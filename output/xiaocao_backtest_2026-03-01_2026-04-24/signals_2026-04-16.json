@@ -1,0 +1,34 @@
+[
+  {
+    "date": "2026-04-16",
+    "mode": "接力低弱转1",
+    "code": "000788.XSHE",
+    "name": "北大医药",
+    "xcjw": 343.6,
+    "cjs": 0.0,
+    "jsjl": 38.88,
+    "jssb": 0.0,
+    "pctChange": -3.48,
+    "openPctChange": 1.92,
+    "direction": false,
+    "directionRank": -1,
+    "categoryRank": -1,
+    "reason": "弱转强 + 昨日连板 + 竞王达标"
+  },
+  {
+    "date": "2026-04-16",
+    "mode": "接力低弱转2",
+    "code": "000788.XSHE",
+    "name": "北大医药",
+    "xcjw": 343.6,
+    "cjs": 0.0,
+    "jsjl": 38.88,
+    "jssb": 0.0,
+    "pctChange": -3.48,
+    "openPctChange": 1.92,
+    "direction": false,
+    "directionRank": -1,
+    "categoryRank": -1,
+    "reason": "高开弱转强 + 昨日连板 + 竞王达标"
+  }
+]

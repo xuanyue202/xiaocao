@@ -1,0 +1,19 @@
+api:
+  base_url: https://p-xcapi.kjap1.cn
+  timeout: 10
+  retries: 3
+
+defaults:
+  exchange: SSE
+  output_format: table
+  data_dir: results
+  output_dir: output
+
+strategy:
+  hpqb_state: 0
+  lpdx_state: 0
+  block_model: 1
+  category_model: 0
+
+logging:
+  level: info

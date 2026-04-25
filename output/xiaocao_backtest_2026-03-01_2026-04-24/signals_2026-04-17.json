@@ -1,0 +1,50 @@
+[
+  {
+    "date": "2026-04-17",
+    "mode": "接力低弱转2",
+    "code": "603220.XSHG",
+    "name": "中贝通信",
+    "xcjw": 193.73,
+    "cjs": 0.0,
+    "jsjl": 23.7,
+    "jssb": 0.0,
+    "pctChange": -0.98,
+    "openPctChange": 1.97,
+    "direction": true,
+    "directionRank": -1,
+    "categoryRank": 0,
+    "reason": "高开弱转强 + 昨日连板 + 竞王达标"
+  },
+  {
+    "date": "2026-04-17",
+    "mode": "接力低弱转1",
+    "code": "300736.XSHE",
+    "name": "百邦科技",
+    "xcjw": 322.06,
+    "cjs": 0.0,
+    "jsjl": 105.61,
+    "jssb": 0.0,
+    "pctChange": -0.53,
+    "openPctChange": 4.04,
+    "direction": false,
+    "directionRank": -1,
+    "categoryRank": -1,
+    "reason": "弱转强 + 昨日连板 + 竞王达标"
+  },
+  {
+    "date": "2026-04-17",
+    "mode": "接力低弱转2",
+    "code": "300736.XSHE",
+    "name": "百邦科技",
+    "xcjw": 322.06,
+    "cjs": 0.0,
+    "jsjl": 105.61,
+    "jssb": 0.0,
+    "pctChange": -0.53,
+    "openPctChange": 4.04,
+    "direction": false,
+    "directionRank": -1,
+    "categoryRank": -1,
+    "reason": "高开弱转强 + 昨日连板 + 竞王达标"
+  }
+]

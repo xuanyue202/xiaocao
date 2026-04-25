@@ -1,0 +1,50 @@
+[
+  {
+    "date": "2026-04-15",
+    "mode": "接力低弱转2",
+    "code": "000967.XSHE",
+    "name": "盈峰环境",
+    "xcjw": 203.67,
+    "cjs": 0.0,
+    "jsjl": 33.71,
+    "jssb": 0.0,
+    "pctChange": -2.46,
+    "openPctChange": 4.19,
+    "direction": true,
+    "directionRank": -1,
+    "categoryRank": 0,
+    "reason": "高开弱转强 + 昨日连板 + 竞王达标"
+  },
+  {
+    "date": "2026-04-15",
+    "mode": "接力低弱转2",
+    "code": "002157.XSHE",
+    "name": "正邦科技",
+    "xcjw": 213.67,
+    "cjs": 0.0,
+    "jsjl": 12.08,
+    "jssb": 0.0,
+    "pctChange": -1.13,
+    "openPctChange": 1.43,
+    "direction": true,
+    "directionRank": -1,
+    "categoryRank": 0,
+    "reason": "高开弱转强 + 昨日连板 + 竞王达标"
+  },
+  {
+    "date": "2026-04-15",
+    "mode": "首红断低吸",
+    "code": "600654.XSHG",
+    "name": "中安科",
+    "xcjw": 159.1,
+    "cjs": 3.38,
+    "jsjl": 0.0,
+    "jssb": 0.0,
+    "pctChange": -2.0,
+    "openPctChange": -0.44,
+    "direction": true,
+    "directionRank": -1,
+    "categoryRank": 0,
+    "reason": "首红断 + 低吸有分 + 竞王达标"
+  }
+]

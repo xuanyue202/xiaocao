@@ -1,0 +1,34 @@
+[
+  {
+    "date": "2026-03-19",
+    "mode": "接力低弱转2",
+    "code": "002432.XSHE",
+    "name": "九安医疗",
+    "xcjw": 181.15,
+    "cjs": 0.0,
+    "jsjl": 27.69,
+    "jssb": 0.0,
+    "pctChange": 5.91,
+    "openPctChange": 3.87,
+    "direction": true,
+    "directionRank": -1,
+    "categoryRank": 0,
+    "reason": "高开弱转强 + 昨日连板 + 竞王达标"
+  },
+  {
+    "date": "2026-03-19",
+    "mode": "接力低弱转2",
+    "code": "300571.XSHE",
+    "name": "平治信息",
+    "xcjw": 214.97,
+    "cjs": 0.0,
+    "jsjl": 36.86,
+    "jssb": 0.0,
+    "pctChange": -2.8,
+    "openPctChange": 2.19,
+    "direction": false,
+    "directionRank": -1,
+    "categoryRank": -1,
+    "reason": "高开弱转强 + 昨日连板 + 竞王达标"
+  }
+]

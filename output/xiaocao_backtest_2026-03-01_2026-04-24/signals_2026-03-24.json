@@ -1,0 +1,50 @@
+[
+  {
+    "date": "2026-03-24",
+    "mode": "接力低弱转2",
+    "code": "002565.XSHE",
+    "name": "顺灏股份",
+    "xcjw": 273.7,
+    "cjs": 0.0,
+    "jsjl": 42.99,
+    "jssb": 0.0,
+    "pctChange": -2.31,
+    "openPctChange": 1.94,
+    "direction": false,
+    "directionRank": -1,
+    "categoryRank": -1,
+    "reason": "高开弱转强 + 昨日连板 + 竞王达标"
+  },
+  {
+    "date": "2026-03-24",
+    "mode": "接力低弱转1",
+    "code": "300345.XSHE",
+    "name": "华民股份",
+    "xcjw": 236.4,
+    "cjs": 0.0,
+    "jsjl": 238.11,
+    "jssb": 0.0,
+    "pctChange": -4.93,
+    "openPctChange": 6.01,
+    "direction": true,
+    "directionRank": -1,
+    "categoryRank": 0,
+    "reason": "弱转强 + 昨日连板 + 竞王达标"
+  },
+  {
+    "date": "2026-03-24",
+    "mode": "接力低弱转2",
+    "code": "300345.XSHE",
+    "name": "华民股份",
+    "xcjw": 236.4,
+    "cjs": 0.0,
+    "jsjl": 238.11,
+    "jssb": 0.0,
+    "pctChange": -4.93,
+    "openPctChange": 6.01,
+    "direction": true,
+    "directionRank": -1,
+    "categoryRank": 0,
+    "reason": "高开弱转强 + 昨日连板 + 竞王达标"
+  }
+]

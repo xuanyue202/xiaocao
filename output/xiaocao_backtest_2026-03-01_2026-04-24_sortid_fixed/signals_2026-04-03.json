@@ -1,0 +1,34 @@
+[
+  {
+    "date": "2026-04-03",
+    "mode": "接力低弱转1",
+    "code": "002038.XSHE",
+    "name": "双鹭药业",
+    "xcjw": 387.22,
+    "cjs": 0.0,
+    "jsjl": 14.97,
+    "jssb": 0.0,
+    "pctChange": 4.42,
+    "openPctChange": 0.58,
+    "direction": true,
+    "directionRank": -1,
+    "categoryRank": 0,
+    "reason": "弱转强 + 昨日连板 + 竞王达标"
+  },
+  {
+    "date": "2026-04-03",
+    "mode": "接力低弱转1",
+    "code": "603222.XSHG",
+    "name": "济民健康",
+    "xcjw": 487.12,
+    "cjs": 0.0,
+    "jsjl": 17.13,
+    "jssb": 0.0,
+    "pctChange": 2.25,
+    "openPctChange": 0.89,
+    "direction": false,
+    "directionRank": -1,
+    "categoryRank": -1,
+    "reason": "弱转强 + 昨日连板 + 竞王达标"
+  }
+]

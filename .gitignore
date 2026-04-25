@@ -1,0 +1,15 @@
+.DS_Store
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# 本地配置可能包含私有环境信息。
+xiaocao.yaml
+
+# CLI/报告运行产物。需要保留的样例请显式加入版本库。
+reports/
+output/*.md
+output/cli_result_*.csv
+output/*.json
