@@ -228,8 +228,43 @@ v3.3 已上线 default。继续优化的天花板是 sample-size，不是 framew
 | Rules 层 state-modulated 分数门槛 (v3.5 ±15%) | active n 73→135, avg +3.4%→+1.0%, sum -113pp | rules 层 score 阈值是 LOAD-BEARING；动了 = universe 涌入低质量 |
 | Per-mode static xcjw threshold (Q4 only) | TRAIN +0.4% 但 win 率倒退、sum 损失 | 静态per-mode 阈值不能跨子月份 generalize |
 | Binary regime gate | TEST avg -4.24% 到 -5.04% | 1-day backtest 中 bear 日反而 best |
+| **v3.4 (Plan A3+A4+A5+A8 整合, 2026-04-26)** | n active 73→78, **avg +3.40%→+3.14% (-0.26pp)**, **win 63.0%→60.3% (-2.7pp)**, sum 持平 (~245), 2025-12 子月份退步 -0.12pp/-1.3pp | DBR drop + momentum/limitup bonus axes 在 1-day frame 下是 wash. 见下面详解 |
 
-这些都试过了。下次想到任何新的 "filter / threshold / static cutoff" 想法时，
+**v3.4 失败详细诊断（2026-04-26）**
+
+按 Plan A1-A8 整合的 v3.4 candidate（src/xiaocao/strategy/regime.py:MODE_PROFILE_V3_4）:
+- A3 calibration 发现 6 个有充足样本的 mode 的 DBR 都对 winners/losers 不可分（Δ_med ∈ [-0.14, +0.00]，绿断甚至反预测）→ drop DBR precondition
+- A4/A5 加了 momentum + limitup_density 两轴，按第一性原理给 12 个 mode 设 wants_*
+- A8 用 0.7×3-axis-base + 0.3×bonus 混合 BC 友好
+
+8mo robustness gate 实测（src/xiaocao/strategy/runner.py:STRATEGY_PROFILES["validated_v3_4"]）：
+
+| | n_active | avg | win | sum_pct |
+|---|---|---|---|---|
+| validated_v3 (baseline) | 73 | **+3.40%** | **63.0%** | ~248 |
+| validated_v3_4 (candidate) | 78 | +3.14% | 60.3% | ~245 |
+
+**Mode-level 分解**（v3 vs v3.4 active n / avg）：
+- 接力低弱转1: 29/+3.56% → 29/+3.56% (identical, momentum bonus 没改 threshold 跨阈值)
+- N字低吸: 13/+2.61% → 13/+2.61% (identical)
+- 绿断低吸: 10/-0.85% → 14/-0.66% (+4 trades，cohort 内 marginal 改善)
+- 首红断低吸: 21/+5.69% → 22/+5.32% (+1 trade，但 avg 退步)
+
+**关键洞察**：
+1. momentum + limitup bonus axes 在 8mo 实测中**没改变任何 mode 的 active tag**——因为 0.3 权重的 bonus 不足以让 fitness 跨过 adaptive threshold 翻转
+2. v3.4 vs v3 的实际差异**全部来自 DBR drop**（绿断+4，首红断+1）
+3. drop 后多进的 5 笔 trades 是 marginal-positive cohort（绿断从 -0.85 → -0.66 是改善），但加权进 active pool 把全局 avg 从 +3.40 拉到 +3.14
+4. 子月份 2026-02/03/04 (TEST) 完全 identical → DBR drop 在那些月没产生 candidates；只在 12/01 上有效
+5. 这与 v3.6 实测的"绿断 100% precondition fail"一致，但 v3.6 是 winners 一起被屏蔽；v3.4 是 winners + losers 一起放开。两个方向的实验都证明：**1-day backtest 里 DBR 没有可用 signal 等级的预测力**，无论 hard-gate 还是 dropped
+
+**v3.4 所揭示的 framework 上限信号**：
+连续 v3.4 / v3.5 / v3.6 三次失败都指向同一根因——1-day next-open/next-close 这个 prediction frame 内**已经没有可用的 EOD 结构性信号**。继续在 EOD 层加/减 axis、precondition、SCALE 都是 wash。两条真正的出路：
+- **Phase B**: 多日持仓 backtest（report §4 / Plan B）
+- **Phase C**: 盘中信号生成（intraday，A1 已发现 jssb 是 intraday-only 字段）
+
+momentum / limitup_density 数据基础设施保留（state.py），不动 default。MODE_PROFILE_V3_4 dict 保留为 reference / 调研用，不进 default profile。
+
+这些都试过了。下次想到任何新的 "filter / threshold / static cutoff / new state axis" 想法时，
 **先回来看这张表**——大概率已经是 known dead end。
 
 ---

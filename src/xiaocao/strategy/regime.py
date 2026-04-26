@@ -215,11 +215,19 @@ def _classify_proxy(positive_ratio: float, mean_pct: float) -> str:
 
 @dataclass(frozen=True)
 class ModeProfile:
-    """Static profile of a strategy mode's structural fit conditions."""
+    """Static profile of a strategy mode's structural fit conditions.
+
+    Axes 1-3 (reward, risk, continuity) are mandatory and form the base
+    fitness. Axes 4-5 (momentum, limitup_density) default to "any" for
+    backward-compat with v3.3 — when set to a non-"any" value they
+    contribute as a 30%-weighted bonus on top of the base 3-axis mean.
+    """
     direction_bet: str   # "continuation" / "rebound" / "rotation"
     wants_reward: str
     wants_risk: str
     wants_continuity: str
+    wants_momentum: str = "any"          # 大盘 5d 累计 momentum 期望
+    wants_limitup_density: str = "any"   # 涨停密度期望
     precondition: Callable[[StateVector], bool] | None = None
 
 
@@ -238,6 +246,7 @@ def _duan_ban_recovery_ok(state: StateVector) -> bool:
 
 
 MODE_PROFILE: dict[str, ModeProfile] = {
+    # === v3.3 baseline — preserved exactly for backward-compat ===
     # 接力 — continuation bets on 情绪 momentum carrying overnight
     "接力低弱转1": ModeProfile(
         "continuation", wants_reward="high", wants_risk="high", wants_continuity="high"
@@ -254,7 +263,7 @@ MODE_PROFILE: dict[str, ModeProfile] = {
     "方向红盘起爆": ModeProfile(
         "continuation", wants_reward="high", wants_risk="high", wants_continuity="high"
     ),
-    # 断板 (绿/红/首红) — rebound bets, gated by 断板亏钱效应
+    # 断板 (绿/红/首红) — rebound bets, gated by 断板亏钱效应 (v3.3 default)
     "绿断低吸": ModeProfile(
         "rebound", wants_reward="mid", wants_risk="low", wants_continuity="any",
         precondition=_duan_ban_recovery_ok,
@@ -289,6 +298,82 @@ MODE_PROFILE: dict[str, ModeProfile] = {
 }
 
 
+# === v3.4 candidate (Plan A8) — opt-in via STRATEGY_PROFILES["validated_v3_4"]. ===
+#
+# Two structural changes vs v3.3:
+#
+# 1. **DBR preconditions dropped** (per A3 calibration on
+#    output/calibrate_dbr_per_mode.md): for all 6 modes with sufficient sample,
+#    DBR distribution between winners and losers overlap (Δ_med ∈ [-0.14, +0.00]),
+#    sometimes anti-predictive. 绿断/红断/首红断 lose hard precondition; rely on
+#    adaptive fitness modulation only.
+#
+# 2. **Two new bonus axes** wired in:
+#    - wants_momentum (5d cumulative 大盘 mean pct, normalized to [0,1])
+#    - wants_limitup_density (focus pool 涨停 ratio, normalized to [0,1])
+#    First-principles per report §4 "1-day backtest里 bear 日 best mode = 低吸；
+#    trend_strong 日 best mode = 接力". So 接力 wants high momentum + high limitup;
+#    断板低吸 wants low momentum (oversold rebound).
+#
+# NOTE on 红盘起爆主攻 (A1 finding): EOD jssb is decayed (p99=60 vs xcjw p99=624);
+# STRONG_JW=200 filters out 99.7% of qibao pool. This mode is structurally
+# intraday-only. The v3.4 profile is best-effort but real fix is Phase C R2.
+MODE_PROFILE_V3_4: dict[str, ModeProfile] = {
+    "接力低弱转1": ModeProfile(
+        "continuation", wants_reward="high", wants_risk="high", wants_continuity="high",
+        wants_momentum="high", wants_limitup_density="high",
+    ),
+    "接力低弱转2": ModeProfile(
+        "continuation", wants_reward="high", wants_risk="very_high", wants_continuity="high",
+        wants_momentum="very_high", wants_limitup_density="high",
+        precondition=lambda state: state.risk >= 0.45,  # NOT a DBR precondition; kept
+    ),
+    "红盘起爆主攻": ModeProfile(
+        "continuation", wants_reward="high", wants_risk="high", wants_continuity="mid",
+        wants_momentum="high", wants_limitup_density="high",
+    ),
+    "方向红盘起爆": ModeProfile(
+        "continuation", wants_reward="high", wants_risk="high", wants_continuity="high",
+        wants_momentum="high", wants_limitup_density="high",
+    ),
+    "绿断低吸": ModeProfile(
+        "rebound", wants_reward="mid", wants_risk="low", wants_continuity="any",
+        wants_momentum="low", wants_limitup_density="low",
+        # precondition dropped — A3 found anti-predictive
+    ),
+    "红断低吸": ModeProfile(
+        "rebound", wants_reward="mid", wants_risk="mid", wants_continuity="any",
+        wants_momentum="low", wants_limitup_density="mid",
+        # precondition dropped — A3 found overlap
+    ),
+    "首红断低吸": ModeProfile(
+        "rebound", wants_reward="mid", wants_risk="mid", wants_continuity="any",
+        wants_momentum="low", wants_limitup_density="mid",
+        # precondition dropped — A3 found overlap
+    ),
+    "N字低吸": ModeProfile(
+        "continuation", wants_reward="mid", wants_risk="mid", wants_continuity="high",
+        wants_momentum="mid", wants_limitup_density="mid",
+    ),
+    "孕线低吸": ModeProfile(
+        "rebound", wants_reward="low", wants_risk="mid", wants_continuity="high",
+        wants_momentum="mid", wants_limitup_density="low",
+    ),
+    "全盘低位低吸": ModeProfile(
+        "rebound", wants_reward="high", wants_risk="low", wants_continuity="low",
+        wants_momentum="low", wants_limitup_density="low",
+    ),
+    "方向低位低吸": ModeProfile(
+        "rebound", wants_reward="mid", wants_risk="mid", wants_continuity="high",
+        wants_momentum="mid", wants_limitup_density="mid",
+    ),
+    "方向内绿盘低吸前3名": ModeProfile(
+        "rebound", wants_reward="mid", wants_risk="low", wants_continuity="high",
+        wants_momentum="low", wants_limitup_density="mid",
+    ),
+}
+
+
 # Target levels for each "wants" qualifier
 _TARGET_LEVEL: dict[str, float] = {
     "low": 0.25,
@@ -316,24 +401,52 @@ def align(want: str, observed: float) -> float:
 PRECONDITION_FAIL = float("-inf")
 
 
-def mode_fitness(mode: str, state: StateVector | None) -> float:
+def mode_fitness(
+    mode: str,
+    state: StateVector | None,
+    profiles: dict[str, ModeProfile] | None = None,
+) -> float:
     """Continuous fitness ∈ [-1, +1], or PRECONDITION_FAIL when state-gated out.
 
-    Three axes averaged: reward × risk × continuity alignment. Returns 0.0
-    (neutral) when mode or state is unknown.
+    Base = 3-axis mean of (reward, risk, continuity) alignments — preserves
+    v3.3 backward-compat exactly when wants_momentum / wants_limitup_density
+    are "any" (the default in MODE_PROFILE).
+
+    When wants_momentum and/or wants_limitup_density are non-"any" (v3.4
+    via MODE_PROFILE_V3_4), they contribute as a 30%-weighted bonus on top
+    of the 70%-weighted base:
+
+        fitness = 0.7 * base_3axis + 0.3 * mean(active_new_axes)
+
+    `profiles` defaults to MODE_PROFILE (v3.3 BC). Pass MODE_PROFILE_V3_4
+    when running the v3.4 candidate.
     """
     if state is None:
         return 0.0
-    profile = MODE_PROFILE.get(mode)
+    profile_dict = profiles if profiles is not None else MODE_PROFILE
+    profile = profile_dict.get(mode)
     if profile is None:
         return 0.0
     if profile.precondition is not None and not profile.precondition(state):
         return PRECONDITION_FAIL
-    return (
+
+    base = (
         align(profile.wants_reward, state.reward)
         + align(profile.wants_risk, state.risk)
         + align(profile.wants_continuity, state.continuity)
     ) / 3.0
+
+    bonus_aligns: list[float] = []
+    if profile.wants_momentum != "any":
+        bonus_aligns.append(align(profile.wants_momentum, state.momentum))
+    if profile.wants_limitup_density != "any":
+        bonus_aligns.append(align(profile.wants_limitup_density, state.limitup_density))
+
+    if not bonus_aligns:
+        return base
+
+    bonus = sum(bonus_aligns) / len(bonus_aligns)
+    return 0.7 * base + 0.3 * bonus
 
 
 # --- Legacy 5-tier discrete fitness (kept for back-compat) -------------------

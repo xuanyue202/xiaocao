@@ -239,6 +239,7 @@ def tag_signals(
     trade_days: list[str] | None = None,
     regime: str | None = None,
     state: Any | None = None,
+    mode_profiles: dict[str, Any] | None = None,
     **decision_kwargs: Any,
 ) -> tuple[list[dict[str, Any]], dict[str, ModeDecision]]:
     """Tag every signal row with `adaptive_active` (bool) + `adaptive_reason`.
@@ -270,7 +271,7 @@ def tag_signals(
         mode = row.get("mode") or ""
         if mode and mode not in decisions:
             if state is not None:
-                fitness: float | int = mode_fitness(mode, state)
+                fitness: float | int = mode_fitness(mode, state, profiles=mode_profiles)
             else:
                 fitness = mode_regime_fitness(mode, regime)
             decisions[mode] = decide_mode_state(

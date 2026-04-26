@@ -120,58 +120,254 @@ def score_trades(
     signals_by_date: dict[str, list[dict[str, Any]]],
     trade_days: list[str],
     klines: dict[str, dict[str, dict[str, Any]]],
+    *,
+    hold_days: int = 1,
+    exit_rule: str = "next_close",
+    max_dd_pct: float = 5.0,
+    entry_rule: str = "open",
+    intraday_minute_data: dict[tuple[str, str], list[dict[str, Any]]] | None = None,
+    intraday_dd_threshold: float = 1.5,
 ) -> tuple[list[dict[str, Any]], list[str]]:
-    """Compute closed trades. Returns (trades, incomplete_signal_dates)."""
+    """Compute closed trades. Returns (trades, incomplete_signal_dates).
+
+    Default behavior (hold_days=1, exit_rule="next_close", entry_rule="open")
+    preserves the 1-day backtest convention exactly: buy at signal-day OPEN
+    (= 9:25 集合竞价 fill at 9:30), sell at next trading day's CLOSE.
+
+    Multi-day exit (Plan B): set hold_days ≥ 2 with exit_rule ∈
+      - "hold_to_n":      sell at trade_days[idx + hold_days] CLOSE
+      - "max_dd":         exit on first day where drawdown from running peak
+                          (HIGH after entry) exceeds max_dd_pct; if no such
+                          day, fall back to hold_to_n
+      - "max_favorable":  sell at the day with the max favorable excursion
+                          (HIGH) in the window — backward-looking; useful for
+                          ceiling analysis, not realistic execution
+
+    Entry modes (Plan D): `entry_rule` ∈
+      - "open" (default):       buy at signal-day 9:30 open (= 9:25 集合竞价
+                                fill); all signals taken.
+      - "confirmation_935":     "9:35 加仓 mode" — buy at 9:35 close ONLY when
+                                the stock is STILL STRONG (drawdown from
+                                9:30-9:35 max ≤ intraday_dd_threshold);
+                                SKIP signals that retraced significantly.
+                                Empirical: STRONG subset has 1d avg +4.54%
+                                vs RETRACED +1.56% on 8mo TRAIN+TEST.
+                                Models an INDEPENDENT trade unit alongside
+                                any 9:25 集合竞价 position — user sizes
+                                positions flexibly in real ops. Note: 9:35
+                                entry price > 9:30 open due to morning surge,
+                                so per-trade return is lower than 9:30-open
+                                same-subset (+2.15% vs +4.54% on 1d), but
+                                still positive-EV add-on capacity.
+
+    For "confirmation_935" without minute data: SKIP (fail-safe; caller
+    should pre-fetch via scripts/backfill_intraday_minute.py).
+    """
+    from xiaocao.strategy.intraday_entry import compute_intraday_axes
+
+    use_intraday_entry = entry_rule == "confirmation_935"
+    if entry_rule not in {"open", "confirmation_935"}:
+        raise ValueError(f"unknown entry_rule {entry_rule!r}")
+
+    def _resolve_entry(buy_date: str, code: str, fallback_open: float | None
+                       ) -> tuple[float | None, dict[str, Any] | None]:
+        """Return (entry_price, intraday_axes) for a signal.
+        entry_price=None means SKIP this signal."""
+        if not use_intraday_entry:
+            return fallback_open, None
+        td = buy_date.replace("-", "")
+        recs = (intraday_minute_data or {}).get((td, str(code)))
+        axes = compute_intraday_axes(recs) if recs else None
+        if axes is None:
+            return None, None  # no minute data → skip (fail-safe)
+        if axes["drawdown_from_peak"] > intraday_dd_threshold:
+            return None, axes  # retraced (weak signal) → skip 9:35 add-on
+        return float(axes["entry_price"]), axes
+
     day_idx = {d: i for i, d in enumerate(trade_days)}
     trades: list[dict[str, Any]] = []
     incomplete: list[str] = []
+
+    # 1d BC path
+    if hold_days == 1 and exit_rule == "next_close":
+        for buy_date in sorted(signals_by_date):
+            idx = day_idx.get(buy_date)
+            if idx is None or idx + 1 >= len(trade_days):
+                if signals_by_date[buy_date]:
+                    incomplete.append(buy_date)
+                continue
+            sell_date = trade_days[idx + 1]
+            for sig in signals_by_date[buy_date]:
+                code = sig.get("code")
+                if not code:
+                    continue
+                kbd = klines.get(str(code), {})
+                buy_row = kbd.get(buy_date)
+                sell_row = kbd.get(sell_date)
+                buy_open = _to_float(buy_row.get("open")) if buy_row else None
+                sell_close = _to_float(sell_row.get("close")) if sell_row else None
+                if buy_open is None or sell_close is None or buy_open == 0:
+                    continue
+                entry_price, axes = _resolve_entry(buy_date, str(code), buy_open)
+                if entry_price is None or entry_price == 0:
+                    continue
+                ret = (sell_close / entry_price - 1) * 100
+                t = _trade_row(sig, buy_date, sell_date, ret)
+                if axes is not None:
+                    t["intradayDrawdown"] = axes.get("drawdown_from_peak")
+                    t["intradayEntry"] = entry_price
+                    t["intradayPctAt935"] = axes.get("pct_at_935")
+                trades.append(t)
+        return trades, incomplete
+
+    # Multi-day path (Plan B)
+    if hold_days < 1:
+        raise ValueError(f"hold_days must be ≥ 1, got {hold_days}")
+    if exit_rule not in {"next_close", "hold_to_n", "max_dd", "max_favorable"}:
+        raise ValueError(f"unknown exit_rule {exit_rule!r}")
+
     for buy_date in sorted(signals_by_date):
         idx = day_idx.get(buy_date)
         if idx is None or idx + 1 >= len(trade_days):
             if signals_by_date[buy_date]:
                 incomplete.append(buy_date)
             continue
-        sell_date = trade_days[idx + 1]
+        # Window: trade_days[idx+1 .. idx+hold_days] (clipped at end of trade_days)
+        last_idx = min(idx + hold_days, len(trade_days) - 1)
+        if last_idx <= idx:
+            if signals_by_date[buy_date]:
+                incomplete.append(buy_date)
+            continue
+        window_dates = trade_days[idx + 1: last_idx + 1]
         for sig in signals_by_date[buy_date]:
             code = sig.get("code")
             if not code:
                 continue
             kbd = klines.get(str(code), {})
             buy_row = kbd.get(buy_date)
-            sell_row = kbd.get(sell_date)
             buy_open = _to_float(buy_row.get("open")) if buy_row else None
-            sell_close = _to_float(sell_row.get("close")) if sell_row else None
-            if buy_open is None or sell_close is None or buy_open == 0:
+            if buy_open is None or buy_open == 0:
                 continue
-            ret = (sell_close / buy_open - 1) * 100
-            trades.append({
-                "buyDate": buy_date,
-                "sellDate": sell_date,
-                "code": code,
-                "name": sig.get("name") or "",
-                "mode": sig.get("mode") or "",
-                "returnPct": ret,
-                "xcjw": _to_float(sig.get("xcjw")) or 0.0,
-                "cjs": _to_float(sig.get("cjs")) or 0.0,
-                "jsjl": _to_float(sig.get("jsjl")) or 0.0,
-                "openPctChange": _to_float(sig.get("openPctChange")) or 0.0,
-                "reason": sig.get("reason") or "",
-                "droppedModes": ",".join(sig.get("dropped_modes") or []),
-                # B-track annotations (may be empty for backtests without enrichment)
-                "regime": sig.get("regime") or "",
-                "isMainLine": bool(sig.get("is_main_line")) if "is_main_line" in sig else "",
-                "isBigCap": bool(sig.get("is_big_cap")) if "is_big_cap" in sig else "",
-                # adaptive_active: True = counts toward real P&L, False = shadow
-                # (still recorded so mode_history reflects the mode's true track record).
-                # When adaptive is off, we omit the key (treated as active everywhere).
-                "adaptiveActive": (
-                    bool(sig.get("adaptive_active"))
-                    if "adaptive_active" in sig
-                    else ""
-                ),
-                "adaptiveReason": sig.get("adaptive_reason") or "",
-            })
+            entry_price, axes = _resolve_entry(buy_date, str(code), buy_open)
+            if entry_price is None or entry_price == 0:
+                continue
+
+            # Walk window, compute exit per rule
+            sell_date, sell_price, exit_kind = _resolve_exit(
+                kbd, window_dates, entry_price, exit_rule, max_dd_pct,
+            )
+            if sell_date is None or sell_price is None:
+                continue
+            ret = (sell_price / entry_price - 1) * 100
+            t = _trade_row(sig, buy_date, sell_date, ret)
+            t["holdDays"] = day_idx[sell_date] - idx
+            t["exitKind"] = exit_kind
+            if axes is not None:
+                t["intradayDrawdown"] = axes.get("drawdown_from_peak")
+                t["intradayEntry"] = entry_price
+                t["intradayPctAt935"] = axes.get("pct_at_935")
+            trades.append(t)
     return trades, incomplete
+
+
+def _trade_row(
+    sig: dict[str, Any], buy_date: str, sell_date: str, ret: float,
+) -> dict[str, Any]:
+    return {
+        "buyDate": buy_date,
+        "sellDate": sell_date,
+        "code": sig.get("code"),
+        "name": sig.get("name") or "",
+        "mode": sig.get("mode") or "",
+        "returnPct": ret,
+        "xcjw": _to_float(sig.get("xcjw")) or 0.0,
+        "cjs": _to_float(sig.get("cjs")) or 0.0,
+        "jsjl": _to_float(sig.get("jsjl")) or 0.0,
+        "openPctChange": _to_float(sig.get("openPctChange")) or 0.0,
+        "reason": sig.get("reason") or "",
+        "droppedModes": ",".join(sig.get("dropped_modes") or []),
+        "regime": sig.get("regime") or "",
+        "isMainLine": bool(sig.get("is_main_line")) if "is_main_line" in sig else "",
+        "isBigCap": bool(sig.get("is_big_cap")) if "is_big_cap" in sig else "",
+        "adaptiveActive": (
+            bool(sig.get("adaptive_active"))
+            if "adaptive_active" in sig else ""
+        ),
+        "adaptiveReason": sig.get("adaptive_reason") or "",
+    }
+
+
+def _resolve_exit(
+    kbd: dict[str, dict[str, Any]],
+    window_dates: list[str],
+    buy_open: float,
+    rule: str,
+    max_dd_pct: float,
+) -> tuple[str | None, float | None, str | None]:
+    """Walk forward through the hold-window and pick the exit price.
+
+    Returns (sell_date, sell_price, exit_kind) where exit_kind ∈
+    {"hold_to_n", "max_dd_stop", "max_favorable", "incomplete"}.
+    """
+    if not window_dates:
+        return None, None, None
+
+    rows = [(d, kbd.get(d)) for d in window_dates]
+    rows = [(d, r) for d, r in rows if r]
+    if not rows:
+        return None, None, None
+
+    last_date, last_row = rows[-1]
+    last_close = _to_float(last_row.get("close"))
+
+    if rule == "hold_to_n":
+        if last_close is None:
+            return None, None, None
+        return last_date, last_close, "hold_to_n"
+
+    if rule == "next_close":
+        # 1d shortcut even when called via multi_day: just close of first window day
+        first_date, first_row = rows[0]
+        first_close = _to_float(first_row.get("close"))
+        if first_close is None:
+            return None, None, None
+        return first_date, first_close, "next_close"
+
+    if rule == "max_favorable":
+        # Sell at day with maximum HIGH (forward-looking ceiling proxy).
+        best = max(rows, key=lambda dr: _to_float(dr[1].get("high")) or float("-inf"))
+        bdate, brow = best
+        bhigh = _to_float(brow.get("high"))
+        if bhigh is None:
+            return None, None, None
+        return bdate, bhigh, "max_favorable"
+
+    if rule == "max_dd":
+        # Trailing stop. Conservative ordering to avoid intraday look-ahead:
+        # within a single trading day, check today's LOW against the peak set
+        # by PREVIOUS days only (ignoring today's HIGH). Only after the
+        # drawdown check do we incorporate today's HIGH into the peak for
+        # subsequent days. This prevents the model from "selling at today's
+        # peak * 0.98" when intraday the LOW could precede the HIGH.
+        peak = buy_open
+        for d, r in rows:
+            low = _to_float(r.get("low"))
+            if low is not None and peak > 0:
+                drawdown_pct = (peak - low) / peak * 100
+                if drawdown_pct >= max_dd_pct:
+                    stop_price = peak * (1 - max_dd_pct / 100)
+                    return d, stop_price, "max_dd_stop"
+            high = _to_float(r.get("high"))
+            if high is not None and high > peak:
+                peak = high
+        if last_close is None:
+            return None, None, None
+        return last_date, last_close, "hold_to_n"
+
+    # Unknown rule
+    return None, None, None
+
+
 
 
 def _stats(values: list[float]) -> dict[str, Any]:
@@ -371,6 +567,13 @@ def run_backtest(
     adaptive_modes: bool = False,
     reset_mode_history: bool = True,
     warmup_start: str | None = None,
+    # Plan B — multi-day persistence scoring
+    hold_days: int = 1,
+    exit_rule: str = "next_close",
+    max_dd_pct: float = 5.0,
+    # Plan D — intraday entry-timing
+    entry_rule: str = "open",
+    intraday_dd_threshold: float = 1.5,
     **strategy_kwargs: Any,
 ) -> dict[str, Any]:
     """Run a backtest and write artifacts to `output_dir`. Returns the summary dict.
@@ -642,7 +845,21 @@ def run_backtest(
     klines_raw = fetch_klines(client, all_codes, kline_end, count=effective_kline_count)
     klines = {code: _kline_by_date(rows) for code, rows in klines_raw.items()}
 
-    trades, incomplete = score_trades(signals_by_date, trade_days, klines)
+    intraday_minute_data = None
+    if entry_rule == "confirmation_935":
+        cache_obj = getattr(client, "cache", None)
+        cache_path = getattr(cache_obj, "path", None) if cache_obj is not None else None
+        if cache_path:
+            from xiaocao.strategy.intraday_entry import load_minute_cache
+            intraday_minute_data = load_minute_cache(cache_path)
+
+    trades, incomplete = score_trades(
+        signals_by_date, trade_days, klines,
+        hold_days=hold_days, exit_rule=exit_rule, max_dd_pct=max_dd_pct,
+        entry_rule=entry_rule,
+        intraday_minute_data=intraday_minute_data,
+        intraday_dd_threshold=intraday_dd_threshold,
+    )
     summary = aggregate_summary(
         trades,
         period_requested=f"{start} to {end}",

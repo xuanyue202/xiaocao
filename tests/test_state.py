@@ -10,6 +10,8 @@ from xiaocao.strategy.state import (
     StateVector,
     _compute_continuity,
     _compute_duan_ban_recovery,
+    _compute_limitup_density,
+    _compute_momentum,
     _compute_reward_density,
     _compute_risk_polarity,
     build_state_index,
@@ -67,6 +69,59 @@ def test_duan_ban_recovery_no_candidates_neutral() -> None:
     today = {"A": -1.0, "B": -1.0}
     rec, n = _compute_duan_ban_recovery(today, yesterday)
     assert n == 0 and rec == 0.5
+
+
+def test_momentum_neutral_when_empty() -> None:
+    mom, n = _compute_momentum([])
+    assert mom == 0.5 and n == 0
+
+
+def test_momentum_positive_week_saturates_high() -> None:
+    # 5 days of +3% mean each → cumulative +15 → clamped to +1 → momentum = 1.0
+    mom, n = _compute_momentum([3.0, 3.0, 3.0, 3.0, 3.0])
+    assert n == 5 and mom == pytest.approx(1.0)
+
+
+def test_momentum_negative_week_saturates_low() -> None:
+    mom, n = _compute_momentum([-3.0, -3.0, -3.0, -3.0, -3.0])
+    assert n == 5 and mom == pytest.approx(0.0)
+
+
+def test_momentum_balanced_returns_neutral() -> None:
+    # Sum 0 → momentum 0.5
+    mom, _ = _compute_momentum([1.5, -1.5, 0.8, -0.8, 0.0])
+    assert mom == pytest.approx(0.5)
+
+
+def test_momentum_partial_window() -> None:
+    # 3 days of +1% each → +3 / 10 = 0.3 → (0.3+1)/2 = 0.65
+    mom, n = _compute_momentum([1.0, 1.0, 1.0])
+    assert n == 3 and mom == pytest.approx(0.65)
+
+
+def test_momentum_in_built_state_index_window(tmp_path) -> None:
+    """Verify build_state_index threads daily mean pct → momentum across dates."""
+    cache_path = tmp_path / "c.db"
+    rows = []
+    # 6 dates, 30 stocks each, all +2% → cumulative +12 → clamped → momentum 1.0 by day 5
+    for d_offset in range(6):
+        date = f"2026-04-{20+d_offset:02d}"
+        for i in range(30):
+            rows.append({"code": f"C{i:03d}", "tradeDate": date, "pctChangeRate": 2.0})
+    _seed_kline_cache(cache_path, rows)
+
+    class FakeCache:
+        path = str(cache_path)
+
+    idx = build_state_index(FakeCache())
+    # Day 5 (last) should have cumulative 5d × 2% = 10 → clamped → 1.0
+    last_state = idx["2026-04-25"]
+    assert last_state.momentum == pytest.approx(1.0)
+    assert last_state.n_momentum == 5
+    # Day 1 has only 1 sample in window → +2% / 10 = 0.2 → (0.2+1)/2 = 0.6
+    first_state = idx["2026-04-20"]
+    assert first_state.n_momentum == 1
+    assert first_state.momentum == pytest.approx(0.6)
 
 
 def _seed_kline_cache(cache_path, rows: list[dict]) -> None:
@@ -147,3 +202,57 @@ def test_state_vector_is_immutable() -> None:
     s = StateVector(reward=0.7, risk=0.6, continuity=0.5, duan_ban_recovery=0.5)
     with pytest.raises(Exception):
         s.reward = 0.9  # frozen dataclass
+
+
+def test_state_vector_default_momentum_neutral() -> None:
+    """StateVector without explicit momentum defaults to 0.5 (back-compat)."""
+    s = StateVector(reward=0.5, risk=0.5, continuity=0.5, duan_ban_recovery=0.5)
+    assert s.momentum == 0.5
+    assert s.n_momentum == 0
+    assert s.limitup_density == 0.0  # 0 means "no signal", different from neutral 0.5
+
+
+def test_limitup_density_empty_returns_zero() -> None:
+    assert _compute_limitup_density([]) == 0.0
+
+
+def test_limitup_density_no_limitup_zero() -> None:
+    pcts = [3.0, -2.0, 5.0, 0.0, 8.0]  # max 8 < 9.5
+    assert _compute_limitup_density(pcts) == 0.0
+
+
+def test_limitup_density_saturates_at_5pct() -> None:
+    # 5 / 100 = 5% → exactly saturates to 1.0
+    pcts = [9.6] * 5 + [0.0] * 95
+    assert _compute_limitup_density(pcts) == pytest.approx(1.0)
+
+
+def test_limitup_density_above_saturation_clamped() -> None:
+    # 10 / 100 = 10% → clamped to 1.0
+    pcts = [9.6] * 10 + [0.0] * 90
+    assert _compute_limitup_density(pcts) == pytest.approx(1.0)
+
+
+def test_limitup_density_partial() -> None:
+    # 1 / 100 = 1% → 1% / 5% = 0.2
+    pcts = [9.6] + [0.0] * 99
+    assert _compute_limitup_density(pcts) == pytest.approx(0.2)
+
+
+def test_limitup_density_in_state_index(tmp_path) -> None:
+    """build_state_index populates limitup_density per day."""
+    cache_path = tmp_path / "c.db"
+    rows = []
+    # 30 stocks: first 3 have pct 10% (涨停, 10%>=9.5), rest 0% → 3/30=10% → clamped to 1.0
+    for i in range(30):
+        rows.append({
+            "code": f"C{i:03d}", "tradeDate": "2026-04-23",
+            "pctChangeRate": 10.0 if i < 3 else 0.0,
+        })
+    _seed_kline_cache(cache_path, rows)
+
+    class FakeCache:
+        path = str(cache_path)
+
+    idx = build_state_index(FakeCache())
+    assert idx["2026-04-23"].limitup_density == pytest.approx(1.0)

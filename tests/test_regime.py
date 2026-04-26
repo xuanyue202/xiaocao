@@ -176,3 +176,95 @@ def test_mode_fitness_smooth_around_target():
     f1 = mode_fitness("N字低吸", s1)
     f2 = mode_fitness("N字低吸", s2)
     assert abs(f1 - f2) < 0.05, "small input change → big output change (jumpy)"
+
+
+# ============================================================================
+# v3.4 candidate (Plan A8) — MODE_PROFILE_V3_4 tests
+# ============================================================================
+
+def test_v3_4_drops_dbr_precondition_for_lvduan():
+    """A3 found DBR is not predictive for 绿断低吸. v3.4 drops the precondition."""
+    from xiaocao.strategy.regime import MODE_PROFILE_V3_4, mode_fitness, PRECONDITION_FAIL
+    from xiaocao.strategy.state import StateVector
+    # Same low DBR that would FAIL precondition under v3 default
+    state = StateVector(
+        reward=0.5, risk=0.3, continuity=0.5, duan_ban_recovery=0.20,
+        momentum=0.30, limitup_density=0.20,
+    )
+    f_v3_4 = mode_fitness("绿断低吸", state, profiles=MODE_PROFILE_V3_4)
+    assert f_v3_4 != PRECONDITION_FAIL
+    assert isinstance(f_v3_4, float)
+
+
+def test_v3_4_lvduan_likes_low_momentum_oversold():
+    """绿断低吸 v3.4 wants_momentum=low, wants_limitup_density=low.
+
+    Bull-week state should give LOWER fitness than bear-week state.
+    """
+    from xiaocao.strategy.regime import MODE_PROFILE_V3_4, mode_fitness
+    from xiaocao.strategy.state import StateVector
+    bear = StateVector(reward=0.5, risk=0.3, continuity=0.5, duan_ban_recovery=0.5,
+                       momentum=0.20, limitup_density=0.10)  # bear week
+    bull = StateVector(reward=0.5, risk=0.3, continuity=0.5, duan_ban_recovery=0.5,
+                       momentum=0.85, limitup_density=0.85)  # bull week
+    f_bear = mode_fitness("绿断低吸", bear, profiles=MODE_PROFILE_V3_4)
+    f_bull = mode_fitness("绿断低吸", bull, profiles=MODE_PROFILE_V3_4)
+    assert f_bear > f_bull, f"绿断低吸 should prefer oversold context: f_bear={f_bear} f_bull={f_bull}"
+
+
+def test_v3_4_jielidi_likes_high_momentum_bull():
+    """接力低弱转1 v3.4 wants_momentum=high. Bull-week should outperform bear-week."""
+    from xiaocao.strategy.regime import MODE_PROFILE_V3_4, mode_fitness
+    from xiaocao.strategy.state import StateVector
+    bear = StateVector(reward=0.7, risk=0.7, continuity=0.7, duan_ban_recovery=0.5,
+                       momentum=0.20, limitup_density=0.10)
+    bull = StateVector(reward=0.7, risk=0.7, continuity=0.7, duan_ban_recovery=0.5,
+                       momentum=0.85, limitup_density=0.85)
+    f_bear = mode_fitness("接力低弱转1", bear, profiles=MODE_PROFILE_V3_4)
+    f_bull = mode_fitness("接力低弱转1", bull, profiles=MODE_PROFILE_V3_4)
+    assert f_bull > f_bear, f"接力 should prefer bull context: f_bull={f_bull} f_bear={f_bear}"
+
+
+def test_v3_4_collapses_to_v3_when_bonuses_any():
+    """If a mode has wants_momentum/wants_limitup both 'any', v3.4 fitness == v3 fitness."""
+    from xiaocao.strategy.regime import MODE_PROFILE, mode_fitness
+    from xiaocao.strategy.regime import ModeProfile
+    from xiaocao.strategy.state import StateVector
+    test_profiles = {"test_mode": ModeProfile(
+        "rebound", wants_reward="mid", wants_risk="mid", wants_continuity="mid",
+        # wants_momentum and wants_limitup_density default to "any"
+    )}
+    state = StateVector(reward=0.55, risk=0.55, continuity=0.55, duan_ban_recovery=0.5,
+                        momentum=0.30, limitup_density=0.30)
+    f = mode_fitness("test_mode", state, profiles=test_profiles)
+    # 3-axis only: align(mid, 0.55) for each = 1 - 2.5*0.05 = 0.875 → mean = 0.875
+    assert f == pytest.approx(0.875, abs=0.001)
+
+
+def test_v3_4_default_profiles_unchanged():
+    """When mode_fitness is called WITHOUT profiles= arg, it uses MODE_PROFILE
+    (v3.3 baseline) — preserves BC for all existing call sites."""
+    from xiaocao.strategy.regime import MODE_PROFILE, mode_fitness, PRECONDITION_FAIL
+    from xiaocao.strategy.state import StateVector
+    # 绿断低吸 in v3 has DBR precondition. With low DBR → fail.
+    state = StateVector(reward=0.5, risk=0.3, continuity=0.5, duan_ban_recovery=0.20)
+    assert mode_fitness("绿断低吸", state) == PRECONDITION_FAIL  # default v3 path
+
+
+def test_v3_4_bonus_weight_30pct():
+    """Sanity: v3.4 fitness mixes 70% base + 30% bonus.
+    Construct a case where base = 0 and bonus = 1; expect 0.3."""
+    from xiaocao.strategy.regime import mode_fitness
+    from xiaocao.strategy.regime import ModeProfile
+    from xiaocao.strategy.state import StateVector
+    # Profile with all 3 base axes "any" (align=0 each → base=0) +
+    # wants_momentum=high with state.momentum exactly at target 0.70 → align=1
+    profiles = {"x": ModeProfile(
+        "rebound", wants_reward="any", wants_risk="any", wants_continuity="any",
+        wants_momentum="high",  # target 0.70
+    )}
+    state = StateVector(reward=0.5, risk=0.5, continuity=0.5, duan_ban_recovery=0.5,
+                        momentum=0.70)
+    f = mode_fitness("x", state, profiles=profiles)
+    # base = 0, bonus = 1 → 0.7*0 + 0.3*1 = 0.3
+    assert f == pytest.approx(0.3, abs=0.001)

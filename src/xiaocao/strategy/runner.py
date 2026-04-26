@@ -130,6 +130,131 @@ STRATEGY_PROFILES: dict[str, dict[str, Any]] = {
         "exclude_main_line": True,
         "state_aware_adaptive": True,
     },
+    # validated_v5 (RECOMMENDED — Plan B shipped 2026-04-26):
+    #
+    # Same signal generation as validated_v3 (state-fitness adaptive, 12-mode
+    # profile, exclude 接力低弱转2 + 方向内绿盘低吸前3名). The change is on the
+    # SCORING side only:
+    #
+    #   - hold_days = 5  (was 1)
+    #   - exit_rule = "max_dd"  (was "next_close")
+    #   - max_dd_pct = 2.0  (peak-to-trough trailing stop in %)
+    #
+    # This means: enter at 9:30 open as before (T+1 compatible 9:25 集合竞价
+    # path), but instead of selling at next-day close, hold up to 5 trading
+    # days with a trailing stop that triggers when the position retraces 2%
+    # from its post-entry peak HIGH.
+    #
+    # 8-month TRAIN+TEST result vs validated_v3 (1d):
+    #   avg  +3.40% → +6.39% (Δ +2.99pp)
+    #   win  56.2% → 56.2%   (unchanged)
+    #   sum  +248.1% → +466.6% (Δ +88%)
+    #   per-month: 4/4 TRAIN months improved (+1.42pp..+5.06pp avg lift),
+    #              TEST month -0.47pp on n=5 (small-sample noise)
+    #
+    # See `reports/multi_day_validation_2026-04-26.md` for full sub-month
+    # decomposition + max_dd threshold sweep + look-ahead bias fix.
+    #
+    # Caveats:
+    #   - dd=2% is the optimum on this 8mo window; cross-window validation
+    #     (May-Jun 2026 / 2024 historical) recommended before considering
+    #     promotion to absolute default
+    #   - changes ALL existing P&L metrics' interpretation; old 1d numbers
+    #     no longer directly comparable to v5 numbers
+    "validated_v5": {
+        "block_model": RANK_MODEL_FOCUS,
+        "category_model": 0,
+        "sort_id": 40,
+        "direction_sort_key": "directionCjs",
+        "pool_sort_key": None,
+        "max_per_direction": None,
+        "exclude_modes": ["接力低弱转2", "方向内绿盘低吸前3名"],
+        "exclude_main_line": True,
+        "state_aware_adaptive": True,
+        # Phase B scoring defaults — read by run_backtest CLI handler.
+        "hold_days": 5,
+        "exit_rule": "max_dd",
+        "max_dd_pct": 2.0,
+    },
+    # validated_v6 (AGGRESSIVE — Plan E cross-window verified 2026-04-26):
+    #
+    # Same as validated_v5 but with tighter trailing stop:
+    #   - hold_days = 3   (was 5; 3d_dd2 ≈ 5d_dd2 empirically, simplification)
+    #   - exit_rule = "max_dd"
+    #   - max_dd_pct = 0.5  (was 2.0; tighter stop locks in more profit on
+    #                       winners, accepts -0.5% lock-in on losers)
+    #
+    # Cross-window head-to-head (8mo Sep25-Apr26 + xwin Apr-Aug 2025):
+    #   variant     |  8mo avg  | xwin avg  | sum (both)
+    #   1d (v3)     | +3.40%    | -0.14%    | +234.8%
+    #   3d_dd2 (v5) | +6.42%    | +2.30%    | +686.6%
+    #   3d_dd0.5    | **+6.88%**| **+3.04%**| **+790.5%**
+    #
+    # Both independent windows agreed dd=0.5% is optimal (NOT over-fit). The
+    # gap is bigger in the bear-leaning xwin (+0.77pp) than the bull-leaning
+    # 8mo (+0.46pp), suggesting tight stops protect more in tougher regimes.
+    #
+    # Trade-off vs v5: win rate drops (8mo 56%→48%, xwin 39%→23%). More
+    # frequent small losses (-0.5% lock-in) + occasional bigger winners. The
+    # AVG and SUM both improve, but psychological pattern is different from
+    # v5. Choose based on trader preference.
+    #
+    # Brokerage / slippage NOT modeled — in real trading, ~0.5% slippage on
+    # stop fills could erode dd=0.5% advantage more than dd=2.0%. Verify on
+    # paper trading before ship-to-production.
+    "validated_v6": {
+        "block_model": RANK_MODEL_FOCUS,
+        "category_model": 0,
+        "sort_id": 40,
+        "direction_sort_key": "directionCjs",
+        "pool_sort_key": None,
+        "max_per_direction": None,
+        "exclude_modes": ["接力低弱转2", "方向内绿盘低吸前3名"],
+        "exclude_main_line": True,
+        "state_aware_adaptive": True,
+        # Aggressive Phase B+E: 3d hold + tight 0.5% trailing stop
+        "hold_days": 3,
+        "exit_rule": "max_dd",
+        "max_dd_pct": 0.5,
+    },
+    # validated_v3_4 (CANDIDATE — Plan A8, requires robustness gate to ship):
+    #
+    # Two structural changes vs v3:
+    #
+    # 1. **DBR preconditions dropped** for 绿断/红断/首红断 (per A3 calibration in
+    #    output/calibrate_dbr_per_mode.md): the DBR distributions for winners and
+    #    losers OVERLAP for all 6 calibrated modes (Δ_med ∈ [-0.14, +0.00]),
+    #    sometimes anti-predictive. v3.6 had observed 100% precondition fail for
+    #    绿断 — root cause was DBR isn't a useful gate, not threshold tuning.
+    #
+    # 2. **Two new bonus axes** wired into mode_fitness:
+    #    - wants_momentum (5d cumulative 大盘 mean pct, normalized to [0,1])
+    #    - wants_limitup_density (focus pool 涨停 ratio, normalized to [0,1])
+    #    First-principles per report §4: 接力 wants high momentum + high limitup;
+    #    断板低吸 wants low momentum + low/mid limitup (oversold rebound regime).
+    #
+    # mode_fitness math: `0.7 * base_3axis + 0.3 * mean(active_new_axes)`. The
+    # 0.7 weight on the existing 3 axes preserves v3 dominance while letting
+    # the 2 new axes modulate. When both new axes are "any" (e.g., for unknown
+    # modes), v3.4 collapses to v3 exactly.
+    #
+    # Robustness gate to run before ship:
+    #   xiaocao backtest run --start 2025-12-01 --end 2026-04-30 \
+    #     --warmup-start 2025-09-01 --workers 6 --kline-count 200 \
+    #     --profile validated_v3_4
+    #   compare TRAIN/TEST avg/win/sum + 4 子月份 vs validated_v3.
+    "validated_v3_4": {
+        "block_model": RANK_MODEL_FOCUS,
+        "category_model": 0,
+        "sort_id": 40,
+        "direction_sort_key": "directionCjs",
+        "pool_sort_key": None,
+        "max_per_direction": None,
+        "exclude_modes": ["接力低弱转2", "方向内绿盘低吸前3名"],
+        "exclude_main_line": True,
+        "state_aware_adaptive": True,
+        "use_v3_4_profiles": True,  # plumb to tag_signals → mode_fitness
+    },
 }
 
 
@@ -160,6 +285,7 @@ def run_strategy(
     adaptive_cache: Any | None = None,
     adaptive_trade_days: list[str] | None = None,
     state_aware_adaptive: bool = True,
+    use_v3_4_profiles: bool = False,
 ) -> list[dict[str, Any]]:
     """Generate signals for `date`, annotated with regime / main-line / big-cap.
 
@@ -196,6 +322,8 @@ def run_strategy(
             exclude_main_line = bool(preset["exclude_main_line"])
         if "state_aware_adaptive" in preset:
             state_aware_adaptive = bool(preset["state_aware_adaptive"])
+        if "use_v3_4_profiles" in preset:
+            use_v3_4_profiles = bool(preset["use_v3_4_profiles"])
 
     # Resolve regime if caller passed market_overview but not the label.
     if regime is None and market_overview is not None:
@@ -275,8 +403,12 @@ def run_strategy(
         # it counts toward actual P&L (active=True) or shadow (active=False).
         # state_aware_adaptive=True (v3): use continuous StateVector fitness.
         # state_aware_adaptive=False (v2): legacy regime-label discrete fitness.
+        # use_v3_4_profiles=True (v3.4): use MODE_PROFILE_V3_4 with momentum +
+        # limitup_density bonus axes and dropped DBR preconditions.
         state = _state_for_date(date, adaptive_cache) if state_aware_adaptive else None
         adaptive_regime = regime if regime is not None else derive_proxy_regime(date, adaptive_cache)
+        from .regime import MODE_PROFILE, MODE_PROFILE_V3_4
+        profiles_arg = MODE_PROFILE_V3_4 if use_v3_4_profiles else MODE_PROFILE
         output, _ = tag_signals(
             output,
             date,
@@ -284,6 +416,7 @@ def run_strategy(
             trade_days=adaptive_trade_days,
             regime=adaptive_regime,
             state=state,
+            mode_profiles=profiles_arg,
         )
 
     cap = max_open_pct if max_open_pct is not None else MAX_OPEN_PCT_CHANGE

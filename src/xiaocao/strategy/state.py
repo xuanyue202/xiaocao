@@ -27,11 +27,15 @@ from typing import Any
 _REWARD_PCT_THRESHOLD = 2.0
 _DUAN_BAN_HIGH_PCT = 8.0  # yesterday's "near 涨停" cutoff
 _DUAN_BAN_FAIL_PCT = 9.5  # yesterday's failed-涨停 must have CLOSED below this
+_LIMITUP_PCT = 9.5        # pct ≥ 9.5 → 涨停 (or 近涨停)
+_LIMITUP_SAT = 0.05       # 5% of market 涨停 saturates limitup_density to 1.0
+_MOMENTUM_WINDOW = 5      # days in cumulative mean pct
+_MOMENTUM_SCALE = 10.0    # ±10% cumulative move → maps to ±1 → [0,1] via (x+1)/2
 
 
 @dataclass(frozen=True)
 class StateVector:
-    """Four observable market state dimensions per date.
+    """Five observable market state dimensions per date.
 
     All values ∈ [0, 1]. NaN-equivalent missing values default to 0.5 (neutral).
     """
@@ -39,10 +43,13 @@ class StateVector:
     risk: float            # 风险方向: positive_ratio
     continuity: float      # 连续性: top-K mainline overlap
     duan_ban_recovery: float  # 断板亏钱效应: median next-day pct of yesterday's failed-涨停
+    momentum: float = 0.5  # 大盘 5d 累计 mean pct，标准化到 [0,1]，0.5 = 中性
+    limitup_density: float = 0.0  # pct≥9.5 比例，标准化到 [0,1]（5%饱和）；0 = 罕见涨停
 
     n_samples: int = 0     # number of stocks contributing to (reward, risk)
     n_continuity: int = 0  # number of overlapping top-K blocks (0..5)
     n_duan_ban: int = 0    # number of yesterday's failed-涨停 stocks tracked
+    n_momentum: int = 0    # number of days available in the 5d window (0..5)
 
 
 def _normalize_date(s: str) -> str:
@@ -145,6 +152,32 @@ def _compute_continuity(today_top5: list[str], yesterday_top5: list[str]) -> tup
     return overlap / denom, overlap
 
 
+def _compute_limitup_density(pcts: list[float]) -> float:
+    """Fraction of stocks with pct ≥ _LIMITUP_PCT (9.5%), normalized so that
+    5% of market 涨停 → 1.0. Empty input → 0.0 (no signal != neutral).
+    """
+    if not pcts:
+        return 0.0
+    n_lu = sum(1 for v in pcts if v >= _LIMITUP_PCT)
+    raw = n_lu / len(pcts)
+    return min(1.0, raw / _LIMITUP_SAT)
+
+
+def _compute_momentum(daily_mean_pcts: list[float]) -> tuple[float, int]:
+    """5-day cumulative mean-pct → [0, 1].
+
+    `daily_mean_pcts` is the most-recent-N (len ≤ _MOMENTUM_WINDOW) sequence,
+    chronological order doesn't matter for the sum. Returns (momentum, n_used).
+    Empty input → (0.5, 0) neutral.
+    """
+    if not daily_mean_pcts:
+        return 0.5, 0
+    total = sum(daily_mean_pcts)
+    # Map ±_MOMENTUM_SCALE → ±1 → [0,1] via (x+1)/2, clamp.
+    scaled = max(-1.0, min(1.0, total / _MOMENTUM_SCALE))
+    return (scaled + 1.0) / 2.0, len(daily_mean_pcts)
+
+
 def _compute_duan_ban_recovery(
     today_pcts: dict[str, float],
     yesterday_pcts: dict[str, float],
@@ -193,6 +226,13 @@ def build_state_index(cache: Any) -> dict[str, StateVector]:
     sorted_dates = sorted(pct_index.keys())
     out: dict[str, StateVector] = {}
 
+    # Pre-compute daily mean pct for the momentum window.
+    daily_mean: dict[str, float] = {}
+    for d, pcts_dict in pct_index.items():
+        if len(pcts_dict) >= 30:
+            vals = list(pcts_dict.values())
+            daily_mean[d] = sum(vals) / len(vals)
+
     for i, d in enumerate(sorted_dates):
         pcts_dict = pct_index[d]
         pcts = list(pcts_dict.values())
@@ -201,6 +241,7 @@ def build_state_index(cache: Any) -> dict[str, StateVector]:
 
         reward = _compute_reward_density(pcts)
         risk = _compute_risk_polarity(pcts)
+        limitup = _compute_limitup_density(pcts)
         today_top5 = block_top5.get(d, [])
         yesterday = sorted_dates[i - 1] if i > 0 else None
         yesterday_top5 = block_top5.get(yesterday, []) if yesterday else []
@@ -208,21 +249,30 @@ def build_state_index(cache: Any) -> dict[str, StateVector]:
         yesterday_pcts = pct_index.get(yesterday, {}) if yesterday else {}
         duan_ban, n_db = _compute_duan_ban_recovery(pcts_dict, yesterday_pcts)
 
+        # Momentum: prior W days' (incl today) mean pct sum, normalized.
+        window_dates = sorted_dates[max(0, i - _MOMENTUM_WINDOW + 1): i + 1]
+        window_means = [daily_mean[wd] for wd in window_dates if wd in daily_mean]
+        momentum, n_mom = _compute_momentum(window_means)
+
         out[d] = StateVector(
             reward=reward,
             risk=risk,
             continuity=continuity,
             duan_ban_recovery=duan_ban,
+            momentum=momentum,
+            limitup_density=limitup,
             n_samples=len(pcts),
             n_continuity=n_cont,
             n_duan_ban=n_db,
+            n_momentum=n_mom,
         )
     return out
 
 
 NEUTRAL_STATE = StateVector(
     reward=0.5, risk=0.5, continuity=0.5, duan_ban_recovery=0.5,
-    n_samples=0, n_continuity=0, n_duan_ban=0,
+    momentum=0.5, limitup_density=0.0,
+    n_samples=0, n_continuity=0, n_duan_ban=0, n_momentum=0,
 )
 
 

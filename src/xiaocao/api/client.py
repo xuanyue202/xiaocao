@@ -55,6 +55,25 @@ class XiaocaoClient:
     retries: int = 3
     backoff: float = 0.4
     cache: Any | None = None  # optional SQLiteCache instance
+    pool_size: int = 128  # HTTP connection pool size for concurrent workers
+
+    def __post_init__(self) -> None:
+        # Use a Session with adapter-level connection pooling so concurrent
+        # workers reuse keep-alive sockets instead of opening fresh TCP
+        # connections per call. Without this, observed CLOSE_WAIT pile-up
+        # (>300 zombie sockets) and ~10x slower throughput on long backtests.
+        # pool_size large enough for max concurrency (workers × per-day fan-out)
+        # so connections never overflow the pool and get discarded mid-flight.
+        self._session = requests.Session()
+        adapter = requests.adapters.HTTPAdapter(
+            pool_connections=self.pool_size,
+            pool_maxsize=self.pool_size,
+            pool_block=True,  # block waiting for free conn instead of opening new
+            max_retries=0,  # we do retries ourselves below
+        )
+        self._session.mount("http://", adapter)
+        self._session.mount("https://", adapter)
+        self._session.headers.update(DEFAULT_HEADERS)
 
     def post(self, path: str, params: dict[str, Any]) -> Any:
         return self._post_json(path, {"params": params})
@@ -80,16 +99,17 @@ class XiaocaoClient:
         last_error: Exception | None = None
         for attempt in range(self.retries + 1):
             try:
-                response = requests.post(
+                # Context manager ensures response is closed even on exceptions,
+                # preventing CLOSE_WAIT socket pile-up in concurrent workloads.
+                with self._session.post(
                     url,
-                    headers=DEFAULT_HEADERS,
                     json=payload,
                     timeout=self.timeout,
-                )
-                if response.status_code == 404:
-                    raise ApiNotFoundError(f"API endpoint not found: {path}")
-                response.raise_for_status()
-                body = response.json()
+                ) as response:
+                    if response.status_code == 404:
+                        raise ApiNotFoundError(f"API endpoint not found: {path}")
+                    response.raise_for_status()
+                    body = response.json()
                 code = body.get("code")
                 if code is not None and code != 8200:
                     message = body.get("msg") or body.get("errmsg") or body
@@ -555,8 +575,40 @@ class XiaocaoClient:
             },
         )
 
-    def minute_line(self, code: str, freq: str = "1min", adj: str = "bfq") -> Any:
-        return self.post("/stock/minute_line", {"adj": adj, "freq": freq, "code": code})
+    def minute_line(
+        self,
+        code: str,
+        freq: str = "1min",
+        adj: str = "bfq",
+        trade_date: str | None = None,
+        count: int | None = None,
+        code_type: int = 0,
+    ) -> Any:
+        """Per-stock 1-min K-line. Supports HISTORICAL playback when both
+        `trade_date` (any past day) AND `count` are passed; without them the
+        backend silently returns today's data only.
+
+        Per JS bundle wrapper K0 (~9835): defaults adj=bfq freq=1min; tradeDate
+        is formatted as YYYYMMDD before send. If `code` contains ".XCHJZS" the
+        wrapper routes to /stock/xiao_cao_environment_minute_line and strips
+        the suffix; we mirror that here so callers get the same routing.
+
+        Empirically (probed 2026-04-26):
+          - count=241 + tradeDate=YYYYMMDD returns the full 9:30-15:00 day's
+            1-min data for ANY past trading day → history WORKS
+          - omitting count returns today's data regardless of trade_date
+            (backend default 'live' mode)
+        """
+        is_env = ".XCHJZS" in code
+        path = "/stock/xiao_cao_environment_minute_line" if is_env else "/stock/minute_line"
+        clean_code = code.replace(".XCHJZS", "") if is_env else code
+        payload: dict[str, Any] = {"adj": adj, "freq": freq, "code": clean_code,
+                                    "codeType": code_type}
+        if trade_date:
+            payload["tradeDate"] = compact_date(trade_date)
+        if count is not None:
+            payload["count"] = count
+        return self.post(path, payload)
 
     def date_kline(
         self,

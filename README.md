@@ -502,7 +502,7 @@ xiaocao strategy run --date latest --profile default
 - `--pool-sort-key`：接力 / 低吸两个池子的预排序口径，默认沿用历史的 `38 (xiaocaoXCJW)`。
 - `--max-per-direction`：每个方向最多保留多少候选，默认 10。
 - `--exclude-modes`：逗号分隔的模式名，跳过这些模式（如 `接力低弱转2`）。
-- `--profile`：把上面这些参数打包成预设。当前只有 `default`，后续会扩展。
+- `--profile`：把上面这些参数打包成预设。当前推荐 `validated_v5`（多日持仓 max_dd 2%）。完整列表见下面「已经验证通过的 profile」段。
 
 报告子命令也接受 `--top-blocks`（强方向详情拉取数量，默认 5）和 `--no-extras`（跳过 market_overview / 方向详情 / 技术指标拉取，加速本地调试）。
 
@@ -631,13 +631,34 @@ xiaocao backtest validate \
 
 ### 已经验证通过的 profile
 
-| profile | 说明 |
-|---|---|
-| `default` | 不带过滤，原始策略输出 |
-| `validated` | 排除 `接力低弱转2` 和 `方向内绿盘低吸前3名`（March/April 双窗口验证）|
-| `validated_off_main_line` | validated + `exclude_main_line=True`（与 validated_v2 等价的旧名）|
-| `validated_v2` | validated + `exclude_main_line=True`，配合 CLI 默认开启的 `--adaptive-modes` (legacy regime-label fitness) |
-| **`validated_v3`** | **当前推荐**：v2 + state-aware adaptive (StateVector × ModeProfile × asymmetric soft modulation, calibrated DBR threshold). 8-month TRAIN 上 vs v2: avg +0.16%, sum +5.2%, 0 月份退步. |
+| profile | 入场 | 出场 | 8mo avg | xwin avg | 推荐场景 |
+|---|---|---|---|---|---|
+| `default` | 9:30 open | 1d next_close | — | — | 无过滤，原始策略输出 |
+| `validated` | 9:30 open | 1d next_close | — | — | 排除 接力低弱转2 + 方向内绿盘低吸前3名（March/April 双窗口验证）|
+| `validated_off_main_line` | 9:30 open | 1d next_close | — | — | validated + exclude_main_line=True（旧别名）|
+| `validated_v2` | 9:30 open | 1d next_close | +2.82% / 58.9% | — | legacy regime-label adaptive（保 BC）|
+| `validated_v3` | 9:30 open | 1d next_close | +3.40% / 56.2% | -0.14% / 46.3% | state-aware adaptive，1d frame，bear 期赔钱 |
+| **`validated_v5`** | 9:30 open | **5d max_dd 2%** | **+6.39% / 56.2%** | **+2.27% / 38.9%** | **当前推荐 ship default**。Phase B 多日持仓 + trailing stop。两个 window 都对 v3 +2.4-3.0pp avg。T+1 兼容。 |
+| `validated_v6` | 9:30 open | 3d max_dd 0.5% | +6.88% / 47.9% | +3.04% / 23.2% | aggressive 选项。dd=0.5% cross-window 验证为 monotonic 最优，+0.46-0.77pp avg vs v5。**但 win rate 显著低 + 滑点未建模 → 上线前必须 paper trading 1-2 周** |
+| `validated_v3_4` | 9:30 open | 1d next_close | +3.14% / 60.3% | — | EXPERIMENTAL，DBR drop + momentum/limitup bonus axes。8mo 实测对 v3 wash → REJECT，留作研究 |
+
+**版本选择指南**：
+
+- 第一次部署 → `validated_v5`（empirically robust 跨 bull/bear，T+1 兼容，最低实操风险）
+- 已经跑了 1-2 周 v5 paper trading 验证滑点 → 可以试 `validated_v6` 加 aggressive 优化
+- 想回 v3 (1d) 行为 → `--profile validated_v3`
+- 中庸折中 → `--profile validated_v5 --max-dd-pct 1.0`（介于 v5 和 v6）
+
+**`validated_v5` / `validated_v6` 关键 caveats**：
+
+- 多日持仓改变所有指标的可比性。老 1d 数据不能直接和 v5/v6 对比
+- max_dd 是 trailing stop（peak 回撤 N%），不是 fixed stop loss
+- T+1 满足：stop 检查仅作用于 buy_date+1 之后
+- `holdDays` 字段记录实际持仓天数（多数 trade ≤ 3 日就触发 stop）
+
+完整对比 + cross-window 数据见 `reports/cross_window_validation_2026-04-26.md` 和 `reports/multi_day_validation_2026-04-26.md`。
+
+---
 
 **`validated_v2` 调优依据**（详见 `reports/strategy_tuning_2025-12_2026-04.md`）：
 
@@ -654,6 +675,107 @@ xiaocao backtest validate \
   开启 adaptive 后 active P&L 进一步收敛到 5 笔 +7.83% win 80%（4 月）。
 
 老的 `validated`（不带 off_mainline）和 `validated_off_main_line` 仍然保留，互不破坏。
+
+## 实盘日常工作流（v5 / v6 推荐 + 持仓监控 + 卖点提醒）
+
+每天三步：盘前推荐 → 集合竞价/9:30 入场 → 盘中监控 → 触发卖点。
+
+### 第一步：盘前推荐（9:25 之后 / 9:30 之前）
+
+```bash
+PYTHONPATH=src python3 scripts/live_recommend.py
+# 默认 --date today。也可回测：--date 2026-04-21
+```
+
+输出：
+
+- stdout 打印 markdown 表格（code / name / mode / 9:30 open 价 / v5 初始 stop / v6 初始 stop / open_pct / flags）
+- 文件 `output/live/recommend_YYYY-MM-DD.md` 留档
+
+每只候选股给两条价位线：v5 init stop = open × 0.98，v6 init stop = open × 0.995。这是「买入当日」的初始止损位；持仓后随 peak 上行 stop 同步抬升（trailing stop）。
+
+实操：你看完表格决定买哪些 + 多大仓位 → 9:25 集合竞价下单 → 9:30 fill。**仓位灵活**，脚本只是给候选 + 初始 stop 参考，不强制。
+
+### 第二步：填入持仓记录（9:30 fill 后）
+
+每笔实际买入 append 一行到 `output/live/positions.jsonl`（一行 JSON）：
+
+```jsonl
+{"code": "002347.XSHE", "name": "泰尔股份", "entry_date": "2026-04-28", "entry_price": 8.50, "profile": "v6", "shares": 1000, "status": "open"}
+```
+
+字段：
+
+- `profile` ∈ `{"v5", "v6"}` — 决定 trailing stop 阈值（v5=2.0%, v6=0.5%）
+- `entry_date` / `entry_price` — 实际 fill 价
+- `shares` — 仅作记录（脚本不用，给你自己看）
+- `status` — `"open"` / `"closed"`（卖出后改 closed 跳过监控）
+
+模板：`output/live/positions.jsonl.example`
+
+### 第三步：盘中监控 + 卖点提醒（9:35-14:55, 每 5-10 分钟）
+
+```bash
+PYTHONPATH=src python3 scripts/live_monitor.py
+```
+
+每次跑：
+
+1. 读 `positions.jsonl` 所有 `status="open"` 的持仓
+2. 拉每只股票从 entry_date+1 到今天的 minute_line
+3. 跟踪 entry 后 peak (HIGH) → 计算 current dd_from_peak
+4. 若 dd ≥ profile 阈值（v5: 2.0% / v6: 0.5%）→ **触发 SELL alert**
+
+输出：
+
+- stdout 打印每只持仓的 entry/peak/latest/dd/ret 状态行
+- 触发卖点时弹 **macOS 通知**（`Glass` 提示音）
+- 写入 `output/live/alerts.jsonl` 审计日志（持续累积）
+
+T+1 兼容：entry 当日（today == entry_date）即使 dd 触发也不会推 alert（标 `T1_blocked`）—— A 股不让同日卖。次日才正式生效。
+
+### 自动化建议
+
+最简：手动运行。盘前 1 次 + 盘中每 10 分钟手动一次 `live_monitor.py`。
+
+进阶：crontab（macOS launchd）：
+
+```cron
+# 盘前推荐 — 周一到周五 9:26
+26 9 * * 1-5 cd /Users/.../xiaocao && PYTHONPATH=src python3 scripts/live_recommend.py >> output/live/cron.log 2>&1
+
+# 盘中监控 — 每 10 分钟（9:35-11:30, 13:00-14:55）
+35,45,55 9 * * 1-5  cd /Users/.../xiaocao && PYTHONPATH=src python3 scripts/live_monitor.py >> output/live/cron.log 2>&1
+0,10,20,30,40,50 10,11 * * 1-5  cd /Users/.../xiaocao && PYTHONPATH=src python3 scripts/live_monitor.py >> output/live/cron.log 2>&1
+0,10,20,30,40,50 13 * * 1-5  cd /Users/.../xiaocao && PYTHONPATH=src python3 scripts/live_monitor.py >> output/live/cron.log 2>&1
+0,10,20,30,40,50 14 * * 1-5  cd /Users/.../xiaocao && PYTHONPATH=src python3 scripts/live_monitor.py >> output/live/cron.log 2>&1
+```
+
+### v5 vs v6 选择策略（实操）
+
+- **同一只股票可以两个 profile 各开一笔**：positions.jsonl 写两行 entry，`profile` 一行 `v5` 一行 `v6`，监控时分别 trigger
+- **保守起步**：先全用 v5（dd=2%），等 paper trading 1-2 周（见 `scripts/paper_trade_v6.py`）验证 v6 滑点 < 0.1% 后再切 v6 或部分混用
+- **混合**：一只股票如果你 9:25 集合竞价买了 1000 股记 v5，9:35 看到回撤后又加仓 500 股记 v6 — 两条 position record 独立监控独立卖点
+
+### 实操注意
+
+- `live_monitor.py` 每次跑会拉所有持仓的当日 minute_line（API 调用）。不要 1 分钟跑一次（频繁打 API）。**5-10 分钟一次足够**——A 股一根 1min K 线就是 1 分钟，10 秒级波动不需要追
+- T+1 之外其他规则也要遵守（涨停 / ST / 临停等），脚本不感知，**自己识别这些情况手动 override**
+- 卖单滑点：脚本算的 dd 是基于「过去某分钟 close」。实际下市价单 fill 价可能更差几个 tick。**v6 的 0.5% 阈值对滑点最敏感**——这正是 paper trading 要验证的（见 `scripts/paper_trade_v6.py`）
+- 通知不会替你下单。你看到 alert 后**手动**去券商 app 卖
+
+### 与 paper trading 的关系
+
+| 工具 | 用途 |
+|---|---|
+| `live_recommend.py` | **每天**用。生成今日候选 + 价位 |
+| `live_monitor.py` | **盘中每 5-10 分钟**用。盯持仓，触发卖点提醒 |
+| `paper_trade_v6.py log` | **每天 EOD** 用。记录 v6 候选信号 + 理论 stop（不依赖你实际下单） |
+| `paper_trade_v6.py replay` | **每周/两周**用。统计 v6 历史滑点（mean/median）→ 决定 v6 是否升级 default |
+
+`paper_trade_v6.py` 与 `live_monitor.py` 互不依赖：前者纯 backtest 验证 v6 dd=0.5% 是否经得起滑点；后者是你实盘 v5/v6 持仓的盯盘。两者并行跑互不影响。
+
+---
 
 ## 报告：盘前参考、盘后复盘、通用日报
 

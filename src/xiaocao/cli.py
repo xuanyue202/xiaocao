@@ -200,6 +200,9 @@ def _quote(parser: argparse.ArgumentParser) -> None:
     p.add_argument("--code", required=True)
     p.add_argument("--freq", default="1min")
     p.add_argument("--adj", default="bfq")
+    p.add_argument("--trade-date", help="历史日期 YYYY-MM-DD 或 YYYYMMDD；与 --count 一起传则返回该日全程 1min K（不传仅返回今日 live）")
+    p.add_argument("--count", type=int, help="拉取分钟数；241 = 一个交易日全程 (9:30-15:00)。Backend 需要此参数才走历史路径")
+    p.add_argument("--code-type", type=int, default=0)
     p.set_defaults(handler=quote_minute)
 
     p = sub.add_parser("history")
@@ -272,6 +275,9 @@ def _market(parser: argparse.ArgumentParser) -> None:
     p.add_argument("--code", required=True)
     p.add_argument("--freq", default="1min")
     p.add_argument("--adj", default="bfq")
+    p.add_argument("--trade-date", help="历史日期；与 --count 一起传则返回该日全程 1min K")
+    p.add_argument("--count", type=int, help="分钟数；241 = 一个交易日全程")
+    p.add_argument("--code-type", type=int, default=0)
     p.set_defaults(handler=market_minute_line)
 
     p = sub.add_parser("kline")
@@ -341,6 +347,11 @@ def _strategy(parser: argparse.ArgumentParser) -> None:
     p.add_argument("--max-per-direction", type=int)
     p.add_argument("--profile", choices=sorted(STRATEGY_PROFILES))
     p.add_argument("--exclude-modes", help="逗号分隔的模式名，跳过这些模式的信号")
+    p.add_argument(
+        "--explain",
+        action="store_true",
+        help="输出每个信号的可解释报告（state 5轴、profile 偏好、per-axis align、precondition、modulated threshold、scores、flags），markdown 格式",
+    )
     p.set_defaults(handler=strategy_run)
 
 
@@ -386,6 +397,42 @@ def _backtest(parser: argparse.ArgumentParser) -> None:
     p.add_argument(
         "--warmup-start",
         help="预热起始日期（YYYY-MM-DD）；该日期到 --start 之间的交易作为种子写入 mode_history，不计入 summary",
+    )
+    # Plan B — multi-day persistence scoring (profile may set defaults)
+    p.add_argument(
+        "--hold-days",
+        type=int,
+        default=None,
+        help="持仓 N 个交易日后退出。未指定时由 profile 决定（v5 默认 5, v3 默认 1）",
+    )
+    p.add_argument(
+        "--exit-rule",
+        choices=["next_close", "hold_to_n", "max_dd", "max_favorable"],
+        default=None,
+        help="exit 规则。未指定时由 profile 决定（v5 默认 max_dd, v3 默认 next_close）",
+    )
+    p.add_argument(
+        "--max-dd-pct",
+        type=float,
+        default=None,
+        help="max_dd 回撤止损 % 阈值。未指定时由 profile 决定（v5 默认 2.0, fallback 5.0）",
+    )
+    # Plan D — intraday entry-timing modes
+    p.add_argument(
+        "--entry-rule",
+        choices=["open", "confirmation_935"],
+        default="open",
+        help=(
+            "入场规则：open=9:30 开盘价 (默认；= 9:25 集合竞价 fill at 9:30)；"
+            "confirmation_935=9:35 close（要求 9:30-9:35 有回撤；冲高未回撤则跳过）。"
+            "后者为可选'9:35 加仓'信号，与 9:25 集合竞价头寸独立"
+        ),
+    )
+    p.add_argument(
+        "--intraday-dd-threshold",
+        type=float,
+        default=1.5,
+        help="confirmation_935 入场要求的回撤阈值 %（默认 1.5）",
     )
     p.set_defaults(handler=backtest_run)
 
@@ -613,7 +660,15 @@ def quote_realtime(args: argparse.Namespace) -> None:
 
 
 def quote_minute(args: argparse.Namespace) -> None:
-    write_output(_client(args).minute_line(args.code, args.freq, args.adj), _fmt(args), args.output)
+    write_output(
+        _client(args).minute_line(
+            args.code, args.freq, args.adj,
+            trade_date=getattr(args, "trade_date", None),
+            count=getattr(args, "count", None),
+            code_type=getattr(args, "code_type", 0),
+        ),
+        _fmt(args), args.output,
+    )
 
 
 def quote_history(args: argparse.Namespace) -> None:
@@ -778,7 +833,15 @@ def market_technical(args: argparse.Namespace) -> None:
 
 
 def market_minute_line(args: argparse.Namespace) -> None:
-    write_output(_client(args).minute_line(args.code, args.freq, args.adj), _fmt(args), args.output)
+    write_output(
+        _client(args).minute_line(
+            args.code, args.freq, args.adj,
+            trade_date=getattr(args, "trade_date", None),
+            count=getattr(args, "count", None),
+            code_type=getattr(args, "code_type", 0),
+        ),
+        _fmt(args), args.output,
+    )
 
 
 def market_kline(args: argparse.Namespace) -> None:
@@ -830,10 +893,42 @@ def strategy_run(args: argparse.Namespace) -> None:
         exclude_modes=_parse_exclude_modes(getattr(args, "exclude_modes", None)),
         profile=getattr(args, "profile", None),
     )
+    if getattr(args, "explain", False):
+        from xiaocao.strategy.explain import explain_rows
+        from xiaocao.strategy.runner import _state_for_date
+        client = getattr(source, "client", None)
+        cache = getattr(client, "cache", None) if client is not None else None
+        state = _state_for_date(date_value, cache)
+        text = explain_rows(rows, state, date=date_value)
+        out_path = args.output
+        if out_path:
+            Path(out_path).write_text(text, encoding="utf-8")
+        else:
+            print(text)
+        return
     output = args.output
     if output is None and _fmt(args) == "csv":
         output = str(Path(settings.output_dir) / f"result_{date_value}.csv")
     write_output(rows, _fmt(args), output)
+
+
+def _resolve_scoring_arg(args: argparse.Namespace, name: str, fallback: Any) -> Any:
+    """Pick scoring arg with priority: explicit CLI > profile preset > fallback.
+
+    argparse defaults are None for these scoring args (hold_days, exit_rule,
+    max_dd_pct) so we can distinguish "user didn't set" from "user set
+    default value". STRATEGY_PROFILES["validated_v5"] etc. may carry scoring
+    keys that take effect when the user picks that profile without overriding.
+    """
+    explicit = getattr(args, name, None)
+    if explicit is not None:
+        return explicit
+    profile_name = getattr(args, "profile", None)
+    if profile_name and profile_name in STRATEGY_PROFILES:
+        preset = STRATEGY_PROFILES[profile_name]
+        if name in preset:
+            return preset[name]
+    return fallback
 
 
 def backtest_run(args: argparse.Namespace) -> None:
@@ -878,6 +973,11 @@ def backtest_run(args: argparse.Namespace) -> None:
         adaptive_modes=getattr(args, "adaptive_modes", False),
         reset_mode_history=getattr(args, "reset_mode_history", True),
         warmup_start=getattr(args, "warmup_start", None),
+        hold_days=_resolve_scoring_arg(args, "hold_days", 1),
+        exit_rule=_resolve_scoring_arg(args, "exit_rule", "next_close"),
+        max_dd_pct=_resolve_scoring_arg(args, "max_dd_pct", 5.0),
+        entry_rule=getattr(args, "entry_rule", "open"),
+        intraday_dd_threshold=getattr(args, "intraday_dd_threshold", 1.5),
     )
     sig = summary.get("overall_signal_level", {})
     sd = summary.get("overall_stock_day_level", {})
