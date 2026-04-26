@@ -2,17 +2,11 @@ from __future__ import annotations
 
 from typing import Any
 
+from xiaocao.api.catalog import STOCK_GROUPS, resolve_group
 from xiaocao.api.client import XiaocaoClient
 
 
-GROUPS = {
-    "jieli": 0,
-    "lianban": 0,
-    "jingwang": 1,
-    "hpqb": 2,
-    "qibao": 2,
-    "dixi": 3,
-}
+GROUPS = {key: item.value for key, item in STOCK_GROUPS.items()}
 
 
 class ApiDataSource:
@@ -22,7 +16,7 @@ class ApiDataSource:
         self.lpdx_state = lpdx_state
 
     def get_pool(self, date: str, group: str | int) -> list[str]:
-        group_id = GROUPS.get(str(group), group)
+        group_id = resolve_group(group)
         return self.client.get_code_list_v2(date, group_id, self.hpqb_state, self.lpdx_state)
 
     def get_stock_index(self, date: str, codes: list[str]) -> list[dict[str, Any]]:
@@ -38,8 +32,23 @@ class ApiDataSource:
             )
         return output
 
-    def sort_codes(self, date: str, codes: list[str], sort_id: int = 40) -> list[str]:
-        rows = self.client.sort_v2(codes, sort_id=sort_id)
+    def sort_codes(
+        self,
+        date: str,
+        codes: list[str],
+        sort_id: int | str = 40,
+        descending: bool = True,
+        target_type: int | str = "stock",
+    ) -> list[str]:
+        rows = self.client.sort_v2(
+            codes,
+            sort_id=sort_id,
+            sort_type=descending,
+            type_=target_type,
+            date=date,
+            hpqb_state=self.hpqb_state,
+            lpdx_state=self.lpdx_state,
+        )
         result = []
         for row in rows:
             if isinstance(row, str):

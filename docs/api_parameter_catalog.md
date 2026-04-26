@@ -365,7 +365,84 @@ rows = client.sort_v2(
 )
 ```
 
-## 6. 后续建议
+## 6. 技术指标 `indicators` 参数
+
+来源：`reference/index-f3118026.js` 中 `Zd` 数组（~5747）。`h6`（~5746）多了三个，但只在前端图表本地渲染，不发给 backend。
+
+### 6.1 backend 接受的 `indicators` 值
+
+| 值 | 含义 | 备注 |
+|---|---|---|
+| `smallGrass` | 小草核心指标 | ema/aaaLine/bbbLine 等小草自有线，前端默认值 |
+| `vol` | 成交量 | |
+| `amt` | 成交额 | |
+| `macd` | MACD | |
+| `rsi` | RSI | |
+| `kdj` | KDJ | |
+| `boll` | 布林带 | |
+
+### 6.2 前端本地渲染、backend **不接受** 的值
+
+| 值 | 含义 |
+|---|---|
+| `smallGrassTrend` | 小草趋势线（前端本地计算） |
+| `klinesma` | K 线均线（前端本地计算） |
+| `mike` | 麦克支撑压力（前端本地计算） |
+
+CLI 侧 `xiaocao indicator query --indicator klinesma` 会在 argparse 阶段就报错。
+
+## 7. K 线 `freq` 与 `adj` 枚举
+
+来源：`reference/index-f3118026.js` 的 `u6` 对象（~5728）和 `K0` 函数默认参数（~13220）。
+
+### 7.1 `freq`
+
+| 值 | 含义 |
+|---|---|
+| `5min` | 5 分钟 |
+| `15min` | 15 分钟 |
+| `30min` | 30 分钟 |
+| `60min` | 60 分钟 |
+| `D` | 日线 |
+| `W` | 周线 |
+| `M` | 月线 |
+| `Q` | 季线 |
+| `Y` | 年线 |
+
+### 7.2 `adj`
+
+| 值 | 含义 | 默认场景 |
+|---|---|---|
+| `qfq` | 前复权 | 分钟级 freq 默认 |
+| `bfq` | 不复权 | 日线及以上默认 |
+
+JS 中 `K0` 的判断逻辑等价于 `adj = "min" in freq ? "qfq" : "bfq"`。CLI 的 `_indicator_adj_default()` 也按这个口径推断。
+
+## 8. 环境分时默认 code list
+
+来源：`src/xiaocao/api/client.py` `xiao_cao_environment_second_line_v2` 的 `code` 默认值。
+
+```text
+9A0001, 9A0002, 9A0003, 9B0001, 9B0002, 9B0003,
+9C0001, 9A0004, 9B0004, 9A0005, 9B0005, 9C0002
+```
+
+这些是小草环境指数（`.XCHJZS` 域）。前端默认就是按这一组代码请求 v2 环境分时。
+
+## 9. 百分比 normalizer 字段
+
+`client.py` 的 `_percent()` 把 backend 返回的"百倍"字段除以 100。下面字段确认会经过这个处理：
+
+| 字段 | 出现位置 |
+|---|---|
+| `pctChangeRate` | `_normalize_kline_rows` / `_normalize_minute_line_rows` / `_normalize_technical_rows` / `xiao_cao_environment_second_line_selection` / `xiao_cao_block_detail` |
+| `turnoverRate` | `_normalize_kline_rows` / `_normalize_technical_rows` / `xiao_cao_environment_second_line_selection`（来源字段名 `turnoverRatio`） |
+| `roe` | `stock_info` |
+| `maxPctChangeRate` | `xiao_cao_week_stats` |
+
+注意：`pctChange`（绝对涨跌额，单位元）不进 `_percent`。
+
+## 10. 后续建议
 
 基于这份参数字典，Python 侧下一步最值得补的是：
 

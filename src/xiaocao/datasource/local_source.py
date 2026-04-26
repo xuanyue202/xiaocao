@@ -6,6 +6,7 @@ import json
 from pathlib import Path
 from typing import Any
 
+from xiaocao.api.catalog import SORT_V2_ALIASES, SORT_V2_FIELDS
 from xiaocao.api.errors import NoDataError, XiaocaoError
 
 
@@ -52,7 +53,17 @@ SORT_ID_FIELDS = {
     "jieli": "jsjl",
     "jssb": "jssb",
     "hpqb": "jssb",
+    "xiaocaoJSJL": "jsjl",
+    "xiaocaoXCJW": "xcjw",
+    "xiaocaoJSSB": "jssb",
+    "xiaocaoCJS": "cjs",
+    "xiaocaoDWCJS": "dwcjs",
 }
+for key, item in SORT_V2_FIELDS.items():
+    SORT_ID_FIELDS.setdefault(item.value, key)
+    SORT_ID_FIELDS.setdefault(key, key)
+for alias, target in SORT_V2_ALIASES.items():
+    SORT_ID_FIELDS.setdefault(alias, SORT_ID_FIELDS.get(target, target))
 
 
 class LocalDataSource:
@@ -84,7 +95,14 @@ class LocalDataSource:
         lookup = {row.get("code"): row for row in rows}
         return [lookup[code] for code in codes if code in lookup]
 
-    def sort_codes(self, date: str, codes: list[str] | None = None, sort_id: int | str = "xcjw") -> list[str]:
+    def sort_codes(
+        self,
+        date: str,
+        codes: list[str] | None = None,
+        sort_id: int | str = "xcjw",
+        descending: bool = True,
+        target_type: int | str = "stock",
+    ) -> list[str]:
         sort_field = SORT_ID_FIELDS.get(sort_id)
         if sort_field is None:
             raise XiaocaoError(
@@ -92,7 +110,7 @@ class LocalDataSource:
                 f"Known local mappings: {', '.join(str(key) for key in SORT_ID_FIELDS)}"
             )
         rows = self.get_stock_index(date, codes)
-        rows.sort(key=lambda row: _to_float(row.get(sort_field)), reverse=True)
+        rows.sort(key=lambda row: _to_float(row.get(sort_field)), reverse=descending)
         return [row["code"] for row in rows if row.get("code")]
 
     def get_industry_block_rank(self, date: str, model: int = 1) -> list[dict[str, Any]]:

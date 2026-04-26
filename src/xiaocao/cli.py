@@ -7,23 +7,36 @@ from pathlib import Path
 from typing import Any
 
 from xiaocao.api import XiaocaoClient, XiaocaoError
+from xiaocao.api.catalog import (
+    DYNAMIC_INDEX_TYPES,
+    ENDPOINTS,
+    INDICATORS_BACKEND,
+    INDICATORS_FRONTEND_ONLY,
+    KLINE_ADJUSTMENTS,
+    KLINE_FREQS,
+    RANK_MODELS,
+    SORT_DIRECTIONS,
+    SORT_TARGET_TYPES,
+    SORT_V2_FIELDS,
+    STOCK_GROUPS,
+    named_rows,
+    resolve_dynamic_index_type,
+    resolve_rank_model,
+    resolve_sort_direction,
+    resolve_sort_id,
+)
 from xiaocao.api.client import RANK_MODEL_FULL
 from xiaocao.config import load_settings
 from xiaocao.datasource import ApiDataSource, LocalDataSource
 from xiaocao.output import write_output
 from xiaocao.report import build_daily_report
+from xiaocao.backtest import run_backtest
 from xiaocao.strategy import run_strategy
+from xiaocao.strategy.runner import STRATEGY_PROFILES
 from xiaocao.utils.dates import lookback_start, normal_date, today_str
 
 
-GROUPS = {
-    "jieli": 0,
-    "lianban": 0,
-    "jingwang": 1,
-    "hpqb": 2,
-    "qibao": 2,
-    "dixi": 3,
-}
+GROUPS = {key: item.value for key, item in STOCK_GROUPS.items()}
 
 
 def main(argv: list[str] | None = None) -> None:
@@ -47,6 +60,16 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--retries", type=int)
     parser.add_argument("--format", choices=["table", "json", "csv", "markdown"])
     parser.add_argument("--output")
+    parser.add_argument(
+        "--cache",
+        default="output/.cache/xiaocao.db",
+        help="持久化缓存 SQLite 路径；默认 output/.cache/xiaocao.db。--no-cache 禁用",
+    )
+    parser.add_argument(
+        "--no-cache",
+        action="store_true",
+        help="禁用持久化缓存，强制每次都打 API",
+    )
 
     sub = parser.add_subparsers(dest="command")
     _calendar(sub.add_parser("calendar"))
@@ -55,9 +78,12 @@ def build_parser() -> argparse.ArgumentParser:
     _block(sub.add_parser("block"))
     _quote(sub.add_parser("quote"))
     _market(sub.add_parser("market"))
+    _indicator(sub.add_parser("indicator"))
     _strategy(sub.add_parser("strategy"))
+    _backtest(sub.add_parser("backtest"))
     _report(sub.add_parser("report"))
     _config(sub.add_parser("config"))
+    _catalog(sub.add_parser("catalog"))
     return parser
 
 
@@ -88,7 +114,10 @@ def _data(parser: argparse.ArgumentParser) -> None:
 
     p = sub.add_parser("sort")
     p.add_argument("--date", required=True)
-    p.add_argument("--sort-id", type=int, default=40)
+    p.add_argument("--sort-id", type=int)
+    p.add_argument("--sort-key")
+    p.add_argument("--sort", choices=sorted(SORT_DIRECTIONS), default="desc")
+    p.add_argument("--target-type", choices=sorted(SORT_TARGET_TYPES), default="stock")
     p.add_argument("--stock-file")
     p.add_argument("--from-pool", choices=sorted(GROUPS))
     p.add_argument("--source", choices=["api", "local"], default="api")
@@ -106,27 +135,50 @@ def _index(parser: argparse.ArgumentParser) -> None:
 
     p = sub.add_parser("dynamic")
     p.add_argument("--date", required=True)
-    p.add_argument("--index-type", type=int, default=0)
+    p.add_argument("--index-type", type=int)
+    p.add_argument("--index-name", choices=sorted(DYNAMIC_INDEX_TYPES))
     p.set_defaults(handler=index_dynamic)
+
+    p = sub.add_parser("industry-dynamic")
+    p.add_argument("--date", required=True)
+    p.add_argument("--index-type", type=int)
+    p.add_argument("--index-name", choices=sorted(DYNAMIC_INDEX_TYPES))
+    p.set_defaults(handler=index_industry_dynamic)
 
 
 def _block(parser: argparse.ArgumentParser) -> None:
     sub = parser.add_subparsers(dest="block_command")
     p = sub.add_parser("rank")
     p.add_argument("--date", required=True)
-    p.add_argument("--model", type=int, default=1)
+    p.add_argument("--model", type=int)
+    p.add_argument("--rank-model", choices=sorted(RANK_MODELS), default="focus")
     p.add_argument("--source", choices=["api", "local"], default="api")
     p.set_defaults(handler=block_rank)
 
     p = sub.add_parser("category-rank")
     p.add_argument("--date", required=True)
-    p.add_argument("--model", type=int, default=0)
+    p.add_argument("--model", type=int)
+    p.add_argument("--rank-model", choices=sorted(RANK_MODELS), default="full")
     p.add_argument("--source", choices=["api", "local"], default="api")
     p.set_defaults(handler=block_category_rank)
 
     p = sub.add_parser("score")
     p.add_argument("--date", required=True)
     p.set_defaults(handler=block_score)
+
+    p = sub.add_parser("detail")
+    p.add_argument("--code", required=True)
+    p.add_argument("--date", required=True)
+    p.set_defaults(handler=block_detail)
+
+    p = sub.add_parser("kline")
+    p.add_argument("--code", required=True)
+    p.add_argument("--count", type=int, default=120)
+    p.add_argument("--freq", default="D")
+    p.add_argument("--adj", default="bfq")
+    p.add_argument("--code-type", default="0")
+    p.add_argument("--param-time", default="")
+    p.set_defaults(handler=block_kline)
 
     p = sub.add_parser("stocks")
     p.add_argument("--date", required=True)
@@ -176,12 +228,45 @@ def _market(parser: argparse.ArgumentParser) -> None:
     p.add_argument("--codes", required=True)
     p.set_defaults(handler=market_second_line_detail)
 
+    p = sub.add_parser("overview")
+    p.set_defaults(handler=market_overview)
+
+    p = sub.add_parser("stock-info")
+    p.set_defaults(handler=market_stock_info)
+
     p = sub.add_parser("environment")
     p.add_argument("--date", required=True)
     p.add_argument("--codes", default="9A0001,9A0002,9A0003,9B0001,9B0002,9B0003,9C0001,9A0004,9B0004,9A0005,9B0005,9C0002")
     p.add_argument("--code-type", type=int, default=0)
     p.add_argument("--fool-mode", type=int, default=0)
     p.set_defaults(handler=market_environment)
+
+    p = sub.add_parser("env-selection")
+    p.add_argument("--date", required=True)
+    p.set_defaults(handler=market_env_selection)
+
+    p = sub.add_parser("env-minute")
+    p.add_argument("--code", required=True)
+    p.add_argument("--date")
+    p.add_argument("--freq", default="1min")
+    p.add_argument("--adj", default="bfq")
+    p.set_defaults(handler=market_env_minute)
+
+    p = sub.add_parser("week-stats")
+    p.set_defaults(handler=market_week_stats)
+
+    p = sub.add_parser("each-trade")
+    p.add_argument("--code", required=True)
+    p.add_argument("--count", type=int)
+    p.add_argument("--code-type", type=int, default=0)
+    p.add_argument("--is-less", type=int, default=0)
+    p.set_defaults(handler=market_each_trade)
+
+    p = sub.add_parser("technical")
+    p.add_argument("--history", action="store_true")
+    p.add_argument("--param", action="append", default=[], help="原样透传 key=value，可重复")
+    p.set_defaults(handler=market_technical)
+
 
     p = sub.add_parser("minute-line")
     p.add_argument("--code", required=True)
@@ -205,14 +290,126 @@ def _market(parser: argparse.ArgumentParser) -> None:
     p.set_defaults(handler=market_auction)
 
 
+def _indicator(parser: argparse.ArgumentParser) -> None:
+    sub = parser.add_subparsers(dest="indicator_command")
+
+    sg = sub.add_parser("smallgrass", help="小草核心技术指标 (smallGrass) preset")
+    sg_sub = sg.add_subparsers(dest="indicator_action")
+
+    p = sg_sub.add_parser("current")
+    p.add_argument("--code")
+    p.add_argument("--codes")
+    p.set_defaults(handler=indicator_smallgrass_current)
+
+    p = sg_sub.add_parser("history")
+    p.add_argument("--code", required=True)
+    p.add_argument("--freq", choices=sorted(KLINE_FREQS), default="D")
+    p.add_argument("--count", type=int, default=200)
+    p.add_argument("--adj", choices=sorted(KLINE_ADJUSTMENTS))
+    p.add_argument("--trade-date")
+    p.set_defaults(handler=indicator_smallgrass_history)
+
+    q = sub.add_parser("query", help="按 backend 接受的 indicators 值查询")
+    q_sub = q.add_subparsers(dest="indicator_action")
+
+    p = q_sub.add_parser("current")
+    p.add_argument("--indicator", required=True, choices=sorted(INDICATORS_BACKEND))
+    p.add_argument("--code")
+    p.add_argument("--codes")
+    p.set_defaults(handler=indicator_query_current)
+
+    p = q_sub.add_parser("history")
+    p.add_argument("--indicator", required=True, choices=sorted(INDICATORS_BACKEND))
+    p.add_argument("--code", required=True)
+    p.add_argument("--freq", choices=sorted(KLINE_FREQS), default="D")
+    p.add_argument("--count", type=int, default=200)
+    p.add_argument("--adj", choices=sorted(KLINE_ADJUSTMENTS))
+    p.add_argument("--trade-date")
+    p.set_defaults(handler=indicator_query_history)
+
+
 def _strategy(parser: argparse.ArgumentParser) -> None:
     sub = parser.add_subparsers(dest="strategy_command")
     p = sub.add_parser("run")
     p.add_argument("--date", required=True)
     p.add_argument("--source", choices=["api", "local"], default="api")
     p.add_argument("--modes")
-    p.add_argument("--sort-id", type=int, default=40)
+    p.add_argument("--sort-id", type=int)
+    p.add_argument("--sort-key")
+    p.add_argument("--direction-sort-key", default="directionCjs")
+    p.add_argument("--pool-sort-key")
+    p.add_argument("--max-per-direction", type=int)
+    p.add_argument("--profile", choices=sorted(STRATEGY_PROFILES))
+    p.add_argument("--exclude-modes", help="逗号分隔的模式名，跳过这些模式的信号")
     p.set_defaults(handler=strategy_run)
+
+
+def _backtest(parser: argparse.ArgumentParser) -> None:
+    sub = parser.add_subparsers(dest="backtest_command")
+    p = sub.add_parser("run")
+    p.add_argument("--start", required=True, help="YYYY-MM-DD")
+    p.add_argument("--end", required=True, help="YYYY-MM-DD")
+    # Global --output (defined on the top-level parser) supplies the output directory.
+    # Default: output/xiaocao_backtest_<start>_<end>.
+    p.add_argument("--modes", help="逗号分隔策略模式")
+    p.add_argument("--sort-id", type=int)
+    p.add_argument("--sort-key")
+    p.add_argument("--direction-sort-key", default="directionCjs")
+    p.add_argument("--pool-sort-key")
+    p.add_argument("--max-per-direction", type=int)
+    p.add_argument("--profile", choices=sorted(STRATEGY_PROFILES))
+    p.add_argument("--exclude-modes", help="逗号分隔的模式名，跳过这些模式的信号")
+    p.add_argument("--kline-count", type=int, default=30, help="每只票拉的日 K 数量")
+    p.add_argument("--quiet", action="store_true", help="抑制每日进度输出")
+    p.add_argument("--workers", type=int, default=1, help="并行处理的天数数量；>1 时跨天并发")
+    p.add_argument("--no-enrich", action="store_true", help="禁用 regime/main-line/big-cap 标注")
+    p.add_argument("--mainline-window", type=int, default=3)
+    p.add_argument("--mainline-topk", type=int, default=5)
+    p.add_argument("--mainline-min-hits", type=int, help="主线判定的最少命中天数；默认=window（最严）")
+    p.add_argument("--bigcap-top-pct", type=float, default=0.2)
+    p.add_argument("--regime-gate", action="store_true", help="按 regime 过滤模式")
+    p.add_argument("--require-main-line", action="store_true", help="只保留主线方向内的信号")
+    p.add_argument("--exclude-main-line", action="store_true", help="只保留主线方向之外的信号")
+    p.add_argument("--max-open-pct", type=float, help="覆盖默认 6.0 的开幅过滤上限")
+    p.add_argument(
+        "--adaptive-modes",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help="按 mode_history 滚动表现自适应启停模式；--no-adaptive-modes 禁用",
+    )
+    p.add_argument(
+        "--reset-mode-history",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help="adaptive 运行前清空当前窗口的 mode_history。设为 False 可让多次 run 累积，适合 strict-dormant 验证",
+    )
+    p.add_argument(
+        "--warmup-start",
+        help="预热起始日期（YYYY-MM-DD）；该日期到 --start 之间的交易作为种子写入 mode_history，不计入 summary",
+    )
+    p.set_defaults(handler=backtest_run)
+
+    v = sub.add_parser("validate", help="跨多窗口 A/B 验证策略改动；防止单窗口过拟合")
+    v.add_argument(
+        "--windows",
+        required=True,
+        help="逗号分隔的多窗口；每个窗口写作 START:END，例：2026-03-01:2026-03-31,2026-04-01:2026-04-24",
+    )
+    v.add_argument(
+        "--variant",
+        required=True,
+        help="变体附加参数，作为单字符串传入（shlex 拆分）。例：'--require-main-line --max-open-pct 4'",
+    )
+    v.add_argument(
+        "--metric",
+        choices=["avg", "median", "win_rate"],
+        default="avg",
+        help="判定 PASS 的主指标；默认 avg",
+    )
+    # Global --output (defined on the top parser) supplies the validation
+    # output directory.  Default: output/validation_<timestamp>.
+    v.add_argument("--workers", type=int, default=4)
+    v.set_defaults(handler=backtest_validate)
 
 
 def _report(parser: argparse.ArgumentParser) -> None:
@@ -221,21 +418,30 @@ def _report(parser: argparse.ArgumentParser) -> None:
     p.add_argument("--date", required=True)
     p.add_argument("--source", choices=["api", "local"], default="api")
     p.add_argument("--modes")
-    p.add_argument("--sort-id", type=int, default=40)
+    p.add_argument("--sort-id", type=int)
+    p.add_argument("--sort-key")
+    p.add_argument("--top-blocks", type=int, default=5)
+    p.add_argument("--no-extras", action="store_true", help="跳过 market_overview / 方向详情 / 技术指标拉取")
     p.set_defaults(handler=report_daily)
 
     p = sub.add_parser("premarket")
     p.add_argument("--date", default="latest")
     p.add_argument("--source", choices=["api", "local"], default="api")
     p.add_argument("--modes")
-    p.add_argument("--sort-id", type=int, default=40)
+    p.add_argument("--sort-id", type=int)
+    p.add_argument("--sort-key")
+    p.add_argument("--top-blocks", type=int, default=5)
+    p.add_argument("--no-extras", action="store_true", help="跳过 market_overview / 方向详情 / 技术指标拉取")
     p.set_defaults(handler=report_premarket)
 
     p = sub.add_parser("afterclose")
     p.add_argument("--date", default="latest")
     p.add_argument("--source", choices=["api", "local"], default="api")
     p.add_argument("--modes")
-    p.add_argument("--sort-id", type=int, default=40)
+    p.add_argument("--sort-id", type=int)
+    p.add_argument("--sort-key")
+    p.add_argument("--top-blocks", type=int, default=5)
+    p.add_argument("--no-extras", action="store_true", help="跳过 market_overview / 方向详情 / 技术指标拉取")
     p.set_defaults(handler=report_afterclose)
 
 
@@ -243,6 +449,38 @@ def _config(parser: argparse.ArgumentParser) -> None:
     sub = parser.add_subparsers(dest="config_command")
     p = sub.add_parser("show")
     p.set_defaults(handler=config_show)
+
+
+def _catalog(parser: argparse.ArgumentParser) -> None:
+    sub = parser.add_subparsers(dest="catalog_command")
+
+    p = sub.add_parser("list")
+    p.set_defaults(handler=catalog_list)
+
+    p = sub.add_parser("describe")
+    p.add_argument("name")
+    p.set_defaults(handler=catalog_describe)
+
+    p = sub.add_parser("sort-keys")
+    p.set_defaults(handler=catalog_sort_keys)
+
+    p = sub.add_parser("groups")
+    p.set_defaults(handler=catalog_groups)
+
+    p = sub.add_parser("rank-models")
+    p.set_defaults(handler=catalog_rank_models)
+
+    p = sub.add_parser("index-types")
+    p.set_defaults(handler=catalog_index_types)
+
+    p = sub.add_parser("freqs")
+    p.set_defaults(handler=catalog_freqs)
+
+    p = sub.add_parser("adjs")
+    p.set_defaults(handler=catalog_adjs)
+
+    p = sub.add_parser("indicators")
+    p.set_defaults(handler=catalog_indicators)
 
 
 def calendar_trade_days(args: argparse.Namespace) -> None:
@@ -285,10 +523,13 @@ def data_sort(args: argparse.Namespace) -> None:
         codes = json.loads(Path(args.stock_file).read_text(encoding="utf-8"))
     else:
         codes = source.get_pool(date_value, "jingwang")
-    if args.source == "api":
-        sorted_codes = source.sort_codes(date_value, codes, args.sort_id)
-    else:
-        sorted_codes = source.sort_codes(date_value, codes, args.sort_id)
+    sorted_codes = source.sort_codes(
+        date_value,
+        codes,
+        _sort_selector(args),
+        descending=resolve_sort_direction(args.sort) == 1,
+        target_type=args.target_type,
+    )
     write_output([{"code": code} for code in sorted_codes], _fmt(args), args.output)
 
 
@@ -306,23 +547,49 @@ def index_stock(args: argparse.Namespace) -> None:
 
 def index_dynamic(args: argparse.Namespace) -> None:
     date_value = _resolve_simple_date(args.date) if args.date not in {"latest", "previous"} else _resolve_date(args.date, "api", args)
-    write_output(_client(args).get_xiao_cao_dynamic_index(date_value, args.index_type), _fmt(args), args.output)
+    write_output(_client(args).get_xiao_cao_dynamic_index(date_value, _index_type_selector(args)), _fmt(args), args.output)
+
+
+def index_industry_dynamic(args: argparse.Namespace) -> None:
+    date_value = _resolve_simple_date(args.date) if args.date not in {"latest", "previous"} else _resolve_date(args.date, "api", args)
+    write_output(_client(args).get_xiao_cao_industry_block_dynamic_index(date_value, _index_type_selector(args)), _fmt(args), args.output)
 
 
 def block_rank(args: argparse.Namespace) -> None:
     source = _source(args)
     date_value = _resolve_date(args.date, args.source, args)
-    write_output(source.get_industry_block_rank(date_value, args.model), _fmt(args), args.output)
+    write_output(source.get_industry_block_rank(date_value, _rank_model_selector(args)), _fmt(args), args.output)
 
 
 def block_category_rank(args: argparse.Namespace) -> None:
     source = _source(args)
     date_value = _resolve_date(args.date, args.source, args)
-    write_output(source.get_block_category_rank(date_value, args.model), _fmt(args), args.output)
+    write_output(source.get_block_category_rank(date_value, _rank_model_selector(args)), _fmt(args), args.output)
 
 
 def block_score(args: argparse.Namespace) -> None:
-    write_output(_client(args).get_block_score(_resolve_simple_date(args.date)), _fmt(args), args.output)
+    date_value = _resolve_date(args.date, "api", args) if args.date in {"latest", "previous"} else _resolve_simple_date(args.date)
+    write_output(_client(args).get_block_score(date_value), _fmt(args), args.output)
+
+
+def block_detail(args: argparse.Namespace) -> None:
+    date_value = _resolve_date(args.date, "api", args) if args.date in {"latest", "previous"} else _resolve_simple_date(args.date)
+    write_output(_client(args).xiao_cao_block_detail(args.code, date_value), _fmt(args), args.output)
+
+
+def block_kline(args: argparse.Namespace) -> None:
+    write_output(
+        _client(args).xiao_cao_block_date_kline(
+            args.code,
+            count=args.count,
+            freq=args.freq,
+            adj=args.adj,
+            code_type=args.code_type,
+            param_time=args.param_time,
+        ),
+        _fmt(args),
+        args.output,
+    )
 
 
 def block_stocks(args: argparse.Namespace) -> None:
@@ -388,6 +655,14 @@ def market_second_line_detail(args: argparse.Namespace) -> None:
     write_output(_client(args).second_line_detail_info(args.codes), _fmt(args), args.output)
 
 
+def market_overview(args: argparse.Namespace) -> None:
+    write_output(_client(args).market_overview(), _fmt(args), args.output)
+
+
+def market_stock_info(args: argparse.Namespace) -> None:
+    write_output(_client(args).stock_info(), _fmt(args), args.output)
+
+
 def market_environment(args: argparse.Namespace) -> None:
     date_value = _resolve_date(args.date, "api", args) if args.date in {"latest", "previous"} else _resolve_simple_date(args.date)
     write_output(
@@ -400,6 +675,106 @@ def market_environment(args: argparse.Namespace) -> None:
         _fmt(args),
         args.output,
     )
+
+
+def market_env_selection(args: argparse.Namespace) -> None:
+    date_value = _resolve_date(args.date, "api", args) if args.date in {"latest", "previous"} else _resolve_simple_date(args.date)
+    write_output(_client(args).xiao_cao_environment_second_line_selection(date_value), _fmt(args), args.output)
+
+
+def market_env_minute(args: argparse.Namespace) -> None:
+    date_value = None
+    if args.date:
+        date_value = _resolve_date(args.date, "api", args) if args.date in {"latest", "previous"} else _resolve_simple_date(args.date)
+    write_output(_client(args).xiao_cao_environment_minute_line(args.code, date_value, args.adj, args.freq), _fmt(args), args.output)
+
+
+def market_week_stats(args: argparse.Namespace) -> None:
+    write_output(_client(args).xiao_cao_week_stats(), _fmt(args), args.output)
+
+
+def market_each_trade(args: argparse.Namespace) -> None:
+    write_output(
+        _client(args).each_trade(args.code, count=args.count, code_type=args.code_type, is_less=args.is_less),
+        _fmt(args),
+        args.output,
+    )
+
+
+def _indicator_codes(args: argparse.Namespace) -> str:
+    code = getattr(args, "code", None)
+    codes = getattr(args, "codes", None)
+    if code and codes:
+        raise SystemExit("ERROR: pass --code or --codes, not both")
+    if code:
+        return code
+    if codes:
+        return codes
+    raise SystemExit("ERROR: --code or --codes is required")
+
+
+def _indicator_adj_default(freq: str) -> str:
+    # JS K0 (~13220): minute frequencies default to qfq, others to bfq.
+    return "qfq" if "min" in freq else "bfq"
+
+
+def _indicator_current(args: argparse.Namespace, indicator: str) -> None:
+    codes = _indicator_codes(args)
+    result = _client(args).get_technical_index(stock_ids=codes, indicator=indicator)
+    write_output(result, _fmt(args), args.output)
+
+
+def _indicator_history(args: argparse.Namespace, indicator: str) -> None:
+    freq = args.freq
+    adj = args.adj or _indicator_adj_default(freq)
+    result = _client(args).get_technical_index_history(
+        stock_id=args.code,
+        freq=freq,
+        indicator=indicator,
+        count=args.count,
+        adj=adj,
+        trade_date=getattr(args, "trade_date", None),
+    )
+    write_output(result, _fmt(args), args.output)
+
+
+def indicator_smallgrass_current(args: argparse.Namespace) -> None:
+    _indicator_current(args, "smallGrass")
+
+
+def indicator_smallgrass_history(args: argparse.Namespace) -> None:
+    _indicator_history(args, "smallGrass")
+
+
+def indicator_query_current(args: argparse.Namespace) -> None:
+    _indicator_current(args, args.indicator)
+
+
+def indicator_query_history(args: argparse.Namespace) -> None:
+    _indicator_history(args, args.indicator)
+
+
+def market_technical(args: argparse.Namespace) -> None:
+    params = _parse_key_values(args.param)
+    client = _client(args)
+    if args.history:
+        result = client.get_technical_index_history(
+            stock_id=params.pop("code", params.pop("stockId", None)),
+            freq=str(params.pop("freq", "D")),
+            indicator=str(params.pop("indicators", params.pop("indicator", "smallGrass"))),
+            count=int(params.pop("count", 200)),
+            adj=str(params.pop("adj", "qfq")),
+            trade_date=params.pop("tradeDate", None),
+            **params,
+        )
+    else:
+        stock_ids = params.pop("code", params.pop("stockIds", params.pop("stockId", None)))
+        result = client.get_technical_index(
+            stock_ids=stock_ids,
+            indicator=str(params.pop("indicators", params.pop("indicator", "smallGrass"))),
+            **params,
+        )
+    write_output(result, _fmt(args), args.output)
 
 
 def market_minute_line(args: argparse.Namespace) -> None:
@@ -448,12 +823,172 @@ def strategy_run(args: argparse.Namespace) -> None:
         modes=modes,
         block_model=settings.block_model,
         category_model=settings.category_model,
-        sort_id=args.sort_id,
+        sort_id=_sort_selector(args),
+        direction_sort_key=getattr(args, "direction_sort_key", "directionCjs"),
+        pool_sort_key=getattr(args, "pool_sort_key", None),
+        max_per_direction=getattr(args, "max_per_direction", None),
+        exclude_modes=_parse_exclude_modes(getattr(args, "exclude_modes", None)),
+        profile=getattr(args, "profile", None),
     )
     output = args.output
     if output is None and _fmt(args) == "csv":
         output = str(Path(settings.output_dir) / f"result_{date_value}.csv")
     write_output(rows, _fmt(args), output)
+
+
+def backtest_run(args: argparse.Namespace) -> None:
+    settings = load_settings(args.config)
+    client = _client(args)
+    source = ApiDataSource(client, settings.hpqb_state, settings.lpdx_state)
+    modes = {item.strip() for item in args.modes.split(",")} if args.modes else None
+    output_dir = Path(args.output or f"output/xiaocao_backtest_{args.start}_{args.end}")
+
+    progress = None
+    if not args.quiet:
+        def progress(date: str, n: int) -> None:
+            print(f"  [{date}] {n} signals")
+
+    summary = run_backtest(
+        client,
+        source,
+        start=args.start,
+        end=args.end,
+        output_dir=output_dir,
+        kline_count=args.kline_count,
+        progress=progress,
+        workers=getattr(args, "workers", 1),
+        enrich=not getattr(args, "no_enrich", False),
+        mainline_window=getattr(args, "mainline_window", 3),
+        mainline_topk=getattr(args, "mainline_topk", 5),
+        mainline_min_hits=getattr(args, "mainline_min_hits", None),
+        bigcap_top_pct=getattr(args, "bigcap_top_pct", 0.2),
+        modes=modes,
+        block_model=settings.block_model,
+        category_model=settings.category_model,
+        sort_id=_sort_selector(args),
+        direction_sort_key=getattr(args, "direction_sort_key", "directionCjs"),
+        pool_sort_key=getattr(args, "pool_sort_key", None),
+        max_per_direction=getattr(args, "max_per_direction", None),
+        exclude_modes=_parse_exclude_modes(getattr(args, "exclude_modes", None)),
+        profile=getattr(args, "profile", None),
+        regime_gate=getattr(args, "regime_gate", False),
+        require_main_line=getattr(args, "require_main_line", False),
+        exclude_main_line=getattr(args, "exclude_main_line", False),
+        max_open_pct=getattr(args, "max_open_pct", None),
+        adaptive_modes=getattr(args, "adaptive_modes", False),
+        reset_mode_history=getattr(args, "reset_mode_history", True),
+        warmup_start=getattr(args, "warmup_start", None),
+    )
+    sig = summary.get("overall_signal_level", {})
+    sd = summary.get("overall_stock_day_level", {})
+    active = summary.get("active_signal_level", {})
+    shadow = summary.get("shadow_signal_level", {})
+    print(f"  signal-level:    n={sig.get('count', 0)} avg={sig.get('avg', 0):+.2f}% win={sig.get('win_rate', 0):.1f}% median={sig.get('median', 0):+.2f}%")
+    print(f"  stock-day level: n={sd.get('count', 0)} avg={sd.get('avg', 0):+.2f}% win={sd.get('win_rate', 0):.1f}% median={sd.get('median', 0):+.2f}%")
+    if active.get("count"):
+        print(f"  ▸ active (real P&L): n={active.get('count', 0)} avg={active.get('avg', 0):+.2f}% win={active.get('win_rate', 0):.1f}%")
+    if shadow.get("count"):
+        print(f"  ▸ shadow (reference): n={shadow.get('count', 0)} avg={shadow.get('avg', 0):+.2f}% win={shadow.get('win_rate', 0):.1f}%")
+    print(f"  artifacts -> {output_dir}/")
+
+
+def backtest_validate(args: argparse.Namespace) -> None:
+    """Run baseline + variant on each window; PASS only if BOTH windows improve."""
+    import shlex
+    from datetime import datetime as _dt
+
+    windows = []
+    for w in args.windows.split(","):
+        w = w.strip()
+        if ":" not in w:
+            raise SystemExit(f"ERROR: window {w!r} must be START:END")
+        s, e = w.split(":", 1)
+        windows.append((s.strip(), e.strip()))
+    if len(windows) < 2:
+        raise SystemExit("ERROR: --windows must list at least 2 windows for cross-window validation")
+
+    variant_argv = shlex.split(args.variant)
+
+    out_root = Path(args.output or f"output/validation_{_dt.now():%Y%m%d_%H%M%S}")
+    out_root.mkdir(parents=True, exist_ok=True)
+
+    metric = args.metric
+    workers = str(args.workers)
+    cache_path = getattr(args, "cache", None)
+
+    def _run_one(label: str, start: str, end: str, extra_argv: list[str]) -> dict:
+        out_dir = out_root / f"{label}_{start}_{end}"
+        argv = []
+        if cache_path:
+            argv.extend(["--cache", cache_path])
+        argv.extend([
+            "backtest", "run",
+            "--start", start, "--end", end,
+            "--workers", workers,
+            "--quiet",
+            "--output", str(out_dir),
+        ])
+        argv.extend(extra_argv)
+        # Re-enter main() with constructed argv
+        main(argv)
+        return json.loads((out_dir / "summary.json").read_text(encoding="utf-8"))
+
+    def _level(summary: dict) -> dict:
+        # Prefer active_signal_level (real P&L when adaptive is on); fall back
+        # to overall when active is empty (e.g. --no-adaptive-modes mode).
+        a = summary.get("active_signal_level") or {}
+        if a.get("count"):
+            return a
+        return summary.get("overall_signal_level", {})
+
+    rows = []
+    for start, end in windows:
+        print(f"\n=== window {start} -> {end} ===")
+        base = _run_one("baseline", start, end, [])
+        var = _run_one("variant", start, end, variant_argv)
+        b = _level(base)
+        v = _level(var)
+        delta = v.get(metric, 0) - b.get(metric, 0)
+        improved = delta > 0
+        rows.append({
+            "window": f"{start} -> {end}",
+            "baseline_n": b.get("count", 0),
+            "variant_n": v.get("count", 0),
+            "baseline": round(b.get(metric, 0), 3),
+            "variant": round(v.get(metric, 0), 3),
+            "delta": round(delta, 3),
+            "improved": improved,
+            "baseline_win": round(b.get("win_rate", 0), 1),
+            "variant_win": round(v.get("win_rate", 0), 1),
+        })
+        print(
+            f"  baseline {metric}={b.get(metric, 0):+.2f}% win={b.get('win_rate', 0):.1f}% n={b.get('count', 0)}\n"
+            f"  variant  {metric}={v.get(metric, 0):+.2f}% win={v.get('win_rate', 0):.1f}% n={v.get('count', 0)}\n"
+            f"  delta    {delta:+.2f}%  improved={'YES' if improved else 'NO'}"
+        )
+
+    overall_pass = all(r["improved"] for r in rows)
+    report = {
+        "metric": metric,
+        "variant_args": variant_argv,
+        "windows": rows,
+        "overall_pass": overall_pass,
+        "rule": "variant must strictly improve {} on EVERY window".format(metric),
+    }
+    (out_root / "validation_report.json").write_text(
+        json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8"
+    )
+    print(f"\n>>> {'PASS' if overall_pass else 'FAIL'} on metric={metric} across {len(rows)} windows")
+    print(f">>> report: {out_root / 'validation_report.json'}")
+    if not overall_pass:
+        raise SystemExit(1)
+
+
+def _parse_exclude_modes(value: str | None) -> set[str] | None:
+    if not value:
+        return None
+    items = {item.strip() for item in value.split(",") if item.strip()}
+    return items or None
 
 
 def report_daily(args: argparse.Namespace) -> None:
@@ -496,7 +1031,7 @@ def _report_common(
         modes=modes,
         block_model=settings.block_model,
         category_model=settings.category_model,
-        sort_id=args.sort_id,
+        sort_id=_sort_selector(args),
     )
     previous_date = _previous_trade_date(date_value, args.source, args) if include_previous_performance else None
     previous_signals = []
@@ -508,14 +1043,14 @@ def _report_common(
             modes=modes,
             block_model=settings.block_model,
             category_model=settings.category_model,
-            sort_id=args.sort_id,
+            sort_id=_sort_selector(args),
         )
         if isinstance(source, ApiDataSource):
             performance = _signal_performance(_client(args), previous_date, date_value, previous_signals)
     fmt = args.format or "markdown"
     output = args.output
     if fmt == "json":
-        extra = _report_extras(args, source, date_value, settings)
+        extra = _report_extras(args, source, date_value, settings, signals)
         report_block_rank = _report_block_rank(source, date_value)
         data = {
             "date": date_value,
@@ -543,7 +1078,7 @@ def _report_common(
         previous_date=previous_date,
         previousSignals=previous_signals if include_previous_performance else None,
         performance=performance if include_previous_performance else None,
-        **_report_extras(args, source, date_value, settings),
+        **_report_extras(args, source, date_value, settings, signals),
     )
     if output is None:
         output = str(Path(default_dir) / f"{date_value}.md")
@@ -554,12 +1089,72 @@ def config_show(args: argparse.Namespace) -> None:
     write_output(load_settings(args.config).__dict__, "json", args.output)
 
 
+def catalog_list(args: argparse.Namespace) -> None:
+    write_output([spec.as_row() for spec in ENDPOINTS.values()], _fmt(args), args.output)
+
+
+def catalog_describe(args: argparse.Namespace) -> None:
+    spec = ENDPOINTS.get(args.name)
+    if spec is None:
+        by_path = {item.path: item for item in ENDPOINTS.values()}
+        spec = by_path.get(args.name)
+    if spec is None:
+        raise SystemExit(f"ERROR: unknown API {args.name!r}. Try: xiaocao catalog list")
+    write_output(spec.as_row(), _fmt(args), args.output)
+
+
+def catalog_sort_keys(args: argparse.Namespace) -> None:
+    rows = [item.as_row() for item in SORT_V2_FIELDS.values()]
+    rows.sort(key=lambda row: int(row["value"]))
+    write_output(rows, _fmt(args), args.output)
+
+
+def catalog_groups(args: argparse.Namespace) -> None:
+    write_output(named_rows(STOCK_GROUPS), _fmt(args), args.output)
+
+
+def catalog_rank_models(args: argparse.Namespace) -> None:
+    write_output(named_rows(RANK_MODELS), _fmt(args), args.output)
+
+
+def catalog_index_types(args: argparse.Namespace) -> None:
+    write_output(named_rows(DYNAMIC_INDEX_TYPES), _fmt(args), args.output)
+
+
+def catalog_freqs(args: argparse.Namespace) -> None:
+    write_output(named_rows(KLINE_FREQS), _fmt(args), args.output)
+
+
+def catalog_adjs(args: argparse.Namespace) -> None:
+    write_output(named_rows(KLINE_ADJUSTMENTS), _fmt(args), args.output)
+
+
+def catalog_indicators(args: argparse.Namespace) -> None:
+    rows: list[dict[str, Any]] = []
+    for item in INDICATORS_BACKEND.values():
+        row = item.as_row()
+        row["scope"] = "backend"
+        rows.append(row)
+    for item in INDICATORS_FRONTEND_ONLY.values():
+        row = item.as_row()
+        row["scope"] = "frontend-only"
+        rows.append(row)
+    write_output(rows, _fmt(args), args.output)
+
+
 def _client(args: argparse.Namespace) -> XiaocaoClient:
     settings = load_settings(args.config)
+    cache = None
+    if not getattr(args, "no_cache", False):
+        cache_path = getattr(args, "cache", None)
+        if cache_path:
+            from xiaocao.api.cache import SQLiteCache
+            cache = SQLiteCache(cache_path)
     return XiaocaoClient(
         base_url=args.base_url or settings.base_url,
         timeout=args.timeout or settings.timeout,
         retries=args.retries if args.retries is not None else settings.retries,
+        cache=cache,
     )
 
 
@@ -575,15 +1170,113 @@ def _fmt(args: argparse.Namespace) -> str:
     return args.format or settings.output_format
 
 
-def _report_extras(args: argparse.Namespace, source: Any, date_value: str, settings: Any) -> dict[str, Any]:
+def _sort_selector(args: argparse.Namespace) -> int | str:
+    sort_key = getattr(args, "sort_key", None)
+    sort_id = getattr(args, "sort_id", None)
+    if sort_key:
+        resolve_sort_id(sort_key)
+        return sort_key
+    if sort_id is not None:
+        return sort_id
+    return "xiaocaoCJS"
+
+
+def _rank_model_selector(args: argparse.Namespace) -> int:
+    model = getattr(args, "model", None)
+    if model is not None:
+        return model
+    return resolve_rank_model(getattr(args, "rank_model", "full"))
+
+
+def _index_type_selector(args: argparse.Namespace) -> int:
+    index_type = getattr(args, "index_type", None)
+    if index_type is not None:
+        return index_type
+    return resolve_dynamic_index_type(getattr(args, "index_name", None) or "jinglong")
+
+
+def _report_extras(
+    args: argparse.Namespace,
+    source: Any,
+    date_value: str,
+    settings: Any,
+    signals: list[dict[str, Any]] | None = None,
+) -> dict[str, Any]:
     if not isinstance(source, ApiDataSource):
         return {}
     client = _client(args)
-    return {
+    extras: dict[str, Any] = {
         "blockScore": client.get_block_score(date_value),
         "dynamicIndex": client.get_xiao_cao_dynamic_index(date_value, 0),
         "environment": client.xiao_cao_environment_second_line_v2(date_value),
     }
+    if getattr(args, "no_extras", False):
+        return extras
+    extras["marketOverview"] = _safe_call(client.market_overview)
+    block_rank = source.get_industry_block_rank(date_value, RANK_MODEL_FULL)
+    top_n = max(0, int(getattr(args, "top_blocks", 5)))
+    extras["topBlockDetails"] = _fetch_top_block_details(client, block_rank, date_value, top_n)
+    if signals:
+        extras["candidateTechnical"] = _fetch_candidate_technical(client, signals)
+    extras["weekStats"] = _safe_call(client.xiao_cao_week_stats)
+    return extras
+
+
+def _safe_call(fn: Any) -> Any:
+    try:
+        return fn()
+    except XiaocaoError:
+        return None
+
+
+def _fetch_top_block_details(
+    client: XiaocaoClient,
+    block_rank: list[dict[str, Any]],
+    date_value: str,
+    top_n: int,
+) -> list[dict[str, Any]]:
+    if top_n <= 0 or not block_rank:
+        return []
+    ranked = [row for row in block_rank if isinstance(row, dict) and row.get("blockCode")]
+    ranked.sort(key=lambda row: float(row.get("num") or 0), reverse=True)
+    codes = [row["blockCode"] for row in ranked[:top_n]]
+    out: list[dict[str, Any]] = []
+    for code in codes:
+        try:
+            out.append(client.xiao_cao_block_detail(code, date_value))
+        except XiaocaoError:
+            continue
+    return out
+
+
+def _fetch_candidate_technical(
+    client: XiaocaoClient,
+    signals: list[dict[str, Any]],
+) -> dict[str, Any]:
+    seen: list[str] = []
+    seen_set: set[str] = set()
+    for sig in signals:
+        if not isinstance(sig, dict):
+            continue
+        code = sig.get("code")
+        if not code or code in seen_set:
+            continue
+        seen.append(str(code))
+        seen_set.add(str(code))
+    if not seen:
+        return {}
+    try:
+        rows = client.get_technical_index(stock_ids=seen, indicator="smallGrass")
+    except XiaocaoError:
+        return {}
+    by_code: dict[str, Any] = {}
+    for row in rows or []:
+        if not isinstance(row, dict):
+            continue
+        code = row.get("stockId") or row.get("code")
+        if code:
+            by_code[str(code)] = row
+    return by_code
 
 
 def _report_block_rank(source: Any, date_value: str) -> list[dict[str, Any]]:
@@ -698,6 +1391,36 @@ def _parse_codes(args: argparse.Namespace) -> list[str]:
     return codes
 
 
+def _parse_key_values(items: list[str]) -> dict[str, Any]:
+    output: dict[str, Any] = {}
+    for item in items:
+        if "=" not in item:
+            raise SystemExit(f"ERROR: --param must be key=value, got {item!r}")
+        key, value = item.split("=", 1)
+        if not key:
+            raise SystemExit(f"ERROR: --param key must not be empty, got {item!r}")
+        output[key] = _coerce_param_value(value)
+    return output
+
+
+def _coerce_param_value(value: str) -> Any:
+    lowered = value.lower()
+    if lowered == "true":
+        return True
+    if lowered == "false":
+        return False
+    if lowered == "null":
+        return None
+    try:
+        return int(value)
+    except ValueError:
+        pass
+    try:
+        return float(value)
+    except ValueError:
+        return value
+
+
 def _flatten_kline_map(rows_by_code: dict[str, Any]) -> list[dict[str, Any]]:
     output: list[dict[str, Any]] = []
     for code, rows in rows_by_code.items():
@@ -738,7 +1461,7 @@ def _resolve_date(value: str, source_name: str, args: argparse.Namespace | None 
 
 
 def _normalize_global_args(argv: list[str]) -> list[str]:
-    options_with_values = {"--config", "--base-url", "--timeout", "--retries", "--format", "--output"}
+    options_with_values = {"--config", "--base-url", "--timeout", "--retries", "--format", "--output", "--cache"}
     front: list[str] = []
     rest: list[str] = []
     i = 0

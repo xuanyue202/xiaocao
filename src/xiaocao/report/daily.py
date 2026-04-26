@@ -17,12 +17,20 @@ def build_daily_report(
     previous_date: str | None = None,
     previousSignals: list[dict[str, Any]] | None = None,
     performance: list[dict[str, Any]] | None = None,
+    marketOverview: Any | None = None,
+    topBlockDetails: list[dict[str, Any]] | None = None,
+    candidateTechnical: dict[str, Any] | None = None,
+    weekStats: dict[str, Any] | None = None,
 ) -> str:
     lines = [title or f"## {date} 小草模式日报", ""]
     name_map = _build_name_map(block_rank or [], category_rank or [], _rows(blockScore), dynamicIndex or [])
     lines.extend(_summary(signals, purpose, previous_date))
     lines.append("")
+    lines.extend(_market_overview_section(marketOverview))
+    lines.append("")
     lines.extend(_rank_section("### 强方向", block_rank or [], name_map, "blockCode"))
+    lines.append("")
+    lines.extend(_top_block_details_section(topBlockDetails or [], name_map))
     lines.append("")
     lines.extend(_rank_section("### 强方向大类", category_rank or [], name_map, "categoryCode"))
     lines.append("")
@@ -32,6 +40,8 @@ def build_daily_report(
     lines.append("")
     lines.extend(_environment_section(environment))
     lines.append("")
+    lines.extend(_week_stats_section(weekStats))
+    lines.append("")
     if previousSignals is not None or performance is not None:
         lines.extend(_performance_section(previous_date, previousSignals or [], performance or []))
         lines.append("")
@@ -39,6 +49,7 @@ def build_daily_report(
     lines.append("")
     lines.append(_signals_table(signals))
     lines.append("")
+    lines.extend(_candidate_technical_section(candidateTechnical or {}, signals))
     return "\n".join(lines)
 
 
@@ -267,3 +278,103 @@ def _num(value: Any) -> float:
         return float(value)
     except (TypeError, ValueError):
         return 0.0
+
+
+def _market_overview_section(overview: Any) -> list[str]:
+    lines = ["### 市场概览", ""]
+    if overview is None:
+        return lines + ["_未拉取（local source 或 --no-extras）_"]
+    if isinstance(overview, dict):
+        # Surface the most informative scalar fields if present.
+        rows = []
+        for key in (
+            "marketHeat", "marketScore", "marketTrend",
+            "positiveCount", "negativeCount", "neutralCount",
+            "limitUpCount", "limitDownCount",
+            "totalAmt", "totalVol",
+        ):
+            if key in overview and _present(overview[key]):
+                rows.append({"字段": key, "值": _fmt(overview[key])})
+        if rows:
+            return lines + [_markdown_table(rows)]
+        # Fallback: render whatever scalar keys exist.
+        flat = [
+            {"字段": k, "值": _fmt(v)}
+            for k, v in overview.items()
+            if not isinstance(v, (list, dict)) and _present(v)
+        ]
+        if flat:
+            return lines + [_markdown_table(flat[:12])]
+    return lines + ["_No data_"]
+
+
+def _top_block_details_section(details: list[dict[str, Any]], name_map: dict[str, str]) -> list[str]:
+    lines = ["### 强方向详情", ""]
+    if not details:
+        return lines + ["_未拉取（local source 或 --no-extras）_"]
+    table_rows = []
+    for index, row in enumerate(details, start=1):
+        if not isinstance(row, dict):
+            continue
+        code = _code(row, "code")
+        table_rows.append({
+            "序号": index,
+            "代码": code,
+            "名称": _name(row, name_map, "code"),
+            "短线分": _fmt(row.get("shortLineScore")),
+            "趋势分": _fmt(row.get("trendScore")),
+            "排名": row.get("rank"),
+            "位置": _fmt(row.get("position")),
+            "类型": row.get("blockType"),
+            "涨跌幅%": _fmt(row.get("pctChangeRate")),
+        })
+    if not table_rows:
+        return lines + ["_No data_"]
+    return lines + [_markdown_table(table_rows)]
+
+
+def _candidate_technical_section(
+    technical: dict[str, Any],
+    signals: list[dict[str, Any]],
+) -> list[str]:
+    lines = ["### 候选股 smallGrass 技术指标", ""]
+    if not technical:
+        return lines + ["_未拉取（local source 或 --no-extras）_"]
+    code_to_name = {}
+    for sig in signals:
+        if isinstance(sig, dict):
+            code = sig.get("code")
+            if code:
+                code_to_name[str(code)] = sig.get("name") or ""
+    table_rows = []
+    for code, payload in technical.items():
+        rows = _rows(payload)
+        latest = rows[-1] if rows else (payload if isinstance(payload, dict) else None)
+        if not isinstance(latest, dict):
+            continue
+        table_rows.append({
+            "代码": code,
+            "名称": code_to_name.get(str(code), latest.get("codeName", "")),
+            "ema": _fmt(latest.get("ema")),
+            "aaaLine": _fmt(latest.get("aaaLine")),
+            "bbbLine": _fmt(latest.get("bbbLine")),
+            "trade": _fmt(latest.get("trade")),
+            "tradeDate": latest.get("tradeDate"),
+        })
+    if not table_rows:
+        return lines + ["_拉取到的指标数据为空_"]
+    return lines + [_markdown_table(table_rows)]
+
+
+def _week_stats_section(week_stats: Any) -> list[str]:
+    lines = ["### 本周模式持仓"]
+    if not week_stats:
+        return []  # Skip the section entirely when not available — avoid clutter.
+    if not isinstance(week_stats, dict):
+        return []
+    counts = {key: len(value or []) for key, value in week_stats.items() if isinstance(value, list)}
+    if not any(counts.values()):
+        return []
+    lines.append("")
+    table_rows = [{"模式": mode, "在持数": count} for mode, count in counts.items()]
+    return lines + [_markdown_table(table_rows)]

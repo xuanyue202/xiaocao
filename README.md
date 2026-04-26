@@ -91,29 +91,37 @@ xiaocao quote auction --code 300750.XSHE --date latest --format json
 xiaocao data pool --date latest --group dixi --format json
 xiaocao data pool --source local --date 2024-10-25 --group dixi
 
-# 在股票池或自定义股票列表中排序
-xiaocao data sort --date latest --from-pool dixi --sort-id 40 --format table
-xiaocao data sort --date latest --stock-file stocks.json --sort-id 38 --format csv --output output/sorted.csv
+# 在股票池或自定义股票列表中排序；优先用 sort-key，不必记裸数字
+xiaocao data sort --date latest --from-pool dixi --sort-key xiaocaoCJS --format table
+xiaocao data sort --date latest --from-pool dixi --sort-key directionCjs --sort desc --format table
+xiaocao data sort --date latest --stock-file stocks.json --sort-key xiaocaoXCJW --format csv --output output/sorted.csv
 
 # 个股小草指数
 xiaocao index stock --date latest --codes 688807.XSHG,301050.XSHE --format json
 xiaocao index stock --date latest --from-pool dixi --format csv --output output/dixi_index.csv
 
 # 小草动态指数
-xiaocao index dynamic --date latest --index-type 0 --format table
+xiaocao index dynamic --date latest --index-name jinglong --format table
+xiaocao index industry-dynamic --date latest --index-name jinglong --format table
 ```
 
 ### 板块、方向和环境
 
 ```bash
-xiaocao block rank --date latest --model 1 --format table
-xiaocao block category-rank --date latest --model 0 --format table
+xiaocao block rank --date latest --rank-model focus --format table
+xiaocao block category-rank --date latest --rank-model full --format table
 xiaocao block score --date latest --format json
 xiaocao block stocks --date latest --block-code 980338.ZHBK --format json
 xiaocao block stocks --date latest --category-code 000028.BKDL --format json
+xiaocao block detail --date latest --code T08.ZHBK --format json
+xiaocao block kline --code T08.ZHBK --count 60 --format table
 
+xiaocao market overview --format json
+xiaocao market stock-info --format csv --output output/stock_info.csv
 xiaocao market environment --date latest --format json
 xiaocao market environment --date latest --codes 9A0001,9A0002,9B0001 --format table
+xiaocao market env-selection --date latest --format json
+xiaocao market week-stats --format json
 ```
 
 ### 兼容行情入口
@@ -126,13 +134,17 @@ xiaocao market second-line-detail --codes 000001.XSHG,399001.XSHE --format table
 xiaocao market minute-line --code 603520.XSHG --freq 1min --adj bfq --format json
 xiaocao market kline --code 000001.XSHG --count 60 --freq D --adj qfq --format table
 xiaocao market auction --code 688808.XSHG --date latest --format json
+xiaocao market each-trade --code 300750.XSHE --count 20 --format table
+xiaocao market env-minute --code 9A0001.XCHJZS --date latest --format json
+xiaocao market technical --history --param code=300750.XSHE --param freq=D --format json
+xiaocao market technical --param code=300750.XSHE --format json
 ```
 
 ### 策略和报告
 
 ```bash
 xiaocao strategy run --date latest --source api --format table
-xiaocao strategy run --date latest --modes jieli,dixi --sort-id 40 --format csv --output output/signals.csv
+xiaocao strategy run --date latest --modes jieli,dixi --sort-key xiaocaoCJS --format csv --output output/signals.csv
 xiaocao strategy run --source local --date 2024-10-25 --format table
 
 xiaocao report premarket --date latest --source api --output reports/premarket/latest.md
@@ -144,8 +156,19 @@ xiaocao report daily --date latest --source api --format json --output output/da
 
 ```bash
 xiaocao config show --format json
+xiaocao catalog list --format table
+xiaocao catalog describe sort_v2 --format json
+xiaocao catalog sort-keys --format table
+xiaocao catalog groups --format table
+xiaocao catalog rank-models --format table
+xiaocao catalog index-types --format table
+xiaocao catalog freqs --format table
+xiaocao catalog adjs --format table
+xiaocao catalog indicators --format table
 PYTHONPATH=src python3 -m pytest tests/e2e -q
 ```
+
+`catalog` 子命令仅做参数速查，不发请求。需要发请求请用对应业务子命令（`market`/`block`/`indicator` 等）。
 
 ## 典型使用场景与调用流
 
@@ -303,8 +326,9 @@ xiaocao calendar next --date 2026-04-24
 ```bash
 xiaocao data pool --date latest --group dixi --format json
 xiaocao data pool --date 2026-04-24 --group jingwang --format csv --output output/jingwang.csv
-xiaocao data sort --date latest --from-pool dixi --sort-id 40 --format table
-xiaocao data sort --date latest --stock-file stocks.json --sort-id 38 --format csv --output output/sorted.csv
+xiaocao data sort --date latest --from-pool dixi --sort-key xiaocaoCJS --format table
+xiaocao data sort --date latest --from-pool dixi --sort-key directionCjs --sort desc --format table
+xiaocao data sort --date latest --stock-file stocks.json --sort-key xiaocaoXCJW --format csv --output output/sorted.csv
 ```
 
 `--source local` 可读取本地 `results/*_detail.csv`：
@@ -313,7 +337,13 @@ xiaocao data sort --date latest --stock-file stocks.json --sort-id 38 --format c
 xiaocao data pool --source local --date 2024-10-25 --group dixi
 ```
 
-本地排序当前支持常用映射：
+排序参数优先使用 `--sort-key`。可通过下面命令查看完整映射：
+
+```bash
+xiaocao catalog sort-keys --format table
+```
+
+`--sort-id` 仍保留，用于兼容旧脚本。本地排序当前支持常用映射：
 
 - `37 -> jsjl` / `44 -> jsjlTest`
 - `38 -> xcjw` / `48 -> xcjwV2`
@@ -340,21 +370,24 @@ xiaocao index stock --date latest --from-pool dixi --format csv --output output/
 小草动态指数：
 
 ```bash
-xiaocao index dynamic --date latest --index-type 0 --format table
-xiaocao index dynamic --date 2026-04-24 --index-type 0 --format json
+xiaocao index dynamic --date latest --index-name jinglong --format table
+xiaocao index dynamic --date 2026-04-24 --index-name jinglong --format json
+xiaocao index industry-dynamic --date latest --index-name jinglong --format table
 ```
 
 ## 板块与方向
 
 ```bash
-xiaocao block rank --date latest --model 1 --format table
-xiaocao block category-rank --date latest --model 0 --format table
+xiaocao block rank --date latest --rank-model focus --format table
+xiaocao block category-rank --date latest --rank-model full --format table
 xiaocao block score --date latest --format json
 xiaocao block stocks --date latest --block-code 980338.ZHBK --format json
 xiaocao block stocks --date latest --category-code 000028.BKDL --format json
+xiaocao block detail --date latest --code T08.ZHBK --format json
+xiaocao block kline --code T08.ZHBK --count 60 --format table
 ```
 
-`model` 口径目前没有官方枚举文档。CLI 的当前约定是：报告展示使用 `model=0` 的全量强度排行，策略加持默认使用 `model=1` 的短线重点/精选口径。更详细的推理和证据见 [docs/api_models.md](docs/api_models.md)。
+`model` 口径目前没有官方枚举文档。CLI 优先使用 `--rank-model full|focus|full_alias_2|full_alias_3`；`--model` 仍保留为底层数字透传。当前约定是：报告展示使用 `full`，策略加持默认使用 `focus`。更详细的推理和证据见 [docs/api_models.md](docs/api_models.md)。
 
 ## 通用行情
 
@@ -378,6 +411,14 @@ xiaocao quote auction --code 688808.XSHG --date latest --format json
 
 ```bash
 xiaocao market second-line --codes 000001.XSHG,399001.XSHE,399006.XSHE --format json
+xiaocao market overview --format json
+xiaocao market stock-info --format csv --output output/stock_info.csv
+xiaocao market env-selection --date latest --format json
+xiaocao market week-stats --format json
+xiaocao market each-trade --code 300750.XSHE --count 20 --format table
+xiaocao market env-minute --code 9A0001.XCHJZS --date latest --format json
+xiaocao market technical --history --param code=300750.XSHE --param freq=D --format json
+xiaocao market technical --param code=300750.XSHE --format json
 xiaocao market second-line-detail --codes 000001.XSHG,399001.XSHE,399006.XSHE --format table
 xiaocao market minute-line --code 603520.XSHG --freq 1min --adj bfq --format json
 xiaocao market kline --code 300422.XSHE --count 20 --freq D --adj qfq --format table
@@ -386,6 +427,42 @@ xiaocao market auction --code 688808.XSHG --date latest --format json
 xiaocao market environment --date latest --format json
 xiaocao market environment --date latest --codes 9A0001,9A0002,9B0001 --format table
 ```
+
+## 小草技术指标
+
+`indicator` 子命令封装 `/stock/get_technical_index` 与 `/stock/get_technical_index_history`。这两个接口和大多数 `/stock/...` API 不一样：前端 POST 的是 raw body，不包 `{params: ...}`。CLI 和 `XiaocaoClient` 已按这个口径处理。
+
+`smallgrass` preset 直接给 `indicators=smallGrass`：
+
+```bash
+xiaocao indicator smallgrass current --code 300750.XSHE --format json
+xiaocao indicator smallgrass current --codes 300750.XSHE,000001.XSHG --format json
+xiaocao indicator smallgrass history --code 300750.XSHE --freq D --count 120 --format json
+xiaocao indicator smallgrass history --code 300750.XSHE --freq 5min --count 240 --format json
+```
+
+`query` 子命令允许指定 backend 接受的其它 indicator：
+
+```bash
+xiaocao indicator query current --code 300750.XSHE --indicator macd --format json
+xiaocao indicator query history --code 300750.XSHE --indicator boll --freq D --format json
+```
+
+backend 接受的 indicators（来自 `reference/index-f3118026.js` 的 `Zd` 数组）：`smallGrass / vol / amt / macd / rsi / kdj / boll`。前端图表本地渲染但 backend **不接受**的：`smallGrassTrend / klinesma / mike` —— 用 `indicator query --indicator klinesma` 会被 argparse 直接拒绝。
+
+参数：
+
+| 参数 | 适用 | 默认 | 含义 |
+|---|---|---|---|
+| `--code` | 当前、历史 | 必填（历史） | 股票/指数代码 |
+| `--codes` | 当前 | — | 逗号分隔多个代码 |
+| `--freq` | 历史 | `D` | `D/W/M/Q/Y/5min/15min/30min/60min` |
+| `--adj` | 历史 | freq 推导 | `qfq`（min 周期）/`bfq`（其它），来自 JS `K0` 默认 |
+| `--count` | 历史 | `200` | 返回条数 |
+| `--trade-date` | 历史 | — | 上翻加载更多时使用 |
+| `--indicator` | `query` 必填 | — | 见上方 backend 列表 |
+
+旧的 `market technical --history --param code=...` 兼容入口保留，作为低层透传调试路径。
 
 ## 策略运行
 
@@ -401,15 +478,182 @@ xiaocao strategy run --date latest --source api --format csv --output output/res
 ```bash
 xiaocao strategy run --date latest --modes jieli
 xiaocao strategy run --date latest --modes dixi
-xiaocao strategy run --date latest --modes direction --sort-id 40
+xiaocao strategy run --date latest --modes direction --sort-key directionCjs
 ```
 
 本地历史数据回放：
 
 ```bash
 xiaocao strategy run --source local --date 2024-10-25 --format table
-xiaocao strategy run --source local --date 2024-10-25 --modes direction --sort-id 40
+xiaocao strategy run --source local --date 2024-10-25 --modes direction --sort-key xiaocaoCJS
 ```
+
+方向内排序与每方向上限：
+
+```bash
+xiaocao strategy run --date latest --modes direction \
+  --direction-sort-key directionCjs \
+  --max-per-direction 5
+
+xiaocao strategy run --date latest --profile default
+```
+
+- `--direction-sort-key`：方向内候选股排序口径，默认 `directionCjs`（id 47），更贴近前端"方向内绿盘低吸"语义。可改成 `directionCjsV2` / `xiaocaoCJS` / `xcjwV2` 等。
+- `--pool-sort-key`：接力 / 低吸两个池子的预排序口径，默认沿用历史的 `38 (xiaocaoXCJW)`。
+- `--max-per-direction`：每个方向最多保留多少候选，默认 10。
+- `--exclude-modes`：逗号分隔的模式名，跳过这些模式（如 `接力低弱转2`）。
+- `--profile`：把上面这些参数打包成预设。当前只有 `default`，后续会扩展。
+
+报告子命令也接受 `--top-blocks`（强方向详情拉取数量，默认 5）和 `--no-extras`（跳过 market_overview / 方向详情 / 技术指标拉取，加速本地调试）。
+
+策略输出每个 `(date, code)` 只发一条信号；如果同一标的同时命中多个模式，主模式留在 `mode` 字段，其它模式记录在 `dropped_modes` 里。
+
+## 回测
+
+`xiaocao backtest run` 用现有策略对历史区间复跑，按"信号当日 qfq 开盘买、次个交易日 qfq 收盘卖"的 1 日持仓口径打分。产出：每日 `signals_<date>.json` + 收尾 `trades.csv` + 聚合 `summary.json`（含 `overall_signal_level`、`overall_stock_day_level`、`mode_summary`）。
+
+```bash
+# 基础回测
+xiaocao backtest run --start 2026-03-01 --end 2026-04-24
+
+# 指定输出目录
+xiaocao backtest run --start 2026-03-01 --end 2026-04-24 \
+  --output output/xiaocao_backtest_2026-03-01_2026-04-24
+
+# A/B 验证：剔除某个表现差的模式
+xiaocao backtest run --start 2026-03-01 --end 2026-04-24 \
+  --exclude-modes 接力低弱转2 \
+  --output output/xiaocao_backtest_no_jslrz2
+```
+
+backtest 接受全部 `strategy run` 的过滤参数（`--modes`、`--sort-key`、`--direction-sort-key`、`--pool-sort-key`、`--max-per-direction`、`--exclude-modes`、`--profile`），所以同一份策略改动可以快速 A/B：跑两次同区间，对比两个 `summary.json`。
+
+### 性能选项
+
+`--cache` 默认开启，路径为 `output/.cache/xiaocao.db`。所有过去日期的 API 结果（block_rank / get_xiao_cao_index_v2 / sort_v2 / 历史 K 线 等）存进 SQLite；下次相同查询命中缓存直接返回。冷缓存下 39 天回测约 2 分钟（workers=6），热缓存下 0.1 秒。
+
+```bash
+# 默认就有缓存，可指定路径
+xiaocao backtest run --start 2026-03-01 --end 2026-04-24
+
+# 显式指定缓存路径
+xiaocao --cache ~/.xiaocao_cache.db backtest run --start 2026-03-01 --end 2026-04-24
+
+# 关闭缓存，每次都打 API
+xiaocao --no-cache backtest run --start 2026-03-01 --end 2026-04-24
+
+# 跨天并行（冷缓存下显著加速；adaptive_modes 会强制串行）
+xiaocao backtest run --start 2026-03-01 --end 2026-04-24 --workers 6
+```
+
+### B 档结构性增强（道+法层）
+
+每个回测信号默认会被标注 `regime`/`is_main_line`/`is_big_cap`，summary 里相应有 `regime_summary` / `mainline_summary` / `bigcap_summary` 切片。可调参数：
+
+```bash
+xiaocao backtest run --start 2026-03-01 --end 2026-04-24 \
+  --mainline-window 3 --mainline-topk 5 \
+  --bigcap-top-pct 0.2 \
+  [--require-main-line]    # 硬过滤：只保留主线方向内的信号
+  [--exclude-main-line]    # 硬过滤：只保留主线方向之外的信号（短线套利友好）
+  [--regime-gate]          # 硬过滤：丢弃当前 regime 不允许的模式（live 才有 regime）
+  [--max-open-pct 4]       # 覆盖默认 6.0 的开幅上限
+  [--no-enrich]            # 关闭所有标注，跑 baseline 行为
+```
+
+注意：`market_overview` 接口是 live state（无历史日期参数），所以 backtest 中历史日期的 regime 留空；live `xiaocao strategy run` 才有有效 regime。
+
+实测发现：在小草现有的"短线弱转强 / 低吸"模式集合上，**主线之外的信号反而表现更好**（baseline 数据：on-mainline avg -5.5%/win 17%，off-mainline avg +3.7%/win 62%），与 0413-A "盘中方向卡的是新轮动而非昨日老主线" 一致。所以 `--exclude-main-line` 比 `--require-main-line` 通常更适合短线模式。
+
+### 自适应模式（Adaptive mode gating）
+
+**关键设计**：adaptive 不丢信号。每个候选信号都会被生成、按次日开盘买/收盘卖打分、写进 mode_history。adaptive 的作用是给每条信号打 `adaptive_active = True/False` 标签：
+
+- `adaptive_active = True` → **active**：计入用户的"真实"收益（real P&L）
+- `adaptive_active = False` → **shadow**：仅作参考，不计入 P&L，但 outcome 仍记录到 mode_history
+
+这样设计的好处：
+- 没有冷启动 chicken-egg 问题（即使 mode_history 为空，所有信号照样跑、照样记录）
+- adaptive 的滚动窗口反映模式的**真实**长期表现，不只是 adaptive 放行的子集
+- 模式稀疏（如 8 笔 / 39 天）也够用——所有 outcome 都有记录
+
+每个模式查自己 5/10/20 个**交易日**的滚动 (n, avg)，按下面分层规则决定下一日的 active/shadow：
+
+| 层级 | 条件（n_min 默认 5d/10d/20d = 1/2/3） | 决策（thr 默认 5d/10d/20d = -5%/-3%/-2%）|
+|---|---|---|
+| Tier 1 | 5d AND 10d 都达 n_min | 双窗口都 avg ≤ thr → SHADOW；任一正向 → ACTIVE |
+| Tier 2 | 5d 或 10d 单独达 n_min | 该单窗口 avg ≤ thr → SHADOW；正向 → ACTIVE |
+| Tier 3 | 5d/10d 都不足，20d 达 n_min | 20d avg ≤ thr → SHADOW；正向 → ACTIVE |
+| Tier 4 | 20d 也不足 | **SHADOW**（dormant 模式无证据可下注，但信号仍记录） |
+
+> 默认 (n_min=1/2/3, thr=-5/-3/-2) 经过 5 个月 4 个月训练 / 1 个月测试集上 1620 配置 grid
+> 验证为接近最优——抬高 n_min 会损失样本，降低 thr 改善有限；详见
+> `reports/strategy_tuning_2025-12_2026-04.md` §4.1。
+
+```bash
+# 默认开启
+xiaocao backtest run --start 2026-03-01 --end 2026-04-24
+#   → 输出：signal-level (全部) + active (P&L) + shadow (参考)
+
+# 关闭：所有信号默认视为 active
+xiaocao backtest run --start 2026-03-01 --end 2026-04-24 --no-adaptive-modes
+
+# 第二次跑同一窗口要消费 mode_history（不要清空）
+xiaocao backtest run --start 2026-03-01 --end 2026-04-24 --no-reset-mode-history
+```
+
+Summary JSON 里有 `overall_signal_level` / `active_signal_level` / `shadow_signal_level` 三个分组；`mode_summary` 每条带 `all` 和 `active` 两个口径。
+
+实测在 2026-03 → 2026-04 区间：
+- 第一次跑（mode_history 空）：30 信号全部 SHADOW（Tier 4），mode_history 写入 30 条
+- 第二次跑（不 reset）：30 信号 → 5 ACTIVE / 25 SHADOW
+  - `接力低弱转2` 14/16 SHADOW（Tier 1/3 大多 avg ≤ 0）
+  - `方向内绿盘低吸前3名` 5/6 SHADOW
+  - 即 adaptive 自主把这两个差模式 ~85% 屏蔽到 shadow，与手动 `--exclude-modes` 等效（不 100%，因为 rolling 窗口偶尔翻正）
+
+**预热建议**：如果你希望第一次跑就有 ACTIVE 信号产生（而不是全 shadow），用 `--warmup-start <更早日期>` 让早期信号当 seed（warmup 段不进 summary）。前提是 warmup 段策略本身能产生信号——2026-02 在我们的数据里恰好为零，所以 Feb warmup 对这段无效。
+
+### 跨窗口反过拟合验证
+
+任何"看起来变好"的策略改动，单一时间窗结论不可信（30 笔交易 ≠ 大数定律）。`backtest validate` 强制要求变体在至少 2 个不重叠窗口都改善才算通过：
+
+```bash
+xiaocao backtest validate \
+  --windows 2026-03-01:2026-03-31,2026-04-01:2026-04-24 \
+  --variant='--exclude-modes 接力低弱转2,方向内绿盘低吸前3名' \
+  --metric avg \
+  --output reports/validation/exclude_two_bad
+```
+
+输出 `validation_report.json` 含每窗口的 baseline vs variant，以及全局 PASS/FAIL。变体只在一个窗口改善就 FAIL（exit code 1）。
+
+注意 `--variant` 的值如果以 `--` 开头，必须用 `--variant=...` 等号写法（避免 argparse 把后面解析成另一个 flag）。
+
+### 已经验证通过的 profile
+
+| profile | 说明 |
+|---|---|
+| `default` | 不带过滤，原始策略输出 |
+| `validated` | 排除 `接力低弱转2` 和 `方向内绿盘低吸前3名`（March/April 双窗口验证）|
+| `validated_off_main_line` | validated + `exclude_main_line=True`（与 validated_v2 等价的旧名）|
+| `validated_v2` | validated + `exclude_main_line=True`，配合 CLI 默认开启的 `--adaptive-modes` (legacy regime-label fitness) |
+| **`validated_v3`** | **当前推荐**：v2 + state-aware adaptive (StateVector × ModeProfile × asymmetric soft modulation, calibrated DBR threshold). 8-month TRAIN 上 vs v2: avg +0.16%, sum +5.2%, 0 月份退步. |
+
+**`validated_v2` 调优依据**（详见 `reports/strategy_tuning_2025-12_2026-04.md`）：
+
+- 训练集：2025-12 ~ 2026-03（4 个月，158 候选 trades，跨 8 个模式）
+- 测试集：2026-04（held-out，17 trades）
+- 端到端 `xiaocao backtest validate` 跨 3 窗口全部 PASS（vs default 基线，结构性过滤部分）：
+
+  | window | baseline avg/win | validated_v2 avg/win | Δ avg | Δ win |
+  |---|---|---|---|---|
+  | Dec25-Jan26 | +1.51% / 50.6% | +1.87% / 52.2% | +0.36% | +1.6pp |
+  | Feb-Mar26 | +3.50% / 64.0% | +3.84% / 68.5% | +0.34% | +4.5pp |
+  | **Apr26** | +1.51% / 41.2% | **+4.48% / 53.8%** | **+2.97%** | **+12.6pp** |
+
+  开启 adaptive 后 active P&L 进一步收敛到 5 笔 +7.83% win 80%（4 月）。
+
+老的 `validated`（不带 off_mainline）和 `validated_off_main_line` 仍然保留，互不破坏。
 
 ## 报告：盘前参考、盘后复盘、通用日报
 
