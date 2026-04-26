@@ -1,0 +1,45 @@
+[
+  {
+    "date": "2025-06-06",
+    "mode": "方向内绿盘低吸前3名",
+    "code": "002345.XSHE",
+    "name": "潮宏基",
+    "xcjw": 366.51,
+    "cjs": 66.55,
+    "jsjl": 0.0,
+    "jssb": 0.0,
+    "pctChange": -3.04,
+    "openPctChange": -3.52,
+    "direction": true,
+    "directionRank": -1,
+    "categoryRank": 0,
+    "reason": "方向内低吸排名1 + 绿断 + 低吸有分",
+    "blockCodeList": [
+      "910584.DDBK",
+      "885933.DDBK",
+      "885420.DDBK",
+      "885788.DDBK",
+      "886072.DDBK",
+      "885694.DDBK",
+      "885530.DDBK",
+      "885937.DDBK",
+      "886095.DDBK",
+      "885784.DDBK",
+      "885552.DDBK"
+    ],
+    "blockCategoryCodeList": [
+      "000012.BKDL",
+      "000003.BKDL",
+      "000038.BKDL",
+      "000023.BKDL",
+      "000010.BKDL",
+      "000022.BKDL",
+      "000001.BKDL"
+    ],
+    "excIndustryCode": "T13.ZHBK",
+    "adaptive_active": false,
+    "adaptive_reason": "excluded by --exclude-modes: 方向内绿盘低吸前3名; Tier1 双窗口未一致: 5d avg=+14.17% / 10d avg=+0.82% (阈值 -7%/-5%)",
+    "is_main_line": false,
+    "is_big_cap": false
+  }
+]

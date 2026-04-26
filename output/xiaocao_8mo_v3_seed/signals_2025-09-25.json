@@ -1,0 +1,50 @@
+[
+  {
+    "date": "2025-09-25",
+    "mode": "方向内绿盘低吸前3名",
+    "code": "603618.XSHG",
+    "name": "杭电股份",
+    "xcjw": 684.81,
+    "cjs": 769.92,
+    "jsjl": 0.0,
+    "jssb": 0.0,
+    "pctChange": -0.9,
+    "openPctChange": -9.17,
+    "direction": true,
+    "directionRank": -1,
+    "categoryRank": 0,
+    "reason": "方向内低吸排名3 + 绿断 + 低吸有分",
+    "blockCodeList": [
+      "885743.DDBK",
+      "886084.DDBK",
+      "910107.DDBK",
+      "885425.DDBK",
+      "885311.DDBK",
+      "885935.DDBK",
+      "885556.DDBK",
+      "885924.DDBK",
+      "885520.DDBK",
+      "885641.DDBK",
+      "885710.DDBK",
+      "886020.DDBK",
+      "885921.DDBK",
+      "885431.DDBK",
+      "910151.DDBK",
+      "885355.DDBK",
+      "885531.DDBK"
+    ],
+    "blockCategoryCodeList": [
+      "000035.BKDL",
+      "000027.BKDL",
+      "000037.BKDL",
+      "000004.BKDL",
+      "000001.BKDL",
+      "000013.BKDL",
+      "000025.BKDL",
+      "000029.BKDL"
+    ],
+    "excIndustryCode": "T26.ZHBK",
+    "is_main_line": false,
+    "is_big_cap": false
+  }
+]

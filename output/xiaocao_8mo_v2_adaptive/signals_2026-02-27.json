@@ -1,0 +1,45 @@
+[
+  {
+    "date": "2026-02-27",
+    "mode": "接力低弱转1",
+    "code": "001400.XSHE",
+    "name": "江顺科技",
+    "xcjw": 283.9,
+    "cjs": 0.0,
+    "jsjl": 30.12,
+    "jssb": 0.0,
+    "pctChange": 2.38,
+    "openPctChange": 2.05,
+    "direction": true,
+    "directionRank": -1,
+    "categoryRank": 0,
+    "reason": "弱转强 + 昨日连板 + 竞王达标",
+    "blockCodeList": [
+      "886078.DDBK",
+      "885537.DDBK",
+      "885641.DDBK",
+      "910431.DDBK",
+      "885598.DDBK",
+      "885929.DDBK",
+      "885999.DDBK",
+      "885905.DDBK",
+      "885431.DDBK",
+      "886044.DDBK"
+    ],
+    "blockCategoryCodeList": [
+      "000035.BKDL",
+      "000027.BKDL",
+      "000031.BKDL",
+      "000032.BKDL",
+      "000033.BKDL"
+    ],
+    "excIndustryCode": null,
+    "is_main_line": false,
+    "is_big_cap": false,
+    "adaptive_active": true,
+    "adaptive_reason": "Tier1 双窗口未一致: 5d avg=+10.62% / 10d avg=+10.62% (阈值 -15%/-10%)",
+    "dropped_modes": [
+      "接力低弱转2"
+    ]
+  }
+]

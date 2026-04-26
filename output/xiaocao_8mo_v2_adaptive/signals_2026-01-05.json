@@ -1,0 +1,53 @@
+[
+  {
+    "date": "2026-01-05",
+    "mode": "接力低弱转2",
+    "code": "003009.XSHE",
+    "name": "中天火箭",
+    "xcjw": 180.49,
+    "cjs": 0.0,
+    "jsjl": 16.68,
+    "jssb": 0.0,
+    "pctChange": 5.52,
+    "openPctChange": 2.34,
+    "direction": true,
+    "directionRank": -1,
+    "categoryRank": 0,
+    "reason": "高开弱转强 + 昨日连板 + 竞王达标",
+    "blockCodeList": [
+      "885743.DDBK",
+      "910934.DDBK",
+      "886021.DDBK",
+      "885929.DDBK",
+      "885595.DDBK",
+      "910836.DDBK",
+      "910462.DDBK",
+      "885700.DDBK",
+      "885564.DDBK",
+      "910276.DDBK",
+      "886078.DDBK",
+      "885694.DDBK",
+      "885766.DDBK",
+      "886086.DDBK",
+      "885741.DDBK",
+      "910026.DDBK",
+      "886065.DDBK",
+      "885531.DDBK",
+      "911422.DDBK"
+    ],
+    "blockCategoryCodeList": [
+      "000038.BKDL",
+      "000035.BKDL",
+      "000027.BKDL",
+      "000004.BKDL",
+      "000013.BKDL",
+      "000017.BKDL",
+      "000033.BKDL"
+    ],
+    "excIndustryCode": "T24.ZHBK",
+    "adaptive_active": false,
+    "adaptive_reason": "excluded by --exclude-modes: 接力低弱转2; Tier2 10d 单窗口正向 (avg=+0.61% > -10%)",
+    "is_main_line": false,
+    "is_big_cap": false
+  }
+]

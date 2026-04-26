@@ -1,0 +1,36 @@
+[
+  {
+    "date": "2025-04-16",
+    "mode": "方向内绿盘低吸前3名",
+    "code": "000626.XSHE",
+    "name": "远大控股",
+    "xcjw": 159.3,
+    "cjs": 10.23,
+    "jsjl": 0.0,
+    "jssb": 0.0,
+    "pctChange": -4.15,
+    "openPctChange": -2.69,
+    "direction": false,
+    "directionRank": -1,
+    "categoryRank": -1,
+    "reason": "方向内低吸排名1 + 绿断 + 低吸有分",
+    "blockCodeList": [
+      "885812.DDBK",
+      "885995.DDBK",
+      "885705.DDBK",
+      "885505.DDBK",
+      "885642.DDBK",
+      "885988.DDBK",
+      "910129.DDBK"
+    ],
+    "blockCategoryCodeList": [
+      "000024.BKDL",
+      "000026.BKDL",
+      "000010.BKDL"
+    ],
+    "excIndustryCode": "980339.ZHBK",
+    "adaptive_active": false,
+    "adaptive_reason": "excluded by --exclude-modes: 方向内绿盘低吸前3名; Tier1 双窗口未一致: 5d avg=+14.87% / 10d avg=+9.91% (阈值 -7%/-5%)",
+    "is_big_cap": false
+  }
+]

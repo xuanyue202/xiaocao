@@ -1,0 +1,39 @@
+[
+  {
+    "date": "2025-04-29",
+    "mode": "接力低弱转2",
+    "code": "301209.XSHE",
+    "name": "联合化学",
+    "xcjw": 178.86,
+    "cjs": 0.0,
+    "jsjl": 68.28,
+    "jssb": 0.0,
+    "pctChange": 13.67,
+    "openPctChange": 4.01,
+    "direction": true,
+    "directionRank": -1,
+    "categoryRank": 0,
+    "reason": "高开弱转强 + 昨日连板 + 竞王达标",
+    "blockCodeList": [
+      "886054.DDBK",
+      "910475.DDBK",
+      "885694.DDBK",
+      "885929.DDBK",
+      "885633.DDBK",
+      "886097.DDBK",
+      "885864.DDBK"
+    ],
+    "blockCategoryCodeList": [
+      "000038.BKDL",
+      "000023.BKDL",
+      "000031.BKDL",
+      "000022.BKDL",
+      "000033.BKDL"
+    ],
+    "excIndustryCode": "T03.ZHBK",
+    "adaptive_active": false,
+    "adaptive_reason": "excluded by --exclude-modes: 接力低弱转2; Tier3 20d 兜底: avg=-2.99%≤-3% n=3 (5d/10d 数据不足)",
+    "is_main_line": false,
+    "is_big_cap": false
+  }
+]

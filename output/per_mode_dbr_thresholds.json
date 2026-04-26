@@ -1,0 +1,44 @@
+{
+  "接力低弱转1": {
+    "action": "drop",
+    "threshold": null,
+    "n_total": 58,
+    "delta_med": 0.0
+  },
+  "方向内绿盘低吸前3名": {
+    "action": "drop",
+    "threshold": null,
+    "n_total": 53,
+    "delta_med": -0.0069
+  },
+  "首红断低吸": {
+    "action": "drop",
+    "threshold": null,
+    "n_total": 51,
+    "delta_med": -0.0816
+  },
+  "绿断低吸": {
+    "action": "drop",
+    "threshold": null,
+    "n_total": 37,
+    "delta_med": -0.0821
+  },
+  "N字低吸": {
+    "action": "drop",
+    "threshold": null,
+    "n_total": 35,
+    "delta_med": -0.14
+  },
+  "接力低弱转2": {
+    "action": "drop",
+    "threshold": null,
+    "n_total": 30,
+    "delta_med": -0.0578
+  },
+  "红断低吸": {
+    "action": "skip",
+    "threshold": null,
+    "n_total": 12,
+    "delta_med": null
+  }
+}

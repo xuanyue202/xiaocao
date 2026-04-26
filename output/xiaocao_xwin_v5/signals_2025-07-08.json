@@ -1,0 +1,86 @@
+[
+  {
+    "date": "2025-07-08",
+    "mode": "接力低弱转1",
+    "code": "301388.XSHE",
+    "name": "欣灵电气",
+    "xcjw": 309.95,
+    "cjs": 0.0,
+    "jsjl": 164.38,
+    "jssb": 0.0,
+    "pctChange": 17.71,
+    "openPctChange": 1.95,
+    "direction": false,
+    "directionRank": -1,
+    "categoryRank": -1,
+    "reason": "弱转强 + 昨日连板 + 竞王达标",
+    "blockCodeList": [
+      "910107.DDBK",
+      "885312.DDBK",
+      "885929.DDBK",
+      "885946.DDBK",
+      "885941.DDBK",
+      "885461.DDBK",
+      "885531.DDBK"
+    ],
+    "blockCategoryCodeList": [
+      "000035.BKDL",
+      "000027.BKDL",
+      "000025.BKDL",
+      "000033.BKDL"
+    ],
+    "excIndustryCode": "T26.ZHBK",
+    "is_main_line": false,
+    "is_big_cap": false,
+    "adaptive_active": true,
+    "adaptive_reason": "Tier1 双窗口未一致: 5d avg=-4.42% / 10d avg=-2.01% (阈值 -6%/-4%)",
+    "dropped_modes": [
+      "接力低弱转2"
+    ]
+  },
+  {
+    "date": "2025-07-08",
+    "mode": "首红断低吸",
+    "code": "001210.XSHE",
+    "name": "金房能源",
+    "xcjw": 172.28,
+    "cjs": 49.66,
+    "jsjl": 0.0,
+    "jssb": 0.0,
+    "pctChange": -1.19,
+    "openPctChange": -5.15,
+    "direction": true,
+    "directionRank": -1,
+    "categoryRank": 0,
+    "reason": "首红断 + 低吸有分 + 竞王达标",
+    "blockCodeList": [
+      "885514.DDBK",
+      "885345.DDBK",
+      "111111.DDBK",
+      "910594.DDBK",
+      "885887.DDBK",
+      "885984.DDBK",
+      "885386.DDBK",
+      "885783.DDBK",
+      "885921.DDBK",
+      "885563.DDBK",
+      "886097.DDBK",
+      "886044.DDBK"
+    ],
+    "blockCategoryCodeList": [
+      "000003.BKDL",
+      "000035.BKDL",
+      "000023.BKDL",
+      "000011.BKDL",
+      "000031.BKDL",
+      "000007.BKDL",
+      "000004.BKDL",
+      "000025.BKDL"
+    ],
+    "excIndustryCode": "T16.ZHBK",
+    "is_main_line": false,
+    "is_big_cap": false,
+    "adaptive_active": true,
+    "adaptive_reason": "Tier1 双窗口未一致: 5d avg=-2.06% / 10d avg=-0.46% (阈值 -4%/-2%)"
+  }
+]

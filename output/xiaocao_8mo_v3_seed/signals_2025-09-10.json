@@ -1,0 +1,52 @@
+[
+  {
+    "date": "2025-09-10",
+    "mode": "接力低弱转1",
+    "code": "000892.XSHE",
+    "name": "欢瑞世纪",
+    "xcjw": 349.1,
+    "cjs": 0.0,
+    "jsjl": 154.17,
+    "jssb": 0.0,
+    "pctChange": -5.26,
+    "openPctChange": 6.4,
+    "direction": true,
+    "directionRank": -1,
+    "categoryRank": 0,
+    "reason": "弱转强 + 昨日连板 + 竞王达标",
+    "blockCodeList": [
+      "885788.DDBK",
+      "886060.DDBK",
+      "885890.DDBK",
+      "886019.DDBK",
+      "911190.DDBK",
+      "885420.DDBK",
+      "886099.DDBK",
+      "885694.DDBK",
+      "910545.DDBK",
+      "886086.DDBK",
+      "885950.DDBK",
+      "910305.DDBK",
+      "885418.DDBK",
+      "886079.DDBK",
+      "886095.DDBK",
+      "885728.DDBK"
+    ],
+    "blockCategoryCodeList": [
+      "000012.BKDL",
+      "000038.BKDL",
+      "000023.BKDL",
+      "000010.BKDL",
+      "000004.BKDL",
+      "000034.BKDL"
+    ],
+    "excIndustryCode": "T22.ZHBK",
+    "is_main_line": false,
+    "is_big_cap": false,
+    "adaptive_active": false,
+    "adaptive_reason": "openPctChange ≥ 6.0% (chasing high open)",
+    "dropped_modes": [
+      "接力低弱转2"
+    ]
+  }
+]

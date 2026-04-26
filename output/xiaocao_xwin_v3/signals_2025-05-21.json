@@ -1,0 +1,51 @@
+[
+  {
+    "date": "2025-05-21",
+    "mode": "方向内绿盘低吸前3名",
+    "code": "002651.XSHE",
+    "name": "利君股份",
+    "xcjw": 490.57,
+    "cjs": 575.83,
+    "jsjl": 0.0,
+    "jssb": 0.0,
+    "pctChange": 7.32,
+    "openPctChange": -10.02,
+    "direction": false,
+    "directionRank": -1,
+    "categoryRank": -1,
+    "reason": "方向内低吸排名2 + 绿断 + 低吸有分",
+    "blockCodeList": [
+      "885743.DDBK",
+      "885517.DDBK",
+      "885566.DDBK",
+      "910836.DDBK",
+      "910462.DDBK",
+      "885427.DDBK",
+      "885700.DDBK",
+      "885500.DDBK",
+      "885564.DDBK",
+      "886030.DDBK",
+      "886067.DDBK",
+      "910967.DDBK",
+      "886078.DDBK",
+      "885694.DDBK",
+      "886086.DDBK",
+      "885563.DDBK",
+      "911506.DDBK"
+    ],
+    "blockCategoryCodeList": [
+      "000038.BKDL",
+      "000018.BKDL",
+      "000011.BKDL",
+      "000027.BKDL",
+      "000004.BKDL",
+      "000013.BKDL",
+      "000033.BKDL"
+    ],
+    "excIndustryCode": "T24.ZHBK",
+    "adaptive_active": false,
+    "adaptive_reason": "excluded by --exclude-modes: 方向内绿盘低吸前3名; Tier1 双窗口未一致: 5d avg=+12.03% / 10d avg=+8.79% (阈值 -8%/-5%)",
+    "is_main_line": false,
+    "is_big_cap": false
+  }
+]

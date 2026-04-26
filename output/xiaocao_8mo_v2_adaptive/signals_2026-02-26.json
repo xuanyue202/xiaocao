@@ -1,0 +1,42 @@
+[
+  {
+    "date": "2026-02-26",
+    "mode": "接力低弱转1",
+    "code": "001209.XSHE",
+    "name": "洪兴股份",
+    "xcjw": 696.29,
+    "cjs": 0.0,
+    "jsjl": 1.82,
+    "jssb": 0.0,
+    "pctChange": 9.97,
+    "openPctChange": 0.04,
+    "direction": false,
+    "directionRank": -1,
+    "categoryRank": -1,
+    "reason": "弱转强 + 昨日连板 + 竞王达标",
+    "blockCodeList": [
+      "885420.DDBK",
+      "885788.DDBK",
+      "910545.DDBK",
+      "910618.DDBK",
+      "885521.DDBK",
+      "885642.DDBK",
+      "886095.DDBK",
+      "885976.DDBK",
+      "885540.DDBK"
+    ],
+    "blockCategoryCodeList": [
+      "000012.BKDL",
+      "000021.BKDL",
+      "000003.BKDL",
+      "000026.BKDL",
+      "000010.BKDL",
+      "000004.BKDL"
+    ],
+    "excIndustryCode": "T13.ZHBK",
+    "is_main_line": false,
+    "is_big_cap": false,
+    "adaptive_active": true,
+    "adaptive_reason": "Tier1 双窗口未一致: 5d avg=+5.45% / 10d avg=+5.45% (阈值 -15%/-10%)"
+  }
+]

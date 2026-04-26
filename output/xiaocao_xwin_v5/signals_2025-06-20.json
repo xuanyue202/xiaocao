@@ -1,0 +1,118 @@
+[
+  {
+    "date": "2025-06-20",
+    "mode": "接力低弱转1",
+    "code": "301292.XSHE",
+    "name": "海科新源",
+    "xcjw": 827.34,
+    "cjs": 0.0,
+    "jsjl": 995.92,
+    "jssb": 0.0,
+    "pctChange": 10.42,
+    "openPctChange": 8.67,
+    "direction": true,
+    "directionRank": -1,
+    "categoryRank": 0,
+    "reason": "弱转强 + 昨日连板 + 竞王达标",
+    "blockCodeList": [
+      "885694.DDBK",
+      "885598.DDBK",
+      "885710.DDBK",
+      "885929.DDBK",
+      "885905.DDBK",
+      "910342.DDBK",
+      "885431.DDBK",
+      "885928.DDBK",
+      "886032.DDBK",
+      "885997.DDBK"
+    ],
+    "blockCategoryCodeList": [
+      "000038.BKDL",
+      "000035.BKDL",
+      "000027.BKDL",
+      "000032.BKDL",
+      "000033.BKDL"
+    ],
+    "excIndustryCode": "T26.ZHBK",
+    "is_main_line": false,
+    "is_big_cap": false,
+    "adaptive_active": false,
+    "adaptive_reason": "Tier1 双窗口未一致: 5d avg=+0.61% / 10d avg=+1.32% (阈值 -6%/-3%); openPctChange ≥ 6.0% (chasing high open)",
+    "dropped_modes": [
+      "接力低弱转2"
+    ]
+  },
+  {
+    "date": "2025-06-20",
+    "mode": "接力低弱转1",
+    "code": "300483.XSHE",
+    "name": "首华燃气",
+    "xcjw": 449.12,
+    "cjs": 0.0,
+    "jsjl": 165.15,
+    "jssb": 0.0,
+    "pctChange": 6.0,
+    "openPctChange": 4.71,
+    "direction": false,
+    "directionRank": -1,
+    "categoryRank": -1,
+    "reason": "弱转强 + 昨日连板 + 竞王达标",
+    "blockCodeList": [
+      "885739.DDBK",
+      "885430.DDBK",
+      "885990.DDBK",
+      "910054.DDBK",
+      "885895.DDBK",
+      "885964.DDBK"
+    ],
+    "blockCategoryCodeList": [
+      "000023.BKDL",
+      "000018.BKDL",
+      "000010.BKDL",
+      "000019.BKDL",
+      "000005.BKDL"
+    ],
+    "excIndustryCode": "T29.ZHBK",
+    "is_main_line": false,
+    "is_big_cap": false,
+    "adaptive_active": true,
+    "adaptive_reason": "Tier1 双窗口未一致: 5d avg=+0.61% / 10d avg=+1.32% (阈值 -6%/-3%)",
+    "dropped_modes": [
+      "接力低弱转2"
+    ]
+  },
+  {
+    "date": "2025-06-20",
+    "mode": "绿断低吸",
+    "code": "603151.XSHG",
+    "name": "邦基科技",
+    "xcjw": 200.59,
+    "cjs": 13.27,
+    "jsjl": 0.0,
+    "jssb": 0.0,
+    "pctChange": 8.57,
+    "openPctChange": -1.12,
+    "direction": false,
+    "directionRank": -1,
+    "categoryRank": -1,
+    "reason": "绿断 + 低吸有分 + 竞王达标",
+    "blockCodeList": [
+      "885739.DDBK",
+      "886089.DDBK",
+      "885705.DDBK",
+      "910079.DDBK",
+      "886104.DDBK",
+      "885573.DDBK"
+    ],
+    "blockCategoryCodeList": [
+      "000024.BKDL",
+      "000023.BKDL",
+      "000010.BKDL"
+    ],
+    "excIndustryCode": "T01.ZHBK",
+    "is_main_line": false,
+    "is_big_cap": false,
+    "adaptive_active": true,
+    "adaptive_reason": "Tier1 双窗口未一致: 5d avg=-2.10% / 10d avg=-2.10% (阈值 -4%/-2%)"
+  }
+]

@@ -1,0 +1,47 @@
+[
+  {
+    "date": "2025-07-22",
+    "mode": "方向内绿盘低吸前3名",
+    "code": "600620.XSHG",
+    "name": "天宸股份",
+    "xcjw": 387.14,
+    "cjs": 202.54,
+    "jsjl": 0.0,
+    "jssb": 0.0,
+    "pctChange": -0.87,
+    "openPctChange": -9.23,
+    "direction": true,
+    "directionRank": -1,
+    "categoryRank": 0,
+    "reason": "方向内低吸排名1 + 绿断 + 低吸有分",
+    "blockCodeList": [
+      "885878.DDBK",
+      "910433.DDBK",
+      "910551.DDBK",
+      "885522.DDBK",
+      "886104.DDBK",
+      "885520.DDBK",
+      "885490.DDBK",
+      "885770.DDBK",
+      "910026.DDBK",
+      "885921.DDBK",
+      "885587.DDBK",
+      "910319.DDBK",
+      "885531.DDBK",
+      "885915.DDBK"
+    ],
+    "blockCategoryCodeList": [
+      "000035.BKDL",
+      "000023.BKDL",
+      "000018.BKDL",
+      "000019.BKDL",
+      "000037.BKDL",
+      "000007.BKDL",
+      "000009.BKDL"
+    ],
+    "excIndustryCode": "T23.ZHBK",
+    "adaptive_active": false,
+    "adaptive_reason": "excluded by --exclude-modes: 方向内绿盘低吸前3名; Tier1 双窗口未一致: 5d avg=-6.69% / 10d avg=-6.84% (阈值 -7%/-5%)",
+    "is_big_cap": false
+  }
+]

@@ -1,0 +1,45 @@
+[
+  {
+    "date": "2025-05-28",
+    "mode": "方向低位低吸",
+    "code": "600187.XSHG",
+    "name": "国中水务",
+    "xcjw": 173.82,
+    "cjs": 12.26,
+    "jsjl": 0.0,
+    "jssb": 0.0,
+    "pctChange": 0.88,
+    "openPctChange": -2.87,
+    "direction": true,
+    "directionRank": -1,
+    "categoryRank": 0,
+    "reason": "方向内低吸排名3 + 低位 + 竞王达标",
+    "blockCodeList": [
+      "885739.DDBK",
+      "885690.DDBK",
+      "910115.DDBK",
+      "911513.DDBK",
+      "910594.DDBK",
+      "885520.DDBK",
+      "911221.DDBK",
+      "885787.DDBK",
+      "885921.DDBK",
+      "885849.DDBK",
+      "885563.DDBK",
+      "885412.DDBK",
+      "886010.DDBK"
+    ],
+    "blockCategoryCodeList": [
+      "000023.BKDL",
+      "000035.BKDL",
+      "000011.BKDL",
+      "000037.BKDL",
+      "000004.BKDL"
+    ],
+    "excIndustryCode": "T30.ZHBK",
+    "is_main_line": false,
+    "is_big_cap": true,
+    "adaptive_active": true,
+    "adaptive_reason": "Tier3 20d 兜底正向 (avg=+0.59% > -4%)"
+  }
+]

@@ -1,0 +1,44 @@
+[
+  {
+    "date": "2026-03-31",
+    "mode": "首红断低吸",
+    "code": "603387.XSHG",
+    "name": "基蛋生物",
+    "xcjw": 152.97,
+    "cjs": 2.34,
+    "jsjl": 0.0,
+    "jssb": 0.0,
+    "pctChange": -1.28,
+    "openPctChange": -0.59,
+    "direction": true,
+    "directionRank": -1,
+    "categoryRank": 0,
+    "reason": "首红断 + 低吸有分 + 竞王达标",
+    "blockCodeList": [
+      "885867.DDBK",
+      "883303.DDBK",
+      "910001.DDBK",
+      "886022.DDBK",
+      "885520.DDBK",
+      "885917.DDBK",
+      "885994.DDBK",
+      "885413.DDBK",
+      "886012.DDBK",
+      "885539.DDBK",
+      "885952.DDBK",
+      "885989.DDBK"
+    ],
+    "blockCategoryCodeList": [
+      "000023.BKDL",
+      "000015.BKDL",
+      "000019.BKDL",
+      "000037.BKDL",
+      "000009.BKDL"
+    ],
+    "excIndustryCode": "T15.ZHBK",
+    "is_main_line": false,
+    "is_big_cap": false,
+    "adaptive_active": true,
+    "adaptive_reason": "Tier3 20d 兜底正向 (avg=+6.59% > -1%)"
+  }
+]

@@ -1,0 +1,44 @@
+[
+  {
+    "date": "2025-12-01",
+    "mode": "方向内绿盘低吸前3名",
+    "code": "001387.XSHE",
+    "name": "雪祺电气",
+    "xcjw": 544.78,
+    "cjs": 423.42,
+    "jsjl": 0.0,
+    "jssb": 0.0,
+    "pctChange": 7.87,
+    "openPctChange": -3.66,
+    "direction": true,
+    "directionRank": -1,
+    "categoryRank": 0,
+    "reason": "方向内低吸排名2 + 绿断 + 低吸有分",
+    "blockCodeList": [
+      "885785.DDBK",
+      "911454.DDBK",
+      "885959.DDBK",
+      "885598.DDBK",
+      "885905.DDBK",
+      "885921.DDBK",
+      "885545.DDBK",
+      "885835.DDBK",
+      "885461.DDBK",
+      "885543.DDBK",
+      "910452.DDBK"
+    ],
+    "blockCategoryCodeList": [
+      "000014.BKDL",
+      "000035.BKDL",
+      "000010.BKDL",
+      "000015.BKDL",
+      "000027.BKDL",
+      "000032.BKDL",
+      "000029.BKDL"
+    ],
+    "excIndustryCode": "T11.ZHBK",
+    "adaptive_active": false,
+    "adaptive_reason": "excluded by --exclude-modes: 方向内绿盘低吸前3名; Tier1 双窗口未一致: 5d avg=+5.50% / 10d avg=+4.92% (阈值 -7%/-5%)",
+    "is_big_cap": false
+  }
+]

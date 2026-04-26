@@ -1,0 +1,49 @@
+[
+  {
+    "date": "2026-02-12",
+    "mode": "接力低弱转2",
+    "code": "001267.XSHE",
+    "name": "汇绿生态",
+    "xcjw": 209.0,
+    "cjs": 0.0,
+    "jsjl": 8.58,
+    "jssb": 0.0,
+    "pctChange": 2.53,
+    "openPctChange": 1.04,
+    "direction": true,
+    "directionRank": -1,
+    "categoryRank": 0,
+    "reason": "高开弱转强 + 昨日连板 + 竞王达标",
+    "blockCodeList": [
+      "910475.DDBK",
+      "885739.DDBK",
+      "886073.DDBK",
+      "885962.DDBK",
+      "911198.DDBK",
+      "911513.DDBK",
+      "886033.DDBK",
+      "885694.DDBK",
+      "885991.DDBK",
+      "910417.DDBK",
+      "885705.DDBK",
+      "885958.DDBK",
+      "885412.DDBK",
+      "885531.DDBK"
+    ],
+    "blockCategoryCodeList": [
+      "000038.BKDL",
+      "000024.BKDL",
+      "000023.BKDL",
+      "000035.BKDL",
+      "000010.BKDL",
+      "000011.BKDL",
+      "000031.BKDL",
+      "000007.BKDL"
+    ],
+    "excIndustryCode": "T25.ZHBK",
+    "adaptive_active": false,
+    "adaptive_reason": "excluded by --exclude-modes: 接力低弱转2; Tier4 dormant: 20 个交易日样本不足 (n5=0/n10=0/n20=2, 需 1/2/3)",
+    "is_main_line": false,
+    "is_big_cap": false
+  }
+]

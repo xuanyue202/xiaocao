@@ -1,0 +1,46 @@
+[
+  {
+    "date": "2025-11-27",
+    "mode": "首红断低吸",
+    "code": "000566.XSHE",
+    "name": "海南海药",
+    "xcjw": 254.05,
+    "cjs": 10.7,
+    "jsjl": 0.0,
+    "jssb": 0.0,
+    "pctChange": -6.67,
+    "openPctChange": -0.11,
+    "direction": true,
+    "directionRank": -1,
+    "categoryRank": 1,
+    "reason": "首红断 + 低吸有分 + 竞王达标",
+    "blockCodeList": [
+      "886021.DDBK",
+      "885595.DDBK",
+      "910001.DDBK",
+      "885835.DDBK",
+      "885880.DDBK",
+      "885490.DDBK",
+      "885769.DDBK",
+      "885694.DDBK",
+      "886015.DDBK",
+      "885894.DDBK",
+      "885413.DDBK",
+      "885539.DDBK",
+      "885765.DDBK",
+      "886047.DDBK",
+      "911514.DDBK"
+    ],
+    "blockCategoryCodeList": [
+      "000038.BKDL",
+      "000014.BKDL",
+      "000015.BKDL",
+      "000004.BKDL",
+      "000009.BKDL",
+      "000017.BKDL"
+    ],
+    "excIndustryCode": "T15.ZHBK",
+    "is_main_line": false,
+    "is_big_cap": true
+  }
+]

@@ -1,0 +1,43 @@
+[
+  {
+    "date": "2026-04-23",
+    "mode": "接力低弱转1",
+    "code": "001234.XSHE",
+    "name": "泰慕士",
+    "xcjw": 511.16,
+    "cjs": 0.0,
+    "jsjl": 17.78,
+    "jssb": 0.0,
+    "pctChange": 9.05,
+    "openPctChange": 0.88,
+    "direction": false,
+    "directionRank": -1,
+    "categoryRank": -1,
+    "reason": "弱转强 + 昨日连板 + 竞王达标",
+    "blockCodeList": [
+      "885840.DDBK",
+      "886021.DDBK",
+      "885739.DDBK",
+      "886072.DDBK",
+      "911454.DDBK",
+      "910618.DDBK",
+      "885832.DDBK",
+      "886079.DDBK",
+      "885615.DDBK",
+      "885540.DDBK"
+    ],
+    "blockCategoryCodeList": [
+      "000012.BKDL",
+      "000021.BKDL",
+      "000026.BKDL",
+      "000023.BKDL",
+      "000004.BKDL",
+      "000017.BKDL"
+    ],
+    "excIndustryCode": "T13.ZHBK",
+    "is_main_line": false,
+    "is_big_cap": false,
+    "adaptive_active": true,
+    "adaptive_reason": "Tier1 双窗口未一致: 5d avg=+2.67% / 10d avg=+2.67% (阈值 -7%/-4%)"
+  }
+]

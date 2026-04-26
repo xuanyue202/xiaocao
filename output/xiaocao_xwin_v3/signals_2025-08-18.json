@@ -1,0 +1,52 @@
+[
+  {
+    "date": "2025-08-18",
+    "mode": "接力低弱转1",
+    "code": "603002.XSHG",
+    "name": "宏昌电子",
+    "xcjw": 307.59,
+    "cjs": 0.0,
+    "jsjl": 40.09,
+    "jssb": 0.0,
+    "pctChange": 2.34,
+    "openPctChange": 3.3,
+    "direction": true,
+    "directionRank": -1,
+    "categoryRank": 0,
+    "reason": "弱转强 + 昨日连板 + 竞王达标",
+    "blockCodeList": [
+      "886048.DDBK",
+      "910886.DDBK",
+      "886009.DDBK",
+      "885556.DDBK",
+      "885756.DDBK",
+      "885520.DDBK",
+      "910276.DDBK",
+      "886072.DDBK",
+      "885537.DDBK",
+      "885959.DDBK",
+      "910151.DDBK",
+      "885939.DDBK",
+      "910161.DDBK",
+      "885997.DDBK"
+    ],
+    "blockCategoryCodeList": [
+      "000023.BKDL",
+      "000031.BKDL",
+      "000027.BKDL",
+      "000037.BKDL",
+      "000004.BKDL",
+      "000025.BKDL",
+      "000033.BKDL",
+      "000029.BKDL"
+    ],
+    "excIndustryCode": "T08.ZHBK",
+    "is_main_line": false,
+    "is_big_cap": false,
+    "adaptive_active": true,
+    "adaptive_reason": "Tier1 双窗口未一致: 5d avg=+5.53% / 10d avg=+9.70% (阈值 -8%/-5%)",
+    "dropped_modes": [
+      "接力低弱转2"
+    ]
+  }
+]

@@ -1,0 +1,86 @@
+[
+  {
+    "date": "2025-09-26",
+    "mode": "接力低弱转1",
+    "code": "601619.XSHG",
+    "name": "嘉泽新能",
+    "xcjw": 244.55,
+    "cjs": 0.0,
+    "jsjl": 43.85,
+    "jssb": 0.0,
+    "pctChange": 5.34,
+    "openPctChange": 4.59,
+    "direction": true,
+    "directionRank": -1,
+    "categoryRank": 0,
+    "reason": "弱转强 + 昨日连板 + 竞王达标",
+    "blockCodeList": [
+      "885936.DDBK",
+      "910433.DDBK",
+      "885867.DDBK",
+      "885986.DDBK",
+      "111111.DDBK",
+      "885311.DDBK",
+      "885520.DDBK",
+      "886072.DDBK",
+      "885641.DDBK",
+      "886086.DDBK",
+      "886089.DDBK",
+      "885921.DDBK",
+      "910298.DDBK",
+      "885531.DDBK"
+    ],
+    "blockCategoryCodeList": [
+      "000035.BKDL",
+      "000023.BKDL",
+      "000011.BKDL",
+      "000037.BKDL",
+      "000004.BKDL"
+    ],
+    "excIndustryCode": "T16.ZHBK",
+    "is_main_line": false,
+    "is_big_cap": true,
+    "dropped_modes": [
+      "接力低弱转2"
+    ]
+  },
+  {
+    "date": "2025-09-26",
+    "mode": "首红断低吸",
+    "code": "301148.XSHE",
+    "name": "嘉戎技术",
+    "xcjw": 211.69,
+    "cjs": 5.9399999999999995,
+    "jsjl": 0.0,
+    "jssb": 0.0,
+    "pctChange": -3.42,
+    "openPctChange": -0.49,
+    "direction": false,
+    "directionRank": -1,
+    "categoryRank": -1,
+    "reason": "首红断 + 低吸有分 + 竞王达标",
+    "blockCodeList": [
+      "885571.DDBK",
+      "910288.DDBK",
+      "886052.DDBK",
+      "911221.DDBK",
+      "885991.DDBK",
+      "885929.DDBK",
+      "885617.DDBK",
+      "111111.DDBK",
+      "910594.DDBK",
+      "885412.DDBK",
+      "885939.DDBK"
+    ],
+    "blockCategoryCodeList": [
+      "000035.BKDL",
+      "000011.BKDL",
+      "000007.BKDL",
+      "000004.BKDL",
+      "000033.BKDL"
+    ],
+    "excIndustryCode": "T30.ZHBK",
+    "is_main_line": false,
+    "is_big_cap": false
+  }
+]

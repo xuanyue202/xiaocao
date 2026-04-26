@@ -1,0 +1,38 @@
+[
+  {
+    "date": "2025-11-14",
+    "mode": "绿断低吸",
+    "code": "002374.XSHE",
+    "name": "中锐股份",
+    "xcjw": 329.71,
+    "cjs": 267.56,
+    "jsjl": 0.0,
+    "jssb": 0.0,
+    "pctChange": -1.78,
+    "openPctChange": -6.43,
+    "direction": true,
+    "directionRank": -1,
+    "categoryRank": 0,
+    "reason": "绿断 + 低吸有分 + 竞王达标",
+    "blockCodeList": [
+      "885694.DDBK",
+      "885525.DDBK",
+      "883437.DDBK",
+      "910417.DDBK",
+      "885690.DDBK",
+      "885412.DDBK",
+      "910312.DDBK",
+      "885939.DDBK"
+    ],
+    "blockCategoryCodeList": [
+      "000038.BKDL",
+      "000023.BKDL",
+      "000010.BKDL",
+      "000011.BKDL",
+      "000004.BKDL"
+    ],
+    "excIndustryCode": "T14.ZHBK",
+    "is_main_line": false,
+    "is_big_cap": false
+  }
+]

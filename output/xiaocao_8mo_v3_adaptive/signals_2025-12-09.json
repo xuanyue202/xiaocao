@@ -1,0 +1,45 @@
+[
+  {
+    "date": "2025-12-09",
+    "mode": "方向内绿盘低吸前3名",
+    "code": "002300.XSHE",
+    "name": "太阳电缆",
+    "xcjw": 207.26,
+    "cjs": 103.2,
+    "jsjl": 0.0,
+    "jssb": 0.0,
+    "pctChange": 2.17,
+    "openPctChange": -6.65,
+    "direction": true,
+    "directionRank": -1,
+    "categoryRank": 0,
+    "reason": "方向内低吸排名1 + 绿断 + 低吸有分",
+    "blockCodeList": [
+      "885571.DDBK",
+      "910107.DDBK",
+      "885425.DDBK",
+      "910836.DDBK",
+      "885700.DDBK",
+      "911652.DDBK",
+      "885461.DDBK",
+      "885426.DDBK",
+      "885641.DDBK",
+      "885694.DDBK",
+      "885939.DDBK",
+      "885531.DDBK",
+      "911588.DDBK"
+    ],
+    "blockCategoryCodeList": [
+      "000038.BKDL",
+      "000035.BKDL",
+      "000027.BKDL",
+      "000004.BKDL",
+      "000013.BKDL"
+    ],
+    "excIndustryCode": "T26.ZHBK",
+    "adaptive_active": false,
+    "adaptive_reason": "excluded by --exclude-modes: 方向内绿盘低吸前3名; Tier1 双窗口未一致: 5d avg=+6.42% / 10d avg=+4.27% (阈值 -9%/-6%)",
+    "is_main_line": false,
+    "is_big_cap": false
+  }
+]

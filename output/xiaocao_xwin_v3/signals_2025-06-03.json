@@ -1,0 +1,46 @@
+[
+  {
+    "date": "2025-06-03",
+    "mode": "方向低位低吸",
+    "code": "600834.XSHG",
+    "name": "申通地铁",
+    "xcjw": 323.62,
+    "cjs": 117.95,
+    "jsjl": 0.0,
+    "jssb": 0.0,
+    "pctChange": 0.59,
+    "openPctChange": -7.97,
+    "direction": true,
+    "directionRank": -1,
+    "categoryRank": 0,
+    "reason": "方向内低吸排名1 + 低位 + 竞王达标",
+    "blockCodeList": [
+      "885936.DDBK",
+      "886021.DDBK",
+      "885739.DDBK",
+      "885986.DDBK",
+      "885461.DDBK",
+      "885493.DDBK",
+      "885806.DDBK",
+      "885920.DDBK",
+      "910129.DDBK",
+      "910324.DDBK",
+      "885736.DDBK",
+      "885915.DDBK"
+    ],
+    "blockCategoryCodeList": [
+      "000035.BKDL",
+      "000023.BKDL",
+      "000011.BKDL",
+      "000006.BKDL",
+      "000027.BKDL",
+      "000007.BKDL",
+      "000017.BKDL"
+    ],
+    "excIndustryCode": "T17.ZHBK",
+    "is_main_line": false,
+    "is_big_cap": false,
+    "adaptive_active": true,
+    "adaptive_reason": "Tier2 5d 单窗口正向 (avg=+1.18% > -7%)"
+  }
+]

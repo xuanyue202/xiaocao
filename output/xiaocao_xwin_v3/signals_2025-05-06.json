@@ -1,0 +1,136 @@
+[
+  {
+    "date": "2025-05-06",
+    "mode": "接力低弱转1",
+    "code": "002581.XSHE",
+    "name": "ST未名",
+    "xcjw": 274.68,
+    "cjs": 0.0,
+    "jsjl": 49.24,
+    "jssb": 0.0,
+    "pctChange": 3.33,
+    "openPctChange": 4.54,
+    "direction": true,
+    "directionRank": -1,
+    "categoryRank": 0,
+    "reason": "弱转强 + 昨日连板 + 竞王达标",
+    "blockCodeList": [
+      "885845.DDBK",
+      "885739.DDBK",
+      "885694.DDBK",
+      "910001.DDBK",
+      "885699.DDBK",
+      "885989.DDBK",
+      "885927.DDBK",
+      "885403.DDBK"
+    ],
+    "blockCategoryCodeList": [
+      "000038.BKDL",
+      "000023.BKDL",
+      "000028.BKDL",
+      "000009.BKDL"
+    ],
+    "excIndustryCode": "T15.ZHBK",
+    "is_main_line": false,
+    "is_big_cap": false,
+    "adaptive_active": false,
+    "adaptive_reason": "Tier2 5d 单窗口保守: avg=-17.82%≤-8% n=1 (10d n<2)",
+    "dropped_modes": [
+      "接力低弱转2"
+    ]
+  },
+  {
+    "date": "2025-05-06",
+    "mode": "接力低弱转1",
+    "code": "002664.XSHE",
+    "name": "信质集团",
+    "xcjw": 256.55,
+    "cjs": 0.0,
+    "jsjl": 45.31,
+    "jssb": 0.0,
+    "pctChange": 5.28,
+    "openPctChange": 4.47,
+    "direction": true,
+    "directionRank": -1,
+    "categoryRank": 0,
+    "reason": "弱转强 + 昨日连板 + 竞王达标",
+    "blockCodeList": [
+      "885785.DDBK",
+      "885467.DDBK",
+      "885517.DDBK",
+      "910214.DDBK",
+      "886069.DDBK",
+      "885545.DDBK",
+      "885564.DDBK",
+      "886067.DDBK",
+      "910967.DDBK",
+      "885694.DDBK",
+      "885806.DDBK",
+      "885834.DDBK",
+      "885789.DDBK",
+      "911349.DDBK",
+      "885431.DDBK",
+      "885997.DDBK"
+    ],
+    "blockCategoryCodeList": [
+      "000038.BKDL",
+      "000014.BKDL",
+      "000035.BKDL",
+      "000006.BKDL",
+      "000027.BKDL",
+      "000033.BKDL"
+    ],
+    "excIndustryCode": "T09.ZHBK",
+    "is_main_line": false,
+    "is_big_cap": false,
+    "adaptive_active": false,
+    "adaptive_reason": "Tier2 5d 单窗口保守: avg=-17.82%≤-8% n=1 (10d n<2)",
+    "dropped_modes": [
+      "接力低弱转2"
+    ]
+  },
+  {
+    "date": "2025-05-06",
+    "mode": "绿断低吸",
+    "code": "603065.XSHG",
+    "name": "宿迁联盛",
+    "xcjw": 419.36,
+    "cjs": 553.73,
+    "jsjl": 0.0,
+    "jssb": 0.0,
+    "pctChange": 4.28,
+    "openPctChange": -5.92,
+    "direction": false,
+    "directionRank": -1,
+    "categoryRank": -1,
+    "reason": "绿断 + 低吸有分 + 竞王达标",
+    "blockCodeList": [
+      "885520.DDBK",
+      "910276.DDBK",
+      "885840.DDBK",
+      "885586.DDBK",
+      "910433.DDBK",
+      "885598.DDBK",
+      "885929.DDBK",
+      "885563.DDBK",
+      "885544.DDBK"
+    ],
+    "blockCategoryCodeList": [
+      "000012.BKDL",
+      "000036.BKDL",
+      "000026.BKDL",
+      "000011.BKDL",
+      "000037.BKDL",
+      "000032.BKDL",
+      "000033.BKDL"
+    ],
+    "excIndustryCode": "T03.ZHBK",
+    "is_main_line": false,
+    "is_big_cap": false,
+    "adaptive_active": false,
+    "adaptive_reason": "Tier4 dormant: 20 个交易日样本不足 (n5=0/n10=0/n20=1, 需 1/2/3)",
+    "dropped_modes": [
+      "全盘低位低吸"
+    ]
+  }
+]

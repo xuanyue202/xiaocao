@@ -1,0 +1,80 @@
+[
+  {
+    "date": "2025-10-15",
+    "mode": "方向内绿盘低吸前3名",
+    "code": "600382.XSHG",
+    "name": "广东明珠",
+    "xcjw": 198.75,
+    "cjs": 28.72,
+    "jsjl": 0.0,
+    "jssb": 0.0,
+    "pctChange": -1.55,
+    "openPctChange": -4.44,
+    "direction": true,
+    "directionRank": -1,
+    "categoryRank": 0,
+    "reason": "方向内低吸排名2 + 绿断 + 低吸有分",
+    "blockCodeList": [
+      "885739.DDBK",
+      "886072.DDBK",
+      "885525.DDBK",
+      "885742.DDBK",
+      "910399.DDBK",
+      "886104.DDBK",
+      "885690.DDBK",
+      "885835.DDBK",
+      "885431.DDBK",
+      "885564.DDBK"
+    ],
+    "blockCategoryCodeList": [
+      "000023.BKDL",
+      "000010.BKDL",
+      "000011.BKDL",
+      "000015.BKDL",
+      "000027.BKDL"
+    ],
+    "excIndustryCode": "T04.ZHBK",
+    "is_main_line": false,
+    "is_big_cap": false
+  },
+  {
+    "date": "2025-10-15",
+    "mode": "方向内绿盘低吸前3名",
+    "code": "000006.XSHE",
+    "name": "深振业A",
+    "xcjw": 134.32,
+    "cjs": 17.66,
+    "jsjl": 0.0,
+    "jssb": 0.0,
+    "pctChange": -4.9,
+    "openPctChange": -5.37,
+    "direction": true,
+    "directionRank": -1,
+    "categoryRank": 0,
+    "reason": "方向内低吸排名3 + 绿断 + 低吸有分",
+    "blockCodeList": [
+      "885697.DDBK",
+      "910934.DDBK",
+      "886021.DDBK",
+      "885694.DDBK",
+      "910551.DDBK",
+      "885867.DDBK",
+      "885991.DDBK",
+      "885521.DDBK",
+      "885663.DDBK",
+      "910161.DDBK",
+      "885915.DDBK"
+    ],
+    "blockCategoryCodeList": [
+      "000038.BKDL",
+      "000023.BKDL",
+      "000007.BKDL",
+      "000037.BKDL",
+      "000004.BKDL",
+      "000017.BKDL"
+    ],
+    "excIndustryCode": "T18.ZHBK",
+    "is_main_line": false,
+    "is_big_cap": true
+  }
+]

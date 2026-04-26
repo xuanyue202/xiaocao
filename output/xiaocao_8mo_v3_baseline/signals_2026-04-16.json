@@ -1,0 +1,46 @@
+[
+  {
+    "date": "2026-04-16",
+    "mode": "接力低弱转1",
+    "code": "000788.XSHE",
+    "name": "北大医药",
+    "xcjw": 343.6,
+    "cjs": 0.0,
+    "jsjl": 38.88,
+    "jssb": 0.0,
+    "pctChange": -3.48,
+    "openPctChange": 1.92,
+    "direction": false,
+    "directionRank": -1,
+    "categoryRank": -1,
+    "reason": "弱转强 + 昨日连板 + 竞王达标",
+    "blockCodeList": [
+      "885514.DDBK",
+      "885739.DDBK",
+      "885661.DDBK",
+      "910001.DDBK",
+      "885403.DDBK",
+      "885856.DDBK",
+      "885490.DDBK",
+      "885502.DDBK",
+      "886086.DDBK",
+      "886079.DDBK",
+      "885539.DDBK",
+      "886097.DDBK"
+    ],
+    "blockCategoryCodeList": [
+      "000023.BKDL",
+      "000006.BKDL",
+      "000004.BKDL",
+      "000009.BKDL"
+    ],
+    "excIndustryCode": "T15.ZHBK",
+    "is_main_line": false,
+    "is_big_cap": false,
+    "adaptive_active": true,
+    "adaptive_reason": "Tier2 10d 单窗口正向 (avg=+5.03% > -5%)",
+    "dropped_modes": [
+      "接力低弱转2"
+    ]
+  }
+]

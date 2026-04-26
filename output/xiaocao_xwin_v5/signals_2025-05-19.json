@@ -1,0 +1,82 @@
+[
+  {
+    "date": "2025-05-19",
+    "mode": "首红断低吸",
+    "code": "000566.XSHE",
+    "name": "海南海药",
+    "xcjw": 167.92,
+    "cjs": 2.0,
+    "jsjl": 0.0,
+    "jssb": 0.0,
+    "pctChange": 0.53,
+    "openPctChange": -0.18,
+    "direction": false,
+    "directionRank": -1,
+    "categoryRank": -1,
+    "reason": "首红断 + 低吸有分 + 竞王达标",
+    "blockCodeList": [
+      "886021.DDBK",
+      "885595.DDBK",
+      "910001.DDBK",
+      "885835.DDBK",
+      "885880.DDBK",
+      "885490.DDBK",
+      "885769.DDBK",
+      "885694.DDBK",
+      "886015.DDBK",
+      "885894.DDBK",
+      "885413.DDBK",
+      "885539.DDBK",
+      "885765.DDBK",
+      "886047.DDBK",
+      "911514.DDBK"
+    ],
+    "blockCategoryCodeList": [
+      "000038.BKDL",
+      "000014.BKDL",
+      "000015.BKDL",
+      "000004.BKDL",
+      "000009.BKDL",
+      "000017.BKDL"
+    ],
+    "excIndustryCode": "T15.ZHBK",
+    "is_main_line": false,
+    "is_big_cap": true,
+    "adaptive_active": false,
+    "adaptive_reason": "Tier4 dormant: 20 个交易日样本不足 (n5=0/n10=0/n20=0, 需 1/2/3)"
+  },
+  {
+    "date": "2025-05-19",
+    "mode": "方向内绿盘低吸前3名",
+    "code": "605055.XSHG",
+    "name": "迎丰股份",
+    "xcjw": 232.39,
+    "cjs": 59.8,
+    "jsjl": 0.0,
+    "jssb": 0.0,
+    "pctChange": 18.7,
+    "openPctChange": -7.26,
+    "direction": true,
+    "directionRank": -1,
+    "categoryRank": 0,
+    "reason": "方向内低吸排名3 + 绿断 + 低吸有分",
+    "blockCodeList": [
+      "885924.DDBK",
+      "885517.DDBK",
+      "910618.DDBK",
+      "886008.DDBK",
+      "885832.DDBK",
+      "886079.DDBK"
+    ],
+    "blockCategoryCodeList": [
+      "000023.BKDL",
+      "000004.BKDL",
+      "000033.BKDL"
+    ],
+    "excIndustryCode": "T13.ZHBK",
+    "adaptive_active": false,
+    "adaptive_reason": "excluded by --exclude-modes: 方向内绿盘低吸前3名; Tier1 双窗口未一致: 5d avg=-6.63% / 10d avg=-2.16% (阈值 -7%/-4%)",
+    "is_main_line": false,
+    "is_big_cap": false
+  }
+]

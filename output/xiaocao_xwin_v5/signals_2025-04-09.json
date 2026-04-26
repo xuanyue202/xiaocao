@@ -1,0 +1,45 @@
+[
+  {
+    "date": "2025-04-09",
+    "mode": "方向低位低吸",
+    "code": "002631.XSHE",
+    "name": "德尔未来",
+    "xcjw": 175.64,
+    "cjs": 31.62,
+    "jsjl": 0.0,
+    "jssb": 0.0,
+    "pctChange": 2.25,
+    "openPctChange": -5.24,
+    "direction": true,
+    "directionRank": -1,
+    "categoryRank": 0,
+    "reason": "方向内低吸排名3 + 低位 + 竞王达标",
+    "blockCodeList": [
+      "910276.DDBK",
+      "885420.DDBK",
+      "886052.DDBK",
+      "885783.DDBK",
+      "910399.DDBK",
+      "885809.DDBK",
+      "885832.DDBK",
+      "885478.DDBK",
+      "885563.DDBK",
+      "885355.DDBK",
+      "885888.DDBK"
+    ],
+    "blockCategoryCodeList": [
+      "000010.BKDL",
+      "000011.BKDL",
+      "000007.BKDL",
+      "000004.BKDL",
+      "000001.BKDL",
+      "000025.BKDL",
+      "000029.BKDL"
+    ],
+    "excIndustryCode": "980373.ZHBK",
+    "is_main_line": false,
+    "is_big_cap": false,
+    "adaptive_active": true,
+    "adaptive_reason": "Tier1 双窗口未一致: 5d avg=+6.77% / 10d avg=+6.48% (阈值 -6%/-4%)"
+  }
+]

@@ -1,0 +1,47 @@
+[
+  {
+    "date": "2025-07-23",
+    "mode": "接力低弱转1",
+    "code": "601699.XSHG",
+    "name": "潞安环能",
+    "xcjw": 350.3,
+    "cjs": 0.0,
+    "jsjl": 98.83,
+    "jssb": 0.0,
+    "pctChange": -2.15,
+    "openPctChange": 7.14,
+    "direction": false,
+    "directionRank": -1,
+    "categoryRank": -1,
+    "reason": "弱转强 + 昨日连板 + 竞王达标",
+    "blockCodeList": [
+      "886021.DDBK",
+      "885398.DDBK",
+      "885867.DDBK",
+      "883303.DDBK",
+      "883300.DDBK",
+      "885914.DDBK",
+      "883302.DDBK",
+      "885520.DDBK",
+      "886072.DDBK",
+      "885745.DDBK",
+      "883304.DDBK",
+      "910045.DDBK"
+    ],
+    "blockCategoryCodeList": [
+      "000008.BKDL",
+      "000038.BKDL",
+      "000023.BKDL",
+      "000037.BKDL",
+      "000017.BKDL"
+    ],
+    "excIndustryCode": "T02.ZHBK",
+    "is_main_line": false,
+    "is_big_cap": true,
+    "adaptive_active": false,
+    "adaptive_reason": "Tier1 双窗口未一致: 5d avg=+2.29% / 10d avg=+1.72% (阈值 -5%/-3%); openPctChange ≥ 6.0% (chasing high open)",
+    "dropped_modes": [
+      "接力低弱转2"
+    ]
+  }
+]

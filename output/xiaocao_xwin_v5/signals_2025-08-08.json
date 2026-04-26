@@ -1,0 +1,41 @@
+[
+  {
+    "date": "2025-08-08",
+    "mode": "方向内绿盘低吸前3名",
+    "code": "603059.XSHG",
+    "name": "倍加洁",
+    "xcjw": 387.38,
+    "cjs": 318.62,
+    "jsjl": 0.0,
+    "jssb": 0.0,
+    "pctChange": -10.010000228881836,
+    "openPctChange": -10.03,
+    "direction": false,
+    "directionRank": -1,
+    "categoryRank": -1,
+    "reason": "方向内低吸排名1 + 绿断 + 低吸有分",
+    "blockCodeList": [
+      "885840.DDBK",
+      "885420.DDBK",
+      "910001.DDBK",
+      "911298.DDBK",
+      "885642.DDBK",
+      "885835.DDBK",
+      "910724.DDBK",
+      "885540.DDBK",
+      "885703.DDBK"
+    ],
+    "blockCategoryCodeList": [
+      "000021.BKDL",
+      "000026.BKDL",
+      "000010.BKDL",
+      "000015.BKDL",
+      "000009.BKDL"
+    ],
+    "excIndustryCode": "T31.ZHBK",
+    "adaptive_active": false,
+    "adaptive_reason": "excluded by --exclude-modes: 方向内绿盘低吸前3名; Tier3 20d 兜底: avg=-6.58%≤-3% n=5 (5d/10d 数据不足)",
+    "is_main_line": false,
+    "is_big_cap": false
+  }
+]

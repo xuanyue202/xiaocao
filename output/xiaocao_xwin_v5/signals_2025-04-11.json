@@ -1,0 +1,49 @@
+[
+  {
+    "date": "2025-04-11",
+    "mode": "红断低吸",
+    "code": "002688.XSHE",
+    "name": "金河生物",
+    "xcjw": 235.52,
+    "cjs": 346.89,
+    "jsjl": 0.0,
+    "jssb": 0.0,
+    "pctChange": -6.09,
+    "openPctChange": -4.29,
+    "direction": true,
+    "directionRank": -1,
+    "categoryRank": 0,
+    "reason": "红断 + 低吸有分 + 竞王达标",
+    "blockCodeList": [
+      "885846.DDBK",
+      "885508.DDBK",
+      "885811.DDBK",
+      "885694.DDBK",
+      "886086.DDBK",
+      "885995.DDBK",
+      "886012.DDBK",
+      "910079.DDBK",
+      "885904.DDBK",
+      "911603.DDBK",
+      "885412.DDBK",
+      "885728.DDBK"
+    ],
+    "blockCategoryCodeList": [
+      "000038.BKDL",
+      "000024.BKDL",
+      "000010.BKDL",
+      "000011.BKDL",
+      "000019.BKDL",
+      "000004.BKDL",
+      "000034.BKDL",
+      "000009.BKDL"
+    ],
+    "excIndustryCode": "980371.ZHBK",
+    "is_big_cap": false,
+    "adaptive_active": false,
+    "adaptive_reason": "Tier1 双窗口确认: 5d avg=-8.66%≤-4% AND 10d avg=-10.20%≤-2% (n=3/4)",
+    "dropped_modes": [
+      "孕线低吸"
+    ]
+  }
+]

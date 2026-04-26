@@ -1,0 +1,82 @@
+[
+  {
+    "date": "2025-12-30",
+    "mode": "方向内绿盘低吸前3名",
+    "code": "605007.XSHG",
+    "name": "五洲特纸",
+    "xcjw": 375.34,
+    "cjs": 181.72,
+    "jsjl": 0.0,
+    "jssb": 0.0,
+    "pctChange": 7.52,
+    "openPctChange": -9.11,
+    "direction": true,
+    "directionRank": -1,
+    "categoryRank": 0,
+    "reason": "方向内低吸排名1 + 绿断 + 低吸有分",
+    "blockCodeList": [
+      "885924.DDBK",
+      "885520.DDBK",
+      "886079.DDBK",
+      "885939.DDBK",
+      "910624.DDBK"
+    ],
+    "blockCategoryCodeList": [
+      "000023.BKDL",
+      "000037.BKDL",
+      "000004.BKDL"
+    ],
+    "excIndustryCode": "T14.ZHBK",
+    "adaptive_active": false,
+    "adaptive_reason": "excluded by --exclude-modes: 方向内绿盘低吸前3名; Tier2 10d 单窗口正向 (avg=+8.23% > -6%)",
+    "is_main_line": false,
+    "is_big_cap": false
+  },
+  {
+    "date": "2025-12-30",
+    "mode": "方向内绿盘低吸前3名",
+    "code": "002363.XSHE",
+    "name": "隆基机械",
+    "xcjw": 669.05,
+    "cjs": 463.56,
+    "jsjl": 0.0,
+    "jssb": 0.0,
+    "pctChange": 14.04,
+    "openPctChange": -7.25,
+    "direction": true,
+    "directionRank": -1,
+    "categoryRank": 0,
+    "reason": "方向内低吸排名1 + 绿断 + 低吸有分",
+    "blockCodeList": [
+      "885840.DDBK",
+      "885467.DDBK",
+      "910214.DDBK",
+      "910462.DDBK",
+      "885700.DDBK",
+      "885619.DDBK",
+      "886078.DDBK",
+      "885806.DDBK",
+      "885834.DDBK",
+      "886061.DDBK",
+      "911349.DDBK",
+      "885431.DDBK",
+      "885976.DDBK",
+      "885797.DDBK",
+      "885997.DDBK"
+    ],
+    "blockCategoryCodeList": [
+      "000012.BKDL",
+      "000003.BKDL",
+      "000026.BKDL",
+      "000006.BKDL",
+      "000027.BKDL",
+      "000013.BKDL",
+      "000033.BKDL"
+    ],
+    "excIndustryCode": "T09.ZHBK",
+    "adaptive_active": false,
+    "adaptive_reason": "excluded by --exclude-modes: 方向内绿盘低吸前3名; Tier2 10d 单窗口正向 (avg=+8.23% > -6%)",
+    "is_main_line": false,
+    "is_big_cap": false
+  }
+]

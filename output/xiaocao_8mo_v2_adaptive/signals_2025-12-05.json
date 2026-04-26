@@ -1,0 +1,52 @@
+[
+  {
+    "date": "2025-12-05",
+    "mode": "接力低弱转1",
+    "code": "600635.XSHG",
+    "name": "大众公用",
+    "xcjw": 286.09,
+    "cjs": 0.0,
+    "jsjl": 1.63,
+    "jssb": 0.0,
+    "pctChange": -9.84,
+    "openPctChange": 0.12,
+    "direction": true,
+    "directionRank": -1,
+    "categoryRank": 0,
+    "reason": "弱转强 + 昨日连板 + 竞王达标",
+    "blockCodeList": [
+      "885936.DDBK",
+      "885867.DDBK",
+      "886104.DDBK",
+      "911198.DDBK",
+      "885729.DDBK",
+      "885461.DDBK",
+      "886001.DDBK",
+      "885456.DDBK",
+      "885520.DDBK",
+      "910967.DDBK",
+      "885430.DDBK",
+      "885787.DDBK",
+      "885413.DDBK",
+      "910054.DDBK",
+      "910069.DDBK",
+      "885431.DDBK",
+      "885412.DDBK",
+      "911646.DDBK"
+    ],
+    "blockCategoryCodeList": [
+      "000035.BKDL",
+      "000023.BKDL",
+      "000011.BKDL",
+      "000015.BKDL",
+      "000027.BKDL",
+      "000037.BKDL",
+      "000005.BKDL"
+    ],
+    "excIndustryCode": "T16.ZHBK",
+    "is_main_line": false,
+    "is_big_cap": true,
+    "adaptive_active": true,
+    "adaptive_reason": "Tier1 双窗口未一致: 5d avg=+0.25% / 10d avg=+0.25% (阈值 -15%/-10%)"
+  }
+]

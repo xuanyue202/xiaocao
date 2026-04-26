@@ -1,0 +1,40 @@
+[
+  {
+    "date": "2025-09-29",
+    "mode": "接力低弱转2",
+    "code": "603163.XSHG",
+    "name": "圣晖集成",
+    "xcjw": 202.23,
+    "cjs": 0.0,
+    "jsjl": 15.36,
+    "jssb": 0.0,
+    "pctChange": -3.88,
+    "openPctChange": 1.61,
+    "direction": false,
+    "directionRank": -1,
+    "categoryRank": -1,
+    "reason": "高开弱转强 + 昨日连板 + 竞王达标",
+    "blockCodeList": [
+      "886072.DDBK",
+      "910417.DDBK",
+      "885832.DDBK",
+      "885786.DDBK",
+      "885494.DDBK",
+      "911652.DDBK",
+      "885897.DDBK",
+      "885939.DDBK",
+      "910161.DDBK",
+      "885756.DDBK"
+    ],
+    "blockCategoryCodeList": [
+      "000023.BKDL",
+      "000018.BKDL",
+      "000031.BKDL",
+      "000004.BKDL",
+      "000033.BKDL"
+    ],
+    "excIndustryCode": "T25.ZHBK",
+    "is_main_line": false,
+    "is_big_cap": false
+  }
+]

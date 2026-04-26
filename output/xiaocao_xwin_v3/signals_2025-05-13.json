@@ -1,0 +1,50 @@
+[
+  {
+    "date": "2025-05-13",
+    "mode": "全盘低位低吸",
+    "code": "301050.XSHE",
+    "name": "雷电微力",
+    "xcjw": 164.94,
+    "cjs": 2.35,
+    "jsjl": 0.0,
+    "jssb": 0.0,
+    "pctChange": -3.48,
+    "openPctChange": -1.99,
+    "direction": true,
+    "directionRank": -1,
+    "categoryRank": 0,
+    "reason": "低吸池前2 + 低位 + 竞王达标",
+    "blockCodeList": [
+      "886009.DDBK",
+      "885929.DDBK",
+      "885574.DDBK",
+      "910836.DDBK",
+      "910462.DDBK",
+      "885700.DDBK",
+      "885564.DDBK",
+      "886035.DDBK",
+      "885756.DDBK",
+      "886078.DDBK",
+      "885694.DDBK",
+      "886086.DDBK",
+      "886037.DDBK",
+      "886076.DDBK",
+      "910319.DDBK",
+      "911506.DDBK"
+    ],
+    "blockCategoryCodeList": [
+      "000038.BKDL",
+      "000031.BKDL",
+      "000027.BKDL",
+      "000004.BKDL",
+      "000013.BKDL",
+      "000033.BKDL",
+      "000025.BKDL"
+    ],
+    "excIndustryCode": "T24.ZHBK",
+    "is_main_line": false,
+    "is_big_cap": false,
+    "adaptive_active": false,
+    "adaptive_reason": "Tier4 dormant: 20 个交易日样本不足 (n5=0/n10=1/n20=2, 需 1/2/3)"
+  }
+]

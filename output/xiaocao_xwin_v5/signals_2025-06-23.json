@@ -1,0 +1,50 @@
+[
+  {
+    "date": "2025-06-23",
+    "mode": "接力低弱转1",
+    "code": "600794.XSHG",
+    "name": "保税科技",
+    "xcjw": 414.91,
+    "cjs": 0.0,
+    "jsjl": 62.77,
+    "jssb": 0.0,
+    "pctChange": 6.94,
+    "openPctChange": 2.94,
+    "direction": true,
+    "directionRank": -1,
+    "categoryRank": 0,
+    "reason": "弱转强 + 昨日连板 + 竞王达标",
+    "blockCodeList": [
+      "886021.DDBK",
+      "885733.DDBK",
+      "910734.DDBK",
+      "886041.DDBK",
+      "885832.DDBK",
+      "885988.DDBK",
+      "885520.DDBK",
+      "910584.DDBK",
+      "885420.DDBK",
+      "885413.DDBK",
+      "885770.DDBK",
+      "885866.DDBK",
+      "885976.DDBK"
+    ],
+    "blockCategoryCodeList": [
+      "000003.BKDL",
+      "000018.BKDL",
+      "000010.BKDL",
+      "000015.BKDL",
+      "000037.BKDL",
+      "000004.BKDL",
+      "000017.BKDL"
+    ],
+    "excIndustryCode": "T17.ZHBK",
+    "is_main_line": false,
+    "is_big_cap": true,
+    "adaptive_active": true,
+    "adaptive_reason": "Tier1 双窗口未一致: 5d avg=+9.90% / 10d avg=+3.30% (阈值 -7%/-4%)",
+    "dropped_modes": [
+      "接力低弱转2"
+    ]
+  }
+]

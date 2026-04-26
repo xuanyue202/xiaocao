@@ -1,0 +1,51 @@
+[
+  {
+    "date": "2025-05-15",
+    "mode": "方向内绿盘低吸前3名",
+    "code": "002981.XSHE",
+    "name": "朝阳科技",
+    "xcjw": 206.73,
+    "cjs": 3.93,
+    "jsjl": 0.0,
+    "jssb": 0.0,
+    "pctChange": -7.26,
+    "openPctChange": -2.03,
+    "direction": false,
+    "directionRank": -1,
+    "categoryRank": -1,
+    "reason": "方向内低吸排名3 + 绿断 + 低吸有分",
+    "blockCodeList": [
+      "885785.DDBK",
+      "885840.DDBK",
+      "885517.DDBK",
+      "885564.DDBK",
+      "910527.DDBK",
+      "885800.DDBK",
+      "885709.DDBK",
+      "885454.DDBK",
+      "885921.DDBK",
+      "885376.DDBK",
+      "885539.DDBK",
+      "885494.DDBK",
+      "885868.DDBK"
+    ],
+    "blockCategoryCodeList": [
+      "000012.BKDL",
+      "000026.BKDL",
+      "000014.BKDL",
+      "000035.BKDL",
+      "000018.BKDL",
+      "000006.BKDL",
+      "000027.BKDL",
+      "000009.BKDL",
+      "000033.BKDL",
+      "000029.BKDL",
+      "000025.BKDL"
+    ],
+    "excIndustryCode": "T08.ZHBK",
+    "adaptive_active": false,
+    "adaptive_reason": "excluded by --exclude-modes: 方向内绿盘低吸前3名; Tier2 5d 单窗口正向 (avg=+2.32% > -8%)",
+    "is_main_line": false,
+    "is_big_cap": false
+  }
+]

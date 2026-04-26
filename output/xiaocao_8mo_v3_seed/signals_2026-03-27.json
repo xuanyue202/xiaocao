@@ -1,0 +1,53 @@
+[
+  {
+    "date": "2026-03-27",
+    "mode": "方向内绿盘低吸前3名",
+    "code": "605299.XSHG",
+    "name": "舒华体育",
+    "xcjw": 315.45,
+    "cjs": 55.07,
+    "jsjl": 0.0,
+    "jssb": 0.0,
+    "pctChange": 13.17,
+    "openPctChange": -2.8,
+    "direction": true,
+    "directionRank": -1,
+    "categoryRank": 0,
+    "reason": "方向内低吸排名1 + 绿断 + 低吸有分",
+    "blockCodeList": [
+      "885701.DDBK",
+      "886100.DDBK",
+      "885788.DDBK",
+      "885522.DDBK",
+      "885825.DDBK",
+      "886019.DDBK",
+      "886083.DDBK",
+      "911652.DDBK",
+      "885703.DDBK",
+      "885580.DDBK",
+      "885420.DDBK",
+      "886072.DDBK",
+      "885806.DDBK",
+      "910445.DDBK",
+      "885642.DDBK",
+      "885939.DDBK",
+      "885784.DDBK",
+      "885728.DDBK",
+      "885923.DDBK",
+      "885615.DDBK"
+    ],
+    "blockCategoryCodeList": [
+      "000012.BKDL",
+      "000026.BKDL",
+      "000023.BKDL",
+      "000010.BKDL",
+      "000006.BKDL",
+      "000019.BKDL",
+      "000004.BKDL",
+      "000034.BKDL",
+      "000009.BKDL"
+    ],
+    "excIndustryCode": "T14.ZHBK",
+    "is_big_cap": false
+  }
+]

@@ -1,0 +1,40 @@
+[
+  {
+    "date": "2025-04-18",
+    "mode": "方向低位低吸",
+    "code": "000668.XSHE",
+    "name": "*ST荣控",
+    "xcjw": 385.63,
+    "cjs": 0.0,
+    "jsjl": 0.0,
+    "jssb": 0.0,
+    "pctChange": 3.38,
+    "openPctChange": null,
+    "direction": false,
+    "directionRank": -1,
+    "categoryRank": -1,
+    "reason": "方向内低吸排名1 + 低位 + 竞王达标",
+    "blockCodeList": [
+      "885420.DDBK",
+      "885788.DDBK",
+      "885739.DDBK",
+      "910551.DDBK",
+      "885699.DDBK",
+      "885539.DDBK",
+      "885915.DDBK"
+    ],
+    "blockCategoryCodeList": [
+      "000012.BKDL",
+      "000023.BKDL",
+      "000010.BKDL",
+      "000007.BKDL",
+      "000028.BKDL",
+      "000009.BKDL"
+    ],
+    "excIndustryCode": "T18.ZHBK",
+    "is_main_line": false,
+    "is_big_cap": false,
+    "adaptive_active": true,
+    "adaptive_reason": "Tier1 双窗口未一致: 5d avg=-5.68% / 10d avg=-0.99% (阈值 -7%/-4%)"
+  }
+]

@@ -1,0 +1,54 @@
+[
+  {
+    "date": "2026-02-25",
+    "mode": "绿断低吸",
+    "code": "002951.XSHE",
+    "name": "金时科技",
+    "xcjw": 314.63,
+    "cjs": 85.51,
+    "jsjl": 0.0,
+    "jssb": 0.0,
+    "pctChange": -6.099999904632568,
+    "openPctChange": -6.1,
+    "direction": true,
+    "directionRank": -1,
+    "categoryRank": 0,
+    "reason": "绿断 + 低吸有分 + 竞王达标",
+    "blockCodeList": [
+      "910433.DDBK",
+      "910886.DDBK",
+      "885749.DDBK",
+      "885699.DDBK",
+      "885851.DDBK",
+      "885641.DDBK",
+      "885694.DDBK",
+      "886086.DDBK",
+      "885742.DDBK",
+      "885921.DDBK",
+      "885886.DDBK",
+      "910556.DDBK",
+      "910161.DDBK",
+      "910624.DDBK",
+      "885976.DDBK"
+    ],
+    "blockCategoryCodeList": [
+      "000003.BKDL",
+      "000038.BKDL",
+      "000035.BKDL",
+      "000023.BKDL",
+      "000010.BKDL",
+      "000015.BKDL",
+      "000027.BKDL",
+      "000004.BKDL",
+      "000028.BKDL"
+    ],
+    "excIndustryCode": "T14.ZHBK",
+    "is_main_line": false,
+    "is_big_cap": false,
+    "adaptive_active": true,
+    "adaptive_reason": "Tier2 5d 单窗口正向 (avg=-7.44% > -10%)",
+    "dropped_modes": [
+      "方向内绿盘低吸前3名"
+    ]
+  }
+]

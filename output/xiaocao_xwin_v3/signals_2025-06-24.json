@@ -1,0 +1,37 @@
+[
+  {
+    "date": "2025-06-24",
+    "mode": "首红断低吸",
+    "code": "603120.XSHG",
+    "name": "肯特催化",
+    "xcjw": 199.07,
+    "cjs": 12.66,
+    "jsjl": 0.0,
+    "jssb": 0.0,
+    "pctChange": 1.84,
+    "openPctChange": -0.68,
+    "direction": true,
+    "directionRank": -1,
+    "categoryRank": 1,
+    "reason": "首红断 + 低吸有分 + 竞王达标",
+    "blockCodeList": [
+      "885903.DDBK",
+      "885598.DDBK",
+      "885929.DDBK",
+      "885905.DDBK",
+      "885756.DDBK",
+      "885864.DDBK"
+    ],
+    "blockCategoryCodeList": [
+      "000031.BKDL",
+      "000022.BKDL",
+      "000032.BKDL",
+      "000033.BKDL"
+    ],
+    "excIndustryCode": null,
+    "is_main_line": false,
+    "is_big_cap": false,
+    "adaptive_active": false,
+    "adaptive_reason": "Tier4 dormant: 20 个交易日样本不足 (n5=0/n10=1/n20=1, 需 1/2/3)"
+  }
+]

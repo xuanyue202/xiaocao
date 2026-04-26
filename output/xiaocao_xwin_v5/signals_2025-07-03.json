@@ -1,0 +1,43 @@
+[
+  {
+    "date": "2025-07-03",
+    "mode": "接力低弱转1",
+    "code": "600876.XSHG",
+    "name": "凯盛新能",
+    "xcjw": 362.01,
+    "cjs": 0.0,
+    "jsjl": 40.2,
+    "jssb": 0.0,
+    "pctChange": 0.58,
+    "openPctChange": 2.81,
+    "direction": true,
+    "directionRank": -1,
+    "categoryRank": 0,
+    "reason": "弱转强 + 昨日连板 + 竞王达标",
+    "blockCodeList": [
+      "885520.DDBK",
+      "910934.DDBK",
+      "886021.DDBK",
+      "885867.DDBK",
+      "885595.DDBK",
+      "910026.DDBK",
+      "885919.DDBK",
+      "886011.DDBK",
+      "885531.DDBK"
+    ],
+    "blockCategoryCodeList": [
+      "000023.BKDL",
+      "000035.BKDL",
+      "000011.BKDL",
+      "000037.BKDL",
+      "000017.BKDL"
+    ],
+    "excIndustryCode": "T26.ZHBK",
+    "is_big_cap": false,
+    "adaptive_active": true,
+    "adaptive_reason": "Tier1 双窗口未一致: 5d avg=+1.60% / 10d avg=+6.33% (阈值 -7%/-4%)",
+    "dropped_modes": [
+      "接力低弱转2"
+    ]
+  }
+]

@@ -1,0 +1,45 @@
+[
+  {
+    "date": "2026-03-05",
+    "mode": "方向内绿盘低吸前3名",
+    "code": "301158.XSHE",
+    "name": "德石股份",
+    "xcjw": 179.43,
+    "cjs": 5.84,
+    "jsjl": 0.0,
+    "jssb": 0.0,
+    "pctChange": -6.25,
+    "openPctChange": -0.71,
+    "direction": true,
+    "directionRank": -1,
+    "categoryRank": 0,
+    "reason": "方向内低吸排名3 + 绿断 + 低吸有分",
+    "blockCodeList": [
+      "885345.DDBK",
+      "885929.DDBK",
+      "885427.DDBK",
+      "885748.DDBK",
+      "885964.DDBK",
+      "885372.DDBK",
+      "885426.DDBK",
+      "911221.DDBK",
+      "885430.DDBK",
+      "910342.DDBK",
+      "910048.DDBK",
+      "885494.DDBK",
+      "885965.DDBK",
+      "911588.DDBK"
+    ],
+    "blockCategoryCodeList": [
+      "000026.BKDL",
+      "000018.BKDL",
+      "000004.BKDL",
+      "000005.BKDL",
+      "000013.BKDL",
+      "000033.BKDL"
+    ],
+    "excIndustryCode": "T07.ZHBK",
+    "is_main_line": true,
+    "is_big_cap": false
+  }
+]

@@ -1,0 +1,54 @@
+[
+  {
+    "date": "2025-11-13",
+    "mode": "接力低弱转1",
+    "code": "300272.XSHE",
+    "name": "开能健康",
+    "xcjw": 480.0,
+    "cjs": 0.0,
+    "jsjl": 98.21,
+    "jssb": 0.0,
+    "pctChange": 0.82,
+    "openPctChange": 1.78,
+    "direction": true,
+    "directionRank": -1,
+    "categoryRank": 0,
+    "reason": "弱转强 + 昨日连板 + 竞王达标",
+    "blockCodeList": [
+      "885840.DDBK",
+      "911454.DDBK",
+      "885961.DDBK",
+      "885522.DDBK",
+      "885517.DDBK",
+      "910001.DDBK",
+      "886041.DDBK",
+      "885543.DDBK",
+      "910452.DDBK",
+      "885769.DDBK",
+      "885502.DDBK",
+      "885787.DDBK",
+      "885913.DDBK",
+      "885909.DDBK",
+      "885578.DDBK",
+      "885941.DDBK"
+    ],
+    "blockCategoryCodeList": [
+      "000021.BKDL",
+      "000003.BKDL",
+      "000026.BKDL",
+      "000023.BKDL",
+      "000011.BKDL",
+      "000010.BKDL",
+      "000006.BKDL",
+      "000019.BKDL",
+      "000009.BKDL",
+      "000033.BKDL"
+    ],
+    "excIndustryCode": "T11.ZHBK",
+    "is_main_line": false,
+    "is_big_cap": false,
+    "dropped_modes": [
+      "接力低弱转2"
+    ]
+  }
+]

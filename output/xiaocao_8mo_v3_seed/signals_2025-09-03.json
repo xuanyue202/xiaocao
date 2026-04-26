@@ -1,0 +1,42 @@
+[
+  {
+    "date": "2025-09-03",
+    "mode": "方向内绿盘低吸前3名",
+    "code": "603177.XSHG",
+    "name": "德创环保",
+    "xcjw": 188.64,
+    "cjs": 112.26,
+    "jsjl": 0.0,
+    "jssb": 0.0,
+    "pctChange": -10.0,
+    "openPctChange": -10.0,
+    "direction": true,
+    "directionRank": -1,
+    "categoryRank": 0,
+    "reason": "方向内低吸排名1 + 绿断 + 低吸有分",
+    "blockCodeList": [
+      "885996.DDBK",
+      "910433.DDBK",
+      "885775.DDBK",
+      "885919.DDBK",
+      "885461.DDBK",
+      "910594.DDBK",
+      "885555.DDBK",
+      "885823.DDBK",
+      "886079.DDBK",
+      "885928.DDBK",
+      "885563.DDBK",
+      "885494.DDBK",
+      "885410.DDBK"
+    ],
+    "blockCategoryCodeList": [
+      "000035.BKDL",
+      "000023.BKDL",
+      "000018.BKDL",
+      "000011.BKDL",
+      "000027.BKDL"
+    ],
+    "excIndustryCode": "T30.ZHBK",
+    "is_big_cap": false
+  }
+]

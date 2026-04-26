@@ -1,0 +1,45 @@
+[
+  {
+    "date": "2026-04-08",
+    "mode": "接力低弱转2",
+    "code": "002840.XSHE",
+    "name": "华统股份",
+    "xcjw": 219.75,
+    "cjs": 0.0,
+    "jsjl": 17.45,
+    "jssb": 0.0,
+    "pctChange": -1.14,
+    "openPctChange": 2.01,
+    "direction": true,
+    "directionRank": -1,
+    "categoryRank": 2,
+    "reason": "高开弱转强 + 昨日连板 + 竞王达标",
+    "blockCodeList": [
+      "885951.DDBK",
+      "885694.DDBK",
+      "885502.DDBK",
+      "886089.DDBK",
+      "910079.DDBK",
+      "885919.DDBK",
+      "886079.DDBK",
+      "910115.DDBK",
+      "885808.DDBK",
+      "885573.DDBK",
+      "885531.DDBK"
+    ],
+    "blockCategoryCodeList": [
+      "000038.BKDL",
+      "000024.BKDL",
+      "000023.BKDL",
+      "000035.BKDL",
+      "000010.BKDL",
+      "000006.BKDL",
+      "000011.BKDL"
+    ],
+    "excIndustryCode": "T12.ZHBK",
+    "adaptive_active": false,
+    "adaptive_reason": "excluded by --exclude-modes: 接力低弱转2; Tier3 20d 兜底正向 (avg=-4.94% > -7%)",
+    "is_main_line": false,
+    "is_big_cap": false
+  }
+]

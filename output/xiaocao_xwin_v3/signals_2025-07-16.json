@@ -1,0 +1,48 @@
+[
+  {
+    "date": "2025-07-16",
+    "mode": "方向内绿盘低吸前3名",
+    "code": "603778.XSHG",
+    "name": "国晟科技",
+    "xcjw": 216.71,
+    "cjs": 62.22,
+    "jsjl": 0.0,
+    "jssb": 0.0,
+    "pctChange": -5.32,
+    "openPctChange": -4.86,
+    "direction": true,
+    "directionRank": -1,
+    "categoryRank": 0,
+    "reason": "方向内低吸排名3 + 绿断 + 低吸有分",
+    "blockCodeList": [
+      "885878.DDBK",
+      "910836.DDBK",
+      "911202.DDBK",
+      "885690.DDBK",
+      "885729.DDBK",
+      "886032.DDBK",
+      "886006.DDBK",
+      "885710.DDBK",
+      "885991.DDBK",
+      "910417.DDBK",
+      "910026.DDBK",
+      "885921.DDBK",
+      "885958.DDBK",
+      "886004.DDBK",
+      "885563.DDBK",
+      "886007.DDBK",
+      "885531.DDBK"
+    ],
+    "blockCategoryCodeList": [
+      "000035.BKDL",
+      "000023.BKDL",
+      "000011.BKDL",
+      "000007.BKDL"
+    ],
+    "excIndustryCode": "T26.ZHBK",
+    "adaptive_active": false,
+    "adaptive_reason": "excluded by --exclude-modes: 方向内绿盘低吸前3名; Tier1 双窗口确认: 5d avg=-7.63%≤-5% AND 10d avg=-7.75%≤-3% (n=2/5)",
+    "is_main_line": false,
+    "is_big_cap": false
+  }
+]

@@ -1,0 +1,47 @@
+[
+  {
+    "date": "2026-01-06",
+    "mode": "方向内绿盘低吸前3名",
+    "code": "603608.XSHG",
+    "name": "天创时尚",
+    "xcjw": 189.3,
+    "cjs": 27.57,
+    "jsjl": 0.0,
+    "jssb": 0.0,
+    "pctChange": -6.19,
+    "openPctChange": -2.87,
+    "direction": true,
+    "directionRank": -1,
+    "categoryRank": 0,
+    "reason": "方向内低吸排名3 + 绿断 + 低吸有分",
+    "blockCodeList": [
+      "885739.DDBK",
+      "885517.DDBK",
+      "885890.DDBK",
+      "910618.DDBK",
+      "885521.DDBK",
+      "885699.DDBK",
+      "886019.DDBK",
+      "885888.DDBK",
+      "885420.DDBK",
+      "885742.DDBK",
+      "885642.DDBK",
+      "885418.DDBK",
+      "885876.DDBK",
+      "885784.DDBK"
+    ],
+    "blockCategoryCodeList": [
+      "000012.BKDL",
+      "000026.BKDL",
+      "000023.BKDL",
+      "000010.BKDL",
+      "000004.BKDL",
+      "000028.BKDL",
+      "000034.BKDL",
+      "000033.BKDL"
+    ],
+    "excIndustryCode": "T13.ZHBK",
+    "is_main_line": false,
+    "is_big_cap": false
+  }
+]

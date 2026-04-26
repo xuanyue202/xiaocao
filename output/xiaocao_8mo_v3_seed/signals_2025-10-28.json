@@ -1,0 +1,48 @@
+[
+  {
+    "date": "2025-10-28",
+    "mode": "绿断低吸",
+    "code": "002160.XSHE",
+    "name": "常铝股份",
+    "xcjw": 239.84,
+    "cjs": 9.7,
+    "jsjl": 0.0,
+    "jssb": 0.0,
+    "pctChange": -1.71,
+    "openPctChange": null,
+    "direction": true,
+    "directionRank": -1,
+    "categoryRank": 1,
+    "reason": "绿断 + 低吸有分 + 竞王达标",
+    "blockCodeList": [
+      "886021.DDBK",
+      "885930.DDBK",
+      "885467.DDBK",
+      "910214.DDBK",
+      "885999.DDBK",
+      "886032.DDBK",
+      "885972.DDBK",
+      "910431.DDBK",
+      "885710.DDBK",
+      "910342.DDBK",
+      "885789.DDBK",
+      "886079.DDBK",
+      "885431.DDBK",
+      "885539.DDBK",
+      "911301.DDBK",
+      "885997.DDBK"
+    ],
+    "blockCategoryCodeList": [
+      "000035.BKDL",
+      "000023.BKDL",
+      "000027.BKDL",
+      "000009.BKDL",
+      "000001.BKDL",
+      "000017.BKDL",
+      "000033.BKDL"
+    ],
+    "excIndustryCode": "T05.ZHBK",
+    "is_main_line": false,
+    "is_big_cap": false
+  }
+]

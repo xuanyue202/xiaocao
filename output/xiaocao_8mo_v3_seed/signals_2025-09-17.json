@@ -1,0 +1,41 @@
+[
+  {
+    "date": "2025-09-17",
+    "mode": "红断低吸",
+    "code": "605303.XSHG",
+    "name": "园林股份",
+    "xcjw": 257.56,
+    "cjs": 57.65,
+    "jsjl": 0.0,
+    "jssb": 0.0,
+    "pctChange": -1.59,
+    "openPctChange": -3.59,
+    "direction": false,
+    "directionRank": -1,
+    "categoryRank": -1,
+    "reason": "红断 + 低吸有分 + 竞王达标",
+    "blockCodeList": [
+      "885924.DDBK",
+      "886042.DDBK",
+      "885991.DDBK",
+      "910417.DDBK",
+      "910870.DDBK",
+      "885705.DDBK",
+      "885690.DDBK",
+      "885744.DDBK",
+      "885497.DDBK",
+      "885756.DDBK"
+    ],
+    "blockCategoryCodeList": [
+      "000012.BKDL",
+      "000010.BKDL",
+      "000011.BKDL",
+      "000031.BKDL",
+      "000007.BKDL",
+      "000004.BKDL"
+    ],
+    "excIndustryCode": "T25.ZHBK",
+    "is_main_line": false,
+    "is_big_cap": false
+  }
+]

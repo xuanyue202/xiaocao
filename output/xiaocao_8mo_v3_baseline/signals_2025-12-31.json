@@ -1,0 +1,38 @@
+[
+  {
+    "date": "2025-12-31",
+    "mode": "方向内绿盘低吸前3名",
+    "code": "002652.XSHE",
+    "name": "扬子新材",
+    "xcjw": 1626.1,
+    "cjs": 1664.03,
+    "jsjl": 0.0,
+    "jssb": 0.0,
+    "pctChange": -3.19,
+    "openPctChange": -6.64,
+    "direction": true,
+    "directionRank": -1,
+    "categoryRank": 0,
+    "reason": "方向内低吸排名3 + 绿断 + 低吸有分",
+    "blockCodeList": [
+      "910001.DDBK",
+      "910399.DDBK",
+      "886079.DDBK",
+      "885897.DDBK",
+      "910161.DDBK",
+      "885744.DDBK",
+      "885544.DDBK"
+    ],
+    "blockCategoryCodeList": [
+      "000036.BKDL",
+      "000023.BKDL",
+      "000031.BKDL",
+      "000004.BKDL"
+    ],
+    "excIndustryCode": "T06.ZHBK",
+    "adaptive_active": false,
+    "adaptive_reason": "excluded by --exclude-modes: 方向内绿盘低吸前3名; Tier1 双窗口未一致: 5d avg=+6.22% / 10d avg=+7.23% (阈值 -8%/-5%)",
+    "is_main_line": false,
+    "is_big_cap": false
+  }
+]

@@ -1,0 +1,50 @@
+[
+  {
+    "date": "2025-11-26",
+    "mode": "首红断低吸",
+    "code": "002574.XSHE",
+    "name": "明牌珠宝",
+    "xcjw": 184.94,
+    "cjs": 20.62,
+    "jsjl": 0.0,
+    "jssb": 0.0,
+    "pctChange": 1.12,
+    "openPctChange": -3.4,
+    "direction": true,
+    "directionRank": -1,
+    "categoryRank": 0,
+    "reason": "首红断 + 低吸有分 + 竞王达标",
+    "blockCodeList": [
+      "885878.DDBK",
+      "910551.DDBK",
+      "885835.DDBK",
+      "885888.DDBK",
+      "885924.DDBK",
+      "910584.DDBK",
+      "885420.DDBK",
+      "885530.DDBK",
+      "910026.DDBK",
+      "885758.DDBK",
+      "885642.DDBK",
+      "886095.DDBK",
+      "885657.DDBK",
+      "886007.DDBK",
+      "885784.DDBK",
+      "885531.DDBK",
+      "885552.DDBK"
+    ],
+    "blockCategoryCodeList": [
+      "000012.BKDL",
+      "000026.BKDL",
+      "000035.BKDL",
+      "000010.BKDL",
+      "000015.BKDL",
+      "000007.BKDL",
+      "000004.BKDL",
+      "000001.BKDL"
+    ],
+    "excIndustryCode": "T13.ZHBK",
+    "is_main_line": false,
+    "is_big_cap": false
+  }
+]

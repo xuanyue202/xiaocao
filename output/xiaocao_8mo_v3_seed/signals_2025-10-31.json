@@ -1,0 +1,49 @@
+[
+  {
+    "date": "2025-10-31",
+    "mode": "接力低弱转1",
+    "code": "002759.XSHE",
+    "name": "天际股份",
+    "xcjw": 375.1,
+    "cjs": 0.0,
+    "jsjl": 291.13,
+    "jssb": 0.0,
+    "pctChange": 0.78,
+    "openPctChange": 9.13,
+    "direction": false,
+    "directionRank": -1,
+    "categoryRank": -1,
+    "reason": "弱转强 + 昨日连板 + 竞王达标",
+    "blockCodeList": [
+      "910433.DDBK",
+      "911202.DDBK",
+      "886032.DDBK",
+      "885551.DDBK",
+      "885543.DDBK",
+      "910452.DDBK",
+      "885694.DDBK",
+      "885863.DDBK",
+      "885710.DDBK",
+      "910342.DDBK",
+      "885789.DDBK",
+      "885928.DDBK",
+      "885997.DDBK"
+    ],
+    "blockCategoryCodeList": [
+      "000038.BKDL",
+      "000024.BKDL",
+      "000035.BKDL",
+      "000010.BKDL",
+      "000027.BKDL",
+      "000022.BKDL"
+    ],
+    "excIndustryCode": "T26.ZHBK",
+    "is_main_line": false,
+    "is_big_cap": false,
+    "adaptive_active": false,
+    "adaptive_reason": "openPctChange ≥ 6.0% (chasing high open)",
+    "dropped_modes": [
+      "接力低弱转2"
+    ]
+  }
+]

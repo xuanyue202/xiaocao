@@ -1,0 +1,46 @@
+[
+  {
+    "date": "2025-04-15",
+    "mode": "方向低位低吸",
+    "code": "600753.XSHG",
+    "name": "*ST海钦",
+    "xcjw": 254.71,
+    "cjs": 33.48,
+    "jsjl": 0.0,
+    "jssb": 0.0,
+    "pctChange": -1.67,
+    "openPctChange": -3.39,
+    "direction": false,
+    "directionRank": -1,
+    "categoryRank": -1,
+    "reason": "方向内低吸排名1 + 低位 + 竞王达标",
+    "blockCodeList": [
+      "885398.DDBK",
+      "885938.DDBK",
+      "885699.DDBK",
+      "911349.DDBK",
+      "885675.DDBK",
+      "910151.DDBK",
+      "910045.DDBK",
+      "885461.DDBK",
+      "911513.DDBK",
+      "910129.DDBK",
+      "910324.DDBK"
+    ],
+    "blockCategoryCodeList": [
+      "000008.BKDL",
+      "000035.BKDL",
+      "000027.BKDL",
+      "000028.BKDL",
+      "000029.BKDL"
+    ],
+    "excIndustryCode": "980339.ZHBK",
+    "is_main_line": false,
+    "is_big_cap": false,
+    "adaptive_active": true,
+    "adaptive_reason": "Tier1 双窗口未一致: 5d avg=+3.69% / 10d avg=+3.85% (阈值 -9%/-6%)",
+    "dropped_modes": [
+      "方向内绿盘低吸前3名"
+    ]
+  }
+]

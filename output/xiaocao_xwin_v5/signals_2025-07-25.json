@@ -1,0 +1,37 @@
+[
+  {
+    "date": "2025-07-25",
+    "mode": "接力低弱转2",
+    "code": "002826.XSHE",
+    "name": "易明医药",
+    "xcjw": 190.79,
+    "cjs": 0.0,
+    "jsjl": 23.41,
+    "jssb": 0.0,
+    "pctChange": 7.88,
+    "openPctChange": 1.96,
+    "direction": true,
+    "directionRank": -1,
+    "categoryRank": 0,
+    "reason": "高开弱转强 + 昨日连板 + 竞王达标",
+    "blockCodeList": [
+      "885739.DDBK",
+      "886086.DDBK",
+      "886029.DDBK",
+      "910001.DDBK",
+      "886079.DDBK",
+      "886097.DDBK",
+      "885856.DDBK"
+    ],
+    "blockCategoryCodeList": [
+      "000023.BKDL",
+      "000004.BKDL",
+      "000009.BKDL"
+    ],
+    "excIndustryCode": "T15.ZHBK",
+    "adaptive_active": false,
+    "adaptive_reason": "excluded by --exclude-modes: 接力低弱转2; Tier4 dormant: 20 个交易日样本不足 (n5=0/n10=0/n20=0, 需 1/2/3)",
+    "is_main_line": false,
+    "is_big_cap": false
+  }
+]

@@ -1,0 +1,38 @@
+[
+  {
+    "date": "2025-04-28",
+    "mode": "方向低位低吸",
+    "code": "300326.XSHE",
+    "name": "ST凯利",
+    "xcjw": 323.04,
+    "cjs": 580.26,
+    "jsjl": 0.0,
+    "jssb": 0.0,
+    "pctChange": -3.43,
+    "openPctChange": -15.7,
+    "direction": true,
+    "directionRank": -1,
+    "categoryRank": 0,
+    "reason": "方向内低吸排名3 + 低位 + 竞王达标",
+    "blockCodeList": [
+      "885694.DDBK",
+      "885929.DDBK",
+      "910001.DDBK",
+      "885699.DDBK",
+      "885587.DDBK",
+      "885539.DDBK"
+    ],
+    "blockCategoryCodeList": [
+      "000038.BKDL",
+      "000023.BKDL",
+      "000028.BKDL",
+      "000009.BKDL",
+      "000033.BKDL"
+    ],
+    "excIndustryCode": "T15.ZHBK",
+    "is_main_line": false,
+    "is_big_cap": false,
+    "adaptive_active": true,
+    "adaptive_reason": "Tier1 双窗口未一致: 5d avg=-0.82% / 10d avg=-1.92% (阈值 -8%/-5%)"
+  }
+]

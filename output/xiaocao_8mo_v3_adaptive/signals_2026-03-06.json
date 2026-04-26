@@ -1,0 +1,35 @@
+[
+  {
+    "date": "2026-03-06",
+    "mode": "首红断低吸",
+    "code": "301373.XSHE",
+    "name": "凌玮科技",
+    "xcjw": 208.69,
+    "cjs": 12.07,
+    "jsjl": 0.0,
+    "jssb": 0.0,
+    "pctChange": 14.83,
+    "openPctChange": -0.39,
+    "direction": true,
+    "directionRank": -1,
+    "categoryRank": 0,
+    "reason": "首红断 + 低吸有分 + 竞王达标",
+    "blockCodeList": [
+      "910276.DDBK",
+      "910475.DDBK",
+      "885929.DDBK",
+      "885531.DDBK",
+      "885544.DDBK"
+    ],
+    "blockCategoryCodeList": [
+      "000036.BKDL",
+      "000035.BKDL",
+      "000033.BKDL"
+    ],
+    "excIndustryCode": "T03.ZHBK",
+    "is_main_line": false,
+    "is_big_cap": false,
+    "adaptive_active": true,
+    "adaptive_reason": "Tier1 双窗口未一致: 5d avg=+2.81% / 10d avg=+2.81% (阈值 -7%/-5%)"
+  }
+]

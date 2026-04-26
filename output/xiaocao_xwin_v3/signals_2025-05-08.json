@@ -1,0 +1,82 @@
+[
+  {
+    "date": "2025-05-08",
+    "mode": "方向低位低吸",
+    "code": "000668.XSHE",
+    "name": "*ST荣控",
+    "xcjw": 157.39,
+    "cjs": 0.0,
+    "jsjl": 0.0,
+    "jssb": 1.09,
+    "pctChange": 2.73,
+    "openPctChange": 2.23,
+    "direction": true,
+    "directionRank": -1,
+    "categoryRank": 1,
+    "reason": "方向内低吸排名1 + 低位 + 竞王达标",
+    "blockCodeList": [
+      "885420.DDBK",
+      "885788.DDBK",
+      "885739.DDBK",
+      "910551.DDBK",
+      "885699.DDBK",
+      "885539.DDBK",
+      "885915.DDBK"
+    ],
+    "blockCategoryCodeList": [
+      "000012.BKDL",
+      "000023.BKDL",
+      "000010.BKDL",
+      "000007.BKDL",
+      "000028.BKDL",
+      "000009.BKDL"
+    ],
+    "excIndustryCode": "T18.ZHBK",
+    "is_main_line": false,
+    "is_big_cap": false,
+    "adaptive_active": true,
+    "adaptive_reason": "Tier1 双窗口未一致: 5d avg=+0.90% / 10d avg=-0.48% (阈值 -7%/-5%)"
+  },
+  {
+    "date": "2025-05-08",
+    "mode": "方向低位低吸",
+    "code": "603506.XSHG",
+    "name": "南都物业",
+    "xcjw": 167.38,
+    "cjs": 0.9,
+    "jsjl": 0.0,
+    "jssb": 0.0,
+    "pctChange": -0.37,
+    "openPctChange": -0.91,
+    "direction": true,
+    "directionRank": -1,
+    "categoryRank": 1,
+    "reason": "方向内低吸排名2 + 低位 + 竞王达标",
+    "blockCodeList": [
+      "885420.DDBK",
+      "886072.DDBK",
+      "910551.DDBK",
+      "885522.DDBK",
+      "885517.DDBK",
+      "885854.DDBK",
+      "886104.DDBK",
+      "885832.DDBK",
+      "885915.DDBK",
+      "885911.DDBK"
+    ],
+    "blockCategoryCodeList": [
+      "000023.BKDL",
+      "000010.BKDL",
+      "000011.BKDL",
+      "000019.BKDL",
+      "000007.BKDL",
+      "000004.BKDL",
+      "000033.BKDL"
+    ],
+    "excIndustryCode": "T18.ZHBK",
+    "is_main_line": false,
+    "is_big_cap": false,
+    "adaptive_active": true,
+    "adaptive_reason": "Tier1 双窗口未一致: 5d avg=+0.90% / 10d avg=-0.48% (阈值 -7%/-5%)"
+  }
+]

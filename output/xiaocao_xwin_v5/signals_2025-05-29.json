@@ -1,0 +1,53 @@
+[
+  {
+    "date": "2025-05-29",
+    "mode": "接力低弱转1",
+    "code": "300740.XSHE",
+    "name": "水羊股份",
+    "xcjw": 248.74,
+    "cjs": 0.0,
+    "jsjl": 5.78,
+    "jssb": 0.0,
+    "pctChange": -4.78,
+    "openPctChange": 0.3,
+    "direction": true,
+    "directionRank": -1,
+    "categoryRank": 2,
+    "reason": "弱转强 + 昨日连板 + 竞王达标",
+    "blockCodeList": [
+      "886100.DDBK",
+      "885788.DDBK",
+      "910288.DDBK",
+      "886077.DDBK",
+      "910001.DDBK",
+      "911190.DDBK",
+      "111111.DDBK",
+      "885985.DDBK",
+      "885540.DDBK",
+      "910584.DDBK",
+      "885420.DDBK",
+      "885694.DDBK",
+      "885910.DDBK",
+      "886089.DDBK",
+      "911298.DDBK",
+      "885913.DDBK",
+      "885642.DDBK",
+      "885876.DDBK"
+    ],
+    "blockCategoryCodeList": [
+      "000012.BKDL",
+      "000021.BKDL",
+      "000038.BKDL",
+      "000026.BKDL",
+      "000023.BKDL",
+      "000010.BKDL",
+      "000034.BKDL",
+      "000009.BKDL"
+    ],
+    "excIndustryCode": "T31.ZHBK",
+    "is_main_line": false,
+    "is_big_cap": false,
+    "adaptive_active": true,
+    "adaptive_reason": "Tier1 双窗口未一致: 5d avg=+4.20% / 10d avg=+1.96% (阈值 -8%/-5%)"
+  }
+]

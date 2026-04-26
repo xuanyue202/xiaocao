@@ -1,0 +1,37 @@
+[
+  {
+    "date": "2025-09-11",
+    "mode": "方向内绿盘低吸前3名",
+    "code": "003036.XSHE",
+    "name": "泰坦股份",
+    "xcjw": 148.24,
+    "cjs": 7.73,
+    "jsjl": 0.0,
+    "jssb": 0.0,
+    "pctChange": -3.24,
+    "openPctChange": -2.48,
+    "direction": true,
+    "directionRank": -1,
+    "categoryRank": 0,
+    "reason": "方向内低吸排名1 + 绿断 + 低吸有分",
+    "blockCodeList": [
+      "885924.DDBK",
+      "885710.DDBK",
+      "885517.DDBK",
+      "910618.DDBK",
+      "886057.DDBK",
+      "885835.DDBK",
+      "885427.DDBK",
+      "886032.DDBK"
+    ],
+    "blockCategoryCodeList": [
+      "000035.BKDL",
+      "000015.BKDL",
+      "000004.BKDL",
+      "000033.BKDL"
+    ],
+    "excIndustryCode": "T07.ZHBK",
+    "is_main_line": false,
+    "is_big_cap": false
+  }
+]

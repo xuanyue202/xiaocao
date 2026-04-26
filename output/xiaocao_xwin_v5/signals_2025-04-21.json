@@ -1,0 +1,48 @@
+[
+  {
+    "date": "2025-04-21",
+    "mode": "方向低位低吸",
+    "code": "301509.XSHE",
+    "name": "金凯生科",
+    "xcjw": 316.4,
+    "cjs": 419.43,
+    "jsjl": 0.0,
+    "jssb": 0.0,
+    "pctChange": 0.84,
+    "openPctChange": -7.74,
+    "direction": true,
+    "directionRank": -1,
+    "categoryRank": 0,
+    "reason": "方向内低吸排名2 + 低位 + 竞王达标",
+    "blockCodeList": [
+      "886027.DDBK",
+      "885840.DDBK",
+      "910475.DDBK",
+      "885598.DDBK",
+      "885929.DDBK",
+      "910001.DDBK",
+      "885905.DDBK",
+      "885551.DDBK",
+      "886056.DDBK",
+      "885927.DDBK",
+      "886051.DDBK",
+      "885403.DDBK",
+      "885694.DDBK",
+      "885823.DDBK"
+    ],
+    "blockCategoryCodeList": [
+      "000038.BKDL",
+      "000026.BKDL",
+      "000011.BKDL",
+      "000022.BKDL",
+      "000032.BKDL",
+      "000009.BKDL",
+      "000033.BKDL"
+    ],
+    "excIndustryCode": "T15.ZHBK",
+    "is_main_line": false,
+    "is_big_cap": false,
+    "adaptive_active": true,
+    "adaptive_reason": "Tier1 双窗口未一致: 5d avg=-6.30% / 10d avg=-2.97% (阈值 -5%/-3%)"
+  }
+]

@@ -1,0 +1,60 @@
+[
+  {
+    "date": "2026-01-20",
+    "mode": "绿断低吸",
+    "code": "001255.XSHE",
+    "name": "博菲电气",
+    "xcjw": 345.4,
+    "cjs": 96.51,
+    "jsjl": 0.0,
+    "jssb": 0.0,
+    "pctChange": -7.22,
+    "openPctChange": -3.0,
+    "direction": true,
+    "directionRank": -1,
+    "categoryRank": 0,
+    "reason": "绿断 + 低吸有分 + 竞王达标",
+    "blockCodeList": [
+      "885571.DDBK",
+      "910934.DDBK",
+      "885912.DDBK",
+      "885929.DDBK",
+      "885832.DDBK",
+      "885700.DDBK",
+      "910139.DDBK",
+      "885543.DDBK",
+      "886038.DDBK",
+      "885572.DDBK",
+      "885619.DDBK",
+      "885924.DDBK",
+      "910276.DDBK",
+      "885641.DDBK",
+      "910417.DDBK",
+      "885562.DDBK",
+      "885431.DDBK",
+      "885531.DDBK",
+      "910161.DDBK",
+      "885997.DDBK",
+      "885544.DDBK",
+      "910140.DDBK"
+    ],
+    "blockCategoryCodeList": [
+      "000008.BKDL",
+      "000036.BKDL",
+      "000035.BKDL",
+      "000018.BKDL",
+      "000010.BKDL",
+      "000027.BKDL",
+      "000004.BKDL",
+      "000022.BKDL",
+      "000013.BKDL",
+      "000033.BKDL"
+    ],
+    "excIndustryCode": "T03.ZHBK",
+    "is_main_line": true,
+    "is_big_cap": false,
+    "dropped_modes": [
+      "方向内绿盘低吸前3名"
+    ]
+  }
+]

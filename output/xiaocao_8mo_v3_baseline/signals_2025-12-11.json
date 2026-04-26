@@ -1,0 +1,41 @@
+[
+  {
+    "date": "2025-12-11",
+    "mode": "方向内绿盘低吸前3名",
+    "code": "603696.XSHG",
+    "name": "安记食品",
+    "xcjw": 563.57,
+    "cjs": 523.22,
+    "jsjl": 0.0,
+    "jssb": 0.0,
+    "pctChange": -5.26,
+    "openPctChange": -5.0,
+    "direction": true,
+    "directionRank": -1,
+    "categoryRank": 0,
+    "reason": "方向内低吸排名3 + 绿断 + 低吸有分",
+    "blockCodeList": [
+      "885420.DDBK",
+      "885617.DDBK",
+      "886104.DDBK",
+      "910115.DDBK",
+      "911652.DDBK",
+      "885623.DDBK",
+      "885939.DDBK",
+      "885784.DDBK",
+      "885911.DDBK",
+      "885456.DDBK"
+    ],
+    "blockCategoryCodeList": [
+      "000023.BKDL",
+      "000010.BKDL",
+      "000015.BKDL",
+      "000004.BKDL"
+    ],
+    "excIndustryCode": "T12.ZHBK",
+    "adaptive_active": false,
+    "adaptive_reason": "excluded by --exclude-modes: 方向内绿盘低吸前3名; Tier1 双窗口未一致: 5d avg=+4.80% / 10d avg=+5.20% (阈值 -7%/-5%)",
+    "is_main_line": false,
+    "is_big_cap": false
+  }
+]

@@ -1,0 +1,51 @@
+[
+  {
+    "date": "2025-08-29",
+    "mode": "接力低弱转2",
+    "code": "688668.XSHG",
+    "name": "鼎通科技",
+    "xcjw": 159.94,
+    "cjs": 0.0,
+    "jsjl": 76.92,
+    "jssb": 0.0,
+    "pctChange": -2.17,
+    "openPctChange": 8.52,
+    "direction": true,
+    "directionRank": -1,
+    "categoryRank": 0,
+    "reason": "高开弱转强 + 昨日连板 + 竞王达标",
+    "blockCodeList": [
+      "911085.DDBK",
+      "886048.DDBK",
+      "910433.DDBK",
+      "910886.DDBK",
+      "886073.DDBK",
+      "910214.DDBK",
+      "886104.DDBK",
+      "911198.DDBK",
+      "910197.DDBK",
+      "885556.DDBK",
+      "885520.DDBK",
+      "886061.DDBK",
+      "885431.DDBK",
+      "886097.DDBK",
+      "886044.DDBK",
+      "910151.DDBK",
+      "885997.DDBK",
+      "886002.DDBK"
+    ],
+    "blockCategoryCodeList": [
+      "000023.BKDL",
+      "000031.BKDL",
+      "000027.BKDL",
+      "000037.BKDL",
+      "000025.BKDL",
+      "000033.BKDL"
+    ],
+    "excIndustryCode": "T28.ZHBK",
+    "adaptive_active": false,
+    "adaptive_reason": "excluded by --exclude-modes: 接力低弱转2; Tier4 dormant: 20 个交易日样本不足 (n5=0/n10=0/n20=0, 需 1/2/3); openPctChange ≥ 6.0% (chasing high open)",
+    "is_main_line": false,
+    "is_big_cap": false
+  }
+]
