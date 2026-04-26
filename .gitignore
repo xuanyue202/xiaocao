@@ -43,6 +43,9 @@ output/xiaocao_8mo_v3_hold3/
 output/xiaocao_xwin_v6/
 output/validation_*/
 output/xiaocao_backtest_*/
+output/v3_*_validate/
+output/tune_*/
+output/winners_losers_analysis/
 
 # Live trading runtime — 只保 positions.jsonl.example 模板
 output/live/positions.jsonl
