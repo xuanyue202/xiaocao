@@ -34,6 +34,7 @@ sys.path.insert(0, str(ROOT / "scripts"))
 sys.path.insert(0, str(ROOT / "src"))
 
 from replay_lib import CACHE_DB, trade_days_in_universe, load_universe  # noqa: E402
+from xiaocao.api.cache import iter_cached_responses  # noqa: E402
 
 OUT_PATH = ROOT / "output" / "proxy_regime.json"
 
@@ -50,16 +51,7 @@ def aggregate_kline_sentiment() -> dict[str, list[float]]:
     contributes only once per date.
     """
     by_date: dict[str, dict[str, float]] = defaultdict(dict)
-    with sqlite3.connect(CACHE_DB) as conn:
-        rows = conn.execute(
-            "SELECT response_json FROM api_cache "
-            "WHERE endpoint='/stock/date_kline'"
-        ).fetchall()
-    for (rj,) in rows:
-        try:
-            data = json.loads(rj)
-        except json.JSONDecodeError:
-            continue
+    for data in iter_cached_responses(CACHE_DB, "/stock/date_kline"):
         if not isinstance(data, list):
             continue
         for k in data:
@@ -76,22 +68,14 @@ def aggregate_kline_sentiment() -> dict[str, list[float]]:
 def aggregate_block_rank_strength(model: int = 0) -> dict[str, float]:
     """For each date, sum the top-10 block `num` strengths."""
     out: dict[str, float] = {}
-    with sqlite3.connect(CACHE_DB) as conn:
-        rows = conn.execute(
-            "SELECT params_json, response_json FROM api_cache "
-            "WHERE endpoint='/stock/xiao_cao_industry_block_rank'"
-        ).fetchall()
-    for pj, rj in rows:
+    rows = iter_cached_responses(CACHE_DB, "/stock/xiao_cao_industry_block_rank", include_params=True)
+    for pj, data in rows:
         p = json.loads(pj)
         inner = p.get("params", p)
         d = str(inner.get("date") or "")
         if len(d) == 8 and d.isdigit():
             d = f"{d[:4]}-{d[4:6]}-{d[6:]}"
         if inner.get("model") != model:
-            continue
-        try:
-            data = json.loads(rj)
-        except json.JSONDecodeError:
             continue
         if isinstance(data, dict):
             data = data.get("data") or list(data.values())

@@ -148,21 +148,15 @@ def derive_proxy_regime(date_iso: str, cache: Any) -> str:
 
 def _build_proxy_index(cache: Any) -> dict[str, str]:
     import sqlite3
-    import json
     from collections import defaultdict
+    from xiaocao.api.cache import iter_cached_responses
+
     by_date: dict[str, dict[str, float]] = defaultdict(dict)
     try:
-        with sqlite3.connect(cache.path) as conn:
-            rows = conn.execute(
-                "SELECT response_json FROM api_cache WHERE endpoint='/stock/date_kline'"
-            ).fetchall()
+        rows = list(iter_cached_responses(cache.path, "/stock/date_kline"))
     except sqlite3.Error:
         return {}
-    for (rj,) in rows:
-        try:
-            data = json.loads(rj)
-        except (json.JSONDecodeError, TypeError):
-            continue
+    for data in rows:
         if not isinstance(data, list):
             continue
         for k in data:

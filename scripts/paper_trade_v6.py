@@ -38,6 +38,7 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "src"))
 
 from xiaocao.api.cache import SQLiteCache  # noqa: E402
+from xiaocao.api.cache import iter_cached_responses  # noqa: E402
 from xiaocao.api.client import XiaocaoClient  # noqa: E402
 from xiaocao.config import load_settings  # noqa: E402
 from xiaocao.datasource.api_source import ApiDataSource  # noqa: E402
@@ -65,15 +66,16 @@ def _resolve_date(date_arg: str) -> str:
         return _date.today().isoformat()
     if date_arg == "latest":
         # Find the latest cached trade day from date_kline cache
-        import sqlite3
-        with sqlite3.connect(ROOT / "output" / ".cache" / "xiaocao.db") as conn:
-            row = conn.execute(
-                "SELECT MAX(json_extract(value, '$.tradeDate')) "
-                "FROM api_cache, json_each(response_json) "
-                "WHERE endpoint='/stock/date_kline' LIMIT 1"
-            ).fetchone()
-        if row and row[0]:
-            d = str(row[0])[:10]
+        latest = ""
+        cache_path = ROOT / "output" / ".cache" / "xiaocao.db"
+        for data in iter_cached_responses(cache_path, "/stock/date_kline"):
+            if not isinstance(data, list):
+                continue
+            for row in data:
+                if isinstance(row, dict):
+                    latest = max(latest, str(row.get("tradeDate") or ""))
+        if latest:
+            d = latest[:10]
             if len(d) == 8 and d.isdigit():
                 d = f"{d[:4]}-{d[4:6]}-{d[6:]}"
             return d

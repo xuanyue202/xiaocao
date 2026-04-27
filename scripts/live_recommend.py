@@ -55,30 +55,73 @@ def _resolve_date(date_arg: str) -> str:
     return date_arg
 
 
-def _open_price(client: XiaocaoClient, code: str, date_iso: str) -> float | None:
-    """Fetch the open price for `code` on `date_iso`."""
+def _entry_price(client: XiaocaoClient, code: str, date_iso: str) -> tuple[float | None, str, float | None]:
+    """Fetch the best available early-session entry price for `code`.
+
+    After 9:30, daily K has today's open. Between 9:25 and 9:30, use the latest
+    call-auction quote instead; the daily K row is not populated yet.
+    """
     try:
         rows = client.date_kline(code, count=10, freq="D", adj="qfq")
     except Exception:
-        return None
-    if not isinstance(rows, list):
-        return None
-    td_compact = date_iso.replace("-", "")
-    for r in rows:
-        if not isinstance(r, dict):
-            continue
-        td = str(r.get("tradeDate", ""))[:10]
-        if td == date_iso or td == td_compact:
+        rows = []
+    if isinstance(rows, list):
+        td_compact = date_iso.replace("-", "")
+        for r in rows:
+            if not isinstance(r, dict):
+                continue
+            td = str(r.get("tradeDate", ""))[:10]
+            if td == date_iso or td == td_compact:
+                try:
+                    price = float(r.get("open") or 0) or None
+                except (TypeError, ValueError):
+                    price = None
+                if price:
+                    pre_close = _to_float(r.get("preClose"))
+                    return price, "open", pre_close
+
+    try:
+        auction_rows = client.stock_call_auction(code, date_iso)
+    except Exception:
+        auction_rows = []
+    if isinstance(auction_rows, list):
+        valid_rows = [
+            r for r in auction_rows
+            if isinstance(r, dict) and str(r.get("tradeTimestamp") or "") >= "092500"
+        ]
+        for r in reversed(valid_rows or auction_rows):
             try:
-                return float(r.get("open") or 0) or None
+                price = float(r.get("trade") or r.get("buyPrice1") or r.get("sellPrice1") or 0) or None
             except (TypeError, ValueError):
-                return None
-    return None
+                price = None
+            if price:
+                pre_close = _to_float(r.get("preClose"))
+                return price, "auction", pre_close
+    return None, "", None
+
+
+def _basket_price(entry_price: float, pre_close: float | None, premium_pct: float) -> tuple[float, str]:
+    raw = entry_price * (1 + premium_pct / 100)
+    if pre_close and pre_close > 0:
+        cap = pre_close * 1.06
+        if raw > cap:
+            return cap, "openPct<=6%"
+    return raw, f"entry+{premium_pct:.1f}%"
+
+
+def _to_float(value: object) -> float | None:
+    try:
+        number = float(value)  # type: ignore[arg-type]
+    except (TypeError, ValueError):
+        return None
+    return number if number > 0 else None
 
 
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--date", default="today")
+    parser.add_argument("--basket-premium-pct", type=float, default=2.0,
+                        help="早盘篮子估算价 = 集合竞价/entry 价上浮百分比，默认 2%%")
     parser.add_argument("--no-stdout", action="store_true",
                         help="只写文件，不打印 stdout")
     args = parser.parse_args()
@@ -108,14 +151,19 @@ def main() -> None:
         code = r.get("code")
         if not code:
             continue
-        opn = _open_price(client, code, date_iso)
+        opn, entry_source, pre_close = _entry_price(client, code, date_iso)
         if not opn:
             continue
+        basket_price, basket_rule = _basket_price(opn, pre_close, args.basket_premium_pct)
         candidates.append({
             "code": code,
             "name": r.get("name") or "",
             "mode": r.get("mode") or "",
             "open": opn,
+            "pre_close": pre_close,
+            "entry_source": entry_source,
+            "basket_price": round(basket_price, 4),
+            "basket_rule": basket_rule,
             "v5_stop_initial": round(opn * (1 - 0.02), 4),  # 2% below entry as initial
             "v6_stop_initial": round(opn * (1 - 0.005), 4),  # 0.5% below entry
             "is_main_line": bool(r.get("is_main_line")),
@@ -139,12 +187,13 @@ def main() -> None:
     L.append("- **v5 (5d max_dd 2%)** = 持仓 5 日，从 post-entry peak 回撤 2% 即 trailing stop")
     L.append("- **v6 (3d max_dd 0.5%)** = 持仓 3 日，回撤 0.5% 即止 (aggressive，待 paper trading 验证)")
     L.append("- **入场价** = 今日 9:30 open（= 9:25 集合竞价 fill）")
+    L.append(f"- **篮子估算价** = min(entry × (1 + {args.basket_premium_pct:.1f}%), preClose × 1.06)，用于早盘挂单参考")
     L.append("- **stop 列** = 当前 peak = entry 时的初始 stop 价位；peak 上行后 stop 同步上抬")
     L.append("")
     L.append("## 候选清单")
     L.append("")
-    L.append("| code | name | mode | open | v5 init stop | v6 init stop | open_pct | flags |")
-    L.append("|---|---|---|---|---|---|---|---|")
+    L.append("| code | name | mode | entry | basket | basket rule | source | v5 init stop | v6 init stop | open_pct | flags |")
+    L.append("|---|---|---|---|---|---|---|---|---|---|---|")
     for c in candidates:
         flags = []
         if c["direction"]: flags.append("dir")
@@ -153,7 +202,8 @@ def main() -> None:
         flag_s = "+".join(flags) if flags else "-"
         L.append(
             f"| {c['code']} | {c['name']} | {c['mode']} | "
-            f"{c['open']:.2f} | {c['v5_stop_initial']:.2f} | {c['v6_stop_initial']:.2f} | "
+            f"{c['open']:.2f} | {c['basket_price']:.2f} | {c['basket_rule']} | {c['entry_source']} | "
+            f"{c['v5_stop_initial']:.2f} | {c['v6_stop_initial']:.2f} | "
             f"{c['open_pct_change']:+.2f}% | {flag_s} |"
         )
     L.append("")
@@ -166,6 +216,8 @@ def main() -> None:
         L.append(json.dumps({
             "code": c["code"], "name": c["name"],
             "entry_date": date_iso, "entry_price": c["open"],
+            "basket_price": c["basket_price"],
+            "basket_rule": c["basket_rule"],
             "profile": "v5",  # or v6 — depends on which stop you commit to
             "shares": 1000,
         }, ensure_ascii=False))

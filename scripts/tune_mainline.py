@@ -31,6 +31,7 @@ from replay_lib import (  # noqa: E402
     load_universe,
     trade_days_in_universe,
 )
+from xiaocao.api.cache import iter_cached_responses  # noqa: E402
 from xiaocao.strategy.mainline import compute_mainline  # noqa: E402
 
 
@@ -51,13 +52,9 @@ def load_rank_history(
     Returns {YYYY-MM-DD: rows}. Days with no cached entry are skipped silently.
     """
     out: dict[str, list[dict]] = {}
-    with sqlite3.connect(CACHE_DB) as conn:
-        rows = conn.execute(
-            "SELECT params_json, response_json FROM api_cache WHERE endpoint=?",
-            (endpoint,),
-        ).fetchall()
+    rows = iter_cached_responses(CACHE_DB, endpoint, include_params=True)
     days_set = set(days)
-    for params_json, resp_json in rows:
+    for params_json, data in rows:
         try:
             params = json.loads(params_json)
         except json.JSONDecodeError:
@@ -74,10 +71,6 @@ def load_rank_history(
             continue
         p_model = inner.get("model")
         if p_model != model:
-            continue
-        try:
-            data = json.loads(resp_json)
-        except json.JSONDecodeError:
             continue
         out[p_date] = data if isinstance(data, list) else (
             data.get("data") if isinstance(data, dict) else []

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import time
+from datetime import date
 
 import pytest
 
@@ -8,6 +9,7 @@ from xiaocao.api.cache import (
     SQLiteCache,
     canonical_params,
     is_historical,
+    iter_cached_responses,
 )
 
 
@@ -47,6 +49,66 @@ def test_sqlite_cache_round_trip(tmp_path):
     assert db.get("/stock/sort_v2", payload) == {"data": [1, 2, 3]}
 
 
+def test_sqlite_cache_stores_compressed_blob(tmp_path):
+    db = SQLiteCache(tmp_path / "cache.db")
+    payload = {"params": {"date": "2020-01-01", "code": "X"}}
+    db.put("/stock/sort_v2", payload, {"data": ["same"] * 100})
+
+    import sqlite3
+    with sqlite3.connect(db.path) as c:
+        response_json, response_blob = c.execute(
+            "SELECT response_json, response_blob FROM api_cache"
+        ).fetchone()
+    assert response_json == ""
+    assert isinstance(response_blob, bytes)
+    assert db.get("/stock/sort_v2", payload) == {"data": ["same"] * 100}
+
+
+def test_sqlite_cache_reads_legacy_plain_response_json(tmp_path):
+    import json
+    import sqlite3
+
+    db = SQLiteCache(tmp_path / "cache.db")
+    payload = {"params": {"date": "2020-01-01"}}
+    params_json = canonical_params(payload)
+    params_hash = db._hash(params_json)
+    with sqlite3.connect(db.path) as c:
+        c.execute(
+            """
+            INSERT INTO api_cache
+              (endpoint, params_hash, params_json, fetched_at, historical, response_json)
+            VALUES (?, ?, ?, ?, ?, ?)
+            """,
+            ("/stock/sort_v2", params_hash, params_json, 0, 1, json.dumps({"legacy": True})),
+        )
+        c.commit()
+
+    assert db.get("/stock/sort_v2", payload) == {"legacy": True}
+
+
+def test_iter_cached_responses_handles_plain_and_compressed_rows(tmp_path):
+    import json
+    import sqlite3
+
+    db = SQLiteCache(tmp_path / "cache.db")
+    db.put("/stock/sort_v2", {"params": {"date": "2020-01-01"}}, {"new": 1})
+
+    with sqlite3.connect(db.path) as c:
+        c.execute(
+            """
+            INSERT INTO api_cache
+              (endpoint, params_hash, params_json, fetched_at, historical, response_json)
+            VALUES (?, ?, ?, ?, ?, ?)
+            """,
+            ("/stock/sort_v2", "legacy", "{}", 0, 1, json.dumps({"old": 2})),
+        )
+        c.commit()
+
+    rows = list(iter_cached_responses(db.path, "/stock/sort_v2"))
+    assert {"new": 1} in rows
+    assert {"old": 2} in rows
+
+
 def test_sqlite_historical_never_expires(tmp_path):
     db = SQLiteCache(tmp_path / "cache.db")
     payload = {"params": {"date": "2020-01-01"}}
@@ -63,12 +125,54 @@ def test_sqlite_live_expires_after_ttl(tmp_path):
     db = SQLiteCache(tmp_path / "cache.db")
     payload = {"params": {}}
     db.put("/stock/market_overview", payload, "fresh")
-    # Force fetched_at past TTL (60s for market_overview).
+    # Force fetched_at past TTL.
     import sqlite3
     with sqlite3.connect(db.path) as c:
         c.execute("UPDATE api_cache SET fetched_at = ?", (int(time.time()) - 3600,))
         c.commit()
     assert db.get("/stock/market_overview", payload) is None
+
+
+def test_sqlite_live_realtime_endpoints_expire_quickly(tmp_path):
+    db = SQLiteCache(tmp_path / "cache.db")
+    payload = {"params": {"code": "000001.XSHE", "tradeDate": date.today().strftime("%Y%m%d")}}
+    db.put("/stock/stock_call_auction", payload, [{"trade": 1}])
+
+    import sqlite3
+    with sqlite3.connect(db.path) as c:
+        c.execute("UPDATE api_cache SET fetched_at = ?", (int(time.time()) - 4,))
+        c.commit()
+    assert db.get("/stock/stock_call_auction", payload) is None
+
+
+def test_sqlite_today_date_anchored_endpoints_expire_quickly(tmp_path):
+    db = SQLiteCache(tmp_path / "cache.db")
+    payload = {"params": {"date": date.today().isoformat(), "model": 1}}
+    db.put("/stock/xiao_cao_industry_block_rank", payload, [{"num": 1}])
+
+    import sqlite3
+    with sqlite3.connect(db.path) as c:
+        c.execute("UPDATE api_cache SET fetched_at = ?", (int(time.time()) - 11,))
+        c.commit()
+    assert db.get("/stock/xiao_cao_industry_block_rank", payload) is None
+
+
+def test_sqlite_does_not_cache_empty_live_responses(tmp_path):
+    db = SQLiteCache(tmp_path / "cache.db")
+    payload = {"params": {"date": date.today().isoformat()}}
+    db.put("/stock/xiao_cao_industry_block_rank", payload, [])
+    db.put(
+        "/stock/xiao_cao_block_category_rank_v3",
+        payload,
+        {
+            "localNum": None,
+            "globalNum": None,
+            "localCategoryRankList": None,
+            "globalCategoryRankList": None,
+        },
+    )
+    assert db.get("/stock/xiao_cao_industry_block_rank", payload) is None
+    assert db.get("/stock/xiao_cao_block_category_rank_v3", payload) is None
 
 
 def test_sqlite_clear(tmp_path):
@@ -86,7 +190,7 @@ def test_sqlite_stats(tmp_path):
     db = SQLiteCache(tmp_path / "cache.db")
     db.put("/stock/sort_v2", {"params": {"date": "2020-01-01"}}, [1])
     db.put("/stock/sort_v2", {"params": {"date": "2020-01-02"}}, [2])
-    db.put("/stock/market_overview", {"params": {}}, {})
+    db.put("/stock/market_overview", {"params": {}}, {"ok": True})
     stats = {row["endpoint"]: row for row in db.stats()}
     assert stats["/stock/sort_v2"]["rows"] == 2
     assert stats["/stock/sort_v2"]["historical"] == 2

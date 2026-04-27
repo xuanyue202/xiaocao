@@ -23,6 +23,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from xiaocao.api.cache import iter_cached_responses
+
 
 _REWARD_PCT_THRESHOLD = 2.0
 _DUAN_BAN_HIGH_PCT = 8.0  # yesterday's "near 涨停" cutoff
@@ -63,17 +65,10 @@ def _load_kline_pcts(cache_path: str | Path) -> dict[str, dict[str, float]]:
     """{date_iso: {code: pctChangeRate}}. De-dups per (date, code)."""
     out: dict[str, dict[str, float]] = defaultdict(dict)
     try:
-        with sqlite3.connect(str(cache_path)) as conn:
-            rows = conn.execute(
-                "SELECT response_json FROM api_cache WHERE endpoint='/stock/date_kline'"
-            ).fetchall()
+        rows = list(iter_cached_responses(cache_path, "/stock/date_kline"))
     except sqlite3.Error:
         return {}
-    for (rj,) in rows:
-        try:
-            data = json.loads(rj)
-        except (json.JSONDecodeError, TypeError):
-            continue
+    for data in rows:
         if not isinstance(data, list):
             continue
         for k in data:
@@ -91,14 +86,10 @@ def _load_block_top5_by_date(cache_path: str | Path) -> dict[str, list[str]]:
     """{date_iso: [top-5 blockCode by num desc]}. Uses model=0 (FULL rank)."""
     out: dict[str, list[str]] = {}
     try:
-        with sqlite3.connect(str(cache_path)) as conn:
-            rows = conn.execute(
-                "SELECT params_json, response_json FROM api_cache "
-                "WHERE endpoint='/stock/xiao_cao_industry_block_rank'"
-            ).fetchall()
+        rows = list(iter_cached_responses(cache_path, "/stock/xiao_cao_industry_block_rank", include_params=True))
     except sqlite3.Error:
         return {}
-    for pj, rj in rows:
+    for pj, data in rows:
         try:
             params = json.loads(pj)
         except json.JSONDecodeError:
@@ -108,10 +99,6 @@ def _load_block_top5_by_date(cache_path: str | Path) -> dict[str, list[str]]:
             continue
         d = _normalize_date(str(inner.get("date") or ""))
         if not d:
-            continue
-        try:
-            data = json.loads(rj)
-        except (json.JSONDecodeError, TypeError):
             continue
         if isinstance(data, dict):
             data = data.get("data") or list(data.values())

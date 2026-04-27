@@ -32,7 +32,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "src"))
 
-from xiaocao.api.cache import SQLiteCache
+from xiaocao.api.cache import SQLiteCache, iter_cached_responses
 from xiaocao.strategy.regime import mode_fitness
 from xiaocao.strategy.state import build_state_index, get_state
 
@@ -155,7 +155,6 @@ def count_score_bar_near_misses(cache_path: str) -> int:
     This is approximate (proper analysis would re-run the rules), but gives a
     rough order-of-magnitude estimate of how many opportunities are missed.
     """
-    import sqlite3
     cache = SQLiteCache(cache_path)
     state_index = build_state_index(cache)
 
@@ -173,13 +172,9 @@ def count_score_bar_near_misses(cache_path: str) -> int:
     near_miss_total = 0
     near_miss_by_mode: dict[str, int] = defaultdict(int)
 
-    with sqlite3.connect(cache_path) as conn:
-        rows = conn.execute(
-            "SELECT params_json, response_json FROM api_cache "
-            "WHERE endpoint='/stock/sort_v2'"
-        ).fetchall()
+    rows = iter_cached_responses(cache_path, "/stock/sort_v2", include_params=True)
 
-    for pj, rj in rows:
+    for pj, response in rows:
         try:
             params = json.loads(pj)
         except json.JSONDecodeError:
@@ -215,10 +210,6 @@ def count_score_bar_near_misses(cache_path: str) -> int:
                 # As a proxy: the cached list has 50-100 stocks; near-miss
                 # candidates are those NOT in the top quartile (which already
                 # passed). Count fraction.
-                try:
-                    response = json.loads(rj)
-                except json.JSONDecodeError:
-                    continue
                 if not isinstance(response, list):
                     continue
                 # Heuristic: stocks in positions [size*0.25, size*0.5) of the

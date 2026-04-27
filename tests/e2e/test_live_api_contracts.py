@@ -71,9 +71,10 @@ def test_xiao_cao_index_v2_contract(client: XiaocaoClient, recent_trade_date: st
 
 @pytest.mark.e2e
 @pytest.mark.parametrize("sort_id", [8, 40])
-def test_sort_v2_contract(client: XiaocaoClient, pools: dict[str, list[str]], sort_id: int) -> None:
-    requested = pools["dixi"][:20]
-    rows = client.sort_v2(requested, sort_id=sort_id)
+def test_sort_v2_contract(client: XiaocaoClient, recent_trade_date: str, pools: dict[str, list[str]], sort_id: int) -> None:
+    pool_name = "jieli" if sort_id == 40 else "dixi"
+    requested = pools[pool_name][:20]
+    rows = client.sort_v2(requested, sort_id=sort_id, date=recent_trade_date)
     assert_non_empty_list(rows, f"sort_v2 sort_id={sort_id}")
     returned_codes = [_stock_code_from_sort_row(row) for row in rows]
     returned_codes = [code for code in returned_codes if code]
@@ -81,7 +82,7 @@ def test_sort_v2_contract(client: XiaocaoClient, pools: dict[str, list[str]], so
     for code in returned_codes[:50]:
         assert_stock_code(code, f"sort_v2 sort_id={sort_id}")
 
-    datasource_codes = ApiDataSource(client).sort_codes("unused-date", requested, sort_id=sort_id)
+    datasource_codes = ApiDataSource(client).sort_codes(recent_trade_date, requested, sort_id=sort_id)
     assert datasource_codes, f"ApiDataSource.sort_codes sort_id={sort_id} returned empty list"
     assert set(datasource_codes).issubset(set(requested)), (
         "ApiDataSource.sort_codes must filter sort_v2 responses back to requested stockIds. "

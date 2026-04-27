@@ -28,6 +28,8 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "src"))
 
+from xiaocao.api.cache import iter_cached_responses  # noqa: E402
+
 from xiaocao.backtest import score_trades  # noqa: E402
 
 OUT_MD = ROOT / "output" / "cross_window_validation.md"
@@ -59,17 +61,9 @@ def load_trade_days(d: Path) -> list[str]:
 
 
 def load_klines() -> dict[str, dict[str, dict]]:
-    import sqlite3
     out: dict[str, dict[str, dict]] = defaultdict(dict)
-    with sqlite3.connect(str(ROOT / "output" / ".cache" / "xiaocao.db")) as conn:
-        rows = conn.execute(
-            "SELECT response_json FROM api_cache WHERE endpoint='/stock/date_kline'"
-        ).fetchall()
-    for (rj,) in rows:
-        try:
-            data = json.loads(rj)
-        except json.JSONDecodeError:
-            continue
+    cache_path = ROOT / "output" / ".cache" / "xiaocao.db"
+    for data in iter_cached_responses(cache_path, "/stock/date_kline"):
         if not isinstance(data, list):
             continue
         for k in data:

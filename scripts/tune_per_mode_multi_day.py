@@ -67,18 +67,10 @@ def load_trade_days(signal_dir: Path) -> list[str]:
 
 def load_klines_from_cache(cache_path: Path) -> dict[str, dict[str, dict]]:
     """{code: {date: row}} — daily kline, freq=D adj=qfq."""
-    import sqlite3
+    from xiaocao.api.cache import iter_cached_responses
+
     out: dict[str, dict[str, dict]] = defaultdict(dict)
-    with sqlite3.connect(str(cache_path)) as conn:
-        rows = conn.execute(
-            "SELECT params_json, response_json FROM api_cache "
-            "WHERE endpoint='/stock/date_kline'"
-        ).fetchall()
-    for pj, rj in rows:
-        try:
-            data = json.loads(rj)
-        except json.JSONDecodeError:
-            continue
+    for data in iter_cached_responses(cache_path, "/stock/date_kline"):
         if not isinstance(data, list):
             continue
         for k in data:

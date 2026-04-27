@@ -25,6 +25,8 @@ from collections import defaultdict
 from pathlib import Path
 from typing import Any
 
+from xiaocao.api.cache import iter_cached_responses
+
 # Empirical 8mo TRAIN+TEST result on validated_v3 baseline (73 active trades):
 #   STRONG  (drawdown ≤ 1.5%, n=45): 1d avg +4.54% / win 66.7%
 #                                    5d_dd2 avg +7.77% / win 68.9%
@@ -51,17 +53,12 @@ def load_minute_cache(
     """
     out: dict[tuple[str, str], list[dict[str, Any]]] = {}
     try:
-        with sqlite3.connect(str(cache_path)) as conn:
-            rows = conn.execute(
-                "SELECT params_json, response_json FROM api_cache "
-                "WHERE endpoint='/stock/minute_line'"
-            ).fetchall()
+        rows = list(iter_cached_responses(cache_path, "/stock/minute_line", include_params=True))
     except sqlite3.Error:
         return {}
-    for pj, rj in rows:
+    for pj, data in rows:
         try:
             params = json.loads(pj).get("params", {})
-            data = json.loads(rj)
         except (json.JSONDecodeError, AttributeError):
             continue
         if require_count_param and "count" not in params:

@@ -25,18 +25,15 @@ from replay_lib import (  # noqa: E402
 )
 from xiaocao.strategy.adaptive import decide_mode_state  # noqa: E402
 from xiaocao.strategy.mainline import compute_mainline  # noqa: E402
+from xiaocao.api.cache import iter_cached_responses  # noqa: E402
 
 CACHE_DB = ROOT / "output" / ".cache" / "xiaocao.db"
 
 
 def load_rank(model: int) -> dict[str, list[dict]]:
     out: dict[str, list[dict]] = {}
-    with sqlite3.connect(CACHE_DB) as conn:
-        rows = conn.execute(
-            "SELECT params_json, response_json FROM api_cache "
-            "WHERE endpoint='/stock/xiao_cao_industry_block_rank'"
-        ).fetchall()
-    for pj, rj in rows:
+    rows = iter_cached_responses(CACHE_DB, "/stock/xiao_cao_industry_block_rank", include_params=True)
+    for pj, data in rows:
         p = json.loads(pj)
         inner = p.get("params", p)
         d = inner.get("date", "")
@@ -44,7 +41,6 @@ def load_rank(model: int) -> dict[str, list[dict]]:
             d = f"{d[:4]}-{d[4:6]}-{d[6:]}"
         if inner.get("model") != model:
             continue
-        data = json.loads(rj)
         out[d] = data if isinstance(data, list) else (data.get("data") if isinstance(data, dict) else [])
     return out
 

@@ -8,6 +8,7 @@ from typing import Any
 import pytest
 
 from xiaocao.api import XiaocaoClient
+from xiaocao.utils.trading_session import latest_completed_trade_date
 
 
 CODE_RE = re.compile(r"^\d{6}\.(XSHG|XSHE|BJSE)$")
@@ -32,7 +33,8 @@ def recent_trade_date(client: XiaocaoClient) -> str:
     assert_non_empty_list(rows, "trade_cal recent 45 days")
     dates = sorted(filter(None, (_row_date(row) for row in rows)))
     assert dates, f"trade_cal returned no parseable dates. sample={sample(rows)}"
-    latest = dates[-1]
+    completed = latest_completed_trade_date(dates)
+    latest = _latest_populated_trade_date(client, dates, prefer=completed)
     assert DATE_RE.match(latest), f"latest trade date should be YYYY-MM-DD, got {latest!r}"
     assert start <= latest <= today.isoformat(), f"latest trade date {latest} is outside {start}..{today.isoformat()}"
     return latest
@@ -125,3 +127,21 @@ def _dedupe(values: list[str]) -> list[str]:
             seen.add(value)
             output.append(value)
     return output
+
+
+def _latest_populated_trade_date(client: XiaocaoClient, dates: list[str], prefer: str | None = None) -> str:
+    """Pick the latest date whose after-close aggregate endpoints have landed.
+
+    The trade calendar can include the current trading day before block rank,
+    block score, and dynamic-index endpoints have populated. Live e2e contract
+    tests need a stable populated date, not necessarily today's session.
+    """
+    candidates = [d for d in dates if prefer is None or d <= prefer]
+    candidates = candidates or dates
+    for candidate in reversed(candidates[-7:]):
+        try:
+            if client.get_industry_block_rank(candidate, model=1) and client.get_block_score(candidate):
+                return candidate
+        except Exception:
+            continue
+    return dates[-1]

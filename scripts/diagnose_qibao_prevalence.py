@@ -57,13 +57,10 @@ PCT_RELAXED = 5.0
 def load_pool_by_date() -> dict[str, list[str]]:
     """{date_iso: [stockId,...]} — only groups='2' (qibao)."""
     out: dict[str, list[str]] = {}
-    import sqlite3
-    with sqlite3.connect(str(CACHE_PATH)) as conn:
-        rows = conn.execute(
-            "SELECT params_json, response_json FROM api_cache "
-            "WHERE endpoint='/stock/focus_xiao_cao_index/get_code_list_v2'"
-        ).fetchall()
-    for pj, rj in rows:
+    from xiaocao.api.cache import iter_cached_responses
+
+    rows = iter_cached_responses(CACHE_PATH, "/stock/focus_xiao_cao_index/get_code_list_v2", include_params=True)
+    for pj, data in rows:
         try:
             params = json.loads(pj).get("params", {})
         except (json.JSONDecodeError, AttributeError):
@@ -72,10 +69,6 @@ def load_pool_by_date() -> dict[str, list[str]]:
             continue
         date = str(params.get("date") or "")[:10]
         if not date:
-            continue
-        try:
-            data = json.loads(rj)
-        except json.JSONDecodeError:
             continue
         codes = data.get("data") if isinstance(data, dict) else None
         if isinstance(codes, list):
@@ -86,23 +79,16 @@ def load_pool_by_date() -> dict[str, list[str]]:
 def load_enriched_by_date() -> dict[str, dict[str, dict]]:
     """{date_iso: {stockCode: detail_dict}} — merged across chunks."""
     out: dict[str, dict[str, dict]] = defaultdict(dict)
-    import sqlite3
-    with sqlite3.connect(str(CACHE_PATH)) as conn:
-        rows = conn.execute(
-            "SELECT params_json, response_json FROM api_cache "
-            "WHERE endpoint='/stock/xiao_cao_index_v2'"
-        ).fetchall()
-    for pj, rj in rows:
+    from xiaocao.api.cache import iter_cached_responses
+
+    rows = iter_cached_responses(CACHE_PATH, "/stock/xiao_cao_index_v2", include_params=True)
+    for pj, data in rows:
         try:
             params = json.loads(pj).get("params", {})
         except (json.JSONDecodeError, AttributeError):
             continue
         date = str(params.get("date") or "")[:10]
         if not date:
-            continue
-        try:
-            data = json.loads(rj)
-        except json.JSONDecodeError:
             continue
         if isinstance(data, dict):
             for code, detail in data.items():

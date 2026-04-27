@@ -15,12 +15,12 @@ dist/
 
 # CLI/报告运行产物。
 # - reports/ 仍然 gitignored；要保留的报告用 `git add -f` 显式加入
-# - output/.cache/xiaocao.db 是 cross-deployment 复用的核心 cache，commit
 # - canonical 的 backtest 产出（v3_baseline / v3_seed / v3_adaptive / xwin_*）commit，
 #   用于 reproducibility 和 paper-trading replay；中间实验产物 ignore
 reports/
 
-# SQLite cache：commit only the main .db; ignore WAL / SHM / journal
+# SQLite cache：保留在本地，不进 Git。
+output/.cache/*.db
 output/.cache/*-wal
 output/.cache/*-shm
 output/.cache/*-journal

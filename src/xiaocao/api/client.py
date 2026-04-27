@@ -242,7 +242,7 @@ class XiaocaoClient:
             for key in ("localCategoryRankList", "globalCategoryRankList", "data"):
                 if isinstance(result.get(key), list):
                     return result[key]
-            return list(result.values())
+            return [value for value in result.values() if isinstance(value, dict)]
         return result
 
     def get_block_score(self, date: str) -> Any:

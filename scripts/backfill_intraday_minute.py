@@ -107,8 +107,7 @@ def main() -> None:
 
     elapsed = time.time() - t0
     print(f"\nDone in {elapsed:.1f}s: {success} ok, {empty} empty, {failure} failed")
-    print(f"Cached responses are now queryable via:")
-    print(f"  SELECT response_json FROM api_cache WHERE endpoint='/stock/minute_line'")
+    print("Cached responses are now readable via xiaocao.api.cache.iter_cached_responses().")
 
 
 if __name__ == "__main__":

@@ -34,6 +34,7 @@ from xiaocao.backtest import run_backtest
 from xiaocao.strategy import run_strategy
 from xiaocao.strategy.runner import STRATEGY_PROFILES
 from xiaocao.utils.dates import lookback_start, normal_date, today_str
+from xiaocao.utils.trading_session import latest_completed_trade_date
 
 
 GROUPS = {key: item.value for key, item in STOCK_GROUPS.items()}
@@ -1096,6 +1097,7 @@ def report_daily(args: argparse.Namespace) -> None:
 
 
 def report_premarket(args: argparse.Namespace) -> None:
+    args.completed_data_date = True
     _report_common(
         args,
         purpose="盘前参考：用最近一个已完成交易日的数据，生成今日观察方向与候选信号",
@@ -1105,6 +1107,7 @@ def report_premarket(args: argparse.Namespace) -> None:
 
 
 def report_afterclose(args: argparse.Namespace) -> None:
+    args.completed_data_date = True
     _report_common(
         args,
         purpose="盘后复盘：复盘当日环境、方向和信号，并统计上一交易日信号到当日收盘的表现",
@@ -1122,7 +1125,11 @@ def _report_common(
     include_previous_performance: bool = False,
 ) -> None:
     source = _source(args)
-    date_value = _resolve_date(args.date, args.source, args)
+    date_value = (
+        _resolve_completed_data_date(args.date, args.source, args)
+        if getattr(args, "completed_data_date", False)
+        else _resolve_date(args.date, args.source, args)
+    )
     settings = load_settings(args.config)
     modes = {item.strip() for item in args.modes.split(",")} if args.modes else None
     signals = run_strategy(
@@ -1558,6 +1565,18 @@ def _resolve_date(value: str, source_name: str, args: argparse.Namespace | None 
             return dates[-1] if dates else latest
         return latest
     return normal_date(value)
+
+
+def _resolve_completed_data_date(value: str, source_name: str, args: argparse.Namespace | None = None) -> str:
+    """Resolve a date for reports that depend on after-close aggregate endpoints."""
+    if value not in {"today", "latest"}:
+        return _resolve_date(value, source_name, args)
+    if source_name == "local":
+        return _resolve_date("latest", source_name, args)
+    target = today_str()
+    rows = (_client(args) if args is not None else XiaocaoClient()).get_trade_cal(lookback_start(target), target)
+    dates = sorted(_calendar_date(row) for row in rows if _calendar_date(row))
+    return latest_completed_trade_date(dates) if dates else target
 
 
 def _normalize_global_args(argv: list[str]) -> list[str]:

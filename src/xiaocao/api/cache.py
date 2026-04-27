@@ -12,15 +12,17 @@ Schema:
         params_json TEXT,
         fetched_at INTEGER,
         historical INTEGER,
-        response_json TEXT,
+        response_json TEXT,       -- legacy/plain fallback
+        response_blob BLOB,        -- gzip-compressed UTF-8 JSON
         PRIMARY KEY (endpoint, params_hash)
     )
 
-The cache is intentionally simple — single table, no migrations, transparent
-to the caller. Open one `SQLiteCache(path)` and pass it to `XiaocaoClient`.
+The cache stores responses as gzip-compressed JSON blobs. Legacy rows with
+plain `response_json` are still readable.
 """
 from __future__ import annotations
 
+import gzip
 import hashlib
 import json
 import sqlite3
@@ -30,8 +32,9 @@ from datetime import date as _date
 from pathlib import Path
 from typing import Any
 
-_DEFAULT_LIVE_TTL = 300  # 5 min
+_DEFAULT_LIVE_TTL = 30
 _TODAY_PAST_DAY_PADDING = 0  # treat today as live; only strictly past dates are historical
+_GZIP_LEVEL = 6
 
 
 # Per-endpoint cache policy. `date_arg` names the params key that, when ≤ today,
@@ -39,35 +42,35 @@ _TODAY_PAST_DAY_PADDING = 0  # treat today as live; only strictly past dates are
 # default TTL for live responses.
 ENDPOINT_POLICY: dict[str, dict[str, Any]] = {
     # Date-anchored, historical when date is past
-    "/stock/xiao_cao_industry_block_rank": {"date_arg": "date"},
-    "/stock/xiao_cao_block_category_rank_v3": {"date_arg": "date"},
-    "/stock/xiao_cao_dynamic_index": {"date_arg": "tradeDate"},
-    "/stock/xiao_cao_industry_block_dynamic_index": {"date_arg": "tradeDate"},
-    "/stock/focus_xiao_cao_index/get_code_list_v2": {"date_arg": "date"},
-    "/stock/xiao_cao_index_v2": {"date_arg": "date"},
-    "/stock/xiao_cao_block_score": {"date_arg": "date"},
-    "/stock/xiao_cao_environment_second_line_v2": {"date_arg": "date"},
-    "/stock/xiao_cao_environment_second_line_selection": {"date_arg": "date"},
-    "/stock/xiao_cao_environment_minute_line": {"date_arg": "tradeDate"},
-    "/stock/xiao_cao_block_detail": {"date_arg": "tradeDate"},
-    "/stock/sort_v2": {"date_arg": "date"},
-    "/stock/get_code_by_xiao_cao_block": {"date_arg": "tradeDate"},
-    "/stock/stock_call_auction": {"date_arg": "tradeDate"},
-    "/stock/date_kline": {"date_arg": "paramTime", "live_ttl": 120},
-    "/stock/xiao_cao_block_date_kline": {"date_arg": "paramTime", "live_ttl": 120},
-    "/stock/trade_cal": {"date_arg": "endDate"},
+    "/stock/xiao_cao_industry_block_rank": {"date_arg": "date", "live_ttl": 10},
+    "/stock/xiao_cao_block_category_rank_v3": {"date_arg": "date", "live_ttl": 10},
+    "/stock/xiao_cao_dynamic_index": {"date_arg": "tradeDate", "live_ttl": 10},
+    "/stock/xiao_cao_industry_block_dynamic_index": {"date_arg": "tradeDate", "live_ttl": 10},
+    "/stock/focus_xiao_cao_index/get_code_list_v2": {"date_arg": "date", "live_ttl": 10},
+    "/stock/xiao_cao_index_v2": {"date_arg": "date", "live_ttl": 10},
+    "/stock/xiao_cao_block_score": {"date_arg": "date", "live_ttl": 10},
+    "/stock/xiao_cao_environment_second_line_v2": {"date_arg": "date", "live_ttl": 10},
+    "/stock/xiao_cao_environment_second_line_selection": {"date_arg": "date", "live_ttl": 10},
+    "/stock/xiao_cao_environment_minute_line": {"date_arg": "tradeDate", "live_ttl": 5},
+    "/stock/xiao_cao_block_detail": {"date_arg": "tradeDate", "live_ttl": 10},
+    "/stock/sort_v2": {"date_arg": "date", "live_ttl": 10},
+    "/stock/get_code_by_xiao_cao_block": {"date_arg": "tradeDate", "live_ttl": 10},
+    "/stock/stock_call_auction": {"date_arg": "tradeDate", "live_ttl": 3},
+    "/stock/date_kline": {"date_arg": "paramTime", "live_ttl": 10},
+    "/stock/xiao_cao_block_date_kline": {"date_arg": "paramTime", "live_ttl": 10},
+    "/stock/trade_cal": {"date_arg": "endDate", "live_ttl": 3600},
     # Always live
-    "/stock/market_overview": {"date_arg": None, "live_ttl": 60},
+    "/stock/market_overview": {"date_arg": None, "live_ttl": 10},
     "/stock/stock_info": {"date_arg": None, "live_ttl": 86400},
-    "/stock/minute_line": {"date_arg": None, "live_ttl": 60},
-    "/stock/each_trade": {"date_arg": None, "live_ttl": 60},
-    "/stock/get_technical_index": {"date_arg": None, "live_ttl": 60},
-    "/stock/get_technical_index_history": {"date_arg": "tradeDate", "live_ttl": 300},
+    "/stock/minute_line": {"date_arg": None, "live_ttl": 5},
+    "/stock/each_trade": {"date_arg": None, "live_ttl": 3},
+    "/stock/get_technical_index": {"date_arg": None, "live_ttl": 10},
+    "/stock/get_technical_index_history": {"date_arg": "tradeDate", "live_ttl": 10},
     "/stock/next_trade_cal": {"date_arg": None, "live_ttl": 600},
-    "/stock/second_line": {"date_arg": None, "live_ttl": 60},
-    "/stock/second_line_detail_info": {"date_arg": None, "live_ttl": 60},
+    "/stock/second_line": {"date_arg": None, "live_ttl": 3},
+    "/stock/second_line_detail_info": {"date_arg": None, "live_ttl": 3},
     "/stock/xiao_cao_week_stats": {"date_arg": None, "live_ttl": 3600},
-    "/stock/xiao_cao_emotions_height": {"date_arg": None, "live_ttl": 60},
+    "/stock/xiao_cao_emotions_height": {"date_arg": None, "live_ttl": 10},
 }
 
 
@@ -114,6 +117,71 @@ def is_historical(endpoint: str, payload: dict[str, Any], today_iso: str) -> boo
     return False
 
 
+def encode_cached_response(response: Any) -> bytes:
+    response_json = json.dumps(response, ensure_ascii=False, separators=(",", ":"))
+    return gzip.compress(response_json.encode("utf-8"), compresslevel=_GZIP_LEVEL, mtime=0)
+
+
+def decode_cached_response(response_blob: bytes | None, response_json: str | None) -> Any:
+    if response_blob:
+        raw = gzip.decompress(response_blob).decode("utf-8")
+        return json.loads(raw)
+    if response_json:
+        return json.loads(response_json)
+    raise ValueError("Cached response row has neither response_blob nor response_json")
+
+
+def is_empty_response(response: Any) -> bool:
+    """True for backend "not populated yet" shapes that should not poison live cache."""
+    if response is None:
+        return True
+    if isinstance(response, list):
+        return len(response) == 0
+    if isinstance(response, dict):
+        if not response:
+            return True
+        return all(is_empty_response(value) for value in response.values())
+    return False
+
+
+def _api_cache_columns(conn: sqlite3.Connection) -> set[str]:
+    try:
+        return {str(row[1]) for row in conn.execute("PRAGMA table_info(api_cache)").fetchall()}
+    except sqlite3.Error:
+        return set()
+
+
+def iter_cached_responses(
+    cache_path: str | Path,
+    endpoint: str,
+    *,
+    include_params: bool = False,
+) -> Any:
+    """Yield decoded cached responses for an endpoint.
+
+    This is the compatibility boundary for callers that used to select
+    `response_json` directly. It reads both new gzip BLOB rows and legacy
+    plain-text rows.
+    """
+    with sqlite3.connect(str(cache_path)) as conn:
+        columns = _api_cache_columns(conn)
+        if "response_blob" in columns:
+            select = "params_json, response_blob, response_json" if include_params else "response_blob, response_json"
+        else:
+            select = "params_json, NULL, response_json" if include_params else "NULL, response_json"
+        rows = conn.execute(
+            f"SELECT {select} FROM api_cache WHERE endpoint=?",
+            (endpoint,),
+        ).fetchall()
+    for row in rows:
+        if include_params:
+            params_json, response_blob, response_json = row
+            yield params_json, decode_cached_response(response_blob, response_json)
+        else:
+            response_blob, response_json = row
+            yield decode_cached_response(response_blob, response_json)
+
+
 class SQLiteCache:
     def __init__(self, path: str | Path) -> None:
         self.path = str(path)
@@ -131,11 +199,15 @@ class SQLiteCache:
                     params_json TEXT NOT NULL,
                     fetched_at INTEGER NOT NULL,
                     historical INTEGER NOT NULL,
-                    response_json TEXT NOT NULL,
+                    response_json TEXT,
+                    response_blob BLOB,
                     PRIMARY KEY (endpoint, params_hash)
                 )
                 """
             )
+            columns = _api_cache_columns(conn)
+            if "response_blob" not in columns:
+                conn.execute("ALTER TABLE api_cache ADD COLUMN response_blob BLOB")
             conn.execute("CREATE INDEX IF NOT EXISTS idx_endpoint ON api_cache(endpoint)")
             # Per-trade outcomes for adaptive mode gating. (mode, trade_date,
             # code) is the key — same code may appear on different dates.
@@ -163,19 +235,20 @@ class SQLiteCache:
         params_hash = self._hash(params_json)
         with self._lock, sqlite3.connect(self.path) as conn:
             row = conn.execute(
-                "SELECT response_json, fetched_at, historical FROM api_cache "
+                "SELECT response_blob, response_json, fetched_at, historical FROM api_cache "
                 "WHERE endpoint=? AND params_hash=?",
                 (endpoint, params_hash),
             ).fetchone()
         if row is None:
             return None
-        response_json, fetched_at, historical = row
+        response_blob, response_json, fetched_at, historical = row
+        response = decode_cached_response(response_blob, response_json)
         if historical:
-            return json.loads(response_json)
+            return response
         policy = ENDPOINT_POLICY.get(endpoint, {})
         ttl = int(policy.get("live_ttl", _DEFAULT_LIVE_TTL))
         if time.time() - fetched_at < ttl:
-            return json.loads(response_json)
+            return response
         return None
 
     def put(self, endpoint: str, payload: dict[str, Any], response: Any) -> None:
@@ -183,12 +256,15 @@ class SQLiteCache:
         params_hash = self._hash(params_json)
         today_iso = _date.today().isoformat()
         hist = 1 if is_historical(endpoint, payload, today_iso) else 0
+        if not hist and is_empty_response(response):
+            return
+        response_blob = encode_cached_response(response)
         with self._lock, sqlite3.connect(self.path) as conn:
             conn.execute(
                 """
                 INSERT OR REPLACE INTO api_cache
-                  (endpoint, params_hash, params_json, fetched_at, historical, response_json)
-                VALUES (?, ?, ?, ?, ?, ?)
+                  (endpoint, params_hash, params_json, fetched_at, historical, response_json, response_blob)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     endpoint,
@@ -196,7 +272,8 @@ class SQLiteCache:
                     params_json,
                     int(time.time()),
                     hist,
-                    json.dumps(response, ensure_ascii=False),
+                    "",
+                    response_blob,
                 ),
             )
             conn.commit()

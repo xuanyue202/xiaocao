@@ -38,6 +38,8 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "src"))
 
+from xiaocao.api.cache import iter_cached_responses  # noqa: E402
+
 CACHE = ROOT / "output" / ".cache" / "xiaocao.db"
 SOURCE_DIR = ROOT / "output" / "xiaocao_8mo_v3_baseline"
 OUT_MD = ROOT / "output" / "r2_intraday_analysis.md"
@@ -46,14 +48,10 @@ OUT_MD = ROOT / "output" / "r2_intraday_analysis.md"
 def load_minute_data() -> dict[tuple[str, str], list[dict]]:
     """{(YYYYMMDD, code): list of minute records sorted by time}."""
     out: dict[tuple[str, str], list[dict]] = {}
-    with sqlite3.connect(str(CACHE)) as conn:
-        rows = conn.execute(
-            "SELECT params_json, response_json FROM api_cache WHERE endpoint='/stock/minute_line'"
-        ).fetchall()
-    for pj, rj in rows:
+    rows = iter_cached_responses(CACHE, "/stock/minute_line", include_params=True)
+    for pj, data in rows:
         try:
             params = json.loads(pj).get("params", {})
-            data = json.loads(rj)
         except (json.JSONDecodeError, AttributeError):
             continue
         # Skip entries WITHOUT count — those are early probes that silently
