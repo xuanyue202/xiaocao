@@ -85,6 +85,7 @@ def build_parser() -> argparse.ArgumentParser:
     _report(sub.add_parser("report"))
     _config(sub.add_parser("config"))
     _catalog(sub.add_parser("catalog"))
+    _cache(sub.add_parser("cache"))
     return parser
 
 
@@ -529,6 +530,21 @@ def _catalog(parser: argparse.ArgumentParser) -> None:
 
     p = sub.add_parser("indicators")
     p.set_defaults(handler=catalog_indicators)
+
+
+def _cache(parser: argparse.ArgumentParser) -> None:
+    sub = parser.add_subparsers(dest="cache_command")
+
+    p = sub.add_parser("stats", help="查看 SQLite cache 当前体量")
+    p.add_argument("--archive", action="store_true", help="查看 archive DB，而不是 hot DB")
+    p.set_defaults(handler=cache_stats)
+
+    p = sub.add_parser("maintain", help="归档大明细历史缓存，并清理不再持久化的 realtime 行")
+    p.add_argument("--hot-days", type=int, default=365, help="大明细历史缓存 hot DB 保留天数，默认 365")
+    p.add_argument("--archive-path", help="archive DB 路径；默认与 --cache 同目录，形如 xiaocao.archive.db")
+    p.add_argument("--dry-run", action="store_true", help="只统计将要处理的行数，不写入")
+    p.add_argument("--vacuum", action="store_true", help="维护后执行 VACUUM 收缩 hot DB 文件")
+    p.set_defaults(handler=cache_maintain)
 
 
 def calendar_trade_days(args: argparse.Namespace) -> None:
@@ -1247,6 +1263,34 @@ def catalog_indicators(args: argparse.Namespace) -> None:
         row["scope"] = "frontend-only"
         rows.append(row)
     write_output(rows, _fmt(args), args.output)
+
+
+def cache_stats(args: argparse.Namespace) -> None:
+    from xiaocao.api.cache import SQLiteCache
+
+    cache_path = Path(getattr(args, "cache", "output/.cache/xiaocao.db"))
+    db = SQLiteCache(cache_path)
+    if getattr(args, "archive", False):
+        archive_path = Path(db.archive_path)
+        if not archive_path.exists():
+            write_output([], _fmt(args), args.output)
+            return
+        db = SQLiteCache(archive_path)
+    write_output(db.stats(), _fmt(args), args.output)
+
+
+def cache_maintain(args: argparse.Namespace) -> None:
+    from xiaocao.api.cache import SQLiteCache
+
+    cache_path = Path(getattr(args, "cache", "output/.cache/xiaocao.db"))
+    db = SQLiteCache(cache_path, archive_path=getattr(args, "archive_path", None))
+    result = db.maintain(
+        hot_days=args.hot_days,
+        archive_path=getattr(args, "archive_path", None),
+        vacuum=bool(getattr(args, "vacuum", False)),
+        dry_run=bool(getattr(args, "dry_run", False)),
+    )
+    write_output(result, _fmt(args), args.output)
 
 
 def _client(args: argparse.Namespace) -> XiaocaoClient:

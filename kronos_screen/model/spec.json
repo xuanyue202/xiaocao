@@ -1,0 +1,53 @@
+{
+  "name": "two-stage secondary screen (K-filter -> P-pick)",
+  "stage_2a_K": "Kronos base frozen embedding (last-hidden) -> StandardScaler -> PCA(8) -> Ridge(alpha=10); drop bottom 50% of day's candidates by K-score",
+  "stage_2b_P": "prior-day(D-1) intraday features -> HistGBDT; rank survivors, take top N (default 3-4)",
+  "P_features": [
+    "pd_ret",
+    "pd_tail_ret",
+    "pd_head_ret",
+    "pd_close_pos",
+    "pd_amplitude",
+    "pd_vwap_dev",
+    "pd_close_pcr",
+    "pd_q1_ret",
+    "pd_q4_ret",
+    "pd_late_accel",
+    "pd_upmin_ratio",
+    "pd_ret_std",
+    "pd_max_drawup",
+    "pd_tail_volshare",
+    "pd_head_volshare",
+    "pd_vol_skew",
+    "pd_mainin_sum",
+    "pd_mainin_tail",
+    "pd_mainin_trend",
+    "pd_mainin_amt_ratio",
+    "pd_mainin_late_ratio",
+    "pd_trend_end",
+    "pd_trend_slope"
+  ],
+  "live_inputs": {
+    "K": "Kronos base emb of code's daily K-line context (bars < buyDate), via kronos_lib.embed_contexts",
+    "P": "minute_line(code, prevTradingDay, count=241) -> build_priorday_feats.feats_from_minutes",
+    "optional_live": "stock_call_auction(code, today) imbalance (buyVol2-sellVol2)/pctChange as final tie-break (not backtestable)"
+  },
+  "validated_oos": {
+    "period": "2025-12-23..2026-05-27",
+    "days": 93,
+    "pipe_top3": {
+      "dayRet%": 1.76,
+      "win%": 57.7,
+      "Sharpe": 5.29,
+      "cum%": 402,
+      "pairedP": 0.017
+    },
+    "take_all": {
+      "dayRet%": 0.847,
+      "win%": 50.8,
+      "Sharpe": 3.04,
+      "cum%": 112
+    },
+    "caveat": "edge concentrated in 主板; main-board-only paired p=0.147 (borderline); robust across N=3-5 and 4/6 months"
+  }
+}

@@ -1,8 +1,10 @@
 """Persistent SQLite cache for XiaocaoClient responses.
 
 Most `/stock/...` endpoints are deterministic for a given (path, params) tuple
-once the date in question is in the past — so we can cache the response forever.
-Live endpoints (no date arg, or `date == today`) cache with a short TTL.
+once the date in question is in the past, so those rows are worth persisting.
+Realtime quote-like endpoints are intentionally not written to SQLite: their
+TTL is too short, and the current CLI/scripts do not repeatedly call the same
+payload often enough for a durable cache to pay for itself.
 
 Schema:
 
@@ -28,18 +30,19 @@ import json
 import sqlite3
 import threading
 import time
-from datetime import date as _date
+from datetime import date as _date, timedelta as _timedelta
 from pathlib import Path
 from typing import Any
 
 _DEFAULT_LIVE_TTL = 30
 _TODAY_PAST_DAY_PADDING = 0  # treat today as live; only strictly past dates are historical
 _GZIP_LEVEL = 6
+DEFAULT_HOT_DAYS = 365
 
 
 # Per-endpoint cache policy. `date_arg` names the params key that, when ≤ today,
-# makes the response historical (cache forever). `live_ttl` overrides the
-# default TTL for live responses.
+# makes the response historical. Only historical rows and explicitly marked
+# slow-changing rows are persisted; volatile realtime rows are skipped.
 ENDPOINT_POLICY: dict[str, dict[str, Any]] = {
     # Date-anchored, historical when date is past
     "/stock/xiao_cao_industry_block_rank": {"date_arg": "date", "live_ttl": 10},
@@ -51,7 +54,7 @@ ENDPOINT_POLICY: dict[str, dict[str, Any]] = {
     "/stock/xiao_cao_block_score": {"date_arg": "date", "live_ttl": 10},
     "/stock/xiao_cao_environment_second_line_v2": {"date_arg": "date", "live_ttl": 10},
     "/stock/xiao_cao_environment_second_line_selection": {"date_arg": "date", "live_ttl": 10},
-    "/stock/xiao_cao_environment_minute_line": {"date_arg": "tradeDate", "live_ttl": 5},
+    "/stock/xiao_cao_environment_minute_line": {"date_arg": "tradeDate", "requires_count_for_history": True, "live_ttl": 5},
     "/stock/xiao_cao_block_detail": {"date_arg": "tradeDate", "live_ttl": 10},
     "/stock/sort_v2": {"date_arg": "date", "live_ttl": 10},
     "/stock/get_code_by_xiao_cao_block": {"date_arg": "tradeDate", "live_ttl": 10},
@@ -60,17 +63,32 @@ ENDPOINT_POLICY: dict[str, dict[str, Any]] = {
     "/stock/xiao_cao_block_date_kline": {"date_arg": "paramTime", "live_ttl": 10},
     "/stock/trade_cal": {"date_arg": "endDate", "live_ttl": 3600},
     # Always live
-    "/stock/market_overview": {"date_arg": None, "live_ttl": 10},
-    "/stock/stock_info": {"date_arg": None, "live_ttl": 86400},
-    "/stock/minute_line": {"date_arg": None, "live_ttl": 5},
-    "/stock/each_trade": {"date_arg": None, "live_ttl": 3},
-    "/stock/get_technical_index": {"date_arg": None, "live_ttl": 10},
+    "/stock/market_overview": {"date_arg": None, "persist": False, "live_ttl": 10},
+    "/stock/stock_info": {"date_arg": None, "persist": True, "live_ttl": 86400},
+    "/stock/minute_line": {"date_arg": "tradeDate", "requires_count_for_history": True, "live_ttl": 5},
+    "/stock/each_trade": {"date_arg": None, "persist": False, "live_ttl": 3},
+    "/stock/get_technical_index": {"date_arg": None, "persist": False, "live_ttl": 10},
     "/stock/get_technical_index_history": {"date_arg": "tradeDate", "live_ttl": 10},
-    "/stock/next_trade_cal": {"date_arg": None, "live_ttl": 600},
-    "/stock/second_line": {"date_arg": None, "live_ttl": 3},
-    "/stock/second_line_detail_info": {"date_arg": None, "live_ttl": 3},
-    "/stock/xiao_cao_week_stats": {"date_arg": None, "live_ttl": 3600},
-    "/stock/xiao_cao_emotions_height": {"date_arg": None, "live_ttl": 10},
+    "/stock/next_trade_cal": {"date_arg": None, "persist": True, "live_ttl": 600},
+    "/stock/second_line": {"date_arg": None, "persist": False, "live_ttl": 3},
+    "/stock/second_line_detail_info": {"date_arg": None, "persist": False, "live_ttl": 3},
+    "/stock/xiao_cao_week_stats": {"date_arg": None, "persist": True, "live_ttl": 3600},
+    "/stock/xiao_cao_emotions_height": {"date_arg": None, "persist": False, "live_ttl": 10},
+}
+
+ARCHIVE_ENDPOINTS: set[str] = {
+    "/stock/xiao_cao_index_v2",
+    "/stock/sort_v2",
+    "/stock/date_kline",
+    "/stock/xiao_cao_block_date_kline",
+    "/stock/minute_line",
+    "/stock/xiao_cao_environment_minute_line",
+}
+
+SLOW_PERSIST_ENDPOINTS: set[str] = {
+    endpoint
+    for endpoint, policy in ENDPOINT_POLICY.items()
+    if policy.get("persist") is True
 }
 
 
@@ -96,25 +114,41 @@ def _payload_inner(payload: dict[str, Any]) -> dict[str, Any]:
     return payload if isinstance(payload, dict) else {}
 
 
+def _payload_date(endpoint: str, payload: dict[str, Any]) -> str | None:
+    policy = ENDPOINT_POLICY.get(endpoint, {})
+    date_arg = policy.get("date_arg")
+    if not date_arg:
+        return None
+    inner = _payload_inner(payload)
+    value = inner.get(date_arg)
+    if not isinstance(value, str) or len(value) < 8:
+        return None
+    return _normalize_date(value)
+
+
 def is_historical(endpoint: str, payload: dict[str, Any], today_iso: str) -> bool:
     """Whether the response is anchored to a past date and can be cached forever."""
     policy = ENDPOINT_POLICY.get(endpoint, {})
-    date_arg = policy.get("date_arg")
     inner = _payload_inner(payload)
-    keys: tuple[str, ...]
-    if date_arg:
-        keys = (date_arg,)
-    else:
+    if policy.get("requires_count_for_history") and inner.get("count") is None:
+        return False
+    normalized = _payload_date(endpoint, payload)
+    if normalized is None:
         # No declared date arg → endpoint is live (e.g. market_overview).
         return False
-    for k in keys:
-        v = inner.get(k)
-        if not isinstance(v, str) or len(v) < 8:
-            continue
-        normalized = _normalize_date(v)
-        if normalized < today_iso:
-            return True
-    return False
+    return normalized < today_iso
+
+
+def should_persist(endpoint: str, payload: dict[str, Any], today_iso: str) -> bool:
+    """Return whether this response is worth writing to the durable cache."""
+    if is_historical(endpoint, payload, today_iso):
+        return True
+    return bool(ENDPOINT_POLICY.get(endpoint, {}).get("persist", False))
+
+
+def default_archive_path(cache_path: str | Path) -> str:
+    path = Path(cache_path)
+    return str(path.with_name(f"{path.stem}.archive{path.suffix or '.db'}"))
 
 
 def encode_cached_response(response: Any) -> bytes:
@@ -151,64 +185,81 @@ def _api_cache_columns(conn: sqlite3.Connection) -> set[str]:
         return set()
 
 
+def _init_api_cache_schema(conn: sqlite3.Connection) -> None:
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS api_cache (
+            endpoint TEXT NOT NULL,
+            params_hash TEXT NOT NULL,
+            params_json TEXT NOT NULL,
+            fetched_at INTEGER NOT NULL,
+            historical INTEGER NOT NULL,
+            response_json TEXT,
+            response_blob BLOB,
+            PRIMARY KEY (endpoint, params_hash)
+        )
+        """
+    )
+    columns = _api_cache_columns(conn)
+    if "response_blob" not in columns:
+        conn.execute("ALTER TABLE api_cache ADD COLUMN response_blob BLOB")
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_endpoint ON api_cache(endpoint)")
+
+
 def iter_cached_responses(
     cache_path: str | Path,
     endpoint: str,
     *,
     include_params: bool = False,
+    include_archive: bool = True,
+    archive_path: str | Path | None = None,
 ) -> Any:
     """Yield decoded cached responses for an endpoint.
 
     This is the compatibility boundary for callers that used to select
     `response_json` directly. It reads both new gzip BLOB rows and legacy
-    plain-text rows.
+    plain-text rows. By default it also reads the sibling archive DB when it
+    exists, so analysis scripts keep seeing old rotated detail rows.
     """
-    with sqlite3.connect(str(cache_path)) as conn:
-        columns = _api_cache_columns(conn)
-        if "response_blob" in columns:
-            select = "params_json, response_blob, response_json" if include_params else "response_blob, response_json"
-        else:
-            select = "params_json, NULL, response_json" if include_params else "NULL, response_json"
-        rows = conn.execute(
-            f"SELECT {select} FROM api_cache WHERE endpoint=?",
-            (endpoint,),
-        ).fetchall()
-    for row in rows:
-        if include_params:
-            params_json, response_blob, response_json = row
-            yield params_json, decode_cached_response(response_blob, response_json)
-        else:
-            response_blob, response_json = row
-            yield decode_cached_response(response_blob, response_json)
+    db_paths = [Path(cache_path)]
+    if include_archive:
+        db_paths.append(Path(archive_path) if archive_path is not None else Path(default_archive_path(cache_path)))
+    seen: set[tuple[str, str]] = set()
+    for db_path in db_paths:
+        if not db_path.exists():
+            continue
+        with sqlite3.connect(str(db_path)) as conn:
+            columns = _api_cache_columns(conn)
+            if "response_blob" in columns:
+                select = "params_hash, params_json, response_blob, response_json"
+            else:
+                select = "params_hash, params_json, NULL, response_json"
+            rows = conn.execute(
+                f"SELECT {select} FROM api_cache WHERE endpoint=?",
+                (endpoint,),
+            ).fetchall()
+        for params_hash, params_json, response_blob, response_json in rows:
+            key = (endpoint, str(params_hash))
+            if key in seen:
+                continue
+            seen.add(key)
+            if include_params:
+                yield params_json, decode_cached_response(response_blob, response_json)
+            else:
+                yield decode_cached_response(response_blob, response_json)
 
 
 class SQLiteCache:
-    def __init__(self, path: str | Path) -> None:
+    def __init__(self, path: str | Path, archive_path: str | Path | None = None) -> None:
         self.path = str(path)
+        self.archive_path = str(archive_path) if archive_path is not None else default_archive_path(path)
         self._lock = threading.Lock()
         self._init_schema()
 
     def _init_schema(self) -> None:
         Path(self.path).parent.mkdir(parents=True, exist_ok=True)
         with sqlite3.connect(self.path) as conn:
-            conn.execute(
-                """
-                CREATE TABLE IF NOT EXISTS api_cache (
-                    endpoint TEXT NOT NULL,
-                    params_hash TEXT NOT NULL,
-                    params_json TEXT NOT NULL,
-                    fetched_at INTEGER NOT NULL,
-                    historical INTEGER NOT NULL,
-                    response_json TEXT,
-                    response_blob BLOB,
-                    PRIMARY KEY (endpoint, params_hash)
-                )
-                """
-            )
-            columns = _api_cache_columns(conn)
-            if "response_blob" not in columns:
-                conn.execute("ALTER TABLE api_cache ADD COLUMN response_blob BLOB")
-            conn.execute("CREATE INDEX IF NOT EXISTS idx_endpoint ON api_cache(endpoint)")
+            _init_api_cache_schema(conn)
             # Per-trade outcomes for adaptive mode gating. (mode, trade_date,
             # code) is the key — same code may appear on different dates.
             # `trade_date` is the buyDate (ISO YYYY-MM-DD).
@@ -233,12 +284,12 @@ class SQLiteCache:
     def get(self, endpoint: str, payload: dict[str, Any]) -> Any | None:
         params_json = canonical_params(payload)
         params_hash = self._hash(params_json)
-        with self._lock, sqlite3.connect(self.path) as conn:
-            row = conn.execute(
-                "SELECT response_blob, response_json, fetched_at, historical FROM api_cache "
-                "WHERE endpoint=? AND params_hash=?",
-                (endpoint, params_hash),
-            ).fetchone()
+        row = self._get_row(self.path, endpoint, params_hash)
+        if row is None and Path(self.archive_path).exists():
+            row = self._get_row(self.archive_path, endpoint, params_hash)
+            if row is not None:
+                response_blob, response_json, _fetched_at, _historical = row
+                return decode_cached_response(response_blob, response_json)
         if row is None:
             return None
         response_blob, response_json, fetched_at, historical = row
@@ -251,11 +302,22 @@ class SQLiteCache:
             return response
         return None
 
+    def _get_row(self, db_path: str, endpoint: str, params_hash: str) -> tuple[Any, ...] | None:
+        with self._lock, sqlite3.connect(db_path) as conn:
+            row = conn.execute(
+                "SELECT response_blob, response_json, fetched_at, historical FROM api_cache "
+                "WHERE endpoint=? AND params_hash=?",
+                (endpoint, params_hash),
+            ).fetchone()
+        return row
+
     def put(self, endpoint: str, payload: dict[str, Any], response: Any) -> None:
         params_json = canonical_params(payload)
         params_hash = self._hash(params_json)
         today_iso = _date.today().isoformat()
         hist = 1 if is_historical(endpoint, payload, today_iso) else 0
+        if not should_persist(endpoint, payload, today_iso):
+            return
         if not hist and is_empty_response(response):
             return
         response_blob = encode_cached_response(response)
@@ -277,6 +339,94 @@ class SQLiteCache:
                 ),
             )
             conn.commit()
+
+    def maintain(
+        self,
+        *,
+        hot_days: int = DEFAULT_HOT_DAYS,
+        archive_path: str | Path | None = None,
+        vacuum: bool = False,
+        dry_run: bool = False,
+        today_iso: str | None = None,
+    ) -> dict[str, Any]:
+        """Archive old large historical detail rows and drop stale volatile rows.
+
+        Only high-volume historical detail endpoints are archived. Small stable
+        endpoints and mode_history are left alone.
+        """
+        target_archive = str(archive_path) if archive_path is not None else self.archive_path
+        today = _date.fromisoformat(today_iso or _date.today().isoformat())
+        cutoff = (today - _timedelta(days=hot_days)).isoformat()
+        moved = 0
+        deleted_nonpersistent = 0
+        with self._lock, sqlite3.connect(self.path) as conn:
+            archive_rows: list[tuple[Any, ...]] = []
+            for endpoint in sorted(ARCHIVE_ENDPOINTS):
+                rows = conn.execute(
+                    """
+                    SELECT endpoint, params_hash, params_json, fetched_at, historical, response_json, response_blob
+                    FROM api_cache
+                    WHERE endpoint=? AND historical=1
+                    """,
+                    (endpoint,),
+                ).fetchall()
+                for row in rows:
+                    payload_date = _payload_date(endpoint, json.loads(row[2]))
+                    if payload_date is not None and payload_date < cutoff:
+                        archive_rows.append(row)
+            moved = len(archive_rows)
+            slow_placeholders = ",".join("?" for _ in SLOW_PERSIST_ENDPOINTS)
+            delete_filter = (
+                f"historical=0 AND endpoint NOT IN ({slow_placeholders})"
+                if SLOW_PERSIST_ENDPOINTS
+                else "historical=0"
+            )
+            delete_params = list(SLOW_PERSIST_ENDPOINTS)
+            (deleted_nonpersistent,) = conn.execute(
+                f"SELECT COUNT(*) FROM api_cache WHERE {delete_filter}",
+                delete_params,
+            ).fetchone()
+            if dry_run:
+                return {
+                    "hot_days": hot_days,
+                    "cutoff": cutoff,
+                    "archive_path": target_archive,
+                    "archived": moved,
+                    "deleted_nonpersistent": int(deleted_nonpersistent or 0),
+                    "vacuumed": False,
+                    "dry_run": True,
+                }
+            if archive_rows:
+                Path(target_archive).parent.mkdir(parents=True, exist_ok=True)
+                with sqlite3.connect(target_archive) as archive:
+                    _init_api_cache_schema(archive)
+                    archive.executemany(
+                        """
+                        INSERT OR REPLACE INTO api_cache
+                          (endpoint, params_hash, params_json, fetched_at, historical, response_json, response_blob)
+                        VALUES (?, ?, ?, ?, ?, ?, ?)
+                        """,
+                        archive_rows,
+                    )
+                    archive.commit()
+                conn.executemany(
+                    "DELETE FROM api_cache WHERE endpoint=? AND params_hash=?",
+                    [(row[0], row[1]) for row in archive_rows],
+                )
+            conn.execute(f"DELETE FROM api_cache WHERE {delete_filter}", delete_params)
+            conn.commit()
+            conn.execute("PRAGMA wal_checkpoint(TRUNCATE)")
+            if vacuum:
+                conn.execute("VACUUM")
+        return {
+            "hot_days": hot_days,
+            "cutoff": cutoff,
+            "archive_path": target_archive,
+            "archived": moved,
+            "deleted_nonpersistent": int(deleted_nonpersistent or 0),
+            "vacuumed": bool(vacuum),
+            "dry_run": False,
+        }
 
     def clear(self, endpoint: str | None = None) -> int:
         with self._lock, sqlite3.connect(self.path) as conn:
@@ -421,9 +571,20 @@ class SQLiteCache:
     def stats(self) -> list[dict[str, Any]]:
         with self._lock, sqlite3.connect(self.path) as conn:
             rows = conn.execute(
-                "SELECT endpoint, COUNT(*), SUM(historical) FROM api_cache GROUP BY endpoint"
+                """
+                SELECT endpoint, COUNT(*), SUM(historical),
+                       COALESCE(SUM(LENGTH(response_blob)), 0),
+                       COALESCE(SUM(LENGTH(params_json)), 0)
+                FROM api_cache GROUP BY endpoint
+                """
             ).fetchall()
         return [
-            {"endpoint": r[0], "rows": int(r[1]), "historical": int(r[2] or 0)}
+            {
+                "endpoint": r[0],
+                "rows": int(r[1]),
+                "historical": int(r[2] or 0),
+                "response_mb": round(int(r[3] or 0) / 1024 / 1024, 3),
+                "params_mb": round(int(r[4] or 0) / 1024 / 1024, 3),
+            }
             for r in rows
         ]

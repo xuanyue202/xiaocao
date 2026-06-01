@@ -8,8 +8,10 @@ import pytest
 from xiaocao.api.cache import (
     SQLiteCache,
     canonical_params,
+    default_archive_path,
     is_historical,
     iter_cached_responses,
+    should_persist,
 )
 
 
@@ -39,6 +41,24 @@ def test_is_historical_today_is_live():
 def test_is_historical_unknown_endpoint_is_live():
     payload = {"params": {"date": "2020-01-01"}}
     assert is_historical("/stock/no_policy_endpoint", payload, today_iso="2026-04-25") is False
+
+
+def test_should_persist_skips_volatile_realtime_rows():
+    assert should_persist("/stock/second_line", {"params": {"code": "000001.XSHE"}}, "2026-04-25") is False
+    assert should_persist("/stock/market_overview", {"params": {}}, "2026-04-25") is False
+
+
+def test_should_persist_keeps_slow_metadata_rows():
+    assert should_persist("/stock/stock_info", {"params": {}}, "2026-04-25") is True
+    assert should_persist("/stock/xiao_cao_week_stats", {"params": {}}, "2026-04-25") is True
+
+
+def test_minute_line_history_requires_trade_date_and_count():
+    today = "2026-04-25"
+    with_date_only = {"params": {"code": "000001.XSHE", "tradeDate": "20200101"}}
+    with_date_and_count = {"params": {"code": "000001.XSHE", "tradeDate": "20200101", "count": 241}}
+    assert is_historical("/stock/minute_line", with_date_only, today) is False
+    assert is_historical("/stock/minute_line", with_date_and_count, today) is True
 
 
 def test_sqlite_cache_round_trip(tmp_path):
@@ -121,39 +141,39 @@ def test_sqlite_historical_never_expires(tmp_path):
     assert db.get("/stock/sort_v2", payload) == "old"
 
 
-def test_sqlite_live_expires_after_ttl(tmp_path):
+def test_sqlite_realtime_rows_are_not_persisted(tmp_path):
+    db = SQLiteCache(tmp_path / "cache.db")
+    payload = {"params": {"code": "000001.XSHE"}}
+    db.put("/stock/second_line", payload, "fresh")
+
+    import sqlite3
+    with sqlite3.connect(db.path) as c:
+        (rows,) = c.execute("SELECT COUNT(*) FROM api_cache").fetchone()
+    assert rows == 0
+    assert db.get("/stock/second_line", payload) is None
+
+
+def test_sqlite_slow_metadata_still_expires_by_ttl(tmp_path):
     db = SQLiteCache(tmp_path / "cache.db")
     payload = {"params": {}}
-    db.put("/stock/market_overview", payload, "fresh")
-    # Force fetched_at past TTL.
-    import sqlite3
-    with sqlite3.connect(db.path) as c:
-        c.execute("UPDATE api_cache SET fetched_at = ?", (int(time.time()) - 3600,))
-        c.commit()
-    assert db.get("/stock/market_overview", payload) is None
-
-
-def test_sqlite_live_realtime_endpoints_expire_quickly(tmp_path):
-    db = SQLiteCache(tmp_path / "cache.db")
-    payload = {"params": {"code": "000001.XSHE", "tradeDate": date.today().strftime("%Y%m%d")}}
-    db.put("/stock/stock_call_auction", payload, [{"trade": 1}])
+    db.put("/stock/xiao_cao_week_stats", payload, {"fresh": True})
 
     import sqlite3
     with sqlite3.connect(db.path) as c:
-        c.execute("UPDATE api_cache SET fetched_at = ?", (int(time.time()) - 4,))
+        c.execute("UPDATE api_cache SET fetched_at = ?", (int(time.time()) - 7200,))
         c.commit()
-    assert db.get("/stock/stock_call_auction", payload) is None
+    assert db.get("/stock/xiao_cao_week_stats", payload) is None
 
 
-def test_sqlite_today_date_anchored_endpoints_expire_quickly(tmp_path):
+def test_sqlite_today_date_anchored_rows_are_not_persisted(tmp_path):
     db = SQLiteCache(tmp_path / "cache.db")
     payload = {"params": {"date": date.today().isoformat(), "model": 1}}
     db.put("/stock/xiao_cao_industry_block_rank", payload, [{"num": 1}])
 
     import sqlite3
     with sqlite3.connect(db.path) as c:
-        c.execute("UPDATE api_cache SET fetched_at = ?", (int(time.time()) - 11,))
-        c.commit()
+        (rows,) = c.execute("SELECT COUNT(*) FROM api_cache").fetchone()
+    assert rows == 0
     assert db.get("/stock/xiao_cao_industry_block_rank", payload) is None
 
 
@@ -177,25 +197,101 @@ def test_sqlite_does_not_cache_empty_live_responses(tmp_path):
 
 def test_sqlite_clear(tmp_path):
     db = SQLiteCache(tmp_path / "cache.db")
-    db.put("/stock/a", {"params": {}}, 1)
-    db.put("/stock/b", {"params": {}}, 2)
-    assert db.clear("/stock/a") == 1
-    assert db.get("/stock/a", {"params": {}}) is None
-    assert db.get("/stock/b", {"params": {}}) == 2
+    db.put("/stock/sort_v2", {"params": {"date": "2020-01-01"}}, 1)
+    db.put("/stock/date_kline", {"params": {"paramTime": "2020-01-01"}}, 2)
+    assert db.clear("/stock/sort_v2") == 1
+    assert db.get("/stock/sort_v2", {"params": {"date": "2020-01-01"}}) is None
+    assert db.get("/stock/date_kline", {"params": {"paramTime": "2020-01-01"}}) == 2
     assert db.clear() == 1
-    assert db.get("/stock/b", {"params": {}}) is None
+    assert db.get("/stock/date_kline", {"params": {"paramTime": "2020-01-01"}}) is None
 
 
 def test_sqlite_stats(tmp_path):
     db = SQLiteCache(tmp_path / "cache.db")
     db.put("/stock/sort_v2", {"params": {"date": "2020-01-01"}}, [1])
     db.put("/stock/sort_v2", {"params": {"date": "2020-01-02"}}, [2])
-    db.put("/stock/market_overview", {"params": {}}, {"ok": True})
+    db.put("/stock/stock_info", {"params": {}}, {"ok": True})
     stats = {row["endpoint"]: row for row in db.stats()}
     assert stats["/stock/sort_v2"]["rows"] == 2
     assert stats["/stock/sort_v2"]["historical"] == 2
-    assert stats["/stock/market_overview"]["rows"] == 1
-    assert stats["/stock/market_overview"]["historical"] == 0
+    assert stats["/stock/stock_info"]["rows"] == 1
+    assert stats["/stock/stock_info"]["historical"] == 0
+
+
+def test_cache_maintain_archives_old_large_detail_rows(tmp_path):
+    db = SQLiteCache(tmp_path / "cache.db")
+    old_payload = {"params": {"date": "2020-01-01", "stockIds": ["A"]}}
+    fresh_payload = {"params": {"date": "2026-04-20", "stockIds": ["A"]}}
+    small_payload = {"params": {"date": "2020-01-01", "model": 1}}
+    db.put("/stock/sort_v2", old_payload, {"old": True})
+    db.put("/stock/sort_v2", fresh_payload, {"fresh": True})
+    db.put("/stock/xiao_cao_industry_block_rank", small_payload, {"small": True})
+
+    result = db.maintain(hot_days=365, today_iso="2026-04-25")
+
+    assert result["archived"] == 1
+    assert result["deleted_nonpersistent"] == 0
+    assert db.get("/stock/sort_v2", old_payload) == {"old": True}
+    assert db.get("/stock/sort_v2", fresh_payload) == {"fresh": True}
+    assert db.get("/stock/xiao_cao_industry_block_rank", small_payload) == {"small": True}
+    assert default_archive_path(db.path) == db.archive_path
+
+    import sqlite3
+    with sqlite3.connect(db.path) as c:
+        (hot_old_rows,) = c.execute(
+            "SELECT COUNT(*) FROM api_cache WHERE endpoint='/stock/sort_v2' AND params_json=?",
+            (canonical_params(old_payload),),
+        ).fetchone()
+    with sqlite3.connect(db.archive_path) as c:
+        (archive_old_rows,) = c.execute(
+            "SELECT COUNT(*) FROM api_cache WHERE endpoint='/stock/sort_v2' AND params_json=?",
+            (canonical_params(old_payload),),
+        ).fetchone()
+    assert hot_old_rows == 0
+    assert archive_old_rows == 1
+    rows = list(iter_cached_responses(db.path, "/stock/sort_v2"))
+    assert {"old": True} in rows
+    assert {"fresh": True} in rows
+
+
+def test_cache_maintain_deletes_legacy_volatile_rows(tmp_path):
+    import sqlite3
+
+    db = SQLiteCache(tmp_path / "cache.db")
+    payload = {"params": {"code": "000001.XSHE"}}
+    params_json = canonical_params(payload)
+    with sqlite3.connect(db.path) as c:
+        c.execute(
+            """
+            INSERT INTO api_cache
+              (endpoint, params_hash, params_json, fetched_at, historical, response_json)
+            VALUES (?, ?, ?, ?, ?, ?)
+            """,
+            ("/stock/second_line", db._hash(params_json), params_json, 0, 0, '"old"'),
+        )
+        c.commit()
+
+    result = db.maintain(dry_run=True)
+    assert result["deleted_nonpersistent"] == 1
+    assert db.get("/stock/second_line", payload) is None
+
+    result = db.maintain()
+    assert result["deleted_nonpersistent"] == 1
+    with sqlite3.connect(db.path) as c:
+        (rows,) = c.execute("SELECT COUNT(*) FROM api_cache").fetchone()
+    assert rows == 0
+
+
+def test_cache_maintain_keeps_slow_metadata_rows(tmp_path):
+    import sqlite3
+
+    db = SQLiteCache(tmp_path / "cache.db")
+    db.put("/stock/stock_info", {"params": {}}, {"slow": True})
+    result = db.maintain()
+    assert result["deleted_nonpersistent"] == 0
+    with sqlite3.connect(db.path) as c:
+        (rows,) = c.execute("SELECT COUNT(*) FROM api_cache WHERE endpoint='/stock/stock_info'").fetchone()
+    assert rows == 1
 
 
 def test_client_uses_cache_when_present(tmp_path, monkeypatch):

@@ -30,7 +30,27 @@ class ApiDataSource:
                     self.lpdx_state,
                 )
             )
-        return output
+        # The backend may return a mapping or a list whose order is not the
+        # requested order. Strategy rules scan sorted pools with early-stop
+        # score floors, so preserving the caller's sorted `codes` order is
+        # part of the datasource contract.
+        by_code: dict[str, dict[str, Any]] = {}
+        for row in output:
+            if not isinstance(row, dict):
+                continue
+            code = row.get("code") or row.get("stockCode") or row.get("stockId")
+            if code:
+                by_code[str(code)] = row
+        if not by_code:
+            return output
+        requested_codes = set(codes)
+        ordered = [by_code[code] for code in codes if code in by_code]
+        extras = [
+            row for row in output
+            if isinstance(row, dict)
+            and str(row.get("code") or row.get("stockCode") or row.get("stockId") or "") not in requested_codes
+        ]
+        return ordered + extras
 
     def sort_codes(
         self,

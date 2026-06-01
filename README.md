@@ -530,7 +530,7 @@ backtest 接受全部 `strategy run` 的过滤参数（`--modes`、`--sort-key`�
 
 ### 性能选项
 
-`--cache` 默认开启，路径为 `output/.cache/xiaocao.db`。所有过去日期的 API 结果（block_rank / get_xiao_cao_index_v2 / sort_v2 / 历史 K 线 等）存进 SQLite；下次相同查询命中缓存直接返回。冷缓存下 39 天回测约 2 分钟（workers=6），热缓存下 0.1 秒。
+`--cache` 默认开启，路径为 `output/.cache/xiaocao.db`。过去日期的 API 结果（block_rank / get_xiao_cao_index_v2 / sort_v2 / 历史 K 线 / 历史 minute_line 等）会存进 SQLite；实时盘口、逐笔、second_line、market_overview、今日无历史锚点的 minute_line 不落盘。少量慢变元数据（stock_info / next_trade_cal / week_stats）继续缓存，但不参与 rotation。冷缓存下 39 天回测约 2 分钟（workers=6），热缓存下 0.1 秒。
 
 ```bash
 # 默认就有缓存，可指定路径
@@ -544,6 +544,13 @@ xiaocao --no-cache backtest run --start 2026-03-01 --end 2026-04-24
 
 # 跨天并行（冷缓存下显著加速；adaptive_modes 会强制串行）
 xiaocao backtest run --start 2026-03-01 --end 2026-04-24 --workers 6
+
+# 查看缓存体量
+xiaocao cache stats --format table
+
+# 维护缓存：大明细历史数据 hot DB 默认保留 365 天，旧数据迁移到 xiaocao.archive.db
+xiaocao cache maintain --dry-run
+xiaocao cache maintain --hot-days 365 --vacuum
 ```
 
 ### B 档结构性增强（道+法层）

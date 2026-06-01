@@ -24,6 +24,7 @@ output/.cache/*.db
 output/.cache/*-wal
 output/.cache/*-shm
 output/.cache/*-journal
+output/.cache/
 
 # 顶层 ad-hoc artifacts（每次 backtest 产生）
 output/*.log
@@ -45,13 +46,42 @@ output/validation_*/
 output/xiaocao_backtest_*/
 output/v3_*_validate/
 output/tune_*/
+output/rank_tuning/
 output/winners_losers_analysis/
+output/board_stats_*/
+output/discipline_verify_*/
+output/mode_history_rebuild_*/
+output/xiaocao_6mo_*/
 
 # Live trading runtime — 只保 positions.jsonl.example 模板
 output/live/positions.jsonl
 output/live/alerts.jsonl
 output/live/recommend_*.md
 output/live/*.log
+output/live/auto/
+output/live/eod_features.jsonl
+output/live/paper_account.json*
+output/live/paper_holdings.json
+output/live/paper_holdings_snapshots.jsonl
+output/live/paper_trades.jsonl*
+output/live/positions.jsonl.*
+output/live/signal_snapshots.jsonl
+output/live/training_rows.parquet
 
 # Paper trading runtime（每次 replay 重新生成）
 output/paper_v6/
+
+# Kronos overlay: source code/spec live in Git; binary artifacts and corpora do not.
+Kronos/
+kronos_screen/data/
+kronos_screen/model/*.joblib
+kronos_screen/kronos_paper.pdf
+kronos_screen/kronos_paper.txt
+kronos_screen/scripts/__pycache__/
+
+# Packaged/exported artifacts.
+output/*.zip
+output/*.sha256
+
+# Local agent/editor state.
+.claude/

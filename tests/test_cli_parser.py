@@ -218,6 +218,19 @@ def test_catalog_extra_lookup_subcommands() -> None:
     assert indicators.handler.__name__ == "catalog_indicators"
 
 
+def test_cache_commands_parse() -> None:
+    parser = build_parser()
+    stats = parser.parse_args(["cache", "stats", "--archive"])
+    maintain = parser.parse_args(["cache", "maintain", "--hot-days", "180", "--dry-run", "--vacuum"])
+
+    assert stats.handler.__name__ == "cache_stats"
+    assert stats.archive is True
+    assert maintain.handler.__name__ == "cache_maintain"
+    assert maintain.hot_days == 180
+    assert maintain.dry_run is True
+    assert maintain.vacuum is True
+
+
 def test_second_batch_market_and_block_commands_parse() -> None:
     parser = build_parser()
 
