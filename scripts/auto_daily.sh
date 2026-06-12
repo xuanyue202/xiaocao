@@ -14,11 +14,23 @@ LOG="$LOG_DIR/${TODAY}_${STEP}.log"
 log() { echo "[$(date '+%F %T')] $*" | tee -a "$LOG"; }
 
 # --- trading-day guard: `calendar latest` returns the latest trading day <= today ---
-CALENDAR_OUTPUT="$("$PY" -m xiaocao calendar latest --date today 2>&1)"
-CALENDAR_STATUS=$?
-if [ $CALENDAR_STATUS -ne 0 ]; then
-  log "交易日历查询失败 — skip $STEP"
+CALENDAR_STATUS=1
+CALENDAR_OUTPUT=""
+CALENDAR_MAX_RETRIES=3
+for attempt in $(seq 1 "$CALENDAR_MAX_RETRIES"); do
+  CALENDAR_OUTPUT="$("$PY" -m xiaocao calendar latest --date today 2>&1)"
+  CALENDAR_STATUS=$?
+  if [ $CALENDAR_STATUS -eq 0 ]; then
+    break
+  fi
+  log "交易日历查询失败 (attempt ${attempt}/${CALENDAR_MAX_RETRIES})"
   printf '%s\n' "$CALENDAR_OUTPUT" | tee -a "$LOG"
+  if [ "$attempt" -lt "$CALENDAR_MAX_RETRIES" ]; then
+    sleep 2
+  fi
+done
+if [ $CALENDAR_STATUS -ne 0 ]; then
+  log "交易日历查询最终失败 — skip $STEP"
   exit $CALENDAR_STATUS
 fi
 LATEST="$(printf '%s\n' "$CALENDAR_OUTPUT" | tail -1 | tr -d '[:space:]')"

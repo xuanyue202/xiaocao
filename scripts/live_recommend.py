@@ -19,11 +19,16 @@ Usage:
 from __future__ import annotations
 
 import argparse
+import html
 import json
 import sys
 import time as _time
 from datetime import date as _date, datetime, time, timedelta
 from pathlib import Path
+from urllib.parse import quote_plus
+from xml.etree import ElementTree
+
+import requests
 
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "src"))
@@ -36,6 +41,8 @@ from xiaocao.strategy import run_strategy  # noqa: E402
 from xiaocao.utils.trading_session import A_SHARE_TZ  # noqa: E402
 
 OUT_DIR = ROOT / "output" / "live"
+STOCK_SENTIMENT_FILE = OUT_DIR / "stock_sentiment.json"
+STOCK_SENTIMENT_HISTORY_FILE = OUT_DIR / "stock_sentiment_history.jsonl"
 WAIT_START = time(9, 20)
 WAIT_TARGET = time(9, 25, 1)
 DEFAULT_MAX_CANDIDATES = 3
@@ -66,6 +73,15 @@ PROFILES = {
     "v5": {"profile": "validated_v5", "dd_pct": 2.0, "label": "5d max_dd 2% (conservative)"},
     "v6": {"profile": "validated_v6", "dd_pct": 0.5, "label": "3d max_dd 0.5% (aggressive)"},
 }
+SENTIMENT_HEADERS = {"user-agent": "Mozilla/5.0 xiaocao-live-recommend/0.1"}
+POSITIVE_SENTIMENT_TERMS = (
+    "涨停", "连板", "大涨", "增持", "回购", "中标", "订单", "预增", "扭亏",
+    "增长", "盈利", "签约", "突破", "获批", "龙头", "景气", "合作",
+)
+NEGATIVE_SENTIMENT_TERMS = (
+    "跌停", "减持", "问询", "处罚", "下滑", "亏损", "风险", "终止", "诉讼",
+    "异常波动", "监管", "解禁", "退市", "违约", "澄清", "下修",
+)
 
 
 def _client() -> XiaocaoClient:
@@ -75,6 +91,227 @@ def _client() -> XiaocaoClient:
         base_url=settings.base_url, timeout=settings.timeout,
         retries=settings.retries, cache=cache,
     )
+
+
+def _load_stock_sentiment_map(today_iso: str) -> dict[str, dict[str, object]]:
+    if not STOCK_SENTIMENT_FILE.exists():
+        return {}
+    try:
+        payload = json.loads(STOCK_SENTIMENT_FILE.read_text(encoding="utf-8"))
+    except Exception:
+        return {}
+
+    out: dict[str, dict[str, object]] = {}
+
+    def _ingest(item: object) -> None:
+        if not isinstance(item, dict):
+            return
+        code = str(item.get("code") or item.get("stockId") or "").strip()
+        if not code:
+            return
+        item_date = str(item.get("date") or item.get("tradeDate") or today_iso)[:10]
+        if item_date != today_iso:
+            return
+        out[code] = item
+
+    if isinstance(payload, dict):
+        for key, value in payload.items():
+            if isinstance(value, dict):
+                _ingest({"code": key, **value})
+    elif isinstance(payload, list):
+        for item in payload:
+            _ingest(item)
+    return out
+
+
+def _sanitize_headline(text: str) -> str:
+    cleaned = html.unescape(text or "").strip()
+    if " - " in cleaned:
+        cleaned = cleaned.split(" - ", 1)[0].strip()
+    return " ".join(cleaned.split())
+
+
+def _google_news_query(name: str, code: str) -> str:
+    symbol = code.split(".", 1)[0]
+    return f'"{name}" {symbol} 股票'
+
+
+def _fetch_google_news_headlines(name: str, code: str, max_items: int = 5) -> tuple[str, list[dict[str, str]]]:
+    query = _google_news_query(name, code)
+    url = f"https://news.google.com/rss/search?q={quote_plus(query)}&hl=zh-CN&gl=CN&ceid=CN:zh-Hans"
+    try:
+        response = requests.get(url, timeout=6, headers=SENTIMENT_HEADERS)
+        response.raise_for_status()
+        root = ElementTree.fromstring(response.content)
+    except Exception as exc:
+        raise RuntimeError(f"google_news_rss_failed:{type(exc).__name__}") from exc
+
+    items: list[dict[str, str]] = []
+    for item in root.findall(".//item"):
+        title = _sanitize_headline(item.findtext("title", default=""))
+        link = (item.findtext("link", default="") or "").strip()
+        pub_date = (item.findtext("pubDate", default="") or "").strip()
+        if not title:
+            continue
+        items.append({"title": title, "link": link, "published_at": pub_date})
+        if len(items) >= max_items:
+            break
+    return url, items
+
+
+def _headline_sentiment_score(headlines: list[dict[str, str]]) -> float:
+    if not headlines:
+        return 0.0
+    pos = 0
+    neg = 0
+    for item in headlines:
+        title = str(item.get("title") or "")
+        pos += sum(1 for term in POSITIVE_SENTIMENT_TERMS if term in title)
+        neg += sum(1 for term in NEGATIVE_SENTIMENT_TERMS if term in title)
+    raw = (pos - neg) / max(1.0, len(headlines) * 2.0)
+    return max(-1.0, min(1.0, raw))
+
+
+def _headline_sentiment_label(score: float) -> str:
+    if score >= 0.2:
+        return "偏多"
+    if score <= -0.2:
+        return "偏空"
+    return "中性"
+
+
+def _headline_sentiment_summary(headlines: list[dict[str, str]], score: float) -> str:
+    if not headlines:
+        return "未检索到近期公开新闻标题。"
+    lead = _sanitize_headline(str(headlines[0].get("title") or ""))
+    label = _headline_sentiment_label(score)
+    if label == "偏多":
+        prefix = "近期公开标题偏多"
+    elif label == "偏空":
+        prefix = "近期公开标题偏空"
+    else:
+        prefix = "近期公开标题偏中性"
+    if lead:
+        return f"{prefix}，最新聚焦“{lead}”。"
+    return f"{prefix}。"
+
+
+def _build_top_stock_sentiment(
+    top_candidates: list[dict[str, object]],
+    date_iso: str,
+) -> list[dict[str, object]]:
+    if not top_candidates:
+        return []
+    existing = _load_stock_sentiment_map(date_iso)
+    out: list[dict[str, object]] = []
+    for candidate in top_candidates:
+        code = str(candidate.get("code") or "")
+        name = str(candidate.get("name") or "")
+        if not code or not name:
+            continue
+        current = existing.get(code)
+        if current and str(current.get("date") or "")[:10] == date_iso:
+            record = dict(current)
+        else:
+            try:
+                source_url, headlines = _fetch_google_news_headlines(name, code)
+                score = round(_headline_sentiment_score(headlines), 4)
+                summary = _headline_sentiment_summary(headlines, score)
+                record = {
+                    "date": date_iso,
+                    "code": code,
+                    "name": name,
+                    "sentiment_score": score,
+                    "score": score,
+                    "label": _headline_sentiment_label(score),
+                    "summary": summary,
+                    "source": "google_news_rss",
+                    "source_url": source_url,
+                    "headlines": headlines,
+                    "decision_used": False,
+                }
+            except Exception as exc:
+                record = {
+                    "date": date_iso,
+                    "code": code,
+                    "name": name,
+                    "sentiment_score": 0.0,
+                    "score": 0.0,
+                    "label": "中性",
+                    "summary": f"舆情抓取失败，原因={type(exc).__name__}。",
+                    "source": "google_news_rss",
+                    "source_url": "",
+                    "headlines": [],
+                    "decision_used": False,
+                    "error": str(exc),
+                }
+        record["target_set"] = "vb_star" if bool(candidate.get("vb_star")) else "selected"
+        record["target_rank"] = int(_num(candidate.get("vb_rank") or candidate.get("kp_rank") or 0))
+        record["mode"] = str(candidate.get("mode") or "")
+        out.append(record)
+    return out
+
+
+def _write_stock_sentiment_records(records: list[dict[str, object]], date_iso: str) -> None:
+    if not records:
+        return
+    latest = _load_stock_sentiment_map(date_iso)
+    for record in records:
+        latest[str(record.get("code") or "")] = record
+    STOCK_SENTIMENT_FILE.write_text(
+        json.dumps(list(latest.values()), ensure_ascii=False, indent=2),
+        encoding="utf-8",
+    )
+
+    history: dict[tuple[str, str], dict[str, object]] = {}
+    if STOCK_SENTIMENT_HISTORY_FILE.exists():
+        with STOCK_SENTIMENT_HISTORY_FILE.open(encoding="utf-8") as f:
+            for line in f:
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    row = json.loads(line)
+                except Exception:
+                    continue
+                key = (str(row.get("date") or "")[:10], str(row.get("code") or ""))
+                if key[0] and key[1]:
+                    history[key] = row
+    for record in records:
+        key = (str(record.get("date") or "")[:10], str(record.get("code") or ""))
+        if key[0] and key[1]:
+            history[key] = record
+    with STOCK_SENTIMENT_HISTORY_FILE.open("w", encoding="utf-8") as f:
+        for key in sorted(history):
+            f.write(json.dumps(history[key], ensure_ascii=False) + "\n")
+
+
+def _merge_sentiment_into_signal_snapshots(records: list[dict[str, object]], date_iso: str) -> None:
+    snap = OUT_DIR / "signal_snapshots.jsonl"
+    if not records or not snap.exists():
+        return
+    by_code = {str(r.get("code") or ""): r for r in records if r.get("code")}
+    lines = snap.read_text(encoding="utf-8").splitlines()
+    merged: list[str] = []
+    for line in lines:
+        if not line.strip():
+            continue
+        try:
+            row = json.loads(line)
+        except Exception:
+            merged.append(line)
+            continue
+        if str(row.get("date") or "")[:10] == date_iso:
+            record = by_code.get(str(row.get("code") or ""))
+            if record is not None:
+                row["stock_sentiment_score"] = record.get("score")
+                row["stock_sentiment_label"] = record.get("label")
+                row["stock_sentiment_summary"] = record.get("summary")
+                row["stock_sentiment_source"] = record.get("source")
+                row["stock_sentiment_decision_used"] = False
+                row["stock_sentiment_target_set"] = record.get("target_set")
+        merged.append(json.dumps(row, ensure_ascii=False, default=str))
+    snap.write_text("\n".join(merged) + ("\n" if merged else ""), encoding="utf-8")
 
 
 def _resolve_date(date_arg: str) -> str:
@@ -803,6 +1040,10 @@ def main() -> None:
     )
     standby_keys = {_candidate_key(c) for c in standby}
     overflow = [c for c in overflow if _candidate_key(c) not in standby_keys]
+    top_sentiment_target = vb_stars if vb_stars else selected
+    top_sentiment = _build_top_stock_sentiment(top_sentiment_target, date_iso)
+    _write_stock_sentiment_records(top_sentiment, date_iso)
+    _merge_sentiment_into_signal_snapshots(top_sentiment, date_iso)
 
     # Render markdown
     L: list[str] = []
@@ -851,6 +1092,18 @@ def main() -> None:
                      f"{_num(c.get('p_score')):+.3f} | {_num(c.get('auc_pct')):+.2f}% | {_num(c.get('auc_residual_imb')):+.2f} |")
         L.append("- **★B = 实盘建议集**（仅当日实时有效）：在 K→P 幸存者中以 **P 为主排序、9:25 竞价不平衡(残余买卖压差+竞价涨幅)做最终 tiebreak**(权重 0.25，不覆盖强 P 信号)。")
         L.append("- **★ = A/B 基线**（纯 K→P，无竞价）。两套每日快照入 `output/live/signal_snapshots.jsonl`；`forward_eval.py --live-only` 累积真实收益后裁决竞价 tiebreak 是否带来增益（前瞻验证，历史不可回测）。")
+        L.append("")
+    if top_sentiment:
+        L.append("## Top 舆情摘要（只记录，不参与今日决策）")
+        L.append("")
+        L.append("| 标的 | 集合 | 舆情 | 分数 | 一句话 |")
+        L.append("|---|---|---|---:|---|")
+        for row in top_sentiment:
+            L.append(
+                f"| {row.get('code','')} {row.get('name','')} | {row.get('target_set','')} | "
+                f"{row.get('label','中性')} | {_num(row.get('score')):+.2f} | {row.get('summary','')} |"
+            )
+        L.append("- 以上舆情仅沉淀到 `output/live/stock_sentiment.json`、`output/live/stock_sentiment_history.jsonl` 和 `output/live/signal_snapshots.jsonl`，供后续分析/训练使用；当前不参与排名或买卖决策。")
         L.append("")
     L.append("## 候选清单")
     L.append("")
