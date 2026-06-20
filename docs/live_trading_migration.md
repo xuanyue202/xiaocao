@@ -56,7 +56,9 @@ through the appropriate secret/config channel.
 
 ## Restore Sketch
 
-1. Clone this repo on the target machine.
+1. Clone this repo on the target machine at `~/coding/xiaocao`. The tracked
+   Codex automation TOML files assume this workstation layout and store
+   `cwds = ["~/coding/xiaocao"]`.
 2. Create a fresh virtualenv and install the package/dependencies.
 3. Restore the object-storage bundle paths into the repo root.
 4. Clone or restore Kronos and set `KRONOS_REPO=/path/to/Kronos`.
@@ -68,8 +70,13 @@ through the appropriate secret/config channel.
 bash -n scripts/auto_daily.sh
 ```
 
-6. Recreate Codex automations with:
+6. Restore Codex project config from `.codex/`. The repo copy is canonical;
+   expose it to Codex Desktop through the expected global discovery entries:
+   - `~/.codex/skills/xiaocao-trading` -> `.codex/skills/xiaocao-trading`
+   - `~/.codex/automations/xiaocao-*/automation.toml` ->
+     `.codex/automations/xiaocao-*/automation.toml`
+   The tracked schedules are:
    - morning: `bash scripts/auto_daily.sh morning`, weekdays 09:23 Asia/Shanghai
    - eod: `bash scripts/auto_daily.sh eod`, weekdays 15:10 Asia/Shanghai
-   - intraday: `.venv/bin/python scripts/live_monitor.py --execute-sells`,
-     weekdays every 30 minutes from 09:35 plus 14:55
+   - intraday monitor: `.venv/bin/python scripts/live_monitor.py --execute-sells`,
+     opening dense, sparse daytime, and closing-discipline passes.

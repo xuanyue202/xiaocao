@@ -1,7 +1,9 @@
-"""Package the distributable xiaocao-trading Codex skill.
+"""Package and install the repo-maintained xiaocao-trading Codex skill.
 
-The skill is self-contained: it bundles a minimal xiaocao runtime under
-`assets/xiaocao-runtime` so recipients do not need this repository checked out.
+The repo copy under `.codex/skills/xiaocao-trading/` is the source of truth.
+This script refreshes its generated runtime bundle from the current checkout,
+optionally links or copies that skill to the local Codex install directory, then
+creates a distributable zip.
 
 Output:
     output/xiaocao-trading-skill.zip
@@ -20,14 +22,19 @@ from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parent.parent
-DEFAULT_SKILL_DIR = Path.home() / ".codex" / "skills" / "xiaocao-trading"
+DEFAULT_SKILL_DIR = ROOT / ".codex" / "skills" / "xiaocao-trading"
+DEFAULT_INSTALL_DIR = Path.home() / ".codex" / "skills" / "xiaocao-trading"
 DEFAULT_OUTPUT_DIR = ROOT / "output"
+PACKAGE_DIR_NAME = "xiaocao-trading"
 
 RUNTIME_ITEMS = [
     "src",
     "scripts",
     "tests",
     "docs",
+    "kronos_screen/STATE.md",
+    "kronos_screen/model/spec.json",
+    "kronos_screen/scripts",
     "pyproject.toml",
     "README.md",
     "xiaocao.yaml.example",
@@ -82,8 +89,14 @@ def validate_skill(skill_dir: Path) -> None:
         skill_md,
         openai_yaml,
         runtime / "src" / "xiaocao" / "cli.py",
+        runtime / "src" / "xiaocao" / "live" / "safety.py",
+        runtime / "scripts" / "auto_daily.sh",
+        runtime / "scripts" / "authorize_live.py",
         runtime / "scripts" / "live_recommend.py",
         runtime / "scripts" / "live_monitor.py",
+        runtime / "kronos_screen" / "scripts" / "paper_record.py",
+        runtime / "kronos_screen" / "scripts" / "eod_capture.py",
+        runtime / "kronos_screen" / "scripts" / "forward_eval.py",
         runtime / "pyproject.toml",
     ]
     missing = [str(path) for path in required if not path.exists()]
@@ -107,6 +120,51 @@ def smoke_test(runtime_dir: Path) -> None:
         stderr=subprocess.PIPE,
         text=True,
     )
+    subprocess.run(["bash", "-n", "scripts/auto_daily.sh"], cwd=runtime_dir, check=True)
+    subprocess.run(
+        [
+            sys.executable,
+            "-m",
+            "py_compile",
+            "scripts/authorize_live.py",
+            "scripts/live_recommend.py",
+            "scripts/live_monitor.py",
+            "kronos_screen/scripts/paper_record.py",
+            "src/xiaocao/live/safety.py",
+        ],
+        cwd=runtime_dir,
+        env=env,
+        check=True,
+    )
+
+
+def _remove_path(path: Path) -> None:
+    if path.exists() or path.is_symlink():
+        if path.is_dir() and not path.is_symlink():
+            shutil.rmtree(path)
+        else:
+            path.unlink()
+
+
+def install_skill(skill_dir: Path, install_dir: Path, mode: str) -> None:
+    install_dir.parent.mkdir(parents=True, exist_ok=True)
+    if mode == "symlink":
+        if install_dir.is_symlink() and install_dir.resolve() == skill_dir:
+            return
+        if install_dir.exists() and install_dir.resolve() == skill_dir:
+            return
+        _remove_path(install_dir)
+        install_dir.symlink_to(skill_dir, target_is_directory=True)
+        return
+
+    if mode != "copy":
+        raise ValueError(f"unknown install mode: {mode}")
+
+    tmp_dir = install_dir.parent / f".{install_dir.name}.tmp"
+    _remove_path(tmp_dir)
+    shutil.copytree(skill_dir, tmp_dir, ignore=_ignore_runtime_noise)
+    _remove_path(install_dir)
+    tmp_dir.rename(install_dir)
 
 
 def zip_skill(skill_dir: Path, output_dir: Path) -> tuple[Path, str]:
@@ -118,11 +176,11 @@ def zip_skill(skill_dir: Path, output_dir: Path) -> tuple[Path, str]:
     if sha_path.exists():
         sha_path.unlink()
 
-    base = skill_dir.parent
     with zipfile.ZipFile(zip_path, "w", compression=zipfile.ZIP_DEFLATED) as zf:
         for path in sorted(skill_dir.rglob("*")):
             if path.is_file():
-                zf.write(path, path.relative_to(base))
+                arcname = Path(PACKAGE_DIR_NAME) / path.relative_to(skill_dir)
+                zf.write(path, arcname)
 
     digest = hashlib.sha256(zip_path.read_bytes()).hexdigest()
     sha_path.write_text(f"{digest}  {zip_path.name}\n", encoding="utf-8")
@@ -131,12 +189,34 @@ def zip_skill(skill_dir: Path, output_dir: Path) -> tuple[Path, str]:
 
 def main() -> None:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--skill-dir", type=Path, default=DEFAULT_SKILL_DIR)
+    parser.add_argument(
+        "--skill-dir",
+        type=Path,
+        default=DEFAULT_SKILL_DIR,
+        help="repo-maintained skill directory; default: ./.codex/skills/xiaocao-trading",
+    )
+    parser.add_argument(
+        "--install-dir",
+        type=Path,
+        default=DEFAULT_INSTALL_DIR,
+        help="local Codex install destination; default: ~/.codex/skills/xiaocao-trading",
+    )
     parser.add_argument("--output-dir", type=Path, default=DEFAULT_OUTPUT_DIR)
+    parser.add_argument("--no-install", action="store_true", help="refresh/package only; do not touch ~/.codex")
+    parser.add_argument(
+        "--install-mode",
+        choices=("symlink", "copy"),
+        default="symlink",
+        help="how to expose the repo skill to Codex; default: symlink",
+    )
     parser.add_argument("--no-smoke-test", action="store_true")
     args = parser.parse_args()
 
     skill_dir = args.skill_dir.expanduser().resolve()
+    install_dir = args.install_dir.expanduser()
+    if not install_dir.is_absolute():
+        install_dir = Path.cwd() / install_dir
+    install_dir = install_dir.absolute()
     output_dir = args.output_dir.expanduser().resolve()
     if not skill_dir.exists():
         raise SystemExit(f"ERROR: skill directory not found: {skill_dir}")
@@ -145,10 +225,14 @@ def main() -> None:
     validate_skill(skill_dir)
     if not args.no_smoke_test:
         smoke_test(runtime_dir)
+    if not args.no_install:
+        install_skill(skill_dir, install_dir, args.install_mode)
 
     zip_path, digest = zip_skill(skill_dir, output_dir)
     print(f"skill_dir: {skill_dir}")
     print(f"runtime:   {runtime_dir}")
+    if not args.no_install:
+        print(f"installed: {install_dir} ({args.install_mode})")
     print(f"zip:       {zip_path}")
     print(f"sha256:    {digest}")
     print(f"sha_file:  {output_dir / 'xiaocao-trading-skill.sha256'}")

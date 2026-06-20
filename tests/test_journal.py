@@ -1,0 +1,87 @@
+"""Tests for the structured decision journal (src/xiaocao/live/journal.py)."""
+from __future__ import annotations
+
+from xiaocao.live import journal
+
+
+def test_append_and_read_roundtrip(tmp_path):
+    path = tmp_path / "decision_journal.jsonl"
+    rec = journal.append_decision(
+        automation="live_monitor", market_date="2026-06-19",
+        deterministic={"open_positions": 2, "positions": [{"code": "000001.XSHG"}]},
+        posture={"regime": "neutral"}, path=path,
+    )
+    assert rec["automation"] == "live_monitor" and rec["state_hash"]
+    rows = journal.read_all(path)
+    assert len(rows) == 1 and rows[0]["market_date"] == "2026-06-19"
+    assert rows[0]["deterministic"]["open_positions"] == 2
+
+
+def test_read_recent_and_for_date(tmp_path):
+    path = tmp_path / "j.jsonl"
+    for i, d in enumerate(["2026-06-18", "2026-06-18", "2026-06-19"]):
+        journal.append_decision(automation="m", market_date=d, run_id=f"r{i}", path=path)
+    assert len(journal.read_recent(2, path=path)) == 2
+    assert len(journal.read_for_date("2026-06-18", path=path)) == 2
+
+
+def test_latest_filters_by_automation_and_date(tmp_path):
+    path = tmp_path / "j.jsonl"
+    journal.append_decision(automation="morning", market_date="2026-06-19", run_id="a", path=path)
+    journal.append_decision(automation="live_monitor", market_date="2026-06-19", run_id="b", path=path)
+    journal.append_decision(automation="live_monitor", market_date="2026-06-19", run_id="c", path=path)
+    # A fresh-context agent at the close asks: what did today's morning run conclude?
+    assert journal.latest(automation="morning", market_date="2026-06-19", path=path)["run_id"] == "a"
+    # ...and the most recent monitor run.
+    assert journal.latest(automation="live_monitor", path=path)["run_id"] == "c"
+    assert journal.latest(automation="eod", path=path) is None
+
+
+def test_state_hash_is_stable_and_order_independent():
+    a = journal.state_hash({"x": 1, "y": [2, 3]})
+    b = journal.state_hash({"y": [2, 3], "x": 1})
+    assert a == b and len(a) == 16
+
+
+def test_append_never_crashes_on_non_serializable_value(tmp_path):
+    # A stray non-JSON value (datetime, set) must be coerced (default=str), never
+    # raise and crash the monitor's emit site.
+    from datetime import datetime
+    path = tmp_path / "j.jsonl"
+    rec = journal.append_decision(
+        automation="m", market_date="2026-06-19",
+        deterministic={"positions": [{"ts": datetime(2026, 6, 19, 10, 0), "s": {1, 2}}]},
+        path=path,
+    )
+    assert rec["automation"] == "m"
+    assert len(journal.read_all(path)) == 1  # written via default=str, not crashed
+
+
+def test_state_hash_never_raises_on_non_str_keys():
+    # default=str rescues non-JSON VALUES but NOT non-str dict KEYS (a tuple key
+    # raises TypeError out of json.dumps). state_hash is called before the write
+    # try/except, so it must fall back rather than crash the loop.
+    h = journal.state_hash({("2026-06-19", "600000"): {"dd": 1.0}})  # tuple key
+    assert isinstance(h, str) and len(h) == 16
+
+
+def test_append_never_crashes_on_exotic_dict_keys(tmp_path):
+    path = tmp_path / "j.jsonl"
+    rec = journal.append_decision(
+        automation="m", market_date="2026-06-19",
+        deterministic={"positions": {("2026-06-19", "600000"): {"dd_pct": 3.1}}},  # tuple-keyed
+        path=path,
+    )
+    assert rec["automation"] == "m" and rec["state_hash"]
+
+
+def test_append_never_raises_on_unwritable_path(tmp_path):
+    # A file where a directory is expected -> mkdir/open fail, but auditing must
+    # never crash the loop; append returns the record regardless.
+    blocker = tmp_path / "blocker"
+    blocker.write_text("x", encoding="utf-8")
+    rec = journal.append_decision(
+        automation="m", market_date="2026-06-19", path=blocker / "nested.jsonl",
+    )
+    assert rec["automation"] == "m"
+    assert journal.read_all(blocker / "nested.jsonl") == []

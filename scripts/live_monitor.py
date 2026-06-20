@@ -61,6 +61,23 @@ from xiaocao.strategy.regime import (  # noqa: E402
     positive_total,
 )
 from xiaocao.utils.trading_session import A_SHARE_TZ  # noqa: E402
+from xiaocao.live.exit_policy import (  # noqa: E402
+    AFTERNOON_TIGHTEN_TIME,
+    EOD_DISCIPLINE_TIME,
+    MIDDAY_REVIEW_TIME,
+    MORNING_REVIEW_TIME,
+    PROFILE_DD,
+    PROFILE_HARD_DD,
+    clamp as _clamp,
+    decide_sell_action as _decide_sell_action,
+    decision_score_context as _decision_score_context,
+    market_now as _market_now,
+    realtime_strength_context as _realtime_strength_context,
+    sell_block_reason as _sell_block_reason,
+    strong_hold_reason as _strong_hold_reason,
+)
+from xiaocao.live import accounts, contexts, journal  # noqa: E402
+from xiaocao.live.notify import notify as _notify  # noqa: E402
 
 OUT_DIR = ROOT / "output" / "live"
 POSITIONS_FILE = OUT_DIR / "positions.jsonl"
@@ -72,16 +89,15 @@ HOLDING_SNAPSHOTS_FILE = OUT_DIR / "paper_holdings_snapshots.jsonl"
 STOCK_SENTIMENT_FILE = OUT_DIR / "stock_sentiment.json"
 SIGNAL_SNAPSHOTS_FILE = OUT_DIR / "signal_snapshots.jsonl"
 
-PROFILE_DD = {"v5": 2.0, "v6": 0.5}
-# Intraday hard floor: the only stop EXECUTED at intraday checkpoints. Ordinary
-# trailing/composite exits are diagnosed intraday but executed at 14:55.
-PROFILE_HARD_DD = {"v5": 8.0, "v6": 8.0}
+# PROFILE_DD / PROFILE_HARD_DD and the phase-time constants now live in
+# xiaocao.live.exit_policy (imported above) — the single importable source for the
+# staged-exit rules. The live loop executes decide_sell_action from there; a
+# backtest *can* import the same module for 回测=实盘 parity, but the existing
+# backtest_intraday_stop.py is a separate comparison harness that does NOT import
+# it yet (parity available by construction, not yet exercised). See
+# docs/OPERATING_CONTRACT.md §4 and src/xiaocao/live/exit_policy.py.
 DEFAULT_STARTING_CAPITAL = 100000.0
 DEFAULT_FEE_RATE = 0.0001
-MORNING_REVIEW_TIME = time(9, 35)
-MIDDAY_REVIEW_TIME = time(10, 30)
-AFTERNOON_TIGHTEN_TIME = time(14, 0)
-EOD_DISCIPLINE_TIME = time(14, 55)
 TRADE_CAL_RETRIES = 3
 TRADE_CAL_RETRY_BACKOFF_SECONDS = 2.0
 
@@ -94,56 +110,23 @@ def _now_iso() -> str:
     return datetime.now().isoformat(timespec="seconds")
 
 
-def _market_now(now: datetime | None = None) -> datetime:
-    if now is None:
-        return datetime.now(A_SHARE_TZ)
-    if now.tzinfo is None:
-        return now.replace(tzinfo=A_SHARE_TZ)
-    return now.astimezone(A_SHARE_TZ)
-
-
-def _clamp(value: float, lo: float = -1.0, hi: float = 1.0) -> float:
-    return max(lo, min(hi, value))
-
-
+# Account/position I/O is defined once in xiaocao.live.accounts (the real-money
+# state SSOT, shared with paper_record); these are thin wrappers binding it to
+# this script's path/constant defaults so existing call sites are unchanged.
 def _load_account() -> dict:
-    if ACCOUNT_FILE.exists():
-        with ACCOUNT_FILE.open(encoding="utf-8") as f:
-            account = json.load(f)
-        account.setdefault("initial_capital", DEFAULT_STARTING_CAPITAL)
-        account.setdefault("cash", DEFAULT_STARTING_CAPITAL)
-        account.setdefault("fee_rate", DEFAULT_FEE_RATE)
-        account.setdefault("realized_pnl", 0.0)
-        account.setdefault("total_fees", 0.0)
-        return account
-    return {
-        "initial_capital": DEFAULT_STARTING_CAPITAL,
-        "cash": DEFAULT_STARTING_CAPITAL,
-        "fee_rate": DEFAULT_FEE_RATE,
-        "realized_pnl": 0.0,
-        "total_fees": 0.0,
-        "created_at": _now_iso(),
-    }
+    return accounts.load_account(ACCOUNT_FILE, DEFAULT_STARTING_CAPITAL, DEFAULT_FEE_RATE)
 
 
 def _save_account(account: dict) -> None:
-    ACCOUNT_FILE.parent.mkdir(parents=True, exist_ok=True)
-    account["updated_at"] = _now_iso()
-    tmp = ACCOUNT_FILE.with_suffix(".json.tmp")
-    with tmp.open("w", encoding="utf-8") as f:
-        json.dump(account, f, ensure_ascii=False, indent=2, sort_keys=True)
-        f.write("\n")
-    tmp.replace(ACCOUNT_FILE)
+    accounts.save_account(account, ACCOUNT_FILE)
 
 
 def _append_trade(record: dict) -> None:
-    TRADES_FILE.parent.mkdir(parents=True, exist_ok=True)
-    with TRADES_FILE.open("a", encoding="utf-8") as f:
-        f.write(json.dumps(record, ensure_ascii=False, sort_keys=True) + "\n")
+    accounts.append_jsonl(record, TRADES_FILE)
 
 
 def _position_key(position: dict) -> tuple[str, str]:
-    return str(position.get("entry_date", "")), str(position.get("code", ""))
+    return accounts.position_key(position)
 
 
 def _write_holdings_snapshot(statuses: list[dict]) -> dict:
@@ -401,62 +384,14 @@ def _load_stock_sentiment_map(today_iso: str) -> dict[str, dict[str, object]]:
     return out
 
 
+# Pure/file-based decision-context builders live in xiaocao.live.contexts (now
+# independently unit-tested); thin wrappers bind them to this script's paths.
 def _load_signal_snapshot_map() -> dict[tuple[str, str], dict[str, object]]:
-    if not SIGNAL_SNAPSHOTS_FILE.exists():
-        return {}
-    out: dict[tuple[str, str], dict[str, object]] = {}
-    with SIGNAL_SNAPSHOTS_FILE.open(encoding="utf-8") as f:
-        for line in f:
-            line = line.strip()
-            if not line:
-                continue
-            try:
-                row = json.loads(line)
-            except Exception:
-                continue
-            code = str(row.get("code") or "")
-            date = str(row.get("date") or "")[:10]
-            if not code or not date:
-                continue
-            key = (date, code)
-            prev = out.get(key)
-            if prev is None or str(row.get("captured_at") or "") >= str(prev.get("captured_at") or ""):
-                out[key] = row
-    return out
+    return contexts.load_signal_snapshot_map(SIGNAL_SNAPSHOTS_FILE)
 
 
 def _kronos_context(position: dict, snapshot_map: dict[tuple[str, str], dict[str, object]]) -> dict[str, object]:
-    code = str(position.get("code") or "")
-    entry_date = str(position.get("entry_date") or "")[:10]
-    row = snapshot_map.get((entry_date, code), {})
-
-    def _num(key: str) -> float | None:
-        value = row.get(key, position.get(key))
-        try:
-            if value in (None, ""):
-                return None
-            return float(value)
-        except (TypeError, ValueError):
-            return None
-
-    p_score = _num("p_score")
-    k_score = _num("k_score")
-    score = 0.0
-    if p_score is not None:
-        score += 0.6 * _clamp(p_score / 3.0)
-    if k_score is not None:
-        score += 0.2 * _clamp(k_score / 3.0)
-    if bool(row.get("vb_star", position.get("vb_star", False))):
-        score += 0.2
-    elif bool(row.get("kp_star", position.get("kp_star", False))):
-        score += 0.1
-    return {
-        "score": round(_clamp(score), 4),
-        "p_score": p_score,
-        "k_score": k_score,
-        "vb_star": bool(row.get("vb_star", position.get("vb_star", False))),
-        "kp_star": bool(row.get("kp_star", position.get("kp_star", False))),
-    }
+    return contexts.kronos_context(position, snapshot_map)
 
 
 def _stock_sentiment_context(
@@ -465,308 +400,11 @@ def _stock_sentiment_context(
     smallgrass: dict[str, object],
     sentiment_map: dict[str, dict[str, object]],
 ) -> dict[str, object]:
-    external = sentiment_map.get(code)
-    proxy_score = float(smallgrass.get("score", 0.0) or 0.0)
-    if external is not None:
-        ext_score = float(external.get("score", 0.0) or 0.0)
-        score = _clamp(0.7 * ext_score + 0.3 * proxy_score)
-        source = "external+smallgrass"
-    else:
-        ext_score = None
-        score = _clamp(proxy_score)
-        source = str(smallgrass.get("source") or "smallgrass_proxy")
-    return {
-        "score": round(score, 4),
-        "source": source,
-        "external_score": ext_score,
-        "proxy_score": round(proxy_score, 4),
-    }
-
-
-def _realtime_strength_context(detail: dict, latest_price: float, peak: float) -> dict[str, object]:
-    if not detail:
-        return {"score": 0.0, "source": "missing"}
-
-    def _f(key: str) -> float | None:
-        try:
-            value = detail.get(key)
-            if value in (None, ""):
-                return None
-            return float(value)
-        except (TypeError, ValueError):
-            return None
-
-    pct_change = _f("pctChangeRate") or 0.0
-    high = _f("high") or latest_price
-    open_px = _f("open") or latest_price
-    up_price = _f("upPrice")
-    buy_vol1 = _f("buyVol1") or 0.0
-    sell_vol1 = _f("sellVol1") or 0.0
-    vol_in = _f("volIn") or 0.0
-    vol_out = _f("volOut") or 0.0
-
-    near_high = _clamp((latest_price / max(high, 1e-9) - 0.985) / 0.015)
-    open_follow = _clamp((latest_price / max(open_px, 1e-9) - 1.0) / 0.05)
-    order_imb = _clamp((buy_vol1 - sell_vol1) / (buy_vol1 + sell_vol1 + 1e-9))
-    flow_imb = _clamp((vol_in - vol_out) / (vol_in + vol_out + 1e-9))
-    limit_prox = 0.0
-    if up_price and up_price > 0:
-        limit_prox = _clamp((latest_price / up_price - 0.97) / 0.03)
-
-    score = _clamp(
-        0.30 * _clamp(pct_change / 8.0)
-        + 0.20 * near_high
-        + 0.20 * open_follow
-        + 0.15 * order_imb
-        + 0.10 * flow_imb
-        + 0.05 * limit_prox
-    )
-    return {
-        "score": round(score, 4),
-        "pct_change_rate": pct_change,
-        "near_high": round(near_high, 4),
-        "open_follow": round(open_follow, 4),
-        "order_imbalance": round(order_imb, 4),
-        "flow_imbalance": round(flow_imb, 4),
-        "limit_proximity": round(limit_prox, 4),
-        "peak": peak,
-    }
-
-
-def _decision_score_context(
-    *,
-    market: dict[str, object],
-    stock_sentiment: dict[str, object],
-    realtime: dict[str, object],
-    kronos: dict[str, object],
-) -> dict[str, object]:
-    market_score = float(market.get("score", 0.0) or 0.0)
-    stock_score = float(stock_sentiment.get("score", 0.0) or 0.0)
-    realtime_score = float(realtime.get("score", 0.0) or 0.0)
-    kronos_score = float(kronos.get("score", 0.0) or 0.0)
-    composite = _clamp(
-        0.30 * market_score
-        + 0.25 * stock_score
-        + 0.30 * realtime_score
-        + 0.15 * kronos_score
-    )
-    return {
-        "market_score": round(market_score, 4),
-        "stock_sentiment_score": round(stock_score, 4),
-        "realtime_score": round(realtime_score, 4),
-        "kronos_score": round(kronos_score, 4),
-        "composite_score": round(composite, 4),
-    }
-
-
-def _sell_block_reason(detail: dict) -> str | None:
-    if not detail:
-        return None
-    try:
-        trade = float(detail.get("trade") or detail.get("close") or 0.0)
-    except (TypeError, ValueError):
-        trade = 0.0
-    try:
-        down_price = float(detail.get("downPrice") or 0.0)
-    except (TypeError, ValueError):
-        down_price = 0.0
-    try:
-        buy_vol1 = float(detail.get("buyVol1") or 0.0)
-    except (TypeError, ValueError):
-        buy_vol1 = 0.0
-    # A limit-down stock with no best-bid liquidity cannot be sold in reality.
-    # The realtime feed can round `trade`, so allow a tiny tolerance around the
-    # official downPrice instead of requiring exact float equality.
-    tolerance = max(0.01, down_price * 0.0005) if down_price > 0 else 0.0
-    if down_price > 0 and trade > 0 and trade <= down_price + tolerance and buy_vol1 <= 0:
-        return "LIMIT_DOWN_NO_BID"
-    return None
-
-
-def _strong_hold_reason(
-    position: dict,
-    detail: dict,
-    latest_price: float,
-    peak: float,
-    *,
-    strict: bool = False,
-) -> str | None:
-    if not detail:
-        return None
-    mode = str(position.get("mode") or "")
-    flags = str(position.get("flags") or "")
-    try:
-        xcjw = float(position.get("xcjw") or 0.0)
-    except (TypeError, ValueError):
-        xcjw = 0.0
-    try:
-        jsjl = float(position.get("jsjl") or 0.0)
-    except (TypeError, ValueError):
-        jsjl = 0.0
-    try:
-        up_price = float(detail.get("upPrice") or 0.0)
-    except (TypeError, ValueError):
-        up_price = 0.0
-    try:
-        pct_change_rate = float(detail.get("pctChangeRate") or 0.0)
-    except (TypeError, ValueError):
-        pct_change_rate = 0.0
-    try:
-        day_high = float(detail.get("high") or 0.0)
-    except (TypeError, ValueError):
-        day_high = 0.0
-
-    is_trend_leader = ("接力" in mode) or ("连板" in mode) or ("★KP" in flags and jsjl > 0) or xcjw >= 300
-
-    if up_price > 0 and latest_price >= up_price * 0.997:
-        return "NEAR_LIMIT_UP"
-    if pct_change_rate >= 9.5:
-        return "LIMIT_UP_DAY"
-    if is_trend_leader and pct_change_rate >= 8.0 and day_high > 0 and latest_price >= day_high * 0.995:
-        return "TURNED_LEADER_NEAR_HIGH"
-    if strict:
-        return None
-    if is_trend_leader and peak > 0 and latest_price >= peak * 0.995 and pct_change_rate >= 6.0:
-        return "STRONG_TREND_HOLD"
-    return None
-
-
-def _decide_sell_action(
-    position: dict,
-    *,
-    detail: dict,
-    latest_price: float,
-    peak: float,
-    dd_pct: float,
-    dd_threshold: float,
-    t1_blocked: bool,
-    hold_days: int,
-    signal_score: float = 0.0,
-    hard_dd_threshold: float = 8.0,
-    now: datetime | None = None,
-) -> dict[str, object]:
-    now_time = _market_now(now).time()
-    soft_hold_reason = _strong_hold_reason(position, detail, latest_price, peak, strict=False)
-
-    if t1_blocked:
-        return {
-            "triggered": False,
-            "sell_reason": None,
-            "hold_reason": None,
-            "decision_phase": "t1_blocked",
-        }
-
-    # Staged execution: intraday checkpoints only EXECUTE the hard floor
-    # (catastrophic damage / liquidity escape). Ordinary trailing-stop or
-    # composite deterioration is DIAGNOSED intraday (deferred_sell_reason,
-    # recorded for forward evaluation) and executed at the 14:55 discipline
-    # pass. Rationale (decompose_pnl on the 06-01..06-12 book): sparse
-    # checkpoints turned the 2% trailing stop into a "sell the D+1 morning
-    # low" rule; the validated exit reference is next close.
-    if dd_pct >= hard_dd_threshold and not soft_hold_reason:
-        return {
-            "triggered": True,
-            "sell_reason": "HARD_STOP",
-            "hold_reason": None,
-            "decision_phase": "risk_floor",
-        }
-
-    if hold_days < 1:
-        return {
-            "triggered": False,
-            "sell_reason": None,
-            "hold_reason": soft_hold_reason,
-            "decision_phase": "same_day",
-        }
-
-    if now_time >= EOD_DISCIPLINE_TIME:
-        strict_hold_reason = _strong_hold_reason(position, detail, latest_price, peak, strict=True)
-        if strict_hold_reason:
-            return {
-                "triggered": False,
-                "sell_reason": None,
-                "hold_reason": strict_hold_reason,
-                "decision_phase": "eod_discipline",
-            }
-        # attribute correctly: stop condition met -> TRAILING_STOP (executed
-        # at the discipline pass), otherwise plain discipline exit
-        return {
-            "triggered": True,
-            "sell_reason": "TRAILING_STOP" if dd_pct >= dd_threshold else "EOD_DISCIPLINE_1455",
-            "hold_reason": None,
-            "decision_phase": "eod_discipline",
-        }
-
-    if now_time < MORNING_REVIEW_TIME:
-        return {
-            "triggered": False,
-            "sell_reason": None,
-            "hold_reason": soft_hold_reason,
-            "decision_phase": "opening_buffer",
-        }
-
-    if now_time < MIDDAY_REVIEW_TIME:
-        phase = "morning_assessment"
-        sell_cut = -0.15
-        hold_cut = 0.25
-        sell_reason = "COMPOSITE_MORNING_EXIT"
-    elif now_time < AFTERNOON_TIGHTEN_TIME:
-        phase = "midday_reassessment"
-        sell_cut = -0.02
-        hold_cut = 0.18
-        sell_reason = "COMPOSITE_MIDDAY_EXIT"
-    else:
-        phase = "afternoon_tighten"
-        sell_cut = 0.10
-        hold_cut = 0.28
-        sell_reason = "COMPOSITE_AFTERNOON_EXIT"
-
-    deferred_sell_reason = None
-    if signal_score <= sell_cut:
-        deferred_sell_reason = sell_reason
-    elif dd_pct >= dd_threshold and not soft_hold_reason:
-        deferred_sell_reason = "TRAILING_STOP"
-    if deferred_sell_reason:
-        # diagnosed intraday, executed at >= 14:55 (or earlier by hard floor)
-        return {
-            "triggered": False,
-            "sell_reason": None,
-            "deferred_sell_reason": deferred_sell_reason,
-            "hold_reason": None,
-            "decision_phase": phase,
-        }
-
-    if soft_hold_reason and signal_score >= hold_cut:
-        return {
-            "triggered": False,
-            "sell_reason": None,
-            "hold_reason": soft_hold_reason,
-            "decision_phase": phase,
-        }
-
-    return {
-        "triggered": False,
-        "sell_reason": None,
-        "hold_reason": None,
-        "decision_phase": phase,
-    }
+    return contexts.stock_sentiment_context(code, smallgrass=smallgrass, sentiment_map=sentiment_map)
 
 
 def _load_all_positions() -> list[dict]:
-    if not POSITIONS_FILE.exists():
-        return []
-    out = []
-    with POSITIONS_FILE.open(encoding="utf-8") as f:
-        for line in f:
-            line = line.strip()
-            if not line or line.startswith("#"):
-                continue
-            try:
-                p = json.loads(line)
-                out.append(p)
-            except json.JSONDecodeError:
-                continue
-    return out
+    return accounts.load_positions(POSITIONS_FILE)
 
 
 def _load_positions() -> list[dict]:
@@ -892,21 +530,6 @@ def _execute_simulated_sells(client: XiaocaoClient, triggered_alerts: list[dict]
                 f.write(json.dumps(p, ensure_ascii=False, sort_keys=True) + "\n")
         _save_account(account)
     return closed, blocked
-
-
-def _macos_notify(title: str, body: str) -> None:
-    if sys.platform != "darwin":
-        return
-    try:
-        # Escape quotes for AppleScript
-        title_safe = title.replace('"', '\\"').replace("'", "\\'")
-        body_safe = body.replace('"', '\\"').replace("'", "\\'")
-        subprocess.run([
-            "osascript", "-e",
-            f'display notification "{body_safe}" with title "{title_safe}" sound name "Glass"',
-        ], check=False, capture_output=True, timeout=5)
-    except Exception:
-        pass
 
 
 def _trading_dates_between(start: str, end: str, client: XiaocaoClient) -> list[str]:
@@ -1093,6 +716,43 @@ def _compute_status(
     }
 
 
+def _decision_packet(statuses: list[dict], snapshot: dict) -> dict:
+    """Compact the per-position statuses into one deterministic decision packet
+    for the journal — so a later fresh-context agent consumes structured state
+    instead of re-scraping holdings/alerts/positions files."""
+    triggered = [
+        {"code": s["code"], "name": s.get("name"), "sell_reason": s.get("sell_reason")}
+        for s in statuses if s.get("triggered")
+    ]
+    deferred = [
+        {"code": s["code"], "name": s.get("name"), "deferred_sell_reason": s.get("deferred_sell_reason")}
+        for s in statuses if s.get("deferred_sell_reason")
+    ]
+    holds = [
+        {"code": s["code"], "name": s.get("name"), "reason": s.get("strong_hold_reason") or s.get("decision_phase")}
+        for s in statuses if not s.get("triggered") and not s.get("deferred_sell_reason")
+    ]
+    positions = [
+        {
+            "code": s["code"], "name": s.get("name"),
+            "dd_pct": s.get("dd_pct"), "ret_pct": s.get("ret_pct"), "net_ret_pct": s.get("net_ret_pct"),
+            "composite_score": s.get("composite_score"), "decision_phase": s.get("decision_phase"),
+            "sell_reason": s.get("sell_reason"), "deferred_sell_reason": s.get("deferred_sell_reason"),
+            "strong_hold_reason": s.get("strong_hold_reason"), "t1_blocked": s.get("t1_blocked"),
+        }
+        for s in statuses
+    ]
+    return {
+        "open_positions": snapshot.get("open_positions"),
+        "cash": snapshot.get("cash"),
+        "equity": snapshot.get("total_equity_after_exit_fee"),
+        "triggered": triggered,
+        "deferred": deferred,
+        "holds": holds,
+        "positions": positions,
+    }
+
+
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--code", help="只检查指定 code")
@@ -1230,7 +890,8 @@ def main() -> None:
             )
             if not already_logged:
                 if not args.no_notify:
-                    _macos_notify(f"卖点触发 {s['code']}", msg)
+                    # macOS popup + Feishu (when XIAOCAO_FEISHU_WEBHOOK is set)
+                    _notify(f"卖点触发 {s['code']}", msg, macos=True)
                 with ALERTS_FILE.open("a", encoding="utf-8") as f:
                     f.write(json.dumps({
                         "ts": today_iso,
@@ -1256,6 +917,20 @@ def main() -> None:
         f"equity={snapshot['total_equity_after_exit_fee']:.2f}, "
         f"open_positions={snapshot['open_positions']} -> "
         f"{HOLDINGS_FILE.relative_to(ROOT)}"
+    )
+    journal.append_decision(
+        automation="live_monitor",
+        market_date=today_iso,
+        path=OUT_DIR / "decision_journal.jsonl",
+        deterministic=_decision_packet(statuses, snapshot),
+        posture={
+            "regime": market_context.get("regime"),
+            "score": round(float(market_context.get("score", 0.0) or 0.0), 4),
+            "positive_total": market_context.get("positive_total"),
+            "negative_total": market_context.get("negative_total"),
+            "limit_up_count": market_context.get("limit_up_count"),
+            "limit_down_count": market_context.get("limit_down_count"),
+        },
     )
 
 

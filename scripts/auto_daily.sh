@@ -1,10 +1,13 @@
 #!/usr/bin/env bash
-# Daily xiaocao paper-trade + data-accumulation automation.
+# Daily xiaocao paper-trade + data-accumulation automation (the compounding flywheel).
 #   auto_daily.sh morning   # ~09:23 (self-waits to 9:25): recommend + ★/★B + auction snapshot + paper-record
-#   auto_daily.sh eod        # ~15:05 (after close): tick-flow capture + forward A/B + monitor
+#   auto_daily.sh eod        # ~15:05 (after close): tick capture + forward A/B + monitor + settle + digest->Feishu + pipeline health
+#   auto_daily.sh optimize   # ~weekly (trading Fri): capability flywheel — judge live pipeline under the discipline guards + record to the ledger
+# Capital flywheel: morning entries -> intraday staged exits -> eod settle/digest.
+# Capability flywheel: eod accumulates training_rows -> optimize judges & records to kronos_screen/HYPOTHESES.jsonl.
 # Trading-day guarded (skips weekends/holidays), logs to output/live/auto/.
 set -uo pipefail
-ROOT="/Users/bytedance/coding/xiaocao"
+ROOT="${XIAOCAO_ROOT:-$HOME/coding/xiaocao}"
 PY="$ROOT/.venv/bin/python"
 cd "$ROOT" || exit 1
 STEP="${1:-}"
@@ -53,16 +56,51 @@ case "$STEP" in
   eod)
     log "eod: tick-flow capture"
     "$PY" kronos_screen/scripts/eod_capture.py >>"$LOG" 2>&1
-    log "forward_eval (A/B + accumulate training rows)"
-    "$PY" kronos_screen/scripts/forward_eval.py --live-only --fee-rate 0.0001 >>"$LOG" 2>&1
+    # data health GATES the capability (learning) half: a critical finding (e.g.
+    # duplicate snapshots) must NOT be fed into training_rows/the ledger, or the
+    # flywheel learns from a 真的谎言. The capital half (monitor/settle/digest)
+    # still runs for visibility.
+    log "data health check (catch dirty data before trusting A/B)"
+    if "$PY" scripts/data_doctor.py >>"$LOG" 2>&1; then DATA_OK=1; else DATA_OK=0; fi
+    if [ "$DATA_OK" = "1" ]; then
+      log "forward_eval (A/B + accumulate training rows)"
+      "$PY" kronos_screen/scripts/forward_eval.py --live-only --fee-rate 0.0001 >>"$LOG" 2>&1
+    else
+      log "data health CRITICAL — SKIPPING forward_eval + capability record (won't learn from dirty data)"
+    fi
     log "monitor open paper positions"
     "$PY" scripts/live_monitor.py --execute-sells >>"$LOG" 2>&1 || true
     log "settle book A (validated next-close reference)"
     "$PY" kronos_screen/scripts/settle_book_a.py >>"$LOG" 2>&1 || true
     log "pnl decomposition (pick_alpha / entry_slippage / exit_timing)"
     "$PY" kronos_screen/scripts/decompose_pnl.py >>"$LOG" 2>&1 || true
+    log "status digest -> Feishu (capital flywheel visibility; book A/B spread)"
+    "$PY" scripts/status.py --push-feishu >>"$LOG" 2>&1 || true
+    # Capability flywheel: health-check daily, RECORD a dated verdict weekly (Fri)
+    # so the loop turns automatically without a separate scheduler — but only on
+    # clean data. On-demand recording is still `auto_daily.sh optimize`.
+    if [ "$DATA_OK" != "1" ]; then
+      log "capability flywheel SKIPPED (data health critical)"
+    elif [ "$(date +%u)" = "5" ]; then
+      log "capability flywheel (weekly Fri): judge + record verdict -> ledger"
+      "$PY" scripts/continuous_optimize.py --record >>"$LOG" 2>&1 || true
+    else
+      log "pipeline health check (capability flywheel, no record)"
+      "$PY" scripts/continuous_optimize.py >>"$LOG" 2>&1 || true
+    fi
+    # Three-flywheel health on the dashboard every eod. ① capital + ② capability
+    # auto-turn; ③ strategy is a human gate. --notify-blocked escalates to Feishu
+    # ONLY if a PASS verdict is pending with no actuator (a validated edge with
+    # nowhere to go) — a real anomaly the human must act on, never auto-applied.
+    log "flywheel self-check (3 飞轮健康度；③ 策略 actuator 状态)"
+    "$PY" scripts/flywheel_selfcheck.py --notify-blocked >>"$LOG" 2>&1 || true
     log "eod done"
     ;;
+  optimize)
+    log "capability flywheel: judge live pipeline under discipline guards + record to ledger"
+    "$PY" scripts/continuous_optimize.py --record >>"$LOG" 2>&1 || true
+    log "optimize done -> kronos_screen/HYPOTHESES.jsonl"
+    ;;
   *)
-    echo "usage: auto_daily.sh {morning|eod}"; exit 2;;
+    echo "usage: auto_daily.sh {morning|eod|optimize}"; exit 2;;
 esac

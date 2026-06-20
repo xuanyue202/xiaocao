@@ -1,0 +1,7 @@
+interface:
+  display_name: "Xiaocao Trading"
+  short_description: "Run Xiaocao trading and market-data workflows"
+  default_prompt: "Use $xiaocao-trading to run today’s morning recommendation and summarize the result."
+
+policy:
+  allow_implicit_invocation: true
