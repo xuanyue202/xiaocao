@@ -158,7 +158,13 @@ def load_authorization(
         return None, "authorization is not an object"
     provided = str(auth.get("signature") or "")
     expected = sign_payload(auth, signing_key)
-    if not provided or not hmac.compare_digest(provided, expected):
+    try:
+        # compare_digest raises TypeError on non-ASCII str inputs; a crafted
+        # non-ASCII signature must deny cleanly (and be audited), not crash.
+        sig_ok = bool(provided) and hmac.compare_digest(provided, expected)
+    except (TypeError, ValueError):
+        sig_ok = False
+    if not sig_ok:
         return None, "invalid signature (tampered or wrong signing key)"
     expires = _parse_iso(auth.get("expires_at"))
     if expires is None:
@@ -207,24 +213,26 @@ def authorize_capital_action(
         _audit(decision, audit_path)
         return decision
 
-    # Scope checks.
+    # Scope checks — FAIL CLOSED: if the authorization restricts an attribute but
+    # the action leaves it unspecified (None), that is a DENY, not a skip. An
+    # omitted notional must never bypass the max_notional cap.
     sides = auth.get("sides")
-    if sides and side is not None and side.upper() not in {str(s).upper() for s in sides}:
-        decision = Decision(False, kind, f"side {side!r} out of authorized scope {sides}", code, side, notional)
+    if sides and (side is None or side.upper() not in {str(s).upper() for s in sides}):
+        decision = Decision(False, kind, f"side {side!r} outside/unspecified for authorized scope {sides}", code, side, notional)
         _audit(decision, audit_path)
         return decision
 
     codes = auth.get("codes")
-    if codes and code is not None and code not in set(codes):
-        decision = Decision(False, kind, f"code {code!r} out of authorized scope", code, side, notional)
+    if codes and (code is None or code not in set(codes)):
+        decision = Decision(False, kind, f"code {code!r} outside/unspecified for authorized scope", code, side, notional)
         _audit(decision, audit_path)
         return decision
 
     max_notional = auth.get("max_notional")
-    if max_notional is not None and notional is not None and float(notional) > float(max_notional) + 1e-6:
+    if max_notional is not None and (notional is None or float(notional) > float(max_notional) + 1e-6):
         decision = Decision(
             False, kind,
-            f"notional {notional:.2f} exceeds authorized max {float(max_notional):.2f}",
+            f"notional {notional!r} unspecified or exceeds authorized max {float(max_notional):.2f}",
             code, side, notional,
         )
         _audit(decision, audit_path)
@@ -235,7 +243,12 @@ def authorize_capital_action(
         code, side, notional,
         details={"scope": auth.get("scope"), "expires_at": auth.get("expires_at")},
     )
-    _audit(decision, audit_path)
+    # A real-capital ALLOW MUST be durably audited (OPERATING_CONTRACT §9). If the
+    # audit cannot be written, fail closed rather than place an un-auditable order.
+    if not _audit(decision, audit_path):
+        denied = Decision(False, kind, "audit write failed — denying un-auditable real-capital action", code, side, notional)
+        _audit(denied, audit_path)
+        return denied
     return decision
 
 
@@ -251,9 +264,13 @@ def require_capital_action(**kwargs: Any) -> Decision:
     return decision
 
 
-def _audit(decision: Decision, audit_path: Path | None) -> None:
+def _audit(decision: Decision, audit_path: Path | None) -> bool:
+    """Append one audit row. Returns True if written (or auditing disabled). A
+    real-capital ALLOW uses the return value to fail closed when it cannot be
+    durably recorded; DENY/always-allowed rows stay best-effort so auditing never
+    crashes the trading loop."""
     if audit_path is None:
-        return
+        return True
     row = {
         "ts": _utcnow().isoformat(timespec="seconds"),
         "allowed": decision.allowed,
@@ -267,8 +284,7 @@ def _audit(decision: Decision, audit_path: Path | None) -> None:
     try:
         audit_path.parent.mkdir(parents=True, exist_ok=True)
         with audit_path.open("a", encoding="utf-8") as fh:
-            fh.write(json.dumps(row, ensure_ascii=False, sort_keys=True) + "\n")
+            fh.write(json.dumps(row, ensure_ascii=False, sort_keys=True, default=str) + "\n")
+        return True
     except OSError:
-        # Auditing must never crash the trading loop; a failed audit write is
-        # itself a (rare) anomaly the caller's own logging will surface.
-        pass
+        return False

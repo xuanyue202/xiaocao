@@ -128,8 +128,8 @@ def test_real_capital_denied_when_side_or_code_out_of_scope(tmp_path):
         kind="real_capital", side="BUY", code="600519.XSHG", notional=100.0,
         auth_path=auth, audit_path=tmp_path / "audit.jsonl", env=_both_keys_env(), now=NOW,
     )
-    assert not d_side.allowed and "out of authorized scope" in d_side.reason
-    assert not d_code.allowed and "out of authorized scope" in d_code.reason
+    assert not d_side.allowed and "authorized scope" in d_side.reason
+    assert not d_code.allowed and "authorized scope" in d_code.reason
 
 
 def test_real_capital_allowed_with_both_keys_in_scope(tmp_path):
@@ -199,6 +199,53 @@ def test_paper_fill_never_exceeds_basket_abandon_bound(open_px, basket, window):
     price, basis, _, _ = pr._fill_price_from_window(record, window=window, limit_premium_pct=0.5)
     if price is not None:  # None == SKIP (limit not reached), which is allowed
         assert price <= basket + 1e-9, f"{basis}: fill {price} exceeded basket abandon bound {basket}"
+
+
+def test_non_ascii_signature_denies_cleanly_and_audits(tmp_path):
+    # A crafted non-ASCII signature must DENY (not crash hmac.compare_digest) and
+    # still write an audit row; require_capital_action must raise CapitalActionDenied,
+    # not a TypeError.
+    auth = _valid_auth_file(tmp_path)
+    obj = json.loads(auth.read_text())
+    obj["signature"] = "café-not-a-real-sig"  # non-ASCII
+    auth.write_text(json.dumps(obj, ensure_ascii=False), encoding="utf-8")
+    audit = tmp_path / "audit.jsonl"
+    d = authorize_capital_action(
+        kind="real_capital", notional=100.0, auth_path=auth,
+        audit_path=audit, env=_both_keys_env(), now=NOW,
+    )
+    assert not d.allowed and "invalid signature" in d.reason
+    rows = [json.loads(l) for l in audit.read_text().splitlines() if l.strip()]
+    assert rows and rows[-1]["allowed"] is False
+    with pytest.raises(CapitalActionDenied):
+        require_capital_action(kind="real_capital", notional=100.0, auth_path=auth,
+                               audit_path=audit, env=_both_keys_env(), now=NOW)
+
+
+def test_omitted_scoped_attributes_fail_closed(tmp_path):
+    # An authorization that RESTRICTS an attribute must DENY when the action omits
+    # it — an omitted notional/side/code must never bypass the scope.
+    auth = _valid_auth_file(tmp_path, max_notional=5000.0, sides=["BUY"], codes=["000001.XSHG"])
+    audit = tmp_path / "audit.jsonl"
+    common = dict(kind="real_capital", auth_path=auth, audit_path=audit, env=_both_keys_env(), now=NOW)
+    # notional omitted vs a max_notional cap
+    assert not authorize_capital_action(**common, side="BUY", code="000001.XSHG").allowed
+    # side omitted vs a sides allowlist
+    assert not authorize_capital_action(**common, code="000001.XSHG", notional=100.0).allowed
+    # code omitted vs a codes allowlist
+    assert not authorize_capital_action(**common, side="BUY", notional=100.0).allowed
+
+
+def test_real_capital_allow_fails_closed_when_audit_unwritable(tmp_path):
+    # A real-capital ALLOW that cannot be durably audited must convert to a DENY.
+    auth = _valid_auth_file(tmp_path)
+    blocker = tmp_path / "blocker"
+    blocker.write_text("x", encoding="utf-8")  # a file where a dir is needed
+    d = authorize_capital_action(
+        kind="real_capital", side="BUY", notional=100.0, auth_path=auth,
+        audit_path=blocker / "audit.jsonl", env=_both_keys_env(), now=NOW,
+    )
+    assert not d.allowed and "audit write failed" in d.reason
 
 
 def test_paper_fill_skips_when_window_low_above_limit():
