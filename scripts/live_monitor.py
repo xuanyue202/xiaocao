@@ -76,7 +76,7 @@ from xiaocao.live.exit_policy import (  # noqa: E402
     sell_block_reason as _sell_block_reason,
     strong_hold_reason as _strong_hold_reason,
 )
-from xiaocao.live import accounts, journal  # noqa: E402
+from xiaocao.live import accounts, contexts, journal  # noqa: E402
 from xiaocao.live.notify import notify as _notify  # noqa: E402
 
 OUT_DIR = ROOT / "output" / "live"
@@ -380,62 +380,14 @@ def _load_stock_sentiment_map(today_iso: str) -> dict[str, dict[str, object]]:
     return out
 
 
+# Pure/file-based decision-context builders live in xiaocao.live.contexts (now
+# independently unit-tested); thin wrappers bind them to this script's paths.
 def _load_signal_snapshot_map() -> dict[tuple[str, str], dict[str, object]]:
-    if not SIGNAL_SNAPSHOTS_FILE.exists():
-        return {}
-    out: dict[tuple[str, str], dict[str, object]] = {}
-    with SIGNAL_SNAPSHOTS_FILE.open(encoding="utf-8") as f:
-        for line in f:
-            line = line.strip()
-            if not line:
-                continue
-            try:
-                row = json.loads(line)
-            except Exception:
-                continue
-            code = str(row.get("code") or "")
-            date = str(row.get("date") or "")[:10]
-            if not code or not date:
-                continue
-            key = (date, code)
-            prev = out.get(key)
-            if prev is None or str(row.get("captured_at") or "") >= str(prev.get("captured_at") or ""):
-                out[key] = row
-    return out
+    return contexts.load_signal_snapshot_map(SIGNAL_SNAPSHOTS_FILE)
 
 
 def _kronos_context(position: dict, snapshot_map: dict[tuple[str, str], dict[str, object]]) -> dict[str, object]:
-    code = str(position.get("code") or "")
-    entry_date = str(position.get("entry_date") or "")[:10]
-    row = snapshot_map.get((entry_date, code), {})
-
-    def _num(key: str) -> float | None:
-        value = row.get(key, position.get(key))
-        try:
-            if value in (None, ""):
-                return None
-            return float(value)
-        except (TypeError, ValueError):
-            return None
-
-    p_score = _num("p_score")
-    k_score = _num("k_score")
-    score = 0.0
-    if p_score is not None:
-        score += 0.6 * _clamp(p_score / 3.0)
-    if k_score is not None:
-        score += 0.2 * _clamp(k_score / 3.0)
-    if bool(row.get("vb_star", position.get("vb_star", False))):
-        score += 0.2
-    elif bool(row.get("kp_star", position.get("kp_star", False))):
-        score += 0.1
-    return {
-        "score": round(_clamp(score), 4),
-        "p_score": p_score,
-        "k_score": k_score,
-        "vb_star": bool(row.get("vb_star", position.get("vb_star", False))),
-        "kp_star": bool(row.get("kp_star", position.get("kp_star", False))),
-    }
+    return contexts.kronos_context(position, snapshot_map)
 
 
 def _stock_sentiment_context(
@@ -444,22 +396,7 @@ def _stock_sentiment_context(
     smallgrass: dict[str, object],
     sentiment_map: dict[str, dict[str, object]],
 ) -> dict[str, object]:
-    external = sentiment_map.get(code)
-    proxy_score = float(smallgrass.get("score", 0.0) or 0.0)
-    if external is not None:
-        ext_score = float(external.get("score", 0.0) or 0.0)
-        score = _clamp(0.7 * ext_score + 0.3 * proxy_score)
-        source = "external+smallgrass"
-    else:
-        ext_score = None
-        score = _clamp(proxy_score)
-        source = str(smallgrass.get("source") or "smallgrass_proxy")
-    return {
-        "score": round(score, 4),
-        "source": source,
-        "external_score": ext_score,
-        "proxy_score": round(proxy_score, 4),
-    }
+    return contexts.stock_sentiment_context(code, smallgrass=smallgrass, sentiment_map=sentiment_map)
 
 
 def _load_all_positions() -> list[dict]:
