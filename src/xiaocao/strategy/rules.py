@@ -5,7 +5,7 @@ from typing import Any
 # Thresholds are defined once in the parameter registry (the frozen vs tunable
 # SSOT); imported here so rules.py has a single authoritative source. Values are
 # unchanged — see src/xiaocao/strategy/params.py and docs/OPERATING_CONTRACT.md.
-from xiaocao.strategy.params import QUALIFIED_JW, STRONG_JW, SUPER_JW  # noqa: F401
+from xiaocao.strategy.params import DIRECTION_DISCOUNT, QUALIFIED_JW, STRONG_JW, SUPER_JW  # noqa: F401
 
 
 def pick_big_ones(items: list[dict[str, Any]], upper_num: int = 5) -> list[dict[str, Any]]:
@@ -34,7 +34,7 @@ def check_lianban(details: list[dict[str, Any]], picked_block: list[dict[str, An
     output = []
     for detail in details:
         focus = _direction_obj(detail, picked_block, picked_category)
-        if _num(detail.get("xcjw")) < STRONG_JW / 1.3:
+        if _num(detail.get("xcjw")) < STRONG_JW / DIRECTION_DISCOUNT:
             break
         if _num(detail.get("isWeak")) != 1 or _num(detail.get("ylimitupdays")) != 1 or _num(detail.get("jsjl")) <= 0:
             continue
@@ -50,7 +50,7 @@ def check_dixi(details: list[dict[str, Any]], picked_block: list[dict[str, Any]]
     output = []
     for rank, detail in enumerate(details, start=1):
         focus = _direction_obj(detail, picked_block, picked_category)
-        if _num(detail.get("xcjw")) < QUALIFIED_JW / 1.3:
+        if _num(detail.get("xcjw")) < QUALIFIED_JW / DIRECTION_DISCOUNT:
             break
         if _num(detail.get("isDownBroken")) == 1 and _compare_jw(detail, QUALIFIED_JW, focus) and _num(detail.get("cjs")) > 0:
             output.append(_signal(date, "绿断低吸", detail, focus, "绿断 + 低吸有分 + 竞王达标"))
@@ -60,9 +60,9 @@ def check_dixi(details: list[dict[str, Any]], picked_block: list[dict[str, Any]]
             output.append(_signal(date, "首红断低吸", detail, focus, "首红断 + 低吸有分 + 竞王达标"))
         if rank <= 2 and _num(detail.get("isBottom")) == 1 and _compare_jw(detail, STRONG_JW, focus):
             output.append(_signal(date, "全盘低位低吸", detail, focus, "低吸池前2 + 低位 + 竞王达标"))
-        if focus["direction"] and _num(detail.get("isHalf")) == 1 and _compare_jw(detail, STRONG_JW * 1.3, focus) and _num(detail.get("cjs")) > 0:
+        if focus["direction"] and _num(detail.get("isHalf")) == 1 and _compare_jw(detail, STRONG_JW * DIRECTION_DISCOUNT, focus) and _num(detail.get("cjs")) > 0:
             output.append(_signal(date, "N字低吸", detail, focus, "强方向 + N字半位 + 低吸有分"))
-        if focus["direction"] and _num(detail.get("isGestationLine")) == 1 and _compare_jw(detail, QUALIFIED_JW * 1.3, focus) and _num(detail.get("cjs")) > 100:
+        if focus["direction"] and _num(detail.get("isGestationLine")) == 1 and _compare_jw(detail, QUALIFIED_JW * DIRECTION_DISCOUNT, focus) and _num(detail.get("cjs")) > 100:
             output.append(_signal(date, "孕线低吸", detail, focus, "强方向 + 孕线 + 低吸分达标"))
     return output
 
@@ -113,7 +113,7 @@ def check_qibao(
     output = []
     for detail in details:
         focus = _direction_obj(detail, picked_block, picked_category)
-        if _num(detail.get("jssb")) < QUALIFIED_JW / 1.3:
+        if _num(detail.get("jssb")) < QUALIFIED_JW / DIRECTION_DISCOUNT:
             break
         if _num(detail.get("isLimitUp")) == 1:
             continue
@@ -150,7 +150,7 @@ def _compare_score(detail: dict[str, Any], score_field: str, threshold: float, f
     xcjw across check_lianban / check_dixi / check_direction_dixi.
     """
     score = _num(detail.get(score_field))
-    return score >= threshold or (focus["direction"] and score >= threshold / 1.3)
+    return score >= threshold or (focus["direction"] and score >= threshold / DIRECTION_DISCOUNT)
 
 
 def _direction_obj(detail: dict[str, Any], picked_block: list[dict[str, Any]], picked_category: list[dict[str, Any]]) -> dict[str, Any]:
@@ -192,13 +192,13 @@ def _compare_jw(detail: dict[str, Any], threshold: float, focus: dict[str, Any],
     at the adaptive layer (where it works), NOT the rules layer.
     """
     score = _num(detail.get("xcjw"))
-    return score >= threshold or (focus["direction"] and score >= threshold / 1.3)
+    return score >= threshold or (focus["direction"] and score >= threshold / DIRECTION_DISCOUNT)
 
 
 def _compare_score(detail: dict[str, Any], score_field: str, threshold: float, focus: dict[str, Any], state_fitness: float = 0.0) -> bool:
     """Like `_compare_jw` but for any score field. state_fitness ignored (see above)."""
     score = _num(detail.get(score_field))
-    return score >= threshold or (focus["direction"] and score >= threshold / 1.3)
+    return score >= threshold or (focus["direction"] and score >= threshold / DIRECTION_DISCOUNT)
 
 
 def _signal(date: str, mode: str, detail: dict[str, Any], focus: dict[str, Any], reason: str) -> dict[str, Any]:

@@ -35,6 +35,22 @@ VARIANTS = {
 }
 
 
+def is_new_information(prev: dict | None, verdict: dict) -> bool:
+    """Should this verdict be appended to the ledger?
+
+    True when there is no prior entry for the hypothesis, or the verdict / the
+    set of failing guards CHANGED. The flywheel RE-EVALUATES every variant each
+    run (more accumulated days may flip a verdict), but the ledger is a CHANGELOG,
+    not a heartbeat: re-recording an identical REJECTED every run would bury the
+    real transitions under duplicates. This is what makes `ledger.already_refuted`
+    load-bearing — a settled, unchanged verdict is consulted, not re-litigated."""
+    if prev is None:
+        return True
+    if prev.get("verdict") != verdict.get("verdict"):
+        return True
+    return sorted(prev.get("rejected_by") or []) != sorted(verdict.get("rejected_by") or [])
+
+
 def build_results(df: pd.DataFrame, variant_col: str) -> list[dict]:
     """Per selected trade: strat_ret = the pick's realized next-close return;
     base_ret = that day's LEAVE-ONE-OUT take-all mean (the counterfactual of NOT
@@ -101,6 +117,13 @@ def main() -> None:
         verdict = guards.evaluate_hypothesis(results, n_tried=n_tried, cache_only=True, min_days=a.min_days)
         pt = verdict["per_trade"]
         mark = "PASS" if verdict["verdict"] == "PASS" else "REJECTED"
+        # Consult the ledger BEFORE judging-as-new: a previously-refuted direction
+        # is re-evaluated (data grows) but flagged so the operator sees continuity.
+        prior = ledger.find(hyp_id, path=ledger_path)
+        prev = prior[-1] if prior else None
+        if prev is not None and ledger.already_refuted(hyp_id, path=ledger_path):
+            print(f"   note: re-evaluating a previously-REJECTED direction "
+                  f"(ledger.already_refuted={hyp_id}); more data may yet change the verdict")
         print(
             f"{hyp_id}: {mark}  ({verdict['n_trades']} trades / {verdict['n_days']} days)  "
             f"per-trade spread {pt['spread']:+.4f}%  p={verdict['significance']['p']:.3f}"
@@ -110,12 +133,16 @@ def main() -> None:
         for w in verdict["warnings"]:
             print(f"   ⚠ {w}")
         if a.record:
-            ledger.record_hypothesis(
-                hypothesis_id=hyp_id, claim=claim,
-                method="live forward eval (open[D]->net close[D+1]) vs take-all, per-trade",
-                verdict=verdict, n_tried=n_tried, path=ledger_path,
-            )
-            any_recorded = True
+            if is_new_information(prev, verdict):
+                ledger.record_hypothesis(
+                    hypothesis_id=hyp_id, claim=claim,
+                    method="live forward eval (open[D]->net close[D+1]) vs take-all, per-trade",
+                    verdict=verdict, n_tried=n_tried, path=ledger_path,
+                )
+                any_recorded = True
+            else:
+                print(f"   verdict unchanged vs ledger ({mark}) — not re-recording "
+                      f"(the ledger is a changelog, not a heartbeat)")
     if any_recorded:
         print(f"recorded verdict(s) -> {a.ledger}")
 

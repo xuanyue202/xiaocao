@@ -49,6 +49,26 @@ def test_account_reconciles_within_tolerance(tmp_path):
     assert data_health.account_reconciles(tmp_path) == []
 
 
+def test_unlabeled_closed_positions_are_surfaced(tmp_path):
+    # A closed row with NO `book` field is counted as book B by default; surface
+    # it so a future book-A close can't be silently absorbed into book B's recon.
+    _write_jsonl(tmp_path / "positions.jsonl", [
+        {"book": "B", "status": "closed", "code": "A", "realized_pnl": -10.0},
+        {"status": "closed", "code": "LEGACY", "realized_pnl": -5.0},  # no book label
+    ])
+    findings = data_health.unlabeled_closed_positions(tmp_path)
+    assert findings and findings[0]["severity"] == "warn"
+    assert "LEGACY" in findings[0]["detail"] and "1 closed" in findings[0]["detail"]
+
+
+def test_labeled_positions_produce_no_unlabeled_finding(tmp_path):
+    _write_jsonl(tmp_path / "positions.jsonl", [
+        {"book": "B", "status": "closed", "code": "A", "realized_pnl": -10.0},
+        {"book": "A", "status": "closed", "code": "B", "realized_pnl": 5.0},
+    ])
+    assert data_health.unlabeled_closed_positions(tmp_path) == []
+
+
 def test_stale_open_positions_flagged(tmp_path):
     _write_jsonl(tmp_path / "positions.jsonl", [
         {"book": "B", "status": "open", "code": "A", "entry_date": "2026-06-01"},

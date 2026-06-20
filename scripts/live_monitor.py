@@ -90,8 +90,12 @@ STOCK_SENTIMENT_FILE = OUT_DIR / "stock_sentiment.json"
 SIGNAL_SNAPSHOTS_FILE = OUT_DIR / "signal_snapshots.jsonl"
 
 # PROFILE_DD / PROFILE_HARD_DD and the phase-time constants now live in
-# xiaocao.live.exit_policy (imported above) so the live loop and backtest replay
-# share one source. See docs/OPERATING_CONTRACT.md §4.
+# xiaocao.live.exit_policy (imported above) — the single importable source for the
+# staged-exit rules. The live loop executes decide_sell_action from there; a
+# backtest *can* import the same module for 回测=实盘 parity, but the existing
+# backtest_intraday_stop.py is a separate comparison harness that does NOT import
+# it yet (parity available by construction, not yet exercised). See
+# docs/OPERATING_CONTRACT.md §4 and src/xiaocao/live/exit_policy.py.
 DEFAULT_STARTING_CAPITAL = 100000.0
 DEFAULT_FEE_RATE = 0.0001
 TRADE_CAL_RETRIES = 3

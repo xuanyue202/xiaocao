@@ -18,6 +18,7 @@ from __future__ import annotations
 import base64
 import hashlib
 import hmac
+import json
 import os
 import subprocess
 import sys
@@ -82,9 +83,29 @@ def feishu_notify(
         status, text = (poster or _default_poster)(webhook, payload)
     except Exception as exc:  # noqa: BLE001
         return f"error: {type(exc).__name__}"
-    if status == 200 and ('"StatusCode":0' in text or '"code":0' in text or text == "" or "ok" in text.lower()):
-        return "ok"
-    return f"http {status}: {text[:120]}"
+    return "ok" if (status == 200 and _feishu_ok(text)) else f"http {status}: {text[:120]}"
+
+
+def _feishu_ok(text: str) -> bool:
+    """A Feishu webhook reports failures as HTTP 200 with an error JSON body
+    (e.g. {"code":19021,"msg":"sign match fail ..."}), so a loose substring match
+    like `"ok" in text` would treat "token"/"book"/"lookup" error bodies as
+    success and silently swallow a HARD_STOP / kill-switch alert. Parse the result
+    code: success is StatusCode==0 / code==0 (or an empty body)."""
+    if not text:
+        return True
+    try:
+        body = json.loads(text)
+    except (ValueError, TypeError):
+        # non-JSON 200 body: trust only the explicit success markers.
+        return '"StatusCode":0' in text or '"code":0' in text
+    if not isinstance(body, dict):
+        return False
+    code = body.get("code", body.get("StatusCode", 0))
+    try:
+        return int(code) == 0
+    except (TypeError, ValueError):
+        return False
 
 
 def notify(

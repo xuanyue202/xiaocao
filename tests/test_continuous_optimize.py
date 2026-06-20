@@ -72,6 +72,18 @@ def test_losing_strategy_with_timestamp_dates_is_not_a_false_positive():
     assert v["per_trade"]["spread"] < 0 and v["verdict"] == "REJECTED"
 
 
+def test_is_new_information_gates_ledger_appends():
+    # The capability flywheel re-evaluates every run, but the ledger is a
+    # changelog: only a missing or CHANGED verdict is worth appending. This is
+    # what makes ledger.already_refuted load-bearing rather than dead code.
+    rej = {"verdict": "REJECTED", "rejected_by": ["significant"]}
+    assert co.is_new_information(None, rej) is True                       # first time -> record
+    assert co.is_new_information(rej, rej) is False                       # unchanged -> skip
+    assert co.is_new_information(rej, {"verdict": "PASS", "rejected_by": []}) is True   # flipped
+    assert co.is_new_information(                                          # same verdict, new failing guard
+        rej, {"verdict": "REJECTED", "rejected_by": ["significant", "enough_days"]}) is True
+
+
 def test_build_results_empty_when_no_picks():
     df = _df()
     df["kp_star"] = False

@@ -88,6 +88,12 @@ case "$STEP" in
       log "pipeline health check (capability flywheel, no record)"
       "$PY" scripts/continuous_optimize.py >>"$LOG" 2>&1 || true
     fi
+    # Three-flywheel health on the dashboard every eod. ① capital + ② capability
+    # auto-turn; ③ strategy is a human gate. --notify-blocked escalates to Feishu
+    # ONLY if a PASS verdict is pending with no actuator (a validated edge with
+    # nowhere to go) — a real anomaly the human must act on, never auto-applied.
+    log "flywheel self-check (3 飞轮健康度；③ 策略 actuator 状态)"
+    "$PY" scripts/flywheel_selfcheck.py --notify-blocked >>"$LOG" 2>&1 || true
     log "eod done"
     ;;
   optimize)

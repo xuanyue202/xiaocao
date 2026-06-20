@@ -40,7 +40,13 @@ def build_digest(
 ) -> dict[str, Any]:
     holdings_snap = _load_json(live_dir / "paper_holdings.json")
     acct_b = _load_json(live_dir / "paper_account.json")
-    acct_a = _load_json(live_dir / "paper_account_A.json")
+    acct_a_path = live_dir / "paper_account_A.json"
+    acct_a = _load_json(acct_a_path)
+    # A missing/unparseable book-A account must NOT masquerade as realized 0.0:
+    # ab_realized_delta would then collapse to book B's entire PnL and be reported
+    # as "stops helped/hurt" against an empty baseline — the exact self-deceiving
+    # signal iteration-7's A/B comparison exists to avoid. Gate the spread on this.
+    book_a_present = acct_a_path.exists() and bool(acct_a)
     market_date = market_date or holdings_snap.get("date") or date.today().isoformat()
 
     book_b = {
@@ -82,8 +88,12 @@ def build_digest(
         "generated_at": (now or datetime.now()).isoformat(timespec="seconds"),
         "book_b": book_b,
         "book_a": book_a,
+        "book_a_present": book_a_present,
         # live stop policy minus validated next-close policy: >0 = stops helped.
-        "ab_realized_delta": round(book_b["realized_pnl"] - book_a["realized_pnl"], 2),
+        # None (not 0.0) when book A is absent — the spread is undefined, never faked.
+        "ab_realized_delta": (
+            round(book_b["realized_pnl"] - book_a["realized_pnl"], 2) if book_a_present else None
+        ),
         "today": today,
         "holdings": holdings,
     }
@@ -91,12 +101,18 @@ def build_digest(
 
 def format_digest(d: dict[str, Any]) -> str:
     b, a = d["book_b"], d["book_a"]
+    delta = d.get("ab_realized_delta")
+    ab_line = (
+        f"A/B realized 差 (实盘止损 − 验证): {delta:+.0f}"
+        if delta is not None
+        else "A/B realized 差 (实盘止损 − 验证): N/A（book A 未结算/缺失）"
+    )
     lines = [
         f"小草盘后 {d['market_date']}",
         f"book B(实盘止损口径): equity {b['equity']:.0f} | cash {b['cash']:.0f} | "
         f"realized {b['realized_pnl']:+.0f} | 未实现 {b['unrealized_pnl']:+.0f} | 持仓 {b['open_positions']}",
         f"book A(验证口径 next_close): cash {a['cash']:.0f} | realized {a['realized_pnl']:+.0f}",
-        f"A/B realized 差 (实盘止损 − 验证): {d['ab_realized_delta']:+.0f}",
+        ab_line,
     ]
     today = d.get("today") or {}
     if today:

@@ -23,7 +23,7 @@
 |----|------|-----------|
 | **确定性脊柱** | data / fill / stop / 记账(book A/B) / 安全 / 契约校验 | **否**——纯确定性代码，回测与实盘**同一份** |
 | **Agent 皮层** | 判断：每日 posture、异常分诊、强持有例外、研究方向 | 是——结构化包进、结构化决策出（入审计日志） |
-| **复利记忆** | cache.db / state.db / decision_journal / HYPOTHESES / training_rows / model | 否 |
+| **复利记忆** | cache.db / decision_journal.jsonl / HYPOTHESES.jsonl / training_rows / model（注：`state.db` 可查询投影**尚未实现**——当前"查询当前状态"由 `status.build_digest` 直接装配 jsonl，非 SQL） | 否 |
 
 **MUST NOT**：让 agent 直接计算成交价、改账本余额、决定是否真实下单。这些只能由脊柱确定性执行；agent 仅产出"判断"，落入决策日志。
 
@@ -85,8 +85,9 @@
 
 ## 10. 异常 / 升级策略（agent 皮层）
 
-- **只上报真实异常**：脚本失败、缺预期输出、`候选股 NONE`、缺 paper-record 输出、对账 MISMATCH、`HARD_STOP` 触发、现金不足、可疑数据。
-- **非异常（正常）**：`SELL_DEFERRED`（盘中只诊断）、`T+1_blocked`、非交易日 skip、book A 单独结算。
+- **只上报真实异常**：脚本失败、缺预期输出、`候选股 NONE`、缺 paper-record 输出、对账 MISMATCH、`HARD_STOP` 触发、现金不足、可疑数据、**③ 策略飞轮 `blocked`**（有 PASS 裁决待应用却无 actuator——验证过的 edge 闲置）。
+- **③ 策略飞轮 `blocked` 升级动作**：这是**人工决策**，agent 升级给人、**不得自动执行**。报告 `pending_pass_verdicts` 与其账本指标；应用方式 = 人确认后改 `src/xiaocao/strategy/params.py`（唯一改值入口，冻结约束）或重训模型，且**必须再过 train+test guard**。`flywheel_selfcheck.py --notify-blocked`（eod 自动跑）已推飞书。**agent 永不自动改参/重训**——自动应用 edge 违反 train+test 纪律。
+- **非异常（正常）**：`SELL_DEFERRED`（盘中只诊断）、`T+1_blocked`、非交易日 skip、book A 单独结算、**③ 策略飞轮 `open`**（无 PASS 可应用，策略正确地冻结，无需动作）。
 - EOD 是**盘后审计**，非新多空判断：强调执行纪律、A/B 证据、数据采集健康、账户一致性、未决风险。
 
 ## 11. 契约不变量（可执行回归 → `tests/test_operating_contract.py`）
@@ -95,6 +96,7 @@
 - [x] real_capital 缺任一钥匙 / 签名篡改 / 过期 / 越权 / 超额 → 拒；双钥匙 in-scope → 放行；每个决定入审计。
 - [x] `require_capital_action` 拒时抛 `CapitalActionDenied`。
 - [x] 成交 ≤ basket 放弃线（`_fill_price_from_window`）；窗口最低价 > L → SKIP。
+- [x] book A/B fixture 回放：同组 picks 过 A/B，realized 差 **完全等于出场口径差**（逐仓可归因，无记账漂移）；无 stop 触发时 book A == book B（消灭 iteration-7 的 -4,191 漂移）。`tests/test_operating_contract.py::test_ab_replay_*`
 - [ ] （后续）settle_book_a 只用 next_close 且幂等；decompose_pnl 三项金额求和 = account realized_pnl（容差=取整）。
 
 ## 12. 修订记录

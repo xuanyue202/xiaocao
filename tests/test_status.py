@@ -53,7 +53,24 @@ def test_format_digest_is_readable_and_has_key_numbers(tmp_path):
 
 
 def test_digest_tolerates_missing_files(tmp_path):
-    # No live files at all -> defaults, never raises.
+    # No live files at all -> defaults, never raises. The A/B spread must be None
+    # (undefined), NOT a fabricated 0.0, when book A is absent.
     d = S.build_digest(live_dir=tmp_path, market_date="2026-06-19")
-    assert d["book_b"]["open_positions"] == 0 and d["ab_realized_delta"] == 0.0
+    assert d["book_b"]["open_positions"] == 0
+    assert d["book_a_present"] is False and d["ab_realized_delta"] is None
     assert d["today"] == {}
+
+
+def test_ab_delta_not_faked_when_only_book_a_missing(tmp_path):
+    # Book B has a real realized PnL but settle_book_a hasn't run: the spread must
+    # NOT collapse to book B's entire PnL against an empty book-A baseline (the
+    # exact self-deceiving "stops helped +4191" signal iteration-7 guards against).
+    tmp_path.mkdir(parents=True, exist_ok=True)
+    (tmp_path / "paper_account.json").write_text(
+        json.dumps({"cash": 1.0, "realized_pnl": -4191.0}), encoding="utf-8")
+    (tmp_path / "paper_holdings.json").write_text(
+        json.dumps({"date": "2026-06-19", "open_positions": 0, "holdings": []}), encoding="utf-8")
+    d = S.build_digest(live_dir=tmp_path, market_date="2026-06-19")
+    assert d["book_b"]["realized_pnl"] == -4191.0
+    assert d["book_a_present"] is False and d["ab_realized_delta"] is None
+    assert "N/A" in S.format_digest(d)

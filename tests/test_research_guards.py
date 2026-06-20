@@ -122,6 +122,20 @@ def test_walk_forward_rejects_severe_oos_decay():
     assert "walk_forward_consistent" in v["rejected_by"]
 
 
+def test_walk_forward_absolute_floor_rejects_negligible_retained_edge():
+    # Both halves positive and the test half retains >50% of the train edge, so the
+    # RELATIVE retain check alone passes — but both edges are negligible. The
+    # absolute floor (min_edge, threaded from min_effect) must reject it; without
+    # it the retain check degenerates to sign-only as train_edge -> 0.
+    trades = []
+    for i in range(4):
+        trades.append({"day": f"2026-11-{i + 1:02d}", "strat_ret": 0.0008, "base_ret": 0.0})
+    for i in range(4, 8):
+        trades.append({"day": f"2026-11-{i + 1:02d}", "strat_ret": 0.0006, "base_ret": 0.0})
+    assert guards.walk_forward(trades)["consistent"] is True               # relative check alone passes
+    assert guards.walk_forward(trades, min_edge=0.005)["consistent"] is False  # absolute floor rejects
+
+
 def test_significant_guard_is_directional():
     # A significantly NEGATIVE edge must not satisfy the significance guard.
     diffs = [-0.022, 0.002] * 4

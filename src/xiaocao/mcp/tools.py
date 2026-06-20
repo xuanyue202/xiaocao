@@ -22,7 +22,8 @@ def _root(root: Path | None) -> Path:
 
 
 def flywheel_status(root: Path | None = None) -> dict[str, Any]:
-    """Are both compounding loops wired and able to spin? (no network)"""
+    """Are the three coupled compounding flywheels wired? ① capital + ② capability
+    auto-turn; ③ strategy is an intentional human gate (open/blocked/closed). No network."""
     return flywheel.check_flywheel(root=_root(root), env={})
 
 

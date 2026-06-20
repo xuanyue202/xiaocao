@@ -53,6 +53,21 @@ def test_feishu_non_200_is_reported_not_raised():
     assert res.startswith("http 500")
 
 
+def test_feishu_200_error_body_is_not_swallowed_as_ok():
+    # Feishu returns failures as HTTP 200 with an error code. A body whose msg
+    # contains the substring "ok" (e.g. "token") must NOT be read as success —
+    # otherwise a HARD_STOP alert is silently dropped while the loop logs "ok".
+    poster = _capturing_poster(status=200, text='{"code":19001,"msg":"invalid token"}')
+    res = N.feishu_notify("https://hook", "t", "b", poster=poster)
+    assert res != "ok" and res.startswith("http 200")
+
+
+def test_feishu_success_code_zero_is_ok():
+    for body in ('{"code":0,"msg":"success"}', '{"StatusCode":0}', ""):
+        poster = _capturing_poster(status=200, text=body)
+        assert N.feishu_notify("https://hook", "t", "b", poster=poster) == "ok"
+
+
 def test_feishu_network_error_never_raises():
     def boom(url, payload):
         raise ConnectionError("down")

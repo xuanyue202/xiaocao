@@ -11,7 +11,8 @@ from datetime import datetime, timedelta, timezone
 
 import pytest
 
-from xiaocao.live import safety
+from xiaocao.live import safety, status
+from xiaocao.live.exit_policy import decide_sell_action
 from xiaocao.live.safety import (
     CapitalActionDenied,
     authorize_capital_action,
@@ -256,3 +257,87 @@ def test_paper_fill_skips_when_window_low_above_limit():
         record, window={"vwap": 10.10, "low": 10.06, "high": 10.20, "time": "0931"}, limit_premium_pct=0.5,
     )
     assert price is None and meta.get("skip_reason") == "LIMIT_NOT_REACHED"
+
+
+def test_real_capital_denied_when_expires_at_is_naive_tz(tmp_path):
+    # A hand-minted authorization with a NAIVE expiry (no tz offset) is ambiguous;
+    # the gate must fail-closed, not silently relabel it UTC (which would widen the
+    # real-capital window by the minter's local offset — a fail-OPEN on expiry).
+    auth = make_authorization(
+        scope="test", max_notional=20000.0, signing_key=KEY,
+        expires_at="2027-01-01T15:00:00",  # naive: no +00:00
+        issued_at=NOW.isoformat(timespec="seconds"),
+    )
+    path = tmp_path / "live_authorization.json"
+    path.write_text(json.dumps(auth), encoding="utf-8")
+    d = authorize_capital_action(
+        kind="real_capital", side="BUY", notional=100.0, auth_path=path,
+        audit_path=tmp_path / "audit.jsonl", env=_both_keys_env(), now=NOW,
+    )
+    assert not d.allowed and "expires_at" in d.reason
+
+
+# --------------------------------------------------------------------------- #
+# §11 invariant: book A/B fixture replay (the iteration-7 raison d'être —
+# book A/B drift was once -4,191). Same picks through both口径; the realized
+# spread must be ENTIRELY the exit-policy difference, with no bookkeeping drift.
+# Book B's exit is the REAL production decision (exit_policy.decide_sell_action);
+# book A always exits at next_close.
+# --------------------------------------------------------------------------- #
+def _book_b_exit(pick):
+    """Replay the production staged-exit decision. HARD_STOP executes intraday at
+    the checkpoint price; everything else holds to the 14:55 discipline pass and
+    exits at the close-aligned 14:55 price — exactly the staging the live loop runs."""
+    d = decide_sell_action(
+        {}, detail={}, latest_price=pick["intraday_price"], peak=pick["peak"],
+        dd_pct=pick["dd_pct"], dd_threshold=2.0, t1_blocked=False, hold_days=1,
+        signal_score=0.5, hard_dd_threshold=8.0, now=pick["now"],
+    )
+    if d["triggered"] and d["sell_reason"] == "HARD_STOP":
+        return pick["intraday_price"], "HARD_STOP"
+    return pick["price_1455"], d.get("sell_reason")
+
+
+def test_ab_replay_spread_is_entirely_exit_policy_no_drift(tmp_path):
+    eod_t = datetime(2026, 6, 22, 14, 55)
+    intraday_t = datetime(2026, 6, 22, 10, 0)
+    picks = [
+        # no stop fires -> book B exits at 14:55 == next_close -> books AGREE (zero drift)
+        {"code": "AAA", "entry": 10.0, "shares": 1000, "next_close": 10.5,
+         "intraday_price": 10.5, "price_1455": 10.5, "peak": 10.6, "dd_pct": 1.0, "now": eod_t},
+        # hard stop fires intraday at 18.5 while next_close is 21.0 -> divergence
+        {"code": "BBB", "entry": 20.0, "shares": 500, "next_close": 21.0,
+         "intraday_price": 18.5, "price_1455": 21.0, "peak": 20.5, "dd_pct": 9.0, "now": intraday_t},
+    ]
+    book_a = book_b = attribution = 0.0
+    reasons = {}
+    for p in picks:
+        exit_b, reason = _book_b_exit(p)
+        reasons[p["code"]] = reason
+        book_a += (p["next_close"] - p["entry"]) * p["shares"]
+        book_b += (exit_b - p["entry"]) * p["shares"]
+        attribution += (exit_b - p["next_close"]) * p["shares"]  # exit-policy difference only
+
+    # the production exit policy: AAA defers to the 14:55 discipline, BBB hard-stops
+    assert reasons["AAA"] == "EOD_DISCIPLINE_1455"
+    assert reasons["BBB"] == "HARD_STOP"
+    # the entire A/B spread is the exit difference — no entry/cost-basis/recon drift
+    assert round(book_b - book_a, 6) == round(attribution, 6) == -1250.0
+
+    # and the digest computes the SAME spread from the seeded book accounts
+    (tmp_path / "paper_account.json").write_text(json.dumps({"realized_pnl": book_b}), encoding="utf-8")
+    (tmp_path / "paper_account_A.json").write_text(json.dumps({"realized_pnl": book_a}), encoding="utf-8")
+    digest = status.build_digest(live_dir=tmp_path, market_date="2026-06-22")
+    assert digest["book_a_present"] is True
+    assert digest["ab_realized_delta"] == round(book_b - book_a, 2) == -1250.0
+
+
+def test_ab_replay_books_agree_when_no_stop_fires():
+    # Identical inputs, no stop -> book B (14:55 == next_close) must equal book A.
+    # A nonzero delta here would be a bookkeeping drift bug (the -4191 failure mode).
+    p = {"code": "AAA", "entry": 10.0, "shares": 1000, "next_close": 10.5,
+         "intraday_price": 10.5, "price_1455": 10.5, "peak": 10.55, "dd_pct": 1.0,
+         "now": datetime(2026, 6, 22, 14, 55)}
+    exit_b, reason = _book_b_exit(p)
+    assert reason == "EOD_DISCIPLINE_1455"
+    assert (p["next_close"] - p["entry"]) * p["shares"] == (exit_b - p["entry"]) * p["shares"]

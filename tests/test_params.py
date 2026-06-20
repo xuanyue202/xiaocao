@@ -23,8 +23,19 @@ def test_rewired_consumers_match_registry():
     # rules.py and exit_policy.py now import these from the registry.
     assert (rules.SUPER_JW, rules.STRONG_JW, rules.QUALIFIED_JW) == (
         params.SUPER_JW, params.STRONG_JW, params.QUALIFIED_JW)
+    assert rules.DIRECTION_DISCOUNT == params.DIRECTION_DISCOUNT
     assert exit_policy.PROFILE_DD is params.PROFILE_DD
     assert exit_policy.PROFILE_HARD_DD is params.PROFILE_HARD_DD
+
+
+def test_direction_discount_is_wired_not_a_hardcoded_literal():
+    # Regression for the registry-phantom bug: DIRECTION_DISCOUNT used to be a
+    # registry knob that rules.py ignored (11 hardcoded `1.3`), so editing the
+    # registry changed nothing while the SSOT/ledger/digest reported the new value
+    # — a "真的谎言". rules.py must drive the discount from the registry symbol.
+    src = (Path(__file__).resolve().parents[1] / "src" / "xiaocao" / "strategy" / "rules.py").read_text()
+    assert "DIRECTION_DISCOUNT" in src
+    assert "/ 1.3" not in src and "* 1.3" not in src, "direction discount must not be a hardcoded literal"
 
 
 def test_documented_consumers_have_not_drifted():

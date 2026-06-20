@@ -125,7 +125,13 @@ def _parse_iso(value: Any) -> datetime | None:
         dt = datetime.fromisoformat(str(value))
     except (TypeError, ValueError):
         return None
-    return dt if dt.tzinfo else dt.replace(tzinfo=timezone.utc)
+    # Fail-closed on a NAIVE expiry: relabeling it UTC (the old behavior) silently
+    # widens the real-capital window by the minter's local offset (8h for China
+    # time) — a fail-OPEN on the expiry key. A hand-minted authorization MUST carry
+    # an explicit tz offset; scripts/authorize_live.py already emits tz-aware UTC.
+    if dt.tzinfo is None:
+        return None
+    return dt
 
 
 def live_trading_enabled(env: dict[str, str] | None = None) -> bool:

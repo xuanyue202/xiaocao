@@ -59,9 +59,35 @@ def duplicate_snapshots(live_dir: Path) -> list[dict[str, Any]]:
     }]
 
 
+def unlabeled_closed_positions(live_dir: Path) -> list[dict[str, Any]]:
+    """Closed positions missing an explicit `book` label.
+
+    account_reconciles treats an absent `book` as B for legacy compatibility
+    (older rows predate the explicit label). That is safe only as long as every
+    unlabeled close genuinely is book B — a future/legacy book-A close written
+    without the label would be silently summed into book B's reconciliation,
+    masking a real discrepancy (the precise data-honesty hazard this doctor
+    exists to catch). Surface them so the label gets backfilled rather than
+    absorbed."""
+    positions = _read_jsonl(live_dir / "positions.jsonl")
+    unlabeled = [p for p in positions if p.get("status") == "closed" and "book" not in p]
+    if not unlabeled:
+        return []
+    codes = [str(p.get("code")) for p in unlabeled[:8]]
+    return [{
+        "check": "unlabeled_closed_positions",
+        "severity": "warn",
+        "detail": f"{len(unlabeled)} closed position(s) lack an explicit `book` label "
+                  f"(e.g. {', '.join(codes)}) — reconciliation counts them as book B by "
+                  f"default; backfill the label so a future book-A close can't be absorbed",
+    }]
+
+
 def account_reconciles(live_dir: Path, *, tolerance: float = 1.0) -> list[dict[str, Any]]:
     """Book B account realized_pnl must equal the sum of closed book-B positions'
-    realized_pnl. A drift means trades or account updates were lost."""
+    realized_pnl. A drift means trades or account updates were lost. An absent
+    `book` is treated as B for legacy compatibility (see unlabeled_closed_positions,
+    which flags such rows so they can't silently absorb a book-A close)."""
     acct = _read_json(live_dir / "paper_account.json")
     if not acct:
         return []
@@ -110,6 +136,7 @@ def check(live_dir: Path, *, today: str | None = None) -> dict[str, Any]:
     findings: list[dict[str, Any]] = []
     findings += duplicate_snapshots(live_dir)
     findings += account_reconciles(live_dir)
+    findings += unlabeled_closed_positions(live_dir)
     findings += stale_open_positions(live_dir, today=today)
     return {
         "findings": findings,

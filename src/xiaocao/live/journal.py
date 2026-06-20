@@ -36,9 +36,15 @@ def _now_iso() -> str:
 
 def state_hash(payload: Any) -> str:
     """Short, stable digest of the state a decision acted on (for dedupe/audit).
-    default=str so a stray non-JSON value (numpy float, datetime, set) can never
-    raise here and crash the monitor's emit site."""
-    blob = json.dumps(payload, ensure_ascii=False, sort_keys=True, separators=(",", ":"), default=str)
+    default=str rescues a stray non-JSON VALUE (numpy float, datetime, set), but
+    NOT a non-str dict KEY (a tuple/numpy key raises TypeError out of json.dumps).
+    Since this is called before the file-write try/except in append_decision, it
+    must never raise — fall back to a repr-based digest for exotic keys so an
+    audit detail can never crash the trading loop."""
+    try:
+        blob = json.dumps(payload, ensure_ascii=False, sort_keys=True, separators=(",", ":"), default=str)
+    except (TypeError, ValueError):
+        blob = repr(payload)
     return hashlib.sha256(blob.encode("utf-8")).hexdigest()[:16]
 
 

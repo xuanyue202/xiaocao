@@ -139,21 +139,30 @@ def day_weighted_stats(trades: Sequence[Mapping[str, Any]]) -> dict[str, float]:
     by_day = _by_day(trades)
     day_strat = [_mean([s for s, _ in v]) for v in by_day.values()]
     day_base = [_mean([b for _, b in v]) for v in by_day.values()]
+    # NOTE: no strat_cum/base_cum here. A compounded cum is unit-dependent — the
+    # pipeline emits returns in PERCENT (forward_eval *100), so `prod(1+r)` would
+    # treat +2% as +200% and overstate by ~200x. The honest, unit-safe summary is
+    # the per-day mean spread; the cum headline is exactly the day-weighting trick
+    # the per-trade guard exists to refuse.
     return {
         "n_days": len(by_day),
         "strat_day_mean": _mean(day_strat),
         "base_day_mean": _mean(day_base),
         "spread": _mean(day_strat) - _mean(day_base),
-        "strat_cum": math.prod(1.0 + r for r in day_strat) - 1.0 if day_strat else 0.0,
-        "base_cum": math.prod(1.0 + r for r in day_base) - 1.0 if day_base else 0.0,
     }
 
 
-def walk_forward(trades: Sequence[Mapping[str, Any]], *, retain_ratio: float = 0.5) -> dict[str, Any]:
-    """Train = first half of days, test = second half. The edge must be positive
-    in BOTH halves AND the test half must retain at least `retain_ratio` of the
+def walk_forward(
+    trades: Sequence[Mapping[str, Any]], *, retain_ratio: float = 0.5, min_edge: float = 0.0
+) -> dict[str, Any]:
+    """Train = first half of days, test = second half. BOTH halves' edge must
+    exceed `min_edge` AND the test half must retain at least `retain_ratio` of the
     train edge — guarding against severe out-of-sample decay (sign-only is not
-    enough). For an odd day count the extra day goes to TEST (more conservative)."""
+    enough). `min_edge` is an absolute floor (default 0 = strictly positive); the
+    relative retain check alone degenerates toward sign-only as train_edge -> 0
+    (retain_ratio * train_edge -> 0), so threading the economic floor here keeps a
+    near-zero edge from "retaining" a near-zero edge. For an odd day count the
+    extra day goes to TEST (more conservative)."""
     by_day = _by_day(trades)
     days = sorted(by_day)
     mid = len(days) // 2
@@ -167,8 +176,8 @@ def walk_forward(trades: Sequence[Mapping[str, Any]], *, retain_ratio: float = 0
 
     train_edge, test_edge = edge(train_days), edge(test_days)
     consistent = (
-        train_edge > 0
-        and test_edge > 0
+        train_edge > min_edge
+        and test_edge > min_edge
         and test_edge >= retain_ratio * train_edge
     )
     return {
@@ -177,6 +186,7 @@ def walk_forward(trades: Sequence[Mapping[str, Any]], *, retain_ratio: float = 0
         "train_edge": train_edge,
         "test_edge": test_edge,
         "retain_ratio": retain_ratio,
+        "min_edge": min_edge,
         "consistent": consistent,
     }
 
@@ -222,7 +232,9 @@ def evaluate_hypothesis(
 
     pt = per_trade_stats(trades)
     dw = day_weighted_stats(trades)
-    wf = walk_forward(trades, retain_ratio=retain_ratio)
+    # min_effect doubles as the absolute walk-forward floor: when a caller sets an
+    # economic floor, each half-edge must clear it, not merely be positive.
+    wf = walk_forward(trades, retain_ratio=retain_ratio, min_edge=min_effect)
     sig = paired_ttest_by_day(trades)
 
     n_days = int(dw["n_days"])

@@ -57,6 +57,24 @@ def test_append_never_crashes_on_non_serializable_value(tmp_path):
     assert len(journal.read_all(path)) == 1  # written via default=str, not crashed
 
 
+def test_state_hash_never_raises_on_non_str_keys():
+    # default=str rescues non-JSON VALUES but NOT non-str dict KEYS (a tuple key
+    # raises TypeError out of json.dumps). state_hash is called before the write
+    # try/except, so it must fall back rather than crash the loop.
+    h = journal.state_hash({("2026-06-19", "600000"): {"dd": 1.0}})  # tuple key
+    assert isinstance(h, str) and len(h) == 16
+
+
+def test_append_never_crashes_on_exotic_dict_keys(tmp_path):
+    path = tmp_path / "j.jsonl"
+    rec = journal.append_decision(
+        automation="m", market_date="2026-06-19",
+        deterministic={"positions": {("2026-06-19", "600000"): {"dd_pct": 3.1}}},  # tuple-keyed
+        path=path,
+    )
+    assert rec["automation"] == "m" and rec["state_hash"]
+
+
 def test_append_never_raises_on_unwritable_path(tmp_path):
     # A file where a directory is expected -> mkdir/open fail, but auditing must
     # never crash the loop; append returns the record regardless.

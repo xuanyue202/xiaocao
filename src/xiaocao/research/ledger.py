@@ -1,8 +1,10 @@
 """Knowledge ledger — structured record of every hypothesis the harness judged.
 
 Append-only kronos_screen/HYPOTHESES.jsonl: the executable successor to
-STATE.md's hand-written research log. Because verdicts are durable and queryable,
-the system never re-litigates a refuted idea — it compounds what it has learned.
+STATE.md's hand-written research log. Verdicts are durable and queryable, so the
+capability flywheel re-evaluates a direction as data grows but does not re-litigate
+a settled one by hand: continuous_optimize consults `already_refuted`/`find` and
+appends only when the verdict CHANGES (the ledger is a changelog, not a heartbeat).
 A new hypothesis can declare `supersedes` to mark which prior entry it revises.
 """
 from __future__ import annotations

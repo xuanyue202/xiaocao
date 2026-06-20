@@ -5,9 +5,23 @@ only) and JSON-shaped.
 """
 from __future__ import annotations
 
+import inspect
 import json
 
-from xiaocao.mcp import tools
+from xiaocao.mcp import server, tools
+
+
+def test_server_public_tools_do_not_expose_root_param():
+    # Security: the pure tools take an internal `root` injection seam (tests only).
+    # FastMCP derives the agent-callable schema from the signature, so leaking
+    # `root` would let a caller redirect every file/cache read outside the repo.
+    # The server must register clean wrappers that drop it.
+    public = dict(server.public_tools())
+    assert set(public) == set(tools.TOOLS)  # same surface, just sanitized signatures
+    for name, fn in public.items():
+        params = inspect.signature(fn).parameters
+        assert "root" not in params, f"{name} leaks the internal root param to agents"
+        assert fn.__doc__, f"{name} lost its agent-facing description"
 
 
 def test_tools_registry_complete():
