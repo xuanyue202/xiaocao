@@ -37,6 +37,20 @@ python3 -m pip install -e .
 
 Use `table` for human-readable checks, `json` for follow-up analysis, and `csv` when the user wants a spreadsheet/export.
 
+## Operating Contract & Capital Safety (read first)
+
+`docs/OPERATING_CONTRACT.md` is the single source of truth (SSOT) for the trading口径: book A/B exit policy, the staged-exit rule, fill model, quality governor, kill-switch, and the capital-safety boundary. When a question is about *what the system should do*, follow the contract, not ad-hoc reasoning.
+
+Architecture principle — **the deterministic spine runs without an LLM** (data, fills, stops, accounting, safety are code in `src/xiaocao/live/`); the agent is for **judgment** (posture, anomaly triage, hold exceptions) and **research**. Do not hand-compute fills, edit account balances, or decide to place a real order — the scripts do that.
+
+Capital safety (two-key): xiaocao is paper-only. A real-capital order is structurally impossible without BOTH `XIAOCAO_LIVE_TRADING_ENABLED=true` AND a human-signed `output/live/live_authorization.json` (minted only by `scripts/authorize_live.py`). An automation can never self-authorize live trading. See `src/xiaocao/live/safety.py`.
+
+Agent-facing tools (prefer these over re-scraping files):
+
+- `python3 scripts/show_journal.py --date today` — what earlier runs concluded today (cross-context continuity). Read this at the start of an intraday/EOD run instead of re-deriving the day from scattered files.
+- `python3 scripts/status.py` (`--json`, `--push-feishu`) — the situational-awareness digest: book A vs book B realized spread, equity/cash, today's decisions, open holdings.
+- `python3 scripts/research_run.py --trades <file> --n-tried N` — judge a cache-built results file under the discipline guards (cache-only, walk-forward, per-trade-not-day-weighted, multiple-comparison significance); it refuses to call a day-weighting artifact "validated".
+
 ## Live Trading
 
 Use this section for morning recommendations, 9:25 candidates, intraday monitoring, sell alerts, open positions, v5/v6 tracking, or paper trading questions.
@@ -213,6 +227,9 @@ After it finishes, inspect the current date's EOD log plus the live outputs that
 - `output/live/positions.jsonl`
 - `output/live/paper_trades.jsonl`
 - live monitor output from the EOD script
+- `output/live/decision_journal.jsonl` (structured per-run decisions; or `python3 scripts/show_journal.py --date today`)
+
+EOD also pushes the situational-awareness digest to Feishu (`scripts/status.py --push-feishu`; needs `XIAOCAO_FEISHU_WEBHOOK`) and runs a pipeline health check (`scripts/continuous_optimize.py`, no record). A separate weekly `bash scripts/auto_daily.sh optimize` judges the live pipeline under the discipline guards and records a dated verdict to `kronos_screen/HYPOTHESES.jsonl` — the capability flywheel. Surface a REJECTED pipeline verdict only as evidence, not alarm: the secondary screen is a defensive overlay under forward test, expected to be marginal.
 
 Reply in Chinese with a concise A/B battle report for take-all vs ★ vs ★B (including the **A/B contrast frequency** line — if B never differed from A the verdict is uninformative), the **book A vs book B** comparison from `settle_book_a.py` (validated next-close policy vs live stop policy), and the **PnL attribution** from `decompose_pnl.py` (`pick_alpha / entry_slippage / exit_timing` — entry_slippage should stay near zero under the VWAP fill model; flag it if it grows). Also report current cash/equity/open positions and any executed sells. Highlight only real anomalies: script failure, missing expected output, NONE/no usable result, HARD_STOP trigger, attribution reconciliation MISMATCH, or clearly unusual A/B behavior.
 
@@ -243,7 +260,11 @@ PYTHONPATH=src python3 kronos_screen/scripts/forward_eval.py --live-only
 PYTHONPATH=src python3 kronos_screen/scripts/settle_book_a.py
 # 5) per-trade PnL attribution vs the validated counterfactual (reconciles to the account)
 PYTHONPATH=src python3 kronos_screen/scripts/decompose_pnl.py
+# 6) capability flywheel (weekly) — judge the accumulated pipeline under the discipline guards + record a verdict
+PYTHONPATH=src python3 scripts/continuous_optimize.py --record
 ```
+
+The capability flywheel (`scripts/continuous_optimize.py`) closes the loop: it reads `training_rows.parquet`, builds per-trade results (each pick vs that day's take-all mean), runs them through `src/xiaocao/research/guards.py` (cache-only, walk-forward train+test, **per-trade not day-weighted**, multiple-comparison significance), and appends the verdict to the `kronos_screen/HYPOTHESES.jsonl` knowledge ledger — the executable successor to STATE.md's hand-written log. It will honestly REJECT a marginal/over-fit edge; treat a REJECTED verdict as evidence the overlay is not (yet) validated, not as a failure. `ledger.already_refuted(id)` lets you skip re-running a dead direction. To judge any other hypothesis, produce a `{day, strat_ret, base_ret}` jsonl from cache and run `scripts/research_run.py`.
 
 Accumulated artifacts:
 
