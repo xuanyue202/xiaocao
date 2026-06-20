@@ -8,11 +8,14 @@ A new hypothesis can declare `supersedes` to mark which prior entry it revises.
 from __future__ import annotations
 
 import json
+import sys
 from datetime import datetime
 from pathlib import Path
 from typing import Any
 
-DEFAULT_LEDGER_PATH = Path("kronos_screen/HYPOTHESES.jsonl")
+# Anchored to the repo root (src/xiaocao/research/ledger.py -> parents[3]) so the
+# capability flywheel writes to the same ledger regardless of the caller's cwd.
+DEFAULT_LEDGER_PATH = Path(__file__).resolve().parents[3] / "kronos_screen" / "HYPOTHESES.jsonl"
 
 
 def _now_iso() -> str:
@@ -57,9 +60,11 @@ def record_hypothesis(
     try:
         path.parent.mkdir(parents=True, exist_ok=True)
         with path.open("a", encoding="utf-8") as fh:
-            fh.write(json.dumps(entry, ensure_ascii=False, sort_keys=True) + "\n")
-    except OSError:
-        pass
+            fh.write(json.dumps(entry, ensure_ascii=False, sort_keys=True, default=str) + "\n")
+    except OSError as exc:
+        # Surface (don't silently swallow): a lost verdict means the capability
+        # flywheel stopped recording, which must be visible in the eod log.
+        print(f"ledger: FAILED to record verdict to {path}: {exc}", file=sys.stderr)
     return entry
 
 

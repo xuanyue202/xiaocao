@@ -43,6 +43,20 @@ def test_state_hash_is_stable_and_order_independent():
     assert a == b and len(a) == 16
 
 
+def test_append_never_crashes_on_non_serializable_value(tmp_path):
+    # A stray non-JSON value (datetime, set) must be coerced (default=str), never
+    # raise and crash the monitor's emit site.
+    from datetime import datetime
+    path = tmp_path / "j.jsonl"
+    rec = journal.append_decision(
+        automation="m", market_date="2026-06-19",
+        deterministic={"positions": [{"ts": datetime(2026, 6, 19, 10, 0), "s": {1, 2}}]},
+        path=path,
+    )
+    assert rec["automation"] == "m"
+    assert len(journal.read_all(path)) == 1  # written via default=str, not crashed
+
+
 def test_append_never_raises_on_unwritable_path(tmp_path):
     # A file where a directory is expected -> mkdir/open fail, but auditing must
     # never crash the loop; append returns the record regardless.

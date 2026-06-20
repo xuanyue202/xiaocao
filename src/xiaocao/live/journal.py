@@ -35,8 +35,10 @@ def _now_iso() -> str:
 
 
 def state_hash(payload: Any) -> str:
-    """Short, stable digest of the state a decision acted on (for dedupe/audit)."""
-    blob = json.dumps(payload, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+    """Short, stable digest of the state a decision acted on (for dedupe/audit).
+    default=str so a stray non-JSON value (numpy float, datetime, set) can never
+    raise here and crash the monitor's emit site."""
+    blob = json.dumps(payload, ensure_ascii=False, sort_keys=True, separators=(",", ":"), default=str)
     return hashlib.sha256(blob.encode("utf-8")).hexdigest()[:16]
 
 
@@ -72,8 +74,9 @@ def append_decision(
     try:
         path.parent.mkdir(parents=True, exist_ok=True)
         with path.open("a", encoding="utf-8") as fh:
-            fh.write(json.dumps(record, ensure_ascii=False, sort_keys=True) + "\n")
-    except OSError:
+            # default=str: a non-serializable value must never crash the loop.
+            fh.write(json.dumps(record, ensure_ascii=False, sort_keys=True, default=str) + "\n")
+    except (OSError, TypeError, ValueError):
         pass
     return record
 

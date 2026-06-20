@@ -15,11 +15,17 @@ it only inspects wiring and accumulated artifacts. See docs/FLYWHEEL.md.
 from __future__ import annotations
 
 import re
+from datetime import date
 from pathlib import Path
 from typing import Any
 
-from xiaocao.live import safety
+from xiaocao.live import journal, safety
 from xiaocao.research import guards as _guards  # noqa: F401  (import proves the harness is wired)
+
+
+def _last_journal_date(path: Path) -> str | None:
+    dates = [r.get("market_date") for r in journal.read_all(path) if r.get("market_date")]
+    return max(dates) if dates else None
 
 
 def _count_lines(path: Path) -> int:
@@ -74,6 +80,7 @@ def check_flywheel(
         "automation_steps": steps,
         "automation_complete": {"morning", "eod"}.issubset(set(steps)),
         "journal_entries": _count_lines(live / "decision_journal.jsonl"),
+        "last_journal_date": _last_journal_date(live / "decision_journal.jsonl"),
         "book_a_present": (live / "paper_account_A.json").exists(),
         "book_b_present": (live / "paper_account.json").exists(),
     }
@@ -116,4 +123,13 @@ def _warnings(capital: dict[str, Any], capability: dict[str, Any]) -> list[str]:
         w.append("training_rows present but unreadable here (pandas unavailable)")
     if capital["journal_entries"] == 0:
         w.append("decision journal empty — runs are not yet recording structured decisions")
+    # LIVENESS: wiring can be intact while the loop has silently stopped running.
+    lj = capital.get("last_journal_date")
+    if lj:
+        try:
+            gap = (date.today() - date.fromisoformat(lj)).days
+            if gap > 5:
+                w.append(f"LIVENESS: newest decision-journal entry is {lj} ({gap}d old) — the loop may have stalled")
+        except (TypeError, ValueError):
+            pass
     return w

@@ -41,6 +41,17 @@ def test_missing_optimize_step_is_not_spinning(tmp_path):
     assert any("capability flywheel not wired" in w for w in r["warnings"])
 
 
+def test_liveness_warns_on_stale_journal(tmp_path):
+    # Wiring intact but the loop silently stopped: a stale journal must surface a
+    # LIVENESS warning even though spinning stays true.
+    root = _wire_repo(tmp_path)
+    (root / "output" / "live" / "decision_journal.jsonl").write_text(
+        json.dumps({"automation": "live_monitor", "market_date": "2020-01-01"}) + "\n", encoding="utf-8")
+    r = flywheel.check_flywheel(root=root, env={}, auth_path=root / "none.json")
+    assert r["capital_flywheel"]["last_journal_date"] == "2020-01-01"
+    assert any("LIVENESS" in w for w in r["warnings"])
+
+
 def test_unblocked_real_capital_is_critical(tmp_path):
     # Simulate a (mis)configuration where the real-capital path would NOT be
     # blocked: a valid two-key setup. The self-check must flag it as critical.
