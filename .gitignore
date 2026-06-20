@@ -92,7 +92,14 @@ output/kronos_random_split/
 # Packaged/exported artifacts.
 output/*.zip
 output/*.sha256
-skills/
+
+# Project Codex config is maintained in Git; generated runtime/state below it is
+# produced from this checkout or by the Codex app.
+.codex/skills/*/assets/xiaocao-runtime/
+.codex/automations/*/memory.md
+
+# Legacy local skill staging path; canonical source is .codex/skills/.
+/skills/
 
 # Local agent/editor state.
 .claude/

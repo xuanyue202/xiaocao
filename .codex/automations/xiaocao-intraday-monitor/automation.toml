@@ -1,0 +1,13 @@
+version = 1
+id = "xiaocao-intraday-monitor"
+kind = "cron"
+name = "xiaocao intraday monitor opening dense"
+prompt = "Use the local `xiaocao-trading` skill/project conventions. Run the Xiaocao opening-dense intraday monitor workflow and report according to the skill's automation workflow instructions."
+status = "ACTIVE"
+rrule = "DTSTART:20260608T013500\nRRULE:FREQ=WEEKLY;BYDAY=MO,TU,WE,TH,FR;BYHOUR=1;BYMINUTE=35,45,55"
+model = "gpt-5.5"
+reasoning_effort = "high"
+execution_environment = "local"
+cwds = ["~/coding/xiaocao"]
+created_at = 1780276028254
+updated_at = 1781141752867

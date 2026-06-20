@@ -4,7 +4,7 @@
 #   auto_daily.sh eod        # ~15:05 (after close): tick-flow capture + forward A/B + monitor
 # Trading-day guarded (skips weekends/holidays), logs to output/live/auto/.
 set -uo pipefail
-ROOT="/Users/bytedance/coding/xiaocao"
+ROOT="${XIAOCAO_ROOT:-$HOME/coding/xiaocao}"
 PY="$ROOT/.venv/bin/python"
 cd "$ROOT" || exit 1
 STEP="${1:-}"
