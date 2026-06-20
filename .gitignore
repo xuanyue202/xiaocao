@@ -101,5 +101,6 @@ output/*.sha256
 # Legacy local skill staging path; canonical source is .codex/skills/.
 /skills/
 
-# Local agent/editor state.
-.claude/
+# Local Claude state. Project-shared Claude links may be tracked.
+.claude/settings.local.json
+.claude/scheduled_tasks.lock

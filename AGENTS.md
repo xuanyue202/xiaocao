@@ -1,17 +1,17 @@
 # Repository Guidelines
 
-Xiaocao is a Python CLI and automation toolkit for A-share market data, strategy screening, reports, Kronos-assisted recommendations, and paper-trading surveillance.
+Xiaocao is a Python CLI and automation toolkit for A-share data, strategy screening, reports, Kronos recommendations, and paper-trading surveillance.
 
 ## Project Structure & Module Organization
 
-This is a Python `src/` layout project. Core code lives in `src/xiaocao/`; CLI entrypoints are `cli.py` and `__main__.py`. Strategy logic is under `strategy/`, API under `api/`, sources under `datasource/`, and live safety gates under `live/`.
+Python uses a `src/` layout. Core code lives in `src/xiaocao/`; CLI entrypoints are `cli.py` and `__main__.py`. Strategy logic is under `strategy/`, API under `api/`, sources under `datasource/`, and live safety gates under `live/`.
 
-Operational scripts live in `scripts/`; live automation centers on `auto_daily.sh`, `live_recommend.py`, and `live_monitor.py`. Kronos tooling lives in `kronos_screen/`. Tests are in `tests/`, with API e2e tests in `tests/e2e/`. Codex config is in `.codex/`; generated runtime bundles and `output/` artifacts are not source.
+Operational scripts live in `scripts/`; live automation centers on `auto_daily.sh`, `live_recommend.py`, and `live_monitor.py`. Kronos tooling lives in `kronos_screen/`. Tests are in `tests/`, with API e2e tests in `tests/e2e/`. Codex config is in `.codex/`; generated bundles and `output/` artifacts are not source.
 
 ## Build, Test, and Development Commands
 
 - `PYTHONPATH=src python3 -m xiaocao --help`: run the CLI from source.
-- `python3 -m pip install -e .`: install editable package and `xiaocao` console script.
+- `python3 -m pip install -e .`: install the package and `xiaocao` console script.
 - `PYTHONPATH=src python3 -m pytest -q`: run the standard test suite.
 - `PYTHONPATH=src python3 -m pytest tests/e2e -q`: run live API tests.
 - `bash -n scripts/auto_daily.sh`: syntax-check automation shell.
@@ -19,13 +19,13 @@ Operational scripts live in `scripts/`; live automation centers on `auto_daily.s
 
 ## Codex Skill, CLI & Automation Flow
 
-Treat repo code as the behavioral source, `.codex/skills/xiaocao-trading/SKILL.md` as agent instructions, and `.codex/automations/*/automation.toml` as schedules. Codex Desktop discovers `~/.codex` symlinks; do not edit those directly.
+Treat repo code as the behavioral source, `.codex/skills/xiaocao-trading/SKILL.md` as agent instructions, and `.codex/automations/*/automation.toml` as schedules. Codex discovers `~/.codex` symlinks; do not edit discovery copies directly.
 
 End-to-end path: automation prompt -> `xiaocao-trading` skill -> runtime bundle -> CLI/scripts -> `output/live/*` artifacts -> summary. CLI output, live behavior, account files, or Kronos fields require matching skill and automation updates.
 
 ## Coding Style & Naming Conventions
 
-Use 4-space indentation and type hints where they clarify interfaces. Prefer small, testable functions and explicit normalization. Python modules and tests use `snake_case`; CLI subcommands should stay descriptive. Keep runtime state and generated reports under `output/`.
+Use 4-space indentation and type hints where they clarify interfaces. Prefer small, testable functions and explicit normalization. Modules and tests use `snake_case`; CLI subcommands should stay descriptive. Keep runtime state and generated reports under `output/`.
 
 ## Testing Guidelines
 
@@ -37,4 +37,4 @@ Recent commits use concise imperative summaries, sometimes with a priority prefi
 
 ## Security & Configuration Tips
 
-Do not commit `xiaocao.yaml`, account state, caches, model binaries, or signing secrets. Real-capital paths must go through `src/xiaocao/live/safety.py`; automations should remain paper/sensor safe unless explicitly authorized by the two-key flow.
+Do not commit `xiaocao.yaml`, account state, caches, binaries, or signing secrets. Real-capital paths must go through `src/xiaocao/live/safety.py`; automations should remain paper/sensor safe unless explicitly authorized by the two-key flow.

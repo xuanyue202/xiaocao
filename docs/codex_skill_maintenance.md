@@ -108,9 +108,19 @@ Before changing any layer, check the downstream contract:
   `docs/OPERATING_CONTRACT.md` and the skill if the agent-facing behavior
   changes.
 
-## `.agents`
+## Claude Code
 
-Do not use project `.agents` as the primary Xiaocao Codex config location.
-This environment can discover global `/Users/bytedance/.agents/skills`, but
-project-local `.agents` is not equivalent to the Codex Desktop skill and
-automation discovery paths above.
+Claude Code project support is intentionally thin and symlink-based:
+
+- `CLAUDE.md` -> `AGENTS.md`
+- `.claude/skills` -> `../.codex/skills`
+
+This keeps Claude and Codex on the same contributor guide and skill source. Do
+not create a second Claude-specific copy of the Xiaocao skill. Local Claude state
+such as `.claude/settings.local.json` and `.claude/scheduled_tasks.lock` remains
+ignored.
+
+Do not use project `.agents` as the primary Xiaocao agent config location. This
+environment can discover global `/Users/bytedance/.agents/skills`, but
+project-local `.agents` is not equivalent to the Codex Desktop or Claude Code
+project discovery paths above.
