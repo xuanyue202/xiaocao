@@ -56,6 +56,8 @@ case "$STEP" in
   eod)
     log "eod: tick-flow capture"
     "$PY" kronos_screen/scripts/eod_capture.py >>"$LOG" 2>&1
+    log "data health check (catch dirty data before trusting A/B)"
+    "$PY" scripts/data_doctor.py >>"$LOG" 2>&1 || log "data health: CRITICAL findings — see log, treat A/B as suspect"
     log "forward_eval (A/B + accumulate training rows)"
     "$PY" kronos_screen/scripts/forward_eval.py --live-only --fee-rate 0.0001 >>"$LOG" 2>&1
     log "monitor open paper positions"
