@@ -5,6 +5,14 @@ quality_governor.py and paper_record.py into one place, making the **frozen vs
 tunable** boundary explicit. Borrowed in spirit from QuantDinger's `# @param`
 metadata, but as a central registry.
 
+Consumer wiring (important): `strategy/rules.py` and `live/exit_policy.py` IMPORT
+their values from this registry, so an edit here changes their behavior directly.
+`kronos_screen/quality_governor.py` and `paper_record.py` keep their own literal
+copies (they are kronos-tier scripts) and are kept in sync only by the
+value-equality drift test (tests/test_params.py) — editing a value here does NOT
+propagate to them; it makes the drift test fail until their literal is also
+updated. Treat that test failure as the signal to update both.
+
 CRITICAL: this is pure consolidation — **no value is changed and nothing new is
 fitted here**. Every value below is already validated and live. The `range` is
 the search space the research workshop (src/xiaocao/research/) may explore; a

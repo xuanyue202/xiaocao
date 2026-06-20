@@ -3,8 +3,13 @@ monitor and backtest replay (so 回测 = 实盘 by construction).
 
 Extracted verbatim from scripts/live_monitor.py. Behaviour is unchanged; this
 module exists so the staged-exit rules become independently importable and
-unit-testable, and so backtest tooling (kronos_screen/scripts/backtest_intraday_stop.py)
-can replay the *same* code the live loop executes. See docs/OPERATING_CONTRACT.md §4.
+unit-testable, and so backtest tooling *can* be wired to replay the same
+decide_sell_action the live loop executes (delivering 回测=实盘 parity for the
+stop layer). NOTE: backtest_intraday_stop.py is a separate policy-COMPARISON
+harness (it replays next_close/sparse/hard8/… alternatives, not the production
+decision) and does not import this module — so the parity is available by
+construction but not yet exercised by an existing backtest. See
+docs/OPERATING_CONTRACT.md §4.
 
 Key invariant (validated via decompose_pnl on the 06-01..06-12 book): intraday
 checkpoints only EXECUTE the hard floor; ordinary trailing/composite exits are

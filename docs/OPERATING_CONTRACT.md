@@ -53,6 +53,7 @@
 - `basket_price` **仅为放弃线**，**MUST NOT** 作为成交假设（旧行为按 basket 记成交=虚构 ~1.9%/笔滑点，已废）。
 - 窗口最低价 > L → **SKIP**（`paper_skips.jsonl`，`LIMIT_NOT_REACHED`，**不静默丢弃**）；无窗口数据 → 回退到 L（`fill_fallback`）。
 - 唯一实现：`paper_record._fill_price_from_window`。
+- **数据源单一性（OHLCV 故意不接公共源 fallback）**：止损/peak-dd 依赖的分钟线 OHLCV **只**来自专有 API（`client.minute_line`）。**MUST NOT** 把公共源（akshare/腾讯等）价格接入 live 止损路径：不同复权/时间戳/坏tick 会算出不同的 peak/dd，使 book B 与验证 next-close 口径及 API 喂的回测**静默漂移**——正是 data_health 要抓的"真的谎言"。OHLCV 不可得时应 **fail-safe（持有/跳过）**，而非用二手数据动作。公共源仅允许用于**带 provenance 标记、经对账的研究/回填工具**，且 book A/B 记账永不读 `source='public'`。
 
 ## 6. 仓位与资金
 
@@ -77,7 +78,8 @@
 - **real_capital 必须同时**：
   1. env `XIAOCAO_LIVE_TRADING_ENABLED=true`；
   2. 签名授权 `output/live/live_authorization.json`（HMAC 对 `XIAOCAO_LIVE_SIGNING_KEY` 校验，**agent 无法自签**——签名密钥由人持有，automation 环境不携带；由交互式 `scripts/authorize_live.py` 铸造）。授权**带 scope（max_notional / side / code 白名单）与到期**。
-- 任一缺失/签名被篡改/过期/越权/超额 → **硬拒**。每个 ALLOW/DENY 决定 **MUST** 入 `output/live/safety_audit.jsonl`。
+- 任一缺失/签名被篡改（含非 ASCII 签名）/过期/越权/**或越权属性缺省**（如限定 max_notional 却未指定 notional、限定 side/code 却为 None）→ **硬拒**（fail-closed）。
+- 审计：real_capital **ALLOW 必须可持久审计**——若审计写失败则转为 DENY（不下不可审计的真实单）；DENY/always-allowed 行为 best-effort（审计永不让交易回路崩溃）。`require_capital_action` 拒绝时**只**抛 `CapitalActionDenied`。
 - 唯一实现 `src/xiaocao/live/safety.py`；真实下单 **MUST** 经 `require_capital_action(...)`，仅在 ALLOW 时下单。
 - **现状**：尚无 real-capital 调用点（paper-only）；本节是 paper→real 的结构缝，使切换=配置翻转而非重构。
 
