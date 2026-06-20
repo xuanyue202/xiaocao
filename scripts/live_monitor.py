@@ -77,6 +77,7 @@ from xiaocao.live.exit_policy import (  # noqa: E402
     strong_hold_reason as _strong_hold_reason,
 )
 from xiaocao.live import journal  # noqa: E402
+from xiaocao.live.notify import notify as _notify  # noqa: E402
 
 OUT_DIR = ROOT / "output" / "live"
 POSITIONS_FILE = OUT_DIR / "positions.jsonl"
@@ -624,21 +625,6 @@ def _execute_simulated_sells(client: XiaocaoClient, triggered_alerts: list[dict]
     return closed, blocked
 
 
-def _macos_notify(title: str, body: str) -> None:
-    if sys.platform != "darwin":
-        return
-    try:
-        # Escape quotes for AppleScript
-        title_safe = title.replace('"', '\\"').replace("'", "\\'")
-        body_safe = body.replace('"', '\\"').replace("'", "\\'")
-        subprocess.run([
-            "osascript", "-e",
-            f'display notification "{body_safe}" with title "{title_safe}" sound name "Glass"',
-        ], check=False, capture_output=True, timeout=5)
-    except Exception:
-        pass
-
-
 def _trading_dates_between(start: str, end: str, client: XiaocaoClient) -> list[str]:
     """Return list of YYYY-MM-DD trading days between start and end inclusive."""
     last_error: Exception | None = None
@@ -997,7 +983,8 @@ def main() -> None:
             )
             if not already_logged:
                 if not args.no_notify:
-                    _macos_notify(f"卖点触发 {s['code']}", msg)
+                    # macOS popup + Feishu (when XIAOCAO_FEISHU_WEBHOOK is set)
+                    _notify(f"卖点触发 {s['code']}", msg, macos=True)
                 with ALERTS_FILE.open("a", encoding="utf-8") as f:
                     f.write(json.dumps({
                         "ts": today_iso,
