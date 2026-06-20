@@ -49,8 +49,10 @@
 |---|---|---|
 | morning | `auto_daily.sh morning` | 工作日 09:23 |
 | 盘中监控 dense/sparse/1455 | `live_monitor.py --execute-sells` | 09:35–14:55 多档 |
-| eod | `auto_daily.sh eod` | 工作日 15:10 |
-| **optimize（能力飞轮）** | `auto_daily.sh optimize` | 每周（建议交易日周五 eod 后） |
+| eod | `auto_daily.sh eod`（含数据体检 + 飞书日报 + pipeline 健康检查；**周五自动 record 能力飞轮裁决入账本**） | 工作日 15:10 |
+| optimize（能力飞轮，按需） | `auto_daily.sh optimize` | 手动/补跑 |
+
+能力飞轮**无需独立调度器**：eod 每日健康检查，**周五自动 `--record`** 一条裁决入 `HYPOTHESES.jsonl`（既有 eod cron 即可驱动）。`optimize` 步骤保留作按需补跑。
 
 ## 运维与监控（一条命令看全局）
 

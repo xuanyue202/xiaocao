@@ -68,8 +68,16 @@ case "$STEP" in
     "$PY" kronos_screen/scripts/decompose_pnl.py >>"$LOG" 2>&1 || true
     log "status digest -> Feishu (capital flywheel visibility; book A/B spread)"
     "$PY" scripts/status.py --push-feishu >>"$LOG" 2>&1 || true
-    log "pipeline health check (capability flywheel, no record)"
-    "$PY" scripts/continuous_optimize.py >>"$LOG" 2>&1 || true
+    # Capability flywheel: health-check daily, but RECORD a dated verdict to the
+    # ledger weekly (Friday) so the loop turns automatically without a separate
+    # scheduler. On-demand recording is still `auto_daily.sh optimize`.
+    if [ "$(date +%u)" = "5" ]; then
+      log "capability flywheel (weekly Fri): judge + record verdict -> ledger"
+      "$PY" scripts/continuous_optimize.py --record >>"$LOG" 2>&1 || true
+    else
+      log "pipeline health check (capability flywheel, no record)"
+      "$PY" scripts/continuous_optimize.py >>"$LOG" 2>&1 || true
+    fi
     log "eod done"
     ;;
   optimize)
