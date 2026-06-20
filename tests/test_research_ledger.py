@@ -5,10 +5,16 @@ from xiaocao.research import guards, ledger
 
 
 def _verdict(spread_positive=True):
+    # A genuine PASS needs real day-to-day variance (a perfectly constant edge is
+    # now — correctly — not significant). Jitter the positive case; make the
+    # negative case clearly losing.
     trades = []
-    for i in range(10):
-        s = 0.01 if spread_positive else -0.01
-        trades.append({"day": f"2026-05-{i + 1:02d}", "strat_ret": s, "base_ret": 0.0})
+    for i in range(12):
+        if spread_positive:
+            strat, base = 0.01 + 0.001 * ((i % 3) - 1), 0.0
+        else:
+            strat, base = 0.005, 0.02
+        trades.append({"day": f"2026-05-{i + 1:02d}", "strat_ret": strat, "base_ret": base})
     return guards.evaluate_hypothesis(trades, n_tried=1)
 
 

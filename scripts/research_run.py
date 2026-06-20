@@ -54,6 +54,10 @@ def main() -> None:
     ap.add_argument("--ledger", default=str(ledger.DEFAULT_LEDGER_PATH))
     a = ap.parse_args()
 
+    if a.n_tried <= 1:
+        print("⚠ no multiple-comparison correction (n_tried=1) — pass --n-tried with the honest "
+              "count of hypotheses tried in this research program, or significance is overstated.",
+              file=sys.stderr)
     trades = _load_trades(Path(a.trades))
     verdict = guards.evaluate_hypothesis(
         trades, n_tried=a.n_tried, cache_only=True, alpha=a.alpha, min_days=a.min_days,

@@ -37,20 +37,31 @@ VARIANTS = {
 
 def build_results(df: pd.DataFrame, variant_col: str) -> list[dict]:
     """Per selected trade: strat_ret = the pick's realized next-close return;
-    base_ret = that day's take-all mean (the counterfactual of selecting nothing).
-    Per-trade spread therefore answers exactly STATE.md's honest question, not the
-    day-weighted cum headline."""
+    base_ret = that day's LEAVE-ONE-OUT take-all mean (the counterfactual of NOT
+    selecting this pick — it excludes the pick itself, so the baseline is not
+    contaminated by the very return being judged). Days with no non-pick row are
+    skipped (no counterfactual exists). Per-trade spread therefore answers exactly
+    STATE.md's honest question, not the day-weighted cum headline.
+
+    The day key is normalized to one dtype on BOTH the groupby and the lookup: a
+    Timestamp-typed `date` column would otherwise key the groupby on Timestamps
+    while str(...) lookups miss, silently defaulting every baseline to 0.0 and
+    passing a LOSING strategy as validated (an audited critical bug). A missing
+    day now raises (fail loud) rather than fabricating a baseline."""
     scored = df[df["net_realized_ret"].notna()].copy()
     if scored.empty or variant_col not in scored.columns:
         return []
-    day_takeall = scored.groupby("date")["net_realized_ret"].mean().to_dict()
+    scored["__day"] = scored["date"].astype(str)
+    day_sum = scored.groupby("__day")["net_realized_ret"].sum()
+    day_cnt = scored.groupby("__day")["net_realized_ret"].count()
+    picks = scored[scored[variant_col] == True]  # noqa: E712
     out: list[dict] = []
-    for r in scored[scored[variant_col] == True].itertuples():  # noqa: E712
-        out.append({
-            "day": str(r.date),
-            "strat_ret": float(r.net_realized_ret),
-            "base_ret": float(day_takeall.get(str(r.date), 0.0)),
-        })
+    for day, ret in zip(picks["__day"], picks["net_realized_ret"]):
+        n = int(day_cnt[day])  # KeyError if the day is absent — fail loud, never default to 0
+        if n <= 1:
+            continue  # no non-pick counterfactual that day
+        base = (float(day_sum[day]) - float(ret)) / (n - 1)
+        out.append({"day": str(day), "strat_ret": float(ret), "base_ret": base})
     return out
 
 
@@ -70,13 +81,24 @@ def main() -> None:
         return
     df = pd.read_parquet(path)
 
+    # Honest multiple-comparison floor: at least the count of distinct hypotheses
+    # ever judged (in the ledger) plus the variants tried now, so passing a small
+    # --n-tried cannot launder a result that should fail Bonferroni.
+    ledger_path = Path(a.ledger)
+    prior_ids = {e.get("id") for e in ledger.read_all(ledger_path)}
+    tried_ids = prior_ids | {h for h, _ in VARIANTS.values()}
+    n_tried = max(int(a.n_tried), len(tried_ids))
+    if n_tried > a.n_tried:
+        print(f"note: n_tried raised {a.n_tried}->{n_tried} "
+              f"(ledger has {len(prior_ids)} distinct prior hypotheses; multiple-comparison honesty)")
+
     any_recorded = False
     for variant_col, (hyp_id, claim) in VARIANTS.items():
         results = build_results(df, variant_col)
         if not results:
             print(f"{hyp_id}: no live picks with outcomes yet — skip")
             continue
-        verdict = guards.evaluate_hypothesis(results, n_tried=a.n_tried, cache_only=True, min_days=a.min_days)
+        verdict = guards.evaluate_hypothesis(results, n_tried=n_tried, cache_only=True, min_days=a.min_days)
         pt = verdict["per_trade"]
         mark = "PASS" if verdict["verdict"] == "PASS" else "REJECTED"
         print(
@@ -91,7 +113,7 @@ def main() -> None:
             ledger.record_hypothesis(
                 hypothesis_id=hyp_id, claim=claim,
                 method="live forward eval (open[D]->net close[D+1]) vs take-all, per-trade",
-                verdict=verdict, n_tried=a.n_tried, path=Path(a.ledger),
+                verdict=verdict, n_tried=n_tried, path=ledger_path,
             )
             any_recorded = True
     if any_recorded:
