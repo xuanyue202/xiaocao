@@ -32,6 +32,7 @@ import requests
 
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "src"))
+sys.path.insert(0, str(ROOT / "kronos_screen" / "scripts"))
 
 from xiaocao.api.cache import SQLiteCache  # noqa: E402
 from xiaocao.api.client import XiaocaoClient  # noqa: E402
@@ -39,6 +40,7 @@ from xiaocao.config import load_settings  # noqa: E402
 from xiaocao.datasource.api_source import ApiDataSource  # noqa: E402
 from xiaocao.strategy import run_strategy  # noqa: E402
 from xiaocao.utils.trading_session import A_SHARE_TZ  # noqa: E402
+from quality_governor import ensure_quality_fields  # noqa: E402
 
 OUT_DIR = ROOT / "output" / "live"
 STOCK_SENTIMENT_FILE = OUT_DIR / "stock_sentiment.json"
@@ -1083,14 +1085,18 @@ def main() -> None:
     if vb_stars:
         _live = _is_today_live_run(date_iso)
         _tag = "今日实时建议" if _live else "回测占位(竞价为latest，非当日，仅验证管线)"
-        L.append(f"## ★B 实盘推荐 = K→P + 9:25竞价不平衡 tiebreak — {_tag}")
+        L.append(f"## ★B 排名候选 + 仓位建议 = K→P + 9:25竞价不平衡 tiebreak — {_tag}")
         L.append("")
-        L.append("| ★B | code | name | mode | Pscore | 竞价涨幅 | 残余买卖压差 |")
-        L.append("|---|---|---|---|---:|---:|---:|")
+        L.append("| ★B | code | name | mode | primary | Pscore | quality_tag | 竞价涨幅 | 残余买卖压差 |")
+        L.append("|---|---|---|---|---:|---:|---|---:|---:|")
         for c in vb_stars:
+            q = ensure_quality_fields(c)
             L.append(f"| {c.get('vb_rank','')} | {c['code']} | {c.get('name','')} | {c.get('mode','')} | "
-                     f"{_num(c.get('p_score')):+.3f} | {_num(c.get('auc_pct')):+.2f}% | {_num(c.get('auc_residual_imb')):+.2f} |")
-        L.append("- **★B = 实盘建议集**（仅当日实时有效）：在 K→P 幸存者中以 **P 为主排序、9:25 竞价不平衡(残余买卖压差+竞价涨幅)做最终 tiebreak**(权重 0.25，不覆盖强 P 信号)。")
+                     f"{_num(q.get('primary_score')):.1f} | {_num(c.get('p_score')):+.3f} | {q.get('quality_tag','normal')} | "
+                     f"{_num(c.get('auc_pct')):+.2f}% | {_num(c.get('auc_residual_imb')):+.2f} |")
+        L.append("- **★B = 排名候选，不等于必须买满三只**：v1 只在 `paper_record.py --quality-governor shadow` 记录质量治理反事实；Book B 正式买入仍只受 Book A kill-switch 约束。")
+        L.append("- **quality_tag**：`normal`=primary≥150；`weak_primary`=primary<150；`p_tail_warning`=P 极弱尾部。当前仅提示/沉淀，不在推荐阶段硬过滤。")
+        L.append("- **竞价 forced-contrast**：在 K 幸存者中，若非★候选竞价质量显著优于★内最弱竞价者，则换入以制造可验证 A/B 对照；否则 ★B 与 ★ 保持一致。")
         L.append("- **★ = A/B 基线**（纯 K→P，无竞价）。两套每日快照入 `output/live/signal_snapshots.jsonl`；`forward_eval.py --live-only` 累积真实收益后裁决竞价 tiebreak 是否带来增益（前瞻验证，历史不可回测）。")
         L.append("")
     if top_sentiment:

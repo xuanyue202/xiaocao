@@ -47,7 +47,7 @@ case "$STEP" in
     log "morning: live_recommend (self-waits to 9:25)"
     "$PY" scripts/live_recommend.py --no-stdout >>"$LOG" 2>&1
     log "paper-record ★B picks"
-    "$PY" kronos_screen/scripts/paper_record.py --date "$TODAY" --initial-capital 100000 --fee-rate 0.0001 --deploy-ratio 0.5 --max-total-exposure-ratio 0.67 >>"$LOG" 2>&1
+    "$PY" kronos_screen/scripts/paper_record.py --date "$TODAY" --initial-capital 100000 --fee-rate 0.0001 --deploy-ratio 0.5 --max-total-exposure-ratio 0.67 --quality-governor shadow >>"$LOG" 2>&1
     log "morning done -> output/live/recommend_${TODAY}.md"
     ;;
   eod)
@@ -57,6 +57,10 @@ case "$STEP" in
     "$PY" kronos_screen/scripts/forward_eval.py --live-only --fee-rate 0.0001 >>"$LOG" 2>&1
     log "monitor open paper positions"
     "$PY" scripts/live_monitor.py --execute-sells >>"$LOG" 2>&1 || true
+    log "settle book A (validated next-close reference)"
+    "$PY" kronos_screen/scripts/settle_book_a.py >>"$LOG" 2>&1 || true
+    log "pnl decomposition (pick_alpha / entry_slippage / exit_timing)"
+    "$PY" kronos_screen/scripts/decompose_pnl.py >>"$LOG" 2>&1 || true
     log "eod done"
     ;;
   *)

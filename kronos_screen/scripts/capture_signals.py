@@ -16,15 +16,21 @@ flagged is_live=false.
 """
 from __future__ import annotations
 import json
+import sys
 from datetime import datetime
 from pathlib import Path
 from scipy.stats import rankdata
 import numpy as np
 
+SCRIPTS = Path(__file__).resolve().parent
+sys.path.insert(0, str(SCRIPTS))
+from quality_governor import ensure_quality_fields  # noqa: E402
+
 OUT = Path("output/live/signal_snapshots.jsonl")
-# Auction-imbalance tiebreak weight. Small => P-score stays primary; auction
-# only reorders near-ties. Live-only signal; validate forward in paper trading.
-TIEBREAK_W = 0.25
+# NOTE: the original design (rank-weighted tiebreak, W=0.25) produced B == A on
+# every live day (zero contrast), and auc_residual_imb saturates at +/-1 because
+# the post-match residual book is one-sided by construction. Variant B is now a
+# FORCED-CONTRAST swap (see capture()) using continuous auction features.
 
 
 def auction_features(client, code, date_iso):
@@ -64,50 +70,113 @@ def _wd_rank(vals):
     return out
 
 
+def _replace_day_rows(out: Path, date_iso, is_live, new_lines):
+    """Idempotent write: re-running capture for the same (date, is_live) replaces
+    that day's rows instead of appending duplicates (mixed-run stars otherwise
+    survive forward_eval's per-code dedup and pollute the A/B sample)."""
+    kept = []
+    if out.exists():
+        with out.open(encoding="utf-8") as fh:
+            for line in fh:
+                line = line.rstrip("\n")
+                if not line.strip():
+                    continue
+                try:
+                    rec = json.loads(line)
+                except Exception:
+                    kept.append(line)
+                    continue
+                if rec.get("date") == date_iso and bool(rec.get("is_live")) == bool(is_live):
+                    continue  # replaced by this run
+                kept.append(line)
+    tmp = out.with_suffix(out.suffix + ".tmp")
+    with tmp.open("w", encoding="utf-8") as fh:
+        for line in kept + new_lines:
+            fh.write(line + "\n")
+    tmp.replace(out)
+
+
 def capture(candidates, client, date_iso, is_live, top_n=3, out=OUT):
-    """Attach auction features + A/B variant flags to candidates; append snapshot.
-    Variant A pick = existing kp_star. Variant B = re-rank K-survivors by
-    rank(P) + rank(auction residual imbalance)."""
+    """Attach auction features + A/B variant flags to candidates; write snapshot.
+    Variant A = existing kp_star (pure K->P top-N by P).
+    Variant B = FORCED CONTRAST: among K-survivors, compute a continuous
+    auction-quality score q = rank(auc_buy_residual_ratio)/2 + rank(auc_pct)/2;
+    if the auction-worst A pick scores below the best non-A survivor's q, swap
+    it out for that survivor (highest P among non-A). This guarantees A != B
+    whenever the auction signal actually disagrees, so forward A/B accumulates
+    informative contrast (the old W=0.25 rank tiebreak never changed a pick).
+    Idempotent per (date, is_live)."""
     if not candidates:
         return candidates
     for c in candidates:
         c.update(auction_features(client, c["code"], date_iso))
-    # variant B: among K-survivors, rank by P with auction imbalance as a
-    # FINAL TIEBREAK (P dominates; auction only reorders near-ties). The
-    # tiebreak weight is small so a strong P signal is never overridden.
     surv = [c for c in candidates if c.get("kp_keep")]
     if surv:
-        rp = _wd_rank([c.get("p_score") for c in surv])
-        ra = _wd_rank([c.get("auc_residual_imb") for c in surv])   # 残余买卖压差
-        rap = _wd_rank([c.get("auc_pct") for c in surv])           # 竞价涨幅
-        auc_composite = 0.5 * np.nan_to_num(ra, nan=0.5) + 0.5 * np.nan_to_num(rap, nan=0.5)
-        comb = np.nan_to_num(rp, nan=0.0) + TIEBREAK_W * auc_composite
-        for c, v in zip(surv, comb):
-            c["vb_score"] = float(v)
-        order = np.argsort(-comb)
-        for rank, j in enumerate(order):
-            surv[j]["vb_rank"] = rank + 1
-            surv[j]["vb_star"] = rank < top_n
+        rq_ratio = _wd_rank([c.get("auc_buy_residual_ratio") for c in surv])  # 残余买盘/撮合量 (连续)
+        rq_pct = _wd_rank([c.get("auc_pct") for c in surv])                   # 竞价涨幅
+        q = 0.5 * np.nan_to_num(rq_ratio, nan=0.5) + 0.5 * np.nan_to_num(rq_pct, nan=0.5)
+        for c, v in zip(surv, q):
+            c["vb_score"] = float(v)  # auction quality, NOT a combined rank
+        a_picks = [c for c in surv if c.get("kp_star")]
+        others = sorted(
+            [c for c in surv if not c.get("kp_star")],
+            key=lambda c: -(c.get("p_score") if c.get("p_score") is not None else -1e9),
+        )
+        b_set = list(a_picks)
+        swapped = False
+        if a_picks and others:
+            worst = min(a_picks, key=lambda c: c.get("vb_score", 0.5))
+            repl = others[0]
+            if repl.get("vb_score", 0.5) > worst.get("vb_score", 0.5):
+                b_set = [c for c in a_picks if c is not worst] + [repl]
+                swapped = True
+        b_sorted = sorted(
+            b_set,
+            key=lambda c: -(c.get("p_score") if c.get("p_score") is not None else -1e9),
+        )
+        for rank, c in enumerate(b_sorted, 1):
+            c["vb_rank"] = rank
+            c["vb_star"] = True
+        for c in surv:
+            c["vb_swap"] = swapped
     for c in candidates:
         c.setdefault("vb_rank", 9999); c.setdefault("vb_star", False)
 
     out.parent.mkdir(parents=True, exist_ok=True)
     ts = datetime.now().isoformat(timespec="seconds")
-    with out.open("a", encoding="utf-8") as fh:
-        for c in candidates:
-            rec = {
-                "captured_at": ts, "date": date_iso, "is_live": bool(is_live),
-                "code": c.get("code"), "name": c.get("name"), "mode": c.get("mode"),
-                "flags": c.get("flags"),
-                "xcjw": c.get("xcjw"), "cjs": c.get("cjs"), "jsjl": c.get("jsjl"),
-                "k_score": c.get("k_score"), "p_score": c.get("p_score"),
-                "kp_keep": c.get("kp_keep"), "kp_rank": c.get("kp_rank"), "kp_star": c.get("kp_star"),
-                "vb_rank": c.get("vb_rank"), "vb_star": c.get("vb_star"), "vb_score": c.get("vb_score"),
-                "open": c.get("open"), "open_pct_change": c.get("open_pct_change"),
-                "basket_price": c.get("basket_price"), "basket_rule": c.get("basket_rule"),
-                "basket_slippage_pct": c.get("basket_slippage_pct"),
-                **{k: c.get(k) for k in ("auc_date", "auc_pct", "auc_match_vol", "auc_amt",
-                                          "auc_residual_imb", "auc_buy_residual_ratio", "auc_status")},
-            }
-            fh.write(json.dumps(rec, ensure_ascii=False, default=str) + "\n")
+    new_lines = []
+    for c in candidates:
+        q = ensure_quality_fields(c)
+        c.update({
+            "primary_score": q.get("primary_score"),
+            "primary_score_label": q.get("primary_score_label"),
+            "rank_score": q.get("rank_score"),
+            "mode_confidence": q.get("mode_confidence"),
+            "quality_tag": q.get("quality_tag"),
+            "quality_fields_fallback": q.get("quality_fields_fallback"),
+        })
+        rec = {
+            "captured_at": ts, "date": date_iso, "is_live": bool(is_live),
+            "code": c.get("code"), "name": c.get("name"), "mode": c.get("mode"),
+            "flags": c.get("flags"),
+            "xcjw": c.get("xcjw"), "cjs": c.get("cjs"), "jsjl": c.get("jsjl"),
+            "jssb": c.get("jssb"),
+            "primary_score": c.get("primary_score"),
+            "primary_score_label": c.get("primary_score_label"),
+            "rank_score": c.get("rank_score"),
+            "mode_confidence": c.get("mode_confidence"),
+            "quality_tag": c.get("quality_tag"),
+            "quality_fields_fallback": c.get("quality_fields_fallback"),
+            "k_score": c.get("k_score"), "p_score": c.get("p_score"),
+            "kp_keep": c.get("kp_keep"), "kp_rank": c.get("kp_rank"), "kp_star": c.get("kp_star"),
+            "vb_rank": c.get("vb_rank"), "vb_star": c.get("vb_star"), "vb_score": c.get("vb_score"),
+            "vb_swap": c.get("vb_swap"),
+            "open": c.get("open"), "open_pct_change": c.get("open_pct_change"),
+            "basket_price": c.get("basket_price"), "basket_rule": c.get("basket_rule"),
+            "basket_slippage_pct": c.get("basket_slippage_pct"),
+            **{k: c.get(k) for k in ("auc_date", "auc_pct", "auc_match_vol", "auc_amt",
+                                      "auc_residual_imb", "auc_buy_residual_ratio", "auc_status")},
+        }
+        new_lines.append(json.dumps(rec, ensure_ascii=False, default=str))
+    _replace_day_rows(out, date_iso, is_live, new_lines)
     return candidates

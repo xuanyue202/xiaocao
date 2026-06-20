@@ -99,6 +99,14 @@ def main():
     sa = scored[scored.kp_star == True]; sb = scored[scored.vb_star == True]
     print(f"  A  K->P        : {A.mean():+.2f}%/day  win {(sa.net_realized_ret>0).mean()*100:.0f}%  (n={len(sa)})")
     print(f"  B  K->P+auction: {B.mean():+.2f}%/day  win {(sb.net_realized_ret>0).mean()*100:.0f}%  (n={len(sb)})")
+    # contrast frequency: days where B's pick set actually differs from A's.
+    # Without contrast the A/B comparison carries no information.
+    diff_days = sum(
+        1 for _, g in scored.groupby("date")
+        if set(g.loc[g.kp_star == True, "code"]) != set(g.loc[g.vb_star == True, "code"])
+    )
+    print(f"  A/B contrast   : B != A on {diff_days}/{scored['date'].nunique()} days"
+          + ("  (zero contrast — verdict uninformative)" if diff_days == 0 else ""))
     if len(A) >= 8:
         from scipy.stats import ttest_rel
         n = min(len(A), len(B), len(ta))

@@ -73,6 +73,9 @@ STOCK_SENTIMENT_FILE = OUT_DIR / "stock_sentiment.json"
 SIGNAL_SNAPSHOTS_FILE = OUT_DIR / "signal_snapshots.jsonl"
 
 PROFILE_DD = {"v5": 2.0, "v6": 0.5}
+# Intraday hard floor: the only stop EXECUTED at intraday checkpoints. Ordinary
+# trailing/composite exits are diagnosed intraday but executed at 14:55.
+PROFILE_HARD_DD = {"v5": 8.0, "v6": 8.0}
 DEFAULT_STARTING_CAPITAL = 100000.0
 DEFAULT_FEE_RATE = 0.0001
 MORNING_REVIEW_TIME = time(9, 35)
@@ -639,6 +642,7 @@ def _decide_sell_action(
     t1_blocked: bool,
     hold_days: int,
     signal_score: float = 0.0,
+    hard_dd_threshold: float = 8.0,
     now: datetime | None = None,
 ) -> dict[str, object]:
     now_time = _market_now(now).time()
@@ -652,12 +656,17 @@ def _decide_sell_action(
             "decision_phase": "t1_blocked",
         }
 
-    # Hard risk floor always comes first unless the stock is clearly proving it
-    # is turning into a leader / limit-up style exception.
-    if dd_pct >= dd_threshold and not soft_hold_reason:
+    # Staged execution: intraday checkpoints only EXECUTE the hard floor
+    # (catastrophic damage / liquidity escape). Ordinary trailing-stop or
+    # composite deterioration is DIAGNOSED intraday (deferred_sell_reason,
+    # recorded for forward evaluation) and executed at the 14:55 discipline
+    # pass. Rationale (decompose_pnl on the 06-01..06-12 book): sparse
+    # checkpoints turned the 2% trailing stop into a "sell the D+1 morning
+    # low" rule; the validated exit reference is next close.
+    if dd_pct >= hard_dd_threshold and not soft_hold_reason:
         return {
             "triggered": True,
-            "sell_reason": "TRAILING_STOP",
+            "sell_reason": "HARD_STOP",
             "hold_reason": None,
             "decision_phase": "risk_floor",
         }
@@ -679,9 +688,11 @@ def _decide_sell_action(
                 "hold_reason": strict_hold_reason,
                 "decision_phase": "eod_discipline",
             }
+        # attribute correctly: stop condition met -> TRAILING_STOP (executed
+        # at the discipline pass), otherwise plain discipline exit
         return {
             "triggered": True,
-            "sell_reason": "EOD_DISCIPLINE_1455",
+            "sell_reason": "TRAILING_STOP" if dd_pct >= dd_threshold else "EOD_DISCIPLINE_1455",
             "hold_reason": None,
             "decision_phase": "eod_discipline",
         }
@@ -710,10 +721,17 @@ def _decide_sell_action(
         hold_cut = 0.28
         sell_reason = "COMPOSITE_AFTERNOON_EXIT"
 
+    deferred_sell_reason = None
     if signal_score <= sell_cut:
+        deferred_sell_reason = sell_reason
+    elif dd_pct >= dd_threshold and not soft_hold_reason:
+        deferred_sell_reason = "TRAILING_STOP"
+    if deferred_sell_reason:
+        # diagnosed intraday, executed at >= 14:55 (or earlier by hard floor)
         return {
-            "triggered": True,
-            "sell_reason": sell_reason,
+            "triggered": False,
+            "sell_reason": None,
+            "deferred_sell_reason": deferred_sell_reason,
             "hold_reason": None,
             "decision_phase": phase,
         }
@@ -752,7 +770,12 @@ def _load_all_positions() -> list[dict]:
 
 
 def _load_positions() -> list[dict]:
-    return [p for p in _load_all_positions() if p.get("status", "open") == "open"]
+    # book A (validated open->next-close reference) is a pure accounting book
+    # settled by settle_book_a.py — never monitored or stop-managed here.
+    return [
+        p for p in _load_all_positions()
+        if p.get("status", "open") == "open" and p.get("book", "B") == "B"
+    ]
 
 
 def _has_alert_recorded(
@@ -801,6 +824,8 @@ def _execute_simulated_sells(client: XiaocaoClient, triggered_alerts: list[dict]
         for p in positions:
             if p.get("status", "open") != "open":
                 continue
+            if p.get("book", "B") != "B":
+                continue  # book A settles via settle_book_a.py, never here
             if p.get("code") != alert["code"] or p.get("entry_date") != alert["entry_date"]:
                 continue
             detail = _realtime_detail(client, str(p.get("code") or ""))
@@ -1033,12 +1058,14 @@ def _compute_status(
         t1_blocked=t1_blocked,
         hold_days=hold_days,
         signal_score=float(score_context.get("composite_score", 0.0) or 0.0),
+        hard_dd_threshold=PROFILE_HARD_DD.get(profile, 8.0),
     )
     return {
         "code": code,
         "name": position.get("name", ""),
         "profile": profile,
         "dd_threshold_pct": dd_threshold,
+        "hard_dd_threshold_pct": PROFILE_HARD_DD.get(profile, 8.0),
         "entry_date": entry_date,
         "entry_price": entry_price,
         "peak": round(peak, 4),
@@ -1053,6 +1080,7 @@ def _compute_status(
         "t1_blocked": t1_blocked,
         "strong_hold_reason": decision["hold_reason"],
         "sell_reason": decision["sell_reason"],
+        "deferred_sell_reason": decision.get("deferred_sell_reason"),
         "decision_phase": decision["decision_phase"],
         "triggered": bool(decision["triggered"]),
         **score_context,
@@ -1133,6 +1161,8 @@ def main() -> None:
             status_label = (
                 f"🔔 {s['sell_reason']}"
                 if s["triggered"] else
+                f"defer:{s['deferred_sell_reason']}"
+                if s.get("deferred_sell_reason") else
                 f"hold:{s['strong_hold_reason']}"
                 if s.get("strong_hold_reason") else
                 "T+1_blocked" if s["t1_blocked"] else
@@ -1152,6 +1182,23 @@ def main() -> None:
                         "alert": "SELL_SUPPRESSED_STRONG_HOLD",
                         **s,
                     }, ensure_ascii=False) + "\n")
+            if s.get("deferred_sell_reason"):
+                # diagnosed intraday, executed at the 14:55 pass — recorded so
+                # forward eval can compare deferred vs immediate exit prices
+                if not _has_alert_recorded(
+                    "SELL_DEFERRED",
+                    code=str(s.get("code") or ""),
+                    entry_date=str(s.get("entry_date") or ""),
+                    alert_date=_date.today().isoformat(),
+                    reason=str(s.get("deferred_sell_reason") or ""),
+                ):
+                    with ALERTS_FILE.open("a", encoding="utf-8") as f:
+                        f.write(json.dumps({
+                            "ts": _now_iso(),
+                            "alert": "SELL_DEFERRED",
+                            "reason": s.get("deferred_sell_reason"),
+                            **s,
+                        }, ensure_ascii=False) + "\n")
             if s["triggered"]:
                 triggered_alerts.append(s)
     except TradingCalendarLookupError as exc:

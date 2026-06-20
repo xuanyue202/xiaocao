@@ -10,7 +10,9 @@ def _dt(hour: int, minute: int) -> datetime:
     return datetime(2026, 6, 2, hour, minute, tzinfo=A_SHARE_TZ)
 
 
-def test_stale_position_sells_after_935_when_composite_turns_negative() -> None:
+def test_stale_position_defers_composite_exit_to_eod_discipline() -> None:
+    # staged execution: composite deterioration is diagnosed intraday but
+    # executed at the 14:55 pass, not sold into the morning weakness
     decision = _decide_sell_action(
         {"mode": "首红断低吸", "flags": "", "xcjw": 120, "jsjl": 0},
         detail={"pctChangeRate": 1.2, "high": 10.1, "upPrice": 11.0},
@@ -24,8 +26,8 @@ def test_stale_position_sells_after_935_when_composite_turns_negative() -> None:
         now=_dt(10, 0),
     )
 
-    assert decision["triggered"] is True
-    assert decision["sell_reason"] == "COMPOSITE_MORNING_EXIT"
+    assert decision["triggered"] is False
+    assert decision["deferred_sell_reason"] == "COMPOSITE_MORNING_EXIT"
 
 
 def test_stale_position_waits_when_composite_not_bad_enough() -> None:
@@ -100,7 +102,9 @@ def test_eod_discipline_keeps_limit_up_style_exception() -> None:
     assert decision["hold_reason"] in {"NEAR_LIMIT_UP", "LIMIT_UP_DAY"}
 
 
-def test_hard_stop_sells_before_morning_rotation_window() -> None:
+def test_soft_trailing_stop_is_deferred_intraday() -> None:
+    # dd above the soft threshold but below the hard floor: diagnose, don't
+    # sell the morning low
     decision = _decide_sell_action(
         {"mode": "绿断低吸", "flags": "", "xcjw": 120, "jsjl": 0},
         detail={"pctChangeRate": -2.5, "high": 10.0, "upPrice": 11.0},
@@ -111,11 +115,49 @@ def test_hard_stop_sells_before_morning_rotation_window() -> None:
         t1_blocked=False,
         hold_days=1,
         signal_score=0.8,
+        now=_dt(9, 41),
+    )
+
+    assert decision["triggered"] is False
+    assert decision["deferred_sell_reason"] == "TRAILING_STOP"
+
+
+def test_hard_floor_executes_immediately_intraday() -> None:
+    decision = _decide_sell_action(
+        {"mode": "绿断低吸", "flags": "", "xcjw": 120, "jsjl": 0},
+        detail={"pctChangeRate": -8.5, "high": 10.0, "upPrice": 11.0},
+        latest_price=9.1,
+        peak=10.0,
+        dd_pct=9.0,
+        dd_threshold=2.0,
+        t1_blocked=False,
+        hold_days=1,
+        signal_score=0.8,
         now=_dt(9, 31),
     )
 
     assert decision["triggered"] is True
+    assert decision["sell_reason"] == "HARD_STOP"
+    assert decision["decision_phase"] == "risk_floor"
+
+
+def test_eod_pass_executes_trailing_stop_with_attribution() -> None:
+    decision = _decide_sell_action(
+        {"mode": "首红断低吸", "flags": "", "xcjw": 120, "jsjl": 0},
+        detail={"pctChangeRate": -3.0, "high": 10.0, "upPrice": 11.0},
+        latest_price=9.7,
+        peak=10.0,
+        dd_pct=3.0,
+        dd_threshold=2.0,
+        t1_blocked=False,
+        hold_days=1,
+        signal_score=0.0,
+        now=_dt(14, 56),
+    )
+
+    assert decision["triggered"] is True
     assert decision["sell_reason"] == "TRAILING_STOP"
+    assert decision["decision_phase"] == "eod_discipline"
 
 
 def test_midday_review_tightens_threshold_vs_morning() -> None:
@@ -132,8 +174,10 @@ def test_midday_review_tightens_threshold_vs_morning() -> None:
         now=_dt(11, 0),
     )
 
-    assert decision["triggered"] is True
-    assert decision["sell_reason"] == "COMPOSITE_MIDDAY_EXIT"
+    # midday cut (-0.02) catches a score the morning cut (-0.15) would pass,
+    # but execution is deferred to the 14:55 pass
+    assert decision["triggered"] is False
+    assert decision["deferred_sell_reason"] == "COMPOSITE_MIDDAY_EXIT"
 
 
 def test_same_day_position_remains_t1_blocked() -> None:

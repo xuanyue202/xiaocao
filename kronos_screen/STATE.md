@@ -171,3 +171,25 @@ Kronos base **frozen** emb + PCA8 + Ridge + 按日横截面 target = **鲁棒但
 - 数据集脚本 kronos_screen/scripts/build_dataset.py
 - Kronos 仓库 /Users/bytedance/coding/xiaocao/Kronos (model/kronos.py: Kronos.decode_s1 返回 (s1_logits, x) → x 是隐藏表征)
 - 跑全年 backtest 命令见 fullyear_backtest.log 头部
+
+## 迭代7: 自动模拟盘复盘 (06-01..06-12, 9个交易日) + 执行/风控层修复
+**复盘结论 (decompose_pnl 精确对账, 26笔平仓 -6,651):**
+- 亏损归因 (exact, price-diff x shares): **入场滑点 -4,417 (59%)** > 出场时机 -1,588 (21%) > 选股alpha -1,448 (19%) > fees -47。
+- 入场: paper 一直按 basket=entry×1.02 最差挂单价记成交 (+1.85%/笔虚构滑点)。
+- 出场: 2% trailing stop 在稀疏检查点下实际触发时 dd 已 5-12% = "D+1早盘低点卖出" 规则 (-0.58%/笔 vs next_close)。
+- 数据质量: snapshot 同日重复 (06-01 三份) 使 A/B 失真——**去重后 take-all +0.58%/day vs K→P -1.02%/day (n=8天, p=0.28)**: 此前 "-0.49 vs -1.01 cushion" 是脏数据假象, K→P 此窗口反而拖累。
+- ★B≡★ 每天完全一致 (W=0.25 tiebreak 从未改变 pick, 零对照); auc_residual_imb 撮合后必然单边 → ±1 退化二值。
+
+**修复 (全部落地+测试 264 passed):**
+1. capture_signals: 同 (date,is_live) 重跑整体替换 (幂等); forward_eval 报 A/B contrast 频率。
+2. decompose_pnl.py: 每日 eod 自动跑, 逐笔对账 (pick_alpha/entry_slippage/exit_timing, 容差=取整噪声); auc_pct 分桶监控。
+3. paper_record: 成交 = min(窗口VWAP, open×1.005), basket 仅作放弃线 (SKIPPED→paper_skips.jsonl); 今日三笔对照: 10.424→10.233 / 12.850→12.703 / 14.758→14.552。
+4. live_monitor 分阶段卖出: 盘中只执行 HARD_STOP (dd≥8%); 普通 trailing/composite 盘中只诊断 (SELL_DEFERRED 入 alerts) → 14:55 统一执行 (出场对齐 next_close 参照)。
+5. 双轨账本: book_A = 验证口径 (open买入/next_close卖出/无stop, settle_book_a.py 盘后结算, 永不被 monitor 管理) vs book_B = 实时 stop 口径; 同一组 ★B picks 前瞻对比。
+6. ★B 改 forced-contrast: 在 K 幸存者中, A 集中竞价质量最差者 (q=rank(残余买盘比)/2+rank(竞价涨幅)/2) 若低于最佳非A幸存者则换入 → 保证 A≠B 时才有信息。
+7. kill-switch (性能型, 因 regime gate 全败): book_A 近5个出场日累计 <-3% → B 减半deploy; <-5% → B 停买 (A/采集永不停, sensor 保活)。
+
+**deploy gate 回测 (backtest_deploy_gate.py, 200天):** g_prev_neg / g_below_ma20 / g_2d_drop 全部 FAIL train+test 一致性 → 不接任何指数 regime gate (与早前预登记结论一致)。
+**基线健康 (take-all open→next_close):** ALL +1.06%/day → 6mo +0.76 → 3mo +0.73 → 1mo +0.46 → **1wk -2.60 (win 17%)**: 缓慢软化+急性坏周尾部, 非结构性失效。
+**auc_pct 分桶 (n小, 仅监控):** <-8% 桶 +1.75% (彩票型) / -8..-4% 桶 -5.65% / -4..0% 桶 -7.41% (0/7!) — 与"深水低吸最危险"直觉相反, 暂不加过滤。
+**stop 策略回放 (backtest_intraday_stop.py, 1456笔, 0 skip):** sparse2/sparse4/atr 均不替代 next_close；hard8(盘中8%硬止损+14:55退出) ALL +1.02% 略高于 next_close +1.00%, 但 6mo/3mo/test 均低于 next_close → 只作为灾难硬底, 不作为收益增强 stop；eod_only(14:55退出, 无stop) 全窗口小幅优于 next_close (ALL +1.04%, test +0.86% vs +0.80%) → 出场层应贴近收盘参照, 避免稀疏盘中止损卖低点。
