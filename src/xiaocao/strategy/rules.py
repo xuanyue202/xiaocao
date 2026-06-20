@@ -2,9 +2,10 @@ from __future__ import annotations
 
 from typing import Any
 
-SUPER_JW = 300
-STRONG_JW = 200
-QUALIFIED_JW = 150
+# Thresholds are defined once in the parameter registry (the frozen vs tunable
+# SSOT); imported here so rules.py has a single authoritative source. Values are
+# unchanged — see src/xiaocao/strategy/params.py and docs/OPERATING_CONTRACT.md.
+from xiaocao.strategy.params import QUALIFIED_JW, STRONG_JW, SUPER_JW  # noqa: F401
 
 
 def pick_big_ones(items: list[dict[str, Any]], upper_num: int = 5) -> list[dict[str, Any]]:

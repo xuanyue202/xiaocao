@@ -17,12 +17,10 @@ from __future__ import annotations
 from datetime import datetime, time
 
 from xiaocao.utils.trading_session import A_SHARE_TZ
-
-# Profile drawdown thresholds (peak->now %, the soft trailing trigger).
-PROFILE_DD = {"v5": 2.0, "v6": 0.5}
-# Intraday hard floor: the only stop EXECUTED at intraday checkpoints. Ordinary
-# trailing/composite exits are diagnosed intraday but executed at 14:55.
-PROFILE_HARD_DD = {"v5": 8.0, "v6": 8.0}
+# Drawdown thresholds live in the parameter registry (the frozen-vs-tunable SSOT).
+#   PROFILE_DD      : soft trailing dd%% per profile, executed at 14:55 not intraday
+#   PROFILE_HARD_DD : intraday hard floor — the only stop executed at intraday checkpoints
+from xiaocao.strategy.params import PROFILE_DD, PROFILE_HARD_DD  # noqa: F401
 
 MORNING_REVIEW_TIME = time(9, 35)
 MIDDAY_REVIEW_TIME = time(10, 30)
