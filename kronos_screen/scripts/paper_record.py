@@ -23,6 +23,7 @@ SCRIPTS = Path(__file__).resolve().parent
 sys.path.insert(0, str(SCRIPTS))
 
 from xiaocao.api.client import XiaocaoClient  # noqa: E402
+from xiaocao.live import accounts  # noqa: E402
 from quality_governor import annotate_quality_governor, ensure_quality_fields  # noqa: E402
 
 SNAP = Path("output/live/signal_snapshots.jsonl")
@@ -43,40 +44,18 @@ def _now_iso() -> str:
     return datetime.now().isoformat(timespec="seconds")
 
 
+# Account/position I/O is the shared real-money SSOT in xiaocao.live.accounts
+# (also used by live_monitor); these thin wrappers bind it to this script's paths.
 def _load_account(initial_capital: float, fee_rate: float, path: Path = ACCOUNT) -> dict:
-    if path.exists():
-        with path.open(encoding="utf-8") as f:
-            account = json.load(f)
-        account.setdefault("initial_capital", initial_capital)
-        account.setdefault("cash", initial_capital)
-        account.setdefault("fee_rate", fee_rate)
-        account.setdefault("realized_pnl", 0.0)
-        account.setdefault("total_fees", 0.0)
-        return account
-    return {
-        "initial_capital": initial_capital,
-        "cash": initial_capital,
-        "fee_rate": fee_rate,
-        "realized_pnl": 0.0,
-        "total_fees": 0.0,
-        "created_at": _now_iso(),
-    }
+    return accounts.load_account(path, initial_capital, fee_rate)
 
 
 def _save_account(account: dict, path: Path = ACCOUNT) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    account["updated_at"] = _now_iso()
-    tmp = path.with_suffix(".json.tmp")
-    with tmp.open("w", encoding="utf-8") as f:
-        json.dump(account, f, ensure_ascii=False, indent=2, sort_keys=True)
-        f.write("\n")
-    tmp.replace(path)
+    accounts.save_account(account, path)
 
 
 def _append_trade(record: dict) -> None:
-    TRADES.parent.mkdir(parents=True, exist_ok=True)
-    with TRADES.open("a", encoding="utf-8") as f:
-        f.write(json.dumps(record, ensure_ascii=False, sort_keys=True) + "\n")
+    accounts.append_jsonl(record, TRADES)
 
 
 def _append_skip(record: dict) -> None:
@@ -819,19 +798,7 @@ def _record_book_a(picks: list[dict], a, fee_rate: float) -> None:
 
 
 def _load_positions_from_file(path: Path) -> list[dict]:
-    if not path.exists():
-        return []
-    out = []
-    with path.open(encoding="utf-8") as f:
-        for line in f:
-            line = line.strip()
-            if not line:
-                continue
-            try:
-                out.append(json.loads(line))
-            except Exception:
-                continue
-    return out
+    return accounts.load_positions(path)
 
 
 if __name__ == "__main__":

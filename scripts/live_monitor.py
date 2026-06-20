@@ -76,7 +76,7 @@ from xiaocao.live.exit_policy import (  # noqa: E402
     sell_block_reason as _sell_block_reason,
     strong_hold_reason as _strong_hold_reason,
 )
-from xiaocao.live import journal  # noqa: E402
+from xiaocao.live import accounts, journal  # noqa: E402
 from xiaocao.live.notify import notify as _notify  # noqa: E402
 
 OUT_DIR = ROOT / "output" / "live"
@@ -106,44 +106,23 @@ def _now_iso() -> str:
     return datetime.now().isoformat(timespec="seconds")
 
 
+# Account/position I/O is defined once in xiaocao.live.accounts (the real-money
+# state SSOT, shared with paper_record); these are thin wrappers binding it to
+# this script's path/constant defaults so existing call sites are unchanged.
 def _load_account() -> dict:
-    if ACCOUNT_FILE.exists():
-        with ACCOUNT_FILE.open(encoding="utf-8") as f:
-            account = json.load(f)
-        account.setdefault("initial_capital", DEFAULT_STARTING_CAPITAL)
-        account.setdefault("cash", DEFAULT_STARTING_CAPITAL)
-        account.setdefault("fee_rate", DEFAULT_FEE_RATE)
-        account.setdefault("realized_pnl", 0.0)
-        account.setdefault("total_fees", 0.0)
-        return account
-    return {
-        "initial_capital": DEFAULT_STARTING_CAPITAL,
-        "cash": DEFAULT_STARTING_CAPITAL,
-        "fee_rate": DEFAULT_FEE_RATE,
-        "realized_pnl": 0.0,
-        "total_fees": 0.0,
-        "created_at": _now_iso(),
-    }
+    return accounts.load_account(ACCOUNT_FILE, DEFAULT_STARTING_CAPITAL, DEFAULT_FEE_RATE)
 
 
 def _save_account(account: dict) -> None:
-    ACCOUNT_FILE.parent.mkdir(parents=True, exist_ok=True)
-    account["updated_at"] = _now_iso()
-    tmp = ACCOUNT_FILE.with_suffix(".json.tmp")
-    with tmp.open("w", encoding="utf-8") as f:
-        json.dump(account, f, ensure_ascii=False, indent=2, sort_keys=True)
-        f.write("\n")
-    tmp.replace(ACCOUNT_FILE)
+    accounts.save_account(account, ACCOUNT_FILE)
 
 
 def _append_trade(record: dict) -> None:
-    TRADES_FILE.parent.mkdir(parents=True, exist_ok=True)
-    with TRADES_FILE.open("a", encoding="utf-8") as f:
-        f.write(json.dumps(record, ensure_ascii=False, sort_keys=True) + "\n")
+    accounts.append_jsonl(record, TRADES_FILE)
 
 
 def _position_key(position: dict) -> tuple[str, str]:
-    return str(position.get("entry_date", "")), str(position.get("code", ""))
+    return accounts.position_key(position)
 
 
 def _write_holdings_snapshot(statuses: list[dict]) -> dict:
@@ -484,20 +463,7 @@ def _stock_sentiment_context(
 
 
 def _load_all_positions() -> list[dict]:
-    if not POSITIONS_FILE.exists():
-        return []
-    out = []
-    with POSITIONS_FILE.open(encoding="utf-8") as f:
-        for line in f:
-            line = line.strip()
-            if not line or line.startswith("#"):
-                continue
-            try:
-                p = json.loads(line)
-                out.append(p)
-            except json.JSONDecodeError:
-                continue
-    return out
+    return accounts.load_positions(POSITIONS_FILE)
 
 
 def _load_positions() -> list[dict]:
