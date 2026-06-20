@@ -76,6 +76,7 @@ from xiaocao.live.exit_policy import (  # noqa: E402
     sell_block_reason as _sell_block_reason,
     strong_hold_reason as _strong_hold_reason,
 )
+from xiaocao.live import journal  # noqa: E402
 
 OUT_DIR = ROOT / "output" / "live"
 POSITIONS_FILE = OUT_DIR / "positions.jsonl"
@@ -822,6 +823,43 @@ def _compute_status(
     }
 
 
+def _decision_packet(statuses: list[dict], snapshot: dict) -> dict:
+    """Compact the per-position statuses into one deterministic decision packet
+    for the journal — so a later fresh-context agent consumes structured state
+    instead of re-scraping holdings/alerts/positions files."""
+    triggered = [
+        {"code": s["code"], "name": s.get("name"), "sell_reason": s.get("sell_reason")}
+        for s in statuses if s.get("triggered")
+    ]
+    deferred = [
+        {"code": s["code"], "name": s.get("name"), "deferred_sell_reason": s.get("deferred_sell_reason")}
+        for s in statuses if s.get("deferred_sell_reason")
+    ]
+    holds = [
+        {"code": s["code"], "name": s.get("name"), "reason": s.get("strong_hold_reason") or s.get("decision_phase")}
+        for s in statuses if not s.get("triggered") and not s.get("deferred_sell_reason")
+    ]
+    positions = [
+        {
+            "code": s["code"], "name": s.get("name"),
+            "dd_pct": s.get("dd_pct"), "ret_pct": s.get("ret_pct"), "net_ret_pct": s.get("net_ret_pct"),
+            "composite_score": s.get("composite_score"), "decision_phase": s.get("decision_phase"),
+            "sell_reason": s.get("sell_reason"), "deferred_sell_reason": s.get("deferred_sell_reason"),
+            "strong_hold_reason": s.get("strong_hold_reason"), "t1_blocked": s.get("t1_blocked"),
+        }
+        for s in statuses
+    ]
+    return {
+        "open_positions": snapshot.get("open_positions"),
+        "cash": snapshot.get("cash"),
+        "equity": snapshot.get("total_equity_after_exit_fee"),
+        "triggered": triggered,
+        "deferred": deferred,
+        "holds": holds,
+        "positions": positions,
+    }
+
+
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--code", help="只检查指定 code")
@@ -985,6 +1023,20 @@ def main() -> None:
         f"equity={snapshot['total_equity_after_exit_fee']:.2f}, "
         f"open_positions={snapshot['open_positions']} -> "
         f"{HOLDINGS_FILE.relative_to(ROOT)}"
+    )
+    journal.append_decision(
+        automation="live_monitor",
+        market_date=today_iso,
+        path=OUT_DIR / "decision_journal.jsonl",
+        deterministic=_decision_packet(statuses, snapshot),
+        posture={
+            "regime": market_context.get("regime"),
+            "score": round(float(market_context.get("score", 0.0) or 0.0), 4),
+            "positive_total": market_context.get("positive_total"),
+            "negative_total": market_context.get("negative_total"),
+            "limit_up_count": market_context.get("limit_up_count"),
+            "limit_down_count": market_context.get("limit_down_count"),
+        },
     )
 
 
