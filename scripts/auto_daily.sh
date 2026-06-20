@@ -1,7 +1,10 @@
 #!/usr/bin/env bash
-# Daily xiaocao paper-trade + data-accumulation automation.
+# Daily xiaocao paper-trade + data-accumulation automation (the compounding flywheel).
 #   auto_daily.sh morning   # ~09:23 (self-waits to 9:25): recommend + ★/★B + auction snapshot + paper-record
-#   auto_daily.sh eod        # ~15:05 (after close): tick-flow capture + forward A/B + monitor
+#   auto_daily.sh eod        # ~15:05 (after close): tick capture + forward A/B + monitor + settle + digest->Feishu + pipeline health
+#   auto_daily.sh optimize   # ~weekly (trading Fri): capability flywheel — judge live pipeline under the discipline guards + record to the ledger
+# Capital flywheel: morning entries -> intraday staged exits -> eod settle/digest.
+# Capability flywheel: eod accumulates training_rows -> optimize judges & records to kronos_screen/HYPOTHESES.jsonl.
 # Trading-day guarded (skips weekends/holidays), logs to output/live/auto/.
 set -uo pipefail
 ROOT="${XIAOCAO_ROOT:-$HOME/coding/xiaocao}"
@@ -61,8 +64,17 @@ case "$STEP" in
     "$PY" kronos_screen/scripts/settle_book_a.py >>"$LOG" 2>&1 || true
     log "pnl decomposition (pick_alpha / entry_slippage / exit_timing)"
     "$PY" kronos_screen/scripts/decompose_pnl.py >>"$LOG" 2>&1 || true
+    log "status digest -> Feishu (capital flywheel visibility; book A/B spread)"
+    "$PY" scripts/status.py --push-feishu >>"$LOG" 2>&1 || true
+    log "pipeline health check (capability flywheel, no record)"
+    "$PY" scripts/continuous_optimize.py >>"$LOG" 2>&1 || true
     log "eod done"
     ;;
+  optimize)
+    log "capability flywheel: judge live pipeline under discipline guards + record to ledger"
+    "$PY" scripts/continuous_optimize.py --record >>"$LOG" 2>&1 || true
+    log "optimize done -> kronos_screen/HYPOTHESES.jsonl"
+    ;;
   *)
-    echo "usage: auto_daily.sh {morning|eod}"; exit 2;;
+    echo "usage: auto_daily.sh {morning|eod|optimize}"; exit 2;;
 esac
