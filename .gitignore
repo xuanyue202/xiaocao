@@ -60,6 +60,7 @@ output/quality_governor_backtest*/
 # Live trading runtime — 只保 positions.jsonl.example 模板
 output/live/positions.jsonl
 output/live/alerts.jsonl
+output/live/*.env
 output/live/recommend_*.md
 output/live/*.log
 output/live/auto/

@@ -82,26 +82,34 @@ def test_superseded_pass_is_not_pending(tmp_path):
     assert r["strategy_flywheel"]["status"] == "open"
 
 
-def test_blocked_escalation_pushes_feishu_with_runbook(tmp_path):
+def test_blocked_escalation_pushes_wecom_with_runbook(tmp_path):
     # When ③ is blocked, eod's `--notify-blocked` must escalate to a human with the
     # do-NOT-auto-change-params runbook, naming the pending hypothesis.
     calls = []
 
-    def poster(url, payload):
+    def poster(url, payload, *, headers=None, verify=True):
         calls.append(payload)
-        return 200, '{"code":0}'
+        return 200, '{"ok":true}'
 
     report = {"strategy_flywheel": {"status": "blocked", "pending_pass_verdicts": ["edge1"]}}
-    res = fsc.maybe_escalate_blocked(report, {"XIAOCAO_FEISHU_WEBHOOK": "https://hook"}, poster=poster)
-    assert res["feishu"] == "ok"
-    text = calls[0]["content"]["text"]
+    res = fsc.maybe_escalate_blocked(
+        report,
+        {
+            "XIAOCAO_WECOM_RELAY_URL": "https://clawsg/send",
+            "XIAOCAO_WECOM_RELAY_TOKEN": "tok",
+            "XIAOCAO_WECOM_USER_ID": "Chen",
+        },
+        poster=poster,
+    )
+    assert res["wecom"] == "ok"
+    text = calls[0]["text"]
     assert "edge1" in text and "不得自动改参" in text and "params.py" in text
 
 
 def test_no_escalation_when_strategy_open_or_closed():
     for st in ("open", "closed"):
         report = {"strategy_flywheel": {"status": st, "pending_pass_verdicts": []}}
-        assert fsc.maybe_escalate_blocked(report, {"XIAOCAO_FEISHU_WEBHOOK": "https://hook"}) is None
+        assert fsc.maybe_escalate_blocked(report, {"XIAOCAO_WECOM_RELAY_URL": "https://clawsg/send"}) is None
 
 
 def test_missing_optimize_step_is_not_spinning(tmp_path):

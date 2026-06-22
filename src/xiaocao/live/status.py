@@ -1,5 +1,5 @@
 """Situational-awareness status digest — one snapshot consumed by the agent,
-the human, and Feishu.
+the human, and WeCom.
 
 Assembles the live state (book B vs the validated book A, today's deterministic
 decisions, open holdings) from the standard output/live/* files into a single
@@ -99,36 +99,111 @@ def build_digest(
     }
 
 
-def format_digest(d: dict[str, Any]) -> str:
+def _money(value: Any, *, signed: bool = False) -> str:
+    val = _f(value)
+    if signed:
+        return f"{val:+,.0f}"
+    return f"{val:,.0f}"
+
+
+def _pct(value: Any, *, signed: bool = False) -> str:
+    if value is None:
+        return "N/A"
+    val = _f(value)
+    sign = "+" if signed else ""
+    return f"{val:{sign}.2f}%"
+
+
+def _fmt_optional(value: Any) -> str:
+    if value is None or value == "":
+        return "N/A"
+    return str(value)
+
+
+def _holding_hint(h: dict[str, Any]) -> str:
+    net = _f(h.get("net_ret_pct"))
+    dd = _f(h.get("dd_pct"))
+    if dd >= 8:
+        return "回撤偏大，重点盯盘"
+    if net >= 8 and dd <= 2:
+        return "盈利领先，继续按规则观察"
+    if net > 0:
+        return "盈利中，跟随止盈规则"
+    if net < 0:
+        return "浮亏中，按规则处理"
+    return "等待下一次纪律检查"
+
+
+def _format_ab_summary(delta: Any) -> str:
+    if delta is None:
+        return "A/B realized 差: N/A。Book A 还没结算/缺失，这里先不硬算。"
+    value = _f(delta)
+    if value > 0:
+        explain = "止损/退出层目前比 next-close 验证口径多赚。"
+    elif value < 0:
+        explain = "止损/退出层目前跑输 next-close 验证口径；这是证据，不是报错。"
+    else:
+        explain = "两种退出口径目前打平。"
+    return f"A/B realized 差: {_money(value, signed=True)}（book B - book A）。{explain}"
+
+
+def format_digest_body(d: dict[str, Any]) -> str:
+    """Human-oriented message body for phone pushes and CLI output.
+
+    Keep the structured field names that agents depend on (book A/book B,
+    A/B realized), but add short Chinese explanations so the digest reads like
+    a daily account note instead of a raw table dump.
+    """
     b, a = d["book_b"], d["book_a"]
-    delta = d.get("ab_realized_delta")
-    ab_line = (
-        f"A/B realized 差 (实盘止损 − 验证): {delta:+.0f}"
-        if delta is not None
-        else "A/B realized 差 (实盘止损 − 验证): N/A（book A 未结算/缺失）"
-    )
     lines = [
-        f"小草盘后 {d['market_date']}",
-        f"book B(实盘止损口径): equity {b['equity']:.0f} | cash {b['cash']:.0f} | "
-        f"realized {b['realized_pnl']:+.0f} | 未实现 {b['unrealized_pnl']:+.0f} | 持仓 {b['open_positions']}",
-        f"book A(验证口径 next_close): cash {a['cash']:.0f} | realized {a['realized_pnl']:+.0f}",
-        ab_line,
+        "结论",
+        f"- book B 实盘止损账本：总权益 {_money(b['equity'])}，现金 {_money(b['cash'])}，"
+        f"持仓 {b['open_positions']} 只。",
+        f"- 已实现 {_money(b['realized_pnl'], signed=True)}，未实现 "
+        f"{_money(b['unrealized_pnl'], signed=True)}。",
     ]
+    if d.get("book_a_present"):
+        lines.append(
+            f"- book A 验证账本（next-close）：现金 {_money(a['cash'])}，"
+            f"已实现 {_money(a['realized_pnl'], signed=True)}。"
+        )
+    else:
+        lines.append("- book A 验证账本（next-close）：未结算/缺失。")
+    lines.append(f"- {_format_ab_summary(d.get('ab_realized_delta'))}")
     today = d.get("today") or {}
     if today:
         pos = today.get("posture") or {}
-        lines.append(
-            f"今日({today.get('automation')}): regime {pos.get('regime')} "
-            f"score {pos.get('score')} | 触发卖 {len(today.get('triggered') or [])} "
-            f"| 递延 {len(today.get('deferred') or [])} | 持有 {today.get('n_holds')}"
-        )
+        lines.extend([
+            "",
+            "今日决策",
+            f"- {_fmt_optional(today.get('automation'))}: regime {_fmt_optional(pos.get('regime'))}，"
+            f"score {_fmt_optional(pos.get('score'))}；触发卖 {len(today.get('triggered') or [])}，"
+            f"递延 {len(today.get('deferred') or [])}，继续持有 {today.get('n_holds')}",
+        ])
         for t in today.get("triggered") or []:
-            lines.append(f"  SELL {t.get('code')} {t.get('name')} — {t.get('sell_reason')}")
-    if d.get("holdings"):
-        lines.append("持仓:")
-        for h in d["holdings"]:
             lines.append(
-                f"  {h.get('code')} {h.get('name')} [{h.get('profile')}] "
-                f"net {h.get('net_ret_pct')}% dd {h.get('dd_pct')}%"
+                f"- 卖出触发：{_fmt_optional(t.get('name'))} "
+                f"{_fmt_optional(t.get('code'))}，原因 {_fmt_optional(t.get('sell_reason'))}"
             )
+    else:
+        lines.extend([
+            "",
+            "今日决策",
+            "- 暂无最新决策日志；这条只展示账本和持仓快照。",
+        ])
+    if d.get("holdings"):
+        lines.extend(["", "持仓"])
+        for i, h in enumerate(d["holdings"], 1):
+            lines.append(
+                f"{i}. {_fmt_optional(h.get('name'))} {_fmt_optional(h.get('code'))} "
+                f"[{_fmt_optional(h.get('profile'))}]："
+                f"{_pct(h.get('net_ret_pct'), signed=True)}，回撤 {_pct(h.get('dd_pct'))}"
+                f"（{_holding_hint(h)}）"
+            )
+    else:
+        lines.extend(["", "持仓", "- 当前无 open 持仓。"])
     return "\n".join(lines)
+
+
+def format_digest(d: dict[str, Any]) -> str:
+    return f"小草盘后 {d['market_date']}\n{format_digest_body(d)}"

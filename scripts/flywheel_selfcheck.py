@@ -29,8 +29,8 @@ def maybe_escalate_blocked(report: dict, env: dict, *, poster=None) -> dict | No
     pending with NO actuator wired, so the system has learned something it cannot
     apply. This is a real anomaly, not by-design idle: it needs a HUMAN decision
     (apply via strategy/params.py / retrain, under the train+test guard) — the
-    agent must NEVER auto-change a param. Pushes a Feishu alert (no-op without a
-    webhook). Returns the notify result, or None when not blocked."""
+    agent must NEVER auto-change a param. Pushes a WeCom alert (no-op without a
+    relay config). Returns the notify result, or None when not blocked."""
     strat = report.get("strategy_flywheel", {})
     if strat.get("status") != "blocked":
         return None
@@ -48,7 +48,7 @@ def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--json", action="store_true")
     ap.add_argument("--notify-blocked", action="store_true",
-                    help="push a Feishu escalation if the strategy flywheel is BLOCKED")
+                    help="push a WeCom escalation if the strategy flywheel is BLOCKED")
     a = ap.parse_args()
 
     report = flywheel.check_flywheel(root=ROOT, env=dict(os.environ))

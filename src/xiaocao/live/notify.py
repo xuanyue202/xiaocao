@@ -2,9 +2,10 @@
 
 Channels:
   - macos  : local osascript "Glass" popup (only on darwin).
-  - feishu : group-bot webhook — activates when XIAOCAO_FEISHU_WEBHOOK is set,
-             optionally signed with XIAOCAO_FEISHU_SECRET. A silent no-op when
-             unset, so the loop runs unchanged until you wire a bot.
+  - wecom  : OpenClaw wecom-app-relay POST /send — activates when
+             XIAOCAO_WECOM_RELAY_URL, XIAOCAO_WECOM_RELAY_TOKEN, and
+             XIAOCAO_WECOM_USER_ID are set. A silent no-op when unset, so the
+             loop runs unchanged until you wire the relay.
 
 Borrowed from QuantDinger's multi-channel signal_notifier, kept lightweight
 (requests only, no new deps). Real-money operation needs alerts that reach a
@@ -15,21 +16,25 @@ trading loop continues.
 """
 from __future__ import annotations
 
-import base64
-import hashlib
-import hmac
 import json
 import os
 import subprocess
 import sys
-from datetime import datetime, timezone
+from datetime import datetime
+from pathlib import Path
 from typing import Any, Callable
 
-ENV_FEISHU_WEBHOOK = "XIAOCAO_FEISHU_WEBHOOK"
-ENV_FEISHU_SECRET = "XIAOCAO_FEISHU_SECRET"
+ENV_NOTIFY_ENV_FILE = "XIAOCAO_NOTIFY_ENV_FILE"
+ENV_WECOM_RELAY_URL = "XIAOCAO_WECOM_RELAY_URL"
+ENV_WECOM_RELAY_TOKEN = "XIAOCAO_WECOM_RELAY_TOKEN"
+ENV_WECOM_USER_ID = "XIAOCAO_WECOM_USER_ID"
+ENV_WECOM_TO_USER = "XIAOCAO_WECOM_TO_USER"  # backward-friendly alias
+ENV_WECOM_ACCOUNT_ID = "XIAOCAO_WECOM_ACCOUNT_ID"
+ENV_WECOM_INSECURE = "XIAOCAO_WECOM_INSECURE"
 
-# poster(url, json_payload) -> (status_code, text). Injectable for tests.
-Poster = Callable[[str, dict[str, Any]], "tuple[int, str]"]
+# poster(url, json_payload, *, headers, verify) -> (status_code, text).
+# Injectable for tests; _post_json also accepts the old two-arg shape.
+Poster = Callable[..., "tuple[int, str]"]
 
 
 def macos_notify(title: str, body: str) -> str:
@@ -50,62 +55,159 @@ def macos_notify(title: str, body: str) -> str:
         return f"error: {type(exc).__name__}"
 
 
-def _feishu_sign(secret: str, timestamp: int) -> str:
-    string_to_sign = f"{timestamp}\n{secret}"
-    digest = hmac.new(string_to_sign.encode("utf-8"), b"", hashlib.sha256).digest()
-    return base64.b64encode(digest).decode("utf-8")
-
-
-def _default_poster(url: str, payload: dict[str, Any]) -> tuple[int, str]:
+def _default_poster(
+    url: str,
+    payload: dict[str, Any],
+    *,
+    headers: dict[str, str] | None = None,
+    verify: bool = True,
+) -> tuple[int, str]:
     import requests  # local import so importing this module never requires requests
 
-    resp = requests.post(url, json=payload, timeout=8)
+    resp = requests.post(url, json=payload, headers=headers, timeout=8, verify=verify)
     return resp.status_code, resp.text
 
 
-def feishu_notify(
-    webhook: str,
+def _post_json(
+    url: str,
+    payload: dict[str, Any],
+    *,
+    headers: dict[str, str] | None = None,
+    verify: bool = True,
+    poster: Poster | None = None,
+) -> tuple[int, str]:
+    if poster is None:
+        return _default_poster(url, payload, headers=headers, verify=verify)
+    try:
+        return poster(url, payload, headers=headers, verify=verify)
+    except TypeError:
+        # Existing tests/helpers used a two-argument poster before headers were
+        # needed. Keep that injectable shape working.
+        return poster(url, payload)
+
+
+def _truthy(value: str | None) -> bool:
+    return str(value or "").strip().lower() in {"1", "true", "yes", "y", "on"}
+
+
+def _env_first(src: dict[str, str] | os._Environ[str], *names: str) -> str:
+    for name in names:
+        value = str(src.get(name, "")).strip()
+        if value:
+            return value
+    return ""
+
+
+def _parse_env_file(path: Path) -> dict[str, str]:
+    out: dict[str, str] = {}
+    try:
+        lines = path.read_text(encoding="utf-8").splitlines()
+    except OSError:
+        return out
+    for raw in lines:
+        line = raw.strip()
+        if not line or line.startswith("#"):
+            continue
+        if line.startswith("export "):
+            line = line[len("export "):].strip()
+        if "=" not in line:
+            continue
+        key, value = line.split("=", 1)
+        key = key.strip()
+        value = value.strip()
+        if not key:
+            continue
+        if (value.startswith('"') and value.endswith('"')) or (value.startswith("'") and value.endswith("'")):
+            value = value[1:-1]
+        out[key] = value
+    return out
+
+
+def _merged_env(src: dict[str, str] | os._Environ[str]) -> dict[str, str]:
+    env = dict(src)
+    explicit = _env_first(env, ENV_NOTIFY_ENV_FILE)
+    candidates = [Path(explicit).expanduser()] if explicit else [
+        Path.cwd() / "output" / "live" / "notify.env",
+        Path.home() / ".xiaocao" / "notify.env",
+    ]
+    for path in candidates:
+        file_env = _parse_env_file(path)
+        if file_env:
+            merged = file_env
+            merged.update(env)  # process env wins over file env
+            return merged
+    return env
+
+
+def _normalize_wecom_send_url(raw: str) -> str:
+    url = raw.strip().rstrip("/")
+    if not url:
+        return ""
+    path = url.split("?", 1)[0].rstrip("/")
+    if path.endswith("/send"):
+        return url
+    return f"{url}/send"
+
+
+def wecom_notify(
+    relay_url: str,
     title: str,
     body: str,
     *,
-    secret: str | None = None,
+    token: str,
+    user_id: str,
+    account_id: str = "default",
+    insecure: bool = False,
     poster: Poster | None = None,
     now: datetime | None = None,
 ) -> str:
-    """Post a text message to a Feishu/Lark group-bot webhook. Returns a status
-    string; never raises."""
-    payload: dict[str, Any] = {"msg_type": "text", "content": {"text": f"{title}\n{body}"}}
-    if secret:
-        ts = int((now or datetime.now(timezone.utc)).timestamp())
-        payload["timestamp"] = str(ts)
-        payload["sign"] = _feishu_sign(secret, ts)
+    """Post a text message through OpenClaw's wecom-app-relay /send endpoint.
+    Returns a status string; never raises."""
+    _ = now  # kept for a stable notify() call signature in tests/callers
+    payload: dict[str, Any] = {
+        "accountId": account_id or "default",
+        "userId": user_id,
+        "text": f"{title}\n{body}",
+    }
+    headers = {
+        "Authorization": f"Bearer {token}",
+        "Content-Type": "application/json",
+    }
     try:
-        status, text = (poster or _default_poster)(webhook, payload)
+        status, text = _post_json(
+            _normalize_wecom_send_url(relay_url),
+            payload,
+            headers=headers,
+            verify=not insecure,
+            poster=poster,
+        )
     except Exception as exc:  # noqa: BLE001
         return f"error: {type(exc).__name__}"
-    return "ok" if (status == 200 and _feishu_ok(text)) else f"http {status}: {text[:120]}"
+    return "ok" if (200 <= status < 300 and _wecom_ok(text)) else f"http {status}: {text[:120]}"
 
 
-def _feishu_ok(text: str) -> bool:
-    """A Feishu webhook reports failures as HTTP 200 with an error JSON body
-    (e.g. {"code":19021,"msg":"sign match fail ..."}), so a loose substring match
-    like `"ok" in text` would treat "token"/"book"/"lookup" error bodies as
-    success and silently swallow a HARD_STOP / kill-switch alert. Parse the result
-    code: success is StatusCode==0 / code==0 (or an empty body)."""
+def _wecom_ok(text: str) -> bool:
+    """Relay /send can fail as HTTP 200 with a JSON error body, so parse the
+    structured result instead of trusting a substring such as "ok" in errmsg."""
     if not text:
         return True
     try:
         body = json.loads(text)
     except (ValueError, TypeError):
-        # non-JSON 200 body: trust only the explicit success markers.
-        return '"StatusCode":0' in text or '"code":0' in text
+        return text.strip().lower() in {"ok", "success"}
     if not isinstance(body, dict):
         return False
-    code = body.get("code", body.get("StatusCode", 0))
-    try:
-        return int(code) == 0
-    except (TypeError, ValueError):
-        return False
+    if "ok" in body:
+        return bool(body.get("ok"))
+    if "success" in body:
+        return bool(body.get("success"))
+    for key in ("errcode", "code", "StatusCode"):
+        if key in body:
+            try:
+                return int(body.get(key)) == 0
+            except (TypeError, ValueError):
+                return False
+    return False
 
 
 def notify(
@@ -119,15 +221,37 @@ def notify(
 ) -> dict[str, str]:
     """Fan a message out to the enabled channels. Returns {channel: status}.
 
-    macos is opt-in (callers gate it on a --no-notify flag); feishu auto-enables
-    when XIAOCAO_FEISHU_WEBHOOK is present.
+    macos is opt-in (callers gate it on a --no-notify flag); wecom auto-enables
+    when the XIAOCAO_WECOM_* relay env vars are present.
     """
-    src = os.environ if env is None else env
+    src = _merged_env(os.environ) if env is None else env
     results: dict[str, str] = {}
     if macos:
         results["macos"] = macos_notify(title, body)
-    webhook = str(src.get(ENV_FEISHU_WEBHOOK, "")).strip()
-    if webhook:
-        secret = str(src.get(ENV_FEISHU_SECRET, "")).strip() or None
-        results["feishu"] = feishu_notify(webhook, title, body, secret=secret, poster=poster, now=now)
+    relay_url = _env_first(src, ENV_WECOM_RELAY_URL)
+    token = _env_first(src, ENV_WECOM_RELAY_TOKEN)
+    user_id = _env_first(src, ENV_WECOM_USER_ID, ENV_WECOM_TO_USER)
+    if relay_url or token or user_id:
+        missing = []
+        if not relay_url:
+            missing.append(ENV_WECOM_RELAY_URL)
+        if not token:
+            missing.append(ENV_WECOM_RELAY_TOKEN)
+        if not user_id:
+            missing.append(ENV_WECOM_USER_ID)
+        if missing:
+            results["wecom"] = "not configured: missing " + ", ".join(missing)
+        else:
+            account_id = _env_first(src, ENV_WECOM_ACCOUNT_ID) or "default"
+            results["wecom"] = wecom_notify(
+                relay_url,
+                title,
+                body,
+                token=token,
+                user_id=user_id,
+                account_id=account_id,
+                insecure=_truthy(_env_first(src, ENV_WECOM_INSECURE)),
+                poster=poster,
+                now=now,
+            )
     return results

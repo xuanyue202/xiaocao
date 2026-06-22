@@ -50,6 +50,15 @@ def test_format_digest_is_readable_and_has_key_numbers(tmp_path):
     text = S.format_digest(d)
     assert "book A" in text and "book B" in text and "A/B realized" in text
     assert "青龙管业" in text
+    assert "止损/退出层" in text
+
+
+def test_push_body_omits_title_so_notify_does_not_duplicate_it(tmp_path):
+    _seed(tmp_path, b_realized=-4191.0, a_realized=410.0)
+    d = S.build_digest(live_dir=tmp_path, market_date="2026-06-19")
+    body = S.format_digest_body(d)
+    assert not body.startswith("小草盘后")
+    assert "结论" in body and "持仓" in body
 
 
 def test_digest_tolerates_missing_files(tmp_path):

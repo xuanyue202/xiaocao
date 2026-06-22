@@ -25,8 +25,8 @@
 | 时点 | 步骤 | 实现 |
 |---|---|---|
 | 9:25 morning | recommend + ★/★B + 集合竞价快照 + paper-record(成交=min(VWAP,L)) | `auto_daily.sh morning` → `live_recommend.py`, `paper_record.py` |
-| 盘中 | staged exit：盘中仅 HARD_STOP(dd≥8%)，其余诊断递延 14:55；每轮写决策日志；卖点→飞书 | `live_monitor.py` → `live/exit_policy.py`, `live/journal.py`, `live/notify.py` |
-| 15:05 eod | settle book A(验证口径) / decompose PnL / **status 摘要→飞书** / pipeline 健康检查 | `auto_daily.sh eod` → `settle_book_a.py`, `decompose_pnl.py`, `status.py`, `continuous_optimize.py` |
+| 盘中 | staged exit：盘中仅 HARD_STOP(dd≥8%)，其余诊断递延 14:55；每轮写决策日志；卖点→WeCom relay | `live_monitor.py` → `live/exit_policy.py`, `live/journal.py`, `live/notify.py` |
+| 15:05 eod | settle book A(验证口径) / decompose PnL / **status 摘要→WeCom relay** / pipeline 健康检查 | `auto_daily.sh eod` → `settle_book_a.py`, `decompose_pnl.py`, `status.py`, `continuous_optimize.py` |
 
 复利的护栏：**双钥匙资金安全边界**（`live/safety.py`，paper→real 需两把钥匙，agent 无法自签）、**book A vs book B** 双账本（实盘止损口径 vs 验证 next-close 口径，差值即"止损层是否帮倒忙"）、**kill-switch**（book A 近5出场日 <-3% 减半 / <-5% 停买，sensor 永不停）。一切口径见 `docs/OPERATING_CONTRACT.md`。
 
@@ -41,6 +41,17 @@
 **诚实性内建**：harness 拒绝把"日度等权 +254% 假象"洗成 headline——逐笔护栏会戳穿它。在当前真实数据上，flywheel 自动复现 STATE.md 的结论：K→P 二级筛选 **REJECTED**（逐笔 spread −1.2%，p=0.33，walk-forward 不一致）。飞轮说真话。
 
 任意假设：从 cache 产出 `{day, strat_ret, base_ret}` jsonl，`research_run.py` 给出裁决并可入账本。
+
+### 判断先验 → 候选假设（小草蒸馏喂 ② 的入口）
+
+小草大师班转录蒸馏出的能力层分两层，**严格区分 candidate 与 verdict**：
+
+- **候选账本** `reference/experience/xiaocao_hypotheses.jsonl`：从转录提炼的**可证伪先验**（`status:"candidate"`），每条带 `implied_rule` / `operationalization` / `falsifiable_test`。**这是一摞未证伪的先验，不是裁决**，对脊柱权威 = 0。
+- **裁决账本** `kronos_screen/HYPOTHESES.jsonl`：`research_run.py` 给出的 PASS/REJECTED **verdict**。
+
+唯一晋级路径：**candidate → 操作化（cache-only 构造 `{day,strat_ret,base_ret}`）→ `research_run.py` 护栏（逐笔/walk-forward/train+test/多重比较）→ verdict 账本 → ③ 人工门**。回填 candidate 的 `status` 为 `tested:PASS/REJECTED` 避免重复 litigate（镜像 `ledger.already_refuted`）。
+
+**红线**：playbook/REGIME_TIMELINE 先验只作 ① 资金飞轮的 **agent 判断输入**（morning 读现行 posture、eod 用出场纪律做异常分诊），**永不**短路 ②→③、永不进确定性脊柱；未测 candidate 对大环 `fully_closed` 贡献 = 0。一句话：**小草的话是假设源，不是 edge 源**——这正是他本人"标准+数据验证+当下适配"的元规则。
 
 ## ③ 策略复利（本事变强 · actuator，人工门）
 
@@ -60,7 +71,7 @@
 |---|---|---|
 | morning | `auto_daily.sh morning` | 工作日 09:23 |
 | 盘中监控 dense/sparse/1455 | `live_monitor.py --execute-sells` | 09:35–14:55 多档 |
-| eod | `auto_daily.sh eod`（含数据体检 + 飞书日报 + pipeline 健康检查；**周五自动 record 能力飞轮裁决入账本**） | 工作日 15:10 |
+| eod | `auto_daily.sh eod`（含数据体检 + WeCom relay 日报 + pipeline 健康检查；**周五自动 record 能力飞轮裁决入账本**） | 工作日 15:10 |
 | optimize（能力飞轮，按需） | `auto_daily.sh optimize` | 手动/补跑 |
 
 能力飞轮**无需独立调度器**：eod 每日健康检查，**周五自动 `--record`** 一条裁决入 `HYPOTHESES.jsonl`（既有 eod cron 即可驱动）。`optimize` 步骤保留作按需补跑。
@@ -69,10 +80,15 @@
 
 ```bash
 python3 scripts/flywheel_selfcheck.py          # 三个飞轮健康度 (① ② 自动转 / ③ 人工门 open|blocked|closed)
-python3 scripts/status.py                       # book A/B 价差 + 今日决策 + 持仓 (--push-feishu)
+python3 scripts/status.py                       # book A/B 价差 + 今日决策 + 持仓 (--push-wecom)
 python3 scripts/show_journal.py --date today    # 今天各 run 的结构化决策（跨上下文连续性）
 python3 scripts/continuous_optimize.py          # 当前 pipeline 在纪律下的诚实裁决
 ```
 
-激活飞书推送：`export XIAOCAO_FEISHU_WEBHOOK=...`（可选 `XIAOCAO_FEISHU_SECRET`）。
+激活 WeCom relay 推送：
+`export XIAOCAO_WECOM_RELAY_URL=https://.../send`
+`export XIAOCAO_WECOM_RELAY_TOKEN=...`
+`export XIAOCAO_WECOM_USER_ID=...`
+可选：`XIAOCAO_WECOM_ACCOUNT_ID=default`，自签证书场景设 `XIAOCAO_WECOM_INSECURE=true`。
+Codex cron 推荐把这些变量写入本地未入库文件 `output/live/notify.env`；通知模块会自动读取。也可用 `XIAOCAO_NOTIFY_ENV_FILE=/path/to/notify.env` 指向其他位置。
 上真金（终局）：`XIAOCAO_LIVE_TRADING_ENABLED=true` + `scripts/authorize_live.py` 铸造签名授权（两把钥匙）。在此之前，real-capital 路径结构上被 `live/safety.py` 硬拒。

@@ -890,7 +890,7 @@ def main() -> None:
             )
             if not already_logged:
                 if not args.no_notify:
-                    # macOS popup + Feishu (when XIAOCAO_FEISHU_WEBHOOK is set)
+                    # macOS popup + WeCom relay (when XIAOCAO_WECOM_* is set)
                     _notify(f"卖点触发 {s['code']}", msg, macos=True)
                 with ALERTS_FILE.open("a", encoding="utf-8") as f:
                     f.write(json.dumps({

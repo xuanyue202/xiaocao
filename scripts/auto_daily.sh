@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Daily xiaocao paper-trade + data-accumulation automation (the compounding flywheel).
 #   auto_daily.sh morning   # ~09:23 (self-waits to 9:25): recommend + ★/★B + auction snapshot + paper-record
-#   auto_daily.sh eod        # ~15:05 (after close): tick capture + forward A/B + monitor + settle + digest->Feishu + pipeline health
+#   auto_daily.sh eod        # ~15:05 (after close): tick capture + forward A/B + monitor + settle + digest->WeCom + pipeline health
 #   auto_daily.sh optimize   # ~weekly (trading Fri): capability flywheel — judge live pipeline under the discipline guards + record to the ledger
 # Capital flywheel: morning entries -> intraday staged exits -> eod settle/digest.
 # Capability flywheel: eod accumulates training_rows -> optimize judges & records to kronos_screen/HYPOTHESES.jsonl.
@@ -51,6 +51,8 @@ case "$STEP" in
     "$PY" scripts/live_recommend.py --no-stdout >>"$LOG" 2>&1
     log "paper-record ★B picks"
     "$PY" kronos_screen/scripts/paper_record.py --date "$TODAY" --initial-capital 100000 --fee-rate 0.0001 --deploy-ratio 0.5 --max-total-exposure-ratio 0.67 --quality-governor shadow >>"$LOG" 2>&1
+    log "surface 小草 posture prior (judgment lens only; NOT a filter on the deterministic picks)"
+    "$PY" scripts/xiaocao_knowledge.py --posture >>"$LOG" 2>&1 || true
     log "morning done -> output/live/recommend_${TODAY}.md"
     ;;
   eod)
@@ -74,8 +76,8 @@ case "$STEP" in
     "$PY" kronos_screen/scripts/settle_book_a.py >>"$LOG" 2>&1 || true
     log "pnl decomposition (pick_alpha / entry_slippage / exit_timing)"
     "$PY" kronos_screen/scripts/decompose_pnl.py >>"$LOG" 2>&1 || true
-    log "status digest -> Feishu (capital flywheel visibility; book A/B spread)"
-    "$PY" scripts/status.py --push-feishu >>"$LOG" 2>&1 || true
+    log "status digest -> WeCom relay (capital flywheel visibility; book A/B spread)"
+    "$PY" scripts/status.py --push-wecom >>"$LOG" 2>&1 || true
     # Capability flywheel: health-check daily, RECORD a dated verdict weekly (Fri)
     # so the loop turns automatically without a separate scheduler — but only on
     # clean data. On-demand recording is still `auto_daily.sh optimize`.
@@ -89,11 +91,13 @@ case "$STEP" in
       "$PY" scripts/continuous_optimize.py >>"$LOG" 2>&1 || true
     fi
     # Three-flywheel health on the dashboard every eod. ① capital + ② capability
-    # auto-turn; ③ strategy is a human gate. --notify-blocked escalates to Feishu
+    # auto-turn; ③ strategy is a human gate. --notify-blocked escalates to WeCom
     # ONLY if a PASS verdict is pending with no actuator (a validated edge with
     # nowhere to go) — a real anomaly the human must act on, never auto-applied.
     log "flywheel self-check (3 飞轮健康度；③ 策略 actuator 状态)"
     "$PY" scripts/flywheel_selfcheck.py --notify-blocked >>"$LOG" 2>&1 || true
+    log "小草 posture freshness check (flag if the distilled prior has gone stale)"
+    "$PY" scripts/xiaocao_knowledge.py --check >>"$LOG" 2>&1 || log "⚠ 小草 posture STALE — 重蒸馏最新转录并更新 reference/experience/posture_current.json"
     log "eod done"
     ;;
   optimize)

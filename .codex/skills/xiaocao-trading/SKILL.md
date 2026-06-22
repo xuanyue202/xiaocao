@@ -48,11 +48,32 @@ Capital safety (two-key): xiaocao is paper-only. A real-capital order is structu
 Agent-facing tools (prefer these over re-scraping files):
 
 - `python3 scripts/show_journal.py --date today` — what earlier runs concluded today (cross-context continuity). Read this at the start of an intraday/EOD run instead of re-deriving the day from scattered files.
-- `python3 scripts/status.py` (`--json`, `--push-feishu`) — the situational-awareness digest: book A vs book B realized spread, equity/cash, today's decisions, open holdings.
+- `python3 scripts/status.py` (`--json`, `--push-wecom`) — the situational-awareness digest: book A vs book B realized spread, equity/cash, today's decisions, open holdings; `--push-wecom` posts through the OpenClaw WeCom relay when `XIAOCAO_WECOM_*` is configured.
 - `python3 scripts/research_run.py --trades <file> --n-tried N` — judge a cache-built results file under the discipline guards (cache-only, walk-forward, per-trade-not-day-weighted, multiple-comparison significance); it refuses to call a day-weighting artifact "validated".
 - `python3 scripts/data_doctor.py` — dirty-data doctor. **Run it before trusting any A/B verdict**: it catches duplicate (date,code,is_live) snapshots (the 06-01 bug that made an A/B result meaningless), book A/B account drift, and stale positions. Exits non-zero on a critical finding.
 - `python3 scripts/flywheel_selfcheck.py` — are the three coupled flywheels healthy? ① capital + ② capability auto-turn (spinning); ③ strategy is an intentional human gate, reported open/blocked/closed (🔴 only if a PASS verdict is pending with no actuator). Also flags a stalled loop.
 - MCP read tools (optional): `python3 -m xiaocao.mcp.server` exposes the same read-only surface to an MCP client — `live_status`, `data_health_report`, `recent_decisions`, `ledger_verdicts`, `judge_hypothesis`, `operating_contract`, `flywheel_status` (never live trading).
+
+## Xiaocao Judgment Playbook (posture & exit priors)
+
+Use this section when an automation (morning / intraday / eod) needs the **discretionary judgment priors** distilled from the 小草大师班 live commentary — never for a deterministic action. These priors live in human-readable artifacts and are **agent context only**:
+
+- `docs/XIAOCAO_PLAYBOOK.md` — the 道-法-术-纪律 playbook + a **「实时盘面判断模型」** table (观察→推断→底层逻辑→动作, across 盘前/集合竞价/9:31-9:35/盘中). Every line is tagged `[已编码]` (the spine already implements it), `[先验]` (agent judgment only), or `[待验]` (a hypothesis that must clear the flywheel). Distilled from `reference/experience/distilled/*_{morning,review}.json`.
+- `reference/experience/REGIME_TIMELINE.md` — the dated **posture timeline**: one row per session with `regime` / `dominant_style` / risk stance / leaders / `valid_until` / `证伪条件`. The **现行 posture** section at the bottom is the current macro prior.
+- `reference/experience/xiaocao_hypotheses.jsonl` — the **candidate** hypothesis backlog (see flywheel hookup below). Candidates are NOT verdicts.
+
+How each agent consults them:
+
+- **Morning agent** — read the **现行 posture** of `REGIME_TIMELINE.md` (regime / risk / `证伪条件`) as today's macro prior, plus the 术/纪律 of `XIAOCAO_PLAYBOOK.md`, to frame the day's narrative (optimistic / neutral / defensive; which 方向 lead vs lag; whether the deterministic `★B` picks sit *with* or *against* the posture). It is a **lens for the Chinese summary**, never a filter on the picks. If the latest timeline row is several sessions stale, say "no current posture prior" and proceed on live data only.
+- **EOD agent** — use the 纪律 (出场) section of `XIAOCAO_PLAYBOOK.md` for **anomaly triage only**: when a position was held through a deferred trailing/composite signal or a strong-hold exception, judge whether that looks like a *defensible discretionary exception* or a *discipline gap worth flagging*. One line of triage in the A/B report — it changes no fill, stop, or account row.
+
+**红线 (MUST NOT)** — consistent with `docs/OPERATING_CONTRACT.md` §2 (LLM 不进确定性回路):
+
+- MUST NOT enter the deterministic spine (data / fill / stop / book A·B accounting / safety). No script reads these files.
+- MUST NOT auto-tune any param / threshold / profile / model from a playbook claim. `src/xiaocao/strategy/params.py` stays frozen-guarded; the only edit path is the §10 human gate.
+- MUST NOT be cited as evidence a strategy is "validated". A live-commentary claim is a **prior/hypothesis**, not a verified edge.
+
+**Hypotheses go through the flywheel, not the playbook.** Every falsifiable claim is harvested into `reference/experience/xiaocao_hypotheses.jsonl` as a **candidate** (`status:"candidate"`). It only becomes a usable edge by passing the capability flywheel (`scripts/research_run.py` discipline guards → `kronos_screen/HYPOTHESES.jsonl` verdict ledger) and then the ③ strategy human gate — the path in `## Kronos Secondary Screen & Continuous Optimization` and `docs/FLYWHEEL.md`. An un-operationalized candidate carries **zero** authority over the spine.
 
 ## Live Trading
 
@@ -232,7 +253,7 @@ After it finishes, inspect the current date's EOD log plus the live outputs that
 - live monitor output from the EOD script
 - `output/live/decision_journal.jsonl` (structured per-run decisions; or `python3 scripts/show_journal.py --date today`)
 
-EOD first runs `scripts/data_doctor.py`; a CRITICAL finding (e.g. duplicate snapshots) **gates the learning half** — `forward_eval` and the capability-flywheel record are skipped so the system never learns from dirty data (the capital half still runs). It then pushes the situational-awareness digest to Feishu (`scripts/status.py --push-feishu`; needs `XIAOCAO_FEISHU_WEBHOOK`). The capability flywheel (`scripts/continuous_optimize.py`) runs a health check every eod and, **on Fridays, automatically records a dated verdict** to `kronos_screen/HYPOTHESES.jsonl` from within the same eod run — no separate scheduler is needed (`bash scripts/auto_daily.sh optimize` is only for on-demand/back-fill recording). Surface a REJECTED pipeline verdict only as evidence, not alarm: the secondary screen is a defensive overlay under forward test, expected to be marginal.
+EOD first runs `scripts/data_doctor.py`; a CRITICAL finding (e.g. duplicate snapshots) **gates the learning half** — `forward_eval` and the capability-flywheel record are skipped so the system never learns from dirty data (the capital half still runs). It then pushes the situational-awareness digest to WeCom via OpenClaw relay (`scripts/status.py --push-wecom`; needs `XIAOCAO_WECOM_RELAY_URL`, `XIAOCAO_WECOM_RELAY_TOKEN`, `XIAOCAO_WECOM_USER_ID`; optional `XIAOCAO_WECOM_ACCOUNT_ID=default`, `XIAOCAO_WECOM_INSECURE=true`). For Codex cron, put these vars in local untracked `output/live/notify.env` (or point `XIAOCAO_NOTIFY_ENV_FILE` elsewhere) so fresh automation contexts inherit the relay config without editing each automation. The capability flywheel (`scripts/continuous_optimize.py`) runs a health check every eod and, **on Fridays, automatically records a dated verdict** to `kronos_screen/HYPOTHESES.jsonl` from within the same eod run — no separate scheduler is needed (`bash scripts/auto_daily.sh optimize` is only for on-demand/back-fill recording). Surface a REJECTED pipeline verdict only as evidence, not alarm: the secondary screen is a defensive overlay under forward test, expected to be marginal.
 
 EOD then runs `scripts/flywheel_selfcheck.py --notify-blocked` — the three-flywheel health check. **Read its `③ strategy flywheel` status and act per the runbook below.** ① capital and ② capability auto-turning is the normal steady state; the only line that needs a decision is ③.
 
@@ -276,7 +297,7 @@ The capability flywheel (`scripts/continuous_optimize.py`) closes the loop: it r
 `scripts/flywheel_selfcheck.py` reports three coupled flywheels: **① capital** (钱滚钱), **② capability** (经验滚经验), **③ strategy** (本事变强). ① and ② turn automatically every day — if either is not `spinning`/`wired`, it's a wiring/data break to fix (the self-check exit code and warnings tell you). ③ is the **actuator leg** and is an **intentional human gate**; act by its `status`:
 
 - **`open` (🟡) — the normal state today.** No hypothesis has PASSed, so there is nothing validated to apply (K→P is REJECTED). **No action.** Do not invent a param change; the strategy is frozen for good reason.
-- **`blocked` (🔴) — a real anomaly, escalate.** A hypothesis has PASSed the discipline guards (a genuine validated edge) but no actuator is wired (`scripts/apply_verdict.py` does not exist), so the edge is sitting unused. `--notify-blocked` already pushed a Feishu alert. **Your job: escalate to the human, do NOT act autonomously.** Report the pending hypothesis id(s) (`pending_pass_verdicts`) and its ledger metrics, and state that applying it is a human decision — change the relevant value in `src/xiaocao/strategy/params.py` (the only edit path, frozen-guarded) or retrain the model, **only after the human confirms** and **only if it re-passes the train+test guard**. **NEVER auto-edit a param or retrain on your own** — auto-applying an edge violates the train+test discipline this whole system exists to protect.
+- **`blocked` (🔴) — a real anomaly, escalate.** A hypothesis has PASSed the discipline guards (a genuine validated edge) but no actuator is wired (`scripts/apply_verdict.py` does not exist), so the edge is sitting unused. `--notify-blocked` already pushed a WeCom relay alert when configured. **Your job: escalate to the human, do NOT act autonomously.** Report the pending hypothesis id(s) (`pending_pass_verdicts`) and its ledger metrics, and state that applying it is a human decision — change the relevant value in `src/xiaocao/strategy/params.py` (the only edit path, frozen-guarded) or retrain the model, **only after the human confirms** and **only if it re-passes the train+test guard**. **NEVER auto-edit a param or retrain on your own** — auto-applying an edge violates the train+test discipline this whole system exists to protect.
 - **`closed` (🟢) — future.** Once a confirm-gated actuator (`scripts/apply_verdict.py`) exists, the ②→③→① ring closes and this turns green. Until then, `rings.fully_closed=False` is the honest state, not a bug.
 
 Accumulated artifacts:
