@@ -6,6 +6,8 @@ import json
 import sys
 from pathlib import Path
 
+import pytest
+
 from xiaocao.live import flywheel
 
 SCRIPTS = Path(__file__).resolve().parents[1] / "scripts"
@@ -26,12 +28,20 @@ def _wire_repo(tmp_path, *, with_optimize=True, with_data=True):
     (tmp_path / "kronos_screen").mkdir(parents=True, exist_ok=True)
     (tmp_path / "kronos_screen" / "HYPOTHESES.jsonl").write_text(json.dumps({"id": "x", "verdict": "REJECTED"}) + "\n", encoding="utf-8")
     if with_data:
-        import pandas as pd
-        pd.DataFrame([{"date": "2026-06-01", "net_realized_ret": 1.0}]).to_parquet(live / "training_rows.parquet")
+        # pandas/pyarrow are an OPTIONAL extra (training_rows is a metric, not load-bearing —
+        # _parquet_rows degrades to 0/None without it). Write the fixture parquet only when
+        # available so the 6 tests that DON'T assert on training_rows still run pandas-free;
+        # the one test that does asserts via pytest.importorskip.
+        try:
+            import pandas as pd
+            pd.DataFrame([{"date": "2026-06-01", "net_realized_ret": 1.0}]).to_parquet(live / "training_rows.parquet")
+        except ImportError:
+            pass
     return tmp_path
 
 
 def test_fully_wired_repo_is_spinning(tmp_path):
+    pytest.importorskip("pandas")  # this test asserts training_rows == 1, which needs the parquet
     root = _wire_repo(tmp_path)
     # no live authorization + env without the live flag -> paper-only holds.
     r = flywheel.check_flywheel(root=root, env={}, auth_path=root / "none.json")

@@ -26,6 +26,7 @@ from __future__ import annotations
 
 import json
 import re
+import statistics
 from datetime import date
 from pathlib import Path
 from typing import Any
@@ -79,6 +80,103 @@ def _max_jsonl_date(path: Path, key: str) -> str | None:
         if v:
             dates.append(str(v))
     return max(dates) if dates else None
+
+
+def _jsonl_entries(path: Path) -> list[dict]:
+    """Parsed JSON records from a jsonl file, skipping `#` comment + blank lines."""
+    out: list[dict] = []
+    if not path.exists():
+        return out
+    for line in path.read_text(encoding="utf-8").splitlines():
+        s = line.strip()
+        if not s or s.startswith("#"):
+            continue
+        try:
+            out.append(json.loads(s))
+        except json.JSONDecodeError:
+            pass
+    return out
+
+
+def knowledge_scoreboard(root: Path, *, today: date | None = None) -> dict[str, Any]:
+    """The ②-layer scoreboard: is the knowledge flywheel getting SMARTER, or just heavier?
+
+    Counting raw lines hides the real failure mode — ingest outrunning grading. These
+    ratios make it falsifiable: a candidate→tested ratio trending to zero, or an
+    oldest-untested age climbing, is the 'append-only producer with no consumer' signal.
+    Pure read of tracked artifacts; never gates (WARN-only upstream)."""
+    today = today or date.today()
+    distilled = root / "reference" / "experience" / "distilled"
+    backlog = root / "reference" / "experience" / "xiaocao_hypotheses.jsonl"
+    ledger_path = root / "kronos_screen" / "HYPOTHESES.jsonl"
+
+    transcripts = len(list(distilled.glob("*.json"))) if distilled.exists() else 0
+    entries = _jsonl_entries(backlog)
+    verdicts: dict[str, str] = {}
+    for e in _jsonl_entries(ledger_path):
+        if e.get("id") and e.get("verdict"):
+            verdicts[str(e["id"])] = str(e["verdict"])
+
+    def retired(e: dict) -> bool:
+        return bool(e.get("retired_on")) or str(e.get("status", "")).startswith("retired")
+
+    def passed(e: dict) -> bool:
+        return verdicts.get(str(e.get("id"))) == "PASS" or e.get("last_verdict") == "PASS"
+
+    def tested(e: dict) -> bool:
+        # research touched it: a ledger verdict, a folded-in verdict, or a non-candidate status
+        st = str(e.get("status", ""))
+        return (str(e.get("id")) in verdicts or bool(e.get("last_verdict"))
+                or st.startswith(("tested", "SHELVED", "evidence")) or retired(e))
+
+    total = len(entries)
+    assertions = sum(len(e.get("source_dates") or []) for e in entries)   # transcript-level mentions
+    n_tested = sum(1 for e in entries if tested(e))
+    n_passed = sum(1 for e in entries if passed(e))
+    n_retired = sum(1 for e in entries if retired(e))
+    untested = [e for e in entries if not tested(e)]
+    recurrences = sorted(len(e.get("source_dates") or []) for e in entries)
+    median_recurrence = (statistics.median(recurrences) if recurrences else 0)
+
+    oldest_dates = [min(e.get("source_dates")) for e in untested if e.get("source_dates")]
+    oldest_unscored = min(oldest_dates) if oldest_dates else None
+    oldest_age_days = None
+    if oldest_unscored:
+        try:
+            oldest_age_days = (today - date.fromisoformat(oldest_unscored)).days
+        except (TypeError, ValueError):
+            pass
+
+    return {
+        "transcripts_distilled": transcripts,
+        "candidates_total": total,
+        "candidate_assertions": assertions,             # sum of source_dates (pre-dedup mentions)
+        "dedup_ratio": round(total / assertions, 2) if assertions else None,  # <1 = recurrence-merge working
+        "candidates_tested": n_tested,
+        "candidates_passed": n_passed,
+        "candidates_retired": n_retired,
+        "candidates_untested": len(untested),
+        "candidate_to_tested": round(n_tested / total, 2) if total else None,
+        "tested_to_pass": round(n_passed / n_tested, 2) if n_tested else None,
+        "median_recurrence": median_recurrence,
+        "oldest_untested": oldest_unscored,
+        "oldest_untested_age_days": oldest_age_days,
+    }
+
+
+def _knowledge_warnings(k: dict[str, Any]) -> list[str]:
+    """WARN-only: surface the 'ingest outruns grading' decay before it rots the flywheel."""
+    w: list[str] = []
+    total, c2t = k.get("candidates_total", 0), k.get("candidate_to_tested")
+    if total >= 15 and c2t is not None and c2t < 0.25:
+        w.append(f"KNOWLEDGE: backlog grading is falling behind ingest "
+                 f"({k['candidates_tested']}/{total} tested = {c2t:.0%}) — run scripts/flywheel_sweep.py "
+                 f"to prioritize/retire (ingest is outrunning the verdict rate)")
+    age = k.get("oldest_untested_age_days")
+    if age is not None and age > 30:
+        w.append(f"KNOWLEDGE: oldest untested candidate is {age}d old (since {k['oldest_untested']}) — "
+                 f"the backlog has a stale tail nothing is consuming")
+    return w
 
 
 def _automation_steps(auto_daily: Path) -> list[str]:
@@ -165,6 +263,7 @@ def check_flywheel(
         "posture_score_wired": _source_mentions(auto_daily, "posture_calibration.py"),
         "exit_score_wired": _source_mentions(auto_daily, "exit_calibration.py"),
         "distill_wired": _source_mentions(auto_daily, "--distill"),
+        "sweep_wired": _source_mentions(auto_daily, "flywheel_sweep.py"),  # the backlog CONSUMER
         "posture_recorded": _count_lines(live / "posture_calls.jsonl"),
         "posture_scored": _count_lines(live / "posture_calibration.jsonl"),
         "posture_last_recorded": _max_jsonl_date(live / "posture_calls.jsonl", "date"),
@@ -213,13 +312,15 @@ def check_flywheel(
         capability["optimize_step_wired"],      # the capability loop is wired
         capability["guards_importable"],
     ]
+    knowledge = knowledge_scoreboard(root)
     return {
         "capital_flywheel": capital,
         "capability_flywheel": capability,
         "strategy_flywheel": strategy,
+        "knowledge": knowledge,
         "rings": rings,
         "spinning": all(critical),
-        "warnings": _warnings(capital, capability, strategy),
+        "warnings": _warnings(capital, capability, strategy) + _knowledge_warnings(knowledge),
     }
 
 
@@ -262,6 +363,9 @@ def _warnings(capital: dict[str, Any], capability: dict[str, Any], strategy: dic
     elif not cal.get("distill_wired", True):
         w.append("CALIBRATION: scoring wired but --distill is not — flagged rules won't reach the "
                  "candidate backlog / human gate")
+    elif not cal.get("sweep_wired", True):
+        w.append("KNOWLEDGE: the backlog CONSUMER is not scheduled — auto_daily.sh missing "
+                 "flywheel_sweep.py (candidates accrete with nothing ranking/retiring them)")
     pl = cal.get("posture_last_recorded")
     if pl:  # posture records every trading day, so staleness => the scorer stalled
         try:

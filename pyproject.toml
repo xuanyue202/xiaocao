@@ -14,8 +14,17 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+# the data/ML layer (training_rows parquet, continuous_optimize, capture_signals) uses
+# pandas/pyarrow. The core CLI + deterministic spine + live safety do NOT — flywheel.py reads
+# parquet through a try/except that degrades to None — so these are OPTIONAL, declared here so a
+# full env (`pip install -e .[data]`) runs the pandas-dependent tests instead of skipping them.
+data = [
+  "pandas>=2.0",
+  "pyarrow>=12",
+]
 test = [
   "pytest>=8.0",
+  "xiaocao[data]",
 ]
 
 [project.scripts]

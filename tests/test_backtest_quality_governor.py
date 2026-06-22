@@ -1,8 +1,10 @@
 from __future__ import annotations
 
-import pandas as pd
+import pytest
 
-from kronos_screen.scripts.backtest_quality_governor import _evaluate, _prepare
+pd = pytest.importorskip("pandas")  # backtest quality governor is pandas-based; skip (not error) if absent
+
+from kronos_screen.scripts.backtest_quality_governor import _evaluate, _prepare  # noqa: E402
 
 
 def test_quality_governor_backtest_uses_slot_cash_sizing() -> None:

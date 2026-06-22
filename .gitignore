@@ -86,6 +86,7 @@ output/live/posture_calibration.jsonl
 output/live/exit_call*.jsonl
 output/live/exit_calibration.jsonl
 output/live/calibration_candidates.jsonl
+output/live/reality_checks.jsonl
 
 # Paper trading runtime（每次 replay 重新生成）
 output/paper_v6/

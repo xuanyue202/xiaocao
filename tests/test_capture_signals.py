@@ -3,7 +3,11 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from kronos_screen.scripts.capture_signals import _replace_day_rows, capture
+import pytest
+
+pytest.importorskip("pandas")  # capture_signals pulls pandas transitively; skip (not error) if absent
+
+from kronos_screen.scripts.capture_signals import _replace_day_rows, capture  # noqa: E402
 
 
 class FakeAuctionClient:

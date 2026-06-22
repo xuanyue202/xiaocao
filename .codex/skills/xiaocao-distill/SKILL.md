@@ -26,10 +26,18 @@ PYTHONPATH=src python3 scripts/distill_transcript.py --feedback     # 1. what re
 # 2. read the transcript + write reference/experience/distilled/<YYYY-MM-DD>_<morning|review>.json
 PYTHONPATH=src python3 scripts/distill_transcript.py --validate <that file>   # 3. schema fail-closed
 PYTHONPATH=src python3 scripts/distill_transcript.py --ingest <that file>     # 4. THIS file's hypotheses -> backlog
+PYTHONPATH=src python3 scripts/distill_transcript.py --reality-check <that file>  # 4b. (复盘 only) stage 【loop】/现实校准 self-grades to a hard surface
 # 5. (judgment) refresh reference/experience/posture_current.json + append a REGIME_TIMELINE row;
 #    add a playbook [校准] line ONLY if step 1 showed a prior that reality has now contradicted/confirmed.
 PYTHONPATH=src python3 scripts/distill_transcript.py --validate reference/experience/posture_current.json
 ```
+
+**Recurrence is signal — let it merge, don't reword.** `--ingest` now MERGES a repeated claim
+into the existing candidate (appends the date to `source_dates`) instead of dropping it;
+recurrence = how many transcripts repeat a claim = its test-priority in the sweep. So when
+`--feedback` shows a standing claim that today's transcript restates, write it the SAME way
+(let it merge and bump recurrence) — do NOT reword it into a near-duplicate new id. Genuinely
+new claims still get new ids.
 
 **Step 1 is what makes this a loop, not a one-way pipe.** `--feedback` prints the
 standing posture, the calibration sensors' flagged priors (`<45%` hit — reality says
@@ -127,7 +135,16 @@ fails) — but never skip the `exit_lessons` / prior-check that a review exists 
   whole history (`--ingest-all` exists for a deliberate one-time backfill and will flood the
   curated backlog; don't use it per-transcript). **Review the git diff** before committing — that
   diff IS your gate that the extracted candidates are sane. It does NOT promote anything to a param.
+- `--reality-check <file>` (复盘) extracts the review's `【loop】`/`现实校准` self-grades to a
+  runtime hard surface (`reality_checks.jsonl`) so they flow into the next `--feedback`, instead
+  of dead-ending in prose. `--reconcile` folds research verdicts back: a REJECTED candidate is
+  retired (stops reappearing as live work), a PASS is tagged as §10 evidence (NEVER auto-applied).
+  `--retire <id> --reason <r>` is agent-judgment retirement (e.g. a 复盘 falsified the claim).
 - It never edits `exit_policy.py`, `params.py`, accounts, or the verdict ledger.
+- The eod `flywheel_sweep.py` is the backlog CONSUMER: it reconciles the ledger and ranks the
+  untested candidates by test-priority (recurrence↓ then age↑). `scripts/flywheel_selfcheck.py`
+  now prints a knowledge scoreboard (candidate→tested / tested→PASS / retired / oldest-untested)
+  so 'ingest outrunning grading' is visible, not silent. None of this touches the spine.
 
 ## Downstream (already wired — you are feeding these)
 

@@ -14,10 +14,12 @@ import json
 import sys
 from pathlib import Path
 
-import pandas as pd
+import pytest
 
-from xiaocao.live import data_health, flywheel, journal, status
-from xiaocao.research import guards, ledger
+pd = pytest.importorskip("pandas")  # integration fixture writes parquet; skip (not error) if absent
+
+from xiaocao.live import data_health, flywheel, journal, status  # noqa: E402
+from xiaocao.research import guards, ledger  # noqa: E402
 
 SCRIPTS = Path(__file__).resolve().parents[1] / "scripts"
 if str(SCRIPTS) not in sys.path:

@@ -9,9 +9,11 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
-import pandas as pd
+import pytest
 
-from xiaocao.research import guards
+pd = pytest.importorskip("pandas")  # continuous_optimize requires pandas; skip (not error) if absent
+
+from xiaocao.research import guards  # noqa: E402
 
 SCRIPTS = Path(__file__).resolve().parents[1] / "scripts"
 if str(SCRIPTS) not in sys.path:

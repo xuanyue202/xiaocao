@@ -82,10 +82,27 @@ def main() -> None:
               f"  (recorded {cal.get('posture_recorded', 0)} / {cal.get('exit_recorded', 0)})")
         print(f"     distill wired     : {cal.get('distill_wired', False)}  | "
               f"candidates staged : {cal.get('candidates_staged', 0)} (promote → research → §10)")
+        print(f"     consumer (sweep)  : {cal.get('sweep_wired', False)}  (backlog ranked/retired by flywheel_sweep.py)")
         print(f"{strat_dot} ③ strategy flywheel (本事变强) — {strat['status']}:")
         print(f"     actuator wired    : {strat['actuator_wired']}  (PASS→改参/重训)")
         print(f"     PASS pending      : {strat['pending_pass_verdicts'] or 'none'}")
         print(f"     {strat['note']}")
+        k = report.get("knowledge", {})
+        c2t, t2p = k.get("candidate_to_tested"), k.get("tested_to_pass")
+        getting_smarter = "🟢 smarter" if (c2t or 0) >= 0.25 else "🟡 heavier"
+        c2t_s = f"{c2t:.0%}" if c2t is not None else "—"
+        t2p_s = f"{t2p:.0%}" if t2p is not None else "—"
+        age = k.get("oldest_untested_age_days")
+        oldest_s = (k.get("oldest_untested") or "—") + (f" ({age}d)" if age is not None else "")
+        print(f"📊 knowledge scoreboard (② 判断层是否在变聪明,不只是变重): {getting_smarter}")
+        print(f"     transcripts/cands : {k.get('transcripts_distilled')} distilled / "
+              f"{k.get('candidates_total')} candidates ({k.get('candidate_assertions')} mentions, "
+              f"dedup {k.get('dedup_ratio')})")
+        print(f"     candidate→tested  : {k.get('candidates_tested')}/{k.get('candidates_total')} = {c2t_s}"
+              f"   tested→PASS: {k.get('candidates_passed')}/{k.get('candidates_tested')} = {t2p_s}")
+        print(f"     retired / untested: {k.get('candidates_retired')} retired / "
+              f"{k.get('candidates_untested')} untested  | median recurrence "
+              f"{k.get('median_recurrence')}  | oldest untested {oldest_s}")
         print(f"three-ring coupling : ①→② {rings['capital_to_capability']} | "
               f"②→③ {rings['capability_to_strategy']} | ③→① {rings['strategy_to_capital']}")
         for w in report["warnings"]:

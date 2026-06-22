@@ -116,6 +116,8 @@ case "$STEP" in
     "$PY" scripts/posture_calibration.py --distill >>"$LOG" 2>&1 || true
     log "exit calibration: record today's exit decisions, score closed windows, then distill (per-rule hit-rate = distill signal)"
     "$PY" scripts/exit_calibration.py --ingest --score --distill >>"$LOG" 2>&1 || true
+    log "flywheel sweep: reconcile verdict ledger (retire REJECTED, tag PASS) + log the test-priority queue (backlog consumer; authority=0)"
+    "$PY" scripts/flywheel_sweep.py --top 8 >>"$LOG" 2>&1 || true
     log "eod done"
     ;;
   optimize)
@@ -123,6 +125,13 @@ case "$STEP" in
     "$PY" scripts/continuous_optimize.py --record >>"$LOG" 2>&1 || true
     log "optimize done -> kronos_screen/HYPOTHESES.jsonl"
     ;;
+  sweep)
+    # weekly backlog consumer: deeper ranked queue + ledger reconciliation. Report-only,
+    # never promotes (authority=0). Surfaces the oldest/highest-recurrence priors to research.
+    log "flywheel sweep (backlog consumer): reconcile ledger + rank ALL untested candidates by test-priority"
+    "$PY" scripts/flywheel_sweep.py --top 30 >>"$LOG" 2>&1 || true
+    log "sweep done (report-only; pick a top cache-expressible candidate -> research_run.py -> §10 gate)"
+    ;;
   *)
-    echo "usage: auto_daily.sh {morning|eod|optimize}"; exit 2;;
+    echo "usage: auto_daily.sh {morning|eod|optimize|sweep}"; exit 2;;
 esac

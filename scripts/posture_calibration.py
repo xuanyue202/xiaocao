@@ -45,14 +45,47 @@ CALLS = LIVE / "posture_calls.jsonl"
 SCORED = LIVE / "posture_calibration.jsonl"
 CANDIDATES = LIVE / "calibration_candidates.jsonl"  # distill bridge -> human gate
 
-ACTION = {  # posture/regime label -> directional action
+ACTION = {  # posture/regime label -> directional action (the COARSE 3-way; legacy axis)
     "bear": "defensive", "divergence": "defensive", "主跌": "defensive", "空仓": "defensive",
     "trend_strong": "aggressive", "trend_continuing": "aggressive", "进攻": "aggressive", "持有": "aggressive",
     "neutral": "neutral", "recovery": "neutral", "观望": "neutral",
 }
 
+# Finer than ACTION: the STANCE separates 'trim' (减仓一半 — reduce but keep a base) from
+# full participate/exit. The regime enum maps 趋势 -> aggressive, so a trim day (e.g. 6/22
+# 减仓一半) was mislabeled 'aggressive' and graded as if fully long — the calibration retro's
+# finding. Scoring the stance closes the loop on the variable 小草 actually moved (exposure),
+# not the regime label. 'up' = bet market rises; 'down' = bet it falls/flattens.
+STANCE_DIR = {"participate": "up", "trim": "down", "exit": "down", "sit_out": "down", "neutral": None}
+
 
 def _mean(xs): return sum(xs) / len(xs) if xs else 0.0
+
+
+def stance_of(call: dict) -> str:
+    """Derive the finer stance: an explicit `stance` field wins; else infer from the
+    posture text (减仓/空仓/离场), falling back to the coarse ACTION map. Keeps a TRIM from
+    being scored as full participation."""
+    s = call.get("stance")
+    if s in STANCE_DIR:
+        return s
+    text = " ".join(str(call.get(k, "")) for k in ("posture", "dominant_style", "risk", "stage", "note"))
+    if any(k in text for k in ("空仓", "清仓", "全部卖", "全清", "sit_out")):
+        return "sit_out"
+    if any(k in text for k in ("减仓", "减一半", "减半", "降仓", "止盈一半", "trim")):
+        return "trim"            # checked before bare '离场' so '减仓离场' reads as trim
+    if "离场" in text or "exit" in text:
+        return "exit"
+    act = call.get("action") or ACTION.get(call.get("posture"), "neutral")
+    return {"aggressive": "participate", "defensive": "sit_out", "neutral": "neutral"}.get(act, "neutral")
+
+
+def score_stance(stance, fwd_ret):
+    """participate right if forward market rose; trim/exit/sit_out right if it fell/flattened."""
+    direction = STANCE_DIR.get(stance)
+    if fwd_ret is None or direction is None:
+        return None
+    return fwd_ret > 0 if direction == "up" else fwd_ret <= 0
 
 
 def market_panel():
@@ -98,6 +131,14 @@ def score_call(action, fwd_ret):
     return fwd_ret <= 0  # defensive
 
 
+def _right_stance(s):
+    """The stance-scored outcome for a row (stored at score time, else derived)."""
+    rs = s.get("right_stance")
+    if rs is not None:
+        return rs
+    return score_stance(stance_of(s), s.get("fwd_ret"))
+
+
 def summarize(scored):
     by_action = defaultdict(lambda: [0, 0])
     for s in scored:
@@ -105,7 +146,7 @@ def summarize(scored):
             continue
         by_action[s["action"]][0] += 1 if s["right"] else 0
         by_action[s["action"]][1] += 1
-    print(f"\n  posture calibration ({sum(v[1] for v in by_action.values())} directional calls):")
+    print(f"\n  posture calibration — coarse action ({sum(v[1] for v in by_action.values())} directional calls):")
     for act in ("aggressive", "defensive"):
         hit, n = by_action[act]
         if n:
@@ -116,6 +157,23 @@ def summarize(scored):
     if tot_n:
         print(f"    OVERALL    {tot_hit}/{tot_n} = {100*tot_hit/tot_n:.0f}%  "
               f"(>55% = the judgment call adds value; ~50% = no better than coin)")
+    # the finer STANCE axis — separates trim from full participate/exit (the loop now closes
+    # on the variable actually moved, exposure, so a too-eager TRIM shows up on its own).
+    by_stance = defaultdict(lambda: [0, 0])
+    for s in scored:
+        rs = _right_stance(s)
+        if rs is None:
+            continue
+        st = stance_of(s)
+        by_stance[st][0] += 1 if rs else 0
+        by_stance[st][1] += 1
+    if any(v[1] for v in by_stance.values()):
+        print(f"  posture calibration — fine stance:")
+        for st in ("participate", "trim", "exit", "sit_out"):
+            hit, n = by_stance[st]
+            if n:
+                print(f"    {st:<11} hit-rate {hit}/{n} = {100*hit/n:.0f}%  "
+                      f"{'(systematically wrong → distill)' if hit/n < 0.45 and n >= 10 else ''}")
 
 
 def backfill_proxy(horizon, W):
@@ -210,6 +268,25 @@ def distill(horizon, min_n=10):
                     "docs/XIAOCAO_PLAYBOOK.md / re-distill the latest transcript (prior, not a param)",
             "authority": 0,
         })
+    # finer STANCE axis: a too-eager trim/exit/sit_out surfaces on its own (not buried in
+    # 'aggressive'). Score each row on its stance, then flag the same <45%-over-min_n way.
+    stance_rows = [{**s, "right": _right_stance(s)} for s in all_scored]
+    for f in cd.flagged(stance_rows, key=lambda s: stance_of(s), min_n=min_n):
+        st = f["key"]
+        if st not in ("participate", "trim", "exit", "sit_out"):
+            continue
+        meaning = ("participating fully when the market then fell" if st == "participate" else
+                   f"reducing/exiting ('{st}') when the market then ROSE — 踏空 / 减飞")
+        cands.append({
+            "cand_key": f"posture-stance:{st}",
+            "sensor": "posture_calibration",
+            "claim": f"Posture stance '{st}' calibrates {f['rate']*100:.0f}% over H={horizon}d "
+                     f"forward (n={f['n']}); it is wrong by {meaning}.",
+            "n": f["n"], "rate": f["rate"], "horizon": horizon,
+            "next": "decompose by severity/duration; refine the stance prior in docs/XIAOCAO_PLAYBOOK.md "
+                    "/ re-distill (prior, not a param)",
+            "authority": 0,
+        })
     n = cd.stage(CANDIDATES, cands)
     print(f"distill: {len(cands)} flagged posture action(s); +{n} new candidate(s) staged to "
           f"{CANDIDATES.name} (min_n={min_n}, threshold<45%). Priors only — ZERO spine authority.")
@@ -250,10 +327,13 @@ def main():
         existing = {json.loads(l).get("date") for l in CALLS.read_text().splitlines()} if CALLS.exists() else set()
         if today in existing:
             print(f"posture call for {today} already recorded"); return
+        stance = stance_of({"posture": regime, "dominant_style": cur.get("dominant_style", ""),
+                            "risk": cur.get("risk", ""), "stage": cur.get("stage", "")})
         with CALLS.open("a", encoding="utf-8") as fh:
             fh.write(json.dumps({"date": today, "posture": regime, "action": ACTION.get(regime, "neutral"),
-                                 "as_of": cur.get("as_of"), "source": "posture_current"}, ensure_ascii=False) + "\n")
-        print(f"recorded standing posture call: {today} {regime} ({ACTION.get(regime,'neutral')})")
+                                 "stance": stance, "as_of": cur.get("as_of"), "source": "posture_current"},
+                                ensure_ascii=False) + "\n")
+        print(f"recorded standing posture call: {today} {regime} ({ACTION.get(regime,'neutral')} / stance={stance})")
         return
     if a.record:
         LIVE.mkdir(parents=True, exist_ok=True)
@@ -282,6 +362,8 @@ def main():
                 continue  # forward window not closed yet
             c["fwd_ret"] = fwd
             c["right"] = score_call(c["action"], fwd)
+            c["stance"] = stance_of(c)
+            c["right_stance"] = score_stance(c["stance"], fwd)
             newly.append(c)
         if newly:
             LIVE.mkdir(parents=True, exist_ok=True)

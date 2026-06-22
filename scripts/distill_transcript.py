@@ -38,6 +38,8 @@ BACKLOG = ROOT / "reference" / "experience" / "xiaocao_hypotheses.jsonl"
 POSTURE = ROOT / "reference" / "experience" / "posture_current.json"
 PLAYBOOK = ROOT / "docs" / "XIAOCAO_PLAYBOOK.md"
 CANDIDATES = ROOT / "output" / "live" / "calibration_candidates.jsonl"
+LEDGER = ROOT / "kronos_screen" / "HYPOTHESES.jsonl"          # research verdicts (untracked)
+REALITY_CHECKS = ROOT / "output" / "live" / "reality_checks.jsonl"  # loop self-grades (runtime)
 
 # --- schemas (the contract the agent's distilled JSON must satisfy) ---------- #
 # REQUIRED = the 12 keys present in all 23 real distillations (fail-closed).
@@ -70,8 +72,43 @@ def _read_jsonl(path: Path) -> list[dict]:
     return out
 
 
+# punctuation stripped before claim-dedup so "评分≥50。" == "评分≥50" == "评分 ≥ 50"
+# (normalized-EXACT match only — semantic near-duplicates are intentionally NOT auto-merged;
+# that is the agent's judgment at distill time, where --feedback shows the standing claims).
+_DEDUP_PUNCT = "，,。.；;：:、'\"“”‘’（）()【】[]｛｝{}！!？?·…~～—-_/\\|　"
+
+
 def _norm(claim: str) -> str:
-    return re.sub(r"\s+", "", str(claim or ""))
+    s = re.sub(r"\s+", "", str(claim or ""))
+    return s.translate(str.maketrans("", "", _DEDUP_PUNCT)).lower()
+
+
+def _load_backlog(path: Path) -> list[dict]:
+    """Ordered items preserving the file exactly: each is {'raw': line} for a
+    comment/blank line or {'entry': dict} for a JSON record. Lets ingest mutate
+    entries in place (recurrence-merge) and rewrite WITHOUT losing the # header."""
+    items: list[dict] = []
+    if not path.exists():
+        return items
+    for line in path.read_text(encoding="utf-8").splitlines():
+        s = line.strip()
+        if not s or s.startswith("#"):
+            items.append({"raw": line})
+        else:
+            try:
+                items.append({"entry": json.loads(s)})
+            except json.JSONDecodeError:
+                items.append({"raw": line})
+    return items
+
+
+def _write_backlog(path: Path, items: list[dict], new_entries: list[dict]) -> None:
+    with path.open("w", encoding="utf-8") as fh:
+        for it in items:
+            fh.write((it["raw"] if "raw" in it
+                      else json.dumps(it["entry"], ensure_ascii=False)) + "\n")
+        for e in new_entries:
+            fh.write(json.dumps(e, ensure_ascii=False) + "\n")
 
 
 # --- --feedback -------------------------------------------------------------- #
@@ -101,6 +138,21 @@ def feedback() -> int:
             print("playbook 最近的 [校准] 行(现实已改写的先验):")
             for ln in cal_lines[-3:]:
                 print(f"  {ln.strip()[:140]}")
+    # loop self-grades 小草 made about his OWN prior (from --reality-check) — the human
+    # companion to the mechanical sensors; answer in this distillation whether they hold.
+    rc = _read_jsonl(REALITY_CHECKS)
+    if rc:
+        print("\n复盘自评(现实确认/证伪了哪条先验 — 上几场 review 的 loop 自评):")
+        for r in rc[-3:]:
+            print(f"  [{r.get('date')}] {str(r.get('text',''))[:130]}")
+    # backlog liveness — the 'ingest outruns grading' early-warning, in miniature.
+    bl = [e for e in _read_jsonl(BACKLOG)]
+    if bl:
+        retired = sum(1 for e in bl if e.get("retired_on") or str(e.get("status", "")).startswith("retired"))
+        untested = [e for e in bl if str(e.get("status", "")).startswith("candidate") and not e.get("retired_on")]
+        oldest = min((min(e.get("source_dates") or ["9999"]) for e in untested), default=None)
+        print(f"\ncandidate backlog: {len(bl)} total | {len(untested)} untested | {retired} retired"
+              + (f" | oldest untested since {oldest}" if oldest and oldest != '9999' else ""))
     return 0
 
 
@@ -186,12 +238,23 @@ def ingest(source: Path = DISTILLED) -> int:
     """Feed new candidate hypotheses into the backlog from `source`: a single distilled
     JSON file (the per-transcript default the skill uses), or a directory (bulk backfill,
     only via the explicit --ingest-all — it can dump the whole history into the curated
-    backlog). Deduped by claim against what is already there."""
+    backlog).
+
+    Deduped by NORMALIZED claim. A claim that matches an existing entry is NOT dropped:
+    its date is appended to that entry's `source_dates` (RECURRENCE-MERGE). Recurrence —
+    how many distinct transcripts repeat a claim — is the cheapest compounding signal we
+    have (= len(source_dates)); it becomes the natural test-priority for the sweep, so the
+    backlog drains by importance instead of accreting near-identical ids. Only a genuinely
+    new claim allocates a new XH id."""
     files = sorted(source.glob("*.json")) if source.is_dir() else [source]
-    existing = _read_jsonl(BACKLOG)
-    seen_claims = {_norm(e.get("claim")) for e in existing}
-    nxt = _next_id(existing)
-    new_entries = []
+    items = _load_backlog(BACKLOG)
+    entries = [it["entry"] for it in items if "entry" in it]
+    by_claim: dict[str, dict] = {}
+    for e in entries:
+        by_claim.setdefault(_norm(e.get("claim")), e)   # first occurrence wins the merge target
+    nxt = _next_id(entries)
+    new_entries: list[dict] = []
+    merged = 0
     for jf in files:
         try:
             d = json.loads(jf.read_text(encoding="utf-8"))
@@ -202,9 +265,14 @@ def ingest(source: Path = DISTILLED) -> int:
             if not isinstance(h, dict) or not h.get("claim"):
                 continue
             key = _norm(h["claim"])
-            if key in seen_claims:
+            if key in by_claim:                          # recurrence: bump source_dates, no new id
+                e = by_claim[key]
+                sd = e.setdefault("source_dates", [])
+                if date and date not in sd:
+                    sd.append(date)
+                    sd.sort()
+                    merged += 1
                 continue
-            seen_claims.add(key)
             entry = {
                 "id": f"XH-{nxt:03d}",
                 "claim": h["claim"],
@@ -216,15 +284,136 @@ def ingest(source: Path = DISTILLED) -> int:
                 "status": f"candidate (distilled {date}; authority=0 — must pass "
                           f"research_exit_priors/research_run + §10 before any param change)",
             }
+            by_claim[key] = entry
             new_entries.append(entry)
             nxt += 1
-    if new_entries:
-        with BACKLOG.open("a", encoding="utf-8") as fh:
-            for e in new_entries:
-                fh.write(json.dumps(e, ensure_ascii=False) + "\n")
-    print(f"ingest: +{len(new_entries)} new candidate(s) -> {BACKLOG.name} "
-          f"(deduped by claim; ids {f'XH-{nxt-len(new_entries):03d}..XH-{nxt-1:03d}' if new_entries else '—'}). "
+    if new_entries or merged:
+        _write_backlog(BACKLOG, items, new_entries)
+    ids = f"XH-{nxt-len(new_entries):03d}..XH-{nxt-1:03d}" if new_entries else "—"
+    print(f"ingest: +{len(new_entries)} new candidate(s), ~{merged} recurrence-merge(s) -> {BACKLOG.name} "
+          f"(normalized-claim dedup; new ids {ids}). "
           f"Candidates enter authority=0; review the git diff, then they must clear the guards + §10.")
+    return 0
+
+
+# --- retirement / falsification write-back (close the append-only leaks) ------ #
+def _ledger_latest_verdicts(ledger: Path = LEDGER) -> dict[str, str]:
+    """Latest research verdict per hypothesis id from the (untracked) verdict ledger."""
+    latest: dict[str, str] = {}
+    for e in _read_jsonl(ledger):
+        hid, v = e.get("id"), e.get("verdict")
+        if hid and v:
+            latest[str(hid)] = str(v)
+    return latest
+
+
+def _today() -> str:
+    import datetime
+    return datetime.date.today().isoformat()
+
+
+def retire(ids: list[str], reason: str, *, on_date: str | None = None) -> int:
+    """Mark candidate(s) retired (agent-judgment retirement — e.g. a 复盘 reality-check
+    contradicted the claim). Retiring a CANDIDATE (authority=0) only curates the backlog;
+    it removes nothing from the spine. Idempotent: re-retiring keeps the first date."""
+    on_date = on_date or _today()
+    items = _load_backlog(BACKLOG)
+    want = set(ids)
+    n = 0
+    for it in items:
+        e = it.get("entry")
+        if not e or e.get("id") not in want:
+            continue
+        if not e.get("retired_on"):
+            e["retired_on"] = on_date
+            e["retire_reason"] = reason
+            if str(e.get("status", "")).startswith("candidate"):
+                e["status"] = f"retired ({on_date}): {reason}"
+            n += 1
+    if n:
+        _write_backlog(BACKLOG, items, [])
+    print(f"retire: {n} candidate(s) marked retired ({', '.join(sorted(want))}) on {on_date}. "
+          f"Backlog curation only — authority over the spine unchanged (was already 0).")
+    return 0
+
+
+def reconcile(*, on_date: str | None = None, ledger: Path = LEDGER) -> int:
+    """Evidence-driven retirement: fold the research verdict ledger back into the backlog.
+    A candidate whose id has a REJECTED verdict is retired (tape/research killed it — it
+    must stop reappearing as live work); a PASS is tagged as human-gate evidence (NOT
+    auto-promoted — §10 still decides). Adds structured `last_verdict`/`retired_on` without
+    clobbering hand-written status. Idempotent."""
+    on_date = on_date or _today()
+    verdicts = _ledger_latest_verdicts(ledger)
+    items = _load_backlog(BACKLOG)
+    retired = passed = tagged = 0
+    for it in items:
+        e = it.get("entry")
+        if not e:
+            continue
+        v = verdicts.get(str(e.get("id")))
+        if not v:
+            continue
+        if e.get("last_verdict") != v:
+            e["last_verdict"] = v
+            tagged += 1
+        if v == "REJECTED" and not e.get("retired_on"):
+            e["retired_on"] = on_date
+            e["retire_reason"] = "research_run REJECTED (verdict ledger)"
+            if str(e.get("status", "")).startswith("candidate"):
+                e["status"] = f"retired ({on_date}): research_run REJECTED"
+            retired += 1
+        elif v == "PASS":
+            passed += 1
+    if tagged or retired:
+        _write_backlog(BACKLOG, items, [])
+    print(f"reconcile: {retired} candidate(s) retired (REJECTED), {passed} PASS tagged as §10 evidence, "
+          f"{tagged} verdict(s) folded in from {ledger.name}. PASS is NEVER auto-promoted — human gate decides.")
+    return 0
+
+
+def _loop_grades(d: dict) -> list[str]:
+    """The review's self-grades — judgment_heuristics tagged 【loop】 + exit_lessons tagged
+    【现实校准. These are 小草 grading his own prior against the tape: the most direct loop
+    nutrient, which otherwise only lives in distilled prose."""
+    out = []
+    for h in d.get("judgment_heuristics", []):
+        if isinstance(h, str) and "【loop】" in h:
+            out.append(h)
+    for ln in d.get("exit_lessons", []):
+        if isinstance(ln, str) and "现实校准" in ln:
+            out.append(ln)
+    return out
+
+
+def reality_check(path: Path) -> int:
+    """Write a distilled review's loop self-grades to a hard surface (reality_checks.jsonl),
+    so the 'did the tape confirm/refute the prior?' signal stops dead-ending in prose and
+    flows into the next --feedback. Deduped by (date, text)."""
+    try:
+        d = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as e:
+        print(f"⚠ reality-check: cannot read {path}: {e}")
+        return 1
+    grades = _loop_grades(d)
+    if not grades:
+        print(f"reality-check: no 【loop】/现实校准 grades in {path.name} "
+              f"(expected in a 复盘; a 盘前/短 session may legitimately have none).")
+        return 0
+    existing = {(r.get("date"), r.get("text")) for r in _read_jsonl(REALITY_CHECKS)}
+    date, kind = d.get("date"), d.get("kind", "")
+    added = 0
+    REALITY_CHECKS.parent.mkdir(parents=True, exist_ok=True)
+    with REALITY_CHECKS.open("a", encoding="utf-8") as fh:
+        for g in grades:
+            if (date, g) in existing:
+                continue
+            fh.write(json.dumps({"date": date, "kind": kind, "file": path.name, "text": g},
+                                 ensure_ascii=False) + "\n")
+            existing.add((date, g))
+            added += 1
+    print(f"reality-check: +{added} loop self-grade(s) staged from {path.name} -> {REALITY_CHECKS.name} "
+          f"(surfaces in the next --feedback).")
     return 0
 
 
@@ -235,6 +424,13 @@ def main() -> int:
     ap.add_argument("--ingest", metavar="FILE", help="feed ONE distilled file's new hypotheses into the candidate backlog")
     ap.add_argument("--ingest-all", action="store_true",
                     help="bulk backfill: ingest ALL distilled files (explicit — can flood the curated backlog)")
+    ap.add_argument("--reality-check", metavar="FILE",
+                    help="stage a 复盘's 【loop】/现实校准 self-grades to reality_checks.jsonl (surfaces in --feedback)")
+    ap.add_argument("--reconcile", action="store_true",
+                    help="fold verdict-ledger results back: retire REJECTED candidates, tag PASS as §10 evidence")
+    ap.add_argument("--retire", metavar="ID", action="append",
+                    help="retire a candidate by id (agent-judgment retirement; repeatable). Needs --reason")
+    ap.add_argument("--reason", help="reason text for --retire")
     a = ap.parse_args()
     rc = 0
     if a.feedback:
@@ -245,7 +441,15 @@ def main() -> int:
         rc |= ingest(Path(a.ingest))
     if a.ingest_all:
         rc |= ingest(DISTILLED)
-    if not (a.feedback or a.validate or a.ingest or a.ingest_all):
+    if a.reality_check:
+        rc |= reality_check(Path(a.reality_check))
+    if a.reconcile:
+        rc |= reconcile()
+    if a.retire:
+        if not a.reason:
+            ap.error("--retire requires --reason")
+        rc |= retire(a.retire, a.reason)
+    if not (a.feedback or a.validate or a.ingest or a.ingest_all or a.reality_check or a.reconcile or a.retire):
         ap.print_help()
     return rc
 
