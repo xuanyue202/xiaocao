@@ -41,6 +41,15 @@ Pytest uses `pytest.ini`, `tests` as the default path, and `e2e` as the live API
 
 Recent commits use concise imperative summaries, sometimes with a priority prefix such as `P0:`. Examples: `Add live trading automation migration support`, `Improve paper trading execution controls`. PRs should describe changes, list validation, call out live/API impact, and mention excluded artifacts.
 
+## Calling the xiaocao data API (`p-xcapi.kjap1.cn`)
+
+**Rate-limit every call.** The API throttles on bursts — empirically ~10 sequential calls succeed, but ~60 in quick succession start returning empty `[]`/null (a silent throttle, not an error). When fetching for more than a handful of symbols/dates: batch small, space requests (e.g. sleep ~0.5–1s between calls, ≤~8 concurrent), and **prefer cache-first reads** (`output/.cache/xiaocao.db`) over re-fetching. Never hammer it in a tight loop. Cache results so a retry doesn't re-hit the API.
+
+Gotchas (each cost real debugging time):
+- **Codes need the exchange suffix** — `date_kline('600519')` returns empty; `date_kline('600519.XSHG')` works. Always pass `NNNNNN.XSHG/.XSHE/.BJSE`.
+- **Minute-line price is in `trade`, not `close`** — `/stock/minute_line` bars have `open/high/low/close = null`; the per-minute price is the `trade` field (+ `vol`/`amt`/`pctChangeRate`). Reconstruct daily OHLC/VWAP from `trade`.
+- **`date_kline` (daily OHLCV) can lag weeks** — it froze at 2026-05-29 for ~3 weeks while realtime/minute stayed current. Recent daily bars are reconstructable from `minute_line(code, trade_date=YYYYMMDD, count=241)` (history needs BOTH `trade_date` and `count`). `data_health.stale_market_cache` flags the lag at eod; don't let a swallowed `except: rows=[]` hide it.
+
 ## Security & Configuration Tips
 
 Do not commit `xiaocao.yaml`, account state, caches, binaries, or signing secrets. Real-capital paths must go through `src/xiaocao/live/safety.py`; automations should remain paper/sensor safe unless explicitly authorized by the two-key flow.
