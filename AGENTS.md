@@ -49,6 +49,7 @@ Gotchas (each cost real debugging time):
 - **Codes need the exchange suffix** — `date_kline('600519')` returns empty; `date_kline('600519.XSHG')` works. Always pass `NNNNNN.XSHG/.XSHE/.BJSE`.
 - **Minute-line price is in `trade`, not `close`** — `/stock/minute_line` bars have `open/high/low/close = null`; the per-minute price is the `trade` field (+ `vol`/`amt`/`pctChangeRate`). Reconstruct daily OHLC/VWAP from `trade`.
 - **`date_kline` (daily OHLCV) can lag weeks** — it froze at 2026-05-29 for ~3 weeks while realtime/minute stayed current. Recent daily bars are reconstructable from `minute_line(code, trade_date=YYYYMMDD, count=241)` (history needs BOTH `trade_date` and `count`). `data_health.stale_market_cache` flags the lag at eod; don't let a swallowed `except: rows=[]` hide it.
+- **`date_kline` history is deep, concept-rank history is shallow** — `date_kline(code, count=1300)` serves real prices back to ~2021-02 (incl. the 2022 bear), but `block_category_rank_v3` serves historical *rankings* (`num`/`name`) while the per-concept **return** field `prePctChangeRate` is **0 before ~2024-05-13** (historical concept returns are NOT available). Backtesting trend/concept *returns* on pre-2024-05 ranks silently uses zero-return data (it inflated a cross-cycle alpha to +20~28pp until caught — see `research_trend_crosscycle.py:_real_return_panel`). For cross-cycle returns go STOCK-level via `date_kline`, or reconstruct concept returns from constituent `date_kline`.
 
 ## Security & Configuration Tips
 
