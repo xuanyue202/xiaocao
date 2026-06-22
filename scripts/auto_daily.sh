@@ -113,6 +113,8 @@ case "$STEP" in
     "$PY" scripts/xiaocao_knowledge.py --check >>"$LOG" 2>&1 || log "⚠ 小草 posture STALE — 重蒸馏最新转录并更新 reference/experience/posture_current.json"
     log "judgment calibration: score posture calls whose fwd window closed (defensive hit-rate = distill signal)"
     "$PY" scripts/posture_calibration.py --score >>"$LOG" 2>&1 || true
+    log "exit calibration: record today's exit decisions + score those whose fwd window closed (per-rule hit-rate = distill signal)"
+    "$PY" scripts/exit_calibration.py --ingest --score >>"$LOG" 2>&1 || true
     log "eod done"
     ;;
   optimize)

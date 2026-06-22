@@ -77,6 +77,11 @@ output/live/signal_snapshots.jsonl*
 output/live/stock_sentiment.json
 output/live/stock_sentiment_history.jsonl
 output/live/training_rows.parquet
+# judgment/exit calibration sensors — runtime ledgers (record + scored), sensor-only
+output/live/posture_call*.jsonl
+output/live/posture_calibration.jsonl
+output/live/exit_call*.jsonl
+output/live/exit_calibration.jsonl
 
 # Paper trading runtime（每次 replay 重新生成）
 output/paper_v6/

@@ -60,6 +60,38 @@ quantifies the session's finding — sitting out on trailing-bad-breadth misses 
 bounce. The discretionary judgment layer must beat this baseline; the loop measures
 whether it does, honestly, as calls accrue.
 
+## Half 2b — Exit calibration (the same loop, on the 卖出逻辑)
+
+`scripts/exit_calibration.py` applies the identical "score the deterministic decision
+against the realized forward outcome" loop to the exit policy
+(`src/xiaocao/live/exit_policy.py`). The live monitor already RECORDS every exit
+decision to `output/live/alerts.jsonl` ("recorded for forward evaluation") but nothing
+scored them — `show_journal.py` only printed. This closes that loop.
+
+It reads today's Book-B exit decisions from `alerts.jsonl` and collapses each
+position-day to its net realized stance — **one decision per (code, day)**:
+
+- `sell` = the position was sold that day (`SELL_TRIGGERED`). The staged-exit
+  defer→14:55-execute path is the SELL, counted once (an earlier draft double-counted
+  the intraday defer as a separate multi-day "hold" — a contradictory vote on the same
+  forward path; caught by the adversarial verify pass).
+- `hold` = held through: a strong-hold suppression, or a defer that did NOT sell that
+  day (the position-level analog of 小草's "别对回调空仓 — don't sell the dip").
+
+Each is scored against the position's realized forward path (`hold` right if the stock
+rose, `sell` right if it fell), using a split-safe, contiguous `date_kline.pctChangeRate`
+series, lookahead-safe by construction (window strictly after the decision day; a
+corrupt/uncapped bar makes its window unscored, never mis-scored). Output buckets by
+**exit rule** (HARD_STOP / TRAILING_STOP / COMPOSITE_* / strong-hold) so a rule reading
+**<45% over n≥8–10** becomes a distillation target for `research_exit_priors.py` + §10.
+It tags `n<5` as not-yet-meaningful and prints the opportunity-cost caveat (it scores the
+per-position path only, not portfolio P&L). **Wiring:** `auto_daily.sh eod` runs
+`exit_calibration.py --ingest --score` right after the posture scorer; the
+`xiaocao-trading` skill's EOD workflow tells the agent to surface a flagged rule as
+human-gate evidence — never an auto-tune. Sensor-only: zero authority over the spine.
+Coverage starts thin (the daily cache lags the live June decisions; many low-suck
+small-caps aren't cached) and accumulates forward, exactly like the posture scorer.
+
 ## Why this is the right loop (not more alpha hunting)
 
 - It compounds the layer that the data proved holds the edge (coarse judgment +
