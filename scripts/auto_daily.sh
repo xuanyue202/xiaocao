@@ -53,6 +53,8 @@ case "$STEP" in
     "$PY" kronos_screen/scripts/paper_record.py --date "$TODAY" --initial-capital 100000 --fee-rate 0.0001 --deploy-ratio 0.5 --max-total-exposure-ratio 0.67 --quality-governor shadow >>"$LOG" 2>&1
     log "surface 小草 posture prior (judgment lens only; NOT a filter on the deterministic picks)"
     "$PY" scripts/xiaocao_knowledge.py --posture >>"$LOG" 2>&1 || true
+    log "record standing posture call (judgment-calibration loop; scored fwd at eod)"
+    "$PY" scripts/posture_calibration.py --record-current >>"$LOG" 2>&1 || true
     log "morning done -> output/live/recommend_${TODAY}.md"
     ;;
   eod)
@@ -69,6 +71,12 @@ case "$STEP" in
     # still runs for visibility.
     log "data health check (catch dirty data before trusting A/B)"
     if "$PY" scripts/data_doctor.py >>"$LOG" 2>&1; then DATA_OK=1; else DATA_OK=0; fi
+    # governance pre-flight: fail-closed if the learning substrate is zero-padded /
+    # stale (data_guard / DATA_QUALITY.md). Complements data_doctor.
+    if [ "$DATA_OK" = "1" ]; then
+      if "$PY" scripts/learning_preflight.py >>"$LOG" 2>&1; then :; else
+        DATA_OK=0; log "learning_preflight FAILED (dirty substrate) — won't learn"; fi
+    fi
     if [ "$DATA_OK" = "1" ]; then
       log "forward_eval (A/B + accumulate training rows)"
       "$PY" kronos_screen/scripts/forward_eval.py --live-only --fee-rate 0.0001 >>"$LOG" 2>&1
@@ -103,6 +111,8 @@ case "$STEP" in
     "$PY" scripts/flywheel_selfcheck.py --notify-blocked >>"$LOG" 2>&1 || true
     log "小草 posture freshness check (flag if the distilled prior has gone stale)"
     "$PY" scripts/xiaocao_knowledge.py --check >>"$LOG" 2>&1 || log "⚠ 小草 posture STALE — 重蒸馏最新转录并更新 reference/experience/posture_current.json"
+    log "judgment calibration: score posture calls whose fwd window closed (defensive hit-rate = distill signal)"
+    "$PY" scripts/posture_calibration.py --score >>"$LOG" 2>&1 || true
     log "eod done"
     ;;
   optimize)
