@@ -51,6 +51,12 @@
 14. **XH-018 的「选股 alpha」过不了严格 OOS**：建了 `src/xiaocao/research/trend_guards.py`（**非重叠 hold 为单位**，测 复利/最大回撤/换手/walk-forward(train+test alpha 都正)/per-hold 配对 t/**survives-non-bull**，无法验证非牛市则 fail-closed）。`scripts/trend_optimize.py` 全配置 **REJECTED**：+6~20pp alpha **只在长 hold 出现**（R60: +10.5pp、mdd **0.8%**、walk-forward train+test 都正）——但**只有 3 个独立 hold**（过不了 enough_holds≥8，t=1.5 p=0.27 不显著）；R≤40 有足够 hold 时 alpha 归零/转负；**非牛市 regime 的 alpha 在每个能测的配置里都是负的**。
 15. **修正 #12 的「alpha」措辞**：之前 `research_trend_longhold.py` 的 +6~20pp 是**单路径、跨配置比较**的口径；非重叠 walk-forward + 非牛 + 显著性下**不成立**——它是**牛市 + 独立 hold 太少**的产物。**站得住的只有：趋势长持复利强（+44~52%）且回撤低（R60 mdd 0.8%）——这是 beta/参与度,不是被验证的选股 alpha。** Book T 的 lever = **参与（长持捕捉趋势 beta，系统踏空的就是这块）,不是「跑赢平均题材」**。`trend_rules`(选股器)因此推迟——没有被验证的选股 edge 可建。**仪器起作用了:它拒绝把牛市样本 artifact 当 edge 放行。**
 
+**2026-06-23 — 汇合 allocator Loop（目标:穿越牛熊、样本外稳、风险调整复利最大化）。三轮,每轮诚实落账。**
+16. **短线是 Sharpe-0.68 的全天候引擎(measured,robust)**(`scripts/research_regime_profile.py`):低吸 per-trade 风险调整收益**随 regime 单调**——bear +0.06%(Sharpe 0.01)→ divergence +2.0% → recovery +2.4% → trend_continuing +3.1% → **trend_strong +4.2%(Sharpe 0.49)**;**唯一负 regime 是 neutral(−0.20%)**=唯一「空仓更好」的窄区。**短线是组合的核心资产,几乎全 regime 正期望**(印证 XH-011:不该按 regime 禁用)。趋势长持 regime profile 在验证 horizon 上**只有 3 个 hold,测不了**。
+17. **短线的 regime-条件 SIZING 不过样本外(SHELVED)**(`scripts/research_regime_sizing.py`):按 regime 缩放敞口(prop/sharpe/binary,等均值敞口=择时非杠杆),walk-forward 双向。OOS Sharpe Δ 一个方向 +、另一个方向 −(+0.03/−0.05、+0.04/−0.06、0/+0.02),**没有一种在两个方向都改善**。regime→edge 关系样本内单调但**两个半段间不稳定、不可外推**。**还缺什么才能定论**:更稳/可迁移的 regime 特征,或跨真实熊市的数据。
+18. **两 book 不相关(ρ≈0,好!)但趋势 Sharpe 太低→汇合的风险调整增益≈0(SHELVED)**(`scripts/research_book_blend.py`):短线/趋势日收益相关系数 **ρ≈0 且两半段稳定**(−0.02/−0.11/+0.05)——分散化**真实可得**。但等风险 50/50 blend Sharpe +0.55 **< 短线单独 +0.68**,因趋势单独 Sharpe 仅 ~0.1;即便**最优风险权重** blend ≈ √(0.68²+0.1²) ≈ **0.69,只比短线单独高 +0.01**(R∈{20,40,60,120} 全一致)。**结论:分散化可得但趋势太弱,blend 现在不值当;要让汇合在风险调整上有意义,必须先把趋势 Sharpe 抬上去**(更好选股/大票中军/regime择时)——而这需要前向/大票数据,本 cache 给不了。
+19. **Loop 阶段性结论(诚实的墙)**:可复现的最大风险调整资产 = **短线 book(Sharpe 0.68,全天候)**;趋势 = 参与/beta 对冲(捕捉踏空的 beta),非 Sharpe 改善器。**穿越牛熊无法验证(样本无真实熊市)、趋势 regime/选股无法验证(慢 book→独立周期太少)、regime sizing 不可外推**。下一个真 edge 全部卡在**缺数据**(熊市样本、更多独立趋势周期、前向大票中军参与数据)→ 按「学不动了就停」停在 cache,等数据累积。**汇合 allocator 的实证底座 = #16-18:短线常开(全天候)、neutral 微缩、趋势作小卫星(参与非 Sharpe)。**
+
 ## 3. 怎么保证「一直在 + 适时被吸收」
 
 - **持久**：全部 checked-in 文件（非某个 agent 的私有记忆）。`CLAUDE.md` 与 `.codex/skills/xiaocao-trading/SKILL.md` 都指向本页 → 每个新上下文必然发现。
