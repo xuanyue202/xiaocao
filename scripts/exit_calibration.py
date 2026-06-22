@@ -52,12 +52,14 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "src"))
 
 from xiaocao.api.cache import iter_cached_responses  # noqa: E402
+from xiaocao.research import calibration_distill as cd  # noqa: E402
 
 DB = ROOT / "output" / ".cache" / "xiaocao.db"
 LIVE = ROOT / "output" / "live"
 ALERTS = LIVE / "alerts.jsonl"
 CALLS = LIVE / "exit_calls.jsonl"
 SCORED = LIVE / "exit_calibration.jsonl"
+CANDIDATES = LIVE / "calibration_candidates.jsonl"  # distill bridge -> human gate
 
 # A single daily return beyond this is impossible for a real A-share trading day
 # (BJSE caps at ±30%); a larger value is a split/rights artifact in bfq data or a
@@ -391,6 +393,34 @@ def score(horizon, verbose_skips=False):
     summarize(all_scored)
 
 
+def distill(horizon, min_n=8):
+    """The distill bridge: stage a falsifiable CANDIDATE for any exit rule that scores
+    <45% over n>=min_n. Runtime-staged for the human gate — it never edits the spine or
+    the tracked candidate backlog. With thin data nothing fires (safe, no spam)."""
+    all_scored = ([json.loads(l) for l in SCORED.read_text(encoding="utf-8").splitlines() if l.strip()]
+                  if SCORED.exists() else [])
+    flags = cd.flagged(all_scored, key=lambda s: (s["action"], s.get("rule") or "(unlabeled)"), min_n=min_n)
+    cands = []
+    for f in flags:
+        action, rule = f["key"]
+        direction = ("tends to CUT BOUNCES (we sold, then the stock rose)" if action == "sell"
+                     else "tends to HOLD LOSERS (we held, then the stock fell)")
+        cands.append({
+            "cand_key": f"exit:{action}:{rule}",
+            "sensor": "exit_calibration",
+            "claim": f"Exit rule '{rule}' ({action}) calibrates {f['rate']*100:.0f}% over H={horizon}d "
+                     f"forward (n={f['n']}); hypothesis: it {direction}.",
+            "n": f["n"], "rate": f["rate"], "horizon": horizon,
+            "next": "promote to reference/experience/xiaocao_hypotheses.jsonl, then validate via "
+                    "research_exit_priors.py + the §10 human gate",
+            "authority": 0,
+        })
+    n = cd.stage(CANDIDATES, cands)
+    print(f"distill: {len(flags)} flagged exit rule(s); +{n} new candidate(s) staged to "
+          f"{CANDIDATES.name} (min_n={min_n}, threshold<45%). Candidates have ZERO spine "
+          f"authority until they clear research_exit_priors + §10.")
+
+
 def report(horizon):
     all_scored = ([json.loads(l) for l in SCORED.read_text(encoding="utf-8").splitlines() if l.strip()]
                   if SCORED.exists() else [])
@@ -403,6 +433,8 @@ def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--ingest", action="store_true", help="record new exit decisions from alerts.jsonl")
     ap.add_argument("--score", action="store_true", help="score recorded decisions whose window closed")
+    ap.add_argument("--distill", action="store_true",
+                    help="stage a candidate hypothesis for any rule <45% over n>=8 (human gate)")
     ap.add_argument("--report", action="store_true", help="print the current calibration summary")
     ap.add_argument("--horizon", type=int, default=5, help="forward trading days (default 5)")
     ap.add_argument("--verbose-skips", action="store_true")
@@ -412,9 +444,11 @@ def main():
         ingest()
     if a.score:
         score(a.horizon, a.verbose_skips)
+    if a.distill:
+        distill(a.horizon)
     if a.report:
         report(a.horizon)
-    if not (a.ingest or a.score or a.report):
+    if not (a.ingest or a.score or a.distill or a.report):
         ap.print_help()
 
 

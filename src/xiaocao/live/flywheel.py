@@ -24,6 +24,7 @@ it only inspects wiring and accumulated artifacts. See docs/FLYWHEEL.md.
 """
 from __future__ import annotations
 
+import json
 import re
 from datetime import date
 from pathlib import Path
@@ -59,6 +60,25 @@ def _parquet_rows(path: Path) -> int | None:
         return len(pd.read_parquet(path))
     except Exception:
         return None  # pandas missing or unreadable — unknown, not zero
+
+
+def _max_jsonl_date(path: Path, key: str) -> str | None:
+    """Freshest value of `key` across a jsonl file (skipping `#` comment + blank lines).
+    Used for calibration-loop liveness."""
+    if not path.exists():
+        return None
+    dates = []
+    for line in path.read_text(encoding="utf-8").splitlines():
+        s = line.strip()
+        if not s or s.startswith("#"):
+            continue
+        try:
+            v = json.loads(s).get(key)
+        except json.JSONDecodeError:
+            continue
+        if v:
+            dates.append(str(v))
+    return max(dates) if dates else None
 
 
 def _automation_steps(auto_daily: Path) -> list[str]:
@@ -133,6 +153,27 @@ def check_flywheel(
     capability["status"] = (
         "wired" if (capability["optimize_step_wired"] and capability["guards_importable"]) else "broken"
     )
+
+    # --- calibration loops (judgment-layer learning, part of ②) ------------- #
+    # The posture + exit calibration sensors score deterministic decisions against the
+    # realized forward outcome and stage falsifiable candidates for the human gate. They
+    # used to be sidecars the self-check was blind to; now they are a MONITORED leg, so a
+    # silent break (unwired step / stalled scorer) surfaces as a WARNING. They are
+    # sensor-only — never a critical gate (a broken sensor must not halt the capital loop).
+    auto_daily = root / "scripts" / "auto_daily.sh"
+    calibration = {
+        "posture_score_wired": _source_mentions(auto_daily, "posture_calibration.py"),
+        "exit_score_wired": _source_mentions(auto_daily, "exit_calibration.py"),
+        "distill_wired": _source_mentions(auto_daily, "--distill"),
+        "posture_recorded": _count_lines(live / "posture_calls.jsonl"),
+        "posture_scored": _count_lines(live / "posture_calibration.jsonl"),
+        "posture_last_recorded": _max_jsonl_date(live / "posture_calls.jsonl", "date"),
+        "exit_recorded": _count_lines(live / "exit_calls.jsonl"),
+        "exit_scored": _count_lines(live / "exit_calibration.jsonl"),
+        "candidates_staged": _count_lines(live / "calibration_candidates.jsonl"),
+    }
+    calibration["wired"] = calibration["posture_score_wired"] and calibration["exit_score_wired"]
+    capability["calibration"] = calibration
 
     # --- ③ strategy flywheel: PASS -> param change / retrain (ACTUATOR) ----- #
     # The actuator leg is intentionally a human gate today. It is "open" (idle by
@@ -211,6 +252,23 @@ def _warnings(capital: dict[str, Any], capability: dict[str, Any], strategy: dic
             gap = (date.today() - date.fromisoformat(lj)).days
             if gap > 5:
                 w.append(f"LIVENESS: newest decision-journal entry is {lj} ({gap}d old) — the loop may have stalled")
+        except (TypeError, ValueError):
+            pass
+    # CALIBRATION (judgment-layer learning) — WARN only, never gates the capital loop.
+    cal = capability.get("calibration", {})
+    if not cal.get("wired", True):
+        w.append("CALIBRATION: not wired — auto_daily.sh eod missing posture/exit_calibration "
+                 "--score (the judgment-calibration loop won't compound)")
+    elif not cal.get("distill_wired", True):
+        w.append("CALIBRATION: scoring wired but --distill is not — flagged rules won't reach the "
+                 "candidate backlog / human gate")
+    pl = cal.get("posture_last_recorded")
+    if pl:  # posture records every trading day, so staleness => the scorer stalled
+        try:
+            gap = (date.today() - date.fromisoformat(pl)).days
+            if gap > 7:
+                w.append(f"CALIBRATION LIVENESS: posture last recorded {pl} ({gap}d old) — the "
+                         f"judgment-calibration loop may have stalled")
         except (TypeError, ValueError):
             pass
     return w

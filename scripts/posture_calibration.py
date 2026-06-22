@@ -37,11 +37,13 @@ sys.path.insert(0, str(ROOT / "src"))
 
 from xiaocao.api.cache import iter_cached_responses  # noqa: E402
 from xiaocao.research import data_guard as dg  # noqa: E402
+from xiaocao.research import calibration_distill as cd  # noqa: E402
 
 DB = ROOT / "output" / ".cache" / "xiaocao.db"
 LIVE = ROOT / "output" / "live"
 CALLS = LIVE / "posture_calls.jsonl"
 SCORED = LIVE / "posture_calibration.jsonl"
+CANDIDATES = LIVE / "calibration_candidates.jsonl"  # distill bridge -> human gate
 
 ACTION = {  # posture/regime label -> directional action
     "bear": "defensive", "divergence": "defensive", "主跌": "defensive", "空仓": "defensive",
@@ -182,10 +184,43 @@ def decompose_defensive(horizon, W):
           "judgment is 'don't sit out a dip — wait for severe/sustained collapse'. (prior, not param)")
 
 
+def distill(horizon, min_n=10):
+    """The distill bridge: stage a falsifiable CANDIDATE for any posture ACTION that
+    scores <45% over n>=min_n. Runtime-staged for the human gate — it never edits the
+    spine. The posture layer's 'research' is a transcript re-distillation + a refined
+    prior in XIAOCAO_PLAYBOOK.md (a prior, never an auto param)."""
+    all_scored = ([json.loads(l) for l in SCORED.read_text(encoding="utf-8").splitlines() if l.strip()]
+                  if SCORED.exists() else [])
+    flags = cd.flagged(all_scored, key=lambda s: s.get("action"), min_n=min_n)
+    cands = []
+    for f in flags:
+        action = f["key"]
+        if action not in ("aggressive", "defensive"):
+            continue
+        meaning = ("being aggressive (participating) when the market then fell"
+                   if action == "aggressive" else
+                   "sitting out (defensive) when the market then rose — 踏空 the bounce")
+        cands.append({
+            "cand_key": f"posture:{action}",
+            "sensor": "posture_calibration",
+            "claim": f"Posture action '{action}' calibrates {f['rate']*100:.0f}% over H={horizon}d "
+                     f"forward (n={f['n']}); it is wrong by {meaning}.",
+            "n": f["n"], "rate": f["rate"], "horizon": horizon,
+            "next": "decompose (--decompose) by severity/duration, then refine the prior in "
+                    "docs/XIAOCAO_PLAYBOOK.md / re-distill the latest transcript (prior, not a param)",
+            "authority": 0,
+        })
+    n = cd.stage(CANDIDATES, cands)
+    print(f"distill: {len(cands)} flagged posture action(s); +{n} new candidate(s) staged to "
+          f"{CANDIDATES.name} (min_n={min_n}, threshold<45%). Priors only — ZERO spine authority.")
+
+
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--backfill-proxy", action="store_true")
     ap.add_argument("--decompose", action="store_true", help="decompose the defensive miscalibration")
+    ap.add_argument("--distill", action="store_true",
+                    help="stage a candidate prior for any action <45% over n>=10 (human gate)")
     ap.add_argument("--record", nargs=3, metavar=("DATE", "POSTURE", "ACTION"))
     ap.add_argument("--record-current", action="store_true",
                     help="append today's standing posture from posture_current.json (morning automation)")
@@ -199,6 +234,9 @@ def main():
         return
     if a.decompose:
         decompose_defensive(a.horizon, a.window)
+        return
+    if a.distill:
+        distill(a.horizon)
         return
     if a.record_current:
         import datetime

@@ -75,6 +75,13 @@ def main() -> None:
         print(f"     ledger verdicts   : {capa['ledger_entries']}")
         print(f"     optimize wired    : {capa['optimize_step_wired']}")
         print(f"     already_refuted   : {capa['already_refuted_wired']} (runner consults the ledger)")
+        cal = capa.get("calibration", {})
+        cal_dot = "🟢" if cal.get("wired") else "🔴"
+        print(f"{cal_dot} ②b calibration loops (判断层校准 — sensor-only, → human gate):")
+        print(f"     posture / exit    : scored {cal.get('posture_scored', 0)} / {cal.get('exit_scored', 0)}"
+              f"  (recorded {cal.get('posture_recorded', 0)} / {cal.get('exit_recorded', 0)})")
+        print(f"     distill wired     : {cal.get('distill_wired', False)}  | "
+              f"candidates staged : {cal.get('candidates_staged', 0)} (promote → research → §10)")
         print(f"{strat_dot} ③ strategy flywheel (本事变强) — {strat['status']}:")
         print(f"     actuator wired    : {strat['actuator_wired']}  (PASS→改参/重训)")
         print(f"     PASS pending      : {strat['pending_pass_verdicts'] or 'none'}")

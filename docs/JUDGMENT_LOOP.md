@@ -92,6 +92,31 @@ human-gate evidence — never an auto-tune. Sensor-only: zero authority over the
 Coverage starts thin (the daily cache lags the live June decisions; many low-suck
 small-caps aren't cached) and accumulates forward, exactly like the posture scorer.
 
+## In the flywheel, not beside it (monitored leg + distill bridge)
+
+Both calibration loops (posture + exit) used to be sidecars on the eod cadence that the
+flywheel self-check was blind to — they ran, but nothing would notice if one silently
+broke, and a flagged result reached the research layer only as prose in the skill. Two
+wirings make them a real, evolvable leg:
+
+- **Monitored leg (A).** `xiaocao.live.flywheel.check_flywheel` reports a **②b
+  calibration** block (wiring of the eod `--score`/`--distill` steps, posture/exit
+  recorded+scored counts, candidates staged) and `flywheel_selfcheck.py` prints it. A
+  missing step or a stalled posture scorer (posture records every trading day, so
+  staleness = stall) raises a `CALIBRATION` **warning** — never a critical gate, because
+  a sensor-only loop must not halt the capital loop.
+- **Distill bridge (B).** `xiaocao.research.calibration_distill` + each sensor's
+  `--distill` stage a falsifiable CANDIDATE for any rule/posture that scores **<45% over
+  the min-n floor** into `output/live/calibration_candidates.jsonl` (runtime). It does
+  NOT write the tracked backlog (`xiaocao_hypotheses.jsonl` stays human-curated with
+  stable XH ids) and does NOT touch the spine. A staged candidate is human-gate work:
+  promote → `research_exit_priors.py` / `research_run.py` → §10. Every hop is explicit;
+  only the two gates that MUST be human (promote, apply) stay human. With thin data
+  nothing fires (no spam) — the bridge proves out as `n` accrues.
+
+So the loop is honest end to end: it compounds on governed data, it reports its own
+health, and its output is staged work for the gate — never an automatic param edit.
+
 ## Why this is the right loop (not more alpha hunting)
 
 - It compounds the layer that the data proved holds the edge (coarse judgment +
