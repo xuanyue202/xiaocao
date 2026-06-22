@@ -16,7 +16,46 @@ from xiaocao.api.cache import SQLiteCache
 
 SNAP = Path("output/live/signal_snapshots.jsonl")
 TRAIN = Path("output/live/training_rows.parquet")
+RECONSTRUCTED_DAILY = Path("output/live/daily_reconstructed.jsonl")
 DEFAULT_FEE_RATE = 0.0001
+
+
+def _normal_date(value) -> str | None:
+    s = str(value or "").strip()
+    if len(s) == 8 and s.isdigit():
+        return f"{s[:4]}-{s[4:6]}-{s[6:]}"
+    if len(s) >= 10:
+        return s[:10]
+    return None
+
+
+def _load_reconstructed_daily(path: Path = RECONSTRUCTED_DAILY) -> dict[str, dict[str, dict]]:
+    out: dict[str, dict[str, dict]] = defaultdict(dict)
+    if not path.exists():
+        return out
+    for line in path.read_text(encoding="utf-8").splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            row = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        code = row.get("code")
+        d = _normal_date(row.get("date"))
+        if not code or not d:
+            continue
+        out[str(code)][d] = {
+            "tradeDate": d,
+            "open": row.get("open"),
+            "high": row.get("high"),
+            "low": row.get("low"),
+            "close": row.get("close"),
+            "volume": row.get("vol", row.get("volume")),
+            "amount": row.get("amt", row.get("amount")),
+            "source": row.get("source", "minute_reconstructed"),
+        }
+    return out
 
 
 def main():
@@ -38,6 +77,7 @@ def main():
 
     s = load_settings(None)
     cli = XiaocaoClient(base_url=s.base_url, timeout=s.timeout, retries=s.retries, cache=SQLiteCache(a.cache))
+    reconstructed = _load_reconstructed_daily()
 
     # realized next-close return per (date, code): open[D] -> close[D+1]
     rets = {}
@@ -48,7 +88,15 @@ def main():
             continue
         if not isinstance(kl, list):
             continue
-        ser = {r["tradeDate"]: r for r in kl if isinstance(r, dict) and r.get("tradeDate")}
+        ser = {
+            _normal_date(r.get("tradeDate")): r
+            for r in kl
+            if isinstance(r, dict) and _normal_date(r.get("tradeDate"))
+        }
+        # date_kline can lag; EOD reconstructs recent bars from minute_line.
+        # Merge them here so current live labels are not blocked by the vendor
+        # daily feed while still using date_kline for deeper history.
+        ser.update(reconstructed.get(str(code), {}))
         dts = sorted(ser)
         for d in df.loc[df.code == code, "date"].unique():
             if d not in dts:

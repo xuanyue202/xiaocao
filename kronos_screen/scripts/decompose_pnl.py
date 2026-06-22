@@ -25,6 +25,7 @@ POS = Path("output/live/positions.jsonl")
 SNAP = Path("output/live/signal_snapshots.jsonl")
 ACCOUNT = Path("output/live/paper_account.json")
 OUT_CSV = Path("output/live/pnl_decompose.csv")
+RECONSTRUCTED_DAILY = Path("output/live/daily_reconstructed.jsonl")
 
 
 def _f(v):
@@ -49,23 +50,65 @@ def _load_jsonl(path: Path) -> list[dict]:
     return out
 
 
-def _kline_map(cli, code: str) -> dict[str, dict]:
+def _normal_date(value) -> str | None:
+    s = str(value or "").strip()
+    if len(s) == 8 and s.isdigit():
+        return f"{s[:4]}-{s[4:6]}-{s[6:]}"
+    if len(s) >= 10:
+        return s[:10]
+    return None
+
+
+def _load_reconstructed_daily(path: Path = RECONSTRUCTED_DAILY) -> dict[str, dict[str, dict]]:
+    out: dict[str, dict[str, dict]] = {}
+    for row in _load_jsonl(path):
+        code = row.get("code")
+        d = _normal_date(row.get("date"))
+        if not code or not d:
+            continue
+        out.setdefault(str(code), {})[d] = {
+            "tradeDate": d,
+            "open": row.get("open"),
+            "high": row.get("high"),
+            "low": row.get("low"),
+            "close": row.get("close"),
+            "source": row.get("source", "minute_reconstructed"),
+        }
+    return out
+
+
+def _kline_map(cli, code: str, reconstructed: dict[str, dict[str, dict]]) -> dict[str, dict]:
     try:
         kl = cli.date_kline(code, count=400, freq="D", adj="bfq")
     except Exception:
-        return {}
+        kl = []
     if not isinstance(kl, list):
-        return {}
-    return {r["tradeDate"]: r for r in kl if isinstance(r, dict) and r.get("tradeDate")}
+        kl = []
+    ser = {
+        _normal_date(r.get("tradeDate")): r
+        for r in kl
+        if isinstance(r, dict) and _normal_date(r.get("tradeDate"))
+    }
+    ser.update(reconstructed.get(str(code), {}))
+    return ser
 
 
-def decompose(positions: list[dict], cli, fee_rate_fallback: float = 0.0001) -> tuple[list[dict], list[dict]]:
+def decompose(
+    positions: list[dict],
+    cli,
+    *,
+    book: str = "B",
+    fee_rate_fallback: float = 0.0001,
+) -> tuple[list[dict], list[dict]]:
     """Returns (rows, pending). pending = closed trades whose close[D+1] bar is
     not final yet (or kline gap) — reported, never silently dropped."""
     rows, pending = [], []
     kl_cache: dict[str, dict[str, dict]] = {}
+    reconstructed = _load_reconstructed_daily()
     for p in positions:
         if p.get("status") != "closed":
+            continue
+        if book and p.get("book", "B") != book:
             continue
         code = p.get("code")
         d0, d1x = p.get("entry_date"), p.get("exit_date")
@@ -75,7 +118,7 @@ def decompose(positions: list[dict], cli, fee_rate_fallback: float = 0.0001) -> 
             pending.append(p)
             continue
         if code not in kl_cache:
-            kl_cache[code] = _kline_map(cli, code)
+            kl_cache[code] = _kline_map(cli, code, reconstructed)
         ser = kl_cache[code]
         dts = sorted(ser)
         if d0 not in dts:
@@ -117,7 +160,7 @@ def decompose(positions: list[dict], cli, fee_rate_fallback: float = 0.0001) -> 
     return rows, pending
 
 
-def _summarize(rows: list[dict], pending: list[dict]) -> None:
+def _summarize(rows: list[dict], pending: list[dict], *, book: str) -> None:
     n = len(rows)
     if not n:
         print("no closed trades to decompose")
@@ -128,7 +171,7 @@ def _summarize(rows: list[dict], pending: list[dict]) -> None:
         return s(key) / n
     pnl = s("realized_pnl")
     fees = s("fees")
-    print(f"closed trades decomposed: {n}   win: {sum(1 for r in rows if (r['realized_pnl'] or 0) > 0)}/{n}")
+    print(f"book {book}: closed trades decomposed: {n}   win: {sum(1 for r in rows if (r['realized_pnl'] or 0) > 0)}/{n}")
     if pending:
         pend_pnl = sum(_f(p.get("realized_pnl")) or 0 for p in pending)
         names = ", ".join(f"{p.get('name')}({p.get('exit_date')})" for p in pending)
@@ -182,13 +225,15 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--cache", default="output/.cache/xiaocao.db")
     ap.add_argument("--csv", default=str(OUT_CSV))
+    ap.add_argument("--book", default="B", choices=["A", "B", "all"], help="position book to decompose")
     a = ap.parse_args()
     positions = _load_jsonl(POS)
     s = load_settings(None)
     cli = XiaocaoClient(base_url=s.base_url, timeout=s.timeout, retries=s.retries,
                         cache=SQLiteCache(a.cache))
-    rows, pending = decompose(positions, cli)
-    _summarize(rows, pending)
+    book = "" if a.book == "all" else a.book
+    rows, pending = decompose(positions, cli, book=book)
+    _summarize(rows, pending, book=a.book)
     _auction_buckets(rows)
     if rows:
         import csv
