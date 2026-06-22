@@ -96,7 +96,7 @@ def test_ingest_maps_dedups_and_assigns_ids(tmp_path, monkeypatch):
     backlog.write_text("# comment header\n" + json.dumps({"id": "XH-005", "claim": "existing"}) + "\n", encoding="utf-8")
     monkeypatch.setattr(dt, "BACKLOG", backlog)
 
-    assert dt.ingest(distilled_dir=ddir) == 0
+    assert dt.ingest(ddir) == 0          # a directory == bulk backfill
     entries = [json.loads(l) for l in backlog.read_text().splitlines() if l.strip() and not l.startswith("#")]
     # existing + claim A + claim B (the duplicate A is dropped)
     assert [e["id"] for e in entries] == ["XH-005", "XH-006", "XH-007"]
@@ -117,8 +117,28 @@ def test_ingest_is_idempotent(tmp_path, monkeypatch):
     backlog = tmp_path / "backlog.jsonl"
     backlog.write_text("", encoding="utf-8")
     monkeypatch.setattr(dt, "BACKLOG", backlog)
-    dt.ingest(distilled_dir=ddir)
+    dt.ingest(ddir)
     n1 = len([l for l in backlog.read_text().splitlines() if l.strip()])
-    dt.ingest(distilled_dir=ddir)            # second run adds nothing
+    dt.ingest(ddir)                          # second run adds nothing
     n2 = len([l for l in backlog.read_text().splitlines() if l.strip()])
     assert n1 == 1 and n2 == 1
+
+
+def test_ingest_single_file_only_adds_that_files_hypotheses(tmp_path, monkeypatch):
+    # the per-transcript default: --ingest FILE must add ONLY that file's hypotheses,
+    # never the whole distilled/ history (the bug the diff-gate caught).
+    ddir = tmp_path / "distilled"
+    ddir.mkdir()
+    (ddir / "2026-06-10_morning.json").write_text(json.dumps(_valid_distilled()), encoding="utf-8")
+    today = _valid_distilled(date="2026-06-22")
+    today["hypotheses"] = [{"claim": "today only", "implied_rule": "r", "expected_effect": "e",
+                            "falsifiable_test": "t"}]
+    today_f = ddir / "2026-06-22_morning.json"
+    today_f.write_text(json.dumps(today), encoding="utf-8")
+    backlog = tmp_path / "backlog.jsonl"
+    backlog.write_text("", encoding="utf-8")
+    monkeypatch.setattr(dt, "BACKLOG", backlog)
+
+    dt.ingest(today_f)                       # one file -> one hypothesis, not both files
+    claims = [json.loads(l)["claim"] for l in backlog.read_text().splitlines() if l.strip()]
+    assert claims == ["today only"]

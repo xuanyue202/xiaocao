@@ -23,7 +23,7 @@ the spine. A claim earns authority only by passing `research_exit_priors.py` /
 PYTHONPATH=src python3 scripts/distill_transcript.py --feedback     # 1. what reality falsified
 # 2. read the transcript + write reference/experience/distilled/<YYYY-MM-DD>_<morning|review>.json
 PYTHONPATH=src python3 scripts/distill_transcript.py --validate <that file>   # 3. schema fail-closed
-PYTHONPATH=src python3 scripts/distill_transcript.py --ingest        # 4. hypotheses -> candidate backlog
+PYTHONPATH=src python3 scripts/distill_transcript.py --ingest <that file>     # 4. THIS file's hypotheses -> backlog
 # 5. (judgment) refresh reference/experience/posture_current.json + append a REGIME_TIMELINE row;
 #    add a playbook [校准] line ONLY if step 1 showed a prior that reality has now contradicted/confirmed.
 PYTHONPATH=src python3 scripts/distill_transcript.py --validate reference/experience/posture_current.json
@@ -119,10 +119,12 @@ fails) — but never skip the `exit_lessons` / prior-check that a review exists 
 
 ## What the harness does (and does not)
 
-- `--ingest` maps each new `hypotheses` entry into `reference/experience/xiaocao_hypotheses.jsonl`
-  (the tracked candidate backlog) with a stable `XH-NNN` id and `authority=0` status,
-  deduped by claim. **Review the git diff** before committing — that diff IS your gate that
-  the extracted candidates are sane. It does NOT promote anything to a param.
+- `--ingest <file>` maps the new `hypotheses` from THAT one distilled file into
+  `reference/experience/xiaocao_hypotheses.jsonl` (the tracked candidate backlog) with a stable
+  `XH-NNN` id and `authority=0` status, deduped by claim. Pass the file you just wrote — NOT the
+  whole history (`--ingest-all` exists for a deliberate one-time backfill and will flood the
+  curated backlog; don't use it per-transcript). **Review the git diff** before committing — that
+  diff IS your gate that the extracted candidates are sane. It does NOT promote anything to a param.
 - It never edits `exit_policy.py`, `params.py`, accounts, or the verdict ledger.
 
 ## Downstream (already wired — you are feeding these)

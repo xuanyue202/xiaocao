@@ -182,12 +182,17 @@ def _next_id(existing: list[dict]) -> int:
     return (max(nums) + 1) if nums else 1
 
 
-def ingest(distilled_dir: Path = DISTILLED) -> int:
+def ingest(source: Path = DISTILLED) -> int:
+    """Feed new candidate hypotheses into the backlog from `source`: a single distilled
+    JSON file (the per-transcript default the skill uses), or a directory (bulk backfill,
+    only via the explicit --ingest-all — it can dump the whole history into the curated
+    backlog). Deduped by claim against what is already there."""
+    files = sorted(source.glob("*.json")) if source.is_dir() else [source]
     existing = _read_jsonl(BACKLOG)
     seen_claims = {_norm(e.get("claim")) for e in existing}
     nxt = _next_id(existing)
     new_entries = []
-    for jf in sorted(distilled_dir.glob("*.json")):
+    for jf in files:
         try:
             d = json.loads(jf.read_text(encoding="utf-8"))
         except json.JSONDecodeError:
@@ -227,7 +232,9 @@ def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--feedback", action="store_true", help="surface what reality falsified (run before distilling)")
     ap.add_argument("--validate", metavar="FILE", help="schema-check a distilled JSON or posture_current.json")
-    ap.add_argument("--ingest", action="store_true", help="feed distilled hypotheses into the candidate backlog")
+    ap.add_argument("--ingest", metavar="FILE", help="feed ONE distilled file's new hypotheses into the candidate backlog")
+    ap.add_argument("--ingest-all", action="store_true",
+                    help="bulk backfill: ingest ALL distilled files (explicit — can flood the curated backlog)")
     a = ap.parse_args()
     rc = 0
     if a.feedback:
@@ -235,8 +242,10 @@ def main() -> int:
     if a.validate:
         rc |= validate(Path(a.validate))
     if a.ingest:
-        rc |= ingest()
-    if not (a.feedback or a.validate or a.ingest):
+        rc |= ingest(Path(a.ingest))
+    if a.ingest_all:
+        rc |= ingest(DISTILLED)
+    if not (a.feedback or a.validate or a.ingest or a.ingest_all):
         ap.print_help()
     return rc
 
