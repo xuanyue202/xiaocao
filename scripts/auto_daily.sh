@@ -58,6 +58,11 @@ case "$STEP" in
   eod)
     log "eod: tick-flow capture"
     "$PY" kronos_screen/scripts/eod_capture.py >>"$LOG" 2>&1
+    # date_kline (daily OHLCV) feed lags weeks; reconstruct today's daily bar from
+    # minute (current) for held + signalled codes so the learning substrate stays
+    # current. Rate-limited (API throttles on bursts). Non-fatal.
+    log "refresh daily bars from minute (bypass lagging date_kline feed)"
+    "$PY" scripts/refresh_daily_cache.py >>"$LOG" 2>&1 || true
     # data health GATES the capability (learning) half: a critical finding (e.g.
     # duplicate snapshots) must NOT be fed into training_rows/the ledger, or the
     # flywheel learns from a 真的谎言. The capital half (monitor/settle/digest)
