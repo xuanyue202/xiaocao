@@ -163,6 +163,14 @@ def validate(path: Path) -> int:
             print(f"    - {e}")
         return 1
     print(f"✓ {path.name} ({label}) valid")
+    if label == "distilled":
+        name = path.name.lower()
+        if "morning" in name:
+            print("  · 早盘 emphasis: go deep on decision_trace (real-time 观察→推断→动作) + "
+                  "regime_call.what_would_falsify (today's forward bet the calibration loop will score)")
+        elif "review" in name:
+            print("  · 复盘 emphasis: go deep on exit_lessons/method_principles + the prior-check "
+                  "(现实确认/证伪了哪条 --feedback 先验) — the most direct nutrient for the loop")
     return 0
 
 

@@ -53,6 +53,37 @@ e.g. `盘前直播` / `盘后复盘/大师班专场`).
 - `hypotheses[i]` — dict with `claim`, `implied_rule`, `falsifiable_test` (required) and
   `expected_effect` (optional). Optionally `category`.
 
+## 早盘 vs 复盘:same schema, different emphasis (go DEEP on different fields)
+
+Both kinds keep the full 12-key schema — the difference is what you extract richly. (The
+filename's `morning|review` tells you which; the data backs this split.)
+
+**早盘 (盘前直播) — the forward PLAN: what to do today, before the open.** Go deep on:
+- `decision_trace` (the richest field in a morning — and the highest-value one): the
+  real-time pre-open reasoning, 观察 → 推断 → 动作 and **why**. This is what makes a
+  morning worth keeping; a morning that only records conclusions has thrown away its value.
+- `regime_call.what_would_falsify` + `horizon`: today's forward COMMITMENT — the falsifier
+  is mandatory (a call with no falsifier is narrative, not a prior).
+- `posture` / `directions` / `timing_notes`: today's stance, who leads vs lags, the
+  intraday-rhythm guess (e.g. "10点高点 → 11:15回调 → 午后反弹").
+- The morning's `hypotheses` are forward BETS (if-X-then-Y). These are the PREDICTIONS the
+  calibration loops later score — so state them falsifiably.
+
+**复盘 (盘后/大师班) — the backward VERDICT + METHOD: what it taught, and did it play out.**
+Go deep on:
+- `exit_lessons` / `method_principles` / `judgment_heuristics`: 出场纪律复盘 + 系统教学/方法论
+  (a review carries more teaching, and more `stocks` as worked examples — capture them).
+- **Loop-critical — the review is where 小草 grades his OWN calls.** Extract "现实确认/证伪了
+  哪条先验" here: did today's price action confirm or break the morning posture? which
+  `[校准]`/flagged prior from `--feedback` did the market vindicate or punish? Put it in
+  `judgment_heuristics`/`exit_lessons`. This is the human-judgment companion to the
+  calibration sensors' mechanical scoring — it is the most direct nutrient for the loop.
+- The review's `hypotheses` tend to be lessons GENERALIZED from experience (a distilled
+  method), vs the morning's forward bets.
+
+If a session is a short/临时加播 review, a thinner `decision_trace` is fine (it warns, not
+fails) — but never skip the `exit_lessons` / prior-check that a review exists to capture.
+
 ## Distillation discipline (the honesty bar)
 
 - **`decision_trace` is the highest-value field.** Capture the *reconstructable real-time
