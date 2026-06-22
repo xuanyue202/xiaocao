@@ -20,6 +20,8 @@ the spine. A claim earns authority only by passing `research_exit_priors.py` /
 ## The loop (run in order)
 
 ```
+# 0. save the RAW transcript to reference/experience/transcripts/<YYYY-MM>/ (the 原料, kept alongside
+#    distilled so source and product are paired/auditable). Then:
 PYTHONPATH=src python3 scripts/distill_transcript.py --feedback     # 1. what reality falsified
 # 2. read the transcript + write reference/experience/distilled/<YYYY-MM-DD>_<morning|review>.json
 PYTHONPATH=src python3 scripts/distill_transcript.py --validate <that file>   # 3. schema fail-closed

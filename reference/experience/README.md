@@ -15,7 +15,7 @@
 
 | 文件 | 是什么 | 谁消费 / 何时 | 性质 |
 |---|---|---|---|
-| `June/*.md` | 原始转录（盘前+复盘，6/1–6/21，语音转文字有错别字） | 蒸馏输入 | 原料 |
+| `transcripts/<YYYY-MM>/*.md` | 原始转录（盘前+复盘，按月统一归档；语音转文字有错别字） | 蒸馏输入；`xiaocao-distill` skill 写入 | 原料 |
 | `distilled/<date>_<kind>.json` ×23 | 逐篇结构化提取（posture/方向/个股/方法/出场课/**decision_trace 实时判断链**/假设，已纠错） | 综合输入；按需回查 | 底料（append-only） |
 | `docs/XIAOCAO_PLAYBOOK.md` | 道-法-术-纪律 + **第五节「实时盘面判断模型」**（盘前→竞价→9:31-9:35→盘中 的 if-then 表）。每条标 `[已编码]/[先验]/[待验]` | **agent 每日**：morning 看术/纪律framing，eod 用出场纪律做异常分诊 | 判断先验 |
 | `REGIME_TIMELINE.md` | 逐日 dated posture（regime/龙头/valid_until/证伪条件）+ 现行 posture + 对小草本人的回测提醒 | morning 读现行 posture 定调 | 判断先验（会过期） |

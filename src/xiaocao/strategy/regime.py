@@ -204,7 +204,7 @@ def _classify_proxy(positive_ratio: float, mean_pct: float) -> str:
 # Plus an optional `precondition(state) -> bool` for special cases (断板 modes
 # need yesterday's failed-涨停 to have rebounded — see state.duan_ban_recovery).
 #
-# Encoded values come from synthesis of reference/experience/0410..0419 +
+# Encoded values come from synthesis of reference/experience/transcripts/2026-04/0410..0419 +
 # standard short-term quant intuition. Each cell is auditable; disagree freely.
 
 @dataclass(frozen=True)
