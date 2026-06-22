@@ -66,6 +66,9 @@
 25. **赚钱效应=真实持久状态,但属判断层不是机械择时器**(`scripts/research_money_effect.py`;用户反框「熊市不做/赚钱效应高才做/别屎上雕花」):**赚钱效应(大票>+5% 占比)自相关 lag1 +0.46 ≫ 均值收益 +0.05**——它是反身/持久的真信号(用户对)。但**机械门(滞后、等均敞口、双向 walk-forward)仍不过样本外**(一方向 +0.05、另一方向 −;持久性 lag5 已衰到 +0.13,不足以择时参与)。=> **赚钱效应是实时判断(你看见就做),不是滞后机械计时器;机械化它正是「屎上雕花」。它归 道-层/agent-cortex posture(playbook 已在那:regime=道、主跌空仓=小草 2023 被收割的纪律),不进确定性脊柱。** 数据证实用户反框:粗判断(高效应才做、明确熊市不做)对,细机械择时错。
 26. **数据治理(`docs/DATA_QUALITY.md`)**:本 session 三次踩坑根因=「请求可达 range ≠ 数据有效 range」。审计后定:价格 date_kline 深(2019/2021+,可靠)、小草信号(index_v2/concept return/mode_history)浅(~2025+);两 range 不一致处全是坑。已写 governance doc + 回测前 checklist(验内容非覆盖/钉数据有效底/审收益口径/滞后每个特征/确认入缓存)。这是「数据治理不精细」的系统性修复。
 
+**2026-06-23 末 — 判断校准 Loop 已搭并执行一轮(`docs/JUDGMENT_LOOP.md`)。**
+27. **Loop 跑通并产出真实精炼**:①治理 preflight(`learning_preflight.py`+`data_guard.py`)对 mode_history substrate 实测 fail-closed(stale 26d)②校准基线(`posture_calibration.py --backfill-proxy` 2021-2026):**进攻 posture 61% 命中(对)、防守 42%(系统性错)**③蒸馏分解(`--decompose`,跨 H=5/10/20 稳健):**防守/空仓在连续坏 1-10 天 25-34% 命中(错——回调反弹),只有连续 >10 天才校准 67-83%(n=6)**。=> **精炼 playbook 防守先验** `[校准]`:**别对回调空仓(踏空反弹),空仓只留给「持续 >10 天」真主跌**(=小草 2023 被收割纪律的精确版)。这是判断层(agent-cortex)被校准 loop 量化精炼的首例,非脊柱参数;morning record / eod score 已接 auto_daily,forward 继续累积验证 n。**下一个 loop 取向已定:复利判断层(校准+蒸馏)on 治理过的数据,不再挖机械 alpha。**
+
 ## 3. 怎么保证「一直在 + 适时被吸收」
 
 - **持久**：全部 checked-in 文件（非某个 agent 的私有记忆）。`CLAUDE.md` 与 `.codex/skills/xiaocao-trading/SKILL.md` 都指向本页 → 每个新上下文必然发现。

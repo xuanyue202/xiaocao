@@ -139,9 +139,53 @@ def backfill_proxy(horizon, W):
           "that's why timing must be coarse JUDGMENT, not a mechanical param).")
 
 
+def decompose_defensive(horizon, W):
+    """The distillation step: WHEN is the defensive posture actually right?
+
+    The baseline flagged defensive (trailing breadth bad) as 42% — systematically
+    wrong. Decompose it by SEVERITY (how bad) and DURATION (how long it's been
+    bad), lookahead-safe, to find the coarse sub-condition (if any) where sitting
+    out genuinely pays. This refines the JUDGMENT prior — make it coarser/rarer —
+    not a mechanical param.
+    """
+    days, daily = market_panel()
+    series = [daily[d] for d in days]
+    sev_buckets = {"mild [-0.8,-0.3)": [], "moderate [-1.5,-0.8)": [], "severe (<-1.5)": []}
+    dur_buckets = {"1-3 d": [], "4-10 d": [], ">10 d": []}
+    run = 0
+    for i in range(W, len(days) - horizon):
+        m = _mean(dg.trailing(series, i, W))            # lookahead-safe
+        defensive = m < -0.3
+        run = run + 1 if defensive else 0
+        if not defensive:
+            continue
+        fwd = forward_return(days, daily, days[i], horizon)
+        right = score_call("defensive", fwd)
+        if right is None:
+            continue
+        sev = "severe (<-1.5)" if m < -1.5 else "moderate [-1.5,-0.8)" if m < -0.8 else "mild [-0.8,-0.3)"
+        dur = ">10 d" if run > 10 else "4-10 d" if run > 3 else "1-3 d"
+        sev_buckets[sev].append(right)
+        dur_buckets[dur].append(right)
+
+    def show(name, buckets):
+        print(f"\n  defensive hit-rate by {name} (right = market actually fell forward):")
+        for k, v in buckets.items():
+            if v:
+                hr = 100 * sum(v) / len(v)
+                flag = "✓ calibrated (sit out)" if hr >= 55 else "✗ still wrong (bounces)" if hr < 50 else ""
+                print(f"    {k:<22} {sum(v):>3}/{len(v):<4} = {hr:>3.0f}%   {flag}")
+    print(f"\ndecompose-defensive (H={horizon}, W={W}): when is sitting out actually right?")
+    show("SEVERITY", sev_buckets)
+    show("DURATION (consecutive defensive days)", dur_buckets)
+    print("\n  refinement: keep defensive ONLY where it calibrates ≥55%; elsewhere the coarse "
+          "judgment is 'don't sit out a dip — wait for severe/sustained collapse'. (prior, not param)")
+
+
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--backfill-proxy", action="store_true")
+    ap.add_argument("--decompose", action="store_true", help="decompose the defensive miscalibration")
     ap.add_argument("--record", nargs=3, metavar=("DATE", "POSTURE", "ACTION"))
     ap.add_argument("--record-current", action="store_true",
                     help="append today's standing posture from posture_current.json (morning automation)")
@@ -152,6 +196,9 @@ def main():
 
     if a.backfill_proxy:
         backfill_proxy(a.horizon, a.window)
+        return
+    if a.decompose:
+        decompose_defensive(a.horizon, a.window)
         return
     if a.record_current:
         import datetime
