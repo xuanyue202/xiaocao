@@ -47,6 +47,10 @@
 12. **上面 9-11 的 REJECTED 测的是「churn 的短线化趋势」，不是趋势长期主义**：那些用 **10-20 日反复重选**（恰好是 A 股**动量反转**区）+ **相对平均题材** + **短线 per-day 护栏**判。换成**低换手、长持有、绝对复利**口径（`scripts/research_trend_longhold.py`）结论**反转**：(a) **趋势确实赚钱**——hold top-3 趋势概念全年复利 **+22~57%**（最强单概念 算力芯片 **+80%**）；(b) **持有越长，alpha 越正**：rebalance≈季度（R=60/120d）时 vs 平均题材(beta) spread **+6~+20pp**，而 churn（R=20d）spread −4~+1pp ≈ 无/负；**所有长持配置都跑赢 beta，所有 churn 配置都不**；换手越低相对越好（=长期主义）。
 13. **方法学元结论**：**确定性脊柱的 per-day 配对 t 护栏是为短线 book 造的,是评趋势 book 的错误仪器**（趋势 book 持仓少、长持、该用复利收益/回撤/换手评，不是 per-day 显著性）。两套平行系统 → 两套评估。**系统 6 月踏空 +29.5% 的真 lever = 没有在跑一条平行的趋势 book（长持主线大票）**，不是调短线参数、也不是「会挑票」。（限度:1 段 ~1.4yr **牛市**样本,绝对收益大头是 beta、alpha +6~20pp 真但需更多 regime 验证;概念等权≠小草持有的主线中军大票。）→ 新候选 **XH-018**(趋势 book:低换手长持主线,独立评估轨)。
 
+**2026-06-22 深夜 — Book T Phase 1：把 #12 的 +6~20pp 放进严格仪器（`trend_guards`），部分回撤上面的乐观。**
+14. **XH-018 的「选股 alpha」过不了严格 OOS**：建了 `src/xiaocao/research/trend_guards.py`（**非重叠 hold 为单位**，测 复利/最大回撤/换手/walk-forward(train+test alpha 都正)/per-hold 配对 t/**survives-non-bull**，无法验证非牛市则 fail-closed）。`scripts/trend_optimize.py` 全配置 **REJECTED**：+6~20pp alpha **只在长 hold 出现**（R60: +10.5pp、mdd **0.8%**、walk-forward train+test 都正）——但**只有 3 个独立 hold**（过不了 enough_holds≥8，t=1.5 p=0.27 不显著）；R≤40 有足够 hold 时 alpha 归零/转负；**非牛市 regime 的 alpha 在每个能测的配置里都是负的**。
+15. **修正 #12 的「alpha」措辞**：之前 `research_trend_longhold.py` 的 +6~20pp 是**单路径、跨配置比较**的口径；非重叠 walk-forward + 非牛 + 显著性下**不成立**——它是**牛市 + 独立 hold 太少**的产物。**站得住的只有：趋势长持复利强（+44~52%）且回撤低（R60 mdd 0.8%）——这是 beta/参与度,不是被验证的选股 alpha。** Book T 的 lever = **参与（长持捕捉趋势 beta，系统踏空的就是这块）,不是「跑赢平均题材」**。`trend_rules`(选股器)因此推迟——没有被验证的选股 edge 可建。**仪器起作用了:它拒绝把牛市样本 artifact 当 edge 放行。**
+
 ## 3. 怎么保证「一直在 + 适时被吸收」
 
 - **持久**：全部 checked-in 文件（非某个 agent 的私有记忆）。`CLAUDE.md` 与 `.codex/skills/xiaocao-trading/SKILL.md` 都指向本页 → 每个新上下文必然发现。
