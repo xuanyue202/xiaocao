@@ -61,6 +61,39 @@ REGISTRY: dict[str, Param] = {
 }
 
 
+# --- Book T (趋势主线) — PROPOSED, NOT in the validated SSOT ----------------- #
+# Mirrors the candidate↔verdict two-tier discipline at the PARAM layer: REGISTRY
+# above is the *verdict* tier (validated-live; a value changes only after a PASS).
+# BOOK_T_PROPOSED is the *candidate* tier for the still-unbuilt 趋势 book — it is
+# consumed by NOTHING, has ZERO authority over any behavior, and exists only so
+# the design (docs/TREND_BOOK_DESIGN.md) has a concrete home. Defaults come from
+# this session's XH-018 research (scripts/research_trend_longhold.py) on ONE
+# bull-market sample (+6~20pp vs beta at quarterly rebalance) — priors, not edges.
+# A param graduates into REGISTRY ONLY after a trend_guards (compounded / max-dd /
+# turnover / vs-beta) OOS PASS on a non-bull regime + the §10 human gate. Until
+# then: frozen, unused, untrusted. See docs/OPERATING_CONTRACT.md §2/§10,
+# docs/FLYWHEEL.md (candidate→verdict), kronos_screen/HYPOTHESES.jsonl (XH-018).
+BOOK_T_PROPOSED: dict[str, Param] = {
+    "TREND_BUDGET_RATIO": Param(
+        "TREND_BUDGET_RATIO", 0.30, "trend.allocator (UNBUILT)",
+        "PROPOSED: equity share allocated to Book T vs 短线; allocator not built", (0.0, 0.5, 0.1)),
+    "TREND_LOOKBACK_L": Param(
+        "TREND_LOOKBACK_L", 60, "trend.mainline_signal (UNBUILT)",
+        "PROPOSED: trailing trend-strength lookback (trading days); XH-018 best L=60-120", (20, 120, 20)),
+    "TREND_REBALANCE_R": Param(
+        "TREND_REBALANCE_R", 60, "trend.allocator (UNBUILT)",
+        "PROPOSED: rebalance/hold horizon (days); the +6~20pp alpha lives at R>=60 (long-hold), "
+        "R=20 churn ~0", (20, 120, 20)),
+    "TREND_TOP_M": Param(
+        "TREND_TOP_M", 3, "trend.trend_rules (UNBUILT)",
+        "PROPOSED: # mainline big-caps held (小草 平铺 2-3 最强)", (2, 5, 1)),
+    "TREND_TRAIL_DD": Param(
+        "TREND_TRAIL_DD", 12.0, "trend.exit_policy (UNBUILT)",
+        "PROPOSED: wider soft trailing dd%% for 方向还在就扛; profile TBD, MUST stay disjoint from "
+        "the short-line strong-hold predicate", (8.0, 20.0, 2.0)),
+}
+
+
 def get(name: str) -> Any:
     return REGISTRY[name].value
 

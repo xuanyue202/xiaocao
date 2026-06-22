@@ -67,3 +67,13 @@ def test_all_params_frozen_until_a_pass_verdict():
 def test_helpers():
     assert params.get("SUPER_JW") == 300
     assert params.as_dict()["QUALIFIED_JW"] == 150
+
+
+def test_book_t_params_are_proposed_not_validated():
+    # Book T params are the *candidate* tier: frozen, disjoint from the validated
+    # REGISTRY, and consumed by nothing. They must NOT leak into the live SSOT
+    # (REGISTRY / as_dict) until a trend_guards OOS PASS + §10 gate promotes them —
+    # the param-layer mirror of the candidate↔verdict hypothesis discipline.
+    assert set(params.BOOK_T_PROPOSED) & set(params.REGISTRY) == set()
+    assert all(p.frozen for p in params.BOOK_T_PROPOSED.values())
+    assert not (set(params.BOOK_T_PROPOSED) & set(params.as_dict()))

@@ -5,8 +5,10 @@ import pytest
 from xiaocao.strategy.bigcap import bigcap_codes, is_bigcap, split_by_bigcap
 
 
-def _row(stock_id: str, shares: int, type_: int = 1) -> dict:
-    return {"stockId": stock_id, "type": type_, "tradableAShare": shares}
+def _row(stock_id: str, shares: int, status: int = 1) -> dict:
+    # Mirrors real XiaocaoClient.stock_info() rows: `code` + `statusType`
+    # (1 = 普通股 tradable, 99 = index/non-tradable). No `type`/`stockId`.
+    return {"code": stock_id, "statusType": status, "tradableAShare": shares}
 
 
 def test_bigcap_picks_top_pct_by_shares():
@@ -15,10 +17,10 @@ def test_bigcap_picks_top_pct_by_shares():
     assert out == {"S0", "S1"}  # top 2 of 10
 
 
-def test_bigcap_skips_non_type_1():
+def test_bigcap_skips_non_status_1():
     rows = [
-        _row("idx", 10**12, type_=5),  # index — must be skipped
-        _row("blk", 10**11, type_=99),  # block — must be skipped
+        _row("idx", 10**12, status=99),  # index — must be skipped
+        _row("susp", 10**11, status=5),  # non-tradable — must be skipped
         _row("A", 100),
         _row("B", 50),
     ]
@@ -26,12 +28,34 @@ def test_bigcap_skips_non_type_1():
     assert out == {"A"}  # 50% of 2 valid candidates = 1
 
 
+def test_bigcap_real_cached_schema():
+    # Exact shape the live API returns (see output/.cache/xiaocao.db): tradable
+    # stocks are statusType==1; indices are statusType==99 with tradableAShare==0;
+    # there is NO `type` field. The old `type==1` filter skipped EVERYTHING here.
+    rows = [
+        {"code": "000001.XSHG", "codeName": "上证指数", "statusType": 99, "tradableAShare": 0},
+        {"code": "600519.XSHG", "codeName": "贵州茅台", "statusType": 1, "tradableAShare": 1_256_000_000},
+        {"code": "000001.XSHE", "codeName": "平安银行", "statusType": 1, "tradableAShare": 19_405_600_653},
+    ]
+    out = bigcap_codes(rows, top_pct=1.0)
+    assert out == {"600519.XSHG", "000001.XSHE"}  # both tradable, index dropped
+
+
+def test_bigcap_legacy_type_fallback():
+    # Older/fixture rows without statusType still work via the `type` fallback.
+    rows = [
+        {"stockId": "A", "type": 1, "tradableAShare": 100},
+        {"stockId": "idx", "type": 99, "tradableAShare": 10**9},
+    ]
+    assert bigcap_codes(rows, top_pct=1.0) == {"A"}
+
+
 def test_bigcap_handles_zero_or_missing_shares():
     rows = [
         _row("A", 100),
         _row("B", 0),
-        {"stockId": "C", "type": 1, "tradableAShare": None},
-        {"type": 1, "tradableAShare": 99999},  # no stockId
+        {"code": "C", "statusType": 1, "tradableAShare": None},
+        {"statusType": 1, "tradableAShare": 99999},  # no code/stockId
     ]
     assert bigcap_codes(rows, top_pct=1.0) == {"A"}
 

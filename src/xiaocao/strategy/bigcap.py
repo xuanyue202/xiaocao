@@ -5,8 +5,9 @@
     大票要单独排名，不要和小票混在一起评分。
 
 The "big-cap" cohort is a static-per-backtest set of stockIds chosen by ranking
-all `type=1` rows from `XiaocaoClient.stock_info()` by `tradableAShare` and
-taking the top `top_pct` (default 20%). `tradableAShare` is share count, not
+all tradable (`statusType == 1`) rows from `XiaocaoClient.stock_info()` by
+`tradableAShare` and taking the top `top_pct` (default 20%). `tradableAShare` is
+share count, not
 market cap; we use it as a proxy because it is monotonic with float market cap
 for blue-chip identification, doesn't require live prices, and is stable enough
 to compute once per backtest.
@@ -27,8 +28,9 @@ def bigcap_codes(
     """Return the set of stockIds that count as 大票.
 
     Args:
-        stock_info_rows: rows from XiaocaoClient.stock_info(); only entries with
-            `type == 1` (普通股) are considered.
+        stock_info_rows: rows from XiaocaoClient.stock_info(); only tradable
+            entries (`statusType == 1`, 普通股) are considered — indices and
+            non-tradable rows come back as `statusType == 99`.
         top_pct: top percentile by tradableAShare (e.g. 0.2 = top 20%).
         min_shares: if set, an absolute floor (number of shares) overrides
             the percentile calculation when stricter.
@@ -43,7 +45,14 @@ def bigcap_codes(
     for row in stock_info_rows or []:
         if not isinstance(row, dict):
             continue
-        if row.get("type") != 1:
+        # Real stock_info() rows carry `statusType` (1 = 普通股 tradable, 99 =
+        # index/non-tradable); the `type` field is absent there. Prefer
+        # statusType, fall back to `type` for legacy/fixture rows. Filtering the
+        # wrong (always-missing) field silently skipped EVERY row -> empty pool.
+        status = row.get("statusType")
+        if status is None:
+            status = row.get("type")
+        if status != 1:
             continue
         shares = row.get("tradableAShare")
         sid = row.get("stockId") or row.get("code")
