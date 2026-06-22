@@ -490,6 +490,10 @@ def _entry_price(client: XiaocaoClient, code: str, date_iso: str) -> tuple[float
         rows = client.date_kline(code, count=10, freq="D", adj="qfq")
     except Exception:
         rows = []
+    # NOTE: a per-candidate empty/failed date_kline degrades gracefully here (we
+    # fall back to other price sources). The SYSTEMIC hazard — the date_kline feed
+    # going stale for everyone (it froze at 2026-05-29 for ~3 weeks, unnoticed) —
+    # is NOT silently swallowed: data_health.stale_market_cache flags it every eod.
     if isinstance(rows, list):
         td_compact = date_iso.replace("-", "")
         for r in rows:
