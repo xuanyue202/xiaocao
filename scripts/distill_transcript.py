@@ -166,8 +166,9 @@ def validate(path: Path) -> int:
     if label == "distilled":
         name = path.name.lower()
         if "morning" in name:
-            print("  · 早盘 emphasis: go deep on decision_trace (real-time 观察→推断→动作) + "
-                  "regime_call.what_would_falsify (today's forward bet the calibration loop will score)")
+            print("  · 早盘 emphasis (delayed, not a live signal): 反推 the pre-open reasoning — go deep on "
+                  "decision_trace (观察→推断→动作 + why). Delayed != stale: if the call is still in force "
+                  "(within horizon, posture not past valid_until), also extract it as actionable strategy")
         elif "review" in name:
             print("  · 复盘 emphasis: go deep on exit_lessons/method_principles + the prior-check "
                   "(现实确认/证伪了哪条 --feedback 先验) — the most direct nutrient for the loop")

@@ -55,19 +55,33 @@ e.g. `盘前直播` / `盘后复盘/大师班专场`).
 
 ## 早盘 vs 复盘:same schema, different emphasis (go DEEP on different fields)
 
-Both kinds keep the full 12-key schema — the difference is what you extract richly. (The
-filename's `morning|review` tells you which; the data backs this split.)
+**Both arrive DELAYED, not live** — by the time you distill either one, that day has already
+played out. So neither is a real-time signal. Both keep the full 12-key schema, and the
+shared value — morning as much as review — is the same as it has always been: **从他的动作 /
+决策 / 判断反推底层逻辑** (the `decision_trace`), NOT the conclusion or the stock picks. The
+difference is only which fields carry that logic most richly. (The filename's `morning|review`
+tells you which.)
 
-**早盘 (盘前直播) — the forward PLAN: what to do today, before the open.** Go deep on:
-- `decision_trace` (the richest field in a morning — and the highest-value one): the
-  real-time pre-open reasoning, 观察 → 推断 → 动作 and **why**. This is what makes a
-  morning worth keeping; a morning that only records conclusions has thrown away its value.
-- `regime_call.what_would_falsify` + `horizon`: today's forward COMMITMENT — the falsifier
-  is mandatory (a call with no falsifier is narrative, not a prior).
-- `posture` / `directions` / `timing_notes`: today's stance, who leads vs lags, the
-  intraday-rhythm guess (e.g. "10点高点 → 11:15回调 → 午后反弹").
-- The morning's `hypotheses` are forward BETS (if-X-then-Y). These are the PREDICTIONS the
-  calibration loops later score — so state them falsifiably.
+**早盘 (盘前直播) — reverse-engineer the pre-open REASONING.** It is NOT a forward bet (it
+reaches you delayed); its job is to recover *how he thinks before the open*, as priors. Go deep on:
+- `decision_trace` (richest in a morning, and the whole point): the 观察 → 推断 → 动作 chain and
+  **why** — the reconstructable judgment process you can later replay and test.
+- `regime_call.what_would_falsify` + `horizon`: NOT a bet we grade — part of his LOGIC, i.e. what
+  he watches to know the call is wrong. Capture it as reasoning structure, not a prediction.
+- `posture` / `directions` / `timing_notes`: how he frames the stance, leaders vs laggards, the
+  intraday-rhythm read (e.g. "10点高点 → 11:15回调 → 午后反弹").
+- Everything extracted is a PRIOR/heuristic (authority=0). **Do not conflate with the calibration
+  loop:** that loop scores the LIVE system posture (`posture_current.json`, recorded in real time),
+  NOT this delayed transcript directly. The transcript is a *source* of judgment logic that informs
+  the live posture, never an auto-graded prediction.
+- **But delayed ≠ stale — if it has not expired, ALSO extract the strategy, not just the logic.**
+  The reasoning (`decision_trace`) is always worth recovering; the *call* (posture / regime /
+  method) is worth recovering too, and is **actionable** when it is still in force — within its
+  `horizon`, `posture_current` not past `valid_until`, `xiaocao_knowledge.py --check` not flagging
+  stale, and the `what_would_falsify` not yet tripped by the tape. A still-current call updates
+  `posture_current` (the prior the live system reads) and seeds candidate `hypotheses` to test;
+  an expired one is kept as logic/heuristic only (the specific call is moot, how he reasoned isn't).
+  Freshness is the gate — not the delay.
 
 **复盘 (盘后/大师班) — the backward VERDICT + METHOD: what it taught, and did it play out.**
 Go deep on:
@@ -79,7 +93,7 @@ Go deep on:
   `judgment_heuristics`/`exit_lessons`. This is the human-judgment companion to the
   calibration sensors' mechanical scoring — it is the most direct nutrient for the loop.
 - The review's `hypotheses` tend to be lessons GENERALIZED from experience (a distilled
-  method), vs the morning's forward bets.
+  method), vs the morning's pre-open reasoning logic.
 
 If a session is a short/临时加播 review, a thinner `decision_trace` is fine (it warns, not
 fails) — but never skip the `exit_lessons` / prior-check that a review exists to capture.
