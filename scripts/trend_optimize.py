@@ -13,6 +13,7 @@ anything? Cache-only. Usage: python3 scripts/trend_optimize.py
 """
 from __future__ import annotations
 
+import argparse
 import sys
 from collections import defaultdict
 from pathlib import Path
@@ -21,7 +22,7 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "src"))
 
 from xiaocao.api.cache import SQLiteCache, iter_cached_responses  # noqa: E402
-from xiaocao.research import trend_guards  # noqa: E402
+from xiaocao.research import ledger, trend_guards  # noqa: E402
 from xiaocao.strategy import mainline_signal as ms  # noqa: E402
 from xiaocao.strategy import regime as regime_mod  # noqa: E402
 
@@ -40,11 +41,37 @@ CONFIGS = [
 ]
 
 
-def regime_known_dates() -> set[str]:
+def _cfg_tag(cfg) -> str:
+    tag = f"{cfg['sel']}_L{cfg['L']}_R{cfg['R']}_M{cfg['M']}"
+    if cfg["sel"] == "rotation":
+        tag += f"_W{cfg['W']}_K{cfg['K']}"
+    return tag
+
+
+def _hypothesis_id(cfg) -> str:
+    return f"T_{_cfg_tag(cfg)}"
+
+
+def _claim(cfg) -> str:
+    return (
+        f"Book T trend config {_cfg_tag(cfg)} beats average-theme beta "
+        "under compounded return / drawdown / turnover guards"
+    )
+
+
+def _is_new_information(prev: dict | None, verdict: dict) -> bool:
+    if prev is None:
+        return True
+    if prev.get("verdict") != verdict.get("verdict"):
+        return True
+    return sorted(prev.get("rejected_by") or []) != sorted(verdict.get("rejected_by") or [])
+
+
+def regime_known_dates(db_path: Path = DB) -> set[str]:
     """Dates where date_kline genuinely has a breadth sample (so a proxy regime is
     real, not the 'neutral' default returned for missing dates)."""
     cnt: dict[str, int] = defaultdict(int)
-    for data in iter_cached_responses(str(DB), "/stock/date_kline"):
+    for data in iter_cached_responses(str(db_path), "/stock/date_kline"):
         if isinstance(data, list):
             for k in data:
                 if isinstance(k, dict) and k.get("tradeDate") and k.get("code"):
@@ -83,17 +110,30 @@ def build_holds(panel, cache, known, cfg):
 
 
 def main():
-    panel = ms.load_concept_panel(DB)
-    cache = SQLiteCache(DB)
-    known = regime_known_dates()
+    ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    ap.add_argument("--db", default=str(DB), help="cache DB path; must be cache-only")
+    ap.add_argument("--record", action="store_true", help="append changed trend verdicts to the ledger")
+    ap.add_argument("--ledger", default=str(ledger.DEFAULT_LEDGER_PATH))
+    ap.add_argument("--n-tried", type=int, default=len(CONFIGS),
+                    help="honest trend-hypothesis count for Bonferroni")
+    ap.add_argument("--min-holds", type=int, default=8)
+    a = ap.parse_args()
+
+    db_path = Path(a.db)
+    panel = ms.load_concept_panel(db_path)
+    cache = SQLiteCache(db_path)
+    known = regime_known_dates(db_path)
     days = panel["days"]
+    n_tried = max(int(a.n_tried), len(CONFIGS))
     print(f"concept panel: {len(days)} days ({days[0]}..{days[-1]}); regime-known dates: {len(known)}")
     print(f"instrument: trend_guards (compounded/dd/turnover/walk-forward/per-hold-t/survives-non-bull)")
-    print(f"n_tried (Bonferroni) = {len(CONFIGS)}\n")
+    print(f"n_tried (Bonferroni) = {n_tried}\n")
 
+    any_recorded = False
+    ledger_path = Path(a.ledger)
     for cfg in CONFIGS:
         holds = build_holds(panel, cache, known, cfg)
-        v = trend_guards.evaluate_trend(holds, n_tried=len(CONFIGS), cache_only=True)
+        v = trend_guards.evaluate_trend(holds, n_tried=n_tried, cache_only=True, min_holds=a.min_holds)
         c = v["compounded"]
         wf = v["walk_forward"]
         nb = v["non_bull"]
@@ -109,7 +149,29 @@ def main():
         print(f"{'':<22} -> {mark}")
         for w in v["warnings"]:
             print(f"{'':<22}    ⚠ {w}")
+        if a.record:
+            hyp_id = _hypothesis_id(cfg)
+            prior = ledger.find(hyp_id, path=ledger_path)
+            prev = prior[-1] if prior else None
+            if _is_new_information(prev, v):
+                ledger.record_hypothesis(
+                    hypothesis_id=hyp_id,
+                    claim=_claim(cfg),
+                    method=(
+                        "cache-only concept panel; non-overlapping Book-T holds; "
+                        "trend_guards compounded/dd/turnover/non-bull instrument"
+                    ),
+                    verdict=v,
+                    n_tried=n_tried,
+                    path=ledger_path,
+                )
+                any_recorded = True
+                print(f"{'':<22} recorded -> {ledger_path}")
+            else:
+                print(f"{'':<22} verdict unchanged vs ledger — not re-recording")
         print()
+    if any_recorded:
+        print(f"recorded trend verdict(s) -> {ledger_path}")
 
 
 if __name__ == "__main__":

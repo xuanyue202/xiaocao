@@ -34,9 +34,15 @@ def _seed(live_dir, *, b_realized, a_realized):
 
 def test_digest_assembles_books_and_ab_spread(tmp_path):
     _seed(tmp_path, b_realized=-4191.0, a_realized=410.0)
+    (tmp_path / "positions.jsonl").write_text(json.dumps({
+        "book": "A", "status": "open", "entry_cash_out": 10000.0,
+    }) + "\n", encoding="utf-8")
     d = S.build_digest(live_dir=tmp_path, market_date="2026-06-19")
     assert d["book_b"]["realized_pnl"] == -4191.0
     assert d["book_a"]["realized_pnl"] == 410.0
+    assert d["book_a"]["open_positions"] == 1
+    assert d["book_a"]["open_entry_cash_out"] == 10000.0
+    assert d["book_a"]["cost_basis_equity"] == 66500.0
     # the headline: live stop policy minus validated next-close policy
     assert d["ab_realized_delta"] == -4601.0
     assert d["book_b"]["open_positions"] == 1
@@ -51,6 +57,26 @@ def test_format_digest_is_readable_and_has_key_numbers(tmp_path):
     assert "book A" in text and "book B" in text and "A/B realized" in text
     assert "青龙管业" in text
     assert "止损/退出层" in text
+
+
+def test_digest_includes_book_t_when_present(tmp_path):
+    _seed(tmp_path, b_realized=-4191.0, a_realized=410.0)
+    (tmp_path / "paper_account_T.json").write_text(json.dumps({
+        "cash": 21000.0, "realized_pnl": 123.0, "total_fees": 3.0,
+    }), encoding="utf-8")
+    (tmp_path / "paper_holdings_T.json").write_text(json.dumps({
+        "date": "2026-06-19", "book": "T", "cash": 21000.0,
+        "total_equity_after_exit_fee": 30500.0,
+        "unrealized_pnl_after_fee": 500.0,
+        "open_positions": 1,
+        "holdings": [],
+    }), encoding="utf-8")
+
+    d = S.build_digest(live_dir=tmp_path, market_date="2026-06-19")
+    assert d["book_t_present"] is True
+    assert d["book_t"]["open_positions"] == 1
+    assert d["book_t"]["realized_pnl"] == 123.0
+    assert "book T" in S.format_digest(d)
 
 
 def test_push_body_omits_title_so_notify_does_not_duplicate_it(tmp_path):

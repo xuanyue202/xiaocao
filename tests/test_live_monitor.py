@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from datetime import datetime
 
-from scripts.live_monitor import _decide_sell_action, _sell_block_reason
+from scripts.live_monitor import _decide_sell_action, _decide_trend_sell_action, _sell_block_reason
 from xiaocao.utils.trading_session import A_SHARE_TZ
 
 
@@ -195,6 +195,50 @@ def test_same_day_position_remains_t1_blocked() -> None:
 
     assert decision["triggered"] is False
     assert decision["decision_phase"] == "t1_blocked"
+
+
+def test_book_t_uses_wide_trend_stop_not_shortline_composite() -> None:
+    decision = _decide_trend_sell_action(
+        {"trend_rebalance_days": 60},
+        dd_pct=11.5,
+        dd_threshold=12.0,
+        t1_blocked=False,
+        hold_days=10,
+        now=_dt(10, 0),
+    )
+    assert decision["triggered"] is False
+    assert decision["hold_reason"] == "TREND_HOLD"
+
+    decision = _decide_trend_sell_action(
+        {"trend_rebalance_days": 60},
+        dd_pct=12.1,
+        dd_threshold=12.0,
+        t1_blocked=False,
+        hold_days=10,
+        now=_dt(10, 0),
+    )
+    assert decision["triggered"] is True
+    assert decision["sell_reason"] == "TREND_TRAIL_STOP"
+
+
+def test_book_t_rebalances_only_at_eod_after_target_days() -> None:
+    intraday = _decide_trend_sell_action(
+        {"trend_rebalance_days": 20},
+        dd_pct=0.0,
+        t1_blocked=False,
+        hold_days=21,
+        now=_dt(10, 0),
+    )
+    eod = _decide_trend_sell_action(
+        {"trend_rebalance_days": 20},
+        dd_pct=0.0,
+        t1_blocked=False,
+        hold_days=21,
+        now=_dt(14, 56),
+    )
+    assert intraday["triggered"] is False
+    assert eod["triggered"] is True
+    assert eod["sell_reason"] == "TREND_REBALANCE_R"
 
 
 def test_simulated_sell_blocks_limit_down_with_no_bid() -> None:

@@ -17,15 +17,19 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+from typing import Any
 
 from xiaocao.live.exit_policy import clamp
 
 
-def load_signal_snapshot_map(path: Path) -> dict[tuple[str, str], dict[str, object]]:
-    """Latest snapshot per (date, code) from signal_snapshots.jsonl."""
+def load_signal_snapshot_map(path: Path) -> dict[tuple[str, str, str], dict[str, object]]:
+    """Latest snapshot per (date, code, book) from signal_snapshots.jsonl.
+
+    Legacy rows without `book` are Book B.
+    """
     if not path.exists():
         return {}
-    out: dict[tuple[str, str], dict[str, object]] = {}
+    out: dict[tuple[str, str, str], dict[str, object]] = {}
     with path.open(encoding="utf-8") as f:
         for line in f:
             line = line.strip()
@@ -39,17 +43,19 @@ def load_signal_snapshot_map(path: Path) -> dict[tuple[str, str], dict[str, obje
             date = str(row.get("date") or "")[:10]
             if not code or not date:
                 continue
-            key = (date, code)
+            book = str(row.get("book") or "B")
+            key = (date, code, book)
             prev = out.get(key)
             if prev is None or str(row.get("captured_at") or "") >= str(prev.get("captured_at") or ""):
                 out[key] = row
     return out
 
 
-def kronos_context(position: dict, snapshot_map: dict[tuple[str, str], dict[str, object]]) -> dict[str, object]:
+def kronos_context(position: dict, snapshot_map: dict[Any, dict[str, object]]) -> dict[str, object]:
     code = str(position.get("code") or "")
     entry_date = str(position.get("entry_date") or "")[:10]
-    row = snapshot_map.get((entry_date, code), {})
+    book = str(position.get("book") or "B")
+    row = snapshot_map.get((entry_date, code, book)) or snapshot_map.get((entry_date, code)) or {}
 
     def _num(key: str) -> float | None:
         value = row.get(key, position.get(key))

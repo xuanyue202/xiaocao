@@ -19,8 +19,19 @@ def test_load_signal_snapshot_map_keeps_latest_per_key(tmp_path):
         json.dumps({"code": "", "date": ""}),  # skipped
     ]) + "\n", encoding="utf-8")
     m = contexts.load_signal_snapshot_map(p)
-    assert set(m) == {("2026-06-19", "A"), ("2026-06-19", "B")}
-    assert m[("2026-06-19", "A")]["p_score"] == 0.9  # latest captured_at
+    assert set(m) == {("2026-06-19", "A", "B"), ("2026-06-19", "B", "B")}
+    assert m[("2026-06-19", "A", "B")]["p_score"] == 0.9  # latest captured_at
+
+
+def test_load_signal_snapshot_map_keeps_books_separate(tmp_path):
+    p = tmp_path / "snaps.jsonl"
+    p.write_text("\n".join([
+        json.dumps({"date": "2026-06-19", "book": "B", "code": "A", "captured_at": "t1", "p_score": 0.1}),
+        json.dumps({"date": "2026-06-19", "book": "T", "code": "A", "captured_at": "t1", "p_score": 9.9}),
+    ]) + "\n", encoding="utf-8")
+    m = contexts.load_signal_snapshot_map(p)
+    assert m[("2026-06-19", "A", "B")]["p_score"] == 0.1
+    assert m[("2026-06-19", "A", "T")]["p_score"] == 9.9
 
 
 def test_load_signal_snapshot_map_missing_file(tmp_path):
@@ -28,8 +39,8 @@ def test_load_signal_snapshot_map_missing_file(tmp_path):
 
 
 def test_kronos_context_combines_p_k_and_star_flags():
-    snap = {("2026-06-19", "A"): {"p_score": 3.0, "k_score": 3.0, "vb_star": True}}
-    pos = {"code": "A", "entry_date": "2026-06-19"}
+    snap = {("2026-06-19", "A", "B"): {"p_score": 3.0, "k_score": 3.0, "vb_star": True}}
+    pos = {"book": "B", "code": "A", "entry_date": "2026-06-19"}
     ctx = contexts.kronos_context(pos, snap)
     # 0.6*clamp(1.0) + 0.2*clamp(1.0) + 0.2 (vb_star) = 1.0, clamped
     assert ctx["score"] == 1.0 and ctx["vb_star"] is True and ctx["p_score"] == 3.0

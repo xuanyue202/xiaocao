@@ -12,7 +12,7 @@ def _write_jsonl(path, rows):
 
 
 def test_duplicate_snapshots_detected(tmp_path):
-    # The 06-01 bug: same (date,code,is_live) captured more than once.
+    # The 06-01 bug: same (date,code,is_live,book) captured more than once.
     _write_jsonl(tmp_path / "signal_snapshots.jsonl", [
         {"date": "2026-06-01", "code": "A", "is_live": True, "captured_at": "t1"},
         {"date": "2026-06-01", "code": "A", "is_live": True, "captured_at": "t2"},
@@ -26,6 +26,14 @@ def test_clean_snapshots_no_finding(tmp_path):
     _write_jsonl(tmp_path / "signal_snapshots.jsonl", [
         {"date": "2026-06-01", "code": "A", "is_live": True, "captured_at": "t1"},
         {"date": "2026-06-02", "code": "A", "is_live": True, "captured_at": "t1"},
+    ])
+    assert data_health.duplicate_snapshots(tmp_path) == []
+
+
+def test_duplicate_snapshots_are_book_scoped(tmp_path):
+    _write_jsonl(tmp_path / "signal_snapshots.jsonl", [
+        {"date": "2026-06-01", "book": "B", "code": "A", "is_live": True, "captured_at": "t1"},
+        {"date": "2026-06-01", "book": "T", "code": "A", "is_live": True, "captured_at": "t1"},
     ])
     assert data_health.duplicate_snapshots(tmp_path) == []
 
@@ -47,6 +55,15 @@ def test_account_reconciles_within_tolerance(tmp_path):
         {"book": "B", "status": "closed", "realized_pnl": -50.0},
     ])
     assert data_health.account_reconciles(tmp_path) == []
+
+
+def test_book_t_account_drift_detected(tmp_path):
+    (tmp_path / "paper_account_T.json").write_text(json.dumps({"realized_pnl": 100.0}), encoding="utf-8")
+    _write_jsonl(tmp_path / "positions.jsonl", [
+        {"book": "T", "status": "closed", "realized_pnl": 10.0},
+    ])
+    findings = data_health.account_reconciles_book_t(tmp_path)
+    assert findings and findings[0]["check"] == "account_reconciles_book_t"
 
 
 def test_unlabeled_closed_positions_are_surfaced(tmp_path):

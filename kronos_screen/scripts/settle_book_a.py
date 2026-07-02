@@ -19,6 +19,7 @@ POS = Path("output/live/positions.jsonl")
 ACCOUNT_A = Path("output/live/paper_account_A.json")
 ACCOUNT_B = Path("output/live/paper_account.json")
 TRADES = Path("output/live/paper_trades.jsonl")
+RECONSTRUCTED_DAILY = Path("output/live/daily_reconstructed.jsonl")
 
 
 def _f(v):
@@ -30,6 +31,58 @@ def _f(v):
 
 def _now_iso() -> str:
     return datetime.now().isoformat(timespec="seconds")
+
+
+def _normal_date(value) -> str | None:
+    s = str(value or "").strip()
+    if len(s) == 8 and s.isdigit():
+        return f"{s[:4]}-{s[4:6]}-{s[6:]}"
+    if len(s) >= 10:
+        return s[:10]
+    return None
+
+
+def _load_reconstructed_daily(path: Path = RECONSTRUCTED_DAILY) -> dict[str, dict[str, dict]]:
+    out: dict[str, dict[str, dict]] = {}
+    if not path.exists():
+        return out
+    for line in path.open(encoding="utf-8"):
+        if not line.strip():
+            continue
+        try:
+            row = json.loads(line)
+        except Exception:
+            continue
+        code = row.get("code")
+        d = _normal_date(row.get("date"))
+        if not code or not d:
+            continue
+        out.setdefault(str(code), {})[d] = {
+            "tradeDate": d,
+            "open": row.get("open"),
+            "high": row.get("high"),
+            "low": row.get("low"),
+            "close": row.get("close"),
+            "source": row.get("source", "minute_reconstructed"),
+        }
+    return out
+
+
+def _kline_map(cli: XiaocaoClient, code: str, reconstructed: dict[str, dict[str, dict]]) -> dict[str, dict]:
+    try:
+        kl = cli.date_kline(code, count=60, freq="D", adj="bfq")
+    except Exception:
+        kl = []
+    if not isinstance(kl, list):
+        kl = []
+    ser = {
+        _normal_date(r.get("tradeDate")): r
+        for r in kl
+        if isinstance(r, dict) and _normal_date(r.get("tradeDate"))
+    }
+    # date_kline can lag; EOD reconstructs recent bars from minute_line.
+    ser.update(reconstructed.get(str(code), {}))
+    return {k: v for k, v in ser.items() if k}
 
 
 def main():
@@ -50,6 +103,7 @@ def main():
     s = load_settings(None)
     cli = XiaocaoClient(base_url=s.base_url, timeout=s.timeout, retries=s.retries,
                         cache=SQLiteCache(a.cache))
+    reconstructed = _load_reconstructed_daily()
     account = json.loads(ACCOUNT_A.read_text(encoding="utf-8")) if ACCOUNT_A.exists() else None
     if account is None:
         print("book A: no account file yet"); return
@@ -57,12 +111,10 @@ def main():
     settled = 0
     for p in todo:
         code, d0 = p["code"], p["entry_date"]
-        try:
-            kl = cli.date_kline(code, count=60, freq="D", adj="bfq")
-        except Exception:
+        d0 = _normal_date(d0)
+        if not d0:
             continue
-        ser = {r["tradeDate"]: r for r in kl if isinstance(r, dict) and r.get("tradeDate")} \
-            if isinstance(kl, list) else {}
+        ser = _kline_map(cli, code, reconstructed)
         dts = sorted(ser)
         if d0 not in dts:
             continue

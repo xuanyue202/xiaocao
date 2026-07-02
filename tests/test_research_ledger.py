@@ -1,7 +1,7 @@
 """Tests for the knowledge ledger (src/xiaocao/research/ledger.py)."""
 from __future__ import annotations
 
-from xiaocao.research import guards, ledger
+from xiaocao.research import guards, ledger, trend_guards
 
 
 def _verdict(spread_positive=True):
@@ -48,3 +48,30 @@ def test_record_never_raises_on_unwritable_path(tmp_path):
     e = ledger.record_hypothesis(hypothesis_id="h", claim="c", method="m",
                                  verdict=_verdict(True), path=blocker / "nested.jsonl")
     assert e["id"] == "h"
+
+
+def test_record_trend_verdict_metrics(tmp_path):
+    path = tmp_path / "HYPOTHESES.jsonl"
+    holds = []
+    regimes = ["trend_strong", "bear", "trend_continuing", "divergence", "trend_strong",
+               "bear", "trend_strong", "neutral", "trend_strong", "divergence"]
+    for i, diff in enumerate([1.5, 0.6, 1.2, 0.8, 1.0, 1.3, 0.7, 1.1, 0.9, 1.4]):
+        holds.append({
+            "entry": f"2026-05-{i + 1:02d}",
+            "strat_ret": 1.0 + diff,
+            "base_ret": 1.0,
+            "regime": regimes[i],
+            "turnover": 0.3,
+        })
+    verdict = trend_guards.evaluate_trend(holds, n_tried=1)
+    e = ledger.record_hypothesis(
+        hypothesis_id="T_trend_L60_R20_M3",
+        claim="trend book beats beta",
+        method="trend_guards compounded/dd/turnover",
+        verdict=verdict,
+        n_tried=1,
+        path=path,
+    )
+    assert e["metrics"]["n_holds"] == len(holds)
+    assert e["metrics"]["compounded_alpha"] > 0
+    assert e["metrics"]["turnover"] == 0.3

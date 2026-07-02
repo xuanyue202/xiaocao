@@ -24,6 +24,50 @@ def _now_iso() -> str:
     return datetime.now().isoformat(timespec="seconds")
 
 
+def _round(value: Any, digits: int = 6) -> float:
+    try:
+        return round(float(value), digits)
+    except (TypeError, ValueError):
+        return 0.0
+
+
+def _metrics_from_verdict(verdict: dict[str, Any]) -> dict[str, Any]:
+    """Summarize both short-line and trend guard verdicts for the ledger."""
+    sig = verdict.get("significance", {})
+    if "compounded" in verdict:
+        comp = verdict.get("compounded", {})
+        per_hold = verdict.get("per_hold", {})
+        wf = verdict.get("walk_forward", {})
+        non_bull = verdict.get("non_bull", {})
+        return {
+            "n_holds": verdict.get("n_holds"),
+            "compounded_strat": _round(comp.get("strat", 0.0)),
+            "compounded_base": _round(comp.get("base", 0.0)),
+            "compounded_alpha": _round(comp.get("alpha", 0.0)),
+            "max_drawdown": _round(verdict.get("max_drawdown", 0.0)),
+            "turnover": _round(verdict.get("turnover", 0.0)),
+            "per_hold_alpha_mean": _round(per_hold.get("alpha_mean", 0.0)),
+            "per_hold_win": _round(per_hold.get("win", 0.0)),
+            "train_alpha": _round(wf.get("train_alpha", 0.0)),
+            "test_alpha": _round(wf.get("test_alpha", 0.0)),
+            "non_bull_holds": non_bull.get("n_holds"),
+            "non_bull_alpha_mean": _round(non_bull.get("alpha_mean", 0.0)),
+            "p": _round(sig.get("p", 1.0)),
+            "effective_alpha": sig.get("effective_alpha"),
+        }
+    pt = verdict.get("per_trade", {})
+    wf = verdict.get("walk_forward", {})
+    return {
+        "n_trades": verdict.get("n_trades"),
+        "n_days": verdict.get("n_days"),
+        "per_trade_spread": _round(pt.get("spread", 0.0)),
+        "train_edge": _round(wf.get("train_edge", 0.0)),
+        "test_edge": _round(wf.get("test_edge", 0.0)),
+        "p": _round(sig.get("p", 1.0)),
+        "effective_alpha": sig.get("effective_alpha"),
+    }
+
+
 def record_hypothesis(
     *,
     hypothesis_id: str,
@@ -36,9 +80,6 @@ def record_hypothesis(
     path: Path = DEFAULT_LEDGER_PATH,
 ) -> dict[str, Any]:
     """Distil a guards verdict into a ledger entry and append it. Returns it."""
-    pt = verdict.get("per_trade", {})
-    wf = verdict.get("walk_forward", {})
-    sig = verdict.get("significance", {})
     entry = {
         "id": hypothesis_id,
         "ts": ts or _now_iso(),
@@ -46,15 +87,7 @@ def record_hypothesis(
         "method": method,
         "verdict": verdict.get("verdict"),
         "rejected_by": verdict.get("rejected_by", []),
-        "metrics": {
-            "n_trades": verdict.get("n_trades"),
-            "n_days": verdict.get("n_days"),
-            "per_trade_spread": round(float(pt.get("spread", 0.0)), 6),
-            "train_edge": round(float(wf.get("train_edge", 0.0)), 6),
-            "test_edge": round(float(wf.get("test_edge", 0.0)), 6),
-            "p": round(float(sig.get("p", 1.0)), 6),
-            "effective_alpha": sig.get("effective_alpha"),
-        },
+        "metrics": _metrics_from_verdict(verdict),
         "n_tried": n_tried,
         "supersedes": supersedes,
         "warnings": verdict.get("warnings", []),

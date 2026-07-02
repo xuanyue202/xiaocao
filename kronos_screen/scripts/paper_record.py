@@ -3,10 +3,13 @@ live_monitor.py can track them under the v5 rule. Idempotent per (date, code).
 
 Fill model (realistic, not worst-case): a paper limit order at
 L = min(open x (1 + limit premium), basket_price). After the opening window
-settles, fill at min(window VWAP, L); if the window never trades through L the
-pick is SKIPPED (audited in output/live/paper_skips.jsonl). basket_price is the
-abandon bound only — never the fill assumption (the old behaviour booked every
-fill at the +2% chase cap, costing ~1.9%/trade of fictitious slippage).
+settles, fill at min(window VWAP, L) if the window trades through L. If the
+initial low limit is not filled or would be rejected as too far from the tape,
+paper_record checks the latest opening-window price as the real-time retry
+proxy; when that price is still within the basket abandon bound, it buys at
+that real-time price and audits the retry. basket_price is the abandon bound
+only — never the fill assumption (the old behaviour booked every fill at the
++2% chase cap, costing ~1.9%/trade of fictitious slippage).
 Reads output/live/signal_snapshots.jsonl; appends to output/live/positions.jsonl.
 """
 from __future__ import annotations
@@ -24,12 +27,20 @@ sys.path.insert(0, str(SCRIPTS))
 
 from xiaocao.api.client import XiaocaoClient  # noqa: E402
 from xiaocao.live import accounts  # noqa: E402
+from xiaocao.strategy.params import (  # noqa: E402
+    TREND_BUDGET_RATIO,
+    TREND_REBALANCE_R,
+    TREND_TOP_M,
+    TREND_TRAIL_DD,
+)
+from xiaocao.strategy.trend_rules import generate_trend_picks  # noqa: E402
 from quality_governor import annotate_quality_governor, ensure_quality_fields  # noqa: E402
 
 SNAP = Path("output/live/signal_snapshots.jsonl")
 POS = Path("output/live/positions.jsonl")
 ACCOUNT = Path("output/live/paper_account.json")
 ACCOUNT_A = Path("output/live/paper_account_A.json")
+ACCOUNT_T = Path("output/live/paper_account_T.json")
 TRADES = Path("output/live/paper_trades.jsonl")
 SKIPS = Path("output/live/paper_skips.jsonl")
 QUALITY_AUDIT = Path("output/live/quality_governor_audit.jsonl")
@@ -37,6 +48,7 @@ DEFAULT_STARTING_CAPITAL = 100000.0
 DEFAULT_FEE_RATE = 0.0001
 DEFAULT_DEPLOY_RATIO = 0.5
 DEFAULT_MAX_TOTAL_EXPOSURE_RATIO = 0.67
+DEFAULT_TREND_MAX_EXPOSURE_RATIO = 1.0
 A_SHARE_TZ = ZoneInfo("Asia/Shanghai")
 
 
@@ -178,7 +190,7 @@ def _fill_window_stats(
     if not closes:
         return None
     vwap = amt / vol if vol > 0 else sum(closes) / len(closes)
-    return {"vwap": vwap, "low": lo, "high": hi, "time": last_time}
+    return {"vwap": vwap, "low": lo, "high": hi, "last": closes[-1], "time": last_time}
 
 
 def _fill_price_from_window(
@@ -187,9 +199,13 @@ def _fill_price_from_window(
     window: dict | None,
     limit_premium_pct: float,
 ) -> tuple[float | None, str, str | None, dict]:
-    """Realistic paper fill: a limit order at L = min(open x (1+premium), basket).
-    - window low > L  -> limit never reached -> SKIP (price None).
-    - else fill at min(window VWAP, L)  (limit fills at L or better).
+    """Realistic paper fill with an order-status retry.
+
+    First submit a limit order at L = min(open x (1+premium), basket).
+    - window low <= L -> fill at min(window VWAP, L) (limit fills at L or better).
+    - window low > L  -> initial limit did not fill / may be blocked. Check the
+      latest window price as a real-time retry proxy; if it is still <= basket,
+      buy at that real-time price, otherwise SKIP.
     - no window data  -> fall back to L anchored on open (never the basket cap).
     basket remains only the abandon bound, NOT the fill assumption."""
     basket_px = _num(record.get("basket_price"))
@@ -208,13 +224,34 @@ def _fill_price_from_window(
         if window.get("low"):
             metadata["fill_window_low"] = round(float(window["low"]), 4)
         metadata["fill_window_vwap"] = round(float(window["vwap"]), 4)
+        if window.get("last"):
+            metadata["fill_window_last"] = round(float(window["last"]), 4)
         if window.get("time"):
             metadata["fill_window_time"] = window["time"]
         if limit_px is None:
             return float(window["vwap"]), "opening_window_vwap", None, metadata
         lo = _num(window.get("low"))
         if lo is not None and lo > limit_px:
+            realtime_px = _num(window.get("last"))
+            metadata["initial_fill_blocked"] = True
+            metadata["initial_fill_block_reason"] = "LIMIT_NOT_REACHED"
+            if realtime_px is not None and basket_px is not None and basket_px > 0 and realtime_px <= basket_px:
+                metadata["fill_retry"] = True
+                metadata["fill_retry_reason"] = "LIMIT_NOT_REACHED_REALTIME_WITHIN_BASKET"
+                metadata["fill_retry_price"] = round(realtime_px, 4)
+                return (
+                    realtime_px,
+                    "retry_realtime_after_limit_reject",
+                    record.get("basket_rule"),
+                    metadata,
+                )
             metadata["skip_reason"] = "LIMIT_NOT_REACHED"
+            if realtime_px is None:
+                metadata["skip_detail"] = "NO_REALTIME_RETRY_PRICE"
+            elif basket_px is None or basket_px <= 0:
+                metadata["skip_detail"] = "NO_BASKET_RETRY_BOUND"
+            else:
+                metadata["skip_detail"] = "REALTIME_ABOVE_BASKET"
             return None, "skipped_limit_not_reached", record.get("basket_rule"), metadata
         return (
             min(float(window["vwap"]), limit_px),
@@ -401,8 +438,9 @@ def _quality_audit_records(
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--date", default=datetime.now().strftime("%Y-%m-%d"))
-    ap.add_argument("--pick", choices=["vb_star", "kp_star"], default="vb_star",
-                    help="which variant to paper-trade (vb_star=★B live set, kp_star=★ baseline)")
+    ap.add_argument("--pick", choices=["vb_star", "kp_star", "mode_star"], default="vb_star",
+                    help="which variant to paper-trade "
+                         "(vb_star=★B live set, kp_star=★ baseline, mode_star=★M shadow variant)")
     ap.add_argument("--initial-capital", type=float, default=DEFAULT_STARTING_CAPITAL,
                     help="initial paper account cash; only used when the account file does not exist")
     ap.add_argument("--fee-rate", type=float, default=DEFAULT_FEE_RATE,
@@ -422,8 +460,9 @@ def main():
                     help="opening execution window end, HHMM; default 0931")
     ap.add_argument("--limit-premium-pct", type=float, default=0.5,
                     help="paper limit order premium over the 9:25 open reference, in %%; "
-                         "fill = min(window VWAP, open x (1+premium)) or SKIP if the "
-                         "window never trades through the limit; default 0.5")
+                         "fill = min(window VWAP, open x (1+premium)) when touched; "
+                         "if not touched, retry at latest window price while <= basket; "
+                         "default 0.5")
     ap.add_argument("--fill-settle-seconds", type=int, default=5,
                     help="seconds after the next minute to wait before reading the end bar")
     ap.add_argument("--no-wait-fill-window", action="store_true",
@@ -433,10 +472,24 @@ def main():
     ap.add_argument("--quality-governor", choices=["off", "shadow", "on"], default="off",
                     help="quality governor mode: off=ignore, shadow=audit only, "
                          "on=leave weak-primary slots in cash without reallocating")
+    ap.add_argument("--trend-only", action="store_true",
+                    help="record Book T trend paper positions only; skips Book B/A")
+    ap.add_argument("--trend-budget-ratio", type=float, default=TREND_BUDGET_RATIO,
+                    help="Book T paper account initial capital as a ratio of --initial-capital")
+    ap.add_argument("--trend-max-positions", type=int, default=TREND_TOP_M,
+                    help="target number of Book T positions")
+    ap.add_argument("--trend-max-total-exposure-ratio", type=float, default=DEFAULT_TREND_MAX_EXPOSURE_RATIO,
+                    help="Book T open gross exposure cap / Book T initial capital")
     a = ap.parse_args()
     _parse_hhmm(a.fill_window_start)
     _parse_hhmm(a.fill_window_end)
     _validate_fill_window(a.fill_window_start, a.fill_window_end)
+    if a.trend_only:
+        if not a.no_wait_fill_window:
+            _wait_until_fill_window_complete(a.date, a.fill_window_end, a.fill_settle_seconds)
+        client = XiaocaoClient()
+        _record_book_t(client, a)
+        return
     if not SNAP.exists():
         print("no snapshots; run live_recommend first"); return
     snaps = [json.loads(l) for l in open(SNAP, encoding="utf-8") if l.strip()]
@@ -450,8 +503,6 @@ def main():
         print(f"{a.date}: no live {a.pick} picks to paper-record (is_live snapshot required)"); return
     account = _load_account(a.initial_capital, a.fee_rate)
     fee_rate = float(account.get("fee_rate", a.fee_rate))
-    if not a.no_book_a:
-        _record_book_a(picks, a, fee_rate)
     existing = set()
     open_codes = set()
     existing_auto_for_date = 0
@@ -502,15 +553,19 @@ def main():
         print(
             f"{a.date}: SKIP {r.get('code')} {r.get('name')} — "
             f"{meta.get('skip_reason')} (limit {meta.get('fill_limit_price')}, "
-            f"window low {meta.get('fill_window_low')})"
+            f"window low {meta.get('fill_window_low')}, "
+            f"realtime {meta.get('fill_window_last')}, "
+            f"detail {meta.get('skip_detail')})"
         )
         _append_skip({
             "ts": _now_iso(), "date": a.date, "code": r.get("code"),
             "name": r.get("name"), "source": f"auto:{a.pick}",
             "reason": meta.get("skip_reason"),
+            "detail": meta.get("skip_detail"),
             "limit_price": meta.get("fill_limit_price"),
             "window_low": meta.get("fill_window_low"),
             "window_vwap": meta.get("fill_window_vwap"),
+            "window_last": meta.get("fill_window_last"),
             "basket_price": r.get("basket_price"), "open": r.get("open"),
             "primary_score": r.get("primary_score"),
             "p_score": r.get("p_score"),
@@ -518,8 +573,10 @@ def main():
             "quality_governor_mode": a.quality_governor,
         })
     if not buyable:
-        print(f"{a.date}: all {a.pick} picks skipped (limit not reached)")
+        print(f"{a.date}: all {a.pick} picks skipped (limit not reached and retry not suitable)")
         return
+    if not a.no_book_a:
+        _record_book_a(buyable, a, fee_rate)
     cash = float(account.get("cash", 0.0))
     deploy_ratio = float(a.deploy_ratio)
     if not (0 < deploy_ratio <= 1):
@@ -648,8 +705,14 @@ def main():
                 "fill_window_high": fill_meta.get("fill_window_high"),
                 "fill_window_low": fill_meta.get("fill_window_low"),
                 "fill_window_vwap": fill_meta.get("fill_window_vwap"),
+                "fill_window_last": fill_meta.get("fill_window_last"),
                 "fill_limit_price": fill_meta.get("fill_limit_price"),
                 "fill_window_time": fill_meta.get("fill_window_time"),
+                "initial_fill_blocked": fill_meta.get("initial_fill_blocked"),
+                "initial_fill_block_reason": fill_meta.get("initial_fill_block_reason"),
+                "fill_retry": fill_meta.get("fill_retry"),
+                "fill_retry_reason": fill_meta.get("fill_retry_reason"),
+                "fill_retry_price": fill_meta.get("fill_retry_price"),
                 "fill_fallback": fill_meta.get("fill_fallback"),
                 "basket_price": round(float(r["basket_price"]), 3) if r.get("basket_price") else None,
                 "basket_rule": basket_rule,
@@ -675,7 +738,13 @@ def main():
                 "fill_window_end": a.fill_window_end,
                 "fill_window_high": fill_meta.get("fill_window_high"),
                 "fill_window_vwap": fill_meta.get("fill_window_vwap"),
+                "fill_window_last": fill_meta.get("fill_window_last"),
                 "fill_limit_price": fill_meta.get("fill_limit_price"),
+                "initial_fill_blocked": fill_meta.get("initial_fill_blocked"),
+                "initial_fill_block_reason": fill_meta.get("initial_fill_block_reason"),
+                "fill_retry": fill_meta.get("fill_retry"),
+                "fill_retry_reason": fill_meta.get("fill_retry_reason"),
+                "fill_retry_price": fill_meta.get("fill_retry_price"),
             })
             run_fees = round(run_fees + entry_fee, 2)
             n += 1
@@ -696,6 +765,221 @@ def main():
         f"deploy_ratio={deploy_ratio:.0%}, exposure_budget={exposure_budget:.2f}, "
         f"target_notional={target_notional:.2f}/position, "
         f"quality_governor={a.quality_governor})"
+    )
+
+
+def _record_book_t(client: XiaocaoClient, a) -> None:
+    """Record Book T trend paper positions.
+
+    Book T is separate from Book B: same positions.jsonl, different `book`,
+    account file, source, and exit profile. Same-code B/T overlap is allowed.
+    """
+    trend_ratio = float(a.trend_budget_ratio)
+    if not (0 < trend_ratio <= 1):
+        raise SystemExit("--trend-budget-ratio must be in (0, 1]")
+    target_positions = max(1, int(a.trend_max_positions))
+    max_exposure = float(a.trend_max_total_exposure_ratio)
+    if not (0 < max_exposure <= 1):
+        raise SystemExit("--trend-max-total-exposure-ratio must be in (0, 1]")
+
+    trend_initial_capital = round(float(a.initial_capital) * trend_ratio, 2)
+    account = _load_account(trend_initial_capital, a.fee_rate, path=ACCOUNT_T)
+    fee_rate = float(account.get("fee_rate", a.fee_rate))
+
+    existing: set[tuple[str, str]] = set()
+    open_codes: set[str] = set()
+    open_count = 0
+    current_open_cost = 0.0
+    existing_auto_for_date = 0
+    for row in _load_positions_from_file(POS):
+        if row.get("book") != "T":
+            continue
+        existing.add((str(row.get("entry_date") or ""), str(row.get("code") or "")))
+        if row.get("status", "open") == "open":
+            open_count += 1
+            if row.get("code"):
+                open_codes.add(str(row.get("code")))
+            current_open_cost += float(row.get("gross_notional") or 0.0)
+        if row.get("entry_date") == a.date and row.get("source") == "auto:trend_book":
+            existing_auto_for_date += 1
+
+    if existing_auto_for_date and not a.allow_additional:
+        print(
+            f"{a.date}: book T already paper-recorded {existing_auto_for_date} trend position(s); "
+            "skip additional buys"
+        )
+        return
+
+    remaining_slots = max(0, target_positions - open_count)
+    if remaining_slots <= 0:
+        print(f"{a.date}: book T already has {open_count}/{target_positions} open position(s); no new buys")
+        return
+
+    picks = generate_trend_picks(client, a.date, max_positions=target_positions)
+    buyable = [
+        r for r in picks
+        if (a.date, str(r.get("code") or "")) not in existing
+        and str(r.get("code") or "") not in open_codes
+        and r.get("open")
+    ][:remaining_slots]
+    if not buyable:
+        print(f"{a.date}: book T — no new trend candidates after book-scoped duplicate checks")
+        return
+
+    buyable, skipped = _attach_fill_prices(
+        client,
+        buyable,
+        a.date,
+        start_hhmm=a.fill_window_start,
+        end_hhmm=a.fill_window_end,
+        limit_premium_pct=a.limit_premium_pct,
+    )
+    for r in skipped:
+        meta = r.get("_paper_fill") or {}
+        print(
+            f"{a.date}: book T SKIP {r.get('code')} {r.get('name')} — "
+            f"{meta.get('skip_reason')} (limit {meta.get('fill_limit_price')}, "
+            f"window low {meta.get('fill_window_low')}, realtime {meta.get('fill_window_last')})"
+        )
+        _append_skip({
+            "ts": _now_iso(), "date": a.date, "book": "T", "code": r.get("code"),
+            "name": r.get("name"), "source": "auto:trend_book",
+            "reason": meta.get("skip_reason"),
+            "detail": meta.get("skip_detail"),
+            "limit_price": meta.get("fill_limit_price"),
+            "window_low": meta.get("fill_window_low"),
+            "window_vwap": meta.get("fill_window_vwap"),
+            "window_last": meta.get("fill_window_last"),
+            "basket_price": r.get("basket_price"), "open": r.get("open"),
+            "category_code": r.get("category_code"),
+            "category_rank": r.get("category_rank"),
+        })
+    if not buyable:
+        print(f"{a.date}: book T all candidates skipped by opening fill model")
+        return
+
+    cash = float(account.get("cash", 0.0))
+    exposure_budget = max(
+        0.0,
+        float(account.get("initial_capital", trend_initial_capital)) * max_exposure - current_open_cost,
+    )
+    slot_notional = min(cash, exposure_budget) / max(remaining_slots, 1)
+    if slot_notional <= 0:
+        print(
+            f"{a.date}: book T exposure budget exhausted "
+            f"(cash_T={cash:.2f}, open_cost_T={current_open_cost:.2f})"
+        )
+        return
+
+    POS.parent.mkdir(parents=True, exist_ok=True)
+    n = 0
+    run_fees = 0.0
+    with POS.open("a", encoding="utf-8") as fh:
+        for r in buyable:
+            if n >= remaining_slots:
+                break
+            px, fill_basis, basket_rule = _fill_price(r)
+            if not px:
+                continue
+            px = float(px)
+            fill_meta = r.get("_paper_fill") if isinstance(r.get("_paper_fill"), dict) else {}
+            shares = int((min(slot_notional, cash) / (px * (1 + fee_rate))) / 100) * 100
+            if shares < 100:
+                continue
+            gross_notional = round(shares * px, 2)
+            entry_fee = round(gross_notional * fee_rate, 2)
+            entry_cash_out = round(gross_notional + entry_fee, 2)
+            if entry_cash_out > cash + 1e-6:
+                continue
+            cash = round(cash - entry_cash_out, 2)
+            row = {
+                "book": "T",
+                "code": r["code"],
+                "name": r.get("name", ""),
+                "entry_date": a.date,
+                "entry_price": round(px, 3),
+                "profile": "trend",
+                "shares": shares,
+                "mode": r.get("mode"),
+                "is_main_line": r.get("is_main_line"),
+                "is_big_cap": r.get("is_big_cap"),
+                "category_code": r.get("category_code"),
+                "category_name": r.get("category_name"),
+                "category_rank": r.get("category_rank"),
+                "category_score": r.get("category_score"),
+                "trend_score": r.get("trend_score"),
+                "trend_num": r.get("trend_num"),
+                "trend_lookback_days": r.get("trend_lookback_days"),
+                "trend_rebalance_days": r.get("trend_rebalance_days", TREND_REBALANCE_R),
+                "trend_trail_dd_pct": r.get("trend_trail_dd_pct", TREND_TRAIL_DD),
+                "tradableAShare": r.get("tradableAShare"),
+                "gross_notional": gross_notional,
+                "entry_fee": entry_fee,
+                "entry_cash_out": entry_cash_out,
+                "entry_price_basis": fill_basis,
+                "fill_window_start": a.fill_window_start,
+                "fill_window_end": a.fill_window_end,
+                "fill_window_high": fill_meta.get("fill_window_high"),
+                "fill_window_low": fill_meta.get("fill_window_low"),
+                "fill_window_vwap": fill_meta.get("fill_window_vwap"),
+                "fill_window_last": fill_meta.get("fill_window_last"),
+                "fill_limit_price": fill_meta.get("fill_limit_price"),
+                "fill_window_time": fill_meta.get("fill_window_time"),
+                "initial_fill_blocked": fill_meta.get("initial_fill_blocked"),
+                "initial_fill_block_reason": fill_meta.get("initial_fill_block_reason"),
+                "fill_retry": fill_meta.get("fill_retry"),
+                "fill_retry_reason": fill_meta.get("fill_retry_reason"),
+                "fill_retry_price": fill_meta.get("fill_retry_price"),
+                "fill_fallback": fill_meta.get("fill_fallback"),
+                "basket_price": round(float(r["basket_price"]), 3) if r.get("basket_price") else None,
+                "basket_rule": basket_rule,
+                "initial_capital": round(float(account.get("initial_capital", trend_initial_capital)), 2),
+                "fee_rate": fee_rate,
+                "allocation_rule": (
+                    f"book_t_trend_budget_{trend_ratio:.0%}"
+                    f"_slots_{target_positions}"
+                    f"_cap_{max_exposure:.0%}"
+                ),
+                "status": "open",
+                "source": "auto:trend_book",
+                "reason": r.get("reason"),
+            }
+            fh.write(json.dumps(row, ensure_ascii=False, sort_keys=True) + "\n")
+            _append_trade({
+                "ts": _now_iso(), "date": a.date, "side": "BUY", "book": "T",
+                "code": r["code"], "name": r.get("name", ""),
+                "price": round(px, 3), "shares": shares,
+                "gross_notional": gross_notional, "fee": entry_fee,
+                "cash_after": cash, "source": "auto:trend_book",
+                "price_basis": fill_basis,
+                "category_code": r.get("category_code"),
+                "category_rank": r.get("category_rank"),
+                "trend_score": r.get("trend_score"),
+                "fill_window_start": a.fill_window_start,
+                "fill_window_end": a.fill_window_end,
+                "fill_window_vwap": fill_meta.get("fill_window_vwap"),
+                "fill_window_last": fill_meta.get("fill_window_last"),
+                "fill_limit_price": fill_meta.get("fill_limit_price"),
+            })
+            run_fees = round(run_fees + entry_fee, 2)
+            n += 1
+
+    if n == 0:
+        print(
+            f"{a.date}: book T no positions recorded after fill/sizing checks "
+            f"(cash_T={cash:.2f}, slot_notional={slot_notional:.2f})"
+        )
+        return
+    account["cash"] = cash
+    account["fee_rate"] = fee_rate
+    account["last_buy_date"] = a.date
+    account["total_fees"] = round(float(account.get("total_fees", 0.0)) + run_fees, 2)
+    _save_account(account, path=ACCOUNT_T)
+    print(
+        f"{a.date}: book T paper-recorded {n} trend position(s) -> {POS} "
+        f"(cash_T_after={cash:.2f}, initial_T={float(account.get('initial_capital', trend_initial_capital)):.2f}, "
+        f"slot_notional={slot_notional:.2f}, trail_dd={TREND_TRAIL_DD:.1f}%, "
+        f"rebalance_days={TREND_REBALANCE_R})"
     )
 
 
@@ -730,11 +1014,11 @@ def _kill_switch_factor() -> tuple[float, str]:
 
 
 def _record_book_a(picks: list[dict], a, fee_rate: float) -> None:
-    """Book A = the VALIDATED reference policy: buy at the open reference,
-    sell at next close, no stop. Pure accounting book (settled by
-    settle_book_a.py at eod) — never monitored or stop-managed. Lets the
-    forward record answer directly whether the stop layer (book B) helps or
-    hurts vs the only backtested exit."""
+    """Book A = the reference exit policy: same fillable picks and same paper
+    entry price as book B, then sell at next close with no stop. Pure accounting
+    book (settled by settle_book_a.py at eod) — never monitored or stop-managed.
+    Keeping the entry fill aligned prevents the A/B spread from mixing entry
+    slippage into the exit-policy comparison."""
     account = _load_account(a.initial_capital, fee_rate, path=ACCOUNT_A)
     existing = set()
     open_codes = set()
@@ -748,7 +1032,7 @@ def _record_book_a(picks: list[dict], a, fee_rate: float) -> None:
     for r in picks:
         if (a.date, r.get("code")) in existing or r.get("code") in open_codes:
             continue
-        if not _num(r.get("open")):
+        if not _fill_price(r)[0]:
             continue
         buyable.append(r)
     if not buyable:
@@ -760,7 +1044,11 @@ def _record_book_a(picks: list[dict], a, fee_rate: float) -> None:
     n = 0
     with POS.open("a", encoding="utf-8") as fh:
         for r in buyable:
-            px = float(_num(r.get("open")))
+            px, fill_basis, basket_rule = _fill_price(r)
+            if not px:
+                continue
+            fill_meta = r.get("_paper_fill") if isinstance(r.get("_paper_fill"), dict) else {}
+            px = float(px)
             shares = int((min(target, cash) / (px * (1 + fee_rate))) / 100) * 100
             if shares < 100:
                 continue
@@ -776,7 +1064,23 @@ def _record_book_a(picks: list[dict], a, fee_rate: float) -> None:
                 "entry_price": round(px, 3), "profile": "v5_nextclose", "shares": shares,
                 "mode": r.get("mode"),
                 "gross_notional": gross, "entry_fee": fee, "entry_cash_out": cash_out,
-                "entry_price_basis": "open_reference",
+                "entry_price_basis": fill_basis,
+                "fill_window_start": a.fill_window_start,
+                "fill_window_end": a.fill_window_end,
+                "fill_window_high": fill_meta.get("fill_window_high"),
+                "fill_window_low": fill_meta.get("fill_window_low"),
+                "fill_window_vwap": fill_meta.get("fill_window_vwap"),
+                "fill_window_last": fill_meta.get("fill_window_last"),
+                "fill_limit_price": fill_meta.get("fill_limit_price"),
+                "fill_window_time": fill_meta.get("fill_window_time"),
+                "initial_fill_blocked": fill_meta.get("initial_fill_blocked"),
+                "initial_fill_block_reason": fill_meta.get("initial_fill_block_reason"),
+                "fill_retry": fill_meta.get("fill_retry"),
+                "fill_retry_reason": fill_meta.get("fill_retry_reason"),
+                "fill_retry_price": fill_meta.get("fill_retry_price"),
+                "fill_fallback": fill_meta.get("fill_fallback"),
+                "basket_price": round(float(r["basket_price"]), 3) if r.get("basket_price") else None,
+                "basket_rule": basket_rule,
                 "fee_rate": fee_rate,
                 "initial_capital": round(float(account.get("initial_capital", a.initial_capital)), 2),
                 "status": "open", "source": f"auto:{a.pick}:bookA",
@@ -786,7 +1090,18 @@ def _record_book_a(picks: list[dict], a, fee_rate: float) -> None:
                 "code": r["code"], "name": r.get("name", ""), "price": round(px, 3),
                 "shares": shares, "gross_notional": gross, "fee": fee,
                 "cash_after": cash, "source": f"auto:{a.pick}:bookA",
-                "price_basis": "open_reference",
+                "price_basis": fill_basis,
+                "fill_window_start": a.fill_window_start,
+                "fill_window_end": a.fill_window_end,
+                "fill_window_high": fill_meta.get("fill_window_high"),
+                "fill_window_vwap": fill_meta.get("fill_window_vwap"),
+                "fill_window_last": fill_meta.get("fill_window_last"),
+                "fill_limit_price": fill_meta.get("fill_limit_price"),
+                "initial_fill_blocked": fill_meta.get("initial_fill_blocked"),
+                "initial_fill_block_reason": fill_meta.get("initial_fill_block_reason"),
+                "fill_retry": fill_meta.get("fill_retry"),
+                "fill_retry_reason": fill_meta.get("fill_retry_reason"),
+                "fill_retry_price": fill_meta.get("fill_retry_price"),
             })
             n += 1
     if n:
@@ -794,7 +1109,7 @@ def _record_book_a(picks: list[dict], a, fee_rate: float) -> None:
         account["fee_rate"] = fee_rate
         account["last_buy_date"] = a.date
         _save_account(account, path=ACCOUNT_A)
-    print(f"{a.date}: book A recorded {n} position(s) at open reference (cash_A={cash:.2f})")
+    print(f"{a.date}: book A recorded {n} position(s) at book-B-aligned entry fill (cash_A={cash:.2f})")
 
 
 def _load_positions_from_file(path: Path) -> list[dict]:

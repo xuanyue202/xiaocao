@@ -42,11 +42,14 @@ def _read_json(path: Path) -> dict[str, Any]:
 
 
 def duplicate_snapshots(live_dir: Path) -> list[dict[str, Any]]:
-    """Flag (date, code, is_live) keys with >1 row in signal_snapshots.jsonl —
+    """Flag (date, code, is_live, book) keys with >1 row in signal_snapshots.jsonl —
     the exact corruption that faked the A/B verdict. capture_signals replaces a
     day's rows idempotently now, so any duplicate is a regression."""
     rows = _read_jsonl(live_dir / "signal_snapshots.jsonl")
-    keys = Counter((r.get("date"), r.get("code"), bool(r.get("is_live"))) for r in rows)
+    keys = Counter(
+        (r.get("date"), r.get("code"), bool(r.get("is_live")), str(r.get("book") or "B"))
+        for r in rows
+    )
     dups = {k: n for k, n in keys.items() if n > 1}
     if not dups:
         return []
@@ -54,7 +57,7 @@ def duplicate_snapshots(live_dir: Path) -> list[dict[str, Any]]:
     return [{
         "check": "duplicate_snapshots",
         "severity": "critical",
-        "detail": f"{len(dups)} duplicate (date,code,is_live) keys in signal_snapshots.jsonl "
+        "detail": f"{len(dups)} duplicate (date,code,is_live,book) keys in signal_snapshots.jsonl "
                   f"(e.g. {worst}) — dedupe before trusting any A/B verdict",
     }]
 
@@ -104,6 +107,29 @@ def account_reconciles(live_dir: Path, *, tolerance: float = 1.0) -> list[dict[s
             "check": "account_reconciles",
             "severity": "warn",
             "detail": f"book B realized_pnl {acct_realized:+.2f} vs sum of closed positions "
+                      f"{closed_sum:+.2f} (drift {drift:+.2f} > {tolerance})",
+        }]
+    return []
+
+
+def account_reconciles_book_t(live_dir: Path, *, tolerance: float = 1.0) -> list[dict[str, Any]]:
+    """Book T account realized_pnl must equal closed book-T positions."""
+    acct = _read_json(live_dir / "paper_account_T.json")
+    if not acct:
+        return []
+    positions = _read_jsonl(live_dir / "positions.jsonl")
+    closed_sum = sum(
+        float(p.get("realized_pnl") or 0.0)
+        for p in positions
+        if p.get("book") == "T" and p.get("status") == "closed"
+    )
+    acct_realized = float(acct.get("realized_pnl") or 0.0)
+    drift = acct_realized - closed_sum
+    if abs(drift) > tolerance:
+        return [{
+            "check": "account_reconciles_book_t",
+            "severity": "warn",
+            "detail": f"book T realized_pnl {acct_realized:+.2f} vs sum of closed positions "
                       f"{closed_sum:+.2f} (drift {drift:+.2f} > {tolerance})",
         }]
     return []
@@ -183,6 +209,7 @@ def check(
     findings: list[dict[str, Any]] = []
     findings += duplicate_snapshots(live_dir)
     findings += account_reconciles(live_dir)
+    findings += account_reconciles_book_t(live_dir)
     findings += unlabeled_closed_positions(live_dir)
     findings += stale_open_positions(live_dir, today=today)
     # Cache lives at output/.cache/xiaocao.db (sibling of output/live); callers

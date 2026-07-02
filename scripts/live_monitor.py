@@ -78,14 +78,18 @@ from xiaocao.live.exit_policy import (  # noqa: E402
 )
 from xiaocao.live import accounts, contexts, journal  # noqa: E402
 from xiaocao.live.notify import notify as _notify  # noqa: E402
+from xiaocao.strategy.params import TREND_BUDGET_RATIO, TREND_REBALANCE_R, TREND_TRAIL_DD  # noqa: E402
 
 OUT_DIR = ROOT / "output" / "live"
 POSITIONS_FILE = OUT_DIR / "positions.jsonl"
 ALERTS_FILE = OUT_DIR / "alerts.jsonl"
 ACCOUNT_FILE = OUT_DIR / "paper_account.json"
+ACCOUNT_T_FILE = OUT_DIR / "paper_account_T.json"
 TRADES_FILE = OUT_DIR / "paper_trades.jsonl"
 HOLDINGS_FILE = OUT_DIR / "paper_holdings.json"
+HOLDINGS_T_FILE = OUT_DIR / "paper_holdings_T.json"
 HOLDING_SNAPSHOTS_FILE = OUT_DIR / "paper_holdings_snapshots.jsonl"
+HOLDING_T_SNAPSHOTS_FILE = OUT_DIR / "paper_holdings_T_snapshots.jsonl"
 STOCK_SENTIMENT_FILE = OUT_DIR / "stock_sentiment.json"
 SIGNAL_SNAPSHOTS_FILE = OUT_DIR / "signal_snapshots.jsonl"
 
@@ -113,12 +117,25 @@ def _now_iso() -> str:
 # Account/position I/O is defined once in xiaocao.live.accounts (the real-money
 # state SSOT, shared with paper_record); these are thin wrappers binding it to
 # this script's path/constant defaults so existing call sites are unchanged.
-def _load_account() -> dict:
-    return accounts.load_account(ACCOUNT_FILE, DEFAULT_STARTING_CAPITAL, DEFAULT_FEE_RATE)
+def _account_file(book: str) -> Path:
+    return ACCOUNT_T_FILE if book == "T" else ACCOUNT_FILE
 
 
-def _save_account(account: dict) -> None:
-    accounts.save_account(account, ACCOUNT_FILE)
+def _holdings_file(book: str) -> Path:
+    return HOLDINGS_T_FILE if book == "T" else HOLDINGS_FILE
+
+
+def _holding_snapshots_file(book: str) -> Path:
+    return HOLDING_T_SNAPSHOTS_FILE if book == "T" else HOLDING_SNAPSHOTS_FILE
+
+
+def _load_account(book: str = "B") -> dict:
+    initial = DEFAULT_STARTING_CAPITAL * TREND_BUDGET_RATIO if book == "T" else DEFAULT_STARTING_CAPITAL
+    return accounts.load_account(_account_file(book), initial, DEFAULT_FEE_RATE)
+
+
+def _save_account(account: dict, book: str = "B") -> None:
+    accounts.save_account(account, _account_file(book))
 
 
 def _append_trade(record: dict) -> None:
@@ -129,14 +146,14 @@ def _position_key(position: dict) -> tuple[str, str]:
     return accounts.position_key(position)
 
 
-def _write_holdings_snapshot(statuses: list[dict]) -> dict:
-    account = _load_account()
+def _write_holdings_snapshot(statuses: list[dict], *, book: str = "B") -> dict:
+    account = _load_account(book)
     status_by_key = {_position_key(s): s for s in statuses}
     holdings = []
     total_market_value = 0.0
     total_liquidation_value = 0.0
     total_cost = 0.0
-    for p in _load_positions():
+    for p in _load_positions(book):
         s = status_by_key.get(_position_key(p))
         if not s:
             s = {
@@ -159,6 +176,7 @@ def _write_holdings_snapshot(statuses: list[dict]) -> dict:
         total_liquidation_value = round(total_liquidation_value + liquidation_value, 2)
         total_cost = round(total_cost + cost, 2)
         holdings.append({
+            "book": book,
             "code": p.get("code"),
             "name": p.get("name", ""),
             "entry_date": p.get("entry_date"),
@@ -181,6 +199,7 @@ def _write_holdings_snapshot(statuses: list[dict]) -> dict:
     snapshot = {
         "ts": _now_iso(),
         "date": _date.today().isoformat(),
+        "book": book,
         "cash": cash,
         "market_value": total_market_value,
         "liquidation_value_after_fee": total_liquidation_value,
@@ -192,15 +211,18 @@ def _write_holdings_snapshot(statuses: list[dict]) -> dict:
         "open_positions": len(holdings),
         "holdings": holdings,
     }
-    if not ACCOUNT_FILE.exists():
-        _save_account(account)
-    HOLDINGS_FILE.parent.mkdir(parents=True, exist_ok=True)
-    tmp = HOLDINGS_FILE.with_suffix(".json.tmp")
+    account_path = _account_file(book)
+    holdings_path = _holdings_file(book)
+    snapshots_path = _holding_snapshots_file(book)
+    if not account_path.exists():
+        _save_account(account, book)
+    holdings_path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = holdings_path.with_suffix(".json.tmp")
     with tmp.open("w", encoding="utf-8") as f:
         json.dump(snapshot, f, ensure_ascii=False, indent=2, sort_keys=True)
         f.write("\n")
-    tmp.replace(HOLDINGS_FILE)
-    with HOLDING_SNAPSHOTS_FILE.open("a", encoding="utf-8") as f:
+    tmp.replace(holdings_path)
+    with snapshots_path.open("a", encoding="utf-8") as f:
         f.write(json.dumps(snapshot, ensure_ascii=False, sort_keys=True) + "\n")
     return snapshot
 
@@ -386,11 +408,11 @@ def _load_stock_sentiment_map(today_iso: str) -> dict[str, dict[str, object]]:
 
 # Pure/file-based decision-context builders live in xiaocao.live.contexts (now
 # independently unit-tested); thin wrappers bind them to this script's paths.
-def _load_signal_snapshot_map() -> dict[tuple[str, str], dict[str, object]]:
+def _load_signal_snapshot_map() -> dict[tuple[str, str, str], dict[str, object]]:
     return contexts.load_signal_snapshot_map(SIGNAL_SNAPSHOTS_FILE)
 
 
-def _kronos_context(position: dict, snapshot_map: dict[tuple[str, str], dict[str, object]]) -> dict[str, object]:
+def _kronos_context(position: dict, snapshot_map: dict[tuple[str, str, str], dict[str, object]]) -> dict[str, object]:
     return contexts.kronos_context(position, snapshot_map)
 
 
@@ -407,12 +429,12 @@ def _load_all_positions() -> list[dict]:
     return accounts.load_positions(POSITIONS_FILE)
 
 
-def _load_positions() -> list[dict]:
+def _load_positions(book: str = "B") -> list[dict]:
     # book A (validated open->next-close reference) is a pure accounting book
     # settled by settle_book_a.py — never monitored or stop-managed here.
     return [
         p for p in _load_all_positions()
-        if p.get("status", "open") == "open" and p.get("book", "B") == "B"
+        if p.get("status", "open") == "open" and p.get("book", "B") == book
     ]
 
 
@@ -423,6 +445,7 @@ def _has_alert_recorded(
     entry_date: str,
     alert_date: str,
     reason: str | None = None,
+    book: str = "B",
 ) -> bool:
     if not ALERTS_FILE.exists():
         return False
@@ -439,6 +462,8 @@ def _has_alert_recorded(
             row_date = ts[:10]
             if row.get("alert") != alert_type:
                 continue
+            if str(row.get("book") or "B") != book:
+                continue
             if str(row.get("code") or "") != code:
                 continue
             if str(row.get("entry_date") or "") != entry_date:
@@ -451,19 +476,19 @@ def _has_alert_recorded(
     return False
 
 
-def _execute_simulated_sells(client: XiaocaoClient, triggered_alerts: list[dict]) -> tuple[int, int]:
+def _execute_simulated_sells(client: XiaocaoClient, triggered_alerts: list[dict], *, book: str = "B") -> tuple[int, int]:
     if not triggered_alerts:
         return 0, 0
     positions = _load_all_positions()
-    account = _load_account()
+    account = _load_account(book)
     closed = 0
     blocked = 0
     for alert in triggered_alerts:
         for p in positions:
             if p.get("status", "open") != "open":
                 continue
-            if p.get("book", "B") != "B":
-                continue  # book A settles via settle_book_a.py, never here
+            if p.get("book", "B") != book:
+                continue
             if p.get("code") != alert["code"] or p.get("entry_date") != alert["entry_date"]:
                 continue
             detail = _realtime_detail(client, str(p.get("code") or ""))
@@ -477,11 +502,13 @@ def _execute_simulated_sells(client: XiaocaoClient, triggered_alerts: list[dict]
                     entry_date=str(p.get("entry_date") or ""),
                     alert_date=today_iso,
                     reason=blocked_reason,
+                    book=book,
                 ):
                     with ALERTS_FILE.open("a", encoding="utf-8") as f:
                         f.write(json.dumps({
                             "ts": _now_iso(),
                             "alert": "SELL_BLOCKED",
+                            "book": book,
                             "reason": blocked_reason,
                             "code": p.get("code"),
                             "name": p.get("name", ""),
@@ -516,6 +543,7 @@ def _execute_simulated_sells(client: XiaocaoClient, triggered_alerts: list[dict]
             })
             _append_trade({
                 "ts": _now_iso(), "date": _date.today().isoformat(), "side": "SELL",
+                "book": book,
                 "code": p.get("code"), "name": p.get("name", ""),
                 "price": round(exit_price, 4), "shares": shares,
                 "gross_notional": gross_notional, "fee": exit_fee,
@@ -528,7 +556,7 @@ def _execute_simulated_sells(client: XiaocaoClient, triggered_alerts: list[dict]
         with POSITIONS_FILE.open("w", encoding="utf-8") as f:
             for p in positions:
                 f.write(json.dumps(p, ensure_ascii=False, sort_keys=True) + "\n")
-        _save_account(account)
+        _save_account(account, book)
     return closed, blocked
 
 
@@ -578,21 +606,72 @@ def _is_trading_day(today_iso: str, client: XiaocaoClient) -> tuple[bool, str]:
     return latest == today_iso, latest
 
 
+def _decide_trend_sell_action(
+    position: dict,
+    *,
+    dd_pct: float,
+    t1_blocked: bool,
+    hold_days: int,
+    dd_threshold: float = TREND_TRAIL_DD,
+    now: datetime | None = None,
+) -> dict[str, object]:
+    """Book T exit policy: wide trailing stop + low-turnover rebalance.
+
+    This intentionally does not call short-line strong_hold_reason or composite
+    scoring. The trend book has its own lifecycle and cannot suppress Book-B
+    exits for the same stock.
+    """
+    if t1_blocked:
+        return {
+            "triggered": False,
+            "sell_reason": None,
+            "hold_reason": None,
+            "decision_phase": "t1_blocked",
+        }
+    if dd_pct >= dd_threshold:
+        return {
+            "triggered": True,
+            "sell_reason": "TREND_TRAIL_STOP",
+            "hold_reason": None,
+            "decision_phase": "trend_risk",
+        }
+    target_days = int(position.get("trend_rebalance_days") or TREND_REBALANCE_R)
+    if hold_days >= target_days and _market_now(now).time() >= EOD_DISCIPLINE_TIME:
+        return {
+            "triggered": True,
+            "sell_reason": "TREND_REBALANCE_R",
+            "hold_reason": None,
+            "decision_phase": "trend_rebalance",
+        }
+    return {
+        "triggered": False,
+        "sell_reason": None,
+        "hold_reason": "TREND_HOLD",
+        "decision_phase": "trend_monitor",
+    }
+
+
 def _compute_status(
     client: XiaocaoClient,
     position: dict,
     today_iso: str,
     *,
+    book: str,
     market_context: dict[str, object],
     sentiment_map: dict[str, dict[str, object]],
-    snapshot_map: dict[tuple[str, str], dict[str, object]],
+    snapshot_map: dict[tuple[str, str, str], dict[str, object]],
 ) -> dict:
     """Pull minute data from entry_date through today, compute peak + dd + status."""
     code = position["code"]
     entry_date = position["entry_date"]
     entry_price = float(position["entry_price"])
     profile = position.get("profile", "v5")
-    dd_threshold = PROFILE_DD.get(profile, 2.0)
+    if book == "T":
+        dd_threshold = float(position.get("trend_trail_dd_pct") or TREND_TRAIL_DD)
+        hard_dd_threshold = dd_threshold
+    else:
+        dd_threshold = PROFILE_DD.get(profile, 2.0)
+        hard_dd_threshold = PROFILE_HARD_DD.get(profile, 8.0)
     fee_rate = float(position.get("fee_rate", 0.0001))
 
     # Trading days from entry_date to today
@@ -671,24 +750,34 @@ def _compute_status(
         realtime=realtime_context,
         kronos=kronos_context,
     )
-    decision = _decide_sell_action(
-        position,
-        detail=detail,
-        latest_price=latest_price,
-        peak=peak,
-        dd_pct=dd_pct,
-        dd_threshold=dd_threshold,
-        t1_blocked=t1_blocked,
-        hold_days=hold_days,
-        signal_score=float(score_context.get("composite_score", 0.0) or 0.0),
-        hard_dd_threshold=PROFILE_HARD_DD.get(profile, 8.0),
-    )
+    if book == "T":
+        decision = _decide_trend_sell_action(
+            position,
+            dd_pct=dd_pct,
+            dd_threshold=dd_threshold,
+            t1_blocked=t1_blocked,
+            hold_days=hold_days,
+        )
+    else:
+        decision = _decide_sell_action(
+            position,
+            detail=detail,
+            latest_price=latest_price,
+            peak=peak,
+            dd_pct=dd_pct,
+            dd_threshold=dd_threshold,
+            t1_blocked=t1_blocked,
+            hold_days=hold_days,
+            signal_score=float(score_context.get("composite_score", 0.0) or 0.0),
+            hard_dd_threshold=hard_dd_threshold,
+        )
     return {
+        "book": book,
         "code": code,
         "name": position.get("name", ""),
         "profile": profile,
         "dd_threshold_pct": dd_threshold,
-        "hard_dd_threshold_pct": PROFILE_HARD_DD.get(profile, 8.0),
+        "hard_dd_threshold_pct": hard_dd_threshold,
         "entry_date": entry_date,
         "entry_price": entry_price,
         "peak": round(peak, 4),
@@ -721,19 +810,20 @@ def _decision_packet(statuses: list[dict], snapshot: dict) -> dict:
     for the journal — so a later fresh-context agent consumes structured state
     instead of re-scraping holdings/alerts/positions files."""
     triggered = [
-        {"code": s["code"], "name": s.get("name"), "sell_reason": s.get("sell_reason")}
+        {"book": s.get("book", "B"), "code": s["code"], "name": s.get("name"), "sell_reason": s.get("sell_reason")}
         for s in statuses if s.get("triggered")
     ]
     deferred = [
-        {"code": s["code"], "name": s.get("name"), "deferred_sell_reason": s.get("deferred_sell_reason")}
+        {"book": s.get("book", "B"), "code": s["code"], "name": s.get("name"), "deferred_sell_reason": s.get("deferred_sell_reason")}
         for s in statuses if s.get("deferred_sell_reason")
     ]
     holds = [
-        {"code": s["code"], "name": s.get("name"), "reason": s.get("strong_hold_reason") or s.get("decision_phase")}
+        {"book": s.get("book", "B"), "code": s["code"], "name": s.get("name"), "reason": s.get("strong_hold_reason") or s.get("decision_phase")}
         for s in statuses if not s.get("triggered") and not s.get("deferred_sell_reason")
     ]
     positions = [
         {
+            "book": s.get("book", "B"),
             "code": s["code"], "name": s.get("name"),
             "dd_pct": s.get("dd_pct"), "ret_pct": s.get("ret_pct"), "net_ret_pct": s.get("net_ret_pct"),
             "composite_score": s.get("composite_score"), "decision_phase": s.get("decision_phase"),
@@ -743,6 +833,7 @@ def _decision_packet(statuses: list[dict], snapshot: dict) -> dict:
         for s in statuses
     ]
     return {
+        "book": snapshot.get("book", "B"),
         "open_positions": snapshot.get("open_positions"),
         "cash": snapshot.get("cash"),
         "equity": snapshot.get("total_equity_after_exit_fee"),
@@ -756,6 +847,8 @@ def _decision_packet(statuses: list[dict], snapshot: dict) -> dict:
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--code", help="只检查指定 code")
+    parser.add_argument("--book", choices=["B", "T"], default="B",
+                        help="which paper book to monitor; default B (short-line)")
     parser.add_argument("--no-notify", action="store_true",
                         help="禁用 macOS 通知（保留 stdout + alerts.jsonl）")
     parser.add_argument("--execute-sells", action="store_true",
@@ -777,12 +870,13 @@ def main() -> None:
         return
 
     OUT_DIR.mkdir(parents=True, exist_ok=True)
-    positions = _load_positions()
+    book = args.book
+    positions = _load_positions(book)
     if args.code:
         positions = [p for p in positions if p.get("code") == args.code]
     if not positions:
-        snapshot = _write_holdings_snapshot([])
-        print(f"No open positions in {POSITIONS_FILE.relative_to(ROOT)}")
+        snapshot = _write_holdings_snapshot([], book=book)
+        print(f"No open Book {book} positions in {POSITIONS_FILE.relative_to(ROOT)}")
         print(
             f"Account: cash={snapshot['cash']:.2f}, "
             f"equity={snapshot['total_equity_after_exit_fee']:.2f}, "
@@ -794,7 +888,7 @@ def main() -> None:
     sentiment_map = _load_stock_sentiment_map(today_iso)
     snapshot_map = _load_signal_snapshot_map()
 
-    print(f"Monitoring {len(positions)} open position(s) at {today_iso}\n")
+    print(f"Monitoring {len(positions)} open Book {book} position(s) at {today_iso}\n")
     print(
         f"Market regime={market_context.get('regime')} "
         f"score={float(market_context.get('score', 0.0)):+.2f} "
@@ -813,6 +907,7 @@ def main() -> None:
                 client,
                 p,
                 today_iso,
+                book=book,
                 market_context=market_context,
                 sentiment_map=sentiment_map,
                 snapshot_map=snapshot_map,
@@ -851,11 +946,13 @@ def main() -> None:
                     entry_date=str(s.get("entry_date") or ""),
                     alert_date=_date.today().isoformat(),
                     reason=str(s.get("deferred_sell_reason") or ""),
+                    book=book,
                 ):
                     with ALERTS_FILE.open("a", encoding="utf-8") as f:
                         f.write(json.dumps({
                             "ts": _now_iso(),
                             "alert": "SELL_DEFERRED",
+                            "book": book,
                             "reason": s.get("deferred_sell_reason"),
                             **s,
                         }, ensure_ascii=False) + "\n")
@@ -887,6 +984,7 @@ def main() -> None:
                 entry_date=str(s.get("entry_date") or ""),
                 alert_date=today_iso,
                 reason=str(s.get("sell_reason") or ""),
+                book=book,
             )
             if not already_logged:
                 if not args.no_notify:
@@ -896,11 +994,12 @@ def main() -> None:
                     f.write(json.dumps({
                         "ts": today_iso,
                         "alert": "SELL_TRIGGERED",
+                        "book": book,
                         **s,
                     }, ensure_ascii=False) + "\n")
         if args.execute_sells:
-            closed, blocked = _execute_simulated_sells(client, triggered_alerts)
-            account = _load_account()
+            closed, blocked = _execute_simulated_sells(client, triggered_alerts, book=book)
+            account = _load_account(book)
             print(
                 f"\nSimulated sells executed: {closed}; "
                 f"blocked={blocked}; "
@@ -910,16 +1009,16 @@ def main() -> None:
             )
     else:
         print(f"\nNo sell triggers. {sum(1 for p in positions)} position(s) holding.")
-    snapshot = _write_holdings_snapshot(statuses)
+    snapshot = _write_holdings_snapshot(statuses, book=book)
     print(
         f"Holdings snapshot: cash={snapshot['cash']:.2f}, "
         f"holdings_value={snapshot['liquidation_value_after_fee']:.2f}, "
         f"equity={snapshot['total_equity_after_exit_fee']:.2f}, "
         f"open_positions={snapshot['open_positions']} -> "
-        f"{HOLDINGS_FILE.relative_to(ROOT)}"
+        f"{_holdings_file(book).relative_to(ROOT)}"
     )
     journal.append_decision(
-        automation="live_monitor",
+        automation="live_monitor" if book == "B" else "live_monitor_book_t",
         market_date=today_iso,
         path=OUT_DIR / "decision_journal.jsonl",
         deterministic=_decision_packet(statuses, snapshot),

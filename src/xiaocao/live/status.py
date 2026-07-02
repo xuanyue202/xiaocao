@@ -39,9 +39,13 @@ def build_digest(
     now: datetime | None = None,
 ) -> dict[str, Any]:
     holdings_snap = _load_json(live_dir / "paper_holdings.json")
+    holdings_t_snap = _load_json(live_dir / "paper_holdings_T.json")
     acct_b = _load_json(live_dir / "paper_account.json")
     acct_a_path = live_dir / "paper_account_A.json"
     acct_a = _load_json(acct_a_path)
+    acct_t_path = live_dir / "paper_account_T.json"
+    acct_t = _load_json(acct_t_path)
+    positions_path = live_dir / "positions.jsonl"
     # A missing/unparseable book-A account must NOT masquerade as realized 0.0:
     # ab_realized_delta would then collapse to book B's entire PnL and be reported
     # as "stops helped/hurt" against an empty baseline — the exact self-deceiving
@@ -60,6 +64,47 @@ def build_digest(
     book_a = {
         "cash": _f(acct_a.get("cash")),
         "realized_pnl": _f(acct_a.get("realized_pnl")),
+    }
+    open_a: list[dict[str, Any]] = []
+    try:
+        for line in positions_path.read_text(encoding="utf-8").splitlines():
+            if not line.strip():
+                continue
+            row = json.loads(line)
+            if row.get("book") == "A" and row.get("status", "open") == "open":
+                open_a.append(row)
+    except (OSError, ValueError):
+        open_a = []
+    book_a_open_cost = round(sum(_f(p.get("entry_cash_out")) for p in open_a), 2)
+    book_a.update({
+        "open_positions": len(open_a),
+        "open_entry_cash_out": book_a_open_cost,
+        # Book A is a reference book settled at next close; we do not maintain a
+        # live mark-to-market snapshot for it. Cost-basis equity prevents the
+        # cash line from being misread as total account size.
+        "cost_basis_equity": round(book_a["cash"] + book_a_open_cost, 2) if book_a_present else 0.0,
+    })
+    book_t_present = acct_t_path.exists() and bool(acct_t)
+    open_t: list[dict[str, Any]] = []
+    try:
+        for line in positions_path.read_text(encoding="utf-8").splitlines():
+            if not line.strip():
+                continue
+            row = json.loads(line)
+            if row.get("book") == "T" and row.get("status", "open") == "open":
+                open_t.append(row)
+    except (OSError, ValueError):
+        open_t = []
+    book_t_open_cost = round(sum(_f(p.get("entry_cash_out")) for p in open_t), 2)
+    book_t = {
+        "cash": _f(acct_t.get("cash")),
+        "realized_pnl": _f(acct_t.get("realized_pnl")),
+        "total_fees": _f(acct_t.get("total_fees")),
+        "equity": _f(holdings_t_snap.get("total_equity_after_exit_fee")),
+        "unrealized_pnl": _f(holdings_t_snap.get("unrealized_pnl_after_fee")),
+        "open_positions": int(holdings_t_snap.get("open_positions") or len(open_t)),
+        "open_entry_cash_out": book_t_open_cost,
+        "cost_basis_equity": round(_f(acct_t.get("cash")) + book_t_open_cost, 2) if book_t_present else 0.0,
     }
 
     latest = journal.latest(market_date=market_date, path=live_dir / "decision_journal.jsonl")
@@ -89,6 +134,8 @@ def build_digest(
         "book_b": book_b,
         "book_a": book_a,
         "book_a_present": book_a_present,
+        "book_t": book_t,
+        "book_t_present": book_t_present,
         # live stop policy minus validated next-close policy: >0 = stops helped.
         # None (not 0.0) when book A is absent — the spread is undefined, never faked.
         "ab_realized_delta": (
@@ -165,10 +212,19 @@ def format_digest_body(d: dict[str, Any]) -> str:
     if d.get("book_a_present"):
         lines.append(
             f"- book A 验证账本（next-close）：现金 {_money(a['cash'])}，"
+            f"open虚拟持仓成本 {_money(a.get('open_entry_cash_out'))}，"
+            f"成本口径权益 {_money(a.get('cost_basis_equity'))}，"
             f"已实现 {_money(a['realized_pnl'], signed=True)}。"
         )
     else:
         lines.append("- book A 验证账本（next-close）：未结算/缺失。")
+    t = d.get("book_t") or {}
+    if d.get("book_t_present"):
+        t_equity = t.get("equity") or t.get("cost_basis_equity")
+        lines.append(
+            f"- book T 趋势模拟账本：权益 {_money(t_equity)}，现金 {_money(t.get('cash'))}，"
+            f"持仓 {t.get('open_positions', 0)} 只，已实现 {_money(t.get('realized_pnl'), signed=True)}。"
+        )
     lines.append(f"- {_format_ab_summary(d.get('ab_realized_delta'))}")
     today = d.get("today") or {}
     if today:

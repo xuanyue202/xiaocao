@@ -249,14 +249,31 @@ def test_real_capital_allow_fails_closed_when_audit_unwritable(tmp_path):
     assert not d.allowed and "audit write failed" in d.reason
 
 
-def test_paper_fill_skips_when_window_low_above_limit():
+def test_paper_fill_retries_when_limit_misses_but_realtime_is_within_basket():
     pr = _paper_record()
     # open=10 -> L=min(10*1.005, basket=10.10)=10.05; window low 10.06 never trades through L.
     record = {"open": 10.0, "basket_price": 10.10}
     price, basis, _, meta = pr._fill_price_from_window(
-        record, window={"vwap": 10.10, "low": 10.06, "high": 10.20, "time": "0931"}, limit_premium_pct=0.5,
+        record,
+        window={"vwap": 10.08, "low": 10.06, "high": 10.20, "last": 10.08, "time": "0931"},
+        limit_premium_pct=0.5,
     )
-    assert price is None and meta.get("skip_reason") == "LIMIT_NOT_REACHED"
+    assert price == 10.08
+    assert basis == "retry_realtime_after_limit_reject"
+    assert meta.get("fill_retry_reason") == "LIMIT_NOT_REACHED_REALTIME_WITHIN_BASKET"
+
+
+def test_paper_fill_skips_when_limit_misses_and_realtime_is_above_basket():
+    pr = _paper_record()
+    record = {"open": 10.0, "basket_price": 10.10}
+    price, _, _, meta = pr._fill_price_from_window(
+        record,
+        window={"vwap": 10.12, "low": 10.06, "high": 10.20, "last": 10.12, "time": "0931"},
+        limit_premium_pct=0.5,
+    )
+    assert price is None
+    assert meta.get("skip_reason") == "LIMIT_NOT_REACHED"
+    assert meta.get("skip_detail") == "REALTIME_ABOVE_BASKET"
 
 
 def test_real_capital_denied_when_expires_at_is_naive_tz(tmp_path):
