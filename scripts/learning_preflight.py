@@ -35,7 +35,8 @@ def _normal_date(value: object) -> str | None:
     return None
 
 
-def _latest_reconstructed_date(path: Path = RECONSTRUCTED_DAILY) -> str | None:
+def _latest_reconstructed_date(path: Path | None = None) -> str | None:
+    path = path or RECONSTRUCTED_DAILY
     if not path.exists():
         return None
     latest: str | None = None
