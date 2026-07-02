@@ -159,6 +159,11 @@ def _is_meaningful_summary(value: Any) -> bool:
     return not str(value).strip().lower().startswith("legacy_backfill:")
 
 
+def _is_resolved_instrumentation(value: Any) -> bool:
+    text = str(value or "").strip().lower()
+    return text.startswith(("implemented:", "已实现", "done:"))
+
+
 def _distilled_path(file_name: str | None) -> Path | None:
     if not file_name:
         return None
@@ -251,14 +256,14 @@ def _human_proposal_line(p: dict) -> str:
         pending_ids = re.findall(r"xh-\d+", pid, flags=re.IGNORECASE)
         pending = ", ".join(x.upper() for x in pending_ids) or pid.removeprefix("pass-pending-").upper()
         return (
-            f"- **确认是否消费 PASS 证据**：{pending} 已经通过研究/纪律口径，但还没有映射成纸面/模拟策略改动。"
-            "现在不自动改策略；需要你确认它到底该怎么落地，或者明确先搁置。"
+            f"- **确认策略映射方案**：{pending} 已经通过研究/纪律口径，但这次固定输入里还缺"
+            "明确的落地映射、不过拟合说明或回滚方案。证据链补齐后可以自动落地；现在先写成提案，避免想当然改策略。"
         )
     if pid.startswith("instrumentation-"):
         reason = str(p.get("reason") or "").removeprefix("提案：").strip()
         return (
-            f"- **确认是否补命中审计工具**：{_clip(reason, limit=180)} "
-            "这是流程工具，不是策略结论；确认后再实现。"
+            f"- **补流程工具**：{_clip(reason, limit=180)} "
+            "这是只读观测工具，不改策略/参数/成交/账户；以后这类固定输入里的工具缺口默认直接优化。"
         )
     return f"- **需要确认** `{pid}`：{_clip(p.get('title') or p.get('reason'), limit=180)}"
 
@@ -267,7 +272,10 @@ def _render_needs_review(plan: dict, blocked_dirty: list[str]) -> list[str]:
     out = [_human_proposal_line(p) for p in plan.get("proposals", [])]
     pending = plan.get("flywheel", {}).get("strategy_flywheel", {}).get("pending_pass_verdicts") or []
     if pending and not any(str(p.get("id", "")).startswith("pass-pending-") for p in plan.get("proposals", [])):
-        out.append(f"- **确认是否消费 PASS 证据**：{', '.join(pending)} 已 PASS，但还没有进入策略消费。")
+        out.append(
+            f"- **确认策略映射方案**：{', '.join(pending)} 已 PASS，但本次 plan 没有给出"
+            "可直接落地的代码映射/不过拟合/回滚方案。"
+        )
     if blocked_dirty:
         sample = ", ".join(blocked_dirty[:5])
         more = f"；另有 {len(blocked_dirty) - 5} 个" if len(blocked_dirty) > 5 else ""
@@ -383,6 +391,23 @@ def _proposal(
     }
 
 
+def _auto_apply_candidate(
+    *,
+    cid: str,
+    title: str,
+    source: str,
+    recommended_change: str,
+    evidence: dict,
+) -> dict:
+    return {
+        "id": cid,
+        "title": title,
+        "source": source,
+        "recommended_change": recommended_change,
+        "evidence_bundle": evidence,
+    }
+
+
 def build_plan(*, as_of: dt.date | None = None, output: Path | None = None) -> dict:
     as_of = as_of or _today()
     pre_dirty = _git_status()
@@ -400,35 +425,34 @@ def build_plan(*, as_of: dt.date | None = None, output: Path | None = None) -> d
             title=f"{', '.join(pending)} 已 PASS，但还没有进入策略消费",
             source="scripts/flywheel_selfcheck.py",
             reason=f"策略飞轮发现已 PASS 但未消费的证据：{', '.join(pending)}。",
-            recommended_action="请确认这条 PASS 证据是否要映射成纸面/模拟策略改动；没有明确映射和验证前，不自动改策略。",
+            recommended_action="补齐明确落地映射、不过拟合证据和回滚方案；齐了就按固定输入走 AUTO_APPLIED，否则维持提案。",
             evidence=_evidence_bundle(
                 problem=f"已 PASS 但没有进入策略消费：{', '.join(pending)}",
                 attribution="flywheel_selfcheck 从 verdict ledger 读到 PASS；缺口是 ② 证据没有进入 ③ 策略更新。",
                 artifact="kronos_screen/HYPOTHESES.jsonl + scripts/flywheel_selfcheck.py",
                 baseline="当前行为只是把 PASS 证据暴露出来，没有应用到纸面/模拟策略。",
-                overfit="这里不推导自动策略改动；仍需要明确映射、回测/前测验证和可回滚方案。",
+                overfit="PASS 本身不等于任意改代码；自动落地需要明确映射、不过拟合说明和可回滚方案。",
                 scope="纸面/模拟策略提案",
             ),
         ))
 
     for row in action_rows:
         todo = row.get("instrumentation_todo")
-        if _is_nullish(todo):
+        if _is_nullish(todo) or _is_resolved_instrumentation(todo):
             continue
         pid = f"instrumentation-{row.get('date')}-{_slug(str(todo))}"
-        proposals.append(_proposal(
-            pid=pid,
+        auto_apply_candidates.append(_auto_apply_candidate(
+            cid=pid,
             title=f"补命中审计投影工具：{row.get('file')}",
             source="reference/experience/distill_action_log.jsonl",
-            reason=str(todo),
-            recommended_action="请确认是否补这个观测/投影工具；确认后再实现，避免以后复盘继续手扒多个 JSON。",
+            recommended_change="实现只读观测/投影工具；不改变策略、参数、买卖、账户或资金。",
             evidence=_evidence_bundle(
                 problem=f"转录解读暴露了工具缺口：{todo}",
                 attribution="这个缺口来自 action_summary.instrumentation_todo 的显式路由，不是临时脑补。",
                 artifact=f"reference/experience/distilled/{row.get('file')}",
                 baseline="没有这个工具/字段时，后续命中审计仍要手动拼 recommend、signal、positions、cohorts。",
-                overfit="这是非收益类工具改动；仍需确认价值和范围，不把它当策略结论。",
-                scope="流程/观测工具提案",
+                overfit="这是只读观测工具，不改变收益路径；负作用限于维护成本/报告噪音，可用测试和报告样例约束。",
+                scope="流程/观测工具自动优化",
             ),
         ))
 
@@ -443,10 +467,11 @@ def build_plan(*, as_of: dt.date | None = None, output: Path | None = None) -> d
         "recent_action_summary": action_rows,
         "auto_apply_candidates": auto_apply_candidates,
         "proposals": proposals,
-        "mode_recommendation": MODE_PROPOSAL if proposals else MODE_NONE,
+        "mode_recommendation": MODE_PROPOSAL if proposals else (MODE_AUTO if auto_apply_candidates else MODE_NONE),
         "rules": {
             "outside_fixed_inputs": "proposal_only_requires_user_confirmation",
             "auto_apply_requires": "complete evidence_bundle + fixed input source + validation + clean target files",
+            "instrumentation_todo": "auto_apply_when_read_only_and_from_fixed_action_log; no user confirmation required",
             "dirty_file_boundary": "pre-existing dirty files are not auto-edited; emit NEEDS_HUMAN_CONFIRMATION",
         },
     }
@@ -526,7 +551,7 @@ def _render_report(plan: dict, *, mode: str, validation: list[str], created_issu
         "",
         "## 先看结论",
         f"- 本周模式：{human_mode}（`{mode}`）。",
-        f"- 自动改策略代码：{'有，见下方「已自动落地」' if mode == MODE_AUTO else '没有。本周只产出提案/审计，不静默改策略。'}",
+        f"- 自动改策略代码：{'有，见下方「已自动落地」' if mode == MODE_AUTO else '没有。没有完整证据链时只产出提案/审计，不想当然改策略。'}",
         f"- 需要你确认的事项：{decision_count} 个{reminder}，见下一节。",
         "",
         "## 需要你看/确认的事项",

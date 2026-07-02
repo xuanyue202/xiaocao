@@ -4,6 +4,7 @@ Self-contained fixture (no parquet) so it runs without pandas."""
 from __future__ import annotations
 
 import json
+from datetime import date, timedelta
 
 from xiaocao.live import flywheel
 
@@ -31,13 +32,15 @@ esac
 """
 
 
-def _root(tmp_path, *, auto_daily=WIRED_EOD, posture_date="2026-06-20", candidates=0):
+def _root(tmp_path, *, auto_daily=WIRED_EOD, posture_date=None, candidates=0):
+    fresh_date = date.today().isoformat()
+    posture_date = fresh_date if posture_date is None else posture_date
     (tmp_path / "scripts").mkdir(parents=True, exist_ok=True)
     (tmp_path / "scripts" / "auto_daily.sh").write_text(auto_daily, encoding="utf-8")
     live = tmp_path / "output" / "live"
     live.mkdir(parents=True, exist_ok=True)
     (live / "decision_journal.jsonl").write_text(
-        json.dumps({"automation": "live_monitor", "market_date": "2026-06-20"}) + "\n", encoding="utf-8")
+        json.dumps({"automation": "live_monitor", "market_date": fresh_date}) + "\n", encoding="utf-8")
     (live / "paper_account.json").write_text("{}", encoding="utf-8")
     (live / "paper_account_A.json").write_text("{}", encoding="utf-8")
     if posture_date:
@@ -81,7 +84,7 @@ def test_calibration_unwired_warns_but_does_not_gate(tmp_path):
 
 
 def test_calibration_liveness_warns_when_posture_stale(tmp_path):
-    root = _root(tmp_path, posture_date="2026-06-01")  # >7d before today
+    root = _root(tmp_path, posture_date=(date.today() - timedelta(days=30)).isoformat())
     r = flywheel.check_flywheel(root=root, env={}, auth_path=root / "none.json")
     assert any("CALIBRATION LIVENESS" in w for w in r["warnings"])
     assert r["spinning"] is True
@@ -149,3 +152,24 @@ def test_knowledge_warning_fires_when_grading_lags(tmp_path):
     k = flywheel.knowledge_scoreboard(root)
     warns = flywheel._knowledge_warnings(k)
     assert any("falling behind ingest" in w for w in warns)
+
+
+def test_applied_pass_is_not_reported_as_pending_strategy_gap(tmp_path):
+    root = _root(tmp_path)
+    ledger = root / "kronos_screen" / "HYPOTHESES.jsonl"
+    ledger.write_text(json.dumps({"id": "XH-037", "verdict": "PASS"}) + "\n", encoding="utf-8")
+    applied = root / "reference" / "experience" / "applied_verdicts.jsonl"
+    applied.parent.mkdir(parents=True, exist_ok=True)
+    applied.write_text(json.dumps({
+        "id": "XH-037",
+        "status": "applied",
+        "scope": "paper/simulation",
+    }) + "\n", encoding="utf-8")
+
+    r = flywheel.check_flywheel(root=root, env={}, auth_path=root / "none.json")
+
+    strat = r["strategy_flywheel"]
+    assert strat["applied_pass_verdicts"] == ["XH-037"]
+    assert strat["pending_pass_verdicts"] == []
+    assert strat["status"] == "open"
+    assert not any("STRATEGY:" in w for w in r["warnings"])

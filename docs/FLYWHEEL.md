@@ -58,17 +58,17 @@
 
 ## ③ 策略复利（本事变强 · actuator，人工门）
 
-② 产出一个 **PASS** 裁决时，③ 把它变成更强的策略：改一个参数（`strategy/params.py` 是唯一改值入口，受 `frozen` 约束）或重训模型（`build_scorer.py`），明天的策略就比今天强，回喂 ① 赚更多。
+② 产出一个 **PASS** 裁决时，③ 把它变成更强的策略：可能是纸面/模拟层的 emitted mode、cohort 规则、研究工具、报告字段，也可能是未来的人审核心参数/模型更新。快速探索期可以自动落地 paper/simulation/research/tooling 改动；real-capital、账户历史、安全逻辑和核心真相源仍然不能自动改。
 
 **现状诚实**：这根 actuator 腿处在快速探索期的半自动状态。`flywheel_selfcheck.py`
-仍会把 PASS 待消费但没有 actuator 的状态报为 `blocked`；weekly deep review 是当前的消费器：
-它生成固定输入 plan，Codex agent 可按 evidence_bundle 自动改 paper/simulation 代码，随后由
+仍会把 PASS 待消费但没有明确消费记录的状态报为 `blocked`；weekly deep review 是当前的消费器：
+它生成固定输入 plan，Codex agent 可按完整 evidence_bundle 自动改 paper/simulation/research/tooling 代码，随后由
 `weekly_deep_review.py --finalize` 写周报、ledger、allowlist stage 并 commit。`flywheel_selfcheck.py`
 对 ③ 给三态：
 
-- `open`（🟡）：无 PASS 待应用——**当前状态**（K→P 被 REJECTED，本就无 edge 可喂，正确地停着）；
-- `blocked`（🔴）：有 PASS 待应用却无 actuator（`scripts/apply_verdict.py` 不存在）——**真实缺口**，自检会告警；
-- `closed`（🟢）：actuator 已接线（weekly 或未来专用 actuator 能把 PASS/evidence 转为受审计的改动）。
+- `open`（🟡）：无未消费 PASS 待应用；如果有已消费 PASS，会记录在 `reference/experience/applied_verdicts.jsonl`；
+- `blocked`（🔴）：有 PASS 待应用但缺少消费记录或明确映射——**真实缺口**，weekly 应自动落地证据完整的纸面/模拟/工具改动；不完整则写 proposal；
+- `closed`（🟢）：专用 actuator 已接线，能把合格 PASS/evidence 稳定转为受审计的改动。
 
 因此大环 `rings.fully_closed=False` 是**诚实状态**，断点在 **②→③**（无验证过的 edge + actuator 未接线），不是 bug。
 

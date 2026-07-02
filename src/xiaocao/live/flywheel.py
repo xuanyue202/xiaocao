@@ -206,7 +206,23 @@ def _source_mentions(path: Path, token: str) -> bool:
         return False
 
 
-def _pending_pass_ids(ledger_path: Path) -> list[str]:
+def _applied_verdict_ids(path: Path) -> set[str]:
+    """Verdicts that have already been consumed by a paper/simulation actuator.
+
+    This is deliberately separate from the verdict ledger: PASS/REJECTED records
+    answer "is the edge validated?", while this file answers "has that validated
+    edge been wired into the exploratory paper/simulation layer yet?".
+    """
+    out: set[str] = set()
+    for e in _jsonl_entries(path):
+        hid = e.get("id")
+        status = str(e.get("status", "applied")).lower()
+        if hid and status in {"applied", "consumed"}:
+            out.add(str(hid))
+    return out
+
+
+def _pending_pass_ids(ledger_path: Path, *, applied_path: Path | None = None) -> list[str]:
     """Hypotheses whose LATEST ledger verdict is PASS — a validated edge that the
     strategy flywheel should actuate. Empty today (K->P is REJECTED); a non-empty
     list with no actuator wired is a real gap, not a by-design idle."""
@@ -215,7 +231,8 @@ def _pending_pass_ids(ledger_path: Path) -> list[str]:
         hid = e.get("id")
         if hid is not None:
             latest[hid] = e.get("verdict")
-    return [hid for hid, v in latest.items() if v == "PASS"]
+    applied = _applied_verdict_ids(applied_path) if applied_path else set()
+    return [hid for hid, v in latest.items() if v == "PASS" and hid not in applied]
 
 
 def check_flywheel(
@@ -289,7 +306,9 @@ def check_flywheel(
     # design) when no PASS is pending, "blocked" (a real gap) if a validated edge
     # exists but nothing can apply it, and "closed" only once an actuator is wired.
     actuator_wired = (root / "scripts" / "apply_verdict.py").exists()
-    pending_pass = _pending_pass_ids(ledger_path)
+    applied_path = root / "reference" / "experience" / "applied_verdicts.jsonl"
+    applied_pass = sorted(_applied_verdict_ids(applied_path))
+    pending_pass = _pending_pass_ids(ledger_path, applied_path=applied_path)
     params_frozen = all(p.frozen for p in params.REGISTRY.values())
     if actuator_wired:
         strat_status = "closed"
@@ -300,9 +319,10 @@ def check_flywheel(
     strategy = {
         "actuator_wired": actuator_wired,
         "params_frozen": params_frozen,
+        "applied_pass_verdicts": applied_pass,
         "pending_pass_verdicts": pending_pass,
         "status": strat_status,
-        "note": "PASS→改参/重训目前是人工门(受 strategy/params.py 冻结约束)；尚未自动闭环",
+        "note": "PASS→纸面/模拟改动可以由 weekly 自动审计落地；实盘/核心参数仍受人工门和冻结约束",
     }
 
     # --- the three-ring coupling: does ① feed ② feed ③ feed ① ? ------------- #

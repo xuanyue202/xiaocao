@@ -85,6 +85,7 @@ def main() -> None:
         print(f"     consumer (sweep)  : {cal.get('sweep_wired', False)}  (backlog ranked/retired by flywheel_sweep.py)")
         print(f"{strat_dot} ③ strategy flywheel (本事变强) — {strat['status']}:")
         print(f"     actuator wired    : {strat['actuator_wired']}  (PASS→改参/重训)")
+        print(f"     PASS applied      : {strat.get('applied_pass_verdicts') or 'none'}")
         print(f"     PASS pending      : {strat['pending_pass_verdicts'] or 'none'}")
         print(f"     {strat['note']}")
         k = report.get("knowledge", {})

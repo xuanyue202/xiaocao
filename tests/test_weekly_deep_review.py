@@ -53,8 +53,33 @@ def test_build_plan_routes_pass_pending_and_instrumentation_todo(tmp_path, monke
     assert plan["mode_recommendation"] == wdr.MODE_PROPOSAL
     ids = {p["id"] for p in plan["proposals"]}
     assert "pass-pending-xh-037" in ids
-    assert any(i.startswith("instrumentation-2026-07-02") for i in ids)
+    auto_ids = {c["id"] for c in plan["auto_apply_candidates"]}
+    assert any(i.startswith("instrumentation-2026-07-02") for i in auto_ids)
     assert plan["rules"]["outside_fixed_inputs"] == "proposal_only_requires_user_confirmation"
+    assert plan["rules"]["instrumentation_todo"].startswith("auto_apply")
+
+
+def test_build_plan_skips_resolved_instrumentation_todo(tmp_path, monkeypatch):
+    _patch_paths(monkeypatch, tmp_path)
+    wdr.ACTION_LOG.parent.mkdir(parents=True)
+    wdr.ACTION_LOG.write_text(json.dumps({
+        "date": "2026-07-02",
+        "kind": "盘后复盘",
+        "file": "2026-07-02_review.json",
+        "routing": ["instrumentation"],
+        "instrumentation_todo": "implemented: scripts/strategy_hit_audit.py",
+    }, ensure_ascii=False) + "\n", encoding="utf-8")
+    done_fw = _fake_flywheel()
+    done_fw["strategy_flywheel"] = {"status": "open", "pending_pass_verdicts": []}
+    monkeypatch.setattr(wdr.flywheel, "check_flywheel", lambda **_: done_fw)
+    monkeypatch.setattr(wdr, "_load_sweep_json", lambda: {"scoreboard": {}, "pass_evidence": [], "queue": []})
+    monkeypatch.setattr(wdr, "_git_status", lambda: [])
+
+    plan = wdr.build_plan(as_of=dt.date(2026, 7, 2), output=tmp_path / "plan.json")
+
+    assert plan["mode_recommendation"] == wdr.MODE_NONE
+    assert plan["proposals"] == []
+    assert plan["auto_apply_candidates"] == []
 
 
 def test_finalize_writes_report_ledger_and_proposal_issue(tmp_path, monkeypatch):

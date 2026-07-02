@@ -258,7 +258,7 @@
     "playbook_update": "新增 2026-07-01 校准：板块内高低切必须看阶段，不能把 6/17 那种健康轮涨直接套到尾声扩散；尾声扩散要减仓而不是继续追强。",
     "hypothesis_update": "把 XH-038、XH-025 记为再次出现；新增“高低切环境里，大涨次日追涨是否不如回调/下杀后的模式内低吸”的候选假设。",
     "audit_evidence": "7/1 命中审计：信濠光电是真正的老师样本与本地正式买入重合；传艺科技是本地买入标杆但不是老师点名重合；海川智能/拓斯达只是 authority=0 的观察 cohort；多数趋势核心只是方向样本，不能算短线命中。",
-    "instrumentation_todo": "提案：补一个 strategy-hit-audit 投影小工具，把 recommend、signal、positions、cohorts 聚合成可读表，避免未来每次复盘都手动扒 JSON。",
+    "instrumentation_todo": "implemented: scripts/strategy_hit_audit.py 已补 strategy-hit-audit 投影工具，把 recommend、signal、positions、cohorts 聚合成可读表，避免未来每次复盘手动扒 JSON。",
     "routing": [
       "posture",
       "playbook",
