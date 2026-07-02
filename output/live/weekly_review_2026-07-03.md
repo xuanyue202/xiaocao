@@ -67,10 +67,7 @@
 {
   "scoreboard": {},
   "pass_evidence": [],
-  "pre_existing_dirty_count": 2,
-  "pre_existing_dirty_sample": [
-    "?? output/live/paper_holdings_T.json",
-    "?? output/live/paper_holdings_T_snapshots.jsonl"
-  ]
+  "pre_existing_dirty_count": 0,
+  "pre_existing_dirty_sample": []
 }
 ```

@@ -93,10 +93,7 @@
     ]
   },
   "mode_recommendation": "NO_ACTION_REQUIRED",
-  "pre_existing_dirty": [
-    "?? output/live/paper_holdings_T.json",
-    "?? output/live/paper_holdings_T_snapshots.jsonl"
-  ],
+  "pre_existing_dirty": [],
   "proposals": [],
   "recent_action_summary": [
     {
