@@ -402,6 +402,18 @@ Dirty-file boundary: record the pre-run `git status --porcelain`; do not auto-ed
 that was already dirty before the weekly run. If evidence points to such a file, write
 `NEEDS_HUMAN_CONFIRMATION` in the report/proposal and stop at a recommendation.
 
+Weekly report readability is part of the contract. The first screen must be Chinese and
+decision-oriented, not an internal state dump. It must answer, in this order:
+
+1. 这批转录/证据具体给了什么启发（尤其是 posture、playbook、hypothesis、audit）。
+2. 已经改进或沉淀到了哪里（例如 posture_current、XIAOCAO_PLAYBOOK、候选假设、命中审计、工具提案）。
+3. 需要用户看/确认什么，以及为什么不能自动落地。
+
+Do not use raw headings such as `Human Attention`, `NEEDS_CONFIRMATION`, or
+`BLOCKED_BY_DIRTY_FILE` in the human-facing first screen. A pre-existing dirty file list is
+only a local-worktree reminder, not a strategy decision; summarize the count and a few sample
+paths in Chinese, and keep the full machine details in the audit section.
+
 Finalize with the weekly harness after implementation/proposal routing:
 
 ```bash

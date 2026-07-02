@@ -40,6 +40,11 @@ MODE_AUTO = "AUTO_APPLIED"
 MODE_PROPOSAL = "PROPOSAL_ONLY"
 MODE_NONE = "NO_ACTION_REQUIRED"
 MODES = {MODE_AUTO, MODE_PROPOSAL, MODE_NONE}
+MODE_LABELS = {
+    MODE_AUTO: "已按证据自动落地",
+    MODE_PROPOSAL: "只给提案，等你确认",
+    MODE_NONE: "本周无需动作",
+}
 
 NULLISH = {"", "none", "no_change", "not_applicable", "no_issue_created", "[]", "{}"}
 REQUIRED_EVIDENCE_FIELDS = {
@@ -146,6 +151,131 @@ def _is_nullish(value: Any) -> bool:
     if isinstance(value, (list, dict)):
         return not value
     return str(value).strip().lower() in NULLISH
+
+
+def _is_meaningful_summary(value: Any) -> bool:
+    if _is_nullish(value):
+        return False
+    return not str(value).strip().lower().startswith("legacy_backfill:")
+
+
+def _distilled_path(file_name: str | None) -> Path | None:
+    if not file_name:
+        return None
+    path = ROOT / "reference" / "experience" / "distilled" / str(file_name)
+    return path if path.exists() else None
+
+
+def _load_distilled(file_name: str | None) -> dict:
+    path = _distilled_path(file_name)
+    if not path:
+        return {}
+    try:
+        return json.loads(path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError:
+        return {}
+
+
+def _clip(s: Any, *, limit: int = 180) -> str:
+    text = re.sub(r"\s+", " ", str(s or "")).strip()
+    if len(text) <= limit:
+        return text
+    return text[: limit - 1].rstrip() + "…"
+
+
+def _report_action_rows(plan: dict, *, limit: int = 4) -> list[dict]:
+    rows = [
+        r for r in plan.get("recent_action_summary", [])
+        if any(_is_meaningful_summary(r.get(k)) for k in (
+            "posture_update", "playbook_update", "hypothesis_update",
+            "audit_evidence", "instrumentation_todo",
+        ))
+    ]
+    return rows[-limit:]
+
+
+def _render_transcript_insights(plan: dict) -> list[str]:
+    rows = _report_action_rows(plan)
+    if not rows:
+        return ["- 本周没有新的高信号转录启发。"]
+    out: list[str] = []
+    for row in rows:
+        distilled = _load_distilled(row.get("file"))
+        label = f"{row.get('date')} {row.get('kind') or ''}".strip()
+        if row.get("file"):
+            label += f"（{row.get('file')}）"
+        out.append(f"- **{label}**")
+        summary = distilled.get("summary")
+        if summary:
+            out.append(f"  启发：{_clip(summary, limit=220)}")
+        if _is_meaningful_summary(row.get("posture_update")):
+            out.append(f"  姿态：{_clip(row.get('posture_update'))}")
+        if _is_meaningful_summary(row.get("playbook_update")):
+            out.append(f"  打法：{_clip(row.get('playbook_update'))}")
+        if _is_meaningful_summary(row.get("hypothesis_update")):
+            out.append(f"  待验证：{_clip(row.get('hypothesis_update'))}")
+        if _is_meaningful_summary(row.get("audit_evidence")):
+            out.append(f"  命中审计：{_clip(row.get('audit_evidence'))}")
+        if _is_meaningful_summary(row.get("instrumentation_todo")):
+            out.append(f"  工具缺口：{_clip(row.get('instrumentation_todo'))}")
+    return out
+
+
+def _render_knowledge_changes(plan: dict) -> list[str]:
+    rows = _report_action_rows(plan)
+    if not rows:
+        return ["- 没有新的知识层变更。"]
+    buckets = [
+        ("posture_update", "姿态先验"),
+        ("playbook_update", "Playbook/纪律"),
+        ("hypothesis_update", "候选假设"),
+        ("audit_evidence", "命中审计"),
+        ("instrumentation_todo", "工具/流程提案"),
+    ]
+    out: list[str] = []
+    for key, label in buckets:
+        items = [
+            f"{r.get('date')} {r.get('file')}: {_clip(r.get(key), limit=190)}"
+            for r in rows
+            if _is_meaningful_summary(r.get(key))
+        ]
+        if items:
+            out.append(f"- **{label}**")
+            out.extend(f"  - {item}" for item in items)
+    return out or ["- 没有新的知识层变更。"]
+
+
+def _human_proposal_line(p: dict) -> str:
+    pid = str(p.get("id", "proposal"))
+    if pid.startswith("pass-pending-"):
+        pending_ids = re.findall(r"xh-\d+", pid, flags=re.IGNORECASE)
+        pending = ", ".join(x.upper() for x in pending_ids) or pid.removeprefix("pass-pending-").upper()
+        return (
+            f"- **确认是否消费 PASS 证据**：{pending} 已经通过研究/纪律口径，但还没有映射成纸面/模拟策略改动。"
+            "现在不自动改策略；需要你确认它到底该怎么落地，或者明确先搁置。"
+        )
+    if pid.startswith("instrumentation-"):
+        reason = str(p.get("reason") or "").removeprefix("提案：").strip()
+        return (
+            f"- **确认是否补命中审计工具**：{_clip(reason, limit=180)} "
+            "这是流程工具，不是策略结论；确认后再实现。"
+        )
+    return f"- **需要确认** `{pid}`：{_clip(p.get('title') or p.get('reason'), limit=180)}"
+
+
+def _render_needs_review(plan: dict, blocked_dirty: list[str]) -> list[str]:
+    out = [_human_proposal_line(p) for p in plan.get("proposals", [])]
+    pending = plan.get("flywheel", {}).get("strategy_flywheel", {}).get("pending_pass_verdicts") or []
+    if pending and not any(str(p.get("id", "")).startswith("pass-pending-") for p in plan.get("proposals", [])):
+        out.append(f"- **确认是否消费 PASS 证据**：{', '.join(pending)} 已 PASS，但还没有进入策略消费。")
+    if blocked_dirty:
+        sample = ", ".join(blocked_dirty[:5])
+        more = f"；另有 {len(blocked_dirty) - 5} 个" if len(blocked_dirty) > 5 else ""
+        out.append(
+            f"- **本地工作区提醒，不是策略判断**：有 {len(blocked_dirty)} 个本来就 dirty 的可改路径，"
+            f"本周自动化不会碰它们。样例：{sample}{more}。"
+        )
+    return out or ["- 没有需要你确认的事项。"]
 
 
 def _slug(s: str) -> str:
@@ -267,17 +397,17 @@ def build_plan(*, as_of: dt.date | None = None, output: Path | None = None) -> d
     if pending:
         proposals.append(_proposal(
             pid="pass-pending-" + "-".join(str(x).lower() for x in pending),
-            title="PASS verdict pending strategy consumption",
+            title=f"{', '.join(pending)} 已 PASS，但还没有进入策略消费",
             source="scripts/flywheel_selfcheck.py",
-            reason=f"Strategy flywheel is blocked by pending PASS verdict(s): {', '.join(pending)}.",
-            recommended_action="Confirm or implement the paper/simulation strategy mapping for the PASS evidence; do not leave it hidden in the ledger.",
+            reason=f"策略飞轮发现已 PASS 但未消费的证据：{', '.join(pending)}。",
+            recommended_action="请确认这条 PASS 证据是否要映射成纸面/模拟策略改动；没有明确映射和验证前，不自动改策略。",
             evidence=_evidence_bundle(
-                problem=f"PASS pending with no actuator: {', '.join(pending)}",
-                attribution="flywheel_selfcheck derives pending PASS from the verdict ledger; the gap is ② evidence not reaching ③ strategy updates.",
+                problem=f"已 PASS 但没有进入策略消费：{', '.join(pending)}",
+                attribution="flywheel_selfcheck 从 verdict ledger 读到 PASS；缺口是 ② 证据没有进入 ③ 策略更新。",
                 artifact="kronos_screen/HYPOTHESES.jsonl + scripts/flywheel_selfcheck.py",
-                baseline="Current behavior leaves PASS evidence visible but unapplied.",
-                overfit="No automatic strategy change is inferred here; implementation still needs a concrete mapping and validation.",
-                scope="paper/simulation strategy proposal",
+                baseline="当前行为只是把 PASS 证据暴露出来，没有应用到纸面/模拟策略。",
+                overfit="这里不推导自动策略改动；仍需要明确映射、回测/前测验证和可回滚方案。",
+                scope="纸面/模拟策略提案",
             ),
         ))
 
@@ -288,17 +418,17 @@ def build_plan(*, as_of: dt.date | None = None, output: Path | None = None) -> d
         pid = f"instrumentation-{row.get('date')}-{_slug(str(todo))}"
         proposals.append(_proposal(
             pid=pid,
-            title=f"Instrumentation todo from {row.get('file')}",
+            title=f"补命中审计投影工具：{row.get('file')}",
             source="reference/experience/distill_action_log.jsonl",
             reason=str(todo),
-            recommended_action="Create or implement the observability/tooling change after confirming it is still needed.",
+            recommended_action="请确认是否补这个观测/投影工具；确认后再实现，避免以后复盘继续手扒多个 JSON。",
             evidence=_evidence_bundle(
-                problem=f"Distillation exposed instrumentation gap: {todo}",
-                attribution="The gap was explicitly routed through action_summary.instrumentation_todo, not inferred ad hoc.",
+                problem=f"转录解读暴露了工具缺口：{todo}",
+                attribution="这个缺口来自 action_summary.instrumentation_todo 的显式路由，不是临时脑补。",
                 artifact=f"reference/experience/distilled/{row.get('file')}",
-                baseline="Without the tool/schema/report field, future review cannot attribute the same observation cleanly.",
-                overfit="Non-return tooling change; still requires explicit evidence and human confirmation unless it is in the fixed input plan.",
-                scope="workflow/instrumentation proposal",
+                baseline="没有这个工具/字段时，后续命中审计仍要手动拼 recommend、signal、positions、cohorts。",
+                overfit="这是非收益类工具改动；仍需确认价值和范围，不把它当策略结论。",
+                scope="流程/观测工具提案",
             ),
         ))
 
@@ -344,13 +474,13 @@ def _write_proposal_issues(plan: dict) -> list[str]:
             f"- source: {p['source']}",
             f"- requires_confirmation: {p['requires_confirmation']}",
             "",
-            "## Reason",
+            "## 为什么需要你看",
             p["reason"],
             "",
-            "## Recommended Action",
+            "## 建议动作",
             p["recommended_action"],
             "",
-            "## Evidence Bundle",
+            "## 证据包",
             "```json",
             json.dumps(p["evidence_bundle"], ensure_ascii=False, indent=2),
             "```",
@@ -388,66 +518,68 @@ def _render_report(plan: dict, *, mode: str, validation: list[str], created_issu
     fw = plan.get("flywheel", {})
     knowledge = fw.get("knowledge", {})
     strategy = fw.get("strategy_flywheel", {})
+    human_mode = MODE_LABELS.get(mode, mode)
+    decision_count = len(plan.get("proposals", []))
+    reminder = "；另有 1 条本地工作区提醒" if blocked_dirty else ""
     lines = [
-        f"# Xiaocao Weekly Deep Review {plan['date']}",
+        f"# 小草每周深度复盘 {plan['date']}",
         "",
-        f"## Mode",
-        mode,
+        "## 先看结论",
+        f"- 本周模式：{human_mode}（`{mode}`）。",
+        f"- 自动改策略代码：{'有，见下方「已自动落地」' if mode == MODE_AUTO else '没有。本周只产出提案/审计，不静默改策略。'}",
+        f"- 需要你确认的事项：{decision_count} 个{reminder}，见下一节。",
         "",
-        "## Human Attention",
+        "## 需要你看/确认的事项",
     ]
-    if plan.get("proposals"):
-        for p in plan["proposals"]:
-            lines.append(f"- NEEDS_CONFIRMATION `{p['id']}`: {p['title']}")
-    if blocked_dirty:
-        max_blocked = 20
-        for p in blocked_dirty[:max_blocked]:
-            lines.append(f"- BLOCKED_BY_DIRTY_FILE `{p}`")
-        if len(blocked_dirty) > max_blocked:
-            lines.append(f"- BLOCKED_BY_DIRTY_FILE ... and {len(blocked_dirty) - max_blocked} more pre-existing dirty allowed path(s)")
-    pending = strategy.get("pending_pass_verdicts") or []
-    if pending:
-        lines.append(f"- PASS pending: {', '.join(pending)}")
-    if not plan.get("proposals") and not blocked_dirty and not pending:
-        lines.append("- none")
+    lines.extend(_render_needs_review(plan, blocked_dirty))
     lines += [
         "",
-        "## Auto Applied Changes",
+        "## 这批转录给我的启发",
+    ]
+    lines.extend(_render_transcript_insights(plan))
+    lines += [
+        "",
+        "## 已经改进/沉淀到哪里",
+    ]
+    lines.extend(_render_knowledge_changes(plan))
+    lines += [
+        "",
+        "## 已自动落地的代码/配置变更",
     ]
     if mode == MODE_AUTO:
         for c in plan.get("auto_apply_candidates", []):
             lines.append(f"- `{c.get('id')}` {c.get('title')}: {c.get('recommended_change')}")
         lines.append("")
-        lines.append("Changed/staged files:")
+        lines.append("本次纳入提交/暂存的文件：")
         lines.extend([f"- {p}" for p in staged_files] or ["- none detected"])
     else:
         lines.append("- none")
     lines += [
         "",
-        "## Evidence Summary",
-        f"- fixed inputs: {', '.join(plan.get('fixed_inputs', []))}",
-        f"- proposals: {len(plan.get('proposals', []))}",
-        f"- auto_apply_candidates: {len(plan.get('auto_apply_candidates', []))}",
+        "## 证据来源",
+        f"- 固定输入清单：{', '.join(plan.get('fixed_inputs', []))}",
+        f"- 提案数量：{len(plan.get('proposals', []))}",
+        f"- 自动落地候选数量：{len(plan.get('auto_apply_candidates', []))}",
         "",
-        "## Validation",
+        "## 验证",
     ]
     lines.extend(f"- {v}" for v in _validation_lines(validation))
     lines += [
         "",
-        "## Rollback",
-        "- After commit: `git revert <commit>`",
+        "## 回滚",
+        "- 如果本周有提交：`git revert <commit>`",
         "",
-        "## Flywheel Health",
-        f"- spinning: {fw.get('spinning')}",
-        f"- strategy: {strategy.get('status')} pending={strategy.get('pending_pass_verdicts')}",
-        f"- knowledge: candidates {knowledge.get('candidates_total')} / tested {knowledge.get('candidates_tested')} / retired {knowledge.get('candidates_retired')} / oldest {knowledge.get('oldest_untested')}",
+        "## 飞轮健康度",
+        f"- 总体在转：{fw.get('spinning')}",
+        f"- 策略飞轮：{strategy.get('status')}；待处理 PASS={strategy.get('pending_pass_verdicts')}",
+        f"- 知识飞轮：候选 {knowledge.get('candidates_total')} / 已测 {knowledge.get('candidates_tested')} / 已退役 {knowledge.get('candidates_retired')} / 最老未测 {knowledge.get('oldest_untested')}",
         "",
-        "## Proposal Issues",
+        "## 提案文件",
     ]
     lines.extend(f"- {p}" for p in created_issues) if created_issues else lines.append("- none")
     lines += [
         "",
-        "## Details",
+        "## 机器审计明细",
         "```json",
         json.dumps({
             "scoreboard": plan.get("sweep", {}).get("scoreboard", {}),

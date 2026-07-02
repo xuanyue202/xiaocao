@@ -161,9 +161,9 @@
     }
   ],
   "action_summary": {
-    "posture_update": "2026-07-01 morning extends trend_tail_rotation: electronic/semiconductor trend still valid but in补涨/加速尾声; keep 5-day-line fallback and reduce-on-rebound posture.",
-    "playbook_update": "calibrate board-internal high-low rotation: early mainline rotation can hold, tail-stage high-core weakness + low-mid补涨 becomes扩散减仓; add 5日线 fallback.",
-    "hypothesis_update": "merge recurrence for XH-038 and XH-025; add candidate about 科创/20cm > 主板 hierarchy inside the same electronic mainline.",
+    "posture_update": "7/1 早盘延续 trend_tail_rotation：电子/半导体主线还没死，但已经进入补涨、加速尾声和高低切窗口；处理上用5日线兜底，修复反弹偏减仓。",
+    "playbook_update": "校准“板块内高低切”：早期主线轮涨可以持有，尾声阶段高位核心弱、低中位补涨反而是扩散减仓信号；新增看不懂时退回5日线的兜底规则。",
+    "hypothesis_update": "把 XH-038、XH-025 记为再次出现；新增“同一电子主线内，科创/20cm 的尾声补涨弹性是否优于主板10cm”的候选假设。",
     "audit_evidence": "not_applicable",
     "instrumentation_todo": "no_issue_created",
     "routing": [

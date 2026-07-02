@@ -66,6 +66,16 @@ def test_finalize_writes_report_ledger_and_proposal_issue(tmp_path, monkeypatch)
         "pre_existing_dirty": [],
         "flywheel": _fake_flywheel(),
         "sweep": {"scoreboard": {}, "pass_evidence": ["XH-037"]},
+        "recent_action_summary": [{
+            "date": "2026-07-01",
+            "kind": "盘后复盘",
+            "file": "2026-07-01_review.json",
+            "posture_update": "确认趋势主线尾声高低切，修复偏减仓。",
+            "playbook_update": "高低切要按阶段区分。",
+            "hypothesis_update": "新增大涨次日不接 vs 回调低吸候选。",
+            "audit_evidence": "信濠光电是真正重合样本。",
+            "instrumentation_todo": "补命中审计投影工具。",
+        }],
         "auto_apply_candidates": [],
         "proposals": [{
             "id": "pass-pending-xh-037",
@@ -94,7 +104,15 @@ def test_finalize_writes_report_ledger_and_proposal_issue(tmp_path, monkeypatch)
 
     report = tmp_path / result["report"]
     ledger = tmp_path / result["ledger"]
-    assert report.exists() and "PROPOSAL_ONLY" in report.read_text(encoding="utf-8")
+    text = report.read_text(encoding="utf-8")
+    assert report.exists() and "PROPOSAL_ONLY" in text
+    assert "## 需要你看/确认的事项" in text
+    assert "## 这批转录给我的启发" in text
+    assert "确认趋势主线尾声高低切" in text
+    assert "信濠光电是真正重合样本" in text
+    assert "## 已经改进/沉淀到哪里" in text
+    assert "Human Attention" not in text
+    assert "NEEDS_CONFIRMATION" not in text
     assert result["issues"] == [".scratch/weekly-deep-review/2026-07-02/pass-pending-xh-037.md"]
     assert (tmp_path / result["issues"][0]).exists()
     rows = [json.loads(l) for l in ledger.read_text(encoding="utf-8").splitlines() if l.strip()]
@@ -133,7 +151,9 @@ def test_finalize_ledger_excludes_pre_existing_dirty_allowed_files(tmp_path, mon
         "output/live/weekly_review_2026-07-02.md",
     ]
     report = (tmp_path / result["report"]).read_text(encoding="utf-8")
-    assert "BLOCKED_BY_DIRTY_FILE `scripts/pre_existing_dirty.py`" in report
+    assert "本地工作区提醒，不是策略判断" in report
+    assert "scripts/pre_existing_dirty.py" in report
+    assert "BLOCKED_BY_DIRTY_FILE" not in report
 
 
 def test_no_commit_skips_staging(tmp_path, monkeypatch):
