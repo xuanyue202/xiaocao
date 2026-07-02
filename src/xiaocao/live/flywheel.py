@@ -109,6 +109,7 @@ def knowledge_scoreboard(root: Path, *, today: date | None = None) -> dict[str, 
     distilled = root / "reference" / "experience" / "distilled"
     backlog = root / "reference" / "experience" / "xiaocao_hypotheses.jsonl"
     ledger_path = root / "kronos_screen" / "HYPOTHESES.jsonl"
+    action_log = root / "reference" / "experience" / "distill_action_log.jsonl"
 
     transcripts = len(list(distilled.glob("*.json"))) if distilled.exists() else 0
     entries = _jsonl_entries(backlog)
@@ -146,6 +147,12 @@ def knowledge_scoreboard(root: Path, *, today: date | None = None) -> dict[str, 
             oldest_age_days = (today - date.fromisoformat(oldest_unscored)).days
         except (TypeError, ValueError):
             pass
+    action_rows = _jsonl_entries(action_log)
+    instrumentation_todos = [
+        e for e in action_rows
+        if str(e.get("instrumentation_todo", "")).strip().lower()
+        not in {"", "none", "no_change", "not_applicable", "no_issue_created"}
+    ]
 
     return {
         "transcripts_distilled": transcripts,
@@ -161,6 +168,8 @@ def knowledge_scoreboard(root: Path, *, today: date | None = None) -> dict[str, 
         "median_recurrence": median_recurrence,
         "oldest_untested": oldest_unscored,
         "oldest_untested_age_days": oldest_age_days,
+        "action_log_rows": len(action_rows),
+        "instrumentation_todos": len(instrumentation_todos),
     }
 
 
@@ -183,8 +192,9 @@ def _automation_steps(auto_daily: Path) -> list[str]:
     if not auto_daily.exists():
         return []
     text = auto_daily.read_text(encoding="utf-8")
-    # steps are the case labels: `morning)` `eod)` `optimize)`
-    return [m for m in ("morning", "eod", "optimize") if re.search(rf"^\s*{m}\)", text, re.MULTILINE)]
+    # steps are the case labels: `morning)` `eod)` `optimize)` etc.
+    return [m for m in ("morning", "eod", "optimize", "sweep", "weekly")
+            if re.search(rf"^\s*{m}\)", text, re.MULTILINE)]
 
 
 def _source_mentions(path: Path, token: str) -> bool:

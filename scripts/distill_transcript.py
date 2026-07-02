@@ -18,6 +18,9 @@ steps the agent calls:
   --ingest              feed the `hypotheses` extracted in distilled/*.json into the
                         candidate backlog (reference/experience/xiaocao_hypotheses.jsonl)
                         with dedup + stable XH ids. Mechanical field-mapping only.
+  --refresh-action-log  rebuild the lightweight routing index from each distilled
+                        file's required action_summary. The per-file JSON remains
+                        the SSOT; this is only a generated consumer surface.
 
 It NEVER reads a transcript, NEVER makes a judgment, NEVER updates posture_current
 (that is a synthesized prior the agent writes — the harness only validates it), and
@@ -40,12 +43,14 @@ PLAYBOOK = ROOT / "docs" / "XIAOCAO_PLAYBOOK.md"
 CANDIDATES = ROOT / "output" / "live" / "calibration_candidates.jsonl"
 LEDGER = ROOT / "kronos_screen" / "HYPOTHESES.jsonl"          # research verdicts (untracked)
 REALITY_CHECKS = ROOT / "output" / "live" / "reality_checks.jsonl"  # loop self-grades (runtime)
+ACTION_LOG = ROOT / "reference" / "experience" / "distill_action_log.jsonl"
 
 # --- schemas (the contract the agent's distilled JSON must satisfy) ---------- #
 # REQUIRED = the 12 keys present in all 23 real distillations (fail-closed).
 DISTILLED_KEYS = {
     "date", "kind", "summary", "posture", "regime_call", "directions", "stocks",
     "method_principles", "exit_lessons", "hypotheses", "timing_notes", "typo_corrections",
+    "action_summary",
 }
 # EXPECTED = high-value but a short/临时加播 session may legitimately lack them — WARN,
 # don't reject. decision_trace (the 可反推判断逻辑) is the most valuable field.
@@ -55,6 +60,14 @@ POSTURE_FIELDS = {"regime", "dominant_style", "risk", "style_ranking"}
 # category lives in the FILENAME, not this field — so only require it be non-empty.
 HYP_REQUIRED = {"claim", "implied_rule", "falsifiable_test"}  # expected_effect is optional (114/125)
 POSTURE_CURRENT_KEYS = {"as_of", "valid_until", "regime", "dominant_style", "style_ranking"}
+ACTION_SUMMARY_FIELDS = {
+    "posture_update",
+    "playbook_update",
+    "hypothesis_update",
+    "audit_evidence",
+    "instrumentation_todo",
+    "routing",
+}
 
 
 def _read_jsonl(path: Path) -> list[dict]:
@@ -70,6 +83,13 @@ def _read_jsonl(path: Path) -> list[dict]:
         except json.JSONDecodeError:
             pass
     return out
+
+
+def _display_path(path: Path) -> str:
+    try:
+        return str(path.relative_to(ROOT))
+    except ValueError:
+        return str(path)
 
 
 # punctuation stripped before claim-dedup so "评分≥50。" == "评分≥50" == "评分 ≥ 50"
@@ -180,6 +200,16 @@ def _validate_distilled(d: dict) -> tuple[list[str], list[str]]:
         for i, h in enumerate(hyps):
             if not isinstance(h, dict) or (HYP_REQUIRED - set(h)):
                 errs.append(f"hypotheses[{i}] must be a dict with {sorted(HYP_REQUIRED)} (expected_effect optional)")
+    action_summary = d.get("action_summary")
+    if not isinstance(action_summary, dict):
+        errs.append("action_summary must be a dict with the five routing fields + routing")
+    else:
+        missing_action = ACTION_SUMMARY_FIELDS - set(action_summary)
+        if missing_action:
+            errs.append(f"action_summary missing keys: {sorted(missing_action)}")
+        routing = action_summary.get("routing")
+        if routing is not None and (not isinstance(routing, list) or not all(isinstance(x, str) for x in routing)):
+            errs.append("action_summary.routing must be a list of strings")
     return errs, warns
 
 
@@ -417,6 +447,58 @@ def reality_check(path: Path) -> int:
     return 0
 
 
+# --- generated action log --------------------------------------------------- #
+def _action_log_record(path: Path, d: dict) -> dict:
+    """Compact routing row for consumers. The distilled JSON is the SSOT; this row
+    is deliberately lossy so it cannot become a second source of truth."""
+    summary = d.get("action_summary") or {}
+    return {
+        "date": d.get("date"),
+        "kind": d.get("kind"),
+        "file": path.name,
+        "routing": summary.get("routing", []),
+        "posture_update": summary.get("posture_update"),
+        "playbook_update": summary.get("playbook_update"),
+        "hypothesis_update": summary.get("hypothesis_update"),
+        "audit_evidence": summary.get("audit_evidence"),
+        "instrumentation_todo": summary.get("instrumentation_todo"),
+    }
+
+
+def refresh_action_log(source: Path = DISTILLED, output: Path = ACTION_LOG) -> int:
+    """Regenerate the lightweight action-summary index from distilled JSON files.
+    Fails closed if any distilled file lacks a valid action_summary; otherwise writes
+    deterministic JSONL sorted by filename."""
+    files = sorted(source.glob("*.json")) if source.is_dir() else [source]
+    records: list[dict] = []
+    invalid: list[tuple[Path, list[str]]] = []
+    for jf in files:
+        try:
+            d = json.loads(jf.read_text(encoding="utf-8"))
+        except json.JSONDecodeError as e:
+            invalid.append((jf, [f"invalid JSON: {e}"]))
+            continue
+        errs, _warns = _validate_distilled(d)
+        if errs:
+            invalid.append((jf, errs))
+            continue
+        records.append(_action_log_record(jf, d))
+    if invalid:
+        print("refresh-action-log FAILED: invalid distilled file(s)")
+        for jf, errs in invalid:
+            print(f"  - {jf.name}:")
+            for e in errs:
+                print(f"      {e}")
+        return 1
+    output.parent.mkdir(parents=True, exist_ok=True)
+    with output.open("w", encoding="utf-8") as fh:
+        for r in records:
+            fh.write(json.dumps(r, ensure_ascii=False, sort_keys=True) + "\n")
+    print(f"refresh-action-log: wrote {len(records)} row(s) -> {_display_path(output)} "
+          "(generated from per-file action_summary; distilled JSON remains SSOT)")
+    return 0
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--feedback", action="store_true", help="surface what reality falsified (run before distilling)")
@@ -428,6 +510,8 @@ def main() -> int:
                     help="stage a 复盘's 【loop】/现实校准 self-grades to reality_checks.jsonl (surfaces in --feedback)")
     ap.add_argument("--reconcile", action="store_true",
                     help="fold verdict-ledger results back: retire REJECTED candidates, tag PASS as §10 evidence")
+    ap.add_argument("--refresh-action-log", action="store_true",
+                    help="rebuild reference/experience/distill_action_log.jsonl from required per-file action_summary")
     ap.add_argument("--retire", metavar="ID", action="append",
                     help="retire a candidate by id (agent-judgment retirement; repeatable). Needs --reason")
     ap.add_argument("--reason", help="reason text for --retire")
@@ -445,11 +529,14 @@ def main() -> int:
         rc |= reality_check(Path(a.reality_check))
     if a.reconcile:
         rc |= reconcile()
+    if a.refresh_action_log:
+        rc |= refresh_action_log()
     if a.retire:
         if not a.reason:
             ap.error("--retire requires --reason")
         rc |= retire(a.retire, a.reason)
-    if not (a.feedback or a.validate or a.ingest or a.ingest_all or a.reality_check or a.reconcile or a.retire):
+    if not (a.feedback or a.validate or a.ingest or a.ingest_all or a.reality_check
+            or a.reconcile or a.refresh_action_log or a.retire):
         ap.print_help()
     return rc
 

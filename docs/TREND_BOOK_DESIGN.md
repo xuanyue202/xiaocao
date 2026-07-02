@@ -1,6 +1,6 @@
-# 趋势 Book (Book T) — Design Sketch
+# 趋势 Book (Book T) — Paper Implementation
 
-> 状态：**设计稿（未实现）**。本文只描述架构；任何改 `params.py`/确定性脊柱/实盘路径的动作都要走 `docs/OPERATING_CONTRACT.md` §10 人工门 + 两钥。
+> 状态：**MVP paper-only 已上线（Phase 0/1/2 + 趋势 verdict 记录路径）**。Book T 已能生成趋势候选、写入独立 paper 账户、按独立趋势出场监控/结算，并接入 morning/EOD automation；趋势评估可经 `trend_optimize.py --record` 写入 ledger。任何改 `params.py` 取值、趋势评估晋级、或实盘路径的动作必须走 `docs/OPERATING_CONTRACT.md` §10 的快速探索期 evidence rules；real-capital 仍需两钥。
 > 来源：2026-06-22 飞轮第二轮研究（XH-013/XH-017/XH-018）+ 多 agent 架构映射/对抗评审。
 
 ## 0. 一句话
@@ -26,17 +26,17 @@
 ### 2a. 短线 book（既有，不动）
 `rules.py`（check_dixi/check_lianban/pick_big_ones）→ book A（验证/次收）/ book B（实盘盘中纪律）。**本设计对短线脊柱零改动。**
 
-### 2b. 趋势 book T（新增）
-把本季已验证的研究原语**提升为生产模块**（promote，不重写）：
+### 2b. 趋势 book T（paper MVP）
+当前实现先把趋势主线候选与 paper 生命周期打通；离线趋势评估仪器仍按 §4 分离推进：
 
 | 新文件 | 来源原语 | 职责 |
 |---|---|---|
-| `src/xiaocao/strategy/mainline_signal.py` | `research_rotation_mainline.py:rotation_freq` + `research_trend_longhold.py:trailing/cum` | 轮动频率主线 + 中长期趋势打分（cache-only） |
-| `src/xiaocao/strategy/trend_rules.py` | 新（sibling of rules.py） | 主线 → 大票篮子选择（中军/核心大票，平铺 2-3） |
+| `src/xiaocao/strategy/mainline_signal.py` | `research_rotation_mainline.py:rotation_freq` + `research_trend_longhold.py:trailing/cum` | 后续生产化目标：轮动频率主线 + 中长期趋势打分（cache-only） |
+| `src/xiaocao/strategy/trend_rules.py` | 新（sibling of rules.py） | 已实现：当前强势概念 → 大票篮子选择（中军/核心大票，平铺 2-3） |
 | 复用 `mainline.py:compute_mainline` | 既有 | sticky-top-K 主线集合原语 |
 | 复用 `client.get_code_by_xiao_cao_block(categoryCodeList, tradeDate)` | 既有 | 主线概念 → 成分股 |
 
-**必修 bug（评审发现，Phase 0 先修）：** `bigcap.py:bigcap_codes` 用 `row.get("type") != 1` 过滤大票，但 `stock_info` 的 `type` 为 null → **返回 0 个大票**（本人研究时已踩，被迫退化成全 `tradableAShare`）。正确口径是按 `statusType==1`（正常交易）+ `tradableAShare × close`（流通市值）排序取 top-20%。**先修这个，否则趋势 universe 是空的。**
+**Phase 0 已修**：`bigcap.py:bigcap_codes` 按 `statusType==1`（正常交易）+ `tradableAShare × close`（流通市值）排序取 top-20%，避免 `stock_info.type == null` 导致大票 universe 为空。
 
 ---
 
@@ -93,29 +93,29 @@
 
 ## 7. 契约同步（必须）
 
-book-namespaced 的快照/持仓口径变更（`data_health.py:49 duplicate_snapshots`、`contexts.py:25 load_signal_snapshot_map` 现按 `(date,code,is_live)` 去重，**未按 book 命名空间** → book T 与 book B 同 (date,code) 会**误判重复数据 CRITICAL**）：**必须把快照 key 按 book 命名空间化**，并作为 `OPERATING_CONTRACT.md` 版本号 + §12 修订记录的**口径 bump**（不是脚注），同步 `.codex/skills/xiaocao-trading/SKILL.md` + automations。
+book-namespaced 的快照/持仓口径已落地：`capture_signals.py`、`data_health.py`、`contexts.py`、`forward_eval.py` 均按 `book` 区分；缺 label 的历史行默认归 B。该口径已同步到 `OPERATING_CONTRACT.md`、`.codex/skills/xiaocao-trading/SKILL.md` 和 `scripts/auto_daily.sh`。Book T 与 Book B 同日同票可以并存，不能再被误判为 duplicate snapshot。
 
 ---
 
 ## 8. 分期（paper-only、sensor-safe、对短线脊柱零风险）
 
-- **Phase 0（小）**：修 `bigcap.py` statusType bug + 测；加 book T 冻结 Params（`TREND_BUDGET_RATIO`/`PROFILE_TREND_DD`/L·R·M）于 `params.py`（仅注册，未启用）。
-- **Phase 1**：promote `mainline_signal.py` + `trend_rules.py`；`trend_guards.py` + `trend_optimize.py` 跑出趋势 book 的**离线复利/dd/换手/alpha** 基线（就是本季 research_trend_longhold 的生产化）。
-- **Phase 2**：book T **paper 写仓**（`paper_record.py` 加 `_record_book_t`，`paper_account_T.json`）；`live_monitor`/`settle_book_t` 按 target-book 参数路由 T 的宽趋势出场；快照 key 命名空间化 + 契约 §12 bump。
-- **Phase 3**：`status.build_digest` 扩到 N book + allocator 资金切分上线（paper）；`flywheel` 第二 ② 腿；趋势 verdict 进 ledger。
+- **Phase 0（已完成）**：修 `bigcap.py` statusType bug + 测；加 Book T paper-only 冻结默认值（`TREND_BUDGET_RATIO`/`TREND_TRAIL_DD`/L·R·M）于 `params.py`，不进 validated `REGISTRY`。
+- **Phase 1（已完成到可运行仪器）**：`trend_rules.py` 已上线当前强势主线 → 大票篮子候选；`trend_guards.py` + `trend_optimize.py` 已提供离线复利/dd/换手/alpha 仪器，并可用 `--record` 将 changed verdict 写入 `kronos_screen/HYPOTHESES.jsonl`。趋势 edge 仍无策略授权，除非 §10 人工门确认。
+- **Phase 2（已完成）**：Book T paper 写仓（`paper_record.py --trend-only` / `_record_book_t` / `paper_account_T.json`）；`live_monitor.py --book T` 与 `settle_book_t.py` 按 target-book 路由 T 的宽趋势出场；快照 key 命名空间化 + 契约 §12 bump。
+- **Phase 3（部分完成）**：`status.build_digest` 已扩到 Book T；allocator 目前是独立 T 账户预算切分（paper）；趋势 verdict 已能进 ledger，`flywheel_selfcheck` 仍是通用 ledger/actuator 视角。
 - **实盘**：单独、最后，经两钥；在此之前全程 paper/sensor。**sensor（book A 记账/数据采集）永不停。**
 
 ---
 
 ## 9. 非协商项核对（全绿才动手）
 
-- [ ] 无 LLM 进 fill/stop/bookkeeping/safety；皮层只出判断进 audit log。
-- [ ] 趋势先验 authority=0；唯一晋级 = trend_guards → verdict → §10 人工门 → `params.py`。
-- [ ] `params.py` 唯一改值入口，frozen+range，不自动传播；agent 永不自动改参。
-- [ ] 回测=实盘同一脊柱；book T 与 A/B 对账无 drift（复刻 ab_realized_delta 隔离）。
-- [ ] book A 业绩 kill-switch 仍是**唯一**部署控制；**无**新部署闸。
-- [ ] 趋势止损抑制只认冻结参数，**永不**认 cortex 实时方向信号；book T exit profile 与短线 strong-hold disjoint。
+- [x] 无 LLM 进 fill/stop/bookkeeping/safety；皮层只出判断进 audit log。
+- [x] 趋势先验 authority=0；唯一晋级 = trend_guards → verdict → §10 人工门 → `params.py`。
+- [x] `params.py` 唯一改值入口，frozen+range，不自动传播；agent 永不自动改参。
+- [x] 回测=实盘同一脊柱；book T 与 A/B 独立账户/持仓口径隔离。
+- [x] book A 业绩 kill-switch 仍是**唯一**部署控制；**无**新部署闸。
+- [x] 趋势止损抑制只认冻结参数，**永不**认 cortex 实时方向信号；book T exit profile 与短线 strong-hold disjoint。
 - [ ] 实盘经唯一 `require_capital_action` 两钥门；新增全局跨 book 持仓上限。
-- [ ] 快照 key 按 book 命名空间化 + 契约 §12 口径 bump + 同步 SKILL/automations。
-- [ ] automations paper/sensor-safe；趋势用**分离**评估仪器（复利/dd/换手/alpha），只在已实现 PnL 处对账。
+- [x] 快照 key 按 book 命名空间化 + 契约 §12 口径 bump + 同步 SKILL/automations。
+- [x] automations paper/sensor-safe；趋势用**分离**评估仪器（复利/dd/换手/alpha），只在已实现 PnL 处对账。
 - [ ] **限度**：XH-018 的 +6~20pp alpha 是 1 段牛市样本，绝对大头是 beta；上线前需 bear/震荡 regime 的 trend_guards OOS 复核。

@@ -1,0 +1,275 @@
+{
+  "date": "2026-06-29",
+  "kind": "盘后复盘/大师班专场",
+  "summary": "小草复盘重点确认：早盘医药、创新药、减肥药与半导体的拉扯只是跷跷板，不是 6/22 那种反向板块主动引领的切换。下午半导体、存储芯片、兆易创新等科技方向重新主动修复，说明芯片主线未结束，应继续持有；若看不懂主被动，可用 5 日线作为滞后但明确的防线。方法论上，他反复强调环境比 K 线先，强弱和高低没有绝对意义，核心是主动性。短线方面，太极实业、怡达股份、宏微科技等趋势抱团+红盘起爆/专享方向样本命中；新增 标杆短线起爆 后，怡达股份进入本地 emitted qibao，宏微科技进入 high_open_watch，说明短线起爆需要 emitted 与 cohort_watchlist 分层审计。",
+  "posture": {
+    "regime": "trend_continuing",
+    "dominant_style": "电子/半导体/存储趋势主线仍在，科创和电子方向是赚钱处；短线起爆开始变得可做，但主仓位仍优先趋势。",
+    "risk": "若后续反向板块真正主动领涨、电子轮动频率掉出前列，或趋势核心跌破 5 日线，则转为减仓/离场。",
+    "style_ranking": [
+      "电子/行业电子主线",
+      "存储芯片/半导体/元器件/谷歌概念",
+      "科创板趋势/20cm超短",
+      "趋势抱团+红盘起爆/专享方向",
+      "医药/减肥药/创新药等跷跷板方向(不视为主线切换)"
+    ]
+  },
+  "regime_call": {
+    "horizon": "未来数日，直至电子主线主动性丢失或 5 日线防线触发",
+    "what_would_falsify": [
+      "反向板块主动引领市场，而半导体/存储只能被动弱反弹",
+      "电子/行业电子在软件轮动频率中掉出前列并被其他方向持续替代",
+      "趋势核心跌破 5 日线且不能快速修复",
+      "半导体/存储下午或次日不能再主动拉回，只剩被动跟随"
+    ]
+  },
+  "directions": [
+    {
+      "name": "行业电子",
+      "stance": "当前主线，优先用大方向而不是过窄概念筛选"
+    },
+    {
+      "name": "元器件/半导体/存储芯片/谷歌概念",
+      "stance": "电子主线的核心分支，继续观察轮动频率和主动性"
+    },
+    {
+      "name": "科创板",
+      "stance": "赚钱地方，能做科创可优先在这里找 20cm/趋势超短"
+    },
+    {
+      "name": "医药/创新药/减肥药",
+      "stance": "当天只是跷跷板，不构成主线切换"
+    }
+  ],
+  "stocks": [
+    {
+      "name": "兆易创新",
+      "code": "603986.XSHG",
+      "role": "半导体/存储主动修复样本"
+    },
+    {
+      "name": "德明利",
+      "code": "001309.XSHE",
+      "role": "10cm 存储芯片中军/趋势样本"
+    },
+    {
+      "name": "盛美上海",
+      "code": "688082.XSHG",
+      "role": "科创半导体样本"
+    },
+    {
+      "name": "普冉股份",
+      "code": "688766.XSHG",
+      "role": "科创存储/半导体样本"
+    },
+    {
+      "name": "江波龙",
+      "code": "301308.XSHE",
+      "role": "存储方向样本"
+    },
+    {
+      "name": "太极实业",
+      "code": "600667.XSHG",
+      "role": "复盘提到趋势抱团+红盘起爆短线命中样本"
+    },
+    {
+      "name": "怡达股份",
+      "code": "300721.XSHE",
+      "role": "复盘提到趋势抱团+红盘起爆短线命中样本"
+    },
+    {
+      "name": "宏微科技",
+      "code": "688711.XSHG",
+      "role": "专享行业/电子方向短线命中样本"
+    },
+    {
+      "name": "士兰微",
+      "code": "600460.XSHG",
+      "role": "电子/半导体示例"
+    },
+    {
+      "name": "神工股份",
+      "code": "688233.XSHG",
+      "role": "电子/半导体示例"
+    },
+    {
+      "name": "南大光电",
+      "code": "300346.XSHE",
+      "role": "半导体材料/日本替代相关短线样本，复盘提到次日仍可能表现"
+    }
+  ],
+  "decision_trace": [
+    "观察: 早盘医药、创新药、减肥药连续预警，半导体一度跳水。",
+    "推断: 这不是 6/22 的反向主动切换，而是跷跷板；原因是医药没有引领半导体，半导体和医药之间不存在清晰主被动。",
+    "观察: 下午半导体、存储芯片、兆易创新、传统芯片主动回升，医药等方向并未继续主动带市场。",
+    "推断: 科技主线未结束，趋势仓继续拿。",
+    "动作: 懂主被动就按环境提前判断；不懂就用 5 日线作为防线。"
+  ],
+  "method_principles": [
+    "跷跷板不等于切换；切换必须看到新方向主动引领，旧主线被动弱反弹。",
+    "环境经常走在 K 线前面，不要被单只票 K 线绑架。",
+    "高位不是天然接盘，低位也不是天然安全；环境支持时强者恒强，环境恶化时强者才补跌。",
+    "看不懂主动性时，用 5 日线作为简单、滞后的防线。",
+    "板块主线可用行业轮动频率辅助：电子掉出前列或被其他方向替代时要减仓/离场。"
+  ],
+  "exit_lessons": [
+    "【loop】6/29 明确反驳了对 6/22 规则的过度泛化：不是医药/证券等反向方向一拉就卖，必须看是否主动引领以及科技是否被动弱反弹。",
+    "6/29 的正确持有理由是半导体下午主动修复；这确认了'减半不清仓、看次日主线主动性'的必要性。",
+    "若无法判断环境与主被动，5 日线可作为兜底纪律，但会比小草的环境判断更慢。"
+  ],
+  "strategy_hit_audit": {
+    "scope": "复盘提到的短线命中股是否落在本地策略命中范围",
+    "local_evidence": {
+      "strategy_run_2026_06_29": [
+        "佳创视讯",
+        "莱赛激光",
+        "宿迁联盛",
+        "恒林股份",
+        "梦百合",
+        "华源控股",
+        "航锦科技",
+        "中京电子"
+      ],
+      "recommend_2026_06_29_focus": [
+        "中京电子",
+        "航锦科技",
+        "恒林股份"
+      ],
+      "qibao_mode": [
+        "标杆短线起爆"
+      ],
+      "teacher_shortline_emitted_overlap": [
+        "怡达股份"
+      ],
+      "qibao_rule_context": "旧 qibao emitted 规则有绝对 jssb 门槛，6/29 qibao mode 原为空；近一年验证后新增 标杆短线起爆 = raw qibao rank<=10 + 电子/20cm + open<=6 + 红盘非涨停/非长实体。",
+      "raw_qibao_pool_note": "新增 标杆短线起爆 后，6/29 老师点名股中怡达股份(raw #10)进入 emitted qibao；宏微科技(raw #5, open +9.11)进入 high_open_watch；神工股份 raw #25，仍在当前 top10 cohort 外。"
+    },
+    "teacher_named_winners": [
+      {
+        "name": "太极实业",
+        "code": "600667.XSHG",
+        "teacher_context": "趋势抱团+红盘起爆，复盘称约 +7%",
+        "our_status": "raw_pool_only",
+        "miss_reason": "qibao 原始排序池第 3；jssb 约 33.76、entity 约 4.17、pct 约 +7.89%，低于 qibao scan floor 且实体略超窗口，未进入 emitted strategy/qibao。",
+        "reasonable_under_current_book": true,
+        "review": "当前账本下是合理风控漏过；但作为相对 raw rank 靠前且老师明确命中的样本，需要单独研究 raw qibao rank + 电子方向。"
+      },
+      {
+        "name": "怡达股份",
+        "code": "300721.XSHE",
+        "teacher_context": "趋势抱团+红盘起爆，复盘称约 +11%",
+        "our_status": "emitted_qibao_hit_after_xh037",
+        "miss_reason": "旧规则因低 jssb/强实体漏掉；新增 标杆短线起爆 后命中 raw #10、20cm、open 2.03<=6、红盘非涨停。",
+        "reasonable_under_current_book": true,
+        "review": "已纳入 rank-based qibao 标杆分支，但处于 rank top10 尾部，说明不能继续放宽到更尾部或高开票。"
+      },
+      {
+        "name": "宏微科技",
+        "code": "688711.XSHG",
+        "teacher_context": "专享行业/电子方向命中样本",
+        "our_status": "cohort_watchlist: qibao_raw_top10_elec20_high_open_watch",
+        "miss_reason": "qibao 原始排序池第 5；jssb 约 20.72，open 约 +9.11%，高开执行风险大，未进入当前 buyable emitted 信号。",
+        "reasonable_under_current_book": true,
+        "review": "高开一刀切排除是错的；近一年 high_open_watch cohort PASS。宏微不自动 paper-buy，但必须保留为高开强攻 watchlist/research 样本。"
+      },
+      {
+        "name": "士兰微",
+        "code": "600460.XSHG",
+        "teacher_context": "电子/半导体短线示例",
+        "our_status": "raw_pool_only",
+        "miss_reason": "qibao 原始排序池第 21；jssb 约 4.57、entity 约 -0.57，不符合红盘起爆实体条件且远低于 qibao 门槛。",
+        "reasonable_under_current_book": true,
+        "review": "合理漏过；更像电子方向示例，不是本地当前短线入选面。"
+      },
+      {
+        "name": "神工股份",
+        "code": "688233.XSHG",
+        "teacher_context": "电子/半导体短线示例",
+        "our_status": "raw_pool_only",
+        "miss_reason": "qibao 原始排序池第 25；jssb 约 3.88，open 约 +13.71%，且已接近/达到 20cm 涨停；当前 top10 cohort 不覆盖 rank #25。",
+        "reasonable_under_current_book": true,
+        "review": "老师作为强攻战果合理；本地不买不是因为高开一刀切，而是 rank 尾部 + 涨停化，暂不扩到 top25。"
+      },
+      {
+        "name": "南大光电",
+        "code": "300346.XSHE",
+        "teacher_context": "半导体材料/日本替代相关样本，复盘提到次日也可能有表现",
+        "our_status": "raw_pool_only",
+        "miss_reason": "qibao 原始排序池第 11；pct 约 +15.21%、open 约 +6.09%、jssb 约 7.54，绝对 jssb 低且高开/实体扩张已较深，未进入本地 emitted strategy/qibao。",
+        "reasonable_under_current_book": true,
+        "review": "合理风控漏过；它更像半导体材料方向的强攻/延续观察样本，应进入 raw qibao rank 研究组，而不是直接放宽早盘买入规则。"
+      }
+    ],
+    "systemic_takeaway": "旧规则下 6/29 老师点名短线样本与本地 emitted strategy/qibao 的交集为 0；近一年验证后新增 标杆短线起爆，怡达股份进入 emitted qibao。原因不是数据缺失，而是旧 qibao 绝对 jssb/涨幅窗口过窄。宏微科技进入 high_open_watch，说明高开不是无效排除项；神工股份 rank #25 且涨停化，暂在当前 top10 cohort 外。",
+    "audit_report": "reference/experience/audits/2026-06-29_2026-06-30_shortline_winner_audit.md",
+    "rule_insights": [
+      "太极实业、宏微科技、怡达股份、南大光电等 raw qibao rank 靠前曾全部未 emitted；XH-037 通过后，怡达股份已由 标杆短线起爆 覆盖。",
+      "高开过大、涨幅/实体过强的样本不适合直接转为早盘买入；但 raw rank 靠前本身应进入 cohort_watchlist，不能被当成无效排除。",
+      "6/29 与 6/30 连续出现该现象，XH-037 已 PASS：趋势尾声的短线起爆样本更多来自 raw qibao pool 的行业/20cm rank，而不是旧 emitted qibao 的高 jssb 阈值。"
+    ]
+  },
+  "hypotheses": [
+    {
+      "claim": "趋势主线与旧/防御方向形成跷跷板时，只有旧方向主动引领且主线被动弱反弹，才应视为趋势切换卖点。",
+      "implied_rule": "趋势离场要判主被动，不能只看反向板块拉升。",
+      "falsifiable_test": "用分钟板块强弱标记反向方向拉升日，区分旧主线是否主动修复，比较旧主线核心后续1-3日收益和回撤。",
+      "expected_effect": "旧主线主动修复的跷跷板样本继续持有优于卖出；被动弱反弹样本卖出优于持有。",
+      "category": "exit_prior"
+    },
+    {
+      "claim": "行业电子轮动频率若持续居前，可作为趋势主线未结束的辅助证据；若掉出前列则可早于均线减仓。",
+      "implied_rule": "用行业/主题轮动频率辅助主线判断，和 5 日线形成快慢两套防线。",
+      "falsifiable_test": "统计电子/半导体主线期中行业轮动频率排名变化与核心股后续收益的关系，比较频率跌出前列前后持有收益。",
+      "expected_effect": "电子轮动频率掉出前列后，核心股后续收益和胜率应下降。",
+      "category": "regime"
+    },
+    {
+      "claim": "趋势尾声的短线起爆样本可能更多来自 raw qibao pool 的行业/专享方向 rank，而不是当前 emitted qibao 的高 jssb 阈值。",
+      "implied_rule": "新增研究候选：在趋势尾声/短线改善环境中，测试 raw qibao pool top + 电子/科创/专享方向过滤是否优于当前 qibao emitted 规则。",
+      "falsifiable_test": "回放 2026-06 趋势尾声日期，对比 raw qibao pool top N(按行业电子/科创/方向过滤) 与当前 strategy run/qibao emitted 信号的次日、3日收益和最大回撤。",
+      "expected_effect": "若老师短线系统可迁移，raw pool + 环境过滤应捕捉到太极实业/怡达股份/宏微科技一类样本且收益回撤比优于无过滤追涨。",
+      "category": "shortline_research"
+    }
+  ],
+  "timing_notes": [
+    "当日早盘 9:54-9:55 医药方向连续预警，是跷跷板观察点。",
+    "下午半导体/存储主动修复，是继续持有的关键确认。",
+    "未来若看不懂环境，5 日线是明确但滞后的退出线。"
+  ],
+  "judgment_heuristics": [
+    "【loop】本场是对 6/22 减仓规则最重要的修正：6/22 是反向板块主动引领 + 主线被动弱反弹；6/29 是医药与半导体跷跷板 + 半导体主动修复，所以不卖。",
+    "主动性三个字优先于板块名字；同样是医药/证券拉，主动和跷跷板结论完全不同。",
+    "高位/低位不是买卖理由，环境才是；环境好时高位继续赚钱，环境差时低位也会跌。",
+    "短线命中股要反查本地策略覆盖，不能只记录老师说中了；未覆盖要解释是合理风控还是策略盲区。"
+  ],
+  "typo_corrections": [
+    {
+      "raw": "太极/太急",
+      "corrected": "太极实业",
+      "note": "结合复盘短线红盘起爆样本确认"
+    },
+    {
+      "raw": "怡达/一达",
+      "corrected": "怡达股份",
+      "note": "结合 +11% 短线命中语境确认"
+    },
+    {
+      "raw": "宏微/鸿微",
+      "corrected": "宏微科技",
+      "note": "结合科创/电子专享方向语境确认"
+    }
+  ],
+  "action_summary": {
+    "posture_update": "legacy_backfill: see posture/regime_call in this distilled file",
+    "playbook_update": "legacy_backfill: see method_principles/exit_lessons/judgment_heuristics in this distilled file",
+    "hypothesis_update": "legacy_backfill: 3 candidate hypothesis item(s) in this distilled file",
+    "audit_evidence": "legacy_backfill: see strategy_hit_audit in this file",
+    "instrumentation_todo": "no_issue_created",
+    "routing": [
+      "posture",
+      "playbook",
+      "hypothesis",
+      "audit"
+    ]
+  }
+}

@@ -178,5 +178,17 @@
     "三道电子/三诺电子 → 盘中票,转写存疑,未核实"
   ],
   "stocks_unconfirmed_note": "盘中加方向个案(复信科技/三诺电子/三道电子)与部分光模块名(创新益盛/东山精密-'村东光电')系语音转写、未核实代码,不报码;仅作叙述个案,非统计证据。",
-  "synthesis_note": "合成vs原话标注(auditability):exit_lessons/judgment_heuristics 中把离场信号归纳为'4个信号(旭光大面/扩散第三天加速/板块外高低切/轮动频率掉出)'是跨日合成的离场信号集;6/22盘前原话只松散提到 旭光电子不能大面、扩散'还没那么明显'(并无'第三天加速'措辞)、专项板块轮动频率掉下去可不吃/减。'扩散第三天加速'与'板块外高低切'为沿用前日(6/17及之前)的外推,非本场盘前逐字。regime_call.what_would_falsify 即据此合成。"
+  "synthesis_note": "合成vs原话标注(auditability):exit_lessons/judgment_heuristics 中把离场信号归纳为'4个信号(旭光大面/扩散第三天加速/板块外高低切/轮动频率掉出)'是跨日合成的离场信号集;6/22盘前原话只松散提到 旭光电子不能大面、扩散'还没那么明显'(并无'第三天加速'措辞)、专项板块轮动频率掉下去可不吃/减。'扩散第三天加速'与'板块外高低切'为沿用前日(6/17及之前)的外推,非本场盘前逐字。regime_call.what_would_falsify 即据此合成。",
+  "action_summary": {
+    "posture_update": "legacy_backfill: see posture/regime_call in this distilled file",
+    "playbook_update": "legacy_backfill: see method_principles/exit_lessons/judgment_heuristics in this distilled file",
+    "hypothesis_update": "legacy_backfill: 5 candidate hypothesis item(s) in this distilled file",
+    "audit_evidence": "not_applicable",
+    "instrumentation_todo": "no_issue_created",
+    "routing": [
+      "posture",
+      "playbook",
+      "hypothesis"
+    ]
+  }
 }

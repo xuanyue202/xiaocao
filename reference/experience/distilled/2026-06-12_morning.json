@@ -231,5 +231,17 @@
     "螃蟹/白线 -> 黄线(小票)vs 白线(大票)的黄白线背离",
     "二胀盘/二板指数 -> 题材/二板指数[转写存疑]",
     "召唤型/涨幅型 -> 妖股/连板型(本篇未明确点用,作通用纠错备注)"
-  ]
+  ],
+  "action_summary": {
+    "posture_update": "legacy_backfill: see posture/regime_call in this distilled file",
+    "playbook_update": "legacy_backfill: see method_principles/exit_lessons/judgment_heuristics in this distilled file",
+    "hypothesis_update": "legacy_backfill: 5 candidate hypothesis item(s) in this distilled file",
+    "audit_evidence": "not_applicable",
+    "instrumentation_todo": "no_issue_created",
+    "routing": [
+      "posture",
+      "playbook",
+      "hypothesis"
+    ]
+  }
 }

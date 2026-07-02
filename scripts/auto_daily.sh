@@ -2,9 +2,10 @@
 # Daily xiaocao paper-trade + data-accumulation automation (the compounding flywheel).
 #   auto_daily.sh morning   # ~09:23 (self-waits to 9:25): recommend + ★/★B + auction snapshot + paper-record
 #   auto_daily.sh eod        # ~15:05 (after close): tick capture + forward A/B + monitor + settle + digest->WeCom + pipeline health
-#   auto_daily.sh optimize   # ~weekly (trading Fri): capability flywheel — judge live pipeline under the discipline guards + record to the ledger
+#   auto_daily.sh optimize   # ~weekly (trading Fri): capability flywheel — judge short-line + trend pipelines and record to the ledger
+#   auto_daily.sh weekly     # Friday evening: deep flywheel review plan (Codex applies/finalizes evidence-backed changes)
 # Capital flywheel: morning entries -> intraday staged exits -> eod settle/digest.
-# Capability flywheel: eod accumulates training_rows -> optimize judges & records to kronos_screen/HYPOTHESES.jsonl.
+# Capability flywheel: eod accumulates training_rows + Book-T evidence -> optimize judges & records to kronos_screen/HYPOTHESES.jsonl.
 # Trading-day guarded (skips weekends/holidays), logs to output/live/auto/.
 set -uo pipefail
 ROOT="${XIAOCAO_ROOT:-$HOME/coding/xiaocao}"
@@ -17,32 +18,35 @@ LOG="$LOG_DIR/${TODAY}_${STEP}.log"
 log() { echo "[$(date '+%F %T')] $*" | tee -a "$LOG"; }
 
 # --- trading-day guard: `calendar latest` returns the latest trading day <= today ---
-CALENDAR_STATUS=1
-CALENDAR_OUTPUT=""
-CALENDAR_MAX_RETRIES=3
-for attempt in $(seq 1 "$CALENDAR_MAX_RETRIES"); do
-  CALENDAR_OUTPUT="$("$PY" -m xiaocao calendar latest --date today 2>&1)"
-  CALENDAR_STATUS=$?
-  if [ $CALENDAR_STATUS -eq 0 ]; then
-    break
+# weekly is an audit/review loop, not a trading action; it still runs on holiday Fridays.
+if [ "$STEP" != "weekly" ]; then
+  CALENDAR_STATUS=1
+  CALENDAR_OUTPUT=""
+  CALENDAR_MAX_RETRIES=3
+  for attempt in $(seq 1 "$CALENDAR_MAX_RETRIES"); do
+    CALENDAR_OUTPUT="$("$PY" -m xiaocao calendar latest --date today 2>&1)"
+    CALENDAR_STATUS=$?
+    if [ $CALENDAR_STATUS -eq 0 ]; then
+      break
+    fi
+    log "交易日历查询失败 (attempt ${attempt}/${CALENDAR_MAX_RETRIES})"
+    printf '%s\n' "$CALENDAR_OUTPUT" | tee -a "$LOG"
+    if [ "$attempt" -lt "$CALENDAR_MAX_RETRIES" ]; then
+      sleep 2
+    fi
+  done
+  if [ $CALENDAR_STATUS -ne 0 ]; then
+    log "交易日历查询最终失败 — skip $STEP"
+    exit $CALENDAR_STATUS
   fi
-  log "交易日历查询失败 (attempt ${attempt}/${CALENDAR_MAX_RETRIES})"
-  printf '%s\n' "$CALENDAR_OUTPUT" | tee -a "$LOG"
-  if [ "$attempt" -lt "$CALENDAR_MAX_RETRIES" ]; then
-    sleep 2
+  LATEST="$(printf '%s\n' "$CALENDAR_OUTPUT" | tail -1 | tr -d '[:space:]')"
+  if [ -z "$LATEST" ]; then
+    log "交易日历查询为空 — skip $STEP"
+    exit 1
   fi
-done
-if [ $CALENDAR_STATUS -ne 0 ]; then
-  log "交易日历查询最终失败 — skip $STEP"
-  exit $CALENDAR_STATUS
-fi
-LATEST="$(printf '%s\n' "$CALENDAR_OUTPUT" | tail -1 | tr -d '[:space:]')"
-if [ -z "$LATEST" ]; then
-  log "交易日历查询为空 — skip $STEP"
-  exit 1
-fi
-if [ "$LATEST" != "$TODAY" ]; then
-  log "非交易日 (today=$TODAY, latest_trading=$LATEST) — skip $STEP"; exit 0
+  if [ "$LATEST" != "$TODAY" ]; then
+    log "非交易日 (today=$TODAY, latest_trading=$LATEST) — skip $STEP"; exit 0
+  fi
 fi
 
 case "$STEP" in
@@ -51,6 +55,8 @@ case "$STEP" in
     "$PY" scripts/live_recommend.py --no-stdout >>"$LOG" 2>&1
     log "paper-record ★B picks"
     "$PY" kronos_screen/scripts/paper_record.py --date "$TODAY" --initial-capital 100000 --fee-rate 0.0001 --deploy-ratio 0.5 --max-total-exposure-ratio 0.67 --quality-governor shadow >>"$LOG" 2>&1
+    log "paper-record Book T trend basket (paper-only, independent account)"
+    "$PY" kronos_screen/scripts/paper_record.py --date "$TODAY" --initial-capital 100000 --fee-rate 0.0001 --trend-only >>"$LOG" 2>&1 || true
     log "surface 小草 posture prior (judgment lens only; NOT a filter on the deterministic picks)"
     "$PY" scripts/xiaocao_knowledge.py --posture >>"$LOG" 2>&1 || true
     log "record standing posture call (judgment-calibration loop; scored fwd at eod)"
@@ -85,10 +91,21 @@ case "$STEP" in
     fi
     log "monitor open paper positions"
     "$PY" scripts/live_monitor.py --execute-sells >>"$LOG" 2>&1 || true
+    log "monitor open Book T trend positions"
+    "$PY" scripts/live_monitor.py --book T --execute-sells >>"$LOG" 2>&1 || true
     log "settle book A (validated next-close reference)"
     "$PY" kronos_screen/scripts/settle_book_a.py >>"$LOG" 2>&1 || true
+    log "settle book T (wide trend stop / low-turnover rebalance)"
+    "$PY" kronos_screen/scripts/settle_book_t.py >>"$LOG" 2>&1 || true
     log "pnl decomposition (pick_alpha / entry_slippage / exit_timing)"
     "$PY" kronos_screen/scripts/decompose_pnl.py >>"$LOG" 2>&1 || true
+    PAPER_VS_MARKET_START="${PAPER_VS_MARKET_START:-2026-06-01}"
+    PAPER_VS_MARKET_OUT="output/research/paper_vs_market_${PAPER_VS_MARKET_START}_${TODAY}.md"
+    log "paper vs market benchmark -> ${PAPER_VS_MARKET_OUT}"
+    "$PY" scripts/research_paper_vs_market.py \
+      --start "$PAPER_VS_MARKET_START" \
+      --end "$TODAY" \
+      --output "$PAPER_VS_MARKET_OUT" >>"$LOG" 2>&1 || true
     log "status digest -> WeCom relay (capital flywheel visibility; book A/B spread)"
     "$PY" scripts/status.py --push-wecom >>"$LOG" 2>&1 || true
     # Capability flywheel: health-check daily, RECORD a dated verdict weekly (Fri)
@@ -99,9 +116,13 @@ case "$STEP" in
     elif [ "$(date +%u)" = "5" ]; then
       log "capability flywheel (weekly Fri): judge + record verdict -> ledger"
       "$PY" scripts/continuous_optimize.py --record >>"$LOG" 2>&1 || true
+      log "trend capability flywheel (weekly Fri): judge + record Book T verdict -> ledger"
+      "$PY" scripts/trend_optimize.py --record >>"$LOG" 2>&1 || true
     else
       log "pipeline health check (capability flywheel, no record)"
       "$PY" scripts/continuous_optimize.py >>"$LOG" 2>&1 || true
+      log "trend pipeline health check (trend_guards, no record)"
+      "$PY" scripts/trend_optimize.py >>"$LOG" 2>&1 || true
     fi
     # Three-flywheel health on the dashboard every eod. ① capital + ② capability
     # auto-turn; ③ strategy is a human gate. --notify-blocked escalates to WeCom
@@ -121,8 +142,10 @@ case "$STEP" in
     log "eod done"
     ;;
   optimize)
-    log "capability flywheel: judge live pipeline under discipline guards + record to ledger"
+    log "capability flywheel: judge live short-line pipeline under discipline guards + record to ledger"
     "$PY" scripts/continuous_optimize.py --record >>"$LOG" 2>&1 || true
+    log "trend capability flywheel: judge Book T under trend_guards + record to ledger"
+    "$PY" scripts/trend_optimize.py --record >>"$LOG" 2>&1 || true
     log "optimize done -> kronos_screen/HYPOTHESES.jsonl"
     ;;
   sweep)
@@ -132,6 +155,18 @@ case "$STEP" in
     "$PY" scripts/flywheel_sweep.py --top 30 >>"$LOG" 2>&1 || true
     log "sweep done (report-only; pick a top cache-expressible candidate -> research_run.py -> §10 gate)"
     ;;
+  weekly)
+    log "weekly deep review: record short-line + trend verdicts before planning"
+    "$PY" scripts/continuous_optimize.py --record >>"$LOG" 2>&1 || true
+    "$PY" scripts/trend_optimize.py --record >>"$LOG" 2>&1 || true
+    log "weekly deep review: reconcile/rank backlog"
+    "$PY" scripts/flywheel_sweep.py --top 30 >>"$LOG" 2>&1 || true
+    log "weekly deep review: refresh distill action log"
+    "$PY" scripts/distill_transcript.py --refresh-action-log >>"$LOG" 2>&1 || true
+    log "weekly deep review: build fixed-input plan"
+    "$PY" scripts/weekly_deep_review.py --plan --date "$TODAY" >>"$LOG" 2>&1
+    log "weekly plan ready -> output/live/weekly_plan_${TODAY}.json; Codex should apply evidence-backed changes, validate, then finalize/commit"
+    ;;
   *)
-    echo "usage: auto_daily.sh {morning|eod|optimize|sweep}"; exit 2;;
+    echo "usage: auto_daily.sh {morning|eod|optimize|sweep|weekly}"; exit 2;;
 esac

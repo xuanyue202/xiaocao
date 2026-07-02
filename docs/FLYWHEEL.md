@@ -18,7 +18,10 @@
 - **③ 策略飞轮**（本事变强）：某假设通过纪律（PASS）→ 改参（`params.py` 唯一入口，冻结约束）/重训 → 明天更强 → 回喂 ①。🟡 **actuator 腿是有意的人工门，尚未自动闭环**；当前无 PASS 可喂（K→P 被 REJECTED），所以**正确地停着**。若未来出现 PASS 却无 actuator，自检会转 🔴 `blocked`。
 - **三环耦合**：① 产出数据喂 ②，② 产出验证过的 edge 喂 ③，③ 产出更强策略回喂 ①。**当前断点在 ②→③**（无验证过的 edge + actuator 未接线）；大环 `fully_closed=False` 是诚实状态，不是 bug。
 
-> 设计纪律：actuator 自动化是**有意推迟**的——自动改参会违反 [train+test 双改善] 纪律。先做"PASS→参数提案→人 confirm→受 guard 写回"的半自动，保留人在环。
+> 设计纪律（2026-07-02 快速探索期）：actuator 不再是纯冻结的人肉门。weekly deep review
+> 可以在 paper/simulation/research/tooling 范围内自动应用 evidence-backed 改动并提交，但必须
+> 有完整 `evidence_bundle`、固定输入来源、验证结果、dirty-file 边界和回滚说明。固定输入之外
+> 或证据不足的发现只能变成 proposal，等人确认。
 
 ## ① 资金复利（money compounds）
 
@@ -57,11 +60,15 @@
 
 ② 产出一个 **PASS** 裁决时，③ 把它变成更强的策略：改一个参数（`strategy/params.py` 是唯一改值入口，受 `frozen` 约束）或重训模型（`build_scorer.py`），明天的策略就比今天强，回喂 ① 赚更多。
 
-**现状诚实**：这根 actuator 腿是**有意的人工门，尚未自动闭环**——自动改参会违反"train+test 双改善"纪律，所以先保留人在环。`flywheel_selfcheck.py` 对 ③ 给三态：
+**现状诚实**：这根 actuator 腿处在快速探索期的半自动状态。`flywheel_selfcheck.py`
+仍会把 PASS 待消费但没有 actuator 的状态报为 `blocked`；weekly deep review 是当前的消费器：
+它生成固定输入 plan，Codex agent 可按 evidence_bundle 自动改 paper/simulation 代码，随后由
+`weekly_deep_review.py --finalize` 写周报、ledger、allowlist stage 并 commit。`flywheel_selfcheck.py`
+对 ③ 给三态：
 
 - `open`（🟡）：无 PASS 待应用——**当前状态**（K→P 被 REJECTED，本就无 edge 可喂，正确地停着）；
 - `blocked`（🔴）：有 PASS 待应用却无 actuator（`scripts/apply_verdict.py` 不存在）——**真实缺口**，自检会告警；
-- `closed`（🟢）：actuator 已接线（未来：PASS→参数提案→人 confirm→受 guard 写回）。
+- `closed`（🟢）：actuator 已接线（weekly 或未来专用 actuator 能把 PASS/evidence 转为受审计的改动）。
 
 因此大环 `rings.fully_closed=False` 是**诚实状态**，断点在 **②→③**（无验证过的 edge + actuator 未接线），不是 bug。
 
@@ -75,6 +82,23 @@
 | optimize（能力飞轮，按需） | `auto_daily.sh optimize` | 手动/补跑 |
 
 能力飞轮**无需独立调度器**：eod 每日健康检查，**周五自动 `--record`** 一条裁决入 `HYPOTHESES.jsonl`（既有 eod cron 即可驱动）。`optimize` 步骤保留作按需补跑。
+
+## Weekly deep review（②→③ 消费器）
+
+周五晚 20:30 中国时间运行 `xiaocao-weekly-deep-review`。它不是交易动作，而是把一周的
+经验真正消费掉：
+
+1. `auto_daily.sh weekly` 先跑短线/趋势 verdict record、`flywheel_sweep.py --top 30`、
+   `distill_transcript.py --refresh-action-log`，再生成 `output/live/weekly_plan_<date>.json`。
+2. Codex agent 读取 plan。只有固定输入清单内、带完整 `evidence_bundle`、可验证且目标文件非
+   pre-existing dirty 的事项，才允许 `AUTO_APPLIED` 改 paper/simulation/research/tooling。
+3. 固定输入之外、证据不够硬、或命中 dirty-file 的事项必须 `PROPOSAL_ONLY`，写入周报第一屏和
+   `.scratch/weekly-deep-review/<date>/...md`。
+4. `weekly_deep_review.py --finalize` 写 `output/live/weekly_review_<date>.md`、追加
+   `output/live/flywheel_change_ledger.jsonl`、只 stage allowlist 文件并 commit 当前分支。
+
+这让 ② 不只是“变重”，而是每周把 PASS、校准结果、action_summary、instrumentation 缺口和
+研究证据消费成：自动改动、明确 proposal、或 no-action 结论。
 
 ## 运维与监控（一条命令看全局）
 

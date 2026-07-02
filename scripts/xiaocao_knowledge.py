@@ -29,6 +29,7 @@ HYPS = ROOT / "reference/experience/xiaocao_hypotheses.jsonl"
 LEDGER = ROOT / "kronos_screen/HYPOTHESES.jsonl"
 PLAYBOOK = ROOT / "docs/XIAOCAO_PLAYBOOK.md"
 TIMELINE = ROOT / "reference/experience/REGIME_TIMELINE.md"
+ACTION_LOG = ROOT / "reference/experience/distill_action_log.jsonl"
 
 
 def _today() -> _dt.date:
@@ -78,6 +79,21 @@ def _load_verdicts() -> list[dict]:
     return out
 
 
+def _load_action_log() -> list[dict]:
+    if not ACTION_LOG.exists():
+        return []
+    out = []
+    for line in ACTION_LOG.read_text(encoding="utf-8").splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            out.append(json.loads(line))
+        except json.JSONDecodeError:
+            continue
+    return out
+
+
 def render_posture(posture: dict | None, compact: bool = False) -> str:
     if not posture:
         return "现行 posture 先验：缺失（无 posture_current.json）— 按纯 live data 决策。"
@@ -101,19 +117,48 @@ def render_posture(posture: dict | None, compact: bool = False) -> str:
 def render_hyps(hyps: list[dict], verdicts: list[dict]) -> str:
     if not hyps:
         return "候选假设账本：空。"
-    cand = [h for h in hyps if str(h.get("status", "")).startswith("candidate")]
-    tested = [h for h in hyps if str(h.get("status", "")).startswith("tested")]
+    verdict_map = {str(v.get("id")): str(v.get("verdict")) for v in verdicts if v.get("id") and v.get("verdict")}
+
+    def is_retired(h: dict) -> bool:
+        return bool(h.get("retired_on")) or str(h.get("status", "")).startswith("retired")
+
+    def is_tested(h: dict) -> bool:
+        status = str(h.get("status", ""))
+        return (
+            str(h.get("id")) in verdict_map
+            or bool(h.get("last_verdict"))
+            or status.startswith(("tested", "SHELVED", "evidence"))
+            or is_retired(h)
+        )
+
+    cand = [h for h in hyps if not is_tested(h)]
+    tested = [h for h in hyps if is_tested(h)]
     cand.sort(key=lambda h: -int(h.get("priority", 0)))
-    lines = [f"候选假设账本（reference/experience/xiaocao_hypotheses.jsonl）：{len(cand)} candidate / {len(tested)} tested"]
+    lines = [f"候选假设账本（reference/experience/xiaocao_hypotheses.jsonl）：{len(hyps)} total / {len(cand)} untested / {len(tested)} tested-or-retired"]
     lines.append("  待操作化（按 priority，top 5）：")
     for h in cand[:5]:
         lines.append(f"    - [{h.get('priority')}] {h.get('id')} ({h.get('category')}): {str(h.get('claim',''))[:70]}…")
     if tested:
-        lines.append("  已测：" + ", ".join(f"{h.get('id')}={h.get('status').split(':')[-1]}" for h in tested))
+        def label(h: dict) -> str:
+            return verdict_map.get(str(h.get("id"))) or h.get("last_verdict") or str(h.get("status", ""))
+        lines.append("  已测/搁置：" + ", ".join(f"{h.get('id')}={label(h)}" for h in tested))
     if verdicts:
         v = {x.get("id"): x.get("verdict") for x in verdicts}
         lines.append(f"  verdict 账本（kronos_screen/HYPOTHESES.jsonl）：{len(verdicts)} 条 — " +
                      ", ".join(f"{k}={vv}" for k, vv in v.items()))
+    return "\n".join(lines)
+
+
+def render_action_log(rows: list[dict], *, limit: int = 5) -> str:
+    if not rows:
+        return "蒸馏行动索引：缺失（运行 scripts/distill_transcript.py --refresh-action-log）。"
+    rows = sorted(rows, key=lambda r: (str(r.get("date", "")), str(r.get("file", ""))), reverse=True)
+    lines = [f"蒸馏行动索引（reference/experience/distill_action_log.jsonl）：最近 {min(limit, len(rows))} 篇"]
+    for r in rows[:limit]:
+        routing = ",".join(r.get("routing") or []) or "-"
+        inst = r.get("instrumentation_todo") or "none"
+        hyp = r.get("hypothesis_update") or "none"
+        lines.append(f"  - {r.get('date')} {r.get('file')} routing={routing} | hypothesis={str(hyp)[:50]} | instrumentation={str(inst)[:50]}")
     return "\n".join(lines)
 
 
@@ -146,6 +191,8 @@ def main() -> None:
     print(render_posture(posture))
     print()
     print(render_hyps(_load_hyps(), _load_verdicts()))
+    print()
+    print(render_action_log(_load_action_log()))
     print()
     print(f"判断手册：{PLAYBOOK.relative_to(ROOT)}（道-法-术-纪律 + 实时盘面判断表）")
     print(f"posture 时间线：{TIMELINE.relative_to(ROOT)}（逐日 + 现行 posture + 回测提醒）")

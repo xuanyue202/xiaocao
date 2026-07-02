@@ -1,9 +1,9 @@
 # 小草运营契约（Operating Contract, SSOT）
 
-**版本**：1.1
+**版本**：1.5
 **状态**：现行
 **适用范围**：所有 paper / 未来 real 的实盘环（live_recommend → paper_record → live_monitor → eod）与回测
-**关联实现**：`src/xiaocao/live/safety.py`、`kronos_screen/scripts/{paper_record,settle_book_a,decompose_pnl,quality_governor}.py`、`scripts/live_monitor.py`
+**关联实现**：`src/xiaocao/live/safety.py`、`src/xiaocao/strategy/trend_rules.py`、`kronos_screen/scripts/{paper_record,settle_book_a,settle_book_t,decompose_pnl,quality_governor}.py`、`scripts/live_monitor.py`
 **回归测试**：`tests/test_operating_contract.py`
 **借鉴**：QuantDinger `docs/SIGNAL_EXECUTION_STANDARD_CN.md`（契约 SSOT 结构）+ `docs/agent/MCP_SETUP.md`（paper-only 默认 / 双钥匙 live gate）
 
@@ -21,8 +21,9 @@
 
 | 层 | 负责 | 是否有 LLM |
 |----|------|-----------|
-| **确定性脊柱** | data / fill / stop / 记账(book A/B) / 安全 / 契约校验 | **否**——纯确定性代码，回测与实盘**同一份** |
+| **确定性脊柱** | data / fill / stop / 记账(book A/B/T) / 安全 / 契约校验 | **否**——纯确定性代码，回测与实盘**同一份** |
 | **Agent 皮层** | 判断：每日 posture、异常分诊、强持有例外、研究方向 | 是——结构化包进、结构化决策出（入审计日志） |
+| **Benchmark / Watchlist / Research Cohort 中间层** | `reference/experience/cohorts/*.yaml`（定义）/ `output/cohorts/cohort_snapshots.jsonl`（逐日快照）/ `output/research/*.jsonl`（护栏输入）：承接 raw pool、老师点名战果、本地标杆买入与待研究观察名单 | 否——**authority=0**，只供复盘、观察、`research_run.py`，不直接进买入/卖出/记账 |
 | **复利记忆** | cache.db / decision_journal.jsonl / HYPOTHESES.jsonl / training_rows / model（注：`state.db` 可查询投影**尚未实现**——当前"查询当前状态"由 `status.build_digest` 直接装配 jsonl，非 SQL） | 否 |
 | **判断先验（小草蒸馏）** | `reference/experience/distilled/*.json`（逐篇结构化提取）/ `docs/XIAOCAO_PLAYBOOK.md`（道-法-术-纪律 + 实时盘面判断模型）/ `reference/experience/REGIME_TIMELINE.md`（dated posture）/ `reference/experience/xiaocao_hypotheses.jsonl`（**candidate** 假设账本，非 verdict） | 是——**仅** agent 皮层判断/叙述先验；**无脚本读取**，不进脊柱 |
 
@@ -30,12 +31,14 @@
 
 **MUST NOT（判断先验）**：不得让 playbook / REGIME_TIMELINE / xiaocao_hypotheses.jsonl 的先验进入 fill/stop/记账/安全，或据此**自动调任何 param/threshold/profile/model**。candidate 假设**不是 verdict**，对脊柱权威 = 0；唯一升级路径 = 过 `research_run.py` 护栏 → `kronos_screen/HYPOTHESES.jsonl` → §10 人工门。
 
+**MUST NOT（cohort 中间层）**：不得把 `benchmark/watchlist/research cohort` 成员直接当成实盘买入。cohort 可以证明“值得观察/值得研究/是老师或本地标杆”，但一条 cohort 只有通过 `research_run.py` 护栏并经过 §10 人工门，才能升级为 emitted strategy 或 param 变更。2026-06-30 人工门已将 raw-qibao top10 + 电子/20cm 的 `high_open_watch` 6%-10% 子桶和 `limitlike_watch` 升级为 **Book B 模拟盘** emitted modes（`高开标杆起爆` / `强攻标杆起爆`）；这不改变实盘两钥匙边界。
+
 ---
 
 ## 3. Book A — 验证参考口径（永不被监控）
 
-- **口径**：买入 = 信号日开盘参考价 `open[D]`；卖出 = **下一交易日收盘** `close[D+1]`；**无 stop**。
-- **唯一实现**：`paper_record._record_book_a`（建仓，`entry_price_basis="open_reference"`）+ `settle_book_a.py`（盘后结算，幂等）。
+- **口径**：买入 = 与 Book B 对齐的最终实际纸面成交价 `book_b_fill[D]`（同一批 fillable picks，同一套 9:30-9:31 VWAP/limit/retry 入场）；卖出 = **下一交易日收盘** `close[D+1]`；**无 stop**。
+- **唯一实现**：`paper_record._record_book_a`（建仓，复用 Book B `entry_price_basis`/fill metadata）+ `settle_book_a.py`（盘后结算，幂等）。
 - **角色**：纯会计账本 + **kill-switch 传感器**；永不被 `live_monitor` 触碰或 stop 管理。
 - **MUST**：book A 行（`book="A"`）与 book B 互不阻塞建仓；settle 只用 `close[D+1]`，幂等。
 
@@ -50,18 +53,29 @@
 - **强持有例外**（抑制 trailing 出场）：接力/连板 或 xcjw≥300 或 jsjl>0；近涨停（≥99.7% up_price）；成为领涨且 pct≥8% 且近日高（≥99.5%）。
 - **profile**：v5 = 5 日 / dd 2%；v6 = 3 日 / dd 0.5%（更激进，需前瞻验证）。hard floor 两者均 8%。
 
+## 4b. Book T — 趋势模拟口径（paper-only，独立生命周期）
+
+- **建仓**：`paper_record.py --trend-only` 调 `strategy.trend_rules.generate_trend_picks`，从当前主线大类中选少量大票/中军候选，写入 `positions.jsonl` 的 `book="T"` 行；同 code 可同时有 B/T 两行，互不阻塞、互不 net。
+- **账户**：`paper_account_T.json`，默认初始资金 = `initial_capital × TREND_BUDGET_RATIO`；统一 `paper_trades.jsonl` 记录 `book:"T"`。
+- **出场**：`live_monitor.py --book T` 和 `settle_book_t.py` 只认冻结趋势参数：`TREND_TRAIL_DD` 宽回撤与 `TREND_REBALANCE_R` 低换手到期；**不得调用** Book B 的 `strong_hold_reason` / composite 逻辑，也不得让“方向还在”这类皮层判断抑制 B 的止损。
+- **评估**：Book T 不进入 `forward_eval.py -> training_rows.parquet -> continuous_optimize.py` 的短线 per-trade A/B/C/D 口径；趋势评估只走 `trend_guards` / `trend_optimize` 的复利、回撤、换手、vs-beta 仪器。`trend_optimize.py --record` 只能把 changed verdict 写入 `kronos_screen/HYPOTHESES.jsonl`，不得改 `TREND_*` 参数。
+- **命名空间**：`signal_snapshots.jsonl` 的唯一键是 `(date, code, is_live, book)`；缺 `book` 的旧行默认 B。`data_health` / `contexts` / `forward_eval` 均必须保留 book 维度，避免 B/T 同票同日被误判重复或互相覆盖。
+
 ## 5. 成交模型（真实，非最坏价）
 
-- 限价 `L = min(open[D] × (1 + 0.5%), basket_price)`；开盘窗口（默认 09:30–09:31）结算后 **fill = min(窗口VWAP, L)**。
+- 初始限价 `L = min(open[D] × (1 + 0.5%), basket_price)`；开盘窗口（默认 09:30–09:31）结算后，若窗口最低价触达 `L`，**fill = min(窗口VWAP, L)**。
 - `basket_price` **仅为放弃线**，**MUST NOT** 作为成交假设（旧行为按 basket 记成交=虚构 ~1.9%/笔滑点，已废）。
-- 窗口最低价 > L → **SKIP**（`paper_skips.jsonl`，`LIMIT_NOT_REACHED`，**不静默丢弃**）；无窗口数据 → 回退到 L（`fill_fallback`）。
+- 窗口最低价 > `L` → 先视为初始限价未成/可能被交易所价格笼子拦截，再检查窗口最后价（实时补单代理）：若 `last <= basket_price`，按 `last` 成交并记录 `retry_realtime_after_limit_reject`；若 `last > basket_price` 或缺少可用实时价 → **SKIP**（`paper_skips.jsonl`，`LIMIT_NOT_REACHED` + `skip_detail`，**不静默丢弃**）。
+- 无窗口数据 → 回退到 L（`fill_fallback`）。
 - 唯一实现：`paper_record._fill_price_from_window`。
 - **数据源单一性（OHLCV 故意不接公共源 fallback）**：止损/peak-dd 依赖的分钟线 OHLCV **只**来自专有 API（`client.minute_line`）。**MUST NOT** 把公共源（akshare/腾讯等）价格接入 live 止损路径：不同复权/时间戳/坏tick 会算出不同的 peak/dd，使 book B 与验证 next-close 口径及 API 喂的回测**静默漂移**——正是 data_health 要抓的"真的谎言"。OHLCV 不可得时应 **fail-safe（持有/跳过）**，而非用二手数据动作。公共源仅允许用于**带 provenance 标记、经对账的研究/回填工具**，且 book A/B 记账永不读 `source='public'`。
+- Book T 使用同一成交模型与同一专有 OHLCV 边界；`basket_price` 仍只是放弃线。
 
 ## 6. 仓位与资金
 
 - `deploy_ratio` 默认 **0.5**（留 dry powder）；`max_total_exposure_ratio` 默认 **0.67**；等权滚动现金；整 100 股；单边费率 **1bp**。
 - 被 quality-governor 过滤的 slot **留现金、不再分配**（保守）。
+- Book T 默认预算为独立 T 账户 `TREND_BUDGET_RATIO=30%`、目标 `TREND_TOP_M=3` 个 slot；这只是 paper 仪器参数，不是已验证 alpha。
 
 ## 7. Quality Governor（默认 shadow）
 
@@ -74,6 +88,7 @@
 - 依据 book A 近 5 个出场日累计收益：`< -3%` → book B deploy **减半**；`< -5%` → book B **停买**。
 - **传感器常活**：book A 记账与数据采集**永不**因 kill-switch 停止。唯一实现 `paper_record._kill_switch_factor`。
 - 指数/regime deploy gate 已回测全败 train+test 一致性（`backtest_deploy_gate.py`），故**不接任何指数 regime gate**；性能 kill-switch 是唯一 deploy 控制。
+- Book T 不新增第二部署闸；它独立 paper 运行，用 trend_guards 评估，不反向改动 Book B。
 
 ## 9. 双钥匙资金动作边界（real-capital，借 QuantDinger 双钥匙）
 
@@ -86,11 +101,20 @@
 - 唯一实现 `src/xiaocao/live/safety.py`；真实下单 **MUST** 经 `require_capital_action(...)`，仅在 ALLOW 时下单。
 - **现状**：尚无 real-capital 调用点（paper-only）；本节是 paper→real 的结构缝，使切换=配置翻转而非重构。
 
-## 10. 异常 / 升级策略（agent 皮层）
+## 10. 快速探索期的自动迭代 / 升级策略（agent 皮层）
 
 - **只上报真实异常**：脚本失败、缺预期输出、`候选股 NONE`、缺 paper-record 输出、对账 MISMATCH、`HARD_STOP` 触发、现金不足、可疑数据、**③ 策略飞轮 `blocked`**（有 PASS 裁决待应用却无 actuator——验证过的 edge 闲置）。
-- **③ 策略飞轮 `blocked` 升级动作**：这是**人工决策**，agent 升级给人、**不得自动执行**。报告 `pending_pass_verdicts` 与其账本指标；应用方式 = 人确认后改 `src/xiaocao/strategy/params.py`（唯一改值入口，冻结约束）或重训模型，且**必须再过 train+test guard**。`flywheel_selfcheck.py --notify-blocked`（eod 自动跑）已通过 WeCom relay 推送（需 `XIAOCAO_WECOM_*`）。**agent 永不自动改参/重训**——自动应用 edge 违反 train+test 纪律。
-- **非异常（正常）**：`SELL_DEFERRED`（盘中只诊断）、`T+1_blocked`、非交易日 skip、book A 单独结算、**③ 策略飞轮 `open`**（无 PASS 可应用，策略正确地冻结，无需动作）。
+- **探索期目标**：当前无 real-capital；核心目标是提升收益率和验证效率。weekly deep review 可以在 paper/simulation/research/tooling 范围内自动改代码/参数并提交，但任何改动都必须有明确归因证据，不能想当然。
+- **自动改动硬门槛：`evidence_bundle`**。没有完整 `evidence_bundle` 的事项只能 `PROPOSAL_ONLY`，不得 `AUTO_APPLIED`。每个 bundle 必须写清：
+  `problem_observed`、`attribution`、`evidence_artifact`、`baseline_vs_variant`、
+  `overfit_check`、`change_scope`、`rollback`。
+- **AUTO_APPLIED 候选格式**：weekly finalize 必须收到至少一个 auto-apply candidate（plan 内或 `--auto-apply-candidate` JSON/JSONL），字段包括 `id`、`title`、`source`、`recommended_change`、`evidence_bundle`。脚本会校验 source 是否属于固定输入清单、bundle 是否完整、validation 是否不含失败标记；校验失败不得提交为 `AUTO_APPLIED`。
+- **固定输入清单**：自动改动只能来自 weekly plan 的固定输入：`flywheel_selfcheck.py`、`flywheel_sweep.py --json --top 30`、`distill_action_log.jsonl`、`kronos_screen/HYPOTHESES.jsonl`、`output/research/*`、`pnl_decompose.csv`、`paper_vs_market_*.md`、`posture_calibration.jsonl`、`exit_calibration.jsonl`、`git status --porcelain`。固定输入之外的发现一律写 proposal 等用户确认。
+- **允许自动改**：paper/simulation 策略参数、emitted modes、Book B/T 模拟策略、研究脚本、报告字段、cohort 规则、模型配置、蒸馏/action-log/schema/observability 工具。策略收益类改动必须有 PASS / fill-aware PASS / baseline-vs-variant 明确改善，并说明不过拟合证据；工具类改动必须能归因到具体审计/验证缺口。
+- **不得自动改**：账户历史、成交账本、原始缓存、数据口径真相源、安全校验、real-capital 授权逻辑、live authorization、手工改账。即使未来上小资金，真实资金边界仍走双钥匙。
+- **dirty-file 边界**：weekly 开始时记录 `git status --porcelain`。运行前已 dirty 的文件不得自动修改；若证据明确指向该文件，周报第一屏写 `NEEDS_HUMAN_CONFIRMATION`，创建 `.scratch/weekly-deep-review/...` proposal，等待用户明确确认。
+- **提交与审计**：weekly finalize 写 `output/live/weekly_review_YYYY-MM-DD.md`、追加 `output/live/flywheel_change_ledger.jsonl`、只 stage allowlist 文件并直接提交当前分支。`AUTO_APPLIED` 和 `PROPOSAL_ONLY` 都可以 commit；commit body 必须列 validation、报告路径、rollback。不得 `git add -A`。
+- **非异常（正常）**：`SELL_DEFERRED`（盘中只诊断）、`T+1_blocked`、非交易日 skip、book A 单独结算、Book T 无候选/无到期结算、**③ 策略飞轮 `open`**（无 PASS 可应用，策略正确地冻结，无需动作）。
 - EOD 是**盘后审计**，非新多空判断：强调执行纪律、A/B 证据、数据采集健康、账户一致性、未决风险。
 
 ## 11. 契约不变量（可执行回归 → `tests/test_operating_contract.py`）
@@ -98,8 +122,9 @@
 - [x] paper/sensor/research 永远放行；unknown kind 默认拒。
 - [x] real_capital 缺任一钥匙 / 签名篡改 / 过期 / 越权 / 超额 → 拒；双钥匙 in-scope → 放行；每个决定入审计。
 - [x] `require_capital_action` 拒时抛 `CapitalActionDenied`。
-- [x] 成交 ≤ basket 放弃线（`_fill_price_from_window`）；窗口最低价 > L → SKIP。
+- [x] 成交 ≤ basket 放弃线（`_fill_price_from_window`）；窗口最低价 > L 时，实时价仍在 basket 内则补单成交，否则 SKIP。
 - [x] book A/B fixture 回放：同组 picks 过 A/B，realized 差 **完全等于出场口径差**（逐仓可归因，无记账漂移）；无 stop 触发时 book A == book B（消灭 iteration-7 的 -4,191 漂移）。`tests/test_operating_contract.py::test_ab_replay_*`
+- [x] Book T snapshot/account/monitor key 均带 `book` 命名空间；B/T 同票同日不互相覆盖；T 宽止损不调用短线 strong-hold/composite。
 - [ ] （后续）settle_book_a 只用 next_close 且幂等；decompose_pnl 三项金额求和 = account realized_pnl（容差=取整）。
 
 ## 12. 修订记录
@@ -108,3 +133,7 @@
 |------|------|------|
 | 1.0 | 2026-06-20 | 首版：架构原则 + book A/B 口径 + 成交模型 + 仓位 + governor + kill-switch + **双钥匙资金边界** + 异常策略 + 不变量。 |
 | 1.1 | 2026-06-21 | §2 登记「判断先验（小草蒸馏）」复利记忆层（playbook / REGIME_TIMELINE / distilled / xiaocao_hypotheses.jsonl）+ 新增 MUST NOT：先验不进脊柱、不自动改参，candidate≠verdict。能力层接入 SKILL.md「Xiaocao Judgment Playbook」节，与 FLYWHEEL.md「判断先验→候选假设」两层假设模型对齐。 |
+| 1.2 | 2026-06-30 | §2 增加 Benchmark/Watchlist/Research Cohort 中间层：承接老师点名、本地标杆与 raw pool 观察样本，authority=0；明确 cohort 不直接进 paper-buy/确定性脊柱，唯一升级路径仍为 research_run 护栏 + §10 人工门。 |
+| 1.3 | 2026-06-30 | 记录 raw-qibao high-open 6%-10% 与 limitlike 子桶的 §10 paper-only 升级边界；仍无实盘授权。 |
+| 1.4 | 2026-07-01 | Book T 趋势模拟仓上线：`trend_rules.py` 候选、`paper_record.py --trend-only`、`paper_account_T.json`、`live_monitor.py --book T`、`settle_book_t.py`；snapshot/data_health/context/forward_eval key 升级为 book-scoped；`trend_optimize.py` 接入 `trend_guards` 复利/dd/换手评估并与短线 `continuous_optimize.py` 分离。 |
+| 1.5 | 2026-07-02 | 快速探索期 weekly deep review 自动迭代规则：evidence_bundle 硬门槛、固定输入清单、dirty-file 显式确认、proposal/weekly report/change ledger、allowlist staging/current-branch commit；允许 paper/simulation 自动改动，仍禁止账户/缓存/安全/real-capital 授权自动改。 |

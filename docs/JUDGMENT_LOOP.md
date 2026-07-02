@@ -117,6 +117,30 @@ wirings make them a real, evolvable leg:
 So the loop is honest end to end: it compounds on governed data, it reports its own
 health, and its output is staged work for the gate — never an automatic param edit.
 
+## Weekly deep review consumes the loop
+
+Daily EOD keeps the sensors warm; weekly deep review is the consumer that prevents those
+signals from disappearing into prose:
+
+- Each distilled transcript must include `action_summary` with five forced routing
+  dimensions: posture, playbook, hypothesis, audit evidence, and instrumentation todo.
+  `scripts/distill_transcript.py --refresh-action-log` rebuilds
+  `reference/experience/distill_action_log.jsonl` from those per-file summaries.
+- `scripts/weekly_deep_review.py --plan` reads only the fixed input set
+  (`flywheel_selfcheck`, `flywheel_sweep --json`, action log, verdict ledger, research
+  reports, PnL attribution, paper-vs-market, posture/exit calibration, git status) and
+  produces evidence bundles/proposals.
+- In the fast exploration phase, a fixed-input item with a complete `evidence_bundle` can
+  drive an AUTO_APPLIED paper/simulation/research/tooling change. Anything outside the fixed
+  input set, any weak attribution, or any pre-existing dirty target becomes a proposal that
+  needs explicit user confirmation.
+- `--finalize` writes the weekly report, appends `flywheel_change_ledger.jsonl`, stages only
+  the allowlist, and commits to the current branch.
+
+This changes the old loop from “sensor-only, wait for someone to notice” to “sensor →
+weekly evidence bundle → auto-applied change or explicit proposal,” while keeping account
+history, raw caches, safety logic, and real-capital authorization out of automation.
+
 ## Why this is the right loop (not more alpha hunting)
 
 - It compounds the layer that the data proved holds the edge (coarse judgment +

@@ -305,5 +305,17 @@
     "cpu/cpo混用 → CPO(光模块);'整个CPU元器件' → CPO元器件",
     "三维光纤 → [转写存疑,疑指某光纤光缆票]",
     "公仓/公仓 → 空仓"
-  ]
+  ],
+  "action_summary": {
+    "posture_update": "legacy_backfill: see posture/regime_call in this distilled file",
+    "playbook_update": "legacy_backfill: see method_principles/exit_lessons/judgment_heuristics in this distilled file",
+    "hypothesis_update": "legacy_backfill: 6 candidate hypothesis item(s) in this distilled file",
+    "audit_evidence": "not_applicable",
+    "instrumentation_todo": "no_issue_created",
+    "routing": [
+      "posture",
+      "playbook",
+      "hypothesis"
+    ]
+  }
 }

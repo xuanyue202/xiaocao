@@ -20,6 +20,14 @@ def _valid_distilled(date="2026-06-10", kind="morning"):
         "judgment_heuristics": [], "timing_notes": [], "typo_corrections": [],
         "regime_call": {"horizon": "h", "what_would_falsify": "w"},
         "posture": {"regime": "divergence", "dominant_style": "d", "risk": "r", "style_ranking": []},
+        "action_summary": {
+            "posture_update": "no_change",
+            "playbook_update": "no_change",
+            "hypothesis_update": "no_change",
+            "audit_evidence": "not_applicable",
+            "instrumentation_todo": "no_issue_created",
+            "routing": [],
+        },
         "hypotheses": [
             {"claim": "claim A", "implied_rule": "rule A", "expected_effect": "e", "falsifiable_test": "t"},
         ],
@@ -38,6 +46,26 @@ def test_validate_missing_keys_fails_closed(tmp_path):
     d = _valid_distilled()
     del d["exit_lessons"]
     f = tmp_path / "x.json"
+    f.write_text(json.dumps(d), encoding="utf-8")
+    assert dt.validate(f) == 1
+
+
+def test_validate_missing_action_summary_fails_closed(tmp_path):
+    d = _valid_distilled()
+    del d["action_summary"]
+    f = tmp_path / "x.json"
+    f.write_text(json.dumps(d), encoding="utf-8")
+    assert dt.validate(f) == 1
+
+
+def test_validate_action_summary_requires_all_routing_fields(tmp_path):
+    d = _valid_distilled()
+    del d["action_summary"]["instrumentation_todo"]
+    f = tmp_path / "x.json"
+    f.write_text(json.dumps(d), encoding="utf-8")
+    assert dt.validate(f) == 1
+    d = _valid_distilled()
+    d["action_summary"]["routing"] = "posture"
     f.write_text(json.dumps(d), encoding="utf-8")
     assert dt.validate(f) == 1
 
@@ -238,3 +266,42 @@ def test_reality_check_extracts_loop_grades_and_dedups(tmp_path, monkeypatch):
     assert any("【loop】" in r["text"] for r in rows) and any("现实校准" in r["text"] for r in rows)
     dt.reality_check(f)                                       # idempotent (deduped by date+text)
     assert len([l for l in rc.read_text().splitlines() if l.strip()]) == 2
+
+
+def test_refresh_action_log_rebuilds_from_distilled_summaries(tmp_path, monkeypatch):
+    ddir = tmp_path / "distilled"
+    ddir.mkdir()
+    d = _valid_distilled(date="2026-06-22", kind="盘后复盘")
+    d["action_summary"] = {
+        "posture_update": "updated valid_until 2026-06-25",
+        "playbook_update": "added exit heuristic",
+        "hypothesis_update": "merged XH-001",
+        "audit_evidence": "teacher_named_winners checked",
+        "instrumentation_todo": "no_issue_created",
+        "routing": ["posture", "hypothesis"],
+    }
+    (ddir / "2026-06-22_review.json").write_text(json.dumps(d, ensure_ascii=False), encoding="utf-8")
+    out = tmp_path / "distill_action_log.jsonl"
+
+    assert dt.refresh_action_log(ddir, out) == 0
+    rows = [json.loads(l) for l in out.read_text(encoding="utf-8").splitlines() if l.strip()]
+    assert rows == [{
+        "audit_evidence": "teacher_named_winners checked",
+        "date": "2026-06-22",
+        "file": "2026-06-22_review.json",
+        "hypothesis_update": "merged XH-001",
+        "instrumentation_todo": "no_issue_created",
+        "kind": "盘后复盘",
+        "playbook_update": "added exit heuristic",
+        "posture_update": "updated valid_until 2026-06-25",
+        "routing": ["posture", "hypothesis"],
+    }]
+
+
+def test_refresh_action_log_fails_if_any_distilled_summary_invalid(tmp_path):
+    ddir = tmp_path / "distilled"
+    ddir.mkdir()
+    d = _valid_distilled()
+    del d["action_summary"]
+    (ddir / "bad.json").write_text(json.dumps(d), encoding="utf-8")
+    assert dt.refresh_action_log(ddir, tmp_path / "out.jsonl") == 1

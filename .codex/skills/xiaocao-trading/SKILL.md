@@ -27,7 +27,10 @@ PYTHONPATH=src python3 -m xiaocao ...
 PYTHONPATH=src python3 scripts/live_recommend.py
 ```
 
-The bundled runtime includes the Xiaocao CLI/package source, live scripts, docs, `stocks.json`, and `xiaocao.yaml.example`. It intentionally does not include local historical `results/`, large `output/` caches, or private `xiaocao.yaml`.
+The bundled runtime includes the Xiaocao CLI/package source, live scripts, docs,
+`reference/experience` knowledge artifacts, `stocks.json`, and `xiaocao.yaml.example`.
+It intentionally does not include local historical `results/`, large `output/` caches, or
+private `xiaocao.yaml`.
 
 Python dependencies are declared in `pyproject.toml` (`requests`, `PyYAML`; `pytest` for e2e checks). If a command fails with a missing dependency, install from `XIAOCAO_ROOT`:
 
@@ -39,7 +42,7 @@ Use `table` for human-readable checks, `json` for follow-up analysis, and `csv` 
 
 ## Operating Contract & Capital Safety (read first)
 
-`docs/OPERATING_CONTRACT.md` is the single source of truth (SSOT) for the trading口径: book A/B exit policy, the staged-exit rule, fill model, quality governor, kill-switch, and the capital-safety boundary. When a question is about *what the system should do*, follow the contract, not ad-hoc reasoning.
+`docs/OPERATING_CONTRACT.md` is the single source of truth (SSOT) for the trading口径: book A/B/T exit policy, the staged-exit rule, fill model, quality governor, kill-switch, trend-book separation, and the capital-safety boundary. When a question is about *what the system should do*, follow the contract, not ad-hoc reasoning.
 
 Architecture principle — **the deterministic spine runs without an LLM** (data, fills, stops, accounting, safety are code in `src/xiaocao/live/`); the agent is for **judgment** (posture, anomaly triage, hold exceptions) and **research**. Do not hand-compute fills, edit account balances, or decide to place a real order — the scripts do that.
 
@@ -48,9 +51,9 @@ Capital safety (two-key): xiaocao is paper-only. A real-capital order is structu
 Agent-facing tools (prefer these over re-scraping files):
 
 - `python3 scripts/show_journal.py --date today` — what earlier runs concluded today (cross-context continuity). Read this at the start of an intraday/EOD run instead of re-deriving the day from scattered files.
-- `python3 scripts/status.py` (`--json`, `--push-wecom`) — the situational-awareness digest: book A vs book B realized spread, equity/cash, today's decisions, open holdings; `--push-wecom` posts through the OpenClaw WeCom relay when `XIAOCAO_WECOM_*` is configured.
+- `python3 scripts/status.py` (`--json`, `--push-wecom`) — the situational-awareness digest: book A vs book B realized spread, Book T trend account, equity/cash, today's decisions, open holdings; `--push-wecom` posts through the OpenClaw WeCom relay when `XIAOCAO_WECOM_*` is configured.
 - `python3 scripts/research_run.py --trades <file> --n-tried N` — judge a cache-built results file under the discipline guards (cache-only, walk-forward, per-trade-not-day-weighted, multiple-comparison significance); it refuses to call a day-weighting artifact "validated".
-- `python3 scripts/data_doctor.py` — dirty-data doctor. **Run it before trusting any A/B verdict**: it catches duplicate (date,code,is_live) snapshots (the 06-01 bug that made an A/B result meaningless), book A/B account drift, and stale positions. Exits non-zero on a critical finding.
+- `python3 scripts/data_doctor.py` — dirty-data doctor. **Run it before trusting any A/B verdict**: it catches duplicate (date,code,is_live,book) snapshots (the 06-01 bug that made an A/B result meaningless), book A/B/T account drift, and stale positions. Exits non-zero on a critical finding.
 - `python3 scripts/flywheel_selfcheck.py` — are the three coupled flywheels healthy? ① capital + ② capability auto-turn (spinning); ③ strategy is an intentional human gate, reported open/blocked/closed (🔴 only if a PASS verdict is pending with no actuator). Also flags a stalled loop.
 - MCP read tools (optional): `python3 -m xiaocao.mcp.server` exposes the same read-only surface to an MCP client — `live_status`, `data_health_report`, `recent_decisions`, `ledger_verdicts`, `judge_hypothesis`, `operating_contract`, `flywheel_status` (never live trading).
 
@@ -101,6 +104,76 @@ Key fields:
 - `open_pct`: opening percentage change.
 - `flags`: direction/main-line/big-cap tags, plus Kronos K→P tags `★KP<rank>` (a top secondary pick) / `KP↓` (Kronos dropped to the bottom half) when the overlay is active.
 
+Signal stability: for a same-day live run, the Xiaocao signal set produced after the
+09:25 call-auction snapshot is the day's fixed morning signal. Use it as trusted evidence
+for later review/audit; do not reclassify it as unstable just because the review happens
+after the close. Intraday prices and fills can change, but the 09:25 emitted/recommended
+set is the reference signal set.
+
+Intermediate cohorts: `scripts/cohort_snapshot.py --date <date>` captures benchmark/watchlist
+research cohorts such as raw-qibao high-open or limit-like strong-attack samples into
+`output/cohorts/cohort_snapshots.jsonl`. These rows have `authority=0`: use them for
+review, watchlists, and `research_run.py` artifacts, not as automatic paper-buy inputs.
+When reviewing whether those watchlist samples are actually tradable, use the fill-aware
+research path: `scripts/backfill_qibao_cohort_minutes.py` to cache only missing cohort
+minute-line code-days at a low request rate, then `scripts/research_qibao_cohort_execution.py`
+to generate `output/research/qibao_cohort_execution_*.jsonl`, then judge with
+`scripts/research_run.py`. The benchmark base must remain the full same-day qibao pool daily
+return; a partially backfilled minute subset is not a valid base. The script scales daily open
+into the minute bar price axis before applying the `open*1.005` limit; do not anchor the touch
+test on the first cached minute. Even a PASS here remains
+authority=0 until the §10 human gate promotes it.
+
+Current human-gated paper-only promotions (2026-06-30): raw-qibao top10 +
+electronic/20cm `high_open_watch` **only for open 6%-10%** is emitted as
+`高开标杆起爆`, and `limitlike_watch` is emitted as `强攻标杆起爆`. These are
+Book-B/paper simulation rules only; they do not authorize real capital and must
+keep `qibaoRankScore` as the primary score. Generic high-open signals outside
+these promoted qibao benchmark modes remain shadowed by the normal
+`openPctChange >= 6` guard.
+
+When the user asks whether the live short-line strategy is effective, compare
+Book B against A-share benchmarks with:
+
+```bash
+PYTHONPATH=src python3 scripts/research_paper_vs_market.py --start 2026-06-01 --output output/research/paper_vs_market_2026-06-01_latest.md
+```
+
+Use 上证 as a broad large-cap reference, but also compare 深成指 / 创业板指 /
+中证1000 because the current book trades small/mid growth and 20cm names.
+The EOD automation now writes the same comparison daily to
+`output/research/paper_vs_market_<start>_<date>.md` (default start
+`2026-06-01`; override with `PAPER_VS_MARKET_START`).
+
+When the user asks for a fast stage on trend/Book-T participation, start with the
+concrete leader-basket counterfactual before wider trend-book research:
+
+```bash
+PYTHONPATH=src python3 scripts/research_trend_leader_basket.py --entry-date 2026-06-01 --checkpoints 2026-06-08,2026-06-19 --output output/research/trend_leader_basket_2026-06-01.md
+```
+
+This script is cache-first and uses `/stock/minute_line` `trade` as the price
+axis; default entry is entry-day close. Use `--allow-api` only to fill missing
+minute bars, rate-limited.
+
+Mode recent confidence / mode rotation is sourced from **live all-hit forward
+labels** first: `output/live/training_rows.parquet`, produced by
+`signal_snapshots.jsonl -> forward_eval.py --live-only`, contains every live
+morning hit including bought, unbought, KP-dropped, and shadow rows. `live_recommend.py`
+must rank modes by those recent 5/10/20-day `net_realized_ret` windows before
+falling back to SQLite `mode_history`. If every mode confidence is 50, treat it
+as a wiring/data issue: check that EOD `forward_eval` has refreshed
+`training_rows.parquet`, that `capture_signals.py` is recording
+`mode_confidence_source/reason`, and only then fall back to stale
+`mode_history`.
+
+For qibao benchmark work, `capture_signals.py` must preserve `rawQibaoRank`,
+`qibaoRankScore`, `qibaoBenchmarkKind`, and `qibaoBenchmarkLayer` into
+`signal_snapshots.jsonl`; `forward_eval.py` materializes
+`qibao_benchmark_star` and reports it as variant D. If qibao benchmark winners
+look absent from `training_rows.parquet`, treat that as a data wiring break first,
+not as a strategy conclusion.
+
 When the Kronos K→P overlay is available, the report adds two sections:
 
 - `## ★ Kronos K→P 优先` — variant A baseline: pure K→P picks (Kronos embedding drops the worst half, prior-day intraday model ranks survivors).
@@ -133,6 +206,24 @@ PYTHONPATH=src python3 scripts/live_monitor.py
 
 The monitor reads `status="open"` positions, prints entry/peak/latest/drawdown/return state, writes alerts to `output/live/alerts.jsonl`, and applies T+1 blocking on the entry date.
 
+Book T trend paper book:
+
+```bash
+PYTHONPATH=src python3 kronos_screen/scripts/paper_record.py --date YYYY-MM-DD --trend-only
+PYTHONPATH=src python3 scripts/live_monitor.py --book T --execute-sells
+PYTHONPATH=src python3 kronos_screen/scripts/settle_book_t.py
+```
+
+Book T writes `book:"T"` rows to the same `output/live/positions.jsonl`, uses
+`output/live/paper_account_T.json`, and keeps `output/live/paper_holdings_T.json`.
+It is paper-only and independent from Book B: same-code B/T overlap is allowed,
+T exits use `TREND_TRAIL_DD` / `TREND_REBALANCE_R`, and T must not consume Book-B
+strong-hold/composite logic. Trend evaluation stays out of
+`continuous_optimize.py`; use `trend_guards` / `trend_optimize` for compounded
+return, drawdown, turnover, and beta comparison.
+Run `PYTHONPATH=src python3 scripts/trend_optimize.py` for the trend health
+check, and add `--record` only from the weekly/explicit optimize path.
+
 If the recommendation output is `候选股: NONE`, report that result directly unless the user explicitly asks to investigate.
 
 ## Automation Workflows
@@ -160,7 +251,8 @@ bash scripts/auto_daily.sh morning
 `auto_daily.sh morning` is intentionally a small orchestration, not just a recommendation call:
 
 1. `scripts/live_recommend.py` waits until the 9:25 auction snapshot is usable, writes the recommendation, captures ★/★B forward signals, and records news/sentiment when available.
-2. `kronos_screen/scripts/paper_record.py` confirms the paper buy after the opening execution window. Treat `basket` as the **abandon bound only, never the fill assumption**. The fill model is a realistic paper limit order: `L = min(open × (1 + 0.5%), basket_price)`; after the 9:30-9:31 window settles, fill at `min(window VWAP, L)`. If the window never trades through `L`, the pick is **skipped** and audited in `output/live/paper_skips.jsonl` (`SKIPPED / LIMIT_NOT_REACHED`). If minute data is unavailable it falls back to `L` and marks `fill_fallback`. It also records **book A** — the validated reference policy (buy at the open reference, sell at next close, no stop) — as a parallel virtual book, and applies a **kill-switch**: if book A's last 5 exit-days cum return < -3% it halves book B's deploy, < -5% it pauses book B buys entirely (book A and data capture always continue).
+2. `kronos_screen/scripts/paper_record.py` confirms the Book-B paper buy after the opening execution window. Treat `basket` as the **abandon bound only, never the fill assumption**. The fill model is a realistic paper limit order: `L = min(open × (1 + 0.5%), basket_price)`; after the 9:30-9:31 window settles, if the window trades through `L`, fill at `min(window VWAP, L)`. If the initial low limit is not filled or would be rejected as too far from the tape, check the latest opening-window price as the real-time retry proxy; when that price is still `<= basket_price`, fill at that real-time price and audit `retry_realtime_after_limit_reject`. If the retry price is above `basket` or unavailable, the pick is **skipped** and audited in `output/live/paper_skips.jsonl` (`SKIPPED / LIMIT_NOT_REACHED`). If minute data is unavailable it falls back to `L` and marks `fill_fallback`. It also records **book A** — the validated reference policy (same final entry fill as Book B, sell at next close, no stop) — as a parallel virtual book, and applies a **kill-switch**: if book A's last 5 exit-days cum return < -3% it halves book B's deploy, < -5% it pauses Book-B buys entirely (book A and data capture always continue).
+3. The morning orchestration then runs `paper_record.py --trend-only` for Book T. This records only new trend slots into `paper_account_T.json`; no Book-T candidate, an already-full T book, or a skipped T fill is normal paper state and not a Book-B anomaly.
 
 Use a two-stage reply for the morning automation. Keep the single orchestrated `auto_daily.sh morning` process running so the 9:35 opening-dense monitor sees confirmed positions, but as soon as the log shows `wrote .../recommend_<date>.md` or that recommendation file exists, inspect it and immediately send an interim Chinese update with today's ★B table and whether ★B differs from ★. The interim table must include `basket`, `basket_rule`, and the produced one-sentence stock sentiment/news summary; mark `paper_buy` as pending/`待模拟成交` and do not call the morning automation finished yet. Then continue waiting for `paper_record.py`; after the paper-buy phase completes, send the complete morning summary with fills, fees, account cash, posture, and anomalies.
 
@@ -173,6 +265,7 @@ After it finishes, inspect the current date's morning log plus the live outputs 
 - `output/live/signal_snapshots.jsonl`
 - `output/live/positions.jsonl`
 - `output/live/paper_account.json`
+- `output/live/paper_account_T.json`
 - `output/live/paper_trades.jsonl`
 
 Reply in Chinese with a concise morning summary.
@@ -198,7 +291,7 @@ Always use the same columns, and fill missing values with `-`:
 | `auc_residual_imb` | 9:25 residual auction pressure |
 | `basis` | Short recommendation basis: mode/score, flags, and any produced small-grass indicators |
 | `sentiment/news` | Short label plus compressed news keyword; keep this cell brief |
-| `paper_buy` | Fee, fill basis, fill limit, window VWAP/high/low, and fallback/skip status when positions were recorded |
+| `paper_buy` | Fee, fill basis, fill limit, window VWAP/high/low/last, retry/fallback/skip status when positions were recorded |
 
 Interpret `auc_residual_imb` with care: the post-match residual book is one-sided **by construction**, so this value saturates at +/-1 and is effectively only a sign (kept for the record, no longer used for selection). The ★B variant is a **forced-contrast** set: among K-survivors, if the auction-worst ★ pick (by `q = rank(残余买盘/撮合量)/2 + rank(竞价涨幅)/2`) scores below the best non-★ survivor, it is swapped out (`vb_swap=true`). Mention in the summary whether today's ★B differed from ★.
 
@@ -228,6 +321,7 @@ If the script reports a non-trading-day skip, treat it as normal and keep the re
 - `output/live/alerts.jsonl`
 
 Reply in Chinese with a concise cash/equity/open-position summary. Treat `T+1_blocked` as diagnostic only. Sell execution is **staged**: intraday checkpoints only execute `HARD_STOP` (drawdown ≥ 8% hard floor) or liquidity escapes; ordinary trailing-stop / composite deterioration is only **diagnosed** intraday (`defer:<reason>` in the status column, `SELL_DEFERRED` in alerts) and executed at the 14:55 discipline pass — a deferred diagnosis is normal, not an anomaly. Highlight only actual executed sells, `HARD_STOP` triggers, script failures, missing/corrupt account or position files, or other real anomalies. Book A positions (`book="A"`) are settled separately by `settle_book_a.py` and never appear in the monitor.
+Book T positions are monitored only by `scripts/live_monitor.py --book T`; they use wide trend exits and should not be mixed into the default Book-B monitor summary.
 
 Opening-dense monitor runs should pay extra attention to market regime, breadth, limit-up/limit-down counts, stock sentiment, and whether the opening action confirms or rejects the morning recommendation posture. Sparse intraday monitor runs should stay quiet unless there is an actual sell signal, simulated sell, data problem, or meaningful regime/position deterioration.
 
@@ -247,13 +341,22 @@ After it finishes, inspect the current date's EOD log plus the live outputs that
 - `output/live/eod_features.jsonl`
 - `output/live/training_rows.parquet`
 - `output/live/paper_account.json`
+- `output/live/paper_account_T.json`
 - `output/live/paper_holdings.json`
+- `output/live/paper_holdings_T.json`
 - `output/live/positions.jsonl`
 - `output/live/paper_trades.jsonl`
 - live monitor output from the EOD script
+- Book T monitor / `settle_book_t.py` output when present
 - `output/live/decision_journal.jsonl` (structured per-run decisions; or `python3 scripts/show_journal.py --date today`)
+- `output/research/paper_vs_market_<start>_<date>.md` (Book B vs 上证/深成指/创业板指/中证1000)
 
-EOD first runs `scripts/data_doctor.py`; a CRITICAL finding (e.g. duplicate snapshots) **gates the learning half** — `forward_eval` and the capability-flywheel record are skipped so the system never learns from dirty data (the capital half still runs). It then pushes the situational-awareness digest to WeCom via OpenClaw relay (`scripts/status.py --push-wecom`; needs `XIAOCAO_WECOM_RELAY_URL`, `XIAOCAO_WECOM_RELAY_TOKEN`, `XIAOCAO_WECOM_USER_ID`; optional `XIAOCAO_WECOM_ACCOUNT_ID=default`, `XIAOCAO_WECOM_INSECURE=true`). For Codex cron, put these vars in local untracked `output/live/notify.env` (or point `XIAOCAO_NOTIFY_ENV_FILE` elsewhere) so fresh automation contexts inherit the relay config without editing each automation. The capability flywheel (`scripts/continuous_optimize.py`) runs a health check every eod and, **on Fridays, automatically records a dated verdict** to `kronos_screen/HYPOTHESES.jsonl` from within the same eod run — no separate scheduler is needed (`bash scripts/auto_daily.sh optimize` is only for on-demand/back-fill recording). Surface a REJECTED pipeline verdict only as evidence, not alarm: the secondary screen is a defensive overlay under forward test, expected to be marginal.
+EOD first runs `scripts/data_doctor.py`; a CRITICAL finding (e.g. duplicate snapshots) **gates the learning half** — `forward_eval` and the capability-flywheel record are skipped so the system never learns from dirty data (the capital half still runs). The EOD capital half monitors Book B, monitors Book T with `scripts/live_monitor.py --book T --execute-sells`, settles Book A, then settles Book T with `settle_book_t.py`. It then pushes the situational-awareness digest to WeCom via OpenClaw relay (`scripts/status.py --push-wecom`; needs `XIAOCAO_WECOM_RELAY_URL`, `XIAOCAO_WECOM_RELAY_TOKEN`, `XIAOCAO_WECOM_USER_ID`; optional `XIAOCAO_WECOM_ACCOUNT_ID=default`, `XIAOCAO_WECOM_INSECURE=true`). For Codex cron, put these vars in local untracked `output/live/notify.env` (or point `XIAOCAO_NOTIFY_ENV_FILE` elsewhere) so fresh automation contexts inherit the relay config without editing each automation. The capability flywheels run health checks every eod: `continuous_optimize.py` for short-line A/B/C/D and `trend_optimize.py` for Book T's compounded/dd/turnover instrument. On Fridays both automatically record changed verdicts to `kronos_screen/HYPOTHESES.jsonl`; `bash scripts/auto_daily.sh optimize` is the on-demand/back-fill recording path. Surface a REJECTED pipeline verdict only as evidence, not alarm: the secondary screen and Book T trend edge are forward/research evidence until §10 says otherwise.
+
+EOD also runs `scripts/research_paper_vs_market.py` and writes the dated report
+under `output/research/`. Include a one-line "Book B vs index avg" result in the
+Chinese EOD reply; this is the daily sanity check that the simulated strategy is
+at least beating a passive A-share reference over the same window.
 
 EOD then runs `scripts/flywheel_selfcheck.py --notify-blocked` — the three-flywheel health check. **Read its `③ strategy flywheel` status and act per the runbook below.** ① capital and ② capability auto-turning is the normal steady state; the only line that needs a decision is ③.
 
@@ -263,9 +366,63 @@ The **`--distill`** step closes the loop into the flywheel: a flagged rule is st
 
 EOD also runs `scripts/flywheel_sweep.py` — the candidate-backlog **CONSUMER** (the thing that keeps ② getting *smarter*, not just *heavier*). It first **reconciles** the research verdict ledger back into `reference/experience/xiaocao_hypotheses.jsonl`: a REJECTED candidate is **retired** (structured `retired_on` + `last_verdict`, so it stops reappearing as live work) and a PASS is tagged as §10 evidence — **never auto-applied**. It then prints the **test-priority queue**: untested candidates ranked by recurrence↓ (how many distinct transcripts repeat the claim = `len(source_dates)`) then age↑, flagged cache-expressible. `flywheel_selfcheck.py` prints a **knowledge scoreboard** — `transcripts / candidate→tested / tested→PASS / retired / median recurrence / oldest-untested` plus a 🟢 smarter / 🟡 heavier gauge. In the report: if the scoreboard reads 🟡 **heavier** or a `KNOWLEDGE` warning fires (grading falling behind ingest, or a stale oldest-untested tail), surface the **top 1–3 cache-expressible candidates from the sweep queue** as the §10 research to-do — the human picks one, confirms its operationalization, runs `research_run.py` / `research_exit_priors.py` under the train+test guard; a PASS is evidence, never an auto param change. Retirements, scoreboard ratios, and the queue are **informational** (the standing 判断层 backlog state), not anomalies — surface them as a one-line "知识飞轮" status + the to-do when grading is behind, not an alarm.
 
-Reply in Chinese with a concise A/B battle report for take-all vs ★ vs ★B (including the **A/B contrast frequency** line — if B never differed from A the verdict is uninformative), the **book A vs book B** comparison from `settle_book_a.py` (validated next-close policy vs live stop policy), and the **PnL attribution** from `decompose_pnl.py` (`pick_alpha / entry_slippage / exit_timing` — entry_slippage should stay near zero under the VWAP fill model; flag it if it grows). Also report current cash/equity/open positions and any executed sells. Include the **exit-calibration** line only when an exit rule cleared the min-n floor (a `<45%` rule is a distillation flag for the human gate, not an anomaly; a tagged small-n or thin-coverage result is informational and need not be surfaced). Add a one-line **知识飞轮** status from the knowledge scoreboard (e.g. `候选 30 / 已测 30% / 已退役 5 / 最老未测 21d`) and, **only when** it reads 🟡 heavier or a `KNOWLEDGE` warning fired, the §10 to-do naming the top 1–3 cache-expressible candidates from the sweep queue. Highlight only real anomalies: script failure, missing expected output, NONE/no usable result, HARD_STOP trigger, attribution reconciliation MISMATCH, or clearly unusual A/B behavior.
+Reply in Chinese with a concise A/B/C/D battle report for take-all vs ★ vs ★B vs ★M vs qibao-benchmark (including the **A/B contrast frequency** line — if B never differed from A the verdict is uninformative), the **book A vs book B** comparison from `settle_book_a.py` (validated next-close policy vs live stop policy), the **Book B vs index avg** line from `paper_vs_market`, the **Book T trend paper account** line when present (cash/equity/open, executed trend exits, no short-line verdict), and the **PnL attribution** from `decompose_pnl.py` (`pick_alpha / entry_slippage / exit_timing` — entry_slippage should stay near zero under the VWAP fill model; flag it if it grows). Also report current cash/equity/open positions and any executed sells, separating Book B and Book T. Include the **exit-calibration** line only when an exit rule cleared the min-n floor (a `<45%` rule is a distillation flag for the human gate, not an anomaly; a tagged small-n or thin-coverage result is informational and need not be surfaced). Add a one-line **知识飞轮** status from the knowledge scoreboard (e.g. `候选 30 / 已测 30% / 已退役 5 / 最老未测 21d`) and, **only when** it reads 🟡 heavier or a `KNOWLEDGE` warning fired, the §10 to-do naming the top 1–3 cache-expressible candidates from the sweep queue. Highlight only real anomalies: script failure, missing expected output, NONE/no usable result, HARD_STOP trigger, attribution reconciliation MISMATCH, Book T account/holding drift, or clearly unusual A/B behavior.
 
 EOD reporting is a post-trade audit, not a fresh bullish/bearish call. Emphasize realized/simulated execution discipline, A/B evidence, data capture health, account/holding consistency, and any blocked sells or unresolved risk that must carry into the next session.
+
+Weekly deep review automation workflow:
+
+```bash
+bash scripts/auto_daily.sh weekly
+```
+
+This is a Friday-evening **flywheel consumer / auto-iteration** workflow, not a trading
+workflow. It still runs on non-trading Fridays and reviews the most recent trading week.
+`auto_daily.sh weekly` records short-line + Book-T verdicts, reconciles/ranks the backlog,
+refreshes `reference/experience/distill_action_log.jsonl`, and writes:
+
+```text
+output/live/weekly_plan_YYYY-MM-DD.json
+```
+
+After the plan exists, the Codex agent must inspect it and then act by evidence level:
+
+- `AUTO_APPLIED`: allowed for paper/simulation/research/tooling strategy changes **only**
+  when the plan contains a complete `evidence_bundle` from the fixed input list
+  (`flywheel_selfcheck`, `flywheel_sweep --json`, `distill_action_log`, verdict ledger,
+  research outputs, PnL attribution, paper-vs-market, posture/exit calibration, git status).
+  Implement the change, update tests/docs as needed, and run validation before finalizing.
+- `PROPOSAL_ONLY`: required for anything outside the fixed input list, any weak/unclear
+  evidence, any dirty-file target, or any strategy mapping that is not concrete enough to
+  implement. The weekly report must surface the proposal in the first screen and create a
+  `.scratch/weekly-deep-review/<date>/...md` issue. Do not silently bury it in the backlog.
+- `NO_ACTION_REQUIRED`: only when the plan has no auto-apply candidate and no proposal.
+
+Dirty-file boundary: record the pre-run `git status --porcelain`; do not auto-edit a file
+that was already dirty before the weekly run. If evidence points to such a file, write
+`NEEDS_HUMAN_CONFIRMATION` in the report/proposal and stop at a recommendation.
+
+Finalize with the weekly harness after implementation/proposal routing:
+
+```bash
+PYTHONPATH=src python3 scripts/weekly_deep_review.py \
+  --finalize output/live/weekly_plan_YYYY-MM-DD.json \
+  --mode AUTO_APPLIED \
+  --auto-apply-candidate output/live/weekly_auto_apply_candidate_YYYY-MM-DD.json \
+  --validation "bash -n scripts/auto_daily.sh: PASS" \
+  --validation "PYTHONPATH=src python3 -m pytest ...: PASS"
+```
+
+Use `--mode PROPOSAL_ONLY` when no code was auto-applied. Finalize writes
+`output/live/weekly_review_YYYY-MM-DD.md`, appends
+`output/live/flywheel_change_ledger.jsonl`, stages only the weekly allowlist, and commits to
+the current branch. If validation fails, fix and rerun validation, or finalize as
+`PROPOSAL_ONLY`; do not label a failed or unvalidated strategy change `AUTO_APPLIED`.
+An `AUTO_APPLIED` finalize must include at least one auto-apply candidate with required
+fields `id`, `title`, `source`, `recommended_change`, and a complete `evidence_bundle`
+(`problem_observed`, `attribution`, `evidence_artifact`, `baseline_vs_variant`,
+`overfit_check`, `change_scope`, `rollback`). The candidate `source` must be from the
+fixed input list; otherwise it is a proposal requiring user confirmation.
 
 ## Kronos Secondary Screen & Continuous Optimization
 
@@ -286,17 +443,30 @@ Daily continuous-optimization loop:
 PYTHONPATH=src python3 scripts/live_recommend.py
 # 2) after 15:00 — capture today's TICK order-flow (each_trade buy/sell) + minute path
 PYTHONPATH=src python3 kronos_screen/scripts/eod_capture.py            # add --save-raw to keep raw ticks
-# 3) after the T+1 close is available — join realized returns: A/B verdict + accumulate training rows
+# 3) after the T+1 close is available — join realized returns: A/B/C/D verdict + accumulate training rows
 PYTHONPATH=src python3 kronos_screen/scripts/forward_eval.py --live-only
 # 4) settle book A (validated open->next-close reference) + A-vs-B comparison
 PYTHONPATH=src python3 kronos_screen/scripts/settle_book_a.py
-# 5) per-trade PnL attribution vs the validated counterfactual (reconciles to the account)
+# 5) monitor and settle Book T with its trend exit profile
+PYTHONPATH=src python3 scripts/live_monitor.py --book T --execute-sells
+PYTHONPATH=src python3 kronos_screen/scripts/settle_book_t.py
+# 6) per-trade PnL attribution vs the validated counterfactual (reconciles to the account)
 PYTHONPATH=src python3 kronos_screen/scripts/decompose_pnl.py
-# 6) capability flywheel (weekly) — judge the accumulated pipeline under the discipline guards + record a verdict
+# 7) capability flywheel (weekly) — judge the accumulated pipeline under the discipline guards + record a verdict
 PYTHONPATH=src python3 scripts/continuous_optimize.py --record
+# 8) trend capability flywheel (weekly) — judge Book T with compounded/dd/turnover guards + record changed verdicts
+PYTHONPATH=src python3 scripts/trend_optimize.py --record
 ```
 
-The capability flywheel (`scripts/continuous_optimize.py`) closes the loop: it reads `training_rows.parquet`, builds per-trade results (each pick vs that day's take-all mean), runs them through `src/xiaocao/research/guards.py` (cache-only, walk-forward train+test, **per-trade not day-weighted**, multiple-comparison significance), and appends the verdict to the `kronos_screen/HYPOTHESES.jsonl` knowledge ledger — the executable successor to STATE.md's hand-written log. It will honestly REJECT a marginal/over-fit edge; treat a REJECTED verdict as evidence the overlay is not (yet) validated, not as a failure. Each run re-evaluates every variant (more data may flip a verdict) but only re-records the ledger when the verdict CHANGED, consulting `ledger.already_refuted(id)` — so a settled, unchanged verdict is not re-litigated. To judge any other hypothesis, produce a `{day, strat_ret, base_ret}` jsonl from cache and run `scripts/research_run.py`.
+The capability flywheel (`scripts/continuous_optimize.py`) closes the loop: it reads `training_rows.parquet`, builds per-trade results (each pick vs that day's take-all mean), runs them through `src/xiaocao/research/guards.py` (cache-only, walk-forward train+test, **per-trade not day-weighted**, multiple-comparison significance), and appends the verdict to the `kronos_screen/HYPOTHESES.jsonl` knowledge ledger — the executable successor to STATE.md's hand-written log. It will honestly REJECT a marginal/over-fit edge; treat a REJECTED verdict as evidence the overlay is not (yet) validated, not as a failure. Each run re-evaluates every tracked variant (A `kp_star`, B `vb_star`, C `mode_star`, D `qibao_benchmark_star`; more data may flip a verdict) but only re-records the ledger when the verdict CHANGED, consulting `ledger.already_refuted(id)` — so a settled, unchanged verdict is not re-litigated. To judge any other hypothesis, produce a `{day, strat_ret, base_ret}` jsonl from cache and run `scripts/research_run.py`.
+
+The trend capability flywheel (`scripts/trend_optimize.py`) is parallel, not a
+variant of the above: it builds non-overlapping Book-T-style holds from the
+cached concept panel and judges them with `src/xiaocao/research/trend_guards.py`
+on compounded alpha, max drawdown, turnover, walk-forward retention,
+per-hold significance, and non-bull survival. Its `--record` path writes changed
+trend verdicts into the same ledger with trend-specific metrics; it still has
+zero authority to change `TREND_*` params without §10.
 
 ### The three flywheels & what to do at each ③ state
 
@@ -308,16 +478,17 @@ The capability flywheel (`scripts/continuous_optimize.py`) closes the loop: it r
 
 Accumulated artifacts:
 
-- `output/live/signal_snapshots.jsonl` — per-candidate daily: K/P scores, ★/★B tiers + `vb_swap`, auction features (`is_live` flags real same-day captures; re-running a day replaces that day's rows — idempotent).
+- `output/live/signal_snapshots.jsonl` — per-candidate daily, keyed by `(date, code, is_live, book)`: K/P scores, ★/★B/★M tiers (`kp_star` / `vb_star` / `mode_star`) + `vb_swap`, raw-qibao benchmark fields, auction features, and trend context fields when capture has them (`is_live` flags real same-day captures; re-running a day replaces that day's rows for the same book — idempotent). ★M is K survivors re-ranked by live all-hit mode-rotation `rank_score`; it is shadow forward-test only unless the research guard and §10 human gate promote it.
 - `output/live/eod_features.jsonl` — per-candidate tick order-flow features (净主买 / 大单净额 / 尾盘净主买).
-- `output/live/training_rows.parquet` — snapshots joined to realized next-close returns; the growing labeled set.
+- `output/live/training_rows.parquet` — Book-B snapshots joined to realized next-close returns; the growing short-line labeled set, including `qibao_benchmark_star` for the independent qibao benchmark D variant. Book T is excluded from this per-trade continuous-optimization path.
 - `output/live/paper_account_A.json` + `book="A"` rows in `positions.jsonl` — the validated-policy virtual book (kill-switch sensor).
+- `output/live/paper_account_T.json` + `book="T"` rows in `positions.jsonl` — the trend paper book; monitor via `scripts/live_monitor.py --book T` and settle via `settle_book_t.py`.
 - `output/live/pnl_decompose.csv` — per-trade `pick_alpha / entry_slippage / exit_timing` attribution.
 - `output/live/paper_skips.jsonl` — picks whose paper limit was never reached (audit, no silent drops).
 
 Exit-layer validation tooling (run on demand, not daily): `kronos_screen/scripts/backtest_intraday_stop.py` replays stop policies (`next_close / sparse2 / sparse4 / hard8 / eod_only / atr`) on historical minute prints across the full candidate history; `kronos_screen/scripts/backtest_deploy_gate.py` tests deploy gates (all index/regime gates FAILED train+test consistency — the performance kill-switch is the only deploy control).
 
-`forward_eval.py --live-only` reports take-all vs ★(K→P) vs ★B(K→P+auction) with a paired significance test, so the auction tiebreak and any new signal are validated forward (call-auction and ticks are latest-only on the API → not backtestable; only live captures count). Periodically retrain P and re-fit the screen on the accumulated `training_rows.parquet`, then refresh `kronos_screen/model/*.joblib`. Background and full evaluation history are in `kronos_screen/STATE.md`.
+`forward_eval.py --live-only` reports take-all vs ★(K→P) vs ★B(K→P+auction) vs ★M(K survivors + mode-rotation rank) vs qibao-benchmark D with a paired significance test, so the auction tiebreak and any new signal are validated forward (call-auction and ticks are latest-only on the API → not backtestable; only live captures count). Periodically retrain P and re-fit the screen on the accumulated `training_rows.parquet`, then refresh `kronos_screen/model/*.joblib`. Background and full evaluation history are in `kronos_screen/STATE.md`.
 
 ## Market Data
 

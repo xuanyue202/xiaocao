@@ -35,6 +35,7 @@ RUNTIME_ITEMS = [
     "kronos_screen/STATE.md",
     "kronos_screen/model/spec.json",
     "kronos_screen/scripts",
+    "reference/experience",
     "pyproject.toml",
     "README.md",
     "xiaocao.yaml.example",

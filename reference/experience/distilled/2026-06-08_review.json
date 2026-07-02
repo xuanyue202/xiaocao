@@ -492,5 +492,17 @@
     "盘中起爆/盘中起泡 → 盘中起爆(超强主力/强席位算法)",
     "先机预警/电子预警/先去预警 → 盘中预警(有声音弹出的实时预警)",
     "中级区长/中继续创/中期去算 → 中期算法/中期预算(用于判断是否破趋势) [转写存疑]"
-  ]
+  ],
+  "action_summary": {
+    "posture_update": "legacy_backfill: see posture/regime_call in this distilled file",
+    "playbook_update": "legacy_backfill: see method_principles/exit_lessons/judgment_heuristics in this distilled file",
+    "hypothesis_update": "legacy_backfill: 6 candidate hypothesis item(s) in this distilled file",
+    "audit_evidence": "not_applicable",
+    "instrumentation_todo": "no_issue_created",
+    "routing": [
+      "posture",
+      "playbook",
+      "hypothesis"
+    ]
+  }
 }

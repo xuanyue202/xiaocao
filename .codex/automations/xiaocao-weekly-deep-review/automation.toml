@@ -1,0 +1,13 @@
+version = 1
+id = "xiaocao-weekly-deep-review"
+kind = "cron"
+name = "xiaocao weekly deep review"
+prompt = "Use the local `xiaocao-trading` skill/project conventions. Run the Xiaocao weekly deep review workflow: build the fixed-input plan, apply only evidence-backed AUTO_APPLIED changes when the plan permits, otherwise create explicit proposals, run validation, then finalize the weekly report/ledger/current-branch commit according to the skill's weekly workflow instructions."
+status = "ACTIVE"
+rrule = "DTSTART:20260703T123000\nRRULE:FREQ=WEEKLY;BYDAY=FR"
+model = "gpt-5.5"
+reasoning_effort = "high"
+execution_environment = "local"
+cwds = ["~/coding/xiaocao"]
+created_at = 1783043400000
+updated_at = 1783043400000

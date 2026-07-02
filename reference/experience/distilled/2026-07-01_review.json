@@ -1,0 +1,270 @@
+{
+  "date": "2026-07-01",
+  "kind": "盘后复盘/大师班专场",
+  "summary": "7/1 盘后复盘把当天的科技回调定义为高低切/跷跷板中的正常波动，而不是存储芯片和科技主线彻底结束。核心动作是：趋势股破5日线走，没破不乱动；如果次日修复，仍可在反弹里减仓；当前不适合机械去弱留强，而更接近轻仓低吸高抛。小草反复区分 6/22 那种外部旧方向主动带起、科技被动弱反弹的卖点，和 7/1 这种科技内部仍强、只是高低切/扩散的减仓窗口。复盘还明确了系统使用的元规则：行情结构变了，同一套工具要切换用法；看不懂主动/被动，就退回5日线和轻仓纪律。",
+  "posture": {
+    "regime": "trend_tail_rotation",
+    "dominant_style": "电子/半导体/存储主线未彻底结束，但处于趋势尾声的高低切、扩散和补涨阶段；趋势仓以反弹减仓、5日线兜底为主，短线只用模式化电子/科创/20cm机会。",
+    "risk": "高位核心不再持续主动，低中位补涨和旧方向跷跷板使节奏更反人性；若高低位一起跌破或外部方向持续主动接管，则趋势主线失效。",
+    "style_ranking": [
+      "电子/半导体/存储主线内仍主动的科创/20cm与模式化短线",
+      "中科飞测、京东方A 等仍在趋势线上的核心/中军样本",
+      "高位存储核心的修复减仓机会",
+      "低中位补涨分支(只适合模式化低吸高抛，不追涨)",
+      "保险/券商/猪肉/AI软件等旧方向跷跷板(只有持续主动才构成切换)"
+    ]
+  },
+  "regime_call": {
+    "horizon": "未来1-3个交易日，重点看科技/存储是否按预期修复，以及修复时高位核心能否重新主动领涨。",
+    "what_would_falsify": [
+      "科技/存储修复时高位核心重新主动领涨并带动低位，说明尾声减仓可以放慢",
+      "修复只有低位补涨、高位核心弱反弹，则继续反弹减仓",
+      "高位和低位一起跌、核心票破5日线不收回，则从高低切升级为趋势结束",
+      "保险/券商/猪肉/AI软件等旧方向持续主动引领，科技只能被动弱反弹，则属于板块外切换"
+    ]
+  },
+  "directions": [
+    {
+      "name": "存储芯片/半导体",
+      "stance": "主线仍未结束，但处在尾声高低切；修复可减，破5日线走。"
+    },
+    {
+      "name": "科创板/20cm",
+      "stance": "仍是弹性和赚钱效应更强的地方，但追涨风险高。"
+    },
+    {
+      "name": "光电/元器件/电子分支",
+      "stance": "京东方A、信濠光电等作为支线/中军和本地模式样本；跟随主线，不独立拔高。"
+    },
+    {
+      "name": "旧方向/防御方向",
+      "stance": "保险、券商、猪肉、AI软件等当天跷跷板不等于新主线，只有持续主动才算切换。"
+    }
+  ],
+  "stocks": [
+    {
+      "name": "中科飞测",
+      "code": "688361.XSHG",
+      "role": "复盘核心教学样本：回调可以吸，但点名不是追涨或重仓授权；收盘仍相对强。"
+    },
+    {
+      "name": "京东方A",
+      "code": "000725.XSHE",
+      "role": "光电支线中军，仍在趋势上，持有看趋势线/5日线。"
+    },
+    {
+      "name": "德明利",
+      "code": "001309.XSHE",
+      "role": "高位存储核心，用于说明高位核心不再领涨时应减仓。"
+    },
+    {
+      "name": "兆易创新",
+      "code": "603986.XSHG",
+      "role": "高位存储核心，用于说明高低切。"
+    },
+    {
+      "name": "普冉股份",
+      "code": "688766.XSHG",
+      "role": "科创存储补涨/轮涨样本，转录作土然/不然。"
+    },
+    {
+      "name": "盛美上海",
+      "code": "688082.XSHG",
+      "role": "科创半导体设备/趋势样本，转录作美上海。"
+    },
+    {
+      "name": "信濠光电",
+      "code": "301051.XSHE",
+      "role": "专享方向光电样本；本地 7/1 ★B/Book B 标杆短线起爆买入。"
+    },
+    {
+      "name": "传艺科技",
+      "code": "002866.XSHE",
+      "role": "本地 7/1 ★B/Book B 标杆短线起爆买入。"
+    },
+    {
+      "name": "太辰光",
+      "code": "300570.XSHE",
+      "role": "本地 7/1 观察名单，标杆短线起爆但 weak_primary。"
+    },
+    {
+      "name": "海川智能",
+      "code": "300720.XSHE",
+      "role": "本地 7/1 qibao_raw_top10_elec20_limitlike_watch cohort，authority=0。"
+    },
+    {
+      "name": "拓斯达",
+      "code": "300607.XSHE",
+      "role": "本地 7/1 qibao_raw_top10_elec20_limitlike_watch cohort，authority=0。"
+    },
+    {
+      "name": "南大光电",
+      "code": "300346.XSHE",
+      "role": "盘中/工业气体或光刻材料链样本，复盘用于说明方向配合。"
+    },
+    {
+      "name": "雅克科技",
+      "code": "002409.XSHE",
+      "role": "盘中模式复盘样本，转录后段称约6个点。"
+    },
+    {
+      "name": "江丰电子",
+      "code": "300666.XSHE",
+      "role": "盘中模式复盘样本，转录后段称约6个点。"
+    }
+  ],
+  "decision_trace": [
+    "观察: 科技/科创/存储当日回落，但存储芯片仍是最强主线之一，部分低位/补涨分支仍强。",
+    "推断: 这不是 6/22 那种外部方向持续主动引领、科技被动弱反弹；7/1 更像板块内高低切和跷跷板。",
+    "动作: 趋势仓不在回落中乱杀；个股破5日线则走，没破可等修复，修复时继续减仓。",
+    "观察: 去弱留强在单边主升阶段有效，但高低切/轮动阶段会反过来，被昨日强弱牵着走会两头挨打。",
+    "动作: 在高低切阶段改成轻仓低吸高抛；看不懂主动/被动时停手或用5日线规则，不用主观争论替代标准。"
+  ],
+  "method_principles": [
+    "同样是高低切，早期主线内部轮涨可以视为健康，尾声阶段高位核心不动、低位补涨反向带动高位，则是扩散减仓信号。",
+    "去弱留强不是永恒规则：主升行情用去弱留强，高低切/轮动行情用低吸高抛。",
+    "老师点名票不是重仓授权；一只票不是100%胜率，仓位和标准必须先于情绪。",
+    "看不懂主动/被动时，降低判断复杂度：只做自己理解的模式，趋势股用5日线作明确边界。",
+    "盘中系统/竞价系统也要配方向；单日大肉或小面都不能成为次日情绪化放大/放弃的理由。"
+  ],
+  "exit_lessons": [
+    "【loop】7/1 复盘确认 6/30 的'板块内高低切=扩散减仓'先验，但强调主线未死，动作是反弹减仓而不是恐慌清仓。",
+    "5日线是看不懂复杂结构时的兜底纪律：破了走，没破不因盘中跳水乱动。",
+    "若次日科技/存储修复，仍可卖、减或做低吸高抛；修复不等于重新加满仓。",
+    "外部旧方向当天跷跷板不等于切换；必须看它是否持续主动、是否真正让科技只剩被动弱反弹。"
+  ],
+  "strategy_hit_audit": {
+    "scope": "7/1 复盘提到的趋势/短线样本与本地 7/1 推荐、纸面成交、cohort 观察层的覆盖关系。",
+    "teacher_named_winners": [
+      {
+        "name": "中科飞测",
+        "code": "688361.XSHG",
+        "classification": "direction_core_observation",
+        "local_evidence": "not emitted in recommend_2026-07-01.md / signal_snapshots.jsonl",
+        "judgment": "老师用它讲回调低吸、趋势仍强和追涨纪律，不是本地 9:25 标杆短线买入重合。"
+      },
+      {
+        "name": "京东方A",
+        "code": "000725.XSHE",
+        "classification": "direction_core_observation",
+        "local_evidence": "not emitted in 7/1 local recommendation",
+        "judgment": "光电支线中军/趋势持有样本，更多是趋势纪律而非短线 entry audit。"
+      },
+      {
+        "name": "信濠光电",
+        "code": "301051.XSHE",
+        "classification": "emitted_strategy_hit",
+        "local_evidence": "recommend_2026-07-01 ★B1/★KP1, mode=标杆短线起爆, primary=156.0; Book A/B both bought at 09:32, Book B 900 shares entry 19.593",
+        "judgment": "本地与老师专享方向/光电样本有真实重合，是 7/1 最重要的 strategy_hit_audit 正样本。"
+      }
+    ],
+    "local_strategy_benchmark_hits": [
+      {
+        "name": "传艺科技",
+        "code": "002866.XSHE",
+        "classification": "emitted_strategy_hit",
+        "local_evidence": "recommend_2026-07-01 ★B2/★KP2, mode=标杆短线起爆, primary=180.0; Book A/B both bought at 09:32, Book B 1100 shares entry 16.347",
+        "judgment": "本地当日正式买入，但复盘正文未把它作为老师点名赢家；应作为本地标杆而不是老师 overlap。"
+      },
+      {
+        "name": "太辰光",
+        "code": "300570.XSHE",
+        "classification": "watchlist_only",
+        "local_evidence": "recommend_2026-07-01 观察名单, mode=标杆短线起爆, primary=132.0, quality_tag=weak_primary",
+        "judgment": "进入观察但未买，说明质量门没有放松。"
+      }
+    ],
+    "cohort_watchlist": [
+      {
+        "name": "海川智能",
+        "code": "300720.XSHE",
+        "classification": "cohort_watchlist",
+        "local_evidence": "cohort_snapshot 2026-07-01 qibao_raw_top10_elec20_limitlike_watch, authority=0",
+        "judgment": "作为 raw-qibao/20cm/强攻 watchlist，不是当前正式买入证据。"
+      },
+      {
+        "name": "拓斯达",
+        "code": "300607.XSHE",
+        "classification": "cohort_watchlist",
+        "local_evidence": "cohort_snapshot 2026-07-01 qibao_raw_top10_elec20_limitlike_watch, authority=0",
+        "judgment": "同上，适合进入后续 execution/research，不是自动升格。"
+      }
+    ],
+    "local_runtime_context": {
+      "recommendation": "output/live/recommend_2026-07-01.md emitted 301051 信濠光电 and 002866 传艺科技; 300570 太辰光 was observation.",
+      "paper_state": "7/1 EOD Book B held 信濠光电 -1.11% net and 传艺科技 ~flat, both T+1_blocked; no sell triggers.",
+      "paper_vs_market": "Book B 2026-06-01..2026-07-01 return +2.94%, Book B - avg index +2.94pp, but indices had missing start/end bars; use as rough health signal only."
+    },
+    "blind_spot_judgment": "7/1 的重合优于 6/30：信濠光电同时被老师方向样本和本地正式买入覆盖。但大多数趋势核心仍只是 direction_core_observation，不应把它们算成短线命中 overlap。"
+  },
+  "hypotheses": [
+    {
+      "claim": "趋势主线内发生高低切时，主线未必立刻结束，但持仓应在反弹中减仓而不是继续加仓。",
+      "implied_rule": "尾声高低切中，修复反弹是减仓窗口；若高低位一起转弱并破5日线则离场。",
+      "falsifiable_test": "识别主线高位核心弱于低位补涨分支的日期，比较趋势核心继续持有、反弹减仓、加仓三种策略的后续收益回撤。",
+      "expected_effect": "反弹减仓路径应降低最大回撤，同时保留主线未死样本的部分收益。",
+      "category": "exit_prior"
+    },
+    {
+      "claim": "在趋势主升浪持股期,盘中拆高低点(做T/择时)工具失效(高低点反着);只有纯轮动/震荡期才有效。",
+      "implied_rule": "同一工具按行情结构切换：主升阶段偏持有/去弱留强，高低切阶段偏轻仓低吸高抛。",
+      "falsifiable_test": "用 proxy_regime 分主升、轮动、高低切三类日，比较日内高低点/做T工具相对持有和固定减仓的收益。",
+      "expected_effect": "高低切/轮动阶段工具有效性高于主升阶段。",
+      "category": "timing"
+    },
+    {
+      "claim": "高低切环境中，大涨次日追涨的短线样本期望低于回调/下杀后模式内低吸样本。",
+      "implied_rule": "大涨次日不接；如果方向仍在，只在回调、下杀、模式内低吸处参与，并降低仓位。",
+      "falsifiable_test": "在趋势尾声高低切窗口内，将前一日大涨后次日追涨样本与次日回调/下杀后低吸样本配对比较1-3日收益、最大回撤和止损率。",
+      "expected_effect": "回调/下杀后模式低吸应有更低回撤和更高净收益；若不成立则该纪律只是叙事。",
+      "category": "entry_timing"
+    }
+  ],
+  "timing_notes": [
+    "小草预计科技/存储次日有修复概率，但修复仍是减仓或低吸高抛机会，不是重新满仓追。",
+    "主升趋势里去弱留强，轮动/高低切里低吸高抛；行情结构变，操作方式也变。",
+    "如果不理解主动/被动和高低切性质，就停手或只看5日线。"
+  ],
+  "judgment_heuristics": [
+    "【loop】7/1 对 6/30 posture 做确认和细化：主线未死，但高低切/扩散使动作从持有转为反弹减仓和低吸高抛。",
+    "同一条主线在不同阶段的策略相反：主升阶段追强/去弱留强，高低切阶段不能按单日强弱追涨杀跌。",
+    "点名股票造成追涨和重仓冲动，本身是风险信号；系统应该把老师点名拆成方向样本、纪律样本、买入重合三类。",
+    "看不懂时不要要求更复杂解释，退到标准：环境、方向、模式、5日线、仓位。"
+  ],
+  "typo_corrections": [
+    {
+      "raw": "造诣创新",
+      "corrected": "兆易创新"
+    },
+    {
+      "raw": "土然股份/不然股份/蓝股份",
+      "corrected": "普冉股份"
+    },
+    {
+      "raw": "信号光电",
+      "corrected": "信濠光电"
+    },
+    {
+      "raw": "机智科技",
+      "corrected": "激智科技（转录疑似，未纳入核心 stocks）"
+    },
+    {
+      "raw": "东科飞车/中科飞车",
+      "corrected": "中科飞测"
+    }
+  ],
+  "action_summary": {
+    "posture_update": "update posture_current as_of 2026-07-01: trend_tail_rotation confirmed, valid_until 2026-07-03; 修复减仓/5日线兜底/高低切低吸高抛.",
+    "playbook_update": "add 2026-07-01 calibration: board-internal high-low rotation is stage-dependent; 6/17 healthy rotation cannot be blindly applied to tail-stage扩散.",
+    "hypothesis_update": "merge recurrence for XH-038 and XH-025; add entry_timing candidate about 大涨次日不接 vs 回调低吸 in high-low rotation.",
+    "audit_evidence": "7/1 strategy_hit_audit: 信濠光电 is true teacher/local overlap; 传艺科技 is local benchmark; 海川智能/拓斯达 are authority=0 cohort watchlist; most trend stocks are direction_core_observations.",
+    "instrumentation_todo": "proposal: add a compact strategy-hit-audit projection helper so future distillation does not need ad-hoc JSON scraping of recommend/signal/positions/cohorts.",
+    "routing": [
+      "posture",
+      "playbook",
+      "hypothesis",
+      "audit",
+      "instrumentation"
+    ]
+  }
+}

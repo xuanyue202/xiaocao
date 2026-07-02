@@ -16,10 +16,12 @@
 | 文件 | 是什么 | 谁消费 / 何时 | 性质 |
 |---|---|---|---|
 | `transcripts/<YYYY-MM>/*.md` | 原始转录（盘前+复盘，按月统一归档；语音转文字有错别字） | 蒸馏输入；`xiaocao-distill` skill 写入 | 原料 |
-| `distilled/<date>_<kind>.json` ×23 | 逐篇结构化提取（posture/方向/个股/方法/出场课/**decision_trace 实时判断链**/假设，已纠错） | 综合输入；按需回查 | 底料（append-only） |
+| `distilled/<date>_<kind>.json` | 逐篇结构化提取（posture/方向/个股/方法/出场课/**decision_trace 实时判断链**/假设/action_summary，已纠错） | 综合输入；按需回查 | 底料（append-only） |
+| `distill_action_log.jsonl` | 从每篇 `distilled/*.json` 的必填 `action_summary` 机械生成的轻量路由索引 | `xiaocao_knowledge.py` / weekly deep review | 索引（非 SSOT） |
 | `docs/XIAOCAO_PLAYBOOK.md` | 道-法-术-纪律 + **第五节「实时盘面判断模型」**（盘前→竞价→9:31-9:35→盘中 的 if-then 表）。每条标 `[已编码]/[先验]/[待验]` | **agent 每日**：morning 看术/纪律framing，eod 用出场纪律做异常分诊 | 判断先验 |
 | `REGIME_TIMELINE.md` | 逐日 dated posture（regime/龙头/valid_until/证伪条件）+ 现行 posture + 对小草本人的回测提醒 | morning 读现行 posture 定调 | 判断先验（会过期） |
 | `posture_current.json` | 现行 posture 的**机器可读 SSOT**（as_of/valid_until/regime/falsifiers） | `xiaocao_knowledge.py` 读它判时效 | 判断先验 |
+| `cohorts/*.yaml` + `output/cohorts/cohort_snapshots.jsonl` | benchmark/watchlist/research cohort 中间层：承接老师点名战果、本地标杆买入、raw pool 观察名单 | 复盘审计 / watchlist / research_run 前的样本面 | authority=0 观察层 |
 | `xiaocao_hypotheses.jsonl` | 17 条**可证伪候选**（XH-001..017），含 operationalization 配方 + status | 飞轮入口（candidate→护栏） | 候选假设（非 verdict） |
 | `kronos_screen/HYPOTHESES.jsonl` | `research_run.py` 的 **verdict 账本**（PASS/REJECTED） | flywheel_selfcheck / 人工门③ | 裁决 |
 | `output/research/*.jsonl` | 操作化某假设时建的逐笔 `{day,strat_ret,base_ret}` | research_run.py 输入 | 检验工件 |
@@ -75,6 +77,7 @@
 - **适时消费（机械化，非靠 agent 自觉）**：`scripts/xiaocao_knowledge.py` 把现行 posture 摆到面前；`auto_daily.sh` **morning 打印 posture 先验**、**eod 跑 `--check` 标时效**。posture 过期（valid_until 已过）→ STALE 告警，提示重蒸馏。
 - **复利（新转录进来）**：放进 `reference/experience/<月份>/` → 跑蒸馏工作流（同首轮）→ append 新 `distilled/*.json`、更新 playbook/timeline/`posture_current.json`、追加假设 → 飞轮重测。
 - **候选重测节奏**：候选/已测假设随数据增长**重评估**（镜像 `ledger.already_refuted`）：相关 regime 累积 **≥8 个新 OOS 交易日** 或相关子集**笔数翻倍**才重测（保证样本外、不重复 litigate）。绑数据增长，不绑日历。
+- **周度消费**：周五晚 `xiaocao-weekly-deep-review` 读取固定输入清单（自检、sweep、action log、verdict、研究产物、PnL/基准、校准、git status），把证据变成 `AUTO_APPLIED` paper/simulation 改动或显式 proposal，并写周报/ledger/commit。固定输入之外的发现只 proposal，等确认。
 
 ## 4. 把一条候选喂进飞轮（操作化配方）
 

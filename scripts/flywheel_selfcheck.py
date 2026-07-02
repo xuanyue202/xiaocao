@@ -103,6 +103,8 @@ def main() -> None:
         print(f"     retired / untested: {k.get('candidates_retired')} retired / "
               f"{k.get('candidates_untested')} untested  | median recurrence "
               f"{k.get('median_recurrence')}  | oldest untested {oldest_s}")
+        print(f"     action log / todo : {k.get('action_log_rows', 0)} rows / "
+              f"{k.get('instrumentation_todos', 0)} instrumentation todo(s)")
         print(f"three-ring coupling : ①→② {rings['capital_to_capability']} | "
               f"②→③ {rings['capability_to_strategy']} | ③→① {rings['strategy_to_capital']}")
         for w in report["warnings"]:

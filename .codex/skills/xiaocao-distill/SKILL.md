@@ -30,6 +30,7 @@ PYTHONPATH=src python3 scripts/distill_transcript.py --reality-check <that file>
 # 5. (judgment) refresh reference/experience/posture_current.json + append a REGIME_TIMELINE row;
 #    add a playbook [校准] line ONLY if step 1 showed a prior that reality has now contradicted/confirmed.
 PYTHONPATH=src python3 scripts/distill_transcript.py --validate reference/experience/posture_current.json
+PYTHONPATH=src python3 scripts/distill_transcript.py --refresh-action-log  # 6. rebuild the generated weekly-consumer index
 ```
 
 **Recurrence is signal — let it merge, don't reword.** `--ingest` now MERGES a repeated claim
@@ -51,17 +52,29 @@ Filename: `reference/experience/distilled/<YYYY-MM-DD>_<morning|review>.json` (t
 morning|review category lives in the filename; the `kind` field is free-text Chinese,
 e.g. `盘前直播` / `盘后复盘/大师班专场`).
 
-**Required (12, fail-closed):** `date` (ISO), `kind`, `summary`, `posture`,
+**Required (13, fail-closed):** `date` (ISO), `kind`, `summary`, `posture`,
 `regime_call`, `directions`, `stocks`, `method_principles`, `exit_lessons`,
-`hypotheses`, `timing_notes`, `typo_corrections`.
+`hypotheses`, `timing_notes`, `typo_corrections`, `action_summary`.
 **Expected (warn if absent — include unless the session was a short/临时加播):**
 `decision_trace`, `judgment_heuristics`.
+**Optional but REQUIRED when triggered by content:** `strategy_hit_audit` — for 复盘
+sessions that mention short-line winners / 短线命中股 / 红盘起爆 / 专享方向 /
+科创20cm worked examples.
 
 - `posture` — dict with `regime`, `dominant_style`, `risk`, `style_ranking`.
 - `regime_call` — `horizon` + `what_would_falsify` (the falsifier is mandatory: a call
   with no falsifier is narrative, not a prior).
 - `hypotheses[i]` — dict with `claim`, `implied_rule`, `falsifiable_test` (required) and
   `expected_effect` (optional). Optionally `category`.
+- `action_summary` — required routing sheet that forces the agent to think through every
+  downstream consumer. Required keys: `posture_update`, `playbook_update`,
+  `hypothesis_update`, `audit_evidence`, `instrumentation_todo`, and `routing` (list of
+  strings). Use explicit empty states such as `no_change`, `not_applicable`,
+  `no_issue_created`; do not omit a dimension just because nothing changed.
+
+The generated `reference/experience/distill_action_log.jsonl` is rebuilt from per-file
+`action_summary` via `--refresh-action-log`. The per-file distilled JSON is the SSOT; the
+JSONL is a lightweight weekly-deep-review index, not a second truth.
 
 ## 早盘 vs 复盘:same schema, different emphasis (go DEEP on different fields)
 
@@ -105,6 +118,75 @@ Go deep on:
 - The review's `hypotheses` tend to be lessons GENERALIZED from experience (a distilled
   method), vs the morning's pre-open reasoning logic.
 
+**复盘 mandatory side-check — short-line hit coverage audit.** If a review names short-line
+winners or says a mode "hit" (e.g. `趋势抱团+红盘起爆`, `专享方向+红盘起爆`, `盘中`,
+`科创/20cm`, `短线命中`), audit whether those stocks were inside OUR strategy hit range:
+- Define the benchmark universe first, and keep the buckets separate:
+  1. `teacher_named_winners` — stocks the transcript actually names as winners/hits.
+  2. `local_strategy_benchmark_hits` — same-day local emitted/recommended/bought stocks in the
+     same direction (for example a paper buy). These are real Xiaocao benchmark stocks, but NOT
+     a teacher overlap unless the teacher named them.
+  3. `direction_core_observations` — 中军/方向确认/盘中后置 examples that are not entry signals.
+- For each stock, follow the evidence chain in this order: transcript name/code resolution ->
+  local recommendation/trade evidence (`recommend_<date>.md`, `signal_snapshots.jsonl`,
+  `positions.jsonl`, `paper_trades.jsonl`, `decision_journal.jsonl`) -> emitted strategy range
+  (`PYTHONPATH=src python3 -m xiaocao --format json strategy run --date <date> --source api`
+  plus the relevant `--modes`) -> Xiaocao index snapshot -> raw pools -> first-principles review.
+  Prefer compact field projection over dumping huge JSON.
+- For same-day audits, treat Xiaocao's post-09:25 signals as fixed facts. Once the morning
+  recommendation/signal snapshot has been produced after the 09:25 call auction, it does not
+  mutate later in the day; do not discount it as an unstable hindsight input. Still separate
+  "teacher named it in review" from "our book should have bought it at 09:25".
+- Use the CLI for index snapshots. The command is under the **`index`** command, not `data`:
+  `PYTHONPATH=src python3 -m xiaocao --format json index stock --date <date> --source api --codes <codes>`.
+  Do not instantiate `ApiDataSource` or hand-roll client calls unless the CLI is impossible.
+  If an old-date `index stock` response lacks some fields, record only the confirmed fields and
+  use raw-pool/strategy evidence for the rest; missing fields are not zeros.
+- Check the emitted local range first: `recommend_<date>.md`, `signal_snapshots.jsonl`, and
+  `PYTHONPATH=src python3 -m xiaocao --format json strategy run --date <date> --source api`
+  (prefer cache/local when available; obey API rate limits).
+- If the named winners are qibao/方向 examples, also check
+  `strategy run --modes qibao` and the raw pool with
+  `data sort --from-pool qibao --sort-key xiaocaoJSSB --sort desc` for that date.
+- Also materialize the intermediate cohort layer for qibao/short-line reviews:
+  `PYTHONPATH=src python3 scripts/cohort_snapshot.py --date <date>`. Use
+  `output/cohorts/cohort_snapshots.jsonl` to distinguish `benchmark` buyable samples from
+  `watchlist` high-open / limit-like strong-attack samples. Cohort membership has
+  `authority=0`: it is evidence for review/research, not a live buy signal.
+- Classify each named stock: `emitted_strategy_hit`, `emitted_qibao_hit`, `raw_pool_only`,
+  `cohort_benchmark`, `cohort_watchlist`, `not_emitted`, or `no_evidence`.
+- For misses, write WHY in `strategy_hit_audit`: rule threshold (`jssb` / `pct` /
+  entity window; qibao scan floor is about `150/1.3`, main qibao `>=200`, direction qibao
+  `>=150`), limit-up or high-open risk, mode mismatch, direction-only、中军 observation,
+  or data/name uncertainty. Then judge whether the miss is reasonable under the current book
+  (risk-control) or a real research blind spot. Be precise: a local related hit in the same
+  sector is NOT a teacher-winner overlap unless the teacher actually named that stock.
+- Do not treat high-open as a universal exclusion. In the raw-qibao top10 + electronic/20cm
+  universe, high-open and limit-like/long-entity cohorts are research-positive but execution
+  riskier; keep them as `cohort_watchlist` unless they pass the separate execution/buy-rule
+  gate. Distinguish "not current paper-buy" from "not a valid benchmark". For claims about
+  tradability, do not stop at daily open->next-close: run/follow the fill-aware cohort evidence
+  path (`scripts/backfill_qibao_cohort_minutes.py --execute` for missing cohort code-days, then
+  `scripts/research_qibao_cohort_execution.py`, then `scripts/research_run.py --trades
+  output/research/qibao_cohort_execution_<cohort>.jsonl --n-tried <N>`). Use same-day qibao
+  full-pool daily base for the benchmark; do not let a partially backfilled minute subset become
+  the base. The fill script scales daily open into the minute bar price axis before applying the
+  `open*1.005` limit, so the touch test is not tautologically anchored on the first cached minute.
+  Current 2025-07-01..2026-06-28 fill-aware results: high-open watch PASS
+  (+2.96pp, n=110) and limit-like watch PASS (+11.24pp, n=223), both authority=0.
+  As of the 2026-06-30 §10 human gate, only the high-open 6%-10% sub-bucket and
+  the limit-like bucket are promoted to Book-B/paper emitted modes
+  (`高开标杆起爆`, `强攻标杆起爆`). They remain non-live-capital rules and generic
+  high-open samples outside this qibao benchmark family are still high-open
+  shadow, not automatic buys.
+- First-principles review is mandatory for benchmark misses and local benchmark hits. Explain
+  whether the stock matches the current book's target function (low-suck, red-board qibao,
+  direction core, 20cm/STAR,盘中后置, etc.), why it was filtered or bought, and whether that is
+  合理 under the current risk contract.
+- If the miss looks systemic, add a falsifiable `hypotheses` item (for example raw qibao
+  rank + industry/科创 filter vs current emitted qibao). **Do not change deterministic
+  strategy params or live rules from this audit.** It is review nutrient only.
+
 If a session is a short/临时加播 review, a thinner `decision_trace` is fine (it warns, not
 fails) — but never skip the `exit_lessons` / prior-check that a review exists to capture.
 
@@ -117,15 +199,35 @@ fails) — but never skip the `exit_lessons` / prior-check that a review exists 
   case (he said stock X worked) is NOT statistical evidence — it may be a concentration
   trick. Write a *falsifiable_test* that `research_exit_priors`/`research_run` could run on
   cache history. authority = 0 until it passes the guards + §10.
+- **Budget and dedup hypotheses before ingest.** Before `--ingest`, compare new claims against
+  the current tail of `reference/experience/xiaocao_hypotheses.jsonl` and against the same
+  batch. Merge near-duplicates by using one exact `claim` string so the harness recurrence-merges
+  them. Prefer fewer high-signal, testable candidates over splitting one lesson into many ids.
+  After ingest, inspect the tail/diff; if a batch creates many new IDs, stop and curate before
+  finalizing.
 - **`typo_corrections`** — the transcript is auto-transcribed; fix homophone errors
   (stock names, terms) and record the corrections so downstream readers trust the text.
 - **Unconfirmed stocks** — if you cannot confirm a ticker/name from the text, flag it in
   `stocks` (or a `stocks_unconfirmed_note`); never fabricate a code.
+- **Short-line hit audit is part of review honesty.** Do not record "老师说中了 X" as if
+  it proves our system covered it. Tie the named winners back to local emitted signals and
+  raw pools, and explicitly explain any miss.
+- **Subagents are helpers, not authority.** If context is large and you use subagents, give them
+  the exact files, date, commands, and required output schema. The main agent must still verify
+  subagent claims against local artifacts/CLI before writing distilled JSON or the skill. Never
+  let a subagent summary be the only evidence for strategy-hit coverage.
+- **Control context size.** For API/CLI outputs, project compact tables with only `code`, `name`,
+  `pct/open/entity`, Xiaocao index fields, raw rank, emitted mode, and trade evidence. Avoid
+  pasting full strategy/index JSON into the working context.
 - **`posture_current.json` is a SYNTHESIZED prior, not a copy of today's `posture`.** It
   carries `leaders` / `watch_flag` / `falsifiers` / `valid_until` that one day's distilled
   posture may not fully populate. ENRICH the existing file from the new distillation +
   prior context; do not clobber curated fields. The harness only validates its schema —
   it never auto-writes it (that would lose judgment).
+- **`action_summary` is mandatory even for short sessions.** Its job is not to create work;
+  its job is to prove the five routing dimensions were considered. A real observation/audit
+  gap goes under `instrumentation_todo`; if it is likely to recur, the weekly deep review
+  turns it into an explicit `.scratch` proposal instead of letting it disappear in prose.
 
 ## What the harness does (and does not)
 
@@ -140,6 +242,9 @@ fails) — but never skip the `exit_lessons` / prior-check that a review exists 
   of dead-ending in prose. `--reconcile` folds research verdicts back: a REJECTED candidate is
   retired (stops reappearing as live work), a PASS is tagged as §10 evidence (NEVER auto-applied).
   `--retire <id> --reason <r>` is agent-judgment retirement (e.g. a 复盘 falsified the claim).
+- `--refresh-action-log` rebuilds `reference/experience/distill_action_log.jsonl` from the
+  per-file `action_summary` fields. It fails closed if any distilled file lacks the required
+  routing fields.
 - It never edits `exit_policy.py`, `params.py`, accounts, or the verdict ledger.
 - The eod `flywheel_sweep.py` is the backlog CONSUMER: it reconciles the ledger and ranks the
   untested candidates by test-priority (recurrence↓ then age↑). `scripts/flywheel_selfcheck.py`
@@ -150,8 +255,12 @@ fails) — but never skip the `exit_lessons` / prior-check that a review exists 
 
 - `xiaocao_knowledge.py --posture` surfaces the refreshed posture to the morning agent;
   `--check` flags it stale at eod (your cue that a fresh transcript is overdue).
+- `xiaocao_knowledge.py` also surfaces recent `distill_action_log.jsonl` rows so a new
+  context can see what posture/playbook/hypothesis/audit/instrumentation routes were produced.
 - The calibration loops (`posture_calibration.py`, `exit_calibration.py`) score these
   priors against realized forward outcomes and stage `<45%` ones back as flagged
   candidates — which appear in your next `--feedback`. The loop closes.
-- A candidate you ingest is human-gate work: it must clear the discipline guards and §10
-  before it can change anything deterministic.
+- The weekly deep review consumes `distill_action_log.jsonl`: fixed-input evidence can drive
+  AUTO_APPLIED paper/simulation changes; anything outside the fixed input list becomes an
+  explicit proposal requiring user confirmation. A candidate you ingest has authority 0 until
+  it clears the discipline guards and the exploration-period evidence rules in §10.

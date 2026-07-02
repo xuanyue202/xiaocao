@@ -80,3 +80,5 @@ bash -n scripts/auto_daily.sh
    - eod: `bash scripts/auto_daily.sh eod`, weekdays 15:10 Asia/Shanghai
    - intraday monitor: `.venv/bin/python scripts/live_monitor.py --execute-sells`,
      opening dense, sparse daytime, and closing-discipline passes.
+   - weekly deep review: `bash scripts/auto_daily.sh weekly`, Fridays 20:30
+     Asia/Shanghai; non-trading Fridays still produce the latest-week review plan.

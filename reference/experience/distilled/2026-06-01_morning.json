@@ -297,5 +297,17 @@
     "工商/工仓 → 空仓",
     "棚顶/封顶/盆顶 在第15-18、28段语境多指盆景控股,[转写存疑]"
   ],
-  "stocks_unconfirmed_note": "生益科技、三环集团、共达电声代码按真实A股常识补全,若与 cache 不一致以 cache 为准。'盆景控股''长银通'未给出可确认代码,留空并标[转写存疑]。'力核心'为盘中模式/系统选出的核心标的称谓,非具体可确认票名,故仅作 sample(以共达电声承载),未单列。"
+  "stocks_unconfirmed_note": "生益科技、三环集团、共达电声代码按真实A股常识补全,若与 cache 不一致以 cache 为准。'盆景控股''长银通'未给出可确认代码,留空并标[转写存疑]。'力核心'为盘中模式/系统选出的核心标的称谓,非具体可确认票名,故仅作 sample(以共达电声承载),未单列。",
+  "action_summary": {
+    "posture_update": "legacy_backfill: see posture/regime_call in this distilled file",
+    "playbook_update": "legacy_backfill: see method_principles/exit_lessons/judgment_heuristics in this distilled file",
+    "hypothesis_update": "legacy_backfill: 5 candidate hypothesis item(s) in this distilled file",
+    "audit_evidence": "not_applicable",
+    "instrumentation_todo": "no_issue_created",
+    "routing": [
+      "posture",
+      "playbook",
+      "hypothesis"
+    ]
+  }
 }

@@ -26,24 +26,96 @@
     "盘中加方向个案(中船特气/光智科技/三诺电子/复信科技/麦捷科技/雅创电子,工具性、不主推)"
   ],
   "stocks": [
-    {"name": "生益科技", "role": "元器件主线核心;今日下午被动弱反弹(反弹很弱=非常不好),减仓信号样本", "confirmed": true},
-    {"name": "三环集团", "role": "元器件主线;今日下午反弹很弱,减仓信号样本", "confirmed": true},
-    {"name": "铜冠铜箔", "role": "元器件主线,内部轮转", "confirmed": true},
-    {"name": "亨通光电", "role": "通信/光模块主线", "confirmed": true},
-    {"name": "长飞光纤", "role": "通信/光模块主线", "confirmed": true},
-    {"name": "天孚通信", "role": "光模块", "confirmed": true},
-    {"name": "旭光电子", "role": "情绪共振风向标(看它不做它),不能出大面", "confirmed": true},
-    {"name": "德明利", "role": "历史离场范式样本:早上反弹弱+别板块更强时减,次日修复再走完(非破位离场)", "confirmed": true},
-    {"name": "中船特气", "role": "盘中加方向今日第一名样本(+7%多);转写曾作'中山科技/中长特气'", "confirmed": false},
-    {"name": "光智科技", "role": "盘中加方向今日第二名样本(+8%);转写曾作'光致科技'", "confirmed": false},
-    {"name": "麦捷科技", "role": "盘中样本(6/17,+30%多)", "confirmed": true},
-    {"name": "雅创电子", "role": "盘中样本(6/16,+20%多);转写曾作'龙阳电子/融创电/融雅创电子'", "confirmed": false},
-    {"name": "沃格光电", "role": "盘中模式个案(某日+8%次日续涨)", "confirmed": true},
-    {"name": "三诺电子", "role": "盘中今日/昨日样本(+20%涨停);转写存疑'三道电子'", "confirmed": false},
-    {"name": "复信科技", "role": "盘中昨日样本(+20%涨停);转写存疑'复兴科技'", "confirmed": false},
-    {"name": "中聚星", "role": "盘中样本(再往前);转写存疑'中巨星'", "confirmed": false},
-    {"name": "双星新材", "role": "盘中技术化工样本(12号起爆次日返包)", "confirmed": false},
-    {"name": "元力股份", "role": "盘中样本(跌后次日反弹)", "confirmed": false}
+    {
+      "name": "生益科技",
+      "role": "元器件主线核心;今日下午被动弱反弹(反弹很弱=非常不好),减仓信号样本",
+      "confirmed": true
+    },
+    {
+      "name": "三环集团",
+      "role": "元器件主线;今日下午反弹很弱,减仓信号样本",
+      "confirmed": true
+    },
+    {
+      "name": "铜冠铜箔",
+      "role": "元器件主线,内部轮转",
+      "confirmed": true
+    },
+    {
+      "name": "亨通光电",
+      "role": "通信/光模块主线",
+      "confirmed": true
+    },
+    {
+      "name": "长飞光纤",
+      "role": "通信/光模块主线",
+      "confirmed": true
+    },
+    {
+      "name": "天孚通信",
+      "role": "光模块",
+      "confirmed": true
+    },
+    {
+      "name": "旭光电子",
+      "role": "情绪共振风向标(看它不做它),不能出大面",
+      "confirmed": true
+    },
+    {
+      "name": "德明利",
+      "role": "历史离场范式样本:早上反弹弱+别板块更强时减,次日修复再走完(非破位离场)",
+      "confirmed": true
+    },
+    {
+      "name": "中船特气",
+      "role": "盘中加方向今日第一名样本(+7%多);转写曾作'中山科技/中长特气'",
+      "confirmed": false
+    },
+    {
+      "name": "光智科技",
+      "role": "盘中加方向今日第二名样本(+8%);转写曾作'光致科技'",
+      "confirmed": false
+    },
+    {
+      "name": "麦捷科技",
+      "role": "盘中样本(6/17,+30%多)",
+      "confirmed": true
+    },
+    {
+      "name": "雅创电子",
+      "role": "盘中样本(6/16,+20%多);转写曾作'龙阳电子/融创电/融雅创电子'",
+      "confirmed": false
+    },
+    {
+      "name": "沃格光电",
+      "role": "盘中模式个案(某日+8%次日续涨)",
+      "confirmed": true
+    },
+    {
+      "name": "三诺电子",
+      "role": "盘中今日/昨日样本(+20%涨停);转写存疑'三道电子'",
+      "confirmed": false
+    },
+    {
+      "name": "复信科技",
+      "role": "盘中昨日样本(+20%涨停);转写存疑'复兴科技'",
+      "confirmed": false
+    },
+    {
+      "name": "中聚星",
+      "role": "盘中样本(再往前);转写存疑'中巨星'",
+      "confirmed": false
+    },
+    {
+      "name": "双星新材",
+      "role": "盘中技术化工样本(12号起爆次日返包)",
+      "confirmed": false
+    },
+    {
+      "name": "元力股份",
+      "role": "盘中样本(跌后次日反弹)",
+      "confirmed": false
+    }
   ],
   "method_principles": [
     "主动vs被动是出场判断的底层:凡'被动'接不好——被动上涨=不好、主动上涨=好;主动下跌=惨、(主线)被动下跌=没事。买卖都靠'对比强弱'对比出来。",
@@ -141,5 +213,17 @@
     "小赵老师/小炒模式 → 小草老师/小草模式"
   ],
   "stocks_unconfirmed_note": "盘中加方向个案(中船特气/光智科技/三诺电子/复信科技/中聚星/雅创电子等)系语音转写、未核实代码,不报码;仅作模式可持续性的叙述个案,非统计证据。中船特气/光智科技为今日第一二名,名称较可辨但代码未核。",
-  "synthesis_note": "合成vs原话标注(auditability):regime_call.what_would_falsify 五条中,#1(反向板块主动引领)与#5(反向falsifier:次日主线重新主动领涨则减仓过早)由本场原话直接支持;#2 扩散第三天加速、#3 旭光大面、#4 轮动频率掉出 属跨日合成的标准离场信号集(沿用6/17及之前的判断,非本场逐字)。method_principles 的'主动/被动接不好''第三种情况切保险证券''减一半防卖飞''评分≥50'均为本场原话/口播。exit_lessons[0] 的校准对象是 posture_current 的 falsifier 而非 morning what_would_falsify 编号(见该条⚠说明)。XH-027~030 为本场新候选,authority=0。"
+  "synthesis_note": "合成vs原话标注(auditability):regime_call.what_would_falsify 五条中,#1(反向板块主动引领)与#5(反向falsifier:次日主线重新主动领涨则减仓过早)由本场原话直接支持;#2 扩散第三天加速、#3 旭光大面、#4 轮动频率掉出 属跨日合成的标准离场信号集(沿用6/17及之前的判断,非本场逐字)。method_principles 的'主动/被动接不好''第三种情况切保险证券''减一半防卖飞''评分≥50'均为本场原话/口播。exit_lessons[0] 的校准对象是 posture_current 的 falsifier 而非 morning what_would_falsify 编号(见该条⚠说明)。XH-027~030 为本场新候选,authority=0。",
+  "action_summary": {
+    "posture_update": "legacy_backfill: see posture/regime_call in this distilled file",
+    "playbook_update": "legacy_backfill: see method_principles/exit_lessons/judgment_heuristics in this distilled file",
+    "hypothesis_update": "legacy_backfill: 4 candidate hypothesis item(s) in this distilled file",
+    "audit_evidence": "not_applicable",
+    "instrumentation_todo": "no_issue_created",
+    "routing": [
+      "posture",
+      "playbook",
+      "hypothesis"
+    ]
+  }
 }

@@ -338,5 +338,17 @@
     "运线/运线模式 → 妖线/涨幅型妖股模式[转写存疑]",
     "紫薇模式 → 盘中模式名(保留原音[转写存疑])",
     "美元是要离场 → '无论如何/最后是要离场'(口水音)"
-  ]
+  ],
+  "action_summary": {
+    "posture_update": "legacy_backfill: see posture/regime_call in this distilled file",
+    "playbook_update": "legacy_backfill: see method_principles/exit_lessons/judgment_heuristics in this distilled file",
+    "hypothesis_update": "legacy_backfill: 5 candidate hypothesis item(s) in this distilled file",
+    "audit_evidence": "not_applicable",
+    "instrumentation_todo": "no_issue_created",
+    "routing": [
+      "posture",
+      "playbook",
+      "hypothesis"
+    ]
+  }
 }

@@ -1,0 +1,326 @@
+{
+  "date": "2026-06-30",
+  "kind": "盘后复盘/大师班专场",
+  "summary": "小草盘后确认 6/30 的核心不是芯片是否还涨，而是涨的结构变了：强的是前期没涨或中低位补涨，高位核心不再主动领涨。这种板块内高低切意味着资金扩散、倒金字塔和趋势尾声风险，正确动作是反弹减仓，不是直接清仓，也不是追当天涨起来的低位补涨。短线方面，趋势回调后红盘起爆、专享方向、科创/20cm 赚钱效应增强，雷曼光电、信濠光电、联得装备、正帆科技等成为老师点名命中样本；新增 标杆短线起爆 后，雷曼、信濠、金宏气体进入本地 emitted qibao，正帆、联得、聚和进入 limitlike_watch。五方光电虽非转录点名股，但同日被本地 strategy/recommend/纸面账本命中并买入，应作为本地小草模式标杆单独复盘。",
+  "posture": {
+    "regime": "trend_tail_rotation",
+    "dominant_style": "电子/半导体主线未完全结束，但已从高位核心主升转为板块内高低切和扩散；趋势仓反弹减仓，短线/科创/红盘起爆相对增强。",
+    "risk": "高位核心不再主动领涨，低位补涨随机性大；若继续扩散或高位核心弱反弹，应继续减仓，避免把趋势利润吐回。",
+    "style_ranking": [
+      "电子大方向内的短线红盘起爆/专享方向/科创20cm",
+      "光学光电/玻璃基板/元器件等低中位补涨分支",
+      "原半导体/存储高位核心(底仓观察、反弹减仓)",
+      "京东方A 等光电中军(有利润可减，持有看5日线)",
+      "非模式化低位补涨(随机性高，回避)"
+    ]
+  },
+  "regime_call": {
+    "horizon": "未来数日，直到高低切结束、主线重回高位核心领涨或电子主线整体失效",
+    "what_would_falsify": [
+      "高位半导体/存储核心重新主动领涨并带动低位，而非低位反向带动高位",
+      "电子主线轮动频率重新稳定居前且高位核心修复强于补涨分支",
+      "反向旧方向主动接管市场，电子/半导体只做被动弱反弹，则趋势主线进一步失效",
+      "短线红盘起爆/科创20cm连续失效，说明'趋势回调后短线增强'判断不成立"
+    ]
+  },
+  "directions": [
+    {
+      "name": "电子/行业电子",
+      "stance": "仍是大方向，但应从趋势持仓思路切到减仓+短线模式思路"
+    },
+    {
+      "name": "光学光电/玻璃基板",
+      "stance": "当日补涨和资金攻击分支，可用模式做，不追随机低位"
+    },
+    {
+      "name": "半导体/存储高位核心",
+      "stance": "未结束但不健康，反弹减仓"
+    },
+    {
+      "name": "科创/20cm",
+      "stance": "短线赚钱处，适合红盘起爆/绿盘低吸等模式，但要尊重环境"
+    }
+  ],
+  "stocks": [
+    {
+      "name": "雷曼光电",
+      "code": "300162.XSHE",
+      "role": "专享方向/光学光电短线命中样本"
+    },
+    {
+      "name": "信濠光电",
+      "code": "301051.XSHE",
+      "role": "专享方向/光学光电短线命中样本"
+    },
+    {
+      "name": "联得装备",
+      "code": "300545.XSHE",
+      "role": "专享方向/电子设备短线命中样本"
+    },
+    {
+      "name": "五方光电",
+      "code": "002962.XSHE",
+      "role": "本地 emitted strategy + 纸面买入标杆，光电/电子方向首红断低吸样本；不是 6/30 复盘转录点名股"
+    },
+    {
+      "name": "正帆科技",
+      "code": "688596.XSHG",
+      "role": "科创/20cm 短线起爆样本"
+    },
+    {
+      "name": "金宏气体",
+      "code": "688106.XSHG",
+      "role": "科创/电子链短线样本"
+    },
+    {
+      "name": "聚和材料",
+      "code": "688503.XSHG",
+      "role": "科创/电子链短线样本，转录作'巨鸿材料'"
+    },
+    {
+      "name": "京东方A",
+      "code": "000725.XSHE",
+      "role": "光学光电/玻璃基板中军，大票样本；有利润可减，持有看5日线"
+    },
+    {
+      "name": "南大光电",
+      "code": "300346.XSHE",
+      "role": "日本相关/光刻胶或半导体材料方向样本，复盘称次日也可能有表现"
+    },
+    {
+      "name": "富满微",
+      "code": "300671.XSHE",
+      "role": "盘中短线命中样本，转录作'富威满'"
+    }
+  ],
+  "decision_trace": [
+    "观察: 半导体/芯片仍涨，但涨的是前期没怎么涨或中低位补涨，高位核心不动或不强。",
+    "推断: 这不是健康主升，而是板块内高低切、扩散、资金分流。",
+    "动作: 趋势仓反弹减仓，避免把前面吃到的肉还回去；不直接清仓，因为板块未完全结束。",
+    "观察: 雷曼光电、信濠光电、联得装备、正帆科技等短线起爆强。",
+    "推断: 趋势回调后，短线/科创/红盘起爆环境改善；低位选择必须靠模式和方向，不靠主观乱猜。"
+  ],
+  "method_principles": [
+    "高低切不是好事，哪怕发生在同一个电子主线内部，也意味着资金分散。",
+    "板块内高低切的动作是反弹减仓，不是立刻全卖；板块外主动切换才更接近离场。",
+    "低位补涨随机性很强，若不用红盘起爆/专享方向/科创等工具，容易追到随机垃圾。",
+    "趋势回调时短线会变好，但不能把'去弱留强'机械套用在高低切阶段；有时强的高位不该追，低中位起爆才是当日资金攻击点。",
+    "5 日线仍是看不懂环境时的兜底防线。"
+  ],
+  "exit_lessons": [
+    "【loop】6/30 复盘确认 6/29 的跷跷板没有触发卖点，但 6/30 的板块内高低切触发了减仓点：主线未死，仓位要降。",
+    "不要在前一天跌的时候卖、当天涨起来再追；正确节奏是趋势仓反弹减仓，短线只按模式做。",
+    "高低切/扩散会让今天领涨不代表明天继续领涨，轮动结构下不能按单日最强无脑追。"
+  ],
+  "strategy_hit_audit": {
+    "scope": "复盘提到的短线/专享方向/红盘起爆命中股是否落在本地策略命中范围",
+    "local_evidence": {
+      "strategy_run_2026_06_30": [
+        "雅克科技",
+        "昊华科技",
+        "五方光电",
+        "大胜达",
+        "返利科技"
+      ],
+      "recommend_2026_06_30_focus": [
+        "大胜达",
+        "五方光电"
+      ],
+      "qibao_mode": [
+        "标杆短线起爆"
+      ],
+      "teacher_shortline_emitted_overlap": [
+        "雷曼光电",
+        "信濠光电",
+        "金宏气体"
+      ],
+      "local_strategy_benchmark_hits": [
+        {
+          "name": "五方光电",
+          "code": "002962.XSHE",
+          "status": "emitted_strategy_hit + emitted_dixi_hit + paper_buy",
+          "mode": "首红断低吸",
+          "recommend_evidence": "recommend_2026-06-30: ★KP2/★B2, primary_score 398.8, rank_score 80.9, entry 19.95, basket 20.35",
+          "trade_evidence": "paper_trades/positions: Book A 800股 + Book B 400股, entry_price 20.05, source auto:vb_star, 09:32买入；盘中 T+1 持有，净收益约 +6.41% 至 +10.70%，14:55约 +9.70%",
+          "index_snapshot": "pct +4.87, open -4.82, entity +10.18, xcjw 285.9, cjs 141.12, directionCjs 1270.93, 电子行业 rank 1/66, shortLineScore 82.21",
+          "first_principles_review": "这是本地低吸分支抓到的同日光电/电子补涨标杆：集合竞价深水、方向和 xcjw/cjs 结构强，买点不是追老师点名的红盘扩张，而是对高低切环境中的低位光电补涨做风险受控的首红断低吸。此前把它只写成 local_evidence note 不够，应纳入本地标杆复盘。"
+        }
+      ],
+      "local_related_hit_note": "五方光电不是老师点名短线赢家，所以不计入 teacher_shortline_emitted_overlap；但它是同日 emitted strategy 与纸面买入标杆，必须在 local_strategy_benchmark_hits 里单独复盘。",
+      "qibao_rule_context": "旧 qibao emitted 规则过度依赖绝对 jssb，6/30 qibao mode 原为空；近一年 cache-only 验证后新增 标杆短线起爆 = raw qibao rank<=10 + 电子/20cm + open<=6 + 红盘非涨停/非长实体。",
+      "raw_qibao_pool_note": "新增 标杆短线起爆 后，6/30 老师点名股中雷曼光电(raw #1)、信濠光电(raw #4)、金宏气体(raw #6)进入 emitted qibao；正帆科技(raw #2)、联得装备(raw #5)、聚和材料(raw #9)进入 limitlike_watch，不再视为无效排除。"
+    },
+    "teacher_named_winners": [
+      {
+        "name": "雷曼光电",
+        "code": "300162.XSHE",
+        "teacher_context": "专享方向/光学光电红盘起爆短线命中",
+        "our_status": "emitted_qibao_hit_after_xh037",
+        "miss_reason": "旧规则因 jssb 低漏掉；新增 标杆短线起爆 后命中 raw #1、电子/20cm、open 4.34<=6、红盘非涨停。",
+        "reasonable_under_current_book": true,
+        "review": "已纳入 rank-based qibao 标杆分支，是 6/30 最直接的老师短线标杆覆盖样本。"
+      },
+      {
+        "name": "信濠光电",
+        "code": "301051.XSHE",
+        "teacher_context": "专享方向/光学光电红盘起爆短线命中",
+        "our_status": "emitted_qibao_hit_after_xh037",
+        "miss_reason": "旧规则因 jssb 低漏掉；新增 标杆短线起爆 后命中 raw #4、电子/20cm、open 3.57<=6、红盘非涨停。",
+        "reasonable_under_current_book": true,
+        "review": "已纳入 rank-based qibao 标杆分支；验证方向筛选比绝对 jssb 更贴近老师短线样本。"
+      },
+      {
+        "name": "联得装备",
+        "code": "300545.XSHE",
+        "teacher_context": "专享方向/电子红盘起爆，20cm 命中",
+        "our_status": "cohort_watchlist: qibao_raw_top10_elec20_limitlike_watch",
+        "miss_reason": "qibao 原始排序池第 5；jssb 约 8.74，涨幅约 20% 且已接近/达到涨停，当前买入规则主动规避追涨停/过强实体。",
+        "reasonable_under_current_book": true,
+        "review": "不自动 paper-buy 仍合理，但不是无效样本；近一年同类 limitlike_watch PASS，应作为 20cm 强攻 benchmark/watchlist 保留。"
+      },
+      {
+        "name": "正帆科技",
+        "code": "688596.XSHG",
+        "teacher_context": "科创/20cm 起爆样本",
+        "our_status": "cohort_watchlist: qibao_raw_top10_elec20_limitlike_watch",
+        "miss_reason": "qibao 原始排序池第 2；jssb 约 28.82、entity 约 11.97，当前买入规则不追已经展开的强攻击。",
+        "reasonable_under_current_book": true,
+        "review": "不自动 paper-buy 仍合理，但它是科创/20cm 强攻标杆；近一年同类 limitlike_watch PASS，应进入 cohort 而非被排除。"
+      },
+      {
+        "name": "金宏气体",
+        "code": "688106.XSHG",
+        "teacher_context": "转录作'金鸿科技'，科创/电子链短线样本",
+        "our_status": "emitted_qibao_hit_after_xh037",
+        "miss_reason": "旧规则主要因 jssb 低漏掉；新增 标杆短线起爆 后命中 raw #6、电子/20cm、open 2.12<=6、红盘非涨停。",
+        "reasonable_under_current_book": true,
+        "review": "这是最明确的旧规则盲点，近一年验证 PASS 后已被 标杆短线起爆 覆盖。"
+      },
+      {
+        "name": "聚和材料",
+        "code": "688503.XSHG",
+        "teacher_context": "转录作'巨鸿材料'，科创/电子链短线样本",
+        "our_status": "cohort_watchlist: qibao_raw_top10_elec20_limitlike_watch",
+        "miss_reason": "qibao 原始排序池第 9；jssb 约 5.59、entity 约 16.61，当前买入规则不追强实体/近20cm。",
+        "reasonable_under_current_book": true,
+        "review": "合理不追，但必须保留为科创/20cm 强攻 cohort 样本；同类历史研究已 PASS。"
+      },
+      {
+        "name": "京东方A",
+        "code": "000725.XSHE",
+        "teacher_context": "光学光电/玻璃基板中军，不是纯短线起爆",
+        "our_status": "no_evidence",
+        "miss_reason": "无同日 emitted/raw 短线池证据，jssb 约 0；更像老师用来表达光电/玻璃基板方向中军和趋势大票替代物。",
+        "reasonable_under_current_book": true,
+        "review": "合理不纳入短线命中统计；可作为方向确认/中军观察而非策略漏选。"
+      },
+      {
+        "name": "富满微",
+        "code": "300671.XSHE",
+        "teacher_context": "盘中短线命中样本，转录作'富威满'",
+        "our_status": "no_evidence",
+        "miss_reason": "无同日 qibao/dixi/jieli/raw hit；jssb 约 0 且盘中后置强攻，不在本地 9:25/早盘命中面。",
+        "reasonable_under_current_book": true,
+        "review": "合理漏过；归因于盘中系统/后置机会，不应拿 9:25 emitted 策略硬对齐。"
+      }
+    ],
+    "systemic_takeaway": "旧规则下 6/30 老师点名短线赢家与本地 emitted strategy/qibao 的交集为 0；近一年 cache-only 验证后新增 标杆短线起爆，交集变为雷曼光电、信濠光电、金宏气体。五方光电不是点名股，但它证明本地策略同时捕捉到了同日光电/电子方向的低吸标杆。最终结论：本地低吸分支有效，旧 qibao 绝对 jssb 规则存在系统盲点；已用 raw qibao rank<=10 + 电子/20cm + open<=6 + 红盘非涨停/非长实体分支修复；高开/近20cm/长实体样本不自动 paper-buy，但进入 authority=0 的 cohort_watchlist。",
+    "audit_report": "reference/experience/audits/2026-06-29_2026-06-30_shortline_winner_audit.md",
+    "rule_insights": [
+      "旧规则交集为 0，但 XH-037 近一年验证 PASS 后新增 标杆短线起爆，6/30 点名股已覆盖雷曼光电、信濠光电、金宏气体。",
+      "五方光电是本地有效样本，不是漏选；它验证了高低切环境中光电/电子低吸补涨可以被当前 strategy/recommend/纸面账本捕捉。",
+      "高开/涨停化强实体不是无效样本，正帆科技、联得装备、聚和材料进入 limitlike_watch；它们不应直接变成 9:25 paper-buy，但必须保留为 benchmark/watchlist。",
+      "最值得挑战的是 qibao emitted 的绝对 jssb 门槛：金宏气体 raw rank #6、entity 3.70、xcjw 277.23、shortLine 174.01，主要因 jssb 8.20 被挡；新增分支后已覆盖。",
+      "已落地买入规则边界：raw_qibao_rank<=10 + 电子/20cm + open<=6 + 红盘非涨停/非长实体；高开/涨停化样本走 cohort/watchlist/research，不直接进买入。"
+    ]
+  },
+  "hypotheses": [
+    {
+      "claim": "趋势主线内发生高低切时，主线未必立刻结束，但持仓应在反弹中减仓而不是继续加仓。",
+      "implied_rule": "出现高位核心不强、低中位补涨主动时，趋势仓反弹减仓，保留底仓观察。",
+      "falsifiable_test": "构造主线内高低切指标(高位核心相对低位补涨弱化)，比较触发后高位核心持有、减半、清仓三种路径的3-10日收益回撤。",
+      "expected_effect": "减半路径应显著降低回撤，并在主线未死样本中保留部分上行。",
+      "category": "exit_prior"
+    },
+    {
+      "claim": "趋势尾声/回调阶段，短线红盘起爆、专享方向、科创/20cm 等模式化短线信号的相对赚钱效应会改善，但必须用模式确认而不是提前埋伏或无纪律追高。",
+      "implied_rule": "趋势仓降风险后，短线只通过红盘起爆/专享方向/科创20cm等模式和方向参与，不做随机低位补涨或无过滤追高。",
+      "falsifiable_test": "以趋势主线回调或高低切日期为锚点，比较随后1-5日红盘起爆/专享方向/科创20cm信号与普通短线信号的收益和最大回撤。",
+      "expected_effect": "模式化短线样本应相对趋势核心和普通低位样本表现更好。",
+      "category": "shortline_transition"
+    },
+    {
+      "claim": "趋势尾声的短线起爆样本可能更多来自 raw qibao pool 的行业/专享方向 rank，而不是当前 emitted qibao 的高 jssb 阈值。",
+      "implied_rule": "保留现有风控，不直接改参；新增研究对照组测试 rank-based qibao。",
+      "falsifiable_test": "对 2026-06-29 至 2026-06-30 及历史相似趋势尾声阶段，回放 raw qibao pool top N + 电子/光电/科创过滤，与 emitted qibao/strategy run 的收益、回撤、容量和可成交性对比。",
+      "expected_effect": "若假设成立，raw qibao 过滤组应覆盖雷曼光电、信濠光电、联得装备等样本，并在趋势尾声窗口收益高于 emitted qibao。",
+      "category": "shortline_research"
+    }
+  ],
+  "timing_notes": [
+    "当天强的是先前没涨或回调过的低中位分支，不是原高位核心。",
+    "老师强调不要追午后涨起来的补涨，趋势仓应趁反弹减仓。",
+    "未来几天如果仍是轮动结构，今天领涨不代表明天继续领涨。"
+  ],
+  "judgment_heuristics": [
+    "【loop】6/30 是 6/22 '高低切/扩散即减仓'先验的再确认，但触发形式从板块外反向切换变成板块内高低切；动作也从清仓前奏细化为反弹减仓、保留底仓。",
+    "同属电子方向也要分健康主升和低位补涨；低位补涨主动带高位，不如高位核心主动带板块健康。",
+    "短线命中审计必须和本地策略输出对表：老师说中的票如果我们没覆盖，要判断是风控合理漏过、数据缺失，还是可研究的模式盲区。",
+    "在高低切阶段，机械去弱留强会失效；当日最强可能只是补涨轮动，次日未必持续。"
+  ],
+  "typo_corrections": [
+    {
+      "raw": "雷曼/莱曼光电",
+      "corrected": "雷曼光电",
+      "note": "光学光电短线命中样本"
+    },
+    {
+      "raw": "信豪/信濠",
+      "corrected": "信濠光电",
+      "note": "光学光电短线命中样本"
+    },
+    {
+      "raw": "联德/联得",
+      "corrected": "联得装备",
+      "note": "电子设备短线样本"
+    },
+    {
+      "raw": "正方科技/正帆/正凡",
+      "corrected": "正帆科技",
+      "note": "科创/20cm 起爆样本"
+    },
+    {
+      "raw": "金鸿科技",
+      "corrected": "金宏气体",
+      "note": "科创/电子链短线样本"
+    },
+    {
+      "raw": "巨鸿材料",
+      "corrected": "聚和材料",
+      "note": "科创/电子链短线样本"
+    },
+    {
+      "raw": "富威满",
+      "corrected": "富满微",
+      "note": "盘中短线命中样本"
+    },
+    {
+      "raw": "京东方",
+      "corrected": "京东方A",
+      "note": "光学光电/玻璃基板中军"
+    }
+  ],
+  "action_summary": {
+    "posture_update": "legacy_backfill: see posture/regime_call in this distilled file",
+    "playbook_update": "legacy_backfill: see method_principles/exit_lessons/judgment_heuristics in this distilled file",
+    "hypothesis_update": "legacy_backfill: 3 candidate hypothesis item(s) in this distilled file",
+    "audit_evidence": "legacy_backfill: see strategy_hit_audit in this file",
+    "instrumentation_todo": "no_issue_created",
+    "routing": [
+      "posture",
+      "playbook",
+      "hypothesis",
+      "audit"
+    ]
+  }
+}

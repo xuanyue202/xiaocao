@@ -336,5 +336,17 @@
     "拆涨跌/猜涨跌 -> 猜涨跌(讲者每日对盘面高低点的预判,保留)",
     "得免/点面一下 -> [转写存疑](疑为'点名/点一下'共达电声)"
   ],
-  "directions_note": "本场为跷跷板修复日:趋势(元器件/CPO/通信设备/芯片)修复但无延续性,短线垃圾(博彩/AI营销/北交所/10cm超跌)轮动。点名真实趋势核心票:三环集团、生益科技、鹏鼎控股、东山精密、德明利;教学样本:中际旭创、存储芯片。方向模式样本(芯片概念):汇丰钻石、云汉新城[均转写存疑]。'力核心''共达电声''工业互联''生恒科技'存在转写存疑或概念不确定,已据上下文标注。整体操作:短线清仓/空仓,趋势在相对高点(下午约2点)减/卖、不参与横盘。"
+  "directions_note": "本场为跷跷板修复日:趋势(元器件/CPO/通信设备/芯片)修复但无延续性,短线垃圾(博彩/AI营销/北交所/10cm超跌)轮动。点名真实趋势核心票:三环集团、生益科技、鹏鼎控股、东山精密、德明利;教学样本:中际旭创、存储芯片。方向模式样本(芯片概念):汇丰钻石、云汉新城[均转写存疑]。'力核心''共达电声''工业互联''生恒科技'存在转写存疑或概念不确定,已据上下文标注。整体操作:短线清仓/空仓,趋势在相对高点(下午约2点)减/卖、不参与横盘。",
+  "action_summary": {
+    "posture_update": "legacy_backfill: see posture/regime_call in this distilled file",
+    "playbook_update": "legacy_backfill: see method_principles/exit_lessons/judgment_heuristics in this distilled file",
+    "hypothesis_update": "legacy_backfill: 6 candidate hypothesis item(s) in this distilled file",
+    "audit_evidence": "not_applicable",
+    "instrumentation_todo": "no_issue_created",
+    "routing": [
+      "posture",
+      "playbook",
+      "hypothesis"
+    ]
+  }
 }

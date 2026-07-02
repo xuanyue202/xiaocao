@@ -289,5 +289,17 @@
     "采支撑位/采支撑 → 踩到支撑位",
     "客栈板菜 → [转写存疑]疑为'创业板/科创板'相关分类"
   ],
-  "stocks_unconfirmed_note": "新易盛、天孚通信、东山精密的股票代码为按真实A股常识补全;若与 cache 不一致以 cache 为准。'力核心/盘中核心'未给出可确认票名,标[转写存疑]未列入 stocks。汇丰钻石为北交所标的,代码未在转录中给出,留空。"
+  "stocks_unconfirmed_note": "新易盛、天孚通信、东山精密的股票代码为按真实A股常识补全;若与 cache 不一致以 cache 为准。'力核心/盘中核心'未给出可确认票名,标[转写存疑]未列入 stocks。汇丰钻石为北交所标的,代码未在转录中给出,留空。",
+  "action_summary": {
+    "posture_update": "legacy_backfill: see posture/regime_call in this distilled file",
+    "playbook_update": "legacy_backfill: see method_principles/exit_lessons/judgment_heuristics in this distilled file",
+    "hypothesis_update": "legacy_backfill: 6 candidate hypothesis item(s) in this distilled file",
+    "audit_evidence": "not_applicable",
+    "instrumentation_todo": "no_issue_created",
+    "routing": [
+      "posture",
+      "playbook",
+      "hypothesis"
+    ]
+  }
 }
