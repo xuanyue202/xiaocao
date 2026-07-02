@@ -94,3 +94,14 @@ def test_build_results_empty_when_no_picks():
 
 def test_build_results_handles_missing_variant_column():
     assert co.build_results(_df(), "vb_star") == []
+
+
+def test_build_results_supports_qibao_benchmark_variant():
+    df = pd.DataFrame([
+        {"date": "2026-06-30", "code": "Q", "qibao_benchmark_star": True, "net_realized_ret": 6.0},
+        {"date": "2026-06-30", "code": "O1", "qibao_benchmark_star": False, "net_realized_ret": 1.0},
+        {"date": "2026-06-30", "code": "O2", "qibao_benchmark_star": False, "net_realized_ret": -1.0},
+    ])
+    assert co.build_results(df, "qibao_benchmark_star") == [
+        {"day": "2026-06-30", "strat_ret": 6.0, "base_ret": 0.0},
+    ]

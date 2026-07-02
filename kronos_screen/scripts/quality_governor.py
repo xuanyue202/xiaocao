@@ -12,6 +12,10 @@ from typing import Any
 
 PRIMARY_THRESHOLD = 150.0
 P_TAIL_WARNING_THRESHOLD = -2.0
+try:
+    from xiaocao.strategy.rules import RAW_QIBAO_BENCHMARK_MODES
+except Exception:  # pragma: no cover - standalone script fallback
+    RAW_QIBAO_BENCHMARK_MODES = {"标杆短线起爆", "高开标杆起爆", "强攻标杆起爆"}
 
 
 def num(value: Any) -> float | None:
@@ -32,6 +36,8 @@ def primary_score(row: dict[str, Any]) -> tuple[float, str]:
     cjs = num(row.get("cjs")) or 0.0
     jsjl = num(row.get("jsjl")) or 0.0
     jssb = num(row.get("jssb")) or 0.0
+    if mode in RAW_QIBAO_BENCHMARK_MODES or row.get("qibaoBenchmarkKind"):
+        return num(row.get("qibaoRankScore")) or 0.0, "qibaoRankScore"
     if "起爆" in mode:
         return jssb, "jssb"
     if mode.startswith("接力"):

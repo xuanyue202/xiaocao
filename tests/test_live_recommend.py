@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from datetime import datetime
 
+import pytest
+
 import scripts.live_recommend as live_recommend
 from scripts.live_recommend import (
     _annotate_recommendation_score,
@@ -20,6 +22,8 @@ from scripts.live_recommend import (
     _seconds_until_recommendation_start,
     _select_candidates,
     _select_standby_candidates,
+    _mode_confidence,
+    _training_rows_mode_window_stats,
 )
 from xiaocao.utils.trading_session import A_SHARE_TZ
 
@@ -113,6 +117,52 @@ def test_mode_confidence_shrinks_sparse_history_toward_neutral() -> None:
     assert dense["confidence"] == 82.0
 
 
+def test_training_rows_mode_window_stats_reads_live_all_hit_rows(tmp_path) -> None:
+    pd = pytest.importorskip("pandas")
+    path = tmp_path / "training_rows.parquet"
+    pd.DataFrame([
+        {"date": "2026-06-24", "mode": "N字低吸", "is_live": True, "net_realized_ret": 8.0},
+        {"date": "2026-06-25", "mode": "N字低吸", "is_live": True, "net_realized_ret": 4.0},
+        {"date": "2026-06-25", "mode": "首红断低吸", "is_live": True, "net_realized_ret": -6.0},
+        {"date": "2026-06-25", "mode": "N字低吸", "is_live": False, "net_realized_ret": -20.0},
+        {"date": "2026-06-30", "mode": "N字低吸", "is_live": True, "net_realized_ret": 30.0},
+    ]).to_parquet(path, index=False)
+
+    stats = _training_rows_mode_window_stats(
+        {"N字低吸", "首红断低吸"},
+        "2026-06-30",
+        ["2026-06-23", "2026-06-24", "2026-06-25", "2026-06-26", "2026-06-29", "2026-06-30"],
+        path,
+    )
+
+    assert stats["N字低吸"][5] == {"n": 2, "avg": 6.0}
+    assert stats["首红断低吸"][5] == {"n": 1, "avg": -6.0}
+
+
+def test_mode_confidence_prefers_live_all_hit_rows_over_cache(tmp_path) -> None:
+    pd = pytest.importorskip("pandas")
+    path = tmp_path / "training_rows.parquet"
+    pd.DataFrame([
+        {"date": "2026-06-24", "mode": "N字低吸", "is_live": True, "net_realized_ret": 8.0},
+        {"date": "2026-06-25", "mode": "N字低吸", "is_live": True, "net_realized_ret": 8.0},
+    ]).to_parquet(path, index=False)
+
+    class BadCache:
+        def mode_window_stats(self, *args, **kwargs):
+            return {"n": 8, "avg": -8.0}
+
+    conf = _mode_confidence(
+        BadCache(),
+        {"N字低吸"},
+        "2026-06-30",
+        ["2026-06-23", "2026-06-24", "2026-06-25", "2026-06-26", "2026-06-29", "2026-06-30"],
+        path,
+    )["N字低吸"]
+
+    assert conf["confidence"] > 50.0
+    assert conf["mode_confidence_source"] == "live all-hit shadow PnL"
+
+
 def test_recommendation_score_uses_mode_confidence() -> None:
     candidate = {"code": "A", "mode": "绿断低吸", "xcjw": 250, "cjs": 80, "open_pct_change": -3.0}
 
@@ -121,6 +171,35 @@ def test_recommendation_score_uses_mode_confidence() -> None:
     high = _annotate_recommendation_score(candidate, {"绿断低吸": {"confidence": 80}})
 
     assert low["rank_score"] < neutral["rank_score"] < high["rank_score"]
+
+
+def test_raw_qibao_benchmark_uses_rank_score_as_primary() -> None:
+    candidate = {
+        "code": "A",
+        "mode": "标杆短线起爆",
+        "jssb": 4.0,
+        "qibaoRankScore": 228.0,
+        "open_pct_change": 2.0,
+    }
+
+    annotated = _annotate_recommendation_score(candidate, {})
+
+    assert annotated["primary_score"] == 228.0
+    assert annotated["primary_score_label"] == "qibaoRankScore"
+
+
+def test_promoted_qibao_benchmark_modes_use_rank_score_as_primary() -> None:
+    for mode in ("高开标杆起爆", "强攻标杆起爆"):
+        annotated = _annotate_recommendation_score({
+            "code": "A",
+            "mode": mode,
+            "jssb": 4.0,
+            "qibaoRankScore": 216.0,
+            "open_pct_change": 8.0,
+        }, {})
+
+        assert annotated["primary_score"] == 216.0
+        assert annotated["primary_score_label"] == "qibaoRankScore"
 
 
 def test_basket_params_are_mode_specific_and_confidence_adjusted() -> None:
@@ -133,6 +212,21 @@ def test_basket_params_are_mode_specific_and_confidence_adjusted() -> None:
     assert low_exec_cap == 2.0
     assert momentum_cap == 10.0
     assert momentum_exec_cap == 6.0
+
+    raw_premium, raw_cap, raw_exec_cap = _basket_params("标杆短线起爆", confidence=60)
+    assert raw_premium == 1.68
+    assert raw_cap == 6.0
+    assert raw_exec_cap == 4.5
+
+    high_premium, high_cap, high_exec_cap = _basket_params("高开标杆起爆", confidence=60)
+    assert high_premium == 1.48
+    assert high_cap == 10.0
+    assert high_exec_cap == 8.0
+
+    strong_premium, strong_cap, strong_exec_cap = _basket_params("强攻标杆起爆", confidence=60)
+    assert strong_premium == 1.28
+    assert strong_cap == 20.0
+    assert strong_exec_cap == 18.0
 
 
 def test_first_red_break_basket_allows_two_percent_price_priority_on_flat_open() -> None:

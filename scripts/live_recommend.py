@@ -39,10 +39,17 @@ from xiaocao.api.client import XiaocaoClient  # noqa: E402
 from xiaocao.config import load_settings  # noqa: E402
 from xiaocao.datasource.api_source import ApiDataSource  # noqa: E402
 from xiaocao.strategy import run_strategy  # noqa: E402
+from xiaocao.strategy.rules import (  # noqa: E402
+    RAW_QIBAO_BENCHMARK_MODE,
+    RAW_QIBAO_BENCHMARK_MODES,
+    RAW_QIBAO_HIGH_OPEN_MODE,
+    RAW_QIBAO_LIMITLIKE_MODE,
+)
 from xiaocao.utils.trading_session import A_SHARE_TZ  # noqa: E402
 from quality_governor import ensure_quality_fields  # noqa: E402
 
 OUT_DIR = ROOT / "output" / "live"
+TRAINING_ROWS_FILE = OUT_DIR / "training_rows.parquet"
 STOCK_SENTIMENT_FILE = OUT_DIR / "stock_sentiment.json"
 STOCK_SENTIMENT_HISTORY_FILE = OUT_DIR / "stock_sentiment_history.jsonl"
 WAIT_START = time(9, 20)
@@ -62,6 +69,9 @@ BASKET_POLICY = {
     "接力低弱转2": {"premium": 1.2, "min": 0.8, "max": 1.8, "cap_pct": 8.0, "exec_cap_pct": 5.5},
     "红盘起爆主攻": {"premium": 2.0, "min": 1.5, "max": 2.5, "cap_pct": 10.0, "exec_cap_pct": 6.0},
     "方向红盘起爆": {"premium": 1.8, "min": 1.2, "max": 2.3, "cap_pct": 8.0, "exec_cap_pct": 5.5},
+    RAW_QIBAO_BENCHMARK_MODE: {"premium": 1.6, "min": 1.0, "max": 2.0, "cap_pct": 6.0, "exec_cap_pct": 4.5},
+    RAW_QIBAO_HIGH_OPEN_MODE: {"premium": 1.4, "min": 0.8, "max": 1.8, "cap_pct": 10.0, "exec_cap_pct": 8.0},
+    RAW_QIBAO_LIMITLIKE_MODE: {"premium": 1.2, "min": 0.5, "max": 1.6, "cap_pct": 20.0, "exec_cap_pct": 18.0},
     "N字低吸": {"premium": 2.0, "min": 1.5, "max": 2.3, "cap_pct": 5.0, "exec_cap_pct": 4.0},
     "绿断低吸": {"premium": 2.0, "min": 1.5, "max": 2.0, "cap_pct": 2.0, "exec_cap_pct": 2.0},
     "红断低吸": {"premium": 2.0, "min": 1.5, "max": 2.0, "cap_pct": 2.0, "exec_cap_pct": 2.0},
@@ -637,6 +647,8 @@ def _primary_score(row: dict[str, object]) -> tuple[float, str]:
     cjs = _num(row.get("cjs"))
     jsjl = _num(row.get("jsjl"))
     jssb = _num(row.get("jssb"))
+    if mode in RAW_QIBAO_BENCHMARK_MODES or row.get("qibaoBenchmarkKind"):
+        return _num(row.get("qibaoRankScore")), "qibaoRankScore"
     if "起爆" in mode:
         return jssb, "jssb"
     if mode.startswith("接力"):
@@ -702,7 +714,11 @@ def _open_risk_penalty(mode: str, open_pct: float) -> float:
     return min(35.0, deep_low_penalty + chase_penalty)
 
 
-def _confidence_from_window_stats(windows: dict[int, dict[str, object]]) -> dict[str, object]:
+def _confidence_from_window_stats(
+    windows: dict[int, dict[str, object]],
+    *,
+    source: str = "mode_history",
+) -> dict[str, object]:
     weighted_sum = 0.0
     weight_sum = 0.0
     max_n = 0
@@ -721,7 +737,8 @@ def _confidence_from_window_stats(windows: dict[int, dict[str, object]]) -> dict
             "confidence": 50.0,
             "mode_recent_avg": 0.0,
             "mode_recent_n": 0,
-            "mode_confidence_reason": "no recent mode_history",
+            "mode_confidence_source": source,
+            "mode_confidence_reason": f"no recent {source}",
         }
     recent_avg = weighted_sum / weight_sum
     raw_confidence = 50.0 + max(-10.0, min(10.0, recent_avg)) * 4.0
@@ -731,8 +748,90 @@ def _confidence_from_window_stats(windows: dict[int, dict[str, object]]) -> dict
         "confidence": round(max(0.0, min(100.0, confidence)), 2),
         "mode_recent_avg": round(recent_avg, 2),
         "mode_recent_n": max_n,
-        "mode_confidence_reason": f"5/10/20d weighted avg {recent_avg:+.2f}% n={max_n}",
+        "mode_confidence_source": source,
+        "mode_confidence_reason": f"5/10/20d {source} weighted avg {recent_avg:+.2f}% n={max_n}",
     }
+
+
+def _window_lower_bound(asof_iso: str, window_days: int, trade_days: list[str] | None) -> str | None:
+    asof = asof_iso[:10]
+    if trade_days:
+        normalized = sorted({str(d)[:10] for d in trade_days if str(d or "")[:10] <= asof})
+        try:
+            idx = normalized.index(asof)
+        except ValueError:
+            idx = len(normalized)
+        lower_idx = max(0, idx - window_days)
+        if lower_idx < len(normalized):
+            return normalized[lower_idx]
+        return asof
+    try:
+        return (_date.fromisoformat(asof) - timedelta(days=window_days)).isoformat()
+    except ValueError:
+        return None
+
+
+def _training_rows_mode_window_stats(
+    modes: set[str],
+    date_iso: str,
+    trade_days: list[str],
+    path: Path = TRAINING_ROWS_FILE,
+) -> dict[str, dict[int, dict[str, object]]]:
+    """Return per-mode windows from live all-hit forward labels.
+
+    `training_rows.parquet` is produced from `signal_snapshots.jsonl`, so it
+    contains the full live candidate set: bought, unbought, KP-dropped, and
+    shadow rows. That is the right substrate for mode ranking. SQLite
+    `mode_history` is only the fallback because it can lag the live feed.
+    """
+    if not modes or not path.exists():
+        return {}
+    try:
+        import pandas as pd  # type: ignore
+    except Exception:
+        return {}
+    try:
+        df = pd.read_parquet(path)
+    except Exception:
+        return {}
+    required = {"date", "mode"}
+    if df.empty or not required.issubset(set(df.columns)):
+        return {}
+    ret_col = "net_realized_ret" if "net_realized_ret" in df.columns else "realized_ret"
+    if ret_col not in df.columns:
+        return {}
+
+    df = df.copy()
+    df["_date"] = df["date"].astype(str).str[:10]
+    df["_mode"] = df["mode"].astype(str)
+    df["_ret"] = pd.to_numeric(df[ret_col], errors="coerce")
+    if "is_live" in df.columns:
+        live_mask = df["is_live"].map(
+            lambda value: str(value).strip().lower() in {"1", "true", "yes"}
+            if isinstance(value, str) else bool(value)
+        )
+        df = df[live_mask]
+    df = df[
+        (df["_date"] < date_iso[:10])
+        & (df["_mode"].isin(modes))
+        & (df["_ret"].notna())
+    ]
+    if df.empty:
+        return {}
+
+    out: dict[str, dict[int, dict[str, object]]] = {mode: {} for mode in modes}
+    for window in MODE_CONFIDENCE_WINDOWS:
+        lower = _window_lower_bound(date_iso, window, trade_days or None)
+        if lower is None:
+            continue
+        sub = df[(df["_date"] >= lower) & (df["_date"] < date_iso[:10])]
+        for mode in modes:
+            vals = sub.loc[sub["_mode"] == mode, "_ret"]
+            out[mode][window] = {
+                "n": int(vals.count()),
+                "avg": float(vals.mean()) if int(vals.count()) else 0.0,
+            }
+    return {mode: windows for mode, windows in out.items() if windows}
 
 
 def _mode_confidence(
@@ -740,17 +839,27 @@ def _mode_confidence(
     modes: set[str],
     date_iso: str,
     trade_days: list[str],
+    training_rows_path: Path = TRAINING_ROWS_FILE,
 ) -> dict[str, dict[str, object]]:
     out: dict[str, dict[str, object]] = {}
-    if cache is None:
+    if not modes:
         return out
+    live_windows = _training_rows_mode_window_stats(modes, date_iso, trade_days, training_rows_path)
     effective_trade_days = trade_days or None
     for mode in modes:
-        windows = {
+        windows = live_windows.get(mode) or {}
+        has_live = any(int(_num(stat.get("n"))) > 0 for stat in windows.values())
+        if has_live:
+            out[mode] = _confidence_from_window_stats(windows, source="live all-hit shadow PnL")
+            continue
+        if cache is None:
+            out[mode] = _confidence_from_window_stats({}, source="live all-hit shadow PnL")
+            continue
+        fallback_windows = {
             window: cache.mode_window_stats(mode, date_iso, window, trade_days=effective_trade_days)
             for window in MODE_CONFIDENCE_WINDOWS
         }
-        out[mode] = _confidence_from_window_stats(windows)
+        out[mode] = _confidence_from_window_stats(fallback_windows, source="mode_history fallback")
     return out
 
 
@@ -777,6 +886,7 @@ def _annotate_recommendation_score(
     out["mode_confidence"] = round(confidence, 2)
     out["mode_recent_avg"] = confidence_info.get("mode_recent_avg", 0.0)
     out["mode_recent_n"] = confidence_info.get("mode_recent_n", 0)
+    out["mode_confidence_source"] = confidence_info.get("mode_confidence_source", "neutral")
     out["mode_confidence_reason"] = confidence_info.get("mode_confidence_reason", "neutral")
     out["rank_score"] = round(rank_score, 2)
     return out
@@ -947,6 +1057,12 @@ def main() -> None:
             "cjs": _num(r.get("cjs")),
             "jsjl": _num(r.get("jsjl")),
             "jssb": _num(r.get("jssb")),
+            "rawQibaoRank": r.get("rawQibaoRank"),
+            "qibaoRankScore": r.get("qibaoRankScore"),
+            "qibaoBenchmarkKind": r.get("qibaoBenchmarkKind"),
+            "qibaoBenchmarkLayer": r.get("qibaoBenchmarkLayer"),
+            "industryElectronic": r.get("industryElectronic"),
+            "board20": r.get("board20"),
             "open": opn,
             "pre_close": pre_close,
             "entry_source": entry_source,
@@ -975,9 +1091,10 @@ def main() -> None:
         date_iso,
         trade_days,
     )
+    candidates = [_annotate_recommendation_score(c, mode_confidence) for c in candidates]
     for c in candidates:
         mode = str(c.get("mode") or "")
-        confidence = _num(mode_confidence.get(mode, {}).get("confidence", 50.0))
+        confidence = _num(c.get("mode_confidence"))
         premium_pct, cap_pct, exec_cap_pct = _basket_params(mode, confidence, args.basket_premium_pct)
         price_limit_pct = _price_limit_pct(c.get("code"), c.get("name"))
         scaled_exec_cap_pct = _scale_exec_cap_pct(exec_cap_pct, price_limit_pct)
@@ -1008,6 +1125,7 @@ def main() -> None:
     # lift (NOT a proven return engine). Never blocks the recommendation.
     kp_stars: list[dict] = []
     vb_stars: list[dict] = []
+    mode_stars: list[dict] = []
     if not args.no_kronos:
         try:
             import importlib.util as _ilu
@@ -1020,12 +1138,13 @@ def main() -> None:
 
             _load("secondary_screen").score(candidates, client, date_iso, top_n=max(1, args.kronos_top_n))
             kp_stars = [c for c in candidates if c.get("kp_star")]
-            # Capture forward signals (auction imbalance) + A/B variant B + snapshot
+            # Capture forward signals (auction imbalance) + A/B/C tracked variants + snapshot
             try:
                 _load("capture_signals").capture(
                     candidates, client, date_iso,
                     is_live=_is_today_live_run(date_iso), top_n=max(1, args.kronos_top_n))
                 vb_stars = [c for c in candidates if c.get("vb_star")]
+                mode_stars = [c for c in candidates if c.get("mode_star")]
             except Exception as e:
                 print(f"[signal capture skipped: {type(e).__name__}: {e}]", file=sys.stderr)
         except Exception as e:  # missing model / torch / API — degrade gracefully
@@ -1102,6 +1221,18 @@ def main() -> None:
         L.append("- **quality_tag**：`normal`=primary≥150；`weak_primary`=primary<150；`p_tail_warning`=P 极弱尾部。当前仅提示/沉淀，不在推荐阶段硬过滤。")
         L.append("- **竞价 forced-contrast**：在 K 幸存者中，若非★候选竞价质量显著优于★内最弱竞价者，则换入以制造可验证 A/B 对照；否则 ★B 与 ★ 保持一致。")
         L.append("- **★ = A/B 基线**（纯 K→P，无竞价）。两套每日快照入 `output/live/signal_snapshots.jsonl`；`forward_eval.py --live-only` 累积真实收益后裁决竞价 tiebreak 是否带来增益（前瞻验证，历史不可回测）。")
+        L.append("")
+    if mode_stars:
+        L.append("## ★M K生存池内模式轮动影子候选 — forward-test only")
+        L.append("")
+        L.append("| ★M | code | name | mode | rank | mode_conf | primary | Pscore |")
+        L.append("|---|---|---|---|---:|---:|---:|---:|")
+        for c in sorted(mode_stars, key=lambda x: int(_num(x.get("mode_rank")) or 9999)):
+            q = ensure_quality_fields(c)
+            L.append(f"| {c.get('mode_rank','')} | {c['code']} | {c.get('name','')} | {c.get('mode','')} | "
+                     f"{_num(c.get('rank_score')):.1f} | {_num(c.get('mode_confidence')):.1f} | "
+                     f"{_num(q.get('primary_score')):.1f} | {_num(c.get('p_score')):+.3f} |")
+        L.append("- **★M 当前不参与默认 Book B 买入**：它只进入 `signal_snapshots.jsonl -> forward_eval.py -> continuous_optimize.py`，等研究守门和 §10 人工门通过后再考虑升格。")
         L.append("")
     if top_sentiment:
         L.append("## Top 舆情摘要（只记录，不参与今日决策）")

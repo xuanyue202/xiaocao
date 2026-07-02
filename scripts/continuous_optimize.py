@@ -10,7 +10,7 @@ REJECTED tells the operator the edge has not (yet) survived — with no one
 re-deriving the checks by hand. (On today's data this will faithfully reproduce
 STATE.md's "marginal, not robustly significant" conclusion.)
 
-    python3 scripts/continuous_optimize.py                 # judge A (kp_star) & B (vb_star)
+    python3 scripts/continuous_optimize.py                 # judge A/B/C tracked variants
     python3 scripts/continuous_optimize.py --record         # also append to the ledger
     python3 scripts/continuous_optimize.py --n-tried 6      # honest multiple-comparison count
 """
@@ -32,6 +32,11 @@ TRAIN = ROOT / "output" / "live" / "training_rows.parquet"
 VARIANTS = {
     "kp_star": ("A_kp_star", "K->P top picks (variant A) beats take-all"),
     "vb_star": ("B_vb_star", "K->P + auction tiebreak (variant B) beats take-all"),
+    "mode_star": ("C_mode_rotation_k_survivors", "K survivors + mode-rotation rank (variant C) beats take-all"),
+    "qibao_benchmark_star": (
+        "D_qibao_benchmark_paper_promoted",
+        "raw-qibao benchmark paper-promoted modes (variant D) beat take-all",
+    ),
 }
 
 

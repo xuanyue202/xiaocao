@@ -1,0 +1,53 @@
+version: 1
+family: qibao_raw
+authority: 0
+source: qibao pool sorted by xiaocaoJSSB after the 09:25 signal snapshot
+contract:
+  purpose: benchmark/watchlist/research cohort layer between raw pools and emitted strategy
+  must_not:
+    - feed paper trading directly unless a named sub-bucket is promoted by research_run PASS and the section 10 human gate
+    - auto-tune strategy params
+    - be treated as a live buy signal without research_run PASS and the section 10 human gate
+  same_day_signal: post-09:25 Xiaocao signal membership is a fixed same-day fact
+  promoted_paper_only:
+    date: 2026-06-30
+    scope: Book B / simulation only; no real-capital authority
+    modes:
+      - "高开标杆起爆: qibao_raw_top10_elec20_high_open_watch with 6 < open_pct <= 10"
+      - "强攻标杆起爆: qibao_raw_top10_elec20_limitlike_watch"
+cohorts:
+  - id: qibao_raw_top10_elec20_buyable
+    layer: benchmark
+    filters:
+      - raw_qibao_rank <= 10
+      - electronic industry or 20cm board
+      - red entity
+      - open_pct <= 6
+      - not near 20cm limit and entity_pct < 9.5
+    current_use: eligible for the current 标杆短线起爆 buyable branch
+    evidence: XH-037 PASS, 2025-07-01..2026-06-29, open to next close
+  - id: qibao_raw_top10_elec20_high_open_watch
+    layer: watchlist
+    filters:
+      - raw_qibao_rank <= 10
+      - electronic industry or 20cm board
+      - red entity
+      - open_pct > 6
+      - not near 20cm limit and entity_pct < 9.5
+    current_use: open 6%-10% sub-bucket promoted to paper-only emitted mode 高开标杆起爆; open >10% remains watchlist
+    evidence:
+      daily_open_to_next_close: cache-only PASS, 2025-07-01..2026-06-29, n=72 trades, spread +3.50pp
+      fill_aware: cache/API-backfilled minute PASS, 2025-07-01..2026-06-28, n=110 trades / 82 days, 09:30-09:31 daily-open-scaled limit-touch fill -> next minute close, spread +2.96pp, n_tried=8
+      caution: promotion is paper-only and limited to 6%-10%; open >10% remains watchlist
+  - id: qibao_raw_top10_elec20_limitlike_watch
+    layer: watchlist
+    filters:
+      - raw_qibao_rank <= 10
+      - electronic industry or 20cm board
+      - red entity
+      - near 20cm limit or entity_pct >= 9.5
+    current_use: promoted to paper-only emitted mode 强攻标杆起爆 after section 10 human gate
+    evidence:
+      daily_open_to_next_close: cache-only PASS, 2025-07-01..2026-06-29, n=155 trades, spread +12.10pp
+      fill_aware: cache/API-backfilled minute PASS, 2025-07-01..2026-06-28, n=223 trades / 141 days, 09:30-09:31 daily-open-scaled limit-touch fill -> next minute close, spread +11.24pp, n_tried=8
+      caution: price-touch fill is not queue-depth proof for one-price limit-up names; promotion is paper-only, not real-capital authority

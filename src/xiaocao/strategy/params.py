@@ -44,6 +44,21 @@ REGISTRY: dict[str, Param] = {
     "QUALIFIED_JW": Param("QUALIFIED_JW", 150, "strategy.rules", "qualified tier; 低吸/方向 base gate", (100, 200, 25)),
     "DIRECTION_DISCOUNT": Param("DIRECTION_DISCOUNT", 1.3, "strategy.rules",
                                 "板块方向共振时阈值除以此 (threshold/1.3)", (1.1, 1.6, 0.1)),
+    "RAW_QIBAO_RANK_TOP_N": Param(
+        "RAW_QIBAO_RANK_TOP_N", 10, "strategy.rules",
+        "raw qibao rank 标杆分支: 取小草红盘起爆 raw rank 前 N; XH-037 PASS 2025-07-01..2026-06-29",
+        (5, 20, 1),
+    ),
+    "RAW_QIBAO_OPEN_PCT_CAP": Param(
+        "RAW_QIBAO_OPEN_PCT_CAP", 6.0, "strategy.rules",
+        "raw qibao rank 标杆分支: 可控开幅上限; XH-037 PASS 2025-07-01..2026-06-29",
+        (3.0, 8.0, 0.5),
+    ),
+    "RAW_QIBAO_HIGH_OPEN_PCT_CAP": Param(
+        "RAW_QIBAO_HIGH_OPEN_PCT_CAP", 10.0, "strategy.rules",
+        "raw qibao rank 高开标杆分支: open 6-10; XH-037 follow-up PASS + 2026-06-30 human gate for paper-only",
+        (8.0, 12.0, 0.5),
+    ),
     # --- 二级筛选 quality governor (quality_governor.py) -------------------- #
     "PRIMARY_THRESHOLD": Param("PRIMARY_THRESHOLD", 150.0, "kronos_screen.quality_governor",
                                "K->P primary_score 下限; below => weak_primary (shadow default)", (100.0, 200.0, 10.0)),
@@ -61,35 +76,30 @@ REGISTRY: dict[str, Param] = {
 }
 
 
-# --- Book T (趋势主线) — PROPOSED, NOT in the validated SSOT ----------------- #
-# Mirrors the candidate↔verdict two-tier discipline at the PARAM layer: REGISTRY
-# above is the *verdict* tier (validated-live; a value changes only after a PASS).
-# BOOK_T_PROPOSED is the *candidate* tier for the still-unbuilt 趋势 book — it is
-# consumed by NOTHING, has ZERO authority over any behavior, and exists only so
-# the design (docs/TREND_BOOK_DESIGN.md) has a concrete home. Defaults come from
-# this session's XH-018 research (scripts/research_trend_longhold.py) on ONE
-# bull-market sample (+6~20pp vs beta at quarterly rebalance) — priors, not edges.
-# A param graduates into REGISTRY ONLY after a trend_guards (compounded / max-dd /
-# turnover / vs-beta) OOS PASS on a non-bull regime + the §10 human gate. Until
-# then: frozen, unused, untrusted. See docs/OPERATING_CONTRACT.md §2/§10,
-# docs/FLYWHEEL.md (candidate→verdict), kronos_screen/HYPOTHESES.jsonl (XH-018).
+# --- Book T (趋势主线) — paper-only simulation defaults ---------------------- #
+# These frozen values drive the Book-T PAPER simulator only. They are not evidence
+# that a trend-selection edge has passed; the edge still needs trend_guards
+# (compounded / max-dd / turnover / vs-beta) + §10 before it can graduate into
+# the validated live SSOT above. The point of consuming them now is to start
+# accumulating a real, separate trend-book ledger without contaminating Book B or
+# continuous_optimize.
 BOOK_T_PROPOSED: dict[str, Param] = {
     "TREND_BUDGET_RATIO": Param(
-        "TREND_BUDGET_RATIO", 0.30, "trend.allocator (UNBUILT)",
-        "PROPOSED: equity share allocated to Book T vs 短线; allocator not built", (0.0, 0.5, 0.1)),
+        "TREND_BUDGET_RATIO", 0.30, "trend.allocator (paper-only)",
+        "PAPER: equity share allocated to Book T vs 短线; not a validated edge", (0.0, 0.5, 0.1)),
     "TREND_LOOKBACK_L": Param(
-        "TREND_LOOKBACK_L", 60, "trend.mainline_signal (UNBUILT)",
-        "PROPOSED: trailing trend-strength lookback (trading days); XH-018 best L=60-120", (20, 120, 20)),
+        "TREND_LOOKBACK_L", 60, "trend.mainline_signal (paper-only)",
+        "PAPER: trailing trend-strength lookback (trading days); XH-018 prior L=60-120", (20, 120, 20)),
     "TREND_REBALANCE_R": Param(
-        "TREND_REBALANCE_R", 60, "trend.allocator (UNBUILT)",
-        "PROPOSED: rebalance/hold horizon (days); the +6~20pp alpha lives at R>=60 (long-hold), "
+        "TREND_REBALANCE_R", 60, "trend.allocator (paper-only)",
+        "PAPER: rebalance/hold horizon (days); the +6~20pp alpha lived at R>=60 (long-hold), "
         "R=20 churn ~0", (20, 120, 20)),
     "TREND_TOP_M": Param(
-        "TREND_TOP_M", 3, "trend.trend_rules (UNBUILT)",
-        "PROPOSED: # mainline big-caps held (小草 平铺 2-3 最强)", (2, 5, 1)),
+        "TREND_TOP_M", 3, "trend.trend_rules (paper-only)",
+        "PAPER: # mainline big-caps held (小草 平铺 2-3 最强)", (2, 5, 1)),
     "TREND_TRAIL_DD": Param(
-        "TREND_TRAIL_DD", 12.0, "trend.exit_policy (UNBUILT)",
-        "PROPOSED: wider soft trailing dd%% for 方向还在就扛; profile TBD, MUST stay disjoint from "
+        "TREND_TRAIL_DD", 12.0, "trend.exit_policy (paper-only)",
+        "PAPER: wider trailing dd%%; MUST stay disjoint from "
         "the short-line strong-hold predicate", (8.0, 20.0, 2.0)),
 }
 
@@ -108,9 +118,18 @@ SUPER_JW = REGISTRY["SUPER_JW"].value
 STRONG_JW = REGISTRY["STRONG_JW"].value
 QUALIFIED_JW = REGISTRY["QUALIFIED_JW"].value
 DIRECTION_DISCOUNT = REGISTRY["DIRECTION_DISCOUNT"].value
+RAW_QIBAO_RANK_TOP_N = REGISTRY["RAW_QIBAO_RANK_TOP_N"].value
+RAW_QIBAO_OPEN_PCT_CAP = REGISTRY["RAW_QIBAO_OPEN_PCT_CAP"].value
+RAW_QIBAO_HIGH_OPEN_PCT_CAP = REGISTRY["RAW_QIBAO_HIGH_OPEN_PCT_CAP"].value
 PRIMARY_THRESHOLD = REGISTRY["PRIMARY_THRESHOLD"].value
 PROFILE_DD = REGISTRY["PROFILE_DD"].value
 PROFILE_HARD_DD = REGISTRY["PROFILE_HARD_DD"].value
 DEPLOY_RATIO = REGISTRY["DEPLOY_RATIO"].value
 MAX_TOTAL_EXPOSURE_RATIO = REGISTRY["MAX_TOTAL_EXPOSURE_RATIO"].value
 FEE_RATE = REGISTRY["FEE_RATE"].value
+
+TREND_BUDGET_RATIO = BOOK_T_PROPOSED["TREND_BUDGET_RATIO"].value
+TREND_LOOKBACK_L = BOOK_T_PROPOSED["TREND_LOOKBACK_L"].value
+TREND_REBALANCE_R = BOOK_T_PROPOSED["TREND_REBALANCE_R"].value
+TREND_TOP_M = BOOK_T_PROPOSED["TREND_TOP_M"].value
+TREND_TRAIL_DD = BOOK_T_PROPOSED["TREND_TRAIL_DD"].value

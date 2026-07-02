@@ -24,6 +24,9 @@ def test_rewired_consumers_match_registry():
     assert (rules.SUPER_JW, rules.STRONG_JW, rules.QUALIFIED_JW) == (
         params.SUPER_JW, params.STRONG_JW, params.QUALIFIED_JW)
     assert rules.DIRECTION_DISCOUNT == params.DIRECTION_DISCOUNT
+    assert rules.RAW_QIBAO_RANK_TOP_N == params.RAW_QIBAO_RANK_TOP_N
+    assert rules.RAW_QIBAO_OPEN_PCT_CAP == params.RAW_QIBAO_OPEN_PCT_CAP
+    assert rules.RAW_QIBAO_HIGH_OPEN_PCT_CAP == params.RAW_QIBAO_HIGH_OPEN_PCT_CAP
     assert exit_policy.PROFILE_DD is params.PROFILE_DD
     assert exit_policy.PROFILE_HARD_DD is params.PROFILE_HARD_DD
 
@@ -53,6 +56,8 @@ def test_values_are_unchanged_from_validated_baseline():
     # Pin the validated values so a future edit to the registry is a conscious act.
     assert params.SUPER_JW == 300 and params.STRONG_JW == 200 and params.QUALIFIED_JW == 150
     assert params.DIRECTION_DISCOUNT == 1.3
+    assert params.RAW_QIBAO_RANK_TOP_N == 10 and params.RAW_QIBAO_OPEN_PCT_CAP == 6.0
+    assert params.RAW_QIBAO_HIGH_OPEN_PCT_CAP == 10.0
     assert params.PROFILE_DD == {"v5": 2.0, "v6": 0.5}
     assert params.PROFILE_HARD_DD == {"v5": 8.0, "v6": 8.0}
     assert params.DEPLOY_RATIO == 0.5 and params.MAX_TOTAL_EXPOSURE_RATIO == 0.67
@@ -69,11 +74,11 @@ def test_helpers():
     assert params.as_dict()["QUALIFIED_JW"] == 150
 
 
-def test_book_t_params_are_proposed_not_validated():
-    # Book T params are the *candidate* tier: frozen, disjoint from the validated
-    # REGISTRY, and consumed by nothing. They must NOT leak into the live SSOT
-    # (REGISTRY / as_dict) until a trend_guards OOS PASS + §10 gate promotes them —
-    # the param-layer mirror of the candidate↔verdict hypothesis discipline.
+def test_book_t_params_are_paper_only_not_validated():
+    # Book T params are the paper-simulation tier: frozen and disjoint from the
+    # validated REGISTRY. They must NOT leak into the live SSOT (REGISTRY /
+    # as_dict) until a trend_guards OOS PASS + §10 gate promotes them.
     assert set(params.BOOK_T_PROPOSED) & set(params.REGISTRY) == set()
     assert all(p.frozen for p in params.BOOK_T_PROPOSED.values())
     assert not (set(params.BOOK_T_PROPOSED) & set(params.as_dict()))
+    assert params.TREND_TOP_M == params.BOOK_T_PROPOSED["TREND_TOP_M"].value

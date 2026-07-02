@@ -5,7 +5,25 @@ from typing import Any
 # Thresholds are defined once in the parameter registry (the frozen vs tunable
 # SSOT); imported here so rules.py has a single authoritative source. Values are
 # unchanged — see src/xiaocao/strategy/params.py and docs/OPERATING_CONTRACT.md.
-from xiaocao.strategy.params import DIRECTION_DISCOUNT, QUALIFIED_JW, STRONG_JW, SUPER_JW  # noqa: F401
+from xiaocao.strategy.params import (  # noqa: F401
+    DIRECTION_DISCOUNT,
+    RAW_QIBAO_HIGH_OPEN_PCT_CAP,
+    QUALIFIED_JW,
+    RAW_QIBAO_OPEN_PCT_CAP,
+    RAW_QIBAO_RANK_TOP_N,
+    STRONG_JW,
+    SUPER_JW,
+)
+
+
+RAW_QIBAO_BENCHMARK_MODE = "标杆短线起爆"
+RAW_QIBAO_HIGH_OPEN_MODE = "高开标杆起爆"
+RAW_QIBAO_LIMITLIKE_MODE = "强攻标杆起爆"
+RAW_QIBAO_BENCHMARK_MODES = {
+    RAW_QIBAO_BENCHMARK_MODE,
+    RAW_QIBAO_HIGH_OPEN_MODE,
+    RAW_QIBAO_LIMITLIKE_MODE,
+}
 
 
 def pick_big_ones(items: list[dict[str, Any]], upper_num: int = 5) -> list[dict[str, Any]]:
@@ -98,49 +116,158 @@ def check_qibao(
     much. Buy point is when the stock has just turned positive ("红盘") but is
     not yet stretched (低涨幅 / 低位卡位). 0419: "9:31-9:35 排名上来但涨幅还不高的".
 
-    Rules emit two variants:
+    Rules emit five variants:
       - 红盘起爆主攻 (jssb ≥ STRONG_JW=200, currently red, pctChange in (0, 4]):
         algorithm-confirmed core attack candidate, in the 0-4% sweet spot
       - 方向红盘起爆 (jssb ≥ QUALIFIED_JW=150 with direction support, pctChange in (0, 3]):
         weaker score but direction共振, tighter pct cap
+      - 标杆短线起爆 (raw qibao rank top10 + 电子/20cm + open≤6 + red + non-limit):
+        XH-037 PASS cohort. This covers 小草复盘里的趋势尾声/短线标杆股 where
+        absolute EOD jssb decays but raw qibao rank + board/industry context
+        carried the edge.
+      - 高开标杆起爆 (same raw-qibao base, open in (6,10], non-limitlike):
+        2026-06-30 human-gated paper-only promotion of the high-open watch
+        sub-bucket after fill-aware PASS evidence.
+      - 强攻标杆起爆 (same raw-qibao base, near-limit/long-entity):
+        2026-06-30 human-gated paper-only promotion of the limitlike watch
+        bucket. This intentionally bypasses the strict jssb mode's pct/limit-up
+        guard only inside the raw top10 electronic/20cm cohort.
 
-    Both modes filter out:
-      - already 涨停 (isLimitUp == 1)
-      - jssb floor: bail out of the sorted iteration once below QUALIFIED_JW/1.3
-        (per the dixi pattern — input is sorted by jssb descending)
-      - negative pctChange (not yet 红盘)
+    All variants filter out already 涨停 and non-red rows. The strict jssb modes
+    still stop after the top-N raw-rank prefix once jssb falls below
+    QUALIFIED_JW/1.3; 标杆短线起爆 deliberately ignores that old absolute jssb
+    floor inside its validated top-N cohort.
     """
     output = []
-    for detail in details:
+    for rank, detail in enumerate(details, start=1):
         focus = _direction_obj(detail, picked_block, picked_category)
-        if _num(detail.get("jssb")) < QUALIFIED_JW / DIRECTION_DISCOUNT:
+        # Strict qibao can stop once jssb falls below the discounted floor, but
+        # the validated raw-rank branch must still inspect the top-N prefix.
+        if rank > RAW_QIBAO_RANK_TOP_N and _num(detail.get("jssb")) < QUALIFIED_JW / DIRECTION_DISCOUNT:
             break
-        if _num(detail.get("isLimitUp")) == 1:
-            continue
         pct = _num(
             detail.get("entityPctChangeRate")
             or detail.get("pctChangeRate")
             or detail.get("pctChange")
         )
-        if pct <= 0 or pct >= 9.5:
-            continue  # not 红盘 yet, OR already at 涨停 (≥+9.5%)
-        # 红盘起爆主攻: high jssb + 0 < pct ≤ 4
-        if pct <= 4.0 and _compare_score(detail, "jssb", STRONG_JW, focus):
+        open_pct = _num(detail.get("openPctChangeRate") or detail.get("openPctChange"))
+        # Strict jssb modes keep the old anti-chase guard. The raw benchmark
+        # modes below are handled separately so the human-gated strong-attack
+        # cohort can be paper-traded without weakening the older modes.
+        if _num(detail.get("isLimitUp")) != 1 and 0 < pct < 9.5:
+            # 红盘起爆主攻: high jssb + 0 < pct ≤ 4
+            if pct <= 4.0 and _compare_score(detail, "jssb", STRONG_JW, focus):
+                output.append(_signal(
+                    date, "红盘起爆主攻", detail, focus,
+                    "高分起爆 + 红盘 + 涨幅可控",
+                ))
+            # 方向红盘起爆: lower jssb + direction共振 + tighter pct
+            elif (
+                pct <= 3.0
+                and focus["direction"]
+                and _compare_score(detail, "jssb", QUALIFIED_JW, focus)
+            ):
+                output.append(_signal(
+                    date, "方向红盘起爆", detail, focus,
+                    "方向红盘起爆 + 涨幅低位",
+                ))
+        benchmark = _raw_qibao_benchmark_signal(detail, rank, open_pct)
+        if benchmark is not None:
+            mode, kind, reason = benchmark
+            enriched = _enrich_raw_qibao_benchmark(detail, rank, kind)
             output.append(_signal(
-                date, "红盘起爆主攻", detail, focus,
-                "高分起爆 + 红盘 + 涨幅可控",
-            ))
-        # 方向红盘起爆: lower jssb + direction共振 + tighter pct
-        elif (
-            pct <= 3.0
-            and focus["direction"]
-            and _compare_score(detail, "jssb", QUALIFIED_JW, focus)
-        ):
-            output.append(_signal(
-                date, "方向红盘起爆", detail, focus,
-                "方向红盘起爆 + 涨幅低位",
+                date, mode, enriched, focus, reason,
             ))
     return output
+
+
+def _raw_qibao_benchmark_signal(
+    detail: dict[str, Any],
+    rank: int,
+    open_pct: float,
+) -> tuple[str, str, str] | None:
+    if rank > RAW_QIBAO_RANK_TOP_N:
+        return None
+    if not _raw_qibao_base_eligible(detail):
+        return None
+    if _is_raw_qibao_limitlike(detail):
+        return (
+            RAW_QIBAO_LIMITLIKE_MODE,
+            "raw_top10_elec20_limitlike",
+            "raw qibao rank前10 + 电子/20cm + 强攻/长实体标杆",
+        )
+    if open_pct > RAW_QIBAO_OPEN_PCT_CAP:
+        if open_pct <= RAW_QIBAO_HIGH_OPEN_PCT_CAP:
+            return (
+                RAW_QIBAO_HIGH_OPEN_MODE,
+                "raw_top10_elec20_high_open_6_10",
+                "raw qibao rank前10 + 电子/20cm + 高开6-10%标杆",
+            )
+        return None
+    return (
+        RAW_QIBAO_BENCHMARK_MODE,
+        "raw_top10_elec20_open_le6_red_notlimit",
+        "raw qibao rank前10 + 电子/20cm + 红盘非涨停 + 开幅可控",
+    )
+
+
+def _raw_qibao_base_eligible(detail: dict[str, Any]) -> bool:
+    return _raw_qibao_red(detail) and (_is_electronic_industry(detail) or _is_20cm_stock(detail))
+
+
+def _raw_qibao_red(detail: dict[str, Any]) -> bool:
+    return _entity_pct(detail) > 0 or _total_pct(detail) > 0
+
+
+def _is_raw_qibao_limitlike(detail: dict[str, Any]) -> bool:
+    return (
+        (_is_20cm_stock(detail) and (_total_pct(detail) >= 18.0 or _num(detail.get("limitupdays")) > 0))
+        or _entity_pct(detail) >= 9.5
+    )
+
+
+def _enrich_raw_qibao_benchmark(detail: dict[str, Any], rank: int, kind: str) -> dict[str, Any]:
+    enriched = dict(detail)
+    enriched["rawQibaoRank"] = rank
+    enriched["qibaoRankScore"] = _raw_qibao_rank_score(rank)
+    enriched["qibaoBenchmarkKind"] = kind
+    enriched["qibaoBenchmarkLayer"] = "paper_buy"
+    enriched["industryElectronic"] = _is_electronic_industry(detail)
+    enriched["board20"] = _is_20cm_stock(detail)
+    return enriched
+
+
+def _raw_qibao_rank_score(rank: int) -> float:
+    if rank <= 0:
+        return 0.0
+    return max(120.0, 240.0 - (rank - 1) * 12.0)
+
+
+def _is_20cm_stock(detail: dict[str, Any]) -> bool:
+    code = str(detail.get("code") or detail.get("stockCode") or detail.get("stockId") or "")
+    return code.startswith(("300", "301", "688"))
+
+
+def _entity_pct(detail: dict[str, Any]) -> float:
+    if detail.get("entityPctChangeRate") not in (None, ""):
+        return _num(detail.get("entityPctChangeRate"))
+    return _total_pct(detail)
+
+
+def _total_pct(detail: dict[str, Any]) -> float:
+    return _num(detail.get("pctChangeRate") or detail.get("pctChange") or detail.get("entityPctChangeRate"))
+
+
+def _is_electronic_industry(detail: dict[str, Any]) -> bool:
+    items = detail.get("excIndustryStockList") or []
+    if not isinstance(items, list):
+        return False
+    for item in items:
+        if not isinstance(item, dict):
+            continue
+        if item.get("code") == "T08.ZHBK" or item.get("codeName") == "电子":
+            return True
+    return False
 
 
 def _compare_score(detail: dict[str, Any], score_field: str, threshold: float, focus: dict[str, Any]) -> bool:
@@ -211,6 +338,12 @@ def _signal(date: str, mode: str, detail: dict[str, Any], focus: dict[str, Any],
         "cjs": detail.get("cjs"),
         "jsjl": detail.get("jsjl"),
         "jssb": detail.get("jssb"),
+        "rawQibaoRank": detail.get("rawQibaoRank"),
+        "qibaoRankScore": detail.get("qibaoRankScore"),
+        "qibaoBenchmarkKind": detail.get("qibaoBenchmarkKind"),
+        "qibaoBenchmarkLayer": detail.get("qibaoBenchmarkLayer"),
+        "industryElectronic": detail.get("industryElectronic"),
+        "board20": detail.get("board20"),
         "pctChange": detail.get("entityPctChangeRate") or detail.get("pctChangeRate") or detail.get("pctChange"),
         "openPctChange": detail.get("openPctChangeRate") or detail.get("openPctChange"),
         "direction": focus["direction"],
@@ -245,5 +378,3 @@ def _num(value: Any) -> float:
         return float(value)
     except (TypeError, ValueError):
         return 0.0
-
-

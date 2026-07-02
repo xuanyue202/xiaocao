@@ -257,6 +257,15 @@ MODE_PROFILE: dict[str, ModeProfile] = {
     "方向红盘起爆": ModeProfile(
         "continuation", wants_reward="high", wants_risk="high", wants_continuity="high"
     ),
+    "标杆短线起爆": ModeProfile(
+        "continuation", wants_reward="high", wants_risk="high", wants_continuity="high"
+    ),
+    "高开标杆起爆": ModeProfile(
+        "continuation", wants_reward="high", wants_risk="very_high", wants_continuity="high"
+    ),
+    "强攻标杆起爆": ModeProfile(
+        "continuation", wants_reward="very_high", wants_risk="very_high", wants_continuity="high"
+    ),
     # 断板 (绿/红/首红) — rebound bets, gated by 断板亏钱效应 (v3.3 default)
     "绿断低吸": ModeProfile(
         "rebound", wants_reward="mid", wants_risk="low", wants_continuity="any",
@@ -329,6 +338,18 @@ MODE_PROFILE_V3_4: dict[str, ModeProfile] = {
     "方向红盘起爆": ModeProfile(
         "continuation", wants_reward="high", wants_risk="high", wants_continuity="high",
         wants_momentum="high", wants_limitup_density="high",
+    ),
+    "标杆短线起爆": ModeProfile(
+        "continuation", wants_reward="high", wants_risk="high", wants_continuity="high",
+        wants_momentum="high", wants_limitup_density="high",
+    ),
+    "高开标杆起爆": ModeProfile(
+        "continuation", wants_reward="high", wants_risk="very_high", wants_continuity="high",
+        wants_momentum="high", wants_limitup_density="high",
+    ),
+    "强攻标杆起爆": ModeProfile(
+        "continuation", wants_reward="very_high", wants_risk="very_high", wants_continuity="high",
+        wants_momentum="very_high", wants_limitup_density="high",
     ),
     "绿断低吸": ModeProfile(
         "rebound", wants_reward="mid", wants_risk="low", wants_continuity="any",

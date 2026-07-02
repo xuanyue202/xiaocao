@@ -1,5 +1,6 @@
-"""Join captured live snapshots with realized next-close returns -> (1) A/B
-verdict (variant A = K->P vs variant B = K->P + auction imbalance vs take-all),
+"""Join captured live snapshots with realized next-close returns -> (1) A/B/C/D
+verdict (A = K->P, B = K->P + auction imbalance, C = K survivors + mode
+rotation rank, D = qibao benchmark modes vs take-all),
 (2) accumulated labeled training rows for future models.
 
 Run any time after the outcome day's close is available (T+1+). Idempotent.
@@ -18,6 +19,38 @@ SNAP = Path("output/live/signal_snapshots.jsonl")
 TRAIN = Path("output/live/training_rows.parquet")
 RECONSTRUCTED_DAILY = Path("output/live/daily_reconstructed.jsonl")
 DEFAULT_FEE_RATE = 0.0001
+QIBAO_BENCHMARK_MODES = {"标杆短线起爆", "高开标杆起爆", "强攻标杆起爆"}
+REQUIRED_TRAINING_COLUMNS = {
+    "book": "B",
+    "kp_star": False,
+    "vb_star": False,
+    "mode_star": False,
+    "mode_rank": pd.NA,
+    "mode_score": pd.NA,
+    "mode_confidence_source": pd.NA,
+    "mode_confidence_reason": pd.NA,
+    "mode_recent_avg": pd.NA,
+    "mode_recent_n": pd.NA,
+    "is_main_line": pd.NA,
+    "is_big_cap": pd.NA,
+    "direction": pd.NA,
+    "direction_rank": pd.NA,
+    "category_rank": pd.NA,
+    "regime": pd.NA,
+    "macro_focus_score": pd.NA,
+    "macro_focus_reason": pd.NA,
+    "open_risk_penalty": pd.NA,
+    "qibaoBenchmarkKind": pd.NA,
+    "qibaoBenchmarkLayer": pd.NA,
+    "rawQibaoRank": pd.NA,
+    "qibaoRankScore": pd.NA,
+    "industryElectronic": pd.NA,
+    "board20": pd.NA,
+    "reason": pd.NA,
+    "excIndustryCode": pd.NA,
+    "blockCodeList": pd.NA,
+    "blockCategoryCodeList": pd.NA,
+}
 
 
 def _normal_date(value) -> str | None:
@@ -58,6 +91,40 @@ def _load_reconstructed_daily(path: Path = RECONSTRUCTED_DAILY) -> dict[str, dic
     return out
 
 
+def qibao_benchmark_mask(df: pd.DataFrame) -> pd.Series:
+    layer = (
+        df["qibaoBenchmarkLayer"].fillna("").astype(str)
+        if "qibaoBenchmarkLayer" in df.columns
+        else pd.Series([""] * len(df), index=df.index)
+    )
+    mode = (
+        df["mode"].fillna("").astype(str)
+        if "mode" in df.columns
+        else pd.Series([""] * len(df), index=df.index)
+    )
+    return (layer == "paper_buy") | mode.isin(QIBAO_BENCHMARK_MODES)
+
+
+def ensure_training_schema(df: pd.DataFrame) -> pd.DataFrame:
+    out = df.copy()
+    for col, default in REQUIRED_TRAINING_COLUMNS.items():
+        if col not in out.columns:
+            out[col] = default
+    out["qibao_benchmark_star"] = qibao_benchmark_mask(out)
+    return out
+
+
+def day_mean(scored: pd.DataFrame, ret_col: str, mask_col: str | None = None) -> np.ndarray:
+    per = []
+    if mask_col and mask_col not in scored.columns:
+        return np.array(per)
+    for _, g in scored.groupby("date"):
+        sel = g[g[mask_col] == True] if mask_col else g  # noqa: E712
+        if len(sel):
+            per.append(sel[ret_col].mean())
+    return np.array(per)
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--snap", default=str(SNAP))
@@ -69,7 +136,15 @@ def main():
     if not Path(a.snap).exists():
         print("no snapshots yet:", a.snap); return
     recs = [json.loads(l) for l in open(a.snap, encoding="utf-8") if l.strip()]
-    df = pd.DataFrame(recs).drop_duplicates(["date", "code"], keep="last")
+    df = pd.DataFrame(recs)
+    if "book" not in df.columns:
+        df["book"] = "B"
+    df["book"] = df["book"].fillna("B").astype(str)
+    df = df.drop_duplicates(["date", "code", "book"], keep="last")
+    # The A/B/C/D continuous-optimization lane is Book B only. Book T uses
+    # trend_guards / trend_optimize and must not be laundered through per-trade
+    # short-line metrics.
+    df = df[df["book"] == "B"].copy()
     if a.live_only:
         df = df[df["is_live"] == True]
     if df.empty:
@@ -120,7 +195,7 @@ def main():
         rets.get((r.date, r.code), (None, None))[1] for r in df.itertuples()
     ]
     df["fee_rate"] = a.fee_rate
-    scored = df[df["realized_ret"].notna()].copy()
+    scored = ensure_training_schema(df[df["realized_ret"].notna()].copy())
     print(f"snapshots={len(df)}  scored(outcome known)={len(scored)}  pending={len(df)-len(scored)}")
     if scored.empty:
         print("no outcomes available yet — re-run after T+1 close."); return
@@ -130,23 +205,24 @@ def main():
     scored.to_parquet(TRAIN, index=False)
     print(f"accumulated {len(scored)} labeled training rows -> {TRAIN}")
 
-    # A/B by day
-    def day_mean(mask_col, ret_col):
-        per = []
-        for d, g in scored.groupby("date"):
-            sel = g[g[mask_col] == True] if mask_col else g
-            if len(sel):
-                per.append(sel[ret_col].mean())
-        return np.array(per)
-    ta = day_mean(None, "net_realized_ret")
-    A = day_mean("kp_star", "net_realized_ret")
-    B = day_mean("vb_star", "net_realized_ret")
-    print(f"\nA/B over {scored['date'].nunique()} live days ({scored.date.min()}..{scored.date.max()}):")
+    # A/B/C/D by day
+    ta = day_mean(scored, "net_realized_ret")
+    A = day_mean(scored, "net_realized_ret", "kp_star")
+    B = day_mean(scored, "net_realized_ret", "vb_star")
+    C = day_mean(scored, "net_realized_ret", "mode_star")
+    D = day_mean(scored, "net_realized_ret", "qibao_benchmark_star")
+    print(f"\nA/B/C/D over {scored['date'].nunique()} live days ({scored.date.min()}..{scored.date.max()}):")
     print(f"  net of fees   : one-way fee={a.fee_rate:.4%}")
     print(f"  take-all      : {ta.mean():+.2f}%/day  win {(scored.net_realized_ret>0).mean()*100:.0f}%")
     sa = scored[scored.kp_star == True]; sb = scored[scored.vb_star == True]
     print(f"  A  K->P        : {A.mean():+.2f}%/day  win {(sa.net_realized_ret>0).mean()*100:.0f}%  (n={len(sa)})")
     print(f"  B  K->P+auction: {B.mean():+.2f}%/day  win {(sb.net_realized_ret>0).mean()*100:.0f}%  (n={len(sb)})")
+    if "mode_star" in scored.columns and len(C):
+        sc = scored[scored.mode_star == True]
+        print(f"  C  K->mode-rank: {C.mean():+.2f}%/day  win {(sc.net_realized_ret>0).mean()*100:.0f}%  (n={len(sc)})")
+    if len(D):
+        sd = scored[scored.qibao_benchmark_star == True]
+        print(f"  D  qibao-bench : {D.mean():+.2f}%/day  win {(sd.net_realized_ret>0).mean()*100:.0f}%  (n={len(sd)})")
     # contrast frequency: days where B's pick set actually differs from A's.
     # Without contrast the A/B comparison carries no information.
     diff_days = sum(
@@ -159,6 +235,12 @@ def main():
         from scipy.stats import ttest_rel
         n = min(len(A), len(B), len(ta))
         print(f"  paired vs take-all: A p={ttest_rel(A[:n],ta[:n])[1]:.3f}  B p={ttest_rel(B[:n],ta[:n])[1]:.3f}")
+        if len(C) >= 8:
+            n = min(len(C), len(ta))
+            print(f"                      C p={ttest_rel(C[:n],ta[:n])[1]:.3f}")
+        if len(D) >= 8:
+            n = min(len(D), len(ta))
+            print(f"                      D p={ttest_rel(D[:n],ta[:n])[1]:.3f}")
 
 
 if __name__ == "__main__":

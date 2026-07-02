@@ -6,7 +6,14 @@ from xiaocao.api.client import RANK_MODEL_FOCUS
 
 from .adaptive import tag_signals
 from .regime import classify_regime, derive_proxy_regime, mode_allowed_in
-from .rules import check_direction_dixi, check_dixi, check_lianban, check_qibao, pick_big_ones
+from .rules import (
+    RAW_QIBAO_BENCHMARK_MODES,
+    check_direction_dixi,
+    check_dixi,
+    check_lianban,
+    check_qibao,
+    pick_big_ones,
+)
 from .state import StateVector, build_state_index, get_state
 
 MAX_OPEN_PCT_CHANGE = 6.0
@@ -536,7 +543,7 @@ def _filter_open_pct(rows: list[dict[str, Any]], cap: float = MAX_OPEN_PCT_CHANG
     """
     out: list[dict[str, Any]] = []
     for row in rows:
-        if _num(row.get("openPctChange")) >= cap:
+        if _num(row.get("openPctChange")) >= cap and not _is_paper_buy_qibao_benchmark(row):
             row = dict(row)
             row["adaptive_active"] = False
             note = f"openPctChange ≥ {cap}% (chasing high open)"
@@ -544,6 +551,13 @@ def _filter_open_pct(rows: list[dict[str, Any]], cap: float = MAX_OPEN_PCT_CHANG
             row["adaptive_reason"] = f"{prev}; {note}" if prev else note
         out.append(row)
     return out
+
+
+def _is_paper_buy_qibao_benchmark(row: dict[str, Any]) -> bool:
+    return (
+        str(row.get("mode") or "") in RAW_QIBAO_BENCHMARK_MODES
+        and str(row.get("qibaoBenchmarkLayer") or "") == "paper_buy"
+    )
 
 
 def _num(value: Any) -> float:

@@ -59,6 +59,111 @@ def test_check_qibao_direction_variant_with_lower_score() -> None:
     assert [(s["mode"], s["code"]) for s in out] == [("方向红盘起爆", "001.XSHE")]
 
 
+def test_check_qibao_emits_raw_rank_benchmark_for_electronic_or_20cm() -> None:
+    details = [
+        {
+            "code": "688001.XSHG",
+            "codeName": "样本科技",
+            "jssb": 8.0,
+            "isLimitUp": 0,
+            "entityPctChangeRate": 3.7,
+            "openPctChangeRate": 2.1,
+        },
+    ]
+
+    out = check_qibao(details, [], [], "2026-04-25")
+
+    assert [(s["mode"], s["code"]) for s in out] == [("标杆短线起爆", "688001.XSHG")]
+    assert out[0]["rawQibaoRank"] == 1
+    assert out[0]["qibaoRankScore"] == 240.0
+    assert out[0]["board20"] is True
+
+
+def test_check_qibao_raw_rank_benchmark_uses_electronic_industry_too() -> None:
+    details = [
+        {
+            "code": "600667.XSHG",
+            "jssb": 7.0,
+            "isLimitUp": 0,
+            "entityPctChangeRate": 2.8,
+            "openPctChangeRate": 3.5,
+            "excIndustryStockList": [{"code": "T08.ZHBK", "codeName": "电子"}],
+        },
+    ]
+
+    out = check_qibao(details, [], [], "2026-04-25")
+
+    assert [(s["mode"], s["code"]) for s in out] == [("标杆短线起爆", "600667.XSHG")]
+    assert out[0]["industryElectronic"] is True
+
+
+def test_check_qibao_raw_rank_benchmark_filters_high_open_and_rank_tail() -> None:
+    too_high_open = {
+        "code": "688001.XSHG",
+        "jssb": 20.0,
+        "isLimitUp": 0,
+        "entityPctChangeRate": 2.5,
+        "openPctChangeRate": 10.1,
+    }
+    tail = [
+        {
+            "code": f"00000{i}.XSHE",
+            "jssb": 20.0 - i,
+            "isLimitUp": 0,
+            "entityPctChangeRate": 2.5,
+            "openPctChangeRate": 2.0,
+        }
+        for i in range(10)
+    ]
+    tail.append({
+        "code": "688011.XSHG",
+        "jssb": 1.0,
+        "isLimitUp": 0,
+        "entityPctChangeRate": 2.5,
+        "openPctChangeRate": 2.0,
+    })
+
+    assert check_qibao([too_high_open], [], [], "2026-04-25") == []
+    assert check_qibao(tail, [], [], "2026-04-25") == []
+
+
+def test_check_qibao_emits_high_open_benchmark_for_6_to_10_bucket() -> None:
+    details = [
+        {
+            "code": "688001.XSHG",
+            "jssb": 20.0,
+            "isLimitUp": 0,
+            "entityPctChangeRate": 2.5,
+            "openPctChangeRate": 7.2,
+        },
+    ]
+
+    out = check_qibao(details, [], [], "2026-04-25")
+
+    assert [(s["mode"], s["code"]) for s in out] == [("高开标杆起爆", "688001.XSHG")]
+    assert out[0]["qibaoBenchmarkKind"] == "raw_top10_elec20_high_open_6_10"
+    assert out[0]["qibaoBenchmarkLayer"] == "paper_buy"
+
+
+def test_check_qibao_emits_limitlike_benchmark_despite_strict_chase_guard() -> None:
+    details = [
+        {
+            "code": "688001.XSHG",
+            "jssb": 20.0,
+            "isLimitUp": 1,
+            "pctChangeRate": 19.8,
+            "entityPctChangeRate": 16.0,
+            "openPctChangeRate": 6.8,
+        },
+    ]
+
+    out = check_qibao(details, [], [], "2026-04-25")
+
+    assert [(s["mode"], s["code"]) for s in out] == [("强攻标杆起爆", "688001.XSHG")]
+    assert out[0]["qibaoBenchmarkKind"] == "raw_top10_elec20_limitlike"
+    assert out[0]["qibaoRankScore"] == 240.0
+
+
 def test_pick_big_ones_skips_none_entries() -> None:
     # Some upstream endpoints return list values that include None gaps when
     # the response was a dict whose values include nulls. The picker must not
@@ -89,6 +194,28 @@ def test_strategy_open_pct_high_marked_shadow_not_dropped() -> None:
     assert by_code["shadow-six"]["adaptive_active"] is False
     assert "openPctChange" in by_code["shadow-six"]["adaptive_reason"]
     assert by_code["shadow-high"]["adaptive_active"] is False
+
+
+def test_strategy_open_pct_keeps_promoted_qibao_benchmarks_active() -> None:
+    rows = [
+        {
+            "code": "qibao-high-open",
+            "mode": "高开标杆起爆",
+            "openPctChange": 7.2,
+            "qibaoBenchmarkLayer": "paper_buy",
+        },
+        {
+            "code": "qibao-limitlike",
+            "mode": "强攻标杆起爆",
+            "openPctChange": 9.5,
+            "qibaoBenchmarkLayer": "paper_buy",
+        },
+    ]
+
+    out = _filter_open_pct(rows)
+
+    assert [row["code"] for row in out] == ["qibao-high-open", "qibao-limitlike"]
+    assert all("adaptive_active" not in row for row in out)
 
 
 class _FakeSource:
