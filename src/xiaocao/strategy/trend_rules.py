@@ -1,9 +1,10 @@
 """Book T trend-candidate generator.
 
 Book T is a separate paper-only long-hold book. It is not a short-line mode and
-does not consume Book-B picks. The generator below turns the current main-line
-category ranks into a small basket of large-cap constituents, leaving execution,
-accounting and exits to the deterministic live scripts.
+does not consume Book-B picks. The generator below turns current main-line
+category ranks into a small basket of large-cap constituents, while keeping the
+paper basket aligned with the current Xiaocao posture: stay exposed to trend,
+but do not turn defensive/old-direction strength into a trend buy.
 """
 from __future__ import annotations
 
@@ -14,6 +15,47 @@ from xiaocao.strategy.params import TREND_LOOKBACK_L, TREND_REBALANCE_R, TREND_T
 
 TREND_MODE = "趋势主线"
 DEFAULT_BASKET_PREMIUM_PCT = 0.8
+DEFAULT_CATEGORY_SCAN_MULTIPLIER = 3
+
+EXTERNAL_DIRECTION_KEYWORDS = (
+    "银行",
+    "保险",
+    "证券",
+    "券商",
+    "医药",
+    "药",
+    "白酒",
+    "酿酒",
+    "零售",
+    "酒店",
+    "旅游",
+    "航空",
+    "煤炭",
+    "石油",
+)
+
+POSTURE_ALIGNED_KEYWORDS = (
+    "电子",
+    "半导体",
+    "芯片",
+    "存储",
+    "元器件",
+    "pcb",
+    "cpo",
+    "通信",
+    "光模块",
+    "光电",
+    "玻璃基板",
+    "科创",
+    "20cm",
+    "机器人",
+    "智造",
+    "算力",
+    "ai硬件",
+    "京东方",
+)
+
+ALIGNMENT_PRIORITY = {"aligned": 0, "neutral": 1, "external": 2}
 
 
 def _num(value: Any, default: float = 0.0) -> float:
@@ -46,6 +88,47 @@ def _category_strength(row: dict[str, Any]) -> float:
         if row.get(key) not in (None, ""):
             return _num(row.get(key))
     return 0.0
+
+
+def _match_keyword(text: str, keywords: tuple[str, ...]) -> str | None:
+    lowered = text.lower()
+    for keyword in keywords:
+        if keyword.lower() in lowered:
+            return keyword
+    return None
+
+
+def classify_trend_alignment(
+    *,
+    code: str = "",
+    name: str = "",
+    category_name: str = "",
+    category_code: str = "",
+) -> dict[str, str]:
+    """Classify a Book-T candidate against the current paper posture.
+
+    `external` is a hard block for new buys and an exit cue for existing Book-T
+    paper rows after T+1. `aligned` gets preference. `neutral` is allowed only as
+    a low-turnover fallback to keep the trend sleeve invested when no better
+    aligned representative exists.
+    """
+    text = " ".join(str(v or "") for v in (code, name, category_name, category_code))
+    external = _match_keyword(text, EXTERNAL_DIRECTION_KEYWORDS)
+    if external:
+        return {
+            "trend_alignment": "external",
+            "trend_alignment_reason": f"外部旧方向/防守方向:{external}",
+        }
+    aligned = _match_keyword(text, POSTURE_ALIGNED_KEYWORDS)
+    if aligned:
+        return {
+            "trend_alignment": "aligned",
+            "trend_alignment_reason": f"小草趋势主线相关:{aligned}",
+        }
+    return {
+        "trend_alignment": "neutral",
+        "trend_alignment_reason": "非外部旧方向；仅作趋势仓位兜底候选",
+    }
 
 
 def _extract_codes(value: Any) -> list[str]:
@@ -121,14 +204,14 @@ def _constituent_codes(client: Any, date_iso: str, category_code: str) -> list[s
     return _extract_codes(payload)
 
 
-def _select_representative(
+def _rank_representatives(
     codes: list[str],
     *,
     stock_info: dict[str, dict[str, Any]],
     bigcap_set: set[str],
-) -> tuple[str | None, bool]:
+) -> list[tuple[str, bool]]:
     if not codes:
-        return None, False
+        return []
     ranked = sorted(
         _dedupe(codes),
         key=lambda code: (
@@ -137,8 +220,7 @@ def _select_representative(
             code,
         ),
     )
-    code = ranked[0] if ranked else None
-    return code, bool(code in bigcap_set) if code else False
+    return [(code, bool(code in bigcap_set)) for code in ranked]
 
 
 def generate_trend_picks(
@@ -156,7 +238,10 @@ def generate_trend_picks(
     is allowed later by keeping separate ledger rows.
     """
     max_positions = max(1, int(max_positions))
-    category_count = max_positions if category_count is None else max(1, int(category_count))
+    category_count = (
+        max_positions * DEFAULT_CATEGORY_SCAN_MULTIPLIER
+        if category_count is None else max(1, int(category_count))
+    )
     info_rows = client.stock_info()
     if not isinstance(info_rows, list):
         info_rows = []
@@ -170,11 +255,25 @@ def generate_trend_picks(
         if not cat_code:
             continue
         codes = _constituent_codes(client, date_iso, cat_code)
-        code, is_big = _select_representative(codes, stock_info=stock_info, bigcap_set=bigcaps)
-        if not code or code in used_codes:
+        picked: tuple[str, bool, dict[str, Any], dict[str, str]] | None = None
+        for code, is_big in _rank_representatives(codes, stock_info=stock_info, bigcap_set=bigcaps):
+            if code in used_codes:
+                continue
+            info = stock_info.get(code) or {}
+            alignment = classify_trend_alignment(
+                code=code,
+                name=_name(info),
+                category_name=_category_name(cat),
+                category_code=cat_code,
+            )
+            if alignment["trend_alignment"] == "external":
+                continue
+            picked = (code, is_big, info, alignment)
+            break
+        if picked is None:
             continue
+        code, is_big, info, alignment = picked
         used_codes.add(code)
-        info = stock_info.get(code) or {}
         candidates.append({
             "book": "T",
             "code": code,
@@ -193,9 +292,19 @@ def generate_trend_picks(
             "trend_rebalance_days": TREND_REBALANCE_R,
             "trend_trail_dd_pct": TREND_TRAIL_DD,
             "tradableAShare": info.get("tradableAShare"),
+            "trend_alignment": alignment["trend_alignment"],
+            "trend_alignment_reason": alignment["trend_alignment_reason"],
         })
-        if len(candidates) >= max_positions:
-            break
+
+    candidates = sorted(
+        candidates,
+        key=lambda row: (
+            ALIGNMENT_PRIORITY.get(str(row.get("trend_alignment") or "neutral"), 9),
+            int(_num(row.get("category_rank"), 9999)),
+            -_num(row.get("category_score")),
+            str(row.get("code") or ""),
+        ),
+    )
 
     if not candidates:
         return []
@@ -209,6 +318,14 @@ def generate_trend_picks(
         if open_px <= 0:
             continue
         name = _name(detail) or str(c.get("name") or "")
+        alignment = classify_trend_alignment(
+            code=str(c.get("code") or ""),
+            name=name,
+            category_name=str(c.get("category_name") or ""),
+            category_code=str(c.get("category_code") or ""),
+        )
+        if alignment["trend_alignment"] == "external":
+            continue
         pre_close = _num(detail.get("preClose"))
         pct = _num(detail.get("pctChangeRate"))
         basket = round(open_px * (1.0 + basket_premium_pct / 100.0), 4)
@@ -221,10 +338,18 @@ def generate_trend_picks(
             "basket_price": basket,
             "basket_rule": f"trend_open+{basket_premium_pct:.1f}%",
             "basket_premium_pct": basket_premium_pct,
+            "trend_alignment": alignment["trend_alignment"],
+            "trend_alignment_reason": alignment["trend_alignment_reason"],
+            "trend_switch_policy": (
+                "prefer_aligned_low_turnover; block_external; rebalance_on_R_or_mismatch"
+            ),
             "reason": (
                 f"Book T {c['category_name'] or c['category_code']} "
-                f"r{c['category_rank']} bigcap={bool(c['is_big_cap'])}"
+                f"r{c['category_rank']} bigcap={bool(c['is_big_cap'])} "
+                f"alignment={alignment['trend_alignment']}"
             ),
         })
         out.append(enriched)
+        if len(out) >= max_positions:
+            break
     return out

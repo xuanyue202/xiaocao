@@ -375,11 +375,14 @@ def test_book_t_records_independent_trend_account(tmp_path, monkeypatch) -> None
     assert row["source"] == "auto:trend_book"
     assert row["category_code"] == "C1.BKDL"
     assert row["entry_price_basis"] == "opening_window_vwap_capped_by_limit"
+    assert row["trend_alignment"] == "neutral"
+    assert "兜底" in row["trend_alignment_reason"]
     assert row["shares"] == 900
     account = json.loads(account_t.read_text(encoding="utf-8"))
     assert account["initial_capital"] == 30000.0
     [trade] = [json.loads(line) for line in trades.read_text(encoding="utf-8").splitlines()]
     assert trade["book"] == "T" and trade["side"] == "BUY"
+    assert trade["trend_alignment"] == "neutral"
 
 
 def test_validate_fill_window_rejects_reversed_window() -> None:

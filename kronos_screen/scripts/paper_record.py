@@ -812,7 +812,10 @@ def _record_book_t(client: XiaocaoClient, a) -> None:
 
     remaining_slots = max(0, target_positions - open_count)
     if remaining_slots <= 0:
-        print(f"{a.date}: book T already has {open_count}/{target_positions} open position(s); no new buys")
+        print(
+            f"{a.date}: book T already has {open_count}/{target_positions} open position(s); "
+            "no new buys; switches are handled by T+1 posture-mismatch exits or low-turnover rebalance"
+        )
         return
 
     picks = generate_trend_picks(client, a.date, max_positions=target_positions)
@@ -913,6 +916,9 @@ def _record_book_t(client: XiaocaoClient, a) -> None:
                 "trend_rebalance_days": r.get("trend_rebalance_days", TREND_REBALANCE_R),
                 "trend_trail_dd_pct": r.get("trend_trail_dd_pct", TREND_TRAIL_DD),
                 "tradableAShare": r.get("tradableAShare"),
+                "trend_alignment": r.get("trend_alignment"),
+                "trend_alignment_reason": r.get("trend_alignment_reason"),
+                "trend_switch_policy": r.get("trend_switch_policy"),
                 "gross_notional": gross_notional,
                 "entry_fee": entry_fee,
                 "entry_cash_out": entry_cash_out,
@@ -955,6 +961,9 @@ def _record_book_t(client: XiaocaoClient, a) -> None:
                 "category_code": r.get("category_code"),
                 "category_rank": r.get("category_rank"),
                 "trend_score": r.get("trend_score"),
+                "trend_alignment": r.get("trend_alignment"),
+                "trend_alignment_reason": r.get("trend_alignment_reason"),
+                "trend_switch_policy": r.get("trend_switch_policy"),
                 "fill_window_start": a.fill_window_start,
                 "fill_window_end": a.fill_window_end,
                 "fill_window_vwap": fill_meta.get("fill_window_vwap"),

@@ -217,7 +217,15 @@ PYTHONPATH=src python3 kronos_screen/scripts/settle_book_t.py
 Book T writes `book:"T"` rows to the same `output/live/positions.jsonl`, uses
 `output/live/paper_account_T.json`, and keeps `output/live/paper_holdings_T.json`.
 It is paper-only and independent from Book B: same-code B/T overlap is allowed,
-T exits use `TREND_TRAIL_DD` / `TREND_REBALANCE_R`, and T must not consume Book-B
+new buys prefer posture-aligned trend representatives (electronics / semiconductor /
+storage / optoelectronics / components / communications / robotics); neutral
+representatives can fill the trend sleeve only when needed to keep exposure.
+Bank / insurance / broker / medicine / liquor and other external old directions
+are `external`: do not treat them as trend buys. T exits use `TREND_TRAIL_DD` /
+`TREND_REBALANCE_R`; an already-held `external` T row exits after T+1 as
+`TREND_POSTURE_MISMATCH`, then the next morning can refill the slot. Ordinary
+ranking drift is not a switch signal, because Book T is a low-turnover exposure
+sleeve and fees matter. T must not consume Book-B
 strong-hold/composite logic. Trend evaluation stays out of
 `continuous_optimize.py`; use `trend_guards` / `trend_optimize` for compounded
 return, drawdown, turnover, and beta comparison.

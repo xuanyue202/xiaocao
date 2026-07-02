@@ -23,6 +23,7 @@ from xiaocao.api.client import XiaocaoClient  # noqa: E402
 from xiaocao.config.settings import load_settings  # noqa: E402
 from xiaocao.live import accounts  # noqa: E402
 from xiaocao.strategy.params import TREND_BUDGET_RATIO, TREND_REBALANCE_R, TREND_TRAIL_DD  # noqa: E402
+from xiaocao.strategy.trend_rules import classify_trend_alignment  # noqa: E402
 
 POS = Path("output/live/positions.jsonl")
 ACCOUNT_T = Path("output/live/paper_account_T.json")
@@ -108,6 +109,44 @@ def _load_account() -> dict[str, Any]:
     )
 
 
+def _trend_alignment_for_position(p: dict[str, Any]) -> dict[str, str]:
+    return classify_trend_alignment(
+        code=str(p.get("code") or ""),
+        name=str(p.get("name") or ""),
+        category_name=str(p.get("category_name") or ""),
+        category_code=str(p.get("category_code") or ""),
+    )
+
+
+def _mark_trend_switch_context(
+    p: dict[str, Any],
+    *,
+    fee_rate: float,
+    alignment: dict[str, str],
+) -> None:
+    p["trend_alignment"] = alignment["trend_alignment"]
+    p["trend_alignment_reason"] = alignment["trend_alignment_reason"]
+    p["trend_switch_policy"] = "hold_exposure; switch_external_after_t1; otherwise_rebalance_on_R"
+    p["trend_switch_est_roundtrip_fee_bps"] = round(fee_rate * 2 * 10000, 2)
+
+
+def _trend_exit_reason(
+    *,
+    dd_pct: float,
+    trail_dd: float,
+    hold_days: int,
+    rebalance_days: int,
+    alignment: dict[str, str],
+) -> str | None:
+    if dd_pct >= trail_dd:
+        return "TREND_DAILY_TRAIL_STOP"
+    if alignment["trend_alignment"] == "external" and hold_days >= 1:
+        return "TREND_POSTURE_MISMATCH"
+    if hold_days >= rebalance_days:
+        return "TREND_REBALANCE_R"
+    return None
+
+
 def _close_position(
     p: dict[str, Any],
     *,
@@ -142,7 +181,7 @@ def _close_position(
     account["realized_pnl"] = round(float(account.get("realized_pnl", 0.0)) + realized, 2)
     account["total_fees"] = round(float(account.get("total_fees", 0.0)) + exit_fee, 2)
     account["last_sell_date"] = exit_date
-    accounts.append_jsonl({
+    trade = {
         "ts": _now_iso(),
         "date": exit_date,
         "side": "SELL",
@@ -159,7 +198,12 @@ def _close_position(
         "trend_exit_peak": round(peak_price, 4),
         "trend_exit_dd_pct": round(dd_pct, 4),
         "trend_hold_days": hold_days,
-    }, TRADES)
+        "trend_alignment": p.get("trend_alignment"),
+        "trend_alignment_reason": p.get("trend_alignment_reason"),
+        "trend_switch_policy": p.get("trend_switch_policy"),
+        "trend_switch_est_roundtrip_fee_bps": p.get("trend_switch_est_roundtrip_fee_bps"),
+    }
+    accounts.append_jsonl(trade, TRADES)
 
 
 def main() -> None:
@@ -219,11 +263,16 @@ def main() -> None:
         hold_days = i1 - i0
         rebalance_days = int(p.get("trend_rebalance_days") or TREND_REBALANCE_R)
         trail_dd = float(p.get("trend_trail_dd_pct") or TREND_TRAIL_DD)
-        reason = None
-        if dd_pct >= trail_dd:
-            reason = "TREND_DAILY_TRAIL_STOP"
-        elif hold_days >= rebalance_days:
-            reason = "TREND_REBALANCE_R"
+        fee_rate = float(p.get("fee_rate") or account.get("fee_rate", DEFAULT_FEE_RATE))
+        alignment = _trend_alignment_for_position(p)
+        _mark_trend_switch_context(p, fee_rate=fee_rate, alignment=alignment)
+        reason = _trend_exit_reason(
+            dd_pct=dd_pct,
+            trail_dd=trail_dd,
+            hold_days=hold_days,
+            rebalance_days=rebalance_days,
+            alignment=alignment,
+        )
         if reason is None:
             continue
         _close_position(
