@@ -66,8 +66,8 @@ output/live/*.log
 output/live/auto/
 output/live/eod_features.jsonl
 output/live/paper_account*.json*
-output/live/paper_holdings.json
-output/live/paper_holdings_snapshots.jsonl
+output/live/paper_holdings*.json
+output/live/paper_holdings*_snapshots.jsonl
 output/live/paper_skips.jsonl
 output/live/paper_trades.jsonl*
 output/live/positions.jsonl.*
