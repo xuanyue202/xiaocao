@@ -107,10 +107,11 @@ def classify_trend_alignment(
 ) -> dict[str, str]:
     """Classify a Book-T candidate against the current paper posture.
 
-    `external` is a hard block for new buys and an exit cue for existing Book-T
-    paper rows after T+1. `aligned` gets preference. `neutral` is allowed only as
-    a low-turnover fallback to keep the trend sleeve invested when no better
-    aligned representative exists.
+    `external` is a hard block for new buys and a paired-switch cue for existing
+    Book-T paper rows after T+1, but only when the morning run has a replacement
+    ready. `aligned` gets preference. `neutral` is allowed only as a low-turnover
+    fallback to keep the trend sleeve invested when no better aligned
+    representative exists.
     """
     text = " ".join(str(v or "") for v in (code, name, category_name, category_code))
     external = _match_keyword(text, EXTERNAL_DIRECTION_KEYWORDS)
@@ -341,7 +342,8 @@ def generate_trend_picks(
             "trend_alignment": alignment["trend_alignment"],
             "trend_alignment_reason": alignment["trend_alignment_reason"],
             "trend_switch_policy": (
-                "prefer_aligned_low_turnover; block_external; rebalance_on_R_or_mismatch"
+                "prefer_aligned_low_turnover; block_external; "
+                "paired_switch_external_when_replacement_ready"
             ),
             "reason": (
                 f"Book T {c['category_name'] or c['category_code']} "

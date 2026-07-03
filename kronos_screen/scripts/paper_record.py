@@ -33,7 +33,7 @@ from xiaocao.strategy.params import (  # noqa: E402
     TREND_TOP_M,
     TREND_TRAIL_DD,
 )
-from xiaocao.strategy.trend_rules import generate_trend_picks  # noqa: E402
+from xiaocao.strategy.trend_rules import classify_trend_alignment, generate_trend_picks  # noqa: E402
 from quality_governor import annotate_quality_governor, ensure_quality_fields  # noqa: E402
 
 SNAP = Path("output/live/signal_snapshots.jsonl")
@@ -768,6 +768,151 @@ def main():
     )
 
 
+def _book_t_position_cost(row: dict) -> float:
+    cost = _num(row.get("gross_notional"))
+    if cost is not None and cost > 0:
+        return cost
+    cash_out = _num(row.get("entry_cash_out"))
+    return float(cash_out or 0.0)
+
+
+def _book_t_entry_before_today(row: dict, date_iso: str) -> bool:
+    entry_date = str(row.get("entry_date") or "")[:10]
+    return bool(entry_date and entry_date < str(date_iso)[:10])
+
+
+def _mark_book_t_switch_context(row: dict, *, fee_rate: float) -> dict[str, str]:
+    alignment = classify_trend_alignment(
+        code=str(row.get("code") or ""),
+        name=str(row.get("name") or ""),
+        category_name=str(row.get("category_name") or ""),
+        category_code=str(row.get("category_code") or ""),
+    )
+    row["trend_alignment"] = alignment["trend_alignment"]
+    row["trend_alignment_reason"] = alignment["trend_alignment_reason"]
+    row["trend_switch_policy"] = "hold_exposure; paired_morning_switch_when_replacement_ready"
+    row["trend_switch_est_roundtrip_fee_bps"] = round(fee_rate * 2 * 10000, 2)
+    return alignment
+
+
+def _book_t_switch_exit_plan(
+    client: XiaocaoClient,
+    row: dict,
+    *,
+    date_iso: str,
+    start_hhmm: str,
+    end_hhmm: str,
+    account: dict,
+) -> dict | None:
+    code = str(row.get("code") or "")
+    shares = int(row.get("shares") or 0)
+    if not code or shares <= 0:
+        return None
+    window = _fill_window_stats(
+        client,
+        code,
+        date_iso,
+        start_hhmm=start_hhmm,
+        end_hhmm=end_hhmm,
+    )
+    if not window:
+        return None
+    exit_price = _num(window.get("vwap"))
+    if exit_price is None or exit_price <= 0:
+        return None
+    fee_rate = float(row.get("fee_rate") or account.get("fee_rate", DEFAULT_FEE_RATE))
+    gross = round(float(exit_price) * shares, 2)
+    exit_fee = round(gross * fee_rate, 2)
+    cash_in = round(gross - exit_fee, 2)
+    entry_cash_out = _num(row.get("entry_cash_out"))
+    if entry_cash_out is None:
+        entry_cash_out = round(
+            float(row.get("gross_notional") or 0.0) + float(row.get("entry_fee") or 0.0),
+            2,
+        )
+    realized = round(cash_in - float(entry_cash_out or 0.0), 2)
+    return {
+        "position": row,
+        "exit_price": float(exit_price),
+        "gross": gross,
+        "exit_fee": exit_fee,
+        "cash_in": cash_in,
+        "realized_pnl": realized,
+        "open_cost": _book_t_position_cost(row),
+        "fill_window_start": start_hhmm,
+        "fill_window_end": end_hhmm,
+        "fill_window_vwap": round(float(exit_price), 4),
+        "fill_window_low": round(float(window["low"]), 4) if window.get("low") else None,
+        "fill_window_high": round(float(window["high"]), 4) if window.get("high") else None,
+        "fill_window_last": round(float(window["last"]), 4) if window.get("last") else None,
+        "fill_window_time": window.get("time"),
+    }
+
+
+def _apply_book_t_switch_exit(plan: dict, account: dict, *, date_iso: str) -> None:
+    row = plan["position"]
+    row.update({
+        "status": "closed",
+        "exit_date": date_iso,
+        "exit_price": round(float(plan["exit_price"]), 4),
+        "exit_fee": plan["exit_fee"],
+        "exit_cash_in": plan["cash_in"],
+        "realized_pnl": plan["realized_pnl"],
+        "exit_reason": "TREND_POSTURE_MISMATCH",
+        "trend_switch_execution": "paired_morning_switch",
+        "trend_switch_fill_basis": "opening_window_vwap",
+        "trend_switch_exit_window_start": plan.get("fill_window_start"),
+        "trend_switch_exit_window_end": plan.get("fill_window_end"),
+        "trend_switch_exit_window_vwap": plan.get("fill_window_vwap"),
+        "trend_switch_exit_window_last": plan.get("fill_window_last"),
+    })
+    account["cash"] = round(float(account.get("cash", 0.0)) + float(plan["cash_in"]), 2)
+    account["realized_pnl"] = round(
+        float(account.get("realized_pnl", 0.0)) + float(plan["realized_pnl"]),
+        2,
+    )
+    account["total_fees"] = round(
+        float(account.get("total_fees", 0.0)) + float(plan["exit_fee"]),
+        2,
+    )
+    account["last_sell_date"] = date_iso
+    _append_trade({
+        "ts": _now_iso(),
+        "date": date_iso,
+        "side": "SELL",
+        "book": "T",
+        "code": row.get("code"),
+        "name": row.get("name", ""),
+        "price": round(float(plan["exit_price"]), 4),
+        "shares": int(row.get("shares") or 0),
+        "gross_notional": plan["gross"],
+        "fee": plan["exit_fee"],
+        "cash_after": account["cash"],
+        "realized_pnl": plan["realized_pnl"],
+        "reason": "TREND_POSTURE_MISMATCH",
+        "source": "auto:trend_book",
+        "price_basis": "opening_window_vwap",
+        "trend_switch_execution": "paired_morning_switch",
+        "trend_alignment": row.get("trend_alignment"),
+        "trend_alignment_reason": row.get("trend_alignment_reason"),
+        "trend_switch_policy": row.get("trend_switch_policy"),
+        "trend_switch_est_roundtrip_fee_bps": row.get("trend_switch_est_roundtrip_fee_bps"),
+        "fill_window_start": plan.get("fill_window_start"),
+        "fill_window_end": plan.get("fill_window_end"),
+        "fill_window_vwap": plan.get("fill_window_vwap"),
+        "fill_window_last": plan.get("fill_window_last"),
+    })
+
+
+def _save_positions_to_file(path: Path, rows: list[dict]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_suffix(".jsonl.tmp")
+    with tmp.open("w", encoding="utf-8") as fh:
+        for row in rows:
+            fh.write(json.dumps(row, ensure_ascii=False, sort_keys=True) + "\n")
+    tmp.replace(path)
+
+
 def _record_book_t(client: XiaocaoClient, a) -> None:
     """Record Book T trend paper positions.
 
@@ -786,12 +931,14 @@ def _record_book_t(client: XiaocaoClient, a) -> None:
     account = _load_account(trend_initial_capital, a.fee_rate, path=ACCOUNT_T)
     fee_rate = float(account.get("fee_rate", a.fee_rate))
 
+    positions = _load_positions_from_file(POS)
     existing: set[tuple[str, str]] = set()
     open_codes: set[str] = set()
     open_count = 0
     current_open_cost = 0.0
     existing_auto_for_date = 0
-    for row in _load_positions_from_file(POS):
+    switch_candidates: list[dict] = []
+    for row in positions:
         if row.get("book") != "T":
             continue
         existing.add((str(row.get("entry_date") or ""), str(row.get("code") or "")))
@@ -799,7 +946,13 @@ def _record_book_t(client: XiaocaoClient, a) -> None:
             open_count += 1
             if row.get("code"):
                 open_codes.add(str(row.get("code")))
-            current_open_cost += float(row.get("gross_notional") or 0.0)
+            current_open_cost += _book_t_position_cost(row)
+            alignment = _mark_book_t_switch_context(row, fee_rate=fee_rate)
+            if (
+                alignment["trend_alignment"] == "external"
+                and _book_t_entry_before_today(row, a.date)
+            ):
+                switch_candidates.append(row)
         if row.get("entry_date") == a.date and row.get("source") == "auto:trend_book":
             existing_auto_for_date += 1
 
@@ -810,28 +963,46 @@ def _record_book_t(client: XiaocaoClient, a) -> None:
         )
         return
 
-    remaining_slots = max(0, target_positions - open_count)
-    if remaining_slots <= 0:
+    switch_exit_plans: list[dict] = []
+    for row in switch_candidates:
+        plan = _book_t_switch_exit_plan(
+            client,
+            row,
+            date_iso=a.date,
+            start_hhmm=a.fill_window_start,
+            end_hhmm=a.fill_window_end,
+            account=account,
+        )
+        if plan is not None:
+            switch_exit_plans.append(plan)
+
+    empty_slots = max(0, target_positions - open_count)
+    available_slots = empty_slots + len(switch_exit_plans)
+    if available_slots <= 0:
         print(
             f"{a.date}: book T already has {open_count}/{target_positions} open position(s); "
-            "no new buys; switches are handled by T+1 posture-mismatch exits or low-turnover rebalance"
+            "no new buys; paired switches wait for a sellable old row and a replacement"
         )
         return
 
-    picks = generate_trend_picks(client, a.date, max_positions=target_positions)
-    buyable = [
+    picks = generate_trend_picks(
+        client,
+        a.date,
+        max_positions=target_positions + len(open_codes) + len(switch_exit_plans),
+    )
+    candidate_pool = [
         r for r in picks
         if (a.date, str(r.get("code") or "")) not in existing
         and str(r.get("code") or "") not in open_codes
         and r.get("open")
-    ][:remaining_slots]
-    if not buyable:
+    ][: max(available_slots * 3, available_slots)]
+    if not candidate_pool:
         print(f"{a.date}: book T — no new trend candidates after book-scoped duplicate checks")
         return
 
     buyable, skipped = _attach_fill_prices(
         client,
-        buyable,
+        candidate_pool,
         a.date,
         start_hhmm=a.fill_window_start,
         end_hhmm=a.fill_window_end,
@@ -857,121 +1028,153 @@ def _record_book_t(client: XiaocaoClient, a) -> None:
             "category_code": r.get("category_code"),
             "category_rank": r.get("category_rank"),
         })
+    buyable = buyable[:available_slots]
     if not buyable:
-        print(f"{a.date}: book T all candidates skipped by opening fill model")
+        if switch_candidates:
+            print(
+                f"{a.date}: book T holds {len(switch_candidates)} posture-mismatch candidate(s); "
+                "no paired replacement filled, so exposure is kept"
+            )
+        else:
+            print(f"{a.date}: book T all candidates skipped by opening fill model")
         return
 
     cash = float(account.get("cash", 0.0))
+    planned_switch_count = min(
+        len(switch_exit_plans),
+        max(0, len(buyable) - empty_slots),
+    )
+    selected_switches = switch_exit_plans[:planned_switch_count]
+    switch_cash_in = sum(float(p["cash_in"]) for p in selected_switches)
+    switched_open_cost = sum(float(p["open_cost"]) for p in selected_switches)
+    plan_cash = round(cash + switch_cash_in, 2)
+    plan_open_cost = max(0.0, current_open_cost - switched_open_cost)
     exposure_budget = max(
         0.0,
-        float(account.get("initial_capital", trend_initial_capital)) * max_exposure - current_open_cost,
+        float(account.get("initial_capital", trend_initial_capital)) * max_exposure - plan_open_cost,
     )
-    slot_notional = min(cash, exposure_budget) / max(remaining_slots, 1)
+    slot_notional = min(plan_cash, exposure_budget) / max(available_slots, 1)
     if slot_notional <= 0:
         print(
             f"{a.date}: book T exposure budget exhausted "
-            f"(cash_T={cash:.2f}, open_cost_T={current_open_cost:.2f})"
+            f"(cash_T={cash:.2f}, open_cost_T={current_open_cost:.2f}, "
+            f"switch_ready={planned_switch_count})"
         )
         return
 
     POS.parent.mkdir(parents=True, exist_ok=True)
     n = 0
     run_fees = 0.0
-    with POS.open("a", encoding="utf-8") as fh:
-        for r in buyable:
-            if n >= remaining_slots:
-                break
-            px, fill_basis, basket_rule = _fill_price(r)
-            if not px:
-                continue
-            px = float(px)
-            fill_meta = r.get("_paper_fill") if isinstance(r.get("_paper_fill"), dict) else {}
-            shares = int((min(slot_notional, cash) / (px * (1 + fee_rate))) / 100) * 100
-            if shares < 100:
-                continue
-            gross_notional = round(shares * px, 2)
-            entry_fee = round(gross_notional * fee_rate, 2)
-            entry_cash_out = round(gross_notional + entry_fee, 2)
-            if entry_cash_out > cash + 1e-6:
-                continue
-            cash = round(cash - entry_cash_out, 2)
-            row = {
-                "book": "T",
-                "code": r["code"],
-                "name": r.get("name", ""),
-                "entry_date": a.date,
-                "entry_price": round(px, 3),
-                "profile": "trend",
-                "shares": shares,
-                "mode": r.get("mode"),
-                "is_main_line": r.get("is_main_line"),
-                "is_big_cap": r.get("is_big_cap"),
-                "category_code": r.get("category_code"),
-                "category_name": r.get("category_name"),
-                "category_rank": r.get("category_rank"),
-                "category_score": r.get("category_score"),
-                "trend_score": r.get("trend_score"),
-                "trend_num": r.get("trend_num"),
-                "trend_lookback_days": r.get("trend_lookback_days"),
-                "trend_rebalance_days": r.get("trend_rebalance_days", TREND_REBALANCE_R),
-                "trend_trail_dd_pct": r.get("trend_trail_dd_pct", TREND_TRAIL_DD),
-                "tradableAShare": r.get("tradableAShare"),
-                "trend_alignment": r.get("trend_alignment"),
-                "trend_alignment_reason": r.get("trend_alignment_reason"),
-                "trend_switch_policy": r.get("trend_switch_policy"),
-                "gross_notional": gross_notional,
-                "entry_fee": entry_fee,
-                "entry_cash_out": entry_cash_out,
-                "entry_price_basis": fill_basis,
-                "fill_window_start": a.fill_window_start,
-                "fill_window_end": a.fill_window_end,
-                "fill_window_high": fill_meta.get("fill_window_high"),
-                "fill_window_low": fill_meta.get("fill_window_low"),
-                "fill_window_vwap": fill_meta.get("fill_window_vwap"),
-                "fill_window_last": fill_meta.get("fill_window_last"),
-                "fill_limit_price": fill_meta.get("fill_limit_price"),
-                "fill_window_time": fill_meta.get("fill_window_time"),
-                "initial_fill_blocked": fill_meta.get("initial_fill_blocked"),
-                "initial_fill_block_reason": fill_meta.get("initial_fill_block_reason"),
-                "fill_retry": fill_meta.get("fill_retry"),
-                "fill_retry_reason": fill_meta.get("fill_retry_reason"),
-                "fill_retry_price": fill_meta.get("fill_retry_price"),
-                "fill_fallback": fill_meta.get("fill_fallback"),
-                "basket_price": round(float(r["basket_price"]), 3) if r.get("basket_price") else None,
-                "basket_rule": basket_rule,
-                "initial_capital": round(float(account.get("initial_capital", trend_initial_capital)), 2),
-                "fee_rate": fee_rate,
-                "allocation_rule": (
-                    f"book_t_trend_budget_{trend_ratio:.0%}"
-                    f"_slots_{target_positions}"
-                    f"_cap_{max_exposure:.0%}"
-                ),
-                "status": "open",
-                "source": "auto:trend_book",
-                "reason": r.get("reason"),
-            }
-            fh.write(json.dumps(row, ensure_ascii=False, sort_keys=True) + "\n")
-            _append_trade({
-                "ts": _now_iso(), "date": a.date, "side": "BUY", "book": "T",
-                "code": r["code"], "name": r.get("name", ""),
-                "price": round(px, 3), "shares": shares,
-                "gross_notional": gross_notional, "fee": entry_fee,
-                "cash_after": cash, "source": "auto:trend_book",
-                "price_basis": fill_basis,
-                "category_code": r.get("category_code"),
-                "category_rank": r.get("category_rank"),
-                "trend_score": r.get("trend_score"),
-                "trend_alignment": r.get("trend_alignment"),
-                "trend_alignment_reason": r.get("trend_alignment_reason"),
-                "trend_switch_policy": r.get("trend_switch_policy"),
-                "fill_window_start": a.fill_window_start,
-                "fill_window_end": a.fill_window_end,
-                "fill_window_vwap": fill_meta.get("fill_window_vwap"),
-                "fill_window_last": fill_meta.get("fill_window_last"),
-                "fill_limit_price": fill_meta.get("fill_limit_price"),
-            })
-            run_fees = round(run_fees + entry_fee, 2)
-            n += 1
+    new_rows: list[dict] = []
+    new_trades: list[dict] = []
+    cash = plan_cash
+    for r in buyable:
+        if n >= len(buyable):
+            break
+        px, fill_basis, basket_rule = _fill_price(r)
+        if not px:
+            continue
+        px = float(px)
+        fill_meta = r.get("_paper_fill") if isinstance(r.get("_paper_fill"), dict) else {}
+        shares = int((min(slot_notional, cash) / (px * (1 + fee_rate))) / 100) * 100
+        if shares < 100:
+            continue
+        gross_notional = round(shares * px, 2)
+        entry_fee = round(gross_notional * fee_rate, 2)
+        entry_cash_out = round(gross_notional + entry_fee, 2)
+        if entry_cash_out > cash + 1e-6:
+            continue
+        cash = round(cash - entry_cash_out, 2)
+        row = {
+            "book": "T",
+            "code": r["code"],
+            "name": r.get("name", ""),
+            "entry_date": a.date,
+            "entry_price": round(px, 3),
+            "profile": "trend",
+            "shares": shares,
+            "mode": r.get("mode"),
+            "is_main_line": r.get("is_main_line"),
+            "is_big_cap": r.get("is_big_cap"),
+            "category_code": r.get("category_code"),
+            "category_name": r.get("category_name"),
+            "category_rank": r.get("category_rank"),
+            "category_score": r.get("category_score"),
+            "trend_score": r.get("trend_score"),
+            "trend_num": r.get("trend_num"),
+            "trend_lookback_days": r.get("trend_lookback_days"),
+            "trend_rebalance_days": r.get("trend_rebalance_days", TREND_REBALANCE_R),
+            "trend_trail_dd_pct": r.get("trend_trail_dd_pct", TREND_TRAIL_DD),
+            "tradableAShare": r.get("tradableAShare"),
+            "trend_alignment": r.get("trend_alignment"),
+            "trend_alignment_reason": r.get("trend_alignment_reason"),
+            "trend_switch_policy": r.get("trend_switch_policy"),
+            "trend_switch_execution": (
+                "paired_morning_replacement" if n < planned_switch_count else None
+            ),
+            "gross_notional": gross_notional,
+            "entry_fee": entry_fee,
+            "entry_cash_out": entry_cash_out,
+            "entry_price_basis": fill_basis,
+            "fill_window_start": a.fill_window_start,
+            "fill_window_end": a.fill_window_end,
+            "fill_window_high": fill_meta.get("fill_window_high"),
+            "fill_window_low": fill_meta.get("fill_window_low"),
+            "fill_window_vwap": fill_meta.get("fill_window_vwap"),
+            "fill_window_last": fill_meta.get("fill_window_last"),
+            "fill_limit_price": fill_meta.get("fill_limit_price"),
+            "fill_window_time": fill_meta.get("fill_window_time"),
+            "initial_fill_blocked": fill_meta.get("initial_fill_blocked"),
+            "initial_fill_block_reason": fill_meta.get("initial_fill_block_reason"),
+            "fill_retry": fill_meta.get("fill_retry"),
+            "fill_retry_reason": fill_meta.get("fill_retry_reason"),
+            "fill_retry_price": fill_meta.get("fill_retry_price"),
+            "fill_fallback": fill_meta.get("fill_fallback"),
+            "basket_price": round(float(r["basket_price"]), 3) if r.get("basket_price") else None,
+            "basket_rule": basket_rule,
+            "initial_capital": round(float(account.get("initial_capital", trend_initial_capital)), 2),
+            "fee_rate": fee_rate,
+            "allocation_rule": (
+                f"book_t_trend_budget_{trend_ratio:.0%}"
+                f"_slots_{target_positions}"
+                f"_cap_{max_exposure:.0%}"
+            ),
+            "status": "open",
+            "source": "auto:trend_book",
+            "reason": r.get("reason"),
+        }
+        new_rows.append(row)
+        new_trades.append({
+            "ts": _now_iso(), "date": a.date, "side": "BUY", "book": "T",
+            "code": r["code"], "name": r.get("name", ""),
+            "price": round(px, 3), "shares": shares,
+            "gross_notional": gross_notional, "fee": entry_fee,
+            "cash_after": cash, "source": "auto:trend_book",
+            "price_basis": fill_basis,
+            "category_code": r.get("category_code"),
+            "category_rank": r.get("category_rank"),
+            "trend_score": r.get("trend_score"),
+            "trend_alignment": r.get("trend_alignment"),
+            "trend_alignment_reason": r.get("trend_alignment_reason"),
+            "trend_switch_policy": r.get("trend_switch_policy"),
+            "trend_switch_execution": (
+                "paired_morning_replacement" if n < planned_switch_count else None
+            ),
+            "fill_window_start": a.fill_window_start,
+            "fill_window_end": a.fill_window_end,
+            "fill_window_vwap": fill_meta.get("fill_window_vwap"),
+            "fill_window_last": fill_meta.get("fill_window_last"),
+            "fill_limit_price": fill_meta.get("fill_limit_price"),
+        })
+        run_fees = round(run_fees + entry_fee, 2)
+        n += 1
+
+    actual_switch_count = min(planned_switch_count, n)
+    selected_switches = selected_switches[:actual_switch_count]
+    if actual_switch_count < planned_switch_count:
+        # Rewind the unused switch proceeds before mutating account/positions.
+        unused = switch_exit_plans[actual_switch_count:planned_switch_count]
+        cash = round(cash - sum(float(p["cash_in"]) for p in unused), 2)
 
     if n == 0:
         print(
@@ -979,13 +1182,24 @@ def _record_book_t(client: XiaocaoClient, a) -> None:
             f"(cash_T={cash:.2f}, slot_notional={slot_notional:.2f})"
         )
         return
+    for plan in selected_switches:
+        _apply_book_t_switch_exit(plan, account, date_iso=a.date)
+    for trade in new_trades:
+        _append_trade(trade)
     account["cash"] = cash
     account["fee_rate"] = fee_rate
     account["last_buy_date"] = a.date
     account["total_fees"] = round(float(account.get("total_fees", 0.0)) + run_fees, 2)
     _save_account(account, path=ACCOUNT_T)
+    if selected_switches:
+        _save_positions_to_file(POS, positions + new_rows)
+    else:
+        with POS.open("a", encoding="utf-8") as fh:
+            for row in new_rows:
+                fh.write(json.dumps(row, ensure_ascii=False, sort_keys=True) + "\n")
     print(
-        f"{a.date}: book T paper-recorded {n} trend position(s) -> {POS} "
+        f"{a.date}: book T paper-recorded {n} trend position(s), "
+        f"paired_switches={len(selected_switches)} -> {POS} "
         f"(cash_T_after={cash:.2f}, initial_T={float(account.get('initial_capital', trend_initial_capital)):.2f}, "
         f"slot_notional={slot_notional:.2f}, trail_dd={TREND_TRAIL_DD:.1f}%, "
         f"rebalance_days={TREND_REBALANCE_R})"

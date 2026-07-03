@@ -58,7 +58,7 @@
 ### (3) 同一只票、两个时间维度（最硬的点）
 短线要卖 X（次收/HARD_STOP），趋势仍持 X（方向还在就扛）——**不 net 成一个仓**，保留**两行**（book B 行 + book T 行），各自独立生命周期。schema 已支持（今天 book A/B 就同时持有同一只票）。
 - **谁赢**：谁都不覆盖谁的 horizon。脊柱各跑各的纪律：B 在 14:55/HARD_STOP，T 在 rebalance/宽趋势止损。
-- **个股可以换，但不能乱换**：T 的换股只在两种情况下发生：一是已有 T 仓被 `classify_trend_alignment` 识别为 `external` 且过了 T+1，按 `TREND_POSTURE_MISMATCH` 换出；二是到 `TREND_REBALANCE_R` 低换手周期。普通 category rank 日内/日间波动不换，避免手续费和“战略定力”被噪音打掉。换出后由下一次 morning 补回空 slot，继续保持趋势袖子仓位。
+- **个股可以换，但不能乱换**：T 的换股只在两种情况下发生：一是已有 T 仓被 `classify_trend_alignment` 识别为 `external` 且过了 T+1，并且 morning 已有可成交替代候选，才按 `TREND_POSTURE_MISMATCH` 做成对 SELL+BUY；二是到 `TREND_REBALANCE_R` 低换手周期。普通 category rank 日内/日间波动不换，避免手续费和“战略定力”被噪音打掉。没有替代候选时不为了“清理旧方向”单边空出趋势 slot。
 - **评审 RED #1**：book T 的「方向还在就扛」强持有**绝不能**走短线的 `exit_policy.py:181 strong_hold_reason/is_trend_leader` 路径——否则 T 的判断会**压制 B 对同一只票的确定性止损**。→ book T 用**独立的冻结 exit profile**（如 `PROFILE_TREND_DD`，更宽 trailing），与短线 strong-hold 谓词**完全 disjoint**；趋势止损抑制只 key 在**冻结 trend 参数**上，**永不** key 在 cortex 的「方向还在」实时信号上。
 - **真实经纪商**：allocator 在调 `require_capital_action` **之前** net 同 code 跨 book 的 BUY/SELL 意图，让 scope/notional 检查看到合并 size；并加一个**全局跨 book 持仓上限**（今天的 `max_total_exposure_ratio` 只管 book B），超限按冻结预算比例 pro-rata 削减——**判断永不越过上限**。
 

@@ -3,7 +3,7 @@ from __future__ import annotations
 from kronos_screen.scripts import settle_book_t as sbt
 
 
-def test_book_t_existing_bank_position_is_posture_mismatch_candidate() -> None:
+def test_book_t_existing_bank_position_waits_for_paired_morning_switch() -> None:
     row = {
         "book": "T",
         "code": "601288.XSHG",
@@ -17,7 +17,7 @@ def test_book_t_existing_bank_position_is_posture_mismatch_candidate() -> None:
 
     assert row["trend_alignment"] == "external"
     assert "银行" in row["trend_alignment_reason"]
-    assert row["trend_switch_policy"] == "hold_exposure; switch_external_after_t1; otherwise_rebalance_on_R"
+    assert row["trend_switch_policy"] == "hold_exposure; paired_morning_switch_when_replacement_ready"
     assert row["trend_switch_est_roundtrip_fee_bps"] == 2.0
 
     assert sbt._trend_exit_reason(
@@ -33,7 +33,7 @@ def test_book_t_existing_bank_position_is_posture_mismatch_candidate() -> None:
         hold_days=1,
         rebalance_days=60,
         alignment=alignment,
-    ) == "TREND_POSTURE_MISMATCH"
+    ) is None
 
 
 def test_book_t_aligned_position_keeps_exposure_until_rebalance_or_trail() -> None:

@@ -46,6 +46,66 @@ class FakeBookTClient(FakeClient):
         }
 
 
+class FakeBookTSwitchClient(FakeClient):
+    def stock_info(self):
+        return [
+            {"code": "601288.XSHG", "codeName": "农业银行", "statusType": 1, "tradableAShare": 300_000},
+            {"code": "000725.XSHE", "codeName": "京东方Ａ", "statusType": 1, "tradableAShare": 90_000},
+        ]
+
+    def get_block_category_rank_v3(self, date, model=0):
+        return [
+            {"categoryCode": "BANK.BKDL", "name": "业绩股权类", "num": 200, "trendScore": 200},
+            {"categoryCode": "ELEC.BKDL", "name": "行业电子", "num": 180, "trendScore": 180},
+        ]
+
+    def get_code_by_xiao_cao_block(self, date, **filters):
+        code = filters.get("categoryCodeList")
+        if code == "BANK.BKDL":
+            return ["601288.XSHG"]
+        if code == "ELEC.BKDL":
+            return ["000725.XSHE"]
+        return []
+
+    def second_line_detail_info(self, codes):
+        return {
+            "000725.XSHE": {
+                "code": "000725.XSHE",
+                "codeName": "京东方Ａ",
+                "open": 10.0,
+                "preClose": 9.9,
+                "pctChangeRate": 1.0,
+            }
+        }
+
+    def minute_line(self, code: str, freq: str, adj: str, *, trade_date: str, count: int):
+        px = 5.0 if code == "601288.XSHG" else 10.0
+        return [
+            {"tradeTime": "0930", "close": px, "high": px, "low": px, "amt": px * 100, "vol": 100},
+            {"tradeTime": "0931", "close": px, "high": px, "low": px, "amt": px * 100, "vol": 100},
+        ]
+
+
+class FakeBookTNoReplacementClient(FakeBookTSwitchClient):
+    def stock_info(self):
+        return [
+            {"code": "601288.XSHG", "codeName": "农业银行", "statusType": 1, "tradableAShare": 300_000},
+        ]
+
+    def get_block_category_rank_v3(self, date, model=0):
+        return [
+            {"categoryCode": "BANK.BKDL", "name": "业绩股权类", "num": 200, "trendScore": 200},
+        ]
+
+    def get_code_by_xiao_cao_block(self, date, **filters):
+        if filters.get("categoryCodeList") == "BANK.BKDL":
+            return ["601288.XSHG"]
+        return []
+
+    def second_line_detail_info(self, codes):
+        return {}
+
+
 def test_fill_uses_window_vwap_when_below_limit() -> None:
     price, basis, basket_rule, meta = _fill_price_from_window(
         {"basket_price": 10.391, "basket_rule": "entry+2.1%", "open": 10.18},
@@ -383,6 +443,141 @@ def test_book_t_records_independent_trend_account(tmp_path, monkeypatch) -> None
     [trade] = [json.loads(line) for line in trades.read_text(encoding="utf-8").splitlines()]
     assert trade["book"] == "T" and trade["side"] == "BUY"
     assert trade["trend_alignment"] == "neutral"
+
+
+def test_book_t_switches_external_position_only_with_paired_replacement(tmp_path, monkeypatch) -> None:
+    import json
+    from argparse import Namespace
+    import kronos_screen.scripts.paper_record as pr
+
+    pos = tmp_path / "positions.jsonl"
+    account_t = tmp_path / "paper_account_T.json"
+    trades = tmp_path / "paper_trades.jsonl"
+    skips = tmp_path / "paper_skips.jsonl"
+    monkeypatch.setattr(pr, "POS", pos)
+    monkeypatch.setattr(pr, "ACCOUNT_T", account_t)
+    monkeypatch.setattr(pr, "TRADES", trades)
+    monkeypatch.setattr(pr, "SKIPS", skips)
+
+    bank = {
+        "book": "T",
+        "code": "601288.XSHG",
+        "name": "农业银行",
+        "entry_date": "2026-07-02",
+        "entry_price": 5.0,
+        "shares": 2000,
+        "gross_notional": 10000.0,
+        "entry_fee": 1.0,
+        "entry_cash_out": 10001.0,
+        "fee_rate": 0.0001,
+        "category_name": "业绩股权类",
+        "status": "open",
+        "source": "auto:trend_book",
+    }
+    pos.write_text(json.dumps(bank, ensure_ascii=False) + "\n", encoding="utf-8")
+    account_t.write_text(json.dumps({
+        "initial_capital": 30000.0,
+        "cash": 19999.0,
+        "fee_rate": 0.0001,
+        "realized_pnl": 0.0,
+        "total_fees": 1.0,
+    }), encoding="utf-8")
+    args = Namespace(
+        date="2026-07-03",
+        initial_capital=100000.0,
+        fee_rate=0.0001,
+        trend_budget_ratio=0.3,
+        trend_max_positions=1,
+        trend_max_total_exposure_ratio=1.0,
+        fill_window_start="0930",
+        fill_window_end="0931",
+        limit_premium_pct=0.5,
+        allow_additional=False,
+    )
+
+    _record_book_t(FakeBookTSwitchClient([]), args)
+
+    rows = [json.loads(line) for line in pos.read_text(encoding="utf-8").splitlines()]
+    old, new = rows
+    assert old["code"] == "601288.XSHG"
+    assert old["status"] == "closed"
+    assert old["exit_reason"] == "TREND_POSTURE_MISMATCH"
+    assert old["trend_switch_execution"] == "paired_morning_switch"
+    assert new["code"] == "000725.XSHE"
+    assert new["status"] == "open"
+    assert new["trend_alignment"] == "aligned"
+    assert new["trend_switch_execution"] == "paired_morning_replacement"
+
+    trade_rows = [json.loads(line) for line in trades.read_text(encoding="utf-8").splitlines()]
+    assert [(r["side"], r["code"]) for r in trade_rows] == [
+        ("SELL", "601288.XSHG"),
+        ("BUY", "000725.XSHE"),
+    ]
+    account = json.loads(account_t.read_text(encoding="utf-8"))
+    assert round(account["cash"], 2) == 995.10
+    assert account["realized_pnl"] == -2.0
+    assert account["total_fees"] == 4.9
+
+
+def test_book_t_keeps_external_position_when_no_replacement_exists(tmp_path, monkeypatch) -> None:
+    import json
+    from argparse import Namespace
+    import kronos_screen.scripts.paper_record as pr
+
+    pos = tmp_path / "positions.jsonl"
+    account_t = tmp_path / "paper_account_T.json"
+    trades = tmp_path / "paper_trades.jsonl"
+    skips = tmp_path / "paper_skips.jsonl"
+    monkeypatch.setattr(pr, "POS", pos)
+    monkeypatch.setattr(pr, "ACCOUNT_T", account_t)
+    monkeypatch.setattr(pr, "TRADES", trades)
+    monkeypatch.setattr(pr, "SKIPS", skips)
+
+    bank = {
+        "book": "T",
+        "code": "601288.XSHG",
+        "name": "农业银行",
+        "entry_date": "2026-07-02",
+        "entry_price": 5.0,
+        "shares": 2000,
+        "gross_notional": 10000.0,
+        "entry_fee": 1.0,
+        "entry_cash_out": 10001.0,
+        "fee_rate": 0.0001,
+        "category_name": "业绩股权类",
+        "status": "open",
+        "source": "auto:trend_book",
+    }
+    pos.write_text(json.dumps(bank, ensure_ascii=False) + "\n", encoding="utf-8")
+    account_t.write_text(json.dumps({
+        "initial_capital": 30000.0,
+        "cash": 19999.0,
+        "fee_rate": 0.0001,
+        "realized_pnl": 0.0,
+        "total_fees": 1.0,
+    }), encoding="utf-8")
+    args = Namespace(
+        date="2026-07-03",
+        initial_capital=100000.0,
+        fee_rate=0.0001,
+        trend_budget_ratio=0.3,
+        trend_max_positions=1,
+        trend_max_total_exposure_ratio=1.0,
+        fill_window_start="0930",
+        fill_window_end="0931",
+        limit_premium_pct=0.5,
+        allow_additional=False,
+    )
+
+    _record_book_t(FakeBookTNoReplacementClient([]), args)
+
+    [row] = [json.loads(line) for line in pos.read_text(encoding="utf-8").splitlines()]
+    assert row["code"] == "601288.XSHG"
+    assert row["status"] == "open"
+    assert not trades.exists()
+    account = json.loads(account_t.read_text(encoding="utf-8"))
+    assert account["cash"] == 19999.0
+    assert account["realized_pnl"] == 0.0
 
 
 def test_validate_fill_window_rejects_reversed_window() -> None:

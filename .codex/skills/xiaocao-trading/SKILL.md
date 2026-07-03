@@ -222,10 +222,13 @@ storage / optoelectronics / components / communications / robotics); neutral
 representatives can fill the trend sleeve only when needed to keep exposure.
 Bank / insurance / broker / medicine / liquor and other external old directions
 are `external`: do not treat them as trend buys. T exits use `TREND_TRAIL_DD` /
-`TREND_REBALANCE_R`; an already-held `external` T row exits after T+1 as
-`TREND_POSTURE_MISMATCH`, then the next morning can refill the slot. Ordinary
-ranking drift is not a switch signal, because Book T is a low-turnover exposure
-sleeve and fees matter. T must not consume Book-B
+`TREND_REBALANCE_R`; an already-held `external` T row is not sold unpaired at
+EOD. After T+1, the next morning `paper_record.py --trend-only` may switch it
+only when a replacement candidate is fillable in the same run: record the old
+row as `TREND_POSTURE_MISMATCH` / `paired_morning_switch`, then buy the new
+aligned/neutral representative. If no replacement is fillable, keep the old row
+open to preserve trend exposure. Ordinary ranking drift is not a switch signal,
+because Book T is a low-turnover exposure sleeve and fees matter. T must not consume Book-B
 strong-hold/composite logic. Trend evaluation stays out of
 `continuous_optimize.py`; use `trend_guards` / `trend_optimize` for compounded
 return, drawdown, turnover, and beta comparison.
@@ -260,7 +263,7 @@ bash scripts/auto_daily.sh morning
 
 1. `scripts/live_recommend.py` waits until the 9:25 auction snapshot is usable, writes the recommendation, captures ★/★B forward signals, and records news/sentiment when available.
 2. `kronos_screen/scripts/paper_record.py` confirms the Book-B paper buy after the opening execution window. Treat `basket` as the **abandon bound only, never the fill assumption**. The fill model is a realistic paper limit order: `L = min(open × (1 + 0.5%), basket_price)`; after the 9:30-9:31 window settles, if the window trades through `L`, fill at `min(window VWAP, L)`. If the initial low limit is not filled or would be rejected as too far from the tape, check the latest opening-window price as the real-time retry proxy; when that price is still `<= basket_price`, fill at that real-time price and audit `retry_realtime_after_limit_reject`. If the retry price is above `basket` or unavailable, the pick is **skipped** and audited in `output/live/paper_skips.jsonl` (`SKIPPED / LIMIT_NOT_REACHED`). If minute data is unavailable it falls back to `L` and marks `fill_fallback`. It also records **book A** — the validated reference policy (same final entry fill as Book B, sell at next close, no stop) — as a parallel virtual book, and applies a **kill-switch**: if book A's last 5 exit-days cum return < -3% it halves book B's deploy, < -5% it pauses Book-B buys entirely (book A and data capture always continue).
-3. The morning orchestration then runs `paper_record.py --trend-only` for Book T. This records only new trend slots into `paper_account_T.json`; no Book-T candidate, an already-full T book, or a skipped T fill is normal paper state and not a Book-B anomaly.
+3. The morning orchestration then runs `paper_record.py --trend-only` for Book T. This records new trend slots into `paper_account_T.json` and, when an already-held `external` T row is T+1 eligible and a replacement candidate is fillable, performs the paired trend switch in the same run. No Book-T candidate, an already-full T book with no paired switch, or a skipped T fill is normal paper state and not a Book-B anomaly.
 
 Use a two-stage reply for the morning automation. Keep the single orchestrated `auto_daily.sh morning` process running so the 9:35 opening-dense monitor sees confirmed positions, but as soon as the log shows `wrote .../recommend_<date>.md` or that recommendation file exists, inspect it and immediately send an interim Chinese update with today's ★B table and whether ★B differs from ★. The interim table must include `basket`, `basket_rule`, and the produced one-sentence stock sentiment/news summary; mark `paper_buy` as pending/`待模拟成交` and do not call the morning automation finished yet. Then continue waiting for `paper_record.py`; after the paper-buy phase completes, send the complete morning summary with fills, fees, account cash, posture, and anomalies.
 

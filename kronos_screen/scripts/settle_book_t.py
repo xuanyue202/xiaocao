@@ -126,7 +126,7 @@ def _mark_trend_switch_context(
 ) -> None:
     p["trend_alignment"] = alignment["trend_alignment"]
     p["trend_alignment_reason"] = alignment["trend_alignment_reason"]
-    p["trend_switch_policy"] = "hold_exposure; switch_external_after_t1; otherwise_rebalance_on_R"
+    p["trend_switch_policy"] = "hold_exposure; paired_morning_switch_when_replacement_ready"
     p["trend_switch_est_roundtrip_fee_bps"] = round(fee_rate * 2 * 10000, 2)
 
 
@@ -140,8 +140,6 @@ def _trend_exit_reason(
 ) -> str | None:
     if dd_pct >= trail_dd:
         return "TREND_DAILY_TRAIL_STOP"
-    if alignment["trend_alignment"] == "external" and hold_days >= 1:
-        return "TREND_POSTURE_MISMATCH"
     if hold_days >= rebalance_days:
         return "TREND_REBALANCE_R"
     return None
