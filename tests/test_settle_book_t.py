@@ -36,7 +36,7 @@ def test_book_t_existing_bank_position_waits_for_paired_morning_switch() -> None
     ) is None
 
 
-def test_book_t_aligned_position_keeps_exposure_until_rebalance_or_trail() -> None:
+def test_book_t_aligned_position_keeps_exposure_until_paired_rebalance_or_trail() -> None:
     alignment = {
         "trend_alignment": "aligned",
         "trend_alignment_reason": "matched posture keyword: 半导体",
@@ -55,7 +55,7 @@ def test_book_t_aligned_position_keeps_exposure_until_rebalance_or_trail() -> No
         hold_days=60,
         rebalance_days=60,
         alignment=alignment,
-    ) == "TREND_REBALANCE_R"
+    ) is None
     assert sbt._trend_exit_reason(
         dd_pct=12.0,
         trail_dd=12.0,

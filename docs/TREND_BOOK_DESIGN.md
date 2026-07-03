@@ -51,14 +51,14 @@
 - **Book T 的仓位目标**：趋势的本质是保持一个独立趋势袖子，不是每日追涨杀跌。新仓优先买与小草现行主线一致的 `aligned` 代表；如果没有足够 aligned，允许 `neutral` 兜底以维持趋势参与；银行/保险/证券/医药/白酒等外部旧方向为 `external`，只当风险/切换信号，不当趋势新买入。
 
 ### (2) 一本账 + 一个安全门
-- **一本持仓账**：`positions.jsonl` 仍是唯一 append-only ledger；book T 行带 `book:"T"`。**陷阱**：缺 label 默认归 B → `live_monitor`/`paper_record`/`settle`/`data_health` 的每个 book 过滤器**必须同步**认 T，否则 T 静默并进 B 的对账。
+- **一本持仓账**：`positions.jsonl` 仍是唯一持仓状态账本；book T 行带 `book:"T"`。买入追加新行，确定性出场/配对换股会重写既有行状态。**陷阱**：缺 label 默认归 B → `live_monitor`/`paper_record`/`settle`/`data_health` 的每个 book 过滤器**必须同步**认 T，否则 T 静默并进 B 的对账。
 - **账户文件**：`accounts.py:load_account/save_account(path,...)` 已 path 参数化 → 加 `paper_account_T.json` 不动 SSOT。
 - **真实下单**（暂未接）：经**同一个** `safety.require_capital_action` 两钥 fail-closed 门。
 
 ### (3) 同一只票、两个时间维度（最硬的点）
 短线要卖 X（次收/HARD_STOP），趋势仍持 X（方向还在就扛）——**不 net 成一个仓**，保留**两行**（book B 行 + book T 行），各自独立生命周期。schema 已支持（今天 book A/B 就同时持有同一只票）。
 - **谁赢**：谁都不覆盖谁的 horizon。脊柱各跑各的纪律：B 在 14:55/HARD_STOP，T 在 rebalance/宽趋势止损。
-- **个股可以换，但不能乱换**：T 的换股只在两种情况下发生：一是已有 T 仓被 `classify_trend_alignment` 识别为 `external` 且过了 T+1，并且 morning 已有可成交替代候选，才按 `TREND_POSTURE_MISMATCH` 做成对 SELL+BUY；二是到 `TREND_REBALANCE_R` 低换手周期。普通 category rank 日内/日间波动不换，避免手续费和“战略定力”被噪音打掉。没有替代候选时不为了“清理旧方向”单边空出趋势 slot。
+- **个股可以换，但不能乱换**：T 的换股只在两种情况下发生：一是已有 T 仓被 `classify_trend_alignment` 识别为 `external` 且过了 T+1，并且 morning 已有可成交替代候选，才按 `TREND_POSTURE_MISMATCH` 做成对 SELL+BUY；二是到 `TREND_REBALANCE_R` 低换手周期后，下一次 morning 有可成交替代候选时才按 `TREND_REBALANCE_R` 做成对 SELL+BUY。普通 category rank 日内/日间波动不换，避免手续费和“战略定力”被噪音打掉。没有替代候选时不为了“清理旧方向”或“到期 rebalance”单边空出趋势 slot。
 - **评审 RED #1**：book T 的「方向还在就扛」强持有**绝不能**走短线的 `exit_policy.py:181 strong_hold_reason/is_trend_leader` 路径——否则 T 的判断会**压制 B 对同一只票的确定性止损**。→ book T 用**独立的冻结 exit profile**（如 `PROFILE_TREND_DD`，更宽 trailing），与短线 strong-hold 谓词**完全 disjoint**；趋势止损抑制只 key 在**冻结 trend 参数**上，**永不** key 在 cortex 的「方向还在」实时信号上。
 - **真实经纪商**：allocator 在调 `require_capital_action` **之前** net 同 code 跨 book 的 BUY/SELL 意图，让 scope/notional 检查看到合并 size；并加一个**全局跨 book 持仓上限**（今天的 `max_total_exposure_ratio` 只管 book B），超限按冻结预算比例 pro-rata 削减——**判断永不越过上限**。
 

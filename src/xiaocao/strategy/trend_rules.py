@@ -56,6 +56,14 @@ POSTURE_ALIGNED_KEYWORDS = (
 )
 
 ALIGNMENT_PRIORITY = {"aligned": 0, "neutral": 1, "external": 2}
+TREND_SWITCH_POLICY_HELD = "hold_exposure; paired_morning_switch_when_replacement_ready"
+TREND_SWITCH_POLICY_NEW_BUY = (
+    "prefer_aligned_low_turnover; block_external; paired_switch_external_when_replacement_ready"
+)
+TREND_SWITCH_EXECUTION_EXIT = "paired_morning_switch"
+TREND_SWITCH_EXECUTION_REPLACEMENT = "paired_morning_replacement"
+TREND_EXIT_POSTURE_MISMATCH = "TREND_POSTURE_MISMATCH"
+TREND_EXIT_REBALANCE = "TREND_REBALANCE_R"
 
 
 def _num(value: Any, default: float = 0.0) -> float:
@@ -341,10 +349,7 @@ def generate_trend_picks(
             "basket_premium_pct": basket_premium_pct,
             "trend_alignment": alignment["trend_alignment"],
             "trend_alignment_reason": alignment["trend_alignment_reason"],
-            "trend_switch_policy": (
-                "prefer_aligned_low_turnover; block_external; "
-                "paired_switch_external_when_replacement_ready"
-            ),
+            "trend_switch_policy": TREND_SWITCH_POLICY_NEW_BUY,
             "reason": (
                 f"Book T {c['category_name'] or c['category_code']} "
                 f"r{c['category_rank']} bigcap={bool(c['is_big_cap'])} "

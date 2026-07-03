@@ -10,7 +10,7 @@ proxy; when that price is still within the basket abandon bound, it buys at
 that real-time price and audits the retry. basket_price is the abandon bound
 only — never the fill assumption (the old behaviour booked every fill at the
 +2% chase cap, costing ~1.9%/trade of fictitious slippage).
-Reads output/live/signal_snapshots.jsonl; appends to output/live/positions.jsonl.
+Reads output/live/signal_snapshots.jsonl; updates output/live/positions.jsonl.
 """
 from __future__ import annotations
 import argparse, json
@@ -33,7 +33,15 @@ from xiaocao.strategy.params import (  # noqa: E402
     TREND_TOP_M,
     TREND_TRAIL_DD,
 )
-from xiaocao.strategy.trend_rules import classify_trend_alignment, generate_trend_picks  # noqa: E402
+from xiaocao.strategy.trend_rules import (  # noqa: E402
+    TREND_EXIT_POSTURE_MISMATCH,
+    TREND_EXIT_REBALANCE,
+    TREND_SWITCH_EXECUTION_EXIT,
+    TREND_SWITCH_EXECUTION_REPLACEMENT,
+    TREND_SWITCH_POLICY_HELD,
+    classify_trend_alignment,
+    generate_trend_picks,
+)
 from quality_governor import annotate_quality_governor, ensure_quality_fields  # noqa: E402
 
 SNAP = Path("output/live/signal_snapshots.jsonl")
@@ -781,6 +789,46 @@ def _book_t_entry_before_today(row: dict, date_iso: str) -> bool:
     return bool(entry_date and entry_date < str(date_iso)[:10])
 
 
+def _book_t_hold_days(client: XiaocaoClient, row: dict, date_iso: str) -> int:
+    entry_date = str(row.get("entry_date") or "")[:10]
+    today = str(date_iso)[:10]
+    if not entry_date or entry_date >= today:
+        return 0
+    try:
+        rows = client.get_trade_cal(entry_date, today, "SSE", 1)
+    except Exception:
+        rows = []
+    days: set[str] = set()
+    if isinstance(rows, list):
+        for item in rows:
+            if not isinstance(item, dict):
+                continue
+            raw = item.get("calDate") or item.get("tradeDate") or item.get("date")
+            if raw is None:
+                continue
+            text = str(raw)
+            if len(text) == 8 and text.isdigit():
+                text = f"{text[:4]}-{text[4:6]}-{text[6:]}"
+            else:
+                text = text[:10]
+            if entry_date <= text <= today:
+                days.add(text)
+    if days:
+        return max(0, len(days) - 1)
+    try:
+        return max(0, (datetime.fromisoformat(today) - datetime.fromisoformat(entry_date)).days)
+    except ValueError:
+        return 0
+
+
+def _book_t_rebalance_due(client: XiaocaoClient, row: dict, date_iso: str) -> bool:
+    try:
+        rebalance_days = int(row.get("trend_rebalance_days") or TREND_REBALANCE_R)
+    except (TypeError, ValueError):
+        rebalance_days = TREND_REBALANCE_R
+    return _book_t_hold_days(client, row, date_iso) >= rebalance_days
+
+
 def _mark_book_t_switch_context(row: dict, *, fee_rate: float) -> dict[str, str]:
     alignment = classify_trend_alignment(
         code=str(row.get("code") or ""),
@@ -790,7 +838,7 @@ def _mark_book_t_switch_context(row: dict, *, fee_rate: float) -> dict[str, str]
     )
     row["trend_alignment"] = alignment["trend_alignment"]
     row["trend_alignment_reason"] = alignment["trend_alignment_reason"]
-    row["trend_switch_policy"] = "hold_exposure; paired_morning_switch_when_replacement_ready"
+    row["trend_switch_policy"] = TREND_SWITCH_POLICY_HELD
     row["trend_switch_est_roundtrip_fee_bps"] = round(fee_rate * 2 * 10000, 2)
     return alignment
 
@@ -803,6 +851,7 @@ def _book_t_switch_exit_plan(
     start_hhmm: str,
     end_hhmm: str,
     account: dict,
+    exit_reason: str,
 ) -> dict | None:
     code = str(row.get("code") or "")
     shares = int(row.get("shares") or 0)
@@ -838,6 +887,7 @@ def _book_t_switch_exit_plan(
         "exit_fee": exit_fee,
         "cash_in": cash_in,
         "realized_pnl": realized,
+        "exit_reason": exit_reason,
         "open_cost": _book_t_position_cost(row),
         "fill_window_start": start_hhmm,
         "fill_window_end": end_hhmm,
@@ -858,8 +908,8 @@ def _apply_book_t_switch_exit(plan: dict, account: dict, *, date_iso: str) -> No
         "exit_fee": plan["exit_fee"],
         "exit_cash_in": plan["cash_in"],
         "realized_pnl": plan["realized_pnl"],
-        "exit_reason": "TREND_POSTURE_MISMATCH",
-        "trend_switch_execution": "paired_morning_switch",
+        "exit_reason": plan["exit_reason"],
+        "trend_switch_execution": TREND_SWITCH_EXECUTION_EXIT,
         "trend_switch_fill_basis": "opening_window_vwap",
         "trend_switch_exit_window_start": plan.get("fill_window_start"),
         "trend_switch_exit_window_end": plan.get("fill_window_end"),
@@ -889,10 +939,10 @@ def _apply_book_t_switch_exit(plan: dict, account: dict, *, date_iso: str) -> No
         "fee": plan["exit_fee"],
         "cash_after": account["cash"],
         "realized_pnl": plan["realized_pnl"],
-        "reason": "TREND_POSTURE_MISMATCH",
+        "reason": plan["exit_reason"],
         "source": "auto:trend_book",
         "price_basis": "opening_window_vwap",
-        "trend_switch_execution": "paired_morning_switch",
+        "trend_switch_execution": TREND_SWITCH_EXECUTION_EXIT,
         "trend_alignment": row.get("trend_alignment"),
         "trend_alignment_reason": row.get("trend_alignment_reason"),
         "trend_switch_policy": row.get("trend_switch_policy"),
@@ -937,7 +987,7 @@ def _record_book_t(client: XiaocaoClient, a) -> None:
     open_count = 0
     current_open_cost = 0.0
     existing_auto_for_date = 0
-    switch_candidates: list[dict] = []
+    switch_candidates: list[tuple[dict, str]] = []
     for row in positions:
         if row.get("book") != "T":
             continue
@@ -948,11 +998,10 @@ def _record_book_t(client: XiaocaoClient, a) -> None:
                 open_codes.add(str(row.get("code")))
             current_open_cost += _book_t_position_cost(row)
             alignment = _mark_book_t_switch_context(row, fee_rate=fee_rate)
-            if (
-                alignment["trend_alignment"] == "external"
-                and _book_t_entry_before_today(row, a.date)
-            ):
-                switch_candidates.append(row)
+            if alignment["trend_alignment"] == "external" and _book_t_entry_before_today(row, a.date):
+                switch_candidates.append((row, TREND_EXIT_POSTURE_MISMATCH))
+            elif _book_t_rebalance_due(client, row, a.date):
+                switch_candidates.append((row, TREND_EXIT_REBALANCE))
         if row.get("entry_date") == a.date and row.get("source") == "auto:trend_book":
             existing_auto_for_date += 1
 
@@ -964,7 +1013,7 @@ def _record_book_t(client: XiaocaoClient, a) -> None:
         return
 
     switch_exit_plans: list[dict] = []
-    for row in switch_candidates:
+    for row, exit_reason in switch_candidates:
         plan = _book_t_switch_exit_plan(
             client,
             row,
@@ -972,6 +1021,7 @@ def _record_book_t(client: XiaocaoClient, a) -> None:
             start_hhmm=a.fill_window_start,
             end_hhmm=a.fill_window_end,
             account=account,
+            exit_reason=exit_reason,
         )
         if plan is not None:
             switch_exit_plans.append(plan)
@@ -1032,7 +1082,7 @@ def _record_book_t(client: XiaocaoClient, a) -> None:
     if not buyable:
         if switch_candidates:
             print(
-                f"{a.date}: book T holds {len(switch_candidates)} posture-mismatch candidate(s); "
+                f"{a.date}: book T holds {len(switch_candidates)} switch candidate(s); "
                 "no paired replacement filled, so exposure is kept"
             )
         else:
@@ -1040,10 +1090,7 @@ def _record_book_t(client: XiaocaoClient, a) -> None:
         return
 
     cash = float(account.get("cash", 0.0))
-    planned_switch_count = min(
-        len(switch_exit_plans),
-        max(0, len(buyable) - empty_slots),
-    )
+    planned_switch_count = min(len(switch_exit_plans), len(buyable))
     selected_switches = switch_exit_plans[:planned_switch_count]
     switch_cash_in = sum(float(p["cash_in"]) for p in selected_switches)
     switched_open_cost = sum(float(p["open_cost"]) for p in selected_switches)
@@ -1110,7 +1157,7 @@ def _record_book_t(client: XiaocaoClient, a) -> None:
             "trend_alignment_reason": r.get("trend_alignment_reason"),
             "trend_switch_policy": r.get("trend_switch_policy"),
             "trend_switch_execution": (
-                "paired_morning_replacement" if n < planned_switch_count else None
+                TREND_SWITCH_EXECUTION_REPLACEMENT if n < planned_switch_count else None
             ),
             "gross_notional": gross_notional,
             "entry_fee": entry_fee,
@@ -1158,7 +1205,7 @@ def _record_book_t(client: XiaocaoClient, a) -> None:
             "trend_alignment_reason": r.get("trend_alignment_reason"),
             "trend_switch_policy": r.get("trend_switch_policy"),
             "trend_switch_execution": (
-                "paired_morning_replacement" if n < planned_switch_count else None
+                TREND_SWITCH_EXECUTION_REPLACEMENT if n < planned_switch_count else None
             ),
             "fill_window_start": a.fill_window_start,
             "fill_window_end": a.fill_window_end,

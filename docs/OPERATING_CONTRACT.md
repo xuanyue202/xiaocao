@@ -1,6 +1,6 @@
 # 小草运营契约（Operating Contract, SSOT）
 
-**版本**：1.5
+**版本**：1.7
 **状态**：现行
 **适用范围**：所有 paper / 未来 real 的实盘环（live_recommend → paper_record → live_monitor → eod）与回测
 **关联实现**：`src/xiaocao/live/safety.py`、`src/xiaocao/strategy/trend_rules.py`、`kronos_screen/scripts/{paper_record,settle_book_a,settle_book_t,decompose_pnl,quality_governor}.py`、`scripts/live_monitor.py`
@@ -57,7 +57,7 @@
 
 - **建仓**：`paper_record.py --trend-only` 调 `strategy.trend_rules.generate_trend_picks`，从当前主线大类中选少量大票/中军候选，写入 `positions.jsonl` 的 `book="T"` 行；同 code 可同时有 B/T 两行，互不阻塞、互不 net。候选分为 `aligned / neutral / external`：电子、半导体、存储、光电、元器件、通信、机器人等与当前小草主线相关者优先；中性候选只作保持趋势仓位的兜底；银行/保险/证券/医药/白酒等外部旧方向是 `external`，不得作为新趋势买入。
 - **账户**：`paper_account_T.json`，默认初始资金 = `initial_capital × TREND_BUDGET_RATIO`；统一 `paper_trades.jsonl` 记录 `book:"T"`。
-- **出场 / 换股**：`live_monitor.py --book T` 和 `settle_book_t.py` 只认冻结趋势参数：`TREND_TRAIL_DD` 宽回撤与 `TREND_REBALANCE_R` 低换手到期；方向错配不在 EOD 单边卖出。已持仓若被分类为 `external` 且过 T+1，下一次 morning 只有在 `paper_record.py --trend-only` 已找到可成交替代候选时，才按 `TREND_POSTURE_MISMATCH` 做成对 SELL+BUY；无替代则继续持有，避免趋势袖子空仓断档。普通排名变化不触发换仓，避免手续费和噪音换手。**不得调用** Book B 的 `strong_hold_reason` / composite 逻辑，也不得让“方向还在”这类皮层判断抑制 B 的止损。
+- **出场 / 换股**：`live_monitor.py --book T` 和 `settle_book_t.py` 只认冻结趋势参数：`TREND_TRAIL_DD` 宽回撤；方向错配和 `TREND_REBALANCE_R` 低换手到期都不在 EOD 单边卖出。已持仓若被分类为 `external` 且过 T+1，或达到低换手 rebalance 周期，下一次 morning 只有在 `paper_record.py --trend-only` 已找到可成交替代候选时，才按 `TREND_POSTURE_MISMATCH` / `TREND_REBALANCE_R` 做成对 SELL+BUY；无替代则继续持有，避免趋势袖子空仓断档。普通排名变化不触发换仓，避免手续费和噪音换手。**不得调用** Book B 的 `strong_hold_reason` / composite 逻辑，也不得让“方向还在”这类皮层判断抑制 B 的止损。
 - **评估**：Book T 不进入 `forward_eval.py -> training_rows.parquet -> continuous_optimize.py` 的短线 per-trade A/B/C/D 口径；趋势评估只走 `trend_guards` / `trend_optimize` 的复利、回撤、换手、vs-beta 仪器。`trend_optimize.py --record` 只能把 changed verdict 写入 `kronos_screen/HYPOTHESES.jsonl`，不得改 `TREND_*` 参数。
 - **命名空间**：`signal_snapshots.jsonl` 的唯一键是 `(date, code, is_live, book)`；缺 `book` 的旧行默认 B。`data_health` / `contexts` / `forward_eval` 均必须保留 book 维度，避免 B/T 同票同日被误判重复或互相覆盖。
 
@@ -138,4 +138,4 @@
 | 1.4 | 2026-07-01 | Book T 趋势模拟仓上线：`trend_rules.py` 候选、`paper_record.py --trend-only`、`paper_account_T.json`、`live_monitor.py --book T`、`settle_book_t.py`；snapshot/data_health/context/forward_eval key 升级为 book-scoped；`trend_optimize.py` 接入 `trend_guards` 复利/dd/换手评估并与短线 `continuous_optimize.py` 分离。 |
 | 1.5 | 2026-07-02 | 快速探索期 weekly deep review 自动迭代规则：evidence_bundle 硬门槛、固定输入清单、dirty-file 显式确认、proposal/weekly report/change ledger、allowlist staging/current-branch commit；允许 paper/simulation 自动改动，仍禁止账户/缓存/安全/real-capital 授权自动改。 |
 | 1.6 | 2026-07-02 | Book T 候选与换股口径细化：新仓按 `aligned/neutral/external` 分层，外部旧方向不买；已持有 `external` 过 T+1 后按 `TREND_POSTURE_MISMATCH` 换出，普通排名变化只等低换手 rebalance，保持趋势袖子仓位但避免银行/保险等防守方向被误当主线。 |
-| 1.7 | 2026-07-03 | Book T 错配换股改为 morning 成对切换：EOD 不再单边卖出 `external`；早盘只有出现可成交替代候选时才 SELL+BUY，同步记录 `paired_morning_switch`，无替代则保持趋势暴露。 |
+| 1.7 | 2026-07-03 | Book T 错配/低换手 rebalance 改为 morning 成对切换：EOD 不再单边卖出 `external` 或 rebalance-due 行；早盘只有出现可成交替代候选时才 SELL+BUY，同步记录 `paired_morning_switch`，无替代则保持趋势暴露。 |

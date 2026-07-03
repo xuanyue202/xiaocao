@@ -615,7 +615,7 @@ def _decide_trend_sell_action(
     dd_threshold: float = TREND_TRAIL_DD,
     now: datetime | None = None,
 ) -> dict[str, object]:
-    """Book T exit policy: wide trailing stop + low-turnover rebalance.
+    """Book T exit policy: wide trailing stop; rebalance waits for paired switch.
 
     This intentionally does not call short-line strong_hold_reason or composite
     scoring. The trend book has its own lifecycle and cannot suppress Book-B
@@ -638,10 +638,10 @@ def _decide_trend_sell_action(
     target_days = int(position.get("trend_rebalance_days") or TREND_REBALANCE_R)
     if hold_days >= target_days and _market_now(now).time() >= EOD_DISCIPLINE_TIME:
         return {
-            "triggered": True,
-            "sell_reason": "TREND_REBALANCE_R",
+            "triggered": False,
+            "sell_reason": None,
             "hold_reason": None,
-            "decision_phase": "trend_rebalance",
+            "decision_phase": "trend_rebalance_due_wait_paired_switch",
         }
     return {
         "triggered": False,

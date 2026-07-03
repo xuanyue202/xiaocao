@@ -221,7 +221,7 @@ def test_book_t_uses_wide_trend_stop_not_shortline_composite() -> None:
     assert decision["sell_reason"] == "TREND_TRAIL_STOP"
 
 
-def test_book_t_rebalances_only_at_eod_after_target_days() -> None:
+def test_book_t_rebalance_due_waits_for_paired_morning_switch() -> None:
     intraday = _decide_trend_sell_action(
         {"trend_rebalance_days": 20},
         dd_pct=0.0,
@@ -237,8 +237,9 @@ def test_book_t_rebalances_only_at_eod_after_target_days() -> None:
         now=_dt(14, 56),
     )
     assert intraday["triggered"] is False
-    assert eod["triggered"] is True
-    assert eod["sell_reason"] == "TREND_REBALANCE_R"
+    assert eod["triggered"] is False
+    assert eod["sell_reason"] is None
+    assert eod["decision_phase"] == "trend_rebalance_due_wait_paired_switch"
 
 
 def test_simulated_sell_blocks_limit_down_with_no_bid() -> None:
