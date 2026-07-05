@@ -12,9 +12,11 @@ from kronos_screen.scripts.paper_record import (
     _quality_governor_buyable,
     _record_book_t,
     _record_book_a,
+    _select_intelligence_picks,
     _validate_fill_window,
 )
 from kronos_screen.scripts.quality_governor import ensure_quality_fields
+from xiaocao.live import intelligence_policy
 
 
 class FakeClient:
@@ -290,6 +292,91 @@ def test_attach_fill_prices_skips_when_limit_not_reached() -> None:
     [record] = skipped
     assert record["_paper_fill"]["skip_reason"] == "LIMIT_NOT_REACHED"
     assert record["_paper_fill"]["skip_detail"] == "REALTIME_ABOVE_BASKET"
+
+
+def test_select_intelligence_picks_uses_all_latest_candidates_and_vetoes() -> None:
+    result = _select_intelligence_picks(
+        [
+            {
+                "code": "A.XSHE",
+                "name": "基础一",
+                "vb_star": True,
+                "vb_rank": 1,
+                "rank_score": 100.0,
+                "score_source": "agent_review",
+                "agent_short_score": 0.0,
+                "data_quality": "ok",
+            },
+            {
+                "code": "B.XSHE",
+                "name": "基础二",
+                "vb_star": True,
+                "vb_rank": 2,
+                "rank_score": 99.0,
+                "score_source": "agent_review",
+                "agent_short_score": 0.6,
+                "data_quality": "ok",
+                "veto_flags": [{
+                    "event_type": "dishonesty_enforcement",
+                    "severity": "critical",
+                    "confidence": 0.95,
+                }],
+            },
+            {
+                "code": "C.XSHE",
+                "name": "AI替换",
+                "vb_star": False,
+                "rank_score": 90.0,
+                "score_source": "agent_review",
+                "agent_short_score": 0.9,
+                "data_quality": "ok",
+            },
+        ],
+        pick="vb_star",
+        config=intelligence_policy.IntelligenceTradeConfig(mode="on", score_bonus=20.0),
+    )
+
+    assert result.slot_count == 2
+    assert [row["code"] for row in result.selected] == ["C.XSHE", "A.XSHE"]
+    assert result.selected[0]["ai_intelligence_replaced_base_pick"] is True
+    assert [row["code"] for row in result.vetoed] == ["B.XSHE"]
+
+
+def test_select_intelligence_picks_uses_trade_date_asof_for_veto_expiry() -> None:
+    row = {
+        "code": "A.XSHE",
+        "name": "基础一",
+        "vb_star": True,
+        "vb_rank": 1,
+        "rank_score": 100.0,
+        "score_source": "agent_review",
+        "agent_short_score": 0.0,
+        "data_quality": "ok",
+        "veto_flags": [{
+            "event_type": "debt_default",
+            "severity": "high",
+            "confidence": 0.95,
+            "event_date": "2026-05-01",
+        }],
+    }
+
+    expired = _select_intelligence_picks(
+        [row],
+        pick="vb_star",
+        config=intelligence_policy.IntelligenceTradeConfig(mode="on", veto_max_age_days=30),
+        asof="2026-07-05T09:30:00+08:00",
+    )
+    active_on_trade_day = _select_intelligence_picks(
+        [row],
+        pick="vb_star",
+        config=intelligence_policy.IntelligenceTradeConfig(mode="on", veto_max_age_days=30),
+        asof="2026-05-20T09:30:00+08:00",
+    )
+
+    assert expired.vetoed == []
+    assert [r["code"] for r in expired.selected] == ["A.XSHE"]
+    assert [r["code"] for r in active_on_trade_day.vetoed] == ["A.XSHE"]
+    assert active_on_trade_day.selected == []
 
 
 def test_old_snapshot_quality_fields_are_recomputed() -> None:

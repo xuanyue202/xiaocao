@@ -197,6 +197,44 @@ def test_same_day_position_remains_t1_blocked() -> None:
     assert decision["decision_phase"] == "t1_blocked"
 
 
+def test_ai_event_risk_exit_triggers_after_t1() -> None:
+    decision = _decide_sell_action(
+        {"mode": "首红断低吸", "flags": "", "xcjw": 120, "jsjl": 0},
+        detail={"pctChangeRate": 1.0, "high": 10.2, "upPrice": 11.0},
+        latest_price=10.1,
+        peak=10.2,
+        dd_pct=0.98,
+        dd_threshold=2.0,
+        t1_blocked=False,
+        hold_days=1,
+        signal_score=0.5,
+        event_risk={"triggered": True, "event_types": ["financial_fraud"]},
+        now=_dt(10, 0),
+    )
+
+    assert decision["triggered"] is True
+    assert decision["sell_reason"] == "AI_EVENT_RISK_EXIT"
+    assert decision["decision_phase"] == "event_risk"
+
+
+def test_ai_event_risk_exit_respects_t1_block() -> None:
+    decision = _decide_sell_action(
+        {"mode": "首红断低吸", "flags": "", "xcjw": 120, "jsjl": 0},
+        detail={"pctChangeRate": -8.0, "high": 10.0, "upPrice": 11.0},
+        latest_price=9.2,
+        peak=10.0,
+        dd_pct=8.0,
+        dd_threshold=2.0,
+        t1_blocked=True,
+        hold_days=0,
+        event_risk={"triggered": True, "event_types": ["financial_fraud"]},
+        now=_dt(10, 0),
+    )
+
+    assert decision["triggered"] is False
+    assert decision["decision_phase"] == "t1_blocked"
+
+
 def test_book_t_uses_wide_trend_stop_not_shortline_composite() -> None:
     decision = _decide_trend_sell_action(
         {"trend_rebalance_days": 60},

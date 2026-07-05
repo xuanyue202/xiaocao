@@ -76,6 +76,14 @@ output/live/quality_governor_audit.jsonl
 output/live/signal_snapshots.jsonl*
 output/live/stock_sentiment.json
 output/live/stock_sentiment_history.jsonl
+output/live/agent_signals.jsonl
+output/live/context_pack_*.json
+output/live/run_flow*.jsonl
+output/live/run_flow_*.json
+output/live/intelligence_evidence_*.jsonl
+output/live/intelligence_evidence_cache.jsonl
+output/live/intelligence_latency.jsonl
+output/live/intelligence_veto_audit.jsonl
 output/live/training_rows.parquet
 output/live/decision_journal.jsonl
 output/live/daily_reconstructed.jsonl

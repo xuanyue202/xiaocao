@@ -1,9 +1,9 @@
 # 小草运营契约（Operating Contract, SSOT）
 
-**版本**：1.7
+**版本**：1.8
 **状态**：现行
 **适用范围**：所有 paper / 未来 real 的实盘环（live_recommend → paper_record → live_monitor → eod）与回测
-**关联实现**：`src/xiaocao/live/safety.py`、`src/xiaocao/strategy/trend_rules.py`、`kronos_screen/scripts/{paper_record,settle_book_a,settle_book_t,decompose_pnl,quality_governor}.py`、`scripts/live_monitor.py`
+**关联实现**：`src/xiaocao/live/safety.py`、`src/xiaocao/live/intelligence_policy.py`、`src/xiaocao/strategy/trend_rules.py`、`kronos_screen/scripts/{paper_record,settle_book_a,settle_book_t,decompose_pnl,quality_governor}.py`、`scripts/live_monitor.py`
 **回归测试**：`tests/test_operating_contract.py`
 **借鉴**：QuantDinger `docs/SIGNAL_EXECUTION_STANDARD_CN.md`（契约 SSOT 结构）+ `docs/agent/MCP_SETUP.md`（paper-only 默认 / 双钥匙 live gate）
 
@@ -45,7 +45,10 @@
 ## 4. Book B — 实盘策略口径（分阶段出场）
 
 - **建仓**：`paper_record`（见第 5 节成交模型）。
+- **AI 情报因子（paper-only P2）**：`paper_record.py --intelligence-trade on` 消费已经落盘的结构化 `agent_review`，在最新 `signal_snapshots.jsonl` 候选池内按 `rank_score + agent_short_score × ai_score_bonus` 重排 Book-B 纸面买入 slot；`agent_short_score >= ai_buy_threshold` 的非基础 ★B 候选可参与替换。没有 `agent_review` 时必须退化为原始 `vb_star` 选择。关键词 `keyword_score` / 一句话舆情永不参与买入排序。
+- **AI hard-veto**：只认 `intelligence_evidence.HARD_VETO_TAXONOMY` 中的明确事件类型，且需模型写入 `veto_flags`、`severity` 达 high/critical、`confidence >= ai_veto_confidence`、未过短线时效或标记 ongoing。命中后 Book-B 纸面买入跳过并写 `paper_skips.jsonl` 的 `AI_HARD_VETO`；非法 event_type / 低置信 / 低严重度不生效，避免关键词一票否决。Evidence freeze 覆盖当天候选池和当前 open Book-B 持仓；同日缓存只在新鲜 TTL 内复用，过期后刷新素材，避免盘中新利空被旧缓存遮蔽。
 - **出场分阶段**（`live_monitor`）：
+  - **AI_EVENT_RISK_EXIT**：持仓股票若当天结构化 `veto_flags` 命中 hard-veto，且不处于 T+1，则触发尽早卖出；仍受跌停无买盘等流动性执行约束。
   - **盘中仅执行** `HARD_STOP`（peak→now 回撤 ≥ **8%** 且无强持有理由）或流动性逃逸。
   - **普通 trailing / composite 恶化盘中只诊断**（状态列 `defer:<reason>`，alerts 记 `SELL_DEFERRED`）→ **14:55 纪律 pass 统一执行**，出场对齐 next_close 参照。
   - **T+1**：建仓日不可卖（`t1_blocked`，诊断用）。
@@ -139,3 +142,4 @@
 | 1.5 | 2026-07-02 | 快速探索期 weekly deep review 自动迭代规则：evidence_bundle 硬门槛、固定输入清单、dirty-file 显式确认、proposal/weekly report/change ledger、allowlist staging/current-branch commit；允许 paper/simulation 自动改动，仍禁止账户/缓存/安全/real-capital 授权自动改。 |
 | 1.6 | 2026-07-02 | Book T 候选与换股口径细化：新仓按 `aligned/neutral/external` 分层，外部旧方向不买；已持有 `external` 过 T+1 后按 `TREND_POSTURE_MISMATCH` 换出，普通排名变化只等低换手 rebalance，保持趋势袖子仓位但避免银行/保险等防守方向被误当主线。 |
 | 1.7 | 2026-07-03 | Book T 错配/低换手 rebalance 改为 morning 成对切换：EOD 不再单边卖出 `external` 或 rebalance-due 行；早盘只有出现可成交替代候选时才 SELL+BUY，同步记录 `paired_morning_switch`，无替代则保持趋势暴露。 |
+| 1.8 | 2026-07-05 | AI 情报因子 P2 接入 Book-B 纸面交易：结构化 `agent_review` 短线分参与候选池重排，taxonomy hard-veto 可跳过买入并触发 T+1 后 `AI_EVENT_RISK_EXIT`；关键词舆情仍只作诊断，real-capital 边界不变。 |

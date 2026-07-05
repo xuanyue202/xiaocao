@@ -1,6 +1,6 @@
-"""Join captured live snapshots with realized next-close returns -> (1) A/B/C/D
+"""Join captured live snapshots with realized next-close returns -> (1) A/B/C/D/E
 verdict (A = K->P, B = K->P + auction imbalance, C = K survivors + mode
-rotation rank, D = qibao benchmark modes vs take-all),
+rotation rank, D = qibao benchmark modes, E = agent-reviewed AI intelligence short factor vs take-all),
 (2) accumulated labeled training rows for future models.
 
 Run any time after the outcome day's close is available (T+1+). Idempotent.
@@ -25,6 +25,29 @@ REQUIRED_TRAINING_COLUMNS = {
     "kp_star": False,
     "vb_star": False,
     "mode_star": False,
+    "ai_intelligence_short_star": False,
+    "ai_intelligence_short_rank": pd.NA,
+    "ai_intelligence_short_score": pd.NA,
+    "ai_intelligence_short_threshold": pd.NA,
+    "ai_intelligence_short_surface": pd.NA,
+    # Back-compat for pre-rename snapshots.
+    "intelligence_long_star": False,
+    "intelligence_long_rank": pd.NA,
+    "intelligence_long_score": pd.NA,
+    "intelligence_long_threshold": pd.NA,
+    "intelligence_long_surface": pd.NA,
+    "intelligence_factor_score_source": pd.NA,
+    "intelligence_factor_keyword_score": pd.NA,
+    "intelligence_factor_agent_score": pd.NA,
+    "intelligence_factor_short_score": pd.NA,
+    "intelligence_factor_trend_score": pd.NA,
+    "intelligence_factor_trend_label": pd.NA,
+    "stock_sentiment_score": pd.NA,
+    "stock_sentiment_label": pd.NA,
+    "stock_sentiment_data_quality": pd.NA,
+    "stock_sentiment_evidence_state": pd.NA,
+    "stock_sentiment_authority": pd.NA,
+    "stock_sentiment_target_set": pd.NA,
     "mode_rank": pd.NA,
     "mode_score": pd.NA,
     "mode_confidence_source": pd.NA,
@@ -51,6 +74,7 @@ REQUIRED_TRAINING_COLUMNS = {
     "blockCodeList": pd.NA,
     "blockCategoryCodeList": pd.NA,
 }
+PARQUET_STRING_COLUMNS = ("excIndustryCode", "blockCodeList", "blockCategoryCodeList")
 
 
 def _normal_date(value) -> str | None:
@@ -110,8 +134,26 @@ def ensure_training_schema(df: pd.DataFrame) -> pd.DataFrame:
     for col, default in REQUIRED_TRAINING_COLUMNS.items():
         if col not in out.columns:
             out[col] = default
+    if "ai_intelligence_short_star" not in df.columns and "intelligence_long_star" in df.columns:
+        out["ai_intelligence_short_star"] = out["intelligence_long_star"]
+        out["ai_intelligence_short_rank"] = out["intelligence_long_rank"]
+        out["ai_intelligence_short_score"] = out["intelligence_long_score"]
+        out["ai_intelligence_short_threshold"] = out["intelligence_long_threshold"]
+        out["ai_intelligence_short_surface"] = out["intelligence_long_surface"]
+    for col in PARQUET_STRING_COLUMNS:
+        out[col] = out[col].map(_metadata_to_string)
     out["qibao_benchmark_star"] = qibao_benchmark_mask(out)
     return out
+
+
+def _metadata_to_string(value: object) -> object:
+    if isinstance(value, (list, tuple, set)):
+        return ",".join(str(part) for part in value if part is not None and str(part).strip())
+    if isinstance(value, dict):
+        return json.dumps(value, ensure_ascii=False, sort_keys=True)
+    if pd.isna(value):
+        return pd.NA
+    return str(value)
 
 
 def day_mean(scored: pd.DataFrame, ret_col: str, mask_col: str | None = None) -> np.ndarray:
@@ -205,13 +247,14 @@ def main():
     scored.to_parquet(TRAIN, index=False)
     print(f"accumulated {len(scored)} labeled training rows -> {TRAIN}")
 
-    # A/B/C/D by day
+    # A/B/C/D/E by day
     ta = day_mean(scored, "net_realized_ret")
     A = day_mean(scored, "net_realized_ret", "kp_star")
     B = day_mean(scored, "net_realized_ret", "vb_star")
     C = day_mean(scored, "net_realized_ret", "mode_star")
     D = day_mean(scored, "net_realized_ret", "qibao_benchmark_star")
-    print(f"\nA/B/C/D over {scored['date'].nunique()} live days ({scored.date.min()}..{scored.date.max()}):")
+    E = day_mean(scored, "net_realized_ret", "ai_intelligence_short_star")
+    print(f"\nA/B/C/D/E over {scored['date'].nunique()} live days ({scored.date.min()}..{scored.date.max()}):")
     print(f"  net of fees   : one-way fee={a.fee_rate:.4%}")
     print(f"  take-all      : {ta.mean():+.2f}%/day  win {(scored.net_realized_ret>0).mean()*100:.0f}%")
     sa = scored[scored.kp_star == True]; sb = scored[scored.vb_star == True]
@@ -223,6 +266,9 @@ def main():
     if len(D):
         sd = scored[scored.qibao_benchmark_star == True]
         print(f"  D  qibao-bench : {D.mean():+.2f}%/day  win {(sd.net_realized_ret>0).mean()*100:.0f}%  (n={len(sd)})")
+    if len(E):
+        se = scored[scored.ai_intelligence_short_star == True]
+        print(f"  E  AI-intel    : {E.mean():+.2f}%/day  win {(se.net_realized_ret>0).mean()*100:.0f}%  (n={len(se)})")
     # contrast frequency: days where B's pick set actually differs from A's.
     # Without contrast the A/B comparison carries no information.
     diff_days = sum(
@@ -231,6 +277,17 @@ def main():
     )
     print(f"  A/B contrast   : B != A on {diff_days}/{scored['date'].nunique()} days"
           + ("  (zero contrast — verdict uninformative)" if diff_days == 0 else ""))
+    e_pick_days = sum(
+        1 for _, g in scored.groupby("date")
+        if len(set(g.loc[g.ai_intelligence_short_star == True, "code"])) > 0
+    )
+    e_diff_b_days = sum(
+        1 for _, g in scored.groupby("date")
+        if set(g.loc[g.ai_intelligence_short_star == True, "code"])
+        and set(g.loc[g.ai_intelligence_short_star == True, "code"]) != set(g.loc[g.vb_star == True, "code"])
+    )
+    print(f"  E contrast     : AI-intel picked on {e_pick_days}/{scored['date'].nunique()} days; "
+          f"E != B on {e_diff_b_days}/{scored['date'].nunique()} days")
     if len(A) >= 8:
         from scipy.stats import ttest_rel
         n = min(len(A), len(B), len(ta))
@@ -241,6 +298,9 @@ def main():
         if len(D) >= 8:
             n = min(len(D), len(ta))
             print(f"                      D p={ttest_rel(D[:n],ta[:n])[1]:.3f}")
+        if len(E) >= 8:
+            n = min(len(E), len(ta))
+            print(f"                      E p={ttest_rel(E[:n],ta[:n])[1]:.3f}")
 
 
 if __name__ == "__main__":

@@ -204,6 +204,7 @@ def decide_sell_action(
     t1_blocked: bool,
     hold_days: int,
     signal_score: float = 0.0,
+    event_risk: dict[str, object] | None = None,
     hard_dd_threshold: float = 8.0,
     now: datetime | None = None,
 ) -> dict[str, object]:
@@ -216,6 +217,15 @@ def decide_sell_action(
             "sell_reason": None,
             "hold_reason": None,
             "decision_phase": "t1_blocked",
+        }
+
+    if event_risk and event_risk.get("triggered"):
+        return {
+            "triggered": True,
+            "sell_reason": "AI_EVENT_RISK_EXIT",
+            "hold_reason": None,
+            "decision_phase": "event_risk",
+            "event_risk": event_risk,
         }
 
     # Staged execution: intraday checkpoints only EXECUTE the hard floor

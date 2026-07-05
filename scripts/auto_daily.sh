@@ -16,6 +16,15 @@ TODAY="$(date +%F)"
 LOG_DIR="$ROOT/output/live/auto"; mkdir -p "$LOG_DIR"
 LOG="$LOG_DIR/${TODAY}_${STEP}.log"
 log() { echo "[$(date '+%F %T')] $*" | tee -a "$LOG"; }
+_finalize_flow() {
+  local status=$?
+  if [ -n "${STEP:-}" ] && [ -f "${LOG:-}" ]; then
+    "$PY" scripts/build_run_flow.py --automation "$STEP" --date "$TODAY" --log "$LOG" --exit-code "$status" >>"$LOG" 2>&1 || true
+    "$PY" scripts/build_context_pack.py --date "$TODAY" --phase "$STEP" >>"$LOG" 2>&1 || true
+  fi
+  return "$status"
+}
+trap _finalize_flow EXIT
 
 # --- trading-day guard: `calendar latest` returns the latest trading day <= today ---
 # weekly is an audit/review loop, not a trading action; it still runs on holiday Fridays.
@@ -54,7 +63,7 @@ case "$STEP" in
     log "morning: live_recommend (self-waits to 9:25)"
     "$PY" scripts/live_recommend.py --no-stdout >>"$LOG" 2>&1
     log "paper-record ★B picks"
-    "$PY" kronos_screen/scripts/paper_record.py --date "$TODAY" --initial-capital 100000 --fee-rate 0.0001 --deploy-ratio 0.5 --max-total-exposure-ratio 0.67 --quality-governor shadow >>"$LOG" 2>&1
+    "$PY" kronos_screen/scripts/paper_record.py --date "$TODAY" --initial-capital 100000 --fee-rate 0.0001 --deploy-ratio 0.5 --max-total-exposure-ratio 0.67 --quality-governor shadow --intelligence-trade on >>"$LOG" 2>&1
     log "paper-record Book T trend basket (paper-only, independent account)"
     "$PY" kronos_screen/scripts/paper_record.py --date "$TODAY" --initial-capital 100000 --fee-rate 0.0001 --trend-only >>"$LOG" 2>&1 || true
     log "surface 小草 posture prior (judgment lens only; NOT a filter on the deterministic picks)"
@@ -86,6 +95,8 @@ case "$STEP" in
     if [ "$DATA_OK" = "1" ]; then
       log "forward_eval (A/B + accumulate training rows)"
       "$PY" kronos_screen/scripts/forward_eval.py --live-only --fee-rate 0.0001 >>"$LOG" 2>&1
+      log "intelligence shadow eval (cached one-line sentiment vs realized training rows)"
+      "$PY" scripts/research_intelligence_shadow.py --end "$TODAY" >>"$LOG" 2>&1 || true
     else
       log "data health CRITICAL — SKIPPING forward_eval + capability record (won't learn from dirty data)"
     fi

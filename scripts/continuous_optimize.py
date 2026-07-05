@@ -37,6 +37,10 @@ VARIANTS = {
         "D_qibao_benchmark_paper_promoted",
         "raw-qibao benchmark paper-promoted modes (variant D) beat take-all",
     ),
+    "ai_intelligence_short_star": (
+        "E_ai_intelligence_short_factor",
+        "agent-reviewed AI intelligence short-factor bullish picks (variant E) beat take-all",
+    ),
 }
 
 
@@ -101,6 +105,8 @@ def main() -> None:
         print(f"no accumulated data yet ({path}); run the daily eod loop first to grow training_rows")
         return
     df = pd.read_parquet(path)
+    if "ai_intelligence_short_star" not in df.columns and "intelligence_long_star" in df.columns:
+        df["ai_intelligence_short_star"] = df["intelligence_long_star"]
 
     # Honest multiple-comparison floor: at least the count of distinct hypotheses
     # ever judged (in the ledger) plus the variants tried now, so passing a small

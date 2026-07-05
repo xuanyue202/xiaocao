@@ -26,7 +26,7 @@ SCRIPTS = Path(__file__).resolve().parent
 sys.path.insert(0, str(SCRIPTS))
 
 from xiaocao.api.client import XiaocaoClient  # noqa: E402
-from xiaocao.live import accounts  # noqa: E402
+from xiaocao.live import accounts, intelligence_policy  # noqa: E402
 from xiaocao.strategy.params import (  # noqa: E402
     TREND_BUDGET_RATIO,
     TREND_REBALANCE_R,
@@ -443,6 +443,57 @@ def _quality_audit_records(
     return rows
 
 
+def _intelligence_config_from_args(a) -> intelligence_policy.IntelligenceTradeConfig:
+    return intelligence_policy.IntelligenceTradeConfig(
+        mode=str(getattr(a, "intelligence_trade", "on") or "on"),
+        buy_threshold=float(getattr(a, "ai_buy_threshold", 0.2)),
+        score_bonus=float(getattr(a, "ai_score_bonus", 20.0)),
+        veto_min_confidence=float(getattr(a, "ai_veto_confidence", 0.7)),
+    )
+
+
+def _select_intelligence_picks(
+    day_live: list[dict],
+    *,
+    pick: str,
+    config: intelligence_policy.IntelligenceTradeConfig,
+    asof: str | None = None,
+) -> intelligence_policy.BuySelection:
+    rows = [ensure_quality_fields(r) for r in day_live]
+    return intelligence_policy.select_buy_candidates(rows, pick_col=pick, config=config, asof=asof)
+
+
+def _audit_intelligence_vetoes(
+    *,
+    date_iso: str,
+    pick: str,
+    selection: intelligence_policy.BuySelection,
+) -> None:
+    if selection.mode != "on":
+        return
+    for r in selection.vetoed:
+        event_types = r.get("ai_hard_veto_event_types") or []
+        reason = r.get("ai_hard_veto_reason") or "AI hard-veto event"
+        print(
+            f"{date_iso}: SKIP {r.get('code')} {r.get('name')} — "
+            f"AI_HARD_VETO ({','.join(event_types) or 'unknown'}; {reason})"
+        )
+        _append_skip({
+            "ts": _now_iso(),
+            "date": date_iso,
+            "code": r.get("code"),
+            "name": r.get("name"),
+            "source": f"auto:{pick}",
+            "reason": "AI_HARD_VETO",
+            "detail": reason,
+            "event_types": event_types,
+            "veto_flags": r.get("ai_hard_veto_flags") or [],
+            "ai_intelligence_short_score": r.get("ai_intelligence_short_score"),
+            "ai_intelligence_trade_score": r.get("ai_intelligence_trade_score"),
+            "ai_intelligence_trade_mode": selection.mode,
+        })
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--date", default=datetime.now().strftime("%Y-%m-%d"))
@@ -480,6 +531,16 @@ def main():
     ap.add_argument("--quality-governor", choices=["off", "shadow", "on"], default="off",
                     help="quality governor mode: off=ignore, shadow=audit only, "
                          "on=leave weak-primary slots in cash without reallocating")
+    ap.add_argument("--intelligence-trade", choices=["off", "shadow", "on"], default="on",
+                    help="Book-B paper intelligence mode: off=base picks only, "
+                         "shadow=audit only, on=agent_review short score reranks candidates "
+                         "and hard-veto skips severe event-risk names")
+    ap.add_argument("--ai-buy-threshold", type=float, default=0.2,
+                    help="minimum agent_short_score for a non-base candidate to enter the Book-B paper ranking pool")
+    ap.add_argument("--ai-score-bonus", type=float, default=20.0,
+                    help="rank_score bonus multiplier for agent_short_score in Book-B paper ranking")
+    ap.add_argument("--ai-veto-confidence", type=float, default=0.7,
+                    help="minimum model confidence for a hard-veto event to block Book-B paper buys")
     ap.add_argument("--trend-only", action="store_true",
                     help="record Book T trend paper positions only; skips Book B/A")
     ap.add_argument("--trend-budget-ratio", type=float, default=TREND_BUDGET_RATIO,
@@ -503,10 +564,19 @@ def main():
     snaps = [json.loads(l) for l in open(SNAP, encoding="utf-8") if l.strip()]
     day_live = [r for r in snaps if r.get("date") == a.date and r.get("is_live")]
     latest_capture = max((str(r.get("captured_at") or "") for r in day_live), default="")
-    picks = [
-        ensure_quality_fields(r) for r in day_live
-        if str(r.get("captured_at") or "") == latest_capture and r.get(a.pick)
+    latest_rows = [
+        r for r in day_live
+        if str(r.get("captured_at") or "") == latest_capture
     ]
+    intelligence_config = _intelligence_config_from_args(a)
+    selection = _select_intelligence_picks(
+        latest_rows,
+        pick=a.pick,
+        config=intelligence_config,
+        asof=f"{a.date[:10]}T09:30:00+08:00",
+    )
+    _audit_intelligence_vetoes(date_iso=a.date, pick=a.pick, selection=selection)
+    picks = selection.selected
     if not picks:
         print(f"{a.date}: no live {a.pick} picks to paper-record (is_live snapshot required)"); return
     account = _load_account(a.initial_capital, a.fee_rate)
@@ -579,6 +649,13 @@ def main():
             "p_score": r.get("p_score"),
             "quality_tag": r.get("quality_tag"),
             "quality_governor_mode": a.quality_governor,
+            "intelligence_trade_mode": a.intelligence_trade,
+            "ai_intelligence_short_score": r.get("ai_intelligence_short_score"),
+            "ai_intelligence_trade_score": r.get("ai_intelligence_trade_score"),
+            "ai_intelligence_trade_rank": r.get("ai_intelligence_trade_rank"),
+            "ai_intelligence_trade_reason": r.get("ai_intelligence_trade_reason"),
+            "ai_intelligence_replaced_base_pick": bool(r.get("ai_intelligence_replaced_base_pick")),
+            "ai_hard_veto": bool(r.get("ai_hard_veto")),
         })
     if not buyable:
         print(f"{a.date}: all {a.pick} picks skipped (limit not reached and retry not suitable)")
@@ -705,6 +782,14 @@ def main():
                 "quality_governor_action": r.get("quality_governor_action"),
                 "quality_governor_reason": r.get("quality_governor_reason"),
                 "quality_slot_weight": r.get("quality_slot_weight"),
+                "intelligence_trade_mode": a.intelligence_trade,
+                "ai_intelligence_short_score": r.get("ai_intelligence_short_score"),
+                "ai_intelligence_trade_score": r.get("ai_intelligence_trade_score"),
+                "ai_intelligence_trade_rank": r.get("ai_intelligence_trade_rank"),
+                "ai_intelligence_trade_reason": r.get("ai_intelligence_trade_reason"),
+                "ai_intelligence_replaced_base_pick": bool(r.get("ai_intelligence_replaced_base_pick")),
+                "ai_intelligence_base_pick": bool(r.get("ai_intelligence_base_pick")),
+                "ai_hard_veto": bool(r.get("ai_hard_veto")),
                 "gross_notional": gross_notional, "entry_fee": entry_fee,
                 "entry_cash_out": entry_cash_out,
                 "entry_price_basis": fill_basis,
@@ -742,6 +827,12 @@ def main():
                 "p_score": r.get("p_score"),
                 "quality_tag": r.get("quality_tag"),
                 "quality_governor_mode": a.quality_governor,
+                "intelligence_trade_mode": a.intelligence_trade,
+                "ai_intelligence_short_score": r.get("ai_intelligence_short_score"),
+                "ai_intelligence_trade_score": r.get("ai_intelligence_trade_score"),
+                "ai_intelligence_trade_rank": r.get("ai_intelligence_trade_rank"),
+                "ai_intelligence_trade_reason": r.get("ai_intelligence_trade_reason"),
+                "ai_intelligence_replaced_base_pick": bool(r.get("ai_intelligence_replaced_base_pick")),
                 "fill_window_start": a.fill_window_start,
                 "fill_window_end": a.fill_window_end,
                 "fill_window_high": fill_meta.get("fill_window_high"),
@@ -772,7 +863,8 @@ def main():
         f"(rolling_cash_after={cash:.2f}, fee_rate={fee_rate:.4%}, "
         f"deploy_ratio={deploy_ratio:.0%}, exposure_budget={exposure_budget:.2f}, "
         f"target_notional={target_notional:.2f}/position, "
-        f"quality_governor={a.quality_governor})"
+        f"quality_governor={a.quality_governor}, "
+        f"intelligence_trade={a.intelligence_trade})"
     )
 
 

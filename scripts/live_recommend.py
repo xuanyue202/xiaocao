@@ -19,7 +19,8 @@ Usage:
 from __future__ import annotations
 
 import argparse
-import html
+from concurrent.futures import TimeoutError as FuturesTimeoutError
+from concurrent.futures import ThreadPoolExecutor, as_completed
 import json
 import sys
 import time as _time
@@ -38,6 +39,7 @@ from xiaocao.api.cache import SQLiteCache  # noqa: E402
 from xiaocao.api.client import XiaocaoClient  # noqa: E402
 from xiaocao.config import load_settings  # noqa: E402
 from xiaocao.datasource.api_source import ApiDataSource  # noqa: E402
+from xiaocao.live import agent_signals, intelligence, intelligence_evidence, intelligence_policy  # noqa: E402
 from xiaocao.strategy import run_strategy  # noqa: E402
 from xiaocao.strategy.rules import (  # noqa: E402
     RAW_QIBAO_BENCHMARK_MODE,
@@ -52,6 +54,7 @@ OUT_DIR = ROOT / "output" / "live"
 TRAINING_ROWS_FILE = OUT_DIR / "training_rows.parquet"
 STOCK_SENTIMENT_FILE = OUT_DIR / "stock_sentiment.json"
 STOCK_SENTIMENT_HISTORY_FILE = OUT_DIR / "stock_sentiment_history.jsonl"
+POSITIONS_FILE = OUT_DIR / "positions.jsonl"
 WAIT_START = time(9, 20)
 WAIT_TARGET = time(9, 25, 1)
 DEFAULT_MAX_CANDIDATES = 3
@@ -86,14 +89,10 @@ PROFILES = {
     "v6": {"profile": "validated_v6", "dd_pct": 0.5, "label": "3d max_dd 0.5% (aggressive)"},
 }
 SENTIMENT_HEADERS = {"user-agent": "Mozilla/5.0 xiaocao-live-recommend/0.1"}
-POSITIVE_SENTIMENT_TERMS = (
-    "涨停", "连板", "大涨", "增持", "回购", "中标", "订单", "预增", "扭亏",
-    "增长", "盈利", "签约", "突破", "获批", "龙头", "景气", "合作",
-)
-NEGATIVE_SENTIMENT_TERMS = (
-    "跌停", "减持", "问询", "处罚", "下滑", "亏损", "风险", "终止", "诉讼",
-    "异常波动", "监管", "解禁", "退市", "违约", "澄清", "下修",
-)
+INTELLIGENCE_EVIDENCE_TIMEOUT_SEC = 60.0
+INTELLIGENCE_CACHE_TTL_SEC = 30 * 60
+POSITIVE_SENTIMENT_TERMS = intelligence.POSITIVE_TERMS
+NEGATIVE_SENTIMENT_TERMS = intelligence.NEGATIVE_TERMS
 
 
 def _client() -> XiaocaoClient:
@@ -136,11 +135,109 @@ def _load_stock_sentiment_map(today_iso: str) -> dict[str, dict[str, object]]:
     return out
 
 
+def _parse_ts(value: object) -> datetime | None:
+    text = str(value or "").strip()
+    if not text:
+        return None
+    if text.endswith("Z"):
+        text = text[:-1] + "+00:00"
+    try:
+        return datetime.fromisoformat(text)
+    except ValueError:
+        return None
+
+
+def _cache_record_fresh(
+    record: dict[str, object],
+    date_iso: str,
+    *,
+    now: datetime | None = None,
+    ttl_sec: int = INTELLIGENCE_CACHE_TTL_SEC,
+) -> bool:
+    if str(record.get("date") or "")[:10] != date_iso:
+        return False
+    fetched = _parse_ts(record.get("fetched_at") or record.get("last_seen_at"))
+    if fetched is None:
+        return False
+    if now is None:
+        now = datetime.now(tz=fetched.tzinfo) if fetched.tzinfo else datetime.now()
+    if fetched.tzinfo and now.tzinfo is None:
+        now = now.replace(tzinfo=fetched.tzinfo)
+    if fetched.tzinfo is None and now.tzinfo is not None:
+        now = now.replace(tzinfo=None)
+    age = (now - fetched).total_seconds()
+    return 0 <= age <= ttl_sec
+
+
+def _load_open_book_b_position_candidates(path: Path = POSITIONS_FILE) -> list[dict[str, object]]:
+    if not path.exists():
+        return []
+    rows: list[dict[str, object]] = []
+    with path.open(encoding="utf-8") as fh:
+        for line in fh:
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                row = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            if row.get("status", "open") != "open":
+                continue
+            if str(row.get("book") or "B") != "B":
+                continue
+            code = str(row.get("code") or "")
+            name = str(row.get("name") or "")
+            if not code or not name:
+                continue
+            rows.append({
+                "code": code,
+                "name": name,
+                "mode": row.get("mode", ""),
+                "target_set": "open_position",
+                "target_rank": 9999,
+                "is_open_position": True,
+                "position_entry_date": row.get("entry_date"),
+            })
+    return rows
+
+
+def _merge_intelligence_universe(
+    candidates: list[dict[str, object]],
+    open_positions: list[dict[str, object]],
+) -> list[dict[str, object]]:
+    position_by_code = {str(row.get("code") or ""): row for row in open_positions if row.get("code")}
+    seen: set[str] = set()
+    out: list[dict[str, object]] = []
+    for candidate in candidates:
+        code = str(candidate.get("code") or "")
+        if not code:
+            continue
+        merged = dict(candidate)
+        if code in position_by_code:
+            merged["is_open_position"] = True
+            merged["position_entry_date"] = position_by_code[code].get("position_entry_date")
+        out.append(merged)
+        seen.add(code)
+    for row in open_positions:
+        code = str(row.get("code") or "")
+        if code and code not in seen:
+            out.append(dict(row))
+            seen.add(code)
+    return out
+
+
+def _carry_prior_veto_flags(record: dict[str, object], previous: object) -> None:
+    if not isinstance(previous, dict):
+        return
+    flags = previous.get("veto_flags") or previous.get("intelligence_veto_flags")
+    if isinstance(flags, list) and flags:
+        record["veto_flags"] = flags
+        record["prior_veto_flags_carried"] = True
+
+
 def _sanitize_headline(text: str) -> str:
-    cleaned = html.unescape(text or "").strip()
-    if " - " in cleaned:
-        cleaned = cleaned.split(" - ", 1)[0].strip()
-    return " ".join(cleaned.split())
+    return intelligence.sanitize_headline(text)
 
 
 def _google_news_query(name: str, code: str) -> str:
@@ -172,96 +269,125 @@ def _fetch_google_news_headlines(name: str, code: str, max_items: int = 5) -> tu
 
 
 def _headline_sentiment_score(headlines: list[dict[str, str]]) -> float:
-    if not headlines:
-        return 0.0
-    pos = 0
-    neg = 0
-    for item in headlines:
-        title = str(item.get("title") or "")
-        pos += sum(1 for term in POSITIVE_SENTIMENT_TERMS if term in title)
-        neg += sum(1 for term in NEGATIVE_SENTIMENT_TERMS if term in title)
-    raw = (pos - neg) / max(1.0, len(headlines) * 2.0)
-    return max(-1.0, min(1.0, raw))
+    return intelligence.headline_sentiment_score(headlines)
 
 
 def _headline_sentiment_label(score: float) -> str:
-    if score >= 0.2:
-        return "偏多"
-    if score <= -0.2:
-        return "偏空"
-    return "中性"
+    return intelligence.headline_sentiment_label(score)
 
 
 def _headline_sentiment_summary(headlines: list[dict[str, str]], score: float) -> str:
-    if not headlines:
-        return "未检索到近期公开新闻标题。"
-    lead = _sanitize_headline(str(headlines[0].get("title") or ""))
-    label = _headline_sentiment_label(score)
-    if label == "偏多":
-        prefix = "近期公开标题偏多"
-    elif label == "偏空":
-        prefix = "近期公开标题偏空"
-    else:
-        prefix = "近期公开标题偏中性"
-    if lead:
-        return f"{prefix}，最新聚焦“{lead}”。"
-    return f"{prefix}。"
+    return intelligence.headline_sentiment_summary(headlines, score)
 
 
 def _build_top_stock_sentiment(
     top_candidates: list[dict[str, object]],
     date_iso: str,
+    *,
+    max_workers: int = 4,
+    max_seconds: float = INTELLIGENCE_EVIDENCE_TIMEOUT_SEC,
 ) -> list[dict[str, object]]:
     if not top_candidates:
         return []
     existing = _load_stock_sentiment_map(date_iso)
-    out: list[dict[str, object]] = []
+    started = _time.monotonic()
+    ordered_codes: list[str] = []
+    out_by_code: dict[str, dict[str, object]] = {}
+    fetch_specs: list[dict[str, object]] = []
     for candidate in top_candidates:
         code = str(candidate.get("code") or "")
         name = str(candidate.get("name") or "")
         if not code or not name:
             continue
+        ordered_codes.append(code)
         current = existing.get(code)
-        if current and str(current.get("date") or "")[:10] == date_iso:
-            record = dict(current)
+        if current and _cache_record_fresh(current, date_iso):
+            record = intelligence.normalize_stock_intelligence_record(
+                dict(current),
+                date=date_iso,
+                code=code,
+                name=name,
+            )
+            record["evidence_capture_state"] = "cache_hit"
         else:
-            try:
-                source_url, headlines = _fetch_google_news_headlines(name, code)
-                score = round(_headline_sentiment_score(headlines), 4)
-                summary = _headline_sentiment_summary(headlines, score)
-                record = {
-                    "date": date_iso,
-                    "code": code,
-                    "name": name,
-                    "sentiment_score": score,
-                    "score": score,
-                    "label": _headline_sentiment_label(score),
-                    "summary": summary,
-                    "source": "google_news_rss",
-                    "source_url": source_url,
-                    "headlines": headlines,
-                    "decision_used": False,
-                }
-            except Exception as exc:
-                record = {
-                    "date": date_iso,
-                    "code": code,
-                    "name": name,
-                    "sentiment_score": 0.0,
-                    "score": 0.0,
-                    "label": "中性",
-                    "summary": f"舆情抓取失败，原因={type(exc).__name__}。",
-                    "source": "google_news_rss",
-                    "source_url": "",
-                    "headlines": [],
-                    "decision_used": False,
-                    "error": str(exc),
-                }
-        record["target_set"] = "vb_star" if bool(candidate.get("vb_star")) else "selected"
-        record["target_rank"] = int(_num(candidate.get("vb_rank") or candidate.get("kp_rank") or 0))
+            fetch_specs.append({"candidate": candidate, "code": code, "name": name, "previous": current})
+            continue
+        record["target_set"] = str(candidate.get("target_set") or ("vb_star" if bool(candidate.get("vb_star")) else "candidate"))
+        record["target_rank"] = int(_num(candidate.get("vb_rank") or candidate.get("kp_rank") or candidate.get("target_rank") or 0))
         record["mode"] = str(candidate.get("mode") or "")
-        out.append(record)
-    return out
+        out_by_code[code] = record
+
+    def _fetch_record(spec: dict[str, object]) -> dict[str, object]:
+        code = str(spec.get("code") or "")
+        name = str(spec.get("name") or "")
+        candidate = spec.get("candidate") if isinstance(spec.get("candidate"), dict) else {}
+        previous = spec.get("previous")
+        try:
+            source_url, headlines = _fetch_google_news_headlines(name, code)
+            record = intelligence.build_stock_intelligence_record(
+                date=date_iso,
+                code=code,
+                name=name,
+                source="google_news_rss",
+                source_url=source_url,
+                headlines=headlines,
+            )
+            record["evidence_capture_state"] = "fetched"
+        except Exception as exc:
+            record = intelligence.build_stock_intelligence_record(
+                date=date_iso,
+                code=code,
+                name=name,
+                source="google_news_rss",
+                source_url="",
+                headlines=[],
+                error=f"{type(exc).__name__}:{exc}",
+            )
+            record["summary"] = f"舆情抓取失败，原因={type(exc).__name__}。"
+            record["evidence_capture_state"] = "fetch_failed"
+        _carry_prior_veto_flags(record, previous)
+        record["target_set"] = str(candidate.get("target_set") or ("vb_star" if bool(candidate.get("vb_star")) else "candidate"))
+        record["target_rank"] = int(_num(candidate.get("vb_rank") or candidate.get("kp_rank") or candidate.get("rank") or candidate.get("target_rank") or 0))
+        record["mode"] = str(candidate.get("mode") or "")
+        return record
+
+    if fetch_specs:
+        deadline = started + max_seconds
+        with ThreadPoolExecutor(max_workers=max(1, max_workers)) as pool:
+            futures = {pool.submit(_fetch_record, spec): spec for spec in fetch_specs}
+            try:
+                for fut in as_completed(futures, timeout=max(0.1, deadline - _time.monotonic())):
+                    record = fut.result()
+                    out_by_code[str(record.get("code") or "")] = record
+                    if _time.monotonic() >= deadline:
+                        break
+            except FuturesTimeoutError:
+                pass
+            for fut, spec in futures.items():
+                if fut.done():
+                    continue
+                fut.cancel()
+                code = str(spec.get("code") or "")
+                name = str(spec.get("name") or "")
+                candidate = spec.get("candidate") if isinstance(spec.get("candidate"), dict) else {}
+                previous = spec.get("previous")
+                record = intelligence.build_stock_intelligence_record(
+                    date=date_iso,
+                    code=code,
+                    name=name,
+                    source="google_news_rss",
+                    source_url="",
+                    headlines=[],
+                    error="evidence_capture_timeout",
+                )
+                record["summary"] = "舆情素材抓取超时，等待后续冻结补齐。"
+                record["evidence_capture_state"] = "timeout"
+                _carry_prior_veto_flags(record, previous)
+                record["target_set"] = "vb_star" if bool(candidate.get("vb_star")) else "candidate"
+                record["target_rank"] = int(_num(candidate.get("vb_rank") or candidate.get("kp_rank") or candidate.get("rank") or 0))
+                record["mode"] = str(candidate.get("mode") or "")
+                out_by_code[code] = record
+    return [out_by_code[code] for code in ordered_codes if code in out_by_code]
 
 
 def _write_stock_sentiment_records(records: list[dict[str, object]], date_iso: str) -> None:
@@ -296,6 +422,10 @@ def _write_stock_sentiment_records(records: list[dict[str, object]], date_iso: s
     with STOCK_SENTIMENT_HISTORY_FILE.open("w", encoding="utf-8") as f:
         for key in sorted(history):
             f.write(json.dumps(history[key], ensure_ascii=False) + "\n")
+    agent_signals.upsert_signals(
+        OUT_DIR / "agent_signals.jsonl",
+        agent_signals.signals_from_intelligence_records(records),
+    )
 
 
 def _merge_sentiment_into_signal_snapshots(records: list[dict[str, object]], date_iso: str) -> None:
@@ -303,6 +433,7 @@ def _merge_sentiment_into_signal_snapshots(records: list[dict[str, object]], dat
     if not records or not snap.exists():
         return
     by_code = {str(r.get("code") or ""): r for r in records if r.get("code")}
+    short_by_code = intelligence.short_shadow_rank_map(records)
     lines = snap.read_text(encoding="utf-8").splitlines()
     merged: list[str] = []
     for line in lines:
@@ -314,14 +445,53 @@ def _merge_sentiment_into_signal_snapshots(records: list[dict[str, object]], dat
             merged.append(line)
             continue
         if str(row.get("date") or "")[:10] == date_iso:
+            row["intelligence_long_star"] = False
+            row["intelligence_long_rank"] = 9999
+            row["intelligence_long_score"] = None
+            row["intelligence_long_threshold"] = 0.2
+            row["intelligence_long_surface"] = "shadow_ab"
+            row["ai_intelligence_short_star"] = False
+            row["ai_intelligence_short_rank"] = 9999
+            row["ai_intelligence_short_score"] = None
+            row["ai_intelligence_short_threshold"] = 0.2
+            row["ai_intelligence_short_surface"] = "shadow_ab"
             record = by_code.get(str(row.get("code") or ""))
             if record is not None:
                 row["stock_sentiment_score"] = record.get("score")
                 row["stock_sentiment_label"] = record.get("label")
                 row["stock_sentiment_summary"] = record.get("summary")
                 row["stock_sentiment_source"] = record.get("source")
-                row["stock_sentiment_decision_used"] = False
+                row["stock_sentiment_decision_used"] = bool(record.get("decision_used", False))
                 row["stock_sentiment_target_set"] = record.get("target_set")
+                row["stock_sentiment_data_quality"] = record.get("data_quality")
+                row["stock_sentiment_evidence_state"] = record.get("evidence_state")
+                row["stock_sentiment_authority"] = record.get("authority", 0)
+                row["stock_sentiment_relevance_counts"] = record.get("relevance_counts") or {}
+                row["score_source"] = record.get("score_source")
+                row["agent_score"] = record.get("agent_score")
+                row["agent_short_score"] = record.get("agent_short_score")
+                row["agent_trend_score"] = record.get("agent_trend_score")
+                row["veto_flags"] = record.get("veto_flags") or []
+                row["intelligence_factor_score_source"] = record.get("score_source")
+                row["intelligence_factor_keyword_score"] = record.get("keyword_score")
+                row["intelligence_factor_agent_score"] = record.get("agent_score")
+                row["intelligence_factor_short_score"] = record.get("agent_short_score")
+                row["intelligence_factor_trend_score"] = record.get("agent_trend_score")
+                row["intelligence_factor_trend_label"] = record.get("trend_label")
+                row["intelligence_veto_flags"] = record.get("veto_flags") or []
+                veto_state = intelligence_policy.hard_veto_state(record, asof=f"{date_iso}T09:30:00+08:00")
+                row["ai_hard_veto"] = bool(veto_state.get("hard_veto"))
+                row["ai_hard_veto_event_types"] = veto_state.get("event_types") or []
+                row["ai_hard_veto_reason"] = veto_state.get("reason") or ""
+                usage = record.get("usage") if isinstance(record.get("usage"), dict) else {}
+                exit_composite_input = bool(usage.get("exit_composite_input", False))
+                if record.get("score_source") == "agent_review":
+                    exit_composite_input = False
+                row["stock_sentiment_exit_composite_input"] = exit_composite_input
+                row["stock_sentiment_buy_ranking_used"] = bool(usage.get("buy_ranking", False))
+                short_flags = short_by_code.get(str(row.get("code") or ""))
+                if short_flags:
+                    row.update(short_flags)
         merged.append(json.dumps(row, ensure_ascii=False, default=str))
     snap.write_text("\n".join(merged) + ("\n" if merged else ""), encoding="utf-8")
 
@@ -1165,10 +1335,45 @@ def main() -> None:
     )
     standby_keys = {_candidate_key(c) for c in standby}
     overflow = [c for c in overflow if _candidate_key(c) not in standby_keys]
-    top_sentiment_target = vb_stars if vb_stars else selected
-    top_sentiment = _build_top_stock_sentiment(top_sentiment_target, date_iso)
-    _write_stock_sentiment_records(top_sentiment, date_iso)
-    _merge_sentiment_into_signal_snapshots(top_sentiment, date_iso)
+    open_position_candidates = _load_open_book_b_position_candidates()
+    intelligence_universe = _merge_intelligence_universe(candidates, open_position_candidates)
+    open_position_codes = {str(c.get("code") or "") for c in open_position_candidates}
+    sentiment_started = _time.monotonic()
+    sentiment_records = _build_top_stock_sentiment(
+        intelligence_universe,
+        date_iso,
+        max_workers=4,
+        max_seconds=INTELLIGENCE_EVIDENCE_TIMEOUT_SEC,
+    )
+    selected_codes = {str(c.get("code") or "") for c in selected}
+    standby_codes = {str(c.get("code") or "") for c in standby}
+    vb_codes = {str(c.get("code") or "") for c in vb_stars}
+    for record in sentiment_records:
+        code = str(record.get("code") or "")
+        if code in vb_codes:
+            record["target_set"] = "vb_star"
+        elif code in selected_codes:
+            record["target_set"] = "selected"
+        elif code in standby_codes:
+            record["target_set"] = "standby"
+        elif code in open_position_codes:
+            record["target_set"] = "open_position"
+        else:
+            record["target_set"] = "candidate"
+    _write_stock_sentiment_records(sentiment_records, date_iso)
+    _merge_sentiment_into_signal_snapshots(sentiment_records, date_iso)
+    intelligence_evidence.write_freeze_artifacts(
+        live_dir=OUT_DIR,
+        records=sentiment_records,
+        candidates=intelligence_universe,
+        market_date=date_iso,
+        phase="morning_freeze",
+        universe="candidates+open_positions",
+        elapsed_ms=int((_time.monotonic() - sentiment_started) * 1000),
+    )
+    top_sentiment_codes = [str(c.get("code") or "") for c in (vb_stars if vb_stars else selected)]
+    sentiment_by_code = {str(r.get("code") or ""): r for r in sentiment_records}
+    top_sentiment = [sentiment_by_code[code] for code in top_sentiment_codes if code in sentiment_by_code]
 
     # Render markdown
     L: list[str] = []
@@ -1235,16 +1440,19 @@ def main() -> None:
         L.append("- **★M 当前不参与默认 Book B 买入**：它只进入 `signal_snapshots.jsonl -> forward_eval.py -> continuous_optimize.py`，等研究守门和 §10 人工门通过后再考虑升格。")
         L.append("")
     if top_sentiment:
-        L.append("## Top 舆情摘要（只记录，不参与今日决策）")
+        L.append("## Top AI 情报因子（证据化记录；agent 研判后进入做多影子 A/B）")
         L.append("")
-        L.append("| 标的 | 集合 | 舆情 | 分数 | 一句话 |")
-        L.append("|---|---|---|---:|---|")
+        L.append("| 标的 | 集合 | 因子 | 分数 | 来源 | 质量 | 摘要 |")
+        L.append("|---|---|---|---:|---|---|---|")
         for row in top_sentiment:
             L.append(
                 f"| {row.get('code','')} {row.get('name','')} | {row.get('target_set','')} | "
-                f"{row.get('label','中性')} | {_num(row.get('score')):+.2f} | {row.get('summary','')} |"
+                f"{row.get('label','中性')} | {_num(row.get('score')):+.2f} | "
+                f"{row.get('score_source','')} | {row.get('data_quality','legacy')} | {row.get('summary','')} |"
             )
-        L.append("- 以上舆情仅沉淀到 `output/live/stock_sentiment.json`、`output/live/stock_sentiment_history.jsonl` 和 `output/live/signal_snapshots.jsonl`，供后续分析/训练使用；当前不参与排名或买卖决策。")
+        L.append("- 以上信息沉淀到 `stock_sentiment*`、`agent_signals.jsonl` 和 `signal_snapshots.jsonl`；标题关键词只保留为 `keyword_score` 诊断，不产生做多信号。")
+        L.append("- 只有 agent 结构化研判写入 `score_source=agent_review` 且 `score>=0.2` 时，才会标记 `ai_intelligence_short_star`，进入 forward_eval 做多影子 A/B；`paper_record.py --intelligence-trade on` 会在 Book-B 纸面买入中消费该短线分和 hard-veto。")
+        L.append("- 边界：它暂不改变正式 Book B 买入集合和自动买入；是否升格取决于短线 forward label，趋势侧后续走 Book T / trend_guards 独立评估。")
         L.append("")
     L.append("## 候选清单")
     L.append("")

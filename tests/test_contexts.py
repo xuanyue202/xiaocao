@@ -58,12 +58,39 @@ def test_kronos_context_neutral_when_no_scores():
     assert ctx["score"] == 0.0 and ctx["p_score"] is None and ctx["k_score"] is None
 
 
-def test_stock_sentiment_context_blends_external_and_proxy():
+def test_stock_sentiment_context_keeps_agent_review_out_of_exit_composite():
     ctx = contexts.stock_sentiment_context(
         "A", smallgrass={"score": 0.5, "source": "smallgrass_proxy"},
-        sentiment_map={"A": {"score": 1.0}},
+        sentiment_map={"A": {"score": 1.0, "agent_short_score": 1.0, "score_source": "agent_review"}},
     )
-    assert ctx["score"] == round(0.7 * 1.0 + 0.3 * 0.5, 4) and ctx["source"] == "external+smallgrass"
+    assert ctx["score"] == 0.5
+    assert ctx["external_score"] == 1.0
+    assert ctx["external_score_used"] is False
+    assert ctx["source"] == "smallgrass_proxy"
+
+
+def test_stock_sentiment_context_ignores_pending_external_keyword_score():
+    ctx = contexts.stock_sentiment_context(
+        "A", smallgrass={"score": 0.5, "source": "smallgrass_proxy"},
+        sentiment_map={"A": {"score": 1.0, "score_source": "pending_agent_review"}},
+    )
+    assert ctx["score"] == 0.5
+    assert ctx["external_score"] is None
+    assert ctx["source"] == "smallgrass_proxy"
+
+
+def test_stock_sentiment_context_ignores_trend_only_agent_review():
+    ctx = contexts.stock_sentiment_context(
+        "A", smallgrass={"score": 0.5, "source": "smallgrass_proxy"},
+        sentiment_map={"A": {
+            "score_source": "pending_agent_review",
+            "agent_trend_score": 0.9,
+            "trend_score_source": "agent_review",
+        }},
+    )
+    assert ctx["score"] == 0.5
+    assert ctx["external_score"] is None
+    assert ctx["source"] == "smallgrass_proxy"
 
 
 def test_stock_sentiment_context_proxy_only_when_no_external():

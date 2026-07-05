@@ -94,17 +94,26 @@ def stock_sentiment_context(
 ) -> dict[str, object]:
     external = sentiment_map.get(code)
     proxy_score = float(smallgrass.get("score", 0.0) or 0.0)
-    if external is not None:
-        ext_score = float(external.get("score", 0.0) or 0.0)
-        score = clamp(0.7 * ext_score + 0.3 * proxy_score)
-        source = "external+smallgrass"
-    else:
-        ext_score = None
-        score = clamp(proxy_score)
-        source = str(smallgrass.get("source") or "smallgrass_proxy")
+    external_is_agent_review = (
+        external is not None
+        and str(external.get("score_source") or "") == "agent_review"
+        and external.get("agent_short_score") not in (None, "")
+    )
+    ext_score = None
+    if external_is_agent_review:
+        try:
+            ext_score = float(external.get("agent_short_score", external.get("score", 0.0)) or 0.0)
+        except (TypeError, ValueError):
+            ext_score = None
+    # P0 boundary: ordinary AI short scores are training/shadow evidence. They do
+    # not feed the Book-B exit composite until a dedicated event-risk exit rule is
+    # implemented and audited. Keep external_score visible for diagnostics only.
+    score = clamp(proxy_score)
+    source = str(smallgrass.get("source") or "smallgrass_proxy")
     return {
         "score": round(score, 4),
         "source": source,
         "external_score": ext_score,
         "proxy_score": round(proxy_score, 4),
+        "external_score_used": False,
     }

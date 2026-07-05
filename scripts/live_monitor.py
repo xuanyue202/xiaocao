@@ -76,7 +76,7 @@ from xiaocao.live.exit_policy import (  # noqa: E402
     sell_block_reason as _sell_block_reason,
     strong_hold_reason as _strong_hold_reason,
 )
-from xiaocao.live import accounts, contexts, journal  # noqa: E402
+from xiaocao.live import accounts, contexts, intelligence_policy, journal  # noqa: E402
 from xiaocao.live.notify import notify as _notify  # noqa: E402
 from xiaocao.strategy.params import TREND_BUDGET_RATIO, TREND_REBALANCE_R, TREND_TRAIL_DD  # noqa: E402
 
@@ -742,6 +742,7 @@ def _compute_status(
         smallgrass=smallgrass_context,
         sentiment_map=sentiment_map,
     )
+    event_risk = intelligence_policy.event_risk_exit(sentiment_map.get(code))
     kronos_context = _kronos_context(position, snapshot_map)
     realtime_context = _realtime_strength_context(detail, latest_price, peak)
     score_context = _decision_score_context(
@@ -769,6 +770,7 @@ def _compute_status(
             t1_blocked=t1_blocked,
             hold_days=hold_days,
             signal_score=float(score_context.get("composite_score", 0.0) or 0.0),
+            event_risk=event_risk,
             hard_dd_threshold=hard_dd_threshold,
         )
     return {
@@ -795,6 +797,9 @@ def _compute_status(
         "deferred_sell_reason": decision.get("deferred_sell_reason"),
         "decision_phase": decision["decision_phase"],
         "triggered": bool(decision["triggered"]),
+        "ai_event_risk_exit": bool(event_risk.get("triggered")),
+        "ai_event_risk_event_types": event_risk.get("event_types") or [],
+        "ai_event_risk_reason": event_risk.get("reason") or "",
         **score_context,
         "market_regime": market_context.get("regime"),
         "stock_sentiment_source": stock_sentiment_context.get("source"),
