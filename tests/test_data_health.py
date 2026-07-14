@@ -159,9 +159,23 @@ def test_unlabeled_ledger_rows_are_surfaced(tmp_path):
         {"side": "SELL", "code": "LEGACY_TRADE"},
     ])
     findings = data_health.unlabeled_closed_positions(tmp_path)
-    assert findings and findings[0]["severity"] == "warn"
+    assert findings and findings[0]["severity"] == "critical"
     assert "LEGACY" in findings[0]["detail"]
     assert "1 position" in findings[0]["detail"] and "1 trade" in findings[0]["detail"]
+
+
+def test_invalid_book_value_is_critical(tmp_path):
+    _write_jsonl(tmp_path / "positions.jsonl", [
+        {"book": "X", "status": "closed", "code": "INVALID"},
+    ])
+    _write_jsonl(tmp_path / "paper_trades.jsonl", [
+        {"book": "B", "side": "BUY", "code": "OK"},
+    ])
+
+    findings = data_health.unlabeled_closed_positions(tmp_path)
+
+    assert findings and findings[0]["severity"] == "critical"
+    assert "INVALID:'X'" in findings[0]["detail"]
 
 
 def test_labeled_positions_produce_no_unlabeled_finding(tmp_path):

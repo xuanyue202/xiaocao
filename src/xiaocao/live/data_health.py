@@ -17,6 +17,7 @@ from datetime import date
 from pathlib import Path
 from typing import Any
 
+from xiaocao.live.accounts import VALID_BOOKS
 from xiaocao.live.sell_blocks import load_blocked_sell_keys
 
 
@@ -88,17 +89,20 @@ def unlabeled_closed_positions(live_dir: Path) -> list[dict[str, Any]]:
     """
     positions = _read_jsonl(live_dir / "positions.jsonl")
     trades = _read_jsonl(live_dir / "paper_trades.jsonl")
-    unlabeled_positions = [p for p in positions if not p.get("book")]
-    unlabeled_trades = [t for t in trades if not t.get("book")]
-    if not unlabeled_positions and not unlabeled_trades:
+    invalid_positions = [p for p in positions if p.get("book") not in VALID_BOOKS]
+    invalid_trades = [t for t in trades if t.get("book") not in VALID_BOOKS]
+    if not invalid_positions and not invalid_trades:
         return []
-    examples = [str(row.get("code")) for row in (unlabeled_positions + unlabeled_trades)[:8]]
+    examples = [
+        f"{row.get('code')}:{row.get('book')!r}"
+        for row in (invalid_positions + invalid_trades)[:8]
+    ]
     return [{
         "check": "unlabeled_closed_positions",
-        "severity": "warn",
+        "severity": "critical",
         "detail": (
-            f"{len(unlabeled_positions)} position(s) and {len(unlabeled_trades)} trade(s) "
-            f"lack an explicit `book` label (e.g. {', '.join(examples)}) — backfill only "
+            f"{len(invalid_positions)} position(s) and {len(invalid_trades)} trade(s) "
+            f"lack a valid explicit `book=A/B/T` identity (e.g. {', '.join(examples)}) — backfill only "
             f"from provable ledger identity; do not silently default accounting ownership"
         ),
     }]

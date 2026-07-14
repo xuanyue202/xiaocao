@@ -185,15 +185,8 @@ def _print_comparison(positions: list[dict]) -> None:
                 for p in closed if p.get("entry_cash_out")]
         avg = sum(rets) / len(rets) if rets else 0.0
         return {"n": len(closed), "pnl": pnl, "win": wins, "avg": avg}
-    sa, sb = stats("A"), stats("B")
-    print("\n-- book A (validated next-close, no stop) vs book B (live stop policy) --")
-    for label, st in (("A", sa), ("B", sb)):
-        if st:
-            print(f"  book {label}: n={st['n']:>3}  pnl {st['pnl']:+,.0f}  "
-                  f"win {st['win']}/{st['n']}  avg {st['avg']:+.2f}%/trade")
-        else:
-            print(f"  book {label}: no closed trades yet")
     paired = paired_exit_attribution(positions)
+    print("\n-- paired exit-policy comparison (identical entry cohort; descriptive only) --")
     if paired["eligible_pairs"]:
         print(
             f"  paired identical cohort: n={paired['eligible_pairs']}  "
@@ -205,6 +198,14 @@ def _print_comparison(positions: list[dict]) -> None:
         print("  paired identical cohort: N/A")
     if paired["excluded"]:
         print(f"  excluded cohort drift: {json.dumps(paired['excluded'], ensure_ascii=False, sort_keys=True)}")
+    sa, sb = stats("A"), stats("B")
+    print("-- raw book totals (accounting only; cohort/allocation drift makes them non-attributable) --")
+    for label, st in (("A", sa), ("B", sb)):
+        if st:
+            print(f"  book {label}: n={st['n']:>3}  pnl {st['pnl']:+,.0f}  "
+                  f"win {st['win']}/{st['n']}  avg {st['avg']:+.2f}%/trade")
+        else:
+            print(f"  book {label}: no closed trades yet")
     accs = []
     for label, path in (("A", ACCOUNT_A), ("B", ACCOUNT_B)):
         if path.exists():
