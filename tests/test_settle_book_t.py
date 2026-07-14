@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import json
+
 from kronos_screen.scripts import settle_book_t as sbt
 
 
@@ -63,3 +65,49 @@ def test_book_t_aligned_position_keeps_exposure_until_paired_rebalance_or_trail(
         rebalance_days=60,
         alignment=alignment,
     ) == "TREND_DAILY_TRAIL_STOP"
+
+
+def test_blocked_sell_key_prevents_same_day_book_t_settlement(tmp_path) -> None:
+    alerts = tmp_path / "alerts.jsonl"
+    alerts.write_text(
+        json.dumps({
+            "ts": "2026-07-13T15:14:10",
+            "alert": "SELL_BLOCKED",
+            "book": "T",
+            "reason": "LIMIT_DOWN_NO_BID",
+            "code": "000725.XSHE",
+            "entry_date": "2026-07-07",
+        }) + "\n",
+        encoding="utf-8",
+    )
+
+    blocked = sbt._load_blocked_sell_keys(alerts)
+
+    assert ("T", "2026-07-13", "000725.XSHE", "2026-07-07") in blocked
+    assert sbt._settlement_block_reason(
+        blocked,
+        book="T",
+        exit_date="2026-07-13",
+        code="000725.XSHE",
+        entry_date="2026-07-07",
+    ) == "LIMIT_DOWN_NO_BID"
+    assert sbt._settlement_block_reason(
+        blocked,
+        book="T",
+        exit_date="2026-07-14",
+        code="000725.XSHE",
+        entry_date="2026-07-07",
+    ) is None
+
+
+def test_sell_block_key_is_book_scoped(tmp_path) -> None:
+    alerts = tmp_path / "alerts.jsonl"
+    alerts.write_text(json.dumps({
+        "ts": "2026-07-13T15:14:10", "alert": "SELL_BLOCKED", "book": "T",
+        "reason": "LIMIT_DOWN_NO_BID", "code": "SAME", "entry_date": "2026-07-07",
+    }) + "\n", encoding="utf-8")
+    blocked = sbt._load_blocked_sell_keys(alerts)
+
+    assert sbt._settlement_block_reason(
+        blocked, book="B", exit_date="2026-07-13", code="SAME", entry_date="2026-07-07",
+    ) is None

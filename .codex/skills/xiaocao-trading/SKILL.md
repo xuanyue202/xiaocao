@@ -51,7 +51,7 @@ Capital safety (two-key): xiaocao is paper-only. A real-capital order is structu
 Agent-facing tools (prefer these over re-scraping files):
 
 - `python3 scripts/show_journal.py --date today` — what earlier runs concluded today (cross-context continuity). Read this at the start of an intraday/EOD run instead of re-deriving the day from scattered files.
-- `python3 scripts/status.py` (`--json`, `--push-wecom`) — the situational-awareness digest: book A vs book B realized spread, Book T trend account, equity/cash, today's decisions, open holdings; `--push-wecom` posts through the OpenClaw WeCom relay when `XIAOCAO_WECOM_*` is configured.
+- `python3 scripts/status.py` (`--json`, `--push-wecom`) — the situational-awareness digest: Book-A/Book-B raw accounting delta plus identical-cohort normalized exit comparison, Book T trend account, equity/cash, today's decisions, open holdings; `--push-wecom` posts through the OpenClaw WeCom relay when `XIAOCAO_WECOM_*` is configured. Never translate the raw cumulative A-B PnL delta into "stops helped/hurt".
 - `python3 scripts/research_run.py --trades <file> --n-tried N` — judge a cache-built results file under the discipline guards (cache-only, walk-forward, per-trade-not-day-weighted, multiple-comparison significance); it refuses to call a day-weighting artifact "validated".
 - `python3 scripts/data_doctor.py` — dirty-data doctor. **Run it before trusting any A/B verdict**: it catches duplicate (date,code,is_live,book) snapshots (the 06-01 bug that made an A/B result meaningless), book A/B/T account drift, and stale positions. Exits non-zero on a critical finding.
 - `python3 scripts/flywheel_selfcheck.py` — are the three coupled flywheels healthy? ① capital + ② capability auto-turn (spinning); ③ strategy is an intentional human gate, reported open/blocked/closed (🔴 only if a PASS verdict is pending with no actuator). Also flags a stalled loop.
@@ -67,7 +67,7 @@ Use this section when an automation (morning / intraday / eod) needs the **discr
 
 How each agent consults them:
 
-- **Morning agent** — read the **现行 posture** of `REGIME_TIMELINE.md` (regime / risk / `证伪条件`) as today's macro prior, plus the 术/纪律 of `XIAOCAO_PLAYBOOK.md`, to frame the day's narrative (optimistic / neutral / defensive; which 方向 lead vs lag; whether the deterministic `★B` picks sit *with* or *against* the posture). It is a **lens for the Chinese summary**, never a filter on the picks. If the latest timeline row is several sessions stale, say "no current posture prior" and proceed on live data only.
+- **Morning agent** — read the **现行 posture** of `REGIME_TIMELINE.md` (regime / risk / `证伪条件`) as today's macro prior, plus the 术/纪律 of `XIAOCAO_PLAYBOOK.md`, to frame the day's narrative (optimistic / neutral / defensive; which 方向 lead vs lag; whether the deterministic `★B` picks sit *with* or *against* the posture). It is a **lens for the Chinese summary**, never a filter on the picks. `valid_until` is a hard freshness boundary: once expired, say "no current posture prior" and proceed on live data only; do not keep copying the stale call into later dates.
 - **EOD agent** — use the 纪律 (出场) section of `XIAOCAO_PLAYBOOK.md` for **anomaly triage only**: when a position was held through a deferred trailing/composite signal or a strong-hold exception, judge whether that looks like a *defensible discretionary exception* or a *discipline gap worth flagging*. One line of triage in the A/B report — it changes no fill, stop, or account row. The **exit-calibration sensor** (`output/live/exit_calibration.jsonl`, refreshed every eod, see the EOD workflow below) is the falsifiable companion to this triage: once an exit rule clears the min-n floor it shows, on realized forward paths, whether holding-through / selling actually *paid* — so the triage line can cite data instead of vibe. Still a prior, never an auto action.
 
 **红线 (MUST NOT)** — consistent with `docs/OPERATING_CONTRACT.md` §2 (LLM 不进确定性回路):
@@ -250,7 +250,8 @@ Recommended China-market automation cadence:
 - Morning recommendation + paper-buy confirmation: 09:23 on trading weekdays. This is a two-phase workflow inside one automation run: first produce the 9:25 recommendation/snapshot, then confirm paper fills after the opening execution window has settled.
 - Opening dense intraday monitor: 09:35, 09:45, 09:55. Keep this denser because early realized volatility, auction follow-through, and first stop-loss signals cluster near the open.
 - Sparse intraday monitor: 10:25, 10:55, 13:25, 13:55. This is enough for ordinary holding surveillance after the open; do not poll every 10 minutes all day unless explicitly requested.
-- Closing-discipline intraday monitor: 14:25 and 14:55. Treat this as risk cleanup and quantitative discipline, not optimistic discretionary extension.
+- 14:25 risk precheck: run immediately; execute only actions already legal before the close gate (`HARD_STOP`, `AI_EVENT_RISK_EXIT`, liquidity escape) and leave soft trailing/composite exits deferred. It must never wait in-process for 14:55.
+- 14:55 closing discipline: a separate automation and the only soft-exit closing pass. Run exactly once when woken; do not wait for another gate.
 - EOD capture/evaluation: 15:10.
 
 For Codex cron automations on a UTC+8 machine, store RRULE times as the equivalent UTC wall-clock values so the app displays and runs at the intended China local times.
@@ -338,9 +339,12 @@ Book T positions are monitored only by `scripts/live_monitor.py --book T`; they 
 
 Opening-dense monitor runs should pay extra attention to market regime, breadth, limit-up/limit-down counts, stock sentiment, and whether the opening action confirms or rejects the morning recommendation posture. Sparse intraday monitor runs should stay quiet unless there is an actual sell signal, simulated sell, data problem, or meaningful regime/position deterioration.
 
-Closing-discipline monitor runs should be conservative and rule-based: prioritize T+1 legality, trailing-stop/profile rules, EOD discipline, position/account consistency, and whether any strong-hold exception is truly limit-up/leader-like. Do not preserve a weak position into the close merely because the morning thesis sounded good.
+The 14:25 precheck and 14:55 closing pass have different task IDs and prompts. The 14:25 run must finish after its immediate monitor pass; it must not stay alive until 14:55. Closing-discipline monitor runs should be conservative and rule-based: prioritize T+1 legality, trailing-stop/profile rules, EOD discipline, position/account consistency, and whether any strong-hold exception is truly limit-up/leader-like. Do not preserve a weak position into the close merely because the morning thesis sounded good.
 
 When `--execute-sells` is used, simulated sell execution must honor liquidity constraints. If a triggered sell is limit-down with no bid liquidity, record/report `SELL_BLOCKED` with `LIMIT_DOWN_NO_BID`, keep the position open, and do not update cash, realized PnL, or trades as if the sell executed.
+
+Every paper-ledger writer uses the same `output/live/paper_ledger.lock`. Closing updates are a recoverable positions/account/trades transaction; if `.ledger_txn/pending.json` exists, the next writer completes it under that lock and `data_doctor` treats it as CRITICAL until recovered. Never hand-delete the pending manifest or report a half-committed ledger as current truth.
+All simulated sell read/modify/write work is serialized by the shared paper-ledger process lock and reloads positions after acquiring it. An overlapping agent may report a no-op after the first writer closes the position; it must never append a duplicate SELL.
 
 EOD automation workflow:
 
@@ -364,12 +368,18 @@ After it finishes, inspect the current date's EOD log plus the live outputs that
 - `output/live/decision_journal.jsonl` (structured per-run decisions; or `python3 scripts/show_journal.py --date today`)
 - `output/research/paper_vs_market_<start>_<date>.md` (Book B vs 上证/深成指/创业板指/中证1000)
 
-EOD first runs `scripts/data_doctor.py`; a CRITICAL finding (e.g. duplicate snapshots) **gates the learning half** — `forward_eval` and the capability-flywheel record are skipped so the system never learns from dirty data (the capital half still runs). The EOD capital half monitors Book B, monitors Book T with `scripts/live_monitor.py --book T --execute-sells`, settles Book A, then settles Book T with `settle_book_t.py`. It then pushes the situational-awareness digest to WeCom via OpenClaw relay (`scripts/status.py --push-wecom`; needs `XIAOCAO_WECOM_RELAY_URL`, `XIAOCAO_WECOM_RELAY_TOKEN`, `XIAOCAO_WECOM_USER_ID`; optional `XIAOCAO_WECOM_ACCOUNT_ID=default`, `XIAOCAO_WECOM_INSECURE=true`). For Codex cron, put these vars in local untracked `output/live/notify.env` (or point `XIAOCAO_NOTIFY_ENV_FILE` elsewhere) so fresh automation contexts inherit the relay config without editing each automation. The capability flywheels run health checks every eod: `continuous_optimize.py` for short-line A/B/C/D/E (E = AI intelligence short shadow) and `trend_optimize.py` for Book T's compounded/dd/turnover instrument; `research_intelligence_shadow.py` also scores cached intelligence evidence against realized training rows for the broader learning loop. On Fridays both automatically record changed verdicts to `kronos_screen/HYPOTHESES.jsonl`; `bash scripts/auto_daily.sh optimize` is the on-demand/back-fill recording path. Surface a REJECTED pipeline verdict only as evidence, not alarm: the secondary screen, AI intelligence shadow, and Book T trend edge are forward/research evidence until §10 says otherwise.
+When Book T shows `valuation_status != fresh`, report its cost-basis equity and
+`unrealized=N/A`; do not combine a newer account/position ledger with an older
+`paper_holdings_T.json` mark.
+
+EOD first runs `scripts/data_doctor.py`; a CRITICAL finding (e.g. duplicate snapshots or a ledger close after a final-session `SELL_BLOCKED`) **gates the learning half** — `forward_eval` and the capability-flywheel record are skipped so the system never learns from dirty data (the capital half still runs). The EOD capital half monitors Book B, monitors Book T with `scripts/live_monitor.py --book T --execute-sells`, settles Book A, then settles Book T with `settle_book_t.py`. A Book-T `SELL_BLOCKED` observed after the 14:55 gate is an execution fact: settlement must preserve the open position and must not synthesize a close from the daily bar. It then pushes the situational-awareness digest to WeCom via OpenClaw relay (`scripts/status.py --push-wecom`; needs `XIAOCAO_WECOM_RELAY_URL`, `XIAOCAO_WECOM_RELAY_TOKEN`, `XIAOCAO_WECOM_USER_ID`; optional `XIAOCAO_WECOM_ACCOUNT_ID=default`, `XIAOCAO_WECOM_INSECURE=true`). For Codex cron, put these vars in local untracked `output/live/notify.env` (or point `XIAOCAO_NOTIFY_ENV_FILE` elsewhere) so fresh automation contexts inherit the relay config without editing each automation. The capability flywheels run health checks every eod: `continuous_optimize.py` for short-line A/B/C/D/E (E = AI intelligence short shadow) and `trend_optimize.py` for Book T's compounded/dd/turnover instrument; `research_intelligence_shadow.py` also scores cached intelligence evidence against realized training rows for the broader learning loop. On Fridays both automatically record changed verdicts to `kronos_screen/HYPOTHESES.jsonl`; `bash scripts/auto_daily.sh optimize` is the on-demand/back-fill recording path. Surface a REJECTED pipeline verdict only as evidence, not alarm: the secondary screen, AI intelligence shadow, and Book T trend edge are forward/research evidence until §10 says otherwise.
 
 EOD also runs `scripts/research_paper_vs_market.py` and writes the dated report
 under `output/research/`. Include a one-line "Book B vs index avg" result in the
 Chinese EOD reply; this is the daily sanity check that the simulated strategy is
-at least beating a passive A-share reference over the same window.
+at least beating a passive A-share reference over the same window. The benchmark
+is valid only at `index coverage = 4/4` (上证/深成指/创业板指/中证1000); otherwise
+report the index average and spread as `N/A`, never `0.00%`.
 
 EOD then runs `scripts/flywheel_selfcheck.py --notify-blocked` — the three-flywheel health check. **Read its `③ strategy flywheel` status and act per the runbook below.** ① capital and ② capability auto-turning is the normal steady state; the only line that needs a decision is ③.
 

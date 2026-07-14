@@ -71,6 +71,9 @@ output/live/paper_holdings*_snapshots.jsonl
 output/live/paper_skips.jsonl
 output/live/paper_trades.jsonl*
 output/live/positions.jsonl.*
+output/live/paper_ledger.lock
+output/live/ledger_repairs.jsonl
+output/live/.ledger_txn/
 output/live/pnl_decompose.csv
 output/live/quality_governor_audit.jsonl
 output/live/signal_snapshots.jsonl*
@@ -78,6 +81,7 @@ output/live/stock_sentiment.json
 output/live/stock_sentiment_history.jsonl
 output/live/agent_signals.jsonl
 output/live/context_pack_*.json
+output/live/intelligence_review_queue_*.json
 output/live/run_flow*.jsonl
 output/live/run_flow_*.json
 output/live/intelligence_evidence_*.jsonl

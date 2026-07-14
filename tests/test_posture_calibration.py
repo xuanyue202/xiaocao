@@ -72,3 +72,35 @@ def test_trim_scored_separately_not_as_aggressive():
     call = {"action": "aggressive", "stance": "trim", "fwd_ret": +0.8}
     assert pc.score_call(call["action"], call["fwd_ret"]) is True       # coarse: looks right
     assert pc.score_stance(call["stance"], call["fwd_ret"]) is False    # fine: actually 减飞
+
+
+def test_current_posture_refuses_call_after_valid_until():
+    current = {"as_of": "2026-07-01", "valid_until": "2026-07-03", "regime": "trend_continuing"}
+
+    row, reason = pc.current_posture_call(current, "2026-07-14")
+
+    assert row is None and "expired" in reason
+
+
+def test_current_posture_call_carries_expiry_when_fresh():
+    current = {
+        "as_of": "2026-07-01", "valid_until": "2026-07-15", "regime": "trend_continuing",
+        "dominant_style": "持有",
+    }
+
+    row, reason = pc.current_posture_call(current, "2026-07-14")
+
+    assert reason == "fresh"
+    assert row["date"] == "2026-07-14" and row["valid_until"] == "2026-07-15"
+
+
+def test_prune_expired_current_calls_removes_only_matching_stale_rows():
+    current = {"as_of": "2026-07-01", "valid_until": "2026-07-03"}
+    kept, removed = pc.prune_expired_current_calls([
+        {"date": "2026-07-02", "as_of": "2026-07-01", "source": "posture_current"},
+        {"date": "2026-07-06", "as_of": "2026-07-01", "source": "posture_current"},
+        {"date": "2026-07-06", "as_of": "other", "source": "manual"},
+    ], current)
+
+    assert [row["date"] for row in removed] == ["2026-07-06"]
+    assert len(kept) == 2

@@ -16,6 +16,7 @@ from pathlib import Path
 from typing import Any
 
 from xiaocao.live import journal
+from xiaocao.live.ab_attribution import paired_exit_attribution
 
 
 def _load_json(path: Path) -> dict[str, Any]:
@@ -25,11 +26,52 @@ def _load_json(path: Path) -> dict[str, Any]:
         return {}
 
 
+def _load_positions(path: Path) -> list[dict[str, Any]]:
+    try:
+        return [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines() if line.strip()]
+    except (OSError, ValueError):
+        return []
+
+
 def _f(value: Any, default: float = 0.0) -> float:
     try:
         return float(value)
     except (TypeError, ValueError):
         return default
+
+
+def _holding_identity(row: dict[str, Any]) -> tuple[str, str, int]:
+    return (
+        str(row.get("code") or ""),
+        str(row.get("entry_date") or "")[:10],
+        int(row.get("shares") or 0),
+    )
+
+
+def _valuation_status(
+    snapshot: dict[str, Any],
+    *,
+    account: dict[str, Any],
+    open_positions: list[dict[str, Any]],
+    market_date: str,
+) -> tuple[str, str]:
+    if not snapshot:
+        return "missing", "no holdings snapshot"
+    snapshot_date = str(snapshot.get("date") or "")[:10]
+    if snapshot_date != market_date:
+        return "stale", f"snapshot date {snapshot_date or 'missing'} != market date {market_date}"
+    snapshot_ids = sorted(_holding_identity(row) for row in (snapshot.get("holdings") or []))
+    position_ids = sorted(_holding_identity(row) for row in open_positions)
+    if snapshot_ids != position_ids:
+        return "mismatch", "snapshot holdings do not match open position ledger"
+    for key in ("cash", "realized_pnl", "total_fees"):
+        if key not in snapshot:
+            return "mismatch", f"snapshot missing account total {key}"
+        if key not in account:
+            return "mismatch", f"account missing total {key}"
+        if abs(_f(snapshot.get(key)) - _f(account.get(key))) > 0.01:
+            return "mismatch", f"snapshot {key} does not match account ledger"
+    return "fresh", "snapshot date, holdings identity, and account totals match"
 
 
 def build_digest(
@@ -46,6 +88,7 @@ def build_digest(
     acct_t_path = live_dir / "paper_account_T.json"
     acct_t = _load_json(acct_t_path)
     positions_path = live_dir / "positions.jsonl"
+    all_positions = _load_positions(positions_path)
     # A missing/unparseable book-A account must NOT masquerade as realized 0.0:
     # ab_realized_delta would then collapse to book B's entire PnL and be reported
     # as "stops helped/hurt" against an empty baseline — the exact self-deceiving
@@ -65,16 +108,10 @@ def build_digest(
         "cash": _f(acct_a.get("cash")),
         "realized_pnl": _f(acct_a.get("realized_pnl")),
     }
-    open_a: list[dict[str, Any]] = []
-    try:
-        for line in positions_path.read_text(encoding="utf-8").splitlines():
-            if not line.strip():
-                continue
-            row = json.loads(line)
-            if row.get("book") == "A" and row.get("status", "open") == "open":
-                open_a.append(row)
-    except (OSError, ValueError):
-        open_a = []
+    open_a = [
+        row for row in all_positions
+        if row.get("book") == "A" and row.get("status", "open") == "open"
+    ]
     book_a_open_cost = round(sum(_f(p.get("entry_cash_out")) for p in open_a), 2)
     book_a.update({
         "open_positions": len(open_a),
@@ -85,26 +122,37 @@ def build_digest(
         "cost_basis_equity": round(book_a["cash"] + book_a_open_cost, 2) if book_a_present else 0.0,
     })
     book_t_present = acct_t_path.exists() and bool(acct_t)
-    open_t: list[dict[str, Any]] = []
-    try:
-        for line in positions_path.read_text(encoding="utf-8").splitlines():
-            if not line.strip():
-                continue
-            row = json.loads(line)
-            if row.get("book") == "T" and row.get("status", "open") == "open":
-                open_t.append(row)
-    except (OSError, ValueError):
-        open_t = []
+    open_t = [
+        row for row in all_positions
+        if row.get("book") == "T" and row.get("status", "open") == "open"
+    ]
     book_t_open_cost = round(sum(_f(p.get("entry_cash_out")) for p in open_t), 2)
+    book_t_cost_equity = round(_f(acct_t.get("cash")) + book_t_open_cost, 2) if book_t_present else 0.0
+    t_valuation_status, t_valuation_reason = _valuation_status(
+        holdings_t_snap,
+        account=acct_t,
+        open_positions=open_t,
+        market_date=market_date,
+    )
+    t_marked = t_valuation_status == "fresh"
     book_t = {
         "cash": _f(acct_t.get("cash")),
         "realized_pnl": _f(acct_t.get("realized_pnl")),
         "total_fees": _f(acct_t.get("total_fees")),
-        "equity": _f(holdings_t_snap.get("total_equity_after_exit_fee")),
-        "unrealized_pnl": _f(holdings_t_snap.get("unrealized_pnl_after_fee")),
-        "open_positions": int(holdings_t_snap.get("open_positions") or len(open_t)),
+        "equity": (
+            _f(holdings_t_snap.get("total_equity_after_exit_fee"))
+            if t_marked else book_t_cost_equity
+        ),
+        "unrealized_pnl": (
+            _f(holdings_t_snap.get("unrealized_pnl_after_fee")) if t_marked else None
+        ),
+        "open_positions": len(open_t),
         "open_entry_cash_out": book_t_open_cost,
-        "cost_basis_equity": round(_f(acct_t.get("cash")) + book_t_open_cost, 2) if book_t_present else 0.0,
+        "cost_basis_equity": book_t_cost_equity,
+        "equity_basis": "marked_snapshot" if t_marked else "cost_basis",
+        "valuation_status": t_valuation_status,
+        "valuation_reason": t_valuation_reason,
+        "valuation_as_of": str(holdings_t_snap.get("ts") or holdings_t_snap.get("date") or "") or None,
     }
 
     latest = journal.latest(market_date=market_date, path=live_dir / "decision_journal.jsonl")
@@ -128,6 +176,7 @@ def build_digest(
         for h in (holdings_snap.get("holdings") or [])
     ]
 
+    ab_paired = paired_exit_attribution(all_positions)
     return {
         "market_date": market_date,
         "generated_at": (now or datetime.now()).isoformat(timespec="seconds"),
@@ -136,11 +185,14 @@ def build_digest(
         "book_a_present": book_a_present,
         "book_t": book_t,
         "book_t_present": book_t_present,
-        # live stop policy minus validated next-close policy: >0 = stops helped.
-        # None (not 0.0) when book A is absent — the spread is undefined, never faked.
+        # Retained as raw accounting compatibility only. Different cohorts and
+        # notionals make this unsuitable for exit-policy attribution.
         "ab_realized_delta": (
             round(book_b["realized_pnl"] - book_a["realized_pnl"], 2) if book_a_present else None
         ),
+        "ab_realized_delta_authority": "accounting_only",
+        "ab_paired_exit": ab_paired,
+        "ab_paired_exit_edge_pp": ab_paired.get("mean_b_minus_a_pp"),
         "today": today,
         "holdings": holdings,
     }
@@ -181,17 +233,26 @@ def _holding_hint(h: dict[str, Any]) -> str:
     return "等待下一次纪律检查"
 
 
-def _format_ab_summary(delta: Any) -> str:
+def _format_ab_summary(digest: dict[str, Any]) -> str:
+    delta = digest.get("ab_realized_delta")
     if delta is None:
-        return "A/B realized 差: N/A。Book A 还没结算/缺失，这里先不硬算。"
-    value = _f(delta)
-    if value > 0:
-        explain = "止损/退出层目前比 next-close 验证口径多赚。"
-    elif value < 0:
-        explain = "止损/退出层目前跑输 next-close 验证口径；这是证据，不是报错。"
+        accounting = "A/B 累计账面差: N/A（Book A 未结算/缺失）。"
     else:
-        explain = "两种退出口径目前打平。"
-    return f"A/B realized 差: {_money(value, signed=True)}（book B - book A）。{explain}"
+        accounting = (
+            f"A/B 累计账面差: {_money(delta, signed=True)}（B-A，仅会计信息；"
+            "样本数、仓位或结算进度可能不同，不可直接归因）。"
+        )
+    paired = digest.get("ab_paired_exit") or {}
+    n = int(paired.get("eligible_pairs") or 0)
+    edge = paired.get("mean_b_minus_a_pp")
+    if not n or edge is None:
+        comparison = "配对退出样本: N/A（暂无同股票/同日/同价/同股数且双方已结算的样本）。"
+    else:
+        comparison = (
+            f"配对退出样本: n={n}，平均归一化收益 B-A {_pct(edge, signed=True).replace('%', 'pp')}，"
+            f"B 优于 A {int(paired.get('b_better_pairs') or 0)}/{n}；仅描述性统计。"
+        )
+    return f"{accounting}\n- {comparison}"
 
 
 def format_digest_body(d: dict[str, Any]) -> str:
@@ -220,12 +281,20 @@ def format_digest_body(d: dict[str, Any]) -> str:
         lines.append("- book A 验证账本（next-close）：未结算/缺失。")
     t = d.get("book_t") or {}
     if d.get("book_t_present"):
-        t_equity = t.get("equity") or t.get("cost_basis_equity")
-        lines.append(
-            f"- book T 趋势模拟账本：权益 {_money(t_equity)}，现金 {_money(t.get('cash'))}，"
-            f"持仓 {t.get('open_positions', 0)} 只，已实现 {_money(t.get('realized_pnl'), signed=True)}。"
-        )
-    lines.append(f"- {_format_ab_summary(d.get('ab_realized_delta'))}")
+        if t.get("valuation_status") == "fresh":
+            lines.append(
+                f"- book T 趋势模拟账本：权益 {_money(t.get('equity'))}，现金 {_money(t.get('cash'))}，"
+                f"持仓 {t.get('open_positions', 0)} 只，已实现 {_money(t.get('realized_pnl'), signed=True)}，"
+                f"未实现 {_money(t.get('unrealized_pnl'), signed=True)}。"
+            )
+        else:
+            lines.append(
+                f"- book T 趋势模拟账本：成本口径权益 {_money(t.get('cost_basis_equity'))}，"
+                f"现金 {_money(t.get('cash'))}，持仓 {t.get('open_positions', 0)} 只，"
+                f"已实现 {_money(t.get('realized_pnl'), signed=True)}；估值 N/A "
+                f"（{_fmt_optional(t.get('valuation_status'))}: {_fmt_optional(t.get('valuation_reason'))}）。"
+            )
+    lines.append(f"- {_format_ab_summary(d)}")
     today = d.get("today") or {}
     if today:
         pos = today.get("posture") or {}

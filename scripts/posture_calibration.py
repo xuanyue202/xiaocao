@@ -80,6 +80,46 @@ def stance_of(call: dict) -> str:
     return {"aggressive": "participate", "defensive": "sit_out", "neutral": "neutral"}.get(act, "neutral")
 
 
+def current_posture_call(current: dict, today: str) -> tuple[dict | None, str]:
+    valid_until = str(current.get("valid_until") or "")[:10]
+    if not valid_until:
+        return None, "missing valid_until; posture has no calibration authority"
+    if today > valid_until:
+        return None, f"expired on {valid_until}"
+    regime = str(current.get("regime") or "neutral")
+    stance = stance_of({
+        "posture": regime,
+        "dominant_style": current.get("dominant_style", ""),
+        "risk": current.get("risk", ""),
+        "stage": current.get("stage", ""),
+    })
+    return ({
+        "date": today,
+        "posture": regime,
+        "action": ACTION.get(regime, "neutral"),
+        "stance": stance,
+        "as_of": current.get("as_of"),
+        "valid_until": valid_until,
+        "source": "posture_current",
+    }, "fresh")
+
+
+def prune_expired_current_calls(
+    calls: list[dict], current: dict
+) -> tuple[list[dict], list[dict]]:
+    as_of = str(current.get("as_of") or "")[:10]
+    valid_until = str(current.get("valid_until") or "")[:10]
+    kept: list[dict] = []
+    removed: list[dict] = []
+    for row in calls:
+        matches = row.get("source") == "posture_current" and str(row.get("as_of") or "")[:10] == as_of
+        if matches and valid_until and str(row.get("date") or "")[:10] > valid_until:
+            removed.append(row)
+        else:
+            kept.append(row)
+    return kept, removed
+
+
 def score_stance(stance, fwd_ret):
     """participate right if forward market rose; trim/exit/sit_out right if it fell/flattened."""
     direction = STANCE_DIR.get(stance)
@@ -301,6 +341,8 @@ def main():
     ap.add_argument("--record", nargs=3, metavar=("DATE", "POSTURE", "ACTION"))
     ap.add_argument("--record-current", action="store_true",
                     help="append today's standing posture from posture_current.json (morning automation)")
+    ap.add_argument("--prune-expired", action="store_true",
+                    help="remove posture_current calls recorded after that posture's valid_until")
     ap.add_argument("--score", action="store_true")
     ap.add_argument("--horizon", type=int, default=10)
     ap.add_argument("--window", type=int, default=20)
@@ -315,25 +357,50 @@ def main():
     if a.distill:
         distill(a.horizon)
         return
+    if a.prune_expired:
+        pc = ROOT / "reference" / "experience" / "posture_current.json"
+        if not pc.exists() or not CALLS.exists():
+            print("no posture_current/calls to prune"); return
+        current = json.loads(pc.read_text(encoding="utf-8"))
+        calls = [json.loads(line) for line in CALLS.read_text(encoding="utf-8").splitlines() if line.strip()]
+        kept, removed = prune_expired_current_calls(calls, current)
+        if removed:
+            tmp = CALLS.with_suffix(".jsonl.tmp")
+            with tmp.open("w", encoding="utf-8") as fh:
+                for row in kept:
+                    fh.write(json.dumps(row, ensure_ascii=False, sort_keys=True) + "\n")
+            tmp.replace(CALLS)
+            audit = LIVE / "posture_call_repairs.jsonl"
+            with audit.open("a", encoding="utf-8") as fh:
+                fh.write(json.dumps({
+                    "repair": "prune_expired_posture_current_calls",
+                    "as_of": current.get("as_of"),
+                    "valid_until": current.get("valid_until"),
+                    "removed": removed,
+                }, ensure_ascii=False, sort_keys=True) + "\n")
+        print(f"posture expiry repair: removed={len(removed)} kept={len(kept)}")
+        return
     if a.record_current:
         import datetime
         pc = ROOT / "reference" / "experience" / "posture_current.json"
         if not pc.exists():
             print("no posture_current.json"); return
         cur = json.loads(pc.read_text(encoding="utf-8"))
-        regime = cur.get("regime", "neutral")
         today = datetime.date.today().isoformat()
+        row, freshness = current_posture_call(cur, today)
+        if row is None:
+            print(f"posture_current {freshness}; skip calibration call")
+            return
         LIVE.mkdir(parents=True, exist_ok=True)
         existing = {json.loads(l).get("date") for l in CALLS.read_text().splitlines()} if CALLS.exists() else set()
         if today in existing:
             print(f"posture call for {today} already recorded"); return
-        stance = stance_of({"posture": regime, "dominant_style": cur.get("dominant_style", ""),
-                            "risk": cur.get("risk", ""), "stage": cur.get("stage", "")})
         with CALLS.open("a", encoding="utf-8") as fh:
-            fh.write(json.dumps({"date": today, "posture": regime, "action": ACTION.get(regime, "neutral"),
-                                 "stance": stance, "as_of": cur.get("as_of"), "source": "posture_current"},
-                                ensure_ascii=False) + "\n")
-        print(f"recorded standing posture call: {today} {regime} ({ACTION.get(regime,'neutral')} / stance={stance})")
+            fh.write(json.dumps(row, ensure_ascii=False) + "\n")
+        print(
+            f"recorded standing posture call: {today} {row['posture']} "
+            f"({row['action']} / stance={row['stance']}, valid_until={row['valid_until']})"
+        )
         return
     if a.record:
         LIVE.mkdir(parents=True, exist_ok=True)

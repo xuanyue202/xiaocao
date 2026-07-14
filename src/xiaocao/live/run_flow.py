@@ -17,6 +17,8 @@ LOG_LINE_RE = re.compile(r"^\[(?P<ts>[^\]]+)\]\s*(?P<message>.*)$")
 
 def classify_message(message: str) -> str:
     text = message.lower()
+    if ("data health" in text and ("critical" in text or "skip" in text)) or "fallback_timeout" in text:
+        return "degraded"
     if "hard_stop" in text or "critical" in text or "failed" in text or "error" in text:
         return "failed"
     if "skipping" in text or "skip" in text:
@@ -95,16 +97,35 @@ def build_snapshot(
     market_date: str,
     events: list[dict[str, Any]],
     exit_code: int = 0,
+    supporting_health: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     counts = Counter(str(e.get("status") or "unknown") for e in events)
     if exit_code != 0:
-        status = "failed"
+        deterministic_status = "failed"
     elif counts.get("failed", 0) > 0:
-        status = "failed"
+        deterministic_status = "failed"
     elif counts.get("skipped", 0) > 0:
-        status = "completed_with_skips"
+        deterministic_status = "completed_with_skips"
     else:
-        status = "succeeded"
+        deterministic_status = "succeeded"
+    health = dict(supporting_health or {"status": "healthy", "issues": []})
+    health.setdefault("issues", [])
+    if counts.get("degraded", 0) > 0:
+        health["status"] = "degraded"
+        health["issues"] = list(health["issues"]) + [
+            {
+                "surface": "run_log",
+                "detail": str(row.get("message") or row.get("step") or "degraded event"),
+            }
+            for row in events if row.get("status") == "degraded"
+        ]
+    health.setdefault("status", "healthy")
+    if deterministic_status == "failed":
+        status = "failed"
+    elif health.get("status") == "degraded":
+        status = "degraded"
+    else:
+        status = deterministic_status
     return {
         "schema_version": 1,
         "automation": automation,
@@ -112,8 +133,92 @@ def build_snapshot(
         "generated_at": datetime.now().isoformat(timespec="seconds"),
         "exit_code": exit_code,
         "status": status,
+        "deterministic_status": deterministic_status,
+        "supporting_health": health,
         "counts": dict(counts),
         "steps": events,
+    }
+
+
+def supporting_health_from_live(
+    *,
+    live_dir: Path,
+    market_date: str,
+    posture_path: Path | None = None,
+) -> dict[str, Any]:
+    """Summarize optional sensor/cortex health without changing main-chain truth."""
+    from xiaocao.live import data_health
+
+    issues: list[dict[str, Any]] = []
+    health = data_health.check(live_dir, today=market_date)
+    if health.get("critical") or health.get("warn"):
+        issues.append({
+            "surface": "data_health",
+            "severity": "critical" if health.get("critical") else "warn",
+            "detail": f"critical={health.get('critical', 0)} warn={health.get('warn', 0)}",
+        })
+
+    history = live_dir / "stock_sentiment_history.jsonl"
+    reviewed_codes: set[str] = set()
+    legacy_pending_codes: set[str] = set()
+    if history.exists():
+        for line in history.read_text(encoding="utf-8").splitlines():
+            try:
+                row = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            if str(row.get("date") or "")[:10] != market_date[:10]:
+                continue
+            if row.get("score_source") == "agent_review":
+                reviewed_codes.add(str(row.get("code") or ""))
+            elif row.get("score_source") == "pending_agent_review":
+                legacy_pending_codes.add(str(row.get("code") or ""))
+    queue_path = live_dir / f"intelligence_review_queue_{market_date[:10]}.json"
+    try:
+        queue = json.loads(queue_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        queue = {}
+    selected_codes = {
+        str(item.get("code") or "")
+        for item in (queue.get("items") or [])
+        if item.get("code")
+    }
+    pending_codes = (
+        selected_codes - reviewed_codes
+        if selected_codes
+        else legacy_pending_codes - reviewed_codes
+    )
+    reviewed = len(reviewed_codes)
+    pending = len(pending_codes)
+    if pending:
+        issues.append({
+            "surface": "agent_review",
+            "severity": "warn",
+            "detail": f"reviewed={reviewed} pending={pending}; base-pick fallback active",
+        })
+
+    if posture_path is None:
+        posture_path = Path(__file__).resolve().parents[3] / "reference" / "experience" / "posture_current.json"
+    try:
+        posture = json.loads(posture_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        posture = {}
+    valid_until = str(posture.get("valid_until") or "")[:10]
+    if not valid_until or market_date[:10] > valid_until:
+        issues.append({
+            "surface": "posture",
+            "severity": "warn",
+            "detail": f"valid_until={valid_until or 'missing'} market_date={market_date[:10]}",
+        })
+    return {
+        "status": "degraded" if issues else "healthy",
+        "issues": issues,
+        "agent_review": {
+            "selected": len(selected_codes),
+            "reviewed": reviewed,
+            "pending": pending,
+        },
+        "posture_valid_until": valid_until or None,
     }
 
 
@@ -144,6 +249,8 @@ def upsert_snapshot_event(path: Path, snapshot: dict[str, Any], *, snapshot_path
         "market_date": snapshot.get("market_date"),
         "automation": snapshot.get("automation"),
         "status": snapshot.get("status"),
+        "deterministic_status": snapshot.get("deterministic_status"),
+        "supporting_health": snapshot.get("supporting_health"),
         "exit_code": snapshot.get("exit_code"),
         "counts": snapshot.get("counts"),
         "snapshot_path": str(snapshot_path),

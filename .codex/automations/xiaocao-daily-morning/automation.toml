@@ -2,7 +2,7 @@ version = 1
 id = "xiaocao-daily-morning"
 kind = "cron"
 name = "xiaocao daily morning"
-prompt = "Use the local `xiaocao-trading` skill/project conventions. Run the Xiaocao morning automation workflow and report according to the skill's automation workflow instructions."
+prompt = "Use the local `xiaocao-trading` skill/project conventions. Run the Xiaocao morning automation workflow. When the running shell reaches the bounded agent-review rendezvous, keep that shell alive, consume the dated review queue from frozen evidence, and write structured reviews with `scripts/agent_intelligence_review.py`; never use keyword scoring. Let timeout fall back to base picks, then report according to the skill."
 status = "ACTIVE"
 rrule = "DTSTART:20260608T012300\nRRULE:FREQ=WEEKLY;BYDAY=MO,TU,WE,TH,FR"
 model = "gpt-5.5"
@@ -10,4 +10,4 @@ reasoning_effort = "high"
 execution_environment = "local"
 cwds = ["~/coding/xiaocao"]
 created_at = 1780275839448
-updated_at = 1781141716183
+updated_at = 1783998205000

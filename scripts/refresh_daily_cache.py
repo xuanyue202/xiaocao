@@ -4,7 +4,8 @@
 The date_kline (daily OHLCV) endpoint can trail realtime by weeks, freezing
 mode_history / the proxy-regime substrate (see AGENTS.md). minute_line stays
 current, so at eod we reconstruct today's daily bar (from the `trade` field) for
-the universe we actually care about — open positions + today's signals — and
+the universe we actually care about — four benchmark indices + open positions
++ the requested day's signals — and
 append it to a provenance-tagged store the learning side can read. Rate-limited
 and cache-first (minute persists to xiaocao.db).
 
@@ -30,11 +31,19 @@ from xiaocao.config import load_settings  # noqa: E402
 
 LIVE = ROOT / "output" / "live"
 STORE = LIVE / "daily_reconstructed.jsonl"
+MARKET_INDEX_CODES = ("000001.XSHG", "399001.XSHE", "399006.XSHE", "000852.XSHG")
 
 
-def _universe() -> set[str]:
-    codes: set[str] = set()
-    pos = LIVE / "positions.jsonl"
+def _normal_date(value: str) -> str:
+    text = str(value or "").strip()
+    if len(text) == 8 and text.isdigit():
+        return f"{text[:4]}-{text[4:6]}-{text[6:]}"
+    return text[:10]
+
+
+def _universe(target_date: str, *, live_dir: Path = LIVE) -> set[str]:
+    codes: set[str] = set(MARKET_INDEX_CODES)
+    pos = live_dir / "positions.jsonl"
     if pos.exists():
         for line in pos.read_text(encoding="utf-8").splitlines():
             line = line.strip()
@@ -46,9 +55,9 @@ def _universe() -> set[str]:
                 continue
             if r.get("status") == "open" and r.get("code"):
                 codes.add(str(r["code"]))
-    snaps = LIVE / "signal_snapshots.jsonl"
+    snaps = live_dir / "signal_snapshots.jsonl"
     if snaps.exists():
-        today = date.today().isoformat()
+        wanted = _normal_date(target_date)
         for line in snaps.read_text(encoding="utf-8").splitlines():
             line = line.strip()
             if not line:
@@ -57,7 +66,7 @@ def _universe() -> set[str]:
                 r = json.loads(line)
             except json.JSONDecodeError:
                 continue
-            if str(r.get("date", "")) == today and r.get("code"):
+            if _normal_date(str(r.get("date", ""))) == wanted and r.get("code"):
                 codes.add(str(r["code"]))
     return codes
 
@@ -84,9 +93,9 @@ def main() -> None:
     ap.add_argument("--sleep", type=float, default=2.0)
     a = ap.parse_args()
 
-    codes = _universe()
+    codes = _universe(a.date)
     if not codes:
-        print("refresh_daily_cache: no open positions / today signals — nothing to refresh")
+        print("refresh_daily_cache: no benchmark/open-position/requested-day signal universe")
         return
     done = _done(STORE)
     s = load_settings(None)

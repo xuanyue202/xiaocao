@@ -23,6 +23,7 @@ from xiaocao.config import load_settings  # noqa: E402
 from xiaocao.live.status import build_digest  # noqa: E402
 
 LIVE_DIR = ROOT / "output" / "live"
+RECONSTRUCTED_DAILY = LIVE_DIR / "daily_reconstructed.jsonl"
 DEFAULT_INDICES = {
     "000001.XSHG": "上证指数",
     "399001.XSHE": "深证成指",
@@ -84,6 +85,29 @@ def rows_from_kline(payload: Any) -> list[dict[str, Any]]:
             if isinstance(value, list):
                 return [r for r in value if isinstance(r, dict)]
     return []
+
+
+def normal_date(value: Any) -> str:
+    text = str(value or "").strip()
+    if len(text) == 8 and text.isdigit():
+        return f"{text[:4]}-{text[4:6]}-{text[6:]}"
+    return text[:10]
+
+
+def load_reconstructed(path: Path) -> dict[str, dict[str, dict[str, Any]]]:
+    out: dict[str, dict[str, dict[str, Any]]] = defaultdict(dict)
+    if not path.exists():
+        return out
+    for line in path.read_text(encoding="utf-8").splitlines():
+        try:
+            row = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        code = str(row.get("code") or "")
+        day = normal_date(row.get("date"))
+        if code and day:
+            out[code][day] = {**row, "tradeDate": day}
+    return out
 
 
 def close_mdd(rows: list[dict[str, Any]]) -> float:
@@ -169,44 +193,75 @@ def paper_stats(start: str, end: str) -> dict[str, Any]:
     }
 
 
-def build_report(start: str, end: str, index_map: dict[str, str], count: int) -> dict[str, Any]:
-    c = client()
-    paper = paper_stats(start, end)
+def index_report(
+    c: XiaocaoClient,
+    *,
+    start: str,
+    end: str,
+    index_map: dict[str, str],
+    count: int,
+    reconstructed_path: Path = RECONSTRUCTED_DAILY,
+) -> list[dict[str, Any]]:
+    reconstructed = load_reconstructed(reconstructed_path)
     indices = []
     for code, name in index_map.items():
         rows = rows_from_kline(c.date_kline(code, count=count, freq="D", adj="qfq"))
-        by_date = {str(r.get("tradeDate")): r for r in rows}
+        by_date = {normal_date(r.get("tradeDate")): r for r in rows}
+        by_date.update(reconstructed.get(code, {}))
         if start not in by_date or end not in by_date:
             indices.append({"code": code, "name": name, "error": "missing start/end bar"})
             continue
-        seq = sorted((r for r in rows if start <= str(r.get("tradeDate")) <= end), key=lambda r: str(r.get("tradeDate")))
+        seq = [by_date[day] for day in sorted(day for day in by_date if start <= day <= end)]
         s = by_date[start]
         e = by_date[end]
         start_open = f(s.get("open"))
         start_close = f(s.get("close"))
         end_close = f(e.get("close"))
+        if start_open <= 0 or start_close <= 0 or end_close <= 0:
+            indices.append({
+                "code": code,
+                "name": name,
+                "error": "invalid non-positive start/end price",
+            })
+            continue
         indices.append({
             "code": code,
             "name": name,
-            "open_to_close_pct": round((end_close / start_open - 1.0) * 100.0, 4) if start_open else 0.0,
-            "close_to_close_pct": round((end_close / start_close - 1.0) * 100.0, 4) if start_close else 0.0,
+            "open_to_close_pct": round((end_close / start_open - 1.0) * 100.0, 4),
+            "close_to_close_pct": round((end_close / start_close - 1.0) * 100.0, 4),
             "close_mdd_pct": round(close_mdd(seq), 4),
+            "end_source": str(e.get("source") or "date_kline"),
         })
-    valid = [r for r in indices if "error" not in r]
-    avg_open = statistics.mean(r["open_to_close_pct"] for r in valid) if valid else 0.0
-    avg_close = statistics.mean(r["close_to_close_pct"] for r in valid) if valid else 0.0
+    return indices
+
+
+def build_report(start: str, end: str, index_map: dict[str, str], count: int) -> dict[str, Any]:
+    c = client()
+    paper = paper_stats(start, end)
+    indices = index_report(c, start=start, end=end, index_map=index_map, count=count)
+    valid_by_code = {str(r.get("code")): r for r in indices if "error" not in r}
+    required_codes = tuple(DEFAULT_INDICES)
+    valid_standard = [valid_by_code[code] for code in required_codes if code in valid_by_code]
+    complete = len(valid_standard) == len(required_codes)
+    avg_open = statistics.mean(r["open_to_close_pct"] for r in valid_standard) if complete else None
+    avg_close = statistics.mean(r["close_to_close_pct"] for r in valid_standard) if complete else None
     return {
         "paper": paper,
         "indices": indices,
-        "index_avg_open_to_close_pct": round(avg_open, 4),
-        "index_avg_close_to_close_pct": round(avg_close, 4),
-        "paper_vs_index_avg_open_pp": round(paper["return_pct"] - avg_open, 4),
-        "paper_vs_index_avg_close_pp": round(paper["return_pct"] - avg_close, 4),
+        "index_coverage": f"{len(valid_standard)}/{len(required_codes)}",
+        "index_avg_open_to_close_pct": round(avg_open, 4) if avg_open is not None else None,
+        "index_avg_close_to_close_pct": round(avg_close, 4) if avg_close is not None else None,
+        "paper_vs_index_avg_open_pp": round(paper["return_pct"] - avg_open, 4) if avg_open is not None else None,
+        "paper_vs_index_avg_close_pp": round(paper["return_pct"] - avg_close, 4) if avg_close is not None else None,
     }
 
 
 def markdown(report: dict[str, Any]) -> str:
     paper = report["paper"]
+    avg_index = report.get("index_avg_open_to_close_pct")
+    spread = report.get("paper_vs_index_avg_open_pp")
+    avg_index_text = f"{avg_index:+.2f}%" if avg_index is not None else "N/A"
+    spread_text = f"{spread:+.2f}pp" if spread is not None else "N/A"
     lines = [
         f"# Paper Vs Market {paper['start']}..{paper['end']}",
         "",
@@ -219,8 +274,9 @@ def markdown(report: dict[str, Any]) -> str:
         f"| realized / unrealized | {paper['realized_pnl']:+,.2f} / {paper['unrealized_pnl']:+,.2f} |",
         f"| buys / closed / open | {paper['buy_count']} / {paper['closed_count']} / {paper['open_count']} |",
         f"| closed avg / median / win-rate | {paper['closed_avg_ret_pct']:+.2f}% / {paper['closed_median_ret_pct']:+.2f}% / {paper['closed_win_rate_pct']:.2f}% |",
-        f"| avg index open->close | {report['index_avg_open_to_close_pct']:+.2f}% |",
-        f"| Book B - avg index | {report['paper_vs_index_avg_open_pp']:+.2f}pp |",
+        f"| index coverage | {report.get('index_coverage', '0/0')} |",
+        f"| avg index open->close | {avg_index_text} |",
+        f"| Book B - avg index | {spread_text} |",
         "",
         "## Indices",
         "",

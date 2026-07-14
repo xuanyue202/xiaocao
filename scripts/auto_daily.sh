@@ -62,6 +62,11 @@ case "$STEP" in
   morning)
     log "morning: live_recommend (self-waits to 9:25)"
     "$PY" scripts/live_recommend.py --no-stdout >>"$LOG" 2>&1
+    log "build AI intelligence review queue (zero-fetch; no score write)"
+    "$PY" scripts/build_intelligence_review_queue.py --date "$TODAY" --limit "${XIAOCAO_AGENT_REVIEW_QUEUE_LIMIT:-8}" >>"$LOG" 2>&1 || true
+    log "bounded agent-review rendezvous (structured review only; timeout falls back to base picks)"
+    REVIEW_RENDEZVOUS="$("$PY" scripts/wait_for_agent_reviews.py --date "$TODAY" --timeout-sec "${XIAOCAO_AGENT_REVIEW_TIMEOUT_SEC:-180}" 2>&1)" || true
+    log "agent-review rendezvous result: $REVIEW_RENDEZVOUS"
     log "paper-record ★B picks"
     "$PY" kronos_screen/scripts/paper_record.py --date "$TODAY" --initial-capital 100000 --fee-rate 0.0001 --deploy-ratio 0.5 --max-total-exposure-ratio 0.67 --quality-governor shadow --intelligence-trade on >>"$LOG" 2>&1
     log "paper-record Book T trend basket (paper-only, independent account)"

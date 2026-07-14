@@ -1,0 +1,13 @@
+version = 1
+id = "xiaocao-intraday-risk-precheck-1425"
+kind = "cron"
+name = "xiaocao intraday risk precheck 1425"
+prompt = "Use the local `xiaocao-trading` skill/project conventions. This is the 14:25 risk precheck, not the 14:55 closing discipline. Run the monitor immediately and never wait for 14:55: execute only actions already permitted before the closing gate (for example HARD_STOP or AI_EVENT_RISK_EXIT), leave ordinary trailing/composite exits deferred, record continuity, and report only a real sell, blocked sell, data failure, or meaningful deterioration."
+status = "ACTIVE"
+rrule = "RRULE:FREQ=WEEKLY;BYDAY=MO,TU,WE,TH,FR;BYHOUR=6;BYMINUTE=25"
+model = "gpt-5.5"
+reasoning_effort = "high"
+execution_environment = "local"
+cwds = ["~/coding/xiaocao"]
+created_at = 1783996620466
+updated_at = 1783996620466

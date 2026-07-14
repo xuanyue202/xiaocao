@@ -17,6 +17,8 @@ from datetime import date
 from pathlib import Path
 from typing import Any
 
+from xiaocao.live.sell_blocks import load_blocked_sell_keys
+
 
 def _read_jsonl(path: Path) -> list[dict[str, Any]]:
     if not path.exists():
@@ -62,27 +64,43 @@ def duplicate_snapshots(live_dir: Path) -> list[dict[str, Any]]:
     }]
 
 
-def unlabeled_closed_positions(live_dir: Path) -> list[dict[str, Any]]:
-    """Closed positions missing an explicit `book` label.
-
-    account_reconciles treats an absent `book` as B for legacy compatibility
-    (older rows predate the explicit label). That is safe only as long as every
-    unlabeled close genuinely is book B — a future/legacy book-A close written
-    without the label would be silently summed into book B's reconciliation,
-    masking a real discrepancy (the precise data-honesty hazard this doctor
-    exists to catch). Surface them so the label gets backfilled rather than
-    absorbed."""
-    positions = _read_jsonl(live_dir / "positions.jsonl")
-    unlabeled = [p for p in positions if p.get("status") == "closed" and "book" not in p]
-    if not unlabeled:
+def incomplete_ledger_transaction(live_dir: Path) -> list[dict[str, Any]]:
+    """A prepared multi-file commit must be recovered before trusting ledgers."""
+    pending = live_dir / ".ledger_txn" / "pending.json"
+    if not pending.exists():
         return []
-    codes = [str(p.get("code")) for p in unlabeled[:8]]
+    return [{
+        "check": "incomplete_ledger_transaction",
+        "severity": "critical",
+        "detail": (
+            f"prepared ledger transaction remains at {pending}; run the next ledger writer "
+            "or accounts.recover_ledger_transaction under the canonical lock before evaluation"
+        ),
+    }]
+
+
+def unlabeled_closed_positions(live_dir: Path) -> list[dict[str, Any]]:
+    """Positions or trades missing explicit accounting ownership.
+
+    The function name is retained for CLI/check compatibility, but the
+    invariant now covers the complete ledger.  Read paths may still tolerate
+    historical rows; every current writer fails closed instead.
+    """
+    positions = _read_jsonl(live_dir / "positions.jsonl")
+    trades = _read_jsonl(live_dir / "paper_trades.jsonl")
+    unlabeled_positions = [p for p in positions if not p.get("book")]
+    unlabeled_trades = [t for t in trades if not t.get("book")]
+    if not unlabeled_positions and not unlabeled_trades:
+        return []
+    examples = [str(row.get("code")) for row in (unlabeled_positions + unlabeled_trades)[:8]]
     return [{
         "check": "unlabeled_closed_positions",
         "severity": "warn",
-        "detail": f"{len(unlabeled)} closed position(s) lack an explicit `book` label "
-                  f"(e.g. {', '.join(codes)}) — reconciliation counts them as book B by "
-                  f"default; backfill the label so a future book-A close can't be absorbed",
+        "detail": (
+            f"{len(unlabeled_positions)} position(s) and {len(unlabeled_trades)} trade(s) "
+            f"lack an explicit `book` label (e.g. {', '.join(examples)}) — backfill only "
+            f"from provable ledger identity; do not silently default accounting ownership"
+        ),
     }]
 
 
@@ -135,6 +153,45 @@ def account_reconciles_book_t(live_dir: Path, *, tolerance: float = 1.0) -> list
     return []
 
 
+def blocked_sell_executions(live_dir: Path) -> list[dict[str, Any]]:
+    """A market-rejected sell must not become a same-day closed position.
+
+    This cross-ledger invariant catches independent writers that ignore the
+    execution result and settle from a theoretical close price instead.
+    """
+    # A morning liquidity block may clear.  A block observed after the 14:55
+    # discipline gate cannot be followed by another executable session that day.
+    blocked = load_blocked_sell_keys(live_dir / "alerts.jsonl", not_before_time="14:55")
+    if not blocked:
+        return []
+    contradictions: list[tuple[str, str, str, str]] = []
+    for position in _read_jsonl(live_dir / "positions.jsonl"):
+        if position.get("status") != "closed":
+            continue
+        key = (
+            str(position.get("book") or "B"),
+            str(position.get("exit_date") or "")[:10],
+            str(position.get("code") or ""),
+            str(position.get("entry_date") or "")[:10],
+        )
+        if key in blocked:
+            contradictions.append(key)
+    if not contradictions:
+        return []
+    examples = ", ".join(
+        f"{book}:{code}({entry}->{exit})"
+        for book, exit, code, entry in contradictions[:5]
+    )
+    return [{
+        "check": "blocked_sell_executions",
+        "severity": "critical",
+        "detail": (
+            f"{len(contradictions)} position(s) were recorded closed on a day their sell was "
+            f"blocked by market liquidity: {examples} — repair the ledger before trusting PnL"
+        ),
+    }]
+
+
 def stale_open_positions(live_dir: Path, *, today: str | None = None, max_days: int = 10) -> list[dict[str, Any]]:
     """Book B positions open far longer than the v5/v6 hold horizon — they should
     have exited; a stale one means the monitor/settle path skipped them."""
@@ -158,7 +215,13 @@ def stale_open_positions(live_dir: Path, *, today: str | None = None, max_days: 
     return []
 
 
-def stale_market_cache(cache_path: Path, *, today: str | None = None, max_days: int = 10) -> list[dict[str, Any]]:
+def stale_market_cache(
+    cache_path: Path,
+    *,
+    reconstructed_path: Path | None = None,
+    today: str | None = None,
+    max_days: int = 10,
+) -> list[dict[str, Any]]:
     """The historical daily-bar / mode-return cache silently goes stale when the
     upstream date_kline feed lags. In June 2026 the date_kline endpoint froze at
     2026-05-29 (~3 weeks behind) while live_recommend's `except: rows=[]` swallowed
@@ -191,13 +254,33 @@ def stale_market_cache(cache_path: Path, *, today: str | None = None, max_days: 
         gap = (today_d - date.fromisoformat(latest)).days
     except ValueError:
         return []
+    reconstructed_latest: str | None = None
+    if reconstructed_path is not None:
+        reconstructed_dates = [
+            str(row.get("date") or "")
+            for row in _read_jsonl(reconstructed_path)
+            if row.get("date")
+        ]
+        normalized = [
+            f"{value[:4]}-{value[4:6]}-{value[6:8]}" if len(value) == 8 and value.isdigit() else value[:10]
+            for value in reconstructed_dates
+        ]
+        reconstructed_latest = max(normalized, default=None)
+        if reconstructed_latest:
+            try:
+                reconstructed_gap = (today_d - date.fromisoformat(reconstructed_latest)).days
+            except ValueError:
+                reconstructed_gap = max_days + 1
+            if reconstructed_gap <= max_days:
+                return []
     if gap > max_days:
         return [{
             "check": "stale_market_cache",
             "severity": "warn",
             "detail": (
-                f"日线数据(mode_history/date_kline)停在 {latest}，距今 {gap} 天 — 历史日线 feed "
-                f"滞后，forward_eval/假设检验在用陈旧日线。检查 date_kline 端点时效，勿让静默回退掩盖。"
+                f"日线数据(mode_history/date_kline)停在 {latest}，距今 {gap} 天，"
+                f"minute 重建最新={reconstructed_latest or 'missing'} — 可用日线桥也陈旧，"
+                f"forward_eval/假设检验可能在用陈旧日线。"
             ),
         }]
     return []
@@ -207,15 +290,21 @@ def check(
     live_dir: Path, *, today: str | None = None, cache_path: Path | None = None
 ) -> dict[str, Any]:
     findings: list[dict[str, Any]] = []
+    findings += incomplete_ledger_transaction(live_dir)
     findings += duplicate_snapshots(live_dir)
     findings += account_reconciles(live_dir)
     findings += account_reconciles_book_t(live_dir)
+    findings += blocked_sell_executions(live_dir)
     findings += unlabeled_closed_positions(live_dir)
     findings += stale_open_positions(live_dir, today=today)
     # Cache lives at output/.cache/xiaocao.db (sibling of output/live); callers
     # may override. A missing cache yields no finding.
     cp = cache_path if cache_path is not None else live_dir.parent / ".cache" / "xiaocao.db"
-    findings += stale_market_cache(cp, today=today)
+    findings += stale_market_cache(
+        cp,
+        reconstructed_path=live_dir / "daily_reconstructed.jsonl",
+        today=today,
+    )
     return {
         "findings": findings,
         "critical": sum(1 for f in findings if f["severity"] == "critical"),

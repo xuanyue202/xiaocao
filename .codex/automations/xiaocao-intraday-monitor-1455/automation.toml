@@ -2,12 +2,12 @@ version = 1
 id = "xiaocao-intraday-monitor-1455"
 kind = "cron"
 name = "xiaocao intraday monitor closing discipline"
-prompt = "Use the local `xiaocao-trading` skill/project conventions. Run the Xiaocao closing-discipline intraday monitor workflow and report according to the skill's automation workflow instructions."
+prompt = "Use the local `xiaocao-trading` skill/project conventions. This is the 14:55 closing-discipline run. Start immediately when woken; do not wait for another time gate. Run the Xiaocao 14:55 closing execution workflow exactly once, report executed/blocked sells and unresolved risk, and stay quiet on a clean no-op."
 status = "ACTIVE"
-rrule = "DTSTART:20260608T062500\nRRULE:FREQ=WEEKLY;BYDAY=MO,TU,WE,TH,FR;BYHOUR=6;BYMINUTE=25,55"
+rrule = "DTSTART:20260608T065500\nRRULE:FREQ=WEEKLY;BYDAY=MO,TU,WE,TH,FR"
 model = "gpt-5.5"
 reasoning_effort = "high"
 execution_environment = "local"
 cwds = ["~/coding/xiaocao"]
 created_at = 1780276037463
-updated_at = 1781141737338
+updated_at = 1783996602568

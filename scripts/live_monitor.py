@@ -139,7 +139,7 @@ def _save_account(account: dict, book: str = "B") -> None:
 
 
 def _append_trade(record: dict) -> None:
-    accounts.append_jsonl(record, TRADES_FILE)
+    accounts.append_trade(record, TRADES_FILE)
 
 
 def _position_key(position: dict) -> tuple[str, str]:
@@ -479,10 +479,25 @@ def _has_alert_recorded(
 def _execute_simulated_sells(client: XiaocaoClient, triggered_alerts: list[dict], *, book: str = "B") -> tuple[int, int]:
     if not triggered_alerts:
         return 0, 0
+    # Two automation agents can overlap around the closing gate.  Lock before
+    # reloading state so the later process observes the first process's close
+    # instead of executing the same stale trigger twice.
+    with accounts.ledger_lock(accounts.ledger_lock_path(OUT_DIR)):
+        accounts.recover_ledger_transaction(OUT_DIR)
+        return _execute_simulated_sells_locked(client, triggered_alerts, book=book)
+
+
+def _execute_simulated_sells_locked(
+    client: XiaocaoClient,
+    triggered_alerts: list[dict],
+    *,
+    book: str = "B",
+) -> tuple[int, int]:
     positions = _load_all_positions()
     account = _load_account(book)
     closed = 0
     blocked = 0
+    new_trades: list[dict] = []
     for alert in triggered_alerts:
         for p in positions:
             if p.get("status", "open") != "open":
@@ -541,7 +556,7 @@ def _execute_simulated_sells(client: XiaocaoClient, triggered_alerts: list[dict]
                 "realized_pnl": realized_pnl,
                 "exit_reason": str(alert.get("sell_reason") or "TRAILING_STOP"),
             })
-            _append_trade({
+            new_trades.append({
                 "ts": _now_iso(), "date": _date.today().isoformat(), "side": "SELL",
                 "book": book,
                 "code": p.get("code"), "name": p.get("name", ""),
@@ -553,10 +568,15 @@ def _execute_simulated_sells(client: XiaocaoClient, triggered_alerts: list[dict]
             closed += 1
             break
     if closed:
-        with POSITIONS_FILE.open("w", encoding="utf-8") as f:
-            for p in positions:
-                f.write(json.dumps(p, ensure_ascii=False, sort_keys=True) + "\n")
-        _save_account(account, book)
+        accounts.commit_ledger_transaction(
+            live_dir=OUT_DIR,
+            positions=positions,
+            positions_path=POSITIONS_FILE,
+            account=account,
+            account_path=_account_file(book),
+            new_trades=new_trades,
+            trades_path=TRADES_FILE,
+        )
     return closed, blocked
 
 

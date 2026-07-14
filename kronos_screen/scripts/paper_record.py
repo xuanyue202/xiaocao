@@ -75,7 +75,7 @@ def _save_account(account: dict, path: Path = ACCOUNT) -> None:
 
 
 def _append_trade(record: dict) -> None:
-    accounts.append_jsonl(record, TRADES)
+    accounts.append_trade(record, TRADES)
 
 
 def _append_skip(record: dict) -> None:
@@ -494,7 +494,7 @@ def _audit_intelligence_vetoes(
         })
 
 
-def main():
+def _main_locked():
     ap = argparse.ArgumentParser()
     ap.add_argument("--date", default=datetime.now().strftime("%Y-%m-%d"))
     ap.add_argument("--pick", choices=["vb_star", "kp_star", "mode_star"], default="vb_star",
@@ -766,7 +766,7 @@ def main():
             if entry_cash_out > cash + 1e-6:
                 continue
             cash = round(cash - entry_cash_out, 2)
-            fh.write(json.dumps({
+            fh.write(accounts.position_jsonl_line({
                 "book": "B",
                 "code": r["code"], "name": r.get("name", ""), "entry_date": a.date,
                 "entry_price": round(px, 3), "profile": a.profile, "shares": shares,
@@ -817,9 +817,10 @@ def main():
                     f"_quality_{a.quality_governor}"
                 ),
                 "status": "open", "source": f"auto:{a.pick}",
-            }, ensure_ascii=False) + "\n")
+            }))
             _append_trade({
-                "ts": _now_iso(), "date": a.date, "side": "BUY", "code": r["code"],
+                "ts": _now_iso(), "date": a.date, "side": "BUY", "book": "B",
+                "code": r["code"],
                 "name": r.get("name", ""), "price": round(px, 3), "shares": shares,
                 "gross_notional": gross_notional, "fee": entry_fee,
                 "cash_after": cash, "source": f"auto:{a.pick}", "price_basis": fill_basis,
@@ -991,7 +992,7 @@ def _book_t_switch_exit_plan(
     }
 
 
-def _apply_book_t_switch_exit(plan: dict, account: dict, *, date_iso: str) -> None:
+def _apply_book_t_switch_exit(plan: dict, account: dict, *, date_iso: str) -> dict:
     row = plan["position"]
     row.update({
         "status": "closed",
@@ -1018,7 +1019,7 @@ def _apply_book_t_switch_exit(plan: dict, account: dict, *, date_iso: str) -> No
         2,
     )
     account["last_sell_date"] = date_iso
-    _append_trade({
+    return {
         "ts": _now_iso(),
         "date": date_iso,
         "side": "SELL",
@@ -1043,16 +1044,7 @@ def _apply_book_t_switch_exit(plan: dict, account: dict, *, date_iso: str) -> No
         "fill_window_end": plan.get("fill_window_end"),
         "fill_window_vwap": plan.get("fill_window_vwap"),
         "fill_window_last": plan.get("fill_window_last"),
-    })
-
-
-def _save_positions_to_file(path: Path, rows: list[dict]) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    tmp = path.with_suffix(".jsonl.tmp")
-    with tmp.open("w", encoding="utf-8") as fh:
-        for row in rows:
-            fh.write(json.dumps(row, ensure_ascii=False, sort_keys=True) + "\n")
-    tmp.replace(path)
+    }
 
 
 def _record_book_t(client: XiaocaoClient, a) -> None:
@@ -1321,21 +1313,23 @@ def _record_book_t(client: XiaocaoClient, a) -> None:
             f"(cash_T={cash:.2f}, slot_notional={slot_notional:.2f})"
         )
         return
-    for plan in selected_switches:
+    switch_trades = [
         _apply_book_t_switch_exit(plan, account, date_iso=a.date)
-    for trade in new_trades:
-        _append_trade(trade)
+        for plan in selected_switches
+    ]
     account["cash"] = cash
     account["fee_rate"] = fee_rate
     account["last_buy_date"] = a.date
     account["total_fees"] = round(float(account.get("total_fees", 0.0)) + run_fees, 2)
-    _save_account(account, path=ACCOUNT_T)
-    if selected_switches:
-        _save_positions_to_file(POS, positions + new_rows)
-    else:
-        with POS.open("a", encoding="utf-8") as fh:
-            for row in new_rows:
-                fh.write(json.dumps(row, ensure_ascii=False, sort_keys=True) + "\n")
+    accounts.commit_ledger_transaction(
+        live_dir=POS.parent,
+        positions=positions + new_rows,
+        positions_path=POS,
+        account=account,
+        account_path=ACCOUNT_T,
+        new_trades=switch_trades + new_trades,
+        trades_path=TRADES,
+    )
     print(
         f"{a.date}: book T paper-recorded {n} trend position(s), "
         f"paired_switches={len(selected_switches)} -> {POS} "
@@ -1420,7 +1414,7 @@ def _record_book_a(picks: list[dict], a, fee_rate: float) -> None:
             if cash_out > cash + 1e-6:
                 continue
             cash = round(cash - cash_out, 2)
-            fh.write(json.dumps({
+            fh.write(accounts.position_jsonl_line({
                 "book": "A",
                 "code": r["code"], "name": r.get("name", ""), "entry_date": a.date,
                 "entry_price": round(px, 3), "profile": "v5_nextclose", "shares": shares,
@@ -1446,7 +1440,7 @@ def _record_book_a(picks: list[dict], a, fee_rate: float) -> None:
                 "fee_rate": fee_rate,
                 "initial_capital": round(float(account.get("initial_capital", a.initial_capital)), 2),
                 "status": "open", "source": f"auto:{a.pick}:bookA",
-            }, ensure_ascii=False) + "\n")
+            }))
             _append_trade({
                 "ts": _now_iso(), "date": a.date, "side": "BUY", "book": "A",
                 "code": r["code"], "name": r.get("name", ""), "price": round(px, 3),
@@ -1476,6 +1470,12 @@ def _record_book_a(picks: list[dict], a, fee_rate: float) -> None:
 
 def _load_positions_from_file(path: Path) -> list[dict]:
     return accounts.load_positions(path)
+
+
+def main() -> None:
+    with accounts.ledger_lock(accounts.ledger_lock_path(POS.parent)):
+        accounts.recover_ledger_transaction(POS.parent)
+        _main_locked()
 
 
 if __name__ == "__main__":

@@ -14,6 +14,8 @@ sys.path.insert(0, str(ROOT / "src"))
 from xiaocao.config.settings import load_settings  # noqa: E402
 from xiaocao.api.client import XiaocaoClient        # noqa: E402
 from xiaocao.api.cache import SQLiteCache           # noqa: E402
+from xiaocao.live.ab_attribution import paired_exit_attribution  # noqa: E402
+from xiaocao.live import accounts  # noqa: E402
 
 POS = Path("output/live/positions.jsonl")
 ACCOUNT_A = Path("output/live/paper_account_A.json")
@@ -85,7 +87,7 @@ def _kline_map(cli: XiaocaoClient, code: str, reconstructed: dict[str, dict[str,
     return {k: v for k, v in ser.items() if k}
 
 
-def main():
+def _main_locked():
     ap = argparse.ArgumentParser()
     ap.add_argument("--cache", default="output/.cache/xiaocao.db")
     a = ap.parse_args()
@@ -109,6 +111,7 @@ def main():
         print("book A: no account file yet"); return
 
     settled = 0
+    new_trades: list[dict] = []
     for p in todo:
         code, d0 = p["code"], p["entry_date"]
         d0 = _normal_date(d0)
@@ -140,29 +143,33 @@ def main():
         account["cash"] = round(float(account.get("cash", 0.0)) + cash_in, 2)
         account["realized_pnl"] = round(float(account.get("realized_pnl", 0.0)) + realized, 2)
         account["total_fees"] = round(float(account.get("total_fees", 0.0)) + exit_fee, 2)
-        with TRADES.open("a", encoding="utf-8") as f:
-            f.write(json.dumps({
-                "ts": _now_iso(), "date": d1, "side": "SELL", "book": "A",
-                "code": code, "name": p.get("name", ""), "price": close1,
-                "shares": shares, "gross_notional": gross, "fee": exit_fee,
-                "cash_after": account["cash"], "realized_pnl": realized,
-                "reason": "NEXT_CLOSE",
-            }, ensure_ascii=False, sort_keys=True) + "\n")
+        new_trades.append({
+            "ts": _now_iso(), "date": d1, "side": "SELL", "book": "A",
+            "code": code, "name": p.get("name", ""), "price": close1,
+            "shares": shares, "gross_notional": gross, "fee": exit_fee,
+            "cash_after": account["cash"], "realized_pnl": realized,
+            "reason": "NEXT_CLOSE",
+        })
         settled += 1
 
     if settled:
-        account["updated_at"] = _now_iso()
-        tmp = ACCOUNT_A.with_suffix(".json.tmp")
-        tmp.write_text(json.dumps(account, ensure_ascii=False, indent=2, sort_keys=True) + "\n",
-                       encoding="utf-8")
-        tmp.replace(ACCOUNT_A)
-        tmp2 = POS.with_suffix(".jsonl.tmp")
-        with tmp2.open("w", encoding="utf-8") as f:
-            for p in positions:
-                f.write(json.dumps(p, ensure_ascii=False, sort_keys=True) + "\n")
-        tmp2.replace(POS)
+        accounts.commit_ledger_transaction(
+            live_dir=POS.parent,
+            positions=positions,
+            positions_path=POS,
+            account=account,
+            account_path=ACCOUNT_A,
+            new_trades=new_trades,
+            trades_path=TRADES,
+        )
     print(f"book A: settled {settled} position(s) at next close")
     _print_comparison(positions)
+
+
+def main() -> None:
+    with accounts.ledger_lock(accounts.ledger_lock_path(POS.parent)):
+        accounts.recover_ledger_transaction(POS.parent)
+        _main_locked()
 
 
 def _print_comparison(positions: list[dict]) -> None:
@@ -186,6 +193,18 @@ def _print_comparison(positions: list[dict]) -> None:
                   f"win {st['win']}/{st['n']}  avg {st['avg']:+.2f}%/trade")
         else:
             print(f"  book {label}: no closed trades yet")
+    paired = paired_exit_attribution(positions)
+    if paired["eligible_pairs"]:
+        print(
+            f"  paired identical cohort: n={paired['eligible_pairs']}  "
+            f"mean B-A {float(paired['mean_b_minus_a_pp']):+.2f}pp  "
+            f"B better {paired['b_better_pairs']}/{paired['eligible_pairs']}  "
+            "(descriptive only)"
+        )
+    else:
+        print("  paired identical cohort: N/A")
+    if paired["excluded"]:
+        print(f"  excluded cohort drift: {json.dumps(paired['excluded'], ensure_ascii=False, sort_keys=True)}")
     accs = []
     for label, path in (("A", ACCOUNT_A), ("B", ACCOUNT_B)):
         if path.exists():

@@ -38,6 +38,16 @@ def test_duplicate_snapshots_are_book_scoped(tmp_path):
     assert data_health.duplicate_snapshots(tmp_path) == []
 
 
+def test_incomplete_ledger_transaction_is_critical(tmp_path):
+    pending = tmp_path / ".ledger_txn" / "pending.json"
+    pending.parent.mkdir(parents=True)
+    pending.write_text("{}", encoding="utf-8")
+
+    findings = data_health.incomplete_ledger_transaction(tmp_path)
+
+    assert findings and findings[0]["severity"] == "critical"
+
+
 def test_account_drift_detected(tmp_path):
     (tmp_path / "paper_account.json").write_text(json.dumps({"realized_pnl": -4191.0}), encoding="utf-8")
     _write_jsonl(tmp_path / "positions.jsonl", [
@@ -66,22 +76,102 @@ def test_book_t_account_drift_detected(tmp_path):
     assert findings and findings[0]["check"] == "account_reconciles_book_t"
 
 
-def test_unlabeled_closed_positions_are_surfaced(tmp_path):
-    # A closed row with NO `book` field is counted as book B by default; surface
-    # it so a future book-A close can't be silently absorbed into book B's recon.
+def test_book_t_blocked_sell_cannot_be_recorded_as_closed(tmp_path):
+    _write_jsonl(tmp_path / "alerts.jsonl", [{
+        "ts": "2026-07-13T15:14:10",
+        "alert": "SELL_BLOCKED",
+        "book": "T",
+        "reason": "LIMIT_DOWN_NO_BID",
+        "code": "000725.XSHE",
+        "entry_date": "2026-07-07",
+    }])
+    _write_jsonl(tmp_path / "positions.jsonl", [{
+        "book": "T",
+        "status": "closed",
+        "code": "000725.XSHE",
+        "entry_date": "2026-07-07",
+        "exit_date": "2026-07-13",
+        "exit_price": 6.83,
+    }])
+
+    findings = data_health.blocked_sell_executions(tmp_path)
+
+    assert findings and findings[0]["severity"] == "critical"
+    assert "000725.XSHE" in findings[0]["detail"]
+
+
+def test_book_t_blocked_sell_remaining_open_is_healthy(tmp_path):
+    _write_jsonl(tmp_path / "alerts.jsonl", [{
+        "ts": "2026-07-13T15:14:10",
+        "alert": "SELL_BLOCKED",
+        "book": "T",
+        "reason": "LIMIT_DOWN_NO_BID",
+        "code": "000725.XSHE",
+        "entry_date": "2026-07-07",
+    }])
+    _write_jsonl(tmp_path / "positions.jsonl", [{
+        "book": "T",
+        "status": "open",
+        "code": "000725.XSHE",
+        "entry_date": "2026-07-07",
+    }])
+
+    assert data_health.blocked_sell_executions(tmp_path) == []
+
+
+def test_book_t_block_does_not_contradict_same_identity_book_b_close(tmp_path):
+    _write_jsonl(tmp_path / "alerts.jsonl", [{
+        "ts": "2026-07-13T15:14:10", "alert": "SELL_BLOCKED", "book": "T",
+        "reason": "LIMIT_DOWN_NO_BID", "code": "SAME", "entry_date": "2026-07-07",
+    }])
+    _write_jsonl(tmp_path / "positions.jsonl", [{
+        "book": "B", "status": "closed", "code": "SAME",
+        "entry_date": "2026-07-07", "exit_date": "2026-07-13",
+    }])
+
+    assert data_health.blocked_sell_executions(tmp_path) == []
+
+
+def test_morning_sell_block_can_clear_before_later_execution(tmp_path):
+    _write_jsonl(tmp_path / "alerts.jsonl", [{
+        "ts": "2026-06-11T09:36:26",
+        "alert": "SELL_BLOCKED",
+        "book": "B",
+        "reason": "LIMIT_DOWN_NO_BID",
+        "code": "603859.XSHG",
+        "entry_date": "2026-06-10",
+    }])
+    _write_jsonl(tmp_path / "positions.jsonl", [{
+        "book": "B", "status": "closed", "code": "603859.XSHG",
+        "entry_date": "2026-06-10", "exit_date": "2026-06-11",
+    }])
+
+    assert data_health.blocked_sell_executions(tmp_path) == []
+
+
+def test_unlabeled_ledger_rows_are_surfaced(tmp_path):
     _write_jsonl(tmp_path / "positions.jsonl", [
         {"book": "B", "status": "closed", "code": "A", "realized_pnl": -10.0},
         {"status": "closed", "code": "LEGACY", "realized_pnl": -5.0},  # no book label
     ])
+    _write_jsonl(tmp_path / "paper_trades.jsonl", [
+        {"book": "B", "side": "BUY", "code": "A"},
+        {"side": "SELL", "code": "LEGACY_TRADE"},
+    ])
     findings = data_health.unlabeled_closed_positions(tmp_path)
     assert findings and findings[0]["severity"] == "warn"
-    assert "LEGACY" in findings[0]["detail"] and "1 closed" in findings[0]["detail"]
+    assert "LEGACY" in findings[0]["detail"]
+    assert "1 position" in findings[0]["detail"] and "1 trade" in findings[0]["detail"]
 
 
 def test_labeled_positions_produce_no_unlabeled_finding(tmp_path):
     _write_jsonl(tmp_path / "positions.jsonl", [
         {"book": "B", "status": "closed", "code": "A", "realized_pnl": -10.0},
         {"book": "A", "status": "closed", "code": "B", "realized_pnl": 5.0},
+    ])
+    _write_jsonl(tmp_path / "paper_trades.jsonl", [
+        {"book": "B", "side": "BUY", "code": "A"},
+        {"book": "A", "side": "SELL", "code": "B"},
     ])
     assert data_health.unlabeled_closed_positions(tmp_path) == []
 
@@ -119,6 +209,23 @@ def test_fresh_market_cache_no_finding(tmp_path):
     cache = tmp_path / ".cache" / "xiaocao.db"
     _write_mode_history(cache, "2026-06-19")
     assert data_health.stale_market_cache(cache, today="2026-06-22", max_days=10) == []
+
+
+def test_fresh_reconstructed_daily_bridges_lagging_vendor_cache(tmp_path):
+    cache = tmp_path / ".cache" / "xiaocao.db"
+    _write_mode_history(cache, "2026-05-27")
+    reconstructed = tmp_path / "live" / "daily_reconstructed.jsonl"
+    _write_jsonl(reconstructed, [{
+        "code": "000001.XSHG", "date": "20260619", "close": 3000,
+        "source": "minute_reconstructed",
+    }])
+
+    assert data_health.stale_market_cache(
+        cache,
+        reconstructed_path=reconstructed,
+        today="2026-06-22",
+        max_days=10,
+    ) == []
 
 
 def test_missing_market_cache_no_finding(tmp_path):

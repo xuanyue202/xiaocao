@@ -1,7 +1,10 @@
 from __future__ import annotations
 
+import json
+from contextlib import contextmanager
 from datetime import datetime
 
+from scripts import live_monitor as monitor
 from scripts.live_monitor import _decide_sell_action, _decide_trend_sell_action, _sell_block_reason
 from xiaocao.utils.trading_session import A_SHARE_TZ
 
@@ -294,3 +297,47 @@ def test_simulated_sell_allows_limit_down_when_bid_exists() -> None:
         "downPrice": 9.0,
         "buyVol1": 100,
     }) is None
+
+
+def test_simulated_sell_is_locked_and_idempotent_across_overlapping_runs(tmp_path, monkeypatch) -> None:
+    positions = tmp_path / "positions.jsonl"
+    account = tmp_path / "paper_account.json"
+    trades = tmp_path / "paper_trades.jsonl"
+    alerts = tmp_path / "alerts.jsonl"
+    positions.write_text(json.dumps({
+        "book": "B", "status": "open", "code": "X.XSHE", "entry_date": "2026-07-13",
+        "entry_price": 10.0, "entry_cash_out": 1000.1, "shares": 100, "fee_rate": 0.0001,
+    }) + "\n", encoding="utf-8")
+    account.write_text(json.dumps({
+        "initial_capital": 10000.0, "cash": 8999.9, "realized_pnl": 0.0,
+        "total_fees": 0.1, "fee_rate": 0.0001,
+    }), encoding="utf-8")
+    monkeypatch.setattr(monitor, "OUT_DIR", tmp_path)
+    monkeypatch.setattr(monitor, "POSITIONS_FILE", positions)
+    monkeypatch.setattr(monitor, "ACCOUNT_FILE", account)
+    monkeypatch.setattr(monitor, "TRADES_FILE", trades)
+    monkeypatch.setattr(monitor, "ALERTS_FILE", alerts)
+    events = []
+
+    @contextmanager
+    def fake_lock(_path):
+        events.append("enter")
+        yield
+        events.append("exit")
+
+    monkeypatch.setattr(monitor.accounts, "ledger_lock", fake_lock)
+
+    class Client:
+        def second_line_detail_info(self, code):
+            return {"code": code, "trade": 9.5, "downPrice": 9.0, "buyVol1": 100}
+
+    signal = [{
+        "code": "X.XSHE", "entry_date": "2026-07-13", "latest_price": 9.5,
+        "shares": 100, "sell_reason": "TRAILING_STOP",
+    }]
+    first = monitor._execute_simulated_sells(Client(), signal, book="B")
+    second = monitor._execute_simulated_sells(Client(), signal, book="B")
+
+    assert first == (1, 0) and second == (0, 0)
+    assert events == ["enter", "exit", "enter", "exit"]
+    assert len(trades.read_text(encoding="utf-8").splitlines()) == 1

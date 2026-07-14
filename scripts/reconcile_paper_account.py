@@ -15,6 +15,10 @@ from pathlib import Path
 from typing import Any
 
 ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(ROOT / "src"))
+
+from xiaocao.live import accounts  # noqa: E402
+
 LIVE = ROOT / "output" / "live"
 POSITIONS = LIVE / "positions.jsonl"
 ACCOUNT = LIVE / "paper_account.json"
@@ -109,21 +113,24 @@ def main() -> int:
 
     positions_path = Path(args.positions)
     account_path = Path(args.account)
-    positions = _load_jsonl(positions_path)
-    account = _load_json(account_path)
-    if not positions:
-        print(f"no positions found: {positions_path}", file=sys.stderr)
-        return 2
-    rebuilt, summary = rebuild_account(positions, account)
-    print(json.dumps(summary, ensure_ascii=False, indent=2, sort_keys=True))
-    if args.write:
-        account_path.write_text(
-            json.dumps(rebuilt, ensure_ascii=False, indent=2, sort_keys=True) + "\n",
-            encoding="utf-8",
-        )
-        print(f"wrote rebuilt account -> {account_path}")
-    else:
-        print("dry-run only; pass --write to update the account file")
+    live_dir = account_path.parent
+    with accounts.ledger_lock(accounts.ledger_lock_path(live_dir)):
+        accounts.recover_ledger_transaction(live_dir)
+        positions = _load_jsonl(positions_path)
+        account = _load_json(account_path)
+        if not positions:
+            print(f"no positions found: {positions_path}", file=sys.stderr)
+            return 2
+        rebuilt, summary = rebuild_account(positions, account)
+        print(json.dumps(summary, ensure_ascii=False, indent=2, sort_keys=True))
+        if args.write:
+            accounts.commit_file_transaction(
+                live_dir=live_dir,
+                payloads=[("account", account_path, accounts.encode_json(rebuilt))],
+            )
+            print(f"wrote rebuilt account -> {account_path}")
+        else:
+            print("dry-run only; pass --write to update the account file")
     return 0
 
 

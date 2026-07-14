@@ -33,6 +33,9 @@
 
 **MUST NOT（cohort 中间层）**：不得把 `benchmark/watchlist/research cohort` 成员直接当成实盘买入。cohort 可以证明“值得观察/值得研究/是老师或本地标杆”，但一条 cohort 只有通过 `research_run.py` 护栏并经过 §10 人工门，才能升级为 emitted strategy 或 param 变更。2026-06-30 人工门已将 raw-qibao top10 + 电子/20cm 的 `high_open_watch` 6%-10% 子桶和 `limitlike_watch` 升级为 **Book B 模拟盘** emitted modes（`高开标杆起爆` / `强攻标杆起爆`）；这不改变实盘两钥匙边界。
 
+- **运行状态语义**：自动化必须分别记录 `deterministic_status` 与 `supporting_health`。主链脚本成功但 data-health、posture 或 agent-review 支持层不完整时，总状态是 `degraded`，不能伪装成全健康 `succeeded`；支持层降级也不能反写成确定性成交/记账失败。
+- **账本身份是会计主键**：`positions.jsonl` 与 `paper_trades.jsonl` 的每一行都必须显式写合法 `book=A/B/T`，所有现行写入端缺失时 fail-closed。读取端的历史兼容默认不能充当修复；旧账只能由专属 writer source 或唯一匹配的 code/date/shares/price/PnL 证明后回填，并记录前后 hash 的 repair audit。
+
 ---
 
 ## 3. Book A — 验证参考口径（永不被监控）
@@ -41,6 +44,7 @@
 - **唯一实现**：`paper_record._record_book_a`（建仓，复用 Book B `entry_price_basis`/fill metadata）+ `settle_book_a.py`（盘后结算，幂等）。
 - **角色**：纯会计账本 + **kill-switch 传感器**；永不被 `live_monitor` 触碰或 stop 管理。
 - **MUST**：book A 行（`book="A"`）与 book B 互不阻塞建仓；settle 只用 `close[D+1]`，幂等。
+- **A/B 归因口径**：累计 account realized 差只是一条会计信息，样本数/仓位/结算进度不同时不得解释为止损帮助或伤害。退出层描述性比较只纳入同 `code+entry_date+entry_price+shares` 且 A/B 均已 closed 的逐仓配对，以 `realized_pnl / entry_cash_out` 的归一化收益计算 B-A pp，并同时披露 eligible n 与 share/price/open/missing 排除数；统计本身不构成因果结论。
 
 ## 4. Book B — 实盘策略口径（分阶段出场）
 
@@ -53,6 +57,7 @@
   - **普通 trailing / composite 恶化盘中只诊断**（状态列 `defer:<reason>`，alerts 记 `SELL_DEFERRED`）→ **14:55 纪律 pass 统一执行**，出场对齐 next_close 参照。
   - **T+1**：建仓日不可卖（`t1_blocked`，诊断用）。
   - **流动性**：触发卖出但跌停无买盘 → 记 `SELL_BLOCKED / LIMIT_DOWN_NO_BID`，**保持持仓**，不更新 cash/realized_pnl/trades。
+- **收盘任务与单写者**：14:25 是独立风险预检，只立即执行盘中已获授权的 HARD_STOP / AI_EVENT_RISK_EXIT 等，不等待 14:55；14:55 是独立且唯一的 soft-exit 收盘纪律 pass。所有 paper-record / monitor / settle / repair 写者共享唯一 `paper_ledger.lock`，必须在锁内重载并提交，重叠 agent 只能观察前一写者结果，不能重复 SELL。收盘 positions/account/trades 三文件提交先持久化 `.ledger_txn/pending.json` 与目标快照；中断后下一写者幂等补完，未恢复事务由 data doctor 报 CRITICAL，禁止用半提交账本评估。
 - **强持有例外**（抑制 trailing 出场）：接力/连板 或 xcjw≥300 或 jsjl>0；近涨停（≥99.7% up_price）；成为领涨且 pct≥8% 且近日高（≥99.5%）。
 - **profile**：v5 = 5 日 / dd 2%；v6 = 3 日 / dd 0.5%（更激进，需前瞻验证）。hard floor 两者均 8%。
 
@@ -60,7 +65,9 @@
 
 - **建仓**：`paper_record.py --trend-only` 调 `strategy.trend_rules.generate_trend_picks`，从当前主线大类中选少量大票/中军候选，写入 `positions.jsonl` 的 `book="T"` 行；同 code 可同时有 B/T 两行，互不阻塞、互不 net。候选分为 `aligned / neutral / external`：电子、半导体、存储、光电、元器件、通信、机器人等与当前小草主线相关者优先；中性候选只作保持趋势仓位的兜底；银行/保险/证券/医药/白酒等外部旧方向是 `external`，不得作为新趋势买入。
 - **账户**：`paper_account_T.json`，默认初始资金 = `initial_capital × TREND_BUDGET_RATIO`；统一 `paper_trades.jsonl` 记录 `book:"T"`。
+- **状态快照一致性**：`status.py` 的持仓数量只取 `positions.jsonl` open T 行。`paper_holdings_T.json` 只有在日期、`(code,entry_date,shares)` 身份集和 account totals 全部匹配时才有估值权；否则 `equity` 降级为 cash + open entry cost，`unrealized_pnl=N/A` 并显式给出 `stale/mismatch/missing`，禁止跨版本拼接。
 - **出场 / 换股**：`live_monitor.py --book T` 和 `settle_book_t.py` 只认冻结趋势参数：`TREND_TRAIL_DD` 宽回撤；方向错配和 `TREND_REBALANCE_R` 低换手到期都不在 EOD 单边卖出。已持仓若被分类为 `external` 且过 T+1，或达到低换手 rebalance 周期，下一次 morning 只有在 `paper_record.py --trend-only` 已找到可成交替代候选时，才按 `TREND_POSTURE_MISMATCH` / `TREND_REBALANCE_R` 做成对 SELL+BUY；无替代则继续持有，避免趋势袖子空仓断档。普通排名变化不触发换仓，避免手续费和噪音换手。**不得调用** Book B 的 `strong_hold_reason` / composite 逻辑，也不得让“方向还在”这类皮层判断抑制 B 的止损。
+- **流动性事实优先**：`SELL_BLOCKED / LIMIT_DOWN_NO_BID` 是执行事实；14:55 后同日同 `book+code+entry_date` 被阻卖时，`settle_book_t.py` 必须保持 open，禁止用理论收盘价补记 SELL。`data_health.blocked_sell_executions` 对违反此不变量的账本报 CRITICAL。
 - **评估**：Book T 不进入 `forward_eval.py -> training_rows.parquet -> continuous_optimize.py` 的短线 per-trade A/B/C/D 口径；趋势评估只走 `trend_guards` / `trend_optimize` 的复利、回撤、换手、vs-beta 仪器。`trend_optimize.py --record` 只能把 changed verdict 写入 `kronos_screen/HYPOTHESES.jsonl`，不得改 `TREND_*` 参数。
 - **命名空间**：`signal_snapshots.jsonl` 的唯一键是 `(date, code, is_live, book)`；缺 `book` 的旧行默认 B。`data_health` / `contexts` / `forward_eval` 均必须保留 book 维度，避免 B/T 同票同日被误判重复或互相覆盖。
 
@@ -72,6 +79,7 @@
 - 无窗口数据 → 回退到 L（`fill_fallback`）。
 - 唯一实现：`paper_record._fill_price_from_window`。
 - **数据源单一性（OHLCV 故意不接公共源 fallback）**：止损/peak-dd 依赖的分钟线 OHLCV **只**来自专有 API（`client.minute_line`）。**MUST NOT** 把公共源（akshare/腾讯等）价格接入 live 止损路径：不同复权/时间戳/坏tick 会算出不同的 peak/dd，使 book B 与验证 next-close 口径及 API 喂的回测**静默漂移**——正是 data_health 要抓的"真的谎言"。OHLCV 不可得时应 **fail-safe（持有/跳过）**，而非用二手数据动作。公共源仅允许用于**带 provenance 标记、经对账的研究/回填工具**，且 book A/B 记账永不读 `source='public'`。
+- **四指数基准完整性**：`refresh_daily_cache.py` 每日必须把上证、深成指、创业板指、中证1000 与持仓/信号一起做分钟重建，并按显式 `--date` 选择该日信号。`forward_eval` 的 `market_return_pct` 与 paper-vs-market 均要求四项齐全；任一缺失时聚合值/超额收益为 N/A，禁止把缺失当 0 或用部分指数冒充四指数均值。
 - Book T 使用同一成交模型与同一专有 OHLCV 边界；`basket_price` 仍只是放弃线。
 
 ## 6. 仓位与资金
