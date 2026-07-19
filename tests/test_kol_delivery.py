@@ -62,6 +62,7 @@ def _result() -> dict:
             "conflicts": [{
                 "topic": "entry-timing",
                 "claim_ids": ["claim-1", "claim-2"],
+                "authors": ["小草", "吕晓彤"],
                 "judgment": "长期方向不覆盖短线风控。",
             }],
         },
@@ -98,8 +99,9 @@ def test_wechat_delivery_uses_existing_relay_and_is_idempotent(tmp_path):
     assert "发生了什么：KOL 明确要求卸掉杠杆。" in calls[0][1]
     assert "为什么会传导：长期 AI 方向不需要账户杠杆表达。" in calls[0][1]
     assert "对你意味着什么：你现在没有这项持仓，因此不需要处理。" in calls[0][1]
+    assert "多方不同判断" in calls[0][1]
+    assert "小草、吕晓彤" in calls[0][1]
     assert "Book KOL-US" not in calls[0][1]
-    assert "跨源冲突" not in calls[0][1]
     assert "超配仓" not in calls[0][1]
     assert result["items"][0]["notification"]["status"] == "delivered"
     assert first["deliveries"][0]["receipt"].startswith("wecom-relay://ok/evidence-1/")

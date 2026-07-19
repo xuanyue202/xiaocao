@@ -15,7 +15,7 @@
   ],
   "stocks": [
     {"name": "美光科技", "code": "MU", "role": "苹果反击与存储涨价预期受压的直接样本。"},
-    {"name": "北方华创", "code": "002371.XSHE", "role": "家庭持有的国产半导体设备代表，逻辑来自长鑫扩产采购。"},
+    {"name": "北方华创", "code": "002371.XSHE", "role": "国产半导体设备代表，逻辑来自长鑫扩产采购。"},
     {"name": "TQQQ", "code": "TQQQ", "role": "应卸掉的杠杆产品；长期AI观点不构成继续持有三倍ETF的理由。"}
   ],
   "decision_trace": [
@@ -45,5 +45,5 @@
   "timing_notes": ["存储先减仓，剩余仓位等待价格破位或盈利预期确认。", "半导体设备虽可能继续被恐慌错杀，当前A股bear环境只保留不加仓。"],
   "judgment_heuristics": ["先问利润来自涨价还是资本开支，再判断同一产业链该一起买卖还是分开。", "长期趋势只能证明要保留方向暴露，不能证明任何杠杆、估值和入场价格都合理。", "产业逻辑偏空但价格未确认时，分段减仓比全有全无更诚实。"],
   "typo_corrections": [{"raw": "长新/常新/小肠", "corrected": "长鑫（长鑫存储，CXMT）"}, {"raw": "小半", "corrected": "小型半导体设备/半导体设备（按上下文）"}, {"raw": "苹果之路", "corrected": "苹果之怒/苹果对美光的公开反击（按上下文）"}],
-  "action_summary": {"posture_update": "不覆盖A股短期posture；增加跨市场产业分化先验。", "playbook_update": "沉淀下游议价权、芯片价格与设备资本开支分离、长期方向与杠杆工具分离。", "hypothesis_update": "新增下游压价事件、存储与设备分化、非杠杆长期配置三条authority=0候选。", "audit_evidence": "家庭真实持有TQQQ、MU、DRAM和北方华创，因此同一来源必须拆成卖出/减仓/持有三个动作。", "instrumentation_todo": "为存储盈利预期和长鑫设备采购建立可复核事件/基本面时间线。", "routing": ["playbook", "hypothesis", "portfolio_construction"]}
+  "action_summary": {"posture_update": "不覆盖A股短期posture；增加跨市场产业分化先验。", "playbook_update": "沉淀下游议价权、芯片价格与设备资本开支分离、长期方向与杠杆工具分离。", "hypothesis_update": "新增下游压价事件、存储与设备分化、非杠杆长期配置三条authority=0候选。", "audit_evidence": "同一来源必须把去杠杆、存储芯片和半导体设备拆成三种动作；实际持仓只在运行时读取，不写入知识层。", "instrumentation_todo": "为存储盈利预期和长鑫设备采购建立可复核事件/基本面时间线。", "routing": ["playbook", "hypothesis", "portfolio_construction"]}
 }

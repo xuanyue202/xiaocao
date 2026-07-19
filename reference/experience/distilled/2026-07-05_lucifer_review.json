@@ -24,5 +24,5 @@
   "timing_notes": ["北特科技7月17日收42.02元，接近但未到40元关注位；叠加A股bear，当前是候选不是买点。", "黄金坑预计在冬季至2027年初只是情景窗口，失效条件必须与盈利和流动性绑定。"],
   "judgment_heuristics": ["对每个长期机会同时问四件事：产业位置、客户验证、价格锚、组合资金从哪里来。", "持仓外机会照常研究；可以通过减杠杆和减拥挤仓轮换资金。", "宏观大叙事最终必须落到具体标的、动作、触发和失效，否则只进入知识层不进入消息层。"],
   "typo_corrections": [{"raw": "北特科某记/北特", "corrected": "北特科技（603009.XSHG）"}, {"raw": "行星拉杠", "corrected": "行星滚柱丝杠"}, {"raw": "黄鱼/鲅鱼", "corrected": "疑似白银（上下文有ASR歧义，未作为具体交易映射）"}],
-  "action_summary": {"posture_update": "不覆盖小草A股短期posture；增加下半年防守与物理AI持仓外机会先验。", "playbook_update": "沉淀产业位置+客户验证+价格锚+资金来源四问，以及治理折价。", "hypothesis_update": "新增物理AI关键零部件多条件、治理减持折价、高现金价格纪律三条authority=0候选。", "audit_evidence": "北特科技当前42.02元、未持有；三花智控39.75元、未持有。两者都按持仓外机会处理。", "instrumentation_todo": "为北特科技40元加市场止跌条件建立观察触发，不接真实交易接口。", "routing": ["playbook", "hypothesis", "portfolio_construction"]}
+  "action_summary": {"posture_update": "不覆盖小草A股短期posture；增加下半年防守与物理AI持仓外机会先验。", "playbook_update": "沉淀产业位置+客户验证+价格锚+资金来源四问，以及治理折价。", "hypothesis_update": "新增物理AI关键零部件多条件、治理减持折价、高现金价格纪律三条authority=0候选。", "audit_evidence": "北特科技42.02元接近作者价格锚；三花智控39.75元仍有治理折价。两者均按全市场候选评估，不把组合快照写入知识层。", "instrumentation_todo": "为北特科技40元加市场止跌条件建立观察触发，不接真实交易接口。", "routing": ["playbook", "hypothesis", "portfolio_construction"]}
 }

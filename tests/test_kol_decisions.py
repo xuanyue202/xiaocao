@@ -10,6 +10,7 @@ from xiaocao.kol.decisions import (
     DecisionError,
     DecisionPipeline,
     TranscriptDocument,
+    render_household_item_message,
 )
 
 
@@ -166,6 +167,21 @@ def test_transcript_document_reads_plain_text_and_requires_exact_quote(tmp_path)
     assert document.contains("等待成交量放大再行动")
     assert len(document.sha256) == 64
     assert document.text_length > 10
+
+
+def test_committed_acceptance_does_not_persist_household_account_state():
+    acceptance = (
+        Path(__file__).parents[1]
+        / "reference/experience/acceptance/kol_decisions_2026-07-19.json"
+    ).read_text(encoding="utf-8")
+
+    for forbidden in (
+        "家庭真实持有",
+        "家庭真实组合仍持有",
+        "家庭账户仍持有",
+        "真实组合卖出",
+    ):
+        assert forbidden not in acceptance
 
 
 @pytest.mark.parametrize("status", ["support", "qualify", "conflict", "invalidate"])
@@ -335,6 +351,44 @@ def test_cross_source_links_are_judgment_not_votes(tmp_path):
     assert "vote" not in json.dumps(result["cross_source"], ensure_ascii=False).lower()
 
 
+def test_cross_source_relation_requires_claims_from_distinct_authors(tmp_path):
+    transcript = _write_text(tmp_path / "real.txt", "等待成交量放大再行动")
+    item = _item(transcript, author="吕晓彤")
+    item["claims"].append({
+        **item["claims"][0],
+        "claim_id": "吕晓彤-second-risk",
+    })
+    bundle = _bundle(item, household_path=tmp_path / "unused.json")
+    bundle["cross_source"]["conflicts"] = [{
+        "topic": "same-author-is-not-cross-source",
+        "claim_ids": ["吕晓彤-risk", "吕晓彤-second-risk"],
+        "judgment": "同一作者的两个观点不能冒充跨来源冲突。",
+    }]
+
+    with pytest.raises(DecisionError, match="distinct authors"):
+        _pipeline(tmp_path / "out").process(bundle)
+
+
+def test_reader_message_surfaces_relevant_cross_author_judgment(tmp_path):
+    transcript = _write_text(tmp_path / "real.txt", "等待成交量放大再行动")
+    item = _item(transcript, author="小草")
+    cross_source = {
+        "agreements": [{
+            "topic": "risk",
+            "claim_ids": ["小草-risk", "吕晓彤-risk"],
+            "authors": ["小草", "吕晓彤"],
+            "judgment": "两位都主张先降低高贝塔风险。",
+        }],
+        "conflicts": [],
+    }
+
+    message = render_household_item_message(item, cross_source)
+
+    assert "多方共同信号" in message
+    assert "小草、吕晓彤" in message
+    assert "两位都主张先降低高贝塔风险" in message
+
+
 def test_no_trade_is_an_idempotent_book_decision(tmp_path):
     transcript = _write_text(tmp_path / "real.txt", "等待成交量放大再行动")
     household = _write_household(tmp_path / "household.json")
@@ -347,6 +401,39 @@ def test_no_trade_is_an_idempotent_book_decision(tmp_path):
     assert result["items"][0]["book_kol_us"]["idempotent_replay"] is True
     decisions = tmp_path / "out" / "book_kol_us" / "decisions.jsonl"
     assert len(decisions.read_text().splitlines()) == 1
+
+
+def test_material_paper_redecision_is_allowed_for_same_evidence(tmp_path):
+    transcript = _write_text(tmp_path / "real.txt", "等待成交量放大再行动")
+    pipeline = _pipeline(tmp_path / "out")
+    first_item = _item(transcript)
+    first = pipeline.process(_bundle(first_item, household_path=tmp_path / "unused.json"))
+
+    revised_item = _item(transcript, ticker="QQQ")
+    revised_item["market_validation"]["status"] = "support"
+    revised_item["market_validation"]["summary"] = "新市场事实支持建立非杠杆科技仓位。"
+    second = pipeline.process(
+        _bundle(revised_item, household_path=tmp_path / "unused.json")
+    )
+    replay = pipeline.process(
+        _bundle(revised_item, household_path=tmp_path / "unused.json")
+    )
+
+    assert first["items"][0]["book_kol_us"]["status"] == "no_trade"
+    assert second["items"][0]["book_kol_us"]["status"] == "filled"
+    assert second["items"][0]["book_kol_us"]["idempotent_replay"] is False
+    assert replay["items"][0]["book_kol_us"]["idempotent_replay"] is True
+    assert (
+        first["items"][0]["book_kol_us"]["idempotency_key"]
+        != second["items"][0]["book_kol_us"]["idempotency_key"]
+    )
+    decisions = tmp_path / "out" / "book_kol_us" / "decisions.jsonl"
+    trades = tmp_path / "out" / "book_kol_us" / "trades.jsonl"
+    assert len(decisions.read_text().splitlines()) == 2
+    assert sum(
+        json.loads(line).get("event") == "trade_filled"
+        for line in trades.read_text().splitlines()
+    ) == 1
 
 
 def test_validates_entire_batch_before_any_side_effect(tmp_path):

@@ -91,11 +91,11 @@
     {"raw": "早盘利息/绿盘利息", "corrected": "早盘低吸/绿盘低吸"}
   ],
   "action_summary": {
-    "posture_update": "更新A股短期posture为bear_liquidation_unfinished，有效至2026-07-31；低位放量和主动主线是解除条件。",
+    "posture_update": "not_applied_in_issue_01：保留为带作者和证据的authority=0候选，不改写全局current posture。",
     "playbook_update": "沉淀‘位置不等于出清’、‘主跌期5%-10%仓位’、‘超跌反弹T+1高抛’和‘候选宇宙不受持仓限制’。",
     "hypothesis_update": "新增融资盘放量识别、未涨科技小票弹性、主跌反弹T+1退出三条authority=0候选。",
     "audit_evidence": "万邦医药次日进入本地候选但被COLD门禁过滤；*ST萃华未覆盖；C托伦斯保持未映射。",
     "instrumentation_todo": "研究盘中动态卡位相对9:25静态推荐的增量，单独建shadow证据，不改确定性策略。",
-    "routing": ["posture", "playbook", "hypothesis", "strategy_hit_audit"]
+    "routing": ["playbook", "hypothesis", "strategy_hit_audit"]
   }
 }

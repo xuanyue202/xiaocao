@@ -78,7 +78,7 @@
           "horizon": "未来一至两周",
           "execution": "先建候选池，不在放量出清前下单；触发后首笔只用总资产5%，上限10%，次日无延续则退出。",
           "trigger": "A股低位放量完成恐慌出清，且未涨科技小票成为当日主动领涨方向。",
-          "funding_plan": "优先由卸掉TQQQ杠杆和削减拥挤存储仓释放资金，不受当前持仓名单限制。",
+          "funding_plan": "若组合执行去杠杆或削减拥挤存储仓，可把释放资金用于新机会；候选范围不受当前持仓名单限制。",
           "confidence": "medium",
           "falsifiers": ["放量后市场继续破位", "主动方向转向非科技", "候选票此前已经大涨或上方套牢盘沉重"],
           "rationale": {
@@ -127,13 +127,13 @@
           "assets": [{"name": "三倍做多纳指", "market": "US", "ticker": "TQQQ"}],
           "relevant_asset_codes": ["TQQQ"],
           "horizon": "下一个交易日",
-          "execution": "真实组合卖出全部TQQQ；若仍要保留AI敞口，只用现有VGT/SMH或非杠杆QQQ表达。",
+          "execution": "卖出全部TQQQ；若仍要保留AI敞口，只用VGT、SMH或非杠杆QQQ表达。",
           "trigger": "当前即执行。",
           "funding_plan": "释放的现金留作后续A股科技小票和北特科技条件单资金。",
           "confidence": "high",
-          "falsifiers": ["家庭账户已无TQQQ"],
+          "falsifiers": ["组合已无TQQQ", "倍数产品的路径风险得到可验证的结构性改善"],
           "rationale": {"news_or_event": ["吕晓彤明确提出把所有倍数产品卸掉，只保留非杠杆的正股或ETF。"], "fundamental": ["看好AI的长期趋势，并不需要用三倍杠杆来表达。"], "trading": ["三倍ETF按日复位，市场震荡时会产生路径损耗；7月17日TQQQ跌4.651%，约为QQQ跌幅1.492%的3.1倍，回撤放大已经出现。"]},
-          "current_validation": {"status": "support", "as_of": "2026-07-19T19:30:00+08:00", "summary": "TQQQ的实际跌幅再次证明杠杆放大风险，且家庭账户仍持有。", "currentness": {"latest_available": true, "checked_at": "2026-07-19T19:30:00+08:00", "reason": "7月17日为最新完整美股交易日。"}, "facts": [{"metric": "TQQQ_vs_QQQ_daily_change", "value": "TQQQ=-4.651%; QQQ=-1.492%", "observed_at": "2026-07-18T00:15:00Z", "evidence": "finance://USA/TQQQ,QQQ/2026-07-17"}]}
+          "current_validation": {"status": "support", "as_of": "2026-07-19T19:30:00+08:00", "summary": "TQQQ的实际跌幅再次证明杠杆放大风险；是否需要处理由运行时最新持仓决定。", "currentness": {"latest_available": true, "checked_at": "2026-07-19T19:30:00+08:00", "reason": "7月17日为最新完整美股交易日。"}, "facts": [{"metric": "TQQQ_vs_QQQ_daily_change", "value": "TQQQ=-4.651%; QQQ=-1.492%", "observed_at": "2026-07-18T00:15:00Z", "evidence": "finance://USA/TQQQ,QQQ/2026-07-17"}]}
         },
         {
           "signal_id": "lv-reduce-storage",
@@ -157,17 +157,17 @@
           "assets": [{"name": "北方华创等国产半导体设备", "market": "CN", "ticker": "002371.XSHE"}],
           "relevant_asset_codes": ["002371", "002371.XSHE"],
           "horizon": "中长期",
-          "execution": "保留北方华创，不在A股主跌环境里加仓；等市场放量出清且设备方向主动时再评估。",
-          "trigger": "当前持有；新增仓位需同时满足市场止跌和设备方向主动。",
+          "execution": "保留北方华创但不加仓；等市场放量出清且设备方向主动时再评估。",
+          "trigger": "新增仓位需同时满足市场止跌和设备方向主动。",
           "confidence": "medium",
           "falsifiers": ["长鑫扩产或设备采购低于预期", "北方华创趋势持续破坏且无基本面修复"],
           "rationale": {"news_or_event": ["长鑫扩产与潜在上市带来新一轮设备采购预期。"], "fundamental": ["存储芯片降价会伤害芯片厂利润，但长鑫扩产本身会增加设备订单，所以北方华创赚的是资本开支，不是存储涨价。"], "trading": ["7月17日A股仍在主跌，北方华创收677元；产业逻辑可以保留，但当前不适合在恐慌里追加同类高波动科技仓位。"]},
-          "current_validation": {"status": "qualify", "as_of": "2026-07-19T19:30:00+08:00", "summary": "产业逻辑保留，但7月17日北方华创收677元且A股广度极弱，当前只持有不加仓。", "currentness": {"latest_available": true, "checked_at": "2026-07-19T19:30:00+08:00", "reason": "周末无新增A股交易日。"}, "facts": [{"metric": "002371_daily_ohlc", "value": "open=693.30 high=707.40 low=660.42 close=677.00", "observed_at": "2026-07-17T15:00:00+08:00", "evidence": "xiaocao://minute_line/002371.XSHE/20260717"}]}
+          "current_validation": {"status": "qualify", "as_of": "2026-07-19T19:30:00+08:00", "summary": "产业逻辑保留，但7月17日北方华创收677元且A股广度极弱，当前结论是已有仓位不加、新仓等待。", "currentness": {"latest_available": true, "checked_at": "2026-07-19T19:30:00+08:00", "reason": "周末无新增A股交易日。"}, "facts": [{"metric": "002371_daily_ohlc", "value": "open=693.30 high=707.40 low=660.42 close=677.00", "observed_at": "2026-07-17T15:00:00+08:00", "evidence": "xiaocao://minute_line/002371.XSHE/20260717"}]}
         }
       ],
       "market_validation": {"status": "qualify", "as_of": "2026-07-19T19:30:00+08:00", "summary": "杠杆风险获得价格确认；存储产业逻辑偏空但价格尚未破位；国产设备逻辑与存储芯片涨价需分开。", "currentness": {"latest_available": true, "checked_at": "2026-07-19T19:30:00+08:00", "reason": "周末使用7月17日最新收盘数据。"}, "facts": [{"metric": "TQQQ_vs_QQQ_daily_change", "value": "TQQQ=-4.651%; QQQ=-1.492%", "observed_at": "2026-07-18T00:15:00Z", "evidence": "finance://USA/TQQQ,QQQ/2026-07-17"}]},
       "synthesis": {"summary": "最优先动作是卖掉TQQQ；存储MU/DRAM先各减半；北方华创逻辑不同，保留但不加。", "confidence": "high", "conflicts": []},
-      "household_recommendation": {"action": "sell", "evidence": "家庭真实组合仍持有TQQQ、MU、DRAM和北方华创，必须分资产处理。", "confidence": "high", "horizon": "下一个交易日", "falsifier": "相关仓位已经清零或市场与盈利预期发生明确反转。", "relevant_asset_codes": ["TQQQ", "MU", "DRAM", "002371"]},
+      "household_recommendation": {"action": "sell", "evidence": "同一来源涉及杠杆、存储芯片和半导体设备三种不同逻辑；具体持仓动作由运行时最新组合上下文决定。", "confidence": "high", "horizon": "下一个交易日", "falsifier": "相关仓位已经清零或市场与盈利预期发生明确反转。", "relevant_asset_codes": ["TQQQ", "MU", "DRAM", "002371"]},
       "book_kol_us": {"decision": "trade", "ticker": "QQQ", "instrument_type": "etf", "listing_country": "US", "side": "buy", "target_weight": 0.3, "price": 695.33, "concentration_risk": "科技宽基仍有估值和资本开支周期风险。", "exit_or_falsifier": "AI资本开支与应用渗透持续逆转，或QQQ趋势与基本面同时转弱。"}
     },
     {
@@ -193,7 +193,7 @@
           "horizon": "未来一至两周",
           "execution": "现价42.02元不追；只有回到40元附近且A股出现低位放量止跌时，首笔买总资产3%，最高5%。",
           "trigger": "价格不高于40元，且A股完成放量出清、机器人方向出现主动性。",
-          "funding_plan": "优先使用卖出TQQQ和减持MU/DRAM释放的资金；北特科技当前不在家庭持仓也照常进入机会池。",
+          "funding_plan": "若组合执行去杠杆或削减存储仓，可把释放资金用于北特科技条件单；是否已持有不限制机会进入候选池。",
           "confidence": "medium",
           "falsifiers": ["跌破40元时市场仍未止跌", "特斯拉供应商或行星滚柱丝杠逻辑被证伪", "公司治理或订单出现重大负面变化"],
           "rationale": {"news_or_event": ["路西法把物理AI和机器人列为接下来重点研究的长期方向，并点名北特科技作为具体零部件样本。"], "fundamental": ["北特科技切入行星滚柱丝杠和机器人关节零部件，又在特斯拉供应链里；如果机器人放量，这类关键零部件会先获得订单弹性，小流通盘还会放大股价弹性。"], "trading": ["路西法历史入场约40元；7月17日收42.02元已经接近，但A股还在主跌，所以必须等价格和市场止跌同时出现。"]},
@@ -226,7 +226,7 @@
       {"topic": "physical-ai-opportunity", "claim_ids": ["xiaocao-20260716-unrisen-small-tech", "lucifer-20260705-beite"], "judgment": "小草给出未涨科技小票的短线候选特征，路西法给出北特科技及40元关注位；系统交叉成一个具体条件单，但仍需A股放量止跌确认。"}
     ],
     "conflicts": [
-      {"topic": "memory-versus-semiconductor-equipment", "claim_ids": ["lv-20260713-clear-storage", "lv-20260713-semcap-cxmt"], "judgment": "清存储芯片不等于清半导体设备：前者受涨价预期、下游压价和韩国杠杆影响，后者受长鑫扩产采购驱动，家庭组合应减MU/DRAM而保留北方华创。"}
+      {"topic": "semiconductor-equipment-horizon", "claim_ids": ["xiaocao-20260716-volume-capitulation", "lv-20260713-semcap-cxmt"], "judgment": "吕晓彤的长鑫扩产逻辑支持中长期设备需求，小草的融资盘判断则反对在A股主跌期立即加仓；系统保留产业逻辑，但把新增仓位推迟到市场放量止跌后。"}
     ]
   }
 }

@@ -21,9 +21,10 @@ synthesis, one household advisory action, and one Book KOL-US trade or explicit
 no-trade decision. Every actionable signal must name an asset/ticker or explicit
 theme, action, horizon, execution, trigger, falsifiers, current validation, and
 separate event/fundamental/trading rationales. Framework-only content fails as
-`low_density_content`. Cross-source agreements and
-conflicts link claim IDs and require a written judgment; counts and majority
-votes have no authority.
+`low_density_content`. Cross-source agreements and conflicts link claim IDs
+from at least two distinct authors and require a written judgment; counts and
+majority votes have no authority. Relevant multi-author conclusions are part of
+the reader-facing message, not audit-only plumbing.
 
 The candidate universe is the market, not the current household holdings.
 Fresh 亮灰 positions are used to label held/unheld opportunities, size risk, and
@@ -58,9 +59,11 @@ PYTHONPATH=src python3 scripts/kol_decisions.py path/to/bundle.json --send-wecha
 ```
 
 The sender reuses `src/xiaocao/live/notify.py`. A relay `ok` is persisted as a
-per-item receipt immediately. Notification idempotency includes the advisory
-content/revision, while Book KOL-US continues to key on evidence SHA: corrected
-advice can be resent without duplicating a paper trade. A process lock and a
+per-item receipt immediately. Notification idempotency includes the advisory,
+relevant cross-source judgment, and revision. Book KOL-US keys on evidence plus
+the material paper intent: replaying the same decision is idempotent, while a
+later `no_trade -> trade` or target change can be recorded after new market
+facts. Legacy evidence-only decisions remain replay-compatible. A process lock and a
 durable pre-send claim prevent concurrent duplicate sends; an interrupted relay
 call fails closed as uncertain until reconciled.
 
@@ -70,17 +73,21 @@ Phone messages are written for a human reader, not as serialized pipeline state:
 each names the company and code, explains what happened, connects the causal
 chain to the likely market impact, says what it means for this household or a
 new opportunity, and gives plain-language timing and reconsideration conditions.
-Book KOL-US fills, gate/status enums, bucket labels, hashes, and cross-source
-plumbing remain in the audit result and are never included in WeChat copy.
+Book KOL-US fills, gate/status enums, bucket labels, and hashes remain in the
+audit result and are never included in WeChat copy. Relevant cross-author
+agreement or tension is rendered in plain language.
 
 Reusable reasoning from every author is distilled through the same
 `xiaocao-distill` governance into `reference/experience/distilled/`. New
 multi-author files include `author`, `source`, and evidence path/SHA provenance;
-the common candidate backlog preserves authors and source references. 小草's
-A-share posture remains the dated posture SSOT, while 吕晓彤/路西法 notes can
-enrich playbook and hypotheses without impersonating 小草 or overwriting that
-posture. All such knowledge remains `authority=0` until the existing research
-and human gates pass.
+the common candidate backlog preserves authors and source references. This
+issue does not rewrite the global current A-share posture; all three authors'
+notes enrich hypotheses and reusable judgment with `authority=0` until the
+existing research and human gates pass.
+
+Committed acceptance bundles contain transcript claims, market evidence, and
+redacted routing intent only. The actual family holdings and personalized
+held/unheld assessment stay under ignored `output/live/kol_intelligence/`.
 
 Use `--preflight` to validate all transcript quotes, market facts, cross-source
 links, and Book KOL-US intents without writing any notification or trade. Once
