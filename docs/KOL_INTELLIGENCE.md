@@ -59,8 +59,10 @@ PYTHONPATH=src python3 scripts/kol_decisions.py path/to/bundle.json --send-wecha
 ```
 
 The sender reuses `src/xiaocao/live/notify.py`. A relay `ok` is persisted as a
-per-item receipt immediately. Notification idempotency includes the advisory,
-relevant cross-source judgment, and revision. Book KOL-US keys on evidence plus
+per-item receipt immediately. Notification idempotency includes the market
+outlook, advisory, relevant cross-source judgment, and revision, so a material
+change from defense to trial positioning creates a new reader notification.
+Book KOL-US keys on evidence plus
 the material paper intent: replaying the same decision is idempotent, while a
 later `no_trade -> trade` or target change can be recorded after new market
 facts. Legacy evidence-only decisions remain replay-compatible. A process lock and a
@@ -69,10 +71,22 @@ call fails closed as uncertain until reconciled.
 
 ## Two output layers
 
-Phone messages are written for a human reader, not as serialized pipeline state:
-each names the company and code, explains what happened, connects the causal
-chain to the likely market impact, says what it means for this household or a
-new opportunity, and gives plain-language timing and reconsideration conditions.
+Phone messages are written for a human reader, not as serialized pipeline state.
+When the source contains a market-wide or portfolio-wide judgment, the normalized
+item carries an evidence-linked `market_outlook` with the current phase, base
+case, overall strategy, turning points, horizon, confidence, falsifiers, and its
+own scope-matched current-market validation. The message renders this as a
+standalone `大盘与整体策略` section before individual stocks or themes. It shows
+the linked KOL quotes first, then labels current-market validation and every
+forward path/strategy statement as system judgment, including validation time
+and whether facts support, qualify, conflict with, or invalidate the view. Key
+facts are rendered in reader language with their observation time; raw evidence
+references remain in the audit output instead of cluttering the phone message. It
+must not be inferred from holdings or invented when the source has no such view.
+Each subsequent signal names the company and code,
+explains what happened, connects the causal chain to the likely market impact,
+says what it means for this household or a new opportunity, and gives
+plain-language timing and reconsideration conditions.
 Book KOL-US fills, gate/status enums, bucket labels, and hashes remain in the
 audit result and are never included in WeChat copy. Relevant cross-author
 agreement or tension is rendered in plain language.

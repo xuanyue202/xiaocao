@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import re
+from datetime import datetime
 from typing import Any
 
 
@@ -51,6 +52,77 @@ def _reader_timing_label(action: Any) -> str:
     }.get(str(action), "什么时候行动")
 
 
+def _reader_confidence(value: Any) -> str:
+    return {
+        "high": "高",
+        "medium": "中",
+        "low": "低",
+    }.get(str(value), str(value))
+
+
+def _reader_market_status(value: Any) -> str:
+    return {
+        "support": "支持",
+        "qualify": "有条件支持",
+        "conflict": "与当前市场冲突",
+        "invalidate": "当前已失效",
+    }.get(str(value), str(value))
+
+
+def _reader_time(value: Any) -> str:
+    try:
+        return datetime.fromisoformat(str(value)).strftime("%Y-%m-%d %H:%M")
+    except ValueError:
+        return str(value)
+
+
+def reader_market_facts(validation: dict[str, Any]) -> list[str]:
+    facts = []
+    for fact in validation.get("facts") or []:
+        text = str(fact.get("reader_text") or "").strip()
+        if not text:
+            text = f"{fact.get('metric')}：{fact.get('value')}"
+        facts.append(f"{text}（观察于 {_reader_time(fact.get('observed_at'))}）")
+    return facts
+
+
+def _render_market_outlook(
+    outlook: dict[str, Any],
+    claims: list[dict[str, Any]],
+) -> list[str]:
+    claim_quotes = {
+        claim.get("claim_id"): str(claim.get("quote"))
+        for claim in claims
+    }
+    author_quotes = [
+        f"「{claim_quotes[claim_id]}」"
+        for claim_id in outlook["claim_ids"]
+    ]
+    validation = outlook["current_validation"]
+    lines = [
+        f"【大盘与整体策略：{outlook['scope']}】",
+        "作者原话：" + "；".join(author_quotes),
+        "最新市场验证（截至 "
+        f"{_reader_time(validation['as_of'])}，"
+        f"{_reader_market_status(validation['status'])}）：{validation['summary']}",
+    ]
+    lines.extend(
+        f"关键事实：{fact}"
+        for fact in reader_market_facts(validation)
+    )
+    lines.extend([
+        f"系统当前重判：{outlook['current_phase']}",
+        f"系统未来推演：{outlook['base_case']}",
+        "系统整体策略：" + "；".join(str(value) for value in outlook["strategy"]),
+        "系统关注的关键转折："
+        + "；".join(str(value) for value in outlook["turning_points"]),
+        f"判断周期：{outlook['horizon']}（信心：{_reader_confidence(outlook['confidence'])}）",
+        "什么情况需要改判："
+        + "；".join(str(value) for value in outlook["falsifiers"]),
+    ])
+    return lines
+
+
 def reader_message_title(item: dict[str, Any]) -> str:
     names: list[str] = []
     for signal in item.get("actionable_signals") or []:
@@ -94,6 +166,9 @@ def render_household_item_message(
 ) -> str:
     """Render human-readable market intelligence; internal gates stay internal."""
     lines = [f"先说结论：{item['synthesis']['summary']}"]
+    market_outlook = item.get("market_outlook") or {}
+    if market_outlook:
+        lines.extend(["", *_render_market_outlook(market_outlook, item["claims"])])
     for signal in item.get("actionable_signals") or []:
         lines.extend(["", _reader_signal_heading(signal)])
         rationale = signal.get("rationale") or {}

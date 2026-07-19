@@ -24,6 +24,7 @@ from .book import BookKolUs
 from .delivery import WechatDelivery
 from .rendering import (
     reader_cross_source as _reader_cross_source,
+    reader_market_facts as _reader_market_facts,
     render_household_item_message,
     render_household_message,
 )
@@ -31,6 +32,7 @@ from .rendering import (
 
 MARKET_STATUSES = {"support", "qualify", "conflict", "invalidate"}
 HOUSEHOLD_ACTIONS = {"buy", "add", "hold", "reduce", "sell", "wait"}
+CONFIDENCE_LEVELS = {"low", "medium", "high"}
 
 
 class DecisionPipeline:
@@ -168,6 +170,33 @@ class DecisionPipeline:
                 field=f"actionable_signals[{signal_id}].current_validation",
             )
 
+    def _validate_market_outlook(self, item: dict[str, Any]) -> None:
+        outlook = item.get("market_outlook") or {}
+        if not outlook:
+            return
+        claim_ids = {claim.get("claim_id") for claim in item.get("claims") or []}
+        linked = outlook.get("claim_ids") or []
+        if not linked or not set(linked).issubset(claim_ids):
+            raise DecisionError("market outlook claim_ids are invalid")
+        for field in ("scope", "current_phase", "base_case", "horizon"):
+            if not str(outlook.get(field) or "").strip():
+                raise DecisionError(f"market outlook requires {field}")
+        if outlook.get("confidence") not in CONFIDENCE_LEVELS:
+            raise DecisionError("market outlook confidence is invalid")
+        for field in ("strategy", "turning_points", "falsifiers"):
+            values = outlook.get(field)
+            if not isinstance(values, list) or not values:
+                raise DecisionError(f"market outlook requires {field}")
+            if any(
+                not isinstance(value, str) or not value.strip()
+                for value in values
+            ):
+                raise DecisionError(f"market outlook {field} values must be nonblank text")
+        self._validate_market_validation(
+            outlook.get("current_validation") or {},
+            field="market_outlook.current_validation",
+        )
+
     def _validate_item(self, item: dict[str, Any]) -> TranscriptDocument:
         required = ("source", "author", "title", "published_at", "captured_at", "evidence_path")
         missing = [name for name in required if not str(item.get(name) or "").strip()]
@@ -184,6 +213,7 @@ class DecisionPipeline:
             if not document.contains(claim["quote"]):
                 raise DecisionError(f"quote not found in evidence: {claim['claim_id']}")
         self._validate_actionable_signals(item)
+        self._validate_market_outlook(item)
         self._validate_market_validation(
             item.get("market_validation") or {}, field="market_validation"
         )
@@ -290,7 +320,9 @@ class DecisionPipeline:
         *,
         author: Any,
         title: Any,
+        claims: list[dict[str, Any]],
         actionable_signals: list[dict[str, Any]],
+        market_outlook: dict[str, Any],
         synthesis: dict[str, Any],
         household_recommendation: dict[str, Any],
         cross_source: dict[str, Any],
@@ -333,10 +365,41 @@ class DecisionPipeline:
                     "held": bool(context.get("held")),
                 }
             )
+        visible_market_outlook: dict[str, Any] = {}
+        if market_outlook:
+            claim_quotes = {
+                claim.get("claim_id"): claim.get("quote")
+                for claim in claims
+            }
+            visible_market_outlook = {
+                field: market_outlook.get(field)
+                for field in (
+                    "scope",
+                    "current_phase",
+                    "base_case",
+                    "strategy",
+                    "turning_points",
+                    "horizon",
+                    "confidence",
+                    "falsifiers",
+                )
+            }
+            visible_market_outlook["author_quotes"] = [
+                claim_quotes[claim_id]
+                for claim_id in market_outlook.get("claim_ids") or []
+            ]
+            validation = market_outlook.get("current_validation") or {}
+            visible_market_outlook["current_validation"] = {
+                "status": validation.get("status"),
+                "as_of": validation.get("as_of"),
+                "summary": validation.get("summary"),
+                "facts": _reader_market_facts(validation),
+            }
         return {
             "author": author,
             "title": title,
             "actionable_signals": normalized_signals,
+            "market_outlook": visible_market_outlook,
             "synthesis": {"summary": synthesis.get("summary")},
             "cross_source": cross_source,
         }
@@ -414,7 +477,9 @@ class DecisionPipeline:
             notification_payload = self._notification_payload(
                 author=item["author"],
                 title=item["title"],
+                claims=item["claims"],
                 actionable_signals=contextual_signals,
+                market_outlook=item.get("market_outlook") or {},
                 synthesis=item["synthesis"],
                 household_recommendation=contextual_advice,
                 cross_source=_reader_cross_source(item, cross_source),
@@ -432,7 +497,9 @@ class DecisionPipeline:
                     and self._notification_payload(
                         author=row.get("author"),
                         title=row.get("title"),
+                        claims=row.get("kol_claims") or [],
                         actionable_signals=row.get("actionable_signals") or [],
+                        market_outlook=row.get("market_outlook") or {},
                         synthesis=row.get("system_synthesis") or {},
                         household_recommendation=row.get("household_recommendation") or {},
                         cross_source=row.get("cross_source_judgments") or {
@@ -458,6 +525,7 @@ class DecisionPipeline:
                 "notification_revision": item.get("notification_revision"),
                 "kol_claims": item["claims"],
                 "actionable_signals": contextual_signals,
+                "market_outlook": item.get("market_outlook") or {},
                 "system_synthesis": item["synthesis"],
                 "market_validation": item["market_validation"],
                 "cross_source_judgments": _reader_cross_source(item, cross_source),

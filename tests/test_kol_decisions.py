@@ -160,6 +160,39 @@ def _bundle(item: dict, *, household_path: Path) -> dict:
     }
 
 
+def _market_outlook(**overrides) -> dict:
+    outlook = {
+        "scope": "A股整体",
+        "claim_ids": ["小草-risk"],
+        "current_phase": "风险释放尚未完成。",
+        "base_case": "低位放量前继续防守。",
+        "strategy": ["控制高贝塔仓位"],
+        "turning_points": ["低位显著放量"],
+        "horizon": "未来一至两周",
+        "confidence": "high",
+        "falsifiers": ["放量后继续破位"],
+        "current_validation": {
+            "status": "qualify",
+            "as_of": "2026-07-19T18:00:00+08:00",
+            "summary": "周末无新增交易日，等待下一交易日确认。",
+            "currentness": {
+                "latest_available": True,
+                "checked_at": "2026-07-19T18:00:00+08:00",
+                "reason": "周末无新增交易日。",
+            },
+            "facts": [{
+                "metric": "market_session",
+                "value": "closed",
+                "observed_at": "2026-07-19T16:00:00+08:00",
+                "evidence": "frozen://market/2026-07-19",
+                "reader_text": "7月19日周末休市，最新可用交易日不变。",
+            }],
+        },
+    }
+    outlook.update(overrides)
+    return outlook
+
+
 def test_transcript_document_reads_plain_text_and_requires_exact_quote(tmp_path):
     path = _write_text(tmp_path / "real.txt", "今天的结论：等待成交量放大再行动。")
     document = TranscriptDocument.load(path)
@@ -387,6 +420,162 @@ def test_reader_message_surfaces_relevant_cross_author_judgment(tmp_path):
     assert "多方共同信号" in message
     assert "小草、吕晓彤" in message
     assert "两位都主张先降低高贝塔风险" in message
+
+
+def test_reader_message_surfaces_market_outlook_before_individual_signals(tmp_path):
+    transcript = _write_text(tmp_path / "real.txt", "等待成交量放大再行动")
+    item = _item(transcript, author="小草")
+    item["market_outlook"] = _market_outlook(
+        current_phase="风险释放尚未完成，反弹仍按弱势修复看待。",
+        base_case="低位显著放量前，大盘更可能反复磨底而不是直接反转。",
+        strategy=["控制高贝塔仓位", "保留现金等待止跌确认"],
+        turning_points=["低位显著放量", "市场广度停止恶化"],
+    )
+
+    message = render_household_item_message(item)
+
+    assert "【大盘与整体策略：A股整体】" in message
+    assert "作者原话：「等待成交量放大再行动」" in message
+    assert "最新市场验证（截至 2026-07-19 18:00，有条件支持）" in message
+    assert "关键事实：7月19日周末休市，最新可用交易日不变。（观察于 2026-07-19 16:00）" in message
+    assert "系统当前重判：风险释放尚未完成" in message
+    assert "系统未来推演：低位显著放量前" in message
+    assert "系统整体策略：控制高贝塔仓位；保留现金等待止跌确认" in message
+    assert "系统关注的关键转折：低位显著放量；市场广度停止恶化" in message
+    assert "判断周期：未来一至两周（信心：高）" in message
+    assert message.index("【大盘与整体策略：A股整体】") < message.index(
+        "【暂不参与：A股短线】"
+    )
+
+
+def test_material_market_outlook_change_creates_new_reader_notification(tmp_path):
+    transcript = _write_text(tmp_path / "real.txt", "等待成交量放大再行动")
+    pipeline = _pipeline(tmp_path / "out")
+    first_item = _item(transcript, author="小草")
+    first_item["notification_revision"] = "market-outlook-v1"
+    first_item["market_outlook"] = _market_outlook()
+
+    first = pipeline.process(
+        _bundle(first_item, household_path=tmp_path / "unused.json")
+    )
+    revised_item = _item(transcript, author="小草")
+    revised_item["notification_revision"] = "market-outlook-v1"
+    revised_item["market_outlook"] = {
+        **first_item["market_outlook"],
+        "current_phase": "低位放量已经出现，进入止跌确认阶段。",
+        "base_case": "若市场广度同步修复，可从防守转向试仓。",
+    }
+    second = pipeline.process(
+        _bundle(revised_item, household_path=tmp_path / "unused.json")
+    )
+    replay = pipeline.process(
+        _bundle(revised_item, household_path=tmp_path / "unused.json")
+    )
+
+    assert first["items"][0]["notification"]["idempotency_key"] != second[
+        "items"
+    ][0]["notification"]["idempotency_key"]
+    assert second["items"][0]["idempotent_replay"] is False
+    assert replay["items"][0]["idempotent_replay"] is True
+    assert len((tmp_path / "out" / "household_outbox.jsonl").read_text().splitlines()) == 2
+
+
+def test_market_outlook_must_link_back_to_this_items_claims(tmp_path):
+    transcript = _write_text(tmp_path / "real.txt", "等待成交量放大再行动")
+    item = _item(transcript, author="小草")
+    item["market_outlook"] = _market_outlook(claim_ids=["another-author-risk"])
+
+    with pytest.raises(DecisionError, match="market outlook claim_ids"):
+        _pipeline(tmp_path / "out").process(
+            _bundle(item, household_path=tmp_path / "unused.json")
+        )
+
+
+def test_market_outlook_provenance_only_change_does_not_duplicate_notification(tmp_path):
+    transcript = _write_text(tmp_path / "real.txt", "等待成交量放大再行动")
+    pipeline = _pipeline(tmp_path / "out")
+    first_item = _item(transcript, author="小草")
+    first_item["claims"].append({
+        **first_item["claims"][0],
+        "claim_id": "小草-alt-risk",
+    })
+    first_item["notification_revision"] = "market-outlook-v1"
+    first_item["market_outlook"] = _market_outlook()
+
+    first = pipeline.process(
+        _bundle(first_item, household_path=tmp_path / "unused.json")
+    )
+    revised_item = _item(transcript, author="小草")
+    revised_item["claims"].append({
+        **revised_item["claims"][0],
+        "claim_id": "小草-alt-risk",
+    })
+    revised_item["notification_revision"] = "market-outlook-v1"
+    revised_item["market_outlook"] = {
+        **first_item["market_outlook"],
+        "claim_ids": ["小草-alt-risk"],
+    }
+    replay = pipeline.process(
+        _bundle(revised_item, household_path=tmp_path / "unused.json")
+    )
+
+    assert replay["items"][0]["idempotent_replay"] is True
+    assert replay["items"][0]["notification"]["idempotency_key"] == first[
+        "items"
+    ][0]["notification"]["idempotency_key"]
+    assert len((tmp_path / "out" / "household_outbox.jsonl").read_text().splitlines()) == 1
+
+
+def test_reader_visible_market_fact_change_creates_new_notification(tmp_path):
+    transcript = _write_text(tmp_path / "real.txt", "等待成交量放大再行动")
+    pipeline = _pipeline(tmp_path / "out")
+    first_item = _item(transcript, author="小草")
+    first_item["notification_revision"] = "market-outlook-v1"
+    first_item["market_outlook"] = _market_outlook()
+    first = pipeline.process(
+        _bundle(first_item, household_path=tmp_path / "unused.json")
+    )
+
+    revised_item = _item(transcript, author="小草")
+    revised_item["notification_revision"] = "market-outlook-v1"
+    revised_item["market_outlook"] = _market_outlook()
+    revised_item["market_outlook"]["current_validation"]["facts"][0].update({
+        "value": "open",
+        "observed_at": "2026-07-19T18:00:00+08:00",
+        "reader_text": "市场已经恢复交易并出现低位放量。",
+    })
+    second = pipeline.process(
+        _bundle(revised_item, household_path=tmp_path / "unused.json")
+    )
+
+    assert second["items"][0]["idempotent_replay"] is False
+    assert second["items"][0]["notification"]["idempotency_key"] != first[
+        "items"
+    ][0]["notification"]["idempotency_key"]
+    assert len((tmp_path / "out" / "household_outbox.jsonl").read_text().splitlines()) == 2
+
+
+def test_market_outlook_requires_its_own_current_validation(tmp_path):
+    transcript = _write_text(tmp_path / "real.txt", "等待成交量放大再行动")
+    item = _item(transcript, author="小草")
+    item["market_outlook"] = _market_outlook()
+    del item["market_outlook"]["current_validation"]
+
+    with pytest.raises(DecisionError, match="market_outlook.current_validation"):
+        _pipeline(tmp_path / "out").process(
+            _bundle(item, household_path=tmp_path / "unused.json")
+        )
+
+
+def test_market_outlook_rejects_blank_reader_facing_list_values(tmp_path):
+    transcript = _write_text(tmp_path / "real.txt", "等待成交量放大再行动")
+    item = _item(transcript, author="小草")
+    item["market_outlook"] = _market_outlook(strategy=["   "])
+
+    with pytest.raises(DecisionError, match="market outlook strategy values"):
+        _pipeline(tmp_path / "out").process(
+            _bundle(item, household_path=tmp_path / "unused.json")
+        )
 
 
 def test_no_trade_is_an_idempotent_book_decision(tmp_path):
