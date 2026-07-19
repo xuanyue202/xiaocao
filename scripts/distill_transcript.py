@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
-"""Distillation harness — the deterministic plumbing around the AGENT-driven
-distillation of a 小草 盘前/盘后 transcript into the knowledge layer.
+"""Distillation harness — deterministic plumbing around AGENT-driven
+distillation of attributed KOL transcripts into the Xiaocao knowledge layer.
 
 The agent (the `xiaocao-distill` skill) is the entry point and does the READING —
 turning Chinese livestream commentary into a structured distilled JSON is inherently
@@ -68,6 +68,7 @@ ACTION_SUMMARY_FIELDS = {
     "instrumentation_todo",
     "routing",
 }
+PROVENANCE_FIELDS = {"author", "source", "evidence"}
 
 
 def _read_jsonl(path: Path) -> list[dict]:
@@ -210,6 +211,27 @@ def _validate_distilled(d: dict) -> tuple[list[str], list[str]]:
         routing = action_summary.get("routing")
         if routing is not None and (not isinstance(routing, list) or not all(isinstance(x, str) for x in routing)):
             errs.append("action_summary.routing must be a list of strings")
+    present_provenance = PROVENANCE_FIELDS.intersection(d)
+    if present_provenance and present_provenance != PROVENANCE_FIELDS:
+        errs.append(
+            "multi-author provenance must include author, source, and evidence together"
+        )
+    elif present_provenance:
+        if not str(d.get("author") or "").strip() or not str(d.get("source") or "").strip():
+            errs.append("author and source must be non-empty strings")
+        evidence = d.get("evidence")
+        if not isinstance(evidence, list) or not evidence:
+            errs.append("evidence must be a non-empty list")
+        else:
+            for i, item in enumerate(evidence):
+                if (
+                    not isinstance(item, dict)
+                    or not str(item.get("path") or "").strip()
+                    or not re.fullmatch(r"[0-9a-f]{64}", str(item.get("sha256") or ""))
+                ):
+                    errs.append(
+                        f"evidence[{i}] requires path and lowercase 64-char sha256"
+                    )
     return errs, warns
 
 
@@ -285,12 +307,25 @@ def ingest(source: Path = DISTILLED) -> int:
     nxt = _next_id(entries)
     new_entries: list[dict] = []
     merged = 0
+
+    def source_ref(d: dict, jf: Path) -> dict | None:
+        if not PROVENANCE_FIELDS.issubset(d):
+            return None
+        return {
+            "author": d["author"],
+            "date": d.get("date"),
+            "evidence_sha256": [row["sha256"] for row in d.get("evidence") or []],
+            "file": jf.name,
+            "source": d["source"],
+        }
+
     for jf in files:
         try:
             d = json.loads(jf.read_text(encoding="utf-8"))
         except json.JSONDecodeError:
             continue
         date = d.get("date")
+        provenance = source_ref(d, jf)
         for h in d.get("hypotheses", []):
             if not isinstance(h, dict) or not h.get("claim"):
                 continue
@@ -302,6 +337,16 @@ def ingest(source: Path = DISTILLED) -> int:
                     sd.append(date)
                     sd.sort()
                     merged += 1
+                if provenance:
+                    refs = e.setdefault("source_refs", [])
+                    if provenance not in refs:
+                        refs.append(provenance)
+                        refs.sort(key=lambda row: (str(row.get("date")), str(row.get("author"))))
+                        merged += 1
+                    authors = e.setdefault("authors", [])
+                    if provenance["author"] not in authors:
+                        authors.append(provenance["author"])
+                        authors.sort()
                 continue
             entry = {
                 "id": f"XH-{nxt:03d}",
@@ -314,6 +359,9 @@ def ingest(source: Path = DISTILLED) -> int:
                 "status": f"candidate (distilled {date}; authority=0 — must pass "
                           f"research_exit_priors/research_run + §10 before any param change)",
             }
+            if provenance:
+                entry["authors"] = [provenance["author"]]
+                entry["source_refs"] = [provenance]
             by_claim[key] = entry
             new_entries.append(entry)
             nxt += 1
@@ -452,7 +500,7 @@ def _action_log_record(path: Path, d: dict) -> dict:
     """Compact routing row for consumers. The distilled JSON is the SSOT; this row
     is deliberately lossy so it cannot become a second source of truth."""
     summary = d.get("action_summary") or {}
-    return {
+    record = {
         "date": d.get("date"),
         "kind": d.get("kind"),
         "file": path.name,
@@ -463,6 +511,10 @@ def _action_log_record(path: Path, d: dict) -> dict:
         "audit_evidence": summary.get("audit_evidence"),
         "instrumentation_todo": summary.get("instrumentation_todo"),
     }
+    if d.get("author"):
+        record["author"] = d["author"]
+        record["source"] = d.get("source")
+    return record
 
 
 def refresh_action_log(source: Path = DISTILLED, output: Path = ACTION_LOG) -> int:

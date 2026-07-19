@@ -1,0 +1,232 @@
+{
+  "household_context_provider": {
+    "type": "lianghui_mcp",
+    "fresh_read_per_run": true
+  },
+  "items": [
+    {
+      "source": "baidu_manuscript_export",
+      "author": "小草",
+      "title": "20260716 大师班专场(晚17：30开播)-compressed",
+      "published_at": "2026-07-16T17:30:00+08:00",
+      "captured_at": "2026-07-19T17:03:00+08:00",
+      "evidence_path": "/Users/bytedance/Downloads/小草/20260716 大师班专场(晚17：30开播)-compressed.md",
+      "notification_revision": "human-readable-causal-v3",
+      "claims": [
+        {
+          "claim_id": "xiaocao-20260716-volume-capitulation",
+          "quote": "杀到什么时候才有希望止跌呢？杀到放量啊",
+          "reasoning": "融资盘循环清退尚未结束，低位放量才是风险释放完成的必要确认。",
+          "asset_scope": ["A-share", "market-regime"],
+          "direction": "defensive",
+          "horizon": "未来一至两周",
+          "confidence": "high",
+          "falsifiers": ["低位显著放量后仍持续破位"]
+        },
+        {
+          "claim_id": "xiaocao-20260716-unrisen-small-tech",
+          "quote": "赚钱的地方我个人判断啊，可能会是在。科技短线里面没涨的股票",
+          "reasoning": "高位科技大票有套牢盘，下一段短线机会更可能来自此前未涨、抗跌的小市值科技。",
+          "asset_scope": ["A-share", "small-cap-technology"],
+          "direction": "conditional-long",
+          "horizon": "未来一至两周",
+          "confidence": "medium",
+          "falsifiers": ["放量出清后领涨方向并非未涨科技小票"]
+        },
+        {
+          "claim_id": "xiaocao-20260716-next-day-exit",
+          "quote": "今天的超跌反弹也是明天要走，你有机会冲高就走啊",
+          "reasoning": "主跌环境中的绿盘低吸是隔日反弹交易，不得把短线反弹拖成长持。",
+          "asset_scope": ["A-share", "oversold-rebound"],
+          "direction": "one-day-trade",
+          "horizon": "次一交易日",
+          "confidence": "high",
+          "falsifiers": ["环境已从主跌切换成持续主升"]
+        }
+      ],
+      "actionable_signals": [
+        {
+          "signal_id": "xiaocao-wanbang-window-closed",
+          "claim_ids": ["xiaocao-20260716-next-day-exit"],
+          "action": "wait",
+          "assets": [{"name": "万邦医药", "market": "CN", "ticker": "301520.XSHE"}],
+          "relevant_asset_codes": ["301520", "301520.XSHE"],
+          "horizon": "当前",
+          "execution": "不追万邦医药。7月16日低吸、7月17日冲高卖出的交易窗口已经结束；新一轮信号须重新生成。",
+          "trigger": "只有新的模式信号与新的当日市场条件同时出现，才重新评估。",
+          "confidence": "high",
+          "falsifiers": ["出现新的、可核验的模式内低吸信号"],
+          "rationale": {
+            "news_or_event": [],
+            "fundamental": ["该观点不是医药中线看多，而是模式内超跌反弹。"],
+            "trading": ["7月17日已从61.00元冲到71.33元并收66.62元，隔日高抛窗口已兑现。"]
+          },
+          "current_validation": {
+            "status": "invalidate",
+            "as_of": "2026-07-19T19:30:00+08:00",
+            "summary": "原始隔日低吸交易已过期；当前只能不追，不能把历史命中当成新买点。",
+            "currentness": {"latest_available": true, "checked_at": "2026-07-19T19:30:00+08:00", "reason": "7月19日为周末，7月17日是最新A股交易日。"},
+            "facts": [{"metric": "301520_daily_ohlc", "value": "open=63.76 high=71.33 low=61.00 close=66.62", "observed_at": "2026-07-17T15:00:00+08:00", "evidence": "xiaocao://minute_line/301520.XSHE/20260717"}]
+          }
+        },
+        {
+          "signal_id": "xiaocao-small-tech-after-capitulation",
+          "claim_ids": ["xiaocao-20260716-volume-capitulation", "xiaocao-20260716-unrisen-small-tech"],
+          "action": "buy",
+          "assets": [{"name": "此前未涨且抗跌的科技小票", "market": "CN", "theme": "unrisen-small-cap-tech"}],
+          "relevant_asset_codes": [],
+          "horizon": "未来一至两周",
+          "execution": "先建候选池，不在放量出清前下单；触发后首笔只用总资产5%，上限10%，次日无延续则退出。",
+          "trigger": "A股低位放量完成恐慌出清，且未涨科技小票成为当日主动领涨方向。",
+          "funding_plan": "优先由卸掉TQQQ杠杆和削减拥挤存储仓释放资金，不受当前持仓名单限制。",
+          "confidence": "medium",
+          "falsifiers": ["放量后市场继续破位", "主动方向转向非科技", "候选票此前已经大涨或上方套牢盘沉重"],
+          "rationale": {
+            "news_or_event": ["融资盘清退仍在进行。"],
+            "fundamental": ["科技长期方向没有消失，但高位科技大票上方全是套牢盘，反弹时会遇到持续卖压。"],
+            "trading": ["资金更可能转向此前没涨、下跌时又抗跌的小科技票；这类票在市场止跌后更容易形成短线弹性。"]
+          },
+          "current_validation": {
+            "status": "qualify",
+            "as_of": "2026-07-19T19:30:00+08:00",
+            "summary": "7月17日市场仍在主跌，买入条件尚未出现；机会方向保留，但现在要等市场先止跌。",
+            "currentness": {"latest_available": true, "checked_at": "2026-07-19T19:30:00+08:00", "reason": "周末无新增A股交易日。"},
+            "facts": [{"metric": "xiaocao_market_regime", "value": "bear; score=-0.6785; negative_total=5001; positive_total=481", "observed_at": "2026-07-17T15:26:36+08:00", "evidence": "/Users/bytedance/coding/xiaocao/output/live/decision_journal.jsonl#run_id=live_monitor:2026-07-17:2026-07-17T15:26:36"}]
+          }
+        }
+      ],
+      "market_validation": {
+        "status": "support",
+        "as_of": "2026-07-19T19:30:00+08:00",
+        "summary": "7月17日市场广度继续恶化至bear，支持先等放量出清；万邦医药的历史隔日窗口已关闭。",
+        "currentness": {"latest_available": true, "checked_at": "2026-07-19T19:30:00+08:00", "reason": "周末无新增A股交易日。"},
+        "facts": [{"metric": "xiaocao_market_regime", "value": "bear; score=-0.6785; negative_total=5001; positive_total=481", "observed_at": "2026-07-17T15:26:36+08:00", "evidence": "/Users/bytedance/coding/xiaocao/output/live/decision_journal.jsonl#run_id=live_monitor:2026-07-17:2026-07-17T15:26:36"}]
+      },
+      "synthesis": {"summary": "不追已经兑现的万邦医药；真正可执行的新机会是等待放量出清后，用5%首仓参与未涨科技小票。", "confidence": "high", "conflicts": []},
+      "household_recommendation": {"action": "wait", "evidence": "当前买点未触发，但持仓外候选继续搜索。", "confidence": "high", "horizon": "未来一至两周", "falsifier": "放量出清且未涨科技小票主动领涨。", "relevant_asset_codes": ["301520"]},
+      "book_kol_us": {"decision": "no_trade", "reason": "信号针对A股短线且当前尚未触发。"}
+    },
+    {
+      "source": "baidu_manuscript_export",
+      "author": "吕晓彤",
+      "title": "吕晓彤7月13日会员直播",
+      "published_at": "2026-07-13T20:00:00+08:00",
+      "captured_at": "2026-07-19T18:16:00+08:00",
+      "evidence_path": "/Users/bytedance/Downloads/小草/吕晓彤7月13日会员直播.md",
+      "notification_revision": "human-readable-causal-v3",
+      "claims": [
+        {"claim_id": "lv-20260713-clear-storage", "quote": "我只是让大家清掉了存储", "reasoning": "存储的涨价与盈利预期过于拥挤，苹果对美光的反击和韩国杠杆出清会压缩上游利润与估值。", "asset_scope": ["memory", "MU", "DRAM"], "direction": "sell", "horizon": "当前至下一轮基本面确认", "confidence": "high", "falsifiers": ["盈利预期重新上修且价格突破前高"]},
+        {"claim_id": "lv-20260713-remove-leverage", "quote": "把杠杆都卸掉。不要买任何两倍的产品", "reasoning": "长期AI看多不需要通过倍数产品承担路径损耗和放大回撤。", "asset_scope": ["leveraged-etf", "TQQQ"], "direction": "sell", "horizon": "立即", "confidence": "high", "falsifiers": ["账户已经没有任何杠杆产品"]},
+        {"claim_id": "lv-20260713-semcap-cxmt", "quote": "你买半导体设备买的是什么？买的是长新", "reasoning": "国产存储扩产会带来半导体设备采购，小型半导体设备股的恐慌下跌可能是错杀。", "asset_scope": ["China-semiconductor-equipment", "CXMT"], "direction": "long", "horizon": "中长期", "confidence": "medium", "falsifiers": ["长鑫扩产和设备采购显著低于预期"]}
+      ],
+      "actionable_signals": [
+        {
+          "signal_id": "lv-sell-tqqq",
+          "claim_ids": ["lv-20260713-remove-leverage"],
+          "action": "sell",
+          "assets": [{"name": "三倍做多纳指", "market": "US", "ticker": "TQQQ"}],
+          "relevant_asset_codes": ["TQQQ"],
+          "horizon": "下一个交易日",
+          "execution": "真实组合卖出全部TQQQ；若仍要保留AI敞口，只用现有VGT/SMH或非杠杆QQQ表达。",
+          "trigger": "当前即执行。",
+          "funding_plan": "释放的现金留作后续A股科技小票和北特科技条件单资金。",
+          "confidence": "high",
+          "falsifiers": ["家庭账户已无TQQQ"],
+          "rationale": {"news_or_event": ["吕晓彤明确提出把所有倍数产品卸掉，只保留非杠杆的正股或ETF。"], "fundamental": ["看好AI的长期趋势，并不需要用三倍杠杆来表达。"], "trading": ["三倍ETF按日复位，市场震荡时会产生路径损耗；7月17日TQQQ跌4.651%，约为QQQ跌幅1.492%的3.1倍，回撤放大已经出现。"]},
+          "current_validation": {"status": "support", "as_of": "2026-07-19T19:30:00+08:00", "summary": "TQQQ的实际跌幅再次证明杠杆放大风险，且家庭账户仍持有。", "currentness": {"latest_available": true, "checked_at": "2026-07-19T19:30:00+08:00", "reason": "7月17日为最新完整美股交易日。"}, "facts": [{"metric": "TQQQ_vs_QQQ_daily_change", "value": "TQQQ=-4.651%; QQQ=-1.492%", "observed_at": "2026-07-18T00:15:00Z", "evidence": "finance://USA/TQQQ,QQQ/2026-07-17"}]}
+        },
+        {
+          "signal_id": "lv-reduce-storage",
+          "claim_ids": ["lv-20260713-clear-storage"],
+          "action": "reduce",
+          "assets": [{"name": "美光科技", "market": "US", "ticker": "MU"}, {"name": "存储主题ETF", "market": "US", "ticker": "DRAM"}],
+          "relevant_asset_codes": ["MU", "DRAM"],
+          "horizon": "下一个交易日",
+          "execution": "MU和DRAM各减仓50%；剩余仓位若跌破7月17日低点（MU 804.48、DRAM 48.65）或盈利预期继续下修，再退出。",
+          "trigger": "当前先减半；破位或基本面确认后处理剩余仓。",
+          "funding_plan": "减仓资金先回现金，不立即追入其他高波动科技。",
+          "confidence": "medium",
+          "falsifiers": ["存储盈利预期重新上修", "MU与DRAM放量突破7月17日高点并维持"],
+          "rationale": {"news_or_event": ["苹果公开反击美光的提价，说明最有议价权的下游客户已经开始抵制涨价。"], "fundamental": ["一旦苹果寻找更便宜的供应商，其他客户也会跟进，上游存储厂商的提价空间和利润预期就会被压缩；长鑫等新增供给还会进一步削弱稀缺性。"], "trading": ["但7月17日MU近乎持平、DRAM还涨0.478%，股价暂时没有确认崩跌，所以先减半，等价格或盈利预期进一步确认再处理剩余仓位。"]},
+          "current_validation": {"status": "qualify", "as_of": "2026-07-19T19:30:00+08:00", "summary": "产业和拥挤逻辑支持降仓，但最新价格尚未确认破位，因此采用分段减仓。", "currentness": {"latest_available": true, "checked_at": "2026-07-19T19:30:00+08:00", "reason": "7月17日为最新完整美股交易日。"}, "facts": [{"metric": "MU_daily", "value": "close=848.95; change=-0.0047%; high=902.94; low=804.48", "observed_at": "2026-07-18T00:15:00Z", "evidence": "finance://USA/MU/2026-07-17"}, {"metric": "DRAM_daily", "value": "close=52.72; change=+0.478%; high=55.39; low=48.65", "observed_at": "2026-07-18T00:15:00Z", "evidence": "finance://USA/DRAM/2026-07-17"}]}
+        },
+        {
+          "signal_id": "lv-hold-semcap-no-add",
+          "claim_ids": ["lv-20260713-semcap-cxmt"],
+          "action": "hold",
+          "assets": [{"name": "北方华创等国产半导体设备", "market": "CN", "ticker": "002371.XSHE"}],
+          "relevant_asset_codes": ["002371", "002371.XSHE"],
+          "horizon": "中长期",
+          "execution": "保留北方华创，不在A股主跌环境里加仓；等市场放量出清且设备方向主动时再评估。",
+          "trigger": "当前持有；新增仓位需同时满足市场止跌和设备方向主动。",
+          "confidence": "medium",
+          "falsifiers": ["长鑫扩产或设备采购低于预期", "北方华创趋势持续破坏且无基本面修复"],
+          "rationale": {"news_or_event": ["长鑫扩产与潜在上市带来新一轮设备采购预期。"], "fundamental": ["存储芯片降价会伤害芯片厂利润，但长鑫扩产本身会增加设备订单，所以北方华创赚的是资本开支，不是存储涨价。"], "trading": ["7月17日A股仍在主跌，北方华创收677元；产业逻辑可以保留，但当前不适合在恐慌里追加同类高波动科技仓位。"]},
+          "current_validation": {"status": "qualify", "as_of": "2026-07-19T19:30:00+08:00", "summary": "产业逻辑保留，但7月17日北方华创收677元且A股广度极弱，当前只持有不加仓。", "currentness": {"latest_available": true, "checked_at": "2026-07-19T19:30:00+08:00", "reason": "周末无新增A股交易日。"}, "facts": [{"metric": "002371_daily_ohlc", "value": "open=693.30 high=707.40 low=660.42 close=677.00", "observed_at": "2026-07-17T15:00:00+08:00", "evidence": "xiaocao://minute_line/002371.XSHE/20260717"}]}
+        }
+      ],
+      "market_validation": {"status": "qualify", "as_of": "2026-07-19T19:30:00+08:00", "summary": "杠杆风险获得价格确认；存储产业逻辑偏空但价格尚未破位；国产设备逻辑与存储芯片涨价需分开。", "currentness": {"latest_available": true, "checked_at": "2026-07-19T19:30:00+08:00", "reason": "周末使用7月17日最新收盘数据。"}, "facts": [{"metric": "TQQQ_vs_QQQ_daily_change", "value": "TQQQ=-4.651%; QQQ=-1.492%", "observed_at": "2026-07-18T00:15:00Z", "evidence": "finance://USA/TQQQ,QQQ/2026-07-17"}]},
+      "synthesis": {"summary": "最优先动作是卖掉TQQQ；存储MU/DRAM先各减半；北方华创逻辑不同，保留但不加。", "confidence": "high", "conflicts": []},
+      "household_recommendation": {"action": "sell", "evidence": "家庭真实组合仍持有TQQQ、MU、DRAM和北方华创，必须分资产处理。", "confidence": "high", "horizon": "下一个交易日", "falsifier": "相关仓位已经清零或市场与盈利预期发生明确反转。", "relevant_asset_codes": ["TQQQ", "MU", "DRAM", "002371"]},
+      "book_kol_us": {"decision": "trade", "ticker": "QQQ", "instrument_type": "etf", "listing_country": "US", "side": "buy", "target_weight": 0.3, "price": 695.33, "concentration_risk": "科技宽基仍有估值和资本开支周期风险。", "exit_or_falsifier": "AI资本开支与应用渗透持续逆转，或QQQ趋势与基本面同时转弱。"}
+    },
+    {
+      "source": "baidu_manuscript_export",
+      "author": "路西法",
+      "title": "路西法7月5日（二）",
+      "published_at": "2026-07-05T21:30:00+08:00",
+      "captured_at": "2026-07-19T18:24:00+08:00",
+      "evidence_path": "/Users/bytedance/Downloads/小草/路西法7月5日（二）.md",
+      "notification_revision": "human-readable-causal-v3",
+      "claims": [
+        {"claim_id": "lucifer-20260705-beite", "quote": "我40就进，后来加，现在已经是50多了嘛", "reasoning": "北特科技具备行星滚柱丝杠/机器人关节零部件、特斯拉供应商、小流通盘等弹性逻辑，作者明确以40元附近作为关注区。", "asset_scope": ["603009.XSHG", "physical-AI"], "direction": "conditional-long", "horizon": "中长期", "confidence": "medium", "falsifiers": ["特斯拉供应链或关键零部件逻辑失效"]},
+        {"claim_id": "lucifer-20260705-sanhua", "quote": "这个企业本身我觉得没问题，但是但是我觉得这个老板的心态我觉得不太好", "reasoning": "三花智控的热管理业务受益于新能源车和机器人，但创始人及高管套现削弱外部投资者信心。", "asset_scope": ["002050.XSHE", "thermal-management"], "direction": "avoid-for-now", "horizon": "中期", "confidence": "medium", "falsifiers": ["治理和减持担忧消退且估值重新具备安全边际"]},
+        {"claim_id": "lucifer-20260705-half-cash", "quote": "确保自己有一半的cash留在手上，一半的现金留在手上，至少一半", "reasoning": "2026年下半年先防守，等待冬季至2027年初潜在黄金坑。", "asset_scope": ["portfolio", "cash"], "direction": "defensive", "horizon": "2026年下半年", "confidence": "medium", "falsifiers": ["盈利和流动性持续超预期且风险资产完成估值消化"]}
+      ],
+      "actionable_signals": [
+        {
+          "signal_id": "lucifer-beite-entry",
+          "claim_ids": ["lucifer-20260705-beite", "lucifer-20260705-half-cash"],
+          "action": "buy",
+          "assets": [{"name": "北特科技", "market": "CN", "ticker": "603009.XSHG"}],
+          "relevant_asset_codes": ["603009", "603009.XSHG"],
+          "horizon": "未来一至两周",
+          "execution": "现价42.02元不追；只有回到40元附近且A股出现低位放量止跌时，首笔买总资产3%，最高5%。",
+          "trigger": "价格不高于40元，且A股完成放量出清、机器人方向出现主动性。",
+          "funding_plan": "优先使用卖出TQQQ和减持MU/DRAM释放的资金；北特科技当前不在家庭持仓也照常进入机会池。",
+          "confidence": "medium",
+          "falsifiers": ["跌破40元时市场仍未止跌", "特斯拉供应商或行星滚柱丝杠逻辑被证伪", "公司治理或订单出现重大负面变化"],
+          "rationale": {"news_or_event": ["路西法把物理AI和机器人列为接下来重点研究的长期方向，并点名北特科技作为具体零部件样本。"], "fundamental": ["北特科技切入行星滚柱丝杠和机器人关节零部件，又在特斯拉供应链里；如果机器人放量，这类关键零部件会先获得订单弹性，小流通盘还会放大股价弹性。"], "trading": ["路西法历史入场约40元；7月17日收42.02元已经接近，但A股还在主跌，所以必须等价格和市场止跌同时出现。"]},
+          "current_validation": {"status": "qualify", "as_of": "2026-07-19T19:30:00+08:00", "summary": "价格已接近作者40元关注位，但A股尚未完成放量止跌，所以进入持仓外候选池而不是立即买。", "currentness": {"latest_available": true, "checked_at": "2026-07-19T19:30:00+08:00", "reason": "周末无新增A股交易日。"}, "facts": [{"metric": "603009_daily_ohlc", "value": "open=44.97 high=47.67 low=42.02 close=42.02", "observed_at": "2026-07-17T15:00:00+08:00", "evidence": "xiaocao://minute_line/603009.XSHG/20260717"}]}
+        },
+        {
+          "signal_id": "lucifer-sanhua-governance-wait",
+          "claim_ids": ["lucifer-20260705-sanhua"],
+          "action": "wait",
+          "assets": [{"name": "三花智控", "market": "CN", "ticker": "002050.XSHE"}],
+          "relevant_asset_codes": ["002050", "002050.XSHE"],
+          "horizon": "未来一个季度",
+          "execution": "不新开三花智控；业务逻辑虽好，但在创始人和高管减持担忧消退前不给估值溢价。",
+          "trigger": "治理/减持风险明确缓解，且价格出现足够安全边际后再评估。",
+          "confidence": "medium",
+          "falsifiers": ["公司披露显示治理担忧消退且订单盈利持续超预期"],
+          "rationale": {"news_or_event": ["三花智控的创始人和高管套现，给市场留下了治理和利益一致性的疑问。"], "fundamental": ["新能源车和机器人都需要热管理，三花的业务方向本身没有坏。"], "trading": ["但管理层持续套现会压低投资者愿意给的估值；7月17日回落到39.75元，还不足以证明这层治理折价已经消化。"]},
+          "current_validation": {"status": "qualify", "as_of": "2026-07-19T19:30:00+08:00", "summary": "业务与治理信号冲突，当前最可执行动作是等待而非因回调买入。", "currentness": {"latest_available": true, "checked_at": "2026-07-19T19:30:00+08:00", "reason": "周末无新增A股交易日。"}, "facts": [{"metric": "002050_daily_ohlc", "value": "open=41.70 high=41.88 low=38.52 close=39.75", "observed_at": "2026-07-17T15:00:00+08:00", "evidence": "xiaocao://minute_line/002050.XSHE/20260717"}]}
+        }
+      ],
+      "market_validation": {"status": "qualify", "as_of": "2026-07-19T19:30:00+08:00", "summary": "北特科技价格接近40元关注位但市场触发未完成；三花业务逻辑和治理折价并存。", "currentness": {"latest_available": true, "checked_at": "2026-07-19T19:30:00+08:00", "reason": "周末使用7月17日最新A股收盘。"}, "facts": [{"metric": "603009_close", "value": "42.02 CNY", "observed_at": "2026-07-17T15:00:00+08:00", "evidence": "xiaocao://minute_line/603009.XSHG/20260717"}]},
+      "synthesis": {"summary": "把北特科技作为明确的持仓外机会：40元附近加市场止跌才买；三花智控因治理折价暂不买。", "confidence": "medium", "conflicts": []},
+      "household_recommendation": {"action": "wait", "evidence": "北特科技价格接近但市场触发未完成，三花治理风险未解除。", "confidence": "medium", "horizon": "未来一至两周", "falsifier": "北特科技同时满足40元与市场止跌条件。", "relevant_asset_codes": ["603009", "002050"]},
+      "book_kol_us": {"decision": "no_trade", "reason": "明确机会是A股北特科技；当前美股不新增重复科技纸面仓。"}
+    }
+  ],
+  "cross_source": {
+    "agreements": [
+      {"topic": "deleveraging-and-cash", "claim_ids": ["xiaocao-20260716-volume-capitulation", "lv-20260713-remove-leverage", "lucifer-20260705-half-cash"], "judgment": "三者都要求先降低短期高贝塔风险，但依据分别是A股融资盘、杠杆产品损耗和下半年宏观风险；统一动作是先卸TQQQ和降存储，再等具体触发。"},
+      {"topic": "physical-ai-opportunity", "claim_ids": ["xiaocao-20260716-unrisen-small-tech", "lucifer-20260705-beite"], "judgment": "小草给出未涨科技小票的短线候选特征，路西法给出北特科技及40元关注位；系统交叉成一个具体条件单，但仍需A股放量止跌确认。"}
+    ],
+    "conflicts": [
+      {"topic": "memory-versus-semiconductor-equipment", "claim_ids": ["lv-20260713-clear-storage", "lv-20260713-semcap-cxmt"], "judgment": "清存储芯片不等于清半导体设备：前者受涨价预期、下游压价和韩国杠杆影响，后者受长鑫扩产采购驱动，家庭组合应减MU/DRAM而保留北方华创。"}
+    ]
+  }
+}

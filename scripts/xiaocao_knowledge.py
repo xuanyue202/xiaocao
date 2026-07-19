@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
-"""Xiaocao knowledge surfacing + freshness self-check (read-only governance).
+"""Xiaocao investment-knowledge surfacing + freshness self-check.
 
-The distilled 小草 knowledge layer (playbook / regime timeline / candidate
-hypotheses / verdict ledger) only COMPOUNDS if it is (a) discoverable, (b)
+The distilled, source-attributed KOL knowledge layer (playbook / regime timeline /
+candidate hypotheses / verdict ledger) only COMPOUNDS if it is (a) discoverable, (b)
 surfaced at the right moment, and (c) flagged when stale. This script is the
 single entry point that does all three — it reads, never writes, and never
 touches the deterministic spine.
@@ -158,7 +158,8 @@ def render_action_log(rows: list[dict], *, limit: int = 5) -> str:
         routing = ",".join(r.get("routing") or []) or "-"
         inst = r.get("instrumentation_todo") or "none"
         hyp = r.get("hypothesis_update") or "none"
-        lines.append(f"  - {r.get('date')} {r.get('file')} routing={routing} | hypothesis={str(hyp)[:50]} | instrumentation={str(inst)[:50]}")
+        author = r.get("author") or "小草（历史未标注）"
+        lines.append(f"  - {r.get('date')} [{author}] {r.get('file')} routing={routing} | hypothesis={str(hyp)[:50]} | instrumentation={str(inst)[:50]}")
     return "\n".join(lines)
 
 
@@ -186,7 +187,7 @@ def main() -> None:
         return
 
     print("=" * 72)
-    print("小草知识层 · 现状一览（read-only；索引见 reference/experience/README.md）")
+    print("Xiaocao 投资知识层 · 多作者、来源可追溯（read-only；索引见 reference/experience/README.md）")
     print("=" * 72)
     print(render_posture(posture))
     print()

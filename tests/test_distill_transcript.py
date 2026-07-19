@@ -42,6 +42,25 @@ def test_validate_good_distilled(tmp_path):
     assert dt.validate(f) == 0
 
 
+def test_validate_multi_author_provenance_is_complete_or_fails_closed(tmp_path):
+    d = _valid_distilled()
+    d.update({
+        "author": "吕晓彤",
+        "source": "local_transcript",
+        "evidence": [{
+            "path": "/tmp/吕晓彤.md",
+            "sha256": "a" * 64,
+        }],
+    })
+    f = tmp_path / "2026-07-13_lv_xiaotong_review.json"
+    f.write_text(json.dumps(d, ensure_ascii=False), encoding="utf-8")
+    assert dt.validate(f) == 0
+
+    del d["evidence"]
+    f.write_text(json.dumps(d, ensure_ascii=False), encoding="utf-8")
+    assert dt.validate(f) == 1
+
+
 def test_validate_missing_keys_fails_closed(tmp_path):
     d = _valid_distilled()
     del d["exit_lessons"]
@@ -167,6 +186,32 @@ def test_ingest_recurrence_merges_dates_no_new_id(tmp_path, monkeypatch):
     assert len(entries) == 1                                   # ONE entry, not two
     assert entries[0]["id"] == "XH-001"
     assert entries[0]["source_dates"] == ["2026-06-10", "2026-06-22"]  # recurrence=2
+
+
+def test_ingest_preserves_multi_author_source_provenance(tmp_path, monkeypatch):
+    d = _valid_distilled(date="2026-07-13", kind="会员直播复盘")
+    d.update({
+        "author": "吕晓彤",
+        "source": "local_transcript",
+        "evidence": [{"path": "/tmp/lv.md", "sha256": "b" * 64}],
+    })
+    source = tmp_path / "2026-07-13_lv_xiaotong_review.json"
+    source.write_text(json.dumps(d, ensure_ascii=False), encoding="utf-8")
+    backlog = tmp_path / "backlog.jsonl"
+    backlog.write_text("", encoding="utf-8")
+    monkeypatch.setattr(dt, "BACKLOG", backlog)
+
+    assert dt.ingest(source) == 0
+
+    entry = json.loads(backlog.read_text(encoding="utf-8").strip())
+    assert entry["authors"] == ["吕晓彤"]
+    assert entry["source_refs"] == [{
+        "author": "吕晓彤",
+        "date": "2026-07-13",
+        "evidence_sha256": ["b" * 64],
+        "file": "2026-07-13_lv_xiaotong_review.json",
+        "source": "local_transcript",
+    }]
 
 
 def test_ingest_is_idempotent(tmp_path, monkeypatch):
