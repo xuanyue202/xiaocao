@@ -15,7 +15,7 @@
 
 | 文件 | 是什么 | 谁消费 / 何时 | 性质 |
 |---|---|---|---|
-| `transcripts/<YYYY-MM>/*.md` | 原始转录（盘前+复盘，按月统一归档；语音转文字有错别字） | 蒸馏输入；`xiaocao-distill` skill 写入 | 原料 |
+| `transcripts/<YYYY-MM>/*.md` | 原始转录（多作者盘前+复盘，按月统一归档；语音转文字有错别字） | `kol-intelligence` 的长期沉淀分支读取并写入蒸馏层 | 原料 |
 | `distilled/<date>_<kind>.json` | 逐篇结构化提取（posture/方向/个股/方法/出场课/**decision_trace 实时判断链**/假设/action_summary，已纠错） | 综合输入；按需回查 | 底料（append-only） |
 | `distill_action_log.jsonl` | 从每篇 `distilled/*.json` 的必填 `action_summary` 机械生成的轻量路由索引 | `xiaocao_knowledge.py` / weekly deep review | 索引（非 SSOT） |
 | `docs/XIAOCAO_PLAYBOOK.md` | 道-法-术-纪律 + **第五节「实时盘面判断模型」**（盘前→竞价→9:31-9:35→盘中 的 if-then 表）。每条标 `[已编码]/[先验]/[待验]` | **agent 每日**：morning 看术/纪律framing，eod 用出场纪律做异常分诊 | 判断先验 |
@@ -23,8 +23,10 @@
 | `posture_current.json` | 现行 posture 的**机器可读 SSOT**（as_of/valid_until/regime/falsifiers） | `xiaocao_knowledge.py` 读它判时效 | 判断先验 |
 | `cohorts/*.yaml` + `output/cohorts/cohort_snapshots.jsonl` | benchmark/watchlist/research cohort 中间层：承接老师点名战果、本地标杆买入、raw pool 观察名单 | 复盘审计 / watchlist / research_run 前的样本面 | authority=0 观察层 |
 | `xiaocao_hypotheses.jsonl` | 17 条**可证伪候选**（XH-001..017），含 operationalization 配方 + status | 飞轮入口（candidate→护栏） | 候选假设（非 verdict） |
+| `research_protocols.yaml` | 策略自进化协议 registry：Book B / Book T 等研究族的稳定内核、允许/禁止改动、manifest 字段、promotion 边界 | `research_run.py` manifest / `weekly_deep_review.py` AUTO_APPLIED 门禁 | 研究消费协议 |
 | `kronos_screen/HYPOTHESES.jsonl` | `research_run.py` 的 **verdict 账本**（PASS/REJECTED） | flywheel_selfcheck / 人工门③ | 裁决 |
 | `output/research/*.jsonl` | 操作化某假设时建的逐笔 `{day,strat_ret,base_ret}` | research_run.py 输入 | 检验工件 |
+| `output/research/runs/*/manifest.json` | 一次 research_run 的版本化记录：protocol id、输入 hash、guard 参数、verdict、diagnostics、git 状态 | weekly deep review 的策略收益类 `AUTO_APPLIED` 证据 | 研究消费工件 |
 
 ## 2. 飞轮发现日志（hard-won 结论，别再走回头路）
 
@@ -82,6 +84,6 @@
 ## 4. 把一条候选喂进飞轮（操作化配方）
 
 1. 选一条 `xiaocao_hypotheses.jsonl` 候选，按其 `operationalization` 从 **cache** 建逐笔 `{day,strat_ret,base_ret}`（cache-first，不发 API）。
-2. `PYTHONPATH=src python3 scripts/research_run.py --trades <file> --n-tried <本轮所试假设数>`（护栏：cache-only / ≥8 天 / 逐笔非日度 / walk-forward train+test / 多重比较）。
+2. `PYTHONPATH=src python3 scripts/research_run.py --trades <file> --n-tried <本轮所试假设数> --protocol-id <protocol> --run-dir output/research/runs/<run-id>`（护栏：cache-only / ≥8 天 / 逐笔非日度 / walk-forward train+test / 多重比较；同时写 manifest、verdict、trades 副本和 diagnostics）。
 3. 满意再 `--record --id XH-0xx --claim ... --method ...` 写 verdict 账本；回填候选 `status` 为 `tested:PASS/REJECTED`。
 4. **PASS** 才进 ③ 人工门：人确认 → 改 `src/xiaocao/strategy/params.py`（唯一入口，冻结约束）或重训 → **再过 train+test**。agent 永不自动改参。

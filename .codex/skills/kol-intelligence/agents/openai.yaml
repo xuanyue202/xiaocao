@@ -1,0 +1,4 @@
+interface:
+  display_name: "KOL 投资情报"
+  short_description: "捕获并处理 KOL 内容，联动当下决策与长期知识沉淀"
+  default_prompt: "使用 $kol-intelligence 处理这份 KOL 材料，一次完成当下决策与可复用知识沉淀。"

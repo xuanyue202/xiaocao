@@ -2,7 +2,7 @@
 """Distillation harness — deterministic plumbing around AGENT-driven
 distillation of attributed KOL transcripts into the Xiaocao knowledge layer.
 
-The agent (the `xiaocao-distill` skill) is the entry point and does the READING —
+The agent (the durable-knowledge branch of `kol-intelligence`) is the entry point and does the READING —
 turning Chinese livestream commentary into a structured distilled JSON is inherently
 a judgment task, not a script. This harness does ONLY the mechanical, judgment-free
 steps the agent calls:
