@@ -4,7 +4,7 @@
 
 **Blocked by:** Nothing. The Codex browser denial remains recorded as a surface-specific capability failure. The logged-in OpenCLI extension/daemon provides the permitted DOM route; no raw CDP, Computer Use, absolute coordinates, token extraction, or desktop workaround was used.
 
-**Status:** in-progress
+**Status:** completed
 
 **Progress:** Ticket 01 is completed in commits `f892c86`, `a49462b`, and `8e92126`. Ticket 02 now has two real `baidu_consumer_page` jobs in `decided`: the requested 717 video and the corrected 719 video. OpenCLI 1.8.6 reads the already logged-in page, proves exact target URLs, reconciles the existing transcripts without regeneration, observes the existing AI notes as optional siblings, rejects virtualized/partial transcript DOM, writes immutable hash-bound text, validates opening/middle/ending excerpts, reads fresh market and household context, sends a real household message, and records a paper-only Book KOL-US fill or no-trade. Three-attempt bounded retry handles transient read-only OpenCLI timeouts; failures are appended and later success clears transient error fields. The export/download state machine remains tested for compatibility but is not invoked after successful complete-DOM proof. No Computer Use or ticket 03–07 work was performed.
 
@@ -22,7 +22,7 @@
 - [x] Browser/API/interface failures append explicitly without secrets, cookies, query strings, household positions, or transcript content entering the Netdisk ledger.
 - [x] The coordinator can resume from cloud video plus lightweight job/artifact references; large local upload remains assigned to the broadband media worker when needed.
 - [x] No live capture, subscription access, batch ingestion, or scheduling was implemented; no files under tickets 03–07 were modified.
-- [ ] Focused tests, full suite, two-axis review, requirement evidence, and implementation commit are recorded below.
+- [x] Focused tests, full suite, two-axis review, requirement evidence, and implementation commit are recorded below.
 
 ## Verification evidence
 
@@ -52,7 +52,10 @@
 - Both decision bundles passed source-neutral preflight with a fresh LiangHui MCP household-context read. The committed acceptance inputs are `reference/experience/acceptance/kol_netdisk_717_decision_2026-07-20.json`, `reference/experience/acceptance/kol_netdisk_719_decision_2026-07-20.json`, and `reference/experience/acceptance/kol_netdisk_market_2026-07-20T1038.json`.
 - Ledger audit found no access/refresh token, cookie, `BDUSS`, `STOKEN`, auth material, household context/positions, transcript quote, or page query string. Only sanitized paths, hashes, states, and delivery/book summaries are durable.
 - Decision branch: both sources were actionable for current household posture. Knowledge branch: `knowledge_status=no_reusable_knowledge` for both because the small-position/wait-for-mainline lessons duplicate existing Xiaocao priors and add no novel falsifiable hypothesis; no knowledge file was changed.
-- Focused and full-suite test results, staged-index snapshot results, two-axis review findings, and the implementation commit are added after the final stable-index review.
+- Exact staged-index snapshot (`git checkout-index --all --prefix=<fresh-temp>/`): `tests/test_kol_enrichment.py tests/test_kol_netdisk_enrichment.py` -> `63 passed` in 1.45 seconds; full `tests/` -> `734 passed` in 15.61 seconds; `git diff --cached --check` -> clean.
+- Final Spec review: no remaining actionable findings. It confirmed optional/non-gating AI notes, one atomic OpenCLI URL/tab/text/render read, consistent policy documentation, corrected 717/719 evidence, both required outputs, and no Ticket 03–07, subscription, batch, scheduling, raw-CDP, or Computer Use implementation.
+- Final Standards review: all three P1 findings were fixed. No blocking finding remained; the only P2 judgement call is future maintainability work around the broad Netdisk service and repeated provider decision-finalization logic, intentionally not expanded inside Ticket 02. It also confirmed no staged scope leak or sensitive evidence.
+- Implementation commit: `ff64705` (`Implement deterministic Netdisk video enrichment`).
 
 ## Comments
 
