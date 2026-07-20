@@ -1,0 +1,25 @@
+{
+  "captured_at": "2026-07-20T15:05:54+08:00",
+  "source": "xiaocao_api",
+  "market_overview": {
+    "observed_at": "2026-07-20T15:05:54+08:00",
+    "level_zero": 74,
+    "positive_levels": [854, 505, 240, 99, 37, 5, 0],
+    "negative_levels": [903, 928, 905, 645, 323, 5, 0],
+    "positive_total": 1740,
+    "negative_total": 3709,
+    "classification": "broad_decline",
+    "interpretation": "收盘后下跌家数约为上涨家数的2.1倍，上午的有限修复未能维持。"
+  },
+  "category_rank_top": [
+    {"name": "**中市值股票", "num": 170.11, "prePctChangeRate": -4.48},
+    {"name": "人工智能", "num": 170.09, "prePctChangeRate": -4.96},
+    {"name": "业绩股权类", "num": 160.09, "prePctChangeRate": -4.08},
+    {"name": "算力芯片", "num": 160.09, "prePctChangeRate": -6.44},
+    {"name": "数字科技", "num": 160.08, "prePctChangeRate": -4.85}
+  ],
+  "endpoints": [
+    "/stock/market_overview",
+    "/stock/xiao_cao_block_category_rank_v3?date=2026-07-20&model=0"
+  ]
+}

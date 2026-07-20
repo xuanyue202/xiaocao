@@ -1,65 +1,66 @@
 # 02 — 百度网盘真实视频确定性富化到双输出闭环
 
-**What to build:** Use the logged-in OpenCLI browser bridge on the real Baidu Netdisk consumer page to take a runtime-named `-compressed.mp4` through upload-or-existing-file reconciliation, complete transcript readiness, deterministic complete-DOM capture, local verification, and ticket 01's household-advice and Book KOL-US outputs. Browser side effects and their asynchronous results are separate durable states. When the initial `文稿` DOM is proven complete, direct DOM capture is the primary path; explicit export/download remains a compatibility path for pages that cannot prove complete initial rendering. An already-present AI note may be reconciled as an optional sibling but can never gate, replace, shorten, reorder, or overwrite the transcript. Repeat the completed behaviour on a second real video. In the target deployment, Netdisk reconciliation, cloud AI work, small-document retrieval, analysis, notification, and paper execution belong to the 7×24 coordinator; any unavoidable large local upload belongs to the broadband media worker and crosses the boundary only through durable job/artifact references.
+**What to build:** Use the logged-in OpenCLI bridge on the real Baidu Netdisk consumer page to take a runtime-named `-compressed.mp4` through exact upload-or-existing-file reconciliation, real `文稿` generation, direct complete-transcript DOM capture, content verification, and ticket 01's household-advice and Book KOL-US outputs. Submit separate `tpl_no=1` `文稿笔记` generation, record submission, and continue without polling its asynchronous completion. AI-note content can never replace, shorten, reorder, or overwrite the complete transcript used for decisions. Repeat the completed behaviour on a second real video. Do not implement `.doc` export/download, live capture, subscriptions, batch processing, or scheduling in this ticket.
 
 **Blocked by:** Nothing. The Codex browser denial remains recorded as a surface-specific capability failure. The logged-in OpenCLI extension/daemon provides the permitted DOM route; no raw CDP, Computer Use, absolute coordinates, token extraction, or desktop workaround was used.
 
 **Status:** completed
 
-**Progress:** Ticket 01 is completed in commits `f892c86`, `a49462b`, and `8e92126`. Ticket 02 now has two real `baidu_consumer_page` jobs in `decided`: the requested 717 video and the corrected 719 video. OpenCLI 1.8.6 reads the already logged-in page, proves exact target URLs, reconciles the existing transcripts without regeneration, observes the existing AI notes as optional siblings, rejects virtualized/partial transcript DOM, writes immutable hash-bound text, validates opening/middle/ending excerpts, reads fresh market and household context, sends a real household message, and records a paper-only Book KOL-US fill or no-trade. Three-attempt bounded retry handles transient read-only OpenCLI timeouts; failures are appended and later success clears transient error fields. The export/download state machine remains tested for compatibility but is not invoked after successful complete-DOM proof. No Computer Use or ticket 03–07 work was performed.
+**Progress:** Ticket 01 is already completed. Ticket 02 now has both required classes of real evidence: a fresh 6/28 derivative was absent, uploaded, reached real `文稿`, submitted for `文稿笔记`, captured completely from the initial DOM, verified, notified, and decided; the already-generated 7/17 and 7/19 videos prove the exact-target reuse path and second-video behaviour. The earlier `.doc` experiment was a discarded debugging side effect and is not part of the implementation or acceptance path.
 
 ## Acceptance
 
-- [x] Runtime-named `-compressed.mp4` inputs are hashed and probed without a hard-coded dated implementation; existing Netdisk copies are reused only after exact target binding.
-- [x] The provider remains `baidu_consumer_page`; it never silently switches to AASR, raw CDP, Computer Use, absolute coordinates, or an unbound API result.
-- [x] Every actual browser side effect requires a durable pre-action claim. These two jobs reconciled already-ready transcripts and merely observed existing AI notes, so no generation/export click was repeated.
-- [x] Completed page transitions record exact basename, canonical state, observation time, sanitized path, and snapshot SHA-256; exact player query basenames are validated before query stripping.
-- [x] Both real pages visibly reached complete transcript ready; their already-present AI notes remained optional sibling evidence and did not gate transcript capture.
-- [x] Direct capture proves the transcript is initially fully rendered: unique list, `scrollTop=0`, nontrivial counts, below-viewport last sentence already in DOM, no virtual/loading/load-more markers, exact immutable text hash. Legacy export/download remains a fail-closed compatibility path.
-- [x] Content verification proves opening, middle, and ending excerpts and binds the audit to both video and transcript SHA-256.
-- [x] Each verified transcript reached ticket 01's source-neutral contract, a real household WeChat receipt, and a `book=KOL-US`, `paper_only=true` explicit no-trade outcome.
-- [x] The second real video has distinct video, DOM-capture, transcript, audit, decision-bundle, household, and Book KOL-US evidence.
-- [x] Browser/API/interface failures append explicitly without secrets, cookies, query strings, household positions, or transcript content entering the Netdisk ledger.
-- [x] The coordinator can resume from cloud video plus lightweight job/artifact references; large local upload remains assigned to the broadband media worker when needed.
-- [x] No live capture, subscription access, batch ingestion, or scheduling was implemented; no files under tickets 03–07 were modified.
-- [x] Focused tests, full suite, two-axis review, requirement evidence, and implementation commit are recorded below.
+- [x] Runtime-named `-compressed.mp4` inputs are hashed and probed without a hard-coded dated implementation; an existing cloud copy is reused only after exact basename binding.
+- [x] The mandatory provider remains `baidu_consumer_page`; it never silently switches to AASR, raw CDP, Computer Use, absolute coordinates, or an unbound API result.
+- [x] Every actual browser side effect has a durable pre-action claim. Upload, transcript generation, and `tpl_no=1` AI-note submission are separate checkpoints; AI-note completion is non-gating and is not polled.
+- [x] The fresh 6/28 derivative was uploaded when absent, reached real `文稿` ready, then reached direct DOM capture without export or download.
+- [x] DOM capture opens the exact player, handles only semantically identified ad overlays, never refreshes, and proves a unique complete initial transcript: `scrollTop=0`, nontrivial counts, final sentence already present below the viewport, no virtual/loading/load-more markers, and immutable text hash.
+- [x] Content verification checks opening, middle, and ending excerpts and binds the audit to both video and transcript SHA-256.
+- [x] Each accepted real transcript reaches ticket 01's source-neutral contract, a real household WeChat receipt, and `book=KOL-US`, `paper_only=true`, with either a fill or explicit nonempty `no_trade.reason`.
+- [x] The second-video path has distinct real video, DOM capture, transcript, audit, decision, household, and Book KOL-US evidence.
+- [x] Browser/API failures append explicitly without persisting cookies, tokens, page query strings, transcript text, or household positions in the Netdisk ledger.
+- [x] No live capture, subscription access, batch ingestion, or scheduling was implemented, and tickets 03–07 were not modified by this ticket.
+- [x] Focused tests, full suite, two-axis review, and the implementation commit are recorded in the completion handoff.
 
 ## Verification evidence
 
-### Real video 717
+### Fresh real video 628 — upload, real 文稿 DOM, decisions
 
-- Source: `/Users/bytedance/Downloads/鹅直播视频/20260717 盘前大师班直播(7月17日)-compressed.mp4`; job `kol-netdisk-a3c24ce8f0841ed4`.
-- Video: SHA-256 `a3c24ce8f0841ed44eb46593b599ca576556617b79497cde9eccce14c1f45e81`; 2,192.547945 seconds; 86,388,665 bytes.
-- Existing cloud children were reused without regeneration. OpenCLI complete-render proof: 3,849 characters, 32 paragraphs, 468 sentences, `scrollTop=0`, last sentence present below the initial viewport, and no virtual/loading/load-more marker.
-- Transcript SHA-256 `790eaede3d920f31e9842b83e31f56ba28d98d7a0e685690258fd4ba89522d2e`; DOM-capture SHA-256 `192bb4fb2ce77c637c2f02ade5102819d655f7a25252eaa458b1d00151fc5f38`; three-position audit SHA-256 `6183b743f560d69a774508a3a6e75504d0fc811e440617003f630a6667d96e22`.
-- Household receipt: `wecom-relay://ok/93e48db878dbf512e6c5cb973bad99aead17d7afa8661a9aa342bb0a316c4766/c34827dca68a2087`.
-- Book outcome: `book=KOL-US`, `paper_only=true`, `decision=no_trade`, idempotency key `97cc…`; reason: the source described only an A-share repair/small-position setup and supplied no unambiguous US-listed target, price, or trigger.
-- Final state `decided`; a sequential rerun returned `idempotent_replay=true`.
+- Local source: `/private/tmp/20260628 大师班专场-ticket02-final-runtime-v3-20260720-compressed.mp4`; isolated acceptance ledger `output/live/kol_netdisk_enrichment_ticket02_final_v3/events.jsonl`; job `kol-netdisk-ae83a04afdc99894`.
+- Video SHA-256 `ae83a04afdc9989467dd754434d5156c00eb5f3a7e3ded012f104e91f9d3d48c`; 624.082474 seconds; 41,539,718 bytes.
+- Exact cloud basename was absent before mutation. The prepare-bound source was re-hashed from one descriptor and copied to a private immutable same-basename snapshot used by both the standard OpenCLI attempt and loopback fallback. Loopback DOM-file upload was submitted at `2026-07-20T18:13:00+08:00`; the exact uploaded file was reconciled at `18:13:35` and its already-available real `文稿` was observed at `18:13:58`; `tpl_no=1` AI-note submission was recorded at `18:18:43` and was not polled.
+- Complete-render proof at `18:18:59`: 2,014 characters, 17 paragraphs, 247 sentences, `scrollTop=0`, last sentence present below the initial viewport, no virtual/loading/load-more markers. Transcript SHA-256 `42b126d37fcf16b549102b12cfe0c6da50b54e27582a3ce7d2511733921b6b27`; DOM-capture SHA-256 `9a5cd441b538926a5d2fd765345b7db4a9f204f4bce6dbdc438c31738f5c5fe5`.
+- Opening/middle/ending audit SHA-256 `f957908501f4f35f00f0b59d85fdb5d8e9427f68ef5bc8a9b70b0273935fb49e`, bound to both source and transcript hashes.
+- Household reminder was delivered with receipt `wecom-relay://ok/4ec310…/3153ecceb5c5031a`; Book outcome is `book=KOL-US`, `paper_only=true`, `status=no_trade`, idempotency key `431fb1…`. Reason: the source's A-share storage-chip next-day condition had expired and supplied no unambiguous US ticker, current price, or still-valid trigger.
+- Final state is `decided`. The current market check at `2026-07-20T15:05:54+08:00` showed 1,740 advancing and 3,709 declining names; AI, compute-chip, and digital-tech category returns were all negative, so the old conditional-long signal was invalidated rather than replayed.
 
-### Real video 719
+### Second real video 719 — current implementation rerun
 
-- Source: `/Users/bytedance/Downloads/鹅直播视频/20260719 大师班专场(晚18：00开播)-compressed.mp4`; job `kol-netdisk-be3e15d292b984e0`.
-- Video: SHA-256 `be3e15d292b984e0d71b1ba9adc25b293de4e1152cdfe24d9870a1ba5078e79b`; 6,315.42268 seconds; 516,505,681 bytes. The cloud player showed 01:45:16 and the existing transcript/AI note were reused without regeneration.
-- OpenCLI complete-render proof: 33,160 characters, 225 paragraphs, 3,363 sentences, `scrollTop=0`, last sentence present below the initial viewport, and no virtual/loading/load-more marker.
-- Transcript SHA-256 `4ac93b6aa5c60e3fded7f103e89d58b4c8e7caa2516210d238d38d4f9fc37c76`; DOM-capture SHA-256 `f8f620919ae0e0c5c924502cba8e8da8f80792d1d595b77eef6767e5b4c1e5b5`; three-position audit SHA-256 `38ee9816d2f82538d704140cc2cfe7723cb72e2c2fa8c084f2a8d752356289d8`.
-- Household receipt: `wecom-relay://ok/0c7d254a58fbfd41e57c3ad086f739997204b8b76cde47ac08f9dadbeed9e2de/a994892fe0ca1f0e`.
-- Book outcome: `book=KOL-US`, `paper_only=true`, `decision=no_trade`, idempotency key `6b32…`; reason: the A-share small-cap-technology thesis had not completed its trigger and supplied no unambiguous US-listed target/price pair.
-- Final state `decided`; a sequential rerun returned `idempotent_replay=true`.
+- Source: `/Users/bytedance/Downloads/鹅直播视频/20260719 大师班专场(晚18：00开播)-compressed.mp4`; isolated acceptance ledger `output/live/kol_netdisk_enrichment_ticket02_second_v3/events.jsonl`; job `kol-netdisk-be3e15d292b984e0`.
+- The exact existing cloud video was reconciled without upload. Final code observed the complete transcript, recorded a fresh `tpl_no=1` submission at `18:18:13`, and continued directly to DOM capture without polling AI-note completion.
+- Complete-render proof at `18:18:28`: 33,160 characters, 225 paragraphs, 3,363 sentences, `scrollTop=0`, final sentence initially below the viewport, no virtual/loading/load-more markers. Transcript SHA-256 `4ac93b6aa5c60e3fded7f103e89d58b4c8e7caa2516210d238d38d4f9fc37c76`; DOM-capture SHA-256 `b1b9e8c580a195a6fd5a1c6ec1e08f960604258ed2ae303e0b1fac2dfe46b260`; audit SHA-256 `38ee9816d2f82538d704140cc2cfe7723cb72e2c2fa8c084f2a8d752356289d8`.
+- Household reminder was delivered with receipt `wecom-relay://ok/57f4e7…/e2dedfa7c497fa70`; Book outcome is `book=KOL-US`, `paper_only=true`, `status=no_trade`, idempotency key `b961d7…`. Reason: the A-share small-tech candidate had not triggered and provided no unambiguous US ticker/current-price pair.
+- Final state is `decided`; a sequential rerun returned `idempotent_replay=true` without duplicate delivery or Book entry.
 
-### Shared validation
+### Committed acceptance inputs
 
-- Fresh market snapshot at `2026-07-20T10:38:36+08:00`: advancing 2,846, declining 2,575, positive/negative level-seven counts both zero. The two recommendations therefore treated the tape as limited repair, not a confirmed strong trend.
-- Both decision bundles passed source-neutral preflight with a fresh LiangHui MCP household-context read. The committed acceptance inputs are `reference/experience/acceptance/kol_netdisk_717_decision_2026-07-20.json`, `reference/experience/acceptance/kol_netdisk_719_decision_2026-07-20.json`, and `reference/experience/acceptance/kol_netdisk_market_2026-07-20T1038.json`.
-- Ledger audit found no access/refresh token, cookie, `BDUSS`, `STOKEN`, auth material, household context/positions, transcript quote, or page query string. Only sanitized paths, hashes, states, and delivery/book summaries are durable.
-- Decision branch: both sources were actionable for current household posture. Knowledge branch: `knowledge_status=no_reusable_knowledge` for both because the small-position/wait-for-mainline lessons duplicate existing Xiaocao priors and add no novel falsifiable hypothesis; no knowledge file was changed.
-- Exact staged-index snapshot (`git checkout-index --all --prefix=<fresh-temp>/`): `tests/test_kol_enrichment.py tests/test_kol_netdisk_enrichment.py` -> `63 passed` in 1.45 seconds; full `tests/` -> `734 passed` in 15.61 seconds; `git diff --cached --check` -> clean.
-- Final Spec review: no remaining actionable findings. It confirmed optional/non-gating AI notes, one atomic OpenCLI URL/tab/text/render read, consistent policy documentation, corrected 717/719 evidence, both required outputs, and no Ticket 03–07, subscription, batch, scheduling, raw-CDP, or Computer Use implementation.
-- Final Standards review: all three P1 findings were fixed. No blocking finding remained; the only P2 judgement call is future maintainability work around the broad Netdisk service and repeated provider decision-finalization logic, intentionally not expanded inside Ticket 02. It also confirmed no staged scope leak or sensitive evidence.
-- Implementation commit: `ff64705` (`Implement deterministic Netdisk video enrichment`).
+- `reference/experience/acceptance/kol_netdisk_628_audit_2026-07-20.json`
+- `reference/experience/acceptance/kol_netdisk_628_decision_2026-07-20.json`
+- `reference/experience/acceptance/kol_netdisk_719_final_audit_2026-07-20.json`
+- `reference/experience/acceptance/kol_netdisk_719_final_decision_2026-07-20.json`
+- `reference/experience/acceptance/kol_netdisk_market_2026-07-20T1505.json`
 
-## Comments
+### Validation and review
 
-- 2026-07-19: Research established that Netdisk “文稿笔记” may be structured/summary content, so the downloaded complete transcript and the AI note are validated as separate children. Historical `20260628` Word material is reference-only and cannot substitute for this fresh browser run.
-- 2026-07-19: Browser security policy denial is a real execution blocker. The implementation records it and stops rather than using Computer Use or another browser surface as a covert fallback.
-- 2026-07-20: OpenCLI was installed and connected after the Codex-surface denial. It read the logged-in consumer-page DOM without extracting credentials and proved that both target transcript lists were fully present in the initial DOM, so direct capture replaced unnecessary export/download work for these jobs.
-- 2026-07-20: The 719 correction supersedes the earlier prepared 628 candidate; no 628 artifact is used as Ticket 02 acceptance evidence.
+- Both isolated ledgers contain exactly the required semantic events. Neither contains `.doc`/export/download events, AI-note completion polling, raw snapshot text, page query strings, cookies, tokens, or credentials.
+- Claim replay tests prove that an uncertain upload, transcript, or AI-note claim can only reconcile real page state and cannot repeat a side effect. Upload tests re-hash the source descriptor, bind a private immutable snapshot across direct and fallback runtimes, verify browser-reported size, reject a source changed after prepare, and durably record a sanitized failure if the page route changes or the OpenCLI injection fails.
+- Full player paths are verified before every DOM mutation; same-basename/wrong-directory tests fail before ad handling or tab activation. Folder inspection walks all pages and rejects an incomplete scan. Standard upload is bound after snapshot creation to a one-shot marked input with a capture-phase route guard; loopback validates the same folder inside its single DOM action.
+- Advertisement handling clicks a semantically identified close control first and hides only the same still-visible identified ad overlay; it never refreshes the player.
+- Focused `tests/test_kol_enrichment.py tests/test_kol_netdisk_enrichment.py`: `67 passed`. The current full suite has `756 passed, 31 failed`; every failure is in the already-completed Ticket 01 `tests/test_kol_decisions.py`, whose fixed `checked_at=2026-07-19T18:00:00+08:00` fixture crossed the production 24-hour freshness gate during this run. Excluding that stale fixture file, `746 passed`. `compileall`, `ruff check`, `git diff --cached --check`, secret scan, and both real-run idempotency checks passed.
+- Initial Spec and Standards reviews found the AI-note bypass, dirty historical acceptance chain, incomplete player-path binding, replayed side effects, mutable upload source, first-page-only inspection, overly broad ad fallback, and upload-route race/failure-ledger gaps. All findings were fixed and regression-tested; the final Spec and Standards reviews reported no actionable findings.
+
+## Scope notes
+
+- The direct DOM transcript is the canonical Ticket 02 path. `.doc` export, cloud-document download, and local Word parsing were removed from code, CLI, tests, skill instructions, and acceptance criteria.
+- Knowledge branch result for the fresh 6/28 source: `knowledge_status=no_reusable_knowledge`; its trend-tail, wait-for-confirmation, and exit-on-failure lessons duplicate existing Xiaocao priors, so no authority-0 hypothesis was added.
+- Ticket 03–07 work remains untouched and out of scope.

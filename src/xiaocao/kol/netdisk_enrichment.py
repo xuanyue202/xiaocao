@@ -3,14 +3,19 @@
 from __future__ import annotations
 
 import hashlib
+import http.server
 import json
+import os
 import re
+import secrets
 import shutil
 import subprocess
+import tempfile
+import threading
 from datetime import datetime, timedelta, timezone
-from pathlib import Path, PurePosixPath
-from typing import Any, Callable
-from urllib.parse import parse_qs, urlsplit, urlunsplit
+from pathlib import Path
+from typing import Any, BinaryIO, Callable
+from urllib.parse import parse_qs, quote, urlsplit, urlunsplit
 
 from .enrichment_store import EnrichmentJobStore
 from .enrichment_types import (
@@ -22,10 +27,79 @@ from .enrichment_types import (
 
 _SHA256 = re.compile(r"^[0-9a-f]{64}$")
 _OPENCLI_SESSION = re.compile(r"^[A-Za-z0-9_.-]{1,64}$")
-_OPENCLI_CAPTURE_PROBE = """(() => {
-  const active = document.querySelector('.vp-tabs__header-item--active');
-  const scroller = document.querySelector('.ai-draft__wrap-content');
-  const list = document.querySelector('.ai-draft__wrap-list');
+_OPENCLI_PROFILE = re.compile(r"^[A-Za-z0-9_.-]{1,128}$")
+_NETDISK_DIRECTORY = "/课程/自己的课/小草"
+_NETDISK_FOLDER_URL = (
+    "https://pan.baidu.com/disk/main#/index?category=all&path="
+    "%2F%E8%AF%BE%E7%A8%8B%2F%E8%87%AA%E5%B7%B1%E7%9A%84%E8%AF%BE%2F%E5%B0%8F%E8%8D%89"
+)
+_OPENCLI_CAPTURE_PROBE = r"""(async () => {
+  const expectedPath = __EXPECTED_NETDISK_PATH__;
+  const currentUrl = new URL(location.href);
+  const targetBound = currentUrl.origin === 'https://pan.baidu.com'
+    && currentUrl.pathname === '/pfile/video'
+    && currentUrl.searchParams.getAll('path').length === 1
+    && currentUrl.searchParams.get('path') === expectedPath;
+  if (!targetBound) return {url: location.href, target_bound: false};
+  const visible = node => {
+    const rect = node.getBoundingClientRect();
+    const style = getComputedStyle(node);
+    return rect.width > 0 && rect.height > 0
+      && style.display !== 'none' && style.visibility !== 'hidden';
+  };
+  const adPattern = /广告|限时特惠|下载客户端|开通\s*(?:SVIP|超级会员)|SVIP\s*(?:活动|特惠|优惠)/i;
+  const overlaySelector = [
+    '[role="dialog"]',
+    '[class*="modal"]',
+    '[class*="popup"]',
+    '[class*="advert"]',
+    '[class*="promotion"]',
+    '[class*="pay-revolution"]',
+    '[class*="vip-dialog"]'
+  ].join(',');
+  let ad_overlays_dismissed = 0;
+  for (const overlay of [...document.querySelectorAll(overlaySelector)]) {
+    const text = (overlay.innerText || '').trim();
+    const identity = `${overlay.className || ''} ${text}`;
+    if (!visible(overlay) || !adPattern.test(identity)) continue;
+    const close = [...overlay.querySelectorAll(
+      'button,[role="button"],[aria-label],[title],[class*="close"]'
+    )].find(node => {
+      const label = `${node.getAttribute('aria-label') || ''} `
+        + `${node.getAttribute('title') || ''} `
+        + `${node.className || ''} ${(node.textContent || '').trim()}`;
+      return visible(node) && /关闭|close|×|^x$/i.test(label);
+    });
+    if (close) {
+      close.click();
+      await new Promise(resolve => setTimeout(resolve, 100));
+    }
+    if (document.contains(overlay) && visible(overlay)) {
+      overlay.style.setProperty('display', 'none', 'important');
+      overlay.setAttribute('aria-hidden', 'true');
+    }
+    ad_overlays_dismissed += 1;
+  }
+  const tabs = [...document.querySelectorAll('.vp-tabs__header-item')];
+  const transcriptTabs = tabs.filter(
+    node => (node.textContent || '').trim() === '文稿'
+  );
+  if (transcriptTabs.length === 1
+      && !transcriptTabs[0].classList.contains('vp-tabs__header-item--active')) {
+    transcriptTabs[0].click();
+  }
+  const deadline = Date.now() + 20000;
+  let active = null;
+  let scroller = null;
+  let list = null;
+  while (Date.now() < deadline) {
+    active = document.querySelector('.vp-tabs__header-item--active');
+    scroller = document.querySelector('.ai-draft__wrap-content');
+    list = document.querySelector('.ai-draft__wrap-list');
+    if ((active?.textContent || '').trim() === '文稿'
+        && (list?.innerText || '').trim().length >= 200) break;
+    await new Promise(resolve => setTimeout(resolve, 200));
+  }
   const paragraphs = list ? [...list.querySelectorAll('.ai-draft__p-paragraph')] : [];
   const sentences = list ? [...list.querySelectorAll('.ai-draft__p-sentence')] : [];
   const last = sentences.at(-1);
@@ -43,6 +117,8 @@ _OPENCLI_CAPTURE_PROBE = """(() => {
   const text = (list?.innerText || '').trim();
   return {
     url: location.href,
+    target_bound: true,
+    ad_overlays_dismissed,
     active: {
       matches: document.querySelectorAll('.vp-tabs__header-item--active').length,
       text: active?.textContent || ''
@@ -68,25 +144,32 @@ _OPENCLI_CAPTURE_PROBE = """(() => {
     }
   };
 })()"""
-_ACTIONS = {"upload", "transcript", "ai_note", "export", "download"}
+_ACTIONS = {"upload", "transcript", "ai_note"}
 _CAPABILITY_FAILURES = {
     "browser_security_policy_denied",
     "authentication_required",
     "captcha_required",
     "page_contract_changed",
 }
+_LOOPBACK_UPLOAD_FAILURES = {
+    "wrong_folder",
+    "input_missing",
+    "loopback_fetch_failed",
+    "wrong_folder_after_fetch",
+}
 _STATE_PREDECESSORS = {
     "transcript_requested": "transcript_claimed",
     "transcript_ready": "transcript_requested",
     "ai_note_requested": "ai_note_claimed",
     "ai_note_ready": "ai_note_requested",
-    "export_ready": "export_claimed",
-    "cloud_document_ready": "export_ready",
-    "download_requested": "download_claimed",
 }
 _RECONCILIATION_PREDECESSORS = {
     "transcript_ready": {"video_ready", "transcript_claimed", "transcript_requested"},
     "ai_note_ready": {"transcript_ready", "ai_note_claimed", "ai_note_requested"},
+}
+_DIRECT_READY_PREDECESSORS = {
+    "transcript_ready": "transcript_claimed",
+    "ai_note_ready": "ai_note_claimed",
 }
 _STATE_ORDER = [
     "prepared",
@@ -98,12 +181,7 @@ _STATE_ORDER = [
     "ai_note_claimed",
     "ai_note_requested",
     "ai_note_ready",
-    "export_claimed",
-    "export_ready",
-    "cloud_document_ready",
-    "download_claimed",
-    "download_requested",
-    "downloaded",
+    "transcript_captured",
     "verified",
     "decided",
 ]
@@ -113,16 +191,12 @@ _VISIBLE_STATE_MARKERS = {
     "transcript_ready": "transcript_ready",
     "ai_note_requested": "ai_note_generating",
     "ai_note_ready": "ai_note_ready",
-    "export_ready": "transcript_exported",
-    "cloud_document_ready": "cloud_document_present",
-    "download_requested": "download_started",
 }
 _PLAYER_STEPS = {
     "transcript_requested",
     "transcript_ready",
     "ai_note_requested",
     "ai_note_ready",
-    "export_ready",
 }
 _VISIBLE_STATE_PATTERNS = {
     "video_ready": re.compile(
@@ -136,21 +210,13 @@ _VISIBLE_STATE_PATTERNS = {
         r"文稿.{0,48}(?:已生成|生成完成|已完成|"
         r"content_chars=[1-9]\d{2,}.{0,32}export_available)"
     ),
-    "ai_note_requested": re.compile(r"AI\s*笔记.{0,24}(?:生成中|处理中)", re.IGNORECASE),
+    "ai_note_requested": re.compile(
+        r"AI\s*笔记.{0,24}(?:生成中|处理中|生成已提交)", re.IGNORECASE
+    ),
     "ai_note_ready": re.compile(
         r"AI\s*笔记.{0,48}(?:已生成|生成完成|已完成|"
         r"content_chars=[1-9]\d{2,}.{0,32}export_available)",
         re.IGNORECASE,
-    ),
-    "export_ready": re.compile(r"(?:文稿.{0,24})?已导出"),
-    "cloud_document_ready": re.compile(
-        r"(?:同名文稿|(?:^|\n)\s*[-*]?\s*"
-        r"(?:row|listitem|checkbox)(?=\s|[\"':=])|role\s*=\s*[\"']?"
-        r"(?:row|listitem|checkbox)(?=\s|[\"':=]))",
-        re.IGNORECASE,
-    ),
-    "download_requested": re.compile(
-        r"(?:下载.{0,24}(?:已开始|下载中)|已添加.{0,24}传输|传输.{0,24}进行中)"
     ),
 }
 _TRANSIENT_FAILURE_FIELDS = {
@@ -170,13 +236,22 @@ def _sha256_file(path: Path) -> str:
     return digest.hexdigest()
 
 
+def _sha256_handle(handle: BinaryIO) -> str:
+    digest = hashlib.sha256()
+    handle.seek(0)
+    for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+        digest.update(chunk)
+    handle.seek(0)
+    return digest.hexdigest()
+
+
 def _clear_transient_failures(row: dict[str, Any]) -> None:
     for field in _TRANSIENT_FAILURE_FIELDS:
         row.pop(field, None)
 
 
 class NetdiskEnrichmentService:
-    """Record browser actions only when backed by real page/download evidence."""
+    """Record browser actions only when backed by real page/DOM evidence."""
 
     def __init__(
         self,
@@ -191,10 +266,11 @@ class NetdiskEnrichmentService:
         self.events_path = self.store.events_path
         self.runner = runner
         self.now = now or (lambda: datetime.now(timezone.utc).astimezone())
+        installed_opencli = shutil.which("opencli")
         self.opencli_command = opencli_command or (
-            "npx",
-            "--yes",
-            "@jackwener/opencli@1.8.6",
+            (installed_opencli,)
+            if installed_opencli
+            else ("npx", "--yes", "@jackwener/opencli@1.8.6")
         )
 
     def _time(self) -> datetime:
@@ -220,21 +296,1286 @@ class NetdiskEnrichmentService:
             raise EnrichmentError(f"external command failed: {command[0]}")
         return result
 
-    def _run_opencli(self, session: str, *args: str) -> Any:
+    def _opencli_process(
+        self,
+        session: str,
+        *args: str,
+        profile: str | None = None,
+        timeout_seconds: int = 30,
+    ) -> Any:
+        if not _OPENCLI_SESSION.fullmatch(session):
+            raise EnrichmentError("OpenCLI session name is invalid")
+        if profile is not None and not _OPENCLI_PROFILE.fullmatch(profile):
+            raise EnrichmentError("OpenCLI profile name is invalid")
         command = [
             *self.opencli_command,
+            *(["--profile", profile] if profile else []),
             "browser",
             session,
             *args,
         ]
+        runner_kwargs: dict[str, Any] = {
+            "capture_output": True,
+            "text": True,
+            "check": False,
+            "timeout": timeout_seconds,
+        }
+        try:
+            return self.runner(command, **runner_kwargs)
+        except subprocess.TimeoutExpired as exc:
+            raise EnrichmentError("OpenCLI browser command timed out") from exc
+
+    def _run_opencli(
+        self,
+        session: str,
+        *args: str,
+        profile: str | None = None,
+        timeout_seconds: int = 10,
+        attempts: int = 3,
+    ) -> Any:
         last_error: EnrichmentError | None = None
-        for _attempt in range(3):
+        for _attempt in range(attempts):
             try:
-                return self._run(command, timeout_seconds=10)
+                result = self._opencli_process(
+                    session,
+                    *args,
+                    profile=profile,
+                    timeout_seconds=timeout_seconds,
+                )
+                if result.returncode != 0:
+                    raise EnrichmentError("OpenCLI browser command failed")
+                return result
             except EnrichmentError as exc:
                 last_error = exc
         assert last_error is not None
         raise last_error
+
+    def _opencli_json(
+        self,
+        session: str,
+        *args: str,
+        profile: str | None = None,
+        timeout_seconds: int = 10,
+        attempts: int = 3,
+    ) -> dict[str, Any]:
+        result = self._run_opencli(
+            session,
+            *args,
+            profile=profile,
+            timeout_seconds=timeout_seconds,
+            attempts=attempts,
+        )
+        try:
+            payload = json.loads(str(result.stdout))
+        except (TypeError, json.JSONDecodeError) as exc:
+            raise EnrichmentError("OpenCLI returned invalid JSON") from exc
+        if not isinstance(payload, dict):
+            raise EnrichmentError("OpenCLI returned a non-object result")
+        return payload
+
+    @staticmethod
+    def _browser_proof(
+        *,
+        target_name: str,
+        visible_state: str,
+        state_text: str,
+        observed_at: datetime,
+        page_url: str,
+    ) -> dict[str, str]:
+        snapshot_text = f"{target_name}\n{state_text}"
+        return {
+            "page_url": page_url,
+            "target_name": target_name,
+            "visible_state": visible_state,
+            "snapshot_text": snapshot_text,
+            "target_region_text": snapshot_text,
+            "snapshot_sha256": hashlib.sha256(
+                snapshot_text.encode("utf-8")
+            ).hexdigest(),
+            "observed_at": observed_at.isoformat(timespec="microseconds"),
+        }
+
+    def _inspect_opencli_target(
+        self,
+        *,
+        session: str,
+        profile: str | None,
+        target_name: str,
+    ) -> dict[str, Any]:
+        self._opencli_json(
+            session,
+            "open",
+            _NETDISK_FOLDER_URL,
+            profile=profile,
+            timeout_seconds=30,
+        )
+        script = """(async () => {
+  const dir = %s;
+  const target = %s;
+  const currentUrl = new URL(location.href);
+  const hashQuery = currentUrl.hash.includes('?')
+    ? currentUrl.hash.slice(currentUrl.hash.indexOf('?') + 1)
+    : '';
+  const currentDir = new URLSearchParams(hashQuery).get('path');
+  const folderBound = currentUrl.origin === 'https://pan.baidu.com'
+    && currentUrl.pathname === '/disk/main'
+    && currentDir === dir;
+  if (!folderBound) {
+    return {
+      page_url: location.origin + location.pathname,
+      errno: 0,
+      exact_count: 0,
+      target_name: target,
+      target_index: -1,
+      pages_scanned: 0,
+      complete_scan: false,
+      folder_bound: false
+    };
+  }
+  const pageSize = 1000;
+  const maxPages = 100;
+  let page = 1;
+  let errno = 0;
+  let exactCount = 0;
+  let targetIndex = -1;
+  let scanned = 0;
+  let completeScan = false;
+  while (page <= maxPages) {
+    const url = '/api/list?clienttype=0&app_id=250528&web=1'
+      + '&order=name&desc=1&dir=' + encodeURIComponent(dir)
+      + '&num=' + pageSize + '&page=' + page;
+    const response = await fetch(url, {credentials: 'include'});
+    const body = await response.json();
+    errno = body.errno;
+    if (errno !== 0) break;
+    const items = body.list || [];
+    items.forEach((item, index) => {
+      if (item.server_filename === target) {
+        exactCount += 1;
+        if (targetIndex < 0) targetIndex = scanned + index;
+      }
+    });
+    scanned += items.length;
+    const hasMore = body.has_more === 1 || body.has_more === true;
+    if (!hasMore && items.length < pageSize) {
+      completeScan = true;
+      break;
+    }
+    if (items.length === 0) {
+      completeScan = true;
+      break;
+    }
+    page += 1;
+  }
+  return {
+    page_url: location.origin + location.pathname,
+    errno,
+    exact_count: exactCount,
+    target_name: target,
+    target_index: targetIndex,
+    pages_scanned: page,
+    complete_scan: completeScan,
+    folder_bound: true
+  };
+})()""" % (json.dumps(_NETDISK_DIRECTORY), json.dumps(target_name))
+        payload = self._opencli_json(
+            session,
+            "eval",
+            script,
+            profile=profile,
+            timeout_seconds=30,
+            attempts=3,
+        )
+        if payload.get("errno") != 0:
+            raise EnrichmentError("Netdisk file-list API inspection failed")
+        if payload.get("target_name") != target_name:
+            raise EnrichmentError("Netdisk target inspection was not exact")
+        if payload.get("folder_bound") is not True:
+            raise EnrichmentError("OpenCLI is not in the prepared Netdisk folder")
+        if payload.get("complete_scan") is not True:
+            raise EnrichmentError("Netdisk target inspection did not scan the full folder")
+        try:
+            exact_count = int(payload.get("exact_count"))
+        except (TypeError, ValueError) as exc:
+            raise EnrichmentError("Netdisk target inspection count is invalid") from exc
+        if exact_count not in {0, 1}:
+            raise EnrichmentError("Netdisk target name is ambiguous")
+        try:
+            target_index = int(payload.get("target_index", -1))
+        except (TypeError, ValueError) as exc:
+            raise EnrichmentError("Netdisk target inspection index is invalid") from exc
+        if exact_count == 1 and target_index < 0:
+            target_index = 0
+        return {
+            "exact_count": exact_count,
+            "target_index": target_index,
+            "observed_at": self._time(),
+        }
+
+    def _assert_opencli_folder(
+        self,
+        *,
+        session: str,
+        profile: str | None,
+    ) -> None:
+        script = """(() => {
+  const expectedDir = %s;
+  const currentUrl = new URL(location.href);
+  const hashQuery = currentUrl.hash.includes('?')
+    ? currentUrl.hash.slice(currentUrl.hash.indexOf('?') + 1)
+    : '';
+  const currentDir = new URLSearchParams(hashQuery).get('path');
+  return {
+    folder_bound: currentUrl.origin === 'https://pan.baidu.com'
+      && currentUrl.pathname === '/disk/main'
+      && currentDir === expectedDir
+  };
+})()""" % json.dumps(_NETDISK_DIRECTORY)
+        payload = self._opencli_json(
+            session,
+            "eval",
+            script,
+            profile=profile,
+            timeout_seconds=30,
+            attempts=1,
+        )
+        if payload.get("folder_bound") is not True:
+            raise EnrichmentError("OpenCLI is not in the prepared Netdisk folder")
+
+    def _mark_opencli_upload_input(
+        self,
+        *,
+        session: str,
+        profile: str | None,
+        marker: str,
+    ) -> str:
+        script = """(() => {
+  const expectedDir = %s;
+  const marker = %s;
+  const folderBound = () => {
+    const currentUrl = new URL(location.href);
+    const hashQuery = currentUrl.hash.includes('?')
+      ? currentUrl.hash.slice(currentUrl.hash.indexOf('?') + 1)
+      : '';
+    return currentUrl.origin === 'https://pan.baidu.com'
+      && currentUrl.pathname === '/disk/main'
+      && new URLSearchParams(hashQuery).get('path') === expectedDir;
+  };
+  if (!folderBound()) return {marked: false, reason: 'wrong_folder'};
+  const inputs = [...document.querySelectorAll(
+    'input[type="file"][title="点击选择文件"][accept="*/*"]'
+  )].filter(input => !input.hasAttribute('webkitdirectory'));
+  if (inputs.length < 1) return {marked: false, reason: 'input_missing'};
+  const input = inputs[0];
+  input.setAttribute('data-xiaocao-upload-marker', marker);
+  const blockWrongFolder = event => {
+    if (folderBound()) return;
+    input.value = '';
+    event.stopImmediatePropagation();
+  };
+  input.addEventListener('input', blockWrongFolder, {capture: true, once: true});
+  input.addEventListener('change', blockWrongFolder, {capture: true, once: true});
+  window.addEventListener('hashchange', () => {
+    input.removeAttribute('data-xiaocao-upload-marker');
+    input.value = '';
+  }, {once: true});
+  return {marked: true, matches: 1};
+})()""" % (json.dumps(_NETDISK_DIRECTORY), json.dumps(marker))
+        payload = self._opencli_json(
+            session,
+            "eval",
+            script,
+            profile=profile,
+            timeout_seconds=30,
+            attempts=1,
+        )
+        if payload.get("marked") is not True or payload.get("matches") != 1:
+            raise EnrichmentError("OpenCLI upload input could not be bound to the folder")
+        return f'input[data-xiaocao-upload-marker="{marker}"]'
+
+    def _record_opencli_liveness(
+        self,
+        job_id: str,
+        *,
+        target_name: str,
+        target_present: bool,
+        observed_at: datetime,
+    ) -> dict[str, Any]:
+        snapshot_text = (
+            "https://pan.baidu.com/disk/main|"
+            f"{_NETDISK_DIRECTORY}|opencli|target_"
+            f"{'present' if target_present else 'absent'}:{target_name}"
+        )
+        return self.record_browser_liveness(
+            job_id,
+            surface="opencli",
+            evidence={
+                "page_url": "https://pan.baidu.com/disk/main",
+                "snapshot_text": snapshot_text,
+                "snapshot_sha256": hashlib.sha256(
+                    snapshot_text.encode("utf-8")
+                ).hexdigest(),
+                "observed_at": observed_at.isoformat(timespec="microseconds"),
+            },
+        )
+
+    def _record_loopback_upload_failure(
+        self,
+        job_id: str,
+        *,
+        reason: object,
+    ) -> None:
+        safe_reason = (
+            reason
+            if isinstance(reason, str) and reason in _LOOPBACK_UPLOAD_FAILURES
+            else "browser_injection_failed"
+        )
+        with self.store.job_lock(job_id):
+            current = self.store.latest(job_id)
+            if current.get("status") != "upload_claimed":
+                return
+            self.store.append({
+                **current,
+                "event": "netdisk_upload_failed",
+                "status": "upload_claimed",
+                "failure_stage": "loopback_dom_file",
+                "reason": safe_reason,
+                "error_type": "EnrichmentError",
+                "updated_at": self._time().isoformat(timespec="microseconds"),
+            })
+
+    def _upload_via_loopback_dom_file(
+        self,
+        job_id: str,
+        *,
+        session: str,
+        profile: str | None,
+        source: BinaryIO,
+        target_name: str,
+        expected_size: int,
+    ) -> None:
+        token = secrets.token_urlsafe(24)
+        route = f"/{token}"
+
+        class ExactFileHandler(http.server.BaseHTTPRequestHandler):
+            def do_GET(handler_self) -> None:  # noqa: N802
+                if handler_self.path != route:
+                    handler_self.send_error(404)
+                    return
+                handler_self.send_response(200)
+                handler_self.send_header("Content-Type", "video/mp4")
+                handler_self.send_header("Content-Length", str(expected_size))
+                handler_self.send_header(
+                    "Access-Control-Allow-Origin", "https://pan.baidu.com"
+                )
+                handler_self.end_headers()
+                source.seek(0)
+                shutil.copyfileobj(source, handler_self.wfile, 1024 * 1024)
+
+            def log_message(self, _format: str, *_args: Any) -> None:
+                return
+
+        server = http.server.ThreadingHTTPServer(("127.0.0.1", 0), ExactFileHandler)
+        thread = threading.Thread(target=server.serve_forever, daemon=True)
+        thread.start()
+        failure_reason: object = "browser_injection_failed"
+        try:
+            try:
+                local_url = f"http://127.0.0.1:{server.server_port}{route}"
+                script = """(async () => {
+  const target = %s;
+  const source = %s;
+  const expectedDir = %s;
+  const folderBound = () => {
+    const currentUrl = new URL(location.href);
+    const hashQuery = currentUrl.hash.includes('?')
+      ? currentUrl.hash.slice(currentUrl.hash.indexOf('?') + 1)
+      : '';
+    return currentUrl.origin === 'https://pan.baidu.com'
+      && currentUrl.pathname === '/disk/main'
+      && new URLSearchParams(hashQuery).get('path') === expectedDir;
+  };
+  if (!folderBound()) return {injected: false, reason: 'wrong_folder'};
+  const inputs = [...document.querySelectorAll(
+    'input[type="file"][title="点击选择文件"][accept="*/*"]'
+  )].filter(input => !input.hasAttribute('webkitdirectory'));
+  if (inputs.length < 1) return {injected: false, reason: 'input_missing'};
+  const response = await fetch(source);
+  if (!response.ok) return {injected: false, reason: 'loopback_fetch_failed'};
+  const blob = await response.blob();
+  if (!folderBound()) {
+    return {injected: false, reason: 'wrong_folder_after_fetch'};
+  }
+  const file = new File([blob], target, {
+    type: 'video/mp4',
+    lastModified: Date.now()
+  });
+  const transfer = new DataTransfer();
+  transfer.items.add(file);
+  inputs[0].files = transfer.files;
+  inputs[0].dispatchEvent(new Event('input', {bubbles: true}));
+  inputs[0].dispatchEvent(new Event('change', {bubbles: true}));
+  return {injected: true, target_name: target, size_bytes: file.size};
+})()""" % (
+                json.dumps(target_name),
+                json.dumps(local_url),
+                json.dumps(_NETDISK_DIRECTORY),
+            )
+                payload = self._opencli_json(
+                    session,
+                    "eval",
+                    script,
+                    profile=profile,
+                    timeout_seconds=180,
+                    attempts=1,
+                )
+            finally:
+                server.shutdown()
+                server.server_close()
+                thread.join(timeout=5)
+            if payload.get("injected") is not True:
+                failure_reason = payload.get("reason")
+                raise EnrichmentError("OpenCLI loopback file injection failed")
+            if payload.get("target_name") != target_name:
+                raise EnrichmentError("OpenCLI loopback upload target changed")
+            try:
+                injected_size = int(payload.get("size_bytes"))
+            except (TypeError, ValueError) as exc:
+                raise EnrichmentError("OpenCLI loopback upload size is invalid") from exc
+            if injected_size != expected_size:
+                raise EnrichmentError("OpenCLI loopback upload size changed")
+        except EnrichmentError:
+            self._record_loopback_upload_failure(
+                job_id,
+                reason=failure_reason,
+            )
+            raise
+
+    def _submit_opencli_upload(
+        self,
+        job_id: str,
+        *,
+        session: str,
+        profile: str | None,
+    ) -> dict[str, Any]:
+        current = self.store.latest(job_id)
+        video_path = Path(str(current["video_path"])).expanduser().resolve()
+        self._assert_opencli_folder(session=session, profile=profile)
+        try:
+            source = video_path.open("rb")
+        except OSError as exc:
+            raise EnrichmentError("prepared upload source is unavailable") from exc
+        with source:
+            source_stat = os.fstat(source.fileno())
+            if (
+                source_stat.st_size != current.get("video_size_bytes")
+                or _sha256_handle(source) != current.get("video_sha256")
+            ):
+                raise EnrichmentError("prepared upload source changed")
+            with tempfile.TemporaryDirectory(
+                prefix="xiaocao-netdisk-upload-"
+            ) as snapshot_dir:
+                snapshot_path = Path(snapshot_dir) / str(current["video_basename"])
+                source.seek(0)
+                with snapshot_path.open("wb") as snapshot_writer:
+                    shutil.copyfileobj(source, snapshot_writer, 1024 * 1024)
+                    snapshot_writer.flush()
+                    os.fsync(snapshot_writer.fileno())
+                if (
+                    snapshot_path.stat().st_size != current.get("video_size_bytes")
+                    or _sha256_file(snapshot_path) != current.get("video_sha256")
+                ):
+                    raise EnrichmentError("immutable upload snapshot changed")
+                marker = secrets.token_urlsafe(18)
+                selector = self._mark_opencli_upload_input(
+                    session=session,
+                    profile=profile,
+                    marker=marker,
+                )
+                result = self._opencli_process(
+                    session,
+                    "upload",
+                    selector,
+                    str(snapshot_path),
+                    "--nth",
+                    "0",
+                    profile=profile,
+                    timeout_seconds=30,
+                )
+                transport = "opencli_cdp"
+                if result.returncode != 0:
+                    diagnostic = f"{result.stdout}\n{result.stderr}".lower()
+                    if "not allowed" not in diagnostic:
+                        raise EnrichmentError("OpenCLI file upload failed")
+                    with snapshot_path.open("rb") as snapshot_reader:
+                        self._upload_via_loopback_dom_file(
+                            job_id,
+                            session=session,
+                            profile=profile,
+                            source=snapshot_reader,
+                            target_name=str(current["video_basename"]),
+                            expected_size=int(current["video_size_bytes"]),
+                        )
+                    transport = "loopback_dom_file"
+        with self.store.job_lock(job_id):
+            latest = self.store.latest(job_id)
+            if latest.get("status") != "upload_claimed":
+                raise EnrichmentError("upload submission lost its durable claim")
+            now = self._time().isoformat(timespec="microseconds")
+            row = {
+                **latest,
+                "event": "netdisk_upload_started",
+                "upload_transport": transport,
+                "upload_started_at": now,
+                "updated_at": now,
+            }
+            self.store.append(row)
+            return {**row, "idempotent_replay": False}
+
+    @staticmethod
+    def _player_url(target_name: str) -> str:
+        path = f"{_NETDISK_DIRECTORY}/{target_name}"
+        return f"https://pan.baidu.com/pfile/video?path={quote(path, safe='')}"
+
+    @staticmethod
+    def _validate_player_url(page_url: str, *, target_name: str) -> str:
+        parsed = urlsplit(page_url)
+        query = parse_qs(parsed.query, keep_blank_values=True)
+        netdisk_paths = query.get("path") or []
+        expected_path = f"{_NETDISK_DIRECTORY}/{target_name}"
+        if (
+            parsed.scheme != "https"
+            or parsed.netloc.lower() != "pan.baidu.com"
+            or parsed.path != "/pfile/video"
+            or parsed.username is not None
+            or parsed.password is not None
+            or len(netdisk_paths) != 1
+            or netdisk_paths[0] != expected_path
+        ):
+            raise EnrichmentError("OpenCLI player does not match the prepared Netdisk path")
+        return page_url
+
+    def _open_opencli_player(
+        self,
+        *,
+        session: str,
+        profile: str | None,
+        target_name: str,
+    ) -> str:
+        player_url = self._player_url(target_name)
+        self._opencli_json(
+            session,
+            "open",
+            player_url,
+            profile=profile,
+            timeout_seconds=30,
+        )
+        observed = self._opencli_json(
+            session,
+            "eval",
+            "(() => ({current_url: location.href}))()",
+            profile=profile,
+            timeout_seconds=30,
+        )
+        actual_url = observed.get("current_url")
+        if not isinstance(actual_url, str):
+            raise EnrichmentError("OpenCLI did not return the current player URL")
+        return self._validate_player_url(actual_url, target_name=target_name)
+
+    def _select_opencli_tab(
+        self,
+        *,
+        session: str,
+        profile: str | None,
+        label: str,
+        target_name: str,
+    ) -> None:
+        script = """(() => {
+  const label = %s;
+  const expectedPath = %s;
+  const currentUrl = new URL(location.href);
+  const targetBound = currentUrl.origin === 'https://pan.baidu.com'
+    && currentUrl.pathname === '/pfile/video'
+    && currentUrl.searchParams.getAll('path').length === 1
+    && currentUrl.searchParams.get('path') === expectedPath;
+  if (!targetBound) {
+    return {scheduled: false, tab: label, matches: 0, target_bound: false};
+  }
+  const tabs = [...document.querySelectorAll('.vp-tabs__header-item')];
+  const matches = tabs.filter(node => (node.textContent || '').trim() === label);
+  if (matches.length !== 1) {
+    return {scheduled: false, tab: label, matches: matches.length};
+  }
+  if (matches[0].classList.contains('vp-tabs__header-item--active')) {
+    return {scheduled: false, already_active: true, tab: label, matches: 1};
+  }
+  setTimeout(() => matches[0].click(), 0);
+  return {scheduled: true, tab: label, matches: 1};
+})()""" % (
+            json.dumps(label),
+            json.dumps(f"{_NETDISK_DIRECTORY}/{target_name}"),
+        )
+        payload = self._opencli_json(
+            session,
+            "eval",
+            script,
+            profile=profile,
+            timeout_seconds=30,
+            attempts=1,
+        )
+        if payload.get("target_bound") is False:
+            raise EnrichmentError("OpenCLI player path changed before tab activation")
+        if payload.get("matches") != 1:
+            raise EnrichmentError(f"Netdisk {label} tab was not uniquely located")
+
+    def _wait_opencli_active_tab(
+        self,
+        *,
+        session: str,
+        profile: str | None,
+        label: str,
+        target_name: str,
+    ) -> None:
+        script = """(async () => {
+  const expected_tab = %s;
+  const expectedPath = %s;
+  const deadline = Date.now() + 10000;
+  let active_tab = '';
+  let target_bound = false;
+  while (Date.now() < deadline) {
+    const currentUrl = new URL(location.href);
+    target_bound = currentUrl.origin === 'https://pan.baidu.com'
+      && currentUrl.pathname === '/pfile/video'
+      && currentUrl.searchParams.getAll('path').length === 1
+      && currentUrl.searchParams.get('path') === expectedPath;
+    if (!target_bound) break;
+    const active = document.querySelector('.vp-tabs__header-item--active');
+    active_tab = (active?.textContent || '').trim();
+    if (active_tab === expected_tab) break;
+    await new Promise(resolve => setTimeout(resolve, 100));
+  }
+  return {active_tab, expected_tab, target_bound};
+})()""" % (
+            json.dumps(label),
+            json.dumps(f"{_NETDISK_DIRECTORY}/{target_name}"),
+        )
+        payload = self._opencli_json(
+            session,
+            "eval",
+            script,
+            profile=profile,
+            timeout_seconds=30,
+            attempts=1,
+        )
+        if payload.get("target_bound") is not True:
+            raise EnrichmentError("OpenCLI player path changed while activating tab")
+        if payload.get("active_tab") != label:
+            raise EnrichmentError(f"Netdisk {label} tab did not become active")
+
+    def _probe_opencli_transcript(
+        self,
+        *,
+        session: str,
+        profile: str | None,
+        target_name: str,
+    ) -> dict[str, Any]:
+        script = """(async () => {
+  const expectedPath = %s;
+  const deadline = Date.now() + 20000;
+  let transcript_state = 'missing';
+  let active_tab = '';
+  let content_chars = 0;
+  let export_available = false;
+  let target_bound = false;
+  while (Date.now() < deadline) {
+    const currentUrl = new URL(location.href);
+    target_bound = currentUrl.origin === 'https://pan.baidu.com'
+      && currentUrl.pathname === '/pfile/video'
+      && currentUrl.searchParams.getAll('path').length === 1
+      && currentUrl.searchParams.get('path') === expectedPath;
+    if (!target_bound) break;
+    const active = document.querySelector('.vp-tabs__header-item--active');
+    const root = document.querySelector('.vp-ai-draft');
+    const list = document.querySelector('.ai-draft__wrap-list');
+    const text = (list?.innerText || '').trim();
+    const rootText = (root?.innerText || '').trim();
+    const exportNode = document.querySelector('.ai-draft__export-container');
+    active_tab = (active?.textContent || '').trim();
+    content_chars = text.length;
+    export_available = !!exportNode;
+    if (list && content_chars >= 200) transcript_state = 'ready';
+    else if (/生成中|处理中|努力生成/.test(rootText)) {
+      transcript_state = 'generating';
+    }
+    if (transcript_state !== 'missing') break;
+    await new Promise(resolve => setTimeout(resolve, 200));
+  }
+  return {
+    transcript_state,
+    active_tab,
+    content_chars,
+    export_available,
+    target_bound
+  };
+})()""" % json.dumps(f"{_NETDISK_DIRECTORY}/{target_name}")
+        payload = self._opencli_json(
+            session,
+            "eval",
+            script,
+            profile=profile,
+            timeout_seconds=30,
+        )
+        if payload.get("target_bound") is not True:
+            raise EnrichmentError("OpenCLI player path changed during transcript probe")
+        if payload.get("active_tab") != "文稿":
+            raise EnrichmentError("Netdisk transcript tab did not become active")
+        state = payload.get("transcript_state")
+        if state not in {"missing", "generating", "ready"}:
+            raise EnrichmentError("Netdisk transcript state is invalid")
+        if state == "ready":
+            try:
+                content_chars = int(payload.get("content_chars"))
+            except (TypeError, ValueError) as exc:
+                raise EnrichmentError("Netdisk transcript length is invalid") from exc
+            if content_chars < 200 or payload.get("export_available") is not True:
+                raise EnrichmentError("Netdisk transcript ready proof is incomplete")
+        return payload
+
+    def _record_opencli_still_generating(
+        self,
+        job_id: str,
+        *,
+        kind: str,
+        target_name: str,
+        page_url: str,
+    ) -> dict[str, Any]:
+        if kind not in {"transcript", "ai_note"}:
+            raise EnrichmentError("unsupported Netdisk generation kind")
+        step = f"{kind}_requested"
+        visible_state = f"{kind}_generating"
+        label = "文稿" if kind == "transcript" else "AI笔记"
+        observed_at = self._time()
+        with self.store.job_lock(job_id):
+            current = self.store.latest(job_id)
+            if current.get("status") != step:
+                raise EnrichmentError("generation poll lost its requested state")
+            evidence = self._browser_proof(
+                target_name=target_name,
+                visible_state=visible_state,
+                state_text=f"{label} 生成中",
+                observed_at=observed_at,
+                page_url=page_url,
+            )
+            normalized = self._browser_evidence(
+                current,
+                evidence,
+                expected_target=target_name,
+                step=step,
+            )
+            self._require_after_latest_capability_failure(
+                job_id,
+                observed_at=str(normalized["observed_at"]),
+                evidence_kind=f"{step} browser evidence",
+            )
+            prior = current.get("browser_evidence")
+            if isinstance(prior, dict):
+                prior_at = self._event_time(
+                    prior.get("observed_at"), field=f"{step} prior observed_at"
+                )
+                if observed_at.astimezone(timezone.utc) < prior_at:
+                    raise EnrichmentError("generation poll predates prior evidence")
+            next_poll = observed_at + timedelta(minutes=5)
+            row = {
+                **current,
+                "event": f"netdisk_{kind}_still_generating",
+                "browser_evidence": normalized,
+                "next_poll_not_before": next_poll.isoformat(timespec="microseconds"),
+                "updated_at": observed_at.isoformat(timespec="seconds"),
+            }
+            _clear_transient_failures(row)
+            self.store.append(row)
+            return {
+                **row,
+                "pending": True,
+                "idempotent_replay": False,
+            }
+
+    def _advance_opencli_transcript(
+        self,
+        job_id: str,
+        *,
+        session: str,
+        profile: str | None,
+    ) -> dict[str, Any]:
+        current = self.store.latest(job_id)
+        status = str(current.get("status") or "")
+        if status == "video_ready":
+            claim = self.claim_browser_action(job_id, action="transcript")
+            if claim.get("idempotent_replay") is True:
+                return {
+                    **self.store.latest(job_id),
+                    "pending": True,
+                    "side_effect_uncertain": True,
+                    "idempotent_replay": True,
+                }
+        elif status == "transcript_claimed":
+            return {
+                **current,
+                "pending": True,
+                "side_effect_uncertain": True,
+                "idempotent_replay": True,
+            }
+        elif status == "transcript_requested":
+            raw_not_before = current.get("next_poll_not_before")
+            try:
+                not_before = datetime.fromisoformat(str(raw_not_before or ""))
+            except ValueError as exc:
+                raise EnrichmentError("transcript poll checkpoint is invalid") from exc
+            if not_before.tzinfo is None:
+                raise EnrichmentError("transcript poll checkpoint needs a timezone")
+            if self._time().astimezone(timezone.utc) < not_before.astimezone(timezone.utc):
+                return {**current, "pending": True, "idempotent_replay": True}
+        target_name = str(current["video_basename"])
+        player_url = self._open_opencli_player(
+            session=session,
+            profile=profile,
+            target_name=target_name,
+        )
+        self._select_opencli_tab(
+            session=session,
+            profile=profile,
+            label="文稿",
+            target_name=target_name,
+        )
+        self._wait_opencli_active_tab(
+            session=session,
+            profile=profile,
+            label="文稿",
+            target_name=target_name,
+        )
+        probe = self._probe_opencli_transcript(
+            session=session,
+            profile=profile,
+            target_name=target_name,
+        )
+        observed_at = self._time()
+        if probe["transcript_state"] == "generating":
+            if status == "transcript_requested":
+                return self._record_opencli_still_generating(
+                    job_id,
+                    kind="transcript",
+                    target_name=target_name,
+                    page_url=player_url,
+                )
+            return self.record_browser_state(
+                job_id,
+                step="transcript_requested",
+                evidence=self._browser_proof(
+                    target_name=target_name,
+                    visible_state="transcript_generating",
+                    state_text="文稿 生成中",
+                    observed_at=observed_at,
+                    page_url=player_url,
+                ),
+            )
+        if probe["transcript_state"] == "ready":
+            return self.record_browser_state(
+                job_id,
+                step="transcript_ready",
+                evidence=self._browser_proof(
+                    target_name=target_name,
+                    visible_state="transcript_ready",
+                    state_text=(
+                        "文稿 已生成 "
+                        f"content_chars={int(probe['content_chars'])} export_available"
+                    ),
+                    observed_at=observed_at,
+                    page_url=player_url,
+                ),
+            )
+        raise EnrichmentError("Netdisk transcript generation did not start")
+
+    def _probe_opencli_ai_note(
+        self,
+        *,
+        session: str,
+        profile: str | None,
+        target_name: str,
+    ) -> dict[str, Any]:
+        script = """(() => {
+  const expectedPath = %s;
+  const currentUrl = new URL(location.href);
+  const target_bound = currentUrl.origin === 'https://pan.baidu.com'
+    && currentUrl.pathname === '/pfile/video'
+    && currentUrl.searchParams.getAll('path').length === 1
+    && currentUrl.searchParams.get('path') === expectedPath;
+  if (!target_bound) return {ai_note_state: 'missing', target_bound: false};
+  const active = document.querySelector('.vp-tabs__header-item--active');
+  const frame = document.getElementById('noteIframe');
+  const doc = frame?.contentDocument;
+  const text = (doc?.body?.innerText || '').trim();
+  const src = frame?.getAttribute('src') || '';
+  let ai_note_state = 'missing';
+  if (/生成中|正在生成|处理中/.test(text)) {
+    ai_note_state = 'generating';
+  } else if (src.includes('action=edit') && text.length >= 200) {
+    ai_note_state = 'ready';
+  }
+  return {
+    ai_note_state,
+    active_tab: (active?.textContent || '').trim(),
+    content_chars: text.length,
+    template: /文稿笔记/.test(text) ? '文稿笔记' : '',
+    export_available: /导出/.test(text),
+    target_bound: true
+  };
+})()""" % json.dumps(f"{_NETDISK_DIRECTORY}/{target_name}")
+        payload = self._opencli_json(
+            session,
+            "eval",
+            script,
+            profile=profile,
+            timeout_seconds=30,
+        )
+        if payload.get("target_bound") is not True:
+            raise EnrichmentError("OpenCLI player path changed during AI-note probe")
+        if payload.get("active_tab") != "笔记":
+            raise EnrichmentError("Netdisk AI-note tab did not become active")
+        state = payload.get("ai_note_state")
+        if state not in {"missing", "generating", "ready"}:
+            raise EnrichmentError("Netdisk AI-note state is invalid")
+        if state == "ready":
+            try:
+                content_chars = int(payload.get("content_chars"))
+            except (TypeError, ValueError) as exc:
+                raise EnrichmentError("Netdisk AI-note length is invalid") from exc
+            if content_chars < 200:
+                raise EnrichmentError("Netdisk AI-note ready proof is incomplete")
+        return payload
+
+    def _trigger_opencli_ai_note(
+        self,
+        *,
+        session: str,
+        profile: str | None,
+        target_name: str,
+    ) -> None:
+        preview_script = """(() => {
+  const expectedPath = %s;
+  const currentUrl = new URL(location.href);
+  const targetBound = currentUrl.origin === 'https://pan.baidu.com'
+    && currentUrl.pathname === '/pfile/video'
+    && currentUrl.searchParams.getAll('path').length === 1
+    && currentUrl.searchParams.get('path') === expectedPath;
+  if (!targetBound) return {scheduled: false, template_no: 1, target_bound: false};
+  const frame = document.getElementById('noteIframe');
+  if (!frame) return {scheduled: false, template_no: 1};
+  window.postMessage({type: 'previewTemplate', data: {tpl_no: 1}}, '*');
+  return {scheduled: true, template_no: 1};
+})()""" % json.dumps(f"{_NETDISK_DIRECTORY}/{target_name}")
+        preview = self._opencli_json(
+            session,
+            "eval",
+            preview_script,
+            profile=profile,
+            timeout_seconds=30,
+            attempts=1,
+        )
+        if preview.get("target_bound") is False:
+            raise EnrichmentError("OpenCLI player path changed before AI-note preview")
+        if preview.get("scheduled") is not True:
+            raise EnrichmentError("Netdisk AI-note template modal did not open")
+        self._run_opencli(
+            session,
+            "wait",
+            "selector",
+            "#tplModal",
+            "--timeout",
+            "10000",
+            profile=profile,
+            timeout_seconds=20,
+        )
+        submit_script = """(() => {
+  const expectedPath = %s;
+  const currentUrl = new URL(location.href);
+  const targetBound = currentUrl.origin === 'https://pan.baidu.com'
+    && currentUrl.pathname === '/pfile/video'
+    && currentUrl.searchParams.getAll('path').length === 1
+    && currentUrl.searchParams.get('path') === expectedPath;
+  if (!targetBound) return {submitted: false, template_no: 1, target_bound: false};
+  const modal = document.getElementById('tplModal');
+  if (!modal) return {submitted: false, template_no: 1};
+  window.postMessage({type: 'genNoteByTpl', data: {tpl_no: 1}}, '*');
+  return {submitted: true, template_no: 1};
+})()""" % json.dumps(f"{_NETDISK_DIRECTORY}/{target_name}")
+        submitted = self._opencli_json(
+            session,
+            "eval",
+            submit_script,
+            profile=profile,
+            timeout_seconds=30,
+            attempts=1,
+        )
+        if submitted.get("target_bound") is False:
+            raise EnrichmentError("OpenCLI player path changed before AI-note submission")
+        if submitted.get("submitted") is not True:
+            raise EnrichmentError("Netdisk AI-note template submission failed")
+
+    def _record_ai_note_triggered(
+        self,
+        job_id: str,
+        *,
+        target_name: str,
+        page_url: str,
+    ) -> dict[str, Any]:
+        with self.store.job_lock(job_id):
+            current = self.store.latest(job_id)
+            if current.get("status") != "ai_note_claimed":
+                raise EnrichmentError("AI-note trigger lost its durable claim")
+            observed_at = self._time()
+            normalized = self._browser_evidence(
+                current,
+                self._browser_proof(
+                    target_name=target_name,
+                    visible_state="ai_note_generating",
+                    state_text="AI笔记 生成已提交",
+                    observed_at=observed_at,
+                    page_url=page_url,
+                ),
+                expected_target=target_name,
+                step="ai_note_requested",
+            )
+            self._require_after_latest_capability_failure(
+                job_id,
+                observed_at=str(normalized["observed_at"]),
+                evidence_kind="ai_note_requested browser evidence",
+            )
+            self._require_transition_causality(
+                current,
+                step="ai_note_requested",
+                observed_at=str(normalized["observed_at"]),
+                reconcile_existing=False,
+            )
+            now = observed_at.isoformat(timespec="microseconds")
+            row = {
+                **current,
+                "event": "netdisk_ai_note_triggered",
+                "status": "ai_note_requested",
+                "ai_note_template": "文稿笔记",
+                "ai_note_template_no": 1,
+                "ai_note_completion_required": False,
+                "ai_note_triggered_at": now,
+                "browser_evidence": normalized,
+                "updated_at": now,
+            }
+            _clear_transient_failures(row)
+            self.store.append(row)
+            return {**row, "idempotent_replay": False}
+
+    def _advance_opencli_ai_note(
+        self,
+        job_id: str,
+        *,
+        session: str,
+        profile: str | None,
+    ) -> dict[str, Any]:
+        current = self.store.latest(job_id)
+        status = str(current.get("status") or "")
+        if status == "transcript_ready":
+            claim = self.claim_browser_action(job_id, action="ai_note")
+            if claim.get("idempotent_replay") is True:
+                return {
+                    **self.store.latest(job_id),
+                    "pending": True,
+                    "side_effect_uncertain": True,
+                    "idempotent_replay": True,
+                }
+        elif status == "ai_note_claimed":
+            return {
+                **current,
+                "pending": True,
+                "side_effect_uncertain": True,
+                "idempotent_replay": True,
+            }
+        target_name = str(current["video_basename"])
+        player_url = self._open_opencli_player(
+            session=session,
+            profile=profile,
+            target_name=target_name,
+        )
+        self._select_opencli_tab(
+            session=session,
+            profile=profile,
+            label="笔记",
+            target_name=target_name,
+        )
+        self._wait_opencli_active_tab(
+            session=session,
+            profile=profile,
+            label="笔记",
+            target_name=target_name,
+        )
+        self._run_opencli(
+            session,
+            "wait",
+            "selector",
+            "#noteIframe",
+            "--timeout",
+            "10000",
+            profile=profile,
+            timeout_seconds=20,
+        )
+        probe = self._probe_opencli_ai_note(
+            session=session,
+            profile=profile,
+            target_name=target_name,
+        )
+        observed_at = self._time()
+        if probe["ai_note_state"] == "missing":
+            latest = self.store.latest(job_id)
+            if latest.get("ai_note_triggered_at"):
+                return {**latest, "pending": True, "idempotent_replay": True}
+            self._trigger_opencli_ai_note(
+                session=session,
+                profile=profile,
+                target_name=target_name,
+            )
+            return self._record_ai_note_triggered(
+                job_id,
+                target_name=target_name,
+                page_url=player_url,
+            )
+        if probe["ai_note_state"] == "generating":
+            return self.record_browser_state(
+                job_id,
+                step="ai_note_requested",
+                evidence=self._browser_proof(
+                    target_name=target_name,
+                    visible_state="ai_note_generating",
+                    state_text="AI笔记 生成中",
+                    observed_at=observed_at,
+                    page_url=player_url,
+                ),
+            )
+        return self.record_browser_state(
+            job_id,
+            step="ai_note_ready",
+            evidence=self._browser_proof(
+                target_name=target_name,
+                visible_state="ai_note_ready",
+                state_text=(
+                    "AI笔记 已生成 "
+                    f"content_chars={int(probe['content_chars'])} export_available"
+                ),
+                observed_at=observed_at,
+                page_url=player_url,
+            ),
+        )
+
+    def advance_opencli(
+        self,
+        job_id: str,
+        *,
+        session: str,
+        profile: str | None = None,
+    ) -> dict[str, Any]:
+        """Advance one durable Netdisk browser checkpoint without scheduling."""
+        if not _OPENCLI_SESSION.fullmatch(session):
+            raise EnrichmentError("OpenCLI session name is invalid")
+        if profile is not None and not _OPENCLI_PROFILE.fullmatch(profile):
+            raise EnrichmentError("OpenCLI profile name is invalid")
+        current = self.store.latest(job_id)
+        status = str(current.get("status") or "")
+        if status in {
+            "video_ready",
+            "transcript_claimed",
+            "transcript_requested",
+        }:
+            return self._advance_opencli_transcript(
+                job_id,
+                session=session,
+                profile=profile,
+            )
+        if status in {"transcript_ready", "ai_note_claimed"}:
+            return self._advance_opencli_ai_note(
+                job_id,
+                session=session,
+                profile=profile,
+            )
+        if status in {
+            "ai_note_requested",
+            "ai_note_ready",
+            "transcript_captured",
+        }:
+            return self.capture_opencli_transcript(
+                job_id,
+                session=session,
+                profile=profile,
+            )
+        if status not in {"prepared", "upload_claimed"}:
+            raise EnrichmentError(f"OpenCLI advance does not support state {status} yet")
+        target_name = str(current["video_basename"])
+        inspection = self._inspect_opencli_target(
+            session=session,
+            profile=profile,
+            target_name=target_name,
+        )
+        present = inspection["exact_count"] == 1
+        observed_at = inspection["observed_at"]
+        if status == "prepared":
+            self._record_opencli_liveness(
+                job_id,
+                target_name=target_name,
+                target_present=present,
+                observed_at=observed_at,
+            )
+            if present:
+                return self.record_browser_state(
+                    job_id,
+                    step="video_ready",
+                    evidence=self._browser_proof(
+                        target_name=target_name,
+                        visible_state="video_present",
+                        state_text="目标视频 row 已存在",
+                        observed_at=observed_at,
+                        page_url="https://pan.baidu.com/disk/main",
+                    ),
+                    source_mode="existing",
+                )
+            claim = self.claim_browser_action(job_id, action="upload")
+            if claim.get("idempotent_replay") is True:
+                return {
+                    **self.store.latest(job_id),
+                    "pending": True,
+                    "side_effect_uncertain": True,
+                    "idempotent_replay": True,
+                }
+            return self._submit_opencli_upload(
+                job_id,
+                session=session,
+                profile=profile,
+            )
+        if present:
+            return self.record_browser_state(
+                job_id,
+                step="video_ready",
+                evidence=self._browser_proof(
+                    target_name=target_name,
+                    visible_state="video_present",
+                    state_text="上传完成 目标视频 row 可见",
+                    observed_at=observed_at,
+                    page_url="https://pan.baidu.com/disk/main",
+                ),
+                source_mode="uploaded",
+            )
+        if current.get("upload_started_at"):
+            return {**current, "pending": True, "idempotent_replay": True}
+        return {
+            **current,
+            "pending": True,
+            "side_effect_uncertain": True,
+            "idempotent_replay": True,
+        }
 
     def status(self, job_id: str | None = None) -> dict[str, Any]:
         return self.store.status(job_id)
@@ -383,7 +1724,7 @@ class NetdiskEnrichmentService:
             ).get("path") or []
             if (
                 len(netdisk_paths) != 1
-                or PurePosixPath(netdisk_paths[0]).name != expected_target
+                or netdisk_paths[0] != f"{_NETDISK_DIRECTORY}/{expected_target}"
             ):
                 raise EnrichmentError("browser evidence page URL is invalid")
         target = str(evidence.get("target_name") or "").strip()
@@ -578,23 +1919,28 @@ class NetdiskEnrichmentService:
         elif step in {
             "transcript_requested",
             "ai_note_requested",
-            "export_ready",
-            "download_requested",
         }:
             checkpoint = self._event_time(
                 current.get("claimed_at"), field=f"{step} claimed_at"
             )
             checkpoint_name = "browser action claim"
-        elif step in {"transcript_ready", "ai_note_ready", "cloud_document_ready"}:
-            predecessor = current.get("browser_evidence")
-            if not isinstance(predecessor, dict):
-                raise EnrichmentError(
-                    f"{step} requires timestamped predecessor browser evidence"
+        elif step in {"transcript_ready", "ai_note_ready"}:
+            if current.get("status") == _DIRECT_READY_PREDECESSORS.get(step):
+                checkpoint = self._event_time(
+                    current.get("claimed_at"), field=f"{step} claimed_at"
                 )
-            checkpoint = self._event_time(
-                predecessor.get("observed_at"), field=f"{step} predecessor observed_at"
-            )
-            checkpoint_name = "predecessor browser evidence"
+                checkpoint_name = "browser action claim"
+            else:
+                predecessor = current.get("browser_evidence")
+                if not isinstance(predecessor, dict):
+                    raise EnrichmentError(
+                        f"{step} requires timestamped predecessor browser evidence"
+                    )
+                checkpoint = self._event_time(
+                    predecessor.get("observed_at"),
+                    field=f"{step} predecessor observed_at",
+                )
+                checkpoint_name = "predecessor browser evidence"
         if checkpoint is not None and observed < checkpoint:
             raise EnrichmentError(
                 f"{step} evidence predates its {checkpoint_name}"
@@ -633,8 +1979,6 @@ class NetdiskEnrichmentService:
             "upload": {"prepared"},
             "transcript": {"video_ready"},
             "ai_note": {"transcript_ready"},
-            "export": {"transcript_ready", "ai_note_ready"},
-            "download": {"cloud_document_ready"},
         }[action]
         claimed_status = f"{action}_claimed"
         with self.store.job_lock(job_id):
@@ -672,8 +2016,6 @@ class NetdiskEnrichmentService:
                 "claimed_at": now,
                 "updated_at": now,
             }
-            if action == "download":
-                row["download_claimed_at"] = now
             _clear_transient_failures(row)
             self.store.append(row)
             return {**row, "idempotent_replay": False}
@@ -721,7 +2063,14 @@ class NetdiskEnrichmentService:
                 reconcile_existing
                 and current_status in _RECONCILIATION_PREDECESSORS.get(step, set())
             )
-            if current_status != expected and not reconciliation_allowed:
+            direct_ready_allowed = (
+                current_status == _DIRECT_READY_PREDECESSORS.get(step)
+            )
+            if (
+                current_status != expected
+                and not reconciliation_allowed
+                and not direct_ready_allowed
+            ):
                 self._record_rejection(
                     current,
                     operation=f"record:{step}",
@@ -734,8 +2083,6 @@ class NetdiskEnrichmentService:
                 raise EnrichmentError(f"{step} requires state {expected}")
             try:
                 expected_target = str(current["video_basename"])
-                if step in {"cloud_document_ready", "download_requested"}:
-                    expected_target = f"{Path(expected_target).stem}.doc"
                 normalized = self._browser_evidence(
                     current,
                     evidence,
@@ -778,128 +2125,11 @@ class NetdiskEnrichmentService:
                 row["reconciled_from_status"] = current_status
             if step == "video_ready":
                 row["source_mode"] = source_mode
-            if step == "download_requested":
-                row["download_requested_at"] = now
-            _clear_transient_failures(row)
-            self.store.append(row)
-            return {**row, "idempotent_replay": False}
-
-    def import_transcript_download(
-        self, job_id: str, download_path: Path | str
-    ) -> dict[str, Any]:
-        source = Path(download_path).expanduser().resolve()
-        with self.store.job_lock(job_id):
-            current = self.store.latest(job_id)
-
-            def reject(reason: str, message: str) -> None:
-                self.store.append({
-                    **current,
-                    "event": "netdisk_download_import_failed",
-                    "status": current.get("status"),
-                    "failure_stage": "import_download",
-                    "reason": reason,
-                    "error_type": "EnrichmentError",
-                    "updated_at": self._time().isoformat(timespec="seconds"),
-                })
-                raise EnrichmentError(message)
-
-            if not source.is_file():
-                reject("file_not_found", f"downloaded transcript not found: {source}")
-            source_sha = _sha256_file(source)
-            if current.get("status") in {"downloaded", "verified", "decided"}:
-                if current.get("download_sha256") == source_sha:
-                    return {**current, "idempotent_replay": True}
-                reject(
-                    "completed_download_mismatch",
-                    "completed download cannot be silently replaced",
-                )
-            if current.get("status") != "download_requested":
-                reject(
-                    "invalid_predecessor",
-                    "download import requires state download_requested",
-                )
-            suffix = source.suffix.lower()
-            if suffix not in {".doc", ".docx", ".txt", ".md"}:
-                reject(
-                    "unsupported_format",
-                    "downloaded transcript has an unsupported format",
-                )
-            video_stem = Path(str(current["video_basename"])).stem
-            if source.stem != video_stem:
-                reject(
-                    "basename_mismatch",
-                    "downloaded transcript name does not exactly match the video",
-                )
-            try:
-                claimed_at = datetime.fromisoformat(
-                    str(current.get("download_claimed_at") or "")
-                )
-            except ValueError:
-                reject("missing_claim_time", "download claim time is invalid")
-            if claimed_at.tzinfo is None:
-                reject("missing_claim_time", "download claim time needs a timezone")
-            modified_at = datetime.fromtimestamp(
-                source.stat().st_mtime, tz=timezone.utc
-            )
-            if (
-                modified_at < claimed_at.astimezone(timezone.utc) - timedelta(seconds=1)
-                or modified_at
-                > self._time().astimezone(timezone.utc) + timedelta(minutes=2)
-            ):
-                reject(
-                    "stale_or_future_file",
-                    "downloaded transcript is not fresh for this download request",
-                )
-            artifact_dir = self.output_dir / "artifacts" / job_id
-            artifact_dir.mkdir(parents=True, exist_ok=True)
-            durable_download = artifact_dir / source.name
-            temporary = artifact_dir / f".{source.name}.partial"
-            shutil.copyfile(source, temporary)
-            temporary.replace(durable_download)
-            try:
-                if suffix in {".txt", ".md"}:
-                    transcript = durable_download.read_text(encoding="utf-8")
-                else:
-                    converted = self._run([
-                        "textutil",
-                        "-convert",
-                        "txt",
-                        "-stdout",
-                        str(durable_download),
-                    ])
-                    transcript = str(converted.stdout)
-                if len(transcript.strip()) < 200:
-                    raise EnrichmentError("downloaded transcript is implausibly short")
-            except (EnrichmentError, OSError, UnicodeError) as exc:
-                self.store.append({
-                    **current,
-                    "event": "netdisk_download_import_failed",
-                    "status": "download_requested",
-                    "download_sha256": source_sha,
-                    "failure_stage": "read_download",
-                    "reason": "read_or_conversion_failed",
-                    "error_type": type(exc).__name__,
-                    "updated_at": self._time().isoformat(timespec="seconds"),
-                })
-                raise
-            transcript_path = artifact_dir / f"{video_stem}.txt"
-            transcript_bytes = (transcript.rstrip() + "\n").encode("utf-8")
-            transcript_temp = artifact_dir / f".{video_stem}.partial.txt"
-            transcript_temp.write_bytes(transcript_bytes)
-            transcript_temp.replace(transcript_path)
-            now = self._time().isoformat(timespec="seconds")
-            row = {
-                **current,
-                "event": "netdisk_transcript_downloaded",
-                "status": "downloaded",
-                "download_path": str(durable_download),
-                "download_sha256": _sha256_file(durable_download),
-                "download_size_bytes": durable_download.stat().st_size,
-                "transcript_path": str(transcript_path),
-                "transcript_sha256": hashlib.sha256(transcript_bytes).hexdigest(),
-                "transcript_character_count": len(transcript.strip()),
-                "updated_at": now,
-            }
+            if step in {"transcript_requested", "ai_note_requested"}:
+                observed_at = datetime.fromisoformat(normalized["observed_at"])
+                row["next_poll_not_before"] = (
+                    observed_at + timedelta(minutes=5)
+                ).isoformat(timespec="microseconds")
             _clear_transient_failures(row)
             self.store.append(row)
             return {**row, "idempotent_replay": False}
@@ -909,10 +2139,13 @@ class NetdiskEnrichmentService:
         job_id: str,
         *,
         session: str,
+        profile: str | None = None,
     ) -> dict[str, Any]:
-        """Materialize a complete, already-rendered Netdisk transcript via OpenCLI."""
+        """Materialize the complete, initially rendered Netdisk transcript via OpenCLI."""
         if not _OPENCLI_SESSION.fullmatch(session):
             raise EnrichmentError("OpenCLI session name is invalid")
+        if profile is not None and not _OPENCLI_PROFILE.fullmatch(profile):
+            raise EnrichmentError("OpenCLI profile name is invalid")
         with self.store.job_lock(job_id):
             current = self.store.latest(job_id)
             failure_recorded = False
@@ -931,7 +2164,7 @@ class NetdiskEnrichmentService:
                 })
                 raise EnrichmentError(message)
 
-            if current.get("status") in {"downloaded", "verified", "decided"}:
+            if current.get("status") in {"transcript_captured", "verified", "decided"}:
                 transcript_path = Path(str(current.get("transcript_path") or ""))
                 if (
                     current.get("transcript_acquisition") == "opencli_dom"
@@ -944,27 +2177,42 @@ class NetdiskEnrichmentService:
                     "completed_capture_mismatch",
                     "completed transcript capture cannot be silently replaced",
                 )
-            if current.get("status") not in {"transcript_ready", "ai_note_ready"}:
+            if current.get("status") not in {
+                "ai_note_requested",
+                "ai_note_ready",
+            }:
                 reject(
                     "invalid_predecessor",
-                    "OpenCLI DOM capture requires a ready transcript",
+                    "OpenCLI DOM capture requires AI-note submission after transcript readiness",
                 )
             if current.get("browser_surface") != "opencli":
                 reject(
                     "wrong_browser_surface",
                     "OpenCLI DOM capture requires an OpenCLI browser proof",
                 )
-            if not self._has_fresh_browser_control(current):
-                reject(
-                    "browser_control_not_live",
-                    "OpenCLI DOM capture requires fresh browser evidence",
-                )
-
             try:
+                try:
+                    self._open_opencli_player(
+                        session=session,
+                        profile=profile,
+                        target_name=str(current["video_basename"]),
+                    )
+                except EnrichmentError:
+                    reject(
+                        "target_url_mismatch",
+                        "OpenCLI player does not match the prepared Netdisk path",
+                    )
                 capture_output = self._run_opencli(
                     session,
                     "eval",
-                    _OPENCLI_CAPTURE_PROBE,
+                    _OPENCLI_CAPTURE_PROBE.replace(
+                        "__EXPECTED_NETDISK_PATH__",
+                        json.dumps(
+                            f"{_NETDISK_DIRECTORY}/{current['video_basename']}"
+                        ),
+                    ),
+                    profile=profile,
+                    timeout_seconds=30,
                 )
                 capture_result = json.loads(str(capture_output.stdout))
                 page_url = (
@@ -977,23 +2225,22 @@ class NetdiskEnrichmentService:
                         "invalid_opencli_url",
                         "OpenCLI did not return a page URL",
                     )
-                parsed = urlsplit(page_url)
-                query = parse_qs(parsed.query, keep_blank_values=True)
-                netdisk_paths = query.get("path") or []
-                if (
-                    parsed.scheme != "https"
-                    or parsed.netloc.lower() != "pan.baidu.com"
-                    or parsed.path != "/pfile/video"
-                    or parsed.username is not None
-                    or parsed.password is not None
-                    or len(netdisk_paths) != 1
-                    or PurePosixPath(netdisk_paths[0]).name
-                    != current.get("video_basename")
-                ):
+                try:
+                    self._validate_player_url(
+                        page_url,
+                        target_name=str(current["video_basename"]),
+                    )
+                except EnrichmentError:
                     reject(
                         "target_url_mismatch",
                         "OpenCLI page does not match the prepared Netdisk video",
                     )
+                if capture_result.get("target_bound") is not True:
+                    reject(
+                        "target_url_mismatch",
+                        "OpenCLI page changed before transcript DOM capture",
+                    )
+                parsed = urlsplit(page_url)
 
                 active = capture_result.get("active")
                 if (
@@ -1137,7 +2384,7 @@ class NetdiskEnrichmentService:
             row = {
                 **current,
                 "event": "netdisk_transcript_dom_captured",
-                "status": "downloaded",
+                "status": "transcript_captured",
                 "transcript_acquisition": "opencli_dom",
                 "transcript_path": str(transcript_path),
                 "transcript_sha256": transcript_sha,
@@ -1149,13 +2396,16 @@ class NetdiskEnrichmentService:
                 "dom_capture_observed_at": observed_at.isoformat(
                     timespec="microseconds"
                 ),
+                "dom_ad_overlays_dismissed": int(
+                    capture_result.get("ad_overlays_dismissed") or 0
+                ),
                 "updated_at": observed_at.isoformat(timespec="seconds"),
             }
             _clear_transient_failures(row)
             self.store.append(row)
             return {**row, "idempotent_replay": False}
 
-    def verify_download(
+    def verify_transcript(
         self, job_id: str, *, audit_path: Path | str
     ) -> dict[str, Any]:
         supplied = Path(audit_path).expanduser().resolve()
@@ -1167,7 +2417,7 @@ class NetdiskEnrichmentService:
                     **current,
                     "event": "netdisk_content_verification_failed",
                     "status": current.get("status"),
-                    "failure_stage": "verify_download",
+                    "failure_stage": "verify_transcript",
                     "reason": reason,
                     "error_type": "EnrichmentError",
                     "updated_at": self._time().isoformat(timespec="seconds"),
@@ -1185,10 +2435,10 @@ class NetdiskEnrichmentService:
                     "completed_audit_mismatch",
                     "verified content audit cannot be replaced",
                 )
-            if current.get("status") != "downloaded":
+            if current.get("status") != "transcript_captured":
                 reject(
                     "invalid_predecessor",
-                    "content verification requires state downloaded",
+                    "content verification requires state transcript_captured",
                 )
             transcript_path = Path(str(current.get("transcript_path") or ""))
             if (
@@ -1197,7 +2447,7 @@ class NetdiskEnrichmentService:
             ):
                 reject(
                     "transcript_missing_or_changed",
-                    "downloaded transcript is missing or changed",
+                    "captured transcript is missing or changed",
                 )
             try:
                 audit = json.loads(audit_bytes)
@@ -1206,7 +2456,7 @@ class NetdiskEnrichmentService:
                     **current,
                     "event": "netdisk_content_verification_failed",
                     "status": current.get("status"),
-                    "failure_stage": "verify_download",
+                    "failure_stage": "verify_transcript",
                     "reason": "invalid_audit_json",
                     "error_type": type(exc).__name__,
                     "updated_at": self._time().isoformat(timespec="seconds"),
@@ -1226,7 +2476,7 @@ class NetdiskEnrichmentService:
             ):
                 reject(
                     "audit_binding_mismatch",
-                    "content audit does not match the downloaded transcript",
+                    "content audit does not match the captured transcript",
                 )
             text = transcript_path.read_text(encoding="utf-8")
             boundaries = {
@@ -1262,6 +2512,13 @@ class NetdiskEnrichmentService:
                 "audit_path": str(durable_audit),
                 "audit_sha256": audit_sha,
                 "updated_at": self._time().isoformat(timespec="seconds"),
+            }
+            row["browser_evidence"] = {
+                "page_url": str(current.get("dom_page_url") or ""),
+                "target_name": str(current.get("video_basename") or ""),
+                "visible_state": "transcript_dom_captured",
+                "snapshot_sha256": str(current.get("dom_capture_sha256") or ""),
+                "observed_at": str(current.get("dom_capture_observed_at") or ""),
             }
             _clear_transient_failures(row)
             self.store.append(row)
@@ -1422,6 +2679,13 @@ class NetdiskEnrichmentService:
                 "household_notification": household_summary,
                 "book_kol_us": paper_summary,
                 "updated_at": self._time().isoformat(timespec="seconds"),
+            }
+            row["browser_evidence"] = {
+                "page_url": str(current.get("dom_page_url") or ""),
+                "target_name": str(current.get("video_basename") or ""),
+                "visible_state": "transcript_dom_captured",
+                "snapshot_sha256": str(current.get("dom_capture_sha256") or ""),
+                "observed_at": str(current.get("dom_capture_observed_at") or ""),
             }
             _clear_transient_failures(row)
             self.store.append(row)

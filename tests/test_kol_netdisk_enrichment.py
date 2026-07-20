@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import hashlib
 import json
-import os
 import subprocess
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -26,13 +25,6 @@ def _runner(command, **_kwargs):
             stdout=json.dumps({"format": {"duration": "2192.547945"}}),
             stderr="",
         )
-    if command[0] == "textutil":
-        text = (
-            "开头明确说今天不要追高，先等待。"
-            + "中间讨论机器人产业链与北特科技，数字目标是四十。" * 20
-            + "结尾再次强调若成交量不放大就不交易。"
-        )
-        return SimpleNamespace(returncode=0, stdout=text, stderr="")
     raise AssertionError(command)
 
 
@@ -40,6 +32,7 @@ def _opencli_capture_runner(
     video_name: str,
     *,
     virtualized: bool = False,
+    profile: str | None = None,
 ):
     transcript = (
         "开头明确说市场连续下跌后可能修复，但仓位必须很轻。\n\n"
@@ -50,15 +43,31 @@ def _opencli_capture_runner(
     def runner(command, **kwargs):
         if command[0] == "ffprobe":
             return _runner(command, **kwargs)
-        if command[:3] != ["opencli", "browser", "ticket02-test"]:
+        prefix = ["opencli"]
+        if profile:
+            prefix.extend(["--profile", profile])
+        prefix.extend(["browser", "ticket02-test"])
+        if command[: len(prefix)] != prefix:
             raise AssertionError(command)
-        tail = command[3:]
-        if len(tail) == 2 and tail[0] == "eval" and "url: location.href" in tail[1]:
+        tail = command[len(prefix):]
+        if tail[:1] == ["open"]:
+            payload = {"url": command[len(prefix) + 1], "page": "page-1"}
+        elif tail[:1] == ["eval"] and "current_url: location.href" in tail[1]:
+            payload = {
+                "current_url": "https://pan.baidu.com/pfile/video?path="
+                + quote(f"/课程/自己的课/小草/{video_name}")
+            }
+        elif len(tail) == 2 and tail[0] == "eval" and "url: location.href" in tail[1]:
+            assert "ad_overlays_dismissed" in tail[1]
+            assert "location.reload" not in tail[1]
+            assert "await new Promise" in tail[1]
+            assert "document.contains(overlay) && visible(overlay)" in tail[1]
             payload = {
                 "url": (
                     "https://pan.baidu.com/pfile/video?path="
-                    f"%2F%E8%AF%BE%E7%A8%8B%2F{video_name}"
+                    + quote(f"/课程/自己的课/小草/{video_name}")
                 ),
+                "target_bound": True,
                 "active": {"matches": 1, "text": "文稿"},
                 "transcript": {"text": transcript},
                 "render": {
@@ -98,10 +107,6 @@ def _evidence(video_name: str, visible_state: str) -> dict:
         "文稿 已生成": "transcript_ready",
         "AI笔记生成中": "ai_note_generating",
         "AI笔记 已生成": "ai_note_ready",
-        "文稿 已导出": "transcript_exported",
-        "同名文稿已在当前网盘目录中可见": "cloud_document_present",
-        "同名文稿可见": "cloud_document_present",
-        "同名文稿下载已开始": "download_started",
     }
     marker = markers.get(visible_state)
     if marker is None and visible_state.startswith("文稿生成中"):
@@ -112,7 +117,6 @@ def _evidence(video_name: str, visible_state: str) -> dict:
         "transcript_ready",
         "ai_note_generating",
         "ai_note_ready",
-        "transcript_exported",
     }
     page_url = (
         "https://pan.baidu.com/pfile/video?path="
@@ -150,43 +154,711 @@ def _liveness_evidence(*, observed_at: datetime = NOW) -> dict:
     }
 
 
-def _advance_to_download_requested(
-    service: NetdiskEnrichmentService, video: Path, job_id: str
-) -> None:
+def _opencli_upload_runner(
+    events_path: Path,
+    video_name: str,
+    *,
+    injected_size: int = 10,
+    opencli_command: tuple[str, ...] = ("opencli",),
+    snapshot_paths: list[Path] | None = None,
+    route_changes_during_fetch: bool = False,
+    loopback_command_fails: bool = False,
+):
+    target_present = False
+
+    def runner(command, **kwargs):
+        nonlocal target_present
+        if command[0] == "ffprobe":
+            return _runner(command, **kwargs)
+        prefix = [*opencli_command, "--profile", "work", "browser"]
+        if command[: len(prefix)] != prefix:
+            raise AssertionError(command)
+        assert command[len(prefix)] == "ticket02-upload"
+        tail = command[len(prefix) + 1:]
+        if tail[:1] == ["open"]:
+            payload = {"url": tail[1], "page": "page-1"}
+        elif tail[:1] == ["eval"] and "current_url: location.href" in tail[1]:
+            payload = {
+                "current_url": "https://pan.baidu.com/pfile/video?path="
+                + quote(f"/课程/自己的课/小草/{video_name}")
+            }
+        elif tail[:1] == ["eval"] and "/api/list" in tail[1]:
+            assert "maxPages = 100" in tail[1]
+            assert "page += 1" in tail[1]
+            assert "complete_scan" in tail[1]
+            payload = {
+                "page_url": "https://pan.baidu.com/disk/main",
+                "errno": 0,
+                "complete_scan": True,
+                "folder_bound": True,
+                "exact_count": 1 if target_present else 0,
+                "target_name": video_name,
+            }
+        elif tail[:1] == ["eval"] and "data-xiaocao-upload-marker" in tail[1]:
+            assert "stopImmediatePropagation" in tail[1]
+            assert "capture: true" in tail[1]
+            assert "addEventListener('input'" in tail[1]
+            assert "addEventListener('change'" in tail[1]
+            assert "hashchange" in tail[1]
+            payload = {"marked": True, "matches": 1}
+        elif tail[:1] == ["eval"] and "folder_bound" in tail[1]:
+            payload = {"folder_bound": True}
+        elif tail[:1] == ["upload"]:
+            ledger = events_path.read_text(encoding="utf-8")
+            assert "netdisk_upload_claimed" in ledger
+            assert "data-xiaocao-upload-marker" in tail[1]
+            snapshot_path = Path(tail[2])
+            assert snapshot_path.name == video_name
+            assert snapshot_path.read_bytes() == b"real-video"
+            if snapshot_paths is not None:
+                snapshot_paths.append(snapshot_path)
+            return SimpleNamespace(returncode=1, stdout="", stderr="Not allowed")
+        elif tail[:1] == ["eval"] and "DataTransfer" in tail[1]:
+            ledger = events_path.read_text(encoding="utf-8")
+            assert "netdisk_upload_claimed" in ledger
+            assert "expectedDir" in tail[1]
+            assert "wrong_folder" in tail[1]
+            assert "wrong_folder_after_fetch" in tail[1]
+            if loopback_command_fails:
+                return SimpleNamespace(
+                    returncode=1,
+                    stdout="",
+                    stderr="simulated browser failure",
+                )
+            if route_changes_during_fetch:
+                payload = {
+                    "injected": False,
+                    "reason": "wrong_folder_after_fetch",
+                }
+                return SimpleNamespace(
+                    returncode=0,
+                    stdout=json.dumps(payload, ensure_ascii=False),
+                    stderr="",
+                )
+            target_present = True
+            payload = {
+                "injected": True,
+                "target_name": video_name,
+                "size_bytes": injected_size,
+            }
+        else:
+            raise AssertionError(command)
+        return SimpleNamespace(
+            returncode=0,
+            stdout=json.dumps(payload, ensure_ascii=False),
+            stderr="",
+        )
+
+    return runner
+
+
+def test_opencli_step_claims_before_loopback_upload_and_waits_for_cloud_proof(
+    tmp_path,
+):
+    video = tmp_path / "20260720 upload-contract-compressed.mp4"
+    video.write_bytes(b"real-video")
+    events_path = tmp_path / "out" / "events.jsonl"
+    service = NetdiskEnrichmentService(
+        tmp_path / "out",
+        runner=_opencli_upload_runner(events_path, video.name),
+        now=lambda: NOW,
+        opencli_command=("opencli",),
+    )
+    prepared = service.prepare(video)
+
+    submitted = service.advance_opencli(
+        prepared["job_id"],
+        session="ticket02-upload",
+        profile="work",
+    )
+
+    assert submitted["event"] == "netdisk_upload_started"
+    assert submitted["status"] == "upload_claimed"
+    assert submitted["upload_transport"] == "loopback_dom_file"
+    assert "127.0.0.1" not in json.dumps(submitted)
+    assert [json.loads(line)["event"] for line in events_path.read_text().splitlines()] == [
+        "netdisk_video_prepared",
+        "netdisk_browser_liveness_ready",
+        "netdisk_upload_claimed",
+        "netdisk_upload_started",
+    ]
+
+    ready = service.advance_opencli(
+        prepared["job_id"],
+        session="ticket02-upload",
+        profile="work",
+    )
+
+    assert ready["event"] == "netdisk_video_ready"
+    assert ready["status"] == "video_ready"
+    assert ready["source_mode"] == "uploaded"
+
+
+def test_npx_runtime_upload_uses_private_snapshot_path_not_inherited_fd(tmp_path):
+    video = tmp_path / "20260720 npx-contract-compressed.mp4"
+    video.write_bytes(b"real-video")
+    snapshots: list[Path] = []
+    opencli_command = ("npx", "--yes", "@jackwener/opencli@1.8.6")
+    service = NetdiskEnrichmentService(
+        tmp_path / "out",
+        runner=_opencli_upload_runner(
+            tmp_path / "out" / "events.jsonl",
+            video.name,
+            opencli_command=opencli_command,
+            snapshot_paths=snapshots,
+        ),
+        now=lambda: NOW,
+        opencli_command=opencli_command,
+    )
+    prepared = service.prepare(video)
+
+    submitted = service.advance_opencli(
+        prepared["job_id"],
+        session="ticket02-upload",
+        profile="work",
+    )
+
+    assert submitted["status"] == "upload_claimed"
+    assert submitted["upload_transport"] == "loopback_dom_file"
+    assert len(snapshots) == 1
+    assert "/dev/fd/" not in str(snapshots[0])
+    assert snapshots[0].exists() is False
+
+
+def test_upload_claim_replay_only_reconciles_and_never_resubmits(tmp_path):
+    video = tmp_path / "20260720 replay-contract-compressed.mp4"
+    video.write_bytes(b"real-video")
+    commands = []
+    base_runner = _opencli_upload_runner(
+        tmp_path / "out" / "events.jsonl",
+        video.name,
+    )
+
+    def runner(command, **kwargs):
+        commands.append(command)
+        return base_runner(command, **kwargs)
+
+    service = NetdiskEnrichmentService(
+        tmp_path / "out",
+        runner=runner,
+        now=lambda: NOW,
+        opencli_command=("opencli",),
+    )
+    prepared = service.prepare(video)
+    service.record_browser_liveness(
+        prepared["job_id"],
+        surface="opencli",
+        evidence=_liveness_evidence(),
+    )
+    service.claim_browser_action(prepared["job_id"], action="upload")
+
+    replay = service.advance_opencli(
+        prepared["job_id"],
+        session="ticket02-upload",
+        profile="work",
+    )
+
+    assert replay["status"] == "upload_claimed"
+    assert replay["side_effect_uncertain"] is True
+    assert all("upload" not in command[5:] for command in commands)
+    assert all(
+        not (len(command) > 6 and "DataTransfer" in command[6])
+        for command in commands
+    )
+
+
+def test_upload_rejects_source_changed_after_prepare_before_any_submission(tmp_path):
+    video = tmp_path / "20260720 immutable-source-compressed.mp4"
+    video.write_bytes(b"real-video")
+    upload_attempted = False
+
+    def runner(command, **kwargs):
+        nonlocal upload_attempted
+        if command[0] == "ffprobe":
+            return _runner(command, **kwargs)
+        tail = command[5:]
+        if tail[:1] == ["open"]:
+            payload = {"url": command[6], "page": "page-1"}
+        elif tail[:1] == ["eval"] and "/api/list" in tail[1]:
+            video.write_bytes(b"changed-source")
+            payload = {
+                "page_url": "https://pan.baidu.com/disk/main",
+                "errno": 0,
+                "complete_scan": True,
+                "folder_bound": True,
+                "exact_count": 0,
+                "target_name": video.name,
+                "target_index": -1,
+            }
+        elif tail[:1] == ["eval"] and "folder_bound" in tail[1]:
+            payload = {"folder_bound": True}
+        else:
+            upload_attempted = True
+            raise AssertionError(command)
+        return SimpleNamespace(
+            returncode=0,
+            stdout=json.dumps(payload, ensure_ascii=False),
+            stderr="",
+        )
+
+    service = NetdiskEnrichmentService(
+        tmp_path / "out",
+        runner=runner,
+        now=lambda: NOW,
+        opencli_command=("opencli",),
+    )
+    prepared = service.prepare(video)
+
+    with pytest.raises(EnrichmentError, match="source changed"):
+        service.advance_opencli(
+            prepared["job_id"],
+            session="ticket02-immutable",
+            profile="work",
+        )
+
+    assert upload_attempted is False
+    assert service.status(prepared["job_id"])["status"] == "upload_claimed"
+
+
+def test_loopback_upload_rejects_browser_size_mismatch(tmp_path):
+    video = tmp_path / "20260720 size-contract-compressed.mp4"
+    video.write_bytes(b"real-video")
+    service = NetdiskEnrichmentService(
+        tmp_path / "out",
+        runner=_opencli_upload_runner(
+            tmp_path / "out" / "events.jsonl",
+            video.name,
+            injected_size=9,
+        ),
+        now=lambda: NOW,
+        opencli_command=("opencli",),
+    )
+    prepared = service.prepare(video)
+
+    with pytest.raises(EnrichmentError, match="size changed"):
+        service.advance_opencli(
+            prepared["job_id"],
+            session="ticket02-upload",
+            profile="work",
+        )
+
+    latest = service.status(prepared["job_id"])
+    assert latest["event"] == "netdisk_upload_failed"
+    assert latest["status"] == "upload_claimed"
+    assert latest["reason"] == "browser_injection_failed"
+
+
+def test_loopback_upload_records_sanitized_opencli_command_failure(tmp_path):
+    video = tmp_path / "20260720 command-failure-compressed.mp4"
+    video.write_bytes(b"real-video")
+    output_dir = tmp_path / "out"
+    service = NetdiskEnrichmentService(
+        output_dir,
+        runner=_opencli_upload_runner(
+            output_dir / "events.jsonl",
+            video.name,
+            loopback_command_fails=True,
+        ),
+        now=lambda: NOW,
+        opencli_command=("opencli",),
+    )
+    prepared = service.prepare(video)
+
+    with pytest.raises(EnrichmentError, match="OpenCLI browser command failed"):
+        service.advance_opencli(
+            prepared["job_id"],
+            session="ticket02-upload",
+            profile="work",
+        )
+
+    events = [
+        json.loads(line)
+        for line in (output_dir / "events.jsonl").read_text(encoding="utf-8").splitlines()
+    ]
+    assert events[-1]["event"] == "netdisk_upload_failed"
+    assert events[-1]["status"] == "upload_claimed"
+    assert events[-1]["reason"] == "browser_injection_failed"
+    assert "simulated browser failure" not in json.dumps(events)
+    assert "netdisk_upload_started" not in [row["event"] for row in events]
+
+
+def test_loopback_upload_rejects_route_change_during_fetch(tmp_path):
+    video = tmp_path / "20260720 folder-bound-compressed.mp4"
+    video.write_bytes(b"real-video")
+    output_dir = tmp_path / "out"
+    service = NetdiskEnrichmentService(
+        output_dir,
+        runner=_opencli_upload_runner(
+            output_dir / "events.jsonl",
+            video.name,
+            route_changes_during_fetch=True,
+        ),
+        now=lambda: NOW,
+        opencli_command=("opencli",),
+    )
+    prepared = service.prepare(video)
+
+    with pytest.raises(EnrichmentError, match="loopback file injection failed"):
+        service.advance_opencli(
+            prepared["job_id"],
+            session="ticket02-upload",
+            profile="work",
+        )
+
+    events = [
+        json.loads(line)
+        for line in (output_dir / "events.jsonl").read_text(encoding="utf-8").splitlines()
+    ]
+    assert "netdisk_upload_claimed" in [row["event"] for row in events]
+    assert "netdisk_upload_started" not in [row["event"] for row in events]
+    assert events[-1]["event"] == "netdisk_upload_failed"
+    assert events[-1]["status"] == "upload_claimed"
+    assert events[-1]["reason"] == "wrong_folder_after_fetch"
+    assert events[-1]["failure_stage"] == "loopback_dom_file"
+    assert service.status(prepared["job_id"])["status"] == "upload_claimed"
+
+
+def _opencli_transcript_runner(video_name: str):
+    transcript_probe_count = 0
+
+    def runner(command, **kwargs):
+        nonlocal transcript_probe_count
+        if command[0] == "ffprobe":
+            return _runner(command, **kwargs)
+        if command[:4] != ["opencli", "--profile", "work", "browser"]:
+            raise AssertionError(command)
+        tail = command[5:]
+        if tail[:1] == ["open"]:
+            payload = {"url": command[6], "page": "page-1"}
+        elif tail[:1] == ["eval"] and "current_url: location.href" in tail[1]:
+            payload = {
+                "current_url": "https://pan.baidu.com/pfile/video?path="
+                + quote(f"/课程/自己的课/小草/{video_name}")
+            }
+        elif tail[:1] == ["eval"] and "/api/list" in tail[1]:
+            payload = {
+                "page_url": "https://pan.baidu.com/disk/main",
+                "errno": 0,
+                "complete_scan": True,
+                "folder_bound": True,
+                "exact_count": 1,
+                "target_name": video_name,
+            }
+        elif tail[:1] == ["eval"] and "scheduled" in tail[1]:
+            payload = {"scheduled": True, "tab": "文稿", "matches": 1}
+        elif tail[:1] == ["eval"] and "expected_tab" in tail[1]:
+            payload = {
+                "active_tab": "文稿",
+                "expected_tab": "文稿",
+                "target_bound": True,
+            }
+        elif tail[:1] == ["eval"] and "transcript_state" in tail[1]:
+            transcript_probe_count += 1
+            payload = (
+                {
+                    "transcript_state": "generating",
+                    "active_tab": "文稿",
+                    "content_chars": 0,
+                    "export_available": False,
+                    "target_bound": True,
+                }
+                if transcript_probe_count == 1
+                else {
+                    "transcript_state": "ready",
+                    "active_tab": "文稿",
+                    "content_chars": 1842,
+                    "export_available": True,
+                    "target_bound": True,
+                }
+            )
+        else:
+            raise AssertionError(command)
+        return SimpleNamespace(
+            returncode=0,
+            stdout=json.dumps(payload, ensure_ascii=False),
+            stderr="",
+        )
+
+    return runner
+
+
+def test_opencli_step_submits_then_polls_transcript_without_reclicking_generation(
+    tmp_path,
+):
+    video = tmp_path / "20260720 transcript-contract-compressed.mp4"
+    video.write_bytes(b"real-video")
+    clock = [NOW]
+    service = NetdiskEnrichmentService(
+        tmp_path / "out",
+        runner=_opencli_transcript_runner(video.name),
+        now=lambda: clock[0],
+        opencli_command=("opencli",),
+    )
+    prepared = service.prepare(video)
+    ready = service.advance_opencli(
+        prepared["job_id"], session="ticket02-transcript", profile="work"
+    )
+
+    requested = service.advance_opencli(
+        prepared["job_id"], session="ticket02-transcript", profile="work"
+    )
+
+    assert ready["status"] == "video_ready"
+    assert requested["event"] == "netdisk_transcript_requested"
+    assert requested["status"] == "transcript_requested"
+    assert requested["next_poll_not_before"] == (
+        NOW + timedelta(minutes=5)
+    ).isoformat(timespec="microseconds")
+    events = [
+        json.loads(line)["event"]
+        for line in (tmp_path / "out" / "events.jsonl").read_text().splitlines()
+    ]
+    assert events[-2:] == [
+        "netdisk_transcript_claimed",
+        "netdisk_transcript_requested",
+    ]
+
+    clock[0] = NOW + timedelta(minutes=6)
+    completed = service.advance_opencli(
+        prepared["job_id"], session="ticket02-transcript", profile="work"
+    )
+
+    assert completed["event"] == "netdisk_transcript_ready"
+    assert completed["status"] == "transcript_ready"
+
+
+def test_transcript_claim_replay_never_repeats_generation_interaction(tmp_path):
+    service, video, prepared = _prepare(tmp_path)
+    job_id = prepared["job_id"]
+    service.record_browser_liveness(
+        job_id,
+        surface="opencli",
+        evidence=_liveness_evidence(),
+    )
     service.record_browser_state(
         job_id,
         step="video_ready",
         evidence=_evidence(video.name, "目标视频已存在"),
         source_mode="existing",
     )
-    for action, requested_step, ready_step, requested_text, ready_text in (
-        ("transcript", "transcript_requested", "transcript_ready", "文稿生成中", "文稿 已生成"),
-        ("ai_note", "ai_note_requested", "ai_note_ready", "AI笔记生成中", "AI笔记 已生成"),
-    ):
-        service.claim_browser_action(job_id, action=action)
-        service.record_browser_state(
-            job_id, step=requested_step, evidence=_evidence(video.name, requested_text)
-        )
-        service.record_browser_state(
-            job_id, step=ready_step, evidence=_evidence(video.name, ready_text)
-        )
-    service.claim_browser_action(job_id, action="export")
-    service.record_browser_state(
+    service.claim_browser_action(job_id, action="transcript")
+
+    def no_browser_mutation(command, **_kwargs):
+        raise AssertionError(command)
+
+    service.runner = no_browser_mutation
+    replay = service.advance_opencli(
         job_id,
-        step="export_ready",
-        evidence=_evidence(video.name, "文稿 已导出"),
+        session="ticket02-transcript",
+        profile="work",
     )
-    document_name = f"{video.stem}.doc"
-    service.record_browser_state(
-        job_id,
-        step="cloud_document_ready",
-        evidence=_evidence(document_name, "同名文稿已在当前网盘目录中可见"),
+
+    assert replay["status"] == "transcript_claimed"
+    assert replay["side_effect_uncertain"] is True
+    assert replay["idempotent_replay"] is True
+
+
+def _opencli_ai_note_runner(
+    video_name: str,
+    *,
+    note_states: list[dict] | None = None,
+):
+    note_probe_count = 0
+    probe_states = note_states or [
+        {
+            "ai_note_state": "missing",
+            "active_tab": "笔记",
+            "content_chars": 0,
+            "template": "",
+            "target_bound": True,
+        },
+        {
+            "ai_note_state": "generating",
+            "active_tab": "笔记",
+            "content_chars": 0,
+            "template": "文稿笔记",
+            "target_bound": True,
+        },
+        {
+            "ai_note_state": "ready",
+            "active_tab": "笔记",
+            "content_chars": 918,
+            "template": "文稿笔记",
+            "target_bound": True,
+        },
+    ]
+
+    def runner(command, **kwargs):
+        nonlocal note_probe_count
+        if command[0] == "ffprobe":
+            return _runner(command, **kwargs)
+        if command[:4] != ["opencli", "--profile", "work", "browser"]:
+            raise AssertionError(command)
+        tail = command[5:]
+        if tail[:1] == ["open"]:
+            payload = {"url": command[6], "page": "page-1"}
+        elif tail[:1] == ["eval"] and "current_url: location.href" in tail[1]:
+            payload = {
+                "current_url": "https://pan.baidu.com/pfile/video?path="
+                + quote(f"/课程/自己的课/小草/{video_name}")
+            }
+        elif tail[:2] == ["wait", "selector"]:
+            return SimpleNamespace(returncode=0, stdout="Waited", stderr="")
+        elif tail[:1] == ["eval"] and "previewTemplate" in tail[1]:
+            payload = {"scheduled": True, "template_no": 1}
+        elif tail[:1] == ["eval"] and "genNoteByTpl" in tail[1]:
+            payload = {"submitted": True, "template_no": 1}
+        elif tail[:1] == ["eval"] and "ai_note_state" in tail[1]:
+            note_probe_count += 1
+            payload = probe_states[min(note_probe_count - 1, len(probe_states) - 1)]
+        elif tail[:1] == ["eval"] and "scheduled" in tail[1]:
+            payload = {"scheduled": True, "tab": "笔记", "matches": 1}
+        elif tail[:1] == ["eval"] and "expected_tab" in tail[1]:
+            payload = {
+                "active_tab": "笔记",
+                "expected_tab": "笔记",
+                "target_bound": True,
+            }
+        else:
+            raise AssertionError(command)
+        return SimpleNamespace(
+            returncode=0,
+            stdout=json.dumps(payload, ensure_ascii=False),
+            stderr="",
+        )
+
+    return runner
+
+
+def test_opencli_step_tracks_ai_note_as_independent_template_job(tmp_path):
+    video = tmp_path / "20260720 ai-note-contract-compressed.mp4"
+    video.write_bytes(b"real-video")
+    clock = [NOW]
+    service = NetdiskEnrichmentService(
+        tmp_path / "out",
+        runner=_opencli_ai_note_runner(video.name),
+        now=lambda: clock[0],
+        opencli_command=("opencli",),
     )
-    service.claim_browser_action(job_id, action="download")
+    prepared = service.prepare(video)
+    job_id = prepared["job_id"]
     service.record_browser_state(
         job_id,
-        step="download_requested",
-        evidence=_evidence(document_name, "同名文稿下载已开始"),
+        step="video_ready",
+        evidence=_evidence(video.name, "目标视频已存在"),
+        source_mode="existing",
+    )
+    service.record_browser_state(
+        job_id,
+        step="transcript_ready",
+        evidence=_evidence(video.name, "文稿 已生成"),
+        reconcile_existing=True,
+    )
+
+    triggered = service.advance_opencli(
+        job_id, session="ticket02-ai-note", profile="work"
+    )
+
+    assert triggered["event"] == "netdisk_ai_note_triggered"
+    assert triggered["status"] == "ai_note_requested"
+    assert triggered["ai_note_template"] == "文稿笔记"
+    assert triggered["ai_note_template_no"] == 1
+    assert triggered["ai_note_completion_required"] is False
+    assert triggered["browser_evidence"]["page_url"] == (
+        "https://pan.baidu.com/pfile/video"
+    )
+    assert "snapshot_text" not in triggered["browser_evidence"]
+
+
+def test_ai_note_claim_replay_never_repeats_template_submission(tmp_path):
+    service, video, prepared = _prepare(tmp_path)
+    job_id = prepared["job_id"]
+    service.record_browser_liveness(
+        job_id,
+        surface="opencli",
+        evidence=_liveness_evidence(),
+    )
+    service.record_browser_state(
+        job_id,
+        step="video_ready",
+        evidence=_evidence(video.name, "目标视频已存在"),
+        source_mode="existing",
+    )
+    service.record_browser_state(
+        job_id,
+        step="transcript_ready",
+        evidence=_evidence(video.name, "文稿 已生成"),
+        reconcile_existing=True,
+    )
+    service.claim_browser_action(job_id, action="ai_note")
+
+    def no_browser_mutation(command, **_kwargs):
+        raise AssertionError(command)
+
+    service.runner = no_browser_mutation
+    replay = service.advance_opencli(
+        job_id,
+        session="ticket02-ai-note",
+        profile="work",
+    )
+
+    assert replay["status"] == "ai_note_claimed"
+    assert replay["side_effect_uncertain"] is True
+    assert replay["idempotent_replay"] is True
+
+
+def test_opencli_step_waits_for_semantic_tab_activation_before_probing(tmp_path):
+    video = tmp_path / "20260720 tab-race-contract-compressed.mp4"
+    video.write_bytes(b"real-video")
+    commands = []
+    base_runner = _opencli_ai_note_runner(video.name)
+
+    def runner(command, **kwargs):
+        commands.append(command)
+        tail = command[5:] if len(command) > 5 else []
+        if tail[:1] == ["eval"] and "expected_tab" in tail[1]:
+            return SimpleNamespace(
+                returncode=0,
+                stdout=json.dumps(
+                    {
+                        "active_tab": "笔记",
+                        "expected_tab": "笔记",
+                        "target_bound": True,
+                    },
+                    ensure_ascii=False,
+                ),
+                stderr="",
+            )
+        return base_runner(command, **kwargs)
+
+    service = NetdiskEnrichmentService(
+        tmp_path / "out",
+        runner=runner,
+        now=lambda: NOW,
+        opencli_command=("opencli",),
+    )
+    prepared = service.prepare(video)
+    job_id = prepared["job_id"]
+    service.record_browser_state(
+        job_id,
+        step="video_ready",
+        evidence=_evidence(video.name, "目标视频已存在"),
+        source_mode="existing",
+    )
+    service.record_browser_state(
+        job_id,
+        step="transcript_ready",
+        evidence=_evidence(video.name, "文稿 已生成"),
+        reconcile_existing=True,
+    )
+
+    service.advance_opencli(job_id, session="ticket02-tab-race", profile="work")
+
+    assert any(
+        len(command) > 6
+        and command[5] == "eval"
+        and "expected_tab" in command[6]
+        for command in commands
     )
 
 
@@ -534,6 +1206,13 @@ def _prepare_opencli_dom_capture(
             evidence=_evidence(video.name, "AI笔记 已生成"),
             reconcile_existing=True,
         )
+    else:
+        service.claim_browser_action(job_id, action="ai_note")
+        service.record_browser_state(
+            job_id,
+            step="ai_note_requested",
+            evidence=_evidence(video.name, "AI笔记生成中"),
+        )
     return service, job_id
 
 
@@ -547,7 +1226,7 @@ def test_opencli_dom_capture_materializes_complete_immutable_transcript(tmp_path
 
     transcript = Path(captured["transcript_path"])
     assert captured["event"] == "netdisk_transcript_dom_captured"
-    assert captured["status"] == "downloaded"
+    assert captured["status"] == "transcript_captured"
     assert captured["transcript_acquisition"] == "opencli_dom"
     assert captured["dom_page_url"] == "https://pan.baidu.com/pfile/video"
     assert captured["dom_render_proof"]["scroll_top"] == 0
@@ -563,9 +1242,21 @@ def test_opencli_dom_capture_materializes_complete_immutable_transcript(tmp_path
     assert "access_token" not in ledger
 
 
-def test_legacy_export_compatibility_does_not_require_ai_note(tmp_path):
-    service, video, prepared = _prepare(tmp_path)
-    job_id = prepared["job_id"]
+def test_opencli_dom_capture_requires_ai_note_submission_state(tmp_path):
+    video = tmp_path / "20260720 submission-gate-compressed.mp4"
+    video.write_bytes(b"real-video")
+    service = NetdiskEnrichmentService(
+        tmp_path / "out",
+        runner=_opencli_capture_runner(video.name),
+        now=lambda: NOW,
+        opencli_command=("opencli",),
+    )
+    job_id = service.prepare(video)["job_id"]
+    service.record_browser_liveness(
+        job_id,
+        surface="opencli",
+        evidence=_liveness_evidence(),
+    )
     service.record_browser_state(
         job_id,
         step="video_ready",
@@ -579,9 +1270,43 @@ def test_legacy_export_compatibility_does_not_require_ai_note(tmp_path):
         reconcile_existing=True,
     )
 
-    claimed = service.claim_browser_action(job_id, action="export")
+    with pytest.raises(EnrichmentError, match="AI-note submission"):
+        service.capture_opencli_transcript(job_id, session="ticket02-test")
 
-    assert claimed["status"] == "export_claimed"
+
+def test_opencli_capture_rejects_same_basename_in_wrong_directory_before_dom_mutation(
+    tmp_path,
+):
+    service, job_id = _prepare_opencli_dom_capture(tmp_path)
+    base_runner = service.runner
+    capture_mutated = False
+
+    def wrong_directory_runner(command, **kwargs):
+        nonlocal capture_mutated
+        if (
+            command[0] == "opencli"
+            and command[-2:-1] == ["eval"]
+            and "current_url: location.href" in command[-1]
+        ):
+            name = service.status(job_id)["video_basename"]
+            payload = {
+                "current_url": "https://pan.baidu.com/pfile/video?path="
+                + quote(f"/另一个目录/{name}")
+            }
+            return SimpleNamespace(
+                returncode=0,
+                stdout=json.dumps(payload, ensure_ascii=False),
+                stderr="",
+            )
+        if command[0] == "opencli" and "ad_overlays_dismissed" in command[-1]:
+            capture_mutated = True
+        return base_runner(command, **kwargs)
+
+    service.runner = wrong_directory_runner
+    with pytest.raises(EnrichmentError, match="prepared Netdisk path"):
+        service.capture_opencli_transcript(job_id, session="ticket02-test")
+
+    assert capture_mutated is False
 
 
 def test_opencli_dom_capture_retries_one_transient_command_timeout(tmp_path):
@@ -603,8 +1328,8 @@ def test_opencli_dom_capture_retries_one_transient_command_timeout(tmp_path):
         session="ticket02-test",
     )
 
-    assert captured["status"] == "downloaded"
-    assert opencli_calls == 2
+    assert captured["status"] == "transcript_captured"
+    assert opencli_calls == 4
 
 
 def test_opencli_dom_capture_rejects_virtualized_or_partial_render(tmp_path):
@@ -618,7 +1343,7 @@ def test_opencli_dom_capture_rejects_virtualized_or_partial_render(tmp_path):
 
     status = service.status(job_id)
     assert status["event"] == "netdisk_dom_capture_failed"
-    assert status["status"] == "transcript_ready"
+    assert status["status"] == "ai_note_requested"
     assert status["reason"] == "partial_or_virtualized_transcript"
 
     service.runner = _opencli_capture_runner(status["video_basename"])
@@ -627,7 +1352,7 @@ def test_opencli_dom_capture_rejects_virtualized_or_partial_render(tmp_path):
         session="ticket02-test",
     )
 
-    assert recovered["status"] == "downloaded"
+    assert recovered["status"] == "transcript_captured"
     assert "reason" not in recovered
     assert "failure_stage" not in recovered
     assert "error_type" not in recovered
@@ -637,9 +1362,6 @@ def test_opencli_dom_capture_rejects_virtualized_or_partial_render(tmp_path):
     "step",
     (
         "transcript_requested",
-        "export_ready",
-        "cloud_document_ready",
-        "download_requested",
     ),
 )
 def test_reconcile_existing_rejects_non_reconcilable_states(tmp_path, step):
@@ -770,12 +1492,14 @@ def test_decision_completion_rejects_non_object_provider_result():
         validate_decision_completion(None)  # type: ignore[arg-type]
 
 
-def test_full_browser_checkpoint_chain_imports_and_reads_downloaded_word(tmp_path):
+def test_full_browser_checkpoint_chain_reads_complete_dom_transcript(tmp_path):
     service, video, current = _prepare(tmp_path)
     job_id = current["job_id"]
+    service.runner = _opencli_capture_runner(video.name)
+    service.opencli_command = ("opencli",)
     service.record_browser_liveness(
         job_id,
-        surface="codex_chrome",
+        surface="opencli",
         evidence=_liveness_evidence(),
     )
     current = service.claim_browser_action(job_id, action="upload")
@@ -802,65 +1526,40 @@ def test_full_browser_checkpoint_chain_imports_and_reads_downloaded_word(tmp_pat
         step="ai_note_requested",
         evidence=_evidence(video.name, "AI笔记生成中"),
     )
-    current = service.record_browser_state(
+    captured = service.advance_opencli(
         job_id,
-        step="ai_note_ready",
-        evidence=_evidence(video.name, "AI笔记 已生成"),
+        session="ticket02-test",
     )
-    current = service.claim_browser_action(job_id, action="export")
-    current = service.record_browser_state(
-        job_id,
-        step="export_ready",
-        evidence=_evidence(video.name, "文稿 已导出"),
-    )
-    document_name = f"{video.stem}.doc"
-    current = service.record_browser_state(
-        job_id,
-        step="cloud_document_ready",
-        evidence=_evidence(document_name, "同名文稿已在当前网盘目录中可见"),
-    )
-    current = service.claim_browser_action(job_id, action="download")
-    current = service.record_browser_state(
-        job_id,
-        step="download_requested",
-        evidence=_evidence(document_name, "同名文稿下载已开始"),
-    )
-    downloaded = tmp_path / f"{video.stem}.doc"
-    downloaded.write_bytes(b"word-container")
-    os.utime(downloaded, (NOW.timestamp(), NOW.timestamp()))
-    imported = service.import_transcript_download(job_id, downloaded)
 
-    text = Path(imported["transcript_path"]).read_text(encoding="utf-8")
-    assert current["status"] == "download_requested"
-    assert imported["status"] == "downloaded"
-    assert imported["download_sha256"] == hashlib.sha256(
-        b"word-container"
-    ).hexdigest()
-    assert "北特科技" in text
-    assert imported["transcript_sha256"] == hashlib.sha256(
-        Path(imported["transcript_path"]).read_bytes()
+    text = Path(captured["transcript_path"]).read_text(encoding="utf-8")
+    assert current["status"] == "ai_note_requested"
+    assert captured["status"] == "transcript_captured"
+    assert captured["transcript_acquisition"] == "opencli_dom"
+    assert "信通电子" in text
+    assert captured["transcript_sha256"] == hashlib.sha256(
+        Path(captured["transcript_path"]).read_bytes()
     ).hexdigest()
 
     audit_path = tmp_path / "audit.json"
     audit_path.write_text(
         json.dumps(
             {
-                "video_sha256": imported["video_sha256"],
-                "transcript_sha256": imported["transcript_sha256"],
+                "video_sha256": captured["video_sha256"],
+                "transcript_sha256": captured["transcript_sha256"],
                 "checks": [
-                    {
-                        "position": "opening",
-                        "excerpt": "不要追高",
+                        {
+                            "position": "opening",
+                            "excerpt": "市场连续下跌后可能修复",
                         "passed": True,
                     },
                     {
-                        "position": "middle",
-                        "excerpt": "数字目标是四十",
+                            "position": "middle",
+                            "excerpt": "信通电子、德明利和市场成交量",
                         "passed": True,
                     },
                     {
-                        "position": "ending",
-                        "excerpt": "成交量不放大就不交易",
+                            "position": "ending",
+                            "excerpt": "商业航天没有企稳信号",
                         "passed": True,
                     },
                 ],
@@ -869,7 +1568,7 @@ def test_full_browser_checkpoint_chain_imports_and_reads_downloaded_word(tmp_pat
         ),
         encoding="utf-8",
     )
-    verified = service.verify_download(job_id, audit_path=audit_path)
+    verified = service.verify_transcript(job_id, audit_path=audit_path)
 
     assert verified["status"] == "verified"
     assert verified["content_checks"] == ["ending", "middle", "opening"]
@@ -951,127 +1650,11 @@ def test_full_browser_checkpoint_chain_imports_and_reads_downloaded_word(tmp_pat
     }
 
 
-def test_download_is_blocked_until_exported_cloud_document_is_visible(tmp_path):
-    service, video, current = _prepare(tmp_path)
-    job_id = current["job_id"]
-    service.record_browser_state(
-        job_id,
-        step="video_ready",
-        evidence=_evidence(video.name, "目标视频已存在"),
-        source_mode="existing",
-    )
-    service.claim_browser_action(job_id, action="transcript")
-    service.record_browser_state(
-        job_id,
-        step="transcript_requested",
-        evidence=_evidence(video.name, "文稿生成中"),
-    )
-    service.record_browser_state(
-        job_id,
-        step="transcript_ready",
-        evidence=_evidence(video.name, "文稿 已生成"),
-    )
-
-    service.claim_browser_action(job_id, action="ai_note")
-    service.record_browser_state(
-        job_id,
-        step="ai_note_requested",
-        evidence=_evidence(video.name, "AI笔记生成中"),
-    )
-    service.record_browser_state(
-        job_id,
-        step="ai_note_ready",
-        evidence=_evidence(video.name, "AI笔记 已生成"),
-    )
-
-    with pytest.raises(EnrichmentError, match="cloud_document_ready"):
-        service.claim_browser_action(job_id, action="download")
-
-
-def test_import_is_blocked_until_real_download_was_started(tmp_path):
-    service, video, current = _prepare(tmp_path)
-    job_id = current["job_id"]
-    service.record_browser_state(
-        job_id,
-        step="video_ready",
-        evidence=_evidence(video.name, "目标视频已存在"),
-        source_mode="existing",
-    )
-    for action, requested_step, ready_step, requested_text, ready_text in (
-        ("transcript", "transcript_requested", "transcript_ready", "文稿生成中", "文稿 已生成"),
-        ("ai_note", "ai_note_requested", "ai_note_ready", "AI笔记生成中", "AI笔记 已生成"),
-    ):
-        service.claim_browser_action(job_id, action=action)
-        service.record_browser_state(
-            job_id,
-            step=requested_step,
-            evidence=_evidence(video.name, requested_text),
-        )
-        service.record_browser_state(
-            job_id,
-            step=ready_step,
-            evidence=_evidence(video.name, ready_text),
-        )
-    service.claim_browser_action(job_id, action="export")
-    service.record_browser_state(
-        job_id,
-        step="export_ready",
-        evidence=_evidence(video.name, "文稿 已导出"),
-    )
-    document_name = f"{video.stem}.doc"
-    service.record_browser_state(
-        job_id,
-        step="cloud_document_ready",
-        evidence=_evidence(document_name, "同名文稿已在当前网盘目录中可见"),
-    )
-    service.claim_browser_action(job_id, action="download")
-    downloaded = tmp_path / document_name
-    downloaded.write_bytes(b"word-container")
-
-    with pytest.raises(EnrichmentError, match="download_requested"):
-        service.import_transcript_download(job_id, downloaded)
-
-
-@pytest.mark.parametrize(
-    ("filename", "mtime", "match", "reason"),
-    [
-        (
-            "20260717 盘前大师班直播(7月17日)-compressed-old.doc",
-            NOW.timestamp(),
-            "exactly match",
-            "basename_mismatch",
-        ),
-        (
-            "20260717 盘前大师班直播(7月17日)-compressed.doc",
-            NOW.timestamp() - 30,
-            "not fresh",
-            "stale_or_future_file",
-        ),
-    ],
-)
-def test_download_import_rejects_unbound_local_files(
-    tmp_path, filename, mtime, match, reason
-):
-    service, video, prepared = _prepare(tmp_path)
-    _advance_to_download_requested(service, video, prepared["job_id"])
-    downloaded = tmp_path / filename
-    downloaded.write_bytes(b"word-container")
-    os.utime(downloaded, (mtime, mtime))
-
-    with pytest.raises(EnrichmentError, match=match):
-        service.import_transcript_download(prepared["job_id"], downloaded)
-
-    latest = service.status(prepared["job_id"])
-    assert latest["event"] == "netdisk_download_import_failed"
-    assert latest["status"] == "download_requested"
-    assert latest["reason"] == reason
-
-
 def test_verification_failure_is_appended_without_audit_content(tmp_path):
     service, _video, prepared = _prepare(tmp_path)
 
     with pytest.raises(EnrichmentError, match="content audit not found"):
-        service.verify_download(
+        service.verify_transcript(
             prepared["job_id"], audit_path=tmp_path / "secret-audit.json"
         )
 
@@ -1083,19 +1666,15 @@ def test_verification_failure_is_appended_without_audit_content(tmp_path):
 
 
 def test_non_object_content_audit_fails_with_a_durable_event(tmp_path):
-    service, video, prepared = _prepare(tmp_path)
-    _advance_to_download_requested(service, video, prepared["job_id"])
-    downloaded = tmp_path / f"{video.stem}.doc"
-    downloaded.write_bytes(b"word-container")
-    os.utime(downloaded, (NOW.timestamp(), NOW.timestamp()))
-    service.import_transcript_download(prepared["job_id"], downloaded)
+    service, job_id = _prepare_opencli_dom_capture(tmp_path)
+    service.capture_opencli_transcript(job_id, session="ticket02-test")
     audit_path = tmp_path / "audit.json"
     audit_path.write_text("[]", encoding="utf-8")
 
     with pytest.raises(EnrichmentError, match="JSON object"):
-        service.verify_download(prepared["job_id"], audit_path=audit_path)
+        service.verify_transcript(job_id, audit_path=audit_path)
 
-    latest = service.status(prepared["job_id"])
+    latest = service.status(job_id)
     assert latest["event"] == "netdisk_content_verification_failed"
     assert latest["reason"] == "invalid_audit_shape"
 
@@ -1116,57 +1695,6 @@ def test_decision_input_failure_is_appended_without_bundle_contents(tmp_path):
     assert latest["failure_stage"] == "bundle_not_found"
     ledger = (tmp_path / "out" / "events.jsonl").read_text()
     assert "missing-household-bundle" not in ledger
-
-
-def test_cloud_document_evidence_requires_exact_generated_doc_name(tmp_path):
-    service, video, current = _prepare(tmp_path)
-    job_id = current["job_id"]
-    service.record_browser_state(
-        job_id,
-        step="video_ready",
-        evidence=_evidence(video.name, "目标视频已存在"),
-        source_mode="existing",
-    )
-    for action, requested_step, ready_step, requested_text, ready_text in (
-        ("transcript", "transcript_requested", "transcript_ready", "文稿生成中", "文稿 已生成"),
-        ("ai_note", "ai_note_requested", "ai_note_ready", "AI笔记生成中", "AI笔记 已生成"),
-    ):
-        service.claim_browser_action(job_id, action=action)
-        service.record_browser_state(
-            job_id,
-            step=requested_step,
-            evidence=_evidence(video.name, requested_text),
-        )
-        service.record_browser_state(
-            job_id,
-            step=ready_step,
-            evidence=_evidence(video.name, ready_text),
-        )
-    service.claim_browser_action(job_id, action="export")
-    service.record_browser_state(
-        job_id,
-        step="export_ready",
-        evidence=_evidence(video.name, "文稿 已导出"),
-    )
-
-    with pytest.raises(EnrichmentError, match="target does not match"):
-        service.record_browser_state(
-            job_id,
-            step="cloud_document_ready",
-            evidence=_evidence(f"wrong-{video.stem}.doc", "同名文稿可见"),
-        )
-
-    document_name = f"{video.stem}.doc"
-    evidence = _evidence(document_name, "同名文稿可见")
-    evidence["target_region_text"] = document_name
-    evidence["snapshot_text"] = document_name
-    evidence["snapshot_sha256"] = hashlib.sha256(document_name.encode()).hexdigest()
-    with pytest.raises(EnrichmentError, match="does not prove the state"):
-        service.record_browser_state(
-            job_id,
-            step="cloud_document_ready",
-            evidence=evidence,
-        )
 
 
 def test_claim_replay_stays_uncertain_until_real_page_evidence_arrives(tmp_path):
@@ -1434,46 +1962,3 @@ def test_same_second_preclaim_evidence_is_rejected_with_microsecond_precision(
             evidence=stale_video,
             source_mode="uploaded",
         )
-
-
-def test_cloud_document_evidence_cannot_predate_current_export(tmp_path):
-    service, video, prepared = _prepare(tmp_path)
-    job_id = prepared["job_id"]
-    service.record_browser_state(
-        job_id,
-        step="video_ready",
-        evidence=_evidence(video.name, "目标视频已存在"),
-        source_mode="existing",
-    )
-    service.record_browser_state(
-        job_id,
-        step="transcript_ready",
-        evidence=_evidence(video.name, "文稿 已生成"),
-        reconcile_existing=True,
-    )
-    service.record_browser_state(
-        job_id,
-        step="ai_note_ready",
-        evidence=_evidence(video.name, "AI笔记 已生成"),
-        reconcile_existing=True,
-    )
-    service.claim_browser_action(job_id, action="export")
-    service.record_browser_state(
-        job_id,
-        step="export_ready",
-        evidence=_evidence(video.name, "文稿 已导出"),
-    )
-    document_name = f"{video.stem}.doc"
-    stale_document = _evidence(
-        document_name, "同名文稿已在当前网盘目录中可见"
-    )
-    stale_document["observed_at"] = (NOW - timedelta(seconds=1)).isoformat()
-
-    with pytest.raises(EnrichmentError, match="predecessor browser evidence"):
-        service.record_browser_state(
-            job_id,
-            step="cloud_document_ready",
-            evidence=stale_document,
-        )
-
-    assert service.status(job_id)["status"] == "export_ready"

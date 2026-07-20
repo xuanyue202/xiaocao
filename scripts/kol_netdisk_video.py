@@ -41,7 +41,7 @@ def main() -> int:
             "record",
             "capability-failure",
             "capture-dom",
-            "import-download",
+            "advance-opencli",
             "verify",
             "decide",
             "status",
@@ -51,7 +51,7 @@ def main() -> int:
     parser.add_argument("--video", type=Path)
     parser.add_argument("--job-id")
     parser.add_argument(
-        "--action", choices=("upload", "transcript", "ai_note", "export", "download")
+        "--action", choices=("upload", "transcript", "ai_note")
     )
     parser.add_argument(
         "--step",
@@ -61,9 +61,6 @@ def main() -> int:
             "transcript_ready",
             "ai_note_requested",
             "ai_note_ready",
-            "export_ready",
-            "cloud_document_ready",
-            "download_requested",
         ),
     )
     parser.add_argument("--evidence-file", type=Path)
@@ -85,8 +82,8 @@ def main() -> int:
             "page_contract_changed",
         ),
     )
-    parser.add_argument("--download", type=Path)
     parser.add_argument("--opencli-session")
+    parser.add_argument("--opencli-profile")
     parser.add_argument("--audit-file", type=Path)
     parser.add_argument("--bundle", type=Path)
     parser.add_argument("--decision-output-dir", type=Path, default=DEFAULT_DECISIONS)
@@ -108,10 +105,10 @@ def main() -> int:
         args.surface is None or args.reason is None
     ):
         parser.error("capability-failure requires --surface and --reason")
-    if args.command == "import-download" and args.download is None:
-        parser.error("import-download requires --download")
     if args.command == "capture-dom" and not args.opencli_session:
         parser.error("capture-dom requires --opencli-session")
+    if args.command == "advance-opencli" and not args.opencli_session:
+        parser.error("advance-opencli requires --opencli-session")
     if args.command == "verify" and args.audit_file is None:
         parser.error("verify requires --audit-file")
     if args.command == "decide" and args.bundle is None:
@@ -153,12 +150,19 @@ def main() -> int:
             service.capture_opencli_transcript(
                 args.job_id,
                 session=args.opencli_session,
+                profile=args.opencli_profile,
             )
         )
-    elif args.command == "import-download":
-        _print(service.import_transcript_download(args.job_id, args.download))
+    elif args.command == "advance-opencli":
+        _print(
+            service.advance_opencli(
+                args.job_id,
+                session=args.opencli_session,
+                profile=args.opencli_profile,
+            )
+        )
     elif args.command == "verify":
-        _print(service.verify_download(args.job_id, audit_path=args.audit_file))
+        _print(service.verify_transcript(args.job_id, audit_path=args.audit_file))
     else:
         _print(
             service.decide(

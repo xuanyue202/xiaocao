@@ -1,0 +1,177 @@
+{
+  "household_context_provider": {
+    "type": "lianghui_mcp",
+    "fresh_read_per_run": true
+  },
+  "items": [
+    {
+      "source": "baidu_netdisk_opencli_dom",
+      "author": "小草",
+      "title": "20260719 大师班专场(晚18：00开播)-compressed",
+      "published_at": "2026-07-19T18:00:00+08:00",
+      "captured_at": "2026-07-20T18:18:28+08:00",
+      "evidence_path": "/Users/bytedance/coding/xiaocao/output/live/kol_netdisk_enrichment_ticket02_second_v3/artifacts/kol-netdisk-be3e15d292b984e0/20260719 大师班专场(晚18：00开播)-compressed.txt",
+      "notification_revision": "ticket02-719-final-runtime-v3",
+      "claims": [
+        {
+          "claim_id": "xiaocao-719-final-small-tech-rotation",
+          "quote": "我个人倾向于会。会转到科技小票啊",
+          "reasoning": "趋势科技大票上方套牢盘较重，下一阶段更可能由此前未充分上涨的科技小票提供弹性。",
+          "asset_scope": ["A-share", "small-cap-technology"],
+          "direction": "conditional-long",
+          "horizon": "下一交易周到一个月",
+          "confidence": "medium",
+          "falsifiers": ["市场主线持续由趋势大票主导", "科技小票不能形成相对强度"]
+        },
+        {
+          "claim_id": "xiaocao-719-final-wait-mainline",
+          "quote": "我就得等啊，等到有主线啊，等到赚钱效应出来。",
+          "reasoning": "放量或出清本身不构成买点，必须等待主线和可持续赚钱效应。",
+          "asset_scope": ["A-share", "market-regime"],
+          "direction": "wait",
+          "horizon": "未来一至两周",
+          "confidence": "high",
+          "falsifiers": ["主线和赚钱效应已经持续出现"]
+        },
+        {
+          "claim_id": "xiaocao-719-final-no-horizontal-bottom-fishing",
+          "quote": "我们不参与横盘。",
+          "reasoning": "下跌后的横盘消化期耗时且难以选中下一只领涨股，不应靠盲目抄底占用仓位。",
+          "asset_scope": ["A-share", "bottom-fishing"],
+          "direction": "avoid",
+          "horizon": "主线确认前",
+          "confidence": "high",
+          "falsifiers": ["横盘结束且领涨方向完成确认"]
+        }
+      ],
+      "market_outlook": {
+        "scope": "A股整体与科技小票候选",
+        "claim_ids": [
+          "xiaocao-719-final-small-tech-rotation",
+          "xiaocao-719-final-wait-mainline",
+          "xiaocao-719-final-no-horizontal-bottom-fishing"
+        ],
+        "current_phase": "7月20日收盘后上涨1740家、下跌3709家；人工智能、算力芯片和数字科技虽位于类别排名前列，但收益均显著为负。",
+        "base_case": "科技小票仍可保留为搜索方向，但当前市场没有主线持续性、广度扩张或赚钱效应确认，所以只等待，不抄底。",
+        "strategy": [
+          "不在横盘消化期盲目抄底趋势科技大票",
+          "科技小票仅保留候选，不把类别排名当买点",
+          "只有主线、广度和赚钱效应同时确认后才重评小仓试错"
+        ],
+        "turning_points": [
+          "科技小票形成持续主动领涨",
+          "市场上涨广度转正并连续维持",
+          "科技类别继续普跌且主线缺失"
+        ],
+        "horizon": "下一交易周到一个月",
+        "confidence": "high",
+        "falsifiers": ["科技小票形成持续主动领涨并得到市场广度确认"],
+        "current_validation": {
+          "status": "invalidate",
+          "as_of": "2026-07-20T15:05:54+08:00",
+          "summary": "方向可列候选，但当前广度显著转负，科技类别也普遍下跌，买入触发不成立。",
+          "currentness": {
+            "latest_available": true,
+            "checked_at": "2026-07-20T15:05:54+08:00",
+            "reason": "使用7月20日收盘后市场概览和同日最新板块排名。"
+          },
+          "facts": [
+            {
+              "metric": "a_share_breadth",
+              "value": "positive_total=1740; negative_total=3709; classification=broad_decline",
+              "observed_at": "2026-07-20T15:05:54+08:00",
+              "evidence": "/Users/bytedance/coding/xiaocao/reference/experience/acceptance/kol_netdisk_market_2026-07-20T1505.json#market_overview",
+              "reader_text": "收盘后下跌家数约为上涨家数的2.1倍。"
+            },
+            {
+              "metric": "technology_category_returns",
+              "value": "人工智能=-4.96%; 算力芯片=-6.44%; 数字科技=-4.85%",
+              "observed_at": "2026-07-20T15:05:54+08:00",
+              "evidence": "/Users/bytedance/coding/xiaocao/reference/experience/acceptance/kol_netdisk_market_2026-07-20T1505.json#category_rank_top"
+            }
+          ]
+        }
+      },
+      "actionable_signals": [
+        {
+          "signal_id": "xiaocao-719-final-wait-small-tech",
+          "claim_ids": [
+            "xiaocao-719-final-small-tech-rotation",
+            "xiaocao-719-final-wait-mainline",
+            "xiaocao-719-final-no-horizontal-bottom-fishing"
+          ],
+          "action": "wait",
+          "assets": [
+            {"name": "此前未充分上涨的科技小票", "market": "CN", "theme": "unrisen-small-cap-tech"}
+          ],
+          "relevant_asset_codes": [],
+          "horizon": "下一交易周到一个月",
+          "execution": "不抄底、不追类别排名；只有科技小票形成持续主动领涨、市场广度转正并出现赚钱效应后才重新评估。",
+          "trigger": "科技小票连续形成相对强度，上涨广度扩大，且主线赚钱效应持续。",
+          "funding_plan": "当前不新增资金占用；未来触发时使用最新家庭资产和风险预算。",
+          "confidence": "high",
+          "falsifiers": ["科技方向继续普跌", "只有单点脉冲而无赚钱效应扩散"],
+          "rationale": {
+            "news_or_event": [],
+            "fundamental": ["趋势大票上方套牢盘会压制修复速度，未充分上涨的小票只具备候选价值。"],
+            "trading": ["7月20日下跌家数显著多于上涨家数，科技类别收益为负，主线和赚钱效应尚未确认。"]
+          },
+          "current_validation": {
+            "status": "invalidate",
+            "as_of": "2026-07-20T15:05:54+08:00",
+            "summary": "当前市场没有完成科技小票试仓所需的广度和赚钱效应触发。",
+            "currentness": {
+              "latest_available": true,
+              "checked_at": "2026-07-20T15:05:54+08:00",
+              "reason": "使用7月20日收盘后市场概览和板块排名。"
+            },
+            "facts": [
+              {
+                "metric": "breadth_and_technology",
+                "value": "positive=1740; negative=3709; 人工智能=-4.96%; 算力芯片=-6.44%",
+                "observed_at": "2026-07-20T15:05:54+08:00",
+                "evidence": "/Users/bytedance/coding/xiaocao/reference/experience/acceptance/kol_netdisk_market_2026-07-20T1505.json"
+              }
+            ]
+          }
+        }
+      ],
+      "market_validation": {
+        "status": "invalidate",
+        "as_of": "2026-07-20T15:05:54+08:00",
+        "summary": "科技小票方向没有完成当前买入触发，等待主线和赚钱效应的约束仍有效。",
+        "currentness": {
+          "latest_available": true,
+          "checked_at": "2026-07-20T15:05:54+08:00",
+          "reason": "使用7月20日收盘后最新市场概览和板块排名。"
+        },
+        "facts": [
+          {
+            "metric": "a_share_breadth_and_technology",
+            "value": "positive=1740; negative=3709; 人工智能=-4.96%; 算力芯片=-6.44%",
+            "observed_at": "2026-07-20T15:05:54+08:00",
+            "evidence": "/Users/bytedance/coding/xiaocao/reference/experience/acceptance/kol_netdisk_market_2026-07-20T1505.json"
+          }
+        ]
+      },
+      "synthesis": {
+        "summary": "科技小票仍是值得搜索的后续方向，但7月20日收盘广度和科技表现都没有形成买点；家庭侧继续等待，不参与横盘抄底，Book KOL-US不交易。",
+        "confidence": "high",
+        "conflicts": []
+      },
+      "household_recommendation": {
+        "action": "wait",
+        "evidence": "当前下跌家数约为上涨家数2.1倍，科技类别显著下跌，主线和赚钱效应没有确认。",
+        "confidence": "high",
+        "horizon": "下一交易周到一个月",
+        "falsifier": "科技小票形成持续主动领涨，市场广度转正且赚钱效应扩散。",
+        "relevant_asset_codes": []
+      },
+      "book_kol_us": {
+        "decision": "no_trade",
+        "reason": "来源的可执行方向是尚未触发的A股科技小票候选，没有无歧义的美国上市标的、当前价格或有效买入触发。"
+      }
+    }
+  ],
+  "cross_source": {"agreements": [], "conflicts": []}
+}

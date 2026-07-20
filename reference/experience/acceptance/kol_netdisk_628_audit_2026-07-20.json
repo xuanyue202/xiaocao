@@ -1,0 +1,21 @@
+{
+  "video_sha256": "ae83a04afdc9989467dd754434d5156c00eb5f3a7e3ded012f104e91f9d3d48c",
+  "transcript_sha256": "42b126d37fcf16b549102b12cfe0c6da50b54e27582a3ce7d2511733921b6b27",
+  "checks": [
+    {
+      "position": "opening",
+      "excerpt": "按照现在的节奏，现在先讲一下",
+      "passed": true
+    },
+    {
+      "position": "middle",
+      "excerpt": "被别的板块取代了",
+      "passed": true
+    },
+    {
+      "position": "ending",
+      "excerpt": "我更倾向于这个阶段保持警惕",
+      "passed": true
+    }
+  ]
+}

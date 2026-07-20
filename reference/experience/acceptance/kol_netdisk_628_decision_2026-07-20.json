@@ -1,0 +1,181 @@
+{
+  "household_context_provider": {
+    "type": "lianghui_mcp",
+    "fresh_read_per_run": true
+  },
+  "items": [
+    {
+      "source": "baidu_netdisk_opencli_dom",
+      "author": "小草",
+      "title": "20260628 大师班专场-ticket02-final-runtime-v3-20260720-compressed",
+      "published_at": "2026-06-28T00:00:00+08:00",
+      "published_time_precision": "date",
+      "captured_at": "2026-07-20T18:18:59+08:00",
+      "evidence_path": "/Users/bytedance/coding/xiaocao/output/live/kol_netdisk_enrichment_ticket02_final_v3/artifacts/kol-netdisk-ae83a04afdc99894/20260628 大师班专场-ticket02-final-runtime-v3-20260720-compressed.txt",
+      "notification_revision": "ticket02-628-final-runtime-v3",
+      "claims": [
+        {
+          "claim_id": "xiaocao-628-trend-tail",
+          "quote": "反正在这个最后趋势，这个地方大概率在这里是行情趋势行情的呃尾声了，要么就是被取代，要么就是走加速啊。",
+          "reasoning": "来源把当时行情定义为趋势尾声，后续只有原主线加速或被新板块取代两种主要路径，因此不能把旧强势等同于无条件续涨。",
+          "asset_scope": ["A-share", "trend-regime"],
+          "direction": "cautious",
+          "horizon": "当时下一交易日至一周",
+          "confidence": "high",
+          "falsifiers": ["趋势行情重新扩散且强度持续", "新主线已经完成确认"]
+        },
+        {
+          "claim_id": "xiaocao-628-storage-conditional",
+          "quote": "如果能继续。有能够继续有领涨的这种情况，下面他可能还会继续，还会继续啊",
+          "reasoning": "存储芯片的机会依赖下一交易日继续领涨，而不是依赖周末利好本身；这是短时效的条件信号。",
+          "asset_scope": ["A-share", "storage-chip"],
+          "direction": "conditional-long",
+          "horizon": "当时下一交易日",
+          "confidence": "medium",
+          "falsifiers": ["高开转弱", "存储芯片不能继续领涨", "被其他板块取代"]
+        },
+        {
+          "claim_id": "xiaocao-628-exit-if-weak",
+          "quote": "如果不能走啊，那就离场",
+          "reasoning": "来源给出的失效处理是离场，不能把已经过期的条件信号延伸成当前追买理由。",
+          "asset_scope": ["A-share", "storage-chip"],
+          "direction": "exit-on-failure",
+          "horizon": "触发失败时",
+          "confidence": "high",
+          "falsifiers": ["存储芯片重新形成持续主动领涨"]
+        }
+      ],
+      "market_outlook": {
+        "scope": "A股趋势行情与存储芯片",
+        "claim_ids": [
+          "xiaocao-628-trend-tail",
+          "xiaocao-628-storage-conditional",
+          "xiaocao-628-exit-if-weak"
+        ],
+        "current_phase": "7月20日收盘后上涨1740家、下跌3709家；人工智能、算力芯片和数字科技虽在类别排名前列，但当日收益均为明显负值。",
+        "base_case": "6月28日的隔日领涨条件已经过期，且当前广度和科技类别表现没有提供新的续强确认，因此只保留风控含义，不据此开新仓。",
+        "strategy": [
+          "不以6月28日周末利好或逆势表现作为7月20日追买依据",
+          "存储芯片只有重新形成主动领涨和市场广度修复后才重评",
+          "若已有同类风险暴露，遵循弱则离场并交给最新组合风控处理"
+        ],
+        "turning_points": [
+          "存储芯片连续形成主动领涨且市场广度转正",
+          "科技类别由普跌转为扩散上涨",
+          "旧强势方向继续高开转弱或被其他板块取代"
+        ],
+        "horizon": "当前至下一交易周",
+        "confidence": "high",
+        "falsifiers": [
+          "存储芯片重新形成持续领涨并得到广度确认",
+          "市场出现新的、可验证的主线扩散"
+        ],
+        "current_validation": {
+          "status": "invalidate",
+          "as_of": "2026-07-20T15:05:54+08:00",
+          "summary": "来源要求的隔日继续领涨条件已经失去时效；当前市场广度显著转负，科技类别收益也为负，不能支持当前开仓。",
+          "currentness": {
+            "latest_available": true,
+            "checked_at": "2026-07-20T15:05:54+08:00",
+            "reason": "使用7月20日收盘后市场概览和同日最新板块排名。"
+          },
+          "facts": [
+            {
+              "metric": "a_share_breadth",
+              "value": "positive_total=1740; negative_total=3709; classification=broad_decline",
+              "observed_at": "2026-07-20T15:05:54+08:00",
+              "evidence": "/Users/bytedance/coding/xiaocao/reference/experience/acceptance/kol_netdisk_market_2026-07-20T1505.json#market_overview",
+              "reader_text": "收盘后下跌家数约为上涨家数的2.1倍。"
+            },
+            {
+              "metric": "technology_category_returns",
+              "value": "人工智能=-4.96%; 算力芯片=-6.44%; 数字科技=-4.85%",
+              "observed_at": "2026-07-20T15:05:54+08:00",
+              "evidence": "/Users/bytedance/coding/xiaocao/reference/experience/acceptance/kol_netdisk_market_2026-07-20T1505.json#category_rank_top",
+              "reader_text": "科技类别虽在排名前列，但当日收益整体显著为负。"
+            }
+          ]
+        }
+      },
+      "actionable_signals": [
+        {
+          "signal_id": "xiaocao-628-expired-storage-condition",
+          "claim_ids": [
+            "xiaocao-628-storage-conditional",
+            "xiaocao-628-exit-if-weak"
+          ],
+          "action": "wait",
+          "assets": [
+            {"name": "A股存储芯片", "market": "CN", "theme": "storage-chip"}
+          ],
+          "relevant_asset_codes": [],
+          "horizon": "当前至下一交易周",
+          "execution": "不执行6月28日的隔日条件单；只有存储芯片重新主动领涨、市场广度转正且强度延续时才重新建立候选。",
+          "trigger": "存储芯片连续主动领涨，市场上涨广度恢复，并且不是高开转弱。",
+          "funding_plan": "当前不占用新增资金；未来触发时仍需使用最新家庭资产与风险预算。",
+          "confidence": "high",
+          "falsifiers": ["存储芯片重新形成持续主动领涨", "市场广度和科技扩散同时修复"],
+          "rationale": {
+            "news_or_event": ["来源明确认为消息面不是主要依据，核心是下一交易日是否继续领涨。"],
+            "fundamental": [],
+            "trading": ["7月20日上涨1740家、下跌3709家，算力芯片类别收益为-6.44%，没有当前续强确认。"]
+          },
+          "current_validation": {
+            "status": "invalidate",
+            "as_of": "2026-07-20T15:05:54+08:00",
+            "summary": "隔日信号已过期，当前广度和科技类别表现也没有形成新的触发。",
+            "currentness": {
+              "latest_available": true,
+              "checked_at": "2026-07-20T15:05:54+08:00",
+              "reason": "使用7月20日收盘后最新市场概览和板块排名。"
+            },
+            "facts": [
+              {
+                "metric": "breadth_and_storage_proxy",
+                "value": "positive=1740; negative=3709; 算力芯片=-6.44%",
+                "observed_at": "2026-07-20T15:05:54+08:00",
+                "evidence": "/Users/bytedance/coding/xiaocao/reference/experience/acceptance/kol_netdisk_market_2026-07-20T1505.json"
+              }
+            ]
+          }
+        }
+      ],
+      "market_validation": {
+        "status": "invalidate",
+        "as_of": "2026-07-20T15:05:54+08:00",
+        "summary": "当前市场数据不能把6月28日的短时条件信号续接为新交易。",
+        "currentness": {
+          "latest_available": true,
+          "checked_at": "2026-07-20T15:05:54+08:00",
+          "reason": "使用7月20日收盘后市场概览和板块排名。"
+        },
+        "facts": [
+          {
+            "metric": "a_share_breadth_and_technology",
+            "value": "positive=1740; negative=3709; 人工智能=-4.96%; 算力芯片=-6.44%",
+            "observed_at": "2026-07-20T15:05:54+08:00",
+            "evidence": "/Users/bytedance/coding/xiaocao/reference/experience/acceptance/kol_netdisk_market_2026-07-20T1505.json"
+          }
+        ]
+      },
+      "synthesis": {
+        "summary": "6月28日视频的有效业务信息是趋势尾声、存储芯片需隔日继续领涨、失效则离场；这些条件到7月20日已经过期且未被当前市场确认，所以家庭侧等待、不追，Book KOL-US不交易。",
+        "confidence": "high",
+        "conflicts": []
+      },
+      "household_recommendation": {
+        "action": "wait",
+        "evidence": "6月28日的隔日领涨条件已过期；7月20日市场下跌家数约为上涨家数2.1倍，科技类别也显著下跌。",
+        "confidence": "high",
+        "horizon": "当前至下一交易周",
+        "falsifier": "存储芯片重新形成持续主动领涨，且市场广度和科技扩散同步修复。",
+        "relevant_asset_codes": []
+      },
+      "book_kol_us": {
+        "decision": "no_trade",
+        "reason": "来源给出的是已过期的A股存储芯片隔日条件信号，没有无歧义的美国上市标的、当前价格或仍有效的触发条件。"
+      }
+    }
+  ],
+  "cross_source": {"agreements": [], "conflicts": []}
+}

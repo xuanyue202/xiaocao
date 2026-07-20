@@ -1,0 +1,21 @@
+{
+  "video_sha256": "be3e15d292b984e0d71b1ba9adc25b293de4e1152cdfe24d9870a1ba5078e79b",
+  "transcript_sha256": "4ac93b6aa5c60e3fded7f103e89d58b4c8e7caa2516210d238d38d4f9fc37c76",
+  "checks": [
+    {
+      "position": "opening",
+      "excerpt": "我个人倾向于会。会转到科技小票啊",
+      "passed": true
+    },
+    {
+      "position": "middle",
+      "excerpt": "你今天就算抄到那个底了。他大概率也会怎么样",
+      "passed": true
+    },
+    {
+      "position": "ending",
+      "excerpt": "正常到九点四十五好吧，过了九点四十五就无所谓了",
+      "passed": true
+    }
+  ]
+}
