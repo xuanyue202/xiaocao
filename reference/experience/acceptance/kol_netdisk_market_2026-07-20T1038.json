@@ -1,0 +1,24 @@
+{
+  "captured_at": "2026-07-20T10:39:20+08:00",
+  "source": "xiaocao_api",
+  "market_overview": {
+    "observed_at": "2026-07-20T10:38:36+08:00",
+    "positive_total": 2846,
+    "negative_total": 2575,
+    "positive_level_seven": 0,
+    "negative_level_seven": 0,
+    "classification": "trend_continuing",
+    "interpretation": "上涨家数略多但优势有限，属于修复而非强趋势确认。"
+  },
+  "category_rank_top": [
+    {"name": "**中市值股票", "num": 170.11},
+    {"name": "人工智能", "num": 170.09},
+    {"name": "业绩股权类", "num": 160.09},
+    {"name": "算力芯片", "num": 160.09},
+    {"name": "数字科技", "num": 160.08}
+  ],
+  "endpoints": [
+    "/stock/market_overview",
+    "/stock/xiao_cao_block_category_rank_v3?date=2026-07-20&model=0"
+  ]
+}

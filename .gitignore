@@ -91,6 +91,8 @@ output/live/intelligence_veto_audit.jsonl
 output/live/training_rows.parquet
 output/live/decision_journal.jsonl
 output/live/daily_reconstructed.jsonl
+output/live/kol_enrichment/
+output/live/kol_netdisk_enrichment/
 output/research/
 # judgment/exit calibration sensors — runtime ledgers (record + scored + distilled), sensor-only
 output/live/posture_call*.jsonl

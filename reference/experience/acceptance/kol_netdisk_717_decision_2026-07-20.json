@@ -1,0 +1,186 @@
+{
+  "household_context_provider": {
+    "type": "lianghui_mcp",
+    "fresh_read_per_run": true
+  },
+  "items": [
+    {
+      "source": "baidu_netdisk_opencli_dom",
+      "author": "小草",
+      "title": "20260717 盘前大师班直播(7月17日)-compressed",
+      "published_at": "2026-07-17T09:15:00+08:00",
+      "captured_at": "2026-07-20T10:02:38+08:00",
+      "evidence_path": "/Users/bytedance/coding/xiaocao/output/live/kol_netdisk_enrichment/artifacts/kol-netdisk-a3c24ce8f0841ed4/20260717 盘前大师班直播(7月17日)-compressed.txt",
+      "notification_revision": "ticket02-717-opencli-v1",
+      "claims": [
+        {
+          "claim_id": "xiaocao-717-weak-repair",
+          "quote": "这个行情还是不行啊",
+          "reasoning": "连续大跌后的反弹只能先按弱势修复处理，不能直接等同于趋势反转。",
+          "asset_scope": ["A-share", "market-regime"],
+          "direction": "defensive",
+          "horizon": "当日到下一交易周",
+          "confidence": "high",
+          "falsifiers": ["市场广度持续扩张并形成稳定领涨主线"]
+        },
+        {
+          "claim_id": "xiaocao-717-small-position",
+          "quote": "你实在要娱乐的话，你就小仓位娱乐一下，很小的仓位啊",
+          "reasoning": "弱势环境里的绿盘低吸只能是可放弃的小仓位短线尝试。",
+          "asset_scope": ["A-share", "oversold-rebound"],
+          "direction": "conditional-long",
+          "horizon": "一至两个交易日",
+          "confidence": "high",
+          "falsifiers": ["市场重新转弱或候选在触发前已经明显拉升"]
+        },
+        {
+          "claim_id": "xiaocao-717-capitulation-incomplete",
+          "quote": "老师，恐慌盘出来没有？我觉得还没有。",
+          "reasoning": "当时的成交量和出清程度不足，风险释放尚未完成。",
+          "asset_scope": ["A-share", "liquidity"],
+          "direction": "wait",
+          "horizon": "未来一周",
+          "confidence": "medium",
+          "falsifiers": ["放量出清后市场广度和赚钱效应同步改善"]
+        }
+      ],
+      "market_outlook": {
+        "scope": "A股整体",
+        "claim_ids": [
+          "xiaocao-717-weak-repair",
+          "xiaocao-717-small-position",
+          "xiaocao-717-capitulation-incomplete"
+        ],
+        "current_phase": "7月20日10:38，市场已从7月17日极弱广度修复到上涨2846家、下跌2575家，但涨停层仍为0，修复存在而强趋势尚未确认。",
+        "base_case": "短线可以继续观察修复，但在广度优势扩大和主线确认前不追高；若参与，只能用很小仓位并接受不做。",
+        "strategy": [
+          "不把早盘修复直接当成趋势反转",
+          "仅观察绿盘低吸类短线机会，未触发时保持现金",
+          "若上涨广度再次转负或候选先拉升，则取消尝试"
+        ],
+        "turning_points": [
+          "上涨家数显著扩大且出现持续涨停扩散",
+          "市场广度重新转负并跌破修复结构"
+        ],
+        "horizon": "当日到下一交易周",
+        "confidence": "medium",
+        "falsifiers": [
+          "领涨主线和赚钱效应持续增强",
+          "市场修复失败并重新进入普跌"
+        ],
+        "current_validation": {
+          "status": "qualify",
+          "as_of": "2026-07-20T10:39:35+08:00",
+          "summary": "最新广度确认修复已经发生，但优势较小且无涨停扩散，因此只支持小仓位观察，不支持追高或判断反转。",
+          "currentness": {
+            "latest_available": true,
+            "checked_at": "2026-07-20T10:39:35+08:00",
+            "reason": "使用7月20日10:38实时市场概览。"
+          },
+          "facts": [
+            {
+              "metric": "a_share_breadth",
+              "value": "positive_total=2846; negative_total=2575",
+              "observed_at": "2026-07-20T10:38:36+08:00",
+              "evidence": "/Users/bytedance/coding/xiaocao/reference/experience/acceptance/kol_netdisk_market_2026-07-20T1038.json#market_overview",
+              "reader_text": "10:38上涨2846家、下跌2575家，修复占优但差距不大。"
+            },
+            {
+              "metric": "limit_tier_breadth",
+              "value": "positive_level_seven=0; negative_level_seven=0",
+              "observed_at": "2026-07-20T10:38:36+08:00",
+              "evidence": "/Users/bytedance/coding/xiaocao/reference/experience/acceptance/kol_netdisk_market_2026-07-20T1038.json#market_overview",
+              "reader_text": "涨停层尚未扩散，不能据此确认强趋势。"
+            }
+          ]
+        }
+      },
+      "actionable_signals": [
+        {
+          "signal_id": "xiaocao-717-small-oversold-repair",
+          "claim_ids": [
+            "xiaocao-717-small-position",
+            "xiaocao-717-capitulation-incomplete"
+          ],
+          "action": "wait",
+          "assets": [
+            {"name": "A股超跌修复候选", "market": "CN", "theme": "oversold-repair"}
+          ],
+          "relevant_asset_codes": [],
+          "horizon": "一至两个交易日",
+          "execution": "当前不追高；只有候选在绿盘、市场广度不恶化且短线触发同时出现时，才允许总资产不超过3%的试错仓，次日无延续即退出。",
+          "trigger": "绿盘候选出现可核验短线触发，同时上涨广度保持占优。",
+          "funding_plan": "优先使用现金；不因当前持仓名单限制候选，但不为短线修复卖出长期核心资产。",
+          "confidence": "medium",
+          "falsifiers": [
+            "市场广度重新转负",
+            "候选触发前已经明显拉升",
+            "次日没有延续"
+          ],
+          "rationale": {
+            "news_or_event": [],
+            "fundamental": [],
+            "trading": [
+              "原始观点明确限定为很小仓位的弱势反弹交易。",
+              "10:38广度仅小幅占优，尚不足以放大仓位。"
+            ]
+          },
+          "current_validation": {
+            "status": "qualify",
+            "as_of": "2026-07-20T10:39:35+08:00",
+            "summary": "修复出现但强度有限，条件单保留，当前仍是等待而不是立即买入。",
+            "currentness": {
+              "latest_available": true,
+              "checked_at": "2026-07-20T10:39:35+08:00",
+              "reason": "使用7月20日10:38实时市场概览。"
+            },
+            "facts": [
+              {
+                "metric": "a_share_breadth",
+                "value": "positive_total=2846; negative_total=2575; positive_level_seven=0",
+                "observed_at": "2026-07-20T10:38:36+08:00",
+                "evidence": "/Users/bytedance/coding/xiaocao/reference/experience/acceptance/kol_netdisk_market_2026-07-20T1038.json#market_overview"
+              }
+            ]
+          }
+        }
+      ],
+      "market_validation": {
+        "status": "qualify",
+        "as_of": "2026-07-20T10:39:35+08:00",
+        "summary": "实时广度支持弱修复已经发生，但涨停层未扩散，只能维持小仓位、可不做的约束。",
+        "currentness": {
+          "latest_available": true,
+          "checked_at": "2026-07-20T10:39:35+08:00",
+          "reason": "使用7月20日10:38实时市场概览。"
+        },
+        "facts": [
+          {
+            "metric": "a_share_breadth",
+            "value": "positive_total=2846; negative_total=2575; positive_level_seven=0",
+            "observed_at": "2026-07-20T10:38:36+08:00",
+            "evidence": "/Users/bytedance/coding/xiaocao/reference/experience/acceptance/kol_netdisk_market_2026-07-20T1038.json#market_overview"
+          }
+        ]
+      },
+      "synthesis": {
+        "summary": "7月20日早盘修复验证了反弹可能，但强度不足以确认反转；家庭侧不追高，只保留最多3%的条件试错仓，并以广度转弱或次日无延续为退出条件。",
+        "confidence": "medium",
+        "conflicts": []
+      },
+      "household_recommendation": {
+        "action": "wait",
+        "evidence": "弱修复已出现，但涨停扩散和明确主线都未确认。",
+        "confidence": "medium",
+        "horizon": "当日到下一交易周",
+        "falsifier": "上涨广度持续扩大并形成可核验主线。",
+        "relevant_asset_codes": []
+      },
+      "book_kol_us": {
+        "decision": "no_trade",
+        "reason": "该视频只给出A股盘前超跌修复和小仓位条件，未提供可映射到美国上市现金证券的明确标的、价格与触发。"
+      }
+    }
+  ],
+  "cross_source": {"agreements": [], "conflicts": []}
+}

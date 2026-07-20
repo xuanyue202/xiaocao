@@ -1,0 +1,53 @@
+"""Shared error types for KOL enrichment providers."""
+
+from __future__ import annotations
+
+from typing import Any
+
+
+class EnrichmentError(RuntimeError):
+    """An enrichment step could not produce auditable evidence."""
+
+
+def validate_decision_process_result(result: Any) -> dict[str, Any]:
+    """Validate Ticket 01 output shape before any delivery side effect."""
+    if not isinstance(result, dict) or result.get("status") != "completed":
+        raise EnrichmentError("ticket 01 decision pipeline did not complete one item")
+    items = result.get("items")
+    if (
+        not isinstance(items, list)
+        or len(items) != 1
+        or not isinstance(items[0], dict)
+    ):
+        raise EnrichmentError("ticket 01 decision pipeline did not complete one item")
+    return result
+
+
+def validate_decision_completion(
+    result: dict[str, Any],
+) -> tuple[dict[str, Any], dict[str, Any]]:
+    """Fail closed unless Ticket 01 produced both required durable outcomes."""
+    if not isinstance(result, dict):
+        raise EnrichmentError("ticket 01 decision pipeline result is invalid")
+    items = result.get("items")
+    if result.get("status") != "completed" or not isinstance(items, list) or len(items) != 1:
+        raise EnrichmentError("ticket 01 decision pipeline did not complete one item")
+    item = items[0]
+    if not isinstance(item, dict):
+        raise EnrichmentError("ticket 01 decision item is invalid")
+    notification = item.get("notification") or {}
+    paper = item.get("book_kol_us") or {}
+    if not isinstance(notification, dict) or notification.get("status") != "delivered":
+        raise EnrichmentError("household advisory was not delivered")
+    if not str(notification.get("receipt") or "").strip():
+        raise EnrichmentError("household advisory requires a delivery receipt")
+    if (
+        not isinstance(paper, dict)
+        or paper.get("status") not in {"filled", "no_trade"}
+        or paper.get("book") != "KOL-US"
+        or paper.get("paper_only") is not True
+    ):
+        raise EnrichmentError("Book KOL-US paper-only outcome is invalid")
+    if paper.get("status") == "no_trade" and not str(paper.get("reason") or "").strip():
+        raise EnrichmentError("Book KOL-US no_trade requires reason")
+    return notification, paper
