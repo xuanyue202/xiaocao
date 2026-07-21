@@ -1,0 +1,137 @@
+{
+  "schema_version": 1,
+  "ticket": "02-deterministic-video-enrichment-to-decisions",
+  "observed_at": "2026-07-21T11:17:43+08:00",
+  "implementation_commit": "d43e724",
+  "upload_route": {
+    "transport": "opencli_cdp",
+    "official_command": "opencli browser <session> upload <selector> <persistent-source-path>",
+    "extension_file_url_access_required": true,
+    "loopback_dom_blob_fallback_present": false,
+    "source_rehashed_before_submission": true,
+    "persistent_source_used_for_async_browser_upload": true,
+    "upload_timeout_seconds": 300,
+    "permission_failure": {
+      "failure_stage": "opencli_cdp",
+      "reason": "file_access_denied",
+      "diagnostic_persisted": false
+    }
+  },
+  "videos": [
+    {
+      "role": "morning",
+      "job_id": "kol-netdisk-b80732abb1d9dfc7",
+      "title": "20260720 盘前大师班直播(7月20日)-compressed.mp4",
+      "video_sha256": "b80732abb1d9dfc79a396b9c86ebc89438ee06246302508baaedfd703fded64a",
+      "video_size_bytes": 85731827,
+      "video_duration_seconds": 2200.561644,
+      "acceptance_ledger": "output/live/kol_netdisk_enrichment_20260720_morning/events.jsonl",
+      "transcript_acquisition": "opencli_dom",
+      "transcript_sha256": "c56a7d94c2d7b3ebfff09241c23b73039f3d45bf914e0fafe54e184a47e2ac01",
+      "transcript_character_count": 3552,
+      "dom_capture_sha256": "f7c57ff6f3b785051c6f31fe4657e5e9a808e31892efc5bb9279181a2ba0b6eb",
+      "dom_render_proof": {
+        "paragraph_count": 29,
+        "sentence_count": 433,
+        "scroll_top": 0,
+        "last_node_in_dom": true,
+        "last_node_below_viewport": true,
+        "has_load_more": false,
+        "virtual_or_loading_markers": []
+      },
+      "audit_sha256": "6ff6f485d16cf73fcfcb93376af5f82b07e542d8b606851d23d057a2f1f8f757",
+      "decision_bundle_sha256": "0be4b2f70fb19544bb435f2060c17b098115e91d511f1c91772021d44b135e38",
+      "decision_result_sha256": "24427fdb33bf568411067bd4e5360e585c92f8ec61c8156ae24161565cc186a2",
+      "household_notification": {
+        "status": "delivered",
+        "idempotency_key": "a84b3e181de4c04e790bb90f5950b46e70b3f61e346bda2236babc05792b2dc7",
+        "receipt_present": true
+      },
+      "book_kol_us": {
+        "status": "no_trade",
+        "paper_only": true,
+        "idempotency_key": "c63975548acf2360b3cfb8ae3e75d2483d66ddc907c41526daa1240c2a1ecf6c",
+        "reason": "来源只给出尚未触发的A股科技等待信号，没有无歧义的美国上市标的、当前价格或有效交易触发。"
+      },
+      "decision": "wait; do not chase a technology gap-up before breadth and active leadership confirm",
+      "knowledge_status": "no_reusable_knowledge",
+      "idempotent_replay": true
+    },
+    {
+      "role": "review",
+      "job_id": "kol-netdisk-ceccb41344432ae8",
+      "title": "20260720 大师班专场(晚18：00开播)-compressed.mp4",
+      "video_sha256": "ceccb41344432ae840466efc8a87245f4b95b16e664ca32d2dd02b57141d82af",
+      "video_size_bytes": 536259685,
+      "video_duration_seconds": 5408.0,
+      "acceptance_ledger": "output/live/kol_netdisk_enrichment_20260720_review_cdp_source/events.jsonl",
+      "upload_transport": "opencli_cdp",
+      "upload_started_at": "2026-07-21T11:02:25.054206+08:00",
+      "cloud_video_ready_at": "2026-07-21T11:03:39.194498+08:00",
+      "transcript_ready_at": "2026-07-21T11:14:31.577284+08:00",
+      "transcript_acquisition": "opencli_dom",
+      "transcript_sha256": "b677d27e0666e2e081e66a20d44c40db5b1cf76184167f3b1f3ae19b7c3e14a0",
+      "transcript_character_count": 13984,
+      "dom_capture_sha256": "633b1f68c597130321876647522b0c40897d4f1f86dbf4db1c5790f6b4b6acfc",
+      "dom_render_proof": {
+        "paragraph_count": 101,
+        "sentence_count": 1514,
+        "scroll_top": 0,
+        "last_node_in_dom": true,
+        "last_node_below_viewport": true,
+        "has_load_more": false,
+        "virtual_or_loading_markers": []
+      },
+      "audit_sha256": "2f49e0fdf2ac6b369f41413158fd09e68948aaf921d871bb6bac4a36bb7919b1",
+      "decision_bundle_sha256": "f72bd153128a4104f792d5216a31c33d4dbab0f1b51fdb0d1121d10fe6cefb54",
+      "decision_result_sha256": "37fdbd003f6c13ffda9a9aebc1948bd24eeac0f521874a259b8595b475eb984d",
+      "household_notification": {
+        "status": "delivered",
+        "idempotency_key": "2a640351f2ae89ec04da3f15b56cc2950a5f2bbebea4ebf86ec3ce50268687db",
+        "receipt_present": true
+      },
+      "book_kol_us": {
+        "status": "no_trade",
+        "paper_only": true,
+        "idempotency_key": "21e06b53a17c03fc3c65d10336d86e0df72c868c2671e00feb3f3eae8ea38645",
+        "reason": "来源只给出A股融资出清与科技主线等待条件，没有无歧义的美国上市标的、当前价格或有效交易触发。"
+      },
+      "decision": "wait; the decline and margin-financing flush are not complete",
+      "knowledge_status": "no_reusable_knowledge",
+      "idempotent_replay": true
+    }
+  ],
+  "market_validation": {
+    "observed_at": "2026-07-21T11:07:35+08:00",
+    "evidence_sha256": "3d1c0d8db607c3cb24ed19acdcca16d822971fba241be44cd4995c37396c751f",
+    "positive_total": 1932,
+    "negative_total": 3499,
+    "technology_returns": {
+      "算力芯片": -4.31,
+      "电子类": -5.72,
+      "通信类": -3.38,
+      "华为大科技": -2.97
+    }
+  },
+  "idempotency_counts_after_two_replays": {
+    "household_outbox_rows": 2,
+    "book_kol_us_decision_rows": 2
+  },
+  "validation": {
+    "focused": "80 passed",
+    "compileall": "passed",
+    "diff_check": "passed",
+    "full_suite": "759 passed, 31 failed",
+    "full_suite_failure_scope": "All 31 failures are tests/test_kol_decisions.py fixtures with checked_at=2026-07-19T18:00:00+08:00 crossing the production 24-hour currentness gate.",
+    "ruff": "not installed in the project or system Python environment"
+  },
+  "scope_exclusions": [
+    "computer_use",
+    "doc_export_or_download",
+    "live_capture_implementation",
+    "subscription_ingestion",
+    "batch_processing",
+    "scheduling",
+    "ticket_03_through_07_changes"
+  ]
+}
