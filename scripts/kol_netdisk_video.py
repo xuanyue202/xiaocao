@@ -169,7 +169,7 @@ def main() -> int:
                 args.job_id,
                 bundle_path=args.bundle,
                 decision_output_dir=args.decision_output_dir,
-                sender=lambda title, body: notify(title, body, macos=False),
+                sender=lambda title, body: notify(title, body, macos=False, audience="kol"),
             )
         )
     return 0

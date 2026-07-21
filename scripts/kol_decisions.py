@@ -51,7 +51,7 @@ def main() -> int:
     if result.get("status") == "completed" and args.send_wechat:
         result["wechat_delivery"] = pipeline.deliver_wechat(
             result,
-            sender=lambda title, body: notify(title, body, macos=False),
+            sender=lambda title, body: notify(title, body, macos=False, audience="kol"),
         )
     args.output_dir.mkdir(parents=True, exist_ok=True)
     result_path = args.output_dir / "latest_result.json"

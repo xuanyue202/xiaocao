@@ -4,8 +4,9 @@ Channels:
   - macos  : local osascript "Glass" popup (only on darwin).
   - wecom  : OpenClaw wecom-app-relay POST /send — activates when
              XIAOCAO_WECOM_RELAY_URL, XIAOCAO_WECOM_RELAY_TOKEN, and
-             XIAOCAO_WECOM_USER_ID are set. A silent no-op when unset, so the
-             loop runs unchanged until you wire the relay.
+             XIAOCAO_WECOM_USER_IDS (or legacy XIAOCAO_WECOM_USER_ID) are set.
+             A silent no-op when unset, so the loop runs unchanged until you
+             wire the relay.
 
 Borrowed from QuantDinger's multi-channel signal_notifier, kept lightweight
 (requests only, no new deps). Real-money operation needs alerts that reach a
@@ -27,8 +28,10 @@ from typing import Any, Callable
 ENV_NOTIFY_ENV_FILE = "XIAOCAO_NOTIFY_ENV_FILE"
 ENV_WECOM_RELAY_URL = "XIAOCAO_WECOM_RELAY_URL"
 ENV_WECOM_RELAY_TOKEN = "XIAOCAO_WECOM_RELAY_TOKEN"
+ENV_WECOM_USER_IDS = "XIAOCAO_WECOM_USER_IDS"
 ENV_WECOM_USER_ID = "XIAOCAO_WECOM_USER_ID"
 ENV_WECOM_TO_USER = "XIAOCAO_WECOM_TO_USER"  # backward-friendly alias
+ENV_KOL_WECOM_USER_IDS = "XIAOCAO_KOL_WECOM_USER_IDS"
 ENV_WECOM_ACCOUNT_ID = "XIAOCAO_WECOM_ACCOUNT_ID"
 ENV_WECOM_INSECURE = "XIAOCAO_WECOM_INSECURE"
 
@@ -96,6 +99,23 @@ def _env_first(src: dict[str, str] | os._Environ[str], *names: str) -> str:
         if value:
             return value
     return ""
+
+
+def _wecom_user_ids(
+    src: dict[str, str] | os._Environ[str],
+    *,
+    audience: str | None = None,
+) -> tuple[str, ...]:
+    preferred = (ENV_KOL_WECOM_USER_IDS,) if audience == "kol" else ()
+    raw = _env_first(
+        src,
+        *preferred,
+        ENV_WECOM_USER_IDS,
+        ENV_WECOM_USER_ID,
+        ENV_WECOM_TO_USER,
+    )
+    values = raw.replace(";", ",").replace("\n", ",").split(",")
+    return tuple(dict.fromkeys(value.strip() for value in values if value.strip()))
 
 
 def _parse_env_file(path: Path) -> dict[str, str]:
@@ -218,6 +238,7 @@ def notify(
     env: dict[str, str] | None = None,
     poster: Poster | None = None,
     now: datetime | None = None,
+    audience: str | None = None,
 ) -> dict[str, str]:
     """Fan a message out to the enabled channels. Returns {channel: status}.
 
@@ -230,28 +251,40 @@ def notify(
         results["macos"] = macos_notify(title, body)
     relay_url = _env_first(src, ENV_WECOM_RELAY_URL)
     token = _env_first(src, ENV_WECOM_RELAY_TOKEN)
-    user_id = _env_first(src, ENV_WECOM_USER_ID, ENV_WECOM_TO_USER)
-    if relay_url or token or user_id:
+    user_ids = _wecom_user_ids(src, audience=audience)
+    if relay_url or token or user_ids:
         missing = []
         if not relay_url:
             missing.append(ENV_WECOM_RELAY_URL)
         if not token:
             missing.append(ENV_WECOM_RELAY_TOKEN)
-        if not user_id:
-            missing.append(ENV_WECOM_USER_ID)
+        if not user_ids:
+            missing.append(ENV_WECOM_USER_IDS)
         if missing:
             results["wecom"] = "not configured: missing " + ", ".join(missing)
         else:
             account_id = _env_first(src, ENV_WECOM_ACCOUNT_ID) or "default"
-            results["wecom"] = wecom_notify(
-                relay_url,
-                title,
-                body,
-                token=token,
-                user_id=user_id,
-                account_id=account_id,
-                insecure=_truthy(_env_first(src, ENV_WECOM_INSECURE)),
-                poster=poster,
-                now=now,
+            statuses = {
+                user_id: wecom_notify(
+                    relay_url,
+                    title,
+                    body,
+                    token=token,
+                    user_id=user_id,
+                    account_id=account_id,
+                    insecure=_truthy(_env_first(src, ENV_WECOM_INSECURE)),
+                    poster=poster,
+                    now=now,
+                )
+                for user_id in user_ids
+            }
+            failures = {
+                user_id: status for user_id, status in statuses.items() if status != "ok"
+            }
+            results["wecom"] = (
+                "ok"
+                if not failures
+                else "failed recipients: "
+                + "; ".join(f"{user_id}={status}" for user_id, status in failures.items())
             )
     return results

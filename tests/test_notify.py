@@ -43,6 +43,62 @@ def test_wecom_fires_when_relay_config_present():
     assert verify is True
 
 
+def test_wecom_fans_out_to_distinct_configured_recipients():
+    poster = _capturing_poster()
+    env = {
+        N.ENV_WECOM_RELAY_URL: "https://clawsg/send",
+        N.ENV_WECOM_RELAY_TOKEN: "tok",
+        N.ENV_WECOM_USER_IDS: "Chen, FeiFei, Chen",
+    }
+
+    res = N.notify("小草通知", "双发验证", env=env, poster=poster)
+
+    assert res["wecom"] == "ok"
+    assert [call[1]["userId"] for call in poster.calls] == ["Chen", "FeiFei"]
+    assert all(call[1]["text"] == "小草通知\n双发验证" for call in poster.calls)
+
+
+def test_kol_audience_uses_its_own_recipient_list():
+    poster = _capturing_poster()
+    env = {
+        N.ENV_WECOM_RELAY_URL: "https://clawsg/send",
+        N.ENV_WECOM_RELAY_TOKEN: "tok",
+        N.ENV_WECOM_USER_ID: "Chen",
+        N.ENV_KOL_WECOM_USER_IDS: "Chen,FeiFei",
+    }
+
+    default_res = N.notify("普通通知", "只发 Chen", env=env, poster=poster)
+    kol_res = N.notify("KOL 通知", "双发", env=env, poster=poster, audience="kol")
+
+    assert default_res["wecom"] == "ok"
+    assert kol_res["wecom"] == "ok"
+    assert [call[1]["userId"] for call in poster.calls] == ["Chen", "Chen", "FeiFei"]
+
+
+def test_wecom_fanout_reports_the_failed_recipient():
+    calls = []
+
+    def poster(url, payload, *, headers=None, verify=True):
+        calls.append((url, payload, headers, verify))
+        if payload["userId"] == "FeiFei":
+            return 500, "down"
+        return 200, '{"ok":true}'
+
+    res = N.notify(
+        "小草通知",
+        "双发验证",
+        env={
+            N.ENV_WECOM_RELAY_URL: "https://clawsg/send",
+            N.ENV_WECOM_RELAY_TOKEN: "tok",
+            N.ENV_WECOM_USER_IDS: "Chen;FeiFei",
+        },
+        poster=poster,
+    )
+
+    assert res["wecom"].startswith("failed recipients: FeiFei=")
+    assert [call[1]["userId"] for call in calls] == ["Chen", "FeiFei"]
+
+
 def test_wecom_base_url_appends_send_and_honors_account_and_insecure():
     poster = _capturing_poster(text='{"errcode":0,"errmsg":"ok"}')
     res = N.notify(
@@ -133,6 +189,8 @@ def test_notify_loads_local_env_file(tmp_path, monkeypatch):
         N.ENV_NOTIFY_ENV_FILE,
         N.ENV_WECOM_RELAY_URL,
         N.ENV_WECOM_RELAY_TOKEN,
+        N.ENV_WECOM_USER_IDS,
+        N.ENV_KOL_WECOM_USER_IDS,
         N.ENV_WECOM_USER_ID,
         N.ENV_WECOM_TO_USER,
         N.ENV_WECOM_ACCOUNT_ID,
