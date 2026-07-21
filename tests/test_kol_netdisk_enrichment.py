@@ -158,11 +158,9 @@ def _opencli_upload_runner(
     events_path: Path,
     video_name: str,
     *,
-    injected_size: int = 10,
     opencli_command: tuple[str, ...] = ("opencli",),
     snapshot_paths: list[Path] | None = None,
-    route_changes_during_fetch: bool = False,
-    loopback_command_fails: bool = False,
+    upload_error: str | None = None,
 ):
     target_present = False
 
@@ -206,40 +204,25 @@ def _opencli_upload_runner(
         elif tail[:1] == ["upload"]:
             ledger = events_path.read_text(encoding="utf-8")
             assert "netdisk_upload_claimed" in ledger
+            assert kwargs["timeout"] == 300
+            assert kwargs["env"]["OPENCLI_BROWSER_COMMAND_TIMEOUT"] == "290"
             assert "data-xiaocao-upload-marker" in tail[1]
             snapshot_path = Path(tail[2])
             assert snapshot_path.name == video_name
             assert snapshot_path.read_bytes() == b"real-video"
             if snapshot_paths is not None:
                 snapshot_paths.append(snapshot_path)
-            return SimpleNamespace(returncode=1, stdout="", stderr="Not allowed")
-        elif tail[:1] == ["eval"] and "DataTransfer" in tail[1]:
-            ledger = events_path.read_text(encoding="utf-8")
-            assert "netdisk_upload_claimed" in ledger
-            assert "expectedDir" in tail[1]
-            assert "wrong_folder" in tail[1]
-            assert "wrong_folder_after_fetch" in tail[1]
-            if loopback_command_fails:
+            if upload_error is not None:
                 return SimpleNamespace(
                     returncode=1,
                     stdout="",
-                    stderr="simulated browser failure",
-                )
-            if route_changes_during_fetch:
-                payload = {
-                    "injected": False,
-                    "reason": "wrong_folder_after_fetch",
-                }
-                return SimpleNamespace(
-                    returncode=0,
-                    stdout=json.dumps(payload, ensure_ascii=False),
-                    stderr="",
+                    stderr=upload_error,
                 )
             target_present = True
             payload = {
-                "injected": True,
-                "target_name": video_name,
-                "size_bytes": injected_size,
+                "uploaded": True,
+                "files": [str(snapshot_path)],
+                "file_names": [video_name],
             }
         else:
             raise AssertionError(command)
@@ -252,7 +235,7 @@ def _opencli_upload_runner(
     return runner
 
 
-def test_opencli_step_claims_before_loopback_upload_and_waits_for_cloud_proof(
+def test_opencli_step_claims_before_cdp_upload_and_waits_for_cloud_proof(
     tmp_path,
 ):
     video = tmp_path / "20260720 upload-contract-compressed.mp4"
@@ -274,7 +257,7 @@ def test_opencli_step_claims_before_loopback_upload_and_waits_for_cloud_proof(
 
     assert submitted["event"] == "netdisk_upload_started"
     assert submitted["status"] == "upload_claimed"
-    assert submitted["upload_transport"] == "loopback_dom_file"
+    assert submitted["upload_transport"] == "opencli_cdp"
     assert "127.0.0.1" not in json.dumps(submitted)
     assert [json.loads(line)["event"] for line in events_path.read_text().splitlines()] == [
         "netdisk_video_prepared",
@@ -294,7 +277,31 @@ def test_opencli_step_claims_before_loopback_upload_and_waits_for_cloud_proof(
     assert ready["source_mode"] == "uploaded"
 
 
-def test_npx_runtime_upload_uses_private_snapshot_path_not_inherited_fd(tmp_path):
+def test_short_opencli_dom_commands_keep_the_cli_default_timeout(tmp_path):
+    service = NetdiskEnrichmentService(
+        tmp_path / "out",
+        runner=lambda _command, **kwargs: SimpleNamespace(
+            returncode=0,
+            stdout=json.dumps({"ok": True}),
+            stderr="",
+            runner_kwargs=kwargs,
+        ),
+        now=lambda: NOW,
+        opencli_command=("opencli",),
+    )
+
+    result = service._opencli_process(
+        "ticket02-dom",
+        "eval",
+        "({ok: true})",
+        profile="work",
+        timeout_seconds=10,
+    )
+
+    assert "env" not in result.runner_kwargs
+
+
+def test_npx_runtime_upload_keeps_the_verified_source_path_available(tmp_path):
     video = tmp_path / "20260720 npx-contract-compressed.mp4"
     video.write_bytes(b"real-video")
     snapshots: list[Path] = []
@@ -319,10 +326,10 @@ def test_npx_runtime_upload_uses_private_snapshot_path_not_inherited_fd(tmp_path
     )
 
     assert submitted["status"] == "upload_claimed"
-    assert submitted["upload_transport"] == "loopback_dom_file"
+    assert submitted["upload_transport"] == "opencli_cdp"
     assert len(snapshots) == 1
-    assert "/dev/fd/" not in str(snapshots[0])
-    assert snapshots[0].exists() is False
+    assert snapshots[0] == video.resolve()
+    assert snapshots[0].exists() is True
 
 
 def test_upload_claim_replay_only_reconciles_and_never_resubmits(tmp_path):
@@ -420,22 +427,23 @@ def test_upload_rejects_source_changed_after_prepare_before_any_submission(tmp_p
     assert service.status(prepared["job_id"])["status"] == "upload_claimed"
 
 
-def test_loopback_upload_rejects_browser_size_mismatch(tmp_path):
-    video = tmp_path / "20260720 size-contract-compressed.mp4"
+def test_cdp_upload_records_actionable_file_access_permission_failure(tmp_path):
+    video = tmp_path / "20260720 permission-contract-compressed.mp4"
     video.write_bytes(b"real-video")
+    output_dir = tmp_path / "out"
     service = NetdiskEnrichmentService(
-        tmp_path / "out",
+        output_dir,
         runner=_opencli_upload_runner(
-            tmp_path / "out" / "events.jsonl",
+            output_dir / "events.jsonl",
             video.name,
-            injected_size=9,
+            upload_error="Not allowed",
         ),
         now=lambda: NOW,
         opencli_command=("opencli",),
     )
     prepared = service.prepare(video)
 
-    with pytest.raises(EnrichmentError, match="size changed"):
+    with pytest.raises(EnrichmentError, match="Allow access to file URLs"):
         service.advance_opencli(
             prepared["job_id"],
             session="ticket02-upload",
@@ -445,10 +453,12 @@ def test_loopback_upload_rejects_browser_size_mismatch(tmp_path):
     latest = service.status(prepared["job_id"])
     assert latest["event"] == "netdisk_upload_failed"
     assert latest["status"] == "upload_claimed"
-    assert latest["reason"] == "browser_injection_failed"
+    assert latest["failure_stage"] == "opencli_cdp"
+    assert latest["reason"] == "file_access_denied"
+    assert "Not allowed" not in json.dumps(latest)
 
 
-def test_loopback_upload_records_sanitized_opencli_command_failure(tmp_path):
+def test_cdp_upload_records_sanitized_opencli_command_failure(tmp_path):
     video = tmp_path / "20260720 command-failure-compressed.mp4"
     video.write_bytes(b"real-video")
     output_dir = tmp_path / "out"
@@ -457,14 +467,14 @@ def test_loopback_upload_records_sanitized_opencli_command_failure(tmp_path):
         runner=_opencli_upload_runner(
             output_dir / "events.jsonl",
             video.name,
-            loopback_command_fails=True,
+            upload_error="simulated browser failure",
         ),
         now=lambda: NOW,
         opencli_command=("opencli",),
     )
     prepared = service.prepare(video)
 
-    with pytest.raises(EnrichmentError, match="OpenCLI browser command failed"):
+    with pytest.raises(EnrichmentError, match="OpenCLI file upload failed"):
         service.advance_opencli(
             prepared["job_id"],
             session="ticket02-upload",
@@ -477,45 +487,10 @@ def test_loopback_upload_records_sanitized_opencli_command_failure(tmp_path):
     ]
     assert events[-1]["event"] == "netdisk_upload_failed"
     assert events[-1]["status"] == "upload_claimed"
-    assert events[-1]["reason"] == "browser_injection_failed"
+    assert events[-1]["failure_stage"] == "opencli_cdp"
+    assert events[-1]["reason"] == "browser_command_failed"
     assert "simulated browser failure" not in json.dumps(events)
     assert "netdisk_upload_started" not in [row["event"] for row in events]
-
-
-def test_loopback_upload_rejects_route_change_during_fetch(tmp_path):
-    video = tmp_path / "20260720 folder-bound-compressed.mp4"
-    video.write_bytes(b"real-video")
-    output_dir = tmp_path / "out"
-    service = NetdiskEnrichmentService(
-        output_dir,
-        runner=_opencli_upload_runner(
-            output_dir / "events.jsonl",
-            video.name,
-            route_changes_during_fetch=True,
-        ),
-        now=lambda: NOW,
-        opencli_command=("opencli",),
-    )
-    prepared = service.prepare(video)
-
-    with pytest.raises(EnrichmentError, match="loopback file injection failed"):
-        service.advance_opencli(
-            prepared["job_id"],
-            session="ticket02-upload",
-            profile="work",
-        )
-
-    events = [
-        json.loads(line)
-        for line in (output_dir / "events.jsonl").read_text(encoding="utf-8").splitlines()
-    ]
-    assert "netdisk_upload_claimed" in [row["event"] for row in events]
-    assert "netdisk_upload_started" not in [row["event"] for row in events]
-    assert events[-1]["event"] == "netdisk_upload_failed"
-    assert events[-1]["status"] == "upload_claimed"
-    assert events[-1]["reason"] == "wrong_folder_after_fetch"
-    assert events[-1]["failure_stage"] == "loopback_dom_file"
-    assert service.status(prepared["job_id"])["status"] == "upload_claimed"
 
 
 def _opencli_transcript_runner(video_name: str):

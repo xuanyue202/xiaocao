@@ -37,8 +37,8 @@ Keep the layers separate:
 1. Start the existing sniffer from `/Users/bytedance/coding/wx_channels_download`:
    `./wx_video_download_macos_arm64`.
 2. Verify `http://127.0.0.1:2022/api/status` before asking the user to play anything.
-3. Arm a fresh job:
-   `PYTHONPATH=src python3 scripts/kol_capture.py arm --source xiaocao --author 小草`.
+3. Arm a fresh Xiaocao job (source and author are fixed by this adapter):
+   `PYTHONPATH=src python3 scripts/kol_capture.py arm`.
 4. Ask the user to open the enterprise-WeChat card and play the target stream. For a protected evening replay, the user enters the password; never store it in source or job state.
 5. Poll with the returned job id and start the download. This must reproduce the `/download/live` **保存** action (`type=live_capture`, `compress=true`), never the raw `仅保存原片` path:
    `PYTHONPATH=src python3 scripts/kol_capture.py poll --job-id <id> --download`.

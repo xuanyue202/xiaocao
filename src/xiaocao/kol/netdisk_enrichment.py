@@ -3,18 +3,15 @@
 from __future__ import annotations
 
 import hashlib
-import http.server
 import json
 import os
 import re
 import secrets
 import shutil
 import subprocess
-import tempfile
-import threading
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from typing import Any, BinaryIO, Callable
+from typing import Any, Callable
 from urllib.parse import parse_qs, quote, urlsplit, urlunsplit
 
 from .enrichment_store import EnrichmentJobStore
@@ -28,6 +25,7 @@ from .enrichment_types import (
 _SHA256 = re.compile(r"^[0-9a-f]{64}$")
 _OPENCLI_SESSION = re.compile(r"^[A-Za-z0-9_.-]{1,64}$")
 _OPENCLI_PROFILE = re.compile(r"^[A-Za-z0-9_.-]{1,128}$")
+_OPENCLI_UPLOAD_TIMEOUT_SECONDS = 300
 _NETDISK_DIRECTORY = "/课程/自己的课/小草"
 _NETDISK_FOLDER_URL = (
     "https://pan.baidu.com/disk/main#/index?category=all&path="
@@ -151,11 +149,9 @@ _CAPABILITY_FAILURES = {
     "captcha_required",
     "page_contract_changed",
 }
-_LOOPBACK_UPLOAD_FAILURES = {
-    "wrong_folder",
-    "input_missing",
-    "loopback_fetch_failed",
-    "wrong_folder_after_fetch",
+_OPENCLI_UPLOAD_FAILURES = {
+    "file_access_denied",
+    "browser_command_failed",
 }
 _STATE_PREDECESSORS = {
     "transcript_requested": "transcript_claimed",
@@ -320,6 +316,13 @@ class NetdiskEnrichmentService:
             "check": False,
             "timeout": timeout_seconds,
         }
+        if timeout_seconds > 30:
+            runner_kwargs["env"] = {
+                **os.environ,
+                "OPENCLI_BROWSER_COMMAND_TIMEOUT": str(
+                    max(1, timeout_seconds - 10)
+                ),
+            }
         try:
             return self.runner(command, **runner_kwargs)
         except subprocess.TimeoutExpired as exc:
@@ -619,7 +622,7 @@ class NetdiskEnrichmentService:
             },
         )
 
-    def _record_loopback_upload_failure(
+    def _record_opencli_upload_failure(
         self,
         job_id: str,
         *,
@@ -627,8 +630,8 @@ class NetdiskEnrichmentService:
     ) -> None:
         safe_reason = (
             reason
-            if isinstance(reason, str) and reason in _LOOPBACK_UPLOAD_FAILURES
-            else "browser_injection_failed"
+            if isinstance(reason, str) and reason in _OPENCLI_UPLOAD_FAILURES
+            else "browser_command_failed"
         )
         with self.store.job_lock(job_id):
             current = self.store.latest(job_id)
@@ -638,118 +641,11 @@ class NetdiskEnrichmentService:
                 **current,
                 "event": "netdisk_upload_failed",
                 "status": "upload_claimed",
-                "failure_stage": "loopback_dom_file",
+                "failure_stage": "opencli_cdp",
                 "reason": safe_reason,
                 "error_type": "EnrichmentError",
                 "updated_at": self._time().isoformat(timespec="microseconds"),
             })
-
-    def _upload_via_loopback_dom_file(
-        self,
-        job_id: str,
-        *,
-        session: str,
-        profile: str | None,
-        source: BinaryIO,
-        target_name: str,
-        expected_size: int,
-    ) -> None:
-        token = secrets.token_urlsafe(24)
-        route = f"/{token}"
-
-        class ExactFileHandler(http.server.BaseHTTPRequestHandler):
-            def do_GET(handler_self) -> None:  # noqa: N802
-                if handler_self.path != route:
-                    handler_self.send_error(404)
-                    return
-                handler_self.send_response(200)
-                handler_self.send_header("Content-Type", "video/mp4")
-                handler_self.send_header("Content-Length", str(expected_size))
-                handler_self.send_header(
-                    "Access-Control-Allow-Origin", "https://pan.baidu.com"
-                )
-                handler_self.end_headers()
-                source.seek(0)
-                shutil.copyfileobj(source, handler_self.wfile, 1024 * 1024)
-
-            def log_message(self, _format: str, *_args: Any) -> None:
-                return
-
-        server = http.server.ThreadingHTTPServer(("127.0.0.1", 0), ExactFileHandler)
-        thread = threading.Thread(target=server.serve_forever, daemon=True)
-        thread.start()
-        failure_reason: object = "browser_injection_failed"
-        try:
-            try:
-                local_url = f"http://127.0.0.1:{server.server_port}{route}"
-                script = """(async () => {
-  const target = %s;
-  const source = %s;
-  const expectedDir = %s;
-  const folderBound = () => {
-    const currentUrl = new URL(location.href);
-    const hashQuery = currentUrl.hash.includes('?')
-      ? currentUrl.hash.slice(currentUrl.hash.indexOf('?') + 1)
-      : '';
-    return currentUrl.origin === 'https://pan.baidu.com'
-      && currentUrl.pathname === '/disk/main'
-      && new URLSearchParams(hashQuery).get('path') === expectedDir;
-  };
-  if (!folderBound()) return {injected: false, reason: 'wrong_folder'};
-  const inputs = [...document.querySelectorAll(
-    'input[type="file"][title="点击选择文件"][accept="*/*"]'
-  )].filter(input => !input.hasAttribute('webkitdirectory'));
-  if (inputs.length < 1) return {injected: false, reason: 'input_missing'};
-  const response = await fetch(source);
-  if (!response.ok) return {injected: false, reason: 'loopback_fetch_failed'};
-  const blob = await response.blob();
-  if (!folderBound()) {
-    return {injected: false, reason: 'wrong_folder_after_fetch'};
-  }
-  const file = new File([blob], target, {
-    type: 'video/mp4',
-    lastModified: Date.now()
-  });
-  const transfer = new DataTransfer();
-  transfer.items.add(file);
-  inputs[0].files = transfer.files;
-  inputs[0].dispatchEvent(new Event('input', {bubbles: true}));
-  inputs[0].dispatchEvent(new Event('change', {bubbles: true}));
-  return {injected: true, target_name: target, size_bytes: file.size};
-})()""" % (
-                json.dumps(target_name),
-                json.dumps(local_url),
-                json.dumps(_NETDISK_DIRECTORY),
-            )
-                payload = self._opencli_json(
-                    session,
-                    "eval",
-                    script,
-                    profile=profile,
-                    timeout_seconds=180,
-                    attempts=1,
-                )
-            finally:
-                server.shutdown()
-                server.server_close()
-                thread.join(timeout=5)
-            if payload.get("injected") is not True:
-                failure_reason = payload.get("reason")
-                raise EnrichmentError("OpenCLI loopback file injection failed")
-            if payload.get("target_name") != target_name:
-                raise EnrichmentError("OpenCLI loopback upload target changed")
-            try:
-                injected_size = int(payload.get("size_bytes"))
-            except (TypeError, ValueError) as exc:
-                raise EnrichmentError("OpenCLI loopback upload size is invalid") from exc
-            if injected_size != expected_size:
-                raise EnrichmentError("OpenCLI loopback upload size changed")
-        except EnrichmentError:
-            self._record_loopback_upload_failure(
-                job_id,
-                reason=failure_reason,
-            )
-            raise
 
     def _submit_opencli_upload(
         self,
@@ -772,51 +668,46 @@ class NetdiskEnrichmentService:
                 or _sha256_handle(source) != current.get("video_sha256")
             ):
                 raise EnrichmentError("prepared upload source changed")
-            with tempfile.TemporaryDirectory(
-                prefix="xiaocao-netdisk-upload-"
-            ) as snapshot_dir:
-                snapshot_path = Path(snapshot_dir) / str(current["video_basename"])
-                source.seek(0)
-                with snapshot_path.open("wb") as snapshot_writer:
-                    shutil.copyfileobj(source, snapshot_writer, 1024 * 1024)
-                    snapshot_writer.flush()
-                    os.fsync(snapshot_writer.fileno())
-                if (
-                    snapshot_path.stat().st_size != current.get("video_size_bytes")
-                    or _sha256_file(snapshot_path) != current.get("video_sha256")
-                ):
-                    raise EnrichmentError("immutable upload snapshot changed")
-                marker = secrets.token_urlsafe(18)
-                selector = self._mark_opencli_upload_input(
-                    session=session,
-                    profile=profile,
-                    marker=marker,
-                )
+            marker = secrets.token_urlsafe(18)
+            selector = self._mark_opencli_upload_input(
+                session=session,
+                profile=profile,
+                marker=marker,
+            )
+            try:
                 result = self._opencli_process(
                     session,
                     "upload",
                     selector,
-                    str(snapshot_path),
+                    str(video_path),
                     "--nth",
                     "0",
                     profile=profile,
-                    timeout_seconds=30,
+                    timeout_seconds=_OPENCLI_UPLOAD_TIMEOUT_SECONDS,
                 )
-                transport = "opencli_cdp"
-                if result.returncode != 0:
-                    diagnostic = f"{result.stdout}\n{result.stderr}".lower()
-                    if "not allowed" not in diagnostic:
-                        raise EnrichmentError("OpenCLI file upload failed")
-                    with snapshot_path.open("rb") as snapshot_reader:
-                        self._upload_via_loopback_dom_file(
-                            job_id,
-                            session=session,
-                            profile=profile,
-                            source=snapshot_reader,
-                            target_name=str(current["video_basename"]),
-                            expected_size=int(current["video_size_bytes"]),
-                        )
-                    transport = "loopback_dom_file"
+            except EnrichmentError:
+                self._record_opencli_upload_failure(
+                    job_id,
+                    reason="browser_command_failed",
+                )
+                raise
+            if result.returncode != 0:
+                diagnostic = f"{result.stdout}\n{result.stderr}".lower()
+                if "not allowed" in diagnostic:
+                    self._record_opencli_upload_failure(
+                        job_id,
+                        reason="file_access_denied",
+                    )
+                    raise EnrichmentError(
+                        "OpenCLI local file access denied; enable "
+                        "Allow access to file URLs for the OpenCLI extension"
+                    )
+                self._record_opencli_upload_failure(
+                    job_id,
+                    reason="browser_command_failed",
+                )
+                raise EnrichmentError("OpenCLI file upload failed")
+            transport = "opencli_cdp"
         with self.store.job_lock(job_id):
             latest = self.store.latest(job_id)
             if latest.get("status") != "upload_claimed":
