@@ -132,5 +132,6 @@
 - Known limitation: the observed provider default-root save is reconciled
   narrowly by exact identity/name/size because the real destination dialog was
   absent. This is the one observed failure path, not a general second adapter.
-- Commit information is recorded below after the scoped Ticket 05 commit; all
-  unrelated dirty-worktree changes remain unstaged and unmodified.
+- Scoped implementation and real-acceptance commit:
+  `d9af45b` (`Complete Ticket 05 cloud video loop`). All unrelated
+  dirty-worktree changes remained unstaged and unmodified.

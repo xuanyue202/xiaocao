@@ -216,5 +216,10 @@
     "The immutable real decision bundles were produced before the final fail-closed exact branch-status validator. This acceptance record normalizes both real outcomes to actionable_signal and no_reusable_knowledge; future bundles missing exact statuses, all seven coverage rows or an explicit Xiaocao cross-view are rejected before household or paper side effects.",
     "The Lucifer sample is semantically the same authorized content processed previously, so Ticket 05 correctly reused the completed household and paper receipts instead of sending duplicates."
   ],
-  "commits": []
+  "commits": [
+    {
+      "sha": "d9af45b",
+      "subject": "Complete Ticket 05 cloud video loop"
+    }
+  ]
 }
