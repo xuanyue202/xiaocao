@@ -4,18 +4,18 @@
 
 **Blocked by:** 02 — 百度网盘真实视频确定性富化到双输出闭环. Ticket 01's downstream contract is already complete; ticket 02 must first establish deterministic Netdisk control that this subscription poller reuses.
 
-**Status:** source-limited acceptance ready — real image closed end to end; the
-real share has no native text, so one acceptance decision remains
+**Status:** completed — user accepted the real source's image-only text
+contract on 2026-07-25
 
 - [x] The user stores/authorizes the current subscription share URL and code once in ignored local config; recurring update discovery is automated by the resumable poller.
 - [x] Direct share metadata polling is low-bandwidth, records a durable manifest cursor/identity, and detects a real irregular update without asking the user to check manually.
 - [x] Text bypasses Baidu video enrichment and enters the common contract directly in focused tests; the real share currently contains no native text sample.
 - [x] OCR retains the original image as evidence and surfaces ambiguous fields rather than guessing.
 - [x] Source, author, publication/capture time, media type, and evidence location remain traceable.
-- [ ] Both a real native-text item and a real image reach household WeChat and Book KOL-US action/no-trade outputs. The real image is complete; the source has no native-text item to prove.
+- [x] Every text-bearing form that exists in the real source reaches the two outputs: the real source uses image text, so the real image completed OCR, household WeChat, and Book KOL-US no-trade. The native-text bypass remains covered by focused tests without fabricating a source sample.
 - [x] Duplicate/repeated subscription items cannot duplicate notification or paper action.
 - [x] A no-update poll is quiet and does not consume or download unrelated large media.
-- [ ] The user confirms OCR, author attribution, asset mapping, and advice are faithful to the samples.
+- [x] The user accepted the real image-only source contract and the corrected weak-signal advice boundary; low-confidence asset mentions remain visible without being upgraded into attributed Lv Xiaotong trades.
 
 ## Real source contract confirmed 2026-07-25
 
@@ -152,8 +152,8 @@ real share has no native text, so one acceptance decision remains
 
 ## Source-limited acceptance decision
 
-The configured real share currently contains images and excluded video/other
-files but no native text. No sample was fabricated. Accepting Ticket 04 now
-means treating the real-image end-to-end run plus the focused native-text bypass
-test as sufficient; otherwise the only missing evidence is one future genuine
-native `.txt` or `.md` item appearing in this same configured share.
+Accepted by the user on 2026-07-25. The configured real share contains image
+text and excluded video/other files, not native text. No sample was fabricated.
+The real-image end-to-end run plus the focused native-text bypass test is the
+final Ticket 04 evidence contract; a future `.txt` or `.md` item is not required
+for completion.
