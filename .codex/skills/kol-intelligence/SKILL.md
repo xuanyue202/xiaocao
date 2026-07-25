@@ -11,7 +11,7 @@ Keep every run resumable. Prefer deterministic local APIs, CLIs, and logged-in b
 
 Process each high-density item once. After normalization, reopen the latest evidence file from disk and bind the reading to its current SHA-256; never distill or decide from a cached chat summary or a stale context copy. Preserve one shared source/author/evidence identity, then evaluate these branches independently:
 
-1. **Current decision:** extract timely market-wide, sector, asset, and company signals; validate them against current facts; produce household advice and a Book KOL-US paper action. Use exactly `decision_status=actionable_signal` when supported or `decision_status=no_actionable_signal` with a concrete reason. Do not invent a trade.
+1. **Current decision:** extract timely market-wide, sector, asset, and company signals; validate them against current facts; produce household advice and a Book KOL-US paper action. Use exactly `decision_status=actionable_signal` when supported or `decision_status=no_actionable_signal` with a concrete reason. For every no-action result, also set `reader_insight.status=useful` with a short evidence-bound `summary` and explicit `boundary`, or `reader_insight.status=none` with a concrete reason. Low confidence is not a reason to hide a relevant mention; do not invent a trade.
 2. **Durable knowledge:** extract reusable causal reasoning, decision heuristics, exit lessons, and falsifiable candidate hypotheses from any author. Use exactly `knowledge_status=reusable_knowledge` when supported or `knowledge_status=no_reusable_knowledge` with a concrete reason. Do not create an empty distillation.
 
 Both branches may complete, either branch may complete alone, or both may explicitly no-op. Do not make the user invoke another skill. Before writing knowledge, read [durable-knowledge.md](references/durable-knowledge.md) completely and follow its authority, provenance, schema, and author-specific posture rules.
@@ -68,13 +68,77 @@ Do not modify the dirty `wx_channels_download` repository. Treat its local API a
 - `scripts/kol_enrich_video.py` is an explicit `baidu_aasr` fallback for a separately authorized run. It never silently replaces a Netdisk job and cannot satisfy Ticket 02's mandatory Netdisk acceptance. Its transcript remains complete provider-order ASR with `pid=80006`, `smooth_text=0`, `filter_sensitive=0`, immutable raw results, and audio spot checks.
 - If a deterministic provider or interface differs from its recorded contract, persist the failure and stop. Ask for only the smallest current login, authorization, CAPTCHA, or real-page clarification action; do not improvise or ask the user to repeat already-verified preparation.
 
+## Lv Xiaotong direct subscription
+
+- Ticket 04 has exactly one discovery/download provider: the ignored
+  `xiaocao.yaml` values under `kol_intelligence.lv_xiaotong`, opened through the
+  logged-in OpenCLI Browser Bridge in Google Chrome. The separately installed
+  Codex browser connector may be hosted in Microsoft Edge; it is not the
+  Ticket 04 OpenCLI session. Do not add subscription-message parsing,
+  another link source, a raw HTTP client, Computer Use, or a second long-lived
+  adapter.
+- Codex's built-in browser can enumerate an already-open private-share tab but
+  policy rejects DOM reads against the real `/s/...` page. Record this only as
+  `browser_security_policy_denied`; never log the real URL/code, retry the same
+  IAB read, ask for an IAB tab attachment, or switch browser-control mechanisms
+  to evade the policy.
+- The one-time bootstrap action is: the user opens the configured link in
+  Google Chrome with the OpenCLI Browser Bridge installed, verifies that the
+  file list is visible, and leaves that tab active. Then start the single
+  resumable runner:
+  `PYTHONPATH=src python3 scripts/kol_lv_subscription.py run --bootstrap-bind --opencli-session xiaocao-lv-subscription`.
+  Later runs omit `--bootstrap-bind` and reuse the stable OpenCLI session.
+- The runner completes a full recursive `/share/list` scan before updating the
+  cursor. It ignores video payloads, persists a source-version claim before
+  each small text/image browser download, snapshots only the completed browser
+  receipt, bypasses OCR for native UTF-8 text, and runs macOS Vision OCR once
+  for images. A replayed/uncertain download claim may only reconcile the prior
+  download event; it must never retrigger it.
+- When the still-running command emits
+  `subscription_analysis_input_required`, reopen the referenced immutable
+  evidence and `analysis_request.json`, validate current market and household
+  facts, build the complete coverage matrix and source-neutral decision bundle,
+  then write exactly `{"bundle_path":"<absolute-json-path>"}` followed by a
+  newline to that same process. Do not exit and manually chain `poll`,
+  `claim-download`, `ingest`, and `decide`.
+- Completion requires a durable household notification outcome plus a
+  paper-only Book KOL-US result for every processed item. The notification
+  outcome is delivered for a useful reader insight and suppressed with a
+  reason only when there is no accurately relayable insight. A no-update run
+  with no unfinished item prints nothing. After any interruption, rerun the
+  same command: the durable manifest, download receipt, OCR result, analysis
+  request, notification outcome, and paper decision resume without duplicate
+  OCR, notification, or paper action.
+
+## Trade-information coverage gate
+
+Before creating the decision bundle, build a private **trade-information coverage matrix** against the immutable transcript. This is an extraction-completeness checklist, not a keyword score. Bind every supported row to an exact evidence excerpt, its corrected reader-facing meaning, the applicable horizon, and any trigger or falsifier. Explicitly mark unsupported rows as absent instead of silently omitting them:
+
+- **today's market diagnosis**: what happened in the current session, the present market phase, breadth/liquidity/risk appetite, and whether the author sees a tradable regime;
+- **next-session playbook**: what to watch or do tomorrow, including opening/confirmation conditions, leadership tests, pullback requirements, chase prohibitions, and cancellation conditions;
+- **next-several-session base case**: the expected path over the following days or weeks, likely continuation/divergence/rotation, and the observations that would overturn it;
+- style and market-cap regime: trend versus short-term emotion, large versus small capitalization, and which style is not ready;
+- market/board/sector hierarchy: broad market first, then board/theme leadership, then named instruments;
+- position and risk budget: recommended exposure ranges, pacing, funding source, and risk-control limits;
+- named-asset inventory: every materially discussed company, fund, index, commodity, or currency, including whether it is a primary candidate, alternative/ETF, comparison, negative example, historical example, or unrelated demonstration/promotion.
+
+Build an **entity-resolution inventory** for every named or phonetic company, fund, index, and code before judgment:
+
+- retain the raw ASR surface form privately for audit, but resolve the official current name, six-digit code, and exchange from authoritative current sources;
+- if the mapping remains ambiguous, mark it unresolved and exclude it from actionable recommendations;
+- keep the exact transcript `quote` for evidence validation; when it contains ASR name/code errors, also populate `reader_quote` with a faithful corrected transcription and never silently change the underlying claim;
+- never expose Chinese-digit codes, garbled ASR names, bare internal symbols such as `688347.XSHG`, internal metric keys, or unverified name-code pairs in a household message;
+- require a plain-language `reader_text` for every market fact that may be shown to the user.
+
+If the source contains market, style, timing, or position statements, `market_outlook` is mandatory and a single-stock signal cannot substitute for it. The **market-level conclusion must lead** the notification title and first section, ordered as: today's diagnosis, next-session playbook, next-several-session base case, style/position guidance, and only then sectors and individual instruments. Surface every primary candidate and meaningful alternative, or explicitly record its non-actionable role and exclusion reason; do not let one executable instrument erase the rest of the author's decision hierarchy.
+
 ## Judgment contract
 
 - Preserve the KOL's claim, reasoning, horizon, asset scope, and falsifiers. A thesis does not expire merely because a day passed.
 - Re-evaluate the thesis against current market facts at processing time; do not replay an old order blindly.
 - Prioritize concrete, time-sensitive implications: the market phase and overall strategy, sectors to add/reduce/exit, specific opportunities, the causal chain, validity window, trigger, and falsifier. Generic textbook framing belongs only in the durable-knowledge branch.
 - Treat holdings as context, not a search boundary. Surface strong opportunities outside current holdings and explain the funding or switching logic when relevant.
-- In human-facing messages, name both the company/fund and its code, explain the source signal and causal chain in plain language, and omit internal gates, enums, hashes, and serialized pipeline state.
+- In human-facing messages, name both the company/fund and its code, explain the source signal and causal chain in plain language, and omit internal gates, enums, hashes, and serialized pipeline state. For `no_actionable_signal`, send a compact weak-signal card when `reader_insight.status=useful`: state the insight, link only genuinely relevant current household positions, and make the evidence boundary explicit. Do not expand it into unrelated market or portfolio analysis, and do not decide for the user whether to act.
 - Extract all relevant asset classes, but Book KOL-US may transact only US-listed equities and ETFs.
 - Book KOL-US is paper-only. No margin, options, futures, short selling, or negative cash. Leveraged and inverse ETFs are allowed as cash instruments when the opportunity warrants them.
 - Do not suppress good paper opportunities with arbitrary fixed sizing thresholds. Make sizing opportunity-dependent and explain concentration risk.
@@ -94,4 +158,4 @@ For every processed high-density item, produce:
 - durable distillation path and routed hypothesis ids when knowledge was written;
 - processing state and next asynchronous checkpoint.
 
-Notify on every processed high-density item, not only when Book KOL-US trades.
+Notify on every processed high-density item that has `reader_insight.status=useful`, regardless of confidence and regardless of whether Book KOL-US trades. A weak but accurately attributable asset mention must not be swallowed: label its confidence and provenance boundary instead. If `reader_insight.status=none`, persist the evidence, no-op reason, and paper result, but suppress the household notification.

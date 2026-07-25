@@ -226,6 +226,23 @@ class DecisionPipeline:
         synthesis = item.get("synthesis") or {}
         if not synthesis.get("summary") or not synthesis.get("confidence"):
             raise DecisionError("system synthesis must be explicit")
+        if item.get("decision_status") == "no_actionable_signal":
+            insight = item.get("reader_insight") or {}
+            if insight.get("status") not in {"useful", "none"}:
+                raise DecisionError(
+                    "no_actionable_signal requires reader_insight useful or none"
+                )
+            if insight["status"] == "useful" and any(
+                not str(insight.get(field) or "").strip()
+                for field in ("summary", "boundary")
+            ):
+                raise DecisionError(
+                    "useful reader_insight requires summary and boundary"
+                )
+            if insight["status"] == "none" and not str(
+                insight.get("reason") or ""
+            ).strip():
+                raise DecisionError("empty reader_insight requires a reason")
         return document
 
     def _validate_cross_source(self, bundle: dict[str, Any]) -> dict[str, Any]:
@@ -326,6 +343,7 @@ class DecisionPipeline:
         synthesis: dict[str, Any],
         household_recommendation: dict[str, Any],
         cross_source: dict[str, Any],
+        reader_insight: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         """Return only semantics that can change the reader-facing message.
 
@@ -395,7 +413,7 @@ class DecisionPipeline:
                 "summary": validation.get("summary"),
                 "facts": _reader_market_facts(validation),
             }
-        return {
+        payload = {
             "author": author,
             "title": title,
             "actionable_signals": normalized_signals,
@@ -403,6 +421,13 @@ class DecisionPipeline:
             "synthesis": {"summary": synthesis.get("summary")},
             "cross_source": cross_source,
         }
+        if reader_insight:
+            payload["reader_insight"] = {
+                field: reader_insight.get(field)
+                for field in ("status", "summary", "boundary", "reason")
+                if reader_insight.get(field) is not None
+            }
+        return payload
 
     @staticmethod
     def _notification_identity(
@@ -483,6 +508,7 @@ class DecisionPipeline:
                 synthesis=item["synthesis"],
                 household_recommendation=contextual_advice,
                 cross_source=_reader_cross_source(item, cross_source),
+                reader_insight=item.get("reader_insight"),
             )
             desired_identity = self._notification_identity(
                 document.sha256,
@@ -506,6 +532,7 @@ class DecisionPipeline:
                             "agreements": [],
                             "conflicts": [],
                         },
+                        reader_insight=row.get("reader_insight"),
                     ) == notification_payload
                 ),
                 None,
@@ -514,10 +541,20 @@ class DecisionPipeline:
                 (equivalent_prior or {}).get("idempotency_key") or desired_identity
             )
             replay = identity in known_notifications
+            insight = item.get("reader_insight") or {}
+            notification_suppressed = (
+                item.get("decision_status") == "no_actionable_signal"
+                and insight.get("status") == "none"
+            )
             message = {
                 "idempotency_key": identity,
                 "channel": "wechat",
-                "status": "pending",
+                "status": "suppressed" if notification_suppressed else "pending",
+                "reason": (
+                    str(insight.get("reason"))
+                    if notification_suppressed
+                    else None
+                ),
                 "author": item["author"],
                 "title": item["title"],
                 "evidence": str(document.path),
@@ -530,6 +567,9 @@ class DecisionPipeline:
                 "market_validation": item["market_validation"],
                 "cross_source_judgments": _reader_cross_source(item, cross_source),
                 "household_recommendation": contextual_advice,
+                "decision_status": item.get("decision_status"),
+                "decision_reason": item.get("decision_reason"),
+                "reader_insight": item.get("reader_insight"),
                 "household_context_assessment": context_assessment,
                 "household_context": {
                     "family_id": household_context["family_id"],

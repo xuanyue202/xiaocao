@@ -84,6 +84,9 @@ class WechatDelivery:
                 identity = str(notification.get("idempotency_key") or "").strip()
                 if not identity:
                     raise DecisionError("notification idempotency key is missing")
+                if notification.get("status") == "suppressed":
+                    skipped.append(identity)
+                    continue
                 prior = delivered.get(identity)
                 if prior:
                     notification.update(

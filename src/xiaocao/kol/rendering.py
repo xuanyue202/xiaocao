@@ -124,6 +124,8 @@ def _render_market_outlook(
 
 
 def reader_message_title(item: dict[str, Any]) -> str:
+    if item.get("decision_status") == "no_actionable_signal":
+        return f"投资情报｜{item['author']}：弱信号提醒"
     names: list[str] = []
     for signal in item.get("actionable_signals") or []:
         for asset in signal.get("assets") or []:
@@ -165,6 +167,8 @@ def render_household_item_message(
     cross_source: dict[str, Any] | None = None,
 ) -> str:
     """Render human-readable market intelligence; internal gates stay internal."""
+    if item.get("decision_status") == "no_actionable_signal":
+        return _render_no_actionable_signal(item)
     lines = [f"先说结论：{item['synthesis']['summary']}"]
     market_outlook = item.get("market_outlook") or {}
     if market_outlook:
@@ -220,6 +224,55 @@ def render_household_item_message(
             f"信息来源：{item['author']}｜{item['title']}",
             "这只是决策信息，不会替你执行真实交易。",
         ]
+    )
+    return "\n".join(lines)
+
+
+def _render_no_actionable_signal(item: dict[str, Any]) -> str:
+    insight = item.get("reader_insight") or {}
+    if insight.get("status") == "none":
+        return ""
+    positions: list[dict[str, Any]] = []
+    seen_codes: set[str] = set()
+    for signal in item.get("actionable_signals") or []:
+        context = signal.get("context_assessment") or {}
+        for position in context.get("relevant_positions") or []:
+            code = str(position.get("asset_code") or "").strip()
+            if not code or code in seen_codes:
+                continue
+            seen_codes.add(code)
+            positions.append(position)
+
+    lines = [
+        "【注意｜弱信号】",
+        f"洞察：{str(insight.get('summary') or '').strip()}",
+    ]
+    if positions:
+        labels = []
+        for position in positions:
+            name = str(position.get("asset_name") or "").strip()
+            code = str(position.get("asset_code") or "").strip()
+            labels.append(f"{name}（{code}）" if name else code)
+        lines.append(
+            f"与你有关：家庭当前持有{'、'.join(labels)}；请注意波动，"
+            "是否调整由你决定。"
+        )
+    lines.append(
+        "边界："
+        + str(
+            insight.get("boundary")
+            or "这是低置信度信息，不自动生成买卖动作。"
+        ).strip()
+    )
+    source_label = (
+        "百度网盘订阅图片"
+        if item.get("source") == "baidu_subscription_share_browser"
+        else "原始材料"
+    )
+    lines.append(
+        "来源："
+        f"{item['author']}订阅｜{_reader_time(item.get('published_at'))}｜"
+        f"{source_label}｜{str(item.get('title') or '原始内容').strip()}"
     )
     return "\n".join(lines)
 

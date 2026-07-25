@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from datetime import datetime, timezone
 from pathlib import Path
 
 import pytest
@@ -12,6 +13,7 @@ from xiaocao.kol.decisions import (
     TranscriptDocument,
     render_household_item_message,
 )
+from xiaocao.kol.rendering import reader_message_title
 
 
 def _write_text(path: Path, text: str) -> Path:
@@ -252,6 +254,51 @@ def test_pipeline_routes_once_and_keeps_book_isolated(tmp_path):
     assert decision["evidence_context"]["market_validation"]["status"] == "qualify"
 
 
+def test_no_reader_insight_is_audited_but_never_sent(tmp_path):
+    transcript = _write_text(tmp_path / "empty-insight.txt", "等待成交量放大再行动")
+    item = _item(transcript)
+    item.update(
+        {
+            "decision_status": "no_actionable_signal",
+            "decision_reason": "原文不足以形成交易判断。",
+            "reader_insight": {
+                "status": "none",
+                "reason": "没有可准确复述给读者的新洞察。",
+            },
+        }
+    )
+    checked_at = datetime.now(timezone.utc).isoformat()
+    for validation in (
+        item["market_validation"],
+        item["actionable_signals"][0]["current_validation"],
+    ):
+        validation["as_of"] = checked_at
+        validation["currentness"]["checked_at"] = checked_at
+        validation["facts"][0]["observed_at"] = checked_at
+    pipeline = _pipeline(tmp_path / "out")
+    first = pipeline.process(_bundle(item, household_path=tmp_path / "unused.json"))
+    second = pipeline.process(_bundle(item, household_path=tmp_path / "unused.json"))
+    sends = 0
+
+    def sender(_title, _body):
+        nonlocal sends
+        sends += 1
+        return {"wecom": "ok"}
+
+    delivery = pipeline.deliver_wechat(first, sender=sender)
+
+    assert first["items"][0]["notification"]["status"] == "suppressed"
+    assert first["items"][0]["notification"]["reason"] == (
+        "没有可准确复述给读者的新洞察。"
+    )
+    assert second["items"][0]["idempotent_replay"] is True
+    assert delivery["status"] == "already_delivered"
+    assert sends == 0
+    rows = (tmp_path / "out" / "household_outbox.jsonl").read_text().splitlines()
+    assert len(rows) == 1
+    assert json.loads(rows[0])["status"] == "suppressed"
+
+
 def test_rejects_unquoted_claim_and_unsafe_paper_instruments(tmp_path):
     transcript = _write_text(tmp_path / "real.txt", "原文没有该说法")
     household = _write_household(tmp_path / "household.json")
@@ -446,6 +493,83 @@ def test_reader_message_surfaces_market_outlook_before_individual_signals(tmp_pa
     assert message.index("【大盘与整体策略：A股整体】") < message.index(
         "【暂不参与：A股短线】"
     )
+
+
+def test_no_actionable_reader_message_is_short_and_only_links_real_holding(tmp_path):
+    transcript = _write_text(tmp_path / "17.png.txt", "特斯拉才叫崩啊")
+    item = _item(transcript, author="吕晓彤", ticker="TSLA")
+    item.update(
+        {
+            "decision_status": "no_actionable_signal",
+            "decision_reason": "群聊片段无法确认作者归属。",
+            "reader_insight": {
+                "status": "useful",
+                "summary": "群内有人明确提到特斯拉下跌，反映当时短线风险情绪偏弱。",
+                "boundary": "这不是吕晓彤本人确认观点，也没有完整买卖条件。",
+            },
+            "source": "baidu_subscription_share_browser",
+            "published_at": "2026-07-23T23:41:07+08:00",
+            "title": "17.png",
+            "market_outlook": _market_outlook(scope="A股整体与美股大型科技观察"),
+        }
+    )
+    item["actionable_signals"][0]["context_assessment"] = {
+        "held": True,
+        "relevant_positions": [
+            {
+                "asset_code": "TSLA",
+                "asset_name": "特斯拉",
+                "currency": "USD",
+                "current_amount": 4695,
+            }
+        ],
+    }
+
+    message = render_household_item_message(item)
+
+    assert reader_message_title(item) == "投资情报｜吕晓彤：弱信号提醒"
+    assert message.splitlines() == [
+        "【注意｜弱信号】",
+        "洞察：群内有人明确提到特斯拉下跌，反映当时短线风险情绪偏弱。",
+        "与你有关：家庭当前持有特斯拉（TSLA）；请注意波动，是否调整由你决定。",
+        "边界：这不是吕晓彤本人确认观点，也没有完整买卖条件。",
+        "来源：吕晓彤订阅｜2026-07-23 23:41｜百度网盘订阅图片｜17.png",
+    ]
+    assert "INTC" not in message
+    assert "GOOGL" not in message
+    assert "下一交易日" not in message
+    assert "大盘与整体策略" not in message
+
+
+def test_no_actionable_reader_message_does_not_force_household_analysis(tmp_path):
+    transcript = _write_text(tmp_path / "18.png.txt", "大A现在是不是不跟美韩了")
+    item = _item(transcript, author="吕晓彤")
+    item.update(
+        {
+            "decision_status": "no_actionable_signal",
+            "decision_reason": "只有无法归属的提问。",
+            "reader_insight": {
+                "status": "useful",
+                "summary": "群内在讨论A股与海外市场的联动是否减弱。",
+                "boundary": "原文只有提问，没有明确结论。",
+            },
+            "source": "baidu_subscription_share_browser",
+            "published_at": "2026-07-24T09:00:00+08:00",
+            "title": "18.png",
+            "market_outlook": _market_outlook(),
+        }
+    )
+    item["actionable_signals"][0]["context_assessment"] = {
+        "held": False,
+        "relevant_positions": [],
+    }
+
+    message = render_household_item_message(item)
+
+    assert "洞察：群内在讨论A股与海外市场的联动是否减弱。" in message
+    assert "家庭" not in message
+    assert "系统当前重判" not in message
+    assert len(message.splitlines()) == 4
 
 
 def test_material_market_outlook_change_creates_new_reader_notification(tmp_path):

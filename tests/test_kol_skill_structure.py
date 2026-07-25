@@ -21,6 +21,21 @@ def test_kol_skill_is_the_single_conditional_entrypoint() -> None:
     assert "holdings as context, not a search boundary" in text
 
 
+def test_kol_skill_requires_complete_trade_information_coverage() -> None:
+    text = SKILL_MD.read_text(encoding="utf-8")
+
+    for marker in (
+        "trade-information coverage matrix",
+        "today's market diagnosis",
+        "next-session playbook",
+        "next-several-session base case",
+        "entity-resolution inventory",
+        "reader_quote",
+        "market-level conclusion must lead",
+    ):
+        assert marker in text
+
+
 def test_kol_skill_local_markdown_links_resolve() -> None:
     markdown_files = [SKILL_MD, *SKILL_DIR.joinpath("references").glob("*.md")]
 

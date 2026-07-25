@@ -37,9 +37,22 @@ def validate_decision_completion(
         raise EnrichmentError("ticket 01 decision item is invalid")
     notification = item.get("notification") or {}
     paper = item.get("book_kol_us") or {}
-    if not isinstance(notification, dict) or notification.get("status") != "delivered":
+    suppressed = (
+        isinstance(notification, dict)
+        and notification.get("status") == "suppressed"
+        and item.get("decision_status") == "no_actionable_signal"
+        and (item.get("reader_insight") or {}).get("status") == "none"
+        and bool(str(notification.get("reason") or "").strip())
+    )
+    if (
+        not isinstance(notification, dict)
+        or notification.get("status") not in {"delivered", "suppressed"}
+        or (notification.get("status") == "suppressed" and not suppressed)
+    ):
         raise EnrichmentError("household advisory was not delivered")
-    if not str(notification.get("receipt") or "").strip():
+    if notification.get("status") == "delivered" and not str(
+        notification.get("receipt") or ""
+    ).strip():
         raise EnrichmentError("household advisory requires a delivery receipt")
     if (
         not isinstance(paper, dict)
