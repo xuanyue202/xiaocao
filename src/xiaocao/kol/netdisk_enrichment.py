@@ -59,8 +59,9 @@ _OPENCLI_CAPTURE_PROBE = r"""(async () => {
     return rect.width > 0 && rect.height > 0
       && style.display !== 'none' && style.visibility !== 'hidden';
   };
-  const adPattern = /广告|限时特惠|下载客户端|开通\s*(?:SVIP|超级会员)|SVIP\s*(?:活动|特惠|优惠)/i;
+  const adPattern = /广告|运营图片|限时特惠|下载客户端|开通\s*(?:SVIP|超级会员)|SVIP\s*(?:活动|特惠|优惠)/i;
   const overlaySelector = [
+    '.nd-operate-guidance',
     '[role="dialog"]',
     '[class*="modal"]',
     '[class*="popup"]',
@@ -72,13 +73,17 @@ _OPENCLI_CAPTURE_PROBE = r"""(async () => {
   let ad_overlays_dismissed = 0;
   for (const overlay of [...document.querySelectorAll(overlaySelector)]) {
     const text = (overlay.innerText || '').trim();
-    const identity = `${overlay.className || ''} ${text}`;
+    const imageLabels = [...overlay.querySelectorAll('img')].map(
+      node => `${node.getAttribute('alt') || ''} ${node.className || ''}`
+    ).join(' ');
+    const identity = `${overlay.className || ''} ${text} ${imageLabels}`;
     if (!visible(overlay) || !adPattern.test(identity)) continue;
     const close = [...overlay.querySelectorAll(
-      'button,[role="button"],[aria-label],[title],[class*="close"]'
+      'button,[role="button"],[aria-label],[title],[class*="close"],img[alt="close"]'
     )].find(node => {
       const label = `${node.getAttribute('aria-label') || ''} `
         + `${node.getAttribute('title') || ''} `
+        + `${node.getAttribute('alt') || ''} `
         + `${node.className || ''} ${(node.textContent || '').trim()}`;
       return visible(node) && /关闭|close|×|^x$/i.test(label);
     });
@@ -480,6 +485,51 @@ class NetdiskEnrichmentService:
       folder_bound: false
     };
   }
+  const visible = node => {
+    const rect = node.getBoundingClientRect();
+    const style = getComputedStyle(node);
+    return rect.width > 0 && rect.height > 0
+      && style.display !== 'none' && style.visibility !== 'hidden'
+      && Number(style.opacity) !== 0;
+  };
+  const adPattern = /广告|运营图片|限时特惠|下载客户端|开通\\s*(?:SVIP|超级会员)|SVIP\\s*(?:活动|特惠|优惠)/i;
+  const overlaySelector = [
+    '.nd-operate-guidance',
+    '[role="dialog"]',
+    '[class*="modal"]',
+    '[class*="popup"]',
+    '[class*="advert"]',
+    '[class*="promotion"]',
+    '[class*="pay-revolution"]',
+    '[class*="vip-dialog"]'
+  ].join(',');
+  let adOverlaysDismissed = 0;
+  for (const overlay of [...document.querySelectorAll(overlaySelector)]) {
+    const text = (overlay.innerText || '').trim();
+    const imageLabels = [...overlay.querySelectorAll('img')].map(
+      node => `${node.getAttribute('alt') || ''} ${node.className || ''}`
+    ).join(' ');
+    const identity = `${overlay.className || ''} ${text} ${imageLabels}`;
+    if (!visible(overlay) || !adPattern.test(identity)) continue;
+    const close = [...overlay.querySelectorAll(
+      'button,[role="button"],[aria-label],[title],[class*="close"],img[alt="close"]'
+    )].find(node => {
+      const label = `${node.getAttribute('aria-label') || ''} `
+        + `${node.getAttribute('title') || ''} `
+        + `${node.getAttribute('alt') || ''} `
+        + `${node.className || ''} ${(node.textContent || '').trim()}`;
+      return visible(node) && /关闭|close|×|^x$/i.test(label);
+    });
+    if (close) {
+      close.click();
+      await new Promise(resolve => setTimeout(resolve, 100));
+    }
+    if (document.contains(overlay) && visible(overlay)) {
+      overlay.style.setProperty('display', 'none', 'important');
+      overlay.setAttribute('aria-hidden', 'true');
+    }
+    adOverlaysDismissed += 1;
+  }
   const pageSize = 1000;
   const maxPages = 100;
   let page = 1;
@@ -523,7 +573,8 @@ class NetdiskEnrichmentService:
     target_index: targetIndex,
     pages_scanned: page,
     complete_scan: completeScan,
-    folder_bound: true
+    folder_bound: true,
+    ad_overlays_dismissed: adOverlaysDismissed
   };
 })()""" % (json.dumps(self.netdisk_directory), json.dumps(target_name))
         payload = self._opencli_json(
@@ -1426,6 +1477,9 @@ class NetdiskEnrichmentService:
                     "modal_visible": trigger_proof.get("modal_visible") is True,
                     "confirmed_state": confirmed_state,
                     "content_chars": int(trigger_proof.get("content_chars") or 0),
+                    "reconciled_after_claim": (
+                        trigger_proof.get("reconciled_after_claim") is True
+                    ),
                 },
                 "browser_evidence": normalized,
                 "updated_at": now,
@@ -1452,13 +1506,7 @@ class NetdiskEnrichmentService:
                     "side_effect_uncertain": True,
                     "idempotent_replay": True,
                 }
-        elif status == "ai_note_claimed":
-            return {
-                **current,
-                "pending": True,
-                "side_effect_uncertain": True,
-                "idempotent_replay": True,
-            }
+        reconcile_claim = status == "ai_note_claimed"
         target_name = str(current["video_basename"])
         player_url = self._open_opencli_player(
             session=session,
@@ -1494,6 +1542,13 @@ class NetdiskEnrichmentService:
         )
         observed_at = self._time()
         if probe["ai_note_state"] == "missing":
+            if reconcile_claim:
+                return {
+                    **self.store.latest(job_id),
+                    "pending": True,
+                    "side_effect_uncertain": True,
+                    "idempotent_replay": True,
+                }
             latest = self.store.latest(job_id)
             if latest.get("ai_note_triggered_at"):
                 return {**latest, "pending": True, "idempotent_replay": True}
@@ -1507,6 +1562,19 @@ class NetdiskEnrichmentService:
                 target_name=target_name,
                 page_url=player_url,
                 trigger_proof=trigger_proof,
+            )
+        if reconcile_claim:
+            return self._record_ai_note_triggered(
+                job_id,
+                target_name=target_name,
+                page_url=player_url,
+                trigger_proof={
+                    "click_dispatched": False,
+                    "modal_visible": False,
+                    "confirmed_state": probe["ai_note_state"],
+                    "content_chars": int(probe.get("content_chars") or 0),
+                    "reconciled_after_claim": True,
+                },
             )
         if probe["ai_note_state"] == "generating":
             return self.record_browser_state(
@@ -3094,7 +3162,10 @@ class NetdiskEnrichmentService:
                     "updated_at": self._time().isoformat(timespec="seconds"),
                 }
                 if bundle_sha is not None:
-                    row["decision_bundle_sha256"] = bundle_sha
+                    if current.get("status") == "decided":
+                        row["attempted_decision_bundle_sha256"] = bundle_sha
+                    else:
+                        row["decision_bundle_sha256"] = bundle_sha
                 self.store.append(row)
 
             if not bundle_file.is_file():
@@ -3112,7 +3183,8 @@ class NetdiskEnrichmentService:
                 and current.get("decision_bundle_sha256") == bundle_sha
             ):
                 return {**current, "idempotent_replay": True}
-            if current.get("status") != "verified":
+            is_revision = current.get("status") == "decided"
+            if not is_revision and current.get("status") != "verified":
                 exc = EnrichmentError(
                     "only a verified Netdisk transcript can be decided"
                 )
@@ -3153,6 +3225,85 @@ class NetdiskEnrichmentService:
                 )
                 record_failure("evidence_path_mismatch", exc, bundle_sha=bundle_sha)
                 raise exc
+            if is_revision:
+                from .book import BookKolUs
+
+                prior_book = current.get("book_kol_us") or {}
+                prior_book_key = str(prior_book.get("idempotency_key") or "")
+                revision_book = BookKolUs(
+                    Path(decision_output_dir).expanduser().resolve()
+                    / "book_kol_us"
+                )
+                try:
+                    revision_intent = items[0].get("book_kol_us") or {}
+                    revision_book.validate(revision_intent)
+                    revision_book_key = revision_book.resolve_identity(
+                        str(current["transcript_sha256"]),
+                        revision_intent,
+                    )
+                except Exception as exc:
+                    record_failure(
+                        "revision_book_validation",
+                        exc,
+                        bundle_sha=bundle_sha,
+                    )
+                    raise EnrichmentError(
+                        "decision revision has an invalid Book KOL-US intent"
+                    ) from exc
+                if not prior_book_key or revision_book_key != prior_book_key:
+                    exc = EnrichmentError(
+                        "message-only revision cannot change Book KOL-US intent"
+                    )
+                    record_failure(
+                        "revision_book_changed",
+                        exc,
+                        bundle_sha=bundle_sha,
+                    )
+                    raise exc
+                prior_completion = next(
+                    (
+                        row
+                        for row in reversed(self.store.read())
+                        if row.get("job_id") == job_id
+                        and row.get("event")
+                        == "netdisk_decision_revision_completed"
+                        and row.get("decision_bundle_sha256") == bundle_sha
+                    ),
+                    None,
+                )
+                if prior_completion is not None:
+                    return {**prior_completion, "idempotent_replay": True}
+                prior_claim = next(
+                    (
+                        row
+                        for row in reversed(self.store.read())
+                        if row.get("job_id") == job_id
+                        and row.get("event")
+                        == "netdisk_decision_revision_claimed"
+                        and row.get("pending_decision_bundle_sha256")
+                        == bundle_sha
+                    ),
+                    None,
+                )
+                if prior_claim is None:
+                    prior_bundle_sha = str(
+                        current.get("decision_bundle_sha256") or ""
+                    )
+                    current = {
+                        **current,
+                        "event": "netdisk_decision_revision_claimed",
+                        "status": "decided",
+                        "decision_revision_idempotency_key": hashlib.sha256(
+                            f"decision-revision:{job_id}:{bundle_sha}".encode()
+                        ).hexdigest(),
+                        "previous_decision_bundle_sha256": prior_bundle_sha,
+                        "pending_decision_bundle_path": str(bundle_file),
+                        "pending_decision_bundle_sha256": bundle_sha,
+                        "updated_at": self._time().isoformat(timespec="seconds"),
+                    }
+                    self.store.append(current)
+                else:
+                    current = prior_claim
             if pipeline is None:
                 from .decisions import DecisionPipeline
                 from .household import LiangHuiMcpClient
@@ -3188,8 +3339,13 @@ class NetdiskEnrichmentService:
                 json.dumps(result, ensure_ascii=False, sort_keys=True, indent=2) + "\n"
             ).encode("utf-8")
             artifact_dir = self.output_dir / "artifacts" / job_id
-            result_path = artifact_dir / "decision_result.json"
-            temporary = artifact_dir / ".decision_result.partial.json"
+            result_name = (
+                f"decision_result.{bundle_sha[:16]}.json"
+                if is_revision
+                else "decision_result.json"
+            )
+            result_path = artifact_dir / result_name
+            temporary = artifact_dir / f".{result_name}.partial"
             temporary.write_bytes(result_bytes)
             temporary.replace(result_path)
             household_summary = {
@@ -3212,7 +3368,11 @@ class NetdiskEnrichmentService:
             }
             row = {
                 **current,
-                "event": "netdisk_decisions_completed",
+                "event": (
+                    "netdisk_decision_revision_completed"
+                    if is_revision
+                    else "netdisk_decisions_completed"
+                ),
                 "status": "decided",
                 "decision_bundle_path": str(bundle_file),
                 "decision_bundle_sha256": bundle_sha,
@@ -3220,8 +3380,16 @@ class NetdiskEnrichmentService:
                 "decision_result_sha256": hashlib.sha256(result_bytes).hexdigest(),
                 "household_notification": household_summary,
                 "book_kol_us": paper_summary,
+                "new_external_side_effect_count": (
+                    int(result["items"][0].get("idempotent_replay") is not True)
+                    if is_revision
+                    else 2
+                ),
                 "updated_at": self._time().isoformat(timespec="seconds"),
             }
+            row.pop("pending_decision_bundle_path", None)
+            row.pop("pending_decision_bundle_sha256", None)
+            row.pop("attempted_decision_bundle_sha256", None)
             row["browser_evidence"] = {
                 "page_url": str(current.get("dom_page_url") or ""),
                 "target_name": str(current.get("video_basename") or ""),

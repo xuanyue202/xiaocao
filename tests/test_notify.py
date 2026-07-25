@@ -58,6 +58,56 @@ def test_wecom_fans_out_to_distinct_configured_recipients():
     assert all(call[1]["text"] == "小草通知\n双发验证" for call in poster.calls)
 
 
+def test_wecom_splits_long_utf8_text_without_loss(monkeypatch):
+    monkeypatch.setattr(N.time, "sleep", lambda _seconds: None)
+    poster = _capturing_poster()
+    title = "投资情报｜小草：直播观点拆解"
+    body = "甲" * 600 + "\n\n信息来源：" + "乙" * 100
+
+    result = N.wecom_notify(
+        "https://clawsg/send",
+        title,
+        body,
+        token="tok",
+        user_id="Chen",
+        poster=poster,
+    )
+
+    chunks = [call[1]["text"] for call in poster.calls]
+    assert result == "ok"
+    assert len(chunks) == 2
+    assert chunks[0].endswith("\n\n")
+    assert chunks[1].startswith("信息来源：")
+    assert "".join(chunks) == f"{title}\n{body}"
+    assert all(
+        len(chunk.encode("utf-8")) <= N.WECOM_TEXT_MAX_BYTES
+        for chunk in chunks
+    )
+
+
+def test_wecom_long_text_requires_every_chunk_to_succeed(monkeypatch):
+    monkeypatch.setattr(N.time, "sleep", lambda _seconds: None)
+    calls = []
+
+    def poster(url, payload, *, headers=None, verify=True):
+        calls.append((url, payload, headers, verify))
+        if len(calls) == 2:
+            return 500, "second chunk failed"
+        return 200, '{"ok":true}'
+
+    result = N.wecom_notify(
+        "https://clawsg/send",
+        "KOL",
+        "甲" * 700,
+        token="tok",
+        user_id="Chen",
+        poster=poster,
+    )
+
+    assert result.startswith("chunk 2/2 http 500")
+    assert len(calls) == 2
+
+
 def test_kol_audience_uses_its_own_recipient_list():
     poster = _capturing_poster()
     env = {

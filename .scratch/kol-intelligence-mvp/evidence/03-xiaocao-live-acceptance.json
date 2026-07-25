@@ -1,0 +1,93 @@
+{
+  "schema_version": 1,
+  "ticket": "03-xiaocao-live-to-decisions",
+  "status": "completed",
+  "completed_at": "2026-07-25T20:44:47+08:00",
+  "capture": {
+    "capture_job_id": "kol-d141475ad2a9",
+    "live_id": "l_6a632acee4b0694c352f25ba",
+    "mode": "live_capture",
+    "compress": true,
+    "compress_inline": true,
+    "media_basename": "20260724 大师班专场(晚18：30开播)-compressed.mp4",
+    "media_sha256": "ac3939f5f949cf47e05b90680bca91393fd7e249e62f69f6dfbec7735f9815b2",
+    "media_size_bytes": 208016619,
+    "media_duration_seconds": 2989.109589,
+    "raw_source_retained": false,
+    "tail_decode_seconds": 30,
+    "playback_prompt_count": 1
+  },
+  "cleanup": {
+    "observed_at": "2026-07-25T19:29:02+08:00",
+    "completed_before_first_netdisk_browser_action": true,
+    "exact_sniffer_process_running": false,
+    "ports_2022_2023_listening": false,
+    "capture_status_endpoint_available": false,
+    "system_http_proxy_enabled": false,
+    "system_https_proxy_enabled": false,
+    "system_pac_proxy_enabled": false,
+    "system_socks_proxy_enabled": false,
+    "evidence_sha256": "fa57480742e048767bd6f54f06fb5fc5a4e0ead39795223656a313bdddefbb3a"
+  },
+  "cloud_handoff": {
+    "netdisk_job_id": "kol-netdisk-ac3939f5f949cf47",
+    "handoff_sha256": "38ed7b7bc9971dd344a4e1e0eb856c20d26c97fcf44d97bb723ed365ca8bb887",
+    "coordinator_large_payload_local_bytes": 0,
+    "semantic_ad_close_verified": true
+  },
+  "enrichment": {
+    "transcript_sha256": "ff0556df3d35414bf33b18fa6ef1543ed210d901bda2c77c420990526092d75b",
+    "transcript_character_count": 12934,
+    "ai_note_template_no": 1,
+    "content_audit_sha256": "83c08e89251ae84a53d43be06b901a40841d391baeef085f1077975b758cbddb",
+    "decision_bundle_sha256": "9c831c29acd7dd040635d3ec3eb1fa71c481a7255cc93a13c947184db7151633",
+    "decision_result_sha256": "d751ce6da86cbdd905f17c81241a1a59804706481e112e29bf4cf03db8e75904",
+    "market_first": true,
+    "source_system_and_market_validation_separated": true,
+    "seven_row_trade_information_matrix_complete": true
+  },
+  "household_output": {
+    "status": "delivered",
+    "advisory_only": true,
+    "notification_idempotency_key": "fd699f29e34da5fe3fc3c8d4a08dcbf1cf7c34d27aa9018a6e31eef322310aeb",
+    "recipient_count": 2,
+    "utf8_chunk_limit_bytes": 2048,
+    "utf8_chunk_sizes_bytes": [
+      2045,
+      176
+    ],
+    "lossless_reassembly_verified": true
+  },
+  "book_kol_us_output": {
+    "paper_only": true,
+    "status": "no_trade",
+    "idempotency_key": "6cd34b6a7d687f61b3ffd3195bf492ed0c7b772a123d6f3a1d608eb3fdd40885",
+    "reason": "The source contains only A-share assets and themes, with no unambiguous actionable US-listed stock or ETF."
+  },
+  "side_effect_counts": {
+    "capture": 1,
+    "upload": 1,
+    "transcript_request": 1,
+    "ai_note_request": 1,
+    "household_notification": 1,
+    "book_kol_us": 1,
+    "rerun_external_side_effects": 0,
+    "confirmation_external_side_effects": 0
+  },
+  "user_confirmation": {
+    "value": "target_live_and_decision_value_confirmed",
+    "confirmed_at": "2026-07-25T20:44:47+08:00",
+    "active_interaction_target_minutes": 5
+  },
+  "validation": {
+    "focused_tests": "97 passed",
+    "git_diff_check": "passed"
+  },
+  "sanitization": {
+    "contains_credentials": false,
+    "contains_passwords": false,
+    "contains_signed_media_urls": false,
+    "contains_receipt_endpoints": false,
+    "contains_transcript_text": false
+  }
+}

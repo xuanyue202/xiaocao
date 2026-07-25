@@ -10,6 +10,7 @@ from urllib.parse import quote
 
 import pytest
 
+from xiaocao.kol.book import BookKolUs
 from xiaocao.kol.enrichment import EnrichmentError
 from xiaocao.kol.enrichment_types import validate_decision_completion
 from xiaocao.kol.netdisk_enrichment import NetdiskEnrichmentService
@@ -184,6 +185,12 @@ def _opencli_upload_runner(
             assert "maxPages = 100" in tail[1]
             assert "page += 1" in tail[1]
             assert "complete_scan" in tail[1]
+            assert ".nd-operate-guidance" in tail[1]
+            assert 'img[alt="close"]' in tail[1]
+            assert "getBoundingClientRect" in tail[1]
+            assert ".click()" in tail[1]
+            assert "clientX" not in tail[1]
+            assert "clientY" not in tail[1]
             payload = {
                 "page_url": "https://pan.baidu.com/disk/main",
                 "errno": 0,
@@ -191,6 +198,7 @@ def _opencli_upload_runner(
                 "folder_bound": True,
                 "exact_count": 1 if target_present else 0,
                 "target_name": video_name,
+                "ad_overlays_dismissed": 1,
             }
         elif tail[:1] == ["eval"] and "data-xiaocao-upload-marker" in tail[1]:
             assert "stopImmediatePropagation" in tail[1]
@@ -761,6 +769,7 @@ def test_opencli_step_tracks_ai_note_as_independent_template_job(tmp_path):
         "modal_visible": False,
         "confirmed_state": "generating",
         "content_chars": 42,
+        "reconciled_after_claim": False,
     }
     assert triggered["browser_evidence"]["page_url"] == (
         "https://pan.baidu.com/pfile/video"
@@ -869,7 +878,9 @@ def test_ai_note_submission_does_not_record_success_while_modal_remains_visible(
     assert current["event"] == "netdisk_ai_note_claimed"
 
 
-def test_ai_note_claim_replay_never_repeats_template_submission(tmp_path):
+def test_ai_note_claim_replay_reconciles_without_repeating_template_submission(
+    tmp_path,
+):
     service, video, prepared = _prepare(tmp_path)
     job_id = prepared["job_id"]
     service.record_browser_liveness(
@@ -890,11 +901,91 @@ def test_ai_note_claim_replay_never_repeats_template_submission(tmp_path):
         reconcile_existing=True,
     )
     service.claim_browser_action(job_id, action="ai_note")
+    commands = []
+    base_runner = _opencli_ai_note_runner(
+        video.name,
+        note_states=[{
+            "ai_note_state": "generating",
+            "active_tab": "笔记",
+            "content_chars": 72,
+            "template": "文稿笔记",
+            "target_bound": True,
+        }],
+    )
 
-    def no_browser_mutation(command, **_kwargs):
-        raise AssertionError(command)
+    def reconcile_runner(command, **kwargs):
+        commands.append(command)
+        return base_runner(command, **kwargs)
 
-    service.runner = no_browser_mutation
+    service.runner = reconcile_runner
+    service.opencli_command = ("opencli",)
+    replay = service.advance_opencli(
+        job_id,
+        session="ticket02-ai-note",
+        profile="work",
+    )
+
+    assert replay["event"] == "netdisk_ai_note_triggered"
+    assert replay["status"] == "ai_note_requested"
+    assert replay["ai_note_template_no"] == 1
+    assert replay["ai_note_submission_proof"] == {
+        "control_text": "生成该笔记",
+        "click_dispatched": False,
+        "modal_visible": False,
+        "confirmed_state": "generating",
+        "content_chars": 72,
+        "reconciled_after_claim": True,
+    }
+    eval_scripts = [
+        command[6]
+        for command in commands
+        if len(command) > 6 and command[5] == "eval"
+    ]
+    assert not any("previewTemplate" in script for script in eval_scripts)
+    assert not any("生成该笔记" in script for script in eval_scripts)
+
+
+def test_ai_note_claim_replay_stays_uncertain_when_no_transition_is_visible(
+    tmp_path,
+):
+    service, video, prepared = _prepare(tmp_path)
+    job_id = prepared["job_id"]
+    service.record_browser_liveness(
+        job_id,
+        surface="opencli",
+        evidence=_liveness_evidence(),
+    )
+    service.record_browser_state(
+        job_id,
+        step="video_ready",
+        evidence=_evidence(video.name, "目标视频已存在"),
+        source_mode="existing",
+    )
+    service.record_browser_state(
+        job_id,
+        step="transcript_ready",
+        evidence=_evidence(video.name, "文稿 已生成"),
+        reconcile_existing=True,
+    )
+    service.claim_browser_action(job_id, action="ai_note")
+    commands = []
+    base_runner = _opencli_ai_note_runner(
+        video.name,
+        note_states=[{
+            "ai_note_state": "missing",
+            "active_tab": "笔记",
+            "content_chars": 0,
+            "template": "",
+            "target_bound": True,
+        }],
+    )
+
+    def reconcile_runner(command, **kwargs):
+        commands.append(command)
+        return base_runner(command, **kwargs)
+
+    service.runner = reconcile_runner
+    service.opencli_command = ("opencli",)
     replay = service.advance_opencli(
         job_id,
         session="ticket02-ai-note",
@@ -904,6 +995,13 @@ def test_ai_note_claim_replay_never_repeats_template_submission(tmp_path):
     assert replay["status"] == "ai_note_claimed"
     assert replay["side_effect_uncertain"] is True
     assert replay["idempotent_replay"] is True
+    eval_scripts = [
+        command[6]
+        for command in commands
+        if len(command) > 6 and command[5] == "eval"
+    ]
+    assert not any("previewTemplate" in script for script in eval_scripts)
+    assert not any("生成该笔记" in script for script in eval_scripts)
 
 
 def test_opencli_step_waits_for_semantic_tab_activation_before_probing(tmp_path):
@@ -1747,6 +1845,164 @@ def test_full_browser_checkpoint_chain_reads_complete_dom_transcript(tmp_path):
         "paper_only": True,
         "reason": "仅涉及 A 股。",
     }
+
+
+def test_decided_job_runs_one_claimed_message_revision_without_new_book_effect(
+    tmp_path,
+):
+    service, _video, prepared = _prepare(tmp_path)
+    transcript = tmp_path / "complete-transcript.txt"
+    transcript.write_text("小草完整文稿" * 100, encoding="utf-8")
+    transcript_sha = hashlib.sha256(transcript.read_bytes()).hexdigest()
+    decision_output = tmp_path / "decisions"
+    book_intent = {
+        "decision": "no_trade",
+        "reason": "本场仅涉及 A 股。",
+    }
+    book = BookKolUs(decision_output / "book_kol_us")
+    book_key = book.resolve_identity(transcript_sha, book_intent)
+    prior_book = book.route(
+        book_intent,
+        idempotency_key=book_key,
+        evidence=str(transcript),
+        evidence_context={
+            "evidence_sha256": transcript_sha,
+            "paper_intent_sha256": book.intent_fingerprint(book_intent),
+        },
+    )
+    original_bundle = tmp_path / "bundle-v1.json"
+    original_bundle.write_text(
+        json.dumps(
+            {
+                "items": [
+                    {
+                        "evidence_path": str(transcript),
+                        "book_kol_us": book_intent,
+                    }
+                ]
+            }
+        ),
+        encoding="utf-8",
+    )
+    artifact_dir = (
+        tmp_path / "out" / "artifacts" / str(prepared["job_id"])
+    )
+    artifact_dir.mkdir(parents=True, exist_ok=True)
+    original_result = artifact_dir / "decision_result.json"
+    original_result.write_text('{"status":"completed"}\n', encoding="utf-8")
+    service.store.append(
+        {
+            **prepared,
+            "event": "netdisk_decisions_completed",
+            "status": "decided",
+            "transcript_path": str(transcript),
+            "transcript_sha256": transcript_sha,
+            "decision_bundle_path": str(original_bundle),
+            "decision_bundle_sha256": hashlib.sha256(
+                original_bundle.read_bytes()
+            ).hexdigest(),
+            "decision_result_path": str(original_result),
+            "decision_result_sha256": hashlib.sha256(
+                original_result.read_bytes()
+            ).hexdigest(),
+            "household_notification": {
+                "status": "delivered",
+                "idempotency_key": "notice-v1",
+                "receipt": "wecom-relay://ok/notice-v1",
+            },
+            "book_kol_us": prior_book,
+        }
+    )
+    revision_bundle = tmp_path / "bundle-v2.json"
+    revision_bundle.write_text(
+        json.dumps(
+            {
+                "items": [
+                    {
+                        "evidence_path": str(transcript),
+                        "book_kol_us": book_intent,
+                        "notification_revision": "v2-context-corrected",
+                    }
+                ]
+            }
+        ),
+        encoding="utf-8",
+    )
+    calls = {"process": 0, "send": 0}
+
+    class RevisionPipeline:
+        def process(self, _bundle):
+            calls["process"] += 1
+            return {
+                "status": "completed",
+                "items": [
+                    {
+                        "notification": {
+                            "status": "pending",
+                            "idempotency_key": "notice-v2",
+                        },
+                        "book_kol_us": {
+                            **prior_book,
+                            "idempotent_replay": True,
+                        },
+                        "idempotent_replay": False,
+                    }
+                ],
+            }
+
+        def deliver_wechat(self, result, *, sender):
+            calls["send"] += 1
+            sender("更正版", "KOL观点与系统拆解")
+            result["items"][0]["notification"].update(
+                {
+                    "status": "delivered",
+                    "receipt": "wecom-relay://ok/notice-v2",
+                }
+            )
+            return {"status": "delivered"}
+
+    pipeline = RevisionPipeline()
+    first = service.decide(
+        prepared["job_id"],
+        bundle_path=revision_bundle,
+        decision_output_dir=decision_output,
+        sender=lambda _title, _body: {"wecom": "ok"},
+        pipeline=pipeline,
+    )
+    replay = service.decide(
+        prepared["job_id"],
+        bundle_path=revision_bundle,
+        decision_output_dir=decision_output,
+        sender=lambda _title, _body: {"wecom": "ok"},
+        pipeline=pipeline,
+    )
+
+    events = [
+        row
+        for row in service.store.read()
+        if row.get("job_id") == prepared["job_id"]
+    ]
+    assert first["event"] == "netdisk_decision_revision_completed"
+    assert first["new_external_side_effect_count"] == 1
+    assert first["book_kol_us"]["idempotency_key"] == book_key
+    assert Path(first["decision_result_path"]).name.startswith(
+        "decision_result."
+    )
+    assert replay["idempotent_replay"] is True
+    assert calls == {"process": 1, "send": 1}
+    assert sum(
+        row.get("event") == "netdisk_decision_revision_claimed"
+        for row in events
+    ) == 1
+    assert sum(
+        row.get("event") == "netdisk_decision_revision_completed"
+        for row in events
+    ) == 1
+    assert len(
+        (decision_output / "book_kol_us" / "decisions.jsonl")
+        .read_text()
+        .splitlines()
+    ) == 1
 
 
 def test_verification_failure_is_appended_without_audit_content(tmp_path):

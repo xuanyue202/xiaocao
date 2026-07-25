@@ -226,6 +226,52 @@ class DecisionPipeline:
         synthesis = item.get("synthesis") or {}
         if not synthesis.get("summary") or not synthesis.get("confidence"):
             raise DecisionError("system synthesis must be explicit")
+        if synthesis.get("reader_render_mode") == "kol_context_corrected":
+            claims_by_id = {
+                str(claim.get("claim_id")): claim
+                for claim in item.get("claims") or []
+            }
+            reader_quote_ids = synthesis.get("reader_quote_ids")
+            normalized_reader_quote_ids = [
+                str(claim_id)
+                for claim_id in reader_quote_ids
+            ] if isinstance(reader_quote_ids, list) else []
+            if (
+                not isinstance(reader_quote_ids, list)
+                or not reader_quote_ids
+                or len(normalized_reader_quote_ids)
+                != len(set(normalized_reader_quote_ids))
+                or any(
+                    claim_id not in claims_by_id
+                    for claim_id in normalized_reader_quote_ids
+                )
+            ):
+                raise DecisionError(
+                    "context-corrected KOL output requires unique valid reader_quote_ids"
+                )
+            if any(
+                not str(
+                    claims_by_id[claim_id].get("reader_quote") or ""
+                ).strip()
+                for claim_id in normalized_reader_quote_ids
+            ):
+                raise DecisionError(
+                    "context-corrected KOL output requires every reader_quote"
+                )
+            analysis_points = synthesis.get("analysis_points")
+            if (
+                not isinstance(analysis_points, list)
+                or not analysis_points
+                or any(
+                    not isinstance(value, str) or not value.strip()
+                    for value in analysis_points
+                )
+                or not str(synthesis.get("system_check") or "").strip()
+                or not str(synthesis.get("system_advice") or "").strip()
+            ):
+                raise DecisionError(
+                    "context-corrected KOL output requires analysis, check, and advice"
+                )
         if item.get("decision_status") == "no_actionable_signal":
             insight = item.get("reader_insight") or {}
             if insight.get("status") not in {"useful", "none"}:
@@ -413,12 +459,36 @@ class DecisionPipeline:
                 "summary": validation.get("summary"),
                 "facts": _reader_market_facts(validation),
             }
+        visible_synthesis = {
+            field: synthesis.get(field)
+            for field in (
+                "summary",
+                "reader_render_mode",
+                "reader_quote_ids",
+                "analysis_points",
+                "system_check",
+                "system_advice",
+            )
+            if synthesis.get(field) is not None
+        }
+        if synthesis.get("reader_render_mode") == "kol_context_corrected":
+            claims_by_id = {
+                str(claim.get("claim_id")): claim
+                for claim in claims
+            }
+            visible_synthesis["reader_quotes"] = [
+                {
+                    "claim_id": str(claim_id),
+                    "text": claims_by_id[str(claim_id)].get("reader_quote"),
+                }
+                for claim_id in synthesis.get("reader_quote_ids") or []
+            ]
         payload = {
             "author": author,
             "title": title,
             "actionable_signals": normalized_signals,
             "market_outlook": visible_market_outlook,
-            "synthesis": {"summary": synthesis.get("summary")},
+            "synthesis": visible_synthesis,
             "cross_source": cross_source,
         }
         if reader_insight:

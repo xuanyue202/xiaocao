@@ -496,6 +496,76 @@ def test_reader_message_surfaces_market_outlook_before_individual_signals(tmp_pa
     )
 
 
+def test_context_corrected_kol_message_separates_viewpoints_from_system_analysis(
+    tmp_path,
+):
+    transcript = _write_text(
+        tmp_path / "real.txt",
+        "今天外面又是一片惨跌。低位是轮动的。听不懂就不做。",
+    )
+    item = _item(transcript, author="小草")
+    item["claims"] = [
+        {
+            **item["claims"][0],
+            "claim_id": "market",
+            "quote": "今天外面又是一片惨跌。",
+            "reader_quote": "当天是普跌环境，但轻仓账户本身没有大问题。",
+        },
+        {
+            **item["claims"][0],
+            "claim_id": "rotation",
+            "quote": "低位是轮动的。",
+            "reader_quote": "当前位置是低位轮动，没有明确主线。",
+        },
+    ]
+    item["synthesis"].update(
+        {
+            "reader_render_mode": "kol_context_corrected",
+            "reader_quote_ids": ["market", "rotation"],
+            "analysis_points": [
+                "这不是看多市场，而是在弱市里比较相对强弱。",
+                "执行重点是控制总仓位，不因单票上涨放大风险。",
+            ],
+            "system_check": "收盘上涨555家、下跌4939家。",
+            "system_advice": "等待，不新增仓位。",
+        }
+    )
+
+    message = render_household_item_message(item)
+
+    assert reader_message_title(item) == "投资情报｜小草：直播观点拆解"
+    assert message.startswith("【KOL观点｜小草｜按逐字稿上下文校正】")
+    assert "- 当天是普跌环境，但轻仓账户本身没有大问题。" in message
+    assert "- 当前位置是低位轮动，没有明确主线。" in message
+    assert "今天外面又是一片惨跌" not in message
+    assert "【系统拆解｜对KOL逻辑的分析】" in message
+    assert "- 这不是看多市场，而是在弱市里比较相对强弱。" in message
+    assert "【系统核对｜仅补事实】\n收盘上涨555家、下跌4939家。" in message
+    assert "【系统结论】\n等待，不新增仓位。" in message
+    assert "今天盘面判断" not in message
+    assert "系统关注的关键转折" not in message
+    assert "发生了什么" not in message
+
+    payload_kwargs = {
+        "author": item["author"],
+        "title": item["title"],
+        "claims": item["claims"],
+        "actionable_signals": [],
+        "market_outlook": {},
+        "synthesis": item["synthesis"],
+        "household_recommendation": {},
+        "cross_source": {"agreements": [], "conflicts": []},
+    }
+    original_payload = DecisionPipeline._notification_payload(
+        **payload_kwargs
+    )
+    item["claims"][0]["reader_quote"] = "当天市场普跌，账户依靠轻仓规避冲击。"
+    revised_payload = DecisionPipeline._notification_payload(
+        **payload_kwargs
+    )
+    assert original_payload != revised_payload
+
+
 def test_no_actionable_reader_message_is_short_and_only_links_real_holding(tmp_path):
     transcript = _write_text(tmp_path / "17.png.txt", "特斯拉才叫崩啊")
     item = _item(transcript, author="吕晓彤", ticker="TSLA")

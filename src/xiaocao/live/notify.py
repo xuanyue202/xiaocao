@@ -19,8 +19,10 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import subprocess
 import sys
+import time
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Callable
@@ -34,6 +36,16 @@ ENV_WECOM_TO_USER = "XIAOCAO_WECOM_TO_USER"  # backward-friendly alias
 ENV_KOL_WECOM_USER_IDS = "XIAOCAO_KOL_WECOM_USER_IDS"
 ENV_WECOM_ACCOUNT_ID = "XIAOCAO_WECOM_ACCOUNT_ID"
 ENV_WECOM_INSECURE = "XIAOCAO_WECOM_INSECURE"
+WECOM_TEXT_MAX_BYTES = 2048
+WECOM_CHUNK_DELAY_SECONDS = 0.2
+_SMART_SPLIT_MIN_RATIO = 0.6
+_WECOM_BOUNDARY_PATTERNS = (
+    re.compile(r"\n\n+"),
+    re.compile(r"\n"),
+    re.compile(r"""[。！？.!?；;:：](?:["'”’」』）】》]*)?(?:\s+|$)"""),
+    re.compile(r"[,，、](?:\s+|$)"),
+    re.compile(r"\s+"),
+)
 
 # poster(url, json_payload, *, headers, verify) -> (status_code, text).
 # Injectable for tests; _post_json also accepts the old two-arg shape.
@@ -169,6 +181,49 @@ def _normalize_wecom_send_url(raw: str) -> str:
     return f"{url}/send"
 
 
+def _utf8_prefix_index(text: str, max_bytes: int) -> int:
+    total = 0
+    for index, character in enumerate(text):
+        size = len(character.encode("utf-8"))
+        if total + size > max_bytes:
+            return index
+        total += size
+    return len(text)
+
+
+def _smart_utf8_split_index(text: str, max_bytes: int) -> int:
+    hard_index = max(1, _utf8_prefix_index(text, max_bytes))
+    prefix = text[:hard_index]
+    minimum = max(1, int(hard_index * _SMART_SPLIT_MIN_RATIO))
+    for pattern in _WECOM_BOUNDARY_PATTERNS:
+        boundaries = [
+            match.end()
+            for match in pattern.finditer(prefix)
+            if match.end() >= minimum
+        ]
+        if boundaries:
+            return boundaries[-1]
+    return hard_index
+
+
+def split_wecom_text_by_bytes(
+    text: str,
+    max_bytes: int = WECOM_TEXT_MAX_BYTES,
+) -> list[str]:
+    """Split without losing text or breaking UTF-8 code points."""
+    if not text or max_bytes <= 0:
+        return [text] if text else []
+    chunks: list[str] = []
+    remaining = text
+    while len(remaining.encode("utf-8")) > max_bytes:
+        split_index = _smart_utf8_split_index(remaining, max_bytes)
+        chunks.append(remaining[:split_index])
+        remaining = remaining[split_index:]
+    if remaining:
+        chunks.append(remaining)
+    return chunks
+
+
 def wecom_notify(
     relay_url: str,
     title: str,
@@ -184,26 +239,45 @@ def wecom_notify(
     """Post a text message through OpenClaw's wecom-app-relay /send endpoint.
     Returns a status string; never raises."""
     _ = now  # kept for a stable notify() call signature in tests/callers
-    payload: dict[str, Any] = {
-        "accountId": account_id or "default",
-        "userId": user_id,
-        "text": f"{title}\n{body}",
-    }
+    chunks = split_wecom_text_by_bytes(f"{title}\n{body}")
     headers = {
         "Authorization": f"Bearer {token}",
         "Content-Type": "application/json",
     }
-    try:
-        status, text = _post_json(
-            _normalize_wecom_send_url(relay_url),
-            payload,
-            headers=headers,
-            verify=not insecure,
-            poster=poster,
-        )
-    except Exception as exc:  # noqa: BLE001
-        return f"error: {type(exc).__name__}"
-    return "ok" if (200 <= status < 300 and _wecom_ok(text)) else f"http {status}: {text[:120]}"
+    for index, chunk in enumerate(chunks, start=1):
+        payload: dict[str, Any] = {
+            "accountId": account_id or "default",
+            "userId": user_id,
+            "text": chunk,
+        }
+        try:
+            status, response_text = _post_json(
+                _normalize_wecom_send_url(relay_url),
+                payload,
+                headers=headers,
+                verify=not insecure,
+                poster=poster,
+            )
+        except Exception as exc:  # noqa: BLE001
+            chunk_prefix = (
+                f"chunk {index}/{len(chunks)} "
+                if len(chunks) > 1
+                else ""
+            )
+            return f"{chunk_prefix}error: {type(exc).__name__}"
+        if not (
+            200 <= status < 300
+            and _wecom_ok(response_text)
+        ):
+            chunk_prefix = (
+                f"chunk {index}/{len(chunks)} "
+                if len(chunks) > 1
+                else ""
+            )
+            return f"{chunk_prefix}http {status}: {response_text[:120]}"
+        if index < len(chunks):
+            time.sleep(WECOM_CHUNK_DELAY_SECONDS)
+    return "ok"
 
 
 def _wecom_ok(text: str) -> bool:

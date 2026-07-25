@@ -212,6 +212,10 @@ def _render_market_outlook(
 def reader_message_title(item: dict[str, Any]) -> str:
     if item.get("decision_status") == "no_actionable_signal":
         return f"投资情报｜{item['author']}：弱信号提醒"
+    if (item.get("synthesis") or {}).get("reader_render_mode") == (
+        "kol_context_corrected"
+    ):
+        return f"投资情报｜{item['author']}：直播观点拆解"
     market_scope = _reader_text((item.get("market_outlook") or {}).get("scope")).strip()
     if market_scope:
         return f"投资情报｜{item['author']}：{market_scope}"
@@ -225,6 +229,54 @@ def reader_message_title(item: dict[str, Any]) -> str:
     if len(names) > 3:
         topic += "等"
     return f"投资情报｜{item['author']}" + (f"：{topic}" if topic else "")
+
+
+def _render_kol_context_corrected(item: dict[str, Any]) -> str:
+    synthesis = item.get("synthesis") or {}
+    claims = {
+        str(claim.get("claim_id")): claim
+        for claim in item.get("claims") or []
+        if isinstance(claim, dict)
+    }
+    requested_ids = synthesis.get("reader_quote_ids") or list(claims)
+    quote_ids = [
+        str(claim_id)
+        for claim_id in requested_ids
+        if str(claim_id) in claims
+    ]
+    lines = [
+        f"【KOL观点｜{_reader_text(item['author'])}｜按逐字稿上下文校正】"
+    ]
+    for claim_id in quote_ids:
+        claim = claims[claim_id]
+        quote = _reader_text(claim.get("reader_quote")).strip()
+        if quote:
+            lines.append(f"- {quote}")
+    analysis_points = [
+        _reader_text(value).strip()
+        for value in synthesis.get("analysis_points") or []
+        if _reader_text(value).strip()
+    ]
+    if analysis_points:
+        lines.extend(["", "【系统拆解｜对KOL逻辑的分析】"])
+        lines.extend(f"- {value}" for value in analysis_points)
+    system_check = _reader_text(synthesis.get("system_check")).strip()
+    system_advice = _reader_text(synthesis.get("system_advice")).strip()
+    if system_check:
+        lines.extend(["", "【系统核对｜仅补事实】", system_check])
+    if system_advice:
+        lines.extend(["", "【系统结论】", system_advice])
+    source_label = _reader_source_label(item)
+    lines.extend(
+        [
+            "",
+            "信息来源："
+            f"{item['author']}｜{_reader_time(item.get('published_at'))}｜"
+            f"{source_label}｜{_reader_source_title(item)}",
+            "这只是决策信息，不会替你执行真实交易。",
+        ]
+    )
+    return "\n".join(lines)
 
 
 def reader_cross_source(
@@ -258,6 +310,10 @@ def render_household_item_message(
     """Render human-readable market intelligence; internal gates stay internal."""
     if item.get("decision_status") == "no_actionable_signal":
         return _render_no_actionable_signal(item)
+    if (item.get("synthesis") or {}).get("reader_render_mode") == (
+        "kol_context_corrected"
+    ):
+        return _render_kol_context_corrected(item)
     market_outlook = item.get("market_outlook") or {}
     if market_outlook:
         lines = _render_market_outlook(market_outlook, item["claims"])
