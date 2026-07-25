@@ -36,6 +36,21 @@ def test_kol_skill_requires_complete_trade_information_coverage() -> None:
         assert marker in text
 
 
+def test_kol_skill_has_one_resumable_ticket05_cloud_video_runner() -> None:
+    text = SKILL_MD.read_text(encoding="utf-8")
+
+    for marker in (
+        "scripts/kol_subscription_videos.py run",
+        "/课程/路西法全套",
+        "cloud-to-cloud",
+        "large_payload_local_bytes=0",
+        "subscription_video_analysis_input_required",
+        "A no-update run prints nothing",
+        "same-author, same-title transcript",
+    ):
+        assert marker in text
+
+
 def test_kol_skill_local_markdown_links_resolve() -> None:
     markdown_files = [SKILL_MD, *SKILL_DIR.joinpath("references").glob("*.md")]
 

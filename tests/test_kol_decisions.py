@@ -485,9 +485,10 @@ def test_reader_message_surfaces_market_outlook_before_individual_signals(tmp_pa
     assert "作者原话：「等待成交量放大再行动」" in message
     assert "最新市场验证（截至 2026-07-19 18:00，有条件支持）" in message
     assert "关键事实：7月19日周末休市，最新可用交易日不变。（观察于 2026-07-19 16:00）" in message
-    assert "系统当前重判：风险释放尚未完成" in message
-    assert "系统未来推演：低位显著放量前" in message
-    assert "系统整体策略：控制高贝塔仓位；保留现金等待止跌确认" in message
+    assert "今天盘面判断：风险释放尚未完成" in message
+    assert "下一交易日计划：控制高贝塔仓位" in message
+    assert "后续几天基础情景：低位显著放量前" in message
+    assert "下一交易日计划：控制高贝塔仓位；保留现金等待止跌确认" in message
     assert "系统关注的关键转折：低位显著放量；市场广度停止恶化" in message
     assert "判断周期：未来一至两周（信心：高）" in message
     assert message.index("【大盘与整体策略：A股整体】") < message.index(
@@ -556,7 +557,7 @@ def test_no_actionable_reader_message_does_not_force_household_analysis(tmp_path
             "source": "baidu_subscription_share_browser",
             "published_at": "2026-07-24T09:00:00+08:00",
             "title": "18.png",
-            "market_outlook": _market_outlook(),
+            "market_outlook": _market_outlook(claim_ids=["吕晓彤-risk"]),
         }
     )
     item["actionable_signals"][0]["context_assessment"] = {
@@ -568,8 +569,103 @@ def test_no_actionable_reader_message_does_not_force_household_analysis(tmp_path
 
     assert "洞察：群内在讨论A股与海外市场的联动是否减弱。" in message
     assert "家庭" not in message
-    assert "系统当前重判" not in message
+    assert "今天盘面判断" not in message
     assert len(message.splitlines()) == 4
+
+
+def test_reader_message_prioritizes_market_scope_and_normalizes_asr_entities(
+    tmp_path,
+):
+    transcript = _write_text(
+        tmp_path / "20260721 大师班专场(晚17：30开播)-compressed.txt",
+        "科创芯片ETF就这个五八八七五零。",
+    )
+    item = _item(transcript, author="小草")
+    item.update(
+        {
+            "source": "baidu_netdisk_opencli_dom",
+            "published_at": "2026-07-21T17:30:00+08:00",
+            "claims": [
+                {
+                    **item["claims"][0],
+                    "quote": "科创芯片ETF就这个五八八七五零。",
+                    "reader_quote": "科创芯片ETF（588750）只等回调，不追涨。",
+                }
+            ],
+            "market_outlook": _market_outlook(
+                claim_ids=["小草-risk"],
+                scope="A股整体、趋势大票与半导体轮动",
+                strategy=[
+                    "588750.XSHG不追涨",
+                    "趋势仓先用两到三成，短线情绪股继续等待",
+                ],
+            ),
+        }
+    )
+    item["market_outlook"]["current_validation"]["facts"].append(
+        {
+            "metric": "semiconductor_leaders_close",
+            "value": "688347.XSHG=92.30",
+            "observed_at": "2026-07-19T16:00:00+08:00",
+            "evidence": "frozen://market/2026-07-19",
+        }
+    )
+
+    title = reader_message_title(item)
+    message = render_household_item_message(item)
+    notification_payload = DecisionPipeline._notification_payload(
+        author=item["author"],
+        title=item["title"],
+        claims=item["claims"],
+        actionable_signals=item["actionable_signals"],
+        market_outlook=item["market_outlook"],
+        synthesis=item["synthesis"],
+        household_recommendation=item["household_recommendation"],
+        cross_source={"agreements": [], "conflicts": []},
+    )
+
+    assert title == "投资情报｜小草：A股整体、趋势大票与半导体轮动"
+    assert message.startswith("【大盘与整体策略：A股整体、趋势大票与半导体轮动】")
+    assert "来源要点（转录已校正）：「科创芯片ETF（588750）只等回调，不追涨。」" in message
+    assert "五八八七五零" not in message
+    assert "588750.XSHG" not in message
+    assert "semiconductor_leaders_close" not in message
+    assert "688347.XSHG" not in message
+    assert notification_payload["market_outlook"]["author_quotes"] == [
+        "科创芯片ETF（588750）只等回调，不追涨。"
+    ]
+    assert (
+        "信息来源：小草｜2026-07-21 17:30｜百度网盘原视频（完整文稿）｜"
+        "大师班专场(晚17：30开播)"
+    ) in message
+
+
+def test_reader_message_labels_ticket05_video_sources(tmp_path):
+    transcript = _write_text(tmp_path / "7月20日.txt", "等待成交量放大再行动")
+    item = _item(transcript, author="吕晓彤")
+    item.update(
+        {
+            "source": "baidu_subscription_share_browser",
+            "media_type": "video",
+            "published_at": "2026-07-20T00:00:00+08:00",
+            "title": "吕晓彤7月20日",
+            "market_outlook": _market_outlook(claim_ids=["吕晓彤-risk"]),
+        }
+    )
+
+    lv_message = render_household_item_message(item)
+    item.update(
+        {
+            "source": "baidu_private_folder",
+            "author": "路西法",
+            "title": "路西法7月5日（二）",
+        }
+    )
+    lucifer_message = render_household_item_message(item)
+
+    assert "百度网盘订阅视频（完整文稿）" in lv_message
+    assert "百度网盘订阅图片" not in lv_message
+    assert "百度网盘私有目录视频（完整文稿）" in lucifer_message
 
 
 def test_material_market_outlook_change_creates_new_reader_notification(tmp_path):

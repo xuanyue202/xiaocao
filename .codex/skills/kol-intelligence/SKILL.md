@@ -53,13 +53,13 @@ Do not modify the dirty `wx_channels_download` repository. Treat its local API a
 - Ticket 02's mandatory provider is `baidu_consumer_page`, orchestrated through the logged-in OpenCLI browser bridge and `scripts/kol_netdisk_video.py`:
   1. Run `prepare --video <runtime-named-compressed.mp4>`. It hashes and probes the exact local source and returns the stable job ID required by every later command; this local preparation has no browser side effect.
   2. Before asking the user for anything, run the OpenCLI doctor/profile checks and inspect the exact cloud folder through the logged-in page. A manually clickable tab or an empty session list is not proof. Do not use raw CDP, Computer Use, or absolute coordinates.
-  3. Repeatedly run `advance-opencli --job-id <id> --opencli-session <stable-name> [--opencli-profile <profile>]`. Each invocation advances at most one durable external checkpoint or observes one asynchronous completion; it is a manual resumable stepper, not a batcher or scheduler.
+  3. Repeatedly run `advance-opencli --job-id <id> --opencli-session <stable-name> [--opencli-profile <profile>]`. Each invocation advances at most one durable external checkpoint or observes one asynchronous completion; it is a manual resumable stepper, not a batcher or scheduler. While transcript generation is pending, honor `next_poll_not_before` and use the runtime's fixed one-minute polling interval. Do not poll AI-note completion.
   4. The stepper scans every logged-in folder-API page and reconciles the exact basename only after a complete scan. If absent, it claims upload before mutation, opens the prepared source once, verifies size and SHA-256, and copies those bytes to a private temporary immutable snapshot with the exact target basename. Both direct OpenCLI and any fallback read that same verified snapshot, so the contract works through either a direct binary or an `npx` runtime. After the snapshot is complete, revalidate the real folder hash-route, mark only the current folder's file input with an unguessable one-shot selector, and install capture-phase route guards that block both input and change events if navigation occurs. Only when Chrome returns the specific `Not allowed` failure may it serve the snapshot from an unguessable `127.0.0.1` route; that one DOM action revalidates the folder both before and after fetching the snapshot, constructs a native DOM `File`, verifies its browser-reported size, and dispatches the file-input events. The marker, temporary path, and loopback URL are never persisted, and readiness still requires a later exact cloud-file proof.
   5. Before any player DOM mutation, validate the real `location.href` against the complete `/课程/自己的课/小草/<target-basename>` path, not just the basename. The stepper then activates `文稿`, waits for the semantic active-tab state, claims generation before the triggering interaction, and records requested/ready separately. An already-ready transcript is reconciled without regenerating it.
-  6. The stepper then activates `笔记`, waits for the semantic active-tab state, and submits template `tpl_no=1` (`文稿笔记`) under an independent claim when needed. A successful submission records `ai_note_requested`; do not wait for, poll, or require AI-note completion.
+  6. The stepper then activates `笔记`, waits for the semantic active-tab state, and opens template `tpl_no=1` (`文稿笔记`) under an independent claim when needed. It must enter the `#tplModal` iframe, uniquely locate and click the visible `生成该笔记` button, and then prove that the template modal is no longer visible and the note iframe has entered `generating` or `ready`. A direct `genNoteByTpl` postMessage, a click-dispatched return value, or a synthetic "已提交" snapshot is not submission proof. Only the confirmed UI transition records `ai_note_requested`; do not wait for, poll, or require later AI-note completion.
   7. As soon as the complete `文稿` is ready and AI-note submission has been recorded, the stepper opens the exact player and performs one atomic OpenCLI DOM action. It first closes a semantically identified advertisement dialog; if that exact ad overlay cannot be closed, it hides only that identified overlay. It then activates `文稿`, waits for content, and captures the unique initial `.ai-draft__wrap-list` as immutable UTF-8 text. Never refresh as an ad workaround.
   8. DOM capture is valid only when it proves `scrollTop=0`, nontrivial paragraph/sentence counts, the last sentence is already in DOM and below the initial viewport when content overflows, and there are no virtual/loading/load-more markers. Run `verify --audit-file <json>` with excerpts from the opening, middle, and ending thirds, bound to both source-video and transcript hashes.
-  9. Create one ticket-01 source-neutral bundle whose `evidence_path` is that verified transcript, then run `decide --bundle <json>`. Completion requires an actual household WeChat receipt and a result with `book=KOL-US`, `paper_only=true`, plus a fill or an explicit nonempty `no_trade.reason`.
+  9. Create one ticket-01 source-neutral bundle whose `evidence_path` is that verified transcript, then run `decide --bundle <json>`. KOL delivery must call the notifier with `audience="kol"` and fan out once to the distinct `XIAOCAO_KOL_WECOM_USER_IDS` set (currently `Chen,FeiFei`). Treat the aggregate relay result as successful only when every configured recipient returns `ok`; one successful recipient is not completion. Before any makeup send, compare the recipient configuration time with the original send time and send only to a proven-missing recipient—never replay the full decision pipeline or duplicate a recipient that already succeeded. Completion requires the all-recipient household WeChat receipt and a result with `book=KOL-US`, `paper_only=true`, plus a fill or an explicit nonempty `no_trade.reason`.
 - `capture-dom --opencli-session <session> [--opencli-profile <profile>]` invokes the same exact-player DOM contract directly. There is no `.doc` export, cloud-document, browser-download, or local Word-import path in Ticket 02.
 - Each completed transition needs exact-target, timezone-aware, hash-bound evidence. Player query parameters are validated for basename binding and stripped before ledger storage. The append-only ledger stores no snapshot text, transcript content, query string, cookie, token, household position, or credential.
 - Every external browser side effect has a durable pre-action claim. A new claim requires a fresh, at-most-30-minute persisted liveness/page proof; a capability failure blocks later claims until a new valid liveness record. A replayed or uncertain claim is read-only: inspect the real page and reconcile it, but never repeat upload, transcript generation, or AI-note submission blindly. Sequential reruns return the latest state and cannot regress a verified or decided job to prepared.
@@ -110,6 +110,44 @@ Do not modify the dirty `wx_channels_download` repository. Treat its local API a
   request, notification outcome, and paper decision resume without duplicate
   OCR, notification, or paper action.
 
+## Lv Xiaotong and Lucifer cloud videos
+
+- Ticket 05 has exactly two metadata entry points on the same logged-in Google
+  Chrome OpenCLI Browser Bridge: the Ticket 04 configured Lv Xiaotong share
+  and the private directory `/课程/路西法全套`. Do not use the Codex built-in
+  browser, another share, raw CDP, Computer Use, coordinates, a direct HTTP
+  client, marketplace search, or an automated purchase.
+- Run one resumable coordinator command:
+  `PYTHONPATH=src python3 scripts/kol_subscription_videos.py run --opencli-profile <connected-profile>`.
+  Its default Lv, private-folder, and enrichment session is the already-bound
+  `xiaocao-lv-subscription` session. Override a session only after explicitly
+  binding and proving that exact Google Chrome OpenCLI session.
+- The first scan recursively baselines all history but makes only the latest
+  real video from each source work-eligible. Later scans process only a new or
+  changed provider identity/version. A no-update run prints nothing.
+- Lv Xiaotong video handling is cloud-to-cloud. Persist a pre-action claim,
+  reconcile an exact existing private copy by provider identity/path/size, or
+  trigger one share-side save and persist its exact private receipt. Never
+  download the source video locally. Lucifer videos are already private and
+  enter enrichment in place. If either provider truly requires large local
+  bytes, persist a broadband-worker handoff and stop.
+- Both sources use Ticket 02's exact-player transcript and `tpl_no=1` note
+  contract. Register the cloud metadata version without inventing a payload
+  hash, bind the player to the complete path, preserve the complete transcript
+  as immutable evidence, and record `large_payload_local_bytes=0`.
+- When the runner emits `subscription_video_analysis_input_required`, reopen
+  the referenced transcript and SHA-256, build all seven coverage rows and the
+  full entity inventory, then write `{"bundle_path":"<absolute-json-path>"}`
+  followed by a newline to the same process. The bundle must use exactly
+  `decision_status=actionable_signal|no_actionable_signal` and
+  `knowledge_status=reusable_knowledge|no_reusable_knowledge`, include an
+  explicit Xiaocao consensus/conflict/unrelated assessment, and state that the
+  comparison cannot duplicate delivery or Book side effects.
+- A semantically identical, same-author, same-title transcript may reuse prior
+  household and paper receipts only after exact normalized-content proof and
+  receipt reconciliation. It still gets a current coverage matrix and market
+  validation; it must not resend or write another paper action.
+
 ## Trade-information coverage gate
 
 Before creating the decision bundle, build a private **trade-information coverage matrix** against the immutable transcript. This is an extraction-completeness checklist, not a keyword score. Bind every supported row to an exact evidence excerpt, its corrected reader-facing meaning, the applicable horizon, and any trigger or falsifier. Explicitly mark unsupported rows as absent instead of silently omitting them:
@@ -138,7 +176,7 @@ If the source contains market, style, timing, or position statements, `market_ou
 - Re-evaluate the thesis against current market facts at processing time; do not replay an old order blindly.
 - Prioritize concrete, time-sensitive implications: the market phase and overall strategy, sectors to add/reduce/exit, specific opportunities, the causal chain, validity window, trigger, and falsifier. Generic textbook framing belongs only in the durable-knowledge branch.
 - Treat holdings as context, not a search boundary. Surface strong opportunities outside current holdings and explain the funding or switching logic when relevant.
-- In human-facing messages, name both the company/fund and its code, explain the source signal and causal chain in plain language, and omit internal gates, enums, hashes, and serialized pipeline state. For `no_actionable_signal`, send a compact weak-signal card when `reader_insight.status=useful`: state the insight, link only genuinely relevant current household positions, and make the evidence boundary explicit. Do not expand it into unrelated market or portfolio analysis, and do not decide for the user whether to act.
+- In human-facing messages, name both the verified company/fund and its code, explain the source signal and causal chain in plain language, show the author and source date/type, and omit internal gates, enums, hashes, local filenames, serialized pipeline state, and raw ASR artifacts. Populate `reader_title` when the source title needs editorial cleanup; otherwise the renderer must remove transport-only date prefixes, extensions, and compression suffixes. For `no_actionable_signal`, send a compact weak-signal card when `reader_insight.status=useful`: state the insight, link only genuinely relevant current household positions, and make the evidence boundary explicit. Do not expand it into unrelated market or portfolio analysis, and do not decide for the user whether to act.
 - Extract all relevant asset classes, but Book KOL-US may transact only US-listed equities and ETFs.
 - Book KOL-US is paper-only. No margin, options, futures, short selling, or negative cash. Leveraged and inverse ETFs are allowed as cash instruments when the opportunity warrants them.
 - Do not suppress good paper opportunities with arbitrary fixed sizing thresholds. Make sizing opportunity-dependent and explain concentration risk.
@@ -158,4 +196,4 @@ For every processed high-density item, produce:
 - durable distillation path and routed hypothesis ids when knowledge was written;
 - processing state and next asynchronous checkpoint.
 
-Notify on every processed high-density item that has `reader_insight.status=useful`, regardless of confidence and regardless of whether Book KOL-US trades. A weak but accurately attributable asset mention must not be swallowed: label its confidence and provenance boundary instead. If `reader_insight.status=none`, persist the evidence, no-op reason, and paper result, but suppress the household notification.
+Notify on every processed high-density item that has `reader_insight.status=useful`, regardless of confidence and regardless of whether Book KOL-US trades. A weak but accurately attributable asset mention must not be swallowed: label its confidence and provenance boundary instead. If `reader_insight.status=none`, persist the evidence, no-op reason, and paper result, but suppress the household notification. For a sent KOL message, use one de-duplicated fan-out to both currently configured household recipients (`Chen` and `FeiFei`), with fail-closed all-recipient success.

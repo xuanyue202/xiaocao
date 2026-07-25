@@ -7,10 +7,49 @@ from datetime import datetime
 from typing import Any
 
 
+_CHINESE_DIGITS = str.maketrans(
+    {
+        "零": "0",
+        "〇": "0",
+        "一": "1",
+        "幺": "1",
+        "二": "2",
+        "两": "2",
+        "三": "3",
+        "四": "4",
+        "五": "5",
+        "六": "6",
+        "七": "7",
+        "八": "8",
+        "九": "9",
+    }
+)
+_SOURCE_LABELS = {
+    "baidu_netdisk_opencli_dom": "百度网盘原视频（完整文稿）",
+    "local_transcript": "本地原始文稿",
+}
+
+
+def _reader_text(value: Any) -> str:
+    text = str(value or "")
+    text = re.sub(
+        r"(?<![零〇一幺二两三四五六七八九])"
+        r"[零〇一幺二两三四五六七八九]{6}"
+        r"(?![零〇一幺二两三四五六七八九])",
+        lambda match: match.group(0).translate(_CHINESE_DIGITS),
+        text,
+    )
+    return re.sub(
+        r"(?<!\d)(\d{6})\.(?:XSHG|XSHE|BJSE)(?![A-Z])",
+        r"\1",
+        text,
+    )
+
+
 def _reader_asset_label(signal: dict[str, Any]) -> str:
     labels = []
     for asset in signal.get("assets") or []:
-        name = str(asset.get("name") or "未命名机会").strip()
+        name = _reader_text(asset.get("name") or "未命名机会").strip()
         code = str(asset.get("ticker") or "").strip()
         code = re.sub(r"\.(XSHG|XSHE|BJSE)$", "", code)
         labels.append(f"{name}（{code}）" if code else name)
@@ -76,12 +115,46 @@ def _reader_time(value: Any) -> str:
         return str(value)
 
 
+def _reader_source_title(item: dict[str, Any]) -> str:
+    explicit = _reader_text(item.get("reader_title")).strip()
+    if explicit:
+        return explicit
+    title = _reader_text(item.get("title")).strip()
+    title = re.sub(r"\.(?:mp4|txt|md)$", "", title, flags=re.IGNORECASE)
+    title = re.sub(r"^\d{8}[\s_-]*", "", title)
+    title = re.sub(
+        r"[\s_-]*compressed(?:_\d{8}_\d{6})?$",
+        "",
+        title,
+        flags=re.IGNORECASE,
+    )
+    return title.replace("_", " ").strip() or "原始内容"
+
+
+def _reader_source_label(item: dict[str, Any]) -> str:
+    source = str(item.get("source") or "")
+    media_type = str(item.get("media_type") or "")
+    if source == "baidu_subscription_share_browser":
+        return (
+            "百度网盘订阅视频（完整文稿）"
+            if media_type == "video"
+            else "百度网盘订阅图片"
+        )
+    if source == "baidu_private_folder":
+        return (
+            "百度网盘私有目录视频（完整文稿）"
+            if media_type == "video"
+            else "百度网盘私有目录文稿"
+        )
+    return _SOURCE_LABELS.get(source, "原始材料")
+
+
 def reader_market_facts(validation: dict[str, Any]) -> list[str]:
     facts = []
     for fact in validation.get("facts") or []:
-        text = str(fact.get("reader_text") or "").strip()
+        text = _reader_text(fact.get("reader_text") or "").strip()
         if not text:
-            text = f"{fact.get('metric')}：{fact.get('value')}"
+            continue
         facts.append(f"{text}（观察于 {_reader_time(fact.get('observed_at'))}）")
     return facts
 
@@ -90,35 +163,48 @@ def _render_market_outlook(
     outlook: dict[str, Any],
     claims: list[dict[str, Any]],
 ) -> list[str]:
-    claim_quotes = {
-        claim.get("claim_id"): str(claim.get("quote"))
-        for claim in claims
-    }
+    claim_by_id = {claim.get("claim_id"): claim for claim in claims}
     author_quotes = [
-        f"「{claim_quotes[claim_id]}」"
+        "「"
+        + _reader_text(
+            claim_by_id[claim_id].get("reader_quote")
+            or claim_by_id[claim_id].get("quote")
+        )
+        + "」"
         for claim_id in outlook["claim_ids"]
     ]
+    quote_label = (
+        "来源要点（转录已校正）"
+        if any(
+            claim_by_id[claim_id].get("reader_quote")
+            for claim_id in outlook["claim_ids"]
+        )
+        else "作者原话"
+    )
     validation = outlook["current_validation"]
     lines = [
-        f"【大盘与整体策略：{outlook['scope']}】",
-        "作者原话：" + "；".join(author_quotes),
+        f"【大盘与整体策略：{_reader_text(outlook['scope'])}】",
+        f"今天盘面判断：{_reader_text(outlook['current_phase'])}",
+        "下一交易日计划："
+        + "；".join(_reader_text(value) for value in outlook["strategy"]),
+        f"后续几天基础情景：{_reader_text(outlook['base_case'])}",
         "最新市场验证（截至 "
         f"{_reader_time(validation['as_of'])}，"
-        f"{_reader_market_status(validation['status'])}）：{validation['summary']}",
+        f"{_reader_market_status(validation['status'])}）："
+        f"{_reader_text(validation['summary'])}",
+        quote_label + "：" + "；".join(author_quotes),
     ]
     lines.extend(
         f"关键事实：{fact}"
         for fact in reader_market_facts(validation)
     )
     lines.extend([
-        f"系统当前重判：{outlook['current_phase']}",
-        f"系统未来推演：{outlook['base_case']}",
-        "系统整体策略：" + "；".join(str(value) for value in outlook["strategy"]),
         "系统关注的关键转折："
-        + "；".join(str(value) for value in outlook["turning_points"]),
-        f"判断周期：{outlook['horizon']}（信心：{_reader_confidence(outlook['confidence'])}）",
+        + "；".join(_reader_text(value) for value in outlook["turning_points"]),
+        f"判断周期：{_reader_text(outlook['horizon'])}"
+        f"（信心：{_reader_confidence(outlook['confidence'])}）",
         "什么情况需要改判："
-        + "；".join(str(value) for value in outlook["falsifiers"]),
+        + "；".join(_reader_text(value) for value in outlook["falsifiers"]),
     ])
     return lines
 
@@ -126,10 +212,13 @@ def _render_market_outlook(
 def reader_message_title(item: dict[str, Any]) -> str:
     if item.get("decision_status") == "no_actionable_signal":
         return f"投资情报｜{item['author']}：弱信号提醒"
+    market_scope = _reader_text((item.get("market_outlook") or {}).get("scope")).strip()
+    if market_scope:
+        return f"投资情报｜{item['author']}：{market_scope}"
     names: list[str] = []
     for signal in item.get("actionable_signals") or []:
         for asset in signal.get("assets") or []:
-            name = str(asset.get("name") or "").strip()
+            name = _reader_text(asset.get("name") or "").strip()
             if name and name not in names:
                 names.append(name)
     topic = "、".join(names[:3])
@@ -169,26 +258,28 @@ def render_household_item_message(
     """Render human-readable market intelligence; internal gates stay internal."""
     if item.get("decision_status") == "no_actionable_signal":
         return _render_no_actionable_signal(item)
-    lines = [f"先说结论：{item['synthesis']['summary']}"]
     market_outlook = item.get("market_outlook") or {}
     if market_outlook:
-        lines.extend(["", *_render_market_outlook(market_outlook, item["claims"])])
+        lines = _render_market_outlook(market_outlook, item["claims"])
+        lines.extend(["", f"本次执行结论：{_reader_text(item['synthesis']['summary'])}"])
+    else:
+        lines = [f"先说结论：{_reader_text(item['synthesis']['summary'])}"]
     for signal in item.get("actionable_signals") or []:
         lines.extend(["", _reader_signal_heading(signal)])
         rationale = signal.get("rationale") or {}
-        events = [str(value) for value in rationale.get("news_or_event") or []]
-        fundamentals = [str(value) for value in rationale.get("fundamental") or []]
-        trading = [str(value) for value in rationale.get("trading") or []]
+        events = [_reader_text(value) for value in rationale.get("news_or_event") or []]
+        fundamentals = [_reader_text(value) for value in rationale.get("fundamental") or []]
+        trading = [_reader_text(value) for value in rationale.get("trading") or []]
         validation = signal.get("current_validation") or {}
         lines.append(
             "发生了什么："
-            + ("；".join(events) if events else str(validation.get("summary")))
+            + ("；".join(events) if events else _reader_text(validation.get("summary")))
         )
         causal_parts = [*fundamentals, *trading]
         if causal_parts:
             lines.append(f"为什么会传导：{' → '.join(causal_parts)}")
         if events:
-            lines.append(f"现在市场怎么验证：{validation.get('summary')}")
+            lines.append(f"现在市场怎么验证：{_reader_text(validation.get('summary'))}")
         signal_context = signal.get("context_assessment") or {}
         held_text = _reader_context_text(signal)
         funding_plan = signal.get("funding_plan") or signal_context.get("funding_plan")
@@ -198,15 +289,16 @@ def render_household_item_message(
             "reduce",
             "hold",
         }
-        execution_text = signal["execution"] if needs_execution_text else ""
+        execution_text = _reader_text(signal["execution"]) if needs_execution_text else ""
         lines.append(f"对你意味着什么：{held_text}{execution_text}")
         if funding_plan:
-            lines.append(f"资金怎么安排：{funding_plan}")
+            lines.append(f"资金怎么安排：{_reader_text(funding_plan)}")
         lines.extend(
             [
-                f"{_reader_timing_label(signal.get('action'))}：{signal['trigger']}",
+                f"{_reader_timing_label(signal.get('action'))}："
+                f"{_reader_text(signal['trigger'])}",
                 "什么情况需要重新评估："
-                + "；".join(str(value) for value in signal["falsifiers"]),
+                + "；".join(_reader_text(value) for value in signal["falsifiers"]),
             ]
         )
     relevant_cross_source = reader_cross_source(item, cross_source)
@@ -217,11 +309,16 @@ def render_household_item_message(
         for relation in relevant_cross_source[relation_type]:
             authors = "、".join(str(value) for value in relation.get("authors") or [])
             attribution = f"（{authors}）" if authors else ""
-            lines.extend(["", f"{label}{attribution}：{relation['judgment']}"])
+            lines.extend(
+                ["", f"{label}{attribution}：{_reader_text(relation['judgment'])}"]
+            )
+    source_label = _reader_source_label(item)
     lines.extend(
         [
             "",
-            f"信息来源：{item['author']}｜{item['title']}",
+            "信息来源："
+            f"{item['author']}｜{_reader_time(item.get('published_at'))}｜"
+            f"{source_label}｜{_reader_source_title(item)}",
             "这只是决策信息，不会替你执行真实交易。",
         ]
     )
@@ -243,14 +340,12 @@ def _render_no_actionable_signal(item: dict[str, Any]) -> str:
             seen_codes.add(code)
             positions.append(position)
 
-    lines = [
-        "【注意｜弱信号】",
-        f"洞察：{str(insight.get('summary') or '').strip()}",
-    ]
+    lines = ["【注意｜弱信号】"]
+    lines.append(f"洞察：{_reader_text(insight.get('summary'))}")
     if positions:
         labels = []
         for position in positions:
-            name = str(position.get("asset_name") or "").strip()
+            name = _reader_text(position.get("asset_name") or "").strip()
             code = str(position.get("asset_code") or "").strip()
             labels.append(f"{name}（{code}）" if name else code)
         lines.append(
@@ -259,20 +354,16 @@ def _render_no_actionable_signal(item: dict[str, Any]) -> str:
         )
     lines.append(
         "边界："
-        + str(
+        + _reader_text(
             insight.get("boundary")
             or "这是低置信度信息，不自动生成买卖动作。"
-        ).strip()
+        )
     )
-    source_label = (
-        "百度网盘订阅图片"
-        if item.get("source") == "baidu_subscription_share_browser"
-        else "原始材料"
-    )
+    source_label = _reader_source_label(item)
     lines.append(
         "来源："
         f"{item['author']}订阅｜{_reader_time(item.get('published_at'))}｜"
-        f"{source_label}｜{str(item.get('title') or '原始内容').strip()}"
+        f"{source_label}｜{_reader_source_title(item)}"
     )
     return "\n".join(lines)
 

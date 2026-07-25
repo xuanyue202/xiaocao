@@ -582,7 +582,7 @@ def test_opencli_step_submits_then_polls_transcript_without_reclicking_generatio
     assert requested["event"] == "netdisk_transcript_requested"
     assert requested["status"] == "transcript_requested"
     assert requested["next_poll_not_before"] == (
-        NOW + timedelta(minutes=5)
+        NOW + timedelta(minutes=1)
     ).isoformat(timespec="microseconds")
     events = [
         json.loads(line)["event"]
@@ -637,6 +637,7 @@ def _opencli_ai_note_runner(
     video_name: str,
     *,
     note_states: list[dict] | None = None,
+    submission_payload: dict | None = None,
 ):
     note_probe_count = 0
     probe_states = note_states or [
@@ -681,6 +682,21 @@ def _opencli_ai_note_runner(
             return SimpleNamespace(returncode=0, stdout="Waited", stderr="")
         elif tail[:1] == ["eval"] and "previewTemplate" in tail[1]:
             payload = {"scheduled": True, "template_no": 1}
+        elif (
+            tail[:1] == ["eval"]
+            and "生成该笔记" in tail[1]
+            and "contentDocument" in tail[1]
+        ):
+            payload = submission_payload or {
+                "submitted": True,
+                "template_no": 1,
+                "target_bound": True,
+                "button_matches": 1,
+                "click_dispatched": True,
+                "modal_visible": False,
+                "confirmed_state": "generating",
+                "content_chars": 42,
+            }
         elif tail[:1] == ["eval"] and "genNoteByTpl" in tail[1]:
             payload = {"submitted": True, "template_no": 1}
         elif tail[:1] == ["eval"] and "ai_note_state" in tail[1]:
@@ -739,10 +755,118 @@ def test_opencli_step_tracks_ai_note_as_independent_template_job(tmp_path):
     assert triggered["ai_note_template"] == "文稿笔记"
     assert triggered["ai_note_template_no"] == 1
     assert triggered["ai_note_completion_required"] is False
+    assert triggered["ai_note_submission_proof"] == {
+        "control_text": "生成该笔记",
+        "click_dispatched": True,
+        "modal_visible": False,
+        "confirmed_state": "generating",
+        "content_chars": 42,
+    }
     assert triggered["browser_evidence"]["page_url"] == (
         "https://pan.baidu.com/pfile/video"
     )
     assert "snapshot_text" not in triggered["browser_evidence"]
+
+
+def test_ai_note_submission_clicks_real_modal_button_and_confirms_transition(
+    tmp_path,
+):
+    video = tmp_path / "20260720 ai-note-final-click-compressed.mp4"
+    video.write_bytes(b"real-video")
+    commands = []
+    base_runner = _opencli_ai_note_runner(video.name)
+
+    def runner(command, **kwargs):
+        commands.append(command)
+        return base_runner(command, **kwargs)
+
+    service = NetdiskEnrichmentService(
+        tmp_path / "out",
+        runner=runner,
+        now=lambda: NOW,
+        opencli_command=("opencli",),
+    )
+    job_id = service.prepare(video)["job_id"]
+    service.record_browser_state(
+        job_id,
+        step="video_ready",
+        evidence=_evidence(video.name, "目标视频已存在"),
+        source_mode="existing",
+    )
+    service.record_browser_state(
+        job_id,
+        step="transcript_ready",
+        evidence=_evidence(video.name, "文稿 已生成"),
+        reconcile_existing=True,
+    )
+
+    triggered = service.advance_opencli(
+        job_id, session="ticket02-ai-note-click", profile="work"
+    )
+
+    eval_scripts = [
+        command[6]
+        for command in commands
+        if len(command) > 6 and command[5] == "eval"
+    ]
+    assert not any("genNoteByTpl" in script for script in eval_scripts)
+    assert any(
+        "tplModal" in script
+        and "contentDocument" in script
+        and "生成该笔记" in script
+        and ".click()" in script
+        and "modal_visible" in script
+        for script in eval_scripts
+    )
+    assert any("以下为AI生成的" in script for script in eval_scripts)
+    assert triggered["browser_evidence"]["visible_state"] == "ai_note_generating"
+
+
+def test_ai_note_submission_does_not_record_success_while_modal_remains_visible(
+    tmp_path,
+):
+    video = tmp_path / "20260720 ai-note-stuck-modal-compressed.mp4"
+    video.write_bytes(b"real-video")
+    service = NetdiskEnrichmentService(
+        tmp_path / "out",
+        runner=_opencli_ai_note_runner(
+            video.name,
+            submission_payload={
+                "submitted": False,
+                "template_no": 1,
+                "target_bound": True,
+                "button_matches": 1,
+                "click_dispatched": True,
+                "modal_visible": True,
+                "confirmed_state": "generating",
+                "content_chars": 42,
+            },
+        ),
+        now=lambda: NOW,
+        opencli_command=("opencli",),
+    )
+    job_id = service.prepare(video)["job_id"]
+    service.record_browser_state(
+        job_id,
+        step="video_ready",
+        evidence=_evidence(video.name, "目标视频已存在"),
+        source_mode="existing",
+    )
+    service.record_browser_state(
+        job_id,
+        step="transcript_ready",
+        evidence=_evidence(video.name, "文稿 已生成"),
+        reconcile_existing=True,
+    )
+
+    with pytest.raises(EnrichmentError, match="did not close the template modal"):
+        service.advance_opencli(
+            job_id, session="ticket02-ai-note-stuck", profile="work"
+        )
+
+    current = service.status(job_id)
+    assert current["status"] == "ai_note_claimed"
+    assert current["event"] == "netdisk_ai_note_claimed"
 
 
 def test_ai_note_claim_replay_never_repeats_template_submission(tmp_path):

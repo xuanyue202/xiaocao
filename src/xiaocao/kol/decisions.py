@@ -386,7 +386,7 @@ class DecisionPipeline:
         visible_market_outlook: dict[str, Any] = {}
         if market_outlook:
             claim_quotes = {
-                claim.get("claim_id"): claim.get("quote")
+                claim.get("claim_id"): claim.get("reader_quote") or claim.get("quote")
                 for claim in claims
             }
             visible_market_outlook = {

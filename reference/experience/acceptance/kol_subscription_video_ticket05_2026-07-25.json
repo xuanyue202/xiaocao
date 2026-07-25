@@ -1,0 +1,220 @@
+{
+  "schema_version": 1,
+  "ticket": "05-subscription-video-to-decisions",
+  "status": "completed",
+  "accepted_at": "2026-07-25T18:05:43+08:00",
+  "browser_contract": {
+    "surface": "google_chrome_opencli_browser_bridge",
+    "opencli_version": "1.8.6",
+    "connected_extension_version": "1.0.22",
+    "stable_session": "xiaocao-lv-subscription",
+    "codex_builtin_browser_used": false,
+    "computer_use_used": false,
+    "raw_cdp_used": false,
+    "credential_or_share_url_persisted": false
+  },
+  "read_only_entry_gates": {
+    "lv_xiaotong": {
+      "complete_scan": true,
+      "entry_count": 515,
+      "video_count": 328,
+      "selected_provider_identity_sha256": "b3b6bb19b73db9f15c005fe3034906261364b460b4f3c6f9e3c1c33dc125e444",
+      "selected_path": "/彤商学院防断更新zk7897897/彤商学院/直播回放/2026年7月/7月20日.mp4",
+      "selected_size_bytes": 3682235122,
+      "selected_modified_at": 1784560843
+    },
+    "lucifer": {
+      "fixed_root": "/课程/路西法全套",
+      "complete_scan": true,
+      "entry_count": 414,
+      "supported_file_count_at_gate": 281,
+      "verified_transcript_provider_identity_sha256": "42239a3626136f27e55405af2a9567a881422ebf4615dd5c3cf302c8f1176f56",
+      "verified_transcript_path": "/课程/路西法全套/鹿7.5/7月5日（三）.doc",
+      "verified_transcript_size_bytes": 31226,
+      "verified_transcript_modified_at": 1784456658
+    }
+  },
+  "bootstrap": {
+    "completed_at": "2026-07-25T16:18:24+08:00",
+    "policy": "latest_real_video_per_source",
+    "historical_video_baseline_count": 545,
+    "historical_replay_side_effect_count": 0,
+    "later_eligibility": "new_or_content_version_changed"
+  },
+  "samples": [
+    {
+      "author": "吕晓彤",
+      "source": "baidu_subscription_share_browser",
+      "path": "/彤商学院防断更新zk7897897/彤商学院/直播回放/2026年7月/7月20日.mp4",
+      "size_bytes": 3682235122,
+      "modified_at": 1784560843,
+      "stable_identity_sha256": "687cebb7eece471b7d71d6043324059d2ace729d1debe1e0fd05ec4ef3091f4a",
+      "provider_identity_sha256": "b3b6bb19b73db9f15c005fe3034906261364b460b4f3c6f9e3c1c33dc125e444",
+      "version_key": "051231a20050519b6514a8d566f2473e6135be3095f32abf8f22b3506ca51aac",
+      "cloud_transfer": {
+        "status": "completed",
+        "claim_before_trigger": true,
+        "receipt_after_completion": true,
+        "large_payload_local_bytes": 0,
+        "target_size_bytes": 3682235122,
+        "target_provider_identity_sha256": "3b64d9aa1ed52a9c6f789760b3e192e35f9f4dc863f78688bacc7c780ec3b325",
+        "reconciled_default_root_save": true
+      },
+      "enrichment": {
+        "job_id": "kol-netdisk-cloud-d5f607550bbd9dee",
+        "source_mode": "cloud_existing",
+        "large_payload_local_bytes": 0,
+        "transcript_acquisition": "opencli_dom",
+        "transcript_sha256": "6b0ea81e0524c7eb03a4ae28b495673ff905b3fb606ca6fa9b21c0887f3c4be4",
+        "transcript_character_count": 18919,
+        "dom_capture_sha256": "4b85af2057012e20f13ff70788e118f5ee47ba2f958e456187dfff0849b4b43d",
+        "content_audit_sha256": "c6bbd88101efc0b8f8b1252c70789e75de52b8ce3c43310512b22223e052c931",
+        "content_checks": [
+          "opening",
+          "middle",
+          "ending"
+        ],
+        "ai_note_status": "ready"
+      },
+      "decision_contract_audit": {
+        "decision_status": "actionable_signal",
+        "knowledge_status": "no_reusable_knowledge",
+        "knowledge_reason": "The reusable leverage and ETF-versus-stock rules already exist in the 2026-07-13 Lv Xiaotong distilled artifact; Ticket 05 does not duplicate them.",
+        "coverage_rows": [
+          "todays_market_diagnosis",
+          "next_session_playbook",
+          "next_several_session_base_case",
+          "style_market_cap_regime",
+          "market_board_sector_hierarchy",
+          "position_risk_budget",
+          "named_asset_inventory"
+        ],
+        "market_first": true,
+        "all_named_assets_resolved_or_explicitly_unresolved": true,
+        "xiaocao_cross_view": {
+          "consensus": "deleveraging_first_and_do_not_chase",
+          "conflict": "unconditional_etf_recovery_versus_conditional_risk_budget",
+          "unrelated": "short_term_consumer_style_rotation"
+        },
+        "household": {
+          "status": "delivered",
+          "action": "wait",
+          "receipt_persisted": true
+        },
+        "book_kol_us": {
+          "paper_only": true,
+          "status": "no_trade",
+          "reason": "Named US stocks are historical examples or ambiguous candidates and no uniquely mapped US stock or ETF has a current entry trigger."
+        },
+        "decision_result_sha256": "73f0c0b3586461bf8fdd98c49d9fd5a3a9efdf91a8bbae04889c664580330867"
+      }
+    },
+    {
+      "author": "路西法",
+      "source": "baidu_private_folder",
+      "path": "/课程/路西法全套/鹿7.5/7月5日（二）.mp4",
+      "size_bytes": 578859389,
+      "modified_at": 1784456551,
+      "stable_identity_sha256": "1d33d6886adccc3b8558c5886f7362d55789fcb2fcbe8f323d9d699731a47a48",
+      "provider_identity_sha256": "1e871713cde3b80caa8583f1ebc9a79922f82138c5ee1846897d501512aa630c",
+      "version_key": "aaa96795b8bc03bee3aff82a05b9fb4e8131b66d0edffb22f18c0e62dd7a37f3",
+      "cloud_transfer": {
+        "status": "not_required_existing_private_file",
+        "large_payload_local_bytes": 0
+      },
+      "enrichment": {
+        "job_id": "kol-netdisk-cloud-ee1f3f05b5dcd84e",
+        "source_mode": "cloud_existing",
+        "large_payload_local_bytes": 0,
+        "transcript_acquisition": "opencli_dom",
+        "transcript_sha256": "b86ccbab2a0293bc3f3ca89cc1657f49d1a40dddd4fd7e59db78cfd496f728b4",
+        "transcript_character_count": 11604,
+        "dom_capture_sha256": "96e46198253191a6e49c2fe3a17ac7ab33be798f62318be855e0dd1dd902edc4",
+        "content_audit_sha256": "cf4eba30b7f1e75084f90b50fabe38bc02e4ccaec950e80168612a72a94b5fa5",
+        "content_checks": [
+          "opening",
+          "middle",
+          "ending"
+        ],
+        "ai_note_status": "ready"
+      },
+      "decision_contract_audit": {
+        "decision_status": "actionable_signal",
+        "knowledge_status": "no_reusable_knowledge",
+        "knowledge_reason": "The same authorized content already exists in the 2026-07-05 Lucifer distilled artifact; Ticket 05 does not duplicate it.",
+        "coverage_rows": [
+          "todays_market_diagnosis",
+          "next_session_playbook",
+          "next_several_session_base_case",
+          "style_market_cap_regime",
+          "market_board_sector_hierarchy",
+          "position_risk_budget",
+          "named_asset_inventory"
+        ],
+        "market_first": true,
+        "all_named_assets_resolved_or_explicitly_unresolved": true,
+        "xiaocao_cross_view": {
+          "consensus": "bear_posture_and_at_least_half_cash",
+          "conflict": "private_spacex_short_is_not_book_authority",
+          "unrelated": "ai_side_income"
+        },
+        "household": {
+          "status": "reused_completed_receipt",
+          "action": "wait",
+          "new_external_side_effect_count": 0
+        },
+        "book_kol_us": {
+          "paper_only": true,
+          "status": "no_trade",
+          "reason": "The executable opportunity is an A-share; the US references have no current entry trigger."
+        },
+        "semantic_duplicate": {
+          "normalized_similarity": 0.9996505634664105,
+          "containment": true,
+          "claim_before_reconcile": true,
+          "receipt_after_reconcile": true,
+          "new_external_side_effect_count": 0
+        },
+        "decision_result_sha256": "f96733665cca9217618057816ed0e42eef01375c2cde525a5fa964606855fb53"
+      }
+    }
+  ],
+  "idempotency_acceptance": {
+    "runner": "PYTHONPATH=src .venv/bin/python scripts/kol_subscription_videos.py run --opencli-profile <connected-profile>",
+    "observed_at": "2026-07-25T18:05:43+08:00",
+    "exit_code": 0,
+    "stdout_bytes": 0,
+    "stderr_bytes": 0,
+    "before": {
+      "events": 11,
+      "claims": 2,
+      "receipts": 2,
+      "household_outbox": 31,
+      "paper_decisions": 11
+    },
+    "after": {
+      "events": 11,
+      "claims": 2,
+      "receipts": 2,
+      "household_outbox": 31,
+      "paper_decisions": 11
+    },
+    "duplicate_side_effect_count": 0
+  },
+  "focused_validation": [
+    {
+      "command": "PYTHONPATH=src .venv/bin/python -m pytest -q tests/test_kol_subscription_video.py tests/test_kol_netdisk_enrichment.py tests/test_kol_lv_subscription.py tests/test_kol_skill_structure.py",
+      "result": "93 passed in 2.14s"
+    },
+    {
+      "command": "PYTHONPATH=src .venv/bin/python -m pytest -q tests/test_kol_decisions.py -k 'reader_message_labels_ticket05_video_sources or reader_message_prioritizes_market_scope_and_normalizes_asr_entities or no_actionable_reader_message or no_reader_insight'",
+      "result": "5 passed, 41 deselected in 0.12s"
+    }
+  ],
+  "known_limits": [
+    "The real Lv provider completed the cloud save at the private root after the destination dialog was absent. The runner reconciled the exact name, size and provider identity, persisted the receipt, and will not repeat the transfer.",
+    "The immutable real decision bundles were produced before the final fail-closed exact branch-status validator. This acceptance record normalizes both real outcomes to actionable_signal and no_reusable_knowledge; future bundles missing exact statuses, all seven coverage rows or an explicit Xiaocao cross-view are rejected before household or paper side effects.",
+    "The Lucifer sample is semantically the same authorized content processed previously, so Ticket 05 correctly reused the completed household and paper receipts instead of sending duplicates."
+  ],
+  "commits": []
+}

@@ -9,8 +9,9 @@ import re
 import secrets
 import shutil
 import subprocess
+from difflib import SequenceMatcher
 from datetime import datetime, timedelta, timezone
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from typing import Any, Callable
 from urllib.parse import parse_qs, quote, urlsplit, urlunsplit
 
@@ -26,11 +27,24 @@ _SHA256 = re.compile(r"^[0-9a-f]{64}$")
 _OPENCLI_SESSION = re.compile(r"^[A-Za-z0-9_.-]{1,64}$")
 _OPENCLI_PROFILE = re.compile(r"^[A-Za-z0-9_.-]{1,128}$")
 _OPENCLI_UPLOAD_TIMEOUT_SECONDS = 300
+_NETDISK_GENERATION_POLL_INTERVAL = timedelta(minutes=1)
 _NETDISK_DIRECTORY = "/课程/自己的课/小草"
 _NETDISK_FOLDER_URL = (
     "https://pan.baidu.com/disk/main#/index?category=all&path="
     "%2F%E8%AF%BE%E7%A8%8B%2F%E8%87%AA%E5%B7%B1%E7%9A%84%E8%AF%BE%2F%E5%B0%8F%E8%8D%89"
 )
+
+
+def _atomic_write_json(path: Path, value: dict[str, Any]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    temporary = path.with_name(f".{path.name}.partial")
+    temporary.write_text(
+        json.dumps(value, ensure_ascii=False, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+    temporary.replace(path)
+
+
 _OPENCLI_CAPTURE_PROBE = r"""(async () => {
   const expectedPath = __EXPECTED_NETDISK_PATH__;
   const currentUrl = new URL(location.href);
@@ -256,18 +270,49 @@ class NetdiskEnrichmentService:
         runner: Callable[..., Any] = subprocess.run,
         now: Callable[[], datetime] | None = None,
         opencli_command: tuple[str, ...] | None = None,
+        netdisk_directory: str = _NETDISK_DIRECTORY,
     ):
         self.store = EnrichmentJobStore(output_dir)
         self.output_dir = self.store.output_dir
         self.events_path = self.store.events_path
         self.runner = runner
         self.now = now or (lambda: datetime.now(timezone.utc).astimezone())
+        directory = str(netdisk_directory or "").strip()
+        if (
+            not directory.startswith("/")
+            or directory.endswith("/")
+            and directory != "/"
+            or "//" in directory
+            or "?" in directory
+            or "#" in directory
+        ):
+            raise EnrichmentError("Netdisk directory is invalid")
+        self.netdisk_directory = directory
         installed_opencli = shutil.which("opencli")
         self.opencli_command = opencli_command or (
             (installed_opencli,)
             if installed_opencli
             else ("npx", "--yes", "@jackwener/opencli@1.8.6")
         )
+
+    def _netdisk_folder_url(self) -> str:
+        return (
+            "https://pan.baidu.com/disk/main#/index?category=all&path="
+            + quote(self.netdisk_directory, safe="")
+        )
+
+    def _netdisk_path(self, target_name: str) -> str:
+        name = str(target_name or "").strip()
+        if (
+            not name
+            or name in {".", ".."}
+            or "/" in name
+            or "\\" in name
+        ):
+            raise EnrichmentError("Netdisk target basename is invalid")
+        if self.netdisk_directory == "/":
+            return f"/{name}"
+        return f"{self.netdisk_directory}/{name}"
 
     def _time(self) -> datetime:
         value = self.now()
@@ -408,7 +453,7 @@ class NetdiskEnrichmentService:
         self._opencli_json(
             session,
             "open",
-            _NETDISK_FOLDER_URL,
+            self._netdisk_folder_url(),
             profile=profile,
             timeout_seconds=30,
         )
@@ -480,7 +525,7 @@ class NetdiskEnrichmentService:
     complete_scan: completeScan,
     folder_bound: true
   };
-})()""" % (json.dumps(_NETDISK_DIRECTORY), json.dumps(target_name))
+})()""" % (json.dumps(self.netdisk_directory), json.dumps(target_name))
         payload = self._opencli_json(
             session,
             "eval",
@@ -533,7 +578,7 @@ class NetdiskEnrichmentService:
       && currentUrl.pathname === '/disk/main'
       && currentDir === expectedDir
   };
-})()""" % json.dumps(_NETDISK_DIRECTORY)
+})()""" % json.dumps(self.netdisk_directory)
         payload = self._opencli_json(
             session,
             "eval",
@@ -583,7 +628,7 @@ class NetdiskEnrichmentService:
     input.value = '';
   }, {once: true});
   return {marked: true, matches: 1};
-})()""" % (json.dumps(_NETDISK_DIRECTORY), json.dumps(marker))
+})()""" % (json.dumps(self.netdisk_directory), json.dumps(marker))
         payload = self._opencli_json(
             session,
             "eval",
@@ -606,7 +651,7 @@ class NetdiskEnrichmentService:
     ) -> dict[str, Any]:
         snapshot_text = (
             "https://pan.baidu.com/disk/main|"
-            f"{_NETDISK_DIRECTORY}|opencli|target_"
+            f"{self.netdisk_directory}|opencli|target_"
             f"{'present' if target_present else 'absent'}:{target_name}"
         )
         return self.record_browser_liveness(
@@ -723,17 +768,15 @@ class NetdiskEnrichmentService:
             self.store.append(row)
             return {**row, "idempotent_replay": False}
 
-    @staticmethod
-    def _player_url(target_name: str) -> str:
-        path = f"{_NETDISK_DIRECTORY}/{target_name}"
+    def _player_url(self, target_name: str) -> str:
+        path = self._netdisk_path(target_name)
         return f"https://pan.baidu.com/pfile/video?path={quote(path, safe='')}"
 
-    @staticmethod
-    def _validate_player_url(page_url: str, *, target_name: str) -> str:
+    def _validate_player_url(self, page_url: str, *, target_name: str) -> str:
         parsed = urlsplit(page_url)
         query = parse_qs(parsed.query, keep_blank_values=True)
         netdisk_paths = query.get("path") or []
-        expected_path = f"{_NETDISK_DIRECTORY}/{target_name}"
+        expected_path = self._netdisk_path(target_name)
         if (
             parsed.scheme != "https"
             or parsed.netloc.lower() != "pan.baidu.com"
@@ -804,7 +847,7 @@ class NetdiskEnrichmentService:
   return {scheduled: true, tab: label, matches: 1};
 })()""" % (
             json.dumps(label),
-            json.dumps(f"{_NETDISK_DIRECTORY}/{target_name}"),
+            json.dumps(self._netdisk_path(target_name)),
         )
         payload = self._opencli_json(
             session,
@@ -848,7 +891,7 @@ class NetdiskEnrichmentService:
   return {active_tab, expected_tab, target_bound};
 })()""" % (
             json.dumps(label),
-            json.dumps(f"{_NETDISK_DIRECTORY}/{target_name}"),
+            json.dumps(self._netdisk_path(target_name)),
         )
         payload = self._opencli_json(
             session,
@@ -908,7 +951,7 @@ class NetdiskEnrichmentService:
     export_available,
     target_bound
   };
-})()""" % json.dumps(f"{_NETDISK_DIRECTORY}/{target_name}")
+})()""" % json.dumps(self._netdisk_path(target_name))
         payload = self._opencli_json(
             session,
             "eval",
@@ -975,7 +1018,7 @@ class NetdiskEnrichmentService:
                 )
                 if observed_at.astimezone(timezone.utc) < prior_at:
                     raise EnrichmentError("generation poll predates prior evidence")
-            next_poll = observed_at + timedelta(minutes=5)
+            next_poll = observed_at + _NETDISK_GENERATION_POLL_INTERVAL
             row = {
                 **current,
                 "event": f"netdisk_{kind}_still_generating",
@@ -1109,7 +1152,13 @@ class NetdiskEnrichmentService:
   let ai_note_state = 'missing';
   if (/生成中|正在生成|处理中/.test(text)) {
     ai_note_state = 'generating';
-  } else if (src.includes('action=edit') && text.length >= 200) {
+  } else if (
+    text.length >= 200
+    && (
+      src.includes('action=edit')
+      || /以下为AI生成的.{0,20}笔记.{0,20}内容/.test(text)
+    )
+  ) {
     ai_note_state = 'ready';
   }
   return {
@@ -1120,7 +1169,7 @@ class NetdiskEnrichmentService:
     export_available: /导出/.test(text),
     target_bound: true
   };
-})()""" % json.dumps(f"{_NETDISK_DIRECTORY}/{target_name}")
+})()""" % json.dumps(self._netdisk_path(target_name))
         payload = self._opencli_json(
             session,
             "eval",
@@ -1150,7 +1199,7 @@ class NetdiskEnrichmentService:
         session: str,
         profile: str | None,
         target_name: str,
-    ) -> None:
+    ) -> dict[str, Any]:
         preview_script = """(() => {
   const expectedPath = %s;
   const currentUrl = new URL(location.href);
@@ -1163,7 +1212,7 @@ class NetdiskEnrichmentService:
   if (!frame) return {scheduled: false, template_no: 1};
   window.postMessage({type: 'previewTemplate', data: {tpl_no: 1}}, '*');
   return {scheduled: true, template_no: 1};
-})()""" % json.dumps(f"{_NETDISK_DIRECTORY}/{target_name}")
+})()""" % json.dumps(self._netdisk_path(target_name))
         preview = self._opencli_json(
             session,
             "eval",
@@ -1186,19 +1235,112 @@ class NetdiskEnrichmentService:
             profile=profile,
             timeout_seconds=20,
         )
-        submit_script = """(() => {
+        submit_script = """(async () => {
   const expectedPath = %s;
   const currentUrl = new URL(location.href);
   const targetBound = currentUrl.origin === 'https://pan.baidu.com'
     && currentUrl.pathname === '/pfile/video'
     && currentUrl.searchParams.getAll('path').length === 1
     && currentUrl.searchParams.get('path') === expectedPath;
-  if (!targetBound) return {submitted: false, template_no: 1, target_bound: false};
-  const modal = document.getElementById('tplModal');
-  if (!modal) return {submitted: false, template_no: 1};
-  window.postMessage({type: 'genNoteByTpl', data: {tpl_no: 1}}, '*');
-  return {submitted: true, template_no: 1};
-})()""" % json.dumps(f"{_NETDISK_DIRECTORY}/{target_name}")
+  if (!targetBound) {
+    return {submitted: false, template_no: 1, target_bound: false};
+  }
+  const visible = node => {
+    if (!node) return false;
+    const rect = node.getBoundingClientRect();
+    const style = getComputedStyle(node);
+    return rect.width > 0 && rect.height > 0
+      && style.display !== 'none' && style.visibility !== 'hidden';
+  };
+  const buttonDeadline = Date.now() + 10000;
+  let button = null;
+  let buttonMatches = 0;
+  while (Date.now() < buttonDeadline) {
+    const modal = document.getElementById('tplModal');
+    const modalDocument = modal?.contentDocument;
+    const matches = modalDocument
+      ? [...modalDocument.querySelectorAll('button')].filter(node => (
+        visible(node) && (node.textContent || '').trim() === '生成该笔记'
+      ))
+      : [];
+    buttonMatches = matches.length;
+    if (buttonMatches === 1) {
+      button = matches[0];
+      break;
+    }
+    await new Promise(resolve => setTimeout(resolve, 100));
+  }
+  if (!button) {
+    return {
+      submitted: false,
+      template_no: 1,
+      button_matches: buttonMatches,
+      click_dispatched: false
+    };
+  }
+  button.click();
+  const transitionDeadline = Date.now() + 10000;
+  let modal_visible = true;
+  let note_state = 'missing';
+  let content_chars = 0;
+  while (Date.now() < transitionDeadline) {
+    const liveUrl = new URL(location.href);
+    const stillTargetBound = liveUrl.origin === 'https://pan.baidu.com'
+      && liveUrl.pathname === '/pfile/video'
+      && liveUrl.searchParams.getAll('path').length === 1
+      && liveUrl.searchParams.get('path') === expectedPath;
+    if (!stillTargetBound) {
+      return {
+        submitted: false,
+        template_no: 1,
+        target_bound: false,
+        click_dispatched: true
+      };
+    }
+    const modal = document.getElementById('tplModal');
+    modal_visible = visible(modal);
+    const noteFrame = document.getElementById('noteIframe');
+    const noteDocument = noteFrame?.contentDocument;
+    const noteText = (noteDocument?.body?.innerText || '').trim();
+    const noteSrc = noteFrame?.getAttribute('src') || '';
+    content_chars = noteText.length;
+    note_state = 'missing';
+    if (/生成中|正在生成|处理中/.test(noteText)) {
+      note_state = 'generating';
+    } else if (
+      content_chars >= 200
+      && (
+        noteSrc.includes('action=edit')
+        || /以下为AI生成的.{0,20}笔记.{0,20}内容/.test(noteText)
+      )
+    ) {
+      note_state = 'ready';
+    }
+    if (!modal_visible && note_state !== 'missing') {
+      return {
+        submitted: true,
+        template_no: 1,
+        target_bound: true,
+        button_matches: 1,
+        click_dispatched: true,
+        modal_visible,
+        confirmed_state: note_state,
+        content_chars
+      };
+    }
+    await new Promise(resolve => setTimeout(resolve, 200));
+  }
+  return {
+    submitted: false,
+    template_no: 1,
+    target_bound: true,
+    button_matches: 1,
+    click_dispatched: true,
+    modal_visible,
+    confirmed_state: note_state,
+    content_chars
+  };
+})()""" % json.dumps(self._netdisk_path(target_name))
         submitted = self._opencli_json(
             session,
             "eval",
@@ -1210,7 +1352,17 @@ class NetdiskEnrichmentService:
         if submitted.get("target_bound") is False:
             raise EnrichmentError("OpenCLI player path changed before AI-note submission")
         if submitted.get("submitted") is not True:
+            if submitted.get("click_dispatched") is True:
+                raise EnrichmentError(
+                    "Netdisk AI-note final click did not close the template modal "
+                    "and confirm generation"
+                )
             raise EnrichmentError("Netdisk AI-note template submission failed")
+        if submitted.get("modal_visible") is not False:
+            raise EnrichmentError("Netdisk AI-note template modal remained visible")
+        if submitted.get("confirmed_state") not in {"generating", "ready"}:
+            raise EnrichmentError("Netdisk AI-note generation transition was not confirmed")
+        return submitted
 
     def _record_ai_note_triggered(
         self,
@@ -1218,18 +1370,30 @@ class NetdiskEnrichmentService:
         *,
         target_name: str,
         page_url: str,
+        trigger_proof: dict[str, Any],
     ) -> dict[str, Any]:
         with self.store.job_lock(job_id):
             current = self.store.latest(job_id)
             if current.get("status") != "ai_note_claimed":
                 raise EnrichmentError("AI-note trigger lost its durable claim")
             observed_at = self._time()
+            confirmed_state = str(trigger_proof.get("confirmed_state") or "")
+            if confirmed_state not in {"generating", "ready"}:
+                raise EnrichmentError("AI-note trigger proof has no confirmed state")
+            visible_state = (
+                "ai_note_ready" if confirmed_state == "ready" else "ai_note_generating"
+            )
+            state_text = (
+                f"AI笔记 已生成 content_chars={int(trigger_proof.get('content_chars') or 0)}"
+                if confirmed_state == "ready"
+                else "AI笔记 生成中 模板弹窗已关闭"
+            )
             normalized = self._browser_evidence(
                 current,
                 self._browser_proof(
                     target_name=target_name,
-                    visible_state="ai_note_generating",
-                    state_text="AI笔记 生成已提交",
+                    visible_state=visible_state,
+                    state_text=state_text,
                     observed_at=observed_at,
                     page_url=page_url,
                 ),
@@ -1256,6 +1420,13 @@ class NetdiskEnrichmentService:
                 "ai_note_template_no": 1,
                 "ai_note_completion_required": False,
                 "ai_note_triggered_at": now,
+                "ai_note_submission_proof": {
+                    "control_text": "生成该笔记",
+                    "click_dispatched": trigger_proof.get("click_dispatched") is True,
+                    "modal_visible": trigger_proof.get("modal_visible") is True,
+                    "confirmed_state": confirmed_state,
+                    "content_chars": int(trigger_proof.get("content_chars") or 0),
+                },
                 "browser_evidence": normalized,
                 "updated_at": now,
             }
@@ -1326,7 +1497,7 @@ class NetdiskEnrichmentService:
             latest = self.store.latest(job_id)
             if latest.get("ai_note_triggered_at"):
                 return {**latest, "pending": True, "idempotent_replay": True}
-            self._trigger_opencli_ai_note(
+            trigger_proof = self._trigger_opencli_ai_note(
                 session=session,
                 profile=profile,
                 target_name=target_name,
@@ -1335,6 +1506,7 @@ class NetdiskEnrichmentService:
                 job_id,
                 target_name=target_name,
                 page_url=player_url,
+                trigger_proof=trigger_proof,
             )
         if probe["ai_note_state"] == "generating":
             return self.record_browser_state(
@@ -1585,6 +1757,142 @@ class NetdiskEnrichmentService:
             self.store.append(row)
             return {**row, "idempotent_replay": False}
 
+    def prepare_cloud(
+        self,
+        *,
+        netdisk_path: str,
+        provider_identity_sha256: str,
+        size: int,
+        modified_at: int,
+        source: str,
+        author: str,
+        observed_at: datetime,
+    ) -> dict[str, Any]:
+        """Register one exact cloud video without reading its large payload."""
+        source_author = {
+            "baidu_subscription_share_browser": "吕晓彤",
+            "baidu_private_folder": "路西法",
+        }
+        source_name = str(source or "").strip()
+        author_name = str(author or "").strip()
+        if source_author.get(source_name) != author_name:
+            raise EnrichmentError("cloud video source and author do not match")
+        path = str(netdisk_path or "").strip()
+        expected_prefix = (
+            "/" if self.netdisk_directory == "/" else f"{self.netdisk_directory}/"
+        )
+        if (
+            not path.startswith(expected_prefix)
+            or PurePosixPath(path).parent
+            != PurePosixPath(self.netdisk_directory)
+        ):
+            raise EnrichmentError("cloud video is outside the configured Netdisk directory")
+        basename = path.removeprefix(expected_prefix)
+        if "/" in basename or "\\" in basename:
+            raise EnrichmentError("cloud video path is not an exact directory child")
+        if Path(basename).suffix.lower() not in {
+            ".avi",
+            ".flv",
+            ".m4v",
+            ".mkv",
+            ".mov",
+            ".mp4",
+        }:
+            raise EnrichmentError("cloud source is not a supported video")
+        identity = str(provider_identity_sha256 or "").strip().lower()
+        if not _SHA256.fullmatch(identity):
+            raise EnrichmentError("cloud provider identity hash is invalid")
+        try:
+            source_size = int(size)
+            source_modified_at = int(modified_at)
+        except (TypeError, ValueError) as exc:
+            raise EnrichmentError("cloud video metadata is invalid") from exc
+        if source_size <= 0 or source_modified_at <= 0:
+            raise EnrichmentError("cloud video metadata is incomplete")
+        if observed_at.tzinfo is None:
+            raise EnrichmentError("cloud video observation needs a timezone")
+        age = self._time().astimezone(timezone.utc) - observed_at.astimezone(
+            timezone.utc
+        )
+        if age < -timedelta(minutes=2) or age > timedelta(minutes=30):
+            raise EnrichmentError("cloud video observation is not fresh")
+        version_payload = {
+            "author": author_name,
+            "modified_at": source_modified_at,
+            "netdisk_path": path,
+            "provider_identity_sha256": identity,
+            "size": source_size,
+            "source": source_name,
+        }
+        source_version_sha256 = hashlib.sha256(
+            json.dumps(
+                version_payload,
+                ensure_ascii=False,
+                separators=(",", ":"),
+                sort_keys=True,
+            ).encode("utf-8")
+        ).hexdigest()
+        job_id = f"kol-netdisk-cloud-{source_version_sha256[:16]}"
+        with self.store.job_lock(job_id):
+            try:
+                current = self.store.latest(job_id)
+            except EnrichmentError as exc:
+                if "not found" not in str(exc):
+                    raise
+                current = None
+            if current is not None:
+                if (
+                    current.get("source_version_sha256")
+                    != source_version_sha256
+                    or current.get("netdisk_path") != path
+                    or current.get("provider_identity_sha256") != identity
+                ):
+                    raise EnrichmentError("registered cloud video identity changed")
+                return {**current, "idempotent_replay": True}
+            snapshot_text = f"{basename}\n目标视频 row 已存在"
+            proof = self._browser_proof(
+                target_name=basename,
+                visible_state="video_present",
+                state_text="目标视频 row 已存在",
+                observed_at=observed_at,
+                page_url="https://pan.baidu.com/disk/main",
+            )
+            row = {
+                "schema_version": 1,
+                "event": "netdisk_cloud_video_registered",
+                "status": "video_ready",
+                "provider": "baidu_consumer_page",
+                "job_id": job_id,
+                "source": source_name,
+                "author": author_name,
+                "netdisk_path": path,
+                "netdisk_directory": self.netdisk_directory,
+                "video_basename": basename,
+                "video_sha256": source_version_sha256,
+                "video_sha256_kind": "cloud_metadata_version",
+                "source_version_sha256": source_version_sha256,
+                "provider_identity_sha256": identity,
+                "video_size_bytes": source_size,
+                "source_modified_at": source_modified_at,
+                "source_mode": "cloud_existing",
+                "browser_surface": "opencli",
+                "browser_evidence": self._browser_evidence(
+                    {},
+                    {
+                        **proof,
+                        "snapshot_text": snapshot_text,
+                        "target_region_text": snapshot_text,
+                    },
+                    expected_target=basename,
+                    step="video_ready",
+                ),
+                "large_payload_local_bytes": 0,
+                "created_at": self._time().isoformat(timespec="seconds"),
+                "updated_at": self._time().isoformat(timespec="seconds"),
+            }
+            self.store.append(row)
+            return {**row, "idempotent_replay": False}
+
     def _browser_evidence(
         self,
         current: dict[str, Any],
@@ -1615,7 +1923,7 @@ class NetdiskEnrichmentService:
             ).get("path") or []
             if (
                 len(netdisk_paths) != 1
-                or netdisk_paths[0] != f"{_NETDISK_DIRECTORY}/{expected_target}"
+                or netdisk_paths[0] != self._netdisk_path(expected_target)
             ):
                 raise EnrichmentError("browser evidence page URL is invalid")
         target = str(evidence.get("target_name") or "").strip()
@@ -2019,7 +2327,7 @@ class NetdiskEnrichmentService:
             if step in {"transcript_requested", "ai_note_requested"}:
                 observed_at = datetime.fromisoformat(normalized["observed_at"])
                 row["next_poll_not_before"] = (
-                    observed_at + timedelta(minutes=5)
+                    observed_at + _NETDISK_GENERATION_POLL_INTERVAL
                 ).isoformat(timespec="microseconds")
             _clear_transient_failures(row)
             self.store.append(row)
@@ -2099,7 +2407,9 @@ class NetdiskEnrichmentService:
                     _OPENCLI_CAPTURE_PROBE.replace(
                         "__EXPECTED_NETDISK_PATH__",
                         json.dumps(
-                            f"{_NETDISK_DIRECTORY}/{current['video_basename']}"
+                            self._netdisk_path(
+                                str(current["video_basename"])
+                            )
                         ),
                     ),
                     profile=profile,
@@ -2412,6 +2722,347 @@ class NetdiskEnrichmentService:
                 "observed_at": str(current.get("dom_capture_observed_at") or ""),
             }
             _clear_transient_failures(row)
+            self.store.append(row)
+            return {**row, "idempotent_replay": False}
+
+    def reconcile_semantic_duplicate(
+        self,
+        job_id: str,
+        *,
+        bundle_path: Path | str,
+        reconciliation_path: Path | str,
+        decision_output_dir: Path | str,
+    ) -> dict[str, Any]:
+        """Bind a new verified transcript to prior receipted outcomes, without resend."""
+        bundle_file = Path(bundle_path).expanduser().resolve()
+        reconciliation_file = Path(reconciliation_path).expanduser().resolve()
+        with self.store.job_lock(job_id):
+            current = self.store.latest(job_id)
+            if not bundle_file.is_file() or not reconciliation_file.is_file():
+                raise EnrichmentError("semantic duplicate evidence is missing")
+            bundle_bytes = bundle_file.read_bytes()
+            reconciliation_bytes = reconciliation_file.read_bytes()
+            bundle_sha = hashlib.sha256(bundle_bytes).hexdigest()
+            reconciliation_sha = hashlib.sha256(
+                reconciliation_bytes
+            ).hexdigest()
+            if (
+                current.get("status") == "decided"
+                and current.get("decision_bundle_sha256") == bundle_sha
+                and current.get("semantic_reconciliation_sha256")
+                == reconciliation_sha
+            ):
+                return {**current, "idempotent_replay": True}
+            if current.get("status") != "verified":
+                raise EnrichmentError(
+                    "only a verified transcript can be duplicate-reconciled"
+                )
+            transcript_path = Path(str(current.get("transcript_path") or ""))
+            if (
+                not transcript_path.is_file()
+                or _sha256_file(transcript_path)
+                != current.get("transcript_sha256")
+            ):
+                raise EnrichmentError("verified transcript is missing or changed")
+            try:
+                bundle = json.loads(bundle_bytes)
+                reconciliation = json.loads(reconciliation_bytes)
+            except json.JSONDecodeError as exc:
+                raise EnrichmentError(
+                    "semantic duplicate input is invalid JSON"
+                ) from exc
+            items = bundle.get("items") if isinstance(bundle, dict) else None
+            if (
+                not isinstance(items, list)
+                or len(items) != 1
+                or not isinstance(items[0], dict)
+            ):
+                raise EnrichmentError(
+                    "semantic duplicate requires one decision item"
+                )
+            item = items[0]
+            evidence_path = Path(
+                str(item.get("evidence_path") or "")
+            ).expanduser().resolve()
+            if (
+                evidence_path != transcript_path.resolve()
+                or item.get("evidence_sha256")
+                != current.get("transcript_sha256")
+            ):
+                raise EnrichmentError(
+                    "semantic duplicate bundle is not bound to this transcript"
+                )
+            from .decisions import DecisionPipeline
+
+            validation_pipeline = DecisionPipeline(
+                Path(decision_output_dir),
+                household_context_loader=lambda: {},
+            )
+            failures = validation_pipeline._failures(bundle)
+            if failures:
+                raise EnrichmentError(
+                    "semantic duplicate analysis failed: "
+                    + ",".join(failures)
+                )
+            try:
+                validation_pipeline._validate_cross_source(bundle)
+                document = validation_pipeline._validate_item(item)
+                validation_pipeline.book.validate(
+                    item.get("book_kol_us") or {}
+                )
+            except Exception as exc:
+                raise EnrichmentError(
+                    "semantic duplicate analysis contract is invalid"
+                ) from exc
+            if (
+                document.path.resolve() != transcript_path.resolve()
+                or document.sha256 != current.get("transcript_sha256")
+            ):
+                raise EnrichmentError(
+                    "semantic duplicate analysis document is not current"
+                )
+            coverage = item.get("coverage_matrix")
+            required_coverage = {
+                "todays_market_diagnosis",
+                "next_session_playbook",
+                "next_several_session_base_case",
+                "style_market_cap_regime",
+                "market_board_sector_hierarchy",
+                "position_risk_budget",
+                "named_asset_inventory",
+            }
+            if (
+                not isinstance(coverage, list)
+                or {row.get("row_id") for row in coverage if isinstance(row, dict)}
+                != required_coverage
+                or any(
+                    not str(row.get("conclusion") or "").strip()
+                    or not isinstance(row.get("evidence"), list)
+                    or not row["evidence"]
+                    for row in coverage
+                    if isinstance(row, dict)
+                )
+            ):
+                raise EnrichmentError(
+                    "semantic duplicate analysis coverage is incomplete"
+                )
+            if not isinstance(reconciliation, dict):
+                raise EnrichmentError(
+                    "semantic duplicate reconciliation must be an object"
+                )
+            current_text = re.sub(
+                r"\s+",
+                "",
+                transcript_path.read_text(encoding="utf-8"),
+            )
+            prior_path = Path(
+                str(reconciliation.get("prior_evidence_path") or "")
+            ).expanduser().resolve()
+            prior_sha = str(
+                reconciliation.get("prior_evidence_sha256") or ""
+            )
+            if (
+                reconciliation.get("current_evidence_path")
+                != str(transcript_path.resolve())
+                or reconciliation.get("current_evidence_sha256")
+                != current.get("transcript_sha256")
+                or not prior_path.is_file()
+                or not _SHA256.fullmatch(prior_sha)
+                or _sha256_file(prior_path) != prior_sha
+            ):
+                raise EnrichmentError(
+                    "semantic duplicate evidence binding is invalid"
+                )
+            prior_text = re.sub(
+                r"\s+",
+                "",
+                prior_path.read_text(encoding="utf-8"),
+            )
+            similarity = SequenceMatcher(
+                None,
+                current_text,
+                prior_text,
+                autojunk=False,
+            ).ratio()
+            containment = current_text in prior_text or prior_text in current_text
+            if (
+                len(current_text) < 2_000
+                or len(prior_text) < 2_000
+                or similarity < 0.995
+                or not containment
+                or reconciliation.get("normalized_containment") is not True
+                or abs(
+                    float(reconciliation.get("normalized_similarity") or 0)
+                    - similarity
+                )
+                > 1e-12
+            ):
+                raise EnrichmentError(
+                    "semantic duplicate transcript proof did not match"
+                )
+            notification = reconciliation.get("household_notification") or {}
+            paper = reconciliation.get("book_kol_us") or {}
+            result_item = {
+                **item,
+                "notification": {
+                    **notification,
+                    "reconciled_existing": True,
+                },
+                "book_kol_us": {
+                    **paper,
+                    "idempotent_replay": True,
+                    "reconciled_existing": True,
+                },
+                "decision_status": "semantic_duplicate_reconciled",
+                "decision_reason": (
+                    "完整文稿与同作者同标题的既有证据一致；复用已送达家庭"
+                    "建议和既有 Book KOL-US 纸面结果，未产生新副作用。"
+                ),
+            }
+            result = {
+                "status": "completed",
+                "items": [result_item],
+                "semantic_duplicate_reconciliation": {
+                    "prior_evidence_path": str(prior_path),
+                    "prior_evidence_sha256": prior_sha,
+                    "normalized_similarity": similarity,
+                    "normalized_containment": True,
+                    "side_effects_reused": [
+                        "household_notification",
+                        "book_kol_us",
+                    ],
+                    "new_external_side_effect_count": 0,
+                },
+                "processed_at": self._time().isoformat(timespec="seconds"),
+            }
+            validated_notification, validated_paper = (
+                validate_decision_completion(result)
+            )
+            claim_path = (
+                self.output_dir
+                / "artifacts"
+                / job_id
+                / "semantic_duplicate_claim.json"
+            )
+            receipt_path = claim_path.with_name(
+                "semantic_duplicate_receipt.json"
+            )
+            claim = {
+                "schema_version": 1,
+                "event": "semantic_duplicate_reconciliation_claimed",
+                "job_id": job_id,
+                "decision_bundle_sha256": bundle_sha,
+                "semantic_reconciliation_sha256": reconciliation_sha,
+                "current_evidence_sha256": current["transcript_sha256"],
+                "prior_evidence_sha256": prior_sha,
+                "claimed_at": self._time().isoformat(timespec="seconds"),
+            }
+            if claim_path.is_file():
+                try:
+                    existing_claim = json.loads(
+                        claim_path.read_text(encoding="utf-8")
+                    )
+                except json.JSONDecodeError as exc:
+                    raise EnrichmentError(
+                        "semantic duplicate claim is invalid"
+                    ) from exc
+                if {
+                    key: existing_claim.get(key)
+                    for key in (
+                        "job_id",
+                        "decision_bundle_sha256",
+                        "semantic_reconciliation_sha256",
+                        "current_evidence_sha256",
+                        "prior_evidence_sha256",
+                    )
+                } != {
+                    key: claim.get(key)
+                    for key in (
+                        "job_id",
+                        "decision_bundle_sha256",
+                        "semantic_reconciliation_sha256",
+                        "current_evidence_sha256",
+                        "prior_evidence_sha256",
+                    )
+                }:
+                    raise EnrichmentError(
+                        "semantic duplicate claim conflicts with prior state"
+                    )
+            else:
+                _atomic_write_json(claim_path, claim)
+            result_bytes = (
+                json.dumps(
+                    result,
+                    ensure_ascii=False,
+                    sort_keys=True,
+                    indent=2,
+                )
+                + "\n"
+            ).encode("utf-8")
+            result_path = (
+                self.output_dir
+                / "artifacts"
+                / job_id
+                / "decision_result.json"
+            )
+            temporary = result_path.with_name(
+                ".decision_result.partial.json"
+            )
+            temporary.write_bytes(result_bytes)
+            temporary.replace(result_path)
+            receipt = {
+                **claim,
+                "event": "semantic_duplicate_reconciliation_completed",
+                "status": "completed",
+                "decision_result_path": str(result_path),
+                "decision_result_sha256": hashlib.sha256(
+                    result_bytes
+                ).hexdigest(),
+                "household_notification": {
+                    key: validated_notification[key]
+                    for key in (
+                        "idempotency_key",
+                        "status",
+                        "receipt",
+                    )
+                    if validated_notification.get(key) is not None
+                },
+                "book_kol_us": {
+                    key: validated_paper[key]
+                    for key in (
+                        "idempotency_key",
+                        "status",
+                        "book",
+                        "paper_only",
+                        "reason",
+                    )
+                    if validated_paper.get(key) is not None
+                },
+                "new_external_side_effect_count": 0,
+                "completed_at": self._time().isoformat(timespec="seconds"),
+            }
+            _atomic_write_json(receipt_path, receipt)
+            row = {
+                **current,
+                "event": "netdisk_semantic_duplicate_reconciled",
+                "status": "decided",
+                "decision_bundle_path": str(bundle_file),
+                "decision_bundle_sha256": bundle_sha,
+                "semantic_reconciliation_path": str(reconciliation_file),
+                "semantic_reconciliation_sha256": reconciliation_sha,
+                "semantic_duplicate_claim_path": str(claim_path),
+                "semantic_duplicate_receipt_path": str(receipt_path),
+                "decision_result_path": str(result_path),
+                "decision_result_sha256": receipt[
+                    "decision_result_sha256"
+                ],
+                "household_notification": receipt[
+                    "household_notification"
+                ],
+                "book_kol_us": receipt["book_kol_us"],
+                "new_external_side_effect_count": 0,
+                "updated_at": self._time().isoformat(timespec="seconds"),
+            }
             self.store.append(row)
             return {**row, "idempotent_replay": False}
 
