@@ -224,10 +224,16 @@ def build_claim_extraction_request(
                             "one or more evidence-bound claim ids for "
                             "must_surface"
                         ),
-                        "subject": "asset, theme, market, or capital risk",
-                        "stance": "faithful source direction or condition",
-                        "horizon": "source horizon or explicitly not provided",
-                        "attribution": "speaker, quoted party, or ambiguity",
+                        "subject": (
+                            "自然中文的资产、主题、市场或资本风险名称；"
+                            "只有正式公司/产品名和股票或ETF代码可保留英文"
+                        ),
+                        "stance": (
+                            "忠实、完整、自然中文的观点结论及条件；"
+                            "不得输出内部枚举或英文标签"
+                        ),
+                        "horizon": "自然中文的来源期限，或明确写原文未提供",
+                        "attribution": "说话人、被引用方或自然中文的归属歧义",
                         "evidence_refs": [
                             {
                                 "segment_id": "one supplied segment id",
@@ -240,7 +246,7 @@ def build_claim_extraction_request(
                             "potential_impact": "low, medium, or high",
                             "specificity": "low, medium, or high",
                             "user_relevance": "unknown, indirect, or direct",
-                            "reason": "plain-language decision priority reason",
+                            "reason": "自然中文的决策优先级理由",
                         },
                     }
                 ],
@@ -278,7 +284,7 @@ def build_claim_extraction_request(
             ],
             "reader_briefing": {
                 "format": "wecom_narrative_v1",
-                "title": "short decision-priority title",
+                "title": "简短、自然中文的决策优先级标题",
                 "thesis_order": (
                     "all must_surface thesis ids in exact priority order"
                 ),

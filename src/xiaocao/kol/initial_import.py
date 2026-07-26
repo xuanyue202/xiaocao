@@ -56,6 +56,53 @@ LV_LONGITUDINAL = {
     "lv-20260720-etf-versus-stock",
     "lv-20260720-apple-pullback",
 }
+LV_VIDEO_READER_COPY = {
+    "lv-20260720-remove-leverage": {
+        "subject": "科技杠杆产品",
+        "stance": (
+            "立即停止新增两倍、三倍科技多头产品；已有暴露应优先"
+            "降低杠杆或换成非杠杆股票、ETF，避免长期承受路径损耗。"
+        ),
+    },
+    "lv-20260720-etf-versus-stock": {
+        "subject": "非杠杆科技ETF与科技个股",
+        "stance": (
+            "长期科技方向可以保留，但非杠杆ETF和个股必须分开"
+            "判断：不要在恐慌中机械卖出ETF，也不要用“必然涨回”"
+            "作为补仓理由；个股要单独验证基本面与修复条件。"
+        ),
+    },
+    "lv-20260720-apple-pullback": {
+        "subject": "苹果（AAPL）",
+        "stance": (
+            "若苹果继续下跌，可以列入候选观察；只有价格、估值以及"
+            "需求和利润率形成足够安全边际后，才考虑介入。"
+        ),
+    },
+}
+LV_VIDEO_READER_CLAIMS = {
+    "lv-20260720-global-tech-liquidation": (
+        "作者把这次全球科技急跌解释为拥挤交易、融资盘和量化资金"
+        "相互踩踏形成的快速去杠杆，而不是单一公司的普通回调。"
+    ),
+    "lv-20260720-remove-leverage": (
+        "作者明确反对长期持有两倍、三倍科技多头产品：长期看多科技"
+        "并不能抵消高波动路径中的损耗和强平风险。"
+    ),
+    "lv-20260720-etf-versus-stock": (
+        "作者认为非杠杆行业ETF与个股必须分开处理。ETF具有成分"
+        "调整机制，但这不等于任何买入价都一定快速修复，因此既不要"
+        "恐慌卖出，也不要仅凭“必然涨回”追加仓位。"
+    ),
+    "lv-20260720-execution-regret": (
+        "作者复盘了判断与执行脱节：即使方向判断正确，若仓位管理没有"
+        "同步调整，仍会扩大回撤。"
+    ),
+    "lv-20260720-apple-pullback": (
+        "作者把苹果（AAPL）列为下跌后的候选机会，但没有给出价格、"
+        "估值或确认条件，因此目前只能观察，不能直接执行。"
+    ),
+}
 
 
 def _sha256_file(path: Path) -> str:
@@ -638,15 +685,12 @@ def _lv_video_candidate(
     for claim_id in sorted(LV_LONGITUDINAL):
         claim = claims[claim_id]
         current = claim_id in LV_CURRENT
+        reader_copy = LV_VIDEO_READER_COPY[claim_id]
         viewpoints.append(
             {
                 "local_thesis_id": claim_id,
-                "subject": "、".join(
-                    str(value)
-                    for value in claim.get("asset_scope", [])
-                )
-                or claim_id,
-                "stance": claim.get("direction"),
+                "subject": reader_copy["subject"],
+                "stance": reader_copy["stance"],
                 "horizon": claim.get("horizon"),
                 "attribution": "吕晓彤",
                 "role": "primary_recommendation",
@@ -684,11 +728,8 @@ def _lv_video_candidate(
         "## KOL 关键观点",
         "",
     ]
-    for claim in claims.values():
-        lines.append(
-            f"- {_safe_text(claim.get('quote'))}。"
-            f"{_safe_text(claim.get('reasoning'))}"
-        )
+    for claim_id in claims:
+        lines.append(f"- {LV_VIDEO_READER_CLAIMS[claim_id]}")
     lines.extend(
         [
             "",
@@ -703,9 +744,13 @@ def _lv_video_candidate(
         ]
     )
     for signal in signals:
+        trigger = _safe_text(signal.get("trigger")).replace(
+            "fresh household context",
+            "最新家庭组合信息",
+        )
         lines.append(
             f"- {_safe_text(signal.get('execution'))}"
-            f"  边界：{_safe_text(signal.get('trigger'))}"
+            f"  边界：{trigger}"
         )
     book = item.get("book_kol_us") or {}
     lines.extend(
@@ -713,7 +758,13 @@ def _lv_video_candidate(
             "",
             "## Book KOL-US",
             "",
-            f"纸面结果：{_safe_text(book.get('status'))}。"
+            "纸面结果："
+            + (
+                "暂不交易"
+                if book.get("status") == "no_trade"
+                else _safe_text(book.get("status"))
+            )
+            + "。"
             f"{_safe_text(book.get('reason'))}",
             "",
             "## 发布说明",
@@ -749,7 +800,7 @@ def _lv_video_candidate(
         kol_id=KOL_REGISTRY["吕晓彤"],
         author="吕晓彤",
         source="订阅云端视频",
-        title="投资情报｜吕晓彤 7 月 20 日直播",
+        title="吕晓彤 7月20日直播：科技去杠杆与苹果观察条件",
         summary=reader_summary,
         source_published_at=_utc(item["published_at"]),
         media_types=["video"],

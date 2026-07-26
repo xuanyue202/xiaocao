@@ -24,6 +24,7 @@ from typing import Any, Iterator, Protocol
 import rfc8785
 
 from .decisions import DecisionError
+from .reader_copy import ReaderCopyError, validate_reader_payload
 
 
 KOL_RECORD_KINDS = {
@@ -155,6 +156,10 @@ def build_record(
 ) -> dict[str, Any]:
     if kind not in KOL_RECORD_KINDS:
         raise PublicationError(f"unsupported KOL record kind: {kind}")
+    try:
+        validate_reader_payload(kind, payload)
+    except ReaderCopyError as exc:
+        raise PublicationError(str(exc)) from exc
     envelope: dict[str, Any] = {
         "schema_version": 1,
         "kind": kind,
@@ -374,6 +379,7 @@ def build_append_only_publication_update(
     created_at: str,
     revision: str,
     reason: str,
+    report_payload_updates: dict[str, Any] | None = None,
 ) -> tuple[list[dict[str, Any]], dict[str, Any]]:
     """Append Agent records while preserving the exact published history."""
 
@@ -421,10 +427,22 @@ def build_append_only_publication_update(
             "publication viewpoint_ids must match its viewpoint records"
         )
     payload = copy.deepcopy(current_report["payload"])
+    updates = copy.deepcopy(report_payload_updates or {})
+    unsupported_updates = set(updates) - {
+        "title",
+        "summary",
+        "report_body",
+    }
+    if unsupported_updates:
+        raise PublicationError(
+            "report correction cannot change stable publication fields: "
+            + ", ".join(sorted(unsupported_updates))
+        )
+    payload.update(updates)
     payload["viewpoint_ids"] = viewpoint_ids
     source_binding = current_report["source_binding"]
     publication_id = str(source_binding["publication_id"])
-    if viewpoint_ids == current_viewpoint_ids:
+    if payload == current_report["payload"]:
         report = copy.deepcopy(current_report)
         report["idempotency_key"] = stable_claim(
             "put",

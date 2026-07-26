@@ -58,6 +58,17 @@ Keep the layers separate:
   currentness explicit with an as-of evaluation. Lack of a counterexample
   never makes an old viewpoint current. 灰常亮 stores and displays these
   records; it does not create a second analysis layer or expire them itself.
+- Every field shown directly to a family reader must be edited as coherent
+  natural Chinese, regardless of KOL or source adapter. Report titles and
+  summaries, viewpoint subjects and stances, evaluation bases, relation
+  reasons, and explanatory lists must never expose internal enums,
+  snake/kebab/camel tags, serialized arrays, raw ASR fragments, database
+  identifiers, or English action labels. English is reserved for an official
+  company/product name or a stock/ETF ticker such as `SpaceX` or `AAPL`.
+  A viewpoint subject says clearly what the view concerns; its stance is a
+  complete sentence that preserves the direction, condition, horizon, and
+  material boundary supported by the source. This is a publication gate for
+  every KOL path, not a cleanup rule tied to one author or keyword.
 - Maintain each stable KOL as one Agent-owned projection of current complete
   viewpoints plus an archived history timeline. Re-evaluate on every new real
   publication event, when an explicit horizon/trigger/falsifier becomes due,

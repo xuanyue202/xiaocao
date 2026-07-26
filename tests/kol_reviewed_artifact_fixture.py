@@ -108,7 +108,16 @@ def materialize_reviewed_artifacts(root: Path) -> Path:
         *[f"lucifer-current-{index:02d}" for index in range(1, 14)],
     ]
     lucifer_theses = []
-    for thesis_id in lucifer_current_ids + sorted(LUCIFER_UNCERTAIN):
+    reader_subjects = {
+        "gold-near-term-rebound": "黄金短期反弹",
+        "gold-tactical-trim": "黄金战术减仓",
+        "physical-ai-energy-etf": "物理人工智能与能源ETF",
+        "ai-bubble-winter-window": "人工智能泡沫风险窗口",
+    }
+    for index, thesis_id in enumerate(
+        lucifer_current_ids + sorted(LUCIFER_UNCERTAIN),
+        start=1,
+    ):
         if thesis_id == "spacex-short-after-july-7":
             subject = "SpaceX"
             stance = "7月7日后用总资金5%以下做空，绝不加杠杆"
@@ -116,7 +125,10 @@ def materialize_reviewed_artifacts(root: Path) -> Path:
             subject = "北特科技"
             stance = "作者约40元买入，等待市场修复与个股企稳"
         else:
-            subject = thesis_id.replace("-", " ")
+            subject = reader_subjects.get(
+                thesis_id,
+                f"路西法受审历史观点{index}",
+            )
             stance = "保留来源观点及条件，行动前重新核实"
         lucifer_theses.append(
             _thesis(thesis_id, subject=subject, stance=stance)

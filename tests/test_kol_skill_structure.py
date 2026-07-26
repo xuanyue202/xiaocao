@@ -45,6 +45,21 @@ def test_kol_skill_requires_complete_trade_information_coverage() -> None:
     assert "source-salience register" not in text
 
 
+def test_kol_skill_requires_natural_reader_copy_for_every_author() -> None:
+    text = SKILL_MD.read_text(encoding="utf-8")
+
+    for marker in (
+        "natural Chinese",
+        "regardless of KOL or source adapter",
+        "snake/kebab/camel tags",
+        "company/product name",
+        "stock/ETF ticker",
+        "complete sentence",
+        "not a cleanup rule tied to one author or keyword",
+    ):
+        assert marker in text
+
+
 def test_kol_skill_has_one_resumable_ticket05_cloud_video_runner() -> None:
     text = SKILL_MD.read_text(encoding="utf-8")
 

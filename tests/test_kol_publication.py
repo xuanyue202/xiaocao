@@ -197,6 +197,91 @@ def test_append_only_update_preserves_report_and_uses_double_cas():
     assert publish["records"] == manifest_entries(records)
 
 
+def test_append_only_update_can_correct_reader_copy_without_stable_field_change():
+    current = _initial_report()
+
+    records, publish = build_append_only_publication_update(
+        current_records=[current],
+        additions=[],
+        viewpoint_ids=[],
+        created_at="2026-07-26T08:25:00.000Z",
+        revision="reader-copy-v1",
+        reason="纠正读者文案",
+        report_payload_updates={
+            "title": "利率变化与科技股估值",
+            "summary": "等待估值和利率条件改善，不把一次反弹当成趋势确认。",
+            "report_body": "# 核心判断\n\n等待估值和利率条件改善。",
+        },
+    )
+    report = records[0]
+
+    assert report["record_id"] == current["record_id"]
+    assert report["payload"]["kol_id"] == current["payload"]["kol_id"]
+    assert report["payload"]["title"] == "利率变化与科技股估值"
+    assert report["expected_content_sha256"] == current["content_sha256"]
+    assert publish["expected_content_sha256"] == current["content_sha256"]
+    assert publish["expected_manifest_sha256"] == INITIAL_MANIFEST_SHA256
+
+
+def test_reader_copy_gate_is_source_neutral_and_allows_only_formal_ascii_subjects():
+    report = _initial_report()
+    common = {
+        "viewpoint_id": "vp-reader-copy",
+        "report_id": report["record_id"],
+        "kol_id": "kol-any-author",
+        "local_thesis_id": "reader-copy-test",
+        "source_published_at": report["payload"]["source_published_at"],
+        "evidence_refs": [
+            {
+                "claim_id": "claim-reader-copy",
+                "segment_id": "segment-reader-copy",
+                "excerpt": "来源证据",
+            }
+        ],
+    }
+
+    for subject, stance in (
+        ("non-leveraged-tech-etf、individual-tech-equities", "继续观察"),
+        ("任意行业", "hold-with-conditions"),
+        ("another_machine_tag", "降低风险暴露"),
+    ):
+        with pytest.raises(
+            Exception,
+            match="machine token|natural Chinese",
+        ):
+            build_record(
+                kind="viewpoint",
+                record_id_value="vp-reader-copy",
+                idempotency_key="put-reader-copy",
+                created_at="2026-07-26T08:20:00.000Z",
+                source_binding=report["source_binding"],
+                payload={
+                    **common,
+                    "subject": subject,
+                    "stance": stance,
+                },
+            )
+
+    for subject, stance in (
+        ("SpaceX", "等待明确时间和仓位条件后再评估。"),
+        ("苹果（AAPL）", "等待价格与估值形成安全边际后再观察。"),
+        ("非杠杆科技ETF", "保留长期方向，但不使用杠杆产品。"),
+    ):
+        record = build_record(
+            kind="viewpoint",
+            record_id_value="vp-reader-copy",
+            idempotency_key="put-reader-copy",
+            created_at="2026-07-26T08:20:00.000Z",
+            source_binding=report["source_binding"],
+            payload={
+                **common,
+                "subject": subject,
+                "stance": stance,
+            },
+        )
+        assert record["content_sha256"]
+
+
 def test_append_only_update_rejects_silent_viewpoint_omission():
     current = _initial_report()
     viewpoint = _viewpoint(current)
