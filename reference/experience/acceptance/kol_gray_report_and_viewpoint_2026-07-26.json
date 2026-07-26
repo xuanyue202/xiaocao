@@ -1,0 +1,116 @@
+{
+  "schema_version": 1,
+  "accepted_at": "2026-07-26T12:16:00.000Z",
+  "product": "灰常亮",
+  "scope": "Ticket 06 event-report publication and reviewed longitudinal initialization",
+  "production_contract": {
+    "report_identity": "one real KOL publication event",
+    "complete_reader_surface": "灰常亮 safe Markdown report",
+    "enterprise_wechat": "one eligible event-specific concise insight, compact synthesis, then one stable report link",
+    "batch_merges_reports_or_reminders": false,
+    "historical_notification_replay": false,
+    "historical_book_replay": false
+  },
+  "initial_publication": {
+    "report_count": 39,
+    "record_count": 97,
+    "production_readback_count": 39,
+    "ledger_line_count": 311,
+    "ledger_sha256": "14ff3f5668a2fe94317fbb5e455de8bec08525302b69e85437949c7361ab8af6"
+  },
+  "longitudinal_maintenance": {
+    "updated_report_count": 38,
+    "production_readback_count": 38,
+    "record_receipt_count": 611,
+    "uncertain_write_count": 0,
+    "ledger_line_count": 1336,
+    "ledger_sha256": "33ee981eb845b2b2cfd43720d6e71d38c0deaa53c88053c04e57c6b33ea9dabf",
+    "projection": {
+      "kol-lucifer": {
+        "current": 19,
+        "uncertain": 13,
+        "expired": 0,
+        "relation_count": 2,
+        "lead_subject": "SpaceX",
+        "lead_stance": "7月7日后用总资金5%以下做空，绝不加杠杆"
+      },
+      "kol-lv-xiaotong": {
+        "current": 4,
+        "uncertain": 4,
+        "expired": 0,
+        "relation_count": 2
+      },
+      "kol-xiaocao": {
+        "current": 8,
+        "uncertain": 2,
+        "expired": 203,
+        "relation_count": 34,
+        "lead_subject": "A股整体环境与风格"
+      }
+    }
+  },
+  "lucifer_receipt": {
+    "report_id": "kr_cg6eeammpiho23ncqts5n3jxt7wx67h5yqflmx6245royb33dzga",
+    "content_sha256": "dea4bea61b924d87b75beef00d6b72fd71e260d4a991f07e4dd70efb809bda71",
+    "previous_content_sha256": "358ded1745a6182eb711c9e4a92b5d1f8c1ebcbeefcbc10646872d91130a14ec",
+    "manifest_sha256": "b03fe178ff7c30e3b886573b990e542cd4c1ce9810b7733d0809db1b6ed4fc15",
+    "previous_manifest_sha256": "b5b2dc1cc662d5d1a595f0d00959aa5a2b0169bec48d816e628e2c755395142f",
+    "detail_url": "https://main.d1wlcxe7oy19ym.amplifyapp.com/kol-reports/kr_cg6eeammpiho23ncqts5n3jxt7wx67h5yqflmx6245royb33dzga",
+    "record_state": "published"
+  },
+  "idempotent_replay": {
+    "ledger_sha256_before": "33ee981eb845b2b2cfd43720d6e71d38c0deaa53c88053c04e57c6b33ea9dabf",
+    "ledger_sha256_after": "33ee981eb845b2b2cfd43720d6e71d38c0deaa53c88053c04e57c6b33ea9dabf",
+    "ledger_lines_before": 1336,
+    "ledger_lines_after": 1336,
+    "production_readback_count": 38
+  },
+  "reader_projection_acceptance": {
+    "gray_main_commit": "89d859f2f37d81f93972bc48af9a1413b07a5f25",
+    "deployment": "Amplify 162",
+    "deep_link_http_200": true,
+    "login_restores_exact_report_id": true,
+    "browser_console_error_count": 0,
+    "kol-xiaocao": {
+      "current": 8,
+      "uncertain": 2,
+      "history_total": 203,
+      "lead_subjects": [
+        "A股整体环境与风格",
+        "轮动区间交易节奏"
+      ]
+    },
+    "kol-lv-xiaotong": {
+      "current": 4,
+      "uncertain": 4,
+      "refines_relation_count": 2
+    },
+    "kol-lucifer": {
+      "current": 19,
+      "uncertain": 13,
+      "lead_subject": "SpaceX",
+      "lead_stance": "7月7日后用总资金5%以下做空，绝不加杠杆"
+    },
+    "ordering_source": "report.viewpoint_ids",
+    "display_order_field_added": false,
+    "second_analysis_layer_added": false,
+    "production_write_count": 0
+  },
+  "side_effect_accounting": {
+    "notification_claims_created": 0,
+    "book_kol_us_replays": 0,
+    "coordinator_source_video_bytes": 0,
+    "large_payload_local_bytes": 0
+  },
+  "validation": {
+    "kol_pytest_passed": 255,
+    "git_diff_check": "passed"
+  },
+  "redaction": {
+    "actor_id_included": false,
+    "family_id_included": false,
+    "credentials_included": false,
+    "raw_transcript_included": false,
+    "runtime_requests_included": false
+  }
+}

@@ -6,6 +6,7 @@ from pathlib import Path
 
 import pytest
 
+from tests.kol_claim_fixture import attach_claim_contract
 from xiaocao.kol.decisions import (
     BookKolUs,
     DecisionError,
@@ -14,6 +15,10 @@ from xiaocao.kol.decisions import (
     render_household_item_message,
 )
 from xiaocao.kol.rendering import reader_message_title
+
+
+def _processing_time() -> str:
+    return datetime.now(timezone.utc).isoformat(timespec="seconds")
 
 
 def _write_text(path: Path, text: str) -> Path:
@@ -64,7 +69,7 @@ def _item(path: Path, *, author: str = "小草", ticker: str | None = None) -> d
         if ticker
         else {"decision": "no_trade", "reason": "观点仅涉及非美股资产。"}
     )
-    return {
+    item = {
         "source": "local_transcript",
         "author": author,
         "title": path.stem,
@@ -106,7 +111,7 @@ def _item(path: Path, *, author: str = "小草", ticker: str | None = None) -> d
                     "summary": "周末无新增交易日，等待下一交易日确认。",
                     "currentness": {
                         "latest_available": True,
-                        "checked_at": "2026-07-19T18:00:00+08:00",
+                        "checked_at": _processing_time(),
                         "reason": "周末无新增交易日。",
                     },
                     "facts": [
@@ -126,7 +131,7 @@ def _item(path: Path, *, author: str = "小草", ticker: str | None = None) -> d
             "summary": "周末无新增交易日，保留防守判断并等待下一交易日验证。",
             "currentness": {
                 "latest_available": True,
-                "checked_at": "2026-07-19T18:00:00+08:00",
+                "checked_at": _processing_time(),
                 "reason": "周末无新增交易日。",
             },
             "facts": [
@@ -152,6 +157,7 @@ def _item(path: Path, *, author: str = "小草", ticker: str | None = None) -> d
         },
         "book_kol_us": paper,
     }
+    return attach_claim_contract(item, path)
 
 
 def _bundle(item: dict, *, household_path: Path) -> dict:
@@ -179,7 +185,7 @@ def _market_outlook(**overrides) -> dict:
             "summary": "周末无新增交易日，等待下一交易日确认。",
             "currentness": {
                 "latest_available": True,
-                "checked_at": "2026-07-19T18:00:00+08:00",
+                "checked_at": _processing_time(),
                 "reason": "周末无新增交易日。",
             },
             "facts": [{
@@ -314,7 +320,7 @@ def test_rejects_unquoted_claim_and_unsafe_paper_instruments(tmp_path):
     assert not (tmp_path / "out" / "household_outbox.jsonl").exists()
 
 
-def test_framework_only_content_without_actionable_signals_fails_visibly(tmp_path):
+def test_must_surface_thesis_without_actionable_signal_is_not_low_density(tmp_path):
     transcript = _write_text(tmp_path / "real.txt", "等待成交量放大再行动")
     item = _item(transcript)
     item["actionable_signals"] = []
@@ -323,8 +329,8 @@ def test_framework_only_content_without_actionable_signals_fails_visibly(tmp_pat
         _bundle(item, household_path=tmp_path / "unused.json")
     )
 
-    assert result["status"] == "failed"
-    assert result["failures"] == ["low_density_content"]
+    assert result["status"] == "completed"
+    assert "failures" not in result
 
 
 def test_actionable_signal_requires_asset_action_trigger_logic_and_current_validation(tmp_path):
@@ -452,6 +458,7 @@ def test_cross_source_relation_requires_claims_from_distinct_authors(tmp_path):
 def test_reader_message_surfaces_relevant_cross_author_judgment(tmp_path):
     transcript = _write_text(tmp_path / "real.txt", "等待成交量放大再行动")
     item = _item(transcript, author="小草")
+    item.pop("reader_briefing")
     cross_source = {
         "agreements": [{
             "topic": "risk",
@@ -478,6 +485,7 @@ def test_reader_message_surfaces_market_outlook_before_individual_signals(tmp_pa
         strategy=["控制高贝塔仓位", "保留现金等待止跌确认"],
         turning_points=["低位显著放量", "市场广度停止恶化"],
     )
+    item.pop("reader_briefing")
 
     message = render_household_item_message(item)
 
@@ -530,6 +538,7 @@ def test_context_corrected_kol_message_separates_viewpoints_from_system_analysis
             "system_advice": "等待，不新增仓位。",
         }
     )
+    item.pop("reader_briefing")
 
     message = render_household_item_message(item)
 
@@ -595,6 +604,7 @@ def test_no_actionable_reader_message_is_short_and_only_links_real_holding(tmp_p
             }
         ],
     }
+    item.pop("reader_briefing")
 
     message = render_household_item_message(item)
 
@@ -634,6 +644,7 @@ def test_no_actionable_reader_message_does_not_force_household_analysis(tmp_path
         "held": False,
         "relevant_positions": [],
     }
+    item.pop("reader_briefing")
 
     message = render_household_item_message(item)
 
@@ -680,6 +691,7 @@ def test_reader_message_prioritizes_market_scope_and_normalizes_asr_entities(
             "evidence": "frozen://market/2026-07-19",
         }
     )
+    item.pop("reader_briefing")
 
     title = reader_message_title(item)
     message = render_household_item_message(item)

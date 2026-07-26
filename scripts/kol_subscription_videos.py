@@ -45,7 +45,17 @@ def _read_bundle(request: dict[str, Any]) -> Path:
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("command", choices=("run", "scan", "status"))
+    parser.add_argument(
+        "command",
+        choices=(
+            "run",
+            "scan",
+            "status",
+            "prepare-episode-review",
+            "reconcile-episode-review",
+            "approve-episode-review",
+        ),
+    )
     parser.add_argument("--config", type=Path, default=Path("xiaocao.yaml"))
     parser.add_argument("--output-dir", type=Path, default=DEFAULT_OUTPUT)
     parser.add_argument("--decision-output-dir", type=Path, default=DEFAULT_DECISIONS)
@@ -62,6 +72,17 @@ def main() -> int:
         "--enrichment-session",
         default="xiaocao-lv-subscription",
     )
+    parser.add_argument(
+        "--episode-spec",
+        type=Path,
+        help=(
+            "Optional small JSON manifest for arbitrary multi-part filenames; "
+            "automatic common suffix grouping remains the default."
+        ),
+    )
+    parser.add_argument("--episode-identity")
+    parser.add_argument("--component-evidence", type=Path)
+    parser.add_argument("--bundle", type=Path)
     args = parser.parse_args()
 
     service = SubscriptionVideoService(
@@ -71,11 +92,59 @@ def main() -> int:
     if args.command == "status":
         _print(service.status())
         return 0
+    if args.command == "prepare-episode-review":
+        if not args.episode_identity or args.component_evidence is None:
+            parser.error(
+                "prepare-episode-review requires --episode-identity "
+                "and --component-evidence"
+            )
+        _print(
+            service.prepare_legacy_episode_review(
+                args.episode_identity,
+                component_evidence_path=args.component_evidence,
+            )
+        )
+        return 0
+    if args.command == "reconcile-episode-review":
+        if not args.episode_identity or args.bundle is None:
+            parser.error(
+                "reconcile-episode-review requires --episode-identity "
+                "and --bundle"
+            )
+        _print(
+            service.reconcile_legacy_episode_review(
+                args.episode_identity,
+                bundle_path=args.bundle,
+                decision_output_dir=args.decision_output_dir,
+            )
+        )
+        return 0
+    if args.command == "approve-episode-review":
+        if not args.episode_identity or args.bundle is None:
+            parser.error(
+                "approve-episode-review requires --episode-identity "
+                "and --bundle"
+            )
+        _print(
+            service.approve_legacy_episode_review(
+                args.episode_identity,
+                bundle_path=args.bundle,
+                decision_output_dir=args.decision_output_dir,
+                sender=lambda title, body: notify(
+                    title,
+                    body,
+                    macos=False,
+                    audience="kol",
+                ),
+            )
+        )
+        return 0
 
     discovered = service.scan_opencli(
         lv_session=args.lv_session,
         private_session=args.private_session,
         profile=args.opencli_profile,
+        episode_spec_path=args.episode_spec,
     )
     if args.command == "scan":
         if discovered is not None:
@@ -86,6 +155,7 @@ def main() -> int:
     if not pending:
         return 0
     completed = []
+    waiting = []
     for item in pending:
         state = service.advance_item(
             item,
@@ -108,17 +178,18 @@ def main() -> int:
                 ),
             )
         if state.get("status") != "decided":
-            _print(
+            waiting.append(
                 {
-                    "event": "subscription_video_pending",
                     "identity": item["identity"],
                     "version_key": item["version_key"],
                     "source": item["source"],
                     "author": item["author"],
+                    "is_episode": item.get("is_episode") is True,
+                    "part_count": int(item.get("part_count") or 1),
                     "checkpoint": state,
                 }
             )
-            return 2
+            continue
         completed.append(
             {
                 "identity": item["identity"],
@@ -129,6 +200,15 @@ def main() -> int:
                 "decision_result_path": state["decision_result_path"],
             }
         )
+    if waiting:
+        _print(
+            {
+                "event": "subscription_video_run_pending",
+                "completed": completed,
+                "waiting": waiting,
+            }
+        )
+        return 2
     _print(
         {
             "event": "subscription_video_run_completed",

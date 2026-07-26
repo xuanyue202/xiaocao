@@ -32,6 +32,56 @@ Keep the layers separate:
 - Prefer Netdisk-side transfer and enrichment. If a provider step truly requires moving a large file through a local machine, persist an explicit broadband handoff instead of silently pulling it through the always-on node.
 - Development may colocate both roles on one Mac, but code and job state must preserve this placement boundary.
 
+## 灰常亮 report and viewpoint publication
+
+- Use `灰常亮` as the canonical Chinese product name. `LiangHui` and `亮灰`
+  are aliases for the same family Web App: 亮仔 is 垚亮 and 灰仔 is 菲菲.
+  Never transliterate `LiangHui` as `梁辉`.
+- One complete reader report represents one real KOL publication event. A
+  multipart livestream is one report with ordered `source_parts`; two
+  independent events remain two reports even when one batch processes them.
+  Never derive report identity from a batch, filename, display author, ticker,
+  or local thesis id.
+- Publish every report that passes the Xiaocao completeness and safety gate to
+  灰常亮 through the existing family-authenticated MCP. The complete safe
+  Markdown `report_body` is the authoritative reader content. A report may
+  publish without longitudinal viewpoints; never manufacture viewpoints to
+  fill the schema.
+- `reader_insight` describes content value, while `alert_eligible` independently
+  authorizes a new reminder. `reader_insight=none` still publishes a complete
+  report but creates no reminder claim. Historical initialization uses the
+  same report identity/evidence contract, always has `alert_eligible=false`,
+  and must not replay an earlier household notification or Book KOL-US action.
+- Longitudinal `viewpoint`, `viewpoint_evaluation`, and `viewpoint_relation`
+  records are optional Agent judgments. Keep every historical viewpoint,
+  append later viewpoints with `replaces`, `refines`, or `coexists`, and make
+  currentness explicit with an as-of evaluation. Lack of a counterexample
+  never makes an old viewpoint current. 灰常亮 stores and displays these
+  records; it does not create a second analysis layer or expire them itself.
+- Maintain each stable KOL as one Agent-owned projection of current complete
+  viewpoints plus an archived history timeline. Re-evaluate on every new real
+  publication event, when an explicit horizon/trigger/falsifier becomes due,
+  when material market or fundamental evidence changes, or when the user asks
+  for a refresh. Append a new evaluation rather than editing history; publish
+  the complete prior manifest plus additions under content-and-manifest CAS.
+  A KOL projection is not a synthetic publication report and never creates a
+  reminder or Book action by itself. Periodic scheduling belongs to Ticket 07;
+  Ticket 06 creates no recurring task.
+- Before each `put_kol_record` and `publish_kol_report`, persist the exact
+  request under a durable claim. An uncertain response must first use
+  `get_kol_write_status`; a conflict must read `get_kol_record` and rebuild.
+  Publish only the exact manifest. Persist the publication receipt and stable
+  detail URL before a reminder can be claimed.
+- A newly eligible publication event may create at most one concise,
+  independently retryable Enterprise WeChat reminder. It leads with the most
+  decision-important insight, follows with a coherent compact synthesis of the
+  remaining important information, and ends with exactly one stable 灰常亮
+  report link. It must be useful before the user opens the link, but it never
+  duplicates the full report. Different events never merge reminders because
+  a batch completed. A report correction uses the same stable URL and
+  compare-and-swap hashes, and never replays an earlier reminder or Book
+  action.
+
 ## Xiaocao capture
 
 1. Start the existing sniffer from `/Users/bytedance/coding/wx_channels_download`:
@@ -85,7 +135,7 @@ return zero new external side effects on rerun before user confirmation.
   6. The stepper then activates `笔记`, waits for the semantic active-tab state, and opens template `tpl_no=1` (`文稿笔记`) under an independent claim when needed. It must enter the `#tplModal` iframe, uniquely locate and click the visible `生成该笔记` button, and then prove that the template modal is no longer visible and the note iframe has entered `generating` or `ready`. A direct `genNoteByTpl` postMessage, a click-dispatched return value, or a synthetic "已提交" snapshot is not submission proof. Only the confirmed UI transition records `ai_note_requested`; do not wait for, poll, or require later AI-note completion.
   7. On the Netdisk folder page, semantically dismiss the known `.nd-operate-guidance` operation-ad overlay through its unique `img[alt="close"]` control before upload inspection or reconciliation; never use click coordinates. As soon as the complete `文稿` is ready and AI-note submission has been recorded, the stepper opens the exact player and performs one atomic OpenCLI DOM action. It first closes a semantically identified advertisement dialog; if that exact ad overlay cannot be closed, it hides only that identified overlay. It then activates `文稿`, waits for content, and captures the unique initial `.ai-draft__wrap-list` as immutable UTF-8 text. Never refresh as an ad workaround.
   8. DOM capture is valid only when it proves `scrollTop=0`, nontrivial paragraph/sentence counts, the last sentence is already in DOM and below the initial viewport when content overflows, and there are no virtual/loading/load-more markers. Run `verify --audit-file <json>` with excerpts from the opening, middle, and ending thirds, bound to both source-video and transcript hashes.
-  9. Create one ticket-01 source-neutral bundle whose `evidence_path` is that verified transcript, then run `decide --bundle <json>`. KOL delivery must call the notifier with `audience="kol"` and fan out once to the distinct `XIAOCAO_KOL_WECOM_USER_IDS` set (currently `Chen,FeiFei`). The relay REST `/send` path does not inherit the wecom-app extension's long-text chunking, so the notifier must losslessly split the complete title plus body at semantic boundaries into UTF-8 chunks of at most 2,048 bytes, preserve order, and require every chunk for every recipient to return `ok` before writing one aggregate delivery receipt. One successful recipient or chunk is not completion. Before any makeup send, compare the recipient configuration time with the original send time and send only to a proven-missing recipient—never replay the full decision pipeline or duplicate a recipient that already succeeded. Completion requires the all-recipient household WeChat receipt and a result with `book=KOL-US`, `paper_only=true`, plus a fill or an explicit nonempty `no_trade.reason`.
+  9. Create one ticket-01 source-neutral bundle whose `evidence_path` is that verified transcript, then run `decide --bundle <json>`. Publish the complete event report to 灰常亮 first. Only after its durable publication receipt may a newly eligible event fan out one concise reminder to the distinct `XIAOCAO_KOL_WECOM_USER_IDS` set (currently `Chen,FeiFei`): lead with the key insight, add the coherent compact synthesis, and end with exactly one stable report link, all within the 2,048-byte safe-send limit. Do not split the complete report across messages. The legacy chunked notifier is reconciliation-only for already-claimed historical sends. Before any makeup send, compare the recipient configuration time with the original send time and send only to a proven-missing recipient—never replay the full decision pipeline or duplicate a recipient that already succeeded. Completion requires the 灰常亮 receipt, the eligible event's all-recipient short-reminder receipt or a legal no-alert reason, and a result with `book=KOL-US`, `paper_only=true`, plus a fill or an explicit nonempty `no_trade.reason`.
 - `capture-dom --opencli-session <session> [--opencli-profile <profile>]` invokes the same exact-player DOM contract directly. There is no `.doc` export, cloud-document, browser-download, or local Word-import path in Ticket 02.
 - Each completed transition needs exact-target, timezone-aware, hash-bound evidence. Player query parameters are validated for basename binding and stripped before ledger storage. The append-only ledger stores no snapshot text, transcript content, query string, cookie, token, household position, or credential.
 - Every external browser side effect has a durable pre-action claim. A new claim requires a fresh, at-most-30-minute persisted liveness/page proof; a capability failure blocks later claims until a new valid liveness record. A replayed or uncertain claim is read-only: inspect the real page and reconcile it, but never repeat upload, transcript generation, or AI-note submission blindly. Sequential reruns return the latest state and cannot regress a verified or decided job to prepared.
@@ -148,9 +198,47 @@ return zero new external side effects on rerun before user confirmation.
   Its default Lv, private-folder, and enrichment session is the already-bound
   `xiaocao-lv-subscription` session. Override a session only after explicitly
   binding and proving that exact Google Chrome OpenCLI session.
+- A publication may consist of any number of source videos. Treat it as one
+  logical episode, not one decision per file. Prefer explicit source metadata
+  (`episode_id`, title, `part_index`, and optional declared count). Otherwise
+  conservatively recognize common filename suffixes such as Chinese numerals,
+  Arabic numbers, `Part`/`Segment`, `上/中/下`, or `A/B`. Automatic groups with
+  an unknown final count must remain quiescent for at least five minutes before
+  component work begins. Missing, duplicate, mixed-directory, or ambiguous
+  part order is a surfaced pause; never guess or silently process one fragment.
+  For arbitrary filenames, pass a small reviewed JSON manifest with
+  `--episode-spec <path>` rather than renaming evidence or adding a source.
+- Preserve every component provider identity, source path, version, size,
+  order, transcript path, and transcript SHA-256. Assemble the verified
+  component transcripts in source order into one immutable episode evidence
+  file. Analyze that evidence once, publish one complete 灰常亮 event report,
+  send at most one eligible short-link reminder, and write at most one Book
+  KOL-US paper terminal for the episode. A new or
+  changed component creates a new aggregate version; unchanged components and
+  completed episode receipts cannot be replayed. If a legacy run already
+  completed one or more fragments independently, pause the aggregate as
+  `historical_component_receipts_require_reconciliation`; never auto-send a
+  consolidated historical message or paper action. Historical component
+  receipts prove that blind replay is forbidden; they do not prove that the
+  complete aggregate has no new reader insight. A reviewed legacy episode may
+  bind authenticated small component transcripts into one aggregate result.
+  If that result contains an actionable signal or useful reader insight, it
+  must stop at `awaiting_user_review` with no household or Book side effect;
+  it may not use `suppressed` as a terminal. After explicit approval, use the
+  normal event-publication path to create one aggregate-scoped 灰常亮 receipt,
+  eligible short reminder, and Book terminal. `suppressed` is legal only when
+  the complete aggregate has no accurately relayable insight. Historical
+  review approval publishes the report with a legal no-alert reason and
+  reconciles the existing Book result; it never replays either side effect.
+  On replay, the durable review gate or receipt may repair missing derived
+  manifest fields without changing a household or Book ledger. The legacy
+  `approve-episode-review` command is retained only for reconciling an already
+  claimed historical aggregate and must not be used as a new full-message
+  delivery surface.
 - The first scan recursively baselines all history but makes only the latest
-  real video from each source work-eligible. Later scans process only a new or
-  changed provider identity/version. A no-update run prints nothing.
+  real logical content unit from each source work-eligible. Later scans process
+  only a new or changed standalone video or aggregate episode version.
+  A no-update run prints nothing.
 - Lv Xiaotong video handling is cloud-to-cloud. Persist a pre-action claim,
   reconcile an exact existing private copy by provider identity/path/size, or
   trigger one share-side save and persist its exact private receipt. Never
@@ -174,7 +262,145 @@ return zero new external side effects on rerun before user confirmation.
   receipt reconciliation. It still gets a current coverage matrix and market
   validation; it must not resend or write another paper action.
 
-## Trade-information coverage gate
+## Resumable multi-source batches
+
+Ticket 06 adds one coordination surface over the already verified Ticket
+03/04/05 runners; it is not another source adapter:
+
+```bash
+PYTHONPATH=src .venv/bin/python scripts/kol_batch.py run \
+  --spec <batch-spec.json> \
+  --output-dir output/live/kol_batch
+PYTHONPATH=src .venv/bin/python scripts/kol_batch.py status \
+  --batch-id <stable-batch-id> \
+  --output-dir output/live/kol_batch
+PYTHONPATH=src .venv/bin/python scripts/kol_batch.py audit \
+  --batch-id <stable-batch-id> \
+  --output-dir output/live/kol_batch
+PYTHONPATH=src .venv/bin/python scripts/kol_batch.py deliver-insight \
+  --batch-id <stable-batch-id> \
+  --insight <reviewed-insight.json> \
+  --output-dir output/live/kol_batch
+```
+
+- A live batch spec includes one small `insight_path` JSON after the existing
+  decision runners have produced the cross-source synthesis. It binds every
+  child adapter to the immutable evidence and decision-result SHA-256, and
+  contains the decision-priority conclusion, KOL consensus/conflict, system
+  judgment, household action and Book KOL-US result. The coordinator validates
+  those bindings; it never invents or recomputes source decisions.
+- Batch synthesis may enrich each child report's analysis, but the batch is not
+  a reader publication identity and cannot merge child reports, notification
+  claims, or Book terminals. The legacy `deliver-insight` surface is retained
+  only to reconcile already-claimed historical batch delivery; do not use it
+  for a new delivery. New work publishes each real event independently to
+  灰常亮 and, only after that event's publication receipt, may send its one short
+  link reminder. A replay publishes and sends zero new side effects.
+- Batch children retain the stable Ticket 03 capture/handoff identity, Ticket
+  04 source/version identity, or Ticket 05 source/version identity. The
+  append-only batch ledger stores priority, status, `next_poll_not_before`,
+  retry count, failure reason and terminal receipt for each child; restart
+  rebuilds only from that evidence.
+- A Ticket 05 logical episode is still exactly one batch child. Its aggregate
+  identity/version is immutable and its ordered `source_parts` preserves every
+  component identity, version, source path, size, label, and index. Receipt
+  reconciliation must prove the same complete part set was analyzed once,
+  reached exactly one household terminal (`delivered` or legal `suppressed`),
+  and reached exactly one Book terminal. The coordinator never expands the
+  parts into duplicate notification or Book children; it never reads their video bytes.
+- Never wait serially for one video. Each sweep advances at most one checkpoint
+  per due child, so a ready image, text item or other video continues while an
+  asynchronous child waits. Time-sensitive work starts at higher priority;
+  five-minute aging raises older work until it becomes visible, preventing
+  starvation.
+- A transcript/AI child uses `wait_for_async_receipt=true`; registration writes
+  the coordinator-owned durable checkpoint and `next_poll_not_before` into the
+  append-only ledger. Never accept a caller-supplied request timestamp. The
+  first poll occurs only after at least five minutes from that checkpoint. A
+  still-pending child uses explicit exponential backoff; only that failed or
+  due child is retried.
+- Treat `low_density` and `duplicate` as explicit terminal dispositions.
+  Treat `unauthorized`, `missing_evidence`, and `missing_market_data` as
+  explicit paused dispositions. Do not hide any of them under a generic
+  failure or retry an uncertain external claim.
+- The coordinator may read only metadata, receipt JSON, images/small documents,
+  complete transcripts and result payloads. Every child records
+  `large_payload_local_bytes=0`, and the audit must prove coordinator source
+  video bytes are zero. Xiaocao media remains behind its broadband handoff and
+  subscription videos remain cloud-side.
+- Receipt reconciliation is read-only. A completed Ticket 03/04/05 household
+  or Book KOL-US receipt is imported under a durable reconciliation claim and
+  cannot be replayed. A Book `filled` terminal is fail-closed unless it carries
+  the existing runner's KOL-US identity, paper-only flag, idempotency key,
+  ticker, side, price and quantity, bound to the immutable decision-result hash
+  and watched Book ledger. Do not invent a second fill schema in the
+  coordinator.
+- Before accepting a batch, declare `watched_artifacts` with explicit roles for
+  `cloud_transfer_claim`, `cloud_transfer_receipt`,
+  `transcript_generation`, `ai_note_submission`,
+  `household_notification`, and `book_kol_us_action`. The coordinator
+  snapshots only small JSON/JSONL payloads and requires the complete role set,
+  paths, sizes, line counts and hashes to remain unchanged across run,
+  interruption, restart and replay. An empty or changed watcher set cannot
+  pass audit.
+- For a live acceptance, terminate the real runner while at least one child is
+  unfinished, restart the exact same command, and require `audit` to show two
+  runner starts, an interruption, one terminal receipt per child, no terminal
+  regression, unchanged side-effect ledgers and zero new external effects.
+- Ticket 06 creates no recurring Automation or 7x24 schedule. Deployment and
+  scheduling belong to Ticket 07.
+
+## Source-agnostic investment-claim coverage gate
+
+This gate applies to every KOL source and every single-item or batch runner.
+Source adapters may differ only in how they acquire and bind immutable
+evidence. They must all call the same semantic extraction and coverage
+contract before notification or Book effects.
+
+First, build a complete **investment-thesis inventory** from the full
+evidence. A thesis is `must_surface` if any one of these bases applies:
+
+- the KOL makes a concrete investment recommendation;
+- the passage could change portfolio exposure or risk control;
+- it contains a market or sector view that could change a decision;
+- it gives a thesis whose consequences could materially affect an asset,
+  industry, market, or the user's capital.
+
+These bases are an OR condition. Never require a named object, direction,
+timing, position size, and risk boundary to appear together. Conditional,
+low-confidence, unverified, or system-conflicting theses still surface with
+their uncertainty attached. User holdings affect priority and linkage only;
+they never restrict extraction.
+
+Classify every investment-relevant mention as a primary recommendation,
+alternative instrument, risk warning, supporting rationale, historical
+example, analogy, quoted view, or unrelated mention. Pure advertisements and
+promotions are excluded. Historical, analogy, quoted, and unrelated mentions
+remain audit-visible but do not enter the reader briefing unless they also
+carry an independent must-surface thesis. When a material role remains
+ambiguous, surface it as uncertain instead of deleting it.
+
+Group fragments into one **investment-thesis unit** only when subject,
+direction, horizon, and conditions agree. Preserve different directions,
+horizons, or conditions as separate units even when they concern the same
+asset. Preserve conflicts and explicit revisions; never let a newer statement
+silently erase an older conflicting one.
+
+Second, after the inventory is complete, perform an independent semantic
+reread of stable segments covering the entire immutable evidence. Every
+segment is reviewed exactly once and classified as investment content,
+non-investment content, or advertisement. Every investment segment must link
+to one or more thesis units, and every thesis unit must link back to exact
+quotes in its segments. Missing-thesis, incorrect-merge, and role-error
+findings must be empty before the audit can pass. Keyword searches, asset-name
+lists, action-word regexes, and the first summary are diagnostic warnings
+only; they never decide importance and never prove completeness.
+
+Rank the must-surface units by urgency, potential impact, specificity, and
+user relevance. The ranking is decision-driven rather than structurally
+market-first: a specific, time-sensitive recommendation may lead; a broad
+market view may lead when it has greater decision impact. Low-priority,
+high-density material must still be processed and cannot starve.
 
 Before creating the decision bundle, build a private **trade-information coverage matrix** against the immutable transcript. This is an extraction-completeness checklist, not a keyword score. Bind every supported row to an exact evidence excerpt, its corrected reader-facing meaning, the applicable horizon, and any trigger or falsifier. Explicitly mark unsupported rows as absent instead of silently omitting them:
 
@@ -182,9 +408,15 @@ Before creating the decision bundle, build a private **trade-information coverag
 - **next-session playbook**: what to watch or do tomorrow, including opening/confirmation conditions, leadership tests, pullback requirements, chase prohibitions, and cancellation conditions;
 - **next-several-session base case**: the expected path over the following days or weeks, likely continuation/divergence/rotation, and the observations that would overturn it;
 - style and market-cap regime: trend versus short-term emotion, large versus small capitalization, and which style is not ready;
-- market/board/sector hierarchy: broad market first, then board/theme leadership, then named instruments;
+- market/board/sector hierarchy: broad market, board/theme leadership, and named instruments, without imposing reader order;
 - position and risk budget: recommended exposure ranges, pacing, funding source, and risk-control limits;
 - named-asset inventory: every materially discussed company, fund, index, commodity, or currency, including whether it is a primary candidate, alternative/ETF, comparison, negative example, historical example, or unrelated demonstration/promotion.
+
+Apply the layers in this order: (1) preserve the KOL signal, (2) validate
+current facts and market state, (3) assess household relevance, (4) map Book
+KOL-US execution authority. A non-US asset, unavailable order type, stale
+entry, low confidence, or `no_trade` outcome may change only layers 2-4. It
+must never erase or demote a complete source signal from layer 1.
 
 Build an **entity-resolution inventory** for every named or phonetic company, fund, index, and code before judgment:
 
@@ -194,7 +426,12 @@ Build an **entity-resolution inventory** for every named or phonetic company, fu
 - never expose Chinese-digit codes, garbled ASR names, bare internal symbols such as `688347.XSHG`, internal metric keys, or unverified name-code pairs in a household message;
 - require a plain-language `reader_text` for every market fact that may be shown to the user.
 
-If the source contains market, style, timing, or position statements, `market_outlook` is mandatory and a single-stock signal cannot substitute for it. The **market-level conclusion must lead** the notification title and first section, ordered as: today's diagnosis, next-session playbook, next-several-session base case, style/position guidance, and only then sectors and individual instruments. Surface every primary candidate and meaningful alternative, or explicitly record its non-actionable role and exclusion reason; do not let one executable instrument erase the rest of the author's decision hierarchy.
+If the source contains market, style, timing, or position statements,
+`market_outlook` is mandatory and a single-stock signal cannot substitute for
+it. Order the reader briefing by the decision-priority ranking. Surface every
+primary candidate and meaningful alternative, or explicitly record its
+non-actionable role and exclusion reason; do not let one executable instrument
+erase the rest of the author's decision hierarchy.
 
 ## Judgment contract
 
@@ -202,7 +439,7 @@ If the source contains market, style, timing, or position statements, `market_ou
 - Re-evaluate the thesis against current market facts at processing time; do not replay an old order blindly.
 - Prioritize concrete, time-sensitive implications: the market phase and overall strategy, sectors to add/reduce/exit, specific opportunities, the causal chain, validity window, trigger, and falsifier. Generic textbook framing belongs only in the durable-knowledge branch.
 - Treat holdings as context, not a search boundary. Surface strong opportunities outside current holdings and explain the funding or switching logic when relevant.
-- In human-facing messages, name both the verified company/fund and its code, explain the source signal and causal chain in plain language, show the author and source date/type, and omit internal gates, enums, hashes, local filenames, serialized pipeline state, and raw ASR artifacts. Populate `reader_title` when the source title needs editorial cleanup; otherwise the renderer must remove transport-only date prefixes, extensions, and compression suffixes. For `no_actionable_signal`, send a compact weak-signal card when `reader_insight.status=useful`: state the insight, link only genuinely relevant current household positions, and make the evidence boundary explicit. Do not expand it into unrelated market or portfolio analysis, and do not decide for the user whether to act.
+- In human-facing messages, name both the verified company/fund and its code, explain the source signal and causal chain in plain language, show the author and source date/type, and omit internal gates, enums, hashes, local filenames, serialized pipeline state, and raw ASR artifacts. Populate `reader_title` when the source title needs editorial cleanup; otherwise the renderer must remove transport-only date prefixes, extensions, and compression suffixes. Use coherent natural-language paragraphs, never tables. The KOL's valuable information must dominate; the system adds only material fact, background, conflict, or uncertainty notes. For `no_actionable_signal`, send a compact weak-signal card when `reader_insight.status=useful`: state the insight, link only genuinely relevant current household positions, and make the evidence boundary explicit. Do not expand it into unrelated market or portfolio analysis, and do not decide for the user whether to act.
 - For dense spoken-video transcripts, keep the raw exact `quote` only in audit evidence and give every reader-visible claim a faithful `reader_quote` corrected from the surrounding context. Remove ASR misspellings, broken names, filler, repetition, and incomplete oral syntax without inventing a new thesis. The household message must lead with `KOL观点｜按逐字稿上下文校正`, then separately label `系统拆解｜对KOL逻辑的分析`, `系统核对｜仅补事实`, and `系统结论`. Never mix a system inference into the KOL section, never expose the dirty raw transcript as a substitute for faithful correction, and do not let a generic market-analysis scaffold bury the source's actual recommendation logic.
 - Extract all relevant asset classes, but Book KOL-US may transact only US-listed equities and ETFs.
 - Book KOL-US is paper-only. No margin, options, futures, short selling, or negative cash. Leveraged and inverse ETFs are allowed as cash instruments when the opportunity warrants them.
@@ -216,11 +453,29 @@ For every processed high-density item, produce:
 - source, author, title, publication/capture time, and evidence location;
 - KOL claims separated from system synthesis;
 - current-market validation and conflicts;
-- market-wide outlook and overall strategy when the source supports them, before individual sectors or stocks;
+- market-wide outlook and overall strategy when the source supports them,
+  ordered with all other theses by decision priority;
 - household action recommendation and what would change it;
 - Book KOL-US action or an explicit no-trade reason;
 - `decision_status` and `knowledge_status`, including explicit no-op reasons;
 - durable distillation path and routed hypothesis ids when knowledge was written;
 - processing state and next asynchronous checkpoint.
 
-Notify on every processed high-density item that has `reader_insight.status=useful`, regardless of confidence and regardless of whether Book KOL-US trades. A weak but accurately attributable asset mention must not be swallowed: label its confidence and provenance boundary instead. If `reader_insight.status=none`, persist the evidence, no-op reason, and paper result, but suppress the household notification. For a sent KOL message, use one de-duplicated fan-out to both currently configured household recipients (`Chen` and `FeiFei`), with fail-closed all-recipient success.
+Publish every complete processed item to 灰常亮 after the coverage and safety
+gate, including `reader_insight.status=none`. For a new item with
+`reader_insight.status=useful` and explicit alert eligibility, send only one
+concise de-duplicated reminder per real publication event and fan it out to
+both currently configured household recipients (`Chen` and `FeiFei`). Lead
+with the key insight, add a compact synthesis of the other important
+information, and end with the stable 灰常亮 report link. Confidence and Book
+KOL-US trade eligibility do not decide content visibility. If
+`reader_insight.status=none` or the event is historical/reconciled, persist
+the report and reason but create no reminder claim.
+
+The final reader briefing is created only after the coverage audit passes.
+Each must-surface thesis appears exactly once in its ranked KOL prose. System
+paragraphs cannot replace or hide KOL theses. If the UTF-8 payload exceeds
+2,048 bytes, keep the full lossless briefing in 灰常亮 instead of splitting it
+across Enterprise WeChat. Compress the reminder to its key insight, compact
+synthesis and report link; never truncate or weaken the full report to fit the
+transport limit.

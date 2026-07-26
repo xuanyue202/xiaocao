@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "ticket": "05-subscription-video-to-decisions",
-  "status": "completed",
+  "status": "completed_with_gray_publication_and_longitudinal_initialization",
   "accepted_at": "2026-07-25T18:05:43+08:00",
   "browser_contract": {
     "surface": "google_chrome_opencli_browser_bridge",
@@ -177,6 +177,110 @@
         },
         "decision_result_sha256": "f96733665cca9217618057816ed0e42eef01375c2cde525a5fa964606855fb53"
       }
+    },
+    {
+      "author": "路西法",
+      "title": "路西法7月5日",
+      "stable_identity_sha256": "9fc5ed7f825ff6a3dea9ccff39ae382e521a0d777a673e6fad5a45a1c7da2b73",
+      "version_key": "c4ea2e58009b9d3fc193006b7fdffd8b0bb914ac7da64bb3d82dc1c8f8be265e",
+      "source_path": "/课程/路西法全套/鹿7.5/7月5日",
+      "source_size_bytes": 2082952559,
+      "source_modified_at": 1784456551,
+      "provider_identity_sha256": "56494faf0273ff0ad0d30d0bed8ebf65d826effb3ae0e08ba9797909d714c376",
+      "logical_content": {
+        "kind": "multi_part_episode",
+        "part_count": 3,
+        "analyzed_once": true,
+        "household_terminal_once": true,
+        "book_terminal_once": true,
+        "components": [
+          {
+            "source_identity": "25088415af14905aa1da82072b668db34278f21817fe868650a4efb04d4cc048",
+            "version_identity": "cf3c98d35feba8a6b34bdd51cbd5a21a7b71278f50a126cbc3a7a8c0d2770a2a",
+            "part_index": 1,
+            "part_label": "一",
+            "source_path": "/课程/路西法全套/鹿7.5/7月5日（一）.mp4",
+            "source_size": 759800380
+          },
+          {
+            "source_identity": "1d33d6886adccc3b8558c5886f7362d55789fcb2fcbe8f323d9d699731a47a48",
+            "version_identity": "aaa96795b8bc03bee3aff82a05b9fb4e8131b66d0edffb22f18c0e62dd7a37f3",
+            "part_index": 2,
+            "part_label": "二",
+            "source_path": "/课程/路西法全套/鹿7.5/7月5日（二）.mp4",
+            "source_size": 578859389
+          },
+          {
+            "source_identity": "d972ce2110cfa389be9e688090caaebb05fb87330a6b3f847a39bf19e4ea20eb",
+            "version_identity": "bf3a1583dea8da417cf3afa80287ca74848dec36888db62abc119eb635c41208",
+            "part_index": 3,
+            "part_label": "三",
+            "source_path": "/课程/路西法全套/鹿7.5/7月5日（三）.mp4",
+            "source_size": 744292790
+          }
+        ]
+      },
+      "cloud_transfer": {
+        "status": "not_required_existing_private_file",
+        "large_payload_local_bytes": 0,
+        "coordinator_source_video_bytes": 0
+      },
+      "enrichment": {
+        "job_id": "kol-netdisk-cloud-episode-c4ea2e58009b9d3f",
+        "source_mode": "reviewed_existing_small_documents",
+        "large_payload_local_bytes": 0,
+        "coordinator_source_video_bytes": 0,
+        "transcript_acquisition": "three_authenticated_component_transcripts",
+        "transcript_sha256": "829a207063ec2469ae854367d18dfa4de7b56357b9c0c796bbbf9def895dab84",
+        "transcript_character_count": 46263,
+        "episode_evidence_sha256": "bbf5b8c1b927b56dbf81f99c25b8538148f2ae498df1e1121d1afc04f1134c74",
+        "component_transcript_sha256": [
+          "9979e52faead7f453962ba3af7291fc7deaecb7e23f8174633ae0700710efb0b",
+          "c482a8d29e7793e03454847f1e31c8fcf5cd7e6bd32227464dda232af155418c",
+          "eb50136f8f5edc41169e0a1c5b5321ce0266c23de6c0244d7d3c02bbaace2498"
+        ]
+      },
+      "decision_contract_audit": {
+        "decision_status": "actionable_signal",
+        "knowledge_status": "no_reusable_knowledge",
+        "knowledge_reason": "The three-part aggregate completes the evidence boundary but does not create a separately validated deterministic rule.",
+        "coverage_rows": [
+          "todays_market_diagnosis",
+          "next_session_playbook",
+          "next_several_session_base_case",
+          "style_market_cap_regime",
+          "market_board_sector_hierarchy",
+          "position_risk_budget",
+          "named_asset_inventory"
+        ],
+        "market_first": true,
+        "all_named_assets_resolved_or_explicitly_unresolved": true,
+        "xiaocao_cross_view": {
+          "consensus": "defensive_cash_and_current_bear_posture",
+          "conflict": "long_term_physical_ai_does_not_override_current_market_or_book_authority",
+          "unrelated": "side_business_and_political_commentary"
+        },
+        "household": {
+          "status": "suppressed",
+          "reason": "Historical component receipts already exist; no consolidated WeChat replay is authorized.",
+          "action": "wait",
+          "new_external_side_effect_count": 0
+        },
+        "book_kol_us": {
+          "paper_only": true,
+          "status": "no_trade",
+          "reason": "The complete episode has no current executable US stock or ETF trigger; no new paper action is authorized.",
+          "idempotency_key": "9d3ab4c1b88f8e1769c3c46dbf69d87496c9b707875a6e456db096e299ef7ab7"
+        },
+        "historical_receipt_reconciliation": {
+          "part_count": 3,
+          "previously_delivered_household_parts": 2,
+          "previously_recorded_book_parts": 2,
+          "watched_external_ledgers_unchanged": true,
+          "new_external_side_effect_count": 0
+        },
+        "decision_result_sha256": "97cb686050d95f9e3343e6e22c44fb6b7a61addc446cd07557d8164876b7d820"
+      }
     }
   ],
   "idempotency_acceptance": {
@@ -201,6 +305,44 @@
     },
     "duplicate_side_effect_count": 0
   },
+  "post_acceptance_correction": {
+    "recorded_at": "2026-07-26T08:45:00+08:00",
+    "reason": "User review found that the complete Lucifer episode omitted the repeated SpaceX short signal and incorrectly classified SpaceX as unlisted.",
+    "prior_review_only_result_sha256": "97cb686050d95f9e3343e6e22c44fb6b7a61addc446cd07557d8164876b7d820",
+    "prior_household_terminal": "suppressed",
+    "prior_terminal_is_accepted_authority": false,
+    "corrected_state": "published_to_gray",
+    "corrected_household_state": "historical_initialization_no_alert",
+    "corrected_review_sha256": "533747efe1ffc10a0ce1e5e133e0410734c987ddd4aae012a0fef6b7e2b0a6ed",
+    "must_surface_candidate_count": 5,
+    "spacex_candidate_repetition_count": 4,
+    "spacex_current_identity": "SPCX",
+    "spacex_nasdaq_100_effective_date": "2026-07-07",
+    "book_kol_us_proposal": "no_trade",
+    "external_ledgers_unchanged": true,
+    "new_external_side_effect_count": 0,
+    "coordinator_source_video_bytes": 0,
+    "gray_publication": {
+      "report_id": "kr_cg6eeammpiho23ncqts5n3jxt7wx67h5yqflmx6245royb33dzga",
+      "content_sha256": "dea4bea61b924d87b75beef00d6b72fd71e260d4a991f07e4dd70efb809bda71",
+      "manifest_sha256": "b03fe178ff7c30e3b886573b990e542cd4c1ce9810b7733d0809db1b6ed4fc15",
+      "record_state": "published",
+      "longitudinal_viewpoint_count": 32,
+      "current_viewpoint_count": 19,
+      "uncertain_viewpoint_count": 13,
+      "notification_claims_created": 0,
+      "book_kol_us_replays": 0
+    },
+    "focused_validation": {
+      "result": "255 passed in 7.24s",
+      "exact_spacex_marker_regression": true,
+      "missing_candidate_coverage_fails_closed": true,
+      "internal_only_candidate_coverage_fails_closed": true,
+      "review_replay_added_event_count": 0,
+      "approval_handoff_cannot_enter_notification_or_book_path": true,
+      "completion_replay_added_event_count": 0
+    }
+  },
   "focused_validation": [
     {
       "command": "PYTHONPATH=src .venv/bin/python -m pytest -q tests/test_kol_subscription_video.py tests/test_kol_netdisk_enrichment.py tests/test_kol_lv_subscription.py tests/test_kol_skill_structure.py",
@@ -214,7 +356,7 @@
   "known_limits": [
     "The real Lv provider completed the cloud save at the private root after the destination dialog was absent. The runner reconciled the exact name, size and provider identity, persisted the receipt, and will not repeat the transfer.",
     "The immutable real decision bundles were produced before the final fail-closed exact branch-status validator. This acceptance record normalizes both real outcomes to actionable_signal and no_reusable_knowledge; future bundles missing exact statuses, all seven coverage rows or an explicit Xiaocao cross-view are rejected before household or paper side effects.",
-    "The Lucifer sample is semantically the same authorized content processed previously, so Ticket 05 correctly reused the completed household and paper receipts instead of sending duplicates."
+    "The complete Lucifer event was published to 灰常亮 with historical_initialization_no_alert; the old fragment notification and paper receipts were reconciled without replay."
   ],
   "commits": [
     {

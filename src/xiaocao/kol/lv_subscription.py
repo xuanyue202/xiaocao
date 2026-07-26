@@ -16,6 +16,11 @@ from urllib.parse import urlparse
 
 import yaml
 
+from ._shared import DecisionError
+from .claim_coverage import (
+    build_claim_extraction_request,
+    validate_claim_coverage,
+)
 from .enrichment_types import (
     EnrichmentError,
     validate_decision_completion,
@@ -1550,6 +1555,10 @@ class LvSubscriptionService:
             "ocr_sha256": ingest.get("ocr_sha256"),
             "ambiguities": ingest.get("ambiguities") or [],
             "required_coverage_rows": sorted(_COVERAGE_ROWS),
+            "investment_claim_extraction": build_claim_extraction_request(
+                ingest["evidence_path"],
+                evidence_sha256=str(ingest["evidence_sha256"]),
+            ),
             "reader_insight_contract": {
                 "useful": (
                     "send a concise evidence-bound insight even when confidence "
@@ -1925,6 +1934,16 @@ class LvSubscriptionService:
         except OSError as exc:
             raise EnrichmentError("ingested subscription evidence is unavailable") from exc
         self._validate_coverage(item, evidence_text=evidence_text)
+        try:
+            validate_claim_coverage(
+                item,
+                evidence_text=evidence_text,
+                evidence_sha256=str(ingest["evidence_sha256"]),
+            )
+        except DecisionError as exc:
+            raise EnrichmentError(
+                "subscription investment-claim coverage is incomplete"
+            ) from exc
         return item
 
     @_exclusive("decision")

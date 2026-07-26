@@ -12,6 +12,7 @@ from types import SimpleNamespace
 
 import pytest
 
+from tests.kol_claim_fixture import attach_claim_contract
 import xiaocao.kol.lv_subscription as lv_subscription
 from xiaocao.kol.decisions import DecisionPipeline
 from xiaocao.kol.enrichment_types import EnrichmentError
@@ -909,6 +910,7 @@ def _decision_bundle(evidence: dict) -> dict:
             "reason": "来源没有可验证的美股上市股票或 ETF 映射。",
         },
     }
+    attach_claim_contract(item, evidence["evidence_path"])
     return {
         "household_context_provider": {
             "type": "lianghui_mcp",

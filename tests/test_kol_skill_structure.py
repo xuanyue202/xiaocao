@@ -25,15 +25,24 @@ def test_kol_skill_requires_complete_trade_information_coverage() -> None:
     text = SKILL_MD.read_text(encoding="utf-8")
 
     for marker in (
+        "Source-agnostic investment-claim coverage gate",
+        "applies to every KOL source",
+        "complete **investment-thesis inventory**",
+        "an OR condition",
+        "perform an independent semantic",
+        "Keyword searches",
+        "decision-priority ranking",
         "trade-information coverage matrix",
         "today's market diagnosis",
         "next-session playbook",
         "next-several-session base case",
         "entity-resolution inventory",
         "reader_quote",
-        "market-level conclusion must lead",
+        "Use coherent natural-language paragraphs, never tables",
     ):
         assert marker in text
+    assert "market-level conclusion must lead" not in text
+    assert "source-salience register" not in text
 
 
 def test_kol_skill_has_one_resumable_ticket05_cloud_video_runner() -> None:
@@ -47,6 +56,48 @@ def test_kol_skill_has_one_resumable_ticket05_cloud_video_runner() -> None:
         "subscription_video_analysis_input_required",
         "A no-update run prints nothing",
         "same-author, same-title transcript",
+    ):
+        assert marker in text
+
+
+def test_kol_skill_has_one_resumable_ticket06_batch_runner() -> None:
+    text = SKILL_MD.read_text(encoding="utf-8")
+
+    for marker in (
+        "scripts/kol_batch.py run",
+        "scripts/kol_batch.py status",
+        "scripts/kol_batch.py audit",
+        "at least five minutes",
+        "append-only batch ledger",
+        "coordinator-owned durable checkpoint",
+        "watched_artifacts",
+        "cloud_transfer_claim",
+        "large_payload_local_bytes=0",
+        "low_density",
+        "missing_market_data",
+        "insight_path",
+        "reader publication identity",
+        "decision-important insight",
+        "coherent compact synthesis",
+        "stable 灰常亮 report link",
+        "current complete",
+        "content-and-manifest CAS",
+        "not a synthetic publication report",
+        "Ticket 07",
+    ):
+        assert marker in text
+
+
+def test_kol_skill_treats_multi_part_videos_as_one_logical_episode() -> None:
+    text = SKILL_MD.read_text(encoding="utf-8")
+
+    for marker in (
+        "any number of source videos",
+        "--episode-spec <path>",
+        "quiescent for at least five minutes",
+        "one immutable episode evidence",
+        "ordered `source_parts`",
+        "never reads their video bytes",
     ):
         assert marker in text
 

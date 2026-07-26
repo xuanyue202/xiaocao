@@ -27,6 +27,11 @@ from .capture import (
     SnifferError,
     resolve_candidate,
 )
+from ._shared import DecisionError
+from .claim_coverage import (
+    build_claim_extraction_request,
+    validate_claim_coverage,
+)
 from .enrichment_types import EnrichmentError
 from .netdisk_enrichment import NetdiskEnrichmentService
 
@@ -281,6 +286,16 @@ def validate_decision_bundle(
         raise EnrichmentError("Ticket 03 bundle transcript hash does not match")
     evidence_text = transcript_path.read_text(encoding="utf-8")
     validate_coverage_matrix(item, evidence_text=evidence_text)
+    try:
+        validate_claim_coverage(
+            item,
+            evidence_text=evidence_text,
+            evidence_sha256=transcript_sha256,
+        )
+    except DecisionError as exc:
+        raise EnrichmentError(
+            "Ticket 03 investment-claim coverage is incomplete"
+        ) from exc
     if not isinstance(item.get("market_outlook"), dict):
         raise EnrichmentError("Ticket 03 market-level conclusion is missing")
     book = item.get("book_kol_us")
@@ -947,6 +962,12 @@ class XiaocaoLiveService:
                     "transcript_path": state["transcript_path"],
                     "transcript_sha256": state["transcript_sha256"],
                     "required_coverage_rows": sorted(REQUIRED_COVERAGE_ROWS),
+                    "investment_claim_extraction": (
+                        build_claim_extraction_request(
+                            state["transcript_path"],
+                            evidence_sha256=str(state["transcript_sha256"]),
+                        )
+                    ),
                     "next": "provide_bundle_path",
                 }
             validate_decision_bundle(

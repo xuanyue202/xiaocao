@@ -4,7 +4,61 @@
 
 **Blocked by:** 02 — 百度网盘真实视频确定性富化到双输出闭环; 04 — 吕晓彤文字与图片订阅到双输出闭环.
 
-**Status:** completed — real cloud-only E2E accepted 2026-07-25
+**Status:** completed — cloud loop accepted 2026-07-25; corrected Lucifer
+aggregate published to 灰常亮 and re-read without historical side-effect replay
+2026-07-26
+
+## Post-acceptance logical-episode correction
+
+- User review identified that the real Lucifer July 5 publication is three
+  videos, not one complete item:
+  `7月5日（一）.mp4`, `7月5日（二）.mp4`, and `7月5日（三）.mp4`.
+  The accepted part-II transcript remains valid component evidence, but it is
+  not the complete publication by itself.
+- The runner now groups any number of ordered source videos into one logical
+  episode. It does not assume three parts or Chinese numerals. Structured
+  episode metadata is authoritative; common filename suffixes are a
+  conservative fallback; an optional small `--episode-spec` manifest handles
+  arbitrary filenames.
+- Automatic groups with no declared final count settle for five minutes.
+  Missing/duplicate/ambiguous order pauses instead of guessing. All component
+  identities, paths, sizes, versions and transcript hashes are preserved in
+  the aggregate evidence.
+- A logical episode produces one merged, ordered transcript, one analysis
+  request, one complete 灰常亮 event report, at most one eligible short-link
+  reminder, and one Book KOL-US paper terminal. Changed parts change the
+  aggregate version. Source-video bytes remain cloud-side.
+- The real July 5 metadata now resolves without ambiguity to one three-part
+  episode with aggregate stable identity
+  `9fc5ed7f825ff6a3dea9ccff39ae382e521a0d777a673e6fad5a45a1c7da2b73`
+  and aggregate version
+  `c4ea2e58009b9d3fc193006b7fdffd8b0bb914ac7da64bb3d82dc1c8f8be265e`.
+  Because fragment receipts existed under the legacy model, migration first
+  paused it as `historical_component_receipts_require_reconciliation`.
+  Three authenticated component transcripts were then bound into one merged
+  evidence hash
+  `829a207063ec2469ae854367d18dfa4de7b56357b9c0c796bbbf9def895dab84`
+  and an original review-only result hash
+  `97cb686050d95f9e3343e6e22c44fb6b7a61addc446cd07557d8164876b7d820`.
+  User review invalidated that result: it omitted the repeated 7 July,
+  approximately 5%-or-less, no-leverage SpaceX short signal and incorrectly
+  classified SpaceX as unlisted.
+- The old `suppressed` review-only terminal remains immutable evidence but is
+  superseded, not accepted authority. Historical component receipts prohibit
+  blind replay; they do not justify suppressing useful aggregate insight.
+  The local legacy aggregate was paused at `awaiting_user_review`. The
+  corrected full event is now published at stable 灰常亮 report id
+  `kr_cg6eeammpiho23ncqts5n3jxt7wx67h5yqflmx6245royb33dzga`, with 32
+  longitudinal viewpoints, a legal historical no-alert reason, zero new
+  notification or Book side effects, and zero source-video bytes.
+- A source-salience gate independently found five must-surface passages:
+  four repetitions of the SpaceX signal plus one portfolio-defense signal.
+  Every candidate is mapped to a reader-visible claim; omission or an
+  internal-only mapping now fails before notification or Book effects.
+- The legacy `approve-episode-review` surface now creates only a durable
+  灰常亮-publication handoff. It explicitly authorizes neither notification nor
+  Book replay and cannot enter the old full-message delivery path. The
+  publication ledger owns report claims, double-CAS, receipts and replay.
 
 - [x] Both already-authorized entry points were proved read-only through the
   Google Chrome OpenCLI Browser Bridge and now run unattended from one runner.
@@ -22,7 +76,7 @@
   unrelated scope without duplicate side effects.
 - [x] Credentials and the live share URL/code are absent from source, durable
   state and acceptance evidence; no purchase or access-control bypass exists.
-- [x] Author attribution, named-asset mapping, market-first advice and all seven
+- [x] Author attribution, named-asset mapping, decision-priority advice and all seven
   information-coverage rows were checked against both complete transcripts.
 
 ## Real source contract confirmed 2026-07-25
@@ -86,11 +140,14 @@
   unrelated short-term consumer-style discussion. Household output is
   `wait`. Book KOL-US is paper-only `no_trade` because the US names are
   historical examples or ambiguous candidates without a current trigger.
-- Lucifer agrees with Xiaocao on the bear posture and retaining cash; the
-  private SpaceX short narrative conflicts with both instrument eligibility and
-  Book authority, while the AI side-income discussion is unrelated. Household
-  output is `wait`. Book KOL-US is paper-only `no_trade` because the executable
-  opportunity is an A-share and US references have no current trigger.
+- Lucifer agrees with Xiaocao on the bear posture and retaining cash. His
+  primary explicit signal is to use about 5% or less after 7 July to short
+  SpaceX without leverage. Current verification corrects the entity to
+  US-listed `SPCX`, confirms its 7 July Nasdaq-100 inclusion, and records the
+  7 July entry-price boundary as not independently reconstructed. Household
+  output is pending user review. Proposed Book KOL-US is paper-only `no_trade`:
+  direct shorting is outside the cash-only authority and `SPCG` seeks daily
+  -200% exposure, conflicting with the author's no-leverage boundary.
 - The Lucifer transcript is a semantic duplicate of a previously processed
   authorized sample (`normalized_similarity=0.9996505634664105`, containment
   true). A claim was persisted first, then the completed household and paper
@@ -129,6 +186,15 @@
     deselected.
   - `python3 -m py_compile` over the Ticket 05 runner and changed KOL modules
     passed.
+- Post-correction validation:
+  - the exact `7月7号之后` / `百分五左右` / `space x我就空它` /
+    `绝对不能用杠杆` regression is independently detected as
+    `must_surface`;
+  - missing or internal-only candidate coverage fails before side effects;
+  - the complete corrected Ticket 05/06 focused suite passed
+    `150 passed in 3.59s`;
+  - corrected review replay appended zero events and changed zero household
+    or Book ledger hashes.
 - Known limitation: the observed provider default-root save is reconciled
   narrowly by exact identity/name/size because the real destination dialog was
   absent. This is the one observed failure path, not a general second adapter.

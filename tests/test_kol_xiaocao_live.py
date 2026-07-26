@@ -7,6 +7,7 @@ from types import SimpleNamespace
 
 import pytest
 
+from tests.kol_claim_fixture import attach_claim_contract
 from xiaocao.kol.capture import CaptureJobStore, SnifferError
 from xiaocao.kol.enrichment_types import EnrichmentError
 from xiaocao.kol.xiaocao_live import (
@@ -263,20 +264,29 @@ def test_acceptance_audit_proves_exactly_once_real_chain(tmp_path):
     quote = "半导体继续最强才考虑"
     transcript.write_text(quote * 200, encoding="utf-8")
     transcript_sha = _sha256(transcript)
+    bundle_item = {
+        "decision_status": "actionable_signal",
+        "knowledge_status": "reusable_knowledge",
+        "knowledge_reason": "来源包含可证伪的风格与仓位方法。",
+        "evidence_path": str(transcript),
+        "evidence_sha256": transcript_sha,
+        "claims": [
+            {
+                "claim_id": "xiaocao-semiconductor",
+                "quote": quote,
+                "reader_quote": "只有半导体继续保持最强时才考虑参与。",
+            }
+        ],
+        "trade_information_coverage": _coverage(quote),
+        "market_outlook": {"summary": "市场结论优先。"},
+        "book_kol_us": {
+            "decision": "no_trade",
+            "reason": "没有明确美国上市标的和有效交易触发。",
+        },
+    }
+    attach_claim_contract(bundle_item, transcript)
     bundle = _write_json(tmp_path / "bundle.json", {
-        "items": [{
-            "decision_status": "actionable_signal",
-            "knowledge_status": "reusable_knowledge",
-            "knowledge_reason": "来源包含可证伪的风格与仓位方法。",
-            "evidence_path": str(transcript),
-            "evidence_sha256": transcript_sha,
-            "trade_information_coverage": _coverage(quote),
-            "market_outlook": {"summary": "市场结论优先。"},
-            "book_kol_us": {
-                "decision": "no_trade",
-                "reason": "没有明确美国上市标的和有效交易触发。",
-            },
-        }]
+        "items": [bundle_item]
     })
     decision_result = _write_json(tmp_path / "decision_result.json", {
         "status": "completed",

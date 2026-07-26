@@ -1961,6 +1961,200 @@ class NetdiskEnrichmentService:
             self.store.append(row)
             return {**row, "idempotent_replay": False}
 
+    def register_verified_composite(
+        self,
+        *,
+        episode_identity: str,
+        episode_version_key: str,
+        title: str,
+        source: str,
+        author: str,
+        transcript_path: Path | str,
+        components: list[dict[str, Any]],
+        observed_at: datetime,
+    ) -> dict[str, Any]:
+        """Bind verified component transcripts into one logical decision input."""
+        identity = str(episode_identity or "").strip().lower()
+        version_key = str(episode_version_key or "").strip().lower()
+        episode_title = str(title or "").strip()
+        if (
+            not _SHA256.fullmatch(identity)
+            or not _SHA256.fullmatch(version_key)
+            or not episode_title
+            or "/" in episode_title
+            or "\\" in episode_title
+        ):
+            raise EnrichmentError("logical episode identity is invalid")
+        if observed_at.tzinfo is None:
+            raise EnrichmentError("logical episode observation needs a timezone")
+        if {
+            "baidu_subscription_share_browser": "吕晓彤",
+            "baidu_private_folder": "路西法",
+        }.get(str(source or "").strip()) != str(author or "").strip():
+            raise EnrichmentError(
+                "logical episode source and author do not match"
+            )
+        if len(components) < 2:
+            raise EnrichmentError(
+                "logical episode requires at least two verified components"
+            )
+        normalized_components = []
+        for component in components:
+            try:
+                part_index = int(component.get("part_index"))
+                source_size = int(component.get("source_size") or 0)
+            except (TypeError, ValueError) as exc:
+                raise EnrichmentError(
+                    "logical episode component order is invalid"
+                ) from exc
+            evidence_path = Path(
+                str(component.get("transcript_path") or "")
+            ).expanduser().resolve()
+            evidence_sha256 = str(
+                component.get("transcript_sha256") or ""
+            ).lower()
+            if (
+                part_index <= 0
+                or source_size <= 0
+                or component.get("status") not in {"verified", "decided"}
+                or int(component.get("large_payload_local_bytes") or 0) != 0
+                or not evidence_path.is_file()
+                or not _SHA256.fullmatch(evidence_sha256)
+                or _sha256_file(evidence_path) != evidence_sha256
+                or not str(component.get("identity") or "").strip()
+                or not str(component.get("version_key") or "").strip()
+            ):
+                raise EnrichmentError(
+                    "logical episode component evidence is invalid"
+                )
+            normalized_components.append(
+                {
+                    "identity": str(component["identity"]),
+                    "version_key": str(component["version_key"]),
+                    "part_index": part_index,
+                    "part_label": str(component.get("part_label") or part_index),
+                    "source_path": str(component.get("source_path") or ""),
+                    "source_size": source_size,
+                    "transcript_path": str(evidence_path),
+                    "transcript_sha256": evidence_sha256,
+                    "job_id": str(component.get("job_id") or ""),
+                    "large_payload_local_bytes": 0,
+                }
+            )
+        normalized_components.sort(key=lambda row: row["part_index"])
+        if [row["part_index"] for row in normalized_components] != list(
+            range(1, len(normalized_components) + 1)
+        ):
+            raise EnrichmentError(
+                "logical episode components must be contiguous and unique"
+            )
+        expected_version = hashlib.sha256(
+            (
+                identity
+                + "\n"
+                + json.dumps(
+                    [
+                        {
+                            "identity": row["identity"],
+                            "part_index": row["part_index"],
+                            "version_key": row["version_key"],
+                        }
+                        for row in normalized_components
+                    ],
+                    ensure_ascii=False,
+                    separators=(",", ":"),
+                    sort_keys=True,
+                )
+            ).encode("utf-8")
+        ).hexdigest()
+        if expected_version != version_key:
+            raise EnrichmentError(
+                "logical episode version does not match its components"
+            )
+        merged_path = Path(transcript_path).expanduser().resolve()
+        if not merged_path.is_file():
+            raise EnrichmentError("logical episode transcript is missing")
+        transcript_sha256 = _sha256_file(merged_path)
+        job_id = f"kol-netdisk-episode-{version_key[:16]}"
+        binding = {
+            "episode_identity": identity,
+            "episode_version_key": version_key,
+            "source": str(source or "").strip(),
+            "author": str(author or "").strip(),
+            "title": episode_title,
+            "components": normalized_components,
+            "transcript_sha256": transcript_sha256,
+        }
+        binding_sha256 = hashlib.sha256(
+            json.dumps(
+                binding,
+                ensure_ascii=False,
+                separators=(",", ":"),
+                sort_keys=True,
+            ).encode("utf-8")
+        ).hexdigest()
+        with self.store.job_lock(job_id):
+            try:
+                current = self.store.latest(job_id)
+            except EnrichmentError as exc:
+                if "not found" not in str(exc):
+                    raise
+                current = None
+            if current is not None:
+                if (
+                    current.get("source_version_sha256") != version_key
+                    or current.get("composite_binding_sha256")
+                    != binding_sha256
+                    or current.get("transcript_sha256")
+                    != transcript_sha256
+                ):
+                    raise EnrichmentError(
+                        "registered logical episode identity changed"
+                    )
+                return {**current, "idempotent_replay": True}
+            timestamp = self._time().isoformat(timespec="seconds")
+            row = {
+                "schema_version": 1,
+                "event": "netdisk_logical_episode_verified",
+                "status": "verified",
+                "provider": "baidu_consumer_page",
+                "job_id": job_id,
+                "source": binding["source"],
+                "author": binding["author"],
+                "netdisk_directory": self.netdisk_directory,
+                "netdisk_path": "",
+                "video_basename": f"{episode_title}.episode",
+                "video_sha256": version_key,
+                "video_sha256_kind": "logical_episode_metadata_version",
+                "source_version_sha256": version_key,
+                "provider_identity_sha256": identity,
+                "video_size_bytes": sum(
+                    component["source_size"]
+                    for component in normalized_components
+                ),
+                "source_mode": "cloud_logical_episode",
+                "transcript_path": str(merged_path),
+                "transcript_sha256": transcript_sha256,
+                "component_evidence": normalized_components,
+                "component_count": len(normalized_components),
+                "composite_binding_sha256": binding_sha256,
+                "browser_surface": "opencli",
+                "browser_evidence": {
+                    "page_url": "https://pan.baidu.com/disk/main",
+                    "target_name": episode_title,
+                    "visible_state": "component_transcripts_verified",
+                    "snapshot_sha256": binding_sha256,
+                    "observed_at": observed_at.isoformat(
+                        timespec="microseconds"
+                    ),
+                },
+                "large_payload_local_bytes": 0,
+                "created_at": timestamp,
+                "updated_at": timestamp,
+            }
+            self.store.append(row)
+            return {**row, "idempotent_replay": False}
+
     def _browser_evidence(
         self,
         current: dict[str, Any],
@@ -3339,6 +3533,7 @@ class NetdiskEnrichmentService:
                 json.dumps(result, ensure_ascii=False, sort_keys=True, indent=2) + "\n"
             ).encode("utf-8")
             artifact_dir = self.output_dir / "artifacts" / job_id
+            artifact_dir.mkdir(parents=True, exist_ok=True)
             result_name = (
                 f"decision_result.{bundle_sha[:16]}.json"
                 if is_revision

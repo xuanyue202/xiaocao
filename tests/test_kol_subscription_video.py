@@ -7,6 +7,7 @@ from types import SimpleNamespace
 
 import pytest
 
+from tests.kol_claim_fixture import attach_claim_contract
 from xiaocao.kol.enrichment_types import EnrichmentError
 from xiaocao.kol.netdisk_enrichment import NetdiskEnrichmentService
 from xiaocao.kol.subscription_video import (
@@ -95,6 +96,12 @@ def _source_rows() -> tuple[list[dict], list[dict]]:
             modified_at=1_784_456_551,
         ),
         _row(
+            "lucifer-b",
+            "/课程/路西法全套/鹿7.5/7月5日（二）.mp4",
+            size=578_859_389,
+            modified_at=1_784_456_551,
+        ),
+        _row(
             "lucifer-c",
             "/课程/路西法全套/鹿7.5/7月5日（三）.mp4",
             size=744_292_790,
@@ -110,7 +117,7 @@ def _source_rows() -> tuple[list[dict], list[dict]]:
     return lv, lucifer
 
 
-def test_bootstrap_scans_history_but_selects_one_real_video_per_source(tmp_path):
+def test_bootstrap_selects_one_real_logical_content_unit_per_source(tmp_path):
     service = _service(tmp_path)
     lv, lucifer = _source_rows()
 
@@ -118,16 +125,24 @@ def test_bootstrap_scans_history_but_selects_one_real_video_per_source(tmp_path)
 
     assert [row["path"] for row in discovered["updates"]] == [
         "/share/2026年7月/7月20日.mp4",
-        "/课程/路西法全套/鹿7.5/7月5日（三）.mp4",
+        "/课程/路西法全套/鹿7.5/7月5日",
     ]
-    assert {row["source"] for row in service.pending_items()} == {
+    pending = service.pending_items()
+    assert {row["source"] for row in pending} == {
         LV_SOURCE,
         LUCIFER_SOURCE,
     }
+    lucifer_episode = next(
+        row for row in pending if row["source"] == LUCIFER_SOURCE
+    )
+    assert lucifer_episode["is_episode"] is True
+    assert [part["part_index"] for part in lucifer_episode["parts"]] == [1, 2, 3]
     status = service.status()
-    assert status["bootstrap"]["policy"] == "latest_real_video_per_source"
-    assert status["bootstrap"]["historical_video_baseline_count"] == 2
-    assert status["source_counts"] == {LV_SOURCE: 3, LUCIFER_SOURCE: 3}
+    assert status["bootstrap"]["policy"] == (
+        "latest_real_logical_content_per_source"
+    )
+    assert status["bootstrap"]["historical_logical_content_baseline_count"] == 1
+    assert status["source_counts"] == {LV_SOURCE: 3, LUCIFER_SOURCE: 4}
     durable = (tmp_path / "out" / "manifest.json").read_text(encoding="utf-8")
     assert "private-ticket05" not in durable
     assert "a1b2" not in durable
@@ -143,6 +158,10 @@ def test_same_scan_is_quiet_and_only_changed_version_becomes_new_work(tmp_path):
         if item.get("work_eligible"):
             item["completed_version_key"] = item["version_key"]
             item["work_eligible"] = False
+    for episode in manifest["episodes"].values():
+        if episode.get("work_eligible"):
+            episode["completed_version_key"] = episode["version_key"]
+            episode["work_eligible"] = False
     from xiaocao.kol.subscription_video import _atomic_write_json
 
     _atomic_write_json(service.manifest_path, manifest)
@@ -161,6 +180,392 @@ def test_same_scan_is_quiet_and_only_changed_version_becomes_new_work(tmp_path):
     assert len(discovered["updates"]) == 1
     assert discovered["updates"][0]["path"].endswith("/7月20日.mp4")
     assert len(service.pending_items()) == 1
+
+
+def test_episode_analysis_request_binds_all_component_evidence(tmp_path):
+    service = _service(tmp_path)
+    lv, lucifer = _source_rows()
+    service.observe(lv, lucifer)
+    episode = next(
+        item
+        for item in service.pending_items()
+        if item["source"] == LUCIFER_SOURCE
+    )
+    component_states = []
+    for part in episode["parts"]:
+        transcript = tmp_path / f"{part['part_index']}.txt"
+        transcript.write_text(
+            f"第{part['part_index']}段完整文稿。" * 200,
+            encoding="utf-8",
+        )
+        component_states.append(
+            {
+                "job_id": f"part-{part['part_index']}",
+                "status": "verified",
+                "transcript_path": str(transcript),
+                "transcript_sha256": __import__("hashlib").sha256(
+                    transcript.read_bytes()
+                ).hexdigest(),
+                "large_payload_local_bytes": 0,
+                "netdisk_directory": "/课程/路西法全套/鹿7.5",
+            }
+        )
+
+    state = service._prepare_episode_evidence(episode, component_states)
+    request = service._analysis_request(episode, state)
+
+    assert request["title"] == "7月5日"
+    assert request["source_path"] == "/课程/路西法全套/鹿7.5/7月5日"
+    assert request["logical_content"]["part_count"] == 3
+    assert [part["part_index"] for part in request["component_evidence"]] == [
+        1,
+        2,
+        3,
+    ]
+    merged = Path(request["evidence_path"]).read_text(encoding="utf-8")
+    assert merged.index("第1段完整文稿") < merged.index("第2段完整文稿")
+    assert merged.index("第2段完整文稿") < merged.index("第3段完整文稿")
+
+
+def test_episode_advances_all_ready_parts_when_one_part_waits(tmp_path):
+    service = _service(tmp_path)
+    lv, lucifer = _source_rows()
+    service.observe(lv, lucifer)
+    episode = next(
+        item
+        for item in service.pending_items()
+        if item["source"] == LUCIFER_SOURCE
+    )
+    episode["next_poll_not_before"] = "2026-07-25T15:59:59+08:00"
+    visited = []
+
+    def advance(part, **_kwargs):
+        visited.append(part["part_index"])
+        if part["part_index"] == 1:
+            return {
+                "status": "transcript_requested",
+                "next_poll_not_before": "2026-07-25T16:05:00+08:00",
+            }
+        return {
+            "status": "verified",
+            "transcript_path": str(tmp_path / f"{part['part_index']}.txt"),
+            "transcript_sha256": "a" * 64,
+            "large_payload_local_bytes": 0,
+        }
+
+    service._advance_part_to_verified = advance
+
+    state = service.advance_item(
+        episode,
+        lv_session="lv",
+        private_session="private",
+        enrichment_session="enrichment",
+        profile=None,
+    )
+
+    assert visited == [1, 2, 3]
+    assert state["status"] == "waiting_components"
+    assert state["pending_components"][0]["part_index"] == 1
+    assert state["coordinator_source_video_bytes"] == 0
+
+
+def test_automatic_episode_waits_five_minutes_for_more_parts(tmp_path):
+    service = _service(tmp_path)
+    lv, lucifer = _source_rows()
+    service.observe(lv, lucifer)
+    episode = next(
+        item
+        for item in service.pending_items()
+        if item["source"] == LUCIFER_SOURCE
+    )
+    service._advance_part_to_verified = lambda *_args, **_kwargs: (
+        pytest.fail("component work started before the episode settled")
+    )
+
+    state = service.advance_item(
+        episode,
+        lv_session="lv",
+        private_session="private",
+        enrichment_session="enrichment",
+        profile=None,
+    )
+
+    assert state["event"] == "subscription_video_episode_settling"
+    assert state["next_poll_not_before"] == "2026-07-25T16:05:00+08:00"
+    assert state["completion_contract"] == "quiescent_filename_group"
+
+
+def test_legacy_single_part_completion_pauses_episode_without_replay(tmp_path):
+    service = _service(tmp_path)
+    lv, lucifer = _source_rows()
+    service.observe(lv, lucifer)
+    manifest = service._load_manifest()
+    manifest.pop("episodes")
+    for item in manifest["items"].values():
+        item["work_eligible"] = False
+        if item.get("path", "").endswith("7月5日（二）.mp4"):
+            item["completed_version_key"] = item["version_key"]
+    from xiaocao.kol.subscription_video import _atomic_write_json
+
+    _atomic_write_json(service.manifest_path, manifest)
+
+    assert service.observe(lv, lucifer) is None
+    status = service.status()
+    episode = next(iter(status["episodes"].values()))
+    assert episode["work_eligible"] is False
+    assert episode["pause_reason"] == (
+        "historical_component_receipts_require_reconciliation"
+    )
+    assert status["episode_pauses"][0]["reason"] == (
+        "historical_component_receipts_require_reconciliation"
+    )
+    assert all(
+        row.get("episode_pause_reason")
+        == "historical_component_receipts_require_reconciliation"
+        for row in status["items"].values()
+        if "/鹿7.5/" in row.get("path", "") and row["media_type"] == "video"
+    )
+
+
+def test_legacy_episode_useful_aggregate_waits_for_review_without_external_replay(
+    tmp_path,
+    monkeypatch,
+):
+    service = _service(tmp_path)
+    lv, lucifer = _source_rows()
+    service.observe(lv, lucifer)
+    manifest = service._load_manifest()
+    manifest.pop("episodes")
+    for item in manifest["items"].values():
+        item["work_eligible"] = False
+        if item.get("path", "").endswith("7月5日（二）.mp4"):
+            item["completed_version_key"] = item["version_key"]
+    from xiaocao.kol.subscription_video import _atomic_write_json
+
+    _atomic_write_json(service.manifest_path, manifest)
+    assert service.observe(lv, lucifer) is None
+    episode = next(iter(service.status()["episodes"].values()))
+
+    component_spec = {
+        "episode_identity": episode["identity"],
+        "episode_version_key": episode["version_key"],
+        "components": [],
+    }
+    for part in episode["parts"]:
+        transcript = tmp_path / f"part-{part['part_index']}.md"
+        transcript.write_text(
+            f"第{part['part_index']}段完整文稿证据。" * 500,
+            encoding="utf-8",
+        )
+        component_spec["components"].append(
+            {
+                "source_identity": part["identity"],
+                "version_identity": part["version_key"],
+                "part_index": part["part_index"],
+                "source_path": part["path"],
+                "source_size": part["size"],
+                "transcript_path": str(transcript),
+                "transcript_sha256": __import__("hashlib").sha256(
+                    transcript.read_bytes()
+                ).hexdigest(),
+            }
+        )
+    component_path = tmp_path / "components.json"
+    component_path.write_text(
+        json.dumps(component_spec, ensure_ascii=False),
+        encoding="utf-8",
+    )
+
+    request = service.prepare_legacy_episode_review(
+        episode["identity"],
+        component_evidence_path=component_path,
+    )
+    coverage = [
+        {
+            "row_id": row_id,
+            "conclusion": f"{row_id} 已核对",
+            "evidence": [{"transcript_quote": "完整文稿证据"}],
+        }
+        for row_id in sorted(REQUIRED_COVERAGE_ROWS)
+    ]
+    episode_item = {
+        "source": LUCIFER_SOURCE,
+        "author": "路西法",
+        "title": "路西法7月5日",
+        "evidence_path": request["evidence_path"],
+        "evidence_sha256": request["evidence_sha256"],
+        "decision_status": "actionable_signal",
+        "actionable_signals": [{"signal_id": "lucifer-episode-wait"}],
+        "claims": [
+            {
+                "claim_id": "lucifer-aggregate-insight",
+                "quote": "完整文稿证据",
+                "reader_quote": "整期包含新的有效观点。",
+            }
+        ],
+        "knowledge_status": "no_reusable_knowledge",
+        "knowledge_reason": "历史分片已有材料，不重复蒸馏。",
+        "coverage_matrix": coverage,
+        "market_outlook": {"scope": "整体市场"},
+        "synthesis": {
+            "summary": "整期有值得转述的新观点。",
+            "confidence": "medium",
+            "reader_render_mode": "kol_context_corrected",
+            "reader_quote_ids": ["lucifer-aggregate-insight"],
+            "analysis_points": ["旧分片回执不等于整期没有新信息。"],
+            "system_check": "只读核对，没有触发外部动作。",
+            "system_advice": "先交用户审核。",
+        },
+        "xiaocao_cross_view": {
+            "consensus": [{"topic": "risk"}],
+            "conflicts": [],
+            "unrelated": [],
+            "duplicate_side_effect_policy": "历史分片回执只读，整期不重放。",
+        },
+        "book_kol_us": {
+            "decision": "no_trade",
+            "reason": "没有明确美股入场触发。",
+        },
+    }
+    attach_claim_contract(episode_item, request["evidence_path"])
+    bundle_path = tmp_path / "episode-bundle.json"
+    bundle_path.write_text(
+        json.dumps({"items": [episode_item]}, ensure_ascii=False),
+        encoding="utf-8",
+    )
+
+    decisions = tmp_path / "decisions"
+    decisions.mkdir()
+    first_sha = component_spec["components"][0]["transcript_sha256"]
+    (decisions / "household_outbox.jsonl").write_text(
+        json.dumps(
+            {
+                "author": "路西法",
+                "evidence_sha256": first_sha,
+                "idempotency_key": "notice-1",
+            },
+            ensure_ascii=False,
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    (decisions / "events.jsonl").write_text(
+        json.dumps(
+            {
+                "event": "notification_delivered",
+                "status": "delivered",
+                "idempotency_key": "notice-1",
+                "receipt": "wecom-relay://ok/notice-1",
+            },
+            ensure_ascii=False,
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    book_dir = decisions / "book_kol_us"
+    book_dir.mkdir()
+    (book_dir / "decisions.jsonl").write_text(
+        json.dumps(
+            {
+                "book": "KOL-US",
+                "paper_only": True,
+                "status": "no_trade",
+                "reason": "历史分片无美股动作。",
+                "idempotency_key": first_sha,
+            },
+            ensure_ascii=False,
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    watched = [
+        decisions / "household_outbox.jsonl",
+        decisions / "events.jsonl",
+        book_dir / "decisions.jsonl",
+    ]
+    before = [path.read_bytes() for path in watched]
+
+    receipt = service.reconcile_legacy_episode_review(
+        episode["identity"],
+        bundle_path=bundle_path,
+        decision_output_dir=decisions,
+    )
+
+    assert receipt["status"] == "awaiting_user_review"
+    assert receipt["part_count"] == 3
+    assert receipt["household_notification"]["status"] == "review_required"
+    assert "整期包含新的有效观点" in receipt[
+        "household_notification"
+    ]["proposed_message"]
+    assert receipt["book_kol_us_proposal"]["decision"] == "no_trade"
+    assert receipt["new_external_side_effect_count"] == 0
+    assert receipt["coordinator_source_video_bytes"] == 0
+    assert [path.read_bytes() for path in watched] == before
+    completed = service.status()["episodes"][episode["identity"]]
+    assert "completed_version_key" not in completed
+    assert completed["reconciliation_status"] == "awaiting_user_review"
+    assert completed["pause_reason"] == (
+        "useful_aggregate_insight_requires_user_review"
+    )
+
+    event_count = len(service._read_jsonl(service.events_path))
+    replay = service.reconcile_legacy_episode_review(
+        episode["identity"],
+        bundle_path=bundle_path,
+        decision_output_dir=decisions,
+    )
+    assert replay == receipt
+    assert len(service._read_jsonl(service.events_path)) == event_count
+    assert service.observe(lv, lucifer) is None
+    rescanned = service.status()["episodes"][episode["identity"]]
+    assert "completed_version_key" not in rescanned
+    assert rescanned["reconciliation_status"] == "awaiting_user_review"
+    assert rescanned["review_required_sha256"] == receipt[
+        "review_required_sha256"
+    ]
+    assert rescanned["pause_reason"] == (
+        "useful_aggregate_insight_requires_user_review"
+    )
+    assert [path.read_bytes() for path in watched] == before
+
+    monkeypatch.setattr(
+        service,
+        "decide_item",
+        lambda *_args, **_kwargs: pytest.fail(
+            "historical approval must not enter the notification/Book path"
+        ),
+    )
+    handoff = service.approve_legacy_episode_review(
+        episode["identity"],
+        bundle_path=bundle_path,
+        decision_output_dir=decisions,
+        sender=lambda _title, _body: {"wecom": "ok"},
+    )
+    assert handoff["status"] == "gray_publication_required"
+    assert handoff["episode_identity"] == episode["identity"]
+    assert handoff["notification_claim_authorized"] is False
+    assert handoff["book_replay_authorized"] is False
+    approval_claims = list(
+        (service.output_dir / "claims").glob(
+            "legacy_episode_gray_publication_handoff_*.json"
+        )
+    )
+    assert len(approval_claims) == 1
+    approval_claim = json.loads(
+        approval_claims[0].read_text(encoding="utf-8")
+    )
+    assert approval_claim["external_side_effects_authorized"] is False
+    assert approval_claim["notification_claim_authorized"] is False
+    assert approval_claim["book_replay_authorized"] is False
+    assert approval_claim["review_required_sha256"] == receipt[
+        "review_required_sha256"
+    ]
+    assert [path.read_bytes() for path in watched] == before
+    still_paused = service.status()["episodes"][episode["identity"]]
+    assert still_paused["reconciliation_status"] == "awaiting_user_review"
+    assert still_paused["pause_reason"] == (
+        "useful_aggregate_insight_requires_user_review"
+    )
 
 
 def test_cloud_registration_uses_metadata_version_without_local_video(tmp_path):
@@ -324,6 +729,65 @@ def test_private_scan_uses_exact_vue_metadata_without_file_download(tmp_path):
 
     assert result["entries"][0]["size"] == 744_292_790
     assert len(commands) == 2
+
+
+def test_explicit_episode_spec_maps_arbitrary_real_source_names(tmp_path):
+    lv, lucifer = _source_rows()
+    arbitrary = [
+        _row(
+            "lucifer-keynote",
+            "/课程/路西法全套/活动/keynote-final.mp4",
+            size=100,
+            modified_at=1_784_456_551,
+        ),
+        _row(
+            "lucifer-qa",
+            "/课程/路西法全套/活动/现场问答.mp4",
+            size=200,
+            modified_at=1_784_456_552,
+        ),
+    ]
+    spec = tmp_path / "episodes.json"
+    spec.write_text(
+        json.dumps(
+            {
+                "schema_version": 1,
+                "episodes": [
+                    {
+                        "source": LUCIFER_SOURCE,
+                        "episode_id": "launch-day",
+                        "title": "新品发布日",
+                        "parts": [
+                            {
+                                "path": arbitrary[1]["path"],
+                                "index": 2,
+                                "label": "Q&A",
+                            },
+                            {
+                                "path": arbitrary[0]["path"],
+                                "index": 1,
+                                "label": "keynote",
+                            },
+                        ],
+                    }
+                ],
+            },
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+
+    _lv, updated = SubscriptionVideoService._apply_episode_spec(
+        lv,
+        [*lucifer, *arbitrary],
+        episode_spec_path=spec,
+    )
+    selected = [
+        row for row in updated if row.get("episode_id") == "launch-day"
+    ]
+
+    assert {row["part_index"] for row in selected} == {1, 2}
+    assert {row["episode_title"] for row in selected} == {"新品发布日"}
 
 
 def test_folder_creation_recovers_the_observed_baidu_inline_editor():
@@ -627,33 +1091,38 @@ def _ticket05_analysis_bundle(
         }
         for row_id in sorted(REQUIRED_COVERAGE_ROWS)
     ]
-    bundle = {
-        "items": [
+    decision_item = {
+        "source": LUCIFER_SOURCE,
+        "author": "路西法",
+        "title": "路西法7月5日（二）",
+        "evidence_path": str(transcript),
+        "evidence_sha256": evidence_sha,
+        "decision_status": "actionable_signal",
+        "actionable_signals": [{"signal_id": "lucifer-signal"}],
+        "claims": [
             {
-                "source": LUCIFER_SOURCE,
-                "author": "路西法",
-                "title": "路西法7月5日（二）",
-                "evidence_path": str(transcript),
-                "evidence_sha256": evidence_sha,
-                "decision_status": "actionable_signal",
-                "actionable_signals": [{"signal_id": "lucifer-signal"}],
-                "knowledge_status": "no_reusable_knowledge",
-                "knowledge_reason": "同一内容已有蒸馏，不重复写入。",
-                "coverage_matrix": coverage,
-                "market_outlook": {"scope": "整体市场"},
-                "xiaocao_cross_view": {
-                    "consensus": [{"topic": "risk"}],
-                    "conflicts": [],
-                    "unrelated": [],
-                    "duplicate_side_effect_policy": "只复用既有回执。",
-                },
-                "book_kol_us": {
-                    "decision": "no_trade",
-                    "reason": "没有明确美股入场触发。",
-                },
+                "claim_id": "lucifer-signal-claim",
+                "quote": "完整文稿证据",
+                "reader_quote": "整期包含完整文稿证据。",
             }
-        ]
+        ],
+        "knowledge_status": "no_reusable_knowledge",
+        "knowledge_reason": "同一内容已有蒸馏，不重复写入。",
+        "coverage_matrix": coverage,
+        "market_outlook": {"scope": "整体市场"},
+        "xiaocao_cross_view": {
+            "consensus": [{"topic": "risk"}],
+            "conflicts": [],
+            "unrelated": [],
+            "duplicate_side_effect_policy": "只复用既有回执。",
+        },
+        "book_kol_us": {
+            "decision": "no_trade",
+            "reason": "没有明确美股入场触发。",
+        },
     }
+    attach_claim_contract(decision_item, transcript)
+    bundle = {"items": [decision_item]}
     bundle_path = tmp_path / "bundle.json"
     bundle_path.write_text(
         json.dumps(bundle, ensure_ascii=False),

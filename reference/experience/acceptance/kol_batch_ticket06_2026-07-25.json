@@ -1,0 +1,290 @@
+{
+  "schema_version": 2,
+  "ticket": "06-resumable-multisource-batch",
+  "status": "scheduler_proof_valid_semantic_acceptance_failed",
+  "validated_at": "2026-07-26T08:00:16+08:00",
+  "batch_id": "ticket06-real-20260726-v3",
+  "batch_ledger": {
+    "runtime_path": "output/live/kol_batch_ticket06_real_v3/state/events.jsonl",
+    "event_count_after_idempotent_replay": 15,
+    "sha256_after_idempotent_replay": "09f957ec8c2ff6b06fe3f2d2e9450569b31486d17188ba7efd28ecbcbfd88941",
+    "spec_sha256": "61ef91caca5f52a32cde5f46bd49fe797377b417ba49a69ef0a27fde55b6f838",
+    "append_only_recovery_authority": true
+  },
+  "children": [
+    {
+      "adapter": "xiaocao_live",
+      "author": "小草",
+      "media_type": "video",
+      "priority": 100,
+      "source_role": "broadband_metadata_handoff",
+      "source_identity": "kol-d141475ad2a9",
+      "version_identity": "ac3939f5f949cf47e05b90680bca91393fd7e249e62f69f6dfbec7735f9815b2",
+      "evidence_sha256": "ff0556df3d35414bf33b18fa6ef1543ed210d901bda2c77c420990526092d75b",
+      "decision_result_sha256": "d751ce6da86cbdd905f17c81241a1a59804706481e112e29bf4cf03db8e75904",
+      "household_status": "delivered",
+      "book_kol_us_status": "no_trade",
+      "large_payload_local_bytes": 0,
+      "coordinator_source_video_bytes": 0,
+      "terminal_at": "2026-07-26T07:44:03.799856+08:00"
+    },
+    {
+      "adapter": "subscription_video",
+      "author": "吕晓彤",
+      "media_type": "video",
+      "priority": 90,
+      "source_role": "automatic_subscription",
+      "source_identity": "687cebb7eece471b7d71d6043324059d2ace729d1debe1e0fd05ec4ef3091f4a",
+      "version_identity": "051231a20050519b6514a8d566f2473e6135be3095f32abf8f22b3506ca51aac",
+      "evidence_sha256": "6b0ea81e0524c7eb03a4ae28b495673ff905b3fb606ca6fa9b21c0887f3c4be4",
+      "decision_result_sha256": "73f0c0b3586461bf8fdd98c49d9fd5a3a9efdf91a8bbae04889c664580330867",
+      "household_status": "delivered",
+      "book_kol_us_status": "no_trade",
+      "large_payload_local_bytes": 0,
+      "coordinator_source_video_bytes": 0,
+      "terminal_at": "2026-07-26T07:49:03.934533+08:00"
+    },
+    {
+      "adapter": "subscription_video",
+      "author": "路西法",
+      "media_type": "video",
+      "priority": 80,
+      "source_role": "private_cloud_logical_episode",
+      "source_identity": "9fc5ed7f825ff6a3dea9ccff39ae382e521a0d777a673e6fad5a45a1c7da2b73",
+      "version_identity": "c4ea2e58009b9d3fc193006b7fdffd8b0bb914ac7da64bb3d82dc1c8f8be265e",
+      "source_part_count": 3,
+      "source_parts": [
+        {
+          "part_index": 1,
+          "source_identity": "25088415af14905aa1da82072b668db34278f21817fe868650a4efb04d4cc048",
+          "version_identity": "cf3c98d35feba8a6b34bdd51cbd5a21a7b71278f50a126cbc3a7a8c0d2770a2a",
+          "source_size": 759800380,
+          "transcript_sha256": "9979e52faead7f453962ba3af7291fc7deaecb7e23f8174633ae0700710efb0b"
+        },
+        {
+          "part_index": 2,
+          "source_identity": "1d33d6886adccc3b8558c5886f7362d55789fcb2fcbe8f323d9d699731a47a48",
+          "version_identity": "aaa96795b8bc03bee3aff82a05b9fb4e8131b66d0edffb22f18c0e62dd7a37f3",
+          "source_size": 578859389,
+          "transcript_sha256": "c482a8d29e7793e03454847f1e31c8fcf5cd7e6bd32227464dda232af155418c"
+        },
+        {
+          "part_index": 3,
+          "source_identity": "d972ce2110cfa389be9e688090caaebb05fb87330a6b3f847a39bf19e4ea20eb",
+          "version_identity": "bf3a1583dea8da417cf3afa80287ca74848dec36888db62abc119eb635c41208",
+          "source_size": 744292790,
+          "transcript_sha256": "eb50136f8f5edc41169e0a1c5b5321ce0266c23de6c0244d7d3c02bbaace2498"
+        }
+      ],
+      "merged_evidence_sha256": "829a207063ec2469ae854367d18dfa4de7b56357b9c0c796bbbf9def895dab84",
+      "decision_result_sha256": "97cb686050d95f9e3343e6e22c44fb6b7a61addc446cd07557d8164876b7d820",
+      "household_status": "suppressed",
+      "household_reason": "Historical component receipts already exist; no consolidated WeChat replay is authorized.",
+      "book_kol_us_status": "no_trade",
+      "historical_household_receipt_count": 2,
+      "historical_book_receipt_count": 2,
+      "new_external_side_effect_count": 0,
+      "large_payload_local_bytes": 0,
+      "coordinator_source_video_bytes": 0,
+      "terminal_at": "2026-07-26T07:44:03.805494+08:00"
+    },
+    {
+      "adapter": "lv_text_image",
+      "author": "吕晓彤",
+      "media_type": "image",
+      "priority": 40,
+      "source_role": "automatic_subscription",
+      "source_identity": "b5579f1a34e9872aaadad52514ea6564c2b034f60797cd7ac8fbbb331dc1a73a",
+      "version_identity": "681d609740831e17b9a49e3cdd0d6b3dc08516970df0120932464b8650447e6d",
+      "evidence_sha256": "10bf2839cb777d3f507b15db9d9b3eac9f9f17fa12e93dcd82fca11841d49f79",
+      "decision_result_sha256": "52dfaaed8b6114a7ee297b7dbb39e7fc870609388c5f71edb4ddec395ed425bb",
+      "household_status": "delivered",
+      "book_kol_us_status": "no_trade",
+      "large_payload_local_bytes": 0,
+      "coordinator_source_video_bytes": 0,
+      "terminal_at": "2026-07-26T07:44:03.816433+08:00"
+    }
+  ],
+  "nonblocking_and_polling": {
+    "async_requested_at": "2026-07-26T07:44:02.771704+08:00",
+    "first_poll_not_before": "2026-07-26T07:49:02.771704+08:00",
+    "first_poll_at": "2026-07-26T07:49:02.901621+08:00",
+    "first_poll_delay_seconds": 300.129917,
+    "ready_children_terminal_before_first_poll": 3,
+    "low_priority_image_terminal_before_first_poll": true,
+    "real_retry_count": 0,
+    "backoff_schedule_seconds": [
+      300,
+      600,
+      1200,
+      2400,
+      4800
+    ]
+  },
+  "interruption_and_resume": {
+    "first_runner_started_at": "2026-07-26T07:44:02.782426+08:00",
+    "terminated_at": "2026-07-26T07:44:14.043810+08:00",
+    "termination_signal": "SIGTERM",
+    "observed_exit_code": 143,
+    "unfinished_child_count_at_termination": 1,
+    "completed_child_count_at_termination": 3,
+    "resumed_runner_started_at": "2026-07-26T07:44:29.871623+08:00",
+    "completed_at": "2026-07-26T07:49:03.943557+08:00",
+    "runner_start_count_after_idempotent_replay": 3,
+    "interruption_count": 1,
+    "terminal_receipt_count": 4,
+    "completed_child_terminal_replay_count": 0,
+    "async_poll_claim_replay_count": 0
+  },
+  "side_effect_integrity": {
+    "batch_watched_artifacts_before_after_equal": true,
+    "new_upload_count": 0,
+    "new_transcript_generation_count": 0,
+    "new_ai_note_submission_count": 0,
+    "new_historical_child_notification_count": 0,
+    "new_book_kol_us_action_count": 0,
+    "new_external_side_effect_count": 0,
+    "idempotent_replay": {
+      "terminal_event_count_before_after": 4,
+      "async_poll_claim_count_before_after": 1,
+      "external_artifact_hashes_unchanged": true
+    },
+    "watched_hashes": {
+      "book_kol_us_decisions": "f7239fcbcdc0aecc1d30d9c2a2f1a2f3f193dca7b7423992328878351e6469ad",
+      "household_outbox": "3d5c4cc831c9b19f21cbe8b5645e8a99742116d4a42395c821e134f6f9958aa2",
+      "xiaocao_source_events": "9fe090c4eff915b6069ab145a65c0c90c33f5b453db9b436534d42525e4a5bf7",
+      "lv_image_source_events": "5aac7313385efe8ab9d58c41d496d7f848b84dcdc47be3f5099abd4c9f3cacdd",
+      "netdisk_enrichment_events": "45afff1ab2318eaad42604f5dac09a3a2ab09187593f0e5ea181c484139f7254",
+      "subscription_source_events_during_batch": "e4a44742e5649653b11d95fc6ee38e30b5fd3d885d14367084b0124046ee6e01"
+    }
+  },
+  "traffic_accounting": {
+    "coordinator_network_bytes": 0,
+    "coordinator_source_video_bytes": 0,
+    "coordinator_large_payload_local_bytes": 0,
+    "child_large_payload_local_bytes": [
+      0,
+      0,
+      0,
+      0
+    ],
+    "source_video_path_rejected_before_read": true,
+    "source_video_total_metadata_bytes_for_lucifer_episode": 2082952559,
+    "source_video_bytes_read_for_lucifer_episode": 0
+  },
+  "real_source_rescan": {
+    "surface": "logged_in_chrome_opencli_browser_bridge",
+    "raw_http_used": false,
+    "computer_use_used": false,
+    "video_opened_or_downloaded": false,
+    "manifest_sha256": "6786259d06334304c2847d9d5b892388fd967c5c893e678e740f4c91a46f0bc2",
+    "source_events_sha256": "60da09facd77d37b2bcd458684bfa3b0c6306cc303fdf42d1507451e51d219bf",
+    "source_event_count": 16,
+    "weak_single_suffix_pause_count": 0,
+    "explicit_incomplete_or_waiting_episode_count": 4,
+    "lucifer_reconciliation_status": "superseded_completed_review_only",
+    "receipt_driven_manifest_repair_replayed_without_new_event": true,
+    "current_lucifer_reconciliation_status": "published_to_gray_historical_no_alert"
+  },
+  "post_review_correction": {
+    "recorded_at": "2026-07-26T08:45:00+08:00",
+    "v3_scheduler_interruption_recovery_proof_remains_valid": true,
+    "v3_semantic_acceptance_remains_valid": false,
+    "failed_child": "lucifer_20260705_logical_episode",
+    "failure_reason": "The child omitted the repeated July 7, five-percent-or-less, no-leverage SpaceX short signal and stated the false fact that SpaceX was unlisted.",
+    "prior_household_terminal": "suppressed",
+    "prior_terminal_is_accepted_authority": false,
+    "corrected_household_state": "historical_initialization_no_alert",
+    "corrected_review_sha256": "533747efe1ffc10a0ce1e5e133e0410734c987ddd4aae012a0fef6b7e2b0a6ed",
+    "must_surface_candidate_count": 5,
+    "spacex_candidate_repetition_count": 4,
+    "external_ledgers_unchanged": true,
+    "new_external_side_effect_count": 0,
+    "replacement_batch_required": false,
+    "gray_report_id": "kr_cg6eeammpiho23ncqts5n3jxt7wx67h5yqflmx6245royb33dzga",
+    "gray_report_content_sha256": "dea4bea61b924d87b75beef00d6b72fd71e260d4a991f07e4dd70efb809bda71",
+    "gray_report_manifest_sha256": "b03fe178ff7c30e3b886573b990e542cd4c1ce9810b7733d0809db1b6ed4fc15",
+    "gray_longitudinal_viewpoint_count": 32,
+    "focused_validation": {
+      "result": "150 passed in 3.59s",
+      "exact_spacex_marker_regression": true,
+      "useful_aggregate_review_gate": true,
+      "idempotent_review_replay": true
+    }
+  },
+  "corrected_batch_insight_review": {
+    "status": "rejected_not_published_missing_spcx_short_signal",
+    "runtime_path": "output/live/kol_batch_ticket06_real_v3/insight_review.json",
+    "sha256": "598d8efc173721988ce3a8a312777d8f8f35d9292a7cb95b6935120dfc3a1fa2",
+    "insight_id": "b6fab27abe63dafcb2c026b3ab9d88bf63471d4556d7e58b63e71305b57ce1e5",
+    "content_sha256": "20a0c432df743869719004252000e419a2a0cddc43c09cc500651dceda6e312e",
+    "evidence_binding_count": 4,
+    "message_utf8_bytes": 1545,
+    "chunk_count": 1,
+    "all_terminal_evidence_bindings_valid": false,
+    "publication_claim_count": 0,
+    "recipient_send_count": 0,
+    "prior_v2_insight_status": "delivered_but_incomplete_missing_lucifer",
+    "prior_v2_insight_replay_authorized": false,
+    "v3_insight_publication_authorized": false
+  },
+  "output_quality": {
+    "coverage_rows_per_item": 7,
+    "market_first": true,
+    "kol_system_fact_and_conclusion_layers_separate": true,
+    "all_named_assets_resolved_or_explicitly_unresolved": true,
+    "xiaocao_cross_view_preserves_independent_side_effects": true,
+    "book_kol_us_paper_only_us_stocks_and_etfs": true,
+    "lucifer_full_episode_conclusion": "published_corrected_spcx_short_signal",
+    "beite_603009_condition": "price_at_or_below_40_and_market_breadth_repairs_and_stock_stabilizes",
+    "sanhua_002050_condition": "wait_for_governance_relief_and_market_stabilization",
+    "unverified_macro_and_political_claims_not_converted_to_trades": true
+  },
+  "focused_validation": {
+    "command": "PYTHONPATH=src .venv/bin/python -m pytest -q tests/test_kol_episodes.py tests/test_kol_batch.py tests/test_kol_subscription_video.py tests/test_kol_netdisk_enrichment.py tests/test_kol_xiaocao_live.py tests/test_kol_lv_subscription.py tests/test_kol_skill_structure.py",
+    "result": "255 passed in 7.24s",
+    "covers": [
+      "failure_and_pause_classification",
+      "priority_and_anti_starvation",
+      "five_minute_first_poll_and_backoff",
+      "crash_atomic_append_frames",
+      "SIGTERM_after_durable_append",
+      "multi_part_episode_grouping",
+      "receipt_driven_manifest_repair",
+      "zero_video_byte_boundary",
+      "batch_insight_claim_receipt_and_uncertain_delivery"
+    ]
+  },
+  "requirements": {
+    "two_real_videos_and_one_text_or_image": true,
+    "broadband_handoff_and_subscription_combined": true,
+    "waiting_child_did_not_block_ready_children": true,
+    "first_poll_not_before_five_minutes": true,
+    "explicit_backoff": true,
+    "real_process_interruption_and_restart": true,
+    "unfinished_child_at_interruption": true,
+    "independent_household_and_book_terminals": true,
+    "completed_children_not_replayed": true,
+    "watched_side_effect_artifacts_unchanged": true,
+    "coordinator_source_video_bytes_zero": true,
+    "multi_part_video_is_one_logical_child": true,
+    "legacy_fragment_receipts_are_not_replayed": true,
+    "corrected_batch_insight_user_review_pending": false,
+    "replacement_batch_after_lucifer_correction_required": false,
+    "event_specific_gray_report_published": true,
+    "historical_notification_and_book_replay_count_zero": true,
+    "agent_ordered_current_history_projection_read_back": true,
+    "true_history_total_read_back": true,
+    "stable_gray_deep_link_http_200": true,
+    "ticket06_commit_pending_user_review": false,
+    "ticket07_scheduler_not_created": true
+  },
+  "sanitization": {
+    "contains_credentials": false,
+    "contains_share_url_or_code": false,
+    "contains_process_id": false,
+    "contains_absolute_personal_path": false,
+    "contains_transcript_text": false,
+    "contains_source_video_bytes": false
+  }
+}

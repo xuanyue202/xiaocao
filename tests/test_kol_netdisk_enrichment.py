@@ -1887,8 +1887,8 @@ def test_decided_job_runs_one_claimed_message_revision_without_new_book_effect(
     artifact_dir = (
         tmp_path / "out" / "artifacts" / str(prepared["job_id"])
     )
-    artifact_dir.mkdir(parents=True, exist_ok=True)
-    original_result = artifact_dir / "decision_result.json"
+    assert not artifact_dir.exists()
+    original_result = tmp_path / "prior-decision-result.json"
     original_result.write_text('{"status":"completed"}\n', encoding="utf-8")
     service.store.append(
         {
@@ -1988,6 +1988,7 @@ def test_decided_job_runs_one_claimed_message_revision_without_new_book_effect(
     assert Path(first["decision_result_path"]).name.startswith(
         "decision_result."
     )
+    assert artifact_dir.is_dir()
     assert replay["idempotent_replay"] is True
     assert calls == {"process": 1, "send": 1}
     assert sum(

@@ -210,6 +210,11 @@ def _render_market_outlook(
 
 
 def reader_message_title(item: dict[str, Any]) -> str:
+    briefing_title = _reader_text(
+        (item.get("reader_briefing") or {}).get("title")
+    ).strip()
+    if briefing_title:
+        return briefing_title
     if item.get("decision_status") == "no_actionable_signal":
         return f"投资情报｜{item['author']}：弱信号提醒"
     if (item.get("synthesis") or {}).get("reader_render_mode") == (
@@ -308,6 +313,8 @@ def render_household_item_message(
     cross_source: dict[str, Any] | None = None,
 ) -> str:
     """Render human-readable market intelligence; internal gates stay internal."""
+    if isinstance(item.get("reader_briefing"), dict):
+        return _render_reader_briefing(item)
     if item.get("decision_status") == "no_actionable_signal":
         return _render_no_actionable_signal(item)
     if (item.get("synthesis") or {}).get("reader_render_mode") == (
@@ -379,6 +386,28 @@ def render_household_item_message(
         ]
     )
     return "\n".join(lines)
+
+
+def _render_reader_briefing(item: dict[str, Any]) -> str:
+    briefing = item["reader_briefing"]
+    paragraphs = [
+        _reader_text(paragraph.get("text")).strip()
+        for paragraph in briefing.get("paragraphs") or []
+        if isinstance(paragraph, dict)
+        and _reader_text(paragraph.get("text")).strip()
+    ]
+    source_label = _reader_source_label(item)
+    paragraphs.extend(
+        [
+            (
+                "信息来源："
+                f"{item['author']}｜{_reader_time(item.get('published_at'))}｜"
+                f"{source_label}｜{_reader_source_title(item)}"
+            ),
+            "这只是决策信息，不会替你执行真实交易。",
+        ]
+    )
+    return "\n\n".join(paragraphs)
 
 
 def _render_no_actionable_signal(item: dict[str, Any]) -> str:

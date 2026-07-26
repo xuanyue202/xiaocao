@@ -11,6 +11,8 @@ requires-python = ">=3.9"
 dependencies = [
   "requests>=2.28",
   "PyYAML>=6.0",
+  "rfc8785==0.1.4",
+  "tomli>=2.0; python_version < '3.11'",
 ]
 
 [project.optional-dependencies]

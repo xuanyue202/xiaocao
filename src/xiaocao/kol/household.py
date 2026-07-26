@@ -3,19 +3,42 @@
 from __future__ import annotations
 
 import json
+import stat
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable
 from urllib.request import Request, urlopen
 
+try:
+    import tomllib
+except ModuleNotFoundError:  # pragma: no cover - Python 3.9/3.10 compatibility
+    import tomli as tomllib
+
 from .decisions import DecisionError
 
 
-DEFAULT_LIANGHUI_MCP_CONFIG = Path("/Users/bytedance/Downloads/LiangHuiProject/.mcp.json")
+DEFAULT_LIANGHUI_MCP_CONFIG = (
+    Path(__file__).resolve().parents[3] / ".codex" / "config.toml"
+)
+
+
+class LiangHuiMcpError(DecisionError):
+    """Structured LiangHui JSON-RPC application error."""
+
+    def __init__(
+        self,
+        message: str,
+        *,
+        code: str = "",
+        data: dict[str, Any] | None = None,
+    ):
+        super().__init__(message)
+        self.code = code
+        self.data = data or {}
 
 
 class LiangHuiMcpClient:
-    """Read current family/portfolio facts without persisting MCP credentials."""
+    """Use the existing authenticated family MCP without copying credentials."""
 
     def __init__(
         self,
@@ -32,11 +55,37 @@ class LiangHuiMcpClient:
     def from_config(cls, path: Path | str = DEFAULT_LIANGHUI_MCP_CONFIG) -> "LiangHuiMcpClient":
         config_path = Path(path).expanduser().resolve()
         try:
-            config = json.loads(config_path.read_text(encoding="utf-8"))
-            server = config["mcpServers"]["lianghui"]
+            mode = stat.S_IMODE(config_path.stat().st_mode)
+            if mode & 0o077:
+                raise DecisionError(
+                    f"亮灰 MCP config must be private (mode 0600): {config_path}"
+                )
+            raw = config_path.read_bytes()
+            if config_path.suffix.lower() == ".toml":
+                config = tomllib.loads(raw.decode("utf-8"))
+                server = config["mcp_servers"]["lianghui"]
+                headers_value = server.get("http_headers", {})
+            else:
+                config = json.loads(raw.decode("utf-8"))
+                server = config["mcpServers"]["lianghui"]
+                headers_value = server.get("headers", {})
+            if server.get("enabled") is False:
+                raise DecisionError(f"亮灰 MCP is disabled: {config_path}")
             url = str(server["url"])
-            headers = {str(key): str(value) for key, value in server.get("headers", {}).items()}
-        except (OSError, KeyError, TypeError, json.JSONDecodeError) as exc:
+            headers = {
+                str(key): str(value)
+                for key, value in headers_value.items()
+            }
+            if not url.startswith("https://") or not headers:
+                raise DecisionError(f"invalid 亮灰 MCP endpoint: {config_path}")
+        except (
+            OSError,
+            KeyError,
+            TypeError,
+            UnicodeDecodeError,
+            json.JSONDecodeError,
+            tomllib.TOMLDecodeError,
+        ) as exc:
             raise DecisionError(f"invalid 亮灰 MCP config: {config_path}") from exc
         return cls(url, headers)
 
@@ -57,16 +106,50 @@ class LiangHuiMcpClient:
         except (OSError, ValueError, json.JSONDecodeError) as exc:
             raise DecisionError("亮灰 MCP request failed") from exc
         if payload.get("error"):
-            message = payload["error"].get("message", "unknown MCP error")
-            raise DecisionError(f"亮灰 MCP rejected request: {message}")
+            error = payload["error"]
+            data = error.get("data") if isinstance(error, dict) else None
+            message = (
+                error.get("message", "unknown MCP error")
+                if isinstance(error, dict)
+                else "unknown MCP error"
+            )
+            raise LiangHuiMcpError(
+                f"亮灰 MCP rejected request: {message}",
+                code=str((data or {}).get("code") or ""),
+                data=data if isinstance(data, dict) else {},
+            )
         return payload.get("result")
 
     def _tool(self, name: str, arguments: dict[str, Any]) -> Any:
         result = self._rpc("tools/call", {"name": name, "arguments": arguments})
+        structured = (
+            result.get("structuredContent")
+            if isinstance(result, dict)
+            else None
+        )
+        if isinstance(structured, dict):
+            return structured
         try:
             return json.loads(result["content"][0]["text"])
         except (KeyError, IndexError, TypeError, json.JSONDecodeError) as exc:
             raise DecisionError(f"亮灰 MCP returned invalid tool result: {name}") from exc
+
+    def call_tool(self, name: str, arguments: dict[str, Any]) -> Any:
+        """Public small-tool seam used by the durable publication ledger."""
+
+        return self._tool(name, arguments)
+
+    def list_tools(self) -> list[dict[str, Any]]:
+        """Return the live MCP registry for a production contract preflight."""
+
+        result = self._rpc("tools/list", {})
+        tools = result.get("tools") if isinstance(result, dict) else None
+        if not isinstance(tools, list) or not all(
+            isinstance(tool, dict) and isinstance(tool.get("name"), str)
+            for tool in tools
+        ):
+            raise DecisionError("亮灰 MCP returned invalid tools/list result")
+        return tools
 
     def _resource(self, uri: str) -> Any:
         result = self._rpc("resources/read", {"uri": uri})
