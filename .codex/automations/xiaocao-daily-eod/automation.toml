@@ -4,9 +4,9 @@ kind = "cron"
 name = "xiaocao daily eod"
 prompt = "Use the local `xiaocao-trading` skill/project conventions. Run the Xiaocao EOD automation workflow and report according to the skill's automation workflow instructions."
 status = "ACTIVE"
-rrule = "DTSTART:20260608T071000\nRRULE:FREQ=WEEKLY;BYDAY=MO,TU,WE,TH,FR"
-model = "gpt-5.5"
-reasoning_effort = "high"
+rrule = "RRULE:FREQ=WEEKLY;BYDAY=MO,TU,WE,TH,FR;BYHOUR=15;BYMINUTE=10"
+model = "gpt-5.6-sol"
+reasoning_effort = "xhigh"
 execution_environment = "local"
 cwds = ["~/coding/xiaocao"]
 created_at = 1780275846655

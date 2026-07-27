@@ -60,7 +60,7 @@ def test_values_are_unchanged_from_validated_baseline():
     assert params.RAW_QIBAO_HIGH_OPEN_PCT_CAP == 10.0
     assert params.PROFILE_DD == {"v5": 2.0, "v6": 0.5}
     assert params.PROFILE_HARD_DD == {"v5": 8.0, "v6": 8.0}
-    assert params.DEPLOY_RATIO == 0.5 and params.MAX_TOTAL_EXPOSURE_RATIO == 0.67
+    assert params.DEPLOY_RATIO == 0.5 and params.MAX_TOTAL_EXPOSURE_RATIO == 1.0
 
 
 def test_all_params_frozen_until_a_pass_verdict():

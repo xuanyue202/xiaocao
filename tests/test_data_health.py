@@ -247,6 +247,48 @@ def test_missing_market_cache_no_finding(tmp_path):
     assert data_health.stale_market_cache(tmp_path / ".cache" / "xiaocao.db", today="2026-06-22") == []
 
 
+def test_forward_label_bar_coverage_waits_until_eod_reconstruction(tmp_path):
+    _write_jsonl(tmp_path / "signal_snapshots.jsonl", [
+        {"date": "2026-07-17", "code": "A.XSHE", "is_live": True, "book": "B"},
+    ])
+
+    assert data_health.forward_label_bar_coverage(tmp_path, today="2026-07-20") == []
+
+
+def test_forward_label_bar_coverage_flags_missing_previous_live_batch(tmp_path):
+    _write_jsonl(tmp_path / "signal_snapshots.jsonl", [
+        {"date": "2026-07-17", "code": "A.XSHE", "is_live": True, "book": "B"},
+        {"date": "2026-07-17", "code": "B.XSHE", "is_live": True, "book": "B"},
+        {"date": "2026-07-17", "code": "PAPER.XSHE", "is_live": False, "book": "B"},
+        {"date": "2026-07-20", "code": "TODAY.XSHE", "is_live": True, "book": "B"},
+    ])
+    _write_jsonl(tmp_path / "daily_reconstructed.jsonl", [
+        {"date": "20260720", "code": "000001.XSHG", "close": 3000},
+        {"date": "20260720", "code": "A.XSHE", "close": 10},
+    ])
+
+    findings = data_health.forward_label_bar_coverage(tmp_path, today="2026-07-20")
+
+    assert len(findings) == 1
+    assert findings[0]["severity"] == "critical"
+    assert "B.XSHE" in findings[0]["detail"]
+    assert "PAPER.XSHE" not in findings[0]["detail"]
+
+
+def test_forward_label_bar_coverage_accepts_complete_previous_live_batch(tmp_path):
+    _write_jsonl(tmp_path / "signal_snapshots.jsonl", [
+        {"date": "2026-07-17", "code": "A.XSHE", "is_live": True, "book": "B"},
+        {"date": "2026-07-17", "code": "B.XSHE", "is_live": True, "book": "B"},
+    ])
+    _write_jsonl(tmp_path / "daily_reconstructed.jsonl", [
+        {"date": "2026-07-20", "code": "000001.XSHG", "close": 3000},
+        {"date": "2026-07-20", "code": "A.XSHE", "close": 10},
+        {"date": "2026-07-20", "code": "B.XSHE", "close": 20},
+    ])
+
+    assert data_health.forward_label_bar_coverage(tmp_path, today="2026-07-20") == []
+
+
 def test_check_surfaces_stale_cache(tmp_path):
     # check() auto-resolves the cache as a sibling of live_dir and includes it.
     live_dir = tmp_path / "live"

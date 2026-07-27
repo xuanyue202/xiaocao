@@ -63,54 +63,23 @@ DEFAULT_N_MIN_BY_WINDOW: dict[int, int] = {5: 1, 10: 2, 20: 3}
 # bounded by the -2% floor.
 DEFAULT_AVG_THRESHOLD_BY_WINDOW: dict[int, float] = {5: -5.0, 10: -3.0, 20: -2.0}
 
-
-# Asymmetric continuous fitness scaling — v3.2:
-#   threshold(w, f) = base(w) - SCALE(w) * f                 when f >= 0
-#                   = base(w) - SCALE(w) * STRICT_FRAC * f   when f < 0
-#
-# v3.2 calibration: SCALE chosen so that a "moderately positive" fitness
-# (~0.30-0.40, common when state aligns with 2 of 3 axes) yields ~2pp threshold
-# shift on 5d (= one transaction-cost band). Earlier v3.0/v3.1 used SCALE=2-3
-# which under-shifted at moderate fitness compared to legacy bucket-based v2,
-# causing v3 to OVER-SHADOW where v2 kept active and earned. Diagnostic on
-# 8-month seed confirmed v2's bucket "+1" range maps to a ~2pp shift; SCALE=5
-# matches this for fitness ≈ 0.4, falls more aggressively for stronger fitness.
-#
-# Why asymmetric: 2026-04-26 v3.0 diagnostic showed symmetric SCALE was more
-# punishing than the legacy bucketed regime fitness. Asymmetric lets state
-# CONFIRM mode_history (lower the bar) without OVERRIDING when state is unclear.
-#
-# PRECONDITION_FAIL (sentinel for 断板 modes whose duan_ban_recovery is too low)
-# maps to fitness=-1.0 (mild stricter), not 0% threshold (catastrophic).
-_FITNESS_SCALE_BY_WINDOW: dict[int, float] = {5: 5.0, 10: 3.5, 20: 2.5}
-_NEGATIVE_FITNESS_FRAC: float = 0.3  # only 30% of full SCALE for f<0
+AUXILIARY_MODE_AUTHORITY = "shadow_ranking_only"
 
 
 def regime_modulated_thresholds(
     base: dict[int, float] | None,
     fitness: float | int,
 ) -> dict[int, float]:
-    """Apply asymmetric continuous fitness scaling to per-window thresholds.
+    """Return unchanged return-evidence thresholds.
 
-    Positive fitness lowers the threshold (more permissive); negative fitness
-    only mildly raises it. PRECONDITION_FAIL maps to fitness=-1.0 (mild stricter).
+    `fitness` is retained for API compatibility and shadow telemetry. The
+    2026-07-10 gray-zone OOS checks rejected auxiliary mode confirmation, so an
+    environment-fit score has no authority to relax or tighten qualification.
+    A future modulation rule needs its own research PASS and human promotion.
     """
-    from .regime import PRECONDITION_FAIL  # local import to avoid cycle
-
-    base = base if base is not None else DEFAULT_AVG_THRESHOLD_BY_WINDOW
-    if fitness == PRECONDITION_FAIL:
-        f = -1.0
-    else:
-        f = float(fitness)
-        f = max(-2.0, min(2.0, f))
-    out = {}
-    for w, b in base.items():
-        scale = _FITNESS_SCALE_BY_WINDOW.get(w, 2.0)
-        if f >= 0:
-            out[w] = b - scale * f
-        else:
-            out[w] = b - scale * _NEGATIVE_FITNESS_FRAC * f  # f<0 → adds positive
-    return out
+    del fitness
+    thresholds = base if base is not None else DEFAULT_AVG_THRESHOLD_BY_WINDOW
+    return dict(thresholds)
 
 
 @dataclass(frozen=True)
@@ -159,8 +128,8 @@ def decide_mode_state(
 
     n_min_map = n_min_by_window if n_min_by_window is not None else DEFAULT_N_MIN_BY_WINDOW
     thr_map_base = avg_threshold_by_window if avg_threshold_by_window is not None else DEFAULT_AVG_THRESHOLD_BY_WINDOW
-    # Soft regime modulation: shifts thresholds by ±1-2% based on (mode × regime)
-    # fitness. fitness=0 (no regime info) keeps the base map unchanged.
+    # `regime_fitness` is compatibility-only. Auxiliary state is observable but
+    # cannot change mode qualification without a separately promoted OOS PASS.
     thr_map = regime_modulated_thresholds(thr_map_base, regime_fitness)
 
     win_stats: dict[int, dict[str, Any]] = {}
@@ -244,13 +213,16 @@ def tag_signals(
 ) -> tuple[list[dict[str, Any]], dict[str, ModeDecision]]:
     """Tag every signal row with `adaptive_active` (bool) + `adaptive_reason`.
 
-    Fitness lookup priority:
+    Auxiliary fitness lookup priority (shadow telemetry only):
       1. `state` (StateVector): use `mode_fitness(mode, state)` — continuous,
-         the new framework. Captures per-day Reward / Risk / Continuity axes.
+         capturing per-day Reward / Risk / Continuity axes.
       2. `regime` (str): legacy 5-bucket label → integer fitness from
          `mode_regime_fitness`. Used when running live `strategy run` with
          only market_overview-derived label available.
-      3. neither → fitness=0, default thresholds.
+      3. neither → fitness=0.
+
+    Fitness is written to each row for audit/ranking research. It never changes
+    `adaptive_active`; only rolling return evidence does.
 
     Same-mode signals on the same date share one ModeDecision (memoized).
 
@@ -263,9 +235,10 @@ def tag_signals(
     """
     # Lazy-import to avoid circular dependency: regime.py imports nothing here,
     # but adaptive is imported by runner which also imports regime.
-    from .regime import mode_fitness, mode_regime_fitness
+    from .regime import PRECONDITION_FAIL, mode_fitness, mode_regime_fitness
 
     decisions: dict[str, ModeDecision] = {}
+    fitness_by_mode: dict[str, float | int] = {}
     tagged: list[dict[str, Any]] = []
     for row in rows:
         mode = row.get("mode") or ""
@@ -274,6 +247,7 @@ def tag_signals(
                 fitness: float | int = mode_fitness(mode, state, profiles=mode_profiles)
             else:
                 fitness = mode_regime_fitness(mode, regime)
+            fitness_by_mode[mode] = fitness
             decisions[mode] = decide_mode_state(
                 mode, asof_iso, cache,
                 trade_days=trade_days,
@@ -282,6 +256,12 @@ def tag_signals(
             )
         decision = decisions.get(mode)
         annotated = dict(row)
+        if mode:
+            fitness = fitness_by_mode.get(mode, 0)
+            annotated["adaptive_regime_fitness"] = (
+                "PRECONDITION_FAIL" if fitness == PRECONDITION_FAIL else float(fitness)
+            )
+            annotated["adaptive_auxiliary_authority"] = AUXILIARY_MODE_AUTHORITY
         prev_active = annotated.get("adaptive_active")
         if decision is not None:
             # adaptive_active is sticky-False: once any upstream gate marks a

@@ -1,9 +1,9 @@
 # 小草运营契约（Operating Contract, SSOT）
 
-**版本**：1.8
+**版本**：2.3
 **状态**：现行
 **适用范围**：所有 paper / 未来 real 的实盘环（live_recommend → paper_record → live_monitor → eod）与回测
-**关联实现**：`src/xiaocao/live/safety.py`、`src/xiaocao/live/intelligence_policy.py`、`src/xiaocao/strategy/trend_rules.py`、`kronos_screen/scripts/{paper_record,settle_book_a,settle_book_t,decompose_pnl,quality_governor}.py`、`scripts/live_monitor.py`
+**关联实现**：`src/xiaocao/live/safety.py`、`src/xiaocao/live/intelligence_policy.py`、`src/xiaocao/strategy/{mode_switch,trend_rules}.py`、`kronos_screen/scripts/{capture_signals,forward_eval,paper_record,settle_book_a,settle_book_t,decompose_pnl,quality_governor}.py`、`scripts/{live_monitor,research_mode_switch_replay}.py`
 **回归测试**：`tests/test_operating_contract.py`
 **借鉴**：QuantDinger `docs/SIGNAL_EXECUTION_STANDARD_CN.md`（契约 SSOT 结构）+ `docs/agent/MCP_SETUP.md`（paper-only 默认 / 双钥匙 live gate）
 
@@ -40,7 +40,7 @@
 
 ## 3. Book A — 验证参考口径（永不被监控）
 
-- **口径**：买入 = 与 Book B 对齐的最终实际纸面成交价 `book_b_fill[D]`（同一批 fillable picks，同一套 9:30-9:31 VWAP/limit/retry 入场）；卖出 = **下一交易日收盘** `close[D+1]`；**无 stop**。
+- **口径**：买入 = 与 Book B 对齐的最终实际纸面成交价和规划手数 `book_b_fill[D]`（同一批 fillable picks、同一份 ★E 整手分配、同一套 9:30-9:31 VWAP/limit/retry 入场）；卖出 = **下一交易日收盘** `close[D+1]`；**无 stop**。
 - **唯一实现**：`paper_record._record_book_a`（建仓，复用 Book B `entry_price_basis`/fill metadata）+ `settle_book_a.py`（盘后结算，幂等）。
 - **角色**：纯会计账本 + **kill-switch 传感器**；永不被 `live_monitor` 触碰或 stop 管理。
 - **MUST**：book A 行（`book="A"`）与 book B 互不阻塞建仓；settle 只用 `close[D+1]`，幂等。
@@ -48,9 +48,16 @@
 
 ## 4. Book B — 实盘策略口径（分阶段出场）
 
-- **建仓**：`paper_record`（见第 5 节成交模型）。
-- **AI 情报因子（paper-only P2）**：`paper_record.py --intelligence-trade on` 消费已经落盘的结构化 `agent_review`，在最新 `signal_snapshots.jsonl` 候选池内按 `rank_score + agent_short_score × ai_score_bonus` 重排 Book-B 纸面买入 slot；`agent_short_score >= ai_buy_threshold` 的非基础 ★B 候选可参与替换。没有 `agent_review` 时必须退化为原始 `vb_star` 选择。关键词 `keyword_score` / 一句话舆情永不参与买入排序。
-- **AI hard-veto**：只认 `intelligence_evidence.HARD_VETO_TAXONOMY` 中的明确事件类型，且需模型写入 `veto_flags`、`severity` 达 high/critical、`confidence >= ai_veto_confidence`、未过短线时效或标记 ongoing。命中后 Book-B 纸面买入跳过并写 `paper_skips.jsonl` 的 `AI_HARD_VETO`；非法 event_type / 低置信 / 低严重度不生效，避免关键词一票否决。Evidence freeze 覆盖当天候选池和当前 open Book-B 持仓；同日缓存只在新鲜 TTL 内复用，过期后刷新素材，避免盘中新利空被旧缓存遮蔽。
+- **默认建仓集合**：`paper_record.py --pick mode_exec_star` 只成交 `★E`。`★B`（K/P+竞价）和 `★M`（旧模式分轮动）继续前向留样，但没有默认成交权限。
+- **唯一模式证据源**：`output/live/training_rows.parquet` 中 `is_live=true`、`book=B`、`executable_fillable=true`、非北交所的 `executable_net_ret`。该标签复用第 5 节开盘成交模型并扣双边费用；理论 `net_realized_ret`、SQLite `mode_history`、实际已买子集和不可交易北交所信号均不得打开模式资格。
+- **无未来信息与证据口径**：D 日信号在 D+1 收盘结算，最早只能进入 D+2 早盘的模式判断。正式门依次检查首个样本充足的 20/60/120 交易日窗口，最低活跃日/信号数分别为 8/12、15/20、8/10。模式信号日保留已完成回放验证的 1/2/3 信号 25%/45%/50% 证据权重；模式相对同日全可执行候选池和四指数的 alpha 必须各自满足单侧 80% 下置信界大于 0 才为 `ACTIVE`，否则为 `COLD`。四指数证据缺失或样本不足为 `UNKNOWN`。
+- **快速升格与冷却**：最近 5 日至少有 3 个活跃日、5 个信号，候选池/四指数 alpha 均值为正且各自正 alpha 日占多数时，模式直接升为 `ACTIVE`。正式 `ACTIVE` 若同一样本地板下任一双基准 alpha 均值转为非正，则降为 `PROVISIONAL`，不是一票否决；未满足直接升格但剔除最好日后双 alpha 仍为正的模式保留 `PROVISIONAL` 入口。所有可交易模式每日最多贡献排名第一的 1 只；`COLD/UNKNOWN` 只留 shadow。
+- **近期健康传感器**：晨报和 snapshot 额外记录 `mode_fast_health`。最近至少 3 个模式日出现均值转差或多数 alpha 日转差时可提前标记 `EARLY_WARNING/DETERIORATING`，包括尚未达到 5 信号硬冷却地板、或均值仍被单个 winner 支撑的情况；该字段固定 `shadow_only`，不能改变资格、仓位或排序。
+- **门内排序**：通过模式硬门后统一按 `0.50×rank_score分位 + 0.25×K分位 + 0.25×P分位` 排序；`rank_score` 中的模式置信度必须取同一可执行资金加权候选池/四指数 alpha 的保守侧重建，禁止回退理论近期收益或 `mode_history`。K/P、环境适配、小草评分和 AI 情报默认都没有恢复失效模式的权限。
+- **共享实现**：`live_recommend.py`、`capture_signals.py`、`paper_record.py` 与 `research_mode_switch_replay.py` 必须调用 `strategy.mode_switch` 的同一状态机、选择器和整手分配器；不得在回放中复制一套近似逻辑。
+- **AI 情报因子（paper-only P2）**：默认自动化为 `--intelligence-trade shadow`，只记录反事实。显式 `on` 时也只能在已通过资格的 ★E 内重排或移除，不能恢复 `COLD/UNKNOWN`、北交所或非 ★E 候选。关键词 `keyword_score` / 一句话舆情永不参与买入排序。
+- **Agent-review 汇合**：morning 在冻结 evidence 并生成零打分 queue 后进入有上限的 rendezvous；automation agent 只可基于冻结证据写结构化 `agent_review`，不得用关键词脚本冒充判断。超时按 base picks 继续并把支持层标为 degraded，不能无限等待，也不能把 timeout 说成确定性主链失败。
+- **AI hard-veto**：仅在显式 `--intelligence-trade on` 的买入路径中，认 `intelligence_evidence.HARD_VETO_TAXONOMY` 中的明确事件类型，且需模型写入 `veto_flags`、`severity` 达 high/critical、`confidence >= ai_veto_confidence`、未过短线时效或标记 ongoing。命中后 Book-B 纸面买入跳过并写 `paper_skips.jsonl` 的 `AI_HARD_VETO`；非法 event_type / 低置信 / 低严重度不生效。Evidence freeze 覆盖当天候选池和当前 open Book-B 持仓；同日缓存只在新鲜 TTL 内复用。
 - **出场分阶段**（`live_monitor`）：
   - **AI_EVENT_RISK_EXIT**：持仓股票若当天结构化 `veto_flags` 命中 hard-veto，且不处于 T+1，则触发尽早卖出；仍受跌停无买盘等流动性执行约束。
   - **盘中仅执行** `HARD_STOP`（peak→now 回撤 ≥ **8%** 且无强持有理由）或流动性逃逸。
@@ -79,12 +86,13 @@
 - 无窗口数据 → 回退到 L（`fill_fallback`）。
 - 唯一实现：`paper_record._fill_price_from_window`。
 - **数据源单一性（OHLCV 故意不接公共源 fallback）**：止损/peak-dd 依赖的分钟线 OHLCV **只**来自专有 API（`client.minute_line`）。**MUST NOT** 把公共源（akshare/腾讯等）价格接入 live 止损路径：不同复权/时间戳/坏tick 会算出不同的 peak/dd，使 book B 与验证 next-close 口径及 API 喂的回测**静默漂移**——正是 data_health 要抓的"真的谎言"。OHLCV 不可得时应 **fail-safe（持有/跳过）**，而非用二手数据动作。公共源仅允许用于**带 provenance 标记、经对账的研究/回填工具**，且 book A/B 记账永不读 `source='public'`。
-- **四指数基准完整性**：`refresh_daily_cache.py` 每日必须把上证、深成指、创业板指、中证1000 与持仓/信号一起做分钟重建，并按显式 `--date` 选择该日信号。`forward_eval` 的 `market_return_pct` 与 paper-vs-market 均要求四项齐全；任一缺失时聚合值/超额收益为 N/A，禁止把缺失当 0 或用部分指数冒充四指数均值。
+- **四指数与成熟样本完整性**：`refresh_daily_cache.py` 每日必须把上证、深成指、创业板指、中证1000、持仓、当日信号，以及上一交易日 live Book-B 信号批次一起做分钟重建，并按显式 `--date` 选择目标日。上一批信号的 D+1 日线必须在 `forward_eval` 前齐备；当天指数重建已经开始但成熟批次仍有缺口时，`data_doctor` 必须 CRITICAL 并阻断学习。`forward_eval` 的 `market_return_pct` 与 paper-vs-market 均要求四项指数齐全；任一缺失时聚合值/超额收益为 N/A，禁止把缺失当 0 或用部分指数冒充四指数均值。
 - Book T 使用同一成交模型与同一专有 OHLCV 边界；`basket_price` 仍只是放弃线。
 
 ## 6. 仓位与资金
 
-- `deploy_ratio` 默认 **0.5**（留 dry powder）；`max_total_exposure_ratio` 默认 **0.67**；等权滚动现金；整 100 股；单边费率 **1bp**。
+- Book B 每日新批次预算上限 = **已结算净资产 × 50%**，不是剩余现金 × 50%；D 与尚未在 D+1 退出的前一批可重叠，总敞口上限 = **已结算净资产 × 100%**。实际买入仍同时受可用现金约束。
+- 存在至少一个 `ACTIVE` 候选时，批次目标总仓位固定 50%：1 只为 50%，2 只各 25%，3 只各约 16.7%；`ACTIVE + PROVISIONAL` 时先给临时模式约 16.7%，余量给 ACTIVE。仅 `PROVISIONAL` 时每只约 16.7%，空槽不重分配。每模式每日最多 1 只，单票上限 50%，整 100 股，单边费率 1bp；联合分配器先最大化可表达的不同模式数，再看排序、目标偏差和资金利用率。
 - 被 quality-governor 过滤的 slot **留现金、不再分配**（保守）。
 - Book T 默认预算为独立 T 账户 `TREND_BUDGET_RATIO=30%`、目标 `TREND_TOP_M=3` 个 slot；这只是 paper 仪器参数，不是已验证 alpha。Book T 的目标是“趋势袖子尽量保持仓位”，不是每日追排名；换股要有主线错配或 rebalance 到期证据，并记录估算往返手续费。
 
@@ -99,6 +107,7 @@
 - 依据 book A 近 5 个出场日累计收益：`< -3%` → book B deploy **减半**；`< -5%` → book B **停买**。
 - **传感器常活**：book A 记账与数据采集**永不**因 kill-switch 停止。唯一实现 `paper_record._kill_switch_factor`。
 - 指数/regime deploy gate 已回测全败 train+test 一致性（`backtest_deploy_gate.py`），故**不接任何指数 regime gate**；性能 kill-switch 是唯一 deploy 控制。
+- **短线模式辅助指标无准入权限**：state/regime fitness、前日结构及生态代理只保留为 `shadow_ranking_only` 遥测，不能放宽或收紧模式近期收益阈值，也不能把证据不足或失效模式提升为临时可交易。2026-07-10 的 `N字低吸`、`接力低弱转1` 灰区机制确认均为 `REJECTED`；未完成 as-of 历史面板和 OOS 的真实生态指标统一记为 `UNTESTED`。唯一运行实现是 `strategy.adaptive` 写出 `adaptive_regime_fitness` 与 `adaptive_auxiliary_authority`，但 `adaptive_active` 只读滚动收益证据。
 - Book T 不新增第二部署闸；它独立 paper 运行，用 trend_guards 评估，不反向改动 Book B。
 
 ## 9. 双钥匙资金动作边界（real-capital，借 QuantDinger 双钥匙）
@@ -116,11 +125,11 @@
 
 - **只上报真实异常**：脚本失败、缺预期输出、`候选股 NONE`、缺 paper-record 输出、对账 MISMATCH、`HARD_STOP` 触发、现金不足、可疑数据、**③ 策略飞轮 `blocked`**（有 PASS 裁决待应用却无 actuator——验证过的 edge 闲置）。
 - **探索期目标**：当前无 real-capital；核心目标是提升收益率和验证效率。weekly deep review 可以在 paper/simulation/research/tooling 范围内自动改代码/参数并提交，但任何改动都必须有明确归因证据，不能想当然。
-- **自动改动硬门槛：`evidence_bundle`**。没有完整 `evidence_bundle` 的事项只能 `PROPOSAL_ONLY`，不得 `AUTO_APPLIED`。每个 bundle 必须写清：
+- **自动改动硬门槛：`evidence_bundle` + 策略协议门**。没有完整 `evidence_bundle` 的事项只能 `PROPOSAL_ONLY`，不得 `AUTO_APPLIED`。策略收益类改动还必须提供 `protocol_id` 和 `research_manifest`，且 protocol 必须登记在 `reference/experience/research_protocols.yaml`，manifest 必须包含输入 hash、guard 参数、verdict、git 状态和 diagnostics。工具/观测类改动不要求 research manifest。每个 bundle 必须写清：
   `problem_observed`、`attribution`、`evidence_artifact`、`baseline_vs_variant`、
   `overfit_check`、`change_scope`、`rollback`。
-- **AUTO_APPLIED 候选格式**：weekly finalize 必须收到至少一个 auto-apply candidate（plan 内或 `--auto-apply-candidate` JSON/JSONL），字段包括 `id`、`title`、`source`、`recommended_change`、`evidence_bundle`。脚本会校验 source 是否属于固定输入清单、bundle 是否完整、validation 是否不含失败标记；校验失败不得提交为 `AUTO_APPLIED`。
-- **固定输入清单**：自动改动只能来自 weekly plan 的固定输入：`flywheel_selfcheck.py`、`flywheel_sweep.py --json --top 30`、`distill_action_log.jsonl`、`kronos_screen/HYPOTHESES.jsonl`、`output/research/*`、`pnl_decompose.csv`、`paper_vs_market_*.md`、`posture_calibration.jsonl`、`exit_calibration.jsonl`、`git status --porcelain`。固定输入之外的发现一律写 proposal 等用户确认。
+- **AUTO_APPLIED 候选格式**：weekly finalize 必须收到至少一个 auto-apply candidate（plan 内或 `--auto-apply-candidate` JSON/JSONL），字段包括 `id`、`title`、`source`、`recommended_change`、`evidence_bundle`；策略收益类还需要 `change_type`（如 `paper_strategy`）、`protocol_id`、`research_manifest`。脚本会校验 source 是否属于固定输入清单、bundle 是否完整、protocol 是否存在、manifest 是否满足 protocol、validation 是否不含失败标记；校验失败不得提交为 `AUTO_APPLIED`。
+- **固定输入清单**：自动改动只能来自 weekly plan 的固定输入：`flywheel_selfcheck.py`、`flywheel_sweep.py --json --top 30`、`distill_action_log.jsonl`、`kronos_screen/HYPOTHESES.jsonl`、`output/research/*`、`output/research/runs/*/manifest.json`、`reference/experience/research_protocols.yaml`、`pnl_decompose.csv`、`paper_vs_market_*.md`、`posture_calibration.jsonl`、`exit_calibration.jsonl`、`git status --porcelain`。固定输入之外的发现一律写 proposal 等用户确认。
 - **允许自动改**：paper/simulation 策略参数、emitted modes、Book B/T 模拟策略、研究脚本、报告字段、cohort 规则、模型配置、蒸馏/action-log/schema/observability 工具。策略收益类改动必须有 PASS / fill-aware PASS / baseline-vs-variant 明确改善，并说明不过拟合证据；工具类改动必须能归因到具体审计/验证缺口。
 - **不得自动改**：账户历史、成交账本、原始缓存、数据口径真相源、安全校验、real-capital 授权逻辑、live authorization、手工改账。即使未来上小资金，真实资金边界仍走双钥匙。
 - **dirty-file 边界**：weekly 开始时记录 `git status --porcelain`。运行前已 dirty 的文件不得自动修改；若证据明确指向该文件，周报第一屏写 `NEEDS_HUMAN_CONFIRMATION`，创建 `.scratch/weekly-deep-review/...` proposal，等待用户明确确认。
@@ -136,6 +145,8 @@
 - [x] 成交 ≤ basket 放弃线（`_fill_price_from_window`）；窗口最低价 > L 时，实时价仍在 basket 内则补单成交，否则 SKIP。
 - [x] book A/B fixture 回放：同组 picks 过 A/B，realized 差 **完全等于出场口径差**（逐仓可归因，无记账漂移）；无 stop 触发时 book A == book B（消灭 iteration-7 的 -4,191 漂移）。`tests/test_operating_contract.py::test_ab_replay_*`
 - [x] Book T snapshot/account/monitor key 均带 `book` 命名空间；B/T 同票同日不互相覆盖；T 宽止损不调用短线 strong-hold/composite。
+- [x] Book B 与历史回放共用 `strategy.mode_switch`；D-1 outcome 不进入 D 日早盘状态；`COLD/UNKNOWN/BJSE` 无成交权限；`--notional` 不能绕过 3 席位、每模式 1 只和批次 50% 上限。
+- [x] 模式证据保留 25%/45%/50% 验证权重；`ACTIVE` 同时通过候选池和四指数证据，近期双基准均值与多数日转正可直接升格，任一均值转负只冷却到 `PROVISIONAL`。
 - [ ] （后续）settle_book_a 只用 next_close 且幂等；decompose_pnl 三项金额求和 = account realized_pnl（容差=取整）。
 
 ## 12. 修订记录
@@ -151,3 +162,8 @@
 | 1.6 | 2026-07-02 | Book T 候选与换股口径细化：新仓按 `aligned/neutral/external` 分层，外部旧方向不买；已持有 `external` 过 T+1 后按 `TREND_POSTURE_MISMATCH` 换出，普通排名变化只等低换手 rebalance，保持趋势袖子仓位但避免银行/保险等防守方向被误当主线。 |
 | 1.7 | 2026-07-03 | Book T 错配/低换手 rebalance 改为 morning 成对切换：EOD 不再单边卖出 `external` 或 rebalance-due 行；早盘只有出现可成交替代候选时才 SELL+BUY，同步记录 `paired_morning_switch`，无替代则保持趋势暴露。 |
 | 1.8 | 2026-07-05 | AI 情报因子 P2 接入 Book-B 纸面交易：结构化 `agent_review` 短线分参与候选池重排，taxonomy hard-veto 可跳过买入并触发 T+1 后 `AI_EVENT_RISK_EXIT`；关键词舆情仍只作诊断，real-capital 边界不变。 |
+| 1.9 | 2026-07-10 | 短线模式辅助指标权限收回为 `shadow_ranking_only`：灰区机制确认 OOS 被拒后，state/regime fitness 不再调制模式收益阈值；保留结构化遥测供排序研究与新样本复验。 |
+| 2.0 | 2026-07-10 | 人工确认将共享可执行模式状态机升格为 Book-B 默认纸面成交权限：统一 `executable_net_ret` 证据、D+2 可见性、ACTIVE/PROVISIONAL/COLD/UNKNOWN、★E 门内排序、NAV 批次和 T+1 敞口；历史回放改为调用同一实现。real-capital 边界不变。 |
+| 2.1 | 2026-07-10 | 修正模式统计与资金执行错位：信号日按 25%/45%/50% 批次资金权重聚合，ACTIVE 同时要求候选池/四指数 LCB80 为正；近期任一双基准 alpha 均值转负时降为最多 1 只的 PROVISIONAL，模式置信度取双基准保守侧。仍仅 paper/simulation。 |
+| 2.2 | 2026-07-11 | Book-B 模拟盘采用六个月、扩展八个月和近期可执行回放共同占优的进攻候选：近期双 alpha 均值与多数日转正直接 ACTIVE；每模式只取第一名；存在 ACTIVE 时批次目标 50%，单票上限 50%。证据聚合权重保持原验证口径，real-capital 双钥匙边界不变。 |
+| 2.3 | 2026-07-14 | 收紧运行与账本诚实性：Book-T 阻卖事实优先、四指数完整覆盖、T 状态快照降级、严格配对 A/B 归因、14:25/14:55 拆分、posture 到期、agent-review 有界汇合、run-flow 双层状态，以及 A/B/T 显式 book 身份与可审计历史回填。 |

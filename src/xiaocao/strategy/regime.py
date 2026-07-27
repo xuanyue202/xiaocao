@@ -11,9 +11,9 @@ Two layers coexist here:
    `align`): the 道-level abstraction. Each mode declares its preferred
    ranges across 3 universal axes (reward density / risk polarity /
    continuity) plus optional preconditions; `mode_fitness(mode, state)`
-   returns a continuous score ∈ [-1, +1] that adaptive uses to modulate
-   per-window thresholds. See docs and reports/strategy_state_framework_*.md
-   for the full first-principles derivation.
+   returns a continuous score ∈ [-1, +1] for shadow diagnostics and ranking
+   research. It has no mode-qualification authority. See docs and
+   reports/strategy_state_framework_*.md for the historical derivation.
 
 Regimes still emitted (legacy, for live overview-based path):
 - `bear`, `divergence`, `recovery`, `trend_continuing`, `trend_strong`, `neutral`
@@ -308,8 +308,8 @@ MODE_PROFILE: dict[str, ModeProfile] = {
 # 1. **DBR preconditions dropped** (per A3 calibration on
 #    output/calibrate_dbr_per_mode.md): for all 6 modes with sufficient sample,
 #    DBR distribution between winners and losers overlap (Δ_med ∈ [-0.14, +0.00]),
-#    sometimes anti-predictive. 绿断/红断/首红断 lose hard precondition; rely on
-#    adaptive fitness modulation only.
+#    sometimes anti-predictive. 绿断/红断/首红断 drop those profile conditions;
+#    the resulting fitness remains shadow/ranking telemetry only.
 #
 # 2. **Two new bonus axes** wired in:
 #    - wants_momentum (5d cumulative 大盘 mean pct, normalized to [0,1])
@@ -411,8 +411,8 @@ def align(want: str, observed: float) -> float:
     return max(-1.0, 1.0 - 2.5 * abs(observed - target))
 
 
-# Sentinel returned by mode_fitness when a precondition fails — adaptive
-# layer interprets this as "force shadow on any mild loss" (threshold → 0).
+# Sentinel returned when a profile precondition fails. This is telemetry only;
+# it must not force a mode into or out of the tradable set.
 PRECONDITION_FAIL = float("-inf")
 
 
@@ -421,7 +421,7 @@ def mode_fitness(
     state: StateVector | None,
     profiles: dict[str, ModeProfile] | None = None,
 ) -> float:
-    """Continuous fitness ∈ [-1, +1], or PRECONDITION_FAIL when state-gated out.
+    """Continuous fitness ∈ [-1, +1], or PRECONDITION_FAIL when mismatched.
 
     Base = 3-axis mean of (reward, risk, continuity) alignments — preserves
     v3.3 backward-compat exactly when wants_momentum / wants_limitup_density
@@ -513,7 +513,7 @@ MODE_REGIME_FIT: dict[str, set[str]] = {
 
 
 def mode_allowed_in(mode: str, regime: str) -> bool:
-    """Legacy hard-gate. Discouraged — use mode_fitness() with state instead."""
+    """Legacy research hard-gate; never use as production mode authority."""
     fit = MODE_REGIME_FIT.get(mode)
     if fit is None:
         return regime != "bear"

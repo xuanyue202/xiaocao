@@ -7,6 +7,7 @@ The repo is the source of truth for Xiaocao Codex configuration.
 Canonical files:
 
 - `.codex/skills/xiaocao-trading/SKILL.md`
+- `.codex/skills/xiaocao-trading/references/*.md` — branch-specific runbooks loaded through progressive disclosure
 - `.codex/skills/xiaocao-trading/agents/openai.yaml`
 - root project code copied into the generated runtime bundle by
   `scripts/package_xiaocao_skill.py`
@@ -39,19 +40,25 @@ After a refresh, the installed entry should resolve to the repo skill:
 readlink ~/.codex/skills/xiaocao-trading
 ```
 
-When changing Xiaocao behavior, edit the root repo source first. When changing
-Codex instructions, edit `.codex/skills/xiaocao-trading/SKILL.md` first. Do not
+When changing Xiaocao behavior, edit the root repo source first. For Codex
+instructions, keep `SKILL.md` limited to common boundaries and routing; edit the
+single owning file under `references/` for branch-specific behavior. Do not
+duplicate `docs/OPERATING_CONTRACT.md` semantics in the skill, and do not
 hand-edit `~/.codex/skills/xiaocao-trading`; regenerate or relink it from the
 repo.
 
 ## Automations
 
-Canonical automation configs live in:
+Codex Automation is the runtime authority for scheduled tasks. Create or update
+an active task through the Codex Automation tool/API; editing a TOML file alone
+does not prove that the scheduler accepted or activated the change.
+
+Tracked automation mirrors live in:
 
 - `.codex/automations/*/automation.toml`
 
-These tracked files are the canonical config for the Xiaocao workstation layout,
-not a machine-independent template. They intentionally assume the repo is
+These tracked files are reviewable mirrors for the Xiaocao workstation layout,
+not the runtime authority or a machine-independent template. They intentionally assume the repo is
 restored at:
 
 ```text
@@ -67,21 +74,31 @@ Codex Desktop currently discovers active cron automations through:
 
 - `~/.codex/automations/*/automation.toml`
 
-For Xiaocao, the global `automation.toml` files are symlinks back to the repo
-canonical files. The global automation directories still hold app runtime state
-such as `memory.md`, which is intentionally not tracked.
+Do not rely on the global `automation.toml` files being symlinks: Codex Desktop
+may materialize them as regular files when an automation is updated through the
+API. The global automation directories also hold app runtime state such as
+`memory.md`, which is intentionally not tracked.
 
-Project `.codex/automations` by itself is not a guaranteed Codex Desktop
-discovery location. Keep the global symlink entries in place unless the app
-adds first-class project automation discovery.
+Project `.codex/automations` by itself is not a Codex Desktop activation path.
+After every schedule change, update the existing automation through the Codex
+Automation tool/API, view it again through that interface, and then refresh the
+tracked mirror. Never infer activation from a file diff alone.
+
+For ordinary recurring cron tasks, pass a DTSTART-free RRULE containing the
+intended local `BYHOUR` and `BYMINUTE`. Do not add `DTSTART`/`TZID` and do not
+convert local time to UTC. The Automation API explicitly treats requested times
+in the user's locale; DTSTART-anchored or timezone-specific schedules use a
+separate reviewed path. Validate the UI's displayed next-run interval against
+the current local clock after saving, because a syntactically valid RRULE can
+still enter the wrong product path.
 
 ## End-To-End Impact Map
 
 The live Codex loop has several layers:
 
-1. `~/.codex/automations/xiaocao-*/automation.toml` is the Codex Desktop
-   discovery entry. For Xiaocao, each `automation.toml` is a symlink to the repo
-   file under `.codex/automations/`.
+1. Codex Automation is the scheduling authority. Its local state may be
+   materialized under `~/.codex/automations/xiaocao-*`, but those files are an
+   implementation detail, not the supported update interface.
 2. The automation prompt asks Codex to use the local `xiaocao-trading` skill and
    run one workflow: morning, intraday monitor, closing discipline, or EOD.
 3. `~/.codex/skills/xiaocao-trading` is a symlink to
@@ -102,7 +119,8 @@ Before changing any layer, check the downstream contract:
   summary instructions.
 - New live artifacts under `output/live/` may require `.gitignore`,
   migration-doc, and automation summary updates.
-- Automation cadence or prompt changes belong in `.codex/automations/*` and may
+- Automation cadence or prompt changes must be applied through the Codex
+  Automation tool/API, then mirrored in `.codex/automations/*`; they may also
   need a matching `SKILL.md` workflow section.
 - Safety or paper/real-capital behavior changes require tests plus updates to
   `docs/OPERATING_CONTRACT.md` and the skill if the agent-facing behavior

@@ -27,7 +27,14 @@ def main() -> int:
     pack = build_context_pack(live_dir=live_dir, market_date=market_date, phase=args.phase)
     out = Path(args.output) if args.output else live_dir / f"context_pack_{market_date}_{args.phase}.json"
     write_context_pack(out, pack)
-    print(f"context_pack -> {out} status ok={pack['data_health']['ok']} signals={pack['signals']['rows_for_date']} intelligence={pack['stock_intelligence']['rows_for_date']}")
+    intelligence_status = pack.get("intelligence_status") if isinstance(pack.get("intelligence_status"), dict) else {}
+    print(
+        f"context_pack -> {out} status ok={pack['data_health']['ok']} "
+        f"signals={pack['signals']['rows_for_date']} intelligence={pack['stock_intelligence']['rows_for_date']} "
+        f"agent_review={intelligence_status.get('agent_review_rows', 0)} "
+        f"actionable_ai={intelligence_status.get('actionable_short_review_rows', 0)} "
+        f"fallback_base={intelligence_status.get('fallback_to_base_pick', False)}"
+    )
     return 0
 
 

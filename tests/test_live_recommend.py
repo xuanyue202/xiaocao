@@ -2,14 +2,11 @@ from __future__ import annotations
 
 from datetime import datetime
 
-import pytest
-
 import scripts.live_recommend as live_recommend
 from scripts.live_recommend import (
     _annotate_recommendation_score,
     _basket_params,
     _basket_price,
-    _confidence_from_window_stats,
     _entry_price,
     _open_fit,
     _open_risk_penalty,
@@ -22,8 +19,6 @@ from scripts.live_recommend import (
     _seconds_until_recommendation_start,
     _select_candidates,
     _select_standby_candidates,
-    _mode_confidence,
-    _training_rows_mode_window_stats,
 )
 from xiaocao.utils.trading_session import A_SHARE_TZ
 
@@ -107,60 +102,6 @@ def test_open_risk_penalty_catches_extreme_execution_shapes() -> None:
     assert _open_risk_penalty("绿断低吸", -8.5) > 0.0
     assert _open_risk_penalty("接力低弱转1", 2.0) == 0.0
     assert _open_risk_penalty("接力低弱转1", 6.0) > 0.0
-
-
-def test_mode_confidence_shrinks_sparse_history_toward_neutral() -> None:
-    sparse = _confidence_from_window_stats({5: {"n": 1, "avg": 8.0}})
-    dense = _confidence_from_window_stats({5: {"n": 8, "avg": 8.0}})
-
-    assert 50.0 < sparse["confidence"] < dense["confidence"]
-    assert dense["confidence"] == 82.0
-
-
-def test_training_rows_mode_window_stats_reads_live_all_hit_rows(tmp_path) -> None:
-    pd = pytest.importorskip("pandas")
-    path = tmp_path / "training_rows.parquet"
-    pd.DataFrame([
-        {"date": "2026-06-24", "mode": "N字低吸", "is_live": True, "net_realized_ret": 8.0},
-        {"date": "2026-06-25", "mode": "N字低吸", "is_live": True, "net_realized_ret": 4.0},
-        {"date": "2026-06-25", "mode": "首红断低吸", "is_live": True, "net_realized_ret": -6.0},
-        {"date": "2026-06-25", "mode": "N字低吸", "is_live": False, "net_realized_ret": -20.0},
-        {"date": "2026-06-30", "mode": "N字低吸", "is_live": True, "net_realized_ret": 30.0},
-    ]).to_parquet(path, index=False)
-
-    stats = _training_rows_mode_window_stats(
-        {"N字低吸", "首红断低吸"},
-        "2026-06-30",
-        ["2026-06-23", "2026-06-24", "2026-06-25", "2026-06-26", "2026-06-29", "2026-06-30"],
-        path,
-    )
-
-    assert stats["N字低吸"][5] == {"n": 2, "avg": 6.0}
-    assert stats["首红断低吸"][5] == {"n": 1, "avg": -6.0}
-
-
-def test_mode_confidence_prefers_live_all_hit_rows_over_cache(tmp_path) -> None:
-    pd = pytest.importorskip("pandas")
-    path = tmp_path / "training_rows.parquet"
-    pd.DataFrame([
-        {"date": "2026-06-24", "mode": "N字低吸", "is_live": True, "net_realized_ret": 8.0},
-        {"date": "2026-06-25", "mode": "N字低吸", "is_live": True, "net_realized_ret": 8.0},
-    ]).to_parquet(path, index=False)
-
-    class BadCache:
-        def mode_window_stats(self, *args, **kwargs):
-            return {"n": 8, "avg": -8.0}
-
-    conf = _mode_confidence(
-        BadCache(),
-        {"N字低吸"},
-        "2026-06-30",
-        ["2026-06-23", "2026-06-24", "2026-06-25", "2026-06-26", "2026-06-29", "2026-06-30"],
-        path,
-    )["N字低吸"]
-
-    assert conf["confidence"] > 50.0
-    assert conf["mode_confidence_source"] == "live all-hit shadow PnL"
 
 
 def test_recommendation_score_uses_mode_confidence() -> None:

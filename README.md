@@ -555,7 +555,7 @@ xiaocao cache maintain --hot-days 365 --vacuum
 
 ### B 档结构性增强（道+法层）
 
-每个回测信号默认会被标注 `regime`/`is_main_line`/`is_big_cap`，summary 里相应有 `regime_summary` / `mainline_summary` / `bigcap_summary` 切片。可调参数：
+每个回测信号默认会被标注 `regime`/`is_main_line`/`is_big_cap`，summary 里相应有 `regime_summary` / `mainline_summary` / `bigcap_summary` 切片。以下硬过滤参数只用于显式反事实研究，不构成线上模式资格：
 
 ```bash
 xiaocao backtest run --start 2026-03-01 --end 2026-04-24 \
@@ -570,13 +570,49 @@ xiaocao backtest run --start 2026-03-01 --end 2026-04-24 \
 
 注意：`market_overview` 接口是 live state（无历史日期参数），所以 backtest 中历史日期的 regime 留空；live `xiaocao strategy run` 才有有效 regime。
 
-实测发现：在小草现有的"短线弱转强 / 低吸"模式集合上，**主线之外的信号反而表现更好**（baseline 数据：on-mainline avg -5.5%/win 17%，off-mainline avg +3.7%/win 62%），与 0413-A "盘中方向卡的是新轮动而非昨日老主线" 一致。所以 `--exclude-main-line` 比 `--require-main-line` 通常更适合短线模式。
+历史样本曾观察到主线外信号更强，但这只保留为研究线索。除非按当前研究协议得到新的 OOS PASS，主线/regime 信息只作切片、排序研究和审计，不能覆盖模式自身的可执行收益证据。
 
-### 自适应模式（Adaptive mode gating）
+### Book B 可执行模式切换（paper 默认）
 
-**关键设计**：adaptive 不丢信号。每个候选信号都会被生成、按次日开盘买/收盘卖打分、写进 mode_history。adaptive 的作用是给每条信号打 `adaptive_active = True/False` 标签：
+盘前、Book-B 纸面成交和历史回放统一调用
+`src/xiaocao/strategy/mode_switch.py`。唯一有成交权限的近期证据是
+`output/live/training_rows.parquet` 中真实 live、Book B、可成交、非北交所的
+`executable_net_ret`；理论 `net_realized_ret` 和旧 `mode_history` 只保留研究用途。
 
-- `adaptive_active = True` → **active**：计入用户的"真实"收益（real P&L）
+- D 日信号在 D+1 收盘结算，最早 D+2 早盘参与判断。
+- 信号日保留已验证的 1/2/3 信号 25%/45%/50% 证据权重；首个样本充足的
+  20/60/120 日窗口决定正式资格，模式相对同日可执行候选池和四指数的 alpha
+  单侧 80% 下置信界都大于 0 才是 `ACTIVE`。
+- 最近 5 日达到 3 个模式日/5 个信号，双基准 alpha 均值和多数日同时为正时直接
+  升为 `ACTIVE`；正式 `ACTIVE` 若近期任一双基准 alpha 均值转为非正，则冷却为
+  `PROVISIONAL`。所有可交易模式每日最多取排名第一的 1 只，`COLD/UNKNOWN` 只留 shadow。
+- 存在 `ACTIVE` 时 Book-B 新批次目标固定为 NAV 的 50%：一只可占 50%，两只各25%，
+  三只各约16.7%；仅有 `PROVISIONAL` 时仍每只约16.7%。
+- `mode_fast_health` 会更早标记稀疏或被单个 winner 掩盖的近期恶化，但固定为
+  `shadow_only`，不改变资格和仓位。
+- 门内按 `0.50*rank_score分位 + 0.25*K分位 + 0.25*P分位` 排序；
+  `rank_score` 的模式置信度取同一资金加权候选池/四指数 alpha 的保守侧，
+  不回退旧 mode_history。
+  环境和辅助指标不能恢复失效模式。
+- 默认成交集合为 `mode_exec_star`（报告中的 ★E）。每日新批次上限为已结算净资产
+  50%，T+1 重叠总敞口上限为 100%；整手分配与 `research_mode_switch_replay.py`
+  共用同一实现。
+
+```bash
+# 当前 Book-B 默认纸面成交
+PYTHONPATH=src python3 kronos_screen/scripts/paper_record.py \
+  --date YYYY-MM-DD --pick mode_exec_star --intelligence-trade shadow
+
+# 同一状态机/选择器/整手资金账本回放
+PYTHONPATH=src python3 scripts/research_mode_switch_replay.py \
+  --start 2026-06-11 --end 2026-07-09
+```
+
+### 历史回测自适应标签（legacy adaptive，不是 Book B 权限源）
+
+**关键设计**：legacy adaptive 不丢信号。每个候选信号都会被生成、按次日开盘买/收盘卖打分、写进 mode_history。它只给历史 backtest 切片打 `adaptive_active = True/False` 标签，不再决定 live Book-B 成交：
+
+- `adaptive_active = True` → **active**：计入该历史 backtest 的 active 切片
 - `adaptive_active = False` → **shadow**：仅作参考，不计入 P&L，但 outcome 仍记录到 mode_history
 
 这样设计的好处：
@@ -592,6 +628,11 @@ xiaocao backtest run --start 2026-03-01 --end 2026-04-24 \
 | Tier 2 | 5d 或 10d 单独达 n_min | 该单窗口 avg ≤ thr → SHADOW；正向 → ACTIVE |
 | Tier 3 | 5d/10d 都不足，20d 达 n_min | 20d avg ≤ thr → SHADOW；正向 → ACTIVE |
 | Tier 4 | 20d 也不足 | **SHADOW**（dormant 模式无证据可下注，但信号仍记录） |
+
+`adaptive_regime_fitness` 和 `adaptive_auxiliary_authority=shadow_ranking_only`
+会随信号写出，但辅助 fitness 不再移动上述阈值。2026-07-10 对 N字低吸、
+接力低弱转1 的灰区机制确认 OOS 均为 REJECTED；未经独立 PASS 和人工升级，
+环境、前日结构或生态代理既不能放行，也不能否决模式。
 
 > 默认 (n_min=1/2/3, thr=-5/-3/-2) 经过 5 个月 4 个月训练 / 1 个月测试集上 1620 配置 grid
 > 验证为接近最优——抬高 n_min 会损失样本，降低 thr 改善有限；详见
@@ -643,8 +684,8 @@ xiaocao backtest validate \
 | `default` | 9:30 open | 1d next_close | — | — | 无过滤，原始策略输出 |
 | `validated` | 9:30 open | 1d next_close | — | — | 排除 接力低弱转2 + 方向内绿盘低吸前3名（March/April 双窗口验证）|
 | `validated_off_main_line` | 9:30 open | 1d next_close | — | — | validated + exclude_main_line=True（旧别名）|
-| `validated_v2` | 9:30 open | 1d next_close | +2.82% / 58.9% | — | legacy regime-label adaptive（保 BC）|
-| `validated_v3` | 9:30 open | 1d next_close | +3.40% / 56.2% | -0.14% / 46.3% | state-aware adaptive，1d frame，bear 期赔钱 |
+| `validated_v2` | 9:30 open | 1d next_close | +2.82% / 58.9% | — | legacy regime-label 仅作 shadow telemetry（保 BC）|
+| `validated_v3` | 9:30 open | 1d next_close | +3.40% / 56.2% | -0.14% / 46.3% | return-evidence adaptive；state fitness 仅作 shadow telemetry |
 | **`validated_v5`** | 9:30 open | **5d max_dd 2%** | **+6.39% / 56.2%** | **+2.27% / 38.9%** | **当前推荐 ship default**。Phase B 多日持仓 + trailing stop。两个 window 都对 v3 +2.4-3.0pp avg。T+1 兼容。 |
 | `validated_v6` | 9:30 open | 3d max_dd 0.5% | +6.88% / 47.9% | +3.04% / 23.2% | aggressive 选项。dd=0.5% cross-window 验证为 monotonic 最优，+0.46-0.77pp avg vs v5。**但 win rate 显著低 + 滑点未建模 → 上线前必须 paper trading 1-2 周** |
 | `validated_v3_4` | 9:30 open | 1d next_close | +3.14% / 60.3% | — | EXPERIMENTAL，DBR drop + momentum/limitup bonus axes。8mo 实测对 v3 wash → REJECT，留作研究 |

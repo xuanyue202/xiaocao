@@ -36,6 +36,17 @@ def test_explain_signal_precondition_fail_marked() -> None:
     row = {"code": "X.XSHE", "mode": "绿断低吸"}
     out = explain_signal(row, _state(dbr=0.4))
     assert "PRECONDITION_FAIL" in out
+    assert "no qualification authority" in out
+
+
+def test_explain_signal_displays_auxiliary_authority() -> None:
+    row = {
+        "code": "X.XSHE",
+        "mode": "N字低吸",
+        "adaptive_auxiliary_authority": "shadow_ranking_only",
+    }
+    out = explain_signal(row, _state())
+    assert "shadow_ranking_only" in out
 
 
 def test_explain_signal_axes_align_displayed() -> None:

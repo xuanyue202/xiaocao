@@ -41,6 +41,7 @@ def _cand(code: str, p_score: float, kp_star: bool, *, mode: str = "绿断低吸
         "rank_score": rank_score, "mode_confidence": 55.0,
         "p_score": p_score, "k_score": 0.5,
         "kp_keep": True, "kp_rank": 0, "kp_star": kp_star,
+        "mode_state": "ACTIVE", "mode_trade_eligible": True,
         "open": 10.0,
     }
 
@@ -114,6 +115,23 @@ def test_mode_star_ranks_k_survivors_by_mode_aware_rank_score(tmp_path: Path) ->
     assert ranks == {"C2.XSHE": 1, "C3.XSHE": 2, "C4.XSHE": 3}
 
 
+def test_mode_exec_applies_mode_permission_before_soft_rank(tmp_path: Path) -> None:
+    cands = [
+        _cand("COLD.XSHE", 9.0, True, mode="首红断低吸", rank_score=999.0),
+        _cand("A1.XSHE", 3.0, True, mode="接力低弱转1", rank_score=90.0),
+        _cand("A2.XSHE", 2.0, True, mode="接力低弱转1", rank_score=80.0),
+        _cand("A3.XSHE", 1.0, True, mode="接力低弱转1", rank_score=70.0),
+    ]
+    cands[0].update({"mode_state": "COLD", "mode_trade_eligible": False})
+    client = FakeAuctionClient({row["code"]: _auction_row(-1.0, 0.5) for row in cands})
+
+    capture(cands, client, "2026-06-12", is_live=True, top_n=3, out=tmp_path / "snap.jsonl")
+
+    selected = {row["code"] for row in cands if row["mode_exec_star"]}
+    assert selected == {"A1.XSHE"}
+    assert cands[0]["mode_exec_star"] is False
+
+
 def test_replace_day_rows_is_idempotent_per_day(tmp_path: Path) -> None:
     out = tmp_path / "snap.jsonl"
     old = [json.dumps({"date": "2026-06-11", "is_live": True, "code": "X"}),
@@ -176,6 +194,10 @@ def test_capture_snapshot_includes_quality_fields(tmp_path: Path) -> None:
     assert row["mode_star"] is True
     assert row["mode_rank"] == 1
     assert row["mode_score"] == 47.0
+    assert row["mode_exec_star"] is True
+    assert row["mode_state"] == "ACTIVE"
+    assert row["mode_exec_rank_score"] == pytest.approx(row["rank_score"])
+    assert row["mode_exec_target_weight"] == pytest.approx(0.50)
 
 
 def test_capture_snapshot_preserves_qibao_benchmark_fields(tmp_path: Path) -> None:

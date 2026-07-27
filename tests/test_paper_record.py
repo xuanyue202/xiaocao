@@ -379,6 +379,47 @@ def test_select_intelligence_picks_uses_trade_date_asof_for_veto_expiry() -> Non
     assert active_on_trade_day.selected == []
 
 
+def test_mode_exec_intelligence_cannot_restore_cold_or_bjse_candidate() -> None:
+    rows = [
+        {
+            "code": "ACTIVE.XSHE",
+            "mode_exec_star": True,
+            "mode_exec_rank": 1,
+            "mode_trade_eligible": True,
+            "mode_state": "ACTIVE",
+            "rank_score": 10.0,
+            "score_source": "agent_review",
+            "agent_short_score": 0.0,
+        },
+        {
+            "code": "COLD.XSHE",
+            "mode_exec_star": False,
+            "mode_trade_eligible": False,
+            "mode_state": "COLD",
+            "rank_score": 999.0,
+            "score_source": "agent_review",
+            "agent_short_score": 1.0,
+        },
+        {
+            "code": "920001.BJSE",
+            "mode_exec_star": True,
+            "mode_trade_eligible": True,
+            "mode_state": "ACTIVE",
+            "rank_score": 1000.0,
+            "score_source": "agent_review",
+            "agent_short_score": 1.0,
+        },
+    ]
+
+    result = _select_intelligence_picks(
+        rows,
+        pick="mode_exec_star",
+        config=intelligence_policy.IntelligenceTradeConfig(mode="on", score_bonus=100.0),
+    )
+
+    assert [row["code"] for row in result.selected] == ["ACTIVE.XSHE"]
+
+
 def test_old_snapshot_quality_fields_are_recomputed() -> None:
     row = ensure_quality_fields({
         "code": "300001.XSHE",
@@ -532,6 +573,46 @@ def test_book_a_uses_book_b_aligned_fill_price(tmp_path, monkeypatch) -> None:
     assert row["entry_price_basis"] == "opening_window_vwap_capped_by_limit"
     assert row["fill_limit_price"] == 10.05
     assert row["fill_window_last"] == 10.06
+
+
+def test_book_a_reuses_mode_exec_planned_shares(tmp_path, monkeypatch) -> None:
+    import json
+    from argparse import Namespace
+    import kronos_screen.scripts.paper_record as pr
+
+    pos = tmp_path / "positions.jsonl"
+    account_a = tmp_path / "paper_account_A.json"
+    trades = tmp_path / "paper_trades.jsonl"
+    pos.write_text("", encoding="utf-8")
+    monkeypatch.setattr(pr, "POS", pos)
+    monkeypatch.setattr(pr, "ACCOUNT_A", account_a)
+    monkeypatch.setattr(pr, "TRADES", trades)
+    args = Namespace(
+        date="2026-07-13",
+        pick="mode_exec_star",
+        initial_capital=100000.0,
+        deploy_ratio=0.5,
+        fill_window_start="0930",
+        fill_window_end="0931",
+    )
+    picks = [{
+        "code": "000001.XSHE",
+        "name": "平安银行",
+        "mode": "接力低弱转1",
+        "mode_state": "ACTIVE",
+        "mode_exec_target_weight": 0.25,
+        "mode_exec_planned_shares": 1200,
+        "open": 10.0,
+        "basket_price": 10.2,
+        "_paper_fill": {"price": 10.0, "basis": "test_fill"},
+    }]
+
+    _record_book_a(picks, args, fee_rate=0.0001)
+
+    [row] = [json.loads(line) for line in pos.read_text(encoding="utf-8").splitlines()]
+    assert row["shares"] == 1200
+    assert row["mode_state"] == "ACTIVE"
+    assert row["mode_exec_target_weight"] == 0.25
 
 
 def test_book_t_records_independent_trend_account(tmp_path, monkeypatch) -> None:
@@ -721,6 +802,56 @@ def test_book_t_keeps_external_position_when_no_replacement_exists(tmp_path, mon
     account = json.loads(account_t.read_text(encoding="utf-8"))
     assert account["cash"] == 19999.0
     assert account["realized_pnl"] == 0.0
+
+
+def test_book_t_full_aligned_portfolio_returns_before_fill_window_wait(tmp_path, monkeypatch) -> None:
+    import kronos_screen.scripts.paper_record as pr
+
+    pos, account_t, _ = _patch_book_t_paths(tmp_path, monkeypatch)
+    rows = [
+        {
+            "book": "T",
+            "code": code,
+            "name": name,
+            "entry_date": "2026-07-19",
+            "entry_price": 5.0,
+            "shares": 1000,
+            "gross_notional": 5000.0,
+            "entry_fee": 0.5,
+            "entry_cash_out": 5000.5,
+            "fee_rate": 0.0001,
+            "category_name": "行业电子",
+            "trend_rebalance_days": 999,
+            "status": "open",
+            "source": "auto:trend_book",
+        }
+        for code, name in [
+            ("003816.XSHE", "中国广核"),
+            ("601728.XSHG", "中国电信"),
+            ("000725.XSHE", "京东方Ａ"),
+        ]
+    ]
+    pos.write_text(
+        "".join(json.dumps(row, ensure_ascii=False) + "\n" for row in rows),
+        encoding="utf-8",
+    )
+    account_t.write_text(json.dumps({
+        "initial_capital": 30000.0,
+        "cash": 14998.5,
+        "fee_rate": 0.0001,
+        "realized_pnl": 0.0,
+        "total_fees": 1.5,
+    }), encoding="utf-8")
+
+    def fail_if_waited(*_args, **_kwargs):
+        raise AssertionError("full aligned Book T must not wait for the fill window")
+
+    monkeypatch.setattr(pr, "_wait_until_fill_window_complete", fail_if_waited)
+    args = _book_t_args(target_positions=3)
+    args.date = "2026-07-20"
+    args.fill_settle_seconds = 5
+
+    _record_book_t(FakeBookTSwitchClient([]), args, wait_for_fill_window=True)
 
 
 def test_validate_fill_window_rejects_reversed_window() -> None:

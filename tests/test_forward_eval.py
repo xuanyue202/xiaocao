@@ -4,7 +4,31 @@ import pytest
 
 pd = pytest.importorskip("pandas")
 
-from kronos_screen.scripts.forward_eval import day_mean, ensure_training_schema  # noqa: E402
+from kronos_screen.scripts.forward_eval import (  # noqa: E402
+    _is_known_executable,
+    _market_return_map,
+    day_mean,
+    ensure_training_schema,
+)
+
+
+class _IndexClient:
+    def __init__(self, missing: str | None = None, invalid: str | None = None):
+        self.missing = missing
+        self.invalid = invalid
+
+    def date_kline(self, code, **_kwargs):
+        if code == self.missing:
+            return []
+        if code == self.invalid:
+            return [
+                {"tradeDate": "2026-07-10", "open": -100.0, "close": 100.0},
+                {"tradeDate": "2026-07-13", "open": 101.0, "close": 102.0},
+            ]
+        return [
+            {"tradeDate": "2026-07-10", "open": 100.0, "close": 100.0},
+            {"tradeDate": "2026-07-13", "open": 101.0, "close": 102.0},
+        ]
 
 
 def test_training_schema_adds_qibao_benchmark_star_from_layer() -> None:
@@ -29,11 +53,42 @@ def test_training_schema_adds_qibao_benchmark_star_from_layer() -> None:
     assert "is_main_line" in out.columns
     assert "is_big_cap" in out.columns
     assert "ai_intelligence_short_star" in out.columns
+    assert "mode_exec_star" in out.columns
+    assert "mode_exec_rank_score" in out.columns
+    assert "mode_exec_mode_confidence" in out.columns
+    assert "mode_state" in out.columns
+    assert "executable_fillable" in out.columns
+    assert "executable_net_ret" in out.columns
     assert "intelligence_long_star" in out.columns
     assert "regime" in out.columns
     assert "direction_rank" in out.columns
     assert bool(out.loc[out["code"] == "A.XSHE", "qibao_benchmark_star"].iloc[0]) is True
     assert bool(out.loc[out["code"] == "B.XSHE", "qibao_benchmark_star"].iloc[0]) is False
+
+
+def test_unknown_executable_nan_is_not_treated_as_cached_result() -> None:
+    assert not _is_known_executable({
+        "executable_fillable": float("nan"),
+        "executable_skip_reason": float("nan"),
+    })
+
+
+def test_market_return_requires_all_four_index_components() -> None:
+    complete = _market_return_map(_IndexClient(), ["2026-07-10"], {})
+    incomplete = _market_return_map(
+        _IndexClient(missing="399006.XSHE"), ["2026-07-10"], {}
+    )
+    invalid = _market_return_map(
+        _IndexClient(invalid="399006.XSHE"), ["2026-07-10"], {}
+    )
+
+    assert complete["2026-07-10"] == pytest.approx(2.0)
+    assert "2026-07-10" not in incomplete
+    assert "2026-07-10" not in invalid
+    assert _is_known_executable({
+        "executable_fillable": False,
+        "executable_skip_reason": "NO_USER_BOARD_PERMISSION",
+    })
 
 
 def test_training_schema_normalizes_block_metadata_for_parquet(tmp_path) -> None:

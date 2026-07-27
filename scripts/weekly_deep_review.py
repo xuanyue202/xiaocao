@@ -30,6 +30,7 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "src"))
 
 from xiaocao.live import flywheel  # noqa: E402
+from xiaocao.research import protocols  # noqa: E402
 
 ACTION_LOG = ROOT / "reference" / "experience" / "distill_action_log.jsonl"
 CHANGE_LEDGER = ROOT / "output" / "live" / "flywheel_change_ledger.jsonl"
@@ -67,6 +68,8 @@ FIXED_INPUTS = [
     "output/research/paper_vs_market_*.md",
     "output/live/posture_calibration.jsonl",
     "output/live/exit_calibration.jsonl",
+    "reference/experience/research_protocols.yaml",
+    "output/research/runs/*/manifest.json",
     "git status --porcelain",
 ]
 
@@ -322,8 +325,104 @@ def _source_is_fixed(source: str) -> bool:
         or source == "output/live/posture_calibration.jsonl"
         or source == "output/live/exit_calibration.jsonl"
         or source == "reference/experience/distill_action_log.jsonl"
+        or source == "reference/experience/research_protocols.yaml"
         or source == "kronos_screen/HYPOTHESES.jsonl"
     )
+
+
+def _repo_path(path: str | Path) -> Path:
+    p = Path(path)
+    return p if p.is_absolute() else ROOT / p
+
+
+def _protocol_registry_path() -> Path:
+    return ROOT / "reference" / "experience" / "research_protocols.yaml"
+
+
+def _nested_get(data: dict[str, Any], dotted: str) -> Any:
+    cur: Any = data
+    for part in dotted.split("."):
+        if not isinstance(cur, dict) or part not in cur:
+            return None
+        cur = cur[part]
+    return cur
+
+
+def _candidate_requires_research_protocol(candidate: dict[str, Any]) -> bool:
+    change_type = str(candidate.get("change_type", "")).lower()
+    strategy_types = {"strategy", "paper_strategy", "simulation_strategy", "research_strategy", "strategy_return"}
+    tooling_types = {"tooling", "instrumentation", "observability", "report_quality", "reporting", "research_tooling"}
+    if change_type in strategy_types:
+        return True
+    if change_type in tooling_types:
+        return False
+    source = str(candidate.get("source", ""))
+    if source == "kronos_screen/HYPOTHESES.jsonl":
+        return True
+    if source.startswith("output/research/runs/") and source.endswith("/manifest.json"):
+        return True
+    return source.startswith("output/research/") and not change_type
+
+
+def _manifest_artifact_path(artifact: str, manifest: dict[str, Any], manifest_path: Path) -> Path:
+    if Path(artifact).name == manifest_path.name:
+        return manifest_path
+    artifacts = manifest.get("artifacts") if isinstance(manifest.get("artifacts"), dict) else {}
+    for key in (artifact, Path(artifact).stem, Path(artifact).name):
+        value = artifacts.get(key)
+        if value:
+            p = Path(str(value))
+            if p.is_absolute():
+                return p
+            return ROOT / p if len(p.parts) > 1 else manifest_path.parent / p
+    return manifest_path.parent / artifact
+
+
+def _research_protocol_errors(candidate: dict[str, Any]) -> list[str]:
+    if not _candidate_requires_research_protocol(candidate):
+        return []
+    errors: list[str] = []
+    protocol_id = str(candidate.get("protocol_id") or "")
+    manifest_value = str(candidate.get("research_manifest") or "")
+    if not protocol_id:
+        errors.append("strategy auto_apply_candidate requires protocol_id")
+    if not manifest_value:
+        errors.append("strategy auto_apply_candidate requires research_manifest")
+    if errors:
+        return errors
+
+    try:
+        protocol = protocols.find_protocol(protocol_id, path=_protocol_registry_path())
+    except (FileNotFoundError, OSError) as exc:
+        return [f"strategy protocol registry unavailable: {exc}"]
+    if protocol is None:
+        errors.append(f"unknown strategy protocol_id: {protocol_id}")
+        return errors
+
+    manifest_path = _repo_path(manifest_value)
+    if not manifest_path.exists():
+        return [f"research_manifest does not exist: {manifest_value}"]
+    try:
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError as exc:
+        return [f"research_manifest is not valid JSON: {manifest_value}: {exc}"]
+
+    if manifest.get("protocol_id") != protocol_id:
+        errors.append(
+            f"research_manifest protocol_id mismatch: candidate={protocol_id} manifest={manifest.get('protocol_id')}"
+        )
+    for field in protocol.get("required_manifest_fields", []):
+        if _is_nullish(_nested_get(manifest, str(field))):
+            errors.append(f"research_manifest missing/empty required field for {protocol_id}: {field}")
+    for artifact in protocol.get("required_artifacts", []):
+        artifact_name = str(artifact)
+        artifact_path = _manifest_artifact_path(artifact_name, manifest, manifest_path)
+        if not artifact_path.exists():
+            errors.append(
+                f"research_manifest missing required artifact for {protocol_id}: "
+                f"{artifact_name} ({_display_path(artifact_path)})"
+            )
+    return errors
 
 
 def _evidence_errors(bundle: Any) -> list[str]:
@@ -344,6 +443,7 @@ def _auto_apply_errors(candidate: dict) -> list[str]:
     source = str(candidate.get("source", ""))
     if source and not _source_is_fixed(source):
         errors.append(f"auto_apply_candidate source is outside fixed inputs: {source}")
+    errors.extend(_research_protocol_errors(candidate))
     return errors
 
 
@@ -470,7 +570,10 @@ def build_plan(*, as_of: dt.date | None = None, output: Path | None = None) -> d
         "mode_recommendation": MODE_PROPOSAL if proposals else (MODE_AUTO if auto_apply_candidates else MODE_NONE),
         "rules": {
             "outside_fixed_inputs": "proposal_only_requires_user_confirmation",
-            "auto_apply_requires": "complete evidence_bundle + fixed input source + validation + clean target files",
+            "auto_apply_requires": (
+                "complete evidence_bundle + fixed input source + validation + clean target files; "
+                "strategy/research consumption also requires protocol_id + research_manifest"
+            ),
             "instrumentation_todo": "auto_apply_when_read_only_and_from_fixed_action_log; no user confirmation required",
             "dirty_file_boundary": "pre-existing dirty files are not auto-edited; emit NEEDS_HUMAN_CONFIRMATION",
         },

@@ -97,10 +97,20 @@ def explain_signal(row: dict[str, Any], state: StateVector | None) -> str:
         # mode_fitness aggregate (uses regime.py logic — single source of truth)
         f = mode_fitness(mode, state)
         if f == PRECONDITION_FAIL:
-            L.append("- **mode_fitness**: PRECONDITION_FAIL → adaptive forces shadow")
+            L.append(
+                "- **mode_fitness**: PRECONDITION_FAIL "
+                "(shadow/ranking telemetry; no qualification authority)"
+            )
         else:
-            L.append(f"- **mode_fitness**: {f:+.3f}  (3-axis mean of aligns; "
-                     "momentum / limitup not yet wired into fitness — will be in A8)")
+            L.append(
+                f"- **mode_fitness**: {f:+.3f} "
+                "(shadow/ranking telemetry; no qualification authority)"
+            )
+        if row.get("adaptive_auxiliary_authority"):
+            L.append(
+                "- **auxiliary authority**: "
+                f"{row['adaptive_auxiliary_authority']}"
+            )
     else:
         L.append(f"- **profile**: (unknown mode `{mode}`)")
 

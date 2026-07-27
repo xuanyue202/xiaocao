@@ -1,0 +1,94 @@
+schema_version: 1
+protocols:
+  - id: shortline-book-b-v1
+    name: Book B short-line research protocol
+    scope: "Book B paper/simulation short-line hypotheses judged with research_run.py per-trade guards."
+    strategy_kernel:
+      - "Book B fill, stop, accounting, safety, and T+1 legality remain deterministic spine behavior."
+      - "Research compares a candidate variant against a same-sample baseline with {day,strat_ret,base_ret} rows."
+    allowed_change_surfaces:
+      - "paper/simulation emitted modes"
+      - "candidate/cohort definitions with authority=0"
+      - "research scripts and report fields"
+      - "quality or ranking configuration after PASS plus Research Consumption Gate"
+    forbidden_change_surfaces:
+      - "real-capital authorization or order placement"
+      - "account history, positions, fills, raw cache truth sources"
+      - "live safety checks and deterministic fill/stop/accounting code without explicit human gate"
+    sample_policy:
+      unit: "trade"
+      guard: "research_run.py"
+      requirements:
+        - "cache-only input"
+        - "per-trade equal weight economics"
+        - "walk-forward train/test consistency"
+        - "Bonferroni n_tried correction"
+        - "no day-weighted or cumulative headline as primary evidence"
+    required_manifest_fields:
+      - "schema_version"
+      - "run_id"
+      - "hypothesis_id"
+      - "protocol_id"
+      - "parameters.n_tried"
+      - "parameters.cache_only"
+      - "inputs.trades_sha256"
+      - "inputs.n_rows"
+      - "artifacts.trades"
+      - "artifacts.verdict"
+      - "verdict.status"
+      - "diagnostics.coverage"
+      - "git.commit"
+      - "git.dirty"
+    required_artifacts:
+      - "manifest.json"
+      - "trades.jsonl"
+      - "verdict.json"
+    promotion_boundary:
+      auto_applied: "Allowed only for paper/simulation/research/tooling when manifest, evidence_bundle, validation, and rollback are complete."
+      proposal_only: "Required for real-capital, account history, raw truth source, safety, unclear attribution, missing manifest, or dirty target files."
+    rollback: "git revert <commit> plus remove any generated output/research run artifacts if needed."
+
+  - id: trend-book-t-v1
+    name: Book T trend research protocol
+    scope: "Book T paper/simulation trend hypotheses judged with trend_guards/trend_optimize on hold-level compounded evidence."
+    strategy_kernel:
+      - "Book T is a separate paper trend sleeve and must not share Book B short-line stop/composite logic."
+      - "Trend evidence is judged by compounded return, drawdown, turnover, walk-forward retention, and non-bull survival."
+    allowed_change_surfaces:
+      - "Book T paper/simulation candidate rules"
+      - "trend research scripts and reports"
+      - "trend instrumentation and attribution fields"
+    forbidden_change_surfaces:
+      - "Book B short-line exit policy"
+      - "real-capital authorization or order placement"
+      - "account history, positions, fills, raw cache truth sources"
+      - "TREND_* parameter changes without PASS plus explicit human gate"
+    sample_policy:
+      unit: "non-overlapping hold"
+      guard: "trend_guards.py / trend_optimize.py"
+      requirements:
+        - "cache-only input"
+        - "compounded return and alpha"
+        - "max drawdown"
+        - "turnover"
+        - "walk-forward retention"
+        - "non-bull survival when measurable"
+    required_manifest_fields:
+      - "schema_version"
+      - "run_id"
+      - "hypothesis_id"
+      - "protocol_id"
+      - "parameters.n_tried"
+      - "parameters.cache_only"
+      - "artifacts.verdict"
+      - "verdict.status"
+      - "diagnostics.coverage"
+      - "git.commit"
+      - "git.dirty"
+    required_artifacts:
+      - "manifest.json"
+      - "verdict.json"
+    promotion_boundary:
+      auto_applied: "Allowed only for Book T paper/simulation/research/tooling when manifest, evidence_bundle, validation, and rollback are complete."
+      proposal_only: "Required for real-capital, shared allocator policy, account history, raw truth source, safety, unclear attribution, or missing manifest."
+    rollback: "git revert <commit> plus remove any generated output/research run artifacts if needed."

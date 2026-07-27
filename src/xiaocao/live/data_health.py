@@ -21,6 +21,9 @@ from xiaocao.live.accounts import VALID_BOOKS
 from xiaocao.live.sell_blocks import load_blocked_sell_keys
 
 
+MARKET_INDEX_CODES = {"000001.XSHG", "399001.XSHE", "399006.XSHE", "000852.XSHG"}
+
+
 def _read_jsonl(path: Path) -> list[dict[str, Any]]:
     if not path.exists():
         return []
@@ -42,6 +45,13 @@ def _read_json(path: Path) -> dict[str, Any]:
         return json.loads(path.read_text(encoding="utf-8"))
     except (OSError, ValueError):
         return {}
+
+
+def _normal_date(value: Any) -> str:
+    text = str(value or "").strip()
+    if len(text) == 8 and text.isdigit():
+        return f"{text[:4]}-{text[4:6]}-{text[6:]}"
+    return text[:10]
 
 
 def duplicate_snapshots(live_dir: Path) -> list[dict[str, Any]]:
@@ -290,6 +300,54 @@ def stale_market_cache(
     return []
 
 
+def forward_label_bar_coverage(
+    live_dir: Path, *, today: str | None = None
+) -> list[dict[str, Any]]:
+    """Require today's EOD reconstruction to cover the previous live Book-B batch.
+
+    The check stays quiet before EOD: a benchmark row for ``today`` is the
+    evidence that refresh_daily_cache has begun writing that day's bars. Once
+    that evidence exists, silently leaving mature D+1 labels pending is a data
+    integrity failure rather than an ordinary incomplete sample.
+    """
+    target_date = _normal_date(today or date.today().isoformat())
+    snapshots = [
+        row
+        for row in _read_jsonl(live_dir / "signal_snapshots.jsonl")
+        if row.get("is_live") is True
+        and str(row.get("book") or "B") == "B"
+        and row.get("code")
+        and _normal_date(row.get("date")) < target_date
+    ]
+    previous_date = max((_normal_date(row.get("date")) for row in snapshots), default="")
+    if not previous_date:
+        return []
+    expected = {
+        str(row["code"])
+        for row in snapshots
+        if _normal_date(row.get("date")) == previous_date
+    }
+    reconstructed_today = {
+        str(row.get("code"))
+        for row in _read_jsonl(live_dir / "daily_reconstructed.jsonl")
+        if _normal_date(row.get("date")) == target_date and row.get("code")
+    }
+    if not reconstructed_today.intersection(MARKET_INDEX_CODES):
+        return []
+    missing = sorted(expected - reconstructed_today)
+    if not missing:
+        return []
+    return [{
+        "check": "forward_label_bar_coverage",
+        "severity": "critical",
+        "detail": (
+            f"{target_date} EOD minute reconstruction exists, but {len(missing)}/{len(expected)} "
+            f"live Book-B signal bars from {previous_date} are missing (e.g. {', '.join(missing[:8])}) "
+            "— complete D+1 bars before forward evaluation"
+        ),
+    }]
+
+
 def check(
     live_dir: Path, *, today: str | None = None, cache_path: Path | None = None
 ) -> dict[str, Any]:
@@ -301,6 +359,7 @@ def check(
     findings += blocked_sell_executions(live_dir)
     findings += unlabeled_closed_positions(live_dir)
     findings += stale_open_positions(live_dir, today=today)
+    findings += forward_label_bar_coverage(live_dir, today=today)
     # Cache lives at output/.cache/xiaocao.db (sibling of output/live); callers
     # may override. A missing cache yields no finding.
     cp = cache_path if cache_path is not None else live_dir.parent / ".cache" / "xiaocao.db"

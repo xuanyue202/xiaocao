@@ -92,6 +92,9 @@
    `distill_transcript.py --refresh-action-log`，再生成 `output/live/weekly_plan_<date>.json`。
 2. Codex agent 读取 plan。只有固定输入清单内、带完整 `evidence_bundle`、可验证且目标文件非
    pre-existing dirty 的事项，才允许 `AUTO_APPLIED` 改 paper/simulation/research/tooling。
+   策略收益类改动还必须提供已登记 `protocol_id` 和 `research_manifest`；manifest 由
+   `research_run.py --run-dir ... --protocol-id ...` 生成，记录输入 hash、guard 参数、verdict、
+   diagnostics 和 git 状态。只读 instrumentation/report-quality 改动不需要 research manifest。
 3. 固定输入之外、证据不够硬、或命中 dirty-file 的事项必须 `PROPOSAL_ONLY`，写入周报第一屏和
    `.scratch/weekly-deep-review/<date>/...md`。
 4. `weekly_deep_review.py --finalize` 写 `output/live/weekly_review_<date>.md`、追加

@@ -8,7 +8,9 @@ sentiment need an external source). We therefore:
   3. emit tracked picks: variant A = pure K->P, variant B = K->P + auction
      imbalance tie-break, variant C = K survivors ranked by live mode-rotation
      rank_score,
-  4. append everything to output/live/signal_snapshots.jsonl so forward_eval.py
+  4. emit variant F = the executable mode-qualified selector shared with the
+     Book-B paper actuator and historical replay,
+  5. append everything to output/live/signal_snapshots.jsonl so forward_eval.py
      can later join realized returns -> A/B verdict + accumulated training rows.
 
 Auction is latest-only on the API, so these features are meaningful ONLY on the
@@ -22,6 +24,8 @@ from datetime import datetime
 from pathlib import Path
 from scipy.stats import rankdata
 import numpy as np
+
+from xiaocao.strategy.mode_switch import select_executable_candidates
 
 SCRIPTS = Path(__file__).resolve().parent
 sys.path.insert(0, str(SCRIPTS))
@@ -187,6 +191,7 @@ def capture(candidates, client, date_iso, is_live, top_n=3, out=OUT, book="B"):
     for c in candidates:
         c.setdefault("vb_rank", 9999); c.setdefault("vb_star", False)
     _assign_mode_rotation_star(candidates, top_n=top_n)
+    select_executable_candidates(candidates, top_n=top_n)
 
     out.parent.mkdir(parents=True, exist_ok=True)
     ts = datetime.now().isoformat(timespec="seconds")
@@ -196,6 +201,7 @@ def capture(candidates, client, date_iso, is_live, top_n=3, out=OUT, book="B"):
         c.update({
             "primary_score": q.get("primary_score"),
             "primary_score_label": q.get("primary_score_label"),
+            "stock_rank_score": q.get("stock_rank_score"),
             "rank_score": q.get("rank_score"),
             "mode_confidence": q.get("mode_confidence"),
             "quality_tag": q.get("quality_tag"),
@@ -209,6 +215,7 @@ def capture(candidates, client, date_iso, is_live, top_n=3, out=OUT, book="B"):
             "jssb": c.get("jssb"),
             "primary_score": c.get("primary_score"),
             "primary_score_label": c.get("primary_score_label"),
+            "stock_rank_score": c.get("stock_rank_score"),
             "rank_score": c.get("rank_score"),
             "mode_confidence": c.get("mode_confidence"),
             "mode_recent_avg": c.get("mode_recent_avg"),
@@ -222,6 +229,40 @@ def capture(candidates, client, date_iso, is_live, top_n=3, out=OUT, book="B"):
             "vb_rank": c.get("vb_rank"), "vb_star": c.get("vb_star"), "vb_score": c.get("vb_score"),
             "vb_swap": c.get("vb_swap"),
             "mode_rank": c.get("mode_rank"), "mode_star": c.get("mode_star"), "mode_score": c.get("mode_score"),
+            "mode_exec_rank": c.get("mode_exec_rank"),
+            "mode_exec_star": c.get("mode_exec_star"),
+            "mode_exec_score": c.get("mode_exec_score"),
+            "mode_exec_rank_score": c.get("mode_exec_rank_score"),
+            "mode_exec_mode_confidence": c.get("mode_exec_mode_confidence"),
+            "mode_exec_confidence_source": c.get("mode_exec_confidence_source"),
+            "mode_exec_confidence_reason": c.get("mode_exec_confidence_reason"),
+            "mode_exec_target_weight": c.get("mode_exec_target_weight"),
+            "mode_exec_candidate_rank": c.get("mode_exec_candidate_rank"),
+            "mode_state": c.get("mode_state"),
+            "mode_state_reason": c.get("mode_state_reason"),
+            "mode_state_window": c.get("mode_state_window"),
+            "mode_state_max_picks": c.get("mode_state_max_picks"),
+            "mode_trade_eligible": c.get("mode_trade_eligible"),
+            "mode_evidence_source": c.get("mode_evidence_source"),
+            "mode_evidence_latest_date": c.get("mode_evidence_latest_date"),
+            "mode_evidence_days": c.get("mode_evidence_days"),
+            "mode_evidence_signals": c.get("mode_evidence_signals"),
+            "mode_evidence_market_days": c.get("mode_evidence_market_days"),
+            "mode_evidence_effective_days": c.get("mode_evidence_effective_days"),
+            "mode_evidence_weighting": c.get("mode_evidence_weighting"),
+            "mode_return_raw": c.get("mode_return_raw"),
+            "mode_alpha_pool": c.get("mode_alpha_pool"),
+            "mode_alpha_pool_lcb80": c.get("mode_alpha_pool_lcb80"),
+            "mode_alpha_market": c.get("mode_alpha_market"),
+            "mode_alpha_market_lcb80": c.get("mode_alpha_market_lcb80"),
+            "mode_fast_health": c.get("mode_fast_health"),
+            "mode_fast_authority": c.get("mode_fast_authority"),
+            "mode_fast_days": c.get("mode_fast_days"),
+            "mode_fast_signals": c.get("mode_fast_signals"),
+            "mode_fast_alpha_pool": c.get("mode_fast_alpha_pool"),
+            "mode_fast_alpha_market": c.get("mode_fast_alpha_market"),
+            "mode_fast_positive_pool_days": c.get("mode_fast_positive_pool_days"),
+            "mode_fast_positive_market_days": c.get("mode_fast_positive_market_days"),
             "is_main_line": c.get("is_main_line"),
             "is_big_cap": c.get("is_big_cap"),
             "direction": c.get("direction"),

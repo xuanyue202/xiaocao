@@ -140,7 +140,14 @@ def _candidate_context(candidate: dict[str, Any]) -> dict[str, Any]:
     keys = (
         "code", "name", "mode", "rank_score", "primary_score", "primary_score_label",
         "quality_tag", "k_score", "p_score", "kp_star", "vb_star", "vb_rank",
-        "mode_star", "mode_rank", "open", "open_pct_change", "auc_pct",
+        "mode_star", "mode_rank", "mode_exec_star", "mode_exec_rank",
+        "mode_exec_score", "mode_exec_rank_score", "mode_exec_mode_confidence",
+        "mode_exec_target_weight", "mode_state",
+        "mode_state_window", "mode_return_raw", "mode_alpha_pool", "mode_alpha_pool_lcb80",
+        "mode_alpha_market", "mode_alpha_market_lcb80", "mode_evidence_weighting",
+        "mode_fast_health", "mode_fast_authority", "mode_fast_days", "mode_fast_signals",
+        "mode_fast_alpha_pool", "mode_fast_alpha_market",
+        "open", "open_pct_change", "auc_pct",
         "auc_residual_imb", "basket_price", "basket_rule", "qibaoBenchmarkKind",
         "qibaoBenchmarkLayer", "rawQibaoRank", "qibaoRankScore", "reason",
     )

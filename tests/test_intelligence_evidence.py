@@ -50,6 +50,9 @@ def test_freeze_rows_shape_evidence_without_future_fetch() -> None:
             "mode": "首红断低吸",
             "rank_score": 88.0,
             "vb_star": True,
+            "mode_exec_star": True,
+            "mode_state": "ACTIVE",
+            "mode_alpha_pool_lcb80": 1.25,
         }],
         market_date="2026-07-01",
         phase="morning_freeze",
@@ -59,6 +62,8 @@ def test_freeze_rows_shape_evidence_without_future_fetch() -> None:
 
     assert rows[0]["phase"] == "morning_freeze"
     assert rows[0]["candidate_context"]["rank_score"] == 88.0
+    assert rows[0]["candidate_context"]["mode_exec_star"] is True
+    assert rows[0]["candidate_context"]["mode_state"] == "ACTIVE"
     assert rows[0]["evidence"][0]["evidence_id"] == "ev1"
     assert rows[0]["evidence"][0]["short_decay_weight"] == 1.0
     assert "dishonesty_enforcement" in rows[0]["hard_veto_event_types"]

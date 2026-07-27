@@ -1,4 +1,4 @@
-"""Record the day's ★B (live K->P + auction) picks as paper positions so
+"""Record the day's mode-qualified ★E picks as Book-B paper positions so
 live_monitor.py can track them under the v5 rule. Idempotent per (date, code).
 
 Fill model (realistic, not worst-case): a paper limit order at
@@ -33,6 +33,12 @@ from xiaocao.strategy.params import (  # noqa: E402
     TREND_TOP_M,
     TREND_TRAIL_DD,
 )
+from xiaocao.strategy.mode_switch import (  # noqa: E402
+    ACTIVE,
+    PROVISIONAL,
+    plan_board_lot_orders,
+    select_executable_candidates,
+)
 from xiaocao.strategy.trend_rules import (  # noqa: E402
     TREND_EXIT_POSTURE_MISMATCH,
     TREND_EXIT_REBALANCE,
@@ -55,7 +61,7 @@ QUALITY_AUDIT = Path("output/live/quality_governor_audit.jsonl")
 DEFAULT_STARTING_CAPITAL = 100000.0
 DEFAULT_FEE_RATE = 0.0001
 DEFAULT_DEPLOY_RATIO = 0.5
-DEFAULT_MAX_TOTAL_EXPOSURE_RATIO = 0.67
+DEFAULT_MAX_TOTAL_EXPOSURE_RATIO = 1.0
 DEFAULT_TREND_MAX_EXPOSURE_RATIO = 1.0
 A_SHARE_TZ = ZoneInfo("Asia/Shanghai")
 
@@ -445,7 +451,7 @@ def _quality_audit_records(
 
 def _intelligence_config_from_args(a) -> intelligence_policy.IntelligenceTradeConfig:
     return intelligence_policy.IntelligenceTradeConfig(
-        mode=str(getattr(a, "intelligence_trade", "on") or "on"),
+        mode=str(getattr(a, "intelligence_trade", "shadow") or "shadow"),
         buy_threshold=float(getattr(a, "ai_buy_threshold", 0.2)),
         score_bonus=float(getattr(a, "ai_score_bonus", 20.0)),
         veto_min_confidence=float(getattr(a, "ai_veto_confidence", 0.7)),
@@ -460,7 +466,32 @@ def _select_intelligence_picks(
     asof: str | None = None,
 ) -> intelligence_policy.BuySelection:
     rows = [ensure_quality_fields(r) for r in day_live]
+    if pick == "mode_exec_star":
+        # Mode authority is upstream of every auxiliary/AI layer.  Restrict AI
+        # review to already selected executable picks so it may remove risk but
+        # cannot restore a COLD/UNKNOWN mode or a BJSE name.
+        rows = [
+            row for row in rows
+            if row.get("mode_exec_star")
+            and row.get("mode_trade_eligible")
+            and not str(row.get("code") or "").endswith(".BJSE")
+        ]
     return intelligence_policy.select_buy_candidates(rows, pick_col=pick, config=config, asof=asof)
+
+
+def _mode_exec_candidate_pool(day_live: list[dict], limit: int = 8) -> list[dict]:
+    rows = [
+        ensure_quality_fields(row) for row in day_live
+        if row.get("mode_trade_eligible")
+        and row.get("mode_state") in {ACTIVE, PROVISIONAL}
+        and not str(row.get("code") or "").endswith(".BJSE")
+    ]
+    rows.sort(key=lambda row: (
+        int(_num(row.get("mode_exec_candidate_rank")) or 9999),
+        -float(_num(row.get("mode_exec_score")) or 0.0),
+        str(row.get("code") or ""),
+    ))
+    return rows[:max(0, limit)]
 
 
 def _audit_intelligence_vetoes(
@@ -497,9 +528,12 @@ def _audit_intelligence_vetoes(
 def _main_locked():
     ap = argparse.ArgumentParser()
     ap.add_argument("--date", default=datetime.now().strftime("%Y-%m-%d"))
-    ap.add_argument("--pick", choices=["vb_star", "kp_star", "mode_star"], default="vb_star",
+    ap.add_argument(
+        "--pick",
+        choices=["mode_exec_star", "vb_star", "kp_star", "mode_star"],
+        default="mode_exec_star",
                     help="which variant to paper-trade "
-                         "(vb_star=★B live set, kp_star=★ baseline, mode_star=★M shadow variant)")
+                         "(mode_exec_star=★E shared mode switch; other variants are baselines)")
     ap.add_argument("--initial-capital", type=float, default=DEFAULT_STARTING_CAPITAL,
                     help="initial paper account cash; only used when the account file does not exist")
     ap.add_argument("--fee-rate", type=float, default=DEFAULT_FEE_RATE,
@@ -507,9 +541,9 @@ def _main_locked():
     ap.add_argument("--notional", type=float, default=None,
                     help="optional max RMB per position; defaults to available cash / number of buyable picks")
     ap.add_argument("--deploy-ratio", type=float, default=DEFAULT_DEPLOY_RATIO,
-                    help="fraction of current cash allowed to deploy on this run; default 0.5 keeps dry powder")
+                    help="daily Book-B batch cap as a fraction of settled NAV; default 0.5")
     ap.add_argument("--max-total-exposure-ratio", type=float, default=DEFAULT_MAX_TOTAL_EXPOSURE_RATIO,
-                    help="cap total open gross exposure as a fraction of initial capital; default 0.67")
+                    help="cap overlapping T+1 gross exposure as a fraction of settled NAV; default 1.0")
     ap.add_argument("--profile", default="v5")
     ap.add_argument("--allow-additional", action="store_true",
                     help="allow additional auto buys for the same date after an earlier paper-record")
@@ -531,7 +565,7 @@ def _main_locked():
     ap.add_argument("--quality-governor", choices=["off", "shadow", "on"], default="off",
                     help="quality governor mode: off=ignore, shadow=audit only, "
                          "on=leave weak-primary slots in cash without reallocating")
-    ap.add_argument("--intelligence-trade", choices=["off", "shadow", "on"], default="on",
+    ap.add_argument("--intelligence-trade", choices=["off", "shadow", "on"], default="shadow",
                     help="Book-B paper intelligence mode: off=base picks only, "
                          "shadow=audit only, on=agent_review short score reranks candidates "
                          "and hard-veto skips severe event-risk names")
@@ -554,10 +588,8 @@ def _main_locked():
     _parse_hhmm(a.fill_window_end)
     _validate_fill_window(a.fill_window_start, a.fill_window_end)
     if a.trend_only:
-        if not a.no_wait_fill_window:
-            _wait_until_fill_window_complete(a.date, a.fill_window_end, a.fill_settle_seconds)
         client = XiaocaoClient()
-        _record_book_t(client, a)
+        _record_book_t(client, a, wait_for_fill_window=not a.no_wait_fill_window)
         return
     if not SNAP.exists():
         print("no snapshots; run live_recommend first"); return
@@ -568,6 +600,10 @@ def _main_locked():
         r for r in day_live
         if str(r.get("captured_at") or "") == latest_capture
     ]
+    if a.pick == "mode_exec_star":
+        # Re-derive the ★E ranks from the frozen morning state fields. This
+        # catches stale/corrupt star flags while preserving the 09:25 decision.
+        latest_rows = select_executable_candidates(latest_rows, top_n=3)
     intelligence_config = _intelligence_config_from_args(a)
     selection = _select_intelligence_picks(
         latest_rows,
@@ -576,7 +612,12 @@ def _main_locked():
         asof=f"{a.date[:10]}T09:30:00+08:00",
     )
     _audit_intelligence_vetoes(date_iso=a.date, pick=a.pick, selection=selection)
-    picks = selection.selected
+    if a.pick == "mode_exec_star" and intelligence_config.mode != "on":
+        # Keep the ranked top-eight pool until board-lot planning so an
+        # unrepresentable high-price name can fall through to the next name.
+        picks = _mode_exec_candidate_pool(latest_rows)
+    else:
+        picks = selection.selected
     if not picks:
         print(f"{a.date}: no live {a.pick} picks to paper-record (is_live snapshot required)"); return
     account = _load_account(a.initial_capital, a.fee_rate)
@@ -660,7 +701,7 @@ def _main_locked():
     if not buyable:
         print(f"{a.date}: all {a.pick} picks skipped (limit not reached and retry not suitable)")
         return
-    if not a.no_book_a:
+    if not a.no_book_a and a.pick != "mode_exec_star":
         _record_book_a(buyable, a, fee_rate)
     cash = float(account.get("cash", 0.0))
     deploy_ratio = float(a.deploy_ratio)
@@ -679,14 +720,23 @@ def _main_locked():
     for l in _load_positions_from_file(POS):
         if l.get("book", "B") == "B" and l.get("status", "open") == "open":
             current_open_cost += float(l.get("gross_notional") or 0.0)
-    exposure_budget = max(
+    settled_nav = max(
         0.0,
-        float(account.get("initial_capital", a.initial_capital)) * max_total_exposure_ratio - current_open_cost,
+        float(account.get("initial_capital", a.initial_capital))
+        + float(account.get("realized_pnl", 0.0)),
     )
-    deployable_cash = (
-        cash if a.notional is not None
-        else min(cash * deploy_ratio, exposure_budget)
+    exposure_base = settled_nav if a.pick == "mode_exec_star" else float(
+        account.get("initial_capital", a.initial_capital)
     )
+    exposure_budget = max(0.0, exposure_base * max_total_exposure_ratio - current_open_cost)
+    if a.pick == "mode_exec_star":
+        # Batch budget is NAV based.  Using remaining cash * 50% would make
+        # every T+1 cohort mechanically smaller than the previous one.
+        deployable_cash = min(cash, settled_nav * deploy_ratio, exposure_budget)
+    elif a.notional is not None:
+        deployable_cash = cash
+    else:
+        deployable_cash = min(cash * deploy_ratio, exposure_budget)
     if deployable_cash <= 0:
         print(
             f"{a.date}: exposure budget exhausted for {a.pick} "
@@ -712,7 +762,30 @@ def _main_locked():
         ))
         print(f"{a.date}: quality-governor ON left all {a.pick} slots in cash")
         return
-    if a.notional is not None:
+    if a.pick == "mode_exec_star":
+        ranked_fillable: list[dict] = []
+        for row in quality_buyable:
+            price, _, _ = _fill_price(row)
+            if price and price > 0:
+                enriched = dict(row)
+                enriched["execution_price"] = float(price)
+                ranked_fillable.append(enriched)
+        eligible_buyable = plan_board_lot_orders(
+            ranked_fillable,
+            nav=settled_nav,
+            cash_limit=deployable_cash,
+            fee_rate=fee_rate,
+            price_key="execution_price",
+            max_batch_ratio=deploy_ratio,
+            target_scale=ks_factor,
+            per_position_cash_cap=a.notional,
+        )
+        target_notional = (
+            sum(float(row.get("mode_exec_planned_cash_out") or 0.0) for row in eligible_buyable)
+            / len(eligible_buyable)
+            if eligible_buyable else 0.0
+        )
+    elif a.notional is not None:
         eligible_buyable = list(quality_buyable)
         target_notional = a.notional
     elif a.quality_governor == "on":
@@ -743,6 +816,8 @@ def _main_locked():
             f"(cash={cash:.2f}, deployable={deployable_cash:.2f})"
         )
         return
+    if not a.no_book_a and a.pick == "mode_exec_star":
+        _record_book_a(eligible_buyable, a, fee_rate)
     POS.parent.mkdir(parents=True, exist_ok=True)
     n = 0
     run_fees = 0.0
@@ -756,8 +831,14 @@ def _main_locked():
                 continue
             fill_meta = r.get("_paper_fill") if isinstance(r.get("_paper_fill"), dict) else {}
             px = float(px)
-            affordable_notional = min(target_notional, cash)
-            shares = int((affordable_notional / (px * (1 + fee_rate))) / 100) * 100
+            affordable_notional = min(
+                float(r.get("mode_exec_planned_cash_out") or target_notional),
+                cash,
+            )
+            if a.pick == "mode_exec_star" and r.get("mode_exec_planned_shares"):
+                shares = int(r["mode_exec_planned_shares"])
+            else:
+                shares = int((affordable_notional / (px * (1 + fee_rate))) / 100) * 100
             if shares < 100:
                 continue
             gross_notional = round(shares * px, 2)
@@ -775,7 +856,29 @@ def _main_locked():
                 "primary_score": r.get("primary_score"),
                 "primary_score_label": r.get("primary_score_label"),
                 "rank_score": r.get("rank_score"),
+                "stock_rank_score": r.get("stock_rank_score"),
                 "mode_confidence": r.get("mode_confidence"),
+                "mode_state": r.get("mode_state"),
+                "mode_state_reason": r.get("mode_state_reason"),
+                "mode_state_window": r.get("mode_state_window"),
+                "mode_evidence_source": r.get("mode_evidence_source"),
+                "mode_evidence_latest_date": r.get("mode_evidence_latest_date"),
+                "mode_evidence_days": r.get("mode_evidence_days"),
+                "mode_evidence_signals": r.get("mode_evidence_signals"),
+                "mode_evidence_market_days": r.get("mode_evidence_market_days"),
+                "mode_evidence_effective_days": r.get("mode_evidence_effective_days"),
+                "mode_evidence_weighting": r.get("mode_evidence_weighting"),
+                "mode_return_raw": r.get("mode_return_raw"),
+                "mode_alpha_pool": r.get("mode_alpha_pool"),
+                "mode_alpha_pool_lcb80": r.get("mode_alpha_pool_lcb80"),
+                "mode_alpha_market": r.get("mode_alpha_market"),
+                "mode_alpha_market_lcb80": r.get("mode_alpha_market_lcb80"),
+                "mode_exec_score": r.get("mode_exec_score"),
+                "mode_exec_rank_score": r.get("mode_exec_rank_score"),
+                "mode_exec_mode_confidence": r.get("mode_exec_mode_confidence"),
+                "mode_exec_confidence_source": r.get("mode_exec_confidence_source"),
+                "mode_exec_candidate_rank": r.get("mode_exec_candidate_rank"),
+                "mode_exec_target_weight": r.get("mode_exec_target_weight"),
                 "p_score": r.get("p_score"),
                 "quality_tag": r.get("quality_tag"),
                 "quality_governor_mode": a.quality_governor,
@@ -812,9 +915,13 @@ def _main_locked():
                 "initial_capital": round(float(account.get("initial_capital", a.initial_capital)), 2),
                 "fee_rate": fee_rate,
                 "allocation_rule": (
-                    f"rolling_cash_equal_weight_{deploy_ratio:.0%}"
-                    f"_cap_{max_total_exposure_ratio:.0%}"
-                    f"_quality_{a.quality_governor}"
+                    (
+                        f"mode_switch_nav_target_{float(r.get('mode_exec_target_weight') or 0.0):.1%}"
+                        if a.pick == "mode_exec_star" else
+                        f"rolling_cash_equal_weight_{deploy_ratio:.0%}"
+                    )
+                    + f"_cap_{max_total_exposure_ratio:.0%}"
+                    + f"_quality_{a.quality_governor}"
                 ),
                 "status": "open", "source": f"auto:{a.pick}",
             }))
@@ -826,6 +933,18 @@ def _main_locked():
                 "cash_after": cash, "source": f"auto:{a.pick}", "price_basis": fill_basis,
                 "primary_score": r.get("primary_score"),
                 "p_score": r.get("p_score"),
+                "mode": r.get("mode"),
+                "mode_state": r.get("mode_state"),
+                "mode_state_window": r.get("mode_state_window"),
+                "mode_return_raw": r.get("mode_return_raw"),
+                "mode_alpha_pool": r.get("mode_alpha_pool"),
+                "mode_alpha_pool_lcb80": r.get("mode_alpha_pool_lcb80"),
+                "mode_alpha_market": r.get("mode_alpha_market"),
+                "mode_alpha_market_lcb80": r.get("mode_alpha_market_lcb80"),
+                "mode_exec_score": r.get("mode_exec_score"),
+                "mode_exec_rank_score": r.get("mode_exec_rank_score"),
+                "mode_exec_mode_confidence": r.get("mode_exec_mode_confidence"),
+                "mode_exec_target_weight": r.get("mode_exec_target_weight"),
                 "quality_tag": r.get("quality_tag"),
                 "quality_governor_mode": a.quality_governor,
                 "intelligence_trade_mode": a.intelligence_trade,
@@ -861,7 +980,7 @@ def _main_locked():
     _save_account(account)
     print(
         f"{a.date}: paper-recorded {n} {a.pick} positions -> {POS} "
-        f"(rolling_cash_after={cash:.2f}, fee_rate={fee_rate:.4%}, "
+        f"(cash_after={cash:.2f}, fee_rate={fee_rate:.4%}, "
         f"deploy_ratio={deploy_ratio:.0%}, exposure_budget={exposure_budget:.2f}, "
         f"target_notional={target_notional:.2f}/position, "
         f"quality_governor={a.quality_governor}, "
@@ -1047,7 +1166,7 @@ def _apply_book_t_switch_exit(plan: dict, account: dict, *, date_iso: str) -> di
     }
 
 
-def _record_book_t(client: XiaocaoClient, a) -> None:
+def _record_book_t(client: XiaocaoClient, a, *, wait_for_fill_window: bool = False) -> None:
     """Record Book T trend paper positions.
 
     Book T is separate from Book B: same positions.jsonl, different `book`,
@@ -1096,6 +1215,18 @@ def _record_book_t(client: XiaocaoClient, a) -> None:
         )
         return
 
+    empty_slots = max(0, target_positions - open_count)
+    potential_slots = empty_slots + len(switch_candidates)
+    if potential_slots <= 0:
+        print(
+            f"{a.date}: book T already has {open_count}/{target_positions} open position(s); "
+            "no new buys; paired switches wait for a sellable old row and a replacement"
+        )
+        return
+
+    if wait_for_fill_window:
+        _wait_until_fill_window_complete(a.date, a.fill_window_end, a.fill_settle_seconds)
+
     switch_exit_plans: list[dict] = []
     for row, exit_reason in switch_candidates:
         plan = _book_t_switch_exit_plan(
@@ -1110,7 +1241,6 @@ def _record_book_t(client: XiaocaoClient, a) -> None:
         if plan is not None:
             switch_exit_plans.append(plan)
 
-    empty_slots = max(0, target_positions - open_count)
     available_slots = empty_slots + len(switch_exit_plans)
     if available_slots <= 0:
         print(
@@ -1371,10 +1501,10 @@ def _kill_switch_factor() -> tuple[float, str]:
 
 def _record_book_a(picks: list[dict], a, fee_rate: float) -> None:
     """Book A = the reference exit policy: same fillable picks and same paper
-    entry price as book B, then sell at next close with no stop. Pure accounting
-    book (settled by settle_book_a.py at eod) — never monitored or stop-managed.
-    Keeping the entry fill aligned prevents the A/B spread from mixing entry
-    slippage into the exit-policy comparison."""
+    entry price and planned shares as book B, then sell at next close with no
+    stop. Pure accounting book (settled by settle_book_a.py at eod) — never
+    monitored or stop-managed. Keeping entry and size aligned prevents the A/B
+    spread from mixing allocation drift into the exit-policy comparison."""
     account = _load_account(a.initial_capital, fee_rate, path=ACCOUNT_A)
     existing = set()
     open_codes = set()
@@ -1405,7 +1535,11 @@ def _record_book_a(picks: list[dict], a, fee_rate: float) -> None:
                 continue
             fill_meta = r.get("_paper_fill") if isinstance(r.get("_paper_fill"), dict) else {}
             px = float(px)
-            shares = int((min(target, cash) / (px * (1 + fee_rate))) / 100) * 100
+            planned_shares = int(_num(r.get("mode_exec_planned_shares")) or 0)
+            if a.pick == "mode_exec_star" and planned_shares >= 100:
+                shares = planned_shares
+            else:
+                shares = int((min(target, cash) / (px * (1 + fee_rate))) / 100) * 100
             if shares < 100:
                 continue
             gross = round(shares * px, 2)
@@ -1419,6 +1553,8 @@ def _record_book_a(picks: list[dict], a, fee_rate: float) -> None:
                 "code": r["code"], "name": r.get("name", ""), "entry_date": a.date,
                 "entry_price": round(px, 3), "profile": "v5_nextclose", "shares": shares,
                 "mode": r.get("mode"),
+                "mode_state": r.get("mode_state"),
+                "mode_exec_target_weight": r.get("mode_exec_target_weight"),
                 "gross_notional": gross, "entry_fee": fee, "entry_cash_out": cash_out,
                 "entry_price_basis": fill_basis,
                 "fill_window_start": a.fill_window_start,

@@ -29,6 +29,7 @@ from a manual sprint into a standing, prioritized queue. Report-only: safe to sc
 from __future__ import annotations
 
 import argparse
+import contextlib
 import importlib.util
 import json
 import sys
@@ -41,6 +42,7 @@ sys.path.insert(0, str(ROOT / "src"))
 from xiaocao.live import flywheel  # noqa: E402
 
 BACKLOG = ROOT / "reference" / "experience" / "xiaocao_hypotheses.jsonl"
+APPLIED_VERDICTS = ROOT / "reference" / "experience" / "applied_verdicts.jsonl"
 
 # tokens that mean "this candidate can be tested on the local cache" (vs needing fresh data
 # collection or a human to first write the operationalization)
@@ -87,6 +89,17 @@ def _cache_expressible(e: dict) -> bool:
     return any(tok in op for tok in _CACHE_TOKENS)
 
 
+def _applied_verdict_ids(path: Path = APPLIED_VERDICTS) -> set[str]:
+    """PASS verdicts already consumed by a paper/simulation/tooling actuator."""
+    out: set[str] = set()
+    for e in _entries(path):
+        hid = e.get("id")
+        status = str(e.get("status", "applied")).lower()
+        if hid and status in {"applied", "consumed"}:
+            out.add(str(hid))
+    return out
+
+
 def rank_queue(entries: list[dict], *, today: date | None = None) -> list[dict]:
     """Untested candidates ranked by test-priority: recurrence desc, then oldest first.
     Cache-expressible ones float up within the same recurrence (a researcher can act now)."""
@@ -118,16 +131,25 @@ def rank_queue(entries: list[dict], *, today: date | None = None) -> list[dict]:
     return out
 
 
-def pass_evidence(entries: list[dict]) -> list[str]:
-    return [e.get("id") for e in entries if e.get("last_verdict") == "PASS"]
+def pass_evidence(entries: list[dict], *, applied_ids: set[str] | None = None) -> list[str]:
+    applied_ids = applied_ids or set()
+    return [
+        str(e.get("id"))
+        for e in entries
+        if e.get("last_verdict") == "PASS" and str(e.get("id")) not in applied_ids
+    ]
 
 
 def sweep(*, top: int, reconcile: bool, as_json: bool) -> int:
     if reconcile:
-        _load_distill().reconcile()  # retire REJECTED, tag PASS; idempotent
+        if as_json:
+            with contextlib.redirect_stdout(sys.stderr):
+                _load_distill().reconcile()  # retire REJECTED, tag PASS; idempotent
+        else:
+            _load_distill().reconcile()  # retire REJECTED, tag PASS; idempotent
     entries = _entries(BACKLOG)
     queue = rank_queue(entries)
-    passes = pass_evidence(entries)
+    passes = pass_evidence(entries, applied_ids=_applied_verdict_ids())
     k = flywheel.knowledge_scoreboard(ROOT)
 
     if as_json:

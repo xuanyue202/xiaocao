@@ -315,8 +315,8 @@ def _compare_jw(detail: dict[str, Any], threshold: float, focus: dict[str, Any],
       v3.5 active n=135 avg=+1.00% sum=+135%
     Even ±15% state-based scaling created 57 new lower-quality signals that
     diluted the universe. The 300/200/150 score thresholds genuinely are
-    千锤百炼 — they shouldn't be relaxed even softly. State-modulation belongs
-    at the adaptive layer (where it works), NOT the rules layer.
+    千锤百炼 — they shouldn't be relaxed even softly. State fitness now remains
+    shadow/ranking telemetry and has no threshold authority in either layer.
     """
     score = _num(detail.get("xcjw"))
     return score >= threshold or (focus["direction"] and score >= threshold / DIRECTION_DISCOUNT)

@@ -27,6 +27,17 @@ DEFAULT_INSTALL_DIR = Path.home() / ".codex" / "skills" / "xiaocao-trading"
 DEFAULT_OUTPUT_DIR = ROOT / "output"
 PACKAGE_DIR_NAME = "xiaocao-trading"
 
+SKILL_REFERENCE_FILES = [
+    "automation-morning.md",
+    "automation-intraday.md",
+    "automation-eod.md",
+    "automation-weekly.md",
+    "scheduling.md",
+    "market-data.md",
+    "strategy-and-backtests.md",
+    "research-flywheels.md",
+]
+
 RUNTIME_ITEMS = [
     "src",
     "scripts",
@@ -89,6 +100,7 @@ def validate_skill(skill_dir: Path) -> None:
     required = [
         skill_md,
         openai_yaml,
+        *(skill_dir / "references" / name for name in SKILL_REFERENCE_FILES),
         runtime / "src" / "xiaocao" / "cli.py",
         runtime / "src" / "xiaocao" / "live" / "safety.py",
         runtime / "scripts" / "auto_daily.sh",

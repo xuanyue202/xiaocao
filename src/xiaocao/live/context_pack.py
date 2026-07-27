@@ -9,6 +9,7 @@ from typing import Any
 
 from xiaocao.live import data_health, status as live_status
 from xiaocao.live.agent_signals import read_signals
+from xiaocao.live.intelligence_review_queue import build_review_queue
 
 
 def _read_json(path: Path) -> Any:
@@ -127,6 +128,17 @@ def _sentiment_block(live_dir: Path, market_date: str) -> dict[str, Any]:
     }
 
 
+def _intelligence_evidence_block(live_dir: Path, market_date: str) -> dict[str, Any]:
+    path = live_dir / f"intelligence_evidence_{market_date}.jsonl"
+    rows = _date_rows(_read_jsonl(path), market_date)
+    return {
+        "file": file_state(path),
+        "rows_for_date": len(rows),
+        "data_quality": dict(Counter(str(r.get("data_quality") or "unknown") for r in rows)),
+        "universe": dict(Counter(str(r.get("universe") or "unknown") for r in rows)),
+    }
+
+
 def _run_flow_block(live_dir: Path, market_date: str, phase: str) -> dict[str, Any]:
     path = live_dir / f"run_flow_{market_date}_{phase}.json"
     payload = _read_json(path)
@@ -151,6 +163,61 @@ def _agent_signal_block(live_dir: Path, market_date: str) -> dict[str, Any]:
     }
 
 
+def _intelligence_status_block(live_dir: Path, market_date: str, *, review_queue: dict[str, Any] | None = None) -> dict[str, Any]:
+    stock_rows = _date_rows(_read_jsonl(live_dir / "stock_sentiment_history.jsonl"), market_date)
+    snapshot_rows = _date_rows(_read_jsonl(live_dir / "signal_snapshots.jsonl"), market_date)
+    evidence_rows = _date_rows(_read_jsonl(live_dir / f"intelligence_evidence_{market_date}.jsonl"), market_date)
+    queue_path = live_dir / f"intelligence_review_queue_{market_date}.json"
+    queue_payload = review_queue if isinstance(review_queue, dict) else _read_json(queue_path)
+    reviewed = [
+        r for r in stock_rows
+        if str(r.get("score_source") or "") == "agent_review"
+    ]
+    actionable_short = [
+        r for r in reviewed
+        if r.get("agent_short_score") not in (None, "")
+        and str(r.get("data_quality") or "legacy") in {"ok", "legacy"}
+    ]
+    snapshot_actionable = [
+        r for r in snapshot_rows
+        if str(r.get("intelligence_factor_score_source") or "") == "agent_review"
+        and r.get("ai_intelligence_short_score") not in (None, "")
+    ]
+    hard_veto_reviews = [
+        r for r in reviewed
+        if isinstance(r.get("veto_flags"), list) and r.get("veto_flags")
+    ]
+    fallback_to_base = bool(evidence_rows and not actionable_short and not snapshot_actionable)
+    if actionable_short or snapshot_actionable:
+        status = "actionable_agent_review"
+    elif evidence_rows and stock_rows:
+        status = "pending_agent_review"
+    elif evidence_rows:
+        status = "evidence_only"
+    else:
+        status = "no_evidence"
+    queue_counts = queue_payload.get("counts") if isinstance(queue_payload, dict) and isinstance(queue_payload.get("counts"), dict) else {}
+    return {
+        "status": status,
+        "fallback_to_base_pick": fallback_to_base,
+        "evidence_rows": len(evidence_rows),
+        "stock_intelligence_rows": len(stock_rows),
+        "agent_review_rows": len(reviewed),
+        "pending_agent_review_rows": sum(1 for r in stock_rows if str(r.get("score_source") or "") == "pending_agent_review"),
+        "actionable_short_review_rows": len(actionable_short),
+        "snapshot_actionable_rows": len(snapshot_actionable),
+        "ai_intelligence_short_star_rows": sum(1 for r in snapshot_rows if bool(r.get("ai_intelligence_short_star"))),
+        "hard_veto_review_rows": len(hard_veto_reviews),
+        "score_source": dict(Counter(str(r.get("score_source") or "unknown") for r in stock_rows)),
+        "review_queue": {
+            "file": file_state(queue_path),
+            "status": queue_payload.get("status") if isinstance(queue_payload, dict) else "missing",
+            "selected_items": queue_counts.get("selected_items", 0),
+            "pending_items": queue_counts.get("pending_items", 0),
+        },
+    }
+
+
 def build_context_pack(
     *,
     live_dir: Path,
@@ -162,6 +229,7 @@ def build_context_pack(
     now = now or datetime.now()
     health = data_health.check(live_dir, today=market_date)
     digest = live_status.build_digest(live_dir=live_dir, market_date=market_date, now=now)
+    review_queue = build_review_queue(live_dir=live_dir, market_date=market_date, limit=8, now=now)
     return {
         "schema_version": 1,
         "market_date": market_date,
@@ -173,8 +241,11 @@ def build_context_pack(
         "data_health": health,
         "positions": _position_block(live_dir),
         "signals": _signal_block(live_dir, market_date),
+        "intelligence_status": _intelligence_status_block(live_dir, market_date, review_queue=review_queue),
+        "intelligence_evidence": _intelligence_evidence_block(live_dir, market_date),
         "stock_intelligence": _sentiment_block(live_dir, market_date),
         "agent_signals": _agent_signal_block(live_dir, market_date),
+        "intelligence_review_queue": review_queue,
         "run_flow": _run_flow_block(live_dir, market_date, phase),
     }
 

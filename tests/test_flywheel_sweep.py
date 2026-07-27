@@ -4,6 +4,7 @@ recurrence then age, and NEVER mutate the spine."""
 from __future__ import annotations
 
 import importlib.util
+import json
 from datetime import date
 from pathlib import Path
 
@@ -40,7 +41,46 @@ def test_cache_expressible_detects_runnable_ops():
     assert sw._cache_expressible({"operationalization": "等小草下次直播确认"}) is False
 
 
-def test_pass_evidence_lists_only_pass():
+def test_pass_evidence_lists_only_unapplied_pass():
     entries = [{"id": "XH-1", "last_verdict": "PASS"}, {"id": "XH-2", "last_verdict": "REJECTED"},
-               {"id": "XH-3"}]
-    assert sw.pass_evidence(entries) == ["XH-1"]
+               {"id": "XH-3"}, {"id": "XH-4", "last_verdict": "PASS"}]
+    assert sw.pass_evidence(entries, applied_ids={"XH-4"}) == ["XH-1"]
+
+
+def test_applied_verdict_ids_reads_applied_and_consumed_statuses(tmp_path):
+    path = tmp_path / "applied_verdicts.jsonl"
+    path.write_text(
+        "\n".join([
+            "# comment",
+            '{"id":"XH-1","status":"applied"}',
+            '{"id":"XH-2","status":"consumed"}',
+            '{"id":"XH-3","status":"proposal"}',
+            '{"id":"XH-4"}',
+        ]),
+        encoding="utf-8",
+    )
+    assert sw._applied_verdict_ids(path) == {"XH-1", "XH-2", "XH-4"}
+
+
+def test_json_sweep_keeps_stdout_machine_parseable(monkeypatch, capsys):
+    class Distill:
+        @staticmethod
+        def reconcile():
+            print("reconcile chatter")
+
+    monkeypatch.setattr(sw, "_load_distill", lambda: Distill)
+    monkeypatch.setattr(sw, "_entries", lambda path: [])
+    monkeypatch.setattr(sw.flywheel, "knowledge_scoreboard", lambda root: {
+        "candidates_total": 0,
+        "candidates_tested": 0,
+        "candidate_to_tested": 0,
+        "candidates_retired": 0,
+        "candidates_untested": 0,
+        "candidates_passed": 0,
+    })
+
+    assert sw.sweep(top=1, reconcile=True, as_json=True) == 0
+    captured = capsys.readouterr()
+    payload = json.loads(captured.out)
+    assert payload["pass_evidence"] == []
+    assert "reconcile chatter" in captured.err

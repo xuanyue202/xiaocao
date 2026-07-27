@@ -5,7 +5,8 @@ The date_kline (daily OHLCV) endpoint can trail realtime by weeks, freezing
 mode_history / the proxy-regime substrate (see AGENTS.md). minute_line stays
 current, so at eod we reconstruct today's daily bar (from the `trade` field) for
 the universe we actually care about — four benchmark indices + open positions
-+ the requested day's signals — and
++ the requested day's signals + the previous live Book-B signal batch whose
+forward labels mature today — and
 append it to a provenance-tagged store the learning side can read. Rate-limited
 and cache-first (minute persists to xiaocao.db).
 
@@ -58,6 +59,7 @@ def _universe(target_date: str, *, live_dir: Path = LIVE) -> set[str]:
     snaps = live_dir / "signal_snapshots.jsonl"
     if snaps.exists():
         wanted = _normal_date(target_date)
+        previous_live_b: list[tuple[str, str]] = []
         for line in snaps.read_text(encoding="utf-8").splitlines():
             line = line.strip()
             if not line:
@@ -66,8 +68,20 @@ def _universe(target_date: str, *, live_dir: Path = LIVE) -> set[str]:
                 r = json.loads(line)
             except json.JSONDecodeError:
                 continue
-            if _normal_date(str(r.get("date", ""))) == wanted and r.get("code"):
+            snapshot_date = _normal_date(str(r.get("date", "")))
+            if snapshot_date == wanted and r.get("code"):
                 codes.add(str(r["code"]))
+            if (
+                snapshot_date
+                and snapshot_date < wanted
+                and r.get("is_live") is True
+                and str(r.get("book") or "B") == "B"
+                and r.get("code")
+            ):
+                previous_live_b.append((snapshot_date, str(r["code"])))
+        if previous_live_b:
+            previous_date = max(snapshot_date for snapshot_date, _ in previous_live_b)
+            codes.update(code for snapshot_date, code in previous_live_b if snapshot_date == previous_date)
     return codes
 
 

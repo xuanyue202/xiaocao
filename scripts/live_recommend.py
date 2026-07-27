@@ -41,6 +41,13 @@ from xiaocao.config import load_settings  # noqa: E402
 from xiaocao.datasource.api_source import ApiDataSource  # noqa: E402
 from xiaocao.live import agent_signals, intelligence, intelligence_evidence, intelligence_policy  # noqa: E402
 from xiaocao.strategy import run_strategy  # noqa: E402
+from xiaocao.strategy.mode_switch import (  # noqa: E402
+    annotate_candidates as annotate_mode_candidates,
+    confidence_map_from_decisions,
+    decide_modes as decide_mode_switches,
+    fast_health_fields,
+    load_live_executable_evidence,
+)
 from xiaocao.strategy.rules import (  # noqa: E402
     RAW_QIBAO_BENCHMARK_MODE,
     RAW_QIBAO_BENCHMARK_MODES,
@@ -65,8 +72,6 @@ DEFAULT_READY_POLL_SEC = 1.0
 DEFAULT_READY_CONFIRM_SEC = 8.0
 DEFAULT_READY_STABLE_SAMPLES = 2
 STANDBY_MAX_RANK_GAP = 3.0
-MODE_CONFIDENCE_WINDOWS = (5, 10, 20)
-MODE_CONFIDENCE_WEIGHTS = {5: 0.50, 10: 0.30, 20: 0.20}
 BASKET_POLICY = {
     "接力低弱转1": {"premium": 2.0, "min": 1.5, "max": 2.5, "cap_pct": 10.0, "exec_cap_pct": 6.0},
     "接力低弱转2": {"premium": 1.2, "min": 0.8, "max": 1.8, "cap_pct": 8.0, "exec_cap_pct": 5.5},
@@ -509,7 +514,7 @@ def _normal_date(value: object) -> str:
     return text[:10]
 
 
-def _trade_days(client: XiaocaoClient, date_iso: str, lookback_days: int = 90) -> list[str]:
+def _trade_days(client: XiaocaoClient, date_iso: str, lookback_days: int = 220) -> list[str]:
     start = (_date.fromisoformat(date_iso) - timedelta(days=lookback_days)).isoformat()
     rows = client.get_trade_cal(start, date_iso, "SSE", 1)
     return sorted({
@@ -884,155 +889,6 @@ def _open_risk_penalty(mode: str, open_pct: float) -> float:
     return min(35.0, deep_low_penalty + chase_penalty)
 
 
-def _confidence_from_window_stats(
-    windows: dict[int, dict[str, object]],
-    *,
-    source: str = "mode_history",
-) -> dict[str, object]:
-    weighted_sum = 0.0
-    weight_sum = 0.0
-    max_n = 0
-    for window in MODE_CONFIDENCE_WINDOWS:
-        stat = windows.get(window) or {}
-        n = int(_num(stat.get("n")))
-        avg = _num(stat.get("avg"))
-        if n <= 0:
-            continue
-        weight = MODE_CONFIDENCE_WEIGHTS[window]
-        weighted_sum += avg * weight
-        weight_sum += weight
-        max_n = max(max_n, n)
-    if weight_sum <= 0:
-        return {
-            "confidence": 50.0,
-            "mode_recent_avg": 0.0,
-            "mode_recent_n": 0,
-            "mode_confidence_source": source,
-            "mode_confidence_reason": f"no recent {source}",
-        }
-    recent_avg = weighted_sum / weight_sum
-    raw_confidence = 50.0 + max(-10.0, min(10.0, recent_avg)) * 4.0
-    shrink = min(1.0, max_n / 8.0)
-    confidence = 50.0 + (raw_confidence - 50.0) * shrink
-    return {
-        "confidence": round(max(0.0, min(100.0, confidence)), 2),
-        "mode_recent_avg": round(recent_avg, 2),
-        "mode_recent_n": max_n,
-        "mode_confidence_source": source,
-        "mode_confidence_reason": f"5/10/20d {source} weighted avg {recent_avg:+.2f}% n={max_n}",
-    }
-
-
-def _window_lower_bound(asof_iso: str, window_days: int, trade_days: list[str] | None) -> str | None:
-    asof = asof_iso[:10]
-    if trade_days:
-        normalized = sorted({str(d)[:10] for d in trade_days if str(d or "")[:10] <= asof})
-        try:
-            idx = normalized.index(asof)
-        except ValueError:
-            idx = len(normalized)
-        lower_idx = max(0, idx - window_days)
-        if lower_idx < len(normalized):
-            return normalized[lower_idx]
-        return asof
-    try:
-        return (_date.fromisoformat(asof) - timedelta(days=window_days)).isoformat()
-    except ValueError:
-        return None
-
-
-def _training_rows_mode_window_stats(
-    modes: set[str],
-    date_iso: str,
-    trade_days: list[str],
-    path: Path = TRAINING_ROWS_FILE,
-) -> dict[str, dict[int, dict[str, object]]]:
-    """Return per-mode windows from live all-hit forward labels.
-
-    `training_rows.parquet` is produced from `signal_snapshots.jsonl`, so it
-    contains the full live candidate set: bought, unbought, KP-dropped, and
-    shadow rows. That is the right substrate for mode ranking. SQLite
-    `mode_history` is only the fallback because it can lag the live feed.
-    """
-    if not modes or not path.exists():
-        return {}
-    try:
-        import pandas as pd  # type: ignore
-    except Exception:
-        return {}
-    try:
-        df = pd.read_parquet(path)
-    except Exception:
-        return {}
-    required = {"date", "mode"}
-    if df.empty or not required.issubset(set(df.columns)):
-        return {}
-    ret_col = "net_realized_ret" if "net_realized_ret" in df.columns else "realized_ret"
-    if ret_col not in df.columns:
-        return {}
-
-    df = df.copy()
-    df["_date"] = df["date"].astype(str).str[:10]
-    df["_mode"] = df["mode"].astype(str)
-    df["_ret"] = pd.to_numeric(df[ret_col], errors="coerce")
-    if "is_live" in df.columns:
-        live_mask = df["is_live"].map(
-            lambda value: str(value).strip().lower() in {"1", "true", "yes"}
-            if isinstance(value, str) else bool(value)
-        )
-        df = df[live_mask]
-    df = df[
-        (df["_date"] < date_iso[:10])
-        & (df["_mode"].isin(modes))
-        & (df["_ret"].notna())
-    ]
-    if df.empty:
-        return {}
-
-    out: dict[str, dict[int, dict[str, object]]] = {mode: {} for mode in modes}
-    for window in MODE_CONFIDENCE_WINDOWS:
-        lower = _window_lower_bound(date_iso, window, trade_days or None)
-        if lower is None:
-            continue
-        sub = df[(df["_date"] >= lower) & (df["_date"] < date_iso[:10])]
-        for mode in modes:
-            vals = sub.loc[sub["_mode"] == mode, "_ret"]
-            out[mode][window] = {
-                "n": int(vals.count()),
-                "avg": float(vals.mean()) if int(vals.count()) else 0.0,
-            }
-    return {mode: windows for mode, windows in out.items() if windows}
-
-
-def _mode_confidence(
-    cache: SQLiteCache | None,
-    modes: set[str],
-    date_iso: str,
-    trade_days: list[str],
-    training_rows_path: Path = TRAINING_ROWS_FILE,
-) -> dict[str, dict[str, object]]:
-    out: dict[str, dict[str, object]] = {}
-    if not modes:
-        return out
-    live_windows = _training_rows_mode_window_stats(modes, date_iso, trade_days, training_rows_path)
-    effective_trade_days = trade_days or None
-    for mode in modes:
-        windows = live_windows.get(mode) or {}
-        has_live = any(int(_num(stat.get("n"))) > 0 for stat in windows.values())
-        if has_live:
-            out[mode] = _confidence_from_window_stats(windows, source="live all-hit shadow PnL")
-            continue
-        if cache is None:
-            out[mode] = _confidence_from_window_stats({}, source="live all-hit shadow PnL")
-            continue
-        fallback_windows = {
-            window: cache.mode_window_stats(mode, date_iso, window, trade_days=effective_trade_days)
-            for window in MODE_CONFIDENCE_WINDOWS
-        }
-        out[mode] = _confidence_from_window_stats(fallback_windows, source="mode_history fallback")
-    return out
-
-
 def _annotate_recommendation_score(
     candidate: dict[str, object],
     mode_confidence: dict[str, dict[str, object]] | None = None,
@@ -1045,7 +901,8 @@ def _annotate_recommendation_score(
     macro_score, macro_reason = _macro_focus_score(candidate)
     confidence_info = (mode_confidence or {}).get(mode, {})
     confidence = _num(confidence_info.get("confidence")) if confidence_info else 50.0
-    rank_score = score_fit * 0.60 + confidence * 0.25 + macro_score * 0.18 - open_risk_penalty
+    stock_rank_score = score_fit * 0.60 + macro_score * 0.18 - open_risk_penalty
+    rank_score = stock_rank_score + confidence * 0.25
     out = dict(candidate)
     out["primary_score"] = round(primary, 2)
     out["primary_score_label"] = label
@@ -1058,6 +915,7 @@ def _annotate_recommendation_score(
     out["mode_recent_n"] = confidence_info.get("mode_recent_n", 0)
     out["mode_confidence_source"] = confidence_info.get("mode_confidence_source", "neutral")
     out["mode_confidence_reason"] = confidence_info.get("mode_confidence_reason", "neutral")
+    out["stock_rank_score"] = round(stock_rank_score, 2)
     out["rank_score"] = round(rank_score, 2)
     return out
 
@@ -1255,13 +1113,16 @@ def main() -> None:
         trade_days = _trade_days(client, date_iso)
     except Exception:
         trade_days = []
-    mode_confidence = _mode_confidence(
-        cache,
+    executable_evidence = load_live_executable_evidence(TRAINING_ROWS_FILE)
+    mode_decisions = decide_mode_switches(
         {str(c.get("mode") or "") for c in candidates if c.get("mode")},
         date_iso,
+        executable_evidence,
         trade_days,
     )
+    mode_confidence = confidence_map_from_decisions(mode_decisions)
     candidates = [_annotate_recommendation_score(c, mode_confidence) for c in candidates]
+    candidates = annotate_mode_candidates(candidates, mode_decisions)
     for c in candidates:
         mode = str(c.get("mode") or "")
         confidence = _num(c.get("mode_confidence"))
@@ -1296,6 +1157,7 @@ def main() -> None:
     kp_stars: list[dict] = []
     vb_stars: list[dict] = []
     mode_stars: list[dict] = []
+    mode_exec_stars: list[dict] = []
     if not args.no_kronos:
         try:
             import importlib.util as _ilu
@@ -1315,6 +1177,7 @@ def main() -> None:
                     is_live=_is_today_live_run(date_iso), top_n=max(1, args.kronos_top_n))
                 vb_stars = [c for c in candidates if c.get("vb_star")]
                 mode_stars = [c for c in candidates if c.get("mode_star")]
+                mode_exec_stars = [c for c in candidates if c.get("mode_exec_star")]
             except Exception as e:
                 print(f"[signal capture skipped: {type(e).__name__}: {e}]", file=sys.stderr)
         except Exception as e:  # missing model / torch / API — degrade gracefully
@@ -1348,9 +1211,12 @@ def main() -> None:
     selected_codes = {str(c.get("code") or "") for c in selected}
     standby_codes = {str(c.get("code") or "") for c in standby}
     vb_codes = {str(c.get("code") or "") for c in vb_stars}
+    mode_exec_codes = {str(c.get("code") or "") for c in mode_exec_stars}
     for record in sentiment_records:
         code = str(record.get("code") or "")
-        if code in vb_codes:
+        if code in mode_exec_codes:
+            record["target_set"] = "mode_exec_star"
+        elif code in vb_codes:
             record["target_set"] = "vb_star"
         elif code in selected_codes:
             record["target_set"] = "selected"
@@ -1371,7 +1237,8 @@ def main() -> None:
         universe="candidates+open_positions",
         elapsed_ms=int((_time.monotonic() - sentiment_started) * 1000),
     )
-    top_sentiment_codes = [str(c.get("code") or "") for c in (vb_stars if vb_stars else selected)]
+    top_surface = mode_exec_stars or vb_stars or selected
+    top_sentiment_codes = [str(c.get("code") or "") for c in top_surface]
     sentiment_by_code = {str(r.get("code") or ""): r for r in sentiment_records}
     top_sentiment = [sentiment_by_code[code] for code in top_sentiment_codes if code in sentiment_by_code]
 
@@ -1387,6 +1254,40 @@ def main() -> None:
         + ("" if not standby else f" / 小仓候补: {len(standby)}")
         + ("" if not overflow else f" / 观察: {len(overflow)}")
     )
+    L.append(f"- 模式资格证据: executable all-hit {len(executable_evidence)} 笔")
+    L.append("")
+    L.append("## 模式资格（Book B 执行权限）")
+    L.append("")
+    L.append("| mode | state | window | raw | pool alpha/LCB80 | market alpha/LCB80 | fast health (pool/market) | n(days/signals) | max picks |")
+    L.append("|---|---|---:|---:|---:|---:|---|---:|---:|")
+    for mode, decision in sorted(mode_decisions.items()):
+        selected_stats = decision.windows.get(decision.selected_window or -1)
+        fast = fast_health_fields(decision)
+        fast_label = (
+            f"{fast['mode_fast_health']} ("
+            f"{_num(fast.get('mode_fast_alpha_pool')):+.2f}/"
+            f"{_num(fast.get('mode_fast_alpha_market')):+.2f}pp)"
+        )
+        if selected_stats:
+            market_mean = selected_stats.alpha_market_mean
+            market_lcb = selected_stats.alpha_market_lcb80
+            market_label = (
+                f"{market_mean:+.2f}/{market_lcb:+.2f}pp"
+                if market_mean is not None and market_lcb is not None else "-"
+            )
+            L.append(
+                f"| {mode} | {decision.state} | {decision.selected_window or '-'} | "
+                f"{selected_stats.raw_return_mean:+.2f}% | "
+                f"{selected_stats.alpha_pool_mean:+.2f}/{selected_stats.alpha_pool_lcb80:+.2f}pp | "
+                f"{market_label} | {fast_label} | {selected_stats.signal_days}/{selected_stats.signals} | "
+                f"{decision.max_picks} |"
+            )
+        else:
+            L.append(f"| {mode} | {decision.state} | - | - | - | - | {fast_label} | 0/0 | {decision.max_picks} |")
+    L.append("- 模式证据保留 1/2/3 信号对应 25%/45%/50% 验证权重；正式 `ACTIVE` 必须同时稳健跑赢候选池和四指数。")
+    L.append("- 近期双基准均值和多数日转正可直接升为 `ACTIVE`；每模式只取第一名，存在 ACTIVE 时新批次目标50%，单票可达50%。")
+    L.append("- 近期双基准任一均值转负会冷却为 `PROVISIONAL`；`COLD/UNKNOWN` 只保留shadow。")
+    L.append("- `fast health` 是无交易权限的早期传感器；`EARLY_WARNING/DETERIORATING` 不会自行改变模式资格。")
     L.append("")
     L.append("## Profiles 解读")
     L.append("")
@@ -1394,9 +1295,9 @@ def main() -> None:
     L.append("- **v6 (3d max_dd 0.5%)** = 持仓 3 日，回撤 0.5% 即止 (aggressive，待 paper trading 验证)")
     L.append("- **入场价** = 9:25 集合竞价撮合出的开盘价（实时明细 open 字段优先）")
     L.append("- **买入看 entry / basket**：entry 是开盘参考价，basket 是建议挂单上限，不是默认成交价")
-    L.append("- **篮子估算价** = mode-specific premium + mode recent confidence，并按 mode 控制 preClose cap")
+    L.append("- **篮子估算价** = mode-specific premium + 同一可执行双基准保守置信度，并按 mode 控制 preClose cap")
     L.append("- **保护线必须按实际成交价重算**：表中 `stop@basket` 是按最差 basket 成交的保护线参考")
-    L.append("- **二级筛选** = mode-specific score + mode recent confidence + 今日聚焦板块/大类加持，open_pct 只做极端执行风险惩罚")
+    L.append("- **二级筛选** = 个股模式分 + 同一可执行双基准保守置信度 + 今日聚焦板块/大类加持，open_pct 只做极端执行风险惩罚")
     L.append("- **小仓候补** = 与第 N 名分差很小、且不与已入选票形成同 mode / 同板块拥挤的候选；只适合作为降仓观察")
     L.append("- **★KP = Kronos K→P 防御性叠加层**：K(Kronos日线表征)剔除当天最差半数，P(前一日分钟微结构)对幸存者排序；"
              "回测价值为**回撤缓冲+小幅胜率提升**(坏周 -2.4%→-0.7%, win37→54)，**非已证实的收益放大器**，仅作优先级参考。`KP↓`=被K判为后半。")
@@ -1422,10 +1323,33 @@ def main() -> None:
             L.append(f"| {c.get('vb_rank','')} | {c['code']} | {c.get('name','')} | {c.get('mode','')} | "
                      f"{_num(q.get('primary_score')):.1f} | {_num(c.get('p_score')):+.3f} | {q.get('quality_tag','normal')} | "
                      f"{_num(c.get('auc_pct')):+.2f}% | {_num(c.get('auc_residual_imb')):+.2f} |")
-        L.append("- **★B = 排名候选，不等于必须买满三只**：v1 只在 `paper_record.py --quality-governor shadow` 记录质量治理反事实；Book B 正式买入仍只受 Book A kill-switch 约束。")
+        L.append("- **★B 现在是保留基线**：继续前向记录 K/P+竞价表现，但默认 Book B 模拟成交改由下方 ★E 模式资格集合驱动。")
         L.append("- **quality_tag**：`normal`=primary≥150；`weak_primary`=primary<150；`p_tail_warning`=P 极弱尾部。当前仅提示/沉淀，不在推荐阶段硬过滤。")
         L.append("- **竞价 forced-contrast**：在 K 幸存者中，若非★候选竞价质量显著优于★内最弱竞价者，则换入以制造可验证 A/B 对照；否则 ★B 与 ★ 保持一致。")
         L.append("- **★ = A/B 基线**（纯 K→P，无竞价）。两套每日快照入 `output/live/signal_snapshots.jsonl`；`forward_eval.py --live-only` 累积真实收益后裁决竞价 tiebreak 是否带来增益（前瞻验证，历史不可回测）。")
+        L.append("")
+    if mode_exec_stars:
+        L.append("## ★E Book B 模式切换可执行候选")
+        L.append("")
+        L.append("| ★E | code | name | mode | state | exec score | target | pool alpha/LCB80 | market alpha/LCB80 |")
+        L.append("|---|---|---|---|---|---:|---:|---:|---:|")
+        for c in sorted(mode_exec_stars, key=lambda row: int(_num(row.get("mode_exec_rank")) or 9999)):
+            L.append(
+                f"| {c.get('mode_exec_rank','')} | {c['code']} | {c.get('name','')} | "
+                f"{c.get('mode','')} | {c.get('mode_state','')} | "
+                f"{_num(c.get('mode_exec_score')):.3f} | "
+                f"{_num(c.get('mode_exec_target_weight')):.1%} | "
+                f"{_num(c.get('mode_alpha_pool')):+.2f}/"
+                f"{_num(c.get('mode_alpha_pool_lcb80')):+.2f}pp | "
+                f"{_num(c.get('mode_alpha_market')):+.2f}/"
+                f"{_num(c.get('mode_alpha_market_lcb80')):+.2f}pp |"
+            )
+        L.append("- ★E 是 `模式硬门 -> rank/K/P软排序 -> 动态目标仓位` 的默认 Book B 模拟成交集合。")
+        L.append("")
+    else:
+        L.append("## ★E Book B 模式切换可执行候选")
+        L.append("")
+        L.append("- NONE：当前没有通过可执行收益硬门的候选，Book B 新批次留现金。")
         L.append("")
     if mode_stars:
         L.append("## ★M K生存池内模式轮动影子候选 — forward-test only")
@@ -1437,7 +1361,7 @@ def main() -> None:
             L.append(f"| {c.get('mode_rank','')} | {c['code']} | {c.get('name','')} | {c.get('mode','')} | "
                      f"{_num(c.get('rank_score')):.1f} | {_num(c.get('mode_confidence')):.1f} | "
                      f"{_num(q.get('primary_score')):.1f} | {_num(c.get('p_score')):+.3f} |")
-        L.append("- **★M 当前不参与默认 Book B 买入**：它只进入 `signal_snapshots.jsonl -> forward_eval.py -> continuous_optimize.py`，等研究守门和 §10 人工门通过后再考虑升格。")
+        L.append("- **★M 不参与默认 Book B 买入**：它继续作为旧模式分排序影子分支；默认执行是共享状态机产生的 ★E。")
         L.append("")
     if top_sentiment:
         L.append("## Top AI 情报因子（证据化记录；agent 研判后进入做多影子 A/B）")
@@ -1451,8 +1375,8 @@ def main() -> None:
                 f"{row.get('score_source','')} | {row.get('data_quality','legacy')} | {row.get('summary','')} |"
             )
         L.append("- 以上信息沉淀到 `stock_sentiment*`、`agent_signals.jsonl` 和 `signal_snapshots.jsonl`；标题关键词只保留为 `keyword_score` 诊断，不产生做多信号。")
-        L.append("- 只有 agent 结构化研判写入 `score_source=agent_review` 且 `score>=0.2` 时，才会标记 `ai_intelligence_short_star`，进入 forward_eval 做多影子 A/B；`paper_record.py --intelligence-trade on` 会在 Book-B 纸面买入中消费该短线分和 hard-veto。")
-        L.append("- 边界：它暂不改变正式 Book B 买入集合和自动买入；是否升格取决于短线 forward label，趋势侧后续走 Book T / trend_guards 独立评估。")
+        L.append("- 只有 agent 结构化研判写入 `score_source=agent_review` 且 `score>=0.2` 时，才会标记 `ai_intelligence_short_star`，进入 forward_eval 做多影子 A/B；默认自动化为 `--intelligence-trade shadow`，不改 ★E。")
+        L.append("- 显式 `--intelligence-trade on` 也只能在已通过资格的 ★E 内重排或移除，不能恢复 COLD/UNKNOWN、北交所或非 ★E 候选；趋势侧走 Book T / trend_guards 独立评估。")
         L.append("")
     L.append("## 候选清单")
     L.append("")

@@ -34,6 +34,63 @@ def _fake_flywheel():
     }
 
 
+def _write_protocol_registry(root: Path):
+    path = root / "reference" / "experience" / "research_protocols.yaml"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(
+        """
+schema_version: 1
+protocols:
+  - id: shortline-book-b-v1
+    name: Shortline test protocol
+    scope: Test strategy changes
+    strategy_kernel: []
+    allowed_change_surfaces: []
+    forbidden_change_surfaces: []
+    sample_policy: {}
+    required_manifest_fields:
+      - schema_version
+      - protocol_id
+      - hypothesis_id
+      - inputs.trades_sha256
+      - artifacts.trades
+      - artifacts.verdict
+      - verdict.status
+      - git.commit
+      - git.dirty
+    required_artifacts:
+      - manifest.json
+      - trades.jsonl
+      - verdict.json
+    promotion_boundary: {}
+    rollback: git revert <commit>
+""".strip() + "\n",
+        encoding="utf-8",
+    )
+    return path
+
+
+def _write_research_manifest(root: Path, *, write_artifacts: bool = True):
+    path = root / "output" / "research" / "runs" / "demo" / "manifest.json"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    verdict_path = path.parent / "verdict.json"
+    trades_path = path.parent / "trades.jsonl"
+    path.write_text(json.dumps({
+        "schema_version": 1,
+        "protocol_id": "shortline-book-b-v1",
+        "hypothesis_id": "XH-037",
+        "inputs": {"trades_sha256": "a" * 64},
+        "artifacts": {"trades": str(trades_path), "verdict": str(verdict_path)},
+        "verdict": {"status": "PASS"},
+        "diagnostics": {"coverage": {"pick_alpha": 10}},
+        "git": {"commit": "abc123", "dirty": True},
+    }, ensure_ascii=False), encoding="utf-8")
+    if write_artifacts:
+        trades_path.write_text('{"day":"2026-07-01","strat_ret":0.02,"base_ret":0.01}\n', encoding="utf-8")
+        verdict_path.write_text('{"verdict":"PASS"}\n', encoding="utf-8")
+    return path
+
+
 def test_build_plan_routes_pass_pending_and_instrumentation_todo(tmp_path, monkeypatch):
     _patch_paths(monkeypatch, tmp_path)
     wdr.ACTION_LOG.parent.mkdir(parents=True)
@@ -258,8 +315,49 @@ def test_auto_applied_finalize_requires_candidate_and_validation(tmp_path, monke
         raise AssertionError("AUTO_APPLIED with incomplete evidence should fail")
 
 
+def test_strategy_auto_applied_requires_protocol_and_manifest(tmp_path, monkeypatch):
+    _patch_paths(monkeypatch, tmp_path)
+    plan = {
+        "date": "2026-07-02",
+        "fixed_inputs": wdr.FIXED_INPUTS,
+        "pre_existing_dirty": [],
+        "flywheel": _fake_flywheel(),
+        "sweep": {},
+        "auto_apply_candidates": [{
+            "id": "auto-qibao-rule",
+            "title": "Apply qibao paper-only rule",
+            "source": "kronos_screen/HYPOTHESES.jsonl",
+            "recommended_change": "Enable paper-only emitted mode backed by XH-037 PASS.",
+            "evidence_bundle": wdr._evidence_bundle(
+                problem="XH-037 PASS remains unapplied",
+                attribution="Verdict ledger contains PASS and fixed-input weekly plan selected it.",
+                artifact="kronos_screen/HYPOTHESES.jsonl",
+                baseline="Current strategy does not consume the passed qibao evidence.",
+                overfit="research_run PASS with multiple-comparison correction.",
+                scope="paper/simulation strategy code",
+            ),
+        }],
+        "proposals": [],
+        "mode_recommendation": wdr.MODE_AUTO,
+    }
+    plan_path = tmp_path / "plan.json"
+    plan_path.write_text(json.dumps(plan, ensure_ascii=False), encoding="utf-8")
+
+    try:
+        wdr.finalize_plan(plan_path=plan_path, mode=wdr.MODE_AUTO,
+                          validation=["pytest: PASS"], allow_commit=False)
+    except SystemExit as e:
+        text = str(e)
+        assert "protocol_id" in text
+        assert "research_manifest" in text
+    else:
+        raise AssertionError("strategy AUTO_APPLIED without protocol/manifest should fail")
+
+
 def test_auto_applied_can_merge_candidate_file_and_finalize_without_commit(tmp_path, monkeypatch):
     _patch_paths(monkeypatch, tmp_path)
+    _write_protocol_registry(tmp_path)
+    manifest = _write_research_manifest(tmp_path)
     monkeypatch.setattr(wdr, "_stage_and_commit", lambda **_: None)
     monkeypatch.setattr(wdr, "_git_status", lambda: [
         "?? output/live/weekly_review_2026-07-02.md",
@@ -281,6 +379,9 @@ def test_auto_applied_can_merge_candidate_file_and_finalize_without_commit(tmp_p
         "id": "auto-qibao-rule",
         "title": "Apply qibao paper-only rule",
         "source": "kronos_screen/HYPOTHESES.jsonl",
+        "change_type": "paper_strategy",
+        "protocol_id": "shortline-book-b-v1",
+        "research_manifest": str(manifest.relative_to(tmp_path)),
         "recommended_change": "Enable paper-only emitted mode backed by XH-037 PASS.",
         "evidence_bundle": wdr._evidence_bundle(
             problem="XH-037 PASS remains unapplied",
@@ -305,3 +406,90 @@ def test_auto_applied_can_merge_candidate_file_and_finalize_without_commit(tmp_p
     rows = [json.loads(l) for l in (tmp_path / result["ledger"]).read_text(encoding="utf-8").splitlines()]
     assert rows[-1]["mode"] == wdr.MODE_AUTO
     assert rows[-1]["evidence_bundle"][0]["problem_observed"] == "XH-037 PASS remains unapplied"
+
+
+def test_strategy_auto_applied_requires_manifest_artifact_files(tmp_path, monkeypatch):
+    _patch_paths(monkeypatch, tmp_path)
+    _write_protocol_registry(tmp_path)
+    manifest = _write_research_manifest(tmp_path, write_artifacts=False)
+    plan = {
+        "date": "2026-07-02",
+        "fixed_inputs": wdr.FIXED_INPUTS,
+        "pre_existing_dirty": [],
+        "flywheel": _fake_flywheel(),
+        "sweep": {},
+        "auto_apply_candidates": [{
+            "id": "auto-qibao-rule",
+            "title": "Apply qibao paper-only rule",
+            "source": "kronos_screen/HYPOTHESES.jsonl",
+            "change_type": "paper_strategy",
+            "protocol_id": "shortline-book-b-v1",
+            "research_manifest": str(manifest.relative_to(tmp_path)),
+            "recommended_change": "Enable paper-only emitted mode backed by XH-037 PASS.",
+            "evidence_bundle": wdr._evidence_bundle(
+                problem="XH-037 PASS remains unapplied",
+                attribution="Verdict ledger contains PASS and fixed-input weekly plan selected it.",
+                artifact="kronos_screen/HYPOTHESES.jsonl",
+                baseline="Current strategy does not consume the passed qibao evidence.",
+                overfit="research_run PASS with multiple-comparison correction.",
+                scope="paper/simulation strategy code",
+            ),
+        }],
+        "proposals": [],
+        "mode_recommendation": wdr.MODE_AUTO,
+    }
+    plan_path = tmp_path / "plan.json"
+    plan_path.write_text(json.dumps(plan, ensure_ascii=False), encoding="utf-8")
+
+    try:
+        wdr.finalize_plan(plan_path=plan_path, mode=wdr.MODE_AUTO,
+                          validation=["pytest: PASS"], allow_commit=False)
+    except SystemExit as e:
+        text = str(e)
+        assert "missing required artifact" in text
+        assert "trades.jsonl" in text
+        assert "verdict.json" in text
+    else:
+        raise AssertionError("strategy AUTO_APPLIED with missing research artifacts should fail")
+
+
+def test_report_quality_research_output_does_not_require_protocol_manifest(tmp_path, monkeypatch):
+    _patch_paths(monkeypatch, tmp_path)
+    monkeypatch.setattr(wdr, "_stage_and_commit", lambda **_: None)
+    monkeypatch.setattr(wdr, "_git_status", lambda: [
+        "?? output/live/weekly_review_2026-07-02.md",
+        "?? output/live/flywheel_change_ledger.jsonl",
+    ])
+    plan = {
+        "date": "2026-07-02",
+        "fixed_inputs": wdr.FIXED_INPUTS,
+        "pre_existing_dirty": [],
+        "flywheel": _fake_flywheel(),
+        "sweep": {},
+        "auto_apply_candidates": [{
+            "id": "paper-vs-market-format",
+            "title": "Improve paper-vs-market report readability",
+            "source": "output/research/paper_vs_market_2026-06-01_2026-07-02.md",
+            "change_type": "report_quality",
+            "recommended_change": "Add a compact index comparison line to the weekly report.",
+            "evidence_bundle": wdr._evidence_bundle(
+                problem="Weekly report needs a clearer passive-index comparison.",
+                attribution="Fixed paper-vs-market report exposes the missing comparison line.",
+                artifact="output/research/paper_vs_market_2026-06-01_2026-07-02.md",
+                baseline="Readers must inspect the research report manually.",
+                overfit="Read-only report formatting; no strategy parameter or fill behavior changes.",
+                scope="report-quality only",
+            ),
+        }],
+        "proposals": [],
+        "mode_recommendation": wdr.MODE_AUTO,
+    }
+    plan_path = tmp_path / "plan.json"
+    plan_path.write_text(json.dumps(plan, ensure_ascii=False), encoding="utf-8")
+
+    result = wdr.finalize_plan(plan_path=plan_path, mode=wdr.MODE_AUTO,
+                               validation=["pytest: PASS"], allow_commit=False)
+
+    assert result["mode"] == wdr.MODE_AUTO
+    rows = [json.loads(l) for l in (tmp_path / result["ledger"]).read_text(encoding="utf-8").splitlines()]
+    assert rows[-1]["evidence_bundle"][0]["problem_observed"] == "Weekly report needs a clearer passive-index comparison."

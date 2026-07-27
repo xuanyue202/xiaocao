@@ -4,9 +4,9 @@ kind = "cron"
 name = "xiaocao intraday monitor sparse"
 prompt = "Use the local `xiaocao-trading` skill/project conventions. Run the Xiaocao sparse intraday monitor workflow and report according to the skill's automation workflow instructions."
 status = "ACTIVE"
-rrule = "DTSTART:20260608T022500\nRRULE:FREQ=WEEKLY;BYDAY=MO,TU,WE,TH,FR;BYHOUR=2,5;BYMINUTE=25,55"
-model = "gpt-5.5"
-reasoning_effort = "high"
+rrule = "RRULE:FREQ=WEEKLY;BYDAY=MO,TU,WE,TH,FR;BYHOUR=10,13;BYMINUTE=25,55"
+model = "gpt-5.6-sol"
+reasoning_effort = "xhigh"
 execution_environment = "local"
 cwds = ["~/coding/xiaocao"]
 created_at = 1780643920109

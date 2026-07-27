@@ -42,8 +42,12 @@ def load_kronos(size: str, device: str | None = None, model_path: str | None = N
     still comes from the matching pretrained HF id (we don't fine-tune it)."""
     tok_id, mdl_id, d_model = SIZES[size]
     device = device or pick_device()
-    tok = KronosTokenizer.from_pretrained(tok_id).to(device).eval()
-    mdl = Kronos.from_pretrained(model_path or mdl_id).to(device).eval()
+    # Live automation should not phone home or emit Hugging Face auth warnings
+    # when the Kronos weights are already cached. Set KRONOS_ALLOW_HF_DOWNLOAD=1
+    # for an explicit refresh/download path.
+    local_files_only = os.environ.get("KRONOS_ALLOW_HF_DOWNLOAD", "0").lower() not in {"1", "true", "yes"}
+    tok = KronosTokenizer.from_pretrained(tok_id, local_files_only=local_files_only).to(device).eval()
+    mdl = Kronos.from_pretrained(model_path or mdl_id, local_files_only=local_files_only).to(device).eval()
     return tok, mdl, device, d_model
 
 

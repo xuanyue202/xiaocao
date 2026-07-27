@@ -25,9 +25,11 @@ Operational scripts live in `scripts/`; live automation centers on `auto_daily.s
 
 ## Codex Skill, CLI & Automation Flow
 
-Treat repo code as the behavioral source, `.codex/skills/xiaocao-trading/SKILL.md` as agent instructions, and `.codex/automations/*/automation.toml` as schedules. Codex discovers `~/.codex` symlinks; do not edit discovery copies directly.
+Treat repo code as the behavioral source and `.codex/skills/xiaocao-trading/SKILL.md` as agent instructions. **Codex Automation is the runtime scheduling authority**: create or update active tasks through the Codex Automation tool/API, then view them again through that interface. `.codex/automations/*/automation.toml` and `~/.codex/automations/*/automation.toml` are reviewable mirrors/implementation state; editing either file alone does not activate or verify a schedule.
 
-End-to-end path: automation prompt -> `xiaocao-trading` skill -> runtime bundle -> CLI/scripts -> `output/live/*` artifacts -> summary. CLI output, live behavior, account files, or Kronos fields require matching skill and automation updates.
+All China-market schedules must express the intended China wall-clock time directly in an RRULE with `BYHOUR` and `BYMINUTE`, interpreted in the user's locale. For ordinary recurring Codex cron automations, **omit `DTSTART` and `TZID` entirely** and never manually convert China time to UTC. The current Codex Automation contract reserves DTSTART/timezone-specific schedules for a separate reviewed path, and Codex Desktop has shown an eight-hour next-run preview error when a TZID-bearing DTSTART is used here. Preserve unrelated working schedules when changing one task. After any schedule change, update the existing Automation (do not create a duplicate), re-open it through the Automation interface, and verify the displayed next-run cadence against the current local clock.
+
+End-to-end path: Codex Automation schedule -> automation prompt -> `xiaocao-trading` skill -> runtime bundle -> CLI/scripts -> `output/live/*` artifacts -> summary. CLI output, live behavior, account files, or Kronos fields require matching skill and automation updates.
 
 ## Coding Style & Naming Conventions
 

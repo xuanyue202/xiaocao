@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from xiaocao.api.cache import SQLiteCache
 from xiaocao.strategy.adaptive import (
+    AUXILIARY_MODE_AUTHORITY,
     DEFAULT_AVG_THRESHOLD_BY_WINDOW,
     adaptive_mode_filter,  # back-compat alias
     decide_mode_state,
@@ -15,34 +16,23 @@ def test_regime_modulated_thresholds_default_zero_returns_base():
     assert out == DEFAULT_AVG_THRESHOLD_BY_WINDOW
 
 
-def test_regime_modulated_thresholds_positive_fitness_more_permissive():
-    # +1 fitness should make the rule HARDER to trip (thresholds more negative)
+def test_regime_modulated_thresholds_positive_fitness_has_no_authority():
     out = regime_modulated_thresholds(None, fitness=+1.0)
-    for w, base in DEFAULT_AVG_THRESHOLD_BY_WINDOW.items():
-        assert out[w] < base, f"window {w}: expected {out[w]} < {base}"
+    assert out == DEFAULT_AVG_THRESHOLD_BY_WINDOW
 
 
-def test_regime_modulated_thresholds_negative_fitness_mildly_stricter():
-    # Asymmetric design: negative fitness only mildly tightens (30% of scale).
-    # base 5d=-5, fitness=-1 → -5 - 3 * 0.3 * -1 = -5 + 0.9 = -4.1
+def test_regime_modulated_thresholds_negative_fitness_has_no_authority():
     out = regime_modulated_thresholds(None, fitness=-1.0)
-    assert out[5] > DEFAULT_AVG_THRESHOLD_BY_WINDOW[5]  # stricter
-    # But not catastrophically — should still be deeply negative
-    assert out[5] < -3.0, f"too aggressive negative shift: {out[5]}"
+    assert out == DEFAULT_AVG_THRESHOLD_BY_WINDOW
 
 
-def test_regime_modulated_thresholds_precondition_fail_mild_stricter():
-    """PRECONDITION_FAIL is a soft fitness=-1 mild stricter, not 0."""
+def test_regime_modulated_thresholds_precondition_fail_has_no_authority():
     from xiaocao.strategy.regime import PRECONDITION_FAIL
     out = regime_modulated_thresholds(None, fitness=PRECONDITION_FAIL)
-    out_neg1 = regime_modulated_thresholds(None, fitness=-1.0)
-    assert out == out_neg1, "PRECONDITION_FAIL should equal fitness=-1"
-    # And it shouldn't make threshold all zeros (mild, not catastrophic)
-    assert all(v < 0 for v in out.values())
+    assert out == DEFAULT_AVG_THRESHOLD_BY_WINDOW
 
 
-def test_decide_mode_state_with_strong_positive_fitness_more_permissive(tmp_path):
-    """Asymmetric design: positive fitness keeps a mildly-bad mode active."""
+def test_decide_mode_state_positive_fitness_cannot_reenable_bad_mode(tmp_path):
     cache = SQLiteCache(tmp_path / "c.db")
     # 5d avg = -5.5% × 6 trades. Default 5d thr=-5 → trips shadow at fitness=0.
     cache.record_trades([
@@ -53,11 +43,10 @@ def test_decide_mode_state_with_strong_positive_fitness_more_permissive(tmp_path
         ])
     ])
     base = decide_mode_state("M", "2026-04-25", cache, regime_fitness=0)
-    permissive = decide_mode_state("M", "2026-04-25", cache, regime_fitness=+1.0)
-    # base: -5.5 ≤ -5 → shadow
+    with_aux = decide_mode_state("M", "2026-04-25", cache, regime_fitness=+1.0)
     assert base.active is False, base.reason
-    # +1.0 fitness: 5d thr lowered from -5 to -8 → -5.5 not ≤ -8 → active
-    assert permissive.active is True, permissive.reason
+    assert with_aux.active is False, with_aux.reason
+    assert with_aux.reason == base.reason
 
 
 def _seed(cache: SQLiteCache, mode: str, dates_returns: list[tuple[str, float]]) -> None:
@@ -233,8 +222,34 @@ def test_tag_signals_preserves_all_rows_with_active_flag(tmp_path):
     assert by_code["A"]["adaptive_active"] is False  # bad mode → shadow
     assert by_code["B"]["adaptive_active"] is True   # good mode → active
     assert "adaptive_reason" in by_code["A"]
+    assert by_code["A"]["adaptive_auxiliary_authority"] == AUXILIARY_MODE_AUTHORITY
+    assert by_code["B"]["adaptive_regime_fitness"] == 0.0
     assert decisions["Bad"].active is False
     assert decisions["Good"].active is True
+
+
+def test_tag_signals_records_precondition_failure_without_shadow_authority(tmp_path):
+    from xiaocao.strategy.state import StateVector
+
+    cache = SQLiteCache(tmp_path / "c.db")
+    _seed(cache, "绿断低吸", [("2026-04-23", +2.0)])
+    state = StateVector(
+        reward=0.5,
+        risk=0.5,
+        continuity=0.5,
+        duan_ban_recovery=0.1,
+    )
+    tagged, decisions = tag_signals(
+        [{"mode": "绿断低吸", "code": "A"}],
+        "2026-04-25",
+        cache,
+        state=state,
+    )
+
+    assert decisions["绿断低吸"].active is True
+    assert tagged[0]["adaptive_active"] is True
+    assert tagged[0]["adaptive_regime_fitness"] == "PRECONDITION_FAIL"
+    assert tagged[0]["adaptive_auxiliary_authority"] == AUXILIARY_MODE_AUTHORITY
 
 
 def test_adaptive_mode_filter_alias_still_works(tmp_path):

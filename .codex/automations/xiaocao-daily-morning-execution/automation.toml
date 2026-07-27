@@ -1,0 +1,13 @@
+version = 1
+id = "xiaocao-daily-morning-execution"
+kind = "cron"
+name = "xiaocao daily morning execution"
+prompt = "Use the local `xiaocao-trading` skill/project conventions. Run `bash scripts/auto_daily.sh morning-execute`; never rerun live_recommend. Keep that shell alive through the bounded agent-review rendezvous, consume only the dated queue from frozen evidence, and write structured reviews with `scripts/agent_intelligence_review.py`; never use keyword scoring. Let timeout fall back to base picks, then report the final Book B and Book T ledger result according to the skill."
+status = "ACTIVE"
+rrule = "RRULE:FREQ=WEEKLY;BYDAY=MO,TU,WE,TH,FR;BYHOUR=9;BYMINUTE=25"
+model = "gpt-5.6-sol"
+reasoning_effort = "xhigh"
+execution_environment = "local"
+cwds = ["~/coding/xiaocao"]
+created_at = 1784512793716
+updated_at = 1784512793716

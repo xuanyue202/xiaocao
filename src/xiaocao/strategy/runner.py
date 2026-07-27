@@ -100,16 +100,14 @@ STRATEGY_PROFILES: dict[str, dict[str, Any]] = {
         "max_per_direction": None,
         "exclude_modes": ["接力低弱转2", "方向内绿盘低吸前3名"],
         "exclude_main_line": True,
-        # v2: adaptive uses the LEGACY regime-label-based fitness (5-bucket
-        # discrete via classify_regime → mode_regime_fitness). No StateVector.
+        # v2 keeps the legacy 5-bucket fitness as shadow telemetry. It does not
+        # modulate mode qualification thresholds.
         "state_aware_adaptive": False,
     },
-    # validated_v3 (RECOMMENDED — supersedes v2 after 8-month head-to-head):
-    # same structural filters as v2; the adaptive layer uses the new continuous
-    # state-fitness framework (3 axes: reward density × risk polarity ×
-    # continuity, derived per-day from cached date_kline + block_rank), with
-    # mode-specific preconditions for special cases (断板 modes need
-    # duan_ban_recovery ≥ 0.55, calibrated from 8-month tertile analysis).
+    # validated_v3: same structural filters as v2. It emits continuous
+    # state-fitness telemetry (reward density × risk polarity × continuity),
+    # but qualification is now return-evidence-only. The historical results
+    # below predate that authority correction and are retained for provenance.
     #
     # 8-month head-to-head TRAIN result (vs v2):
     #   avg  +2.91% → +3.07% (Δ +0.16%)
@@ -139,9 +137,9 @@ STRATEGY_PROFILES: dict[str, dict[str, Any]] = {
     },
     # validated_v5 (RECOMMENDED — Plan B shipped 2026-04-26):
     #
-    # Same signal generation as validated_v3 (state-fitness adaptive, 12-mode
-    # profile, exclude 接力低弱转2 + 方向内绿盘低吸前3名). The change is on the
-    # SCORING side only:
+    # Same signal generation as validated_v3 (return-evidence adaptive;
+    # state-fitness is shadow telemetry only; exclude 接力低弱转2 +
+    # 方向内绿盘低吸前3名). The change is on the SCORING side only:
     #
     #   - hold_days = 5  (was 1)
     #   - exit_rule = "max_dd"  (was "next_close")
@@ -304,8 +302,8 @@ def run_strategy(
     - mainline_blocks: block codes considered main-line (rolling N days).
       Used to annotate signals; only enforced when `require_main_line=True`.
     - bigcap_codes: stockId set of big-caps; used to annotate signals.
-    - regime_gate: when True, signals from modes not allowed in this regime
-      are dropped (per `regime.MODE_REGIME_FIT`).
+    - regime_gate: explicit counterfactual-research filter using the legacy
+      `regime.MODE_REGIME_FIT`; it must not be enabled for production picks.
     - require_main_line: when True, signals whose parent block is not in
       `mainline_blocks` are dropped.
     - max_open_pct: override for the global MAX_OPEN_PCT_CHANGE filter.
@@ -408,10 +406,11 @@ def run_strategy(
     if adaptive_modes and adaptive_cache is not None:
         # Tag-only: every signal stays in the output; tag determines whether
         # it counts toward actual P&L (active=True) or shadow (active=False).
-        # state_aware_adaptive=True (v3): use continuous StateVector fitness.
-        # state_aware_adaptive=False (v2): legacy regime-label discrete fitness.
-        # use_v3_4_profiles=True (v3.4): use MODE_PROFILE_V3_4 with momentum +
-        # limitup_density bonus axes and dropped DBR preconditions.
+        # State/regime fitness is retained as row-level shadow telemetry only;
+        # mode qualification is based solely on rolling return evidence.
+        # state_aware_adaptive=True uses continuous StateVector telemetry;
+        # False uses the legacy regime-label score. v3.4 selects its alternate
+        # telemetry profiles.
         state = _state_for_date(date, adaptive_cache) if state_aware_adaptive else None
         adaptive_regime = regime if regime is not None else derive_proxy_regime(date, adaptive_cache)
         from .regime import MODE_PROFILE, MODE_PROFILE_V3_4

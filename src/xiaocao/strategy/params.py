@@ -13,13 +13,12 @@ value-equality drift test (tests/test_params.py) — editing a value here does N
 propagate to them; it makes the drift test fail until their literal is also
 updated. Treat that test failure as the signal to update both.
 
-CRITICAL: this is pure consolidation — **no value is changed and nothing new is
-fitted here**. Every value below is already validated and live. The `range` is
-the search space the research workshop (src/xiaocao/research/) may explore; a
-value may only change after a hypothesis PASSES the discipline guards
-(train+test both improve, per-trade-not-day-weighted, significant). Until then
-every param is `frozen=True`. See docs/OPERATING_CONTRACT.md and
-kronos_screen/HYPOTHESES.jsonl.
+CRITICAL: registry values are frozen against unattended tuning. A value changes
+only after the research/human gate documented in `docs/OPERATING_CONTRACT.md`;
+paper-only promotions must say so in their provenance instead of being described
+as validated real-capital parameters. The 2026-07-10 Book-B mode-switch gate set
+the daily batch cap to 50% and the overlapping T+1 exposure cap to 100%. The
+`range` is only a research search space, never permission to auto-tune.
 """
 from __future__ import annotations
 
@@ -69,9 +68,13 @@ REGISTRY: dict[str, Param] = {
                              "intraday hard floor dd%% — the ONLY stop executed intraday"),
     # --- 仓位/资金 sizing (paper_record.py) --------------------------------- #
     "DEPLOY_RATIO": Param("DEPLOY_RATIO", 0.5, "kronos_screen.paper_record",
-                          "fraction of cash deployed per day (keeps dry powder)", (0.25, 1.0, 0.25)),
-    "MAX_TOTAL_EXPOSURE_RATIO": Param("MAX_TOTAL_EXPOSURE_RATIO", 0.67, "kronos_screen.paper_record",
-                                      "cap on total open gross exposure / initial capital", (0.5, 1.0, 0.1)),
+                          "Book-B daily batch cap / settled NAV; 2026-07-10 human-gated paper mode switch",
+                          (0.25, 1.0, 0.25)),
+    "MAX_TOTAL_EXPOSURE_RATIO": Param(
+        "MAX_TOTAL_EXPOSURE_RATIO", 1.0, "kronos_screen.paper_record",
+        "Book-B overlapping T+1 gross exposure cap / settled NAV; paper-only human gate 2026-07-10",
+        (0.5, 1.0, 0.1),
+    ),
     "FEE_RATE": Param("FEE_RATE", 0.0001, "kronos_screen.paper_record", "one-way transaction fee (1bp)", None),
 }
 

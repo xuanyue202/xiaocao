@@ -1,7 +1,9 @@
 #!/usr/bin/env bash
 # Daily xiaocao paper-trade + data-accumulation automation (the compounding flywheel).
-#   auto_daily.sh morning   # ~09:23 (self-waits to 9:25): recommend + ★/★B + auction snapshot + paper-record
-#   auto_daily.sh eod        # ~15:05 (after close): tick capture + forward A/B + monitor + settle + digest->WeCom + pipeline health
+#   auto_daily.sh morning-prerecommend # ~09:23: recommend + freeze review queue, then exit for prompt delivery
+#   auto_daily.sh morning-execute      # ~09:25: consume frozen artifacts + review rendezvous + paper-record
+#   auto_daily.sh morning              # manual compatibility: run both stages in one shell
+#   auto_daily.sh eod        # ~15:05 (after close): tick capture + forward A/B/F + monitor + settle + digest->WeCom + pipeline health
 #   auto_daily.sh optimize   # ~weekly (trading Fri): capability flywheel — judge short-line + trend pipelines and record to the ledger
 #   auto_daily.sh weekly     # Friday evening: deep flywheel review plan (Codex applies/finalizes evidence-backed changes)
 # Capital flywheel: morning entries -> intraday staged exits -> eod settle/digest.
@@ -59,6 +61,51 @@ if [ "$STEP" != "weekly" ]; then
 fi
 
 case "$STEP" in
+  morning-prerecommend)
+    log "morning prerecommend: live_recommend (self-waits to 9:25)"
+    if ! "$PY" scripts/live_recommend.py --no-stdout >>"$LOG" 2>&1; then
+      log "morning prerecommend FAILED: live_recommend did not produce a usable recommendation"
+      exit 1
+    fi
+    log "build AI intelligence review queue (zero-fetch; no score write)"
+    if ! "$PY" scripts/build_intelligence_review_queue.py --date "$TODAY" --limit "${XIAOCAO_AGENT_REVIEW_QUEUE_LIMIT:-8}" >>"$LOG" 2>&1; then
+      log "morning prerecommend FAILED: dated review queue was not frozen"
+      exit 1
+    fi
+    PRERECOMMEND_FREEZE="$("$PY" scripts/wait_for_morning_freeze.py --date "$TODAY" --timeout-sec 0 2>&1)"
+    PRERECOMMEND_FREEZE_EXIT=$?
+    log "morning prerecommend freeze result: $PRERECOMMEND_FREEZE"
+    if [ "$PRERECOMMEND_FREEZE_EXIT" -ne 0 ]; then
+      log "morning prerecommend FAILED: report and review queue did not form a valid dated freeze"
+      exit "$PRERECOMMEND_FREEZE_EXIT"
+    fi
+    log "morning prerecommend ready -> output/live/recommend_${TODAY}.md"
+    ;;
+  morning-execute)
+    log "morning execute: wait for dated frozen recommendation + review queue (never rerun live_recommend)"
+    FREEZE_STATUS="$("$PY" scripts/wait_for_morning_freeze.py --date "$TODAY" --timeout-sec "${XIAOCAO_MORNING_FREEZE_TIMEOUT_SEC:-240}" 2>&1)"
+    FREEZE_EXIT=$?
+    log "morning freeze result: $FREEZE_STATUS"
+    if [ "$FREEZE_EXIT" -ne 0 ]; then
+      log "morning execute aborted: dated frozen evidence unavailable"
+      exit "$FREEZE_EXIT"
+    fi
+    log "bounded agent-review rendezvous (structured review only; timeout falls back to base picks)"
+    REVIEW_RENDEZVOUS="$("$PY" scripts/wait_for_agent_reviews.py --date "$TODAY" --timeout-sec "${XIAOCAO_AGENT_REVIEW_TIMEOUT_SEC:-180}" 2>&1)" || true
+    log "agent-review rendezvous result: $REVIEW_RENDEZVOUS"
+    log "paper-record ★E mode-qualified picks"
+    if ! "$PY" kronos_screen/scripts/paper_record.py --date "$TODAY" --pick mode_exec_star --initial-capital 100000 --fee-rate 0.0001 --deploy-ratio 0.5 --max-total-exposure-ratio 1.0 --quality-governor shadow --intelligence-trade shadow >>"$LOG" 2>&1; then
+      log "morning execute FAILED: Book B paper-record failed"
+      exit 1
+    fi
+    log "paper-record Book T trend basket (paper-only, independent account)"
+    "$PY" kronos_screen/scripts/paper_record.py --date "$TODAY" --initial-capital 100000 --fee-rate 0.0001 --trend-only >>"$LOG" 2>&1 || true
+    log "surface 小草 posture prior (judgment lens only; NOT a filter on the deterministic picks)"
+    "$PY" scripts/xiaocao_knowledge.py --posture >>"$LOG" 2>&1 || true
+    log "record standing posture call (judgment-calibration loop; scored fwd at eod)"
+    "$PY" scripts/posture_calibration.py --record-current >>"$LOG" 2>&1 || true
+    log "morning execution done"
+    ;;
   morning)
     log "morning: live_recommend (self-waits to 9:25)"
     "$PY" scripts/live_recommend.py --no-stdout >>"$LOG" 2>&1
@@ -67,8 +114,8 @@ case "$STEP" in
     log "bounded agent-review rendezvous (structured review only; timeout falls back to base picks)"
     REVIEW_RENDEZVOUS="$("$PY" scripts/wait_for_agent_reviews.py --date "$TODAY" --timeout-sec "${XIAOCAO_AGENT_REVIEW_TIMEOUT_SEC:-180}" 2>&1)" || true
     log "agent-review rendezvous result: $REVIEW_RENDEZVOUS"
-    log "paper-record ★B picks"
-    "$PY" kronos_screen/scripts/paper_record.py --date "$TODAY" --initial-capital 100000 --fee-rate 0.0001 --deploy-ratio 0.5 --max-total-exposure-ratio 0.67 --quality-governor shadow --intelligence-trade on >>"$LOG" 2>&1
+    log "paper-record ★E mode-qualified picks"
+    "$PY" kronos_screen/scripts/paper_record.py --date "$TODAY" --pick mode_exec_star --initial-capital 100000 --fee-rate 0.0001 --deploy-ratio 0.5 --max-total-exposure-ratio 1.0 --quality-governor shadow --intelligence-trade shadow >>"$LOG" 2>&1
     log "paper-record Book T trend basket (paper-only, independent account)"
     "$PY" kronos_screen/scripts/paper_record.py --date "$TODAY" --initial-capital 100000 --fee-rate 0.0001 --trend-only >>"$LOG" 2>&1 || true
     log "surface 小草 posture prior (judgment lens only; NOT a filter on the deterministic picks)"
@@ -98,7 +145,7 @@ case "$STEP" in
         DATA_OK=0; log "learning_preflight FAILED (dirty substrate) — won't learn"; fi
     fi
     if [ "$DATA_OK" = "1" ]; then
-      log "forward_eval (A/B + accumulate training rows)"
+      log "forward_eval (A/B/F + executable mode evidence)"
       "$PY" kronos_screen/scripts/forward_eval.py --live-only --fee-rate 0.0001 >>"$LOG" 2>&1
       log "intelligence shadow eval (cached one-line sentiment vs realized training rows)"
       "$PY" scripts/research_intelligence_shadow.py --end "$TODAY" >>"$LOG" 2>&1 || true
@@ -184,5 +231,5 @@ case "$STEP" in
     log "weekly plan ready -> output/live/weekly_plan_${TODAY}.json; Codex should apply evidence-backed changes, validate, then finalize/commit"
     ;;
   *)
-    echo "usage: auto_daily.sh {morning|eod|optimize|sweep|weekly}"; exit 2;;
+    echo "usage: auto_daily.sh {morning-prerecommend|morning-execute|morning|eod|optimize|sweep|weekly}"; exit 2;;
 esac

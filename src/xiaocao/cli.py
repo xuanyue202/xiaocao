@@ -352,7 +352,7 @@ def _strategy(parser: argparse.ArgumentParser) -> None:
     p.add_argument(
         "--explain",
         action="store_true",
-        help="输出每个信号的可解释报告（state 5轴、profile 偏好、per-axis align、precondition、modulated threshold、scores、flags），markdown 格式",
+        help="输出每个信号的可解释报告（state 5轴、profile 偏好、per-axis align、辅助权限、scores、flags），markdown 格式",
     )
     p.set_defaults(handler=strategy_run)
 
