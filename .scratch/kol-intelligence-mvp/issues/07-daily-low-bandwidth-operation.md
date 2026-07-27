@@ -12,7 +12,15 @@ and reads zero source-video bytes.
 
 **Blocked by:** 06 — 可恢复的多来源批处理闭环（completed）.
 
-**Status:** ready-for-agent
+**Status:** blocked-live-acceptance
+
+Implementation, Automation, focused/full KOL tests, real viewpoint maintenance,
+night silence, and zero-video-byte accounting are complete. Full live source
+acceptance remains blocked by the authenticated Baidu page producing no browser
+download completion event for four newly and automatically discovered Lv
+Xiaotong images. See
+`reference/experience/acceptance/kol_daily_ticket07_2026-07-28.json`; none of
+the unchecked live event terminals below is claimed as complete.
 
 ## Reader and decision contract
 

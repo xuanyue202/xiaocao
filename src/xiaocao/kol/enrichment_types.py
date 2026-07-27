@@ -37,11 +37,28 @@ def validate_decision_completion(
         raise EnrichmentError("ticket 01 decision item is invalid")
     notification = item.get("notification") or {}
     paper = item.get("book_kol_us") or {}
+    content = item.get("content_value") or {}
+    report_only = (
+        content.get("status") == "promoted"
+        and content.get("tier") == "report_only"
+        and bool(
+            str(
+                content.get("no_alert_reason")
+                or content.get("reason")
+                or ""
+            ).strip()
+        )
+    )
     suppressed = (
         isinstance(notification, dict)
         and notification.get("status") == "suppressed"
-        and item.get("decision_status") == "no_actionable_signal"
-        and (item.get("reader_insight") or {}).get("status") == "none"
+        and (
+            report_only
+            or (
+                item.get("decision_status") == "no_actionable_signal"
+                and (item.get("reader_insight") or {}).get("status") == "none"
+            )
+        )
         and bool(str(notification.get("reason") or "").strip())
     )
     if (

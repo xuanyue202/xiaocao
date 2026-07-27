@@ -370,6 +370,55 @@ PYTHONPATH=src .venv/bin/python scripts/kol_batch.py deliver-insight \
 - Ticket 06 creates no recurring Automation or 7x24 schedule. Deployment and
   scheduling belong to Ticket 07.
 
+## Hourly low-bandwidth operation
+
+Ticket 07 deploys the accepted Ticket 06 behavior through exactly one
+short-lived runner:
+
+```bash
+PYTHONPATH=src .venv/bin/python scripts/kol_daily.py run
+PYTHONPATH=src .venv/bin/python scripts/kol_daily.py status
+PYTHONPATH=src .venv/bin/python scripts/kol_daily.py audit
+```
+
+- Codex Automation is the only scheduling authority. Keep exactly one active
+  task with
+  `RRULE:FREQ=DAILY;BYHOUR=7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23;BYMINUTE=0`.
+  Express Beijing wall-clock time directly; omit `DTSTART` and `TZID`. Reopen
+  the Automation after every change and verify the next run and that no
+  duplicate task exists.
+- A 07:00 run drains overnight backlog in decision-priority order. Every run
+  exits after one sweep; no-update and self-recoverable waiting states print
+  nothing. There is no invocation from 23:01 through 06:59.
+- The runner reuses the one configured Lv Xiaotong share URL/code, watches
+  lightweight metadata under `/课程/路西法全套`, and consumes only Xiaocao
+  broadband handoff JSON plus cloud/transcript receipts. It never reads or downloads source-video bytes
+  on the coordinator and never uses Computer Use.
+- When the runner emits `daily_analysis_input_required`, write one evidence-
+  bound Ticket 01 bundle path to the same stdin. Every item must include
+  `content_value.status=low_density|promoted`. Promoted items also include
+  `content_value.tier=report_only|alert_eligible`; an alert-eligible live event
+  supplies one or more accepted `alert_basis` values: current market posture,
+  buy, sell, hold, position boundary, direction, or actionable trigger.
+  Promoted items include reviewed natural-Chinese `publication.summary`,
+  `publication.report_body`, and `publication.remaining_summary`.
+- A low-density item must use a paper-only KOL-US no-trade reason and produces
+  neither a 灰常亮 report nor a reminder. A promoted event must obtain its
+  durable 灰常亮 receipt and stable URL before Book KOL-US or reminder effects.
+  Report-only content records a legal no-alert reason. An alert-eligible event
+  sends one all-recipient reminder containing the key insight, compact
+  synthesis, and exactly one stable report link.
+- Put targeted currentness requests in
+  `output/live/kol_daily/viewpoint_triggers/*.json`. Supported triggers are a
+  new same-KOL publication, due horizon/trigger/falsifier, material fact
+  change, and explicit user request. Maintenance appends an evaluation under
+  content-and-manifest CAS and writes no reminder or Book action.
+- The append-only daily ledger resumes only unfinished sources within an hour.
+  Historical initialization, correction, evaluation maintenance, restart, and
+  replay reconcile existing receipts and never resend an earlier reminder or
+  paper action. A structured user-action blocker sends one concise operational
+  reminder; the same blocker stays silent until it changes or clears.
+
 ## Source-agnostic investment-claim coverage gate
 
 This gate applies to every KOL source and every single-item or batch runner.

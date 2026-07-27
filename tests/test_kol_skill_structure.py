@@ -103,6 +103,28 @@ def test_kol_skill_has_one_resumable_ticket06_batch_runner() -> None:
         assert marker in text
 
 
+def test_kol_skill_has_one_ticket07_daytime_runner() -> None:
+    text = SKILL_MD.read_text(encoding="utf-8")
+
+    for marker in (
+        "scripts/kol_daily.py run",
+        "scripts/kol_daily.py status",
+        "scripts/kol_daily.py audit",
+        "RRULE:FREQ=DAILY;BYHOUR=7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23;BYMINUTE=0",
+        "omit `DTSTART` and `TZID`",
+        "07:00 run drains overnight backlog",
+        "/课程/路西法全套",
+        "never reads or downloads source-video bytes",
+        "content_value.status=low_density|promoted",
+        "content_value.tier=report_only|alert_eligible",
+        "stable URL before Book KOL-US or reminder",
+        "viewpoint_triggers",
+        "material fact",
+        "same blocker stays silent",
+    ):
+        assert marker in text
+
+
 def test_kol_skill_treats_multi_part_videos_as_one_logical_episode() -> None:
     text = SKILL_MD.read_text(encoding="utf-8")
 

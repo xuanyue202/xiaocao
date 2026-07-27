@@ -635,16 +635,36 @@ class DecisionPipeline:
             )
             replay = identity in known_notifications
             insight = item.get("reader_insight") or {}
-            notification_suppressed = (
+            content_value = item.get("content_value") or {}
+            report_only = (
+                content_value.get("status") == "promoted"
+                and content_value.get("tier") == "report_only"
+                and bool(
+                    str(
+                        content_value.get("no_alert_reason")
+                        or content_value.get("reason")
+                        or ""
+                    ).strip()
+                )
+            )
+            notification_suppressed = report_only or (
                 item.get("decision_status") == "no_actionable_signal"
                 and insight.get("status") == "none"
+            )
+            suppression_reason = (
+                str(
+                    content_value.get("no_alert_reason")
+                    or content_value.get("reason")
+                )
+                if report_only
+                else str(insight.get("reason"))
             )
             message = {
                 "idempotency_key": identity,
                 "channel": "wechat",
                 "status": "suppressed" if notification_suppressed else "pending",
                 "reason": (
-                    str(insight.get("reason"))
+                    suppression_reason
                     if notification_suppressed
                     else None
                 ),

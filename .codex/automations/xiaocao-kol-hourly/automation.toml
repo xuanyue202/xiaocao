@@ -1,0 +1,15 @@
+version = 1
+id = "xiaocao-kol-hourly-low-bandwidth-operation"
+kind = "cron"
+name = "xiaocao KOL hourly low-bandwidth operation"
+prompt = "Use the local `kol-intelligence` skill and repository contracts. Run `PYTHONPATH=src .venv/bin/python scripts/kol_daily.py run` exactly once from the Xiaocao repository. When it emits a semantic input request, read the immutable evidence and request, create the required evidence-bound JSON beside the runtime artifacts, and write its absolute path as one JSON line to the same process. Do not use Computer Use or download any source video on this coordinator. Keep normal no-update and retryable waiting states silent; report only a structured user-action blocker or a completed externally visible event."
+status = "ACTIVE"
+rrule = "RRULE:FREQ=DAILY;BYHOUR=7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23;BYMINUTE=0"
+model = "gpt-5.6-sol"
+reasoning_effort = "xhigh"
+notification_policy = "failed_runs_only"
+execution_environment = "local"
+target = { type = "project", project_id = "local-1ff740a1b48a4503d6129896acb205d5" }
+cwds = ["/Users/bytedance/coding/xiaocao"]
+created_at = 1785165307625
+updated_at = 1785165307625

@@ -356,6 +356,18 @@ def test_opencli_download_claims_before_one_browser_trigger_and_replays(tmp_path
     assert second["idempotent_replay"] is True
     assert trigger_calls == 1
     assert wait_calls == 1
+    wait_index = next(
+        index
+        for index, command in enumerate(commands)
+        if command[3:5] == ["wait", "download"]
+    )
+    trigger_index = next(
+        index
+        for index, command in enumerate(commands)
+        if command[3:4] == ["eval"]
+        and "ticket04_exact_ui_download" in command[4]
+    )
+    assert wait_index < trigger_index
     assert any(
         any("ticket04_exact_ui_download" in part for part in command)
         for command in commands
@@ -427,6 +439,35 @@ def test_replayed_download_claim_reconciles_without_retriggering_browser(tmp_pat
 
     assert trigger_calls == 0
     assert wait_calls == 1
+
+
+def test_expired_share_is_a_structured_user_blocker(tmp_path):
+    def browser_runner(command, **_kwargs):
+        tail = command[3:]
+        payload = (
+            {"url": "redacted", "page": "page-1"}
+            if tail[:1] == ["open"]
+            else {"status": "share_expired", "entries": []}
+        )
+        return SimpleNamespace(
+            returncode=0,
+            stdout=json.dumps(payload),
+            stderr="",
+        )
+
+    service = LvSubscriptionService(
+        tmp_path / "out",
+        now=lambda: NOW,
+        runner=browser_runner,
+        opencli_command=("opencli",),
+        share_url="https://pan.baidu.com/s/private-share-token",
+        share_code="a1b2",
+    )
+
+    with pytest.raises(EnrichmentError, match="share is expired"):
+        service.poll_opencli(session="ticket04")
+
+    assert not (tmp_path / "out" / "manifest.json").exists()
 
 
 def test_explicit_pretrigger_browser_failure_can_resume_safely(tmp_path):

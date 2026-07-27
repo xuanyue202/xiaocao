@@ -305,6 +305,44 @@ def test_no_reader_insight_is_audited_but_never_sent(tmp_path):
     assert json.loads(rows[0])["status"] == "suppressed"
 
 
+def test_report_only_content_is_audited_but_never_sent(tmp_path):
+    transcript = _write_text(tmp_path / "report-only.txt", "等待成交量放大再行动")
+    item = _item(transcript)
+    item.update(
+        {
+            "content_value": {
+                "status": "promoted",
+                "tier": "report_only",
+                "reason": "这是历史方法论复核，不是当前提醒。",
+                "no_alert_reason": "历史方法论没有当前行动触发。",
+            },
+            "reader_insight": {
+                "status": "useful",
+                "summary": "等待成交量放大再行动。",
+                "boundary": "历史方法论需结合当前市场重新验证。",
+            },
+        }
+    )
+    pipeline = _pipeline(tmp_path / "out")
+
+    result = pipeline.process(_bundle(item, household_path=tmp_path / "unused.json"))
+    sends = 0
+
+    def sender(_title, _body):
+        nonlocal sends
+        sends += 1
+        return {"wecom": "ok"}
+
+    delivery = pipeline.deliver_wechat(result, sender=sender)
+
+    assert result["items"][0]["notification"]["status"] == "suppressed"
+    assert result["items"][0]["notification"]["reason"] == (
+        "历史方法论没有当前行动触发。"
+    )
+    assert delivery["status"] == "already_delivered"
+    assert sends == 0
+
+
 def test_rejects_unquoted_claim_and_unsafe_paper_instruments(tmp_path):
     transcript = _write_text(tmp_path / "real.txt", "原文没有该说法")
     household = _write_household(tmp_path / "household.json")

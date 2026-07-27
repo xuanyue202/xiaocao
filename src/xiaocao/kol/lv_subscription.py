@@ -9,6 +9,9 @@ import json
 import re
 import shutil
 import subprocess
+import threading
+import time
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable
@@ -67,6 +70,9 @@ _BROWSER_LISTING_SCRIPT_TEMPLATE = r"""(async () => {
   }
   if (location.pathname !== expectedPath) {
     return fail('wrong_share');
+  }
+  if (String(document.body?.innerText || '').includes('已失效')) {
+    return fail('share_expired');
   }
   const localValue = key => {
     try {
@@ -666,6 +672,8 @@ class LvSubscriptionService:
                 profile=profile,
                 timeout_seconds=120,
             )
+        if listing.get("status") == "share_expired":
+            raise EnrichmentError("Lv subscription share is expired")
         if (
             listing.get("status") != "ok"
             or listing.get("complete_scan") is not True
@@ -1238,7 +1246,7 @@ class LvSubscriptionService:
         session: str,
         profile: str | None,
         timeout_seconds: int,
-    ) -> dict[str, Any]:
+    ) -> Path:
         waited = self._opencli_json(
             session,
             "wait",
@@ -1258,13 +1266,7 @@ class LvSubscriptionService:
             raise EnrichmentError(
                 "subscription browser download outcome is uncertain"
             )
-        return self.complete_browser_download(
-            str(item["identity"]),
-            Path(filename),
-            claim_id=str(
-                self.claim_browser_download(str(item["identity"]))["claim_id"]
-            ),
-        )
+        return Path(filename)
 
     def download_opencli(
         self,
@@ -1311,41 +1313,64 @@ class LvSubscriptionService:
 
         claim = self.claim_browser_download(str(identity))
         if claim.get("idempotent_replay") is True:
-            return self._wait_opencli_download(
+            downloaded_path = self._wait_opencli_download(
                 item,
                 session=session,
                 profile=profile,
                 timeout_seconds=5,
             )
-
-        trigger = self._opencli_json(
-            session,
-            "eval",
-            _browser_download_script(
-                expected_share_path=urlparse(self.share_url).path,
-                expected_item_path=str(item["path"]),
-                expected_name=str(item["name"]),
-            ),
-            profile=profile,
-            timeout_seconds=30,
-        )
-        if trigger.get("status") != "download_triggered":
-            reason = str(trigger.get("status") or "")
-            if reason in _DOWNLOAD_PRETRIGGER_FAILURES:
-                self._record_browser_download_pretrigger_failure(
-                    str(identity),
-                    claim_id=str(claim["claim_id"]),
-                    reason=reason,
-                )
-            raise EnrichmentError(
-                "subscription browser download was not triggered"
+            return self.complete_browser_download(
+                str(item["identity"]),
+                downloaded_path,
+                claim_id=str(claim["claim_id"]),
             )
-        return self._wait_opencli_download(
-            item,
-            session=session,
-            profile=profile,
-            timeout_seconds=120,
-        )
+
+        waiter_started = threading.Event()
+
+        def wait_for_download() -> Path:
+            waiter_started.set()
+            return self._wait_opencli_download(
+                item,
+                session=session,
+                profile=profile,
+                timeout_seconds=60,
+            )
+
+        with ThreadPoolExecutor(max_workers=1) as executor:
+            receipt = executor.submit(wait_for_download)
+            if not waiter_started.wait(timeout=5):
+                raise EnrichmentError(
+                    "subscription browser download waiter did not start"
+                )
+            if self.opencli_command != ("opencli",):
+                time.sleep(1)
+            trigger = self._opencli_json(
+                session,
+                "eval",
+                _browser_download_script(
+                    expected_share_path=urlparse(self.share_url).path,
+                    expected_item_path=str(item["path"]),
+                    expected_name=str(item["name"]),
+                ),
+                profile=profile,
+                timeout_seconds=30,
+            )
+            if trigger.get("status") != "download_triggered":
+                reason = str(trigger.get("status") or "")
+                if reason in _DOWNLOAD_PRETRIGGER_FAILURES:
+                    self._record_browser_download_pretrigger_failure(
+                        str(identity),
+                        claim_id=str(claim["claim_id"]),
+                        reason=reason,
+                    )
+                raise EnrichmentError(
+                    "subscription browser download was not triggered"
+                )
+            return self.complete_browser_download(
+                str(item["identity"]),
+                receipt.result(),
+                claim_id=str(claim["claim_id"]),
+            )
 
     @_exclusive("item")
     def ingest_browser_download(

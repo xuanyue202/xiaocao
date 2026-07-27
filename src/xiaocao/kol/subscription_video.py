@@ -3336,6 +3336,7 @@ class SubscriptionVideoService:
         bundle_path: Path | str,
         decision_output_dir: Path | str,
         sender: Callable[[str, str], dict[str, str]],
+        pipeline: Any | None = None,
     ) -> dict[str, Any]:
         enrichment_dir = self.output_dir / "enrichment" / item["version_key"]
         state = NetdiskEnrichmentService(
@@ -3384,6 +3385,7 @@ class SubscriptionVideoService:
                 bundle_path=bundle_path,
                 decision_output_dir=decision_output_dir,
                 sender=sender,
+                pipeline=pipeline,
             )
         self.complete_item(item, result)
         return result
