@@ -93,6 +93,8 @@ output/live/decision_journal.jsonl
 output/live/daily_reconstructed.jsonl
 output/live/kol_enrichment/
 output/live/kol_netdisk_enrichment/
+output/live/kol*/
+output/live/kol_capture_jobs.jsonl
 output/research/
 # judgment/exit calibration sensors — runtime ledgers (record + scored + distilled), sensor-only
 output/live/posture_call*.jsonl
