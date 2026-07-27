@@ -1,0 +1,188 @@
+{
+  "source": "baidu_subscription_share_browser",
+  "author": "吕晓彤",
+  "title": "17.png",
+  "published_at": "2026-07-23T23:41:07+08:00",
+  "media_type": "image_ocr",
+  "decision_status": "no_actionable_signal",
+  "evidence_path": "output/live/kol_lv_subscription/artifacts/681d609740831e17b9a49e3cdd0d6b3dc08516970df0120932464b8650447e6d/evidence.txt",
+  "evidence_sha256": "10bf2839cb777d3f507b15db9d9b3eac9f9f17fa12e93dcd82fca11841d49f79",
+  "reader_title": "投资情报｜吕晓彤会员群截图：弱信号与归属边界",
+  "theses": [
+    {
+      "thesis_id": "google-ai-cost-bear-case",
+      "rank": 1,
+      "role": "quoted_view",
+      "importance_basis": [
+        "material_impact_thesis"
+      ],
+      "subject": "Alphabet/Google与AI产业成本",
+      "stance": "群友认为Google若要避免大跌只能通过降成本牺牲AI产业，无论如何偏利空",
+      "horizon": "未提供",
+      "attribution": "吕晓彤会员群参与者，无法归属于吕晓彤本人",
+      "urgency": "low",
+      "potential_impact": "high",
+      "specificity": "medium",
+      "user_relevance": "indirect",
+      "priority_reason": "论证若成立会同时影响Google和AI产业判断，但来源归属和事实基础都很弱。",
+      "reader_text": "截图中一名群友认为，Google若想避免大跌只能通过降成本牺牲AI产业，因此横竖偏利空；这不是吕晓彤本人观点。",
+      "evidence": [
+        {
+          "line": 22,
+          "quote": "谷歌只有降成本献祭整个ai产业才能"
+        },
+        {
+          "line": 23,
+          "quote": "不大跌，横竖都是利空"
+        }
+      ],
+      "investment_lines": [
+        "22-23"
+      ],
+      "fact_check": {
+        "status": "unverified",
+        "summary": "OCR截图没有提供论据或可核实的成本数据，且发言人并非吕晓彤。",
+        "reader_visible": true
+      }
+    },
+    {
+      "thesis_id": "intel-negative-sentiment",
+      "rank": 2,
+      "role": "quoted_view",
+      "importance_basis": [
+        "market_or_sector_view"
+      ],
+      "subject": "Intel",
+      "stance": "群友表达明显负面和担忧情绪，但没有方向、理由或期限",
+      "horizon": "截图当时",
+      "attribution": "吕晓彤会员群参与者，无法归属于吕晓彤本人",
+      "urgency": "low",
+      "potential_impact": "medium",
+      "specificity": "low",
+      "user_relevance": "indirect",
+      "priority_reason": "标的明确但只是情绪片段，保留弱信号而不制造交易建议。",
+      "reader_text": "另有群友称“看英特尔瑟瑟发抖”，只表达了对Intel的负面情绪，没有理由、期限或操作建议。",
+      "evidence": [
+        {
+          "line": 8,
+          "quote": "我看英特尔瑟瑟发抖"
+        }
+      ],
+      "investment_lines": [
+        "8-8"
+      ],
+      "fact_check": {
+        "status": "unverified",
+        "summary": "这是无论据的群聊情绪，不能推导为卖出或做空建议。",
+        "reader_visible": true
+      }
+    },
+    {
+      "thesis_id": "tesla-negative-sentiment",
+      "rank": 3,
+      "role": "quoted_view",
+      "importance_basis": [
+        "market_or_sector_view"
+      ],
+      "subject": "Tesla",
+      "stance": "群友认为Tesla跌势更明显，但没有理由、期限或操作建议",
+      "horizon": "截图当时",
+      "attribution": "吕晓彤会员群参与者，无法归属于吕晓彤本人",
+      "urgency": "low",
+      "potential_impact": "medium",
+      "specificity": "low",
+      "user_relevance": "indirect",
+      "priority_reason": "标的明确但信息密度低，仍应作为低置信弱信号呈现。",
+      "reader_text": "群里还出现“特斯拉也是”“特斯拉才叫崩”的即时负面情绪，同样没有给出理由、期限或操作建议。",
+      "evidence": [
+        {
+          "line": 10,
+          "quote": "特斯拉也是"
+        },
+        {
+          "line": 15,
+          "quote": "特斯拉才叫崩啊"
+        }
+      ],
+      "investment_lines": [
+        "10-10",
+        "15-15"
+      ],
+      "fact_check": {
+        "status": "unverified",
+        "summary": "截图没有足够上下文或行情数据，不能把情绪表达升级为交易建议。",
+        "reader_visible": true
+      }
+    },
+    {
+      "thesis_id": "a-share-overseas-linkage-question",
+      "decision_relevance": "audit_only",
+      "role": "quoted_view",
+      "subject": "A股与美国、韩国市场联动",
+      "stance": "群友提出A股是否不再跟随美韩市场的问题，没有形成判断",
+      "horizon": "截图当时",
+      "attribution": "吕晓彤会员群参与者，无法归属于吕晓彤本人",
+      "reader_text": "截图里有人询问A股是否不再跟随美韩市场，但没有形成可传达的观点。",
+      "evidence": [
+        {
+          "line": 18,
+          "quote": "大A现在是不是不跟美韩了"
+        }
+      ],
+      "investment_lines": [
+        "18-18"
+      ]
+    },
+    {
+      "thesis_id": "unattributed-wish-for-more-decline",
+      "decision_relevance": "audit_only",
+      "role": "unrelated_mention",
+      "subject": "未明确标的",
+      "stance": "有人希望再跌一些，但对象和上下文无法可靠恢复",
+      "horizon": "截图当时",
+      "attribution": "吕晓彤会员群参与者，具体发言人和对象不明",
+      "reader_text": "“希望再跌”缺少可恢复标的和上下文，只保留在审计中。",
+      "evidence": [
+        {
+          "line": 25,
+          "quote": "希望再跌一"
+        }
+      ],
+      "investment_lines": [
+        "25-25"
+      ]
+    }
+  ],
+  "advertisement_lines": [
+    5,
+    9,
+    11,
+    19
+  ],
+  "reader_paragraphs": [
+    {
+      "kind": "kol",
+      "thesis_ids": [
+        "google-ai-cost-bear-case"
+      ],
+      "text": "这张截图里最有信息量的不是吕晓彤本人观点，而是一名会员群参与者的悲观看法：Google若想避免大跌只能通过降成本牺牲AI产业，因此横竖偏利空。截图没有给出成本数据或论据，只能保留为低置信弱信号。"
+    },
+    {
+      "kind": "kol",
+      "thesis_ids": [
+        "intel-negative-sentiment",
+        "tesla-negative-sentiment"
+      ],
+      "text": "另外两条是即时情绪：有人称“看英特尔瑟瑟发抖”，也有人说“特斯拉也是”“特斯拉才叫崩”。它们标的明确，但没有理由、期限或操作建议，不能被升级为买卖结论。"
+    },
+    {
+      "kind": "system",
+      "thesis_ids": [
+        "google-ai-cost-bear-case",
+        "intel-negative-sentiment",
+        "tesla-negative-sentiment"
+      ],
+      "text": "系统边界：这些话来自吕晓彤会员群截图中的其他参与者，不能归属于吕晓彤；它们值得低噪声保留，但不足以支持家庭动作或Book KOL-US交易。"
+    }
+  ]
+}

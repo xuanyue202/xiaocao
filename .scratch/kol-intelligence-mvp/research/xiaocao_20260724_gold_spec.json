@@ -1,0 +1,458 @@
+{
+  "source": "xiaocao_broadband_handoff",
+  "author": "小草",
+  "title": "20260724 大师班专场（晚18:30开播）",
+  "published_at": "2026-07-24T18:30:00+08:00",
+  "media_type": "video_transcript",
+  "evidence_path": "output/live/kol_netdisk_enrichment/artifacts/kol-netdisk-ac3939f5f949cf47/20260724 大师班专场(晚18：30开播)-compressed.txt",
+  "evidence_sha256": "ff0556df3d35414bf33b18fa6ef1543ed210d901bda2c77c420990526092d75b",
+  "reader_title": "投资情报｜小草：7月24日轮动行情应对",
+  "theses": [
+    {
+      "thesis_id": "broad-decline-low-level-rotation",
+      "rank": 1,
+      "role": "risk_warning",
+      "importance_basis": [
+        "market_or_sector_view",
+        "portfolio_or_risk_guidance"
+      ],
+      "subject": "A股整体环境与风格",
+      "stance": "近5000只股票下跌，市场处于偏低位、无主线的轮动环境，大市值相对抗跌",
+      "horizon": "当前阶段",
+      "urgency": "high",
+      "potential_impact": "high",
+      "specificity": "high",
+      "user_relevance": "direct",
+      "priority_reason": "这是所有个股和仓位动作的环境前提。",
+      "reader_text": "当前A股是大面积下跌、低位轮动且缺少主线的弱环境，大市值相对抗跌。",
+      "evidence": [
+        {
+          "line": 23,
+          "quote": "跌了快5000家啊，其实大票还好"
+        },
+        {
+          "line": 85,
+          "quote": "现阶段不是一个不是一个有主线的行情"
+        }
+      ],
+      "investment_lines": [
+        "1-5",
+        "9-25",
+        "83-87",
+        "99-99",
+        "179-183"
+      ],
+      "fact_check": {
+        "status": "unverified",
+        "summary": "该判断保留为小草对7月24日盘面的来源观点，跨日使用需重新核对市场。",
+        "reader_visible": false
+      }
+    },
+    {
+      "thesis_id": "range-buy-pullbacks-sell-rebounds",
+      "rank": 2,
+      "role": "primary_recommendation",
+      "importance_basis": [
+        "explicit_recommendation",
+        "portfolio_or_risk_guidance"
+      ],
+      "subject": "轮动区间交易节奏",
+      "stance": "回调时分批低吸、反弹时分批高抛，避免追涨后割肉",
+      "horizon": "当前轮动阶段",
+      "urgency": "high",
+      "potential_impact": "high",
+      "specificity": "high",
+      "user_relevance": "direct",
+      "priority_reason": "给出了当前环境下可直接执行的买卖节奏和禁止动作。",
+      "reader_text": "当前轮动阶段应在回调时分批低吸、反弹时分批高抛，不能追涨后再在下跌中割肉。",
+      "evidence": [
+        {
+          "line": 81,
+          "quote": "回调的时候怎么样低吸上涨的时候高抛"
+        },
+        {
+          "line": 85,
+          "quote": "你可千万不要一闪上去就追"
+        }
+      ],
+      "investment_lines": [
+        "71-95",
+        "117-125",
+        "133-141",
+        "165-179"
+      ],
+      "fact_check": {
+        "status": "not_needed",
+        "summary": "这是作者的交易节奏建议，不作为可独立证真的市场事实。",
+        "reader_visible": false
+      }
+    },
+    {
+      "thesis_id": "semiconductor-relative-strength-switch",
+      "rank": 3,
+      "role": "primary_recommendation",
+      "importance_basis": [
+        "explicit_recommendation",
+        "portfolio_or_risk_guidance"
+      ],
+      "subject": "紫光股份、北方华创、华虹公司等同属性半导体组合",
+      "stance": "把同属性标的作为一个篮子，低吸当日相对强者并卖出弱者，不给弱者补仓",
+      "horizon": "当日及短期轮动",
+      "urgency": "high",
+      "potential_impact": "high",
+      "specificity": "high",
+      "user_relevance": "direct",
+      "priority_reason": "包含明确标的、换仓方向和执行条件。",
+      "reader_text": "同属性半导体标的要当作一个组合处理：低吸当日相对强者、卖出弱者，不能因为弱者跌得更多就给它补仓。",
+      "evidence": [
+        {
+          "line": 53,
+          "quote": "谁强就吸谁，然后卖的时候卖弱的"
+        },
+        {
+          "line": 51,
+          "quote": "你就真正差了，你是不管它的"
+        }
+      ],
+      "investment_lines": [
+        "27-69"
+      ],
+      "fact_check": {
+        "status": "unverified",
+        "summary": "逐字稿中的公司名称存在ASR误写，读者意义按上下文校正，实盘前仍需核对代码。",
+        "reader_visible": true
+      }
+    },
+    {
+      "thesis_id": "twenty-percent-risk-budget",
+      "rank": 4,
+      "role": "risk_warning",
+      "importance_basis": [
+        "explicit_recommendation",
+        "portfolio_or_risk_guidance"
+      ],
+      "subject": "趋势轮动仓位",
+      "stance": "常态总仓位不超过两成；盘中因低吸临时到四成后要马上卖回两成，不能重仓",
+      "horizon": "当前弱势轮动阶段",
+      "urgency": "high",
+      "potential_impact": "high",
+      "specificity": "high",
+      "user_relevance": "direct",
+      "priority_reason": "明确给出风险预算上限和临时超仓后的回落要求。",
+      "reader_text": "趋势轮动的常态总仓位不超过两成；盘中低吸导致临时到四成时，要马上卖回两成，不能把临时仓位变成重仓。",
+      "evidence": [
+        {
+          "line": 37,
+          "quote": "总总仓位是是两层啊，中间最多你到四层的时候，你要马上把那两层卖掉"
+        },
+        {
+          "line": 89,
+          "quote": "仓位轻一点，不超过两成仓"
+        }
+      ],
+      "investment_lines": [
+        "37-37",
+        "49-59",
+        "87-91",
+        "139-141",
+        "173-179"
+      ],
+      "fact_check": {
+        "status": "not_needed",
+        "summary": "这是作者的仓位纪律，不需要系统替作者背书。",
+        "reader_visible": false
+      }
+    },
+    {
+      "thesis_id": "semiconductor-etf-alternative",
+      "rank": 5,
+      "role": "alternative_instrument",
+      "importance_basis": [
+        "explicit_recommendation"
+      ],
+      "subject": "科创半导体ETF",
+      "stance": "可作为同一轮动逻辑下的替代工具，回调低吸、反弹高抛",
+      "horizon": "当前轮动阶段",
+      "urgency": "medium",
+      "potential_impact": "medium",
+      "specificity": "high",
+      "user_relevance": "direct",
+      "priority_reason": "这是对单只半导体股票篮子的明确替代工具。",
+      "reader_text": "不做单只股票篮子时，科创半导体ETF可以作为替代工具，仍按回调低吸、反弹高抛处理。",
+      "evidence": [
+        {
+          "line": 75,
+          "quote": "科创半导体ETF，今天也可以一样的低吸"
+        },
+        {
+          "line": 77,
+          "quote": "直接低吸，然后这里高抛"
+        }
+      ],
+      "investment_lines": [
+        "71-81"
+      ],
+      "fact_check": {
+        "status": "unverified",
+        "summary": "来源未给出具体ETF代码，执行前必须完成实体解析。",
+        "reader_visible": true
+      }
+    },
+    {
+      "thesis_id": "do-not-trade-if-uncomprehended",
+      "rank": 6,
+      "role": "risk_warning",
+      "importance_basis": [
+        "explicit_recommendation",
+        "portfolio_or_risk_guidance"
+      ],
+      "subject": "策略理解与交易资格",
+      "stance": "听不懂相对强弱切换或环境模式时就不做，也不做一星二追涨等不符合当前环境的模式",
+      "horizon": "当前及以后每次应用该策略时",
+      "urgency": "medium",
+      "potential_impact": "high",
+      "specificity": "high",
+      "user_relevance": "direct",
+      "priority_reason": "这是防止错误照搬策略的明确停止条件。",
+      "reader_text": "如果没有真正理解相对强弱切换和环境模式，就直接不做；不应为了有交易而套用不符合当前环境的追涨模式。",
+      "evidence": [
+        {
+          "line": 69,
+          "quote": "如果你今天没有听懂。就不做"
+        },
+        {
+          "line": 15,
+          "quote": "我们也不做，不做这种东西"
+        }
+      ],
+      "investment_lines": [
+        "9-19",
+        "69-69",
+        "173-179"
+      ],
+      "fact_check": {
+        "status": "not_needed",
+        "summary": "这是作者明确给出的风险控制停止条件。",
+        "reader_visible": false
+      }
+    },
+    {
+      "thesis_id": "technology-not-power-next-leader",
+      "rank": 7,
+      "role": "supporting_rationale",
+      "importance_basis": [
+        "market_or_sector_view",
+        "material_impact_thesis"
+      ],
+      "subject": "下一轮短线情绪主线",
+      "stance": "若弱市中走出连板或情绪股，大概率来自科技而不是电力",
+      "horizon": "未来约两周的观察窗口",
+      "urgency": "medium",
+      "potential_impact": "high",
+      "specificity": "medium",
+      "user_relevance": "direct",
+      "priority_reason": "给出了下一轮情绪修复的方向筛选和排除项。",
+      "reader_text": "下一轮弱市里若走出连板或情绪龙头，小草更看科技，不看电力，但这只是方向预判，不是已确认主线。",
+      "evidence": [
+        {
+          "line": 113,
+          "quote": "那它一定是科技"
+        },
+        {
+          "line": 115,
+          "quote": "电力不用看啊，电力又不是主线"
+        }
+      ],
+      "investment_lines": [
+        "101-117"
+      ],
+      "fact_check": {
+        "status": "unverified",
+        "summary": "该方向预判需以后续市场领导性确认，不能当成已发生事实。",
+        "reader_visible": true
+      }
+    },
+    {
+      "thesis_id": "eight-session-2021-analogy",
+      "rank": 8,
+      "role": "analogy",
+      "importance_basis": [
+        "market_or_sector_view",
+        "material_impact_thesis"
+      ],
+      "subject": "2021年3月弱市类比与情绪修复时间",
+      "stance": "按2021年3月类比，约八个交易日后可能出现科技情绪股，趋势轮动或持续约一个月，但不能机械照搬",
+      "horizon": "约八个交易日至一个月",
+      "urgency": "medium",
+      "potential_impact": "medium",
+      "specificity": "medium",
+      "user_relevance": "indirect",
+      "priority_reason": "时间窗口具体但依赖历史类比，必须保留其低置信边界。",
+      "reader_text": "他用2021年3月作类比，估计约八个交易日后可能出现科技情绪股、趋势轮动约持续一个月，同时明确说不能机械照搬。",
+      "evidence": [
+        {
+          "line": 101,
+          "quote": "还有八天。就两个礼拜"
+        },
+        {
+          "line": 103,
+          "quote": "如果不能这么一一模一样去套啊"
+        },
+        {
+          "line": 111,
+          "quote": "趋势在这个地方要横一个月左右"
+        }
+      ],
+      "investment_lines": [
+        "83-115"
+      ],
+      "fact_check": {
+        "status": "unverified",
+        "summary": "历史走势类比不能证明本轮会复制相同时间和结构。",
+        "reader_visible": true
+      }
+    },
+    {
+      "thesis_id": "changxin-not-sector-only-drain",
+      "rank": 9,
+      "role": "supporting_rationale",
+      "importance_basis": [
+        "market_or_sector_view",
+        "material_impact_thesis"
+      ],
+      "subject": "长鑫存储上市对半导体资金面的影响",
+      "stance": "不同意其上市必然抽走半导体资金；若有资金分流也可能来自全市场，不能据此判定芯片板块次日暴跌",
+      "horizon": "长鑫存储上市前后",
+      "urgency": "medium",
+      "potential_impact": "medium",
+      "specificity": "medium",
+      "user_relevance": "direct",
+      "priority_reason": "直接反驳一个可能导致错误卖出半导体的流行叙事。",
+      "reader_text": "他不同意“长鑫存储上市必然抽走半导体资金、导致芯片暴跌”的说法，认为资金分流也可能来自全市场，不能用这条传言替代盘面判断。",
+      "evidence": [
+        {
+          "line": 127,
+          "quote": "长新如果上市，就算他吸资金，他为什么要吸存储"
+        },
+        {
+          "line": 133,
+          "quote": "还不是吸全市场的"
+        }
+      ],
+      "investment_lines": [
+        "127-157"
+      ],
+      "fact_check": {
+        "status": "unverified",
+        "summary": "上市安排及实际资金分流仍需以当时公开市场数据核对。",
+        "reader_visible": false
+      }
+    },
+    {
+      "thesis_id": "ignore-rumors-follow-environment",
+      "rank": 10,
+      "role": "risk_warning",
+      "importance_basis": [
+        "portfolio_or_risk_guidance",
+        "material_impact_thesis"
+      ],
+      "subject": "消息噪声与决策框架",
+      "stance": "不要被住房成交、板块传言和主播消息反复驱动，回到环境、方向、模式和仓位",
+      "horizon": "持续适用",
+      "urgency": "low",
+      "potential_impact": "high",
+      "specificity": "medium",
+      "user_relevance": "direct",
+      "priority_reason": "这是降低噪声交易和追涨杀跌的重要操作纪律。",
+      "reader_text": "住房成交量、板块传言和主播消息不能反复驱动交易；搞不清时应回到环境、方向、模式和仓位，而不是逐条追消息。",
+      "evidence": [
+        {
+          "line": 145,
+          "quote": "就像那个这就你们讨论这个常新有什么好讨论的？浪费时间"
+        },
+        {
+          "line": 173,
+          "quote": "搞不清楚就回到大的节奏啊，环境方向模式啊，我用什么仓位"
+        }
+      ],
+      "investment_lines": [
+        "143-185"
+      ],
+      "fact_check": {
+        "status": "not_needed",
+        "summary": "这是作者的决策流程纪律。",
+        "reader_visible": false
+      }
+    },
+    {
+      "thesis_id": "tollens-intraday-example",
+      "decision_relevance": "audit_only",
+      "role": "unrelated_mention",
+      "subject": "逐字稿ASR中的托伦斯",
+      "stance": "作为当日低位断板和套利示例被提及，作者随即说不讨论，不能当作推荐",
+      "horizon": "2026年7月24日当日",
+      "attribution": "小草本人，但仅为示例",
+      "reader_text": "逐字稿中的“托伦斯”只是当日套利示例，不构成推荐。",
+      "evidence": [
+        {
+          "line": 7,
+          "quote": "托伦斯也是一个芯片股"
+        }
+      ],
+      "investment_lines": [
+        "7-7"
+      ]
+    }
+  ],
+  "advertisement_lines": [],
+  "reader_paragraphs": [
+    {
+      "kind": "kol",
+      "thesis_ids": [
+        "broad-decline-low-level-rotation"
+      ],
+      "text": "小草对7月24日盘面的判断是：近5000只股票下跌，市场仍处在偏低位、无主线的轮动阶段，大市值相对抗跌。"
+    },
+    {
+      "kind": "kol",
+      "thesis_ids": [
+        "range-buy-pullbacks-sell-rebounds",
+        "semiconductor-relative-strength-switch",
+        "twenty-percent-risk-budget"
+      ],
+      "text": "在这种环境里，他主张回调时分批低吸、反弹时分批高抛，不能追涨后再割肉。紫光股份、北方华创、华虹公司等同属性半导体要按一个组合处理：吸当日相对强者、卖弱者，不能给弱者补仓。常态总仓位不超过两成，盘中临时到四成要马上卖回两成。"
+    },
+    {
+      "kind": "kol",
+      "thesis_ids": [
+        "semiconductor-etf-alternative",
+        "do-not-trade-if-uncomprehended"
+      ],
+      "text": "不做单股篮子时，科创半导体ETF可以作为替代工具，仍按低吸高抛处理。若没有真正理解相对强弱切换或当前模式，则直接不做，也不要为了交易去套用不适合弱环境的追涨策略。"
+    },
+    {
+      "kind": "kol",
+      "thesis_ids": [
+        "technology-not-power-next-leader",
+        "eight-session-2021-analogy"
+      ],
+      "text": "对下一轮情绪修复，他更看科技、不看电力。他用2021年3月作低置信类比，估计约八个交易日后可能出现科技情绪股、趋势轮动约持续一个月，但明确说不能机械照搬。"
+    },
+    {
+      "kind": "kol",
+      "thesis_ids": [
+        "changxin-not-sector-only-drain",
+        "ignore-rumors-follow-environment"
+      ],
+      "text": "他不同意“长鑫存储上市必然抽走半导体资金并导致芯片暴跌”的传言，认为即使分流也可能来自全市场。更通用的纪律是：不要让住房成交、板块传言和主播消息反复驱动交易，搞不清时回到环境、方向、模式和仓位。"
+    },
+    {
+      "kind": "system",
+      "thesis_ids": [
+        "semiconductor-relative-strength-switch",
+        "semiconductor-etf-alternative"
+      ],
+      "text": "系统边界：逐字稿存在公司名ASR误写，且没有给出ETF代码；任何后续执行都必须先完成当前实体和市场核对。"
+    }
+  ]
+}

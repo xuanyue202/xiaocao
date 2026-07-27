@@ -9,9 +9,9 @@ Keep every run resumable. Prefer deterministic local APIs, CLIs, and logged-in b
 
 ## One input, two conditional branches
 
-Process each high-density item once. After normalization, reopen the latest evidence file from disk and bind the reading to its current SHA-256; never distill or decide from a cached chat summary or a stale context copy. Preserve one shared source/author/evidence identity, then evaluate these branches independently:
+Process each captured source item once. After normalization, reopen the latest evidence file from disk and bind the reading to its current SHA-256; never distill or decide from a cached chat summary or a stale context copy. Preserve one shared source/author/evidence identity, evaluate the investment-content gate, then evaluate these branches independently when supported:
 
-1. **Current decision:** extract timely market-wide, sector, asset, and company signals; validate them against current facts; produce household advice and a Book KOL-US paper action. Use exactly `decision_status=actionable_signal` when supported or `decision_status=no_actionable_signal` with a concrete reason. For every no-action result, also set `reader_insight.status=useful` with a short evidence-bound `summary` and explicit `boundary`, or `reader_insight.status=none` with a concrete reason. Low confidence is not a reason to hide a relevant mention; do not invent a trade.
+1. **Current decision:** extract timely market-wide, sector, asset, and company signals; validate them against current facts; produce household advice and a Book KOL-US paper action. Use exactly `decision_status=actionable_signal` when supported or `decision_status=no_actionable_signal` with a concrete reason. For every no-action result, also set `reader_insight.status=useful` with a short evidence-bound `summary` and explicit `boundary`, or `reader_insight.status=none` with a concrete reason. `reader_insight.status=none` is the pre-publication `low_density` terminal and must not create a 灰常亮 report or reminder. Low confidence is not a reason to hide a relevant mention; do not invent a trade.
 2. **Durable knowledge:** extract reusable causal reasoning, decision heuristics, exit lessons, and falsifiable candidate hypotheses from any author. Use exactly `knowledge_status=reusable_knowledge` when supported or `knowledge_status=no_reusable_knowledge` with a concrete reason. Do not create an empty distillation.
 
 Both branches may complete, either branch may complete alone, or both may explicitly no-op. Do not make the user invoke another skill. Before writing knowledge, read [durable-knowledge.md](references/durable-knowledge.md) completely and follow its authority, provenance, schema, and author-specific posture rules.
@@ -42,16 +42,25 @@ Keep the layers separate:
   independent events remain two reports even when one batch processes them.
   Never derive report identity from a batch, filename, display author, ticker,
   or local thesis id.
-- Publish every report that passes the Xiaocao completeness and safety gate to
-  灰常亮 through the existing family-authenticated MCP. The complete safe
-  Markdown `report_body` is the authoritative reader content. A report may
-  publish without longitudinal viewpoints; never manufacture viewpoints to
-  fill the schema.
-- `reader_insight` describes content value, while `alert_eligible` independently
-  authorizes a new reminder. `reader_insight=none` still publishes a complete
-  report but creates no reminder claim. Historical initialization uses the
-  same report identity/evidence contract, always has `alert_eligible=false`,
-  and must not replay an earlier household notification or Book KOL-US action.
+- Before assigning publication-event identity, complete coverage review must
+  find at least one attributable investment-decision claim. If it finds none,
+  persist a durable `low_density` intake terminal with the audit and no-trade
+  reason; create neither a 灰常亮 report nor a reminder claim. Media length alone
+  never decides this gate.
+- Publish every promoted event report that passes the Xiaocao completeness and
+  safety gate to 灰常亮 through the existing family-authenticated MCP. The
+  complete safe Markdown `report_body` is the authoritative reader content. A
+  report may publish without longitudinal viewpoints; never manufacture
+  viewpoints to fill the schema.
+- `reader_insight` describes a promoted event's content value, while
+  `alert_eligible` independently authorizes a new reminder. Information-rich
+  live sessions use a permissive alert gate: current market posture,
+  buy/sell/hold action, position boundary, direction choice, or actionable
+  trigger is sufficient and need not reverse the previous session. Historical
+  initialization, expired intraday commentary, report correction,
+  methodology-only material, or pure confirmation may publish with
+  `alert_eligible=false` and must not replay an earlier household notification
+  or Book KOL-US action.
 - Longitudinal `viewpoint`, `viewpoint_evaluation`, and `viewpoint_relation`
   records are optional Agent judgments. Keep every historical viewpoint,
   append later viewpoints with `replaces`, `refines`, or `coexists`, and make
@@ -459,7 +468,8 @@ erase the rest of the author's decision hierarchy.
 
 ## Output contract
 
-For every processed high-density item, produce:
+For every processed source item, first produce a durable content-value result.
+For every promoted publication event, produce:
 
 - source, author, title, publication/capture time, and evidence location;
 - KOL claims separated from system synthesis;
@@ -472,16 +482,17 @@ For every processed high-density item, produce:
 - durable distillation path and routed hypothesis ids when knowledge was written;
 - processing state and next asynchronous checkpoint.
 
-Publish every complete processed item to 灰常亮 after the coverage and safety
-gate, including `reader_insight.status=none`. For a new item with
+Do not publish a `low_density` source item to 灰常亮. Publish every complete
+promoted event to 灰常亮 after the coverage and safety gate. For a new event with
 `reader_insight.status=useful` and explicit alert eligibility, send only one
 concise de-duplicated reminder per real publication event and fan it out to
 both currently configured household recipients (`Chen` and `FeiFei`). Lead
 with the key insight, add a compact synthesis of the other important
 information, and end with the stable 灰常亮 report link. Confidence and Book
-KOL-US trade eligibility do not decide content visibility. If
-`reader_insight.status=none` or the event is historical/reconciled, persist
-the report and reason but create no reminder claim.
+KOL-US trade eligibility do not decide content visibility. If the promoted
+event is informative but not currently alert-eligible, or is
+historical/reconciled, persist the report and legal no-alert reason but create
+no reminder claim.
 
 The final reader briefing is created only after the coverage audit passes.
 Each must-surface thesis appears exactly once in its ranked KOL prose. System

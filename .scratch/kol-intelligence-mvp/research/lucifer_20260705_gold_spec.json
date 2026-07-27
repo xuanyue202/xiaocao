@@ -1,0 +1,1079 @@
+{
+  "source": "baidu_private_folder",
+  "author": "路西法",
+  "title": "路西法7月5日",
+  "published_at": "2026-07-05T00:00:00+08:00",
+  "media_type": "video",
+  "evidence_path": "/Users/bytedance/coding/xiaocao/output/live/kol_subscription_videos/artifacts/c4ea2e58009b9d3fc193006b7fdffd8b0bb914ac7da64bb3d82dc1c8f8be265e/7月5日.txt",
+  "evidence_sha256": "829a207063ec2469ae854367d18dfa4de7b56357b9c0c796bbbf9def895dab84",
+  "reader_title": "路西法7月5日｜完整投资信息速览",
+  "advertisement_lines": ["7-9", "75", "264-266", "291-293", "315-316"],
+  "theses": [
+    {
+      "rank": 1,
+      "thesis_id": "spacex-short-after-july-7",
+      "role": "primary_recommendation",
+      "importance_basis": ["explicit_recommendation", "portfolio_or_risk_guidance"],
+      "subject": "SpaceX",
+      "stance": "7月7日后用总资金5%以下做空，绝不加杠杆",
+      "horizon": "2026年7月7日后，中期",
+      "urgency": "high",
+      "potential_impact": "high",
+      "specificity": "high",
+      "user_relevance": "direct",
+      "priority_reason": "对象、方向、时点、仓位和风险边界都具体，直接改变交易计划。",
+      "evidence": [
+        {
+          "line": 134,
+          "quote": "我会在7月7号之后。我拿出我自己百分五左右的。啊，鸡蛋。去砸space x我就空它。"
+        },
+        {
+          "line": 88,
+          "quote": "绝对不能用杠杆"
+        }
+      ],
+      "investment_lines": ["76-88", "132-141", "211", "223", "306", "315"],
+      "reader_text": "路西法反复说，他会在7月7日后拿总资金约5%以下做空SpaceX，认为其中期下跌概率显著高于上涨；同时强调它波动会很妖，绝对不能加杠杆。",
+      "fact_check": {
+        "status": "support",
+        "summary": "SEC文件显示SPCX于6月12日以135美元交易，Nasdaq确认7月7日纳入纳指100；7月24日最新价115.07美元，较IPO价低约14.8%。此前“未上市”的系统结论错误，但缺少7月7日后的精确入场价，不能虚构收益或自动追空。",
+        "reader_visible": true
+      }
+    },
+    {
+      "rank": 2,
+      "thesis_id": "second-half-defensive-cash",
+      "role": "primary_recommendation",
+      "importance_basis": ["portfolio_or_risk_guidance", "market_or_sector_view"],
+      "subject": "2026年下半年风险资产组合",
+      "stance": "轻仓防守、至少保留一半现金，等冬季到2027年初的黄金坑",
+      "horizon": "2026年下半年至2027年春季",
+      "urgency": "high",
+      "potential_impact": "high",
+      "specificity": "high",
+      "user_relevance": "direct",
+      "priority_reason": "明确给出整体仓位、现金比例和等待窗口，影响整个组合。",
+      "evidence": [
+        {
+          "line": 134,
+          "quote": "确保自己有一半的cash留在手上，一半的现金留在手上，至少一半"
+        },
+        {
+          "line": 245,
+          "quote": "比较大概率就发生在冬天，今年的冬天跟明年的年初的这个春天"
+        }
+      ],
+      "investment_lines": ["26-29", "132-135", "163-169", "243-246", "290", "308"],
+      "reader_text": "他的组合主线是下半年轻仓防守，至少留一半现金；他不认同“史无前例危机”，但判断冬季到明年初较可能出现一次较大的黄金坑，届时再等更好的风险资产机会。",
+      "fact_check": {
+        "status": "unverified",
+        "summary": "这是作者的市场路径和仓位方案，窗口尚不能被当成确定事实。",
+        "reader_visible": false
+      }
+    },
+    {
+      "rank": 3,
+      "thesis_id": "non-owner-property-exit",
+      "role": "primary_recommendation",
+      "importance_basis": ["explicit_recommendation", "material_impact_thesis"],
+      "subject": "中国非自住房产",
+      "stance": "利用2026至2027年的最后一波小行情清掉非自住房",
+      "horizon": "2026年至2027年",
+      "urgency": "high",
+      "potential_impact": "high",
+      "specificity": "high",
+      "user_relevance": "direct",
+      "priority_reason": "房产金额大，且作者给出明确处置对象和两年窗口。",
+      "evidence": [
+        {
+          "line": 248,
+          "quote": "这两年只要你不是自住的房子，我觉得可以清掉，而且是不可逆的"
+        }
+      ],
+      "investment_lines": ["248-250"],
+      "reader_text": "对房产，他给的是明确处置建议：2026至2027年若出现最后一波小行情，非自住房可以清掉；他认为上海以外的下行更难逆转，上海也只是跌幅可能小一些。",
+      "fact_check": {
+        "status": "unverified",
+        "summary": "这是高影响、强方向的房地产判断，需要结合具体城市、税费和家庭用途单独核实。",
+        "reader_visible": true
+      }
+    },
+    {
+      "rank": 4,
+      "thesis_id": "gold-tactical-trim",
+      "role": "primary_recommendation",
+      "importance_basis": ["explicit_recommendation", "portfolio_or_risk_guidance"],
+      "subject": "黄金",
+      "stance": "下半年逢高减仓并下修目标，转为现金等待",
+      "horizon": "2026年下半年，重点看11月前后",
+      "urgency": "high",
+      "potential_impact": "high",
+      "specificity": "high",
+      "user_relevance": "direct",
+      "priority_reason": "作者明确说明自己的减仓动作、资金去向和目标位变化。",
+      "evidence": [
+        {
+          "line": 110,
+          "quote": "我下半年是呃黄金。逢高我会出，然后降低它的比重"
+        },
+        {
+          "line": 276,
+          "quote": "七千六千五没到，我就打算下车了"
+        }
+      ],
+      "investment_lines": ["98-111", "132-133", "165", "245-247", "268-280", "316"],
+      "reader_text": "黄金上，他的中期动作不是继续追：下半年逢高降低黄金比重、换成现金等泡沫破裂，并把原先约8000美元的离场设想下修到约6500至7000美元；他特别提示11月前后政策反复和强美元压力。",
+      "fact_check": {
+        "status": "unverified",
+        "summary": "价格目标和政策路径均属作者判断，不能直接当成系统预测。",
+        "reader_visible": false
+      }
+    },
+    {
+      "rank": 5,
+      "thesis_id": "silver-five-year-hold",
+      "role": "primary_recommendation",
+      "importance_basis": ["explicit_recommendation", "material_impact_thesis"],
+      "subject": "白银",
+      "stance": "不减仓，计划持有五年以上，当前偏好高于黄金",
+      "horizon": "五年以上",
+      "urgency": "medium",
+      "potential_impact": "high",
+      "specificity": "high",
+      "user_relevance": "direct",
+      "priority_reason": "明确给出长期持有期限、相对偏好和不减仓动作。",
+      "evidence": [
+        {
+          "line": 166,
+          "quote": "我打算拿它五年以上来"
+        },
+        {
+          "line": 111,
+          "quote": "比起黄鱼的话，我还是更更。更喜欢鲅鱼"
+        }
+      ],
+      "investment_lines": ["98-101", "111-112", "131-133", "166-167"],
+      "reader_text": "白银与黄金不同：他表示白银一分没减，认为价格回到甚至低于生产成本，计划拿五年以上，当前对白银的偏好高于黄金。",
+      "fact_check": {
+        "status": "unverified",
+        "summary": "逐字稿中的“鲅鱼/薄鱼”等隐语按上下文校正为白银；生产成本判断仍需另行核实。",
+        "reader_visible": true
+      }
+    },
+    {
+      "rank": 6,
+      "thesis_id": "physical-ai-energy-etf",
+      "role": "primary_recommendation",
+      "importance_basis": ["explicit_recommendation", "market_or_sector_view", "material_impact_thesis"],
+      "subject": "物理AI、机器人、电力与核能",
+      "stance": "作为十至二十年主线长期关注，优先用广谱ETF分散个股赢家风险",
+      "horizon": "十至二十年",
+      "urgency": "medium",
+      "potential_impact": "high",
+      "specificity": "medium",
+      "user_relevance": "direct",
+      "priority_reason": "作者把它定义为未来唯一主线，并给出ETF这一具体参与方式。",
+      "evidence": [
+        {
+          "line": 281,
+          "quote": "物理AI就是机器人。这加上一个什么加上一个能能能源就是电力核电这些东西。这两个是长期阳光的"
+        },
+        {
+          "line": 289,
+          "quote": "其实都是用ETF的方式是比较合适"
+        }
+      ],
+      "investment_lines": ["28-31", "69", "123-131", "149", "161-165", "204", "209-211", "246", "278-290", "294-304"],
+      "reader_text": "他把物理AI、机器人以及电力和核能列为未来十到二十年的核心主线，并认为能源的重要性可能高于存储；若参与物理AI或核电，他更倾向用覆盖面较广的ETF，避免押中唯一失败的个股。",
+      "fact_check": {
+        "status": "unverified",
+        "summary": "这是长期产业配置框架，未点名具体ETF，系统不能替作者猜代码。",
+        "reader_visible": false
+      }
+    },
+    {
+      "rank": 7,
+      "thesis_id": "strong-dollar-us-regime",
+      "role": "risk_warning",
+      "importance_basis": ["market_or_sector_view", "material_impact_thesis"],
+      "subject": "美元与美国资产定价",
+      "stance": "美元重新走强，美国在两三年内可能取得明显优势，强美元将压制黄金、纳指和其他风险资产",
+      "horizon": "未来两至三年",
+      "urgency": "medium",
+      "potential_impact": "high",
+      "specificity": "medium",
+      "user_relevance": "direct",
+      "priority_reason": "这是贯穿黄金、AI、韩国和全球配置的共同宏观驱动。",
+      "evidence": [
+        {
+          "line": 177,
+          "quote": "两三年之内。会胜负大分。而且我的判断是阿美会全面的胜出"
+        },
+        {
+          "line": 277,
+          "quote": "只要美元一增强。记住，环鱼就会就要受承压"
+        }
+      ],
+      "investment_lines": ["89-98", "102-110", "120-122", "149-151", "171-186", "224", "247", "268-280", "304-306"],
+      "reader_text": "他的总宏观判断是美元因石油结算和利率政策重新变强，美国经济并非衰退而是在带瑕疵的繁荣中；未来两三年美国可能取得明显优势。对应到资产上，强美元会同时压制黄金、纳指、AI和其他风险资产。",
+      "fact_check": {
+        "status": "unverified",
+        "summary": "这是作者的宏观因果链和情景判断，不能在本次速览里当成已证实事实。",
+        "reader_visible": false
+      }
+    },
+    {
+      "rank": 8,
+      "thesis_id": "offshore-currency-safety",
+      "role": "primary_recommendation",
+      "importance_basis": ["portfolio_or_risk_guidance", "material_impact_thesis"],
+      "subject": "跨境现金与币种安全",
+      "stance": "把部分人民币换成美元并在海外保留可用资金，目的重在流动性和财产安全而非赚汇差",
+      "horizon": "尽快建立长期备用通道",
+      "urgency": "high",
+      "potential_impact": "high",
+      "specificity": "medium",
+      "user_relevance": "direct",
+      "priority_reason": "直接涉及家庭现金可得性、币种和司法辖区风险。",
+      "evidence": [
+        {
+          "line": 308,
+          "quote": "阿米花美刀，我们绝对不是为了汇率，是为了安全"
+        },
+        {
+          "line": 263,
+          "quote": "海外区懂了吧？海外区"
+        }
+      ],
+      "investment_lines": ["65-66", "227-228", "259-263", "308-311"],
+      "reader_text": "他建议家庭把一部分可用资金放到海外并换成美元，核心目的不是博汇率，而是保留跨境流动性和财产安全；他也明确反对在个人或公司境内账户长期趴着大量现金。",
+      "fact_check": {
+        "status": "unverified",
+        "summary": "跨境换汇、税务和资金安排受法律与个人身份约束，不能仅凭KOL说法执行。",
+        "reader_visible": true
+      }
+    },
+    {
+      "rank": 9,
+      "thesis_id": "beite-pullback-watch",
+      "role": "primary_recommendation",
+      "importance_basis": ["explicit_recommendation", "material_impact_thesis"],
+      "subject": "北特科技",
+      "stance": "作者约40元买入，现阶段只关注不追，等回到约40元附近再看",
+      "horizon": "等待价格回撤后",
+      "urgency": "medium",
+      "potential_impact": "medium",
+      "specificity": "high",
+      "user_relevance": "direct",
+      "priority_reason": "点名A股公司、作者成本区和重新关注条件。",
+      "evidence": [
+        {
+          "line": 145,
+          "quote": "我是说你关注，但是别碰"
+        },
+        {
+          "line": 144,
+          "quote": "我40就进"
+        }
+      ],
+      "investment_lines": ["142-149", "169-170"],
+      "reader_text": "北特科技是他点名的物理AI零部件样本：作者约40元买入，看中其机器人关节零部件、特斯拉供应链和小流通盘弹性；但他现在的表述是“关注、别碰”，等回到约40元附近再重新看。",
+      "fact_check": {
+        "status": "unverified",
+        "summary": "作者成本、供应链关系和等待价位均应以公告和当前行情复核。",
+        "reader_visible": false
+      }
+    },
+    {
+      "rank": 10,
+      "thesis_id": "sanhua-governance-risk",
+      "role": "risk_warning",
+      "importance_basis": ["explicit_recommendation", "material_impact_thesis"],
+      "subject": "三花智控",
+      "stance": "业务和确定性较好，但创始人及高管套现削弱信心，暂以风险观察为主",
+      "horizon": "治理疑虑解除前",
+      "urgency": "medium",
+      "potential_impact": "medium",
+      "specificity": "high",
+      "user_relevance": "direct",
+      "priority_reason": "点名公司并给出业务利好与治理风险的两面判断。",
+      "evidence": [
+        {
+          "line": 147,
+          "quote": "这个企业本身我觉得没问题，但是但是我觉得这个老板的心态我觉得不太好"
+        }
+      ],
+      "investment_lines": ["145-147"],
+      "reader_text": "三花智控方面，他认可热管理业务在新能源车和机器人中的价值，也认为确定性高于北特；但创始人和高管套现让他对利益一致性失去信心，因此这是好业务伴随治理折价的风险观察。",
+      "fact_check": {
+        "status": "unverified",
+        "summary": "套现事实、用途和治理影响需要以公司公告为准。",
+        "reader_visible": true
+      }
+    },
+    {
+      "rank": 11,
+      "thesis_id": "traditional-consumption-avoid",
+      "role": "primary_recommendation",
+      "importance_basis": ["explicit_recommendation", "market_or_sector_view"],
+      "subject": "白酒、烟草及传统大消费",
+      "stance": "未来五至十年属于夕阳赛道，应回避",
+      "horizon": "五至十年",
+      "urgency": "medium",
+      "potential_impact": "high",
+      "specificity": "medium",
+      "user_relevance": "direct",
+      "priority_reason": "作者给出明确长期负面行业选择，影响资产筛选。",
+      "evidence": [
+        {
+          "line": 168,
+          "quote": "五年来看的话，这哥们是彻底废了"
+        },
+        {
+          "line": 229,
+          "quote": "我都觉得跟酒是一样的"
+        }
+      ],
+      "investment_lines": ["153-156", "167-168", "228-229", "278-279"],
+      "reader_text": "对白酒、烟草和传统大消费，他是长期回避观点：认为资本和政策资源继续流向科技，消费能力又不足，这些行业未来五到十年难以回来；短期反弹不能替代其长期负面判断。",
+      "fact_check": {
+        "status": "unverified",
+        "summary": "这是强烈的长期行业判断，未在本次速览中做全行业事实核验。",
+        "reader_visible": false
+      }
+    },
+    {
+      "rank": 12,
+      "thesis_id": "korea-capital-flight-risk",
+      "role": "risk_warning",
+      "importance_basis": ["market_or_sector_view", "material_impact_thesis"],
+      "subject": "韩国股市及三星等热门资产",
+      "stance": "美元潮汐反转时外资可能集中撤离，韩国市场存在严重下跌风险",
+      "horizon": "2027年前后或下一轮美元潮汐",
+      "urgency": "medium",
+      "potential_impact": "high",
+      "specificity": "medium",
+      "user_relevance": "indirect",
+      "priority_reason": "针对一国市场给出明确资本外流和家庭损失风险。",
+      "evidence": [
+        {
+          "line": 150,
+          "quote": "南韩一定会是一地鸡毛的"
+        },
+        {
+          "line": 248,
+          "quote": "外资会向。蝗虫一样撤离南海"
+        }
+      ],
+      "investment_lines": ["149-151", "247-248"],
+      "reader_text": "他对韩国市场给出高风险警告：本轮上涨过度依赖海外资金，居民又高度参与三星等资产；若下一轮美元潮汐退去，外资可能集中撤离并给普通家庭造成严重损失。",
+      "fact_check": {
+        "status": "unverified",
+        "summary": "资金来源、居民参与度和时间窗口需要数据核实。",
+        "reader_visible": false
+      }
+    },
+    {
+      "rank": 13,
+      "thesis_id": "ai-bubble-winter-window",
+      "role": "risk_warning",
+      "importance_basis": ["market_or_sector_view", "portfolio_or_risk_guidance"],
+      "subject": "AI风险资产",
+      "stance": "长期看好但短期小泡沫可能在冬季到明春破裂，先避开再等机会",
+      "horizon": "2026年冬季至2027年春季",
+      "urgency": "medium",
+      "potential_impact": "high",
+      "specificity": "medium",
+      "user_relevance": "direct",
+      "priority_reason": "同一赛道存在长期看多与短期回避两种不同期限，不能互相覆盖。",
+      "evidence": [
+        {
+          "line": 290,
+          "quote": "很大概率会在这个今年的冬天或者明年的春天"
+        },
+        {
+          "line": 29,
+          "quote": "咱们把这小山头先先避掉嘛"
+        }
+      ],
+      "investment_lines": ["27-31", "132-135", "163-165", "245-246", "277-290"],
+      "reader_text": "尽管长期看多AI，他仍判断当前小泡沫大概率在今年冬季到明年春季破一次，建议先避开这段高估值山头，等泡沫释放后再寻找长期机会。",
+      "fact_check": {
+        "status": "unverified",
+        "summary": "具体破裂窗口属于作者预测，需保留为情景而非事实。",
+        "reader_visible": false
+      }
+    },
+    {
+      "rank": 14,
+      "thesis_id": "gold-near-term-rebound",
+      "role": "alternative_instrument",
+      "importance_basis": ["market_or_sector_view", "material_impact_thesis"],
+      "subject": "黄金短期行情",
+      "stance": "降息效应可能支持约一个月反弹，价格或到4700至4800美元，但不会一步回到5500",
+      "horizon": "约一个月",
+      "urgency": "medium",
+      "potential_impact": "medium",
+      "specificity": "high",
+      "user_relevance": "direct",
+      "priority_reason": "与中期减仓不同期限，具有明确短期路径和价格区间。",
+      "evidence": [
+        {
+          "line": 279,
+          "quote": "会会飞个一个月左右是问题不太大的"
+        },
+        {
+          "line": 280,
+          "quote": "四千七四千八美元，这个是有可能的"
+        }
+      ],
+      "investment_lines": ["279-280", "316"],
+      "reader_text": "黄金的短线判断与中期减仓并不矛盾：他认为新一轮降息效应可能支撑约一个月的反弹，价格存在到4700至4800美元的可能，但不认为会一步回到5500美元。",
+      "fact_check": {
+        "status": "unverified",
+        "summary": "短期价格区间属于作者预测。",
+        "reader_visible": false
+      }
+    },
+    {
+      "rank": 15,
+      "thesis_id": "gold-long-term-positive",
+      "role": "supporting_rationale",
+      "importance_basis": ["material_impact_thesis", "market_or_sector_view"],
+      "subject": "黄金长期价值",
+      "stance": "长期仍受货币贬值支撑，但上涨节奏会更慢、波动更反复",
+      "horizon": "长期",
+      "urgency": "low",
+      "potential_impact": "high",
+      "specificity": "medium",
+      "user_relevance": "direct",
+      "priority_reason": "解释为何短期减仓不等于长期彻底看空。",
+      "evidence": [
+        {
+          "line": 271,
+          "quote": "黄鱼呢？只是几十美元，30美元。是因为你钱不值钱了嘛"
+        },
+        {
+          "line": 105,
+          "quote": "黄鱼的节奏会变得很慢，而且是非常非常的来回的"
+        }
+      ],
+      "investment_lines": ["103-105", "270-271", "278"],
+      "reader_text": "更长周期里，他仍把黄金视为受法币长期贬值支撑的朝阳资产；变化在于美元回强后上涨速度更慢、来回波动更大，而不是长期逻辑完全消失。",
+      "fact_check": {
+        "status": "not_needed",
+        "summary": "这是长期资产框架，不需要在速览中展开完整研究。",
+        "reader_visible": false
+      }
+    },
+    {
+      "rank": 16,
+      "thesis_id": "crypto-trump-conditional",
+      "role": "alternative_instrument",
+      "importance_basis": ["market_or_sector_view", "material_impact_thesis"],
+      "subject": "Bitcoin与Circle",
+      "stance": "若特朗普继续用加密资产辅助化债则仍有机会，否则逻辑可能消失",
+      "horizon": "特朗普政策持续期间",
+      "urgency": "medium",
+      "potential_impact": "medium",
+      "specificity": "medium",
+      "user_relevance": "direct",
+      "priority_reason": "点名加密资产及关键政策条件，可能改变是否参与。",
+      "evidence": [
+        {
+          "line": 173,
+          "quote": "只要老特在，只要老特还是想用，想用这个呃coin来帮他化债"
+        }
+      ],
+      "investment_lines": ["171-174"],
+      "reader_text": "对Bitcoin和Circle，他给的是严格条件性机会：只要特朗普仍想借加密资产辅助化债，这条线就可能有戏；一旦政策想法或人物条件变化，逻辑也可能迅速消失。",
+      "fact_check": {
+        "status": "unverified",
+        "summary": "“加密化债”的政策因果属于作者判断，且高度依赖政治人物。",
+        "reader_visible": true
+      }
+    },
+    {
+      "rank": 17,
+      "thesis_id": "elnino-commodity-risk",
+      "role": "risk_warning",
+      "importance_basis": ["portfolio_or_risk_guidance", "material_impact_thesis"],
+      "subject": "厄尔尼诺、农业工业与工业原料",
+      "stance": "农业和工业企业应预做气候风险方案，银铜铝和东南亚橡胶供应可能受扰",
+      "horizon": "2026年下半年及约十个月后的价格传导",
+      "urgency": "medium",
+      "potential_impact": "high",
+      "specificity": "medium",
+      "user_relevance": "indirect",
+      "priority_reason": "涉及企业经营风险、商品供给和明确的滞后传导。",
+      "evidence": [
+        {
+          "line": 15,
+          "quote": "银啊，铜啊，铝啊，其实都基本上很大概率会受到这个。呃厄尔尼诺影响"
+        },
+        {
+          "line": 15,
+          "quote": "农业的延迟大概是十个月"
+        }
+      ],
+      "investment_lines": ["12-15"],
+      "reader_text": "他提醒2026年下半年极端厄尔尼诺可能同时冲击农业、矿业道路和厂房，银、铜、铝以及东南亚橡胶的供给可能受扰；农业减产对市场价格的体现可能滞后约十个月，相关企业需要提前做预案。",
+      "fact_check": {
+        "status": "unverified",
+        "summary": "气候强度、受影响产区和十个月传导需由气象及供需数据核实。",
+        "reader_visible": true
+      }
+    },
+    {
+      "rank": 18,
+      "thesis_id": "nvidia-virtual-ai-overvalued",
+      "role": "risk_warning",
+      "importance_basis": ["market_or_sector_view", "material_impact_thesis"],
+      "subject": "英伟达及高估值虚拟AI",
+      "stance": "估值已高，不应与整个AI长期机会画等号",
+      "horizon": "2026年下半年",
+      "urgency": "medium",
+      "potential_impact": "medium",
+      "specificity": "high",
+      "user_relevance": "direct",
+      "priority_reason": "点名美股核心资产并解释短期AI泡沫的风险来源。",
+      "evidence": [
+        {
+          "line": 30,
+          "quote": "虚拟AI英伟达这些就是啊，它的这个AI世界老三样，其实那时候确实太高了"
+        }
+      ],
+      "investment_lines": ["30-31"],
+      "reader_text": "他明确区分“看好AI”和“看好英伟达”：他认为英伟达及传统虚拟AI老三样估值已经过高，并把英伟达与SpaceX视为下半年AI小泡沫的重要风险点。",
+      "fact_check": {
+        "status": "unverified",
+        "summary": "估值高低和泡沫判断属于作者观点。",
+        "reader_visible": false
+      }
+    },
+    {
+      "rank": 19,
+      "thesis_id": "memory-orders-vs-moat",
+      "role": "risk_warning",
+      "importance_basis": ["market_or_sector_view", "material_impact_thesis"],
+      "subject": "存储产业、长鑫存储与长江存储",
+      "stance": "存储行情已走过一波；长鑫受低端产能缺口带来订单，但技术壁垒弱于长江",
+      "horizon": "当前产业周期",
+      "urgency": "low",
+      "potential_impact": "medium",
+      "specificity": "high",
+      "user_relevance": "indirect",
+      "priority_reason": "区分订单景气与技术护城河，避免把短期爆单当核心竞争力。",
+      "evidence": [
+        {
+          "line": 203,
+          "quote": "一个是订单上确实是报单的，这是客观事实，但是它的技术壁垒没有长江牛"
+        },
+        {
+          "line": 149,
+          "quote": "内存就别那个了，因为内存已经那个很高了"
+        }
+      ],
+      "investment_lines": ["149-150", "201-204"],
+      "reader_text": "存储方向上，他认为行情已经走过一波，不宜再笼统追高；长鑫存储的订单来自高端厂商转产后留下的低端缺口，但技术壁垒仍弱于长江存储，后者才是他更认可的技术能力。",
+      "fact_check": {
+        "status": "unverified",
+        "summary": "订单、技术排名和发热问题需用公司与产业资料复核。",
+        "reader_visible": false
+      }
+    },
+    {
+      "rank": 20,
+      "thesis_id": "harmonic-drive-herd-risk",
+      "role": "risk_warning",
+      "importance_basis": ["explicit_recommendation", "material_impact_thesis"],
+      "subject": "逐字稿疑似指绿的谐波",
+      "stance": "公司生态位尚可但估值太贵，行情主要由网红羊群效应推动，作者不再进入",
+      "horizon": "当前及网红点名后的短线",
+      "urgency": "medium",
+      "potential_impact": "medium",
+      "specificity": "medium",
+      "user_relevance": "indirect",
+      "priority_reason": "虽有ASR歧义，但作者给出明确不再参与及30分钟追涨风险。",
+      "evidence": [
+        {
+          "line": 222,
+          "quote": "超过30分钟，你基本上就是去站岗去的"
+        },
+        {
+          "line": 222,
+          "quote": "我现在这个斜波，我一样绝对不会再进去"
+        }
+      ],
+      "investment_lines": ["157-160", "221-223"],
+      "reader_text": "逐字稿中的“斜波”疑似指绿的谐波：他认可公司生态位，却认为价格太贵，之前约15%的收益主要来自网红点名后的羊群效应；这种行情若30分钟内没反应就容易站岗，他本人不会再进去。",
+      "fact_check": {
+        "status": "unverified",
+        "summary": "ASR实体仍有歧义，未完成原视频语音复核前只能标为“疑似绿的谐波”。",
+        "reader_visible": true
+      }
+    },
+    {
+      "rank": 21,
+      "thesis_id": "unitree-policy-benchmark",
+      "role": "risk_warning",
+      "importance_basis": ["material_impact_thesis", "market_or_sector_view"],
+      "subject": "宇树科技",
+      "stance": "技术和专利壁垒有限但可能被人为打造为资本市场标杆，产业价值与股价表现需分开",
+      "horizon": "上市及政策扶持阶段",
+      "urgency": "low",
+      "potential_impact": "medium",
+      "specificity": "high",
+      "user_relevance": "indirect",
+      "priority_reason": "具体公司存在产业质量与资本市场表现相反的风险。",
+      "evidence": [
+        {
+          "line": 191,
+          "quote": "它就是个遥控玩具，明确告诉各位"
+        },
+        {
+          "line": 191,
+          "quote": "不代表说它不会在资本市场没有表现"
+        }
+      ],
+      "investment_lines": ["187-193"],
+      "reader_text": "宇树科技方面，他质疑其核心技术、专利和研发壁垒，称更像协调性较好的遥控产品；但又判断它可能被人为打造为标杆，所以产业质量一般不等于资本市场一定没有表现。",
+      "fact_check": {
+        "status": "unverified",
+        "summary": "这是强烈且可能有争议的公司评价，必须以专利、研发和上市资料核实。",
+        "reader_visible": true
+      }
+    },
+    {
+      "rank": 22,
+      "thesis_id": "dreame-financing-risk",
+      "role": "risk_warning",
+      "importance_basis": ["material_impact_thesis", "portfolio_or_risk_guidance"],
+      "subject": "追觅",
+      "stance": "通过多地政府基金进行疑似自融并累积大额风险，作者判断结局会很难看",
+      "horizon": "相关基金和项目风险暴露时",
+      "urgency": "medium",
+      "potential_impact": "high",
+      "specificity": "high",
+      "user_relevance": "indirect",
+      "priority_reason": "点名企业并描述百亿级潜在资金风险。",
+      "evidence": [
+        {
+          "line": 241,
+          "quote": "追觅这个事情。一定会。很难看"
+        },
+        {
+          "line": 238,
+          "quote": "这个实际上叫自溶。左口袋对右口袋"
+        }
+      ],
+      "investment_lines": ["233-242"],
+      "reader_text": "他对追觅给出严重风险警告：称其与多地政府基金合作时由地方出大头、再投向员工创办但实际受自身控制的项目，形成疑似自融和百亿级隐患，并判断这件事最终会很难看。",
+      "fact_check": {
+        "status": "unverified",
+        "summary": "该指控重大且未经本次独立证实，只能作为KOL风险说法转述，不能当成事实定论。",
+        "reader_visible": true
+      }
+    },
+    {
+      "rank": 23,
+      "thesis_id": "autonomous-driving-mature-phase",
+      "role": "supporting_rationale",
+      "importance_basis": ["market_or_sector_view", "material_impact_thesis"],
+      "subject": "AI自动驾驶",
+      "stance": "仍是风口但最佳阶段已过去，特斯拉居首，华为车机可能挑战，地平线是供应链样本",
+      "horizon": "当前产业阶段",
+      "urgency": "low",
+      "potential_impact": "medium",
+      "specificity": "medium",
+      "user_relevance": "indirect",
+      "priority_reason": "对成熟度、龙头和供应链位置有明确行业排序。",
+      "evidence": [
+        {
+          "line": 152,
+          "quote": "AI自动驾驶的这个它是个风口啊，它是个风口啊，但是它的最好的风口我觉得已经过去一段了"
+        }
+      ],
+      "investment_lines": ["148-152"],
+      "reader_text": "自动驾驶仍被他视为风口，但最好的一段已随新能源车行情过去；他认为特斯拉仍是头部，华为车机只有挑战机会而非确定胜出，地平线机器人则是该供应链里的关键零部件样本。",
+      "fact_check": {
+        "status": "unverified",
+        "summary": "行业排名和供应链定位未在本次速览中展开核实。",
+        "reader_visible": false
+      }
+    },
+    {
+      "rank": 24,
+      "thesis_id": "pharma-trading-opportunity",
+      "role": "alternative_instrument",
+      "importance_basis": ["market_or_sector_view"],
+      "subject": "医药",
+      "stance": "相比大消费，医药仍有来回交易机会",
+      "horizon": "当前至中期",
+      "urgency": "low",
+      "potential_impact": "medium",
+      "specificity": "low",
+      "user_relevance": "indirect",
+      "priority_reason": "虽未点名标的，但明确区分医药与大消费的机会等级。",
+      "evidence": [
+        {
+          "line": 153,
+          "quote": "药其实还还可以的，药来回还真的还有机会，但是大消费我觉得没有"
+        }
+      ],
+      "investment_lines": ["153"],
+      "reader_text": "在传统行业内部，他没有把医药与消费一起否定：医药仍可能有来回交易机会，而大消费在他看来没有同等级机会；但他没有给出具体医药标的或触发条件。",
+      "fact_check": {
+        "status": "not_needed",
+        "summary": "这是低具体度的行业相对判断。",
+        "reader_visible": false
+      }
+    },
+    {
+      "rank": 27,
+      "thesis_id": "offshore-legal-structure",
+      "role": "primary_recommendation",
+      "importance_basis": ["portfolio_or_risk_guidance", "material_impact_thesis"],
+      "subject": "海外身份、外资企业与税务结构",
+      "stance": "作者主张用海外身份和外资企业持有资产、分红及结汇以降低税务与执行风险",
+      "horizon": "长期资本结构安排",
+      "urgency": "low",
+      "potential_impact": "high",
+      "specificity": "high",
+      "user_relevance": "indirect",
+      "priority_reason": "会显著改变资产持有结构，但法律风险高、必须专业复核。",
+      "evidence": [
+        {
+          "line": 47,
+          "quote": "用这个外资企业啊，去持有。很多资产啊"
+        },
+        {
+          "line": 52,
+          "quote": "外资企业，分红你不管，人在这边住了多久"
+        }
+      ],
+      "investment_lines": ["42-56", "259-263"],
+      "reader_text": "他还主张通过海外身份和外资企业持有境内资产、分红和结汇，以降低税务或执行风险，并谈到煤矿等资产的持股结构。这个建议影响很大，但法律和税务前提复杂，不能照搬。",
+      "fact_check": {
+        "status": "unverified",
+        "summary": "税务居民、外资分红、行业持股和跨境结汇规则高度具体，必须由持牌税务与法律专业人士核实。",
+        "reader_visible": true
+      }
+    },
+    {
+      "rank": 28,
+      "thesis_id": "global-location-allocation",
+      "role": "primary_recommendation",
+      "importance_basis": ["portfolio_or_risk_guidance", "material_impact_thesis"],
+      "subject": "家庭与产业的全球地域配置",
+      "stance": "富裕家庭优先新加坡，普通家庭可考虑日本；不看好加拿大、英国和澳洲，并主张不要把个人周期全部押在单一经济体",
+      "horizon": "长期",
+      "urgency": "low",
+      "potential_impact": "high",
+      "specificity": "medium",
+      "user_relevance": "indirect",
+      "priority_reason": "涉及家庭、教育、产业和资产所在地的长期重大选择。",
+      "evidence": [
+        {
+          "line": 213,
+          "quote": "你不能拿自己家人个体的幸福去博什么未来的不确定性"
+        },
+        {
+          "line": 213,
+          "quote": "你就是新加坡，你是一般人就是樱花"
+        }
+      ],
+      "investment_lines": ["16-22", "41-42", "67-74", "208-220", "224-231", "251-258", "306-314"],
+      "reader_text": "在地域配置上，他主张不要把家庭、产业和资本的完整周期押在单一经济体；富裕家庭更适合新加坡，普通家庭可考虑日本，同时他长期不看好加拿大、英国和澳洲。其方法论是到通胀地区赚钱、到通缩地区消费。",
+      "fact_check": {
+        "status": "unverified",
+        "summary": "国家比较高度概括，税收、居留、生活和投资条件需按家庭情况分别核实。",
+        "reader_visible": true
+      }
+    },
+    {
+      "rank": 29,
+      "thesis_id": "ai-business-allocation",
+      "role": "primary_recommendation",
+      "importance_basis": ["explicit_recommendation", "material_impact_thesis"],
+      "subject": "AI创业与家庭收入结构",
+      "stance": "国内创业优先科技和AI，家庭可用AI短剧等业务建立工作收入之外的第二收入",
+      "horizon": "当前产业窗口",
+      "urgency": "low",
+      "potential_impact": "medium",
+      "specificity": "medium",
+      "user_relevance": "indirect",
+      "priority_reason": "给出创业行业选择和家庭收入结构的具体建议。",
+      "evidence": [
+        {
+          "line": 130,
+          "quote": "你你自己人生一定要做好一个什么东西"
+        },
+        {
+          "line": 131,
+          "quote": "另外一方面是靠自己的被动收入"
+        }
+      ],
+      "investment_lines": ["127-131", "234-236"],
+      "reader_text": "对创业和家庭现金流，他建议在国内尽量做科技或AI业务，并以AI短剧为例，主张家庭除了用时间换收入的工作外，再建立一条AI或资产带来的第二收入。",
+      "fact_check": {
+        "status": "unverified",
+        "summary": "直播中的“一年一个亿”案例未经核实，不应作为收益预期。",
+        "reader_visible": true
+      }
+    },
+    {
+      "rank": 30,
+      "thesis_id": "coal-mine-opaque-economics",
+      "role": "risk_warning",
+      "importance_basis": ["portfolio_or_risk_guidance", "material_impact_thesis"],
+      "subject": "煤矿股权与矿权项目",
+      "stance": "矿权成本和盈利高度依赖关系与地区，不透明程度高，相邻项目经济性可能相差十倍",
+      "horizon": "项目投资和持有期间",
+      "urgency": "low",
+      "potential_impact": "high",
+      "specificity": "medium",
+      "user_relevance": "unknown",
+      "priority_reason": "只对相关实业家庭有直接意义，但一旦相关则资金影响很大。",
+      "evidence": [
+        {
+          "line": 63,
+          "quote": "有可能你隔壁的拿矿的价格是你的10倍"
+        }
+      ],
+      "investment_lines": ["50-55", "63-64"],
+      "reader_text": "在回答煤矿项目时，他强调矿权成本和盈利高度依赖地区与关系，行业缺乏透明统一定价，相邻项目的取得成本可能相差十倍；因此不能用别人的矿山收益简单套自己的项目。",
+      "fact_check": {
+        "status": "unverified",
+        "summary": "这是针对私人矿业项目的经验性风险提醒，不具备普遍数据证明。",
+        "reader_visible": false
+      }
+    },
+    {
+      "rank": 31,
+      "thesis_id": "geopolitical-war-risk",
+      "role": "supporting_rationale",
+      "importance_basis": ["market_or_sector_view", "material_impact_thesis"],
+      "subject": "俄乌战争与无人机战争形态",
+      "stance": "俄乌战局已转向乌方占优，战争失控与AI发展速度共同决定全球经济风险",
+      "horizon": "当前至中期",
+      "urgency": "low",
+      "potential_impact": "high",
+      "specificity": "medium",
+      "user_relevance": "indirect",
+      "priority_reason": "战争路径可能影响全球经济，但作者没有给出直接资产动作。",
+      "evidence": [
+        {
+          "line": 282,
+          "quote": "世界经济是否会进入萧条，还是继续繁荣"
+        },
+        {
+          "line": 283,
+          "quote": "乌占优势。风向完全倒了"
+        }
+      ],
+      "investment_lines": ["282-287"],
+      "reader_text": "他把地缘冲突列为AI之外决定全球繁荣或萧条的另一变量，并判断俄乌战局已转向乌方占优、无人机战术成为关键。这个判断有宏观影响，但没有对应到直接资产操作。",
+      "fact_check": {
+        "status": "unverified",
+        "summary": "战局判断时效性和争议性都很高，需要单独的最新事实核验。",
+        "reader_visible": true
+      }
+    },
+    {
+      "rank": 25,
+      "thesis_id": "account-cash-tax-scrutiny",
+      "role": "risk_warning",
+      "importance_basis": ["explicit_recommendation", "portfolio_or_risk_guidance"],
+      "subject": "企业及个人账户留存现金与未分配利润",
+      "stance": "作者认为税务检查会优先关注账上资金充足的主体，建议只留日常开销、及时分红且不要把大量现金留在个人账户",
+      "horizon": "当前资本与税务安排",
+      "urgency": "low",
+      "potential_impact": "high",
+      "specificity": "high",
+      "user_relevance": "indirect",
+      "priority_reason": "这是会直接改变大额现金存放和分红安排的具体建议，但法律税务风险很高。",
+      "evidence": [
+        {
+          "line": 262,
+          "quote": "尽可能不要让自己这样趴着大量的钱啊"
+        },
+        {
+          "line": 263,
+          "quote": "平常没事的时候就该分红分掉，分完以后也不要放在个人账上"
+        }
+      ],
+      "investment_lines": ["260-263"],
+      "reader_text": "他认为税务检查会优先关注账上有钱的企业或个人，因此建议账户只留日常开销、未分配利润及时分红，且不要把大额资金长期留在个人账户。这个说法会显著影响资金安排，但不能未经专业核实直接照做。",
+      "fact_check": {
+        "status": "unverified",
+        "summary": "税务稽查逻辑、分红和跨境资金安排必须按具体主体由持牌税务与法律专业人士核实。",
+        "reader_visible": true
+      }
+    },
+    {
+      "rank": 26,
+      "thesis_id": "singapore-corporate-bank-ocbc",
+      "role": "primary_recommendation",
+      "importance_basis": ["explicit_recommendation", "material_impact_thesis"],
+      "subject": "新加坡公司银行账户",
+      "stance": "作者认为新加坡企业开户整体较难，但华侨银行相对友好并优先推荐华侨银行或大华银行",
+      "horizon": "设立和运营新加坡公司时",
+      "urgency": "low",
+      "potential_impact": "medium",
+      "specificity": "high",
+      "user_relevance": "indirect",
+      "priority_reason": "它是涉及海外资金通道的具体机构建议，虽非证券交易但会影响资本可用性。",
+      "evidence": [
+        {
+          "line": 24,
+          "quote": "优先选华侨的啊"
+        },
+        {
+          "line": 25,
+          "quote": "目前我已知的最容易的呃就是华侨了"
+        }
+      ],
+      "investment_lines": ["23-25"],
+      "reader_text": "对新加坡公司开户，他认为整体审查较严，但华侨银行相对友好，优先建议华侨银行或大华银行；若华侨银行也开不出，再考虑网络银行，但他本人不建议后者。",
+      "fact_check": {
+        "status": "unverified",
+        "summary": "银行开户政策、客户资格和合规要求会变化，必须以银行当前正式审核为准。",
+        "reader_visible": true
+      }
+    },
+    {
+      "rank": 32,
+      "thesis_id": "macro-pessimism-information-filter",
+      "role": "quoted_view",
+      "importance_basis": ["market_or_sector_view", "material_impact_thesis"],
+      "subject": "宏观环境与公开信息质量",
+      "stance": "作者引用一位学者的观点称宏观悲观但微观仍有局部机会，并据此认为公开渠道难以听到完整事实",
+      "horizon": "当前宏观阶段",
+      "urgency": "low",
+      "potential_impact": "medium",
+      "specificity": "low",
+      "user_relevance": "indirect",
+      "priority_reason": "这是低具体度的宏观和信息质量判断，没有直接资产动作但可能影响决策置信度。",
+      "evidence": [
+        {
+          "line": 207,
+          "quote": "宏观上是很悲观的。但是啊，微观上还是有所有些地方可以值得乐观的"
+        },
+        {
+          "line": 207,
+          "quote": "现在你没有办法接触到事实上的"
+        }
+      ],
+      "investment_lines": ["205-207"],
+      "reader_text": "他引用一位学者“宏观悲观、微观仍有局部机会”的说法，并用相关内容被移除来说明公开信息可能不完整。这只是引用和信息环境判断，不是直接投资建议。",
+      "fact_check": {
+        "status": "unverified",
+        "summary": "被引用者身份、原话和内容移除原因均未在本次快速结果中独立核实。",
+        "reader_visible": true
+      }
+    },
+    {
+      "thesis_id": "ambiguous-opening-no-reduction",
+      "decision_relevance": "audit_only",
+      "role": "quoted_view",
+      "subject": "开场所指不明的两个持仓",
+      "stance": "作者说两个对象一点都没减、最难过阶段未过且要继续熬，但ASR上下文没有可靠恢复对象，不能覆盖后文对黄金和白银的明确区分",
+      "horizon": "直播开场时",
+      "attribution": "路西法本人，标的归属不明",
+      "evidence": [
+        {
+          "line": 10,
+          "quote": "我一点点都没减啊"
+        },
+        {
+          "line": 11,
+          "quote": "最难过的时间还没有彻底过去"
+        },
+        {
+          "line": 12,
+          "quote": "这两个都稍微熬熬"
+        }
+      ],
+      "investment_lines": ["10-12"],
+      "reader_text": "开场有一句“两个都一点没减、最难过阶段未过、继续熬”，但指代在ASR中丢失，只保留审计，不能据此改写后文明确的黄金减仓、白银不减。"
+    }
+  ],
+  "reader_paragraphs": [
+    {
+      "kind": "kol",
+      "thesis_ids": ["spacex-short-after-july-7"],
+      "text": "【KOL观点｜按逐字稿上下文校正】\n\n最紧迫的是SpaceX：路西法认为其约95至100倍市销率远高于当时英伟达约22倍，几乎把未来兑现都计入价格；7月7日纳入纳指100会带来被动买入，但在他看来是把风险转给指数持有人，不是新的买点。因此他反复说，会在7月7日后拿总资金约5%以下做空SpaceX，认为其中期下跌概率显著高于上涨；同时强调它波动会很妖，绝对不能加杠杆。"
+    },
+    {
+      "kind": "kol",
+      "thesis_ids": ["second-half-defensive-cash", "non-owner-property-exit"],
+      "text": "组合层面，他主张2026年下半年轻仓防守，至少留一半现金，等冬季到明年初可能出现的黄金坑。房产上，他建议利用2026至2027年的最后一波小行情清掉非自住房；上海以外的下行更难逆转，上海也只是可能跌得少一些。"
+    },
+    {
+      "kind": "kol",
+      "thesis_ids": ["gold-tactical-trim", "silver-five-year-hold"],
+      "text": "贵金属要分开看：黄金下半年逢高降低比重，原先约8000美元的离场设想下修到约6500至7000美元，并把资金换成现金等待；白银则一分没减，认为已回到甚至低于生产成本，计划持有五年以上，当前偏好高于黄金。"
+    },
+    {
+      "kind": "kol",
+      "thesis_ids": ["physical-ai-energy-etf", "strong-dollar-us-regime", "offshore-currency-safety"],
+      "text": "长期产业主线是物理AI、机器人、电力和核能，参与时更倾向广谱ETF而非押单只赢家。但他的宏观底色是美元因石油结算和利率重新变强，美国未来两三年可能取得明显优势，强美元会压制黄金、纳指和AI等风险资产。因此他还主张在海外保留一部分美元和可用资金，重点是流动性与财产安全，而不是赚汇差。"
+    },
+    {
+      "kind": "kol",
+      "thesis_ids": ["beite-pullback-watch", "sanhua-governance-risk"],
+      "text": "具体A股里，北特科技是他约40元买入的机器人零部件样本，但当前只建议关注、不追，等回到约40元附近再看。三花智控的热管理业务和确定性更好，不过创始人及高管套现削弱了他的信心，因此是好业务伴随治理折价。"
+    },
+    {
+      "kind": "kol",
+      "thesis_ids": ["traditional-consumption-avoid", "korea-capital-flight-risk", "ai-bubble-winter-window"],
+      "text": "需要回避的方向有三类：白酒、烟草和传统大消费被他视为未来五到十年的夕阳赛道；韩国市场过度依赖海外资金，下一轮美元潮汐可能引发集中撤离；AI虽然长期看好，但当前小泡沫大概率在今年冬季到明年春季破一次，宜先避开高估值山头。"
+    },
+    {
+      "kind": "kol",
+      "thesis_ids": ["gold-near-term-rebound", "gold-long-term-positive", "crypto-trump-conditional"],
+      "text": "不同期限不能合并：黄金短线仍可能受降息效应支持约一个月，看到4700至4800美元，但长期则是受法币贬值支撑、节奏变慢而非逻辑消失。Bitcoin和Circle只有在特朗普继续借加密资产辅助化债的条件下才可能有机会，人物或政策改变就可能失效。"
+    },
+    {
+      "kind": "kol",
+      "thesis_ids": ["elnino-commodity-risk", "nvidia-virtual-ai-overvalued", "memory-orders-vs-moat"],
+      "text": "另外三条产业信息值得留意：极端厄尔尼诺可能冲击农业、矿业道路和厂房，并影响银、铜、铝和东南亚橡胶，农业价格传导可能滞后约十个月；英伟达及传统虚拟AI估值过高，不能代表整个AI长期机会；存储行情已走过一波，长鑫的爆单更多来自低端产能缺口，技术壁垒仍弱于长江存储。"
+    },
+    {
+      "kind": "kol",
+      "thesis_ids": ["harmonic-drive-herd-risk", "unitree-policy-benchmark", "dreame-financing-risk"],
+      "text": "三条公司风险信息分别是：逐字稿中的“斜波”疑似绿的谐波，公司生态位可以但价格太贵，网红点名后的行情超过30分钟再追容易站岗，作者不会再进；宇树的技术和专利壁垒被他质疑，但可能因政策标杆而有资本市场表现；追觅则被他指为通过多地政府基金进行疑似自融并累积大额隐患，判断最终会很难看。"
+    },
+    {
+      "kind": "kol",
+      "thesis_ids": ["autonomous-driving-mature-phase", "pharma-trading-opportunity"],
+      "text": "行业补充中，自动驾驶仍是风口但最好的一段已过去，特斯拉居首、华为车机只有挑战机会，地平线是供应链样本；医药与大消费不同，仍可能有来回交易机会，只是他没有给具体标的和触发条件。"
+    },
+    {
+      "kind": "kol",
+      "thesis_ids": ["account-cash-tax-scrutiny", "singapore-corporate-bank-ocbc", "offshore-legal-structure", "global-location-allocation", "ai-business-allocation"],
+      "text": "较低优先级但可能影响大额资本安排的内容还有：他认为税务检查会优先关注账上有钱的主体，因此建议账户只留日常开销、未分配利润及时分红，且不要把大额现金长期留在个人账户；新加坡公司开户优先考虑相对友好的华侨银行或大华银行；同时主张用海外身份和外资企业安排持股、分红与结汇。地域上，他建议家庭和产业不要把完整周期押在单一经济体，富裕家庭偏新加坡、普通家庭可考虑日本；国内创业则尽量做科技或AI，并建立工作之外的第二收入。"
+    },
+    {
+      "kind": "kol",
+      "thesis_ids": ["coal-mine-opaque-economics", "geopolitical-war-risk", "macro-pessimism-information-filter"],
+      "text": "其余三条低优先级信息是：煤矿项目的矿权成本和盈利高度不透明，不能照搬别人的收益；俄乌战局和无人机战争形态可能影响全球经济；他还引用一位学者“宏观悲观、微观仍有局部机会”的说法，并借内容被移除表达对公开信息完整性的担忧。这最后一条是引用和信息环境判断，不是直接资产建议。"
+    },
+    {
+      "kind": "system",
+      "thesis_ids": ["spacex-short-after-july-7"],
+      "text": "【系统核对｜仅补事实】\n\nSEC文件显示SpaceX已以SPCX上市，6月12日交易、IPO价135美元；Nasdaq确认它在7月7日开盘前纳入纳指100。7月24日最新价115.07美元，较IPO价低约14.8%，所以旧结果称其未上市是错误的；但路西法只说7月7日后做，没有精确入场价，不能虚构收益，也不能把已发生的跌幅自动变成当前追空许可。"
+    },
+    {
+      "kind": "system",
+      "thesis_ids": ["spacex-short-after-july-7"],
+      "text": "【系统拆解｜只解释执行边界】\n\nBook KOL-US维持纸面no_trade：直接做空不在现金纸面组合权限内；可交易的SPCG追踪SPCX每日-200%反向表现，带有杠杆和每日重置风险，与路西法明确的“绝对不能加杠杆”冲突。这个执行限制不能反过来抹掉KOL信号，也不能成为家庭消息suppressed的理由。"
+    },
+    {
+      "kind": "system",
+      "thesis_ids": ["harmonic-drive-herd-risk", "unitree-policy-benchmark", "dreame-financing-risk", "account-cash-tax-scrutiny", "singapore-corporate-bank-ocbc", "offshore-legal-structure", "macro-pessimism-information-filter"],
+      "text": "【系统结论】\n\n先把这期路西法对投资和大额资本安排有潜在影响的信息完整交给你，系统不替你执行交易。仍需核实的边界：绿的谐波实体是根据ASR上下文推测；宇树和追觅评价是重大、争议性较强的KOL说法；银行开户、账户留存现金、分红、跨境持股、税务和结汇都必须由当前银行政策及持牌专业人士按个人情况确认；被引用学者的身份、原话和内容移除原因也未独立核实。"
+    }
+  ]
+}
