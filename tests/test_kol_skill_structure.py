@@ -7,6 +7,8 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 SKILL_DIR = ROOT / ".codex" / "skills" / "kol-intelligence"
 SKILL_MD = SKILL_DIR / "SKILL.md"
+FULL_CONTRACT_MD = SKILL_DIR / "references" / "full-contract.md"
+HOURLY_OPERATION_MD = SKILL_DIR / "references" / "hourly-operation.md"
 
 
 def test_kol_skill_is_the_single_conditional_entrypoint() -> None:
@@ -22,7 +24,7 @@ def test_kol_skill_is_the_single_conditional_entrypoint() -> None:
 
 
 def test_kol_skill_requires_complete_trade_information_coverage() -> None:
-    text = SKILL_MD.read_text(encoding="utf-8")
+    text = FULL_CONTRACT_MD.read_text(encoding="utf-8")
 
     for marker in (
         "Source-agnostic investment-claim coverage gate",
@@ -46,7 +48,7 @@ def test_kol_skill_requires_complete_trade_information_coverage() -> None:
 
 
 def test_kol_skill_requires_natural_reader_copy_for_every_author() -> None:
-    text = SKILL_MD.read_text(encoding="utf-8")
+    text = FULL_CONTRACT_MD.read_text(encoding="utf-8")
 
     for marker in (
         "natural Chinese",
@@ -61,7 +63,7 @@ def test_kol_skill_requires_natural_reader_copy_for_every_author() -> None:
 
 
 def test_kol_skill_has_one_resumable_ticket05_cloud_video_runner() -> None:
-    text = SKILL_MD.read_text(encoding="utf-8")
+    text = FULL_CONTRACT_MD.read_text(encoding="utf-8")
 
     for marker in (
         "scripts/kol_subscription_videos.py run",
@@ -76,7 +78,7 @@ def test_kol_skill_has_one_resumable_ticket05_cloud_video_runner() -> None:
 
 
 def test_kol_skill_has_one_resumable_ticket06_batch_runner() -> None:
-    text = SKILL_MD.read_text(encoding="utf-8")
+    text = FULL_CONTRACT_MD.read_text(encoding="utf-8")
 
     for marker in (
         "scripts/kol_batch.py run",
@@ -104,7 +106,9 @@ def test_kol_skill_has_one_resumable_ticket06_batch_runner() -> None:
 
 
 def test_kol_skill_has_one_ticket07_daytime_runner() -> None:
-    text = SKILL_MD.read_text(encoding="utf-8")
+    text = " ".join(
+        HOURLY_OPERATION_MD.read_text(encoding="utf-8").split()
+    )
 
     for marker in (
         "scripts/kol_daily.py run",
@@ -126,7 +130,7 @@ def test_kol_skill_has_one_ticket07_daytime_runner() -> None:
 
 
 def test_kol_skill_treats_multi_part_videos_as_one_logical_episode() -> None:
-    text = SKILL_MD.read_text(encoding="utf-8")
+    text = FULL_CONTRACT_MD.read_text(encoding="utf-8")
 
     for marker in (
         "any number of source videos",
@@ -148,6 +152,27 @@ def test_kol_skill_local_markdown_links_resolve() -> None:
             assert (source.parent / target).resolve().is_file(), (
                 f"broken Markdown link in {source}: {target}"
             )
+
+
+def test_kol_skill_defers_the_full_contract_on_hourly_no_update_runs() -> None:
+    entrypoint = SKILL_MD.read_text(encoding="utf-8")
+    hourly = HOURLY_OPERATION_MD.read_text(encoding="utf-8")
+    full = FULL_CONTRACT_MD.read_text(encoding="utf-8")
+    entrypoint_flat = " ".join(entrypoint.split())
+    hourly_flat = " ".join(hourly.split())
+
+    assert len(entrypoint.encode("utf-8")) < 5_000
+    assert len(hourly.encode("utf-8")) < 8_000
+    assert len(full.encode("utf-8")) > 35_000
+    assert (
+        "Do not read the full contract before starting the runner"
+        in entrypoint_flat
+    )
+    assert "Do not read `full-contract.md` unless the" in hourly_flat
+    assert "daily_analysis_input_required" in entrypoint
+    assert "daily_analysis_input_required" in hourly
+    assert "Read `full-contract.md` completely before analysis" in hourly_flat
+    assert "verify its current SHA-256 against the request" in hourly_flat
 
 
 def test_durable_branch_preserves_authority_and_provenance_boundaries() -> None:
