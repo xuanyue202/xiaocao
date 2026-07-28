@@ -441,6 +441,71 @@ def test_replayed_download_claim_reconciles_without_retriggering_browser(tmp_pat
     assert wait_calls == 1
 
 
+def test_one_poll_listing_is_reused_for_all_claim_reconciliations(tmp_path):
+    entries = [
+        {
+            **_representative_subscription_entries()[index - 1],
+            "provider_file_id": f"image-{index}",
+        }
+        for index in (1, 2)
+    ]
+    listing_calls = 0
+    wait_calls = 0
+
+    def browser_runner(command, **_kwargs):
+        nonlocal listing_calls, wait_calls
+        tail = command[3:]
+        if tail[:1] == ["open"]:
+            payload = {"url": "redacted", "page": "page-1"}
+            return SimpleNamespace(
+                returncode=0,
+                stdout=json.dumps(payload),
+                stderr="",
+            )
+        if tail[:1] == ["eval"] and "/share/list" in tail[1]:
+            listing_calls += 1
+            payload = {
+                "status": "ok",
+                "complete_scan": True,
+                "entries": entries,
+            }
+            return SimpleNamespace(
+                returncode=0,
+                stdout=json.dumps(payload),
+                stderr="",
+            )
+        if tail[:2] == ["wait", "download"]:
+            wait_calls += 1
+            return SimpleNamespace(
+                returncode=1,
+                stdout=json.dumps({"error": {"code": "download_not_seen"}}),
+                stderr="",
+            )
+        raise AssertionError(command)
+
+    service = LvSubscriptionService(
+        tmp_path / "out",
+        now=lambda: NOW,
+        runner=browser_runner,
+        opencli_command=("opencli",),
+        share_url="https://pan.baidu.com/s/private-share-token",
+        share_code="a1b2",
+    )
+    updates = service.poll_opencli(session="ticket04")["updates"]
+    for update in updates:
+        service.claim_browser_download(update["identity"])
+
+    for update in updates:
+        with pytest.raises(EnrichmentError, match="browser command failed"):
+            service.download_opencli(
+                update["identity"],
+                session="ticket04",
+            )
+
+    assert listing_calls == 1
+    assert wait_calls == 2
+
+
 def test_expired_share_is_a_structured_user_blocker(tmp_path):
     def browser_runner(command, **_kwargs):
         tail = command[3:]

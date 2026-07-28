@@ -62,6 +62,21 @@ def test_kol_skill_requires_natural_reader_copy_for_every_author() -> None:
         assert marker in text
 
 
+def test_kol_skill_reuses_one_ticket04_listing_only_within_one_runner() -> None:
+    text = " ".join(
+        FULL_CONTRACT_MD.read_text(encoding="utf-8").split()
+    )
+
+    for marker in (
+        "one complete in-memory listing",
+        "instead of rescanning",
+        "never crosses a runner boundary",
+        "exact identity, version, name, size, and browser target",
+        "must never retrigger it",
+    ):
+        assert marker in text
+
+
 def test_kol_skill_has_one_resumable_ticket05_cloud_video_runner() -> None:
     text = FULL_CONTRACT_MD.read_text(encoding="utf-8")
 

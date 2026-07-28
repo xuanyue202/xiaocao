@@ -491,6 +491,11 @@ class LvSubscriptionService:
         )
         self.share_url = str(share_url or "").strip()
         self.share_code = str(share_code or "").strip()
+        self._opencli_listing: tuple[
+            str,
+            str | None,
+            dict[str, Any],
+        ] | None = None
 
     @classmethod
     def from_config(
@@ -694,7 +699,24 @@ class LvSubscriptionService:
             session=session,
             profile=profile,
         )
+        self._opencli_listing = (session, profile, listing)
         return self.observe_browser_listing(listing["entries"])
+
+    def _download_listing(
+        self,
+        *,
+        session: str,
+        profile: str | None,
+    ) -> dict[str, Any]:
+        cached = self._opencli_listing
+        if cached is not None and cached[:2] == (session, profile):
+            return cached[2]
+        listing = self._read_opencli_listing(
+            session=session,
+            profile=profile,
+        )
+        self._opencli_listing = (session, profile, listing)
+        return listing
 
     @staticmethod
     def _normalize_entry(raw: dict[str, Any]) -> dict[str, Any]:
@@ -1281,7 +1303,7 @@ class LvSubscriptionService:
         if completed is not None:
             return {**completed, "idempotent_replay": True}
 
-        listing = self._read_opencli_listing(
+        listing = self._download_listing(
             session=session,
             profile=profile,
         )

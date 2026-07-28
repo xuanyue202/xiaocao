@@ -200,7 +200,11 @@ return zero new external side effects on rerun before user confirmation.
   `PYTHONPATH=src python3 scripts/kol_lv_subscription.py run --bootstrap-bind --opencli-session xiaocao-lv-subscription`.
   Later runs omit `--bootstrap-bind` and reuse the stable OpenCLI session.
 - The runner completes a full recursive `/share/list` scan before updating the
-  cursor. It ignores video payloads, persists a source-version claim before
+  cursor. Within that same process, session, and profile, it reuses the one
+  complete in-memory listing for all pending small items instead of rescanning
+  the share per item; the snapshot never crosses a runner boundary, and every
+  item still validates its exact identity, version, name, size, and browser
+  target. It ignores video payloads, persists a source-version claim before
   each small text/image browser download, snapshots only the completed browser
   receipt, bypasses OCR for native UTF-8 text, and runs macOS Vision OCR once
   for images. A replayed/uncertain download claim may only reconcile the prior
