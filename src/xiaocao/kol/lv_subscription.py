@@ -24,7 +24,9 @@ from .claim_coverage import (
     build_claim_extraction_request,
     validate_claim_coverage,
 )
+from .author_profiles import semantic_author_profile
 from .enrichment_types import (
+    EnrichmentDiagnosticError,
     EnrichmentError,
     validate_decision_completion,
     validate_decision_process_result,
@@ -133,6 +135,8 @@ _BROWSER_LISTING_SCRIPT_TEMPLATE = r"""(async () => {
   };
   const maxDirectories = 100;
   const maxItems = 5000;
+  const maxConcurrentDirectories = 4;
+  const requestTimeoutMs = 10000;
   const readPages = async (template, dir) => {
     const parsed = new URL(template);
     const pageSize = Math.max(1, Number(parsed.searchParams.get('num') || 100));
@@ -143,10 +147,33 @@ _BROWSER_LISTING_SCRIPT_TEMPLATE = r"""(async () => {
       if (dir !== null) {
         parsed.searchParams.set('dir', String(dir));
       }
-      const response = await fetch(parsed.toString(), {
-        credentials: 'include'
-      });
-      const body = await response.json();
+      const controller = new AbortController();
+      const timeout = setTimeout(
+        () => controller.abort(),
+        requestTimeoutMs
+      );
+      let response;
+      try {
+        response = await fetch(parsed.toString(), {
+          credentials: 'include',
+          signal: controller.signal
+        });
+      } catch (error) {
+        return {
+          status: error && error.name === 'AbortError'
+            ? 'share_list_timeout'
+            : 'share_list_failed',
+          rows: []
+        };
+      } finally {
+        clearTimeout(timeout);
+      }
+      let body;
+      try {
+        body = await response.json();
+      } catch (_error) {
+        return {status: 'share_list_invalid_json', rows: []};
+      }
       if (!response.ok || body.errno !== 0) {
         return {status: 'share_list_failed', rows: []};
       }
@@ -194,15 +221,26 @@ _BROWSER_LISTING_SCRIPT_TEMPLATE = r"""(async () => {
   }
   let scannedDirectories = 0;
   while (pendingDirs.length > 0) {
-    if (++scannedDirectories > maxDirectories || entries.length > maxItems) {
+    if (
+      scannedDirectories
+        + Math.min(pendingDirs.length, maxConcurrentDirectories)
+        > maxDirectories
+      || entries.length > maxItems
+    ) {
       return fail('listing_bounds_exceeded');
     }
-    const dir = pendingDirs.shift();
-    const directoryResult = await readPages(directoryTemplate, dir);
-    if (directoryResult.status !== 'ok') {
-      return fail(directoryResult.status);
+    const batch = pendingDirs.splice(0, maxConcurrentDirectories);
+    scannedDirectories += batch.length;
+    const directoryResults = await Promise.all(batch.map(async dir => ({
+      dir,
+      result: await readPages(directoryTemplate, dir)
+    })));
+    for (const {result} of directoryResults) {
+      if (result.status !== 'ok') {
+        return fail(result.status);
+      }
+      result.rows.forEach(appendItem);
     }
-    directoryResult.rows.forEach(appendItem);
   }
   return {
     status: 'ok',
@@ -565,6 +603,13 @@ class LvSubscriptionService:
             raise EnrichmentError("OpenCLI session name is invalid")
         if profile is not None and not _OPENCLI_NAME.fullmatch(profile):
             raise EnrichmentError("OpenCLI profile name is invalid")
+        operation = str(args[0] if args else "unknown").strip().lower()
+        stage = {
+            "bind": "browser_bind",
+            "eval": "browser_eval",
+            "open": "browser_open",
+            "wait": "browser_wait",
+        }.get(operation, "browser_command")
         command = [
             *self.opencli_command,
             *(["--profile", profile] if profile else []),
@@ -581,15 +626,35 @@ class LvSubscriptionService:
                 timeout=timeout_seconds,
             )
         except subprocess.TimeoutExpired as exc:
-            raise EnrichmentError("subscription browser command timed out") from exc
+            raise EnrichmentDiagnosticError(
+                "subscription browser command timed out",
+                category="timeout",
+                code="opencli_timeout",
+                stage=stage,
+            ) from exc
         if result.returncode != 0:
-            raise EnrichmentError("subscription browser command failed")
+            raise EnrichmentDiagnosticError(
+                "subscription browser command failed",
+                category="transport_error",
+                code="opencli_command_failed",
+                stage=stage,
+            )
         try:
             value = json.loads(str(result.stdout))
         except (TypeError, json.JSONDecodeError) as exc:
-            raise EnrichmentError("subscription browser returned invalid JSON") from exc
+            raise EnrichmentDiagnosticError(
+                "subscription browser returned invalid JSON",
+                category="protocol_error",
+                code="opencli_invalid_json",
+                stage=stage,
+            ) from exc
         if not isinstance(value, dict):
-            raise EnrichmentError("subscription browser returned a non-object result")
+            raise EnrichmentDiagnosticError(
+                "subscription browser returned a non-object result",
+                category="protocol_error",
+                code="opencli_non_object",
+                stage=stage,
+            )
         return value
 
     def _validate_private_config(self) -> None:
@@ -684,7 +749,30 @@ class LvSubscriptionService:
             or listing.get("complete_scan") is not True
             or not isinstance(listing.get("entries"), list)
         ):
-            raise EnrichmentError("subscription browser listing is unavailable")
+            observed_status = str(listing.get("status") or "")
+            code = {
+                "listing_bounds_exceeded": "listing_bounds_exceeded",
+                "share_list_failed": "share_list_failed",
+                "share_list_invalid_json": "share_list_invalid_json",
+                "share_list_timeout": "share_list_timeout",
+                "share_metadata_missing": "share_metadata_missing",
+                "share_root_template_missing": "share_root_template_missing",
+                "share_directory_template_missing": (
+                    "share_directory_template_missing"
+                ),
+                "wrong_origin": "wrong_browser_origin",
+                "wrong_share": "wrong_share_page",
+            }.get(observed_status, "listing_incomplete")
+            raise EnrichmentDiagnosticError(
+                "subscription browser listing is unavailable",
+                category=(
+                    "timeout"
+                    if observed_status == "share_list_timeout"
+                    else "incomplete_scan"
+                ),
+                code=code,
+                stage="listing_validation",
+            )
         return listing
 
     @_exclusive("poll")
@@ -1586,6 +1674,7 @@ class LvSubscriptionService:
             "status": "waiting_for_analysis",
             "source": ingest["source"],
             "author": ingest["author"],
+            "author_profile": semantic_author_profile(ingest["author"]),
             "identity": identity,
             "version_key": version_key,
             "title": ingest["title"],

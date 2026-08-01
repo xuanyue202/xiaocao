@@ -22,6 +22,7 @@ from .claim_coverage import (
     build_claim_extraction_request,
     validate_claim_coverage,
 )
+from .author_profiles import semantic_author_profile
 from .enrichment_types import EnrichmentError
 from .episodes import assemble_video_units
 from .lv_subscription import LvSubscriptionService
@@ -36,6 +37,8 @@ LUCIFER_AUTHOR = "路西法"
 LUCIFER_ROOT = "/课程/路西法全套"
 LV_DESTINATION_PARENT = "/课程/自己的课"
 LV_DESTINATION_DIRECTORY = "/课程/自己的课/吕晓彤"
+LV_TRANSFER_RETRY_DELAY = timedelta(minutes=30)
+LV_TRANSFER_MAX_TRIGGER_ATTEMPTS = 2
 VIDEO_SUFFIXES = {".avi", ".flv", ".m4v", ".mkv", ".mov", ".mp4"}
 MAX_EPISODE_SPEC_BYTES = 16 * 1024 * 1024
 MAX_EPISODE_REVIEW_SPEC_BYTES = 2 * 1024 * 1024
@@ -229,17 +232,51 @@ _PRIVATE_SEARCH_SCRIPT = r"""(async () => {
     key: 'Enter', code: 'Enter', keyCode: 13, which: 13, bubbles: true
   }));
   const deadline = Date.now() + 15000;
+  let stableSignature = '';
+  let stablePolls = 0;
+  let lastSearchActive = false;
+  let lastItemCount = 0;
+  let lastSearchValue = '';
+  let lastHeadingSeen = false;
   while (Date.now() < deadline) {
     const rows = [...document.querySelectorAll('tr[data-id]')];
     const items = rows.map(row => row.__vue__?._props?.item).filter(Boolean);
     const matches = items.filter(item => (
       String(item.server_filename || '') === targetName
     ));
-    if (matches.length > 0 || /无搜索结果|暂无/.test(
-      String(document.body?.innerText || '')
-    )) {
+    const bodyText = String(document.body?.innerText || '');
+    const hash = String(location.hash || '');
+    const query = hash.includes('?') ? hash.slice(hash.indexOf('?') + 1) : '';
+    const searchValue = new URLSearchParams(query).get('search') || '';
+    const headingSeen = bodyText.includes('搜索：' + targetName);
+    const searchActive = searchValue === targetName && headingSeen;
+    lastSearchActive = searchActive;
+    lastItemCount = items.length;
+    lastSearchValue = searchValue;
+    lastHeadingSeen = headingSeen;
+    const signature = items.map(item => [
+      String(item.fs_id || ''),
+      String(item.path || ''),
+      String(item.server_filename || ''),
+      Number(item.size || 0)
+    ].join('\u0000')).sort().join('\u0001');
+    if (searchActive && signature === stableSignature) {
+      stablePolls += 1;
+    } else {
+      stableSignature = signature;
+      stablePolls = 0;
+    }
+    if (
+      searchActive
+      && (
+        matches.length > 0
+        || /无搜索结果|暂无/.test(bodyText)
+        || (items.length > 0 && stablePolls >= 5)
+      )
+    ) {
       return {
         status: 'ok',
+        search_settled: true,
         entries: matches.map(item => ({
           provider_file_id: String(item.fs_id || ''),
           path: String(item.path || ''),
@@ -252,7 +289,15 @@ _PRIVATE_SEARCH_SCRIPT = r"""(async () => {
     }
     await new Promise(resolve => setTimeout(resolve, 200));
   }
-  return {status: 'private_search_timeout', entries: []};
+  return {
+    status: 'private_search_timeout',
+    entries: [],
+    search_active: lastSearchActive,
+    search_value: lastSearchValue,
+    search_heading_seen: lastHeadingSeen,
+    item_count: lastItemCount,
+    stable_polls: stablePolls
+  };
 })()"""
 
 
@@ -489,8 +534,60 @@ _TRANSFER_SCRIPT = r"""(async () => {
       triggered: false
     };
   }
-  confirms[0].click();
-  return {status: 'cloud_transfer_triggered', triggered: true};
+  const beforeLines = new Set(
+    String(document.body?.innerText || '')
+      .split(/\n+/)
+      .map(value => value.replace(/\s+/g, ' ').trim())
+      .filter(Boolean)
+  );
+  window.__xiaocaoLvTransferConfirmation = {
+    beforeLines: [...beforeLines],
+    preparedAt: Date.now()
+  };
+  confirms[0].setAttribute('data-xiaocao-lv-confirm', 'ready');
+  return {
+    status: 'save_confirmation_ready',
+    confirmation_selector: '[data-xiaocao-lv-confirm="ready"]',
+    triggered: false,
+    provider_outcome: 'unobserved'
+  };
+})()"""
+
+
+_TRANSFER_OUTCOME_SCRIPT = r"""(async () => {
+  const checkpoint = window.__xiaocaoLvTransferConfirmation || {};
+  const beforeLines = new Set(checkpoint.beforeLines || []);
+  const outcomeDeadline = Date.now() + 10000;
+  while (Date.now() < outcomeDeadline) {
+    const newText = String(document.body?.innerText || '')
+      .split(/\n+/)
+      .map(value => value.replace(/\s+/g, ' ').trim())
+      .filter(value => value && !beforeLines.has(value))
+      .join('\n');
+    if (
+      /容量不足|空间不足|转存失败|保存失败|文件过大|已达.{0,8}上限|操作失败|禁止转存/
+        .test(newText)
+    ) {
+      return {
+        status: 'cloud_transfer_rejected',
+        triggered: true,
+        provider_outcome: 'rejected'
+      };
+    }
+    if (/保存成功|转存成功|保存完成|已保存到|正在转存/.test(newText)) {
+      return {
+        status: 'cloud_transfer_accepted',
+        triggered: true,
+        provider_outcome: 'accepted'
+      };
+    }
+    await new Promise(resolve => setTimeout(resolve, 200));
+  }
+  return {
+    status: 'cloud_transfer_triggered',
+    triggered: true,
+    provider_outcome: 'unobserved'
+  };
 })()"""
 
 
@@ -2019,6 +2116,37 @@ class SubscriptionVideoService:
             },
         )
 
+    def _record_transfer_blocker(
+        self,
+        receipt_name: str,
+        claim: dict[str, Any],
+        *,
+        blocker_key: str,
+        failure_reason: str,
+        reconciliation_status: str,
+    ) -> dict[str, Any]:
+        if (
+            claim.get("status") == "blocked"
+            and claim.get("blocker_key") == blocker_key
+        ):
+            return claim
+        blocked = {
+            **claim,
+            "event": "lv_cloud_transfer_blocked",
+            "status": "blocked",
+            "stage": "cloud_transfer_confirmation",
+            "pending": False,
+            "side_effect_uncertain": False,
+            "user_action_required": True,
+            "blocker_key": blocker_key,
+            "failure_reason": failure_reason,
+            "reconciliation_status": reconciliation_status,
+            "blocked_at": self._time().isoformat(timespec="seconds"),
+        }
+        _atomic_write_json(self._claim_path(receipt_name), blocked)
+        _append_jsonl(self.events_path, blocked)
+        return blocked
+
     def _direct_private_entries(
         self,
         *,
@@ -2060,10 +2188,16 @@ class SubscriptionVideoService:
         )
         if (
             payload.get("status") != "ok"
+            or payload.get("search_settled") is not True
             or not isinstance(payload.get("entries"), list)
         ):
             raise EnrichmentError(
-                f"private Netdisk search failed: {payload.get('status')}"
+                "private Netdisk search failed: "
+                f"{payload.get('status')} "
+                f"(active={payload.get('search_active')}, "
+                f"heading={payload.get('search_heading_seen')}, "
+                f"items={payload.get('item_count')}, "
+                f"stable_polls={payload.get('stable_polls')})"
             )
         return payload["entries"]
 
@@ -2259,11 +2393,12 @@ class SubscriptionVideoService:
                 "large_payload_local_bytes": 0,
             },
         )
-        if (
+        reconciled_absent = False
+        if claim.get("triggered_at") or (
             claim.get("status") == "failed_pretrigger"
             and claim.get("reason") == "save_dialog_missing"
         ):
-            root_matches = [
+            exact_matches = [
                 row
                 for row in self._search_private_exact(
                     session=private_session,
@@ -2271,18 +2406,17 @@ class SubscriptionVideoService:
                     target_name=item["name"],
                 )
                 if (
-                    row.get("path") == f"/{item['name']}"
-                    and row.get("name") == item["name"]
+                    row.get("name") == item["name"]
                     and int(row.get("size") or 0) == int(item["size"])
                 )
             ]
-            if len(root_matches) > 1:
+            if len(exact_matches) > 1:
                 raise EnrichmentError(
-                    "default-root Lv cloud transfer is ambiguous"
+                    "unexpected-path Lv cloud transfer is ambiguous"
                 )
-            if len(root_matches) == 1:
+            if len(exact_matches) == 1:
                 target = self._normalize(
-                    root_matches[0],
+                    exact_matches[0],
                     source=LV_SOURCE,
                     author=LV_AUTHOR,
                 )
@@ -2300,7 +2434,12 @@ class SubscriptionVideoService:
                     "target_size": target["size"],
                     "target_modified_at": target["modified_at"],
                     "large_payload_local_bytes": 0,
-                    "reconciled_default_root_save": True,
+                    "reconciled_default_root_save": (
+                        target["path"] == f"/{item['name']}"
+                    ),
+                    "reconciled_unexpected_path_save": (
+                        target["path"] != target_path
+                    ),
                     "completed_at": self._time().isoformat(
                         timespec="seconds"
                     ),
@@ -2308,8 +2447,109 @@ class SubscriptionVideoService:
                 _atomic_write_json(receipt_path, reconciled)
                 _append_jsonl(self.events_path, reconciled)
                 return reconciled
+            reconciled_absent = True
         if claim.get("triggered_at"):
-            return {**claim, "pending": True, "side_effect_uncertain": True}
+            try:
+                triggered_at = datetime.fromisoformat(
+                    str(claim["triggered_at"])
+                )
+            except (TypeError, ValueError) as exc:
+                raise EnrichmentError(
+                    "Lv cloud transfer claim has invalid triggered_at"
+                ) from exc
+            now = self._time()
+            retry_not_before = triggered_at + LV_TRANSFER_RETRY_DELAY
+            trigger_attempt = int(claim.get("trigger_attempt") or 1)
+            if claim.get("provider_trigger_status") == "cloud_transfer_rejected":
+                self._record_transfer_blocker(
+                    receipt_name,
+                    claim,
+                    blocker_key="lv-cloud-transfer-provider-rejected",
+                    failure_reason=(
+                        "provider rejected the confirmed cloud transfer"
+                    ),
+                    reconciliation_status="provider_rejected",
+                )
+                raise EnrichmentError(
+                    "Lv cloud transfer was rejected by provider"
+                )
+            if now < retry_not_before:
+                waiting = {
+                    **claim,
+                    "status": "waiting_cloud_transfer_receipt",
+                    "stage": "cloud_transfer_confirmation",
+                    "pending": True,
+                    "side_effect_uncertain": True,
+                    "trigger_attempt": trigger_attempt,
+                    "next_poll_not_before": retry_not_before.isoformat(
+                        timespec="seconds"
+                    ),
+                    "reconciliation_status": (
+                        "exact_private_copy_absent"
+                        if reconciled_absent
+                        else "pending_exact_reconciliation"
+                    ),
+                }
+                _atomic_write_json(self._claim_path(receipt_name), waiting)
+                return waiting
+            if not reconciled_absent:
+                return {
+                    **claim,
+                    "status": "waiting_cloud_transfer_reconciliation",
+                    "stage": "cloud_transfer_confirmation",
+                    "pending": True,
+                    "side_effect_uncertain": True,
+                    "trigger_attempt": trigger_attempt,
+                }
+            if trigger_attempt >= LV_TRANSFER_MAX_TRIGGER_ATTEMPTS:
+                self._record_transfer_blocker(
+                    receipt_name,
+                    claim,
+                    blocker_key="lv-cloud-transfer-not-materialized",
+                    failure_reason=(
+                        "two confirmed transfer attempts produced no exact "
+                        "private copy"
+                    ),
+                    reconciliation_status=(
+                        "exact_private_copy_absent_after_bounded_retry"
+                    ),
+                )
+                raise EnrichmentError(
+                    "Lv cloud transfer did not materialize after bounded "
+                    "exact reconciliation"
+                )
+            retry_claimed_at = now.isoformat(timespec="microseconds")
+            retry_claim = {
+                **claim,
+                "event": "lv_cloud_transfer_recovery_claimed",
+                "status": "claimed",
+                "claim_id": _sha256_text(
+                    f"{receipt_name}\n{retry_claimed_at}\n"
+                    f"{claim['claim_id']}\n{trigger_attempt + 1}"
+                ),
+                "claimed_at": retry_claimed_at,
+                "retry_of": claim["claim_id"],
+                "trigger_attempt": trigger_attempt + 1,
+                "prior_triggered_at": claim["triggered_at"],
+                "reconciled_absent_at": now.isoformat(timespec="seconds"),
+                "reconciliation_basis": (
+                    "intended_directory_and_settled_private_exact_search"
+                ),
+            }
+            for field in (
+                "triggered_at",
+                "next_poll_not_before",
+                "reconciliation_status",
+                "side_effect_uncertain",
+                "pending",
+            ):
+                retry_claim.pop(field, None)
+            _atomic_write_json(
+                self._claim_path(receipt_name),
+                retry_claim,
+            )
+            _append_jsonl(self.events_path, retry_claim)
+            claim = retry_claim
         if claim.get("status") == "failed_pretrigger":
             self._claim_path(receipt_name).unlink()
             claim = self._write_claim(
@@ -2357,6 +2597,76 @@ class SubscriptionVideoService:
             profile=profile,
             timeout_seconds=60,
         )
+        action_claim = claim
+        if result.get("status") == "save_confirmation_ready":
+            selector = str(result.get("confirmation_selector") or "")
+            expected_selector = (
+                '[data-xiaocao-lv-confirm="ready"]'
+            )
+            if selector != expected_selector:
+                self._record_pretrigger_failure(
+                    receipt_name,
+                    claim,
+                    "save_confirmation_selector_invalid",
+                )
+                raise EnrichmentError(
+                    "Lv cloud transfer confirmation selector is invalid"
+                )
+            action_claim = {
+                **claim,
+                "status": "native_click_claimed",
+                "stage": "cloud_transfer_confirmation",
+                "trigger_attempt": int(
+                    claim.get("trigger_attempt") or 1
+                ),
+                "provider_trigger_status": "native_click_claimed",
+                "provider_outcome": "unobserved",
+                "native_click_selector": selector,
+                "triggered_at": self._time().isoformat(
+                    timespec="microseconds"
+                ),
+            }
+            _atomic_write_json(
+                self._claim_path(receipt_name),
+                action_claim,
+            )
+            _append_jsonl(
+                self.events_path,
+                {
+                    **action_claim,
+                    "event": "lv_cloud_transfer_native_click_claimed",
+                },
+            )
+            click_result = self._opencli_json(
+                lv_session,
+                "click",
+                selector,
+                profile=profile,
+                timeout_seconds=30,
+            )
+            if (
+                click_result.get("clicked") is not True
+                or click_result.get("matches_n") != 1
+            ):
+                _append_jsonl(
+                    self.events_path,
+                    {
+                        **action_claim,
+                        "event": (
+                            "lv_cloud_transfer_native_click_uncertain"
+                        ),
+                    },
+                )
+                raise EnrichmentError(
+                    "Lv cloud transfer native click outcome is uncertain"
+                )
+            result = self._opencli_json(
+                lv_session,
+                "eval",
+                _TRANSFER_OUTCOME_SCRIPT,
+                profile=profile,
+                timeout_seconds=30,
+            )
         if result.get("triggered") is not True:
             self._record_pretrigger_failure(
                 receipt_name,
@@ -2367,9 +2677,21 @@ class SubscriptionVideoService:
                 f"Lv cloud transfer was not triggered: {result.get('status')}"
             )
         triggered = {
-            **claim,
+            **action_claim,
             "status": "triggered",
-            "triggered_at": self._time().isoformat(timespec="microseconds"),
+            "trigger_attempt": int(
+                action_claim.get("trigger_attempt") or 1
+            ),
+            "provider_trigger_status": str(
+                result.get("status") or "cloud_transfer_triggered"
+            ),
+            "provider_outcome": str(
+                result.get("provider_outcome") or "unobserved"
+            ),
+            "triggered_at": str(
+                action_claim.get("triggered_at")
+                or self._time().isoformat(timespec="microseconds")
+            ),
         }
         _atomic_write_json(self._claim_path(receipt_name), triggered)
         _append_jsonl(
@@ -2386,7 +2708,15 @@ class SubscriptionVideoService:
             )
             if ready.get("status") == "completed":
                 return ready
-        return {**triggered, "pending": True, "side_effect_uncertain": True}
+            if ready.get("next_poll_not_before"):
+                return ready
+        return {
+            **triggered,
+            "status": "waiting_cloud_transfer_receipt",
+            "stage": "cloud_transfer_confirmation",
+            "pending": True,
+            "side_effect_uncertain": True,
+        }
 
     def _enrichment_service(
         self,
@@ -2579,6 +2909,7 @@ class SubscriptionVideoService:
             "event": "subscription_video_analysis_input_required",
             "source": item["source"],
             "author": item["author"],
+            "author_profile": semantic_author_profile(item["author"]),
             "title": (
                 item["episode_title"]
                 if item.get("is_episode") is True

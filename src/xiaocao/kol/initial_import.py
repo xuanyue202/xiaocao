@@ -403,22 +403,52 @@ def _legacy_transcript(
     root: Path,
     distilled_path: Path,
     value: dict[str, Any],
-) -> tuple[Path, str]:
+) -> tuple[str, int]:
     evidence = value.get("evidence")
     if isinstance(evidence, list) and evidence:
-        raw_path = str(evidence[0].get("path") or "")
+        record = evidence[0]
+        raw_path = str(record.get("path") or "")
+        expected = str(record.get("sha256") or "")
+        if not re.fullmatch(r"[0-9a-f]{64}", expected):
+            raise PublicationError(
+                f"reviewed evidence hash is invalid: {distilled_path.name}"
+            )
         path = Path(raw_path).expanduser()
-        if not path.is_file():
-            raise PublicationError(
-                f"reviewed source evidence is missing: {distilled_path.name}"
-            )
-        expected = str(evidence[0].get("sha256") or "")
-        actual = _sha256_file(path)
-        if expected and expected != actual:
-            raise PublicationError(
-                f"reviewed evidence hash changed: {distilled_path.name}"
-            )
-        return path, actual
+        candidates = [path if path.is_absolute() else root / path]
+        parts = path.parts
+        for index in range(len(parts) - 1):
+            if parts[index : index + 2] == ("reference", "experience"):
+                candidates.append(root.joinpath(*parts[index:]))
+                break
+        seen: set[Path] = set()
+        for candidate in candidates:
+            if candidate in seen or not candidate.is_file():
+                continue
+            seen.add(candidate)
+            actual = _sha256_file(candidate)
+            if expected != actual:
+                raise PublicationError(
+                    f"reviewed evidence hash changed: {distilled_path.name}"
+                )
+            declared_size = record.get("size")
+            actual_size = candidate.stat().st_size
+            if (
+                declared_size is not None
+                and (
+                    type(declared_size) is not int
+                    or declared_size != actual_size
+                )
+            ):
+                raise PublicationError(
+                    f"reviewed evidence size changed: {distilled_path.name}"
+                )
+            return actual, actual_size
+        declared_size = record.get("size")
+        if type(declared_size) is int and declared_size > 0:
+            return expected, declared_size
+        raise PublicationError(
+            f"reviewed source evidence is missing: {distilled_path.name}"
+        )
     date_token = str(value.get("date") or "").replace("-", "")
     session = "盘前" if distilled_path.stem.endswith("_morning") else "大师班专场"
     matches = sorted(
@@ -432,7 +462,7 @@ def _legacy_transcript(
         raise PublicationError(
             f"legacy evidence cannot be resolved exactly: {distilled_path.name}"
         )
-    return matches[0], _sha256_file(matches[0])
+    return _sha256_file(matches[0]), matches[0].stat().st_size
 
 
 def _distilled_candidate(root: Path, path: Path) -> dict[str, Any]:
@@ -443,13 +473,14 @@ def _distilled_candidate(root: Path, path: Path) -> dict[str, Any]:
     kol_id = KOL_REGISTRY.get(author)
     if not kol_id:
         raise PublicationError(f"unknown historical KOL: {author}")
-    transcript, evidence_sha256 = _legacy_transcript(root, path, value)
+    evidence_sha256, evidence_size = _legacy_transcript(root, path, value)
     decision_sha256 = _sha256_file(path)
     date = str(value["date"])
     session = "morning" if path.stem.endswith("_morning") else "review"
     adapter = {
         "小草": "xiaocao_legacy_transcript",
         "吕晓彤": "lv_legacy_transcript",
+        "路西法": "lucifer_legacy_transcript",
     }[author]
     source_identity = hashlib.sha256(
         "\0".join((author, date, session, evidence_sha256)).encode()
@@ -475,7 +506,7 @@ def _distilled_candidate(root: Path, path: Path) -> dict[str, Any]:
                 "identity": source_identity,
                 "version": evidence_sha256,
                 "order": 1,
-                "size": transcript.stat().st_size,
+                "size": evidence_size,
                 "evidence_sha256": evidence_sha256,
             }
         ],

@@ -93,6 +93,10 @@ Keep the layers separate:
   complete sentence that preserves the direction, condition, horizon, and
   material boundary supported by the source. This is a publication gate for
   every KOL path, not a cleanup rule tied to one author or keyword.
+- Author identity is reviewed data, never a name-based inference. The current
+  recurring authors 吕晓彤, 路西法, and 小草 are male; refer to each author with
+  `他/他的`, never `她/她的`. Semantic requests must carry the repository author
+  profile, and report publication must fail closed on conflicting pronouns.
 - Maintain each stable KOL as one Agent-owned projection of current complete
   viewpoints plus an archived history timeline. Re-evaluate on every new real
   publication event, when an explicit horizon/trigger/falsifier becomes due,
@@ -200,15 +204,18 @@ return zero new external side effects on rerun before user confirmation.
   `PYTHONPATH=src python3 scripts/kol_lv_subscription.py run --bootstrap-bind --opencli-session xiaocao-lv-subscription`.
   Later runs omit `--bootstrap-bind` and reuse the stable OpenCLI session.
 - The runner completes a full recursive `/share/list` scan before updating the
-  cursor. Within that same process, session, and profile, it reuses the one
-  complete in-memory listing for all pending small items instead of rescanning
-  the share per item; the snapshot never crosses a runner boundary, and every
-  item still validates its exact identity, version, name, size, and browser
-  target. It ignores video payloads, persists a source-version claim before
-  each small text/image browser download, snapshots only the completed browser
-  receipt, bypasses OCR for native UTF-8 text, and runs macOS Vision OCR once
-  for images. A replayed/uncertain download claim may only reconcile the prior
-  download event; it must never retrigger it.
+  cursor. Parent-directory modification times are never a pruning gate because
+  Baidu may leave a parent timestamp stale when a deeper child changes. Scan
+  child directories in small bounded concurrent batches with a per-request
+  timeout, then reuse that one complete in-memory listing within the same
+  process, session, and profile for all pending small items instead of
+  rescanning the share per item; the snapshot never crosses a runner boundary,
+  and every item still validates its exact identity, version, name, size, and
+  browser target. It ignores video payloads, persists a source-version claim
+  before each small text/image browser download, snapshots only the completed
+  browser receipt, bypasses OCR for native UTF-8 text, and runs macOS Vision
+  OCR once for images. A replayed/uncertain download claim may only reconcile
+  the prior download event; it must never retrigger it.
 - When the still-running command emits
   `subscription_analysis_input_required`, reopen the referenced immutable
   evidence and `analysis_request.json`, validate current market and household
@@ -274,6 +281,12 @@ return zero new external side effects on rerun before user confirmation.
   `approve-episode-review` command is retained only for reconciling an already
   claimed historical aggregate and must not be used as a new full-message
   delivery surface.
+- For the latest Lv Xiaotong video goal, discovery, cloud transfer, transcript
+  readiness, and analysis are checkpoints rather than success. Bind the
+  terminal to the exact source identity and publication version. Mark the goal
+  successful only after a complete 灰常亮 report has both its durable publication
+  receipt and stable detail URL; surface that proof through Ticket 07
+  `status`/`audit`.
 - The first scan recursively baselines all history but makes only the latest
   real logical content unit from each source work-eligible. Later scans process
   only a new or changed standalone video or aggregate episode version.
@@ -284,6 +297,21 @@ return zero new external side effects on rerun before user confirmation.
   download the source video locally. Lucifer videos are already private and
   enter enrichment in place. If either provider truly requires large local
   bytes, persist a broadband-worker handoff and stop.
+- For the Lv share-side save, DOM evaluation may select the exact source and
+  destination and mark the one visible `确定` control with a unique selector,
+  but the final provider confirmation must use OpenCLI's native
+  `browser <session> click <selector>` command. Persist the click claim before
+  that command. Never use `element.click()` as confirmation proof; a timeout
+  or ambiguous native-click result is side-effect-uncertain and must enter
+  exact private-copy reconciliation before any retry.
+- A triggered Lv save is unfinished until an exact private copy is observed.
+  Reconcile the intended directory first, then a settled provider search by
+  exact filename and byte size; fuzzy search rows with no exact match are a
+  valid zero-match terminal, not a search timeout. After 30 minutes and a fresh
+  exact zero-match proof, one recovery claim may repeat the same target save.
+  Two reconciled trigger attempts without a copy become the structured
+  `lv-cloud-transfer-not-materialized` user-action blocker. Never wait or
+  retrigger indefinitely.
 - Both sources use Ticket 02's exact-player transcript and `tpl_no=1` note
   contract. Register the cloud metadata version without inventing a payload
   hash, bind the player to the complete path, preserve the complete transcript

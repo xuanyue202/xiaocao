@@ -63,7 +63,37 @@ class DailyError(EnrichmentError):
 
 
 class TransientSourceError(DailyError):
-    """A self-recoverable source failure that must remain operationally silent."""
+    """A self-recoverable source failure with credential-safe diagnostics."""
+
+    def __init__(
+        self,
+        message: str,
+        *,
+        category: str = "source_error",
+        code: str = "source_temporarily_unavailable",
+        stage: str = "source_run",
+    ):
+        self.category = str(category or "").strip()
+        self.code = str(code or "").strip()
+        self.stage = str(stage or "").strip()
+        for token in (self.category, self.code, self.stage):
+            if (
+                not token
+                or len(token) > 64
+                or not token.isascii()
+                or not token[0].islower()
+                or not token.replace("_", "").isalnum()
+            ):
+                raise ValueError("transient source diagnostic token is invalid")
+        super().__init__(message)
+
+    def diagnostic(self) -> dict[str, Any]:
+        return {
+            "category": self.category,
+            "code": self.code,
+            "stage": self.stage,
+            "retryable": True,
+        }
 
 
 class UserActionBlocker(DailyError):
@@ -397,6 +427,7 @@ def _publication_candidate(
         )
     )
     insight = item.get("reader_insight") or {}
+    source_published_at = _utc_iso8601(context.source_published_at)
     report_payload = {
         "report_id": report_id_value,
         "report_kind": "publication_event",
@@ -405,7 +436,7 @@ def _publication_candidate(
         "source": context.source,
         "title": str(item.get("title") or ""),
         "summary": str(publication.get("summary") or ""),
-        "source_published_at": context.source_published_at,
+        "source_published_at": source_published_at,
         "media_types": list(context.media_types),
         "source_parts": [dict(row) for row in context.source_parts],
         "report_format": "markdown",
@@ -428,7 +459,7 @@ def _publication_candidate(
         idempotency_key=stable_claim(
             "put", publication_key, "report", decision_sha
         ),
-        created_at=context.source_published_at,
+        created_at=source_published_at,
         source_binding=source_binding,
         payload=report_payload,
     )
@@ -546,6 +577,10 @@ class DailyPublicationPipeline:
                 "kind": "source_event",
                 "event_id": self.context.source_identity,
                 "author": item.get("author"),
+                "source_binding": {
+                    "source_identity": self.context.source_identity,
+                    "publication_version": self.context.publication_version,
+                },
                 "content_value": content,
                 "gray_report": {"status": "not_created"},
                 "alert": {"status": "not_created"},
@@ -584,6 +619,10 @@ class DailyPublicationPipeline:
                 "kind": "source_event",
                 "event_id": self.context.source_identity,
                 "author": item.get("author"),
+                "source_binding": {
+                    "source_identity": self.context.source_identity,
+                    "publication_version": self.context.publication_version,
+                },
                 "content_value": content,
                 "gray_report": {
                     "status": "published",
@@ -725,6 +764,78 @@ class DailyCoordinator:
         with self._locked():
             return self._events_unlocked()
 
+    @staticmethod
+    def _last_sweep_state(rows: list[dict[str, Any]]) -> dict[str, Any] | None:
+        end = next(
+            (
+                index
+                for index in range(len(rows) - 1, -1, -1)
+                if rows[index].get("event") == "sweep_completed"
+            ),
+            None,
+        )
+        if end is None:
+            return None
+        completed = rows[end]
+        if isinstance(completed.get("source_states"), list):
+            return completed
+        start = next(
+            (
+                index
+                for index in range(end - 1, -1, -1)
+                if rows[index].get("event")
+                in {"sweep_started", "sweep_resumed"}
+            ),
+            0,
+        )
+        attempt = rows[start : end + 1]
+        legacy_failure = {
+            "category": "source_error",
+            "code": "legacy_unclassified_failure",
+            "stage": "source_run",
+            "retryable": True,
+        }
+        failures = {
+            str(row.get("source") or ""): legacy_failure
+            for row in attempt
+            if row.get("event") == "source_retryable_failure"
+        }
+        source_states: list[dict[str, Any]] = []
+        for row in attempt:
+            if row.get("event") != "source_completed":
+                continue
+            result = row.get("result")
+            if not isinstance(result, dict):
+                continue
+            state = {
+                key: value
+                for key, value in {
+                    "name": str(row.get("source") or ""),
+                    "status": result.get("status"),
+                    "retryable": result.get("retryable"),
+                    "user_action_required": result.get("user_action_required"),
+                    "waiting_count": result.get("waiting_count"),
+                    "waiting_items": result.get("waiting_items"),
+                }.items()
+                if value is not None
+            }
+            if state["name"] in failures:
+                state["failure"] = failures[state["name"]]
+            source_states.append(state)
+        if any(row.get("user_action_required") for row in source_states):
+            health = "blocked"
+        elif failures:
+            health = "degraded"
+        elif any(row.get("status") == "waiting" for row in source_states):
+            health = "waiting"
+        else:
+            health = "healthy"
+        return {
+            **completed,
+            "health": health,
+            "source_states": source_states,
+        }
+
     def _append(self, event: str, **fields: Any) -> dict[str, Any]:
         row = {
             "schema_version": 1,
@@ -850,15 +961,17 @@ class DailyCoordinator:
                         "notification_sent": not notified,
                     }
                 except TransientSourceError as exc:
+                    failure = exc.diagnostic()
                     self._append(
                         "source_retryable_failure",
                         slot=slot,
                         source=name,
-                        error_type=type(exc).__name__,
+                        failure=failure,
                     )
                     outcome = {
                         "status": "waiting",
                         "retryable": True,
+                        "failure": failure,
                     }
                 except BaseException as exc:
                     self._append(
@@ -936,34 +1049,71 @@ class DailyCoordinator:
                     result=outcome,
                     coordinator_source_video_bytes=0,
                 )
+            source_states = [
+                {
+                    key: row[key]
+                    for key in (
+                        "name",
+                        "status",
+                        "retryable",
+                        "user_action_required",
+                        "waiting_count",
+                        "waiting_items",
+                        "failure",
+                    )
+                    if key in row
+                }
+                for row in results
+            ]
+            if any(row.get("user_action_required") for row in results):
+                health = "blocked"
+            elif any(row.get("failure") for row in results):
+                health = "degraded"
+            elif any(row.get("status") == "waiting" for row in results):
+                health = "waiting"
+            else:
+                health = "healthy"
             self._append(
                 "sweep_completed",
                 slot=slot,
                 status="completed",
+                health=health,
                 source_count=len(results),
+                source_states=source_states,
                 coordinator_source_video_bytes=0,
             )
-        silent = all(row["status"] in {"no_update", "waiting"} for row in results)
+        silent = (
+            all(row["status"] in {"no_update", "waiting"} for row in results)
+            and not any(row.get("failure") for row in results)
+        )
         return {
             "status": "completed",
             "slot": slot,
+            "health": health,
             "silent": silent,
             "source_results": results,
         }
 
     def status(self) -> dict[str, Any]:
         rows = self.events()
-        completed = [
-            row for row in rows if row.get("event") == "sweep_completed"
-        ]
+        last = self._last_sweep_state(rows)
+        health = str((last or {}).get("health") or "unknown")
         return {
-            "status": "ready",
+            "status": (
+                "ready"
+                if health in {"healthy", "waiting"}
+                else health
+                if last
+                else "ready"
+            ),
             "last_sweep": (
                 {
-                    "slot": completed[-1]["slot"],
-                    "status": completed[-1]["status"],
+                    "slot": last["slot"],
+                    "status": last["status"],
+                    "health": health,
+                    "source_states": last.get("source_states", []),
                 }
-                if completed
+                if last
                 else None
             ),
             "event_count": len(rows),
@@ -971,6 +1121,16 @@ class DailyCoordinator:
 
     def audit(self) -> dict[str, Any]:
         rows = self.events()
+        last = self._last_sweep_state(rows)
+        operational_status = str((last or {}).get("health") or "unknown")
+        latest_failures = [
+            {
+                "source": str(state.get("name") or ""),
+                **state["failure"],
+            }
+            for state in ((last or {}).get("source_states") or [])
+            if isinstance(state, dict) and isinstance(state.get("failure"), dict)
+        ]
         source_bytes = sum(
             int(row.get("coordinator_source_video_bytes") or 0)
             for row in rows
@@ -1006,8 +1166,18 @@ class DailyCoordinator:
                 reminder_count += 1
             if event["book_kol_us"]["status"] == "filled":
                 book_trade_count += 1
+        safety_status = "accepted" if source_bytes == 0 else "failed"
         return {
-            "status": "accepted" if source_bytes == 0 else "failed",
+            "status": (
+                "failed"
+                if safety_status == "failed"
+                else "degraded"
+                if operational_status in {"blocked", "degraded"}
+                else "accepted"
+            ),
+            "safety_status": safety_status,
+            "operational_status": operational_status,
+            "latest_failures": latest_failures,
             "event_count": len(rows),
             "coordinator_source_video_bytes": source_bytes,
             "ledger_head_sha256": rows[-1]["event_id"] if rows else None,

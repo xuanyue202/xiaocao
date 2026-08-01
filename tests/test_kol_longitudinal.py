@@ -95,10 +95,17 @@ def test_lucifer_includes_every_must_surface_view_and_keeps_spacex_current(
     updates = _updates(reviewed_artifact_root)
     lucifer = _candidate_by_author(updates, "路西法")
 
-    assert len(lucifer) == 1
+    assert len(lucifer) == 2
+    current = next(
+        candidate
+        for candidate in lucifer
+        if candidate["metadata"]["source_artifact"].endswith(
+            "lucifer_20260705_claim_gold_v4.json"
+        )
+    )
     viewpoints = {
         record["payload"]["local_thesis_id"]: record["payload"]
-        for record in lucifer[0]["records"]
+        for record in current["records"]
         if record["kind"] == "viewpoint"
     }
     assert len(viewpoints) == 32
@@ -157,7 +164,7 @@ def test_lv_later_views_refine_prior_technology_and_leverage_views(
     assert projection["counts"] == {
         "current": 4,
         "uncertain": 4,
-        "expired": 0,
+        "expired": 4,
         "invalidated": 0,
     }
 

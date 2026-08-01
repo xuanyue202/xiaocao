@@ -48,6 +48,48 @@ def _report(candidate):
     )
 
 
+def test_reviewed_legacy_import_survives_checkout_migration(
+    tmp_path,
+    reviewed_artifact_root,
+):
+    project = tmp_path / "xiaocao"
+    distilled_root = project / "reference/experience/distilled"
+    distilled_root.mkdir(parents=True)
+    source = (
+        ROOT
+        / "reference/experience/distilled"
+        / "2026-07-13_lv_xiaotong_review.json"
+    )
+    distilled = json.loads(source.read_text(encoding="utf-8"))
+    distilled["evidence"][0] = {
+        "path": "/Users/former-user/Downloads/吕晓彤7月13日会员直播.md",
+        "sha256": (
+            "bf77dd2a6ae8dcccc9ac5d037ce5ef7bd2244dca733a357725cd49638184073b"
+        ),
+        "size": 59673,
+    }
+    (distilled_root / source.name).write_text(
+        json.dumps(distilled, ensure_ascii=False),
+        encoding="utf-8",
+    )
+
+    candidates = initial_import_candidates(
+        project,
+        reviewed_artifact_root=reviewed_artifact_root,
+    )
+
+    report = next(
+        _report(candidate)
+        for candidate in candidates
+        if _report(candidate)["payload"]["author"] == "吕晓彤"
+    )
+    assert report["source_binding"]["evidence_sha256"] == (
+        "bf77dd2a6ae8dcccc9ac5d037ce5ef7bd2244dca733a357725cd49638184073b"
+    )
+    assert report["payload"]["source_parts"][0]["size"] == 59673
+    assert "/Users/" not in json.dumps(report, ensure_ascii=False)
+
+
 def test_initial_import_has_one_safe_report_per_reviewed_publication_event(
     reviewed_artifact_root,
 ):
@@ -100,8 +142,24 @@ def test_superseded_lucifer_fragments_are_not_imported_and_spacex_is_prominent(
         if _report(row)["payload"]["kol_id"] == "kol-lucifer"
     ]
 
-    assert len(lucifer) == 1
-    payload = _report(lucifer[0])["payload"]
+    assert len(lucifer) == 2
+    historical = next(
+        row
+        for row in lucifer
+        if row["metadata"]["source_artifact"].endswith(
+            "2025-01-09_lucifer_review.json"
+        )
+    )
+    assert len(_report(historical)["payload"]["source_parts"]) == 1
+
+    current = next(
+        row
+        for row in lucifer
+        if row["metadata"]["source_artifact"].endswith(
+            "lucifer_20260705_claim_gold_v4.json"
+        )
+    )
+    payload = _report(current)["payload"]
     assert len(payload["source_parts"]) == 3
     assert "SpaceX" in payload["report_body"]
     assert "7月7日后" in payload["report_body"]

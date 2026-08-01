@@ -7,6 +7,7 @@ import argparse
 import hashlib
 import json
 import sys
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
@@ -60,6 +61,281 @@ def _canonical(value: Any) -> str:
     )
 
 
+def _latest_lv_video_goal(
+    video_output_dir: Path,
+    coordinator_events: list[dict[str, Any]],
+) -> dict[str, Any]:
+    manifest_path = video_output_dir / "manifest.json"
+    if not manifest_path.is_file():
+        return {
+            "status": "not_observed",
+            "success": False,
+            "stage": "discovery",
+        }
+    try:
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return {
+            "status": "invalid_state",
+            "success": False,
+            "stage": "manifest_validation",
+        }
+    items = manifest.get("items")
+    if not isinstance(items, dict):
+        return {
+            "status": "invalid_state",
+            "success": False,
+            "stage": "manifest_validation",
+        }
+    candidates = [
+        item
+        for item in items.values()
+        if isinstance(item, dict)
+        and item.get("author") == "吕晓彤"
+        and item.get("media_type") == "video"
+        and item.get("present") is True
+    ]
+    if not candidates:
+        return {
+            "status": "not_observed",
+            "success": False,
+            "stage": "discovery",
+        }
+    latest = max(
+        candidates,
+        key=lambda item: (
+            int(item.get("modified_at") or 0),
+            str(item.get("version_first_seen_at") or ""),
+            str(item.get("identity") or ""),
+        ),
+    )
+    identity = str(latest.get("identity") or "")
+    version = str(latest.get("version_key") or "")
+    goal: dict[str, Any] = {
+        "status": "pending",
+        "success": False,
+        "stage": "discovery",
+        "identity": identity,
+        "version_key": version,
+        "name": str(latest.get("name") or ""),
+        "modified_at": int(latest.get("modified_at") or 0),
+    }
+    for row in reversed(coordinator_events):
+        if row.get("event") != "source_completed":
+            continue
+        for event in reversed((row.get("result") or {}).get("events") or []):
+            if not isinstance(event, dict) or event.get("kind") != "source_event":
+                continue
+            binding = event.get("source_binding") or {}
+            if (
+                str(binding.get("source_identity") or event.get("event_id") or "")
+                != identity
+                or str(binding.get("publication_version") or "") != version
+            ):
+                continue
+            report = event.get("gray_report") or {}
+            if (
+                report.get("status") == "published"
+                and str(report.get("receipt") or "").strip()
+                and str(report.get("detail_url") or "").strip()
+            ):
+                return {
+                    **goal,
+                    "status": "succeeded",
+                    "success": True,
+                    "stage": "report_published",
+                    "analysis_status": "completed",
+                    "report_status": "published",
+                    "report_receipt": str(report["receipt"]),
+                    "report_url": str(report["detail_url"]),
+                    "coordinator_slot": str(row.get("slot") or ""),
+                }
+            return {
+                **goal,
+                "status": "incomplete",
+                "stage": "report_publication",
+                "analysis_status": "completed",
+                "report_status": str(report.get("status") or "missing"),
+            }
+    decision_result_value = str(
+        latest.get("decision_result_path") or ""
+    ).strip()
+    if decision_result_value:
+        decision_result_path = Path(decision_result_value).expanduser()
+        try:
+            decision_result_bytes = decision_result_path.read_bytes()
+            expected_result_sha256 = str(
+                latest.get("decision_result_sha256") or ""
+            )
+            if (
+                not expected_result_sha256
+                or hashlib.sha256(decision_result_bytes).hexdigest()
+                != expected_result_sha256
+            ):
+                raise ValueError("decision result hash mismatch")
+            decision_result = json.loads(
+                decision_result_bytes.decode("utf-8")
+            )
+            terminal = decision_result["items"][0]["daily_terminal"]
+            binding = terminal["source_binding"]
+            report = terminal["gray_report"]
+        except (
+            OSError,
+            UnicodeDecodeError,
+            json.JSONDecodeError,
+            KeyError,
+            IndexError,
+            TypeError,
+            ValueError,
+        ):
+            return {
+                **goal,
+                "status": "invalid_state",
+                "stage": "decision_result_validation",
+            }
+        if (
+            terminal.get("kind") == "source_event"
+            and str(binding.get("source_identity") or "") == identity
+            and str(binding.get("publication_version") or "") == version
+            and report.get("status") == "published"
+            and str(report.get("receipt") or "").strip()
+            and str(report.get("detail_url") or "").strip()
+        ):
+            return {
+                **goal,
+                "status": "succeeded",
+                "success": True,
+                "stage": "report_published",
+                "analysis_status": "completed",
+                "report_status": "published",
+                "report_receipt": str(report["receipt"]),
+                "report_url": str(report["detail_url"]),
+                "coordinator_slot": "recovered_from_decision_result",
+            }
+        return {
+            **goal,
+            "status": "incomplete",
+            "stage": "report_publication",
+            "analysis_status": "completed",
+            "report_status": str(report.get("status") or "missing"),
+        }
+    if str(latest.get("enrichment_job_id") or "").strip():
+        return {
+            **goal,
+            "status": "processing",
+            "stage": "cloud_enrichment",
+        }
+    receipt_path = (
+        video_output_dir / "receipts" / f"lv_transfer_{version}.json"
+    )
+    if receipt_path.is_file():
+        try:
+            receipt = json.loads(receipt_path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            return {
+                **goal,
+                "status": "invalid_state",
+                "stage": "cloud_transfer_receipt_validation",
+            }
+        if (
+            receipt.get("status") == "completed"
+            and str(receipt.get("source_identity") or "") == identity
+            and str(receipt.get("source_version_key") or "") == version
+        ):
+            return {
+                **goal,
+                "status": "processing",
+                "stage": "cloud_enrichment_registration",
+                "transfer_status": "completed",
+                "target_path": str(receipt.get("target_path") or ""),
+                "target_size": int(receipt.get("target_size") or 0),
+            }
+        return {
+            **goal,
+            "status": "invalid_state",
+            "stage": "cloud_transfer_receipt_validation",
+        }
+    claim_path = video_output_dir / "claims" / f"lv_transfer_{version}.json"
+    if claim_path.is_file():
+        try:
+            claim = json.loads(claim_path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            return {
+                **goal,
+                "status": "invalid_state",
+                "stage": "cloud_transfer_claim_validation",
+            }
+        claim_status = str(claim.get("status") or "")
+        if str(claim.get("source_identity") or "") != identity:
+            return {
+                **goal,
+                "status": "invalid_state",
+                "stage": "cloud_transfer_claim_validation",
+            }
+        if str(claim.get("source_version_key") or "") != version:
+            return {
+                **goal,
+                "status": "invalid_state",
+                "stage": "cloud_transfer_claim_validation",
+            }
+        if claim_status == "blocked":
+            return {
+                **goal,
+                "status": "blocked",
+                "stage": str(
+                    claim.get("stage") or "cloud_transfer_confirmation"
+                ),
+                "transfer_status": claim_status,
+                "trigger_attempt": int(claim.get("trigger_attempt") or 1),
+                "user_action_required": True,
+                "blocker_key": str(claim.get("blocker_key") or ""),
+                "failure_reason": str(claim.get("failure_reason") or ""),
+                "reconciliation_status": str(
+                    claim.get("reconciliation_status") or ""
+                ),
+                **(
+                    {"blocked_at": str(claim["blocked_at"])}
+                    if claim.get("blocked_at")
+                    else {}
+                ),
+            }
+        return {
+            **goal,
+            "status": "processing",
+            "stage": "cloud_transfer_confirmation",
+            "transfer_status": claim_status,
+            "trigger_attempt": int(claim.get("trigger_attempt") or 1),
+            **(
+                {"triggered_at": str(claim["triggered_at"])}
+                if claim.get("triggered_at")
+                else {}
+            ),
+            **(
+                {
+                    "next_poll_not_before": str(
+                        claim["next_poll_not_before"]
+                    )
+                }
+                if claim.get("next_poll_not_before")
+                else {}
+            ),
+            **(
+                {
+                    "reconciliation_status": str(
+                        claim["reconciliation_status"]
+                    )
+                }
+                if claim.get("reconciliation_status")
+                else {}
+            ),
+        }
+    return {
+        **goal,
+        "status": "pending",
+        "stage": "source_acquisition",
+    }
+
+
 def _read_agent_path(request: dict[str, Any], field: str) -> Path:
     print(json.dumps(request, ensure_ascii=False, sort_keys=True), flush=True)
     response = sys.stdin.readline()
@@ -78,6 +354,69 @@ def _read_agent_path(request: dict[str, Any], field: str) -> Path:
     if not path.is_file():
         raise DailyError(f"daily runner {field} is missing")
     return path
+
+
+def _video_publication_context(
+    item: dict[str, Any],
+    state: dict[str, Any],
+) -> DailyPublicationContext:
+    """Bind a video decision to normalized request metadata.
+
+    The provider manifest stores ``modified_at`` as epoch seconds, while the
+    analysis request already exposes a timezone-aware publication time.  The
+    request value is authoritative for publication; the epoch is only a
+    compatibility fallback.
+    """
+
+    published_at = str(
+        state.get("publication_time")
+        or item.get("published_at")
+        or ""
+    ).strip()
+    if not published_at:
+        try:
+            published_at = datetime.fromtimestamp(
+                int(item["modified_at"]),
+                tz=timezone.utc,
+            ).isoformat(timespec="seconds")
+        except (KeyError, TypeError, ValueError, OSError) as exc:
+            raise DailyError(
+                "subscription video lacks a publication timestamp"
+            ) from exc
+    evidence_sha256 = str(
+        state.get("transcript_sha256")
+        or state.get("episode_evidence_sha256")
+        or state.get("evidence_sha256")
+        or ""
+    )
+    if len(evidence_sha256) != 64:
+        raise DailyError(
+            "subscription video request lacks an evidence hash"
+        )
+    parts = item.get("parts") or [item]
+    return DailyPublicationContext(
+        adapter="subscription_video",
+        source_identity=str(item["identity"]),
+        publication_version=str(item["version_key"]),
+        kol_id=(
+            "kol-lucifer"
+            if item["author"] == "路西法"
+            else "kol-lv-xiaotong"
+        ),
+        source=str(item["source"]),
+        source_published_at=published_at,
+        media_types=("video",),
+        source_parts=tuple(
+            {
+                "identity": str(part["identity"]),
+                "version": str(part["version_key"]),
+                "order": index,
+                "size": int(part.get("size") or 0),
+                "evidence_sha256": evidence_sha256,
+            }
+            for index, part in enumerate(parts, start=1)
+        ),
+    )
 
 
 def _sender(title: str, body: str) -> dict[str, str]:
@@ -123,7 +462,35 @@ def _classified_source(name: str, runner):
                     f"{name}-captcha",
                     "请在已授权百度网盘页面完成验证码，然后等待下一小时自动恢复。",
                 ) from exc
-            raise TransientSourceError(message) from exc
+            if message == (
+                "Lv cloud transfer did not materialize after bounded "
+                "exact reconciliation"
+            ):
+                raise UserActionBlocker(
+                    "lv-cloud-transfer-not-materialized",
+                    "百度网盘已两次确认转存，但目标目录和全局精确搜索均无"
+                    "对应文件。请检查网盘容量或转存限制，并手动把最新吕晓彤"
+                    "视频保存到 /课程/自己的课/吕晓彤；完成后保持 Chrome "
+                    "登录，下一小时会只读对账并继续解析。",
+                ) from exc
+            if message == "Lv cloud transfer was rejected by provider":
+                raise UserActionBlocker(
+                    "lv-cloud-transfer-provider-rejected",
+                    "百度网盘明确拒绝了吕晓彤视频转存。请检查网盘容量、"
+                    "会员文件大小或转存上限，处理后手动把最新视频保存到 "
+                    "/课程/自己的课/吕晓彤；保持 Chrome 登录后，下一小时"
+                    "会只读对账并继续解析。",
+                ) from exc
+            raise TransientSourceError(
+                message,
+                category=str(
+                    getattr(exc, "diagnostic_category", "source_error")
+                ),
+                code=str(
+                    getattr(exc, "diagnostic_code", "source_temporarily_unavailable")
+                ),
+                stage=str(getattr(exc, "diagnostic_stage", "source_run")),
+            ) from exc
 
     return run
 
@@ -254,6 +621,7 @@ class DailyRuntime:
             return {"status": "no_update"}
         events = []
         waiting = 0
+        waiting_items = []
         for item in pending:
             state = service.advance_item(
                 item,
@@ -264,6 +632,33 @@ class DailyRuntime:
             )
             if state.get("event") != "subscription_video_analysis_input_required":
                 waiting += 1
+                waiting_items.append(
+                    {
+                        key: value
+                        for key, value in {
+                            "identity": str(item.get("identity") or ""),
+                            "version_key": str(
+                                item.get("version_key") or ""
+                            ),
+                            "name": str(item.get("name") or ""),
+                            "author": str(item.get("author") or ""),
+                            "status": str(state.get("status") or "waiting"),
+                            "stage": str(
+                                state.get("stage")
+                                or "cloud_enrichment"
+                            ),
+                            "trigger_attempt": state.get("trigger_attempt"),
+                            "next_poll_not_before": state.get(
+                                "next_poll_not_before"
+                            ),
+                            "reconciliation_status": state.get(
+                                "reconciliation_status"
+                            ),
+                            "failure_reason": state.get("failure_reason"),
+                        }.items()
+                        if value not in (None, "")
+                    }
+                )
                 continue
             bundle_path = _read_agent_path(
                 {
@@ -275,37 +670,7 @@ class DailyRuntime:
                 },
                 "bundle_path",
             )
-            parts = item.get("parts") or [item]
-            context = DailyPublicationContext(
-                adapter="subscription_video",
-                source_identity=str(item["identity"]),
-                publication_version=str(item["version_key"]),
-                kol_id=(
-                    "kol-lucifer"
-                    if item["author"] == "路西法"
-                    else "kol-lv-xiaotong"
-                ),
-                source=str(item["source"]),
-                source_published_at=str(
-                    item.get("published_at")
-                    or item.get("modified_at")
-                    or state.get("updated_at")
-                ),
-                media_types=("video",),
-                source_parts=tuple(
-                    {
-                        "identity": str(part["identity"]),
-                        "version": str(part["version_key"]),
-                        "order": index,
-                        "size": int(part.get("size") or 0),
-                        "evidence_sha256": str(
-                            state.get("transcript_sha256")
-                            or state.get("episode_evidence_sha256")
-                        ),
-                    }
-                    for index, part in enumerate(parts, start=1)
-                ),
-            )
+            context = _video_publication_context(item, state)
             decision = service.decide_item(
                 item,
                 bundle_path=bundle_path,
@@ -315,8 +680,17 @@ class DailyRuntime:
             )
             events.append(self._terminal(decision["decision_result_path"]))
         if events:
-            return {"status": "completed", "events": events}
-        return {"status": "waiting", "waiting_count": waiting}
+            return {
+                "status": "completed",
+                "events": events,
+                "waiting_count": waiting,
+                "waiting_items": waiting_items,
+            }
+        return {
+            "status": "waiting",
+            "waiting_count": waiting,
+            "waiting_items": waiting_items,
+        }
 
     @staticmethod
     def _handoff(path: Path) -> dict[str, Any]:
@@ -511,10 +885,20 @@ def main() -> int:
     args = parser.parse_args()
     service = DailyCoordinator(args.output_dir)
     if args.command == "status":
-        _print(service.status())
+        value = service.status()
+        value["latest_lv_video_goal"] = _latest_lv_video_goal(
+            args.video_output_dir,
+            service.events(),
+        )
+        _print(value)
         return 0
     if args.command == "audit":
-        _print(service.audit())
+        value = service.audit()
+        value["latest_lv_video_goal"] = _latest_lv_video_goal(
+            args.video_output_dir,
+            service.events(),
+        )
+        _print(value)
         return 0
     runtime = DailyRuntime(args)
     result = service.run(
@@ -547,6 +931,10 @@ def main() -> int:
             },
         ],
         blocker_sender=_sender,
+    )
+    result["latest_lv_video_goal"] = _latest_lv_video_goal(
+        args.video_output_dir,
+        service.events(),
     )
     if not result.get("silent"):
         _print(result)

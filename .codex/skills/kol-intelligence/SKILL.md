@@ -43,6 +43,12 @@ to complete the current-decision and reusable-knowledge branches.
   asset-name lists, or a prior summary as an importance or completeness gate.
 - Publish a promoted event to 灰常亮 before any eligible reminder or Book
   effect. A `low_density` item creates neither a report nor a reminder.
+- For the latest Lv Xiaotong video, discovery, cloud transfer, transcript
+  readiness, and completed analysis are checkpoints, not success. Keep the
+  exact identity/version eligible across hourly sweeps until `status` proves a
+  complete 灰常亮 publication receipt and stable detail URL. Every unfinished
+  state must expose its concrete stage, retry boundary, and safe next action;
+  a generic `waiting_count` is not an acceptable terminal explanation.
 - Reconcile every external claim and receipt before retry. Corrections,
   maintenance, restarts, and replays never resend a prior reminder or paper
   action.

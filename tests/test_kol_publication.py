@@ -106,6 +106,30 @@ def test_cross_language_contract_ids_content_and_manifest_are_frozen():
     assert manifest_sha256(request["records"]) == INITIAL_MANIFEST_SHA256
 
 
+@pytest.mark.parametrize("author", ["吕晓彤", "路西法", "小草"])
+def test_male_kol_report_rejects_feminine_author_pronoun(author):
+    payload = dict(_initial_report()["payload"])
+    payload.update(
+        {
+            "author": author,
+            "summary": f"{author}认为科技仍有机会，她会等待条件确认。",
+        }
+    )
+
+    with pytest.raises(
+        Exception,
+        match=f"{author}.*他.*她",
+    ):
+        build_record(
+            kind="report",
+            record_id_value=REPORT_ID,
+            idempotency_key="put-wrong-author-pronoun",
+            created_at="2026-07-26T08:00:00.000Z",
+            source_binding=_initial_report()["source_binding"],
+            payload=payload,
+        )
+
+
 def test_cross_language_longitudinal_ids_are_frozen():
     first_refs = [
         {
@@ -533,3 +557,65 @@ def test_prepared_artifact_cannot_change_under_same_event_identity(tmp_path):
     )
     with pytest.raises(Exception, match="stable key"):
         ledger.prepare("event-1", [changed], changed_request)
+
+
+def test_invalid_argument_before_any_receipt_can_reprepare_same_source_binding(
+    tmp_path,
+):
+    report = _initial_report()
+    request = build_publish_request(
+        [report],
+        idempotency_key="publish-contract-v1",
+        reason="首次发布",
+    )
+    ledger = PublicationLedger(tmp_path)
+    ledger.prepare("event-repair", [report], request)
+    record_key = ledger._record_key(report)
+    ledger._append(
+        "record_call_claimed",
+        publication_key="event-repair",
+        record_key=record_key,
+        idempotency_key=report["idempotency_key"],
+        request=report,
+    )
+    ledger._append(
+        "record_call_uncertain",
+        publication_key="event-repair",
+        record_key=record_key,
+        idempotency_key=report["idempotency_key"],
+        error_type="LiangHuiMcpError",
+        error_code="INVALID_ARGUMENT",
+    )
+
+    corrected = json.loads(json.dumps(report))
+    corrected["created_at"] = "2026-07-26T00:00:00Z"
+    corrected["payload"]["source_published_at"] = "2026-07-26T00:00:00Z"
+    corrected["content_sha256"] = canonical_sha256(
+        {
+            key: corrected[key]
+            for key in (
+                "schema_version",
+                "kind",
+                "record_id",
+                "created_at",
+                "source_binding",
+                "payload",
+            )
+        }
+    )
+    corrected_request = build_publish_request(
+        [corrected],
+        idempotency_key="publish-contract-v1",
+        reason="首次发布",
+    )
+
+    ledger.prepare("event-repair", [corrected], corrected_request)
+
+    state = ledger.status("event-repair")
+    assert state["artifact"]["records"] == [corrected]
+    assert len([
+        row
+        for row in ledger.events()
+        if row["event"] == "publication_prepared"
+        and row["publication_key"] == "event-repair"
+    ]) == 2

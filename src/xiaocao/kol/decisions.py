@@ -10,6 +10,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable
 
+from .author_profiles import AuthorIdentityError, validate_author_pronouns
 from ._shared import (
     DecisionError,
     TranscriptDocument,
@@ -26,6 +27,7 @@ from .delivery import WechatDelivery
 from .rendering import (
     reader_cross_source as _reader_cross_source,
     reader_market_facts as _reader_market_facts,
+    reader_message_title,
     render_household_item_message,
     render_household_message,
 )
@@ -307,6 +309,26 @@ class DecisionPipeline:
                 insight.get("reason") or ""
             ).strip():
                 raise DecisionError("empty reader_insight requires a reason")
+        try:
+            validate_author_pronouns(
+                item["author"],
+                reader_message_title(item),
+                field="household title",
+            )
+            validate_author_pronouns(
+                item["author"],
+                render_household_item_message(item),
+                field="household message",
+            )
+            publication = item.get("publication") or {}
+            for field in ("summary", "remaining_summary", "report_body"):
+                validate_author_pronouns(
+                    item["author"],
+                    publication.get(field),
+                    field=f"publication.{field}",
+                )
+        except AuthorIdentityError as exc:
+            raise DecisionError(str(exc)) from exc
         return document
 
     def _validate_cross_source(self, bundle: dict[str, Any]) -> dict[str, Any]:

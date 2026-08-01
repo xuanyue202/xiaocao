@@ -442,6 +442,28 @@ def test_missing_context_market_data_and_ambiguous_ticker_fail_visibly(tmp_path)
     assert not (tmp_path / "out" / "household_outbox.jsonl").exists()
 
 
+def test_male_kol_reader_briefing_rejects_feminine_author_pronoun(tmp_path):
+    transcript = _write_text(tmp_path / "real.txt", "等待成交量放大再行动")
+    item = _item(transcript, author="吕晓彤")
+    item["reader_briefing"] = {
+        "format": "wecom_narrative_v1",
+        "title": "投资情报｜等待确认",
+        "thesis_order": ["fixture-thesis-1"],
+        "paragraphs": [
+            {
+                "kind": "kol",
+                "thesis_ids": ["fixture-thesis-1"],
+                "text": "她认为应等待成交量放大再行动。",
+            }
+        ],
+    }
+
+    with pytest.raises(DecisionError, match="吕晓彤.*他.*她"):
+        _pipeline(tmp_path / "out").preflight(
+            _bundle(item, household_path=tmp_path / "unused.json")
+        )
+
+
 def test_cross_source_links_are_judgment_not_votes(tmp_path):
     household = _write_household(tmp_path / "household.json")
     items = []

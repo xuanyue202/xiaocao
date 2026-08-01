@@ -20,12 +20,33 @@ PYTHONPATH=src .venv/bin/python scripts/kol_daily.py audit
 ```
 
 Every run exits after one sweep. A 07:00 run drains overnight backlog in
-decision-priority order. No-update and self-recoverable waiting states print
-nothing. There is no invocation from 23:01 through 06:59.
+decision-priority order. A completed scan with no new content and healthy
+asynchronous waiting print nothing. A retryable source failure prints one
+credential-safe diagnostic containing `category`, `code`, and `stage`; this is
+local operational evidence, not an externally visible event. There is no
+invocation from 23:01 through 06:59.
 
 The coordinator may read only lightweight metadata, transcripts, images,
 handoff JSON, and durable receipts. It never reads or downloads source-video
 bytes and never uses Computer Use.
+
+Discovery is not completion for the latest Lv Xiaotong video. `status` and
+`audit` expose `latest_lv_video_goal`; it is successful only when the exact
+latest observed identity and version have a completed analysis terminal plus a
+published 灰常亮 report with both a durable receipt and stable detail URL.
+Download, cloud enrichment, transcript readiness, or analysis alone remain
+pending/incomplete states and must not be reported as success.
+
+An unfinished subscription-video result must retain its item identity,
+version, concrete stage, trigger attempt, reconciliation result, and
+`next_poll_not_before` in the coordinator ledger. A cloud-save claim gets one
+recovery attempt only after a settled exact zero-match proof; two failed
+materializations become the changed structured blocker
+`lv-cloud-transfer-not-materialized`, not another generic waiting state.
+The share dialog's final `确定` action is an OpenCLI native semantic click on
+the uniquely marked control, never a JavaScript `element.click()`. Claim the
+native click first; if its result is ambiguous, reconcile the exact private
+copy before any second attempt.
 
 ## Semantic loading gate
 
@@ -67,7 +88,9 @@ task exists.
 
 The runner reuses the configured Lv Xiaotong share URL/code, watches
 lightweight metadata under `/课程/路西法全套`, and consumes only Xiaocao
-broadband handoffs plus cloud/transcript receipts.
+broadband handoffs plus cloud/transcript receipts. Lv discovery recursively
+reads the share tree and must not infer child-tree freshness from a
+parent-directory modification time.
 
 Put targeted currentness requests in
 `output/live/kol_daily/viewpoint_triggers/*.json`. Supported triggers are a new
@@ -79,5 +102,6 @@ The append-only ledger resumes only unfinished sources within an hour.
 Historical initialization, correction, evaluation maintenance, restart, and
 replay reconcile existing receipts and never resend an earlier reminder or
 paper action. Report only a structured user-action blocker or a completed
-externally visible event. The same blocker stays silent until it changes or
-clears.
+externally visible event. Do not surface a retryable diagnostic as an external
+event, but preserve it in `status`, `audit`, and the append-only ledger. The same
+blocker stays silent until it changes or clears.

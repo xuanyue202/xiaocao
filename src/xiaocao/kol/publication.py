@@ -616,16 +616,60 @@ class PublicationLedger:
         }
         artifact_sha256 = canonical_sha256(artifact)
         with self._locked():
-            prepared = [
+            publication_events = [
                 row
                 for row in self._events_unlocked()
+                if row.get("publication_key") == publication_key
+            ]
+            prepared = [
+                row
+                for row in publication_events
                 if row.get("event") == "publication_prepared"
-                and row.get("publication_key") == publication_key
             ]
             if prepared:
                 if prepared[-1].get("artifact_sha256") != artifact_sha256:
-                    raise PublicationError(
-                        "prepared publication changed under a stable key"
+                    prior_artifact = prepared[-1].get("artifact") or {}
+                    prior_bindings = [
+                        row.get("source_binding")
+                        for row in prior_artifact.get("records") or []
+                    ]
+                    current_bindings = [
+                        row.get("source_binding")
+                        for row in records
+                    ]
+                    latest = publication_events[-1]
+                    recoverable_rejection = (
+                        latest.get("event") == "record_call_uncertain"
+                        and latest.get("error_code") == "INVALID_ARGUMENT"
+                        and not any(
+                            row.get("event")
+                            in {
+                                "record_receipt",
+                                "publication_call_claimed",
+                                "publication_receipt",
+                            }
+                            for row in publication_events
+                        )
+                        and prior_bindings == current_bindings
+                        and prior_artifact.get("metadata")
+                        == artifact.get("metadata")
+                    )
+                    if not recoverable_rejection:
+                        raise PublicationError(
+                            "prepared publication changed under a stable key"
+                        )
+                    self._append(
+                        "publication_prepared",
+                        publication_key=publication_key,
+                        artifact_sha256=artifact_sha256,
+                        artifact=artifact,
+                        supersedes_artifact_sha256=prepared[-1][
+                            "artifact_sha256"
+                        ],
+                        repair_reason=(
+                            "server_rejected_prior_record_as_invalid_argument"
+                        ),
+                        large_payload_local_bytes=0,
                     )
             else:
                 self._append(
@@ -647,7 +691,7 @@ class PublicationLedger:
         prepared = next(
             (
                 row
-                for row in events
+                for row in reversed(events)
                 if row.get("event") == "publication_prepared"
             ),
             None,

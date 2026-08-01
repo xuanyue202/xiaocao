@@ -10,6 +10,8 @@ from __future__ import annotations
 import re
 from typing import Any, Iterable
 
+from .author_profiles import AuthorIdentityError, validate_author_pronouns
+
 
 _CJK_RE = re.compile(r"[\u3400-\u9fff]")
 _MACHINE_TOKEN_RE = re.compile(
@@ -107,6 +109,16 @@ def validate_reader_payload(kind: str, payload: dict[str, Any]) -> None:
     """Validate fields that can be projected directly to a family reader."""
 
     if kind == "report":
+        author = payload.get("author")
+        for field in ("title", "summary", "report_body"):
+            try:
+                validate_author_pronouns(
+                    author,
+                    payload.get(field),
+                    field=f"report.{field}",
+                )
+            except AuthorIdentityError as exc:
+                raise ReaderCopyError(str(exc)) from exc
         _natural_chinese(payload.get("title"), field="report.title")
         _natural_chinese(
             payload.get("summary"),

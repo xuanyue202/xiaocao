@@ -32,6 +32,7 @@ from .claim_coverage import (
     build_claim_extraction_request,
     validate_claim_coverage,
 )
+from .author_profiles import semantic_author_profile
 from .enrichment_types import EnrichmentError
 from .netdisk_enrichment import NetdiskEnrichmentService
 
@@ -957,6 +958,8 @@ class XiaocaoLiveService:
                 return {
                     "event": "xiaocao_live_analysis_input_required",
                     "status": "verified",
+                    "author": "小草",
+                    "author_profile": semantic_author_profile("小草"),
                     "capture_job_id": capture_job_id,
                     "netdisk_job_id": netdisk_job_id,
                     "transcript_path": state["transcript_path"],

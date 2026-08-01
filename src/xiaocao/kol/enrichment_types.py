@@ -2,11 +2,39 @@
 
 from __future__ import annotations
 
+import re
 from typing import Any
 
 
 class EnrichmentError(RuntimeError):
     """An enrichment step could not produce auditable evidence."""
+
+
+_DIAGNOSTIC_TOKEN = re.compile(r"[a-z][a-z0-9_]{0,63}")
+
+
+class EnrichmentDiagnosticError(EnrichmentError):
+    """A source error carrying only credential-safe operational diagnostics."""
+
+    def __init__(
+        self,
+        message: str,
+        *,
+        category: str,
+        code: str,
+        stage: str,
+    ):
+        values = {
+            "category": str(category or "").strip(),
+            "code": str(code or "").strip(),
+            "stage": str(stage or "").strip(),
+        }
+        if any(not _DIAGNOSTIC_TOKEN.fullmatch(value) for value in values.values()):
+            raise ValueError("enrichment diagnostic tokens are invalid")
+        self.diagnostic_category = values["category"]
+        self.diagnostic_code = values["code"]
+        self.diagnostic_stage = values["stage"]
+        super().__init__(message)
 
 
 def validate_decision_process_result(result: Any) -> dict[str, Any]:

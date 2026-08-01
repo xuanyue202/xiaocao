@@ -1,9 +1,16 @@
 from __future__ import annotations
 
+import hashlib
+import json
 from datetime import datetime
 
 import pytest
 
+from scripts.kol_daily import (
+    _classified_source,
+    _latest_lv_video_goal,
+    _video_publication_context,
+)
 from xiaocao.kol.daily import (
     build_triggered_evaluation_candidate,
     DailyCoordinator,
@@ -13,6 +20,10 @@ from xiaocao.kol.daily import (
     TransientSourceError,
     triggered_evaluation_terminal,
     UserActionBlocker,
+)
+from xiaocao.kol.enrichment_types import (
+    EnrichmentDiagnosticError,
+    EnrichmentError,
 )
 from xiaocao.kol.household import LiangHuiMcpError
 from xiaocao.kol.publication import (
@@ -80,7 +91,51 @@ def test_daily_runner_records_one_short_lived_no_update_sweep(tmp_path):
         {"name": "lucifer", "status": "no_update"},
     ]
     assert service.status()["last_sweep"]["status"] == "completed"
+    assert service.status()["last_sweep"]["health"] == "healthy"
+    assert service.status()["last_sweep"]["source_states"] == [
+        {"name": "lv", "status": "no_update"},
+        {"name": "lucifer", "status": "no_update"},
+    ]
     assert service.audit()["coordinator_source_video_bytes"] == 0
+
+
+def test_daily_status_preserves_specific_video_waiting_stage(tmp_path):
+    service = DailyCoordinator(
+        tmp_path / "daily",
+        now=Clock("2026-07-27T10:00:00+08:00"),
+    )
+    waiting_item = {
+        "identity": "latest",
+        "version_key": "version-2",
+        "name": "底层逻辑7月29日.mp4",
+        "author": "吕晓彤",
+        "status": "waiting_cloud_transfer_receipt",
+        "stage": "cloud_transfer_confirmation",
+        "trigger_attempt": 2,
+        "next_poll_not_before": "2026-07-27T10:30:00+08:00",
+        "reconciliation_status": "exact_private_copy_absent",
+    }
+
+    result = service.run([
+        {
+            "name": "subscription_video",
+            "priority": 20,
+            "run": lambda: {
+                "status": "waiting",
+                "waiting_count": 1,
+                "waiting_items": [waiting_item],
+            },
+        }
+    ])
+
+    assert result["health"] == "waiting"
+    assert result["source_results"][0]["waiting_items"] == [waiting_item]
+    assert service.status()["last_sweep"]["source_states"] == [{
+        "name": "subscription_video",
+        "status": "waiting",
+        "waiting_count": 1,
+        "waiting_items": [waiting_item],
+    }]
 
 
 def _low_density_event() -> dict:
@@ -348,9 +403,109 @@ def test_publication_pipeline_publishes_before_book_and_one_link_reminder(
         "https://reader.example/kol/report-first"
     )
     terminal = result["items"][0]["daily_terminal"]
+    assert terminal["source_binding"] == {
+        "source_identity": "live-20260727-am",
+        "publication_version": "transcript-v1",
+    }
     assert terminal["gray_report"]["terminal_order"] == 1
     assert terminal["book_kol_us"]["terminal_order"] == 2
     assert terminal["alert"]["terminal_order"] == 3
+    publication_key = publication_id_for_source(
+        adapter="xiaocao_live",
+        source_identity="live-20260727-am",
+    )
+    prepared = pipeline.ledger.status(publication_key)
+    assert prepared["artifact"]["records"][0]["created_at"] == (
+        "2026-07-27T01:30:00Z"
+    )
+
+
+def test_video_publication_context_uses_request_time_and_evidence_hash():
+    context = _video_publication_context(
+        {
+            "author": "吕晓彤",
+            "identity": "latest-lv-video",
+            "modified_at": 1785318030,
+            "size": 5_217_837_384,
+            "source": "baidu_subscription_share_browser",
+            "version_key": "latest-lv-version",
+        },
+        {
+            "publication_time": "2026-07-29T00:00:00+08:00",
+            "evidence_sha256": "a" * 64,
+        },
+    )
+
+    assert context.source_published_at == "2026-07-29T00:00:00+08:00"
+    assert context.source_parts[0]["evidence_sha256"] == "a" * 64
+
+
+def test_latest_lv_video_closes_only_on_bound_report_publication(tmp_path):
+    video_output = tmp_path / "videos"
+    video_output.mkdir()
+    (video_output / "manifest.json").write_text(
+        json.dumps({
+            "items": {
+                "latest": {
+                    "author": "吕晓彤",
+                    "identity": "latest-lv-video",
+                    "media_type": "video",
+                    "modified_at": 200,
+                    "name": "底层逻辑7月29日.mp4",
+                    "present": True,
+                    "version_key": "latest-lv-version",
+                    "work_eligible": False,
+                },
+            },
+        }),
+        encoding="utf-8",
+    )
+    order: list[str] = []
+    pipeline = DailyPublicationPipeline(
+        _DelegatePipeline(order),
+        ledger=PublicationLedger(tmp_path / "publication"),
+        client=_PublicationClient(order),
+        context=DailyPublicationContext(
+            adapter="subscription_video",
+            source_identity="latest-lv-video",
+            publication_version="latest-lv-version",
+            kol_id="kol-lv-xiaotong",
+            source="吕晓彤订阅",
+            source_published_at="2026-07-29T17:40:30+08:00",
+            media_types=("video",),
+            source_parts=({
+                "identity": "latest-lv-video",
+                "version": "latest-lv-version",
+                "order": 1,
+                "size": 5_217_837_384,
+                "evidence_sha256": "a" * 64,
+            },),
+        ),
+    )
+
+    result = pipeline.process(_publication_bundle())
+    pipeline.deliver_wechat(
+        result,
+        sender=lambda _title, _body: {"wecom": "ok"},
+    )
+    terminal = result["items"][0]["daily_terminal"]
+    goal = _latest_lv_video_goal(
+        video_output,
+        [{
+            "event": "source_completed",
+            "slot": "2026-07-30T12:00+08:00",
+            "result": {"events": [terminal]},
+        }],
+    )
+
+    assert order == ["gray", "book", "alert"]
+    assert goal["status"] == "succeeded"
+    assert goal["success"] is True
+    assert goal["stage"] == "report_published"
+    assert goal["report_receipt"]
+    assert goal["report_url"] == (
+        "https://reader.example/kol/report-first"
+    )
 
 
 def test_interrupted_sweep_resumes_only_unfinished_source(tmp_path):
@@ -442,7 +597,7 @@ def test_user_blocker_notifies_once_until_state_changes(tmp_path):
     assert service.audit()["operational_reminder_count"] == 3
 
 
-def test_transient_source_failure_is_silent_and_does_not_notify(tmp_path):
+def test_transient_source_failure_is_structured_and_does_not_notify(tmp_path):
     service = DailyCoordinator(
         tmp_path / "daily",
         now=Clock("2026-07-27T14:00:00+08:00"),
@@ -453,15 +608,49 @@ def test_transient_source_failure_is_silent_and_does_not_notify(tmp_path):
         [{
             "name": "lucifer",
             "run": lambda: (_ for _ in ()).throw(
-                TransientSourceError("provider temporarily unavailable")
+                TransientSourceError(
+                    "provider temporarily unavailable",
+                    category="timeout",
+                    code="opencli_timeout",
+                    stage="browser_eval",
+                )
             ),
         }],
         blocker_sender=lambda title, body: notices.append((title, body)),
     )
 
-    assert result["silent"] is True
+    assert result["silent"] is False
+    assert result["health"] == "degraded"
+    assert result["source_results"] == [{
+        "name": "lucifer",
+        "status": "waiting",
+        "retryable": True,
+        "failure": {
+            "category": "timeout",
+            "code": "opencli_timeout",
+            "stage": "browser_eval",
+            "retryable": True,
+        },
+    }]
     assert notices == []
-    assert service.audit()["transient_failure_count"] == 1
+    status = service.status()
+    assert status["status"] == "degraded"
+    assert status["last_sweep"]["health"] == "degraded"
+    audit = service.audit()
+    assert audit["status"] == "degraded"
+    assert audit["safety_status"] == "accepted"
+    assert audit["operational_status"] == "degraded"
+    assert audit["latest_failures"] == [{
+        "source": "lucifer",
+        "category": "timeout",
+        "code": "opencli_timeout",
+        "stage": "browser_eval",
+        "retryable": True,
+    }]
+    assert audit["transient_failure_count"] == 1
+    assert "provider temporarily unavailable" not in (
+        service.events_path.read_text(encoding="utf-8")
+    )
 
     calls = 0
 
@@ -472,6 +661,323 @@ def test_transient_source_failure_is_silent_and_does_not_notify(tmp_path):
 
     service.run([{"name": "lucifer", "run": recovered}])
     assert calls == 1
+    assert service.status()["status"] == "ready"
+    assert service.status()["last_sweep"]["health"] == "healthy"
+
+
+def test_source_classifier_preserves_safe_timeout_diagnostic():
+    runner = _classified_source(
+        "lv_text_image",
+        lambda: (_ for _ in ()).throw(
+            EnrichmentDiagnosticError(
+                "private provider details must not enter the ledger",
+                category="timeout",
+                code="opencli_timeout",
+                stage="browser_eval",
+            )
+        ),
+    )
+
+    with pytest.raises(TransientSourceError) as captured:
+        runner()
+
+    assert captured.value.diagnostic() == {
+        "category": "timeout",
+        "code": "opencli_timeout",
+        "stage": "browser_eval",
+        "retryable": True,
+    }
+
+
+def test_source_classifier_promotes_provider_transfer_rejection_to_blocker():
+    runner = _classified_source(
+        "subscription_video",
+        lambda: (_ for _ in ()).throw(
+            EnrichmentError(
+                "Lv cloud transfer was rejected by provider"
+            )
+        ),
+    )
+
+    with pytest.raises(UserActionBlocker) as captured:
+        runner()
+
+    assert captured.value.blocker_key == (
+        "lv-cloud-transfer-provider-rejected"
+    )
+    assert "/课程/自己的课/吕晓彤" in captured.value.action
+
+
+def test_status_classifies_legacy_retryable_failure_as_degraded(tmp_path):
+    service = DailyCoordinator(
+        tmp_path / "daily",
+        now=Clock("2026-07-27T14:00:00+08:00"),
+    )
+    service.output_dir.mkdir(parents=True)
+    service._append("sweep_started", slot="2026-07-27T14:00+08:00")
+    service._append(
+        "source_retryable_failure",
+        slot="2026-07-27T14:00+08:00",
+        source="lv_text_image",
+        error_type="TransientSourceError",
+    )
+    service._append(
+        "source_completed",
+        slot="2026-07-27T14:00+08:00",
+        source="lv_text_image",
+        result={"status": "waiting", "retryable": True},
+        coordinator_source_video_bytes=0,
+    )
+    service._append(
+        "sweep_completed",
+        slot="2026-07-27T14:00+08:00",
+        status="completed",
+        source_count=1,
+        coordinator_source_video_bytes=0,
+    )
+
+    status = service.status()
+
+    assert status["status"] == "degraded"
+    assert status["last_sweep"]["source_states"][0]["failure"]["code"] == (
+        "legacy_unclassified_failure"
+    )
+
+
+def test_latest_lv_video_goal_requires_matching_version_and_report_receipt(
+    tmp_path,
+):
+    video_output = tmp_path / "videos"
+    video_output.mkdir()
+    (video_output / "manifest.json").write_text(
+        json.dumps({
+            "items": {
+                "latest": {
+                    "author": "吕晓彤",
+                    "identity": "latest",
+                    "media_type": "video",
+                    "modified_at": 200,
+                    "name": "底层逻辑7月29日.mp4",
+                    "present": True,
+                    "version_key": "version-2",
+                    "work_eligible": True,
+                },
+                "older": {
+                    "author": "吕晓彤",
+                    "identity": "older",
+                    "media_type": "video",
+                    "modified_at": 100,
+                    "name": "7月20日.mp4",
+                    "present": True,
+                    "version_key": "version-1",
+                    "work_eligible": False,
+                },
+            },
+        }),
+        encoding="utf-8",
+    )
+
+    pending = _latest_lv_video_goal(video_output, [])
+
+    assert pending == {
+        "status": "pending",
+        "success": False,
+        "stage": "source_acquisition",
+        "identity": "latest",
+        "version_key": "version-2",
+        "name": "底层逻辑7月29日.mp4",
+        "modified_at": 200,
+    }
+
+    (video_output / "claims").mkdir()
+    (video_output / "claims" / "lv_transfer_version-2.json").write_text(
+        json.dumps({
+            "status": "waiting_cloud_transfer_receipt",
+            "source_identity": "latest",
+            "source_version_key": "version-2",
+            "trigger_attempt": 2,
+            "triggered_at": "2026-07-30T09:41:06+08:00",
+            "next_poll_not_before": "2026-07-30T10:11:06+08:00",
+            "reconciliation_status": "exact_private_copy_absent",
+        }),
+        encoding="utf-8",
+    )
+
+    processing = _latest_lv_video_goal(video_output, [])
+
+    assert processing["status"] == "processing"
+    assert processing["stage"] == "cloud_transfer_confirmation"
+    assert processing["transfer_status"] == (
+        "waiting_cloud_transfer_receipt"
+    )
+    assert processing["trigger_attempt"] == 2
+    assert processing["next_poll_not_before"] == (
+        "2026-07-30T10:11:06+08:00"
+    )
+
+    (video_output / "claims" / "lv_transfer_version-2.json").write_text(
+        json.dumps({
+            "status": "blocked",
+            "stage": "cloud_transfer_confirmation",
+            "source_identity": "latest",
+            "source_version_key": "version-2",
+            "trigger_attempt": 2,
+            "blocker_key": "lv-cloud-transfer-not-materialized",
+            "failure_reason": (
+                "two confirmed transfer attempts produced no exact private copy"
+            ),
+            "reconciliation_status": (
+                "exact_private_copy_absent_after_bounded_retry"
+            ),
+            "blocked_at": "2026-07-30T10:11:17+08:00",
+        }),
+        encoding="utf-8",
+    )
+
+    blocked = _latest_lv_video_goal(video_output, [])
+
+    assert blocked["status"] == "blocked"
+    assert blocked["success"] is False
+    assert blocked["user_action_required"] is True
+    assert blocked["blocker_key"] == (
+        "lv-cloud-transfer-not-materialized"
+    )
+    assert blocked["reconciliation_status"] == (
+        "exact_private_copy_absent_after_bounded_retry"
+    )
+
+    succeeded = _latest_lv_video_goal(
+        video_output,
+        [{
+            "event": "source_completed",
+            "slot": "2026-07-30T07:00+08:00",
+            "result": {
+                "events": [{
+                    "kind": "source_event",
+                    "event_id": "latest",
+                    "source_binding": {
+                        "source_identity": "latest",
+                        "publication_version": "version-2",
+                    },
+                    "gray_report": {
+                        "status": "published",
+                        "receipt": "receipt-1",
+                        "detail_url": "https://report.example/latest",
+                    },
+                }],
+            },
+        }],
+    )
+
+    assert succeeded["status"] == "succeeded"
+    assert succeeded["success"] is True
+    assert succeeded["analysis_status"] == "completed"
+    assert succeeded["report_status"] == "published"
+    assert succeeded["report_receipt"] == "receipt-1"
+    assert succeeded["report_url"] == "https://report.example/latest"
+
+
+def test_latest_lv_video_goal_rejects_report_for_stale_version(tmp_path):
+    video_output = tmp_path / "videos"
+    video_output.mkdir()
+    (video_output / "manifest.json").write_text(
+        json.dumps({
+            "items": {
+                "latest": {
+                    "author": "吕晓彤",
+                    "identity": "latest",
+                    "media_type": "video",
+                    "modified_at": 200,
+                    "name": "底层逻辑7月29日.mp4",
+                    "present": True,
+                    "version_key": "version-2",
+                    "work_eligible": True,
+                },
+            },
+        }),
+        encoding="utf-8",
+    )
+    events = [{
+        "event": "source_completed",
+        "slot": "2026-07-29T23:00+08:00",
+        "result": {
+            "events": [{
+                "kind": "source_event",
+                "event_id": "latest",
+                "source_binding": {
+                    "source_identity": "latest",
+                    "publication_version": "version-1",
+                },
+                "gray_report": {
+                    "status": "published",
+                    "receipt": "old-receipt",
+                    "detail_url": "https://report.example/old",
+                },
+            }],
+        },
+    }]
+
+    result = _latest_lv_video_goal(video_output, events)
+
+    assert result["status"] == "pending"
+    assert result["success"] is False
+
+
+def test_latest_lv_video_goal_recovers_from_bound_decision_result(tmp_path):
+    video_output = tmp_path / "videos"
+    video_output.mkdir()
+    result_path = video_output / "latest-decision.json"
+    result_path.write_text(
+        json.dumps({
+            "items": [{
+                "daily_terminal": {
+                    "kind": "source_event",
+                    "event_id": "latest",
+                    "source_binding": {
+                        "source_identity": "latest",
+                        "publication_version": "version-2",
+                    },
+                    "gray_report": {
+                        "status": "published",
+                        "receipt": "receipt-recovered",
+                        "detail_url": "https://report.example/recovered",
+                    },
+                },
+            }],
+        }),
+        encoding="utf-8",
+    )
+    result_sha256 = hashlib.sha256(result_path.read_bytes()).hexdigest()
+    (video_output / "manifest.json").write_text(
+        json.dumps({
+            "items": {
+                "latest": {
+                    "author": "吕晓彤",
+                    "identity": "latest",
+                    "media_type": "video",
+                    "modified_at": 200,
+                    "name": "底层逻辑7月29日.mp4",
+                    "present": True,
+                    "version_key": "version-2",
+                    "completed_version_key": "version-2",
+                    "decision_result_path": str(result_path),
+                    "decision_result_sha256": result_sha256,
+                    "work_eligible": False,
+                },
+            },
+        }),
+        encoding="utf-8",
+    )
+
+    goal = _latest_lv_video_goal(video_output, [])
+
+    assert goal["status"] == "succeeded"
+    assert goal["success"] is True
+    assert goal["report_receipt"] == "receipt-recovered"
+    assert goal["report_url"] == "https://report.example/recovered"
+    assert goal["coordinator_slot"] == (
+        "recovered_from_decision_result"
+    )
 
 
 def test_triggered_viewpoint_evaluation_appends_without_event_side_effects(

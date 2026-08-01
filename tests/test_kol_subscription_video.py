@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import json
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -12,6 +12,9 @@ from xiaocao.kol.enrichment_types import EnrichmentError
 from xiaocao.kol.netdisk_enrichment import NetdiskEnrichmentService
 from xiaocao.kol.subscription_video import (
     _CREATE_FOLDER_SCRIPT,
+    _PRIVATE_SEARCH_SCRIPT,
+    _TRANSFER_OUTCOME_SCRIPT,
+    _TRANSFER_SCRIPT,
     LUCIFER_SOURCE,
     LV_AUTHOR,
     LV_DESTINATION_DIRECTORY,
@@ -182,6 +185,52 @@ def test_same_scan_is_quiet_and_only_changed_version_becomes_new_work(tmp_path):
     assert len(service.pending_items()) == 1
 
 
+def test_new_deep_video_is_detected_when_parent_directory_mtime_is_unchanged(
+    tmp_path,
+):
+    service = _service(tmp_path)
+    lv, lucifer = _source_rows()
+    parent = _row(
+        "lv-july-directory",
+        "/share/2026年7月",
+        size=0,
+        modified_at=1_784_000_000,
+        is_dir=True,
+    )
+    service.observe([parent, *lv], lucifer)
+    manifest = service._load_manifest()
+    for item in manifest["items"].values():
+        item["work_eligible"] = False
+        if item["media_type"] == "video":
+            item["completed_version_key"] = item["version_key"]
+    for episode in manifest["episodes"].values():
+        episode["work_eligible"] = False
+        episode["completed_version_key"] = episode["version_key"]
+    from xiaocao.kol.subscription_video import _atomic_write_json
+
+    _atomic_write_json(service.manifest_path, manifest)
+    new_video = _row(
+        "lv-new-deep-video",
+        "/share/2026年7月/7月29日/7月29日.mp4",
+        size=3_000_000_000,
+        modified_at=1_785_315_600,
+    )
+
+    discovered = service.observe(
+        [parent, *lv, new_video],
+        lucifer,
+    )
+
+    assert [row["path"] for row in discovered["updates"]] == [
+        "/share/2026年7月/7月29日/7月29日.mp4"
+    ]
+    assert next(
+        row
+        for row in service.pending_items()
+        if row["identity"] == discovered["updates"][0]["identity"]
+    )["work_eligible"] is True
+
+
 def test_episode_analysis_request_binds_all_component_evidence(tmp_path):
     service = _service(tmp_path)
     lv, lucifer = _source_rows()
@@ -215,6 +264,12 @@ def test_episode_analysis_request_binds_all_component_evidence(tmp_path):
     request = service._analysis_request(episode, state)
 
     assert request["title"] == "7月5日"
+    assert request["author_profile"] == {
+        "gender": "male",
+        "subject_pronoun": "他",
+        "possessive_pronoun": "他的",
+        "generation_rule": "提及作者本人时只用“他/他的”，不得使用“她/她的”。",
+    }
     assert request["source_path"] == "/课程/路西法全套/鹿7.5/7月5日"
     assert request["logical_content"]["part_count"] == 3
     assert [part["part_index"] for part in request["component_evidence"]] == [
@@ -797,9 +852,24 @@ def test_folder_creation_recovers_the_observed_baidu_inline_editor():
     )
 
 
+def test_private_search_accepts_stable_fuzzy_results_as_exact_zero_matches():
+    assert "bodyText.includes('搜索：' + targetName)" in _PRIVATE_SEARCH_SCRIPT
+    assert "items.length > 0 && stablePolls >= 5" in _PRIVATE_SEARCH_SCRIPT
+    assert "search_settled: true" in _PRIVATE_SEARCH_SCRIPT
+
+
+def test_lv_transfer_observes_provider_outcome_after_confirmation():
+    assert "const beforeLines = new Set(" in _TRANSFER_SCRIPT
+    assert "data-xiaocao-lv-confirm" in _TRANSFER_SCRIPT
+    assert "confirms[0].click()" not in _TRANSFER_SCRIPT
+    assert "cloud_transfer_rejected" in _TRANSFER_OUTCOME_SCRIPT
+    assert "cloud_transfer_accepted" in _TRANSFER_OUTCOME_SCRIPT
+    assert "provider_outcome: 'unobserved'" in _TRANSFER_OUTCOME_SCRIPT
+
+
 def test_lv_transfer_claim_precedes_trigger_and_replay_only_reconciles(tmp_path):
     triggered = False
-    transfer_calls = 0
+    native_click_calls = 0
     service = _service(tmp_path, sleep=lambda _seconds: None)
     item = service._normalize(
         _source_rows()[0][1],
@@ -832,17 +902,38 @@ def test_lv_transfer_claim_precedes_trigger_and_replay_only_reconciles(tmp_path)
     service._direct_private_entries = direct_entries
 
     def opencli(session, *args, **_kwargs):
-        nonlocal triggered, transfer_calls
+        nonlocal triggered, native_click_calls
         if args[0] == "open":
             return {"url": "sanitized"}
-        assert args[0] == "eval"
-        transfer_calls += 1
         claim_path = service._claim_path(f"lv_transfer_{item['version_key']}")
         claim = json.loads(claim_path.read_text(encoding="utf-8"))
-        assert claim["status"] == "claimed"
         assert claim["large_payload_local_bytes"] == 0
+        if args[0] == "click":
+            native_click_calls += 1
+            assert claim["status"] == "native_click_claimed"
+            assert args[1] == '[data-xiaocao-lv-confirm="ready"]'
+            return {
+                "clicked": True,
+                "target": args[1],
+                "matches_n": 1,
+            }
+        assert args[0] == "eval"
+        if "destinationSegments" in args[1]:
+            assert claim["status"] == "claimed"
+            return {
+                "status": "save_confirmation_ready",
+                "confirmation_selector": (
+                    '[data-xiaocao-lv-confirm="ready"]'
+                ),
+                "triggered": False,
+            }
+        assert claim["status"] == "native_click_claimed"
         triggered = True
-        return {"status": "cloud_transfer_triggered", "triggered": True}
+        return {
+            "status": "cloud_transfer_triggered",
+            "triggered": True,
+            "provider_outcome": "unobserved",
+        }
 
     service._opencli_json = opencli
 
@@ -863,7 +954,7 @@ def test_lv_transfer_claim_precedes_trigger_and_replay_only_reconciles(tmp_path)
     assert first["target_size"] == item["size"]
     assert first["large_payload_local_bytes"] == 0
     assert second["status"] == "completed"
-    assert transfer_calls == 1
+    assert native_click_calls == 1
     assert len(
         [
             row
@@ -945,6 +1036,357 @@ def test_lv_transfer_reconciles_observed_default_root_save_without_resend(
     assert recovered["large_payload_local_bytes"] == 0
     assert replay["target_path"] == recovered["target_path"]
     assert trigger_calls == 1
+
+
+def test_lv_transfer_reconciles_default_root_after_confirmed_trigger(
+    tmp_path,
+):
+    service = _service(tmp_path, sleep=lambda _seconds: None)
+    item = service._normalize(
+        _source_rows()[0][1],
+        source=LV_SOURCE,
+        author=LV_AUTHOR,
+    )
+    item.update(
+        {
+            "version_first_seen_at": NOW.isoformat(),
+            "first_seen_at": NOW.isoformat(),
+            "present": True,
+            "work_eligible": True,
+        }
+    )
+    service.ensure_lv_destination = lambda **_kwargs: {"status": "completed"}
+    service._direct_private_entries = lambda **_kwargs: []
+    root_ready = False
+    trigger_calls = 0
+
+    def search(**_kwargs):
+        if not root_ready:
+            return []
+        return [
+            _row(
+                "root-copy",
+                f"/{item['name']}",
+                size=item["size"],
+                modified_at=item["modified_at"] + 1,
+            )
+        ]
+
+    service._search_private_exact = search
+
+    def opencli(_session, *args, **_kwargs):
+        nonlocal root_ready, trigger_calls
+        if args[0] == "open":
+            return {"url": "sanitized"}
+        trigger_calls += 1
+        root_ready = True
+        return {"status": "cloud_transfer_triggered", "triggered": True}
+
+    service._opencli_json = opencli
+
+    recovered = service.transfer_lv_video(
+        item,
+        lv_session="lv",
+        private_session="private",
+        profile="work",
+    )
+    replay = service.transfer_lv_video(
+        item,
+        lv_session="lv",
+        private_session="private",
+        profile="work",
+    )
+
+    assert recovered["status"] == "completed"
+    assert recovered["target_path"] == f"/{item['name']}"
+    assert recovered["reconciled_default_root_save"] is True
+    assert recovered["large_payload_local_bytes"] == 0
+    assert replay["target_path"] == recovered["target_path"]
+    assert trigger_calls == 1
+
+
+def test_lv_transfer_retries_once_after_settled_exact_absence(tmp_path):
+    service = _service(tmp_path, sleep=lambda _seconds: None)
+    item = service._normalize(
+        _source_rows()[0][1],
+        source=LV_SOURCE,
+        author=LV_AUTHOR,
+    )
+    item.update(
+        {
+            "version_first_seen_at": NOW.isoformat(),
+            "first_seen_at": NOW.isoformat(),
+            "present": True,
+            "work_eligible": True,
+        }
+    )
+    service.ensure_lv_destination = lambda **_kwargs: {"status": "completed"}
+    target_ready = False
+    trigger_calls = 0
+
+    def direct_entries(*, directory, **_kwargs):
+        if directory != LV_DESTINATION_DIRECTORY or not target_ready:
+            return []
+        return [
+            _row(
+                "private-recovered-copy",
+                f"{LV_DESTINATION_DIRECTORY}/{item['name']}",
+                size=item["size"],
+                modified_at=item["modified_at"] + 1,
+            )
+        ]
+
+    service._direct_private_entries = direct_entries
+    service._search_private_exact = lambda **_kwargs: []
+    receipt_name = f"lv_transfer_{item['version_key']}"
+    claim_path = service._claim_path(receipt_name)
+    claim_path.parent.mkdir(parents=True)
+    first_triggered_at = NOW - timedelta(minutes=31)
+    claim_path.write_text(
+        json.dumps(
+            {
+                "schema_version": 1,
+                "event": "lv_transfer_claimed",
+                "status": "triggered",
+                "claim_id": "first-claim",
+                "claimed_at": first_triggered_at.isoformat(),
+                "triggered_at": first_triggered_at.isoformat(),
+                "trigger_attempt": 1,
+                "source_identity": item["identity"],
+                "source_version_key": item["version_key"],
+                "source_path": item["path"],
+                "source_size": item["size"],
+                "target_path": (
+                    f"{LV_DESTINATION_DIRECTORY}/{item['name']}"
+                ),
+                "large_payload_local_bytes": 0,
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    def opencli(_session, *args, **_kwargs):
+        nonlocal target_ready, trigger_calls
+        if args[0] == "open":
+            return {"url": "sanitized"}
+        trigger_calls += 1
+        target_ready = True
+        return {"status": "cloud_transfer_triggered", "triggered": True}
+
+    service._opencli_json = opencli
+
+    recovered = service.transfer_lv_video(
+        item,
+        lv_session="lv",
+        private_session="private",
+        profile="work",
+    )
+
+    assert recovered["status"] == "completed"
+    assert recovered["target_size"] == item["size"]
+    assert trigger_calls == 1
+    assert "lv_cloud_transfer_recovery_claimed" in (
+        service.events_path.read_text(encoding="utf-8")
+    )
+
+
+def test_lv_transfer_stops_after_bounded_reconciled_retry(tmp_path):
+    service = _service(tmp_path, sleep=lambda _seconds: None)
+    item = service._normalize(
+        _source_rows()[0][1],
+        source=LV_SOURCE,
+        author=LV_AUTHOR,
+    )
+    item.update(
+        {
+            "version_first_seen_at": NOW.isoformat(),
+            "first_seen_at": NOW.isoformat(),
+            "present": True,
+            "work_eligible": True,
+        }
+    )
+    service.ensure_lv_destination = lambda **_kwargs: {"status": "completed"}
+    service._direct_private_entries = lambda **_kwargs: []
+    service._search_private_exact = lambda **_kwargs: []
+    receipt_name = f"lv_transfer_{item['version_key']}"
+    claim_path = service._claim_path(receipt_name)
+    claim_path.parent.mkdir(parents=True)
+    second_triggered_at = NOW - timedelta(minutes=31)
+    claim_path.write_text(
+        json.dumps(
+            {
+                "schema_version": 1,
+                "event": "lv_transfer_recovery_claimed",
+                "status": "triggered",
+                "claim_id": "second-claim",
+                "claimed_at": second_triggered_at.isoformat(),
+                "triggered_at": second_triggered_at.isoformat(),
+                "trigger_attempt": 2,
+                "source_identity": item["identity"],
+                "source_version_key": item["version_key"],
+                "source_path": item["path"],
+                "source_size": item["size"],
+                "target_path": (
+                    f"{LV_DESTINATION_DIRECTORY}/{item['name']}"
+                ),
+                "large_payload_local_bytes": 0,
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(
+        EnrichmentError,
+        match="did not materialize after bounded exact reconciliation",
+    ):
+        service.transfer_lv_video(
+            item,
+            lv_session="lv",
+            private_session="private",
+            profile="work",
+        )
+
+    blocked = json.loads(claim_path.read_text(encoding="utf-8"))
+    assert blocked["status"] == "blocked"
+    assert blocked["blocker_key"] == (
+        "lv-cloud-transfer-not-materialized"
+    )
+    assert blocked["reconciliation_status"] == (
+        "exact_private_copy_absent_after_bounded_retry"
+    )
+    assert blocked["user_action_required"] is True
+
+
+def test_lv_transfer_blocker_recovers_by_read_only_target_reconciliation(
+    tmp_path,
+):
+    service = _service(tmp_path, sleep=lambda _seconds: None)
+    item = service._normalize(
+        _source_rows()[0][1],
+        source=LV_SOURCE,
+        author=LV_AUTHOR,
+    )
+    item.update(
+        {
+            "version_first_seen_at": NOW.isoformat(),
+            "first_seen_at": NOW.isoformat(),
+            "present": True,
+            "work_eligible": True,
+        }
+    )
+    service.ensure_lv_destination = lambda **_kwargs: {"status": "completed"}
+    service._direct_private_entries = lambda **_kwargs: [
+        _row(
+            "manually-saved-copy",
+            f"{LV_DESTINATION_DIRECTORY}/{item['name']}",
+            size=item["size"],
+            modified_at=item["modified_at"] + 60,
+        )
+    ]
+    service._opencli_json = lambda *_args, **_kwargs: pytest.fail(
+        "blocked recovery must not trigger another share-side save"
+    )
+    receipt_name = f"lv_transfer_{item['version_key']}"
+    claim_path = service._claim_path(receipt_name)
+    claim_path.parent.mkdir(parents=True)
+    claim_path.write_text(
+        json.dumps(
+            {
+                "schema_version": 1,
+                "event": "lv_cloud_transfer_blocked",
+                "status": "blocked",
+                "claim_id": "blocked-claim",
+                "claimed_at": NOW.isoformat(),
+                "triggered_at": (
+                    NOW - timedelta(minutes=31)
+                ).isoformat(),
+                "trigger_attempt": 2,
+                "source_identity": item["identity"],
+                "source_version_key": item["version_key"],
+                "source_path": item["path"],
+                "source_size": item["size"],
+                "target_path": (
+                    f"{LV_DESTINATION_DIRECTORY}/{item['name']}"
+                ),
+                "large_payload_local_bytes": 0,
+                "blocker_key": "lv-cloud-transfer-not-materialized",
+                "user_action_required": True,
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    recovered = service.transfer_lv_video(
+        item,
+        lv_session="lv",
+        private_session="private",
+        profile="work",
+    )
+    replay = service.transfer_lv_video(
+        item,
+        lv_session="lv",
+        private_session="private",
+        profile="work",
+    )
+
+    assert recovered["status"] == "completed"
+    assert recovered["target_path"] == (
+        f"{LV_DESTINATION_DIRECTORY}/{item['name']}"
+    )
+    assert recovered["target_size"] == item["size"]
+    assert recovered["large_payload_local_bytes"] == 0
+    assert replay["status"] == "completed"
+    assert replay["idempotent_replay"] is True
+
+
+def test_lv_transfer_stops_on_explicit_provider_rejection(tmp_path):
+    service = _service(tmp_path, sleep=lambda _seconds: None)
+    item = service._normalize(
+        _source_rows()[0][1],
+        source=LV_SOURCE,
+        author=LV_AUTHOR,
+    )
+    item.update(
+        {
+            "version_first_seen_at": NOW.isoformat(),
+            "first_seen_at": NOW.isoformat(),
+            "present": True,
+            "work_eligible": True,
+        }
+    )
+    service.ensure_lv_destination = lambda **_kwargs: {"status": "completed"}
+    service._direct_private_entries = lambda **_kwargs: []
+    service._search_private_exact = lambda **_kwargs: []
+
+    def opencli(_session, *args, **_kwargs):
+        if args[0] == "open":
+            return {"url": "sanitized"}
+        return {
+            "status": "cloud_transfer_rejected",
+            "triggered": True,
+            "provider_outcome": "rejected",
+        }
+
+    service._opencli_json = opencli
+
+    with pytest.raises(
+        EnrichmentError,
+        match="Lv cloud transfer was rejected by provider",
+    ):
+        service.transfer_lv_video(
+            item,
+            lv_session="lv",
+            private_session="private",
+            profile="work",
+        )
+
+    claim_path = service._claim_path(f"lv_transfer_{item['version_key']}")
+    blocked = json.loads(claim_path.read_text(encoding="utf-8"))
+    assert blocked["status"] == "blocked"
+    assert blocked["blocker_key"] == (
+        "lv-cloud-transfer-provider-rejected"
+    )
+    assert blocked["reconciliation_status"] == "provider_rejected"
 
 
 def test_semantic_duplicate_requires_receipted_household_and_paper_ledgers(

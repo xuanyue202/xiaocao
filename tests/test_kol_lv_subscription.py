@@ -15,7 +15,10 @@ import pytest
 from tests.kol_claim_fixture import attach_claim_contract
 import xiaocao.kol.lv_subscription as lv_subscription
 from xiaocao.kol.decisions import DecisionPipeline
-from xiaocao.kol.enrichment_types import EnrichmentError
+from xiaocao.kol.enrichment_types import (
+    EnrichmentDiagnosticError,
+    EnrichmentError,
+)
 from xiaocao.kol.lv_subscription import LvSubscriptionService
 
 
@@ -252,6 +255,26 @@ def test_private_config_drives_one_browser_listing_path_without_persisting_crede
     )
     assert private_url not in durable
     assert private_code not in durable
+
+
+def test_browser_listing_recurses_without_parent_mtime_pruning_in_bounded_batches():
+    script = lv_subscription._browser_listing_script(
+        "/s/private-share-token"
+    )
+
+    assert "pendingDirs.push(path)" in script
+    assert "const maxConcurrentDirectories = 4;" in script
+    assert (
+        "const batch = pendingDirs.splice(0, maxConcurrentDirectories);"
+        in script
+    )
+    assert "await Promise.all(batch.map(async dir =>" in script
+    assert "const controller = new AbortController();" in script
+    assert "share_list_timeout" in script
+    assert "item.server_mtime" not in script[
+        script.index("if (isDir && !seenDirs.has(path))") :
+        script.index("const maxDirectories")
+    ]
 
 
 def test_private_config_accepts_only_the_observed_root_hash_route(tmp_path):
@@ -532,6 +555,35 @@ def test_expired_share_is_a_structured_user_blocker(tmp_path):
     with pytest.raises(EnrichmentError, match="share is expired"):
         service.poll_opencli(session="ticket04")
 
+    assert not (tmp_path / "out" / "manifest.json").exists()
+
+
+def test_listing_eval_timeout_exposes_safe_operation_diagnostic(tmp_path):
+    def browser_runner(command, **_kwargs):
+        if command[3:4] == ["open"]:
+            return SimpleNamespace(
+                returncode=0,
+                stdout=json.dumps({"url": "redacted", "page": "page-1"}),
+                stderr="",
+            )
+        raise subprocess.TimeoutExpired(command, 120)
+
+    service = LvSubscriptionService(
+        tmp_path / "out",
+        now=lambda: NOW,
+        runner=browser_runner,
+        opencli_command=("opencli",),
+        share_url="https://pan.baidu.com/s/private-share-token",
+        share_code="a1b2",
+    )
+
+    with pytest.raises(EnrichmentDiagnosticError) as captured:
+        service.poll_opencli(session="ticket04")
+
+    assert str(captured.value) == "subscription browser command timed out"
+    assert captured.value.diagnostic_category == "timeout"
+    assert captured.value.diagnostic_code == "opencli_timeout"
+    assert captured.value.diagnostic_stage == "browser_eval"
     assert not (tmp_path / "out" / "manifest.json").exists()
 
 

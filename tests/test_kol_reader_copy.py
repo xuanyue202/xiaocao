@@ -12,8 +12,10 @@ from xiaocao.kol.reader_copy_correction import (
     CORRECTION_AS_OF,
     LV_JULY_13_ORDER,
     LV_JULY_13_REPORT_ID,
+    LV_JULY_13_REPORT_COPY,
     LV_JULY_20_ORDER,
     LV_JULY_20_REPORT_ID,
+    LV_JULY_20_REPORT_COPY,
     build_lv_reader_copy_correction,
 )
 
@@ -228,3 +230,10 @@ def test_lv_reader_copy_correction_replaces_without_erasing_history():
             and relation["asserted_at"] == CORRECTION_AS_OF
         ]
     ) == 2
+
+
+def test_lv_reviewed_report_copy_uses_male_pronouns():
+    for report in (LV_JULY_13_REPORT_COPY, LV_JULY_20_REPORT_COPY):
+        assert "她" not in report["summary"]
+        assert "她" not in report["report_body"]
+        assert "他" in report["report_body"]
