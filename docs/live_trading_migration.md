@@ -58,6 +58,43 @@ and rejects local media paths, but its consumer currently scans a same-machine
 directory. Migration therefore requires a Codex-dispatch contract and remote
 `handoff_id` receipt reconciliation; it does not require a vault inbox adapter.
 
+## Remote KOL Runtime Prerequisites
+
+The remote KOL coordinator is not ready merely because the repository is
+current. Before moving the hourly Automation, verify all of the following on
+`MacBook-Pro-6.local` without printing credential values:
+
+- A repository `.venv` using a supported Python and importing the core runtime
+  dependencies (`requests`, `yaml`, and `rfc8785`).
+- Node.js, npm, and a directly installed pinned OpenCLI command. The repository
+  fallback is `npx --yes @jackwener/opencli@1.8.6`, but an unattended hourly
+  runtime must install `@jackwener/opencli@1.8.6` directly and verify its
+  version instead of depending on an on-demand network download.
+- Google Chrome with the compatible OpenCLI Browser Bridge, plus a proven
+  logged-in `xiaocao-lv-subscription` session that can read both the configured
+  Lv Xiaotong share and the private `/课程/路西法全套` directory. Browser
+  installation alone is not session proof.
+- macOS Swift/Vision support for the small-image OCR path. `ffmpeg`, `ffprobe`,
+  the WeChat sniffer, and the Xiaocao large-media capture binary remain local
+  broadband-worker dependencies and are not required by the normal remote
+  coordinator path.
+- A private `xiaocao.yaml` containing the Lv Xiaotong subscription reference,
+  a mode-0600 family-authenticated `.codex/config.toml` for the 灰常亮 MCP, and
+  the Enterprise WeChat Relay configuration. Transfer or configure these
+  through an approved secret-bearing path; never put their values in Git or a
+  Codex task prompt.
+- The authoritative lightweight KOL manifests, unfinished-item state,
+  publication/notification receipts, and Book KOL-US ledger under
+  `output/live/kol_daily`, `kol_intelligence`, `kol_lv_subscription`,
+  `kol_subscription_videos`, and `kol_xiaocao_live`. A fresh empty directory
+  is not a safe continuation of the current writer.
+
+The incoming Codex task must materialize the validated handoff and bootstrap
+the matching remote Netdisk job state before the coordinator consumes it. The
+current same-machine consumer assumes that job ledger already exists, so this
+adapter and its idempotent receipt are a cutover prerequisite, not something
+to improvise during the first live handoff.
+
 ## Commit To Git
 
 - Source code under `src/`, `scripts/`, and `kronos_screen/scripts/`.
