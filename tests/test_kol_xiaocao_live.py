@@ -31,6 +31,17 @@ def _write_json(path: Path, value: dict) -> Path:
     return path
 
 
+def _canonical_sha256(value: dict) -> str:
+    return hashlib.sha256(
+        json.dumps(
+            value,
+            ensure_ascii=False,
+            sort_keys=True,
+            separators=(",", ":"),
+        ).encode("utf-8")
+    ).hexdigest()
+
+
 def _append_jsonl(path: Path, value: dict) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     with path.open("a", encoding="utf-8") as handle:
@@ -256,6 +267,125 @@ def test_reconcile_real_chain_is_idempotent_and_publishes_light_handoff(tmp_path
         for row in service.events()
         if row["event"] == "xiaocao_live_acceptance_reconciled"
     ]) == 1
+
+
+def test_remote_import_accepts_one_portable_job_capsule_idempotently(tmp_path):
+    media_sha256 = "a" * 64
+    job_id = "kol-netdisk-aaaaaaaaaaaaaaaa"
+    handoff_id = "b" * 64
+    snapshot = {
+        "schema_version": 1,
+        "status": "video_ready",
+        "provider": "baidu_consumer_page",
+        "job_id": job_id,
+        "netdisk_directory": "/课程/自己的课/小草",
+        "netdisk_path": "/课程/自己的课/小草/target-compressed.mp4",
+        "video_basename": "target-compressed.mp4",
+        "video_sha256": media_sha256,
+        "video_sha256_kind": "content_sha256",
+        "video_size_bytes": 123456,
+        "video_duration_seconds": 1800.5,
+        "source_mode": "cloud_handoff",
+        "large_payload_local_bytes": 0,
+        "handoff_id": handoff_id,
+    }
+    capsule = {
+        "schema_version": 2,
+        "source": "xiaocao",
+        "author": "小草",
+        "handoff_id": handoff_id,
+        "capture_job_id": "kol-capture-test",
+        "live_id": "live-test",
+        "captured_at": "2026-08-01T19:30:00+08:00",
+        "media_basename": "target-compressed.mp4",
+        "media_sha256": media_sha256,
+        "media_size_bytes": 123456,
+        "media_duration_seconds": 1800.5,
+        "netdisk_job_id": job_id,
+        "cloud_reference": (
+            "baidu:/课程/自己的课/小草/target-compressed.mp4"
+        ),
+        "provider": "baidu_consumer_page",
+        "large_payload_local_bytes": 0,
+        "published_at": "2026-08-01T19:45:00+08:00",
+        "netdisk_job_snapshot": snapshot,
+        "netdisk_job_snapshot_sha256": _canonical_sha256(snapshot),
+    }
+    capsule["handoff_sha256"] = _canonical_sha256(capsule)
+    service = XiaocaoLiveService(
+        tmp_path / "remote-live",
+        netdisk_output=tmp_path / "remote-netdisk",
+    )
+
+    first = service.import_handoff_capsule(capsule)
+    second = service.import_handoff_capsule(capsule)
+
+    assert first["status"] == "video_ready"
+    assert first["handoff_id"] == handoff_id
+    assert first["idempotent_replay"] is False
+    assert second["idempotent_replay"] is True
+    rows = service.netdisk.store.read()
+    assert len(rows) == 1
+    assert rows[0]["event"] == "netdisk_remote_handoff_imported"
+    assert rows[0]["browser_control_blocked"] is True
+    assert "video_path" not in rows[0]
+    assert "media_path" not in rows[0]
+    assert "browser_evidence" not in rows[0]
+
+
+def test_publish_handoff_includes_portable_cloud_ready_ledger_snapshot(tmp_path):
+    media_sha256 = "c" * 64
+    job_id = f"kol-netdisk-{media_sha256[:16]}"
+    service = XiaocaoLiveService(tmp_path / "local-live")
+    published = service._publish_handoff(
+        capture_job_id="kol-capture-test",
+        media={
+            "live_id": "live-test",
+            "captured_at": "2026-08-01T19:30:00+08:00",
+            "media_basename": "target-compressed.mp4",
+            "media_sha256": media_sha256,
+            "media_size_bytes": 123456,
+            "media_duration_seconds": 1800.5,
+            "media_path": "/private/local/target-compressed.mp4",
+        },
+        netdisk={
+            "status": "video_ready",
+            "provider": "baidu_consumer_page",
+            "job_id": job_id,
+            "netdisk_directory": "/课程/自己的课/小草",
+            "netdisk_path": "/课程/自己的课/小草/target-compressed.mp4",
+            "video_basename": "target-compressed.mp4",
+            "video_path": "/private/local/target-compressed.mp4",
+            "video_sha256": media_sha256,
+            "video_sha256_kind": "content_sha256",
+            "video_size_bytes": 123456,
+            "video_duration_seconds": 1800.5,
+            "browser_evidence": {"session": "local-secret"},
+        },
+    )
+
+    capsule = json.loads(Path(published["handoff_path"]).read_text())
+    assert capsule["schema_version"] == 2
+    assert capsule["handoff_id"] == published["handoff_claim_idempotency_key"]
+    assert capsule["handoff_sha256"] == _canonical_sha256({
+        key: value
+        for key, value in capsule.items()
+        if key != "handoff_sha256"
+    })
+    snapshot = capsule["netdisk_job_snapshot"]
+    assert capsule["netdisk_job_snapshot_sha256"] == _canonical_sha256(snapshot)
+    assert snapshot["status"] == "video_ready"
+    assert snapshot["source_mode"] == "cloud_handoff"
+    assert snapshot["handoff_id"] == capsule["handoff_id"]
+    assert snapshot["large_payload_local_bytes"] == 0
+    serialized = json.dumps(capsule, ensure_ascii=False)
+    assert "/private/local" not in serialized
+    assert "browser_evidence" not in serialized
+    remote = XiaocaoLiveService(
+        tmp_path / "remote-live",
+        netdisk_output=tmp_path / "remote-netdisk",
+    )
+    assert remote.import_handoff_capsule(capsule)["status"] == "video_ready"
 
 
 def test_acceptance_audit_proves_exactly_once_real_chain(tmp_path):

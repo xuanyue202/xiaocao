@@ -1617,6 +1617,23 @@ class NetdiskEnrichmentService:
             raise EnrichmentError("OpenCLI profile name is invalid")
         current = self.store.latest(job_id)
         status = str(current.get("status") or "")
+        if status == "video_ready" and not self._has_fresh_browser_control(current):
+            target_name = str(current["video_basename"])
+            inspection = self._inspect_opencli_target(
+                session=session,
+                profile=profile,
+                target_name=target_name,
+            )
+            if inspection["exact_count"] != 1:
+                raise EnrichmentError(
+                    "remote handoff target is not exactly present in Netdisk"
+                )
+            self._record_opencli_liveness(
+                job_id,
+                target_name=target_name,
+                target_present=True,
+                observed_at=inspection["observed_at"],
+            )
         if status in {
             "video_ready",
             "transcript_claimed",

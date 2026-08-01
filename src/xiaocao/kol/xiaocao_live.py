@@ -363,6 +363,114 @@ class XiaocaoLiveService:
                 rows.append(value)
         return rows
 
+    def import_handoff_capsule(self, capsule: dict[str, Any]) -> dict[str, Any]:
+        """Import one portable cloud-ready job without trusting local paths."""
+        if not isinstance(capsule, dict) or capsule.get("schema_version") != 2:
+            raise EnrichmentError("remote handoff capsule schema is invalid")
+        expected_handoff_sha256 = str(capsule.get("handoff_sha256") or "")
+        unsigned = dict(capsule)
+        unsigned.pop("handoff_sha256", None)
+        if (
+            not _SHA256.fullmatch(expected_handoff_sha256)
+            or _sha256_text(_canonical(unsigned)) != expected_handoff_sha256
+        ):
+            raise EnrichmentError("remote handoff capsule hash is invalid")
+        handoff_id = str(capsule.get("handoff_id") or "")
+        media_sha256 = str(capsule.get("media_sha256") or "")
+        media_basename = str(capsule.get("media_basename") or "")
+        job_id = str(capsule.get("netdisk_job_id") or "")
+        netdisk_path = f"/课程/自己的课/小草/{media_basename}"
+        if (
+            capsule.get("source") != "xiaocao"
+            or capsule.get("author") != "小草"
+            or capsule.get("provider") != "baidu_consumer_page"
+            or capsule.get("large_payload_local_bytes") != 0
+            or not _SHA256.fullmatch(handoff_id)
+            or not _SHA256.fullmatch(media_sha256)
+            or not media_basename
+            or "/" in media_basename
+            or "\\" in media_basename
+            or job_id != f"kol-netdisk-{media_sha256[:16]}"
+            or capsule.get("cloud_reference") != f"baidu:{netdisk_path}"
+        ):
+            raise EnrichmentError("remote handoff capsule binding is invalid")
+        try:
+            media_size_bytes = int(capsule.get("media_size_bytes") or 0)
+            media_duration_seconds = float(
+                capsule.get("media_duration_seconds") or 0
+            )
+        except (TypeError, ValueError) as exc:
+            raise EnrichmentError(
+                "remote handoff capsule media metadata is invalid"
+            ) from exc
+        if media_size_bytes <= 0 or media_duration_seconds <= 0:
+            raise EnrichmentError("remote handoff capsule media metadata is invalid")
+
+        snapshot = capsule.get("netdisk_job_snapshot")
+        expected_snapshot_sha256 = str(
+            capsule.get("netdisk_job_snapshot_sha256") or ""
+        )
+        if (
+            not isinstance(snapshot, dict)
+            or not _SHA256.fullmatch(expected_snapshot_sha256)
+            or _sha256_text(_canonical(snapshot)) != expected_snapshot_sha256
+        ):
+            raise EnrichmentError("remote Netdisk job snapshot hash is invalid")
+        forbidden = {
+            "video_path",
+            "media_path",
+            "browser_evidence",
+            "browser_liveness",
+        }
+        if forbidden.intersection(snapshot):
+            raise EnrichmentError("remote Netdisk job snapshot is not portable")
+        if (
+            snapshot.get("schema_version") != 1
+            or snapshot.get("status") != "video_ready"
+            or snapshot.get("provider") != "baidu_consumer_page"
+            or snapshot.get("job_id") != job_id
+            or snapshot.get("netdisk_directory") != "/课程/自己的课/小草"
+            or snapshot.get("netdisk_path") != netdisk_path
+            or snapshot.get("video_basename") != media_basename
+            or snapshot.get("video_sha256") != media_sha256
+            or snapshot.get("video_sha256_kind") != "content_sha256"
+            or snapshot.get("video_size_bytes") != media_size_bytes
+            or float(snapshot.get("video_duration_seconds") or 0)
+            != media_duration_seconds
+            or snapshot.get("source_mode") != "cloud_handoff"
+            or snapshot.get("large_payload_local_bytes") != 0
+            or snapshot.get("handoff_id") != handoff_id
+        ):
+            raise EnrichmentError("remote Netdisk job snapshot binding is invalid")
+
+        with self.netdisk.store.job_lock(job_id):
+            try:
+                current = self.netdisk.store.latest(job_id)
+            except EnrichmentError as exc:
+                if "not found" not in str(exc):
+                    raise
+                current = None
+            if current is not None:
+                if (
+                    current.get("handoff_id") != handoff_id
+                    or current.get("video_sha256") != media_sha256
+                    or current.get("netdisk_path") != netdisk_path
+                ):
+                    raise EnrichmentError(
+                        "remote handoff conflicts with the existing Netdisk job"
+                    )
+                return {**current, "idempotent_replay": True}
+            now = self._clock().isoformat(timespec="seconds")
+            row = {
+                **snapshot,
+                "event": "netdisk_remote_handoff_imported",
+                "browser_control_blocked": True,
+                "imported_at": now,
+                "updated_at": now,
+            }
+            self.netdisk.store.append(row)
+            return {**row, "idempotent_replay": False}
+
     def latest(self) -> dict[str, Any] | None:
         rows = self.events()
         return rows[-1] if rows else None
@@ -836,25 +944,45 @@ class XiaocaoLiveService:
                 f"handoff:{capture_job_id}:{netdisk['job_id']}"
             ),
         )
-        handoff = {
+        handoff_id = str(claim["idempotency_key"])
+        media_basename = str(media["media_basename"])
+        netdisk_directory = "/课程/自己的课/小草"
+        netdisk_path = f"{netdisk_directory}/{media_basename}"
+        snapshot = {
             "schema_version": 1,
+            "status": "video_ready",
+            "provider": "baidu_consumer_page",
+            "job_id": netdisk["job_id"],
+            "netdisk_directory": netdisk_directory,
+            "netdisk_path": netdisk_path,
+            "video_basename": media_basename,
+            "video_sha256": media["media_sha256"],
+            "video_sha256_kind": "content_sha256",
+            "video_size_bytes": media["media_size_bytes"],
+            "video_duration_seconds": media["media_duration_seconds"],
+            "source_mode": "cloud_handoff",
+            "large_payload_local_bytes": 0,
+            "handoff_id": handoff_id,
+        }
+        handoff = {
+            "schema_version": 2,
             "source": "xiaocao",
             "author": "小草",
+            "handoff_id": handoff_id,
             "capture_job_id": capture_job_id,
             "live_id": media["live_id"],
             "captured_at": media["captured_at"],
-            "media_basename": media["media_basename"],
+            "media_basename": media_basename,
             "media_sha256": media["media_sha256"],
             "media_size_bytes": media["media_size_bytes"],
             "media_duration_seconds": media["media_duration_seconds"],
             "netdisk_job_id": netdisk["job_id"],
-            "cloud_reference": (
-                "baidu:/课程/自己的课/小草/"
-                + str(netdisk["video_basename"])
-            ),
+            "cloud_reference": f"baidu:{netdisk_path}",
             "provider": "baidu_consumer_page",
             "large_payload_local_bytes": 0,
             "published_at": self._clock().isoformat(timespec="seconds"),
+            "netdisk_job_snapshot": snapshot,
+            "netdisk_job_snapshot_sha256": _sha256_text(_canonical(snapshot)),
         }
         handoff["handoff_sha256"] = _sha256_text(_canonical(handoff))
         path = self.output_dir / "handoffs" / f"{capture_job_id}.json"

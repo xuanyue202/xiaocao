@@ -2137,6 +2137,73 @@ def test_opencli_liveness_recovers_from_codex_policy_denial(tmp_path):
     assert claimed["status"] == "upload_claimed"
 
 
+def test_remote_handoff_rechecks_exact_target_before_transcript_claim(
+    tmp_path,
+    monkeypatch,
+):
+    service = NetdiskEnrichmentService(tmp_path / "out", now=lambda: NOW)
+    media_sha256 = "a" * 64
+    job_id = f"kol-netdisk-{media_sha256[:16]}"
+    video_basename = "target-compressed.mp4"
+    service.store.append({
+        "schema_version": 1,
+        "event": "netdisk_remote_handoff_imported",
+        "status": "video_ready",
+        "provider": "baidu_consumer_page",
+        "job_id": job_id,
+        "netdisk_directory": "/课程/自己的课/小草",
+        "netdisk_path": f"/课程/自己的课/小草/{video_basename}",
+        "video_basename": video_basename,
+        "video_sha256": media_sha256,
+        "video_sha256_kind": "content_sha256",
+        "video_size_bytes": 123456,
+        "video_duration_seconds": 1800.5,
+        "source_mode": "cloud_handoff",
+        "large_payload_local_bytes": 0,
+        "handoff_id": "b" * 64,
+        "browser_control_blocked": True,
+        "updated_at": (NOW - timedelta(seconds=1)).isoformat(),
+    })
+    calls: list[str] = []
+
+    def inspect(**kwargs):
+        assert kwargs == {
+            "session": "remote-session",
+            "profile": "work",
+            "target_name": video_basename,
+        }
+        calls.append("inspect")
+        return {
+            "exact_count": 1,
+            "target_index": 0,
+            "observed_at": NOW,
+        }
+
+    def advance(job, *, session, profile):
+        assert (job, session, profile) == (
+            job_id,
+            "remote-session",
+            "work",
+        )
+        current = service.status(job_id)
+        assert current["event"] == "netdisk_browser_liveness_ready"
+        assert current["browser_control_blocked"] is False
+        calls.append("advance")
+        return {**current, "pending": True}
+
+    monkeypatch.setattr(service, "_inspect_opencli_target", inspect)
+    monkeypatch.setattr(service, "_advance_opencli_transcript", advance)
+
+    result = service.advance_opencli(
+        job_id,
+        session="remote-session",
+        profile="work",
+    )
+
+    assert result["pending"] is True
+    assert calls == ["inspect", "advance"]
+
+
 def test_repeated_policy_failure_after_recovery_blocks_again(tmp_path):
     service, _video, prepared = _prepare(tmp_path)
     job_id = prepared["job_id"]

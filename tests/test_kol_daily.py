@@ -3,13 +3,16 @@ from __future__ import annotations
 import hashlib
 import json
 from datetime import datetime
+from types import SimpleNamespace
 
 import pytest
 
+from scripts import kol_daily as kol_daily_script
 from scripts.kol_daily import (
     _classified_source,
     _latest_lv_video_goal,
     _video_publication_context,
+    DailyRuntime,
 )
 from xiaocao.kol.daily import (
     build_triggered_evaluation_candidate,
@@ -41,6 +44,97 @@ class Clock:
 
     def __call__(self) -> datetime:
         return self.value
+
+
+def _canonical_sha256(value: dict) -> str:
+    return hashlib.sha256(
+        json.dumps(
+            value,
+            ensure_ascii=False,
+            sort_keys=True,
+            separators=(",", ":"),
+        ).encode("utf-8")
+    ).hexdigest()
+
+
+def test_xiaocao_runtime_imports_portable_handoff_before_status(
+    tmp_path,
+    monkeypatch,
+):
+    handoff_dir = tmp_path / "xiaocao" / "handoffs"
+    handoff_dir.mkdir(parents=True)
+    media_sha256 = "a" * 64
+    handoff_id = "b" * 64
+    job_id = f"kol-netdisk-{media_sha256[:16]}"
+    snapshot = {
+        "schema_version": 1,
+        "status": "video_ready",
+        "provider": "baidu_consumer_page",
+        "job_id": job_id,
+        "netdisk_directory": "/课程/自己的课/小草",
+        "netdisk_path": "/课程/自己的课/小草/target-compressed.mp4",
+        "video_basename": "target-compressed.mp4",
+        "video_sha256": media_sha256,
+        "video_sha256_kind": "content_sha256",
+        "video_size_bytes": 123456,
+        "video_duration_seconds": 1800.5,
+        "source_mode": "cloud_handoff",
+        "large_payload_local_bytes": 0,
+        "handoff_id": handoff_id,
+    }
+    capsule = {
+        "schema_version": 2,
+        "source": "xiaocao",
+        "author": "小草",
+        "handoff_id": handoff_id,
+        "capture_job_id": "kol-capture-test",
+        "live_id": "live-test",
+        "captured_at": "2026-08-01T19:30:00+08:00",
+        "media_basename": "target-compressed.mp4",
+        "media_sha256": media_sha256,
+        "media_size_bytes": 123456,
+        "media_duration_seconds": 1800.5,
+        "netdisk_job_id": job_id,
+        "cloud_reference": "baidu:/课程/自己的课/小草/target-compressed.mp4",
+        "provider": "baidu_consumer_page",
+        "large_payload_local_bytes": 0,
+        "published_at": "2026-08-01T19:45:00+08:00",
+        "netdisk_job_snapshot": snapshot,
+        "netdisk_job_snapshot_sha256": _canonical_sha256(snapshot),
+    }
+    capsule["handoff_sha256"] = _canonical_sha256(capsule)
+    (handoff_dir / "kol-capture-test.json").write_text(
+        json.dumps(capsule, ensure_ascii=False),
+        encoding="utf-8",
+    )
+    calls: list[str] = []
+
+    class FakeNetdisk:
+        def status(self, requested_job_id):
+            assert requested_job_id == job_id
+            assert calls == ["import"]
+            return {"status": "decided", "job_id": job_id}
+
+    class FakeService:
+        def __init__(self, *_args, **_kwargs):
+            self.netdisk = FakeNetdisk()
+
+        def import_handoff_capsule(self, value):
+            assert value == capsule
+            calls.append("import")
+            return {"status": "video_ready", "job_id": job_id}
+
+    monkeypatch.setattr(kol_daily_script, "XiaocaoLiveService", FakeService)
+    runtime = DailyRuntime.__new__(DailyRuntime)
+    runtime.args = SimpleNamespace(
+        xiaocao_output_dir=tmp_path / "xiaocao",
+        decision_output_dir=tmp_path / "decisions",
+        enrichment_session="xiaocao-lv-subscription",
+        opencli_profile=None,
+    )
+
+    assert runtime.xiaocao() == {"status": "no_update"}
+    assert calls == ["import"]
 
 
 def test_daily_runner_is_silent_outside_beijing_daytime_window(tmp_path):

@@ -722,6 +722,8 @@ class DailyRuntime:
         waiting = 0
         for path in handoffs:
             handoff = self._handoff(path)
+            if handoff.get("schema_version") == 2:
+                service.import_handoff_capsule(handoff)
             job_id = str(handoff["netdisk_job_id"])
             state = service.netdisk.status(job_id)
             if state.get("status") == "decided":

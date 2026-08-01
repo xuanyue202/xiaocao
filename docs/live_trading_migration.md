@@ -28,16 +28,24 @@ the current local machine remains the sole writer.
 
 The WeChat capture node owns capture, compression, large-media validation, and
 cloud upload. It then publishes one small immutable handoff containing the
-source identity, media metadata and hashes, and the exact private cloud
-reference. It does not continue into transcript enrichment, semantic analysis,
-灰常亮 publication, notification, or Book KOL-US.
+source identity, media metadata and hashes, the exact private cloud reference,
+and a portable `video_ready` projection of that Netdisk job ledger. The
+projection and the complete capsule have separate SHA-256 bindings. It does
+not contain a local path, browser evidence, credentials, or source-video bytes,
+and the capture node does not continue into transcript enrichment, semantic
+analysis, 灰常亮 publication, notification, or Book KOL-US.
 
 The normal control plane is the registered Codex task on
 `MacBook-Pro-6.local`. The local capture Automation sends that task a compact,
 credential-free handoff envelope. It sends metadata, hashes, and an exact
-private-cloud reference, not source-video bytes or a local path. The remote
-task validates the envelope, reconciles its stable `handoff_id`, and owns all
-later work. No cross-machine filesystem inbox is required.
+private-cloud reference and the job-ledger projection, not source-video bytes
+or a local path. The remote task validates both hashes and all cross-field
+bindings, merges the projection into its append-only Netdisk ledger by stable
+`handoff_id`, and owns all later work. A replay produces no second ledger row.
+Imported browser control is deliberately blocked: the remote OpenCLI session
+must independently scan the complete target directory and find exactly one
+matching file before any transcript-side mutation. No cross-machine filesystem
+inbox is required.
 
 Delivery is at least once. The local dispatcher keeps an append-only dispatch
 record until the remote task can be read back; the runtime keeps the durable
@@ -53,10 +61,11 @@ vault staging directory may hold a manually synchronized recovery or audit
 copy, but Xiaocao has no runtime dependency on it and never consumes a staged
 historical handoff as live work.
 
-The existing implementation already emits a self-hashed metadata-only JSON
-and rejects local media paths, but its consumer currently scans a same-machine
-directory. Migration therefore requires a Codex-dispatch contract and remote
-`handoff_id` receipt reconciliation; it does not require a vault inbox adapter.
+The implementation emits the portable v2 capsule, imports its cloud-ready
+ledger projection idempotently, and makes the coordinator import it before
+reading job status. The remaining cross-machine responsibility is delivery and
+readback through the registered Codex task; it does not require a vault inbox
+adapter.
 
 ## Remote KOL Runtime Prerequisites
 
@@ -89,11 +98,13 @@ current. Before moving the hourly Automation, verify all of the following on
   `kol_subscription_videos`, and `kol_xiaocao_live`. A fresh empty directory
   is not a safe continuation of the current writer.
 
-The incoming Codex task must materialize the validated handoff and bootstrap
-the matching remote Netdisk job state before the coordinator consumes it. The
-current same-machine consumer assumes that job ledger already exists, so this
-adapter and its idempotent receipt are a cutover prerequisite, not something
-to improvise during the first live handoff.
+At initial cutover, transfer one consistent snapshot of the complete
+authoritative lightweight KOL state listed above, including Book KOL-US and
+publication/notification receipts. That is continuity of the existing writer,
+not a recurring handoff format. After cutover, each incoming Codex task only
+needs to materialize its validated v2 capsule; the coordinator bootstraps that
+job from the embedded projection before consuming it. It must never replace
+the global ledgers with a per-job capsule.
 
 ## Commit To Git
 
