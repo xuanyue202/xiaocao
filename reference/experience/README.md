@@ -87,3 +87,13 @@
 2. `PYTHONPATH=src python3 scripts/research_run.py --trades <file> --n-tried <本轮所试假设数> --protocol-id <protocol> --run-dir output/research/runs/<run-id>`（护栏：cache-only / ≥8 天 / 逐笔非日度 / walk-forward train+test / 多重比较；同时写 manifest、verdict、trades 副本和 diagnostics）。
 3. 满意再 `--record --id XH-0xx --claim ... --method ...` 写 verdict 账本；回填候选 `status` 为 `tested:PASS/REJECTED`。
 4. **PASS** 才进 ③ 人工门：人确认 → 改 `src/xiaocao/strategy/params.py`（唯一入口，冻结约束）或重训 → **再过 train+test**。agent 永不自动改参。
+
+## 5. 与灰常亮和家庭财富知识的边界
+
+- **同仓分层，不再建库**：本目录就是小草项目的知识上下文，与 `src/` 行为源码共同版本化但保持目录和权威边界。这里保存原始证据引用、蒸馏知识、候选假设、研究协议和裁决，不把知识文件当成确定性策略实现。
+- **灰常亮保存已发布情报**：完整 KOL 报告、发布事件观点、当前性评估和观点关系以灰常亮为权威。小草通过只读检索和有预算的分析上下文包消费它们；本地镜像只允许是可重建缓存，不提交第二份报告事实源。
+- **原始证据按需下钻**：当前事件和完整性审计仍重读不可变逐字稿并校验 SHA；历史分析默认先读紧凑上下文，不能每轮无差别加载全部逐字稿。
+- **家庭财富知识不是事件复制**：跨事件、跨 KOL、跨资产仍稳定的家庭原则和因果模型才有资格进入 Obsidian 财富自行车。当前 KOL 流程尚未实现这一提升链路，不能把已有笔记误报成已接通。
+- **隐私先于便利**：凭据、家庭持仓、运行账本、缓存、原始媒体和私有逐字稿不得进入公开 Git。若要把私有原始证据纳入同仓版本化，必须先完成仓库私有化或采用私有证据存储。
+
+灰常亮消费能力的跨项目需求见 `.scratch/kol-intelligence-mvp/issues/08-gray-kol-consumption-and-context.md`。
