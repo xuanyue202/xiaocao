@@ -4,6 +4,60 @@ This repo should move by Git plus a small object-storage bundle. Keep source,
 contracts, and lightweight specs in Git; keep mutable runtime state, caches,
 trained binaries, and large feature corpora outside Git.
 
+## Target Runtime Topology
+
+- `MacBook-Pro-6.local` is the target sole runtime writer for trading
+  Automations, mutable paper ledgers, KOL hourly coordination, 灰常亮 writes,
+  and enterprise-WeChat Relay notifications.
+- The current local machine is the WeChat capture node for operations that
+  require its logged-in desktop session. It is also the development and
+  Obsidian workstation and a manual cold standby, but it does not run a second
+  copy of writer Automations after cutover.
+- There is no active-active or automatic failover mode. A manual takeover must
+  first prove the old writer is quiescent, transfer a consistent runtime-state
+  bundle, switch the existing Codex Automations, and read the resulting task
+  ownership and next-run cadence back through the Automation interface.
+- Git commit equality and checked-in Automation TOML files prove neither
+  runtime-state continuity nor scheduling ownership.
+
+The remote host and its Xiaocao task are registered in Codex. Until
+runtime-state restore and authoritative Automation readback have completed,
+the current local machine remains the sole writer.
+
+## KOL Cross-Machine Handoff
+
+The WeChat capture node owns capture, compression, large-media validation, and
+cloud upload. It then publishes one small immutable handoff containing the
+source identity, media metadata and hashes, and the exact private cloud
+reference. It does not continue into transcript enrichment, semantic analysis,
+灰常亮 publication, notification, or Book KOL-US.
+
+The normal control plane is the registered Codex task on
+`MacBook-Pro-6.local`. The local capture Automation sends that task a compact,
+credential-free handoff envelope. It sends metadata, hashes, and an exact
+private-cloud reference, not source-video bytes or a local path. The remote
+task validates the envelope, reconciles its stable `handoff_id`, and owns all
+later work. No cross-machine filesystem inbox is required.
+
+Delivery is at least once. The local dispatcher keeps an append-only dispatch
+record until the remote task can be read back; the runtime keeps the durable
+idempotency and business receipts. An ambiguous send is reconciled by remote
+thread identity plus `handoff_id` before any retry, so a retry cannot replay
+analysis, publication, notification, or Book KOL-US side effects. If the
+remote host is unavailable, capture may retain the pending dispatch locally,
+but the local machine does not automatically become a runtime writer.
+
+Do not use the public source repository, 灰常亮, Obsidian/TOS synchronization,
+or direct LAN/SSH copy as the normal handoff system of record. The existing
+vault staging directory may hold a manually synchronized recovery or audit
+copy, but Xiaocao has no runtime dependency on it and never consumes a staged
+historical handoff as live work.
+
+The existing implementation already emits a self-hashed metadata-only JSON
+and rejects local media paths, but its consumer currently scans a same-machine
+directory. Migration therefore requires a Codex-dispatch contract and remote
+`handoff_id` receipt reconciliation; it does not require a vault inbox adapter.
+
 ## Commit To Git
 
 - Source code under `src/`, `scripts/`, and `kronos_screen/scripts/`.
@@ -76,9 +130,13 @@ bash -n scripts/auto_daily.sh
    - `~/.codex/automations/xiaocao-*/automation.toml` ->
      `.codex/automations/xiaocao-*/automation.toml`
    The tracked schedules are:
-   - morning: `bash scripts/auto_daily.sh morning`, weekdays 09:23 Asia/Shanghai
+   - morning prerecommendation: weekdays 09:23 China-local time
+   - morning execution: weekdays 09:25 China-local time
    - eod: `bash scripts/auto_daily.sh eod`, weekdays 15:10 Asia/Shanghai
    - intraday monitor: `.venv/bin/python scripts/live_monitor.py --execute-sells`,
      opening dense, sparse daytime, and closing-discipline passes.
    - weekly deep review: `bash scripts/auto_daily.sh weekly`, Fridays 20:30
      Asia/Shanghai; non-trading Fridays still produce the latest-week review plan.
+   - KOL hourly coordination: every hour from 07:00 through 23:00 China-local
+     time; the coordinator consumes lightweight handoffs and never downloads
+     source-video bytes.
