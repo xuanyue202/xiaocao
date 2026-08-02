@@ -839,3 +839,94 @@ def test_start_emits_one_prompt_after_health_and_baseline(tmp_path):
     assert len([
         row for row in service.events() if row["event"] == "capture_armed"
     ]) == 1
+
+
+def test_reconcile_completed_capture_requires_exact_paused_compressed_task(tmp_path):
+    ledger = tmp_path / "capture.jsonl"
+    store = CaptureJobStore(ledger)
+    armed = store.arm([{"live_id": "live-old"}])
+    candidate = {
+        "id": "capture-new",
+        "live_id": "live-new",
+        "captured": "2026-08-02 23:06:46",
+        "filename": "20260802 大师班专场.mp4",
+        "title": "大师班专场",
+    }
+    detected = store.detect_capture(armed, [candidate])
+    assert detected is not None
+    store.transition(
+        detected,
+        "download_started",
+        status="downloading",
+        download_task_id="task-new",
+    )
+    media = tmp_path / "20260802 大师班专场-compressed.mp4"
+    media.write_bytes(b"compressed-video")
+    task = {
+        "id": "task-new",
+        "status": "pause",
+        "protocol": "stream",
+        "name": media.name,
+        "meta": {
+            "opts": {"path": str(tmp_path), "name": media.name},
+            "req": {
+                "labels": {
+                    "capture_id": "capture-new",
+                    "live_id": "live-new",
+                    "type": "live_capture",
+                    "compress": "true",
+                    "compress_inline": "true",
+                    "hls_duration_sec": "120.0",
+                }
+            },
+        },
+    }
+
+    class Sniffer:
+        @staticmethod
+        def tasks():
+            return [task]
+
+    service = XiaocaoLiveService(
+        tmp_path / "live",
+        capture_ledger=ledger,
+        sniffer_client=Sniffer(),
+        runner=_probe_runner(media, 120.0),
+    )
+
+    first = service.reconcile_completed_capture(armed["job_id"])
+    second = service.reconcile_completed_capture(armed["job_id"])
+
+    assert first["status"] == "downloaded"
+    assert first["event"] == "download_completed_reconciled"
+    assert first["provider_status_observed"] == "pause"
+    assert first["download_task"]["meta"]["labels"]["compress"] == "true"
+    assert second["idempotent_replay"] is True
+
+
+def test_reconcile_completed_capture_rejects_running_task(tmp_path):
+    ledger, capture_job_id, _media, _duration = _capture_fixture(tmp_path)
+    store = CaptureJobStore(ledger)
+    current = store.latest(capture_job_id)
+    assert current is not None
+    current = store.transition(
+        current,
+        "download_progress",
+        status="downloading",
+    )
+
+    class Sniffer:
+        @staticmethod
+        def tasks():
+            task = dict(current["download_task"])
+            task["status"] = "running"
+            return [task]
+
+    service = XiaocaoLiveService(
+        tmp_path / "live",
+        capture_ledger=ledger,
+        sniffer_client=Sniffer(),
+    )
+
+    with pytest.raises(EnrichmentError, match="not durably paused"):
+        service.reconcile_completed_capture(capture_job_id)

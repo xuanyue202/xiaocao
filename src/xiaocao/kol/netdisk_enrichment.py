@@ -29,6 +29,7 @@ _OPENCLI_SESSION = re.compile(r"^[A-Za-z0-9_.-]{1,64}$")
 _OPENCLI_PROFILE = re.compile(r"^[A-Za-z0-9_.-]{1,128}$")
 _OPENCLI_UPLOAD_TIMEOUT_SECONDS = 300
 _NETDISK_GENERATION_POLL_INTERVAL = timedelta(minutes=1)
+_AI_NOTE_MAX_TRIGGER_ATTEMPTS = 2
 _NETDISK_DIRECTORY = "/课程/自己的课/小草"
 _NETDISK_FOLDER_URL = (
     "https://pan.baidu.com/disk/main#/index?category=all&path="
@@ -195,6 +196,7 @@ _STATE_ORDER = [
     "transcript_requested",
     "transcript_ready",
     "ai_note_claimed",
+    "ai_note_pretrigger_failed",
     "ai_note_requested",
     "ai_note_ready",
     "transcript_captured",
@@ -1412,12 +1414,100 @@ class NetdiskEnrichmentService:
                     "Netdisk AI-note final click did not close the template modal "
                     "and confirm generation"
                 )
-            raise EnrichmentError("Netdisk AI-note template submission failed")
+            return submitted
         if submitted.get("modal_visible") is not False:
             raise EnrichmentError("Netdisk AI-note template modal remained visible")
         if submitted.get("confirmed_state") not in {"generating", "ready"}:
             raise EnrichmentError("Netdisk AI-note generation transition was not confirmed")
         return submitted
+
+    def _record_ai_note_pretrigger_failure(
+        self,
+        job_id: str,
+        *,
+        trigger_proof: dict[str, Any],
+    ) -> dict[str, Any]:
+        with self.store.job_lock(job_id):
+            current = self.store.latest(job_id)
+            if current.get("status") != "ai_note_claimed":
+                raise EnrichmentError("AI-note pretrigger failure lost its durable claim")
+            if trigger_proof.get("click_dispatched") is True:
+                raise EnrichmentError(
+                    "AI-note pretrigger recovery cannot accept a dispatched click"
+                )
+            if trigger_proof.get("submitted") is True:
+                raise EnrichmentError(
+                    "AI-note pretrigger recovery cannot accept a submitted request"
+                )
+            try:
+                button_matches = int(trigger_proof.get("button_matches") or 0)
+                template_no = int(trigger_proof.get("template_no") or 0)
+            except (TypeError, ValueError) as exc:
+                raise EnrichmentError("AI-note pretrigger proof is invalid") from exc
+            if button_matches != 0 or template_no != 1:
+                raise EnrichmentError("AI-note pretrigger proof is not retryable")
+            attempt = int(current.get("ai_note_trigger_attempt") or 1)
+            if attempt > _AI_NOTE_MAX_TRIGGER_ATTEMPTS:
+                raise EnrichmentError("AI-note trigger attempt count is invalid")
+            now = self._time().isoformat(timespec="microseconds")
+            row = {
+                **current,
+                "event": "netdisk_ai_note_pretrigger_failed",
+                "status": "ai_note_pretrigger_failed",
+                "ai_note_trigger_attempt": attempt,
+                "ai_note_pretrigger_proof": {
+                    "button_matches": button_matches,
+                    "click_dispatched": False,
+                    "template_no": template_no,
+                    "target_bound": trigger_proof.get("target_bound") is True,
+                },
+                "updated_at": now,
+            }
+            _clear_transient_failures(row)
+            self.store.append(row)
+            return row
+
+    def _claim_ai_note_pretrigger_retry(self, job_id: str) -> dict[str, Any]:
+        with self.store.job_lock(job_id):
+            current = self.store.latest(job_id)
+            if current.get("status") != "ai_note_pretrigger_failed":
+                raise EnrichmentError("AI-note pretrigger retry requires failed state")
+            proof = current.get("ai_note_pretrigger_proof")
+            if not isinstance(proof, dict) or proof.get("click_dispatched") is not False:
+                raise EnrichmentError("AI-note pretrigger retry proof is missing")
+            attempt = int(current.get("ai_note_trigger_attempt") or 0)
+            if attempt >= _AI_NOTE_MAX_TRIGGER_ATTEMPTS:
+                return {
+                    **current,
+                    "pending": True,
+                    "retry_exhausted": True,
+                    "idempotent_replay": True,
+                }
+            if not self._has_fresh_browser_control(current):
+                self._record_rejection(
+                    current,
+                    operation="claim:ai_note_pretrigger_retry",
+                    reason="browser_control_not_live",
+                )
+                raise EnrichmentError(
+                    "ai_note retry requires fresh browser claim/DOM liveness evidence"
+                )
+            retry_of = str(current.get("claimed_at") or "")
+            if not retry_of:
+                raise EnrichmentError("AI-note pretrigger retry lost its original claim")
+            now = self._time().isoformat(timespec="microseconds")
+            row = {
+                **current,
+                "event": "netdisk_ai_note_retry_claimed",
+                "status": "ai_note_claimed",
+                "claimed_at": now,
+                "ai_note_trigger_attempt": attempt + 1,
+                "ai_note_retry_of": retry_of,
+                "updated_at": now,
+            }
+            _clear_transient_failures(row)
+            self.store.append(row)
+            return {**row, "idempotent_replay": False}
 
     def _record_ai_note_triggered(
         self,
@@ -1510,6 +1600,10 @@ class NetdiskEnrichmentService:
                     "side_effect_uncertain": True,
                     "idempotent_replay": True,
                 }
+        elif status == "ai_note_pretrigger_failed":
+            claim = self._claim_ai_note_pretrigger_retry(job_id)
+            if claim.get("retry_exhausted") is True:
+                return claim
         reconcile_claim = status == "ai_note_claimed"
         target_name = str(current["video_basename"])
         player_url = self._open_opencli_player(
@@ -1561,6 +1655,12 @@ class NetdiskEnrichmentService:
                 profile=profile,
                 target_name=target_name,
             )
+            if trigger_proof.get("submitted") is not True:
+                self._record_ai_note_pretrigger_failure(
+                    job_id,
+                    trigger_proof=trigger_proof,
+                )
+                raise EnrichmentError("Netdisk AI-note template submission failed")
             return self._record_ai_note_triggered(
                 job_id,
                 target_name=target_name,
@@ -1648,7 +1748,11 @@ class NetdiskEnrichmentService:
                 session=session,
                 profile=profile,
             )
-        if status in {"transcript_ready", "ai_note_claimed"}:
+        if status in {
+            "transcript_ready",
+            "ai_note_claimed",
+            "ai_note_pretrigger_failed",
+        }:
             return self._advance_opencli_ai_note(
                 job_id,
                 session=session,
@@ -2454,6 +2558,110 @@ class NetdiskEnrichmentService:
             row["browser_control_blocked"] = True
         self.store.append(row)
 
+    def reconcile_ai_note_pretrigger_failure(
+        self,
+        job_id: str,
+        *,
+        evidence: dict[str, Any],
+    ) -> dict[str, Any]:
+        """Recover a legacy AI-note claim proven to have failed before click."""
+        required = {
+            "schema_version",
+            "job_id",
+            "action",
+            "claimed_at",
+            "command",
+            "exit_code",
+            "error",
+            "click_dispatched",
+            "source_thread_id",
+            "source_turn_id",
+            "observed_at",
+        }
+        if set(evidence) != required:
+            raise EnrichmentError("AI-note pretrigger evidence fields are invalid")
+        if evidence.get("schema_version") != 1:
+            raise EnrichmentError("AI-note pretrigger evidence schema is invalid")
+        if evidence.get("job_id") != job_id or evidence.get("action") != "ai_note":
+            raise EnrichmentError("AI-note pretrigger evidence target is invalid")
+        if evidence.get("exit_code") != 2:
+            raise EnrichmentError("AI-note pretrigger evidence exit code is invalid")
+        if evidence.get("error") != "Netdisk AI-note template submission failed":
+            raise EnrichmentError("AI-note pretrigger evidence error is invalid")
+        if evidence.get("click_dispatched") is not False:
+            raise EnrichmentError("AI-note pretrigger evidence includes a click")
+        command = str(evidence.get("command") or "")
+        if (
+            "scripts/kol_netdisk_video.py advance-opencli" not in command
+            or f"--job-id {job_id}" not in command
+        ):
+            raise EnrichmentError("AI-note pretrigger evidence command is invalid")
+        for field in ("source_thread_id", "source_turn_id"):
+            if not re.fullmatch(r"[0-9a-f-]{36}", str(evidence.get(field) or "")):
+                raise EnrichmentError(f"AI-note pretrigger evidence {field} is invalid")
+        observed_at = self._event_time(
+            evidence.get("observed_at"), field="AI-note pretrigger observed_at"
+        )
+        canonical = json.dumps(
+            evidence,
+            ensure_ascii=False,
+            sort_keys=True,
+        ) + "\n"
+        evidence_sha256 = hashlib.sha256(canonical.encode("utf-8")).hexdigest()
+
+        with self.store.job_lock(job_id):
+            current = self.store.latest(job_id)
+            if current.get("status") == "ai_note_pretrigger_failed":
+                if current.get("ai_note_pretrigger_evidence_sha256") != evidence_sha256:
+                    raise EnrichmentError(
+                        "AI-note pretrigger failure was reconciled with different evidence"
+                    )
+                return {**current, "idempotent_replay": True}
+            if current.get("status") != "ai_note_claimed":
+                raise EnrichmentError(
+                    "AI-note pretrigger reconciliation requires claimed state"
+                )
+            claimed_at = str(current.get("claimed_at") or "")
+            if evidence.get("claimed_at") != claimed_at:
+                raise EnrichmentError("AI-note pretrigger evidence claim does not match")
+            claim_time = self._event_time(
+                claimed_at, field="AI-note pretrigger claimed_at"
+            )
+            if observed_at < claim_time:
+                raise EnrichmentError("AI-note pretrigger evidence predates the claim")
+            if current.get("ai_note_triggered_at") or current.get(
+                "ai_note_submission_proof"
+            ):
+                raise EnrichmentError("AI-note claim already has submission evidence")
+            attempt = int(current.get("ai_note_trigger_attempt") or 1)
+            if attempt != 1:
+                raise EnrichmentError(
+                    "legacy AI-note pretrigger reconciliation requires first attempt"
+                )
+            now = self._time().isoformat(timespec="microseconds")
+            row = {
+                **current,
+                "event": "netdisk_ai_note_pretrigger_failed",
+                "status": "ai_note_pretrigger_failed",
+                "ai_note_trigger_attempt": attempt,
+                "ai_note_pretrigger_proof": {
+                    "button_matches": None,
+                    "click_dispatched": False,
+                    "template_no": 1,
+                    "target_bound": True,
+                    "proof_kind": "captured_cli_error",
+                },
+                "reconciled_legacy_pretrigger": True,
+                "ai_note_pretrigger_evidence_sha256": evidence_sha256,
+                "ai_note_pretrigger_source_thread_id": evidence["source_thread_id"],
+                "ai_note_pretrigger_source_turn_id": evidence["source_turn_id"],
+                "ai_note_pretrigger_observed_at": evidence["observed_at"],
+                "updated_at": now,
+            }
+            _clear_transient_failures(row)
+            self.store.append(row)
+            return {**row, "idempotent_replay": False}
+
     def claim_browser_action(self, job_id: str, *, action: str) -> dict[str, Any]:
         if action not in _ACTIONS:
             raise EnrichmentError(f"unsupported browser action: {action}")
@@ -2498,6 +2706,8 @@ class NetdiskEnrichmentService:
                 "claimed_at": now,
                 "updated_at": now,
             }
+            if action == "ai_note":
+                row["ai_note_trigger_attempt"] = 1
             _clear_transient_failures(row)
             self.store.append(row)
             return {**row, "idempotent_replay": False}

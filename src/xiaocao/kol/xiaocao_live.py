@@ -761,6 +761,109 @@ class XiaocaoLiveService:
             )
         return current
 
+    def reconcile_completed_capture(self, capture_job_id: str) -> dict[str, Any]:
+        """Recover a complete compressed artifact after a sniffer interruption."""
+        current = self.capture_store.latest(capture_job_id)
+        if current is None:
+            raise EnrichmentError("capture job does not exist")
+        if current.get("status") == "downloaded":
+            return {**current, "idempotent_replay": True}
+        if current.get("status") != "downloading":
+            raise EnrichmentError("capture is not awaiting download reconciliation")
+
+        task_id = str(current.get("download_task_id") or "")
+        matches = [
+            task
+            for task in self.sniffer.tasks()
+            if str(task.get("id") or "") == task_id
+        ]
+        if len(matches) != 1:
+            raise EnrichmentError("exact interrupted download task is unavailable")
+        task = matches[0]
+        if str(task.get("status") or "").lower() != "pause":
+            raise EnrichmentError("interrupted download task is not durably paused")
+        if str(task.get("protocol") or "").lower() != "stream":
+            raise EnrichmentError("interrupted download task is not a stream capture")
+
+        candidate = current.get("candidate") or {}
+        meta = task.get("meta") or {}
+        req = meta.get("req") or {}
+        labels = req.get("labels") or meta.get("labels") or {}
+        opts = meta.get("opts") or {}
+        live_id = str(candidate.get("live_id") or "")
+        capture_id = str(candidate.get("id") or "")
+        if (
+            not live_id
+            or not capture_id
+            or str(labels.get("live_id") or "") != live_id
+            or str(labels.get("capture_id") or "") != capture_id
+            or str(labels.get("type") or "") != "live_capture"
+            or str(labels.get("compress") or "").lower() != "true"
+            or str(labels.get("compress_inline") or "").lower() != "true"
+        ):
+            raise EnrichmentError("paused task does not prove the compressed capture path")
+
+        source_name = str(candidate.get("filename") or "")
+        expected_name = (
+            source_name.removesuffix(".mp4") + "-compressed.mp4"
+            if source_name.endswith(".mp4")
+            else ""
+        )
+        task_name = str(task.get("name") or opts.get("name") or "")
+        directory = str(opts.get("path") or "")
+        if not expected_name or task_name != expected_name or not directory:
+            raise EnrichmentError("paused task media target does not match the capture")
+        media = (Path(directory).expanduser() / task_name).resolve()
+        if not media.is_file() or media.stat().st_size <= 0:
+            raise EnrichmentError("paused task compressed artifact is missing")
+        raw_name = media.name.removesuffix("-compressed.mp4") + ".mp4"
+        if (media.parent / raw_name).exists():
+            raise EnrichmentError("interrupted capture retained a raw source video")
+
+        try:
+            expected_duration = float(labels.get("hls_duration_sec") or 0)
+        except (TypeError, ValueError) as exc:
+            raise EnrichmentError("paused task has invalid HLS duration evidence") from exc
+        if expected_duration < 60:
+            raise EnrichmentError("paused task is missing HLS duration evidence")
+        result = self._runner(
+            [
+                "ffprobe",
+                "-v",
+                "error",
+                "-show_entries",
+                "format=duration,size",
+                "-of",
+                "json",
+                str(media),
+            ],
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+        try:
+            probe = json.loads(result.stdout)["format"]
+            duration = float(probe["duration"])
+            size = int(probe["size"])
+        except (KeyError, TypeError, ValueError, json.JSONDecodeError) as exc:
+            raise EnrichmentError("paused compressed capture could not be probed") from exc
+        tolerance = max(15.0, expected_duration * 0.01)
+        if duration < 60 or abs(duration - expected_duration) > tolerance:
+            raise EnrichmentError("paused compressed capture duration does not match HLS")
+
+        return self.capture_store.transition(
+            current,
+            "download_completed_reconciled",
+            status="downloaded",
+            download_task=task,
+            media_path=str(media),
+            provider_status_observed="pause",
+            media_size_bytes=size,
+            media_duration_seconds=duration,
+            expected_duration_seconds=expected_duration,
+            reconciliation_reason="sniffer_interrupted_after_complete_media",
+        )
+
     @staticmethod
     def _capture_contract(capture: dict[str, Any]) -> dict[str, Any]:
         candidate = capture.get("candidate")

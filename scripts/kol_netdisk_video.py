@@ -42,6 +42,7 @@ def main() -> int:
             "capability-failure",
             "capture-dom",
             "advance-opencli",
+            "reconcile-ai-note-pretrigger",
             "verify",
             "decide",
             "status",
@@ -109,6 +110,8 @@ def main() -> int:
         parser.error("capture-dom requires --opencli-session")
     if args.command == "advance-opencli" and not args.opencli_session:
         parser.error("advance-opencli requires --opencli-session")
+    if args.command == "reconcile-ai-note-pretrigger" and args.evidence_file is None:
+        parser.error("reconcile-ai-note-pretrigger requires --evidence-file")
     if args.command == "verify" and args.audit_file is None:
         parser.error("verify requires --audit-file")
     if args.command == "decide" and args.bundle is None:
@@ -159,6 +162,13 @@ def main() -> int:
                 args.job_id,
                 session=args.opencli_session,
                 profile=args.opencli_profile,
+            )
+        )
+    elif args.command == "reconcile-ai-note-pretrigger":
+        _print(
+            service.reconcile_ai_note_pretrigger_failure(
+                args.job_id,
+                evidence=_load_object(args.evidence_file),
             )
         )
     elif args.command == "verify":

@@ -961,6 +961,246 @@ def test_ai_note_submission_does_not_record_success_while_modal_remains_visible(
     assert current["event"] == "netdisk_ai_note_claimed"
 
 
+def test_ai_note_pretrigger_failure_is_persisted_and_retried_once(tmp_path):
+    video = tmp_path / "20260720 ai-note-pretrigger-retry-compressed.mp4"
+    video.write_bytes(b"real-video")
+    submit_calls = 0
+    missing = {
+        "ai_note_state": "missing",
+        "active_tab": "笔记",
+        "content_chars": 76,
+        "template": "文稿笔记",
+        "export_available": True,
+        "target_bound": True,
+    }
+    base_runner = _opencli_ai_note_runner(
+        video.name,
+        note_states=[missing, missing],
+    )
+
+    def runner(command, **kwargs):
+        nonlocal submit_calls
+        if (
+            len(command) > 6
+            and command[5] == "eval"
+            and "生成该笔记" in command[6]
+            and "contentDocument" in command[6]
+        ):
+            submit_calls += 1
+            payload = (
+                {
+                    "submitted": False,
+                    "template_no": 1,
+                    "target_bound": True,
+                    "button_matches": 0,
+                    "click_dispatched": False,
+                }
+                if submit_calls == 1
+                else {
+                    "submitted": True,
+                    "template_no": 1,
+                    "target_bound": True,
+                    "button_matches": 1,
+                    "click_dispatched": True,
+                    "modal_visible": False,
+                    "confirmed_state": "generating",
+                    "content_chars": 76,
+                }
+            )
+            return SimpleNamespace(
+                returncode=0,
+                stdout=json.dumps(payload, ensure_ascii=False),
+                stderr="",
+            )
+        return base_runner(command, **kwargs)
+
+    service = NetdiskEnrichmentService(
+        tmp_path / "out",
+        runner=runner,
+        now=lambda: NOW,
+        opencli_command=("opencli",),
+    )
+    job_id = service.prepare(video)["job_id"]
+    service.record_browser_state(
+        job_id,
+        step="video_ready",
+        evidence=_evidence(video.name, "目标视频已存在"),
+        source_mode="existing",
+    )
+    service.record_browser_state(
+        job_id,
+        step="transcript_ready",
+        evidence=_evidence(video.name, "文稿 已生成"),
+        reconcile_existing=True,
+    )
+
+    with pytest.raises(EnrichmentError, match="template submission failed"):
+        service.advance_opencli(
+            job_id,
+            session="ticket02-ai-note-pretrigger",
+            profile="work",
+        )
+
+    failed = service.status(job_id)
+    assert failed["event"] == "netdisk_ai_note_pretrigger_failed"
+    assert failed["status"] == "ai_note_pretrigger_failed"
+    assert failed["ai_note_trigger_attempt"] == 1
+    assert failed["ai_note_pretrigger_proof"] == {
+        "button_matches": 0,
+        "click_dispatched": False,
+        "template_no": 1,
+        "target_bound": True,
+    }
+
+    recovered = service.advance_opencli(
+        job_id,
+        session="ticket02-ai-note-pretrigger",
+        profile="work",
+    )
+
+    assert recovered["event"] == "netdisk_ai_note_triggered"
+    assert recovered["status"] == "ai_note_requested"
+    assert recovered["ai_note_trigger_attempt"] == 2
+    assert recovered["ai_note_retry_of"] == failed["claimed_at"]
+    assert submit_calls == 2
+
+
+def test_ai_note_pretrigger_retry_stops_after_two_unsubmitted_attempts(tmp_path):
+    video = tmp_path / "20260720 ai-note-pretrigger-exhausted-compressed.mp4"
+    video.write_bytes(b"real-video")
+    submit_calls = 0
+    missing = {
+        "ai_note_state": "missing",
+        "active_tab": "笔记",
+        "content_chars": 76,
+        "template": "文稿笔记",
+        "export_available": True,
+        "target_bound": True,
+    }
+    base_runner = _opencli_ai_note_runner(
+        video.name,
+        note_states=[missing, missing],
+        submission_payload={
+            "submitted": False,
+            "template_no": 1,
+            "target_bound": True,
+            "button_matches": 0,
+            "click_dispatched": False,
+        },
+    )
+
+    def runner(command, **kwargs):
+        nonlocal submit_calls
+        if (
+            len(command) > 6
+            and command[5] == "eval"
+            and "生成该笔记" in command[6]
+            and "contentDocument" in command[6]
+        ):
+            submit_calls += 1
+        return base_runner(command, **kwargs)
+
+    service = NetdiskEnrichmentService(
+        tmp_path / "out",
+        runner=runner,
+        now=lambda: NOW,
+        opencli_command=("opencli",),
+    )
+    job_id = service.prepare(video)["job_id"]
+    service.record_browser_state(
+        job_id,
+        step="video_ready",
+        evidence=_evidence(video.name, "目标视频已存在"),
+        source_mode="existing",
+    )
+    service.record_browser_state(
+        job_id,
+        step="transcript_ready",
+        evidence=_evidence(video.name, "文稿 已生成"),
+        reconcile_existing=True,
+    )
+
+    for _ in range(2):
+        with pytest.raises(EnrichmentError, match="template submission failed"):
+            service.advance_opencli(
+                job_id,
+                session="ticket02-ai-note-pretrigger",
+                profile="work",
+            )
+
+    exhausted = service.advance_opencli(
+        job_id,
+        session="ticket02-ai-note-pretrigger",
+        profile="work",
+    )
+
+    assert exhausted["status"] == "ai_note_pretrigger_failed"
+    assert exhausted["ai_note_trigger_attempt"] == 2
+    assert exhausted["retry_exhausted"] is True
+    assert exhausted["idempotent_replay"] is True
+    assert submit_calls == 2
+
+
+def test_reconcile_legacy_ai_note_pretrigger_failure_requires_exact_cli_evidence(
+    tmp_path,
+):
+    service, video, prepared = _prepare(tmp_path)
+    job_id = prepared["job_id"]
+    service.record_browser_liveness(
+        job_id,
+        surface="opencli",
+        evidence=_liveness_evidence(),
+    )
+    service.record_browser_state(
+        job_id,
+        step="video_ready",
+        evidence=_evidence(video.name, "目标视频已存在"),
+        source_mode="existing",
+    )
+    service.record_browser_state(
+        job_id,
+        step="transcript_ready",
+        evidence=_evidence(video.name, "文稿 已生成"),
+        reconcile_existing=True,
+    )
+    claim = service.claim_browser_action(job_id, action="ai_note")
+    evidence = {
+        "schema_version": 1,
+        "job_id": job_id,
+        "action": "ai_note",
+        "claimed_at": claim["claimed_at"],
+        "command": (
+            "PYTHONPATH=src .venv/bin/python scripts/kol_netdisk_video.py "
+            f"advance-opencli --job-id {job_id} "
+            "--opencli-session ticket02-ai-note --opencli-profile work"
+        ),
+        "exit_code": 2,
+        "error": "Netdisk AI-note template submission failed",
+        "click_dispatched": False,
+        "source_thread_id": "019fbd59-e55c-7582-8bf9-cb6eee578157",
+        "source_turn_id": "019fc31b-516b-7642-9488-77a963a71ee1",
+        "observed_at": NOW.isoformat(),
+    }
+
+    recovered = service.reconcile_ai_note_pretrigger_failure(
+        job_id,
+        evidence=evidence,
+    )
+    replay = service.reconcile_ai_note_pretrigger_failure(
+        job_id,
+        evidence=evidence,
+    )
+
+    assert recovered["event"] == "netdisk_ai_note_pretrigger_failed"
+    assert recovered["status"] == "ai_note_pretrigger_failed"
+    assert recovered["ai_note_trigger_attempt"] == 1
+    assert recovered["reconciled_legacy_pretrigger"] is True
+    assert recovered["ai_note_pretrigger_evidence_sha256"] == hashlib.sha256(
+        (json.dumps(evidence, ensure_ascii=False, sort_keys=True) + "\n").encode()
+    ).hexdigest()
+    assert replay["idempotent_replay"] is True
+
+
 def test_ai_note_claim_replay_reconciles_without_repeating_template_submission(
     tmp_path,
 ):

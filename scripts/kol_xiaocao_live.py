@@ -28,7 +28,14 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
         "command",
-        choices=("run", "status", "audit", "reconcile-existing", "confirm"),
+        choices=(
+            "run",
+            "status",
+            "audit",
+            "reconcile-capture",
+            "reconcile-existing",
+            "confirm",
+        ),
     )
     parser.add_argument("--output-dir", type=Path, default=DEFAULT_OUTPUT)
     parser.add_argument(
@@ -83,6 +90,11 @@ def main() -> int:
         if not args.capture_job_id:
             parser.error("audit requires --capture-job-id")
         _print(service.audit_acceptance(args.capture_job_id))
+        return 0
+    if args.command == "reconcile-capture":
+        if not args.capture_job_id:
+            parser.error("reconcile-capture requires --capture-job-id")
+        _print(service.reconcile_completed_capture(args.capture_job_id))
         return 0
     if args.command == "reconcile-existing":
         if (
