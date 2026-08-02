@@ -25,6 +25,20 @@ readback, while the remote runtime retains idempotency and business receipts.
 An ambiguous send must be reconciled against the target thread and
 `handoff_id` before retrying.
 
+Relay transport is separable from business ownership. If the remote sole
+writer cannot reach the public Enterprise WeChat Relay and the local capture
+node can, the remote task retains the original notification claim and emits a
+self-hashed, credential-free transport request bound to the final report,
+content hash, exact recipients, original failure, and explicit confirmation
+that those recipients are missing the message. The local node then claims and
+receipts each requested recipient independently. It returns one self-hashed
+all-recipient receipt through the existing Codex task; the remote writer
+validates that receipt and records delivery under the original notification
+identity. No business decision, report publication, Book action, or global KOL
+state is written locally. A delivered recipient is never resent, a proven
+pre-connect failure may resume only for that recipient, and an uncertain call
+stops for reconciliation.
+
 The first writer cutover separately transfers a consistent snapshot of the
 full authoritative lightweight KOL state. Recurring capsules contain only the
 one job projection and must never overwrite the global KOL or Book ledgers.

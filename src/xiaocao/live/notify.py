@@ -238,6 +238,82 @@ def wecom_notify(
 ) -> str:
     """Post a text message through OpenClaw's wecom-app-relay /send endpoint.
     Returns a status string; never raises."""
+    return str(
+        wecom_notify_detailed(
+            relay_url,
+            title,
+            body,
+            token=token,
+            user_id=user_id,
+            account_id=account_id,
+            insecure=insecure,
+            poster=poster,
+            now=now,
+        )["detail"]
+    )
+
+
+def _exception_type_chain(exc: BaseException) -> set[str]:
+    names: set[str] = set()
+    seen: set[int] = set()
+    pending: list[BaseException] = [exc]
+    while pending:
+        current = pending.pop()
+        if id(current) in seen:
+            continue
+        seen.add(id(current))
+        names.add(type(current).__name__)
+        if current.__cause__ is not None:
+            pending.append(current.__cause__)
+        if current.__context__ is not None:
+            pending.append(current.__context__)
+        pending.extend(value for value in current.args if isinstance(value, BaseException))
+    return names
+
+
+def _wecom_exception_result(
+    exc: Exception,
+    *,
+    chunk_prefix: str,
+    partial_delivery: bool,
+) -> dict[str, Any]:
+    error_type = type(exc).__name__
+    detail = f"{chunk_prefix}error: {error_type}"
+    safe_connect_errors = {
+        "ConnectTimeout",
+        "ConnectionRefusedError",
+        "NameResolutionError",
+        "NewConnectionError",
+        "gaierror",
+    }
+    if not partial_delivery and _exception_type_chain(exc) & safe_connect_errors:
+        return {
+            "status": "failed",
+            "detail": detail,
+            "retry_safety": "safe",
+            "failure_phase": "connect",
+        }
+    return {
+        "status": "uncertain",
+        "detail": detail,
+        "retry_safety": "uncertain",
+        "failure_phase": "response",
+    }
+
+
+def wecom_notify_detailed(
+    relay_url: str,
+    title: str,
+    body: str,
+    *,
+    token: str,
+    user_id: str,
+    account_id: str = "default",
+    insecure: bool = False,
+    poster: Poster | None = None,
+    now: datetime | None = None,
+) -> dict[str, Any]:
+    """Post one recipient and preserve whether a retry is provably safe."""
     _ = now  # kept for a stable notify() call signature in tests/callers
     chunks = split_wecom_text_by_bytes(f"{title}\n{body}")
     headers = {
@@ -264,7 +340,11 @@ def wecom_notify(
                 if len(chunks) > 1
                 else ""
             )
-            return f"{chunk_prefix}error: {type(exc).__name__}"
+            return _wecom_exception_result(
+                exc,
+                chunk_prefix=chunk_prefix,
+                partial_delivery=index > 1,
+            )
         if not (
             200 <= status < 300
             and _wecom_ok(response_text)
@@ -274,10 +354,20 @@ def wecom_notify(
                 if len(chunks) > 1
                 else ""
             )
-            return f"{chunk_prefix}http {status}: {response_text[:120]}"
+            return {
+                "status": "failed",
+                "detail": f"{chunk_prefix}http {status}: {response_text[:120]}",
+                "retry_safety": "requires_reconciliation",
+                "failure_phase": "relay_response",
+            }
         if index < len(chunks):
             time.sleep(WECOM_CHUNK_DELAY_SECONDS)
-    return "ok"
+    return {
+        "status": "ok",
+        "detail": "ok",
+        "retry_safety": "not_needed",
+        "failure_phase": None,
+    }
 
 
 def _wecom_ok(text: str) -> bool:
@@ -319,8 +409,35 @@ def notify(
     macos is opt-in (callers gate it on a --no-notify flag); wecom auto-enables
     when the XIAOCAO_WECOM_* relay env vars are present.
     """
+    detailed = notify_detailed(
+        title,
+        body,
+        macos=macos,
+        env=env,
+        poster=poster,
+        now=now,
+        audience=audience,
+    )
+    return {
+        key: str(value)
+        for key, value in detailed.items()
+        if key != "wecom_recipients"
+    }
+
+
+def notify_detailed(
+    title: str,
+    body: str,
+    *,
+    macos: bool = False,
+    env: dict[str, str] | None = None,
+    poster: Poster | None = None,
+    now: datetime | None = None,
+    audience: str | None = None,
+) -> dict[str, Any]:
+    """Fan out while retaining per-recipient relay outcomes for reconciliation."""
     src = _merged_env(os.environ) if env is None else env
-    results: dict[str, str] = {}
+    results: dict[str, Any] = {}
     if macos:
         results["macos"] = macos_notify(title, body)
     relay_url = _env_first(src, ENV_WECOM_RELAY_URL)
@@ -338,8 +455,8 @@ def notify(
             results["wecom"] = "not configured: missing " + ", ".join(missing)
         else:
             account_id = _env_first(src, ENV_WECOM_ACCOUNT_ID) or "default"
-            statuses = {
-                user_id: wecom_notify(
+            recipient_results = {
+                user_id: wecom_notify_detailed(
                     relay_url,
                     title,
                     body,
@@ -353,7 +470,9 @@ def notify(
                 for user_id in user_ids
             }
             failures = {
-                user_id: status for user_id, status in statuses.items() if status != "ok"
+                user_id: value["detail"]
+                for user_id, value in recipient_results.items()
+                if value["status"] != "ok"
             }
             results["wecom"] = (
                 "ok"
@@ -361,4 +480,55 @@ def notify(
                 else "failed recipients: "
                 + "; ".join(f"{user_id}={status}" for user_id, status in failures.items())
             )
+            results["wecom_recipients"] = recipient_results
     return results
+
+
+def configured_wecom_recipients(
+    *,
+    env: dict[str, str] | None = None,
+    audience: str | None = None,
+) -> tuple[str, ...]:
+    """Return configured recipient identities without exposing relay credentials."""
+    src = _merged_env(os.environ) if env is None else env
+    return _wecom_user_ids(src, audience=audience)
+
+
+def send_wecom_recipient_detailed(
+    title: str,
+    body: str,
+    recipient: str,
+    *,
+    env: dict[str, str] | None = None,
+    audience: str | None = None,
+    poster: Poster | None = None,
+) -> dict[str, Any]:
+    """Send exactly one already-configured recipient for a transport handoff."""
+    src = _merged_env(os.environ) if env is None else env
+    allowed = _wecom_user_ids(src, audience=audience)
+    if recipient not in allowed:
+        return {
+            "status": "failed",
+            "detail": "recipient not configured",
+            "retry_safety": "not_allowed",
+            "failure_phase": "preflight",
+        }
+    relay_url = _env_first(src, ENV_WECOM_RELAY_URL)
+    token = _env_first(src, ENV_WECOM_RELAY_TOKEN)
+    if not relay_url or not token:
+        return {
+            "status": "failed",
+            "detail": "relay not configured",
+            "retry_safety": "not_allowed",
+            "failure_phase": "preflight",
+        }
+    return wecom_notify_detailed(
+        relay_url,
+        title,
+        body,
+        token=token,
+        user_id=recipient,
+        account_id=_env_first(src, ENV_WECOM_ACCOUNT_ID) or "default",
+        insecure=_truthy(_env_first(src, ENV_WECOM_INSECURE)),
+        poster=poster,
+    )

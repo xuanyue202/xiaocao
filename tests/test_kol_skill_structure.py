@@ -23,6 +23,20 @@ def test_kol_skill_is_the_single_conditional_entrypoint() -> None:
     assert "holdings as context, not a search boundary" in text
 
 
+def test_kol_skill_routes_xiaocao_recap_to_live_replay_capture_first() -> None:
+    text = SKILL_MD.read_text(encoding="utf-8")
+
+    for marker in (
+        "小草复盘",
+        "live-replay capture",
+        "inspect the current Ticket 03 job",
+        "录入直播回放",
+        "复盘已有报告",
+        "keep that route fixed",
+    ):
+        assert marker in text
+
+
 def test_kol_skill_requires_complete_trade_information_coverage() -> None:
     text = FULL_CONTRACT_MD.read_text(encoding="utf-8")
 

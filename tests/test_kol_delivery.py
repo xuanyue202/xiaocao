@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import hashlib
 import threading
 from concurrent.futures import ThreadPoolExecutor
 
@@ -105,6 +106,95 @@ def test_wechat_delivery_uses_existing_relay_and_is_idempotent(tmp_path):
     assert "超配仓" not in calls[0][1]
     assert result["items"][0]["notification"]["status"] == "delivered"
     assert first["deliveries"][0]["receipt"].startswith("wecom-relay://ok/evidence-1/")
+
+
+def test_transport_receipt_is_validated_before_aggregate_delivery(tmp_path):
+    pipeline = _pipeline(tmp_path)
+    receipt = {
+        "schema_version": 1,
+        "status": "delivered",
+        "handoff_id": "a" * 64,
+        "notification_id": "evidence-1",
+        "report_id": "kr_report_1",
+        "stable_report_url": "https://reader.example/kol-reports/kr_report_1",
+        "content_sha256": "b" * 64,
+        "recipient_receipts": {
+            "Chen": {
+                "receipt": f"wecom-relay://ok/{'a' * 64}/Chen/{'b' * 16}",
+                "delivered_at": "2026-08-03T00:50:00+08:00",
+            },
+            "FeiFei": {
+                "receipt": f"wecom-relay://ok/{'a' * 64}/FeiFei/{'b' * 16}",
+                "delivered_at": "2026-08-03T00:50:01+08:00",
+            },
+        },
+    }
+    receipt["receipt_sha256"] = hashlib.sha256(
+        json.dumps(
+            receipt,
+            ensure_ascii=False,
+            sort_keys=True,
+            separators=(",", ":"),
+        ).encode()
+    ).hexdigest()
+
+    first = pipeline.record_transport_delivery(
+        receipt,
+        expected_recipients=("Chen", "FeiFei"),
+    )
+    second = pipeline.record_transport_delivery(
+        receipt,
+        expected_recipients=("Chen", "FeiFei"),
+    )
+
+    assert first["status"] == "delivered"
+    assert second["idempotent_replay"] is True
+    assert first["receipt"].endswith(receipt["receipt_sha256"])
+    events = pipeline.events_path.read_text(encoding="utf-8")
+    assert events.count("notification_transport_receipt_validated") == 1
+    assert events.count('"event":"notification_delivered"') == 1
+
+
+def test_transport_receipt_rejects_missing_recipient_or_bad_hash(tmp_path):
+    pipeline = _pipeline(tmp_path)
+    receipt = {
+        "schema_version": 1,
+        "status": "delivered",
+        "handoff_id": "a" * 64,
+        "notification_id": "evidence-1",
+        "report_id": "kr_report_1",
+        "stable_report_url": "https://reader.example/kol-reports/kr_report_1",
+        "content_sha256": "b" * 64,
+        "recipient_receipts": {
+            "Chen": {
+                "receipt": f"wecom-relay://ok/{'a' * 64}/Chen/{'b' * 16}",
+                "delivered_at": "2026-08-03T00:50:00+08:00",
+            }
+        },
+        "receipt_sha256": "c" * 64,
+    }
+
+    with pytest.raises(DecisionError, match="transport receipt hash"):
+        pipeline.record_transport_delivery(
+            receipt,
+            expected_recipients=("Chen", "FeiFei"),
+        )
+
+    unsigned = dict(receipt)
+    unsigned.pop("receipt_sha256")
+    receipt["receipt_sha256"] = hashlib.sha256(
+        json.dumps(
+            unsigned,
+            ensure_ascii=False,
+            sort_keys=True,
+            separators=(",", ":"),
+        ).encode()
+    ).hexdigest()
+    with pytest.raises(DecisionError, match="exact recipient set"):
+        pipeline.record_transport_delivery(
+            receipt,
+            expected_recipients=("Chen", "FeiFei"),
+        )
 
 
 def test_wechat_delivery_failure_is_visible_and_not_marked_delivered(tmp_path):

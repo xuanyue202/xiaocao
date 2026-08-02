@@ -149,6 +149,107 @@ def test_wecom_fanout_reports_the_failed_recipient():
     assert [call[1]["userId"] for call in calls] == ["Chen", "FeiFei"]
 
 
+def test_wecom_detailed_result_preserves_each_recipient_and_retry_safety():
+    def poster(_url, payload, *, headers=None, verify=True):
+        if payload["userId"] == "FeiFei":
+            raise ConnectionRefusedError("relay refused the connection")
+        return 200, '{"ok":true}'
+
+    result = N.notify_detailed(
+        "小草通知",
+        "双发验证",
+        env={
+            N.ENV_WECOM_RELAY_URL: "https://clawsg/send",
+            N.ENV_WECOM_RELAY_TOKEN: "tok",
+            N.ENV_KOL_WECOM_USER_IDS: "Chen,FeiFei",
+        },
+        poster=poster,
+        audience="kol",
+    )
+
+    assert result["wecom"] == (
+        "failed recipients: FeiFei=error: ConnectionRefusedError"
+    )
+    assert result["wecom_recipients"]["Chen"] == {
+        "status": "ok",
+        "detail": "ok",
+        "retry_safety": "not_needed",
+        "failure_phase": None,
+    }
+    assert result["wecom_recipients"]["FeiFei"] == {
+        "status": "failed",
+        "detail": "error: ConnectionRefusedError",
+        "retry_safety": "safe",
+        "failure_phase": "connect",
+    }
+
+
+def test_wecom_detailed_result_keeps_connection_reset_uncertain():
+    def poster(_url, _payload, *, headers=None, verify=True):
+        raise ConnectionResetError("peer reset after request bytes")
+
+    result = N.wecom_notify_detailed(
+        "https://clawsg/send",
+        "小草通知",
+        "单发验证",
+        token="tok",
+        user_id="Chen",
+        poster=poster,
+    )
+
+    assert result == {
+        "status": "uncertain",
+        "detail": "error: ConnectionResetError",
+        "retry_safety": "uncertain",
+        "failure_phase": "response",
+    }
+
+
+def test_wecom_detailed_result_recognizes_nested_preconnect_failure():
+    def poster(_url, _payload, *, headers=None, verify=True):
+        try:
+            raise ConnectionRefusedError("refused before request")
+        except ConnectionRefusedError as cause:
+            raise ConnectionError("requests wrapper") from cause
+
+    result = N.wecom_notify_detailed(
+        "https://clawsg/send",
+        "小草通知",
+        "单发验证",
+        token="tok",
+        user_id="Chen",
+        poster=poster,
+    )
+
+    assert result["status"] == "failed"
+    assert result["retry_safety"] == "safe"
+    assert result["failure_phase"] == "connect"
+
+
+def test_wecom_second_chunk_preconnect_failure_is_still_uncertain(monkeypatch):
+    monkeypatch.setattr(N.time, "sleep", lambda _seconds: None)
+    calls = 0
+
+    def poster(_url, _payload, *, headers=None, verify=True):
+        nonlocal calls
+        calls += 1
+        if calls == 2:
+            raise ConnectionRefusedError("second chunk refused")
+        return 200, '{"ok":true}'
+
+    result = N.wecom_notify_detailed(
+        "https://clawsg/send",
+        "小草通知",
+        "甲" * 700,
+        token="tok",
+        user_id="Chen",
+        poster=poster,
+    )
+
+    assert result["status"] == "uncertain"
+    assert result["retry_safety"] == "uncertain"
+
+
 def test_wecom_base_url_appends_send_and_honors_account_and_insecure():
     poster = _capturing_poster(text='{"errcode":0,"errmsg":"ok"}')
     res = N.notify(

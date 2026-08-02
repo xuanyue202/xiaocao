@@ -803,6 +803,21 @@ class DecisionPipeline:
             lock_path=self.wechat_delivery_lock_path,
         ).record(idempotency_key, receipt)
 
+    def record_transport_delivery(
+        self,
+        receipt: dict[str, Any],
+        *,
+        expected_recipients: tuple[str, ...],
+    ) -> dict[str, Any]:
+        return WechatDelivery(
+            events_path=self.events_path,
+            outbox_path=self.outbox_path,
+            lock_path=self.wechat_delivery_lock_path,
+        ).record_transport(
+            receipt,
+            expected_recipients=expected_recipients,
+        )
+
     def deliver_wechat(
         self,
         result: dict[str, Any],

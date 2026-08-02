@@ -9,7 +9,7 @@ from pathlib import Path
 
 from xiaocao.kol.decisions import DecisionPipeline, load_bundle, render_household_message
 from xiaocao.kol.household import LiangHuiMcpClient
-from xiaocao.live.notify import notify
+from xiaocao.live.notify import configured_wecom_recipients, notify
 
 
 def main() -> int:
@@ -24,6 +24,11 @@ def main() -> int:
     )
     parser.add_argument("--mark-delivered", metavar="IDEMPOTENCY_KEY")
     parser.add_argument("--receipt", help="external WeChat receipt/reference")
+    parser.add_argument(
+        "--record-transport-receipt",
+        type=Path,
+        help="validate and record a cross-node all-recipient receipt JSON",
+    )
     args = parser.parse_args()
 
     household_loader = None
@@ -32,6 +37,22 @@ def main() -> int:
         if (bundle.get("household_context_provider") or {}).get("type") == "lianghui_mcp":
             household_loader = LiangHuiMcpClient.from_config().load_context
     pipeline = DecisionPipeline(args.output_dir, household_context_loader=household_loader)
+    if args.record_transport_receipt:
+        receipt = json.loads(
+            args.record_transport_receipt.read_text(encoding="utf-8")
+        )
+        if not isinstance(receipt, dict):
+            parser.error("--record-transport-receipt must contain a JSON object")
+        print(
+            json.dumps(
+                pipeline.record_transport_delivery(
+                    receipt,
+                    expected_recipients=configured_wecom_recipients(audience="kol"),
+                ),
+                ensure_ascii=False,
+            )
+        )
+        return 0
     if args.mark_delivered:
         if not args.receipt:
             parser.error("--mark-delivered requires --receipt")
@@ -42,7 +63,10 @@ def main() -> int:
         )
         return 0
     if args.bundle is None:
-        parser.error("bundle is required unless --mark-delivered is used")
+        parser.error(
+            "bundle is required unless --mark-delivered or "
+            "--record-transport-receipt is used"
+        )
     if args.preflight:
         result = pipeline.preflight(bundle)
         print(json.dumps(result, ensure_ascii=False, indent=2))

@@ -29,6 +29,16 @@ real-capital trades.
 Do not load unrelated references. Do not make the user invoke another skill
 to complete the current-decision and reusable-knowledge branches.
 
+## Route Xiaocao recap requests before analysis
+
+Treat “小草复盘” in a live/video context as a live-replay capture request
+first, not as a request to summarize an existing report; inspect the current Ticket 03 job
+and capture ledger before asking anything. If no discoverable
+state disambiguates the request, ask only: “录入直播回放，还是复盘已有报告？”
+After the user selects live-replay capture, keep that route fixed through
+compressed capture, cloud handoff, remote analysis, publication, reminder, and
+audit; later uses of “复盘” do not switch the task back to report commentary.
+
 ## Non-negotiable semantic boundaries
 
 - Reopen immutable evidence from disk and bind it to its current SHA-256;
