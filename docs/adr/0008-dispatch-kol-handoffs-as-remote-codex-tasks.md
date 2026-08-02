@@ -39,6 +39,12 @@ state is written locally. A delivered recipient is never resent, a proven
 pre-connect failure may resume only for that recipient, and an uncertain call
 stops for reconciliation.
 
+Code handoffs bind the exact 40-character commit read by
+`git rev-parse HEAD`. The sender must not manually expand an abbreviated SHA,
+and the receiver must compare it with the fetched branch and reject any
+mismatch before checkout, validation, or business recovery. This makes a bad
+coordination message a read-only failure instead of a runtime state change.
+
 The first writer cutover separately transfers a consistent snapshot of the
 full authoritative lightweight KOL state. Recurring capsules contain only the
 one job projection and must never overwrite the global KOL or Book ledgers.

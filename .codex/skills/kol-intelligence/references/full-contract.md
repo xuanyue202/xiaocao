@@ -190,6 +190,9 @@ return zero new external side effects on rerun before user confirmation.
      validate it and record the existing notification identity as delivered
      before Ticket 03 may continue. A task message is the control plane; Git is
      only the code/contract transport and never carries runtime request files.
+     Every code-sync task must copy the exact 40-character value produced by
+     `git rev-parse HEAD`; never expand a short SHA manually. The receiver must reject a mismatch
+     against the fetched branch before checkout, tests, or business recovery.
 - `capture-dom --opencli-session <session> [--opencli-profile <profile>]` invokes the same exact-player DOM contract directly. There is no `.doc` export, cloud-document, browser-download, or local Word-import path in Ticket 02.
 - Each completed transition needs exact-target, timezone-aware, hash-bound evidence. Player query parameters are validated for basename binding and stripped before ledger storage. The append-only ledger stores no snapshot text, transcript content, query string, cookie, token, household position, or credential.
 - Every external browser side effect has a durable pre-action claim. A new claim requires a fresh, at-most-30-minute persisted liveness/page proof; a capability failure blocks later claims until a new valid liveness record. A replayed or uncertain claim is read-only: inspect the real page and reconcile it, but never repeat upload, transcript generation, or AI-note submission blindly. Sequential reruns return the latest state and cannot regress a verified or decided job to prepared.

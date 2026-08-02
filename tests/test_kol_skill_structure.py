@@ -37,6 +37,14 @@ def test_kol_skill_routes_xiaocao_recap_to_live_replay_capture_first() -> None:
         assert marker in text
 
 
+def test_kol_skill_handoffs_use_machine_read_full_git_sha() -> None:
+    text = FULL_CONTRACT_MD.read_text(encoding="utf-8")
+
+    assert "git rev-parse HEAD" in text
+    assert "never expand a short SHA manually" in text
+    assert "receiver must reject a mismatch" in text
+
+
 def test_kol_skill_requires_complete_trade_information_coverage() -> None:
     text = FULL_CONTRACT_MD.read_text(encoding="utf-8")
 
