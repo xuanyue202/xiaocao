@@ -3711,23 +3711,31 @@ class SubscriptionVideoService:
             state,
             bundle_path=bundle_path,
         )
-        reconciliation_path = self._semantic_duplicate_input(
-            item,
-            state,
-            bundle_path=bundle_path,
-            decision_output_dir=decision_output_dir,
+        bundle_file = Path(bundle_path).expanduser().resolve()
+        exact_completed_replay = (
+            state.get("status") == "decided"
+            and state.get("decision_bundle_sha256")
+            == _sha256_file(bundle_file)
         )
+        reconciliation_path = None
+        if not exact_completed_replay:
+            reconciliation_path = self._semantic_duplicate_input(
+                item,
+                state,
+                bundle_path=bundle_file,
+                decision_output_dir=decision_output_dir,
+            )
         if reconciliation_path is not None:
             result = service.reconcile_semantic_duplicate(
                 state["job_id"],
-                bundle_path=bundle_path,
+                bundle_path=bundle_file,
                 reconciliation_path=reconciliation_path,
                 decision_output_dir=decision_output_dir,
             )
         else:
             result = service.decide(
                 state["job_id"],
-                bundle_path=bundle_path,
+                bundle_path=bundle_file,
                 decision_output_dir=decision_output_dir,
                 sender=sender,
                 pipeline=pipeline,

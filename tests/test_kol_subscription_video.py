@@ -1629,6 +1629,72 @@ def test_ticket05_analysis_bundle_resolves_migrated_absolute_paths(tmp_path):
     assert validated["evidence_sha256"] == state["transcript_sha256"]
 
 
+def test_exact_completed_replay_precedes_semantic_duplicate_lookup(
+    tmp_path,
+    monkeypatch,
+):
+    service = _service(tmp_path)
+    item, state, bundle_path = _ticket05_analysis_bundle(service, tmp_path)
+    result_path = tmp_path / "decision_result.json"
+    result_path.write_text('{"status":"completed"}\n', encoding="utf-8")
+    state.update(
+        {
+            "status": "decided",
+            "job_id": "completed-job",
+            "decision_bundle_sha256": __import__("hashlib").sha256(
+                bundle_path.read_bytes()
+            ).hexdigest(),
+            "decision_result_path": str(result_path),
+        }
+    )
+
+    class CompletedNetdiskService:
+        def __init__(self, *_args, **_kwargs):
+            pass
+
+        def status(self):
+            return state
+
+        def decide(self, job_id, **_kwargs):
+            assert job_id == "completed-job"
+            return {**state, "idempotent_replay": True}
+
+        def reconcile_semantic_duplicate(self, *_args, **_kwargs):
+            raise AssertionError("exact replay must not enter reconciliation")
+
+    monkeypatch.setattr(
+        "xiaocao.kol.subscription_video.NetdiskEnrichmentService",
+        CompletedNetdiskService,
+    )
+    monkeypatch.setattr(
+        service,
+        "_semantic_duplicate_input",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(
+            AssertionError("exact replay must not search semantic duplicates")
+        ),
+    )
+    completions = []
+    monkeypatch.setattr(
+        service,
+        "complete_item",
+        lambda completed_item, result: completions.append(
+            (completed_item, result)
+        ),
+    )
+
+    replay = service.decide_item(
+        item,
+        bundle_path=bundle_path,
+        decision_output_dir=tmp_path / "decisions",
+        sender=lambda *_args: (_ for _ in ()).throw(
+            AssertionError("exact replay must not call sender")
+        ),
+    )
+
+    assert replay["idempotent_replay"] is True
+    assert completions == [(item, replay)]
+
+
 def test_ticket05_analysis_bundle_requires_cross_view_and_full_coverage(
     tmp_path,
 ):
