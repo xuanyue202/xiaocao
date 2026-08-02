@@ -13,6 +13,7 @@ set -uo pipefail
 ROOT="${XIAOCAO_ROOT:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}"
 PY="$ROOT/.venv/bin/python"
 cd "$ROOT" || exit 1
+export PYTHONPATH="$ROOT/src${PYTHONPATH:+:$PYTHONPATH}"
 STEP="${1:-}"
 TODAY="$(date +%F)"
 LOG_DIR="$ROOT/output/live/auto"; mkdir -p "$LOG_DIR"

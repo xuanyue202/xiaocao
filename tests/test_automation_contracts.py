@@ -48,6 +48,7 @@ def test_auto_daily_exposes_separate_morning_stage_commands() -> None:
 
     assert 'BASH_SOURCE[0]' in script
     assert '$HOME/coding/xiaocao' not in script
+    assert 'export PYTHONPATH="$ROOT/src${PYTHONPATH:+:$PYTHONPATH}"' in script
     assert "morning-prerecommend)" in script
     assert "morning-execute)" in script
     assert "wait_for_morning_freeze.py" in script
