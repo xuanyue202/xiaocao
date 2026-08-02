@@ -145,6 +145,89 @@ def _prepare(tmp_path: Path) -> tuple[NetdiskEnrichmentService, Path, dict]:
     return service, video, service.prepare(video)
 
 
+def test_completed_replay_resolves_migrated_paths_without_side_effects(tmp_path):
+    repo = tmp_path / "new-checkout"
+    output = (
+        repo
+        / "output"
+        / "live"
+        / "kol_subscription_videos"
+        / "enrichment"
+        / "version"
+    )
+    service = NetdiskEnrichmentService(
+        output,
+        runner=_runner,
+        now=lambda: NOW,
+    )
+    artifact_dir = output / "artifacts" / "job-1"
+    artifact_dir.mkdir(parents=True)
+    transcript = artifact_dir / "transcript.txt"
+    transcript.write_text("immutable transcript\n", encoding="utf-8")
+    decision_result = artifact_dir / "decision_result.json"
+    decision_result.write_text('{"status":"completed"}\n', encoding="utf-8")
+    historical_prefix = (
+        "/Users/old/repo/output/live/kol_subscription_videos/"
+        "enrichment/version/artifacts/job-1"
+    )
+    bundle = output / "decision_bundle.json"
+    bundle.write_text(
+        json.dumps(
+            {
+                "items": [
+                    {"evidence_path": f"{historical_prefix}/transcript.txt"}
+                ]
+            }
+        ),
+        encoding="utf-8",
+    )
+    service.store.append(
+        {
+            "job_id": "job-1",
+            "status": "decided",
+            "transcript_path": f"{historical_prefix}/transcript.txt",
+            "transcript_sha256": hashlib.sha256(
+                transcript.read_bytes()
+            ).hexdigest(),
+            "decision_bundle_path": (
+                "/Users/old/repo/output/live/kol_subscription_videos/"
+                "enrichment/version/decision_bundle.json"
+            ),
+            "decision_bundle_sha256": hashlib.sha256(
+                bundle.read_bytes()
+            ).hexdigest(),
+            "decision_result_path": (
+                f"{historical_prefix}/decision_result.json"
+            ),
+            "decision_result_sha256": hashlib.sha256(
+                decision_result.read_bytes()
+            ).hexdigest(),
+        }
+    )
+
+    class FailPipeline:
+        def process(self, _bundle):
+            raise AssertionError("completed replay must not process again")
+
+        def deliver_wechat(self, _result, *, sender):
+            raise AssertionError("completed replay must not notify again")
+
+    replay = service.decide(
+        "job-1",
+        bundle_path=bundle,
+        decision_output_dir=repo / "output" / "live" / "kol_intelligence",
+        sender=lambda *_args: (_ for _ in ()).throw(
+            AssertionError("completed replay must not call sender")
+        ),
+        pipeline=FailPipeline(),
+    )
+
+    assert replay["idempotent_replay"] is True
+    assert replay["transcript_path"] == str(transcript)
+    assert replay["decision_result_path"] == str(decision_result)
+    assert len(service.store.read()) == 1
+
+
 def _liveness_evidence(*, observed_at: datetime = NOW) -> dict:
     snapshot_text = "百度网盘 /课程/自己的课/小草 文件列表"
     return {

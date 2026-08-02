@@ -22,6 +22,8 @@ from .enrichment_types import (
     validate_decision_process_result,
 )
 from .enrichment_store import EnrichmentJobStore
+from .runtime_paths import resolve_repo_owned_path
+
 
 class ProviderRejected(EnrichmentError):
     """The provider explicitly rejected a request before accepting a task."""
@@ -352,6 +354,9 @@ class VideoEnrichmentService:
 
     def _latest(self, job_id: str) -> dict[str, Any]:
         return self.store.latest(job_id)
+
+    def _runtime_path(self, value: Path | str) -> Path:
+        return resolve_repo_owned_path(value, anchor=self.output_dir)
 
     def status(self, job_id: str | None = None) -> dict[str, Any]:
         return self.store.status(job_id)
@@ -860,7 +865,9 @@ class VideoEnrichmentService:
             raise EnrichmentError("only a rendered transcript can be verified")
         _raw, task = self._raw_task(current)
         duration_ms, segments = self._segments(task)
-        transcript_path = Path(str(current.get("transcript_path") or ""))
+        transcript_path = self._runtime_path(
+            str(current.get("transcript_path") or "")
+        )
         plain_path = Path(str(current.get("plain_transcript_path") or ""))
         if (
             not transcript_path.is_file()
@@ -1052,14 +1059,25 @@ class VideoEnrichmentService:
         if current.get("status") == "decided" and current.get(
             "decision_bundle_sha256"
         ) == bundle_sha256:
-            return {**current, "idempotent_replay": True}
+            replay = {**current}
+            for field in (
+                "transcript_path",
+                "decision_bundle_path",
+                "decision_result_path",
+            ):
+                resolved = self._runtime_path(str(replay.get(field) or ""))
+                if resolved.is_file():
+                    replay[field] = str(resolved)
+            return {**replay, "idempotent_replay": True}
         if current.get("status") not in {"verified", "decided"}:
             exc = EnrichmentError("only a verified transcript can enter decisions")
             record_failure(
                 "invalid_predecessor", exc, bundle_sha256=bundle_sha256
             )
             raise exc
-        transcript_path = Path(str(current.get("transcript_path") or ""))
+        transcript_path = self._runtime_path(
+            str(current.get("transcript_path") or "")
+        )
         if (
             not transcript_path.is_file()
             or _sha256_file(transcript_path) != current.get("transcript_sha256")
@@ -1085,7 +1103,9 @@ class VideoEnrichmentService:
             exc = EnrichmentError("decision bundle item must be a JSON object")
             record_failure("invalid_bundle_item", exc, bundle_sha256=bundle_sha256)
             raise exc
-        evidence_path = Path(str(items[0].get("evidence_path") or "")).expanduser().resolve()
+        evidence_path = self._runtime_path(
+            str(items[0].get("evidence_path") or "")
+        )
         if evidence_path != transcript_path.resolve():
             exc = EnrichmentError(
                 "decision bundle evidence_path must be the verified transcript"

@@ -21,6 +21,7 @@ from .enrichment_types import (
     validate_decision_completion,
     validate_decision_process_result,
 )
+from .runtime_paths import resolve_repo_owned_path
 
 
 _SHA256 = re.compile(r"^[0-9a-f]{64}$")
@@ -324,6 +325,9 @@ class NetdiskEnrichmentService:
         if value.tzinfo is None:
             raise EnrichmentError("enrichment clock must include a timezone")
         return value
+
+    def _runtime_path(self, value: Path | str) -> Path:
+        return resolve_repo_owned_path(value, anchor=self.output_dir)
 
     def _run(self, command: list[str], *, timeout_seconds: int = 30) -> Any:
         try:
@@ -3393,7 +3397,18 @@ class NetdiskEnrichmentService:
                 current.get("status") == "decided"
                 and current.get("decision_bundle_sha256") == bundle_sha
             ):
-                return {**current, "idempotent_replay": True}
+                replay = {**current}
+                for field in (
+                    "transcript_path",
+                    "decision_bundle_path",
+                    "decision_result_path",
+                ):
+                    resolved = self._runtime_path(
+                        str(replay.get(field) or "")
+                    )
+                    if resolved.is_file():
+                        replay[field] = str(resolved)
+                return {**replay, "idempotent_replay": True}
             is_revision = current.get("status") == "decided"
             if not is_revision and current.get("status") != "verified":
                 exc = EnrichmentError(
@@ -3401,7 +3416,9 @@ class NetdiskEnrichmentService:
                 )
                 record_failure("invalid_predecessor", exc, bundle_sha=bundle_sha)
                 raise exc
-            transcript_path = Path(str(current.get("transcript_path") or ""))
+            transcript_path = self._runtime_path(
+                str(current.get("transcript_path") or "")
+            )
             if (
                 not transcript_path.is_file()
                 or _sha256_file(transcript_path) != current.get("transcript_sha256")
@@ -3427,9 +3444,9 @@ class NetdiskEnrichmentService:
                 exc = EnrichmentError("decision bundle item must be a JSON object")
                 record_failure("invalid_bundle_item", exc, bundle_sha=bundle_sha)
                 raise exc
-            evidence_path = Path(
+            evidence_path = self._runtime_path(
                 str(items[0].get("evidence_path") or "")
-            ).expanduser().resolve()
+            )
             if evidence_path != transcript_path.resolve():
                 exc = EnrichmentError(
                     "decision bundle evidence_path must be the verified transcript"

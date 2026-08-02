@@ -1599,6 +1599,36 @@ def test_ticket05_analysis_bundle_requires_exact_branch_statuses(tmp_path):
         )
 
 
+def test_ticket05_analysis_bundle_resolves_migrated_absolute_paths(tmp_path):
+    repo = tmp_path / "new-checkout"
+    service = SubscriptionVideoService(
+        repo / "output" / "live" / "kol_subscription_videos",
+        config_path=_config(tmp_path),
+        now=lambda: NOW,
+        opencli_command=("opencli",),
+    )
+    item, state, bundle_path = _ticket05_analysis_bundle(service, tmp_path)
+    transcript = repo / "reference" / "experience" / "transcript.txt"
+    transcript.parent.mkdir(parents=True)
+    transcript.write_bytes(Path(state["transcript_path"]).read_bytes())
+    historical_path = "/Users/old/repo/reference/experience/transcript.txt"
+    state["transcript_path"] = historical_path
+    bundle = json.loads(bundle_path.read_text(encoding="utf-8"))
+    bundle["items"][0]["evidence_path"] = historical_path
+    bundle_path.write_text(
+        json.dumps(bundle, ensure_ascii=False),
+        encoding="utf-8",
+    )
+
+    validated = service._validate_analysis_bundle(
+        item,
+        state,
+        bundle_path=bundle_path,
+    )
+
+    assert validated["evidence_sha256"] == state["transcript_sha256"]
+
+
 def test_ticket05_analysis_bundle_requires_cross_view_and_full_coverage(
     tmp_path,
 ):

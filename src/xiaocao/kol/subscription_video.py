@@ -28,6 +28,7 @@ from .episodes import assemble_video_units
 from .lv_subscription import LvSubscriptionService
 from .netdisk_enrichment import NetdiskEnrichmentService
 from .rendering import reader_message_title, render_household_item_message
+from .runtime_paths import resolve_repo_owned_path
 
 
 LV_SOURCE = "baidu_subscription_share_browser"
@@ -629,6 +630,9 @@ class SubscriptionVideoService:
         if value.tzinfo is None:
             raise EnrichmentError("subscription video clock needs a timezone")
         return value
+
+    def _runtime_path(self, value: Path | str) -> Path:
+        return resolve_repo_owned_path(value, anchor=self.output_dir)
 
     def _opencli_json(
         self,
@@ -3002,10 +3006,12 @@ class SubscriptionVideoService:
             )
         decision = rows[0]
         expected_title = f"{item['author']}{PurePosixPath(item['name']).stem}"
-        evidence_path = Path(
+        evidence_path = self._runtime_path(
             str(decision.get("evidence_path") or "")
-        ).expanduser().resolve()
-        transcript_path = Path(str(state.get("transcript_path") or "")).resolve()
+        )
+        transcript_path = self._runtime_path(
+            str(state.get("transcript_path") or "")
+        )
         if (
             decision.get("source") != item["source"]
             or decision.get("author") != item["author"]
@@ -3057,9 +3063,9 @@ class SubscriptionVideoService:
         if not str(decision.get("knowledge_reason") or "").strip():
             raise EnrichmentError("Ticket 05 knowledge branch needs a reason")
         if knowledge_status == "reusable_knowledge":
-            distillation = Path(
+            distillation = self._runtime_path(
                 str(decision.get("distillation_path") or "")
-            ).expanduser()
+            )
             if not distillation.is_file():
                 raise EnrichmentError(
                     "Ticket 05 reusable knowledge needs a distillation"
@@ -3155,7 +3161,9 @@ class SubscriptionVideoService:
             or decision_item.get("title") != expected_title
         ):
             return None
-        current_path = Path(str(state.get("transcript_path") or "")).resolve()
+        current_path = self._runtime_path(
+            str(state.get("transcript_path") or "")
+        )
         try:
             current_text = current_path.read_text(encoding="utf-8")
         except OSError:
@@ -3186,7 +3194,9 @@ class SubscriptionVideoService:
                 or delivery is None
             ):
                 continue
-            prior_path = Path(str(prior.get("evidence") or "")).expanduser()
+            prior_path = self._runtime_path(
+                str(prior.get("evidence") or "")
+            )
             prior_sha = str(prior.get("evidence_sha256") or "")
             if (
                 not prior_path.is_file()
@@ -3473,12 +3483,16 @@ class SubscriptionVideoService:
         if current.get("version_key") != item["version_key"]:
             raise EnrichmentError("completed Ticket 05 item version changed")
         result_path = str(result.get("decision_result_path") or "")
-        if not result_path or not Path(result_path).is_file():
+        result_file = self._runtime_path(result_path)
+        if not result_path or not result_file.is_file():
             raise EnrichmentError("Ticket 05 decision result is missing")
-        result_sha256 = _sha256_file(Path(result_path))
+        result_sha256 = _sha256_file(result_file)
+        current_result_file = self._runtime_path(
+            str(current.get("decision_result_path") or "")
+        )
         if (
             current.get("completed_version_key") == item["version_key"]
-            and current.get("decision_result_path") == result_path
+            and current_result_file == result_file
             and current.get("decision_result_sha256") == result_sha256
         ):
             return {
@@ -3488,7 +3502,7 @@ class SubscriptionVideoService:
                 "source": item["source"],
                 "author": item["author"],
                 "job_id": result["job_id"],
-                "decision_result_path": result_path,
+                "decision_result_path": str(result_file),
                 "decision_result_sha256": result_sha256,
                 "completed_at": current["completed_at"],
                 "is_episode": item.get("is_episode") is True,
