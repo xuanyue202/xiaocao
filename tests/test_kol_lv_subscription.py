@@ -238,7 +238,11 @@ def test_private_config_drives_one_browser_listing_path_without_persisting_crede
     assert result["observed_count"] == 3
     assert listing_calls == 2
     assert commands[0][:4] == ["opencli", "--profile", "work", "browser"]
-    assert commands[0][4:7] == ["ticket04", "open", private_url]
+    assert commands[0][4:7] == [
+        "ticket04",
+        "open",
+        f"{private_url}?pwd={private_code}",
+    ]
     assert "/share/list" in commands[1][-1]
     assert "performance.getEntriesByType('resource')" in commands[1][-1]
     assert "parsed.searchParams.has('shorturl')" in commands[1][-1]
@@ -255,6 +259,16 @@ def test_private_config_drives_one_browser_listing_path_without_persisting_crede
     )
     assert private_url not in durable
     assert private_code not in durable
+
+
+def test_authorized_share_url_preserves_the_root_hash_route():
+    assert lv_subscription._authorized_share_url(
+        "https://pan.baidu.com/s/private-share-token#list/path=%2F",
+        "a1b2",
+    ) == (
+        "https://pan.baidu.com/s/private-share-token"
+        "?pwd=a1b2#list/path=%2F"
+    )
 
 
 def test_browser_listing_recurses_without_parent_mtime_pruning_in_bounded_batches():

@@ -15,7 +15,7 @@ from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable
-from urllib.parse import urlparse
+from urllib.parse import urlencode, urlparse
 
 import yaml
 
@@ -256,6 +256,12 @@ def _browser_listing_script(expected_path: str) -> str:
         "__EXPECTED_PATH_JSON__",
         json.dumps(expected_path),
     )
+
+
+def _authorized_share_url(share_url: str, share_code: str) -> str:
+    """Restore Baidu's self-contained share link without persisting it."""
+    parsed = urlparse(share_url)
+    return parsed._replace(query=urlencode({"pwd": share_code})).geturl()
 
 
 def _browser_authorization_script(share_code: str) -> str:
@@ -701,11 +707,15 @@ class LvSubscriptionService:
         """Read one complete listing from the sole configured browser page."""
         self._validate_private_config()
         expected_path = urlparse(self.share_url).path
+        authorized_share_url = _authorized_share_url(
+            self.share_url,
+            self.share_code,
+        )
         listing_script = _browser_listing_script(expected_path)
         self._opencli_json(
             session,
             "open",
-            self.share_url,
+            authorized_share_url,
             profile=profile,
             timeout_seconds=30,
         )
@@ -731,7 +741,7 @@ class LvSubscriptionService:
             self._opencli_json(
                 session,
                 "open",
-                self.share_url,
+                authorized_share_url,
                 profile=profile,
                 timeout_seconds=30,
             )
