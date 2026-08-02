@@ -76,7 +76,7 @@ from xiaocao.live.exit_policy import (  # noqa: E402
     sell_block_reason as _sell_block_reason,
     strong_hold_reason as _strong_hold_reason,
 )
-from xiaocao.live import accounts, contexts, intelligence_policy, journal  # noqa: E402
+from xiaocao.live import accounts, contexts, intelligence_policy, journal, paper_exit  # noqa: E402
 from xiaocao.live.notify import notify as _notify  # noqa: E402
 from xiaocao.strategy.params import TREND_BUDGET_RATIO, TREND_REBALANCE_R, TREND_TRAIL_DD  # noqa: E402
 
@@ -477,107 +477,26 @@ def _has_alert_recorded(
 
 
 def _execute_simulated_sells(client: XiaocaoClient, triggered_alerts: list[dict], *, book: str = "B") -> tuple[int, int]:
-    if not triggered_alerts:
-        return 0, 0
-    # Two automation agents can overlap around the closing gate.  Lock before
-    # reloading state so the later process observes the first process's close
-    # instead of executing the same stale trigger twice.
-    with accounts.ledger_lock(accounts.ledger_lock_path(OUT_DIR)):
-        accounts.recover_ledger_transaction(OUT_DIR)
-        return _execute_simulated_sells_locked(client, triggered_alerts, book=book)
-
-
-def _execute_simulated_sells_locked(
-    client: XiaocaoClient,
-    triggered_alerts: list[dict],
-    *,
-    book: str = "B",
-) -> tuple[int, int]:
-    positions = _load_all_positions()
-    account = _load_account(book)
-    closed = 0
-    blocked = 0
-    new_trades: list[dict] = []
-    for alert in triggered_alerts:
-        for p in positions:
-            if p.get("status", "open") != "open":
-                continue
-            if p.get("book", "B") != book:
-                continue
-            if p.get("code") != alert["code"] or p.get("entry_date") != alert["entry_date"]:
-                continue
-            detail = _realtime_detail(client, str(p.get("code") or ""))
-            blocked_reason = _sell_block_reason(detail)
-            if blocked_reason:
-                blocked += 1
-                today_iso = _date.today().isoformat()
-                if not _has_alert_recorded(
-                    "SELL_BLOCKED",
-                    code=str(p.get("code") or ""),
-                    entry_date=str(p.get("entry_date") or ""),
-                    alert_date=today_iso,
-                    reason=blocked_reason,
-                    book=book,
-                ):
-                    with ALERTS_FILE.open("a", encoding="utf-8") as f:
-                        f.write(json.dumps({
-                            "ts": _now_iso(),
-                            "alert": "SELL_BLOCKED",
-                            "book": book,
-                            "reason": blocked_reason,
-                            "code": p.get("code"),
-                            "name": p.get("name", ""),
-                            "entry_date": p.get("entry_date"),
-                        }, ensure_ascii=False) + "\n")
-                break
-            shares = int(p.get("shares") or alert.get("shares") or 0)
-            if shares <= 0:
-                break
-            exit_price = float(alert["latest_price"])
-            fee_rate = float(p.get("fee_rate", account.get("fee_rate", DEFAULT_FEE_RATE)))
-            gross_notional = round(exit_price * shares, 2)
-            exit_fee = round(gross_notional * fee_rate, 2)
-            exit_cash_in = round(gross_notional - exit_fee, 2)
-            entry_cash_out = float(
-                p.get("entry_cash_out")
-                or (float(p["entry_price"]) * shares * (1 + fee_rate))
-            )
-            realized_pnl = round(exit_cash_in - entry_cash_out, 2)
-            account["cash"] = round(float(account.get("cash", 0.0)) + exit_cash_in, 2)
-            account["realized_pnl"] = round(float(account.get("realized_pnl", 0.0)) + realized_pnl, 2)
-            account["total_fees"] = round(float(account.get("total_fees", 0.0)) + exit_fee, 2)
-            account["last_sell_date"] = _date.today().isoformat()
-            p.update({
-                "status": "closed",
-                "exit_date": _date.today().isoformat(),
-                "exit_price": round(exit_price, 4),
-                "exit_fee": exit_fee,
-                "exit_cash_in": exit_cash_in,
-                "realized_pnl": realized_pnl,
-                "exit_reason": str(alert.get("sell_reason") or "TRAILING_STOP"),
-            })
-            new_trades.append({
-                "ts": _now_iso(), "date": _date.today().isoformat(), "side": "SELL",
-                "book": book,
-                "code": p.get("code"), "name": p.get("name", ""),
-                "price": round(exit_price, 4), "shares": shares,
-                "gross_notional": gross_notional, "fee": exit_fee,
-                "cash_after": account["cash"], "realized_pnl": realized_pnl,
-                "reason": str(alert.get("sell_reason") or "TRAILING_STOP"),
-            })
-            closed += 1
-            break
-    if closed:
-        accounts.commit_ledger_transaction(
-            live_dir=OUT_DIR,
-            positions=positions,
-            positions_path=POSITIONS_FILE,
-            account=account,
-            account_path=_account_file(book),
-            new_trades=new_trades,
-            trades_path=TRADES_FILE,
-        )
-    return closed, blocked
+    today_iso = _date.today().isoformat()
+    initial = (
+        DEFAULT_STARTING_CAPITAL * TREND_BUDGET_RATIO
+        if book == "T"
+        else DEFAULT_STARTING_CAPITAL
+    )
+    return paper_exit.execute_simulated_sells(
+        triggered_alerts,
+        book=book,
+        live_dir=OUT_DIR,
+        positions_path=POSITIONS_FILE,
+        account_path=_account_file(book),
+        trades_path=TRADES_FILE,
+        alerts_path=ALERTS_FILE,
+        initial_capital=initial,
+        default_fee_rate=DEFAULT_FEE_RATE,
+        trade_date=today_iso,
+        detail_provider=lambda code: _realtime_detail(client, code),
+        timestamp_provider=lambda _alert: _now_iso(),
+    )
 
 
 def _trading_dates_between(start: str, end: str, client: XiaocaoClient) -> list[str]:

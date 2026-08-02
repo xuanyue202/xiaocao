@@ -65,6 +65,7 @@
   - **T+1**：建仓日不可卖（`t1_blocked`，诊断用）。
   - **流动性**：触发卖出但跌停无买盘 → 记 `SELL_BLOCKED / LIMIT_DOWN_NO_BID`，**保持持仓**，不更新 cash/realized_pnl/trades。
 - **收盘任务与单写者**：14:25 是独立风险预检，只立即执行盘中已获授权的 HARD_STOP / AI_EVENT_RISK_EXIT 等，不等待 14:55；14:55 是独立且唯一的 soft-exit 收盘纪律 pass。所有 paper-record / monitor / settle / repair 写者共享唯一 `paper_ledger.lock`，必须在锁内重载并提交，重叠 agent 只能观察前一写者结果，不能重复 SELL。收盘 positions/account/trades 三文件提交先持久化 `.ledger_txn/pending.json` 与目标快照；中断后下一写者幂等补完，未恢复事务由 data doctor 报 CRITICAL，禁止用半提交账本评估。
+- **历史交易日验收**：`scripts/replay_paper_day.py --date YYYY-MM-DD` 只读冻结的 signal/alerts/decision-journal/trades，使用生产 `exit_policy.decide_sell_action` 重放当日已记录的 Book-B 触发/延迟特征，并核对成交 exactly-once；回执必须写在 `output/live` 之外。迁移验收可再显式传 `--execute-sandbox-twice --sandbox-dir <empty non-production dir>`：它从权威最终账本逆向恢复目标日退出前状态，只在隔离目录调用与 `live_monitor` 相同的 `paper_exit.execute_simulated_sells` 两次，要求首轮成交、次轮零新增且最终状态匹配。不得补造实时字段、成交或改写正式账本；历史强持有若缺原始 realtime detail 必须 fail-closed，不能用近似输入伪造通过。
 - **强持有例外**（抑制 trailing 出场）：接力/连板 或 xcjw≥300 或 jsjl>0；近涨停（≥99.7% up_price）；成为领涨且 pct≥8% 且近日高（≥99.5%）。
 - **profile**：v5 = 5 日 / dd 2%；v6 = 3 日 / dd 0.5%（更激进，需前瞻验证）。hard floor 两者均 8%。
 

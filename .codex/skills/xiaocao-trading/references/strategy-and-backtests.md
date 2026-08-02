@@ -58,6 +58,19 @@ PYTHONPATH=src python3 scripts/research_paper_vs_market.py \
 
 Compare Book B with 上证, 深成指, 创业板指 and 中证1000. Aggregated index/spread is valid only at coverage `4/4`.
 
+## Historical paper-day acceptance
+
+```bash
+PYTHONPATH=src python3 scripts/replay_paper_day.py \
+  --date 2026-07-31 \
+  --live-dir output/live \
+  --execute-sandbox-twice \
+  --sandbox-dir /tmp/xiaocao-paper-sandbox-2026-07-31 \
+  --output /tmp/xiaocao-paper-replay-2026-07-31.json
+```
+
+This is the safe seam for replaying a prior paper-trading day during migration or incident acceptance. It reuses the production Book-B exit policy and reconciles frozen signals, alerts, the decision journal and sell trades. The optional sandbox mode reconstructs the pre-exit state outside `output/live`, calls the same production SELL transaction twice, and requires the second call to make zero changes. It never writes an authoritative business ledger; both the receipt and sandbox must remain outside `output/live`. Do not pass a historical date to today's `live_monitor.py` or substitute current realtime data.
+
 ## Cohorts and qibao execution research
 
 `scripts/cohort_snapshot.py --date <date>` writes authority-0 benchmark/watchlist samples to `output/cohorts/cohort_snapshots.jsonl`. They are not buy inputs.
