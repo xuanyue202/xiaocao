@@ -10,7 +10,7 @@
 # Capability flywheel: eod accumulates training_rows + Book-T evidence -> optimize judges & records to kronos_screen/HYPOTHESES.jsonl.
 # Trading-day guarded (skips weekends/holidays), logs to output/live/auto/.
 set -uo pipefail
-ROOT="${XIAOCAO_ROOT:-$HOME/coding/xiaocao}"
+ROOT="${XIAOCAO_ROOT:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}"
 PY="$ROOT/.venv/bin/python"
 cd "$ROOT" || exit 1
 STEP="${1:-}"

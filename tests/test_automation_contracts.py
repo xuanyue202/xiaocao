@@ -46,6 +46,8 @@ def test_morning_automations_separate_user_visible_prerecommend_from_execution()
 def test_auto_daily_exposes_separate_morning_stage_commands() -> None:
     script = (ROOT / "scripts" / "auto_daily.sh").read_text(encoding="utf-8")
 
+    assert 'BASH_SOURCE[0]' in script
+    assert '$HOME/coding/xiaocao' not in script
     assert "morning-prerecommend)" in script
     assert "morning-execute)" in script
     assert "wait_for_morning_freeze.py" in script
