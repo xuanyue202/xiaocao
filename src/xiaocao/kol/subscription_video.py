@@ -3495,6 +3495,31 @@ class SubscriptionVideoService:
             and current_result_file == result_file
             and current.get("decision_result_sha256") == result_sha256
         ):
+            completed_at = str(
+                current.get("completed_at")
+                or result.get("completed_at")
+                or result.get("updated_at")
+                or ""
+            ).strip()
+            if not completed_at:
+                completion = next(
+                    (
+                        row
+                        for row in reversed(self._read_jsonl(self.events_path))
+                        if row.get("event") == "subscription_video_completed"
+                        and row.get("identity") == item["identity"]
+                        and row.get("version_key") == item["version_key"]
+                        and row.get("decision_result_sha256") == result_sha256
+                    ),
+                    None,
+                )
+                completed_at = str(
+                    (completion or {}).get("completed_at") or ""
+                ).strip()
+            if not completed_at:
+                raise EnrichmentError(
+                    "completed Ticket 05 item has no historical completion time"
+                )
             return {
                 "event": "subscription_video_completed",
                 "identity": item["identity"],
@@ -3504,7 +3529,7 @@ class SubscriptionVideoService:
                 "job_id": result["job_id"],
                 "decision_result_path": str(result_file),
                 "decision_result_sha256": result_sha256,
-                "completed_at": current["completed_at"],
+                "completed_at": completed_at,
                 "is_episode": item.get("is_episode") is True,
                 "part_count": int(item.get("part_count") or 1),
                 "component_identities": [

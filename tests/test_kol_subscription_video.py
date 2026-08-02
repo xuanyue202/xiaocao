@@ -1695,6 +1695,71 @@ def test_exact_completed_replay_precedes_semantic_duplicate_lookup(
     assert completions == [(item, replay)]
 
 
+def test_completed_replay_recovers_legacy_timestamp_without_manifest_write(
+    tmp_path,
+):
+    service = _service(tmp_path)
+    item = {
+        "identity": "legacy-item",
+        "version_key": "legacy-version",
+        "source": LV_SOURCE,
+        "author": LV_AUTHOR,
+    }
+    result_path = tmp_path / "out" / "artifacts" / "decision_result.json"
+    result_path.parent.mkdir(parents=True)
+    result_path.write_text('{"status":"completed"}\n', encoding="utf-8")
+    result_sha = __import__("hashlib").sha256(
+        result_path.read_bytes()
+    ).hexdigest()
+    manifest = {
+        "schema_version": 1,
+        "ticket": "05-subscription-video-to-decisions",
+        "cursor": None,
+        "items": {
+            item["identity"]: {
+                **item,
+                "completed_version_key": item["version_key"],
+                "decision_result_path": str(result_path),
+                "decision_result_sha256": result_sha,
+            }
+        },
+    }
+    service.manifest_path.parent.mkdir(parents=True, exist_ok=True)
+    service.manifest_path.write_text(
+        json.dumps(manifest, ensure_ascii=False, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+    completion_time = "2026-07-30T10:58:32+08:00"
+    service.events_path.write_text(
+        json.dumps(
+            {
+                "event": "subscription_video_completed",
+                "identity": item["identity"],
+                "version_key": item["version_key"],
+                "decision_result_sha256": result_sha,
+                "completed_at": completion_time,
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    manifest_before = service.manifest_path.read_bytes()
+    events_before = service.events_path.read_bytes()
+
+    replay = service.complete_item(
+        item,
+        {
+            "job_id": "legacy-job",
+            "decision_result_path": str(result_path),
+        },
+    )
+
+    assert replay["idempotent_replay"] is True
+    assert replay["completed_at"] == completion_time
+    assert service.manifest_path.read_bytes() == manifest_before
+    assert service.events_path.read_bytes() == events_before
+
+
 def test_ticket05_analysis_bundle_requires_cross_view_and_full_coverage(
     tmp_path,
 ):
