@@ -50,15 +50,36 @@ def test_validate_multi_author_provenance_is_complete_or_fails_closed(tmp_path):
         "evidence": [{
             "path": "/tmp/吕晓彤.md",
             "sha256": "a" * 64,
+            "size": 123,
         }],
     })
     f = tmp_path / "2026-07-13_lv_xiaotong_review.json"
     f.write_text(json.dumps(d, ensure_ascii=False), encoding="utf-8")
     assert dt.validate(f) == 0
 
+    del d["evidence"][0]["size"]
+    f.write_text(json.dumps(d, ensure_ascii=False), encoding="utf-8")
+    assert dt.validate(f) == 1
+
+    d["evidence"][0]["size"] = 0
+    f.write_text(json.dumps(d, ensure_ascii=False), encoding="utf-8")
+    assert dt.validate(f) == 1
+
     del d["evidence"]
     f.write_text(json.dumps(d, ensure_ascii=False), encoding="utf-8")
     assert dt.validate(f) == 1
+
+
+def test_repository_distilled_evidence_is_portable():
+    failures = []
+    distilled_root = ROOT / "reference" / "experience" / "distilled"
+    for path in sorted(distilled_root.glob("*.json")):
+        value = json.loads(path.read_text(encoding="utf-8"))
+        for index, evidence in enumerate(value.get("evidence") or []):
+            if type(evidence.get("size")) is not int or evidence["size"] <= 0:
+                failures.append(f"{path.name}:evidence[{index}].size")
+
+    assert failures == []
 
 
 def test_validate_missing_keys_fails_closed(tmp_path):
@@ -193,7 +214,9 @@ def test_ingest_preserves_multi_author_source_provenance(tmp_path, monkeypatch):
     d.update({
         "author": "吕晓彤",
         "source": "local_transcript",
-        "evidence": [{"path": "/tmp/lv.md", "sha256": "b" * 64}],
+        "evidence": [
+            {"path": "/tmp/lv.md", "sha256": "b" * 64, "size": 123}
+        ],
     })
     source = tmp_path / "2026-07-13_lv_xiaotong_review.json"
     source.write_text(json.dumps(d, ensure_ascii=False), encoding="utf-8")

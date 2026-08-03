@@ -4,9 +4,9 @@
   "author": "路西法",
   "source": "baidu_manuscript_export",
   "evidence": [
-    {"path": "/Users/bytedance/Downloads/小草/路西法7月5日（一）.md", "sha256": "9979e52faead7f453962ba3af7291fc7deaecb7e23f8174633ae0700710efb0b"},
-    {"path": "/Users/bytedance/Downloads/小草/路西法7月5日（二）.md", "sha256": "c482a8d29e7793e03454847f1e31c8fcf5cd7e6bd32227464dda232af155418c"},
-    {"path": "/Users/bytedance/Downloads/小草/路西法7月5日（三）.md", "sha256": "eb50136f8f5edc41169e0a1c5b5321ce0266c23de6c0244d7d3c02bbaace2498"}
+    {"path": "/Users/bytedance/Downloads/小草/路西法7月5日（一）.md", "sha256": "9979e52faead7f453962ba3af7291fc7deaecb7e23f8174633ae0700710efb0b", "size": 48150},
+    {"path": "/Users/bytedance/Downloads/小草/路西法7月5日（二）.md", "sha256": "c482a8d29e7793e03454847f1e31c8fcf5cd7e6bd32227464dda232af155418c", "size": 33841},
+    {"path": "/Users/bytedance/Downloads/小草/路西法7月5日（三）.md", "sha256": "eb50136f8f5edc41169e0a1c5b5321ce0266c23de6c0244d7d3c02bbaace2498", "size": 52595}
   ],
   "summary": "路西法对2026年下半年采取防守姿态，计划保留至少一半现金，等待冬季至2027年初潜在黄金坑；但长期继续看好物理AI、机器人关键零部件和电力/核聚变。他给出的最具体A股样本是北特科技：行星滚柱丝杠/机器人关节关键零部件、特斯拉供应商、小流通盘，历史40元附近入场，并提示回到40附近再关注。三花智控业务好但创始人和高管套现带来治理折价。",
   "posture": {"regime": "h2_defensive_physical_ai_watch", "dominant_style": "保留现金等待回撤，只在预设价格和产业逻辑同时成立时参与物理AI关键零部件。", "risk": "AI长期光明不排除下半年估值泡沫收缩；宏观黄金坑时间只是假设，不能当作确定日期。", "style_ranking": ["现金/防守", "有明确价格纪律的物理AI关键零部件", "电力与核聚变长期观察", "治理风险未解除的优质业务", "高估值泡沫和存储"]},

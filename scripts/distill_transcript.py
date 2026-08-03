@@ -228,9 +228,12 @@ def _validate_distilled(d: dict) -> tuple[list[str], list[str]]:
                     not isinstance(item, dict)
                     or not str(item.get("path") or "").strip()
                     or not re.fullmatch(r"[0-9a-f]{64}", str(item.get("sha256") or ""))
+                    or type(item.get("size")) is not int
+                    or item["size"] <= 0
                 ):
                     errs.append(
-                        f"evidence[{i}] requires path and lowercase 64-char sha256"
+                        f"evidence[{i}] requires path, lowercase 64-char sha256, "
+                        "and positive integer size"
                     )
     return errs, warns
 
