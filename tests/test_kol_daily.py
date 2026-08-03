@@ -541,6 +541,67 @@ def test_publication_pipeline_publishes_before_book_and_one_link_reminder(
     )
 
 
+def test_completed_publication_resumes_without_rebuilding_changed_reader_copy(
+    tmp_path,
+):
+    order: list[str] = []
+    ledger = PublicationLedger(tmp_path / "publication")
+    client = _PublicationClient(order)
+    context = DailyPublicationContext(
+        adapter="xiaocao_live",
+        source_identity="live-20260727-am",
+        publication_version="transcript-v1",
+        kol_id="kol-xiaocao",
+        source="小草直播",
+        source_published_at="2026-07-27T09:30:00+08:00",
+        media_types=("video",),
+        source_parts=({
+            "identity": "handoff-1",
+            "version": "transcript-v1",
+            "order": 1,
+            "size": 0,
+            "evidence_sha256": "a" * 64,
+        },),
+    )
+    first = DailyPublicationPipeline(
+        _DelegatePipeline(order),
+        ledger=ledger,
+        client=client,
+        context=context,
+    )
+    first.process(_publication_bundle())
+    assert order == ["gray", "book"]
+    publication_key = publication_id_for_source(
+        adapter=context.adapter,
+        source_identity=context.source_identity,
+    )
+    original_event_count = ledger.status(publication_key)["event_count"]
+    changed = _publication_bundle()
+    changed["items"][0]["publication"]["report_body"] += (
+        "\n\n内部旧状态 COLD"
+    )
+    changed["items"][0]["publication"]["remaining_summary"] = (
+        "内部旧状态 COLD"
+    )
+    resumed = DailyPublicationPipeline(
+        _DelegatePipeline(order),
+        ledger=ledger,
+        client=client,
+        context=context,
+    )
+
+    result = resumed.process(changed)
+
+    assert result["status"] == "completed"
+    assert order == ["gray", "book", "book"]
+    assert ledger.status(publication_key)["event_count"] == original_event_count
+    with pytest.raises(DailyError, match="internal action label 'COLD'"):
+        resumed.deliver_wechat(
+            result,
+            sender=lambda *_args: pytest.fail("invalid copy must not send"),
+        )
+
+
 def test_video_publication_context_uses_request_time_and_evidence_hash():
     context = _video_publication_context(
         {

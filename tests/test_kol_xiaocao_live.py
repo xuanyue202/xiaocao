@@ -501,7 +501,7 @@ def test_remote_audit_accepts_decided_portable_handoff_without_capture_state(
     ]
     decision_output = tmp_path / "decisions"
     _append_jsonl(decision_output / "events.jsonl", {
-        "event": "notification_send_claimed",
+        "event": "notification_transport_content_alias_validated",
         "idempotency_key": "e" * 64,
     })
     _append_jsonl(decision_output / "events.jsonl", {

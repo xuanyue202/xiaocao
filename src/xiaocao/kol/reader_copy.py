@@ -192,3 +192,18 @@ def validate_reader_payload(kind: str, payload: dict[str, Any]) -> None:
             payload.get("reason"),
             field="viewpoint_relation.reason",
         )
+
+
+def validate_reader_message(title: Any, body: Any) -> None:
+    """Reject transport artifacts and internal actions in a final reminder."""
+    title_text = _text(title, field="notification.title")
+    if _TRANSPORT_TITLE_RE.search(title_text):
+        raise ReaderCopyError(
+            "notification.title must use a reader title, not a transport filename"
+        )
+    _natural_chinese(title_text, field="notification.title")
+    _natural_chinese(
+        body,
+        field="notification.body",
+        reject_machine_tokens=False,
+    )

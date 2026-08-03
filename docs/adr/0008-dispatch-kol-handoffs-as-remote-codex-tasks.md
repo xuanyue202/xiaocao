@@ -64,6 +64,11 @@ forbidden. When a revised notification identity renders byte-identical content
 ending in the same stable report URL as one already validated all-recipient
 transport delivery, the writer records a content-alias delivery and does not
 call the Relay. Any ambiguity or content difference remains fail-closed.
+Completed 灰常亮 publication receipts are read before constructing a new
+candidate on coordinator resume, so a later reader-copy bundle cannot republish
+the stable report. Reminder copy is still validated independently. Ticket03
+acceptance counts one content-alias authorization plus one delivered receipt as
+the exact-once notification terminal.
 
 Code handoffs bind the exact 40-character commit read by
 `git rev-parse HEAD`. The sender must not manually expand an abbreviated SHA,

@@ -22,6 +22,7 @@ from zoneinfo import ZoneInfo
 
 from .enrichment_types import EnrichmentError
 from .publication import (
+    PublicationError,
     PublicationLedger,
     PublicationTransport,
     build_append_only_publication_update,
@@ -33,6 +34,7 @@ from .publication import (
     report_id,
     stable_claim,
 )
+from .reader_copy import ReaderCopyError, validate_reader_message
 from .rendering import reader_source_title
 
 
@@ -543,14 +545,28 @@ class DailyPublicationPipeline:
         self._content = content
         self._publication_copy = item.get("publication") or {}
         if content.get("status") == "promoted":
-            candidate = _publication_candidate(item, context=self.context)
-            self.ledger.prepare(
-                candidate["publication_key"],
-                candidate["records"],
-                candidate["publish_request"],
-                metadata=candidate["metadata"],
+            publication_key = publication_id_for_source(
+                adapter=self.context.adapter,
+                source_identity=self.context.source_identity,
             )
-            state = self.ledger.run(candidate["publication_key"], self.client)
+            try:
+                state = self.ledger.status(publication_key)
+            except PublicationError as exc:
+                if "not prepared" not in str(exc):
+                    raise
+                state = None
+            if not state or not state.get("completed"):
+                candidate = _publication_candidate(item, context=self.context)
+                self.ledger.prepare(
+                    candidate["publication_key"],
+                    candidate["records"],
+                    candidate["publish_request"],
+                    metadata=candidate["metadata"],
+                )
+                state = self.ledger.run(
+                    candidate["publication_key"],
+                    self.client,
+                )
             receipt = state.get("publish_receipt") or {}
             if (
                 not state.get("completed")
@@ -688,6 +704,10 @@ class DailyPublicationPipeline:
         )
         suffix = f"\n\n查看完整报告：{detail_url}"
         body = _fit_reminder(body, suffix=suffix)
+        try:
+            validate_reader_message(title, body)
+        except ReaderCopyError as exc:
+            raise DailyError(str(exc)) from exc
 
         def report_message(
             _item: dict[str, Any],

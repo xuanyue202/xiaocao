@@ -1623,6 +1623,13 @@ class XiaocaoLiveService:
             if row.get("event") == "notification_send_claimed"
             and row.get("idempotency_key") == notification_key
         ]
+        notification_aliases = [
+            row
+            for row in decision_events
+            if row.get("event")
+            == "notification_transport_content_alias_validated"
+            and row.get("idempotency_key") == notification_key
+        ]
         notification_receipts = [
             row
             for row in decision_events
@@ -1662,7 +1669,9 @@ class XiaocaoLiveService:
                 "household_notification": 1,
                 "book_kol_us": 1,
             }
-            or len(notification_claims) != 1
+            or len(notification_claims) > 1
+            or len(notification_aliases) > 1
+            or not (notification_claims or notification_aliases)
             or sum(
                 row.get("event") == "netdisk_decisions_completed"
                 for row in netdisk_events
@@ -1972,6 +1981,13 @@ class XiaocaoLiveService:
             if row.get("event") == "notification_send_claimed"
             and row.get("idempotency_key") == notification_key
         ]
+        notification_aliases = [
+            row
+            for row in decision_events
+            if row.get("event")
+            == "notification_transport_content_alias_validated"
+            and row.get("idempotency_key") == notification_key
+        ]
         notification_receipts = [
             row
             for row in decision_events
@@ -2019,7 +2035,9 @@ class XiaocaoLiveService:
                 "household_notification": 1,
                 "book_kol_us": 1,
             }
-            or len(notification_claims) != 1
+            or len(notification_claims) > 1
+            or len(notification_aliases) > 1
+            or not (notification_claims or notification_aliases)
             or sum(
                 row.get("event") == "netdisk_decisions_completed"
                 for row in netdisk_events

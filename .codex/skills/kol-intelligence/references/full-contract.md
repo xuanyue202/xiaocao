@@ -193,6 +193,13 @@ the two receipts by handoff id and media SHA-256.
      reader copy and the same stable report URL, a revised notification identity
      may consume that delivery through one content-alias receipt without calling
      the sender; a second or nonidentical match fails closed.
+     Once the publication ledger already has a completed stable receipt, a
+     coordinator resume reads that receipt before rebuilding any candidate and
+     never republishes merely because a later decision bundle has reader-copy
+     edits. The final reminder is still validated independently and must use
+     natural reader copy. Ticket 03 acceptance treats one validated content
+     alias as a valid notification authorization, with exactly one delivered
+     receipt and zero new Relay calls.
      When the sole writer cannot reach the public Relay but the capture node can,
      keep the notification claim and final ledger on the sole writer. A local
      transport fallback is allowed only from a self-hashed, credential-free
