@@ -93,6 +93,16 @@ Keep the layers separate:
   complete sentence that preserves the direction, condition, horizon, and
   material boundary supported by the source. This is a publication gate for
   every KOL path, not a cleanup rule tied to one author or keyword.
+- Before publication, compare every reader-facing date, session label, and
+  episode label against the immutable source identity, provider metadata, and
+  transcript self-identification. A filename may contain transport decoration,
+  but the Agent must not silently change an attributable label such as
+  `盘前` into `盘中`. When those sources disagree or the transcript does not
+  resolve the label, use neutral wording such as the date plus `直播` or
+  `大师班`; never invent a more specific session identity. Re-run this check on
+  the authoritative report readback before notification. A mismatch requires a
+  same-report content-and-manifest CAS correction and never replays the prior
+  reminder or Book action.
 - Author identity is reviewed data, never a name-based inference. The current
   recurring authors 吕晓彤, 路西法, and 小草 are male; refer to each author with
   `他/他的`, never `她/她的`. Semantic requests must carry the repository author
@@ -564,6 +574,14 @@ erase the rest of the author's decision hierarchy.
 
 - Preserve the KOL's claim, reasoning, horizon, asset scope, and falsifiers. A thesis does not expire merely because a day passed.
 - Re-evaluate the thesis against current market facts at processing time; do not replay an old order blindly.
+- Current-fact validation must distinguish external confirmation from source
+  consistency. Record the authoritative source and as-of time for every fact
+  presented as independently verified. If current data is unavailable, keep
+  the KOL claim attributable, state the missing validation explicitly, and do
+  not turn internal transcript consistency into a fact check. A source-only
+  report may still publish when it has useful reader insight and makes no
+  unsupported actionable recommendation, but its final quality review must
+  mark the fact-validation depth as limited.
 - Prioritize concrete, time-sensitive implications: the market phase and overall strategy, sectors to add/reduce/exit, specific opportunities, the causal chain, validity window, trigger, and falsifier. Generic textbook framing belongs only in the durable-knowledge branch.
 - Treat holdings as context, not a search boundary. Surface strong opportunities outside current holdings and explain the funding or switching logic when relevant.
 - In human-facing messages, name both the verified company/fund and its code, explain the source signal and causal chain in plain language, show the author and source date/type, and omit internal gates, enums, hashes, local filenames, serialized pipeline state, and raw ASR artifacts. Populate `reader_title` when the source title needs editorial cleanup; otherwise the renderer must remove transport-only date prefixes, extensions, and compression suffixes. Use coherent natural-language paragraphs, never tables. The KOL's valuable information must dominate; the system adds only material fact, background, conflict, or uncertainty notes. For `no_actionable_signal`, send a compact weak-signal card when `reader_insight.status=useful`: state the insight, link only genuinely relevant current household positions, and make the evidence boundary explicit. Do not expand it into unrelated market or portfolio analysis, and do not decide for the user whether to act.

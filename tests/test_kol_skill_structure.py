@@ -112,6 +112,22 @@ def test_kol_skill_requires_natural_reader_copy_for_every_author() -> None:
         assert marker in text
 
 
+def test_kol_skill_preserves_session_identity_and_fact_check_boundaries() -> None:
+    text = " ".join(FULL_CONTRACT_MD.read_text(encoding="utf-8").split())
+
+    for marker in (
+        "reader-facing date, session label, and episode label",
+        "immutable source identity",
+        "must not silently change an attributable label",
+        "use neutral wording",
+        "same-report content-and-manifest CAS correction",
+        "distinguish external confirmation from source consistency",
+        "do not turn internal transcript consistency into a fact check",
+        "fact-validation depth as limited",
+    ):
+        assert marker in text
+
+
 def test_kol_skill_reuses_one_ticket04_listing_only_within_one_runner() -> None:
     text = " ".join(
         FULL_CONTRACT_MD.read_text(encoding="utf-8").split()
