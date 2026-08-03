@@ -33,6 +33,7 @@ from .publication import (
     report_id,
     stable_claim,
 )
+from .rendering import reader_source_title
 
 
 BEIJING = ZoneInfo("Asia/Shanghai")
@@ -434,7 +435,7 @@ def _publication_candidate(
         "kol_id": context.kol_id,
         "author": str(item.get("author") or ""),
         "source": context.source,
-        "title": str(item.get("title") or ""),
+        "title": reader_source_title(item),
         "summary": str(publication.get("summary") or ""),
         "source_published_at": source_published_at,
         "media_types": list(context.media_types),
@@ -676,7 +677,7 @@ class DailyPublicationPipeline:
         item = result["items"][0]
         insight = item.get("reader_insight") or {}
         publication = self._publication_copy or {}
-        title = f"投资情报｜{item.get('author')}：{item.get('title')}"
+        title = f"投资情报｜{item.get('author')}：{reader_source_title(item)}"
         body = "\n\n".join(
             row
             for row in (

@@ -25,6 +25,14 @@ readback, while the remote runtime retains idempotency and business receipts.
 An ambiguous send must be reconciled against the target thread and
 `handoff_id` before retrying.
 
+Acceptance follows the same ownership boundary. The capture node proves local
+capture, compression, cleanup, upload, and handoff. The remote writer persists
+the imported capsule as an immutable receipt and audits only
+`scope=post_handoff`: transcript, AI-note request, semantic decision, 灰常亮,
+notification, and Book. It must not require or synthesize a local capture
+ledger, cleanup receipt, or media path. End-to-end acceptance composes the two
+receipts by `handoff_id` and media SHA-256.
+
 Relay transport is separable from business ownership. If the remote sole
 writer cannot reach the public Enterprise WeChat Relay and the local capture
 node can, the remote task retains the original notification claim and emits a
@@ -33,8 +41,10 @@ content hash, exact recipients, original failure, and explicit confirmation
 that those recipients are missing the message. The local node then claims and
 receipts each requested recipient independently. It returns one self-hashed
 all-recipient receipt through the existing Codex task; the remote writer
-validates that receipt and records delivery under the original notification
-identity. No business decision, report publication, Book action, or global KOL
+validates the original request and receipt together, binds their hashes and
+fields to one matching prior claimed/uncertain notification state, and records
+delivery under the original notification identity. No business decision,
+report publication, Book action, or global KOL
 state is written locally. A delivered recipient is never resent, a proven
 pre-connect failure may resume only for that recipient, and an uncertain call
 stops for reconciliation.

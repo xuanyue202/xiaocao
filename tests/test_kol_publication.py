@@ -306,6 +306,36 @@ def test_reader_copy_gate_is_source_neutral_and_allows_only_formal_ascii_subject
         assert record["content_sha256"]
 
 
+def test_report_reader_copy_rejects_transport_titles_and_internal_actions():
+    report = _initial_report()
+
+    with pytest.raises(Exception, match="reader title|transport filename"):
+        build_record(
+            kind="report",
+            record_id_value=report["record_id"],
+            idempotency_key="put-raw-title",
+            created_at=report["created_at"],
+            source_binding=report["source_binding"],
+            payload={
+                **report["payload"],
+                "title": "20260802 大师班专场-compressed.mp4",
+            },
+        )
+
+    with pytest.raises(Exception, match="internal action label"):
+        build_record(
+            kind="report",
+            record_id_value=report["record_id"],
+            idempotency_key="put-internal-actions",
+            created_at=report["created_at"],
+            source_binding=report["source_binding"],
+            payload={
+                **report["payload"],
+                "report_body": "# 系统结论\n\n家庭动作 wait；Book KOL-US 为 no_trade。",
+            },
+        )
+
+
 def test_append_only_update_rejects_silent_viewpoint_omission():
     current = _initial_report()
     viewpoint = _viewpoint(current)

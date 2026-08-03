@@ -38,6 +38,11 @@ state disambiguates the request, ask only: “录入直播回放，还是复盘�
 After the user selects live-replay capture, keep that route fixed through
 compressed capture, cloud handoff, remote analysis, publication, reminder, and
 audit; later uses of “复盘” do not switch the task back to report commentary.
+Treat the run as complete only when the reader-facing report has been read back,
+the exact recipient set has durable reminder receipts, and the node that owns
+each side of the handoff has passed its own acceptance scope. The remote writer
+must use `scope=post_handoff`; it must never require local capture ledgers or
+video bytes that the handoff contract explicitly forbids transferring.
 
 ## Non-negotiable semantic boundaries
 
@@ -53,6 +58,9 @@ audit; later uses of “复盘” do not switch the task back to report commenta
   asset-name lists, or a prior summary as an importance or completeness gate.
 - Publish a promoted event to 灰常亮 before any eligible reminder or Book
   effect. A `low_density` item creates neither a report nor a reminder.
+- Use one reviewed reader title for both the 灰常亮 report and reminder. Raw
+  filenames, compression suffixes, and internal actions such as `wait` or
+  `no_trade` are acceptance failures even when the structure is otherwise valid.
 - For the latest Lv Xiaotong video, discovery, cloud transfer, transcript
   readiness, and completed analysis are checkpoints, not success. Keep the
   exact identity/version eligible across hourly sweeps until `status` proves a

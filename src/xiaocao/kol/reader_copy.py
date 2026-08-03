@@ -20,6 +20,16 @@ _MACHINE_TOKEN_RE = re.compile(
 _FORMAL_ASCII_NAME_RE = re.compile(
     r"[A-Z][A-Za-z0-9]*(?:[ .&+'/.-][A-Za-z0-9]+)*"
 )
+_INTERNAL_ACTION_RE = re.compile(
+    r"(?<![A-Za-z0-9_])"
+    r"(?:wait|buy|add|hold|reduce|sell|no_trade|cold|executable_count)"
+    r"(?![A-Za-z0-9_])",
+    re.IGNORECASE,
+)
+_TRANSPORT_TITLE_RE = re.compile(
+    r"(?:\.(?:mp4|mov|m4v|txt|md)$|(?:^|[-_])compressed(?:[-_.]|$))",
+    re.IGNORECASE,
+)
 
 
 class ReaderCopyError(ValueError):
@@ -55,6 +65,12 @@ def _natural_chinese(
         raise ReaderCopyError(
             f"{field} must use natural Chinese; English is reserved for "
             "official names and stock or ETF codes"
+        )
+    internal_action = _INTERNAL_ACTION_RE.search(text)
+    if internal_action:
+        raise ReaderCopyError(
+            f"{field} exposes internal action label "
+            f"{internal_action.group(0)!r}; rewrite it as reader-facing Chinese"
         )
     token = _machine_token(text) if reject_machine_tokens else None
     if token:
@@ -119,7 +135,12 @@ def validate_reader_payload(kind: str, payload: dict[str, Any]) -> None:
                 )
             except AuthorIdentityError as exc:
                 raise ReaderCopyError(str(exc)) from exc
-        _natural_chinese(payload.get("title"), field="report.title")
+        title = _text(payload.get("title"), field="report.title")
+        if _TRANSPORT_TITLE_RE.search(title):
+            raise ReaderCopyError(
+                "report.title must use a reader title, not a transport filename"
+            )
+        _natural_chinese(title, field="report.title")
         _natural_chinese(
             payload.get("summary"),
             field="report.summary",

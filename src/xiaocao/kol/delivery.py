@@ -16,6 +16,10 @@ from ._shared import (
     parse_iso,
     read_jsonl,
 )
+from .notification_transport import (
+    NotificationTransport,
+    NotificationTransportError,
+)
 from .rendering import reader_message_title, render_household_item_message
 
 
@@ -62,11 +66,16 @@ class WechatDelivery:
 
     def record_transport(
         self,
+        request: dict[str, Any],
         receipt: dict[str, Any],
         *,
         expected_recipients: tuple[str, ...],
     ) -> dict[str, Any]:
         """Validate a cross-node all-recipient receipt before aggregate delivery."""
+        try:
+            NotificationTransport.validate_request(request)
+        except NotificationTransportError as exc:
+            raise DecisionError(str(exc)) from exc
         if receipt.get("schema_version") != 1 or receipt.get("status") != "delivered":
             raise DecisionError("notification transport receipt is not delivered")
         receipt_sha = str(receipt.get("receipt_sha256") or "")
@@ -118,6 +127,45 @@ class WechatDelivery:
             parse_iso(
                 value["delivered_at"],
                 field=f"recipient_receipts[{recipient}].delivered_at",
+            )
+        if tuple(request.get("recipients") or ()) != expected:
+            raise DecisionError(
+                "notification transport request must cover the exact recipient set"
+            )
+        binding_fields = (
+            "handoff_id",
+            "notification_id",
+            "report_id",
+            "stable_report_url",
+            "content_sha256",
+        )
+        if any(request.get(field) != receipt.get(field) for field in binding_fields):
+            raise DecisionError("notification transport request and receipt differ")
+
+        events = read_jsonl(self.events_path)
+        notification_id = str(request["notification_id"])
+        original_failure = request["original_failure"]
+        prior_claims = [
+            row
+            for row in events
+            if row.get("event") == "notification_send_claimed"
+            and row.get("idempotency_key") == notification_id
+        ]
+        prior_uncertain = [
+            row
+            for row in events
+            if row.get("event") == "notification_send_uncertain"
+            and row.get("idempotency_key") == notification_id
+            and row.get("status") == original_failure["status"]
+        ]
+        if (
+            len(prior_claims) != 1
+            or len(prior_uncertain) != 1
+            or prior_claims[0].get("content_sha256")
+            != str(request["content_sha256"])[:16]
+        ):
+            raise DecisionError(
+                "notification transport requires one matching prior uncertain state"
             )
 
         self.lock_path.parent.mkdir(parents=True, exist_ok=True)

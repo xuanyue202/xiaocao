@@ -131,6 +131,11 @@ def _reader_source_title(item: dict[str, Any]) -> str:
     return title.replace("_", " ").strip() or "原始内容"
 
 
+def reader_source_title(item: dict[str, Any]) -> str:
+    """Return the reviewed source title shared by reports and reminders."""
+    return _reader_source_title(item)
+
+
 def _reader_source_label(item: dict[str, Any]) -> str:
     source = str(item.get("source") or "")
     media_type = str(item.get("media_type") or "")

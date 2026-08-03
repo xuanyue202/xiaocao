@@ -805,6 +805,7 @@ class DecisionPipeline:
 
     def record_transport_delivery(
         self,
+        request: dict[str, Any],
         receipt: dict[str, Any],
         *,
         expected_recipients: tuple[str, ...],
@@ -814,6 +815,7 @@ class DecisionPipeline:
             outbox_path=self.outbox_path,
             lock_path=self.wechat_delivery_lock_path,
         ).record_transport(
+            request,
             receipt,
             expected_recipients=expected_recipients,
         )

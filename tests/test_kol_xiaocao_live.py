@@ -388,6 +388,168 @@ def test_publish_handoff_includes_portable_cloud_ready_ledger_snapshot(tmp_path)
     assert remote.import_handoff_capsule(capsule)["status"] == "video_ready"
 
 
+def test_remote_audit_accepts_decided_portable_handoff_without_capture_state(
+    tmp_path,
+):
+    transcript = tmp_path / "complete.txt"
+    quote = "半导体继续最强才考虑"
+    transcript.write_text(quote * 200, encoding="utf-8")
+    transcript_sha = _sha256(transcript)
+    media_sha256 = "a" * 64
+    handoff_id = "b" * 64
+    job_id = f"kol-netdisk-{media_sha256[:16]}"
+    bundle_item = {
+        "decision_status": "actionable_signal",
+        "knowledge_status": "reusable_knowledge",
+        "knowledge_reason": "来源包含可证伪的风格与仓位方法。",
+        "evidence_path": str(transcript),
+        "evidence_sha256": transcript_sha,
+        "claims": [{
+            "claim_id": "xiaocao-semiconductor",
+            "quote": quote,
+            "reader_quote": "只有半导体继续保持最强时才考虑参与。",
+        }],
+        "trade_information_coverage": _coverage(quote),
+        "market_outlook": {"summary": "市场结论优先。"},
+        "book_kol_us": {
+            "decision": "no_trade",
+            "reason": "没有明确美国上市标的和有效交易触发。",
+        },
+    }
+    attach_claim_contract(bundle_item, transcript)
+    bundle = _write_json(tmp_path / "bundle.json", {"items": [bundle_item]})
+    decision_result = _write_json(tmp_path / "decision_result.json", {
+        "status": "completed",
+        "items": [{
+            "claims": [{"quote": quote}],
+            "synthesis": "系统判断与来源原话分开。",
+            "market_validation": {"status": "qualify"},
+            "market_outlook": {"summary": "市场结论优先。"},
+            "household_recommendation": {"action": "wait"},
+        }],
+    })
+    snapshot = {
+        "schema_version": 1,
+        "status": "video_ready",
+        "provider": "baidu_consumer_page",
+        "job_id": job_id,
+        "netdisk_directory": "/课程/自己的课/小草",
+        "netdisk_path": "/课程/自己的课/小草/target-compressed.mp4",
+        "video_basename": "target-compressed.mp4",
+        "video_sha256": media_sha256,
+        "video_sha256_kind": "content_sha256",
+        "video_size_bytes": 123456,
+        "video_duration_seconds": 1800.5,
+        "source_mode": "cloud_handoff",
+        "large_payload_local_bytes": 0,
+        "handoff_id": handoff_id,
+    }
+    capsule = {
+        "schema_version": 2,
+        "source": "xiaocao",
+        "author": "小草",
+        "handoff_id": handoff_id,
+        "capture_job_id": "kol-capture-test",
+        "live_id": "live-test",
+        "captured_at": "2026-08-01T19:30:00+08:00",
+        "media_basename": "target-compressed.mp4",
+        "media_sha256": media_sha256,
+        "media_size_bytes": 123456,
+        "media_duration_seconds": 1800.5,
+        "netdisk_job_id": job_id,
+        "cloud_reference": (
+            "baidu:/课程/自己的课/小草/target-compressed.mp4"
+        ),
+        "provider": "baidu_consumer_page",
+        "large_payload_local_bytes": 0,
+        "published_at": "2026-08-01T19:45:00+08:00",
+        "netdisk_job_snapshot": snapshot,
+        "netdisk_job_snapshot_sha256": _canonical_sha256(snapshot),
+    }
+    capsule["handoff_sha256"] = _canonical_sha256(capsule)
+    state = {
+        **snapshot,
+        "status": "decided",
+        "transcript_path": str(transcript),
+        "transcript_sha256": transcript_sha,
+        "transcript_character_count": len(transcript.read_text(encoding="utf-8")),
+        "audit_sha256": "c" * 64,
+        "ai_note_template_no": 1,
+        "ai_note_triggered_at": "2026-08-01T20:00:00+08:00",
+        "ai_note_completion_required": False,
+        "decision_bundle_path": str(bundle),
+        "decision_bundle_sha256": _sha256(bundle),
+        "decision_result_path": str(decision_result),
+        "decision_result_sha256": _sha256(decision_result),
+        "household_notification": {
+            "status": "delivered",
+            "idempotency_key": "e" * 64,
+        },
+        "book_kol_us": {
+            "book": "KOL-US",
+            "paper_only": True,
+            "status": "no_trade",
+            "reason": "没有明确美国上市标的和有效交易触发。",
+            "idempotency_key": "d" * 64,
+        },
+    }
+    netdisk_events = [
+        {"job_id": job_id, "event": "netdisk_remote_handoff_imported"},
+        {"job_id": job_id, "event": "netdisk_transcript_requested"},
+        {"job_id": job_id, "event": "netdisk_ai_note_triggered"},
+        {"job_id": job_id, "event": "netdisk_decisions_completed"},
+    ]
+    decision_output = tmp_path / "decisions"
+    _append_jsonl(decision_output / "events.jsonl", {
+        "event": "notification_send_claimed",
+        "idempotency_key": "e" * 64,
+    })
+    _append_jsonl(decision_output / "events.jsonl", {
+        "event": "notification_delivered",
+        "idempotency_key": "e" * 64,
+    })
+    _append_jsonl(decision_output / "book_kol_us" / "decisions.jsonl", {
+        "idempotency_key": "d" * 64,
+        "book": "KOL-US",
+        "paper_only": True,
+        "status": "no_trade",
+        "reason": "没有明确美国上市标的和有效交易触发。",
+    })
+    service = XiaocaoLiveService(
+        tmp_path / "remote-live",
+        netdisk_output=tmp_path / "remote-netdisk",
+        decision_output=decision_output,
+    )
+    service.import_handoff_capsule(capsule)
+    for row in netdisk_events[1:]:
+        service.netdisk.store.append({**snapshot, **row})
+    service.netdisk.store.append(state)
+
+    first = service.advance(
+        "kol-capture-test",
+        opencli_session="remote-session",
+        sender=lambda *_args: pytest.fail("decided replay must not resend"),
+    )
+    second = service.audit_acceptance("kol-capture-test")
+    acceptance = json.loads(
+        Path(first["acceptance_evidence_path"]).read_text(encoding="utf-8")
+    )
+
+    assert first["status"] == "awaiting_user_confirmation"
+    assert first["new_external_side_effect_count"] == 0
+    assert second["idempotent_replay"] is True
+    assert acceptance["scope"] == "post_handoff"
+    assert acceptance["upstream_attestation"]["handoff_id"] == handoff_id
+    assert acceptance["side_effect_counts"] == {
+        "handoff_import": 1,
+        "transcript_request": 1,
+        "ai_note_request": 1,
+        "household_notification": 1,
+        "book_kol_us": 1,
+    }
+    assert not (tmp_path / "capture.jsonl").exists()
+
+
 def test_acceptance_audit_proves_exactly_once_real_chain(tmp_path):
     ledger, capture_job_id, media, duration = _capture_fixture(tmp_path)
     transcript = tmp_path / "complete.txt"

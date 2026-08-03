@@ -481,7 +481,14 @@ def test_publication_pipeline_publishes_before_book_and_one_link_reminder(
         ),
     )
 
-    result = pipeline.process(_publication_bundle())
+    bundle = _publication_bundle()
+    bundle["items"][0]["title"] = (
+        "20260802 大师班专场(晚18：00开播)-compressed.mp4"
+    )
+    bundle["items"][0]["reader_title"] = (
+        "8月2日大师班专场：弱轮动下的周一剧本与10%试错纪律"
+    )
+    result = pipeline.process(bundle)
     delivery = pipeline.deliver_wechat(
         result,
         sender=lambda title, body: (
@@ -492,6 +499,10 @@ def test_publication_pipeline_publishes_before_book_and_one_link_reminder(
     assert order == ["gray", "book", "alert"]
     assert delivery["status"] == "delivered"
     assert len(sent) == 1
+    assert sent[0][0] == (
+        "投资情报｜小草：8月2日大师班专场："
+        "弱轮动下的周一剧本与10%试错纪律"
+    )
     assert sent[0][1].count("https://") == 1
     assert sent[0][1].endswith(
         "https://reader.example/kol/report-first"
@@ -509,6 +520,9 @@ def test_publication_pipeline_publishes_before_book_and_one_link_reminder(
         source_identity="live-20260727-am",
     )
     prepared = pipeline.ledger.status(publication_key)
+    assert prepared["artifact"]["records"][0]["payload"]["title"] == (
+        "8月2日大师班专场：弱轮动下的周一剧本与10%试错纪律"
+    )
     assert prepared["artifact"]["records"][0]["created_at"] == (
         "2026-07-27T01:30:00Z"
     )

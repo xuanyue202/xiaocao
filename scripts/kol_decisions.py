@@ -29,6 +29,11 @@ def main() -> int:
         type=Path,
         help="validate and record a cross-node all-recipient receipt JSON",
     )
+    parser.add_argument(
+        "--transport-request",
+        type=Path,
+        help="original self-hashed request paired with the transport receipt",
+    )
     args = parser.parse_args()
 
     household_loader = None
@@ -38,14 +43,23 @@ def main() -> int:
             household_loader = LiangHuiMcpClient.from_config().load_context
     pipeline = DecisionPipeline(args.output_dir, household_context_loader=household_loader)
     if args.record_transport_receipt:
+        if args.transport_request is None:
+            parser.error(
+                "--record-transport-receipt requires --transport-request"
+            )
+        request = json.loads(args.transport_request.read_text(encoding="utf-8"))
         receipt = json.loads(
             args.record_transport_receipt.read_text(encoding="utf-8")
         )
-        if not isinstance(receipt, dict):
-            parser.error("--record-transport-receipt must contain a JSON object")
+        if not isinstance(request, dict) or not isinstance(receipt, dict):
+            parser.error(
+                "--transport-request and --record-transport-receipt "
+                "must contain JSON objects"
+            )
         print(
             json.dumps(
                 pipeline.record_transport_delivery(
+                    request,
                     receipt,
                     expected_recipients=configured_wecom_recipients(audience="kol"),
                 ),

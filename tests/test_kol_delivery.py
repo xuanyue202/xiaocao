@@ -80,6 +80,48 @@ def _pipeline(tmp_path) -> DecisionPipeline:
     return pipeline
 
 
+def _transport_request() -> dict:
+    value = {
+        "schema_version": 1,
+        "notification_id": "evidence-1",
+        "source_task": {
+            "host_id": "remote-control:host-1",
+            "thread_id": "thread-1",
+        },
+        "report_id": "kr_report_1",
+        "stable_report_url": "https://reader.example/kol-reports/kr_report_1",
+        "title": "投资情报｜小草：弱轮动下的周一剧本",
+        "body": (
+            "高开不追，显著低开后再验证修复。"
+            "\n\n查看完整报告：https://reader.example/kol-reports/kr_report_1"
+        ),
+        "recipients": ["Chen", "FeiFei"],
+        "missing_confirmation": {
+            "kind": "recipient_missing_confirmation",
+            "reference": "user-confirmed-20260803",
+            "confirmed_at": "2026-08-03T00:40:00+08:00",
+        },
+        "original_failure": {
+            "claimed_at": "2026-08-03T00:21:59+08:00",
+            "recorded_at": "2026-08-03T00:22:00+08:00",
+            "status": "failed recipients: Chen; FeiFei",
+            "delivered_recipients": [],
+        },
+    }
+    value["content_sha256"] = hashlib.sha256(
+        f"{value['title']}\n{value['body']}".encode()
+    ).hexdigest()
+    value["handoff_id"] = hashlib.sha256(
+        json.dumps(
+            value,
+            ensure_ascii=False,
+            sort_keys=True,
+            separators=(",", ":"),
+        ).encode()
+    ).hexdigest()
+    return value
+
+
 def test_wechat_delivery_uses_existing_relay_and_is_idempotent(tmp_path):
     pipeline = _pipeline(tmp_path)
     result = _result()
@@ -110,21 +152,39 @@ def test_wechat_delivery_uses_existing_relay_and_is_idempotent(tmp_path):
 
 def test_transport_receipt_is_validated_before_aggregate_delivery(tmp_path):
     pipeline = _pipeline(tmp_path)
+    request = _transport_request()
+    with pipeline.events_path.open("a", encoding="utf-8") as handle:
+        handle.write(json.dumps({
+            "event": "notification_send_claimed",
+            "idempotency_key": "evidence-1",
+            "content_sha256": request["content_sha256"][:16],
+        }, separators=(",", ":")) + "\n")
+        handle.write(json.dumps({
+            "event": "notification_send_uncertain",
+            "idempotency_key": "evidence-1",
+            "status": request["original_failure"]["status"],
+        }, separators=(",", ":")) + "\n")
     receipt = {
         "schema_version": 1,
         "status": "delivered",
-        "handoff_id": "a" * 64,
+        "handoff_id": request["handoff_id"],
         "notification_id": "evidence-1",
         "report_id": "kr_report_1",
         "stable_report_url": "https://reader.example/kol-reports/kr_report_1",
-        "content_sha256": "b" * 64,
+        "content_sha256": request["content_sha256"],
         "recipient_receipts": {
             "Chen": {
-                "receipt": f"wecom-relay://ok/{'a' * 64}/Chen/{'b' * 16}",
+                "receipt": (
+                    f"wecom-relay://ok/{request['handoff_id']}/Chen/"
+                    f"{request['content_sha256'][:16]}"
+                ),
                 "delivered_at": "2026-08-03T00:50:00+08:00",
             },
             "FeiFei": {
-                "receipt": f"wecom-relay://ok/{'a' * 64}/FeiFei/{'b' * 16}",
+                "receipt": (
+                    f"wecom-relay://ok/{request['handoff_id']}/FeiFei/"
+                    f"{request['content_sha256'][:16]}"
+                ),
                 "delivered_at": "2026-08-03T00:50:01+08:00",
             },
         },
@@ -139,10 +199,12 @@ def test_transport_receipt_is_validated_before_aggregate_delivery(tmp_path):
     ).hexdigest()
 
     first = pipeline.record_transport_delivery(
+        request,
         receipt,
         expected_recipients=("Chen", "FeiFei"),
     )
     second = pipeline.record_transport_delivery(
+        request,
         receipt,
         expected_recipients=("Chen", "FeiFei"),
     )
@@ -157,6 +219,7 @@ def test_transport_receipt_is_validated_before_aggregate_delivery(tmp_path):
 
 def test_transport_receipt_rejects_missing_recipient_or_bad_hash(tmp_path):
     pipeline = _pipeline(tmp_path)
+    request = _transport_request()
     receipt = {
         "schema_version": 1,
         "status": "delivered",
@@ -176,6 +239,7 @@ def test_transport_receipt_rejects_missing_recipient_or_bad_hash(tmp_path):
 
     with pytest.raises(DecisionError, match="transport receipt hash"):
         pipeline.record_transport_delivery(
+            request,
             receipt,
             expected_recipients=("Chen", "FeiFei"),
         )
@@ -192,6 +256,79 @@ def test_transport_receipt_rejects_missing_recipient_or_bad_hash(tmp_path):
     ).hexdigest()
     with pytest.raises(DecisionError, match="exact recipient set"):
         pipeline.record_transport_delivery(
+            request,
+            receipt,
+            expected_recipients=("Chen", "FeiFei"),
+        )
+
+
+def test_transport_receipt_rejects_a_different_request_or_missing_uncertain_state(
+    tmp_path,
+):
+    pipeline = _pipeline(tmp_path)
+    request = _transport_request()
+    receipt = {
+        "schema_version": 1,
+        "status": "delivered",
+        "handoff_id": request["handoff_id"],
+        "notification_id": request["notification_id"],
+        "report_id": request["report_id"],
+        "stable_report_url": request["stable_report_url"],
+        "content_sha256": request["content_sha256"],
+        "recipient_receipts": {
+            recipient: {
+                "receipt": (
+                    f"wecom-relay://ok/{request['handoff_id']}/{recipient}/"
+                    f"{request['content_sha256'][:16]}"
+                ),
+                "delivered_at": "2026-08-03T00:50:00+08:00",
+            }
+            for recipient in request["recipients"]
+        },
+    }
+    receipt["receipt_sha256"] = hashlib.sha256(
+        json.dumps(
+            receipt,
+            ensure_ascii=False,
+            sort_keys=True,
+            separators=(",", ":"),
+        ).encode()
+    ).hexdigest()
+
+    with pytest.raises(DecisionError, match="prior uncertain state"):
+        pipeline.record_transport_delivery(
+            request,
+            receipt,
+            expected_recipients=("Chen", "FeiFei"),
+        )
+
+    with pipeline.events_path.open("a", encoding="utf-8") as handle:
+        handle.write(json.dumps({
+            "event": "notification_send_claimed",
+            "idempotency_key": request["notification_id"],
+            "content_sha256": request["content_sha256"][:16],
+        }, separators=(",", ":")) + "\n")
+        handle.write(json.dumps({
+            "event": "notification_send_uncertain",
+            "idempotency_key": request["notification_id"],
+            "status": request["original_failure"]["status"],
+        }, separators=(",", ":")) + "\n")
+    different = dict(request)
+    different["report_id"] = "kr_other"
+    unsigned = dict(different)
+    unsigned.pop("handoff_id")
+    different["handoff_id"] = hashlib.sha256(
+        json.dumps(
+            unsigned,
+            ensure_ascii=False,
+            sort_keys=True,
+            separators=(",", ":"),
+        ).encode()
+    ).hexdigest()
+
+    with pytest.raises(DecisionError, match="request and receipt differ"):
+        pipeline.record_transport_delivery(
+            different,
             receipt,
             expected_recipients=("Chen", "FeiFei"),
         )

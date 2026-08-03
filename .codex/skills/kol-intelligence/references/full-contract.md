@@ -156,10 +156,18 @@ invocations resume from the capture and enrichment ledgers. They must finish
 compressed-media validation plus deterministic process/port/API/proxy cleanup
 before preparing or advancing Netdisk. The broadband invocation owns the
 large upload and then publishes a metadata-only cloud handoff; coordinator
-invocations never read or download the large source video. After decisions,
-`audit` derives its acceptance receipt from the capture, Netdisk, notification,
-and paper ledgers. It must prove each external side effect exactly once and
-return zero new external side effects on rerun before user confirmation.
+invocations never read or download the large source video. Acceptance is
+explicitly scoped by ownership. On the capture node, `audit` may derive a full
+receipt from the capture, cleanup, upload, handoff, notification, and paper
+ledgers when those ledgers are colocated. On the remote sole writer, importing
+the self-hashed capsule persists one immutable `cloud_handoff_imported` receipt;
+`run` and `audit` then use `scope=post_handoff`, treat the capsule as the
+upstream boundary, and validate only remote-owned transcript, AI-note request,
+decision, publication, exact-recipient reminder, and Book effects. The remote
+audit must never reopen the local capture ledger, local cleanup receipt, or
+source-video bytes. Each scope proves its owned external effects exactly once
+and returns zero new external effects on rerun; end-to-end acceptance composes
+the two receipts by handoff id and media SHA-256.
 
 ## Enrichment boundary
 
@@ -186,8 +194,14 @@ return zero new external side effects on rerun before user confirmation.
      transport node. It claims and receipts each recipient independently;
      successful recipients are never replayed, provably pre-connect failures
      may resume only for the missing recipient, and any uncertain result stops.
-     Return the self-hashed all-recipient receipt to the sole writer, which must
-     validate it and record the existing notification identity as delivered
+     Return the original self-hashed request together with the self-hashed
+     all-recipient receipt to the sole writer. Record them with
+     `scripts/kol_decisions.py --transport-request <request.json>
+     --record-transport-receipt <receipt.json>`. The writer must validate both
+     self-hashes, exact request/receipt bindings, the configured recipient set,
+     and one matching prior `notification_send_claimed` plus
+     `notification_send_uncertain` state before recording the existing
+     notification identity as delivered
      before Ticket 03 may continue. A task message is the control plane; Git is
      only the code/contract transport and never carries runtime request files.
      Every code-sync task must copy the exact 40-character value produced by

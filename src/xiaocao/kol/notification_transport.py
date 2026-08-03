@@ -39,7 +39,7 @@ class NotificationTransport:
         self.configured_recipients = configured_recipients
 
     @staticmethod
-    def _validate(request: dict[str, Any]) -> None:
+    def validate_request(request: dict[str, Any]) -> None:
         if request.get("schema_version") != 1:
             raise NotificationTransportError("notification handoff schema is invalid")
         handoff_id = str(request.get("handoff_id") or "")
@@ -174,7 +174,7 @@ class NotificationTransport:
         *,
         sender: Callable[[str, str, str], dict[str, Any]],
     ) -> dict[str, Any]:
-        self._validate(request)
+        self.validate_request(request)
         recipients = tuple(request["recipients"])
         configured = set(self.configured_recipients())
         unconfigured = [value for value in recipients if value not in configured]
