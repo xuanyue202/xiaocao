@@ -431,6 +431,7 @@ class DecisionPipeline:
         cross_source: dict[str, Any],
         reader_insight: dict[str, Any] | None = None,
         reader_briefing: dict[str, Any] | None = None,
+        reader_reminder: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         """Return only semantics that can change the reader-facing message.
 
@@ -540,6 +541,12 @@ class DecisionPipeline:
             }
         if reader_briefing:
             payload["reader_briefing"] = reader_briefing
+        if reader_reminder:
+            payload["reader_reminder"] = {
+                field: reader_reminder.get(field)
+                for field in ("title", "summary")
+                if reader_reminder.get(field) is not None
+            }
         return payload
 
     @staticmethod
@@ -623,6 +630,7 @@ class DecisionPipeline:
                 cross_source=_reader_cross_source(item, cross_source),
                 reader_insight=item.get("reader_insight"),
                 reader_briefing=item.get("reader_briefing"),
+                reader_reminder=item.get("reader_reminder"),
             )
             desired_identity = self._notification_identity(
                 document.sha256,
@@ -648,6 +656,7 @@ class DecisionPipeline:
                         },
                         reader_insight=row.get("reader_insight"),
                         reader_briefing=row.get("reader_briefing"),
+                        reader_reminder=row.get("reader_reminder"),
                     ) == notification_payload
                 ),
                 None,
@@ -706,6 +715,7 @@ class DecisionPipeline:
                 "decision_reason": item.get("decision_reason"),
                 "reader_insight": item.get("reader_insight"),
                 "reader_briefing": item.get("reader_briefing"),
+                "reader_reminder": item.get("reader_reminder"),
                 "household_context_assessment": context_assessment,
                 "household_context": {
                     "family_id": household_context["family_id"],

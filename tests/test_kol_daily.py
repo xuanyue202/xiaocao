@@ -498,6 +498,10 @@ def test_publication_pipeline_publishes_before_book_and_one_link_reminder(
     bundle["items"][0]["reader_title"] = (
         "8月2日大师班专场：弱轮动下的周一剧本与10%试错纪律"
     )
+    bundle["items"][0]["reader_reminder"] = {
+        "title": "弱轮动下的周一剧本与10%试错纪律",
+        "summary": "轮动仍乱，先观察开盘路径，条件满足也只轻仓试错。",
+    }
     result = pipeline.process(bundle)
     delivery = pipeline.deliver_wechat(
         result,
@@ -510,8 +514,10 @@ def test_publication_pipeline_publishes_before_book_and_one_link_reminder(
     assert delivery["status"] == "delivered"
     assert len(sent) == 1
     assert sent[0][0] == (
-        "投资情报｜小草：8月2日大师班专场："
-        "弱轮动下的周一剧本与10%试错纪律"
+        "投资情报｜小草：弱轮动下的周一剧本与10%试错纪律"
+    )
+    assert sent[0][1].startswith(
+        "轮动仍乱，先观察开盘路径，条件满足也只轻仓试错。"
     )
     assert sent[0][1].count("https://") == 1
     assert sent[0][1].endswith(
@@ -580,9 +586,6 @@ def test_completed_publication_resumes_without_rebuilding_changed_reader_copy(
     changed["items"][0]["publication"]["report_body"] += (
         "\n\n内部旧状态 COLD"
     )
-    changed["items"][0]["publication"]["remaining_summary"] = (
-        "内部旧状态 COLD"
-    )
     resumed = DailyPublicationPipeline(
         _DelegatePipeline(order),
         ledger=ledger,
@@ -595,11 +598,19 @@ def test_completed_publication_resumes_without_rebuilding_changed_reader_copy(
     assert result["status"] == "completed"
     assert order == ["gray", "book", "book"]
     assert ledger.status(publication_key)["event_count"] == original_event_count
+    invalid_reminder = _publication_bundle()
+    invalid_reminder["items"][0]["publication"]["remaining_summary"] = (
+        "内部旧状态 COLD"
+    )
+    blocked = DailyPublicationPipeline(
+        _DelegatePipeline(order),
+        ledger=ledger,
+        client=client,
+        context=context,
+    )
     with pytest.raises(DailyError, match="internal action label 'COLD'"):
-        resumed.deliver_wechat(
-            result,
-            sender=lambda *_args: pytest.fail("invalid copy must not send"),
-        )
+        blocked.process(invalid_reminder)
+    assert order == ["gray", "book", "book"]
 
 
 def test_video_publication_context_uses_request_time_and_evidence_hash():

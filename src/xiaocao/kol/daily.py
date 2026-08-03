@@ -512,6 +512,37 @@ def _fit_reminder(value: str, *, suffix: str) -> str:
     return value.rstrip() + suffix
 
 
+def _reader_reminder_copy(
+    item: dict[str, Any],
+    publication: dict[str, Any],
+    *,
+    detail_url: str,
+) -> tuple[str, str]:
+    reader_reminder = item.get("reader_reminder") or {}
+    insight = item.get("reader_insight") or {}
+    reminder_title = str(reader_reminder.get("title") or "").strip()
+    title = (
+        f"投资情报｜{item.get('author')}："
+        f"{reminder_title or reader_source_title(item)}"
+    )
+    reminder_summary = _without_urls(reader_reminder.get("summary"))
+    body = reminder_summary or "\n\n".join(
+        row
+        for row in (
+            _without_urls(insight.get("summary")),
+            _without_urls(publication.get("remaining_summary")),
+        )
+        if row
+    )
+    suffix = f"\n\n查看完整报告：{detail_url}"
+    body = _fit_reminder(body, suffix=suffix)
+    try:
+        validate_reader_message(title, body)
+    except ReaderCopyError as exc:
+        raise DailyError(str(exc)) from exc
+    return title, body
+
+
 class DailyPublicationPipeline:
     """Publish one event report before delegating Book and reminder effects."""
 
@@ -531,6 +562,7 @@ class DailyPublicationPipeline:
         self._publication_state: dict[str, Any] | None = None
         self._content: dict[str, Any] | None = None
         self._publication_copy: dict[str, Any] | None = None
+        self._reminder_message: tuple[str, str] | None = None
 
     def process(self, bundle: dict[str, Any]) -> dict[str, Any]:
         items = bundle.get("items")
@@ -574,6 +606,12 @@ class DailyPublicationPipeline:
             ):
                 raise DailyError("gray report receipt lacks a stable detail URL")
             self._publication_state = state
+            if content.get("tier") == "alert_eligible":
+                self._reminder_message = _reader_reminder_copy(
+                    item,
+                    self._publication_copy,
+                    detail_url=str(receipt["detailUrl"]),
+                )
         elif content.get("status") != "low_density":
             raise DailyError("daily content value result is invalid")
         result = self.delegate.process(bundle)
@@ -689,25 +727,10 @@ class DailyPublicationPipeline:
                 "skipped": [notification.get("idempotency_key")],
             }
         receipt = (self._publication_state or {}).get("publish_receipt") or {}
-        detail_url = str(receipt.get("detailUrl") or "")
         item = result["items"][0]
-        insight = item.get("reader_insight") or {}
-        publication = self._publication_copy or {}
-        title = f"投资情报｜{item.get('author')}：{reader_source_title(item)}"
-        body = "\n\n".join(
-            row
-            for row in (
-                _without_urls(insight.get("summary")),
-                _without_urls(publication.get("remaining_summary")),
-            )
-            if row
-        )
-        suffix = f"\n\n查看完整报告：{detail_url}"
-        body = _fit_reminder(body, suffix=suffix)
-        try:
-            validate_reader_message(title, body)
-        except ReaderCopyError as exc:
-            raise DailyError(str(exc)) from exc
+        if self._reminder_message is None:
+            raise DailyError("reader reminder was not prepared")
+        title, body = self._reminder_message
 
         def report_message(
             _item: dict[str, Any],

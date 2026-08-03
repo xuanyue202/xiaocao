@@ -185,6 +185,10 @@ the two receipts by handoff id and media SHA-256.
   8. DOM capture is valid only when it proves `scrollTop=0`, nontrivial paragraph/sentence counts, the last sentence is already in DOM and below the initial viewport when content overflows, and there are no virtual/loading/load-more markers. Run `verify --audit-file <json>` with excerpts from the opening, middle, and ending thirds, bound to both source-video and transcript hashes.
   9. Create one ticket-01 source-neutral bundle whose `evidence_path` is that verified transcript, then run `decide --bundle <json>`. Publish the complete event report to 灰常亮 first. Only after its durable publication receipt may a newly eligible event fan out one concise reminder to the distinct `XIAOCAO_KOL_WECOM_USER_IDS` set (currently `Chen,FeiFei`): lead with the key insight, add the coherent compact synthesis, and end with exactly one stable report link, all within the 2,048-byte safe-send limit. Do not split the complete report across messages. The legacy chunked notifier is reconciliation-only for already-claimed historical sends. Before any makeup send, compare the recipient configuration time with the original send time and send only to a proven-missing recipient—never replay the full decision pipeline or duplicate a recipient that already succeeded. Completion requires the 灰常亮 receipt, the eligible event's all-recipient short-reminder receipt or a legal no-alert reason, and a result with `book=KOL-US`, `paper_only=true`, plus a fill or an explicit nonempty `no_trade.reason`.
      The delivery claim must hash the exact title/body bytes passed to the Relay.
+     `reader_title` is the full report title. When the WeChat entry needs shorter
+     copy, put its natural-language `title` and `summary` in `reader_reminder`;
+     those fields participate in notification identity and cannot change the
+     report identity.
      A publication wrapper must provide those bytes to the delivery ledger as an
      explicit message builder; it must never hash a generic delegate message and
      then silently substitute a different report reminder inside the sender.

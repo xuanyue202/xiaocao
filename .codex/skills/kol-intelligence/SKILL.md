@@ -58,9 +58,11 @@ video bytes that the handoff contract explicitly forbids transferring.
   asset-name lists, or a prior summary as an importance or completeness gate.
 - Publish a promoted event to 灰常亮 before any eligible reminder or Book
   effect. A `low_density` item creates neither a report nor a reminder.
-- Use one reviewed reader title for both the 灰常亮 report and reminder. Raw
-  filenames, compression suffixes, and internal actions such as `wait` or
-  `no_trade` are acceptance failures even when the structure is otherwise valid.
+- Use reviewed reader copy for both terminals: `reader_title` may retain the
+  report date or session, while optional `reader_reminder.title/summary` keeps
+  the WeChat entry concise. Raw filenames, compression suffixes, and internal
+  actions such as `wait` or `no_trade` are acceptance failures even when the
+  structure is otherwise valid.
 - Bind every notification claim to the exact final title/body bytes passed to
   the Relay. A wrapper must not claim generic copy and substitute different
   report copy inside its sender callback.
