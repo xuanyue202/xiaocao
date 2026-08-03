@@ -79,14 +79,21 @@ def events_from_log(*, automation: str, market_date: str, log_path: Path) -> lis
             message = m.group("message").strip()
             if not message:
                 continue
+            timestamp = m.group("ts")
+            detail = (
+                {"layer": "supporting", "surface": "notification"}
+                if timestamp.strip().lower() == "push"
+                else {}
+            )
             out.append(event(
                 automation=automation,
                 market_date=market_date,
                 step=step_key(message),
                 status=classify_message(message),
                 message=message,
-                ts=m.group("ts"),
+                ts=timestamp,
                 log_path=str(log_path),
+                detail=detail,
             ))
     return out
 
@@ -100,24 +107,37 @@ def build_snapshot(
     supporting_health: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     counts = Counter(str(e.get("status") or "unknown") for e in events)
+    deterministic_counts = Counter(
+        str(e.get("status") or "unknown")
+        for e in events
+        if (e.get("detail") or {}).get("layer") != "supporting"
+    )
     if exit_code != 0:
         deterministic_status = "failed"
-    elif counts.get("failed", 0) > 0:
+    elif deterministic_counts.get("failed", 0) > 0:
         deterministic_status = "failed"
-    elif counts.get("skipped", 0) > 0:
+    elif deterministic_counts.get("skipped", 0) > 0:
         deterministic_status = "completed_with_skips"
     else:
         deterministic_status = "succeeded"
     health = dict(supporting_health or {"status": "healthy", "issues": []})
     health.setdefault("issues", [])
-    if counts.get("degraded", 0) > 0:
+    health_events = [
+        row for row in events
+        if row.get("status") == "degraded"
+        or (
+            row.get("status") == "failed"
+            and (row.get("detail") or {}).get("layer") == "supporting"
+        )
+    ]
+    if health_events:
         health["status"] = "degraded"
         health["issues"] = list(health["issues"]) + [
             {
-                "surface": "run_log",
+                "surface": (row.get("detail") or {}).get("surface", "run_log"),
                 "detail": str(row.get("message") or row.get("step") or "degraded event"),
             }
-            for row in events if row.get("status") == "degraded"
+            for row in health_events
         ]
     health.setdefault("status", "healthy")
     if deterministic_status == "failed":

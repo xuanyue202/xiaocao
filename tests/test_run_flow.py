@@ -51,6 +51,43 @@ def test_optional_health_degrades_success_without_faking_main_chain_failure() ->
     assert snapshot["supporting_health"]["issues"][0]["surface"] == "posture"
 
 
+def test_failed_notification_is_supporting_degradation_not_main_chain_failure(tmp_path: Path) -> None:
+    log = tmp_path / "eod.log"
+    log.write_text(
+        "\n".join([
+            "[2026-08-03 15:27:02] status digest -> WeCom relay...",
+            "[push] {'wecom': 'failed recipients: Chen=error: ConnectionError'}",
+            "[2026-08-03 15:27:22] eod done",
+        ]) + "\n",
+        encoding="utf-8",
+    )
+
+    events = run_flow.events_from_log(
+        automation="eod", market_date="2026-08-03", log_path=log,
+    )
+    push_event = next(row for row in events if row["ts"] == "push")
+    assert push_event["status"] == "failed"
+    assert push_event["detail"] == {
+        "layer": "supporting",
+        "surface": "notification",
+    }
+
+    snapshot = run_flow.build_snapshot(
+        automation="eod",
+        market_date="2026-08-03",
+        events=events,
+        exit_code=0,
+    )
+
+    assert snapshot["counts"]["failed"] == 1
+    assert snapshot["deterministic_status"] == "succeeded"
+    assert snapshot["status"] == "degraded"
+    assert any(
+        issue["surface"] == "notification"
+        for issue in snapshot["supporting_health"]["issues"]
+    )
+
+
 def test_partial_agent_review_is_supporting_degradation(tmp_path: Path) -> None:
     (tmp_path / "intelligence_review_queue_2026-07-14.json").write_text(json.dumps({
         "market_date": "2026-07-14",

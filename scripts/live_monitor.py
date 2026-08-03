@@ -826,6 +826,13 @@ def main() -> None:
             f"equity={snapshot['total_equity_after_exit_fee']:.2f}, "
             f"open_positions=0"
         )
+        journal.append_decision(
+            automation="live_monitor" if book == "B" else "live_monitor_book_t",
+            market_date=today_iso,
+            path=OUT_DIR / "decision_journal.jsonl",
+            deterministic=_decision_packet([], snapshot),
+            posture={},
+        )
         return
 
     market_context = _market_sentiment_context(client)

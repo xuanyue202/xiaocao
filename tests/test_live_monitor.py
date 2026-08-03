@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import sys
 from contextlib import contextmanager
 from datetime import datetime
 
@@ -341,3 +342,44 @@ def test_simulated_sell_is_locked_and_idempotent_across_overlapping_runs(tmp_pat
     assert first == (1, 0) and second == (0, 0)
     assert events == ["enter", "exit", "enter", "exit"]
     assert len(trades.read_text(encoding="utf-8").splitlines()) == 1
+
+
+def test_empty_book_monitor_appends_continuity_journal(tmp_path, monkeypatch) -> None:
+    class FrozenDate:
+        @classmethod
+        def today(cls):
+            return datetime(2026, 8, 3).date()
+
+    monkeypatch.setattr(monitor, "OUT_DIR", tmp_path)
+    monkeypatch.setattr(monitor, "_date", FrozenDate)
+    monkeypatch.setattr(monitor, "_client", lambda: object())
+    monkeypatch.setattr(
+        monitor,
+        "_is_trading_day",
+        lambda _today, _client: (True, "2026-08-03"),
+    )
+    monkeypatch.setattr(monitor, "_load_positions", lambda _book="B": [])
+    monkeypatch.setattr(
+        monitor,
+        "_write_holdings_snapshot",
+        lambda _statuses, *, book="B": {
+            "book": book,
+            "cash": 106528.11,
+            "open_positions": 0,
+            "total_equity_after_exit_fee": 106528.11,
+        },
+    )
+    monkeypatch.setattr(sys, "argv", ["live_monitor.py", "--no-notify"])
+
+    monitor.main()
+
+    rows = [
+        json.loads(line)
+        for line in (tmp_path / "decision_journal.jsonl").read_text(encoding="utf-8").splitlines()
+    ]
+    assert len(rows) == 1
+    assert rows[0]["automation"] == "live_monitor"
+    assert rows[0]["market_date"] == "2026-08-03"
+    assert rows[0]["deterministic"]["book"] == "B"
+    assert rows[0]["deterministic"]["open_positions"] == 0
+    assert rows[0]["posture"] == {}
