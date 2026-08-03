@@ -158,11 +158,49 @@ class WechatDelivery:
             and row.get("idempotency_key") == notification_id
             and row.get("status") == original_failure["status"]
         ]
+        aggregate_receipt = (
+            f"wecom-transport://{request['handoff_id']}/{receipt_sha}"
+        )
+        prior_validations = [
+            row
+            for row in events
+            if row.get("event") == "notification_transport_receipt_validated"
+            and row.get("idempotency_key") == notification_id
+            and row.get("handoff_id") == request["handoff_id"]
+            and row.get("report_id") == request["report_id"]
+            and row.get("stable_report_url") == request["stable_report_url"]
+            and row.get("content_sha256") == request["content_sha256"]
+            and tuple(row.get("recipients") or ()) == expected
+            and row.get("receipt_sha256") == receipt_sha
+        ]
+        prior_deliveries = [
+            row
+            for row in events
+            if row.get("event") == "notification_delivered"
+            and row.get("idempotency_key") == notification_id
+            and row.get("receipt") == aggregate_receipt
+        ]
+        if (
+            len(prior_claims) == 1
+            and len(prior_uncertain) == 1
+            and len(prior_validations) == 1
+            and len(prior_deliveries) == 1
+        ):
+            return {**prior_deliveries[0], "idempotent_replay": True}
+        claim_content_sha = (
+            str(prior_claims[0].get("content_sha256") or "")
+            if len(prior_claims) == 1
+            else ""
+        )
+        revision = request.get("content_revision") or {}
+        content_binding_valid = (
+            claim_content_sha == str(request["content_sha256"])[:16]
+            or revision.get("supersedes_content_sha256") == claim_content_sha
+        )
         if (
             len(prior_claims) != 1
             or len(prior_uncertain) != 1
-            or prior_claims[0].get("content_sha256")
-            != str(request["content_sha256"])[:16]
+            or not content_binding_valid
         ):
             raise DecisionError(
                 "notification transport requires one matching prior uncertain state"
@@ -191,6 +229,7 @@ class WechatDelivery:
                         "report_id": receipt["report_id"],
                         "stable_report_url": receipt["stable_report_url"],
                         "content_sha256": receipt["content_sha256"],
+                        "content_revision": request.get("content_revision"),
                         "recipients": list(expected),
                         "receipt_sha256": receipt_sha,
                         "recorded_at": now_iso(),

@@ -49,6 +49,14 @@ state is written locally. A delivered recipient is never resent, a proven
 pre-connect failure may resume only for that recipient, and an uncertain call
 stops for reconciliation.
 
+The notification identity and the reader copy are separate dimensions. If a
+quality correction changes title or body after the original uncertain claim,
+the request must carry a `content_revision` binding the old claim-hash prefix,
+new full content hash, current report content hash, and correction reference.
+Previously recorded request/receipt pairs that predate this field are replayable
+only from an exact existing validated-transport plus delivered receipt; replay
+adds no ledger event.
+
 Code handoffs bind the exact 40-character commit read by
 `git rev-parse HEAD`. The sender must not manually expand an abbreviated SHA,
 and the receiver must compare it with the fetched branch and reject any

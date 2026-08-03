@@ -80,7 +80,7 @@ class NotificationTransport:
                 "notification handoff requires missing-recipient confirmation"
             )
         try:
-            parse_iso(
+            confirmed_at = parse_iso(
                 confirmation["confirmed_at"],
                 field="missing_confirmation.confirmed_at",
             )
@@ -89,10 +89,27 @@ class NotificationTransport:
         original_failure = request.get("original_failure") or {}
         if (
             not str(original_failure.get("status") or "").strip()
+            or not str(original_failure.get("claimed_at") or "").strip()
+            or not str(original_failure.get("recorded_at") or "").strip()
             or original_failure.get("delivered_recipients") != []
         ):
             raise NotificationTransportError(
                 "notification handoff original failure is not safely bounded"
+            )
+        try:
+            parse_iso(
+                original_failure["claimed_at"],
+                field="original_failure.claimed_at",
+            )
+            failure_at = parse_iso(
+                original_failure["recorded_at"],
+                field="original_failure.recorded_at",
+            )
+        except ValueError as exc:
+            raise NotificationTransportError(str(exc)) from exc
+        if confirmed_at <= failure_at:
+            raise NotificationTransportError(
+                "missing-recipient confirmation must follow the original failure"
             )
         recipients = request.get("recipients")
         if (
@@ -111,6 +128,25 @@ class NotificationTransport:
             raise NotificationTransportError(
                 "notification handoff content hash is invalid"
             )
+        revision = request.get("content_revision")
+        if revision is not None:
+            if (
+                not isinstance(revision, dict)
+                or revision.get("kind") != "reader_copy_correction"
+                or not re.fullmatch(
+                    r"[0-9a-f]{16}",
+                    str(revision.get("supersedes_content_sha256") or ""),
+                )
+                or revision.get("replacement_content_sha256")
+                != request["content_sha256"]
+                or not _SHA256.fullmatch(
+                    str(revision.get("report_content_sha256") or "")
+                )
+                or not str(revision.get("reference") or "").strip()
+            ):
+                raise NotificationTransportError(
+                    "notification content revision proof is invalid"
+                )
         urls = _HTTPS_URL.findall(body)
         stable_url = str(request["stable_report_url"])
         if urls != [stable_url] or not body.rstrip().endswith(stable_url):

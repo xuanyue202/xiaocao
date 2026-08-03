@@ -334,6 +334,164 @@ def test_transport_receipt_rejects_a_different_request_or_missing_uncertain_stat
         )
 
 
+def test_transport_pair_replays_a_previously_validated_reader_copy_revision(
+    tmp_path,
+):
+    pipeline = _pipeline(tmp_path)
+    request = _transport_request()
+    receipt = {
+        "schema_version": 1,
+        "status": "delivered",
+        "handoff_id": request["handoff_id"],
+        "notification_id": request["notification_id"],
+        "report_id": request["report_id"],
+        "stable_report_url": request["stable_report_url"],
+        "content_sha256": request["content_sha256"],
+        "recipient_receipts": {
+            recipient: {
+                "receipt": (
+                    f"wecom-relay://ok/{request['handoff_id']}/{recipient}/"
+                    f"{request['content_sha256'][:16]}"
+                ),
+                "delivered_at": "2026-08-03T00:50:00+08:00",
+            }
+            for recipient in request["recipients"]
+        },
+    }
+    receipt["receipt_sha256"] = hashlib.sha256(
+        json.dumps(
+            receipt,
+            ensure_ascii=False,
+            sort_keys=True,
+            separators=(",", ":"),
+        ).encode()
+    ).hexdigest()
+    aggregate_receipt = (
+        f"wecom-transport://{request['handoff_id']}/"
+        f"{receipt['receipt_sha256']}"
+    )
+    for event in (
+        {
+            "event": "notification_send_claimed",
+            "idempotency_key": request["notification_id"],
+            "content_sha256": "c4040c07a2cc84a7",
+        },
+        {
+            "event": "notification_send_uncertain",
+            "idempotency_key": request["notification_id"],
+            "status": request["original_failure"]["status"],
+        },
+        {
+            "event": "notification_transport_receipt_validated",
+            "idempotency_key": request["notification_id"],
+            "handoff_id": request["handoff_id"],
+            "report_id": request["report_id"],
+            "stable_report_url": request["stable_report_url"],
+            "content_sha256": request["content_sha256"],
+            "recipients": request["recipients"],
+            "receipt_sha256": receipt["receipt_sha256"],
+        },
+        {
+            "event": "notification_delivered",
+            "idempotency_key": request["notification_id"],
+            "status": "delivered",
+            "receipt": aggregate_receipt,
+            "delivered_at": "2026-08-03T00:50:01+08:00",
+        },
+    ):
+        _append = json.dumps(event, separators=(",", ":")) + "\n"
+        with pipeline.events_path.open("a", encoding="utf-8") as handle:
+            handle.write(_append)
+
+    before = pipeline.events_path.read_bytes()
+    replay = pipeline.record_transport_delivery(
+        request,
+        receipt,
+        expected_recipients=("Chen", "FeiFei"),
+    )
+
+    assert replay["idempotent_replay"] is True
+    assert replay["receipt"] == aggregate_receipt
+    assert pipeline.events_path.read_bytes() == before
+
+
+def test_transport_accepts_one_explicit_reader_copy_revision_after_no_delivery(
+    tmp_path,
+):
+    pipeline = _pipeline(tmp_path)
+    request = _transport_request()
+    original_content_sha = "c4040c07a2cc84a7"
+    request["content_revision"] = {
+        "kind": "reader_copy_correction",
+        "supersedes_content_sha256": original_content_sha,
+        "replacement_content_sha256": request["content_sha256"],
+        "report_content_sha256": "7" * 64,
+        "reference": "gray-report-reader-copy-correction",
+    }
+    unsigned = dict(request)
+    unsigned.pop("handoff_id")
+    request["handoff_id"] = hashlib.sha256(
+        json.dumps(
+            unsigned,
+            ensure_ascii=False,
+            sort_keys=True,
+            separators=(",", ":"),
+        ).encode()
+    ).hexdigest()
+    receipt = {
+        "schema_version": 1,
+        "status": "delivered",
+        "handoff_id": request["handoff_id"],
+        "notification_id": request["notification_id"],
+        "report_id": request["report_id"],
+        "stable_report_url": request["stable_report_url"],
+        "content_sha256": request["content_sha256"],
+        "recipient_receipts": {
+            recipient: {
+                "receipt": (
+                    f"wecom-relay://ok/{request['handoff_id']}/{recipient}/"
+                    f"{request['content_sha256'][:16]}"
+                ),
+                "delivered_at": "2026-08-03T00:50:00+08:00",
+            }
+            for recipient in request["recipients"]
+        },
+    }
+    receipt["receipt_sha256"] = hashlib.sha256(
+        json.dumps(
+            receipt,
+            ensure_ascii=False,
+            sort_keys=True,
+            separators=(",", ":"),
+        ).encode()
+    ).hexdigest()
+    for event in (
+        {
+            "event": "notification_send_claimed",
+            "idempotency_key": request["notification_id"],
+            "content_sha256": original_content_sha,
+        },
+        {
+            "event": "notification_send_uncertain",
+            "idempotency_key": request["notification_id"],
+            "status": request["original_failure"]["status"],
+        },
+    ):
+        with pipeline.events_path.open("a", encoding="utf-8") as handle:
+            handle.write(json.dumps(event, separators=(",", ":")) + "\n")
+
+    delivered = pipeline.record_transport_delivery(
+        request,
+        receipt,
+        expected_recipients=("Chen", "FeiFei"),
+    )
+
+    assert delivered["status"] == "delivered"
+    events = pipeline.events_path.read_text(encoding="utf-8")
+    assert "reader_copy_correction" in events
+    assert events.count("notification_transport_receipt_validated") == 1
+
+
 def test_wechat_delivery_failure_is_visible_and_not_marked_delivered(tmp_path):
     pipeline = _pipeline(tmp_path)
     result = _result()

@@ -204,6 +204,14 @@ the two receipts by handoff id and media SHA-256.
      notification identity as delivered
      before Ticket 03 may continue. A task message is the control plane; Git is
      only the code/contract transport and never carries runtime request files.
+     If reader-copy correction changes title/body after the original claim, a
+     first-time request must include a self-hashed `content_revision` that binds
+     the prior 16-character claim hash, replacement full content hash, current
+     report content hash, and correction reference. Without that proof, changed
+     content fails closed. A historical pair recorded before this field existed
+     may replay only when one existing validated-transport event and one
+     delivered event already bind the exact request handoff id and receipt hash;
+     that migration replay writes nothing.
      Every code-sync task must copy the exact 40-character value produced by
      `git rev-parse HEAD`; never expand a short SHA manually. The receiver must reject a mismatch
      against the fetched branch before checkout, tests, or business recovery.
