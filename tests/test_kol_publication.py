@@ -7,6 +7,7 @@ import pytest
 from xiaocao.kol.household import LiangHuiMcpError
 from xiaocao.kol.publication import (
     PublicationLedger,
+    PublicationError,
     build_append_only_publication_update,
     build_publish_request,
     build_record,
@@ -104,6 +105,20 @@ def test_cross_language_contract_ids_content_and_manifest_are_frozen():
     )
     assert request["manifest_sha256"] == INITIAL_MANIFEST_SHA256
     assert manifest_sha256(request["records"]) == INITIAL_MANIFEST_SHA256
+
+
+def test_publication_record_requires_created_at_in_utc_z():
+    report = _initial_report()
+
+    with pytest.raises(PublicationError, match="UTC ISO-8601 ending in Z"):
+        build_record(
+            kind="report",
+            record_id_value=REPORT_ID,
+            idempotency_key="put-non-utc-created-at",
+            created_at="2026-08-03T14:00:00+08:00",
+            source_binding=report["source_binding"],
+            payload=report["payload"],
+        )
 
 
 @pytest.mark.parametrize("author", ["吕晓彤", "路西法", "小草"])

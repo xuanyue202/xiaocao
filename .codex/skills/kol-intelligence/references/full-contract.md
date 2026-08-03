@@ -102,7 +102,9 @@ Keep the layers separate:
   `大师班`; never invent a more specific session identity. Re-run this check on
   the authoritative report readback before notification. A mismatch requires a
   same-report content-and-manifest CAS correction and never replays the prior
-  reminder or Book action.
+  reminder or Book action. Every new or corrected record `created_at` must be
+  a real UTC ISO-8601 timestamp ending in `Z`; a local offset or a fabricated
+  conversion is rejected before any 灰常亮 mutation.
 - Author identity is reviewed data, never a name-based inference. The current
   recurring authors 吕晓彤, 路西法, and 小草 are male; refer to each author with
   `他/他的`, never `她/她的`. Semantic requests must carry the repository author
@@ -234,6 +236,13 @@ the two receipts by handoff id and media SHA-256.
      notification identity as delivered
      before Ticket 03 may continue. A task message is the control plane; Git is
      only the code/contract transport and never carries runtime request files.
+     Therefore the writer's task message must carry the complete
+     credential-free request JSON, its file SHA-256, and its canonical
+     self-hash, not only a remote filesystem path. The transport node must
+     return the complete receipt JSON with its file SHA-256 and canonical
+     self-hash. Repeated task messages with the same handoff id and hash are
+     reconciliation requests owned by one control-plane coordinator; they
+     never authorize a second Relay call, publication, or Book action.
      If reader-copy correction changes title/body after the original claim, a
      first-time request must include a self-hashed `content_revision` that binds
      the prior 16-character claim hash, replacement full content hash, current
@@ -245,6 +254,11 @@ the two receipts by handoff id and media SHA-256.
      Every code-sync task must copy the exact 40-character value produced by
      `git rev-parse HEAD`; never expand a short SHA manually. The receiver must reject a mismatch
      against the fetched branch before checkout, tests, or business recovery.
+     Each cross-node progress message must also include one machine-readable
+     stage capsule with `item_id`, `prerequisite_sha`, `completed_gate`, and
+     `next_gate`. A later summary cannot skip an unresolved prerequisite, and
+     a task-list/readback handler error never authorizes redispatch of the same
+     business mutation.
 - `capture-dom --opencli-session <session> [--opencli-profile <profile>]` invokes the same exact-player DOM contract directly. There is no `.doc` export, cloud-document, browser-download, or local Word-import path in Ticket 02.
 - Each completed transition needs exact-target, timezone-aware, hash-bound evidence. Player query parameters are validated for basename binding and stripped before ledger storage. The append-only ledger stores no snapshot text, transcript content, query string, cookie, token, household position, or credential.
 - Every external browser side effect has a durable pre-action claim. A new claim requires a fresh, at-most-30-minute persisted liveness/page proof; a capability failure blocks later claims until a new valid liveness record. A replayed or uncertain claim is read-only: inspect the real page and reconcile it, but never repeat upload, transcript generation, or AI-note submission blindly. Sequential reruns return the latest state and cannot regress a verified or decided job to prepared.
@@ -582,6 +596,16 @@ erase the rest of the author's decision hierarchy.
   report may still publish when it has useful reader insight and makes no
   unsupported actionable recommendation, but its final quality review must
   mark the fact-validation depth as limited.
+- When the sole writer lacks authoritative current market data and a material
+  current-session claim needs verification, it must stop before publication
+  and send one credential-free, self-hashed market-validation request to the
+  capable node. The response must bind the request hash and record endpoint,
+  parameters, trade date, selected rows, as-of time, and limitations. The
+  writer validates that receipt and classifies each claim as supported,
+  conflicting, or unresolved before publication; source consistency never
+  substitutes for this handoff. A duplicate request with the same identity is
+  read-only reconciliation and cannot cause duplicate API calls or later
+  external side effects.
 - Prioritize concrete, time-sensitive implications: the market phase and overall strategy, sectors to add/reduce/exit, specific opportunities, the causal chain, validity window, trigger, and falsifier. Generic textbook framing belongs only in the durable-knowledge branch.
 - Treat holdings as context, not a search boundary. Surface strong opportunities outside current holdings and explain the funding or switching logic when relevant.
 - In human-facing messages, name both the verified company/fund and its code, explain the source signal and causal chain in plain language, show the author and source date/type, and omit internal gates, enums, hashes, local filenames, serialized pipeline state, and raw ASR artifacts. Populate `reader_title` when the source title needs editorial cleanup; otherwise the renderer must remove transport-only date prefixes, extensions, and compression suffixes. Use coherent natural-language paragraphs, never tables. The KOL's valuable information must dominate; the system adds only material fact, background, conflict, or uncertainty notes. For `no_actionable_signal`, send a compact weak-signal card when `reader_insight.status=useful`: state the insight, link only genuinely relevant current household positions, and make the evidence boundary explicit. Do not expand it into unrelated market or portfolio analysis, and do not decide for the user whether to act.

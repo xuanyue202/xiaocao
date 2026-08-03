@@ -1198,7 +1198,7 @@ def test_triggered_viewpoint_evaluation_appends_without_event_side_effects(
         kind="viewpoint",
         record_id_value=viewpoint_id_value,
         idempotency_key="put-viewpoint",
-        created_at="2026-07-20T08:00:00+08:00",
+        created_at="2026-07-20T00:00:00Z",
         source_binding=source_binding,
         payload={
             "viewpoint_id": viewpoint_id_value,
@@ -1215,7 +1215,7 @@ def test_triggered_viewpoint_evaluation_appends_without_event_side_effects(
         kind="report",
         record_id_value=report_id_value,
         idempotency_key="put-report",
-        created_at="2026-07-20T08:00:00+08:00",
+        created_at="2026-07-20T00:00:00Z",
         source_binding=source_binding,
         payload={
             "report_id": report_id_value,

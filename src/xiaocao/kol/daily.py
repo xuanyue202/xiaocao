@@ -34,7 +34,11 @@ from .publication import (
     report_id,
     stable_claim,
 )
-from .reader_copy import ReaderCopyError, validate_reader_message
+from .reader_copy import (
+    ReaderCopyError,
+    validate_reader_message,
+    validate_reader_source_identity,
+)
 from .rendering import reader_source_title
 
 
@@ -456,6 +460,14 @@ def _publication_candidate(
             ),
         },
     }
+    try:
+        validate_reader_source_identity(
+            source_name=Path(str(item.get("evidence_path") or "")).name,
+            reader_title=report_payload["title"],
+            report_body=report_payload["report_body"],
+        )
+    except ReaderCopyError as exc:
+        raise DailyError(str(exc)) from exc
     report = build_record(
         kind="report",
         record_id_value=report_id_value,

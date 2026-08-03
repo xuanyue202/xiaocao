@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import pytest
+
 from xiaocao.kol.publication import (
     build_record,
     canonical_sha256,
@@ -7,6 +9,10 @@ from xiaocao.kol.publication import (
     record_content_sha256,
     stable_claim,
     viewpoint_id,
+)
+from xiaocao.kol.reader_copy import (
+    ReaderCopyError,
+    validate_reader_source_identity,
 )
 from xiaocao.kol.reader_copy_correction import (
     CORRECTION_AS_OF,
@@ -30,6 +36,34 @@ def _source_binding(report_id_value: str):
         ),
         "extraction_contract_version": "kol-investment-claims-v1",
     }
+
+
+def test_reader_source_identity_rejects_conflicting_session_label():
+    with pytest.raises(ReaderCopyError, match="session identity"):
+        validate_reader_source_identity(
+            source_name="20260803 盘前大师班直播8月3日-compressed.txt",
+            reader_title="8月3日盘中大师班",
+            report_body="# 核心判断\n\n本期盘中大师班强调控制仓位。",
+        )
+
+
+def test_reader_source_identity_allows_neutral_session_copy():
+    validate_reader_source_identity(
+        source_name="20260803 盘前大师班直播8月3日-compressed.txt",
+        reader_title="8月3日大师班",
+        report_body="# 核心判断\n\n本期直播强调控制仓位。",
+    )
+
+
+def test_reader_source_identity_ignores_later_intraday_warning():
+    validate_reader_source_identity(
+        source_name="20260803 盘前大师班直播8月3日-compressed.txt",
+        reader_title="8月3日盘前大师班",
+        report_body=(
+            "# 核心判断\n\n盘前先确定低位优先纪律。\n\n"
+            "## 风险提示\n\n若盘中预警出现，应继续控制仓位。"
+        ),
+    )
 
 
 def _raw_machine_viewpoint(

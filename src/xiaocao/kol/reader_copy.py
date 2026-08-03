@@ -30,6 +30,17 @@ _TRANSPORT_TITLE_RE = re.compile(
     r"(?:\.(?:mp4|mov|m4v|txt|md)$|(?:^|[-_])compressed(?:[-_.]|$))",
     re.IGNORECASE,
 )
+_SESSION_LABELS = (
+    "盘前",
+    "早盘",
+    "盘中",
+    "午盘",
+    "午后",
+    "盘后",
+    "收盘",
+    "晚盘",
+    "夜盘",
+)
 
 
 class ReaderCopyError(ValueError):
@@ -207,3 +218,45 @@ def validate_reader_message(title: Any, body: Any) -> None:
         field="notification.body",
         reject_machine_tokens=False,
     )
+
+
+def validate_reader_source_identity(
+    *,
+    source_name: Any,
+    reader_title: Any,
+    report_body: Any,
+) -> None:
+    """Reject a reader session label that conflicts with immutable evidence.
+
+    A neutral reader title is allowed when the transport filename and transcript
+    do not establish the real session name.  Only the title and opening prose are
+    checked; later mentions such as "盘中预警" may be legitimate source content.
+    """
+
+    source_text = str(source_name or "")
+    source_labels = {
+        label for label in _SESSION_LABELS if label in source_text
+    }
+    if not source_labels:
+        return
+    title = str(reader_title or "")
+    body = str(report_body or "")
+    opening = next(
+        (
+            block.strip()
+            for block in re.split(r"\n\s*\n", body)
+            if block.strip() and not block.lstrip().startswith("#")
+        ),
+        "",
+    )
+    reader_labels = {
+        label
+        for label in _SESSION_LABELS
+        if label in title or label in opening
+    }
+    conflicts = reader_labels - source_labels
+    if conflicts:
+        raise ReaderCopyError(
+            "reader session identity conflicts with immutable source evidence: "
+            + ", ".join(sorted(conflicts))
+        )

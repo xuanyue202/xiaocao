@@ -121,9 +121,32 @@ def test_kol_skill_preserves_session_identity_and_fact_check_boundaries() -> Non
         "must not silently change an attributable label",
         "use neutral wording",
         "same-report content-and-manifest CAS correction",
+        "UTC ISO-8601 timestamp ending in `Z`",
         "distinguish external confirmation from source consistency",
         "do not turn internal transcript consistency into a fact check",
         "fact-validation depth as limited",
+        "stop before publication",
+        "self-hashed market-validation request",
+        "endpoint, parameters, trade date, selected rows, as-of time, and limitations",
+        "supported, conflicting, or unresolved",
+    ):
+        assert marker in text
+
+
+def test_kol_skill_cross_node_handoffs_are_self_contained_and_resumable() -> None:
+    text = " ".join(FULL_CONTRACT_MD.read_text(encoding="utf-8").split())
+
+    for marker in (
+        "complete credential-free request JSON",
+        "not only a remote filesystem path",
+        "complete receipt JSON",
+        "one control-plane coordinator",
+        "item_id",
+        "prerequisite_sha",
+        "completed_gate",
+        "next_gate",
+        "never authorize a second Relay call, publication, or Book action",
+        "handler error never authorizes redispatch",
     ):
         assert marker in text
 

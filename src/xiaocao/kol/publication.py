@@ -144,6 +144,21 @@ def record_content_sha256(envelope: dict[str, Any]) -> str:
     return canonical_sha256(content_hash_input(envelope))
 
 
+def _require_utc_z(value: Any, *, field: str) -> None:
+    text = str(value or "")
+    if "T" not in text or not text.endswith("Z"):
+        raise PublicationError(f"{field} must be UTC ISO-8601 ending in Z")
+    try:
+        parsed = datetime.fromisoformat(text[:-1] + "+00:00")
+    except ValueError as exc:
+        raise PublicationError(f"{field} must be UTC ISO-8601 ending in Z") from exc
+    if (
+        parsed.tzinfo is None
+        or parsed.utcoffset() != timezone.utc.utcoffset(parsed)
+    ):
+        raise PublicationError(f"{field} must be UTC ISO-8601 ending in Z")
+
+
 def build_record(
     *,
     kind: str,
@@ -156,6 +171,7 @@ def build_record(
 ) -> dict[str, Any]:
     if kind not in KOL_RECORD_KINDS:
         raise PublicationError(f"unsupported KOL record kind: {kind}")
+    _require_utc_z(created_at, field="created_at")
     try:
         validate_reader_payload(kind, payload)
     except ReaderCopyError as exc:
