@@ -825,12 +825,20 @@ class DecisionPipeline:
         result: dict[str, Any],
         *,
         sender: Callable[[str, str], dict[str, str]],
+        message_builder: Callable[
+            [dict[str, Any], dict[str, Any]], tuple[str, str]
+        ]
+        | None = None,
     ) -> dict[str, Any]:
         return WechatDelivery(
             events_path=self.events_path,
             outbox_path=self.outbox_path,
             lock_path=self.wechat_delivery_lock_path,
-        ).deliver(result, sender=sender)
+        ).deliver(
+            result,
+            sender=sender,
+            message_builder=message_builder,
+        )
 
 
 def load_bundle(path: Path | str) -> dict[str, Any]:

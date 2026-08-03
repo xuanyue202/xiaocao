@@ -364,6 +364,7 @@ class _DelegatePipeline:
     def __init__(self, order: list[str]):
         self.book = _Book()
         self.order = order
+        self.claimed_content_sha256 = None
 
     def process(self, bundle):
         self.order.append("book")
@@ -384,9 +385,17 @@ class _DelegatePipeline:
             "cross_source": {"agreements": [], "conflicts": []},
         }
 
-    def deliver_wechat(self, result, *, sender):
+    def deliver_wechat(self, result, *, sender, message_builder=None):
         self.order.append("alert")
-        response = sender("legacy", "legacy")
+        assert message_builder is not None
+        title, body = message_builder(
+            result["items"][0],
+            result["cross_source"],
+        )
+        self.claimed_content_sha256 = hashlib.sha256(
+            f"{title}\n{body}".encode()
+        ).hexdigest()[:16]
+        response = sender(title, body)
         assert response == {"wecom": "ok"}
         result["items"][0]["notification"].update(
             {"status": "delivered", "receipt": "wecom://notify-event"}
@@ -459,8 +468,9 @@ def test_publication_pipeline_publishes_before_book_and_one_link_reminder(
 ):
     order: list[str] = []
     sent: list[tuple[str, str]] = []
+    delegate = _DelegatePipeline(order)
     pipeline = DailyPublicationPipeline(
-        _DelegatePipeline(order),
+        delegate,
         ledger=PublicationLedger(tmp_path / "publication"),
         client=_PublicationClient(order),
         context=DailyPublicationContext(
@@ -507,6 +517,9 @@ def test_publication_pipeline_publishes_before_book_and_one_link_reminder(
     assert sent[0][1].endswith(
         "https://reader.example/kol/report-first"
     )
+    assert delegate.claimed_content_sha256 == hashlib.sha256(
+        f"{sent[0][0]}\n{sent[0][1]}".encode()
+    ).hexdigest()[:16]
     terminal = result["items"][0]["daily_terminal"]
     assert terminal["source_binding"] == {
         "source_identity": "live-20260727-am",

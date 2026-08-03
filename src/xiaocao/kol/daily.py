@@ -689,12 +689,16 @@ class DailyPublicationPipeline:
         suffix = f"\n\n查看完整报告：{detail_url}"
         body = _fit_reminder(body, suffix=suffix)
 
-        def report_sender(_title: str, _body: str) -> dict[str, str]:
-            return sender(title, body)
+        def report_message(
+            _item: dict[str, Any],
+            _cross_source: dict[str, Any],
+        ) -> tuple[str, str]:
+            return title, body
 
         delivery = self.delegate.deliver_wechat(
             result,
-            sender=report_sender,
+            sender=sender,
+            message_builder=report_message,
         )
         self._sync_terminal(result, alert_order=3)
         return delivery

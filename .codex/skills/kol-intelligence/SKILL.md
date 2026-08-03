@@ -61,6 +61,9 @@ video bytes that the handoff contract explicitly forbids transferring.
 - Use one reviewed reader title for both the 灰常亮 report and reminder. Raw
   filenames, compression suffixes, and internal actions such as `wait` or
   `no_trade` are acceptance failures even when the structure is otherwise valid.
+- Bind every notification claim to the exact final title/body bytes passed to
+  the Relay. A wrapper must not claim generic copy and substitute different
+  report copy inside its sender callback.
 - For the latest Lv Xiaotong video, discovery, cloud transfer, transcript
   readiness, and completed analysis are checkpoints, not success. Keep the
   exact identity/version eligible across hourly sweeps until `status` proves a

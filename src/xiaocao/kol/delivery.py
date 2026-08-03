@@ -245,6 +245,10 @@ class WechatDelivery:
         result: dict[str, Any],
         *,
         sender: Callable[[str, str], dict[str, str]],
+        message_builder: Callable[
+            [dict[str, Any], dict[str, Any]], tuple[str, str]
+        ]
+        | None = None,
     ) -> dict[str, Any]:
         """Deliver pending items once; uncertain relay outcomes fail closed."""
         deliveries: list[dict[str, Any]] = []
@@ -286,6 +290,107 @@ class WechatDelivery:
                     )
                     skipped.append(identity)
                     continue
+                if message_builder is None:
+                    title = reader_message_title(item)
+                    body = render_household_item_message(item, cross_source)
+                else:
+                    title, body = message_builder(item, cross_source)
+                    if not str(title).strip() or not str(body).strip():
+                        raise DecisionError(
+                            "WeChat message builder returned blank reader copy"
+                        )
+                full_content_sha = hashlib.sha256(
+                    f"{title}\n{body}".encode()
+                ).hexdigest()
+                content_sha = full_content_sha[:16]
+                transport_aliases: list[
+                    tuple[dict[str, Any], dict[str, Any]]
+                ] = []
+                for validation in events:
+                    if (
+                        validation.get("event")
+                        != "notification_transport_receipt_validated"
+                        or validation.get("content_sha256") != full_content_sha
+                        or not str(
+                            validation.get("stable_report_url") or ""
+                        ).strip()
+                        or not body.rstrip().endswith(
+                            str(validation["stable_report_url"])
+                        )
+                    ):
+                        continue
+                    source_id = str(validation.get("idempotency_key") or "")
+                    source_delivery = delivered.get(source_id)
+                    expected_receipt = (
+                        f"wecom-transport://{validation.get('handoff_id')}/"
+                        f"{validation.get('receipt_sha256')}"
+                    )
+                    if (
+                        source_id
+                        and source_id != identity
+                        and source_delivery is not None
+                        and source_delivery.get("receipt") == expected_receipt
+                    ):
+                        transport_aliases.append((validation, source_delivery))
+                if len(transport_aliases) > 1:
+                    raise DecisionError(
+                        "multiple transported deliveries match the reader copy"
+                    )
+                if transport_aliases:
+                    validation, source_delivery = transport_aliases[0]
+                    prior_alias = next(
+                        (
+                            row
+                            for row in events
+                            if row.get("event")
+                            == "notification_transport_content_alias_validated"
+                            and row.get("idempotency_key") == identity
+                            and row.get("source_idempotency_key")
+                            == source_delivery.get("idempotency_key")
+                            and row.get("content_sha256") == full_content_sha
+                        ),
+                        None,
+                    )
+                    if prior_alias is None:
+                        alias_event = {
+                            "event": (
+                                "notification_transport_content_alias_validated"
+                            ),
+                            "idempotency_key": identity,
+                            "source_idempotency_key": source_delivery[
+                                "idempotency_key"
+                            ],
+                            "handoff_id": validation["handoff_id"],
+                            "stable_report_url": validation[
+                                "stable_report_url"
+                            ],
+                            "content_sha256": full_content_sha,
+                            "receipt_sha256": validation["receipt_sha256"],
+                            "recorded_at": now_iso(),
+                        }
+                        append_jsonl(self.events_path, alias_event)
+                        events.append(alias_event)
+                    event = self.record(
+                        identity,
+                        (
+                            "wecom-content-alias://"
+                            f"{source_delivery['idempotency_key']}/"
+                            f"{validation['receipt_sha256']}/"
+                            f"{full_content_sha}"
+                        ),
+                    )
+                    notification.update(
+                        {
+                            "status": "delivered",
+                            "receipt": event["receipt"],
+                            "delivered_at": event["delivered_at"],
+                        }
+                    )
+                    delivered[identity] = event
+                    last_send_state[identity] = event
+                    deliveries.append(event)
+                    continue
+
                 previous_state = last_send_state.get(identity) or {}
                 if previous_state.get("event") in {
                     "notification_send_claimed",
@@ -295,10 +400,6 @@ class WechatDelivery:
                         "WeChat delivery state is uncertain; reconcile the prior relay call "
                         f"before resending {identity}"
                     )
-
-                title = reader_message_title(item)
-                body = render_household_item_message(item, cross_source)
-                content_sha = hashlib.sha256(f"{title}\n{body}".encode()).hexdigest()[:16]
                 claim_event = {
                     "event": "notification_send_claimed",
                     "idempotency_key": identity,
@@ -311,6 +412,16 @@ class WechatDelivery:
                 try:
                     response = sender(title, body)
                 except Exception as exc:
+                    uncertain_event = {
+                        "event": "notification_send_uncertain",
+                        "idempotency_key": identity,
+                        "channel": "wechat",
+                        "status": f"raised: {type(exc).__name__}",
+                        "failure_phase": "sender_call",
+                        "recorded_at": now_iso(),
+                    }
+                    append_jsonl(self.events_path, uncertain_event)
+                    last_send_state[identity] = uncertain_event
                     raise DecisionError(
                         f"WeChat delivery outcome is uncertain for {item['author']}"
                     ) from exc

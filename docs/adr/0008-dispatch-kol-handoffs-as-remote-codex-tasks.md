@@ -57,6 +57,14 @@ Previously recorded request/receipt pairs that predate this field are replayable
 only from an exact existing validated-transport plus delivered receipt; replay
 adds no ledger event.
 
+The claimed content hash always covers the exact title and body passed to the
+Relay. A publication layer supplies its final reminder through an explicit
+message builder; substituting different bytes inside a sender callback is
+forbidden. When a revised notification identity renders byte-identical content
+ending in the same stable report URL as one already validated all-recipient
+transport delivery, the writer records a content-alias delivery and does not
+call the Relay. Any ambiguity or content difference remains fail-closed.
+
 Code handoffs bind the exact 40-character commit read by
 `git rev-parse HEAD`. The sender must not manually expand an abbreviated SHA,
 and the receiver must compare it with the fetched branch and reject any

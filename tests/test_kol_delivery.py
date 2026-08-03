@@ -492,6 +492,81 @@ def test_transport_accepts_one_explicit_reader_copy_revision_after_no_delivery(
     assert events.count("notification_transport_receipt_validated") == 1
 
 
+def test_identical_transported_reader_copy_satisfies_a_revised_identity(
+    tmp_path,
+):
+    pipeline = _pipeline(tmp_path)
+    result = _result()
+    revised_id = "revised-notification"
+    original_id = "original-notification"
+    result["items"][0]["notification"]["idempotency_key"] = revised_id
+    with pipeline.outbox_path.open("a", encoding="utf-8") as handle:
+        handle.write(json.dumps({"idempotency_key": revised_id}) + "\n")
+    stable_url = "https://reader.example/kol-reports/report-first"
+    title = "投资情报｜小草：修订后的读者标题"
+    body = (
+        "等待放量后再行动。"
+        f"\n\n查看完整报告：{stable_url}"
+    )
+    content_sha = hashlib.sha256(f"{title}\n{body}".encode()).hexdigest()
+    handoff_id = "a" * 64
+    receipt_sha = "b" * 64
+    aggregate_receipt = f"wecom-transport://{handoff_id}/{receipt_sha}"
+    for event in (
+        {
+            "event": "notification_transport_receipt_validated",
+            "idempotency_key": original_id,
+            "handoff_id": handoff_id,
+            "stable_report_url": stable_url,
+            "content_sha256": content_sha,
+            "recipients": ["Chen", "FeiFei"],
+            "receipt_sha256": receipt_sha,
+        },
+        {
+            "event": "notification_delivered",
+            "idempotency_key": original_id,
+            "status": "delivered",
+            "receipt": aggregate_receipt,
+            "delivered_at": "2026-08-03T00:50:01+08:00",
+        },
+        {
+            "event": "notification_send_claimed",
+            "idempotency_key": revised_id,
+            "content_sha256": content_sha[:16],
+        },
+    ):
+        with pipeline.events_path.open("a", encoding="utf-8") as handle:
+            handle.write(json.dumps(event, separators=(",", ":")) + "\n")
+    calls: list[str] = []
+
+    delivery = pipeline.deliver_wechat(
+        result,
+        sender=lambda *_args: calls.append("called") or {"wecom": "ok"},
+        message_builder=lambda *_args: (title, body),
+    )
+    replay = pipeline.deliver_wechat(
+        _result() | {
+            "items": [{
+                **_result()["items"][0],
+                "notification": {
+                    "idempotency_key": revised_id,
+                    "status": "pending",
+                },
+            }],
+        },
+        sender=lambda *_args: calls.append("called") or {"wecom": "ok"},
+        message_builder=lambda *_args: (title, body),
+    )
+
+    assert calls == []
+    assert delivery["status"] == "delivered"
+    assert replay["status"] == "already_delivered"
+    assert result["items"][0]["notification"]["status"] == "delivered"
+    events = pipeline.events_path.read_text(encoding="utf-8")
+    assert events.count("notification_transport_content_alias_validated") == 1
+    assert events.count('"idempotency_key":"revised-notification"') == 3
+
+
 def test_wechat_delivery_failure_is_visible_and_not_marked_delivered(tmp_path):
     pipeline = _pipeline(tmp_path)
     result = _result()
@@ -511,6 +586,28 @@ def test_wechat_delivery_failure_is_visible_and_not_marked_delivered(tmp_path):
     with pytest.raises(DecisionError, match="state is uncertain"):
         pipeline.deliver_wechat(_result(), sender=failed_sender)
     assert calls == ["called"]
+
+
+def test_wechat_sender_exception_persists_uncertain_before_stopping(tmp_path):
+    pipeline = _pipeline(tmp_path)
+
+    with pytest.raises(DecisionError, match="outcome is uncertain"):
+        pipeline.deliver_wechat(
+            _result(),
+            sender=lambda *_args: (_ for _ in ()).throw(
+                RuntimeError("relay response lost")
+            ),
+        )
+
+    rows = [
+        json.loads(line)
+        for line in pipeline.events_path.read_text(encoding="utf-8").splitlines()
+    ]
+    assert [row["event"] for row in rows[-2:]] == [
+        "notification_send_claimed",
+        "notification_send_uncertain",
+    ]
+    assert rows[-1]["status"] == "raised: RuntimeError"
 
 
 def test_concurrent_wechat_delivery_claims_each_notification_once(tmp_path):
