@@ -1003,6 +1003,117 @@ def test_start_emits_one_prompt_after_health_and_baseline(tmp_path):
     ]) == 1
 
 
+def test_cancel_wait_stops_only_the_idle_sniffer_and_restores_proxy(
+    tmp_path,
+    monkeypatch,
+):
+    binary = tmp_path / "wx_video_download_macos_arm64"
+    binary.write_bytes(b"binary")
+    ledger = tmp_path / "capture.jsonl"
+    store = CaptureJobStore(ledger)
+    armed = store.arm([{"live_id": "live-old"}])
+    state = {"running": True}
+
+    class Sniffer:
+        @staticmethod
+        def status():
+            if not state["running"]:
+                raise SnifferError("not running")
+            return {"version": "test", "running": True}
+
+        @staticmethod
+        def candidates():
+            return [{"live_id": "live-old"}]
+
+    def runner(command, **_kwargs):
+        if command[0] == "ps":
+            stdout = f"1234 {binary}\n" if state["running"] else ""
+            return SimpleNamespace(stdout=stdout)
+        if command[:2] == ["scutil", "--proxy"]:
+            return SimpleNamespace(
+                stdout=(
+                    "HTTPEnable : 0\n"
+                    "HTTPSEnable : 0\n"
+                    "ProxyAutoConfigEnable : 0\n"
+                    "SOCKSEnable : 0\n"
+                )
+            )
+        raise AssertionError(command)
+
+    def kill(_pid, _signal):
+        state["running"] = False
+
+    monkeypatch.setattr("xiaocao.kol.xiaocao_live.os.kill", kill)
+    service = XiaocaoLiveService(
+        tmp_path / "live",
+        capture_ledger=ledger,
+        sniffer_binary=binary,
+        sniffer_client=Sniffer(),
+        runner=runner,
+    )
+    service._append(
+        "capture_armed",
+        status="awaiting_capture",
+        capture_job_id=armed["job_id"],
+    )
+
+    cancelled = service.cancel_capture_wait(armed["job_id"])
+
+    assert cancelled["event"] == "capture_wait_cancelled"
+    assert cancelled["status"] == "wait_cancelled"
+    assert cancelled["process_gone"] is True
+    assert cancelled["proxy_flags"] == {
+        "HTTPEnable": 0,
+        "HTTPSEnable": 0,
+        "ProxyAutoConfigEnable": 0,
+        "SOCKSEnable": 0,
+    }
+    assert not any(
+        row["event"] == "capture_cleanup_completed"
+        for row in service.events()
+    )
+
+
+def test_cancel_wait_preserves_a_new_candidate_seen_before_ledger_poll(
+    tmp_path,
+    monkeypatch,
+):
+    binary = tmp_path / "wx_video_download_macos_arm64"
+    binary.write_bytes(b"binary")
+    ledger = tmp_path / "capture.jsonl"
+    store = CaptureJobStore(ledger)
+    armed = store.arm([{"live_id": "live-old"}])
+    state = {"killed": False}
+
+    class Sniffer:
+        @staticmethod
+        def candidates():
+            return [{
+                "id": "capture-new",
+                "live_id": "live-new",
+                "captured": "2026-08-03 14:00:00",
+                "filename": "morning.mp4",
+                "title": "盘前大师班",
+            }]
+
+    def kill(_pid, _signal):
+        state["killed"] = True
+
+    monkeypatch.setattr("xiaocao.kol.xiaocao_live.os.kill", kill)
+    service = XiaocaoLiveService(
+        tmp_path / "live",
+        capture_ledger=ledger,
+        sniffer_binary=binary,
+        sniffer_client=Sniffer(),
+    )
+
+    with pytest.raises(EnrichmentError, match="new capture candidate"):
+        service.cancel_capture_wait(armed["job_id"])
+
+    assert state["killed"] is False
+    assert store.latest(armed["job_id"])["status"] == "captured"
+
+
 def test_reconcile_completed_capture_requires_exact_paused_compressed_task(tmp_path):
     ledger = tmp_path / "capture.jsonl"
     store = CaptureJobStore(ledger)

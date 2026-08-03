@@ -1091,6 +1091,57 @@ class XiaocaoLiveService:
             **proof,
         )
 
+    def cancel_capture_wait(self, capture_job_id: str) -> dict[str, Any]:
+        """Stop an idle capture wait without claiming completed-media cleanup."""
+        existing = self._event(
+            "capture_wait_cancelled",
+            capture_job_id=capture_job_id,
+        )
+        if existing is not None:
+            return {**existing, "idempotent_replay": True}
+        capture = self.capture_store.latest(capture_job_id)
+        if capture is None:
+            raise EnrichmentError("capture job does not exist")
+        if capture.get("status") != "awaiting_capture":
+            raise EnrichmentError("only an idle capture wait can be cancelled")
+        detected = self.capture_store.detect_capture(
+            capture,
+            self.sniffer.candidates(),
+        )
+        if detected is not None:
+            raise EnrichmentError(
+                "new capture candidate detected; resume the capture instead"
+            )
+        self._append(
+            "capture_wait_cancel_claimed",
+            status="wait_cancel_claimed",
+            capture_job_id=capture_job_id,
+            idempotency_key=_sha256_text(f"capture-wait-cancel:{capture_job_id}"),
+        )
+        pids = self._sniffer_pids()
+        if len(pids) > 1:
+            raise EnrichmentError("multiple exact sniffer processes block cleanup")
+        if pids:
+            os.kill(pids[0], signal.SIGINT)
+            for _ in range(100):
+                if not self._sniffer_pids():
+                    break
+                time.sleep(0.1)
+        proof = self.cleanup_snapshot()
+        proof["capture_job_id"] = capture_job_id
+        validate_cleanup_evidence(proof)
+        proof_path = self.output_dir / "receipts" / "capture_wait_cancelled.json"
+        _atomic_json(proof_path, proof)
+        return self._append(
+            "capture_wait_cancelled",
+            status="wait_cancelled",
+            cleanup_evidence_path=str(proof_path),
+            cleanup_evidence_sha256=_sha256_file(proof_path),
+            next="run_new_capture",
+            idempotent_replay=False,
+            **proof,
+        )
+
     def _publish_handoff(
         self,
         *,

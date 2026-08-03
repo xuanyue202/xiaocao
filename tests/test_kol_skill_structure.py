@@ -9,6 +9,9 @@ SKILL_DIR = ROOT / ".codex" / "skills" / "kol-intelligence"
 SKILL_MD = SKILL_DIR / "SKILL.md"
 FULL_CONTRACT_MD = SKILL_DIR / "references" / "full-contract.md"
 HOURLY_OPERATION_MD = SKILL_DIR / "references" / "hourly-operation.md"
+XIAOCAO_CAPTURE_START_MD = (
+    SKILL_DIR / "references" / "xiaocao-capture-start.md"
+)
 
 
 def test_kol_skill_is_the_single_conditional_entrypoint() -> None:
@@ -35,6 +38,31 @@ def test_kol_skill_routes_xiaocao_recap_to_live_replay_capture_first() -> None:
         "keep that route fixed",
     ):
         assert marker in text
+
+
+def test_kol_skill_has_a_bounded_under_ten_second_capture_ready_path() -> None:
+    entrypoint = SKILL_MD.read_text(encoding="utf-8")
+
+    assert XIAOCAO_CAPTURE_START_MD.is_file()
+    fast_start = XIAOCAO_CAPTURE_START_MD.read_text(encoding="utf-8")
+    flattened_entrypoint = " ".join(entrypoint.split())
+    flattened_fast_start = " ".join(fast_start.split())
+
+    assert len(fast_start.encode("utf-8")) < 6_000
+    assert "xiaocao-capture-start.md" in entrypoint
+    assert "within 10 seconds" in flattened_entrypoint
+    assert "Do not read `full-contract.md` before Ready" in flattened_entrypoint
+    for marker in (
+        "scripts/kol_xiaocao_live.py run",
+        "capture_armed",
+        "Do not inspect Git",
+        "Do not contact the remote writer",
+        "not a long-lived daemon",
+        "cancel-wait",
+        "ports 2022/2023",
+        "proxy",
+    ):
+        assert marker in flattened_fast_start
 
 
 def test_kol_skill_handoffs_use_machine_read_full_git_sha() -> None:

@@ -12,6 +12,10 @@ real-capital trades.
 
 ## Load only the contract required now
 
+- For an unambiguous Xiaocao replay capture, read
+  [xiaocao-capture-start.md](references/xiaocao-capture-start.md) completely
+  and run its on-demand path within 10 seconds. Do not read `full-contract.md`
+  before Ready. This is the local SOP through metadata-only handoff.
 - For `scripts/kol_daily.py run|status|audit`, the hourly Automation, or a
   normal no-update/retryable sweep, read
   [hourly-operation.md](references/hourly-operation.md) completely. Do not
@@ -20,8 +24,9 @@ real-capital trades.
   process alive, then read
   [full-contract.md](references/full-contract.md) completely before reading
   the immutable evidence and creating the requested bundle.
-- For direct capture, enrichment, subscription, batch, semantic analysis,
-  publication, viewpoint, notification, or Book KOL-US work, read
+- For the remote Ticket 03 post-handoff phase, enrichment, subscription,
+  batch, semantic analysis, publication, viewpoint, notification, or Book
+  KOL-US work, read
   [full-contract.md](references/full-contract.md) completely before acting.
 - Before writing reusable knowledge, also read
   [durable-knowledge.md](references/durable-knowledge.md) completely.
@@ -32,12 +37,12 @@ to complete the current-decision and reusable-knowledge branches.
 ## Route Xiaocao recap requests before analysis
 
 Treat “小草复盘” in a live/video context as a live-replay capture request
-first, not as a request to summarize an existing report; inspect the current Ticket 03 job
-and capture ledger before asking anything. If no discoverable
+first, not as a request to summarize an existing report; let the fast-start
+surface inspect the current Ticket 03 job and capture ledger instead of doing
+a manual preflight before Ready. If no discoverable
 state disambiguates the request, ask only: “录入直播回放，还是复盘已有报告？”
-After the user selects live-replay capture, keep that route fixed through
-compressed capture, cloud handoff, remote analysis, publication, reminder, and
-audit; later uses of “复盘” do not switch the task back to report commentary.
+After selection, keep that route fixed through audit; later uses of “复盘” do
+not switch the task back to report commentary.
 Treat the run as complete only when the reader-facing report has been read back,
 the exact recipient set has durable reminder receipts, and the node that owns
 each side of the handoff has passed its own acceptance scope. The remote writer

@@ -31,6 +31,7 @@ def main() -> int:
         choices=(
             "run",
             "status",
+            "cancel-wait",
             "audit",
             "reconcile-capture",
             "reconcile-existing",
@@ -80,6 +81,11 @@ def main() -> int:
     )
     if args.command == "status":
         _print(service.status())
+        return 0
+    if args.command == "cancel-wait":
+        if not args.capture_job_id:
+            parser.error("cancel-wait requires --capture-job-id")
+        _print(service.cancel_capture_wait(args.capture_job_id))
         return 0
     if args.command == "confirm":
         if not args.confirmation:
