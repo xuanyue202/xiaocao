@@ -846,6 +846,22 @@ def test_download_control_uses_native_click_and_preserves_client_only_status(
     assert operations == ["select", "native_click", "readback"]
 
 
+def test_owner_download_selection_binds_exact_fsid_name_and_checkbox_state():
+    script = lv_subscription._owner_download_link_script(
+        expected_provider_file_id="512980618612681",
+        expected_name="大摩拆解.pdf",
+        expected_size=768188,
+    )
+
+    assert "[data-id], [data-fsid]" in script
+    assert "expectedProviderFileId" in script
+    assert "rowName(row)" in script
+    assert "aria-selected" in script
+    assert "aria-checked" in script
+    assert "selectedRows.length !== 1" in script
+    assert "JS-item-active" not in script
+
+
 def test_replayed_download_claim_reconciles_without_retriggering_browser(tmp_path):
     entry = _representative_subscription_entries()[0]
     entry["provider_file_id"] = "123456789012345"
@@ -1473,6 +1489,307 @@ def test_existing_pdf_claim_intercepts_one_frontend_signed_link_after_errno_2(
         for path in (tmp_path / "out").rglob("*.json*")
     )
     assert "credential=must-not-persist" not in durable
+
+
+def _owner_ready(item, *, transfer_performed):
+    destination = (
+        f"/xiaocao/lv_subscription/{item['version_key']}/{item['name']}"
+    )
+    return {
+        "status": "owner_ready",
+        "exact_match_count": 1,
+        "transfer_performed": transfer_performed,
+        "owner_provider_file_id": "512980618612681",
+        "owner_path": destination,
+        "name": item["name"],
+        "size": item["size"],
+        "modified_at": int(NOW.timestamp()),
+        "directory_receipts": [],
+    }
+
+
+def test_owner_cloud_zero_match_transfers_once_and_streams_with_httponly_cookie(
+    tmp_path,
+):
+    payload = b"%PDF-1.7\n" + b"o" * 4096
+    entry = _pdf_entry(size=len(payload))
+    entry["provider_file_id"] = "162571713959724"
+    transfer_calls = []
+    link_calls = []
+    fetch_calls = []
+    secret_url = (
+        "https://d.pcs.baidu.com/file/owner-evidence?"
+        "signed=must-never-persist"
+    )
+    secret_cookie = "httponly-cookie-must-never-persist"
+
+    def owner_cloud(item, claim, session, profile):
+        transfer_calls.append((
+            item["provider_file_id"],
+            claim["parent_acquisition_claim_id"],
+            session,
+            profile,
+        ))
+        return _owner_ready(item, transfer_performed=True)
+
+    def owner_link(item, owner, session, profile):
+        link_calls.append((owner["owner_provider_file_id"], session, profile))
+        return {
+            "status": "download_link_ready",
+            "download_url": secret_url,
+            "provider_file_id": owner["owner_provider_file_id"],
+            "name": item["name"],
+            "size": item["size"],
+        }
+
+    def owner_fetch(url, cookies, destination, expected_size):
+        fetch_calls.append((url, [dict(row) for row in cookies], expected_size))
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        destination.write_bytes(payload)
+        return {
+            "path": str(destination),
+            "actual_size": len(payload),
+            "content_type": "application/pdf",
+            "http_status": 200,
+            "sha256": hashlib.sha256(payload).hexdigest(),
+        }
+
+    service = LvSubscriptionService(
+        tmp_path / "out",
+        now=lambda: NOW,
+        share_url="https://pan.baidu.com/s/private-share-token",
+        share_code="a1b2",
+        download_policy_configurer=lambda *_args: {
+            "configured": False,
+            "code": "opencli_cdp_method_not_permitted",
+        },
+        owner_cloud_operator=owner_cloud,
+        owner_download_link_reader=owner_link,
+        opencli_cookie_reader=lambda *_args: [{
+            "name": "BDUSS",
+            "value": secret_cookie,
+            "domain": ".baidu.com",
+            "path": "/",
+            "secure": True,
+            "httpOnly": True,
+        }],
+        owner_download_fetcher=owner_fetch,
+    )
+    update = service.observe_browser_listing([entry])["updates"][0]
+    service._opencli_listing = (
+        "ticket04",
+        None,
+        {"status": "ok", "complete_scan": True, "entries": [entry]},
+    )
+    claim = service.claim_browser_download(update["identity"])
+    service._provider_direct_download = lambda *_args, **_kwargs: (_ for _ in ()).throw(
+        EnrichmentDiagnosticError(
+            "share direct unavailable",
+            category="provider_error",
+            code="provider_download_link_errno_2",
+            stage="provider_download_link",
+        )
+    )
+    service._provider_frontend_intercepted_download = (
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(
+            EnrichmentDiagnosticError(
+                "provider requires desktop client",
+                category="provider_error",
+                code="provider_web_download_client_only",
+                stage="provider_download_link",
+            )
+        )
+    )
+
+    first = service.download_opencli(update["identity"], session="ticket04")
+    second = service.download_opencli(update["identity"], session="ticket04")
+
+    assert first["status"] == "completed"
+    assert first["acquisition_transport"] == "owner_cloud_opencli_cookie_stream"
+    assert first["claim_id"] == claim["claim_id"]
+    assert first["sha256"] == hashlib.sha256(payload).hexdigest()
+    assert second["idempotent_replay"] is True
+    assert len(transfer_calls) == 1
+    assert transfer_calls[0][1] == claim["claim_id"]
+    assert len(link_calls) == 1
+    assert len(fetch_calls) == 1
+    assert fetch_calls[0][0] == secret_url
+    assert fetch_calls[0][1][0]["httpOnly"] is True
+    claims = [
+        json.loads(line)
+        for line in service.events_path.read_text(encoding="utf-8").splitlines()
+        if "subscription_browser_download_claimed" in line
+    ]
+    assert len(claims) == 1
+    persisted = "\n".join(
+        path.read_text(encoding="utf-8")
+        for path in (tmp_path / "out").rglob("*.json*")
+    )
+    assert "must-never-persist" not in persisted
+    assert "BDUSS" not in persisted
+
+
+def test_default_owner_stream_keeps_signed_url_and_httponly_cookie_in_process(
+    tmp_path, monkeypatch
+):
+    payload = b"%PDF-1.7\n" + b"s" * 1024
+    entry = _pdf_entry(size=len(payload))
+    entry["provider_file_id"] = "162571713959724"
+    service = LvSubscriptionService(
+        tmp_path / "out",
+        opencli_command=("opencli",),
+    )
+    service._opencli_json = lambda *_args, **_kwargs: {"status": "opened"}
+    fake_bin = tmp_path / "bin"
+    fake_bin.mkdir()
+    opencli = fake_bin / "opencli"
+    node = fake_bin / "node"
+    opencli.write_text("", encoding="utf-8")
+    node.write_text("", encoding="utf-8")
+    page_module = fake_bin / "browser" / "page.js"
+    page_module.parent.mkdir()
+    page_module.write_text("", encoding="utf-8")
+
+    def which(name):
+        return str(opencli if name == "opencli" else node if name == "node" else "")
+
+    def run(command, **_kwargs):
+        assert "Network.getAllCookies" in command[3]
+        assert "httpOnly" in command[3]
+        request = json.loads(command[-1])
+        assert "signed=" not in command[-1]
+        assert "BDUSS" not in command[-1]
+        destination = Path(request["destination"])
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        destination.write_bytes(payload)
+        return SimpleNamespace(
+            returncode=0,
+            stdout=json.dumps({
+                "status": "completed",
+                "path": str(destination),
+                "actual_size": len(payload),
+                "content_type": "application/pdf",
+                "http_status": 200,
+                "sha256": hashlib.sha256(payload).hexdigest(),
+            }),
+            stderr="",
+        )
+
+    monkeypatch.setattr(lv_subscription.shutil, "which", which)
+    monkeypatch.setattr(lv_subscription.subprocess, "run", run)
+    item = {
+        "identity": "a" * 64,
+        "version_key": "b" * 64,
+        "provider_file_id": entry["provider_file_id"],
+        "path": entry["path"],
+        "name": entry["name"],
+        "size": entry["size"],
+        "media_type": "pdf",
+    }
+    owner = _owner_ready(item, transfer_performed=False)
+    destination = service.download_inbox / item["version_key"] / item["name"]
+
+    receipt = service._default_owner_authenticated_streamer(
+        item, owner, "ticket04", None, destination
+    )
+
+    assert receipt["status"] == "completed"
+    assert receipt["sha256"] == hashlib.sha256(payload).hexdigest()
+
+
+def test_owner_cloud_one_exact_match_is_idempotent_without_transfer(tmp_path):
+    entry = _pdf_entry()
+    entry["provider_file_id"] = "162571713959724"
+    calls = 0
+
+    def owner_cloud(item, _claim, _session, _profile):
+        nonlocal calls
+        calls += 1
+        return _owner_ready(item, transfer_performed=False)
+
+    service = LvSubscriptionService(
+        tmp_path / "out",
+        now=lambda: NOW,
+        owner_cloud_operator=owner_cloud,
+    )
+    update = service.observe_browser_listing([entry])["updates"][0]
+    parent = service.claim_browser_download(update["identity"])
+    item = {
+        **service._manifest_item(update["identity"]),
+        "provider_file_id": entry["provider_file_id"],
+    }
+
+    first = service._owner_cloud_transfer(
+        item, parent, session="ticket04", profile=None
+    )
+    second = service._owner_cloud_transfer(
+        item, parent, session="ticket04", profile=None
+    )
+
+    assert first["transfer_performed"] is False
+    assert first["idempotent_replay"] is False
+    assert second["idempotent_replay"] is True
+    assert calls == 1
+
+
+def test_owner_cloud_duplicate_exact_matches_fail_closed(tmp_path):
+    entry = _pdf_entry()
+    entry["provider_file_id"] = "162571713959724"
+    service = LvSubscriptionService(
+        tmp_path / "out",
+        now=lambda: NOW,
+        owner_cloud_operator=lambda *_args: {
+            "status": "owner_duplicate_matches",
+            "exact_match_count": 2,
+        },
+    )
+    update = service.observe_browser_listing([entry])["updates"][0]
+    parent = service.claim_browser_download(update["identity"])
+    item = {
+        **service._manifest_item(update["identity"]),
+        "provider_file_id": entry["provider_file_id"],
+    }
+
+    with pytest.raises(EnrichmentDiagnosticError) as captured:
+        service._owner_cloud_transfer(
+            item, parent, session="ticket04", profile=None
+        )
+
+    assert captured.value.diagnostic_category == "identity_error"
+    assert captured.value.diagnostic_code == "owner_cloud_duplicate_matches"
+    assert captured.value.diagnostic_stage == "owner_cloud_transfer"
+
+
+def test_owner_cloud_fallback_rejects_video_before_any_transfer(tmp_path):
+    calls = 0
+
+    def owner_cloud(*_args):
+        nonlocal calls
+        calls += 1
+        return {}
+
+    service = LvSubscriptionService(
+        tmp_path / "out",
+        owner_cloud_operator=owner_cloud,
+    )
+    item = {
+        "identity": "a" * 64,
+        "version_key": "b" * 64,
+        "provider_file_id": "162571713959724",
+        "path": "/video.mp4",
+        "name": "video.mp4",
+        "size": 4096,
+        "media_type": "video",
+    }
+    claim = {"claim_id": "c" * 64}
+
+    with pytest.raises(EnrichmentDiagnosticError) as captured:
+        service._owner_cloud_transfer(
+            item, claim, session="ticket04", profile=None
+        )
+
+    assert captured.value.diagnostic_code == "owner_cloud_media_not_allowed"
+    assert calls == 0
 
 
 @pytest.mark.parametrize(

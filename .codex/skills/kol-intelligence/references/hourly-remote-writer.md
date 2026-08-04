@@ -116,13 +116,20 @@ summary. Directory/title-date/mtime/version plus verified transcript may prove
 one claimed PDF download, immutable SHA-256, `pypdf`/`pdfplumber`, and rendered
 visual/OCR coverage; unsafe PDFs fail closed.
 
+For a claimed client-only small PDF, reuse its acquisition claim and one exact
+`/xiaocao/lv_subscription/<version>/` owner copy: 0 matches transfers, 1 exact
+name/size resumes, and >1 fails closed. Persist only owner fsid/path/size;
+owner dlink and same-target HttpOnly cookies stay in memory. Require HTTP 200,
+exact size, PDF magic, and SHA. Exclude video/large files; ordinary Save or
+client-only states are not user blockers.
+
 Route Lv claims, not media types. `会员直播` uses current-fact/event/eligible
 alert/paper-Book semantics. Reusable `底层逻辑` normally means no actionable
 signal, useful insight, reusable knowledge, report-only/no-alert/reasoned
-no-trade, distilled at `authority=0`; it cannot change posture or parameters
-without research plus human gate. Mixed claims stay one report; only current
-claims authorize alert/Book. Valuable methodology is not automatically
-low-density.
+`not_applicable` Book intent and no Book row, distilled at `authority=0`; it
+cannot change posture or parameters without research plus human gate. Mixed
+claims stay one report; only current claims authorize alert/Book. Valuable
+methodology is not automatically low-density.
 
 Put targeted currentness requests in
 `output/live/kol_daily/viewpoint_triggers/*.json`. Supported triggers are a new

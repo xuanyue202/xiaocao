@@ -43,6 +43,24 @@ class EnrichmentDiagnosticError(EnrichmentError):
         super().__init__(message)
 
 
+def is_durable_report_only(item: Any) -> bool:
+    """Return whether one result is a durable-only Lv report entry."""
+    if not isinstance(item, dict):
+        return False
+    content = item.get("content_value") or {}
+    routing = item.get("claim_semantic_routing") or {}
+    current_claims = routing.get("current_decision_claim_ids")
+    durable_claims = routing.get("durable_knowledge_claim_ids")
+    return (
+        content.get("status") == "promoted"
+        and content.get("tier") == "report_only"
+        and isinstance(current_claims, list)
+        and not current_claims
+        and isinstance(durable_claims, list)
+        and bool(durable_claims)
+    )
+
+
 def validate_decision_process_result(result: Any) -> dict[str, Any]:
     """Validate Ticket 01 output shape before any delivery side effect."""
     if not isinstance(result, dict) or result.get("status") != "completed":
@@ -105,13 +123,19 @@ def validate_decision_completion(
         notification.get("receipt") or ""
     ).strip():
         raise EnrichmentError("household advisory requires a delivery receipt")
+    durable_report_only = is_durable_report_only(item)
+    valid_paper_status = paper.get("status") in {"filled", "no_trade"} or (
+        durable_report_only and paper.get("status") == "not_created"
+    )
     if (
         not isinstance(paper, dict)
-        or paper.get("status") not in {"filled", "no_trade"}
+        or not valid_paper_status
         or paper.get("book") != "KOL-US"
         or paper.get("paper_only") is not True
     ):
         raise EnrichmentError("Book KOL-US paper-only outcome is invalid")
-    if paper.get("status") == "no_trade" and not str(paper.get("reason") or "").strip():
+    if paper.get("status") in {"no_trade", "not_created"} and not str(
+        paper.get("reason") or ""
+    ).strip():
         raise EnrichmentError("Book KOL-US no_trade requires reason")
     return notification, paper

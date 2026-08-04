@@ -20,7 +20,7 @@ from pathlib import Path
 from typing import Any, Callable, Iterator
 from zoneinfo import ZoneInfo
 
-from .enrichment_types import EnrichmentError
+from .enrichment_types import EnrichmentError, is_durable_report_only
 from .publication import (
     PublicationError,
     PublicationLedger,
@@ -168,13 +168,17 @@ def validate_source_event(value: Any) -> dict[str, Any]:
     book = value.get("book_kol_us")
     if not all(isinstance(row, dict) for row in (report, alert, book)):
         raise DailyError("daily source event lacks independent terminals")
+    durable_report_only = is_durable_report_only(value)
+    valid_book_status = book.get("status") in {"filled", "no_trade"} or (
+        durable_report_only and book.get("status") == "not_created"
+    )
     if (
         book.get("book") != "KOL-US"
         or book.get("paper_only") is not True
-        or book.get("status") not in {"filled", "no_trade"}
+        or not valid_book_status
     ):
         raise DailyError("daily Book terminal is not KOL-US paper-only")
-    if book.get("status") == "no_trade":
+    if book.get("status") in {"no_trade", "not_created"}:
         _required_reason(book.get("reason"), label="Book KOL-US no-trade")
     if disposition == "low_density":
         if report.get("status") != "not_created":
@@ -492,7 +496,7 @@ def _publication_candidate(
         "metadata": {
             "historical": False,
             "notification_claim_authorized": alert_eligible,
-            "book_kol_us_replay_authorized": True,
+            "book_kol_us_replay_authorized": not is_durable_report_only(item),
             "large_payload_local_bytes": 0,
             "coordinator_source_video_bytes": 0,
         },
@@ -649,6 +653,7 @@ class DailyPublicationPipeline:
                     "publication_version": self.context.publication_version,
                 },
                 "content_value": content,
+                "claim_semantic_routing": item.get("claim_semantic_routing") or {},
                 "gray_report": {"status": "not_created"},
                 "alert": {"status": "not_created"},
                 "book_kol_us": book,
@@ -691,6 +696,7 @@ class DailyPublicationPipeline:
                     "publication_version": self.context.publication_version,
                 },
                 "content_value": content,
+                "claim_semantic_routing": item.get("claim_semantic_routing") or {},
                 "gray_report": {
                     "status": "published",
                     "detail_url": receipt.get("detailUrl"),

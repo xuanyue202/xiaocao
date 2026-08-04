@@ -24,6 +24,7 @@ from ._shared import (
 from .book import BookKolUs
 from .claim_coverage import validate_claim_coverage
 from .delivery import WechatDelivery
+from .enrichment_types import is_durable_report_only
 from .rendering import (
     reader_cross_source as _reader_cross_source,
     reader_market_facts as _reader_market_facts,
@@ -291,6 +292,17 @@ class DecisionPipeline:
             ):
                 raise DecisionError(
                     "context-corrected KOL output requires analysis, check, and advice"
+                )
+        if is_durable_report_only(item):
+            paper = item.get("book_kol_us") or {}
+            if (
+                paper.get("book") != "KOL-US"
+                or paper.get("paper_only") is not True
+                or paper.get("decision") != "not_applicable"
+                or not str(paper.get("reason") or "").strip()
+            ):
+                raise DecisionError(
+                    "durable report-only knowledge must suppress Book creation"
                 )
         if item.get("decision_status") == "no_actionable_signal":
             insight = item.get("reader_insight") or {}
@@ -572,9 +584,11 @@ class DecisionPipeline:
         validated = []
         for item in bundle.get("items") or []:
             document = self._validate_item(item)
-            self.book.validate(item.get("book_kol_us") or {})
+            if not is_durable_report_only(item):
+                self.book.validate(item.get("book_kol_us") or {})
             validated.append((item, document))
-        self.book.recover()
+        if any(not is_durable_report_only(item) for item, _ in validated):
+            self.book.recover()
         existing_book_keys = {
             row.get("idempotency_key") for row in _read_jsonl(self.book.decisions_path)
         }
@@ -582,6 +596,8 @@ class DecisionPipeline:
             planned_book = BookKolUs(Path(temporary))
             planned_book.account = deepcopy(self.book.account)
             for item, document in validated:
+                if is_durable_report_only(item):
+                    continue
                 paper_identity = self.book.resolve_identity(
                     document.sha256, item["book_kol_us"]
                 )
@@ -609,8 +625,13 @@ class DecisionPipeline:
         }
         results = []
         for item, document in validated:
-            paper_identity = self.book.resolve_identity(
-                document.sha256, item["book_kol_us"]
+            durable_report_only = is_durable_report_only(item)
+            paper_identity = (
+                None
+                if durable_report_only
+                else self.book.resolve_identity(
+                    document.sha256, item["book_kol_us"]
+                )
             )
             contextual_advice, contextual_signals, context_assessment = (
                 self._contextualize_household_recommendation(
@@ -738,19 +759,29 @@ class DecisionPipeline:
                 _append_jsonl(self.outbox_path, message)
                 outbox_rows.append(message)
                 known_notifications.add(identity)
-            paper = self.book.route(
-                item["book_kol_us"],
-                idempotency_key=paper_identity,
-                evidence=str(document.path),
-                evidence_context={
-                    "evidence_sha256": document.sha256,
-                    "paper_intent_sha256": self.book.intent_fingerprint(
-                        item["book_kol_us"]
-                    ),
-                    "claim_ids": [claim["claim_id"] for claim in item["claims"]],
-                    "market_validation": item["market_validation"],
-                },
-            )
+            if durable_report_only:
+                paper = {
+                    "status": "not_created",
+                    "book": "KOL-US",
+                    "paper_only": True,
+                    "reason": str(item["book_kol_us"]["reason"]).strip(),
+                    "idempotent_replay": False,
+                }
+            else:
+                assert paper_identity is not None
+                paper = self.book.route(
+                    item["book_kol_us"],
+                    idempotency_key=paper_identity,
+                    evidence=str(document.path),
+                    evidence_context={
+                        "evidence_sha256": document.sha256,
+                        "paper_intent_sha256": self.book.intent_fingerprint(
+                            item["book_kol_us"]
+                        ),
+                        "claim_ids": [claim["claim_id"] for claim in item["claims"]],
+                        "market_validation": item["market_validation"],
+                    },
+                )
             result_item = {
                 **item,
                 "actionable_signals": contextual_signals,
@@ -785,7 +816,8 @@ class DecisionPipeline:
         evidence = []
         for item in bundle.get("items") or []:
             document = self._validate_item(item)
-            self.book.validate(item.get("book_kol_us") or {})
+            if not is_durable_report_only(item):
+                self.book.validate(item.get("book_kol_us") or {})
             evidence.append(
                 {
                     "author": item["author"],

@@ -471,6 +471,40 @@ def test_content_value_routes_low_report_only_and_alert_event_independently(
     ]
 
 
+def test_durable_report_only_terminal_has_zero_book_effect(tmp_path):
+    service = DailyCoordinator(
+        tmp_path / "daily",
+        now=Clock("2026-07-27T08:00:00+08:00"),
+    )
+    event = _promoted_event(event_id="lv-durable-report", tier="report_only")
+    event["claim_semantic_routing"] = {
+        "content_product": "underlying_logic",
+        "current_decision_claim_ids": [],
+        "durable_knowledge_claim_ids": ["lv-method"],
+    }
+    event["book_kol_us"] = {
+        "status": "not_created",
+        "book": "KOL-US",
+        "paper_only": True,
+        "reason": "durable-only knowledge creates no Book entry",
+        "terminal_order": 3,
+    }
+
+    result = service.run(
+        [{
+            "name": "lv-durable",
+            "priority": 10,
+            "run": lambda: {"status": "completed", "events": [event]},
+        }]
+    )
+    audit = service.audit()
+
+    assert result["health"] == "healthy"
+    assert audit["gray_report_count"] == 1
+    assert audit["reminder_count"] == 0
+    assert audit["book_trade_count"] == 0
+
+
 def test_promoted_event_fails_closed_when_book_precedes_gray_report(tmp_path):
     service = DailyCoordinator(
         tmp_path / "daily",

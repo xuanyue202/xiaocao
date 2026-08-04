@@ -111,6 +111,7 @@ _DIRECT_DOWNLOAD_CONTENT_TYPES = {
         "binary/octet-stream",
     },
 }
+_OWNER_CLOUD_ROOT = PurePosixPath("/xiaocao/lv_subscription")
 
 
 _BROWSER_LISTING_SCRIPT_TEMPLATE = r"""(async () => {
@@ -740,6 +741,412 @@ def _provider_direct_link_script(
     )
 
 
+_OWNER_CLOUD_TRANSFER_SCRIPT_TEMPLATE = r"""(async () => {
+  const operation = 'ticket04_owner_cloud_transfer';
+  const expectedSharePath = __EXPECTED_SHARE_PATH_JSON__;
+  const expectedProviderFileId = __EXPECTED_PROVIDER_FILE_ID_JSON__;
+  const expectedName = __EXPECTED_NAME_JSON__;
+  const expectedSize = __EXPECTED_SIZE_JSON__;
+  const destinationDirectory = __DESTINATION_DIRECTORY_JSON__;
+  const destinationPath = destinationDirectory + '/' + expectedName;
+  const result = (status, extra = {}) => ({status, operation, ...extra});
+  if (
+    location.origin !== 'https://pan.baidu.com'
+    || location.pathname !== expectedSharePath
+  ) return result('wrong_share');
+  if (
+    !/^\d+$/.test(expectedProviderFileId)
+    || !(expectedSize > 0)
+    || !destinationDirectory.startsWith('/xiaocao/lv_subscription/')
+    || destinationPath !== destinationDirectory + '/' + expectedName
+  ) return result('source_identity_invalid');
+  const visible = element => {
+    const style = getComputedStyle(element);
+    const rect = element.getBoundingClientRect();
+    return style.display !== 'none' && style.visibility !== 'hidden'
+      && rect.width > 0 && rect.height > 0;
+  };
+  const pageText = String(document.body?.innerText || '');
+  if ([...document.querySelectorAll(
+    '[class*="captcha"], [id*="captcha"], iframe[src*="captcha"]'
+  )].some(visible) || /验证码|安全验证/.test(pageText)) {
+    return result('captcha_required');
+  }
+  const sources = [window.yunData || {}, window.locals || {}];
+  const readValue = keys => {
+    for (const source of sources) {
+      for (const key of keys) {
+        try {
+          const value = typeof source.get === 'function'
+            ? source.get(key) : source[key];
+          if (value !== undefined && value !== null && String(value)) {
+            return String(value);
+          }
+        } catch (_error) {}
+      }
+    }
+    return '';
+  };
+  const shareId = readValue(['shareid', 'share_id', 'SHARE_ID']);
+  const shareUk = readValue(['share_uk', 'uk', 'SHARE_UK']);
+  const bdstoken = readValue(['bdstoken', 'BDSTOKEN']);
+  if (!shareId || !shareUk || !bdstoken) return result('auth_required');
+  const classify = payload => {
+    const message = String(
+      payload?.show_msg || payload?.errmsg || payload?.error_msg || ''
+    );
+    if (/验证码|安全验证/.test(message)) return 'captcha_required';
+    if (/登录|认证/.test(message) || Number(payload?.errno) === -6) {
+      return 'auth_required';
+    }
+    return 'provider_error';
+  };
+  const listDirectory = async path => {
+    const query = new URLSearchParams({
+      dir: path, order: 'name', desc: '0', showempty: '0',
+      web: '1', page: '1', num: '1000', channel: 'chunlei',
+      app_id: '250528', clienttype: '0'
+    });
+    const response = await fetch('/api/list?' + query.toString(), {
+      credentials: 'include'
+    });
+    const payload = await response.json();
+    return {response, payload};
+  };
+  const createDirectory = async path => {
+    const query = new URLSearchParams({
+      a: 'commit', channel: 'chunlei', web: '1', app_id: '250528',
+      bdstoken, clienttype: '0'
+    });
+    const body = new URLSearchParams({
+      path, isdir: '1', block_list: '[]'
+    });
+    const response = await fetch('/api/create?' + query.toString(), {
+      method: 'POST', credentials: 'include',
+      headers: {'content-type': 'application/x-www-form-urlencoded'},
+      body: body.toString()
+    });
+    return {response, payload: await response.json()};
+  };
+  const directoryReceipts = [];
+  let parent = '/';
+  for (const component of destinationDirectory.split('/').filter(Boolean)) {
+    const child = (parent === '/' ? '' : parent) + '/' + component;
+    let listed;
+    try { listed = await listDirectory(parent); }
+    catch (_error) { return result('provider_error', {provider_errno: null}); }
+    if (!listed.response.ok || Number(listed.payload?.errno || 0) !== 0) {
+      return result(classify(listed.payload), {
+        provider_errno: Number(listed.payload?.errno || 0)
+      });
+    }
+    let matches = (Array.isArray(listed.payload?.list) ? listed.payload.list : [])
+      .filter(row => Number(row?.isdir || 0) === 1
+        && String(row?.path || '') === child);
+    if (matches.length > 1) {
+      return result('owner_directory_ambiguous', {path: child});
+    }
+    if (matches.length === 0) {
+      let created;
+      try { created = await createDirectory(child); }
+      catch (_error) { return result('provider_error', {provider_errno: null}); }
+      if (
+        !created.response.ok
+        || ![0, -8].includes(Number(created.payload?.errno || 0))
+      ) {
+        return result(classify(created.payload), {
+          provider_errno: Number(created.payload?.errno || 0)
+        });
+      }
+      listed = await listDirectory(parent);
+      matches = (Array.isArray(listed.payload?.list) ? listed.payload.list : [])
+        .filter(row => Number(row?.isdir || 0) === 1
+          && String(row?.path || '') === child);
+    }
+    if (matches.length !== 1) {
+      return result('owner_directory_readback_failed', {path: child});
+    }
+    directoryReceipts.push({
+      path: child,
+      provider_file_id: String(matches[0]?.fs_id || matches[0]?.fsid || ''),
+      exact_count: 1
+    });
+    parent = child;
+  }
+  const exactOwnerRows = payload => (
+    Array.isArray(payload?.list) ? payload.list : []
+  ).filter(row => String(row?.path || '') === destinationPath
+    && String(row?.server_filename || row?.name || '') === expectedName);
+  let ownerListing;
+  try { ownerListing = await listDirectory(destinationDirectory); }
+  catch (_error) { return result('provider_error', {provider_errno: null}); }
+  if (!ownerListing.response.ok
+      || Number(ownerListing.payload?.errno || 0) !== 0) {
+    return result(classify(ownerListing.payload), {
+      provider_errno: Number(ownerListing.payload?.errno || 0)
+    });
+  }
+  let ownerRows = exactOwnerRows(ownerListing.payload);
+  if (ownerRows.length > 1) {
+    return result('owner_duplicate_matches', {exact_match_count: ownerRows.length});
+  }
+  let transferPerformed = false;
+  if (ownerRows.length === 0) {
+    const query = new URLSearchParams({
+      shareid: shareId, from: shareUk, ondup: 'fail', async: '1',
+      channel: 'chunlei', web: '1', app_id: '250528', bdstoken,
+      clienttype: '0'
+    });
+    const body = new URLSearchParams({
+      fsidlist: JSON.stringify([expectedProviderFileId]),
+      path: destinationDirectory
+    });
+    const cookie = document.cookie.split(';').map(value => value.trim())
+      .find(value => value.startsWith('BDCLND='));
+    if (cookie) body.set('sekey', decodeURIComponent(cookie.slice(7)));
+    let response;
+    let payload;
+    try {
+      response = await fetch('/share/transfer?' + query.toString(), {
+        method: 'POST', credentials: 'include',
+        headers: {'content-type': 'application/x-www-form-urlencoded'},
+        body: body.toString()
+      });
+      payload = await response.json();
+    } catch (_error) {
+      return result('provider_error', {provider_errno: null});
+    }
+    if (!response.ok || Number(payload?.errno || 0) !== 0) {
+      return result(classify(payload), {
+        provider_errno: Number(payload?.errno || 0)
+      });
+    }
+    transferPerformed = true;
+    const deadline = Date.now() + 15000;
+    while (Date.now() < deadline) {
+      await new Promise(resolve => setTimeout(resolve, 300));
+      ownerListing = await listDirectory(destinationDirectory);
+      if (Number(ownerListing.payload?.errno || 0) !== 0) continue;
+      ownerRows = exactOwnerRows(ownerListing.payload);
+      if (ownerRows.length !== 0) break;
+    }
+  }
+  if (ownerRows.length > 1) {
+    return result('owner_duplicate_matches', {exact_match_count: ownerRows.length});
+  }
+  if (ownerRows.length !== 1) {
+    return result('owner_transfer_readback_missing', {exact_match_count: 0});
+  }
+  const owner = ownerRows[0];
+  if (Number(owner?.size || 0) !== expectedSize) {
+    return result('owner_size_mismatch', {exact_match_count: 1});
+  }
+  return result('owner_ready', {
+    exact_match_count: 1,
+    transfer_performed: transferPerformed,
+    owner_provider_file_id: String(owner?.fs_id || owner?.fsid || ''),
+    owner_path: String(owner?.path || ''),
+    name: String(owner?.server_filename || owner?.name || ''),
+    size: Number(owner?.size || 0),
+    modified_at: Number(owner?.server_mtime || owner?.local_mtime || 0),
+    directory_receipts: directoryReceipts
+  });
+})()"""
+
+
+def _owner_cloud_transfer_script(
+    *,
+    expected_share_path: str,
+    expected_provider_file_id: str,
+    expected_name: str,
+    expected_size: int,
+    destination_directory: str,
+) -> str:
+    return (
+        _OWNER_CLOUD_TRANSFER_SCRIPT_TEMPLATE.replace(
+            "__EXPECTED_SHARE_PATH_JSON__", json.dumps(expected_share_path)
+        )
+        .replace(
+            "__EXPECTED_PROVIDER_FILE_ID_JSON__",
+            json.dumps(expected_provider_file_id),
+        )
+        .replace("__EXPECTED_NAME_JSON__", json.dumps(expected_name))
+        .replace("__EXPECTED_SIZE_JSON__", json.dumps(expected_size))
+        .replace(
+            "__DESTINATION_DIRECTORY_JSON__",
+            json.dumps(destination_directory),
+        )
+    )
+
+
+_OWNER_DOWNLOAD_LINK_SCRIPT_TEMPLATE = r"""(async () => {
+  const operation = 'ticket04_owner_download_link';
+  const expectedProviderFileId = __EXPECTED_PROVIDER_FILE_ID_JSON__;
+  const expectedName = __EXPECTED_NAME_JSON__;
+  const expectedSize = __EXPECTED_SIZE_JSON__;
+  const result = (status, extra = {}) => ({status, operation, ...extra});
+  if (location.origin !== 'https://pan.baidu.com') {
+    return result('wrong_origin');
+  }
+  const visible = element => {
+    const style = getComputedStyle(element);
+    const rect = element.getBoundingClientRect();
+    return style.display !== 'none' && style.visibility !== 'hidden'
+      && rect.width > 0 && rect.height > 0;
+  };
+  const pageText = String(document.body?.innerText || '');
+  if (/验证码|安全验证/.test(pageText)) return result('captcha_required');
+  if (/登录后|请登录/.test(pageText)) return result('auth_required');
+  const rowFor = node => node.closest(
+    'dd, tr, [role="row"], [class*="table-row"], [class*="file-item"]'
+  ) || node;
+  const rowName = row => {
+    const values = Array.from(row.querySelectorAll('[title], [data-name]'))
+      .flatMap(node => [
+        String(node.getAttribute('title') || ''),
+        String(node.getAttribute('data-name') || ''),
+        String(node.textContent || '').trim()
+      ]);
+    return values.includes(expectedName);
+  };
+  const rowId = row => {
+    const nodes = [row, ...row.querySelectorAll('[data-id], [data-fsid]')];
+    return nodes.some(node => [
+      String(node.getAttribute('data-id') || ''),
+      String(node.getAttribute('data-fsid') || '')
+    ].includes(expectedProviderFileId));
+  };
+  const deadline = Date.now() + 12000;
+  let targets = [];
+  while (Date.now() < deadline) {
+    const nodes = Array.from(document.querySelectorAll(
+      '[data-id], [data-fsid]'
+    )).filter(node => [
+      String(node.getAttribute('data-id') || ''),
+      String(node.getAttribute('data-fsid') || '')
+    ].includes(expectedProviderFileId));
+    targets = [...new Set(nodes.map(rowFor))].filter(row => rowName(row));
+    if (targets.length === 1) break;
+    await new Promise(resolve => setTimeout(resolve, 150));
+  }
+  if (targets.length === 0) return result('owner_target_not_visible');
+  if (targets.length !== 1) return result('owner_target_not_unique');
+  const selectionControl = row => row.querySelector(
+    '[role="checkbox"], input[type="checkbox"], [aria-checked], '
+    + '[class*="checkbox"]'
+  );
+  const selected = row => {
+    const control = selectionControl(row);
+    return row.getAttribute('aria-selected') === 'true'
+      || control?.getAttribute('aria-checked') === 'true'
+      || control?.checked === true;
+  };
+  const visibleRows = [...new Set(Array.from(document.querySelectorAll(
+    'dd, tr, [role="row"], [class*="table-row"], [class*="file-item"]'
+  )).map(rowFor))].filter(visible);
+  for (const row of visibleRows.filter(row => row !== targets[0] && selected(row))) {
+    const control = selectionControl(row);
+    if (!control) return result('owner_selection_control_missing');
+    control.click();
+  }
+  if (!selected(targets[0])) {
+    const control = selectionControl(targets[0]);
+    if (!control) return result('owner_selection_control_missing');
+    control.click();
+  }
+  await new Promise(resolve => setTimeout(resolve, 250));
+  const selectedRows = visibleRows.filter(selected);
+  if (
+    selectedRows.length !== 1
+    || selectedRows[0] !== targets[0]
+    || !rowId(targets[0])
+    || !rowName(targets[0])
+  ) return result('owner_selection_mismatch');
+  const state = {downloadUrl: '', scheme: '', host: '', path: ''};
+  const capture = candidate => {
+    let link;
+    try { link = new URL(String(candidate || ''), location.href); }
+    catch (_error) { return false; }
+    if (
+      link.protocol !== 'https:'
+      || link.hostname !== 'd.pcs.baidu.com'
+      || !(link.pathname.startsWith('/file/')
+        || link.pathname === '/rest/2.0/pcs/file')
+      || !link.search
+    ) return false;
+    state.downloadUrl = link.href;
+    state.scheme = link.protocol;
+    state.host = link.hostname;
+    state.path = link.pathname;
+    return true;
+  };
+  const originalSetAttribute = Element.prototype.setAttribute;
+  Element.prototype.setAttribute = function(name, value) {
+    if (
+      this instanceof HTMLIFrameElement
+      && String(name).toLowerCase() === 'src'
+      && capture(value)
+    ) return originalSetAttribute.call(this, name, 'about:blank');
+    return originalSetAttribute.call(this, name, value);
+  };
+  const observer = new MutationObserver(records => {
+    for (const record of records) {
+      const frame = record.target;
+      if (!(frame instanceof HTMLIFrameElement)) continue;
+      const source = frame.getAttribute('src') || '';
+      if (capture(source)) originalSetAttribute.call(frame, 'src', 'about:blank');
+    }
+  });
+  observer.observe(document.documentElement, {
+    subtree: true, attributes: true, attributeFilter: ['src']
+  });
+  const originalWindowOpen = window.open.bind(window);
+  window.open = (url, ...args) => (
+    capture(url) ? null : originalWindowOpen(url, ...args)
+  );
+  const downloadControls = Array.from(document.querySelectorAll(
+    'a, button, [role="button"]'
+  )).filter(control => visible(control) && (
+    String(control.getAttribute('title') || '').trim() === '下载'
+    || String(control.textContent || '').trim() === '下载'
+  ));
+  if (downloadControls.length !== 1) {
+    return result('owner_download_control_ambiguous');
+  }
+  downloadControls[0].click();
+  const captureDeadline = Date.now() + 15000;
+  while (Date.now() < captureDeadline && !state.downloadUrl) {
+    await new Promise(resolve => setTimeout(resolve, 100));
+  }
+  if (!state.downloadUrl) return result('owner_download_link_not_captured');
+  return result('download_link_ready', {
+    download_url: state.downloadUrl,
+    provider_file_id: expectedProviderFileId,
+    name: expectedName,
+    size: expectedSize,
+    scheme: state.scheme,
+    host: state.host,
+    path: state.path
+  });
+})()"""
+
+
+def _owner_download_link_script(
+    *,
+    expected_provider_file_id: str,
+    expected_name: str,
+    expected_size: int,
+) -> str:
+    return (
+        _OWNER_DOWNLOAD_LINK_SCRIPT_TEMPLATE.replace(
+            "__EXPECTED_PROVIDER_FILE_ID_JSON__",
+            json.dumps(expected_provider_file_id),
+        )
+        .replace("__EXPECTED_NAME_JSON__", json.dumps(expected_name))
+        .replace("__EXPECTED_SIZE_JSON__", json.dumps(expected_size))
+    )
+
+
 _PROVIDER_FRONTEND_INTERCEPT_INSTALL_SCRIPT_TEMPLATE = r"""(async () => {
   const operation = 'ticket04_signed_link_intercept_and_trigger';
   const expectedSharePath = __EXPECTED_SHARE_PATH_JSON__;
@@ -1070,6 +1477,29 @@ class LvSubscriptionService:
             [str, Path, int, str], dict[str, Any]
         ]
         | None = None,
+        owner_cloud_operator: Callable[
+            [dict[str, Any], dict[str, Any], str, str | None],
+            dict[str, Any],
+        ]
+        | None = None,
+        owner_download_link_reader: Callable[
+            [dict[str, Any], dict[str, Any], str, str | None],
+            dict[str, Any],
+        ]
+        | None = None,
+        opencli_cookie_reader: Callable[
+            [str, str | None], list[dict[str, Any]]
+        ]
+        | None = None,
+        owner_download_fetcher: Callable[
+            [str, list[dict[str, Any]], Path, int], dict[str, Any]
+        ]
+        | None = None,
+        owner_authenticated_streamer: Callable[
+            [dict[str, Any], dict[str, Any], str, str | None, Path],
+            dict[str, Any],
+        ]
+        | None = None,
     ):
         self.output_dir = Path(output_dir)
         self.manifest_path = self.output_dir / "manifest.json"
@@ -1103,6 +1533,34 @@ class LvSubscriptionService:
         )
         self.direct_download_fetcher = (
             direct_download_fetcher or self._default_direct_download_fetcher
+        )
+        self.owner_cloud_operator = (
+            owner_cloud_operator or self._default_owner_cloud_operator
+        )
+        self.owner_download_link_reader = (
+            owner_download_link_reader
+            or self._default_owner_download_link_reader
+        )
+        self.opencli_cookie_reader = (
+            opencli_cookie_reader or self._default_opencli_cookie_reader
+        )
+        self.owner_download_fetcher = (
+            owner_download_fetcher or self._default_owner_download_fetcher
+        )
+        self.owner_authenticated_streamer = (
+            owner_authenticated_streamer
+            or (
+                None
+                if any(
+                    value is not None
+                    for value in (
+                        owner_download_link_reader,
+                        opencli_cookie_reader,
+                        owner_download_fetcher,
+                    )
+                )
+                else self._default_owner_authenticated_streamer
+            )
         )
         self._opencli_listing: tuple[
             str,
@@ -2616,6 +3074,847 @@ try {
             "sha256": digest.hexdigest(),
         }
 
+    def _default_owner_cloud_operator(
+        self,
+        item: dict[str, Any],
+        _claim: dict[str, Any],
+        session: str,
+        profile: str | None,
+    ) -> dict[str, Any]:
+        destination_directory = str(
+            _OWNER_CLOUD_ROOT / str(item["version_key"])
+        )
+        return self._opencli_json(
+            session,
+            "eval",
+            _owner_cloud_transfer_script(
+                expected_share_path=urlparse(self.share_url).path,
+                expected_provider_file_id=str(item["provider_file_id"]),
+                expected_name=str(item["name"]),
+                expected_size=int(item["size"]),
+                destination_directory=destination_directory,
+            ),
+            profile=profile,
+            timeout_seconds=45,
+        )
+
+    def _default_owner_download_link_reader(
+        self,
+        item: dict[str, Any],
+        owner: dict[str, Any],
+        session: str,
+        profile: str | None,
+    ) -> dict[str, Any]:
+        destination_directory = str(PurePosixPath(str(owner["owner_path"])).parent)
+        owner_route = (
+            "https://pan.baidu.com/disk/main#/index?"
+            + urlencode({"category": "all", "path": destination_directory})
+        )
+        self._opencli_json(
+            session,
+            "open",
+            owner_route,
+            profile=profile,
+            timeout_seconds=30,
+        )
+        return self._opencli_json(
+            session,
+            "eval",
+            _owner_download_link_script(
+                expected_provider_file_id=str(owner["owner_provider_file_id"]),
+                expected_name=str(item["name"]),
+                expected_size=int(item["size"]),
+            ),
+            profile=profile,
+            timeout_seconds=30,
+        )
+
+    def _default_opencli_cookie_reader(
+        self,
+        session: str,
+        profile: str | None,
+    ) -> list[dict[str, Any]]:
+        """Read target cookies through CDP; callers keep values in memory only."""
+        opencli_binary = shutil.which(str(self.opencli_command[0]))
+        node_binary = shutil.which("node")
+        if not opencli_binary or not node_binary:
+            raise EnrichmentDiagnosticError(
+                "OpenCLI cookie transport is unavailable",
+                category="local_runtime_error",
+                code="opencli_cookie_transport_unavailable",
+                stage="owner_cloud_download",
+            )
+        page_module = Path(opencli_binary).resolve().parent / "browser" / "page.js"
+        if not page_module.is_file():
+            raise EnrichmentDiagnosticError(
+                "OpenCLI cookie transport is unavailable",
+                category="local_runtime_error",
+                code="opencli_cookie_transport_unavailable",
+                stage="owner_cloud_download",
+            )
+        payload = {
+            "module": str(page_module),
+            "session": session,
+            "profile": profile,
+        }
+        script = """
+import {pathToFileURL} from 'node:url';
+const input = JSON.parse(process.argv[1]);
+const {Page} = await import(pathToFileURL(input.module).href);
+const page = new Page(
+  input.session, 20, input.profile || undefined, 'background'
+);
+const response = await page.cdp('Network.getAllCookies');
+const cookies = (response.cookies || []).filter(row => {
+  const domain = String(row.domain || '').replace(/^\\./, '');
+  return domain === 'baidu.com' || domain.endsWith('.baidu.com');
+}).map(row => ({
+  name: String(row.name || ''),
+  value: String(row.value || ''),
+  domain: String(row.domain || ''),
+  path: String(row.path || '/'),
+  secure: row.secure === true,
+  httpOnly: row.httpOnly === true
+}));
+console.log(JSON.stringify({cookies}));
+"""
+        try:
+            completed = subprocess.run(
+                (
+                    node_binary,
+                    "--input-type=module",
+                    "-e",
+                    script,
+                    _canonical(payload),
+                ),
+                capture_output=True,
+                text=True,
+                check=False,
+                timeout=30,
+            )
+            result = json.loads(completed.stdout)
+        except (OSError, subprocess.TimeoutExpired, json.JSONDecodeError) as exc:
+            raise EnrichmentDiagnosticError(
+                "OpenCLI cookie readback failed",
+                category="local_runtime_error",
+                code="opencli_cookie_readback_failed",
+                stage="owner_cloud_download",
+            ) from exc
+        cookies = result.get("cookies") if isinstance(result, dict) else None
+        if completed.returncode != 0 or not isinstance(cookies, list):
+            raise EnrichmentDiagnosticError(
+                "OpenCLI cookie readback failed",
+                category="local_runtime_error",
+                code="opencli_cookie_readback_failed",
+                stage="owner_cloud_download",
+            )
+        return cookies
+
+    def _default_owner_authenticated_streamer(
+        self,
+        item: dict[str, Any],
+        owner: dict[str, Any],
+        session: str,
+        profile: str | None,
+        destination: Path,
+    ) -> dict[str, Any]:
+        """Resolve dlink/cookies and stream in one process without emitting them."""
+        destination_directory = str(PurePosixPath(str(owner["owner_path"])).parent)
+        owner_route = (
+            "https://pan.baidu.com/disk/main#/index?"
+            + urlencode({"category": "all", "path": destination_directory})
+        )
+        self._opencli_json(
+            session,
+            "open",
+            owner_route,
+            profile=profile,
+            timeout_seconds=30,
+        )
+        opencli_binary = shutil.which(str(self.opencli_command[0]))
+        node_binary = shutil.which("node")
+        if not opencli_binary or not node_binary:
+            raise EnrichmentDiagnosticError(
+                "owner authenticated stream transport is unavailable",
+                category="local_runtime_error",
+                code="owner_stream_transport_unavailable",
+                stage="owner_cloud_download",
+            )
+        page_module = Path(opencli_binary).resolve().parent / "browser" / "page.js"
+        if not page_module.is_file():
+            raise EnrichmentDiagnosticError(
+                "owner authenticated stream transport is unavailable",
+                category="local_runtime_error",
+                code="owner_stream_transport_unavailable",
+                stage="owner_cloud_download",
+            )
+        payload = {
+            "module": str(page_module),
+            "session": session,
+            "profile": profile,
+            "expression": _owner_download_link_script(
+                expected_provider_file_id=str(owner["owner_provider_file_id"]),
+                expected_name=str(item["name"]),
+                expected_size=int(item["size"]),
+            ),
+            "destination": str(destination),
+            "expectedSize": int(item["size"]),
+        }
+        script = r"""
+import {pathToFileURL} from 'node:url';
+import {createHash} from 'node:crypto';
+import {promises as fs} from 'node:fs';
+
+const input = JSON.parse(process.argv[1]);
+const output = value => console.log(JSON.stringify(value));
+const failure = code => {
+  const error = new Error('owner stream failed');
+  error.safeCode = code;
+  throw error;
+};
+const digestFile = async path => {
+  const data = await fs.readFile(path);
+  return createHash('sha256').update(data).digest('hex');
+};
+const partial = input.destination.replace(/([^/]+)$/, '.$1.partial');
+try {
+  try {
+    const existing = await fs.readFile(input.destination);
+    if (
+      existing.length !== input.expectedSize
+      || existing.subarray(0, 5).toString() !== '%PDF-'
+    ) failure('owner_download_inbox_collision');
+    output({
+      status: 'completed', path: input.destination,
+      actual_size: existing.length, content_type: 'application/pdf',
+      http_status: 200,
+      sha256: createHash('sha256').update(existing).digest('hex')
+    });
+    process.exit(0);
+  } catch (error) {
+    if (error?.code !== 'ENOENT') throw error;
+  }
+  const {Page} = await import(pathToFileURL(input.module).href);
+  const page = new Page(
+    input.session, 30, input.profile || undefined, 'background'
+  );
+  const evaluated = await page.cdp('Runtime.evaluate', {
+    expression: input.expression,
+    awaitPromise: true,
+    returnByValue: true
+  });
+  const link = evaluated?.result?.result?.value || {};
+  if (link.status !== 'download_link_ready') {
+    output({status: String(link.status || 'owner_download_link_failed')});
+    process.exit(0);
+  }
+  const signedUrl = String(link.download_url || '');
+  delete link.download_url;
+  const parsed = new URL(signedUrl);
+  if (
+    parsed.protocol !== 'https:'
+    || parsed.hostname !== 'd.pcs.baidu.com'
+    || !parsed.search
+  ) failure('owner_download_link_invalid');
+  const cookieReply = await page.cdp('Network.getAllCookies');
+  const cookies = (cookieReply.cookies || []).filter(row => {
+    const domain = String(row.domain || '').replace(/^\./, '');
+    return domain === 'baidu.com' || domain.endsWith('.baidu.com');
+  });
+  if (!cookies.some(row => row.httpOnly === true)) {
+    failure('owner_download_authentication_required');
+  }
+  const cookieHeader = cookies
+    .filter(row => row.name && row.value && !/[\r\n;]/.test(row.name + row.value))
+    .map(row => String(row.name) + '=' + String(row.value)).join('; ');
+  if (!cookieHeader) failure('owner_download_authentication_required');
+  const response = await fetch(signedUrl, {
+    redirect: 'follow',
+    headers: {
+      accept: 'application/pdf,application/octet-stream',
+      cookie: cookieHeader,
+      referer: 'https://pan.baidu.com/disk/main',
+      'user-agent': 'Mozilla/5.0'
+    }
+  });
+  const finalUrl = new URL(response.url);
+  if (
+    response.status !== 200
+    || finalUrl.protocol !== 'https:'
+    || finalUrl.hostname !== 'd.pcs.baidu.com'
+  ) failure('owner_download_http_invalid');
+  const contentType = String(response.headers.get('content-type') || '')
+    .split(';', 1)[0].trim().toLowerCase();
+  if (![
+    'application/pdf', 'application/octet-stream',
+    'application/x-download', 'binary/octet-stream'
+  ].includes(contentType)) failure('owner_download_content_type_invalid');
+  const contentLength = response.headers.get('content-length');
+  if (contentLength && Number(contentLength) !== input.expectedSize) {
+    failure('owner_download_size_mismatch');
+  }
+  await fs.mkdir(input.destination.slice(0, input.destination.lastIndexOf('/')), {
+    recursive: true
+  });
+  const handle = await fs.open(partial, 'wx');
+  const hash = createHash('sha256');
+  let actualSize = 0;
+  try {
+    const reader = response.body.getReader();
+    while (true) {
+      const {done, value} = await reader.read();
+      if (done) break;
+      actualSize += value.byteLength;
+      if (actualSize > input.expectedSize) failure('owner_download_size_mismatch');
+      hash.update(value);
+      await handle.write(value);
+    }
+  } finally {
+    await handle.close();
+  }
+  if (actualSize !== input.expectedSize) failure('owner_download_size_mismatch');
+  const header = Buffer.alloc(5);
+  const verify = await fs.open(partial, 'r');
+  try { await verify.read(header, 0, 5, 0); }
+  finally { await verify.close(); }
+  if (header.toString() !== '%PDF-') failure('owner_download_content_invalid');
+  await fs.rename(partial, input.destination);
+  output({
+    status: 'completed', path: input.destination,
+    actual_size: actualSize, content_type: contentType,
+    http_status: response.status, sha256: hash.digest('hex')
+  });
+} catch (error) {
+  try { await fs.unlink(partial); } catch (_error) {}
+  output({status: String(error?.safeCode || 'owner_stream_failed')});
+}
+"""
+        try:
+            completed = subprocess.run(
+                (
+                    node_binary,
+                    "--input-type=module",
+                    "-e",
+                    script,
+                    _canonical(payload),
+                ),
+                capture_output=True,
+                text=True,
+                check=False,
+                timeout=90,
+            )
+            result = json.loads(completed.stdout)
+        except (OSError, subprocess.TimeoutExpired, json.JSONDecodeError) as exc:
+            raise EnrichmentDiagnosticError(
+                "owner authenticated stream failed",
+                category="local_runtime_error",
+                code="owner_stream_failed",
+                stage="owner_cloud_download",
+            ) from exc
+        if completed.returncode != 0 or not isinstance(result, dict):
+            raise EnrichmentDiagnosticError(
+                "owner authenticated stream failed",
+                category="local_runtime_error",
+                code="owner_stream_failed",
+                stage="owner_cloud_download",
+            )
+        status = str(result.get("status") or "")
+        if status != "completed":
+            category = (
+                "authentication_error"
+                if status in {
+                    "auth_required",
+                    "captcha_required",
+                    "owner_download_authentication_required",
+                }
+                else "identity_error"
+                if status in {
+                    "owner_target_not_unique",
+                    "owner_selection_mismatch",
+                    "owner_download_link_invalid",
+                    "owner_download_inbox_collision",
+                    "owner_download_size_mismatch",
+                }
+                else "provider_error"
+            )
+            safe_code = (
+                status
+                if _SAFE_OPENCLI_ERROR_CODE.fullmatch(status)
+                else "owner_stream_failed"
+            )
+            raise EnrichmentDiagnosticError(
+                "owner authenticated stream did not complete",
+                category=category,
+                code=safe_code,
+                stage="owner_cloud_download",
+            )
+        return result
+
+    @staticmethod
+    def _default_owner_download_fetcher(
+        download_url: str,
+        cookies: list[dict[str, Any]],
+        destination: Path,
+        expected_size: int,
+    ) -> dict[str, Any]:
+        """Stream one owner-side PDF without persisting URL or cookies."""
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        if destination.exists():
+            if (
+                not destination.is_file()
+                or destination.stat().st_size != expected_size
+                or destination.read_bytes()[:5] != b"%PDF-"
+            ):
+                raise EnrichmentDiagnosticError(
+                    "owner download inbox contains a conflicting file",
+                    category="identity_error",
+                    code="owner_download_inbox_collision",
+                    stage="owner_cloud_download",
+                )
+            return {
+                "path": str(destination),
+                "actual_size": expected_size,
+                "content_type": "application/pdf",
+                "http_status": 200,
+                "sha256": _sha256_file(destination),
+            }
+        cookie_parts = []
+        for row in cookies:
+            name = str(row.get("name") or "")
+            value = str(row.get("value") or "")
+            if (
+                not name
+                or not value
+                or any(character in name + value for character in "\r\n;")
+            ):
+                continue
+            cookie_parts.append(f"{name}={value}")
+        if not cookie_parts:
+            raise EnrichmentDiagnosticError(
+                "owner download authentication is unavailable",
+                category="authentication_error",
+                code="owner_download_authentication_required",
+                stage="owner_cloud_download",
+            )
+        request = Request(
+            download_url,
+            headers={
+                "Accept": "application/pdf,application/octet-stream",
+                "Cookie": "; ".join(cookie_parts),
+                "Referer": "https://pan.baidu.com/disk/main",
+                "User-Agent": "Mozilla/5.0",
+            },
+            method="GET",
+        )
+        temporary = destination.with_name(f".{destination.name}.partial")
+        if temporary.exists():
+            raise EnrichmentDiagnosticError(
+                "owner download inbox has an unfinished transfer",
+                category="uncertain_state",
+                code="owner_download_partial_exists",
+                stage="owner_cloud_download",
+            )
+        digest = hashlib.sha256()
+        actual_size = 0
+        content_type = ""
+        http_status = 0
+        try:
+            with urlopen(request, timeout=60) as response:  # noqa: S310
+                http_status = int(getattr(response, "status", 0) or 0)
+                final = urlparse(str(response.geturl() or ""))
+                content_type = str(
+                    response.headers.get_content_type() or ""
+                ).lower()
+                if (
+                    http_status != 200
+                    or final.scheme != "https"
+                    or final.hostname not in _DIRECT_DOWNLOAD_HOSTS
+                ):
+                    raise EnrichmentDiagnosticError(
+                        "owner download response is invalid",
+                        category="provider_error",
+                        code="owner_download_http_invalid",
+                        stage="owner_cloud_download",
+                    )
+                content_length = response.headers.get("Content-Length")
+                if content_length and int(content_length) != expected_size:
+                    raise EnrichmentDiagnosticError(
+                        "owner download size changed",
+                        category="identity_error",
+                        code="owner_download_size_mismatch",
+                        stage="owner_cloud_download",
+                    )
+                if content_type not in _DIRECT_DOWNLOAD_CONTENT_TYPES["pdf"]:
+                    raise EnrichmentDiagnosticError(
+                        "owner download content type is invalid",
+                        category="content_error",
+                        code="owner_download_content_type_invalid",
+                        stage="owner_cloud_download",
+                    )
+                with temporary.open("xb") as handle:
+                    while True:
+                        chunk = response.read(1024 * 1024)
+                        if not chunk:
+                            break
+                        actual_size += len(chunk)
+                        if actual_size > expected_size:
+                            raise EnrichmentDiagnosticError(
+                                "owner download exceeded expected size",
+                                category="identity_error",
+                                code="owner_download_size_mismatch",
+                                stage="owner_cloud_download",
+                            )
+                        digest.update(chunk)
+                        handle.write(chunk)
+        except HTTPError as exc:
+            if exc.code in {401, 403}:
+                raise EnrichmentDiagnosticError(
+                    "owner download authentication is required",
+                    category="authentication_error",
+                    code="owner_download_authentication_required",
+                    stage="owner_cloud_download",
+                ) from exc
+            raise EnrichmentDiagnosticError(
+                "owner download HTTP request failed",
+                category="provider_error",
+                code="owner_download_http_failed",
+                stage="owner_cloud_download",
+            ) from exc
+        except (URLError, TimeoutError, OSError) as exc:
+            raise EnrichmentDiagnosticError(
+                "owner download transport failed",
+                category="transport_error",
+                code="owner_download_transport_failed",
+                stage="owner_cloud_download",
+            ) from exc
+        finally:
+            if temporary.exists() and actual_size != expected_size:
+                temporary.unlink()
+        if actual_size != expected_size:
+            raise EnrichmentDiagnosticError(
+                "owner download size changed",
+                category="identity_error",
+                code="owner_download_size_mismatch",
+                stage="owner_cloud_download",
+            )
+        temporary.replace(destination)
+        if destination.read_bytes()[:5] != b"%PDF-":
+            raise EnrichmentDiagnosticError(
+                "owner download PDF signature is invalid",
+                category="content_error",
+                code="owner_download_content_invalid",
+                stage="owner_cloud_download",
+            )
+        return {
+            "path": str(destination),
+            "actual_size": actual_size,
+            "content_type": content_type,
+            "http_status": http_status,
+            "sha256": digest.hexdigest(),
+        }
+
+    def _owner_cloud_transfer(
+        self,
+        item: dict[str, Any],
+        claim: dict[str, Any],
+        *,
+        session: str,
+        profile: str | None,
+    ) -> dict[str, Any]:
+        """Create or reuse one exact owner-side copy under the parent claim."""
+        if (
+            item.get("media_type") != "pdf"
+            or int(item.get("size") or 0) <= 0
+            or int(item.get("size") or 0) > MAX_SMALL_EVIDENCE_BYTES
+        ):
+            raise EnrichmentDiagnosticError(
+                "owner cloud fallback is limited to small PDFs",
+                category="policy_error",
+                code="owner_cloud_media_not_allowed",
+                stage="owner_cloud_transfer",
+            )
+        provider_file_id = str(item.get("provider_file_id") or "")
+        if not provider_file_id.isdigit():
+            raise EnrichmentDiagnosticError(
+                "owner cloud source identity is invalid",
+                category="identity_error",
+                code="owner_cloud_identity_invalid",
+                stage="owner_cloud_transfer",
+            )
+        destination_directory = str(
+            _OWNER_CLOUD_ROOT / str(item["version_key"])
+        )
+        destination_path = str(
+            PurePosixPath(destination_directory) / str(item["name"])
+        )
+        artifact_dir = self.output_dir / "artifacts" / str(item["version_key"])
+        artifact_dir.mkdir(parents=True, exist_ok=True)
+        claim_path = artifact_dir / "owner_cloud_transfer_claim.json"
+        receipt_path = artifact_dir / "owner_cloud_transfer_receipt.json"
+        binding = {
+            "parent_acquisition_claim_id": str(claim["claim_id"]),
+            "source_identity": str(item["identity"]),
+            "source_version_key": str(item["version_key"]),
+            "source_provider_file_id": provider_file_id,
+            "source_name": str(item["name"]),
+            "source_size": int(item["size"]),
+            "destination_directory": destination_directory,
+            "destination_path": destination_path,
+        }
+        if claim_path.is_file():
+            try:
+                transfer_claim = json.loads(claim_path.read_text(encoding="utf-8"))
+            except (OSError, json.JSONDecodeError) as exc:
+                raise EnrichmentError("owner cloud transfer claim is invalid") from exc
+            if any(transfer_claim.get(key) != value for key, value in binding.items()):
+                raise EnrichmentError("owner cloud transfer claim changed identity")
+        else:
+            transfer_claim = {
+                "schema_version": 1,
+                "event": "subscription_owner_cloud_transfer_claimed",
+                "status": "claimed",
+                "claim_id": hashlib.sha256(
+                    (
+                        "lv-owner-cloud-transfer\n"
+                        f"{claim['claim_id']}\n{item['identity']}\n"
+                        f"{item['version_key']}"
+                    ).encode("utf-8")
+                ).hexdigest(),
+                **binding,
+                "claimed_at": self._time().isoformat(timespec="seconds"),
+            }
+            _atomic_write_json(claim_path, transfer_claim)
+        if receipt_path.is_file():
+            try:
+                receipt = json.loads(receipt_path.read_text(encoding="utf-8"))
+            except (OSError, json.JSONDecodeError) as exc:
+                raise EnrichmentError("owner cloud transfer receipt is invalid") from exc
+            if (
+                receipt.get("status") != "completed"
+                or receipt.get("parent_acquisition_claim_id")
+                != binding["parent_acquisition_claim_id"]
+                or receipt.get("source_identity") != binding["source_identity"]
+                or receipt.get("source_version_key")
+                != binding["source_version_key"]
+                or receipt.get("source_provider_file_id")
+                != binding["source_provider_file_id"]
+                or receipt.get("owner_path") != binding["destination_path"]
+                or receipt.get("name") != binding["source_name"]
+                or receipt.get("size") != binding["source_size"]
+                or receipt.get("exact_match_count") != 1
+                or not str(receipt.get("owner_provider_file_id") or "").isdigit()
+            ):
+                raise EnrichmentError("owner cloud transfer receipt is not evidence-bound")
+            return {**receipt, "idempotent_replay": True}
+        owner = self.owner_cloud_operator(item, transfer_claim, session, profile)
+        if not isinstance(owner, dict):
+            raise EnrichmentDiagnosticError(
+                "owner cloud readback is invalid",
+                category="provider_error",
+                code="owner_cloud_readback_invalid",
+                stage="owner_cloud_transfer",
+            )
+        status = str(owner.get("status") or "")
+        if status == "auth_required":
+            raise EnrichmentDiagnosticError(
+                "owner cloud authentication is required",
+                category="authentication_error",
+                code="owner_cloud_authentication_required",
+                stage="owner_cloud_transfer",
+            )
+        if status == "captcha_required":
+            raise EnrichmentDiagnosticError(
+                "owner cloud CAPTCHA is required",
+                category="authentication_error",
+                code="owner_cloud_captcha_required",
+                stage="owner_cloud_transfer",
+            )
+        codes = {
+            "owner_duplicate_matches": "owner_cloud_duplicate_matches",
+            "owner_size_mismatch": "owner_cloud_size_mismatch",
+            "owner_directory_ambiguous": "owner_cloud_directory_ambiguous",
+        }
+        if status != "owner_ready":
+            raise EnrichmentDiagnosticError(
+                "owner cloud transfer did not produce one exact readback",
+                category=("identity_error" if status in codes else "provider_error"),
+                code=codes.get(status, "owner_cloud_transfer_failed"),
+                stage="owner_cloud_transfer",
+            )
+        owner_provider_file_id = str(owner.get("owner_provider_file_id") or "")
+        if (
+            owner.get("exact_match_count") != 1
+            or not owner_provider_file_id.isdigit()
+            or owner.get("owner_path") != destination_path
+            or owner.get("name") != item["name"]
+            or int(owner.get("size") or 0) != int(item["size"])
+            or not isinstance(owner.get("transfer_performed"), bool)
+        ):
+            raise EnrichmentDiagnosticError(
+                "owner cloud readback changed identity",
+                category="identity_error",
+                code="owner_cloud_readback_mismatch",
+                stage="owner_cloud_transfer",
+            )
+        receipt = {
+            "schema_version": 1,
+            "event": "subscription_owner_cloud_transfer_completed",
+            "status": "completed",
+            "claim_id": str(transfer_claim["claim_id"]),
+            **binding,
+            "owner_provider_file_id": owner_provider_file_id,
+            "owner_path": destination_path,
+            "name": str(item["name"]),
+            "size": int(item["size"]),
+            "modified_at": int(owner.get("modified_at") or 0),
+            "exact_match_count": 1,
+            "transfer_performed": owner["transfer_performed"],
+            "directory_receipts": owner.get("directory_receipts") or [],
+            "completed_at": self._time().isoformat(timespec="seconds"),
+        }
+        _atomic_write_json(receipt_path, receipt)
+        _atomic_write_json(
+            claim_path,
+            {
+                **transfer_claim,
+                "status": "completed",
+                "receipt_path": str(receipt_path.resolve()),
+                "receipt_sha256": _sha256_file(receipt_path),
+                "completed_at": receipt["completed_at"],
+            },
+        )
+        _append_jsonl(
+            self.events_path,
+            {
+                key: value
+                for key, value in receipt.items()
+                if key not in {"directory_receipts"}
+            },
+        )
+        return {**receipt, "idempotent_replay": False}
+
+    def _owner_cloud_download(
+        self,
+        item: dict[str, Any],
+        claim: dict[str, Any],
+        *,
+        session: str,
+        profile: str | None,
+    ) -> dict[str, Any]:
+        owner = self._owner_cloud_transfer(
+            item,
+            claim,
+            session=session,
+            profile=profile,
+        )
+        destination = (
+            self.download_inbox / str(item["version_key"]) / str(item["name"])
+        ).resolve()
+        if destination.parent.parent != self.download_inbox:
+            raise EnrichmentDiagnosticError(
+                "owner download destination is invalid",
+                category="identity_error",
+                code="owner_download_destination_invalid",
+                stage="owner_cloud_download",
+            )
+        if self.owner_authenticated_streamer is not None:
+            fetched = self.owner_authenticated_streamer(
+                item, owner, session, profile, destination
+            )
+        else:
+            link = self.owner_download_link_reader(
+                item, owner, session, profile
+            )
+            if not isinstance(link, dict):
+                raise EnrichmentDiagnosticError(
+                    "owner download link readback is invalid",
+                    category="provider_error",
+                    code="owner_download_link_invalid",
+                    stage="owner_cloud_download",
+                )
+            status = str(link.get("status") or "")
+            if status == "auth_required":
+                raise EnrichmentDiagnosticError(
+                    "owner download authentication is required",
+                    category="authentication_error",
+                    code="owner_download_authentication_required",
+                    stage="owner_cloud_download",
+                )
+            if status == "captcha_required":
+                raise EnrichmentDiagnosticError(
+                    "owner download CAPTCHA is required",
+                    category="authentication_error",
+                    code="owner_download_captcha_required",
+                    stage="owner_cloud_download",
+                )
+            download_url = str(link.get("download_url") or "")
+            parsed = urlparse(download_url)
+            if (
+                status != "download_link_ready"
+                or link.get("provider_file_id")
+                != owner["owner_provider_file_id"]
+                or link.get("name") != item["name"]
+                or int(link.get("size") or 0) != int(item["size"])
+                or parsed.scheme != "https"
+                or parsed.hostname not in _DIRECT_DOWNLOAD_HOSTS
+                or not parsed.query
+            ):
+                raise EnrichmentDiagnosticError(
+                    "owner download link changed identity",
+                    category="identity_error",
+                    code="owner_download_link_invalid",
+                    stage="owner_cloud_download",
+                )
+            cookies = self.opencli_cookie_reader(session, profile)
+            if (
+                not isinstance(cookies, list)
+                or not cookies
+                or not any(
+                    row.get("httpOnly") is True
+                    for row in cookies
+                    if isinstance(row, dict)
+                )
+            ):
+                raise EnrichmentDiagnosticError(
+                    "owner download authentication is unavailable",
+                    category="authentication_error",
+                    code="owner_download_authentication_required",
+                    stage="owner_cloud_download",
+                )
+            try:
+                fetched = self.owner_download_fetcher(
+                    download_url,
+                    cookies,
+                    destination,
+                    int(item["size"]),
+                )
+            finally:
+                link.pop("download_url", None)
+                cookies.clear()
+        path = Path(str(fetched.get("path") or "")).resolve()
+        if (
+            path != destination
+            or not path.is_file()
+            or path.stat().st_size != int(item["size"])
+            or path.read_bytes()[:5] != b"%PDF-"
+            or fetched.get("http_status") != 200
+            or int(fetched.get("actual_size") or 0) != int(item["size"])
+            or fetched.get("sha256") != _sha256_file(path)
+        ):
+            raise EnrichmentDiagnosticError(
+                "owner download receipt is invalid",
+                category="identity_error",
+                code="owner_download_receipt_invalid",
+                stage="download_reconciliation",
+            )
+        return {
+            "path": str(path),
+            "actual_size": path.stat().st_size,
+            "sha256": str(fetched["sha256"]),
+            "content_type": str(fetched.get("content_type") or ""),
+            "acquisition_transport": "owner_cloud_opencli_cookie_stream",
+        }
+
     def _provider_direct_download(
         self,
         item: dict[str, Any],
@@ -3084,6 +4383,7 @@ try {
     def _download_provider_small_file(
         self,
         item: dict[str, Any],
+        claim: dict[str, Any],
         *,
         session: str,
         profile: str | None,
@@ -3100,8 +4400,21 @@ try {
                 "provider_download_metadata_missing",
             }:
                 raise
-        return self._provider_frontend_intercepted_download(
+        try:
+            return self._provider_frontend_intercepted_download(
+                item,
+                session=session,
+                profile=profile,
+            )
+        except EnrichmentDiagnosticError as exc:
+            if exc.diagnostic_code not in {
+                "provider_web_download_client_only",
+                "provider_frontend_signed_link_not_captured",
+            }:
+                raise
+        return self._owner_cloud_download(
             item,
+            claim,
             session=session,
             profile=profile,
         )
@@ -3430,6 +4743,7 @@ try {
                         )
                 direct = self._download_provider_small_file(
                     direct_item,
+                    claim,
                     session=session,
                     profile=profile,
                 )
@@ -3471,6 +4785,7 @@ try {
         ):
             direct = self._download_provider_small_file(
                 direct_item,
+                claim,
                 session=session,
                 profile=profile,
             )
@@ -3492,6 +4807,24 @@ try {
         )
         if trigger.get("status") != "download_confirmation_ready":
             reason = str(trigger.get("status") or "")
+            if (
+                reason == "provider_web_download_client_only"
+                and normalized["media_type"] == "pdf"
+            ):
+                direct = self._owner_cloud_download(
+                    direct_item,
+                    claim,
+                    session=session,
+                    profile=profile,
+                )
+                return self.complete_browser_download(
+                    str(item["identity"]),
+                    Path(str(direct["path"])),
+                    claim_id=str(claim["claim_id"]),
+                    acquisition_transport=str(
+                        direct["acquisition_transport"]
+                    ),
+                )
             if reason in _DOWNLOAD_PRETRIGGER_FAILURES:
                 self._record_browser_download_pretrigger_failure(
                     str(identity),
@@ -3530,6 +4863,7 @@ try {
             if normalized["media_type"] in _DIRECT_DOWNLOAD_MEDIA:
                 direct = self._download_provider_small_file(
                     direct_item,
+                    claim,
                     session=session,
                     profile=profile,
                 )
@@ -4865,18 +6199,17 @@ try {
         if not current_claim_ids and durable_claim_ids:
             content_value = item.get("content_value") or {}
             reader_insight = item.get("reader_insight") or {}
+            paper_intent = item.get("book_kol_us") or {}
             if (
                 decision_status != "no_actionable_signal"
                 or reader_insight.get("status") != "useful"
                 or content_value.get("status") != "promoted"
                 or content_value.get("tier") != "report_only"
-                or (item.get("book_kol_us") or {}).get("decision") != "no_trade"
-                or not str(
-                    (item.get("book_kol_us") or {}).get("reason") or ""
-                ).strip()
+                or paper_intent.get("decision") != "not_applicable"
+                or not str(paper_intent.get("reason") or "").strip()
             ):
                 raise EnrichmentError(
-                    "durable-only Lv knowledge must be report-only and no-trade"
+                    "durable-only Lv knowledge must be report-only with no Book effect"
                 )
         if not isinstance(item.get("market_outlook"), dict):
             raise EnrichmentError(

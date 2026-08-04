@@ -343,6 +343,71 @@ def test_report_only_content_is_audited_but_never_sent(tmp_path):
     assert sends == 0
 
 
+def test_durable_report_only_creates_no_notification_or_book_receipt(tmp_path):
+    transcript = _write_text(
+        tmp_path / "durable-report-only.txt",
+        "等待成交量放大再行动",
+    )
+    item = _item(transcript, author="吕晓彤")
+    claim_id = item["claims"][0]["claim_id"]
+    item.update(
+        {
+            "decision_status": "no_actionable_signal",
+            "decision_reason": "来源是可复用方法，不授权当前交易。",
+            "reader_insight": {
+                "status": "useful",
+                "summary": "等待成交量放大再行动。",
+                "boundary": "这是 authority=0 方法论，不是当前提醒。",
+            },
+            "content_value": {
+                "status": "promoted",
+                "tier": "report_only",
+                "reason": "完整方法论可供检索。",
+                "no_alert_reason": "没有当前决策分支。",
+            },
+            "claim_semantic_routing": {
+                "content_product": "underlying_logic",
+                "current_decision_claim_ids": [],
+                "durable_knowledge_claim_ids": [claim_id],
+                "durable_authority": 0,
+                "may_update_posture_current": False,
+                "may_update_regime_timeline": False,
+                "may_tune_strategy": False,
+            },
+            "book_kol_us": {
+                "book": "KOL-US",
+                "paper_only": True,
+                "decision": "not_applicable",
+                "reason": "durable-only knowledge creates no Book entry",
+            },
+            "actionable_signals": [],
+        }
+    )
+    pipeline = _pipeline(tmp_path / "out")
+
+    first = pipeline.process(
+        _bundle(item, household_path=tmp_path / "unused.json")
+    )
+    second = pipeline.process(
+        _bundle(item, household_path=tmp_path / "unused.json")
+    )
+    sends = 0
+
+    def sender(_title, _body):
+        nonlocal sends
+        sends += 1
+        return {"wecom": "ok"}
+
+    delivery = pipeline.deliver_wechat(first, sender=sender)
+
+    assert first["items"][0]["notification"]["status"] == "suppressed"
+    assert first["items"][0]["book_kol_us"]["status"] == "not_created"
+    assert second["items"][0]["idempotent_replay"] is True
+    assert delivery["status"] == "already_delivered"
+    assert sends == 0
+    assert not (tmp_path / "out" / "book_kol_us" / "decisions.jsonl").exists()
+
+
 def test_rejects_unquoted_claim_and_unsafe_paper_instruments(tmp_path):
     transcript = _write_text(tmp_path / "real.txt", "原文没有该说法")
     household = _write_household(tmp_path / "household.json")

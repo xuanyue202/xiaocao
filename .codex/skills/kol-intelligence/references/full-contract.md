@@ -345,6 +345,19 @@ the two receipts by handoff id and media SHA-256.
   Malformed, encrypted, uncovered, unknown, or oversized PDFs fail closed.
   Replay reuses every relationship/download/extraction/semantic/publication/
   notification/Book receipt and creates no second effect.
+- If a claimed small PDF reaches `provider_web_download_client_only` or the
+  signed-link interceptor cannot recover it, keep the same acquisition claim
+  and use owner-cloud fallback. Create or reuse only
+  `/xiaocao/lv_subscription/<version>/`: zero exact owner matches permits one
+  transfer, one exact name/size match resumes idempotently, and multiple
+  matches fail closed. Success is the owner fsid/path/size readback, never a UI
+  toast. Obtain the owner dlink and the same OpenCLI target's HttpOnly cookies
+  in process memory only, stream HTTPS to the version inbox, and require HTTP
+  200, exact size, PDF magic, and SHA-256. Signed URLs, cookies, and tokens must
+  never enter argv, stdout, ledgers, or receipts. Video and oversized files are
+  ineligible. A normal Save prompt or client-only response is internally
+  recoverable; only auth, SMS, CAPTCHA, consent, or missing system permission
+  may become a user-action blocker.
 - A PDF analysis request lists only provider-metadata relation candidates. The
   semantic bundle must resolve `independent|companion` with content quotes and
   exact provider identity/version evidence. A companion also binds the related
@@ -358,8 +371,9 @@ the two receipts by handoff id and media SHA-256.
   analysis, causal framework, and methodology. When it contains reusable
   reasoning but no current action, use `decision_status=no_actionable_signal`,
   `reader_insight.status=useful`, `knowledge_status=reusable_knowledge`, one
-  report-only `底层逻辑` knowledge entry, no alert, and a reasoned KOL-US
-  `no_trade`; lack of a direct buy/sell instruction is not `low_density`.
+  report-only `底层逻辑` knowledge entry, no alert, and KOL-US
+  `decision=not_applicable` with a reason. This durable-only route creates no
+  Book row; lack of a direct buy/sell instruction is not `low_density`.
 - Preserve the original underlying-logic evidence and normalized text with
   SHA-256, distill reusable material under `reference/experience/distilled/`,
   and route candidate hypotheses to the backlog with `authority=0`. Lv is an
@@ -378,7 +392,9 @@ the two receipts by handoff id and media SHA-256.
   newline to that same process. Do not exit and manually chain `poll`,
   `claim-download`, `ingest`, and `decide`.
 - Completion requires a durable household notification outcome plus a
-  paper-only Book KOL-US result for every processed item. The notification
+  paper-only Book KOL-US result for every processed item, except a pure
+  durable-only `底层逻辑` report may complete with a reasoned `not_created`
+  Book terminal. The notification
   outcome is delivered for a useful reader insight and suppressed with a
   reason only when there is no accurately relayable insight. A no-update run
   with no unfinished item prints nothing. After any interruption, rerun the
