@@ -6,6 +6,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import re
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
@@ -22,7 +23,10 @@ from xiaocao.kol.daily import (
     triggered_evaluation_terminal,
 )
 from xiaocao.kol.decisions import DecisionPipeline
-from xiaocao.kol.enrichment_types import EnrichmentError
+from xiaocao.kol.enrichment_types import (
+    EnrichmentDiagnosticError,
+    EnrichmentError,
+)
 from xiaocao.kol.household import LiangHuiMcpClient
 from xiaocao.kol.lv_subscription import LvSubscriptionService
 from xiaocao.kol.publication import PublicationLedger, read_published_publication
@@ -419,6 +423,86 @@ def _video_publication_context(
     )
 
 
+def _lv_publication_context(
+    ingest: dict[str, Any],
+    bundle_path: Path,
+) -> DailyPublicationContext:
+    """Build one source-neutral event, including an evidence-bound companion."""
+    try:
+        bundle = json.loads(bundle_path.read_text(encoding="utf-8"))
+        decision_item = bundle["items"][0]
+    except (OSError, json.JSONDecodeError, KeyError, IndexError, TypeError) as exc:
+        raise DailyError("Lv decision bundle is invalid") from exc
+    parts = [{
+        "identity": str(ingest["identity"]),
+        "version": str(ingest["version_key"]),
+        "order": 1,
+        "size": int(Path(str(ingest["original_path"])).stat().st_size),
+        "evidence_sha256": str(ingest["evidence_sha256"]),
+    }]
+    media_types = [str(ingest["media_type"])]
+    relationship = decision_item.get("episode_relationship")
+    if (
+        ingest.get("media_type") == "pdf"
+        and isinstance(relationship, dict)
+        and relationship.get("document_role") == "video_summary"
+        and relationship.get("primary_source_status") == "complete"
+        and (
+            relationship.get("semantic_comparison") or {}
+        ).get("substantive_new_points") is True
+    ):
+        related = relationship.get("related_source_part")
+        if not isinstance(related, dict):
+            raise DailyError("Lv PDF companion source part is invalid")
+        parts.append({
+            "identity": str(related.get("identity") or ""),
+            "version": str(related.get("version_key") or ""),
+            "order": 2,
+            "size": int(related.get("size") or 0),
+            "evidence_sha256": str(
+                related.get("transcript_sha256")
+                or related.get("evidence_sha256")
+                or ""
+            ),
+        })
+        media_types.append(str(related.get("media_type") or "video"))
+    if any(
+        not part["identity"]
+        or not part["version"]
+        or not re.fullmatch(r"[0-9a-f]{64}", part["evidence_sha256"])
+        for part in parts
+    ):
+        raise DailyError("Lv publication source parts are incomplete")
+    if len(parts) > 1:
+        source_identity = hashlib.sha256(
+            ("lv-source-neutral-episode\n" + _canonical([
+                {"identity": row["identity"]} for row in parts
+            ])).encode("utf-8")
+        ).hexdigest()
+        publication_version = hashlib.sha256(
+            (source_identity + "\n" + _canonical([
+                {
+                    "version": row["version"],
+                    "evidence_sha256": row["evidence_sha256"],
+                }
+                for row in parts
+            ])).encode("utf-8")
+        ).hexdigest()
+    else:
+        source_identity = str(ingest["identity"])
+        publication_version = str(ingest["version_key"])
+    return DailyPublicationContext(
+        adapter="lv_text_image",
+        source_identity=source_identity,
+        publication_version=publication_version,
+        kol_id="kol-lv-xiaotong",
+        source="吕晓彤订阅",
+        source_published_at=str(ingest["published_at"]),
+        media_types=tuple(dict.fromkeys(media_types)),
+        source_parts=tuple(parts),
+    )
+
+
 def _sender(title: str, body: str) -> dict[str, str]:
     result = notify(title, body, macos=False, audience="kol")
     if not isinstance(result, dict):
@@ -504,6 +588,110 @@ class DailyRuntime:
             else LiangHuiMcpClient.from_config()
         )
         self.publications = PublicationLedger(args.output_dir / "publications")
+        self._lv_service: LvSubscriptionService | None = None
+        self._lv_listing: dict[str, Any] | None = None
+        self._lv_listing_error: EnrichmentError | None = None
+
+    def _lv_service_for_sweep(self) -> LvSubscriptionService:
+        if self._lv_service is None:
+            self._lv_service = LvSubscriptionService.from_config(
+                self.args.lv_output_dir,
+                config_path=self.args.config,
+            )
+        return self._lv_service
+
+    def _lv_listing_for_sweep(self) -> dict[str, Any]:
+        if self._lv_listing is not None:
+            return self._lv_listing
+        if self._lv_listing_error is not None:
+            raise self._lv_listing_error
+        service = self._lv_service_for_sweep()
+        try:
+            self._lv_listing = service._read_opencli_listing(
+                session=self.args.lv_session,
+                profile=self.args.opencli_profile,
+            )
+        except EnrichmentError as exc:
+            self._lv_listing_error = exc
+            raise
+        return self._lv_listing
+
+    def _complete_lv_video_transcripts(self) -> list[dict[str, Any]]:
+        manifest_path = self.args.video_output_dir / "manifest.json"
+        if not manifest_path.is_file():
+            return []
+        try:
+            manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            return []
+        completed = []
+        for item in (manifest.get("items") or {}).values():
+            if (
+                not isinstance(item, dict)
+                or item.get("author") != "吕晓彤"
+                or item.get("media_type") != "video"
+                or item.get("present") is not True
+            ):
+                continue
+            events_path = (
+                self.args.video_output_dir
+                / "enrichment"
+                / str(item.get("version_key") or "")
+                / "events.jsonl"
+            )
+            if not events_path.is_file():
+                continue
+            try:
+                states = [
+                    json.loads(line)
+                    for line in events_path.read_text(encoding="utf-8").splitlines()
+                    if line.strip()
+                ]
+            except (OSError, json.JSONDecodeError):
+                continue
+            state = next(
+                (
+                    row
+                    for row in reversed(states)
+                    if row.get("status") in {"verified", "decided"}
+                    and row.get("transcript_path")
+                    and row.get("transcript_sha256")
+                ),
+                None,
+            )
+            if not isinstance(state, dict):
+                continue
+            transcript_path = Path(str(state["transcript_path"])).expanduser()
+            if not transcript_path.is_absolute():
+                transcript_path = transcript_path.resolve()
+            transcript_sha256 = str(state["transcript_sha256"])
+            if (
+                not transcript_path.is_file()
+                or not re.fullmatch(r"[0-9a-f]{64}", transcript_sha256)
+                or hashlib.sha256(transcript_path.read_bytes()).hexdigest()
+                != transcript_sha256
+            ):
+                continue
+            completed.append(
+                {
+                    key: item[key]
+                    for key in (
+                        "identity",
+                        "version_key",
+                        "provider_identity_sha256",
+                        "path",
+                        "name",
+                        "size",
+                        "modified_at",
+                    )
+                }
+                | {
+                    "transcript_complete": True,
+                    "transcript_path": str(transcript_path.resolve()),
+                    "transcript_sha256": transcript_sha256,
+                }
+            )
+        return completed
 
     def _pipeline(
         self,
@@ -532,19 +720,33 @@ class DailyRuntime:
         return terminal
 
     def lv(self) -> dict[str, Any]:
-        service = LvSubscriptionService.from_config(
-            self.args.lv_output_dir,
-            config_path=self.args.config,
-        )
+        service = self._lv_service_for_sweep()
+        listing = self._lv_listing_for_sweep()
         service.poll_opencli(
             session=self.args.lv_session,
             profile=self.args.opencli_profile,
+            listing=listing,
         )
+        pending = service.pending_items()
+        complete_video_transcripts = self._complete_lv_video_transcripts()
+        for row in pending:
+            if row.get("media_type") != "pdf":
+                continue
+            proof = service.metadata_companion_proof(
+                str(row["identity"]),
+                complete_video_transcripts=complete_video_transcripts,
+            )
+            if proof is not None:
+                service.record_metadata_companion_suppression(
+                    str(row["identity"]),
+                    proof=proof,
+                )
         pending = service.pending_items()
         if not pending:
             return {"status": "no_update"}
         events = []
         waiting = 0
+        suppressed = 0
         for row in pending:
             identity = str(row["identity"])
             try:
@@ -574,22 +776,18 @@ class DailyRuntime:
                 },
                 "bundle_path",
             )
-            context = DailyPublicationContext(
-                adapter="lv_text_image",
-                source_identity=str(ingest["identity"]),
-                publication_version=str(ingest["version_key"]),
-                kol_id="kol-lv-xiaotong",
-                source="吕晓彤订阅",
-                source_published_at=str(ingest["published_at"]),
-                media_types=(str(ingest["media_type"]),),
-                source_parts=({
-                    "identity": str(ingest["identity"]),
-                    "version": str(ingest["version_key"]),
-                    "order": 1,
-                    "size": 0,
-                    "evidence_sha256": str(ingest["evidence_sha256"]),
-                },),
-            )
+            if ingest["media_type"] == "pdf":
+                relationship = service.record_pdf_relationship(
+                    identity,
+                    bundle_path=bundle_path,
+                )
+                if relationship["route"] == "companion_suppressed":
+                    suppressed += 1
+                    continue
+                if relationship["route"] == "waiting_primary_source":
+                    waiting += 1
+                    continue
+            context = _lv_publication_context(ingest, bundle_path)
             state = service.decide(
                 identity,
                 bundle_path=bundle_path,
@@ -603,10 +801,21 @@ class DailyRuntime:
                 "status": "completed",
                 "events": events,
                 "waiting_count": waiting,
+                "suppressed_companion_count": suppressed,
             }
-        return {"status": "waiting", "waiting_count": waiting}
+        if waiting:
+            return {
+                "status": "waiting",
+                "waiting_count": waiting,
+                "suppressed_companion_count": suppressed,
+            }
+        return {
+            "status": "no_update",
+            "suppressed_companion_count": suppressed,
+        }
 
     def videos(self) -> dict[str, Any]:
+        lv_listing = self._lv_listing_for_sweep()
         service = SubscriptionVideoService(
             self.args.video_output_dir,
             config_path=self.args.config,
@@ -615,6 +824,7 @@ class DailyRuntime:
             lv_session=self.args.lv_session,
             private_session=self.args.private_session,
             profile=self.args.opencli_profile,
+            lv_listing=lv_listing,
         )
         pending = service.pending_items()
         if not pending:
@@ -623,13 +833,35 @@ class DailyRuntime:
         waiting = 0
         waiting_items = []
         for item in pending:
-            state = service.advance_item(
-                item,
-                lv_session=self.args.lv_session,
-                private_session=self.args.private_session,
-                enrichment_session=self.args.enrichment_session,
-                profile=self.args.opencli_profile,
-            )
+            try:
+                state = service.advance_item(
+                    item,
+                    lv_session=self.args.lv_session,
+                    private_session=self.args.private_session,
+                    enrichment_session=self.args.enrichment_session,
+                    profile=self.args.opencli_profile,
+                )
+            except EnrichmentDiagnosticError:
+                raise
+            except EnrichmentError as exc:
+                if str(exc) in {
+                    "Lv cloud transfer did not materialize after bounded exact reconciliation",
+                    "Lv cloud transfer was rejected by provider",
+                }:
+                    raise
+                if "uncertain" in str(exc).casefold():
+                    raise EnrichmentDiagnosticError(
+                        "subscription video transfer needs receipt reconciliation",
+                        category="uncertain_state",
+                        code="transfer_receipt_reconciliation_required",
+                        stage="cloud_transfer_reconciliation",
+                    ) from exc
+                raise EnrichmentDiagnosticError(
+                    "subscription video source acquisition is unavailable",
+                    category="source_error",
+                    code="source_acquisition_failed",
+                    stage="source_acquisition",
+                ) from exc
             if state.get("event") != "subscription_video_analysis_input_required":
                 waiting += 1
                 waiting_items.append(

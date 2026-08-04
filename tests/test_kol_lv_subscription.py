@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import subprocess
@@ -285,10 +286,340 @@ def test_browser_listing_recurses_without_parent_mtime_pruning_in_bounded_batche
     assert "await Promise.all(batch.map(async dir =>" in script
     assert "const controller = new AbortController();" in script
     assert "share_list_timeout" in script
+    assert ".includes('已失效')" not in script
+    assert "exact_visible_terminal" in script
+    assert "provider_errno" in script
+    assert "json_error_position" in script
     assert "item.server_mtime" not in script[
         script.index("if (isDir && !seenDirs.has(path))") :
         script.index("const maxDirectories")
     ]
+
+
+@pytest.mark.parametrize(
+    "initial_status",
+    ["share_list_invalid_json", "share_list_timeout"],
+)
+def test_listing_recovers_once_after_transient_full_scan_failure(
+    tmp_path,
+    initial_status,
+):
+    listing_calls = 0
+    open_calls = 0
+
+    def browser_runner(command, **_kwargs):
+        nonlocal listing_calls, open_calls
+        tail = command[3:]
+        if tail[:1] == ["open"]:
+            open_calls += 1
+            payload = {"url": "redacted", "page": "page-1"}
+        elif tail[:1] == ["eval"] and "/share/list" in tail[1]:
+            listing_calls += 1
+            payload = (
+                {"status": initial_status, "entries": []}
+                if listing_calls == 1
+                else {
+                    "status": "ok",
+                    "complete_scan": True,
+                    "entries": _representative_subscription_entries(),
+                }
+            )
+        else:
+            raise AssertionError(command)
+        return SimpleNamespace(
+            returncode=0,
+            stdout=json.dumps(payload, ensure_ascii=False),
+            stderr="",
+        )
+
+    service = LvSubscriptionService(
+        tmp_path / "out",
+        now=lambda: NOW,
+        runner=browser_runner,
+        opencli_command=("opencli",),
+        share_url="https://pan.baidu.com/s/private-share-token",
+        share_code="a1b2",
+        sleep=lambda _seconds: None,
+    )
+
+    listing = service._read_opencli_listing(session="ticket04")
+
+    assert listing["complete_scan"] is True
+    assert listing["recovery"]["attempts"] == 2
+    assert listing["recovery"]["initial_failure"] == {
+        "category": (
+            "timeout" if initial_status == "share_list_timeout" else "incomplete_scan"
+        ),
+        "code": initial_status,
+        "stage": "listing_validation",
+    }
+    assert listing_calls == 2
+    assert open_calls == 2
+
+
+def test_cursor_advances_only_after_complete_listing(tmp_path):
+    calls = 0
+
+    def browser_runner(command, **_kwargs):
+        nonlocal calls
+        tail = command[3:]
+        if tail[:1] == ["open"]:
+            payload = {"url": "redacted", "page": "page-1"}
+        elif tail[:1] == ["eval"]:
+            calls += 1
+            payload = {"status": "share_list_invalid_json", "entries": []}
+        else:
+            raise AssertionError(command)
+        return SimpleNamespace(
+            returncode=0,
+            stdout=json.dumps(payload),
+            stderr="",
+        )
+
+    service = LvSubscriptionService(
+        tmp_path / "out",
+        now=lambda: NOW,
+        runner=browser_runner,
+        opencli_command=("opencli",),
+        share_url="https://pan.baidu.com/s/private-share-token",
+        share_code="a1b2",
+        sleep=lambda _seconds: None,
+    )
+
+    with pytest.raises(EnrichmentDiagnosticError) as captured:
+        service.poll_opencli(session="ticket04")
+
+    assert captured.value.diagnostic_code == "share_list_invalid_json"
+    assert calls == 2
+    assert not service.manifest_path.exists()
+
+
+def _pdf_entry(*, size: int = 4096) -> dict:
+    return {
+        "provider_file_id": "pdf-report",
+        "path": "/彤商学院/报告/大摩拆解.pdf",
+        "name": "大摩拆解.pdf",
+        "is_dir": False,
+        "size": size,
+        "modified_at": int(NOW.timestamp()),
+    }
+
+
+def _captured_pdf(service: LvSubscriptionService, tmp_path: Path) -> tuple[str, Path]:
+    update = service.observe_browser_listing([_pdf_entry()])["updates"][0]
+    downloaded = tmp_path / "大摩拆解.pdf"
+    payload = b"%PDF-1.7\n" + b"x" * (_pdf_entry()["size"] - 9)
+    downloaded.write_bytes(payload)
+    _capture_browser_download(service, update["identity"], downloaded)
+    return update["identity"], downloaded
+
+
+def test_small_pdf_is_discovered_hashed_and_text_extracted(tmp_path):
+    service = LvSubscriptionService(tmp_path / "out", now=lambda: NOW)
+    identity, downloaded = _captured_pdf(service, tmp_path)
+
+    ingest = service.ingest_browser_download(
+        identity,
+        pdf_text_extractor=lambda _path: {
+            "engine": "test-local",
+            "pages": [{
+                "page": 1,
+                "text": "大摩拆解报告包含足够长度的原生文本提取内容。",
+                "has_visuals": False,
+            }],
+        },
+        pdf_renderer=lambda *_args: (_ for _ in ()).throw(
+            AssertionError("text-only PDF must not render")
+        ),
+    )
+
+    assert ingest["media_type"] == "pdf"
+    assert ingest["original_sha256"] == hashlib.sha256(
+        downloaded.read_bytes()
+    ).hexdigest()
+    assert ingest["pdf_page_count"] == 1
+    assert ingest["pdf_visual_pages"] == []
+    coverage = json.loads(Path(ingest["pdf_coverage_path"]).read_text())
+    assert coverage["pages"][0]["coverage_status"] == "covered"
+    assert service.pending_items()[0]["stage"] == "ingested"
+
+
+def test_scanned_pdf_renders_and_records_page_ocr_coverage(tmp_path):
+    service = LvSubscriptionService(tmp_path / "out", now=lambda: NOW)
+    identity, _downloaded = _captured_pdf(service, tmp_path)
+
+    def renderer(_pdf, output_dir, pages):
+        assert pages == [1]
+        output_dir.mkdir(parents=True)
+        rendered = output_dir / "page-0001-1.png"
+        rendered.write_bytes(b"png-page")
+        return {1: rendered}
+
+    ingest = service.ingest_browser_download(
+        identity,
+        pdf_text_extractor=lambda _path: {
+            "engine": "test-local",
+            "pages": [{"page": 1, "text": "", "has_visuals": True}],
+        },
+        pdf_renderer=renderer,
+        ocr_runner=lambda _path: {
+            "engine": "test-ocr",
+            "lines": [{
+                "text": "扫描页中的大摩拆解结论",
+                "confidence": 0.99,
+                "bounding_box": [0, 0, 1, 1],
+            }],
+        },
+    )
+
+    assert ingest["pdf_visual_pages"] == [1]
+    coverage = json.loads(Path(ingest["pdf_coverage_path"]).read_text())
+    page = coverage["pages"][0]
+    assert page["coverage_status"] == "covered"
+    assert len(page["rendered_sha256"]) == 64
+    assert len(page["ocr_sha256"]) == 64
+
+
+def test_pdf_replay_does_not_repeat_ingest_or_analysis_request(tmp_path):
+    service = LvSubscriptionService(tmp_path / "out", now=lambda: NOW)
+    identity, _downloaded = _captured_pdf(service, tmp_path)
+    extractor_calls = 0
+
+    def extractor(_path):
+        nonlocal extractor_calls
+        extractor_calls += 1
+        return {
+            "engine": "test-local",
+            "pages": [{
+                "page": 1,
+                "text": "重复执行仍然复用相同的不可变 PDF 文本证据。",
+                "has_visuals": False,
+            }],
+        }
+
+    first = service.ingest_browser_download(identity, pdf_text_extractor=extractor)
+    second = service.ingest_browser_download(identity, pdf_text_extractor=extractor)
+    first_request = service.prepare_analysis_request(first)
+    second_request = service.prepare_analysis_request(second)
+
+    assert extractor_calls == 1
+    assert second["idempotent_replay"] is True
+    assert second_request["idempotent_replay"] is True
+    assert first_request["evidence_sha256"] == second_request["evidence_sha256"]
+
+
+def test_unknown_and_oversized_pdf_fail_closed(tmp_path):
+    service = LvSubscriptionService(tmp_path / "out", now=lambda: NOW)
+    oversized = _pdf_entry(size=50 * 1024 * 1024 + 1)
+
+    assert service.observe_browser_listing([oversized]) is None
+    assert service.pending_items() == []
+    manifest_item = next(iter(service.status()["items"].values()))
+    assert manifest_item["pause_reason"] == (
+        "pdf_size_outside_small_file_boundary"
+    )
+    with pytest.raises(EnrichmentDiagnosticError) as captured:
+        service.claim_browser_download(manifest_item["identity"])
+    assert captured.value.diagnostic_code == (
+        "pdf_size_outside_small_file_boundary"
+    )
+
+    invalid_service = LvSubscriptionService(
+        tmp_path / "invalid", now=lambda: NOW
+    )
+    invalid_identity, downloaded = _captured_pdf(invalid_service, tmp_path / "invalid")
+    downloaded.write_bytes(b"not-a-pdf" + b"x" * (4096 - 9))
+    receipt = Path(
+        invalid_service._completed_browser_receipt(
+            invalid_service._manifest_item(invalid_identity)
+        )["immutable_path"]
+    )
+    receipt.write_bytes(downloaded.read_bytes())
+    receipt_path = receipt.parent / "browser_download_receipt.json"
+    value = json.loads(receipt_path.read_text())
+    value["sha256"] = hashlib.sha256(receipt.read_bytes()).hexdigest()
+    receipt_path.write_text(json.dumps(value))
+    with pytest.raises(EnrichmentDiagnosticError) as invalid:
+        invalid_service.ingest_browser_download(invalid_identity)
+    assert invalid.value.diagnostic_code == "pdf_invalid"
+
+
+def test_metadata_sufficient_companion_skips_pdf_download_and_side_effects(tmp_path):
+    service = LvSubscriptionService(tmp_path / "out", now=lambda: NOW)
+    base_time = int(NOW.timestamp())
+    video = {
+        "provider_file_id": "video-aug-3",
+        "path": "/彤商学院/直播回放/2026年8月/8月3日 (1).mp4",
+        "name": "8月3日 (1).mp4",
+        "is_dir": False,
+        "size": 5_508_885_608,
+        "modified_at": base_time,
+    }
+    pdf = {
+        "provider_file_id": "summary-aug-3",
+        "path": "/彤商学院/直播回放/2026年8月/8月3日会员直播gpt总结.pdf",
+        "name": "8月3日会员直播gpt总结.pdf",
+        "is_dir": False,
+        "size": 317_268,
+        "modified_at": base_time + 3600,
+    }
+    update = service.observe_browser_listing([video, pdf])["updates"][0]
+    transcript = tmp_path / "video-transcript.txt"
+    transcript.write_text("完整逐字稿证据", encoding="utf-8")
+    normalized_video = LvSubscriptionService._normalize_entry(video)
+    transcript_sha = hashlib.sha256(transcript.read_bytes()).hexdigest()
+    proof = service.metadata_companion_proof(
+        update["identity"],
+        complete_video_transcripts=[{
+            **normalized_video,
+            "provider_identity_sha256": normalized_video["identity"],
+            "transcript_complete": True,
+            "transcript_path": str(transcript),
+            "transcript_sha256": transcript_sha,
+        }],
+    )
+
+    assert proof is not None
+    state = service.record_metadata_companion_suppression(
+        update["identity"],
+        proof=proof,
+    )
+
+    assert state["route"] == "companion_suppressed"
+    assert state["acquisition_skipped"] is True
+    assert state["business_effects"] == {
+        "report": "not_created",
+        "notification": "not_created",
+        "book_kol_us": "not_created",
+    }
+    artifact_dir = service.output_dir / "artifacts" / update["version_key"]
+    assert not (artifact_dir / "browser_download_claim.json").exists()
+    assert not (artifact_dir / "browser_download_receipt.json").exists()
+    assert not (artifact_dir / "ingest_result.json").exists()
+    assert not (artifact_dir / "analysis_request.json").exists()
+    assert service.pending_items() == []
+
+
+def test_ambiguous_pdf_relation_creates_only_one_download_claim(tmp_path):
+    service = LvSubscriptionService(tmp_path / "out", now=lambda: NOW)
+    report = _pdf_entry()
+    update = service.observe_browser_listing([report])["updates"][0]
+
+    assert service.metadata_companion_proof(
+        update["identity"],
+        complete_video_transcripts=[],
+    ) is None
+    first = service.claim_browser_download(update["identity"])
+    second = service.claim_browser_download(update["identity"])
+
+    assert first["claim_id"] == second["claim_id"]
+    assert second["idempotent_replay"] is True
+    claims = [
+        json.loads(line)
+        for line in service.events_path.read_text(encoding="utf-8").splitlines()
+        if "subscription_browser_download_claimed" in line
+    ]
+    assert len(claims) == 1
 
 
 def test_private_config_accepts_only_the_observed_root_hash_route(tmp_path):
@@ -1010,6 +1341,11 @@ def _decision_bundle(evidence: dict) -> dict:
         "evidence_path": evidence["evidence_path"],
         "original_evidence_path": evidence["original_path"],
         "decision_status": "actionable_signal",
+        "claim_semantic_routing": {
+            "content_product": "member_livestream",
+            "current_decision_claim_ids": [claim_id],
+            "durable_knowledge_claim_ids": [],
+        },
         "knowledge_status": "no_reusable_knowledge",
         "knowledge_reason": "短消息只包含当下量能观察，没有可复用因果模型。",
         "trade_information_coverage": coverage,

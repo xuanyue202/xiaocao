@@ -1028,11 +1028,90 @@ class DailyCoordinator:
                         source=name,
                         failure=failure,
                     )
-                    outcome = {
-                        "status": "waiting",
-                        "retryable": True,
-                        "failure": failure,
-                    }
+                    consecutive_prior = 0
+                    for row in reversed(prior_rows):
+                        if (
+                            row.get("event") != "source_completed"
+                            or row.get("source") != name
+                        ):
+                            continue
+                        prior_failure = (row.get("result") or {}).get(
+                            "failure"
+                        )
+                        if not isinstance(prior_failure, dict):
+                            break
+                        if all(
+                            prior_failure.get(field) == failure.get(field)
+                            for field in ("category", "code", "stage")
+                        ):
+                            consecutive_prior += 1
+                            continue
+                        break
+                    if consecutive_prior >= 1:
+                        consecutive_count = consecutive_prior + 1
+                        blocker_key = (
+                            f"{name}-{failure['stage']}-{failure['code']}"
+                            "-recovery-exhausted"
+                        )
+                        action = (
+                            f"KOL 来源 {name} 在 {failure['stage']} 连续 "
+                            f"{consecutive_count} 个小时出现 {failure['code']}；"
+                            "同轮只读恢复已耗尽，且没有重放任何发布、通知或 "
+                            "Book 动作。请检查对应浏览器会话/provider 状态后"
+                            "保留现有 receipts，再恢复下一小时扫描。"
+                        )
+                        self._append(
+                            "source_recovery_exhausted",
+                            slot=slot,
+                            source=name,
+                            failure=failure,
+                            consecutive_count=consecutive_count,
+                            deterministic_recovery_attempted=True,
+                            external_business_effects_replayed=False,
+                        )
+                        blocker_state_rows = [
+                            row
+                            for row in self._events_unlocked()
+                            if row.get("event")
+                            in {"blocker_notified", "blocker_cleared"}
+                            and row.get("source") == name
+                        ]
+                        active_key = (
+                            str(blocker_state_rows[-1].get("blocker_key"))
+                            if blocker_state_rows
+                            and blocker_state_rows[-1].get("event")
+                            == "blocker_notified"
+                            else ""
+                        )
+                        notified = active_key == blocker_key
+                        if not notified:
+                            if blocker_sender is None:
+                                raise DailyError(
+                                    "repeated source failure requires an operational sender"
+                                ) from exc
+                            blocker_sender("KOL 日常运行需要你处理", action)
+                            self._append(
+                                "blocker_notified",
+                                slot=slot,
+                                source=name,
+                                blocker_key=blocker_key,
+                                action=action,
+                            )
+                        outcome = {
+                            "status": "waiting",
+                            "retryable": False,
+                            "failure": failure,
+                            "blocker_key": blocker_key,
+                            "user_action_required": True,
+                            "notification_sent": not notified,
+                            "consecutive_failure_count": consecutive_count,
+                        }
+                    else:
+                        outcome = {
+                            "status": "waiting",
+                            "retryable": True,
+                            "failure": failure,
+                        }
                 except BaseException as exc:
                     self._append(
                         "source_interrupted",
@@ -1078,6 +1157,89 @@ class DailyCoordinator:
                             "replayed_terminal_count": replayed_count,
                         }
                 _validate_source_outcome(outcome)
+                stalled_items = [
+                    row
+                    for row in (outcome.get("waiting_items") or [])
+                    if isinstance(row, dict)
+                    and row.get("stage") == "source_acquisition"
+                    and str(row.get("identity") or "")
+                    and str(row.get("version_key") or "")
+                ]
+                prior_source_results = [
+                    row.get("result") or {}
+                    for row in reversed(prior_rows)
+                    if row.get("event") == "source_completed"
+                    and row.get("source") == name
+                ]
+                stalled_keys = {
+                    (str(row["identity"]), str(row["version_key"]))
+                    for row in stalled_items
+                }
+                prior_stalled_keys = {
+                    (
+                        str(row.get("identity") or ""),
+                        str(row.get("version_key") or ""),
+                    )
+                    for result in prior_source_results[:1]
+                    for row in (result.get("waiting_items") or [])
+                    if isinstance(row, dict)
+                    and row.get("stage") == "source_acquisition"
+                }
+                repeated_stalls = sorted(stalled_keys & prior_stalled_keys)
+                if repeated_stalls and not outcome.get("user_action_required"):
+                    blocker_key = f"{name}-source-acquisition-stalled"
+                    action = (
+                        f"KOL 来源 {name} 已发现 {len(repeated_stalls)} 个新版本，"
+                        "但 source_acquisition 跨两个小时没有进展。同轮确定性"
+                        "恢复已尝试，且没有重放任何发布、通知或 Book 动作。"
+                        "请检查 provider 获取路径并保留现有 claims/receipts 后恢复。"
+                    )
+                    self._append(
+                        "source_acquisition_stalled",
+                        slot=slot,
+                        source=name,
+                        items=[
+                            {"identity": identity, "version_key": version}
+                            for identity, version in repeated_stalls
+                        ],
+                        deterministic_recovery_attempted=True,
+                        external_business_effects_replayed=False,
+                    )
+                    blocker_state_rows = [
+                        row
+                        for row in self._events_unlocked()
+                        if row.get("event")
+                        in {"blocker_notified", "blocker_cleared"}
+                        and row.get("source") == name
+                    ]
+                    active_key = (
+                        str(blocker_state_rows[-1].get("blocker_key"))
+                        if blocker_state_rows
+                        and blocker_state_rows[-1].get("event")
+                        == "blocker_notified"
+                        else ""
+                    )
+                    notified = active_key == blocker_key
+                    if not notified:
+                        if blocker_sender is None:
+                            raise DailyError(
+                                "stalled source acquisition requires an operational sender"
+                            )
+                        blocker_sender("KOL 日常运行需要你处理", action)
+                        self._append(
+                            "blocker_notified",
+                            slot=slot,
+                            source=name,
+                            blocker_key=blocker_key,
+                            action=action,
+                        )
+                    outcome = {
+                        **outcome,
+                        "retryable": False,
+                        "blocker_key": blocker_key,
+                        "user_action_required": True,
+                        "notification_sent": not notified,
+                    }
                 prior_blockers = [
                     row
                     for row in self._events_unlocked()

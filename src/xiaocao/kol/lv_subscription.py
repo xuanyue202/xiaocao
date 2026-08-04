@@ -13,7 +13,7 @@ import threading
 import time
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from typing import Any, Callable
 from urllib.parse import urlencode, urlparse
 
@@ -35,6 +35,26 @@ from .enrichment_types import (
 
 IMAGE_SUFFIXES = {".jpeg", ".jpg", ".png", ".webp"}
 TEXT_SUFFIXES = {".md", ".txt"}
+PDF_SUFFIXES = {".pdf"}
+SUPPORTED_SMALL_MEDIA = {"image", "text", "pdf"}
+MAX_SMALL_EVIDENCE_BYTES = 50 * 1024 * 1024
+MAX_PDF_PAGES = 200
+PDF_BOOTSTRAP_WINDOW_SECONDS = 24 * 60 * 60
+MIN_NATIVE_PDF_PAGE_TEXT = 20
+PDF_DOCUMENT_ROLES = {"independent_report", "video_summary", "unknown"}
+PDF_PRIMARY_SOURCE_STATUSES = {
+    "complete",
+    "unavailable",
+    "incomplete",
+    "pending",
+    "not_applicable",
+}
+LV_CONTENT_PRODUCTS = {
+    "member_livestream",
+    "underlying_logic",
+    "hybrid",
+    "unknown",
+}
 _OPENCLI_NAME = re.compile(r"[A-Za-z0-9_.-]{1,80}")
 _COVERAGE_ROWS = {
     "todays_market_diagnosis",
@@ -62,7 +82,11 @@ _DOWNLOAD_PRETRIGGER_FAILURES = {
 
 
 _BROWSER_LISTING_SCRIPT_TEMPLATE = r"""(async () => {
-  const fail = status => ({status, entries: []});
+  const fail = (status, diagnostic = {}) => ({
+    status,
+    entries: [],
+    diagnostic
+  });
   const expectedPath = __EXPECTED_PATH_JSON__;
   if (location.origin !== 'https://pan.baidu.com') {
     return fail('wrong_origin');
@@ -73,9 +97,12 @@ _BROWSER_LISTING_SCRIPT_TEMPLATE = r"""(async () => {
   if (location.pathname !== expectedPath) {
     return fail('wrong_share');
   }
-  if (String(document.body?.innerText || '').includes('已失效')) {
-    return fail('share_expired');
-  }
+  const visible = element => {
+    const style = getComputedStyle(element);
+    const rect = element.getBoundingClientRect();
+    return style.display !== 'none' && style.visibility !== 'hidden'
+      && rect.width > 0 && rect.height > 0;
+  };
   const localValue = key => {
     try {
       return window.locals && typeof window.locals.get === 'function'
@@ -88,6 +115,23 @@ _BROWSER_LISTING_SCRIPT_TEMPLATE = r"""(async () => {
   const shareid = localValue('shareid');
   const shareUk = localValue('share_uk') || localValue('uk');
   if (!shareid || !shareUk) {
+    const exactExpiredMessages = new Set([
+      '分享已失效',
+      '该分享已失效',
+      '分享的文件已失效',
+      '分享的文件已经被取消了',
+      '分享的文件已经被删除了'
+    ]);
+    const terminalTexts = [...document.querySelectorAll(
+      '[role="alert"], .share-error, .error-msg, .error-message, '
+      + '[class*="share-error"], [class*="expire"]'
+    )].filter(visible).map(node => (
+      String(node.innerText || node.textContent || '')
+        .replace(/\s+/g, ' ').trim()
+    ));
+    if (terminalTexts.some(text => exactExpiredMessages.has(text))) {
+      return fail('share_expired', {basis: 'exact_visible_terminal'});
+    }
     return fail('share_metadata_missing');
   }
   const observedListUrls = () => performance.getEntriesByType('resource')
@@ -169,13 +213,45 @@ _BROWSER_LISTING_SCRIPT_TEMPLATE = r"""(async () => {
         clearTimeout(timeout);
       }
       let body;
+      let rawBody;
       try {
-        body = await response.json();
-      } catch (_error) {
-        return {status: 'share_list_invalid_json', rows: []};
+        rawBody = await response.text();
+        body = JSON.parse(rawBody);
+      } catch (error) {
+        const match = String(error && error.message || '')
+          .match(/position\s+(\d+)/i);
+        return {
+          status: 'share_list_invalid_json',
+          rows: [],
+          diagnostic: {
+            http_status: Number(response.status || 0),
+            content_type: String(
+              response.headers.get('content-type') || ''
+            ).slice(0, 96),
+            body_length: String(rawBody || '').length,
+            json_error_position: match ? Number(match[1]) : null
+          }
+        };
       }
       if (!response.ok || body.errno !== 0) {
-        return {status: 'share_list_failed', rows: []};
+        const providerMessage = String(
+          body.errmsg || body.show_msg || body.error_msg || ''
+        ).replace(/\s+/g, ' ').trim();
+        const expiredMessages = new Set([
+          '分享的文件已经被取消了',
+          '分享的文件已经被删除了',
+          '该分享已失效'
+        ]);
+        return {
+          status: expiredMessages.has(providerMessage)
+            ? 'share_expired'
+            : 'share_list_failed',
+          rows: [],
+          diagnostic: {
+            http_status: Number(response.status || 0),
+            provider_errno: Number(body.errno || 0)
+          }
+        };
       }
       const rows = Array.isArray(body.list) ? body.list : [];
       collected.push(...rows);
@@ -192,7 +268,7 @@ _BROWSER_LISTING_SCRIPT_TEMPLATE = r"""(async () => {
   };
   const rootResult = await readPages(rootTemplate, null);
   if (rootResult.status !== 'ok') {
-    return fail(rootResult.status);
+    return fail(rootResult.status, rootResult.diagnostic || {});
   }
   rootResult.rows.forEach(appendItem);
   let directoryTemplate = observedListUrls().find(name => {
@@ -237,7 +313,7 @@ _BROWSER_LISTING_SCRIPT_TEMPLATE = r"""(async () => {
     })));
     for (const {result} of directoryResults) {
       if (result.status !== 'ok') {
-        return fail(result.status);
+        return fail(result.status, result.diagnostic || {});
       }
       result.rows.forEach(appendItem);
     }
@@ -483,6 +559,8 @@ def _media_type(name: str, *, is_dir: bool) -> str:
         return "image"
     if suffix in TEXT_SUFFIXES:
         return "text"
+    if suffix in PDF_SUFFIXES:
+        return "pdf"
     return "excluded"
 
 
@@ -521,6 +599,7 @@ class LvSubscriptionService:
         opencli_command: tuple[str, ...] | None = None,
         share_url: str | None = None,
         share_code: str | None = None,
+        sleep: Callable[[float], None] = time.sleep,
     ):
         self.output_dir = Path(output_dir)
         self.manifest_path = self.output_dir / "manifest.json"
@@ -535,6 +614,7 @@ class LvSubscriptionService:
         )
         self.share_url = str(share_url or "").strip()
         self.share_code = str(share_code or "").strip()
+        self.sleep = sleep
         self._opencli_listing: tuple[
             str,
             str | None,
@@ -704,7 +784,7 @@ class LvSubscriptionService:
         session: str,
         profile: str | None = None,
     ) -> dict[str, Any]:
-        """Read one complete listing from the sole configured browser page."""
+        """Read one complete listing with one bounded read-only recovery."""
         self._validate_private_config()
         expected_path = urlparse(self.share_url).path
         authorized_share_url = _authorized_share_url(
@@ -712,78 +792,139 @@ class LvSubscriptionService:
             self.share_code,
         )
         listing_script = _browser_listing_script(expected_path)
-        self._opencli_json(
-            session,
-            "open",
-            authorized_share_url,
-            profile=profile,
-            timeout_seconds=30,
-        )
-        listing = self._opencli_json(
-            session,
-            "eval",
-            listing_script,
-            profile=profile,
-            timeout_seconds=120,
-        )
-        if listing.get("status") == "authorization_required":
-            authorized = self._opencli_json(
-                session,
-                "eval",
-                _browser_authorization_script(self.share_code),
-                profile=profile,
-                timeout_seconds=30,
-            )
-            if authorized.get("status") != "authorization_submitted":
-                raise EnrichmentError(
-                    "subscription share authorization requires user confirmation"
+
+        retryable_statuses = {
+            "share_list_failed",
+            "share_list_invalid_json",
+            "share_list_timeout",
+            "share_metadata_missing",
+            "share_root_template_missing",
+            "share_directory_template_missing",
+            "wrong_origin",
+            "wrong_share",
+        }
+        retryable_codes = {
+            "opencli_timeout",
+            "opencli_command_failed",
+            "opencli_invalid_json",
+            "opencli_non_object",
+        }
+        recovered_from: dict[str, str] | None = None
+        for attempt in range(1, 3):
+            try:
+                self._opencli_json(
+                    session,
+                    "open",
+                    authorized_share_url,
+                    profile=profile,
+                    timeout_seconds=30,
                 )
-            self._opencli_json(
-                session,
-                "open",
-                authorized_share_url,
-                profile=profile,
-                timeout_seconds=30,
-            )
-            listing = self._opencli_json(
-                session,
-                "eval",
-                listing_script,
-                profile=profile,
-                timeout_seconds=120,
-            )
-        if listing.get("status") == "share_expired":
-            raise EnrichmentError("Lv subscription share is expired")
-        if (
-            listing.get("status") != "ok"
-            or listing.get("complete_scan") is not True
-            or not isinstance(listing.get("entries"), list)
-        ):
+                listing = self._opencli_json(
+                    session,
+                    "eval",
+                    listing_script,
+                    profile=profile,
+                    timeout_seconds=120,
+                )
+            except EnrichmentDiagnosticError as exc:
+                if attempt == 1 and exc.diagnostic_code in retryable_codes:
+                    recovered_from = {
+                        "category": exc.diagnostic_category,
+                        "code": exc.diagnostic_code,
+                        "stage": exc.diagnostic_stage,
+                    }
+                    self.sleep(1.0)
+                    continue
+                raise
+            if listing.get("status") == "authorization_required":
+                authorized = self._opencli_json(
+                    session,
+                    "eval",
+                    _browser_authorization_script(self.share_code),
+                    profile=profile,
+                    timeout_seconds=30,
+                )
+                if authorized.get("status") != "authorization_submitted":
+                    raise EnrichmentError(
+                        "subscription share authorization requires user confirmation"
+                    )
+                self._opencli_json(
+                    session,
+                    "open",
+                    authorized_share_url,
+                    profile=profile,
+                    timeout_seconds=30,
+                )
+                listing = self._opencli_json(
+                    session,
+                    "eval",
+                    listing_script,
+                    profile=profile,
+                    timeout_seconds=120,
+                )
+            if listing.get("status") == "share_expired":
+                raise EnrichmentError("Lv subscription share is expired")
+            if (
+                listing.get("status") == "ok"
+                and listing.get("complete_scan") is True
+                and isinstance(listing.get("entries"), list)
+            ):
+                if recovered_from is not None:
+                    listing = {
+                        **listing,
+                        "recovery": {
+                            "status": "recovered",
+                            "attempts": attempt,
+                            "initial_failure": recovered_from,
+                        },
+                    }
+                return listing
             observed_status = str(listing.get("status") or "")
-            code = {
-                "listing_bounds_exceeded": "listing_bounds_exceeded",
-                "share_list_failed": "share_list_failed",
-                "share_list_invalid_json": "share_list_invalid_json",
-                "share_list_timeout": "share_list_timeout",
-                "share_metadata_missing": "share_metadata_missing",
-                "share_root_template_missing": "share_root_template_missing",
-                "share_directory_template_missing": (
-                    "share_directory_template_missing"
-                ),
-                "wrong_origin": "wrong_browser_origin",
-                "wrong_share": "wrong_share_page",
-            }.get(observed_status, "listing_incomplete")
-            raise EnrichmentDiagnosticError(
-                "subscription browser listing is unavailable",
-                category=(
-                    "timeout"
-                    if observed_status == "share_list_timeout"
-                    else "incomplete_scan"
-                ),
-                code=code,
-                stage="listing_validation",
+            if attempt == 1 and observed_status in retryable_statuses:
+                recovered_from = {
+                    "category": (
+                        "timeout"
+                        if observed_status == "share_list_timeout"
+                        else "incomplete_scan"
+                    ),
+                    "code": {
+                        "wrong_origin": "wrong_browser_origin",
+                        "wrong_share": "wrong_share_page",
+                    }.get(observed_status, observed_status),
+                    "stage": "listing_validation",
+                }
+                self.sleep(1.0)
+                continue
+            break
+
+        if listing.get("status") == "authorization_required":
+            raise EnrichmentError(
+                "subscription share authorization requires user confirmation"
             )
-        return listing
+        observed_status = str(listing.get("status") or "")
+        code = {
+            "listing_bounds_exceeded": "listing_bounds_exceeded",
+            "share_list_failed": "share_list_failed",
+            "share_list_invalid_json": "share_list_invalid_json",
+            "share_list_timeout": "share_list_timeout",
+            "share_metadata_missing": "share_metadata_missing",
+            "share_root_template_missing": "share_root_template_missing",
+            "share_directory_template_missing": (
+                "share_directory_template_missing"
+            ),
+            "wrong_origin": "wrong_browser_origin",
+            "wrong_share": "wrong_share_page",
+        }.get(observed_status, "listing_incomplete")
+        raise EnrichmentDiagnosticError(
+            "subscription browser listing is unavailable",
+            category=(
+                "timeout"
+                if observed_status == "share_list_timeout"
+                else "incomplete_scan"
+            ),
+            code=code,
+            stage="listing_validation",
+        )
 
     @_exclusive("poll")
     def poll_opencli(
@@ -791,12 +932,25 @@ class LvSubscriptionService:
         *,
         session: str,
         profile: str | None = None,
+        listing: dict[str, Any] | None = None,
     ) -> dict[str, Any] | None:
         """Open the one configured share in a browser and record its full listing."""
-        listing = self._read_opencli_listing(
-            session=session,
-            profile=profile,
-        )
+        if listing is None:
+            listing = self._read_opencli_listing(
+                session=session,
+                profile=profile,
+            )
+        if (
+            listing.get("status") != "ok"
+            or listing.get("complete_scan") is not True
+            or not isinstance(listing.get("entries"), list)
+        ):
+            raise EnrichmentDiagnosticError(
+                "subscription shared listing is incomplete",
+                category="incomplete_scan",
+                code="shared_listing_incomplete",
+                stage="listing_validation",
+            )
         self._opencli_listing = (session, profile, listing)
         return self.observe_browser_listing(listing["entries"])
 
@@ -865,7 +1019,8 @@ class LvSubscriptionService:
         """Record one complete browser listing; return only unseen/changed items."""
         if not isinstance(entries, list):
             raise EnrichmentError("browser subscription listing must be a list")
-        observed_at = self._time().isoformat(timespec="seconds")
+        observed_time = self._time()
+        observed_at = observed_time.isoformat(timespec="seconds")
         normalized = [self._normalize_entry(row) for row in entries]
         if len({row["identity"] for row in normalized}) != len(normalized):
             raise EnrichmentError("browser subscription listing has duplicate identities")
@@ -884,6 +1039,7 @@ class LvSubscriptionService:
         }
         updates: list[dict[str, Any]] = []
         excluded_count = 0
+        paused_count = 0
         for row in normalized:
             persisted = {**row, "last_seen_at": observed_at, "present": True}
             prior = previous.get(row["identity"])
@@ -901,23 +1057,54 @@ class LvSubscriptionService:
                 ]
             else:
                 persisted["version_first_seen_at"] = observed_at
-            if (
+            same_supported_version = (
                 isinstance(prior, dict)
                 and prior.get("version_key") == row["version_key"]
+                and prior.get("media_type") == row["media_type"]
                 and "work_eligible" in prior
-            ):
+            )
+            if same_supported_version:
                 persisted["work_eligible"] = prior["work_eligible"] is True
             else:
+                within_small_boundary = (
+                    row["media_type"] != "pdf"
+                    or 0 < int(row["size"]) <= MAX_SMALL_EVIDENCE_BYTES
+                )
+                classification_migration = (
+                    isinstance(prior, dict)
+                    and prior.get("version_key") == row["version_key"]
+                    and prior.get("media_type") == "excluded"
+                    and row["media_type"] == "pdf"
+                )
                 persisted["work_eligible"] = (
                     not bootstrap_baseline
-                    and row["media_type"] in {"image", "text"}
+                    and row["media_type"] in SUPPORTED_SMALL_MEDIA
+                    and within_small_boundary
+                    and (
+                        not classification_migration
+                        or int(row["modified_at"])
+                        >= int(observed_time.timestamp())
+                        - PDF_BOOTSTRAP_WINDOW_SECONDS
+                    )
                 )
+                if row["media_type"] == "pdf" and not within_small_boundary:
+                    persisted["pause_reason"] = (
+                        "pdf_size_outside_small_file_boundary"
+                    )
             current[row["identity"]] = persisted
-            if row["media_type"] not in {"image", "text"}:
+            if row["media_type"] not in SUPPORTED_SMALL_MEDIA:
                 if not row["is_dir"]:
                     excluded_count += 1
                 continue
-            if not isinstance(prior, dict) or prior.get("version_key") != row["version_key"]:
+            if persisted.get("work_eligible") is not True:
+                if row["media_type"] == "pdf" and not row["is_dir"]:
+                    paused_count += 1
+                continue
+            if (
+                not isinstance(prior, dict)
+                or prior.get("version_key") != row["version_key"]
+                or prior.get("media_type") != row["media_type"]
+            ):
                 updates.append(row)
 
         bootstrap_baseline_count = 0
@@ -941,19 +1128,33 @@ class LvSubscriptionService:
             selected_versions = {
                 str(row["version_key"]) for row in selected.values()
             }
+            recent_pdf_versions = {
+                str(row["version_key"])
+                for row in normalized
+                if row["media_type"] == "pdf"
+                and 0 < int(row["size"]) <= MAX_SMALL_EVIDENCE_BYTES
+                and int(row["modified_at"])
+                >= int(observed_time.timestamp())
+                - PDF_BOOTSTRAP_WINDOW_SECONDS
+            }
+            selected_versions.update(recent_pdf_versions)
             for item in current.values():
                 if isinstance(item, dict):
                     item["work_eligible"] = (
                         item.get("version_key") in selected_versions
                     )
             updates = sorted(
-                selected.values(),
+                [
+                    row
+                    for row in normalized
+                    if row["version_key"] in selected_versions
+                ],
                 key=lambda row: (row["media_type"], row["path"]),
             )
             bootstrap_baseline_count = sum(
                 1
                 for row in normalized
-                if row["media_type"] in {"image", "text"}
+                if row["media_type"] in SUPPORTED_SMALL_MEDIA
                 and row["version_key"] not in selected_versions
             )
             manifest["bootstrap"] = {
@@ -990,6 +1191,7 @@ class LvSubscriptionService:
             "observed_at": observed_at,
             "observed_count": len(normalized),
             "excluded_count": excluded_count,
+            "paused_count": paused_count,
             "bootstrap_baseline_count": bootstrap_baseline_count,
             "updates": updates,
         }
@@ -1000,8 +1202,18 @@ class LvSubscriptionService:
         value = self._load_manifest().get("items", {}).get(identity)
         if not isinstance(value, dict):
             raise EnrichmentError("subscription item identity is unknown")
-        if value.get("media_type") not in {"image", "text"}:
+        if value.get("media_type") not in SUPPORTED_SMALL_MEDIA:
             raise EnrichmentError("subscription item is outside Ticket 04 media scope")
+        if (
+            value.get("media_type") == "pdf"
+            and not 0 < int(value.get("size") or 0) <= MAX_SMALL_EVIDENCE_BYTES
+        ):
+            raise EnrichmentDiagnosticError(
+                "subscription PDF is outside the small-file boundary",
+                category="policy_error",
+                code="pdf_size_outside_small_file_boundary",
+                stage="pdf_acquisition",
+            )
         return value
 
     @staticmethod
@@ -1069,6 +1281,154 @@ class LvSubscriptionService:
         except json.JSONDecodeError as exc:
             raise EnrichmentError("macOS Vision OCR returned invalid JSON") from exc
         return value
+
+    @staticmethod
+    def _default_pdf_text_extractor(path: Path) -> dict[str, Any]:
+        """Extract native text and visual-resource hints without online services."""
+        try:
+            from pypdf import PdfReader
+        except ImportError as exc:
+            raise EnrichmentDiagnosticError(
+                "local PDF text extraction dependency is unavailable",
+                category="dependency_error",
+                code="pdf_text_extractor_unavailable",
+                stage="pdf_extraction",
+            ) from exc
+        try:
+            reader = PdfReader(str(path))
+            if reader.is_encrypted:
+                raise EnrichmentDiagnosticError(
+                    "encrypted subscription PDF requires reviewed handling",
+                    category="policy_error",
+                    code="pdf_encrypted",
+                    stage="pdf_extraction",
+                )
+            if not 0 < len(reader.pages) <= MAX_PDF_PAGES:
+                raise EnrichmentDiagnosticError(
+                    "subscription PDF page count is outside the boundary",
+                    category="policy_error",
+                    code="pdf_page_count_outside_boundary",
+                    stage="pdf_extraction",
+                )
+            pages: list[dict[str, Any]] = []
+            for index, page in enumerate(reader.pages, start=1):
+                text = str(page.extract_text() or "").strip()
+                resources = page.get("/Resources") or {}
+                xobjects = resources.get("/XObject") if hasattr(resources, "get") else None
+                has_visuals = False
+                if xobjects:
+                    try:
+                        for value in xobjects.get_object().values():
+                            target = value.get_object()
+                            if target.get("/Subtype") == "/Image":
+                                has_visuals = True
+                                break
+                    except (AttributeError, KeyError, TypeError, ValueError):
+                        has_visuals = True
+                pages.append(
+                    {
+                        "page": index,
+                        "text": text,
+                        "has_visuals": has_visuals,
+                    }
+                )
+        except EnrichmentDiagnosticError:
+            raise
+        except Exception as exc:
+            raise EnrichmentDiagnosticError(
+                "subscription PDF could not be parsed locally",
+                category="content_error",
+                code="pdf_invalid",
+                stage="pdf_extraction",
+            ) from exc
+
+        missing = [
+            row["page"]
+            for row in pages
+            if len(str(row["text"]).strip()) < MIN_NATIVE_PDF_PAGE_TEXT
+        ]
+        if missing:
+            try:
+                import pdfplumber
+
+                with pdfplumber.open(str(path)) as document:
+                    if len(document.pages) != len(pages):
+                        raise EnrichmentError(
+                            "PDF extractors disagree on page count"
+                        )
+                    for page_number in missing:
+                        fallback = str(
+                            document.pages[page_number - 1].extract_text() or ""
+                        ).strip()
+                        if len(fallback) > len(pages[page_number - 1]["text"]):
+                            pages[page_number - 1]["text"] = fallback
+            except ImportError:
+                pass
+            except EnrichmentError:
+                raise
+            except Exception as exc:
+                raise EnrichmentDiagnosticError(
+                    "subscription PDF fallback extraction failed",
+                    category="content_error",
+                    code="pdf_fallback_extraction_failed",
+                    stage="pdf_extraction",
+                ) from exc
+        return {"engine": "pypdf+pdfplumber", "pages": pages}
+
+    @staticmethod
+    def _default_pdf_renderer(
+        path: Path,
+        output_dir: Path,
+        pages: list[int],
+    ) -> dict[int, Path]:
+        executable = shutil.which("pdftoppm")
+        if executable is None:
+            raise EnrichmentDiagnosticError(
+                "local PDF renderer is unavailable",
+                category="dependency_error",
+                code="pdf_renderer_unavailable",
+                stage="pdf_visual_coverage",
+            )
+        output_dir.mkdir(parents=True, exist_ok=True)
+        rendered: dict[int, Path] = {}
+        for page_number in pages:
+            prefix = output_dir / f"page-{page_number:04d}"
+            try:
+                result = subprocess.run(
+                    (
+                        executable,
+                        "-f",
+                        str(page_number),
+                        "-l",
+                        str(page_number),
+                        "-r",
+                        "150",
+                        "-png",
+                        str(path),
+                        str(prefix),
+                    ),
+                    capture_output=True,
+                    text=True,
+                    check=False,
+                    timeout=120,
+                )
+            except (OSError, subprocess.TimeoutExpired) as exc:
+                raise EnrichmentDiagnosticError(
+                    "subscription PDF page rendering failed",
+                    category="content_error",
+                    code="pdf_render_failed",
+                    stage="pdf_visual_coverage",
+                ) from exc
+            candidates = sorted(output_dir.glob(f"{prefix.name}*.png"))
+            if result.returncode != 0 or len(candidates) != 1:
+                raise EnrichmentDiagnosticError(
+                    "subscription PDF page rendering failed",
+                    category="content_error",
+                    code="pdf_render_failed",
+                    stage="pdf_visual_coverage",
+                )
+            rendered[page_number] = candidates[0]
+        return rendered
 
     @_exclusive("item")
     def claim_browser_download(self, identity: str) -> dict[str, Any]:
@@ -1276,7 +1636,7 @@ class LvSubscriptionService:
         if not source.is_file():
             raise EnrichmentError("browser-downloaded subscription file is missing")
         actual_size = source.stat().st_size
-        if actual_size <= 0 or actual_size > 50 * 1024 * 1024:
+        if actual_size <= 0 or actual_size > MAX_SMALL_EVIDENCE_BYTES:
             raise EnrichmentError(
                 "subscription evidence size is outside the small-file boundary"
             )
@@ -1418,17 +1778,23 @@ class LvSubscriptionService:
             ):
                 matches.append((raw, normalized))
         if len(matches) != 1:
-            raise EnrichmentError(
-                "subscription browser download target is not unique"
+            raise EnrichmentDiagnosticError(
+                "subscription browser download target is not unique",
+                category="identity_error",
+                code="source_version_not_unique",
+                stage="source_acquisition",
             )
         raw, normalized = matches[0]
         if (
-            normalized["media_type"] not in {"image", "text"}
+            normalized["media_type"] not in SUPPORTED_SMALL_MEDIA
             or normalized["name"] != item["name"]
             or normalized["size"] != item["size"]
         ):
-            raise EnrichmentError(
-                "subscription browser download target changed before claim"
+            raise EnrichmentDiagnosticError(
+                "subscription browser download target changed before claim",
+                category="identity_error",
+                code="source_version_changed",
+                stage="source_acquisition",
             )
 
         claim = self.claim_browser_download(str(identity))
@@ -1498,6 +1864,10 @@ class LvSubscriptionService:
         identity: str,
         *,
         ocr_runner: Callable[[Path], dict[str, Any]] | None = None,
+        pdf_text_extractor: Callable[[Path], dict[str, Any]] | None = None,
+        pdf_renderer: Callable[
+            [Path, Path, list[int]], dict[int, Path]
+        ] | None = None,
     ) -> dict[str, Any]:
         """Ingest only an immutable file captured from a claimed browser event."""
         item = self._manifest_item(str(identity))
@@ -1531,6 +1901,19 @@ class LvSubscriptionService:
                     or _sha256_file(prior_ocr) != prior.get("ocr_sha256")
                 ):
                     raise EnrichmentError("subscription OCR evidence changed after ingestion")
+            prior_pdf_coverage_path = str(
+                prior.get("pdf_coverage_path") or ""
+            ).strip()
+            if prior_pdf_coverage_path:
+                prior_pdf_coverage = Path(prior_pdf_coverage_path)
+                if (
+                    not prior_pdf_coverage.is_file()
+                    or _sha256_file(prior_pdf_coverage)
+                    != prior.get("pdf_coverage_sha256")
+                ):
+                    raise EnrichmentError(
+                        "subscription PDF coverage evidence changed after ingestion"
+                    )
             return {**prior, "idempotent_replay": True}
 
         original = source
@@ -1538,6 +1921,9 @@ class LvSubscriptionService:
 
         ambiguities: list[dict[str, Any]] = []
         ocr_path: Path | None = None
+        pdf_coverage_path: Path | None = None
+        pdf_page_count: int | None = None
+        pdf_visual_pages: list[int] = []
         if item["media_type"] == "image":
             ocr = self._validate_ocr_result(
                 (ocr_runner or self._default_ocr_runner)(original)
@@ -1556,6 +1942,169 @@ class LvSubscriptionService:
             }
             ocr_path = artifact_dir / "ocr.json"
             _atomic_write_json(ocr_path, ocr_payload)
+        elif item["media_type"] == "pdf":
+            if not original.read_bytes()[:5].startswith(b"%PDF-"):
+                raise EnrichmentDiagnosticError(
+                    "subscription PDF signature is invalid",
+                    category="content_error",
+                    code="pdf_invalid",
+                    stage="pdf_extraction",
+                )
+            extracted = (pdf_text_extractor or self._default_pdf_text_extractor)(
+                original
+            )
+            pages = extracted.get("pages") if isinstance(extracted, dict) else None
+            if (
+                not isinstance(pages, list)
+                or not 0 < len(pages) <= MAX_PDF_PAGES
+            ):
+                raise EnrichmentDiagnosticError(
+                    "subscription PDF extraction result is invalid",
+                    category="content_error",
+                    code="pdf_extraction_invalid",
+                    stage="pdf_extraction",
+                )
+            normalized_pages: list[dict[str, Any]] = []
+            for expected_page, row in enumerate(pages, start=1):
+                if (
+                    not isinstance(row, dict)
+                    or int(row.get("page") or 0) != expected_page
+                ):
+                    raise EnrichmentDiagnosticError(
+                        "subscription PDF page coverage is invalid",
+                        category="content_error",
+                        code="pdf_page_coverage_invalid",
+                        stage="pdf_extraction",
+                    )
+                text = str(row.get("text") or "").strip()
+                normalized_pages.append(
+                    {
+                        "page": expected_page,
+                        "native_text": text,
+                        "has_visuals": row.get("has_visuals") is True,
+                    }
+                )
+            pages_to_render = [
+                row["page"]
+                for row in normalized_pages
+                if row["has_visuals"]
+                or len(row["native_text"]) < MIN_NATIVE_PDF_PAGE_TEXT
+            ]
+            rendered = (
+                (pdf_renderer or self._default_pdf_renderer)(
+                    original,
+                    artifact_dir / "pdf_pages",
+                    pages_to_render,
+                )
+                if pages_to_render
+                else {}
+            )
+            if set(rendered) != set(pages_to_render):
+                raise EnrichmentDiagnosticError(
+                    "subscription PDF visual coverage is incomplete",
+                    category="coverage_error",
+                    code="pdf_visual_coverage_incomplete",
+                    stage="pdf_visual_coverage",
+                )
+            evidence_sections: list[str] = []
+            coverage_pages: list[dict[str, Any]] = []
+            for row in normalized_pages:
+                page_number = int(row["page"])
+                page_text = str(row["native_text"])
+                page_ocr_path: Path | None = None
+                ocr_text = ""
+                rendered_path = rendered.get(page_number)
+                if rendered_path is not None:
+                    if not rendered_path.is_file():
+                        raise EnrichmentDiagnosticError(
+                            "subscription PDF rendered page is missing",
+                            category="coverage_error",
+                            code="pdf_visual_coverage_incomplete",
+                            stage="pdf_visual_coverage",
+                        )
+                    try:
+                        page_ocr = self._validate_ocr_result(
+                            (ocr_runner or self._default_ocr_runner)(
+                                rendered_path
+                            )
+                        )
+                    except EnrichmentError:
+                        page_ocr = {"engine": "none", "lines": []}
+                    ocr_text = "\n".join(
+                        str(line["text"]) for line in page_ocr["lines"]
+                    ).strip()
+                    page_ocr_path = (
+                        artifact_dir / "pdf_pages" / f"page-{page_number:04d}-ocr.json"
+                    )
+                    _atomic_write_json(
+                        page_ocr_path,
+                        {
+                            **page_ocr,
+                            "page": page_number,
+                            "rendered_sha256": _sha256_file(rendered_path),
+                        },
+                    )
+                combined = "\n".join(
+                    value for value in (page_text, ocr_text) if value
+                ).strip()
+                if not combined and rendered_path is None:
+                    raise EnrichmentDiagnosticError(
+                        "subscription PDF page lacks extractable coverage",
+                        category="coverage_error",
+                        code="pdf_page_uncovered",
+                        stage="pdf_visual_coverage",
+                    )
+                evidence_sections.append(
+                    f"## PDF page {page_number}\n\n"
+                    + (combined or "[visual review required]")
+                )
+                coverage_pages.append(
+                    {
+                        "page": page_number,
+                        "native_text_chars": len(page_text),
+                        "ocr_text_chars": len(ocr_text),
+                        "has_visuals": row["has_visuals"],
+                        "rendered_path": (
+                            str(rendered_path.resolve())
+                            if rendered_path is not None
+                            else None
+                        ),
+                        "rendered_sha256": (
+                            _sha256_file(rendered_path)
+                            if rendered_path is not None
+                            else None
+                        ),
+                        "ocr_path": (
+                            str(page_ocr_path.resolve())
+                            if page_ocr_path is not None
+                            else None
+                        ),
+                        "ocr_sha256": (
+                            _sha256_file(page_ocr_path)
+                            if page_ocr_path is not None
+                            else None
+                        ),
+                        "coverage_status": (
+                            "visual_review_required"
+                            if rendered_path is not None and not ocr_text
+                            else "covered"
+                        ),
+                    }
+                )
+            evidence_text = "\n\n".join(evidence_sections).strip()
+            pdf_page_count = len(normalized_pages)
+            pdf_visual_pages = pages_to_render
+            pdf_coverage_path = artifact_dir / "pdf_coverage.json"
+            _atomic_write_json(
+                pdf_coverage_path,
+                {
+                    "schema_version": 1,
+                    "engine": str(extracted.get("engine") or "local"),
+                    "original_sha256": original_sha,
+                    "page_count": pdf_page_count,
+                    "pages": coverage_pages,
+                },
+            )
         else:
             try:
                 evidence_text = original.read_text(encoding="utf-8").strip()
@@ -1599,6 +2148,14 @@ class LvSubscriptionService:
             "evidence_sha256": _sha256_file(evidence_path),
             "ocr_path": str(ocr_path.resolve()) if ocr_path else None,
             "ocr_sha256": _sha256_file(ocr_path) if ocr_path else None,
+            "pdf_coverage_path": (
+                str(pdf_coverage_path.resolve()) if pdf_coverage_path else None
+            ),
+            "pdf_coverage_sha256": (
+                _sha256_file(pdf_coverage_path) if pdf_coverage_path else None
+            ),
+            "pdf_page_count": pdf_page_count,
+            "pdf_visual_pages": pdf_visual_pages,
             "ambiguities": ambiguities,
             "idempotent_replay": False,
         }
@@ -1620,7 +2177,7 @@ class LvSubscriptionService:
             if (
                 not isinstance(item, dict)
                 or item.get("present") is not True
-                or item.get("media_type") not in {"image", "text"}
+                or item.get("media_type") not in SUPPORTED_SMALL_MEDIA
                 or item.get("work_eligible") is not True
             ):
                 continue
@@ -1629,7 +2186,25 @@ class LvSubscriptionService:
             )
             if (artifact_dir / "decision_state.json").is_file():
                 continue
-            if (artifact_dir / "analysis_request.json").is_file():
+            relationship_path = artifact_dir / "pdf_relationship.json"
+            relationship: dict[str, Any] | None = None
+            if relationship_path.is_file():
+                try:
+                    relationship = json.loads(
+                        relationship_path.read_text(encoding="utf-8")
+                    )
+                except (OSError, json.JSONDecodeError) as exc:
+                    raise EnrichmentError(
+                        "subscription PDF relationship state is invalid"
+                    ) from exc
+                if relationship.get("route") == "companion_suppressed":
+                    continue
+            if (
+                isinstance(relationship, dict)
+                and relationship.get("route") == "waiting_primary_source"
+            ):
+                stage = "relationship_waiting"
+            elif (artifact_dir / "analysis_request.json").is_file():
                 stage = "analysis_requested"
             elif (artifact_dir / "ingest_result.json").is_file():
                 stage = "ingested"
@@ -1665,6 +2240,444 @@ class LvSubscriptionService:
         )
         return pending
 
+    def _episode_relation_candidates(
+        self,
+        item: dict[str, Any],
+    ) -> list[dict[str, Any]]:
+        """Expose candidates only; semantic evidence must decide any relationship."""
+        if item.get("media_type") != "pdf":
+            return []
+        candidates = []
+        for candidate in self._load_manifest().get("items", {}).values():
+            if (
+                not isinstance(candidate, dict)
+                or candidate.get("present") is not True
+                or Path(str(candidate.get("name") or "")).suffix.lower()
+                not in {".avi", ".flv", ".m4v", ".mkv", ".mov", ".mp4"}
+                or abs(
+                    int(candidate.get("modified_at") or 0)
+                    - int(item.get("modified_at") or 0)
+                )
+                > PDF_BOOTSTRAP_WINDOW_SECONDS
+            ):
+                continue
+            candidates.append(
+                {
+                    key: candidate[key]
+                    for key in (
+                        "identity",
+                        "version_key",
+                        "path",
+                        "name",
+                        "size",
+                        "modified_at",
+                    )
+                }
+            )
+        candidates.sort(
+            key=lambda row: (
+                int(row["modified_at"]),
+                str(row["path"]),
+                str(row["identity"]),
+            )
+        )
+        return candidates
+
+    @staticmethod
+    def _content_product_candidates(item: dict[str, Any]) -> list[dict[str, str]]:
+        """Return non-authoritative metadata hints for semantic routing."""
+        path = str(item.get("path") or "")
+        candidates = []
+        if "/直播回放/" in path:
+            candidates.append({
+                "product": "member_livestream",
+                "basis": "provider_directory",
+            })
+        if "/报告/" in path:
+            candidates.append({
+                "product": "underlying_logic",
+                "basis": "provider_directory",
+            })
+        return candidates
+
+    def metadata_companion_proof(
+        self,
+        identity: str,
+        *,
+        complete_video_transcripts: list[dict[str, Any]],
+    ) -> dict[str, Any] | None:
+        """Return a strict no-download companion proof or no conclusion."""
+        item = self._manifest_item(str(identity))
+        if item.get("media_type") != "pdf":
+            return None
+        pdf_stem = PurePosixPath(str(item["name"])).stem
+        pdf_date = re.search(r"(?:(20\d{2})年)?(\d{1,2})月(\d{1,2})日", pdf_stem)
+        summary_semantics = (
+            any(marker in pdf_stem for marker in ("总结", "纪要", "要点"))
+            and "直播" in pdf_stem
+        )
+        if pdf_date is None or not summary_semantics:
+            return None
+        matches = []
+        for video in complete_video_transcripts:
+            video_stem = PurePosixPath(str(video.get("name") or "")).stem
+            video_date = re.search(
+                r"(?:(20\d{2})年)?(\d{1,2})月(\d{1,2})日",
+                video_stem,
+            )
+            try:
+                delta = int(item["modified_at"]) - int(video["modified_at"])
+            except (KeyError, TypeError, ValueError):
+                continue
+            transcript_path = Path(
+                str(video.get("transcript_path") or "")
+            ).expanduser()
+            transcript_sha256 = str(
+                video.get("transcript_sha256") or ""
+            )
+            if (
+                video_date is None
+                or pdf_date.groups()[1:] != video_date.groups()[1:]
+                or PurePosixPath(str(item["path"])).parent
+                != PurePosixPath(str(video.get("path") or "")).parent
+                or not 0 <= delta <= 12 * 60 * 60
+                or video.get("transcript_complete") is not True
+                or not re.fullmatch(
+                    r"[0-9a-f]{64}",
+                    transcript_sha256,
+                )
+                or not transcript_path.is_file()
+                or _sha256_file(transcript_path) != transcript_sha256
+            ):
+                continue
+            matches.append((video, delta))
+        if len(matches) != 1:
+            return None
+        video, delta = matches[0]
+        return {
+            "document_role": "video_summary",
+            "primary_source_status": "complete",
+            "related_source_part": {
+                key: video[key]
+                for key in (
+                    "identity",
+                    "version_key",
+                    "provider_identity_sha256",
+                    "path",
+                    "name",
+                    "size",
+                    "modified_at",
+                    "transcript_path",
+                    "transcript_sha256",
+                )
+            }
+            | {"transcript_complete": True},
+            "relation_basis": {
+                "same_provider_parent": True,
+                "same_title_date": True,
+                "summary_title_semantics": True,
+                "pdf_after_video_seconds": delta,
+                "complete_transcript_sha256_verified": True,
+                "filename_only": False,
+            },
+        }
+
+    @_exclusive("item")
+    def record_metadata_companion_suppression(
+        self,
+        identity: str,
+        *,
+        proof: dict[str, Any],
+    ) -> dict[str, Any]:
+        """Suppress an exact companion before claim/download when proof is complete."""
+        item = self._manifest_item(str(identity))
+        if item.get("media_type") != "pdf":
+            raise EnrichmentError(
+                "metadata companion suppression requires a PDF"
+            )
+        artifact_dir = self.output_dir / "artifacts" / str(item["version_key"])
+        if any(
+            (artifact_dir / name).exists()
+            for name in (
+                "browser_download_claim.json",
+                "browser_download_receipt.json",
+                "ingest_result.json",
+                "analysis_request.json",
+            )
+        ):
+            raise EnrichmentError(
+                "metadata companion suppression must precede acquisition"
+            )
+        expected = self.metadata_companion_proof(
+            str(identity),
+            complete_video_transcripts=[
+                dict(proof.get("related_source_part") or {})
+            ],
+        )
+        if expected != proof:
+            raise EnrichmentError(
+                "metadata companion suppression proof is incomplete"
+            )
+        state_path = artifact_dir / "pdf_relationship.json"
+        proof_sha256 = hashlib.sha256(
+            _canonical(proof).encode("utf-8")
+        ).hexdigest()
+        if state_path.is_file():
+            try:
+                prior = json.loads(state_path.read_text(encoding="utf-8"))
+            except (OSError, json.JSONDecodeError) as exc:
+                raise EnrichmentError(
+                    "subscription PDF relationship state is invalid"
+                ) from exc
+            if (
+                prior.get("route") != "companion_suppressed"
+                or prior.get("relationship_sha256") != proof_sha256
+            ):
+                raise EnrichmentError(
+                    "terminal subscription PDF relationship cannot change"
+                )
+            return {**prior, "idempotent_replay": True}
+        state = {
+            "event": "subscription_pdf_companion_suppressed",
+            "status": "completed",
+            "route": "companion_suppressed",
+            "identity": str(item["identity"]),
+            "version_key": str(item["version_key"]),
+            "provider_path": str(item["path"]),
+            "provider_name": str(item["name"]),
+            "provider_size": int(item["size"]),
+            "provider_modified_at": int(item["modified_at"]),
+            "relationship_sha256": proof_sha256,
+            "document_role": "video_summary",
+            "primary_source_status": "complete",
+            "related_source_part": proof["related_source_part"],
+            "relation_basis": proof["relation_basis"],
+            "acquisition_skipped": True,
+            "business_effects": {
+                "report": "not_created",
+                "notification": "not_created",
+                "book_kol_us": "not_created",
+            },
+            "resolved_at": self._time().isoformat(timespec="seconds"),
+            "idempotent_replay": False,
+        }
+        _atomic_write_json(state_path, state)
+        _append_jsonl(
+            self.events_path,
+            {
+                key: value
+                for key, value in state.items()
+                if key not in {"related_source_part", "idempotent_replay"}
+            },
+        )
+        return state
+
+    def _validated_pdf_relationship(
+        self,
+        ingest: dict[str, Any],
+        decision_item: dict[str, Any],
+    ) -> tuple[dict[str, Any], str]:
+        relationship = decision_item.get("episode_relationship")
+        if not isinstance(relationship, dict):
+            raise EnrichmentError(
+                "subscription PDF episode relationship is unresolved"
+            )
+        role = str(relationship.get("document_role") or "")
+        primary_status = str(
+            relationship.get("primary_source_status") or ""
+        )
+        comparison = relationship.get("semantic_comparison")
+        quotes = relationship.get("content_evidence_quotes")
+        if (
+            role not in PDF_DOCUMENT_ROLES
+            or primary_status not in PDF_PRIMARY_SOURCE_STATUSES
+            or not str(relationship.get("reason") or "").strip()
+            or not isinstance(
+                relationship.get("provider_metadata_basis"), list
+            )
+            or not relationship.get("provider_metadata_basis")
+            or not isinstance(comparison, dict)
+            or not isinstance(comparison.get("substantive_new_points"), bool)
+            or not str(comparison.get("summary") or "").strip()
+            or not isinstance(quotes, list)
+            or not quotes
+        ):
+            raise EnrichmentError(
+                "subscription PDF episode relationship is unresolved"
+            )
+        evidence_path = Path(str(ingest.get("evidence_path") or ""))
+        try:
+            evidence_text = evidence_path.read_text(encoding="utf-8")
+        except OSError as exc:
+            raise EnrichmentError(
+                "subscription PDF evidence is unavailable"
+            ) from exc
+        if any(
+            not isinstance(quote, str)
+            or not quote.strip()
+            or quote not in evidence_text
+            for quote in quotes
+        ):
+            raise EnrichmentError(
+                "subscription PDF episode relationship is not evidence-bound"
+            )
+
+        related = relationship.get("related_source_part")
+        candidate_key: tuple[str, str] | None = None
+        if isinstance(related, dict):
+            candidate_key = (
+                str(related.get("identity") or ""),
+                str(related.get("version_key") or ""),
+            )
+        candidates = {
+            (str(row["identity"]), str(row["version_key"]))
+            for row in self._episode_relation_candidates(
+                self._manifest_item(str(ingest["identity"]))
+            )
+        }
+        if role == "video_summary" or primary_status != "not_applicable":
+            if candidate_key not in candidates:
+                raise EnrichmentError(
+                    "subscription PDF related source metadata is incomplete"
+                )
+        if primary_status == "complete":
+            if (
+                not isinstance(related, dict)
+                or not re.fullmatch(
+                    r"[0-9a-f]{64}",
+                    str(related.get("transcript_sha256") or ""),
+                )
+                or related.get("transcript_complete") is not True
+            ):
+                raise EnrichmentError(
+                    "subscription PDF primary transcript is not proven complete"
+                )
+        if primary_status in {"unavailable", "incomplete"}:
+            failure = relationship.get("primary_source_failure")
+            if (
+                not isinstance(failure, dict)
+                or failure.get("receipt_reconciled") is not True
+                or not str(failure.get("code") or "").strip()
+                or not str(failure.get("stage") or "").strip()
+            ):
+                raise EnrichmentError(
+                    "subscription PDF fallback lacks reconciled primary failure"
+                )
+
+        substantive_new = comparison["substantive_new_points"] is True
+        if role == "independent_report":
+            route = "independent"
+        elif substantive_new and primary_status == "complete":
+            route = "merged_event"
+        elif substantive_new:
+            route = "fallback"
+        elif role == "video_summary" and primary_status == "complete":
+            route = "companion_suppressed"
+        elif primary_status in {"unavailable", "incomplete"}:
+            route = "fallback"
+        else:
+            route = "waiting_primary_source"
+        return relationship, route
+
+    @_exclusive("item")
+    def record_pdf_relationship(
+        self,
+        identity: str,
+        *,
+        bundle_path: Path | str,
+    ) -> dict[str, Any]:
+        """Persist the primary-source routing gate before any publication effect."""
+        item = self._manifest_item(str(identity))
+        if item.get("media_type") != "pdf":
+            raise EnrichmentError(
+                "subscription relationship routing requires a PDF"
+            )
+        artifact_dir = self.output_dir / "artifacts" / str(item["version_key"])
+        ingest_path = artifact_dir / "ingest_result.json"
+        try:
+            ingest = json.loads(ingest_path.read_text(encoding="utf-8"))
+            bundle_file = Path(bundle_path).expanduser().resolve()
+            bundle = json.loads(bundle_file.read_text(encoding="utf-8"))
+            decision_item = bundle["items"][0]
+        except (
+            OSError,
+            json.JSONDecodeError,
+            KeyError,
+            IndexError,
+            TypeError,
+        ) as exc:
+            raise EnrichmentError(
+                "subscription PDF relationship bundle is invalid"
+            ) from exc
+        relationship, route = self._validated_pdf_relationship(
+            ingest,
+            decision_item,
+        )
+        relationship_sha256 = hashlib.sha256(
+            _canonical(relationship).encode("utf-8")
+        ).hexdigest()
+        state_path = artifact_dir / "pdf_relationship.json"
+        if state_path.is_file():
+            try:
+                prior = json.loads(state_path.read_text(encoding="utf-8"))
+            except (OSError, json.JSONDecodeError) as exc:
+                raise EnrichmentError(
+                    "subscription PDF relationship state is invalid"
+                ) from exc
+            if (
+                prior.get("identity") != item["identity"]
+                or prior.get("version_key") != item["version_key"]
+            ):
+                raise EnrichmentError(
+                    "subscription PDF relationship changed source version"
+                )
+            if prior.get("route") != "waiting_primary_source":
+                if (
+                    prior.get("relationship_sha256") != relationship_sha256
+                    or prior.get("route") != route
+                ):
+                    raise EnrichmentError(
+                        "terminal subscription PDF relationship cannot change"
+                    )
+                return {**prior, "idempotent_replay": True}
+        state = {
+            "event": "subscription_pdf_relationship_resolved",
+            "status": (
+                "completed"
+                if route in {
+                    "companion_suppressed",
+                    "independent",
+                    "fallback",
+                    "merged_event",
+                }
+                else "waiting"
+            ),
+            "route": route,
+            "identity": str(item["identity"]),
+            "version_key": str(item["version_key"]),
+            "relationship_sha256": relationship_sha256,
+            "document_role": relationship["document_role"],
+            "primary_source_status": relationship["primary_source_status"],
+            "related_source_part": relationship.get("related_source_part"),
+            "resolved_at": self._time().isoformat(timespec="seconds"),
+            "business_effects": {
+                "report": "not_created",
+                "notification": "not_created",
+                "book_kol_us": "not_created",
+            },
+            "idempotent_replay": False,
+        }
+        _atomic_write_json(state_path, state)
+        _append_jsonl(
+            self.events_path,
+            {
+                key: value
+                for key, value in state.items()
+                if key not in {"related_source_part", "idempotent_replay"}
+            },
+        )
+        return state
+
     def prepare_analysis_request(
         self,
         ingest: dict[str, Any],
@@ -1699,6 +2712,35 @@ class LvSubscriptionService:
             "original_evidence_sha256": ingest["original_sha256"],
             "ocr_path": ingest.get("ocr_path"),
             "ocr_sha256": ingest.get("ocr_sha256"),
+            "pdf_coverage_path": ingest.get("pdf_coverage_path"),
+            "pdf_coverage_sha256": ingest.get("pdf_coverage_sha256"),
+            "pdf_page_count": ingest.get("pdf_page_count"),
+            "pdf_visual_pages": ingest.get("pdf_visual_pages") or [],
+            "episode_relationship_contract": (
+                {
+                    "status": "requires_evidence_bound_resolution",
+                    "document_roles": sorted(PDF_DOCUMENT_ROLES),
+                    "primary_source_statuses": sorted(
+                        PDF_PRIMARY_SOURCE_STATUSES
+                    ),
+                    "precedence": [
+                        "complete_video_transcript",
+                        "independent_report_pdf",
+                        "video_summary_pdf",
+                    ],
+                    "rule": (
+                        "Resolve provider directory, mtime/version, title/date, "
+                        "PDF content, and video-transcript semantics together. "
+                        "A filename alone is never sufficient. A complete "
+                        "video transcript suppresses a summary PDF unless the "
+                        "PDF adds substantive viewpoints or is an independent "
+                        "report event."
+                    ),
+                    "candidates": self._episode_relation_candidates(item),
+                }
+                if ingest["media_type"] == "pdf"
+                else None
+            ),
             "ambiguities": ingest.get("ambiguities") or [],
             "required_coverage_rows": sorted(_COVERAGE_ROWS),
             "investment_claim_extraction": build_claim_extraction_request(
@@ -1714,6 +2756,32 @@ class LvSubscriptionService:
                     "persist the reason and suppress household delivery only "
                     "when nothing useful can be accurately relayed"
                 ),
+            },
+            "claim_semantic_routing_contract": {
+                "content_products": sorted(LV_CONTENT_PRODUCTS),
+                "metadata_candidates": self._content_product_candidates(item),
+                "rule": (
+                    "Classify claims from complete evidence, not file type or "
+                    "filename. Route current-decision claims and durable-knowledge "
+                    "claims independently while preserving one report per real event."
+                ),
+                "member_livestream": (
+                    "complete transcript -> current facts -> event report -> "
+                    "eligible reminder -> paper-only Book"
+                ),
+                "underlying_logic": (
+                    "reusable causal models, methods, and case frameworks -> "
+                    "report_only durable knowledge with authority=0; no alert and "
+                    "reasoned no_trade when no current-decision claim exists"
+                ),
+                "authority_boundary": {
+                    "author_class": "other_author",
+                    "authority": 0,
+                    "may_update_posture_current": False,
+                    "may_update_regime_timeline": False,
+                    "may_tune_strategy": False,
+                    "promotion_requires": ["research_harness", "human_gate"],
+                },
             },
             "next_checkpoint": (
                 "evidence-bound reader insight, current-market judgment, "
@@ -1809,6 +2877,36 @@ class LvSubscriptionService:
                     }
                 )
             ).expanduser().resolve()
+            if ingest["media_type"] == "pdf":
+                relationship = self.record_pdf_relationship(
+                    identity,
+                    bundle_path=bundle_path,
+                )
+                if relationship["route"] in {
+                    "companion_suppressed",
+                    "waiting_primary_source",
+                }:
+                    completed.append(
+                        {
+                            "identity": identity,
+                            "version_key": str(row["version_key"]),
+                            "media_type": "pdf",
+                            "download": {
+                                "status": download["status"],
+                                "idempotent_replay": download.get(
+                                    "idempotent_replay", False
+                                ),
+                            },
+                            "ingest": {
+                                "status": "ingested",
+                                "idempotent_replay": ingest.get(
+                                    "idempotent_replay", False
+                                ),
+                            },
+                            "relationship": relationship,
+                        }
+                    )
+                    continue
             decision = self.decide(
                 identity,
                 bundle_path=bundle_path,
@@ -2020,6 +3118,70 @@ class LvSubscriptionService:
                 raise EnrichmentError(
                     "reusable_knowledge requires routed hypothesis ids"
                 )
+        routing = item.get("claim_semantic_routing")
+        if not isinstance(routing, dict):
+            raise EnrichmentError(
+                "Lv claim-semantic routing is incomplete"
+            )
+        product = str(routing.get("content_product") or "")
+        current_claim_ids = routing.get("current_decision_claim_ids")
+        durable_claim_ids = routing.get("durable_knowledge_claim_ids")
+        if (
+            product not in LV_CONTENT_PRODUCTS
+            or not isinstance(current_claim_ids, list)
+            or not isinstance(durable_claim_ids, list)
+            or any(
+                not isinstance(claim_id, str) or not claim_id.strip()
+                for claim_id in [*current_claim_ids, *durable_claim_ids]
+            )
+            or len(set(current_claim_ids)) != len(current_claim_ids)
+            or len(set(durable_claim_ids)) != len(durable_claim_ids)
+            or set(current_claim_ids) & set(durable_claim_ids)
+        ):
+            raise EnrichmentError(
+                "Lv claim-semantic routing is invalid"
+            )
+        if product == "hybrid" and (
+            not current_claim_ids or not durable_claim_ids
+        ):
+            raise EnrichmentError(
+                "hybrid Lv content needs both semantic claim branches"
+            )
+        if durable_claim_ids:
+            authority = routing.get("durable_authority")
+            if (
+                authority != 0
+                or routing.get("may_update_posture_current") is not False
+                or routing.get("may_update_regime_timeline") is not False
+                or routing.get("may_tune_strategy") is not False
+                or knowledge_status != "reusable_knowledge"
+            ):
+                raise EnrichmentError(
+                    "Lv durable knowledge exceeded its authority boundary"
+                )
+            distillation = Path(
+                str(item.get("durable_distillation_path") or "")
+            )
+            if "reference/experience/distilled" not in distillation.as_posix():
+                raise EnrichmentError(
+                    "Lv durable knowledge needs the reviewed distillation path"
+                )
+        if not current_claim_ids and durable_claim_ids:
+            content_value = item.get("content_value") or {}
+            reader_insight = item.get("reader_insight") or {}
+            if (
+                decision_status != "no_actionable_signal"
+                or reader_insight.get("status") != "useful"
+                or content_value.get("status") != "promoted"
+                or content_value.get("tier") != "report_only"
+                or (item.get("book_kol_us") or {}).get("decision") != "no_trade"
+                or not str(
+                    (item.get("book_kol_us") or {}).get("reason") or ""
+                ).strip()
+            ):
+                raise EnrichmentError(
+                    "durable-only Lv knowledge must be report-only and no-trade"
+                )
         if not isinstance(item.get("market_outlook"), dict):
             raise EnrichmentError(
                 "subscription decision requires a full-band market outlook"
@@ -2075,6 +3237,62 @@ class LvSubscriptionService:
                     raise EnrichmentError(
                         "excluded OCR ambiguity cannot support a claim"
                     )
+        if ingest.get("media_type") == "pdf":
+            coverage_path = Path(str(ingest.get("pdf_coverage_path") or ""))
+            if (
+                not coverage_path.is_file()
+                or _sha256_file(coverage_path)
+                != ingest.get("pdf_coverage_sha256")
+            ):
+                raise EnrichmentError(
+                    "subscription PDF coverage evidence is unavailable"
+                )
+            try:
+                pdf_coverage = json.loads(
+                    coverage_path.read_text(encoding="utf-8")
+                )
+            except (OSError, json.JSONDecodeError) as exc:
+                raise EnrichmentError(
+                    "subscription PDF coverage evidence is invalid"
+                ) from exc
+            pages = pdf_coverage.get("pages")
+            if (
+                not isinstance(pages, list)
+                or len(pages) != int(ingest.get("pdf_page_count") or 0)
+            ):
+                raise EnrichmentError(
+                    "subscription PDF page coverage is incomplete"
+                )
+            visual_pages = {
+                int(row["page"])
+                for row in pages
+                if isinstance(row, dict) and row.get("rendered_path")
+            }
+            assessments = item.get("pdf_page_coverage_assessment")
+            if visual_pages:
+                if not isinstance(assessments, list):
+                    raise EnrichmentError(
+                        "subscription PDF visual pages need reviewed coverage"
+                    )
+                assessed = {
+                    int(row.get("page") or 0)
+                    for row in assessments
+                    if isinstance(row, dict)
+                    and row.get("status") == "verified"
+                    and str(row.get("summary") or "").strip()
+                }
+                if assessed != visual_pages:
+                    raise EnrichmentError(
+                        "subscription PDF visual review coverage is incomplete"
+                    )
+            _relationship, route = self._validated_pdf_relationship(
+                ingest,
+                item,
+            )
+            if route not in {"independent", "fallback", "merged_event"}:
+                raise EnrichmentError(
+                    "subscription PDF is not an independent publication item"
+                )
         try:
             evidence_text = evidence_path.read_text(encoding="utf-8")
         except OSError as exc:

@@ -11,6 +11,7 @@ from scripts import kol_daily as kol_daily_script
 from scripts.kol_daily import (
     _classified_source,
     _latest_lv_video_goal,
+    _lv_publication_context,
     _video_publication_context,
     DailyRuntime,
 )
@@ -880,6 +881,210 @@ def test_source_classifier_preserves_safe_timeout_diagnostic():
         "stage": "browser_eval",
         "retryable": True,
     }
+
+
+def test_one_lv_full_snapshot_is_reused_by_both_adapters(monkeypatch, tmp_path):
+    listing = {
+        "status": "ok",
+        "complete_scan": True,
+        "entries": [{
+            "provider_file_id": "lv-one",
+            "path": "/share/one.mp4",
+            "name": "one.mp4",
+            "is_dir": False,
+            "size": 123,
+            "modified_at": 1_785_000_000,
+        }],
+    }
+    calls = {"full_scan": 0, "video_scan": 0}
+
+    class FakeLv:
+        @classmethod
+        def from_config(cls, *_args, **_kwargs):
+            return cls()
+
+        def _read_opencli_listing(self, **_kwargs):
+            calls["full_scan"] += 1
+            return listing
+
+        def poll_opencli(self, *, listing: dict, **_kwargs):
+            assert listing is not None
+            assert listing is globals_listing
+
+        @staticmethod
+        def pending_items():
+            return []
+
+    class FakeVideos:
+        def __init__(self, *_args, **_kwargs):
+            pass
+
+        def scan_opencli(self, *, lv_listing: dict, **_kwargs):
+            calls["video_scan"] += 1
+            assert lv_listing is globals_listing
+
+        @staticmethod
+        def pending_items():
+            return []
+
+    globals_listing = listing
+    monkeypatch.setattr(kol_daily_script, "LvSubscriptionService", FakeLv)
+    monkeypatch.setattr(kol_daily_script, "SubscriptionVideoService", FakeVideos)
+    runtime = DailyRuntime.__new__(DailyRuntime)
+    runtime.args = SimpleNamespace(
+        lv_output_dir=tmp_path / "lv",
+        video_output_dir=tmp_path / "videos",
+        config=tmp_path / "config.yaml",
+        lv_session="lv-session",
+        private_session="private-session",
+        enrichment_session="enrichment-session",
+        opencli_profile="profile",
+    )
+    runtime._lv_service = None
+    runtime._lv_listing = None
+    runtime._lv_listing_error = None
+
+    assert runtime.lv() == {"status": "no_update"}
+    assert runtime.videos() == {"status": "no_update"}
+    assert calls == {"full_scan": 1, "video_scan": 1}
+
+
+def test_pdf_companion_publication_context_merges_explicit_source_parts(tmp_path):
+    original = tmp_path / "report.pdf"
+    original.write_bytes(b"%PDF-evidence")
+    ingest = {
+        "identity": "pdf-identity",
+        "version_key": "pdf-version",
+        "original_path": str(original),
+        "evidence_sha256": "a" * 64,
+        "media_type": "pdf",
+        "published_at": "2026-08-04T03:22:06+08:00",
+    }
+    bundle_path = tmp_path / "bundle.json"
+    bundle_path.write_text(json.dumps({
+        "items": [{
+            "episode_relationship": {
+                "document_role": "video_summary",
+                "primary_source_status": "complete",
+                "semantic_comparison": {
+                    "substantive_new_points": True,
+                },
+                "related_source_part": {
+                    "identity": "video-identity",
+                    "version_key": "video-version",
+                    "size": 5_508_885_608,
+                    "media_type": "video",
+                    "transcript_sha256": "b" * 64,
+                },
+            },
+        }],
+    }))
+
+    context = _lv_publication_context(ingest, bundle_path)
+
+    assert context.source_identity not in {"pdf-identity", "video-identity"}
+    assert context.media_types == ("pdf", "video")
+    assert [row["identity"] for row in context.source_parts] == [
+        "pdf-identity",
+        "video-identity",
+    ]
+    assert [row["evidence_sha256"] for row in context.source_parts] == [
+        "a" * 64,
+        "b" * 64,
+    ]
+
+
+def test_consecutive_same_failure_escalates_once_without_business_replay(tmp_path):
+    clock = Clock("2026-07-27T14:00:00+08:00")
+    service = DailyCoordinator(tmp_path / "daily", now=clock)
+    notices = []
+    attempts = 0
+
+    def failing():
+        nonlocal attempts
+        attempts += 1
+        raise TransientSourceError(
+            "private details must not be persisted",
+            category="timeout",
+            code="share_list_timeout",
+            stage="listing_validation",
+        )
+
+    first = service.run(
+        [{"name": "lv_text_image", "run": failing}],
+        blocker_sender=lambda title, body: notices.append((title, body)),
+    )
+    clock.value = datetime.fromisoformat("2026-07-27T15:00:00+08:00")
+    second = service.run(
+        [{"name": "lv_text_image", "run": failing}],
+        blocker_sender=lambda title, body: notices.append((title, body)),
+    )
+    clock.value = datetime.fromisoformat("2026-07-27T16:00:00+08:00")
+    third = service.run(
+        [{"name": "lv_text_image", "run": failing}],
+        blocker_sender=lambda title, body: notices.append((title, body)),
+    )
+
+    assert first["health"] == "degraded"
+    assert second["health"] == "blocked"
+    assert third["health"] == "blocked"
+    assert attempts == 3
+    assert len(notices) == 1
+    assert second["source_results"][0]["consecutive_failure_count"] == 2
+    assert third["source_results"][0]["notification_sent"] is False
+    audit = service.audit()
+    assert audit["operational_status"] == "blocked"
+    assert audit["operational_reminder_count"] == 1
+    events = service.events()
+    exhausted = [
+        row for row in events if row["event"] == "source_recovery_exhausted"
+    ]
+    assert len(exhausted) == 2
+    assert all(
+        row["external_business_effects_replayed"] is False
+        for row in exhausted
+    )
+
+
+def test_repeated_source_acquisition_stall_escalates_without_replay(tmp_path):
+    clock = Clock("2026-07-27T14:00:00+08:00")
+    service = DailyCoordinator(tmp_path / "daily", now=clock)
+    notices = []
+    calls = 0
+
+    def waiting():
+        nonlocal calls
+        calls += 1
+        return {
+            "status": "waiting",
+            "waiting_count": 1,
+            "waiting_items": [{
+                "identity": "identity-1",
+                "version_key": "version-1",
+                "stage": "source_acquisition",
+            }],
+        }
+
+    service.run(
+        [{"name": "subscription_video", "run": waiting}],
+        blocker_sender=lambda title, body: notices.append((title, body)),
+    )
+    clock.value = datetime.fromisoformat("2026-07-27T15:00:00+08:00")
+    result = service.run(
+        [{"name": "subscription_video", "run": waiting}],
+        blocker_sender=lambda title, body: notices.append((title, body)),
+    )
+
+    assert calls == 2
+    assert result["health"] == "blocked"
+    assert result["source_results"][0]["user_action_required"] is True
+    assert len(notices) == 1
+    stalled = [
+        row
+        for row in service.events()
+        if row["event"] == "source_acquisition_stalled"
+    ]
+    assert stalled[0]["external_business_effects_replayed"] is False
 
 
 def test_source_classifier_promotes_provider_transfer_rejection_to_blocker():

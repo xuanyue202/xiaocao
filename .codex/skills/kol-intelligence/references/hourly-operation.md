@@ -26,9 +26,8 @@ credential-safe diagnostic containing `category`, `code`, and `stage`; this is
 local operational evidence, not an externally visible event. There is no
 invocation from 23:01 through 06:59.
 
-The coordinator may read only lightweight metadata, transcripts, images,
-handoff JSON, and durable receipts. It never reads or downloads source-video
-bytes and never uses Computer Use.
+The coordinator reads only lightweight evidence/receipts, never reads or
+downloads source-video bytes, and never uses Computer Use.
 
 Discovery is not completion for the latest Lv Xiaotong video. `status` and
 `audit` expose `latest_lv_video_goal`; it is successful only when the exact
@@ -92,6 +91,37 @@ broadband handoffs plus cloud/transcript receipts. Lv discovery recursively
 reads the share tree and must not infer child-tree freshness from a
 parent-directory modification time.
 
+One sweep obtains at most one complete recursive Lv `/share/list` snapshot and
+reuses it for both the small-item and video adapters in the same process,
+session, and profile. Every item still validates exact provider identity,
+version, path, name, size, and target. A cursor advances only after a complete
+scan. The words `已失效` elsewhere in a valid page are not an expiration proof:
+only an exact visible terminal state or an explicit provider failure response
+may classify `share_expired`; successful share metadata and a complete list
+take precedence.
+
+Discovery-only OpenCLI failures (`wrong_share`, `wrong_origin`, `about:blank`,
+timeout, invalid JSON, and incomplete `/share/list`) may reopen the configured
+share, wait briefly, and retry the full read exactly once in the same sweep.
+Preserve the original and final credential-safe `category/code/stage`; never
+collapse them into a generic source error. This recovery authority ends before
+any download, cloud-transfer, publication, notification, or Book side effect.
+Those actions reconcile claims and receipts and are never retried blindly.
+
+Small-PDF precedence is complete video transcript, independent report, then
+video summary. Directory/title-date/mtime/version plus a verified transcript
+may prove `companion_suppressed` before claim; filename alone cannot. Ambiguous
+or incomplete cases use one claimed local PDF download, immutable SHA-256,
+`pypdf`/`pdfplumber`, and rendered visual/OCR coverage; unsafe PDFs fail closed.
+
+Route Lv claims, not media types. `会员直播` uses current-fact/event/eligible
+alert/paper-Book semantics. Reusable `底层逻辑` normally uses no actionable
+signal, useful insight, reusable knowledge, report-only, no alert, and reasoned
+no-trade; it distills under `reference/experience/distilled/` at `authority=0`.
+It cannot change posture/timeline/parameters without research plus human gate.
+Mixed claims stay one report; only the current branch authorizes alert/Book,
+and valuable methodology is not low-density merely for lacking a trade call.
+
 Put targeted currentness requests in
 `output/live/kol_daily/viewpoint_triggers/*.json`. Supported triggers are a new
 same-KOL publication, due horizon/trigger/falsifier, material fact change, and
@@ -105,3 +135,12 @@ paper action. Report only a structured user-action blocker or a completed
 externally visible event. Do not surface a retryable diagnostic as an external
 event, but preserve it in `status`, `audit`, and the append-only ledger. The same
 blocker stays silent until it changes or clears.
+
+A first exhausted transient discovery recovery may remain an internal degraded
+state. The same source/stage/code in consecutive hourly slots, or a newly
+observed identity/version that stays at `source_acquisition` across two slots,
+must append a recovery-exhausted/stalled audit record in that sweep. The runner
+must record that deterministic recovery was attempted and that no business
+effect was replayed. If receipts do not permit a safe deterministic repair,
+emit one deduplicated structured operational blocker; never remain silently
+degraded forever.

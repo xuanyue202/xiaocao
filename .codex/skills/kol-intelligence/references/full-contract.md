@@ -55,6 +55,11 @@ Keep the layers separate:
 - One complete reader report represents one real KOL publication event. A
   multipart livestream is one report with ordered `source_parts`; two
   independent events remain two reports even when one batch processes them.
+  A small PDF may join a video only when provider identity/version metadata and
+  content evidence explicitly prove that both are parts of the same event.
+  Filename similarity is never sufficient. A confirmed mixed-media episode
+  has one source-neutral identity/version and ordered PDF/video `source_parts`;
+  an independent report PDF remains its own publication event.
   Never derive report identity from a batch, filename, display author, ticker,
   or local thesis id.
 - Before assigning publication-event identity, complete coverage review must
@@ -295,11 +300,61 @@ the two receipts by handoff id and media SHA-256.
   process, session, and profile for all pending small items instead of
   rescanning the share per item; the snapshot never crosses a runner boundary,
   and every item still validates its exact identity, version, name, size, and
-  browser target. It ignores video payloads, persists a source-version claim
-  before each small text/image browser download, snapshots only the completed
-  browser receipt, bypasses OCR for native UTF-8 text, and runs macOS Vision
-  OCR once for images. A replayed/uncertain download claim may only reconcile
-  the prior download event; it must never retrigger it.
+  browser target plus its exact path. Ticket 04 and Ticket 05 reuse this same in-process
+  snapshot; neither performs a second recursive Lv scan in the same sweep. It
+  ignores video payloads, persists a source-version claim before each small
+  text/image/PDF browser download, snapshots only the completed browser
+  receipt, bypasses OCR for native UTF-8 text, and runs macOS Vision OCR once
+  for images. The words `已失效` elsewhere in a valid page are not evidence of
+  expiration: require an exact visible terminal UI or explicit provider error,
+  and prefer successful share metadata plus complete `/share/list` evidence.
+  A replayed/uncertain download claim may only reconcile the prior download
+  event; it must never retrigger it.
+- Before any small-item claim, discovery-only `wrong_share`, `wrong_origin`,
+  `about:blank`, OpenCLI timeout/invalid JSON, or incomplete `/share/list` may
+  reopen the configured page, back off, and retry the full read exactly once.
+  Preserve the original and final credential-safe category/code/stage. This
+  bounded authority never extends to download, transfer, publication,
+  notification, or Book actions; uncertain side effects reconcile receipts.
+- A `.pdf` is eligible only inside the configured small-file and page-count
+  boundaries. Do not download it unconditionally. If provider directory,
+  title date and summary semantics, mtime/version relation, and a verified
+  complete video transcript jointly prove one companion, persist an exact
+  `companion_suppressed` relationship receipt before acquisition and create no
+  PDF claim, download, extraction, analysis, report, reminder, or Book effect.
+  Otherwise preserve the claimed original PDF and SHA-256, extract text locally
+  with `pypdf` and, when available, `pdfplumber`, and render every page with
+  visual resources or insufficient native-text coverage using Poppler while
+  recording page-level render/OCR hashes. A rendered page with insufficient OCR
+  remains `visual_review_required` until the semantic bundle covers it.
+  Malformed, encrypted, uncovered, unknown, or oversized PDFs fail closed.
+  Replay reuses every relationship/download/extraction/semantic/publication/
+  notification/Book receipt and creates no second effect.
+- A PDF analysis request lists only provider-metadata relation candidates. The
+  semantic bundle must resolve `independent|companion` with content quotes and
+  exact provider identity/version evidence. A companion also binds the related
+  evidence SHA-256; publication then uses one source-neutral event and ordered
+  mixed-media `source_parts`. Do not publish both a companion PDF and its video
+  independently. Unresolved relation evidence remains pending, not guessed.
+- Route Lv claims by product semantics, never by PDF/video type alone. The
+  `会员直播` product is time-sensitive current decision evidence and follows the
+  complete transcript -> current-fact validation -> one event report ->
+  eligible reminder -> paper-only Book path. The `底层逻辑` product is case
+  analysis, causal framework, and methodology. When it contains reusable
+  reasoning but no current action, use `decision_status=no_actionable_signal`,
+  `reader_insight.status=useful`, `knowledge_status=reusable_knowledge`, one
+  report-only `底层逻辑` knowledge entry, no alert, and a reasoned KOL-US
+  `no_trade`; lack of a direct buy/sell instruction is not `low_density`.
+- Preserve the original underlying-logic evidence and normalized text with
+  SHA-256, distill reusable material under `reference/experience/distilled/`,
+  and route candidate hypotheses to the backlog with `authority=0`. Lv is an
+  other author: this path cannot mutate Xiaocao `posture_current`,
+  `REGIME_TIMELINE`, or deterministic strategy/parameters. Authority promotion
+  requires the research harness and human gate. When one real event contains
+  both current-decision and durable-knowledge claims, publish one report and
+  route the claims into both branches; only current-decision claims may
+  authorize an alert or Book action. Pure promotion, repetition, or evidence
+  with no reusable reasoning may legally use `no_reusable_knowledge`.
 - When the still-running command emits
   `subscription_analysis_input_required`, reopen the referenced immutable
   evidence and `analysis_request.json`, validate current market and household
@@ -323,6 +378,10 @@ the two receipts by handoff id and media SHA-256.
   and the private directory `/课程/路西法全套`. Do not use the Codex built-in
   browser, another share, raw CDP, Computer Use, coordinates, a direct HTTP
   client, marketplace search, or an automated purchase.
+- Within one Ticket 07 sweep, Ticket 05 consumes Ticket 04's already-complete
+  Lv snapshot rather than recursively scanning the same share again. A shared
+  snapshot never bypasses exact per-item identity/version/name/size/target
+  validation and never crosses a process boundary.
 - Run one resumable coordinator command:
   `PYTHONPATH=src python3 scripts/kol_subscription_videos.py run --opencli-profile <connected-profile>`.
   Its default Lv, private-folder, and enrichment session is the already-bound

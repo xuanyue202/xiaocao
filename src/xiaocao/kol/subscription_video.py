@@ -23,7 +23,7 @@ from .claim_coverage import (
     validate_claim_coverage,
 )
 from .author_profiles import semantic_author_profile
-from .enrichment_types import EnrichmentError
+from .enrichment_types import EnrichmentDiagnosticError, EnrichmentError
 from .episodes import assemble_video_units
 from .lv_subscription import LvSubscriptionService
 from .netdisk_enrichment import NetdiskEnrichmentService
@@ -645,6 +645,12 @@ class SubscriptionVideoService:
             raise EnrichmentError("OpenCLI session name is invalid")
         if profile is not None and not _OPENCLI_NAME.fullmatch(profile):
             raise EnrichmentError("OpenCLI profile name is invalid")
+        operation = str(args[0] if args else "unknown").strip().lower()
+        stage = {
+            "eval": "browser_eval",
+            "open": "browser_open",
+            "wait": "browser_wait",
+        }.get(operation, "browser_command")
         command = [
             *self.opencli_command,
             *(["--profile", profile] if profile else []),
@@ -661,15 +667,35 @@ class SubscriptionVideoService:
                 timeout=timeout_seconds,
             )
         except subprocess.TimeoutExpired as exc:
-            raise EnrichmentError("Ticket 05 browser command timed out") from exc
+            raise EnrichmentDiagnosticError(
+                "Ticket 05 browser command timed out",
+                category="timeout",
+                code="opencli_timeout",
+                stage=stage,
+            ) from exc
         if result.returncode != 0:
-            raise EnrichmentError("Ticket 05 browser command failed")
+            raise EnrichmentDiagnosticError(
+                "Ticket 05 browser command failed",
+                category="transport_error",
+                code="opencli_command_failed",
+                stage=stage,
+            )
         try:
             value = json.loads(str(result.stdout))
         except (TypeError, json.JSONDecodeError) as exc:
-            raise EnrichmentError("Ticket 05 browser returned invalid JSON") from exc
+            raise EnrichmentDiagnosticError(
+                "Ticket 05 browser returned invalid JSON",
+                category="protocol_error",
+                code="opencli_invalid_json",
+                stage=stage,
+            ) from exc
         if not isinstance(value, dict):
-            raise EnrichmentError("Ticket 05 browser returned a non-object")
+            raise EnrichmentDiagnosticError(
+                "Ticket 05 browser returned a non-object",
+                category="protocol_error",
+                code="opencli_non_object",
+                stage=stage,
+            )
         return value
 
     def _scan_private(
@@ -710,8 +736,18 @@ class SubscriptionVideoService:
             or payload.get("complete_scan") is not True
             or not isinstance(payload.get("entries"), list)
         ):
-            raise EnrichmentError(
-                f"private Netdisk listing failed: {payload.get('status')}"
+            status = str(payload.get("status") or "")
+            code = {
+                "listing_timeout": "private_listing_timeout",
+                "wrong_origin": "private_wrong_browser_origin",
+                "wrong_path": "private_wrong_directory",
+                "listing_bounds_exceeded": "private_listing_bounds_exceeded",
+            }.get(status, "private_listing_incomplete")
+            raise EnrichmentDiagnosticError(
+                "private Netdisk listing is unavailable",
+                category=("timeout" if status == "listing_timeout" else "incomplete_scan"),
+                code=code,
+                stage="private_listing_validation",
             )
         return payload
 
@@ -1177,11 +1213,24 @@ class SubscriptionVideoService:
         private_session: str,
         profile: str | None,
         episode_spec_path: Path | str | None = None,
+        lv_listing: dict[str, Any] | None = None,
     ) -> dict[str, Any] | None:
-        lv_listing = self.lv._read_opencli_listing(
-            session=lv_session,
-            profile=profile,
-        )
+        if lv_listing is None:
+            lv_listing = self.lv._read_opencli_listing(
+                session=lv_session,
+                profile=profile,
+            )
+        if (
+            lv_listing.get("status") != "ok"
+            or lv_listing.get("complete_scan") is not True
+            or not isinstance(lv_listing.get("entries"), list)
+        ):
+            raise EnrichmentDiagnosticError(
+                "shared Lv listing is incomplete",
+                category="incomplete_scan",
+                code="shared_listing_incomplete",
+                stage="listing_validation",
+            )
         lucifer_listing = self._scan_private(
             session=private_session,
             profile=profile,
