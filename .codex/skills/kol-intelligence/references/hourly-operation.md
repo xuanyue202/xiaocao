@@ -108,6 +108,9 @@ collapse them into a generic source error. This recovery authority ends before
 any download, cloud-transfer, publication, notification, or Book side effect.
 Those actions reconcile claims and receipts and are never retried blindly.
 
+After a scan, ledger and isolate item failures; prioritize latest Lv,
+and reconcile uncertain claims without replay.
+
 Small-PDF precedence is complete video transcript, independent report, then
 video summary. Directory/title-date/mtime/version plus a verified transcript
 may prove `companion_suppressed` before claim; filename alone cannot. Ambiguous

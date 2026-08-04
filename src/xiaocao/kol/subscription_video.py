@@ -1385,6 +1385,83 @@ class SubscriptionVideoService:
     def status(self) -> dict[str, Any]:
         return {**self._load_manifest(), "pending": self.pending_items()}
 
+    def record_item_failure(
+        self,
+        item: dict[str, Any],
+        *,
+        failure: dict[str, str],
+        retryable: bool,
+    ) -> dict[str, Any]:
+        """Audit one isolated item failure without replaying its claims."""
+        manifest = self._load_manifest()
+        collection_name = (
+            "episodes" if item.get("is_episode") is True else "items"
+        )
+        collection = manifest.get(collection_name)
+        persisted = (
+            collection.get(str(item.get("identity") or ""))
+            if isinstance(collection, dict)
+            else None
+        )
+        if (
+            not isinstance(persisted, dict)
+            or persisted.get("version_key") != item.get("version_key")
+        ):
+            raise EnrichmentError(
+                "Ticket 05 isolated failure changed source version"
+            )
+        claim_status = "missing"
+        if item.get("source") == LV_SOURCE:
+            claim_path = self._claim_path(f"lv_transfer_{item['version_key']}")
+            if claim_path.is_file():
+                try:
+                    claim = json.loads(claim_path.read_text(encoding="utf-8"))
+                except (OSError, json.JSONDecodeError):
+                    claim_status = "invalid"
+                else:
+                    claim_status = str(claim.get("status") or "unknown")
+        else:
+            enrichment_events = (
+                self.output_dir
+                / "enrichment"
+                / str(item["version_key"])
+                / "events.jsonl"
+            )
+            if enrichment_events.is_file():
+                try:
+                    rows = [
+                        json.loads(line)
+                        for line in enrichment_events.read_text(
+                            encoding="utf-8"
+                        ).splitlines()
+                        if line.strip()
+                    ]
+                except (OSError, json.JSONDecodeError):
+                    claim_status = "invalid"
+                else:
+                    claim_status = str(
+                        (rows[-1] if rows else {}).get("status") or "missing"
+                    )
+        row = {
+            "schema_version": 1,
+            "event": "subscription_video_item_failure_isolated",
+            "identity": str(item["identity"]),
+            "version_key": str(item["version_key"]),
+            "name": str(item.get("name") or item.get("episode_title") or ""),
+            "source": str(item["source"]),
+            "claim_status": claim_status,
+            "failure": {
+                "category": str(failure["category"]),
+                "code": str(failure["code"]),
+                "stage": str(failure["stage"]),
+                "retryable": bool(retryable),
+            },
+            "external_business_effects_replayed": False,
+            "recorded_at": self._time().isoformat(timespec="seconds"),
+        }
+        _append_jsonl(self.events_path, row)
+        return row
+
     @staticmethod
     def _read_small_json(
         path: Path | str,

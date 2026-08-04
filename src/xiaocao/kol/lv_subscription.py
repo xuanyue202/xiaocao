@@ -678,6 +678,46 @@ class LvSubscriptionService:
             "pending": self.pending_items(),
         }
 
+    def record_item_failure(
+        self,
+        identity: str,
+        *,
+        failure: dict[str, str],
+        retryable: bool,
+    ) -> dict[str, Any]:
+        """Audit one isolated item failure without changing its claim."""
+        item = self._manifest_item(str(identity))
+        artifact_dir = self.output_dir / "artifacts" / str(item["version_key"])
+        claim_path = artifact_dir / "browser_download_claim.json"
+        claim_status = "missing"
+        if claim_path.is_file():
+            try:
+                claim = json.loads(claim_path.read_text(encoding="utf-8"))
+            except (OSError, json.JSONDecodeError):
+                claim_status = "invalid"
+            else:
+                claim_status = str(claim.get("status") or "unknown")
+        row = {
+            "event": "subscription_item_failure_isolated",
+            "source": "baidu_subscription_share_browser",
+            "author": "吕晓彤",
+            "identity": str(item["identity"]),
+            "version_key": str(item["version_key"]),
+            "name": str(item["name"]),
+            "media_type": str(item["media_type"]),
+            "claim_status": claim_status,
+            "failure": {
+                "category": str(failure["category"]),
+                "code": str(failure["code"]),
+                "stage": str(failure["stage"]),
+                "retryable": bool(retryable),
+            },
+            "external_business_effects_replayed": False,
+            "recorded_at": self._time().isoformat(timespec="seconds"),
+        }
+        _append_jsonl(self.events_path, row)
+        return row
+
     def _opencli_json(
         self,
         session: str,

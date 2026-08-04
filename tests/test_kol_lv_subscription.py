@@ -144,6 +144,36 @@ def test_bootstrap_baselines_history_and_keeps_only_latest_supported_versions(
     }
 
 
+def test_isolated_item_failure_does_not_change_existing_claim(tmp_path):
+    service = LvSubscriptionService(tmp_path / "out", now=lambda: NOW)
+    service.observe_browser_listing(_representative_subscription_entries())
+    item = service.pending_items()[0]
+    claim = service.claim_browser_download(item["identity"])
+    claim_path = (
+        tmp_path
+        / "out"
+        / "artifacts"
+        / item["version_key"]
+        / "browser_download_claim.json"
+    )
+    before = claim_path.read_bytes()
+
+    recorded = service.record_item_failure(
+        item["identity"],
+        failure={
+            "category": "timeout",
+            "code": "opencli_timeout",
+            "stage": "browser_command",
+        },
+        retryable=True,
+    )
+
+    assert claim_path.read_bytes() == before
+    assert recorded["claim_status"] == claim["status"] == "claimed"
+    assert recorded["external_business_effects_replayed"] is False
+    assert service.pending_items()[0]["identity"] == item["identity"]
+
+
 def test_disappearing_item_keeps_identity_and_only_a_new_version_is_rediscovered(
     tmp_path,
 ):

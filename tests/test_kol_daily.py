@@ -949,6 +949,201 @@ def test_one_lv_full_snapshot_is_reused_by_both_adapters(monkeypatch, tmp_path):
     assert calls == {"full_scan": 1, "video_scan": 1}
 
 
+def test_lv_pending_failure_isolated_without_blocking_later_pdf(
+    monkeypatch,
+    tmp_path,
+):
+    bundle_path = tmp_path / "bundle.json"
+    bundle_path.write_text("{}", encoding="utf-8")
+    calls = []
+    failures = []
+
+    class FakeLv:
+        def poll_opencli(self, **_kwargs):
+            return None
+
+        @staticmethod
+        def pending_items():
+            return [
+                {
+                    "identity": "historical-bad",
+                    "version_key": "historical-version",
+                    "name": "历史坏状态.pdf",
+                    "path": "/报告/历史坏状态.pdf",
+                    "media_type": "pdf",
+                    "size": 10,
+                    "modified_at": 200,
+                    "stage": "downloaded",
+                },
+                {
+                    "identity": "new-good",
+                    "version_key": "new-version",
+                    "name": "大摩拆解.pdf",
+                    "path": "/报告/大摩拆解.pdf",
+                    "media_type": "pdf",
+                    "size": 20,
+                    "modified_at": 100,
+                    "stage": "discovered",
+                },
+            ]
+
+        @staticmethod
+        def metadata_companion_proof(*_args, **_kwargs):
+            return None
+
+        def download_opencli(self, identity, **_kwargs):
+            calls.append(identity)
+            if identity == "historical-bad":
+                raise EnrichmentError(
+                    "subscription browser download receipt is not evidence-bound"
+                )
+            return {"status": "completed"}
+
+        @staticmethod
+        def ingest_browser_download(identity):
+            return {
+                "identity": identity,
+                "version_key": "new-version",
+                "media_type": "pdf",
+                "evidence_path": "/immutable/new.pdf",
+            }
+
+        @staticmethod
+        def prepare_analysis_request(_ingest):
+            return {"request_path": "/runtime/request.json"}
+
+        @staticmethod
+        def record_pdf_relationship(_identity, *, bundle_path):
+            assert bundle_path == globals_bundle_path
+            return {"route": "companion_suppressed"}
+
+        @staticmethod
+        def record_item_failure(identity, *, failure, retryable):
+            failures.append((identity, failure, retryable))
+
+    globals_bundle_path = bundle_path
+    monkeypatch.setattr(
+        kol_daily_script,
+        "_read_agent_path",
+        lambda *_args, **_kwargs: bundle_path,
+    )
+    runtime = DailyRuntime.__new__(DailyRuntime)
+    runtime.args = SimpleNamespace(
+        lv_output_dir=tmp_path / "lv",
+        video_output_dir=tmp_path / "videos",
+        lv_session="lv-session",
+        opencli_profile=None,
+        decision_output_dir=tmp_path / "decisions",
+    )
+    runtime._lv_service = FakeLv()
+    runtime._lv_listing = {
+        "status": "ok",
+        "complete_scan": True,
+        "entries": [],
+    }
+    runtime._lv_listing_error = None
+
+    result = runtime.lv()
+
+    assert calls == ["historical-bad", "new-good"]
+    assert result["status"] == "waiting"
+    assert result["suppressed_companion_count"] == 1
+    assert result["waiting_count"] == 1
+    assert failures == [(
+        "historical-bad",
+        {
+            "category": "state_error",
+            "code": "download_receipt_not_evidence_bound",
+            "stage": "download_reconciliation",
+        },
+        False,
+    )]
+
+
+def test_video_history_failure_isolated_after_latest_lv_priority(
+    monkeypatch,
+    tmp_path,
+):
+    calls = []
+    failures = []
+    latest_lv = {
+        "identity": "latest-lv",
+        "version_key": "latest-version",
+        "name": "8月3日 (1).mp4",
+        "path": "/share/8月3日 (1).mp4",
+        "source": "baidu_subscription_share_browser",
+        "modified_at": 200,
+        "version_first_seen_at": "2026-08-04T07:00:00+08:00",
+    }
+    historical = {
+        "identity": "historical-lucifer",
+        "version_key": "historical-version",
+        "name": "第一段.mp4",
+        "path": "/private/第一段.mp4",
+        "source": "baidu_private_folder",
+        "modified_at": 100,
+        "version_first_seen_at": "2026-07-28T12:00:00+08:00",
+    }
+
+    class FakeVideos:
+        def __init__(self, *_args, **_kwargs):
+            pass
+
+        def scan_opencli(self, **_kwargs):
+            return None
+
+        @staticmethod
+        def pending_items():
+            return [historical, latest_lv]
+
+        @staticmethod
+        def advance_item(item, **_kwargs):
+            calls.append(item["identity"])
+            if item["identity"] == "historical-lucifer":
+                raise EnrichmentError("OpenCLI browser command timed out")
+            return {
+                "status": "waiting_cloud_transfer_receipt",
+                "stage": "source_acquisition",
+                "next_poll_not_before": "2026-08-04T13:10:00+08:00",
+            }
+
+        @staticmethod
+        def record_item_failure(item, *, failure, retryable):
+            failures.append((item["identity"], failure, retryable))
+
+    monkeypatch.setattr(kol_daily_script, "SubscriptionVideoService", FakeVideos)
+    runtime = DailyRuntime.__new__(DailyRuntime)
+    runtime.args = SimpleNamespace(
+        video_output_dir=tmp_path / "videos",
+        config=tmp_path / "config.yaml",
+        lv_session="lv-session",
+        private_session="private-session",
+        enrichment_session="enrichment-session",
+        opencli_profile=None,
+    )
+    runtime._lv_listing = {
+        "status": "ok",
+        "complete_scan": True,
+        "entries": [],
+    }
+    runtime._lv_listing_error = None
+
+    result = runtime.videos()
+
+    assert calls == ["latest-lv", "historical-lucifer"]
+    assert result["status"] == "waiting"
+    assert result["waiting_count"] == 2
+    assert failures == [(
+        "historical-lucifer",
+        {
+            "category": "timeout",
+            "code": "opencli_timeout",
+            "stage": "browser_command",
+        },
+        True,
+    )]
+
+
 def test_pdf_companion_publication_context_merges_explicit_source_parts(tmp_path):
     original = tmp_path / "report.pdf"
     original.write_bytes(b"%PDF-evidence")

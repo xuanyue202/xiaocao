@@ -30,7 +30,7 @@ from xiaocao.kol.enrichment_types import (
 from xiaocao.kol.household import LiangHuiMcpClient
 from xiaocao.kol.lv_subscription import LvSubscriptionService
 from xiaocao.kol.publication import PublicationLedger, read_published_publication
-from xiaocao.kol.subscription_video import SubscriptionVideoService
+from xiaocao.kol.subscription_video import LV_SOURCE, SubscriptionVideoService
 from xiaocao.kol.xiaocao_live import (
     XiaocaoLiveService,
     validate_decision_bundle,
@@ -44,12 +44,99 @@ DEFAULT_LV_OUTPUT = Path("output/live/kol_lv_subscription")
 DEFAULT_VIDEO_OUTPUT = Path("output/live/kol_subscription_videos")
 DEFAULT_XIAOCAO_OUTPUT = Path("output/live/kol_xiaocao_live")
 MAX_HANDOFF_BYTES = 1024 * 1024
-_RETRYABLE_ITEM_ERRORS = {
-    "subscription browser command failed",
-    "subscription browser command timed out",
-    "subscription browser download outcome is uncertain",
-    "subscription browser download waiter did not start",
-}
+def _isolated_item_failure(
+    exc: EnrichmentError,
+    *,
+    default_stage: str,
+) -> tuple[dict[str, str], bool]:
+    if isinstance(exc, EnrichmentDiagnosticError):
+        return (
+            {
+                "category": str(exc.diagnostic_category),
+                "code": str(exc.diagnostic_code),
+                "stage": str(exc.diagnostic_stage),
+            },
+            True,
+        )
+    message = str(exc)
+    known = {
+        "subscription browser download receipt is not evidence-bound": (
+            "state_error",
+            "download_receipt_not_evidence_bound",
+            "download_reconciliation",
+            False,
+        ),
+        "subscription browser download receipt is invalid": (
+            "state_error",
+            "download_receipt_invalid",
+            "download_reconciliation",
+            False,
+        ),
+        "subscription browser download claim is invalid": (
+            "state_error",
+            "download_claim_invalid",
+            "download_reconciliation",
+            False,
+        ),
+        "subscription browser command timed out": (
+            "timeout",
+            "opencli_timeout",
+            "browser_command",
+            True,
+        ),
+        "OpenCLI browser command timed out": (
+            "timeout",
+            "opencli_timeout",
+            "browser_command",
+            True,
+        ),
+        "subscription browser command failed": (
+            "transport_error",
+            "opencli_command_failed",
+            "browser_command",
+            True,
+        ),
+        "OpenCLI browser command failed": (
+            "transport_error",
+            "opencli_command_failed",
+            "browser_command",
+            True,
+        ),
+        "OpenCLI returned invalid JSON": (
+            "protocol_error",
+            "opencli_invalid_json",
+            "browser_command",
+            True,
+        ),
+        "OpenCLI returned a non-object result": (
+            "protocol_error",
+            "opencli_non_object",
+            "browser_command",
+            True,
+        ),
+        "subscription browser download outcome is uncertain": (
+            "uncertain_state",
+            "download_receipt_reconciliation_required",
+            "download_reconciliation",
+            True,
+        ),
+        "subscription browser download waiter did not start": (
+            "local_runtime_error",
+            "download_waiter_not_started",
+            "download_pretrigger",
+            True,
+        ),
+    }
+    category, code, stage, retryable = known.get(
+        message,
+        (
+            "item_error",
+            "item_processing_failed",
+            default_stage,
+            False,
+        ),
+    )
+    return {"category": category, "code": code, "stage": stage}, retryable
 
 
 def _print(value: dict[str, Any]) -> None:
@@ -728,6 +815,13 @@ class DailyRuntime:
             listing=listing,
         )
         pending = service.pending_items()
+        pending.sort(
+            key=lambda row: (
+                -int(row.get("modified_at") or 0),
+                str(row.get("path") or ""),
+                str(row.get("identity") or ""),
+            )
+        )
         complete_video_transcripts = self._complete_lv_video_transcripts()
         for row in pending:
             if row.get("media_type") != "pdf":
@@ -742,10 +836,18 @@ class DailyRuntime:
                     proof=proof,
                 )
         pending = service.pending_items()
+        pending.sort(
+            key=lambda row: (
+                -int(row.get("modified_at") or 0),
+                str(row.get("path") or ""),
+                str(row.get("identity") or ""),
+            )
+        )
         if not pending:
             return {"status": "no_update"}
         events = []
         waiting = 0
+        waiting_items = []
         suppressed = 0
         for row in pending:
             identity = str(row["identity"])
@@ -756,9 +858,23 @@ class DailyRuntime:
                     profile=self.args.opencli_profile,
                 )
             except EnrichmentError as exc:
-                if str(exc) not in _RETRYABLE_ITEM_ERRORS:
-                    raise
+                failure, retryable = _isolated_item_failure(
+                    exc,
+                    default_stage="small_item_processing",
+                )
+                service.record_item_failure(
+                    identity,
+                    failure=failure,
+                    retryable=retryable,
+                )
                 waiting += 1
+                waiting_items.append({
+                    "identity": identity,
+                    "version_key": str(row.get("version_key") or ""),
+                    "name": str(row.get("name") or ""),
+                    "stage": failure["stage"],
+                    "failure": {**failure, "retryable": retryable},
+                })
                 continue
             ingest = service.ingest_browser_download(identity)
             request = service.prepare_analysis_request(ingest)
@@ -801,12 +917,14 @@ class DailyRuntime:
                 "status": "completed",
                 "events": events,
                 "waiting_count": waiting,
+                "waiting_items": waiting_items,
                 "suppressed_companion_count": suppressed,
             }
         if waiting:
             return {
                 "status": "waiting",
                 "waiting_count": waiting,
+                "waiting_items": waiting_items,
                 "suppressed_companion_count": suppressed,
             }
         return {
@@ -829,6 +947,13 @@ class DailyRuntime:
         pending = service.pending_items()
         if not pending:
             return {"status": "no_update"}
+        pending.sort(
+            key=lambda row: (
+                0 if row.get("source") == LV_SOURCE else 1,
+                -int(row.get("modified_at") or 0),
+                str(row.get("path") or ""),
+            )
+        )
         events = []
         waiting = 0
         waiting_items = []
@@ -841,27 +966,37 @@ class DailyRuntime:
                     enrichment_session=self.args.enrichment_session,
                     profile=self.args.opencli_profile,
                 )
-            except EnrichmentDiagnosticError:
-                raise
             except EnrichmentError as exc:
                 if str(exc) in {
                     "Lv cloud transfer did not materialize after bounded exact reconciliation",
                     "Lv cloud transfer was rejected by provider",
                 }:
                     raise
+                failure, retryable = _isolated_item_failure(
+                    exc,
+                    default_stage="source_acquisition",
+                )
                 if "uncertain" in str(exc).casefold():
-                    raise EnrichmentDiagnosticError(
-                        "subscription video transfer needs receipt reconciliation",
-                        category="uncertain_state",
-                        code="transfer_receipt_reconciliation_required",
-                        stage="cloud_transfer_reconciliation",
-                    ) from exc
-                raise EnrichmentDiagnosticError(
-                    "subscription video source acquisition is unavailable",
-                    category="source_error",
-                    code="source_acquisition_failed",
-                    stage="source_acquisition",
-                ) from exc
+                    failure = {
+                        "category": "uncertain_state",
+                        "code": "transfer_receipt_reconciliation_required",
+                        "stage": "cloud_transfer_reconciliation",
+                    }
+                    retryable = False
+                service.record_item_failure(
+                    item,
+                    failure=failure,
+                    retryable=retryable,
+                )
+                waiting += 1
+                waiting_items.append({
+                    "identity": str(item.get("identity") or ""),
+                    "version_key": str(item.get("version_key") or ""),
+                    "name": str(item.get("name") or ""),
+                    "stage": failure["stage"],
+                    "failure": {**failure, "retryable": retryable},
+                })
+                continue
             if state.get("event") != "subscription_video_analysis_input_required":
                 waiting += 1
                 waiting_items.append(
