@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import sys
 from datetime import datetime
 from types import SimpleNamespace
 
@@ -58,11 +59,21 @@ def _canonical_sha256(value: dict) -> str:
     ).hexdigest()
 
 
+@pytest.mark.parametrize(
+    "handoff_parts",
+    [
+        ("wechat_subscription", "items", "kol-wechat-current", "handoffs"),
+        ("imported_handoffs",),
+    ],
+)
 def test_xiaocao_runtime_imports_portable_handoff_before_status(
     tmp_path,
     monkeypatch,
+    handoff_parts,
 ):
-    handoff_dir = tmp_path / "xiaocao" / "handoffs"
+    handoff_dir = tmp_path / "xiaocao"
+    for part in handoff_parts:
+        handoff_dir /= part
     handoff_dir.mkdir(parents=True)
     media_sha256 = "a" * 64
     handoff_id = "b" * 64
@@ -136,6 +147,123 @@ def test_xiaocao_runtime_imports_portable_handoff_before_status(
 
     assert runtime.xiaocao() == {"status": "no_update"}
     assert calls == ["import"]
+
+
+def test_daily_runtime_runs_xiaocao_wechat_subscription(tmp_path, monkeypatch):
+    calls: list[tuple[str, object]] = []
+
+    class FakeHistoryReader:
+        def __init__(self, contact, *, executable, limit):
+            calls.append(("reader", (contact, executable, limit)))
+
+        def __call__(self):
+            return {"messages": []}
+
+    class FakeCaptureDriver:
+        def __init__(self, output_dir, *, decision_output):
+            calls.append(("capture", (output_dir, decision_output)))
+
+    class FakeSubscription:
+        def __init__(
+            self,
+            output_dir,
+            *,
+            history_reader,
+            browser_exchange,
+            capture_driver,
+            contact,
+            password,
+        ):
+            assert callable(history_reader)
+            assert callable(browser_exchange)
+            assert isinstance(capture_driver, FakeCaptureDriver)
+            calls.append(("subscription", (output_dir, contact, password)))
+
+        def run_once(self, *, opencli_session, opencli_profile=None):
+            calls.append(("run", (opencli_session, opencli_profile)))
+            return {"status": "no_update"}
+
+    monkeypatch.setattr(
+        kol_daily_script, "WechatCliHistoryReader", FakeHistoryReader
+    )
+    monkeypatch.setattr(
+        kol_daily_script, "XiaocaoLiveCaptureDriver", FakeCaptureDriver
+    )
+    monkeypatch.setattr(
+        kol_daily_script, "XiaocaoWechatLiveSubscription", FakeSubscription
+    )
+    runtime = DailyRuntime.__new__(DailyRuntime)
+    runtime.args = SimpleNamespace(
+        xiaocao_wechat_output_dir=tmp_path / "wechat",
+        xiaocao_wechat_contact="福利官小花四-刘丹",
+        xiaocao_live_password="666",
+        wechat_cli=tmp_path / "wechat-cli",
+        wechat_history_limit=80,
+        decision_output_dir=tmp_path / "decisions",
+        enrichment_session="xiaocao-lv-subscription",
+        opencli_profile=None,
+    )
+
+    assert runtime.xiaocao_wechat() == {"status": "no_update"}
+    assert calls == [
+        (
+            "reader",
+            (
+                "福利官小花四-刘丹",
+                tmp_path / "wechat-cli",
+                80,
+            ),
+        ),
+        ("capture", (tmp_path / "wechat", tmp_path / "decisions")),
+        (
+            "subscription",
+            (tmp_path / "wechat", "福利官小花四-刘丹", "666"),
+        ),
+        ("run", ("xiaocao-lv-subscription", None)),
+    ]
+
+
+def test_capture_local_cli_runs_only_xiaocao_wechat_source(
+    tmp_path,
+    monkeypatch,
+):
+    observed: dict[str, object] = {}
+
+    class FakeCoordinator:
+        def __init__(self, output_dir):
+            observed["output_dir"] = output_dir
+
+        def run(self, sources, *, blocker_sender):
+            observed["source_names"] = [source["name"] for source in sources]
+            observed["priorities"] = [source["priority"] for source in sources]
+            observed["result"] = sources[0]["run"]()
+            assert callable(blocker_sender)
+            return {"status": "completed", "silent": True}
+
+    def capture(self):
+        assert not hasattr(self, "client")
+        return {"status": "no_update"}
+
+    monkeypatch.setattr(kol_daily_script, "DailyCoordinator", FakeCoordinator)
+    monkeypatch.setattr(DailyRuntime, "xiaocao_wechat", capture)
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "kol_daily.py",
+            "capture-local",
+            "--output-dir",
+            str(tmp_path / "daily"),
+        ],
+    )
+
+    assert kol_daily_script.main() == 0
+    assert observed == {
+        "output_dir": tmp_path / "daily",
+        "source_names": ["xiaocao_wechat_live"],
+        "priorities": [10],
+        "result": {"status": "no_update"},
+    }
 
 
 def test_daily_runner_is_silent_outside_beijing_daytime_window(tmp_path):

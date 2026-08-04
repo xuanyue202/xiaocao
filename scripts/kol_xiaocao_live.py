@@ -30,6 +30,9 @@ def main() -> int:
         "command",
         choices=(
             "run",
+            "capture",
+            "validate-capture",
+            "cleanup-capture",
             "status",
             "cancel-wait",
             "audit",
@@ -61,6 +64,10 @@ def main() -> int:
     )
     parser.add_argument("--capture-job-id")
     parser.add_argument(
+        "--page-url",
+        help="Xiaoetong replay page URL to bind when starting a capture",
+    )
+    parser.add_argument(
         "--opencli-session",
         default="xiaocao-live-enrichment",
     )
@@ -71,6 +78,10 @@ def main() -> int:
     parser.add_argument("--acceptance-evidence", type=Path)
     parser.add_argument("--confirmation")
     args = parser.parse_args()
+    if args.page_url and (
+        args.command != "run" or args.capture_job_id is not None
+    ):
+        parser.error("--page-url is only valid when starting a new run")
 
     service = XiaocaoLiveService(
         args.output_dir,
@@ -81,6 +92,21 @@ def main() -> int:
     )
     if args.command == "status":
         _print(service.status())
+        return 0
+    if args.command == "capture":
+        if not args.capture_job_id:
+            parser.error("capture requires --capture-job-id")
+        _print(service.advance_capture(args.capture_job_id))
+        return 0
+    if args.command == "validate-capture":
+        if not args.capture_job_id:
+            parser.error("validate-capture requires --capture-job-id")
+        _print(service.validate_media(args.capture_job_id))
+        return 0
+    if args.command == "cleanup-capture":
+        if not args.capture_job_id:
+            parser.error("cleanup-capture requires --capture-job-id")
+        _print(service.cleanup_sniffer(capture_job_id=args.capture_job_id))
         return 0
     if args.command == "cancel-wait":
         if not args.capture_job_id:
@@ -121,7 +147,7 @@ def main() -> int:
         )
         return 0
     if not args.capture_job_id:
-        _print(service.start())
+        _print(service.start(page_url=args.page_url))
         return 0
     _print(
         service.advance(

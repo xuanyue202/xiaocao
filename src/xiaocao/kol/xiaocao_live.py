@@ -23,8 +23,11 @@ from uuid import uuid4
 
 from .capture import (
     CaptureJobStore,
+    FAILED_DOWNLOAD_STATUSES,
+    InvalidSourcePage,
     SnifferClient,
     SnifferError,
+    canonical_xiaoetong_source,
     resolve_candidate,
 )
 from ._shared import DecisionError
@@ -623,10 +626,22 @@ class XiaocaoLiveService:
                 pids.append(int(pieces[0]))
         return pids
 
-    def start(self) -> dict[str, Any]:
+    def start(self, *, page_url: str | None = None) -> dict[str, Any]:
         """Start or reconcile the sniffer, arm baseline, and emit one prompt."""
+        expected_source: dict[str, str] | None = None
+        if page_url:
+            try:
+                expected_source = canonical_xiaoetong_source(page_url)
+            except InvalidSourcePage as exc:
+                raise EnrichmentError(str(exc)) from exc
         armed = self._event("capture_armed")
         if armed is not None:
+            if expected_source is not None:
+                armed_identity = str(armed.get("source_identity") or "")
+                if armed_identity != expected_source["source_identity"]:
+                    raise EnrichmentError(
+                        "active capture is bound to another Xiaoetong page"
+                    )
             pids = self._sniffer_pids()
             try:
                 sniffer_status = self.sniffer.status()
@@ -670,6 +685,7 @@ class XiaocaoLiveService:
                 raise EnrichmentError("sniffer process/API health is inconsistent")
             return {
                 **armed,
+                "process_pid": pids[0],
                 "idempotent_replay": True,
                 "prompt": None,
             }
@@ -716,11 +732,24 @@ class XiaocaoLiveService:
             sniffer_version=str(sniffer_status.get("version") or ""),
             start_claim_idempotency_key=claim["idempotency_key"],
         )
+        baseline_candidates = self.sniffer.candidates()
+        source_job: dict[str, str] | None = None
+        if page_url:
+            source_job = self.sniffer.arm_xiaoetong_source(page_url)
         capture = self.capture_store.arm(
-            self.sniffer.candidates(),
+            baseline_candidates,
             sniffer_status=sniffer_status,
+            expected_source=expected_source,
+            source_job_id=(source_job or {}).get("id"),
         )
         prompt_id = _sha256_text(f"prompt:{capture['job_id']}")
+        source_fields: dict[str, str] = {}
+        if expected_source is not None and source_job is not None:
+            source_fields = {
+                "source_job_id": source_job["id"],
+                "source_identity": expected_source["source_identity"],
+                "source_resource_id": expected_source["source_resource_id"],
+            }
         armed = self._append(
             "capture_armed",
             status="awaiting_capture",
@@ -732,14 +761,21 @@ class XiaocaoLiveService:
             process_pid=receipt["process_pid"],
             prompt_id=prompt_id,
             next="user_playback",
+            **source_fields,
+        )
+        prompt = (
+            "请在已登录浏览器刷新或播放这个小鹅通页面；"
+            "播放器开始请求视频后即可，无需持续播放或等待。"
+            if expected_source is not None
+            else (
+                "请现在打开企业微信里的“小草”目标卡片，必要时输入密码；"
+                "目标播放器一弹出即可，无需持续播放或等待。"
+            )
         )
         return {
             **armed,
             "idempotent_replay": False,
-            "prompt": (
-                "请现在打开企业微信里的“小草”目标卡片，必要时输入密码；"
-                "目标播放器一弹出即可，无需持续播放或等待。"
-            ),
+            "prompt": prompt,
         }
 
     @staticmethod
@@ -751,8 +787,9 @@ class XiaocaoLiveService:
         expected_live = str(candidate.get("live_id") or "")
         matches = []
         for task in tasks:
-            req = ((task.get("meta") or {}).get("req") or {})
-            labels = req.get("labels") or {}
+            meta = task.get("meta") or {}
+            req = meta.get("req") or {}
+            labels = meta.get("labels") or req.get("labels") or {}
             if (
                 str(labels.get("live_id") or "") == expected_live
                 and str(labels.get("type") or "") == "live_capture"
@@ -766,8 +803,103 @@ class XiaocaoLiveService:
         if current is None:
             raise EnrichmentError("capture job does not exist")
         if current.get("status") == "awaiting_capture":
-            candidates = self.sniffer.candidates()
-            detected = self.capture_store.detect_capture(current, candidates)
+            source_job_id = str(current.get("source_job_id") or "")
+            if source_job_id:
+                source_job = self.sniffer.xiaoetong_source_job(source_job_id)
+                expected_source = current.get("expected_source") or {}
+                expected_live = str(
+                    expected_source.get("source_resource_id") or ""
+                )
+                if (
+                    source_job.get("live_id")
+                    and source_job.get("live_id") != expected_live
+                ):
+                    raise EnrichmentError(
+                        "Xiaoetong source job changed its live binding"
+                    )
+                source_status = str(source_job.get("status") or "")
+                if source_status in {"failed", "error", "cancelled"}:
+                    raise EnrichmentError(
+                        "Xiaoetong source job failed before task creation"
+                    )
+                if source_status != "task_created":
+                    return {
+                        "event": "capture_pending",
+                        "status": "awaiting_capture",
+                        "capture_job_id": capture_job_id,
+                        "source_job_id": source_job_id,
+                        "source_job_status": source_status,
+                    }
+                source_task_id = str(source_job.get("task_id") or "")
+                source_task = next(
+                    (
+                        task
+                        for task in self.sniffer.tasks()
+                        if str(task.get("id") or "") == source_task_id
+                    ),
+                    None,
+                )
+                if (
+                    source_task is None
+                    or str(source_task.get("status") or "").lower()
+                    in FAILED_DOWNLOAD_STATUSES
+                ):
+                    source_job = self.sniffer.retry_xiaoetong_source_job(
+                        source_job_id
+                    )
+                    if source_job.get("live_id") != expected_live:
+                        raise EnrichmentError(
+                            "retried Xiaoetong source job changed its live binding"
+                        )
+                    source_status = str(source_job.get("status") or "")
+                    if source_status != "task_created":
+                        return {
+                            "event": "capture_pending",
+                            "status": "awaiting_capture",
+                            "capture_job_id": capture_job_id,
+                            "source_job_id": source_job_id,
+                            "source_job_status": source_status,
+                        }
+                current = self.capture_store.transition(
+                    current,
+                    "source_task_bound",
+                    status="awaiting_capture",
+                    source_job_status=source_status,
+                    source_candidate_id=str(
+                        source_job.get("candidate_id") or ""
+                    ),
+                    source_task_id=str(source_job.get("task_id") or ""),
+                )
+                candidates = self.sniffer.candidates()
+                detected = self.capture_store.bind_source_candidate(
+                    current,
+                    candidates,
+                    candidate_id=str(source_job.get("candidate_id") or ""),
+                )
+                if detected is None:
+                    source_task_id = str(source_job.get("task_id") or "")
+                    source_task = next(
+                        (
+                            task
+                            for task in self.sniffer.tasks()
+                            if str(task.get("id") or "") == source_task_id
+                        ),
+                        None,
+                    )
+                    if (
+                        source_task is not None
+                        and str(source_task.get("status") or "").lower()
+                        in FAILED_DOWNLOAD_STATUSES
+                    ):
+                        detected = self.capture_store.bind_source_candidate(
+                            current,
+                            candidates,
+                            candidate_id=str(source_job.get("candidate_id") or ""),
+                            allow_latest=True,
+                        )
+            else:
+                candidates = self.sniffer.candidates()
+                detected = self.capture_store.detect_capture(current, candidates)
             if detected is None:
                 return {
                     "event": "capture_pending",
@@ -787,9 +919,19 @@ class XiaocaoLiveService:
         if current.get("status") == "download_claimed":
             tasks = self.sniffer.tasks()
             matches = self._matching_tasks(current, tasks)
-            if len(matches) > 1:
+            source_task_id = str(current.get("source_task_id") or "")
+            if source_task_id:
+                source_matches = [
+                    task
+                    for task in matches
+                    if str(task.get("id") or "") == source_task_id
+                ]
+                if not source_matches:
+                    return current
+                task_id = source_task_id
+            elif len(matches) > 1:
                 raise EnrichmentError("multiple download tasks match one live_id")
-            if matches:
+            elif matches:
                 task_id = str(matches[0]["id"])
             else:
                 candidate = resolve_candidate(current, self.sniffer.candidates())
@@ -803,11 +945,40 @@ class XiaocaoLiveService:
                 download_task_id=task_id,
             )
         if current.get("status") == "downloading":
+            tasks = self.sniffer.tasks()
             current = (
-                self.capture_store.reconcile_download(current, self.sniffer.tasks())
+                self.capture_store.reconcile_download(current, tasks)
                 or current
             )
+            if current.get("source_job_id") and current.get("status") == "downloading":
+                task_id = str(current.get("download_task_id") or "")
+                task = next(
+                    (row for row in tasks if str(row.get("id") or "") == task_id),
+                    None,
+                )
+                progress = task.get("progress") if isinstance(task, dict) else None
+                downloaded = (
+                    int(progress.get("downloaded") or 0)
+                    if isinstance(progress, dict)
+                    else 0
+                )
+                if (
+                    task is not None
+                    and str(task.get("status") or "").lower() == "pause"
+                    and downloaded <= 0
+                ):
+                    return self.capture_store.transition(
+                        current,
+                        "source_retry_pending",
+                        status="awaiting_capture",
+                    )
         if current.get("status") == "download_failed":
+            if current.get("source_job_id"):
+                return self.capture_store.transition(
+                    current,
+                    "source_retry_pending",
+                    status="awaiting_capture",
+                )
             candidate = resolve_candidate(current, self.sniffer.candidates())
             if candidate is None:
                 raise EnrichmentError("failed live is unavailable for exact retry")

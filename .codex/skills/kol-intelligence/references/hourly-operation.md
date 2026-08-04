@@ -6,11 +6,21 @@ runner emits a semantic input request.
 
 ## Runner
 
-Run exactly one command in the Xiaocao repository and keep that process alive:
+Run exactly once and keep the process alive for input requests:
 
 ```bash
 PYTHONPATH=src .venv/bin/python scripts/kol_daily.py run
 ```
+
+The sole remote writer uses the command above. The local WeChat node uses only:
+
+```bash
+PYTHONPATH=src .venv/bin/python scripts/kol_daily.py capture-local
+```
+
+`capture-local` runs only `xiaocao_wechat_live`; it never scans Lv, consumes a
+handoff, analyzes, publishes, notifies, or writes Book. Remote `run` is the
+only writer.
 
 Inspection surfaces are:
 
@@ -19,111 +29,113 @@ PYTHONPATH=src .venv/bin/python scripts/kol_daily.py status
 PYTHONPATH=src .venv/bin/python scripts/kol_daily.py audit
 ```
 
-Every run exits after one sweep. A 07:00 run drains overnight backlog in
-decision-priority order. A completed scan with no new content and healthy
-asynchronous waiting print nothing. A retryable source failure prints one
-credential-safe diagnostic containing `category`, `code`, and `stage`; this is
-local operational evidence, not an externally visible event. There is no
-invocation from 23:01 through 06:59.
+Each run exits after one sweep; the 07:00 run drains overnight backlog by decision
+priority. No-update and healthy waiting are silent. Retryable failures expose
+only credential-safe `category`, `code`, and `stage`. Do not run 23:01–06:59.
 
-The coordinator reads only lightweight evidence/receipts, never reads or
-downloads source-video bytes, and never uses Computer Use.
+The coordinator reads only lightweight metadata, transcripts, images, handoff
+JSON, and receipts; it never reads or downloads source-video bytes and never
+uses Computer Use. The local adapter may use Browser, never Computer Use, to
+activate the bound player. `wx_channels_download` alone owns video bytes and
+inline compression.
 
-Discovery is not completion for the latest Lv Xiaotong video. `status` and
-`audit` expose `latest_lv_video_goal`; it is successful only when the exact
-latest observed identity and version have a completed analysis terminal plus a
-published 灰常亮 report with both a durable receipt and stable detail URL.
-Download, cloud enrichment, transcript readiness, or analysis alone remain
-pending/incomplete states and must not be reported as success.
+## Xiaocao WeChat live gate
 
-An unfinished subscription-video result must retain its item identity,
-version, concrete stage, trigger attempt, reconciliation result, and
-`next_poll_not_before` in the coordinator ledger. A cloud-save claim gets one
-recovery attempt only after a settled exact zero-match proof; two failed
-materializations become the changed structured blocker
-`lv-cloud-transfer-not-materialized`, not another generic waiting state.
-The share dialog's final `确定` action is an OpenCLI native semantic click on
-the uniquely marked control, never a JavaScript `element.click()`. Claim the
-native click first; if its result is ambiguous, reconcile the exact private
-copy before any second attempt.
+Scan only `福利官小花四-刘丹（执业编号:A0380125080026）` through local
+`wechat-cli`. First scan baselines older links and arms only the newest; later
+scans add unseen links. Never replace unfinished capture or start two sniffers.
+
+For `daily_browser_input_required`, keep the process alive and use `browser`,
+never Computer Use:
+
+1. `resolve_xiaoetong_page`: open `source_url`; return current URL and page
+   state. MP wrappers become H5 only after embedded app/resource validation;
+   share parameters are stripped.
+2. The runner arms that exact H5 source before requesting playback.
+3. `activate_xiaoetong_playback`: refresh and play. Enter default `666` only
+   for a visible password gate. After media requests begin, return bound URL,
+   `activated=true`, and whether the password was used.
+
+Message text such as “密码666” is not evidence; visible page state is. Never
+read cookies/storage/credentials. Later sweeps reconcile exact task, artifact,
+cleanup, upload, and handoff without Browser.
+
+For `daily_remote_handoff_input_required`, validate the small capsule and reuse
+the registered Xiaocao task on `MacBook-Pro-6.local`. Send fields, never paths
+or video bytes. Remote reads `full-contract.md`, imports under
+`scope=post_handoff`, and reconciles `handoff_id`. Return only after accepted or
+already-present readback; reconcile ambiguity before retry. Persist host, task,
+ID, and acceptance locally.
+
+Latest Lv is incomplete until its identity/version has analysis plus a 灰常亮
+receipt and stable URL. Preserve stage/reconciliation/`next_poll_not_before`;
+use bounded cloud-save/native-click recovery from `full-contract.md`.
 
 ## Semantic loading gate
 
-When the still-running process emits `daily_analysis_input_required`:
+For `daily_analysis_input_required` in the same process:
 
-1. Read the analysis request from disk to locate its evidence and bindings.
+1. Read the request and locate its evidence/bindings.
 2. Read `full-contract.md` completely before analysis.
-3. Reopen the referenced immutable evidence, verify its current SHA-256 against
-   the request, and use that one bound reading for analysis.
+3. Reopen immutable evidence and verify its current SHA-256 against the request.
 4. If reusable knowledge will be written, also read `durable-knowledge.md`
    completely.
-5. Create the complete evidence-bound Ticket 01 JSON beside the runtime
-   artifacts.
+5. Create complete evidence-bound Ticket 01 JSON beside runtime artifacts.
 6. Write exactly `{"bundle_path":"<absolute-json-path>"}` followed by a newline
    to the same process.
 
-Every item includes `content_value.status=low_density|promoted`. Promoted items
-also include `content_value.tier=report_only|alert_eligible`. An alert-eligible
-event supplies one or more accepted `alert_basis` values: current market
-posture, buy, sell, hold, position boundary, direction, or actionable trigger.
-Promoted items include reviewed natural-Chinese `publication.summary`,
-`publication.report_body`, and `publication.remaining_summary`.
+Every item includes `content_value.status=low_density|promoted`; promoted items
+add `content_value.tier=report_only|alert_eligible`, accepted `alert_basis`, and
+reviewed natural-Chinese publication fields.
 
-A low-density item uses a paper-only KOL-US no-trade reason and creates neither
-a 灰常亮 report nor a reminder. A promoted event obtains its durable 灰常亮
-receipt and stable URL before Book KOL-US or reminder effects. Report-only
-content records a legal no-alert reason. An alert-eligible event sends one
-all-recipient reminder with the key insight, compact synthesis, and exactly one
-stable report link.
+Low-density creates neither report nor reminder. A promoted event gets its
+durable 灰常亮 receipt and stable URL before Book KOL-US or reminder effects;
+report-only records a no-alert reason, while alert-eligible sends one reminder.
 
 ## Scheduling and recovery
 
-Codex Automation is the only scheduling authority. Keep exactly one active
-task with
+Codex Automation alone schedules exactly one remote writer and one local
+capture task with
 `RRULE:FREQ=DAILY;BYHOUR=7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23;BYMINUTE=0`.
-Express Beijing wall-clock time directly and omit `DTSTART` and `TZID`. Reopen
-the Automation after every change and verify the next run and that no duplicate
-task exists.
+Use Beijing wall time; omit `DTSTART` and `TZID`. After changes, reopen it and
+verify next run and no duplicate.
 
 The runner reuses the configured Lv Xiaotong share URL/code, watches
-lightweight metadata under `/课程/路西法全套`, and consumes only Xiaocao
-broadband handoffs plus cloud/transcript receipts. Lv discovery recursively
+lightweight metadata under `/课程/路西法全套`, scans the one configured Xiaocao
+WeChat contact, and consumes Xiaocao broadband handoffs plus cloud/transcript
+receipts. Lv discovery recursively
 reads the share tree and must not infer child-tree freshness from a
 parent-directory modification time.
 
-One sweep obtains at most one complete recursive Lv `/share/list` snapshot and
-reuses it for both the small-item and video adapters in the same process,
-session, and profile. Every item still validates exact provider identity,
-version, path, name, size, and target. A cursor advances only after a complete
-scan. The words `已失效` elsewhere in a valid page are not an expiration proof:
-only an exact visible terminal state or an explicit provider failure response
-may classify `share_expired`; successful share metadata and a complete list
-take precedence.
+One sweep gets one complete recursive Lv `/share/list` snapshot and reuses it
+for small-item/video adapters in the same process/session/profile. Each item
+still validates provider identity, version, path, name, size, and target;
+advance cursor only after the full scan. Incidental `已失效` text is not proof:
+only an exact terminal state or provider failure may set `share_expired`;
+successful metadata plus complete list wins.
 
-Discovery-only OpenCLI failures (`wrong_share`, `wrong_origin`, `about:blank`,
-timeout, invalid JSON, and incomplete `/share/list`) may reopen the configured
-share, wait briefly, and retry the full read exactly once in the same sweep.
-Preserve the original and final credential-safe `category/code/stage`; never
-collapse them into a generic source error. This recovery authority ends before
-any download, cloud-transfer, publication, notification, or Book side effect.
-Those actions reconcile claims and receipts and are never retried blindly.
+For discovery-only OpenCLI failures (`wrong_share`, `wrong_origin`,
+`about:blank`, timeout, invalid JSON, incomplete list), reopen the
+share and retry the full read once in the same sweep. Preserve original/final
+safe `category/code/stage`; never generalize the error. This authority
+ends before download, transfer, publication, notification, or Book; those
+reconcile claims/receipts and never retry blindly.
 
 After a scan, ledger and isolate item failures; prioritize latest Lv,
 and reconcile uncertain claims without replay.
 
-Small-PDF precedence is complete video transcript, independent report, then
-video summary. Directory/title-date/mtime/version plus a verified transcript
-may prove `companion_suppressed` before claim; filename alone cannot. Ambiguous
-or incomplete cases use one claimed local PDF download, immutable SHA-256,
-`pypdf`/`pdfplumber`, and rendered visual/OCR coverage; unsafe PDFs fail closed.
+Small-PDF precedence: complete video transcript, independent report, video
+summary. Directory/title-date/mtime/version plus verified transcript may prove
+`companion_suppressed` before claim; filename alone cannot. Ambiguous cases use
+one claimed PDF download, immutable SHA-256, `pypdf`/`pdfplumber`, and rendered
+visual/OCR coverage; unsafe PDFs fail closed.
 
 Route Lv claims, not media types. `会员直播` uses current-fact/event/eligible
-alert/paper-Book semantics. Reusable `底层逻辑` normally uses no actionable
-signal, useful insight, reusable knowledge, report-only, no alert, and reasoned
-no-trade; it distills under `reference/experience/distilled/` at `authority=0`.
-It cannot change posture/timeline/parameters without research plus human gate.
-Mixed claims stay one report; only the current branch authorizes alert/Book,
-and valuable methodology is not low-density merely for lacking a trade call.
+alert/paper-Book semantics. Reusable `底层逻辑` normally means no actionable
+signal, useful insight, reusable knowledge, report-only/no-alert/reasoned
+no-trade, distilled at `authority=0`; it cannot change posture or parameters
+without research plus human gate. Mixed claims stay one report; only current
+claims authorize alert/Book. Valuable methodology is not automatically low-density.
 
 Put targeted currentness requests in
 `output/live/kol_daily/viewpoint_triggers/*.json`. Supported triggers are a new
