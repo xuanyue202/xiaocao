@@ -54,6 +54,12 @@ DEFAULT_XIAOCAO_WECHAT_OUTPUT = (
     DEFAULT_XIAOCAO_OUTPUT / "wechat_subscription"
 )
 MAX_HANDOFF_BYTES = 1024 * 1024
+
+
+class SemanticInputUnavailable(DailyError):
+    """The current source could not obtain its requested agent input."""
+
+
 def _isolated_item_failure(
     exc: EnrichmentError,
     *,
@@ -441,19 +447,25 @@ def _read_agent_path(request: dict[str, Any], field: str) -> Path:
     print(json.dumps(request, ensure_ascii=False, sort_keys=True), flush=True)
     response = sys.stdin.readline()
     if not response:
-        raise DailyError(f"daily runner requires {field} on stdin")
+        raise SemanticInputUnavailable(
+            f"daily runner requires {field} on stdin"
+        )
     raw = response.strip()
     if raw.startswith("{"):
         try:
             value = json.loads(raw)
         except json.JSONDecodeError as exc:
-            raise DailyError("daily runner response is invalid JSON") from exc
+            raise SemanticInputUnavailable(
+                "daily runner response is invalid JSON"
+            ) from exc
         raw = str(value.get(field) or "").strip()
     if not raw:
-        raise DailyError(f"daily runner response lacks {field}")
+        raise SemanticInputUnavailable(
+            f"daily runner response lacks {field}"
+        )
     path = Path(raw).expanduser().resolve()
     if not path.is_file():
-        raise DailyError(f"daily runner {field} is missing")
+        raise SemanticInputUnavailable(f"daily runner {field} is missing")
     return path
 
 
@@ -625,6 +637,13 @@ def _classified_source(name: str, runner):
     def run():
         try:
             return runner()
+        except SemanticInputUnavailable as exc:
+            raise TransientSourceError(
+                "semantic input unavailable",
+                category="input_error",
+                code="semantic_input_unavailable",
+                stage="semantic_input",
+            ) from exc
         except DailyError:
             raise
         except EnrichmentError as exc:

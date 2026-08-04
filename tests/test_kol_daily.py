@@ -15,6 +15,7 @@ from scripts.kol_daily import (
     _lv_publication_context,
     _video_publication_context,
     DailyRuntime,
+    SemanticInputUnavailable,
 )
 from xiaocao.kol.daily import (
     build_triggered_evaluation_candidate,
@@ -1009,6 +1010,26 @@ def test_source_classifier_preserves_safe_timeout_diagnostic():
         "stage": "browser_eval",
         "retryable": True,
     }
+
+
+def test_source_classifier_isolates_unavailable_semantic_input():
+    runner = _classified_source(
+        "subscription_video",
+        lambda: (_ for _ in ()).throw(
+            SemanticInputUnavailable("private input detail")
+        ),
+    )
+
+    with pytest.raises(TransientSourceError) as captured:
+        runner()
+
+    assert captured.value.diagnostic() == {
+        "category": "input_error",
+        "code": "semantic_input_unavailable",
+        "stage": "semantic_input",
+        "retryable": True,
+    }
+    assert "private input detail" not in str(captured.value)
 
 
 def test_one_lv_full_snapshot_is_reused_by_both_adapters(monkeypatch, tmp_path):
