@@ -3,6 +3,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import sqlite3
 import subprocess
 import sys
 import threading
@@ -684,6 +685,7 @@ def test_opencli_download_claims_before_one_browser_trigger_and_replays(tmp_path
     entry["provider_file_id"] = "123456789012345"
     entry["size"] = downloaded.stat().st_size
     commands: list[list[str]] = []
+    download_operations: list[str] = []
     trigger_calls = 0
     wait_calls = 0
 
@@ -700,7 +702,6 @@ def test_opencli_download_claims_before_one_browser_trigger_and_replays(tmp_path
                 "entries": [entry],
             }
         elif tail[:1] == ["eval"] and "ticket04_exact_ui_download" in tail[1]:
-            trigger_calls += 1
             claim_path = (
                 tmp_path
                 / "out"
@@ -712,10 +713,15 @@ def test_opencli_download_claims_before_one_browser_trigger_and_replays(tmp_path
                 "status"
             ] == "claimed"
             payload = {
-                "status": "download_triggered",
+                "status": "download_confirmation_ready",
                 "name": entry["name"],
             }
+        elif tail[:1] == ["click"]:
+            download_operations.append("trigger")
+            trigger_calls += 1
+            payload = {"clicked": True, "matches_n": 1}
         elif tail[:2] == ["wait", "download"]:
+            download_operations.append("wait")
             wait_calls += 1
             payload = {
                 "downloaded": True,
@@ -754,6 +760,7 @@ def test_opencli_download_claims_before_one_browser_trigger_and_replays(tmp_path
     assert second["idempotent_replay"] is True
     assert trigger_calls == 1
     assert wait_calls == 1
+    assert download_operations == ["trigger", "wait"]
     wait_index = next(
         index
         for index, command in enumerate(commands)
@@ -765,7 +772,7 @@ def test_opencli_download_claims_before_one_browser_trigger_and_replays(tmp_path
         if command[3:4] == ["eval"]
         and "ticket04_exact_ui_download" in command[4]
     )
-    assert wait_index < trigger_index
+    assert trigger_index < wait_index
     assert any(
         any("ticket04_exact_ui_download" in part for part in command)
         for command in commands
@@ -777,6 +784,66 @@ def test_opencli_download_claims_before_one_browser_trigger_and_replays(tmp_path
     )
     assert private_url not in durable
     assert private_code not in durable
+
+
+def test_provider_row_selection_does_not_treat_js_item_active_as_selected():
+    script = lv_subscription._browser_download_script(
+        expected_share_path="/s/private-share-token",
+        expected_item_path="/彤商学院/报告/大摩拆解.pdf",
+        expected_name="大摩拆解.pdf",
+    )
+
+    assert "!row.classList.contains('JS-item-active')" in script
+    assert (
+        "rows.filter(row => row.classList.contains('JS-item-active'))"
+        not in script
+    )
+    assert "downloadControls[0].click()" not in script
+    assert "data-xiaocao-download-open" in script
+
+
+def test_download_control_uses_native_click_and_preserves_client_only_status(
+    tmp_path,
+):
+    operations = []
+
+    def runner(command, **_kwargs):
+        tail = command[3:]
+        if tail[:1] == ["eval"] and "ticket04_exact_ui_download" in tail[1]:
+            payload = {"status": "download_control_ready"}
+            operations.append("select")
+        elif tail[:1] == ["click"]:
+            payload = {"clicked": True, "matches_n": 1}
+            operations.append("native_click")
+        elif tail[:1] == ["eval"] and "ticket04_download_confirmation_readback" in tail[1]:
+            payload = {"status": "provider_web_download_client_only"}
+            operations.append("readback")
+        else:
+            raise AssertionError(command)
+        return SimpleNamespace(
+            returncode=0,
+            stdout=json.dumps(payload),
+            stderr="",
+        )
+
+    service = LvSubscriptionService(
+        tmp_path / "out",
+        runner=runner,
+        opencli_command=("opencli",),
+        share_url="https://pan.baidu.com/s/private-share-token",
+        share_code="a1b2",
+    )
+    result = service._prepare_opencli_download_confirmation(
+        {
+            "path": "/彤商学院/报告/大摩拆解.pdf",
+            "name": "大摩拆解.pdf",
+        },
+        session="ticket04",
+        profile=None,
+    )
+
+    assert result["status"] == "provider_web_download_client_only"
+    assert operations == ["select", "native_click", "readback"]
 
 
 def test_replayed_download_claim_reconciles_without_retriggering_browser(tmp_path):
@@ -809,6 +876,15 @@ def test_replayed_download_claim_reconciles_without_retriggering_browser(tmp_pat
         if tail[:1] == ["eval"] and "ticket04_exact_ui_download" in tail[1]:
             trigger_calls += 1
             raise AssertionError("a replayed claim must never retrigger download")
+        if tail[:1] == ["eval"] and "blocked_download_frame_probe" in tail[1]:
+            return SimpleNamespace(
+                returncode=0,
+                stdout=json.dumps({
+                    "status": "other_browser_error",
+                    "error_code": "",
+                }),
+                stderr="",
+            )
         if tail[:2] == ["wait", "download"]:
             wait_calls += 1
             return SimpleNamespace(
@@ -816,7 +892,320 @@ def test_replayed_download_claim_reconciles_without_retriggering_browser(tmp_pat
                 stdout=json.dumps({"error": {"code": "download_not_seen"}}),
                 stderr="",
             )
+        if tail[:1] == ["eval"] and "blocked_download_frame_probe" in tail[1]:
+            return SimpleNamespace(
+                returncode=0,
+                stdout=json.dumps({
+                    "status": "other_browser_error",
+                    "error_code": "",
+                }),
+                stderr="",
+            )
         raise AssertionError(command)
+
+    service = LvSubscriptionService(
+        tmp_path / "out",
+        now=lambda: NOW,
+        runner=browser_runner,
+        opencli_command=("opencli",),
+        share_url="https://pan.baidu.com/s/private-share-token",
+        share_code="a1b2",
+        download_policy_configurer=lambda *_args: {
+            "configured": True,
+            "method": "Page.setDownloadBehavior",
+            "command_ack": True,
+        },
+    )
+    update = service.poll_opencli(session="ticket04")["updates"][0]
+    service.claim_browser_download(update["identity"])
+
+    with pytest.raises(EnrichmentDiagnosticError) as captured:
+        service.download_opencli(
+            update["identity"],
+            session="ticket04",
+        )
+
+    assert captured.value.diagnostic_category == "uncertain_state"
+    assert captured.value.diagnostic_code == "download_not_seen"
+    assert captured.value.diagnostic_stage == "browser_wait"
+    assert captured.value.diagnostic_exit_code == 1
+    assert trigger_calls == 0
+    assert wait_calls == 1
+
+
+def test_replayed_claim_reconciles_exact_native_save_history_without_click(tmp_path):
+    downloads_dir = tmp_path / "Downloads"
+    downloads_dir.mkdir()
+    chrome_profile_dir = tmp_path / "Default"
+    chrome_profile_dir.mkdir()
+    downloaded = downloads_dir / "12.png"
+    downloaded.write_bytes(b"\x89PNG\r\nnative-save-receipt")
+    entry = _representative_subscription_entries()[0]
+    entry["provider_file_id"] = "123456789012345"
+    entry["size"] = downloaded.stat().st_size
+    commands = []
+
+    service = LvSubscriptionService(
+        tmp_path / "out",
+        now=lambda: NOW,
+        runner=lambda command, **_kwargs: commands.append(command),
+        opencli_command=("opencli",),
+        share_url="https://pan.baidu.com/s/private-share-token",
+        share_code="a1b2",
+        downloads_dir=downloads_dir,
+        chrome_profile_dir=chrome_profile_dir,
+    )
+    update = service.observe_browser_listing([entry])["updates"][0]
+    claim = service.claim_browser_download(update["identity"])
+    service._opencli_listing = (
+        "ticket04",
+        None,
+        {"status": "ok", "complete_scan": True, "entries": [entry]},
+    )
+    history = sqlite3.connect(chrome_profile_dir / "History")
+    history.execute(
+        """CREATE TABLE downloads (
+          id INTEGER PRIMARY KEY,
+          target_path TEXT,
+          current_path TEXT,
+          received_bytes INTEGER,
+          total_bytes INTEGER,
+          state INTEGER,
+          interrupt_reason INTEGER,
+          start_time INTEGER,
+          end_time INTEGER
+        )"""
+    )
+    chrome_epoch_us = 11_644_473_600 * 1_000_000
+    claimed_us = int(datetime.fromisoformat(claim["claimed_at"]).timestamp() * 1_000_000)
+    history.execute(
+        "INSERT INTO downloads VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        (
+            1,
+            str(downloaded),
+            str(downloaded),
+            downloaded.stat().st_size,
+            downloaded.stat().st_size,
+            1,
+            0,
+            chrome_epoch_us + claimed_us + 1_000_000,
+            chrome_epoch_us + claimed_us + 2_000_000,
+        ),
+    )
+    history.commit()
+    history.close()
+
+    result = service.download_opencli(update["identity"], session="ticket04")
+
+    assert result["status"] == "completed"
+    assert result["sha256"] == hashlib.sha256(downloaded.read_bytes()).hexdigest()
+    assert commands == []
+
+
+class _FakeNativeSaveProcess:
+    def __init__(self, first, final, *, completed_path=None, payload=b""):
+        self.stdout = SimpleNamespace(
+            readline=lambda: json.dumps(first) + "\n"
+        )
+        self.stderr = SimpleNamespace()
+        self._final = final
+        self._completed_path = completed_path
+        self._payload = payload
+
+    def communicate(self, timeout):
+        assert timeout <= 35
+        if self._completed_path is not None:
+            self._completed_path.write_bytes(self._payload)
+        return json.dumps(self._final) + "\n", ""
+
+    def poll(self):
+        return 0
+
+
+def _native_save_service(tmp_path, monkeypatch, first, final, *, payload=b""):
+    entry = _pdf_entry(size=len(payload) if payload else 768_188)
+    service = LvSubscriptionService(
+        tmp_path / "out",
+        now=lambda: NOW,
+        runner=lambda *_args, **_kwargs: SimpleNamespace(
+            returncode=0,
+            stdout=json.dumps({"clicked": True, "matches_n": 1}),
+            stderr="",
+        ),
+        opencli_command=("opencli",),
+        share_url="https://pan.baidu.com/s/private-share-token",
+        share_code="a1b2",
+    )
+    update = service.observe_browser_listing([entry])["updates"][0]
+    claim = service.claim_browser_download(update["identity"])
+    item = service._manifest_item(update["identity"])
+    destination = (
+        service.download_inbox / item["version_key"] / item["name"]
+    )
+
+    def fake_popen(command, **_kwargs):
+        assert command[-3:] == (
+            item["name"],
+            str(destination.resolve()),
+            str(item["size"]),
+        )
+        return _FakeNativeSaveProcess(
+            first,
+            final,
+            completed_path=(
+                destination
+                if final.get("status") == "completed"
+                else None
+            ),
+            payload=payload,
+        )
+
+    monkeypatch.setattr(lv_subscription.subprocess, "Popen", fake_popen)
+    monkeypatch.setattr(
+        lv_subscription.select,
+        "select",
+        lambda *_args, **_kwargs: ([object()], [], []),
+    )
+    monkeypatch.setattr(
+        service,
+        "_chrome_history_download_completed",
+        lambda *_args, **_kwargs: True,
+    )
+    return service, item, claim
+
+
+def test_automated_native_save_authorized_exact_pdf_completes(tmp_path, monkeypatch):
+    payload = b"%PDF-" + b"x" * 4096
+    service, item, claim = _native_save_service(
+        tmp_path,
+        monkeypatch,
+        {"status": "ready", "accessibility_trusted": True},
+        {"status": "completed", "actual_size": len(payload)},
+        payload=payload,
+    )
+
+    result = service._automated_native_save_download(
+        item,
+        claim,
+        session="ticket04",
+        profile=None,
+        confirmation_prepared=True,
+    )
+
+    assert result["acquisition_transport"] == "automated_native_save"
+    assert result["actual_size"] == len(payload)
+    assert result["sha256"] == hashlib.sha256(payload).hexdigest()
+
+
+def test_automated_native_save_untrusted_is_permission_diagnostic(
+    tmp_path, monkeypatch
+):
+    service, item, claim = _native_save_service(
+        tmp_path,
+        monkeypatch,
+        {"status": "accessibility_not_trusted", "accessibility_trusted": False},
+        {},
+    )
+
+    with pytest.raises(EnrichmentDiagnosticError) as captured:
+        service._automated_native_save_download(
+            item,
+            claim,
+            session="ticket04",
+            profile=None,
+            confirmation_prepared=True,
+        )
+
+    assert captured.value.diagnostic_category == "permission_error"
+    assert captured.value.diagnostic_code == "macos_accessibility_permission_required"
+    assert captured.value.diagnostic_stage == "native_save_automation"
+
+
+def test_automated_native_save_filename_mismatch_fails_closed(
+    tmp_path, monkeypatch
+):
+    service, item, claim = _native_save_service(
+        tmp_path,
+        monkeypatch,
+        {"status": "ready", "accessibility_trusted": True},
+        {"status": "save_sheet_filename_mismatch"},
+    )
+
+    with pytest.raises(EnrichmentDiagnosticError) as captured:
+        service._automated_native_save_download(
+            item,
+            claim,
+            session="ticket04",
+            profile=None,
+            confirmation_prepared=True,
+        )
+
+    assert captured.value.diagnostic_category == "identity_error"
+    assert captured.value.diagnostic_code == "save_sheet_filename_mismatch"
+    assert not (
+        service.download_inbox / item["version_key"] / item["name"]
+    ).exists()
+
+
+def test_replayed_claim_recovers_exact_blocked_download_frame_once(tmp_path):
+    downloaded = tmp_path / "12.png"
+    downloaded.write_bytes(b"\x89PNG\r\nblocked-frame-recovery")
+    entry = _representative_subscription_entries()[0]
+    entry["provider_file_id"] = "123456789012345"
+    entry["size"] = downloaded.stat().st_size
+    waits = 0
+    opens: list[str] = []
+    trigger_calls = 0
+
+    def browser_runner(command, **_kwargs):
+        nonlocal waits, trigger_calls
+        session = command[2]
+        tail = command[3:]
+        if tail[:1] == ["open"]:
+            opens.append(session)
+            payload = {"url": "redacted", "page": "page-1"}
+        elif tail[:1] == ["eval"] and "/share/list" in tail[1]:
+            payload = {
+                "status": "ok",
+                "complete_scan": True,
+                "entries": [entry],
+            }
+        elif tail[:1] == ["eval"] and "ticket04_exact_ui_download" in tail[1]:
+            trigger_calls += 1
+            raise AssertionError("recovery must not replay the provider click")
+        elif tail[:1] == ["eval"] and "blocked_download_frame_probe" in tail[1]:
+            payload = {
+                "status": "blocked_by_client",
+                "error_code": "ERR_BLOCKED_BY_CLIENT",
+            }
+        elif tail[:1] == ["eval"] and "blocked_download_url_probe" in tail[1]:
+            payload = {
+                "status": "download_url_ready",
+                "download_url": "https://d.pcs.baidu.com/file/signed-evidence",
+                "scheme": "https:",
+                "host": "d.pcs.baidu.com",
+                "path": "/file/signed-evidence",
+            }
+        elif tail[:2] == ["wait", "download"]:
+            waits += 1
+            if waits == 1:
+                return SimpleNamespace(
+                    returncode=1,
+                    stdout=json.dumps({"error": {"code": "download_not_seen"}}),
+                    stderr="",
+                )
+            payload = {
+                "downloaded": True,
+                "filename": str(downloaded),
+                "state": "complete",
+            }
+        else:
+            raise AssertionError(command)
+        return SimpleNamespace(
+            returncode=0,
+            stdout=json.dumps(payload),
+            stderr="",
+        )
 
     service = LvSubscriptionService(
         tmp_path / "out",
@@ -829,14 +1218,318 @@ def test_replayed_download_claim_reconciles_without_retriggering_browser(tmp_pat
     update = service.poll_opencli(session="ticket04")["updates"][0]
     service.claim_browser_download(update["identity"])
 
-    with pytest.raises(EnrichmentError, match="browser command failed"):
-        service.download_opencli(
-            update["identity"],
-            session="ticket04",
+    result = service.download_opencli(update["identity"], session="ticket04")
+
+    assert result["status"] == "completed"
+    assert trigger_calls == 0
+    assert waits == 2
+    assert opens == ["ticket04", "ticket04-download"]
+
+
+def test_session_download_policy_ack_uses_controlled_inbox_without_profile_edit(
+    tmp_path,
+):
+    calls = []
+
+    def configure(session, profile, inbox):
+        calls.append((session, profile, inbox))
+        return {
+            "configured": True,
+            "method": "Page.setDownloadBehavior",
+            "command_ack": True,
+        }
+
+    service = LvSubscriptionService(
+        tmp_path / "out",
+        download_policy_configurer=configure,
+    )
+
+    result = service.configure_opencli_download_policy(
+        session="ticket04",
+        profile="dedicated-context",
+    )
+
+    inbox = tmp_path / "out" / "download_inbox"
+    assert calls == [("ticket04", "dedicated-context", inbox.resolve())]
+    assert result == {
+        "configured": True,
+        "method": "Page.setDownloadBehavior",
+        "command_ack": True,
+        "session": "ticket04",
+        "profile": "dedicated-context",
+        "inbox": str(inbox.resolve()),
+        "persistent_profile_mutated": False,
+    }
+    persisted = json.loads(
+        (tmp_path / "out" / "download_policy.json").read_text(encoding="utf-8")
+    )
+    assert persisted == result
+    assert not (tmp_path / "Default" / "Preferences").exists()
+
+
+def test_existing_pdf_claim_uses_direct_page_api_without_second_ui_trigger(
+    tmp_path,
+):
+    payload = b"%PDF-1.7\n" + b"x" * 2048
+    entry = _pdf_entry(size=len(payload))
+    entry["provider_file_id"] = "987654321012345"
+    trigger_calls = 0
+    direct_calls = []
+
+    def browser_runner(command, **_kwargs):
+        nonlocal trigger_calls
+        tail = command[3:]
+        if tail[:1] == ["open"]:
+            result = {"url": "redacted", "page": "page-1"}
+        elif tail[:1] == ["eval"] and "/share/list" in tail[1]:
+            result = {
+                "status": "ok",
+                "complete_scan": True,
+                "entries": [entry],
+            }
+        elif tail[:1] == ["eval"] and "ticket04_provider_direct_link" in tail[1]:
+            result = {
+                "status": "download_link_ready",
+                "download_url": (
+                    "https://d.pcs.baidu.com/rest/2.0/pcs/file?"
+                    "signed=credential-redacted-from-ledger"
+                ),
+                "scheme": "https:",
+                "host": "d.pcs.baidu.com",
+                "path": "/rest/2.0/pcs/file",
+                "provider_file_id": entry["provider_file_id"],
+            }
+        elif tail[:1] in (["click"], ["wait"]):
+            trigger_calls += 1
+            raise AssertionError("existing claim must not replay UI download")
+        elif tail[:1] == ["eval"] and "ticket04_exact_ui_download" in tail[1]:
+            trigger_calls += 1
+            raise AssertionError("existing claim must not replay UI download")
+        else:
+            raise AssertionError(command)
+        return SimpleNamespace(
+            returncode=0,
+            stdout=json.dumps(result),
+            stderr="",
         )
 
+    def direct_fetch(url, destination, expected_size, media_type):
+        direct_calls.append((url, destination, expected_size, media_type))
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        destination.write_bytes(payload)
+        return {
+            "path": str(destination),
+            "actual_size": len(payload),
+            "content_type": "application/pdf",
+            "sha256": hashlib.sha256(payload).hexdigest(),
+        }
+
+    service = LvSubscriptionService(
+        tmp_path / "out",
+        now=lambda: NOW,
+        runner=browser_runner,
+        opencli_command=("opencli",),
+        share_url="https://pan.baidu.com/s/private-share-token",
+        share_code="a1b2",
+        download_policy_configurer=lambda *_args: {
+            "configured": False,
+            "code": "opencli_cdp_method_not_permitted",
+        },
+        direct_download_fetcher=direct_fetch,
+    )
+    update = service.poll_opencli(session="ticket04")["updates"][0]
+    claim = service.claim_browser_download(update["identity"])
+
+    result = service.download_opencli(update["identity"], session="ticket04")
+
+    assert claim["status"] == "claimed"
+    assert result["status"] == "completed"
+    assert result["acquisition_transport"] == "provider_direct_small_file"
+    assert result["sha256"] == hashlib.sha256(payload).hexdigest()
     assert trigger_calls == 0
-    assert wait_calls == 1
+    assert len(direct_calls) == 1
+    assert direct_calls[0][1] == (
+        tmp_path
+        / "out"
+        / "download_inbox"
+        / update["version_key"]
+        / "大摩拆解.pdf"
+    )
+    durable = "\n".join(
+        path.read_text(encoding="utf-8")
+        for path in (tmp_path / "out").rglob("*.json*")
+    )
+    assert "credential-redacted-from-ledger" not in durable
+
+
+def test_existing_pdf_claim_intercepts_one_frontend_signed_link_after_errno_2(
+    tmp_path,
+):
+    payload = b"%PDF-1.7\n" + b"d" * 4096
+    entry = _pdf_entry(size=len(payload))
+    entry["provider_file_id"] = "987654321012345"
+    click_calls = 0
+    claim_calls = 0
+    direct_calls = []
+
+    def browser_runner(command, **_kwargs):
+        nonlocal click_calls
+        tail = command[3:]
+        if tail[:1] == ["open"]:
+            result = {"url": "redacted", "page": "page-1"}
+        elif tail[:1] == ["eval"] and "/share/list" in tail[1]:
+            result = {
+                "status": "ok",
+                "complete_scan": True,
+                "entries": [entry],
+            }
+        elif tail[:1] == ["eval"] and "ticket04_provider_direct_link" in tail[1]:
+            result = {
+                "status": "provider_error",
+                "provider_errno": 2,
+                "http_status": 200,
+            }
+        elif tail[:1] == ["eval"] and "ticket04_target_route_readback" in tail[1]:
+            result = {"status": "target_route_ready"}
+        elif tail[:1] == ["eval"] and "ticket04_exact_ui_download" in tail[1]:
+            result = {
+                "status": "download_confirmation_ready",
+                "name": entry["name"],
+            }
+        elif tail[:1] == ["eval"] and "ticket04_signed_link_intercept_and_trigger" in tail[1]:
+            click_calls += 1
+            result = {
+                "status": "download_link_ready",
+                "download_url": (
+                    "https://d.pcs.baidu.com/file/signed-evidence?"
+                    "credential=must-not-persist"
+                ),
+                "scheme": "https:",
+                "host": "d.pcs.baidu.com",
+                "path": "/file/signed-evidence",
+                "provider_file_id": entry["provider_file_id"],
+            }
+        else:
+            raise AssertionError(command)
+        return SimpleNamespace(
+            returncode=0,
+            stdout=json.dumps(result),
+            stderr="",
+        )
+
+    def direct_fetch(url, destination, expected_size, media_type):
+        direct_calls.append((url, destination, expected_size, media_type))
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        destination.write_bytes(payload)
+        return {
+            "path": str(destination),
+            "actual_size": len(payload),
+            "content_type": "application/pdf",
+            "sha256": hashlib.sha256(payload).hexdigest(),
+        }
+
+    service = LvSubscriptionService(
+        tmp_path / "out",
+        now=lambda: NOW,
+        runner=browser_runner,
+        opencli_command=("opencli",),
+        share_url="https://pan.baidu.com/s/private-share-token",
+        share_code="a1b2",
+        download_policy_configurer=lambda *_args: {
+            "configured": False,
+            "code": "opencli_cdp_method_not_permitted",
+        },
+        direct_download_fetcher=direct_fetch,
+    )
+    update = service.poll_opencli(session="ticket04")["updates"][0]
+    original_claim = service.claim_browser_download
+
+    def counted_claim(identity):
+        nonlocal claim_calls
+        claim_calls += 1
+        return original_claim(identity)
+
+    service.claim_browser_download = counted_claim
+    first = service.claim_browser_download(update["identity"])
+
+    result = service.download_opencli(update["identity"], session="ticket04")
+
+    assert first["status"] == "claimed"
+    assert result["status"] == "completed"
+    assert result["acquisition_transport"] == (
+        "provider_frontend_intercepted_small_file"
+    )
+    assert click_calls == 1
+    assert claim_calls == 2
+    claims = [
+        json.loads(line)
+        for line in service.events_path.read_text(encoding="utf-8").splitlines()
+        if "subscription_browser_download_claimed" in line
+    ]
+    assert len(claims) == 1
+    assert len(direct_calls) == 1
+    durable = "\n".join(
+        path.read_text(encoding="utf-8")
+        for path in (tmp_path / "out").rglob("*.json*")
+    )
+    assert "credential=must-not-persist" not in durable
+
+
+@pytest.mark.parametrize(
+    ("provider_status", "category", "code", "stage"),
+    [
+        (
+            "auth_required",
+            "authentication_error",
+            "provider_authentication_required",
+            "browser_download_authorization",
+        ),
+        (
+            "captcha_required",
+            "authentication_error",
+            "provider_captcha_required",
+            "browser_download_authorization",
+        ),
+        (
+            "provider_error",
+            "provider_error",
+            "provider_download_link_errno_2",
+            "provider_download_link",
+        ),
+    ],
+)
+def test_direct_pdf_api_preserves_auth_captcha_and_provider_diagnostics(
+    tmp_path,
+    provider_status,
+    category,
+    code,
+    stage,
+):
+    service = LvSubscriptionService(tmp_path / "out")
+    service._opencli_json = lambda *_args, **_kwargs: {
+        "status": provider_status,
+        "provider_errno": 0 if provider_status != "provider_error" else 2,
+    }
+    item = {
+        "identity": "a" * 64,
+        "version_key": "b" * 64,
+        "provider_file_id": "987654321012345",
+        "path": "/彤商学院/报告/大摩拆解.pdf",
+        "name": "大摩拆解.pdf",
+        "size": 4096,
+        "media_type": "pdf",
+    }
+
+    with pytest.raises(EnrichmentDiagnosticError) as captured:
+        service._provider_direct_download(
+            item,
+            session="ticket04",
+            profile="dedicated-context",
+        )
+
+    assert captured.value.diagnostic_category == category
+    assert captured.value.diagnostic_code == code
+    assert captured.value.diagnostic_stage == stage
 
 
 def test_one_poll_listing_is_reused_for_all_claim_reconciliations(tmp_path):
@@ -879,6 +1572,15 @@ def test_one_poll_listing_is_reused_for_all_claim_reconciliations(tmp_path):
                 stdout=json.dumps({"error": {"code": "download_not_seen"}}),
                 stderr="",
             )
+        if tail[:1] == ["eval"] and "blocked_download_frame_probe" in tail[1]:
+            return SimpleNamespace(
+                returncode=0,
+                stdout=json.dumps({
+                    "status": "other_browser_error",
+                    "error_code": "",
+                }),
+                stderr="",
+            )
         raise AssertionError(command)
 
     service = LvSubscriptionService(
@@ -888,13 +1590,18 @@ def test_one_poll_listing_is_reused_for_all_claim_reconciliations(tmp_path):
         opencli_command=("opencli",),
         share_url="https://pan.baidu.com/s/private-share-token",
         share_code="a1b2",
+        download_policy_configurer=lambda *_args: {
+            "configured": True,
+            "method": "Page.setDownloadBehavior",
+            "command_ack": True,
+        },
     )
     updates = service.poll_opencli(session="ticket04")["updates"]
     for update in updates:
         service.claim_browser_download(update["identity"])
 
     for update in updates:
-        with pytest.raises(EnrichmentError, match="browser command failed"):
+        with pytest.raises(EnrichmentError):
             service.download_opencli(
                 update["identity"],
                 session="ticket04",
@@ -987,10 +1694,12 @@ def test_explicit_pretrigger_browser_failure_can_resume_safely(tmp_path):
                 {"status": "download_control_ambiguous"}
                 if trigger_attempts == 1
                 else {
-                    "status": "download_triggered",
+                    "status": "download_confirmation_ready",
                     "name": entry["name"],
                 }
             )
+        elif tail[:1] == ["click"]:
+            payload = {"clicked": True, "matches_n": 1}
         elif tail[:2] == ["wait", "download"]:
             payload = {
                 "downloaded": True,
@@ -1497,11 +2206,13 @@ def test_one_runner_resumes_after_analysis_failure_without_repeating_browser_or_
                 "entries": [entry],
             }
         elif tail[:1] == ["eval"] and "ticket04_exact_ui_download" in tail[1]:
-            browser_triggers += 1
             payload = {
-                "status": "download_triggered",
+                "status": "download_confirmation_ready",
                 "name": entry["name"],
             }
+        elif tail[:1] == ["click"]:
+            browser_triggers += 1
+            payload = {"clicked": True, "matches_n": 1}
         elif tail[:2] == ["wait", "download"]:
             payload = {
                 "downloaded": True,

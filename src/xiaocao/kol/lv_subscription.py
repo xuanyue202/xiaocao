@@ -7,15 +7,20 @@ import functools
 import hashlib
 import json
 import re
+import select
 import shutil
+import sqlite3
 import subprocess
+import tempfile
 import threading
 import time
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
 from pathlib import Path, PurePosixPath
 from typing import Any, Callable
-from urllib.parse import urlencode, urlparse
+from urllib.parse import quote, urlencode, urlparse
+from urllib.error import HTTPError, URLError
+from urllib.request import Request, urlopen
 
 import yaml
 
@@ -73,11 +78,38 @@ _DOWNLOAD_PRETRIGGER_FAILURES = {
     "selection_control_missing",
     "selection_mismatch",
     "download_control_ambiguous",
+    "download_confirmation_click_failed",
     "provider_file_id_invalid",
     "share_download_metadata_missing",
     "share_download_failed",
     "share_download_link_missing",
     "share_download_target_mismatch",
+}
+_SAFE_OPENCLI_ERROR_CODE = re.compile(r"[a-z][a-z0-9_]{0,63}")
+_OPENCLI_ERROR_CATEGORIES = {
+    "download_not_seen": "uncertain_state",
+    "selector_ambiguous": "interaction_error",
+    "target_not_found": "interaction_error",
+    "session_not_found": "session_error",
+}
+
+_DIRECT_DOWNLOAD_MEDIA = {"pdf", "text"}
+_DIRECT_DOWNLOAD_HOSTS = {"d.pcs.baidu.com"}
+_DIRECT_DOWNLOAD_PATHS = {"/rest/2.0/pcs/file"}
+_DIRECT_DOWNLOAD_CONTENT_TYPES = {
+    "pdf": {
+        "application/pdf",
+        "application/octet-stream",
+        "application/x-download",
+        "binary/octet-stream",
+    },
+    "text": {
+        "text/plain",
+        "text/markdown",
+        "application/octet-stream",
+        "application/x-download",
+        "binary/octet-stream",
+    },
 }
 
 
@@ -445,7 +477,10 @@ _BROWSER_DOWNLOAD_SCRIPT_TEMPLATE = r"""(async () => {
     return fail('target_not_unique');
   }
   const rows = Array.from(document.querySelectorAll('#shareqr dd'));
-  for (const row of rows.filter(row => row.classList.contains('JS-item-active'))) {
+  const selectedRows = () => rows.filter(
+    row => !row.classList.contains('JS-item-active')
+  );
+  for (const row of selectedRows()) {
     const control = row.querySelector('span.EOGexf');
     if (!control) {
       return fail('selection_control_missing');
@@ -459,9 +494,7 @@ _BROWSER_DOWNLOAD_SCRIPT_TEMPLATE = r"""(async () => {
   }
   targetControl.click();
   await new Promise(resolve => setTimeout(resolve, 200));
-  const selected = rows.filter(
-    row => row.classList.contains('JS-item-active')
-  );
+  const selected = selectedRows();
   const selectedNames = selected.map(row => {
     const filename = row.querySelector('a.filename');
     return String(filename && filename.getAttribute('title') || '');
@@ -475,7 +508,23 @@ _BROWSER_DOWNLOAD_SCRIPT_TEMPLATE = r"""(async () => {
   if (downloadControls.length !== 1) {
     return fail('download_control_ambiguous');
   }
-  downloadControls[0].click();
+  downloadControls[0].setAttribute('data-xiaocao-download-open', '1');
+  return {
+    status: 'download_control_ready',
+    name: expectedName,
+    operation
+  };
+})()"""
+
+
+_BROWSER_DOWNLOAD_CONFIRMATION_SCRIPT = r"""(async () => {
+  const operation = 'ticket04_download_confirmation_readback';
+  const visible = element => {
+    const style = getComputedStyle(element);
+    const rect = element.getBoundingClientRect();
+    return style.display !== 'none' && style.visibility !== 'hidden'
+      && rect.width > 0 && rect.height > 0;
+  };
   const confirmationDeadline = Date.now() + 10000;
   while (Date.now() < confirmationDeadline) {
     const normalDownloads = Array.from(
@@ -486,10 +535,12 @@ _BROWSER_DOWNLOAD_SCRIPT_TEMPLATE = r"""(async () => {
         === '普通下载'
     ));
     if (normalDownloads.length === 1) {
-      normalDownloads[0].click();
+      normalDownloads[0].setAttribute(
+        'data-xiaocao-download-confirmation',
+        '1'
+      );
       return {
-        status: 'download_triggered',
-        name: expectedName,
+        status: 'download_confirmation_ready',
         operation
       };
     }
@@ -498,7 +549,17 @@ _BROWSER_DOWNLOAD_SCRIPT_TEMPLATE = r"""(async () => {
     }
     await new Promise(resolve => setTimeout(resolve, 100));
   }
-  return fail('download_confirmation_missing');
+  const clientOnly = Array.from(document.querySelectorAll('a.g-button'))
+    .filter(visible)
+    .some(control => /安装最新版网盘客户端/.test(
+      String(control.innerText || control.textContent || '').trim()
+    ));
+  return {
+    status: clientOnly
+      ? 'provider_web_download_client_only'
+      : 'download_confirmation_missing',
+    operation
+  };
 })()"""
 
 
@@ -515,6 +576,405 @@ def _browser_download_script(
         )
         .replace("__EXPECTED_ITEM_PATH_JSON__", json.dumps(expected_item_path))
         .replace("__EXPECTED_NAME_JSON__", json.dumps(expected_name))
+    )
+
+
+_PROVIDER_DIRECT_LINK_SCRIPT_TEMPLATE = r"""(async () => {
+  const operation = 'ticket04_provider_direct_link';
+  const expectedSharePath = __EXPECTED_SHARE_PATH_JSON__;
+  const expectedProviderFileId = __EXPECTED_PROVIDER_FILE_ID_JSON__;
+  const expectedItemPath = __EXPECTED_ITEM_PATH_JSON__;
+  const expectedName = __EXPECTED_NAME_JSON__;
+  const expectedSize = __EXPECTED_SIZE_JSON__;
+  const result = (status, extra = {}) => ({status, operation, ...extra});
+  if (
+    location.origin !== 'https://pan.baidu.com'
+    || location.pathname !== expectedSharePath
+  ) {
+    return result('wrong_share');
+  }
+  if (
+    !expectedProviderFileId
+    || !expectedItemPath.endsWith('/' + expectedName)
+    || !(expectedSize > 0)
+  ) {
+    return result('source_identity_invalid');
+  }
+  const visible = element => {
+    const style = getComputedStyle(element);
+    const rect = element.getBoundingClientRect();
+    return style.display !== 'none' && style.visibility !== 'hidden'
+      && rect.width > 0 && rect.height > 0;
+  };
+  const pageText = String(document.body?.innerText || '');
+  const captchaVisible = [...document.querySelectorAll(
+    '[class*="captcha"], [id*="captcha"], iframe[src*="captcha"]'
+  )].some(visible) || /验证码|安全验证/.test(pageText);
+  if (captchaVisible) {
+    return result('captcha_required');
+  }
+  if (
+    location.pathname === '/share/init'
+    || /登录后|请登录|提取码|访问码/.test(pageText)
+  ) {
+    return result('auth_required');
+  }
+  const sources = [window.yunData || {}, window.locals || {}];
+  const readValue = keys => {
+    for (const source of sources) {
+      for (const key of keys) {
+        try {
+          const value = typeof source.get === 'function'
+            ? source.get(key)
+            : source[key];
+          if (value !== undefined && value !== null && String(value)) {
+            return String(value);
+          }
+        } catch (_error) {}
+      }
+    }
+    return '';
+  };
+  const shareId = readValue(['shareid', 'share_id', 'SHARE_ID']);
+  const shareUk = readValue(['share_uk', 'uk', 'SHARE_UK']);
+  const sign = readValue(['sign', 'SIGN']);
+  const timestamp = readValue(['timestamp', 'TIMESTAMP']);
+  if (!shareId || !shareUk || !sign || !timestamp) {
+    return result('share_download_metadata_missing');
+  }
+  const query = new URLSearchParams({
+    sign,
+    timestamp,
+    channel: 'chunlei',
+    clienttype: '0',
+    web: '1',
+    app_id: '250528'
+  });
+  const body = new URLSearchParams({
+    encrypt: '0',
+    product: 'share',
+    uk: shareUk,
+    primaryid: shareId,
+    fid_list: JSON.stringify([expectedProviderFileId])
+  });
+  const cookie = document.cookie.split(';').map(value => value.trim())
+    .find(value => value.startsWith('BDCLND='));
+  if (cookie) {
+    body.set('extra', JSON.stringify({
+      sekey: decodeURIComponent(cookie.slice('BDCLND='.length))
+    }));
+  }
+  let response;
+  let payload;
+  try {
+    response = await fetch('/api/sharedownload?' + query.toString(), {
+      method: 'POST',
+      credentials: 'include',
+      headers: {'content-type': 'application/x-www-form-urlencoded'},
+      body: body.toString()
+    });
+    payload = await response.json();
+  } catch (_error) {
+    return result('provider_error', {provider_errno: null});
+  }
+  const message = String(
+    payload?.show_msg || payload?.errmsg || payload?.error_msg || ''
+  );
+  if (response.status === 401 || response.status === 403 || /登录|认证/.test(message)) {
+    return result('auth_required');
+  }
+  if (/验证码|安全验证/.test(message)) {
+    return result('captcha_required');
+  }
+  if (!response.ok || Number(payload?.errno || 0) !== 0) {
+    return result('provider_error', {
+      provider_errno: Number(payload?.errno || 0),
+      http_status: Number(response.status || 0)
+    });
+  }
+  const rows = Array.isArray(payload?.list) ? payload.list : [];
+  if (rows.length !== 1) {
+    return result('download_link_ambiguous');
+  }
+  const row = rows[0] || {};
+  const providerFileId = String(row.fs_id || row.fsid || expectedProviderFileId);
+  if (providerFileId !== expectedProviderFileId) {
+    return result('download_target_mismatch');
+  }
+  let link;
+  try {
+    link = new URL(String(row.dlink || ''));
+  } catch (_error) {
+    return result('download_link_missing');
+  }
+  return result('download_link_ready', {
+    download_url: link.href,
+    scheme: link.protocol,
+    host: link.hostname,
+    path: link.pathname,
+    provider_file_id: providerFileId
+  });
+})()"""
+
+
+def _provider_direct_link_script(
+    *,
+    expected_share_path: str,
+    expected_provider_file_id: str,
+    expected_item_path: str,
+    expected_name: str,
+    expected_size: int,
+) -> str:
+    return (
+        _PROVIDER_DIRECT_LINK_SCRIPT_TEMPLATE.replace(
+            "__EXPECTED_SHARE_PATH_JSON__",
+            json.dumps(expected_share_path),
+        )
+        .replace(
+            "__EXPECTED_PROVIDER_FILE_ID_JSON__",
+            json.dumps(expected_provider_file_id),
+        )
+        .replace("__EXPECTED_ITEM_PATH_JSON__", json.dumps(expected_item_path))
+        .replace("__EXPECTED_NAME_JSON__", json.dumps(expected_name))
+        .replace("__EXPECTED_SIZE_JSON__", json.dumps(expected_size))
+    )
+
+
+_PROVIDER_FRONTEND_INTERCEPT_INSTALL_SCRIPT_TEMPLATE = r"""(async () => {
+  const operation = 'ticket04_signed_link_intercept_and_trigger';
+  const expectedSharePath = __EXPECTED_SHARE_PATH_JSON__;
+  const expectedProviderFileId = __EXPECTED_PROVIDER_FILE_ID_JSON__;
+  const expectedName = __EXPECTED_NAME_JSON__;
+  const expectedSize = __EXPECTED_SIZE_JSON__;
+  const result = (status, extra = {}) => ({status, operation, ...extra});
+  if (
+    location.origin !== 'https://pan.baidu.com'
+    || location.pathname !== expectedSharePath
+  ) {
+    return result('wrong_share');
+  }
+  const visible = element => {
+    const style = getComputedStyle(element);
+    const rect = element.getBoundingClientRect();
+    return style.display !== 'none' && style.visibility !== 'hidden'
+      && rect.width > 0 && rect.height > 0;
+  };
+  const confirmations = Array.from(document.querySelectorAll(
+    "a[data-xiaocao-download-confirmation='1']"
+  )).filter(visible);
+  if (confirmations.length !== 1) {
+    return result('download_confirmation_missing');
+  }
+  const stateKey = '__xiaocaoTicket04SignedLink';
+  const prior = window[stateKey];
+  if (prior && (
+    prior.providerFileId !== expectedProviderFileId
+    || prior.name !== expectedName
+    || prior.size !== expectedSize
+  )) {
+    return result('interceptor_target_mismatch');
+  }
+  if (prior?.installed === true) {
+    return result('interceptor_installed', {
+      provider_file_id: expectedProviderFileId,
+      name: expectedName,
+      size: expectedSize
+    });
+  }
+  const state = {
+    installed: true,
+    providerFileId: expectedProviderFileId,
+    name: expectedName,
+    size: expectedSize,
+    downloadUrl: '',
+    scheme: '',
+    host: '',
+    path: ''
+  };
+  window[stateKey] = state;
+  const capture = candidate => {
+    let url;
+    try { url = new URL(String(candidate || ''), location.href); }
+    catch (_error) { return false; }
+    if (
+      url.protocol !== 'https:'
+      || url.hostname !== 'd.pcs.baidu.com'
+      || !(url.pathname.startsWith('/file/')
+        || url.pathname === '/rest/2.0/pcs/file')
+      || !url.search
+    ) {
+      return false;
+    }
+    state.downloadUrl = url.href;
+    state.scheme = url.protocol;
+    state.host = url.hostname;
+    state.path = url.pathname;
+    return true;
+  };
+  const capturePayload = payload => {
+    const rows = Array.isArray(payload?.list) ? payload.list : [];
+    for (const row of rows) {
+      const fileId = String(row?.fs_id || row?.fsid || '');
+      if (fileId === expectedProviderFileId && capture(row?.dlink)) {
+        return true;
+      }
+    }
+    return false;
+  };
+  const originalFetch = window.fetch.bind(window);
+  window.fetch = async (...args) => {
+    const response = await originalFetch(...args);
+    try {
+      const requestUrl = new URL(String(args[0]?.url || args[0] || ''), location.href);
+      if (requestUrl.pathname === '/api/sharedownload') {
+        response.clone().json().then(capturePayload).catch(() => {});
+      }
+    } catch (_error) {}
+    return response;
+  };
+  const originalOpen = XMLHttpRequest.prototype.open;
+  XMLHttpRequest.prototype.open = function(method, url, ...rest) {
+    try {
+      const requestUrl = new URL(String(url || ''), location.href);
+      if (requestUrl.pathname === '/api/sharedownload') {
+        this.addEventListener('load', () => {
+          try { capturePayload(JSON.parse(this.responseText)); }
+          catch (_error) {}
+        }, {once: true});
+      }
+    } catch (_error) {}
+    return originalOpen.call(this, method, url, ...rest);
+  };
+  const originalWindowOpen = window.open.bind(window);
+  window.open = (url, ...args) => (
+    capture(url) ? null : originalWindowOpen(url, ...args)
+  );
+  const originalAnchorClick = HTMLAnchorElement.prototype.click;
+  HTMLAnchorElement.prototype.click = function(...args) {
+    if (capture(this.href)) return;
+    return originalAnchorClick.apply(this, args);
+  };
+  const originalSetAttribute = Element.prototype.setAttribute;
+  Element.prototype.setAttribute = function(name, value) {
+    if (
+      this instanceof HTMLIFrameElement
+      && String(name).toLowerCase() === 'src'
+      && capture(value)
+    ) {
+      return originalSetAttribute.call(this, name, 'about:blank');
+    }
+    return originalSetAttribute.call(this, name, value);
+  };
+  const descriptor = Object.getOwnPropertyDescriptor(
+    HTMLIFrameElement.prototype, 'src'
+  );
+  if (descriptor?.get && descriptor?.set) {
+    Object.defineProperty(HTMLIFrameElement.prototype, 'src', {
+      configurable: descriptor.configurable,
+      enumerable: descriptor.enumerable,
+      get: descriptor.get,
+      set(value) {
+        return descriptor.set.call(this, capture(value) ? 'about:blank' : value);
+      }
+    });
+  }
+  const observer = new MutationObserver(records => {
+    for (const record of records) {
+      const node = record.target;
+      if (!(node instanceof HTMLIFrameElement)) continue;
+      const source = node.getAttribute('src') || '';
+      if (capture(source)) originalSetAttribute.call(node, 'src', 'about:blank');
+    }
+  });
+  observer.observe(document.documentElement, {
+    subtree: true, attributes: true, attributeFilter: ['src']
+  });
+  confirmations[0].click();
+  const deadline = Date.now() + 15000;
+  while (Date.now() < deadline) {
+    if (state.downloadUrl) {
+      return result('download_link_ready', {
+        download_url: state.downloadUrl,
+        scheme: state.scheme,
+        host: state.host,
+        path: state.path,
+        provider_file_id: state.providerFileId
+      });
+    }
+    await new Promise(resolve => setTimeout(resolve, 100));
+  }
+  return result('signed_link_not_captured');
+})()"""
+
+
+_PROVIDER_FRONTEND_INTERCEPT_READ_SCRIPT_TEMPLATE = r"""(async () => {
+  const operation = 'ticket04_signed_link_intercept_read';
+  const expectedProviderFileId = __EXPECTED_PROVIDER_FILE_ID_JSON__;
+  const expectedName = __EXPECTED_NAME_JSON__;
+  const expectedSize = __EXPECTED_SIZE_JSON__;
+  const stateKey = '__xiaocaoTicket04SignedLink';
+  const deadline = Date.now() + 15000;
+  while (Date.now() < deadline) {
+    const state = window[stateKey];
+    if (!state || state.installed !== true) {
+      return {status: 'interceptor_missing', operation};
+    }
+    if (
+      state.providerFileId !== expectedProviderFileId
+      || state.name !== expectedName
+      || state.size !== expectedSize
+    ) {
+      return {status: 'interceptor_target_mismatch', operation};
+    }
+    if (state.downloadUrl) {
+      return {
+        status: 'download_link_ready', operation,
+        download_url: state.downloadUrl,
+        scheme: state.scheme,
+        host: state.host,
+        path: state.path,
+        provider_file_id: state.providerFileId
+      };
+    }
+    await new Promise(resolve => setTimeout(resolve, 100));
+  }
+  return {status: 'signed_link_not_captured', operation};
+})()"""
+
+
+def _provider_frontend_intercept_install_script(
+    *,
+    expected_share_path: str,
+    expected_provider_file_id: str,
+    expected_name: str,
+    expected_size: int,
+) -> str:
+    return (
+        _PROVIDER_FRONTEND_INTERCEPT_INSTALL_SCRIPT_TEMPLATE.replace(
+            "__EXPECTED_SHARE_PATH_JSON__", json.dumps(expected_share_path)
+        )
+        .replace(
+            "__EXPECTED_PROVIDER_FILE_ID_JSON__",
+            json.dumps(expected_provider_file_id),
+        )
+        .replace("__EXPECTED_NAME_JSON__", json.dumps(expected_name))
+        .replace("__EXPECTED_SIZE_JSON__", json.dumps(expected_size))
+    )
+
+
+def _provider_frontend_intercept_read_script(
+    *,
+    expected_provider_file_id: str,
+    expected_name: str,
+    expected_size: int,
+) -> str:
+    return (
+        _PROVIDER_FRONTEND_INTERCEPT_READ_SCRIPT_TEMPLATE.replace(
+            "__EXPECTED_PROVIDER_FILE_ID_JSON__",
+            json.dumps(expected_provider_file_id),
+        )
+        .replace("__EXPECTED_NAME_JSON__", json.dumps(expected_name))
+        .replace("__EXPECTED_SIZE_JSON__", json.dumps(expected_size))
     )
 
 
@@ -600,6 +1060,16 @@ class LvSubscriptionService:
         share_url: str | None = None,
         share_code: str | None = None,
         sleep: Callable[[float], None] = time.sleep,
+        downloads_dir: Path | str | None = None,
+        chrome_profile_dir: Path | str | None = None,
+        download_policy_configurer: Callable[
+            [str, str | None, Path], dict[str, Any]
+        ]
+        | None = None,
+        direct_download_fetcher: Callable[
+            [str, Path, int, str], dict[str, Any]
+        ]
+        | None = None,
     ):
         self.output_dir = Path(output_dir)
         self.manifest_path = self.output_dir / "manifest.json"
@@ -615,11 +1085,148 @@ class LvSubscriptionService:
         self.share_url = str(share_url or "").strip()
         self.share_code = str(share_code or "").strip()
         self.sleep = sleep
+        self.downloads_dir = Path(
+            downloads_dir or (Path.home() / "Downloads")
+        ).expanduser().resolve()
+        self.chrome_profile_dir = Path(
+            chrome_profile_dir
+            or (
+                Path.home()
+                / "Library/Application Support/Google/Chrome/Default"
+            )
+        ).expanduser().resolve()
+        self.download_inbox = (self.output_dir / "download_inbox").resolve()
+        self.download_policy_path = self.output_dir / "download_policy.json"
+        self.download_policy_configurer = (
+            download_policy_configurer
+            or self._default_download_policy_configurer
+        )
+        self.direct_download_fetcher = (
+            direct_download_fetcher or self._default_direct_download_fetcher
+        )
         self._opencli_listing: tuple[
             str,
             str | None,
             dict[str, Any],
         ] | None = None
+
+    def _default_download_policy_configurer(
+        self,
+        session: str,
+        profile: str | None,
+        inbox: Path,
+    ) -> dict[str, Any]:
+        """Set target-scoped CDP download behavior without editing Preferences."""
+        opencli_binary = shutil.which(str(self.opencli_command[0]))
+        node_binary = shutil.which("node")
+        if not opencli_binary or not node_binary:
+            return {
+                "configured": False,
+                "code": "opencli_cdp_transport_unavailable",
+            }
+        entrypoint = Path(opencli_binary).resolve()
+        page_module = entrypoint.parent / "browser" / "page.js"
+        if not page_module.is_file():
+            return {
+                "configured": False,
+                "code": "opencli_cdp_transport_unavailable",
+            }
+        payload = {
+            "module": str(page_module),
+            "session": session,
+            "profile": profile,
+            "inbox": str(inbox),
+        }
+        script = """
+import {pathToFileURL} from 'node:url';
+const input = JSON.parse(process.argv[1]);
+const {Page} = await import(pathToFileURL(input.module).href);
+const page = new Page(
+  input.session, 20, input.profile || undefined, 'background'
+);
+try {
+  const ack = await page.cdp('Page.setDownloadBehavior', {
+    behavior: 'allow', downloadPath: input.inbox
+  });
+  console.log(JSON.stringify({
+    configured: true,
+    method: 'Page.setDownloadBehavior',
+    command_ack: ack !== undefined
+  }));
+} catch (error) {
+  const message = String(error && error.message || error);
+  const code = message.includes('not permitted')
+    ? 'opencli_cdp_method_not_permitted'
+    : 'opencli_cdp_download_behavior_failed';
+  console.log(JSON.stringify({configured: false, code}));
+}
+"""
+        try:
+            completed = subprocess.run(
+                (node_binary, "--input-type=module", "-e", script, _canonical(payload)),
+                capture_output=True,
+                text=True,
+                check=False,
+                timeout=30,
+            )
+            result = json.loads(completed.stdout)
+        except (OSError, subprocess.TimeoutExpired, json.JSONDecodeError):
+            return {
+                "configured": False,
+                "code": "opencli_cdp_download_behavior_failed",
+            }
+        if not isinstance(result, dict):
+            return {
+                "configured": False,
+                "code": "opencli_cdp_download_behavior_failed",
+            }
+        return result
+
+    def configure_opencli_download_policy(
+        self,
+        *,
+        session: str,
+        profile: str | None,
+    ) -> dict[str, Any]:
+        """Configure and persist a credential-free target-scoped readback."""
+        if not _OPENCLI_NAME.fullmatch(session) or (
+            profile is not None and not _OPENCLI_NAME.fullmatch(profile)
+        ):
+            raise EnrichmentError("OpenCLI session or profile name is invalid")
+        self.download_inbox.mkdir(parents=True, exist_ok=True)
+        result = self.download_policy_configurer(
+            session,
+            profile,
+            self.download_inbox,
+        )
+        if not isinstance(result, dict) or not isinstance(
+            result.get("configured"), bool
+        ):
+            raise EnrichmentDiagnosticError(
+                "OpenCLI download policy readback is invalid",
+                category="local_runtime_error",
+                code="download_policy_readback_invalid",
+                stage="browser_download_policy",
+            )
+        if result["configured"] is True and (
+            result.get("method") != "Page.setDownloadBehavior"
+            or result.get("command_ack") is not True
+        ):
+            raise EnrichmentDiagnosticError(
+                "OpenCLI download policy was not acknowledged",
+                category="local_runtime_error",
+                code="download_policy_readback_invalid",
+                stage="browser_download_policy",
+            )
+        readback = {
+            **result,
+            "session": session,
+            "profile": profile,
+            "inbox": str(self.download_inbox),
+            "persistent_profile_mutated": False,
+        }
+        _atomic_write_json(self.download_policy_path, readback)
+        return readback
 
     @classmethod
     def from_config(
@@ -682,7 +1289,7 @@ class LvSubscriptionService:
         self,
         identity: str,
         *,
-        failure: dict[str, str],
+        failure: dict[str, Any],
         retryable: bool,
     ) -> dict[str, Any]:
         """Audit one isolated item failure without changing its claim."""
@@ -715,6 +1322,8 @@ class LvSubscriptionService:
             "external_business_effects_replayed": False,
             "recorded_at": self._time().isoformat(timespec="seconds"),
         }
+        if failure.get("exit_code") is not None:
+            row["failure"]["exit_code"] = int(failure["exit_code"])
         _append_jsonl(self.events_path, row)
         return row
 
@@ -732,6 +1341,7 @@ class LvSubscriptionService:
         operation = str(args[0] if args else "unknown").strip().lower()
         stage = {
             "bind": "browser_bind",
+            "click": "browser_click",
             "eval": "browser_eval",
             "open": "browser_open",
             "wait": "browser_wait",
@@ -759,11 +1369,29 @@ class LvSubscriptionService:
                 stage=stage,
             ) from exc
         if result.returncode != 0:
+            error_code = "opencli_command_failed"
+            try:
+                error_envelope = json.loads(str(result.stdout))
+            except (TypeError, json.JSONDecodeError):
+                error_envelope = None
+            if isinstance(error_envelope, dict):
+                error = error_envelope.get("error")
+                candidate = (
+                    str(error.get("code") or "").strip()
+                    if isinstance(error, dict)
+                    else ""
+                )
+                if _SAFE_OPENCLI_ERROR_CODE.fullmatch(candidate):
+                    error_code = candidate
             raise EnrichmentDiagnosticError(
                 "subscription browser command failed",
-                category="transport_error",
-                code="opencli_command_failed",
+                category=_OPENCLI_ERROR_CATEGORIES.get(
+                    error_code,
+                    "transport_error",
+                ),
+                code=error_code,
                 stage=stage,
+                exit_code=int(result.returncode),
             )
         try:
             value = json.loads(str(result.stdout))
@@ -1627,6 +2255,7 @@ class LvSubscriptionService:
         downloaded_path: Path | str,
         *,
         claim_id: str,
+        acquisition_transport: str = "browser_download",
     ) -> dict[str, Any]:
         """Snapshot one browser download against its pre-action source claim."""
         item = self._manifest_item(str(identity))
@@ -1702,6 +2331,7 @@ class LvSubscriptionService:
             "media_type": str(item["media_type"]),
             "expected_size": int(item.get("size") or 0),
             "actual_size": actual_size,
+            "acquisition_transport": acquisition_transport,
             "immutable_path": str(immutable.resolve()),
             "sha256": _sha256_file(immutable),
             "claimed_at": claim["claimed_at"],
@@ -1788,6 +2418,925 @@ class LvSubscriptionService:
             )
         return Path(filename)
 
+    def _prepare_opencli_download_confirmation(
+        self,
+        item: dict[str, Any],
+        *,
+        session: str,
+        profile: str | None,
+    ) -> dict[str, Any]:
+        """Select one provider row and natively open its download choice."""
+        script = _browser_download_script(
+            expected_share_path=urlparse(self.share_url).path,
+            expected_item_path=str(item["path"]),
+            expected_name=str(item["name"]),
+        )
+        prepared = self._opencli_json(
+            session,
+            "eval",
+            script,
+            profile=profile,
+            timeout_seconds=30,
+        )
+        if prepared.get("status") in {
+            "target_not_visible",
+            "download_confirmation_missing",
+        }:
+            self.sleep(1.0)
+            prepared = self._opencli_json(
+                session,
+                "eval",
+                script,
+                profile=profile,
+                timeout_seconds=30,
+            )
+        if prepared.get("status") == "download_confirmation_ready":
+            return prepared
+        if prepared.get("status") != "download_control_ready":
+            return prepared
+        clicked = self._opencli_json(
+            session,
+            "click",
+            "a[data-xiaocao-download-open='1']",
+            profile=profile,
+            timeout_seconds=30,
+        )
+        if clicked.get("clicked") is not True or clicked.get("matches_n") != 1:
+            return {"status": "download_control_click_failed"}
+        return self._opencli_json(
+            session,
+            "eval",
+            _BROWSER_DOWNLOAD_CONFIRMATION_SCRIPT,
+            profile=profile,
+            timeout_seconds=15,
+        )
+
+    @staticmethod
+    def _default_direct_download_fetcher(
+        download_url: str,
+        destination: Path,
+        expected_size: int,
+        media_type: str,
+    ) -> dict[str, Any]:
+        """Stream one signed small file without logging URL or credentials."""
+        if media_type not in _DIRECT_DOWNLOAD_MEDIA:
+            raise EnrichmentDiagnosticError(
+                "provider direct download media is outside the safe boundary",
+                category="policy_error",
+                code="provider_direct_media_not_allowed",
+                stage="provider_direct_download",
+            )
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        if destination.exists():
+            if not destination.is_file() or destination.stat().st_size != expected_size:
+                raise EnrichmentDiagnosticError(
+                    "controlled download inbox contains a conflicting file",
+                    category="identity_error",
+                    code="controlled_inbox_collision",
+                    stage="provider_direct_download",
+                )
+            return {
+                "path": str(destination),
+                "actual_size": destination.stat().st_size,
+                "content_type": "application/octet-stream",
+                "sha256": _sha256_file(destination),
+            }
+        request = Request(
+            download_url,
+            headers={
+                "Accept": (
+                    "application/pdf,application/octet-stream"
+                    if media_type == "pdf"
+                    else "text/plain,application/octet-stream"
+                ),
+                "Referer": "https://pan.baidu.com/",
+                "User-Agent": "Mozilla/5.0",
+            },
+            method="GET",
+        )
+        temporary = destination.with_name(f".{destination.name}.partial")
+        if temporary.exists():
+            raise EnrichmentDiagnosticError(
+                "controlled download inbox has an unfinished transfer",
+                category="uncertain_state",
+                code="controlled_inbox_partial_exists",
+                stage="provider_direct_download",
+            )
+        digest = hashlib.sha256()
+        actual_size = 0
+        content_type = ""
+        try:
+            with urlopen(request, timeout=60) as response:  # noqa: S310
+                content_type = str(
+                    response.headers.get_content_type() or ""
+                ).lower()
+                content_length = response.headers.get("Content-Length")
+                if content_length and int(content_length) != expected_size:
+                    raise EnrichmentDiagnosticError(
+                        "provider direct download size changed",
+                        category="identity_error",
+                        code="provider_download_size_mismatch",
+                        stage="provider_direct_download",
+                    )
+                if content_type not in _DIRECT_DOWNLOAD_CONTENT_TYPES[media_type]:
+                    raise EnrichmentDiagnosticError(
+                        "provider direct download content type is invalid",
+                        category="content_error",
+                        code="provider_download_content_type_invalid",
+                        stage="provider_direct_download",
+                    )
+                with temporary.open("xb") as handle:
+                    while True:
+                        chunk = response.read(1024 * 1024)
+                        if not chunk:
+                            break
+                        actual_size += len(chunk)
+                        if actual_size > expected_size:
+                            raise EnrichmentDiagnosticError(
+                                "provider direct download exceeded expected size",
+                                category="identity_error",
+                                code="provider_download_size_mismatch",
+                                stage="provider_direct_download",
+                            )
+                        digest.update(chunk)
+                        handle.write(chunk)
+        except HTTPError as exc:
+            if exc.code in {401, 403}:
+                raise EnrichmentDiagnosticError(
+                    "provider authentication is required",
+                    category="authentication_error",
+                    code="provider_authentication_required",
+                    stage="browser_download_authorization",
+                ) from exc
+            raise EnrichmentDiagnosticError(
+                "provider direct download failed",
+                category="provider_error",
+                code="provider_direct_http_failed",
+                stage="provider_direct_download",
+            ) from exc
+        except (URLError, TimeoutError, OSError) as exc:
+            raise EnrichmentDiagnosticError(
+                "provider direct download transport failed",
+                category="transport_error",
+                code="provider_direct_transport_failed",
+                stage="provider_direct_download",
+            ) from exc
+        finally:
+            if temporary.exists() and actual_size != expected_size:
+                temporary.unlink()
+        if actual_size != expected_size:
+            raise EnrichmentDiagnosticError(
+                "provider direct download size changed",
+                category="identity_error",
+                code="provider_download_size_mismatch",
+                stage="provider_direct_download",
+            )
+        temporary.replace(destination)
+        if media_type == "pdf" and destination.read_bytes()[:5] != b"%PDF-":
+            raise EnrichmentDiagnosticError(
+                "provider direct PDF signature is invalid",
+                category="content_error",
+                code="provider_download_content_invalid",
+                stage="provider_direct_download",
+            )
+        if media_type == "text":
+            try:
+                destination.read_text(encoding="utf-8")
+            except UnicodeDecodeError as exc:
+                raise EnrichmentDiagnosticError(
+                    "provider direct text is not UTF-8",
+                    category="content_error",
+                    code="provider_download_content_invalid",
+                    stage="provider_direct_download",
+                ) from exc
+        return {
+            "path": str(destination),
+            "actual_size": actual_size,
+            "content_type": content_type,
+            "sha256": digest.hexdigest(),
+        }
+
+    def _provider_direct_download(
+        self,
+        item: dict[str, Any],
+        *,
+        session: str,
+        profile: str | None,
+    ) -> dict[str, Any]:
+        """Recover one claimed PDF/text through the authenticated share API."""
+        media_type = str(item.get("media_type") or "")
+        provider_file_id = str(item.get("provider_file_id") or "").strip()
+        if media_type not in _DIRECT_DOWNLOAD_MEDIA:
+            raise EnrichmentDiagnosticError(
+                "provider direct download media is outside the safe boundary",
+                category="policy_error",
+                code="provider_direct_media_not_allowed",
+                stage="provider_direct_download",
+            )
+        if not provider_file_id or not provider_file_id.isdigit():
+            raise EnrichmentDiagnosticError(
+                "provider direct download identity is invalid",
+                category="identity_error",
+                code="provider_direct_identity_invalid",
+                stage="provider_download_link",
+            )
+        link = self._opencli_json(
+            session,
+            "eval",
+            _provider_direct_link_script(
+                expected_share_path=urlparse(self.share_url).path,
+                expected_provider_file_id=provider_file_id,
+                expected_item_path=str(item["path"]),
+                expected_name=str(item["name"]),
+                expected_size=int(item["size"]),
+            ),
+            profile=profile,
+            timeout_seconds=30,
+        )
+        status = str(link.get("status") or "")
+        if status in {"auth_required", "wrong_share"}:
+            raise EnrichmentDiagnosticError(
+                "provider authentication is required",
+                category="authentication_error",
+                code="provider_authentication_required",
+                stage="browser_download_authorization",
+            )
+        if status == "captcha_required":
+            raise EnrichmentDiagnosticError(
+                "provider CAPTCHA is required",
+                category="authentication_error",
+                code="provider_captcha_required",
+                stage="browser_download_authorization",
+            )
+        if status != "download_link_ready":
+            provider_errno = link.get("provider_errno")
+            if provider_errno == 2:
+                code = "provider_download_link_errno_2"
+            elif status == "share_download_metadata_missing":
+                code = "provider_download_metadata_missing"
+            else:
+                code = "provider_download_link_failed"
+            raise EnrichmentDiagnosticError(
+                "provider download link request failed",
+                category="provider_error",
+                code=code,
+                stage="provider_download_link",
+            )
+        return self._fetch_provider_small_file(
+            item,
+            link,
+            acquisition_transport="provider_direct_small_file",
+        )
+
+    def _provider_frontend_intercepted_download(
+        self,
+        item: dict[str, Any],
+        *,
+        session: str,
+        profile: str | None,
+    ) -> dict[str, Any]:
+        """Trigger the provider frontend once and intercept its signed link."""
+        provider_file_id = str(item.get("provider_file_id") or "").strip()
+        item_path = str(item["path"])
+        parent_path = str(PurePosixPath(item_path).parent)
+        route = urlparse(
+            _authorized_share_url(self.share_url, self.share_code)
+        )._replace(fragment=f"list/path={quote(parent_path, safe='')}").geturl()
+        self._opencli_json(
+            session,
+            "open",
+            route,
+            profile=profile,
+            timeout_seconds=30,
+        )
+        route_readback = self._opencli_json(
+            session,
+            "eval",
+            """(() => {
+              const operation = 'ticket04_target_route_readback';
+              const expectedSharePath = %s;
+              const expectedParentPath = %s;
+              const prefix = '#list/path=';
+              let currentParentPath = '';
+              try {
+                currentParentPath = location.hash.startsWith(prefix)
+                  ? decodeURIComponent(location.hash.slice(prefix.length))
+                  : '';
+              } catch (_error) {}
+              return {
+                status: (
+                  location.origin === 'https://pan.baidu.com'
+                  && location.pathname === expectedSharePath
+                  && currentParentPath === expectedParentPath
+                ) ? 'target_route_ready' : 'target_route_mismatch',
+                operation
+              };
+            })()""" % (
+                json.dumps(urlparse(self.share_url).path),
+                json.dumps(parent_path),
+            ),
+            profile=profile,
+            timeout_seconds=30,
+        )
+        if route_readback.get("status") != "target_route_ready":
+            raise EnrichmentDiagnosticError(
+                "provider frontend target route did not bind",
+                category="identity_error",
+                code="provider_frontend_target_route_mismatch",
+                stage="provider_download_link",
+            )
+        prepared = self._prepare_opencli_download_confirmation(
+            item,
+            session=session,
+            profile=profile,
+        )
+        if prepared.get("status") != "download_confirmation_ready":
+            code = (
+                "provider_web_download_client_only"
+                if prepared.get("status")
+                == "provider_web_download_client_only"
+                else "provider_frontend_target_not_ready"
+            )
+            raise EnrichmentDiagnosticError(
+                "provider frontend download target was not prepared",
+                category="provider_error",
+                code=code,
+                stage="provider_download_link",
+            )
+        link = self._opencli_json(
+            session,
+            "eval",
+            _provider_frontend_intercept_install_script(
+                expected_share_path=urlparse(self.share_url).path,
+                expected_provider_file_id=provider_file_id,
+                expected_name=str(item["name"]),
+                expected_size=int(item["size"]),
+            ),
+            profile=profile,
+            timeout_seconds=20,
+        )
+        if link.get("status") != "download_link_ready":
+            raise EnrichmentDiagnosticError(
+                "provider frontend did not expose a signed download link",
+                category="provider_error",
+                code="provider_frontend_signed_link_not_captured",
+                stage="provider_download_link",
+            )
+        return self._fetch_provider_small_file(
+            item,
+            link,
+            acquisition_transport="provider_frontend_intercepted_small_file",
+        )
+
+    def _automated_native_save_download(
+        self,
+        item: dict[str, Any],
+        claim: dict[str, Any],
+        *,
+        session: str,
+        profile: str | None,
+        confirmation_prepared: bool = False,
+    ) -> dict[str, Any]:
+        """Recover one exact PDF through a trusted, bounded Chrome Save sheet."""
+        if str(item.get("media_type") or "") != "pdf":
+            raise EnrichmentDiagnosticError(
+                "native Save recovery is limited to small PDFs",
+                category="policy_error",
+                code="native_save_media_not_allowed",
+                stage="native_save_automation",
+            )
+        destination = (
+            self.download_inbox
+            / str(item["version_key"])
+            / str(item["name"])
+        ).resolve()
+        if destination.parent.parent != self.download_inbox:
+            raise EnrichmentDiagnosticError(
+                "native Save destination is invalid",
+                category="identity_error",
+                code="native_save_destination_invalid",
+                stage="native_save_automation",
+            )
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        if destination.exists():
+            raise EnrichmentDiagnosticError(
+                "native Save destination already exists without a receipt",
+                category="uncertain_state",
+                code="native_save_destination_exists",
+                stage="native_save_automation",
+            )
+
+        if not confirmation_prepared:
+            item_path = str(item["path"])
+            parent_path = str(PurePosixPath(item_path).parent)
+            route = urlparse(
+                _authorized_share_url(self.share_url, self.share_code)
+            )._replace(
+                fragment=f"list/path={quote(parent_path, safe='')}"
+            ).geturl()
+            self._opencli_json(
+                session,
+                "open",
+                route,
+                profile=profile,
+                timeout_seconds=30,
+            )
+            prepared = self._prepare_opencli_download_confirmation(
+                item,
+                session=session,
+                profile=profile,
+            )
+            if prepared.get("status") != "download_confirmation_ready":
+                code = (
+                    "provider_web_download_client_only"
+                    if prepared.get("status")
+                    == "provider_web_download_client_only"
+                    else "native_save_target_not_ready"
+                )
+                raise EnrichmentDiagnosticError(
+                    "native Save target was not prepared",
+                    category=(
+                        "provider_error"
+                        if code == "provider_web_download_client_only"
+                        else "identity_error"
+                    ),
+                    code=code,
+                    stage="native_save_automation",
+                )
+
+        helper = Path(__file__).parents[3] / "scripts/macos_chrome_save_helper.swift"
+        swift = shutil.which("swift")
+        if not swift or not helper.is_file():
+            raise EnrichmentDiagnosticError(
+                "native Save helper is unavailable",
+                category="local_runtime_error",
+                code="native_save_helper_unavailable",
+                stage="native_save_automation",
+            )
+        process = subprocess.Popen(
+            (
+                swift,
+                str(helper),
+                str(item["name"]),
+                str(destination),
+                str(int(item["size"])),
+            ),
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+        )
+        try:
+            if process.stdout is None or not select.select(
+                [process.stdout], [], [], 15
+            )[0]:
+                raise EnrichmentDiagnosticError(
+                    "native Save helper did not become ready",
+                    category="local_runtime_error",
+                    code="native_save_helper_not_ready",
+                    stage="native_save_automation",
+                )
+            first = json.loads(process.stdout.readline())
+            if first.get("status") == "accessibility_not_trusted":
+                raise EnrichmentDiagnosticError(
+                    "macOS Accessibility permission is required",
+                    category="permission_error",
+                    code="macos_accessibility_permission_required",
+                    stage="native_save_automation",
+                )
+            if (
+                first.get("status") != "ready"
+                or first.get("accessibility_trusted") is not True
+            ):
+                raise EnrichmentDiagnosticError(
+                    "native Save helper readiness is invalid",
+                    category="local_runtime_error",
+                    code="native_save_helper_not_ready",
+                    stage="native_save_automation",
+                )
+            click_error: EnrichmentDiagnosticError | None = None
+            try:
+                clicked = self._opencli_json(
+                    session,
+                    "click",
+                    "a[data-xiaocao-download-confirmation='1']",
+                    profile=profile,
+                    timeout_seconds=30,
+                )
+            except EnrichmentDiagnosticError as exc:
+                click_error = exc
+                clicked = {}
+            if click_error is None and (
+                clicked.get("clicked") is not True
+                or clicked.get("matches_n") != 1
+            ):
+                raise EnrichmentDiagnosticError(
+                    "native Save trigger was not exact",
+                    category="identity_error",
+                    code="native_save_trigger_not_exact",
+                    stage="native_save_automation",
+                )
+            stdout, _stderr = process.communicate(timeout=35)
+            rows = [
+                json.loads(line)
+                for line in stdout.splitlines()
+                if line.strip()
+            ]
+            result = rows[-1] if rows else {}
+            if result.get("status") != "completed":
+                safe_code = str(result.get("status") or "native_save_failed")
+                if not _SAFE_OPENCLI_ERROR_CODE.fullmatch(safe_code):
+                    safe_code = "native_save_failed"
+                raise EnrichmentDiagnosticError(
+                    "automated native Save did not complete",
+                    category=(
+                        "identity_error"
+                        if safe_code
+                        in {
+                            "save_sheet_filename_mismatch",
+                            "overwrite_prompt_detected",
+                            "save_destination_readback_failed",
+                        }
+                        else "local_runtime_error"
+                    ),
+                    code=safe_code,
+                    stage="native_save_automation",
+                )
+        except (json.JSONDecodeError, subprocess.TimeoutExpired) as exc:
+            raise EnrichmentDiagnosticError(
+                "native Save helper response is invalid",
+                category="local_runtime_error",
+                code="native_save_helper_failed",
+                stage="native_save_automation",
+            ) from exc
+        finally:
+            if process.poll() is None:
+                process.terminate()
+                try:
+                    process.wait(timeout=3)
+                except subprocess.TimeoutExpired:
+                    process.kill()
+
+        if (
+            not destination.is_file()
+            or destination.stat().st_size != int(item["size"])
+            or destination.read_bytes()[:5] != b"%PDF-"
+        ):
+            raise EnrichmentDiagnosticError(
+                "automated native Save file is invalid",
+                category="content_error",
+                code="native_save_file_invalid",
+                stage="download_reconciliation",
+            )
+        history_confirmed = False
+        for _attempt in range(20):
+            if self._chrome_history_download_completed(
+                item, claim, destination
+            ):
+                history_confirmed = True
+                break
+            self.sleep(0.25)
+        if not history_confirmed:
+            raise EnrichmentDiagnosticError(
+                "Chrome completed-download history receipt is missing",
+                category="uncertain_state",
+                code="native_save_history_receipt_missing",
+                stage="download_reconciliation",
+            )
+        return {
+            "path": str(destination),
+            "actual_size": destination.stat().st_size,
+            "sha256": _sha256_file(destination),
+            "content_type": "application/pdf",
+            "acquisition_transport": "automated_native_save",
+        }
+
+    def _fetch_provider_small_file(
+        self,
+        item: dict[str, Any],
+        link: dict[str, Any],
+        *,
+        acquisition_transport: str,
+    ) -> dict[str, Any]:
+        """Validate and stream one exact provider-signed small file."""
+        provider_file_id = str(item.get("provider_file_id") or "").strip()
+        media_type = str(item.get("media_type") or "")
+        download_url = str(link.get("download_url") or "")
+        parsed = urlparse(download_url)
+        path_allowed = parsed.path.startswith("/file/") or (
+            parsed.path in _DIRECT_DOWNLOAD_PATHS
+        )
+        if (
+            parsed.scheme != "https"
+            or parsed.hostname not in _DIRECT_DOWNLOAD_HOSTS
+            or not path_allowed
+            or not parsed.query
+            or str(link.get("provider_file_id") or "") != provider_file_id
+        ):
+            raise EnrichmentDiagnosticError(
+                "provider direct download URL is invalid",
+                category="identity_error",
+                code="provider_direct_url_invalid",
+                stage="provider_download_link",
+            )
+        destination = (
+            self.download_inbox
+            / str(item["version_key"])
+            / str(item["name"])
+        ).resolve()
+        if (
+            destination.parent.parent != self.download_inbox
+            or destination.name != str(item["name"])
+        ):
+            raise EnrichmentDiagnosticError(
+                "provider direct download destination is invalid",
+                category="identity_error",
+                code="provider_direct_destination_invalid",
+                stage="provider_direct_download",
+            )
+        fetched = self.direct_download_fetcher(
+            download_url,
+            destination,
+            int(item["size"]),
+            media_type,
+        )
+        path = Path(str(fetched.get("path") or "")).resolve()
+        if (
+            path != destination
+            or not path.is_file()
+            or path.stat().st_size != int(item["size"])
+            or int(fetched.get("actual_size") or 0) != int(item["size"])
+            or str(fetched.get("sha256") or "") != _sha256_file(path)
+        ):
+            raise EnrichmentDiagnosticError(
+                "provider direct download receipt is invalid",
+                category="identity_error",
+                code="provider_direct_receipt_invalid",
+                stage="download_reconciliation",
+            )
+        return {
+            "path": str(path),
+            "actual_size": path.stat().st_size,
+            "sha256": str(fetched["sha256"]),
+            "content_type": str(fetched.get("content_type") or ""),
+            "acquisition_transport": acquisition_transport,
+        }
+
+    def _download_provider_small_file(
+        self,
+        item: dict[str, Any],
+        *,
+        session: str,
+        profile: str | None,
+    ) -> dict[str, Any]:
+        try:
+            return self._provider_direct_download(
+                item,
+                session=session,
+                profile=profile,
+            )
+        except EnrichmentDiagnosticError as exc:
+            if exc.diagnostic_code not in {
+                "provider_download_link_errno_2",
+                "provider_download_metadata_missing",
+            }:
+                raise
+        return self._provider_frontend_intercepted_download(
+            item,
+            session=session,
+            profile=profile,
+        )
+
+    def _reconcile_native_save_download(
+        self,
+        item: dict[str, Any],
+        claim: dict[str, Any],
+        *,
+        profile: str | None,
+    ) -> Path | None:
+        """Bind one exact post-claim Save dialog result to Chrome History."""
+        if profile is not None:
+            return None
+        candidate = (self.downloads_dir / str(item["name"])).resolve()
+        if candidate.parent != self.downloads_dir or not candidate.is_file():
+            return None
+        if candidate.stat().st_size != int(item.get("size") or 0):
+            raise EnrichmentDiagnosticError(
+                "native Save dialog file does not match provider size",
+                category="identity_error",
+                code="native_save_file_mismatch",
+                stage="download_reconciliation",
+            )
+        return (
+            candidate
+            if self._chrome_history_download_completed(item, claim, candidate)
+            else None
+        )
+
+    def _chrome_history_download_completed(
+        self,
+        item: dict[str, Any],
+        claim: dict[str, Any],
+        candidate: Path,
+    ) -> bool:
+        """Read one exact completed Chrome History row after the claim."""
+        history_path = self.chrome_profile_dir / "History"
+        if not history_path.is_file():
+            return False
+        try:
+            claimed_at = datetime.fromisoformat(str(claim["claimed_at"]))
+        except (KeyError, TypeError, ValueError) as exc:
+            raise EnrichmentError(
+                "subscription browser download claim is invalid"
+            ) from exc
+        chrome_epoch_us = 11_644_473_600 * 1_000_000
+        claimed_chrome_us = (
+            chrome_epoch_us + int(claimed_at.timestamp() * 1_000_000)
+        )
+        try:
+            with tempfile.TemporaryDirectory(
+                prefix="xiaocao-chrome-history-"
+            ) as temporary_dir:
+                snapshot = Path(temporary_dir) / "History"
+                shutil.copy2(history_path, snapshot)
+                journal = history_path.with_name("History-journal")
+                if journal.is_file():
+                    shutil.copy2(
+                        journal,
+                        snapshot.with_name("History-journal"),
+                    )
+                connection = sqlite3.connect(snapshot)
+                try:
+                    rows = connection.execute(
+                        """SELECT target_path, current_path, received_bytes,
+                                  total_bytes, state, interrupt_reason,
+                                  start_time, end_time
+                           FROM downloads
+                           WHERE target_path = ? AND current_path = ?
+                             AND start_time >= ?""",
+                        (
+                            str(candidate),
+                            str(candidate),
+                            claimed_chrome_us,
+                        ),
+                    ).fetchall()
+                finally:
+                    connection.close()
+        except (OSError, sqlite3.Error):
+            return False
+        completed = [
+            row
+            for row in rows
+            if int(row[2]) == int(item["size"])
+            and int(row[3]) == int(item["size"])
+            and int(row[4]) == 1
+            and int(row[5]) == 0
+            and int(row[6]) >= claimed_chrome_us
+            and int(row[7]) >= int(row[6])
+        ]
+        if not completed:
+            return False
+        if len(completed) != 1:
+            raise EnrichmentDiagnosticError(
+                "native Save dialog receipt is ambiguous",
+                category="identity_error",
+                code="native_save_receipt_ambiguous",
+                stage="download_reconciliation",
+            )
+        return True
+
+    def _recover_blocked_client_download(
+        self,
+        item: dict[str, Any],
+        *,
+        session: str,
+        profile: str | None,
+    ) -> Path | None:
+        """Reuse one blocked signed URL in a top-level tab without re-clicking."""
+        browser_error = self._opencli_json(
+            session,
+            "eval",
+            """(() => {
+              const operation = 'blocked_download_frame_probe';
+              const text = document.body?.innerText || '';
+              const match = text.match(/ERR_[A-Z_]+/);
+              const errorCode = match ? match[0] : '';
+              return {
+                status: errorCode === 'ERR_BLOCKED_BY_CLIENT'
+                  ? 'blocked_by_client'
+                  : 'other_browser_error',
+                error_code: errorCode,
+                operation
+              };
+            })()""",
+            "--frame",
+            "0",
+            profile=profile,
+            timeout_seconds=15,
+        )
+        if (
+            browser_error.get("status") != "blocked_by_client"
+            or browser_error.get("error_code") != "ERR_BLOCKED_BY_CLIENT"
+        ):
+            return None
+        download_target = self._opencli_json(
+            session,
+            "eval",
+            """(() => {
+              const operation = 'blocked_download_url_probe';
+              const frames = Array.from(
+                document.querySelectorAll('iframe[name="pcsdownloadiframe"]')
+              ).filter(frame => frame.getAttribute('src'));
+              if (frames.length !== 1) {
+                return {status: 'download_url_ambiguous', operation};
+              }
+              const url = new URL(frames[0].getAttribute('src'), location.href);
+              return {
+                status: 'download_url_ready',
+                download_url: url.href,
+                scheme: url.protocol,
+                host: url.hostname,
+                path: url.pathname,
+                operation
+              };
+            })()""",
+            profile=profile,
+            timeout_seconds=15,
+        )
+        download_url = str(download_target.get("download_url") or "")
+        parsed = urlparse(download_url)
+        if (
+            download_target.get("status") != "download_url_ready"
+            or download_target.get("scheme") != "https:"
+            or download_target.get("host") != "d.pcs.baidu.com"
+            or not str(download_target.get("path") or "").startswith("/file/")
+            or parsed.scheme != "https"
+            or parsed.hostname != "d.pcs.baidu.com"
+            or not parsed.path.startswith("/file/")
+        ):
+            raise EnrichmentDiagnosticError(
+                "subscription blocked download URL is invalid",
+                category="identity_error",
+                code="blocked_download_url_invalid",
+                stage="browser_download_recovery",
+            )
+
+        recovery_session = f"{session}-download"
+        if len(recovery_session) > 80:
+            suffix = hashlib.sha256(session.encode("utf-8")).hexdigest()[:8]
+            recovery_session = f"{session[:62]}-{suffix}-download"
+        waiter_started = threading.Event()
+
+        def wait_for_download() -> Path:
+            waiter_started.set()
+            return self._wait_opencli_download(
+                item,
+                session=session,
+                profile=profile,
+                timeout_seconds=60,
+            )
+
+        with ThreadPoolExecutor(max_workers=1) as executor:
+            receipt = executor.submit(wait_for_download)
+            if not waiter_started.wait(timeout=5):
+                raise EnrichmentDiagnosticError(
+                    "subscription recovery observer did not start",
+                    category="local_runtime_error",
+                    code="download_recovery_observer_not_started",
+                    stage="browser_download_recovery",
+                )
+            if self.opencli_command != ("opencli",):
+                time.sleep(1)
+            open_error: EnrichmentError | None = None
+            try:
+                self._opencli_json(
+                    recovery_session,
+                    "open",
+                    download_url,
+                    profile=profile,
+                    timeout_seconds=30,
+                )
+            except EnrichmentError as exc:
+                # A top-level navigation can abort because Chrome converted it
+                # into a download. The observer receipt, not navigation status,
+                # decides whether the recovery completed.
+                open_error = exc
+            try:
+                return receipt.result()
+            except EnrichmentError as exc:
+                if open_error is None:
+                    raise EnrichmentDiagnosticError(
+                        "subscription download prompt requires internal recovery",
+                        category="local_recovery",
+                        code="download_prompt_internal_recovery",
+                        stage="browser_download_prompt",
+                    ) from exc
+                raise EnrichmentDiagnosticError(
+                    "subscription download was blocked by a browser extension",
+                    category="local_policy_error",
+                    code="download_blocked_by_extension",
+                    stage="browser_download_recovery",
+                ) from (open_error or exc)
+
     def download_opencli(
         self,
         identity: str,
@@ -1837,66 +3386,173 @@ class LvSubscriptionService:
                 stage="source_acquisition",
             )
 
-        claim = self.claim_browser_download(str(identity))
-        if claim.get("idempotent_replay") is True:
-            downloaded_path = self._wait_opencli_download(
-                item,
+        direct_item = {
+            **item,
+            "provider_file_id": str(raw.get("provider_file_id") or ""),
+        }
+        download_policy: dict[str, Any] | None = None
+        if normalized["media_type"] in _DIRECT_DOWNLOAD_MEDIA:
+            download_policy = self.configure_opencli_download_policy(
                 session=session,
                 profile=profile,
-                timeout_seconds=5,
             )
+
+        claim = self.claim_browser_download(str(identity))
+        if claim.get("idempotent_replay") is True:
+            reconciled_path = self._reconcile_native_save_download(
+                item,
+                claim,
+                profile=profile,
+            )
+            if reconciled_path is not None:
+                return self.complete_browser_download(
+                    str(item["identity"]),
+                    reconciled_path,
+                    claim_id=str(claim["claim_id"]),
+                )
+            if normalized["media_type"] in _DIRECT_DOWNLOAD_MEDIA:
+                if download_policy and download_policy["configured"] is True:
+                    try:
+                        downloaded_path = self._wait_opencli_download(
+                            item,
+                            session=session,
+                            profile=profile,
+                            timeout_seconds=5,
+                        )
+                    except EnrichmentDiagnosticError as exc:
+                        if exc.diagnostic_code != "download_not_seen":
+                            raise
+                    else:
+                        return self.complete_browser_download(
+                            str(item["identity"]),
+                            downloaded_path,
+                            claim_id=str(claim["claim_id"]),
+                        )
+                direct = self._download_provider_small_file(
+                    direct_item,
+                    session=session,
+                    profile=profile,
+                )
+                return self.complete_browser_download(
+                    str(item["identity"]),
+                    Path(str(direct["path"])),
+                    claim_id=str(claim["claim_id"]),
+                    acquisition_transport=str(
+                        direct["acquisition_transport"]
+                    ),
+                )
+            try:
+                downloaded_path = self._wait_opencli_download(
+                    item,
+                    session=session,
+                    profile=profile,
+                    timeout_seconds=5,
+                )
+            except EnrichmentDiagnosticError as exc:
+                if exc.diagnostic_code != "download_not_seen":
+                    raise
+                downloaded_path = self._recover_blocked_client_download(
+                    item,
+                    session=session,
+                    profile=profile,
+                )
+                if downloaded_path is None:
+                    raise
             return self.complete_browser_download(
                 str(item["identity"]),
                 downloaded_path,
                 claim_id=str(claim["claim_id"]),
             )
 
-        waiter_started = threading.Event()
+        if (
+            normalized["media_type"] in _DIRECT_DOWNLOAD_MEDIA
+            and download_policy
+            and download_policy["configured"] is False
+        ):
+            direct = self._download_provider_small_file(
+                direct_item,
+                session=session,
+                profile=profile,
+            )
+            return self.complete_browser_download(
+                str(item["identity"]),
+                Path(str(direct["path"])),
+                claim_id=str(claim["claim_id"]),
+                acquisition_transport=str(direct["acquisition_transport"]),
+            )
 
-        def wait_for_download() -> Path:
-            waiter_started.set()
-            return self._wait_opencli_download(
+        # OpenCLI serializes commands per browser session. Starting `wait`
+        # first prevents the trigger eval from running until the wait times
+        # out. Trigger first; the Bridge download observer also reports a
+        # matching recent download, so the bounded wait can reconcile it.
+        trigger = self._prepare_opencli_download_confirmation(
+            item,
+            session=session,
+            profile=profile,
+        )
+        if trigger.get("status") != "download_confirmation_ready":
+            reason = str(trigger.get("status") or "")
+            if reason in _DOWNLOAD_PRETRIGGER_FAILURES:
+                self._record_browser_download_pretrigger_failure(
+                    str(identity),
+                    claim_id=str(claim["claim_id"]),
+                    reason=reason,
+                )
+            raise EnrichmentError(
+                "subscription browser download was not triggered"
+            )
+        clicked = self._opencli_json(
+            session,
+            "click",
+            "a[data-xiaocao-download-confirmation='1']",
+            profile=profile,
+            timeout_seconds=30,
+        )
+        if clicked.get("clicked") is not True or clicked.get("matches_n") != 1:
+            self._record_browser_download_pretrigger_failure(
+                str(identity),
+                claim_id=str(claim["claim_id"]),
+                reason="download_confirmation_click_failed",
+            )
+            raise EnrichmentError(
+                "subscription browser download was not triggered"
+            )
+        try:
+            downloaded_path = self._wait_opencli_download(
                 item,
                 session=session,
                 profile=profile,
                 timeout_seconds=60,
             )
-
-        with ThreadPoolExecutor(max_workers=1) as executor:
-            receipt = executor.submit(wait_for_download)
-            if not waiter_started.wait(timeout=5):
-                raise EnrichmentError(
-                    "subscription browser download waiter did not start"
+        except EnrichmentDiagnosticError as exc:
+            if exc.diagnostic_code != "download_not_seen":
+                raise
+            if normalized["media_type"] in _DIRECT_DOWNLOAD_MEDIA:
+                direct = self._download_provider_small_file(
+                    direct_item,
+                    session=session,
+                    profile=profile,
                 )
-            if self.opencli_command != ("opencli",):
-                time.sleep(1)
-            trigger = self._opencli_json(
-                session,
-                "eval",
-                _browser_download_script(
-                    expected_share_path=urlparse(self.share_url).path,
-                    expected_item_path=str(item["path"]),
-                    expected_name=str(item["name"]),
-                ),
+                return self.complete_browser_download(
+                    str(item["identity"]),
+                    Path(str(direct["path"])),
+                    claim_id=str(claim["claim_id"]),
+                    acquisition_transport=str(
+                        direct["acquisition_transport"]
+                    ),
+                )
+            downloaded_path = self._recover_blocked_client_download(
+                item,
+                session=session,
                 profile=profile,
-                timeout_seconds=30,
             )
-            if trigger.get("status") != "download_triggered":
-                reason = str(trigger.get("status") or "")
-                if reason in _DOWNLOAD_PRETRIGGER_FAILURES:
-                    self._record_browser_download_pretrigger_failure(
-                        str(identity),
-                        claim_id=str(claim["claim_id"]),
-                        reason=reason,
-                    )
-                raise EnrichmentError(
-                    "subscription browser download was not triggered"
-                )
-            return self.complete_browser_download(
-                str(item["identity"]),
-                receipt.result(),
-                claim_id=str(claim["claim_id"]),
-            )
+            if downloaded_path is None:
+                raise
+        return self.complete_browser_download(
+            str(item["identity"]),
+            downloaded_path,
+            claim_id=str(claim["claim_id"]),
+        )
 
     @_exclusive("item")
     def ingest_browser_download(

@@ -23,6 +23,7 @@ class EnrichmentDiagnosticError(EnrichmentError):
         category: str,
         code: str,
         stage: str,
+        exit_code: int | None = None,
     ):
         values = {
             "category": str(category or "").strip(),
@@ -31,9 +32,14 @@ class EnrichmentDiagnosticError(EnrichmentError):
         }
         if any(not _DIAGNOSTIC_TOKEN.fullmatch(value) for value in values.values()):
             raise ValueError("enrichment diagnostic tokens are invalid")
+        if exit_code is not None and (
+            isinstance(exit_code, bool) or not isinstance(exit_code, int) or exit_code < 0
+        ):
+            raise ValueError("enrichment diagnostic exit code is invalid")
         self.diagnostic_category = values["category"]
         self.diagnostic_code = values["code"]
         self.diagnostic_stage = values["stage"]
+        self.diagnostic_exit_code = exit_code
         super().__init__(message)
 
 

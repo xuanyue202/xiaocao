@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 import hashlib
+import io
 import json
 from datetime import datetime
+from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
@@ -1060,6 +1062,71 @@ def test_lv_pending_failure_isolated_without_blocking_later_pdf(
     )]
 
 
+def test_lv_native_save_prompt_stays_internal_and_does_not_request_user(tmp_path):
+    failures = []
+
+    class FakeLv:
+        def poll_opencli(self, **_kwargs):
+            return None
+
+        @staticmethod
+        def pending_items():
+            return [{
+                "identity": "e" * 64,
+                "version_key": "v" * 64,
+                "name": "大摩拆解.pdf",
+                "path": "/报告/大摩拆解.pdf",
+                "media_type": "pdf",
+                "size": 768188,
+                "modified_at": 1785774466,
+                "stage": "download_claimed",
+            }]
+
+        @staticmethod
+        def metadata_companion_proof(*_args, **_kwargs):
+            return None
+
+        @staticmethod
+        def download_opencli(*_args, **_kwargs):
+            raise EnrichmentDiagnosticError(
+                "native save prompt",
+                category="local_recovery",
+                code="download_prompt_internal_recovery",
+                stage="browser_download_prompt",
+            )
+
+        @staticmethod
+        def record_item_failure(identity, *, failure, retryable):
+            failures.append((identity, failure, retryable))
+
+    runtime = DailyRuntime.__new__(DailyRuntime)
+    runtime.args = SimpleNamespace(
+        lv_session="lv-session",
+        opencli_profile=None,
+    )
+    runtime._lv_service = FakeLv()
+    runtime._lv_listing = {
+        "status": "ok",
+        "complete_scan": True,
+        "entries": [],
+    }
+    runtime._lv_listing_error = None
+    runtime._complete_lv_video_transcripts = lambda: []
+
+    result = runtime.lv()
+
+    assert result["status"] == "waiting"
+    assert failures == [(
+        "e" * 64,
+        {
+            "category": "local_recovery",
+            "code": "download_prompt_internal_recovery",
+            "stage": "browser_download_prompt",
+        },
+        True,
+    )]
+
+
 def test_video_history_failure_isolated_after_latest_lv_priority(
     monkeypatch,
     tmp_path,
@@ -1142,6 +1209,151 @@ def test_video_history_failure_isolated_after_latest_lv_priority(
         },
         True,
     )]
+
+
+def test_video_semantic_eof_waits_and_next_run_reuses_persisted_request(
+    monkeypatch,
+    tmp_path,
+):
+    video_output = tmp_path / "videos"
+    evidence = tmp_path / "transcript.txt"
+    evidence.write_text("完整逐字稿证据", encoding="utf-8")
+    evidence_sha256 = hashlib.sha256(evidence.read_bytes()).hexdigest()
+    version_key = "v" * 64
+    identity = "i" * 64
+    request_path = video_output / "artifacts" / version_key / "analysis_request.json"
+    item = {
+        "identity": identity,
+        "version_key": version_key,
+        "name": "8月3日 (1).mp4",
+        "path": "/直播回放/2026年8月/8月3日 (1).mp4",
+        "source": "baidu_subscription_share_browser",
+        "author": "吕晓彤",
+        "media_type": "video",
+        "size": 5_508_885_608,
+        "modified_at": 1_785_772_456,
+        "version_first_seen_at": "2026-08-04T07:00:00+08:00",
+    }
+    historical_item = {
+        **item,
+        "identity": "h" * 64,
+        "version_key": "w" * 64,
+        "name": "historical.mp4",
+        "path": "/historical.mp4",
+        "source": "baidu_private_folder",
+        "author": "路西法",
+        "modified_at": 1_748_323_280,
+    }
+    advance_calls = []
+    decision_calls = []
+    pending_calls = 0
+
+    def analysis_request():
+        request_path.parent.mkdir(parents=True, exist_ok=True)
+        request = {
+            "event": "subscription_video_analysis_input_required",
+            "source": item["source"],
+            "author": item["author"],
+            "title": item["name"],
+            "publication_time": "2026-08-03T00:00:00+08:00",
+            "source_identity": identity,
+            "source_version_key": version_key,
+            "evidence_path": str(evidence.resolve()),
+            "evidence_sha256": evidence_sha256,
+            "transcript_path": str(evidence.resolve()),
+            "transcript_sha256": evidence_sha256,
+            "analysis_request_path": str(request_path.resolve()),
+        }
+        request_path.write_text(json.dumps(request), encoding="utf-8")
+        return request
+
+    class FakeVideos:
+        def __init__(self, *_args, **_kwargs):
+            pass
+
+        @staticmethod
+        def scan_opencli(**_kwargs):
+            return None
+
+        @staticmethod
+        def pending_items():
+            nonlocal pending_calls
+            pending_calls += 1
+            if pending_calls == 1:
+                return [item, historical_item]
+            return [item]
+
+        @staticmethod
+        def advance_item(requested, **_kwargs):
+            advance_calls.append(requested["identity"])
+            return analysis_request()
+
+        @staticmethod
+        def decide_item(requested, *, bundle_path, **_kwargs):
+            decision_calls.append((requested["identity"], Path(bundle_path)))
+            result_path = tmp_path / "decision-result.json"
+            result_path.write_text(json.dumps({
+                "items": [{
+                    "daily_terminal": {
+                        "kind": "source_event",
+                        "event_id": identity,
+                    },
+                }],
+            }), encoding="utf-8")
+            return {"decision_result_path": str(result_path)}
+
+    monkeypatch.setattr(kol_daily_script, "SubscriptionVideoService", FakeVideos)
+    runtime = DailyRuntime.__new__(DailyRuntime)
+    runtime.args = SimpleNamespace(
+        video_output_dir=video_output,
+        config=tmp_path / "config.yaml",
+        decision_output_dir=tmp_path / "decisions",
+        lv_session="lv-session",
+        private_session="private-session",
+        enrichment_session="enrichment-session",
+        opencli_profile=None,
+    )
+    runtime._lv_listing = {
+        "status": "ok",
+        "complete_scan": True,
+        "entries": [],
+    }
+    runtime._lv_listing_error = None
+    runtime._pipeline = lambda _context: object()
+
+    monkeypatch.setattr(kol_daily_script.sys, "stdin", io.StringIO(""))
+    first = runtime.videos()
+
+    assert first["status"] == "waiting"
+    assert first["waiting_count"] == 1
+    assert first["waiting_items"] == [{
+        "identity": identity,
+        "version_key": version_key,
+        "name": item["name"],
+        "author": item["author"],
+        "status": "waiting_semantic_input",
+        "stage": "waiting_semantic_input",
+        "analysis_request_path": str(request_path.resolve()),
+        "evidence_path": str(evidence.resolve()),
+        "evidence_sha256": evidence_sha256,
+        "semantic_request_preserved": True,
+        "external_business_effects_replayed": False,
+    }]
+    assert advance_calls == [identity]
+    assert decision_calls == []
+
+    bundle = tmp_path / "bundle.json"
+    bundle.write_text("{}", encoding="utf-8")
+    monkeypatch.setattr(
+        kol_daily_script.sys,
+        "stdin",
+        io.StringIO(json.dumps({"bundle_path": str(bundle)}) + "\n"),
+    )
+    second = runtime.videos()
+
+    assert second["status"] == "completed"
+    assert advance_calls == [identity]
+    assert decision_calls == [(identity, bundle.resolve())]
 
 
 def test_pdf_companion_publication_context_merges_explicit_source_parts(tmp_path):

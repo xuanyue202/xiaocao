@@ -310,6 +310,21 @@ the two receipts by handoff id and media SHA-256.
   and prefer successful share metadata plus complete `/share/list` evidence.
   A replayed/uncertain download claim may only reconcile the prior download
   event; it must never retrigger it.
+- Small-file acquisition is unattended. Do not change the ordinary Chrome
+  profile, its `prompt_for_download` preference, or global extensions. First
+  apply target-scoped `Page.setDownloadBehavior` to the exact bound OpenCLI
+  session and runtime-controlled inbox, and persist a credential-free command
+  acknowledgement/readback. If OpenCLI explicitly rejects that CDP method,
+  only claimed PDF and small UTF-8 text items may use the authenticated share
+  page to request one signed link for their exact provider file id, name, path,
+  size, identity, and version. Keep the signed URL/cookies/tokens in memory,
+  stream only to the controlled inbox, and validate provider HTTPS host/path,
+  content type, exact bytes, and SHA-256 before completing the original claim.
+  This direct path never handles images or video. A native Save dialog or
+  download prompt is internal recovery, never a user-action blocker or WeChat
+  event; only login/authentication, SMS, CAPTCHA, or explicit authorization
+  consent may ask the user. A claimed replay never performs another UI
+  trigger.
 - Before any small-item claim, discovery-only `wrong_share`, `wrong_origin`,
   `about:blank`, OpenCLI timeout/invalid JSON, or incomplete `/share/list` may
   reopen the configured page, back off, and retry the full read exactly once.

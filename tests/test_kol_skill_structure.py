@@ -181,6 +181,37 @@ def test_kol_skill_has_one_resumable_ticket05_cloud_video_runner() -> None:
         assert marker in text
 
 
+def test_hourly_semantic_stdin_eof_is_fail_resumable() -> None:
+    text = " ".join(HOURLY_OPERATION_MD.read_text(encoding="utf-8").split())
+
+    for marker in (
+        "Keep stdin open",
+        "waiting_semantic_input",
+        "preserving the original request, evidence SHA, and item claim",
+        "reuses that exact request/evidence",
+        "skips completed acquisition/transcript work",
+        "never replays publication, notification, or Book effects",
+        "Stop that adapter before later backlog items",
+    ):
+        assert marker in text
+
+
+def test_hourly_small_download_is_unattended_and_prompt_is_internal() -> None:
+    text = " ".join(HOURLY_OPERATION_MD.read_text(encoding="utf-8").split())
+
+    for marker in (
+        "Page.setDownloadBehavior",
+        "controlled inbox",
+        "exact provider id/name/size/identity/version",
+        "no user blocker or WeChat",
+        "never edit ordinary Chrome",
+        "global extension",
+        "Only auth, SMS, CAPTCHA",
+        "second UI trigger",
+    ):
+        assert marker in text
+
+
 def test_kol_skill_has_one_resumable_ticket06_batch_runner() -> None:
     text = FULL_CONTRACT_MD.read_text(encoding="utf-8")
 

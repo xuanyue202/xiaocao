@@ -44,18 +44,32 @@ DEFAULT_LV_OUTPUT = Path("output/live/kol_lv_subscription")
 DEFAULT_VIDEO_OUTPUT = Path("output/live/kol_subscription_videos")
 DEFAULT_XIAOCAO_OUTPUT = Path("output/live/kol_xiaocao_live")
 MAX_HANDOFF_BYTES = 1024 * 1024
+
+
+class SemanticInputUnavailable(DailyError):
+    """A persisted semantic request has no coordinator response yet."""
+
+    def __init__(self, request: dict[str, Any], field: str):
+        super().__init__(f"daily runner is waiting for {field} on stdin")
+        self.request = request
+        self.field = field
+
+
 def _isolated_item_failure(
     exc: EnrichmentError,
     *,
     default_stage: str,
-) -> tuple[dict[str, str], bool]:
+) -> tuple[dict[str, Any], bool]:
     if isinstance(exc, EnrichmentDiagnosticError):
+        failure: dict[str, Any] = {
+            "category": str(exc.diagnostic_category),
+            "code": str(exc.diagnostic_code),
+            "stage": str(exc.diagnostic_stage),
+        }
+        if exc.diagnostic_exit_code is not None:
+            failure["exit_code"] = exc.diagnostic_exit_code
         return (
-            {
-                "category": str(exc.diagnostic_category),
-                "code": str(exc.diagnostic_code),
-                "stage": str(exc.diagnostic_stage),
-            },
+            failure,
             True,
         )
     message = str(exc)
@@ -431,6 +445,8 @@ def _read_agent_path(request: dict[str, Any], field: str) -> Path:
     print(json.dumps(request, ensure_ascii=False, sort_keys=True), flush=True)
     response = sys.stdin.readline()
     if not response:
+        if field == "bundle_path" and request.get("analysis_request_path"):
+            raise SemanticInputUnavailable(request, field)
         raise DailyError(f"daily runner requires {field} on stdin")
     raw = response.strip()
     if raw.startswith("{"):
@@ -445,6 +461,93 @@ def _read_agent_path(request: dict[str, Any], field: str) -> Path:
     if not path.is_file():
         raise DailyError(f"daily runner {field} is missing")
     return path
+
+
+def _semantic_waiting_item(
+    request: dict[str, Any],
+    *,
+    identity: str,
+    version_key: str,
+    name: str,
+    author: str,
+) -> dict[str, Any]:
+    request_path = Path(
+        str(request.get("analysis_request_path") or "")
+    ).expanduser().resolve()
+    if not request_path.is_file():
+        raise DailyError("persisted semantic request is missing")
+    try:
+        persisted = json.loads(request_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        raise DailyError("persisted semantic request is invalid") from exc
+    if not isinstance(persisted, dict):
+        raise DailyError("persisted semantic request is invalid")
+    evidence_path = Path(
+        str(persisted.get("evidence_path") or request.get("evidence_path") or "")
+    ).expanduser().resolve()
+    evidence_sha256 = str(
+        persisted.get("evidence_sha256") or request.get("evidence_sha256") or ""
+    )
+    if (
+        not evidence_path.is_file()
+        or not re.fullmatch(r"[0-9a-f]{64}", evidence_sha256)
+        or hashlib.sha256(evidence_path.read_bytes()).hexdigest()
+        != evidence_sha256
+    ):
+        raise DailyError("persisted semantic request changed evidence")
+    return {
+        "identity": identity,
+        "version_key": version_key,
+        "name": name,
+        "author": author,
+        "status": "waiting_semantic_input",
+        "stage": "waiting_semantic_input",
+        "analysis_request_path": str(request_path),
+        "evidence_path": str(evidence_path),
+        "evidence_sha256": evidence_sha256,
+        "semantic_request_preserved": True,
+        "external_business_effects_replayed": False,
+    }
+
+
+def _persisted_video_analysis_request(
+    output_dir: Path,
+    item: dict[str, Any],
+) -> dict[str, Any] | None:
+    request_path = (
+        output_dir
+        / "artifacts"
+        / str(item.get("version_key") or "")
+        / "analysis_request.json"
+    ).resolve()
+    if not request_path.is_file():
+        return None
+    try:
+        request = json.loads(request_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        raise DailyError("persisted video semantic request is invalid") from exc
+    if not isinstance(request, dict):
+        raise DailyError("persisted video semantic request is invalid")
+    evidence_path = Path(str(request.get("evidence_path") or "")).expanduser()
+    if not evidence_path.is_absolute():
+        evidence_path = evidence_path.resolve()
+    evidence_sha256 = str(request.get("evidence_sha256") or "")
+    if (
+        request.get("event") != "subscription_video_analysis_input_required"
+        or request.get("source_identity") != item.get("identity")
+        or request.get("source_version_key") != item.get("version_key")
+        or request.get("source") != item.get("source")
+        or request.get("author") != item.get("author")
+        or not evidence_path.is_file()
+        or not re.fullmatch(r"[0-9a-f]{64}", evidence_sha256)
+        or hashlib.sha256(evidence_path.read_bytes()).hexdigest()
+        != evidence_sha256
+    ):
+        raise DailyError("persisted video semantic request changed evidence")
+    return {
+        **request,
+        "analysis_request_path": str(request_path),
+    }
 
 
 def _video_publication_context(
@@ -878,8 +981,7 @@ class DailyRuntime:
                 continue
             ingest = service.ingest_browser_download(identity)
             request = service.prepare_analysis_request(ingest)
-            bundle_path = _read_agent_path(
-                {
+            semantic_request = {
                     "event": "daily_analysis_input_required",
                     "adapter": "lv_text_image",
                     "identity": ingest["identity"],
@@ -889,9 +991,24 @@ class DailyRuntime:
                     "required_content_value": (
                         "low_density|promoted(report_only|alert_eligible)"
                     ),
-                },
-                "bundle_path",
-            )
+                }
+            try:
+                bundle_path = _read_agent_path(
+                    semantic_request,
+                    "bundle_path",
+                )
+            except SemanticInputUnavailable as exc:
+                waiting += 1
+                waiting_items.append(_semantic_waiting_item(
+                    exc.request,
+                    identity=identity,
+                    version_key=str(row.get("version_key") or ""),
+                    name=str(row.get("name") or ""),
+                    author=str(row.get("author") or "吕晓彤"),
+                ))
+                # stdin EOF closes the semantic channel for this sweep. Do not
+                # acquire more pending items that cannot receive a bundle.
+                break
             if ingest["media_type"] == "pdf":
                 relationship = service.record_pdf_relationship(
                     identity,
@@ -958,14 +1075,19 @@ class DailyRuntime:
         waiting = 0
         waiting_items = []
         for item in pending:
+            state = _persisted_video_analysis_request(
+                self.args.video_output_dir,
+                item,
+            )
             try:
-                state = service.advance_item(
-                    item,
-                    lv_session=self.args.lv_session,
-                    private_session=self.args.private_session,
-                    enrichment_session=self.args.enrichment_session,
-                    profile=self.args.opencli_profile,
-                )
+                if state is None:
+                    state = service.advance_item(
+                        item,
+                        lv_session=self.args.lv_session,
+                        private_session=self.args.private_session,
+                        enrichment_session=self.args.enrichment_session,
+                        profile=self.args.opencli_profile,
+                    )
             except EnrichmentError as exc:
                 if str(exc) in {
                     "Lv cloud transfer did not materialize after bounded exact reconciliation",
@@ -1027,16 +1149,31 @@ class DailyRuntime:
                     }
                 )
                 continue
-            bundle_path = _read_agent_path(
-                {
+            semantic_request = {
                     **state,
                     "adapter": "subscription_video",
                     "required_content_value": (
                         "low_density|promoted(report_only|alert_eligible)"
                     ),
-                },
-                "bundle_path",
-            )
+                }
+            try:
+                bundle_path = _read_agent_path(
+                    semantic_request,
+                    "bundle_path",
+                )
+            except SemanticInputUnavailable as exc:
+                waiting += 1
+                waiting_items.append(_semantic_waiting_item(
+                    exc.request,
+                    identity=str(item.get("identity") or ""),
+                    version_key=str(item.get("version_key") or ""),
+                    name=str(item.get("name") or ""),
+                    author=str(item.get("author") or ""),
+                ))
+                # A TTY can report EOF for only the current read. Treat it as
+                # closing the channel for the whole adapter sweep so historical
+                # backlog cannot trigger more acquisition work.
+                break
             context = _video_publication_context(item, state)
             decision = service.decide_item(
                 item,

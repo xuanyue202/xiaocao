@@ -1,8 +1,7 @@
 # Hourly Low-Bandwidth Operation
 
-Use this contract for Ticket 07's deterministic preflight, runner lifecycle,
-and silent no-update/retryable paths. Do not read `full-contract.md` unless the
-runner emits a semantic input request.
+Use this for Ticket 07 preflight, lifecycle, and silent paths. Do not read
+`full-contract.md` unless the runner requests semantic input.
 
 ## Runner
 
@@ -19,33 +18,22 @@ PYTHONPATH=src .venv/bin/python scripts/kol_daily.py status
 PYTHONPATH=src .venv/bin/python scripts/kol_daily.py audit
 ```
 
-Every run exits after one sweep. A 07:00 run drains overnight backlog in
-decision-priority order. A completed scan with no new content and healthy
-asynchronous waiting print nothing. A retryable source failure prints one
-credential-safe diagnostic containing `category`, `code`, and `stage`; this is
-local operational evidence, not an externally visible event. There is no
-invocation from 23:01 through 06:59.
+One sweep per run; a 07:00 run drains overnight backlog by decision priority.
+No-update/healthy waits are silent. Retryable failures persist credential-safe
+`category`/`code`/`stage` only. No runs from 23:01 to 06:59.
 
-The coordinator reads only lightweight evidence/receipts, never reads or
-downloads source-video bytes, and never uses Computer Use.
+Read only lightweight evidence/receipts; never reads or downloads source-video
+bytes, and never uses Computer Use.
 
-Discovery is not completion for the latest Lv Xiaotong video. `status` and
-`audit` expose `latest_lv_video_goal`; it is successful only when the exact
-latest observed identity and version have a completed analysis terminal plus a
-published 灰常亮 report with both a durable receipt and stable detail URL.
-Download, cloud enrichment, transcript readiness, or analysis alone remain
-pending/incomplete states and must not be reported as success.
+For the latest Lv video, discovery is not completion. `latest_lv_video_goal`
+succeeds only when its exact identity/version has a completed terminal and a
+灰常亮 report with durable receipt plus stable URL; earlier stages stay pending.
 
-An unfinished subscription-video result must retain its item identity,
-version, concrete stage, trigger attempt, reconciliation result, and
-`next_poll_not_before` in the coordinator ledger. A cloud-save claim gets one
-recovery attempt only after a settled exact zero-match proof; two failed
-materializations become the changed structured blocker
-`lv-cloud-transfer-not-materialized`, not another generic waiting state.
-The share dialog's final `确定` action is an OpenCLI native semantic click on
-the uniquely marked control, never a JavaScript `element.click()`. Claim the
-native click first; if its result is ambiguous, reconcile the exact private
-copy before any second attempt.
+Unfinished video ledger rows retain identity/version/stage, trigger attempt,
+reconciliation, and `next_poll_not_before`. Retry cloud-save once only after a
+settled exact zero-match; two failures become
+`lv-cloud-transfer-not-materialized`. The final share `确定` must be an OpenCLI
+native semantic click; claim it first and reconcile ambiguity before retry.
 
 ## Semantic loading gate
 
@@ -61,6 +49,19 @@ When the still-running process emits `daily_analysis_input_required`:
    artifacts.
 6. Write exactly `{"bundle_path":"<absolute-json-path>"}` followed by a newline
    to the same process.
+
+Keep stdin open. EOF persists `waiting_semantic_input`, preserving the original
+request, evidence SHA, and item claim. The next sweep reuses that exact
+request/evidence, skips completed acquisition/transcript work, and never
+replays publication, notification, or Book effects. Stop that adapter before
+later backlog items.
+
+Small downloads are unattended: never edit ordinary Chrome or a global
+extension. Try `Page.setDownloadBehavior` with controlled inbox readback;
+otherwise bind one memory-only PDF/UTF-8 link to exact provider
+id/name/size/identity/version and validate HTTPS/type/bytes/SHA. Never use it
+for video or persist secrets. Save prompts are internal—no user blocker or
+WeChat. Only auth, SMS, CAPTCHA or consent may ask; no second UI trigger.
 
 Every item includes `content_value.status=low_density|promoted`. Promoted items
 also include `content_value.tier=report_only|alert_eligible`. An alert-eligible
