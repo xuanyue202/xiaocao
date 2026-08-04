@@ -8,7 +8,12 @@ ROOT = Path(__file__).resolve().parents[1]
 SKILL_DIR = ROOT / ".codex" / "skills" / "kol-intelligence"
 SKILL_MD = SKILL_DIR / "SKILL.md"
 FULL_CONTRACT_MD = SKILL_DIR / "references" / "full-contract.md"
-HOURLY_OPERATION_MD = SKILL_DIR / "references" / "hourly-operation.md"
+HOURLY_LOCAL_CAPTURE_MD = (
+    SKILL_DIR / "references" / "hourly-local-capture.md"
+)
+HOURLY_REMOTE_WRITER_MD = (
+    SKILL_DIR / "references" / "hourly-remote-writer.md"
+)
 XIAOCAO_CAPTURE_START_MD = (
     SKILL_DIR / "references" / "xiaocao-capture-start.md"
 )
@@ -211,7 +216,7 @@ def test_kol_skill_has_one_resumable_ticket06_batch_runner() -> None:
 
 def test_kol_skill_has_one_ticket07_daytime_runner() -> None:
     text = " ".join(
-        HOURLY_OPERATION_MD.read_text(encoding="utf-8").split()
+        HOURLY_REMOTE_WRITER_MD.read_text(encoding="utf-8").split()
     )
 
     for marker in (
@@ -260,12 +265,14 @@ def test_kol_skill_local_markdown_links_resolve() -> None:
 
 def test_kol_skill_defers_the_full_contract_on_hourly_no_update_runs() -> None:
     entrypoint = SKILL_MD.read_text(encoding="utf-8")
-    hourly = HOURLY_OPERATION_MD.read_text(encoding="utf-8")
+    local = HOURLY_LOCAL_CAPTURE_MD.read_text(encoding="utf-8")
+    hourly = HOURLY_REMOTE_WRITER_MD.read_text(encoding="utf-8")
     full = FULL_CONTRACT_MD.read_text(encoding="utf-8")
     entrypoint_flat = " ".join(entrypoint.split())
     hourly_flat = " ".join(hourly.split())
 
     assert len(entrypoint.encode("utf-8")) < 5_000
+    assert len(local.encode("utf-8")) < 8_000
     assert len(hourly.encode("utf-8")) < 8_000
     assert len(full.encode("utf-8")) > 35_000
     assert (
@@ -277,6 +284,20 @@ def test_kol_skill_defers_the_full_contract_on_hourly_no_update_runs() -> None:
     assert "daily_analysis_input_required" in hourly
     assert "Read `full-contract.md` completely before analysis" in hourly_flat
     assert "verify its current SHA-256 against the request" in hourly_flat
+
+
+def test_hourly_local_and_remote_machine_contracts_stay_separate() -> None:
+    entrypoint = SKILL_MD.read_text(encoding="utf-8")
+    local = HOURLY_LOCAL_CAPTURE_MD.read_text(encoding="utf-8")
+    remote = HOURLY_REMOTE_WRITER_MD.read_text(encoding="utf-8")
+
+    assert "hourly-operation.md" not in entrypoint
+    assert "scripts/kol_daily.py capture-local" in local
+    assert "scripts/kol_daily.py run" not in local
+    assert "daily_browser_input_required" in local
+    assert "scripts/kol_daily.py run" in remote
+    assert "daily_browser_input_required" not in remote
+    assert "never scans the local WeChat contact" in remote
 
 
 def test_durable_branch_preserves_authority_and_provenance_boundaries() -> None:
