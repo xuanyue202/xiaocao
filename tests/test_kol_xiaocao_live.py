@@ -1003,6 +1003,263 @@ def test_start_emits_one_prompt_after_health_and_baseline(tmp_path):
     ]) == 1
 
 
+def test_start_with_xiaoetong_page_arms_bound_source_job_without_query_state(
+    tmp_path,
+):
+    binary = tmp_path / "wx_video_download_macos_arm64"
+    binary.write_bytes(b"binary")
+    state = {"running": False}
+    calls = []
+
+    class Sniffer:
+        def status(self):
+            if not state["running"]:
+                raise SnifferError("not running")
+            return {"version": "test", "running": True}
+
+        @staticmethod
+        def candidates():
+            calls.append("baseline")
+            return [{"live_id": "l_old"}]
+
+        @staticmethod
+        def arm_xiaoetong_source(_page_url):
+            calls.append("source_job")
+            return {
+                "id": "source-1",
+                "status": "awaiting_playback",
+                "live_id": "l_target",
+            }
+
+    class Process:
+        pid = 1234
+
+    def popen(*_args, **_kwargs):
+        state["running"] = True
+        return Process()
+
+    def runner(command, **_kwargs):
+        if command[0] == "ps":
+            stdout = f"1234 {binary}\n" if state["running"] else ""
+            return SimpleNamespace(stdout=stdout)
+        raise AssertionError(command)
+
+    ledger = tmp_path / "capture.jsonl"
+    service = XiaocaoLiveService(
+        tmp_path / "live",
+        capture_ledger=ledger,
+        sniffer_binary=binary,
+        sniffer_client=Sniffer(),
+        popen=popen,
+        runner=runner,
+    )
+    page_url = (
+        "https://appsnm3rlcp3566.h5.xiaoeknow.com/v4/course/alive/l_target"
+        "?share_user_id=private&share_type=5"
+    )
+
+    result = service.start(page_url=page_url)
+    capture = CaptureJobStore(ledger).latest(result["capture_job_id"])
+
+    assert result["source_job_id"] == "source-1"
+    assert calls == ["baseline", "source_job"]
+    assert result["source_identity"] == "xiaoetong:appsnm3rlcp3566:l_target"
+    assert result["prompt"].startswith("请在已登录浏览器刷新或播放这个小鹅通页面")
+    assert capture is not None
+    assert capture["source_job_id"] == "source-1"
+    assert capture["expected_source"]["source_resource_id"] == "l_target"
+    persisted = ledger.read_text(encoding="utf-8") + service.events_path.read_text(
+        encoding="utf-8"
+    )
+    assert "share_user_id" not in persisted
+    assert page_url not in persisted
+
+
+def test_advance_xiaoetong_source_reuses_auto_created_download_task(tmp_path):
+    ledger = tmp_path / "capture.jsonl"
+    source = {
+        "source_kind": "xiaoetong",
+        "source_host": "appsnm3rlcp3566.h5.xiaoeknow.com",
+        "source_app_id": "appsnm3rlcp3566",
+        "source_resource_id": "l_target",
+        "source_identity": "xiaoetong:appsnm3rlcp3566:l_target",
+    }
+    store = CaptureJobStore(ledger)
+    armed = store.arm(
+        [{"id": "candidate-before-arm", "live_id": "l_target"}],
+        expected_source=source,
+        source_job_id="source-1",
+    )
+    calls = {"create": 0, "source": 0}
+
+    class Sniffer:
+        @staticmethod
+        def xiaoetong_source_job(job_id):
+            assert job_id == "source-1"
+            calls["source"] += 1
+            return {
+                "id": "source-1",
+                "status": "task_created",
+                "live_id": "l_target",
+                "candidate_id": "candidate-1",
+                "task_id": "task-1",
+            }
+
+        @staticmethod
+        def candidates():
+            return [{
+                "id": "candidate-1",
+                "live_id": "l_target",
+                "filename": "target.mp4",
+                "media_type": "m3u8",
+                "captured": "2026-08-04 11:25:17",
+                "url": "https://example.test/live.m3u8?sign=secret",
+            }]
+
+        @staticmethod
+        def tasks():
+            return [{
+                "id": "task-1",
+                "status": "running",
+                "meta": {"req": {"labels": {
+                    "live_id": "l_target",
+                    "type": "live_capture",
+                    "compress": "true",
+                }}},
+            }]
+
+        @staticmethod
+        def start_download(*_args, **_kwargs):
+            calls["create"] += 1
+            return "duplicate-task"
+
+    service = XiaocaoLiveService(
+        tmp_path / "live",
+        capture_ledger=ledger,
+        sniffer_client=Sniffer(),
+    )
+
+    result = service.advance_capture(armed["job_id"])
+
+    assert result["status"] == "downloading"
+    assert result["download_task_id"] == "task-1"
+    assert calls == {"create": 0, "source": 1}
+
+
+def test_advance_xiaoetong_source_retries_orphaned_restored_task_with_fresh_candidate(
+    tmp_path,
+):
+    ledger = tmp_path / "capture.jsonl"
+    source = {
+        "source_kind": "xiaoetong",
+        "source_host": "appsnm3rlcp3566.h5.xiaoeknow.com",
+        "source_app_id": "appsnm3rlcp3566",
+        "source_resource_id": "l_target",
+        "source_identity": "xiaoetong:appsnm3rlcp3566:l_target",
+    }
+    store = CaptureJobStore(ledger)
+    armed = store.arm(
+        [{"id": "candidate-before-arm", "live_id": "l_target"}],
+        expected_source=source,
+        source_job_id="source-1",
+    )
+    retries: list[str] = []
+
+    class Sniffer:
+        @staticmethod
+        def xiaoetong_source_job(_job_id):
+            return {
+                "id": "source-1",
+                "status": "task_created",
+                "live_id": "l_target",
+                "candidate_id": "candidate-no-longer-resolvable",
+                "task_id": "task-restored-error",
+            }
+
+        @staticmethod
+        def retry_xiaoetong_source_job(job_id):
+            assert job_id == "source-1"
+            retries.append(job_id)
+            return {
+                "id": "source-1",
+                "status": "task_created",
+                "live_id": "l_target",
+                "candidate_id": "candidate-fresh",
+                "task_id": "task-retry-fresh",
+            }
+
+        @staticmethod
+        def candidates():
+            return [{
+                "id": "candidate-fresh",
+                "live_id": "l_target",
+                "filename": "target.mp4",
+                "media_type": "m3u8",
+                "captured": "2026-08-04 11:25:17",
+                "url": "https://example.test/live.m3u8?sign=fresh",
+            }]
+
+        @staticmethod
+        def tasks():
+            return ([{
+                    "id": "task-retry-fresh",
+                    "status": "running",
+                    "meta": {"req": {"labels": {
+                        "live_id": "l_target",
+                        "type": "live_capture",
+                        "compress": "true",
+                    }}},
+                }] if retries else [])
+
+        @staticmethod
+        def start_download(candidate, *, force=False):
+            raise AssertionError((candidate, force))
+
+    service = XiaocaoLiveService(
+        tmp_path / "live",
+        capture_ledger=ledger,
+        sniffer_client=Sniffer(),
+    )
+
+    result = service.advance_capture(armed["job_id"])
+
+    assert result["status"] == "downloading"
+    assert result["download_task_id"] == "task-retry-fresh"
+    assert retries == ["source-1"]
+
+
+def test_paused_zero_byte_source_task_returns_to_source_retry(tmp_path):
+    ledger = tmp_path / "capture.jsonl"
+    store = CaptureJobStore(ledger)
+    armed = store.arm([], source_job_id="source-1")
+    downloading = store.transition(
+        armed,
+        "download_started",
+        status="downloading",
+        download_task_id="task-paused",
+    )
+
+    class Sniffer:
+        @staticmethod
+        def tasks():
+            return [{
+                "id": "task-paused",
+                "status": "pause",
+                "progress": {"downloaded": 0},
+            }]
+
+    service = XiaocaoLiveService(
+        tmp_path / "live",
+        capture_ledger=ledger,
+        sniffer_client=Sniffer(),
+    )
+
+    result = service.advance_capture(downloading["job_id"])
+
+    assert result["event"] == "source_retry_pending"
+    assert result["status"] == "awaiting_capture"
+
+
 def test_cancel_wait_stops_only_the_idle_sniffer_and_restores_proxy(
     tmp_path,
     monkeypatch,
@@ -1043,7 +1300,26 @@ def test_cancel_wait_stops_only_the_idle_sniffer_and_restores_proxy(
     def kill(_pid, _signal):
         state["running"] = False
 
+    class ClosedSocket:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            return None
+
+        @staticmethod
+        def settimeout(_timeout):
+            return None
+
+        @staticmethod
+        def connect_ex(_address):
+            return 1
+
     monkeypatch.setattr("xiaocao.kol.xiaocao_live.os.kill", kill)
+    monkeypatch.setattr(
+        "xiaocao.kol.xiaocao_live.socket.socket",
+        lambda *_args, **_kwargs: ClosedSocket(),
+    )
     service = XiaocaoLiveService(
         tmp_path / "live",
         capture_ledger=ledger,

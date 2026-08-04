@@ -28,6 +28,8 @@ _SHA256 = re.compile(r"^[0-9a-f]{64}$")
 _OPENCLI_SESSION = re.compile(r"^[A-Za-z0-9_.-]{1,64}$")
 _OPENCLI_PROFILE = re.compile(r"^[A-Za-z0-9_.-]{1,128}$")
 _OPENCLI_UPLOAD_TIMEOUT_SECONDS = 300
+_OPENCLI_FOLDER_READY_ATTEMPTS = 6
+_OPENCLI_FOLDER_READY_WAIT_SECONDS = 2
 _NETDISK_GENERATION_POLL_INTERVAL = timedelta(minutes=1)
 _AI_NOTE_MAX_TRIGGER_ATTEMPTS = 2
 _NETDISK_DIRECTORY = "/课程/自己的课/小草"
@@ -461,13 +463,6 @@ class NetdiskEnrichmentService:
         profile: str | None,
         target_name: str,
     ) -> dict[str, Any]:
-        self._opencli_json(
-            session,
-            "open",
-            self._netdisk_folder_url(),
-            profile=profile,
-            timeout_seconds=30,
-        )
         script = """(async () => {
   const dir = %s;
   const target = %s;
@@ -583,14 +578,39 @@ class NetdiskEnrichmentService:
     ad_overlays_dismissed: adOverlaysDismissed
   };
 })()""" % (json.dumps(self.netdisk_directory), json.dumps(target_name))
-        payload = self._opencli_json(
-            session,
-            "eval",
-            script,
-            profile=profile,
-            timeout_seconds=30,
-            attempts=3,
-        )
+        payload: dict[str, Any] = {}
+        for ready_attempt in range(_OPENCLI_FOLDER_READY_ATTEMPTS):
+            self._opencli_json(
+                session,
+                "open",
+                self._netdisk_folder_url(),
+                profile=profile,
+                timeout_seconds=30,
+            )
+            payload = self._opencli_json(
+                session,
+                "eval",
+                script,
+                profile=profile,
+                timeout_seconds=30,
+                attempts=3,
+            )
+            if (
+                payload.get("folder_bound") is True
+                and payload.get("errno") == 0
+                and payload.get("complete_scan") is True
+            ):
+                break
+            if ready_attempt + 1 < _OPENCLI_FOLDER_READY_ATTEMPTS:
+                self._opencli_json(
+                    session,
+                    "wait",
+                    "time",
+                    str(_OPENCLI_FOLDER_READY_WAIT_SECONDS),
+                    profile=profile,
+                    timeout_seconds=10,
+                    attempts=1,
+                )
         if payload.get("errno") != 0:
             raise EnrichmentError("Netdisk file-list API inspection failed")
         if payload.get("target_name") != target_name:

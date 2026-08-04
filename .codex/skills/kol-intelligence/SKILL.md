@@ -1,6 +1,6 @@
 ---
 name: kol-intelligence
-description: Capture, resume, enrich, analyze, route, and distill high-density KOL investment content for Xiaocao. Use for hourly KOL coordination, WeChat/Xiaoetong capture, Baidu Netdisk transcript recovery, text/image/transcript processing, current market and portfolio decisions, 灰常亮 publication and viewpoint maintenance, household advice, paper-only Book KOL-US actions, or durable multi-author investment-knowledge distillation.
+description: Capture, resume, analyze, route, publish, and distill Xiaocao KOL investment content across hourly coordination, WeChat/Xiaoetong, Baidu Netdisk, 灰常亮, household advice, paper-only Book KOL-US, and durable knowledge.
 ---
 
 # KOL Intelligence
@@ -10,23 +10,24 @@ CLIs, and logged-in browser DOM automation. Do not use Computer Use unless a
 separately reviewed exception explicitly authorizes it. Never execute
 real-capital trades.
 
-## Load only the contract required now
+## Load only the required contract
 
 - For an unambiguous Xiaocao replay capture, read
   [xiaocao-capture-start.md](references/xiaocao-capture-start.md) completely
-  and run its on-demand path within 10 seconds. Do not read `full-contract.md`
-  before Ready. This is the local SOP through metadata-only handoff.
-- For `scripts/kol_daily.py run|status|audit`, the hourly Automation, or a
+  and start within 10 seconds. Do not read `full-contract.md` before Ready.
+- For the local hourly `scripts/kol_daily.py capture-local` Automation, read
+  [hourly-local-capture.md](references/hourly-local-capture.md) completely.
+  Do not load the remote-writer or full contract on the capture node.
+- For the remote hourly `scripts/kol_daily.py run|status|audit` Automation or a
   normal no-update/retryable sweep, read
-  [hourly-operation.md](references/hourly-operation.md) completely. Do not
-  read the full contract before starting the runner.
+  [hourly-remote-writer.md](references/hourly-remote-writer.md) completely. Do
+  not read the full contract before starting the runner.
 - If the hourly runner emits `daily_analysis_input_required`, keep that same
   process alive, then read
   [full-contract.md](references/full-contract.md) completely before reading
   the immutable evidence and creating the requested bundle.
-- For the remote Ticket 03 post-handoff phase, enrichment, subscription,
-  batch, semantic analysis, publication, viewpoint, notification, or Book
-  KOL-US work, read
+- For remote post-handoff, enrichment, subscription, batch, semantic analysis,
+  publication, viewpoint, notification, or Book KOL-US work, read
   [full-contract.md](references/full-contract.md) completely before acting.
 - Before writing reusable knowledge, also read
   [durable-knowledge.md](references/durable-knowledge.md) completely.
@@ -36,10 +37,9 @@ to complete the current-decision and reusable-knowledge branches.
 
 ## Route Xiaocao recap requests before analysis
 
-Treat “小草复盘” in a live/video context as a live-replay capture request
-first, not as a request to summarize an existing report; let the fast-start
-surface inspect the current Ticket 03 job and capture ledger instead of doing
-a manual preflight before Ready. If no discoverable
+Treat “小草复盘” in a live/video context as a live-replay capture request first;
+let fast-start inspect the current Ticket 03 job and capture ledger before Ready. If no
+discoverable
 state disambiguates the request, ask only: “录入直播回放，还是复盘已有报告？”
 After selection, keep that route fixed through audit; later uses of “复盘” do
 not switch the task back to report commentary.

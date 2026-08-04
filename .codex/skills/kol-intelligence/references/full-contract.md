@@ -3,8 +3,8 @@
 Read this file completely before any semantic extraction, KOL source workflow,
 publication, viewpoint maintenance, household recommendation, or Book KOL-US
 decision. For the hourly coordinator's deterministic preflight and no-update
-path, read `hourly-operation.md` instead and load this file only if the runner
-emits a semantic input request.
+path, read `hourly-remote-writer.md` instead and load this file only if the
+runner emits a semantic input request.
 
 ## Contents
 

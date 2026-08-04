@@ -2,10 +2,14 @@ from __future__ import annotations
 
 import io
 import json
+from base64 import urlsafe_b64encode
 
 from xiaocao.kol.capture import (
     CaptureJobStore,
+    InvalidSourcePage,
     SnifferClient,
+    canonical_xiaoetong_source,
+    resolve_xiaoetong_h5_page,
     resolve_candidate,
 )
 from xiaocao.kol.capture import InvalidCheckpoint
@@ -51,6 +55,198 @@ def test_arm_persists_sniffer_status(tmp_path):
 
     assert armed["sniffer_status"]["running"] is True
     assert store.latest(armed["job_id"])["sniffer_status"]["proxy_port"] == 2023
+
+
+def test_xiaoetong_source_identity_strips_share_and_signed_state():
+    source = canonical_xiaoetong_source(
+        "https://appsnm3rlcp3566.h5.xiaoeknow.com/v4/course/alive/"
+        "l_6a6c475be4b0694c5bf2605b?share_user_id=private&share_type=5"
+    )
+
+    assert source == {
+        "source_kind": "xiaoetong",
+        "source_host": "appsnm3rlcp3566.h5.xiaoeknow.com",
+        "source_app_id": "appsnm3rlcp3566",
+        "source_resource_id": "l_6a6c475be4b0694c5bf2605b",
+        "source_identity": (
+            "xiaoetong:appsnm3rlcp3566:l_6a6c475be4b0694c5bf2605b"
+        ),
+    }
+    assert "share_user_id" not in json.dumps(source)
+    assert "url" not in json.dumps(source).lower()
+
+
+def test_xiaoetong_mp_wrapper_resolves_bound_h5_page():
+    params = urlsafe_b64encode(json.dumps({
+        "app_id": "appsnm3rlcp3566",
+        "resource_id": "l_6a699f8ce4b0694c5bf12013",
+        "h5_url": (
+            "https://appsnm3rlcp3566.h5.xiaoeknow.com/v2/course/alive/"
+            "l_6a699f8ce4b0694c5bf12013?share_user_id=private&share_type=5"
+        ),
+    }).encode()).decode().rstrip("=")
+    wrapper = (
+        "https://appsnm3rlcp3566.mp.xiaoeknow.com/"
+        f"?app_id=appsnm3rlcp3566&params={params}"
+    )
+
+    assert resolve_xiaoetong_h5_page(wrapper) == (
+        "https://appsnm3rlcp3566.h5.xiaoeknow.com/v2/course/alive/"
+        "l_6a699f8ce4b0694c5bf12013"
+    )
+    assert canonical_xiaoetong_source(
+        resolve_xiaoetong_h5_page(wrapper)
+    )["source_identity"] == (
+        "xiaoetong:appsnm3rlcp3566:l_6a699f8ce4b0694c5bf12013"
+    )
+
+
+def test_xiaoetong_mp_wrapper_rejects_cross_app_h5_page():
+    params = urlsafe_b64encode(json.dumps({
+        "app_id": "appsnm3rlcp3566",
+        "resource_id": "l_target",
+        "h5_url": "https://attacker.h5.xiaoeknow.com/v2/course/alive/l_target",
+    }).encode()).decode().rstrip("=")
+
+    try:
+        resolve_xiaoetong_h5_page(
+            "https://appsnm3rlcp3566.mp.xiaoeknow.com/"
+            f"?app_id=appsnm3rlcp3566&params={params}"
+        )
+    except InvalidSourcePage:
+        pass
+    else:
+        raise AssertionError("cross-app Xiaoetong wrapper was accepted")
+
+
+def test_xiaoetong_source_identity_rejects_untrusted_page():
+    for page_url in (
+        "https://example.test/v4/course/alive/l_123",
+        "https://appsnm3rlcp3566.h5.xiaoeknow.com/not-a-course/l_123",
+        "javascript:alert(1)",
+    ):
+        try:
+            canonical_xiaoetong_source(page_url)
+        except InvalidSourcePage:
+            pass
+        else:
+            raise AssertionError(f"untrusted source page accepted: {page_url}")
+
+
+def test_arm_binds_expected_xiaoetong_source_and_filters_other_candidates(tmp_path):
+    store = CaptureJobStore(tmp_path / "jobs.jsonl")
+    source = canonical_xiaoetong_source(
+        "https://appsnm3rlcp3566.h5.xiaoeknow.com/v4/course/alive/l_target"
+    )
+    armed = store.arm([], expected_source=source, source_job_id="source-1")
+
+    assert armed["expected_source"] == source
+    assert armed["source_job_id"] == "source-1"
+    assert store.detect_capture(
+        armed,
+        [{"id": "other", "live_id": "l_other", "captured": "2026-08-03 10:00:00"}],
+    ) is None
+    detected = store.detect_capture(
+        armed,
+        [{"id": "target", "live_id": "l_target", "captured": "2026-08-03 10:01:00"}],
+    )
+    assert detected is not None
+    assert detected["candidate_key"] == "live:l_target"
+    assert "http" not in (tmp_path / "jobs.jsonl").read_text(encoding="utf-8")
+
+
+def test_sniffer_arms_xiaoetong_source_job_without_persisting_response_url():
+    seen = {}
+
+    def opener(request, timeout):
+        seen["path"] = request.full_url
+        seen["payload"] = json.loads(request.data)
+        return _Response({
+            "code": 0,
+            "data": {
+                "id": "source-1",
+                "status": "awaiting_playback",
+                "live_id": "l_target",
+                "page_url": "https://example.test/?share_user_id=private",
+            },
+        })
+
+    client = SnifferClient(opener=opener)
+    job = client.arm_xiaoetong_source(
+        "https://appsnm3rlcp3566.h5.xiaoeknow.com/v4/course/alive/l_target"
+    )
+
+    assert seen["path"].endswith("/api/elive/source-jobs")
+    assert seen["payload"]["compress"] is True
+    assert job == {
+        "id": "source-1",
+        "status": "awaiting_playback",
+        "live_id": "l_target",
+    }
+
+
+def test_sniffer_reads_safe_xiaoetong_source_job_status():
+    seen = {}
+
+    def opener(request, timeout):
+        seen["path"] = request.full_url
+        return _Response({
+            "code": 0,
+            "data": {
+                "id": "source-1",
+                "status": "task_created",
+                "live_id": "l_target",
+                "candidate_id": "candidate-1",
+                "task_id": "task-1",
+                "canonical_page": "https://example.test/safe",
+                "playlist_url": "https://example.test/live.m3u8?sign=secret",
+            },
+        })
+
+    client = SnifferClient(opener=opener)
+    job = client.xiaoetong_source_job("source-1")
+
+    assert seen["path"].endswith("/api/elive/source-jobs/source-1")
+    assert job == {
+        "id": "source-1",
+        "status": "task_created",
+        "live_id": "l_target",
+        "candidate_id": "candidate-1",
+        "task_id": "task-1",
+    }
+    assert "sign" not in json.dumps(job)
+
+
+def test_sniffer_retries_xiaoetong_source_job_without_media_credentials():
+    seen = {}
+
+    def opener(request, timeout):
+        seen["path"] = request.full_url
+        seen["method"] = request.method
+        return _Response({
+            "code": 0,
+            "data": {
+                "id": "source-1",
+                "status": "task_created",
+                "live_id": "l_target",
+                "candidate_id": "candidate-fresh",
+                "task_id": "task-fresh",
+                "playlist_url": "https://example.test/live.m3u8?sign=secret",
+            },
+        })
+
+    job = SnifferClient(opener=opener).retry_xiaoetong_source_job("source-1")
+
+    assert seen["path"].endswith("/api/elive/source-jobs/source-1/retry")
+    assert seen["method"] == "POST"
+    assert job == {
+        "id": "source-1",
+        "status": "task_created",
+        "live_id": "l_target",
+        "candidate_id": "candidate-fresh",
+        "task_id": "task-fresh",
+    }
+    assert "sign" not in json.dumps(job)
 
 
 def test_sniffer_download_payload_keeps_evidence_metadata():
@@ -221,6 +417,27 @@ def test_resolve_candidate_rehydrates_url_only_in_memory(tmp_path):
 
     assert detected is not None
     assert resolve_candidate(detected, [raw]) == raw
+
+
+def test_resolve_candidate_prefers_latest_fresh_url_for_same_live_id(tmp_path):
+    store = CaptureJobStore(tmp_path / "jobs.jsonl")
+    armed = store.arm([])
+    old = {
+        "id": "candidate-old",
+        "live_id": "live-1",
+        "captured": "2026-08-04 11:07:09",
+        "url": "https://example.test/playlist.m3u8",
+    }
+    fresh = {
+        "id": "candidate-fresh",
+        "live_id": "live-1",
+        "captured": "2026-08-04 11:25:17",
+        "url": "https://example.test/playlist.m3u8?sign=fresh",
+    }
+    detected = store.detect_capture(armed, [old, fresh])
+
+    assert detected is not None
+    assert resolve_candidate(detected, [old, fresh]) == fresh
 
 
 def test_checkpoint_records_async_boundary_and_rejects_unknown_status(tmp_path):

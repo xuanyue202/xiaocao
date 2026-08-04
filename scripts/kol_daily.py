@@ -35,6 +35,13 @@ from xiaocao.kol.xiaocao_live import (
     XiaocaoLiveService,
     validate_decision_bundle,
 )
+from xiaocao.kol.xiaocao_wechat import (
+    DEFAULT_CONTACT as DEFAULT_XIAOCAO_WECHAT_CONTACT,
+    DEFAULT_WECHAT_CLI,
+    WechatCliHistoryReader,
+    XiaocaoLiveCaptureDriver,
+    XiaocaoWechatLiveSubscription,
+)
 from xiaocao.live.notify import notify
 
 
@@ -43,16 +50,29 @@ DEFAULT_DECISIONS = Path("output/live/kol_intelligence")
 DEFAULT_LV_OUTPUT = Path("output/live/kol_lv_subscription")
 DEFAULT_VIDEO_OUTPUT = Path("output/live/kol_subscription_videos")
 DEFAULT_XIAOCAO_OUTPUT = Path("output/live/kol_xiaocao_live")
+DEFAULT_XIAOCAO_WECHAT_OUTPUT = (
+    DEFAULT_XIAOCAO_OUTPUT / "wechat_subscription"
+)
 MAX_HANDOFF_BYTES = 1024 * 1024
 
 
 class SemanticInputUnavailable(DailyError):
-    """A persisted semantic request has no coordinator response yet."""
+    """The current source could not obtain its requested agent input."""
 
-    def __init__(self, request: dict[str, Any], field: str):
-        super().__init__(f"daily runner is waiting for {field} on stdin")
-        self.request = request
-        self.field = field
+    def __init__(
+        self,
+        request_or_message: dict[str, Any] | str,
+        field: str | None = None,
+    ):
+        if isinstance(request_or_message, dict):
+            message = f"daily runner is waiting for {field} on stdin"
+            self.request = request_or_message
+            self.field = str(field or "")
+        else:
+            message = str(request_or_message)
+            self.request = {}
+            self.field = str(field or "")
+        super().__init__(message)
 
 
 def _isolated_item_failure(
@@ -447,19 +467,25 @@ def _read_agent_path(request: dict[str, Any], field: str) -> Path:
     if not response:
         if field == "bundle_path" and request.get("analysis_request_path"):
             raise SemanticInputUnavailable(request, field)
-        raise DailyError(f"daily runner requires {field} on stdin")
+        raise SemanticInputUnavailable(
+            f"daily runner requires {field} on stdin"
+        )
     raw = response.strip()
     if raw.startswith("{"):
         try:
             value = json.loads(raw)
         except json.JSONDecodeError as exc:
-            raise DailyError("daily runner response is invalid JSON") from exc
+            raise SemanticInputUnavailable(
+                "daily runner response is invalid JSON"
+            ) from exc
         raw = str(value.get(field) or "").strip()
     if not raw:
-        raise DailyError(f"daily runner response lacks {field}")
+        raise SemanticInputUnavailable(
+            f"daily runner response lacks {field}"
+        )
     path = Path(raw).expanduser().resolve()
     if not path.is_file():
-        raise DailyError(f"daily runner {field} is missing")
+        raise SemanticInputUnavailable(f"daily runner {field} is missing")
     return path
 
 
@@ -548,6 +574,20 @@ def _persisted_video_analysis_request(
         **request,
         "analysis_request_path": str(request_path),
     }
+
+
+def _read_agent_json(request: dict[str, Any]) -> dict[str, Any]:
+    print(json.dumps(request, ensure_ascii=False, sort_keys=True), flush=True)
+    response = sys.stdin.readline()
+    if not response:
+        raise DailyError("daily runner requires a browser response on stdin")
+    try:
+        value = json.loads(response)
+    except json.JSONDecodeError as exc:
+        raise DailyError("daily browser response is invalid JSON") from exc
+    if not isinstance(value, dict):
+        raise DailyError("daily browser response must be a JSON object")
+    return value
 
 
 def _video_publication_context(
@@ -704,6 +744,13 @@ def _classified_source(name: str, runner):
     def run():
         try:
             return runner()
+        except SemanticInputUnavailable as exc:
+            raise TransientSourceError(
+                "semantic input unavailable",
+                category="input_error",
+                code="semantic_input_unavailable",
+                stage="semantic_input",
+            ) from exc
         except DailyError:
             raise
         except EnrichmentError as exc:
@@ -998,6 +1045,8 @@ class DailyRuntime:
                     "bundle_path",
                 )
             except SemanticInputUnavailable as exc:
+                if not exc.request:
+                    raise
                 waiting += 1
                 waiting_items.append(_semantic_waiting_item(
                     exc.request,
@@ -1162,6 +1211,8 @@ class DailyRuntime:
                     "bundle_path",
                 )
             except SemanticInputUnavailable as exc:
+                if not exc.request:
+                    raise
                 waiting += 1
                 waiting_items.append(_semantic_waiting_item(
                     exc.request,
@@ -1219,13 +1270,25 @@ class DailyRuntime:
             self.args.xiaocao_output_dir,
             decision_output=self.args.decision_output_dir,
         )
-        handoffs = sorted(
-            (self.args.xiaocao_output_dir / "handoffs").glob("*.json")
-        )
+        handoff_paths = sorted({
+            *self.args.xiaocao_output_dir.rglob("handoffs/*.json"),
+            *self.args.xiaocao_output_dir.rglob("imported_handoffs/*.json"),
+        })
+        handoffs: dict[str, dict[str, Any]] = {}
+        for path in handoff_paths:
+            handoff = self._handoff(path)
+            handoff_key = str(handoff.get("handoff_id") or "") or (
+                "legacy:"
+                f"{handoff.get('capture_job_id')}:"
+                f"{handoff.get('netdisk_job_id')}"
+            )
+            existing = handoffs.get(handoff_key)
+            if existing is not None and existing != handoff:
+                raise DailyError("conflicting Xiaocao handoff capsules")
+            handoffs[handoff_key] = handoff
         events = []
         waiting = 0
-        for path in handoffs:
-            handoff = self._handoff(path)
+        for handoff in handoffs.values():
             if handoff.get("schema_version") == 2:
                 service.import_handoff_capsule(handoff)
             job_id = str(handoff["netdisk_job_id"])
@@ -1309,6 +1372,29 @@ class DailyRuntime:
             return {"status": "waiting", "waiting_count": waiting}
         return {"status": "no_update"}
 
+    def xiaocao_wechat(self) -> dict[str, Any]:
+        history = WechatCliHistoryReader(
+            self.args.xiaocao_wechat_contact,
+            executable=self.args.wechat_cli,
+            limit=self.args.wechat_history_limit,
+        )
+        capture = XiaocaoLiveCaptureDriver(
+            self.args.xiaocao_wechat_output_dir,
+            decision_output=self.args.decision_output_dir,
+        )
+        subscription = XiaocaoWechatLiveSubscription(
+            self.args.xiaocao_wechat_output_dir,
+            history_reader=history,
+            browser_exchange=_read_agent_json,
+            capture_driver=capture,
+            contact=self.args.xiaocao_wechat_contact,
+            password=self.args.xiaocao_live_password,
+        )
+        return subscription.run_once(
+            opencli_session=self.args.enrichment_session,
+            opencli_profile=self.args.opencli_profile,
+        )
+
     def viewpoints(self) -> dict[str, Any]:
         trigger_dir = self.args.output_dir / "viewpoint_triggers"
         receipt_dir = self.args.output_dir / "viewpoint_receipts"
@@ -1374,7 +1460,9 @@ class DailyRuntime:
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("command", choices=("run", "status", "audit"))
+    parser.add_argument(
+        "command", choices=("run", "capture-local", "status", "audit")
+    )
     parser.add_argument("--config", type=Path, default=Path("xiaocao.yaml"))
     parser.add_argument("--lianghui-config", type=Path)
     parser.add_argument("--output-dir", type=Path, default=DEFAULT_OUTPUT)
@@ -1384,6 +1472,18 @@ def main() -> int:
     parser.add_argument(
         "--xiaocao-output-dir", type=Path, default=DEFAULT_XIAOCAO_OUTPUT
     )
+    parser.add_argument(
+        "--xiaocao-wechat-output-dir",
+        type=Path,
+        default=DEFAULT_XIAOCAO_WECHAT_OUTPUT,
+    )
+    parser.add_argument("--wechat-cli", type=Path, default=DEFAULT_WECHAT_CLI)
+    parser.add_argument(
+        "--xiaocao-wechat-contact",
+        default=DEFAULT_XIAOCAO_WECHAT_CONTACT,
+    )
+    parser.add_argument("--wechat-history-limit", type=int, default=80)
+    parser.add_argument("--xiaocao-live-password", default="666")
     parser.add_argument("--opencli-profile")
     parser.add_argument("--lv-session", default="xiaocao-lv-subscription")
     parser.add_argument("--private-session", default="xiaocao-lv-subscription")
@@ -1405,6 +1505,22 @@ def main() -> int:
             service.events(),
         )
         _print(value)
+        return 0
+    if args.command == "capture-local":
+        runtime = DailyRuntime.__new__(DailyRuntime)
+        runtime.args = args
+        result = service.run(
+            [{
+                "name": "xiaocao_wechat_live",
+                "priority": 10,
+                "run": _classified_source(
+                    "xiaocao_wechat_live", runtime.xiaocao_wechat
+                ),
+            }],
+            blocker_sender=_sender,
+        )
+        if not result.get("silent"):
+            _print(result)
         return 0
     runtime = DailyRuntime(args)
     result = service.run(

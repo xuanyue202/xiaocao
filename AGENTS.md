@@ -31,6 +31,19 @@ All China-market schedules must express the intended China wall-clock time direc
 
 End-to-end path: Codex Automation schedule -> automation prompt -> `xiaocao-trading` skill -> runtime bundle -> CLI/scripts -> `output/live/*` artifacts -> summary. CLI output, live behavior, account files, or Kronos fields require matching skill and automation updates.
 
+### OpenCLI/Chrome recovery for local KOL capture
+
+The local hourly KOL node is WeChat-first. After a Xiaocao replay is captured and inline-compressed, local Baidu Netdisk access is transfer-only: upload the exact validated media, publish the credential-free handoff capsule, and let the remote Mac remain the only post-handoff writer. Do not restore local Netdisk subscription scans, transcription, analysis, publication, notification, or Book writes as a fallback.
+
+An `OpenCLI browser command timed out`, an unresponsive tab, or an absent browser window is not by itself a user blocker. Reconcile the exact capture ID, Netdisk job ID, and upload ledger first, then recover the existing OpenCLI session instead of abandoning the run:
+
+1. Query the existing session with `npx --yes @jackwener/opencli@1.8.6 browser <session> state` (the repository falls back to this pinned package when no global `opencli` exists).
+2. If Chrome is not running or the session has no responsive foreground tab, start/open Chrome through the Chrome browser-control path and bring the same session to the target URL with `opencli browser <session> open <url> --window foreground`; then read `state` again. Do not create a second session or a second Netdisk job merely to recover the tab.
+3. If the session is on a login page, open the login panel and keep the job at `prepared`; request only the irreducible user authentication/phone confirmation. Do not treat a transient redirect through `/disk/main` as authenticated: require the target folder to remain bound and a credentialed `/api/list` readback with `errno=0` before continuing the same job automatically.
+4. Retry an upload only when the ledger proves there is no upload claim. If a claim or `upload_started_at` exists without a conclusive receipt, treat the side effect as uncertain and reconcile the exact target row before retrying.
+
+Do not stop merely because Chrome was closed: launch/rebind it, read back the same OpenCLI session, and continue. Report a user-action blocker only when the recovered foreground page requires authentication, consent, CAPTCHA, or another action the agent cannot safely perform.
+
 ## Codex Remote Dual-Machine Collaboration
 
 `MacBook-Pro-6.local` is a normal, long-lived Xiaocao collaborator reached through **Codex Remote**, not through local mDNS, LAN SSH, AirDrop, or an ad-hoc filesystem inbox. The local repository is `/Users/bytedance/coding/xiaocao`; the remote repository is `/Users/xuanyue202/Documents/project/xiaocao`. Reuse the registered remote Xiaocao project and its existing cutover/executor task whenever possible.
