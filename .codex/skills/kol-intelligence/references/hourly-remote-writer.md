@@ -29,9 +29,18 @@ expose only credential-safe `category`, `code`, and `stage`. Do not run
 
 This machine is the only KOL writer. It consumes Xiaocao `scope=post_handoff`
 capsules and URL-only `wechat_official_article` capsules. Import the latter as
-one compact JSON line with `scripts/kol_daily.py import-wechat-official`; the
-capsule is discovery metadata, not the full article. It never scans the local WeChat contact and never reads or downloads source-video bytes. It does not
+one compact JSON line with `scripts/kol_daily.py import-wechat-official` over a
+plain non-TTY stdin pipe (`tty=false`). Never use a canonical PTY for the
+capsule line, because line buffering can retain or truncate the request before
+Python's `readline()` receives it. The capsule is discovery metadata, not the full article.
+It never scans the local WeChat contact and never reads or downloads source-video bytes. It does not
 activate a capture player or use Computer Use.
+
+When an official-account capsule arrives after this hour's multi-source runner
+has already finished, process only that imported inbox with
+`PYTHONPATH=src .venv/bin/python scripts/kol_daily.py process-wechat-official`.
+Run it exactly once and keep the same process alive for image/semantic input;
+do not rerun the full `run` command merely to pick up the handoff.
 
 For an official item, run installed OpenCLI once with `weixin download`, image
 download, background Chrome, and JSON output. Require success, an item-local

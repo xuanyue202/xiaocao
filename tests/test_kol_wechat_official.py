@@ -265,6 +265,37 @@ def test_first_hour_baselines_older_articles_and_hands_off_latest_url_per_kol(tm
     ]
 
 
+def test_handoff_uses_current_remote_writer_and_non_tty_stdin(tmp_path):
+    requests: list[dict] = []
+
+    def exchange(request: dict) -> dict:
+        requests.append(request)
+        return {
+            "action": request["action"],
+            "subscription_id": request["subscription_id"],
+            "handoff_id": request["handoff_id"],
+            "accepted": True,
+            "readback_status": "accepted",
+            "remote_thread_id": "current-hour-remote-writer",
+            "remote_host_id": "remote-mac",
+        }
+
+    OfficialAccountSubscription(
+        tmp_path / "official",
+        reader=lambda: {"updates": [_payload()["updates"][2]], "failures": []},
+        handoff_exchange=exchange,
+    ).run_once()
+
+    [request] = requests
+    instructions = request["instructions"]
+    assert "current-hour remote writer task" in instructions
+    assert "non-TTY stdin pipe (`tty=false`)" in instructions
+    assert "stale long-lived task" in instructions
+    assert request["required_response"]["remote_thread_id"] == (
+        "current-hour remote writer task id"
+    )
+
+
 def test_remote_import_is_idempotent_and_contains_no_article_evidence(tmp_path):
     capsule = _capture_one(tmp_path)
     inbox = OfficialAccountInbox(tmp_path / "remote")

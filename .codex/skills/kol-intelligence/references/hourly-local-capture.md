@@ -68,19 +68,26 @@ artifact, proxy cleanup, upload, and handoff without Browser.
 
 ## Remote handoff
 
-For `daily_remote_handoff_input_required`, validate the small capsule and reuse
-the registered Xiaocao task on `MacBook-Pro-6.local`. Send capsule fields only,
-never local paths or video bytes. A `wechat_official_article` capsule embeds
-only a credential-free public URL plus identity metadata. Import it
-idempotently with `scripts/kol_daily.py import-wechat-official`; it contains no
-article body, Markdown, summary evidence, or local path. Xiaocao video capsules
-still import with `scope=post_handoff`. The remote task reads
+For `daily_remote_handoff_input_required`, validate the small capsule and
+resolve the newest remote writer Automation task for the current hourly window
+on `MacBook-Pro-6.local`. Never route new work to a stale long-lived task, a
+task from an older window, or a task waiting on approval. Send capsule fields
+only, never local paths or video bytes. A `wechat_official_article` capsule
+embeds only a credential-free public URL plus identity metadata. Import it
+idempotently with `scripts/kol_daily.py import-wechat-official` over a plain
+non-TTY stdin pipe (`tty=false`), writing the exact compact JSON as one line
+exactly once; it contains no article body, Markdown, summary evidence, or local
+path. After an accepted import, the same current-window remote task runs
+`scripts/kol_daily.py process-wechat-official` exactly once and keeps that
+process alive for image/semantic input; it does not rerun the full multi-source
+hourly coordinator. Xiaocao video capsules still import with
+`scope=post_handoff`. The remote task reads
 [hourly-remote-writer.md](hourly-remote-writer.md) and reconciles the exact
 `handoff_id`.
 
 Return acceptance to the same local process only after an accepted or
 already-present readback. Reconcile ambiguity before retrying, and persist the
-host, task, handoff ID, and acceptance. Never create a second remote task or
+host, current-window task, handoff ID, and acceptance. Never create a second
 handoff merely because readback was delayed.
 
 ## Local schedule

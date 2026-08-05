@@ -476,8 +476,10 @@ class XiaocaoWechatLiveSubscription:
             "handoff_id": capsule["handoff_id"],
             "handoff_path": item["handoff_path"],
             "instructions": (
-                "Read and validate the lightweight capsule, then reuse the "
-                "registered remote Xiaocao task on MacBook-Pro-6.local. "
+                "Read and validate the lightweight capsule, then use the newest "
+                "current-hour remote writer task on the registered "
+                "MacBook-Pro-6.local host; never use a stale long-lived task or "
+                "one waiting on approval. "
                 "Reconcile the remote thread and handoff_id before any retry; "
                 "return only after target-task readback proves acceptance."
             ),
@@ -487,7 +489,7 @@ class XiaocaoWechatLiveSubscription:
                 "handoff_id": capsule["handoff_id"],
                 "accepted": True,
                 "readback_status": "accepted|already_present",
-                "remote_thread_id": "existing registered remote task id",
+                "remote_thread_id": "current-hour remote writer task id",
                 "remote_host_id": "registered remote host id",
             },
         }

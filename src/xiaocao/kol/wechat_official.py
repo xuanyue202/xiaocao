@@ -500,10 +500,13 @@ class OfficialAccountSubscription:
             "capsule_path": str(capsule_path),
             "instructions": (
                 "Send the complete credential-free URL capsule, never this local "
-                "path, to the existing remote Xiaocao task. Keep "
-                "scripts/kol_daily.py import-wechat-official alive and write the "
-                "exact compact JSON value to stdin. The import must not treat "
-                "discovery metadata as article evidence."
+                "path, to the current-hour remote writer task on the registered "
+                "Xiaocao remote host. Resolve the newest task for this hourly "
+                "window; never route to a stale long-lived task or one waiting "
+                "on approval. Keep scripts/kol_daily.py import-wechat-official "
+                "alive with a non-TTY stdin pipe (`tty=false`) and write the exact "
+                "compact JSON value as one line exactly once. The import must not "
+                "treat discovery metadata as article evidence."
             ),
             "required_response": {
                 "action": "dispatch_wechat_official_handoff",
@@ -511,7 +514,7 @@ class OfficialAccountSubscription:
                 "handoff_id": capsule["handoff_id"],
                 "accepted": True,
                 "readback_status": "accepted|already_present",
-                "remote_thread_id": "existing registered remote task id",
+                "remote_thread_id": "current-hour remote writer task id",
                 "remote_host_id": "registered remote host id",
             },
         }

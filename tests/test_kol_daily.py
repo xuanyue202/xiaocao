@@ -279,6 +279,42 @@ def test_capture_local_cli_runs_live_and_official_account_sources(
     }
 
 
+def test_process_wechat_official_cli_runs_only_the_remote_inbox(
+    tmp_path,
+    monkeypatch,
+    capsys,
+):
+    observed: dict[str, object] = {}
+
+    class FakeRuntime:
+        def __init__(self, args):
+            observed["args"] = args
+
+        @staticmethod
+        def wechat_official():
+            observed["called"] = True
+            return {"status": "completed", "events": [{"event_id": "article"}]}
+
+    monkeypatch.setattr(kol_daily_script, "DailyRuntime", FakeRuntime)
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "kol_daily.py",
+            "process-wechat-official",
+            "--output-dir",
+            str(tmp_path / "daily"),
+        ],
+    )
+
+    assert kol_daily_script.main() == 0
+    assert observed["called"] is True
+    assert json.loads(capsys.readouterr().out) == {
+        "status": "completed",
+        "events": [{"event_id": "article"}],
+    }
+
+
 def test_daily_runtime_runs_wechat_official_account_subscription(
     tmp_path,
     monkeypatch,

@@ -1607,6 +1607,7 @@ def main() -> int:
             "viewpoints",
             "capture-local",
             "import-wechat-official",
+            "process-wechat-official",
             "status",
             "audit",
         ),
@@ -1665,6 +1666,11 @@ def main() -> int:
                 args.wechat_official_output_dir
             ).import_capsule(capsule)
         )
+        return 0
+    if args.command == "process-wechat-official":
+        result = DailyRuntime(args).wechat_official()
+        if result.get("status") != "no_update":
+            _print(result)
         return 0
     service = DailyCoordinator(args.output_dir)
     if args.command == "status":
