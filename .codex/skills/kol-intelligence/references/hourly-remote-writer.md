@@ -79,7 +79,11 @@ and never issue a second UI trigger.
 
 Every item includes `content_value.status=low_density|promoted`; promoted items
 add `content_value.tier=report_only|alert_eligible`, accepted `alert_basis`, and
-reviewed natural-Chinese publication fields.
+reviewed natural-Chinese publication fields. Every promoted item also decides
+`longitudinal_projection`: `promoted` carries evidence-bound viewpoints and an
+initial `current|expired|invalidated|uncertain` evaluation; `none` carries an
+empty list and a concrete reason. Missing this decision fails closed rather
+than defaulting to an empty viewpoint list.
 
 Low-density creates neither report nor reminder. A promoted event gets its
 durable 灰常亮 receipt and stable URL before Book KOL-US or reminder effects;
@@ -117,6 +121,12 @@ row. Mixed claims stay one report and only current claims authorize effects.
 Put new-publication, due-horizon, material fact, or user currentness requests in
 `output/live/kol_daily/viewpoint_triggers/*.json`; maintenance uses CAS and
 creates no reminder or Book action.
+Use `operation=initial_projection` plus `trigger=user_request` only for a
+reviewed report-only history that still has no viewpoints. Run
+`PYTHONPATH=src .venv/bin/python scripts/kol_daily.py viewpoints` to process
+only these maintenance triggers without scanning sources. It must preserve the
+stable report URL and prior manifest, and it never creates a reminder or Book
+action.
 
 The append-only ledger resumes unfinished work and reconciles history,
 corrections, maintenance, restarts, and replays without resending. Preserve

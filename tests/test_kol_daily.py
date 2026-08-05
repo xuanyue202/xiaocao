@@ -20,14 +20,17 @@ from scripts.kol_daily import (
     SemanticInputUnavailable,
 )
 from xiaocao.kol.daily import (
+    build_initial_projection_candidate,
     build_triggered_evaluation_candidate,
     DailyCoordinator,
     DailyError,
     DailyPublicationContext,
     DailyPublicationPipeline,
+    initial_projection_terminal,
     TransientSourceError,
     triggered_evaluation_terminal,
     UserActionBlocker,
+    VIEWPOINT_EVALUATION_STATUSES,
 )
 from xiaocao.kol.enrichment_types import (
     EnrichmentDiagnosticError,
@@ -701,8 +704,121 @@ def _publication_bundle(tier: str = "alert_eligible") -> dict:
                 ),
                 "remaining_summary": "不机械按钟点交易，优先观察流动性与强弱。",
             },
+            "longitudinal_projection": {
+                "status": "none",
+                "reason": "本测试只验证事件报告与提醒顺序，不建立长期观点。",
+                "viewpoints": [],
+            },
         }]
     }
+
+
+def _projection_bundle() -> dict:
+    bundle = _publication_bundle(tier="report_only")
+    item = bundle["items"][0]
+    item["claims"] = [{
+        "claim_id": "light-position-boundary",
+        "quote": "轮动仍乱，趋势与断板都只用轻仓。",
+    }]
+    item["longitudinal_projection"] = {
+        "status": "promoted",
+        "reason": "轻仓纪律有明确适用环境、期限和失效条件，可以持续复核。",
+        "evaluated_at": "2026-07-27T10:05:00+08:00",
+        "viewpoints": [{
+            "local_thesis_id": "light-position-boundary",
+            "subject": "弱轮动环境下的仓位边界",
+            "stance": "市场轮动混乱时，趋势与断板机会都只适合轻仓试错。",
+            "horizon": "当日及随后几个交易日",
+            "reasoning": "方向持续性不足时，先控制单次错误对账户的影响。",
+            "role": "仓位与风险控制",
+            "triggers": ["市场仍缺少持续领涨方向时继续轻仓。"],
+            "falsifiers": ["主线形成并出现连续放量承接时重新评估仓位。"],
+            "uncertainties": ["需要后续盘面确认主线是否真正形成。"],
+            "evidence_refs": [{
+                "claim_id": "light-position-boundary",
+                "excerpt": "轮动仍乱，趋势与断板都只用轻仓。",
+            }],
+            "evaluation": {
+                "status": "uncertain",
+                "basis": "观点来源明确，但随后数日的盘面持续性尚未验证。",
+                "confidence": "中等",
+                "uncertainties": ["缺少下一交易日的量价确认。"],
+            },
+        }],
+    }
+    return bundle
+
+
+def test_publication_pipeline_creates_initial_viewpoint_and_evaluation(
+    tmp_path,
+):
+    order: list[str] = []
+    pipeline = DailyPublicationPipeline(
+        _DelegatePipeline(order),
+        ledger=PublicationLedger(tmp_path / "publication"),
+        client=_PublicationClient(order),
+        context=DailyPublicationContext(
+            adapter="xiaocao_live",
+            source_identity="live-with-viewpoint",
+            publication_version="transcript-v1",
+            kol_id="kol-xiaocao",
+            source="小草直播",
+            source_published_at="2026-07-27T09:30:00+08:00",
+            media_types=("video",),
+            source_parts=({
+                "identity": "handoff-viewpoint",
+                "version": "transcript-v1",
+                "order": 1,
+                "size": 0,
+                "evidence_sha256": "a" * 64,
+            },),
+        ),
+    )
+
+    result = pipeline.process(_projection_bundle())
+
+    assert result["status"] == "completed"
+    publication_key = publication_id_for_source(
+        adapter="xiaocao_live",
+        source_identity="live-with-viewpoint",
+    )
+    records = pipeline.ledger.status(publication_key)["artifact"]["records"]
+    report = next(row for row in records if row["kind"] == "report")
+    viewpoint = next(row for row in records if row["kind"] == "viewpoint")
+    evaluation = next(
+        row for row in records if row["kind"] == "viewpoint_evaluation"
+    )
+    assert report["payload"]["viewpoint_ids"] == [viewpoint["record_id"]]
+    assert viewpoint["payload"]["local_thesis_id"] == (
+        "light-position-boundary"
+    )
+    assert evaluation["payload"]["viewpoint_id"] == viewpoint["record_id"]
+    assert evaluation["payload"]["status"] == "uncertain"
+    assert evaluation["created_at"] == "2026-07-27T02:05:00Z"
+    assert order == ["gray", "book"]
+
+
+def test_promoted_event_requires_explicit_longitudinal_decision(tmp_path):
+    bundle = _publication_bundle()
+    del bundle["items"][0]["longitudinal_projection"]
+    pipeline = DailyPublicationPipeline(
+        _DelegatePipeline([]),
+        ledger=PublicationLedger(tmp_path / "publication"),
+        client=_PublicationClient([]),
+        context=DailyPublicationContext(
+            adapter="xiaocao_live",
+            source_identity="missing-projection",
+            publication_version="transcript-v1",
+            kol_id="kol-xiaocao",
+            source="小草直播",
+            source_published_at="2026-07-27T09:30:00+08:00",
+            media_types=("video",),
+            source_parts=(),
+        ),
+    )
+
+    with pytest.raises(DailyError, match="explicit longitudinal"):
+        pipeline.process(bundle)
 
 
 def test_publication_pipeline_publishes_before_book_and_one_link_reminder(
@@ -2189,6 +2305,126 @@ def test_triggered_viewpoint_evaluation_appends_without_event_side_effects(
     assert service.audit()["viewpoint_evaluation_count"] == 1
     assert service.audit()["reminder_count"] == 0
     assert service.audit()["book_trade_count"] == 0
+
+
+def test_initial_projection_backfills_report_only_history_without_side_effects(
+    tmp_path,
+):
+    publication_id = publication_id_for_source(
+        adapter="wechat_official_account",
+        source_identity="wechat-official-existing",
+    )
+    report_id_value = report_id(publication_id)
+    evidence_path = tmp_path / "evidence.md"
+    evidence_path.write_text(
+        "# 来源证据\n\n行业景气仍需订单和利润验证。\n",
+        encoding="utf-8",
+    )
+    evidence_sha256 = hashlib.sha256(evidence_path.read_bytes()).hexdigest()
+    source_binding = {
+        "publication_id": publication_id,
+        "publication_version": "article-v1",
+        "evidence_sha256": evidence_sha256,
+        "decision_result_sha256": "b" * 64,
+        "extraction_contract_version": "kol-intelligence-v1",
+    }
+    report = build_record(
+        kind="report",
+        record_id_value=report_id_value,
+        idempotency_key="put-existing-report",
+        created_at="2026-08-04T08:00:00Z",
+        source_binding=source_binding,
+        payload={
+            "report_id": report_id_value,
+            "report_kind": "publication_event",
+            "kol_id": "kol-example",
+            "author": "示例达人",
+            "source": "微信公众号",
+            "title": "示例达人：行业景气判断",
+            "summary": "作者认为行业景气仍需订单和利润验证。",
+            "source_published_at": "2026-08-04T08:00:00Z",
+            "media_types": ["text"],
+            "source_parts": [],
+            "report_format": "markdown",
+            "report_body": "# 核心判断\n\n行业景气仍需订单和利润验证。",
+            "viewpoint_ids": [],
+            "alert_eligible": False,
+            "alert_reason": "历史文章只归档，不补发即时提醒。",
+            "reader_insight": {
+                "status": "useful",
+                "reason": "包含可持续复核的行业判断。",
+            },
+        },
+    )
+    request = {
+        "operation": "initial_projection",
+        "trigger": "user_request",
+        "report_id": report_id_value,
+        "evidence_path": str(evidence_path),
+        "evidence_sha256": evidence_sha256,
+        "claims": [{
+            "claim_id": "industry-profit-check",
+            "quote": "行业景气仍需订单和利润验证。",
+        }],
+        "longitudinal_projection": {
+            "status": "promoted",
+            "reason": "主张有明确对象和验证条件。",
+            "evaluated_at": "2026-08-05T18:20:00+08:00",
+            "viewpoints": [{
+                "local_thesis_id": "industry-profit-check",
+                "subject": "行业景气与利润兑现",
+                "stance": "行业景气能否延续，需要订单增长和利润兑现共同确认。",
+                "horizon": "未来数周至一个季度",
+                "reasoning": "订单只代表需求线索，最终仍需利润质量验证。",
+                "evidence_refs": [{
+                    "claim_id": "industry-profit-check",
+                    "excerpt": "行业景气仍需订单和利润验证。",
+                }],
+                "evaluation": {
+                    "status": "uncertain",
+                    "basis": "来源观点清晰，但尚缺后续订单与利润数据。",
+                    "uncertainties": ["等待下一期经营数据。"],
+                },
+            }],
+        },
+    }
+
+    candidate = build_initial_projection_candidate(
+        {"report": report, "records": [report]},
+        request,
+    )
+    records = candidate["records"]
+    updated_report = next(row for row in records if row["kind"] == "report")
+    viewpoints = [row for row in records if row["kind"] == "viewpoint"]
+    evaluations = [
+        row for row in records if row["kind"] == "viewpoint_evaluation"
+    ]
+    assert len(viewpoints) == 1
+    assert len(evaluations) == 1
+    assert updated_report["payload"]["viewpoint_ids"] == [
+        viewpoints[0]["record_id"]
+    ]
+    assert candidate["publish_request"]["expected_content_sha256"] == (
+        report["content_sha256"]
+    )
+    terminal = initial_projection_terminal(
+        candidate,
+        {
+            "completed": True,
+            "publish_receipt": {
+                "recordState": "published",
+                "detailUrl": "https://reader.example/kol/example",
+            },
+        },
+    )
+    assert terminal["viewpoint_count"] == 1
+    assert terminal["alert"]["status"] == "not_created"
+    assert terminal["book_kol_us"]["status"] == "not_created"
+
+
+def test_viewpoint_maintenance_uses_lianghui_evaluation_statuses():
+    assert "expired" in VIEWPOINT_EVALUATION_STATUSES
+    assert "changed" not in VIEWPOINT_EVALUATION_STATUSES
 
 
 def test_replayed_terminal_receipt_is_recorded_once_across_hourly_slots(

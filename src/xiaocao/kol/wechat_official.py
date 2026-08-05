@@ -1182,6 +1182,11 @@ class OfficialAccountInbox:
                 "避免性别代词。"
             ),
             "required_content_value": "low_density|promoted(report_only|alert_eligible)",
+            "required_longitudinal_projection": (
+                "Every promoted item must decide longitudinal_projection as "
+                "promoted with evidence-bound viewpoints and initial evaluations, "
+                "or none with a concrete reason."
+            ),
             "analysis_request_path": str(request_path),
         }
         if request_path.is_file():

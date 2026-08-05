@@ -336,6 +336,11 @@ def test_hourly_local_and_remote_machine_contracts_stay_separate() -> None:
     assert "A也叫艾利克斯" in local
     assert "scripts/kol_daily.py run" in remote
     assert "scripts/kol_daily.py import-wechat-official" in remote
+    assert "scripts/kol_daily.py viewpoints" in remote
+    assert "longitudinal_projection" in remote
+    assert "longitudinal_projection" in FULL_CONTRACT_MD.read_text(
+        encoding="utf-8"
+    )
     assert "not the full article" in remote
     assert "daily_browser_input_required" not in remote
     assert "never scans the local WeChat contact" in remote

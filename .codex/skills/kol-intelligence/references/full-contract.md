@@ -131,6 +131,23 @@ Keep the layers separate:
   A KOL projection is not a synthetic publication report and never creates a
   reminder or Book action by itself. Periodic scheduling belongs to Ticket 07;
   Ticket 06 creates no recurring task.
+- Every promoted semantic item must include one explicit
+  `longitudinal_projection` decision. Use `status=promoted` only for
+  attributable, decision-relevant claims whose subject, direction, horizon,
+  conditions, evidence, and future evaluation boundary are all preserved;
+  include one or more viewpoints plus an initial as-of evaluation using exactly
+  `current|expired|invalidated|uncertain`. Use `status=none`, an empty
+  viewpoint list, and a concrete reason for news fragments, quotations,
+  examples, advertisements, unsupported inferences, or claims that cannot be
+  evaluated later. A report-only event may still contain valid longitudinal
+  viewpoints; alert eligibility never decides viewpoint visibility.
+- Keep the authoritative article evidence and reader report as Markdown. The
+  narrow `longitudinal_projection` object is a schema-validated internal
+  sidecar for stable 灰常亮 records; never serialize it into reader Markdown.
+  Each viewpoint evidence reference must resolve to the complete source claim
+  inventory, and every initial viewpoint must publish atomically with one
+  explicit currentness evaluation. Missing projection judgment fails closed;
+  it never silently becomes an empty `viewpoint_ids` list.
 - Before each `put_kol_record` and `publish_kol_report`, persist the exact
   request under a durable claim. An uncertain response must first use
   `get_kol_write_status`; a conflict must read `get_kol_record` and rebuild.
@@ -728,6 +745,9 @@ For every promoted publication event, produce:
 - `decision_status` and `knowledge_status`, including explicit no-op reasons;
 - durable distillation path and routed hypothesis ids when knowledge was written;
 - processing state and next asynchronous checkpoint.
+- an explicit longitudinal projection decision, including evidence-bound
+  viewpoints and initial evaluations when supported, or a concrete no-viewpoint
+  reason when not supported.
 
 Do not publish a `low_density` source item to 灰常亮. Publish every complete
 promoted event to 灰常亮 after the coverage and safety gate. For a new event with

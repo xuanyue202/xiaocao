@@ -11,6 +11,7 @@ import fcntl
 import hashlib
 import json
 import os
+import re
 import signal
 import threading
 from contextlib import contextmanager
@@ -33,6 +34,7 @@ from .publication import (
     publication_id_for_source,
     report_id,
     stable_claim,
+    viewpoint_id,
 )
 from .reader_copy import (
     ReaderCopyError,
@@ -63,6 +65,13 @@ VIEWPOINT_TRIGGERS = {
     "material_fact_change",
     "user_request",
 }
+VIEWPOINT_EVALUATION_STATUSES = {
+    "current",
+    "expired",
+    "invalidated",
+    "uncertain",
+}
+_LOCAL_THESIS_ID = re.compile(r"[a-z0-9][a-z0-9._-]{0,127}")
 
 
 class DailyError(EnrichmentError):
@@ -148,6 +157,256 @@ def _required_reason(value: Any, *, label: str) -> str:
     return reason
 
 
+def _reader_text_list(value: Any, *, label: str) -> list[str]:
+    if value in (None, []):
+        return []
+    if not isinstance(value, list):
+        raise DailyError(f"{label} must be a list")
+    rows = [str(row or "").strip() for row in value]
+    if any(not row for row in rows):
+        raise DailyError(f"{label} contains an empty value")
+    return rows
+
+
+def _normalize_longitudinal_projection(
+    item: dict[str, Any],
+) -> dict[str, Any]:
+    """Validate one explicit, evidence-gated longitudinal decision."""
+
+    projection = item.get("longitudinal_projection")
+    if not isinstance(projection, dict):
+        raise DailyError(
+            "promoted event needs an explicit longitudinal projection decision"
+        )
+    status = str(projection.get("status") or "").strip()
+    reason = _required_reason(
+        projection.get("reason"),
+        label="longitudinal projection",
+    )
+    raw_viewpoints = projection.get("viewpoints", [])
+    if not isinstance(raw_viewpoints, list):
+        raise DailyError("longitudinal viewpoints must be a list")
+    if status == "none":
+        if raw_viewpoints:
+            raise DailyError(
+                "longitudinal none decision cannot contain viewpoints"
+            )
+        return {
+            "status": status,
+            "reason": reason,
+            "viewpoints": [],
+        }
+    if status != "promoted" or not raw_viewpoints:
+        raise DailyError(
+            "longitudinal promoted decision needs at least one viewpoint"
+        )
+    evaluated_at = _utc_iso8601(
+        str(projection.get("evaluated_at") or "")
+    )
+    claims = item.get("claims")
+    if not isinstance(claims, list) or not claims:
+        raise DailyError(
+            "longitudinal viewpoints need the complete source claim inventory"
+        )
+    claim_ids = {
+        str(row.get("claim_id") or "").strip()
+        for row in claims
+        if isinstance(row, dict)
+        and str(row.get("claim_id") or "").strip()
+    }
+    if not claim_ids:
+        raise DailyError("longitudinal source claim inventory is empty")
+    normalized: list[dict[str, Any]] = []
+    local_ids: set[str] = set()
+    for index, raw in enumerate(raw_viewpoints):
+        if not isinstance(raw, dict):
+            raise DailyError(
+                f"longitudinal viewpoint {index} must be an object"
+            )
+        local_id = str(raw.get("local_thesis_id") or "").strip()
+        if not _LOCAL_THESIS_ID.fullmatch(local_id):
+            raise DailyError(
+                f"longitudinal viewpoint {index} has an invalid local thesis id"
+            )
+        if local_id in local_ids:
+            raise DailyError("longitudinal viewpoint ids must be unique")
+        local_ids.add(local_id)
+        required = {
+            field: str(raw.get(field) or "").strip()
+            for field in ("subject", "stance", "horizon", "reasoning")
+        }
+        if any(not value for value in required.values()):
+            raise DailyError(
+                f"longitudinal viewpoint {index} lacks reader-facing meaning"
+            )
+        refs = raw.get("evidence_refs")
+        if not isinstance(refs, list) or not refs:
+            raise DailyError(
+                f"longitudinal viewpoint {index} lacks evidence refs"
+            )
+        for ref in refs:
+            if not isinstance(ref, dict):
+                raise DailyError("longitudinal evidence ref must be an object")
+            claim_id = str(ref.get("claim_id") or "").strip()
+            excerpt = str(ref.get("excerpt") or "").strip()
+            if claim_id not in claim_ids or not excerpt:
+                raise DailyError(
+                    "longitudinal evidence ref is not bound to a source claim"
+                )
+        evaluation = raw.get("evaluation")
+        if not isinstance(evaluation, dict):
+            raise DailyError(
+                f"longitudinal viewpoint {index} lacks an initial evaluation"
+            )
+        evaluation_status = str(evaluation.get("status") or "").strip()
+        if evaluation_status not in VIEWPOINT_EVALUATION_STATUSES:
+            raise DailyError(
+                "longitudinal viewpoint evaluation status is unsupported"
+            )
+        basis = str(evaluation.get("basis") or "").strip()
+        if not basis:
+            raise DailyError(
+                "longitudinal viewpoint evaluation needs a basis"
+            )
+        as_of = _utc_iso8601(
+            str(evaluation.get("as_of") or evaluated_at)
+        )
+        normalized.append(
+            {
+                "local_thesis_id": local_id,
+                **required,
+                "attribution": str(
+                    raw.get("attribution") or item.get("author") or ""
+                ).strip(),
+                "role": str(raw.get("role") or "").strip(),
+                "triggers": _reader_text_list(
+                    raw.get("triggers"),
+                    label="longitudinal triggers",
+                ),
+                "falsifiers": _reader_text_list(
+                    raw.get("falsifiers"),
+                    label="longitudinal falsifiers",
+                ),
+                "uncertainties": _reader_text_list(
+                    raw.get("uncertainties"),
+                    label="longitudinal uncertainties",
+                ),
+                "evidence_refs": refs,
+                "evaluation": {
+                    "status": evaluation_status,
+                    "as_of": as_of,
+                    "evaluated_at": evaluated_at,
+                    "basis": basis,
+                    "confidence": str(
+                        evaluation.get("confidence") or "medium"
+                    ).strip(),
+                    "uncertainties": _reader_text_list(
+                        evaluation.get("uncertainties"),
+                        label="longitudinal evaluation uncertainties",
+                    ),
+                    "evidence": list(evaluation.get("evidence") or []),
+                },
+            }
+        )
+    return {
+        "status": status,
+        "reason": reason,
+        "evaluated_at": evaluated_at,
+        "viewpoints": normalized,
+    }
+
+
+def _initial_longitudinal_records(
+    *,
+    report_id_value: str,
+    kol_id: str,
+    source_published_at: str,
+    source_binding: dict[str, Any],
+    projection: dict[str, Any],
+) -> tuple[list[dict[str, Any]], list[str]]:
+    records: list[dict[str, Any]] = []
+    viewpoint_ids: list[str] = []
+    publication_id = str(source_binding["publication_id"])
+    for spec in projection["viewpoints"]:
+        refs = spec["evidence_refs"]
+        viewpoint_id_value = viewpoint_id(
+            report_id_value,
+            spec["local_thesis_id"],
+            refs,
+        )
+        viewpoint_ids.append(viewpoint_id_value)
+        payload = {
+            "viewpoint_id": viewpoint_id_value,
+            "report_id": report_id_value,
+            "kol_id": kol_id,
+            "local_thesis_id": spec["local_thesis_id"],
+            "subject": spec["subject"],
+            "stance": spec["stance"],
+            "source_published_at": source_published_at,
+            "evidence_refs": refs,
+            "horizon": spec["horizon"],
+            "reasoning": spec["reasoning"],
+        }
+        for field in (
+            "attribution",
+            "role",
+            "triggers",
+            "falsifiers",
+            "uncertainties",
+        ):
+            if spec.get(field) not in (None, "", []):
+                payload[field] = spec[field]
+        evaluated_at = spec["evaluation"]["evaluated_at"]
+        viewpoint = build_record(
+            kind="viewpoint",
+            record_id_value=viewpoint_id_value,
+            idempotency_key=stable_claim(
+                "put",
+                publication_id,
+                "initial-viewpoint-v1",
+                viewpoint_id_value,
+            ),
+            created_at=evaluated_at,
+            source_binding=source_binding,
+            payload=payload,
+        )
+        records.append(viewpoint)
+        evaluation = spec["evaluation"]
+        evaluation_id_value = evaluation_id(
+            viewpoint_id_value,
+            evaluation["as_of"],
+            evaluation["evaluated_at"],
+        )
+        evaluation_payload = {
+            "evaluation_id": evaluation_id_value,
+            "viewpoint_id": viewpoint_id_value,
+            "status": evaluation["status"],
+            "as_of": evaluation["as_of"],
+            "evaluated_at": evaluation["evaluated_at"],
+            "basis": evaluation["basis"],
+            "confidence": evaluation["confidence"],
+            "uncertainties": evaluation["uncertainties"],
+        }
+        if evaluation["evidence"]:
+            evaluation_payload["evidence"] = evaluation["evidence"]
+        records.append(
+            build_record(
+                kind="viewpoint_evaluation",
+                record_id_value=evaluation_id_value,
+                idempotency_key=stable_claim(
+                    "put",
+                    publication_id,
+                    "initial-evaluation-v1",
+                    evaluation_id_value,
+                ),
+                created_at=evaluation["evaluated_at"],
+                source_binding=source_binding,
+                payload=evaluation_payload,
+            )
+        )
+    return records, viewpoint_ids
+
+
 def validate_source_event(value: Any) -> dict[str, Any]:
     """Validate one content-value result and its independent terminals."""
 
@@ -226,9 +485,12 @@ def validate_source_event(value: Any) -> dict[str, Any]:
 
 
 def validate_viewpoint_terminal(value: Any) -> dict[str, Any]:
-    """Validate evaluation-only maintenance and its zero-side-effect boundary."""
+    """Validate viewpoint maintenance and its zero-side-effect boundary."""
 
-    if not isinstance(value, dict) or value.get("kind") != "viewpoint_evaluation":
+    if not isinstance(value, dict) or value.get("kind") not in {
+        "viewpoint_evaluation",
+        "viewpoint_projection",
+    }:
         raise DailyError("viewpoint maintenance terminal is invalid")
     publication = value.get("gray_publication") or {}
     if (
@@ -242,6 +504,11 @@ def validate_viewpoint_terminal(value: Any) -> dict[str, Any]:
         or int(value.get("coordinator_source_video_bytes") or 0) != 0
     ):
         raise DailyError("viewpoint maintenance side-effect boundary failed")
+    if value.get("kind") == "viewpoint_projection" and (
+        int(value.get("viewpoint_count") or 0) < 1
+        or int(value.get("evaluation_count") or 0) < 1
+    ):
+        raise DailyError("initial viewpoint projection is incomplete")
     return value
 
 
@@ -293,7 +560,7 @@ def build_triggered_evaluation_candidate(
         not as_of
         or not evaluated_at
         or not basis
-        or status not in {"current", "changed", "invalidated", "uncertain"}
+        or status not in VIEWPOINT_EVALUATION_STATUSES
     ):
         raise DailyError("triggered viewpoint evaluation is incomplete")
     as_of_utc = _utc_iso8601(as_of)
@@ -345,6 +612,137 @@ def build_triggered_evaluation_candidate(
             "large_payload_local_bytes": 0,
             "coordinator_source_video_bytes": 0,
         },
+    }
+
+
+def build_initial_projection_candidate(
+    current_publication: dict[str, Any],
+    request: dict[str, Any],
+) -> dict[str, Any]:
+    """Append the first evidence-gated projection to one report-only history."""
+
+    if request.get("operation") != "initial_projection":
+        raise DailyError("initial viewpoint projection operation is invalid")
+    if request.get("trigger") != "user_request":
+        raise DailyError("initial viewpoint projection needs user review")
+    report = current_publication.get("report")
+    records = current_publication.get("records")
+    if not isinstance(report, dict) or not isinstance(records, list):
+        raise DailyError("current viewpoint publication is incomplete")
+    if report["payload"].get("alert_eligible") is not False:
+        raise DailyError("initial viewpoint backfill is only for report-only history")
+    if report["payload"].get("viewpoint_ids") or any(
+        row.get("kind") == "viewpoint" for row in records
+    ):
+        raise DailyError("initial viewpoint projection already exists")
+    if (
+        str(request.get("report_id") or "") != str(report["record_id"])
+        or str(request.get("evidence_sha256") or "")
+        != str(report["source_binding"]["evidence_sha256"])
+    ):
+        raise DailyError("initial viewpoint projection changed source evidence")
+    evidence_path = Path(str(request.get("evidence_path") or "")).expanduser()
+    if not evidence_path.is_file():
+        raise DailyError("initial viewpoint projection evidence is missing")
+    try:
+        evidence_bytes = evidence_path.read_bytes()
+        evidence_text = evidence_bytes.decode("utf-8")
+    except (OSError, UnicodeDecodeError) as exc:
+        raise DailyError(
+            "initial viewpoint projection evidence is not valid Markdown"
+        ) from exc
+    if hashlib.sha256(evidence_bytes).hexdigest() != request["evidence_sha256"]:
+        raise DailyError("initial viewpoint projection evidence hash changed")
+    claims = request.get("claims")
+    if not isinstance(claims, list) or any(
+        not isinstance(row, dict)
+        or not str(row.get("claim_id") or "").strip()
+        or not str(row.get("quote") or "").strip()
+        or str(row["quote"]).strip() not in evidence_text
+        for row in claims
+    ):
+        raise DailyError(
+            "initial viewpoint projection claims are not bound to evidence"
+        )
+    projection = _normalize_longitudinal_projection(
+        {
+            "author": report["payload"]["author"],
+            "claims": claims,
+            "longitudinal_projection": request.get(
+                "longitudinal_projection"
+            ),
+        }
+    )
+    if projection["status"] != "promoted":
+        raise DailyError("initial viewpoint backfill needs real viewpoints")
+    additions, viewpoint_ids = _initial_longitudinal_records(
+        report_id_value=str(report["record_id"]),
+        kol_id=str(report["payload"]["kol_id"]),
+        source_published_at=str(report["payload"]["source_published_at"]),
+        source_binding=report["source_binding"],
+        projection=projection,
+    )
+    projection_id = canonical_sha256(
+        {
+            "report_id": report["record_id"],
+            "evidence_sha256": request["evidence_sha256"],
+            "projection": projection,
+        }
+    )
+    updated_records, publish = build_append_only_publication_update(
+        current_records=records,
+        additions=additions,
+        viewpoint_ids=viewpoint_ids,
+        created_at=projection["evaluated_at"],
+        revision=f"initial-projection-{projection_id}",
+        reason="补齐来源证据支持的初始长期观点；不创建提醒或 Book 动作。",
+    )
+    return {
+        "publication_key": f"viewpoint-projection:{projection_id}",
+        "records": updated_records,
+        "publish_request": publish,
+        "metadata": {
+            "trigger": "user_request",
+            "projection_id": projection_id,
+            "viewpoint_count": len(viewpoint_ids),
+            "evaluation_count": len(
+                [row for row in additions if row["kind"] == "viewpoint_evaluation"]
+            ),
+            "notification_claim_authorized": False,
+            "book_kol_us_replay_authorized": False,
+            "large_payload_local_bytes": 0,
+            "coordinator_source_video_bytes": 0,
+        },
+    }
+
+
+def initial_projection_terminal(
+    candidate: dict[str, Any],
+    publication_state: dict[str, Any],
+) -> dict[str, Any]:
+    receipt = publication_state.get("publish_receipt") or {}
+    if (
+        publication_state.get("completed") is not True
+        or receipt.get("recordState") not in {"published", "superseded"}
+        or not str(receipt.get("detailUrl") or "").strip()
+    ):
+        raise DailyError("initial viewpoint projection did not publish")
+    metadata = candidate["metadata"]
+    return {
+        "kind": "viewpoint_projection",
+        "event_id": metadata["projection_id"],
+        "trigger": metadata["trigger"],
+        "viewpoint_count": metadata["viewpoint_count"],
+        "evaluation_count": metadata["evaluation_count"],
+        "gray_publication": {
+            "status": "published",
+            "detail_url": receipt["detailUrl"],
+        },
+        "history_preserved": True,
+        "current_projection_order_preserved": True,
+        "alert": {"status": "not_created"},
+        "book_kol_us": {"status": "not_created"},
+        "coordinator_source_video_bytes": 0,
     }
 
 
@@ -439,6 +837,14 @@ def _publication_candidate(
     )
     insight = item.get("reader_insight") or {}
     source_published_at = _utc_iso8601(context.source_published_at)
+    projection = _normalize_longitudinal_projection(item)
+    longitudinal_records, viewpoint_ids = _initial_longitudinal_records(
+        report_id_value=report_id_value,
+        kol_id=context.kol_id,
+        source_published_at=source_published_at,
+        source_binding=source_binding,
+        projection=projection,
+    )
     report_payload = {
         "report_id": report_id_value,
         "report_kind": "publication_event",
@@ -452,7 +858,7 @@ def _publication_candidate(
         "source_parts": [dict(row) for row in context.source_parts],
         "report_format": "markdown",
         "report_body": str(publication.get("report_body") or ""),
-        "viewpoint_ids": [],
+        "viewpoint_ids": viewpoint_ids,
         "alert_eligible": alert_eligible,
         "alert_reason": alert_reason,
         "reader_insight": {
@@ -482,8 +888,9 @@ def _publication_candidate(
         source_binding=source_binding,
         payload=report_payload,
     )
+    records = [report, *longitudinal_records]
     publish = build_publish_request(
-        [report],
+        records,
         idempotency_key=stable_claim(
             "publish", publication_key, decision_sha
         ),
@@ -491,7 +898,7 @@ def _publication_candidate(
     )
     return {
         "publication_key": publication_key,
-        "records": [report],
+        "records": records,
         "publish_request": publish,
         "metadata": {
             "historical": False,
@@ -499,6 +906,14 @@ def _publication_candidate(
             "book_kol_us_replay_authorized": not is_durable_report_only(item),
             "large_payload_local_bytes": 0,
             "coordinator_source_video_bytes": 0,
+            "viewpoint_count": len(viewpoint_ids),
+            "evaluation_count": len(
+                [
+                    row
+                    for row in longitudinal_records
+                    if row["kind"] == "viewpoint_evaluation"
+                ]
+            ),
         },
     }
 

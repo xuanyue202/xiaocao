@@ -13,11 +13,13 @@ from pathlib import Path
 from typing import Any
 
 from xiaocao.kol.daily import (
+    build_initial_projection_candidate,
     build_triggered_evaluation_candidate,
     DailyCoordinator,
     DailyError,
     DailyPublicationContext,
     DailyPublicationPipeline,
+    initial_projection_terminal,
     TransientSourceError,
     UserActionBlocker,
     triggered_evaluation_terminal,
@@ -1555,7 +1557,10 @@ class DailyRuntime:
                 self.client,
                 str(request.get("report_id") or ""),
             )
-            candidate = build_triggered_evaluation_candidate(current, request)
+            if request.get("operation") == "initial_projection":
+                candidate = build_initial_projection_candidate(current, request)
+            else:
+                candidate = build_triggered_evaluation_candidate(current, request)
             self.publications.prepare(
                 candidate["publication_key"],
                 candidate["records"],
@@ -1566,7 +1571,10 @@ class DailyRuntime:
                 candidate["publication_key"],
                 self.client,
             )
-            terminal = triggered_evaluation_terminal(candidate, state)
+            if request.get("operation") == "initial_projection":
+                terminal = initial_projection_terminal(candidate, state)
+            else:
+                terminal = triggered_evaluation_terminal(candidate, state)
             terminals.append(terminal)
             receipt_dir.mkdir(parents=True, exist_ok=True)
             receipt_path.write_text(
@@ -1596,6 +1604,7 @@ def main() -> int:
         "command",
         choices=(
             "run",
+            "viewpoints",
             "capture-local",
             "import-wechat-official",
             "status",
@@ -1700,6 +1709,12 @@ def main() -> int:
             blocker_sender=_sender,
         )
         if not result.get("silent"):
+            _print(result)
+        return 0
+    if args.command == "viewpoints":
+        runtime = DailyRuntime(args)
+        result = runtime.viewpoints()
+        if result.get("status") != "no_update":
             _print(result)
         return 0
     runtime = DailyRuntime(args)

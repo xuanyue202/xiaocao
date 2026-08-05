@@ -407,6 +407,9 @@ def test_image_notes_are_markdown_covered_then_analysis_is_idempotent(tmp_path):
     assert request["evidence_sha256"] == hashlib.sha256(
         Path(ready["evidence_path"]).read_bytes()
     ).hexdigest()
+    assert "longitudinal_projection" in request[
+        "required_longitudinal_projection"
+    ]
 
     bundle_path = tmp_path / "bundle.json"
     bundle_path.write_text(
