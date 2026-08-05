@@ -24,6 +24,20 @@ silent. Retryable failures expose only credential-safe `category`, `code`, and
 `stage`. Reconcile an unfinished capture before creating another one, and never
 start two sniffers.
 
+If `capture-local` stops on the live source before already-imported official-
+account handoffs can receive their authoritative remote readback, do not rerun
+the full sweep. After reconciling the remote `accepted` or `already_present`
+receipts, run the recovery-only command below exactly once and keep it alive for
+the same handoff response exchange:
+
+```bash
+PYTHONPATH=src .venv/bin/python scripts/kol_daily.py capture-wechat-official
+```
+
+This command processes only local official-account discovery/handoff state. It
+must not be scheduled as another hourly runner or used before remote ambiguity
+is resolved.
+
 The local adapter may use Browser, never Computer Use, to activate the bound
 player. `wx_channels_download` alone owns video bytes and inline compression.
 The coordinator and remote control plane receive only metadata, receipts, and

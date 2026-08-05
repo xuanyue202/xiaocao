@@ -1606,6 +1606,7 @@ def main() -> int:
             "run",
             "viewpoints",
             "capture-local",
+            "capture-wechat-official",
             "import-wechat-official",
             "process-wechat-official",
             "status",
@@ -1715,6 +1716,13 @@ def main() -> int:
             blocker_sender=_sender,
         )
         if not result.get("silent"):
+            _print(result)
+        return 0
+    if args.command == "capture-wechat-official":
+        runtime = DailyRuntime.__new__(DailyRuntime)
+        runtime.args = args
+        result = runtime.wechat_official_local()
+        if result.get("status") != "no_update":
             _print(result)
         return 0
     if args.command == "viewpoints":

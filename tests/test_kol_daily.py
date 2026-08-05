@@ -279,6 +279,38 @@ def test_capture_local_cli_runs_live_and_official_account_sources(
     }
 
 
+def test_capture_wechat_official_cli_runs_only_local_official_account_source(
+    tmp_path,
+    monkeypatch,
+    capsys,
+):
+    observed: dict[str, object] = {}
+
+    def capture(self):
+        assert not hasattr(self, "client")
+        observed["args"] = self.args
+        return {"status": "completed", "dispatched": 2}
+
+    monkeypatch.setattr(DailyRuntime, "wechat_official_local", capture)
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "kol_daily.py",
+            "capture-wechat-official",
+            "--output-dir",
+            str(tmp_path / "daily"),
+        ],
+    )
+
+    assert kol_daily_script.main() == 0
+    assert observed["args"].output_dir == tmp_path / "daily"
+    assert json.loads(capsys.readouterr().out) == {
+        "status": "completed",
+        "dispatched": 2,
+    }
+
+
 def test_process_wechat_official_cli_runs_only_the_remote_inbox(
     tmp_path,
     monkeypatch,
