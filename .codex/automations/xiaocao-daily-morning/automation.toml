@@ -2,7 +2,7 @@ version = 1
 id = "xiaocao-daily-morning"
 kind = "cron"
 name = "xiaocao daily morning"
-prompt = "Use the local `xiaocao-trading` skill/project conventions. Run only `bash scripts/auto_daily.sh morning-prerecommend` after minimal preflight. As soon as the dated recommendation exists, report the pre-recommendation conclusion and return a final/inbox result before any agent review. Do not consume the review queue and do not paper-record."
+prompt = "Use the local `xiaocao-trading` skill/project conventions. Run only `bash scripts/auto_daily.sh morning-prerecommend` after minimal preflight. As soon as the dated recommendation and required same-run signal snapshots exist, report the pre-recommendation conclusion and return a final/inbox result before any agent review. Missing K/P cache is supporting-only and must not suppress ★E, but missing signal capture is a deterministic failure and must never be reported as a genuine ★E NONE. Do not consume the review queue and do not paper-record."
 status = "ACTIVE"
 rrule = "RRULE:FREQ=WEEKLY;BYDAY=MO,TU,WE,TH,FR;BYHOUR=9;BYMINUTE=23"
 model = "gpt-5.6-sol"

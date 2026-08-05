@@ -26,7 +26,7 @@ memory and current-day artifacts. If `CODEX_HOME` is unset, resolve it as
 
 The orchestration must reach these stages:
 
-1. The prerecommendation stage runs `live_recommend.py`, freezes the usable 9:25 signal/evidence set, and writes `output/live/recommend_<date>.md` plus ★/★B/★M/★E snapshots.
+1. The prerecommendation stage runs `live_recommend.py`, freezes the usable 9:25 signal/evidence set, and writes `output/live/recommend_<date>.md` plus ★/★B/★M/★E snapshots. K/P is an optional ranking overlay: a missing model/cache must fall back to neutral K/P ranks and must not skip deterministic snapshot capture or ★E selection. Snapshot-capture failure is fatal and must never be reported as a genuine `★E NONE`.
 2. The same stage runs `build_intelligence_review_queue.py` to create the zero-fetch, zero-score review queue, then terminates so its final/inbox result is user-visible. Priority is open Book-B positions, then ★E, ★B and ★.
 3. The execution stage uses `wait_for_morning_freeze.py` to require the matching dated report and queue. Missing, malformed or wrong-date evidence fails closed; it never regenerates the signal set.
 4. `wait_for_agent_reviews.py` opens a bounded rendezvous. While the execution shell waits, read the dated queue and frozen evidence, then write structured reviews with `scripts/agent_intelligence_review.py`. Never substitute keyword scoring. If time expires, let base picks continue and report supporting-layer fallback.
@@ -79,8 +79,9 @@ Candidate truth and booked truth are different. A recommendation is not a buy; p
 
 ## Terminal states and anomalies
 
-Prerecommendation completion requires its shell to terminate and the dated report
-and queue to exist. Execution completion separately requires its shell to
+Prerecommendation completion requires its shell to terminate successfully and the
+dated report, queue and required same-run signal capture to exist. A K/P degradation
+may be supporting-only; a capture failure is deterministic failure. Execution completion separately requires its shell to
 terminate and the final ledger state to be checked. Never conflate the two.
 
 Normal bounded states: no raw candidates, no executable mode, no Book-T slot, review timeout with base-pick fallback, or a documented unfilled limit.

@@ -1,6 +1,11 @@
 from __future__ import annotations
 
 from datetime import datetime
+import importlib.util
+import sys
+from types import SimpleNamespace
+
+import pytest
 
 import scripts.live_recommend as live_recommend
 from scripts.live_recommend import (
@@ -329,3 +334,205 @@ def test_select_standby_rejects_same_block_crowding() -> None:
     ]
 
     assert _select_standby_candidates(ranked, ranked[:3]) == []
+
+
+def test_kronos_model_failure_does_not_block_mode_exec_snapshot_or_report(
+    monkeypatch,
+    tmp_path,
+) -> None:
+    """K/P is optional; an eligible mode must still reach ★E and capture."""
+    candidate = {
+        "code": "600815.XSHG",
+        "name": "厦工股份",
+        "mode": "首红断低吸",
+        "xcjw": 200.0,
+        "cjs": 0.0,
+        "jsjl": 0.0,
+        "jssb": 0.0,
+        "is_main_line": False,
+        "is_big_cap": False,
+        "direction": False,
+        "directionRank": -1,
+        "categoryRank": -1,
+        "regime": "",
+        "reason": "fixture",
+        "openPctChange": 0.0,
+    }
+    capture_calls: list[str] = []
+
+    class _Loader:
+        def exec_module(self, module) -> None:
+            return None
+
+    def fake_spec_from_file_location(modname, _path):
+        return SimpleNamespace(name=modname, loader=_Loader())
+
+    def fake_module_from_spec(spec):
+        if spec.name == "secondary_screen":
+            def score(*_args, **_kwargs):
+                raise RuntimeError("model cache missing")
+
+            return SimpleNamespace(score=score)
+        if spec.name == "capture_signals":
+            def capture(candidates, _client, _date_iso, **_kwargs):
+                capture_calls.append("capture")
+                candidates[0].update({
+                    "mode_exec_star": True,
+                    "mode_exec_rank": 1,
+                    "mode_exec_score": 0.5,
+                    "mode_exec_target_weight": 0.5,
+                })
+
+            return SimpleNamespace(capture=capture)
+        raise AssertionError(spec.name)
+
+    class _Client:
+        cache = None
+
+    monkeypatch.setattr(importlib.util, "spec_from_file_location", fake_spec_from_file_location)
+    monkeypatch.setattr(importlib.util, "module_from_spec", fake_module_from_spec)
+    monkeypatch.setattr(live_recommend, "OUT_DIR", tmp_path)
+    monkeypatch.setattr(live_recommend, "TRAINING_ROWS_FILE", tmp_path / "training_rows.parquet")
+    monkeypatch.setattr(live_recommend, "POSITIONS_FILE", tmp_path / "positions.jsonl")
+    monkeypatch.setattr(live_recommend, "_resolve_date", lambda _date: "2026-08-05")
+    monkeypatch.setattr(live_recommend, "_wait_for_recommendation_start", lambda _date: None)
+    monkeypatch.setattr(live_recommend, "_client", lambda: _Client())
+    monkeypatch.setattr(live_recommend, "ApiDataSource", lambda *_args, **_kwargs: object())
+    monkeypatch.setattr(
+        live_recommend,
+        "_run_strategy_when_ready",
+        lambda *_args, **_kwargs: ([candidate], [candidate]),
+    )
+    monkeypatch.setattr(
+        live_recommend,
+        "_entry_price",
+        lambda *_args, **_kwargs: (5.78, "realtime_open", 5.78),
+    )
+    monkeypatch.setattr(live_recommend, "_trade_days", lambda *_args, **_kwargs: [])
+    monkeypatch.setattr(live_recommend, "load_live_executable_evidence", lambda _path: [])
+    monkeypatch.setattr(live_recommend, "decide_mode_switches", lambda *_args, **_kwargs: {})
+    monkeypatch.setattr(live_recommend, "confidence_map_from_decisions", lambda _decisions: {})
+
+    def annotate(candidates, _decisions):
+        for row in candidates:
+            row.update({
+                "mode_state": "ACTIVE",
+                "mode_trade_eligible": True,
+                "mode_exec_rank_score": row["rank_score"],
+                "mode_alpha_pool": 2.55,
+                "mode_alpha_pool_lcb80": 0.12,
+                "mode_alpha_market": 0.62,
+                "mode_alpha_market_lcb80": -2.56,
+            })
+        return candidates
+
+    monkeypatch.setattr(live_recommend, "annotate_mode_candidates", annotate)
+    monkeypatch.setattr(live_recommend, "_build_top_stock_sentiment", lambda *_args, **_kwargs: [])
+    monkeypatch.setattr(live_recommend, "_write_stock_sentiment_records", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(live_recommend, "_merge_sentiment_into_signal_snapshots", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(
+        live_recommend.intelligence_evidence,
+        "write_freeze_artifacts",
+        lambda **_kwargs: None,
+    )
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        ["live_recommend.py", "--date", "2026-08-05", "--no-stdout"],
+    )
+
+    live_recommend.main()
+
+    report = (tmp_path / "recommend_2026-08-05.md").read_text(encoding="utf-8")
+    assert capture_calls == ["capture"]
+    assert "| 1 | 600815.XSHG | 厦工股份 | 首红断低吸 | ACTIVE |" in report
+    assert "NONE：当前没有通过可执行收益硬门" not in report
+
+
+def test_required_signal_capture_failure_is_not_reported_as_mode_exec_none(
+    monkeypatch,
+    tmp_path,
+) -> None:
+    """A broken deterministic freeze must stop, not masquerade as no picks."""
+    candidate = {
+        "code": "600815.XSHG",
+        "name": "厦工股份",
+        "mode": "首红断低吸",
+        "xcjw": 200.0,
+        "cjs": 0.0,
+        "jsjl": 0.0,
+        "jssb": 0.0,
+        "is_main_line": False,
+        "is_big_cap": False,
+        "direction": False,
+        "directionRank": -1,
+        "categoryRank": -1,
+        "regime": "",
+        "reason": "fixture",
+        "openPctChange": 0.0,
+    }
+
+    class _Loader:
+        def exec_module(self, module) -> None:
+            return None
+
+    def fake_spec_from_file_location(modname, _path):
+        return SimpleNamespace(name=modname, loader=_Loader())
+
+    def fake_module_from_spec(spec):
+        if spec.name == "secondary_screen":
+            return SimpleNamespace(score=lambda *_args, **_kwargs: None)
+        if spec.name == "capture_signals":
+            def capture(*_args, **_kwargs):
+                raise OSError("snapshot path unavailable")
+
+            return SimpleNamespace(capture=capture)
+        raise AssertionError(spec.name)
+
+    class _Client:
+        cache = None
+
+    monkeypatch.setattr(importlib.util, "spec_from_file_location", fake_spec_from_file_location)
+    monkeypatch.setattr(importlib.util, "module_from_spec", fake_module_from_spec)
+    monkeypatch.setattr(live_recommend, "OUT_DIR", tmp_path)
+    monkeypatch.setattr(live_recommend, "TRAINING_ROWS_FILE", tmp_path / "training_rows.parquet")
+    monkeypatch.setattr(live_recommend, "POSITIONS_FILE", tmp_path / "positions.jsonl")
+    monkeypatch.setattr(live_recommend, "_resolve_date", lambda _date: "2026-08-05")
+    monkeypatch.setattr(live_recommend, "_wait_for_recommendation_start", lambda _date: None)
+    monkeypatch.setattr(live_recommend, "_client", lambda: _Client())
+    monkeypatch.setattr(live_recommend, "ApiDataSource", lambda *_args, **_kwargs: object())
+    monkeypatch.setattr(
+        live_recommend,
+        "_run_strategy_when_ready",
+        lambda *_args, **_kwargs: ([candidate], [candidate]),
+    )
+    monkeypatch.setattr(
+        live_recommend,
+        "_entry_price",
+        lambda *_args, **_kwargs: (5.78, "realtime_open", 5.78),
+    )
+    monkeypatch.setattr(live_recommend, "_trade_days", lambda *_args, **_kwargs: [])
+    monkeypatch.setattr(live_recommend, "load_live_executable_evidence", lambda _path: [])
+    monkeypatch.setattr(live_recommend, "decide_mode_switches", lambda *_args, **_kwargs: {})
+    monkeypatch.setattr(live_recommend, "confidence_map_from_decisions", lambda _decisions: {})
+    monkeypatch.setattr(
+        live_recommend,
+        "annotate_mode_candidates",
+        lambda candidates, _decisions: [
+            dict(row, mode_state="ACTIVE", mode_trade_eligible=True)
+            for row in candidates
+        ],
+    )
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        ["live_recommend.py", "--date", "2026-08-05", "--no-stdout"],
+    )
+
+    with pytest.raises(
+        RuntimeError,
+        match="required signal capture failed: OSError: snapshot path unavailable",
+    ):
+        live_recommend.main()
+
+    assert not (tmp_path / "recommend_2026-08-05.md").exists()

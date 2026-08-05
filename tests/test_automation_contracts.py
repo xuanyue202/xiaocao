@@ -33,6 +33,8 @@ def test_morning_automations_separate_user_visible_prerecommend_from_execution()
     assert "morning-prerecommend" in prerecommend["prompt"]
     assert "final/inbox" in prerecommend["prompt"]
     assert "before any agent review" in prerecommend["prompt"]
+    assert "missing signal capture is a deterministic failure" in prerecommend["prompt"]
+    assert "must not suppress ★E" in prerecommend["prompt"]
     assert "do not paper-record" in prerecommend["prompt"]
 
     assert "BYHOUR=9;BYMINUTE=25" in execution["rrule"]

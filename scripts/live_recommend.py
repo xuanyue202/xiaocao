@@ -1158,30 +1158,45 @@ def main() -> None:
     vb_stars: list[dict] = []
     mode_stars: list[dict] = []
     mode_exec_stars: list[dict] = []
+    import importlib.util as _ilu
+
+    def _load_screen_module(modname):
+        module_path = ROOT / "kronos_screen" / "scripts" / f"{modname}.py"
+        spec = _ilu.spec_from_file_location(modname, module_path)
+        module = _ilu.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        return module
+
     if not args.no_kronos:
         try:
-            import importlib.util as _ilu
-
-            def _load(modname):
-                _p = ROOT / "kronos_screen" / "scripts" / f"{modname}.py"
-                _spec = _ilu.spec_from_file_location(modname, _p)
-                _m = _ilu.module_from_spec(_spec); _spec.loader.exec_module(_m)
-                return _m
-
-            _load("secondary_screen").score(candidates, client, date_iso, top_n=max(1, args.kronos_top_n))
+            _load_screen_module("secondary_screen").score(
+                candidates,
+                client,
+                date_iso,
+                top_n=max(1, args.kronos_top_n),
+            )
             kp_stars = [c for c in candidates if c.get("kp_star")]
-            # Capture forward signals (auction imbalance) + A/B/C tracked variants + snapshot
-            try:
-                _load("capture_signals").capture(
-                    candidates, client, date_iso,
-                    is_live=_is_today_live_run(date_iso), top_n=max(1, args.kronos_top_n))
-                vb_stars = [c for c in candidates if c.get("vb_star")]
-                mode_stars = [c for c in candidates if c.get("mode_star")]
-                mode_exec_stars = [c for c in candidates if c.get("mode_exec_star")]
-            except Exception as e:
-                print(f"[signal capture skipped: {type(e).__name__}: {e}]", file=sys.stderr)
         except Exception as e:  # missing model / torch / API — degrade gracefully
             print(f"[Kronos K→P skipped: {type(e).__name__}: {e}]", file=sys.stderr)
+
+    # Signal capture and the shared ★E mode gate are deterministic morning
+    # outputs, not part of the optional K→P overlay.  Missing K/P scores fall
+    # back to neutral percentiles inside select_executable_candidates().
+    try:
+        _load_screen_module("capture_signals").capture(
+            candidates,
+            client,
+            date_iso,
+            is_live=_is_today_live_run(date_iso),
+            top_n=max(1, args.kronos_top_n),
+        )
+        vb_stars = [c for c in candidates if c.get("vb_star")]
+        mode_stars = [c for c in candidates if c.get("mode_star")]
+        mode_exec_stars = [c for c in candidates if c.get("mode_exec_star")]
+    except Exception as e:
+        raise RuntimeError(
+            f"required signal capture failed: {type(e).__name__}: {e}"
+        ) from e
 
     ranked = _rank_candidates(candidates, mode_confidence)
     selected, overflow = _split_ranked_candidates(
