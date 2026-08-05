@@ -90,8 +90,13 @@ only, never local paths or video bytes. A `wechat_official_article` capsule
 embeds only a credential-free public URL plus identity metadata. Import it
 idempotently with `scripts/kol_daily.py import-wechat-official` over a plain
 non-TTY stdin pipe (`tty=false`), writing the exact compact JSON as one line
-exactly once; it contains no article body, Markdown, summary evidence, or local
-path. After an accepted import, the same current-window remote task runs
+exactly once. If the execution backend closes stdin before any bytes arrive,
+first confirm that pre-input failure and absence of a receipt; then create one
+validated temporary JSONL line and invoke the importer once with that file as
+plain stdin. Never fall back to a PTY. XML wrapper text may display URL `&` as
+`&amp;`; restore raw `&` and recompute `handoff_sha256` before import. The
+capsule contains no article body, Markdown, summary evidence, or local path.
+After an accepted import, the same current-window remote task runs
 `scripts/kol_daily.py process-wechat-official` exactly once and keeps that
 process alive for image/semantic input; it does not rerun the full multi-source
 hourly coordinator. Xiaocao video capsules still import with

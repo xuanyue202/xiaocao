@@ -32,7 +32,13 @@ capsules and URL-only `wechat_official_article` capsules. Import the latter as
 one compact JSON line with `scripts/kol_daily.py import-wechat-official` over a
 plain non-TTY stdin pipe (`tty=false`). Never use a canonical PTY for the
 capsule line, because line buffering can retain or truncate the request before
-Python's `readline()` receives it. The capsule is discovery metadata, not the full article.
+Python's `readline()` receives it. If the execution backend closes stdin before
+receiving any bytes, verify the pre-input failure and missing receipt, create
+one validated temporary JSONL line, and invoke the importer once with that file
+as plain stdin. Do not count the empty pre-input process as an import attempt
+and do not send the capsule twice. XML wrapper text may render URL `&` as
+`&amp;`; restore the raw URL, recompute `handoff_sha256`, and require an exact
+match before the importer sees it. The capsule is discovery metadata, not the full article.
 It never scans the local WeChat contact and never reads or downloads source-video bytes. It does not
 activate a capture player or use Computer Use.
 

@@ -505,7 +505,12 @@ class OfficialAccountSubscription:
                 "window; never route to a stale long-lived task or one waiting "
                 "on approval. Keep scripts/kol_daily.py import-wechat-official "
                 "alive with a non-TTY stdin pipe (`tty=false`) and write the exact "
-                "compact JSON value as one line exactly once. The import must not "
+                "compact JSON value as one line exactly once. If that execution "
+                "backend closes stdin before receiving input, confirm the pre-input "
+                "failure, then use one validated temporary JSONL file as stdin for "
+                "the single real import; never use a PTY. Treat XML wrapper "
+                "`&amp;` as transport escaping, restore the URL's raw `&`, and "
+                "recompute the handoff binding before import. The import must not "
                 "treat discovery metadata as article evidence."
             ),
             "required_response": {

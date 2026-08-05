@@ -290,6 +290,9 @@ def test_handoff_uses_current_remote_writer_and_non_tty_stdin(tmp_path):
     instructions = request["instructions"]
     assert "current-hour remote writer task" in instructions
     assert "non-TTY stdin pipe (`tty=false`)" in instructions
+    assert "temporary JSONL file as stdin" in instructions
+    assert "`&amp;` as transport escaping" in instructions
+    assert "recompute the handoff binding" in instructions
     assert "stale long-lived task" in instructions
     assert request["required_response"]["remote_thread_id"] == (
         "current-hour remote writer task id"
