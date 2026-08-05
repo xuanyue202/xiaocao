@@ -7,6 +7,32 @@ logged-in OpenCLI browser bridge. Baidu AASR remains an explicit fallback that
 does not satisfy the mandatory Netdisk acceptance. Ticket 02 excludes Computer
 Use, live capture, subscriptions, batch ingestion, and scheduling.
 
+## WeChat official-account KOL sources
+
+The local hourly capture command also scans two exact-publisher KOL sources
+through the stateless `wechat-cli subscription-updates --within 48h` surface:
+`刘少狙击营` (`kol-liushao-jujiying`) and `A也叫艾利克斯`
+(`kol-a-alex`). The first scan baselines older articles and makes only the
+latest article per publisher eligible; later scans use the stable WeChat
+article ID to add unseen items.
+
+The local source sends a self-hashed URL-only capsule: stable article identity,
+publisher/title, publication/receipt times, normalized public URL, and hashes.
+It contains no summary evidence, article body, credentials, or local path. The
+registered remote task imports it with
+`scripts/kol_daily.py import-wechat-official`.
+
+Remote `run` uses the directly installed OpenCLI browser bridge to write the
+complete article and all images under an item-specific directory. It accepts
+only successful structured output plus exact publisher/title, bounded page
+time, nonempty UTF-8 Markdown, local image coverage, bytes, and SHA-256. The
+agent then reads every image exactly once and writes an auditable Markdown
+description bound to each image SHA. The program appends those notes to the
+article; only that final Markdown enters the common semantic, 灰常亮,
+notification, and paper-only gates. Verification UI or `请输入验证码` stops the
+item for same-Chrome-session user verification; it never starts MCP or a
+second HTTP fetcher.
+
 ## Baidu Netdisk browser enrichment
 
 Prepare the runtime-named source before touching the page:

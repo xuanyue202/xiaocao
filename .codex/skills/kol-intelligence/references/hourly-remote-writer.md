@@ -27,11 +27,17 @@ decision priority. No-update and healthy waiting are silent. Retryable failures
 expose only credential-safe `category`, `code`, and `stage`. Do not run
 23:01–06:59.
 
-This machine is the only KOL writer. It consumes imported Xiaocao handoffs with
-`scope=post_handoff`; it never scans the local WeChat contact, activates a
-browser player, or reads local capture paths. The coordinator reads only
-lightweight metadata, transcripts, images, handoff JSON, and receipts; it never
-reads or downloads source-video bytes and never uses Computer Use.
+This machine is the only KOL writer. It consumes Xiaocao `scope=post_handoff`
+capsules and URL-only `wechat_official_article` capsules. Import the latter as
+one compact JSON line with `scripts/kol_daily.py import-wechat-official`; the
+capsule is discovery metadata, not the full article. It never scans the local WeChat contact and never reads or downloads source-video bytes. It does not
+activate a capture player or use Computer Use.
+
+For an official item, run installed OpenCLI once with `weixin download`, image
+download, background Chrome, and JSON output. Require success, an item-local
+file, exact publisher/title/time, complete UTF-8 body/images, bytes, and hashes.
+Combine OpenCLI's verification UI/path/node signals with `请输入验证码`; CAPTCHA
+stops for same-session verification without HTTP/MCP retry.
 
 For an imported Xiaocao handoff, reconcile the exact `handoff_id` and media
 SHA-256 before advancing. Latest Xiaocao or Lv content is incomplete until its
@@ -53,18 +59,23 @@ For `daily_analysis_input_required` in the same process:
 6. Write exactly `{"bundle_path":"<absolute-json-path>"}` followed by a
    newline to the same process.
 
+For `daily_official_article_image_input_required`, inspect every image once and
+write only `# 图片信息转写` Markdown with each index/SHA, information/decorative
+status, relevant text/chart/table content, and uncertainty. Do not copy the
+body or return JSON. The runner appends notes to full Markdown before analysis.
+
 Keep stdin open. EOF persists `waiting_semantic_input`, preserving the original
 request, evidence SHA, and item claim. The next sweep reuses that exact
 request/evidence, skips completed acquisition/transcript work, and never
 replays publication, notification, or Book effects. Stop that adapter before
 later backlog items.
 
-Small downloads are unattended: never edit ordinary Chrome or a global
-extension. Try `Page.setDownloadBehavior` with controlled inbox readback;
-otherwise bind one memory-only PDF/UTF-8 link to exact provider
-id/name/size/identity/version and validate HTTPS/type/bytes/SHA. Never use it
-for video or persist secrets. Save prompts are internal—no user blocker or
-WeChat. Only auth, SMS, CAPTCHA or consent may ask; no second UI trigger.
+Small downloads are unattended: use `Page.setDownloadBehavior` with a
+controlled inbox; otherwise bind one memory-only link to the exact provider
+id/name/size/identity/version. There is no user blocker or WeChat for a Save
+prompt. Never edit ordinary Chrome or a global extension. Only auth, SMS,
+CAPTCHA, or consent may ask; never edit ordinary Chrome or a global extension,
+and never issue a second UI trigger.
 
 Every item includes `content_value.status=low_density|promoted`; promoted items
 add `content_value.tier=report_only|alert_eligible`, accepted `alert_basis`, and
@@ -88,67 +99,27 @@ not create, edit, or assume ownership of the local capture Automation here.
 
 ## Discovery and recovery
 
-The runner reuses the configured Lv Xiaotong share URL/code, watches lightweight
-metadata under `/课程/路西法全套`, and consumes Xiaocao cloud handoffs plus
-cloud/transcript receipts. Lv discovery recursively reads the share tree and
-must not infer child-tree freshness from a parent-directory modification time.
+Reuse the configured Lv share, `/课程/路西法全套`, Xiaocao handoffs, and their
+receipts. One sweep reuses one complete recursive Lv listing; validate every
+identity/version/path/name/size/target and advance the cursor only after the
+full scan. Parent mtime or incidental `已失效` text is not proof.
 
-One sweep gets one complete recursive Lv `/share/list` snapshot and reuses it
-for small-item/video adapters in the same process/session/profile. Each item
-still validates provider identity, version, path, name, size, and target;
-advance cursor only after the full scan. Incidental `已失效` text is not proof:
-only an exact terminal state or provider failure may set `share_expired`;
-successful metadata plus complete list wins.
+Discovery-only OpenCLI failures may reopen and retry one full read. Preserve
+safe `category/code/stage`; authority ends before any side effect. Reconcile
+claims and isolate failures without replay. Apply `full-contract.md` PDF
+precedence, owner-copy, OCR, and claim-routing rules only when that item reaches
+the relevant stage. Unsafe or ambiguous evidence fails closed.
 
-For discovery-only OpenCLI failures (`wrong_share`, `wrong_origin`,
-`about:blank`, timeout, invalid JSON, incomplete list), reopen the share and
-retry the full read once in the same sweep. Preserve original/final safe
-`category/code/stage`; never generalize the error. This authority ends before
-download, transfer, publication, notification, or Book; those reconcile
-claims/receipts and never retry blindly.
+Route Lv claims, not media types: `会员直播` follows current event gates;
+reusable `底层逻辑` is normally report-only `authority=0` knowledge with no Book
+row. Mixed claims stay one report and only current claims authorize effects.
 
-After a scan, ledger and isolate item failures; prioritize latest Lv and
-reconcile uncertain claims without replay.
+Put new-publication, due-horizon, material fact, or user currentness requests in
+`output/live/kol_daily/viewpoint_triggers/*.json`; maintenance uses CAS and
+creates no reminder or Book action.
 
-Small-PDF precedence: complete video transcript, independent report, video
-summary. Directory/title-date/mtime/version plus verified transcript may prove
-`companion_suppressed` before claim; filename alone cannot. Ambiguous cases use
-one claimed PDF download, immutable SHA-256, `pypdf`/`pdfplumber`, and rendered
-visual/OCR coverage; unsafe PDFs fail closed.
-
-For a claimed client-only small PDF, reuse its acquisition claim and one exact
-`/xiaocao/lv_subscription/<version>/` owner copy: 0 matches transfers, 1 exact
-name/size resumes, and >1 fails closed. Persist only owner fsid/path/size;
-owner dlink and same-target HttpOnly cookies stay in memory. Require HTTP 200,
-exact size, PDF magic, and SHA. Exclude video/large files; ordinary Save or
-client-only states are not user blockers.
-
-Route Lv claims, not media types. `会员直播` uses current-fact/event/eligible
-alert/paper-Book semantics. Reusable `底层逻辑` normally means no actionable
-signal, useful insight, reusable knowledge, report-only/no-alert/reasoned
-`not_applicable` Book intent and no Book row, distilled at `authority=0`; it
-cannot change posture or parameters without research plus human gate. Mixed
-claims stay one report; only current claims authorize alert/Book. Valuable
-methodology is not automatically low-density.
-
-Put targeted currentness requests in
-`output/live/kol_daily/viewpoint_triggers/*.json`. Supported triggers are a new
-same-KOL publication, due horizon/trigger/falsifier, material fact change, and
-explicit user request. Maintenance appends an evaluation under
-content-and-manifest CAS and creates no reminder or Book action.
-
-The append-only ledger resumes only unfinished sources within an hour.
-Historical initialization, correction, evaluation maintenance, restart, and
-replay reconcile existing receipts and never resend an earlier reminder or
-paper action. Report only a structured user-action blocker or a completed
-externally visible event. Do not surface a retryable diagnostic as an external
-event, but preserve it in `status`, `audit`, and the ledger. The same blocker
-stays silent until it changes or clears.
-
-A first exhausted transient discovery recovery may remain an internal degraded
-state. The same source/stage/code in consecutive hourly slots, or a newly
-observed identity/version that stays at `source_acquisition` across two slots,
-must append a recovery-exhausted/stalled audit record in that sweep. Record
-that deterministic recovery was attempted and no business effect was replayed.
-If receipts do not permit a safe deterministic repair, emit one deduplicated
-structured operational blocker; never remain silently degraded forever.
+The append-only ledger resumes unfinished work and reconciles history,
+corrections, maintenance, restarts, and replays without resending. Preserve
+retryable diagnostics in status/audit; the same blocker stays silent until it
+changes. Repeated source/stage/code or acquisition stalls append one exhausted
+audit. If receipts forbid deterministic repair, emit one deduplicated blocker.

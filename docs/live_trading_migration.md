@@ -27,13 +27,22 @@ the current local machine remains the sole writer.
 ## KOL Cross-Machine Handoff
 
 The WeChat capture node owns capture, compression, large-media validation, and
-cloud upload. It then publishes one small immutable handoff containing the
+cloud upload. It also owns exact-publisher discovery for the registered
+`刘少狙击营` and `A也叫艾利克斯` WeChat official-account KOL sources. It then
+publishes one small immutable handoff containing the
 source identity, media metadata and hashes, the exact private cloud reference,
 and a portable `video_ready` projection of that Netdisk job ledger. The
 projection and the complete capsule have separate SHA-256 bindings. It does
 not contain a local path, browser evidence, credentials, or source-video bytes,
 and the capture node does not continue into transcript enrichment, semantic
 analysis, 灰常亮 publication, notification, or Book KOL-US.
+
+An official-account handoff is a separate small
+`wechat_official_article` capsule: publisher, stable article identity, public
+URL, timestamps, and hashes. It contains no summary evidence, article body,
+media bytes, credentials, or local path. The remote task imports it
+idempotently, then OpenCLI materializes the full Markdown and images. Image
+information is written back as SHA-bound Markdown before semantic analysis.
 
 The normal control plane is the registered Codex task on
 `MacBook-Pro-6.local`. The local capture Automation sends that task a compact,

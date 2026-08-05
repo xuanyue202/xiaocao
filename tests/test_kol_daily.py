@@ -226,7 +226,7 @@ def test_daily_runtime_runs_xiaocao_wechat_subscription(tmp_path, monkeypatch):
     ]
 
 
-def test_capture_local_cli_runs_only_xiaocao_wechat_source(
+def test_capture_local_cli_runs_live_and_official_account_sources(
     tmp_path,
     monkeypatch,
 ):
@@ -239,7 +239,7 @@ def test_capture_local_cli_runs_only_xiaocao_wechat_source(
         def run(self, sources, *, blocker_sender):
             observed["source_names"] = [source["name"] for source in sources]
             observed["priorities"] = [source["priority"] for source in sources]
-            observed["result"] = sources[0]["run"]()
+            observed["results"] = [source["run"]() for source in sources]
             assert callable(blocker_sender)
             return {"status": "completed", "silent": True}
 
@@ -249,6 +249,7 @@ def test_capture_local_cli_runs_only_xiaocao_wechat_source(
 
     monkeypatch.setattr(kol_daily_script, "DailyCoordinator", FakeCoordinator)
     monkeypatch.setattr(DailyRuntime, "xiaocao_wechat", capture)
+    monkeypatch.setattr(DailyRuntime, "wechat_official_local", capture)
     monkeypatch.setattr(
         sys,
         "argv",
@@ -263,10 +264,85 @@ def test_capture_local_cli_runs_only_xiaocao_wechat_source(
     assert kol_daily_script.main() == 0
     assert observed == {
         "output_dir": tmp_path / "daily",
-        "source_names": ["xiaocao_wechat_live"],
-        "priorities": [10],
-        "result": {"status": "no_update"},
+        "source_names": [
+            "xiaocao_wechat_live",
+            "wechat_official_accounts",
+        ],
+        "priorities": [10, 20],
+        "results": [
+            {"status": "no_update"},
+            {"status": "no_update"},
+        ],
     }
+
+
+def test_daily_runtime_runs_wechat_official_account_subscription(
+    tmp_path,
+    monkeypatch,
+):
+    calls: list[tuple[str, object]] = []
+
+    class FakeReader:
+        def __init__(self, publishers, *, executable, within):
+            calls.append(("reader", (publishers, executable, within)))
+
+        def __call__(self):
+            return {"updates": [], "failures": []}
+
+    class FakeSubscription:
+        def __init__(
+            self,
+            output_dir,
+            *,
+            reader,
+            handoff_exchange,
+            publishers,
+        ):
+            assert isinstance(reader, FakeReader)
+            assert callable(handoff_exchange)
+            calls.append(("subscription", (output_dir, publishers)))
+
+        def run_once(self):
+            calls.append(("run", None))
+            return {"status": "no_update"}
+
+    monkeypatch.setattr(
+        kol_daily_script,
+        "WechatCliOfficialAccountReader",
+        FakeReader,
+    )
+    monkeypatch.setattr(
+        kol_daily_script,
+        "OfficialAccountSubscription",
+        FakeSubscription,
+    )
+    runtime = DailyRuntime.__new__(DailyRuntime)
+    runtime.args = SimpleNamespace(
+        wechat_official_publishers=("刘少狙击营", "A也叫艾利克斯"),
+        wechat_official_output_dir=tmp_path / "official",
+        wechat_official_within="48h",
+        wechat_cli=tmp_path / "wechat-cli",
+    )
+
+    assert runtime.wechat_official_local() == {"status": "no_update"}
+    assert calls == [
+        (
+            "reader",
+            (
+                ("刘少狙击营", "A也叫艾利克斯"),
+                tmp_path / "wechat-cli",
+                "48h",
+            ),
+        ),
+        (
+            "subscription",
+            (
+                tmp_path / "official",
+                ("刘少狙击营", "A也叫艾利克斯"),
+            ),
+        ),
+        ("run", None),
+    ]
 
 
 def test_daily_runner_is_silent_outside_beijing_daytime_window(tmp_path):
@@ -1694,6 +1770,27 @@ def test_source_classifier_promotes_provider_transfer_rejection_to_blocker():
         "lv-cloud-transfer-provider-rejected"
     )
     assert "/课程/自己的课/吕晓彤" in captured.value.action
+
+
+def test_source_classifier_promotes_wechat_opencli_captcha_to_blocker():
+    runner = _classified_source(
+        "wechat_official_accounts",
+        lambda: (_ for _ in ()).throw(
+            EnrichmentDiagnosticError(
+                "wechat_official_captcha_required",
+                category="user_action",
+                code="wechat_official_captcha_required",
+                stage="wechat_official_opencli",
+            )
+        ),
+    )
+
+    with pytest.raises(UserActionBlocker) as captured:
+        runner()
+
+    assert captured.value.blocker_key == "wechat-official-opencli-captcha"
+    assert "现有 OpenCLI Chrome 会话" in captured.value.action
+    assert "循环重试" in captured.value.action
 
 
 def test_status_classifies_legacy_retryable_failure_as_degraded(tmp_path):

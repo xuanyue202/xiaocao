@@ -1,8 +1,9 @@
 # Hourly Local Capture Node
 
 Use this contract only on the local WeChat/broadband node. Its entire hourly
-scope is discovery, Xiaoetong playback activation, inline-compressed capture,
-cloud upload, and a credential-free handoff. The remote writer follows
+scope is Xiaocao live discovery/capture plus exact-publisher WeChat official-
+account discovery, cloud upload where media exists, and credential-free
+handoffs. The remote writer follows
 [hourly-remote-writer.md](hourly-remote-writer.md); do not perform its work here.
 
 ## Runner and boundary
@@ -13,9 +14,10 @@ Run exactly once and keep the process alive for input requests:
 PYTHONPATH=src .venv/bin/python scripts/kol_daily.py capture-local
 ```
 
-`capture-local` runs only `xiaocao_wechat_live`. It never scans Lv, consumes a
-handoff, reads a transcript, analyzes, publishes, notifies, or writes Book. Do
-not substitute the remote coordinator command on this machine.
+`capture-local` runs only `xiaocao_wechat_live` and
+`wechat_official_accounts`. It never scans Lv, consumes a remote handoff,
+analyzes, publishes, notifies, or writes Book. Do not substitute the remote
+coordinator command on this machine.
 
 Each invocation performs one sweep. Normal no-update and healthy waiting are
 silent. Retryable failures expose only credential-safe `category`, `code`, and
@@ -32,6 +34,22 @@ the self-hashed handoff capsule.
 Scan only `福利官小花四-刘丹（执业编号:A0380125080026）` through local
 `wechat-cli`. First scan baselines older links and arms only the newest; later
 scans add unseen links. Never replace an unfinished capture.
+
+In the same sweep, use the stateless local command
+`subscription-updates --within 48h` to scan exactly these registered KOL
+publishers:
+
+- `刘少狙击营` (`kol-liushao-jujiying`)
+- `A也叫艾利克斯` (`kol-a-alex`)
+
+The combined command repeats `--publisher` for those two exact names and
+requires `failures=[]`. Ignore substring matches whose returned publisher is
+not exact. On first initialization, baseline older articles and make only the
+latest article per publisher eligible; later sweeps add unseen stable article
+IDs. Persist only the stable identity, exact publisher/title,
+publication/receipt times, normalized public URL, and hashes. The subscription
+summary is discovery metadata only and must not cross the handoff or become
+article evidence. Do not drive the WeChat GUI or fetch the article locally.
 
 For `daily_browser_input_required`, keep the same process alive and use
 `browser`, never Computer Use:
@@ -52,9 +70,13 @@ artifact, proxy cleanup, upload, and handoff without Browser.
 
 For `daily_remote_handoff_input_required`, validate the small capsule and reuse
 the registered Xiaocao task on `MacBook-Pro-6.local`. Send capsule fields only,
-never local paths or video bytes. The remote task reads
-[hourly-remote-writer.md](hourly-remote-writer.md), imports with
-`scope=post_handoff`, and reconciles the exact `handoff_id`.
+never local paths or video bytes. A `wechat_official_article` capsule embeds
+only a credential-free public URL plus identity metadata. Import it
+idempotently with `scripts/kol_daily.py import-wechat-official`; it contains no
+article body, Markdown, summary evidence, or local path. Xiaocao video capsules
+still import with `scope=post_handoff`. The remote task reads
+[hourly-remote-writer.md](hourly-remote-writer.md) and reconciles the exact
+`handoff_id`.
 
 Return acceptance to the same local process only after an accepted or
 already-present readback. Reconcile ambiguity before retrying, and persist the

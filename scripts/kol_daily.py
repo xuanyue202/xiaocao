@@ -31,6 +31,14 @@ from xiaocao.kol.household import LiangHuiMcpClient
 from xiaocao.kol.lv_subscription import LvSubscriptionService
 from xiaocao.kol.publication import PublicationLedger, read_published_publication
 from xiaocao.kol.subscription_video import LV_SOURCE, SubscriptionVideoService
+from xiaocao.kol.wechat_official import (
+    DEFAULT_PUBLISHERS as DEFAULT_WECHAT_OFFICIAL_PUBLISHERS,
+    DEFAULT_WITHIN as DEFAULT_WECHAT_OFFICIAL_WITHIN,
+    OfficialAccountInbox,
+    OfficialAccountOpenCliAcquirer,
+    OfficialAccountSubscription,
+    WechatCliOfficialAccountReader,
+)
 from xiaocao.kol.xiaocao_live import (
     XiaocaoLiveService,
     validate_decision_bundle,
@@ -53,6 +61,7 @@ DEFAULT_XIAOCAO_OUTPUT = Path("output/live/kol_xiaocao_live")
 DEFAULT_XIAOCAO_WECHAT_OUTPUT = (
     DEFAULT_XIAOCAO_OUTPUT / "wechat_subscription"
 )
+DEFAULT_WECHAT_OFFICIAL_OUTPUT = Path("output/live/kol_wechat_official")
 MAX_HANDOFF_BYTES = 1024 * 1024
 
 
@@ -465,7 +474,7 @@ def _read_agent_path(request: dict[str, Any], field: str) -> Path:
     print(json.dumps(request, ensure_ascii=False, sort_keys=True), flush=True)
     response = sys.stdin.readline()
     if not response:
-        if field == "bundle_path" and request.get("analysis_request_path"):
+        if request.get("analysis_request_path") or request.get("image_request_path"):
             raise SemanticInputUnavailable(request, field)
         raise SemanticInputUnavailable(
             f"daily runner requires {field} on stdin"
@@ -782,6 +791,13 @@ def _classified_source(name: str, runner):
                 raise UserActionBlocker(
                     f"{name}-captcha",
                     "请在已授权百度网盘页面完成验证码，然后等待下一小时自动恢复。",
+                ) from exc
+            if message == "wechat_official_captcha_required":
+                raise UserActionBlocker(
+                    "wechat-official-opencli-captcha",
+                    "请在远端现有 OpenCLI Chrome 会话中打开对应公众号文章并完成"
+                    "微信验证；不要新建抓取器或循环重试。完成后保持该会话可用，"
+                    "下一小时会重新验收同一文章。",
                 ) from exc
             if message == (
                 "Lv cloud transfer did not materialize after bounded "
@@ -1395,6 +1411,122 @@ class DailyRuntime:
             opencli_profile=self.args.opencli_profile,
         )
 
+    def wechat_official_local(self) -> dict[str, Any]:
+        publishers = tuple(self.args.wechat_official_publishers)
+        reader = WechatCliOfficialAccountReader(
+            publishers,
+            executable=self.args.wechat_cli,
+            within=self.args.wechat_official_within,
+        )
+        subscription = OfficialAccountSubscription(
+            self.args.wechat_official_output_dir,
+            reader=reader,
+            handoff_exchange=_read_agent_json,
+            publishers=publishers,
+        )
+        return subscription.run_once()
+
+    def wechat_official(self) -> dict[str, Any]:
+        inbox = OfficialAccountInbox(self.args.wechat_official_output_dir)
+        acquirer = OfficialAccountOpenCliAcquirer(
+            self.args.wechat_official_output_dir / "opencli"
+        )
+        pending = sorted(
+            inbox.pending_items(),
+            key=lambda row: (
+                str(row.get("published_at") or ""),
+                str(row.get("source_identity") or ""),
+            ),
+        )
+        if not pending:
+            return {"status": "no_update"}
+        events: list[dict[str, Any]] = []
+        waiting_items: list[dict[str, Any]] = []
+        for discovered in pending:
+            item = inbox.acquire(discovered, acquirer=acquirer)
+            image_request = inbox.prepare_image_request(item)
+            if image_request is not None:
+                try:
+                    image_notes_path = _read_agent_path(
+                        image_request,
+                        "image_notes_path",
+                    )
+                except SemanticInputUnavailable as exc:
+                    waiting_items.append({
+                        "identity": str(item["source_identity"]),
+                        "version_key": str(item["raw_markdown_sha256"]),
+                        "name": str(item["title"]),
+                        "author": str(item["author"]),
+                        "status": "waiting_image_notes",
+                        "stage": "waiting_image_notes",
+                        "image_request_path": str(
+                            exc.request.get("image_request_path") or ""
+                        ),
+                        "raw_markdown_path": str(item["raw_markdown_path"]),
+                        "raw_markdown_sha256": str(
+                            item["raw_markdown_sha256"]
+                        ),
+                        "image_count": int(item["image_count"]),
+                        "external_business_effects_replayed": False,
+                    })
+                    break
+                item = inbox.materialize_evidence(
+                    item,
+                    image_notes_path=image_notes_path,
+                )
+            elif item.get("status") != "evidence_ready":
+                item = inbox.materialize_evidence(item)
+            request = inbox.prepare_analysis_request(item)
+            try:
+                bundle_path = _read_agent_path(request, "bundle_path")
+            except SemanticInputUnavailable as exc:
+                waiting_items.append(
+                    _semantic_waiting_item(
+                        exc.request,
+                        identity=str(item["source_identity"]),
+                        version_key=str(item["publication_version"]),
+                        name=str(item["title"]),
+                        author=str(item["author"]),
+                    )
+                )
+                break
+            evidence_path = Path(str(item["evidence_path"])).resolve()
+            context = DailyPublicationContext(
+                adapter="wechat_official_account",
+                source_identity=str(item["source_identity"]),
+                publication_version=str(item["publication_version"]),
+                kol_id=str(item["kol_id"]),
+                source="微信公众号",
+                source_published_at=str(item["published_at"]),
+                media_types=("text",),
+                source_parts=({
+                    "identity": str(item["source_identity"]),
+                    "version": str(item["publication_version"]),
+                    "order": 1,
+                    "size": evidence_path.stat().st_size,
+                    "evidence_sha256": str(item["evidence_sha256"]),
+                },),
+            )
+            decided = inbox.decide(
+                item,
+                bundle_path=bundle_path,
+                pipeline=self._pipeline(context),
+                sender=_sender,
+            )
+            events.append(self._terminal(decided["decision_result_path"]))
+        if events:
+            return {
+                "status": "completed",
+                "events": events,
+                "waiting_count": len(waiting_items),
+                "waiting_items": waiting_items,
+            }
+        return {
+            "status": "waiting",
+            "waiting_count": len(waiting_items),
+            "waiting_items": waiting_items,
+        }
+
     def viewpoints(self) -> dict[str, Any]:
         trigger_dir = self.args.output_dir / "viewpoint_triggers"
         receipt_dir = self.args.output_dir / "viewpoint_receipts"
@@ -1461,7 +1593,14 @@ class DailyRuntime:
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
-        "command", choices=("run", "capture-local", "status", "audit")
+        "command",
+        choices=(
+            "run",
+            "capture-local",
+            "import-wechat-official",
+            "status",
+            "audit",
+        ),
     )
     parser.add_argument("--config", type=Path, default=Path("xiaocao.yaml"))
     parser.add_argument("--lianghui-config", type=Path)
@@ -1477,6 +1616,21 @@ def main() -> int:
         type=Path,
         default=DEFAULT_XIAOCAO_WECHAT_OUTPUT,
     )
+    parser.add_argument(
+        "--wechat-official-output-dir",
+        type=Path,
+        default=DEFAULT_WECHAT_OFFICIAL_OUTPUT,
+    )
+    parser.add_argument(
+        "--wechat-official-publisher",
+        dest="wechat_official_publishers",
+        action="append",
+        default=list(DEFAULT_WECHAT_OFFICIAL_PUBLISHERS),
+    )
+    parser.add_argument(
+        "--wechat-official-within",
+        default=DEFAULT_WECHAT_OFFICIAL_WITHIN,
+    )
     parser.add_argument("--wechat-cli", type=Path, default=DEFAULT_WECHAT_CLI)
     parser.add_argument(
         "--xiaocao-wechat-contact",
@@ -1489,6 +1643,20 @@ def main() -> int:
     parser.add_argument("--private-session", default="xiaocao-lv-subscription")
     parser.add_argument("--enrichment-session", default="xiaocao-lv-subscription")
     args = parser.parse_args()
+    if args.command == "import-wechat-official":
+        try:
+            line = sys.stdin.readline()
+            capsule = json.loads(line)
+        except json.JSONDecodeError as exc:
+            raise DailyError(
+                "official-account import requires one JSON capsule line on stdin"
+            ) from exc
+        _print(
+            OfficialAccountInbox(
+                args.wechat_official_output_dir
+            ).import_capsule(capsule)
+        )
+        return 0
     service = DailyCoordinator(args.output_dir)
     if args.command == "status":
         value = service.status()
@@ -1496,6 +1664,9 @@ def main() -> int:
             args.video_output_dir,
             service.events(),
         )
+        value["wechat_official_accounts"] = OfficialAccountInbox(
+            args.wechat_official_output_dir
+        ).status()
         _print(value)
         return 0
     if args.command == "audit":
@@ -1504,6 +1675,9 @@ def main() -> int:
             args.video_output_dir,
             service.events(),
         )
+        value["wechat_official_accounts"] = OfficialAccountInbox(
+            args.wechat_official_output_dir
+        ).status()
         _print(value)
         return 0
     if args.command == "capture-local":
@@ -1515,6 +1689,12 @@ def main() -> int:
                 "priority": 10,
                 "run": _classified_source(
                     "xiaocao_wechat_live", runtime.xiaocao_wechat
+                ),
+            }, {
+                "name": "wechat_official_accounts",
+                "priority": 20,
+                "run": _classified_source(
+                    "wechat_official_accounts", runtime.wechat_official_local
                 ),
             }],
             blocker_sender=_sender,
@@ -1535,6 +1715,13 @@ def main() -> int:
                 "priority": 20,
                 "run": _classified_source(
                     "subscription_video", runtime.videos
+                ),
+            },
+            {
+                "name": "wechat_official_accounts",
+                "priority": 25,
+                "run": _classified_source(
+                    "wechat_official_accounts", runtime.wechat_official
                 ),
             },
             {

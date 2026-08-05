@@ -46,6 +46,14 @@ Keep the layers separate:
 - Lv Xiaotong's irregular Baidu subscription updates must be polled automatically by the always-on coordinator. The user may help once with login, authorization, or page semantics, but must not be the recurring update detector.
 - Prefer Netdisk-side transfer and enrichment. If a provider step truly requires moving a large file through a local machine, persist an explicit broadband handoff instead of silently pulling it through the always-on node.
 - Development may colocate both roles on one Mac, but code and job state must preserve this placement boundary.
+- The local WeChat node may discover registered official-account publications
+  by exact publisher through stateless `wechat-cli` windows. It hands the sole
+  writer only a self-hashed public URL plus identity metadata, with no article
+  body, summary evidence, credentials, or large bytes. The writer uses the
+  installed OpenCLI browser path to materialize immutable full-article
+  Markdown and images. Every image is inspected once and its information is
+  written as Markdown before the shared semantic gate; a CAPTCHA stops for
+  same-session user verification and never triggers an HTTP/MCP retry loop.
 
 ## 灰常亮 report and viewpoint publication
 

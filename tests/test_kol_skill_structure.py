@@ -330,7 +330,13 @@ def test_hourly_local_and_remote_machine_contracts_stay_separate() -> None:
     assert "scripts/kol_daily.py capture-local" in local
     assert "scripts/kol_daily.py run" not in local
     assert "daily_browser_input_required" in local
+    assert "wechat_official_accounts" in local
+    assert "subscription-updates --within 48h" in local
+    assert "刘少狙击营" in local
+    assert "A也叫艾利克斯" in local
     assert "scripts/kol_daily.py run" in remote
+    assert "scripts/kol_daily.py import-wechat-official" in remote
+    assert "not the full article" in remote
     assert "daily_browser_input_required" not in remote
     assert "never scans the local WeChat contact" in remote
 
