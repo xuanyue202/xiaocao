@@ -1134,7 +1134,11 @@ class DailyRuntime:
         pending.sort(
             key=lambda row: (
                 0 if row.get("source") == LV_SOURCE else 1,
-                -int(row.get("modified_at") or 0),
+                -int(
+                    row.get("remote_activity_at")
+                    or row.get("modified_at")
+                    or 0
+                ),
                 str(row.get("path") or ""),
             )
         )
@@ -1304,9 +1308,14 @@ class DailyRuntime:
             if existing is not None and existing != handoff:
                 raise DailyError("conflicting Xiaocao handoff capsules")
             handoffs[handoff_key] = handoff
+        ordered_handoffs = sorted(
+            handoffs.values(),
+            key=lambda row: str(row.get("published_at") or ""),
+            reverse=True,
+        )
         events = []
         waiting = 0
-        for handoff in handoffs.values():
+        for handoff_index, handoff in enumerate(ordered_handoffs):
             if handoff.get("schema_version") == 2:
                 service.import_handoff_capsule(handoff)
             job_id = str(handoff["netdisk_job_id"])
@@ -1317,7 +1326,51 @@ class DailyRuntime:
                     value = json.loads(result_path.read_text(encoding="utf-8"))
                     if (value.get("items") or [{}])[0].get("daily_terminal"):
                         continue
-                # Historical completed work is never replayed.
+                else:
+                    # A legacy or synthetic decided receipt without a bound
+                    # result cannot be upgraded automatically.
+                    continue
+                # Only the newest handoff may upgrade an earlier bare Ticket 03
+                # decision into the Ticket 07 publication terminal. Older
+                # historical decisions remain reconciliation-only.
+                if handoff_index != 0:
+                    continue
+                bundle_path = Path(
+                    str(state.get("decision_bundle_path") or "")
+                ).expanduser().resolve()
+                if (
+                    not bundle_path.is_file()
+                    or hashlib.sha256(bundle_path.read_bytes()).hexdigest()
+                    != state.get("decision_bundle_sha256")
+                ):
+                    raise DailyError(
+                        "latest Xiaocao decision bundle receipt is missing"
+                    )
+                context = DailyPublicationContext(
+                    adapter="xiaocao_live",
+                    source_identity=str(handoff["capture_job_id"]),
+                    publication_version=str(state["transcript_sha256"]),
+                    kol_id="kol-xiaocao",
+                    source="小草直播",
+                    source_published_at=str(handoff["published_at"]),
+                    media_types=("video",),
+                    source_parts=({
+                        "identity": str(handoff["capture_job_id"]),
+                        "version": str(state["transcript_sha256"]),
+                        "order": 1,
+                        "size": 0,
+                        "evidence_sha256": str(state["transcript_sha256"]),
+                    },),
+                )
+                decided = service.netdisk.decide(
+                    job_id,
+                    bundle_path=bundle_path,
+                    decision_output_dir=self.args.decision_output_dir,
+                    sender=_sender,
+                    pipeline=self._pipeline(context),
+                    reconcile_daily_terminal=True,
+                )
+                events.append(self._terminal(decided["decision_result_path"]))
                 continue
             if state.get("status") not in {"transcript_captured", "verified"}:
                 state = service.netdisk.advance_opencli(

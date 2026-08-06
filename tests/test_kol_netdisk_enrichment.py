@@ -13,7 +13,10 @@ import pytest
 from xiaocao.kol.book import BookKolUs
 from xiaocao.kol.enrichment import EnrichmentError
 from xiaocao.kol.enrichment_types import validate_decision_completion
-from xiaocao.kol.netdisk_enrichment import NetdiskEnrichmentService
+from xiaocao.kol.netdisk_enrichment import (
+    NetdiskEnrichmentService,
+    _normalize_ordered_transcript_segments,
+)
 
 
 NOW = datetime.fromisoformat("2026-07-20T09:00:00+08:00")
@@ -40,6 +43,10 @@ def _opencli_capture_runner(
         + "中段讨论信通电子、德明利和市场成交量，强调触发与风险。" * 20
         + "\n\n结尾明确说商业航天没有企稳信号，当前不参与。"
     )
+    segments = [
+        {"index": index, "paragraph_index": index, "text": text}
+        for index, text in enumerate(transcript.split("\n\n"))
+    ]
 
     def runner(command, **kwargs):
         if command[0] == "ffprobe":
@@ -63,6 +70,8 @@ def _opencli_capture_runner(
             assert "location.reload" not in tail[1]
             assert "await new Promise" in tail[1]
             assert "document.contains(overlay) && visible(overlay)" in tail[1]
+            assert "scroller.scrollTop = 0" in tail[1]
+            assert "getAttribute('data-index')" in tail[1]
             payload = {
                 "url": (
                     "https://pan.baidu.com/pfile/video?path="
@@ -70,18 +79,26 @@ def _opencli_capture_runner(
                 ),
                 "target_bound": True,
                 "active": {"matches": 1, "text": "文稿"},
-                "transcript": {"text": transcript},
+                "transcript": {"text": transcript, "segments": segments},
                 "render": {
                     "list_matches": 1,
                     "scroll_top": 0,
                     "client_height": 555,
                     "scroll_height": 3997,
-                    "paragraph_count": 8,
-                    "sentence_count": 80,
+                    "paragraph_count": len(segments),
+                    "sentence_count": len(segments),
+                    "segment_count": len(segments),
+                    "segment_terminal_index": segments[-1]["index"],
                     "list_text_chars": len(transcript.strip()),
-                    "sentence_text_chars": len(transcript.replace("\n", "")),
+                    "sentence_text_chars": sum(
+                        len(row["text"]) for row in segments
+                    ),
+                    "first_node_in_dom": True,
                     "last_node_in_dom": True,
+                    "first_node_at_viewport_start": True,
+                    "first_node_near_list_start": True,
                     "last_node_below_viewport": True,
+                    "last_node_near_list_end": True,
                     "virtual_or_loading_markers": (
                         ["virtual-list"] if virtualized else []
                     ),
@@ -226,6 +243,116 @@ def test_completed_replay_resolves_migrated_paths_without_side_effects(tmp_path)
     assert replay["transcript_path"] == str(transcript)
     assert replay["decision_result_path"] == str(decision_result)
     assert len(service.store.read()) == 1
+
+
+def test_decided_same_bundle_can_reconcile_missing_daily_terminal(tmp_path):
+    output = tmp_path / "netdisk"
+    decisions = tmp_path / "decisions"
+    service = NetdiskEnrichmentService(output, runner=_runner, now=lambda: NOW)
+    transcript = tmp_path / "complete.txt"
+    transcript.write_text("完整历史文稿" * 200, encoding="utf-8")
+    transcript_sha = hashlib.sha256(transcript.read_bytes()).hexdigest()
+    book_intent = {
+        "decision": "no_trade",
+        "reason": "历史 A 股内容没有当前美股触发。",
+    }
+    book = BookKolUs(decisions / "book_kol_us")
+    book_key = book.resolve_identity(transcript_sha, book_intent)
+    bundle = tmp_path / "bundle.json"
+    bundle.write_text(
+        json.dumps({
+            "items": [{
+                "evidence_path": str(transcript),
+                "book_kol_us": book_intent,
+            }],
+        }),
+        encoding="utf-8",
+    )
+    bundle_sha = hashlib.sha256(bundle.read_bytes()).hexdigest()
+    prior_result = tmp_path / "decision_result.json"
+    prior_result.write_text(
+        json.dumps({"status": "completed", "items": [{}]}),
+        encoding="utf-8",
+    )
+    service.store.append({
+        "job_id": "job-1",
+        "status": "decided",
+        "transcript_path": str(transcript),
+        "transcript_sha256": transcript_sha,
+        "decision_bundle_path": str(bundle),
+        "decision_bundle_sha256": bundle_sha,
+        "decision_result_path": str(prior_result),
+        "decision_result_sha256": hashlib.sha256(
+            prior_result.read_bytes()
+        ).hexdigest(),
+        "book_kol_us": {
+            "book": "KOL-US",
+            "paper_only": True,
+            "status": "no_trade",
+            "reason": book_intent["reason"],
+            "idempotency_key": book_key,
+        },
+    })
+
+    class PublicationPipeline:
+        def process(self, _bundle):
+            return {
+                "status": "completed",
+                "items": [{
+                    "content_value": {
+                        "status": "promoted",
+                        "tier": "report_only",
+                        "no_alert_reason": "历史报告不补发提醒。",
+                    },
+                    "notification": {
+                        "status": "suppressed",
+                        "reason": "历史报告不补发提醒。",
+                        "idempotency_key": "e" * 64,
+                    },
+                    "book_kol_us": {
+                        "book": "KOL-US",
+                        "paper_only": True,
+                        "status": "no_trade",
+                        "reason": book_intent["reason"],
+                        "idempotency_key": book_key,
+                    },
+                    "daily_terminal": {
+                        "gray_report": {
+                            "status": "published",
+                            "detail_url": "https://example.test/report",
+                            "receipt": "publish-receipt",
+                        },
+                        "alert": {
+                            "status": "not_eligible",
+                            "reason": "历史报告不补发提醒。",
+                        },
+                    },
+                }],
+            }
+
+        def deliver_wechat(self, _result, *, sender):
+            return {"status": "legally_not_eligible"}
+
+    reconciled = service.decide(
+        "job-1",
+        bundle_path=bundle,
+        decision_output_dir=decisions,
+        sender=lambda *_args: pytest.fail("suppressed reminder must not send"),
+        pipeline=PublicationPipeline(),
+        reconcile_daily_terminal=True,
+    )
+
+    assert reconciled["idempotent_replay"] is False
+    assert reconciled["household_notification"]["status"] == "suppressed"
+    assert reconciled["household_notification"]["reason"] == (
+        "历史报告不补发提醒。"
+    )
+    result = json.loads(
+        Path(reconciled["decision_result_path"]).read_text(encoding="utf-8")
+    )
+    assert result["items"][0]["daily_terminal"]["gray_report"]["status"] == (
+        "published"
+    )
 
 
 def _liveness_evidence(*, observed_at: datetime = NOW) -> dict:
@@ -987,6 +1114,127 @@ def test_ai_note_submission_does_not_record_success_while_modal_remains_visible(
     current = service.status(job_id)
     assert current["status"] == "ai_note_claimed"
     assert current["event"] == "netdisk_ai_note_claimed"
+
+
+def test_ai_note_postclick_zero_recovery_submits_once_after_exact_zero_proof(
+    tmp_path,
+):
+    video = tmp_path / "20260720 ai-note-postclick-zero-compressed.mp4"
+    video.write_bytes(b"real-video")
+    clock = [NOW]
+    commands = []
+    base_runner = _opencli_ai_note_runner(
+        video.name,
+        note_states=[{
+            "ai_note_state": "missing",
+            "active_tab": "笔记",
+            "content_chars": 76,
+            "template": "",
+            "target_bound": True,
+        }],
+    )
+
+    def runner(command, **kwargs):
+        commands.append(command)
+        return base_runner(command, **kwargs)
+
+    service = NetdiskEnrichmentService(
+        tmp_path / "out",
+        runner=runner,
+        now=lambda: clock[0],
+        opencli_command=("opencli",),
+    )
+    job_id = service.prepare(video)["job_id"]
+    service.record_browser_liveness(
+        job_id,
+        surface="opencli",
+        evidence=_liveness_evidence(),
+    )
+    service.record_browser_state(
+        job_id,
+        step="video_ready",
+        evidence=_evidence(video.name, "目标视频已存在"),
+        source_mode="existing",
+    )
+    service.record_browser_state(
+        job_id,
+        step="transcript_ready",
+        evidence=_evidence(video.name, "文稿 已生成"),
+        reconcile_existing=True,
+    )
+    original = service.claim_browser_action(job_id, action="ai_note")
+    clock[0] = NOW + timedelta(minutes=6)
+
+    recovered = service.recover_ai_note_postclick_zero(
+        job_id,
+        session="ticket02-ai-note-zero",
+        profile="work",
+        operator_confirmed_no_click=True,
+    )
+
+    assert recovered["event"] == "netdisk_ai_note_triggered"
+    assert recovered["status"] == "ai_note_requested"
+    assert recovered["ai_note_trigger_attempt"] == 2
+    assert recovered["ai_note_retry_of"] == original["claimed_at"]
+    assert recovered["ai_note_recovery_kind"] == "stale_claim_exact_zero_effect"
+    assert recovered["ai_note_operator_confirmed_no_click"] is True
+    submit_scripts = [
+        command[6]
+        for command in commands
+        if len(command) > 6
+        and command[5] == "eval"
+        and "baidu-netdisk/submit-ai-note" in command[6]
+    ]
+    assert len(submit_scripts) == 1
+
+
+def test_ai_note_postclick_zero_recovery_rejects_recent_claim(tmp_path):
+    video = tmp_path / "20260720 ai-note-postclick-recent-compressed.mp4"
+    video.write_bytes(b"real-video")
+    service = NetdiskEnrichmentService(
+        tmp_path / "out",
+        runner=_opencli_ai_note_runner(
+            video.name,
+            note_states=[{
+                "ai_note_state": "missing",
+                "active_tab": "笔记",
+                "content_chars": 76,
+                "template": "",
+                "target_bound": True,
+            }],
+        ),
+        now=lambda: NOW,
+        opencli_command=("opencli",),
+    )
+    job_id = service.prepare(video)["job_id"]
+    service.record_browser_liveness(
+        job_id,
+        surface="opencli",
+        evidence=_liveness_evidence(),
+    )
+    service.record_browser_state(
+        job_id,
+        step="video_ready",
+        evidence=_evidence(video.name, "目标视频已存在"),
+        source_mode="existing",
+    )
+    service.record_browser_state(
+        job_id,
+        step="transcript_ready",
+        evidence=_evidence(video.name, "文稿 已生成"),
+        reconcile_existing=True,
+    )
+    service.claim_browser_action(job_id, action="ai_note")
+
+    with pytest.raises(EnrichmentError, match="not old enough"):
+        service.recover_ai_note_postclick_zero(
+            job_id,
+            session="ticket02-ai-note-recent",
+            profile="work",
+            operator_confirmed_no_click=True,
+        )
+
+    assert service.status(job_id)["ai_note_trigger_attempt"] == 1
 
 
 def test_ai_note_pretrigger_failure_is_persisted_and_retried_once(tmp_path):
@@ -1913,6 +2161,56 @@ def test_opencli_dom_capture_rejects_virtualized_or_partial_render(tmp_path):
     assert "reason" not in recovered
     assert "failure_stage" not in recovered
     assert "error_type" not in recovered
+
+
+def test_ordered_transcript_segments_deduplicate_and_restore_source_order():
+    first = "甲" * 90
+    second = "乙" * 90
+    terminal = "丙" * 90
+
+    transcript, proof = _normalize_ordered_transcript_segments([
+        {"index": 1, "paragraph_index": 0, "text": second},
+        {"index": 0, "paragraph_index": 0, "text": first},
+        {"index": 1, "paragraph_index": 0, "text": second},
+        {"index": 2, "paragraph_index": 1, "text": terminal},
+    ])
+
+    assert transcript == first + second + "\n\n" + terminal
+    assert proof["segment_first_index"] == 0
+    assert proof["segment_terminal_index"] == 2
+    assert proof["segment_count"] == 3
+    assert proof["duplicate_segment_count"] == 1
+    assert proof["ordered_by_index"] is True
+    assert proof["observed_order_was_monotonic"] is False
+
+
+@pytest.mark.parametrize(
+    ("segments", "message"),
+    (
+        (
+            [
+                {"index": 0, "paragraph_index": 0, "text": "甲" * 90},
+                {"index": 2, "paragraph_index": 1, "text": "乙" * 90},
+                {"index": 3, "paragraph_index": 1, "text": "丙" * 90},
+            ],
+            "terminal coverage",
+        ),
+        (
+            [
+                {"index": 0, "paragraph_index": 0, "text": "甲" * 90},
+                {"index": 0, "paragraph_index": 0, "text": "乙" * 90},
+                {"index": 1, "paragraph_index": 1, "text": "丙" * 90},
+            ],
+            "conflicting duplicate",
+        ),
+    ),
+)
+def test_ordered_transcript_segments_fail_closed_on_ambiguous_coverage(
+    segments,
+    message,
+):
+    with pytest.raises(EnrichmentError, match=message):
+        _normalize_ordered_transcript_segments(segments)
 
 
 @pytest.mark.parametrize(

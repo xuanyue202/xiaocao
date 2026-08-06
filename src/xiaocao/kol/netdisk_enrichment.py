@@ -36,6 +36,7 @@ _OPENCLI_FOLDER_READY_ATTEMPTS = 6
 _OPENCLI_FOLDER_READY_WAIT_SECONDS = 2
 _NETDISK_GENERATION_POLL_INTERVAL = timedelta(minutes=1)
 _AI_NOTE_MAX_TRIGGER_ATTEMPTS = 2
+_AI_NOTE_POSTCLICK_ZERO_MIN_AGE = timedelta(minutes=5)
 _NETDISK_DIRECTORY = "/课程/自己的课/小草"
 _NETDISK_FOLDER_URL = (
     "https://pan.baidu.com/disk/main#/index?category=all&path="
@@ -125,11 +126,40 @@ _OPENCLI_CAPTURE_PROBE = r"""(async () => {
         && (list?.innerText || '').trim().length >= 200) break;
     await new Promise(resolve => setTimeout(resolve, 200));
   }
+  if (scroller) {
+    scroller.scrollTop = 0;
+    scroller.dispatchEvent(new Event('scroll', {bubbles: true}));
+    const topDeadline = Date.now() + 3000;
+    while (Date.now() < topDeadline && Math.abs(scroller.scrollTop) > 1) {
+      scroller.scrollTop = 0;
+      await new Promise(resolve => setTimeout(resolve, 50));
+    }
+  }
+  list = document.querySelector('.ai-draft__wrap-list');
   const paragraphs = list ? [...list.querySelectorAll('.ai-draft__p-paragraph')] : [];
   const sentences = list ? [...list.querySelectorAll('.ai-draft__p-sentence')] : [];
+  const segments = [];
+  const paragraphTexts = [];
+  for (const [paragraphIndex, paragraph] of paragraphs.entries()) {
+    const paragraphSegments = [...paragraph.querySelectorAll(
+      '.ai-draft__p-sentence'
+    )].map(node => {
+      const rawIndex = node.getAttribute('data-index') || '';
+      const index = /^\d+$/.test(rawIndex) ? Number(rawIndex) : null;
+      const text = (node.textContent || '').trim();
+      const row = {index, paragraph_index: paragraphIndex, text};
+      segments.push(row);
+      return row;
+    });
+    paragraphTexts.push(paragraphSegments.map(row => row.text).join(''));
+  }
+  const transcriptText = paragraphTexts.join('\n\n').trim();
+  const first = sentences.at(0);
   const last = sentences.at(-1);
+  const firstRect = first?.getBoundingClientRect();
   const lastRect = last?.getBoundingClientRect();
   const scrollerRect = scroller?.getBoundingClientRect();
+  const listRect = list?.getBoundingClientRect();
   const markerNodes = list
     ? [...list.querySelectorAll(
         '[class*="virtual"], [class*="skeleton"], [class*="placeholder"], '
@@ -139,7 +169,6 @@ _OPENCLI_CAPTURE_PROBE = r"""(async () => {
   const markers = [...new Set(markerNodes.map(
     node => (node.className || '').toString()
   ).filter(Boolean))];
-  const text = (list?.innerText || '').trim();
   return {
     url: location.href,
     target_bound: true,
@@ -148,7 +177,7 @@ _OPENCLI_CAPTURE_PROBE = r"""(async () => {
       matches: document.querySelectorAll('.vp-tabs__header-item--active').length,
       text: active?.textContent || ''
     },
-    transcript: {text: list?.innerText || ''},
+    transcript: {text: transcriptText, segments},
     render: {
       list_matches: document.querySelectorAll('.ai-draft__wrap-list').length,
       scroll_top: scroller?.scrollTop,
@@ -156,14 +185,26 @@ _OPENCLI_CAPTURE_PROBE = r"""(async () => {
       scroll_height: scroller?.scrollHeight,
       paragraph_count: paragraphs.length,
       sentence_count: sentences.length,
-      list_text_chars: text.length,
-      sentence_text_chars: sentences.reduce(
-        (total, node) => total + (node.textContent || '').length,
+      segment_count: segments.length,
+      segment_terminal_index: segments.at(-1)?.index,
+      list_text_chars: transcriptText.length,
+      sentence_text_chars: segments.reduce(
+        (total, row) => total + row.text.length,
         0
       ),
+      first_node_in_dom: !!first && document.contains(first),
       last_node_in_dom: !!last && document.contains(last),
+      first_node_at_viewport_start: !!firstRect && !!scrollerRect
+        && firstRect.top >= scrollerRect.top - 1
+        && firstRect.top < scrollerRect.bottom,
+      first_node_near_list_start: !!firstRect && !!listRect
+        && firstRect.top >= listRect.top - 1
+        && firstRect.top - listRect.top <= 256,
       last_node_below_viewport: !!lastRect && !!scrollerRect
         && lastRect.bottom > scrollerRect.bottom,
+      last_node_near_list_end: !!lastRect && !!listRect
+        && lastRect.bottom <= listRect.bottom + 1
+        && listRect.bottom - lastRect.bottom <= 256,
       virtual_or_loading_markers: markers,
       has_load_more: /加载更多|正在加载|展开全部/.test(list?.innerText || '')
     }
@@ -272,6 +313,84 @@ def _sha256_handle(handle: BinaryIO) -> str:
 def _clear_transient_failures(row: dict[str, Any]) -> None:
     for field in _TRANSIENT_FAILURE_FIELDS:
         row.pop(field, None)
+
+
+def _normalize_ordered_transcript_segments(
+    value: Any,
+) -> tuple[str, dict[str, Any]]:
+    """Deduplicate and prove one complete, ordered provider segment sequence."""
+    if not isinstance(value, list) or len(value) < 3:
+        raise EnrichmentError("OpenCLI transcript segment evidence is incomplete")
+    unique: dict[int, tuple[int, str]] = {}
+    duplicate_count = 0
+    observed_indices: list[int] = []
+    for row in value:
+        if not isinstance(row, dict):
+            raise EnrichmentError("OpenCLI transcript segment evidence is invalid")
+        index = row.get("index")
+        paragraph_index = row.get("paragraph_index")
+        text = row.get("text")
+        if (
+            isinstance(index, bool)
+            or not isinstance(index, int)
+            or index < 0
+            or isinstance(paragraph_index, bool)
+            or not isinstance(paragraph_index, int)
+            or paragraph_index < 0
+            or not isinstance(text, str)
+            or not text.strip()
+        ):
+            raise EnrichmentError("OpenCLI transcript segment evidence is invalid")
+        normalized = (paragraph_index, text.strip())
+        observed_indices.append(index)
+        prior = unique.get(index)
+        if prior is not None:
+            if prior != normalized:
+                raise EnrichmentError(
+                    "OpenCLI transcript has conflicting duplicate segments"
+                )
+            duplicate_count += 1
+            continue
+        unique[index] = normalized
+    indices = sorted(unique)
+    terminal_index = indices[-1]
+    if indices != list(range(terminal_index + 1)):
+        raise EnrichmentError("OpenCLI transcript terminal coverage is incomplete")
+    paragraphs: list[list[str]] = []
+    last_paragraph = -1
+    ordered_rows: list[dict[str, Any]] = []
+    for index in indices:
+        paragraph_index, text = unique[index]
+        if paragraph_index < last_paragraph or paragraph_index > last_paragraph + 1:
+            raise EnrichmentError("OpenCLI transcript paragraph order is invalid")
+        if paragraph_index == last_paragraph + 1:
+            paragraphs.append([])
+            last_paragraph = paragraph_index
+        paragraphs[paragraph_index].append(text)
+        ordered_rows.append({
+            "index": index,
+            "paragraph_index": paragraph_index,
+            "text": text,
+        })
+    transcript = "\n\n".join("".join(parts) for parts in paragraphs).strip()
+    if len(transcript) < 200:
+        raise EnrichmentError("OpenCLI transcript segment evidence is incomplete")
+    segment_bytes = json.dumps(
+        ordered_rows,
+        ensure_ascii=False,
+        sort_keys=True,
+        separators=(",", ":"),
+    ).encode("utf-8")
+    return transcript, {
+        "segment_count": len(indices),
+        "segment_first_index": indices[0],
+        "segment_terminal_index": terminal_index,
+        "duplicate_segment_count": duplicate_count,
+        "ordered_by_index": True,
+        "observed_order_was_monotonic": observed_indices == sorted(observed_indices),
+        "paragraph_count": len(paragraphs),
+        "segment_sequence_sha256": hashlib.sha256(segment_bytes).hexdigest(),
+    }
 
 
 class NetdiskEnrichmentService:
@@ -934,7 +1053,7 @@ class NetdiskEnrichmentService:
         label: str,
         target_name: str,
     ) -> None:
-        script = """(() => {
+        script = """(async () => {
   const label = %s;
   const expectedPath = %s;
   const currentUrl = new URL(location.href);
@@ -945,8 +1064,22 @@ class NetdiskEnrichmentService:
   if (!targetBound) {
     return {scheduled: false, tab: label, matches: 0, target_bound: false};
   }
-  const tabs = [...document.querySelectorAll('.vp-tabs__header-item')];
-  const matches = tabs.filter(node => (node.textContent || '').trim() === label);
+  const deadline = Date.now() + 10000;
+  let matches = [];
+  while (Date.now() < deadline) {
+    const tabs = [...document.querySelectorAll('.vp-tabs__header-item')];
+    matches = tabs.filter(node => {
+      const rect = node.getBoundingClientRect();
+      const style = getComputedStyle(node);
+      return (node.textContent || '').trim() === label
+        && rect.width > 0
+        && rect.height > 0
+        && style.display !== 'none'
+        && style.visibility !== 'hidden';
+    });
+    if (matches.length === 1) break;
+    await new Promise(resolve => setTimeout(resolve, 100));
+  }
   if (matches.length !== 1) {
     return {scheduled: false, tab: label, matches: matches.length};
   }
@@ -2537,6 +2670,166 @@ class NetdiskEnrichmentService:
             self.store.append(row)
             return {**row, "idempotent_replay": False}
 
+    def recover_ai_note_postclick_zero(
+        self,
+        job_id: str,
+        *,
+        session: str,
+        profile: str | None = None,
+        operator_confirmed_no_click: bool = False,
+    ) -> dict[str, Any]:
+        """Perform one final submit after a stale claim has a fresh zero-effect proof."""
+        if not operator_confirmed_no_click:
+            raise EnrichmentError(
+                "AI-note postclick-zero recovery requires operator confirmation"
+            )
+        if not _OPENCLI_SESSION.fullmatch(session):
+            raise EnrichmentError("OpenCLI session name is invalid")
+        if profile is not None and not _OPENCLI_PROFILE.fullmatch(profile):
+            raise EnrichmentError("OpenCLI profile name is invalid")
+
+        current = self.store.latest(job_id)
+        status = str(current.get("status") or "")
+        if status in {"ai_note_requested", "ai_note_ready"}:
+            return {**current, "idempotent_replay": True}
+        if status != "ai_note_claimed":
+            raise EnrichmentError(
+                "AI-note postclick-zero recovery requires claimed state"
+            )
+        attempt = int(current.get("ai_note_trigger_attempt") or 1)
+        target_name = str(current["video_basename"])
+        player_url = self._open_opencli_player(
+            session=session,
+            profile=profile,
+            target_name=target_name,
+        )
+        self._select_opencli_tab(
+            session=session,
+            profile=profile,
+            label="笔记",
+            target_name=target_name,
+        )
+        self._wait_opencli_active_tab(
+            session=session,
+            profile=profile,
+            label="笔记",
+            target_name=target_name,
+        )
+        self._run_opencli(
+            session,
+            "wait",
+            "selector",
+            "#noteIframe",
+            "--timeout",
+            "10000",
+            profile=profile,
+            timeout_seconds=20,
+        )
+        probe = self._probe_opencli_ai_note(
+            session=session,
+            profile=profile,
+            target_name=target_name,
+        )
+        if probe["ai_note_state"] in {"generating", "ready"}:
+            return self._record_ai_note_triggered(
+                job_id,
+                target_name=target_name,
+                page_url=player_url,
+                trigger_proof={
+                    "click_dispatched": False,
+                    "modal_visible": False,
+                    "confirmed_state": probe["ai_note_state"],
+                    "content_chars": int(probe.get("content_chars") or 0),
+                    "reconciled_after_claim": True,
+                },
+            )
+        if attempt >= _AI_NOTE_MAX_TRIGGER_ATTEMPTS:
+            return {
+                **self.store.latest(job_id),
+                "pending": True,
+                "side_effect_uncertain": True,
+                "retry_exhausted": True,
+                "idempotent_replay": True,
+            }
+        claim_time = self._event_time(
+            current.get("claimed_at"), field="AI-note postclick-zero claimed_at"
+        )
+        observed_at = self._time()
+        if observed_at - claim_time < _AI_NOTE_POSTCLICK_ZERO_MIN_AGE:
+            raise EnrichmentError(
+                "AI-note postclick-zero recovery claim is not old enough"
+            )
+        preview = self._opencli_template_json(
+            session,
+            "prepare_ai_note",
+            expected_path=self._netdisk_path(target_name),
+            profile=profile,
+        )
+        if (
+            preview.get("target_bound") is not True
+            or preview.get("scheduled") is not True
+            or preview.get("modal_ready") is not True
+            or preview.get("template_matches") != 1
+            or preview.get("template_selected") != "文稿笔记"
+            or preview.get("button_matches") != 1
+            or preview.get("click_dispatched") is not False
+        ):
+            raise EnrichmentError(
+                "AI-note postclick-zero recovery lacks exact modal proof"
+            )
+
+        with self.store.job_lock(job_id):
+            latest = self.store.latest(job_id)
+            if (
+                latest.get("status") != "ai_note_claimed"
+                or int(latest.get("ai_note_trigger_attempt") or 1) != attempt
+                or latest.get("claimed_at") != current.get("claimed_at")
+            ):
+                raise EnrichmentError("AI-note postclick-zero claim changed")
+            now = self._time().isoformat(timespec="microseconds")
+            row = {
+                **latest,
+                "event": "netdisk_ai_note_postclick_zero_retry_claimed",
+                "status": "ai_note_claimed",
+                "claimed_at": now,
+                "ai_note_trigger_attempt": attempt + 1,
+                "ai_note_retry_of": str(current.get("claimed_at") or ""),
+                "ai_note_recovery_kind": "stale_claim_exact_zero_effect",
+                "ai_note_operator_confirmed_no_click": True,
+                "ai_note_postclick_zero_proof": {
+                    "observed_at": observed_at.isoformat(timespec="microseconds"),
+                    "ai_note_state": "missing",
+                    "content_chars": int(probe.get("content_chars") or 0),
+                    "target_bound": True,
+                    "template_name": preview.get("template_name"),
+                    "template_version": preview.get("template_version"),
+                    "template_selected": "文稿笔记",
+                    "button_matches": 1,
+                    "click_dispatched": False,
+                },
+                "updated_at": now,
+            }
+            _clear_transient_failures(row)
+            self.store.append(row)
+
+        trigger_proof = self._trigger_opencli_ai_note(
+            session=session,
+            profile=profile,
+            target_name=target_name,
+        )
+        if trigger_proof.get("submitted") is not True:
+            self._record_ai_note_pretrigger_failure(
+                job_id,
+                trigger_proof=trigger_proof,
+            )
+            raise EnrichmentError("Netdisk AI-note template submission failed")
+        return self._record_ai_note_triggered(
+            job_id,
+            target_name=target_name,
+            page_url=player_url,
+            trigger_proof=trigger_proof,
+        )
+
     def claim_browser_action(self, job_id: str, *, action: str) -> dict[str, Any]:
         if action not in _ACTIONS:
             raise EnrichmentError(f"unsupported browser action: {action}")
@@ -2823,19 +3116,32 @@ class NetdiskEnrichmentService:
                     )
 
                 transcript_result = capture_result.get("transcript")
-                transcript = (
+                browser_transcript = (
                     transcript_result.get("text")
                     if isinstance(transcript_result, dict)
                     else None
                 )
                 if (
                     not isinstance(transcript_result, dict)
-                    or not isinstance(transcript, str)
-                    or len(transcript.strip()) < 200
+                    or not isinstance(browser_transcript, str)
+                    or len(browser_transcript.strip()) < 200
                 ):
                     reject(
                         "transcript_missing_or_short",
                         "OpenCLI did not return one nontrivial transcript",
+                    )
+                try:
+                    transcript_text, segment_proof = (
+                        _normalize_ordered_transcript_segments(
+                            transcript_result.get("segments")
+                        )
+                    )
+                except EnrichmentError as exc:
+                    reject("invalid_segment_coverage", str(exc))
+                if browser_transcript.strip() != transcript_text:
+                    reject(
+                        "segment_text_mismatch",
+                        "OpenCLI transcript text does not match ordered segments",
                     )
 
                 render = capture_result.get("render")
@@ -2861,6 +3167,8 @@ class NetdiskEnrichmentService:
                 "scroll_height",
                 "paragraph_count",
                 "sentence_count",
+                "segment_count",
+                "segment_terminal_index",
                 "list_text_chars",
                 "sentence_text_chars",
             }
@@ -2870,21 +3178,30 @@ class NetdiskEnrichmentService:
             ):
                 reject("invalid_render_proof", "OpenCLI render proof is incomplete")
             markers = render.get("virtual_or_loading_markers")
-            transcript_text = transcript.strip()
+            assert isinstance(segment_proof, dict)
             content_fits = render["scroll_height"] <= render["client_height"] + 1
             if (
-                render["scroll_top"] != 0
+                abs(render["scroll_top"]) > 1
                 or render["list_matches"] != 1
                 or render["paragraph_count"] < 1
                 or render["sentence_count"] < 3
+                or render["sentence_count"] != render["segment_count"]
+                or render["segment_count"] != segment_proof["segment_count"]
+                or render["segment_terminal_index"]
+                != segment_proof["segment_terminal_index"]
+                or render["paragraph_count"] != segment_proof["paragraph_count"]
                 or render["list_text_chars"] != len(transcript_text)
                 or render["sentence_text_chars"] <= 0
                 or render["sentence_text_chars"] > render["list_text_chars"]
+                or render.get("first_node_in_dom") is not True
                 or render.get("last_node_in_dom") is not True
+                or render.get("first_node_at_viewport_start") is not True
+                or render.get("first_node_near_list_start") is not True
                 or (
                     not content_fits
                     and render.get("last_node_below_viewport") is not True
                 )
+                or render.get("last_node_near_list_end") is not True
                 or not isinstance(markers, list)
                 or markers
                 or render.get("has_load_more") is not False
@@ -2931,13 +3248,20 @@ class NetdiskEnrichmentService:
                     "scroll_height",
                     "paragraph_count",
                     "sentence_count",
+                    "segment_count",
+                    "segment_terminal_index",
                     "list_text_chars",
                     "sentence_text_chars",
+                    "first_node_in_dom",
                     "last_node_in_dom",
+                    "first_node_at_viewport_start",
+                    "first_node_near_list_start",
                     "last_node_below_viewport",
+                    "last_node_near_list_end",
                     "has_load_more",
                 )
             }
+            render_proof.update(segment_proof)
             render_proof["virtual_or_loading_markers"] = []
             binding = {
                 "page_url": safe_url,
@@ -3442,6 +3766,7 @@ class NetdiskEnrichmentService:
         decision_output_dir: Path | str,
         sender: Callable[[str, str], dict[str, str]],
         pipeline: Any | None = None,
+        reconcile_daily_terminal: bool = False,
     ) -> dict[str, Any]:
         bundle_file = Path(bundle_path).expanduser().resolve()
         with self.store.job_lock(job_id):
@@ -3493,7 +3818,37 @@ class NetdiskEnrichmentService:
                     )
                     if resolved.is_file():
                         replay[field] = str(resolved)
-                return {**replay, "idempotent_replay": True}
+                result_path = Path(
+                    str(replay.get("decision_result_path") or "")
+                ).expanduser()
+                has_daily_terminal = False
+                if result_path.is_file():
+                    try:
+                        prior_result = json.loads(
+                            result_path.read_text(encoding="utf-8")
+                        )
+                        prior_items = prior_result.get("items") or []
+                        has_daily_terminal = bool(
+                            prior_items
+                            and isinstance(prior_items[0], dict)
+                            and isinstance(
+                                prior_items[0].get("daily_terminal"), dict
+                            )
+                        )
+                    except (OSError, json.JSONDecodeError):
+                        has_daily_terminal = False
+                if not reconcile_daily_terminal or has_daily_terminal:
+                    return {**replay, "idempotent_replay": True}
+                if pipeline is None:
+                    exc = EnrichmentError(
+                        "daily terminal reconciliation requires a publication pipeline"
+                    )
+                    record_failure(
+                        "daily_terminal_reconciliation",
+                        exc,
+                        bundle_sha=bundle_sha,
+                    )
+                    raise exc
             is_revision = current.get("status") == "decided"
             if not is_revision and current.get("status") != "verified":
                 exc = EnrichmentError(
@@ -3664,7 +4019,7 @@ class NetdiskEnrichmentService:
             temporary.replace(result_path)
             household_summary = {
                 key: notification[key]
-                for key in ("idempotency_key", "status", "receipt")
+                for key in ("idempotency_key", "status", "receipt", "reason")
                 if notification.get(key) is not None
             }
             paper_summary = {

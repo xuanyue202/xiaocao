@@ -165,8 +165,11 @@ Keep the layers separate:
 
 ## Xiaocao capture
 
-1. Start the existing sniffer from `/Users/bytedance/coding/wx_channels_download`:
-   `./wx_video_download_macos_arm64`.
+1. Start the existing sniffer from the `wx_channels_download` repository beside
+   the active Xiaocao checkout (for example
+   `/Users/bytedance/coding/wx_channels_download` on the capture node):
+   `./wx_video_download_macos_arm64`. Never bind this workflow to another
+   machine's absolute checkout path.
 2. Verify `http://127.0.0.1:2022/api/status` before asking the user to play anything.
 3. Arm a fresh Xiaocao job (source and author are fixed by this adapter):
    `PYTHONPATH=src python3 scripts/kol_capture.py arm`.
@@ -224,6 +227,14 @@ the two receipts by handoff id and media SHA-256.
   6. The stepper then activates `笔记`, waits for the semantic active-tab state, and opens template `tpl_no=1` (`文稿笔记`) under an independent claim when needed. It must enter the `#tplModal` iframe, uniquely locate and click the visible `生成该笔记` button, and then prove that the template modal is no longer visible and the note iframe has entered `generating` or `ready`. A direct `genNoteByTpl` postMessage, a click-dispatched return value, or a synthetic "已提交" snapshot is not submission proof. Only the confirmed UI transition records `ai_note_requested`; do not wait for, poll, or require later AI-note completion.
      Render transcript and AI-note DOM actions only from the versioned repository-owned Baidu Netdisk OpenCLI templates and require the returned template name/version to match before accepting their proof. The early `#tplModal` shell and visible submit button are not readiness: wait until exactly one `文稿笔记` row exists, that row carries the provider's selected marker, and exactly one enabled `生成该笔记` button is visible. Recheck all three conditions immediately before the one final click.
      If the provider action returns the exact pretrigger failure `Netdisk AI-note template submission failed`, the implementation has proved that no click was dispatched. Persist `ai_note_pretrigger_failed` before returning the error and permit at most one fresh claim and one later submission attempt. A legacy claim may enter that state only through `reconcile-ai-note-pretrigger` with the exact captured CLI command, exit code, error, claim timestamp, and remote task/turn identity. A dispatched click, missing original error, different evidence, or a second pretrigger failure remains fail-closed and can never use this recovery path.
+     A separately reviewed `recover-ai-note-postclick-zero` action is the only
+     exception for an old first-attempt claim whose UI click was dispatched but
+     not accepted by the provider. It requires an explicit operator confirmation
+     that no click occurred, a claim at least five minutes old, a fresh exact-path
+     probe showing `missing`, and a fresh modal proof with exactly one selected
+     `文稿笔记` row and one enabled `生成该笔记` button. Persist the second/final
+     recovery claim before clicking. A generating/ready, ambiguous, recent, or
+     already-recovered state never clicks; an uncertain second attempt is final.
   7. On the Netdisk folder page, semantically dismiss the known `.nd-operate-guidance` operation-ad overlay through its unique `img[alt="close"]` control before upload inspection or reconciliation; never use click coordinates. As soon as the complete `文稿` is ready and AI-note submission has been recorded, the stepper opens the exact player and performs one atomic OpenCLI DOM action. It first closes a semantically identified advertisement dialog; if that exact ad overlay cannot be closed, it hides only that identified overlay. It then activates `文稿`, waits for content, and captures the unique initial `.ai-draft__wrap-list` as immutable UTF-8 text. Never refresh as an ad workaround.
   8. DOM capture is valid only when it proves `scrollTop=0`, nontrivial paragraph/sentence counts, the last sentence is already in DOM and below the initial viewport when content overflows, and there are no virtual/loading/load-more markers. Run `verify --audit-file <json>` with excerpts from the opening, middle, and ending thirds, bound to both source-video and transcript hashes.
   9. Create one ticket-01 source-neutral bundle whose `evidence_path` is that verified transcript, then run `decide --bundle <json>`. Publish the complete event report to 灰常亮 first. Only after its durable publication receipt may a newly eligible event fan out one concise reminder to the distinct `XIAOCAO_KOL_WECOM_USER_IDS` set (currently `Chen,FeiFei`): lead with the key insight, add the coherent compact synthesis, and end with exactly one stable report link, all within the 2,048-byte safe-send limit. Do not split the complete report across messages. The legacy chunked notifier is reconciliation-only for already-claimed historical sends. Before any makeup send, compare the recipient configuration time with the original send time and send only to a proven-missing recipient—never replay the full decision pipeline or duplicate a recipient that already succeeded. Completion requires the 灰常亮 receipt, the eligible event's all-recipient short-reminder receipt or a legal no-alert reason, and a result with `book=KOL-US`, `paper_only=true`, plus a fill or an explicit nonempty `no_trade.reason`.

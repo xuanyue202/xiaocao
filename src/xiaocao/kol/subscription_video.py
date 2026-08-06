@@ -81,6 +81,18 @@ def _sha256_file(path: Path) -> str:
     return digest.hexdigest()
 
 
+def _remote_activity_at(row: dict[str, Any]) -> int:
+    """Return the provider-side activity time used for discovery eligibility."""
+    try:
+        modified_at = int(row.get("modified_at") or 0)
+        uploaded_at = int(row.get("uploaded_at") or 0)
+    except (TypeError, ValueError) as exc:
+        raise EnrichmentError("Ticket 05 remote time metadata is invalid") from exc
+    if modified_at < 0 or uploaded_at < 0:
+        raise EnrichmentError("Ticket 05 remote time metadata is invalid")
+    return max(modified_at, uploaded_at)
+
+
 def _atomic_write_json(path: Path, value: dict[str, Any]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     temporary = path.with_name(f".{path.name}.partial")
@@ -158,6 +170,9 @@ _PRIVATE_SCAN_SCRIPT = r"""(async () => {
             name: String(item.server_filename || ''),
             is_dir: item.isdir === 1 || item.isdir === true,
             size: Number(item.size || 0),
+            uploaded_at: Number(
+              item.server_ctime || item.local_ctime || 0
+            ),
             modified_at: Number(
               item.server_mtime || item.local_mtime || 0
             )
@@ -284,6 +299,9 @@ _PRIVATE_SEARCH_SCRIPT = r"""(async () => {
           name: String(item.server_filename || ''),
           is_dir: item.isdir === 1 || item.isdir === true,
           size: Number(item.size || 0),
+          uploaded_at: Number(
+            item.server_ctime || item.local_ctime || 0
+          ),
           modified_at: Number(item.server_mtime || item.local_mtime || 0)
         }))
       };
@@ -765,11 +783,16 @@ class SubscriptionVideoService:
             raise EnrichmentError("Ticket 05 source metadata is incomplete")
         try:
             size = int(row.get("size") or 0)
+            uploaded_at = int(row.get("uploaded_at") or 0)
             modified_at = int(row.get("modified_at") or 0)
         except (TypeError, ValueError) as exc:
             raise EnrichmentError("Ticket 05 source metadata is invalid") from exc
         is_dir = bool(row.get("is_dir"))
-        if size < 0 or (not is_dir and modified_at <= 0):
+        if (
+            size < 0
+            or uploaded_at < 0
+            or (not is_dir and modified_at <= 0 and uploaded_at <= 0)
+        ):
             raise EnrichmentError("Ticket 05 source metadata is invalid")
         provider_hash = _sha256_text(provider_id)
         identity = _sha256_text(f"{source}\n{provider_id}")
@@ -792,8 +815,10 @@ class SubscriptionVideoService:
                 else ("video" if suffix in VIDEO_SUFFIXES else "other")
             ),
             "size": size,
+            "uploaded_at": uploaded_at,
             "modified_at": modified_at,
         }
+        normalized["remote_activity_at"] = _remote_activity_at(normalized)
         explicit_fields = {
             "episode_id": str(row.get("episode_id") or "").strip(),
             "episode_title": str(row.get("episode_title") or "").strip(),
@@ -824,6 +849,182 @@ class SubscriptionVideoService:
             raise EnrichmentError("Ticket 05 manifest is invalid")
         return value
 
+    @staticmethod
+    def _remote_time_watermarks(
+        manifest: dict[str, Any],
+    ) -> tuple[dict[str, int], bool]:
+        stored = manifest.get("source_remote_time_watermarks")
+        if stored is not None:
+            if not isinstance(stored, dict):
+                raise EnrichmentError("Ticket 05 remote time watermarks are invalid")
+            try:
+                watermarks = {
+                    source: int(stored[source])
+                    for source in (LV_SOURCE, LUCIFER_SOURCE)
+                }
+            except (KeyError, TypeError, ValueError) as exc:
+                raise EnrichmentError(
+                    "Ticket 05 remote time watermarks are invalid"
+                ) from exc
+            if any(value < 0 for value in watermarks.values()):
+                raise EnrichmentError("Ticket 05 remote time watermarks are invalid")
+            return watermarks, False
+
+        watermarks = {LV_SOURCE: 0, LUCIFER_SOURCE: 0}
+        bootstrap = manifest.get("bootstrap")
+        selected = (
+            bootstrap.get("selected")
+            if isinstance(bootstrap, dict)
+            and isinstance(bootstrap.get("selected"), list)
+            else []
+        )
+        for row in selected:
+            if not isinstance(row, dict):
+                continue
+            source = str(row.get("source") or "")
+            if source not in watermarks:
+                continue
+            watermarks[source] = max(
+                watermarks[source],
+                _remote_activity_at(row),
+            )
+        previous = manifest.get("items")
+        if isinstance(previous, dict):
+            for row in previous.values():
+                if not isinstance(row, dict) or row.get("media_type") != "video":
+                    continue
+                source = str(row.get("source") or "")
+                if source not in watermarks or watermarks[source] > 0:
+                    continue
+                watermarks[source] = max(
+                    watermarks[source],
+                    _remote_activity_at(row),
+                )
+        return watermarks, bool(manifest.get("items"))
+
+    @_exclusive("manifest")
+    def migrate_legacy_remote_time_eligibility(self) -> dict[str, Any]:
+        """Quarantine pre-fix historical pending rows before browser work."""
+        manifest = self._load_manifest()
+        watermarks, migration_required = self._remote_time_watermarks(manifest)
+        if not migration_required:
+            return {
+                "event": "subscription_video_remote_time_migration_completed",
+                "status": "already_completed",
+                "quarantined_count": int(
+                    (manifest.get("remote_time_migration") or {}).get(
+                        "quarantined_count"
+                    )
+                    or 0
+                ),
+                "source_remote_time_watermarks": watermarks,
+                "external_side_effects_replayed": False,
+            }
+
+        observed_at = self._time().isoformat(timespec="seconds")
+        bootstrap = manifest.get("bootstrap")
+        selected = (
+            bootstrap.get("selected")
+            if isinstance(bootstrap, dict)
+            and isinstance(bootstrap.get("selected"), list)
+            else []
+        )
+        bootstrap_selected = {
+            str(row.get("identity") or "")
+            for row in selected
+            if isinstance(row, dict)
+        }
+        items = manifest["items"]
+        episodes = (
+            manifest.get("episodes")
+            if isinstance(manifest.get("episodes"), dict)
+            else {}
+        )
+        quarantined: list[dict[str, Any]] = []
+        for episode in episodes.values():
+            if (
+                not isinstance(episode, dict)
+                or episode.get("work_eligible") is not True
+                or episode.get("completed_version_key")
+                == episode.get("version_key")
+                or episode.get("identity") in bootstrap_selected
+                or _remote_activity_at(episode)
+                > watermarks[str(episode.get("source") or "")]
+            ):
+                continue
+            episode.update(
+                {
+                    "work_eligible": False,
+                    "eligibility_pause_reason": (
+                        "historical_remote_time_not_newer_than_bootstrap"
+                    ),
+                }
+            )
+            for part in episode.get("parts") or []:
+                member = items.get(str(part.get("identity") or ""))
+                if isinstance(member, dict):
+                    member.update(
+                        {
+                            "work_eligible": False,
+                            "eligibility_pause_reason": episode[
+                                "eligibility_pause_reason"
+                            ],
+                        }
+                    )
+            quarantined.append(episode)
+        for row in items.values():
+            if (
+                not isinstance(row, dict)
+                or row.get("media_type") != "video"
+                or row.get("episode_identity")
+                or row.get("work_eligible") is not True
+                or row.get("completed_version_key") == row.get("version_key")
+                or row.get("identity") in bootstrap_selected
+                or _remote_activity_at(row)
+                > watermarks[str(row.get("source") or "")]
+            ):
+                continue
+            row.update(
+                {
+                    "work_eligible": False,
+                    "eligibility_pause_reason": (
+                        "historical_remote_time_not_newer_than_bootstrap"
+                    ),
+                }
+            )
+            quarantined.append(row)
+        migration = {
+            "event": "subscription_video_remote_time_migration_completed",
+            "status": "completed",
+            "observed_at": observed_at,
+            "quarantined_count": len(quarantined),
+            "quarantined_versions_sha256": _sha256_text(
+                _canonical(
+                    sorted(
+                        (
+                            {
+                                "identity": str(row.get("identity") or ""),
+                                "version_key": str(row.get("version_key") or ""),
+                            }
+                            for row in quarantined
+                        ),
+                        key=lambda row: (row["identity"], row["version_key"]),
+                    )
+                )
+            ),
+            "source_remote_time_watermarks": watermarks,
+            "external_side_effects_replayed": False,
+        }
+        manifest.update(
+            {
+                "source_remote_time_watermarks": watermarks,
+                "remote_time_migration": migration,
+            }
+        )
+        _atomic_write_json(self.manifest_path, manifest)
+        _append_jsonl(self.events_path, migration)
+        return migration
+
     @_exclusive("manifest")
     def observe(
         self,
@@ -851,12 +1052,28 @@ class SubscriptionVideoService:
         manifest = self._load_manifest()
         previous = manifest["items"]
         bootstrap = not previous
+        source_watermarks, migrate_remote_times = self._remote_time_watermarks(
+            manifest
+        )
+        bootstrap_state = manifest.get("bootstrap")
+        selected_rows = (
+            bootstrap_state.get("selected")
+            if isinstance(bootstrap_state, dict)
+            and isinstance(bootstrap_state.get("selected"), list)
+            else []
+        )
+        bootstrap_selected = {
+            str(row.get("identity") or "")
+            for row in selected_rows
+            if isinstance(row, dict)
+        }
         current = {
             identity: {**row, "present": False}
             for identity, row in previous.items()
             if isinstance(row, dict)
         }
         changed_identities: set[str] = set()
+        eligible_changed_identities: set[str] = set()
         for row in normalized:
             prior = previous.get(row["identity"])
             persisted = {
@@ -891,15 +1108,42 @@ class SubscriptionVideoService:
                     "completed_episode_version_key",
                     "episode_decision_result_path",
                     "episode_decision_result_sha256",
+                    "eligibility_reason",
+                    "eligibility_remote_activity_at",
+                    "eligibility_watermark_before",
+                    "eligibility_pause_reason",
                 ):
                     if key in prior:
                         persisted[key] = prior[key]
             else:
-                persisted["work_eligible"] = (
-                    not bootstrap and row["media_type"] == "video"
+                newer_than_watermark = (
+                    row["media_type"] == "video"
+                    and _remote_activity_at(row)
+                    > source_watermarks[row["source"]]
                 )
+                persisted["work_eligible"] = not bootstrap and newer_than_watermark
                 if row["media_type"] == "video":
                     changed_identities.add(row["identity"])
+                    if persisted["work_eligible"]:
+                        eligible_changed_identities.add(row["identity"])
+                        persisted.update(
+                            {
+                                "eligibility_reason": (
+                                    "remote_time_newer_than_watermark"
+                                ),
+                                "eligibility_remote_activity_at": (
+                                    _remote_activity_at(row)
+                                ),
+                                "eligibility_watermark_before": source_watermarks[
+                                    row["source"]
+                                ],
+                            }
+                        )
+                        persisted.pop("eligibility_pause_reason", None)
+                    else:
+                        persisted["eligibility_pause_reason"] = (
+                            "remote_time_not_newer_than_watermark"
+                        )
             current[row["identity"]] = persisted
 
         for item in current.values():
@@ -933,8 +1177,10 @@ class SubscriptionVideoService:
         migration_pauses: list[dict[str, Any]] = []
         for unit in assembled["units"]:
             if unit.get("is_episode") is not True:
-                if unit["identity"] in changed_identities and not bootstrap:
-                    current[unit["identity"]]["work_eligible"] = True
+                if (
+                    unit["identity"] in eligible_changed_identities
+                    and not bootstrap
+                ):
                     logical_updates.append(current[unit["identity"]])
                 continue
             prior_episode = previous_episodes.get(unit["identity"])
@@ -959,7 +1205,13 @@ class SubscriptionVideoService:
                 str(part["identity"]) in changed_identities
                 for part in unit["parts"]
             )
-            eligible = changed and not migration_conflict
+            eligible = (
+                any(
+                    str(part["identity"]) in eligible_changed_identities
+                    for part in unit["parts"]
+                )
+                and not migration_conflict
+            )
             persisted_episode = {
                 **unit,
                 "present": True,
@@ -1025,11 +1277,25 @@ class SubscriptionVideoService:
                     "review_required_path",
                     "review_required_sha256",
                     "superseded_review_only_terminal",
+                    "eligibility_reason",
+                    "eligibility_remote_activity_at",
+                    "eligibility_watermark_before",
+                    "eligibility_pause_reason",
                 ):
                     if key in prior_episode:
                         persisted_episode[key] = prior_episode[key]
             elif eligible:
-                persisted_episode["work_eligible"] = True
+                persisted_episode.update(
+                    {
+                        "work_eligible": True,
+                        "eligibility_reason": "remote_time_newer_than_watermark",
+                        "eligibility_remote_activity_at": _remote_activity_at(unit),
+                        "eligibility_watermark_before": source_watermarks[
+                            unit["source"]
+                        ],
+                    }
+                )
+                persisted_episode.pop("eligibility_pause_reason", None)
             episodes[unit["identity"]] = persisted_episode
             for part in persisted_episode["parts"]:
                 member = current[str(part["identity"])]
@@ -1039,9 +1305,7 @@ class SubscriptionVideoService:
                         "episode_version_key": unit["version_key"],
                         "episode_part_count": unit["part_count"],
                         "episode_part_index": part["part_index"],
-                        "work_eligible": persisted_episode[
-                            "work_eligible"
-                        ],
+                        "work_eligible": persisted_episode["work_eligible"],
                     }
                 )
                 if persisted_episode.get("pause_reason"):
@@ -1094,11 +1358,38 @@ class SubscriptionVideoService:
             for row in selected:
                 if row.get("is_episode") is True:
                     episode = episodes[row["identity"]]
-                    episode["work_eligible"] = True
+                    episode.update(
+                        {
+                            "work_eligible": True,
+                            "eligibility_reason": "bootstrap_latest_remote_content",
+                            "eligibility_remote_activity_at": (
+                                _remote_activity_at(row)
+                            ),
+                            "eligibility_watermark_before": 0,
+                        }
+                    )
                     for part in episode["parts"]:
-                        current[str(part["identity"])]["work_eligible"] = True
+                        current[str(part["identity"])].update(
+                            {
+                                "work_eligible": True,
+                                "eligibility_reason": "bootstrap_latest_remote_content",
+                                "eligibility_remote_activity_at": (
+                                    _remote_activity_at(part)
+                                ),
+                                "eligibility_watermark_before": 0,
+                            }
+                        )
                 else:
-                    current[row["identity"]]["work_eligible"] = True
+                    current[row["identity"]].update(
+                        {
+                            "work_eligible": True,
+                            "eligibility_reason": "bootstrap_latest_remote_content",
+                            "eligibility_remote_activity_at": (
+                                _remote_activity_at(row)
+                            ),
+                            "eligibility_watermark_before": 0,
+                        }
+                    )
             manifest["bootstrap"] = {
                 "policy": "latest_real_logical_content_per_source",
                 "completed_at": observed_at,
@@ -1108,6 +1399,8 @@ class SubscriptionVideoService:
                         "identity": row["identity"],
                         "is_episode": row.get("is_episode") is True,
                         "modified_at": row["modified_at"],
+                        "uploaded_at": int(row.get("uploaded_at") or 0),
+                        "remote_activity_at": _remote_activity_at(row),
                         "part_count": int(row.get("part_count") or 1),
                         "path": row["path"],
                         "size": row["size"],
@@ -1148,6 +1441,68 @@ class SubscriptionVideoService:
                         )
                     ):
                         logical_updates.append(persisted)
+
+        quarantined: list[dict[str, Any]] = []
+        if migrate_remote_times:
+            for row in current.values():
+                if (
+                    not isinstance(row, dict)
+                    or row.get("media_type") != "video"
+                    or row.get("episode_identity")
+                    or row.get("completed_version_key") == row.get("version_key")
+                    or row.get("work_eligible") is not True
+                    or row.get("identity") in bootstrap_selected
+                    or _remote_activity_at(row) > source_watermarks[row["source"]]
+                ):
+                    continue
+                row.update(
+                    {
+                        "work_eligible": False,
+                        "eligibility_pause_reason": (
+                            "historical_remote_time_not_newer_than_bootstrap"
+                        ),
+                    }
+                )
+                quarantined.append(row)
+            for episode in episodes.values():
+                if (
+                    episode.get("completed_version_key")
+                    == episode.get("version_key")
+                    or episode.get("work_eligible") is not True
+                    or episode.get("identity") in bootstrap_selected
+                    or _remote_activity_at(episode)
+                    > source_watermarks[episode["source"]]
+                ):
+                    continue
+                episode.update(
+                    {
+                        "work_eligible": False,
+                        "eligibility_pause_reason": (
+                            "historical_remote_time_not_newer_than_bootstrap"
+                        ),
+                    }
+                )
+                for part in episode.get("parts") or []:
+                    member = current.get(str(part.get("identity") or ""))
+                    if isinstance(member, dict):
+                        member.update(
+                            {
+                                "work_eligible": False,
+                                "eligibility_pause_reason": episode[
+                                    "eligibility_pause_reason"
+                                ],
+                            }
+                        )
+                quarantined.append(episode)
+
+        observed_watermarks = dict(source_watermarks)
+        for row in normalized:
+            if row.get("media_type") != "video":
+                continue
+            observed_watermarks[row["source"]] = max(
+                observed_watermarks[row["source"]],
+                _remote_activity_at(row),
+            )
         cursor = _sha256_text(
             _canonical(
                 [
@@ -1166,6 +1521,7 @@ class SubscriptionVideoService:
                 "items": current,
                 "episodes": episodes,
                 "episode_pauses": episode_pauses,
+                "source_remote_time_watermarks": observed_watermarks,
                 "source_counts": {
                     source: sum(row["source"] == source for row in normalized)
                     for source in (LV_SOURCE, LUCIFER_SOURCE)
@@ -1194,6 +1550,34 @@ class SubscriptionVideoService:
                     "pauses": episode_pauses,
                 },
             )
+        if migrate_remote_times:
+            migration = {
+                "event": "subscription_video_remote_time_migration_completed",
+                "observed_at": observed_at,
+                "quarantined_count": len(quarantined),
+                "quarantined_versions_sha256": _sha256_text(
+                    _canonical(
+                        sorted(
+                            (
+                                {
+                                    "identity": str(row.get("identity") or ""),
+                                    "version_key": str(row.get("version_key") or ""),
+                                }
+                                for row in quarantined
+                            ),
+                            key=lambda row: (
+                                row["identity"],
+                                row["version_key"],
+                            ),
+                        )
+                    )
+                ),
+                "source_remote_time_watermarks": observed_watermarks,
+                "external_side_effects_replayed": False,
+            }
+            manifest["remote_time_migration"] = migration
+            _atomic_write_json(self.manifest_path, manifest)
+            _append_jsonl(self.events_path, migration)
         if not logical_updates:
             return None
         result = {
@@ -1215,6 +1599,7 @@ class SubscriptionVideoService:
         episode_spec_path: Path | str | None = None,
         lv_listing: dict[str, Any] | None = None,
     ) -> dict[str, Any] | None:
+        self.migrate_legacy_remote_time_eligibility()
         if lv_listing is None:
             lv_listing = self.lv._read_opencli_listing(
                 session=lv_session,

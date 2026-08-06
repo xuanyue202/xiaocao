@@ -43,6 +43,7 @@ def main() -> int:
             "capture-dom",
             "advance-opencli",
             "reconcile-ai-note-pretrigger",
+            "recover-ai-note-postclick-zero",
             "verify",
             "decide",
             "status",
@@ -85,6 +86,11 @@ def main() -> int:
     )
     parser.add_argument("--opencli-session")
     parser.add_argument("--opencli-profile")
+    parser.add_argument(
+        "--operator-confirmed-no-click",
+        action="store_true",
+        help="authorize the one final AI-note submit after exact zero-effect proof",
+    )
     parser.add_argument("--audit-file", type=Path)
     parser.add_argument("--bundle", type=Path)
     parser.add_argument("--decision-output-dir", type=Path, default=DEFAULT_DECISIONS)
@@ -112,6 +118,8 @@ def main() -> int:
         parser.error("advance-opencli requires --opencli-session")
     if args.command == "reconcile-ai-note-pretrigger" and args.evidence_file is None:
         parser.error("reconcile-ai-note-pretrigger requires --evidence-file")
+    if args.command == "recover-ai-note-postclick-zero" and not args.opencli_session:
+        parser.error("recover-ai-note-postclick-zero requires --opencli-session")
     if args.command == "verify" and args.audit_file is None:
         parser.error("verify requires --audit-file")
     if args.command == "decide" and args.bundle is None:
@@ -169,6 +177,15 @@ def main() -> int:
             service.reconcile_ai_note_pretrigger_failure(
                 args.job_id,
                 evidence=_load_object(args.evidence_file),
+            )
+        )
+    elif args.command == "recover-ai-note-postclick-zero":
+        _print(
+            service.recover_ai_note_postclick_zero(
+                args.job_id,
+                session=args.opencli_session,
+                profile=args.opencli_profile,
+                operator_confirmed_no_click=args.operator_confirmed_no_click,
             )
         )
     elif args.command == "verify":

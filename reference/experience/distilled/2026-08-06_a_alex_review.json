@@ -1,0 +1,94 @@
+{
+  "date": "2026-08-06",
+  "kind": "review",
+  "author": "A也叫艾利克斯",
+  "source": "微信公众号",
+  "evidence": [
+    {
+      "path": "/Users/xuanyue202/Documents/project/xiaocao/output/live/kol_wechat_official/evidence/c4aef54176b6774ce729d36338d30f0a8580c42718deec3c4d0a9ca8d9a11669.md",
+      "sha256": "6807828e0b5608f771977cb073dba6d06e2051885fd2f512cc0dcc6edef2872c",
+      "size": 13284
+    }
+  ],
+  "summary": "把融资与成交持续缩量看作风险偏好收缩的观测，把阶段低位后的企稳回升当成待验证而非已确认的拐点；同时用预期拥挤度、超预期幅度和长期合同质量解释人工智能存储资产为何可能出现业绩强而价格弱。",
+  "posture": {
+    "regime": "not_applied_other_author",
+    "dominant_style": "risk_appetite_and_expectation_validation",
+    "risk": "融资余额和成交额尚未证明企稳，地缘事件、基础设施约束与高拥挤预期都可能造成二次冲击",
+    "style_ranking": [
+      "先确认融资与成交是否止跌",
+      "再确认政策与订单是否改变基本面",
+      "最后比较业绩兑现与市场隐含预期"
+    ]
+  },
+  "regime_call": {
+    "horizon": "未来数日至数周",
+    "call": "融资和成交已接近作者识别的阶段低位，若没有新的重大冲击，风险偏好存在止跌回升的可能，但当前仍只是待确认候选。",
+    "what_would_falsify": "融资余额和成交额继续同步下行，市场广度转弱，或光模块事件升级并造成相关资产与订单的持续冲击。"
+  },
+  "directions": [
+    {
+      "name": "人工智能基础设施",
+      "view": "需求仍强，但先进封装、存储、电力和资本回报构成供给与估值约束。"
+    },
+    {
+      "name": "存储与终端成本",
+      "view": "长约和产能锁定提高能见度与议价能力，但高拥挤预期会放大业绩发布后的价格波动，成本也可能向手机终端传导。"
+    }
+  ],
+  "stocks": [],
+  "method_principles": [
+    "把融资余额、成交额和市场广度放在一起观察，阶段低位只能形成企稳候选，不能单独当作买点。",
+    "对高预期公司同时比较绝对业绩、超预期幅度的边际变化和股价拥挤度，避免把业绩增长直接等同于正收益。",
+    "把长期合同拆成锁量、价格地板、担保和履约义务，区分真实需求能见度与只靠涨价支撑的收入增长。",
+    "人工智能基础设施研究要同时检查计算、先进封装、存储、电力、冷却和终端成本，不能只看模型需求。"
+  ],
+  "exit_lessons": [
+    "若融资与成交未能止跌，或事件升级造成订单与价格同步恶化，应停止把当前区间解释为风险偏好底部。",
+    "当股价已高度拥挤且超预期幅度收窄时，即使绝对业绩仍强，也要防止预期兑现导致的回撤。"
+  ],
+  "hypotheses": [
+    {
+      "claim": "融资余额和成交额同步接近过去阶段低位后，只有两者连续止跌并伴随市场广度改善，未来数日的风险调整收益才可能优于仅出现单日反弹的样本。",
+      "implied_rule": "把融资、成交和广度的联合止跌作为研究候选，不把单个低位数值直接转成交易开关。",
+      "falsifiable_test": "识别融资与成交同时处于一年分位低位的交易日，比较随后连续三日止跌且广度改善组与未确认组未来1、3、5、10日宽基收益和最大回撤。",
+      "expected_effect": "联合确认组应有更高风险调整收益和更小左尾；若没有稳定差异则拒绝该先验。",
+      "category": "risk_appetite"
+    },
+    {
+      "claim": "高拥挤资产在绝对业绩继续增长但超预期幅度收窄时，短期收益更可能由预期重估而非同比增长决定。",
+      "implied_rule": "财报事件研究同时记录预期差、前期涨幅、机构拥挤代理和同业指引差，不按单一业绩增速排序。",
+      "falsifiable_test": "在AI硬件与存储样本中，比较高低拥挤组在超预期幅度收窄后的1、5、20日超额收益和盈利预期修正。",
+      "expected_effect": "减少在高拥挤资产小幅超预期后追高，并更早识别预期重估。",
+      "category": "expectations_crowding"
+    }
+  ],
+  "timing_notes": [
+    "短期观察融资余额、成交额和市场广度能否形成连续止跌。",
+    "事件层面观察光模块相关政策是否继续升级并影响订单。",
+    "未来数季观察先进封装、存储长约、电力约束和终端涨价是否兑现。"
+  ],
+  "typo_corrections": [],
+  "decision_trace": [
+    "观察：融资余额和成交额持续收缩并接近作者识别的前期阶段低位。",
+    "推演：若没有新的外部冲击，联合止跌可能代表风险偏好开始修复。",
+    "约束：图表缺少精确口径，海外政策、财报与公司数字也未在本轮独立核验。",
+    "行动：把止跌、市场广度、政策文本、订单和预期差列为后续验证条件，不直接生成交易。"
+  ],
+  "judgment_heuristics": [
+    "市场最怕不确定性，但不确定性减少只降低情绪折价，不自动证明基本面改善。",
+    "长期合同提升能见度，但若增量只来自涨价而非数量增长，仍需单独检验需求质量。",
+    "业绩是否利好价格取决于实际结果相对隐含预期，而不只取决于同比增速。"
+  ],
+  "action_summary": {
+    "posture_update": "not_applied_other_author",
+    "playbook_update": "no_change",
+    "hypothesis_update": "one_new_candidate_and_one_existing_recurrence",
+    "audit_evidence": "bound_to_complete_official_article_markdown_and_image_notes_sha256",
+    "instrumentation_todo": "research_joint_financing_turnover_breadth_confirmation_and_expectation_crowding",
+    "routing": [
+      "authority_0_durable_knowledge",
+      "research_backlog_candidate"
+    ]
+  }
+}

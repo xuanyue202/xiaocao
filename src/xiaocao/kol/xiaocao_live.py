@@ -44,8 +44,19 @@ DEFAULT_CAPTURE_LEDGER = Path("output/live/kol_capture_jobs.jsonl")
 DEFAULT_OUTPUT = Path("output/live/kol_xiaocao_live")
 DEFAULT_NETDISK_OUTPUT = Path("output/live/kol_netdisk_enrichment")
 DEFAULT_DECISION_OUTPUT = Path("output/live/kol_intelligence")
-DEFAULT_SNIFFER_DIR = Path("/Users/bytedance/coding/wx_channels_download")
-DEFAULT_SNIFFER_BINARY = DEFAULT_SNIFFER_DIR / "wx_video_download_macos_arm64"
+
+
+def _default_sniffer_binary(repo_root: Path | str | None = None) -> Path:
+    """Resolve the capture adapter beside the active Xiaocao checkout."""
+    root = (
+        Path(repo_root).expanduser().resolve()
+        if repo_root is not None
+        else Path(__file__).resolve().parents[3]
+    )
+    return root.parent / "wx_channels_download" / "wx_video_download_macos_arm64"
+
+
+DEFAULT_SNIFFER_BINARY = _default_sniffer_binary()
 REQUIRED_COVERAGE_ROWS = {
     "todays_market_diagnosis",
     "next_session_playbook",
@@ -315,6 +326,49 @@ def validate_decision_bundle(
     return bundle
 
 
+def _legal_household_terminal(value: Any) -> bool:
+    if not isinstance(value, dict) or not _SHA256.fullmatch(
+        str(value.get("idempotency_key") or "")
+    ):
+        return False
+    if value.get("status") == "delivered":
+        return True
+    return value.get("status") == "suppressed" and bool(
+        str(value.get("reason") or "").strip()
+    )
+
+
+def _validate_daily_publication_terminal(
+    result_item: dict[str, Any],
+    *,
+    household_status: str,
+) -> dict[str, Any]:
+    terminal = result_item.get("daily_terminal")
+    if not isinstance(terminal, dict):
+        raise EnrichmentError("Ticket 03 gray publication terminal is missing")
+    report = terminal.get("gray_report")
+    alert = terminal.get("alert")
+    if (
+        not isinstance(report, dict)
+        or report.get("status") != "published"
+        or not str(report.get("detail_url") or "").strip()
+        or not str(report.get("receipt") or "").strip()
+        or not isinstance(alert, dict)
+    ):
+        raise EnrichmentError("Ticket 03 gray publication receipt is incomplete")
+    if household_status == "suppressed":
+        if (
+            alert.get("status") != "not_eligible"
+            or not str(alert.get("reason") or "").strip()
+        ):
+            raise EnrichmentError(
+                "Ticket 03 historical no-alert terminal is incomplete"
+            )
+    elif alert.get("status") != "delivered":
+        raise EnrichmentError("Ticket 03 reminder delivery terminal is incomplete")
+    return report
+
+
 class XiaocaoLiveService:
     """One status surface for the broadband and coordinator phases."""
 
@@ -331,6 +385,7 @@ class XiaocaoLiveService:
         popen: Callable[..., Any] = subprocess.Popen,
         runner: Callable[..., Any] = subprocess.run,
         clock: Callable[[], datetime] = _now,
+        sleep: Callable[[float], None] = time.sleep,
     ):
         self.output_dir = Path(output_dir).expanduser().resolve()
         self.events_path = self.output_dir / "events.jsonl"
@@ -342,6 +397,7 @@ class XiaocaoLiveService:
         self._popen = popen
         self._runner = runner
         self._clock = clock
+        self._sleep = sleep
 
     def _append(self, event: str, **fields: Any) -> dict[str, Any]:
         row = {
@@ -626,6 +682,20 @@ class XiaocaoLiveService:
                 pids.append(int(pieces[0]))
         return pids
 
+    def _confirm_sniffer_stable(
+        self,
+        *,
+        expected_pid: int,
+    ) -> dict[str, Any] | None:
+        """Reject the API's brief pre-proxy window as a healthy startup."""
+        self._sleep(1.0)
+        if self._sniffer_pids() != [expected_pid]:
+            return None
+        try:
+            return self.sniffer.status()
+        except SnifferError:
+            return None
+
     def start(self, *, page_url: str | None = None) -> dict[str, Any]:
         """Start or reconcile the sniffer, arm baseline, and emit one prompt."""
         expected_source: dict[str, str] | None = None
@@ -668,7 +738,11 @@ class XiaocaoLiveService:
                         sniffer_status = self.sniffer.status()
                         break
                     except SnifferError:
-                        time.sleep(0.1)
+                        self._sleep(0.1)
+                if sniffer_status is not None:
+                    sniffer_status = self._confirm_sniffer_stable(
+                        expected_pid=pids[0]
+                    )
                 if len(pids) != 1 or sniffer_status is None:
                     raise EnrichmentError("sniffer did not resume healthy")
                 self._append(
@@ -721,7 +795,11 @@ class XiaocaoLiveService:
                     sniffer_status = self.sniffer.status()
                     break
                 except SnifferError:
-                    time.sleep(0.1)
+                    self._sleep(0.1)
+            if sniffer_status is not None:
+                sniffer_status = self._confirm_sniffer_stable(
+                    expected_pid=pids[0]
+                )
         if len(pids) != 1 or sniffer_status is None:
             raise EnrichmentError("sniffer did not become healthy")
         receipt = self._append(
@@ -1814,11 +1892,7 @@ class XiaocaoLiveService:
         household = netdisk_state.get("household_notification")
         book = netdisk_state.get("book_kol_us")
         if (
-            not isinstance(household, dict)
-            or household.get("status") != "delivered"
-            or not _SHA256.fullmatch(
-                str(household.get("idempotency_key") or "")
-            )
+            not _legal_household_terminal(household)
             or not isinstance(book, dict)
             or book.get("book") != "KOL-US"
             or book.get("paper_only") is not True
@@ -1830,6 +1904,16 @@ class XiaocaoLiveService:
             )
         ):
             raise EnrichmentError("Ticket 03 remote dual-output receipts are incomplete")
+        assert isinstance(household, dict)
+        publication_report = None
+        if (
+            isinstance(result_item.get("daily_terminal"), dict)
+            or household.get("status") == "suppressed"
+        ):
+            publication_report = _validate_daily_publication_terminal(
+                result_item,
+                household_status=str(household["status"]),
+            )
 
         netdisk_events = [
             row
@@ -1858,6 +1942,10 @@ class XiaocaoLiveService:
             if row.get("event") == "notification_delivered"
             and row.get("idempotency_key") == notification_key
         ]
+        notification_is_delivered = household.get("status") == "delivered"
+        notification_terminal_count = (
+            len(notification_receipts) if notification_is_delivered else 1
+        )
         paper_rows = [
             row
             for row in _read_jsonl(
@@ -1879,7 +1967,7 @@ class XiaocaoLiveService:
                 row.get("event") == "netdisk_ai_note_triggered"
                 for row in netdisk_events
             ),
-            "household_notification": len(notification_receipts),
+            "household_notification": notification_terminal_count,
             "book_kol_us": len(paper_rows),
         }
         if (
@@ -1893,7 +1981,18 @@ class XiaocaoLiveService:
             }
             or len(notification_claims) > 1
             or len(notification_aliases) > 1
-            or not (notification_claims or notification_aliases)
+            or (
+                notification_is_delivered
+                and not (notification_claims or notification_aliases)
+            )
+            or (
+                not notification_is_delivered
+                and bool(
+                    notification_claims
+                    or notification_aliases
+                    or notification_receipts
+                )
+            )
             or sum(
                 row.get("event") == "netdisk_decisions_completed"
                 for row in netdisk_events
@@ -1952,7 +2051,21 @@ class XiaocaoLiveService:
                 ],
             },
             "outputs": {
-                "household_status": "delivered",
+                "gray_report_status": (
+                    "published" if publication_report else None
+                ),
+                "gray_report_url": (
+                    publication_report.get("detail_url")
+                    if publication_report
+                    else None
+                ),
+                "gray_report_receipt": (
+                    publication_report.get("receipt")
+                    if publication_report
+                    else None
+                ),
+                "household_status": household["status"],
+                "household_reason": household.get("reason"),
                 "household_advisory_only": True,
                 "household_idempotency_key": notification_key,
                 "book": "KOL-US",
@@ -2177,11 +2290,7 @@ class XiaocaoLiveService:
         household = netdisk_state.get("household_notification")
         book = netdisk_state.get("book_kol_us")
         if (
-            not isinstance(household, dict)
-            or household.get("status") != "delivered"
-            or not _SHA256.fullmatch(
-                str(household.get("idempotency_key") or "")
-            )
+            not _legal_household_terminal(household)
             or not isinstance(book, dict)
             or book.get("book") != "KOL-US"
             or book.get("paper_only") is not True
@@ -2193,6 +2302,16 @@ class XiaocaoLiveService:
             )
         ):
             raise EnrichmentError("Ticket 03 dual-output receipts are incomplete")
+        assert isinstance(household, dict)
+        publication_report = None
+        if (
+            isinstance(result_item.get("daily_terminal"), dict)
+            or household.get("status") == "suppressed"
+        ):
+            publication_report = _validate_daily_publication_terminal(
+                result_item,
+                household_status=str(household["status"]),
+            )
 
         decision_events = _read_jsonl(self.decision_output / "events.jsonl")
         notification_key = str(household["idempotency_key"])
@@ -2216,6 +2335,10 @@ class XiaocaoLiveService:
             if row.get("event") == "notification_delivered"
             and row.get("idempotency_key") == notification_key
         ]
+        notification_is_delivered = household.get("status") == "delivered"
+        notification_terminal_count = (
+            len(notification_receipts) if notification_is_delivered else 1
+        )
         paper_rows = [
             row
             for row in _read_jsonl(
@@ -2244,7 +2367,7 @@ class XiaocaoLiveService:
                 row.get("event") == "netdisk_ai_note_triggered"
                 for row in netdisk_events
             ),
-            "household_notification": len(notification_receipts),
+            "household_notification": notification_terminal_count,
             "book_kol_us": len(paper_rows),
         }
         if (
@@ -2259,7 +2382,18 @@ class XiaocaoLiveService:
             }
             or len(notification_claims) > 1
             or len(notification_aliases) > 1
-            or not (notification_claims or notification_aliases)
+            or (
+                notification_is_delivered
+                and not (notification_claims or notification_aliases)
+            )
+            or (
+                not notification_is_delivered
+                and bool(
+                    notification_claims
+                    or notification_aliases
+                    or notification_receipts
+                )
+            )
             or sum(
                 row.get("event") == "netdisk_decisions_completed"
                 for row in netdisk_events
@@ -2322,7 +2456,21 @@ class XiaocaoLiveService:
                 ],
             },
             "outputs": {
-                "household_status": "delivered",
+                "gray_report_status": (
+                    "published" if publication_report else None
+                ),
+                "gray_report_url": (
+                    publication_report.get("detail_url")
+                    if publication_report
+                    else None
+                ),
+                "gray_report_receipt": (
+                    publication_report.get("receipt")
+                    if publication_report
+                    else None
+                ),
+                "household_status": household["status"],
+                "household_reason": household.get("reason"),
                 "household_advisory_only": True,
                 "household_idempotency_key": notification_key,
                 "book": "KOL-US",
@@ -2451,10 +2599,11 @@ class XiaocaoLiveService:
         household = state.get("household_notification")
         book = state.get("book_kol_us")
         if (
-            not isinstance(household, dict)
-            or household.get("status") != "delivered"
+            not _legal_household_terminal(household)
             or household.get("idempotency_key")
             != outputs.get("household_idempotency_key")
+            or household.get("status")
+            != outputs.get("household_status", "delivered")
             or not isinstance(book, dict)
             or book.get("book") != "KOL-US"
             or book.get("paper_only") is not True

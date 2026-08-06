@@ -48,6 +48,7 @@ def _row(
     *,
     size: int,
     modified_at: int,
+    uploaded_at: int = 0,
     is_dir: bool = False,
 ) -> dict:
     return {
@@ -56,6 +57,7 @@ def _row(
         "name": path.rsplit("/", 1)[-1],
         "is_dir": is_dir,
         "size": size,
+        "uploaded_at": uploaded_at,
         "modified_at": modified_at,
     }
 
@@ -229,6 +231,121 @@ def test_new_deep_video_is_detected_when_parent_directory_mtime_is_unchanged(
         for row in service.pending_items()
         if row["identity"] == discovered["updates"][0]["identity"]
     )["work_eligible"] is True
+
+
+def test_remote_upload_or_modify_time_must_advance_source_watermark(tmp_path):
+    service = _service(tmp_path)
+    lv, lucifer = _source_rows()
+    service.observe(lv, lucifer)
+    manifest = service._load_manifest()
+    for item in manifest["items"].values():
+        if item.get("work_eligible"):
+            item["completed_version_key"] = item["version_key"]
+            item["work_eligible"] = False
+    for episode in manifest["episodes"].values():
+        if episode.get("work_eligible"):
+            episode["completed_version_key"] = episode["version_key"]
+            episode["work_eligible"] = False
+    from xiaocao.kol.subscription_video import _atomic_write_json
+
+    _atomic_write_json(service.manifest_path, manifest)
+    historical = _row(
+        "lucifer-historical-copy",
+        "/课程/路西法全套/历史/旧课.mp4",
+        size=100,
+        uploaded_at=1_700_000_000,
+        modified_at=1_700_000_100,
+    )
+    newly_uploaded = _row(
+        "lucifer-new-upload",
+        "/课程/路西法全套/更新/新课.mp4",
+        size=200,
+        uploaded_at=1_785_000_000,
+        modified_at=1_700_000_100,
+    )
+
+    discovered = service.observe(lv, [*lucifer, historical, newly_uploaded])
+
+    assert [row["path"] for row in discovered["updates"]] == [
+        newly_uploaded["path"]
+    ]
+    status = service.status()
+    old = next(
+        row for row in status["items"].values()
+        if row["path"] == historical["path"]
+    )
+    new = next(
+        row for row in status["items"].values()
+        if row["path"] == newly_uploaded["path"]
+    )
+    assert old["work_eligible"] is False
+    assert old["eligibility_pause_reason"] == (
+        "remote_time_not_newer_than_watermark"
+    )
+    assert new["work_eligible"] is True
+    assert new["remote_activity_at"] == newly_uploaded["uploaded_at"]
+    assert status["source_remote_time_watermarks"][LUCIFER_SOURCE] == (
+        newly_uploaded["uploaded_at"]
+    )
+
+
+def test_legacy_historical_pending_is_quarantined_without_replaying_claims(
+    tmp_path,
+):
+    service = _service(tmp_path)
+    lv, lucifer = _source_rows()
+    service.observe(lv, lucifer)
+    manifest = service._load_manifest()
+    manifest.pop("source_remote_time_watermarks")
+    manifest.pop("remote_time_migration", None)
+    historical_raw = _row(
+        "legacy-history",
+        "/课程/路西法全套/历史/2024旧课.mp4",
+        size=100,
+        uploaded_at=1_700_000_000,
+        modified_at=1_700_000_100,
+    )
+    historical = service._normalize(
+        historical_raw,
+        source=LUCIFER_SOURCE,
+        author="路西法",
+    )
+    historical.update(
+        {
+            "present": True,
+            "first_seen_at": NOW.isoformat(),
+            "last_seen_at": NOW.isoformat(),
+            "version_first_seen_at": NOW.isoformat(),
+            "work_eligible": True,
+        }
+    )
+    manifest["items"][historical["identity"]] = historical
+    from xiaocao.kol.subscription_video import _atomic_write_json
+
+    _atomic_write_json(service.manifest_path, manifest)
+    claim = service.output_dir / "claims" / "existing.json"
+    claim.parent.mkdir(parents=True)
+    claim.write_text('{"status":"claimed"}\n', encoding="utf-8")
+    before = claim.read_bytes()
+
+    migration = service.migrate_legacy_remote_time_eligibility()
+
+    status = service.status()
+    migrated = status["items"][historical["identity"]]
+    assert migrated["work_eligible"] is False
+    assert migrated["eligibility_pause_reason"] == (
+        "historical_remote_time_not_newer_than_bootstrap"
+    )
+    assert historical["identity"] not in {
+        row["identity"] for row in service.pending_items()
+    }
+    assert migration["quarantined_count"] == 1
+    assert status["remote_time_migration"]["quarantined_count"] == 1
+    assert (
+        status["remote_time_migration"]["external_side_effects_replayed"]
+        is False
+    )
+    assert claim.read_bytes() == before
 
 
 def test_episode_analysis_request_binds_all_component_evidence(tmp_path):

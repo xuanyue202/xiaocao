@@ -201,6 +201,9 @@ _BROWSER_LISTING_SCRIPT_TEMPLATE = r"""(async () => {
       name,
       is_dir: isDir,
       size: Number(item.size || 0),
+      uploaded_at: Number(
+        item.server_ctime || item.local_ctime || item.ctime || 0
+      ),
       modified_at: Number(
         item.server_mtime || item.local_mtime || item.mtime || 0
       )

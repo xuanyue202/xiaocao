@@ -71,6 +71,8 @@ Pytest uses `pytest.ini`, `tests` as the default path, and `e2e` as the live API
 
 Recent commits use concise imperative summaries, sometimes with a priority prefix such as `P0:`. Examples: `Add live trading automation migration support`, `Improve paper trading execution controls`. PRs should describe changes, list validation, call out live/API impact, and mention excluded artifacts.
 
+Once the user authorizes a coherent KOL or knowledge-base change set and it has passed its scoped validation, commit and normally push it promptly so the local and remote writers do not drift into a later conflict. Preserve unrelated WIP and exclude runtime `output/`, credentials, caches, binaries, account state, and other generated artifacts. Fetch and reconcile the remote branch before pushing; never force-push over another writer.
+
 ## Calling the xiaocao data API (`p-xcapi.kjap1.cn`)
 
 **Rate-limit every call.** The API throttles on bursts — empirically ~10 sequential calls succeed, but ~60 in quick succession start returning empty `[]`/null (a silent throttle, not an error). When fetching for more than a handful of symbols/dates: batch small, space requests (e.g. sleep ~0.5–1s between calls, ≤~8 concurrent), and **prefer cache-first reads** (`output/.cache/xiaocao.db`) over re-fetching. Never hammer it in a tight loop. Cache results so a retry doesn't re-hit the API.

@@ -664,3 +664,97 @@ def test_invalid_argument_before_any_receipt_can_reprepare_same_source_binding(
         if row["event"] == "publication_prepared"
         and row["publication_key"] == "event-repair"
     ]) == 2
+
+
+def test_invalid_argument_repairs_only_unreceipted_record(tmp_path):
+    report = _initial_report()
+    evaluation = build_record(
+        kind="viewpoint_evaluation",
+        record_id_value="ve_repair",
+        idempotency_key="put-evaluation-repair-v1",
+        created_at="2026-07-26T08:05:00.000Z",
+        source_binding=report["source_binding"],
+        payload={
+            "evaluation_id": "ve_repair",
+            "viewpoint_id": "vp_repair",
+            "status": "uncertain",
+            "as_of": "2026-07-26T08:05:00.000Z",
+            "evaluated_at": "2026-07-26T08:05:00.000Z",
+            "basis": "等待后续验证。",
+            "confidence": "medium",
+            "uncertainties": [],
+            "evidence": ["/Users/example/output/live/evidence.json"],
+        },
+    )
+    records = [report, evaluation]
+    request = build_publish_request(
+        records,
+        idempotency_key="publish-partial-repair-v1",
+        reason="首次发布",
+    )
+    ledger = PublicationLedger(tmp_path)
+    ledger.prepare("event-partial-repair", records, request)
+    report_key = ledger._record_key(report)
+    ledger._append(
+        "record_receipt",
+        publication_key="event-partial-repair",
+        record_key=report_key,
+        receipt={
+            "idempotencyKey": report["idempotency_key"],
+            "recordState": "staged",
+        },
+        reconciled=False,
+    )
+    evaluation_key = ledger._record_key(evaluation)
+    ledger._append(
+        "record_call_claimed",
+        publication_key="event-partial-repair",
+        record_key=evaluation_key,
+        idempotency_key=evaluation["idempotency_key"],
+        request=evaluation,
+    )
+    ledger._append(
+        "record_call_uncertain",
+        publication_key="event-partial-repair",
+        record_key=evaluation_key,
+        idempotency_key=evaluation["idempotency_key"],
+        error_type="LiangHuiMcpError",
+        error_code="INVALID_ARGUMENT",
+    )
+
+    corrected = json.loads(json.dumps(evaluation))
+    del corrected["payload"]["evidence"]
+    corrected["content_sha256"] = canonical_sha256(
+        {
+            key: corrected[key]
+            for key in (
+                "schema_version",
+                "kind",
+                "record_id",
+                "created_at",
+                "source_binding",
+                "payload",
+            )
+        }
+    )
+    corrected_records = [report, corrected]
+    corrected_request = build_publish_request(
+        corrected_records,
+        idempotency_key="publish-partial-repair-v1",
+        reason="首次发布",
+    )
+
+    ledger.prepare(
+        "event-partial-repair",
+        corrected_records,
+        corrected_request,
+    )
+
+    state = ledger.status("event-partial-repair")
+    assert state["artifact"]["records"] == corrected_records
+    assert state["record_receipts"] == {
+        report_key: {
+            "idempotencyKey": report["idempotency_key"],
+            "recordState": "staged",
+        }
+    }

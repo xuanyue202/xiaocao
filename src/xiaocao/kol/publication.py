@@ -645,22 +645,22 @@ class PublicationLedger:
             if prepared:
                 if prepared[-1].get("artifact_sha256") != artifact_sha256:
                     prior_artifact = prepared[-1].get("artifact") or {}
+                    prior_records = prior_artifact.get("records") or []
                     prior_bindings = [
                         row.get("source_binding")
-                        for row in prior_artifact.get("records") or []
+                        for row in prior_records
                     ]
                     current_bindings = [
                         row.get("source_binding")
                         for row in records
                     ]
                     latest = publication_events[-1]
-                    recoverable_rejection = (
+                    rejection_base = (
                         latest.get("event") == "record_call_uncertain"
                         and latest.get("error_code") == "INVALID_ARGUMENT"
                         and not any(
                             row.get("event")
                             in {
-                                "record_receipt",
                                 "publication_call_claimed",
                                 "publication_receipt",
                             }
@@ -669,6 +669,58 @@ class PublicationLedger:
                         and prior_bindings == current_bindings
                         and prior_artifact.get("metadata")
                         == artifact.get("metadata")
+                    )
+                    receipt_keys = {
+                        str(row.get("record_key") or "")
+                        for row in publication_events
+                        if row.get("event") == "record_receipt"
+                    }
+                    rejected_key = str(latest.get("record_key") or "")
+                    differences = [
+                        (prior, current)
+                        for prior, current in zip(prior_records, records)
+                        if prior != current
+                    ]
+                    strict_partial_repair = False
+                    if (
+                        rejection_base
+                        and receipt_keys
+                        and len(prior_records) == len(records)
+                        and len(differences) == 1
+                        and rejected_key not in receipt_keys
+                    ):
+                        prior_rejected, current_replacement = differences[0]
+                        unchanged_identity = all(
+                            prior_rejected.get(field)
+                            == current_replacement.get(field)
+                            for field in (
+                                "kind",
+                                "record_id",
+                                "idempotency_key",
+                                "created_at",
+                                "source_binding",
+                            )
+                        )
+                        prior_by_key = {
+                            self._record_key(row): row
+                            for row in prior_records
+                        }
+                        current_by_key = {
+                            self._record_key(row): row
+                            for row in records
+                        }
+                        strict_partial_repair = (
+                            self._record_key(prior_rejected) == rejected_key
+                            and unchanged_identity
+                            and all(
+                                key in prior_by_key
+                                and key in current_by_key
+                                and prior_by_key[key] == current_by_key[key]
+                                for key in receipt_keys
+                            )
+                        )
+                    recoverable_rejection = rejection_base and (
+                        not receipt_keys or strict_partial_repair
                     )
                     if not recoverable_rejection:
                         raise PublicationError(

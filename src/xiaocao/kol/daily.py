@@ -168,6 +168,23 @@ def _reader_text_list(value: Any, *, label: str) -> list[str]:
     return rows
 
 
+def _publication_evidence_list(value: Any) -> list[Any]:
+    """Keep reader-safe evidence while excluding local filesystem paths."""
+
+    if value in (None, []):
+        return []
+    if not isinstance(value, list):
+        raise DailyError("longitudinal evaluation evidence must be a list")
+    return [
+        row
+        for row in value
+        if not (
+            isinstance(row, str)
+            and Path(row).expanduser().is_absolute()
+        )
+    ]
+
+
 def _normalize_longitudinal_projection(
     item: dict[str, Any],
 ) -> dict[str, Any]:
@@ -304,7 +321,9 @@ def _normalize_longitudinal_projection(
                         evaluation.get("uncertainties"),
                         label="longitudinal evaluation uncertainties",
                     ),
-                    "evidence": list(evaluation.get("evidence") or []),
+                    "evidence": _publication_evidence_list(
+                        evaluation.get("evidence")
+                    ),
                 },
             }
         )

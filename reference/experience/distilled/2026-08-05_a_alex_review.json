@@ -1,0 +1,84 @@
+{
+  "date": "2026-08-05",
+  "kind": "review",
+  "author": "A也叫艾利克斯",
+  "source": "微信公众号",
+  "evidence": [
+    {
+      "path": "/Users/xuanyue202/Documents/project/xiaocao/output/live/kol_wechat_official/evidence/f08d0947c91f1f83ecbdba4c2f6162362e4687cef1dcbf7b0e5dcbca54d5aa18.md",
+      "sha256": "c933caf40f19145b7826002f991769527034d388f51f8f09745137dd5e129433",
+      "size": 15631
+    }
+  ],
+  "summary": "面对尚未落地的产业监管传闻，先把最坏情形和更可能的基准情形分开，再用技术壁垒、替代能力、供给约束和客户成本判断冲击是短期情绪还是长期基本面变化。",
+  "posture": {
+    "regime": "not_applied_other_author",
+    "dominant_style": "scenario_analysis",
+    "risk": "监管传闻与地缘博弈可能使高拥挤产业链出现估值折价",
+    "style_ranking": [
+      "先核验监管是否落地",
+      "再评估替代能力和客户成本",
+      "最后判断估值与业绩影响"
+    ]
+  },
+  "regime_call": {
+    "horizon": "短期至未来数季",
+    "call": "监管传闻更可能先造成情绪冲击，长期影响取决于正式规则、替代产能和国内需求能否补位。",
+    "what_would_falsify": "正式限制覆盖全部中国厂商且本土替代快速形成，或中国厂商海外客户收入和高端产品订单持续下修。"
+  },
+  "directions": [
+    {
+      "name": "高速光模块与光纤",
+      "view": "长期人工智能数据中心仍抬升光互连需求，但监管分割可能改变客户结构和远期估值。"
+    },
+    {
+      "name": "HBM与人工智能算力",
+      "view": "存储供给、良率和资本开支回报是算力扩张能否持续的重要约束。"
+    }
+  ],
+  "stocks": [],
+  "method_principles": [
+    "对政策传闻同时构造最坏情形和基准情形，不把尚未生效的草案直接当作经营事实。",
+    "比较不同产业冲击时，拆开基本面强弱、筹码拥挤、技术壁垒、认证难度、替代难度和供需格局。",
+    "判断脱钩风险不能只看政治意愿，还要计算替代产能、客户成本和上下游相互依赖。"
+  ],
+  "exit_lessons": [
+    "若正式规则覆盖范围扩大且订单与客户收入开始兑现下修，应停止把下跌解释为纯情绪。",
+    "若公司身份、监管文本或关键份额数据无法核验，不把来源推演升级为具体交易指令。"
+  ],
+  "hypotheses": [
+    {
+      "claim": "高技术壁垒且短期替代产能不足的人工智能硬件环节，监管传闻初期的价格冲击可能大于同期基本面冲击。",
+      "implied_rule": "把正式规则、客户订单、替代产能和价格修复分开跟踪，只有经营指标同步恶化才把风险升级为基本面失效。",
+      "falsifiable_test": "比较类似监管事件后20至60个交易日的订单、盈利预期、客户收入和相对行业收益；若经营指标与价格同步持续下修，则假设不成立。",
+      "expected_effect": "减少在未经核验的政策传闻上机械追跌或抄底。",
+      "category": "event_scenario_analysis"
+    }
+  ],
+  "timing_notes": [
+    "短期观察正式监管文本和市场情绪修复。",
+    "中期观察客户订单、海外产能、国产人工智能需求和高端产品路线。"
+  ],
+  "typo_corrections": [],
+  "decision_trace": [
+    "观察：市场传播美国监管可能限制中国光模块的传闻。",
+    "推演：分别评估全面排除与规则修改或搁置两种情形。",
+    "约束：用技术替代、产能、成本和供应链交织程度检验两种情形。",
+    "行动：在正式规则和经营数据确认前不把传闻直接转化为交易。"
+  ],
+  "judgment_heuristics": [
+    "强基本面叠加拥挤筹码的下跌，不能自动类比为弱基本面产业的持续崩塌。",
+    "产业链互相依赖越深，单边排除的执行成本越高，但这不是监管不会落地的保证。"
+  ],
+  "action_summary": {
+    "posture_update": "not_applied_other_author",
+    "playbook_update": "no_change",
+    "hypothesis_update": "candidate_recorded_in_this_file_only",
+    "audit_evidence": "bound_to_complete_official_article_markdown_sha256",
+    "instrumentation_todo": "track_formal_rule_customer_orders_and_substitution_capacity",
+    "routing": [
+      "authority_0_durable_knowledge",
+      "research_backlog_candidate"
+    ]
+  }
+}

@@ -308,7 +308,15 @@ def _episode_unit(
         "is_episode": True,
         "media_type": "video",
         "size": sum(int(row.get("size") or 0) for row in rows),
+        "uploaded_at": max(int(row.get("uploaded_at") or 0) for row in rows),
         "modified_at": max(int(row.get("modified_at") or 0) for row in rows),
+        "remote_activity_at": max(
+            max(
+                int(row.get("uploaded_at") or 0),
+                int(row.get("modified_at") or 0),
+            )
+            for row in rows
+        ),
         "version_first_seen_at": max(
             str(row.get("version_first_seen_at") or "") for row in rows
         ),

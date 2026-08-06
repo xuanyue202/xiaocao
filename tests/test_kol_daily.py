@@ -155,6 +155,88 @@ def test_xiaocao_runtime_imports_portable_handoff_before_status(
     assert calls == ["import"]
 
 
+def test_xiaocao_runtime_upgrades_only_latest_decided_publication(tmp_path, monkeypatch):
+    xiaocao_output = tmp_path / "xiaocao"
+    handoff_dir = xiaocao_output / "imported_handoffs"
+    handoff_dir.mkdir(parents=True)
+    job_id = "kol-netdisk-current"
+    handoff = {
+        "schema_version": 1,
+        "handoff_id": "a" * 64,
+        "capture_job_id": "kol-current",
+        "netdisk_job_id": job_id,
+        "published_at": "2026-08-06T16:00:00+08:00",
+        "large_payload_local_bytes": 0,
+    }
+    handoff["handoff_sha256"] = _canonical_sha256(handoff)
+    (handoff_dir / "kol-current.json").write_text(
+        json.dumps(handoff),
+        encoding="utf-8",
+    )
+    bundle = tmp_path / "bundle.json"
+    bundle.write_text('{"items": []}', encoding="utf-8")
+    prior_result = tmp_path / "prior-result.json"
+    prior_result.write_text(
+        '{"status": "completed", "items": [{}]}',
+        encoding="utf-8",
+    )
+    upgraded_result = tmp_path / "upgraded-result.json"
+    upgraded_result.write_text(
+        json.dumps({
+            "status": "completed",
+            "items": [{
+                "daily_terminal": {
+                    "kind": "source_event",
+                    "gray_report": {"status": "published"},
+                },
+            }],
+        }),
+        encoding="utf-8",
+    )
+    calls: list[dict[str, object]] = []
+
+    class FakeNetdisk:
+        def status(self, requested_job_id):
+            assert requested_job_id == job_id
+            return {
+                "status": "decided",
+                "decision_result_path": str(prior_result),
+                "decision_bundle_path": str(bundle),
+                "decision_bundle_sha256": hashlib.sha256(
+                    bundle.read_bytes()
+                ).hexdigest(),
+                "transcript_sha256": "b" * 64,
+            }
+
+        def decide(self, requested_job_id, **kwargs):
+            assert requested_job_id == job_id
+            calls.append(kwargs)
+            return {"decision_result_path": str(upgraded_result)}
+
+    class FakeService:
+        def __init__(self, *_args, **_kwargs):
+            self.netdisk = FakeNetdisk()
+
+    monkeypatch.setattr(kol_daily_script, "XiaocaoLiveService", FakeService)
+    runtime = DailyRuntime.__new__(DailyRuntime)
+    runtime.args = SimpleNamespace(
+        xiaocao_output_dir=xiaocao_output,
+        decision_output_dir=tmp_path / "decisions",
+        enrichment_session="xiaocao-lv-subscription",
+        opencli_profile=None,
+    )
+    pipeline = object()
+    runtime._pipeline = lambda _context: pipeline
+
+    result = runtime.xiaocao()
+
+    assert result["status"] == "completed"
+    assert result["events"][0]["gray_report"]["status"] == "published"
+    assert len(calls) == 1
+    assert calls[0]["pipeline"] is pipeline
+    assert calls[0]["reconcile_daily_terminal"] is True
+
+
 def test_daily_runtime_runs_xiaocao_wechat_subscription(tmp_path, monkeypatch):
     calls: list[tuple[str, object]] = []
 
@@ -811,6 +893,9 @@ def _projection_bundle() -> dict:
                 "basis": "观点来源明确，但随后数日的盘面持续性尚未验证。",
                 "confidence": "中等",
                 "uncertainties": ["缺少下一交易日的量价确认。"],
+                "evidence": [
+                    "/Users/example/output/live/paper_holdings.json"
+                ],
             },
         }],
     }
@@ -862,6 +947,7 @@ def test_publication_pipeline_creates_initial_viewpoint_and_evaluation(
     )
     assert evaluation["payload"]["viewpoint_id"] == viewpoint["record_id"]
     assert evaluation["payload"]["status"] == "uncertain"
+    assert "evidence" not in evaluation["payload"]
     assert evaluation["created_at"] == "2026-07-27T02:05:00Z"
     assert order == ["gray", "book"]
 

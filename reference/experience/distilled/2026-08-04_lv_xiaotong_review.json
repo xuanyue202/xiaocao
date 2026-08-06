@@ -1,0 +1,163 @@
+{
+  "date": "2026-08-04",
+  "kind": "底层逻辑报告",
+  "author": "吕晓彤",
+  "source": "baidu_subscription_share_browser",
+  "authority": 0,
+  "evidence": [
+    {
+      "path": "/Users/xuanyue202/Documents/project/xiaocao/output/live/kol_lv_subscription/artifacts/d0aaf17b9291127c8d08a89f338205684e727f4c8be7750d9e3cbc19b0cc4198/browser_original.pdf",
+      "sha256": "b30d094b4cde774523b70d4cf549bfd08566049b1b954d39a57c408d8f8c5cfb",
+      "size": 768188
+    },
+    {
+      "path": "/Users/xuanyue202/Documents/project/xiaocao/reference/experience/transcripts/2026-08/2026-08-04_lv_xiaotong_damo_breakdown.txt",
+      "sha256": "03dc268ce0dc5f6a6a1043ff1dd9763fcf9469a63109769fa6d8563c181603e5",
+      "size": 3291
+    }
+  ],
+  "summary": "这份独立底层逻辑报告把一段投行框架整理为可复用的研究方法：先区分全栈平台、瓶颈资产、应用层、低贝塔半导体与高杠杆中间商，再用增量 EBIT 相对增量 Capex、收入兑现、合同质量、融资成本和去杠杆进度验证。来源同时给出当下方向与仓位建议，但系统只把因果框架、证伪窗口和风险预算沉淀为 authority=0 知识；点名资产与数值均保留为来源主张，不能自动进入策略或真实交易。",
+  "posture": {
+    "regime": "deleveraging_rebound_with_fundamental_divergence",
+    "dominant_style": "研究上优先验证全栈平台的收入与资本开支转化、AI 基建合同质量和应用层变现；回避把高杠杆反弹当成趋势确认。",
+    "risk": "投行原报告未在本次证据中出现，PDF 中的 ROIC、跌幅、杠杆 AUM 和增速数字均未独立核验；内容与 8 月 3 日直播主题重叠，但 provider 将其作为独立报告产品发布。",
+    "style_ranking": [
+      "全栈平台的资本开支转化与真实收入",
+      "有合同和并网资源的 AI 基建瓶颈资产",
+      "能把 Token 成本转为订阅收入的应用层",
+      "低贝塔半导体与设备商的资本开支可见度",
+      "高杠杆中间商、纯题材与拥挤尾部回避"
+    ]
+  },
+  "regime_call": {
+    "horizon": "当前去杠杆阶段至未来 2—3 个季度",
+    "what_would_falsify": [
+      "CSP 的增量 EBIT 相对增量 Capex 持续低于来源框架的关键阈值，且云收入增长继续下行。",
+      "被视为瓶颈资产的公司无法形成可执行合同、并网交付或合理融资成本。",
+      "应用层不能把 Token 成本转化为稳定订阅收入和现金流。",
+      "所谓去杠杆余波已经结束但高杠杆中间商仍持续获得更强基本面兑现，说明来源的风险排序失效。"
+    ]
+  },
+  "directions": [
+    {
+      "name": "全栈云平台",
+      "stance": "将 IDC、GPU、模型、分发入口和收入兑现放在同一 ROIC 框架内验证，不能只看资本开支或模型叙事。"
+    },
+    {
+      "name": "AI 基建瓶颈资产",
+      "stance": "电力、散热和带电机房只有在合同、交付和融资共同成立时才具研究价值，默认属于较小卫星风险预算。"
+    },
+    {
+      "name": "AI 应用层",
+      "stance": "核心验证问题是能否把推理成本转化为可持续订阅收入，而不是是否贴有 AI 标签。"
+    },
+    {
+      "name": "存储与高杠杆中间商",
+      "stance": "长期需求叙事与短期盈利、筹码和去杠杆压力分开处理；单日大幅反弹不是出清完成的证据。"
+    }
+  ],
+  "stocks": [
+    {
+      "name": "Microsoft",
+      "code": "MSFT",
+      "role": "来源列为全栈平台核心样本；系统仅保留为研究案例。"
+    },
+    {
+      "name": "Alphabet",
+      "code": "GOOGL",
+      "role": "来源列为全栈平台核心样本；系统仅保留为研究案例。"
+    },
+    {
+      "name": "Amazon",
+      "code": "AMZN",
+      "role": "来源列为全栈平台样本；需要验证云收入与资本开支转化。"
+    },
+    {
+      "name": "Meta Platforms",
+      "code": "META",
+      "role": "来源列为全栈平台样本；需要验证模型分发与变现。"
+    },
+    {
+      "name": "NVIDIA",
+      "code": "NVDA",
+      "role": "来源将其与高弹性存储动量区分；系统不据此生成交易。"
+    },
+    {
+      "name": "Micron Technology",
+      "code": "MU",
+      "role": "来源用作存储周期与去杠杆压力样本。"
+    }
+  ],
+  "decision_trace": [
+    "观察：来源把韩国杠杆 ETF、基金爆仓和半导体回撤归入同一去杠杆背景。",
+    "推断：强制卖压退潮只支持超卖反弹与基本面分化，不能直接证明全面反转。",
+    "动作：把买入方向拆成核心与卫星，把杠杆、合同和融资成本设为前置门槛。",
+    "观察：来源用三类算力商业模式的 ROIC 差异解释平台与中间商的优先级。",
+    "推断：资本开支本身不是优势，只有转化为增量收入和增量 EBIT 才能验证。",
+    "动作：未来 2—3 个季度跟踪增量 EBIT/增量 Capex、云收入增长、合同和利用率。",
+    "观察：来源同时保留存储长期需求与短期盈利、筹码压力。",
+    "推断：长期产业方向不能替代短期出清证据。",
+    "动作：单日反弹不触发抄底，尤其不使用杠杆；等待盈利预期和筹码共同稳定。"
+  ],
+  "method_principles": [
+    "用增量 EBIT 相对增量 Capex 检查资本开支是否真正创造经营回报。",
+    "把平台、瓶颈资产、应用层和算力中间商按商业模式拆开，不能把 AI 主题当作同质资产。",
+    "合同质量、交付能力、融资成本和利用率必须共同验证 AI 基建资产。",
+    "长期产业需求、短期盈利周期和去杠杆筹码是三个独立证据层。",
+    "方向成立不等于次日上涨；核心与卫星仓位必须使用不同风险预算。"
+  ],
+  "exit_lessons": [
+    "单日大幅反弹不能证明杠杆出清完成。",
+    "无合同、依赖租金价差和高利用率的中间商，在 Token 定价下行时应优先降低风险。",
+    "核心资产若无法维持收入增长和资本开支回报，也必须接受估值压缩的证伪。",
+    "禁止用杠杆为长期逻辑争取时间。"
+  ],
+  "hypotheses": [
+    {
+      "claim": "在 AI 资本开支上行阶段，增量 EBIT 相对增量 Capex 较高且云收入增长可维持的平台，其后续风险调整收益应优于依赖第三方算力租金价差的中间商。",
+      "implied_rule": "按季度构建资本开支转化率、云收入增长、合同质量和融资成本面板；只有经营回报与收入同时满足门槛时，平台或基建样本才进入研究候选。",
+      "falsifiable_test": "用 MSFT、GOOGL、AMZN、META 与可识别的第三方算力中间商构建滚动季度面板，比较增量 EBIT/增量 Capex、云收入增长、未来 3 至 12 个月收益、最大回撤和盈利预期修正。",
+      "expected_effect": "资本开支转化率和收入增长同时较高的组应具有更稳的盈利预期和更小左尾；若中间商长期显著胜出且基本面更稳，则该假设被否证。",
+      "category": "business_model_quality"
+    }
+  ],
+  "timing_notes": [
+    "来源把当下定义为强制卖压最激烈阶段过去后的分化期，而不是全面反转。",
+    "证伪窗口是未来 2—3 个季度，短期价格只能作为筹码状态，不足以验证商业模式。",
+    "报告中的市场跌幅、基金事件和投行数字未独立核验，不作为实时提醒依据。"
+  ],
+  "judgment_heuristics": [
+    "先问商业模式靠什么赚钱，再问它是否属于 AI。",
+    "资本开支增长必须与收入、增量利润和利用率一起观察。",
+    "有电有地不等于有价值，合同、并网、融资和交付缺一不可。",
+    "把核心仓、卫星仓与杠杆工具分开，不用同一置信度管理。",
+    "任何投行框架先保留来源归属，再由研究数据决定是否提升权威。"
+  ],
+  "typo_corrections": [
+    {
+      "raw": "laaS",
+      "corrected": "IaaS（按上下文，原 PDF 字形可能混淆）"
+    },
+    {
+      "raw": "ADl",
+      "corrected": "ADI（按模拟芯片公司上下文）"
+    },
+    {
+      "raw": "G00GL",
+      "corrected": "GOOGL（按 Alphabet 股票代码上下文）"
+    }
+  ],
+  "action_summary": {
+    "posture_update": "不应用：吕晓彤属于 other author，本条 authority=0，不修改 posture_current 或 REGIME_TIMELINE。",
+    "playbook_update": "作为检索知识保留资本开支转化、商业模式分层和核心/卫星风险预算方法；不直接修改确定性 playbook。",
+    "hypothesis_update": "新增 AI 资本开支转化率与商业模式质量的候选假设，等待 research harness 与 human gate。",
+    "audit_evidence": "原 PDF 2 页、768188 字节、SHA-256=b30d094b4cde774523b70d4cf549bfd08566049b1b954d39a57c408d8f8c5cfb；两页均完成原生提取、渲染和视觉/OCR 交叉覆盖。",
+    "instrumentation_todo": "构建季度增量 EBIT/增量 Capex、云收入增长、合同、融资成本、利用率和未来收益面板。",
+    "routing": [
+      "durable_knowledge",
+      "business_model_quality",
+      "portfolio_construction",
+      "report_only"
+    ]
+  }
+}

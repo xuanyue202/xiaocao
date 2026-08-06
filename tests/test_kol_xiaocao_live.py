@@ -13,6 +13,7 @@ from xiaocao.kol.enrichment_types import EnrichmentError
 from xiaocao.kol.xiaocao_live import (
     REQUIRED_COVERAGE_ROWS,
     XiaocaoLiveService,
+    _default_sniffer_binary,
     validate_cleanup_evidence,
     validate_coverage_matrix,
 )
@@ -20,6 +21,17 @@ from xiaocao.kol.xiaocao_live import (
 
 def _sha256(path: Path) -> str:
     return hashlib.sha256(path.read_bytes()).hexdigest()
+
+
+def test_default_sniffer_binary_follows_active_checkout(tmp_path):
+    repo_root = tmp_path / "coding" / "xiaocao"
+
+    assert _default_sniffer_binary(repo_root) == (
+        tmp_path
+        / "coding"
+        / "wx_channels_download"
+        / "wx_video_download_macos_arm64"
+    )
 
 
 def _write_json(path: Path, value: dict) -> Path:
@@ -980,6 +992,7 @@ def test_start_emits_one_prompt_after_health_and_baseline(tmp_path):
         sniffer_client=Sniffer(),
         popen=popen,
         runner=runner,
+        sleep=lambda _seconds: None,
     )
 
     first = service.start()
@@ -1001,6 +1014,52 @@ def test_start_emits_one_prompt_after_health_and_baseline(tmp_path):
     assert len([
         row for row in service.events() if row["event"] == "capture_armed"
     ]) == 1
+
+
+def test_start_rejects_api_that_dies_before_proxy_is_stable(tmp_path):
+    binary = tmp_path / "wx_video_download_macos_arm64"
+    binary.write_bytes(b"binary")
+    state = {"running": False}
+
+    class Sniffer:
+        def status(self):
+            if not state["running"]:
+                raise SnifferError("not running")
+            return {"version": "test", "running": True}
+
+    class Process:
+        pid = 1234
+
+    def popen(*_args, **_kwargs):
+        state["running"] = True
+        return Process()
+
+    def runner(command, **_kwargs):
+        if command[0] == "ps":
+            stdout = f"1234 {binary}\n" if state["running"] else ""
+            return SimpleNamespace(stdout=stdout)
+        raise AssertionError(command)
+
+    def sleep(_seconds):
+        state["running"] = False
+
+    service = XiaocaoLiveService(
+        tmp_path / "live",
+        capture_ledger=tmp_path / "capture.jsonl",
+        sniffer_binary=binary,
+        sniffer_client=Sniffer(),
+        popen=popen,
+        runner=runner,
+        sleep=sleep,
+    )
+
+    with pytest.raises(EnrichmentError, match="did not become healthy"):
+        service.start()
+
+    assert not any(
+        row["event"] in {"sniffer_started", "capture_armed"}
+        for row in service.events()
+    )
 
 
 def test_start_with_xiaoetong_page_arms_bound_source_job_without_query_state(
@@ -1052,6 +1111,7 @@ def test_start_with_xiaoetong_page_arms_bound_source_job_without_query_state(
         sniffer_client=Sniffer(),
         popen=popen,
         runner=runner,
+        sleep=lambda _seconds: None,
     )
     page_url = (
         "https://appsnm3rlcp3566.h5.xiaoeknow.com/v4/course/alive/l_target"
