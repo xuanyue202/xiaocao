@@ -2527,6 +2527,130 @@ def test_remote_handoff_rechecks_exact_target_before_transcript_claim(
     assert calls == ["inspect", "advance"]
 
 
+def test_transcript_ready_refreshes_stale_liveness_before_ai_note_claim(
+    tmp_path,
+    monkeypatch,
+):
+    service = NetdiskEnrichmentService(tmp_path / "out", now=lambda: NOW)
+    media_sha256 = "c" * 64
+    job_id = f"kol-netdisk-{media_sha256[:16]}"
+    video_basename = "20260804-masterclass-compressed.mp4"
+    service.store.append({
+        "schema_version": 1,
+        "event": "netdisk_transcript_ready",
+        "status": "transcript_ready",
+        "provider": "baidu_consumer_page",
+        "job_id": job_id,
+        "netdisk_directory": "/课程/自己的课/小草",
+        "netdisk_path": f"/课程/自己的课/小草/{video_basename}",
+        "video_basename": video_basename,
+        "video_sha256": media_sha256,
+        "video_sha256_kind": "content_sha256",
+        "source_mode": "cloud_handoff",
+        "large_payload_local_bytes": 0,
+        "handoff_id": "d" * 64,
+        "browser_control_blocked": False,
+        "browser_evidence": {
+            "observed_at": (NOW - timedelta(minutes=31)).isoformat(),
+            "page_url": "https://pan.baidu.com/pfile/video",
+            "snapshot_sha256": "e" * 64,
+            "target_name": video_basename,
+            "visible_state": "transcript_ready",
+        },
+        "updated_at": (NOW - timedelta(minutes=31)).isoformat(),
+    })
+    calls: list[str] = []
+
+    def inspect(**kwargs):
+        assert kwargs == {
+            "session": "remote-session",
+            "profile": "work",
+            "target_name": video_basename,
+        }
+        calls.append("inspect")
+        return {
+            "exact_count": 1,
+            "target_index": 0,
+            "observed_at": NOW,
+        }
+
+    def advance(job, *, session, profile):
+        assert (job, session, profile) == (
+            job_id,
+            "remote-session",
+            "work",
+        )
+        current = service.status(job_id)
+        assert current["event"] == "netdisk_browser_liveness_ready"
+        claim = service.claim_browser_action(job_id, action="ai_note")
+        calls.append("advance")
+        return {**claim, "pending": True}
+
+    monkeypatch.setattr(service, "_inspect_opencli_target", inspect)
+    monkeypatch.setattr(service, "_advance_opencli_ai_note", advance)
+
+    result = service.advance_opencli(
+        job_id,
+        session="remote-session",
+        profile="work",
+    )
+
+    assert result["status"] == "ai_note_claimed"
+    assert result["pending"] is True
+    assert calls == ["inspect", "advance"]
+
+
+def test_transcript_ready_keeps_fresh_liveness_without_folder_rescan(
+    tmp_path,
+    monkeypatch,
+):
+    service = NetdiskEnrichmentService(tmp_path / "out", now=lambda: NOW)
+    media_sha256 = "f" * 64
+    job_id = f"kol-netdisk-{media_sha256[:16]}"
+    video_basename = "fresh-masterclass-compressed.mp4"
+    service.store.append({
+        "schema_version": 1,
+        "event": "netdisk_transcript_ready",
+        "status": "transcript_ready",
+        "provider": "baidu_consumer_page",
+        "job_id": job_id,
+        "video_basename": video_basename,
+        "video_sha256": media_sha256,
+        "browser_control_blocked": False,
+        "browser_evidence": {
+            "observed_at": NOW.isoformat(),
+            "page_url": "https://pan.baidu.com/pfile/video",
+            "snapshot_sha256": "a" * 64,
+            "target_name": video_basename,
+            "visible_state": "transcript_ready",
+        },
+        "updated_at": NOW.isoformat(),
+    })
+
+    def unexpected_inspection(**_kwargs):
+        raise AssertionError("fresh liveness must not rescan the folder")
+
+    def advance(job, *, session, profile):
+        assert (job, session, profile) == (
+            job_id,
+            "remote-session",
+            None,
+        )
+        return {**service.status(job_id), "pending": True}
+
+    monkeypatch.setattr(
+        service,
+        "_inspect_opencli_target",
+        unexpected_inspection,
+    )
+    monkeypatch.setattr(service, "_advance_opencli_ai_note", advance)
+
+    result = service.advance_opencli(job_id, session="remote-session")
+
+    assert result["status"] == "transcript_ready"
+    assert result["pending"] is True
+
+
 def test_repeated_policy_failure_after_recovery_blocks_again(tmp_path):
     service, _video, prepared = _prepare(tmp_path)
     job_id = prepared["job_id"]

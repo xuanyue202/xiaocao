@@ -1741,7 +1741,15 @@ class NetdiskEnrichmentService:
             raise EnrichmentError("OpenCLI profile name is invalid")
         current = self.store.latest(job_id)
         status = str(current.get("status") or "")
-        if status == "video_ready" and not self._has_fresh_browser_control(current):
+        claimable_statuses = {
+            "video_ready",
+            "transcript_ready",
+            "ai_note_pretrigger_failed",
+        }
+        if (
+            status in claimable_statuses
+            and not self._has_fresh_browser_control(current)
+        ):
             target_name = str(current["video_basename"])
             inspection = self._inspect_opencli_target(
                 session=session,
