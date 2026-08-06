@@ -639,6 +639,12 @@ def _opencli_transcript_runner(video_name: str):
             )
         else:
             raise AssertionError(command)
+        if tail[:1] == ["eval"] and "baidu-netdisk/probe-transcript" in tail[1]:
+            payload = {
+                "template_name": "baidu-netdisk/probe-transcript",
+                "template_version": 1,
+                **payload,
+            }
         return SimpleNamespace(
             returncode=0,
             stdout=json.dumps(payload, ensure_ascii=False),
@@ -772,11 +778,19 @@ def _opencli_ai_note_runner(
         elif tail[:2] == ["wait", "selector"]:
             return SimpleNamespace(returncode=0, stdout="Waited", stderr="")
         elif tail[:1] == ["eval"] and "previewTemplate" in tail[1]:
-            payload = {"scheduled": True, "template_no": 1}
+            payload = {
+                "scheduled": True,
+                "template_no": 1,
+                "target_bound": True,
+                "modal_ready": True,
+                "template_matches": 1,
+                "template_selected": "文稿笔记",
+                "button_matches": 1,
+                "click_dispatched": False,
+            }
         elif (
             tail[:1] == ["eval"]
-            and "生成该笔记" in tail[1]
-            and "contentDocument" in tail[1]
+            and "baidu-netdisk/submit-ai-note" in tail[1]
         ):
             payload = submission_payload or {
                 "submitted": True,
@@ -803,6 +817,20 @@ def _opencli_ai_note_runner(
             }
         else:
             raise AssertionError(command)
+        if tail[:1] == ["eval"]:
+            for template_name in (
+                "probe-ai-note",
+                "prepare-ai-note",
+                "submit-ai-note",
+            ):
+                marker = f"baidu-netdisk/{template_name}"
+                if marker in tail[1]:
+                    payload = {
+                        "template_name": marker,
+                        "template_version": 1,
+                        **payload,
+                    }
+                    break
         return SimpleNamespace(
             returncode=0,
             stdout=json.dumps(payload, ensure_ascii=False),
@@ -983,8 +1011,7 @@ def test_ai_note_pretrigger_failure_is_persisted_and_retried_once(tmp_path):
         if (
             len(command) > 6
             and command[5] == "eval"
-            and "生成该笔记" in command[6]
-            and "contentDocument" in command[6]
+            and "baidu-netdisk/submit-ai-note" in command[6]
         ):
             submit_calls += 1
             payload = (
@@ -1007,6 +1034,11 @@ def test_ai_note_pretrigger_failure_is_persisted_and_retried_once(tmp_path):
                     "content_chars": 76,
                 }
             )
+            payload = {
+                "template_name": "baidu-netdisk/submit-ai-note",
+                "template_version": 1,
+                **payload,
+            }
             return SimpleNamespace(
                 returncode=0,
                 stdout=json.dumps(payload, ensure_ascii=False),
@@ -1094,8 +1126,7 @@ def test_ai_note_pretrigger_retry_stops_after_two_unsubmitted_attempts(tmp_path)
         if (
             len(command) > 6
             and command[5] == "eval"
-            and "生成该笔记" in command[6]
-            and "contentDocument" in command[6]
+            and "baidu-netdisk/submit-ai-note" in command[6]
         ):
             submit_calls += 1
         return base_runner(command, **kwargs)
@@ -1265,7 +1296,10 @@ def test_ai_note_claim_replay_reconciles_without_repeating_template_submission(
         if len(command) > 6 and command[5] == "eval"
     ]
     assert not any("previewTemplate" in script for script in eval_scripts)
-    assert not any("生成该笔记" in script for script in eval_scripts)
+    assert not any(
+        "baidu-netdisk/submit-ai-note" in script
+        for script in eval_scripts
+    )
 
 
 def test_ai_note_claim_replay_stays_uncertain_when_no_transition_is_visible(
@@ -1324,7 +1358,10 @@ def test_ai_note_claim_replay_stays_uncertain_when_no_transition_is_visible(
         if len(command) > 6 and command[5] == "eval"
     ]
     assert not any("previewTemplate" in script for script in eval_scripts)
-    assert not any("生成该笔记" in script for script in eval_scripts)
+    assert not any(
+        "baidu-netdisk/submit-ai-note" in script
+        for script in eval_scripts
+    )
 
 
 def test_opencli_step_waits_for_semantic_tab_activation_before_probing(tmp_path):

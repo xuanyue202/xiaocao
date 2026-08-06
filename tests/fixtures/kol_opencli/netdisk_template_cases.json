@@ -1,0 +1,74 @@
+{
+  "schema_version": 1,
+  "cases": [
+    {
+      "case": "wrong-player-path-fails-closed",
+      "template": "probe_ai_note",
+      "required": [
+        "searchParams.getAll('path').length === 1",
+        "searchParams.get('path') === expectedPath",
+        "target_bound: false"
+      ]
+    },
+    {
+      "case": "transcript-ready-requires-export-proof",
+      "template": "probe_transcript",
+      "required": [
+        "content_chars >= 200 && export_available",
+        "transcript_state = 'generating'"
+      ]
+    },
+    {
+      "case": "modal-shell-before-template-list-waits",
+      "template": "prepare_ai_note",
+      "required": [
+        "Date.now() + 12000",
+        ".wp-ainoteTpl__left__list__item__title",
+        "templateMatches[0].querySelector('.selected')",
+        "buttonMatches.length === 1"
+      ]
+    },
+    {
+      "case": "text-template-is-explicitly-selected",
+      "template": "prepare_ai_note",
+      "required": [
+        "=== '文稿笔记'",
+        "template_selected: '文稿笔记'",
+        "click_dispatched: false"
+      ]
+    },
+    {
+      "case": "final-click-rechecks-all-preconditions",
+      "template": "submit_ai_note",
+      "required": [
+        "templateMatches.length !== 1",
+        "!templateSelected",
+        "buttonMatches.length !== 1",
+        "click_dispatched: false"
+      ]
+    },
+    {
+      "case": "dispatched-click-needs-strong-transition-proof",
+      "template": "submit_ai_note",
+      "required": [
+        "buttonMatches[0].click()",
+        "!modal_visible && note_state !== 'missing'",
+        "click_dispatched: true",
+        "confirmed_state: note_state"
+      ]
+    },
+    {
+      "case": "uncertain-claim-probe-is-read-only",
+      "template": "probe_ai_note",
+      "required": [
+        "modal_selected_templates",
+        "modal_submit_button_matches"
+      ],
+      "forbidden": [
+        ".click()",
+        "previewTemplate",
+        "genNoteByTpl"
+      ]
+    }
+  ]
+}

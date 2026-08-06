@@ -21,6 +21,10 @@ from .enrichment_types import (
     validate_decision_completion,
     validate_decision_process_result,
 )
+from .netdisk_opencli_templates import (
+    NETDISK_OPENCLI_TEMPLATE_VERSION,
+    render_netdisk_opencli_template,
+)
 from .runtime_paths import resolve_repo_owned_path
 
 
@@ -432,6 +436,35 @@ class NetdiskEnrichmentService:
             raise EnrichmentError("OpenCLI returned invalid JSON") from exc
         if not isinstance(payload, dict):
             raise EnrichmentError("OpenCLI returned a non-object result")
+        return payload
+
+    def _opencli_template_json(
+        self,
+        session: str,
+        template_name: str,
+        *,
+        expected_path: str,
+        profile: str | None,
+    ) -> dict[str, Any]:
+        script = render_netdisk_opencli_template(
+            template_name,
+            expected_path=expected_path,
+        )
+        payload = self._opencli_json(
+            session,
+            "eval",
+            script,
+            profile=profile,
+            timeout_seconds=30,
+            attempts=1,
+        )
+        expected_name = f"baidu-netdisk/{template_name.replace('_', '-')}"
+        if (
+            payload.get("template_name") != expected_name
+            or payload.get("template_version")
+            != NETDISK_OPENCLI_TEMPLATE_VERSION
+        ):
+            raise EnrichmentError("Netdisk OpenCLI template contract mismatch")
         return payload
 
     @staticmethod
@@ -990,51 +1023,11 @@ class NetdiskEnrichmentService:
         profile: str | None,
         target_name: str,
     ) -> dict[str, Any]:
-        script = """(async () => {
-  const expectedPath = %s;
-  const deadline = Date.now() + 20000;
-  let transcript_state = 'missing';
-  let active_tab = '';
-  let content_chars = 0;
-  let export_available = false;
-  let target_bound = false;
-  while (Date.now() < deadline) {
-    const currentUrl = new URL(location.href);
-    target_bound = currentUrl.origin === 'https://pan.baidu.com'
-      && currentUrl.pathname === '/pfile/video'
-      && currentUrl.searchParams.getAll('path').length === 1
-      && currentUrl.searchParams.get('path') === expectedPath;
-    if (!target_bound) break;
-    const active = document.querySelector('.vp-tabs__header-item--active');
-    const root = document.querySelector('.vp-ai-draft');
-    const list = document.querySelector('.ai-draft__wrap-list');
-    const text = (list?.innerText || '').trim();
-    const rootText = (root?.innerText || '').trim();
-    const exportNode = document.querySelector('.ai-draft__export-container');
-    active_tab = (active?.textContent || '').trim();
-    content_chars = text.length;
-    export_available = !!exportNode;
-    if (list && content_chars >= 200) transcript_state = 'ready';
-    else if (/生成中|处理中|努力生成/.test(rootText)) {
-      transcript_state = 'generating';
-    }
-    if (transcript_state !== 'missing') break;
-    await new Promise(resolve => setTimeout(resolve, 200));
-  }
-  return {
-    transcript_state,
-    active_tab,
-    content_chars,
-    export_available,
-    target_bound
-  };
-})()""" % json.dumps(self._netdisk_path(target_name))
-        payload = self._opencli_json(
+        payload = self._opencli_template_json(
             session,
-            "eval",
-            script,
+            "probe_transcript",
+            expected_path=self._netdisk_path(target_name),
             profile=profile,
-            timeout_seconds=30,
         )
         if payload.get("target_bound") is not True:
             raise EnrichmentError("OpenCLI player path changed during transcript probe")
@@ -1213,46 +1206,11 @@ class NetdiskEnrichmentService:
         profile: str | None,
         target_name: str,
     ) -> dict[str, Any]:
-        script = """(() => {
-  const expectedPath = %s;
-  const currentUrl = new URL(location.href);
-  const target_bound = currentUrl.origin === 'https://pan.baidu.com'
-    && currentUrl.pathname === '/pfile/video'
-    && currentUrl.searchParams.getAll('path').length === 1
-    && currentUrl.searchParams.get('path') === expectedPath;
-  if (!target_bound) return {ai_note_state: 'missing', target_bound: false};
-  const active = document.querySelector('.vp-tabs__header-item--active');
-  const frame = document.getElementById('noteIframe');
-  const doc = frame?.contentDocument;
-  const text = (doc?.body?.innerText || '').trim();
-  const src = frame?.getAttribute('src') || '';
-  let ai_note_state = 'missing';
-  if (/生成中|正在生成|处理中/.test(text)) {
-    ai_note_state = 'generating';
-  } else if (
-    text.length >= 200
-    && (
-      src.includes('action=edit')
-      || /以下为AI生成的.{0,20}笔记.{0,20}内容/.test(text)
-    )
-  ) {
-    ai_note_state = 'ready';
-  }
-  return {
-    ai_note_state,
-    active_tab: (active?.textContent || '').trim(),
-    content_chars: text.length,
-    template: /文稿笔记/.test(text) ? '文稿笔记' : '',
-    export_available: /导出/.test(text),
-    target_bound: true
-  };
-})()""" % json.dumps(self._netdisk_path(target_name))
-        payload = self._opencli_json(
+        payload = self._opencli_template_json(
             session,
-            "eval",
-            script,
+            "probe_ai_note",
+            expected_path=self._netdisk_path(target_name),
             profile=profile,
-            timeout_seconds=30,
         )
         if payload.get("target_bound") is not True:
             raise EnrichmentError("OpenCLI player path changed during AI-note probe")
@@ -1277,154 +1235,43 @@ class NetdiskEnrichmentService:
         profile: str | None,
         target_name: str,
     ) -> dict[str, Any]:
-        preview_script = """(() => {
-  const expectedPath = %s;
-  const currentUrl = new URL(location.href);
-  const targetBound = currentUrl.origin === 'https://pan.baidu.com'
-    && currentUrl.pathname === '/pfile/video'
-    && currentUrl.searchParams.getAll('path').length === 1
-    && currentUrl.searchParams.get('path') === expectedPath;
-  if (!targetBound) return {scheduled: false, template_no: 1, target_bound: false};
-  const frame = document.getElementById('noteIframe');
-  if (!frame) return {scheduled: false, template_no: 1};
-  window.postMessage({type: 'previewTemplate', data: {tpl_no: 1}}, '*');
-  return {scheduled: true, template_no: 1};
-})()""" % json.dumps(self._netdisk_path(target_name))
-        preview = self._opencli_json(
+        expected_path = self._netdisk_path(target_name)
+        preview = self._opencli_template_json(
             session,
-            "eval",
-            preview_script,
+            "prepare_ai_note",
+            expected_path=expected_path,
             profile=profile,
-            timeout_seconds=30,
-            attempts=1,
         )
         if preview.get("target_bound") is False:
             raise EnrichmentError("OpenCLI player path changed before AI-note preview")
         if preview.get("scheduled") is not True:
-            raise EnrichmentError("Netdisk AI-note template modal did not open")
-        self._run_opencli(
+            return {
+                "submitted": False,
+                "template_no": 1,
+                "target_bound": preview.get("target_bound") is True,
+                "button_matches": 0,
+                "click_dispatched": False,
+                "preflight_reason": "template_modal_not_ready",
+            }
+        if (
+            preview.get("modal_ready") is not True
+            or preview.get("template_matches") != 1
+            or preview.get("template_selected") != "文稿笔记"
+            or preview.get("button_matches") != 1
+        ):
+            return {
+                "submitted": False,
+                "template_no": 1,
+                "target_bound": True,
+                "button_matches": 0,
+                "click_dispatched": False,
+                "preflight_reason": "text_template_not_selected",
+            }
+        submitted = self._opencli_template_json(
             session,
-            "wait",
-            "selector",
-            "#tplModal",
-            "--timeout",
-            "10000",
+            "submit_ai_note",
+            expected_path=expected_path,
             profile=profile,
-            timeout_seconds=20,
-        )
-        submit_script = """(async () => {
-  const expectedPath = %s;
-  const currentUrl = new URL(location.href);
-  const targetBound = currentUrl.origin === 'https://pan.baidu.com'
-    && currentUrl.pathname === '/pfile/video'
-    && currentUrl.searchParams.getAll('path').length === 1
-    && currentUrl.searchParams.get('path') === expectedPath;
-  if (!targetBound) {
-    return {submitted: false, template_no: 1, target_bound: false};
-  }
-  const visible = node => {
-    if (!node) return false;
-    const rect = node.getBoundingClientRect();
-    const style = getComputedStyle(node);
-    return rect.width > 0 && rect.height > 0
-      && style.display !== 'none' && style.visibility !== 'hidden';
-  };
-  const buttonDeadline = Date.now() + 10000;
-  let button = null;
-  let buttonMatches = 0;
-  while (Date.now() < buttonDeadline) {
-    const modal = document.getElementById('tplModal');
-    const modalDocument = modal?.contentDocument;
-    const matches = modalDocument
-      ? [...modalDocument.querySelectorAll('button')].filter(node => (
-        visible(node) && (node.textContent || '').trim() === '生成该笔记'
-      ))
-      : [];
-    buttonMatches = matches.length;
-    if (buttonMatches === 1) {
-      button = matches[0];
-      break;
-    }
-    await new Promise(resolve => setTimeout(resolve, 100));
-  }
-  if (!button) {
-    return {
-      submitted: false,
-      template_no: 1,
-      button_matches: buttonMatches,
-      click_dispatched: false
-    };
-  }
-  button.click();
-  const transitionDeadline = Date.now() + 10000;
-  let modal_visible = true;
-  let note_state = 'missing';
-  let content_chars = 0;
-  while (Date.now() < transitionDeadline) {
-    const liveUrl = new URL(location.href);
-    const stillTargetBound = liveUrl.origin === 'https://pan.baidu.com'
-      && liveUrl.pathname === '/pfile/video'
-      && liveUrl.searchParams.getAll('path').length === 1
-      && liveUrl.searchParams.get('path') === expectedPath;
-    if (!stillTargetBound) {
-      return {
-        submitted: false,
-        template_no: 1,
-        target_bound: false,
-        click_dispatched: true
-      };
-    }
-    const modal = document.getElementById('tplModal');
-    modal_visible = visible(modal);
-    const noteFrame = document.getElementById('noteIframe');
-    const noteDocument = noteFrame?.contentDocument;
-    const noteText = (noteDocument?.body?.innerText || '').trim();
-    const noteSrc = noteFrame?.getAttribute('src') || '';
-    content_chars = noteText.length;
-    note_state = 'missing';
-    if (/生成中|正在生成|处理中/.test(noteText)) {
-      note_state = 'generating';
-    } else if (
-      content_chars >= 200
-      && (
-        noteSrc.includes('action=edit')
-        || /以下为AI生成的.{0,20}笔记.{0,20}内容/.test(noteText)
-      )
-    ) {
-      note_state = 'ready';
-    }
-    if (!modal_visible && note_state !== 'missing') {
-      return {
-        submitted: true,
-        template_no: 1,
-        target_bound: true,
-        button_matches: 1,
-        click_dispatched: true,
-        modal_visible,
-        confirmed_state: note_state,
-        content_chars
-      };
-    }
-    await new Promise(resolve => setTimeout(resolve, 200));
-  }
-  return {
-    submitted: false,
-    template_no: 1,
-    target_bound: true,
-    button_matches: 1,
-    click_dispatched: true,
-    modal_visible,
-    confirmed_state: note_state,
-    content_chars
-  };
-})()""" % json.dumps(self._netdisk_path(target_name))
-        submitted = self._opencli_json(
-            session,
-            "eval",
-            submit_script,
-            profile=profile,
-            timeout_seconds=30,
-            attempts=1,
         )
         if submitted.get("target_bound") is False:
             raise EnrichmentError("OpenCLI player path changed before AI-note submission")
