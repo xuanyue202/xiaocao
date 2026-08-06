@@ -76,7 +76,10 @@ def main() -> int:
     parser.add_argument("--bundle", type=Path)
     parser.add_argument("--cleanup-evidence", type=Path)
     parser.add_argument("--acceptance-evidence", type=Path)
-    parser.add_argument("--confirmation")
+    parser.add_argument(
+        "--confirmation",
+        help="Legacy migration only; routine Ticket 03 runs complete from receipts",
+    )
     args = parser.parse_args()
     if args.page_url and (
         args.command != "run" or args.capture_job_id is not None

@@ -212,7 +212,16 @@ decision, publication, exact-recipient reminder, and Book effects. The remote
 audit must never reopen the local capture ledger, local cleanup receipt, or
 source-video bytes. Each scope proves its owned external effects exactly once
 and returns zero new external effects on rerun; end-to-end acceptance composes
-the two receipts by handoff id and media SHA-256.
+the two receipts by handoff id and media SHA-256. Once those deterministic
+receipts prove the reader-facing publication, the eligible reminder or legal
+no-alert terminal, and the paper-only Book KOL-US terminal, a routine Ticket 03
+run is `completed` with `next=none`. It must not enter
+`awaiting_user_confirmation` merely because the report or acquisition adapter
+changed. Human review is allowed only for an explicit evidence ambiguity, a
+requested editorial correction, or a separately specified historical
+aggregation gate. The `confirm` surface remains available solely to migrate an
+already-persisted legacy `awaiting_user_confirmation` state; it never gates new
+work and never authorizes replaying publication, reminder, or Book side effects.
 
 ## Enrichment boundary
 

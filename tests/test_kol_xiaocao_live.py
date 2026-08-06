@@ -266,7 +266,9 @@ def test_reconcile_real_chain_is_idempotent_and_publishes_light_handoff(tmp_path
         acceptance_evidence_path=acceptance,
     )
 
-    assert first["status"] == "awaiting_user_confirmation"
+    assert first["status"] == "completed"
+    assert first["completion_basis"] == "deterministic_receipts"
+    assert first["next"] == "none"
     assert first["new_external_side_effect_count"] == 0
     assert second["idempotent_replay"] is True
     handoff = json.loads(
@@ -547,10 +549,14 @@ def test_remote_audit_accepts_decided_portable_handoff_without_capture_state(
         Path(first["acceptance_evidence_path"]).read_text(encoding="utf-8")
     )
 
-    assert first["status"] == "awaiting_user_confirmation"
+    assert first["status"] == "completed"
+    assert first["completion_basis"] == "deterministic_receipts"
+    assert first["next"] == "none"
     assert first["new_external_side_effect_count"] == 0
     assert second["idempotent_replay"] is True
     assert acceptance["scope"] == "post_handoff"
+    assert acceptance["status"] == "completed"
+    assert acceptance["completion_basis"] == "deterministic_receipts"
     assert acceptance["upstream_attestation"]["handoff_id"] == handoff_id
     assert acceptance["side_effect_counts"] == {
         "handoff_import": 1,
@@ -733,7 +739,9 @@ def test_acceptance_audit_proves_exactly_once_real_chain(tmp_path):
         Path(first["acceptance_evidence_path"]).read_text(encoding="utf-8")
     )
 
-    assert first["status"] == "awaiting_user_confirmation"
+    assert first["status"] == "completed"
+    assert first["completion_basis"] == "deterministic_receipts"
+    assert first["next"] == "none"
     assert first["new_external_side_effect_count"] == 0
     assert second["idempotent_replay"] is True
     assert receipt["side_effect_counts"] == {
@@ -744,6 +752,8 @@ def test_acceptance_audit_proves_exactly_once_real_chain(tmp_path):
         "household_notification": 1,
         "book_kol_us": 1,
     }
+    assert receipt["status"] == "completed"
+    assert receipt["completion_basis"] == "deterministic_receipts"
     assert receipt["handoff"]["coordinator_large_payload_local_bytes"] == 0
 
     original_acceptance_path = Path(first["acceptance_evidence_path"])
@@ -789,7 +799,7 @@ def test_acceptance_audit_proves_exactly_once_real_chain(tmp_path):
     assert original_acceptance_path.read_bytes() == original_acceptance_bytes
 
 
-def test_confirmation_is_exactly_once(tmp_path):
+def test_legacy_confirmation_migration_is_exactly_once(tmp_path):
     service = XiaocaoLiveService(tmp_path / "live")
     service._append(
         "xiaocao_live_acceptance_reconciled",

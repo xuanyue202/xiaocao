@@ -47,7 +47,12 @@ Treat the run as complete only when the reader-facing report has been read back,
 the exact recipient set has durable reminder receipts, and the node that owns
 each side of the handoff has passed its own acceptance scope. The remote writer
 must use `scope=post_handoff`; it must never require local capture ledgers or
-video bytes that the handoff contract explicitly forbids transferring.
+video bytes that the handoff contract explicitly forbids transferring. These
+deterministic receipts complete a routine Ticket 03 run automatically; do not
+pause for report-quality or user confirmation. Human review is reserved for an
+explicit evidence ambiguity, requested editorial correction, or a separately
+specified historical aggregation gate. The `confirm` command is migration-only
+for already-persisted legacy `awaiting_user_confirmation` states.
 
 ## Non-negotiable semantic boundaries
 

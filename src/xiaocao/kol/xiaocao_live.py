@@ -2012,7 +2012,8 @@ class XiaocaoLiveService:
             "schema_version": 1,
             "ticket": "03-xiaocao-live-to-decisions",
             "scope": "post_handoff",
-            "status": "awaiting_user_confirmation",
+            "status": "completed",
+            "completion_basis": "deterministic_receipts",
             "upstream_attestation": {
                 "capture_job_id": capture_job_id,
                 "live_id": handoff.get("live_id"),
@@ -2090,7 +2091,8 @@ class XiaocaoLiveService:
         _atomic_json(acceptance_path, acceptance)
         return self._append(
             "xiaocao_live_handoff_acceptance_ready",
-            status="awaiting_user_confirmation",
+            status="completed",
+            completion_basis="deterministic_receipts",
             scope="post_handoff",
             capture_job_id=capture_job_id,
             live_id=str(handoff.get("live_id") or ""),
@@ -2104,7 +2106,7 @@ class XiaocaoLiveService:
             acceptance_evidence_sha256=_sha256_file(acceptance_path),
             new_external_side_effect_count=0,
             idempotent_replay=False,
-            next="user_confirmation",
+            next="none",
         )
 
     def audit_acceptance(self, capture_job_id: str) -> dict[str, Any]:
@@ -2411,7 +2413,8 @@ class XiaocaoLiveService:
         acceptance = {
             "schema_version": 1,
             "ticket": "03-xiaocao-live-to-decisions",
-            "status": "awaiting_user_confirmation",
+            "status": "completed",
+            "completion_basis": "deterministic_receipts",
             "capture": {
                 "capture_job_id": capture_job_id,
                 "live_id": media["live_id"],
@@ -2506,7 +2509,8 @@ class XiaocaoLiveService:
         _atomic_json(acceptance_path, acceptance)
         return self._append(
             "xiaocao_live_acceptance_ready",
-            status="awaiting_user_confirmation",
+            status="completed",
+            completion_basis="deterministic_receipts",
             capture_job_id=capture_job_id,
             live_id=media["live_id"],
             media_sha256=media["media_sha256"],
@@ -2517,7 +2521,7 @@ class XiaocaoLiveService:
             acceptance_evidence_sha256=_sha256_file(acceptance_path),
             new_external_side_effect_count=0,
             idempotent_replay=False,
-            next="user_confirmation",
+            next="none",
         )
 
     def reconcile_existing(
@@ -2646,7 +2650,8 @@ class XiaocaoLiveService:
         _atomic_json(handoff_path, handoff)
         return self._append(
             "xiaocao_live_acceptance_reconciled",
-            status="awaiting_user_confirmation",
+            status="completed",
+            completion_basis="deterministic_receipts",
             capture_job_id=capture_job_id,
             live_id=media["live_id"],
             media_sha256=media["media_sha256"],
@@ -2659,10 +2664,11 @@ class XiaocaoLiveService:
             coordinator_large_payload_local_bytes=0,
             new_external_side_effect_count=0,
             idempotent_replay=False,
-            next="user_confirmation",
+            next="none",
         )
 
     def confirm(self, *, confirmation: str) -> dict[str, Any]:
+        """Close a legacy acceptance that predates deterministic completion."""
         current = self.latest()
         if (
             current is None
@@ -2671,7 +2677,9 @@ class XiaocaoLiveService:
                 "completed",
             }
         ):
-            raise EnrichmentError("Ticket 03 has no acceptance awaiting confirmation")
+            raise EnrichmentError(
+                "Ticket 03 has no legacy acceptance awaiting confirmation"
+            )
         if current.get("status") == "completed":
             return {**current, "idempotent_replay": True}
         if confirmation != "target_live_and_decision_value_confirmed":
