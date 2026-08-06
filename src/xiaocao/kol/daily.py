@@ -1489,61 +1489,27 @@ class DailyCoordinator:
                         break
                     if consecutive_prior >= 1:
                         consecutive_count = consecutive_prior + 1
-                        blocker_key = (
+                        repair_key = (
                             f"{name}-{failure['stage']}-{failure['code']}"
                             "-recovery-exhausted"
-                        )
-                        action = (
-                            f"KOL 来源 {name} 在 {failure['stage']} 连续 "
-                            f"{consecutive_count} 个小时出现 {failure['code']}；"
-                            "同轮只读恢复已耗尽，且没有重放任何发布、通知或 "
-                            "Book 动作。请检查对应浏览器会话/provider 状态后"
-                            "保留现有 receipts，再恢复下一小时扫描。"
                         )
                         self._append(
                             "source_recovery_exhausted",
                             slot=slot,
                             source=name,
                             failure=failure,
+                            repair_key=repair_key,
                             consecutive_count=consecutive_count,
                             deterministic_recovery_attempted=True,
                             external_business_effects_replayed=False,
                         )
-                        blocker_state_rows = [
-                            row
-                            for row in self._events_unlocked()
-                            if row.get("event")
-                            in {"blocker_notified", "blocker_cleared"}
-                            and row.get("source") == name
-                        ]
-                        active_key = (
-                            str(blocker_state_rows[-1].get("blocker_key"))
-                            if blocker_state_rows
-                            and blocker_state_rows[-1].get("event")
-                            == "blocker_notified"
-                            else ""
-                        )
-                        notified = active_key == blocker_key
-                        if not notified:
-                            if blocker_sender is None:
-                                raise DailyError(
-                                    "repeated source failure requires an operational sender"
-                                ) from exc
-                            blocker_sender("KOL 日常运行需要你处理", action)
-                            self._append(
-                                "blocker_notified",
-                                slot=slot,
-                                source=name,
-                                blocker_key=blocker_key,
-                                action=action,
-                            )
                         outcome = {
                             "status": "waiting",
                             "retryable": False,
                             "failure": failure,
-                            "blocker_key": blocker_key,
-                            "user_action_required": True,
-                            "notification_sent": not notified,
+                            "repair_key": repair_key,
+                            "repair_required": True,
+                            "user_action_required": False,
                             "consecutive_failure_count": consecutive_count,
                         }
                     else:
@@ -1627,17 +1593,12 @@ class DailyCoordinator:
                 }
                 repeated_stalls = sorted(stalled_keys & prior_stalled_keys)
                 if repeated_stalls and not outcome.get("user_action_required"):
-                    blocker_key = f"{name}-source-acquisition-stalled"
-                    action = (
-                        f"KOL 来源 {name} 已发现 {len(repeated_stalls)} 个新版本，"
-                        "但 source_acquisition 跨两个小时没有进展。同轮确定性"
-                        "恢复已尝试，且没有重放任何发布、通知或 Book 动作。"
-                        "请检查 provider 获取路径并保留现有 claims/receipts 后恢复。"
-                    )
+                    repair_key = f"{name}-source-acquisition-stalled"
                     self._append(
                         "source_acquisition_stalled",
                         slot=slot,
                         source=name,
+                        repair_key=repair_key,
                         items=[
                             {"identity": identity, "version_key": version}
                             for identity, version in repeated_stalls
@@ -1645,40 +1606,12 @@ class DailyCoordinator:
                         deterministic_recovery_attempted=True,
                         external_business_effects_replayed=False,
                     )
-                    blocker_state_rows = [
-                        row
-                        for row in self._events_unlocked()
-                        if row.get("event")
-                        in {"blocker_notified", "blocker_cleared"}
-                        and row.get("source") == name
-                    ]
-                    active_key = (
-                        str(blocker_state_rows[-1].get("blocker_key"))
-                        if blocker_state_rows
-                        and blocker_state_rows[-1].get("event")
-                        == "blocker_notified"
-                        else ""
-                    )
-                    notified = active_key == blocker_key
-                    if not notified:
-                        if blocker_sender is None:
-                            raise DailyError(
-                                "stalled source acquisition requires an operational sender"
-                            )
-                        blocker_sender("KOL 日常运行需要你处理", action)
-                        self._append(
-                            "blocker_notified",
-                            slot=slot,
-                            source=name,
-                            blocker_key=blocker_key,
-                            action=action,
-                        )
                     outcome = {
                         **outcome,
                         "retryable": False,
-                        "blocker_key": blocker_key,
-                        "user_action_required": True,
-                        "notification_sent": not notified,
+                        "repair_key": repair_key,
+                        "repair_required": True,
+                        "user_action_required": False,
                     }
                 prior_blockers = [
                     row
@@ -1718,6 +1651,8 @@ class DailyCoordinator:
                         "name",
                         "status",
                         "retryable",
+                        "repair_required",
+                        "repair_key",
                         "user_action_required",
                         "waiting_count",
                         "waiting_items",
@@ -1729,7 +1664,10 @@ class DailyCoordinator:
             ]
             if any(row.get("user_action_required") for row in results):
                 health = "blocked"
-            elif any(row.get("failure") for row in results):
+            elif any(
+                row.get("failure") or row.get("repair_required")
+                for row in results
+            ):
                 health = "degraded"
             elif any(row.get("status") == "waiting" for row in results):
                 health = "waiting"
@@ -1747,6 +1685,7 @@ class DailyCoordinator:
         silent = (
             all(row["status"] in {"no_update", "waiting"} for row in results)
             and not any(row.get("failure") for row in results)
+            and not any(row.get("repair_required") for row in results)
         )
         return {
             "status": "completed",
@@ -1792,6 +1731,14 @@ class DailyCoordinator:
             }
             for state in ((last or {}).get("source_states") or [])
             if isinstance(state, dict) and isinstance(state.get("failure"), dict)
+        ]
+        latest_repairs = [
+            {
+                "source": str(state.get("name") or ""),
+                "repair_key": str(state.get("repair_key") or ""),
+            }
+            for state in ((last or {}).get("source_states") or [])
+            if isinstance(state, dict) and state.get("repair_required") is True
         ]
         source_bytes = sum(
             int(row.get("coordinator_source_video_bytes") or 0)
@@ -1840,6 +1787,7 @@ class DailyCoordinator:
             "safety_status": safety_status,
             "operational_status": operational_status,
             "latest_failures": latest_failures,
+            "latest_repairs": latest_repairs,
             "event_count": len(rows),
             "coordinator_source_video_bytes": source_bytes,
             "ledger_head_sha256": rows[-1]["event_id"] if rows else None,
@@ -1857,6 +1805,11 @@ class DailyCoordinator:
             ),
             "transient_failure_count": sum(
                 row.get("event") == "source_retryable_failure" for row in rows
+            ),
+            "repair_required_count": sum(
+                row.get("event")
+                in {"source_recovery_exhausted", "source_acquisition_stalled"}
+                for row in rows
             ),
             "viewpoint_evaluation_count": len(viewpoint_events),
         }

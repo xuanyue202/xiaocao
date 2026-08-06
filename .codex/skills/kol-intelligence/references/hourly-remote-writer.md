@@ -27,6 +27,16 @@ decision priority. No-update and healthy waiting are silent. Retryable failures
 expose only credential-safe `category`, `code`, and `stage`. Do not run
 23:01–06:59.
 
+An internal `repair_required` result is work for the current Agent, not a user
+blocker. Reconcile exact claims/receipts, inspect the failure and repository
+implementation, patch code/templates/contracts plus regression tests when
+intent is determined, and validate the repair. If the original process still
+accepts semantic input, correct the artifact and continue through that same
+stdin. If it exited, preserve the job and resume only through the next
+authorized exact-once surface; never invoke `run` twice for one slot. Commit
+and normally push a validated repair while excluding user WIP and runtime
+artifacts so later hourly runs inherit it.
+
 This machine is the only KOL writer. It consumes Xiaocao `scope=post_handoff`
 capsules and URL-only `wechat_official_article` capsules. Import the latter as
 one compact JSON line with `scripts/kol_daily.py import-wechat-official` over a
@@ -147,4 +157,8 @@ The append-only ledger resumes unfinished work and reconciles history,
 corrections, maintenance, restarts, and replays without resending. Preserve
 retryable diagnostics in status/audit; the same blocker stays silent until it
 changes. Repeated source/stage/code or acquisition stalls append one exhausted
-audit. If receipts forbid deterministic repair, emit one deduplicated blocker.
+audit with `repair_required=true`; they do not notify the user. Emit one
+deduplicated blocker only for authentication, SMS, CAPTCHA, consent, a fact
+only the user can provide, or an external side effect whose outcome cannot be
+reconciled. A timeout, selector drift, schema mismatch, missing internal UI
+path, or repository defect is never by itself `user_action_required`.

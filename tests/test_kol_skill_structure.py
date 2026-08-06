@@ -31,6 +31,37 @@ def test_kol_skill_is_the_single_conditional_entrypoint() -> None:
     assert "holdings as context, not a search boundary" in text
 
 
+def test_kol_skill_owns_safe_self_repair_before_user_escalation() -> None:
+    entrypoint = " ".join(SKILL_MD.read_text(encoding="utf-8").split())
+    hourly = " ".join(
+        HOURLY_REMOTE_WRITER_MD.read_text(encoding="utf-8").split()
+    )
+    full = " ".join(FULL_CONTRACT_MD.read_text(encoding="utf-8").split())
+
+    for marker in (
+        "Repair before escalating",
+        "without waiting for the user to request a retrospective",
+        "repair_required",
+        "commit and normally push",
+        "never run the same hourly command twice",
+    ):
+        assert marker in entrypoint
+    for marker in (
+        "work for the current Agent, not a user blocker",
+        "same stdin",
+        "repair_required=true",
+        "repository defect is never by itself `user_action_required`",
+    ):
+        assert marker in hourly
+    for marker in (
+        "Agent-owned self-repair",
+        "add a regression for the observed boundary case",
+        "must not send a user-action notification",
+        "preserve the original job",
+    ):
+        assert marker in full
+
+
 def test_kol_skill_routes_xiaocao_recap_to_live_replay_capture_first() -> None:
     text = SKILL_MD.read_text(encoding="utf-8")
 
@@ -306,9 +337,9 @@ def test_kol_skill_defers_the_full_contract_on_hourly_no_update_runs() -> None:
     entrypoint_flat = " ".join(entrypoint.split())
     hourly_flat = " ".join(hourly.split())
 
-    assert len(entrypoint.encode("utf-8")) < 5_000
+    assert len(entrypoint.encode("utf-8")) < 7_000
     assert len(local.encode("utf-8")) < 8_000
-    assert len(hourly.encode("utf-8")) < 8_000
+    assert len(hourly.encode("utf-8")) < 10_000
     assert len(full.encode("utf-8")) > 35_000
     assert (
         "Do not read the full contract before starting the runner"

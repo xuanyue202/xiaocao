@@ -22,6 +22,32 @@ runner emits a semantic input request.
 
 Keep every run resumable. Prefer deterministic local APIs, CLIs, and logged-in browser DOM automation. Computer Use is not a default or fallback implementation: the Baidu desktop experiment showed it is too slow and unreliable for this workflow. Consider it only through a separately reviewed exception after API, CLI, and browser-DOM approaches have all been concretely disproved.
 
+## Agent-owned self-repair
+
+A diagnosable implementation failure is not a stopping condition. First bind
+the exact item, current stage, immutable evidence, claims, receipts, and any
+possibly dispatched external effect. When intended behavior is already fixed
+by this contract and the evidence, the Agent owns the complete self-repair
+loop: reproduce read-only, find the root cause, patch repository-owned
+adapters/templates/code/contracts, add a regression for the observed boundary
+case, run the relevant suite, and resume the same durable job without replaying
+completed effects. It must not wait for the user to ask for a postmortem or a
+fix. A validated repair is staged without unrelated WIP, committed, and
+normally pushed after reconciling current `main`, so future Automations inherit
+it instead of rediscovering the same failure.
+
+Use `repair_required` for timeouts, selector or provider-contract drift, schema
+and rendering mismatches, missing internal controls, broken recovery paths,
+and other repository defects the Agent can investigate. These failures may
+degrade a sweep but must not send a user-action notification. Reserve
+`user_action_required` for authentication, SMS, CAPTCHA, consent, a material
+fact only the user can supply, or an uncertain external side effect that exact
+readback cannot reconcile. Never self-repair by weakening evidence gates,
+changing investment meaning, recipients, schedules, real-capital authority,
+or an explicit human review boundary. If the exact-once process has exited,
+preserve the original job and repair the next authorized resume path rather
+than rerunning the same slot.
+
 ## One input, two conditional branches
 
 Process each captured source item once. After normalization, reopen the latest evidence file from disk and bind the reading to its current SHA-256; never distill or decide from a cached chat summary or a stale context copy. Preserve one shared source/author/evidence identity, evaluate the investment-content gate, then evaluate these branches independently when supported:

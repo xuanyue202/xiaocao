@@ -1930,7 +1930,7 @@ def test_pdf_companion_publication_context_merges_explicit_source_parts(tmp_path
     ]
 
 
-def test_consecutive_same_failure_escalates_once_without_business_replay(tmp_path):
+def test_consecutive_same_failure_requests_internal_repair_without_notifying(tmp_path):
     clock = Clock("2026-07-27T14:00:00+08:00")
     service = DailyCoordinator(tmp_path / "daily", now=clock)
     notices = []
@@ -1962,15 +1962,19 @@ def test_consecutive_same_failure_escalates_once_without_business_replay(tmp_pat
     )
 
     assert first["health"] == "degraded"
-    assert second["health"] == "blocked"
-    assert third["health"] == "blocked"
+    assert second["health"] == "degraded"
+    assert third["health"] == "degraded"
     assert attempts == 3
-    assert len(notices) == 1
+    assert notices == []
     assert second["source_results"][0]["consecutive_failure_count"] == 2
-    assert third["source_results"][0]["notification_sent"] is False
+    assert second["source_results"][0]["repair_required"] is True
+    assert second["source_results"][0]["user_action_required"] is False
+    assert third["source_results"][0]["repair_required"] is True
     audit = service.audit()
-    assert audit["operational_status"] == "blocked"
-    assert audit["operational_reminder_count"] == 1
+    assert audit["operational_status"] == "degraded"
+    assert audit["operational_reminder_count"] == 0
+    assert audit["repair_required_count"] == 2
+    assert audit["latest_repairs"][0]["source"] == "lv_text_image"
     events = service.events()
     exhausted = [
         row for row in events if row["event"] == "source_recovery_exhausted"
@@ -1982,7 +1986,7 @@ def test_consecutive_same_failure_escalates_once_without_business_replay(tmp_pat
     )
 
 
-def test_repeated_source_acquisition_stall_escalates_without_replay(tmp_path):
+def test_repeated_source_acquisition_stall_requests_internal_repair(tmp_path):
     clock = Clock("2026-07-27T14:00:00+08:00")
     service = DailyCoordinator(tmp_path / "daily", now=clock)
     notices = []
@@ -2012,9 +2016,10 @@ def test_repeated_source_acquisition_stall_escalates_without_replay(tmp_path):
     )
 
     assert calls == 2
-    assert result["health"] == "blocked"
-    assert result["source_results"][0]["user_action_required"] is True
-    assert len(notices) == 1
+    assert result["health"] == "degraded"
+    assert result["source_results"][0]["repair_required"] is True
+    assert result["source_results"][0]["user_action_required"] is False
+    assert notices == []
     stalled = [
         row
         for row in service.events()

@@ -10,6 +10,25 @@ CLIs, and logged-in browser DOM automation. Do not use Computer Use unless a
 separately reviewed exception explicitly authorizes it. Never execute
 real-capital trades.
 
+## Repair before escalating
+
+Do not stop at a diagnosable repository or provider-contract failure, and do
+not relabel it as a user blocker. Reconcile the exact claims and receipts,
+identify the root cause from current evidence, patch repository-owned code,
+OpenCLI templates, tests, or this contract when intended behavior is already
+fixed, run proportionate regressions, and resume the same job/claim/session.
+Do this in the current task without waiting for the user to request a
+retrospective. Preserve unrelated WIP; stage only the repair, then commit and
+normally push it after tests so later Automations inherit the fix.
+
+`repair_required` means the Agent owns diagnosis and repair. Only authentication,
+SMS, CAPTCHA, consent, a missing fact only the user can provide, or an uncertain
+external side effect that cannot be reconciled may become `user_action_required`.
+Do not auto-change investment semantics, recipients, schedules, real-capital
+authority, or bypass an explicit human gate. If an exact-once process already
+exited, fix the code and preserve its immutable job for the next authorized
+resume; never run the same hourly command twice or fake completion.
+
 ## Load only the required contract
 
 - For an unambiguous Xiaocao replay capture, read
