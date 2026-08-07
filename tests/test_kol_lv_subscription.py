@@ -445,6 +445,64 @@ def _captured_pdf(service: LvSubscriptionService, tmp_path: Path) -> tuple[str, 
     return update["identity"], downloaded
 
 
+def test_transferred_artifact_paths_rebase_to_hash_bound_local_files(tmp_path):
+    entry = _representative_subscription_entries()[0]
+    payload = b"\x89PNG\r\n" + b"x" * (entry["size"] - 6)
+    service = LvSubscriptionService(tmp_path / "out", now=lambda: NOW)
+    update = service.observe_browser_listing([entry])["updates"][0]
+    downloaded = tmp_path / entry["name"]
+    downloaded.write_bytes(payload)
+    _capture_browser_download(service, update["identity"], downloaded)
+    ingest = service.ingest_browser_download(
+        update["identity"],
+        ocr_runner=lambda _path: {
+            "engine": "test-local",
+            "lines": [{
+                "text": "迁移后的图片证据仍由原始哈希绑定。",
+                "confidence": 0.99,
+                "bounding_box": [0.1, 0.1, 0.8, 0.1],
+            }],
+        },
+    )
+    request = service.prepare_analysis_request(ingest)
+    artifact_dir = Path(ingest["evidence_path"]).parent
+    receipt_path = artifact_dir / "browser_download_receipt.json"
+    ingest_path = artifact_dir / "ingest_result.json"
+    request_path = Path(request["request_path"])
+    remote_root = Path("/Users/bytedance/coding/xiaocao/output/live")
+
+    receipt = json.loads(receipt_path.read_text(encoding="utf-8"))
+    receipt["immutable_path"] = str(remote_root / Path(receipt["immutable_path"]).name)
+    receipt_path.write_text(json.dumps(receipt), encoding="utf-8")
+    persisted_ingest = json.loads(ingest_path.read_text(encoding="utf-8"))
+    for key in ("original_path", "evidence_path", "ocr_path"):
+        persisted_ingest[key] = str(
+            remote_root / Path(persisted_ingest[key]).name
+        )
+    ingest_path.write_text(json.dumps(persisted_ingest), encoding="utf-8")
+    persisted_request = json.loads(request_path.read_text(encoding="utf-8"))
+    persisted_request["evidence_path"] = str(remote_root / "evidence.txt")
+    persisted_request["original_evidence_path"] = str(
+        remote_root / "browser_original.png"
+    )
+    persisted_request["ocr_path"] = str(remote_root / "ocr.json")
+    request_path.write_text(json.dumps(persisted_request), encoding="utf-8")
+
+    completed = service._completed_browser_receipt(
+        service._manifest_item(update["identity"])
+    )
+    replayed_ingest = service.ingest_browser_download(update["identity"])
+    replayed_request = service.prepare_analysis_request(replayed_ingest)
+
+    assert Path(completed["immutable_path"]).parent == artifact_dir
+    assert Path(replayed_ingest["original_path"]).parent == artifact_dir
+    assert Path(replayed_ingest["evidence_path"]).parent == artifact_dir
+    assert Path(replayed_ingest["ocr_path"]).parent == artifact_dir
+    assert Path(replayed_request["evidence_path"]).parent == artifact_dir
+    assert Path(replayed_request["original_evidence_path"]).parent == artifact_dir
+    assert Path(replayed_request["ocr_path"]).parent == artifact_dir
+
+
 def test_small_pdf_is_discovered_hashed_and_text_extracted(tmp_path):
     service = LvSubscriptionService(tmp_path / "out", now=lambda: NOW)
     identity, downloaded = _captured_pdf(service, tmp_path)
@@ -1197,10 +1255,15 @@ def test_replayed_claim_recovers_exact_blocked_download_frame_once(tmp_path):
         elif tail[:1] == ["eval"] and "blocked_download_url_probe" in tail[1]:
             payload = {
                 "status": "download_url_ready",
-                "download_url": "https://d.pcs.baidu.com/file/signed-evidence",
+                "download_url": (
+                    "https://d.pcs.baidu.com/rest/2.0/pcs/file?signed=evidence"
+                ),
                 "scheme": "https:",
                 "host": "d.pcs.baidu.com",
-                "path": "/file/signed-evidence",
+                "path": "/rest/2.0/pcs/file",
+                "provider_file_id": entry["provider_file_id"],
+                "name": entry["name"],
+                "size": entry["size"],
             }
         elif tail[:2] == ["wait", "download"]:
             waits += 1
@@ -1240,6 +1303,66 @@ def test_replayed_claim_recovers_exact_blocked_download_frame_once(tmp_path):
     assert trigger_calls == 0
     assert waits == 2
     assert opens == ["ticket04", "ticket04-download"]
+
+
+def test_replayed_claim_reports_missing_blocked_download_frame_exactly(tmp_path):
+    entry = _representative_subscription_entries()[0]
+    entry["provider_file_id"] = "123456789012345"
+    waits = 0
+
+    def browser_runner(command, **_kwargs):
+        nonlocal waits
+        tail = command[3:]
+        if tail[:1] == ["open"]:
+            payload = {"url": "redacted", "page": "page-1"}
+        elif tail[:1] == ["eval"] and "/share/list" in tail[1]:
+            payload = {
+                "status": "ok",
+                "complete_scan": True,
+                "entries": [entry],
+            }
+        elif tail[:2] == ["wait", "download"]:
+            waits += 1
+            return SimpleNamespace(
+                returncode=1,
+                stdout=json.dumps({"error": {"code": "download_not_seen"}}),
+                stderr="",
+            )
+        elif tail[:1] == ["eval"] and "blocked_download_frame_probe" in tail[1]:
+            payload = {
+                "status": "blocked_by_client",
+                "error_code": "ERR_BLOCKED_BY_CLIENT",
+            }
+        elif tail[:1] == ["eval"] and "blocked_download_url_probe" in tail[1]:
+            payload = {
+                "status": "download_url_missing",
+                "frame_count": 0,
+            }
+        else:
+            raise AssertionError(command)
+        return SimpleNamespace(
+            returncode=0,
+            stdout=json.dumps(payload),
+            stderr="",
+        )
+
+    service = LvSubscriptionService(
+        tmp_path / "out",
+        now=lambda: NOW,
+        runner=browser_runner,
+        opencli_command=("opencli",),
+        share_url="https://pan.baidu.com/s/private-share-token",
+        share_code="a1b2",
+    )
+    update = service.poll_opencli(session="ticket04")["updates"][0]
+    service.claim_browser_download(update["identity"])
+
+    with pytest.raises(EnrichmentDiagnosticError) as captured:
+        service.download_opencli(update["identity"], session="ticket04")
+
+    assert captured.value.diagnostic_code == "blocked_download_frame_missing"
+    assert captured.value.diagnostic_stage == "browser_download_recovery"
+    assert waits == 1
 
 
 def test_session_download_policy_ack_uses_controlled_inbox_without_profile_edit(

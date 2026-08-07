@@ -114,6 +114,10 @@ _DIRECT_DOWNLOAD_CONTENT_TYPES = {
 _OWNER_CLOUD_ROOT = PurePosixPath("/xiaocao/lv_subscription")
 
 
+def _is_supported_baidu_download_path(path: str) -> bool:
+    return path.startswith("/file/") or path in _DIRECT_DOWNLOAD_PATHS
+
+
 _BROWSER_LISTING_SCRIPT_TEMPLATE = r"""(async () => {
   const fail = (status, diagnostic = {}) => ({
     status,
@@ -2748,15 +2752,19 @@ try {
                 raise EnrichmentError(
                     "subscription browser download receipt is invalid"
                 ) from exc
-            immutable = Path(str(prior.get("immutable_path") or ""))
-            if (
-                not immutable.is_file()
-                or _sha256_file(immutable) != prior.get("sha256")
-            ):
-                raise EnrichmentError(
+            immutable = self._artifact_bound_file(
+                prior.get("immutable_path"),
+                artifact_dir=artifact_dir,
+                expected_sha256=prior.get("sha256"),
+                error_message=(
                     "subscription browser download changed after capture"
-                )
-            return {**prior, "idempotent_replay": True}
+                ),
+            )
+            return {
+                **prior,
+                "immutable_path": str(immutable),
+                "idempotent_replay": True,
+            }
         if claim.get("status") != "claimed":
             raise EnrichmentError(
                 "subscription browser download claim is not pending"
@@ -2823,6 +2831,75 @@ try {
         )
         return receipt
 
+    @staticmethod
+    def _artifact_bound_file(
+        recorded_path: Any,
+        *,
+        artifact_dir: Path,
+        expected_sha256: Any,
+        error_message: str,
+    ) -> Path:
+        """Resolve a transferred artifact by exact local role and hash."""
+        raw_path = str(recorded_path or "").strip()
+        expected = str(expected_sha256 or "").strip()
+        if not raw_path or not re.fullmatch(r"[0-9a-f]{64}", expected):
+            raise EnrichmentError(error_message)
+        recorded = Path(raw_path).expanduser()
+        candidates = [recorded]
+        if recorded.name not in {"", ".", ".."}:
+            local = artifact_dir / recorded.name
+            if local != recorded:
+                candidates.append(local)
+        for candidate in candidates:
+            try:
+                resolved = candidate.resolve()
+            except OSError:
+                continue
+            if (
+                resolved.is_file()
+                and _sha256_file(resolved) == expected
+                and (
+                    candidate == recorded
+                    or resolved.parent == artifact_dir.resolve()
+                )
+            ):
+                return resolved
+        raise EnrichmentError(error_message)
+
+    def _rebased_ingest_result(
+        self,
+        item: dict[str, Any],
+        ingest: dict[str, Any],
+    ) -> dict[str, Any]:
+        """Rebind transferred ingest paths without weakening their hashes."""
+        if (
+            ingest.get("identity") != item["identity"]
+            or ingest.get("version_key") != item["version_key"]
+        ):
+            raise EnrichmentError("subscription ingest result is invalid")
+        artifact_dir = self.output_dir / "artifacts" / str(item["version_key"])
+        rebased = dict(ingest)
+        for path_key, hash_key in (
+            ("original_path", "original_sha256"),
+            ("evidence_path", "evidence_sha256"),
+            ("ocr_path", "ocr_sha256"),
+            ("pdf_coverage_path", "pdf_coverage_sha256"),
+        ):
+            recorded_path = ingest.get(path_key)
+            expected_hash = ingest.get(hash_key)
+            if not str(recorded_path or "").strip() and expected_hash is None:
+                continue
+            resolved = self._artifact_bound_file(
+                recorded_path,
+                artifact_dir=artifact_dir,
+                expected_sha256=expected_hash,
+                error_message=(
+                    "subscription evidence changed after ingestion"
+                ),
+            )
+            rebased[path_key] = str(resolved)
+        return rebased
+
     def _completed_browser_receipt(
         self,
         item: dict[str, Any],
@@ -2837,18 +2914,23 @@ try {
             raise EnrichmentError(
                 "subscription browser download receipt is invalid"
             ) from exc
-        immutable = Path(str(receipt.get("immutable_path") or ""))
         if (
             receipt.get("status") != "completed"
             or receipt.get("identity") != item["identity"]
             or receipt.get("version_key") != item["version_key"]
-            or not immutable.is_file()
-            or _sha256_file(immutable) != receipt.get("sha256")
         ):
             raise EnrichmentError(
                 "subscription browser download receipt is not evidence-bound"
             )
-        return receipt
+        immutable = self._artifact_bound_file(
+            receipt.get("immutable_path"),
+            artifact_dir=artifact_dir,
+            expected_sha256=receipt.get("sha256"),
+            error_message=(
+                "subscription browser download receipt is not evidence-bound"
+            ),
+        )
+        return {**receipt, "immutable_path": str(immutable)}
 
     def _wait_opencli_download(
         self,
@@ -4324,9 +4406,7 @@ try {
         media_type = str(item.get("media_type") or "")
         download_url = str(link.get("download_url") or "")
         parsed = urlparse(download_url)
-        path_allowed = parsed.path.startswith("/file/") or (
-            parsed.path in _DIRECT_DOWNLOAD_PATHS
-        )
+        path_allowed = _is_supported_baidu_download_path(parsed.path)
         if (
             parsed.scheme != "https"
             or parsed.hostname not in _DIRECT_DOWNLOAD_HOSTS
@@ -4559,40 +4639,132 @@ try {
             "eval",
             """(() => {
               const operation = 'blocked_download_url_probe';
+              const expectedProviderFileId = %s;
+              const expectedName = %s;
+              const expectedSize = %s;
               const frames = Array.from(
                 document.querySelectorAll('iframe[name="pcsdownloadiframe"]')
               ).filter(frame => frame.getAttribute('src'));
-              if (frames.length !== 1) {
-                return {status: 'download_url_ambiguous', operation};
+              if (frames.length === 0) return {
+                status: 'download_url_missing', frame_count: 0, operation
+              };
+              if (frames.length !== 1) return {
+                status: 'download_url_ambiguous',
+                frame_count: frames.length,
+                operation
+              };
+              const rowFor = node => node.closest(
+                'dd, tr, [role="row"], [class*="file-item"], '
+                + '[class*="table-row"]'
+              ) || node;
+              const rowItem = row => row?.__vue__?._props?.item
+                || row?.__vue__?.item || {};
+              const rowId = row => String(
+                rowItem(row)?.fs_id || rowItem(row)?.fsid
+                || row?.getAttribute?.('data-id')
+                || row?.getAttribute?.('data-fsid') || ''
+              );
+              const rowName = row => String(
+                rowItem(row)?.server_filename || rowItem(row)?.name
+                || row?.querySelector?.('a.filename')?.getAttribute('title')
+                || ''
+              );
+              const rowSize = row => Number(rowItem(row)?.size || 0);
+              const rows = [...new Set(Array.from(document.querySelectorAll(
+                '[data-id], [data-fsid]'
+              )).map(rowFor))];
+              const targets = rows.filter(row => (
+                rowId(row) === expectedProviderFileId
+                && rowName(row) === expectedName
+                && rowSize(row) === expectedSize
+              ));
+              if (targets.length !== 1) return {
+                status: targets.length === 0
+                  ? 'download_target_not_bound'
+                  : 'download_target_ambiguous',
+                frame_count: 1,
+                operation
+              };
+              let url;
+              try {
+                url = new URL(frames[0].getAttribute('src'), location.href);
+              } catch (_error) {
+                return {
+                  status: 'download_url_unparseable',
+                  frame_count: 1,
+                  operation
+                };
               }
-              const url = new URL(frames[0].getAttribute('src'), location.href);
               return {
                 status: 'download_url_ready',
                 download_url: url.href,
                 scheme: url.protocol,
                 host: url.hostname,
                 path: url.pathname,
+                provider_file_id: expectedProviderFileId,
+                name: expectedName,
+                size: expectedSize,
+                frame_count: 1,
                 operation
               };
-            })()""",
+            })()""" % (
+                json.dumps(str(item.get("provider_file_id") or "")),
+                json.dumps(str(item.get("name") or "")),
+                json.dumps(int(item.get("size") or 0)),
+            ),
             profile=profile,
             timeout_seconds=15,
         )
+        status = str(download_target.get("status") or "")
+        if status != "download_url_ready":
+            code = {
+                "download_url_missing": "blocked_download_frame_missing",
+                "download_url_ambiguous": "blocked_download_frame_ambiguous",
+                "download_target_not_bound": "blocked_download_target_not_bound",
+                "download_target_ambiguous": "blocked_download_target_ambiguous",
+                "download_url_unparseable": "blocked_download_url_unparseable",
+            }.get(status, "blocked_download_probe_invalid")
+            raise EnrichmentDiagnosticError(
+                "subscription blocked download URL could not be rebound",
+                category="identity_error",
+                code=code,
+                stage="browser_download_recovery",
+            )
         download_url = str(download_target.get("download_url") or "")
         parsed = urlparse(download_url)
         if (
-            download_target.get("status") != "download_url_ready"
-            or download_target.get("scheme") != "https:"
-            or download_target.get("host") != "d.pcs.baidu.com"
-            or not str(download_target.get("path") or "").startswith("/file/")
-            or parsed.scheme != "https"
-            or parsed.hostname != "d.pcs.baidu.com"
-            or not parsed.path.startswith("/file/")
+            str(download_target.get("provider_file_id") or "")
+            != str(item.get("provider_file_id") or "")
+            or str(download_target.get("name") or "") != str(item["name"])
+            or int(download_target.get("size") or 0) != int(item["size"])
         ):
+            raise EnrichmentDiagnosticError(
+                "subscription blocked download target is not evidence-bound",
+                category="identity_error",
+                code="blocked_download_target_not_bound",
+                stage="browser_download_recovery",
+            )
+        if download_target.get("scheme") != "https:" or parsed.scheme != "https":
+            invalid_code = "blocked_download_url_scheme_invalid"
+        elif (
+            download_target.get("host") not in _DIRECT_DOWNLOAD_HOSTS
+            or parsed.hostname not in _DIRECT_DOWNLOAD_HOSTS
+        ):
+            invalid_code = "blocked_download_url_host_invalid"
+        elif (
+            not _is_supported_baidu_download_path(
+                str(download_target.get("path") or "")
+            )
+            or not _is_supported_baidu_download_path(parsed.path)
+        ):
+            invalid_code = "blocked_download_url_path_invalid"
+        else:
+            invalid_code = ""
+        if invalid_code:
             raise EnrichmentDiagnosticError(
                 "subscription blocked download URL is invalid",
                 category="identity_error",
-                code="blocked_download_url_invalid",
+                code=invalid_code,
                 stage="browser_download_recovery",
             )
 
@@ -4769,7 +4941,7 @@ try {
                 if exc.diagnostic_code != "download_not_seen":
                     raise
                 downloaded_path = self._recover_blocked_client_download(
-                    item,
+                    direct_item,
                     session=session,
                     profile=profile,
                 )
@@ -4879,7 +5051,7 @@ try {
                     ),
                 )
             downloaded_path = self._recover_blocked_client_download(
-                item,
+                direct_item,
                 session=session,
                 profile=profile,
             )
@@ -4917,37 +5089,8 @@ try {
                 prior = json.loads(result_path.read_text(encoding="utf-8"))
             except (OSError, json.JSONDecodeError) as exc:
                 raise EnrichmentError("subscription ingest result is invalid") from exc
-            original = Path(str(prior.get("original_path") or ""))
-            evidence = Path(str(prior.get("evidence_path") or ""))
-            if (
-                not original.is_file()
-                or not evidence.is_file()
-                or _sha256_file(original) != prior.get("original_sha256")
-                or _sha256_file(evidence) != prior.get("evidence_sha256")
-            ):
-                raise EnrichmentError("subscription evidence changed after ingestion")
-            prior_ocr_path = str(prior.get("ocr_path") or "").strip()
-            if prior_ocr_path:
-                prior_ocr = Path(prior_ocr_path)
-                if (
-                    not prior_ocr.is_file()
-                    or _sha256_file(prior_ocr) != prior.get("ocr_sha256")
-                ):
-                    raise EnrichmentError("subscription OCR evidence changed after ingestion")
-            prior_pdf_coverage_path = str(
-                prior.get("pdf_coverage_path") or ""
-            ).strip()
-            if prior_pdf_coverage_path:
-                prior_pdf_coverage = Path(prior_pdf_coverage_path)
-                if (
-                    not prior_pdf_coverage.is_file()
-                    or _sha256_file(prior_pdf_coverage)
-                    != prior.get("pdf_coverage_sha256")
-                ):
-                    raise EnrichmentError(
-                        "subscription PDF coverage evidence changed after ingestion"
-                    )
-            return {**prior, "idempotent_replay": True}
+            rebased = self._rebased_ingest_result(item, prior)
+            return {**rebased, "idempotent_replay": True}
 
         original = source
         original_sha = _sha256_file(original)
@@ -5840,7 +5983,14 @@ try {
                 raise EnrichmentError(
                     "subscription analysis request changed evidence"
                 )
-            return {**prior, "idempotent_replay": True}
+            return {
+                **prior,
+                "evidence_path": ingest["evidence_path"],
+                "original_evidence_path": ingest["original_path"],
+                "ocr_path": ingest.get("ocr_path"),
+                "pdf_coverage_path": ingest.get("pdf_coverage_path"),
+                "idempotent_replay": True,
+            }
         _atomic_write_json(request_path, request)
         _append_jsonl(
             self.events_path,
@@ -6362,12 +6512,7 @@ try {
             ingest = json.loads(ingest_path.read_text(encoding="utf-8"))
         except (OSError, json.JSONDecodeError) as exc:
             raise EnrichmentError("subscription ingest result is invalid") from exc
-        if (
-            _sha256_file(Path(ingest["original_path"])) != ingest.get("original_sha256")
-            or _sha256_file(Path(ingest["evidence_path"]))
-            != ingest.get("evidence_sha256")
-        ):
-            raise EnrichmentError("subscription evidence changed before decision")
+        ingest = self._rebased_ingest_result(item, ingest)
 
         bundle_file = Path(bundle_path).expanduser().resolve()
         if not bundle_file.is_file():
