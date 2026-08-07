@@ -43,6 +43,19 @@ KOL_REGISTRY = {
     "小草": "kol-xiaocao",
     "吕晓彤": "kol-lv-xiaotong",
     "路西法": "kol-lucifer",
+    "刘少狙击营": "kol-liushao-jujiying",
+    "A也叫艾利克斯": "kol-a-alex",
+}
+DISTILLED_ADAPTERS = {
+    "小草": "xiaocao_legacy_transcript",
+    "吕晓彤": "lv_legacy_transcript",
+    "路西法": "lucifer_legacy_transcript",
+    "刘少狙击营": "wechat_official_account",
+    "A也叫艾利克斯": "wechat_official_account",
+}
+DISTILLED_KIND_TITLES = {
+    "morning_live": "盘前直播",
+    "review": "复盘",
 }
 
 LUCIFER_CURRENT = set()
@@ -477,11 +490,7 @@ def _distilled_candidate(root: Path, path: Path) -> dict[str, Any]:
     decision_sha256 = _sha256_file(path)
     date = str(value["date"])
     session = "morning" if path.stem.endswith("_morning") else "review"
-    adapter = {
-        "小草": "xiaocao_legacy_transcript",
-        "吕晓彤": "lv_legacy_transcript",
-        "路西法": "lucifer_legacy_transcript",
-    }[author]
+    adapter = DISTILLED_ADAPTERS[author]
     source_identity = hashlib.sha256(
         "\0".join((author, date, session, evidence_sha256)).encode()
     ).hexdigest()
@@ -490,7 +499,10 @@ def _distilled_candidate(root: Path, path: Path) -> dict[str, Any]:
         source_identity=source_identity,
     )
     source_time = _utc(date, date_only=True)
-    title = _reader_title(f"{date} {_safe_text(value.get('kind'))}")
+    kind = _safe_text(value.get("kind"))
+    title = _reader_title(
+        f"{date} {DISTILLED_KIND_TITLES.get(kind, kind)}"
+    )
     return _candidate(
         publication_id=publication_id,
         publication_version=evidence_sha256,

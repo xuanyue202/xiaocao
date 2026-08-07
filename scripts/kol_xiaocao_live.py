@@ -69,7 +69,7 @@ def main() -> int:
     )
     parser.add_argument(
         "--opencli-session",
-        default="xiaocao-live-enrichment",
+        default="site:baidu-netdisk",
     )
     parser.add_argument("--opencli-profile")
     parser.add_argument("--audit-file", type=Path)

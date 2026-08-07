@@ -390,7 +390,10 @@ class XiaocaoLiveService:
         self.output_dir = Path(output_dir).expanduser().resolve()
         self.events_path = self.output_dir / "events.jsonl"
         self.capture_store = CaptureJobStore(capture_ledger)
-        self.netdisk = netdisk_service or NetdiskEnrichmentService(netdisk_output)
+        self.netdisk = netdisk_service or NetdiskEnrichmentService(
+            netdisk_output,
+            use_opencli_upload_template=True,
+        )
         self.decision_output = Path(decision_output).expanduser().resolve()
         self.sniffer_binary = Path(sniffer_binary).expanduser().resolve()
         self.sniffer = sniffer_client or SnifferClient()
@@ -876,6 +879,36 @@ class XiaocaoLiveService:
                 matches.append(task)
         return matches
 
+    @staticmethod
+    def _candidate_from_source_task(
+        task: dict[str, Any],
+        *,
+        source_job_id: str,
+        candidate_id: str,
+        live_id: str,
+    ) -> dict[str, Any] | None:
+        """Recover exact candidate identity after the sniffer retires its row."""
+        meta = task.get("meta") or {}
+        req = meta.get("req") or {}
+        labels = meta.get("labels") or req.get("labels") or {}
+        opts = meta.get("opts") or {}
+        if (
+            str(labels.get("capture_id") or "") != candidate_id
+            or str(labels.get("live_id") or "") != live_id
+            or (
+                labels.get("source_job_id")
+                and str(labels["source_job_id"]) != source_job_id
+            )
+        ):
+            return None
+        candidate = {
+            "id": candidate_id,
+            "live_id": live_id,
+            "filename": str(opts.get("name") or ""),
+            "media_type": str(labels.get("media_type") or ""),
+        }
+        return {key: value for key, value in candidate.items() if value}
+
     def advance_capture(self, capture_job_id: str) -> dict[str, Any]:
         current = self.capture_store.latest(capture_job_id)
         if current is None:
@@ -948,14 +981,11 @@ class XiaocaoLiveService:
                     ),
                     source_task_id=str(source_job.get("task_id") or ""),
                 )
-                candidates = self.sniffer.candidates()
-                detected = self.capture_store.bind_source_candidate(
-                    current,
-                    candidates,
-                    candidate_id=str(source_job.get("candidate_id") or ""),
-                )
-                if detected is None:
-                    source_task_id = str(source_job.get("task_id") or "")
+                source_task_id = str(source_job.get("task_id") or "")
+                if (
+                    source_task is None
+                    or str(source_task.get("id") or "") != source_task_id
+                ):
                     source_task = next(
                         (
                             task
@@ -964,6 +994,31 @@ class XiaocaoLiveService:
                         ),
                         None,
                     )
+                task_candidate = (
+                    self._candidate_from_source_task(
+                        source_task,
+                        source_job_id=source_job_id,
+                        candidate_id=str(source_job.get("candidate_id") or ""),
+                        live_id=expected_live,
+                    )
+                    if source_task is not None
+                    else None
+                )
+                candidates: list[dict[str, Any]] = []
+                if task_candidate is not None:
+                    detected = self.capture_store.bind_source_candidate(
+                        current,
+                        [task_candidate],
+                        candidate_id=str(source_job.get("candidate_id") or ""),
+                    )
+                else:
+                    candidates = self.sniffer.candidates()
+                    detected = self.capture_store.bind_source_candidate(
+                        current,
+                        candidates,
+                        candidate_id=str(source_job.get("candidate_id") or ""),
+                    )
+                if detected is None:
                     if (
                         source_task is not None
                         and str(source_task.get("status") or "").lower()
@@ -1633,12 +1688,15 @@ class XiaocaoLiveService:
         if capture.get("status") != "downloaded":
             capture = self.advance_capture(capture_job_id)
             if capture.get("status") != "downloaded":
-                return {
+                pending = {
                     "event": "xiaocao_live_pending",
                     "status": capture.get("status"),
                     "capture_job_id": capture_job_id,
                     "next": "rerun",
                 }
+                if capture.get("source_job_status"):
+                    pending["source_job_status"] = capture["source_job_status"]
+                return pending
         media = self.validate_media(capture_job_id)
         cleanup = self._event(
             "capture_cleanup_completed",

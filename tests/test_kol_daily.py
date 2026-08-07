@@ -393,6 +393,38 @@ def test_capture_wechat_official_cli_runs_only_local_official_account_source(
     }
 
 
+def test_capture_xiaocao_handoff_cli_runs_only_read_only_handoff_recovery(
+    tmp_path,
+    monkeypatch,
+    capsys,
+):
+    observed: dict[str, object] = {}
+
+    def recover(self):
+        assert not hasattr(self, "client")
+        observed["args"] = self.args
+        return {"status": "no_update", "handoff_dispatched": True}
+
+    monkeypatch.setattr(DailyRuntime, "xiaocao_handoff_local", recover)
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "kol_daily.py",
+            "capture-xiaocao-handoff",
+            "--output-dir",
+            str(tmp_path / "daily"),
+        ],
+    )
+
+    assert kol_daily_script.main() == 0
+    assert observed["args"].output_dir == tmp_path / "daily"
+    assert json.loads(capsys.readouterr().out) == {
+        "status": "no_update",
+        "handoff_dispatched": True,
+    }
+
+
 def test_process_wechat_official_cli_runs_only_the_remote_inbox(
     tmp_path,
     monkeypatch,

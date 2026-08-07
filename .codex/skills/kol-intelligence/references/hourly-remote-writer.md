@@ -1,11 +1,8 @@
 # Hourly Remote Writer
 
-Use this contract only on the remote sole-writer node for Ticket 07's
-deterministic preflight, runner lifecycle, and silent no-update/retryable paths.
-The local WeChat/broadband node follows
-[hourly-local-capture.md](hourly-local-capture.md); do not perform its capture
-work here. Do not read `full-contract.md` unless the runner emits a semantic
-input request or post-handoff semantic work is ready.
+Use only on Ticket 07's remote sole-writer node. Local WeChat follows
+[hourly-local-capture.md](hourly-local-capture.md). Do not read
+`full-contract.md` unless the semantic or post-handoff work is ready.
 
 ## Runner and boundary
 
@@ -15,17 +12,14 @@ Run exactly once and keep the process alive for input requests:
 PYTHONPATH=src .venv/bin/python scripts/kol_daily.py run
 ```
 
-Inspection surfaces are:
-
 ```bash
 PYTHONPATH=src .venv/bin/python scripts/kol_daily.py status
 PYTHONPATH=src .venv/bin/python scripts/kol_daily.py audit
 ```
 
 Each run exits after one sweep; the 07:00 run drains overnight backlog by
-decision priority. No-update and healthy waiting are silent. Retryable failures
-expose only credential-safe `category`, `code`, and `stage`. Do not run
-23:01–06:59.
+decision priority. No-update/waiting is silent. Retryable failures expose only
+credential-safe `category`, `code`, and `stage`. Do not run 23:01–06:59.
 
 An internal `repair_required` result is work for the current Agent, not a user
 blocker. Reconcile exact claims/receipts, inspect the failure and repository
@@ -48,9 +42,9 @@ one validated temporary JSONL line, and invoke the importer once with that file
 as plain stdin. Do not count the empty pre-input process as an import attempt
 and do not send the capsule twice. XML wrapper text may render URL `&` as
 `&amp;`; restore the raw URL, recompute `handoff_sha256`, and require an exact
-match before the importer sees it. The capsule is discovery metadata, not the full article.
-It never scans the local WeChat contact and never reads or downloads source-video bytes. It does not
-activate a capture player or use Computer Use.
+match before import. The capsule is discovery metadata, not the full article.
+It never scans the local WeChat contact and never reads or downloads
+source-video bytes, activates a player, or uses Computer Use.
 
 When an official-account capsule arrives after this hour's multi-source runner
 has already finished, process only that imported inbox with
@@ -58,11 +52,17 @@ has already finished, process only that imported inbox with
 Run it exactly once and keep the same process alive for image/semantic input;
 do not rerun the full `run` command merely to pick up the handoff.
 
-For an official item, run installed OpenCLI once with `weixin download`, image
-download, background Chrome, and JSON output. Require success, an item-local
-file, exact publisher/title/time, complete UTF-8 body/images, bytes, and hashes.
+For an official item, run installed OpenCLI once: `weixin download`, images,
+background Chrome, and JSON. Require an item-local file, exact
+publisher/title/time, complete UTF-8 body/images, bytes, and hashes.
 Combine OpenCLI's verification UI/path/node signals with `请输入验证码`; CAPTCHA
 stops for same-session verification without HTTP/MCP retry.
+
+The no-MCP capture rule bans capture retrieval beyond OpenCLI. After read-only
+exact-receipt reconciliation, the repository-designated LiangHui client is
+allowed only for authorized context, publication, reminders, and receipts.
+Resolve conflicts from business invariants; ask only for auth/consent/CAPTCHA,
+new authority, or materially incompatible business outcomes.
 
 For an imported Xiaocao handoff, reconcile the exact `handoff_id` and media
 SHA-256 before advancing. Latest Xiaocao or Lv content is incomplete until its

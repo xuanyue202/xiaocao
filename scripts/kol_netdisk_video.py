@@ -125,7 +125,10 @@ def main() -> int:
     if args.command == "decide" and args.bundle is None:
         parser.error("decide requires --bundle")
 
-    service = NetdiskEnrichmentService(args.output_dir)
+    service = NetdiskEnrichmentService(
+        args.output_dir,
+        use_opencli_upload_template=True,
+    )
     if args.command == "prepare":
         _print(service.prepare(args.video))
     elif args.command == "status":

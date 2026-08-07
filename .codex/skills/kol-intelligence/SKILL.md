@@ -1,11 +1,11 @@
 ---
 name: kol-intelligence
-description: Capture, resume, analyze, route, publish, and distill Xiaocao KOL investment content across hourly coordination, WeChat/Xiaoetong, Baidu Netdisk, 灰常亮, household advice, paper-only Book KOL-US, and durable knowledge.
+description: Run resumable Xiaocao KOL capture, handoff, analysis, publication, paper-only Book, and durable-knowledge workflows.
 ---
 
 # KOL Intelligence
 
-Keep every run resumable and evidence-bound. Prefer deterministic local APIs,
+Keep runs resumable and evidence-bound. Prefer deterministic local APIs,
 CLIs, and logged-in browser DOM automation. Do not use Computer Use unless a
 separately reviewed exception explicitly authorizes it. Never execute
 real-capital trades.
@@ -34,9 +34,11 @@ resume; never run the same hourly command twice or fake completion.
 - For an unambiguous Xiaocao replay capture, read
   [xiaocao-capture-start.md](references/xiaocao-capture-start.md) completely
   and start within 10 seconds. Do not read `full-contract.md` before Ready.
-- For the local hourly `scripts/kol_daily.py capture-local` Automation, read
-  [hourly-local-capture.md](references/hourly-local-capture.md) completely.
-  Do not load the remote-writer or full contract on the capture node.
+- For local hourly `capture-local`, read
+  [hourly-local-capture.md](references/hourly-local-capture.md) completely. On
+  OpenCLI/Chrome failure also read
+  [opencli-chrome-recovery.md](references/opencli-chrome-recovery.md).
+  Do not load remote-writer/full contracts locally.
 - For the remote hourly `scripts/kol_daily.py run|status|audit` Automation or a
   normal no-update/retryable sweep, read
   [hourly-remote-writer.md](references/hourly-remote-writer.md) completely. Do
@@ -75,6 +77,14 @@ for already-persisted legacy `awaiting_user_confirmation` states.
 
 ## Non-negotiable semantic boundaries
 
+- Xiaoetong: enter `666` only at a visible password gate. Before playback and
+  after refresh/navigation, set and read back `video.muted=true`
+  and `video.volume=0`; otherwise do not mark it activated.
+- Resolve code/state conflicts from first principles without asking by default:
+  preserve a reversible snapshot and unrelated WIP, identify both intents,
+  integrate compatible behavior, verify it, and continue. Ask only when the
+  intents are irreducibly incompatible, new authority is required, or the
+  resolution would materially change the business outcome.
 - Reopen immutable evidence from disk and bind it to its current SHA-256;
   never decide from a cached chat summary.
 - Preserve KOL claims separately from system validation, household advice,

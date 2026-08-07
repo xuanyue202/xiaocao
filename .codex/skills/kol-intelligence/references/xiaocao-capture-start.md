@@ -24,7 +24,10 @@ Before Ready, do only this:
    prompt. The command itself proves the exact binary, local API health, and the
    candidate baseline before it emits that result.
 4. Ask the user to open the target enterprise-WeChat card. The player only
-   needs to appear; continued playback and a fixed wait are unnecessary.
+   needs to appear; continued playback and a fixed wait are unnecessary. If
+   the agent starts media to trigger capture, it must first set and read back
+   `video.muted=true` and `video.volume=0`, and must reapply this after a page
+   refresh or navigation.
 
 Do not inspect Git or scan historical ledgers before Ready. Do not contact the
 remote writer, load market or portfolio data, or read `full-contract.md` before

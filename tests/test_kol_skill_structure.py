@@ -14,6 +14,15 @@ HOURLY_LOCAL_CAPTURE_MD = (
 HOURLY_REMOTE_WRITER_MD = (
     SKILL_DIR / "references" / "hourly-remote-writer.md"
 )
+OPENCLI_CHROME_RECOVERY_MD = (
+    SKILL_DIR / "references" / "opencli-chrome-recovery.md"
+)
+REMOTE_WRITER_LEASE_MD = (
+    SKILL_DIR / "references" / "remote-writer-lease.md"
+)
+LOCAL_AUTOMATION_TOML = (
+    ROOT / ".codex" / "automations" / "xiaocao-kol-hourly" / "automation.toml"
+)
 XIAOCAO_CAPTURE_START_MD = (
     SKILL_DIR / "references" / "xiaocao-capture-start.md"
 )
@@ -29,6 +38,9 @@ def test_kol_skill_is_the_single_conditional_entrypoint() -> None:
     assert "knowledge_status=no_reusable_knowledge" in text
     assert "Do not make the user invoke another skill" in text
     assert "holdings as context, not a search boundary" in text
+    assert "conflicts from first principles without asking by default" in text
+    assert "preserve a reversible snapshot and unrelated WIP" in text
+    assert "irreducibly incompatible" in text
 
 
 def test_kol_skill_owns_safe_self_repair_before_user_escalation() -> None:
@@ -252,6 +264,20 @@ def test_hourly_small_download_is_unattended_and_prompt_is_internal() -> None:
         assert marker in text
 
 
+def test_hourly_remote_scopes_no_mcp_to_capture() -> None:
+    text = " ".join(
+        HOURLY_REMOTE_WRITER_MD.read_text(encoding="utf-8").split()
+    )
+
+    for marker in (
+        "no-MCP capture rule",
+        "repository-designated LiangHui client",
+        "read-only exact-receipt reconciliation",
+        "materially incompatible business outcomes",
+    ):
+        assert marker in text
+
+
 def test_kol_skill_has_one_resumable_ticket06_batch_runner() -> None:
     text = FULL_CONTRACT_MD.read_text(encoding="utf-8")
 
@@ -369,6 +395,7 @@ def test_hourly_local_and_remote_machine_contracts_stay_separate() -> None:
     assert "scripts/kol_daily.py import-wechat-official" in remote
     assert "scripts/kol_daily.py process-wechat-official" in local
     assert "scripts/kol_daily.py process-wechat-official" in remote
+    assert "interactive PTY (`tty=true`)" in local
     assert "non-TTY stdin pipe (`tty=false`)" in local
     assert "non-TTY stdin pipe (`tty=false`)" in remote
     assert "stale long-lived task" in local
@@ -380,6 +407,82 @@ def test_hourly_local_and_remote_machine_contracts_stay_separate() -> None:
     assert "not the full article" in remote
     assert "daily_browser_input_required" not in remote
     assert "never scans the local WeChat contact" in remote
+
+
+def test_hourly_local_handoff_uses_a_verified_twenty_four_hour_writer_lease() -> None:
+    local = HOURLY_LOCAL_CAPTURE_MD.read_text(encoding="utf-8")
+    text = " ".join(REMOTE_WRITER_LEASE_MD.read_text(encoding="utf-8").split())
+
+    assert "remote-writer-lease.md" in local
+
+    for marker in (
+        "Twenty-four-hour selection",
+        "Prefer the newest matching KOL writer Automation task",
+        "do not stop or ask the user to refresh Codex",
+        "created within the preceding twenty-four hours",
+        "`read_thread` must verify",
+        "not waiting on approval or user action",
+        "task-list handler failure alone is not a user blocker",
+        "reconcile the exact task and `handoff_id` before retrying",
+    ):
+        assert marker in text
+
+
+def test_hourly_local_automation_carries_the_writer_lease_fallback() -> None:
+    text = " ".join(LOCAL_AUTOMATION_TOML.read_text(encoding="utf-8").split())
+
+    for marker in (
+        "bounded twenty-four-hour writer lease",
+        "automatically reuse the newest directly readable matching writer",
+        "not waiting on approval or user action",
+        "Task-list failure alone is not a user blocker",
+        "task older than twenty-four hours",
+    ):
+        assert marker in text
+
+
+def test_hourly_local_capture_recovers_late_video_handoffs_without_resweep() -> None:
+    local = " ".join(HOURLY_LOCAL_CAPTURE_MD.read_text(encoding="utf-8").split())
+    automation = " ".join(LOCAL_AUTOMATION_TOML.read_text(encoding="utf-8").split())
+
+    for text in (local, automation):
+        assert "capture-xiaocao-handoff" in text
+        assert "do not rerun the full sweep" in text
+        assert "cloud_handoff_published" in text
+
+
+def test_remote_writer_handler_failure_has_a_bounded_self_repair_loop() -> None:
+    lease = " ".join(REMOTE_WRITER_LEASE_MD.read_text(encoding="utf-8").split())
+    automation = " ".join(LOCAL_AUTOMATION_TOML.read_text(encoding="utf-8").split())
+
+    for text in (lease, automation):
+        assert "No handler registered" in text
+        assert "bounded handler recovery" in text
+        assert "retry `read_thread`" in text
+        assert "never authorizes an unverified send" in text
+
+
+def test_opencli_chrome_recovery_exhausts_self_repair_before_user_action() -> None:
+    entrypoint = SKILL_MD.read_text(encoding="utf-8")
+    recovery = OPENCLI_CHROME_RECOVERY_MD.read_text(encoding="utf-8")
+
+    assert "opencli-chrome-recovery.md" in entrypoint
+    for marker in (
+        "opencli daemon status",
+        "opencli doctor",
+        'open -a "Google Chrome"',
+        "Restart the OpenCLI daemon at most once",
+        "credentialed `/api/list`",
+        "Computer Use is allowed only for the minimum Chrome UI",
+        "click **Keep**, enable Developer mode, and enable",
+        "Without that explicit",
+        "Preferences/Secure Preferences",
+        "prefer **账号登录** over QR or SMS",
+        "Chrome's already-saved Baidu",
+        "Never inspect,",
+        "never duplicate",
+    ):
+        assert marker in recovery
 
 
 def test_durable_branch_preserves_authority_and_provenance_boundaries() -> None:

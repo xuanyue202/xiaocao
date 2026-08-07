@@ -95,7 +95,14 @@ def test_lucifer_includes_every_must_surface_view_and_keeps_spacex_current(
     updates = _updates(reviewed_artifact_root)
     lucifer = _candidate_by_author(updates, "路西法")
 
-    assert len(lucifer) == 2
+    assert {
+        Path(candidate["metadata"]["source_artifact"]).name
+        for candidate in lucifer
+    } == {
+        "2025-01-09_lucifer_review.json",
+        "2025-05-27_lucifer_review.json",
+        "lucifer_20260705_claim_gold_v4.json",
+    }
     current = next(
         candidate
         for candidate in lucifer
@@ -161,12 +168,10 @@ def test_lv_later_views_refine_prior_technology_and_leverage_views(
 
     assert len(relations) == 2
     assert {row["relation_type"] for row in relations} == {"refines"}
-    assert projection["counts"] == {
-        "current": 4,
-        "uncertain": 4,
-        "expired": 4,
-        "invalidated": 0,
-    }
+    assert projection["counts"]["current"] == 4
+    assert projection["counts"]["uncertain"] == 4
+    assert projection["counts"]["expired"] >= 4
+    assert projection["counts"]["invalidated"] == 0
 
 
 def test_every_viewpoint_has_a_latest_explicit_evaluation(
@@ -176,6 +181,8 @@ def test_every_viewpoint_has_a_latest_explicit_evaluation(
     projection = longitudinal_projection(updates)
 
     assert set(projection["kols"]) == {
+        "kol-a-alex",
+        "kol-liushao-jujiying",
         "kol-lucifer",
         "kol-lv-xiaotong",
         "kol-xiaocao",

@@ -1216,6 +1216,116 @@ def test_advance_xiaoetong_source_reuses_auto_created_download_task(tmp_path):
     assert calls == {"create": 0, "source": 1}
 
 
+def test_advance_recovers_completed_source_task_after_candidate_is_retired(tmp_path):
+    ledger = tmp_path / "capture.jsonl"
+    source = {
+        "source_kind": "xiaoetong",
+        "source_host": "appsnm3rlcp3566.h5.xiaoeknow.com",
+        "source_app_id": "appsnm3rlcp3566",
+        "source_resource_id": "l_target",
+        "source_identity": "xiaoetong:appsnm3rlcp3566:l_target",
+    }
+    armed = CaptureJobStore(ledger).arm(
+        [],
+        expected_source=source,
+        source_job_id="source-1",
+    )
+
+    class Sniffer:
+        @staticmethod
+        def xiaoetong_source_job(_job_id):
+            return {
+                "id": "source-1",
+                "status": "task_created",
+                "live_id": "l_target",
+                "candidate_id": "candidate-retired",
+                "task_id": "task-1",
+            }
+
+        @staticmethod
+        def candidates():
+            raise AssertionError("exact completed task must bypass candidate scan")
+
+        @staticmethod
+        def tasks():
+            return [{
+                "id": "task-1",
+                "status": "done",
+                "meta": {
+                    "opts": {"name": "target-compressed.mp4", "path": "/tmp"},
+                    "req": {"labels": {
+                        "capture_id": "candidate-retired",
+                        "live_id": "l_target",
+                        "media_type": "m3u8",
+                        "source_job_id": "source-1",
+                        "type": "live_capture",
+                        "compress": "true",
+                    }},
+                },
+            }]
+
+        @staticmethod
+        def start_download(*_args, **_kwargs):
+            raise AssertionError("must reuse the exact completed source task")
+
+    service = XiaocaoLiveService(
+        tmp_path / "live",
+        capture_ledger=ledger,
+        sniffer_client=Sniffer(),
+    )
+
+    result = service.advance_capture(armed["job_id"])
+
+    assert result["status"] == "downloaded"
+    assert result["download_task_id"] == "task-1"
+    assert result["media_path"] == "/tmp/target-compressed.mp4"
+
+
+def test_advance_surfaces_awaiting_playback_for_hourly_page_recheck(tmp_path):
+    ledger = tmp_path / "capture.jsonl"
+    source = {
+        "source_kind": "xiaoetong",
+        "source_host": "appsnm3rlcp3566.h5.xiaoeknow.com",
+        "source_app_id": "appsnm3rlcp3566",
+        "source_resource_id": "l_target",
+        "source_identity": "xiaoetong:appsnm3rlcp3566:l_target",
+    }
+    armed = CaptureJobStore(ledger).arm(
+        [],
+        expected_source=source,
+        source_job_id="source-1",
+    )
+
+    class Sniffer:
+        @staticmethod
+        def xiaoetong_source_job(job_id):
+            assert job_id == "source-1"
+            return {
+                "id": "source-1",
+                "status": "awaiting_playback",
+                "live_id": "l_target",
+            }
+
+    service = XiaocaoLiveService(
+        tmp_path / "live",
+        capture_ledger=ledger,
+        sniffer_client=Sniffer(),
+    )
+
+    result = service.advance(
+        armed["job_id"],
+        opencli_session="xiaocao-lv-subscription",
+    )
+
+    assert result == {
+        "event": "xiaocao_live_pending",
+        "status": "awaiting_capture",
+        "capture_job_id": armed["job_id"],
+        "source_job_status": "awaiting_playback",
+        "next": "rerun",
+    }
+
+
 def test_advance_xiaoetong_source_retries_orphaned_restored_task_with_fresh_candidate(
     tmp_path,
 ):

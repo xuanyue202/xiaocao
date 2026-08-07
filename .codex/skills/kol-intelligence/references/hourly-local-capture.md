@@ -1,8 +1,7 @@
 # Hourly Local Capture Node
 
-Use this contract only on the local WeChat/broadband node. Its entire hourly
-scope is Xiaocao live discovery/capture plus exact-publisher WeChat official-
-account discovery, cloud upload where media exists, and credential-free
+Use this only on the local WeChat/broadband node: Xiaocao live capture,
+exact-publisher official-account discovery, media upload, and credential-free
 handoffs. The remote writer follows
 [hourly-remote-writer.md](hourly-remote-writer.md); do not perform its work here.
 
@@ -14,28 +13,46 @@ Run exactly once and keep the process alive for input requests:
 PYTHONPATH=src .venv/bin/python scripts/kol_daily.py capture-local
 ```
 
+Use an interactive PTY (`tty=true`) and keep that session alive for Browser and
+handoff JSON on the same stdin. Never use non-TTY for `capture-local` or
+`capture-wechat-official`; only the remote capsule importer uses `tty=false`.
+
 `capture-local` runs only `xiaocao_wechat_live` and
-`wechat_official_accounts`. It never scans Lv, consumes a remote handoff,
-analyzes, publishes, notifies, or writes Book. Do not substitute the remote
-coordinator command on this machine.
+`wechat_official_accounts`; it never scans Lv, analyzes, publishes, notifies,
+or writes Book. Do not substitute the remote coordinator here.
 
 Each invocation performs one sweep. Normal no-update and healthy waiting are
 silent. Retryable failures expose only credential-safe `category`, `code`, and
-`stage`. Reconcile an unfinished capture before creating another one, and never
-start two sniffers.
+`stage`. Reconcile every already-armed capture without deleting or duplicating
+it. The WeChat gate below may arm a distinct newer preview on the same singleton
+sniffer so an old wait cannot starve a live window; never start two sniffers or
+arm the same preview identity twice.
 
-If `capture-local` stops on the live source before already-imported official-
-account handoffs can receive their authoritative remote readback, do not rerun
-the full sweep. After reconciling the remote `accepted` or `already_present`
-receipts, run the recovery-only command below exactly once and keep it alive for
-the same handoff response exchange:
+Within one sweep, prefer the newest browser-critical item, then the newest
+`playback_activated` capture, then the oldest `handoff_ready`; all stay
+resumable.
+
+If video upload emits `cloud_handoff_published` after the full sweep has moved
+to the official-account source, do not rerun the full sweep. Run this read-only
+response exchange exactly once:
+
+```bash
+PYTHONPATH=src .venv/bin/python scripts/kol_daily.py capture-xiaocao-handoff
+```
+
+It reads the item ledger, syncs `handoff_ready`, and dispatches only that
+published capsule. A dispatch lock prevents duplicates; it does not scan
+WeChat, use Browser, advance capture, or re-upload.
+
+If the live source stops before imported official handoffs receive readback,
+do not rerun the full sweep. Reconcile `accepted|already_present`, then run this
+official-only response exchange exactly once:
 
 ```bash
 PYTHONPATH=src .venv/bin/python scripts/kol_daily.py capture-wechat-official
 ```
 
-This command processes only local official-account discovery/handoff state. It
-must not be scheduled as another hourly runner or used before remote ambiguity
+Never schedule this as another hourly runner or use it before remote ambiguity
 is resolved.
 
 The local adapter may use Browser, never Computer Use, to activate the bound
@@ -43,11 +60,19 @@ player. `wx_channels_download` alone owns video bytes and inline compression.
 The coordinator and remote control plane receive only metadata, receipts, and
 the self-hashed handoff capsule.
 
+Before any media upload, read
+[opencli-baidu-netdisk-upload.md](opencli-baidu-netdisk-upload.md) completely.
+
 ## WeChat and Xiaoetong gate
 
 Scan only `福利官小花四-刘丹（执业编号:A0380125080026）` through local
 `wechat-cli`. First scan baselines older links and arms only the newest; later
-scans add unseen links. Never replace an unfinished capture.
+scans add unseen links. A newly discovered later preview is time-critical and
+must not queue behind an older unfinished capture: keep every already-armed
+exact job resumable, reuse the one existing sniffer process to arm the newest
+exact source job, and mark only older still-unarmed `discovered` previews as
+`superseded`. Never replace an armed job, start a second sniffer, or create two
+jobs for the same preview identity.
 
 In the same sweep, use the stateless local command
 `subscription-updates --within 48h` to scan exactly these registered KOL
@@ -72,21 +97,28 @@ For `daily_browser_input_required`, keep the same process alive and use
    URL and page state. Convert an MP wrapper to H5 only after validating its
    embedded app/resource identity; strip share parameters.
 2. Let the runner arm that exact H5 source job.
-3. `activate_xiaoetong_playback`: refresh and play. Enter default `666` only
-   when the page visibly presents a password gate. After media requests begin,
-   return the bound URL, `activated=true`, and whether the password was used.
+3. `activate_xiaoetong_playback`: refresh; enter `666` only at a visible
+   password gate. If waiting/live-only/generating, return its visible state with
+   `activated=false`. If playable, set and read back `muted=true`, `volume=0`
+   (reapply after refresh/navigation), start it, and prove advancing media time.
+   Only then return `activated=true`, bound URL, and password-use state.
 
 Message text such as “密码666” is not evidence; visible page state is. Never
-read cookies, storage, or credentials. Later sweeps reconcile the exact task,
-artifact, proxy cleanup, upload, and handoff without Browser.
+read cookies, storage, or credentials. An `awaiting_playback` source job keeps
+the same capture/source identities and rechecks the same bound page on the next
+hourly sweep until it becomes playable; never wait inside one sweep or create a
+replacement job. Later capture, artifact, proxy cleanup, upload, and handoff
+stages reconcile without Browser.
 
 ## Remote handoff
 
-For `daily_remote_handoff_input_required`, validate the small capsule and
-resolve the newest remote writer Automation task for the current hourly window
-on `MacBook-Pro-6.local`. Never route new work to a stale long-lived task, a
-task from an older window, or a task waiting on approval. Send capsule fields
-only, never local paths or video bytes. A `wechat_official_article` capsule
+For `daily_remote_handoff_input_required`, validate the capsule, then read
+[remote-writer-lease.md](remote-writer-lease.md) completely. It prefers current
+and automatically reuses a verified writer up to twenty-four hours
+old. Never use a stale long-lived task or an approval-waiting task.
+
+Send capsule fields only, never local paths or video bytes. A
+`wechat_official_article` capsule
 embeds only a credential-free public URL plus identity metadata. Import it
 idempotently with `scripts/kol_daily.py import-wechat-official` over a plain
 non-TTY stdin pipe (`tty=false`), writing the exact compact JSON as one line
@@ -96,18 +128,18 @@ validated temporary JSONL line and invoke the importer once with that file as
 plain stdin. Never fall back to a PTY. XML wrapper text may display URL `&` as
 `&amp;`; restore raw `&` and recompute `handoff_sha256` before import. The
 capsule contains no article body, Markdown, summary evidence, or local path.
-After an accepted import, the same current-window remote task runs
+After an accepted import, the same selected remote task runs
 `scripts/kol_daily.py process-wechat-official` exactly once and keeps that
 process alive for image/semantic input; it does not rerun the full multi-source
 hourly coordinator. Xiaocao video capsules still import with
-`scope=post_handoff`. The remote task reads
+`scope=post_handoff`. The selected remote task reads
 [hourly-remote-writer.md](hourly-remote-writer.md) and reconciles the exact
 `handoff_id`.
 
-Return acceptance to the same local process only after an accepted or
-already-present readback. Reconcile ambiguity before retrying, and persist the
-host, current-window task, handoff ID, and acceptance. Never create a second
-handoff merely because readback was delayed.
+After `accepted|already_present` import readback, immediately return acceptance
+to the local runner, then keep the remote task running downstream. Reconcile
+before retry; persist host, task, handoff ID, and acceptance. Delay never
+creates a handoff.
 
 ## Local schedule
 

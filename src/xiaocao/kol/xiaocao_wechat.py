@@ -7,6 +7,7 @@ owned by :class:`XiaocaoLiveService` and the external sniffer/downloader.
 
 from __future__ import annotations
 
+import fcntl
 import hashlib
 import json
 import os
@@ -37,9 +38,17 @@ DEFAULT_CONTACT = "福利官小花四-刘丹（执业编号:A0380125080026）"
 DEFAULT_WECHAT_CLI = Path("/opt/homebrew/bin/wechat-cli")
 _MESSAGE = re.compile(r"^\[(?P<time>\d{4}-\d{2}-\d{2} \d{2}:\d{2})\]")
 _URL = re.compile(r"https://[^\s）)】》>，,；;]+")
-_TERMINAL = {"historical_baseline", "completed"}
+_TERMINAL = {"historical_baseline", "superseded", "completed"}
 _SHA256 = re.compile(r"^[0-9a-f]{64}$")
 _MAX_HANDOFF_BYTES = 1024 * 1024
+_PLAYBACK_PAGE_STATES = {
+    "waiting_to_start",
+    "live",
+    "replay_generating",
+    "playable",
+    "password_required",
+    "unknown",
+}
 
 
 def _canonical(value: Any) -> str:
@@ -131,15 +140,13 @@ def parse_xiaocao_live_messages(payload: dict[str, Any]) -> list[dict[str, Any]]
         timestamp = _MESSAGE.match(raw_message)
         if timestamp is None:
             continue
-        if not ({"草神", "小草"}.intersection({
-            token for token in ("草神", "小草") if token in raw_message
-        })):
-            continue
-        if "直播" not in raw_message and "学习地址" not in raw_message:
-            continue
         published = datetime.strptime(
             timestamp.group("time"), "%Y-%m-%d %H:%M"
         ).replace(tzinfo=BEIJING)
+        # Discovery is already bound to the exact registered contact.  Message
+        # copy is not a stable contract, so iterate every URL and rely on the
+        # Xiaoetong allowlist here plus exact ``/course/alive/`` browser binding
+        # before a capture job can be armed.
         for match in _URL.findall(raw_message):
             source_url = _normalized_live_url(match)
             if source_url is None:
@@ -172,6 +179,12 @@ class CaptureDriver(Protocol):
         opencli_session: str,
         opencli_profile: str | None,
     ) -> dict[str, Any]: ...
+
+    def published_handoff(
+        self,
+        identity: str,
+        capture_job_id: str,
+    ) -> dict[str, Any] | None: ...
 
 
 class WechatCliHistoryReader:
@@ -273,15 +286,7 @@ class XiaocaoLiveCaptureDriver:
         opencli_profile: str | None,
     ) -> dict[str, Any]:
         service = self._service(identity)
-        published = next(
-            (
-                event
-                for event in reversed(service.events())
-                if event.get("event") == "cloud_handoff_published"
-                and event.get("capture_job_id") == capture_job_id
-            ),
-            None,
-        )
+        published = self.published_handoff(identity, capture_job_id)
         if published is not None:
             return {**published, "idempotent_replay": True}
         capture = service.capture_store.latest(capture_job_id)
@@ -291,6 +296,22 @@ class XiaocaoLiveCaptureDriver:
             capture_job_id,
             opencli_session=opencli_session,
             opencli_profile=opencli_profile,
+        )
+
+    def published_handoff(
+        self,
+        identity: str,
+        capture_job_id: str,
+    ) -> dict[str, Any] | None:
+        service = self._service(identity)
+        return next(
+            (
+                event
+                for event in reversed(service.events())
+                if event.get("event") == "cloud_handoff_published"
+                and event.get("capture_job_id") == capture_job_id
+            ),
+            None,
         )
 
 
@@ -394,6 +415,77 @@ class XiaocaoWechatLiveSubscription:
             }
         self._save(manifest)
 
+    def _supersede_older_unarmed_previews(
+        self,
+        manifest: dict[str, Any],
+    ) -> None:
+        discovered = sorted(
+            (
+                dict(item)
+                for item in manifest["items"].values()
+                if item.get("status") == "discovered"
+            ),
+            key=lambda item: (item["published_at"], item["identity"]),
+        )
+        if len(discovered) < 2:
+            return
+        newest = discovered[-1]
+        for item in discovered[:-1]:
+            self._transition(
+                manifest,
+                item,
+                "superseded",
+                superseded_by=newest["identity"],
+            )
+
+    @staticmethod
+    def _next_pending(manifest: dict[str, Any]) -> dict[str, Any] | None:
+        pending = [
+            dict(item)
+            for item in manifest["items"].values()
+            if item.get("status") not in _TERMINAL
+        ]
+        if not pending:
+            return None
+        browser_critical = [
+            item
+            for item in pending
+            if item.get("status")
+            in {
+                "discovered",
+                "page_resolved",
+                "capture_armed",
+                "awaiting_playback",
+            }
+        ]
+        if browser_critical:
+            return max(
+                browser_critical,
+                key=lambda item: (item["published_at"], item["identity"]),
+            )
+        inflight_captures = [
+            item
+            for item in pending
+            if item.get("status") == "playback_activated"
+        ]
+        if inflight_captures:
+            return max(
+                inflight_captures,
+                key=lambda item: (item["published_at"], item["identity"]),
+            )
+        handoffs = [
+            item for item in pending if item.get("status") == "handoff_ready"
+        ]
+        if handoffs:
+            return min(
+                handoffs,
+                key=lambda item: (item["published_at"], item["identity"]),
+            )
+        return max(
+            pending,
+            key=lambda item: (item["published_at"], item["identity"]),
+        )
+
     @staticmethod
     def _canonical_page(page_url: str) -> tuple[str, str]:
         try:
@@ -466,6 +558,41 @@ class XiaocaoWechatLiveSubscription:
         manifest: dict[str, Any],
         item: dict[str, Any],
     ) -> dict[str, Any]:
+        del manifest
+        lock_path = self.output_dir / ".handoff-dispatch.lock"
+        lock_path.parent.mkdir(parents=True, exist_ok=True)
+        with lock_path.open("a+", encoding="utf-8") as lock:
+            try:
+                fcntl.flock(lock.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+            except BlockingIOError:
+                return self._waiting(
+                    item,
+                    {
+                        "event": "xiaocao_live_upload_pending",
+                        "status": "handoff_dispatch_in_progress",
+                    },
+                )
+            current_manifest = self._load()
+            current = current_manifest["items"].get(item["identity"])
+            if not isinstance(current, dict):
+                raise EnrichmentError("Xiaocao handoff item disappeared")
+            if current.get("status") == "completed":
+                return {
+                    "status": "no_update",
+                    "handoff_dispatched": False,
+                    "already_completed": True,
+                    "identity": current["identity"],
+                    "capture_job_id": current["capture_job_id"],
+                }
+            if current.get("status") != "handoff_ready":
+                raise EnrichmentError("Xiaocao handoff is not ready")
+            return self._dispatch_handoff_locked(current_manifest, current)
+
+    def _dispatch_handoff_locked(
+        self,
+        manifest: dict[str, Any],
+        item: dict[str, Any],
+    ) -> dict[str, Any]:
         capsule = self._load_handoff(item)
         request = {
             "event": "daily_remote_handoff_input_required",
@@ -522,6 +649,113 @@ class XiaocaoWechatLiveSubscription:
             "capture_job_id": completed["capture_job_id"],
         }
 
+    def dispatch_published_handoff(self) -> dict[str, Any]:
+        """Dispatch one already-published handoff without rescanning or advancing."""
+        manifest = self._load()
+        ready = sorted(
+            (
+                dict(item)
+                for item in manifest["items"].values()
+                if item.get("status") == "handoff_ready"
+            ),
+            key=lambda item: (item["published_at"], item["identity"]),
+        )
+        if ready:
+            return self._dispatch_handoff(manifest, ready[0])
+
+        candidates = sorted(
+            (
+                dict(item)
+                for item in manifest["items"].values()
+                if item.get("status") not in _TERMINAL
+                and str(item.get("capture_job_id") or "")
+            ),
+            key=lambda item: (item["published_at"], item["identity"]),
+        )
+        for item in candidates:
+            state = self.capture_driver.published_handoff(
+                item["identity"],
+                item["capture_job_id"],
+            )
+            if state is None:
+                continue
+            if (
+                state.get("event") != "cloud_handoff_published"
+                or state.get("status") != "handoff_published"
+                or state.get("capture_job_id") != item["capture_job_id"]
+            ):
+                raise EnrichmentError("published Xiaocao handoff is not bound")
+            item = self._transition(
+                manifest,
+                item,
+                "handoff_ready",
+                handoff_path=str(state.get("handoff_path") or ""),
+            )
+            return self._dispatch_handoff(manifest, item)
+        return {"status": "no_update"}
+
+    def _check_playback(
+        self,
+        manifest: dict[str, Any],
+        item: dict[str, Any],
+        *,
+        reason: str,
+    ) -> dict[str, Any]:
+        request = {
+            "event": "daily_browser_input_required",
+            "adapter": "xiaocao_wechat_live",
+            "action": "activate_xiaoetong_playback",
+            "subscription_id": item["identity"],
+            "page_url": item["page_url"],
+            "check_reason": reason,
+            "password_policy": {
+                "only_if_password_gate_visible": True,
+                "password": self.password,
+            },
+            "instructions": (
+                "Refresh the bound page and inspect its visible lifecycle state. "
+                "If it is directly playable, play it without entering a password. "
+                "If a password gate is visible, enter the supplied password and "
+                "submit it, then start playback. If it is waiting to start, live "
+                "without replay, or generating a replay, return that state without "
+                "waiting for it to change."
+            ),
+            "required_response": {
+                "action": "activate_xiaoetong_playback",
+                "subscription_id": item["identity"],
+                "page_url": item["page_url"],
+                "page_state": (
+                    "waiting_to_start|live|replay_generating|playable|"
+                    "password_required|unknown"
+                ),
+                "activated": "boolean",
+                "password_used": "boolean",
+            },
+        }
+        response = self.browser_exchange(request)
+        self._validate_browser_response(request, response)
+        response_page, response_identity = self._canonical_page(
+            str(response.get("page_url") or "")
+        )
+        activated = response.get("activated") is True
+        page_state = str(
+            response.get("page_state")
+            or ("playable" if activated else "unknown")
+        ).strip()
+        if (
+            response_page != item["page_url"]
+            or response_identity != item["source_identity"]
+            or page_state not in _PLAYBACK_PAGE_STATES
+        ):
+            raise EnrichmentError("browser did not check the bound live page")
+        return self._transition(
+            manifest,
+            item,
+            "playback_activated" if activated else "awaiting_playback",
+            observed_page_state=page_state,
+            password_used=response.get("password_used") is True,
+        )
+
     def run_once(
         self,
         *,
@@ -530,17 +764,10 @@ class XiaocaoWechatLiveSubscription:
     ) -> dict[str, Any]:
         manifest = self._load()
         self._poll(manifest)
-        pending = sorted(
-            (
-                item
-                for item in manifest["items"].values()
-                if item.get("status") not in _TERMINAL
-            ),
-            key=lambda item: (item["published_at"], item["identity"]),
-        )
-        if not pending:
+        self._supersede_older_unarmed_previews(manifest)
+        item = self._next_pending(manifest)
+        if item is None:
             return {"status": "no_update"}
-        item = dict(pending[0])
 
         if item["status"] == "discovered":
             request = {
@@ -582,48 +809,16 @@ class XiaocaoWechatLiveSubscription:
                 capture_job_id=capture_job_id,
             )
 
+        playback_checked = False
         if item["status"] == "capture_armed":
-            request = {
-                "event": "daily_browser_input_required",
-                "adapter": "xiaocao_wechat_live",
-                "action": "activate_xiaoetong_playback",
-                "subscription_id": item["identity"],
-                "page_url": item["page_url"],
-                "password_policy": {
-                    "only_if_password_gate_visible": True,
-                    "password": self.password,
-                },
-                "instructions": (
-                    "Refresh the bound page. If it is directly playable, play it "
-                    "without entering a password. If a password gate is visible, "
-                    "enter the supplied password and submit it, then start playback. "
-                    "Return after media requests begin."
-                ),
-                "required_response": {
-                    "action": "activate_xiaoetong_playback",
-                    "subscription_id": item["identity"],
-                    "page_url": item["page_url"],
-                    "activated": True,
-                    "password_used": "boolean",
-                },
-            }
-            response = self.browser_exchange(request)
-            self._validate_browser_response(request, response)
-            response_page, response_identity = self._canonical_page(
-                str(response.get("page_url") or "")
-            )
-            if (
-                response_page != item["page_url"]
-                or response_identity != item["source_identity"]
-                or response.get("activated") is not True
-            ):
-                raise EnrichmentError("browser did not activate the bound live page")
-            item = self._transition(
+            item = self._check_playback(
                 manifest,
                 item,
-                "playback_activated",
-                password_used=response.get("password_used") is True,
+                reason="initial",
             )
+            playback_checked = True
+            if item["status"] == "awaiting_playback":
+                return self._waiting(item, {"status": "awaiting_playback"})
 
         if item["status"] == "handoff_ready":
             return self._dispatch_handoff(manifest, item)
@@ -634,6 +829,24 @@ class XiaocaoWechatLiveSubscription:
             opencli_session=opencli_session,
             opencli_profile=opencli_profile,
         )
+        if (
+            not playback_checked
+            and item["status"] in {"awaiting_playback", "playback_activated"}
+            and state.get("source_job_status") == "awaiting_playback"
+        ):
+            item = self._check_playback(
+                manifest,
+                item,
+                reason="awaiting_playback",
+            )
+            if item["status"] == "awaiting_playback":
+                return self._waiting(item, {"status": "awaiting_playback"})
+            state = self.capture_driver.advance(
+                item["identity"],
+                item["capture_job_id"],
+                opencli_session=opencli_session,
+                opencli_profile=opencli_profile,
+            )
         if (
             state.get("event") == "cloud_handoff_published"
             and state.get("status") == "handoff_published"

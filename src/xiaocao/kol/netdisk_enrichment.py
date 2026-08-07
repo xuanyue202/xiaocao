@@ -29,9 +29,10 @@ from .runtime_paths import resolve_repo_owned_path
 
 
 _SHA256 = re.compile(r"^[0-9a-f]{64}$")
-_OPENCLI_SESSION = re.compile(r"^[A-Za-z0-9_.-]{1,64}$")
+_OPENCLI_SESSION = re.compile(r"^[A-Za-z0-9_.:-]{1,64}$")
 _OPENCLI_PROFILE = re.compile(r"^[A-Za-z0-9_.-]{1,128}$")
 _OPENCLI_UPLOAD_TIMEOUT_SECONDS = 300
+_OPENCLI_UPLOAD_TEMPLATE_SESSION = "site:baidu-netdisk"
 _OPENCLI_FOLDER_READY_ATTEMPTS = 6
 _OPENCLI_FOLDER_READY_WAIT_SECONDS = 2
 _NETDISK_GENERATION_POLL_INTERVAL = timedelta(minutes=1)
@@ -403,6 +404,7 @@ class NetdiskEnrichmentService:
         runner: Callable[..., Any] = subprocess.run,
         now: Callable[[], datetime] | None = None,
         opencli_command: tuple[str, ...] | None = None,
+        use_opencli_upload_template: bool = False,
         netdisk_directory: str = _NETDISK_DIRECTORY,
     ):
         self.store = EnrichmentJobStore(output_dir)
@@ -421,6 +423,7 @@ class NetdiskEnrichmentService:
         ):
             raise EnrichmentError("Netdisk directory is invalid")
         self.netdisk_directory = directory
+        self.use_opencli_upload_template = bool(use_opencli_upload_template)
         installed_opencli = shutil.which("opencli")
         self.opencli_command = opencli_command or (
             (installed_opencli,)
@@ -533,6 +536,116 @@ class NetdiskEnrichmentService:
                 last_error = exc
         assert last_error is not None
         raise last_error
+
+    def _opencli_upload_template_process(
+        self,
+        *,
+        session: str,
+        profile: str | None,
+        video_path: Path,
+        target_name: str,
+        claim_id: str,
+    ) -> Any:
+        if session != _OPENCLI_UPLOAD_TEMPLATE_SESSION:
+            raise EnrichmentError(
+                "Baidu Netdisk upload template requires OpenCLI session "
+                f"{_OPENCLI_UPLOAD_TEMPLATE_SESSION}"
+            )
+        command = [
+            *self.opencli_command,
+            *(["--profile", profile] if profile else []),
+            "baidu-netdisk",
+            "upload",
+            "--file",
+            str(video_path),
+            "--directory",
+            self.netdisk_directory,
+            "--target-name",
+            target_name,
+            "--claim-id",
+            claim_id,
+            "--site-session",
+            "persistent",
+            "--keep-tab",
+            "true",
+            "--window",
+            "foreground",
+            "--format",
+            "json",
+        ]
+        try:
+            return self.runner(
+                command,
+                capture_output=True,
+                text=True,
+                check=False,
+                timeout=_OPENCLI_UPLOAD_TIMEOUT_SECONDS,
+                env={
+                    **os.environ,
+                    "OPENCLI_BROWSER_COMMAND_TIMEOUT": str(
+                        _OPENCLI_UPLOAD_TIMEOUT_SECONDS - 10
+                    ),
+                },
+            )
+        except subprocess.TimeoutExpired as exc:
+            raise EnrichmentError("OpenCLI upload template timed out") from exc
+
+    @staticmethod
+    def _validate_opencli_upload_template_receipt(
+        result: Any,
+        *,
+        target_name: str,
+        directory: str,
+        claim_id: str,
+    ) -> dict[str, Any]:
+        if result.returncode != 0:
+            diagnostic = f"{result.stdout}\n{result.stderr}".lower()
+            if "not allowed" in diagnostic or "file access" in diagnostic:
+                raise EnrichmentError(
+                    "OpenCLI local file access denied; enable "
+                    "Allow access to file URLs for the OpenCLI extension"
+                )
+            raise EnrichmentError("OpenCLI Baidu Netdisk upload template failed")
+        try:
+            rows = json.loads(str(result.stdout))
+        except (TypeError, json.JSONDecodeError) as exc:
+            raise EnrichmentError(
+                "OpenCLI Baidu Netdisk upload template returned invalid JSON"
+            ) from exc
+        if not isinstance(rows, list) or len(rows) != 1 or not isinstance(rows[0], dict):
+            raise EnrichmentError(
+                "OpenCLI Baidu Netdisk upload template returned an invalid receipt"
+            )
+        row = rows[0]
+        status = row.get("status")
+        if status not in {"upload_submitted", "already_present"}:
+            raise EnrichmentError(
+                "OpenCLI Baidu Netdisk upload template status is invalid"
+            )
+        if (
+            row.get("directory") != directory
+            or row.get("targetName") != target_name
+            or row.get("claimId") != claim_id
+        ):
+            raise EnrichmentError(
+                "OpenCLI Baidu Netdisk upload template receipt identity mismatch"
+            )
+        if status == "upload_submitted" and (
+            row.get("exactCountBefore") != 0
+            or row.get("uploaded") is not True
+            or not str(row.get("uploadTarget") or "").startswith("input[")
+        ):
+            raise EnrichmentError(
+                "OpenCLI Baidu Netdisk upload template did not prove one submission"
+            )
+        if status == "already_present" and (
+            row.get("exactCountBefore") != 1
+            or row.get("uploaded") is not False
+        ):
+            raise EnrichmentError(
+                "OpenCLI Baidu Netdisk upload template existing-file proof is invalid"
+            )
+        return row
 
     def _opencli_json(
         self,
@@ -942,46 +1055,87 @@ class NetdiskEnrichmentService:
                 or _sha256_handle(source) != current.get("video_sha256")
             ):
                 raise EnrichmentError("prepared upload source changed")
-            marker = secrets.token_urlsafe(18)
-            selector = self._mark_opencli_upload_input(
-                session=session,
-                profile=profile,
-                marker=marker,
-            )
-            try:
-                result = self._opencli_process(
-                    session,
-                    "upload",
-                    selector,
-                    str(video_path),
-                    "--nth",
-                    "0",
-                    profile=profile,
-                    timeout_seconds=_OPENCLI_UPLOAD_TIMEOUT_SECONDS,
-                )
-            except EnrichmentError:
-                self._record_opencli_upload_failure(
-                    job_id,
-                    reason="browser_command_failed",
-                )
-                raise
-            if result.returncode != 0:
-                diagnostic = f"{result.stdout}\n{result.stderr}".lower()
-                if "not allowed" in diagnostic:
+            if self.use_opencli_upload_template:
+                try:
+                    result = self._opencli_upload_template_process(
+                        session=session,
+                        profile=profile,
+                        video_path=video_path,
+                        target_name=str(current["video_basename"]),
+                        claim_id=job_id,
+                    )
+                    receipt = self._validate_opencli_upload_template_receipt(
+                        result,
+                        target_name=str(current["video_basename"]),
+                        directory=self.netdisk_directory,
+                        claim_id=job_id,
+                    )
+                except EnrichmentError as exc:
                     self._record_opencli_upload_failure(
                         job_id,
-                        reason="file_access_denied",
+                        reason=(
+                            "file_access_denied"
+                            if "file access denied" in str(exc).lower()
+                            else "browser_command_failed"
+                        ),
                     )
-                    raise EnrichmentError(
-                        "OpenCLI local file access denied; enable "
-                        "Allow access to file URLs for the OpenCLI extension"
+                    raise
+                if receipt["status"] == "already_present":
+                    observed_at = self._time()
+                    return self.record_browser_state(
+                        job_id,
+                        step="video_ready",
+                        evidence=self._browser_proof(
+                            target_name=str(current["video_basename"]),
+                            visible_state="video_present",
+                            state_text="目标视频 row 已存在",
+                            observed_at=observed_at,
+                            page_url="https://pan.baidu.com/disk/main",
+                        ),
+                        source_mode="existing",
                     )
-                self._record_opencli_upload_failure(
-                    job_id,
-                    reason="browser_command_failed",
+                transport = "opencli_template"
+            else:
+                marker = secrets.token_urlsafe(18)
+                selector = self._mark_opencli_upload_input(
+                    session=session,
+                    profile=profile,
+                    marker=marker,
                 )
-                raise EnrichmentError("OpenCLI file upload failed")
-            transport = "opencli_cdp"
+                try:
+                    result = self._opencli_process(
+                        session,
+                        "upload",
+                        selector,
+                        str(video_path),
+                        "--nth",
+                        "0",
+                        profile=profile,
+                        timeout_seconds=_OPENCLI_UPLOAD_TIMEOUT_SECONDS,
+                    )
+                except EnrichmentError:
+                    self._record_opencli_upload_failure(
+                        job_id,
+                        reason="browser_command_failed",
+                    )
+                    raise
+                if result.returncode != 0:
+                    diagnostic = f"{result.stdout}\n{result.stderr}".lower()
+                    if "not allowed" in diagnostic:
+                        self._record_opencli_upload_failure(
+                            job_id,
+                            reason="file_access_denied",
+                        )
+                        raise EnrichmentError(
+                            "OpenCLI local file access denied; enable "
+                            "Allow access to file URLs for the OpenCLI extension"
+                        )
+                    self._record_opencli_upload_failure(
+                        job_id,
+                        reason="browser_command_failed",
+                    )
+                    raise EnrichmentError("OpenCLI file upload failed")
+                transport = "opencli_cdp"
         with self.store.job_lock(job_id):
             latest = self.store.latest(job_id)
             if latest.get("status") != "upload_claimed":

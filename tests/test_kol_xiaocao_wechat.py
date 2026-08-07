@@ -47,6 +47,19 @@ def test_wechat_history_extracts_only_xiaocao_live_links():
     assert all("message" not in item for item in items)
 
 
+def test_wechat_history_accepts_xiaoetong_link_without_message_keywords():
+    payload = _history(
+        "[2026-08-06 16:48] 福利官小花四: 今晚见："
+        "https://yv9lc.xetslk.com/sl/3qV2x"
+    )
+
+    items = parse_xiaocao_live_messages(payload)
+
+    assert len(items) == 1
+    assert items[0]["published_at"] == "2026-08-06T16:48:00+08:00"
+    assert items[0]["source_url"] == "https://yv9lc.xetslk.com/sl/3qV2x"
+
+
 class _CaptureDriver:
     def __init__(self):
         self.arms: list[tuple[str, str]] = []
@@ -76,6 +89,14 @@ class _CaptureDriver:
         assert opencli_profile is None
         self.advances += 1
         return dict(self.next_result)
+
+    def published_handoff(
+        self,
+        identity: str,
+        capture_job_id: str,
+    ) -> dict | None:
+        del identity, capture_job_id
+        return None
 
 
 def test_live_capture_driver_reconciles_sniffer_before_pending_advance(tmp_path):
@@ -237,6 +258,189 @@ def test_first_poll_baselines_history_and_arms_only_latest_live(tmp_path):
     assert statuses == ["historical_baseline", "playback_activated"]
 
 
+def test_newer_preview_is_not_starved_by_an_older_unfinished_capture(tmp_path):
+    old_message = (
+        "[2026-08-04 16:44] 福利官小花四: 草神直播："
+        "https://yv9lc.xetslk.com/sl/old001"
+    )
+    missed_morning_message = (
+        "[2026-08-05 08:32] 福利官小花四: 小草直播："
+        "https://yv9lc.xetslk.com/sl/morning001"
+    )
+    new_message = (
+        "[2026-08-05 16:57] 福利官小花四: 小草直播预告："
+        "https://yv9lc.xetslk.com/sl/new002"
+    )
+    payload = [_history(old_message)]
+    browser_requests: list[dict] = []
+
+    def browser_exchange(request: dict) -> dict:
+        browser_requests.append(request)
+        if request["action"] == "resolve_xiaoetong_page":
+            resource_id = (
+                "l_new_preview"
+                if request["source_url"].endswith("/new002")
+                else "l_old_preview"
+            )
+            return {
+                "action": request["action"],
+                "subscription_id": request["subscription_id"],
+                "page_url": (
+                    "https://appsnm3rlcp3566.h5.xiaoeknow.com/v4/course/"
+                    f"alive/{resource_id}"
+                ),
+                "page_state": "playable",
+            }
+        return {
+            "action": request["action"],
+            "subscription_id": request["subscription_id"],
+            "page_url": request["page_url"],
+            "page_state": "playable",
+            "activated": True,
+            "password_used": False,
+        }
+
+    capture = _CaptureDriver()
+    subscription = XiaocaoWechatLiveSubscription(
+        tmp_path / "wechat",
+        history_reader=lambda: payload[0],
+        browser_exchange=browser_exchange,
+        capture_driver=capture,
+        contact=CONTACT,
+        password="666",
+    )
+
+    subscription.run_once(opencli_session="xiaocao-lv-subscription")
+    payload[0] = _history(old_message, missed_morning_message, new_message)
+    subscription.run_once(opencli_session="xiaocao-lv-subscription")
+
+    parsed = parse_xiaocao_live_messages(payload[0])
+    morning_identity = parsed[-2]["identity"]
+    new_identity = parsed[-1]["identity"]
+    assert capture.arms[-1][0] == new_identity
+    assert any(
+        request.get("subscription_id") == new_identity
+        and request["action"] == "resolve_xiaoetong_page"
+        for request in browser_requests
+    )
+    manifest = json.loads(
+        (tmp_path / "wechat" / "manifest.json").read_text(encoding="utf-8")
+    )
+    assert manifest["items"][morning_identity]["status"] == "superseded"
+    assert manifest["items"][morning_identity]["superseded_by"] == new_identity
+
+
+def test_newest_inflight_capture_precedes_an_older_ready_handoff():
+    manifest = {
+        "items": {
+            "older-handoff": {
+                "identity": "older-handoff",
+                "published_at": "2026-08-05T08:30:00+08:00",
+                "status": "handoff_ready",
+            },
+            "current-live": {
+                "identity": "current-live",
+                "published_at": "2026-08-06T08:30:00+08:00",
+                "status": "playback_activated",
+            },
+        },
+    }
+
+    selected = XiaocaoWechatLiveSubscription._next_pending(manifest)
+
+    assert selected is not None
+    assert selected["identity"] == "current-live"
+
+
+def test_awaiting_playback_rechecks_the_bound_page_each_hour_until_playable(
+    tmp_path,
+):
+    payload = _history(
+        "[2026-08-05 08:32] 福利官小花四: 草神直播："
+        "https://yv9lc.xetslk.com/sl/4EKPYp",
+    )
+    browser_requests: list[dict] = []
+    activation_states = iter([
+        ("waiting_to_start", False),
+        ("replay_generating", False),
+        ("playable", True),
+    ])
+    capture = _CaptureDriver()
+    capture.next_result = {
+        "event": "xiaocao_live_pending",
+        "status": "awaiting_capture",
+        "capture_job_id": "kol-capture-current",
+        "source_job_status": "awaiting_playback",
+        "next": "rerun",
+    }
+
+    def browser_exchange(request: dict) -> dict:
+        browser_requests.append(request)
+        if request["action"] == "resolve_xiaoetong_page":
+            return {
+                "action": request["action"],
+                "subscription_id": request["subscription_id"],
+                "page_url": (
+                    "https://appsnm3rlcp3566.h5.xiaoeknow.com/v4/course/"
+                    "alive/l_6a708838e4b0694c5bf42e55"
+                ),
+                "page_state": "waiting_to_start",
+            }
+        page_state, activated = next(activation_states)
+        if activated:
+            capture.next_result = {
+                "event": "xiaocao_live_pending",
+                "status": "downloading",
+                "capture_job_id": "kol-capture-current",
+                "next": "rerun",
+            }
+        return {
+            "action": request["action"],
+            "subscription_id": request["subscription_id"],
+            "page_url": request["page_url"],
+            "page_state": page_state,
+            "activated": activated,
+            "password_used": False,
+        }
+
+    subscription = XiaocaoWechatLiveSubscription(
+        tmp_path / "wechat",
+        history_reader=lambda: payload,
+        browser_exchange=browser_exchange,
+        capture_driver=capture,
+        contact=CONTACT,
+        password="666",
+    )
+
+    first = subscription.run_once(opencli_session="xiaocao-lv-subscription")
+    second = subscription.run_once(opencli_session="xiaocao-lv-subscription")
+    third = subscription.run_once(opencli_session="xiaocao-lv-subscription")
+
+    assert [first["status"], second["status"], third["status"]] == [
+        "waiting",
+        "waiting",
+        "waiting",
+    ]
+    assert [request["action"] for request in browser_requests] == [
+        "resolve_xiaoetong_page",
+        "activate_xiaoetong_playback",
+        "activate_xiaoetong_playback",
+        "activate_xiaoetong_playback",
+    ]
+    assert [
+        request.get("check_reason")
+        for request in browser_requests
+        if request["action"] == "activate_xiaoetong_playback"
+    ] == ["initial", "awaiting_playback", "awaiting_playback"]
+    assert capture.advances == 3
+    manifest = json.loads(
+        (tmp_path / "wechat" / "manifest.json").read_text(encoding="utf-8")
+    )
+    item = next(iter(manifest["items"].values()))
+    assert item["status"] == "playback_activated"
+    assert item["observed_page_state"] == "playable"
+
+
 def test_pending_capture_resumes_without_reopening_browser(tmp_path):
     payload = _history(
         "[2026-08-04 08:29] 福利官小花四: 9点20草神直播地址：https://yv9lc.xetslk.com/sl/4EKPYp",
@@ -338,3 +542,94 @@ def test_pending_capture_resumes_without_reopening_browser(tmp_path):
     item = next(iter(manifest["items"].values()))
     assert item["status"] == "completed"
     assert item["remote_thread_id"] == "remote-xiaocao-executor"
+
+
+def test_published_handoff_recovery_is_read_only_until_remote_dispatch(tmp_path):
+    payload = _history(
+        "[2026-08-06 16:48] 福利官小花四: 今晚见："
+        "https://yv9lc.xetslk.com/sl/3qV2x"
+    )
+    parsed = parse_xiaocao_live_messages(payload)[0]
+    handoff_path = tmp_path / "handoff.json"
+    capsule = {
+        "schema_version": 2,
+        "handoff_id": "b" * 64,
+        "capture_job_id": "kol-capture-current",
+        "media_sha256": "a" * 64,
+        "large_payload_local_bytes": 0,
+    }
+    capsule["handoff_sha256"] = hashlib.sha256(
+        json.dumps(
+            capsule,
+            ensure_ascii=False,
+            sort_keys=True,
+            separators=(",", ":"),
+        ).encode()
+    ).hexdigest()
+    handoff_path.write_text(json.dumps(capsule), encoding="utf-8")
+    output_dir = tmp_path / "wechat"
+    output_dir.mkdir()
+    (output_dir / "manifest.json").write_text(
+        json.dumps({
+            "schema_version": 1,
+            "items": {
+                parsed["identity"]: {
+                    **parsed,
+                    "status": "playback_activated",
+                    "capture_job_id": "kol-capture-current",
+                }
+            },
+        }),
+        encoding="utf-8",
+    )
+
+    class RecoveryCapture(_CaptureDriver):
+        def published_handoff(self, identity, capture_job_id):
+            assert identity == parsed["identity"]
+            assert capture_job_id == "kol-capture-current"
+            return {
+                "event": "cloud_handoff_published",
+                "status": "handoff_published",
+                "capture_job_id": capture_job_id,
+                "handoff_path": str(handoff_path),
+            }
+
+        def advance(self, *args, **kwargs):
+            raise AssertionError("recovery must not advance or replay capture")
+
+    def exchange(request):
+        assert request["action"] == "dispatch_xiaocao_handoff"
+        return {
+            "action": request["action"],
+            "subscription_id": request["subscription_id"],
+            "handoff_id": request["handoff_id"],
+            "accepted": True,
+            "readback_status": "already_present",
+            "remote_thread_id": "remote-writer-current",
+            "remote_host_id": "remote-control:registered",
+        }
+
+    subscription = XiaocaoWechatLiveSubscription(
+        output_dir,
+        history_reader=lambda: (_ for _ in ()).throw(
+            AssertionError("recovery must not rescan WeChat")
+        ),
+        browser_exchange=exchange,
+        capture_driver=RecoveryCapture(),
+        contact=CONTACT,
+    )
+
+    result = subscription.dispatch_published_handoff()
+
+    assert result == {
+        "status": "no_update",
+        "handoff_dispatched": True,
+        "identity": parsed["identity"],
+        "capture_job_id": "kol-capture-current",
+    }
+    manifest = json.loads(
+        (output_dir / "manifest.json").read_text(encoding="utf-8")
+    )
+    item = manifest["items"][parsed["identity"]]
+    assert item["status"] == "completed"
+    assert item["remote_readback_status"] == "already_present"

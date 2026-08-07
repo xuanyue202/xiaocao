@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import re
 from pathlib import Path
 from typing import Any
 
@@ -29,6 +30,17 @@ from .publication import (
 MAINTENANCE_CREATED_AT = "2026-07-26T11:52:13.000Z"
 MAINTENANCE_AS_OF = "2026-07-26T11:52:13.000Z"
 MAINTENANCE_CONTRACT_VERSION = "kol-longitudinal-review-v1"
+
+READER_POSTURE_STYLES = {
+    "scenario_analysis": "情景分析与条件验证",
+    "risk_appetite_and_expectation_validation": "风险偏好与预期验证",
+}
+READER_INTERNAL_ACTION_LABELS = {
+    "active": "具备模式资格",
+    "cold": "尚不具备模式资格",
+    "no_trade": "暂无可执行交易",
+    "executable_count": "可执行候选数量",
+}
 
 LUCIFER_UNCERTAIN = {
     "sanhua-governance-risk",
@@ -70,6 +82,18 @@ def _safe_text(value: Any, *, maximum: int = 8_000) -> str:
     return text if len(text) <= maximum else text[: maximum - 1] + "…"
 
 
+def _reader_text(value: Any, *, maximum: int = 8_000) -> str:
+    text = _safe_text(value, maximum=maximum)
+    for token, replacement in READER_INTERNAL_ACTION_LABELS.items():
+        text = re.sub(
+            rf"(?<![A-Za-z0-9_]){re.escape(token)}(?![A-Za-z0-9_])",
+            replacement,
+            text,
+            flags=re.IGNORECASE,
+        )
+    return text
+
+
 def _local_id(prefix: str, value: str) -> str:
     digest = hashlib.sha256(value.encode()).hexdigest()[:16]
     return f"{prefix}-{digest}"
@@ -93,12 +117,17 @@ def _existing_viewpoints(candidate: dict[str, Any]) -> dict[str, dict[str, Any]]
 
 
 def _legacy_stance(row: dict[str, Any]) -> str:
-    stance = _safe_text(row.get("stance"))
+    stance = _reader_text(row.get("stance"))
     if stance:
         return stance
-    strength = _safe_text(row.get("strength"))
-    note = _safe_text(row.get("note"))
+    strength = _reader_text(row.get("strength"))
+    note = _reader_text(row.get("note"))
     return "；".join(value for value in (strength, note) if value)
+
+
+def _reader_posture_style(value: Any) -> str:
+    style = _reader_text(value)
+    return READER_POSTURE_STYLES.get(style, style)
 
 
 def _legacy_evaluation(
@@ -157,9 +186,9 @@ def _legacy_specs(
         if isinstance(value.get("regime_call"), dict)
         else {}
     )
-    horizon = _safe_text(regime.get("horizon")) or "当次发布事件及随后数日"
-    dominant = _safe_text(posture.get("dominant_style"))
-    risk = _safe_text(posture.get("risk"))
+    horizon = _reader_text(regime.get("horizon")) or "当次发布事件及随后数日"
+    dominant = _reader_posture_style(posture.get("dominant_style"))
+    risk = _reader_text(posture.get("risk"))
     stance = "；".join(value for value in (dominant, risk) if value)
     specs: list[dict[str, Any]] = []
     if stance:
@@ -180,9 +209,9 @@ def _legacy_specs(
                 "reasoning": _safe_text(value.get("summary")),
                 "triggers": [],
                 "falsifiers": (
-                    [_safe_text(row) for row in regime.get("what_would_falsify", [])]
+                    [_reader_text(row) for row in regime.get("what_would_falsify", [])]
                     if isinstance(regime.get("what_would_falsify"), list)
-                    else [_safe_text(regime.get("what_would_falsify"))]
+                    else [_reader_text(regime.get("what_would_falsify"))]
                     if regime.get("what_would_falsify")
                     else []
                 ),
@@ -641,12 +670,21 @@ def _add_relations(working: list[dict[str, Any]]) -> None:
         report = row["report"]
         if report["payload"]["author"] != "吕晓彤":
             continue
+        source_name = Path(
+            str(row["original"]["metadata"].get("source_artifact") or "")
+        ).name
         for viewpoint in row["viewpoints"]:
             local_id = str(viewpoint["payload"]["local_thesis_id"])
             subject = str(viewpoint["payload"]["subject"])
-            if local_id == "legacy-market-posture":
+            if (
+                source_name == "2026-07-13_lv_xiaotong_review.json"
+                and local_id == "legacy-market-posture"
+            ):
                 lv_legacy["market"] = viewpoint
-            elif subject == "人工智能":
+            elif (
+                source_name == "2026-07-13_lv_xiaotong_review.json"
+                and subject == "人工智能"
+            ):
                 lv_legacy["ai"] = viewpoint
             elif local_id.startswith("lv-20260720-"):
                 lv_video_row = row

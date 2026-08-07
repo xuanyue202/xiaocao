@@ -132,6 +132,35 @@ def test_initial_import_has_one_safe_report_per_reviewed_publication_event(
         assert all(re.fullmatch(r"[a-f0-9]{64}", value) for value in hashes)
 
 
+def test_reviewed_official_account_distills_use_stable_kol_identities(
+    reviewed_artifact_root,
+):
+    candidates = _candidates(reviewed_artifact_root)
+    expected = {
+        "2026-08-04_liu_shao_review.json": (
+            "刘少狙击营",
+            "kol-liushao-jujiying",
+        ),
+        "2026-08-05_a_alex_review.json": (
+            "A也叫艾利克斯",
+            "kol-a-alex",
+        ),
+        "2026-08-06_a_alex_review.json": (
+            "A也叫艾利克斯",
+            "kol-a-alex",
+        ),
+    }
+
+    matched = {}
+    for candidate in candidates:
+        name = Path(candidate["metadata"]["source_artifact"]).name
+        if name in expected:
+            payload = _report(candidate)["payload"]
+            matched[name] = (payload["author"], payload["kol_id"])
+
+    assert matched == expected
+
+
 def test_superseded_lucifer_fragments_are_not_imported_and_spacex_is_prominent(
     reviewed_artifact_root,
 ):
@@ -142,7 +171,14 @@ def test_superseded_lucifer_fragments_are_not_imported_and_spacex_is_prominent(
         if _report(row)["payload"]["kol_id"] == "kol-lucifer"
     ]
 
-    assert len(lucifer) == 2
+    sources = {
+        Path(row["metadata"]["source_artifact"]).name for row in lucifer
+    }
+    assert sources == {
+        "2025-01-09_lucifer_review.json",
+        "2025-05-27_lucifer_review.json",
+        "lucifer_20260705_claim_gold_v4.json",
+    }
     historical = next(
         row
         for row in lucifer

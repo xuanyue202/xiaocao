@@ -495,6 +495,140 @@ def test_opencli_step_claims_before_cdp_upload_and_waits_for_cloud_proof(
     assert ready["source_mode"] == "uploaded"
 
 
+def test_opencli_template_upload_reuses_site_session_and_validates_receipt(
+    tmp_path,
+):
+    video = tmp_path / "20260720 template-contract-compressed.mp4"
+    video.write_bytes(b"real-video")
+    output_dir = tmp_path / "out"
+    target_present = False
+    commands: list[list[str]] = []
+
+    def runner(command, **kwargs):
+        nonlocal target_present
+        commands.append(command)
+        if command[0] == "ffprobe":
+            return _runner(command, **kwargs)
+        browser_prefix = [
+            "opencli",
+            "--profile",
+            "work",
+            "browser",
+            "site:baidu-netdisk",
+        ]
+        if command[: len(browser_prefix)] == browser_prefix:
+            tail = command[len(browser_prefix):]
+            if tail[:1] == ["open"]:
+                payload = {"url": tail[1], "page": "page-1"}
+            elif tail[:1] == ["eval"] and "/api/list" in tail[1]:
+                payload = {
+                    "page_url": "https://pan.baidu.com/disk/main",
+                    "errno": 0,
+                    "complete_scan": True,
+                    "folder_bound": True,
+                    "exact_count": 1 if target_present else 0,
+                    "target_name": video.name,
+                    "target_index": 0 if target_present else -1,
+                }
+            elif tail[:1] == ["eval"] and "folder_bound" in tail[1]:
+                payload = {"folder_bound": True}
+            else:
+                raise AssertionError(command)
+            return SimpleNamespace(
+                returncode=0,
+                stdout=json.dumps(payload, ensure_ascii=False),
+                stderr="",
+            )
+        adapter_prefix = [
+            "opencli",
+            "--profile",
+            "work",
+            "baidu-netdisk",
+            "upload",
+        ]
+        if command[: len(adapter_prefix)] != adapter_prefix:
+            raise AssertionError(command)
+        assert "netdisk_upload_claimed" in (
+            output_dir / "events.jsonl"
+        ).read_text(encoding="utf-8")
+        assert command[command.index("--file") + 1] == str(video.resolve())
+        assert command[command.index("--target-name") + 1] == video.name
+        claim_id = command[command.index("--claim-id") + 1]
+        assert claim_id.startswith("kol-netdisk-")
+        assert kwargs["timeout"] == 300
+        assert kwargs["env"]["OPENCLI_BROWSER_COMMAND_TIMEOUT"] == "290"
+        target_present = True
+        payload = [{
+            "status": "upload_submitted",
+            "directory": "/课程/自己的课/小草",
+            "targetName": video.name,
+            "exactCountBefore": 0,
+            "uploaded": True,
+            "uploadTarget": (
+                f'input[data-opencli-baidu-upload-claim="{claim_id}"]'
+            ),
+            "claimId": claim_id,
+            "url": "https://pan.baidu.com/disk/main",
+        }]
+        return SimpleNamespace(
+            returncode=0,
+            stdout=json.dumps(payload, ensure_ascii=False),
+            stderr="",
+        )
+
+    service = NetdiskEnrichmentService(
+        output_dir,
+        runner=runner,
+        now=lambda: NOW,
+        opencli_command=("opencli",),
+        use_opencli_upload_template=True,
+    )
+    prepared = service.prepare(video)
+
+    submitted = service.advance_opencli(
+        prepared["job_id"],
+        session="site:baidu-netdisk",
+        profile="work",
+    )
+
+    assert submitted["event"] == "netdisk_upload_started"
+    assert submitted["upload_transport"] == "opencli_template"
+    assert any(command[3:5] == ["baidu-netdisk", "upload"] for command in commands)
+
+    ready = service.advance_opencli(
+        prepared["job_id"],
+        session="site:baidu-netdisk",
+        profile="work",
+    )
+    assert ready["status"] == "video_ready"
+    assert ready["source_mode"] == "uploaded"
+
+
+def test_opencli_template_rejects_wrong_receipt_identity():
+    result = SimpleNamespace(
+        returncode=0,
+        stdout=json.dumps([{
+            "status": "upload_submitted",
+            "directory": "/wrong",
+            "targetName": "video.mp4",
+            "exactCountBefore": 0,
+            "uploaded": True,
+            "uploadTarget": "input[data-opencli-baidu-upload-claim]",
+            "claimId": "netdisk-12345678",
+            "url": "https://pan.baidu.com/disk/main",
+        }]),
+        stderr="",
+    )
+
+    with pytest.raises(EnrichmentError, match="identity mismatch"):
+        NetdiskEnrichmentService._validate_opencli_upload_template_receipt(
+            result,
+            target_name="video.mp4",
+            directory="/课程/自己的课/小草",
+            claim_id="netdisk-12345678",
+        )
+
+
 def test_short_opencli_dom_commands_keep_the_cli_default_timeout(tmp_path):
     service = NetdiskEnrichmentService(
         tmp_path / "out",

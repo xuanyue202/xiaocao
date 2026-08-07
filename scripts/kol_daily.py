@@ -1462,9 +1462,28 @@ class DailyRuntime:
             password=self.args.xiaocao_live_password,
         )
         return subscription.run_once(
-            opencli_session=self.args.enrichment_session,
+            opencli_session=getattr(
+                self.args,
+                "xiaocao_enrichment_session",
+                self.args.enrichment_session,
+            ),
             opencli_profile=self.args.opencli_profile,
         )
+
+    def xiaocao_handoff_local(self) -> dict[str, Any]:
+        capture = XiaocaoLiveCaptureDriver(
+            self.args.xiaocao_wechat_output_dir,
+            decision_output=self.args.decision_output_dir,
+        )
+        subscription = XiaocaoWechatLiveSubscription(
+            self.args.xiaocao_wechat_output_dir,
+            history_reader=lambda: {},
+            browser_exchange=_read_agent_json,
+            capture_driver=capture,
+            contact=self.args.xiaocao_wechat_contact,
+            password=self.args.xiaocao_live_password,
+        )
+        return subscription.dispatch_published_handoff()
 
     def wechat_official_local(self) -> dict[str, Any]:
         publishers = tuple(self.args.wechat_official_publishers)
@@ -1659,6 +1678,7 @@ def main() -> int:
             "run",
             "viewpoints",
             "capture-local",
+            "capture-xiaocao-handoff",
             "capture-wechat-official",
             "import-wechat-official",
             "process-wechat-official",
@@ -1706,6 +1726,10 @@ def main() -> int:
     parser.add_argument("--lv-session", default="xiaocao-lv-subscription")
     parser.add_argument("--private-session", default="xiaocao-lv-subscription")
     parser.add_argument("--enrichment-session", default="xiaocao-lv-subscription")
+    parser.add_argument(
+        "--xiaocao-enrichment-session",
+        default="site:baidu-netdisk",
+    )
     args = parser.parse_args()
     if args.command == "import-wechat-official":
         try:
@@ -1776,6 +1800,15 @@ def main() -> int:
         runtime.args = args
         result = runtime.wechat_official_local()
         if result.get("status") != "no_update":
+            _print(result)
+        return 0
+    if args.command == "capture-xiaocao-handoff":
+        runtime = DailyRuntime.__new__(DailyRuntime)
+        runtime.args = args
+        result = runtime.xiaocao_handoff_local()
+        if result.get("status") != "no_update" or result.get(
+            "handoff_dispatched"
+        ):
             _print(result)
         return 0
     if args.command == "viewpoints":
