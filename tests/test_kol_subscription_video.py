@@ -976,6 +976,10 @@ def test_private_search_accepts_stable_fuzzy_results_as_exact_zero_matches():
 
 
 def test_lv_transfer_observes_provider_outcome_after_confirmation():
+    assert "row.querySelectorAll('[role=\"checkbox\"]')" in _TRANSFER_SCRIPT
+    assert "node.getAttribute('aria-checked')" in _TRANSFER_SCRIPT
+    assert "return row.querySelector('span.EOGexf')" in _TRANSFER_SCRIPT
+    assert ".filter(row => rowSelected(row) === true)" in _TRANSFER_SCRIPT
     assert "const beforeLines = new Set(" in _TRANSFER_SCRIPT
     assert "data-xiaocao-lv-confirm" in _TRANSFER_SCRIPT
     assert "confirms[0].click()" not in _TRANSFER_SCRIPT

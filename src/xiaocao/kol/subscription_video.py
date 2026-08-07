@@ -424,6 +424,25 @@ _TRANSFER_SCRIPT = r"""(async () => {
     return style.display !== 'none' && style.visibility !== 'hidden'
       && rect.width > 0 && rect.height > 0;
   };
+  const selectionControl = row => {
+    const semantic = [...row.querySelectorAll('[role="checkbox"]')].filter(
+      node => (
+        visible(node)
+        && ['true', 'false'].includes(node.getAttribute('aria-checked'))
+      )
+    );
+    if (semantic.length === 1) return semantic[0];
+    return row.querySelector('span.EOGexf');
+  };
+  const rowSelected = row => {
+    const control = selectionControl(row);
+    if (!control) return null;
+    const checked = control.getAttribute('aria-checked');
+    if (checked === 'true' || checked === 'false') {
+      return checked === 'true';
+    }
+    return row.classList.contains('JS-item-active');
+  };
   location.hash = 'list/path=' + encodeURIComponent(sourceParent);
   const targetDeadline = Date.now() + 10000;
   let targets = [];
@@ -439,23 +458,24 @@ _TRANSFER_SCRIPT = r"""(async () => {
     return {status: 'transfer_target_not_unique', triggered: false};
   }
   for (const row of [...document.querySelectorAll('#shareqr dd')]) {
-    if (!row.classList.contains('JS-item-active')) continue;
-    const selection = row.querySelector('span.EOGexf');
-    if (!selection) {
+    const selected = rowSelected(row);
+    if (selected === null) {
       return {status: 'transfer_selection_control_missing', triggered: false};
     }
-    selection.click();
+    if (selected) selectionControl(row).click();
   }
   await new Promise(resolve => setTimeout(resolve, 200));
-  const targetSelection = targets[0].querySelector('span.EOGexf');
+  const targetSelection = selectionControl(targets[0]);
   if (!targetSelection) {
     return {status: 'transfer_selection_control_missing', triggered: false};
   }
-  targetSelection.click();
+  if (rowSelected(targets[0]) !== true) targetSelection.click();
   await new Promise(resolve => setTimeout(resolve, 200));
-  const selectedNames = [...document.querySelectorAll(
-    '#shareqr dd.JS-item-active a.filename'
-  )].map(link => String(link.getAttribute('title') || ''));
+  const selectedNames = [...document.querySelectorAll('#shareqr dd')]
+    .filter(row => rowSelected(row) === true)
+    .map(row => row.querySelector('a.filename'))
+    .filter(Boolean)
+    .map(link => String(link.getAttribute('title') || ''));
   if (selectedNames.length !== 1 || selectedNames[0] !== targetName) {
     return {status: 'transfer_selection_mismatch', triggered: false};
   }
