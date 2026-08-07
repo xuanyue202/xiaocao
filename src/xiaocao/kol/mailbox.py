@@ -10,7 +10,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable
 
-from .enrichment_types import EnrichmentError
+from .enrichment_types import EnrichmentDiagnosticError, EnrichmentError
 
 
 MAILBOX_ID = "kol.handoff"
@@ -114,21 +114,35 @@ class MailboxLedger:
             rows.append(row)
         return rows
 
-    def outstanding_handoffs(self) -> list[dict[str, Any]]:
+    def _handoff_states(self) -> tuple[dict[str, dict[str, Any]], set[str]]:
         sent: dict[str, dict[str, Any]] = {}
         acked: set[str] = set()
         for row in self.events():
             handoff_id = str(row.get("handoff_id") or "")
-            if row.get("event") == "mailbox_send_receipted":
+            if row.get("event") in {
+                "mailbox_send_attempted",
+                "mailbox_send_receipted",
+                "mailbox_send_reconciled",
+            }:
                 prior = sent.get(handoff_id)
                 if prior is not None and (
                     prior.get("content_sha256") != row.get("content_sha256")
-                    or prior.get("receipt") != row.get("receipt")
+                    or prior.get("object_kind") != row.get("object_kind")
+                    or prior.get("title") != row.get("title")
                 ):
-                    raise MailboxError("mailbox send receipt changed")
+                    raise MailboxError("mailbox send claim changed")
                 sent[handoff_id] = row
             elif row.get("event") == "mailbox_ack_observed":
                 acked.add(handoff_id)
+        return sent, acked
+
+    def handoff_state(self, handoff_id: str) -> dict[str, Any] | None:
+        sent, _acked = self._handoff_states()
+        state = sent.get(str(handoff_id))
+        return dict(state) if state is not None else None
+
+    def outstanding_handoffs(self) -> list[dict[str, Any]]:
+        sent, acked = self._handoff_states()
         return [sent[key] for key in sorted(sent) if key not in acked]
 
 
@@ -202,6 +216,57 @@ class LiangHuiMailboxClient:
             "payload": capsule,
         }
         content_sha256 = _sha256(sender_content)
+        prior = self.ledger.handoff_state(handoff_id)
+        if prior is not None:
+            if (
+                prior.get("mailbox_id") != MAILBOX_ID
+                or prior.get("message_id") != handoff_id
+                or prior.get("content_sha256") != content_sha256
+                or prior.get("object_kind") != object_kind
+                or prior.get("title") != normalized_title
+            ):
+                raise MailboxError("mailbox send claim changed")
+            if prior.get("event") == "mailbox_send_attempted":
+                response = self.exchange(
+                    {
+                        "event": "daily_lianghui_mailbox_input_required",
+                        "operation": "get_mailbox_message",
+                        "arguments": {
+                            "mailbox_id": MAILBOX_ID,
+                            "message_id": handoff_id,
+                        },
+                    }
+                )
+                message = self._validate_exact_message(response, sent=prior)
+                self.ledger.append(
+                    "mailbox_send_reconciled",
+                    occurred_at=_utc_now(self.now),
+                    handoff_id=handoff_id,
+                    object_kind=object_kind,
+                    title=normalized_title,
+                    mailbox_id=MAILBOX_ID,
+                    message_id=handoff_id,
+                    content_sha256=content_sha256,
+                    outcome="already_present",
+                    observed_status=str(message["status"]),
+                    family_id=str(message["family_id"]),
+                )
+            return {
+                "status": "Handoff完成",
+                "handoff_id": handoff_id,
+                "mailbox_outcome": str(prior.get("outcome") or "already_present"),
+                "content_sha256": content_sha256,
+            }
+        self.ledger.append(
+            "mailbox_send_attempted",
+            occurred_at=_utc_now(self.now),
+            handoff_id=handoff_id,
+            object_kind=object_kind,
+            title=normalized_title,
+            mailbox_id=MAILBOX_ID,
+            message_id=handoff_id,
+            content_sha256=content_sha256,
+        )
         response = self.exchange(
             {
                 "event": "daily_lianghui_mailbox_input_required",
@@ -250,16 +315,42 @@ class LiangHuiMailboxClient:
             raise MailboxError("mailbox exact readback is invalid")
         message = dict(response["message"])
         receipt = sent.get("receipt")
-        if not isinstance(receipt, dict):
-            raise MailboxError("mailbox local send receipt is invalid")
+        expected_family = (
+            receipt.get("family_id") if isinstance(receipt, dict) else None
+        )
+        sender_content = {
+            key: message[key]
+            for key in (
+                "mailbox_id",
+                "message_id",
+                "message_type",
+                "schema_version",
+                "subject",
+                "correlation_id",
+                "payload",
+            )
+            if key in message
+        }
         if (
-            message.get("family_id") != receipt.get("family_id")
+            (
+                expected_family is not None
+                and message.get("family_id") != expected_family
+            )
             or message.get("mailbox_id") != MAILBOX_ID
             or message.get("message_id") != sent.get("handoff_id")
             or message.get("message_type") != MAILBOX_MESSAGE_TYPE
             or message.get("schema_version") != MAILBOX_SCHEMA_VERSION
             or message.get("content_sha256") != sent.get("content_sha256")
+            or (
+                not isinstance(receipt, dict)
+                and message.get("content_sha256") != _sha256(sender_content)
+            )
             or message.get("status") not in {"pending", "acked"}
+            or not _required_id(message.get("family_id"), field="family_id")
+            or not _required_id(message.get("created_by"), field="created_by")
+            or not _UTC_MILLISECONDS.fullmatch(
+                str(message.get("created_at") or "")
+            )
         ):
             raise MailboxError("mailbox exact readback changed identity or content")
         ack_receipt = message.get("ack_receipt")
@@ -297,6 +388,20 @@ class LiangHuiMailboxClient:
                 }
             )
             message = self._validate_exact_message(response, sent=sent)
+            if sent.get("event") == "mailbox_send_attempted":
+                self.ledger.append(
+                    "mailbox_send_reconciled",
+                    occurred_at=_utc_now(self.now),
+                    handoff_id=handoff_id,
+                    object_kind=str(sent["object_kind"]),
+                    title=str(sent["title"]),
+                    mailbox_id=MAILBOX_ID,
+                    message_id=handoff_id,
+                    content_sha256=str(sent["content_sha256"]),
+                    outcome="already_present",
+                    observed_status=str(message["status"]),
+                    family_id=str(message["family_id"]),
+                )
             prefix = _OBJECT_PREFIX[str(sent["object_kind"])]
             row = {
                 "object": f"[{prefix}] {sent['title']}",
@@ -464,11 +569,22 @@ class RemoteMailboxDrain:
     ) -> list[dict[str, Any]]:
         cursor: str | None = None
         seen_cursors: set[str] = set()
+        seen_messages: dict[str, str] = {}
         eligible: list[dict[str, Any]] = []
         while True:
             page = self.client.list_pending(cursor=cursor)
             for message in page["items"]:
-                if str(message["message_id"]) not in attempted:
+                message_id = str(message["message_id"])
+                content_sha256 = str(message["content_sha256"])
+                prior_sha256 = seen_messages.get(message_id)
+                if prior_sha256 is not None:
+                    if prior_sha256 != content_sha256:
+                        raise MailboxError(
+                            "mailbox pagination changed message content"
+                        )
+                    continue
+                seen_messages[message_id] = content_sha256
+                if message_id not in attempted:
                     eligible.append(message)
             if not page["has_more"]:
                 return eligible
@@ -477,6 +593,41 @@ class RemoteMailboxDrain:
                 raise MailboxError("mailbox pagination repeated a cursor")
             seen_cursors.add(next_cursor)
             cursor = next_cursor
+
+    @staticmethod
+    def _safe_waiting_details(result: Any) -> dict[str, str]:
+        source = result if isinstance(result, dict) else {}
+        waiting_items = source.get("waiting_items")
+        if (
+            isinstance(waiting_items, list)
+            and waiting_items
+            and isinstance(waiting_items[0], dict)
+        ):
+            source = {**source, **waiting_items[0]}
+        details: dict[str, str] = {}
+        for key in (
+            "category",
+            "code",
+            "stage",
+            "reconciliation",
+            "next_poll_not_before",
+        ):
+            value = source.get(key)
+            if (
+                isinstance(value, str)
+                and value
+                and len(value) <= 200
+                and "\n" not in value
+                and "\r" not in value
+            ):
+                details[key] = value
+        if not details:
+            details = {
+                "category": "processor_wait",
+                "code": str(source.get("status") or "incomplete_result")[:80],
+                "stage": "business_processing",
+            }
+        return details
 
     def run(self) -> dict[str, Any]:
         attempted: set[str] = set()
@@ -507,28 +658,49 @@ class RemoteMailboxDrain:
                 try:
                     result = self.processor(message)
                 except Exception as exc:
+                    if isinstance(exc, EnrichmentDiagnosticError):
+                        details = {
+                            "category": exc.diagnostic_category,
+                            "code": exc.diagnostic_code,
+                            "stage": exc.diagnostic_stage,
+                        }
+                    else:
+                        details = {
+                            "category": "processor_error",
+                            "code": type(exc).__name__[:80],
+                            "stage": "business_processing",
+                        }
                     self.client.ledger.append(
                         "mailbox_message_waiting",
                         occurred_at=_utc_now(self.client.now),
                         handoff_id=message_id,
-                        error_type=type(exc).__name__,
+                        **details,
                     )
                     waiting.append(message_id)
                     items.append({
                         "object": str(message["subject"]),
                         "status": "等待业务完成",
                         "handoff_id": message_id,
+                        **details,
                     })
                     continue
                 if (
                     not isinstance(result, dict)
                     or result.get("business_complete") is not True
                 ):
+                    details = self._safe_waiting_details(result)
+                    self.client.ledger.append(
+                        "mailbox_message_waiting",
+                        occurred_at=_utc_now(self.client.now),
+                        handoff_id=message_id,
+                        **details,
+                    )
                     waiting.append(message_id)
                     items.append({
                         "object": str(message["subject"]),
                         "status": "等待业务完成",
                         "handoff_id": message_id,
+                        **details,
                     })
                     continue
                 self.client.ack_message(message)

@@ -4,11 +4,14 @@ import json
 import hashlib
 from datetime import datetime, timezone
 
+import pytest
+
 from xiaocao.kol.mailbox import (
     LiangHuiMailboxClient,
     MailboxLedger,
     RemoteMailboxDrain,
 )
+from xiaocao.kol.enrichment_types import EnrichmentDiagnosticError
 
 
 def _official_capsule() -> dict[str, object]:
@@ -123,9 +126,79 @@ def test_local_publish_requires_hash_bound_authoritative_receipt(tmp_path) -> No
         .read_text(encoding="utf-8")
         .splitlines()
     ]
-    assert rows[0]["event"] == "mailbox_send_receipted"
-    assert rows[0]["handoff_id"] == "a" * 64
-    assert rows[0]["receipt"]["content_sha256"] == result["content_sha256"]
+    assert [row["event"] for row in rows] == [
+        "mailbox_send_attempted",
+        "mailbox_send_receipted",
+    ]
+    assert rows[1]["handoff_id"] == "a" * 64
+    assert rows[1]["receipt"]["content_sha256"] == result["content_sha256"]
+
+
+def test_local_publish_reconciles_uncertain_send_before_any_retry(tmp_path) -> None:
+    requests: list[dict[str, object]] = []
+    sent_arguments: dict[str, object] = {}
+
+    def exchange(request: dict[str, object]) -> dict[str, object]:
+        requests.append(request)
+        operation = request["operation"]
+        arguments = request["arguments"]
+        assert isinstance(arguments, dict)
+        if operation == "send_mailbox_message":
+            sent_arguments.update(arguments)
+            raise TimeoutError("response lost after the remote write")
+        assert operation == "get_mailbox_message"
+        return {
+            "operation": operation,
+            "message": {
+                "family_id": "family-one",
+                **{
+                    key: sent_arguments[key]
+                    for key in (
+                        "mailbox_id",
+                        "message_id",
+                        "message_type",
+                        "schema_version",
+                        "subject",
+                        "correlation_id",
+                        "payload",
+                        "content_sha256",
+                    )
+                },
+                "created_by": "user-one",
+                "created_at": "2026-08-07T10:36:13.715Z",
+                "status": "pending",
+                "ack_receipt": None,
+            },
+        }
+
+    client = LiangHuiMailboxClient(
+        MailboxLedger(tmp_path / "mailbox"),
+        exchange=exchange,
+    )
+
+    with pytest.raises(TimeoutError):
+        client.publish_handoff(
+            _official_capsule(),
+            object_kind="article",
+            title="测试交接",
+        )
+
+    result = client.publish_handoff(
+        _official_capsule(),
+        object_kind="article",
+        title="测试交接",
+    )
+
+    assert result["status"] == "Handoff完成"
+    assert result["mailbox_outcome"] == "already_present"
+    assert [request["operation"] for request in requests] == [
+        "send_mailbox_message",
+        "get_mailbox_message",
+    ]
+    assert [row["event"] for row in client.ledger.events()] == [
+        "mailbox_send_attempted",
+        "mailbox_send_reconciled",
+    ]
 
 
 def test_local_reconciliation_uses_exact_get_before_all_done(tmp_path) -> None:
@@ -262,11 +335,14 @@ def test_remote_drain_attempts_each_message_once_and_requeries_for_new_work(
         "acked_message_ids": ["b" * 64, "c" * 64],
         "waiting_message_ids": ["a" * 64],
         "items": [
-            {
-                "object": "[文章] 测试交接",
-                "status": "等待业务完成",
-                "handoff_id": "a" * 64,
-            },
+                {
+                    "object": "[文章] 测试交接",
+                    "status": "等待业务完成",
+                    "handoff_id": "a" * 64,
+                    "category": "processor_wait",
+                    "code": "waiting",
+                    "stage": "business_processing",
+                },
             {
                 "object": "[文章] 测试交接",
                 "status": "全部完成",
@@ -364,3 +440,154 @@ def test_remote_drain_reads_every_page_before_processing_the_batch(tmp_path) -> 
         "ack_mailbox_message",
         "list_mailbox_messages",
     ]
+
+
+def test_remote_drain_deduplicates_one_message_repeated_across_pages(
+    tmp_path,
+) -> None:
+    repeated = _mailbox_message("a" * 64)
+    second = _mailbox_message("b" * 64)
+    list_count = 0
+
+    def exchange(request: dict[str, object]) -> dict[str, object]:
+        nonlocal list_count
+        operation = request["operation"]
+        arguments = request["arguments"]
+        assert isinstance(arguments, dict)
+        if operation == "list_mailbox_messages":
+            list_count += 1
+            if list_count == 1:
+                return {
+                    "operation": operation,
+                    "page": {
+                        "items": [repeated],
+                        "next_cursor": "page-two",
+                        "has_more": True,
+                    },
+                }
+            if list_count == 2:
+                return {
+                    "operation": operation,
+                    "page": {
+                        "items": [repeated, second],
+                        "next_cursor": None,
+                        "has_more": False,
+                    },
+                }
+            return {
+                "operation": operation,
+                "page": {"items": [], "next_cursor": None, "has_more": False},
+            }
+        return {
+            "operation": operation,
+            "outcome": "acked",
+            "receipt": {
+                "operation": operation,
+                "family_id": "family-one",
+                "mailbox_id": "kol.handoff",
+                "message_id": arguments["message_id"],
+                "content_sha256": arguments["expected_content_sha256"],
+                "acked_by": "user-two",
+                "acked_at": "2026-08-07T10:40:00.000Z",
+            },
+        }
+
+    processed: list[str] = []
+    result = RemoteMailboxDrain(
+        LiangHuiMailboxClient(
+            MailboxLedger(tmp_path / "mailbox"),
+            exchange=exchange,
+        ),
+        processor=lambda message: (
+            processed.append(str(message["message_id"]))
+            or {"business_complete": True}
+        ),
+    ).run()
+
+    assert processed == ["a" * 64, "b" * 64]
+    assert result["attempted_message_ids"] == ["a" * 64, "b" * 64]
+
+
+def test_remote_drain_preserves_safe_waiting_diagnostics(tmp_path) -> None:
+    message = _mailbox_message("a" * 64)
+    pages = iter([[message], []])
+
+    def exchange(request: dict[str, object]) -> dict[str, object]:
+        assert request["operation"] == "list_mailbox_messages"
+        return {
+            "operation": "list_mailbox_messages",
+            "page": {
+                "items": next(pages),
+                "next_cursor": None,
+                "has_more": False,
+            },
+        }
+
+    client = LiangHuiMailboxClient(
+        MailboxLedger(tmp_path / "mailbox"),
+        exchange=exchange,
+    )
+    result = RemoteMailboxDrain(
+        client,
+        processor=lambda _message: {
+            "status": "waiting",
+            "business_complete": False,
+            "waiting_items": [{
+                "category": "provider_wait",
+                "code": "transcript_pending",
+                "stage": "cloud_transcript",
+                "reconciliation": "exact_job_pending",
+                "next_poll_not_before": "2026-08-07T12:30:00.000Z",
+            }],
+        },
+    ).run()
+
+    assert result["items"] == [{
+        "object": "[文章] 测试交接",
+        "status": "等待业务完成",
+        "handoff_id": "a" * 64,
+        "category": "provider_wait",
+        "code": "transcript_pending",
+        "stage": "cloud_transcript",
+        "reconciliation": "exact_job_pending",
+        "next_poll_not_before": "2026-08-07T12:30:00.000Z",
+    }]
+    waiting_event = client.ledger.events()[-1]
+    assert waiting_event["stage"] == "cloud_transcript"
+    assert waiting_event["code"] == "transcript_pending"
+
+
+def test_remote_drain_preserves_structured_exception_diagnostics(tmp_path) -> None:
+    message = _mailbox_message("a" * 64)
+    pages = iter([[message], []])
+
+    def exchange(request: dict[str, object]) -> dict[str, object]:
+        assert request["operation"] == "list_mailbox_messages"
+        return {
+            "operation": "list_mailbox_messages",
+            "page": {
+                "items": next(pages),
+                "next_cursor": None,
+                "has_more": False,
+            },
+        }
+
+    def process(_message: dict[str, object]) -> dict[str, object]:
+        raise EnrichmentDiagnosticError(
+            "credential-safe diagnostic",
+            category="provider_wait",
+            code="transcript_pending",
+            stage="cloud_transcript",
+        )
+
+    result = RemoteMailboxDrain(
+        LiangHuiMailboxClient(
+            MailboxLedger(tmp_path / "mailbox"),
+            exchange=exchange,
+        ),
+        processor=process,
+    ).run()
+
+    assert result["items"][0]["category"] == "provider_wait"
+    assert result["items"][0]["code"] == "transcript_pending"
+    assert result["items"][0]["stage"] == "cloud_transcript"

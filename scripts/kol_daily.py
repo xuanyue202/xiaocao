@@ -8,6 +8,7 @@ import hashlib
 import json
 import re
 import sys
+from collections.abc import Collection
 from datetime import datetime, timezone
 from pathlib import Path
 from time import sleep as _cloud_handoff_sleep
@@ -1400,7 +1401,12 @@ class DailyRuntime:
             raise DailyError("Xiaocao lightweight handoff is invalid")
         return value
 
-    def xiaocao(self, handoff_id: str | None = None) -> dict[str, Any]:
+    def xiaocao(
+        self,
+        handoff_id: str | None = None,
+        *,
+        exclude_handoff_ids: Collection[str] = (),
+    ) -> dict[str, Any]:
         service = XiaocaoLiveService(
             self.args.xiaocao_output_dir,
             decision_output=self.args.decision_output_dir,
@@ -1426,6 +1432,7 @@ class DailyRuntime:
             key=lambda row: str(row.get("published_at") or ""),
             reverse=True,
         )
+        excluded = {str(value) for value in exclude_handoff_ids}
         if handoff_id is not None:
             ordered_handoffs = [
                 row
@@ -1434,6 +1441,12 @@ class DailyRuntime:
             ]
             if not ordered_handoffs:
                 raise DailyError("target Xiaocao handoff is not locally durable")
+        elif excluded:
+            ordered_handoffs = [
+                row
+                for row in ordered_handoffs
+                if str(row.get("handoff_id") or "") not in excluded
+            ]
         events = []
         completed_handoff_ids: list[str] = []
         waiting = 0
@@ -1447,6 +1460,13 @@ class DailyRuntime:
                 if result_path.is_file():
                     value = json.loads(result_path.read_text(encoding="utf-8"))
                     if (value.get("items") or [{}])[0].get("daily_terminal"):
+                        if (
+                            hashlib.sha256(result_path.read_bytes()).hexdigest()
+                            != state.get("decision_result_sha256")
+                        ):
+                            raise DailyError(
+                                "Xiaocao decision result changed"
+                            )
                         completed_handoff_ids.append(str(handoff["handoff_id"]))
                         continue
                 else:
@@ -1668,6 +1688,8 @@ class DailyRuntime:
     def wechat_official(
         self,
         handoff_id: str | None = None,
+        *,
+        exclude_handoff_ids: Collection[str] = (),
     ) -> dict[str, Any]:
         inbox = OfficialAccountInbox(self.args.wechat_official_output_dir)
         acquirer = OfficialAccountOpenCliAcquirer(
@@ -1678,6 +1700,7 @@ class DailyRuntime:
             if target is None:
                 raise DailyError("official mailbox handoff import is missing")
             if target.get("status") == "decided":
+                inbox.verify_completed(handoff_id)
                 return {
                     "status": "completed",
                     "events": [],
@@ -1686,7 +1709,12 @@ class DailyRuntime:
                 }
             pending_items = [target]
         else:
-            pending_items = inbox.pending_items()
+            excluded = {str(value) for value in exclude_handoff_ids}
+            pending_items = [
+                item
+                for item in inbox.pending_items()
+                if str(item.get("handoff_id") or "") not in excluded
+            ]
         pending = sorted(
             pending_items,
             key=lambda row: (
@@ -2021,6 +2049,10 @@ def main() -> int:
         return 0
     runtime = DailyRuntime(args)
     mailbox_result = runtime.mailbox()
+    attempted_handoff_ids = frozenset(
+        str(value)
+        for value in mailbox_result.get("attempted_message_ids", [])
+    )
     if mailbox_result.get("attempted_message_ids"):
         _print({"mailbox_drain": mailbox_result})
     result = service.run(
@@ -2041,14 +2073,20 @@ def main() -> int:
                 "name": "wechat_official_accounts",
                 "priority": 25,
                 "run": _classified_source(
-                    "wechat_official_accounts", runtime.wechat_official
+                    "wechat_official_accounts",
+                    lambda: runtime.wechat_official(
+                        exclude_handoff_ids=attempted_handoff_ids
+                    ),
                 ),
             },
             {
                 "name": "xiaocao_handoff",
                 "priority": 30,
                 "run": _classified_source(
-                    "xiaocao_handoff", runtime.xiaocao
+                    "xiaocao_handoff",
+                    lambda: runtime.xiaocao(
+                        exclude_handoff_ids=attempted_handoff_ids
+                    ),
                 ),
             },
             {

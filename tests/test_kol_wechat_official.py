@@ -536,6 +536,39 @@ def test_image_notes_must_cover_every_image_sha(tmp_path):
         inbox.materialize_evidence(acquired, image_notes_path=notes_path)
 
 
+def test_decided_item_completion_requires_hash_bound_daily_terminal(tmp_path):
+    inbox = OfficialAccountInbox(tmp_path / "remote")
+    handoff_id = "a" * 64
+    result_path = tmp_path / "remote" / "decisions" / handoff_id / "result.json"
+    result_path.parent.mkdir(parents=True)
+    result_path.write_text(
+        json.dumps({"items": [{"daily_terminal": {"kind": "source_event"}}]}),
+        encoding="utf-8",
+    )
+    result_sha256 = hashlib.sha256(result_path.read_bytes()).hexdigest()
+    inbox.manifest_path.write_text(
+        json.dumps({
+            "schema_version": 2,
+            "items": {
+                handoff_id: {
+                    "handoff_id": handoff_id,
+                    "status": "decided",
+                    "decision_result_path": str(result_path),
+                    "decision_result_sha256": result_sha256,
+                },
+            },
+        }),
+        encoding="utf-8",
+    )
+
+    completed = inbox.verify_completed(handoff_id)
+    assert completed["decision_result_sha256"] == result_sha256
+
+    result_path.unlink()
+    with pytest.raises(EnrichmentError, match="decision result changed"):
+        inbox.verify_completed(handoff_id)
+
+
 def test_no_image_article_materializes_markdown_without_agent_input(tmp_path):
     capsule = _capture_one(tmp_path)
     inbox = OfficialAccountInbox(tmp_path / "remote")

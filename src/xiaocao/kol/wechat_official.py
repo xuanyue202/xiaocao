@@ -899,6 +899,33 @@ class OfficialAccountInbox:
         item = self._load()["items"].get(str(handoff_id))
         return dict(item) if isinstance(item, dict) else None
 
+    def verify_completed(self, handoff_id: str) -> dict[str, Any]:
+        item = self.get_item(handoff_id)
+        if not isinstance(item, dict) or item.get("status") != "decided":
+            raise EnrichmentError("official-account decision is not complete")
+        result_path = self._verify_file(
+            item.get("decision_result_path"),
+            item.get("decision_result_sha256"),
+            label="decision result",
+        )
+        try:
+            result = json.loads(result_path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError) as exc:
+            raise EnrichmentError(
+                "official-account decision result is invalid"
+            ) from exc
+        items = result.get("items") if isinstance(result, dict) else None
+        if (
+            not isinstance(items, list)
+            or len(items) != 1
+            or not isinstance(items[0], dict)
+            or not isinstance(items[0].get("daily_terminal"), dict)
+        ):
+            raise EnrichmentError(
+                "official-account decision result lacks durable terminal"
+            )
+        return item
+
     @staticmethod
     def _verify_file(path_value: Any, expected_sha256: Any, *, label: str) -> Path:
         path = Path(str(path_value or "")).expanduser().resolve()

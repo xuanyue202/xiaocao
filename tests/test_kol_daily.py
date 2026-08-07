@@ -237,6 +237,58 @@ def test_xiaocao_runtime_upgrades_only_latest_decided_publication(tmp_path, monk
     assert calls[0]["reconcile_daily_terminal"] is True
 
 
+def test_xiaocao_completed_handoff_requires_hash_bound_terminal(
+    tmp_path,
+    monkeypatch,
+):
+    xiaocao_output = tmp_path / "xiaocao"
+    handoff_dir = xiaocao_output / "imported_handoffs"
+    handoff_dir.mkdir(parents=True)
+    handoff = {
+        "schema_version": 1,
+        "handoff_id": "a" * 64,
+        "capture_job_id": "kol-current",
+        "netdisk_job_id": "kol-netdisk-current",
+        "published_at": "2026-08-06T16:00:00+08:00",
+        "large_payload_local_bytes": 0,
+    }
+    handoff["handoff_sha256"] = _canonical_sha256(handoff)
+    (handoff_dir / "kol-current.json").write_text(
+        json.dumps(handoff),
+        encoding="utf-8",
+    )
+    result_path = tmp_path / "decision-result.json"
+    result_path.write_text(
+        json.dumps({"items": [{"daily_terminal": {"kind": "source_event"}}]}),
+        encoding="utf-8",
+    )
+
+    class FakeNetdisk:
+        @staticmethod
+        def status(_job_id):
+            return {
+                "status": "decided",
+                "decision_result_path": str(result_path),
+                "decision_result_sha256": "b" * 64,
+            }
+
+    class FakeService:
+        def __init__(self, *_args, **_kwargs):
+            self.netdisk = FakeNetdisk()
+
+    monkeypatch.setattr(kol_daily_script, "XiaocaoLiveService", FakeService)
+    runtime = DailyRuntime.__new__(DailyRuntime)
+    runtime.args = SimpleNamespace(
+        xiaocao_output_dir=xiaocao_output,
+        decision_output_dir=tmp_path / "decisions",
+        enrichment_session="xiaocao-lv-subscription",
+        opencli_profile=None,
+    )
+
+    with pytest.raises(DailyError, match="decision result changed"):
+        runtime.xiaocao()
+
+
 def test_daily_runtime_runs_xiaocao_wechat_subscription(tmp_path, monkeypatch):
     calls: list[tuple[str, object]] = []
 
@@ -345,6 +397,8 @@ def test_capture_local_cli_runs_live_and_official_account_sources(
             "capture-local",
             "--output-dir",
             str(tmp_path / "daily"),
+            "--mailbox-output-dir",
+            str(tmp_path / "mailbox"),
         ],
     )
 
@@ -390,7 +444,10 @@ def test_remote_run_drains_mailbox_before_existing_sources(
 
         def mailbox(self):
             observed["order"] = ["mailbox"]
-            return {"status": "completed", "attempted_message_ids": []}
+            return {
+                "status": "waiting",
+                "attempted_message_ids": ["a" * 64],
+            }
 
         @staticmethod
         def lv():
@@ -401,11 +458,13 @@ def test_remote_run_drains_mailbox_before_existing_sources(
             return {"status": "no_update"}
 
         @staticmethod
-        def wechat_official():
+        def wechat_official(*, exclude_handoff_ids=()):
+            observed["official_exclusions"] = tuple(exclude_handoff_ids)
             return {"status": "no_update"}
 
         @staticmethod
-        def xiaocao():
+        def xiaocao(*, exclude_handoff_ids=()):
+            observed["xiaocao_exclusions"] = tuple(exclude_handoff_ids)
             return {"status": "no_update"}
 
         @staticmethod
@@ -430,6 +489,36 @@ def test_remote_run_drains_mailbox_before_existing_sources(
         "viewpoint_maintenance",
     ]
     assert observed["priorities"] == [10, 20, 25, 30, 40]
+    assert observed["official_exclusions"] == ("a" * 64,)
+    assert observed["xiaocao_exclusions"] == ("a" * 64,)
+
+
+def test_official_decided_handoff_requires_durable_terminal_readback(
+    tmp_path,
+    monkeypatch,
+):
+    class FakeInbox:
+        def __init__(self, output_dir):
+            assert output_dir == tmp_path / "official"
+
+        @staticmethod
+        def get_item(handoff_id):
+            assert handoff_id == "a" * 64
+            return {"handoff_id": handoff_id, "status": "decided"}
+
+        @staticmethod
+        def verify_completed(handoff_id):
+            assert handoff_id == "a" * 64
+            raise EnrichmentError("official-account decision result changed")
+
+    monkeypatch.setattr(kol_daily_script, "OfficialAccountInbox", FakeInbox)
+    runtime = DailyRuntime.__new__(DailyRuntime)
+    runtime.args = SimpleNamespace(
+        wechat_official_output_dir=tmp_path / "official",
+    )
+
+    with pytest.raises(EnrichmentError, match="decision result changed"):
+        runtime.wechat_official(handoff_id="a" * 64)
 
 
 def test_mailbox_processor_imports_and_completes_only_target_official_handoff(
@@ -612,6 +701,8 @@ def test_capture_local_cli_follows_exact_cloud_handoff_in_same_process(
             "capture-local",
             "--output-dir",
             str(tmp_path / "daily"),
+            "--mailbox-output-dir",
+            str(tmp_path / "mailbox"),
         ],
     )
 
