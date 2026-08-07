@@ -113,6 +113,9 @@ than defaulting to an empty viewpoint list.
 Low-density creates neither report nor reminder. A promoted event gets its
 durable 灰常亮 receipt and stable URL before Book KOL-US or reminder effects;
 report-only records a no-alert reason, while alert-eligible sends one reminder.
+Missing independent verification, no uniquely mapped instrument, low
+confidence, or Book KOL-US `no_trade` do not justify report-only when current
+market posture or direction is present; retain those limits in the reminder.
 
 ## Remote schedule
 

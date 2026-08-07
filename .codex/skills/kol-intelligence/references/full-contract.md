@@ -114,7 +114,11 @@ Keep the layers separate:
   initialization, expired intraday commentary, report correction,
   methodology-only material, or pure confirmation may publish with
   `alert_eligible=false` and must not replay an earlier household notification
-  or Book KOL-US action.
+  or Book KOL-US action. Missing independent verification, no uniquely mapped
+  instrument, low confidence, or a Book KOL-US `no_trade` result are not
+  no-alert reasons when the source still contains current market posture or a
+  current direction choice; keep those execution limits in the reminder
+  boundary instead of demoting the event to `report_only`.
 - Longitudinal `viewpoint`, `viewpoint_evaluation`, and `viewpoint_relation`
   records are optional Agent judgments. Keep every historical viewpoint,
   append later viewpoints with `replaces`, `refines`, or `coexists`, and make

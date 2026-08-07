@@ -262,6 +262,55 @@ def test_append_only_update_can_correct_reader_copy_without_stable_field_change(
     assert publish["expected_manifest_sha256"] == INITIAL_MANIFEST_SHA256
 
 
+def test_append_only_update_can_promote_a_misclassified_live_alert():
+    current = _initial_report()
+
+    records, publish = build_append_only_publication_update(
+        current_records=[current],
+        additions=[],
+        viewpoint_ids=[],
+        created_at="2026-07-26T08:25:00.000Z",
+        revision="alert-eligibility-correction-v1",
+        reason="纠正实时投资情报提醒资格",
+        report_payload_updates={
+            "alert_eligible": True,
+            "alert_reason": "permissive_live_investment_content_gate",
+        },
+    )
+    report = records[0]
+
+    assert report["record_id"] == current["record_id"]
+    assert report["payload"]["alert_eligible"] is True
+    assert report["payload"]["alert_reason"] == (
+        "permissive_live_investment_content_gate"
+    )
+    assert report["expected_content_sha256"] == current["content_sha256"]
+    assert publish["expected_content_sha256"] == current["content_sha256"]
+    assert publish["expected_manifest_sha256"] == INITIAL_MANIFEST_SHA256
+
+
+@pytest.mark.parametrize(
+    "updates",
+    [
+        {"alert_eligible": True},
+        {"alert_reason": "permissive_live_investment_content_gate"},
+        {"alert_eligible": False, "alert_reason": "historical"},
+        {"alert_eligible": True, "alert_reason": "ad_hoc_override"},
+    ],
+)
+def test_alert_eligibility_correction_fails_closed(updates):
+    with pytest.raises(PublicationError, match="alert eligibility|canonical live"):
+        build_append_only_publication_update(
+            current_records=[_initial_report()],
+            additions=[],
+            viewpoint_ids=[],
+            created_at="2026-07-26T08:25:00.000Z",
+            revision="bad-alert-correction",
+            reason="非法更改提醒资格",
+            report_payload_updates=updates,
+        )
+
+
 def test_reader_copy_gate_is_source_neutral_and_allows_only_formal_ascii_subjects():
     report = _initial_report()
     common = {

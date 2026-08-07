@@ -448,12 +448,35 @@ def build_append_only_publication_update(
         "title",
         "summary",
         "report_body",
+        "alert_eligible",
+        "alert_reason",
     }
     if unsupported_updates:
         raise PublicationError(
             "report correction cannot change stable publication fields: "
             + ", ".join(sorted(unsupported_updates))
         )
+    alert_fields = {"alert_eligible", "alert_reason"}
+    present_alert_fields = alert_fields & set(updates)
+    if present_alert_fields:
+        if present_alert_fields != alert_fields:
+            raise PublicationError(
+                "alert eligibility correction requires eligibility and reason"
+            )
+        if current_report["payload"].get("alert_eligible") is not False:
+            raise PublicationError(
+                "alert eligibility correction requires a prior false value"
+            )
+        if updates.get("alert_eligible") is not True:
+            raise PublicationError(
+                "report correction cannot demote alert eligibility"
+            )
+        if updates.get("alert_reason") != (
+            "permissive_live_investment_content_gate"
+        ):
+            raise PublicationError(
+                "alert eligibility correction requires the canonical live gate"
+            )
     payload.update(updates)
     payload["viewpoint_ids"] = viewpoint_ids
     source_binding = current_report["source_binding"]

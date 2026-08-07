@@ -59,6 +59,24 @@ def _request(**overrides) -> dict:
     return value
 
 
+def _makeup_request(**overrides) -> dict:
+    value = _request()
+    value.pop("handoff_id")
+    value.pop("missing_confirmation")
+    value.pop("original_failure")
+    value["makeup_authorization"] = {
+        "kind": "user_authorized_makeup",
+        "reference": "codex-user-message-20260807",
+        "authorized_at": "2026-08-07T11:50:00+08:00",
+    }
+    value.update(overrides)
+    value["content_sha256"] = hashlib.sha256(
+        f"{value['title']}\n{value['body']}".encode()
+    ).hexdigest()
+    value["handoff_id"] = hashlib.sha256(_canonical(value).encode()).hexdigest()
+    return value
+
+
 def test_transport_requires_explicit_missing_recipient_confirmation(tmp_path):
     request = _request(missing_confirmation={})
     unsigned = dict(request)
@@ -106,6 +124,47 @@ def test_transport_sends_each_recipient_once_and_replays_from_receipts(tmp_path)
     assert first["receipt_sha256"] == hashlib.sha256(
         _canonical({k: v for k, v in first.items() if k != "receipt_sha256"}).encode()
     ).hexdigest()
+
+
+def test_user_authorized_makeup_sends_each_recipient_exactly_once(tmp_path):
+    calls: list[str] = []
+
+    def sender(_title: str, _body: str, recipient: str) -> dict:
+        calls.append(recipient)
+        return {"status": "ok", "detail": "ok"}
+
+    transport = NotificationTransport(
+        tmp_path,
+        configured_recipients=lambda: ("Chen", "FeiFei"),
+    )
+    request = _makeup_request()
+
+    first = transport.send(request, sender=sender)
+    second = transport.send(request, sender=sender)
+
+    assert calls == ["Chen", "FeiFei"]
+    assert first == second
+    assert set(first["recipient_receipts"]) == {"Chen", "FeiFei"}
+
+
+def test_makeup_authorization_rejects_ambiguous_dual_authority(tmp_path):
+    request = _makeup_request(
+        missing_confirmation={
+            "kind": "recipient_missing_confirmation",
+            "reference": "also-present",
+            "confirmed_at": "2026-08-07T11:51:00+08:00",
+        }
+    )
+    transport = NotificationTransport(
+        tmp_path,
+        configured_recipients=lambda: ("Chen", "FeiFei"),
+    )
+
+    with pytest.raises(
+        NotificationTransportError,
+        match="makeup authorization is invalid",
+    ):
+        transport.send(request, sender=lambda *_args: {"status": "ok"})
 
 
 def test_transport_retries_only_a_proven_safe_failure(tmp_path):

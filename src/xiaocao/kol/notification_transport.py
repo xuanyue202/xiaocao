@@ -70,47 +70,67 @@ class NotificationTransport:
             raise NotificationTransportError(
                 "notification handoff requires its source task identity"
             )
-        confirmation = request.get("missing_confirmation") or {}
-        if (
-            confirmation.get("kind") != "recipient_missing_confirmation"
-            or not str(confirmation.get("reference") or "").strip()
-            or not str(confirmation.get("confirmed_at") or "").strip()
-        ):
-            raise NotificationTransportError(
-                "notification handoff requires missing-recipient confirmation"
-            )
-        try:
-            confirmed_at = parse_iso(
-                confirmation["confirmed_at"],
-                field="missing_confirmation.confirmed_at",
-            )
-        except ValueError as exc:
-            raise NotificationTransportError(str(exc)) from exc
-        original_failure = request.get("original_failure") or {}
-        if (
-            not str(original_failure.get("status") or "").strip()
-            or not str(original_failure.get("claimed_at") or "").strip()
-            or not str(original_failure.get("recorded_at") or "").strip()
-            or original_failure.get("delivered_recipients") != []
-        ):
-            raise NotificationTransportError(
-                "notification handoff original failure is not safely bounded"
-            )
-        try:
-            parse_iso(
-                original_failure["claimed_at"],
-                field="original_failure.claimed_at",
-            )
-            failure_at = parse_iso(
-                original_failure["recorded_at"],
-                field="original_failure.recorded_at",
-            )
-        except ValueError as exc:
-            raise NotificationTransportError(str(exc)) from exc
-        if confirmed_at <= failure_at:
-            raise NotificationTransportError(
-                "missing-recipient confirmation must follow the original failure"
-            )
+        authorization = request.get("makeup_authorization") or {}
+        if authorization:
+            if (
+                authorization.get("kind") != "user_authorized_makeup"
+                or not str(authorization.get("reference") or "").strip()
+                or not str(authorization.get("authorized_at") or "").strip()
+                or request.get("missing_confirmation")
+                or request.get("original_failure")
+            ):
+                raise NotificationTransportError(
+                    "notification makeup authorization is invalid"
+                )
+            try:
+                parse_iso(
+                    authorization["authorized_at"],
+                    field="makeup_authorization.authorized_at",
+                )
+            except ValueError as exc:
+                raise NotificationTransportError(str(exc)) from exc
+        else:
+            confirmation = request.get("missing_confirmation") or {}
+            if (
+                confirmation.get("kind") != "recipient_missing_confirmation"
+                or not str(confirmation.get("reference") or "").strip()
+                or not str(confirmation.get("confirmed_at") or "").strip()
+            ):
+                raise NotificationTransportError(
+                    "notification handoff requires missing-recipient confirmation"
+                )
+            try:
+                confirmed_at = parse_iso(
+                    confirmation["confirmed_at"],
+                    field="missing_confirmation.confirmed_at",
+                )
+            except ValueError as exc:
+                raise NotificationTransportError(str(exc)) from exc
+            original_failure = request.get("original_failure") or {}
+            if (
+                not str(original_failure.get("status") or "").strip()
+                or not str(original_failure.get("claimed_at") or "").strip()
+                or not str(original_failure.get("recorded_at") or "").strip()
+                or original_failure.get("delivered_recipients") != []
+            ):
+                raise NotificationTransportError(
+                    "notification handoff original failure is not safely bounded"
+                )
+            try:
+                parse_iso(
+                    original_failure["claimed_at"],
+                    field="original_failure.claimed_at",
+                )
+                failure_at = parse_iso(
+                    original_failure["recorded_at"],
+                    field="original_failure.recorded_at",
+                )
+            except ValueError as exc:
+                raise NotificationTransportError(str(exc)) from exc
+            if confirmed_at <= failure_at:
+                raise NotificationTransportError(
+                    "missing-recipient confirmation must follow the original failure"
+                )
         recipients = request.get("recipients")
         if (
             not isinstance(recipients, list)

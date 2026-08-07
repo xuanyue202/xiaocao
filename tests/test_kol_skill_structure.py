@@ -322,6 +322,8 @@ def test_kol_skill_has_one_ticket07_daytime_runner() -> None:
         "never reads or downloads source-video bytes",
         "content_value.status=low_density|promoted",
         "content_value.tier=report_only|alert_eligible",
+        "Missing independent verification",
+        "no uniquely mapped instrument",
         "stable URL before Book KOL-US or reminder",
         "viewpoint_triggers",
         "material fact",
