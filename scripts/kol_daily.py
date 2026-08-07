@@ -939,7 +939,14 @@ class DailyRuntime:
             if imported.get("status") not in {"accepted", "already_present"}:
                 raise DailyError("official mailbox handoff import is not durable")
             result = self.wechat_official(handoff_id=handoff_id)
-        elif capsule.get("source_mode") == "cloud_handoff":
+        elif (
+            capsule.get("source_mode") == "cloud_handoff"
+            or (
+                isinstance(capsule.get("netdisk_job_snapshot"), dict)
+                and capsule["netdisk_job_snapshot"].get("source_mode")
+                == "cloud_handoff"
+            )
+        ):
             XiaocaoLiveService(
                 self.args.xiaocao_output_dir,
                 decision_output=self.args.decision_output_dir,
@@ -1591,6 +1598,7 @@ class DailyRuntime:
         if completed_handoff_ids:
             return {
                 "status": "completed",
+                "events": [],
                 "completed_handoff_ids": completed_handoff_ids,
             }
         if waiting:

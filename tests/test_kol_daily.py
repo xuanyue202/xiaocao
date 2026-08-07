@@ -580,7 +580,7 @@ def test_mailbox_processor_reuses_post_handoff_video_runner_before_ack(
         "handoff_sha256": "b" * 64,
         "capture_job_id": "kol-capture-one",
         "media_sha256": "c" * 64,
-        "source_mode": "cloud_handoff",
+        "netdisk_job_snapshot": {"source_mode": "cloud_handoff"},
         "large_payload_local_bytes": 0,
     }
     calls: list[tuple[str, object]] = []
@@ -620,6 +620,68 @@ def test_mailbox_processor_reuses_post_handoff_video_runner_before_ack(
         ("import", capsule),
         ("process", "a" * 64),
     ]
+
+
+def test_xiaocao_completed_receipt_exposes_empty_terminal_events(
+    tmp_path,
+    monkeypatch,
+):
+    handoff_dir = tmp_path / "xiaocao" / "imported_handoffs"
+    handoff_dir.mkdir(parents=True)
+    handoff_id = "a" * 64
+    job_id = "kol-netdisk-completed"
+    handoff = {
+        "schema_version": 1,
+        "handoff_id": handoff_id,
+        "capture_job_id": "kol-completed",
+        "netdisk_job_id": job_id,
+        "published_at": "2026-08-07T20:00:00+08:00",
+        "large_payload_local_bytes": 0,
+    }
+    handoff["handoff_sha256"] = _canonical_sha256(handoff)
+    (handoff_dir / "kol-completed.json").write_text(
+        json.dumps(handoff),
+        encoding="utf-8",
+    )
+    result_path = tmp_path / "decision-result.json"
+    result_path.write_text(
+        json.dumps({
+            "status": "completed",
+            "items": [{"daily_terminal": {"kind": "source_event"}}],
+        }),
+        encoding="utf-8",
+    )
+
+    class FakeNetdisk:
+        @staticmethod
+        def status(requested_job_id):
+            assert requested_job_id == job_id
+            return {
+                "status": "decided",
+                "decision_result_path": str(result_path),
+                "decision_result_sha256": hashlib.sha256(
+                    result_path.read_bytes()
+                ).hexdigest(),
+            }
+
+    class FakeService:
+        def __init__(self, *_args, **_kwargs):
+            self.netdisk = FakeNetdisk()
+
+    monkeypatch.setattr(kol_daily_script, "XiaocaoLiveService", FakeService)
+    runtime = DailyRuntime.__new__(DailyRuntime)
+    runtime.args = SimpleNamespace(
+        xiaocao_output_dir=tmp_path / "xiaocao",
+        decision_output_dir=tmp_path / "decisions",
+        enrichment_session="xiaocao-lv-subscription",
+        opencli_profile=None,
+    )
+
+    assert runtime.xiaocao(handoff_id=handoff_id) == {
+        "status": "completed",
+        "events": [],
+        "completed_handoff_ids": [handoff_id],
+    }
 
 
 def test_capture_local_cli_follows_exact_cloud_handoff_in_same_process(
