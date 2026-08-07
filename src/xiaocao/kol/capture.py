@@ -24,6 +24,7 @@ from uuid import uuid4
 
 
 DEFAULT_SNIFFER_URL = "http://127.0.0.1:2022"
+CANDIDATES_MIN_TIMEOUT_SECONDS = 15.0
 TERMINAL_DOWNLOAD_STATUSES = {"done", "complete", "completed"}
 FAILED_DOWNLOAD_STATUSES = {"error", "failed"}
 CHECKPOINT_STATUSES = {
@@ -317,6 +318,7 @@ class SnifferClient:
         *,
         method: str = "GET",
         payload: dict[str, Any] | None = None,
+        timeout: float | None = None,
     ) -> dict[str, Any]:
         body = None
         headers: dict[str, str] = {}
@@ -330,7 +332,10 @@ class SnifferClient:
             method=method,
         )
         try:
-            with self.opener(request, timeout=self.timeout) as response:
+            with self.opener(
+                request,
+                timeout=self.timeout if timeout is None else timeout,
+            ) as response:
                 parsed = json.loads(response.read().decode("utf-8"))
         except (HTTPError, URLError, OSError, ValueError, json.JSONDecodeError) as exc:
             raise SnifferError(f"sniffer request failed: {path}: {exc}") from exc
@@ -343,7 +348,10 @@ class SnifferClient:
         return dict(self._json("/api/status").get("data") or {})
 
     def candidates(self) -> list[dict[str, Any]]:
-        data = self._json("/api/elive/live/candidates?all=1").get("data") or {}
+        data = self._json(
+            "/api/elive/live/candidates?all=1",
+            timeout=max(self.timeout, CANDIDATES_MIN_TIMEOUT_SECONDS),
+        ).get("data") or {}
         rows = data.get("list") if isinstance(data, dict) else []
         return [dict(row) for row in rows or [] if isinstance(row, dict)]
 

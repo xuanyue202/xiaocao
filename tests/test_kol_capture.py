@@ -217,6 +217,24 @@ def test_sniffer_reads_safe_xiaoetong_source_job_status():
     assert "sign" not in json.dumps(job)
 
 
+def test_sniffer_allows_large_candidate_listing_more_time():
+    seen = {}
+
+    def opener(request, timeout):
+        seen["path"] = request.full_url
+        seen["timeout"] = timeout
+        return _Response({
+            "code": 0,
+            "data": {"list": [{"id": "candidate-1"}]},
+        })
+
+    client = SnifferClient(timeout=2.0, opener=opener)
+
+    assert client.candidates() == [{"id": "candidate-1"}]
+    assert seen["path"].endswith("/api/elive/live/candidates?all=1")
+    assert seen["timeout"] == 15.0
+
+
 def test_sniffer_retries_xiaoetong_source_job_without_media_credentials():
     seen = {}
 
