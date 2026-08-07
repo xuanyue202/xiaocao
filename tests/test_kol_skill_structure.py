@@ -324,7 +324,10 @@ def test_kol_skill_has_one_ticket07_daytime_runner() -> None:
         "stable URL before Book KOL-US or reminder",
         "viewpoint_triggers",
         "material fact",
-        "same blocker stays silent",
+        "no concrete article or video item is silent",
+        "Every concrete item remains reportable",
+        "unchanged waits and retryable exceptions",
+        '"image_notes_path":"<absolute-md-path>"',
     ):
         assert marker in text
 

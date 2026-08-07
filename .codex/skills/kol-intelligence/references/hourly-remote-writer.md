@@ -88,9 +88,11 @@ For `daily_analysis_input_required` in the same process:
    newline to the same process.
 
 For `daily_official_article_image_input_required`, inspect every image once and
-write only `# 图片信息转写` Markdown with each index/SHA, information/decorative
-status, relevant text/chart/table content, and uncertainty. Do not copy the
-body or return JSON. The runner appends notes to full Markdown before analysis.
+write UTF-8 Markdown headed `# 图片信息转写` with each index/SHA,
+information/decorative status, relevant text/chart/table content, and
+uncertainty. Do not copy the body or serialize note content as JSON. Then write
+exactly `{"image_notes_path":"<absolute-md-path>"}` followed by a newline to
+the same process. The runner appends notes to full Markdown before analysis.
 
 Keep stdin open. EOF persists `waiting_semantic_input`, preserving the original
 request, evidence SHA, and item claim. The next sweep reuses that exact

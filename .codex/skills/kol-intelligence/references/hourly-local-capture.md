@@ -159,7 +159,4 @@ Automation from this node.
 
 The append-only local ledger resumes only unfinished capture/upload/handoff
 work. A restart or replay reconciles existing claims and never repeats a cloud
-upload with an uncertain side effect. Stay silent only when the sweep has no
-concrete article or video item. Otherwise report every current item, including
-unchanged waits and retryable exceptions, while preserving the distinction
-between handoff completion and downstream completion.
+upload with an uncertain side effect.
