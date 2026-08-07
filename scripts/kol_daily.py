@@ -931,13 +931,31 @@ class DailyRuntime:
         handoff_id = str(message.get("message_id") or "")
         capsule = message.get("payload")
         if not isinstance(capsule, dict) or capsule.get("handoff_id") != handoff_id:
-            raise DailyError("mailbox message is not bound to its handoff capsule")
+            raise EnrichmentDiagnosticError(
+                "mailbox message is not bound to its handoff capsule",
+                category="contract_error",
+                code="mailbox_message_binding_invalid",
+                stage="mailbox_validation",
+            )
         if capsule.get("content_transport") == "public_url_only":
-            imported = OfficialAccountInbox(
-                self.args.wechat_official_output_dir
-            ).import_capsule(capsule)
+            try:
+                imported = OfficialAccountInbox(
+                    self.args.wechat_official_output_dir
+                ).import_capsule(capsule)
+            except EnrichmentError as exc:
+                raise EnrichmentDiagnosticError(
+                    "official mailbox handoff import was rejected",
+                    category="contract_error",
+                    code="official_handoff_import_rejected",
+                    stage="mailbox_import",
+                ) from exc
             if imported.get("status") not in {"accepted", "already_present"}:
-                raise DailyError("official mailbox handoff import is not durable")
+                raise EnrichmentDiagnosticError(
+                    "official mailbox handoff import is not durable",
+                    category="contract_error",
+                    code="official_handoff_import_not_durable",
+                    stage="mailbox_import",
+                )
             result = self.wechat_official(handoff_id=handoff_id)
         elif (
             capsule.get("source_mode") == "cloud_handoff"
@@ -947,13 +965,26 @@ class DailyRuntime:
                 == "cloud_handoff"
             )
         ):
-            XiaocaoLiveService(
-                self.args.xiaocao_output_dir,
-                decision_output=self.args.decision_output_dir,
-            ).import_handoff_capsule(capsule)
+            try:
+                XiaocaoLiveService(
+                    self.args.xiaocao_output_dir,
+                    decision_output=self.args.decision_output_dir,
+                ).import_handoff_capsule(capsule)
+            except EnrichmentError as exc:
+                raise EnrichmentDiagnosticError(
+                    "Xiaocao mailbox handoff import was rejected",
+                    category="contract_error",
+                    code="xiaocao_handoff_import_rejected",
+                    stage="mailbox_import",
+                ) from exc
             result = self.xiaocao(handoff_id=handoff_id)
         else:
-            raise DailyError("mailbox handoff capsule type is unsupported")
+            raise EnrichmentDiagnosticError(
+                "mailbox handoff capsule type is unsupported",
+                category="contract_error",
+                code="mailbox_capsule_route_unsupported",
+                stage="mailbox_routing",
+            )
         completed = {
             str(value) for value in result.get("completed_handoff_ids", [])
         }
@@ -967,6 +998,20 @@ class DailyRuntime:
             self._mailbox(),
             processor=self._process_mailbox_message,
         ).run()
+
+    def resume_mailbox(
+        self,
+        message_id: str,
+        *,
+        repair_revision: str,
+    ) -> dict[str, Any]:
+        return RemoteMailboxDrain(
+            self._mailbox(),
+            processor=self._process_mailbox_message,
+        ).run(
+            only_message_id=message_id,
+            repair_revision=repair_revision,
+        )
 
     def _lv_service_for_sweep(self) -> LvSubscriptionService:
         if self._lv_service is None:
@@ -1904,6 +1949,7 @@ def main() -> int:
             "import-wechat-official",
             "process-xiaocao-handoff",
             "process-wechat-official",
+            "resume-mailbox",
             "status",
             "audit",
         ),
@@ -1932,6 +1978,8 @@ def main() -> int:
         type=Path,
         default=DEFAULT_MAILBOX_OUTPUT,
     )
+    parser.add_argument("--mailbox-message-id")
+    parser.add_argument("--repair-revision")
     parser.add_argument(
         "--wechat-official-publisher",
         dest="wechat_official_publishers",
@@ -1981,6 +2029,17 @@ def main() -> int:
         result = DailyRuntime(args).xiaocao()
         if result.get("status") != "no_update":
             _print(result)
+        return 0
+    if args.command == "resume-mailbox":
+        if not args.mailbox_message_id or not args.repair_revision:
+            raise DailyError(
+                "resume-mailbox requires message id and repair revision"
+            )
+        result = DailyRuntime(args).resume_mailbox(
+            args.mailbox_message_id,
+            repair_revision=args.repair_revision,
+        )
+        _print({"mailbox_repair_resume": result})
         return 0
     service = DailyCoordinator(args.output_dir)
     if args.command == "status":

@@ -8,6 +8,7 @@ import pytest
 
 from xiaocao.kol.mailbox import (
     LiangHuiMailboxClient,
+    MailboxError,
     MailboxLedger,
     RemoteMailboxDrain,
 )
@@ -591,3 +592,165 @@ def test_remote_drain_preserves_structured_exception_diagnostics(tmp_path) -> No
     assert result["items"][0]["category"] == "provider_wait"
     assert result["items"][0]["code"] == "transcript_pending"
     assert result["items"][0]["stage"] == "cloud_transcript"
+
+
+def test_remote_repair_resume_processes_only_bound_waiting_message(
+    tmp_path,
+) -> None:
+    target = _mailbox_message("a" * 64)
+    unrelated = _mailbox_message("b" * 64)
+    ledger = MailboxLedger(tmp_path / "mailbox")
+    attempted = ledger.append(
+        "mailbox_message_attempted",
+        occurred_at="2026-08-07T10:37:00.000Z",
+        handoff_id=target["message_id"],
+        content_sha256=target["content_sha256"],
+    )
+    waiting = ledger.append(
+        "mailbox_message_waiting",
+        occurred_at="2026-08-07T10:37:01.000Z",
+        handoff_id=target["message_id"],
+        category="contract_error",
+        code="mailbox_capsule_route_unsupported",
+        stage="mailbox_routing",
+    )
+    requests: list[dict[str, object]] = []
+
+    def exchange(request: dict[str, object]) -> dict[str, object]:
+        requests.append(request)
+        if request["operation"] == "list_mailbox_messages":
+            return {
+                "operation": "list_mailbox_messages",
+                "page": {
+                    "items": [unrelated, target],
+                    "next_cursor": None,
+                    "has_more": False,
+                },
+            }
+        arguments = request["arguments"]
+        assert isinstance(arguments, dict)
+        return {
+            "operation": "ack_mailbox_message",
+            "outcome": "acked",
+            "receipt": {
+                "operation": "ack_mailbox_message",
+                "family_id": "family-one",
+                "mailbox_id": "kol.handoff",
+                "message_id": arguments["message_id"],
+                "content_sha256": arguments["expected_content_sha256"],
+                "acked_by": "user-two",
+                "acked_at": "2026-08-07T10:40:00.000Z",
+            },
+        }
+
+    processed: list[str] = []
+    result = RemoteMailboxDrain(
+        LiangHuiMailboxClient(ledger, exchange=exchange),
+        processor=lambda message: (
+            processed.append(str(message["message_id"]))
+            or {"business_complete": True}
+        ),
+    ).run(
+        only_message_id="a" * 64,
+        repair_revision="c" * 40,
+    )
+
+    assert result["status"] == "completed"
+    assert result["attempted_message_ids"] == ["a" * 64]
+    assert result["acked_message_ids"] == ["a" * 64]
+    assert processed == ["a" * 64]
+    assert [request["operation"] for request in requests] == [
+        "list_mailbox_messages",
+        "ack_mailbox_message",
+    ]
+    rows = ledger.events()
+    resumed = rows[-2]
+    assert resumed["event"] == "mailbox_message_repair_resumed"
+    assert resumed["content_sha256"] == target["content_sha256"]
+    assert resumed["repair_revision"] == "c" * 40
+    assert resumed["prior_waiting_event_id"] == waiting["event_id"]
+    assert attempted["event_id"] != resumed["event_id"]
+
+
+def test_remote_repair_resume_rejects_uncertain_side_effect(tmp_path) -> None:
+    target = _mailbox_message("a" * 64)
+    ledger = MailboxLedger(tmp_path / "mailbox")
+    ledger.append(
+        "mailbox_message_attempted",
+        occurred_at="2026-08-07T10:37:00.000Z",
+        handoff_id=target["message_id"],
+        content_sha256=target["content_sha256"],
+    )
+    ledger.append(
+        "mailbox_message_waiting",
+        occurred_at="2026-08-07T10:37:01.000Z",
+        handoff_id=target["message_id"],
+        category="side_effect_uncertain",
+        code="publication_result_uncertain",
+        stage="publication",
+    )
+    client = LiangHuiMailboxClient(
+        ledger,
+        exchange=lambda _request: pytest.fail("must fail before MCP read"),
+    )
+
+    with pytest.raises(
+        MailboxError,
+        match="requires external side-effect reconciliation",
+    ):
+        RemoteMailboxDrain(
+            client,
+            processor=lambda _message: {"business_complete": True},
+        ).run(
+            only_message_id="a" * 64,
+            repair_revision="d" * 40,
+        )
+
+
+def test_remote_repair_resume_revision_is_single_use(tmp_path) -> None:
+    target = _mailbox_message("a" * 64)
+    ledger = MailboxLedger(tmp_path / "mailbox")
+    ledger.append(
+        "mailbox_message_attempted",
+        occurred_at="2026-08-07T10:37:00.000Z",
+        handoff_id=target["message_id"],
+        content_sha256=target["content_sha256"],
+    )
+    ledger.append(
+        "mailbox_message_waiting",
+        occurred_at="2026-08-07T10:37:01.000Z",
+        handoff_id=target["message_id"],
+        category="contract_error",
+        code="mailbox_capsule_route_unsupported",
+        stage="mailbox_routing",
+    )
+    pages = iter([[target]])
+
+    def exchange(_request: dict[str, object]) -> dict[str, object]:
+        return {
+            "operation": "list_mailbox_messages",
+            "page": {
+                "items": next(pages),
+                "next_cursor": None,
+                "has_more": False,
+            },
+        }
+
+    drain = RemoteMailboxDrain(
+        LiangHuiMailboxClient(ledger, exchange=exchange),
+        processor=lambda _message: {
+            "status": "waiting",
+            "business_complete": False,
+        },
+    )
+    first = drain.run(
+        only_message_id="a" * 64,
+        repair_revision="e" * 40,
+    )
+    assert first["status"] == "waiting"
+
+    with pytest.raises(MailboxError, match="revision was already attempted"):
+        drain.run(
+            only_message_id="a" * 64,
+            repair_revision="e" * 40,
+        )

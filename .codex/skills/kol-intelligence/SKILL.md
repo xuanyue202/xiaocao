@@ -22,12 +22,12 @@ retrospective. Preserve unrelated WIP; stage only the repair, then commit and
 normally push it after tests so later Automations inherit the fix.
 
 `repair_required` means the Agent owns diagnosis and repair. Only authentication,
-SMS, CAPTCHA, consent, a missing fact only the user can provide, or an uncertain
-external side effect that cannot be reconciled may become `user_action_required`.
-Do not auto-change investment semantics, recipients, schedules, real-capital
-authority, or bypass an explicit human gate. If an exact-once process already
-exited, fix the code and preserve its immutable job for the next authorized
-resume; never run the same hourly command twice or fake completion.
+SMS, CAPTCHA, consent, a user-only fact, or an unreconciled external effect may
+become `user_action_required`. Exact-once forbids duplicate effects, not repaired
+continuation. If the process exited, fix/test/commit, reconcile the exact claim,
+then use the narrow repair resume; never run the same hourly command twice.
+Do not change investment semantics, recipients, schedules, capital authority,
+or bypass a human gate.
 
 ## Load only the required contract
 

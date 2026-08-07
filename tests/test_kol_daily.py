@@ -622,6 +622,23 @@ def test_mailbox_processor_reuses_post_handoff_video_runner_before_ack(
     ]
 
 
+def test_mailbox_processor_reports_unsupported_route_as_contract_error(
+    tmp_path,
+):
+    runtime = DailyRuntime.__new__(DailyRuntime)
+    runtime.args = SimpleNamespace()
+
+    with pytest.raises(EnrichmentDiagnosticError) as captured:
+        runtime._process_mailbox_message({
+            "message_id": "a" * 64,
+            "payload": {"handoff_id": "a" * 64},
+        })
+
+    assert captured.value.diagnostic_category == "contract_error"
+    assert captured.value.diagnostic_code == "mailbox_capsule_route_unsupported"
+    assert captured.value.diagnostic_stage == "mailbox_routing"
+
+
 def test_xiaocao_completed_receipt_exposes_empty_terminal_events(
     tmp_path,
     monkeypatch,
@@ -964,6 +981,57 @@ def test_process_xiaocao_handoff_cli_runs_only_remote_post_handoff(
     assert json.loads(capsys.readouterr().out) == {
         "status": "completed",
         "events": [{"event_id": "video"}],
+    }
+
+
+def test_resume_mailbox_cli_runs_only_exact_repair_target(
+    tmp_path,
+    monkeypatch,
+    capsys,
+):
+    observed: dict[str, object] = {}
+
+    class FakeRuntime:
+        def __init__(self, args):
+            observed["args"] = args
+
+        @staticmethod
+        def resume_mailbox(message_id, *, repair_revision):
+            observed["resume"] = (message_id, repair_revision)
+            return {
+                "status": "waiting",
+                "attempted_message_ids": [message_id],
+                "acked_message_ids": [],
+                "waiting_message_ids": [message_id],
+                "items": [],
+            }
+
+    monkeypatch.setattr(kol_daily_script, "DailyRuntime", FakeRuntime)
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "kol_daily.py",
+            "resume-mailbox",
+            "--mailbox-message-id",
+            "a" * 64,
+            "--repair-revision",
+            "b" * 40,
+            "--output-dir",
+            str(tmp_path / "daily"),
+        ],
+    )
+
+    assert kol_daily_script.main() == 0
+    assert observed["resume"] == ("a" * 64, "b" * 40)
+    assert json.loads(capsys.readouterr().out) == {
+        "mailbox_repair_resume": {
+            "status": "waiting",
+            "attempted_message_ids": ["a" * 64],
+            "acked_message_ids": [],
+            "waiting_message_ids": ["a" * 64],
+            "items": [],
+        },
     }
 
 

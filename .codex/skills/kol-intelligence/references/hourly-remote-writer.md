@@ -24,15 +24,10 @@ handoff-completed, or fully completed; never imply that handoff completion is
 downstream completion. Retryable failures expose only credential-safe
 `category`, `code`, and `stage`. Do not run 23:01–06:59.
 
-An internal `repair_required` result is work for the current Agent, not a user
-blocker. Reconcile exact claims/receipts, inspect the failure and repository
-implementation, patch code/templates/contracts plus regression tests when
-intent is determined, and validate the repair. If the original process still
-accepts semantic input, correct the artifact and continue through that same
-stdin. If it exited, preserve the job and resume only through the next
-authorized exact-once surface; never invoke `run` twice for one slot. Commit
-and normally push a validated repair while excluding user WIP and runtime
-artifacts so later hourly runs inherit it.
+`repair_required` is work for the current Agent, not a user blocker: reconcile
+claims/receipts, patch regressions, validate, commit, and push without user WIP. Continue on
+the same stdin when possible. If it exited, never run `run` twice for one slot;
+recheck peers/receipts and use `resume-mailbox` for only the repaired message.
 
 This machine is the only KOL writer. It consumes Xiaocao `scope=post_handoff`
 capsules and URL-only `wechat_official_article` capsules from LiangHuiMCP. The
@@ -78,12 +73,28 @@ The runner validates mailbox `kol.handoff`, message type
 bindings, then imports and processes each message through its existing
 post-handoff business pipeline. It maintains this run's
 `attempted_message_ids`. After a batch, query again and process only new
-eligible messages not already in that set. A waiting or failed message remains
-pending and is not retried again during the same run. Call
+eligible messages. The same runner does not blindly recall an unchanged wait;
+this loop guard does not stop diagnosis, repair, or narrow repaired resume. Call
 `ack_mailbox_message` only after that exact message has completed every
 downstream business effect and durable receipt. Authoritative `acked` or
 `already_acked` is reported as `全部完成`; handoff creation alone is never
 reported as downstream completion.
+
+### Narrow repair resume
+
+After fixing, testing, committing, and pushing a repository failure, continue
+the same item in the current Agent task with:
+
+```bash
+PYTHONPATH=src .venv/bin/python scripts/kol_daily.py resume-mailbox \
+  --mailbox-message-id <exact-64-hex-message-id> \
+  --repair-revision <exact-40-hex-commit>
+```
+
+Reapply the peer gate and keep stdin open. The command requires the prior wait,
+same content hash, and a new repair revision; it processes no other message.
+Missing/acked/changed targets and `uncertain` effects fail closed. Reconcile an
+uncertain effect first; never replay an uncheckable side effect.
 
 For an official item, run installed OpenCLI once: `weixin download`, images,
 background Chrome, and JSON. Require an item-local file, exact
