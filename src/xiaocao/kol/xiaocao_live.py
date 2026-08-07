@@ -44,6 +44,7 @@ DEFAULT_CAPTURE_LEDGER = Path("output/live/kol_capture_jobs.jsonl")
 DEFAULT_OUTPUT = Path("output/live/kol_xiaocao_live")
 DEFAULT_NETDISK_OUTPUT = Path("output/live/kol_netdisk_enrichment")
 DEFAULT_DECISION_OUTPUT = Path("output/live/kol_intelligence")
+DEFAULT_DAILY_OUTPUT = Path("output/live/kol_daily")
 
 
 def _default_sniffer_binary(repo_root: Path | str | None = None) -> Path:
@@ -379,9 +380,11 @@ class XiaocaoLiveService:
         capture_ledger: Path | str = DEFAULT_CAPTURE_LEDGER,
         netdisk_output: Path | str = DEFAULT_NETDISK_OUTPUT,
         decision_output: Path | str = DEFAULT_DECISION_OUTPUT,
+        daily_output: Path | str = DEFAULT_DAILY_OUTPUT,
         sniffer_binary: Path | str = DEFAULT_SNIFFER_BINARY,
         sniffer_client: SnifferClient | None = None,
         netdisk_service: NetdiskEnrichmentService | None = None,
+        publication_client: Any | None = None,
         popen: Callable[..., Any] = subprocess.Popen,
         runner: Callable[..., Any] = subprocess.run,
         clock: Callable[[], datetime] = _now,
@@ -395,12 +398,134 @@ class XiaocaoLiveService:
             use_opencli_upload_template=True,
         )
         self.decision_output = Path(decision_output).expanduser().resolve()
+        self.daily_output = Path(daily_output).expanduser().resolve()
+        self._publication_client = publication_client
         self.sniffer_binary = Path(sniffer_binary).expanduser().resolve()
         self.sniffer = sniffer_client or SnifferClient()
         self._popen = popen
         self._runner = runner
         self._clock = clock
         self._sleep = sleep
+
+    @staticmethod
+    def _has_daily_terminal(state: dict[str, Any]) -> bool:
+        result_path = Path(
+            str(state.get("decision_result_path") or "")
+        ).expanduser().resolve()
+        if not result_path.is_file():
+            return False
+        try:
+            result = _read_json(result_path)
+        except EnrichmentError:
+            return False
+        items = result.get("items")
+        return bool(
+            isinstance(items, list)
+            and items
+            and isinstance(items[0], dict)
+            and isinstance(items[0].get("daily_terminal"), dict)
+        )
+
+    def _daily_publication_pipeline(
+        self,
+        handoff: dict[str, Any],
+        state: dict[str, Any],
+    ) -> Any:
+        """Build the report-first Ticket 07 wrapper for one imported handoff."""
+        from .daily import DailyPublicationContext, DailyPublicationPipeline
+        from .decisions import DecisionPipeline
+        from .household import LiangHuiMcpClient
+        from .publication import PublicationLedger
+
+        client = self._publication_client
+        if client is None:
+            client = LiangHuiMcpClient.from_config()
+            self._publication_client = client
+        context = DailyPublicationContext(
+            adapter="xiaocao_live",
+            source_identity=str(handoff["capture_job_id"]),
+            publication_version=str(state["transcript_sha256"]),
+            kol_id="kol-xiaocao",
+            source="小草直播",
+            source_published_at=str(handoff["published_at"]),
+            media_types=("video",),
+            source_parts=({
+                "identity": str(handoff["capture_job_id"]),
+                "version": str(state["transcript_sha256"]),
+                "order": 1,
+                "size": 0,
+                "evidence_sha256": str(state["transcript_sha256"]),
+            },),
+        )
+        delegate = DecisionPipeline(
+            self.decision_output,
+            household_context_loader=client.load_context,
+        )
+        return DailyPublicationPipeline(
+            delegate,
+            ledger=PublicationLedger(self.daily_output / "publications"),
+            client=client,
+            context=context,
+        )
+
+    def _publication_reconciliation_bundle(
+        self,
+        bundle_path: Path,
+        *,
+        state: dict[str, Any],
+    ) -> Path:
+        """Derive a no-resend bundle after a legacy bare notification escaped."""
+        bundle = _read_json(bundle_path)
+        items = bundle.get("items")
+        if (
+            not isinstance(items, list)
+            or len(items) != 1
+            or not isinstance(items[0], dict)
+        ):
+            raise EnrichmentError("Ticket 03 reconciliation bundle is invalid")
+        item = items[0]
+        content = item.get("content_value")
+        household = state.get("household_notification")
+        if (
+            not isinstance(content, dict)
+            or content.get("status") != "promoted"
+            or content.get("tier") != "alert_eligible"
+            or not isinstance(household, dict)
+            or household.get("status") != "delivered"
+        ):
+            return bundle_path
+        prior_key = str(household.get("idempotency_key") or "")
+        if not _SHA256.fullmatch(prior_key):
+            raise EnrichmentError(
+                "Ticket 03 prior notification identity is invalid"
+            )
+        source_bundle_sha256 = _sha256_file(bundle_path)
+        content = dict(content)
+        content.pop("alert_basis", None)
+        content["tier"] = "report_only"
+        content["no_alert_reason"] = (
+            "该条为缺失灰常亮终态的历史对账；此前家庭通知已完成，"
+            "无法证明任一收件人缺失，因此按合约禁止补发稳定链接提醒。"
+        )
+        item["content_value"] = content
+        item["notification_revision"] = (
+            "post-handoff-publication-reconciliation-v1-" + prior_key[:16]
+        )
+        bundle["post_handoff_publication_reconciliation"] = {
+            "schema_version": 1,
+            "source_bundle_sha256": source_bundle_sha256,
+            "prior_notification_idempotency_key": prior_key,
+            "policy": "publish_report_without_duplicate_reminder",
+        }
+        artifact_dir = Path(
+            str(state.get("decision_result_path") or "")
+        ).expanduser().resolve().parent
+        derived_path = (
+            artifact_dir
+            / "decision_bundle.post-handoff-publication-reconciliation.json"
+        )
+        _atomic_json(derived_path, bundle)
+        return derived_path
 
     def _append(self, event: str, **fields: Any) -> dict[str, Any]:
         row = {
@@ -1593,11 +1718,26 @@ class XiaocaoLiveService:
                 bundle_path=bundle_path,
                 decision_output_dir=self.decision_output,
                 sender=sender,
+                pipeline=self._daily_publication_pipeline(handoff, state),
             )
         if state.get("status") == "decided" and bundle_path is not None:
             requested_bundle = Path(bundle_path).expanduser().resolve()
             requested_bundle_sha = _sha256_file(requested_bundle)
-            if requested_bundle_sha != state.get("decision_bundle_sha256"):
+            has_daily_terminal = self._has_daily_terminal(state)
+            current_bundle = _read_json(state["decision_bundle_path"])
+            reconciliation = current_bundle.get(
+                "post_handoff_publication_reconciliation"
+            )
+            requested_is_reconciliation_source = (
+                has_daily_terminal
+                and isinstance(reconciliation, dict)
+                and reconciliation.get("source_bundle_sha256")
+                == requested_bundle_sha
+            )
+            if (
+                requested_bundle_sha != state.get("decision_bundle_sha256")
+                and not requested_is_reconciliation_source
+            ):
                 validate_decision_bundle(
                     requested_bundle,
                     transcript_path=Path(state["transcript_path"]),
@@ -1612,6 +1752,29 @@ class XiaocaoLiveService:
                     bundle_path=requested_bundle,
                     decision_output_dir=self.decision_output,
                     sender=sender,
+                    pipeline=self._daily_publication_pipeline(handoff, state),
+                )
+            elif not has_daily_terminal:
+                if sender is None:
+                    raise EnrichmentError(
+                        "Ticket 03 publication reconciliation sender is required"
+                    )
+                reconciliation_bundle = self._publication_reconciliation_bundle(
+                    requested_bundle,
+                    state=state,
+                )
+                validate_decision_bundle(
+                    reconciliation_bundle,
+                    transcript_path=Path(state["transcript_path"]),
+                    transcript_sha256=str(state["transcript_sha256"]),
+                )
+                state = self.netdisk.decide(
+                    netdisk_job_id,
+                    bundle_path=reconciliation_bundle,
+                    decision_output_dir=self.decision_output,
+                    sender=sender,
+                    pipeline=self._daily_publication_pipeline(handoff, state),
+                    reconcile_daily_terminal=True,
                 )
         if state.get("status") != "decided":
             return {
@@ -1964,8 +2127,10 @@ class XiaocaoLiveService:
             raise EnrichmentError("Ticket 03 remote dual-output receipts are incomplete")
         assert isinstance(household, dict)
         publication_report = None
+        content_value = bundle_item.get("content_value") or {}
         if (
-            isinstance(result_item.get("daily_terminal"), dict)
+            content_value.get("status") == "promoted"
+            or isinstance(result_item.get("daily_terminal"), dict)
             or household.get("status") == "suppressed"
         ):
             publication_report = _validate_daily_publication_terminal(

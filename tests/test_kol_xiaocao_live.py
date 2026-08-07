@@ -347,6 +347,146 @@ def test_remote_import_accepts_one_portable_job_capsule_idempotently(tmp_path):
     assert "browser_evidence" not in rows[0]
 
 
+def test_publication_reconciliation_derives_legal_no_alert_bundle(tmp_path):
+    source = _write_json(tmp_path / "bundle.json", {
+        "items": [{
+            "content_value": {
+                "status": "promoted",
+                "tier": "alert_eligible",
+                "alert_basis": ["market_posture"],
+                "reason": "有当前市场与仓位边界。",
+            },
+        }],
+    })
+    artifact_dir = tmp_path / "artifacts" / "job"
+    result = _write_json(artifact_dir / "decision_result.json", {
+        "status": "completed",
+        "items": [{}],
+    })
+    service = XiaocaoLiveService(tmp_path / "live")
+
+    derived = service._publication_reconciliation_bundle(
+        source,
+        state={
+            "decision_result_path": str(result),
+            "household_notification": {
+                "status": "delivered",
+                "idempotency_key": "a" * 64,
+            },
+        },
+    )
+
+    original = json.loads(source.read_text(encoding="utf-8"))
+    reconciled = json.loads(derived.read_text(encoding="utf-8"))
+    content = reconciled["items"][0]["content_value"]
+    assert original["items"][0]["content_value"]["tier"] == "alert_eligible"
+    assert content["tier"] == "report_only"
+    assert "alert_basis" not in content
+    assert "禁止补发" in content["no_alert_reason"]
+    assert reconciled["items"][0]["notification_revision"].startswith(
+        "post-handoff-publication-reconciliation-v1-"
+    )
+    assert reconciled["post_handoff_publication_reconciliation"] == {
+        "schema_version": 1,
+        "source_bundle_sha256": _sha256(source),
+        "prior_notification_idempotency_key": "a" * 64,
+        "policy": "publish_report_without_duplicate_reminder",
+    }
+
+
+def test_imported_decided_handoff_reconciles_missing_daily_terminal(
+    tmp_path,
+    monkeypatch,
+):
+    requested = _write_json(tmp_path / "bundle.json", {"items": [{}]})
+    derived = _write_json(tmp_path / "derived.json", {"items": [{}]})
+    prior_result = _write_json(tmp_path / "decision_result.json", {
+        "status": "completed",
+        "items": [{}],
+    })
+    revised_result = _write_json(tmp_path / "decision_result.revised.json", {
+        "status": "completed",
+        "items": [{"daily_terminal": {}}],
+    })
+    state = {
+        "status": "decided",
+        "job_id": "job-1",
+        "transcript_path": str(tmp_path / "transcript.txt"),
+        "transcript_sha256": "b" * 64,
+        "decision_bundle_path": str(requested),
+        "decision_bundle_sha256": _sha256(requested),
+        "decision_result_path": str(prior_result),
+        "decision_result_sha256": _sha256(prior_result),
+    }
+    calls = []
+
+    class Netdisk:
+        store = SimpleNamespace(read=lambda: [])
+
+        @staticmethod
+        def status(job_id):
+            assert job_id == "job-1"
+            return dict(state)
+
+        @staticmethod
+        def decide(job_id, **kwargs):
+            calls.append((job_id, kwargs))
+            return {
+                **state,
+                "decision_bundle_path": str(derived),
+                "decision_bundle_sha256": _sha256(derived),
+                "decision_result_path": str(revised_result),
+                "decision_result_sha256": _sha256(revised_result),
+            }
+
+    service = XiaocaoLiveService(
+        tmp_path / "live",
+        netdisk_service=Netdisk(),
+    )
+    sentinel_pipeline = object()
+    monkeypatch.setattr(
+        "xiaocao.kol.xiaocao_live.validate_decision_bundle",
+        lambda *_args, **_kwargs: None,
+    )
+    monkeypatch.setattr(
+        service,
+        "_publication_reconciliation_bundle",
+        lambda *_args, **_kwargs: derived,
+    )
+    monkeypatch.setattr(
+        service,
+        "_daily_publication_pipeline",
+        lambda *_args, **_kwargs: sentinel_pipeline,
+    )
+    monkeypatch.setattr(
+        service,
+        "_audit_imported_acceptance",
+        lambda *_args, **_kwargs: {"status": "completed", "next": "none"},
+    )
+
+    terminal = service._advance_imported_handoff(
+        {
+            "capture_job_id": "capture-1",
+            "netdisk_job_id": "job-1",
+            "handoff_id": "c" * 64,
+            "media_sha256": "d" * 64,
+            "live_id": "live-1",
+        },
+        opencli_session="session",
+        opencli_profile=None,
+        audit_path=None,
+        bundle_path=requested,
+        sender=lambda *_args: {"wecom": "ok"},
+    )
+
+    assert terminal == {"status": "completed", "next": "none"}
+    assert len(calls) == 1
+    assert calls[0][0] == "job-1"
+    assert calls[0][1]["bundle_path"] == derived
+    assert calls[0][1]["pipeline"] is sentinel_pipeline
+    assert calls[0][1]["reconcile_daily_terminal"] is True
+
+
 def test_publish_handoff_includes_portable_cloud_ready_ledger_snapshot(tmp_path):
     media_sha256 = "c" * 64
     job_id = f"kol-netdisk-{media_sha256[:16]}"
