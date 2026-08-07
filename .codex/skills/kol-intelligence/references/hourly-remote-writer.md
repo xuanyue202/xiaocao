@@ -17,12 +17,12 @@ PYTHONPATH=src .venv/bin/python scripts/kol_daily.py status
 PYTHONPATH=src .venv/bin/python scripts/kol_daily.py audit
 ```
 
-Each run exits after one sweep; the 07:30 run drains overnight backlog by
-decision priority. A sweep with no concrete article or video item is silent.
+Each run is one sweep. A sweep with no concrete item is silent.
 Every concrete item remains reportable while waiting, unchanged, exceptional,
 handoff-completed, or fully completed; never imply that handoff completion is
 downstream completion. Retryable failures expose only credential-safe
-`category`, `code`, and `stage`. Do not run 23:01–06:59.
+`category`, `code`, and `stage`. A started task owns recoverable items through
+repair and exact continuation; do not defer obtainable work.
 
 `repair_required` is work for the current Agent, not a user blocker: reconcile
 claims/receipts, patch regressions, validate, commit, and push without user WIP. Continue on
@@ -50,13 +50,19 @@ Run once and keep it alive for input; do not rerun the full `run` command.
 
 ## Active-peer gate and LiangHuiMCP drain
 
-Before launching Python, resolve the current task identity and list tasks for
-the same Automation ID on the current host and current working directory.
-Ignore titles and exclude the current task. If any other matching active peer
-is running or needs attention, exit successfully without listing or consuming
-the mailbox. A task-list/readback failure fails closed; it is not evidence that
-no peer exists. Do not add a Python global lock, do not add a lease, do not add
-a heartbeat, do not add a fencing token, and do not add a stale takeover path.
+A **peer task** is another Codex task with the same Automation ID, current host,
+and current working directory. Before Python, call standalone `list_threads`
+with `{"limit":20}`. Read active same-host/cwd candidates using `read_thread`
+with `{"threadId":"<candidate-id>","hostId":"<current-host>",
+"turnLimit":3,"includeOutputs":false}` until the in-progress turn matches this
+run's Automation ID and prompt metadata. Ignore titles and exclude that current
+task. An active/needs-attention peer owns continuation: exit successfully
+without mailbox access.
+
+A task-list/readback failure blocks business effects, not repair. Apply 5 Why,
+fix arguments, and retry standalone now. If still unavailable, keep diagnosing
+as `repair_required`; never defer to the next Automation or ask the user. Do
+not add a Python global lock, lease, heartbeat, fencing token, or stale takeover.
 
 If there is no active peer, run `scripts/kol_daily.py run` exactly once. For
 each `daily_lianghui_mailbox_input_required`, call the exact operation and
@@ -73,8 +79,8 @@ The runner validates mailbox `kol.handoff`, message type
 bindings, then imports and processes each message through its existing
 post-handoff business pipeline. It maintains this run's
 `attempted_message_ids`. After a batch, query again and process only new
-eligible messages. The same runner does not blindly recall an unchanged wait;
-this loop guard does not stop diagnosis, repair, or narrow repaired resume. Call
+eligible messages. Do not repeat an unchanged wait inside one drain. If the
+process exits, call `resume-mailbox` for that message when due in this task. Call
 `ack_mailbox_message` only after that exact message has completed every
 downstream business effect and durable receipt. Authoritative `acked` or
 `already_acked` is reported as `全部完成`; handoff creation alone is never
@@ -96,8 +102,8 @@ requires the prior wait, same content hash, and a new repair revision; it
 processes no other message. A contract/error wait may not reuse that revision.
 An async provider wait may reuse it only when the durable wait includes an
 explicit timezone-aware `next_poll_not_before` and that deadline is due.
-Missing/acked/changed targets and `uncertain` effects fail closed. Reconcile an
-uncertain effect first; never replay an uncheckable side effect.
+Missing/acked/changed targets fail closed. Reconcile `uncertain` effects before
+retry. Resume a due provider wait now.
 
 For an official item, run installed OpenCLI once: `weixin download`, images,
 background Chrome, and JSON. Require an item-local file, exact
@@ -145,11 +151,9 @@ replays publication, notification, or Book effects. Stop that adapter before
 later backlog items.
 
 Small downloads are unattended: use `Page.setDownloadBehavior` with a
-controlled inbox; otherwise bind one memory-only link to the exact provider
-id/name/size/identity/version. There is no user blocker or WeChat for a Save
-prompt. Never edit ordinary Chrome or a global extension. Only auth, SMS,
-CAPTCHA, or consent may ask; never edit ordinary Chrome or a global extension,
-and never issue a second UI trigger.
+controlled inbox or bind one memory-only link to the exact provider identity.
+A Save prompt is not a user blocker. Only auth, SMS, CAPTCHA, or consent may
+ask; never edit ordinary Chrome/a global extension or issue a second trigger.
 
 Every item includes `content_value.status=low_density|promoted`; promoted items
 add `content_value.tier=report_only|alert_eligible`, accepted `alert_basis`, and
@@ -205,12 +209,9 @@ only these maintenance triggers without scanning sources. It must preserve the
 stable report URL and prior manifest, and it never creates a reminder or Book
 action.
 
-The append-only ledger resumes unfinished work and reconciles history,
-corrections, maintenance, restarts, and replays without resending. Stay silent
-only when the sweep has no concrete article or video item. Otherwise report
-every current item, including unchanged waits and retryable exceptions, while
-preserving the distinction between handoff completion and downstream
-completion. An unchanged same blocker stays silent after its first report.
+The append-only ledger resumes without resending. Report every concrete item,
+including waits and retryable exceptions; distinguish handoff from downstream
+completion. Report an unchanged blocker only once.
 Repeated source/stage/code or acquisition stalls append one
 exhausted audit with `repair_required=true`; repetition does not make them
 `user_action_required`. Reserve that status for authentication, SMS, CAPTCHA,

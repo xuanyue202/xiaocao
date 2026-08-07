@@ -12,20 +12,23 @@ real-capital trades.
 
 ## Repair before escalating
 
-Do not stop at a diagnosable repository or provider-contract failure, and do
-not relabel it as a user blocker. Reconcile the exact claims and receipts,
-identify the root cause from current evidence, patch repository-owned code,
-OpenCLI templates, tests, or this contract when intended behavior is already
-fixed, run proportionate regressions, and resume the same job/claim/session.
-Do this in the current task without waiting for the user to request a
-retrospective. Preserve unrelated WIP; stage only the repair, then commit and
-normally push it after tests so later Automations inherit the fix.
+First principle: minimize dependence on the user. Apply 5-Why,
+first-principles diagnosis to every recoverable failure in the current task;
+fix the root cause and continue the exact job. Fail-closed blocks unsafe
+effects, not Agent-owned repair. Correct invalid tool arguments immediately,
+retry transient readback with supported arguments, and retrieve evidence when
+available. Do not defer work to the next Automation.
+
+Bind exact claims/receipts, patch repository code/templates/contracts, add a
+regression, and resume the same job without waiting for the user to request a
+retrospective. Preserve unrelated WIP; commit and normally push the repair.
 
 `repair_required` means the Agent owns diagnosis and repair. Only authentication,
 SMS, CAPTCHA, consent, a user-only fact, or an unreconciled external effect may
 become `user_action_required`. Exact-once forbids duplicate effects, not repaired
 continuation. If the process exited, fix/test/commit, reconcile the exact claim,
-then use the narrow repair resume; never run the same hourly command twice.
+then use the narrow repair resume in the current task; never run the same
+hourly command twice. Keep the task responsible through any provider deadline.
 Do not change investment semantics, recipients, schedules, capital authority,
 or bypass a human gate.
 

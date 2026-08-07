@@ -64,7 +64,7 @@ def test_kol_skill_owns_safe_self_repair_before_user_escalation() -> None:
         assert marker in hourly
     for marker in (
         "Agent-owned self-repair",
-        "add a regression for the observed boundary case",
+        "add a regression",
         "must not send a user-action notification",
         "preserve the original job",
     ):
@@ -251,12 +251,12 @@ def test_hourly_small_download_is_unattended_and_prompt_is_internal() -> None:
     for marker in (
         "Page.setDownloadBehavior",
         "controlled inbox",
-        "exact provider id/name/size/identity/version",
-        "no user blocker or WeChat",
+        "exact provider identity",
+        "Save prompt is not a user blocker",
         "never edit ordinary Chrome",
         "global extension",
         "Only auth, SMS, CAPTCHA",
-        "second UI trigger",
+        "second trigger",
     ):
         assert marker in text
 
@@ -303,7 +303,7 @@ def test_kol_skill_has_one_resumable_ticket06_batch_runner() -> None:
         assert marker in text
 
 
-def test_kol_skill_has_one_ticket07_daytime_runner() -> None:
+def test_kol_skill_has_one_ticket07_scheduled_runner() -> None:
     text = " ".join(
         HOURLY_REMOTE_WRITER_MD.read_text(encoding="utf-8").split()
     )
@@ -314,7 +314,6 @@ def test_kol_skill_has_one_ticket07_daytime_runner() -> None:
         "scripts/kol_daily.py audit",
         "RRULE:FREQ=DAILY;BYHOUR=7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23;BYMINUTE=30",
         "omit `DTSTART` and `TZID`",
-        "07:30 run drains overnight backlog",
         "/课程/路西法全套",
         "never reads or downloads source-video bytes",
         "content_value.status=low_density|promoted",
@@ -324,9 +323,9 @@ def test_kol_skill_has_one_ticket07_daytime_runner() -> None:
         "stable URL before Book KOL-US or reminder",
         "viewpoint_triggers",
         "material fact",
-        "no concrete article or video item is silent",
+        "no concrete item is silent",
         "Every concrete item remains reportable",
-        "unchanged waits and retryable exceptions",
+        "including waits and retryable exceptions",
         '"image_notes_path":"<absolute-md-path>"',
     ):
         assert marker in text
@@ -440,25 +439,65 @@ def test_remote_writer_guards_active_peer_and_drains_each_message_once() -> None
     )
 
     for marker in (
-            "same automation id",
+        "same automation id",
         "current host",
         "current working directory",
-        "exclude the current task",
+        "exclude that current task",
         "active peer",
+        "peer task",
+        '"limit":20',
+        "5 why",
+        "blocks business effects, not repair",
+        "never defer to the next automation",
         "attempted_message_ids",
         "new eligible messages",
         "ack_mailbox_message",
         "全部完成",
     ):
         assert marker in remote
-    for forbidden in (
-            "python global lock",
-        "lease",
-        "heartbeat",
-        "fencing",
-        "stale takeover",
+    assert (
+        "do not add a python global lock, lease, heartbeat, fencing token, "
+        "or stale takeover"
+    ) in remote
+
+
+def test_kol_skill_repairs_recoverable_failures_in_the_current_task() -> None:
+    skill = " ".join(SKILL_MD.read_text(encoding="utf-8").lower().split())
+    remote = " ".join(
+        HOURLY_REMOTE_WRITER_MD.read_text(encoding="utf-8").lower().split()
+    )
+
+    for marker in (
+        "minimize dependence on the user",
+        "5-why",
+        "first-principles diagnosis",
+        "correct invalid tool arguments immediately",
+        "do not defer work",
     ):
-        assert f"do not add a {forbidden}" in remote
+        assert marker in skill
+    for marker in (
+        "resume-mailbox",
+        "do not defer obtainable work",
+        "in this task",
+        "repair_required",
+    ):
+        assert marker in remote
+
+
+def test_full_contract_applies_five_why_to_every_recoverable_failure() -> None:
+    full = " ".join(
+        FULL_CONTRACT_MD.read_text(encoding="utf-8").lower().split()
+    )
+
+    for marker in (
+        "minimize dependence on the user",
+        "apply 5 why",
+        "every recoverable code, environment, tool, provider, schema",
+        "control-plane failure",
+        "fail-closed blocks unsafe effects, not repair",
+        "instead of deferring to the user or a later run",
+    ):
+        assert marker in full
 
 
 def test_remote_writer_has_a_xiaocao_only_post_handoff_entrypoint() -> None:

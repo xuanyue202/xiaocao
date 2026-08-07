@@ -24,17 +24,15 @@ Keep every run resumable. Prefer deterministic local APIs, CLIs, and logged-in b
 
 ## Agent-owned self-repair
 
-A diagnosable implementation failure is not a stopping condition. First bind
-the exact item, current stage, immutable evidence, claims, receipts, and any
-possibly dispatched external effect. When intended behavior is already fixed
-by this contract and the evidence, the Agent owns the complete self-repair
-loop: reproduce read-only, find the root cause, patch repository-owned
-adapters/templates/code/contracts, add a regression for the observed boundary
-case, run the relevant suite, and resume the same durable job without replaying
-completed effects. It must not wait for the user to ask for a postmortem or a
-fix. A validated repair is staged without unrelated WIP, committed, and
-normally pushed after reconciling current `main`, so future Automations inherit
-it instead of rediscovering the same failure.
+First principle: minimize dependence on the user. Apply 5 Why and
+first-principles diagnosis to every recoverable code, environment, tool,
+provider, schema, rendering, or control-plane failure in the current task.
+Bind the exact item, stage, evidence, claims, receipts, and uncertain effects;
+reproduce read-only, fix the root cause, add a regression, validate, and resume
+the same durable job without replay. Fail-closed blocks unsafe effects, not
+repair. Retrieve/process evidence when safely obtainable instead of deferring
+to the user or a later run. Commit and normally push the scoped repair after
+reconciling `main`, preserving unrelated WIP.
 
 Use `repair_required` for timeouts, selector or provider-contract drift, schema
 and rendering mismatches, missing internal controls, broken recovery paths,
