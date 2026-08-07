@@ -116,6 +116,85 @@ def test_build_plan_routes_pass_pending_and_instrumentation_todo(tmp_path, monke
     assert plan["rules"]["instrumentation_todo"].startswith("auto_apply")
 
 
+def test_build_plan_keeps_non_ascii_instrumentation_ids_unique(tmp_path, monkeypatch):
+    _patch_paths(monkeypatch, tmp_path)
+    wdr.ACTION_LOG.parent.mkdir(parents=True)
+    rows = [
+        {
+            "date": "2026-08-06",
+            "kind": "公开直播复盘",
+            "file": "2026-08-06_lv_xiaotong_review.json",
+            "routing": ["instrumentation"],
+            "instrumentation_todo": "跟踪人工智能和存储预期差。",
+        },
+        {
+            "date": "2026-08-06",
+            "kind": "盘前大师班",
+            "file": "2026-08-06_xiaocao_morning.json",
+            "routing": ["instrumentation"],
+            "instrumentation_todo": "记录首次资格时间与位置层级。",
+        },
+    ]
+    wdr.ACTION_LOG.write_text(
+        "".join(json.dumps(row, ensure_ascii=False) + "\n" for row in rows),
+        encoding="utf-8",
+    )
+    done_fw = _fake_flywheel()
+    done_fw["strategy_flywheel"] = {
+        "status": "open",
+        "pending_pass_verdicts": [],
+    }
+    monkeypatch.setattr(wdr.flywheel, "check_flywheel", lambda **_: done_fw)
+    monkeypatch.setattr(
+        wdr,
+        "_load_sweep_json",
+        lambda: {"scoreboard": {}, "pass_evidence": [], "queue": []},
+    )
+    monkeypatch.setattr(wdr, "_git_status", lambda: [])
+
+    plan = wdr.build_plan(
+        as_of=dt.date(2026, 8, 7),
+        output=tmp_path / "plan.json",
+    )
+
+    ids = [row["id"] for row in plan["auto_apply_candidates"]]
+    assert len(ids) == 2
+    assert len(set(ids)) == 2
+    assert all(identity.startswith("instrumentation-2026-08-06-") for identity in ids)
+
+
+def test_finalize_rejects_duplicate_candidate_ids(tmp_path, monkeypatch):
+    _patch_paths(monkeypatch, tmp_path)
+    plan = {
+        "date": "2026-08-07",
+        "fixed_inputs": wdr.FIXED_INPUTS,
+        "pre_existing_dirty": [],
+        "flywheel": _fake_flywheel(),
+        "sweep": {"scoreboard": {}, "pass_evidence": []},
+        "recent_action_summary": [],
+        "auto_apply_candidates": [
+            {"id": "duplicate-id"},
+            {"id": "duplicate-id"},
+        ],
+        "proposals": [],
+        "mode_recommendation": wdr.MODE_AUTO,
+    }
+    plan_path = tmp_path / "plan.json"
+    plan_path.write_text(json.dumps(plan), encoding="utf-8")
+
+    try:
+        wdr.finalize_plan(
+            plan_path=plan_path,
+            mode=wdr.MODE_AUTO,
+            validation=["pytest: PASS"],
+            allow_commit=False,
+        )
+    except SystemExit as exc:
+        assert "candidate ids must be unique" in str(exc)
+    else:
+        raise AssertionError("duplicate candidate ids should fail closed")
+
+
 def test_build_plan_skips_resolved_instrumentation_todo(tmp_path, monkeypatch):
     _patch_paths(monkeypatch, tmp_path)
     wdr.ACTION_LOG.parent.mkdir(parents=True)

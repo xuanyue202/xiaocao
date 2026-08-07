@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import argparse
 import datetime as dt
+import hashlib
 import json
 import os
 import re
@@ -294,6 +295,30 @@ def _slug(s: str) -> str:
     return s[:80] or "proposal"
 
 
+def _instrumentation_candidate_id(row: dict[str, Any], todo: str) -> str:
+    """Build a readable identity without collapsing non-ASCII TODOs."""
+    date_s = str(row.get("date") or "unknown-date")
+    file_s = str(row.get("file") or "unknown-source")
+    source_slug = _slug(Path(file_s).stem)[:40]
+    todo_slug = _slug(todo)[:24]
+    digest = hashlib.sha256(f"{file_s}\0{todo}".encode("utf-8")).hexdigest()[:12]
+    return f"instrumentation-{date_s}-{source_slug}-{todo_slug}-{digest}"
+
+
+def _duplicate_plan_ids(*groups: list[dict[str, Any]]) -> list[str]:
+    seen: set[str] = set()
+    duplicates: set[str] = set()
+    for rows in groups:
+        for row in rows:
+            identity = str(row.get("id") or "").strip()
+            if not identity:
+                continue
+            if identity in seen:
+                duplicates.add(identity)
+            seen.add(identity)
+    return sorted(duplicates)
+
+
 def _evidence_bundle(
     *,
     problem: str,
@@ -545,7 +570,7 @@ def build_plan(*, as_of: dt.date | None = None, output: Path | None = None) -> d
         todo = row.get("instrumentation_todo")
         if _is_nullish(todo) or _is_resolved_instrumentation(todo):
             continue
-        pid = f"instrumentation-{row.get('date')}-{_slug(str(todo))}"
+        pid = _instrumentation_candidate_id(row, str(todo))
         auto_apply_candidates.append(_auto_apply_candidate(
             cid=pid,
             title=f"补命中审计投影工具：{row.get('file')}",
@@ -560,6 +585,13 @@ def build_plan(*, as_of: dt.date | None = None, output: Path | None = None) -> d
                 scope="流程/观测工具自动优化",
             ),
         ))
+
+    duplicate_ids = _duplicate_plan_ids(proposals, auto_apply_candidates)
+    if duplicate_ids:
+        raise RuntimeError(
+            "weekly plan candidate ids must be unique: "
+            + ", ".join(duplicate_ids)
+        )
 
     plan = {
         "date": as_of.isoformat(),
@@ -791,6 +823,15 @@ def finalize_plan(*, plan_path: Path, mode: str | None, validation: list[str],
     extra_candidates = _load_auto_apply_candidates(auto_apply_candidate_paths)
     if extra_candidates:
         plan.setdefault("auto_apply_candidates", []).extend(extra_candidates)
+    duplicate_ids = _duplicate_plan_ids(
+        plan.get("proposals", []),
+        plan.get("auto_apply_candidates", []),
+    )
+    if duplicate_ids:
+        raise SystemExit(
+            "weekly plan candidate ids must be unique: "
+            + ", ".join(duplicate_ids)
+        )
     if mode is None:
         if plan.get("auto_apply_candidates"):
             mode = MODE_AUTO
