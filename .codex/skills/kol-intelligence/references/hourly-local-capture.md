@@ -21,12 +21,15 @@ handoff JSON on the same stdin. Never use non-TTY for `capture-local` or
 `wechat_official_accounts`; it never scans Lv, analyzes, publishes, notifies,
 or writes Book. Do not substitute the remote coordinator here.
 
-Each invocation performs one sweep. Normal no-update and healthy waiting are
-silent. Retryable failures expose only credential-safe `category`, `code`, and
-`stage`. Reconcile every already-armed capture without deleting or duplicating
-it. The WeChat gate below may arm a distinct newer preview on the same singleton
-sniffer so an old wait cannot starve a live window; never start two sniffers or
-arm the same preview identity twice.
+Each invocation performs one sweep. A sweep with no concrete article or video
+item is silent. Every concrete item remains reportable while waiting,
+unchanged, exceptional, handoff-completed, or fully completed; never imply that
+handoff completion is downstream completion. Retryable failures expose only
+credential-safe `category`, `code`, and `stage`. Reconcile every already-armed
+capture without deleting or duplicating it. The WeChat gate below may arm a
+distinct newer preview on the same singleton sniffer so an old wait cannot
+starve a live window; never start two sniffers or arm the same preview identity
+twice.
 
 Within one sweep, prefer the newest browser-critical item, then the newest
 `playback_activated` capture, then the oldest `handoff_ready`; all stay
@@ -156,6 +159,7 @@ Automation from this node.
 
 The append-only local ledger resumes only unfinished capture/upload/handoff
 work. A restart or replay reconciles existing claims and never repeats a cloud
-upload with an uncertain side effect. Report only a structured user-action
-blocker or an externally visible completed handoff; preserve retryable details
-in local status and audit surfaces without presenting them as business events.
+upload with an uncertain side effect. Stay silent only when the sweep has no
+concrete article or video item. Otherwise report every current item, including
+unchanged waits and retryable exceptions, while preserving the distinction
+between handoff completion and downstream completion.

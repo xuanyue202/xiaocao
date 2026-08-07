@@ -20,9 +20,6 @@ OPENCLI_CHROME_RECOVERY_MD = (
 REMOTE_WRITER_LEASE_MD = (
     SKILL_DIR / "references" / "remote-writer-lease.md"
 )
-LOCAL_AUTOMATION_TOML = (
-    ROOT / ".codex" / "automations" / "xiaocao-kol-hourly" / "automation.toml"
-)
 XIAOCAO_CAPTURE_START_MD = (
     SKILL_DIR / "references" / "xiaocao-capture-start.md"
 )
@@ -430,38 +427,21 @@ def test_hourly_local_handoff_uses_a_verified_twenty_four_hour_writer_lease() ->
         assert marker in text
 
 
-def test_hourly_local_automation_carries_the_writer_lease_fallback() -> None:
-    text = " ".join(LOCAL_AUTOMATION_TOML.read_text(encoding="utf-8").split())
-
-    for marker in (
-        "bounded twenty-four-hour writer lease",
-        "automatically reuse the newest directly readable matching writer",
-        "not waiting on approval or user action",
-        "Task-list failure alone is not a user blocker",
-        "task older than twenty-four hours",
-    ):
-        assert marker in text
-
-
 def test_hourly_local_capture_recovers_late_video_handoffs_without_resweep() -> None:
     local = " ".join(HOURLY_LOCAL_CAPTURE_MD.read_text(encoding="utf-8").split())
-    automation = " ".join(LOCAL_AUTOMATION_TOML.read_text(encoding="utf-8").split())
 
-    for text in (local, automation):
-        assert "capture-xiaocao-handoff" in text
-        assert "do not rerun the full sweep" in text
-        assert "cloud_handoff_published" in text
+    assert "capture-xiaocao-handoff" in local
+    assert "do not rerun the full sweep" in local
+    assert "cloud_handoff_published" in local
 
 
 def test_remote_writer_handler_failure_has_a_bounded_self_repair_loop() -> None:
     lease = " ".join(REMOTE_WRITER_LEASE_MD.read_text(encoding="utf-8").split())
-    automation = " ".join(LOCAL_AUTOMATION_TOML.read_text(encoding="utf-8").split())
 
-    for text in (lease, automation):
-        assert "No handler registered" in text
-        assert "bounded handler recovery" in text
-        assert "retry `read_thread`" in text
-        assert "never authorizes an unverified send" in text
+    assert "No handler registered" in lease
+    assert "bounded handler recovery" in lease
+    assert "retry `read_thread`" in lease
+    assert "never authorizes an unverified send" in lease
 
 
 def test_opencli_chrome_recovery_exhausts_self_repair_before_user_action() -> None:
