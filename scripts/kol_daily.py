@@ -32,6 +32,11 @@ from xiaocao.kol.enrichment_types import (
 )
 from xiaocao.kol.household import LiangHuiMcpClient
 from xiaocao.kol.lv_subscription import LvSubscriptionService
+from xiaocao.kol.mailbox import (
+    LiangHuiMailboxClient,
+    MailboxLedger,
+    RemoteMailboxDrain,
+)
 from xiaocao.kol.publication import PublicationLedger, read_published_publication
 from xiaocao.kol.subscription_video import LV_SOURCE, SubscriptionVideoService
 from xiaocao.kol.wechat_official import (
@@ -65,6 +70,7 @@ DEFAULT_XIAOCAO_WECHAT_OUTPUT = (
     DEFAULT_XIAOCAO_OUTPUT / "wechat_subscription"
 )
 DEFAULT_WECHAT_OFFICIAL_OUTPUT = Path("output/live/kol_wechat_official")
+DEFAULT_MAILBOX_OUTPUT = Path("output/live/kol_mailbox")
 MAX_HANDOFF_BYTES = 1024 * 1024
 CLOUD_HANDOFF_POLL_SECONDS = 30
 
@@ -895,6 +901,65 @@ class DailyRuntime:
         self._lv_listing: dict[str, Any] | None = None
         self._lv_listing_error: EnrichmentError | None = None
 
+    def _mailbox(self) -> LiangHuiMailboxClient:
+        return LiangHuiMailboxClient(
+            MailboxLedger(self.args.mailbox_output_dir),
+            exchange=_read_agent_json,
+        )
+
+    def reconcile_local_mailbox(self) -> list[dict[str, str]]:
+        return self._mailbox().reconcile_local()
+
+    def publish_mailbox_handoff(
+        self,
+        capsule: dict[str, Any],
+        *,
+        object_kind: str,
+        title: str,
+    ) -> dict[str, Any]:
+        return self._mailbox().publish_handoff(
+            capsule,
+            object_kind=object_kind,
+            title=title,
+        )
+
+    def _process_mailbox_message(
+        self,
+        message: dict[str, Any],
+    ) -> dict[str, Any]:
+        handoff_id = str(message.get("message_id") or "")
+        capsule = message.get("payload")
+        if not isinstance(capsule, dict) or capsule.get("handoff_id") != handoff_id:
+            raise DailyError("mailbox message is not bound to its handoff capsule")
+        if capsule.get("content_transport") == "public_url_only":
+            imported = OfficialAccountInbox(
+                self.args.wechat_official_output_dir
+            ).import_capsule(capsule)
+            if imported.get("status") not in {"accepted", "already_present"}:
+                raise DailyError("official mailbox handoff import is not durable")
+            result = self.wechat_official(handoff_id=handoff_id)
+        elif capsule.get("source_mode") == "cloud_handoff":
+            XiaocaoLiveService(
+                self.args.xiaocao_output_dir,
+                decision_output=self.args.decision_output_dir,
+            ).import_handoff_capsule(capsule)
+            result = self.xiaocao(handoff_id=handoff_id)
+        else:
+            raise DailyError("mailbox handoff capsule type is unsupported")
+        completed = {
+            str(value) for value in result.get("completed_handoff_ids", [])
+        }
+        return {
+            **result,
+            "business_complete": handoff_id in completed,
+        }
+
+    def mailbox(self) -> dict[str, Any]:
+        return RemoteMailboxDrain(
+            self._mailbox(),
+            processor=self._process_mailbox_message,
+        ).run()
+
     def _lv_service_for_sweep(self) -> LvSubscriptionService:
         if self._lv_service is None:
             self._lv_service = LvSubscriptionService.from_config(
@@ -1335,7 +1400,7 @@ class DailyRuntime:
             raise DailyError("Xiaocao lightweight handoff is invalid")
         return value
 
-    def xiaocao(self) -> dict[str, Any]:
+    def xiaocao(self, handoff_id: str | None = None) -> dict[str, Any]:
         service = XiaocaoLiveService(
             self.args.xiaocao_output_dir,
             decision_output=self.args.decision_output_dir,
@@ -1361,7 +1426,16 @@ class DailyRuntime:
             key=lambda row: str(row.get("published_at") or ""),
             reverse=True,
         )
+        if handoff_id is not None:
+            ordered_handoffs = [
+                row
+                for row in ordered_handoffs
+                if row.get("handoff_id") == handoff_id
+            ]
+            if not ordered_handoffs:
+                raise DailyError("target Xiaocao handoff is not locally durable")
         events = []
+        completed_handoff_ids: list[str] = []
         waiting = 0
         for handoff_index, handoff in enumerate(ordered_handoffs):
             if handoff.get("schema_version") == 2:
@@ -1373,6 +1447,7 @@ class DailyRuntime:
                 if result_path.is_file():
                     value = json.loads(result_path.read_text(encoding="utf-8"))
                     if (value.get("items") or [{}])[0].get("daily_terminal"):
+                        completed_handoff_ids.append(str(handoff["handoff_id"]))
                         continue
                 else:
                     # A legacy or synthetic decided receipt without a bound
@@ -1419,6 +1494,7 @@ class DailyRuntime:
                     reconcile_daily_terminal=True,
                 )
                 events.append(self._terminal(decided["decision_result_path"]))
+                completed_handoff_ids.append(str(handoff["handoff_id"]))
                 continue
             if state.get("status") not in {"transcript_captured", "verified"}:
                 state = service.netdisk.advance_opencli(
@@ -1485,8 +1561,18 @@ class DailyRuntime:
                 pipeline=self._pipeline(context),
             )
             events.append(self._terminal(decided["decision_result_path"]))
+            completed_handoff_ids.append(str(handoff["handoff_id"]))
         if events:
-            return {"status": "completed", "events": events}
+            return {
+                "status": "completed",
+                "events": events,
+                "completed_handoff_ids": completed_handoff_ids,
+            }
+        if completed_handoff_ids:
+            return {
+                "status": "completed",
+                "completed_handoff_ids": completed_handoff_ids,
+            }
         if waiting:
             return {"status": "waiting", "waiting_count": waiting}
         return {"status": "no_update"}
@@ -1505,6 +1591,7 @@ class DailyRuntime:
             self.args.xiaocao_wechat_output_dir,
             history_reader=history,
             browser_exchange=_read_agent_json,
+            handoff_exchange=self.publish_mailbox_handoff,
             capture_driver=capture,
             contact=self.args.xiaocao_wechat_contact,
             password=self.args.xiaocao_live_password,
@@ -1527,6 +1614,7 @@ class DailyRuntime:
             self.args.xiaocao_wechat_output_dir,
             history_reader=lambda: {},
             browser_exchange=_read_agent_json,
+            handoff_exchange=self.publish_mailbox_handoff,
             capture_driver=capture,
             contact=self.args.xiaocao_wechat_contact,
             password=self.args.xiaocao_live_password,
@@ -1546,6 +1634,7 @@ class DailyRuntime:
             self.args.xiaocao_wechat_output_dir,
             history_reader=lambda: {},
             browser_exchange=_read_agent_json,
+            handoff_exchange=self.publish_mailbox_handoff,
             capture_driver=capture,
             contact=self.args.xiaocao_wechat_contact,
             password=self.args.xiaocao_live_password,
@@ -1571,18 +1660,35 @@ class DailyRuntime:
         subscription = OfficialAccountSubscription(
             self.args.wechat_official_output_dir,
             reader=reader,
-            handoff_exchange=_read_agent_json,
+            handoff_exchange=self.publish_mailbox_handoff,
             publishers=publishers,
         )
         return subscription.run_once()
 
-    def wechat_official(self) -> dict[str, Any]:
+    def wechat_official(
+        self,
+        handoff_id: str | None = None,
+    ) -> dict[str, Any]:
         inbox = OfficialAccountInbox(self.args.wechat_official_output_dir)
         acquirer = OfficialAccountOpenCliAcquirer(
             self.args.wechat_official_output_dir / "opencli"
         )
+        if handoff_id is not None:
+            target = inbox.get_item(handoff_id)
+            if target is None:
+                raise DailyError("official mailbox handoff import is missing")
+            if target.get("status") == "decided":
+                return {
+                    "status": "completed",
+                    "events": [],
+                    "completed_handoff_ids": [handoff_id],
+                    "already_completed": True,
+                }
+            pending_items = [target]
+        else:
+            pending_items = inbox.pending_items()
         pending = sorted(
-            inbox.pending_items(),
+            pending_items,
             key=lambda row: (
                 str(row.get("published_at") or ""),
                 str(row.get("source_identity") or ""),
@@ -1591,6 +1697,7 @@ class DailyRuntime:
         if not pending:
             return {"status": "no_update"}
         events: list[dict[str, Any]] = []
+        completed_handoff_ids: list[str] = []
         waiting_items: list[dict[str, Any]] = []
         for discovered in pending:
             item = inbox.acquire(discovered, acquirer=acquirer)
@@ -1664,10 +1771,12 @@ class DailyRuntime:
                 sender=_sender,
             )
             events.append(self._terminal(decided["decision_result_path"]))
+            completed_handoff_ids.append(str(item["handoff_id"]))
         if events:
             return {
                 "status": "completed",
                 "events": events,
+                "completed_handoff_ids": completed_handoff_ids,
                 "waiting_count": len(waiting_items),
                 "waiting_items": waiting_items,
             }
@@ -1783,6 +1892,11 @@ def main() -> int:
         default=DEFAULT_WECHAT_OFFICIAL_OUTPUT,
     )
     parser.add_argument(
+        "--mailbox-output-dir",
+        type=Path,
+        default=DEFAULT_MAILBOX_OUTPUT,
+    )
+    parser.add_argument(
         "--wechat-official-publisher",
         dest="wechat_official_publishers",
         action="append",
@@ -1858,6 +1972,9 @@ def main() -> int:
     if args.command == "capture-local":
         runtime = DailyRuntime.__new__(DailyRuntime)
         runtime.args = args
+        mailbox_reconciliation = runtime.reconcile_local_mailbox()
+        if mailbox_reconciliation:
+            _print({"mailbox_reconciliation": mailbox_reconciliation})
         result = service.run(
             [{
                 "name": "xiaocao_wechat_live",
@@ -1903,6 +2020,9 @@ def main() -> int:
             _print(result)
         return 0
     runtime = DailyRuntime(args)
+    mailbox_result = runtime.mailbox()
+    if mailbox_result.get("attempted_message_ids"):
+        _print({"mailbox_drain": mailbox_result})
     result = service.run(
         [
             {

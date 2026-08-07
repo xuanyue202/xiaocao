@@ -12,8 +12,9 @@ Run exactly once and keep the process alive for input requests:
 PYTHONPATH=src .venv/bin/python scripts/kol_daily.py capture-local
 ```
 
-Use an interactive PTY (`tty=true`) and keep stdin alive for Browser and handoff
-JSON. Only the remote capsule importer uses a non-TTY stdin pipe (`tty=false`).
+Use an interactive PTY (`tty=true`) and keep stdin alive for Browser and
+LiangHuiMCP request/response JSON. The normal handoff path does not inject a
+Codex task message and does not invoke the remote capsule importer directly.
 
 `capture-local` runs only `xiaocao_wechat_live` and
 `wechat_official_accounts`; it never scans Lv, analyzes, publishes, notifies,
@@ -32,8 +33,9 @@ resumable.
 An `upload_claimed` or other `cloud_handoff` wait is nonterminal. After the full
 discovery sweep, the same `capture-local` process must keep reconciling that
 exact identity, capture job, Netdisk job, and upload claim until it receives
-`cloud_handoff_published` and authoritative remote `accepted|already_present`
-readback. Waiting for a cloud receipt must not end the task, rely on the next
+`cloud_handoff_published` and authoritative LiangHuiMCP
+`created|already_present` readback. That creation receipt is `Handoff完成`.
+Waiting for a cloud receipt must not end the task, rely on the next
 hourly run, rescan WeChat, or create another upload/handoff claim.
 
 If an older process died after publishing `cloud_handoff_published`, do not
@@ -47,8 +49,8 @@ It reads the item ledger, syncs `handoff_ready`, and dispatches only that
 published capsule. A dispatch lock prevents duplicates; it does not scan
 WeChat, use Browser, advance capture, or re-upload.
 
-If the live source stops before imported official handoffs receive readback,
-do not rerun the full sweep. Reconcile `accepted|already_present`, then run this
+If the live source stops before official handoffs receive creation readback,
+do not rerun the full sweep. Reconcile the same mailbox message, then run this
 official-only response exchange exactly once:
 
 ```bash
@@ -106,36 +108,34 @@ hourly sweep until it becomes playable; never wait inside one sweep or create a
 replacement job. Later capture, artifact, proxy cleanup, upload, and handoff
 stages reconcile without Browser.
 
-## Remote handoff
+## LiangHuiMCP handoff
 
-For `daily_remote_handoff_input_required`, validate the capsule, then read
-[remote-writer-lease.md](remote-writer-lease.md) completely. It prefers current
-and automatically reuses a verified writer up to twenty-four hours
-old. Never use a stale long-lived task or an approval-waiting task.
+The runner emits `daily_lianghui_mailbox_input_required`. Keep the same process
+alive and call the named LiangHuiMCP operation with its exact `arguments`:
 
-Send only capsule fields, never paths or bytes. A `wechat_official_article`
-contains a public URL plus identity metadata. Import it idempotently with
-`scripts/kol_daily.py import-wechat-official` over a non-TTY stdin pipe
-(`tty=false`), one compact line once. If stdin closes before bytes, prove no
-receipt, then use one validated temporary JSONL line. Never use a PTY. Restore
-XML-rendered `&amp;` to `&` and recompute `handoff_sha256` before import.
-After acceptance, the selected task runs
-`scripts/kol_daily.py process-wechat-official` once and keeps it alive for
-inputs; never rerun the coordinator. Xiaocao uses `scope=post_handoff`. Read
-[hourly-remote-writer.md](hourly-remote-writer.md) and reconcile `handoff_id`.
+- `send_mailbox_message`: return one compact JSON line containing
+  `operation`, `outcome`, and the authoritative `receipt`.
+- `get_mailbox_message`: return one compact JSON line containing `operation`
+  and the tool's exact structured message as `message`.
 
-After `accepted|already_present` import readback, immediately return acceptance
-to the local runner, then keep the remote task running downstream. Reconcile
-before retry; persist host, task, handoff ID, and acceptance. Delay never
-creates a handoff.
+Do not reinterpret, trim, or reconstruct a tool receipt. A mailbox operation
+error fails closed. Send only the credential-free capsule fields, never local
+paths or media bytes. A `wechat_official_article` contains only a normalized
+public URL plus identity metadata. Xiaocao video capsules contain post-handoff
+metadata and hashes only.
 
-For a Xiaocao video capsule received after the remote hourly sweep, run only:
+`send_mailbox_message` uses mailbox `kol.handoff`, message type
+`xiaocao.kol_handoff`, schema version `1`, and the same `handoff_id` as both
+message ID and correlation ID. Only authoritative `created|already_present`
+with the exact content hash is `Handoff完成`; no remote task discovery, task
+selection, or `send_message_to_thread` participates in this terminal.
 
-```bash
-PYTHONPATH=src .venv/bin/python scripts/kol_daily.py process-xiaocao-handoff
-```
-
-Do not rerun the remote multi-source coordinator merely to consume it.
+At the start of the next local sweep, use `get_mailbox_message` to reconcile
+every locally receipted but unobserved handoff by exact mailbox ID and the same
+`handoff_id`. `pending` remains `Handoff完成`. A bound `acked` message with its
+authoritative ack receipt becomes `全部完成`. A timeout or ambiguous response
+never authorizes another message ID or changed content; retry only the same
+idempotency key after reconciling its exact readback.
 
 ## Local schedule
 

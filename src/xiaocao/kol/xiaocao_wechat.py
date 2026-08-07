@@ -324,6 +324,7 @@ class XiaocaoWechatLiveSubscription:
         *,
         history_reader: Callable[[], dict[str, Any]],
         browser_exchange: Callable[[dict[str, Any]], dict[str, Any]],
+        handoff_exchange: Callable[..., dict[str, Any]] | None = None,
         capture_driver: CaptureDriver,
         contact: str = DEFAULT_CONTACT,
         password: str = "666",
@@ -334,6 +335,7 @@ class XiaocaoWechatLiveSubscription:
         self.events_path = self.output_dir / "events.jsonl"
         self.history_reader = history_reader
         self.browser_exchange = browser_exchange
+        self.handoff_exchange = handoff_exchange or browser_exchange
         self.capture_driver = capture_driver
         self.contact = str(contact)
         self.password = str(password)
@@ -594,53 +596,33 @@ class XiaocaoWechatLiveSubscription:
         item: dict[str, Any],
     ) -> dict[str, Any]:
         capsule = self._load_handoff(item)
-        request = {
-            "event": "daily_remote_handoff_input_required",
-            "adapter": "xiaocao_wechat_live",
-            "action": "dispatch_xiaocao_handoff",
-            "subscription_id": item["identity"],
-            "capture_job_id": item["capture_job_id"],
-            "handoff_id": capsule["handoff_id"],
-            "handoff_path": item["handoff_path"],
-            "instructions": (
-                "Read and validate the lightweight capsule, then use the newest "
-                "current-hour remote writer task on the registered "
-                "MacBook-Pro-6.local host; never use a stale long-lived task or "
-                "one waiting on approval. "
-                "Reconcile the remote thread and handoff_id before any retry; "
-                "return only after target-task readback proves acceptance."
-            ),
-            "required_response": {
-                "action": "dispatch_xiaocao_handoff",
-                "subscription_id": item["identity"],
-                "handoff_id": capsule["handoff_id"],
-                "accepted": True,
-                "readback_status": "accepted|already_present",
-                "remote_thread_id": "current-hour remote writer task id",
-                "remote_host_id": "registered remote host id",
-            },
-        }
-        response = self.browser_exchange(request)
-        self._validate_browser_response(request, response)
-        remote_thread_id = str(response.get("remote_thread_id") or "").strip()
-        remote_host_id = str(response.get("remote_host_id") or "").strip()
+        response = self.handoff_exchange(
+            capsule,
+            object_kind="video",
+            title=str(item.get("title") or "小草直播"),
+        )
         if (
-            response.get("handoff_id") != capsule["handoff_id"]
-            or response.get("accepted") is not True
-            or response.get("readback_status")
-            not in {"accepted", "already_present"}
-            or not remote_thread_id
-            or not remote_host_id
+            not isinstance(response, dict)
+            or response.get("handoff_id") != capsule["handoff_id"]
+            or response.get("status") != "Handoff完成"
+            or response.get("mailbox_outcome") not in {
+                "created",
+                "already_present",
+            }
+            or not _SHA256.fullmatch(
+                str(response.get("content_sha256") or "")
+            )
         ):
-            raise EnrichmentError("remote Xiaocao handoff lacks acceptance readback")
+            raise EnrichmentError("Xiaocao mailbox handoff lacks creation readback")
         completed = self._transition(
             manifest,
             item,
             "completed",
             handoff_id=capsule["handoff_id"],
-            remote_thread_id=remote_thread_id,
-            remote_host_id=remote_host_id,
-            remote_readback_status=str(response["readback_status"]),
+            mailbox_id="kol.handoff",
+            mailbox_message_id=capsule["handoff_id"],
+            mailbox_content_sha256=str(response["content_sha256"]),
+            mailbox_readback_status=str(response["mailbox_outcome"]),
         )
         return {
             "status": "no_update",

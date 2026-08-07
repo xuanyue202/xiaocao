@@ -467,16 +467,19 @@ def test_pending_cloud_handoff_resumes_exact_job_without_rescanning(tmp_path):
                 "activated": True,
                 "password_used": False,
             }
-        assert request["action"] == "dispatch_xiaocao_handoff"
-        assert request["handoff_id"] == "b" * 64
+        raise AssertionError("mailbox handoff must not use the Browser exchange")
+
+    mailbox_published: list[dict] = []
+
+    def handoff_exchange(capsule, *, object_kind, title):
+        mailbox_published.append(capsule)
+        assert object_kind == "video"
+        assert title
         return {
-            "action": request["action"],
-            "subscription_id": request["subscription_id"],
-            "handoff_id": request["handoff_id"],
-            "accepted": True,
-            "readback_status": "accepted",
-            "remote_thread_id": "remote-xiaocao-executor",
-            "remote_host_id": "remote-control:registered",
+            "status": "Handoff完成",
+            "handoff_id": capsule["handoff_id"],
+            "mailbox_outcome": "created",
+            "content_sha256": "f" * 64,
         }
 
     history_reads = 0
@@ -497,6 +500,7 @@ def test_pending_cloud_handoff_resumes_exact_job_without_rescanning(tmp_path):
         tmp_path / "wechat",
         history_reader=read_history,
         browser_exchange=browser_exchange,
+        handoff_exchange=handoff_exchange,
         capture_driver=capture,
         contact=CONTACT,
         password="666",
@@ -548,8 +552,8 @@ def test_pending_cloud_handoff_resumes_exact_job_without_rescanning(tmp_path):
     assert [request["action"] for request in browser_requests] == [
         "resolve_xiaoetong_page",
         "activate_xiaoetong_playback",
-        "dispatch_xiaocao_handoff",
     ]
+    assert [capsule["handoff_id"] for capsule in mailbox_published] == ["b" * 64]
     assert capture.advances == 2
     assert history_reads == 1
     manifest = json.loads(
@@ -557,7 +561,7 @@ def test_pending_cloud_handoff_resumes_exact_job_without_rescanning(tmp_path):
     )
     item = next(iter(manifest["items"].values()))
     assert item["status"] == "completed"
-    assert item["remote_thread_id"] == "remote-xiaocao-executor"
+    assert item["mailbox_readback_status"] == "created"
 
 
 def test_published_handoff_recovery_is_read_only_until_remote_dispatch(tmp_path):
@@ -613,16 +617,15 @@ def test_published_handoff_recovery_is_read_only_until_remote_dispatch(tmp_path)
         def advance(self, *args, **kwargs):
             raise AssertionError("recovery must not advance or replay capture")
 
-    def exchange(request):
-        assert request["action"] == "dispatch_xiaocao_handoff"
+    def exchange(capsule_value, *, object_kind, title):
+        assert capsule_value == capsule
+        assert object_kind == "video"
+        assert title == "小草直播"
         return {
-            "action": request["action"],
-            "subscription_id": request["subscription_id"],
-            "handoff_id": request["handoff_id"],
-            "accepted": True,
-            "readback_status": "already_present",
-            "remote_thread_id": "remote-writer-current",
-            "remote_host_id": "remote-control:registered",
+            "status": "Handoff完成",
+            "handoff_id": capsule["handoff_id"],
+            "mailbox_outcome": "already_present",
+            "content_sha256": "f" * 64,
         }
 
     subscription = XiaocaoWechatLiveSubscription(
@@ -630,7 +633,8 @@ def test_published_handoff_recovery_is_read_only_until_remote_dispatch(tmp_path)
         history_reader=lambda: (_ for _ in ()).throw(
             AssertionError("recovery must not rescan WeChat")
         ),
-        browser_exchange=exchange,
+        browser_exchange=lambda request: {},
+        handoff_exchange=exchange,
         capture_driver=RecoveryCapture(),
         contact=CONTACT,
     )
@@ -648,4 +652,4 @@ def test_published_handoff_recovery_is_read_only_until_remote_dispatch(tmp_path)
     )
     item = manifest["items"][parsed["identity"]]
     assert item["status"] == "completed"
-    assert item["remote_readback_status"] == "already_present"
+    assert item["mailbox_readback_status"] == "already_present"

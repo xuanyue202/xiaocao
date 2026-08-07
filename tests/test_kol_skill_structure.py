@@ -312,9 +312,9 @@ def test_kol_skill_has_one_ticket07_daytime_runner() -> None:
         "scripts/kol_daily.py run",
         "scripts/kol_daily.py status",
         "scripts/kol_daily.py audit",
-        "RRULE:FREQ=DAILY;BYHOUR=7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23;BYMINUTE=0",
+        "RRULE:FREQ=DAILY;BYHOUR=7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23;BYMINUTE=30",
         "omit `DTSTART` and `TZID`",
-        "07:00 run drains overnight backlog",
+        "07:30 run drains overnight backlog",
         "/课程/路西法全套",
         "never reads or downloads source-video bytes",
         "content_value.status=low_density|promoted",
@@ -367,7 +367,7 @@ def test_kol_skill_defers_the_full_contract_on_hourly_no_update_runs() -> None:
 
     assert len(entrypoint.encode("utf-8")) < 7_000
     assert len(local.encode("utf-8")) < 8_000
-    assert len(hourly.encode("utf-8")) < 10_000
+    assert len(hourly.encode("utf-8")) < 12_000
     assert len(full.encode("utf-8")) > 35_000
     assert (
         "Do not read the full contract before starting the runner"
@@ -394,13 +394,9 @@ def test_hourly_local_and_remote_machine_contracts_stay_separate() -> None:
     assert "刘少狙击营" in local
     assert "A也叫艾利克斯" in local
     assert "scripts/kol_daily.py run" in remote
-    assert "scripts/kol_daily.py import-wechat-official" in remote
-    assert "scripts/kol_daily.py process-wechat-official" in local
     assert "scripts/kol_daily.py process-wechat-official" in remote
     assert "interactive PTY (`tty=true`)" in local
-    assert "non-TTY stdin pipe (`tty=false`)" in local
-    assert "non-TTY stdin pipe (`tty=false`)" in remote
-    assert "stale long-lived task" in local
+    assert "normal handoff path does not inject a" in local
     assert "scripts/kol_daily.py viewpoints" in remote
     assert "longitudinal_projection" in remote
     assert "longitudinal_projection" in FULL_CONTRACT_MD.read_text(
@@ -408,26 +404,23 @@ def test_hourly_local_and_remote_machine_contracts_stay_separate() -> None:
     )
     assert "not the full article" in remote
     assert "daily_browser_input_required" not in remote
-    assert "never scans the local WeChat contact" in remote
+    assert "never scans the local\nWeChat contact" in remote
 
 
-def test_hourly_local_handoff_uses_a_verified_twenty_four_hour_writer_lease() -> None:
+def test_hourly_local_handoff_uses_lianghui_mailbox_creation_readback() -> None:
     local = HOURLY_LOCAL_CAPTURE_MD.read_text(encoding="utf-8")
-    text = " ".join(REMOTE_WRITER_LEASE_MD.read_text(encoding="utf-8").split())
-
-    assert "remote-writer-lease.md" in local
 
     for marker in (
-        "Twenty-four-hour selection",
-        "Prefer the newest matching KOL writer Automation task",
-        "do not stop or ask the user to refresh Codex",
-        "created within the preceding twenty-four hours",
-        "`read_thread` must verify",
-        "not waiting on approval or user action",
-        "task-list handler failure alone is not a user blocker",
-        "reconcile the exact task and `handoff_id` before retrying",
+        "send_mailbox_message",
+        "created|already_present",
+        "Handoff完成",
+        "get_mailbox_message",
+        "全部完成",
+        "same `handoff_id`",
     ):
-        assert marker in text
+        assert marker in local
+    assert "remote-writer-lease.md" not in local
+    assert "no remote task discovery" in local
 
 
 def test_hourly_local_capture_recovers_late_video_handoffs_without_resweep() -> None:
@@ -437,24 +430,41 @@ def test_hourly_local_capture_recovers_late_video_handoffs_without_resweep() -> 
     assert "do not rerun the full sweep" in local
     assert "cloud_handoff_published" in local
     assert "same `capture-local` process" in local
-    assert "accepted|already_present" in local
+    assert "created|already_present" in local
     assert "must not end the task" in local
 
 
-def test_remote_writer_handler_failure_has_a_bounded_self_repair_loop() -> None:
-    lease = " ".join(REMOTE_WRITER_LEASE_MD.read_text(encoding="utf-8").split())
+def test_remote_writer_guards_active_peer_and_drains_each_message_once() -> None:
+    remote = " ".join(
+        HOURLY_REMOTE_WRITER_MD.read_text(encoding="utf-8").lower().split()
+    )
 
-    assert "No handler registered" in lease
-    assert "bounded handler recovery" in lease
-    assert "retry `read_thread`" in lease
-    assert "never authorizes an unverified send" in lease
+    for marker in (
+            "same automation id",
+        "current host",
+        "current working directory",
+        "exclude the current task",
+        "active peer",
+        "attempted_message_ids",
+        "new eligible messages",
+        "ack_mailbox_message",
+        "全部完成",
+    ):
+        assert marker in remote
+    for forbidden in (
+            "python global lock",
+        "lease",
+        "heartbeat",
+        "fencing",
+        "stale takeover",
+    ):
+        assert f"do not add a {forbidden}" in remote
 
 
 def test_remote_writer_has_a_xiaocao_only_post_handoff_entrypoint() -> None:
     local = HOURLY_LOCAL_CAPTURE_MD.read_text(encoding="utf-8")
     remote = HOURLY_REMOTE_WRITER_MD.read_text(encoding="utf-8")
 
-    assert "scripts/kol_daily.py process-xiaocao-handoff" in local
     assert "scripts/kol_daily.py process-xiaocao-handoff" in remote
     assert "do not rerun the full `run` command" in remote
 

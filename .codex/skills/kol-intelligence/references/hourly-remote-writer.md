@@ -17,7 +17,7 @@ PYTHONPATH=src .venv/bin/python scripts/kol_daily.py status
 PYTHONPATH=src .venv/bin/python scripts/kol_daily.py audit
 ```
 
-Each run exits after one sweep; the 07:00 run drains overnight backlog by
+Each run exits after one sweep; the 07:30 run drains overnight backlog by
 decision priority. A sweep with no concrete article or video item is silent.
 Every concrete item remains reportable while waiting, unchanged, exceptional,
 handoff-completed, or fully completed; never imply that handoff completion is
@@ -35,29 +35,55 @@ and normally push a validated repair while excluding user WIP and runtime
 artifacts so later hourly runs inherit it.
 
 This machine is the only KOL writer. It consumes Xiaocao `scope=post_handoff`
-capsules and URL-only `wechat_official_article` capsules. Import the latter as
-one compact JSON line with `scripts/kol_daily.py import-wechat-official` over a
-plain non-TTY stdin pipe (`tty=false`). Never use a canonical PTY for the
-capsule line, because line buffering can retain or truncate the request before
-Python's `readline()` receives it. If the execution backend closes stdin before
-receiving any bytes, verify the pre-input failure and missing receipt, create
-one validated temporary JSONL line, and invoke the importer once with that file
-as plain stdin. Do not count the empty pre-input process as an import attempt
-and do not send the capsule twice. XML wrapper text may render URL `&` as
-`&amp;`; restore the raw URL, recompute `handoff_sha256`, and require an exact
-match before import. The capsule is discovery metadata, not the full article.
-It never scans the local WeChat contact and never reads or downloads
-source-video bytes, activates a player, or uses Computer Use.
+capsules and URL-only `wechat_official_article` capsules from LiangHuiMCP. The
+capsule is discovery metadata, not the full article. It never scans the local
+WeChat contact and never reads or downloads source-video bytes, activates a
+player, or uses Computer Use. The manual `import-wechat-official`,
+`process-wechat-official`, and `process-xiaocao-handoff` commands remain
+reconciliation surfaces only; normal hourly delivery is the mailbox drain at
+the start of `run`.
 
-When an official-account capsule arrives after this hour's multi-source runner
-has already finished, process only that imported inbox with
-`PYTHONPATH=src .venv/bin/python scripts/kol_daily.py process-wechat-official`.
-Run it exactly once and keep the same process alive for image/semantic input;
-do not rerun the full `run` command merely to pick up the handoff.
+When reconciling an already imported official-account capsule outside the
+normal hourly path, process only that inbox with `PYTHONPATH=src
+.venv/bin/python scripts/kol_daily.py process-wechat-official`. Run it exactly
+once and keep the same process alive for image/semantic input; do not rerun the
+full `run` command merely to pick up the handoff.
 
 For a late Xiaocao video capsule, process only imported post-handoff state with
 `PYTHONPATH=src .venv/bin/python scripts/kol_daily.py process-xiaocao-handoff`.
 Run once and keep it alive for input; do not rerun the full `run` command.
+
+## Active-peer gate and LiangHuiMCP drain
+
+Before launching Python, resolve the current task identity and list tasks for
+the same Automation ID on the current host and current working directory.
+Ignore titles and exclude the current task. If any other matching active peer
+is running or needs attention, exit successfully without listing or consuming
+the mailbox. A task-list/readback failure fails closed; it is not evidence that
+no peer exists. Do not add a Python global lock, do not add a lease, do not add
+a heartbeat, do not add a fencing token, and do not add a stale takeover path.
+
+If there is no active peer, run `scripts/kol_daily.py run` exactly once. For
+each `daily_lianghui_mailbox_input_required`, call the exact operation and
+arguments, then return one compact JSON line to the same process:
+
+- `list_mailbox_messages`: return `{"operation":"list_mailbox_messages",
+  "page":<exact structuredContent>}`. The runner asks for pending messages,
+  oldest first, up to 50 per page, and follows every cursor.
+- `ack_mailbox_message`: return `{"operation":"ack_mailbox_message",
+  "outcome":<tool outcome>,"receipt":<exact receipt>}`.
+
+The runner validates mailbox `kol.handoff`, message type
+`xiaocao.kol_handoff`, schema version `1`, exact family/message/content-hash
+bindings, then imports and processes each message through its existing
+post-handoff business pipeline. It maintains this run's
+`attempted_message_ids`. After a batch, query again and process only new
+eligible messages not already in that set. A waiting or failed message remains
+pending and is not retried again during the same run. Call
+`ack_mailbox_message` only after that exact message has completed every
+downstream business effect and durable receipt. Authoritative `acked` or
+`already_acked` is reported as `全部完成`; handoff creation alone is never
+reported as downstream completion.
 
 For an official item, run installed OpenCLI once: `weixin download`, images,
 background Chrome, and JSON. Require an item-local file, exact
@@ -131,7 +157,7 @@ market posture or direction is present; retain those limits in the reminder.
 Codex Automation schedules exactly one remote writer with:
 
 ```text
-RRULE:FREQ=DAILY;BYHOUR=7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23;BYMINUTE=0
+RRULE:FREQ=DAILY;BYHOUR=7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23;BYMINUTE=30
 ```
 
 Use Beijing wall time; omit `DTSTART` and `TZID`. After changes, reopen the

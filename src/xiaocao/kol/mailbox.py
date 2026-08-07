@@ -1,0 +1,540 @@
+"""Deterministic LiangHuiMCP mailbox exchange for KOL handoffs."""
+
+from __future__ import annotations
+
+import hashlib
+import json
+import os
+import re
+from datetime import datetime, timezone
+from pathlib import Path
+from typing import Any, Callable
+
+from .enrichment_types import EnrichmentError
+
+
+MAILBOX_ID = "kol.handoff"
+MAILBOX_MESSAGE_TYPE = "xiaocao.kol_handoff"
+MAILBOX_SCHEMA_VERSION = 1
+_SHA256 = re.compile(r"[a-f0-9]{64}")
+_UTC_MILLISECONDS = re.compile(
+    r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z"
+)
+_OBJECT_PREFIX = {"article": "文章", "video": "视频"}
+
+
+class MailboxError(EnrichmentError):
+    """The mailbox request, response, or ledger could not be proved."""
+
+
+def _canonical(value: Any) -> str:
+    return json.dumps(
+        value,
+        ensure_ascii=False,
+        sort_keys=True,
+        separators=(",", ":"),
+    )
+
+
+def _sha256(value: Any) -> str:
+    return hashlib.sha256(_canonical(value).encode("utf-8")).hexdigest()
+
+
+def _utc_now(clock: Callable[[], datetime]) -> str:
+    value = clock()
+    if value.tzinfo is None:
+        raise MailboxError("mailbox clock needs a timezone")
+    return (
+        value.astimezone(timezone.utc)
+        .isoformat(timespec="milliseconds")
+        .replace("+00:00", "Z")
+    )
+
+
+def _required_id(value: Any, *, field: str) -> str:
+    normalized = str(value or "").strip()
+    if not normalized or len(normalized) > 200:
+        raise MailboxError(f"mailbox {field} is invalid")
+    return normalized
+
+
+class MailboxLedger:
+    """Small append-only receipt ledger shared by local and remote adapters."""
+
+    def __init__(self, output_dir: Path | str):
+        self.output_dir = Path(output_dir).expanduser().resolve()
+        self.events_path = self.output_dir / "events.jsonl"
+
+    def append(self, event: str, **fields: Any) -> dict[str, Any]:
+        row = {"schema_version": 1, "event": event, **fields}
+        row["event_id"] = _sha256(row)
+        payload = (_canonical(row) + "\n").encode("utf-8")
+        self.output_dir.mkdir(parents=True, exist_ok=True)
+        descriptor = os.open(
+            self.events_path,
+            os.O_APPEND | os.O_CREAT | os.O_WRONLY,
+            0o600,
+        )
+        try:
+            remaining = memoryview(payload)
+            while remaining:
+                written = os.write(descriptor, remaining)
+                if written <= 0:
+                    raise MailboxError("mailbox ledger append made no progress")
+                remaining = remaining[written:]
+            os.fsync(descriptor)
+        finally:
+            os.close(descriptor)
+        return row
+
+    def events(self) -> list[dict[str, Any]]:
+        if not self.events_path.is_file():
+            return []
+        rows: list[dict[str, Any]] = []
+        try:
+            lines = self.events_path.read_text(encoding="utf-8").splitlines()
+        except OSError as exc:
+            raise MailboxError("mailbox ledger cannot be read") from exc
+        for number, line in enumerate(lines, start=1):
+            try:
+                row = json.loads(line)
+            except json.JSONDecodeError as exc:
+                raise MailboxError(
+                    f"mailbox ledger line {number} is invalid"
+                ) from exc
+            if not isinstance(row, dict):
+                raise MailboxError(f"mailbox ledger line {number} is invalid")
+            event_id = str(row.get("event_id") or "")
+            unsigned = dict(row)
+            unsigned.pop("event_id", None)
+            if event_id != _sha256(unsigned):
+                raise MailboxError(
+                    f"mailbox ledger line {number} failed integrity validation"
+                )
+            rows.append(row)
+        return rows
+
+    def outstanding_handoffs(self) -> list[dict[str, Any]]:
+        sent: dict[str, dict[str, Any]] = {}
+        acked: set[str] = set()
+        for row in self.events():
+            handoff_id = str(row.get("handoff_id") or "")
+            if row.get("event") == "mailbox_send_receipted":
+                prior = sent.get(handoff_id)
+                if prior is not None and (
+                    prior.get("content_sha256") != row.get("content_sha256")
+                    or prior.get("receipt") != row.get("receipt")
+                ):
+                    raise MailboxError("mailbox send receipt changed")
+                sent[handoff_id] = row
+            elif row.get("event") == "mailbox_ack_observed":
+                acked.add(handoff_id)
+        return [sent[key] for key in sorted(sent) if key not in acked]
+
+
+class LiangHuiMailboxClient:
+    """Thin structured adapter over the four deployed LiangHuiMCP tools."""
+
+    def __init__(
+        self,
+        ledger: MailboxLedger,
+        *,
+        exchange: Callable[[dict[str, Any]], dict[str, Any]],
+        now: Callable[[], datetime] | None = None,
+    ):
+        self.ledger = ledger
+        self.exchange = exchange
+        self.now = now or (lambda: datetime.now(timezone.utc))
+
+    @staticmethod
+    def _validate_send_receipt(
+        response: Any,
+        *,
+        handoff_id: str,
+        content_sha256: str,
+    ) -> tuple[str, dict[str, Any]]:
+        if not isinstance(response, dict):
+            raise MailboxError("mailbox send response is invalid")
+        outcome = str(response.get("outcome") or "")
+        receipt = response.get("receipt")
+        if (
+            response.get("operation") != "send_mailbox_message"
+            or outcome not in {"created", "already_present"}
+            or not isinstance(receipt, dict)
+            or receipt.get("operation") != "send_mailbox_message"
+            or receipt.get("mailbox_id") != MAILBOX_ID
+            or receipt.get("message_id") != handoff_id
+            or receipt.get("message_type") != MAILBOX_MESSAGE_TYPE
+            or receipt.get("schema_version") != MAILBOX_SCHEMA_VERSION
+            or receipt.get("content_sha256") != content_sha256
+            or not _required_id(receipt.get("family_id"), field="family_id")
+            or not _required_id(receipt.get("created_by"), field="created_by")
+            or not _UTC_MILLISECONDS.fullmatch(
+                str(receipt.get("created_at") or "")
+            )
+        ):
+            raise MailboxError("mailbox send lacks an authoritative receipt")
+        return outcome, dict(receipt)
+
+    def publish_handoff(
+        self,
+        capsule: dict[str, Any],
+        *,
+        object_kind: str,
+        title: str,
+    ) -> dict[str, Any]:
+        if not isinstance(capsule, dict):
+            raise MailboxError("mailbox handoff capsule must be an object")
+        handoff_id = str(capsule.get("handoff_id") or "")
+        if not _SHA256.fullmatch(handoff_id):
+            raise MailboxError("mailbox handoff_id must be SHA-256")
+        prefix = _OBJECT_PREFIX.get(object_kind)
+        normalized_title = str(title or "").strip()
+        if prefix is None or not normalized_title:
+            raise MailboxError("mailbox object label is invalid")
+        sender_content = {
+            "mailbox_id": MAILBOX_ID,
+            "message_id": handoff_id,
+            "message_type": MAILBOX_MESSAGE_TYPE,
+            "schema_version": MAILBOX_SCHEMA_VERSION,
+            "subject": f"[{prefix}] {normalized_title}"[:160],
+            "correlation_id": handoff_id,
+            "payload": capsule,
+        }
+        content_sha256 = _sha256(sender_content)
+        response = self.exchange(
+            {
+                "event": "daily_lianghui_mailbox_input_required",
+                "operation": "send_mailbox_message",
+                "arguments": {
+                    **sender_content,
+                    "content_sha256": content_sha256,
+                },
+            }
+        )
+        outcome, receipt = self._validate_send_receipt(
+            response,
+            handoff_id=handoff_id,
+            content_sha256=content_sha256,
+        )
+        self.ledger.append(
+            "mailbox_send_receipted",
+            occurred_at=_utc_now(self.now),
+            handoff_id=handoff_id,
+            object_kind=object_kind,
+            title=normalized_title,
+            mailbox_id=MAILBOX_ID,
+            message_id=handoff_id,
+            content_sha256=content_sha256,
+            outcome=outcome,
+            receipt=receipt,
+        )
+        return {
+            "status": "Handoff完成",
+            "handoff_id": handoff_id,
+            "mailbox_outcome": outcome,
+            "content_sha256": content_sha256,
+        }
+
+    @staticmethod
+    def _validate_exact_message(
+        response: Any,
+        *,
+        sent: dict[str, Any],
+    ) -> dict[str, Any]:
+        if (
+            not isinstance(response, dict)
+            or response.get("operation") != "get_mailbox_message"
+            or not isinstance(response.get("message"), dict)
+        ):
+            raise MailboxError("mailbox exact readback is invalid")
+        message = dict(response["message"])
+        receipt = sent.get("receipt")
+        if not isinstance(receipt, dict):
+            raise MailboxError("mailbox local send receipt is invalid")
+        if (
+            message.get("family_id") != receipt.get("family_id")
+            or message.get("mailbox_id") != MAILBOX_ID
+            or message.get("message_id") != sent.get("handoff_id")
+            or message.get("message_type") != MAILBOX_MESSAGE_TYPE
+            or message.get("schema_version") != MAILBOX_SCHEMA_VERSION
+            or message.get("content_sha256") != sent.get("content_sha256")
+            or message.get("status") not in {"pending", "acked"}
+        ):
+            raise MailboxError("mailbox exact readback changed identity or content")
+        ack_receipt = message.get("ack_receipt")
+        if message["status"] == "pending":
+            if ack_receipt is not None:
+                raise MailboxError("pending mailbox message has an ack receipt")
+            return message
+        if (
+            not isinstance(ack_receipt, dict)
+            or ack_receipt.get("operation") != "ack_mailbox_message"
+            or ack_receipt.get("family_id") != message.get("family_id")
+            or ack_receipt.get("mailbox_id") != MAILBOX_ID
+            or ack_receipt.get("message_id") != sent.get("handoff_id")
+            or ack_receipt.get("content_sha256") != sent.get("content_sha256")
+            or not _required_id(ack_receipt.get("acked_by"), field="acked_by")
+            or not _UTC_MILLISECONDS.fullmatch(
+                str(ack_receipt.get("acked_at") or "")
+            )
+        ):
+            raise MailboxError("acked mailbox message lacks a bound receipt")
+        return message
+
+    def reconcile_local(self) -> list[dict[str, str]]:
+        results: list[dict[str, str]] = []
+        for sent in self.ledger.outstanding_handoffs():
+            handoff_id = str(sent["handoff_id"])
+            response = self.exchange(
+                {
+                    "event": "daily_lianghui_mailbox_input_required",
+                    "operation": "get_mailbox_message",
+                    "arguments": {
+                        "mailbox_id": MAILBOX_ID,
+                        "message_id": handoff_id,
+                    },
+                }
+            )
+            message = self._validate_exact_message(response, sent=sent)
+            prefix = _OBJECT_PREFIX[str(sent["object_kind"])]
+            row = {
+                "object": f"[{prefix}] {sent['title']}",
+                "status": (
+                    "全部完成" if message["status"] == "acked" else "Handoff完成"
+                ),
+                "handoff_id": handoff_id,
+            }
+            results.append(row)
+            if message["status"] == "acked":
+                self.ledger.append(
+                    "mailbox_ack_observed",
+                    occurred_at=_utc_now(self.now),
+                    handoff_id=handoff_id,
+                    content_sha256=str(sent["content_sha256"]),
+                    receipt=message["ack_receipt"],
+                )
+        return results
+
+    @staticmethod
+    def _validate_pending_message(value: Any) -> dict[str, Any]:
+        if not isinstance(value, dict):
+            raise MailboxError("mailbox pending message is invalid")
+        message = dict(value)
+        handoff_id = str(message.get("message_id") or "")
+        payload = message.get("payload")
+        sender_content = {
+            key: message[key]
+            for key in (
+                "mailbox_id",
+                "message_id",
+                "message_type",
+                "schema_version",
+                "subject",
+                "correlation_id",
+                "payload",
+            )
+            if key in message
+        }
+        if (
+            message.get("mailbox_id") != MAILBOX_ID
+            or not _SHA256.fullmatch(handoff_id)
+            or message.get("message_type") != MAILBOX_MESSAGE_TYPE
+            or message.get("schema_version") != MAILBOX_SCHEMA_VERSION
+            or message.get("status") != "pending"
+            or message.get("ack_receipt") is not None
+            or not isinstance(payload, dict)
+            or payload.get("handoff_id") != handoff_id
+            or message.get("content_sha256") != _sha256(sender_content)
+            or not _required_id(message.get("family_id"), field="family_id")
+            or not _required_id(message.get("created_by"), field="created_by")
+            or not _UTC_MILLISECONDS.fullmatch(
+                str(message.get("created_at") or "")
+            )
+        ):
+            raise MailboxError("mailbox pending message binding is invalid")
+        return message
+
+    def list_pending(self, *, cursor: str | None = None) -> dict[str, Any]:
+        arguments: dict[str, Any] = {
+            "view": "pending",
+            "sort": "oldest",
+            "page_size": 50,
+        }
+        if cursor is not None:
+            arguments["cursor"] = cursor
+        response = self.exchange(
+            {
+                "event": "daily_lianghui_mailbox_input_required",
+                "operation": "list_mailbox_messages",
+                "arguments": arguments,
+            }
+        )
+        if (
+            not isinstance(response, dict)
+            or response.get("operation") != "list_mailbox_messages"
+            or not isinstance(response.get("page"), dict)
+        ):
+            raise MailboxError("mailbox pending page is invalid")
+        page = response["page"]
+        items = page.get("items")
+        next_cursor = page.get("next_cursor")
+        has_more = page.get("has_more")
+        if (
+            not isinstance(items, list)
+            or not isinstance(has_more, bool)
+            or (has_more and not isinstance(next_cursor, str))
+            or (not has_more and next_cursor is not None)
+        ):
+            raise MailboxError("mailbox pending pagination is invalid")
+        validated: list[dict[str, Any]] = []
+        for item in items:
+            if (
+                isinstance(item, dict)
+                and item.get("mailbox_id") == MAILBOX_ID
+                and item.get("message_type") == MAILBOX_MESSAGE_TYPE
+                and item.get("schema_version") == MAILBOX_SCHEMA_VERSION
+            ):
+                validated.append(self._validate_pending_message(item))
+        return {
+            "items": validated,
+            "next_cursor": next_cursor,
+            "has_more": has_more,
+        }
+
+    def ack_message(self, message: dict[str, Any]) -> dict[str, Any]:
+        handoff_id = str(message["message_id"])
+        content_sha256 = str(message["content_sha256"])
+        response = self.exchange(
+            {
+                "event": "daily_lianghui_mailbox_input_required",
+                "operation": "ack_mailbox_message",
+                "arguments": {
+                    "mailbox_id": MAILBOX_ID,
+                    "message_id": handoff_id,
+                    "expected_content_sha256": content_sha256,
+                },
+            }
+        )
+        if not isinstance(response, dict):
+            raise MailboxError("mailbox ack response is invalid")
+        outcome = str(response.get("outcome") or "")
+        receipt = response.get("receipt")
+        if (
+            response.get("operation") != "ack_mailbox_message"
+            or outcome not in {"acked", "already_acked"}
+            or not isinstance(receipt, dict)
+            or receipt.get("operation") != "ack_mailbox_message"
+            or receipt.get("family_id") != message.get("family_id")
+            or receipt.get("mailbox_id") != MAILBOX_ID
+            or receipt.get("message_id") != handoff_id
+            or receipt.get("content_sha256") != content_sha256
+            or not _required_id(receipt.get("acked_by"), field="acked_by")
+            or not _UTC_MILLISECONDS.fullmatch(
+                str(receipt.get("acked_at") or "")
+            )
+        ):
+            raise MailboxError("mailbox ack lacks an authoritative receipt")
+        self.ledger.append(
+            "mailbox_ack_receipted",
+            occurred_at=_utc_now(self.now),
+            handoff_id=handoff_id,
+            content_sha256=content_sha256,
+            outcome=outcome,
+            receipt=receipt,
+        )
+        return {"outcome": outcome, "receipt": dict(receipt)}
+
+
+class RemoteMailboxDrain:
+    """Drain new eligible messages once per run without looping on waits."""
+
+    def __init__(
+        self,
+        client: LiangHuiMailboxClient,
+        *,
+        processor: Callable[[dict[str, Any]], dict[str, Any]],
+    ):
+        self.client = client
+        self.processor = processor
+
+    def _new_eligible(
+        self,
+        attempted: set[str],
+    ) -> list[dict[str, Any]]:
+        cursor: str | None = None
+        seen_cursors: set[str] = set()
+        eligible: list[dict[str, Any]] = []
+        while True:
+            page = self.client.list_pending(cursor=cursor)
+            for message in page["items"]:
+                if str(message["message_id"]) not in attempted:
+                    eligible.append(message)
+            if not page["has_more"]:
+                return eligible
+            next_cursor = str(page["next_cursor"])
+            if next_cursor in seen_cursors:
+                raise MailboxError("mailbox pagination repeated a cursor")
+            seen_cursors.add(next_cursor)
+            cursor = next_cursor
+
+    def run(self) -> dict[str, Any]:
+        attempted: set[str] = set()
+        attempted_order: list[str] = []
+        acked: list[str] = []
+        waiting: list[str] = []
+        items: list[dict[str, str]] = []
+        while True:
+            batch = self._new_eligible(attempted)
+            if not batch:
+                return {
+                    "status": "waiting" if waiting else "completed",
+                    "attempted_message_ids": attempted_order,
+                    "acked_message_ids": acked,
+                    "waiting_message_ids": waiting,
+                    "items": items,
+                }
+            for message in batch:
+                message_id = str(message["message_id"])
+                attempted.add(message_id)
+                attempted_order.append(message_id)
+                self.client.ledger.append(
+                    "mailbox_message_attempted",
+                    occurred_at=_utc_now(self.client.now),
+                    handoff_id=message_id,
+                    content_sha256=str(message["content_sha256"]),
+                )
+                try:
+                    result = self.processor(message)
+                except Exception as exc:
+                    self.client.ledger.append(
+                        "mailbox_message_waiting",
+                        occurred_at=_utc_now(self.client.now),
+                        handoff_id=message_id,
+                        error_type=type(exc).__name__,
+                    )
+                    waiting.append(message_id)
+                    items.append({
+                        "object": str(message["subject"]),
+                        "status": "等待业务完成",
+                        "handoff_id": message_id,
+                    })
+                    continue
+                if (
+                    not isinstance(result, dict)
+                    or result.get("business_complete") is not True
+                ):
+                    waiting.append(message_id)
+                    items.append({
+                        "object": str(message["subject"]),
+                        "status": "等待业务完成",
+                        "handoff_id": message_id,
+                    })
+                    continue
+                self.client.ack_message(message)
+                acked.append(message_id)
+                items.append({
+                    "object": str(message["subject"]),
+                    "status": "全部完成",
+                    "handoff_id": message_id,
+                })

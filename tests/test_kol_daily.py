@@ -258,12 +258,14 @@ def test_daily_runtime_runs_xiaocao_wechat_subscription(tmp_path, monkeypatch):
             *,
             history_reader,
             browser_exchange,
+            handoff_exchange,
             capture_driver,
             contact,
             password,
         ):
             assert callable(history_reader)
             assert callable(browser_exchange)
+            assert callable(handoff_exchange)
             assert isinstance(capture_driver, FakeCaptureDriver)
             calls.append(("subscription", (output_dir, contact, password)))
 
@@ -361,6 +363,176 @@ def test_capture_local_cli_runs_live_and_official_account_sources(
     }
 
 
+def test_remote_run_drains_mailbox_before_existing_sources(
+    tmp_path,
+    monkeypatch,
+):
+    observed: dict[str, object] = {}
+
+    class FakeCoordinator:
+        def __init__(self, output_dir):
+            observed["output_dir"] = output_dir
+
+        def run(self, sources, *, blocker_sender):
+            observed["order"].append("coordinator")
+            observed["source_names"] = [source["name"] for source in sources]
+            observed["priorities"] = [source["priority"] for source in sources]
+            observed["results"] = [source["run"]() for source in sources]
+            assert callable(blocker_sender)
+            return {"status": "completed", "silent": True}
+
+        def events(self):
+            return []
+
+    class FakeRuntime:
+        def __init__(self, args):
+            self.args = args
+
+        def mailbox(self):
+            observed["order"] = ["mailbox"]
+            return {"status": "completed", "attempted_message_ids": []}
+
+        @staticmethod
+        def lv():
+            return {"status": "no_update"}
+
+        @staticmethod
+        def videos():
+            return {"status": "no_update"}
+
+        @staticmethod
+        def wechat_official():
+            return {"status": "no_update"}
+
+        @staticmethod
+        def xiaocao():
+            return {"status": "no_update"}
+
+        @staticmethod
+        def viewpoints():
+            return {"status": "no_update"}
+
+    monkeypatch.setattr(kol_daily_script, "DailyCoordinator", FakeCoordinator)
+    monkeypatch.setattr(kol_daily_script, "DailyRuntime", FakeRuntime)
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        ["kol_daily.py", "run", "--output-dir", str(tmp_path / "daily")],
+    )
+
+    assert kol_daily_script.main() == 0
+    assert observed["order"] == ["mailbox", "coordinator"]
+    assert observed["source_names"] == [
+        "lv_text_image",
+        "subscription_video",
+        "wechat_official_accounts",
+        "xiaocao_handoff",
+        "viewpoint_maintenance",
+    ]
+    assert observed["priorities"] == [10, 20, 25, 30, 40]
+
+
+def test_mailbox_processor_imports_and_completes_only_target_official_handoff(
+    tmp_path,
+    monkeypatch,
+):
+    capsule = {
+        "schema_version": 2,
+        "handoff_id": "a" * 64,
+        "handoff_sha256": "b" * 64,
+        "content_transport": "public_url_only",
+        "large_payload_local_bytes": 0,
+    }
+    calls: list[tuple[str, object]] = []
+
+    class FakeInbox:
+        def __init__(self, output_dir):
+            calls.append(("inbox", output_dir))
+
+        def import_capsule(self, value):
+            calls.append(("import", value))
+            return {"status": "accepted", "handoff_id": "a" * 64}
+
+    runtime = DailyRuntime.__new__(DailyRuntime)
+    runtime.args = SimpleNamespace(
+        wechat_official_output_dir=tmp_path / "official",
+    )
+
+    def process_target(handoff_id=None):
+        calls.append(("process", handoff_id))
+        return {
+            "status": "completed",
+            "completed_handoff_ids": ["a" * 64],
+        }
+
+    monkeypatch.setattr(kol_daily_script, "OfficialAccountInbox", FakeInbox)
+    monkeypatch.setattr(runtime, "wechat_official", process_target)
+
+    result = runtime._process_mailbox_message({
+        "message_id": "a" * 64,
+        "payload": capsule,
+    })
+
+    assert result["business_complete"] is True
+    assert calls == [
+        ("inbox", tmp_path / "official"),
+        ("import", capsule),
+        ("process", "a" * 64),
+    ]
+
+
+def test_mailbox_processor_reuses_post_handoff_video_runner_before_ack(
+    tmp_path,
+    monkeypatch,
+):
+    capsule = {
+        "schema_version": 2,
+        "handoff_id": "a" * 64,
+        "handoff_sha256": "b" * 64,
+        "capture_job_id": "kol-capture-one",
+        "media_sha256": "c" * 64,
+        "source_mode": "cloud_handoff",
+        "large_payload_local_bytes": 0,
+    }
+    calls: list[tuple[str, object]] = []
+
+    class FakeService:
+        def __init__(self, output_dir, *, decision_output):
+            calls.append(("service", (output_dir, decision_output)))
+
+        def import_handoff_capsule(self, value):
+            calls.append(("import", value))
+            return {"status": "handoff_imported"}
+
+    runtime = DailyRuntime.__new__(DailyRuntime)
+    runtime.args = SimpleNamespace(
+        xiaocao_output_dir=tmp_path / "xiaocao",
+        decision_output_dir=tmp_path / "decisions",
+    )
+
+    def process_target(handoff_id=None):
+        calls.append(("process", handoff_id))
+        return {
+            "status": "completed",
+            "completed_handoff_ids": ["a" * 64],
+        }
+
+    monkeypatch.setattr(kol_daily_script, "XiaocaoLiveService", FakeService)
+    monkeypatch.setattr(runtime, "xiaocao", process_target)
+
+    result = runtime._process_mailbox_message({
+        "message_id": "a" * 64,
+        "payload": capsule,
+    })
+
+    assert result["business_complete"] is True
+    assert calls == [
+        ("service", (tmp_path / "xiaocao", tmp_path / "decisions")),
+        ("import", capsule),
+        ("process", "a" * 64),
+    ]
+
+
 def test_capture_local_cli_follows_exact_cloud_handoff_in_same_process(
     tmp_path,
     monkeypatch,
@@ -450,6 +622,60 @@ def test_capture_local_cli_follows_exact_cloud_handoff_in_same_process(
         ("kol-wechat-current", "kol-capture-current"),
     ]
     assert observed["sleeps"] == [30]
+
+
+def test_capture_local_reconciles_mailbox_before_one_discovery_sweep(
+    tmp_path,
+    monkeypatch,
+    capsys,
+):
+    calls: list[str] = []
+
+    class FakeCoordinator:
+        def __init__(self, output_dir):
+            assert output_dir == tmp_path / "daily"
+
+        def run(self, sources, *, blocker_sender):
+            calls.append("sweep")
+            assert len(sources) == 2
+            assert callable(blocker_sender)
+            return {"status": "completed", "silent": True, "source_results": []}
+
+    def reconcile(self):
+        calls.append("reconcile")
+        return [{
+            "object": "[文章] 测试交接",
+            "status": "全部完成",
+            "handoff_id": "a" * 64,
+        }]
+
+    monkeypatch.setattr(kol_daily_script, "DailyCoordinator", FakeCoordinator)
+    monkeypatch.setattr(
+        DailyRuntime,
+        "reconcile_local_mailbox",
+        reconcile,
+        raising=False,
+    )
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "kol_daily.py",
+            "capture-local",
+            "--output-dir",
+            str(tmp_path / "daily"),
+            "--mailbox-output-dir",
+            str(tmp_path / "mailbox"),
+        ],
+    )
+
+    assert kol_daily_script.main() == 0
+    assert calls == ["reconcile", "sweep"]
+    assert json.loads(capsys.readouterr().out)["mailbox_reconciliation"] == [{
+        "object": "[文章] 测试交接",
+        "status": "全部完成",
+        "handoff_id": "a" * 64,
+    }]
 
 
 def test_capture_wechat_official_cli_runs_only_local_official_account_source(

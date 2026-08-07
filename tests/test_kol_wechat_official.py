@@ -80,17 +80,20 @@ def _payload() -> dict:
 def _capture_one(tmp_path: Path, *, payload: dict | None = None) -> dict:
     captured: list[dict] = []
 
-    def exchange(request: dict) -> dict:
-        capsule = json.loads(Path(request["capsule_path"]).read_text(encoding="utf-8"))
+    def exchange(
+        capsule: dict,
+        *,
+        object_kind: str,
+        title: str,
+    ) -> dict:
+        assert object_kind == "article"
+        assert title == capsule["title"]
         captured.append(validate_official_account_capsule(capsule))
         return {
-            "action": request["action"],
-            "subscription_id": request["subscription_id"],
-            "handoff_id": request["handoff_id"],
-            "accepted": True,
-            "readback_status": "accepted",
-            "remote_thread_id": "remote-kol-writer",
-            "remote_host_id": "remote-mac",
+            "status": "Handoff完成",
+            "handoff_id": capsule["handoff_id"],
+            "mailbox_outcome": "created",
+            "content_sha256": "f" * 64,
         }
 
     OfficialAccountSubscription(
@@ -222,18 +225,19 @@ def test_first_hour_baselines_older_articles_and_hands_off_latest_url_per_kol(tm
     requests: list[dict] = []
     capsules: list[dict] = []
 
-    def exchange(request: dict) -> dict:
-        requests.append(request)
-        capsule = json.loads(Path(request["capsule_path"]).read_text(encoding="utf-8"))
+    def exchange(
+        capsule: dict,
+        *,
+        object_kind: str,
+        title: str,
+    ) -> dict:
+        requests.append({"object_kind": object_kind, "title": title})
         capsules.append(validate_official_account_capsule(capsule))
         return {
-            "action": request["action"],
-            "subscription_id": request["subscription_id"],
-            "handoff_id": request["handoff_id"],
-            "accepted": True,
-            "readback_status": "accepted",
-            "remote_thread_id": "remote-kol-writer",
-            "remote_host_id": "remote-mac",
+            "status": "Handoff完成",
+            "handoff_id": capsule["handoff_id"],
+            "mailbox_outcome": "created",
+            "content_sha256": "f" * 64,
         }
 
     subscription = OfficialAccountSubscription(
@@ -256,7 +260,7 @@ def test_first_hour_baselines_older_articles_and_hands_off_latest_url_per_kol(tm
         for capsule in capsules
         for field in ("description", "evidence_text", "markdown", "local_path")
     )
-    assert all(request["adapter"] == "wechat_official_account" for request in requests)
+    assert all(request["object_kind"] == "article" for request in requests)
     manifest = json.loads((tmp_path / "official" / "manifest.json").read_text(encoding="utf-8"))
     assert sorted(item["status"] for item in manifest["items"].values()) == [
         "completed",
@@ -265,19 +269,25 @@ def test_first_hour_baselines_older_articles_and_hands_off_latest_url_per_kol(tm
     ]
 
 
-def test_handoff_uses_current_remote_writer_and_non_tty_stdin(tmp_path):
-    requests: list[dict] = []
+def test_handoff_publishes_capsule_to_mailbox_without_remote_task_injection(
+    tmp_path,
+):
+    published: list[dict] = []
 
-    def exchange(request: dict) -> dict:
-        requests.append(request)
+    def exchange(
+        capsule: dict,
+        *,
+        object_kind: str,
+        title: str,
+    ) -> dict:
+        published.append(capsule)
+        assert object_kind == "article"
+        assert title == "业绩炸裂"
         return {
-            "action": request["action"],
-            "subscription_id": request["subscription_id"],
-            "handoff_id": request["handoff_id"],
-            "accepted": True,
-            "readback_status": "accepted",
-            "remote_thread_id": "current-hour-remote-writer",
-            "remote_host_id": "remote-mac",
+            "status": "Handoff完成",
+            "handoff_id": capsule["handoff_id"],
+            "mailbox_outcome": "created",
+            "content_sha256": "f" * 64,
         }
 
     OfficialAccountSubscription(
@@ -286,16 +296,11 @@ def test_handoff_uses_current_remote_writer_and_non_tty_stdin(tmp_path):
         handoff_exchange=exchange,
     ).run_once()
 
-    [request] = requests
-    instructions = request["instructions"]
-    assert "current-hour remote writer task" in instructions
-    assert "non-TTY stdin pipe (`tty=false`)" in instructions
-    assert "temporary JSONL file as stdin" in instructions
-    assert "`&amp;` as transport escaping" in instructions
-    assert "recompute the handoff binding" in instructions
-    assert "stale long-lived task" in instructions
-    assert request["required_response"]["remote_thread_id"] == (
-        "current-hour remote writer task id"
+    [capsule] = published
+    assert capsule["content_transport"] == "public_url_only"
+    assert all(
+        field not in capsule
+        for field in ("local_path", "capsule_path", "remote_thread_id")
     )
 
 

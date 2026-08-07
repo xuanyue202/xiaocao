@@ -403,7 +403,7 @@ class OfficialAccountSubscription:
         output_dir: Path | str,
         *,
         reader: Callable[[], dict[str, Any]],
-        handoff_exchange: Callable[[dict[str, Any]], dict[str, Any]],
+        handoff_exchange: Callable[..., dict[str, Any]],
         publishers: tuple[str, ...] = DEFAULT_PUBLISHERS,
         clock: Callable[[], datetime] | None = None,
     ):
@@ -491,60 +491,35 @@ class OfficialAccountSubscription:
                 raise EnrichmentError("official-account handoff changed after claim")
         else:
             _atomic_json(capsule_path, capsule)
-        request = {
-            "event": "daily_remote_handoff_input_required",
-            "adapter": "wechat_official_account",
-            "action": "dispatch_wechat_official_handoff",
-            "subscription_id": item["identity"],
-            "handoff_id": capsule["handoff_id"],
-            "capsule_path": str(capsule_path),
-            "instructions": (
-                "Send the complete credential-free URL capsule, never this local "
-                "path, to the current-hour remote writer task on the registered "
-                "Xiaocao remote host. Resolve the newest task for this hourly "
-                "window; never route to a stale long-lived task or one waiting "
-                "on approval. Keep scripts/kol_daily.py import-wechat-official "
-                "alive with a non-TTY stdin pipe (`tty=false`) and write the exact "
-                "compact JSON value as one line exactly once. If that execution "
-                "backend closes stdin before receiving input, confirm the pre-input "
-                "failure, then use one validated temporary JSONL file as stdin for "
-                "the single real import; never use a PTY. Treat XML wrapper "
-                "`&amp;` as transport escaping, restore the URL's raw `&`, and "
-                "recompute the handoff binding before import. The import must not "
-                "treat discovery metadata as article evidence."
-            ),
-            "required_response": {
-                "action": "dispatch_wechat_official_handoff",
-                "subscription_id": item["identity"],
-                "handoff_id": capsule["handoff_id"],
-                "accepted": True,
-                "readback_status": "accepted|already_present",
-                "remote_thread_id": "current-hour remote writer task id",
-                "remote_host_id": "registered remote host id",
-            },
-        }
-        response = self.handoff_exchange(request)
+        response = self.handoff_exchange(
+            capsule,
+            object_kind="article",
+            title=str(item["title"]),
+        )
         if (
             not isinstance(response, dict)
-            or response.get("action") != request["action"]
-            or response.get("subscription_id") != item["identity"]
             or response.get("handoff_id") != capsule["handoff_id"]
-            or response.get("accepted") is not True
-            or response.get("readback_status") not in {"accepted", "already_present"}
-            or not str(response.get("remote_thread_id") or "").strip()
-            or not str(response.get("remote_host_id") or "").strip()
+            or response.get("status") != "Handoff完成"
+            or response.get("mailbox_outcome") not in {
+                "created",
+                "already_present",
+            }
+            or not _SHA256.fullmatch(
+                str(response.get("content_sha256") or "")
+            )
         ):
             raise EnrichmentError(
-                "official-account remote handoff lacks acceptance readback"
+                "official-account mailbox handoff lacks creation readback"
             )
         completed = {
             **item,
             "status": "completed",
             "handoff_id": capsule["handoff_id"],
             "handoff_path": str(capsule_path),
-            "remote_thread_id": str(response["remote_thread_id"]),
-            "remote_host_id": str(response["remote_host_id"]),
-            "remote_readback_status": str(response["readback_status"]),
+            "mailbox_id": "kol.handoff",
+            "mailbox_message_id": capsule["handoff_id"],
+            "mailbox_content_sha256": str(response["content_sha256"]),
+            "mailbox_readback_status": str(response["mailbox_outcome"]),
             "updated_at": self._now(),
         }
         manifest["items"][item["identity"]] = completed
@@ -553,10 +528,12 @@ class OfficialAccountSubscription:
             self.events_path,
             {
                 "schema_version": 2,
-                "event": "official_account_url_handoff_completed",
+                "event": "official_account_mailbox_handoff_completed",
                 "identity": item["identity"],
                 "publisher": item["publisher"],
                 "handoff_id": capsule["handoff_id"],
+                "mailbox_outcome": response["mailbox_outcome"],
+                "content_sha256": response["content_sha256"],
                 "occurred_at": completed["updated_at"],
             },
         )
@@ -917,6 +894,10 @@ class OfficialAccountInbox:
             for item in self._load()["items"].values()
             if item.get("status") not in _REMOTE_TERMINAL
         ]
+
+    def get_item(self, handoff_id: str) -> dict[str, Any] | None:
+        item = self._load()["items"].get(str(handoff_id))
+        return dict(item) if isinstance(item, dict) else None
 
     @staticmethod
     def _verify_file(path_value: Any, expected_sha256: Any, *, label: str) -> Path:

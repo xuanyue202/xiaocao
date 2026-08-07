@@ -87,3 +87,14 @@ def test_all_china_market_automations_use_dtstart_free_local_wall_clock() -> Non
         assert "DTSTART" not in rrule
         assert "TZID" not in rrule
         assert all(part in rrule for part in wall_clock_parts)
+
+
+def test_kol_local_automation_uses_lianghui_mailbox_without_task_injection() -> None:
+    automation = _automation("xiaocao-kol-hourly")
+
+    assert "daily_lianghui_mailbox_input_required" in automation["prompt"]
+    assert "send_mailbox_message" in automation["prompt"]
+    assert "get_mailbox_message" in automation["prompt"]
+    assert "Handoff完成" in automation["prompt"]
+    assert "Never use `send_message_to_thread`" in automation["prompt"]
+    assert automation["rrule"].endswith(";BYMINUTE=0")
