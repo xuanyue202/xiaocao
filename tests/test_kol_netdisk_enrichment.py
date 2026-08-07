@@ -1203,7 +1203,7 @@ def test_ai_note_submission_clicks_real_modal_button_and_confirms_transition(
     assert triggered["browser_evidence"]["visible_state"] == "ai_note_generating"
 
 
-def test_ai_note_submission_does_not_record_success_while_modal_remains_visible(
+def test_ai_note_submission_dispatch_does_not_wait_for_modal_transition(
     tmp_path,
 ):
     video = tmp_path / "20260720 ai-note-stuck-modal-compressed.mp4"
@@ -1240,14 +1240,17 @@ def test_ai_note_submission_does_not_record_success_while_modal_remains_visible(
         reconcile_existing=True,
     )
 
-    with pytest.raises(EnrichmentError, match="did not close the template modal"):
-        service.advance_opencli(
-            job_id, session="ticket02-ai-note-stuck", profile="work"
-        )
+    triggered = service.advance_opencli(
+        job_id, session="ticket02-ai-note-stuck", profile="work"
+    )
 
-    current = service.status(job_id)
-    assert current["status"] == "ai_note_claimed"
-    assert current["event"] == "netdisk_ai_note_claimed"
+    assert triggered["status"] == "ai_note_requested"
+    assert triggered["event"] == "netdisk_ai_note_triggered"
+    assert triggered["ai_note_completion_required"] is False
+    assert triggered["ai_note_submission_proof"]["click_dispatched"] is True
+    assert triggered["ai_note_submission_proof"]["confirmed_state"] == (
+        "dispatched"
+    )
 
 
 def test_ai_note_postclick_zero_recovery_submits_once_after_exact_zero_proof(
@@ -1614,7 +1617,7 @@ def test_reconcile_legacy_ai_note_pretrigger_failure_requires_exact_cli_evidence
     assert replay["idempotent_replay"] is True
 
 
-def test_ai_note_claim_replay_reconciles_without_repeating_template_submission(
+def test_ai_note_claim_replay_captures_transcript_without_repeating_submission(
     tmp_path,
 ):
     service, video, prepared = _prepare(tmp_path)
@@ -1638,16 +1641,7 @@ def test_ai_note_claim_replay_reconciles_without_repeating_template_submission(
     )
     service.claim_browser_action(job_id, action="ai_note")
     commands = []
-    base_runner = _opencli_ai_note_runner(
-        video.name,
-        note_states=[{
-            "ai_note_state": "generating",
-            "active_tab": "笔记",
-            "content_chars": 72,
-            "template": "文稿笔记",
-            "target_bound": True,
-        }],
-    )
+    base_runner = _opencli_capture_runner(video.name)
 
     def reconcile_runner(command, **kwargs):
         commands.append(command)
@@ -1657,26 +1651,19 @@ def test_ai_note_claim_replay_reconciles_without_repeating_template_submission(
     service.opencli_command = ("opencli",)
     replay = service.advance_opencli(
         job_id,
-        session="ticket02-ai-note",
-        profile="work",
+        session="ticket02-test",
     )
 
-    assert replay["event"] == "netdisk_ai_note_triggered"
-    assert replay["status"] == "ai_note_requested"
-    assert replay["ai_note_template_no"] == 1
-    assert replay["ai_note_submission_proof"] == {
-        "control_text": "生成该笔记",
-        "click_dispatched": False,
-        "modal_visible": False,
-        "confirmed_state": "generating",
-        "content_chars": 72,
-        "reconciled_after_claim": True,
-    }
+    assert replay["event"] == "netdisk_transcript_dom_captured"
+    assert replay["status"] == "transcript_captured"
+    assert replay["ai_note_completion_required"] is False
+    assert replay["ai_note_submission_status"] == "claimed_non_gating"
     eval_scripts = [
         command[6]
         for command in commands
         if len(command) > 6 and command[5] == "eval"
     ]
+    assert not any("baidu-netdisk/probe-ai-note" in script for script in eval_scripts)
     assert not any("previewTemplate" in script for script in eval_scripts)
     assert not any(
         "baidu-netdisk/submit-ai-note" in script
@@ -1684,7 +1671,7 @@ def test_ai_note_claim_replay_reconciles_without_repeating_template_submission(
     )
 
 
-def test_ai_note_claim_replay_stays_uncertain_when_no_transition_is_visible(
+def test_ai_note_claim_replay_never_reads_ai_note_completion_state(
     tmp_path,
 ):
     service, video, prepared = _prepare(tmp_path)
@@ -1708,16 +1695,7 @@ def test_ai_note_claim_replay_stays_uncertain_when_no_transition_is_visible(
     )
     service.claim_browser_action(job_id, action="ai_note")
     commands = []
-    base_runner = _opencli_ai_note_runner(
-        video.name,
-        note_states=[{
-            "ai_note_state": "missing",
-            "active_tab": "笔记",
-            "content_chars": 0,
-            "template": "",
-            "target_bound": True,
-        }],
-    )
+    base_runner = _opencli_capture_runner(video.name)
 
     def reconcile_runner(command, **kwargs):
         commands.append(command)
@@ -1727,18 +1705,17 @@ def test_ai_note_claim_replay_stays_uncertain_when_no_transition_is_visible(
     service.opencli_command = ("opencli",)
     replay = service.advance_opencli(
         job_id,
-        session="ticket02-ai-note",
-        profile="work",
+        session="ticket02-test",
     )
 
-    assert replay["status"] == "ai_note_claimed"
-    assert replay["side_effect_uncertain"] is True
-    assert replay["idempotent_replay"] is True
+    assert replay["status"] == "transcript_captured"
+    assert replay["ai_note_submission_status"] == "claimed_non_gating"
     eval_scripts = [
         command[6]
         for command in commands
         if len(command) > 6 and command[5] == "eval"
     ]
+    assert not any("baidu-netdisk/probe-ai-note" in script for script in eval_scripts)
     assert not any("previewTemplate" in script for script in eval_scripts)
     assert not any(
         "baidu-netdisk/submit-ai-note" in script
@@ -2211,6 +2188,45 @@ def test_opencli_dom_capture_requires_ai_note_submission_state(tmp_path):
 
     with pytest.raises(EnrichmentError, match="AI-note submission"):
         service.capture_opencli_transcript(job_id, session="ticket02-test")
+
+
+def test_opencli_dom_capture_does_not_wait_on_uncertain_ai_note_claim(tmp_path):
+    video = tmp_path / "20260720 non-gating-ai-note-compressed.mp4"
+    video.write_bytes(b"real-video")
+    service = NetdiskEnrichmentService(
+        tmp_path / "out",
+        runner=_opencli_capture_runner(video.name),
+        now=lambda: NOW,
+        opencli_command=("opencli",),
+    )
+    job_id = service.prepare(video)["job_id"]
+    service.record_browser_liveness(
+        job_id,
+        surface="opencli",
+        evidence=_liveness_evidence(),
+    )
+    service.record_browser_state(
+        job_id,
+        step="video_ready",
+        evidence=_evidence(video.name, "目标视频已存在"),
+        source_mode="existing",
+    )
+    service.record_browser_state(
+        job_id,
+        step="transcript_ready",
+        evidence=_evidence(video.name, "文稿 已生成"),
+        reconcile_existing=True,
+    )
+    service.claim_browser_action(job_id, action="ai_note")
+
+    captured = service.advance_opencli(
+        job_id,
+        session="ticket02-test",
+    )
+
+    assert captured["status"] == "transcript_captured"
+    assert captured["ai_note_completion_required"] is False
+    assert captured["ai_note_submission_status"] == "claimed_non_gating"
 
 
 def test_opencli_capture_rejects_same_basename_in_wrong_directory_before_dom_mutation(

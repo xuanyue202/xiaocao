@@ -1564,15 +1564,14 @@ class NetdiskEnrichmentService:
             raise EnrichmentError("OpenCLI player path changed before AI-note submission")
         if submitted.get("submitted") is not True:
             if submitted.get("click_dispatched") is True:
-                raise EnrichmentError(
-                    "Netdisk AI-note final click did not close the template modal "
-                    "and confirm generation"
-                )
+                return {
+                    **submitted,
+                    "submitted": True,
+                    "confirmed_state": "dispatched",
+                }
             return submitted
-        if submitted.get("modal_visible") is not False:
-            raise EnrichmentError("Netdisk AI-note template modal remained visible")
-        if submitted.get("confirmed_state") not in {"generating", "ready"}:
-            raise EnrichmentError("Netdisk AI-note generation transition was not confirmed")
+        if submitted.get("click_dispatched") is not True:
+            raise EnrichmentError("Netdisk AI-note submission did not dispatch a click")
         return submitted
 
     def _record_ai_note_pretrigger_failure(
@@ -1677,16 +1676,20 @@ class NetdiskEnrichmentService:
                 raise EnrichmentError("AI-note trigger lost its durable claim")
             observed_at = self._time()
             confirmed_state = str(trigger_proof.get("confirmed_state") or "")
-            if confirmed_state not in {"generating", "ready"}:
+            if confirmed_state not in {"dispatched", "generating", "ready"}:
                 raise EnrichmentError("AI-note trigger proof has no confirmed state")
-            visible_state = (
-                "ai_note_ready" if confirmed_state == "ready" else "ai_note_generating"
-            )
-            state_text = (
-                f"AI笔记 已生成 content_chars={int(trigger_proof.get('content_chars') or 0)}"
-                if confirmed_state == "ready"
-                else "AI笔记 生成中 模板弹窗已关闭"
-            )
+            if confirmed_state == "ready":
+                visible_state = "ai_note_ready"
+                state_text = (
+                    "AI笔记 已生成 "
+                    f"content_chars={int(trigger_proof.get('content_chars') or 0)}"
+                )
+            elif confirmed_state == "generating":
+                visible_state = "ai_note_generating"
+                state_text = "AI笔记 生成中"
+            else:
+                visible_state = "ai_note_submission_dispatched"
+                state_text = "AI笔记 生成已提交"
             normalized = self._browser_evidence(
                 current,
                 self._browser_proof(
@@ -1912,7 +1915,6 @@ class NetdiskEnrichmentService:
             )
         if status in {
             "transcript_ready",
-            "ai_note_claimed",
             "ai_note_pretrigger_failed",
         }:
             return self._advance_opencli_ai_note(
@@ -1921,6 +1923,7 @@ class NetdiskEnrichmentService:
                 profile=profile,
             )
         if status in {
+            "ai_note_claimed",
             "ai_note_requested",
             "ai_note_ready",
             "transcript_captured",
@@ -2510,7 +2513,12 @@ class NetdiskEnrichmentService:
         if secret_pattern.search(snapshot_text):
             raise EnrichmentError("browser evidence snapshot contains secret material")
         expected_marker = _VISIBLE_STATE_MARKERS[step]
-        if visible != expected_marker:
+        allowed_markers = (
+            {expected_marker, "ai_note_submission_dispatched"}
+            if step == "ai_note_requested"
+            else {expected_marker}
+        )
+        if visible not in allowed_markers:
             raise EnrichmentError("browser evidence visible state is not canonical")
         exact_target = re.compile(
             rf"(?<![\w.-]){re.escape(expected_target)}(?![\w.-])"
@@ -3192,12 +3200,13 @@ class NetdiskEnrichmentService:
                     "completed transcript capture cannot be silently replaced",
                 )
             if current.get("status") not in {
+                "ai_note_claimed",
                 "ai_note_requested",
                 "ai_note_ready",
             }:
                 reject(
                     "invalid_predecessor",
-                    "OpenCLI DOM capture requires AI-note submission after transcript readiness",
+                    "OpenCLI DOM capture requires an AI-note submission trigger attempt after transcript readiness",
                 )
             if current.get("browser_surface") != "opencli":
                 reject(
@@ -3432,6 +3441,12 @@ class NetdiskEnrichmentService:
                 **current,
                 "event": "netdisk_transcript_dom_captured",
                 "status": "transcript_captured",
+                "ai_note_completion_required": False,
+                "ai_note_submission_status": (
+                    "claimed_non_gating"
+                    if current.get("status") == "ai_note_claimed"
+                    else "requested"
+                ),
                 "transcript_acquisition": "opencli_dom",
                 "transcript_path": str(transcript_path),
                 "transcript_sha256": transcript_sha,

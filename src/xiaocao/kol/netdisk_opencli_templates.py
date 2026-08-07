@@ -383,68 +383,10 @@ _SUBMIT_AI_NOTE = NetdiskOpenCliTemplate(
     };
   }
   buttonMatches[0].click();
-  const transitionDeadline = Date.now() + 15000;
-  let modal_visible = true;
-  let note_state = 'missing';
-  let content_chars = 0;
-  while (Date.now() < transitionDeadline) {
-    const liveUrl = new URL(location.href);
-    const stillTargetBound = liveUrl.origin === 'https://pan.baidu.com'
-      && liveUrl.pathname === '/pfile/video'
-      && liveUrl.searchParams.getAll('path').length === 1
-      && liveUrl.searchParams.get('path') === expectedPath;
-    if (!stillTargetBound) {
-      return {
-        template_name,
-        template_version,
-        submitted: false,
-        template_no: 1,
-        target_bound: false,
-        click_dispatched: true
-      };
-    }
-    const liveModal = document.getElementById('tplModal');
-    modal_visible = visible(liveModal);
-    const noteFrame = document.getElementById('noteIframe');
-    const noteDocument = noteFrame?.contentDocument;
-    const noteText = (noteDocument?.body?.innerText || '').trim();
-    const noteSrc = noteFrame?.getAttribute('src') || '';
-    content_chars = noteText.length;
-    note_state = 'missing';
-    if (/生成中|正在生成|处理中/.test(noteText)) {
-      note_state = 'generating';
-    } else if (
-      content_chars >= 200
-      && (
-        noteSrc.includes('action=edit')
-        || /以下为AI生成的.{0,20}笔记.{0,20}内容/.test(noteText)
-      )
-    ) {
-      note_state = 'ready';
-    }
-    if (!modal_visible && note_state !== 'missing') {
-      return {
-        template_name,
-        template_version,
-        submitted: true,
-        template_no: 1,
-        target_bound: true,
-        modal_ready: true,
-        template_matches: 1,
-        template_selected: '文稿笔记',
-        button_matches: 1,
-        click_dispatched: true,
-        modal_visible,
-        confirmed_state: note_state,
-        content_chars
-      };
-    }
-    await new Promise(resolve => setTimeout(resolve, 200));
-  }
   return {
     template_name,
     template_version,
-    submitted: false,
+    submitted: true,
     template_no: 1,
     target_bound: true,
     modal_ready: true,
@@ -452,9 +394,9 @@ _SUBMIT_AI_NOTE = NetdiskOpenCliTemplate(
     template_selected: '文稿笔记',
     button_matches: 1,
     click_dispatched: true,
-    modal_visible,
-    confirmed_state: note_state,
-    content_chars
+    modal_visible: visible(document.getElementById('tplModal')),
+    confirmed_state: 'dispatched',
+    content_chars: 0
   };
 })()""",
 )

@@ -92,14 +92,14 @@ def test_only_submit_template_can_dispatch_the_generation_click():
     assert "click_dispatched: false" in prepare
 
 
-def test_submit_click_is_ordered_after_selected_template_precondition():
+def test_submit_click_is_terminal_after_selected_template_precondition():
     source = _render("submit_ai_note")
 
     selected_check = source.index("const templateSelected")
     fail_closed_check = source.index("!templateSelected")
     generation_click = source.index("buttonMatches[0].click()")
-    transition_proof = source.index(
-        "!modal_visible && note_state !== 'missing'"
-    )
+    dispatched_receipt = source.index("confirmed_state: 'dispatched'")
 
-    assert selected_check < fail_closed_check < generation_click < transition_proof
+    assert selected_check < fail_closed_check < generation_click < dispatched_receipt
+    assert "transitionDeadline" not in source
+    assert "noteText" not in source

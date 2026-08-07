@@ -48,13 +48,17 @@
       ]
     },
     {
-      "case": "dispatched-click-needs-strong-transition-proof",
+      "case": "dispatched-click-is-the-non-gating-terminal",
       "template": "submit_ai_note",
       "required": [
         "buttonMatches[0].click()",
-        "!modal_visible && note_state !== 'missing'",
+        "submitted: true",
         "click_dispatched: true",
-        "confirmed_state: note_state"
+        "confirmed_state: 'dispatched'"
+      ],
+      "forbidden": [
+        "transitionDeadline",
+        "noteText"
       ]
     },
     {
