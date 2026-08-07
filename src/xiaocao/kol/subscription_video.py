@@ -489,7 +489,17 @@ _TRANSFER_SCRIPT = r"""(async () => {
   const dialogDeadline = Date.now() + 10000;
   let dialog = null;
   while (Date.now() < dialogDeadline) {
-    const candidates = [...document.querySelectorAll(
+    const titledDialogs = [...document.querySelectorAll(
+      '#share-save-dialog-title'
+    )].filter(node => (
+      visible(node)
+      && String(node.innerText || node.textContent || '')
+        .replace(/\s+/g, ' ').trim() === '保存到'
+    )).map(node => node.closest('[role="dialog"]')).filter(node => (
+      visible(node)
+      && node.querySelector('#fileTreeDialog[role="dialog"]')
+    ));
+    const legacyDialogs = [...document.querySelectorAll(
       '.dialog-fileTreeDialog'
     )].filter(node => (
       visible(node)
@@ -497,6 +507,7 @@ _TRANSFER_SCRIPT = r"""(async () => {
         String(node.innerText || node.textContent || '')
       )
     ));
+    const candidates = [...new Set([...titledDialogs, ...legacyDialogs])];
     candidates.sort((left, right) => (
       left.getBoundingClientRect().width * left.getBoundingClientRect().height
       - right.getBoundingClientRect().width * right.getBoundingClientRect().height

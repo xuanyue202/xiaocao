@@ -980,6 +980,12 @@ def test_lv_transfer_observes_provider_outcome_after_confirmation():
     assert "node.getAttribute('aria-checked')" in _TRANSFER_SCRIPT
     assert "return row.querySelector('span.EOGexf')" in _TRANSFER_SCRIPT
     assert ".filter(row => rowSelected(row) === true)" in _TRANSFER_SCRIPT
+    assert "'#share-save-dialog-title'" in _TRANSFER_SCRIPT
+    assert "node.closest('[role=\"dialog\"]')" in _TRANSFER_SCRIPT
+    assert "node.querySelector('#fileTreeDialog[role=\"dialog\"]')" in (
+        _TRANSFER_SCRIPT
+    )
+    assert "const legacyDialogs" in _TRANSFER_SCRIPT
     assert "const beforeLines = new Set(" in _TRANSFER_SCRIPT
     assert "data-xiaocao-lv-confirm" in _TRANSFER_SCRIPT
     assert "confirms[0].click()" not in _TRANSFER_SCRIPT
