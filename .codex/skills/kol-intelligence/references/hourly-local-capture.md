@@ -130,6 +130,14 @@ message ID and correlation ID. Only authoritative `created|already_present`
 with the exact content hash is `Handoff完成`; no remote task discovery, task
 selection, or `send_message_to_thread` participates in this terminal.
 
+Mailbox `subject` must identify the item: video uses
+`[视频] <media_basename stem>` (for example,
+`[视频] 20260807 大师班专场(晚18:00开播)-compressed`); article uses
+`[文章] <exact article title>`. Generic `[视频] 小草直播` fails the pre-send gate.
+Never rewrite emitted MCP arguments. Before first send, repair the sender plus
+tests and resume the same job; after a creation receipt, keep the immutable
+message and apply the repair only to future handoffs.
+
 At the start of the next local sweep, use `get_mailbox_message` to reconcile
 every locally receipted but unobserved handoff by exact mailbox ID and the same
 `handoff_id`. `pending` remains `Handoff完成`. A bound `acked` message with its
