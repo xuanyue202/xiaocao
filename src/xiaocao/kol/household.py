@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import os
 import stat
 from datetime import datetime, timezone
 from pathlib import Path
@@ -17,9 +18,22 @@ except ModuleNotFoundError:  # pragma: no cover - Python 3.9/3.10 compatibility
 from .decisions import DecisionError
 
 
-DEFAULT_LIANGHUI_MCP_CONFIG = (
-    Path(__file__).resolve().parents[3] / ".codex" / "config.toml"
-)
+LIANGHUI_MCP_CONFIG_ENV = "LIANGHUI_MCP_CONFIG"
+
+
+def default_lianghui_mcp_config() -> Path:
+    """Resolve the user-global Codex config, with an explicit test override."""
+
+    override = os.environ.get(LIANGHUI_MCP_CONFIG_ENV, "").strip()
+    if override:
+        return Path(override).expanduser()
+    codex_home = os.environ.get("CODEX_HOME", "").strip()
+    if codex_home:
+        return Path(codex_home).expanduser() / "config.toml"
+    return Path.home() / ".codex" / "config.toml"
+
+
+DEFAULT_LIANGHUI_MCP_CONFIG = default_lianghui_mcp_config()
 
 
 class LiangHuiMcpError(DecisionError):
@@ -52,8 +66,13 @@ class LiangHuiMcpClient:
         self.opener = opener
 
     @classmethod
-    def from_config(cls, path: Path | str = DEFAULT_LIANGHUI_MCP_CONFIG) -> "LiangHuiMcpClient":
-        config_path = Path(path).expanduser().resolve()
+    def from_config(
+        cls,
+        path: Path | str | None = None,
+    ) -> "LiangHuiMcpClient":
+        config_path = Path(
+            path if path is not None else default_lianghui_mcp_config()
+        ).expanduser().resolve()
         try:
             mode = stat.S_IMODE(config_path.stat().st_mode)
             if mode & 0o077:

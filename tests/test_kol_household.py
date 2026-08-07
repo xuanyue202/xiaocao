@@ -1,11 +1,15 @@
 from __future__ import annotations
 
 import json
+from pathlib import Path
 
 import pytest
 
 from xiaocao.kol.decisions import DecisionError
-from xiaocao.kol.household import LiangHuiMcpClient
+from xiaocao.kol.household import (
+    LiangHuiMcpClient,
+    default_lianghui_mcp_config,
+)
 
 
 class _Response:
@@ -90,6 +94,29 @@ enabled = true
 
     with pytest.raises(DecisionError, match="mode 0600"):
         LiangHuiMcpClient.from_config(config_path)
+
+
+def test_lianghui_client_defaults_to_user_global_codex_config(
+    monkeypatch,
+    tmp_path,
+):
+    monkeypatch.delenv("LIANGHUI_MCP_CONFIG", raising=False)
+    monkeypatch.delenv("CODEX_HOME", raising=False)
+    monkeypatch.setenv("HOME", str(tmp_path))
+
+    assert default_lianghui_mcp_config() == (
+        Path(tmp_path) / ".codex" / "config.toml"
+    )
+
+
+def test_lianghui_client_honors_explicit_config_environment(
+    monkeypatch,
+    tmp_path,
+):
+    config_path = tmp_path / "private" / "lianghui.toml"
+    monkeypatch.setenv("LIANGHUI_MCP_CONFIG", str(config_path))
+
+    assert default_lianghui_mcp_config() == config_path
 
 
 def test_lianghui_client_prefers_structured_tool_result():
