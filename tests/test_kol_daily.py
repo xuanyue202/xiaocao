@@ -361,6 +361,97 @@ def test_capture_local_cli_runs_live_and_official_account_sources(
     }
 
 
+def test_capture_local_cli_follows_exact_cloud_handoff_in_same_process(
+    tmp_path,
+    monkeypatch,
+):
+    observed: dict[str, object] = {"coordinator_runs": 0, "follow_calls": []}
+
+    class FakeCoordinator:
+        def __init__(self, output_dir):
+            assert output_dir == tmp_path / "daily"
+
+        def run(self, sources, *, blocker_sender):
+            observed["coordinator_runs"] = int(observed["coordinator_runs"]) + 1
+            assert [source["name"] for source in sources] == [
+                "xiaocao_wechat_live",
+                "wechat_official_accounts",
+            ]
+            assert callable(blocker_sender)
+            return {
+                "status": "completed",
+                "silent": True,
+                "source_results": [{
+                    "name": "xiaocao_wechat_live",
+                    "status": "waiting",
+                    "waiting_items": [{
+                        "identity": "kol-wechat-current",
+                        "capture_job_id": "kol-capture-current",
+                        "status": "upload_claimed",
+                        "stage": "cloud_handoff",
+                    }],
+                }, {
+                    "name": "wechat_official_accounts",
+                    "status": "no_update",
+                }],
+            }
+
+    follow_results = iter([
+        {
+            "status": "waiting",
+            "waiting_count": 1,
+            "waiting_items": [{
+                "identity": "kol-wechat-current",
+                "capture_job_id": "kol-capture-current",
+                "status": "upload_claimed",
+                "stage": "cloud_handoff",
+            }],
+        },
+        {
+            "status": "no_update",
+            "handoff_dispatched": True,
+            "identity": "kol-wechat-current",
+            "capture_job_id": "kol-capture-current",
+        },
+    ])
+
+    def follow(self, identity, capture_job_id):
+        observed["follow_calls"].append((identity, capture_job_id))
+        return next(follow_results)
+
+    monkeypatch.setattr(kol_daily_script, "DailyCoordinator", FakeCoordinator)
+    monkeypatch.setattr(
+        DailyRuntime,
+        "xiaocao_cloud_handoff",
+        follow,
+        raising=False,
+    )
+    monkeypatch.setattr(
+        kol_daily_script,
+        "_cloud_handoff_sleep",
+        lambda seconds: observed.setdefault("sleeps", []).append(seconds),
+        raising=False,
+    )
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "kol_daily.py",
+            "capture-local",
+            "--output-dir",
+            str(tmp_path / "daily"),
+        ],
+    )
+
+    assert kol_daily_script.main() == 0
+    assert observed["coordinator_runs"] == 1
+    assert observed["follow_calls"] == [
+        ("kol-wechat-current", "kol-capture-current"),
+        ("kol-wechat-current", "kol-capture-current"),
+    ]
+    assert observed["sleeps"] == [30]
+
+
 def test_capture_wechat_official_cli_runs_only_local_official_account_source(
     tmp_path,
     monkeypatch,
@@ -458,6 +549,42 @@ def test_process_wechat_official_cli_runs_only_the_remote_inbox(
     assert json.loads(capsys.readouterr().out) == {
         "status": "completed",
         "events": [{"event_id": "article"}],
+    }
+
+
+def test_process_xiaocao_handoff_cli_runs_only_remote_post_handoff(
+    tmp_path,
+    monkeypatch,
+    capsys,
+):
+    observed: dict[str, object] = {}
+
+    class FakeRuntime:
+        def __init__(self, args):
+            observed["args"] = args
+
+        @staticmethod
+        def xiaocao():
+            observed["called"] = True
+            return {"status": "completed", "events": [{"event_id": "video"}]}
+
+    monkeypatch.setattr(kol_daily_script, "DailyRuntime", FakeRuntime)
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "kol_daily.py",
+            "process-xiaocao-handoff",
+            "--output-dir",
+            str(tmp_path / "daily"),
+        ],
+    )
+
+    assert kol_daily_script.main() == 0
+    assert observed["called"] is True
+    assert json.loads(capsys.readouterr().out) == {
+        "status": "completed",
+        "events": [{"event_id": "video"}],
     }
 
 

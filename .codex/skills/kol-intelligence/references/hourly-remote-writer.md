@@ -55,6 +55,10 @@ has already finished, process only that imported inbox with
 Run it exactly once and keep the same process alive for image/semantic input;
 do not rerun the full `run` command merely to pick up the handoff.
 
+For a late Xiaocao video capsule, process only imported post-handoff state with
+`PYTHONPATH=src .venv/bin/python scripts/kol_daily.py process-xiaocao-handoff`.
+Run once and keep it alive for input; do not rerun the full `run` command.
+
 For an official item, run installed OpenCLI once: `weixin download`, images,
 background Chrome, and JSON. Require an item-local file, exact
 publisher/title/time, complete UTF-8 body/images, bytes, and hashes.
@@ -166,7 +170,8 @@ corrections, maintenance, restarts, and replays without resending. Stay silent
 only when the sweep has no concrete article or video item. Otherwise report
 every current item, including unchanged waits and retryable exceptions, while
 preserving the distinction between handoff completion and downstream
-completion. Repeated source/stage/code or acquisition stalls append one
+completion. An unchanged same blocker stays silent after its first report.
+Repeated source/stage/code or acquisition stalls append one
 exhausted audit with `repair_required=true`; repetition does not make them
 `user_action_required`. Reserve that status for authentication, SMS, CAPTCHA,
 consent, a fact only the user can provide, or an external side effect whose

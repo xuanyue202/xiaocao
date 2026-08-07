@@ -436,6 +436,9 @@ def test_hourly_local_capture_recovers_late_video_handoffs_without_resweep() -> 
     assert "capture-xiaocao-handoff" in local
     assert "do not rerun the full sweep" in local
     assert "cloud_handoff_published" in local
+    assert "same `capture-local` process" in local
+    assert "accepted|already_present" in local
+    assert "must not end the task" in local
 
 
 def test_remote_writer_handler_failure_has_a_bounded_self_repair_loop() -> None:
@@ -445,6 +448,15 @@ def test_remote_writer_handler_failure_has_a_bounded_self_repair_loop() -> None:
     assert "bounded handler recovery" in lease
     assert "retry `read_thread`" in lease
     assert "never authorizes an unverified send" in lease
+
+
+def test_remote_writer_has_a_xiaocao_only_post_handoff_entrypoint() -> None:
+    local = HOURLY_LOCAL_CAPTURE_MD.read_text(encoding="utf-8")
+    remote = HOURLY_REMOTE_WRITER_MD.read_text(encoding="utf-8")
+
+    assert "scripts/kol_daily.py process-xiaocao-handoff" in local
+    assert "scripts/kol_daily.py process-xiaocao-handoff" in remote
+    assert "do not rerun the full `run` command" in remote
 
 
 def test_opencli_chrome_recovery_exhausts_self_repair_before_user_action() -> None:

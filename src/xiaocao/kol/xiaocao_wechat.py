@@ -694,6 +694,58 @@ class XiaocaoWechatLiveSubscription:
             return self._dispatch_handoff(manifest, item)
         return {"status": "no_update"}
 
+    def continue_cloud_handoff(
+        self,
+        identity: str,
+        capture_job_id: str,
+        *,
+        opencli_session: str,
+        opencli_profile: str | None = None,
+    ) -> dict[str, Any]:
+        """Advance one exact upload claim through authoritative acceptance."""
+        manifest = self._load()
+        item = manifest["items"].get(identity)
+        if not isinstance(item, dict):
+            raise EnrichmentError("Xiaocao cloud handoff item is missing")
+        if str(item.get("capture_job_id") or "") != capture_job_id:
+            raise EnrichmentError("Xiaocao cloud handoff capture binding changed")
+        if item.get("status") == "completed":
+            return {
+                "status": "no_update",
+                "handoff_dispatched": False,
+                "already_completed": True,
+                "identity": identity,
+                "capture_job_id": capture_job_id,
+            }
+        if item.get("status") == "handoff_ready":
+            return self._dispatch_handoff(manifest, item)
+        if item.get("status") != "playback_activated":
+            raise EnrichmentError("Xiaocao cloud handoff is not resumable")
+
+        state = self.capture_driver.advance(
+            identity,
+            capture_job_id,
+            opencli_session=opencli_session,
+            opencli_profile=opencli_profile,
+        )
+        state_capture_job_id = str(state.get("capture_job_id") or "")
+        if state_capture_job_id and state_capture_job_id != capture_job_id:
+            raise EnrichmentError("Xiaocao cloud handoff advance is not bound")
+        if (
+            state.get("event") == "cloud_handoff_published"
+            and state.get("status") == "handoff_published"
+        ):
+            item = self._transition(
+                manifest,
+                item,
+                "handoff_ready",
+                handoff_path=str(state.get("handoff_path") or ""),
+            )
+            return self._dispatch_handoff(manifest, item)
+        if state.get("event") != "xiaocao_live_upload_pending":
+            raise EnrichmentError("Xiaocao cloud handoff regressed before upload")
+        return self._waiting(item, state)
+
     def _check_playback(
         self,
         manifest: dict[str, Any],

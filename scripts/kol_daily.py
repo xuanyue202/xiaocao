@@ -10,6 +10,7 @@ import re
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
+from time import sleep as _cloud_handoff_sleep
 from typing import Any
 
 from xiaocao.kol.daily import (
@@ -65,6 +66,7 @@ DEFAULT_XIAOCAO_WECHAT_OUTPUT = (
 )
 DEFAULT_WECHAT_OFFICIAL_OUTPUT = Path("output/live/kol_wechat_official")
 MAX_HANDOFF_BYTES = 1024 * 1024
+CLOUD_HANDOFF_POLL_SECONDS = 30
 
 
 class SemanticInputUnavailable(DailyError):
@@ -834,6 +836,52 @@ def _classified_source(name: str, runner):
     return run
 
 
+def _cloud_handoff_binding(
+    result: dict[str, Any],
+) -> tuple[str, str] | None:
+    rows = result.get("source_results")
+    if not isinstance(rows, list):
+        rows = [result]
+    bindings: list[tuple[str, str]] = []
+    for row in rows:
+        if not isinstance(row, dict):
+            continue
+        if row.get("name") not in {None, "xiaocao_wechat_live"}:
+            continue
+        waiting_items = row.get("waiting_items")
+        if not isinstance(waiting_items, list):
+            continue
+        for item in waiting_items:
+            if not isinstance(item, dict) or item.get("stage") != "cloud_handoff":
+                continue
+            identity = str(item.get("identity") or "")
+            capture_job_id = str(item.get("capture_job_id") or "")
+            if not identity or not capture_job_id:
+                raise DailyError("cloud handoff wait lacks an exact binding")
+            bindings.append((identity, capture_job_id))
+    if len(bindings) > 1:
+        raise DailyError("capture-local found multiple cloud handoff bindings")
+    return bindings[0] if bindings else None
+
+
+def _follow_cloud_handoff(
+    runtime: "DailyRuntime",
+    sweep_result: dict[str, Any],
+) -> dict[str, Any] | None:
+    binding = _cloud_handoff_binding(sweep_result)
+    if binding is None:
+        return None
+    identity, capture_job_id = binding
+    while True:
+        result = runtime.xiaocao_cloud_handoff(identity, capture_job_id)
+        if result.get("handoff_dispatched") or result.get("already_completed"):
+            return result
+        current = _cloud_handoff_binding(result)
+        if current != binding:
+            raise DailyError("cloud handoff follow-up lost its exact binding")
+        _cloud_handoff_sleep(CLOUD_HANDOFF_POLL_SECONDS)
+
+
 class DailyRuntime:
     def __init__(self, args: argparse.Namespace):
         self.args = args
@@ -1485,6 +1533,34 @@ class DailyRuntime:
         )
         return subscription.dispatch_published_handoff()
 
+    def xiaocao_cloud_handoff(
+        self,
+        identity: str,
+        capture_job_id: str,
+    ) -> dict[str, Any]:
+        capture = XiaocaoLiveCaptureDriver(
+            self.args.xiaocao_wechat_output_dir,
+            decision_output=self.args.decision_output_dir,
+        )
+        subscription = XiaocaoWechatLiveSubscription(
+            self.args.xiaocao_wechat_output_dir,
+            history_reader=lambda: {},
+            browser_exchange=_read_agent_json,
+            capture_driver=capture,
+            contact=self.args.xiaocao_wechat_contact,
+            password=self.args.xiaocao_live_password,
+        )
+        return subscription.continue_cloud_handoff(
+            identity,
+            capture_job_id,
+            opencli_session=getattr(
+                self.args,
+                "xiaocao_enrichment_session",
+                self.args.enrichment_session,
+            ),
+            opencli_profile=self.args.opencli_profile,
+        )
+
     def wechat_official_local(self) -> dict[str, Any]:
         publishers = tuple(self.args.wechat_official_publishers)
         reader = WechatCliOfficialAccountReader(
@@ -1681,6 +1757,7 @@ def main() -> int:
             "capture-xiaocao-handoff",
             "capture-wechat-official",
             "import-wechat-official",
+            "process-xiaocao-handoff",
             "process-wechat-official",
             "status",
             "audit",
@@ -1750,6 +1827,11 @@ def main() -> int:
         if result.get("status") != "no_update":
             _print(result)
         return 0
+    if args.command == "process-xiaocao-handoff":
+        result = DailyRuntime(args).xiaocao()
+        if result.get("status") != "no_update":
+            _print(result)
+        return 0
     service = DailyCoordinator(args.output_dir)
     if args.command == "status":
         value = service.status()
@@ -1794,6 +1876,9 @@ def main() -> int:
         )
         if not result.get("silent"):
             _print(result)
+        follow_result = _follow_cloud_handoff(runtime, result)
+        if follow_result is not None:
+            _print(follow_result)
         return 0
     if args.command == "capture-wechat-official":
         runtime = DailyRuntime.__new__(DailyRuntime)

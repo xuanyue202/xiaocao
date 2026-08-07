@@ -441,7 +441,7 @@ def test_awaiting_playback_rechecks_the_bound_page_each_hour_until_playable(
     assert item["observed_page_state"] == "playable"
 
 
-def test_pending_capture_resumes_without_reopening_browser(tmp_path):
+def test_pending_cloud_handoff_resumes_exact_job_without_rescanning(tmp_path):
     payload = _history(
         "[2026-08-04 08:29] 福利官小花四: 9点20草神直播地址：https://yv9lc.xetslk.com/sl/4EKPYp",
     )
@@ -479,10 +479,23 @@ def test_pending_capture_resumes_without_reopening_browser(tmp_path):
             "remote_host_id": "remote-control:registered",
         }
 
+    history_reads = 0
+
+    def read_history():
+        nonlocal history_reads
+        history_reads += 1
+        return payload
+
     capture = _CaptureDriver()
+    capture.next_result = {
+        "event": "xiaocao_live_upload_pending",
+        "status": "upload_claimed",
+        "capture_job_id": "kol-capture-current",
+        "next": "rerun_broadband",
+    }
     subscription = XiaocaoWechatLiveSubscription(
         tmp_path / "wechat",
-        history_reader=lambda: payload,
+        history_reader=read_history,
         browser_exchange=browser_exchange,
         capture_driver=capture,
         contact=CONTACT,
@@ -520,7 +533,9 @@ def test_pending_capture_resumes_without_reopening_browser(tmp_path):
         "capture_job_id": "kol-capture-current",
         "handoff_path": str(handoff_path),
     }
-    second = subscription.run_once(
+    second = subscription.continue_cloud_handoff(
+        first["waiting_items"][0]["identity"],
+        "kol-capture-current",
         opencli_session="xiaocao-lv-subscription",
     )
 
@@ -536,6 +551,7 @@ def test_pending_capture_resumes_without_reopening_browser(tmp_path):
         "dispatch_xiaocao_handoff",
     ]
     assert capture.advances == 2
+    assert history_reads == 1
     manifest = json.loads(
         (tmp_path / "wechat" / "manifest.json").read_text(encoding="utf-8")
     )
