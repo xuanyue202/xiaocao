@@ -441,6 +441,56 @@ def test_episode_advances_all_ready_parts_when_one_part_waits(tmp_path):
     assert state["coordinator_source_video_bytes"] == 0
 
 
+def test_cloud_enrichment_stops_after_uncertain_pending_checkpoint(
+    tmp_path,
+    monkeypatch,
+):
+    service = _service(tmp_path)
+    calls = []
+
+    class PendingEnrichment:
+        def prepare_cloud(self, **_kwargs):
+            return {
+                "job_id": "kol-netdisk-cloud-pending",
+                "status": "video_ready",
+            }
+
+        def advance_opencli(self, job_id, **_kwargs):
+            calls.append(job_id)
+            return {
+                "job_id": job_id,
+                "status": "ai_note_claimed",
+                "pending": True,
+                "side_effect_uncertain": True,
+                "idempotent_replay": True,
+            }
+
+    monkeypatch.setattr(
+        service,
+        "_enrichment_service",
+        lambda *_args, **_kwargs: PendingEnrichment(),
+    )
+    state = service._advance_part_to_verified(
+        {
+            "source": LUCIFER_SOURCE,
+            "path": "/课程/路西法全套/待协调.mp4",
+            "provider_identity_sha256": "a" * 64,
+            "size": 1024,
+            "modified_at": 1_784_560_843,
+            "author": "路西法",
+        },
+        lv_session="lv",
+        private_session="private",
+        enrichment_session="enrichment",
+        profile=None,
+    )
+
+    assert calls == ["kol-netdisk-cloud-pending"]
+    assert state["status"] == "ai_note_claimed"
+    assert state["pending"] is True
+    assert state["side_effect_uncertain"] is True
+
+
 def test_automatic_episode_waits_five_minutes_for_more_parts(tmp_path):
     service = _service(tmp_path)
     lv, lucifer = _source_rows()

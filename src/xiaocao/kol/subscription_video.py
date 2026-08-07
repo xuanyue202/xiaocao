@@ -3912,6 +3912,8 @@ class SubscriptionVideoService:
                 session=enrichment_session,
                 profile=profile,
             )
+            if state.get("pending") is True:
+                return state
         return {**state, "pending": True}
 
     def advance_item(
