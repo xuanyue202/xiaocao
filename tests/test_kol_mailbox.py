@@ -754,3 +754,87 @@ def test_remote_repair_resume_revision_is_single_use(tmp_path) -> None:
             only_message_id="a" * 64,
             repair_revision="e" * 40,
         )
+
+
+def test_remote_repair_resume_revision_repolls_only_after_explicit_due_time(
+    tmp_path,
+) -> None:
+    target = _mailbox_message("a" * 64)
+    ledger = MailboxLedger(tmp_path / "mailbox")
+    ledger.append(
+        "mailbox_message_attempted",
+        occurred_at="2026-08-07T10:37:00.000Z",
+        handoff_id=target["message_id"],
+        content_sha256=target["content_sha256"],
+    )
+    ledger.append(
+        "mailbox_message_repair_resumed",
+        occurred_at="2026-08-07T10:38:00.000Z",
+        handoff_id=target["message_id"],
+        content_sha256=target["content_sha256"],
+        repair_revision="f" * 40,
+        prior_waiting_event_id="prior-wait",
+    )
+    ledger.append(
+        "mailbox_message_waiting",
+        occurred_at="2026-08-07T10:38:01.000Z",
+        handoff_id=target["message_id"],
+        category="provider_wait",
+        code="transcript_pending",
+        stage="cloud_transcript",
+        next_poll_not_before="2026-08-07T11:00:00.000Z",
+    )
+
+    before_due = LiangHuiMailboxClient(
+        ledger,
+        exchange=lambda _request: pytest.fail("must fail before MCP read"),
+        now=lambda: datetime.fromisoformat("2026-08-07T10:59:59+00:00"),
+    )
+    with pytest.raises(MailboxError, match="poll deadline is not due"):
+        RemoteMailboxDrain(
+            before_due,
+            processor=lambda _message: {"business_complete": False},
+        ).run(
+            only_message_id="a" * 64,
+            repair_revision="f" * 40,
+        )
+
+    requests: list[dict[str, object]] = []
+
+    def exchange(request: dict[str, object]) -> dict[str, object]:
+        requests.append(request)
+        return {
+            "operation": "list_mailbox_messages",
+            "page": {
+                "items": [target],
+                "next_cursor": None,
+                "has_more": False,
+            },
+        }
+
+    after_due = LiangHuiMailboxClient(
+        ledger,
+        exchange=exchange,
+        now=lambda: datetime.fromisoformat("2026-08-07T11:00:00+00:00"),
+    )
+    result = RemoteMailboxDrain(
+        after_due,
+        processor=lambda _message: {
+            "status": "waiting",
+            "business_complete": False,
+            "waiting_items": [{
+                "category": "provider_wait",
+                "code": "transcript_pending",
+                "stage": "cloud_transcript",
+                "next_poll_not_before": "2026-08-07T11:05:00.000Z",
+            }],
+        },
+    ).run(
+        only_message_id="a" * 64,
+        repair_revision="f" * 40,
+    )
+
+    assert result["status"] == "waiting"
+    assert [request["operation"] for request in requests] == [
+        "list_mailbox_messages"
+    ]

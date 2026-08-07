@@ -150,8 +150,14 @@ class MailboxLedger:
         handoff_id: str,
         *,
         repair_revision: str,
+        now: datetime,
     ) -> dict[str, str]:
-        """Bind one repair resume to the last durable waiting attempt."""
+        """Bind repair continuation to the last durable waiting attempt.
+
+        A revision normally gets one attempt.  It may continue the same claim
+        again only after a provider supplied an explicit poll deadline; this
+        keeps contract failures single-shot while allowing bounded async work.
+        """
         normalized_id = str(handoff_id or "")
         normalized_revision = str(repair_revision or "")
         if not _SHA256.fullmatch(normalized_id):
@@ -185,8 +191,6 @@ class MailboxLedger:
         content_sha256 = str(attempt.get("content_sha256") or "")
         if not _SHA256.fullmatch(content_sha256):
             raise MailboxError("mailbox repair target content binding is invalid")
-        if normalized_revision in used_revisions:
-            raise MailboxError("mailbox repair revision was already attempted")
         diagnostic = " ".join(
             str(waiting.get(key) or "").lower()
             for key in ("category", "code", "stage")
@@ -195,6 +199,18 @@ class MailboxLedger:
             raise MailboxError(
                 "mailbox repair requires external side-effect reconciliation"
             )
+        if normalized_revision in used_revisions:
+            next_poll = str(waiting.get("next_poll_not_before") or "")
+            try:
+                due = datetime.fromisoformat(next_poll.replace("Z", "+00:00"))
+            except ValueError as exc:
+                raise MailboxError(
+                    "mailbox repair revision was already attempted"
+                ) from exc
+            if now.tzinfo is None or due.tzinfo is None:
+                raise MailboxError("mailbox repair poll deadline needs a timezone")
+            if now < due:
+                raise MailboxError("mailbox repair poll deadline is not due")
         return {
             "content_sha256": content_sha256,
             "waiting_event_id": str(waiting["event_id"]),
@@ -712,6 +728,7 @@ class RemoteMailboxDrain:
             repair_claim = self.client.ledger.repair_resume_claim(
                 only_message_id,
                 repair_revision=repair_revision,
+                now=self.client.now(),
             )
         elif repair_revision is not None:
             raise MailboxError("mailbox repair target is required")

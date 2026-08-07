@@ -91,8 +91,11 @@ PYTHONPATH=src .venv/bin/python scripts/kol_daily.py resume-mailbox \
   --repair-revision <exact-40-hex-commit>
 ```
 
-Reapply the peer gate and keep stdin open. The command requires the prior wait,
-same content hash, and a new repair revision; it processes no other message.
+Reapply the peer gate and keep stdin open. The first repaired continuation
+requires the prior wait, same content hash, and a new repair revision; it
+processes no other message. A contract/error wait may not reuse that revision.
+An async provider wait may reuse it only when the durable wait includes an
+explicit timezone-aware `next_poll_not_before` and that deadline is due.
 Missing/acked/changed targets and `uncertain` effects fail closed. Reconcile an
 uncertain effect first; never replay an uncheckable side effect.
 

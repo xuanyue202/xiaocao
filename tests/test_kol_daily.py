@@ -736,6 +736,78 @@ def test_xiaocao_completed_receipt_exposes_empty_terminal_events(
     }
 
 
+def test_xiaocao_wait_preserves_exact_transcript_poll_state(
+    tmp_path,
+    monkeypatch,
+):
+    handoff_dir = tmp_path / "xiaocao" / "imported_handoffs"
+    handoff_dir.mkdir(parents=True)
+    handoff_id = "a" * 64
+    media_sha256 = "b" * 64
+    job_id = "kol-netdisk-current"
+    handoff = {
+        "schema_version": 1,
+        "handoff_id": handoff_id,
+        "capture_job_id": "kol-capture-current",
+        "netdisk_job_id": job_id,
+        "media_sha256": media_sha256,
+        "media_basename": "current-compressed.mp4",
+        "published_at": "2026-08-07T18:00:00+08:00",
+        "large_payload_local_bytes": 0,
+    }
+    handoff["handoff_sha256"] = _canonical_sha256(handoff)
+    (handoff_dir / "kol-capture-current.json").write_text(
+        json.dumps(handoff),
+        encoding="utf-8",
+    )
+
+    class FakeNetdisk:
+        @staticmethod
+        def status(requested_job_id):
+            assert requested_job_id == job_id
+            return {"status": "transcript_claimed"}
+
+        @staticmethod
+        def advance_opencli(requested_job_id, **_kwargs):
+            assert requested_job_id == job_id
+            return {
+                "status": "transcript_requested",
+                "next_poll_not_before": "2026-08-07T21:08:10+08:00",
+            }
+
+    class FakeService:
+        def __init__(self, *_args, **_kwargs):
+            self.netdisk = FakeNetdisk()
+
+    monkeypatch.setattr(kol_daily_script, "XiaocaoLiveService", FakeService)
+    runtime = DailyRuntime.__new__(DailyRuntime)
+    runtime.args = SimpleNamespace(
+        xiaocao_output_dir=tmp_path / "xiaocao",
+        decision_output_dir=tmp_path / "decisions",
+        enrichment_session="xiaocao-lv-subscription",
+        opencli_profile=None,
+    )
+
+    result = runtime.xiaocao(handoff_id=handoff_id)
+
+    assert result == {
+        "status": "waiting",
+        "waiting_count": 1,
+        "waiting_items": [{
+            "identity": "kol-capture-current",
+            "version_key": media_sha256,
+            "name": "current-compressed.mp4",
+            "author": "小草",
+            "status": "transcript_requested",
+            "category": "provider_wait",
+            "code": "transcript_pending",
+            "stage": "cloud_transcript",
+            "reconciliation": "exact_job_pending",
+            "next_poll_not_before": "2026-08-07T21:08:10+08:00",
+        }],
+    }
+
+
 def test_capture_local_cli_follows_exact_cloud_handoff_in_same_process(
     tmp_path,
     monkeypatch,

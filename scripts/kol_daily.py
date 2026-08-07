@@ -1527,6 +1527,7 @@ class DailyRuntime:
         events = []
         completed_handoff_ids: list[str] = []
         waiting = 0
+        waiting_items: list[dict[str, Any]] = []
         for handoff_index, handoff in enumerate(ordered_handoffs):
             if handoff.get("schema_version") == 2:
                 service.import_handoff_capsule(handoff)
@@ -1615,6 +1616,36 @@ class DailyRuntime:
                 )
             if state.get("status") != "verified":
                 waiting += 1
+                state_status = str(state.get("status") or "provider_wait")
+                waiting_item = {
+                    "identity": str(handoff["capture_job_id"]),
+                    "version_key": str(handoff.get("media_sha256") or job_id),
+                    "name": str(
+                        handoff.get("media_basename")
+                        or state.get("video_basename")
+                        or job_id
+                    ),
+                    "author": "小草",
+                    "status": state_status,
+                    "category": "provider_wait",
+                    "code": (
+                        "transcript_pending"
+                        if state_status
+                        in {"transcript_claimed", "transcript_requested"}
+                        else state_status
+                    ),
+                    "stage": (
+                        "cloud_transcript"
+                        if state_status
+                        in {"transcript_claimed", "transcript_requested"}
+                        else "cloud_enrichment"
+                    ),
+                    "reconciliation": "exact_job_pending",
+                }
+                next_poll = state.get("next_poll_not_before")
+                if isinstance(next_poll, str) and next_poll:
+                    waiting_item["next_poll_not_before"] = next_poll
+                waiting_items.append(waiting_item)
                 continue
             bundle_path = _read_agent_path(
                 {
@@ -1672,7 +1703,11 @@ class DailyRuntime:
                 "completed_handoff_ids": completed_handoff_ids,
             }
         if waiting:
-            return {"status": "waiting", "waiting_count": waiting}
+            return {
+                "status": "waiting",
+                "waiting_count": waiting,
+                "waiting_items": waiting_items,
+            }
         return {"status": "no_update"}
 
     def xiaocao_wechat(self) -> dict[str, Any]:
