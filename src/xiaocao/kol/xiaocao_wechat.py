@@ -596,10 +596,19 @@ class XiaocaoWechatLiveSubscription:
         item: dict[str, Any],
     ) -> dict[str, Any]:
         capsule = self._load_handoff(item)
+        media_basename = str(capsule.get("media_basename") or "").strip()
+        if (
+            not media_basename
+            or Path(media_basename).name != media_basename
+            or not Path(media_basename).stem.strip()
+        ):
+            raise EnrichmentError(
+                "Xiaocao handoff lacks a safe media basename title"
+            )
         response = self.handoff_exchange(
             capsule,
             object_kind="video",
-            title=str(item.get("title") or "小草直播"),
+            title=Path(media_basename).stem.strip(),
         )
         if (
             not isinstance(response, dict)

@@ -4,6 +4,7 @@ import hashlib
 import io
 import json
 import sys
+import termios
 from datetime import datetime
 from pathlib import Path
 from types import SimpleNamespace
@@ -15,6 +16,7 @@ from scripts.kol_daily import (
     _classified_source,
     _latest_lv_video_goal,
     _lv_publication_context,
+    _read_agent_json,
     _video_publication_context,
     DailyRuntime,
     SemanticInputUnavailable,
@@ -52,6 +54,39 @@ class Clock:
 
     def __call__(self) -> datetime:
         return self.value
+
+
+def test_agent_json_disables_canonical_tty_for_long_response(
+    monkeypatch,
+) -> None:
+    response = {"message": {"payload": "x" * 5000}}
+
+    class FakeTty(io.StringIO):
+        def isatty(self) -> bool:
+            return True
+
+        def fileno(self) -> int:
+            return 42
+
+    original = [0, 0, 0, termios.ICANON | termios.ECHO, 0, 0, [0] * 32]
+    applied: list[list] = []
+    monkeypatch.setattr(sys, "stdin", FakeTty(json.dumps(response) + "\n"))
+    monkeypatch.setattr(
+        termios,
+        "tcgetattr",
+        lambda descriptor: [*original[:6], list(original[6])],
+    )
+    monkeypatch.setattr(
+        termios,
+        "tcsetattr",
+        lambda descriptor, when, attributes: applied.append(attributes),
+    )
+
+    assert _read_agent_json({"event": "test_input_required"}) == response
+    assert applied[0][3] & (termios.ICANON | termios.ECHO) == 0
+    assert applied[0][6][termios.VMIN] == 1
+    assert applied[0][6][termios.VTIME] == 0
+    assert applied[1] == original
 
 
 def _canonical_sha256(value: dict) -> str:

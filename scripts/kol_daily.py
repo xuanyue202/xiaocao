@@ -8,6 +8,7 @@ import hashlib
 import json
 import re
 import sys
+import termios
 from collections.abc import Collection
 from datetime import datetime, timezone
 from pathlib import Path
@@ -481,9 +482,34 @@ def _latest_lv_video_goal(
     }
 
 
+def _read_agent_line(request: dict[str, Any]) -> str:
+    """Read one complete agent response, including long JSON over a PTY."""
+
+    descriptor: int | None = None
+    original_attributes: list[Any] | None = None
+    if sys.stdin.isatty():
+        descriptor = sys.stdin.fileno()
+        original_attributes = termios.tcgetattr(descriptor)
+        response_attributes = list(original_attributes)
+        response_attributes[6] = list(original_attributes[6])
+        response_attributes[3] &= ~(termios.ICANON | termios.ECHO)
+        response_attributes[6][termios.VMIN] = 1
+        response_attributes[6][termios.VTIME] = 0
+        termios.tcsetattr(descriptor, termios.TCSANOW, response_attributes)
+    try:
+        print(json.dumps(request, ensure_ascii=False, sort_keys=True), flush=True)
+        return sys.stdin.readline()
+    finally:
+        if descriptor is not None and original_attributes is not None:
+            termios.tcsetattr(
+                descriptor,
+                termios.TCSANOW,
+                original_attributes,
+            )
+
+
 def _read_agent_path(request: dict[str, Any], field: str) -> Path:
-    print(json.dumps(request, ensure_ascii=False, sort_keys=True), flush=True)
-    response = sys.stdin.readline()
+    response = _read_agent_line(request)
     if not response:
         if request.get("analysis_request_path") or request.get("image_request_path"):
             raise SemanticInputUnavailable(request, field)
@@ -597,8 +623,7 @@ def _persisted_video_analysis_request(
 
 
 def _read_agent_json(request: dict[str, Any]) -> dict[str, Any]:
-    print(json.dumps(request, ensure_ascii=False, sort_keys=True), flush=True)
-    response = sys.stdin.readline()
+    response = _read_agent_line(request)
     if not response:
         raise DailyError("daily runner requires a browser response on stdin")
     try:

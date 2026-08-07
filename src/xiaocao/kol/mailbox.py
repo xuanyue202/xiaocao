@@ -261,6 +261,18 @@ class LiangHuiMailboxClient:
         normalized_title = str(title or "").strip()
         if prefix is None or not normalized_title:
             raise MailboxError("mailbox object label is invalid")
+        prior = self.ledger.handoff_state(handoff_id)
+        if prior is not None:
+            if (
+                prior.get("mailbox_id") != MAILBOX_ID
+                or prior.get("message_id") != handoff_id
+                or prior.get("object_kind") != object_kind
+                or not str(prior.get("title") or "").strip()
+            ):
+                raise MailboxError("mailbox send claim changed")
+            # An attempted external write is immutable even when a later code
+            # repair improves how future subjects are derived.
+            normalized_title = str(prior["title"])
         sender_content = {
             "mailbox_id": MAILBOX_ID,
             "message_id": handoff_id,
@@ -271,14 +283,9 @@ class LiangHuiMailboxClient:
             "payload": capsule,
         }
         content_sha256 = _sha256(sender_content)
-        prior = self.ledger.handoff_state(handoff_id)
         if prior is not None:
             if (
-                prior.get("mailbox_id") != MAILBOX_ID
-                or prior.get("message_id") != handoff_id
-                or prior.get("content_sha256") != content_sha256
-                or prior.get("object_kind") != object_kind
-                or prior.get("title") != normalized_title
+                prior.get("content_sha256") != content_sha256
             ):
                 raise MailboxError("mailbox send claim changed")
             if prior.get("event") == "mailbox_send_attempted":

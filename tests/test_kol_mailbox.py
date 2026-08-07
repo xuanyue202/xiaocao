@@ -187,7 +187,7 @@ def test_local_publish_reconciles_uncertain_send_before_any_retry(tmp_path) -> N
     result = client.publish_handoff(
         _official_capsule(),
         object_kind="article",
-        title="测试交接",
+        title="修复后的标题",
     )
 
     assert result["status"] == "Handoff完成"

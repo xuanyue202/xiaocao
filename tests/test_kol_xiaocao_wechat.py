@@ -519,6 +519,7 @@ def test_pending_cloud_handoff_resumes_exact_job_without_rescanning(tmp_path):
         "schema_version": 2,
         "handoff_id": "b" * 64,
         "capture_job_id": "kol-capture-current",
+        "media_basename": "target-compressed.mp4",
         "media_sha256": "a" * 64,
         "large_payload_local_bytes": 0,
     }
@@ -575,6 +576,7 @@ def test_published_handoff_recovery_is_read_only_until_remote_dispatch(tmp_path)
         "schema_version": 2,
         "handoff_id": "b" * 64,
         "capture_job_id": "kol-capture-current",
+        "media_basename": "target-compressed.mp4",
         "media_sha256": "a" * 64,
         "large_payload_local_bytes": 0,
     }
@@ -620,7 +622,7 @@ def test_published_handoff_recovery_is_read_only_until_remote_dispatch(tmp_path)
     def exchange(capsule_value, *, object_kind, title):
         assert capsule_value == capsule
         assert object_kind == "video"
-        assert title == "小草直播"
+        assert title == "target-compressed"
         return {
             "status": "Handoff完成",
             "handoff_id": capsule["handoff_id"],
