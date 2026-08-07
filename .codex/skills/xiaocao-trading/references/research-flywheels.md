@@ -35,7 +35,7 @@ Kronos requires the model artifacts under `kronos_screen/model`, a compatible Kr
 
 ## Guarded verdicts
 
-`continuous_optimize.py` builds per-trade variant-versus-same-day-base results and applies cache-only, walk-forward train/test, per-trade equal weighting and multiple-comparison significance guards. REJECTED is evidence, not a pipeline error. Re-evaluation records only changed verdicts.
+`continuous_optimize.py` builds per-trade variant-versus-same-day-base results and applies cache-only, walk-forward train/test, per-trade equal weighting and multiple-comparison significance guards. Strategy-consumption verdicts for `mode_star` use only non-BJSE, opening-window-fillable `executable_net_ret`; theoretical `net_realized_ret` remains shadow evidence and cannot authorize Book-B promotion. `--export-variant ... --export-trades ...` writes the exact guard rows for a protocol-bound `research_run.py` manifest. REJECTED is evidence, not a pipeline error. Re-evaluation records only changed verdicts.
 
 For another hypothesis, create `{day,strat_ret,base_ret}` JSONL and run:
 

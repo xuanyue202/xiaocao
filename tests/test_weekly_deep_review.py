@@ -453,6 +453,36 @@ def test_strategy_auto_applied_requires_manifest_artifact_files(tmp_path, monkey
         raise AssertionError("strategy AUTO_APPLIED with missing research artifacts should fail")
 
 
+def test_strategy_auto_applied_rejects_non_passing_manifest(tmp_path, monkeypatch):
+    _patch_paths(monkeypatch, tmp_path)
+    _write_protocol_registry(tmp_path)
+    manifest = _write_research_manifest(tmp_path)
+    payload = json.loads(manifest.read_text(encoding="utf-8"))
+    payload["verdict"]["status"] = "REJECTED"
+    manifest.write_text(json.dumps(payload, ensure_ascii=False), encoding="utf-8")
+    candidate = {
+        "id": "rejected-strategy",
+        "title": "Do not promote rejected strategy evidence",
+        "source": "kronos_screen/HYPOTHESES.jsonl",
+        "change_type": "paper_strategy",
+        "protocol_id": "shortline-book-b-v1",
+        "research_manifest": str(manifest.relative_to(tmp_path)),
+        "recommended_change": "This must remain blocked.",
+        "evidence_bundle": wdr._evidence_bundle(
+            problem="Strategy evidence is rejected.",
+            attribution="Protocol-bound manifest says REJECTED.",
+            artifact=str(manifest.relative_to(tmp_path)),
+            baseline="No paper strategy promotion.",
+            overfit="The corrected executable guard did not pass significance.",
+            scope="paper/simulation strategy code",
+        ),
+    }
+
+    errors = wdr._research_protocol_errors(candidate)
+
+    assert any("verdict must be PASS" in error and "REJECTED" in error for error in errors)
+
+
 def test_report_quality_research_output_does_not_require_protocol_manifest(tmp_path, monkeypatch):
     _patch_paths(monkeypatch, tmp_path)
     monkeypatch.setattr(wdr, "_stage_and_commit", lambda **_: None)

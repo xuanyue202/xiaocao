@@ -1,12 +1,14 @@
 # 小草每周深度复盘 2026-08-07
 
 ## 先看结论
-- 本周模式：只给提案，等你确认（`PROPOSAL_ONLY`）。
-- 自动改策略代码：没有。没有完整证据链时只产出提案/审计，不想当然改策略。
-- 需要你确认的事项：1 个，见下一节。
+- 本周模式：用户确认后的研究口径优化已落地（研究工具 `AUTO_APPLIED`，交易策略保持不变）。
+- 自动改策略代码：没有。C 的理论收益 PASS 在可执行成交口径下变为 REJECTED，因此没有替换现行 ★E，也没有修改参数、账户、成交或安全逻辑。
+- 需要你确认的事项：0 个；原提案已完成复验并关闭。
 
-## 需要你看/确认的事项
-- **确认策略映射方案**：C_MODE_ROTATION_K_SURVIVORS 已经通过研究/纪律口径，但这次固定输入里还缺明确的落地映射、不过拟合说明或回滚方案。证据链补齐后可以自动落地；现在先写成提案，避免想当然改策略。
+## 用户确认后的复验结论
+- `C_mode_rotation_k_survivors` 改用非北交所、开盘窗口可成交的 `executable_net_ret`：69 笔 / 24 日，逐笔超额 +2.7028pp，train/test 均为正，但 p=0.002994 高于 Bonferroni 门槛 0.0025，最终 `REJECTED(significant)`。
+- C 与现行 ★E 的共同 12 日直接对照未通过 walk-forward 和显著性，不能证明切换默认 Book-B pick 会改善收益。
+- protocol-bound manifest：`output/research/runs/c-mode-rotation-k-survivors-executable-2026-08-07/manifest.json`。最新 verdict 已追加到 `kronos_screen/HYPOTHESES.jsonl`，策略飞轮不再有待消费 PASS。
 
 ## 这批转录给我的启发
 - **2026-08-06 微信公众号复盘（2026-08-06_liu_shao_review.json）**
@@ -66,28 +68,34 @@
   - 2026-08-06 2026-08-06_xiaocao_review.json: 前向记录题材趋势核心相对强弱、梯队层数、分歧后修复、首次盘中资格和固定风险仓位。
 
 ## 已自动落地的代码/配置变更
-- none
+- `scripts/continuous_optimize.py`：`mode_star` 的策略消费裁决固定使用 opening-window fillable `executable_net_ret`，排除北交所；新增精确 guard JSONL 导出，供 `research_run.py` 绑定 manifest。
+- `scripts/weekly_deep_review.py`：策略 `AUTO_APPLIED` 明确要求 manifest verdict 为 PASS，REJECTED manifest 不能再通过 finalizer。
+- `.codex/skills/xiaocao-trading/references/research-flywheels.md` 与回归测试同步更新；Book-B 运行选择、资金、账户与安全代码均未修改。
 
 ## 证据来源
 - 固定输入清单：scripts/flywheel_selfcheck.py, scripts/flywheel_sweep.py --json --top 30, reference/experience/distill_action_log.jsonl, kronos_screen/HYPOTHESES.jsonl, output/research/*, output/live/pnl_decompose.csv, output/research/paper_vs_market_*.md, output/live/posture_calibration.jsonl, output/live/exit_calibration.jsonl, reference/experience/research_protocols.yaml, output/research/runs/*/manifest.json, git status --porcelain
-- 提案数量：1
-- 自动落地候选数量：13
+- 原计划提案数量：1（已复验关闭）
+- 原计划 instrumentation 候选数量：13（本次未顺带实施）
+- 用户确认后自动落地：1 项研究消费口径修正
 
 ## 验证
 - bash -n scripts/auto_daily.sh: PASS
 - PYTHONPATH=src .venv/bin/python scripts/strategy_protocols.py --check: PASS (2 protocols)
-- PYTHONPATH=src .venv/bin/python -m pytest tests/test_weekly_deep_review.py -q: PASS (11 passed)
+- protocol-bound research manifest: REJECTED as expected (69 trades / 24 days; p=0.002994 > 0.0025)
+- PYTHONPATH=src .venv/bin/python -m pytest [12 related files] -q: PASS (103 passed)
+- PYTHONPATH=src .venv/bin/python -m pytest -q: PASS (1195 passed)
+- git diff --check: PASS
 
 ## 回滚
 - 如果本周有提交：`git revert <commit>`
 
 ## 飞轮健康度
 - 总体在转：True
-- 策略飞轮：blocked；待处理 PASS=['C_mode_rotation_k_survivors']
+- 策略飞轮：open；待处理 PASS=[]
 - 知识飞轮：候选 84 / 已测 10 / 已退役 5 / 最老未测 2025-01-09
 
 ## 提案文件
-- .scratch/weekly-deep-review/2026-08-07/pass-pending-c_mode_rotation_k_survivors.md
+- .scratch/weekly-deep-review/2026-08-07/pass-pending-c_mode_rotation_k_survivors.md（用户已确认，复验后关闭；未升级交易策略）
 
 ## 机器审计明细
 ```json

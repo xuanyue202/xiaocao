@@ -17,6 +17,7 @@ STATE.md's "marginal, not robustly significant" conclusion.)
 from __future__ import annotations
 
 import argparse
+import json
 import sys
 from pathlib import Path
 
@@ -43,6 +44,24 @@ VARIANTS = {
     ),
 }
 
+# A strategy-consumption verdict must use the same executable label contract as
+# Book B.  Legacy A/B shadows remain descriptive on theoretical next-close
+# returns, while variant C is the only tracked candidate currently eligible for
+# paper-strategy consumption and therefore must be judged on fillable opening-
+# window net returns.  This keeps a theoretical PASS from being promoted into
+# the executable path.
+VARIANT_RETURN_CONTRACTS = {
+    "mode_star": {
+        "return_col": "executable_net_ret",
+        "eligible_col": "executable_fillable",
+        "exclude_bjse": True,
+        "method": (
+            "live forward eval (opening-window executable net[D]->close[D+1]) "
+            "vs same-day executable take-all, per-trade"
+        ),
+    },
+}
+
 
 def is_new_information(prev: dict | None, verdict: dict) -> bool:
     """Should this verdict be appended to the ledger?
@@ -60,7 +79,23 @@ def is_new_information(prev: dict | None, verdict: dict) -> bool:
     return sorted(prev.get("rejected_by") or []) != sorted(verdict.get("rejected_by") or [])
 
 
-def build_results(df: pd.DataFrame, variant_col: str) -> list[dict]:
+def _truthy(value: object) -> bool:
+    if isinstance(value, str):
+        return value.strip().lower() in {"1", "true", "yes"}
+    try:
+        return bool(value)
+    except (TypeError, ValueError):
+        return False
+
+
+def build_results(
+    df: pd.DataFrame,
+    variant_col: str,
+    *,
+    return_col: str = "net_realized_ret",
+    eligible_col: str | None = None,
+    exclude_bjse: bool = False,
+) -> list[dict]:
     """Per selected trade: strat_ret = the pick's realized next-close return;
     base_ret = that day's LEAVE-ONE-OUT take-all mean (the counterfactual of NOT
     selecting this pick — it excludes the pick itself, so the baseline is not
@@ -73,21 +108,38 @@ def build_results(df: pd.DataFrame, variant_col: str) -> list[dict]:
     while str(...) lookups miss, silently defaulting every baseline to 0.0 and
     passing a LOSING strategy as validated (an audited critical bug). A missing
     day now raises (fail loud) rather than fabricating a baseline."""
-    scored = df[df["net_realized_ret"].notna()].copy()
-    if scored.empty or variant_col not in scored.columns:
+    if variant_col not in df.columns or return_col not in df.columns:
+        return []
+    scored = df[df[return_col].notna()].copy()
+    if eligible_col is not None:
+        if eligible_col not in scored.columns:
+            return []
+        scored = scored[scored[eligible_col].map(_truthy)]
+    if exclude_bjse and "code" in scored.columns:
+        scored = scored[~scored["code"].astype(str).str.endswith(".BJSE")]
+    if scored.empty:
         return []
     scored["__day"] = scored["date"].astype(str)
-    day_sum = scored.groupby("__day")["net_realized_ret"].sum()
-    day_cnt = scored.groupby("__day")["net_realized_ret"].count()
-    picks = scored[scored[variant_col] == True]  # noqa: E712
+    day_sum = scored.groupby("__day")[return_col].sum()
+    day_cnt = scored.groupby("__day")[return_col].count()
+    picks = scored[scored[variant_col].map(_truthy)]
     out: list[dict] = []
-    for day, ret in zip(picks["__day"], picks["net_realized_ret"]):
+    for day, ret in zip(picks["__day"], picks[return_col]):
         n = int(day_cnt[day])  # KeyError if the day is absent — fail loud, never default to 0
         if n <= 1:
             continue  # no non-pick counterfactual that day
         base = (float(day_sum[day]) - float(ret)) / (n - 1)
         out.append({"day": str(day), "strat_ret": float(ret), "base_ret": base})
     return out
+
+
+def write_results_jsonl(results: list[dict], path: Path) -> None:
+    """Persist the exact guard input so research_run.py can bind a manifest."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(
+        "".join(json.dumps(row, ensure_ascii=False, sort_keys=True) + "\n" for row in results),
+        encoding="utf-8",
+    )
 
 
 def main() -> None:
@@ -98,7 +150,13 @@ def main() -> None:
     ap.add_argument("--min-days", type=int, default=8)
     ap.add_argument("--record", action="store_true", help="append verdicts to the knowledge ledger")
     ap.add_argument("--ledger", default=str(ledger.DEFAULT_LEDGER_PATH))
+    ap.add_argument("--export-variant", choices=sorted(VARIANTS),
+                    help="export one variant's exact guard rows for a protocol-bound research run")
+    ap.add_argument("--export-trades", type=Path,
+                    help="JSONL destination paired with --export-variant")
     a = ap.parse_args()
+    if bool(a.export_variant) != bool(a.export_trades):
+        raise SystemExit("--export-variant and --export-trades must be provided together")
 
     path = Path(a.train)
     if not path.exists():
@@ -121,7 +179,19 @@ def main() -> None:
 
     any_recorded = False
     for variant_col, (hyp_id, claim) in VARIANTS.items():
-        results = build_results(df, variant_col)
+        contract = VARIANT_RETURN_CONTRACTS.get(variant_col, {})
+        results = build_results(
+            df,
+            variant_col,
+            return_col=str(contract.get("return_col", "net_realized_ret")),
+            eligible_col=contract.get("eligible_col"),
+            exclude_bjse=bool(contract.get("exclude_bjse", False)),
+        )
+        if a.export_variant == variant_col:
+            if not results:
+                raise SystemExit(f"{hyp_id}: no guard rows available to export")
+            write_results_jsonl(results, a.export_trades)
+            print(f"{hyp_id}: exported {len(results)} guard rows -> {a.export_trades}")
         if not results:
             print(f"{hyp_id}: no live picks with outcomes yet — skip")
             continue
@@ -147,7 +217,10 @@ def main() -> None:
             if is_new_information(prev, verdict):
                 ledger.record_hypothesis(
                     hypothesis_id=hyp_id, claim=claim,
-                    method="live forward eval (open[D]->net close[D+1]) vs take-all, per-trade",
+                    method=str(contract.get(
+                        "method",
+                        "live forward eval (open[D]->net close[D+1]) vs take-all, per-trade",
+                    )),
                     verdict=verdict, n_tried=n_tried, path=ledger_path,
                 )
                 any_recorded = True

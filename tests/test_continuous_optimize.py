@@ -105,3 +105,48 @@ def test_build_results_supports_qibao_benchmark_variant():
     assert co.build_results(df, "qibao_benchmark_star") == [
         {"day": "2026-06-30", "strat_ret": 6.0, "base_ret": 0.0},
     ]
+
+
+def test_mode_star_strategy_consumption_uses_fillable_executable_returns():
+    df = pd.DataFrame([
+        {
+            "date": "2026-07-01", "code": "PICK.XSHE", "mode_star": True,
+            "net_realized_ret": 20.0, "executable_fillable": True,
+            "executable_net_ret": -2.0,
+        },
+        {
+            "date": "2026-07-01", "code": "BASE.XSHE", "mode_star": False,
+            "net_realized_ret": -10.0, "executable_fillable": True,
+            "executable_net_ret": 3.0,
+        },
+        {
+            "date": "2026-07-01", "code": "SKIP.XSHE", "mode_star": False,
+            "net_realized_ret": -10.0, "executable_fillable": False,
+            "executable_net_ret": float("nan"),
+        },
+        {
+            "date": "2026-07-01", "code": "920001.BJSE", "mode_star": False,
+            "net_realized_ret": -10.0, "executable_fillable": True,
+            "executable_net_ret": 99.0,
+        },
+    ])
+
+    contract = co.VARIANT_RETURN_CONTRACTS["mode_star"]
+    assert co.build_results(
+        df,
+        "mode_star",
+        return_col=contract["return_col"],
+        eligible_col=contract["eligible_col"],
+        exclude_bjse=contract["exclude_bjse"],
+    ) == [{"day": "2026-07-01", "strat_ret": -2.0, "base_ret": 3.0}]
+
+
+def test_write_results_jsonl_round_trips_exact_guard_rows(tmp_path):
+    rows = [{"day": "2026-07-01", "strat_ret": 1.25, "base_ret": -0.5}]
+    path = tmp_path / "trades.jsonl"
+
+    co.write_results_jsonl(rows, path)
+
+    assert path.read_text(encoding="utf-8").splitlines() == [
+        '{"base_ret": -0.5, "day": "2026-07-01", "strat_ret": 1.25}'
+    ]

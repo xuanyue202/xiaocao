@@ -411,6 +411,11 @@ def _research_protocol_errors(candidate: dict[str, Any]) -> list[str]:
         errors.append(
             f"research_manifest protocol_id mismatch: candidate={protocol_id} manifest={manifest.get('protocol_id')}"
         )
+    verdict_status = str(_nested_get(manifest, "verdict.status") or "").upper()
+    if verdict_status != "PASS":
+        errors.append(
+            f"research_manifest verdict must be PASS for strategy AUTO_APPLIED: {verdict_status or 'missing'}"
+        )
     for field in protocol.get("required_manifest_fields", []):
         if _is_nullish(_nested_get(manifest, str(field))):
             errors.append(f"research_manifest missing/empty required field for {protocol_id}: {field}")
