@@ -18,8 +18,11 @@ PYTHONPATH=src .venv/bin/python scripts/kol_daily.py audit
 ```
 
 Each run exits after one sweep; the 07:00 run drains overnight backlog by
-decision priority. No-update/waiting is silent. Retryable failures expose only
-credential-safe `category`, `code`, and `stage`. Do not run 23:01–06:59.
+decision priority. A sweep with no concrete article or video item is silent.
+Every concrete item remains reportable while waiting, unchanged, exceptional,
+handoff-completed, or fully completed; never imply that handoff completion is
+downstream completion. Retryable failures expose only credential-safe
+`category`, `code`, and `stage`. Do not run 23:01–06:59.
 
 An internal `repair_required` result is work for the current Agent, not a user
 blocker. Reconcile exact claims/receipts, inspect the failure and repository
@@ -157,11 +160,14 @@ stable report URL and prior manifest, and it never creates a reminder or Book
 action.
 
 The append-only ledger resumes unfinished work and reconciles history,
-corrections, maintenance, restarts, and replays without resending. Preserve
-retryable diagnostics in status/audit; the same blocker stays silent until it
-changes. Repeated source/stage/code or acquisition stalls append one exhausted
-audit with `repair_required=true`; they do not notify the user. Emit one
-deduplicated blocker only for authentication, SMS, CAPTCHA, consent, a fact
-only the user can provide, or an external side effect whose outcome cannot be
-reconciled. A timeout, selector drift, schema mismatch, missing internal UI
-path, or repository defect is never by itself `user_action_required`.
+corrections, maintenance, restarts, and replays without resending. Stay silent
+only when the sweep has no concrete article or video item. Otherwise report
+every current item, including unchanged waits and retryable exceptions, while
+preserving the distinction between handoff completion and downstream
+completion. Repeated source/stage/code or acquisition stalls append one
+exhausted audit with `repair_required=true`; repetition does not make them
+`user_action_required`. Reserve that status for authentication, SMS, CAPTCHA,
+consent, a fact only the user can provide, or an external side effect whose
+outcome cannot be reconciled. A timeout, selector drift, schema mismatch,
+missing internal UI path, or repository defect is never by itself
+`user_action_required`.
