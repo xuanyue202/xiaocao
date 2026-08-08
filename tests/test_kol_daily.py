@@ -3345,6 +3345,81 @@ def test_lv_download_frame_fault_returns_repair_progress_and_stops_fanout(
     }
 
 
+def test_lv_provider_filtered_fault_preserves_claim_and_stops_retry(
+    tmp_path,
+    monkeypatch,
+):
+    class FakeService:
+        @staticmethod
+        def poll_opencli(**_kwargs):
+            return {"status": "ok"}
+
+        @staticmethod
+        def pending_items():
+            return [{
+                "identity": "identity-filtered",
+                "version_key": "version-filtered",
+                "name": "fixture-filtered.png",
+                "media_type": "image",
+                "modified_at": 2,
+                "path": "/fixture-filtered.png",
+            }]
+
+        @staticmethod
+        def metadata_companion_proof(*_args, **_kwargs):
+            return None
+
+        @staticmethod
+        def download_opencli(*_args, **_kwargs):
+            raise EnrichmentDiagnosticError(
+                "provider filtered the exact file",
+                category="provider_error",
+                code="provider_download_filtered",
+                stage="provider_download_link",
+            )
+
+        @staticmethod
+        def record_item_failure(identity, *, failure, retryable):
+            assert identity == "identity-filtered"
+            assert failure == {
+                "category": "provider_error",
+                "code": "provider_download_filtered",
+                "stage": "provider_download_link",
+            }
+            assert retryable is False
+            return {"claim_status": "claimed"}
+
+    runtime = DailyRuntime.__new__(DailyRuntime)
+    runtime.args = SimpleNamespace(
+        lv_session="lv-session",
+        opencli_profile=None,
+    )
+    runtime._lv_service_for_sweep = lambda: FakeService()
+    runtime._lv_listing_for_sweep = lambda: {
+        "status": "ok",
+        "complete_scan": True,
+        "entries": [],
+    }
+    runtime._complete_lv_video_transcripts = lambda: []
+    monkeypatch.setattr(
+        kol_daily_script,
+        "_writer_failure_revision",
+        lambda: "b" * 40,
+    )
+
+    result = runtime.lv()
+
+    assert result["repair_required"] is True
+    progress = WriterProgress.from_dict(result["writer_progress"])
+    assert progress.failure["code"] == "provider_download_filtered"
+    assert progress.retryability == "not_retryable"
+    assert progress.details["claim_receipt_summary"] == {
+        "claim_count": 1,
+        "receipt_count": 0,
+        "uncertain_effect_count": 0,
+    }
+
+
 def test_open_writer_repair_remains_authoritative_until_matching_closure(tmp_path):
     clock = Clock("2026-08-08T07:30:00+08:00")
     coordinator = DailyCoordinator(tmp_path / "daily", now=clock)

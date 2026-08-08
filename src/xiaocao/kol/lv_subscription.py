@@ -732,8 +732,11 @@ _PROVIDER_DIRECT_LINK_SCRIPT_TEMPLATE = r"""(async () => {
     return result('captcha_required');
   }
   if (!response.ok || Number(payload?.errno || 0) !== 0) {
-    return result('provider_error', {
-      provider_errno: Number(payload?.errno || 0),
+    const providerErrno = Number(payload?.errno || 0);
+    const filtered = providerErrno === 2
+      && /部分文件违规，已被过滤|违规文件/.test(pageText);
+    return result(filtered ? 'provider_filtered' : 'provider_error', {
+      provider_errno: providerErrno,
       http_status: Number(response.status || 0)
     });
   }
@@ -4116,7 +4119,9 @@ try {
             )
         if status != "download_link_ready":
             provider_errno = link.get("provider_errno")
-            if provider_errno == 2:
+            if status == "provider_filtered":
+                code = "provider_download_filtered"
+            elif provider_errno == 2:
                 code = "provider_download_link_errno_2"
             elif status == "share_download_metadata_missing":
                 code = "provider_download_metadata_missing"

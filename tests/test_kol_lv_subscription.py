@@ -1637,6 +1637,8 @@ def test_image_recovery_provider_probe_is_versioned_opencli_template():
     assert "performance.getEntriesByType('resource')" in source
     assert "resourceValue(['sekey'])" in source
     assert "if (sign) query.set('sign', sign)" in source
+    assert "provider_filtered" in source
+    assert "部分文件违规，已被过滤" in source
     assert "expectedProviderFileId = \"123456789012345\"" in source
     assert "12.png" in source
 

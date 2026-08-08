@@ -147,6 +147,7 @@ def _source_failure_repair_progress(
     failure_audit: dict[str, Any] | None,
     provider_contract_version: str,
     targeted_test_profile: str,
+    retryability: str = "retryable",
 ) -> WriterProgress:
     fingerprint = FailureFingerprint(
         adapter=adapter,
@@ -173,7 +174,7 @@ def _source_failure_repair_progress(
         claim_receipt_summary=summary,
         targeted_test_profile=targeted_test_profile,
         narrow_resume_surface=f"{adapter}:{item['identity']}",
-        retryability="retryable",
+        retryability=retryability,
     )
 
 
@@ -211,7 +212,7 @@ def _isolated_item_failure(
             failure["exit_code"] = exc.diagnostic_exit_code
         return (
             failure,
-            True,
+            exc.diagnostic_code != "provider_download_filtered",
         )
     message = str(exc)
     known = {
@@ -1621,6 +1622,11 @@ class DailyRuntime:
         waiting = 0
         waiting_items = []
         suppressed = 0
+        claim_receipt_summary = {
+            "claim_count": 0,
+            "receipt_count": 0,
+            "uncertain_effect_count": 0,
+        }
         for row in pending:
             identity = str(row["identity"])
             try:
@@ -1639,6 +1645,11 @@ class DailyRuntime:
                     failure=failure,
                     retryable=retryable,
                 )
+                item_summary = _claim_summary_from_failure_audit(
+                    failure_audit or {}
+                )
+                for key in claim_receipt_summary:
+                    claim_receipt_summary[key] += item_summary[key]
                 waiting += 1
                 waiting_item = {
                     "identity": identity,
@@ -1648,7 +1659,10 @@ class DailyRuntime:
                     "failure": {**failure, "retryable": retryable},
                 }
                 waiting_items.append(waiting_item)
-                if failure["code"] == "blocked_download_frame_missing":
+                if failure["code"] in {
+                    "blocked_download_frame_missing",
+                    "provider_download_filtered",
+                }:
                     affected = [
                         candidate
                         for candidate in pending
@@ -1664,6 +1678,9 @@ class DailyRuntime:
                             BLOCKED_DOWNLOAD_PROVIDER_CONTRACT_VERSION
                         ),
                         targeted_test_profile="kol_lv_download_recovery",
+                        retryability=(
+                            "retryable" if retryable else "not_retryable"
+                        ),
                     )
                     return {
                         "status": "waiting",
@@ -1675,6 +1692,9 @@ class DailyRuntime:
                         "repair_required": True,
                         "user_action_required": False,
                         "writer_progress": progress.to_dict(),
+                        "claim_receipt_summary": (
+                            progress.details["claim_receipt_summary"]
+                        ),
                     }
                 continue
             ingest = service.ingest_browser_download(identity)
@@ -1737,6 +1757,7 @@ class DailyRuntime:
                 "waiting_count": waiting,
                 "waiting_items": waiting_items,
                 "suppressed_companion_count": suppressed,
+                "claim_receipt_summary": claim_receipt_summary,
             }
         if waiting:
             return {
