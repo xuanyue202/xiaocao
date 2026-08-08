@@ -1355,6 +1355,9 @@ def test_reconcile_progress_uses_authoritative_readback_handler_before_source(
                     "code": "publication_receipt_uncertain",
                     "stage": "publication_reconciliation",
                 },
+                "effect_kind": "gray_report",
+                "claim_identity": "gray-report-claim-1",
+                "readback_operation": "read_gray_report_receipt",
             }],
         }
 
@@ -1363,7 +1366,18 @@ def test_reconcile_progress_uses_authoritative_readback_handler_before_source(
 
     def reconciled(progress):
         calls.append(progress.details["readback_operation"])
-        return {"status": "no_update"}
+        return {
+            "outcome": {"status": "no_update"},
+            "reconciliation_receipt": {
+                "event": "reconciliation_completed",
+                "claim_identity": progress.details["claim_identity"],
+                "readback_operation": progress.details["readback_operation"],
+                "readback_evidence_sha256": hashlib.sha256(
+                    b'{"status":"no_update"}'
+                ).hexdigest(),
+                "external_business_effects_replayed": False,
+            },
+        }
 
     result = service.run([{
         "name": "lv_text_image",
@@ -1373,8 +1387,194 @@ def test_reconcile_progress_uses_authoritative_readback_handler_before_source(
         "reconcile": reconciled,
     }])
 
-    assert calls == ["source", "reconcile_publication_reconciliation"]
+    assert calls == ["source", "read_gray_report_receipt"]
     assert result["source_results"][0]["status"] == "no_update"
+
+
+def test_reconciliation_without_authoritative_receipt_becomes_agent_repair(
+    tmp_path,
+):
+    clock = Clock("2026-08-08T07:30:00+08:00")
+    service = DailyCoordinator(tmp_path / "daily", now=clock)
+    service.run([{
+        "name": "lv_text_image",
+        "run": lambda: {
+            "status": "waiting",
+            "waiting_items": [{
+                "identity": "item-1",
+                "stage": "publication_reconciliation",
+                "failure": {
+                    "category": "uncertain_state",
+                    "code": "publication_receipt_uncertain",
+                    "stage": "publication_reconciliation",
+                },
+                "effect_kind": "gray_report",
+                "claim_identity": "gray-report-claim-1",
+                "readback_operation": "read_gray_report_receipt",
+            }],
+        },
+    }])
+    clock.value = datetime.fromisoformat("2026-08-08T08:30:00+08:00")
+
+    result = service.run([{
+        "name": "lv_text_image",
+        "run": lambda: (_ for _ in ()).throw(
+            AssertionError("ordinary runner must stay suppressed")
+        ),
+        "reconcile": lambda _progress: {"status": "no_update"},
+    }])
+
+    source = result["source_results"][0]
+    assert source["repair_required"] is True
+    assert source["writer_progress"]["ownership"] == "agent"
+    assert source["failure"]["category"] == "control_plane_handler_error"
+
+
+def test_structured_input_resume_uses_bound_handler_instead_of_source(tmp_path):
+    clock = Clock("2026-08-08T07:30:00+08:00")
+    service = DailyCoordinator(tmp_path / "daily", now=clock)
+    calls = []
+    service.run([{
+        "name": "lv_text_image",
+        "run": lambda: {
+            "status": "waiting",
+            "waiting_items": [{
+                "identity": "item-1",
+                "version_key": "version-1",
+                "stage": "waiting_semantic_input",
+                "evidence_sha256": "b" * 64,
+            }],
+        },
+    }])
+    clock.value = datetime.fromisoformat("2026-08-08T08:30:00+08:00")
+
+    result = service.run([{
+        "name": "lv_text_image",
+        "run": lambda: (_ for _ in ()).throw(
+            AssertionError("ordinary runner must stay suppressed")
+        ),
+        "structured_input": lambda progress: (
+            calls.append(progress.item_identity)
+            or {
+                "outcome": {"status": "no_update"},
+                "structured_input_receipt": {
+                    "event": "structured_input_consumed",
+                    "request_id": progress.details["request_id"],
+                    "request_schema_version": 1,
+                    "response_field": progress.details["response_field"],
+                    "immutable_bindings_sha256": hashlib.sha256(
+                        json.dumps(
+                            progress.details["immutable_bindings"],
+                            ensure_ascii=False,
+                            sort_keys=True,
+                            separators=(",", ":"),
+                        ).encode()
+                    ).hexdigest(),
+                    "request_sha256": "c" * 64,
+                    "response_sha256": "d" * 64,
+                },
+            }
+        ),
+    }])
+
+    assert calls == ["item-1"]
+    assert result["source_results"][0]["status"] == "no_update"
+
+
+def test_structured_input_without_consumption_receipt_becomes_agent_repair(
+    tmp_path,
+):
+    clock = Clock("2026-08-08T07:30:00+08:00")
+    service = DailyCoordinator(tmp_path / "daily", now=clock)
+    service.run([{
+        "name": "lv_text_image",
+        "run": lambda: {
+            "status": "waiting",
+            "waiting_items": [{
+                "identity": "item-1",
+                "version_key": "version-1",
+                "stage": "waiting_semantic_input",
+                "evidence_sha256": "b" * 64,
+            }],
+        },
+    }])
+    clock.value = datetime.fromisoformat("2026-08-08T08:30:00+08:00")
+
+    result = service.run([{
+        "name": "lv_text_image",
+        "run": lambda: (_ for _ in ()).throw(AssertionError),
+        "structured_input": lambda _progress: {"status": "no_update"},
+    }])
+
+    source = result["source_results"][0]
+    assert source["repair_required"] is True
+    assert source["failure"]["category"] == "control_plane_handler_error"
+
+
+def test_real_structured_input_receipt_binds_lv_evidence(
+    tmp_path,
+    monkeypatch,
+):
+    bundle_path = tmp_path / "bundle.json"
+    bundle_path.write_text('{"schema_version": 1}\n', encoding="utf-8")
+    evidence_sha256 = "e" * 64
+    progress = WriterProgress.structured_input(
+        item_identity="lv-item-1",
+        stage="waiting_semantic_input",
+        request_kind="daily_analysis_input_required",
+        request_id="request-1",
+        request_schema_version=1,
+        immutable_bindings={
+            "identity": "lv-item-1",
+            "version_key": "version-1",
+            "evidence_sha256": evidence_sha256,
+        },
+        response_field="bundle_path",
+        claim_receipt_summary={
+            "claim_count": 0,
+            "receipt_count": 0,
+            "uncertain_effect_count": 0,
+        },
+    )
+    request = {
+        "event": "daily_analysis_input_required",
+        "identity": "lv-item-1",
+        "version_key": "version-1",
+        "evidence_sha256": evidence_sha256,
+    }
+    monkeypatch.setattr(sys, "stdin", io.StringIO(f"{bundle_path}\n"))
+
+    result = kol_daily_script._consume_structured_input(
+        progress,
+        lambda: (
+            kol_daily_script._read_agent_path(request, "bundle_path")
+            and {"status": "no_update"}
+        ),
+    )
+
+    receipt = result["structured_input_receipt"]
+    assert result["outcome"] == {"status": "no_update"}
+    assert receipt["request_id"] == "request-1"
+    assert receipt["response_sha256"] == hashlib.sha256(
+        bundle_path.read_bytes()
+    ).hexdigest()
+
+
+def test_invalid_post_run_schema_becomes_agent_owned_repair(tmp_path):
+    service = DailyCoordinator(
+        tmp_path / "daily",
+        now=Clock("2026-08-08T07:30:00+08:00"),
+    )
+
+    result = service.run([{
+        "name": "lv_text_image",
+        "run": lambda: {"status": "invalid"},
+    }])
+
+    source = result["source_results"][0]
+    assert source["repair_required"] is True
+    assert source["writer_progress"]["ownership"] == "agent"
+    assert source["failure"]["category"] == "schema_error"
 
 
 def test_daily_status_preserves_specific_video_waiting_stage(tmp_path):
@@ -1583,13 +1783,17 @@ def test_promoted_event_fails_closed_when_book_precedes_gray_report(tmp_path):
     event = _promoted_event(event_id="wrong-order", tier="alert_eligible")
     event["book_kol_us"]["terminal_order"] = 0
 
-    with pytest.raises(DailyError, match="gray report must precede"):
-        service.run(
-            [{
-                "name": "source",
-                "run": lambda: {"status": "completed", "events": [event]},
-            }]
-        )
+    result = service.run(
+        [{
+            "name": "source",
+            "run": lambda: {"status": "completed", "events": [event]},
+        }]
+    )
+
+    source = result["source_results"][0]
+    assert source["repair_required"] is True
+    assert source["failure"]["category"] == "schema_error"
+    assert source["failure"]["stage"] == "source_result_validation"
 
 
 class _Book:
@@ -2382,6 +2586,7 @@ def test_lv_pending_failure_isolated_without_blocking_later_pdf(
                 "version_key": "new-version",
                 "media_type": "pdf",
                 "evidence_path": "/immutable/new.pdf",
+                "evidence_sha256": "f" * 64,
             }
 
         @staticmethod

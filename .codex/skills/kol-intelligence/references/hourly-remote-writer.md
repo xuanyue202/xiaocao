@@ -24,7 +24,8 @@ downstream completion. Retryable failures expose only credential-safe
 `category`, `code`, and `stage`. A started task owns recoverable items through
 repair and exact continuation; do not defer obtainable work.
 
-Obey seven-state `writer_progress.next_action`; retryability never changes owner.
+Obey seven-state `writer_progress.next_action`; bind input and readback
+receipts; retryability never changes owner.
 
 `repair_required` is work for the current Agent, not a user blocker: reconcile
 claims/receipts, patch regressions, validate, commit, and push without user WIP. Continue on

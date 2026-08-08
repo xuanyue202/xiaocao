@@ -11,6 +11,7 @@ import re
 import sys
 import termios
 from collections.abc import Collection
+from contextvars import ContextVar
 from datetime import datetime, timezone
 from pathlib import Path
 from time import sleep as _cloud_handoff_sleep
@@ -85,6 +86,10 @@ DEFAULT_WECHAT_OFFICIAL_OUTPUT = Path("output/live/kol_wechat_official")
 DEFAULT_MAILBOX_OUTPUT = Path("output/live/kol_mailbox")
 MAX_HANDOFF_BYTES = 1024 * 1024
 CLOUD_HANDOFF_POLL_SECONDS = 30
+_STRUCTURED_INPUT_STATE: ContextVar[dict[str, Any] | None] = ContextVar(
+    "kol_structured_input_state",
+    default=None,
+)
 
 
 @functools.lru_cache(maxsize=1)
@@ -573,6 +578,38 @@ def _read_agent_path(request: dict[str, Any], field: str) -> Path:
     path = Path(raw).expanduser().resolve()
     if not path.is_file():
         raise SemanticInputUnavailable(f"daily runner {field} is missing")
+    structured_state = _STRUCTURED_INPUT_STATE.get()
+    if structured_state is not None:
+        progress = structured_state["progress"]
+        details = progress.details
+        request_values = {
+            str(value)
+            for value in request.values()
+            if isinstance(value, (str, int)) and not isinstance(value, bool)
+        }
+        bindings = details["immutable_bindings"]
+        if (
+            structured_state.get("receipt") is not None
+            or request.get("event") != details["request_kind"]
+            or field != details["response_field"]
+            or any(str(value) not in request_values for value in bindings.values())
+        ):
+            raise DailyError(
+                "structured input does not match its persisted request binding"
+            )
+        structured_state["receipt"] = {
+            "event": "structured_input_consumed",
+            "request_id": details["request_id"],
+            "request_schema_version": details["request_schema_version"],
+            "response_field": details["response_field"],
+            "immutable_bindings_sha256": hashlib.sha256(
+                _canonical(bindings).encode("utf-8")
+            ).hexdigest(),
+            "request_sha256": hashlib.sha256(
+                _canonical(request).encode("utf-8")
+            ).hexdigest(),
+            "response_sha256": hashlib.sha256(path.read_bytes()).hexdigest(),
+        }
     return path
 
 
@@ -923,6 +960,134 @@ def _classified_progress_source(name: str, runner):
     return run
 
 
+def _exact_progress_surface(adapter: str, surface: str) -> str:
+    prefix = f"{adapter}:"
+    value = str(surface or "")
+    if not value.startswith(prefix) or value == prefix:
+        raise DailyError(f"{adapter} narrow progress surface is invalid")
+    return value[len(prefix):]
+
+
+def _adapter_scope_resume(adapter: str, surface: str, runner):
+    if _exact_progress_surface(adapter, surface) != "source":
+        raise DailyError(f"{adapter} cannot widen an exact narrow resume")
+    return runner()
+
+
+def _missing_progress_operation(adapter: str, operation: str):
+    def missing(*_args, **_kwargs):
+        raise DailyError(f"{adapter} lacks {operation} progress handler")
+
+    return missing
+
+
+def _one_exact_pending(
+    rows: list[dict[str, Any]],
+    identity: str | None,
+    *,
+    label: str,
+) -> list[dict[str, Any]]:
+    if identity is None:
+        return rows
+    exact = [
+        row
+        for row in rows
+        if str(row.get("identity") or "") == identity
+    ]
+    if len(exact) != 1:
+        raise DailyError(f"{label} target is not one exact pending item")
+    return exact
+
+
+def _lv_transfer_claim_binding(
+    output_dir: Path,
+    item: dict[str, Any],
+) -> dict[str, str]:
+    version = str(item.get("version_key") or "")
+    identity = str(item.get("identity") or "")
+    claim_path = output_dir / "claims" / f"lv_transfer_{version}.json"
+    if not claim_path.is_file():
+        return {}
+    try:
+        claim = json.loads(claim_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        raise DailyError("Lv transfer claim is invalid") from exc
+    claim_id = str(claim.get("claim_id") or "")
+    if (
+        not claim_id
+        or str(claim.get("source_identity") or "") != identity
+        or str(claim.get("source_version_key") or "") != version
+    ):
+        raise DailyError("Lv transfer claim binding changed")
+    return {
+        "effect_kind": "cloud_transfer",
+        "claim_identity": f"lv_transfer:{version}:{claim_id}",
+        "readback_operation": "read_lv_transfer_claim_receipt",
+    }
+
+
+def _reconciliation_result(
+    progress: WriterProgress,
+    outcome: dict[str, Any],
+) -> dict[str, Any]:
+    if outcome.get("events"):
+        raise DailyError(
+            "authoritative readback must not replay an external business effect"
+        )
+    evidence_sha256 = hashlib.sha256(
+        _canonical(outcome).encode("utf-8")
+    ).hexdigest()
+    return {
+        "outcome": outcome,
+        "reconciliation_receipt": {
+            "event": "reconciliation_completed",
+            "claim_identity": progress.details["claim_identity"],
+            "readback_operation": progress.details["readback_operation"],
+            "readback_evidence_sha256": evidence_sha256,
+            "external_business_effects_replayed": False,
+        },
+    }
+
+
+def _reconciliation_pending(progress: WriterProgress) -> dict[str, Any]:
+    return {
+        "status": "waiting",
+        "waiting_count": 1,
+        "waiting_items": [{
+            "identity": progress.item_identity,
+            "stage": progress.stage,
+            "failure": {
+                "category": "uncertain_state",
+                "code": "authoritative_readback_still_uncertain",
+                "stage": progress.stage,
+                "retryable": False,
+            },
+        }],
+        "writer_progress": progress.to_dict(),
+    }
+
+
+def _consume_structured_input(
+    progress: WriterProgress,
+    runner,
+) -> dict[str, Any]:
+    state: dict[str, Any] = {"progress": progress, "receipt": None}
+    token = _STRUCTURED_INPUT_STATE.set(state)
+    try:
+        outcome = runner()
+    finally:
+        _STRUCTURED_INPUT_STATE.reset(token)
+    receipt = state.get("receipt")
+    if not isinstance(receipt, dict):
+        raise DailyError(
+            "structured input handler did not consume its bound response"
+        )
+    return {
+        "outcome": outcome,
+        "structured_input_receipt": receipt,
+    }
+
+
 def _cloud_handoff_binding(
     result: dict[str, Any],
 ) -> tuple[str, str] | None:
@@ -1236,16 +1401,11 @@ class DailyRuntime:
                 str(row.get("identity") or ""),
             )
         )
-        if only_identity is not None:
-            pending = [
-                row
-                for row in pending
-                if str(row.get("identity") or "") == only_identity
-            ]
-            if len(pending) != 1:
-                raise DailyError(
-                    "lv narrow repair target is not one exact pending item"
-                )
+        pending = _one_exact_pending(
+            pending,
+            only_identity,
+            label="lv narrow repair",
+        )
         complete_video_transcripts = self._complete_lv_video_transcripts()
         for row in pending:
             if row.get("media_type") != "pdf":
@@ -1267,16 +1427,11 @@ class DailyRuntime:
                 str(row.get("identity") or ""),
             )
         )
-        if only_identity is not None:
-            pending = [
-                row
-                for row in pending
-                if str(row.get("identity") or "") == only_identity
-            ]
-            if len(pending) != 1:
-                raise DailyError(
-                    "lv narrow repair target is not one exact pending item"
-                )
+        pending = _one_exact_pending(
+            pending,
+            only_identity,
+            label="lv narrow repair",
+        )
         if not pending:
             return {"status": "no_update"}
         events = []
@@ -1359,6 +1514,7 @@ class DailyRuntime:
                     "version_key": ingest["version_key"],
                     "analysis_request_path": request["request_path"],
                     "evidence_path": ingest["evidence_path"],
+                    "evidence_sha256": ingest["evidence_sha256"],
                     "required_content_value": (
                         "low_density|promoted(report_only|alert_eligible)"
                     ),
@@ -1430,7 +1586,15 @@ class DailyRuntime:
         return self.lv(only_identity=identity[len(prefix):])
 
     def lv_reconcile(self, progress: WriterProgress) -> dict[str, Any]:
-        return self.lv(only_identity=progress.item_identity)
+        raise DailyError(
+            f"Lv has no authoritative {progress.details['readback_operation']}"
+        )
+
+    def lv_structured_input(self, progress: WriterProgress) -> dict[str, Any]:
+        return _consume_structured_input(
+            progress,
+            lambda: self.lv(only_identity=progress.item_identity),
+        )
 
     def videos(self, *, only_identity: str | None = None) -> dict[str, Any]:
         lv_listing = self._lv_listing_for_sweep()
@@ -1445,16 +1609,11 @@ class DailyRuntime:
             lv_listing=lv_listing,
         )
         pending = service.pending_items()
-        if only_identity is not None:
-            pending = [
-                item
-                for item in pending
-                if str(item.get("identity") or "") == only_identity
-            ]
-            if len(pending) != 1:
-                raise DailyError(
-                    "video reconciliation target is not one exact pending item"
-                )
+        pending = _one_exact_pending(
+            pending,
+            only_identity,
+            label="video progress",
+        )
         if not pending:
             return {"status": "no_update"}
         pending.sort(
@@ -1495,6 +1654,7 @@ class DailyRuntime:
                     exc,
                     default_stage="source_acquisition",
                 )
+                reconciliation_binding: dict[str, str] = {}
                 if "uncertain" in str(exc).casefold():
                     failure = {
                         "category": "uncertain_state",
@@ -1502,6 +1662,10 @@ class DailyRuntime:
                         "stage": "cloud_transfer_reconciliation",
                     }
                     retryable = False
+                    reconciliation_binding = _lv_transfer_claim_binding(
+                        self.args.video_output_dir,
+                        item,
+                    )
                 service.record_item_failure(
                     item,
                     failure=failure,
@@ -1514,6 +1678,7 @@ class DailyRuntime:
                     "name": str(item.get("name") or ""),
                     "stage": failure["stage"],
                     "failure": {**failure, "retryable": retryable},
+                    **reconciliation_binding,
                 })
                 continue
             if state.get("event") != "subscription_video_analysis_input_required":
@@ -1596,7 +1761,90 @@ class DailyRuntime:
         }
 
     def videos_reconcile(self, progress: WriterProgress) -> dict[str, Any]:
-        return self.videos(only_identity=progress.item_identity)
+        service = SubscriptionVideoService(
+            self.args.video_output_dir,
+            config_path=self.args.config,
+        )
+        service.scan_opencli(
+            lv_session=self.args.lv_session,
+            private_session=self.args.private_session,
+            profile=self.args.opencli_profile,
+            lv_listing=self._lv_listing_for_sweep(),
+        )
+        exact = [
+            row
+            for row in service.pending_items()
+            if str(row.get("identity") or "") == progress.item_identity
+        ]
+        if len(exact) > 1:
+            raise DailyError("video readback found duplicate exact pending items")
+        if (
+            progress.details["effect_kind"] != "cloud_transfer"
+            or progress.details["readback_operation"]
+            != "read_lv_transfer_claim_receipt"
+            or not str(progress.details["claim_identity"]).startswith(
+                "lv_transfer:"
+            )
+        ):
+            raise DailyError("video readback operation is unsupported")
+        if not exact:
+            raise DailyError("video readback lost its exact pending item")
+        binding = _lv_transfer_claim_binding(
+            self.args.video_output_dir,
+            exact[0],
+        )
+        if binding.get("claim_identity") != progress.details["claim_identity"]:
+            raise DailyError("video readback claim identity changed")
+        service.transfer_lv_video(
+            exact[0],
+            lv_session=self.args.lv_session,
+            private_session=self.args.private_session,
+            profile=self.args.opencli_profile,
+            readback_only=True,
+        )
+        version = str(exact[0].get("version_key") or "")
+        receipt_path = (
+            self.args.video_output_dir
+            / "receipts"
+            / f"lv_transfer_{version}.json"
+        )
+        resolved = receipt_path.is_file()
+        readback = {
+            "claim_identity": progress.details["claim_identity"],
+            "receipt_sha256": (
+                hashlib.sha256(receipt_path.read_bytes()).hexdigest()
+                if resolved
+                else None
+            ),
+            "effect_observed": "completed" if resolved else "uncertain",
+        }
+        outcome = (
+            {"status": "no_update", "authoritative_readback": readback}
+            if resolved
+            else {
+                **_reconciliation_pending(progress),
+                "authoritative_readback": readback,
+            }
+        )
+        return _reconciliation_result(
+            progress,
+            outcome,
+        )
+
+    def videos_narrow_resume(self, surface: str) -> dict[str, Any]:
+        identity = _exact_progress_surface("subscription_video", surface)
+        if identity == "source":
+            return self.videos()
+        return self.videos(only_identity=identity)
+
+    def videos_structured_input(
+        self,
+        progress: WriterProgress,
+    ) -> dict[str, Any]:
+        return _consume_structured_input(
+            progress,
+            lambda: self.videos(only_identity=progress.item_identity),
+        )
 
     @staticmethod
     def _handoff(path: Path) -> dict[str, Any]:
@@ -1620,6 +1868,7 @@ class DailyRuntime:
         self,
         handoff_id: str | None = None,
         *,
+        only_identity: str | None = None,
         exclude_handoff_ids: Collection[str] = (),
     ) -> dict[str, Any]:
         service = XiaocaoLiveService(
@@ -1648,7 +1897,19 @@ class DailyRuntime:
             reverse=True,
         )
         excluded = {str(value) for value in exclude_handoff_ids}
-        if handoff_id is not None:
+        if handoff_id is not None and only_identity is not None:
+            raise DailyError("Xiaocao exact selectors are mutually exclusive")
+        if only_identity is not None:
+            ordered_handoffs = [
+                row
+                for row in ordered_handoffs
+                if str(row.get("capture_job_id") or "") == only_identity
+            ]
+            if len(ordered_handoffs) != 1:
+                raise DailyError(
+                    "target Xiaocao capture is not one exact durable handoff"
+                )
+        elif handoff_id is not None:
             ordered_handoffs = [
                 row
                 for row in ordered_handoffs
@@ -1848,6 +2109,45 @@ class DailyRuntime:
             }
         return {"status": "no_update"}
 
+    def xiaocao_narrow_resume(
+        self,
+        surface: str,
+        *,
+        exclude_handoff_ids: Collection[str] = (),
+    ) -> dict[str, Any]:
+        identity = _exact_progress_surface("xiaocao_handoff", surface)
+        if identity == "source":
+            return self.xiaocao(exclude_handoff_ids=exclude_handoff_ids)
+        return self.xiaocao(
+            only_identity=identity,
+            exclude_handoff_ids=exclude_handoff_ids,
+        )
+
+    def xiaocao_structured_input(
+        self,
+        progress: WriterProgress,
+        *,
+        exclude_handoff_ids: Collection[str] = (),
+    ) -> dict[str, Any]:
+        return _consume_structured_input(
+            progress,
+            lambda: self.xiaocao(
+                only_identity=progress.item_identity,
+                exclude_handoff_ids=exclude_handoff_ids,
+            ),
+        )
+
+    def xiaocao_reconcile(
+        self,
+        progress: WriterProgress,
+        *,
+        exclude_handoff_ids: Collection[str] = (),
+    ) -> dict[str, Any]:
+        raise DailyError(
+            "Xiaocao has no authoritative "
+            f"{progress.details['readback_operation']}"
+        )
+
     def xiaocao_wechat(self) -> dict[str, Any]:
         history = WechatCliHistoryReader(
             self.args.xiaocao_wechat_contact,
@@ -1940,12 +2240,15 @@ class DailyRuntime:
         self,
         handoff_id: str | None = None,
         *,
+        only_identity: str | None = None,
         exclude_handoff_ids: Collection[str] = (),
     ) -> dict[str, Any]:
         inbox = OfficialAccountInbox(self.args.wechat_official_output_dir)
         acquirer = OfficialAccountOpenCliAcquirer(
             self.args.wechat_official_output_dir / "opencli"
         )
+        if handoff_id is not None and only_identity is not None:
+            raise DailyError("official exact selectors are mutually exclusive")
         if handoff_id is not None:
             target = inbox.get_item(handoff_id)
             if target is None:
@@ -1966,6 +2269,16 @@ class DailyRuntime:
                 for item in inbox.pending_items()
                 if str(item.get("handoff_id") or "") not in excluded
             ]
+            if only_identity is not None:
+                pending_items = [
+                    item
+                    for item in pending_items
+                    if str(item.get("source_identity") or "") == only_identity
+                ]
+                if len(pending_items) != 1:
+                    raise DailyError(
+                        "official narrow target is not one exact pending item"
+                    )
         pending = sorted(
             pending_items,
             key=lambda row: (
@@ -2065,6 +2378,50 @@ class DailyRuntime:
             "waiting_items": waiting_items,
         }
 
+    def wechat_official_narrow_resume(
+        self,
+        surface: str,
+        *,
+        exclude_handoff_ids: Collection[str] = (),
+    ) -> dict[str, Any]:
+        identity = _exact_progress_surface(
+            "wechat_official_accounts",
+            surface,
+        )
+        if identity == "source":
+            return self.wechat_official(
+                exclude_handoff_ids=exclude_handoff_ids
+            )
+        return self.wechat_official(
+            only_identity=identity,
+            exclude_handoff_ids=exclude_handoff_ids,
+        )
+
+    def wechat_official_structured_input(
+        self,
+        progress: WriterProgress,
+        *,
+        exclude_handoff_ids: Collection[str] = (),
+    ) -> dict[str, Any]:
+        return _consume_structured_input(
+            progress,
+            lambda: self.wechat_official(
+                only_identity=progress.item_identity,
+                exclude_handoff_ids=exclude_handoff_ids,
+            ),
+        )
+
+    def wechat_official_reconcile(
+        self,
+        progress: WriterProgress,
+        *,
+        exclude_handoff_ids: Collection[str] = (),
+    ) -> dict[str, Any]:
+        raise DailyError(
+            "official adapter has no authoritative "
+            f"{progress.details['readback_operation']}"
+        )
+
     def viewpoints(self) -> dict[str, Any]:
         trigger_dir = self.args.output_dir / "viewpoint_triggers"
         receipt_dir = self.args.output_dir / "viewpoint_receipts"
@@ -2131,6 +2488,15 @@ class DailyRuntime:
             {"status": "completed", "events": terminals}
             if terminals
             else {"status": "no_update"}
+        )
+
+    def viewpoints_reconcile(
+        self,
+        progress: WriterProgress,
+    ) -> dict[str, Any]:
+        raise DailyError(
+            "viewpoint adapter has no authoritative "
+            f"{progress.details['readback_operation']}"
         )
 
 
@@ -2277,11 +2643,17 @@ def main() -> int:
                 ),
                 "narrow_resume": _classified_narrow_source(
                     "xiaocao_wechat_live",
-                    lambda _surface: runtime.xiaocao_wechat(),
+                    lambda surface: _adapter_scope_resume(
+                        "xiaocao_wechat_live",
+                        surface,
+                        runtime.xiaocao_wechat,
+                    ),
                 ),
                 "reconcile": _classified_progress_source(
                     "xiaocao_wechat_live",
-                    lambda _progress: runtime.xiaocao_wechat(),
+                    _missing_progress_operation(
+                        "xiaocao_wechat_live", "authoritative reconciliation"
+                    ),
                 ),
             }, {
                 "name": "wechat_official_accounts",
@@ -2291,11 +2663,18 @@ def main() -> int:
                 ),
                 "narrow_resume": _classified_narrow_source(
                     "wechat_official_accounts",
-                    lambda _surface: runtime.wechat_official_local(),
+                    lambda surface: _adapter_scope_resume(
+                        "wechat_official_accounts",
+                        surface,
+                        runtime.wechat_official_local,
+                    ),
                 ),
                 "reconcile": _classified_progress_source(
                     "wechat_official_accounts",
-                    lambda _progress: runtime.wechat_official_local(),
+                    _missing_progress_operation(
+                        "wechat_official_accounts",
+                        "authoritative reconciliation",
+                    ),
                 ),
             }],
             blocker_sender=_sender,
@@ -2347,7 +2726,9 @@ def main() -> int:
                     getattr(
                         runtime,
                         "lv_narrow_resume",
-                        lambda _surface: runtime.lv(),
+                        _missing_progress_operation(
+                            "lv_text_image", "narrow resume"
+                        ),
                     ),
                 ),
                 "reconcile": _classified_progress_source(
@@ -2355,7 +2736,19 @@ def main() -> int:
                     getattr(
                         runtime,
                         "lv_reconcile",
-                        lambda _progress: runtime.lv(),
+                        _missing_progress_operation(
+                            "lv_text_image", "reconciliation"
+                        ),
+                    ),
+                ),
+                "structured_input": _classified_progress_source(
+                    "lv_text_image",
+                    getattr(
+                        runtime,
+                        "lv_structured_input",
+                        _missing_progress_operation(
+                            "lv_text_image", "structured input"
+                        ),
                     ),
                 ),
             },
@@ -2367,14 +2760,32 @@ def main() -> int:
                 ),
                 "narrow_resume": _classified_narrow_source(
                     "subscription_video",
-                    lambda _surface: runtime.videos(),
+                    getattr(
+                        runtime,
+                        "videos_narrow_resume",
+                        _missing_progress_operation(
+                            "subscription_video", "narrow resume"
+                        ),
+                    ),
                 ),
                 "reconcile": _classified_progress_source(
                     "subscription_video",
                     getattr(
                         runtime,
                         "videos_reconcile",
-                        lambda _progress: runtime.videos(),
+                        _missing_progress_operation(
+                            "subscription_video", "reconciliation"
+                        ),
+                    ),
+                ),
+                "structured_input": _classified_progress_source(
+                    "subscription_video",
+                    getattr(
+                        runtime,
+                        "videos_structured_input",
+                        _missing_progress_operation(
+                            "subscription_video", "structured input"
+                        ),
                     ),
                 ),
             },
@@ -2389,14 +2800,23 @@ def main() -> int:
                 ),
                 "narrow_resume": _classified_narrow_source(
                     "wechat_official_accounts",
-                    lambda _surface: runtime.wechat_official(
-                        exclude_handoff_ids=attempted_handoff_ids
+                    lambda surface: runtime.wechat_official_narrow_resume(
+                        surface,
+                        exclude_handoff_ids=attempted_handoff_ids,
                     ),
                 ),
                 "reconcile": _classified_progress_source(
                     "wechat_official_accounts",
-                    lambda _progress: runtime.wechat_official(
-                        exclude_handoff_ids=attempted_handoff_ids
+                    lambda progress: runtime.wechat_official_reconcile(
+                        progress,
+                        exclude_handoff_ids=attempted_handoff_ids,
+                    ),
+                ),
+                "structured_input": _classified_progress_source(
+                    "wechat_official_accounts",
+                    lambda progress: runtime.wechat_official_structured_input(
+                        progress,
+                        exclude_handoff_ids=attempted_handoff_ids,
                     ),
                 ),
             },
@@ -2411,14 +2831,23 @@ def main() -> int:
                 ),
                 "narrow_resume": _classified_narrow_source(
                     "xiaocao_handoff",
-                    lambda _surface: runtime.xiaocao(
-                        exclude_handoff_ids=attempted_handoff_ids
+                    lambda surface: runtime.xiaocao_narrow_resume(
+                        surface,
+                        exclude_handoff_ids=attempted_handoff_ids,
                     ),
                 ),
                 "reconcile": _classified_progress_source(
                     "xiaocao_handoff",
-                    lambda _progress: runtime.xiaocao(
-                        exclude_handoff_ids=attempted_handoff_ids
+                    lambda progress: runtime.xiaocao_reconcile(
+                        progress,
+                        exclude_handoff_ids=attempted_handoff_ids,
+                    ),
+                ),
+                "structured_input": _classified_progress_source(
+                    "xiaocao_handoff",
+                    lambda progress: runtime.xiaocao_structured_input(
+                        progress,
+                        exclude_handoff_ids=attempted_handoff_ids,
                     ),
                 ),
             },
@@ -2430,11 +2859,21 @@ def main() -> int:
                 ),
                 "narrow_resume": _classified_narrow_source(
                     "viewpoint_maintenance",
-                    lambda _surface: runtime.viewpoints(),
+                    lambda surface: _adapter_scope_resume(
+                        "viewpoint_maintenance",
+                        surface,
+                        runtime.viewpoints,
+                    ),
                 ),
                 "reconcile": _classified_progress_source(
                     "viewpoint_maintenance",
-                    lambda _progress: runtime.viewpoints(),
+                    getattr(
+                        runtime,
+                        "viewpoints_reconcile",
+                        _missing_progress_operation(
+                            "viewpoint_maintenance", "reconciliation"
+                        ),
+                    ),
                 ),
             },
         ],

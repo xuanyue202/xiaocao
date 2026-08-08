@@ -94,6 +94,10 @@ class DailyError(EnrichmentError):
     """The daily coordination contract could not be proved."""
 
 
+class ControlPlaneHandlerError(DailyError):
+    """A declared progress handler did not prove its bounded operation."""
+
+
 class TransientSourceError(DailyError):
     """A self-recoverable source failure with credential-safe diagnostics."""
 
@@ -1241,8 +1245,219 @@ class DailyCoordinator:
 
     def _failure_revision(self) -> str:
         if self._resolved_failure_revision is None:
-            self._resolved_failure_revision = self._failure_revision_provider()
+            try:
+                self._resolved_failure_revision = (
+                    self._failure_revision_provider()
+                )
+            except Exception:
+                # A broken injected resolver is itself an Agent-owned control
+                # plane fault. Keep the failure fingerprint bound to the real
+                # checkout so that the fault can still converge in the ledger.
+                self._resolved_failure_revision = resolve_repository_revision(
+                    Path(__file__).parents[3]
+                )
         return self._resolved_failure_revision
+
+    def _agent_repair(
+        self,
+        name: str,
+        *,
+        category: str,
+        code: str,
+        stage: str,
+        item_identity: str | None = None,
+    ) -> tuple[dict[str, Any], WriterProgress]:
+        identity = item_identity or f"{name}:source"
+        fingerprint = FailureFingerprint(
+            adapter=name,
+            category=category,
+            code=code,
+            stage=stage,
+            failure_revision=self._failure_revision(),
+            provider_contract_version="xiaocao_writer_v1",
+        )
+        progress = WriterProgress.repair_required(
+            item_identity=identity,
+            fingerprint=fingerprint,
+            repair_revision=None,
+            affected_set_digest=affected_set_digest([{
+                "identity": identity,
+                "version_key": "current",
+            }]),
+            claim_receipt_summary={
+                "claim_count": 0,
+                "receipt_count": 0,
+                "uncertain_effect_count": 0,
+            },
+            targeted_test_profile=f"kol_{name}_{stage}"[:128],
+            narrow_resume_surface=(
+                f"{name}:source"
+                if identity == f"{name}:source"
+                else f"{name}:{identity}"
+            ),
+            retryability="retryable",
+        )
+        return ({
+            "status": "waiting",
+            "waiting_count": 1,
+            "waiting_items": [{
+                "identity": identity,
+                "stage": stage,
+                "failure": {
+                    "category": category,
+                    "code": code,
+                    "stage": stage,
+                    "retryable": True,
+                },
+            }],
+            "failure": {
+                "category": category,
+                "code": code,
+                "stage": stage,
+                "retryable": True,
+            },
+            "repair_required": True,
+            "retryable": False,
+            "user_action_required": False,
+            "writer_progress": progress.to_dict(),
+        }, progress)
+
+    @staticmethod
+    def _reconciliation_result(
+        progress: WriterProgress,
+        value: Any,
+    ) -> tuple[dict[str, Any], dict[str, Any]]:
+        if not isinstance(value, dict):
+            raise ControlPlaneHandlerError(
+                "reconciliation handler result must be an object"
+            )
+        if set(value) != {"outcome", "reconciliation_receipt"}:
+            raise ControlPlaneHandlerError(
+                "reconciliation handler must return only outcome and receipt"
+            )
+        outcome = value["outcome"]
+        receipt = value["reconciliation_receipt"]
+        if not isinstance(outcome, dict) or not isinstance(receipt, dict):
+            raise ControlPlaneHandlerError(
+                "reconciliation outcome and receipt must be objects"
+            )
+        required = {
+            "event",
+            "claim_identity",
+            "readback_operation",
+            "readback_evidence_sha256",
+            "external_business_effects_replayed",
+        }
+        if set(receipt) != required:
+            raise ControlPlaneHandlerError(
+                "reconciliation receipt fields do not match the contract"
+            )
+        if (
+            receipt["event"] != "reconciliation_completed"
+            or receipt["claim_identity"]
+            != progress.details["claim_identity"]
+            or receipt["readback_operation"]
+            != progress.details["readback_operation"]
+            or re.fullmatch(
+                r"[0-9a-f]{64}",
+                str(receipt["readback_evidence_sha256"]),
+            )
+            is None
+            or receipt["readback_evidence_sha256"]
+            != canonical_sha256(outcome)
+            or receipt["external_business_effects_replayed"] is not False
+        ):
+            raise ControlPlaneHandlerError(
+                "reconciliation receipt does not prove the declared readback"
+            )
+        return outcome, receipt
+
+    @staticmethod
+    def _structured_input_result(
+        progress: WriterProgress,
+        value: Any,
+    ) -> tuple[dict[str, Any], dict[str, Any]]:
+        if not isinstance(value, dict):
+            raise ControlPlaneHandlerError(
+                "structured input handler result must be an object"
+            )
+        if set(value) != {"outcome", "structured_input_receipt"}:
+            raise ControlPlaneHandlerError(
+                "structured input handler must return only outcome and receipt"
+            )
+        outcome = value["outcome"]
+        receipt = value["structured_input_receipt"]
+        if not isinstance(outcome, dict) or not isinstance(receipt, dict):
+            raise ControlPlaneHandlerError(
+                "structured input outcome and receipt must be objects"
+            )
+        required = {
+            "event",
+            "request_id",
+            "request_schema_version",
+            "response_field",
+            "immutable_bindings_sha256",
+            "request_sha256",
+            "response_sha256",
+        }
+        if set(receipt) != required:
+            raise ControlPlaneHandlerError(
+                "structured input receipt fields do not match the contract"
+            )
+        sha_fields = (
+            "immutable_bindings_sha256",
+            "request_sha256",
+            "response_sha256",
+        )
+        if (
+            receipt["event"] != "structured_input_consumed"
+            or receipt["request_id"] != progress.details["request_id"]
+            or receipt["request_schema_version"]
+            != progress.details["request_schema_version"]
+            or receipt["response_field"] != progress.details["response_field"]
+            or receipt["immutable_bindings_sha256"]
+            != canonical_sha256(progress.details["immutable_bindings"])
+            or any(
+                re.fullmatch(r"[0-9a-f]{64}", str(receipt[field])) is None
+                for field in sha_fields
+            )
+        ):
+            raise ControlPlaneHandlerError(
+                "structured input receipt does not match the persisted request"
+            )
+        return outcome, receipt
+
+    @staticmethod
+    def _invoke_source_step(
+        source: dict[str, Any],
+        *,
+        runner: Callable[[], Any],
+        retained_outcome: dict[str, Any] | None,
+        narrow_runner: Any,
+        resume_progress: WriterProgress | None,
+        resume_surface: str,
+        structured_progress: WriterProgress | None,
+        reconciliation_progress: WriterProgress | None,
+    ) -> Any:
+        if retained_outcome is not None:
+            return retained_outcome
+        if resume_progress is not None:
+            return narrow_runner(resume_surface)
+        if structured_progress is not None:
+            handler = source.get("structured_input")
+            if not callable(handler):
+                raise ControlPlaneHandlerError(
+                    "source lacks structured input continuation"
+                )
+            return handler(structured_progress)
+        if reconciliation_progress is not None:
+            handler = source.get("reconcile")
+            if not callable(handler):
+                raise ControlPlaneHandlerError(
+                    "source lacks reconciliation"
+                )
+            return handler(reconciliation_progress)
+        return runner()
 
     def _beijing_now(self) -> datetime:
         value = self.now()
@@ -1421,6 +1636,7 @@ class DailyCoordinator:
                 resume_progress: WriterProgress | None = None
                 resume_surface = ""
                 reconciliation_progress: WriterProgress | None = None
+                structured_progress: WriterProgress | None = None
                 if pending_resume is not None:
                     resume_progress, _closure = pending_resume
                     resume_surface = str(
@@ -1512,25 +1728,39 @@ class DailyCoordinator:
                                     deadline=prior_progress.details["deadline"],
                                 )
                         elif prior_progress.status == "reconcile_required":
-                            reconciliation = source.get("reconcile")
-                            if not callable(reconciliation):
-                                raise DailyError(
-                                    f"daily source {name} lacks reconciliation"
-                                )
                             reconciliation_progress = prior_progress
+                        elif prior_progress.status == "structured_input":
+                            structured_progress = prior_progress
                 self._append("source_started", slot=slot, source=name)
                 progress_override: WriterProgress | None = retained_progress
                 user_action_context: dict[str, str] | None = None
+                reconciliation_receipt: dict[str, Any] | None = None
+                structured_input_receipt: dict[str, Any] | None = None
                 try:
-                    outcome = (
-                        retained_outcome
-                        if retained_outcome is not None
-                        else narrow_runner(resume_surface)
-                        if resume_progress is not None
-                        else source["reconcile"](reconciliation_progress)
-                        if reconciliation_progress is not None
-                        else runner()
+                    outcome = self._invoke_source_step(
+                        source,
+                        runner=runner,
+                        retained_outcome=retained_outcome,
+                        narrow_runner=narrow_runner,
+                        resume_progress=resume_progress,
+                        resume_surface=resume_surface,
+                        structured_progress=structured_progress,
+                        reconciliation_progress=reconciliation_progress,
                     )
+                    if reconciliation_progress is not None:
+                        outcome, reconciliation_receipt = (
+                            self._reconciliation_result(
+                                reconciliation_progress,
+                                outcome,
+                            )
+                        )
+                    if structured_progress is not None:
+                        outcome, structured_input_receipt = (
+                            self._structured_input_result(
+                                structured_progress,
+                                outcome,
+                            )
+                        )
                     while (
                         isinstance(outcome, dict)
                         and isinstance(outcome.get("writer_progress"), dict)
@@ -1569,6 +1799,20 @@ class DailyCoordinator:
                         )
                         in_process.validate_transition_to(following_progress)
                         outcome = following_outcome
+                except ControlPlaneHandlerError:
+                    outcome, progress_override = self._agent_repair(
+                        name,
+                        category="control_plane_handler_error",
+                        code="progress_handler_contract_invalid",
+                        stage="progress_handler",
+                        item_identity=(
+                            reconciliation_progress.item_identity
+                            if reconciliation_progress is not None
+                            else structured_progress.item_identity
+                            if structured_progress is not None
+                            else None
+                        ),
+                    )
                 except UserActionBlocker as exc:
                     blocker_state_rows = [
                         row
@@ -1686,43 +1930,12 @@ class DailyCoordinator:
                             },
                         )
                 except Exception:
-                    fingerprint = FailureFingerprint(
-                        adapter=name,
+                    outcome, progress_override = self._agent_repair(
+                        name,
                         category="code_error",
                         code="unhandled_source_exception",
                         stage="source_run",
-                        failure_revision=self._failure_revision(),
-                        provider_contract_version="xiaocao_writer_v1",
                     )
-                    progress_override = WriterProgress.repair_required(
-                        item_identity=f"{name}:source",
-                        fingerprint=fingerprint,
-                        repair_revision=None,
-                        affected_set_digest=affected_set_digest([{
-                            "identity": f"{name}:source",
-                            "version_key": "current",
-                        }]),
-                        claim_receipt_summary={
-                            "claim_count": 0,
-                            "receipt_count": 0,
-                            "uncertain_effect_count": 0,
-                        },
-                        targeted_test_profile=f"kol_{name}_source_run"[:128],
-                        narrow_resume_surface=f"{name}:source",
-                        retryability="retryable",
-                    )
-                    outcome = {
-                        "status": "waiting",
-                        "waiting_count": 1,
-                        "waiting_items": [{
-                            "identity": f"{name}:source",
-                            "stage": "source_run",
-                        }],
-                        "repair_required": True,
-                        "retryable": False,
-                        "user_action_required": False,
-                        "writer_progress": progress_override.to_dict(),
-                    }
                 except BaseException as exc:
                     self._append(
                         "source_interrupted",
@@ -1731,43 +1944,53 @@ class DailyCoordinator:
                         error_type=type(exc).__name__,
                     )
                     raise
-                if outcome is None:
-                    outcome = {"status": "no_update"}
-                if not isinstance(outcome, dict):
-                    raise DailyError(f"daily source {name} returned an invalid result")
-                status = str(outcome.get("status") or "")
-                if status not in {"no_update", "completed", "waiting"}:
-                    raise DailyError(
-                        f"daily source {name} returned an unsupported status"
-                    )
-                if status == "completed":
-                    events = outcome.get("events")
-                    if not isinstance(events, list):
+                try:
+                    if outcome is None:
+                        outcome = {"status": "no_update"}
+                    if not isinstance(outcome, dict):
                         raise DailyError(
-                            f"daily source {name} completed without events"
+                            f"daily source {name} returned an invalid result"
                         )
-                    fresh_events = [
-                        event
-                        for event in events
-                        if isinstance(event, dict)
-                        and str(event.get("event_id") or "")
-                        not in recorded_terminal_ids
-                    ]
-                    replayed_count = len(events) - len(fresh_events)
-                    if fresh_events:
-                        outcome = {**outcome, "events": fresh_events}
-                        recorded_terminal_ids.update(
-                            str(event["event_id"])
-                            for event in fresh_events
+                    status = str(outcome.get("status") or "")
+                    if status not in {"no_update", "completed", "waiting"}:
+                        raise DailyError(
+                            f"daily source {name} returned an unsupported status"
                         )
-                        if replayed_count:
-                            outcome["replayed_terminal_count"] = replayed_count
-                    else:
-                        outcome = {
-                            "status": "no_update",
-                            "replayed_terminal_count": replayed_count,
-                        }
-                _validate_source_outcome(outcome)
+                    if status == "completed":
+                        events = outcome.get("events")
+                        if not isinstance(events, list):
+                            raise DailyError(
+                                f"daily source {name} completed without events"
+                            )
+                        fresh_events = [
+                            event
+                            for event in events
+                            if isinstance(event, dict)
+                            and str(event.get("event_id") or "")
+                            not in recorded_terminal_ids
+                        ]
+                        replayed_count = len(events) - len(fresh_events)
+                        if fresh_events:
+                            outcome = {**outcome, "events": fresh_events}
+                            recorded_terminal_ids.update(
+                                str(event["event_id"])
+                                for event in fresh_events
+                            )
+                            if replayed_count:
+                                outcome["replayed_terminal_count"] = replayed_count
+                        else:
+                            outcome = {
+                                "status": "no_update",
+                                "replayed_terminal_count": replayed_count,
+                            }
+                    _validate_source_outcome(outcome)
+                except Exception:
+                    outcome, progress_override = self._agent_repair(
+                        name,
+                        category="schema_error",
+                        code="source_result_schema_invalid",
+                        stage="source_result_validation",
+                    )
                 stalled_items = [
                     row
                     for row in (outcome.get("waiting_items") or [])
@@ -1841,26 +2064,38 @@ class DailyCoordinator:
                             "retryable": False,
                         },
                     }
-                progress = (
-                    progress_override
-                    if progress_override is not None
-                    and outcome.get("repair_required") is not True
-                    else project_source_outcome(
-                        name,
-                        outcome,
-                        failure_revision=self._failure_revision(),
-                        provider_contract_version="xiaocao_writer_v1",
-                        user_action=user_action_context,
-                        fallback_wait_deadline=(
-                            now + timedelta(hours=1)
-                        ).isoformat(timespec="seconds"),
+                try:
+                    progress = (
+                        progress_override
+                        if progress_override is not None
+                        else project_source_outcome(
+                            name,
+                            outcome,
+                            failure_revision=self._failure_revision(),
+                            provider_contract_version="xiaocao_writer_v1",
+                            user_action=user_action_context,
+                            fallback_wait_deadline=(
+                                now + timedelta(hours=1)
+                            ).isoformat(timespec="seconds"),
+                        )
                     )
-                )
+                except Exception:
+                    outcome, progress = self._agent_repair(
+                        name,
+                        category="schema_error",
+                        code="progress_projection_failed",
+                        stage="progress_projection",
+                    )
                 if resume_progress is not None:
                     self.convergence.record_resume(
                         resume_progress.failure_fingerprint,
                         following=progress,
                         slot=slot,
+                    )
+                if structured_progress is not None:
+                    structured_progress.validate_transition_to(
+                        progress,
+                        evidence=structured_input_receipt,
                     )
                 if (
                     reconciliation_progress is not None
@@ -1868,12 +2103,7 @@ class DailyCoordinator:
                 ):
                     reconciliation_progress.validate_transition_to(
                         progress,
-                        evidence={
-                            "event": "reconciliation_completed",
-                            "claim_identity": reconciliation_progress.details[
-                                "claim_identity"
-                            ],
-                        },
+                        evidence=reconciliation_receipt,
                     )
                 if progress.status == "repair_required":
                     failure = progress.failure

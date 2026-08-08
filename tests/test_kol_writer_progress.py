@@ -286,6 +286,9 @@ def test_open_progress_restores_the_authoritative_repair_contract(tmp_path):
                         "code": "publication_receipt_uncertain",
                         "stage": "publication_reconciliation",
                     },
+                    "effect_kind": "gray_report",
+                    "claim_identity": "gray-report-claim-1",
+                    "readback_operation": "read_gray_report_receipt",
                 }],
             },
             "reconcile_required",
@@ -316,6 +319,59 @@ def test_legacy_source_results_project_through_unified_progress(
 
     assert progress.status == expected_status
     assert WriterProgress.from_dict(progress.to_dict()) == progress
+
+
+def test_projected_repair_resumes_only_the_exact_waiting_item():
+    progress = project_source_outcome(
+        "wechat_official_accounts",
+        {
+            "status": "waiting",
+            "repair_required": True,
+            "waiting_items": [{
+                "identity": "article-1",
+                "version_key": "version-1",
+                "stage": "evidence_materialization",
+                "failure": {
+                    "category": "schema_error",
+                    "code": "image_notes_invalid",
+                    "stage": "evidence_materialization",
+                },
+            }],
+        },
+        failure_revision=FAILURE_REVISION,
+        provider_contract_version="xiaocao_writer_v1",
+    )
+
+    assert progress.details["narrow_resume_surface"] == (
+        "wechat_official_accounts:article-1"
+    )
+
+
+def test_uncertain_effect_without_exact_claim_binding_is_agent_repair():
+    progress = project_source_outcome(
+        "subscription_video",
+        {
+            "status": "waiting",
+            "waiting_items": [{
+                "identity": "video-1",
+                "version_key": "version-1",
+                "stage": "cloud_transfer_reconciliation",
+                "failure": {
+                    "category": "uncertain_state",
+                    "code": "transfer_receipt_uncertain",
+                    "stage": "cloud_transfer_reconciliation",
+                },
+            }],
+        },
+        failure_revision=FAILURE_REVISION,
+        provider_contract_version="xiaocao_writer_v1",
+    )
+
+    assert progress.status == "repair_required"
+    assert progress.failure["category"] == "control_plane_handler_error"
+    assert progress.failure["code"] == (
+        "uncertain_effect_lacks_readback_binding"
+    )
 
 
 def test_repair_closure_must_match_required_test_profile(tmp_path):

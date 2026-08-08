@@ -705,6 +705,22 @@ class WriterProgress:
             )
             if now.tzinfo is None or now < deadline:
                 raise ProgressContractError("wait_until deadline has not elapsed")
+        if self.status == "structured_input":
+            handler_repair = (
+                following.status == "repair_required"
+                and following.failure.get("category")
+                == "control_plane_handler_error"
+            )
+            receipt = dict(evidence or {})
+            if not handler_repair and (
+                receipt.get("event") != "structured_input_consumed"
+                or receipt.get("request_id") != self.details["request_id"]
+                or receipt.get("response_field")
+                != self.details["response_field"]
+            ):
+                raise ProgressContractError(
+                    "structured_input needs a matching consumption receipt"
+                )
         repair_continues = (
             following.status == "repair_required"
             and following.failure_fingerprint == self.failure_fingerprint
@@ -723,8 +739,13 @@ class WriterProgress:
             self.status == "reconcile_required"
             and following.status != "reconcile_required"
         ):
+            handler_repair = (
+                following.status == "repair_required"
+                and following.failure.get("category")
+                == "control_plane_handler_error"
+            )
             receipt = dict(evidence or {})
-            if (
+            if not handler_repair and (
                 receipt.get("event") != "reconciliation_completed"
                 or receipt.get("claim_identity") != self.details["claim_identity"]
             ):
@@ -925,6 +946,8 @@ def project_source_outcome(
             request_kind=(
                 "daily_official_article_image_input_required"
                 if item.get("image_request_path")
+                else "subscription_video_analysis_input_required"
+                if adapter_name == "subscription_video"
                 else "daily_analysis_input_required"
             ),
             request_id=request_id,
@@ -950,25 +973,28 @@ def project_source_outcome(
         or "generic_wait_without_deadline"
     )
     if category == "uncertain_state" or "reconciliation" in stage:
-        claim_identity = _digest({
-            "adapter": adapter_name,
-            "item_identity": item_identity,
-            "stage": stage,
-        })
-        return WriterProgress.reconcile_required(
-            item_identity=item_identity,
-            stage=stage,
-            effect_kind="external_effect",
-            claim_identity=claim_identity,
-            readback_operation=f"reconcile_{stage}"[:128],
-            claim_receipt_summary={
-                **summary,
-                "uncertain_effect_count": max(
-                    1,
-                    summary["uncertain_effect_count"],
-                ),
-            },
+        claim_identity = str((item or {}).get("claim_identity") or "")
+        readback_operation = str(
+            (item or {}).get("readback_operation") or ""
         )
+        effect_kind = str((item or {}).get("effect_kind") or "")
+        if claim_identity and readback_operation and effect_kind:
+            return WriterProgress.reconcile_required(
+                item_identity=item_identity,
+                stage=stage,
+                effect_kind=effect_kind,
+                claim_identity=claim_identity,
+                readback_operation=readback_operation,
+                claim_receipt_summary={
+                    **summary,
+                    "uncertain_effect_count": max(
+                        1,
+                        summary["uncertain_effect_count"],
+                    ),
+                },
+            )
+        category = "control_plane_handler_error"
+        code = "uncertain_effect_lacks_readback_binding"
     deadline = str((item or {}).get("next_poll_not_before") or "").strip()
     if deadline:
         attempted = int((item or {}).get("trigger_attempt") or 1)
@@ -1018,7 +1044,11 @@ def project_source_outcome(
         affected_set_digest=affected_set_digest(affected_rows),
         claim_receipt_summary=summary,
         targeted_test_profile=f"kol_{adapter_name}_{stage}"[:128],
-        narrow_resume_surface=f"{adapter_name}:source",
+        narrow_resume_surface=(
+            f"{adapter_name}:{item_identity}"
+            if item is not None
+            else f"{adapter_name}:source"
+        ),
         retryability=(
             "retryable" if failure.get("retryable", True) is not False
             else "not_retryable"

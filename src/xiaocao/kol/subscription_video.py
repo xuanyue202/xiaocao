@@ -2855,15 +2855,17 @@ class SubscriptionVideoService:
         lv_session: str,
         private_session: str,
         profile: str | None,
+        readback_only: bool = False,
     ) -> dict[str, Any]:
         if item.get("source") != LV_SOURCE or item.get("author") != LV_AUTHOR:
             raise EnrichmentError("cloud transfer accepts only Lv Xiaotong items")
-        destination = self.ensure_lv_destination(
-            session=private_session,
-            profile=profile,
-        )
-        if destination.get("status") != "completed":
-            return {**destination, "pending": True}
+        if not readback_only:
+            destination = self.ensure_lv_destination(
+                session=private_session,
+                profile=profile,
+            )
+            if destination.get("status") != "completed":
+                return {**destination, "pending": True}
         target_path = f"{LV_DESTINATION_DIRECTORY}/{item['name']}"
         receipt_name = f"lv_transfer_{item['version_key']}"
         receipt_path = self._receipt_path(receipt_name)
@@ -2928,17 +2930,37 @@ class SubscriptionVideoService:
                 _atomic_write_json(receipt_path, receipt)
                 _append_jsonl(self.events_path, receipt)
             return receipt
-        claim = self._write_claim(
-            receipt_name,
-            {
-                "source_identity": item["identity"],
-                "source_version_key": item["version_key"],
-                "source_path": item["path"],
-                "source_size": item["size"],
-                "target_path": target_path,
-                "large_payload_local_bytes": 0,
-            },
-        )
+        if readback_only:
+            claim_path = self._claim_path(receipt_name)
+            if not claim_path.is_file():
+                raise EnrichmentError(
+                    "Lv cloud transfer readback requires its exact claim"
+                )
+            try:
+                claim = json.loads(claim_path.read_text(encoding="utf-8"))
+            except json.JSONDecodeError as exc:
+                raise EnrichmentError(
+                    "Lv cloud transfer claim is invalid"
+                ) from exc
+            if (
+                claim.get("source_identity") != item["identity"]
+                or claim.get("source_version_key") != item["version_key"]
+            ):
+                raise EnrichmentError(
+                    "Lv cloud transfer claim conflicts with source"
+                )
+        else:
+            claim = self._write_claim(
+                receipt_name,
+                {
+                    "source_identity": item["identity"],
+                    "source_version_key": item["version_key"],
+                    "source_path": item["path"],
+                    "source_size": item["size"],
+                    "target_path": target_path,
+                    "large_payload_local_bytes": 0,
+                },
+            )
         reconciled_absent = False
         if claim.get("triggered_at") or (
             claim.get("status") == "failed_pretrigger"
@@ -3036,7 +3058,8 @@ class SubscriptionVideoService:
                         else "pending_exact_reconciliation"
                     ),
                 }
-                _atomic_write_json(self._claim_path(receipt_name), waiting)
+                if not readback_only:
+                    _atomic_write_json(self._claim_path(receipt_name), waiting)
                 return waiting
             if not reconciled_absent:
                 return {
@@ -3046,6 +3069,16 @@ class SubscriptionVideoService:
                     "pending": True,
                     "side_effect_uncertain": True,
                     "trigger_attempt": trigger_attempt,
+                }
+            if readback_only:
+                return {
+                    **claim,
+                    "status": "waiting_cloud_transfer_receipt",
+                    "stage": "cloud_transfer_confirmation",
+                    "pending": True,
+                    "side_effect_uncertain": True,
+                    "trigger_attempt": trigger_attempt,
+                    "reconciliation_status": "exact_private_copy_absent",
                 }
             if trigger_attempt >= LV_TRANSFER_MAX_TRIGGER_ATTEMPTS:
                 self._record_transfer_blocker(
