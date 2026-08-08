@@ -71,10 +71,13 @@ run's Automation ID and prompt metadata. Ignore titles and exclude that current
 task. An active/needs-attention peer owns continuation: exit successfully
 without mailbox access.
 
-A task-list/readback failure blocks business effects, not repair. Apply 5 Why,
-fix arguments, and retry standalone now. If still unavailable, keep diagnosing
-as `repair_required`; never defer to the next Automation or ask the user. Do
-not add a Python global lock, lease, heartbeat, fencing token, or stale takeover.
+Bind each list to `hostId`/`projectId`/`cwd`; never reuse `hostId` from
+memory/earlier slots. If a task's tuple changes, discard
+candidates and retry once with the fresh binding; old-host readback fails. Apply
+5 Why; task-list failure handling blocks business effects, not repair. Use two
+lists (initial + fresh retry); both fail => `repair_required`, no third duplicate.
+Never defer to the next Automation.
+Do not add a Python global lock, lease, heartbeat, fencing token, or stale takeover.
 
 If there is no active peer, run `scripts/kol_daily.py run` exactly once. For
 each `daily_lianghui_mailbox_input_required`, call the exact operation and
