@@ -95,6 +95,7 @@ _OPENCLI_ERROR_CATEGORIES = {
 
 _DIRECT_DOWNLOAD_MEDIA = {"pdf", "text"}
 _DIRECT_DOWNLOAD_HOSTS = {"d.pcs.baidu.com"}
+BLOCKED_DOWNLOAD_PROVIDER_CONTRACT_VERSION = "baidu_netdisk_download_v1"
 _DIRECT_DOWNLOAD_PATHS = {"/rest/2.0/pcs/file"}
 _DIRECT_DOWNLOAD_CONTENT_TYPES = {
     "pdf": {

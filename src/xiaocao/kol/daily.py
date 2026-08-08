@@ -42,6 +42,7 @@ from .reader_copy import (
     validate_reader_source_identity,
 )
 from .rendering import reader_source_title
+from .writer_progress import ConvergenceLedger, WriterProgress
 
 
 BEIJING = ZoneInfo("Asia/Shanghai")
@@ -1210,6 +1211,10 @@ class DailyCoordinator:
     ):
         self.output_dir = Path(output_dir).expanduser().resolve()
         self.events_path = self.output_dir / "events.jsonl"
+        self.convergence = ConvergenceLedger(
+            self.output_dir / "convergence.jsonl",
+            now=lambda: self._beijing_now(),
+        )
         self.lock_path = self.output_dir / ".lock"
         self.now = now or (lambda: datetime.now(BEIJING))
         self._thread_lock = threading.RLock()
@@ -1422,9 +1427,54 @@ class DailyCoordinator:
                         {"name": name, **prior_result, "resumed": True}
                     )
                     continue
+                active_progress = self.convergence.active_progress(name)
+                retained_outcome: dict[str, Any] | None = None
+                if active_progress is not None:
+                    failure = active_progress.failure
+                    retained_outcome = {
+                        "status": "waiting",
+                        "waiting_count": 1,
+                        "waiting_items": [{
+                            "identity": active_progress.item_identity,
+                            "stage": active_progress.stage,
+                            "failure": {
+                                "category": failure["category"],
+                                "code": failure["code"],
+                                "stage": failure["stage"],
+                                "retryable": (
+                                    active_progress.retryability == "retryable"
+                                ),
+                            },
+                        }],
+                        "retryable": False,
+                        "failure": {
+                            "category": failure["category"],
+                            "code": failure["code"],
+                            "stage": failure["stage"],
+                            "retryable": (
+                                active_progress.retryability == "retryable"
+                            ),
+                        },
+                        "repair_key": active_progress.failure_fingerprint,
+                        "repair_required": True,
+                        "user_action_required": False,
+                        "writer_progress": active_progress.to_dict(),
+                    }
+                    self._append(
+                        "source_repair_ownership_retained",
+                        slot=slot,
+                        source=name,
+                        failure_fingerprint=(
+                            active_progress.failure_fingerprint
+                        ),
+                    )
                 self._append("source_started", slot=slot, source=name)
                 try:
-                    outcome = runner()
+                    outcome = (
+                        retained_outcome
+                        if retained_outcome is not None
+                        else runner()
+                    )
                 except UserActionBlocker as exc:
                     blocker_state_rows = [
                         row
@@ -1563,6 +1613,11 @@ class DailyCoordinator:
                             "replayed_terminal_count": replayed_count,
                         }
                 _validate_source_outcome(outcome)
+                raw_progress = outcome.get("writer_progress")
+                if raw_progress is not None:
+                    progress = WriterProgress.from_dict(raw_progress)
+                    if progress.status == "repair_required":
+                        self.convergence.record(progress, slot=slot)
                 stalled_items = [
                     row
                     for row in (outcome.get("waiting_items") or [])
@@ -1657,6 +1712,7 @@ class DailyCoordinator:
                         "waiting_count",
                         "waiting_items",
                         "failure",
+                        "writer_progress",
                     )
                     if key in row
                 }
@@ -1722,6 +1778,7 @@ class DailyCoordinator:
 
     def audit(self) -> dict[str, Any]:
         rows = self.events()
+        convergence_rows = self.convergence.events()
         last = self._last_sweep_state(rows)
         operational_status = str((last or {}).get("health") or "unknown")
         latest_failures = [
@@ -1810,6 +1867,18 @@ class DailyCoordinator:
                 row.get("event")
                 in {"source_recovery_exhausted", "source_acquisition_stalled"}
                 for row in rows
+            ) + sum(
+                row.get("event") == "failure_observed"
+                for row in convergence_rows
+            ),
+            "failure_fingerprint_count": len({
+                str(row.get("failure_fingerprint") or "")
+                for row in convergence_rows
+                if row.get("event") == "failure_observed"
+            }),
+            "repair_closed_count": sum(
+                row.get("event") == "repair_closed"
+                for row in convergence_rows
             ),
             "viewpoint_evaluation_count": len(viewpoint_events),
         }

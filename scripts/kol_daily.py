@@ -4,9 +4,11 @@
 from __future__ import annotations
 
 import argparse
+import functools
 import hashlib
 import json
 import re
+import subprocess
 import sys
 import termios
 from collections.abc import Collection
@@ -33,7 +35,10 @@ from xiaocao.kol.enrichment_types import (
     EnrichmentError,
 )
 from xiaocao.kol.household import LiangHuiMcpClient
-from xiaocao.kol.lv_subscription import LvSubscriptionService
+from xiaocao.kol.lv_subscription import (
+    BLOCKED_DOWNLOAD_PROVIDER_CONTRACT_VERSION,
+    LvSubscriptionService,
+)
 from xiaocao.kol.mailbox import (
     LiangHuiMailboxClient,
     MailboxLedger,
@@ -60,6 +65,11 @@ from xiaocao.kol.xiaocao_wechat import (
     XiaocaoLiveCaptureDriver,
     XiaocaoWechatLiveSubscription,
 )
+from xiaocao.kol.writer_progress import (
+    affected_set_digest,
+    FailureFingerprint,
+    WriterProgress,
+)
 from xiaocao.live.notify import notify
 
 
@@ -75,6 +85,49 @@ DEFAULT_WECHAT_OFFICIAL_OUTPUT = Path("output/live/kol_wechat_official")
 DEFAULT_MAILBOX_OUTPUT = Path("output/live/kol_mailbox")
 MAX_HANDOFF_BYTES = 1024 * 1024
 CLOUD_HANDOFF_POLL_SECONDS = 30
+
+
+@functools.lru_cache(maxsize=1)
+def _writer_failure_revision() -> str:
+    """Resolve the exact code revision bound into a repair fingerprint."""
+
+    try:
+        result = subprocess.run(
+            ("git", "rev-parse", "--verify", "HEAD"),
+            cwd=Path(__file__).resolve().parents[1],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.DEVNULL,
+            text=True,
+            check=False,
+            timeout=10,
+        )
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        raise DailyError("writer failure revision cannot be resolved") from exc
+    revision = result.stdout.strip()
+    if result.returncode != 0 or not re.fullmatch(r"[0-9a-f]{40}", revision):
+        raise DailyError("writer failure revision cannot be resolved")
+    return revision
+
+
+def _claim_summary_from_failure_audit(audit: dict[str, Any]) -> dict[str, int]:
+    claim_status = str(audit.get("claim_status") or "missing")
+    if claim_status == "completed":
+        return {
+            "claim_count": 1,
+            "receipt_count": 1,
+            "uncertain_effect_count": 0,
+        }
+    if claim_status == "claimed":
+        return {
+            "claim_count": 1,
+            "receipt_count": 0,
+            "uncertain_effect_count": 0,
+        }
+    return {
+        "claim_count": int(claim_status != "missing"),
+        "receipt_count": 0,
+        "uncertain_effect_count": int(claim_status in {"invalid", "unknown"}),
+    }
 
 
 class SemanticInputUnavailable(DailyError):
@@ -1221,19 +1274,59 @@ class DailyRuntime:
                     exc,
                     default_stage="small_item_processing",
                 )
-                service.record_item_failure(
+                failure_audit = service.record_item_failure(
                     identity,
                     failure=failure,
                     retryable=retryable,
                 )
                 waiting += 1
-                waiting_items.append({
+                waiting_item = {
                     "identity": identity,
                     "version_key": str(row.get("version_key") or ""),
                     "name": str(row.get("name") or ""),
                     "stage": failure["stage"],
                     "failure": {**failure, "retryable": retryable},
-                })
+                }
+                waiting_items.append(waiting_item)
+                if failure["code"] == "blocked_download_frame_missing":
+                    fingerprint = FailureFingerprint(
+                        adapter="lv_text_image",
+                        category=str(failure["category"]),
+                        code=str(failure["code"]),
+                        stage=str(failure["stage"]),
+                        failure_revision=_writer_failure_revision(),
+                        provider_contract_version=(
+                            BLOCKED_DOWNLOAD_PROVIDER_CONTRACT_VERSION
+                        ),
+                    )
+                    progress = WriterProgress.repair_required(
+                        item_identity=identity,
+                        fingerprint=fingerprint,
+                        repair_revision=None,
+                        affected_set_digest=affected_set_digest(
+                            [{
+                                "identity": identity,
+                                "version_key": str(row.get("version_key") or ""),
+                            }]
+                        ),
+                        claim_receipt_summary=(
+                            _claim_summary_from_failure_audit(failure_audit)
+                        ),
+                        targeted_test_profile="kol_lv_download_recovery",
+                        narrow_resume_surface=f"lv_text_image:{identity}",
+                        retryability="retryable" if retryable else "not_retryable",
+                    )
+                    return {
+                        "status": "waiting",
+                        "waiting_count": waiting,
+                        "waiting_items": waiting_items,
+                        "suppressed_companion_count": suppressed,
+                        "retryable": False,
+                        "repair_key": fingerprint.digest,
+                        "repair_required": True,
+                        "user_action_required": False,
+                        "writer_progress": progress.to_dict(),
+                    }
                 continue
             ingest = service.ingest_browser_download(identity)
             request = service.prepare_analysis_request(ingest)

@@ -46,6 +46,7 @@ from xiaocao.kol.publication import (
     report_id,
     viewpoint_id,
 )
+from xiaocao.kol.writer_progress import FailureFingerprint, WriterProgress
 
 
 class Clock:
@@ -2697,6 +2698,194 @@ def test_consecutive_same_failure_requests_internal_repair_without_notifying(tmp
         row["external_business_effects_replayed"] is False
         for row in exhausted
     )
+
+
+def test_lv_download_frame_fault_returns_repair_progress_and_stops_fanout(
+    tmp_path,
+    monkeypatch,
+):
+    calls: list[str] = []
+    failure_revision = "a" * 40
+
+    class FakeService:
+        @staticmethod
+        def poll_opencli(**_kwargs):
+            return {"status": "ok"}
+
+        @staticmethod
+        def pending_items():
+            return [
+                {
+                    "identity": "identity-1",
+                    "version_key": "version-1",
+                    "name": "fixture-1.png",
+                    "media_type": "image",
+                    "modified_at": 2,
+                    "path": "/fixture-1.png",
+                },
+                {
+                    "identity": "identity-2",
+                    "version_key": "version-2",
+                    "name": "fixture-2.png",
+                    "media_type": "image",
+                    "modified_at": 1,
+                    "path": "/fixture-2.png",
+                },
+            ]
+
+        @staticmethod
+        def metadata_companion_proof(*_args, **_kwargs):
+            return None
+
+        @staticmethod
+        def download_opencli(identity, **_kwargs):
+            calls.append(identity)
+            raise EnrichmentDiagnosticError(
+                "private provider error text",
+                category="identity_error",
+                code="blocked_download_frame_missing",
+                stage="browser_download_recovery",
+            )
+
+        @staticmethod
+        def record_item_failure(identity, *, failure, retryable):
+            assert identity == "identity-1"
+            assert failure == {
+                "category": "identity_error",
+                "code": "blocked_download_frame_missing",
+                "stage": "browser_download_recovery",
+            }
+            assert retryable is True
+            return {"claim_status": "claimed"}
+
+    runtime = DailyRuntime.__new__(DailyRuntime)
+    runtime.args = SimpleNamespace(
+        lv_session="lv-session",
+        opencli_profile=None,
+    )
+    runtime._lv_service_for_sweep = lambda: FakeService()
+    runtime._lv_listing_for_sweep = lambda: {
+        "status": "ok",
+        "complete_scan": True,
+        "entries": [],
+    }
+    runtime._complete_lv_video_transcripts = lambda: []
+    monkeypatch.setattr(
+        kol_daily_script,
+        "_writer_failure_revision",
+        lambda: failure_revision,
+    )
+
+    result = runtime.lv()
+
+    assert calls == ["identity-1"]
+    assert result["status"] == "waiting"
+    assert result["repair_required"] is True
+    assert result["retryable"] is False
+    assert result["user_action_required"] is False
+    progress = WriterProgress.from_dict(result["writer_progress"])
+    assert progress.status == "repair_required"
+    assert progress.ownership == "agent"
+    assert progress.retryability == "retryable"
+    fingerprint = FailureFingerprint.from_dict(progress.failure)
+    assert fingerprint.failure_revision == failure_revision
+    assert fingerprint.code == "blocked_download_frame_missing"
+    assert progress.details["claim_receipt_summary"] == {
+        "claim_count": 1,
+        "receipt_count": 0,
+        "uncertain_effect_count": 0,
+    }
+
+
+def test_open_writer_repair_remains_authoritative_until_matching_closure(tmp_path):
+    clock = Clock("2026-08-08T07:30:00+08:00")
+    coordinator = DailyCoordinator(tmp_path / "daily", now=clock)
+    calls = 0
+    fingerprint = FailureFingerprint(
+        adapter="lv_text_image",
+        category="identity_error",
+        code="blocked_download_frame_missing",
+        stage="browser_download_recovery",
+        failure_revision="a" * 40,
+        provider_contract_version="baidu_netdisk_download_v1",
+    )
+    progress = WriterProgress.repair_required(
+        item_identity="identity-1",
+        fingerprint=fingerprint,
+        repair_revision=None,
+        affected_set_digest="d" * 64,
+        claim_receipt_summary={
+            "claim_count": 1,
+            "receipt_count": 0,
+            "uncertain_effect_count": 0,
+        },
+        targeted_test_profile="kol_lv_download_recovery",
+        narrow_resume_surface="lv_text_image:identity-1",
+        retryability="retryable",
+    )
+
+    def first_failure():
+        nonlocal calls
+        calls += 1
+        return {
+            "status": "waiting",
+            "waiting_count": 1,
+            "waiting_items": [{
+                "identity": "identity-1",
+                "version_key": "version-1",
+                "stage": "browser_download_recovery",
+            }],
+            "repair_required": True,
+            "retryable": False,
+            "user_action_required": False,
+            "writer_progress": progress.to_dict(),
+        }
+
+    coordinator.run([{"name": "lv_text_image", "run": first_failure}])
+    clock.value = datetime.fromisoformat("2026-08-08T08:30:00+08:00")
+
+    def generic_wait_that_must_not_run():
+        raise AssertionError("open repair must retain current task ownership")
+
+    second = coordinator.run(
+        [{"name": "lv_text_image", "run": generic_wait_that_must_not_run}]
+    )
+
+    assert calls == 1
+    assert second["health"] == "degraded"
+    assert second["source_results"][0]["repair_required"] is True
+    assert WriterProgress.from_dict(
+        second["source_results"][0]["writer_progress"]
+    ) == progress
+    audit = coordinator.audit()
+    assert audit["failure_fingerprint_count"] == 1
+    assert audit["repair_required_count"] == 2
+    assert audit["repair_closed_count"] == 0
+
+    coordinator.convergence.close_repair(
+        progress.failure_fingerprint,
+        repair_receipt={
+            "receipt_id": "repair-receipt-1",
+            "failure_fingerprint": progress.failure_fingerprint,
+            "repair_revision": "b" * 40,
+            "targeted_test_profile": "kol_lv_download_recovery",
+        },
+        slot="2026-08-08T08:00+08:00",
+    )
+    clock.value = datetime.fromisoformat("2026-08-08T09:30:00+08:00")
+
+    def clean_after_matching_closure():
+        nonlocal calls
+        calls += 1
+        return {"status": "no_update"}
+
+    third = coordinator.run(
+        [{"name": "lv_text_image", "run": clean_after_matching_closure}]
+    )
+
+    assert calls == 2
+    assert third["health"] == "healthy"
+    assert coordinator.audit()["repair_closed_count"] == 1
 
 
 def test_repeated_source_acquisition_stall_requests_internal_repair(tmp_path):
