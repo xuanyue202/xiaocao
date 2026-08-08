@@ -71,12 +71,12 @@ run's Automation ID and prompt metadata. Ignore titles and exclude that current
 task. An active/needs-attention peer owns continuation: exit successfully
 without mailbox access.
 
-Bind each list to `hostId`/`projectId`/`cwd`; never reuse `hostId` from
-memory/earlier slots. If a task's tuple changes, discard
-candidates and retry once with the fresh binding; old-host readback fails. Apply
-5 Why; task-list failure handling blocks business effects, not repair. Use two
-lists (initial + fresh retry); both fail => `repair_required`, no third duplicate.
-Never defer to the next Automation.
+Bind list to `hostId`/`projectId`/`cwd`; never reuse old host. Serial gate: await
+each call; if its wrapper yields a cell handle, wait/terminate it before
+the next. Never overlap list/readback or retry pending. Tuple drift: discard and
+make one fresh list. Two terminal failures => `repair_required`, no third. Apply
+5 Why; task-list failure blocks business effects, not repair. Never defer to the
+next Automation.
 Do not add a Python global lock, lease, heartbeat, fencing token, or stale takeover.
 
 If there is no active peer, run `scripts/kol_daily.py run` exactly once. For
