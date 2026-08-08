@@ -1365,7 +1365,7 @@ def test_replayed_claim_reports_missing_blocked_download_frame_exactly(tmp_path)
     with pytest.raises(EnrichmentDiagnosticError) as captured:
         service.download_opencli(update["identity"], session="ticket04")
 
-    assert captured.value.diagnostic_code == "provider_download_link_errno_2"
+    assert captured.value.diagnostic_code == "provider_download_filtered"
     assert captured.value.diagnostic_stage == "provider_download_link"
     assert waits == 1
 
@@ -2112,6 +2112,34 @@ def test_direct_pdf_api_preserves_auth_captcha_and_provider_diagnostics(
     assert captured.value.diagnostic_category == category
     assert captured.value.diagnostic_code == code
     assert captured.value.diagnostic_stage == stage
+
+
+def test_direct_image_api_maps_provider_errno_2_to_filtered_media(tmp_path):
+    service = LvSubscriptionService(tmp_path / "out")
+    service._opencli_json = lambda *_args, **_kwargs: {
+        "status": "provider_error",
+        "provider_errno": 2,
+    }
+    item = {
+        "identity": "a" * 64,
+        "version_key": "b" * 64,
+        "provider_file_id": "987654321012345",
+        "path": "/彤商学院/图片/170057.png",
+        "name": "170057.png",
+        "size": 4096,
+        "media_type": "image",
+    }
+
+    with pytest.raises(EnrichmentDiagnosticError) as captured:
+        service._provider_direct_download(
+            item,
+            session="ticket04",
+            profile="dedicated-context",
+        )
+
+    assert captured.value.diagnostic_category == "provider_error"
+    assert captured.value.diagnostic_code == "provider_download_filtered"
+    assert captured.value.diagnostic_stage == "provider_download_link"
 
 
 def test_one_poll_listing_is_reused_for_all_claim_reconciliations(tmp_path):

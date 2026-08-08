@@ -4121,6 +4121,8 @@ try {
             provider_errno = link.get("provider_errno")
             if status == "provider_filtered":
                 code = "provider_download_filtered"
+            elif provider_errno == 2 and media_type == "image":
+                code = "provider_download_filtered"
             elif provider_errno == 2:
                 code = "provider_download_link_errno_2"
             elif status == "share_download_metadata_missing":
