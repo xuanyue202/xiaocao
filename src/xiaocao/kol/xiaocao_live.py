@@ -38,6 +38,7 @@ from .claim_coverage import (
 from .author_profiles import semantic_author_profile
 from .enrichment_types import EnrichmentError
 from .netdisk_enrichment import NetdiskEnrichmentService
+from .semantic_bundle import read_validated_bundle, validate_receipt_bindings
 
 
 DEFAULT_CAPTURE_LEDGER = Path("output/live/kol_capture_jobs.jsonl")
@@ -276,8 +277,32 @@ def validate_decision_bundle(
     *,
     transcript_path: Path,
     transcript_sha256: str,
+    handoff_id: str | None = None,
+    source_identity: str | None = None,
+    source_version_key: str | None = None,
+    media_identity: str | None = None,
 ) -> dict[str, Any]:
     bundle = _read_json(bundle_path)
+    if bundle.get("schema_version") == 2:
+        receipt, canonical_bundle = read_validated_bundle(bundle_path)
+        validate_receipt_bindings(
+            receipt,
+            {
+                "transcript_sha256": transcript_sha256,
+                "handoff_id": handoff_id,
+                "source_identity": source_identity,
+                "source_version_key": source_version_key,
+                "media_identity": media_identity,
+            },
+        )
+        item = canonical_bundle["items"][0]
+        if Path(str(item.get("evidence_path") or "")).expanduser().resolve() != (
+            transcript_path.resolve()
+        ):
+            raise EnrichmentError(
+                "Ticket 03 validated bundle uses the wrong transcript"
+            )
+        return canonical_bundle
     items = bundle.get("items")
     if not isinstance(items, list) or len(items) != 1 or not isinstance(items[0], dict):
         raise EnrichmentError("Ticket 03 requires exactly one decision item")

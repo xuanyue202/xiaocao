@@ -23,6 +23,7 @@ from uuid import uuid4
 from zoneinfo import ZoneInfo
 
 from .enrichment_types import EnrichmentDiagnosticError, EnrichmentError
+from .semantic_bundle import read_validated_bundle, validate_receipt_bindings
 
 
 BEIJING = ZoneInfo("Asia/Shanghai")
@@ -1266,17 +1267,36 @@ class OfficialAccountInbox:
         items = bundle.get("items") if isinstance(bundle, dict) else None
         if not isinstance(items, list) or len(items) != 1 or not isinstance(items[0], dict):
             raise EnrichmentError("official-account decision needs one item")
+        validated_receipt = None
+        if isinstance(bundle, dict) and bundle.get("schema_version") == 2:
+            validated_receipt, bundle = read_validated_bundle(bundle_file)
+            validate_receipt_bindings(
+                validated_receipt,
+                {
+                    "handoff_id": item.get("handoff_id"),
+                    "source_identity": item.get("source_identity"),
+                    "source_version_key": item.get("publication_version"),
+                    "transcript_sha256": item.get("evidence_sha256"),
+                },
+            )
+            items = bundle["items"]
         decision_item = items[0]
-        required_bindings = {
-            "source": item["source"],
-            "author": item["author"],
-            "title": item["title"],
-            "published_at": item["published_at"],
-            "evidence_path": item["evidence_path"],
-            "evidence_sha256": item["evidence_sha256"],
-        }
-        if any(decision_item.get(key) != value for key, value in required_bindings.items()):
-            raise EnrichmentError("official-account decision changed source evidence")
+        if validated_receipt is None:
+            required_bindings = {
+                "source": item["source"],
+                "author": item["author"],
+                "title": item["title"],
+                "published_at": item["published_at"],
+                "evidence_path": item["evidence_path"],
+                "evidence_sha256": item["evidence_sha256"],
+            }
+            if any(
+                decision_item.get(key) != value
+                for key, value in required_bindings.items()
+            ):
+                raise EnrichmentError(
+                    "official-account decision changed source evidence"
+                )
         paper_account = getattr(getattr(pipeline, "book", None), "account", None)
         if (
             not isinstance(paper_account, dict)
@@ -1310,6 +1330,20 @@ class OfficialAccountInbox:
             "publication_version": item["publication_version"],
             "decision_bundle_path": str(bundle_file),
             "decision_bundle_sha256": _sha256_bytes(bundle_file.read_bytes()),
+            **(
+                {
+                    "validated_bundle_receipt_path": str(
+                        bundle_file.with_name("validated_bundle_receipt.json")
+                    ),
+                    "validated_bundle_receipt_sha256": _sha256_bytes(
+                        bundle_file.with_name(
+                            "validated_bundle_receipt.json"
+                        ).read_bytes()
+                    ),
+                }
+                if validated_receipt is not None
+                else {}
+            ),
             "decision_result_path": str(result_path),
             "decision_result_sha256": result_sha256,
         }

@@ -30,6 +30,7 @@ from .lv_subscription import LvSubscriptionService
 from .netdisk_enrichment import NetdiskEnrichmentService
 from .rendering import reader_message_title, render_household_item_message
 from .runtime_paths import resolve_repo_owned_path
+from .semantic_bundle import read_validated_bundle, validate_receipt_bindings
 
 
 LV_SOURCE = "baidu_subscription_share_browser"
@@ -3837,6 +3838,24 @@ class SubscriptionVideoService:
             raise EnrichmentError(
                 "Ticket 05 decision bundle requires exactly one item"
             )
+        if isinstance(bundle, dict) and bundle.get("schema_version") == 2:
+            receipt, canonical_bundle = read_validated_bundle(bundle_file)
+            validate_receipt_bindings(
+                receipt,
+                {
+                    "source_identity": item.get("identity"),
+                    "source_version_key": item.get("version_key"),
+                    "transcript_sha256": state.get("transcript_sha256"),
+                },
+            )
+            canonical_item = canonical_bundle["items"][0]
+            if canonical_item.get("evidence_sha256") != state.get(
+                "transcript_sha256"
+            ):
+                raise EnrichmentError(
+                    "Ticket 05 validated bundle transcript receipt does not match"
+                )
+            return canonical_item
         decision = rows[0]
         expected_title = f"{item['author']}{PurePosixPath(item['name']).stem}"
         evidence_path = self._runtime_path(

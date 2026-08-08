@@ -26,6 +26,12 @@ from .netdisk_opencli_templates import (
     render_netdisk_opencli_template,
 )
 from .runtime_paths import resolve_repo_owned_path
+from .semantic_bundle import (
+    SemanticBundleError,
+    ValidatedBundleReceipt,
+    read_validated_bundle,
+    validate_receipt_bindings,
+)
 
 
 _SHA256 = re.compile(r"^[0-9a-f]{64}$")
@@ -43,6 +49,22 @@ _NETDISK_FOLDER_URL = (
     "https://pan.baidu.com/disk/main#/index?category=all&path="
     "%2F%E8%AF%BE%E7%A8%8B%2F%E8%87%AA%E5%B7%B1%E7%9A%84%E8%AF%BE%2F%E5%B0%8F%E8%8D%89"
 )
+
+
+def _validate_canonical_semantic_artifact(
+    bundle_file: Path,
+    bundle: dict[str, Any],
+    *,
+    expected_bindings: dict[str, Any] | None = None,
+) -> ValidatedBundleReceipt | None:
+    """Reconcile a v2 artifact before any Netdisk consumer side effect."""
+
+    if bundle.get("schema_version") != 2:
+        return None
+    receipt, _ = read_validated_bundle(bundle_file)
+    if expected_bindings:
+        validate_receipt_bindings(receipt, expected_bindings)
+    return receipt
 
 
 def _atomic_write_json(path: Path, value: dict[str, Any]) -> None:
@@ -4053,6 +4075,25 @@ class NetdiskEnrichmentService:
                 exc = EnrichmentError("decision bundle item must be a JSON object")
                 record_failure("invalid_bundle_item", exc, bundle_sha=bundle_sha)
                 raise exc
+            validated_receipt = None
+            try:
+                validated_receipt = _validate_canonical_semantic_artifact(
+                    bundle_file,
+                    bundle,
+                    expected_bindings={
+                        "transcript_sha256": current.get("transcript_sha256"),
+                        "handoff_id": current.get("handoff_id"),
+                        "source_identity": current.get("source_identity"),
+                        "source_version_key": current.get("source_version_key"),
+                    },
+                )
+            except SemanticBundleError as exc:
+                record_failure(
+                    "validated_bundle_receipt",
+                    exc,
+                    bundle_sha=bundle_sha,
+                )
+                raise
             evidence_path = self._runtime_path(
                 str(items[0].get("evidence_path") or "")
             )
@@ -4214,6 +4255,20 @@ class NetdiskEnrichmentService:
                 "status": "decided",
                 "decision_bundle_path": str(bundle_file),
                 "decision_bundle_sha256": bundle_sha,
+                **(
+                    {
+                        "validated_bundle_receipt_path": str(
+                            bundle_file.with_name("validated_bundle_receipt.json")
+                        ),
+                        "validated_bundle_receipt_sha256": hashlib.sha256(
+                            bundle_file.with_name(
+                                "validated_bundle_receipt.json"
+                            ).read_bytes()
+                        ).hexdigest(),
+                    }
+                    if validated_receipt is not None
+                    else {}
+                ),
                 "decision_result_path": str(result_path),
                 "decision_result_sha256": hashlib.sha256(result_bytes).hexdigest(),
                 "household_notification": household_summary,

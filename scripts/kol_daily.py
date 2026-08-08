@@ -2132,6 +2132,10 @@ class DailyRuntime:
                 bundle_path,
                 transcript_path=Path(state["transcript_path"]),
                 transcript_sha256=str(state["transcript_sha256"]),
+                handoff_id=str(handoff["capture_job_id"]),
+                source_identity=str(handoff["capture_job_id"]),
+                source_version_key=str(state["transcript_sha256"]),
+                media_identity=str(handoff.get("media_sha256") or "") or None,
             )
             context = DailyPublicationContext(
                 adapter="xiaocao_live",

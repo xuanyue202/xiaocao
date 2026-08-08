@@ -34,6 +34,7 @@ from .enrichment_types import (
     validate_decision_completion,
     validate_decision_process_result,
 )
+from .semantic_bundle import read_validated_bundle, validate_receipt_bindings
 
 
 IMAGE_SUFFIXES = {".jpeg", ".jpg", ".png", ".webp"}
@@ -6531,7 +6532,18 @@ try {
             bundle = json.loads(bundle_bytes)
         except json.JSONDecodeError as exc:
             raise EnrichmentError("subscription decision bundle is invalid JSON") from exc
-        self._validate_decision_bundle(bundle, ingest=ingest)
+        if isinstance(bundle, dict) and bundle.get("schema_version") == 2:
+            receipt, bundle = read_validated_bundle(bundle_file)
+            validate_receipt_bindings(
+                receipt,
+                {
+                    "source_identity": ingest.get("identity") or item.get("identity"),
+                    "source_version_key": ingest.get("version_key") or item.get("version_key"),
+                    "transcript_sha256": ingest.get("evidence_sha256"),
+                },
+            )
+        else:
+            self._validate_decision_bundle(bundle, ingest=ingest)
 
         if pipeline is None:
             from .decisions import DecisionPipeline
