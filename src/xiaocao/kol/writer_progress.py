@@ -5,15 +5,16 @@ from __future__ import annotations
 import fcntl
 import hashlib
 import json
-import os
 import re
-import signal
+import subprocess
 import threading
 from contextlib import contextmanager
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any, Callable, Iterator, Mapping
+
+from ._shared import append_integrity_jsonl, read_integrity_jsonl
 
 
 PROGRESS_STATUSES = frozenset(
@@ -48,6 +49,29 @@ _MAX_LEDGER_LINE_BYTES = 64 * 1024
 
 class ProgressContractError(ValueError):
     """A writer step cannot be represented by the convergence contract."""
+
+
+def resolve_repository_revision(root: Path | str) -> str:
+    """Resolve one full Git revision without leaking command diagnostics."""
+
+    try:
+        result = subprocess.run(
+            ("git", "rev-parse", "--verify", "HEAD"),
+            cwd=Path(root).expanduser().resolve(),
+            stdout=subprocess.PIPE,
+            stderr=subprocess.DEVNULL,
+            text=True,
+            check=False,
+            timeout=10,
+        )
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        raise ProgressContractError(
+            "writer failure revision cannot be resolved"
+        ) from exc
+    revision = result.stdout.strip()
+    if result.returncode != 0 or not _HEX_40.fullmatch(revision):
+        raise ProgressContractError("writer failure revision cannot be resolved")
+    return revision
 
 
 def _canonical(value: Any) -> str:
@@ -671,13 +695,21 @@ class WriterProgress:
             self.details["next_stage"] != following.stage
         ):
             raise ProgressContractError("continue must enter its declared next stage")
-        if self.status == "wait_until" and now is not None:
+        if self.status == "wait_until":
+            if now is None:
+                raise ProgressContractError(
+                    "wait_until transition requires the current time"
+                )
             deadline = datetime.fromisoformat(
                 str(self.details["deadline"]).replace("Z", "+00:00")
             )
             if now.tzinfo is None or now < deadline:
                 raise ProgressContractError("wait_until deadline has not elapsed")
-        if self.status == "repair_required" and following.status != "repair_required":
+        repair_continues = (
+            following.status == "repair_required"
+            and following.failure_fingerprint == self.failure_fingerprint
+        )
+        if self.status == "repair_required" and not repair_continues:
             receipt = dict(evidence or {})
             if (
                 receipt.get("event") != "repair_closed"
@@ -722,6 +754,278 @@ def affected_set_digest(rows: list[Mapping[str, Any]]) -> str:
     return _digest(normalized)
 
 
+def _aggregate_terminal(
+    events: list[dict[str, Any]],
+    *path: str,
+    default: str,
+) -> str:
+    values: list[str] = []
+    for event in events:
+        current: Any = event
+        for field_name in path:
+            current = current.get(field_name) if isinstance(current, Mapping) else None
+        value = str(current or "").strip()
+        if value:
+            values.append(_safe_token(value, field_name=path[-1]))
+    unique = list(dict.fromkeys(values))
+    return unique[0] if len(unique) == 1 else "mixed_completed" if unique else default
+
+
+def _source_item_identity(adapter: str, item: Mapping[str, Any] | None) -> str:
+    if item is not None:
+        identity = str(item.get("identity") or "").strip()
+        if _SAFE_IDENTITY.fullmatch(identity):
+            return identity
+    return f"{adapter}:source"
+
+
+def _progress_claim_summary(outcome: Mapping[str, Any]) -> dict[str, int]:
+    supplied = outcome.get("claim_receipt_summary")
+    if isinstance(supplied, Mapping):
+        return _claim_receipt_summary(supplied)
+    return {
+        "claim_count": 0,
+        "receipt_count": 0,
+        "uncertain_effect_count": 0,
+    }
+
+
+def project_source_outcome(
+    adapter: str,
+    outcome: Mapping[str, Any],
+    *,
+    failure_revision: str,
+    provider_contract_version: str,
+    user_action: Mapping[str, Any] | None = None,
+    fallback_wait_deadline: str | None = None,
+) -> WriterProgress:
+    """Project legacy source output through the finite writer state machine."""
+
+    adapter_name = _safe_token(adapter, field_name="adapter")
+    raw_progress = outcome.get("writer_progress")
+    if isinstance(raw_progress, Mapping):
+        return WriterProgress.from_dict(raw_progress)
+    status = str(outcome.get("status") or "")
+    summary = _progress_claim_summary(outcome)
+    source_identity = f"{adapter_name}:source"
+    if status == "no_update":
+        return WriterProgress.terminal(
+            item_identity=source_identity,
+            stage="source_run",
+            content_terminal="no_update",
+            gray_report_terminal="not_created",
+            reminder_terminal="not_created",
+            book_terminal="not_created",
+            knowledge_terminal="not_created",
+            ack_status="not_applicable",
+            new_external_effect_count=0,
+            claim_receipt_summary=summary,
+        )
+    if status == "completed":
+        raw_events = outcome.get("events")
+        events = [
+            row for row in raw_events if isinstance(row, dict)
+        ] if isinstance(raw_events, list) else []
+        external_effect_count = sum(
+            int((event.get("gray_report") or {}).get("status") == "published")
+            + int((event.get("alert") or {}).get("status") == "delivered")
+            + int((event.get("book_kol_us") or {}).get("status") == "filled")
+            for event in events
+        )
+        terminal_summary = (
+            {
+                "claim_count": external_effect_count,
+                "receipt_count": external_effect_count,
+                "uncertain_effect_count": 0,
+            }
+            if summary == {
+                "claim_count": 0,
+                "receipt_count": 0,
+                "uncertain_effect_count": 0,
+            }
+            else summary
+        )
+        return WriterProgress.terminal(
+            item_identity=source_identity,
+            stage="source_run",
+            content_terminal=_aggregate_terminal(
+                events,
+                "content_value",
+                "status",
+                default="completed",
+            ),
+            gray_report_terminal=_aggregate_terminal(
+                events,
+                "gray_report",
+                "status",
+                default="not_applicable",
+            ),
+            reminder_terminal=_aggregate_terminal(
+                events,
+                "alert",
+                "status",
+                default="not_applicable",
+            ),
+            book_terminal=_aggregate_terminal(
+                events,
+                "book_kol_us",
+                "status",
+                default="not_applicable",
+            ),
+            knowledge_terminal=_aggregate_terminal(
+                events,
+                "knowledge_effect",
+                "status",
+                default="not_applicable",
+            ),
+            ack_status=str(outcome.get("ack_status") or "not_applicable"),
+            new_external_effect_count=external_effect_count,
+            claim_receipt_summary=terminal_summary,
+        )
+    if status != "waiting":
+        raise ProgressContractError("source outcome status cannot be projected")
+    waiting_items = outcome.get("waiting_items")
+    items = [
+        row for row in waiting_items if isinstance(row, Mapping)
+    ] if isinstance(waiting_items, list) else []
+    item = items[0] if items else None
+    item_identity = _source_item_identity(adapter_name, item)
+    stage = _safe_token(
+        (item or {}).get("stage") or "source_run",
+        field_name="stage",
+    )
+    if outcome.get("user_action_required") is True:
+        action = dict(user_action or {})
+        if not action:
+            raise ProgressContractError(
+                "user action projection needs exact blocker fields"
+            )
+        return WriterProgress.user_action_required(
+            item_identity=item_identity,
+            stage=stage,
+            action=str(action.get("action") or ""),
+            blocker_identity=str(action.get("blocker_identity") or ""),
+            dedup_key=str(action.get("dedup_key") or ""),
+            claim_receipt_summary=summary,
+        )
+    if item is not None and (
+        stage == "waiting_semantic_input"
+        or item.get("analysis_request_path")
+        or item.get("image_request_path")
+    ):
+        bindings = {
+            key: str(item[key])
+            for key in ("identity", "version_key", "evidence_sha256")
+            if str(item.get(key) or "").strip()
+        }
+        request_id = _digest({"adapter": adapter_name, **bindings, "stage": stage})
+        return WriterProgress.structured_input(
+            item_identity=item_identity,
+            stage=stage,
+            request_kind=(
+                "daily_official_article_image_input_required"
+                if item.get("image_request_path")
+                else "daily_analysis_input_required"
+            ),
+            request_id=request_id,
+            request_schema_version=1,
+            immutable_bindings=bindings,
+            response_field=(
+                "image_notes_path" if item.get("image_request_path") else "bundle_path"
+            ),
+            claim_receipt_summary=summary,
+        )
+    failure_value = outcome.get("failure")
+    if not isinstance(failure_value, Mapping) and item is not None:
+        failure_value = item.get("failure")
+    failure = dict(failure_value) if isinstance(failure_value, Mapping) else {}
+    category = str(
+        failure.get("category")
+        or (item or {}).get("category")
+        or "internal_state_error"
+    )
+    code = str(
+        failure.get("code")
+        or (item or {}).get("code")
+        or "generic_wait_without_deadline"
+    )
+    if category == "uncertain_state" or "reconciliation" in stage:
+        claim_identity = _digest({
+            "adapter": adapter_name,
+            "item_identity": item_identity,
+            "stage": stage,
+        })
+        return WriterProgress.reconcile_required(
+            item_identity=item_identity,
+            stage=stage,
+            effect_kind="external_effect",
+            claim_identity=claim_identity,
+            readback_operation=f"reconcile_{stage}"[:128],
+            claim_receipt_summary={
+                **summary,
+                "uncertain_effect_count": max(
+                    1,
+                    summary["uncertain_effect_count"],
+                ),
+            },
+        )
+    deadline = str((item or {}).get("next_poll_not_before") or "").strip()
+    if deadline:
+        attempted = int((item or {}).get("trigger_attempt") or 1)
+        return WriterProgress.wait_until(
+            item_identity=item_identity,
+            category=category,
+            code=code,
+            stage=stage,
+            deadline=deadline,
+            attempt_budget={"attempted": attempted, "maximum": max(3, attempted)},
+            claim_receipt_summary=summary,
+        )
+    if (
+        not failure
+        and outcome.get("repair_required") is not True
+        and fallback_wait_deadline is not None
+    ):
+        return WriterProgress.wait_until(
+            item_identity=item_identity,
+            category="provider_wait",
+            code="source_pending",
+            stage=stage,
+            deadline=fallback_wait_deadline,
+            attempt_budget={"attempted": 1, "maximum": 2},
+            claim_receipt_summary=summary,
+        )
+    fingerprint = FailureFingerprint(
+        adapter=adapter_name,
+        category=_safe_token(category, field_name="category"),
+        code=_safe_token(code, field_name="code"),
+        stage=stage,
+        failure_revision=str(
+            _revision(failure_revision, field_name="failure_revision")
+        ),
+        provider_contract_version=provider_contract_version,
+    )
+    affected_rows = [
+        {
+            "identity": item_identity,
+            "version_key": str((item or {}).get("version_key") or "current"),
+        }
+    ]
+    return WriterProgress.repair_required(
+        item_identity=item_identity,
+        fingerprint=fingerprint,
+        repair_revision=None,
+        affected_set_digest=affected_set_digest(affected_rows),
+        claim_receipt_summary=summary,
+        targeted_test_profile=f"kol_{adapter_name}_{stage}"[:128],
+        narrow_resume_surface=f"{adapter_name}:source",
+        retryability=(
+            "retryable" if failure.get("retryable", True) is not False
+            else "not_retryable"
+        ),
+    )
+
+
 class ConvergenceLedger:
     """Append-only observations from which the current repair owner is recovered."""
 
@@ -754,65 +1058,21 @@ class ConvergenceLedger:
                     fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
 
     def _append(self, row: dict[str, Any]) -> dict[str, Any]:
-        unsigned = {"schema_version": 1, **row}
-        unsigned["event_id"] = _digest(unsigned)
-        payload = (_canonical(unsigned) + "\n").encode("utf-8")
-        if len(payload) > _MAX_LEDGER_LINE_BYTES:
-            raise ProgressContractError("convergence ledger event exceeds limit")
-        blocked = {signal.SIGINT, signal.SIGTERM}
-        previous = signal.pthread_sigmask(signal.SIG_BLOCK, blocked)
-        descriptor: int | None = None
-        try:
-            descriptor = os.open(
-                self.path,
-                os.O_APPEND | os.O_CREAT | os.O_WRONLY,
-                0o600,
-            )
-            remaining = memoryview(payload)
-            while remaining:
-                written = os.write(descriptor, remaining)
-                if written <= 0:
-                    raise ProgressContractError(
-                        "convergence ledger append made no progress"
-                    )
-                remaining = remaining[written:]
-            os.fsync(descriptor)
-        finally:
-            if descriptor is not None:
-                os.close(descriptor)
-            signal.pthread_sigmask(signal.SIG_SETMASK, previous)
-        return unsigned
+        return append_integrity_jsonl(
+            self.path,
+            {"schema_version": 1, **row},
+            max_line_bytes=_MAX_LEDGER_LINE_BYTES,
+            label="convergence ledger",
+            error_factory=ProgressContractError,
+        )
 
     def events(self) -> list[dict[str, Any]]:
-        if not self.path.is_file():
-            return []
-        rows: list[dict[str, Any]] = []
-        try:
-            lines = self.path.read_text(encoding="utf-8").splitlines()
-        except OSError as exc:
-            raise ProgressContractError("convergence ledger cannot be read") from exc
-        for number, line in enumerate(lines, start=1):
-            if not line.strip():
-                continue
-            if len(line.encode("utf-8")) > _MAX_LEDGER_LINE_BYTES:
-                raise ProgressContractError(
-                    f"convergence ledger line {number} exceeds limit"
-                )
-            try:
-                row = json.loads(line)
-            except json.JSONDecodeError as exc:
-                raise ProgressContractError(
-                    f"convergence ledger line {number} is invalid"
-                ) from exc
-            event_id = str(row.get("event_id") or "")
-            unsigned = dict(row)
-            unsigned.pop("event_id", None)
-            if event_id != _digest(unsigned):
-                raise ProgressContractError(
-                    f"convergence ledger line {number} failed integrity validation"
-                )
-            rows.append(row)
-        return rows
+        return read_integrity_jsonl(
+            self.path,
+            max_line_bytes=_MAX_LEDGER_LINE_BYTES,
+            label="convergence ledger",
+            error_factory=ProgressContractError,
+        )
 
     def record(self, progress: WriterProgress, *, slot: str) -> dict[str, Any]:
         if progress.status != "repair_required":
@@ -864,6 +1124,95 @@ class ConvergenceLedger:
             return WriterProgress.from_dict(progress)
         return None
 
+    def pending_resume(
+        self,
+        adapter: str,
+    ) -> tuple[WriterProgress, dict[str, Any]] | None:
+        """Return a closed repair whose one narrow continuation is still due."""
+
+        adapter_name = _safe_token(adapter, field_name="adapter")
+        rows = self.events()
+        latest_by_fingerprint: dict[str, dict[str, Any]] = {}
+        for row in rows:
+            fingerprint = str(row.get("failure_fingerprint") or "")
+            if fingerprint:
+                latest_by_fingerprint[fingerprint] = row
+        for closure in reversed(rows):
+            if closure.get("event") != "repair_closed":
+                continue
+            fingerprint = str(closure.get("failure_fingerprint") or "")
+            if latest_by_fingerprint.get(fingerprint) is not closure:
+                continue
+            observation = next(
+                (
+                    row
+                    for row in reversed(rows)
+                    if row.get("event") == "failure_observed"
+                    and row.get("failure_fingerprint") == fingerprint
+                ),
+                None,
+            )
+            if observation is None:
+                raise ProgressContractError("repair closure lost its observation")
+            failure = observation.get("failure")
+            if (
+                not isinstance(failure, Mapping)
+                or failure.get("adapter") != adapter_name
+            ):
+                continue
+            return WriterProgress.from_dict(observation["progress"]), closure
+        return None
+
+    def record_resume(
+        self,
+        failure_fingerprint: str,
+        *,
+        following: WriterProgress,
+        slot: str,
+    ) -> dict[str, Any]:
+        """Consume one matching closure through its declared narrow surface."""
+
+        digest = _sha256(
+            failure_fingerprint,
+            field_name="failure_fingerprint",
+        )
+        _timezone_aware(slot, field_name="slot")
+        with self._locked():
+            rows = [
+                row
+                for row in self.events()
+                if row.get("failure_fingerprint") == digest
+            ]
+            if not rows or rows[-1].get("event") != "repair_closed":
+                raise ProgressContractError("repair has no pending narrow resume")
+            closure = rows[-1]
+            observation = next(
+                row for row in reversed(rows)
+                if row.get("event") == "failure_observed"
+            )
+            prior = WriterProgress.from_dict(observation["progress"])
+            receipt = closure["repair_receipt"]
+            prior.validate_transition_to(
+                following,
+                evidence={
+                    "event": "repair_closed",
+                    "failure_fingerprint": digest,
+                    "repair_revision": receipt["repair_revision"],
+                },
+            )
+            return self._append(
+                {
+                    "event": "repair_resumed",
+                    "resumed_at": self._now(),
+                    "slot": slot,
+                    "failure_fingerprint": digest,
+                    "narrow_resume_surface": prior.details[
+                        "narrow_resume_surface"
+                    ],
+                    "result_status": following.status,
+                }
+            )
+
     def close_repair(
         self,
         failure_fingerprint: str,
@@ -887,6 +1236,11 @@ class ConvergenceLedger:
             raise ProgressContractError(
                 f"repair receipt lacks {', '.join(missing)}"
             )
+        extra = sorted(set(receipt) - required)
+        if extra:
+            raise ProgressContractError(
+                f"repair receipt contains unsupported field {', '.join(extra)}"
+            )
         if receipt["failure_fingerprint"] != digest:
             raise ProgressContractError("repair receipt fingerprint does not match")
         _safe_identity(receipt["receipt_id"], field_name="receipt_id")
@@ -905,6 +1259,21 @@ class ConvergenceLedger:
             ]
             if not observations:
                 raise ProgressContractError("repair closure has no matching failure")
+            open_progress = WriterProgress.from_dict(observations[-1]["progress"])
+            if (
+                receipt["targeted_test_profile"]
+                != open_progress.details["targeted_test_profile"]
+            ):
+                raise ProgressContractError(
+                    "repair receipt test profile does not match open repair"
+                )
+            latest_matching = [
+                row
+                for row in self.events()
+                if row.get("failure_fingerprint") == digest
+            ][-1]
+            if latest_matching.get("event") != "failure_observed":
+                raise ProgressContractError("repair is not currently open")
             return self._append(
                 {
                     "event": "repair_closed",
@@ -950,7 +1319,15 @@ class ConvergenceLedger:
             if parsed_slots[index - 1] != expected_previous:
                 break
             consecutive_slots += 1
-        closed = latest.get("event") == "repair_closed"
+        closed = latest.get("event") in {"repair_closed", "repair_resumed"}
+        latest_closure = next(
+            (
+                row
+                for row in reversed(rows)
+                if row.get("event") == "repair_closed"
+            ),
+            None,
+        )
         return {
             "failure_fingerprint": digest,
             "first_seen": observations[0]["observed_at"],
@@ -958,7 +1335,15 @@ class ConvergenceLedger:
             "same_sweep_count": same_sweep_count,
             "consecutive_slots": consecutive_slots,
             "current_owner": None if closed else latest_observation["ownership"],
-            "repair_receipt": latest.get("repair_receipt") if closed else None,
-            "closure": latest.get("closed_at") if closed else None,
+            "repair_receipt": (
+                latest_closure.get("repair_receipt")
+                if closed and latest_closure is not None
+                else None
+            ),
+            "closure": (
+                latest_closure.get("closed_at")
+                if closed and latest_closure is not None
+                else None
+            ),
             "closed": closed,
         }

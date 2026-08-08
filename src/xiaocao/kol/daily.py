@@ -10,18 +10,17 @@ from __future__ import annotations
 import fcntl
 import hashlib
 import json
-import os
 import re
-import signal
 import threading
 from contextlib import contextmanager
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Callable, Iterator
 from zoneinfo import ZoneInfo
 
 from .enrichment_types import EnrichmentError, is_durable_report_only
+from ._shared import append_integrity_jsonl, read_integrity_jsonl
 from .publication import (
     PublicationError,
     PublicationLedger,
@@ -42,7 +41,14 @@ from .reader_copy import (
     validate_reader_source_identity,
 )
 from .rendering import reader_source_title
-from .writer_progress import ConvergenceLedger, WriterProgress
+from .writer_progress import (
+    affected_set_digest,
+    ConvergenceLedger,
+    FailureFingerprint,
+    project_source_outcome,
+    resolve_repository_revision,
+    WriterProgress,
+)
 
 
 BEIJING = ZoneInfo("Asia/Shanghai")
@@ -72,6 +78,15 @@ VIEWPOINT_EVALUATION_STATUSES = {
     "invalidated",
     "uncertain",
 }
+AGENT_OWNED_FAILURE_CATEGORIES = frozenset({
+    "code_error",
+    "schema_error",
+    "environment_error",
+    "provider_contract_error",
+    "control_plane_handler_error",
+    "local_runtime_error",
+    "protocol_error",
+})
 _LOCAL_THESIS_ID = re.compile(r"[a-z0-9][a-z0-9._-]{0,127}")
 
 
@@ -1208,6 +1223,7 @@ class DailyCoordinator:
         output_dir: Path | str,
         *,
         now: Callable[[], datetime] | None = None,
+        failure_revision: Callable[[], str] | None = None,
     ):
         self.output_dir = Path(output_dir).expanduser().resolve()
         self.events_path = self.output_dir / "events.jsonl"
@@ -1217,7 +1233,16 @@ class DailyCoordinator:
         )
         self.lock_path = self.output_dir / ".lock"
         self.now = now or (lambda: datetime.now(BEIJING))
+        self._failure_revision_provider = failure_revision or (
+            lambda: resolve_repository_revision(Path(__file__).parents[3])
+        )
+        self._resolved_failure_revision: str | None = None
         self._thread_lock = threading.RLock()
+
+    def _failure_revision(self) -> str:
+        if self._resolved_failure_revision is None:
+            self._resolved_failure_revision = self._failure_revision_provider()
+        return self._resolved_failure_revision
 
     def _beijing_now(self) -> datetime:
         value = self.now()
@@ -1237,33 +1262,12 @@ class DailyCoordinator:
                     fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
 
     def _events_unlocked(self) -> list[dict[str, Any]]:
-        if not self.events_path.is_file():
-            return []
-        try:
-            lines = self.events_path.read_text(encoding="utf-8").splitlines()
-        except OSError as exc:
-            raise DailyError("daily ledger cannot be read") from exc
-        rows: list[dict[str, Any]] = []
-        for number, line in enumerate(lines, start=1):
-            if not line.strip():
-                continue
-            if len(line.encode("utf-8")) > MAX_LEDGER_LINE_BYTES:
-                raise DailyError(f"daily ledger line {number} exceeds limit")
-            try:
-                row = json.loads(line)
-            except json.JSONDecodeError as exc:
-                raise DailyError(
-                    f"daily ledger line {number} is invalid"
-                ) from exc
-            event_id = str(row.get("event_id") or "")
-            unsigned = dict(row)
-            unsigned.pop("event_id", None)
-            if event_id != _sha256(unsigned):
-                raise DailyError(
-                    f"daily ledger line {number} failed integrity validation"
-                )
-            rows.append(row)
-        return rows
+        return read_integrity_jsonl(
+            self.events_path,
+            max_line_bytes=MAX_LEDGER_LINE_BYTES,
+            label="daily ledger",
+            error_factory=DailyError,
+        )
 
     def events(self) -> list[dict[str, Any]]:
         with self._locked():
@@ -1348,31 +1352,13 @@ class DailyCoordinator:
             "occurred_at": self._beijing_now().isoformat(timespec="seconds"),
             **fields,
         }
-        row["event_id"] = _sha256(row)
-        payload = (_canonical(row) + "\n").encode("utf-8")
-        if len(payload) > MAX_LEDGER_LINE_BYTES:
-            raise DailyError("daily ledger event exceeds limit")
-        blocked = {signal.SIGINT, signal.SIGTERM}
-        previous = signal.pthread_sigmask(signal.SIG_BLOCK, blocked)
-        descriptor: int | None = None
-        try:
-            descriptor = os.open(
-                self.events_path,
-                os.O_APPEND | os.O_CREAT | os.O_WRONLY,
-                0o600,
-            )
-            remaining = memoryview(payload)
-            while remaining:
-                written = os.write(descriptor, remaining)
-                if written <= 0:
-                    raise DailyError("daily ledger append made no progress")
-                remaining = remaining[written:]
-            os.fsync(descriptor)
-        finally:
-            if descriptor is not None:
-                os.close(descriptor)
-            signal.pthread_sigmask(signal.SIG_SETMASK, previous)
-        return row
+        return append_integrity_jsonl(
+            self.events_path,
+            row,
+            max_line_bytes=MAX_LEDGER_LINE_BYTES,
+            label="daily ledger",
+            error_factory=DailyError,
+        )
 
     def run(
         self,
@@ -1427,9 +1413,24 @@ class DailyCoordinator:
                         {"name": name, **prior_result, "resumed": True}
                     )
                     continue
+                pending_resume = self.convergence.pending_resume(name)
                 active_progress = self.convergence.active_progress(name)
                 retained_outcome: dict[str, Any] | None = None
-                if active_progress is not None:
+                retained_progress: WriterProgress | None = None
+                narrow_runner = source.get("narrow_resume")
+                resume_progress: WriterProgress | None = None
+                resume_surface = ""
+                reconciliation_progress: WriterProgress | None = None
+                if pending_resume is not None:
+                    resume_progress, _closure = pending_resume
+                    resume_surface = str(
+                        resume_progress.details["narrow_resume_surface"]
+                    )
+                    if not callable(narrow_runner):
+                        raise DailyError(
+                            f"daily source {name} lacks its narrow repair resume"
+                        )
+                elif active_progress is not None:
                     failure = active_progress.failure
                     retained_outcome = {
                         "status": "waiting",
@@ -1468,13 +1469,106 @@ class DailyCoordinator:
                             active_progress.failure_fingerprint
                         ),
                     )
+                else:
+                    latest_progress_row = next(
+                        (
+                            row
+                            for row in reversed(prior_rows)
+                            if row.get("event") == "source_progressed"
+                            and row.get("source") == name
+                        ),
+                        None,
+                    )
+                    if latest_progress_row is not None:
+                        prior_progress = WriterProgress.from_dict(
+                            latest_progress_row["progress"]
+                        )
+                        if prior_progress.status == "wait_until":
+                            deadline = datetime.fromisoformat(
+                                str(prior_progress.details["deadline"]).replace(
+                                    "Z", "+00:00"
+                                )
+                            )
+                            if now < deadline:
+                                prior_outcome = next(
+                                    (
+                                        row.get("result")
+                                        for row in reversed(prior_rows)
+                                        if row.get("event") == "source_completed"
+                                        and row.get("source") == name
+                                    ),
+                                    None,
+                                )
+                                if not isinstance(prior_outcome, dict):
+                                    raise DailyError(
+                                        "provider wait lost its source result"
+                                    )
+                                retained_outcome = dict(prior_outcome)
+                                retained_progress = prior_progress
+                                self._append(
+                                    "source_wait_deadline_retained",
+                                    slot=slot,
+                                    source=name,
+                                    deadline=prior_progress.details["deadline"],
+                                )
+                        elif prior_progress.status == "reconcile_required":
+                            reconciliation = source.get("reconcile")
+                            if not callable(reconciliation):
+                                raise DailyError(
+                                    f"daily source {name} lacks reconciliation"
+                                )
+                            reconciliation_progress = prior_progress
                 self._append("source_started", slot=slot, source=name)
+                progress_override: WriterProgress | None = retained_progress
+                user_action_context: dict[str, str] | None = None
                 try:
                     outcome = (
                         retained_outcome
                         if retained_outcome is not None
+                        else narrow_runner(resume_surface)
+                        if resume_progress is not None
+                        else source["reconcile"](reconciliation_progress)
+                        if reconciliation_progress is not None
                         else runner()
                     )
+                    while (
+                        isinstance(outcome, dict)
+                        and isinstance(outcome.get("writer_progress"), dict)
+                    ):
+                        in_process = WriterProgress.from_dict(
+                            outcome["writer_progress"]
+                        )
+                        if in_process.status != "continue":
+                            break
+                        continuation = source.get("continue")
+                        if not callable(continuation):
+                            raise DailyError(
+                                f"daily source {name} lacks its continuation"
+                            )
+                        self._append(
+                            "source_progressed",
+                            slot=slot,
+                            source=name,
+                            progress=in_process.to_dict(),
+                        )
+                        following_outcome = continuation(
+                            str(in_process.details["next_stage"])
+                        )
+                        if (
+                            not isinstance(following_outcome, dict)
+                            or not isinstance(
+                                following_outcome.get("writer_progress"),
+                                dict,
+                            )
+                        ):
+                            raise DailyError(
+                                "daily continuation lacks writer progress"
+                            )
+                        following_progress = WriterProgress.from_dict(
+                            following_outcome["writer_progress"]
+                        )
+                        in_process.validate_transition_to(following_progress)
+                        outcome = following_outcome
                 except UserActionBlocker as exc:
                     blocker_state_rows = [
                         row
@@ -1510,6 +1604,11 @@ class DailyCoordinator:
                         "user_action_required": True,
                         "notification_sent": not notified,
                     }
+                    user_action_context = {
+                        "action": exc.action,
+                        "blocker_identity": exc.blocker_key,
+                        "dedup_key": exc.blocker_key,
+                    }
                 except TransientSourceError as exc:
                     failure = exc.diagnostic()
                     self._append(
@@ -1537,7 +1636,10 @@ class DailyCoordinator:
                             consecutive_prior += 1
                             continue
                         break
-                    if consecutive_prior >= 1:
+                    deterministic_agent_fault = (
+                        exc.category in AGENT_OWNED_FAILURE_CATEGORIES
+                    )
+                    if consecutive_prior >= 1 or deterministic_agent_fault:
                         consecutive_count = consecutive_prior + 1
                         repair_key = (
                             f"{name}-{failure['stage']}-{failure['code']}"
@@ -1568,6 +1670,59 @@ class DailyCoordinator:
                             "retryable": True,
                             "failure": failure,
                         }
+                        progress_override = WriterProgress.wait_until(
+                            item_identity=f"{name}:source",
+                            category=exc.category,
+                            code=exc.code,
+                            stage=exc.stage,
+                            deadline=(now + timedelta(hours=1)).isoformat(
+                                timespec="seconds"
+                            ),
+                            attempt_budget={"attempted": 1, "maximum": 2},
+                            claim_receipt_summary={
+                                "claim_count": 0,
+                                "receipt_count": 0,
+                                "uncertain_effect_count": 0,
+                            },
+                        )
+                except Exception:
+                    fingerprint = FailureFingerprint(
+                        adapter=name,
+                        category="code_error",
+                        code="unhandled_source_exception",
+                        stage="source_run",
+                        failure_revision=self._failure_revision(),
+                        provider_contract_version="xiaocao_writer_v1",
+                    )
+                    progress_override = WriterProgress.repair_required(
+                        item_identity=f"{name}:source",
+                        fingerprint=fingerprint,
+                        repair_revision=None,
+                        affected_set_digest=affected_set_digest([{
+                            "identity": f"{name}:source",
+                            "version_key": "current",
+                        }]),
+                        claim_receipt_summary={
+                            "claim_count": 0,
+                            "receipt_count": 0,
+                            "uncertain_effect_count": 0,
+                        },
+                        targeted_test_profile=f"kol_{name}_source_run"[:128],
+                        narrow_resume_surface=f"{name}:source",
+                        retryability="retryable",
+                    )
+                    outcome = {
+                        "status": "waiting",
+                        "waiting_count": 1,
+                        "waiting_items": [{
+                            "identity": f"{name}:source",
+                            "stage": "source_run",
+                        }],
+                        "repair_required": True,
+                        "retryable": False,
+                        "user_action_required": False,
+                        "writer_progress": progress_override.to_dict(),
+                    }
                 except BaseException as exc:
                     self._append(
                         "source_interrupted",
@@ -1613,11 +1768,6 @@ class DailyCoordinator:
                             "replayed_terminal_count": replayed_count,
                         }
                 _validate_source_outcome(outcome)
-                raw_progress = outcome.get("writer_progress")
-                if raw_progress is not None:
-                    progress = WriterProgress.from_dict(raw_progress)
-                    if progress.status == "repair_required":
-                        self.convergence.record(progress, slot=slot)
                 stalled_items = [
                     row
                     for row in (outcome.get("waiting_items") or [])
@@ -1668,6 +1818,89 @@ class DailyCoordinator:
                         "repair_required": True,
                         "user_action_required": False,
                     }
+                if (
+                    outcome.get("repair_required") is True
+                    and not isinstance(outcome.get("failure"), dict)
+                ):
+                    repair_stage = str(
+                        ((outcome.get("waiting_items") or [{}])[0]).get(
+                            "stage"
+                        )
+                        or "source_run"
+                    )
+                    outcome = {
+                        **outcome,
+                        "failure": {
+                            "category": "internal_state_error",
+                            "code": (
+                                "source_acquisition_stalled"
+                                if repair_stage == "source_acquisition"
+                                else "deterministic_recovery_exhausted"
+                            ),
+                            "stage": repair_stage,
+                            "retryable": False,
+                        },
+                    }
+                progress = (
+                    progress_override
+                    if progress_override is not None
+                    and outcome.get("repair_required") is not True
+                    else project_source_outcome(
+                        name,
+                        outcome,
+                        failure_revision=self._failure_revision(),
+                        provider_contract_version="xiaocao_writer_v1",
+                        user_action=user_action_context,
+                        fallback_wait_deadline=(
+                            now + timedelta(hours=1)
+                        ).isoformat(timespec="seconds"),
+                    )
+                )
+                if resume_progress is not None:
+                    self.convergence.record_resume(
+                        resume_progress.failure_fingerprint,
+                        following=progress,
+                        slot=slot,
+                    )
+                if (
+                    reconciliation_progress is not None
+                    and progress.status != "reconcile_required"
+                ):
+                    reconciliation_progress.validate_transition_to(
+                        progress,
+                        evidence={
+                            "event": "reconciliation_completed",
+                            "claim_identity": reconciliation_progress.details[
+                                "claim_identity"
+                            ],
+                        },
+                    )
+                if progress.status == "repair_required":
+                    failure = progress.failure
+                    outcome = {
+                        **outcome,
+                        "status": "waiting",
+                        "retryable": False,
+                        "failure": {
+                            "category": failure["category"],
+                            "code": failure["code"],
+                            "stage": failure["stage"],
+                            "retryable": (
+                                progress.retryability == "retryable"
+                            ),
+                        },
+                        "repair_key": progress.failure_fingerprint,
+                        "repair_required": True,
+                        "user_action_required": False,
+                        "writer_progress": progress.to_dict(),
+                    }
+                    self.convergence.record(progress, slot=slot)
+                self._append(
+                    "source_progressed",
+                    slot=slot,
+                    source=name,
+                    progress=progress.to_dict(),
+                )
                 prior_blockers = [
                     row
                     for row in self._events_unlocked()
@@ -1793,9 +2026,24 @@ class DailyCoordinator:
             {
                 "source": str(state.get("name") or ""),
                 "repair_key": str(state.get("repair_key") or ""),
+                "owner": str(progress.get("ownership") or "agent"),
+                "failure_fingerprint": str(
+                    progress.get("failure_fingerprint")
+                    or state.get("repair_key")
+                    or ""
+                ),
+                "next_action": str(
+                    progress.get("next_action")
+                    or "validate_repair_then_narrow_resume"
+                ),
             }
             for state in ((last or {}).get("source_states") or [])
             if isinstance(state, dict) and state.get("repair_required") is True
+            for progress in [
+                state.get("writer_progress")
+                if isinstance(state.get("writer_progress"), dict)
+                else {}
+            ]
         ]
         source_bytes = sum(
             int(row.get("coordinator_source_video_bytes") or 0)
@@ -1864,12 +2112,9 @@ class DailyCoordinator:
                 row.get("event") == "source_retryable_failure" for row in rows
             ),
             "repair_required_count": sum(
-                row.get("event")
-                in {"source_recovery_exhausted", "source_acquisition_stalled"}
+                row.get("event") == "source_completed"
+                and (row.get("result") or {}).get("repair_required") is True
                 for row in rows
-            ) + sum(
-                row.get("event") == "failure_observed"
-                for row in convergence_rows
             ),
             "failure_fingerprint_count": len({
                 str(row.get("failure_fingerprint") or "")

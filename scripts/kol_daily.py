@@ -8,7 +8,6 @@ import functools
 import hashlib
 import json
 import re
-import subprocess
 import sys
 import termios
 from collections.abc import Collection
@@ -68,6 +67,7 @@ from xiaocao.kol.xiaocao_wechat import (
 from xiaocao.kol.writer_progress import (
     affected_set_digest,
     FailureFingerprint,
+    resolve_repository_revision,
     WriterProgress,
 )
 from xiaocao.live.notify import notify
@@ -92,21 +92,9 @@ def _writer_failure_revision() -> str:
     """Resolve the exact code revision bound into a repair fingerprint."""
 
     try:
-        result = subprocess.run(
-            ("git", "rev-parse", "--verify", "HEAD"),
-            cwd=Path(__file__).resolve().parents[1],
-            stdout=subprocess.PIPE,
-            stderr=subprocess.DEVNULL,
-            text=True,
-            check=False,
-            timeout=10,
-        )
-    except (OSError, subprocess.TimeoutExpired) as exc:
+        return resolve_repository_revision(Path(__file__).resolve().parents[1])
+    except ValueError as exc:
         raise DailyError("writer failure revision cannot be resolved") from exc
-    revision = result.stdout.strip()
-    if result.returncode != 0 or not re.fullmatch(r"[0-9a-f]{40}", revision):
-        raise DailyError("writer failure revision cannot be resolved")
-    return revision
 
 
 def _claim_summary_from_failure_audit(audit: dict[str, Any]) -> dict[str, int]:
@@ -921,6 +909,20 @@ def _classified_source(name: str, runner):
     return run
 
 
+def _classified_narrow_source(name: str, runner):
+    def run(surface: str):
+        return _classified_source(name, lambda: runner(surface))()
+
+    return run
+
+
+def _classified_progress_source(name: str, runner):
+    def run(progress: WriterProgress):
+        return _classified_source(name, lambda: runner(progress))()
+
+    return run
+
+
 def _cloud_handoff_binding(
     result: dict[str, Any],
 ) -> tuple[str, str] | None:
@@ -1218,7 +1220,7 @@ class DailyRuntime:
             raise DailyError("source Ticket 07 terminal is invalid")
         return terminal
 
-    def lv(self) -> dict[str, Any]:
+    def lv(self, *, only_identity: str | None = None) -> dict[str, Any]:
         service = self._lv_service_for_sweep()
         listing = self._lv_listing_for_sweep()
         service.poll_opencli(
@@ -1234,6 +1236,16 @@ class DailyRuntime:
                 str(row.get("identity") or ""),
             )
         )
+        if only_identity is not None:
+            pending = [
+                row
+                for row in pending
+                if str(row.get("identity") or "") == only_identity
+            ]
+            if len(pending) != 1:
+                raise DailyError(
+                    "lv narrow repair target is not one exact pending item"
+                )
         complete_video_transcripts = self._complete_lv_video_transcripts()
         for row in pending:
             if row.get("media_type") != "pdf":
@@ -1255,6 +1267,16 @@ class DailyRuntime:
                 str(row.get("identity") or ""),
             )
         )
+        if only_identity is not None:
+            pending = [
+                row
+                for row in pending
+                if str(row.get("identity") or "") == only_identity
+            ]
+            if len(pending) != 1:
+                raise DailyError(
+                    "lv narrow repair target is not one exact pending item"
+                )
         if not pending:
             return {"status": "no_update"}
         events = []
@@ -1400,7 +1422,17 @@ class DailyRuntime:
             "suppressed_companion_count": suppressed,
         }
 
-    def videos(self) -> dict[str, Any]:
+    def lv_narrow_resume(self, surface: str) -> dict[str, Any]:
+        prefix = "lv_text_image:"
+        identity = str(surface or "")
+        if not identity.startswith(prefix) or identity == f"{prefix}source":
+            raise DailyError("lv narrow repair surface is invalid")
+        return self.lv(only_identity=identity[len(prefix):])
+
+    def lv_reconcile(self, progress: WriterProgress) -> dict[str, Any]:
+        return self.lv(only_identity=progress.item_identity)
+
+    def videos(self, *, only_identity: str | None = None) -> dict[str, Any]:
         lv_listing = self._lv_listing_for_sweep()
         service = SubscriptionVideoService(
             self.args.video_output_dir,
@@ -1413,6 +1445,16 @@ class DailyRuntime:
             lv_listing=lv_listing,
         )
         pending = service.pending_items()
+        if only_identity is not None:
+            pending = [
+                item
+                for item in pending
+                if str(item.get("identity") or "") == only_identity
+            ]
+            if len(pending) != 1:
+                raise DailyError(
+                    "video reconciliation target is not one exact pending item"
+                )
         if not pending:
             return {"status": "no_update"}
         pending.sort(
@@ -1552,6 +1594,9 @@ class DailyRuntime:
             "waiting_count": waiting,
             "waiting_items": waiting_items,
         }
+
+    def videos_reconcile(self, progress: WriterProgress) -> dict[str, Any]:
+        return self.videos(only_identity=progress.item_identity)
 
     @staticmethod
     def _handoff(path: Path) -> dict[str, Any]:
@@ -2230,11 +2275,27 @@ def main() -> int:
                 "run": _classified_source(
                     "xiaocao_wechat_live", runtime.xiaocao_wechat
                 ),
+                "narrow_resume": _classified_narrow_source(
+                    "xiaocao_wechat_live",
+                    lambda _surface: runtime.xiaocao_wechat(),
+                ),
+                "reconcile": _classified_progress_source(
+                    "xiaocao_wechat_live",
+                    lambda _progress: runtime.xiaocao_wechat(),
+                ),
             }, {
                 "name": "wechat_official_accounts",
                 "priority": 20,
                 "run": _classified_source(
                     "wechat_official_accounts", runtime.wechat_official_local
+                ),
+                "narrow_resume": _classified_narrow_source(
+                    "wechat_official_accounts",
+                    lambda _surface: runtime.wechat_official_local(),
+                ),
+                "reconcile": _classified_progress_source(
+                    "wechat_official_accounts",
+                    lambda _progress: runtime.wechat_official_local(),
                 ),
             }],
             blocker_sender=_sender,
@@ -2281,12 +2342,40 @@ def main() -> int:
                 "name": "lv_text_image",
                 "priority": 10,
                 "run": _classified_source("lv_text_image", runtime.lv),
+                "narrow_resume": _classified_narrow_source(
+                    "lv_text_image",
+                    getattr(
+                        runtime,
+                        "lv_narrow_resume",
+                        lambda _surface: runtime.lv(),
+                    ),
+                ),
+                "reconcile": _classified_progress_source(
+                    "lv_text_image",
+                    getattr(
+                        runtime,
+                        "lv_reconcile",
+                        lambda _progress: runtime.lv(),
+                    ),
+                ),
             },
             {
                 "name": "subscription_video",
                 "priority": 20,
                 "run": _classified_source(
                     "subscription_video", runtime.videos
+                ),
+                "narrow_resume": _classified_narrow_source(
+                    "subscription_video",
+                    lambda _surface: runtime.videos(),
+                ),
+                "reconcile": _classified_progress_source(
+                    "subscription_video",
+                    getattr(
+                        runtime,
+                        "videos_reconcile",
+                        lambda _progress: runtime.videos(),
+                    ),
                 ),
             },
             {
@@ -2295,6 +2384,18 @@ def main() -> int:
                 "run": _classified_source(
                     "wechat_official_accounts",
                     lambda: runtime.wechat_official(
+                        exclude_handoff_ids=attempted_handoff_ids
+                    ),
+                ),
+                "narrow_resume": _classified_narrow_source(
+                    "wechat_official_accounts",
+                    lambda _surface: runtime.wechat_official(
+                        exclude_handoff_ids=attempted_handoff_ids
+                    ),
+                ),
+                "reconcile": _classified_progress_source(
+                    "wechat_official_accounts",
+                    lambda _progress: runtime.wechat_official(
                         exclude_handoff_ids=attempted_handoff_ids
                     ),
                 ),
@@ -2308,12 +2409,32 @@ def main() -> int:
                         exclude_handoff_ids=attempted_handoff_ids
                     ),
                 ),
+                "narrow_resume": _classified_narrow_source(
+                    "xiaocao_handoff",
+                    lambda _surface: runtime.xiaocao(
+                        exclude_handoff_ids=attempted_handoff_ids
+                    ),
+                ),
+                "reconcile": _classified_progress_source(
+                    "xiaocao_handoff",
+                    lambda _progress: runtime.xiaocao(
+                        exclude_handoff_ids=attempted_handoff_ids
+                    ),
+                ),
             },
             {
                 "name": "viewpoint_maintenance",
                 "priority": 40,
                 "run": _classified_source(
                     "viewpoint_maintenance", runtime.viewpoints
+                ),
+                "narrow_resume": _classified_narrow_source(
+                    "viewpoint_maintenance",
+                    lambda _surface: runtime.viewpoints(),
+                ),
+                "reconcile": _classified_progress_source(
+                    "viewpoint_maintenance",
+                    lambda _progress: runtime.viewpoints(),
                 ),
             },
         ],

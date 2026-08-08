@@ -1265,14 +1265,122 @@ def test_daily_runner_records_one_short_lived_no_update_sweep(tmp_path):
         {"name": "lv", "status": "no_update"},
         {"name": "lucifer", "status": "no_update"},
     ]
+    progress_rows = [
+        row for row in service.events()
+        if row["event"] == "source_progressed"
+    ]
+    assert [row["progress"]["status"] for row in progress_rows] == [
+        "terminal",
+        "terminal",
+    ]
     assert service.audit()["coordinator_source_video_bytes"] == 0
 
 
-def test_daily_status_preserves_specific_video_waiting_stage(tmp_path):
+def test_continue_progress_is_consumed_in_process_through_declared_next_stage(
+    tmp_path,
+):
     service = DailyCoordinator(
         tmp_path / "daily",
-        now=Clock("2026-07-27T10:00:00+08:00"),
+        now=Clock("2026-08-08T07:30:00+08:00"),
     )
+    calls = []
+    first = WriterProgress.continue_(
+        item_identity="item-1",
+        completed_stage="discovery",
+        next_stage="download",
+        claim_receipt_summary={
+            "claim_count": 0,
+            "receipt_count": 0,
+            "uncertain_effect_count": 0,
+        },
+    )
+    terminal = WriterProgress.terminal(
+        item_identity="item-1",
+        stage="download",
+        content_terminal="no_update",
+        gray_report_terminal="not_created",
+        reminder_terminal="not_created",
+        book_terminal="not_created",
+        knowledge_terminal="not_created",
+        ack_status="not_applicable",
+        new_external_effect_count=0,
+        claim_receipt_summary={
+            "claim_count": 0,
+            "receipt_count": 0,
+            "uncertain_effect_count": 0,
+        },
+    )
+
+    result = service.run([{
+        "name": "lv_text_image",
+        "run": lambda: {
+            "status": "waiting",
+            "writer_progress": first.to_dict(),
+        },
+        "continue": lambda next_stage: (
+            calls.append(next_stage)
+            or {
+                "status": "no_update",
+                "writer_progress": terminal.to_dict(),
+            }
+        ),
+    }])
+
+    assert calls == ["download"]
+    assert result["source_results"][0]["status"] == "no_update"
+    progress_rows = [
+        row["progress"]["status"]
+        for row in service.events()
+        if row["event"] == "source_progressed"
+    ]
+    assert progress_rows == ["continue", "terminal"]
+
+
+def test_reconcile_progress_uses_authoritative_readback_handler_before_source(
+    tmp_path,
+):
+    clock = Clock("2026-08-08T07:30:00+08:00")
+    service = DailyCoordinator(tmp_path / "daily", now=clock)
+    calls = []
+
+    def uncertain():
+        calls.append("source")
+        return {
+            "status": "waiting",
+            "waiting_items": [{
+                "identity": "item-1",
+                "stage": "publication_reconciliation",
+                "failure": {
+                    "category": "uncertain_state",
+                    "code": "publication_receipt_uncertain",
+                    "stage": "publication_reconciliation",
+                },
+            }],
+        }
+
+    service.run([{"name": "lv_text_image", "run": uncertain}])
+    clock.value = datetime.fromisoformat("2026-08-08T08:30:00+08:00")
+
+    def reconciled(progress):
+        calls.append(progress.details["readback_operation"])
+        return {"status": "no_update"}
+
+    result = service.run([{
+        "name": "lv_text_image",
+        "run": lambda: (_ for _ in ()).throw(
+            AssertionError("reconciliation must precede the source runner")
+        ),
+        "reconcile": reconciled,
+    }])
+
+    assert calls == ["source", "reconcile_publication_reconciliation"]
+    assert result["source_results"][0]["status"] == "no_update"
+
+
+def test_daily_status_preserves_specific_video_waiting_stage(tmp_path):
+    clock = Clock("2026-07-27T10:00:00+08:00")
+    service = DailyCoordinator(tmp_path / "daily", now=clock)
+    calls = 0
     waiting_item = {
         "identity": "latest",
         "version_key": "version-2",
@@ -1285,15 +1393,20 @@ def test_daily_status_preserves_specific_video_waiting_stage(tmp_path):
         "reconciliation_status": "exact_private_copy_absent",
     }
 
+    def waiting():
+        nonlocal calls
+        calls += 1
+        return {
+            "status": "waiting",
+            "waiting_count": 1,
+            "waiting_items": [waiting_item],
+        }
+
     result = service.run([
         {
             "name": "subscription_video",
             "priority": 20,
-            "run": lambda: {
-                "status": "waiting",
-                "waiting_count": 1,
-                "waiting_items": [waiting_item],
-            },
+            "run": waiting,
         }
     ])
 
@@ -1305,6 +1418,20 @@ def test_daily_status_preserves_specific_video_waiting_stage(tmp_path):
         "waiting_count": 1,
         "waiting_items": [waiting_item],
     }]
+    progress = next(
+        row["progress"] for row in service.events()
+        if row["event"] == "source_progressed"
+    )
+    assert progress["status"] == "wait_until"
+    assert progress["next_action"] == "resume_after_deadline"
+
+    clock.value = datetime.fromisoformat("2026-07-27T10:15:00+08:00")
+    service.run([{"name": "subscription_video", "run": waiting}])
+    assert calls == 1
+
+    clock.value = datetime.fromisoformat("2026-07-27T10:30:00+08:00")
+    service.run([{"name": "subscription_video", "run": waiting}])
+    assert calls == 2
 
 
 def _low_density_event() -> dict:
@@ -1927,7 +2054,9 @@ def test_latest_lv_video_closes_only_on_bound_report_publication(tmp_path):
     )
 
 
-def test_interrupted_sweep_resumes_only_unfinished_source(tmp_path):
+def test_unhandled_source_fault_preserves_completed_source_and_requests_repair(
+    tmp_path,
+):
     clock = Clock("2026-07-27T10:00:00+08:00")
     service = DailyCoordinator(tmp_path / "daily", now=clock)
     calls = {"first": 0, "second": 0}
@@ -1940,13 +2069,15 @@ def test_interrupted_sweep_resumes_only_unfinished_source(tmp_path):
         calls["second"] += 1
         raise RuntimeError("forced interruption")
 
-    with pytest.raises(RuntimeError, match="forced interruption"):
-        service.run(
-            [
-                {"name": "first", "priority": 10, "run": first},
-                {"name": "second", "priority": 20, "run": interrupted},
-            ]
-        )
+    first_result = service.run(
+        [
+            {"name": "first", "priority": 10, "run": first},
+            {"name": "second", "priority": 20, "run": interrupted},
+        ]
+    )
+
+    assert first_result["health"] == "degraded"
+    assert first_result["source_results"][1]["repair_required"] is True
 
     result = service.run(
         [
@@ -1954,18 +2085,17 @@ def test_interrupted_sweep_resumes_only_unfinished_source(tmp_path):
             {
                 "name": "second",
                 "priority": 20,
-                "run": lambda: (
-                    calls.__setitem__("second", calls["second"] + 1)
-                    or {"status": "no_update"}
-                ),
+                "run": interrupted,
             },
         ]
     )
 
-    assert calls == {"first": 1, "second": 2}
+    assert calls == {"first": 1, "second": 1}
     assert result["status"] == "completed"
+    assert result["source_results"][0]["resumed"] is True
+    assert result["source_results"][1]["repair_required"] is True
     assert service.audit()["content_value_counts"]["low_density"] == 1
-    assert service.audit()["interruption_count"] == 1
+    assert service.audit()["interruption_count"] == 0
 
 
 def test_user_blocker_notifies_once_until_state_changes(tmp_path):
@@ -2017,10 +2147,8 @@ def test_user_blocker_notifies_once_until_state_changes(tmp_path):
 
 
 def test_transient_source_failure_is_structured_and_does_not_notify(tmp_path):
-    service = DailyCoordinator(
-        tmp_path / "daily",
-        now=Clock("2026-07-27T14:00:00+08:00"),
-    )
+    clock = Clock("2026-07-27T14:00:00+08:00")
+    service = DailyCoordinator(tmp_path / "daily", now=clock)
     notices = []
 
     result = service.run(
@@ -2078,6 +2206,9 @@ def test_transient_source_failure_is_structured_and_does_not_notify(tmp_path):
         calls += 1
         return {"status": "no_update"}
 
+    service.run([{"name": "lucifer", "run": recovered}])
+    assert calls == 0
+    clock.value = datetime.fromisoformat("2026-07-27T15:00:00+08:00")
     service.run([{"name": "lucifer", "run": recovered}])
     assert calls == 1
     assert service.status()["status"] == "ready"
@@ -2678,7 +2809,7 @@ def test_consecutive_same_failure_requests_internal_repair_without_notifying(tmp
     assert first["health"] == "degraded"
     assert second["health"] == "degraded"
     assert third["health"] == "degraded"
-    assert attempts == 3
+    assert attempts == 2
     assert notices == []
     assert second["source_results"][0]["consecutive_failure_count"] == 2
     assert second["source_results"][0]["repair_required"] is True
@@ -2693,11 +2824,48 @@ def test_consecutive_same_failure_requests_internal_repair_without_notifying(tmp
     exhausted = [
         row for row in events if row["event"] == "source_recovery_exhausted"
     ]
-    assert len(exhausted) == 2
+    assert len(exhausted) == 1
     assert all(
         row["external_business_effects_replayed"] is False
         for row in exhausted
     )
+
+
+@pytest.mark.parametrize(
+    "category",
+    [
+        "code_error",
+        "schema_error",
+        "environment_error",
+        "provider_contract_error",
+        "control_plane_handler_error",
+    ],
+)
+def test_deterministic_internal_failure_is_agent_owned_on_first_result(
+    tmp_path,
+    category,
+):
+    service = DailyCoordinator(
+        tmp_path / "daily",
+        now=Clock("2026-08-08T07:30:00+08:00"),
+    )
+
+    def failing():
+        raise TransientSourceError(
+            "private diagnostic text",
+            category=category,
+            code="deterministic_fixture_failure",
+            stage="source_run",
+        )
+
+    result = service.run([{"name": "lv_text_image", "run": failing}])
+
+    source = result["source_results"][0]
+    assert source["repair_required"] is True
+    progress = WriterProgress.from_dict(source["writer_progress"])
+    assert progress.status == "repair_required"
+    assert progress.ownership == "agent"
+    assert progress.retryability == "retryable"
 
 
 def test_lv_download_frame_fault_returns_repair_progress_and_stops_fanout(
@@ -2874,16 +3042,24 @@ def test_open_writer_repair_remains_authoritative_until_matching_closure(tmp_pat
     )
     clock.value = datetime.fromisoformat("2026-08-08T09:30:00+08:00")
 
-    def clean_after_matching_closure():
+    narrow_surfaces = []
+
+    def clean_after_matching_closure(surface):
         nonlocal calls
         calls += 1
+        narrow_surfaces.append(surface)
         return {"status": "no_update"}
 
     third = coordinator.run(
-        [{"name": "lv_text_image", "run": clean_after_matching_closure}]
+        [{
+            "name": "lv_text_image",
+            "run": generic_wait_that_must_not_run,
+            "narrow_resume": clean_after_matching_closure,
+        }]
     )
 
     assert calls == 2
+    assert narrow_surfaces == ["lv_text_image:identity-1"]
     assert third["health"] == "healthy"
     assert coordinator.audit()["repair_closed_count"] == 1
 

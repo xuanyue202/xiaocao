@@ -59,6 +59,9 @@ def test_kol_skill_owns_safe_self_repair_before_user_escalation() -> None:
         "work for the current Agent, not a user blocker",
         "same stdin",
         "repair_required=true",
+        "writer_progress.next_action",
+        "matching repair closure",
+        "narrow_resume_surface",
         "repository defect is never by itself `user_action_required`",
     ):
         assert marker in hourly

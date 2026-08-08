@@ -8,6 +8,7 @@ from xiaocao.kol.writer_progress import (
     ConvergenceLedger,
     FailureFingerprint,
     ProgressContractError,
+    project_source_outcome,
     WriterProgress,
 )
 
@@ -243,3 +244,96 @@ def test_open_progress_restores_the_authoritative_repair_contract(tmp_path):
     assert ConvergenceLedger(
         tmp_path / "convergence.jsonl"
     ).active_progress("lv_text_image") == progress
+
+
+@pytest.mark.parametrize(
+    ("outcome", "expected_status"),
+    [
+        ({"status": "no_update"}, "terminal"),
+        (
+            {
+                "status": "waiting",
+                "waiting_items": [{
+                    "identity": "item-1",
+                    "stage": "cloud_transcript",
+                    "category": "provider_wait",
+                    "code": "transcript_pending",
+                    "next_poll_not_before": "2026-08-08T12:30:00+08:00",
+                }],
+            },
+            "wait_until",
+        ),
+        (
+            {
+                "status": "waiting",
+                "waiting_items": [{
+                    "identity": "item-1",
+                    "version_key": "version-1",
+                    "stage": "waiting_semantic_input",
+                    "evidence_sha256": "c" * 64,
+                }],
+            },
+            "structured_input",
+        ),
+        (
+            {
+                "status": "waiting",
+                "waiting_items": [{
+                    "identity": "item-1",
+                    "stage": "publication_reconciliation",
+                    "failure": {
+                        "category": "uncertain_state",
+                        "code": "publication_receipt_uncertain",
+                        "stage": "publication_reconciliation",
+                    },
+                }],
+            },
+            "reconcile_required",
+        ),
+        (
+            {
+                "status": "waiting",
+                "failure": {
+                    "category": "schema_error",
+                    "code": "bundle_schema_invalid",
+                    "stage": "semantic_validation",
+                },
+            },
+            "repair_required",
+        ),
+    ],
+)
+def test_legacy_source_results_project_through_unified_progress(
+    outcome,
+    expected_status,
+):
+    progress = project_source_outcome(
+        "lv_text_image",
+        outcome,
+        failure_revision=FAILURE_REVISION,
+        provider_contract_version="xiaocao_writer_v1",
+    )
+
+    assert progress.status == expected_status
+    assert WriterProgress.from_dict(progress.to_dict()) == progress
+
+
+def test_repair_closure_must_match_required_test_profile(tmp_path):
+    progress = _progress_rows()["repair_required"]
+    ledger = ConvergenceLedger(
+        tmp_path / "convergence.jsonl",
+        now=lambda: datetime.fromisoformat("2026-08-08T07:30:00+08:00"),
+    )
+    ledger.record(progress, slot="2026-08-08T07:00+08:00")
+
+    with pytest.raises(ProgressContractError, match="test profile does not match"):
+        ledger.close_repair(
+            progress.failure_fingerprint,
+            repair_receipt={
+                "receipt_id": "receipt-1",
+                "failure_fingerprint": progress.failure_fingerprint,
+                "repair_revision": REPAIR_REVISION,
+                "targeted_test_profile": "unrelated_profile",
+            },
+            slot="2026-08-08T07:00+08:00",
+        )

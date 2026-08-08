@@ -24,10 +24,13 @@ downstream completion. Retryable failures expose only credential-safe
 `category`, `code`, and `stage`. A started task owns recoverable items through
 repair and exact continuation; do not defer obtainable work.
 
+Obey seven-state `writer_progress.next_action`; retryability never changes owner.
+
 `repair_required` is work for the current Agent, not a user blocker: reconcile
 claims/receipts, patch regressions, validate, commit, and push without user WIP. Continue on
 the same stdin when possible. If it exited, never run `run` twice for one slot;
 recheck peers/receipts and use `resume-mailbox` for only the repaired message.
+After matching repair closure, run only `narrow_resume_surface`.
 
 This machine is the only KOL writer. It consumes Xiaocao `scope=post_handoff`
 capsules and URL-only `wechat_official_article` capsules from LiangHuiMCP. The
