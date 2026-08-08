@@ -42,6 +42,7 @@ NEXT_ACTIONS = {
 
 _SAFE_TOKEN = re.compile(r"[a-z0-9][a-z0-9._-]{0,127}")
 _SAFE_IDENTITY = re.compile(r"[A-Za-z0-9][A-Za-z0-9._:-]{0,255}")
+_SAFE_BRANCH = re.compile(r"[A-Za-z0-9][A-Za-z0-9._/-]{0,127}")
 _HEX_40 = re.compile(r"[0-9a-f]{40}")
 _HEX_64 = re.compile(r"[0-9a-f]{64}")
 _MAX_LEDGER_LINE_BYTES = 64 * 1024
@@ -99,6 +100,13 @@ def _safe_identity(value: Any, *, field_name: str) -> str:
     if not _SAFE_IDENTITY.fullmatch(identity):
         raise ProgressContractError(f"{field_name} is not a safe identity")
     return identity
+
+
+def _safe_branch(value: Any, *, field_name: str) -> str:
+    branch = str(value or "").strip()
+    if not _SAFE_BRANCH.fullmatch(branch) or branch.startswith("/"):
+        raise ProgressContractError(f"{field_name} is not a safe branch")
+    return branch
 
 
 def _revision(value: Any, *, field_name: str, optional: bool = False) -> str | None:
@@ -231,6 +239,540 @@ class FailureFingerprint:
         if supplied_digest and supplied_digest != result.digest:
             raise ProgressContractError("failure fingerprint digest does not match")
         return result
+
+
+@dataclass(frozen=True)
+class RepairValidationReceipt:
+    """Proof that one repository repair is safe for one exact mailbox wait."""
+
+    message_id: str
+    content_sha256: str
+    failure_fingerprint: str
+    failure_revision: str
+    failure_code: str
+    failure_stage: str
+    repair_revision: str
+    target_branch: str
+    target_branch_revision: str
+    target_branch_lineage: dict[str, Any]
+    targeted_test_profile: str
+    test_command_digest: str
+    test_result_sha256: str
+    test_status: str
+    validated_at: str
+    receipt_sha256: str
+    schema_version: int = 1
+
+    def __post_init__(self) -> None:
+        if isinstance(self.schema_version, bool) or self.schema_version != 1:
+            raise ProgressContractError(
+                "repair validation receipt schema version is unsupported"
+            )
+        _sha256(self.message_id, field_name="message_id")
+        _sha256(self.content_sha256, field_name="content_sha256")
+        _sha256(self.failure_fingerprint, field_name="failure_fingerprint")
+        _revision(self.failure_revision, field_name="failure_revision")
+        _safe_token(self.failure_code, field_name="failure_code")
+        _safe_token(self.failure_stage, field_name="failure_stage")
+        _revision(self.repair_revision, field_name="repair_revision")
+        _safe_branch(self.target_branch, field_name="target_branch")
+        _revision(
+            self.target_branch_revision,
+            field_name="target_branch_revision",
+        )
+        if set(self.target_branch_lineage) != {
+            "failure_revision",
+            "repair_revision",
+            "target_branch_revision",
+            "is_ancestor",
+        }:
+            raise ProgressContractError("repair validation branch lineage is invalid")
+        for field_name in (
+            "failure_revision",
+            "repair_revision",
+            "target_branch_revision",
+        ):
+            _revision(
+                self.target_branch_lineage[field_name],
+                field_name=f"target_branch_lineage.{field_name}",
+            )
+        if self.target_branch_lineage["repair_revision"] != self.repair_revision:
+            raise ProgressContractError("repair validation lineage revision changed")
+        if (
+            self.target_branch_lineage["target_branch_revision"]
+            != self.target_branch_revision
+        ):
+            raise ProgressContractError("repair validation branch tip changed")
+        if self.target_branch_lineage["is_ancestor"] is not True:
+            raise ProgressContractError("repair validation lineage is not proven")
+        _safe_token(
+            self.targeted_test_profile,
+            field_name="targeted_test_profile",
+        )
+        _sha256(self.test_command_digest, field_name="test_command_digest")
+        _sha256(self.test_result_sha256, field_name="test_result_sha256")
+        if self.test_status != "passed":
+            raise ProgressContractError("repair validation test did not pass")
+        _timezone_aware(self.validated_at, field_name="validated_at")
+        _sha256(self.receipt_sha256, field_name="receipt_sha256")
+        if self.receipt_sha256 != self._unsigned_digest():
+            raise ProgressContractError("repair validation receipt hash changed")
+
+    def _unsigned_dict(self) -> dict[str, Any]:
+        return {
+            "schema_version": self.schema_version,
+            "message_id": self.message_id,
+            "content_sha256": self.content_sha256,
+            "failure_fingerprint": self.failure_fingerprint,
+            "failure_revision": self.failure_revision,
+            "failure_code": self.failure_code,
+            "failure_stage": self.failure_stage,
+            "repair_revision": self.repair_revision,
+            "target_branch": self.target_branch,
+            "target_branch_revision": self.target_branch_revision,
+            "target_branch_lineage": dict(self.target_branch_lineage),
+            "targeted_test_profile": self.targeted_test_profile,
+            "test_command_digest": self.test_command_digest,
+            "test_result_sha256": self.test_result_sha256,
+            "test_status": self.test_status,
+            "validated_at": self.validated_at,
+        }
+
+    def _unsigned_digest(self) -> str:
+        return _digest(self._unsigned_dict())
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            **self._unsigned_dict(),
+            "receipt_sha256": self.receipt_sha256,
+        }
+
+    @property
+    def branch_lineage(self) -> dict[str, Any]:
+        """Compatibility name for callers auditing the target branch proof."""
+
+        return dict(self.target_branch_lineage)
+
+    @classmethod
+    def create(
+        cls,
+        *,
+        message_id: str,
+        content_sha256: str,
+        failure_fingerprint: str,
+        failure_revision: str,
+        failure_code: str,
+        failure_stage: str,
+        repair_revision: str,
+        target_branch: str,
+        target_branch_revision: str,
+        targeted_test_profile: str,
+        test_command_digest: str,
+        test_result_sha256: str,
+        validated_at: str,
+    ) -> "RepairValidationReceipt":
+        lineage = {
+            "failure_revision": failure_revision,
+            "repair_revision": repair_revision,
+            "target_branch_revision": target_branch_revision,
+            "is_ancestor": True,
+        }
+        unsigned = {
+            "schema_version": 1,
+            "message_id": message_id,
+            "content_sha256": content_sha256,
+            "failure_fingerprint": failure_fingerprint,
+            "failure_revision": failure_revision,
+            "failure_code": failure_code,
+            "failure_stage": failure_stage,
+            "repair_revision": repair_revision,
+            "target_branch": target_branch,
+            "target_branch_revision": target_branch_revision,
+            "target_branch_lineage": lineage,
+            "targeted_test_profile": targeted_test_profile,
+            "test_command_digest": test_command_digest,
+            "test_result_sha256": test_result_sha256,
+            "test_status": "passed",
+            "validated_at": validated_at,
+        }
+        digest = _digest(unsigned)
+        return cls(
+            **unsigned,
+            receipt_sha256=digest,
+        )
+
+    @classmethod
+    def from_dict(cls, value: Mapping[str, Any]) -> "RepairValidationReceipt":
+        if not isinstance(value, Mapping):
+            raise ProgressContractError("repair validation receipt must be an object")
+        required = {
+            "schema_version",
+            "message_id",
+            "content_sha256",
+            "failure_fingerprint",
+            "failure_revision",
+            "failure_code",
+            "failure_stage",
+            "repair_revision",
+            "target_branch",
+            "target_branch_revision",
+            "target_branch_lineage",
+            "targeted_test_profile",
+            "test_command_digest",
+            "test_result_sha256",
+            "test_status",
+            "validated_at",
+            "receipt_sha256",
+        }
+        missing = sorted(required - set(value))
+        extra = sorted(set(value) - required)
+        if missing:
+            raise ProgressContractError(
+                f"repair validation receipt lacks {', '.join(missing)}"
+            )
+        if extra:
+            raise ProgressContractError(
+                "repair validation receipt contains unsupported field "
+                + ", ".join(extra)
+            )
+        lineage = value["target_branch_lineage"]
+        if not isinstance(lineage, Mapping):
+            raise ProgressContractError("repair validation lineage must be an object")
+        return cls(
+            schema_version=value["schema_version"],
+            message_id=str(value["message_id"]),
+            content_sha256=str(value["content_sha256"]),
+            failure_fingerprint=str(value["failure_fingerprint"]),
+            failure_revision=str(value["failure_revision"]),
+            failure_code=str(value["failure_code"]),
+            failure_stage=str(value["failure_stage"]),
+            repair_revision=str(value["repair_revision"]),
+            target_branch=str(value["target_branch"]),
+            target_branch_revision=str(value["target_branch_revision"]),
+            target_branch_lineage={str(k): v for k, v in lineage.items()},
+            targeted_test_profile=str(value["targeted_test_profile"]),
+            test_command_digest=str(value["test_command_digest"]),
+            test_result_sha256=str(value["test_result_sha256"]),
+            test_status=str(value["test_status"]),
+            validated_at=str(value["validated_at"]),
+            receipt_sha256=str(value["receipt_sha256"]),
+        )
+
+
+class RepairValidationLedger:
+    """Append-only store for repository-owned repair validation receipts."""
+
+    def __init__(self, path: Path | str):
+        self.path = Path(path).expanduser().resolve()
+        self._lock_path = self.path.with_name(self.path.name + ".lock")
+
+    def receipts(self) -> list[RepairValidationReceipt]:
+        rows = read_integrity_jsonl(
+            self.path,
+            max_line_bytes=_MAX_LEDGER_LINE_BYTES,
+            label="repair validation ledger",
+            error_factory=ProgressContractError,
+        )
+        return [
+            RepairValidationReceipt.from_dict(
+                {key: value for key, value in row.items() if key != "event_id"}
+            )
+            for row in rows
+        ]
+
+    def append(self, receipt: RepairValidationReceipt) -> RepairValidationReceipt:
+        if not isinstance(receipt, RepairValidationReceipt):
+            raise ProgressContractError("repair validation receipt is invalid")
+        self._lock_path.parent.mkdir(parents=True, exist_ok=True)
+        with self._lock_path.open("a+", encoding="utf-8") as lock:
+            fcntl.flock(lock.fileno(), fcntl.LOCK_EX)
+            try:
+                if any(
+                    prior.receipt_sha256 == receipt.receipt_sha256
+                    for prior in self.receipts()
+                ):
+                    return receipt
+                append_integrity_jsonl(
+                    self.path,
+                    receipt.to_dict(),
+                    max_line_bytes=_MAX_LEDGER_LINE_BYTES,
+                    label="repair validation ledger",
+                    error_factory=ProgressContractError,
+                )
+            finally:
+                fcntl.flock(lock.fileno(), fcntl.LOCK_UN)
+        return receipt
+
+    def find_matching(
+        self,
+        context: Mapping[str, Any],
+        *,
+        repair_revision: str,
+    ) -> RepairValidationReceipt | None:
+        expected = {
+            "message_id": str(context.get("message_id") or ""),
+            "content_sha256": str(context.get("content_sha256") or ""),
+            "failure_fingerprint": str(
+                context.get("failure_fingerprint") or ""
+            ),
+            "failure_revision": str(context.get("failure_revision") or ""),
+            "failure_code": str(context.get("code") or ""),
+            "failure_stage": str(context.get("stage") or ""),
+        }
+        for receipt in reversed(self.receipts()):
+            if (
+                all(getattr(receipt, key) == value for key, value in expected.items())
+                and receipt.repair_revision == repair_revision
+            ):
+                return receipt
+        return None
+
+    def require(
+        self,
+        context: Mapping[str, Any],
+        *,
+        repair_revision: str,
+    ) -> RepairValidationReceipt:
+        receipt = self.find_matching(context, repair_revision=repair_revision)
+        if receipt is None:
+            raise ProgressContractError(
+                "matching repair validation receipt is required"
+            )
+        return receipt
+
+
+TARGETED_REPAIR_TESTS: dict[str, tuple[str, ...]] = {
+    "kol_mailbox_exact_resume": (
+        "pytest",
+        "tests/test_kol_mailbox.py",
+        "-q",
+    ),
+}
+
+_TARGETED_REPAIR_PATHS: dict[str, frozenset[str]] = {
+    "kol_mailbox_exact_resume": frozenset(
+        {
+            "scripts/kol_daily.py",
+            "src/xiaocao/kol/mailbox.py",
+            "src/xiaocao/kol/writer_progress.py",
+        }
+    ),
+}
+
+
+class RepairValidationService:
+    """Resolve, test, and persist one exact repository repair proof."""
+
+    def __init__(
+        self,
+        repository_root: Path | str,
+        *,
+        ledger: RepairValidationLedger,
+        git_runner: Callable[[tuple[str, ...]], Any] | None = None,
+        test_runner: Callable[[tuple[str, ...]], Any] | None = None,
+        now: Callable[[], str] | None = None,
+    ):
+        self.repository_root = Path(repository_root).expanduser().resolve()
+        self.ledger = ledger
+        self.git_runner = git_runner or self._run_git
+        self.test_runner = test_runner or self._run_tests
+        self.now = now or (
+            lambda: datetime.now().astimezone().isoformat(timespec="seconds")
+        )
+
+    def _run_git(self, command: tuple[str, ...]) -> Any:
+        return subprocess.run(
+            ("git", *command),
+            cwd=self.repository_root,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            check=False,
+            timeout=15,
+        )
+
+    def _run_tests(self, command: tuple[str, ...]) -> Any:
+        return subprocess.run(
+            command,
+            cwd=self.repository_root,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            text=True,
+            check=False,
+            timeout=300,
+        )
+
+    @staticmethod
+    def _output(result: Any) -> str:
+        return "\n".join(
+            value
+            for value in (
+                str(getattr(result, "stdout", "") or ""),
+                str(getattr(result, "stderr", "") or ""),
+            )
+            if value
+        )
+
+    def _git_value(self, command: tuple[str, ...], *, field_name: str) -> str:
+        result = self.git_runner(command)
+        if getattr(result, "returncode", 1) != 0:
+            raise ProgressContractError(f"repair validation {field_name} readback failed")
+        value = str(getattr(result, "stdout", "") or "").strip()
+        if not value:
+            raise ProgressContractError(f"repair validation {field_name} is missing")
+        return value
+
+    def _expected_profile(self, context: Mapping[str, Any]) -> str:
+        if (
+            str(context.get("stage") or "").startswith("mailbox_")
+            and str(context.get("category") or "")
+            in {
+                "contract_error",
+                "schema_error",
+                "control_plane_handler_error",
+                "processor_error",
+            }
+        ) or (
+            str(context.get("category") or "") == "processor_error"
+            and str(context.get("stage") or "") == "business_processing"
+        ):
+            return "kol_mailbox_exact_resume"
+        raise ProgressContractError(
+            "repair validation has no repository-owned targeted test profile"
+        )
+
+    def resolve_head(self) -> str:
+        revision = self._git_value(
+            ("rev-parse", "--verify", "HEAD^{commit}"),
+            field_name="HEAD",
+        )
+        if not _HEX_40.fullmatch(revision):
+            raise ProgressContractError("repair validation HEAD is invalid")
+        return revision
+
+    def require_current(
+        self,
+        context: Mapping[str, Any],
+        *,
+        repair_revision: str,
+    ) -> RepairValidationReceipt:
+        """Require a receipt whose branch readback still names current HEAD."""
+
+        receipt = self.ledger.require(
+            context,
+            repair_revision=repair_revision,
+        )
+        if receipt.targeted_test_profile != self._expected_profile(context):
+            raise ProgressContractError(
+                "repair validation targeted test profile changed"
+            )
+        if self.resolve_head() != repair_revision:
+            raise ProgressContractError("repair revision is not current HEAD")
+        branch = self._git_value(
+            ("branch", "--show-current"),
+            field_name="target branch",
+        )
+        remote_revision = self._git_value(
+            (
+                "rev-parse",
+                "--verify",
+                f"origin/{branch}^{{commit}}",
+            ),
+            field_name="target branch remote",
+        )
+        if (
+            receipt.target_branch != branch
+            or receipt.target_branch_revision != remote_revision
+        ):
+            raise ProgressContractError(
+                "repair validation target branch readback changed"
+            )
+        return receipt
+
+    def validate(
+        self,
+        context: Mapping[str, Any],
+        *,
+        repair_revision: str | None = None,
+    ) -> RepairValidationReceipt:
+        message_id = str(context.get("message_id") or "")
+        content_sha256 = str(context.get("content_sha256") or "")
+        failure_fingerprint = str(context.get("failure_fingerprint") or "")
+        failure_revision = str(context.get("failure_revision") or "")
+        failure_code = str(context.get("code") or "")
+        failure_stage = str(context.get("stage") or "")
+        _sha256(message_id, field_name="message_id")
+        _sha256(content_sha256, field_name="content_sha256")
+        _sha256(failure_fingerprint, field_name="failure_fingerprint")
+        _revision(failure_revision, field_name="failure_revision")
+        profile = self._expected_profile(context)
+        declared_profile = str(context.get("targeted_test_profile") or "")
+        if declared_profile and declared_profile != profile:
+            raise ProgressContractError("repair validation test profile changed")
+        resolved_revision = repair_revision or self.resolve_head()
+        _revision(resolved_revision, field_name="repair_revision")
+        head = self.resolve_head()
+        if resolved_revision != head:
+            raise ProgressContractError("repair revision is not current HEAD")
+        target_branch = self._git_value(
+            ("branch", "--show-current"),
+            field_name="target branch",
+        )
+        _safe_branch(target_branch, field_name="target_branch")
+        target_branch_revision = self._git_value(
+            (
+                "rev-parse",
+                "--verify",
+                f"origin/{target_branch}^{{commit}}",
+            ),
+            field_name="target branch remote",
+        )
+        if target_branch_revision != resolved_revision:
+            raise ProgressContractError("repair revision is not pushed")
+        changed_files_result = self.git_runner(
+            ("diff-tree", "--no-commit-id", "--name-only", "-r", resolved_revision)
+        )
+        if getattr(changed_files_result, "returncode", 1) != 0:
+            raise ProgressContractError("repair commit file readback failed")
+        changed_files = {
+            line.strip()
+            for line in str(getattr(changed_files_result, "stdout", "") or "").splitlines()
+            if line.strip()
+        }
+        if not changed_files & _TARGETED_REPAIR_PATHS[profile]:
+            raise ProgressContractError("repair commit is unrelated to target")
+        lineage = (
+            "merge-base",
+            "--is-ancestor",
+            failure_revision,
+            resolved_revision,
+        )
+        ancestry = self.git_runner(lineage)
+        if getattr(ancestry, "returncode", 1) != 0:
+            raise ProgressContractError("repair revision is outside failure lineage")
+        command = TARGETED_REPAIR_TESTS[profile]
+        result = self.test_runner(command)
+        output = self._output(result)
+        if getattr(result, "returncode", 1) != 0:
+            raise ProgressContractError("repair validation targeted test failed")
+        command_digest = _digest(command)
+        result_digest = hashlib.sha256(output.encode("utf-8")).hexdigest()
+        receipt = RepairValidationReceipt.create(
+            message_id=message_id,
+            content_sha256=content_sha256,
+            failure_fingerprint=failure_fingerprint,
+            failure_revision=failure_revision,
+            failure_code=failure_code,
+            failure_stage=failure_stage,
+            repair_revision=resolved_revision,
+            target_branch=target_branch,
+            target_branch_revision=target_branch_revision,
+            targeted_test_profile=profile,
+            test_command_digest=command_digest,
+            test_result_sha256=result_digest,
+            validated_at=self.now(),
+        )
+        return self.ledger.append(receipt)
 
 
 @dataclass(frozen=True)

@@ -11,6 +11,7 @@ from pathlib import Path
 from typing import Any, Callable
 
 from .enrichment_types import EnrichmentDiagnosticError, EnrichmentError
+from .writer_progress import FailureFingerprint
 
 
 MAILBOX_ID = "kol.handoff"
@@ -145,25 +146,13 @@ class MailboxLedger:
         sent, acked = self._handoff_states()
         return [sent[key] for key in sorted(sent) if key not in acked]
 
-    def repair_resume_claim(
+    def _repair_state(
         self,
         handoff_id: str,
-        *,
-        repair_revision: str,
-        now: datetime,
-    ) -> dict[str, str]:
-        """Bind repair continuation to the last durable waiting attempt.
-
-        A revision normally gets one attempt.  It may continue the same claim
-        again only after a provider supplied an explicit poll deadline; this
-        keeps contract failures single-shot while allowing bounded async work.
-        """
+    ) -> tuple[dict[str, Any] | None, dict[str, Any] | None, bool, set[str]]:
         normalized_id = str(handoff_id or "")
-        normalized_revision = str(repair_revision or "")
         if not _SHA256.fullmatch(normalized_id):
             raise MailboxError("mailbox repair handoff_id is invalid")
-        if not re.fullmatch(r"[a-f0-9]{40}", normalized_revision):
-            raise MailboxError("mailbox repair revision is invalid")
         attempt: dict[str, Any] | None = None
         waiting: dict[str, Any] | None = None
         acked = False
@@ -184,13 +173,78 @@ class MailboxLedger:
                 waiting = row
             elif event == "mailbox_ack_receipted":
                 acked = True
-        if acked:
-            raise MailboxError("mailbox repair target is already acknowledged")
+        return attempt, waiting, acked, used_revisions
+
+    @staticmethod
+    def _repair_context(
+        attempt: dict[str, Any] | None,
+        waiting: dict[str, Any] | None,
+        *,
+        handoff_id: str,
+    ) -> dict[str, str]:
         if attempt is None or waiting is None:
             raise MailboxError("mailbox repair target has no durable wait")
         content_sha256 = str(attempt.get("content_sha256") or "")
         if not _SHA256.fullmatch(content_sha256):
             raise MailboxError("mailbox repair target content binding is invalid")
+        context = {
+            "message_id": handoff_id,
+            "content_sha256": content_sha256,
+            "waiting_event_id": str(waiting["event_id"]),
+        }
+        context.update({
+            key: str(waiting[key])
+            for key in (
+                "category",
+                "code",
+                "stage",
+                "failure_fingerprint",
+                "failure_revision",
+                "targeted_test_profile",
+            )
+            if waiting.get(key) is not None
+        })
+        return context
+
+    def repair_resume_context(self, handoff_id: str) -> dict[str, str]:
+        """Return the local durable wait without contacting the provider."""
+
+        normalized_id = str(handoff_id or "")
+        attempt, waiting, acked, _used_revisions = self._repair_state(normalized_id)
+        if acked:
+            raise MailboxError("mailbox repair target is already acknowledged")
+        return self._repair_context(
+            attempt,
+            waiting,
+            handoff_id=normalized_id,
+        )
+
+    def repair_resume_claim(
+        self,
+        handoff_id: str,
+        *,
+        repair_revision: str,
+        now: datetime,
+    ) -> dict[str, str]:
+        """Bind repair continuation to the last durable waiting attempt.
+
+        A revision normally gets one attempt.  It may continue the same claim
+        again only after a provider supplied an explicit poll deadline; this
+        keeps contract failures single-shot while allowing bounded async work.
+        """
+        normalized_revision = str(repair_revision or "")
+        if not re.fullmatch(r"[a-f0-9]{40}", normalized_revision):
+            raise MailboxError("mailbox repair revision is invalid")
+        normalized_id = str(handoff_id or "")
+        attempt, waiting, acked, used_revisions = self._repair_state(normalized_id)
+        if acked:
+            raise MailboxError("mailbox repair target is already acknowledged")
+        context = self._repair_context(
+            attempt,
+            waiting,
+            handoff_id=normalized_id,
+        )
+        content_sha256 = context["content_sha256"]
         diagnostic = " ".join(
             str(waiting.get(key) or "").lower()
             for key in ("category", "code", "stage")
@@ -199,7 +253,26 @@ class MailboxLedger:
             raise MailboxError(
                 "mailbox repair requires external side-effect reconciliation"
             )
-        if normalized_revision in used_revisions:
+        if str(waiting.get("category") or "") == "provider_wait":
+            next_poll = str(waiting.get("next_poll_not_before") or "")
+            try:
+                due = datetime.fromisoformat(next_poll.replace("Z", "+00:00"))
+            except ValueError as exc:
+                raise MailboxError(
+                    "provider wait lacks a durable poll deadline"
+                ) from exc
+            if now.tzinfo is None or due.tzinfo is None:
+                raise MailboxError("mailbox repair poll deadline needs a timezone")
+            if now < due:
+                raise MailboxError("mailbox repair poll deadline is not due")
+            if used_revisions and normalized_revision not in used_revisions:
+                raise MailboxError(
+                    "provider wait must reuse its repair revision"
+                )
+        if (
+            normalized_revision in used_revisions
+            and str(waiting.get("category") or "") != "provider_wait"
+        ):
             next_poll = str(waiting.get("next_poll_not_before") or "")
             try:
                 due = datetime.fromisoformat(next_poll.replace("Z", "+00:00"))
@@ -212,8 +285,7 @@ class MailboxLedger:
             if now < due:
                 raise MailboxError("mailbox repair poll deadline is not due")
         return {
-            "content_sha256": content_sha256,
-            "waiting_event_id": str(waiting["event_id"]),
+            **context,
         }
 
 
@@ -585,6 +657,60 @@ class LiangHuiMailboxClient:
             "has_more": has_more,
         }
 
+    def get_message(
+        self,
+        message_id: str,
+        *,
+        expected_content_sha256: str,
+    ) -> dict[str, Any]:
+        """Read one mailbox message without widening an exact resume."""
+
+        normalized_id = str(message_id or "")
+        expected_sha = str(expected_content_sha256 or "")
+        if not _SHA256.fullmatch(normalized_id):
+            raise MailboxError("mailbox exact message_id is invalid")
+        if not _SHA256.fullmatch(expected_sha):
+            raise MailboxError("mailbox exact content binding is invalid")
+        try:
+            response = self.exchange(
+                {
+                    "event": "daily_lianghui_mailbox_input_required",
+                    "operation": "get_mailbox_message",
+                    "arguments": {
+                        "mailbox_id": MAILBOX_ID,
+                        "message_id": normalized_id,
+                        "expected_content_sha256": expected_sha,
+                    },
+                }
+            )
+            message = self._validate_exact_message(
+                response,
+                sent={
+                    "handoff_id": normalized_id,
+                    "content_sha256": expected_sha,
+                },
+            )
+        except MailboxError:
+            raise
+        except Exception as exc:
+            raise MailboxError("mailbox exact readback is unavailable") from exc
+        if message.get("status") != "pending":
+            raise MailboxError("mailbox exact repair target is already acknowledged")
+        return message
+
+    def get_mailbox_message(
+        self,
+        message_id: str,
+        *,
+        expected_content_sha256: str,
+    ) -> dict[str, Any]:
+        """Named mailbox-port alias for the exact single-message read."""
+
+        return self.get_message(
+            message_id,
+            expected_content_sha256=expected_content_sha256,
+        )
+
     def ack_message(self, message: dict[str, Any]) -> dict[str, Any]:
         handoff_id = str(message["message_id"])
         content_sha256 = str(message["content_sha256"])
@@ -637,9 +763,13 @@ class RemoteMailboxDrain:
         client: LiangHuiMailboxClient,
         *,
         processor: Callable[[dict[str, Any]], dict[str, Any]],
+        failure_revision: str | None = None,
+        repair_authorizer: Callable[[dict[str, str], str], Any] | None = None,
     ):
         self.client = client
         self.processor = processor
+        self.failure_revision = failure_revision
+        self.repair_authorizer = repair_authorizer
 
     def _new_eligible(
         self,
@@ -681,7 +811,11 @@ class RemoteMailboxDrain:
             cursor = next_cursor
 
     @staticmethod
-    def _safe_waiting_details(result: Any) -> dict[str, str]:
+    def _safe_waiting_details(
+        result: Any,
+        *,
+        failure_revision: str | None = None,
+    ) -> dict[str, str]:
         source = result if isinstance(result, dict) else {}
         waiting_items = source.get("waiting_items")
         if (
@@ -713,6 +847,33 @@ class RemoteMailboxDrain:
                 "code": str(source.get("status") or "incomplete_result")[:80],
                 "stage": "business_processing",
             }
+        progress = source.get("writer_progress")
+        if isinstance(progress, dict) and progress.get("status") == "repair_required":
+            for key in (
+                "failure_fingerprint",
+                "failure_revision",
+                "targeted_test_profile",
+            ):
+                value = progress.get(key)
+                if isinstance(value, str) and value:
+                    details[key] = value
+        if (
+            failure_revision
+            and details.get("category") != "provider_wait"
+            and "failure_fingerprint" not in details
+        ):
+            try:
+                details["failure_revision"] = failure_revision
+                details["failure_fingerprint"] = FailureFingerprint(
+                    adapter="mailbox",
+                    category=details["category"],
+                    code=details["code"],
+                    stage=details["stage"],
+                    failure_revision=failure_revision,
+                    provider_contract_version="lianghui_mailbox_v1",
+                ).digest
+            except (TypeError, ValueError):
+                details.pop("failure_revision", None)
         return details
 
     def run(
@@ -730,6 +891,15 @@ class RemoteMailboxDrain:
                 repair_revision=repair_revision,
                 now=self.client.now(),
             )
+            if (
+                repair_claim.get("category") != "provider_wait"
+                and self.repair_authorizer is None
+            ):
+                raise MailboxError(
+                    "matching repair validation receipt is required"
+                )
+            if self.repair_authorizer is not None:
+                self.repair_authorizer(repair_claim, str(repair_revision))
         elif repair_revision is not None:
             raise MailboxError("mailbox repair target is required")
         attempted: set[str] = set()
@@ -738,13 +908,16 @@ class RemoteMailboxDrain:
         waiting: list[str] = []
         items: list[dict[str, str]] = []
         while True:
-            batch = self._new_eligible(
-                attempted,
-                only_message_id=only_message_id,
-            )
+            if only_message_id is not None:
+                batch = [
+                    self.client.get_mailbox_message(
+                        only_message_id,
+                        expected_content_sha256=repair_claim["content_sha256"],
+                    )
+                ]
+            else:
+                batch = self._new_eligible(attempted)
             if not batch:
-                if only_message_id is not None and not attempted:
-                    raise MailboxError("mailbox repair target is not pending")
                 return {
                     "status": "waiting" if waiting else "completed",
                     "attempted_message_ids": attempted_order,
@@ -797,6 +970,10 @@ class RemoteMailboxDrain:
                             "code": type(exc).__name__[:80],
                             "stage": "business_processing",
                         }
+                    details = self._safe_waiting_details(
+                        details,
+                        failure_revision=self.failure_revision,
+                    )
                     self.client.ledger.append(
                         "mailbox_message_waiting",
                         occurred_at=_utc_now(self.client.now),
@@ -815,7 +992,10 @@ class RemoteMailboxDrain:
                     not isinstance(result, dict)
                     or result.get("business_complete") is not True
                 ):
-                    details = self._safe_waiting_details(result)
+                    details = self._safe_waiting_details(
+                        result,
+                        failure_revision=self.failure_revision,
+                    )
                     self.client.ledger.append(
                         "mailbox_message_waiting",
                         occurred_at=_utc_now(self.client.now),

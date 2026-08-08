@@ -455,6 +455,9 @@ def test_remote_writer_guards_active_peer_and_drains_each_message_once() -> None
         "attempted_message_ids",
         "new eligible messages",
         "ack_mailbox_message",
+        "get_mailbox_message",
+        "validate-repair",
+        "repairvalidationreceipt",
         "全部完成",
     ):
         assert marker in remote

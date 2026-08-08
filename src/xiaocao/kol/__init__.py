@@ -9,6 +9,11 @@ from .semantic_bundle import (
     validate_receipt_bindings,
     validate_existing_bundle,
 )
+from .writer_progress import (
+    RepairValidationLedger,
+    RepairValidationReceipt,
+    RepairValidationService,
+)
 
 __all__ = [
     "DecisionPipeline",
@@ -19,4 +24,7 @@ __all__ = [
     "read_validated_bundle",
     "validate_receipt_bindings",
     "validate_existing_bundle",
+    "RepairValidationLedger",
+    "RepairValidationReceipt",
+    "RepairValidationService",
 ]

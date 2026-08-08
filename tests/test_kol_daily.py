@@ -1147,6 +1147,43 @@ def test_resume_mailbox_cli_runs_only_exact_repair_target(
     }
 
 
+def test_resume_mailbox_cli_allows_repository_head_default(
+    tmp_path,
+    monkeypatch,
+    capsys,
+):
+    observed: dict[str, object] = {}
+
+    class FakeRuntime:
+        def __init__(self, args):
+            observed["args"] = args
+
+        @staticmethod
+        def resume_mailbox(message_id, *, repair_revision):
+            observed["resume"] = (message_id, repair_revision)
+            return {"status": "completed"}
+
+    monkeypatch.setattr(kol_daily_script, "DailyRuntime", FakeRuntime)
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "kol_daily.py",
+            "resume-mailbox",
+            "--mailbox-message-id",
+            "a" * 64,
+            "--output-dir",
+            str(tmp_path / "daily"),
+        ],
+    )
+
+    assert kol_daily_script.main() == 0
+    assert observed["resume"] == ("a" * 64, None)
+    assert json.loads(capsys.readouterr().out) == {
+        "mailbox_repair_resume": {"status": "completed"},
+    }
+
+
 def test_daily_runtime_runs_wechat_official_account_subscription(
     tmp_path,
     monkeypatch,

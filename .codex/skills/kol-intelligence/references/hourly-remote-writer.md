@@ -92,22 +92,20 @@ reported as downstream completion.
 
 ### Narrow repair resume
 
-After fixing, testing, committing, and pushing a repository failure, continue
-the same item in the current Agent task with:
-
 ```bash
+PYTHONPATH=src .venv/bin/python scripts/kol_daily.py validate-repair --mailbox-message-id <exact-64-hex-message-id>
 PYTHONPATH=src .venv/bin/python scripts/kol_daily.py resume-mailbox \
-  --mailbox-message-id <exact-64-hex-message-id> \
-  --repair-revision <exact-40-hex-commit>
+  --mailbox-message-id <exact-64-hex-message-id> [--repair-revision <exact-40-hex-commit>]
 ```
 
-Reapply the peer gate and keep stdin open. The first repaired continuation
-requires the prior wait, same content hash, and a new repair revision; it
-processes no other message. A contract/error wait may not reuse that revision.
-An async provider wait may reuse it only when the durable wait includes an
-explicit timezone-aware `next_poll_not_before` and that deadline is due.
-Missing/acked/changed targets fail closed. Reconcile `uncertain` effects before
-retry. Resume a due provider wait now.
+`validate-repair` runs the repo test, verifies commit
+lineage/branch readback, and persists `RepairValidationReceipt`.
+`resume-mailbox` defaults to `HEAD`, requires that receipt for code or
+contract repairs, and performs exactly one
+`get_mailbox_message(message_id, expected_content_sha256)`—never a list.
+Missing/changed/acked/unavailable targets fail closed pre-processor.
+Provider waits may reuse a revision only after their durable TZ-aware
+poll deadline is due; reconcile uncertain effects before retry.
 
 For an official item, run installed OpenCLI once: `weixin download`, images,
 background Chrome, and JSON. Require an item-local file, exact

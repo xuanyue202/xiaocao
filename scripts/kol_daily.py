@@ -69,6 +69,9 @@ from xiaocao.kol.xiaocao_wechat import (
 from xiaocao.kol.writer_progress import (
     affected_set_digest,
     FailureFingerprint,
+    ProgressContractError,
+    RepairValidationLedger,
+    RepairValidationService,
     resolve_repository_revision,
     WriterProgress,
 )
@@ -1202,6 +1205,14 @@ class DailyRuntime:
             exchange=_read_agent_json,
         )
 
+    def _repair_validation(self) -> RepairValidationService:
+        return RepairValidationService(
+            Path(__file__).resolve().parents[1],
+            ledger=RepairValidationLedger(
+                self.args.mailbox_output_dir / "repair_validation.jsonl"
+            ),
+        )
+
     def reconcile_local_mailbox(self) -> list[dict[str, str]]:
         return self._mailbox().reconcile_local()
 
@@ -1291,21 +1302,54 @@ class DailyRuntime:
         return RemoteMailboxDrain(
             self._mailbox(),
             processor=self._process_mailbox_message,
+            failure_revision=_writer_failure_revision(),
         ).run()
 
     def resume_mailbox(
         self,
         message_id: str,
         *,
-        repair_revision: str,
+        repair_revision: str | None = None,
     ) -> dict[str, Any]:
+        mailbox = self._mailbox()
+        context = mailbox.ledger.repair_resume_context(message_id)
+        validation = self._repair_validation()
+        resolved_revision = repair_revision or validation.resolve_head()
+        repair_authorizer = None
+        if context.get("category") != "provider_wait":
+            validation.require_current(
+                context,
+                repair_revision=resolved_revision,
+            )
+            repair_authorizer = (
+                lambda claim, revision: validation.require_current(
+                    claim,
+                    repair_revision=revision,
+                )
+            )
         return RemoteMailboxDrain(
-            self._mailbox(),
+            mailbox,
             processor=self._process_mailbox_message,
+            failure_revision=resolved_revision,
+            repair_authorizer=repair_authorizer,
         ).run(
             only_message_id=message_id,
+            repair_revision=resolved_revision,
+        )
+
+    def validate_repair(
+        self,
+        message_id: str,
+        *,
+        repair_revision: str | None = None,
+    ) -> dict[str, Any]:
+        mailbox = self._mailbox()
+        context = mailbox.ledger.repair_resume_context(message_id)
+        receipt = self._repair_validation().validate(
+            context,
             repair_revision=repair_revision,
         )
+        return receipt.to_dict()
 
     def _lv_service_for_sweep(self) -> LvSubscriptionService:
         if self._lv_service is None:
@@ -2587,6 +2631,7 @@ def main() -> int:
             "process-xiaocao-handoff",
             "process-wechat-official",
             "resume-mailbox",
+            "validate-repair",
             "status",
             "audit",
         ),
@@ -2668,15 +2713,22 @@ def main() -> int:
             _print(result)
         return 0
     if args.command == "resume-mailbox":
-        if not args.mailbox_message_id or not args.repair_revision:
-            raise DailyError(
-                "resume-mailbox requires message id and repair revision"
-            )
+        if not args.mailbox_message_id:
+            raise DailyError("resume-mailbox requires message id")
         result = DailyRuntime(args).resume_mailbox(
             args.mailbox_message_id,
             repair_revision=args.repair_revision,
         )
         _print({"mailbox_repair_resume": result})
+        return 0
+    if args.command == "validate-repair":
+        if not args.mailbox_message_id:
+            raise DailyError("validate-repair requires message id")
+        result = DailyRuntime(args).validate_repair(
+            args.mailbox_message_id,
+            repair_revision=args.repair_revision,
+        )
+        _print({"repair_validation": result})
         return 0
     service = DailyCoordinator(args.output_dir)
     if args.command == "status":
@@ -2964,7 +3016,7 @@ def main() -> int:
 if __name__ == "__main__":
     try:
         raise SystemExit(main())
-    except (DailyError, EnrichmentError) as exc:
+    except (DailyError, EnrichmentError, ProgressContractError) as exc:
         print(
             json.dumps(
                 {"status": "failed", "error": str(exc)},
