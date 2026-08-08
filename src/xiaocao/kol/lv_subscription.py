@@ -642,6 +642,14 @@ _PROVIDER_DIRECT_LINK_SCRIPT_TEMPLATE = r"""(async () => {
     return result('auth_required');
   }
   const sources = [window.yunData || {}, window.locals || {}];
+  const observedListUrl = performance.getEntriesByType('resource')
+    .map(entry => String(entry.name || ''))
+    .map(value => {
+      try { return new URL(value); } catch (_error) { return null; }
+    })
+    .find(url => url && url.pathname === '/share/list'
+      && url.searchParams.has('shareid')
+      && url.searchParams.has('uk'));
   const readValue = keys => {
     for (const source of sources) {
       for (const key of keys) {
@@ -657,21 +665,33 @@ _PROVIDER_DIRECT_LINK_SCRIPT_TEMPLATE = r"""(async () => {
     }
     return '';
   };
-  const shareId = readValue(['shareid', 'share_id', 'SHARE_ID']);
-  const shareUk = readValue(['share_uk', 'uk', 'SHARE_UK']);
-  const sign = readValue(['sign', 'SIGN']);
-  const timestamp = readValue(['timestamp', 'TIMESTAMP']);
-  if (!shareId || !shareUk || !sign || !timestamp) {
+  const resourceValue = keys => {
+    if (!observedListUrl) return '';
+    for (const key of keys) {
+      const value = observedListUrl.searchParams.get(key);
+      if (value) return String(value);
+    }
+    return '';
+  };
+  const shareId = readValue(['shareid', 'share_id', 'SHARE_ID'])
+    || resourceValue(['shareid', 'share_id']);
+  const shareUk = readValue(['share_uk', 'uk', 'SHARE_UK'])
+    || resourceValue(['share_uk', 'uk']);
+  const sign = readValue(['sign', 'SIGN'])
+    || resourceValue(['sign']);
+  const timestamp = readValue(['timestamp', 'TIMESTAMP'])
+    || resourceValue(['timestamp']);
+  if (!shareId || !shareUk) {
     return result('share_download_metadata_missing');
   }
   const query = new URLSearchParams({
-    sign,
-    timestamp,
     channel: 'chunlei',
     clienttype: '0',
     web: '1',
     app_id: '250528'
   });
+  if (sign) query.set('sign', sign);
+  if (timestamp) query.set('timestamp', timestamp);
   const body = new URLSearchParams({
     encrypt: '0',
     product: 'share',
@@ -681,9 +701,12 @@ _PROVIDER_DIRECT_LINK_SCRIPT_TEMPLATE = r"""(async () => {
   });
   const cookie = document.cookie.split(';').map(value => value.trim())
     .find(value => value.startsWith('BDCLND='));
-  if (cookie) {
+  const sekey = cookie
+    ? decodeURIComponent(cookie.slice('BDCLND='.length))
+    : resourceValue(['sekey']);
+  if (sekey) {
     body.set('extra', JSON.stringify({
-      sekey: decodeURIComponent(cookie.slice('BDCLND='.length))
+      sekey
     }));
   }
   let response;
@@ -4046,7 +4069,7 @@ try {
         session: str,
         profile: str | None,
     ) -> dict[str, Any]:
-        """Recover one claimed PDF/text through the authenticated share API."""
+        """Recover one claimed small item through the authenticated share API."""
         media_type = str(item.get("media_type") or "")
         provider_file_id = str(item.get("provider_file_id") or "").strip()
         if media_type not in _DIRECT_DOWNLOAD_MEDIA:
@@ -4764,16 +4787,12 @@ try {
             # classifying the recovery as a frame failure. This path is
             # read-only with respect to the provider item and never clicks a
             # second download control.
-            try:
-                direct = self._provider_direct_download(
-                    item,
-                    session=session,
-                    profile=profile,
-                )
-            except EnrichmentError:
-                pass
-            else:
-                return Path(str(direct["path"]))
+            direct = self._provider_direct_download(
+                item,
+                session=session,
+                profile=profile,
+            )
+            return Path(str(direct["path"]))
         if status != "download_url_ready":
             code = {
                 "download_url_missing": "blocked_download_frame_missing",

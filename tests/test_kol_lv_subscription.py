@@ -1315,6 +1315,11 @@ def test_replayed_claim_reports_missing_blocked_download_frame_exactly(tmp_path)
         tail = command[3:]
         if tail[:1] == ["open"]:
             payload = {"url": "redacted", "page": "page-1"}
+        elif tail[:1] == ["eval"] and "ticket04_provider_direct_link" in tail[1]:
+            payload = {
+                "status": "provider_error",
+                "provider_errno": 2,
+            }
         elif tail[:1] == ["eval"] and "/share/list" in tail[1]:
             payload = {
                 "status": "ok",
@@ -1338,11 +1343,6 @@ def test_replayed_claim_reports_missing_blocked_download_frame_exactly(tmp_path)
                 "status": "download_url_missing",
                 "frame_count": 0,
             }
-        elif tail[:1] == ["eval"] and "ticket04_provider_direct_link" in tail[1]:
-            payload = {
-                "status": "provider_error",
-                "provider_errno": 2,
-            }
         else:
             raise AssertionError(command)
         return SimpleNamespace(
@@ -1365,8 +1365,8 @@ def test_replayed_claim_reports_missing_blocked_download_frame_exactly(tmp_path)
     with pytest.raises(EnrichmentDiagnosticError) as captured:
         service.download_opencli(update["identity"], session="ticket04")
 
-    assert captured.value.diagnostic_code == "blocked_download_frame_missing"
-    assert captured.value.diagnostic_stage == "browser_download_recovery"
+    assert captured.value.diagnostic_code == "provider_download_link_errno_2"
+    assert captured.value.diagnostic_stage == "provider_download_link"
     assert waits == 1
 
 
@@ -1425,6 +1425,18 @@ def test_existing_pdf_claim_uses_direct_page_api_without_second_ui_trigger(
         tail = command[3:]
         if tail[:1] == ["open"]:
             result = {"url": "redacted", "page": "page-1"}
+        elif tail[:1] == ["eval"] and "ticket04_provider_direct_link" in tail[1]:
+            result = {
+                "status": "download_link_ready",
+                "download_url": (
+                    "https://d.pcs.baidu.com/rest/2.0/pcs/file?"
+                    "signed=credential-redacted-from-ledger"
+                ),
+                "scheme": "https:",
+                "host": "d.pcs.baidu.com",
+                "path": "/rest/2.0/pcs/file",
+                "provider_file_id": entry["provider_file_id"],
+            }
         elif tail[:1] == ["eval"] and "/share/list" in tail[1]:
             result = {
                 "status": "ok",
@@ -1444,18 +1456,6 @@ def test_existing_pdf_claim_uses_direct_page_api_without_second_ui_trigger(
             }
         elif tail[:1] == ["eval"] and "blocked_download_url_probe" in tail[1]:
             result = {"status": "download_url_missing", "frame_count": 0}
-        elif tail[:1] == ["eval"] and "ticket04_provider_direct_link" in tail[1]:
-            result = {
-                "status": "download_link_ready",
-                "download_url": (
-                    "https://d.pcs.baidu.com/rest/2.0/pcs/file?"
-                    "signed=credential-redacted-from-ledger"
-                ),
-                "scheme": "https:",
-                "host": "d.pcs.baidu.com",
-                "path": "/rest/2.0/pcs/file",
-                "provider_file_id": entry["provider_file_id"],
-            }
         elif tail[:1] in (["click"],):
             trigger_calls += 1
             raise AssertionError("existing claim must not replay UI download")
@@ -1534,6 +1534,18 @@ def test_existing_image_claim_uses_direct_page_api_without_second_ui_trigger(
         tail = command[3:]
         if tail[:1] == ["open"]:
             result = {"url": "redacted", "page": "page-1"}
+        elif tail[:1] == ["eval"] and "ticket04_provider_direct_link" in tail[1]:
+            result = {
+                "status": "download_link_ready",
+                "download_url": (
+                    "https://d.pcs.baidu.com/rest/2.0/pcs/file?"
+                    "signed=credential-redacted-from-ledger"
+                ),
+                "scheme": "https:",
+                "host": "d.pcs.baidu.com",
+                "path": "/rest/2.0/pcs/file",
+                "provider_file_id": entry["provider_file_id"],
+            }
         elif tail[:1] == ["eval"] and "/share/list" in tail[1]:
             result = {
                 "status": "ok",
@@ -1553,18 +1565,6 @@ def test_existing_image_claim_uses_direct_page_api_without_second_ui_trigger(
             }
         elif tail[:1] == ["eval"] and "blocked_download_url_probe" in tail[1]:
             result = {"status": "download_url_missing", "frame_count": 0}
-        elif tail[:1] == ["eval"] and "ticket04_provider_direct_link" in tail[1]:
-            result = {
-                "status": "download_link_ready",
-                "download_url": (
-                    "https://d.pcs.baidu.com/rest/2.0/pcs/file?"
-                    "signed=credential-redacted-from-ledger"
-                ),
-                "scheme": "https:",
-                "host": "d.pcs.baidu.com",
-                "path": "/rest/2.0/pcs/file",
-                "provider_file_id": entry["provider_file_id"],
-            }
         elif tail[:1] in (["click"],):
             trigger_calls += 1
             raise AssertionError("existing claim must not replay UI download")
@@ -1634,6 +1634,9 @@ def test_image_recovery_provider_probe_is_versioned_opencli_template():
     assert "baidu-netdisk/probe-download" in source
     assert "const template_version = 1" in source
     assert "__EXPECTED_" not in source
+    assert "performance.getEntriesByType('resource')" in source
+    assert "resourceValue(['sekey'])" in source
+    assert "if (sign) query.set('sign', sign)" in source
     assert "expectedProviderFileId = \"123456789012345\"" in source
     assert "12.png" in source
 
@@ -1653,17 +1656,17 @@ def test_existing_pdf_claim_intercepts_one_frontend_signed_link_after_errno_2(
         tail = command[3:]
         if tail[:1] == ["open"]:
             result = {"url": "redacted", "page": "page-1"}
-        elif tail[:1] == ["eval"] and "/share/list" in tail[1]:
-            result = {
-                "status": "ok",
-                "complete_scan": True,
-                "entries": [entry],
-            }
         elif tail[:1] == ["eval"] and "ticket04_provider_direct_link" in tail[1]:
             result = {
                 "status": "provider_error",
                 "provider_errno": 2,
                 "http_status": 200,
+            }
+        elif tail[:1] == ["eval"] and "/share/list" in tail[1]:
+            result = {
+                "status": "ok",
+                "complete_scan": True,
+                "entries": [entry],
             }
         elif tail[:1] == ["eval"] and "ticket04_target_route_readback" in tail[1]:
             result = {"status": "target_route_ready"}
