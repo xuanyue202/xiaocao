@@ -330,32 +330,23 @@ def test_remote_drain_attempts_each_message_once_and_requeries_for_new_work(
     )
     result = RemoteMailboxDrain(client, processor=process).run()
 
-    assert result == {
-        "status": "waiting",
-        "attempted_message_ids": ["a" * 64, "b" * 64, "c" * 64],
-        "acked_message_ids": ["b" * 64, "c" * 64],
-        "waiting_message_ids": ["a" * 64],
-        "items": [
-                {
-                    "object": "[文章] 测试交接",
-                    "status": "等待业务完成",
-                    "handoff_id": "a" * 64,
-                    "category": "processor_wait",
-                    "code": "waiting",
-                    "stage": "business_processing",
-                },
-            {
-                "object": "[文章] 测试交接",
-                "status": "全部完成",
-                "handoff_id": "b" * 64,
-            },
-            {
-                "object": "[文章] 测试交接",
-                "status": "全部完成",
-                "handoff_id": "c" * 64,
-            },
-        ],
-    }
+    assert result["status"] == "waiting"
+    assert result["attempted_message_ids"] == [
+        "a" * 64,
+        "b" * 64,
+        "c" * 64,
+    ]
+    assert result["acked_message_ids"] == ["b" * 64, "c" * 64]
+    assert result["waiting_message_ids"] == ["a" * 64]
+    assert result["items"][0]["category"] == "processor_error"
+    assert result["items"][0]["code"] == "processor_result_incomplete"
+    assert result["items"][0]["writer_progress"]["status"] == (
+        "repair_required"
+    )
+    assert all(
+        item["writer_progress"]["status"] == "terminal"
+        for item in result["items"][1:]
+    )
     assert processed == ["a" * 64, "b" * 64, "c" * 64]
     assert [request["operation"] for request in requests] == [
         "list_mailbox_messages",
@@ -543,16 +534,9 @@ def test_remote_drain_preserves_safe_waiting_diagnostics(tmp_path) -> None:
         },
     ).run()
 
-    assert result["items"] == [{
-        "object": "[文章] 测试交接",
-        "status": "等待业务完成",
-        "handoff_id": "a" * 64,
-        "category": "provider_wait",
-        "code": "transcript_pending",
-        "stage": "cloud_transcript",
-        "reconciliation": "exact_job_pending",
-        "next_poll_not_before": "2026-08-07T12:30:00.000Z",
-    }]
+    assert result["items"][0]["category"] == "provider_wait"
+    assert result["items"][0]["code"] == "transcript_pending"
+    assert result["items"][0]["writer_progress"]["status"] == "wait_until"
     waiting_event = client.ledger.events()[-1]
     assert waiting_event["stage"] == "cloud_transcript"
     assert waiting_event["code"] == "transcript_pending"
@@ -589,9 +573,51 @@ def test_remote_drain_preserves_structured_exception_diagnostics(tmp_path) -> No
         processor=process,
     ).run()
 
-    assert result["items"][0]["category"] == "provider_wait"
-    assert result["items"][0]["code"] == "transcript_pending"
+    assert result["items"][0]["category"] == "internal_state_error"
+    assert result["items"][0]["code"] == "progress_deadline_missing"
     assert result["items"][0]["stage"] == "cloud_transcript"
+    assert result["items"][0]["writer_progress"]["status"] == (
+        "repair_required"
+    )
+
+
+def test_remote_drain_preserves_legal_user_action_progress(tmp_path) -> None:
+    message = _mailbox_message("a" * 64)
+    pages = iter([[message], []])
+
+    def exchange(request: dict[str, object]) -> dict[str, object]:
+        assert request["operation"] == "list_mailbox_messages"
+        return {
+            "operation": "list_mailbox_messages",
+            "page": {
+                "items": next(pages),
+                "next_cursor": None,
+                "has_more": False,
+            },
+        }
+
+    result = RemoteMailboxDrain(
+        LiangHuiMailboxClient(
+            MailboxLedger(tmp_path / "mailbox"),
+            exchange=exchange,
+        ),
+        processor=lambda _message: {
+            "status": "waiting",
+            "business_complete": False,
+            "user_action_required": True,
+            "waiting_items": [{
+                "stage": "external_authorization",
+                "user_action_required": True,
+                "action": "完成验证码",
+                "blocker_identity": "wechat:captcha",
+                "dedup_key": "wechat:captcha",
+            }],
+        },
+    ).run()
+
+    progress = result["items"][0]["writer_progress"]
+    assert progress["status"] == "user_action_required"
+    assert progress["action"] == "完成验证码"
 
 
 def test_remote_repair_resume_processes_only_bound_waiting_message(

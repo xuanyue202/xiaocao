@@ -72,6 +72,8 @@ from xiaocao.kol.writer_progress import (
     ProgressContractError,
     RepairValidationLedger,
     RepairValidationService,
+    RolloutReadback,
+    normalize_source_result,
     resolve_repository_revision,
     WriterProgress,
 )
@@ -913,6 +915,94 @@ def _sender(title: str, body: str) -> dict[str, str]:
     if not isinstance(result, dict):
         raise DailyError("KOL notification relay returned an invalid result")
     return {str(key): str(value) for key, value in result.items()}
+
+
+def _standalone_writer_result(adapter: str, runner) -> dict[str, Any]:
+    """Keep manual source/maintenance commands on the writer contract."""
+
+    user_action: dict[str, str] | None = None
+    try:
+        outcome = runner()
+    except UserActionBlocker as exc:
+        identity = f"{adapter}:source"
+        user_action = {
+            "action": exc.action,
+            "blocker_identity": f"{adapter}:{exc.blocker_key}",
+            "dedup_key": f"{adapter}:{exc.blocker_key}",
+        }
+        outcome = {
+            "status": "waiting",
+            "user_action_required": True,
+            "waiting_count": 1,
+            "waiting_items": [{
+                "identity": identity,
+                "stage": "external_authorization",
+                "user_action_required": True,
+                **user_action,
+            }],
+        }
+    except SemanticInputUnavailable as exc:
+        outcome = {
+            "status": "waiting",
+            "waiting_count": 1,
+            "waiting_items": [exc.request] if exc.request else [{
+                "stage": "semantic_input",
+                "failure": {
+                    "category": "input_error",
+                    "code": "semantic_input_unavailable",
+                    "stage": "semantic_input",
+                    "retryable": True,
+                },
+            }],
+        }
+    except EnrichmentDiagnosticError as exc:
+        outcome = {
+            "status": "waiting",
+            "failure": {
+                "category": exc.diagnostic_category,
+                "code": exc.diagnostic_code,
+                "stage": exc.diagnostic_stage,
+                "retryable": True,
+            },
+        }
+    except EnrichmentError:
+        outcome = {
+            "status": "waiting",
+            "failure": {
+                "category": "source_error",
+                "code": "standalone_source_error",
+                "stage": "source_run",
+                "retryable": True,
+            },
+        }
+    except Exception:
+        outcome = {
+            "status": "waiting",
+            "failure": {
+                "category": "code_error",
+                "code": "standalone_runner_exception",
+                "stage": "standalone_run",
+                "retryable": True,
+            },
+        }
+    if not isinstance(outcome, dict):
+        outcome = {
+            "status": "waiting",
+            "failure": {
+                "category": "schema_error",
+                "code": "standalone_result_invalid",
+                "stage": "standalone_run",
+                "retryable": True,
+            },
+        }
+    progress = normalize_source_result(
+        adapter,
+        outcome,
+        failure_revision=_writer_failure_revision(),
+        provider_contract_version="xiaocao_writer_v1",
+        user_action=user_action,
+    )
+    return {**outcome, "writer_progress": progress.to_dict()}
 
 
 def _classified_source(name: str, runner):
@@ -2634,6 +2724,8 @@ def main() -> int:
             "validate-repair",
             "status",
             "audit",
+            "convergence-report",
+            "rollout-readback",
         ),
     )
     parser.add_argument("--config", type=Path, default=Path("xiaocao.yaml"))
@@ -2662,6 +2754,8 @@ def main() -> int:
     )
     parser.add_argument("--mailbox-message-id")
     parser.add_argument("--repair-revision")
+    parser.add_argument("--period-start")
+    parser.add_argument("--period-end")
     parser.add_argument(
         "--wechat-official-publisher",
         dest="wechat_official_publishers",
@@ -2703,12 +2797,20 @@ def main() -> int:
         )
         return 0
     if args.command == "process-wechat-official":
-        result = DailyRuntime(args).wechat_official()
+        runtime = DailyRuntime(args)
+        result = _standalone_writer_result(
+            "wechat_official_accounts",
+            runtime.wechat_official,
+        )
         if result.get("status") != "no_update":
             _print(result)
         return 0
     if args.command == "process-xiaocao-handoff":
-        result = DailyRuntime(args).xiaocao()
+        runtime = DailyRuntime(args)
+        result = _standalone_writer_result(
+            "xiaocao_handoff",
+            runtime.xiaocao,
+        )
         if result.get("status") != "no_update":
             _print(result)
         return 0
@@ -2752,6 +2854,34 @@ def main() -> int:
             args.wechat_official_output_dir
         ).status()
         _print(value)
+        return 0
+    if args.command == "convergence-report":
+        _print(service.convergence_report(
+            period_start=args.period_start,
+            period_end=args.period_end,
+        ))
+        return 0
+    if args.command == "rollout-readback":
+        try:
+            payload = json.loads(sys.stdin.readline())
+        except json.JSONDecodeError as exc:
+            raise DailyError(
+                "rollout-readback requires one JSON object on stdin"
+            ) from exc
+        if not isinstance(payload, dict) or set(payload) != {
+            "readback",
+            "baseline",
+            "slot",
+        }:
+            raise DailyError(
+                "rollout-readback requires readback, baseline, and slot"
+            )
+        receipt = service.convergence.record_rollout_readback(
+            RolloutReadback.from_dict(payload["readback"]),
+            slot=str(payload["slot"]),
+            baseline=payload["baseline"],
+        )
+        _print({"rollout_readback": receipt})
         return 0
     if args.command == "capture-local":
         runtime = DailyRuntime.__new__(DailyRuntime)
@@ -2828,7 +2958,10 @@ def main() -> int:
         return 0
     if args.command == "viewpoints":
         runtime = DailyRuntime(args)
-        result = runtime.viewpoints()
+        result = _standalone_writer_result(
+            "viewpoint_maintenance",
+            runtime.viewpoints,
+        )
         if result.get("status") != "no_update":
             _print(result)
         return 0

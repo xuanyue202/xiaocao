@@ -15,6 +15,7 @@ PYTHONPATH=src .venv/bin/python scripts/kol_daily.py run
 ```bash
 PYTHONPATH=src .venv/bin/python scripts/kol_daily.py status
 PYTHONPATH=src .venv/bin/python scripts/kol_daily.py audit
+PYTHONPATH=src .venv/bin/python scripts/kol_daily.py convergence-report
 ```
 
 Each run is one sweep. A sweep with no concrete item is silent.
@@ -32,6 +33,13 @@ claims/receipts, patch regressions, validate, commit, and push without user WIP.
 the same stdin when possible. If it exited, never run `run` twice for one slot;
 recheck peers/receipts and use `resume-mailbox` for only the repaired message.
 After matching repair closure, run only `narrow_resume_surface`.
+
+Every source result must carry the seven-state `writer_progress` object. A raw
+`waiting` result without an immutable provider `next_poll_not_before` is an
+internal contract failure and becomes `repair_required`; known diagnostic
+exceptions never manufacture an hourly `wait_until` or a user blocker. Provider
+deadlines, authentication/CAPTCHA, and uncertain external effects retain their
+own legal progress states.
 
 This machine is the only KOL writer. It consumes Xiaocao `scope=post_handoff`
 capsules and URL-only `wechat_official_article` capsules from LiangHuiMCP. The
@@ -107,24 +115,30 @@ Missing/changed/acked/unavailable targets fail closed pre-processor.
 Provider waits may reuse a revision only after their durable TZ-aware
 poll deadline is due; reconcile uncertain effects before retry.
 
-For an official item, run installed OpenCLI once: `weixin download`, images,
-background Chrome, and JSON. Require an item-local file, exact
-publisher/title/time, complete UTF-8 body/images, bytes, and hashes.
-Combine OpenCLI's verification UI/path/node signals with `请输入验证码`; CAPTCHA
-stops for same-session verification without HTTP/MCP retry.
+`convergence-report` is the credential-safe daily report. It aggregates stable
+failure codes, repair required/closed and same-root recurrence, generic waits,
+internal user dependency, peer-gate attempts/latency, runner starts,
+side-effect reconciliation, duplicate-effect audits, scheduled/clean/business
+slots, and explicit exclusions. It reads append-only ledgers and never deletes
+or rewrites a failed slot. A first rollout may be recorded only after the
+authoritative single-writer readback proves one writer, the target revision,
+protected WIP, dependencies/private config/restored state, and Automation
+ownership:
 
-The no-MCP capture rule bans capture retrieval beyond OpenCLI. After read-only
-exact-receipt reconciliation, the repository-designated LiangHui client is
-allowed only for authorized context, publication, reminders, and receipts.
-Resolve conflicts from business invariants; ask only for auth/consent/CAPTCHA,
-new authority, or materially incompatible business outcomes.
+```bash
+PYTHONPATH=src .venv/bin/python scripts/kol_daily.py rollout-readback
+```
 
-For an imported Xiaocao handoff, reconcile the exact `handoff_id` and media
-SHA-256 before advancing. Latest Xiaocao or Lv content is incomplete until its
-identity/version has analysis plus a 灰常亮 receipt and stable URL. Preserve the
-concrete stage, reconciliation result, and `next_poll_not_before`; use bounded
-cloud-save/native-click recovery from `full-contract.md` only at the relevant
-provider step.
+The command consumes one credential-safe JSON line on stdin and starts the
+seven-day/50-scheduled-slot stability window only after that readback is
+accepted; it never backfills historical business slots.
+
+At provider steps, use installed OpenCLI once and bind exact identity/version,
+bytes, hashes, and receipts. The no-MCP capture rule permits the
+repository-designated LiangHui client only after read-only exact-receipt
+reconciliation; CAPTCHA/auth/consent or materially incompatible business
+outcomes may ask. Reconcile the exact handoff/media SHA before advancing;
+latest content is incomplete until analysis, 灰常亮 receipt, and stable URL.
 
 ## Semantic loading gate
 
@@ -186,29 +200,14 @@ not create, edit, or assume ownership of the local capture Automation here.
 
 ## Discovery and recovery
 
-Reuse the configured Lv share, `/课程/路西法全套`, Xiaocao handoffs, and their
-receipts. One sweep reuses one complete recursive Lv listing; validate every
-identity/version/path/name/size/target and advance the cursor only after the
-full scan. Parent mtime or incidental `已失效` text is not proof.
-
-Discovery-only OpenCLI failures may reopen and retry one full read. Preserve
-safe `category/code/stage`; authority ends before any side effect. Reconcile
-claims and isolate failures without replay. Apply `full-contract.md` PDF
-precedence, owner-copy, OCR, and claim-routing rules only when that item reaches
-the relevant stage. Unsafe or ambiguous evidence fails closed.
-
-Route Lv claims, not media types: `会员直播` follows current event gates;
-reusable `底层逻辑` is normally report-only `authority=0` knowledge with no Book
-row. Mixed claims stay one report and only current claims authorize effects.
-
-Put new-publication, due-horizon, material fact, or user currentness requests in
-`output/live/kol_daily/viewpoint_triggers/*.json`; maintenance uses CAS and
-creates no reminder or Book action.
-Use `operation=initial_projection` plus `trigger=user_request` only for a
-reviewed report-only history that still has no viewpoints. Run
-`PYTHONPATH=src .venv/bin/python scripts/kol_daily.py viewpoints` to process
-only these maintenance triggers without scanning sources. It must preserve the
-stable report URL and prior manifest, and it never creates a reminder or Book
+Reuse the configured Lv share, `/课程/路西法全套`, handoffs, and receipts. One
+sweep reuses one complete recursive listing and validates identity/version/
+path/name/size/target before advancing. Preserve safe diagnostics, reconcile
+claims without replay, and fail closed on ambiguous evidence. Maintenance uses
+new-publication, due-horizon, material fact, or user currentness CAS triggers
+under `output/live/kol_daily/viewpoint_triggers/`; run
+`PYTHONPATH=src .venv/bin/python scripts/kol_daily.py viewpoints` only for those
+triggers, preserving the stable report URL/manifest with no reminder or Book
 action.
 
 The append-only ledger resumes without resending. Report every concrete item,

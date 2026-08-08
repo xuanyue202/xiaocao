@@ -8,10 +8,15 @@ import os
 import re
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any, Callable, Mapping
 
 from .enrichment_types import EnrichmentDiagnosticError, EnrichmentError
-from .writer_progress import FailureFingerprint
+from .writer_progress import (
+    FailureFingerprint,
+    ProgressContractError,
+    WriterProgress,
+    resolve_repository_revision,
+)
 
 
 MAILBOX_ID = "kol.handoff"
@@ -26,6 +31,14 @@ _OBJECT_PREFIX = {"article": "文章", "video": "视频"}
 
 class MailboxError(EnrichmentError):
     """The mailbox request, response, or ledger could not be proved."""
+
+
+def _empty_claim_receipt_summary() -> dict[str, int]:
+    return {
+        "claim_count": 0,
+        "receipt_count": 0,
+        "uncertain_effect_count": 0,
+    }
 
 
 def _canonical(value: Any) -> str:
@@ -815,7 +828,7 @@ class RemoteMailboxDrain:
         result: Any,
         *,
         failure_revision: str | None = None,
-    ) -> dict[str, str]:
+    ) -> dict[str, Any]:
         source = result if isinstance(result, dict) else {}
         waiting_items = source.get("waiting_items")
         if (
@@ -824,13 +837,16 @@ class RemoteMailboxDrain:
             and isinstance(waiting_items[0], dict)
         ):
             source = {**source, **waiting_items[0]}
-        details: dict[str, str] = {}
+        details: dict[str, Any] = {}
         for key in (
             "category",
             "code",
             "stage",
             "reconciliation",
             "next_poll_not_before",
+            "action",
+            "blocker_identity",
+            "dedup_key",
         ):
             value = source.get(key)
             if (
@@ -841,11 +857,23 @@ class RemoteMailboxDrain:
                 and "\r" not in value
             ):
                 details[key] = value
+        if source.get("user_action_required") is True:
+            details["user_action_required"] = True
         if not details:
             details = {
-                "category": "processor_wait",
-                "code": str(source.get("status") or "incomplete_result")[:80],
+                "category": "processor_error",
+                "code": "processor_result_incomplete",
                 "stage": "business_processing",
+            }
+        if (
+            details.get("category") == "provider_wait"
+            and not details.get("next_poll_not_before")
+            and details.get("user_action_required") is not True
+        ):
+            details = {
+                **details,
+                "category": "internal_state_error",
+                "code": "progress_deadline_missing",
             }
         progress = source.get("writer_progress")
         if isinstance(progress, dict) and progress.get("status") == "repair_required":
@@ -860,6 +888,7 @@ class RemoteMailboxDrain:
         if (
             failure_revision
             and details.get("category") != "provider_wait"
+            and details.get("user_action_required") is not True
             and "failure_fingerprint" not in details
         ):
             try:
@@ -875,6 +904,115 @@ class RemoteMailboxDrain:
             except (TypeError, ValueError):
                 details.pop("failure_revision", None)
         return details
+
+    def _waiting_progress(
+        self,
+        message: Mapping[str, Any],
+        result: Any,
+        details: Mapping[str, Any],
+    ) -> WriterProgress:
+        raw_progress = result.get("writer_progress") if isinstance(result, dict) else None
+        if isinstance(raw_progress, Mapping):
+            return WriterProgress.from_dict(raw_progress)
+        summary = (
+            result.get("claim_receipt_summary")
+            if isinstance(result, dict)
+            else None
+        )
+        if not isinstance(summary, Mapping):
+            summary = _empty_claim_receipt_summary()
+        if (
+            details.get("user_action_required") is True
+            and all(
+                isinstance(details.get(key), str) and details.get(key)
+                for key in ("action", "blocker_identity", "dedup_key")
+            )
+        ):
+            return WriterProgress.user_action_required(
+                item_identity=str(message["message_id"]),
+                stage=str(details.get("stage") or "business_processing"),
+                action=str(details.get("action") or ""),
+                blocker_identity=str(details.get("blocker_identity") or ""),
+                dedup_key=str(details.get("dedup_key") or ""),
+                claim_receipt_summary=summary,
+            )
+        revision = self.failure_revision
+        if revision is None:
+            try:
+                revision = resolve_repository_revision(Path(__file__).parents[3])
+            except ProgressContractError as exc:
+                raise MailboxError(
+                    "mailbox processor failure revision is unavailable"
+                ) from exc
+        item_identity = str(message["message_id"])
+        if (
+            details.get("category") == "provider_wait"
+            and details.get("next_poll_not_before")
+        ):
+            attempted = int((result or {}).get("trigger_attempt") or 1) if isinstance(result, dict) else 1
+            return WriterProgress.wait_until(
+                item_identity=item_identity,
+                category=str(details["category"]),
+                code=str(details["code"]),
+                stage=str(details["stage"]),
+                deadline=str(details["next_poll_not_before"]),
+                attempt_budget={"attempted": attempted, "maximum": max(3, attempted)},
+                claim_receipt_summary=summary,
+            )
+        fingerprint = FailureFingerprint(
+            adapter="mailbox",
+            category=str(details["category"]),
+            code=str(details["code"]),
+            stage=str(details["stage"]),
+            failure_revision=str(revision),
+            provider_contract_version="lianghui_mailbox_v1",
+        )
+        return WriterProgress.repair_required(
+            item_identity=item_identity,
+            fingerprint=fingerprint,
+            repair_revision=None,
+            affected_set_digest=hashlib.sha256(
+                json.dumps(
+                    [{"identity": item_identity, "version_key": "current"}],
+                    sort_keys=True,
+                    separators=(",", ":"),
+                ).encode("utf-8")
+            ).hexdigest(),
+            claim_receipt_summary=summary,
+            targeted_test_profile="kol_mailbox_exact_resume",
+            narrow_resume_surface=f"mailbox:{item_identity}",
+            retryability="retryable",
+        )
+
+    @staticmethod
+    def _terminal_progress(
+        message: Mapping[str, Any],
+        result: Any,
+    ) -> WriterProgress:
+        raw_progress = result.get("writer_progress") if isinstance(result, dict) else None
+        if isinstance(raw_progress, Mapping):
+            progress = WriterProgress.from_dict(raw_progress)
+            if progress.status != "terminal":
+                raise MailboxError("completed mailbox result has non-terminal progress")
+            return progress
+        summary = result.get("claim_receipt_summary") if isinstance(result, dict) else None
+        if not isinstance(summary, Mapping):
+            summary = _empty_claim_receipt_summary()
+        effect_count = result.get("new_external_effect_count", 0) if isinstance(result, dict) else 0
+        if isinstance(effect_count, bool) or not isinstance(effect_count, int) or effect_count < 0:
+            raise MailboxError("completed mailbox result has invalid effect count")
+        return WriterProgress.terminal(
+            item_identity=str(message["message_id"]),
+            stage="mailbox_ack",
+            content_terminal="completed",
+            gray_report_terminal="not_applicable",
+            reminder_terminal="not_applicable",
+            book_terminal="not_applicable",
+            knowledge_terminal="not_applicable",
+            ack_status="acked",
+            new_external_effect_count=effect_count,
+            claim_receipt_summary=summary,
+        )
 
     def run(
         self,
@@ -974,6 +1112,8 @@ class RemoteMailboxDrain:
                         details,
                         failure_revision=self.failure_revision,
                     )
+                    progress = self._waiting_progress(message, {}, details)
+                    details["writer_progress"] = progress.to_dict()
                     self.client.ledger.append(
                         "mailbox_message_waiting",
                         occurred_at=_utc_now(self.client.now),
@@ -996,6 +1136,8 @@ class RemoteMailboxDrain:
                         result,
                         failure_revision=self.failure_revision,
                     )
+                    progress = self._waiting_progress(message, result, details)
+                    details["writer_progress"] = progress.to_dict()
                     self.client.ledger.append(
                         "mailbox_message_waiting",
                         occurred_at=_utc_now(self.client.now),
@@ -1010,12 +1152,14 @@ class RemoteMailboxDrain:
                         **details,
                     })
                     continue
+                terminal_progress = self._terminal_progress(message, result)
                 self.client.ack_message(message)
                 acked.append(message_id)
                 items.append({
                     "object": str(message["subject"]),
                     "status": "全部完成",
                     "handoff_id": message_id,
+                    "writer_progress": terminal_progress.to_dict(),
                 })
             if only_message_id is not None:
                 return {

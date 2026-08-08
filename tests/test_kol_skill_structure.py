@@ -63,6 +63,9 @@ def test_kol_skill_owns_safe_self_repair_before_user_escalation() -> None:
         "matching repair closure",
         "narrow_resume_surface",
         "repository defect is never by itself `user_action_required`",
+        "raw `waiting` result without an immutable provider",
+        "convergence-report",
+        "rollout-readback",
     ):
         assert marker in hourly
     for marker in (
@@ -315,6 +318,7 @@ def test_kol_skill_has_one_ticket07_scheduled_runner() -> None:
         "scripts/kol_daily.py run",
         "scripts/kol_daily.py status",
         "scripts/kol_daily.py audit",
+        "scripts/kol_daily.py convergence-report",
         "RRULE:FREQ=DAILY;BYHOUR=7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23;BYMINUTE=30",
         "omit `DTSTART` and `TZID`",
         "/课程/路西法全套",
@@ -458,6 +462,9 @@ def test_remote_writer_guards_active_peer_and_drains_each_message_once() -> None
         "get_mailbox_message",
         "validate-repair",
         "repairvalidationreceipt",
+        "generic waits",
+        "duplicate-effect audits",
+        "seven-day/50-scheduled-slot",
         "全部完成",
     ):
         assert marker in remote

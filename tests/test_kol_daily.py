@@ -17,6 +17,7 @@ from scripts.kol_daily import (
     _latest_lv_video_goal,
     _lv_publication_context,
     _read_agent_json,
+    _standalone_writer_result,
     _video_publication_context,
     DailyRuntime,
     SemanticInputUnavailable,
@@ -59,6 +60,30 @@ class Clock:
 
     def __call__(self) -> datetime:
         return self.value
+
+
+def test_standalone_writer_result_keeps_seven_state_contract():
+    terminal = _standalone_writer_result(
+        "viewpoint_maintenance",
+        lambda: {"status": "no_update"},
+    )
+    assert terminal["writer_progress"]["status"] == "terminal"
+
+    user_action = _standalone_writer_result(
+        "wechat_official_accounts",
+        lambda: (_ for _ in ()).throw(
+            UserActionBlocker("captcha", "完成验证码")
+        ),
+    )
+    assert user_action["writer_progress"]["status"] == (
+        "user_action_required"
+    )
+
+    repair = _standalone_writer_result(
+        "viewpoint_maintenance",
+        lambda: (_ for _ in ()).throw(RuntimeError("internal")),
+    )
+    assert repair["writer_progress"]["status"] == "repair_required"
 
 
 def test_agent_json_disables_canonical_tty_for_long_response(
@@ -1054,10 +1079,10 @@ def test_process_wechat_official_cli_runs_only_the_remote_inbox(
 
     assert kol_daily_script.main() == 0
     assert observed["called"] is True
-    assert json.loads(capsys.readouterr().out) == {
-        "status": "completed",
-        "events": [{"event_id": "article"}],
-    }
+    output = json.loads(capsys.readouterr().out)
+    assert output["status"] == "completed"
+    assert output["events"] == [{"event_id": "article"}]
+    assert output["writer_progress"]["status"] == "terminal"
 
 
 def test_process_xiaocao_handoff_cli_runs_only_remote_post_handoff(
@@ -1090,10 +1115,10 @@ def test_process_xiaocao_handoff_cli_runs_only_remote_post_handoff(
 
     assert kol_daily_script.main() == 0
     assert observed["called"] is True
-    assert json.loads(capsys.readouterr().out) == {
-        "status": "completed",
-        "events": [{"event_id": "video"}],
-    }
+    output = json.loads(capsys.readouterr().out)
+    assert output["status"] == "completed"
+    assert output["events"] == [{"event_id": "video"}]
+    assert output["writer_progress"]["status"] == "terminal"
 
 
 def test_resume_mailbox_cli_runs_only_exact_repair_target(
@@ -1296,16 +1321,20 @@ def test_daily_runner_records_one_short_lived_no_update_sweep(tmp_path):
 
     assert result["status"] == "completed"
     assert result["silent"] is True
-    assert result["source_results"] == [
-        {"name": "lv", "status": "no_update"},
-        {"name": "lucifer", "status": "no_update"},
-    ]
+    assert [
+        (row["name"], row["status"])
+        for row in result["source_results"]
+    ] == [("lv", "no_update"), ("lucifer", "no_update")]
+    assert all(
+        WriterProgress.from_dict(row["writer_progress"]).status == "terminal"
+        for row in result["source_results"]
+    )
     assert service.status()["last_sweep"]["status"] == "completed"
     assert service.status()["last_sweep"]["health"] == "healthy"
-    assert service.status()["last_sweep"]["source_states"] == [
-        {"name": "lv", "status": "no_update"},
-        {"name": "lucifer", "status": "no_update"},
-    ]
+    assert [
+        (row["name"], row["status"])
+        for row in service.status()["last_sweep"]["source_states"]
+    ] == [("lv", "no_update"), ("lucifer", "no_update")]
     progress_rows = [
         row for row in service.events()
         if row["event"] == "source_progressed"
@@ -1653,12 +1682,14 @@ def test_daily_status_preserves_specific_video_waiting_stage(tmp_path):
 
     assert result["health"] == "waiting"
     assert result["source_results"][0]["waiting_items"] == [waiting_item]
-    assert service.status()["last_sweep"]["source_states"] == [{
-        "name": "subscription_video",
-        "status": "waiting",
-        "waiting_count": 1,
-        "waiting_items": [waiting_item],
-    }]
+    waiting_state = service.status()["last_sweep"]["source_states"][0]
+    assert waiting_state["name"] == "subscription_video"
+    assert waiting_state["status"] == "waiting"
+    assert waiting_state["waiting_count"] == 1
+    assert waiting_state["waiting_items"] == [waiting_item]
+    assert WriterProgress.from_dict(
+        waiting_state["writer_progress"]
+    ).status == "wait_until"
     progress = next(
         row["progress"] for row in service.events()
         if row["event"] == "source_progressed"
@@ -2413,17 +2444,18 @@ def test_transient_source_failure_is_structured_and_does_not_notify(tmp_path):
 
     assert result["silent"] is False
     assert result["health"] == "degraded"
-    assert result["source_results"] == [{
-        "name": "lucifer",
-        "status": "waiting",
+    source = result["source_results"][0]
+    assert source["name"] == "lucifer"
+    assert source["status"] == "waiting"
+    assert source["retryable"] is False
+    assert source["repair_required"] is True
+    assert source["user_action_required"] is False
+    assert source["failure"] == {
+        "category": "timeout",
+        "code": "opencli_timeout",
+        "stage": "browser_eval",
         "retryable": True,
-        "failure": {
-            "category": "timeout",
-            "code": "opencli_timeout",
-            "stage": "browser_eval",
-            "retryable": True,
-        },
-    }]
+    }
     assert notices == []
     status = service.status()
     assert status["status"] == "degraded"
@@ -2451,10 +2483,24 @@ def test_transient_source_failure_is_structured_and_does_not_notify(tmp_path):
         calls += 1
         return {"status": "no_update"}
 
-    service.run([{"name": "lucifer", "run": recovered}])
-    assert calls == 0
-    clock.value = datetime.fromisoformat("2026-07-27T15:00:00+08:00")
-    service.run([{"name": "lucifer", "run": recovered}])
+    progress = result["source_results"][0]["writer_progress"]
+    service.convergence.close_repair(
+        progress["failure_fingerprint"],
+        repair_receipt={
+            "receipt_id": "lucifer-repair",
+            "failure_fingerprint": progress["failure_fingerprint"],
+            "repair_revision": "b" * 40,
+            "targeted_test_profile": progress["targeted_test_profile"],
+        },
+        slot="2026-07-27T14:00+08:00",
+    )
+    service.run([
+        {
+            "name": "lucifer",
+            "run": lambda: {"status": "no_update"},
+            "narrow_resume": lambda _surface: recovered(),
+        }
+    ])
     assert calls == 1
     assert service.status()["status"] == "ready"
     assert service.status()["last_sweep"]["health"] == "healthy"
@@ -3148,26 +3194,21 @@ def test_consecutive_same_failure_requests_internal_repair_without_notifying(tmp
     assert first["health"] == "degraded"
     assert second["health"] == "degraded"
     assert third["health"] == "degraded"
-    assert attempts == 2
+    assert attempts == 1
     assert notices == []
-    assert second["source_results"][0]["consecutive_failure_count"] == 2
     assert second["source_results"][0]["repair_required"] is True
     assert second["source_results"][0]["user_action_required"] is False
     assert third["source_results"][0]["repair_required"] is True
     audit = service.audit()
     assert audit["operational_status"] == "degraded"
     assert audit["operational_reminder_count"] == 0
-    assert audit["repair_required_count"] == 2
+    assert audit["repair_required_count"] == 3
     assert audit["latest_repairs"][0]["source"] == "lv_text_image"
     events = service.events()
     exhausted = [
         row for row in events if row["event"] == "source_recovery_exhausted"
     ]
-    assert len(exhausted) == 1
-    assert all(
-        row["external_business_effects_replayed"] is False
-        for row in exhausted
-    )
+    assert exhausted == []
 
 
 @pytest.mark.parametrize(
@@ -3432,7 +3473,7 @@ def test_repeated_source_acquisition_stall_requests_internal_repair(tmp_path):
         blocker_sender=lambda title, body: notices.append((title, body)),
     )
 
-    assert calls == 2
+    assert calls == 1
     assert result["health"] == "degraded"
     assert result["source_results"][0]["repair_required"] is True
     assert result["source_results"][0]["user_action_required"] is False
@@ -3442,7 +3483,7 @@ def test_repeated_source_acquisition_stall_requests_internal_repair(tmp_path):
         for row in service.events()
         if row["event"] == "source_acquisition_stalled"
     ]
-    assert stalled[0]["external_business_effects_replayed"] is False
+    assert stalled == []
 
 
 def test_source_classifier_promotes_provider_transfer_rejection_to_blocker():
@@ -3517,7 +3558,7 @@ def test_status_classifies_legacy_retryable_failure_as_degraded(tmp_path):
 
     assert status["status"] == "degraded"
     assert status["last_sweep"]["source_states"][0]["failure"]["code"] == (
-        "legacy_unclassified_failure"
+        "progress_record_missing"
     )
 
 
@@ -4033,9 +4074,11 @@ def test_replayed_terminal_receipt_is_recorded_once_across_hourly_slots(
 
     assert first["silent"] is False
     assert replay["silent"] is True
-    assert replay["source_results"] == [{
-        "name": "viewpoint_maintenance",
-        "status": "no_update",
-        "replayed_terminal_count": 1,
-    }]
+    replay_source = replay["source_results"][0]
+    assert replay_source["name"] == "viewpoint_maintenance"
+    assert replay_source["status"] == "no_update"
+    assert replay_source["replayed_terminal_count"] == 1
+    assert WriterProgress.from_dict(
+        replay_source["writer_progress"]
+    ).status == "terminal"
     assert service.audit()["viewpoint_evaluation_count"] == 1

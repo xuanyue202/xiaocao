@@ -8,7 +8,7 @@ from xiaocao.kol.writer_progress import (
     ConvergenceLedger,
     FailureFingerprint,
     ProgressContractError,
-    project_source_outcome,
+    normalize_source_result,
     WriterProgress,
 )
 
@@ -310,7 +310,7 @@ def test_legacy_source_results_project_through_unified_progress(
     outcome,
     expected_status,
 ):
-    progress = project_source_outcome(
+    progress = normalize_source_result(
         "lv_text_image",
         outcome,
         failure_revision=FAILURE_REVISION,
@@ -322,7 +322,7 @@ def test_legacy_source_results_project_through_unified_progress(
 
 
 def test_projected_repair_resumes_only_the_exact_waiting_item():
-    progress = project_source_outcome(
+    progress = normalize_source_result(
         "wechat_official_accounts",
         {
             "status": "waiting",
@@ -348,7 +348,7 @@ def test_projected_repair_resumes_only_the_exact_waiting_item():
 
 
 def test_uncertain_effect_without_exact_claim_binding_is_agent_repair():
-    progress = project_source_outcome(
+    progress = normalize_source_result(
         "subscription_video",
         {
             "status": "waiting",
@@ -372,6 +372,26 @@ def test_uncertain_effect_without_exact_claim_binding_is_agent_repair():
     assert progress.failure["code"] == (
         "uncertain_effect_lacks_readback_binding"
     )
+
+
+def test_source_wait_without_durable_deadline_becomes_repair_required():
+    progress = normalize_source_result(
+        "lv_text_image",
+        {
+            "status": "waiting",
+            "waiting_items": [{
+                "identity": "item-1",
+                "stage": "source_run",
+            }],
+        },
+        failure_revision=FAILURE_REVISION,
+        provider_contract_version="xiaocao_writer_v1",
+    )
+
+    assert progress.status == "repair_required"
+    assert progress.failure["category"] == "internal_state_error"
+    assert progress.failure["code"] == "progress_deadline_missing"
+    assert progress.ownership == "agent"
 
 
 def test_repair_closure_must_match_required_test_profile(tmp_path):

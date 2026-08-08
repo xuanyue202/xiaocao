@@ -1353,16 +1353,15 @@ def _progress_claim_summary(outcome: Mapping[str, Any]) -> dict[str, int]:
     }
 
 
-def project_source_outcome(
+def normalize_source_result(
     adapter: str,
     outcome: Mapping[str, Any],
     *,
     failure_revision: str,
     provider_contract_version: str,
     user_action: Mapping[str, Any] | None = None,
-    fallback_wait_deadline: str | None = None,
 ) -> WriterProgress:
-    """Project legacy source output through the finite writer state machine."""
+    """Normalize one source result into the finite writer state machine."""
 
     adapter_name = _safe_token(adapter, field_name="adapter")
     raw_progress = outcome.get("writer_progress")
@@ -1446,7 +1445,7 @@ def project_source_outcome(
             claim_receipt_summary=terminal_summary,
         )
     if status != "waiting":
-        raise ProgressContractError("source outcome status cannot be projected")
+        raise ProgressContractError("source result status cannot be normalized")
     waiting_items = outcome.get("waiting_items")
     items = [
         row for row in waiting_items if isinstance(row, Mapping)
@@ -1504,6 +1503,8 @@ def project_source_outcome(
     if not isinstance(failure_value, Mapping) and item is not None:
         failure_value = item.get("failure")
     failure = dict(failure_value) if isinstance(failure_value, Mapping) else {}
+    if not (item or {}).get("stage") and failure.get("stage"):
+        stage = _safe_token(failure["stage"], field_name="stage")
     category = str(
         failure.get("category")
         or (item or {}).get("category")
@@ -1512,7 +1513,7 @@ def project_source_outcome(
     code = str(
         failure.get("code")
         or (item or {}).get("code")
-        or "generic_wait_without_deadline"
+        or "progress_deadline_missing"
     )
     if category == "uncertain_state" or "reconciliation" in stage:
         claim_identity = str((item or {}).get("claim_identity") or "")
@@ -1549,20 +1550,9 @@ def project_source_outcome(
             attempt_budget={"attempted": attempted, "maximum": max(3, attempted)},
             claim_receipt_summary=summary,
         )
-    if (
-        not failure
-        and outcome.get("repair_required") is not True
-        and fallback_wait_deadline is not None
-    ):
-        return WriterProgress.wait_until(
-            item_identity=item_identity,
-            category="provider_wait",
-            code="source_pending",
-            stage=stage,
-            deadline=fallback_wait_deadline,
-            attempt_budget={"attempted": 1, "maximum": 2},
-            claim_receipt_summary=summary,
-        )
+    if not failure and outcome.get("repair_required") is not True:
+        category = "internal_state_error"
+        code = "progress_deadline_missing"
     fingerprint = FailureFingerprint(
         adapter=adapter_name,
         category=_safe_token(category, field_name="category"),
@@ -1644,6 +1634,20 @@ class ConvergenceLedger:
             max_line_bytes=_MAX_LEDGER_LINE_BYTES,
             label="convergence ledger",
             error_factory=ProgressContractError,
+        )
+
+    def report(
+        self,
+        daily_events: list[Mapping[str, Any]],
+        *,
+        period_start: str,
+        period_end: str,
+    ) -> dict[str, Any]:
+        return build_convergence_report(
+            daily_events,
+            self.events(),
+            period_start=period_start,
+            period_end=period_end,
         )
 
     def record(self, progress: WriterProgress, *, slot: str) -> dict[str, Any]:
@@ -1919,3 +1923,471 @@ class ConvergenceLedger:
             ),
             "closed": closed,
         }
+
+    def record_peer_gate(
+        self,
+        audit: Mapping[str, Any],
+        *,
+        slot: str | None = None,
+    ) -> dict[str, Any]:
+        """Persist only credential-safe peer-gate counts and latency."""
+
+        attempt_count = audit.get("attempt_count")
+        if attempt_count is None:
+            attempt_count = int(audit.get("list_attempt_count") or 0) + int(
+                audit.get("read_thread_attempt_count") or 0
+            )
+        elapsed_ms = audit.get("elapsed_ms", 0)
+        if (
+            isinstance(attempt_count, bool)
+            or not isinstance(attempt_count, int)
+            or attempt_count < 0
+            or isinstance(elapsed_ms, bool)
+            or not isinstance(elapsed_ms, int)
+            or elapsed_ms < 0
+        ):
+            raise ProgressContractError("peer gate audit counts are invalid")
+        if slot is not None:
+            _timezone_aware(slot, field_name="slot")
+        with self._locked():
+            return self._append(
+                {
+                    "event": "peer_gate_observed",
+                    "slot": slot,
+                    "attempt_count": attempt_count,
+                    "elapsed_ms": elapsed_ms,
+                    "gate_result": _safe_token(
+                        audit.get("gate_result") or "unknown",
+                        field_name="gate_result",
+                    ),
+                }
+            )
+
+    def record_rollout_readback(
+        self,
+        readback: "RolloutReadback",
+        *,
+        slot: str,
+        baseline: Mapping[str, Any],
+    ) -> dict[str, Any]:
+        """Record the first accepted rollout and its immutable baseline."""
+
+        if not isinstance(readback, RolloutReadback) or not readback.accepted:
+            raise ProgressContractError("rollout readback is not accepted")
+        _timezone_aware(slot, field_name="slot")
+        if not isinstance(baseline, Mapping):
+            raise ProgressContractError("rollout baseline must be an object")
+        safe_baseline = {
+            str(key): value for key, value in baseline.items()
+            if str(key) in {
+                "failure_fingerprints",
+                "repair_required",
+                "repair_closed",
+                "generic_waits",
+                "runner_starts",
+                "side_effect_reconciliations",
+                "duplicate_effect_findings",
+            }
+        }
+        with self._locked():
+            existing = [
+                row for row in self.events()
+                if row.get("event") == "rollout_readback"
+            ]
+            if existing:
+                raise ProgressContractError("rollout readback already recorded")
+            return self._append(
+                {
+                    "event": "rollout_readback",
+                    "slot": slot,
+                    "readback": readback.to_dict(),
+                    "baseline": safe_baseline,
+                    "stability_window_start": slot,
+                }
+            )
+
+
+@dataclass(frozen=True)
+class RolloutReadback:
+    """Credential-safe proof that one writer can own the production rollout."""
+
+    automation_id: str
+    writer_task_id: str
+    target_revision: str
+    active_writer_count: int
+    duplicate_automation_count: int
+    automation_owner: str
+    automation_readback: bool
+    worktree_protected: bool
+    dependencies_ready: bool
+    private_config_ready: bool
+    restored_state_ready: bool
+    schema_version: int = 1
+
+    def __post_init__(self) -> None:
+        if self.schema_version != 1:
+            raise ProgressContractError("rollout readback schema version is unsupported")
+        object.__setattr__(
+            self,
+            "automation_id",
+            _safe_identity(self.automation_id, field_name="automation_id"),
+        )
+        object.__setattr__(
+            self,
+            "writer_task_id",
+            _safe_identity(self.writer_task_id, field_name="writer_task_id"),
+        )
+        object.__setattr__(
+            self,
+            "target_revision",
+            _revision(self.target_revision, field_name="target_revision"),
+        )
+        for field_name in (
+            "active_writer_count",
+            "duplicate_automation_count",
+        ):
+            value = getattr(self, field_name)
+            if isinstance(value, bool) or not isinstance(value, int) or value < 0:
+                raise ProgressContractError(
+                    f"rollout {field_name} must be a non-negative integer"
+                )
+        if self.automation_owner != self.automation_id:
+            raise ProgressContractError("rollout automation ownership does not match")
+        if self.active_writer_count != 1:
+            raise ProgressContractError("rollout requires exactly one active writer")
+        if self.duplicate_automation_count != 0:
+            raise ProgressContractError("rollout cannot have duplicate automations")
+        if not all(
+            value is True
+            for value in (
+                self.automation_readback,
+                self.worktree_protected,
+                self.dependencies_ready,
+                self.private_config_ready,
+                self.restored_state_ready,
+            )
+        ):
+            raise ProgressContractError("rollout readback is incomplete")
+
+    @property
+    def accepted(self) -> bool:
+        return True
+
+    @classmethod
+    def from_dict(cls, value: Mapping[str, Any]) -> "RolloutReadback":
+        if not isinstance(value, Mapping):
+            raise ProgressContractError("rollout readback must be an object")
+        required = {
+            "schema_version",
+            "automation_id",
+            "writer_task_id",
+            "target_revision",
+            "active_writer_count",
+            "duplicate_automation_count",
+            "automation_owner",
+            "automation_readback",
+            "worktree_protected",
+            "dependencies_ready",
+            "private_config_ready",
+            "restored_state_ready",
+        }
+        missing = sorted(required - set(value))
+        extra = sorted(set(value) - required)
+        if missing:
+            raise ProgressContractError(
+                f"rollout readback lacks {', '.join(missing)}"
+            )
+        if extra:
+            raise ProgressContractError(
+                f"rollout readback contains unsupported field {', '.join(extra)}"
+            )
+        return cls(**{name: value[name] for name in required})
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "schema_version": self.schema_version,
+            "automation_id": self.automation_id,
+            "writer_task_id": self.writer_task_id,
+            "target_revision": self.target_revision,
+            "active_writer_count": self.active_writer_count,
+            "duplicate_automation_count": self.duplicate_automation_count,
+            "automation_owner": self.automation_owner,
+            "automation_readback": self.automation_readback,
+            "worktree_protected": self.worktree_protected,
+            "dependencies_ready": self.dependencies_ready,
+            "private_config_ready": self.private_config_ready,
+            "restored_state_ready": self.restored_state_ready,
+        }
+
+
+def _report_timestamp(value: Any, *, field_name: str) -> datetime:
+    raw = _timezone_aware(value, field_name=field_name)
+    return datetime.fromisoformat(raw.replace("Z", "+00:00"))
+
+
+def _report_in_period(row: Mapping[str, Any], start: datetime, end: datetime) -> bool:
+    raw = row.get("occurred_at") or row.get("slot")
+    if not raw:
+        return True
+    try:
+        value = _report_timestamp(raw, field_name="event timestamp")
+    except ProgressContractError:
+        return False
+    return start <= value <= end
+
+
+def _report_at_or_before(row: Mapping[str, Any], end: datetime) -> bool:
+    raw = row.get("occurred_at") or row.get("slot")
+    if not raw:
+        return True
+    try:
+        return _report_timestamp(raw, field_name="event timestamp") <= end
+    except ProgressContractError:
+        return False
+
+
+def build_convergence_report(
+    daily_events: list[Mapping[str, Any]],
+    convergence_events: list[Mapping[str, Any]],
+    *,
+    period_start: str,
+    period_end: str,
+) -> dict[str, Any]:
+    """Build a credential-safe daily convergence report from append-only rows."""
+
+    start = _report_timestamp(period_start, field_name="period_start")
+    end = _report_timestamp(period_end, field_name="period_end")
+    if start > end:
+        raise ProgressContractError("period_start must not be after period_end")
+    daily = [
+        row for row in daily_events
+        if isinstance(row, Mapping) and _report_in_period(row, start, end)
+    ]
+    convergence = [
+        row for row in convergence_events
+        if isinstance(row, Mapping) and _report_in_period(row, start, end)
+    ]
+    all_daily = [
+        row
+        for row in daily_events
+        if isinstance(row, Mapping) and _report_at_or_before(row, end)
+    ]
+    all_convergence = [
+        row
+        for row in convergence_events
+        if isinstance(row, Mapping) and _report_at_or_before(row, end)
+    ]
+    scheduled_slots = {
+        str(row.get("slot"))
+        for row in daily
+        if row.get("event") == "sweep_completed" and row.get("slot")
+    }
+    clean_slots = {
+        str(row.get("slot"))
+        for row in daily
+        if row.get("event") == "sweep_completed"
+        and row.get("health") == "healthy"
+        and row.get("slot")
+    }
+    business_slots: set[str] = set()
+    failure_codes: dict[str, int] = {}
+    internal_categories = {
+        "code_error",
+        "schema_error",
+        "environment_error",
+        "provider_contract_error",
+        "control_plane_handler_error",
+        "local_runtime_error",
+        "protocol_error",
+        "internal_state_error",
+    }
+    internal_user_dependency = 0
+    generic_waits = 0
+    for row in daily:
+        if row.get("event") != "sweep_completed":
+            continue
+        slot = str(row.get("slot") or "")
+        for state in row.get("source_states") or []:
+            if not isinstance(state, Mapping):
+                continue
+            if int(state.get("new_external_effect_count") or 0) > 0:
+                business_slots.add(slot)
+            failure = state.get("failure")
+            if isinstance(failure, Mapping):
+                code = str(failure.get("code") or "")
+                if code:
+                    failure_codes[code] = failure_codes.get(code, 0) + 1
+                if (
+                    state.get("user_action_required") is True
+                    and str(failure.get("category") or "") in internal_categories
+                ):
+                    internal_user_dependency += 1
+            progress = state.get("writer_progress")
+            if isinstance(progress, Mapping):
+                details = progress.get("details")
+                if (
+                    progress.get("status") == "wait_until"
+                    and isinstance(details, Mapping)
+                    and details.get("code") in {
+                        "generic_wait_without_deadline",
+                        "source_pending",
+                    }
+                ):
+                    generic_waits += 1
+    excluded_by_reason: dict[str, int] = {}
+    for row in daily:
+        if row.get("event") != "slot_excluded":
+            continue
+        reason = str(row.get("reason") or "unknown")
+        _safe_token(reason, field_name="slot exclusion reason")
+        excluded_by_reason[reason] = excluded_by_reason.get(reason, 0) + 1
+
+    fingerprints = {
+        str(row.get("failure_fingerprint"))
+        for row in convergence
+        if row.get("event") == "failure_observed"
+        and str(row.get("failure_fingerprint") or "")
+    }
+    repair_required = sum(
+        row.get("event") == "failure_observed" for row in convergence
+    )
+    repair_closed = sum(
+        row.get("event") == "repair_closed" for row in convergence
+    )
+    closed_fingerprints: set[str] = set()
+    recurrence = 0
+    for row in convergence:
+        event = row.get("event")
+        fingerprint = str(row.get("failure_fingerprint") or "")
+        if event == "repair_closed" and fingerprint:
+            closed_fingerprints.add(fingerprint)
+        elif event == "failure_observed" and fingerprint in closed_fingerprints:
+            recurrence += 1
+        if event == "generic_wait" or row.get("code") in {
+            "generic_wait_without_deadline",
+            "source_pending",
+        }:
+            generic_waits += 1
+        failure = row.get("failure")
+        if isinstance(failure, Mapping):
+            code = str(failure.get("code") or "")
+            if code:
+                failure_codes[code] = failure_codes.get(code, 0) + 1
+
+    peer_attempts = sum(
+        int(row.get("attempt_count") or 0)
+        for row in convergence
+        if row.get("event") == "peer_gate_observed"
+    )
+    peer_latency = sum(
+        int(row.get("elapsed_ms") or 0)
+        for row in convergence
+        if row.get("event") == "peer_gate_observed"
+    )
+    runner_starts = sum(
+        row.get("event") == "runner_started" for row in daily + convergence
+    )
+    reconciliations = sum(
+        row.get("event") == "side_effect_reconciled"
+        for row in daily + convergence
+    )
+    duplicate_audits = [
+        row for row in daily + convergence
+        if row.get("event") == "duplicate_effect_audit"
+    ]
+    duplicate_findings = sum(
+        int(row.get("duplicate_count") or 0) for row in duplicate_audits
+    )
+    rollout_rows = [
+        row for row in all_convergence
+        if row.get("event") == "rollout_readback"
+    ]
+    latest_rollout = rollout_rows[-1] if rollout_rows else None
+    rollout_starts = [
+        str(row.get("stability_window_start") or row.get("slot"))
+        for row in all_convergence
+        if row.get("event") == "rollout_readback"
+        and (row.get("stability_window_start") or row.get("slot"))
+    ]
+    stability_start = min(rollout_starts, default=None)
+    latest_event = max(
+        (
+            row.get("slot") or row.get("occurred_at")
+            for row in daily + convergence
+            if row.get("slot") or row.get("occurred_at")
+        ),
+        default=period_end,
+    )
+    start_date = (
+        _report_timestamp(stability_start, field_name="stability_window_start")
+        if stability_start else None
+    )
+    all_scheduled_slots = {
+        str(row.get("slot"))
+        for row in all_daily
+        if row.get("event") == "sweep_completed" and row.get("slot")
+    }
+    scheduled_after_start = sum(
+        _report_timestamp(slot, field_name="scheduled slot") >= start_date
+        for slot in all_scheduled_slots
+    ) if stability_start and start_date is not None else 0
+    end_date = _report_timestamp(latest_event, field_name="latest event")
+    elapsed_days = (
+        (end_date - start_date).total_seconds() / 86400
+        if start_date is not None else 0
+    )
+    return {
+        "schema_version": 1,
+        "period": {"start": period_start, "end": period_end},
+        "slots": {
+            "scheduled": len(scheduled_slots),
+            "clean": len(clean_slots),
+            "business": len(business_slots),
+            "excluded": sum(excluded_by_reason.values()),
+            "excluded_by_reason": dict(sorted(excluded_by_reason.items())),
+        },
+        "failure_codes": dict(sorted(failure_codes.items())),
+        "rollout": (
+            {
+                "status": "accepted",
+                "automation_id": latest_rollout["readback"]["automation_id"],
+                "writer_task_id": latest_rollout["readback"]["writer_task_id"],
+                "target_revision": latest_rollout["readback"]["target_revision"],
+                "stability_window_start": latest_rollout[
+                    "stability_window_start"
+                ],
+                "baseline": latest_rollout.get("baseline", {}),
+            }
+            if latest_rollout is not None
+            else {"status": "not_recorded"}
+        ),
+        "metrics": {
+            "failure_fingerprints": len(fingerprints),
+            "repair_required": repair_required,
+            "repair_closed": repair_closed,
+            "repair_after_same_root_recurrence": recurrence,
+            "generic_waits": generic_waits,
+            "internal_failure_user_dependency": internal_user_dependency,
+            "peer_gate_attempts": peer_attempts,
+            "peer_gate_latency_ms": peer_latency,
+            "runner_starts": runner_starts,
+            "side_effect_reconciliations": reconciliations,
+            "duplicate_effect_audits": len(duplicate_audits),
+            "duplicate_effect_findings": duplicate_findings,
+        },
+        "stability_window": {
+            "start": (
+                start_date.isoformat(timespec="seconds")
+                if start_date is not None
+                else None
+            ),
+            "scheduled_slots": scheduled_after_start,
+            "required_days": 7,
+            "required_scheduled_slots": 50,
+            "complete": bool(
+                stability_start
+                and elapsed_days >= 7
+                and scheduled_after_start >= 50
+            ),
+        },
+    }

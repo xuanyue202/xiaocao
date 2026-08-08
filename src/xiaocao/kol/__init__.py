@@ -10,9 +10,13 @@ from .semantic_bundle import (
     validate_existing_bundle,
 )
 from .writer_progress import (
+    ConvergenceLedger,
+    RolloutReadback,
     RepairValidationLedger,
     RepairValidationReceipt,
     RepairValidationService,
+    build_convergence_report,
+    normalize_source_result,
 )
 
 __all__ = [
@@ -27,4 +31,8 @@ __all__ = [
     "RepairValidationLedger",
     "RepairValidationReceipt",
     "RepairValidationService",
+    "ConvergenceLedger",
+    "RolloutReadback",
+    "build_convergence_report",
+    "normalize_source_result",
 ]

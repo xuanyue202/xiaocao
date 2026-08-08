@@ -16,7 +16,7 @@ from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from typing import Any, Callable, Iterator
+from typing import Any, Callable, Iterator, Mapping
 from zoneinfo import ZoneInfo
 
 from .enrichment_types import EnrichmentError, is_durable_report_only
@@ -45,7 +45,7 @@ from .writer_progress import (
     affected_set_digest,
     ConvergenceLedger,
     FailureFingerprint,
-    project_source_outcome,
+    normalize_source_result,
     resolve_repository_revision,
     WriterProgress,
 )
@@ -1503,61 +1503,21 @@ class DailyCoordinator:
         completed = rows[end]
         if isinstance(completed.get("source_states"), list):
             return completed
-        start = next(
-            (
-                index
-                for index in range(end - 1, -1, -1)
-                if rows[index].get("event")
-                in {"sweep_started", "sweep_resumed"}
-            ),
-            0,
-        )
-        attempt = rows[start : end + 1]
-        legacy_failure = {
-            "category": "source_error",
-            "code": "legacy_unclassified_failure",
-            "stage": "source_run",
-            "retryable": True,
-        }
-        failures = {
-            str(row.get("source") or ""): legacy_failure
-            for row in attempt
-            if row.get("event") == "source_retryable_failure"
-        }
-        source_states: list[dict[str, Any]] = []
-        for row in attempt:
-            if row.get("event") != "source_completed":
-                continue
-            result = row.get("result")
-            if not isinstance(result, dict):
-                continue
-            state = {
-                key: value
-                for key, value in {
-                    "name": str(row.get("source") or ""),
-                    "status": result.get("status"),
-                    "retryable": result.get("retryable"),
-                    "user_action_required": result.get("user_action_required"),
-                    "waiting_count": result.get("waiting_count"),
-                    "waiting_items": result.get("waiting_items"),
-                }.items()
-                if value is not None
-            }
-            if state["name"] in failures:
-                state["failure"] = failures[state["name"]]
-            source_states.append(state)
-        if any(row.get("user_action_required") for row in source_states):
-            health = "blocked"
-        elif failures:
-            health = "degraded"
-        elif any(row.get("status") == "waiting" for row in source_states):
-            health = "waiting"
-        else:
-            health = "healthy"
         return {
             **completed,
-            "health": health,
-            "source_states": source_states,
+            "health": "degraded",
+            "source_states": [{
+                "name": "coordinator",
+                "status": "waiting",
+                "repair_required": True,
+                "user_action_required": False,
+                "failure": {
+                    "category": "schema_error",
+                    "code": "progress_record_missing",
+                    "stage": "daily_ledger_readback",
+                    "retryable": True,
+                },
+            }],
         }
 
     def _append(self, event: str, **fields: Any) -> dict[str, Any]:
@@ -1613,6 +1573,11 @@ class DailyCoordinator:
             self._append(
                 "sweep_resumed" if completed_by_source else "sweep_started",
                 slot=slot,
+            )
+            self._append(
+                "runner_started",
+                slot=slot,
+                source_count=len(ordered),
             )
             results: list[dict[str, Any]] = []
             for source in ordered:
@@ -1914,21 +1879,6 @@ class DailyCoordinator:
                             "retryable": True,
                             "failure": failure,
                         }
-                        progress_override = WriterProgress.wait_until(
-                            item_identity=f"{name}:source",
-                            category=exc.category,
-                            code=exc.code,
-                            stage=exc.stage,
-                            deadline=(now + timedelta(hours=1)).isoformat(
-                                timespec="seconds"
-                            ),
-                            attempt_budget={"attempted": 1, "maximum": 2},
-                            claim_receipt_summary={
-                                "claim_count": 0,
-                                "receipt_count": 0,
-                                "uncertain_effect_count": 0,
-                            },
-                        )
                 except Exception:
                     outcome, progress_override = self._agent_repair(
                         name,
@@ -1983,6 +1933,13 @@ class DailyCoordinator:
                                 "status": "no_update",
                                 "replayed_terminal_count": replayed_count,
                             }
+                        self._append(
+                            "duplicate_effect_audit",
+                            slot=slot,
+                            source=name,
+                            duplicate_count=replayed_count,
+                            audited=True,
+                        )
                     _validate_source_outcome(outcome)
                 except Exception:
                     outcome, progress_override = self._agent_repair(
@@ -2068,15 +2025,12 @@ class DailyCoordinator:
                     progress = (
                         progress_override
                         if progress_override is not None
-                        else project_source_outcome(
+                        else normalize_source_result(
                             name,
                             outcome,
                             failure_revision=self._failure_revision(),
                             provider_contract_version="xiaocao_writer_v1",
                             user_action=user_action_context,
-                            fallback_wait_deadline=(
-                                now + timedelta(hours=1)
-                            ).isoformat(timespec="seconds"),
                         )
                     )
                 except Exception:
@@ -2105,6 +2059,23 @@ class DailyCoordinator:
                         progress,
                         evidence=reconciliation_receipt,
                     )
+                if reconciliation_receipt is not None:
+                    self._append(
+                        "side_effect_reconciled",
+                        slot=slot,
+                        source=name,
+                        claim_identity=(
+                            reconciliation_receipt["claim_identity"]
+                        ),
+                        readback_operation=(
+                            reconciliation_receipt["readback_operation"]
+                        ),
+                        external_business_effects_replayed=False,
+                    )
+                outcome = {
+                    **outcome,
+                    "writer_progress": progress.to_dict(),
+                }
                 if progress.status == "repair_required":
                     failure = progress.failure
                     outcome = {
@@ -2162,8 +2133,9 @@ class DailyCoordinator:
                     result=outcome,
                     coordinator_source_video_bytes=0,
                 )
-            source_states = [
-                {
+            source_states: list[dict[str, Any]] = []
+            for row in results:
+                state = {
                     key: row[key]
                     for key in (
                         "name",
@@ -2179,8 +2151,27 @@ class DailyCoordinator:
                     )
                     if key in row
                 }
-                for row in results
-            ]
+                new_external_effect_count = sum(
+                    int(
+                        event.get("gray_report", {}).get("status")
+                        == "published"
+                    )
+                    + int(
+                        event.get("alert", {}).get("status")
+                        == "delivered"
+                    )
+                    + int(
+                        event.get("book_kol_us", {}).get("status")
+                        == "filled"
+                    )
+                    for event in row.get("events") or []
+                    if isinstance(event, Mapping)
+                )
+                if new_external_effect_count:
+                    state["new_external_effect_count"] = (
+                        new_external_effect_count
+                    )
+                source_states.append(state)
             if any(row.get("user_action_required") for row in results):
                 health = "blocked"
             elif any(
@@ -2238,6 +2229,26 @@ class DailyCoordinator:
             ),
             "event_count": len(rows),
         }
+
+    def convergence_report(
+        self,
+        *,
+        period_start: str | None = None,
+        period_end: str | None = None,
+    ) -> dict[str, Any]:
+        now = self._beijing_now()
+        start = period_start or now.replace(
+            hour=0,
+            minute=0,
+            second=0,
+            microsecond=0,
+        ).isoformat(timespec="seconds")
+        end = period_end or now.isoformat(timespec="seconds")
+        return self.convergence.report(
+            self.events(),
+            period_start=start,
+            period_end=end,
+        )
 
     def audit(self) -> dict[str, Any]:
         rows = self.events()
