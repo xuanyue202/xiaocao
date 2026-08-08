@@ -35,6 +35,7 @@ from .enrichment_types import (
     validate_decision_process_result,
 )
 from .semantic_bundle import read_validated_bundle, validate_receipt_bindings
+from .netdisk_opencli_templates import NetdiskOpenCliTemplate
 
 
 IMAGE_SUFFIXES = {".jpeg", ".jpg", ".png", ".webp"}
@@ -92,11 +93,19 @@ _OPENCLI_ERROR_CATEGORIES = {
     "session_not_found": "session_error",
 }
 
-_DIRECT_DOWNLOAD_MEDIA = {"pdf", "text"}
+_DIRECT_DOWNLOAD_MEDIA = {"image", "pdf", "text"}
 _DIRECT_DOWNLOAD_HOSTS = {"d.pcs.baidu.com"}
 BLOCKED_DOWNLOAD_PROVIDER_CONTRACT_VERSION = "baidu_netdisk_download_v1"
 _DIRECT_DOWNLOAD_PATHS = {"/rest/2.0/pcs/file"}
 _DIRECT_DOWNLOAD_CONTENT_TYPES = {
+    "image": {
+        "image/jpeg",
+        "image/png",
+        "image/webp",
+        "application/octet-stream",
+        "application/x-download",
+        "binary/octet-stream",
+    },
     "pdf": {
         "application/pdf",
         "application/octet-stream",
@@ -111,6 +120,7 @@ _DIRECT_DOWNLOAD_CONTENT_TYPES = {
         "binary/octet-stream",
     },
 }
+_UI_DIRECT_DOWNLOAD_MEDIA = {"pdf", "text"}
 _OWNER_CLOUD_ROOT = PurePosixPath("/xiaocao/lv_subscription")
 
 
@@ -588,13 +598,17 @@ def _browser_download_script(
 
 
 _PROVIDER_DIRECT_LINK_SCRIPT_TEMPLATE = r"""(async () => {
+  const template_name = 'baidu-netdisk/probe-download';
+  const template_version = 1;
   const operation = 'ticket04_provider_direct_link';
-  const expectedSharePath = __EXPECTED_SHARE_PATH_JSON__;
-  const expectedProviderFileId = __EXPECTED_PROVIDER_FILE_ID_JSON__;
-  const expectedItemPath = __EXPECTED_ITEM_PATH_JSON__;
-  const expectedName = __EXPECTED_NAME_JSON__;
-  const expectedSize = __EXPECTED_SIZE_JSON__;
-  const result = (status, extra = {}) => ({status, operation, ...extra});
+  const expectedSharePath = __EXPECTED_SHARE_PATH__;
+  const expectedProviderFileId = __EXPECTED_PROVIDER_FILE_ID__;
+  const expectedItemPath = __EXPECTED_ITEM_PATH__;
+  const expectedName = __EXPECTED_NAME__;
+  const expectedSize = __EXPECTED_SIZE__;
+  const result = (status, extra = {}) => ({
+    status, operation, template_name, template_version, ...extra
+  });
   if (
     location.origin !== 'https://pan.baidu.com'
     || location.pathname !== expectedSharePath
@@ -724,6 +738,18 @@ _PROVIDER_DIRECT_LINK_SCRIPT_TEMPLATE = r"""(async () => {
   });
 })()"""
 
+_PROVIDER_DIRECT_LINK_TEMPLATE = NetdiskOpenCliTemplate(
+    name="probe_download",
+    source=_PROVIDER_DIRECT_LINK_SCRIPT_TEMPLATE,
+    parameters=(
+        "expected_share_path",
+        "expected_provider_file_id",
+        "expected_item_path",
+        "expected_name",
+        "expected_size",
+    ),
+)
+
 
 def _provider_direct_link_script(
     *,
@@ -733,18 +759,12 @@ def _provider_direct_link_script(
     expected_name: str,
     expected_size: int,
 ) -> str:
-    return (
-        _PROVIDER_DIRECT_LINK_SCRIPT_TEMPLATE.replace(
-            "__EXPECTED_SHARE_PATH_JSON__",
-            json.dumps(expected_share_path),
-        )
-        .replace(
-            "__EXPECTED_PROVIDER_FILE_ID_JSON__",
-            json.dumps(expected_provider_file_id),
-        )
-        .replace("__EXPECTED_ITEM_PATH_JSON__", json.dumps(expected_item_path))
-        .replace("__EXPECTED_NAME_JSON__", json.dumps(expected_name))
-        .replace("__EXPECTED_SIZE_JSON__", json.dumps(expected_size))
+    return _PROVIDER_DIRECT_LINK_TEMPLATE.render(
+        expected_share_path=expected_share_path,
+        expected_provider_file_id=expected_provider_file_id,
+        expected_item_path=expected_item_path,
+        expected_name=expected_name,
+        expected_size=expected_size,
     )
 
 
@@ -3047,11 +3067,11 @@ try {
         request = Request(
             download_url,
             headers={
-                "Accept": (
-                    "application/pdf,application/octet-stream"
-                    if media_type == "pdf"
-                    else "text/plain,application/octet-stream"
-                ),
+                "Accept": {
+                    "image": "image/png,image/jpeg,image/webp,application/octet-stream",
+                    "pdf": "application/pdf,application/octet-stream",
+                    "text": "text/plain,application/octet-stream",
+                }[media_type],
                 "Referer": "https://pan.baidu.com/",
                 "User-Agent": "Mozilla/5.0",
             },
@@ -3142,6 +3162,25 @@ try {
                 code="provider_download_content_invalid",
                 stage="provider_direct_download",
             )
+        if media_type == "image":
+            prefix = destination.read_bytes()[:12]
+            suffix = destination.suffix.lower()
+            valid_signature = (
+                suffix == ".png" and prefix.startswith(b"\x89PNG\r\n\x1a\n")
+            ) or (
+                suffix in {".jpg", ".jpeg"} and prefix.startswith(b"\xff\xd8\xff")
+            ) or (
+                suffix == ".webp"
+                and prefix.startswith(b"RIFF")
+                and prefix[8:12] == b"WEBP"
+            )
+            if not valid_signature:
+                raise EnrichmentDiagnosticError(
+                    "provider direct image signature is invalid",
+                    category="content_error",
+                    code="provider_download_content_invalid",
+                    stage="provider_direct_download",
+                )
         if media_type == "text":
             try:
                 destination.read_text(encoding="utf-8")
@@ -4716,6 +4755,25 @@ try {
             timeout_seconds=15,
         )
         status = str(download_target.get("status") or "")
+        if (
+            status == "download_url_missing"
+            and str(item.get("media_type") or "") == "image"
+        ):
+            # The iframe is a transient provider surface. Rebind the exact
+            # claimed image through the authenticated share API before
+            # classifying the recovery as a frame failure. This path is
+            # read-only with respect to the provider item and never clicks a
+            # second download control.
+            try:
+                direct = self._provider_direct_download(
+                    item,
+                    session=session,
+                    profile=profile,
+                )
+            except EnrichmentError:
+                pass
+            else:
+                return Path(str(direct["path"]))
         if status != "download_url_ready":
             code = {
                 "download_url_missing": "blocked_download_frame_missing",
@@ -4861,7 +4919,7 @@ try {
             "provider_file_id": str(raw.get("provider_file_id") or ""),
         }
         download_policy: dict[str, Any] | None = None
-        if normalized["media_type"] in _DIRECT_DOWNLOAD_MEDIA:
+        if normalized["media_type"] in _UI_DIRECT_DOWNLOAD_MEDIA:
             download_policy = self.configure_opencli_download_policy(
                 session=session,
                 profile=profile,
@@ -4880,7 +4938,7 @@ try {
                     reconciled_path,
                     claim_id=str(claim["claim_id"]),
                 )
-            if normalized["media_type"] in _DIRECT_DOWNLOAD_MEDIA:
+            if normalized["media_type"] in _UI_DIRECT_DOWNLOAD_MEDIA:
                 if download_policy and download_policy["configured"] is True:
                     try:
                         downloaded_path = self._wait_opencli_download(
@@ -4936,7 +4994,7 @@ try {
             )
 
         if (
-            normalized["media_type"] in _DIRECT_DOWNLOAD_MEDIA
+            normalized["media_type"] in _UI_DIRECT_DOWNLOAD_MEDIA
             and download_policy
             and download_policy["configured"] is False
         ):
@@ -5017,7 +5075,7 @@ try {
         except EnrichmentDiagnosticError as exc:
             if exc.diagnostic_code != "download_not_seen":
                 raise
-            if normalized["media_type"] in _DIRECT_DOWNLOAD_MEDIA:
+            if normalized["media_type"] in _UI_DIRECT_DOWNLOAD_MEDIA:
                 direct = self._download_provider_small_file(
                     direct_item,
                     claim,

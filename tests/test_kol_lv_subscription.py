@@ -1338,6 +1338,11 @@ def test_replayed_claim_reports_missing_blocked_download_frame_exactly(tmp_path)
                 "status": "download_url_missing",
                 "frame_count": 0,
             }
+        elif tail[:1] == ["eval"] and "ticket04_provider_direct_link" in tail[1]:
+            payload = {
+                "status": "provider_error",
+                "provider_errno": 2,
+            }
         else:
             raise AssertionError(command)
         return SimpleNamespace(
@@ -1426,6 +1431,19 @@ def test_existing_pdf_claim_uses_direct_page_api_without_second_ui_trigger(
                 "complete_scan": True,
                 "entries": [entry],
             }
+        elif tail[:2] == ["wait", "download"]:
+            return SimpleNamespace(
+                returncode=1,
+                stdout=json.dumps({"error": {"code": "download_not_seen"}}),
+                stderr="",
+            )
+        elif tail[:1] == ["eval"] and "blocked_download_frame_probe" in tail[1]:
+            result = {
+                "status": "blocked_by_client",
+                "error_code": "ERR_BLOCKED_BY_CLIENT",
+            }
+        elif tail[:1] == ["eval"] and "blocked_download_url_probe" in tail[1]:
+            result = {"status": "download_url_missing", "frame_count": 0}
         elif tail[:1] == ["eval"] and "ticket04_provider_direct_link" in tail[1]:
             result = {
                 "status": "download_link_ready",
@@ -1438,7 +1456,7 @@ def test_existing_pdf_claim_uses_direct_page_api_without_second_ui_trigger(
                 "path": "/rest/2.0/pcs/file",
                 "provider_file_id": entry["provider_file_id"],
             }
-        elif tail[:1] in (["click"], ["wait"]):
+        elif tail[:1] in (["click"],):
             trigger_calls += 1
             raise AssertionError("existing claim must not replay UI download")
         elif tail[:1] == ["eval"] and "ticket04_exact_ui_download" in tail[1]:
@@ -1499,6 +1517,125 @@ def test_existing_pdf_claim_uses_direct_page_api_without_second_ui_trigger(
         for path in (tmp_path / "out").rglob("*.json*")
     )
     assert "credential-redacted-from-ledger" not in durable
+
+
+def test_existing_image_claim_uses_direct_page_api_without_second_ui_trigger(
+    tmp_path,
+):
+    payload = b"\x89PNG\r\n\x1a\n" + b"x" * 2048
+    entry = _representative_subscription_entries()[0]
+    entry["provider_file_id"] = "987654321012345"
+    entry["size"] = len(payload)
+    trigger_calls = 0
+    direct_calls = []
+
+    def browser_runner(command, **_kwargs):
+        nonlocal trigger_calls
+        tail = command[3:]
+        if tail[:1] == ["open"]:
+            result = {"url": "redacted", "page": "page-1"}
+        elif tail[:1] == ["eval"] and "/share/list" in tail[1]:
+            result = {
+                "status": "ok",
+                "complete_scan": True,
+                "entries": [entry],
+            }
+        elif tail[:2] == ["wait", "download"]:
+            return SimpleNamespace(
+                returncode=1,
+                stdout=json.dumps({"error": {"code": "download_not_seen"}}),
+                stderr="",
+            )
+        elif tail[:1] == ["eval"] and "blocked_download_frame_probe" in tail[1]:
+            result = {
+                "status": "blocked_by_client",
+                "error_code": "ERR_BLOCKED_BY_CLIENT",
+            }
+        elif tail[:1] == ["eval"] and "blocked_download_url_probe" in tail[1]:
+            result = {"status": "download_url_missing", "frame_count": 0}
+        elif tail[:1] == ["eval"] and "ticket04_provider_direct_link" in tail[1]:
+            result = {
+                "status": "download_link_ready",
+                "download_url": (
+                    "https://d.pcs.baidu.com/rest/2.0/pcs/file?"
+                    "signed=credential-redacted-from-ledger"
+                ),
+                "scheme": "https:",
+                "host": "d.pcs.baidu.com",
+                "path": "/rest/2.0/pcs/file",
+                "provider_file_id": entry["provider_file_id"],
+            }
+        elif tail[:1] in (["click"],):
+            trigger_calls += 1
+            raise AssertionError("existing claim must not replay UI download")
+        elif tail[:1] == ["eval"] and "ticket04_exact_ui_download" in tail[1]:
+            trigger_calls += 1
+            raise AssertionError("existing claim must not replay UI download")
+        else:
+            raise AssertionError(command)
+        return SimpleNamespace(
+            returncode=0,
+            stdout=json.dumps(result),
+            stderr="",
+        )
+
+    def direct_fetch(url, destination, expected_size, media_type):
+        direct_calls.append((url, destination, expected_size, media_type))
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        destination.write_bytes(payload)
+        return {
+            "path": str(destination),
+            "actual_size": len(payload),
+            "content_type": "image/png",
+            "sha256": hashlib.sha256(payload).hexdigest(),
+        }
+
+    service = LvSubscriptionService(
+        tmp_path / "out",
+        now=lambda: NOW,
+        runner=browser_runner,
+        opencli_command=("opencli",),
+        share_url="https://pan.baidu.com/s/private-share-token",
+        share_code="a1b2",
+        download_policy_configurer=lambda *_args: {
+            "configured": False,
+            "code": "opencli_cdp_method_not_permitted",
+        },
+        direct_download_fetcher=direct_fetch,
+    )
+    update = service.poll_opencli(session="ticket04")["updates"][0]
+    claim = service.claim_browser_download(update["identity"])
+
+    result = service.download_opencli(update["identity"], session="ticket04")
+
+    assert claim["status"] == "claimed"
+    assert result["status"] == "completed"
+    assert result["acquisition_transport"] == "browser_download"
+    assert result["sha256"] == hashlib.sha256(payload).hexdigest()
+    assert trigger_calls == 0
+    assert len(direct_calls) == 1
+    assert direct_calls[0][2:] == (len(payload), "image")
+    durable = "\n".join(
+        path.read_text(encoding="utf-8")
+        for path in (tmp_path / "out").rglob("*.json*")
+    )
+    assert "credential-redacted-from-ledger" not in durable
+
+
+def test_image_recovery_provider_probe_is_versioned_opencli_template():
+    source = lv_subscription._provider_direct_link_script(
+        expected_share_path="/s/private-share-token",
+        expected_provider_file_id="123456789012345",
+        expected_item_path="/folder/12.png",
+        expected_name="12.png",
+        expected_size=42,
+    )
+
+    assert "baidu-netdisk/probe-download" in source
+    assert "const template_version = 1" in source
+    assert "__EXPECTED_" not in source
+    assert "expectedProviderFileId = \"123456789012345\"" in source
+    assert "12.png" in source
 
 
 def test_existing_pdf_claim_intercepts_one_frontend_signed_link_after_errno_2(
