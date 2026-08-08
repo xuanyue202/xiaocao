@@ -46,7 +46,11 @@ from xiaocao.kol.publication import (
     report_id,
     viewpoint_id,
 )
-from xiaocao.kol.writer_progress import FailureFingerprint, WriterProgress
+from xiaocao.kol.writer_progress import (
+    FailureFingerprint,
+    WriterProgress,
+    affected_set_digest,
+)
 
 
 class Clock:
@@ -2788,6 +2792,99 @@ def test_video_history_failure_isolated_after_latest_lv_priority(
         },
         True,
     )]
+
+
+def test_video_deterministic_failure_stops_same_root_fanout_with_repair_progress(
+    monkeypatch,
+    tmp_path,
+):
+    calls = []
+    failures = []
+    pending = [
+        {
+            "identity": "image-1",
+            "version_key": "version-1",
+            "name": "图片1.png",
+            "path": "/课程/路西法全套/图片1.png",
+            "source": "baidu_private_folder",
+            "media_type": "image",
+            "remote_activity_at": 200,
+        },
+        {
+            "identity": "image-2",
+            "version_key": "version-2",
+            "name": "图片2.png",
+            "path": "/课程/路西法全套/图片2.png",
+            "source": "baidu_private_folder",
+            "media_type": "image",
+            "remote_activity_at": 100,
+        },
+    ]
+
+    class FakeVideos:
+        def __init__(self, *_args, **_kwargs):
+            pass
+
+        def scan_opencli(self, **_kwargs):
+            return None
+
+        @staticmethod
+        def pending_items():
+            return pending
+
+        @staticmethod
+        def advance_item(item, **_kwargs):
+            calls.append(item["identity"])
+            raise EnrichmentDiagnosticError(
+                "private protocol detail",
+                category="protocol_error",
+                code="opencli_invalid_json",
+                stage="browser_command",
+            )
+
+        @staticmethod
+        def record_item_failure(item, *, failure, retryable):
+            failures.append((item["identity"], failure, retryable))
+            return {"claim_status": "claimed"}
+
+    monkeypatch.setattr(kol_daily_script, "SubscriptionVideoService", FakeVideos)
+    monkeypatch.setattr(kol_daily_script, "_writer_failure_revision", lambda: "a" * 40)
+    runtime = DailyRuntime.__new__(DailyRuntime)
+    runtime.args = SimpleNamespace(
+        video_output_dir=tmp_path / "videos",
+        config=tmp_path / "config.yaml",
+        lv_session="lv-session",
+        private_session="private-session",
+        enrichment_session="enrichment-session",
+        opencli_profile=None,
+    )
+    runtime._lv_listing = {"status": "ok", "complete_scan": True, "entries": []}
+    runtime._lv_listing_error = None
+
+    result = runtime.videos()
+
+    assert calls == ["image-1"]
+    assert failures == [(
+        "image-1",
+        {
+            "category": "protocol_error",
+            "code": "opencli_invalid_json",
+            "stage": "browser_command",
+        },
+        True,
+    )]
+    assert result["repair_required"] is True
+    progress = WriterProgress.from_dict(result["writer_progress"])
+    assert progress.failure["code"] == "opencli_invalid_json"
+    assert progress.details["claim_receipt_summary"] == {
+        "claim_count": 1,
+        "receipt_count": 0,
+        "uncertain_effect_count": 0,
+    }
+    assert progress.details["affected_set_digest"] == affected_set_digest([
+        {"identity": row["identity"], "version_key": row["version_key"]}
+        for row in pending
+    ])
 
 
 def test_video_semantic_eof_waits_and_next_run_reuses_persisted_request(

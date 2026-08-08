@@ -348,6 +348,103 @@ def test_legacy_historical_pending_is_quarantined_without_replaying_claims(
     assert claim.read_bytes() == before
 
 
+def test_reviewed_historical_versions_retire_with_audited_watermark_and_reopen_new_version(
+    tmp_path,
+):
+    service = _service(tmp_path)
+    lv, lucifer = _source_rows()
+    service.observe(lv, lucifer)
+    target = next(
+        row
+        for row in service.pending_items()
+        if row["source"] == LV_SOURCE
+    )
+    manifest_before = service._load_manifest()
+    source_watermark = manifest_before["source_remote_time_watermarks"][LV_SOURCE]
+    claim = service.output_dir / "claims" / "existing-claim.json"
+    claim.parent.mkdir(parents=True)
+    claim.write_text('{"status":"claimed"}\n', encoding="utf-8")
+    claim_before = claim.read_bytes()
+
+    migration = service.retire_historical_versions(
+        [{
+            "identity": target["identity"],
+            "version_key": target["version_key"],
+            "source": LV_SOURCE,
+        }],
+        cutoff={LV_SOURCE: source_watermark, LUCIFER_SOURCE: 0},
+    )
+
+    retired = service.status()["items"][target["identity"]]
+    assert migration["status"] == "completed"
+    assert migration["retired_count"] == 1
+    assert migration["source_watermarks"][LV_SOURCE] == source_watermark
+    assert migration["cutoff"][LV_SOURCE] == source_watermark
+    assert retired["work_eligible"] is False
+    assert retired["eligibility_pause_reason"] == (
+        "historical_backlog_retired"
+    )
+    assert retired.get("completed_version_key") is None
+    assert target["identity"] not in {
+        row["identity"] for row in service.pending_items()
+    }
+    assert claim.read_bytes() == claim_before
+
+    newer = [
+        {
+            **row,
+            "modified_at": row["modified_at"] + 60,
+        }
+        if row["provider_file_id"] == "lv-latest"
+        else row
+        for row in lv
+    ]
+    service.observe(newer, lucifer)
+    assert any(
+        row["version_key"] != target["version_key"]
+        and row["work_eligible"] is True
+        for row in service.pending_items()
+    )
+
+
+def test_historical_eligibility_migration_fails_closed_on_concurrent_manifest_change(
+    tmp_path,
+    monkeypatch,
+):
+    service = _service(tmp_path)
+    lv, lucifer = _source_rows()
+    service.observe(lv, lucifer)
+    target = next(row for row in service.pending_items() if row["source"] == LV_SOURCE)
+    original_load = service._load_manifest
+    calls = 0
+
+    def load_manifest_with_concurrent_writer():
+        nonlocal calls
+        calls += 1
+        value = original_load()
+        if calls == 2:
+            value["concurrent_writer_marker"] = "new-state"
+        return value
+
+    monkeypatch.setattr(service, "_load_manifest", load_manifest_with_concurrent_writer)
+
+    result = service.retire_historical_versions([
+        {
+            "identity": target["identity"],
+            "version_key": target["version_key"],
+            "source": LV_SOURCE,
+        }
+    ])
+
+    assert result["status"] == "blocked"
+    assert result["code"] == "eligibility_migration_concurrent_writer"
+    persisted = json.loads(
+        service.manifest_path.read_text(encoding="utf-8")
+    )
+    assert persisted["items"][target["identity"]]["work_eligible"] is True
+    assert "historical_eligibility_migration" not in persisted
+
+
 def test_episode_analysis_request_binds_all_component_evidence(tmp_path):
     service = _service(tmp_path)
     lv, lucifer = _source_rows()

@@ -50,6 +50,19 @@ handoff.
    recovery requires restarting/re-registering user-owned Desktop state. No
    candidate may be selected until `read_thread` verifies it.
 
+The repository's deterministic replay seam is
+`xiaocao.kol.remote_task_candidates.evaluate_remote_writer_peer_gate`. Feed it
+the registered task-service `list_threads` and `read_thread` adapters. It
+records bounded attempts, elapsed milliseconds, safe failure codes, and the
+terminal gate result. The candidate list is never authoritative: an active
+snapshot whose readback is `idle|completed` is stale and does not block the
+writer, while an authoritative active peer returns `no_op`. A persistent
+handler/timeout or identity-readback fault is agent-owned `repair_required`.
+Use `run_remote_writer_after_peer_gate` for the side-effect boundary; it calls
+mailbox/runner only after `pass`, and records at most one runner start for that
+invocation. No Python lock, lease, heartbeat, fencing token, or stale takeover
+is part of this gate.
+
 ## Delivery and readback
 
 Send the complete credential-free capsule fields once, never its local path or

@@ -1302,7 +1302,7 @@ def test_replayed_claim_recovers_exact_blocked_download_frame_once(tmp_path):
     assert result["status"] == "completed"
     assert trigger_calls == 0
     assert waits == 2
-    assert opens == ["ticket04", "ticket04-download"]
+    assert opens == ["ticket04", "ticket04"]
 
 
 def test_replayed_claim_reports_missing_blocked_download_frame_exactly(tmp_path):

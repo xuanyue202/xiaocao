@@ -18,6 +18,7 @@ from time import sleep as _cloud_handoff_sleep
 from typing import Any
 
 from xiaocao.kol.daily import (
+    AGENT_OWNED_FAILURE_CATEGORIES,
     build_initial_projection_candidate,
     build_triggered_evaluation_candidate,
     DailyCoordinator,
@@ -121,6 +122,54 @@ def _claim_summary_from_failure_audit(audit: dict[str, Any]) -> dict[str, int]:
         "receipt_count": 0,
         "uncertain_effect_count": int(claim_status in {"invalid", "unknown"}),
     }
+
+
+def _requires_bounded_source_repair(failure: dict[str, Any]) -> bool:
+    """Keep deterministic adapter faults from fanning out as ordinary waits."""
+
+    return (
+        str(failure.get("category") or "") in AGENT_OWNED_FAILURE_CATEGORIES
+        or str(failure.get("code") or "") == "blocked_download_frame_missing"
+    )
+
+
+def _source_failure_repair_progress(
+    *,
+    adapter: str,
+    item: dict[str, Any],
+    affected_items: list[dict[str, Any]],
+    failure: dict[str, Any],
+    failure_audit: dict[str, Any] | None,
+    provider_contract_version: str,
+    targeted_test_profile: str,
+) -> WriterProgress:
+    fingerprint = FailureFingerprint(
+        adapter=adapter,
+        category=str(failure["category"]),
+        code=str(failure["code"]),
+        stage=str(failure["stage"]),
+        failure_revision=_writer_failure_revision(),
+        provider_contract_version=provider_contract_version,
+    )
+    summary = _claim_summary_from_failure_audit(
+        failure_audit or {"claim_status": "missing"}
+    )
+    return WriterProgress.repair_required(
+        item_identity=str(item["identity"]),
+        fingerprint=fingerprint,
+        repair_revision=None,
+        affected_set_digest=affected_set_digest([
+            {
+                "identity": str(row["identity"]),
+                "version_key": str(row.get("version_key") or "current"),
+            }
+            for row in affected_items
+        ]),
+        claim_receipt_summary=summary,
+        targeted_test_profile=targeted_test_profile,
+        narrow_resume_surface=f"{adapter}:{item['identity']}",
+        retryability="retryable",
+    )
 
 
 class SemanticInputUnavailable(DailyError):
@@ -1466,32 +1515,21 @@ class DailyRuntime:
                 }
                 waiting_items.append(waiting_item)
                 if failure["code"] == "blocked_download_frame_missing":
-                    fingerprint = FailureFingerprint(
+                    affected = [
+                        candidate
+                        for candidate in pending
+                        if candidate.get("media_type") == row.get("media_type")
+                    ]
+                    progress = _source_failure_repair_progress(
                         adapter="lv_text_image",
-                        category=str(failure["category"]),
-                        code=str(failure["code"]),
-                        stage=str(failure["stage"]),
-                        failure_revision=_writer_failure_revision(),
+                        item=row,
+                        affected_items=affected,
+                        failure=failure,
+                        failure_audit=failure_audit,
                         provider_contract_version=(
                             BLOCKED_DOWNLOAD_PROVIDER_CONTRACT_VERSION
                         ),
-                    )
-                    progress = WriterProgress.repair_required(
-                        item_identity=identity,
-                        fingerprint=fingerprint,
-                        repair_revision=None,
-                        affected_set_digest=affected_set_digest(
-                            [{
-                                "identity": identity,
-                                "version_key": str(row.get("version_key") or ""),
-                            }]
-                        ),
-                        claim_receipt_summary=(
-                            _claim_summary_from_failure_audit(failure_audit)
-                        ),
                         targeted_test_profile="kol_lv_download_recovery",
-                        narrow_resume_surface=f"lv_text_image:{identity}",
-                        retryability="retryable" if retryable else "not_retryable",
                     )
                     return {
                         "status": "waiting",
@@ -1499,7 +1537,7 @@ class DailyRuntime:
                         "waiting_items": waiting_items,
                         "suppressed_companion_count": suppressed,
                         "retryable": False,
-                        "repair_key": fingerprint.digest,
+                        "repair_key": progress.failure_fingerprint,
                         "repair_required": True,
                         "user_action_required": False,
                         "writer_progress": progress.to_dict(),
@@ -1666,20 +1704,51 @@ class DailyRuntime:
                         self.args.video_output_dir,
                         item,
                     )
-                service.record_item_failure(
+                failure_audit = service.record_item_failure(
                     item,
                     failure=failure,
                     retryable=retryable,
                 )
                 waiting += 1
-                waiting_items.append({
+                waiting_item = {
                     "identity": str(item.get("identity") or ""),
                     "version_key": str(item.get("version_key") or ""),
                     "name": str(item.get("name") or ""),
                     "stage": failure["stage"],
                     "failure": {**failure, "retryable": retryable},
                     **reconciliation_binding,
-                })
+                }
+                waiting_items.append(waiting_item)
+                if _requires_bounded_source_repair(failure):
+                    affected = [
+                        candidate
+                        for candidate in pending
+                        if candidate.get("source") == item.get("source")
+                        and candidate.get("media_type") == item.get("media_type")
+                    ]
+                    progress = _source_failure_repair_progress(
+                        adapter="subscription_video",
+                        item=item,
+                        affected_items=affected,
+                        failure=failure,
+                        failure_audit=(
+                            failure_audit
+                            if isinstance(failure_audit, dict)
+                            else None
+                        ),
+                        provider_contract_version="subscription_video_source_v1",
+                        targeted_test_profile="kol_subscription_video_source_recovery",
+                    )
+                    return {
+                        "status": "waiting",
+                        "waiting_count": waiting,
+                        "waiting_items": waiting_items,
+                        "retryable": False,
+                        "repair_key": progress.failure_fingerprint,
+                        "repair_required": True,
+                        "user_action_required": False,
+                        "writer_progress": progress.to_dict(),
+                    }
                 continue
             if state.get("event") != "subscription_video_analysis_input_required":
                 waiting += 1

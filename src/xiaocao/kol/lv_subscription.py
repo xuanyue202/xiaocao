@@ -12,9 +12,7 @@ import shutil
 import sqlite3
 import subprocess
 import tempfile
-import threading
 import time
-from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
 from pathlib import Path, PurePosixPath
 from typing import Any, Callable
@@ -4769,62 +4767,44 @@ try {
                 stage="browser_download_recovery",
             )
 
-        recovery_session = f"{session}-download"
-        if len(recovery_session) > 80:
-            suffix = hashlib.sha256(session.encode("utf-8")).hexdigest()[:8]
-            recovery_session = f"{session[:62]}-{suffix}-download"
-        waiter_started = threading.Event()
-
-        def wait_for_download() -> Path:
-            waiter_started.set()
+        # Keep recovery on the exact browser session that proved the blocked
+        # frame and target. This is a top-level navigation, not a second
+        # provider click; the bounded wait reconciles the same target receipt.
+        open_error: EnrichmentError | None = None
+        try:
+            self._opencli_json(
+                session,
+                "open",
+                download_url,
+                profile=profile,
+                timeout_seconds=30,
+            )
+        except EnrichmentError as exc:
+            # Chrome may report a navigation error after converting the URL
+            # into a download. The observer receipt, not navigation status,
+            # decides whether recovery completed.
+            open_error = exc
+        try:
             return self._wait_opencli_download(
                 item,
                 session=session,
                 profile=profile,
                 timeout_seconds=60,
             )
-
-        with ThreadPoolExecutor(max_workers=1) as executor:
-            receipt = executor.submit(wait_for_download)
-            if not waiter_started.wait(timeout=5):
+        except EnrichmentError as exc:
+            if open_error is None:
                 raise EnrichmentDiagnosticError(
-                    "subscription recovery observer did not start",
-                    category="local_runtime_error",
-                    code="download_recovery_observer_not_started",
-                    stage="browser_download_recovery",
-                )
-            if self.opencli_command != ("opencli",):
-                time.sleep(1)
-            open_error: EnrichmentError | None = None
-            try:
-                self._opencli_json(
-                    recovery_session,
-                    "open",
-                    download_url,
-                    profile=profile,
-                    timeout_seconds=30,
-                )
-            except EnrichmentError as exc:
-                # A top-level navigation can abort because Chrome converted it
-                # into a download. The observer receipt, not navigation status,
-                # decides whether the recovery completed.
-                open_error = exc
-            try:
-                return receipt.result()
-            except EnrichmentError as exc:
-                if open_error is None:
-                    raise EnrichmentDiagnosticError(
-                        "subscription download prompt requires internal recovery",
-                        category="local_recovery",
-                        code="download_prompt_internal_recovery",
-                        stage="browser_download_prompt",
-                    ) from exc
-                raise EnrichmentDiagnosticError(
-                    "subscription download was blocked by a browser extension",
-                    category="local_policy_error",
-                    code="download_blocked_by_extension",
-                    stage="browser_download_recovery",
-                ) from (open_error or exc)
+                    "subscription download prompt requires internal recovery",
+                    category="local_recovery",
+                    code="download_prompt_internal_recovery",
+                    stage="browser_download_prompt",
+                ) from exc
+            raise EnrichmentDiagnosticError(
+                "subscription download was blocked by a browser extension",
+                category="local_policy_error",
+                code="download_blocked_by_extension",
+                stage="browser_download_recovery",
+            ) from (open_error or exc)
 
     def download_opencli(
         self,

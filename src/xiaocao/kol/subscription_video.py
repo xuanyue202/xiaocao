@@ -11,6 +11,7 @@ import re
 import shutil
 import subprocess
 import time
+from collections.abc import Mapping, Sequence
 from difflib import SequenceMatcher
 from datetime import datetime, timedelta, timezone
 from pathlib import Path, PurePosixPath
@@ -1055,6 +1056,263 @@ class SubscriptionVideoService:
         _atomic_write_json(self.manifest_path, manifest)
         _append_jsonl(self.events_path, migration)
         return migration
+
+    @staticmethod
+    def _migration_source_times(
+        value: Mapping[str, Any] | int | None,
+        *,
+        defaults: Mapping[str, int],
+        label: str,
+    ) -> dict[str, int]:
+        if value is None:
+            result = {source: int(defaults[source]) for source in defaults}
+        elif isinstance(value, Mapping):
+            result = {}
+            for source in defaults:
+                raw = value.get(source, defaults[source])
+                try:
+                    result[source] = int(raw)
+                except (TypeError, ValueError) as exc:
+                    raise EnrichmentError(
+                        f"Ticket 05 {label} is invalid"
+                    ) from exc
+        else:
+            try:
+                scalar = int(value)
+            except (TypeError, ValueError) as exc:
+                raise EnrichmentError(f"Ticket 05 {label} is invalid") from exc
+            result = {source: scalar for source in defaults}
+        if any(value < 0 for value in result.values()):
+            raise EnrichmentError(f"Ticket 05 {label} is invalid")
+        return result
+
+    @staticmethod
+    def _reviewed_version_rows(value: Sequence[Mapping[str, Any]]) -> list[dict[str, str]]:
+        if isinstance(value, (str, bytes)) or not isinstance(value, Sequence):
+            raise EnrichmentError(
+                "Ticket 05 historical eligibility review is invalid"
+            )
+        normalized: dict[tuple[str, str], dict[str, str]] = {}
+        for raw in value:
+            if not isinstance(raw, Mapping):
+                raise EnrichmentError(
+                    "Ticket 05 historical eligibility review is invalid"
+                )
+            identity = str(raw.get("identity") or "").strip()
+            version_key = str(raw.get("version_key") or "").strip()
+            source = str(raw.get("source") or "").strip()
+            if not identity or not version_key:
+                raise EnrichmentError(
+                    "Ticket 05 historical eligibility review is incomplete"
+                )
+            key = (identity, version_key)
+            prior = normalized.get(key)
+            if prior is not None and prior.get("source") != source:
+                raise EnrichmentError(
+                    "Ticket 05 historical eligibility review is ambiguous"
+                )
+            normalized[key] = {
+                "identity": identity,
+                "version_key": version_key,
+                "source": source,
+            }
+        if not normalized:
+            raise EnrichmentError(
+                "Ticket 05 historical eligibility review is empty"
+            )
+        return sorted(
+            normalized.values(),
+            key=lambda row: (row["identity"], row["version_key"]),
+        )
+
+    def _write_manifest_if_unchanged(
+        self,
+        expected_digest: str,
+        manifest: dict[str, Any],
+    ) -> bool:
+        current = self._load_manifest()
+        if _sha256_text(_canonical(current)) != expected_digest:
+            return False
+        _atomic_write_json(self.manifest_path, manifest)
+        return True
+
+    @_exclusive("manifest")
+    def retire_historical_versions(
+        self,
+        reviewed_versions: Sequence[Mapping[str, Any]],
+        *,
+        cutoff: Mapping[str, Any] | int | None = None,
+        source_watermarks: Mapping[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        """Retire an audited historical set without fabricating completion.
+
+        This is a manifest-only eligibility migration.  It deliberately has a
+        compare-and-swap check immediately before the write so an uncooperative
+        concurrent writer cannot be overwritten by a historical cleanup.
+        Claims, receipts, and completed-version markers are never edited here.
+        """
+
+        reviewed = self._reviewed_version_rows(reviewed_versions)
+        manifest = self._load_manifest()
+        manifest_digest = _sha256_text(_canonical(manifest))
+        observed_watermarks, _ = self._remote_time_watermarks(manifest)
+        watermarks = self._migration_source_times(
+            source_watermarks,
+            defaults=observed_watermarks,
+            label="source watermarks",
+        )
+        if watermarks != observed_watermarks:
+            return {
+                "event": "subscription_video_historical_eligibility_migration",
+                "status": "blocked",
+                "code": "eligibility_migration_source_watermark_changed",
+                "source_watermarks": observed_watermarks,
+                "external_business_effects_replayed": False,
+            }
+        cutoffs = self._migration_source_times(
+            cutoff,
+            defaults=watermarks,
+            label="eligibility cutoff",
+        )
+        if any(cutoffs[source] > watermarks[source] for source in watermarks):
+            raise EnrichmentError(
+                "Ticket 05 historical eligibility cutoff exceeds source watermark"
+            )
+
+        collections = {"items": manifest["items"]}
+        if isinstance(manifest.get("episodes"), dict):
+            collections["episodes"] = manifest["episodes"]
+        targets: list[tuple[str, dict[str, Any], dict[str, str]]] = []
+        for reviewed_row in reviewed:
+            found: tuple[str, dict[str, Any]] | None = None
+            for collection_name, collection in collections.items():
+                candidate = collection.get(reviewed_row["identity"])
+                if isinstance(candidate, dict):
+                    found = (collection_name, candidate)
+                    break
+            if found is None:
+                raise EnrichmentError(
+                    "Ticket 05 reviewed historical version is missing"
+                )
+            collection_name, row = found
+            if row.get("version_key") != reviewed_row["version_key"]:
+                raise EnrichmentError(
+                    "Ticket 05 reviewed historical version changed"
+                )
+            row_source = str(row.get("source") or "")
+            if reviewed_row["source"] and reviewed_row["source"] != row_source:
+                raise EnrichmentError(
+                    "Ticket 05 reviewed historical source changed"
+                )
+            if row_source not in watermarks:
+                raise EnrichmentError(
+                    "Ticket 05 reviewed historical source is unsupported"
+                )
+            if _remote_activity_at(row) > cutoffs[row_source]:
+                raise EnrichmentError(
+                    "Ticket 05 reviewed version is newer than eligibility cutoff"
+                )
+            targets.append((collection_name, row, reviewed_row))
+
+        migration_id = _sha256_text(
+            _canonical(
+                {
+                    "reviewed_versions": reviewed,
+                    "source_watermarks": watermarks,
+                    "cutoff": cutoffs,
+                }
+            )
+        )
+        prior_migrations = manifest.get("eligibility_migrations")
+        if not isinstance(prior_migrations, list):
+            prior_migrations = []
+        for prior in prior_migrations:
+            if isinstance(prior, dict) and prior.get("migration_id") == migration_id:
+                return {**prior, "status": "already_completed"}
+
+        # A second read is the CAS boundary.  The lock protects cooperating
+        # writers; the digest check also fails closed for a writer that did not
+        # use this service's lock.
+        current_manifest = self._load_manifest()
+        if _sha256_text(_canonical(current_manifest)) != manifest_digest:
+            blocked = {
+                "event": "subscription_video_historical_eligibility_migration",
+                "status": "blocked",
+                "code": "eligibility_migration_concurrent_writer",
+                "migration_id": migration_id,
+                "source_watermarks": watermarks,
+                "cutoff": cutoffs,
+                "external_business_effects_replayed": False,
+            }
+            _append_jsonl(self.events_path, blocked)
+            return blocked
+
+        retired: list[dict[str, str]] = []
+        for collection_name, row, reviewed_row in targets:
+            if (
+                row.get("work_eligible") is True
+                and row.get("completed_version_key") != row.get("version_key")
+            ):
+                row["work_eligible"] = False
+                row["eligibility_pause_reason"] = "historical_backlog_retired"
+                retired.append({
+                    "collection": collection_name,
+                    "identity": reviewed_row["identity"],
+                    "version_key": reviewed_row["version_key"],
+                })
+
+        reviewed_digest = _sha256_text(_canonical(reviewed))
+        retired_digest = _sha256_text(
+            _canonical(
+                sorted(
+                    retired,
+                    key=lambda row: (
+                        row["identity"],
+                        row["version_key"],
+                    ),
+                )
+            )
+        )
+        migration = {
+            "event": "subscription_video_historical_eligibility_migration",
+            "status": "completed",
+            "migration_id": migration_id,
+            "observed_at": self._time().isoformat(timespec="seconds"),
+            "source_watermarks": watermarks,
+            "cutoff": cutoffs,
+            "reviewed_count": len(reviewed),
+            "reviewed_versions_sha256": reviewed_digest,
+            "retired_count": len(retired),
+            "retired_versions_sha256": retired_digest,
+            "collection_summary": {
+                collection: sum(
+                    row["collection"] == collection for row in retired
+                )
+                for collection in sorted(collections)
+            },
+            "completed_version_keys_written": 0,
+            "claims_and_receipts_preserved": True,
+            "external_business_effects_replayed": False,
+        }
+        manifest["source_remote_time_watermarks"] = watermarks
+        manifest["historical_eligibility_migration"] = migration
+        manifest["eligibility_migrations"] = [*prior_migrations, migration]
+        if not self._write_manifest_if_unchanged(manifest_digest, manifest):
+            blocked = {
+                "event": "subscription_video_historical_eligibility_migration",
+                "status": "blocked",
+                "code": "eligibility_migration_concurrent_writer",
+                "migration_id": migration_id,
+                "source_watermarks": watermarks,
+                "cutoff": cutoffs,
+                "external_business_effects_replayed": False,
+            }
+            _append_jsonl(self.events_path, blocked)
+            return blocked
+        _append_jsonl(self.events_path, migration)
+        return migration
+
+    migrate_reviewed_historical_eligibility = retire_historical_versions
 
     @_exclusive("manifest")
     def observe(
