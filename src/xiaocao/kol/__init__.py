@@ -17,6 +17,7 @@ from .writer_progress import (
     RepairValidationReceipt,
     RepairValidationService,
     build_convergence_report,
+    build_stability_acceptance_report,
     normalize_source_result,
 )
 
@@ -36,5 +37,6 @@ __all__ = [
     "ConvergenceLedger",
     "RolloutReadback",
     "build_convergence_report",
+    "build_stability_acceptance_report",
     "normalize_source_result",
 ]

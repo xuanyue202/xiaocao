@@ -9,9 +9,10 @@ import subprocess
 import threading
 from contextlib import contextmanager
 from dataclasses import dataclass, field
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta
 from pathlib import Path
 from typing import Any, Callable, Iterator, Mapping
+from zoneinfo import ZoneInfo
 
 from ._shared import (
     append_integrity_jsonl,
@@ -85,6 +86,35 @@ _SAFE_BRANCH = re.compile(r"[A-Za-z0-9][A-Za-z0-9._/-]{0,127}")
 _HEX_40 = re.compile(r"[0-9a-f]{40}")
 _HEX_64 = re.compile(r"[0-9a-f]{64}")
 _MAX_LEDGER_LINE_BYTES = 64 * 1024
+_ACCEPTANCE_TIMEZONE = ZoneInfo("Asia/Shanghai")
+_REQUIRED_STABILITY_DAYS = 7
+_REQUIRED_STABILITY_SLOTS = 50
+_REQUIRED_RECENT_DAYS = 3
+_REQUIRED_RECENT_SLOTS = 20
+_PEER_GATE_P95_LIMIT_MS = 60_000
+_CLEAN_SWEEP_P95_LIMIT_MS = 300_000
+_MIN_LATENCY_SAMPLES = 20
+_GENERIC_WAIT_CODES = frozenset({
+    "generic_wait_without_deadline",
+    "source_pending",
+})
+_INTERNAL_FAILURE_CATEGORIES = frozenset({
+    "code_error",
+    "schema_error",
+    "environment_error",
+    "provider_contract_error",
+    "control_plane_handler_error",
+    "local_runtime_error",
+    "protocol_error",
+    "internal_state_error",
+})
+_DUPLICATE_EFFECT_KINDS = frozenset({
+    "publication",
+    "reminder",
+    "book",
+    "knowledge",
+    "ack",
+})
 
 
 class ProgressContractError(ValueError):
@@ -1734,6 +1764,20 @@ class ConvergenceLedger:
             period_end=period_end,
         )
 
+    def acceptance_report(
+        self,
+        daily_events: list[Mapping[str, Any]],
+        *,
+        as_of: str,
+    ) -> dict[str, Any]:
+        """Build the final acceptance report from the append-only ledger."""
+
+        return build_stability_acceptance_report(
+            daily_events,
+            self.events(),
+            as_of=as_of,
+        )
+
     def record(self, progress: WriterProgress, *, slot: str) -> dict[str, Any]:
         if progress.status != "repair_required":
             raise ProgressContractError(
@@ -2115,14 +2159,19 @@ class ConvergenceLedger:
         *,
         slot: str,
         baseline: Mapping[str, Any],
+        restart_after_failed_acceptance: bool = False,
     ) -> dict[str, Any]:
-        """Record the first accepted rollout and its immutable baseline."""
+        """Record an accepted rollout and start its measured window."""
 
         if not isinstance(readback, RolloutReadback) or not readback.accepted:
             raise ProgressContractError("rollout readback is not accepted")
         _timezone_aware(slot, field_name="slot")
         if not isinstance(baseline, Mapping):
             raise ProgressContractError("rollout baseline must be an object")
+        if not isinstance(restart_after_failed_acceptance, bool):
+            raise ProgressContractError(
+                "restart_after_failed_acceptance must be boolean"
+            )
         safe_baseline = {
             str(key): value for key, value in baseline.items()
             if str(key) in {
@@ -2133,22 +2182,38 @@ class ConvergenceLedger:
                 "runner_starts",
                 "side_effect_reconciliations",
                 "duplicate_effect_findings",
+                "known_failure_fingerprints",
             }
         }
+        if "known_failure_fingerprints" in safe_baseline:
+            raw_fingerprints = safe_baseline["known_failure_fingerprints"]
+            if not isinstance(raw_fingerprints, list):
+                raise ProgressContractError(
+                    "known_failure_fingerprints must be a list"
+                )
+            safe_baseline["known_failure_fingerprints"] = sorted({
+                _sha256(value, field_name="known failure fingerprint")
+                for value in raw_fingerprints
+            })
         with self._locked():
             existing = [
                 row for row in self.events()
                 if row.get("event") == "rollout_readback"
             ]
-            if existing:
+            if existing and not restart_after_failed_acceptance:
                 raise ProgressContractError("rollout readback already recorded")
+            recorded_at = self._now()
             return self._append(
                 {
                     "event": "rollout_readback",
+                    "observed_at": recorded_at,
                     "slot": slot,
                     "readback": readback.to_dict(),
                     "baseline": safe_baseline,
-                    "stability_window_start": slot,
+                    "stability_window_start": recorded_at,
+                    "restart_after_failed_acceptance": (
+                        restart_after_failed_acceptance
+                    ),
                 }
             )
 
@@ -2290,6 +2355,969 @@ def _report_at_or_before(row: Mapping[str, Any], end: datetime) -> bool:
         return _report_timestamp(raw, field_name="event timestamp") <= end
     except ProgressContractError:
         return False
+
+
+def _acceptance_event_timestamp(row: Mapping[str, Any]) -> datetime | None:
+    raw = row.get("occurred_at") or row.get("slot")
+    if not raw:
+        return None
+    return _report_timestamp(raw, field_name="acceptance event timestamp")
+
+
+def _acceptance_rows_until(
+    rows: list[Mapping[str, Any]],
+    *,
+    as_of: datetime,
+) -> list[Mapping[str, Any]]:
+    return [
+        row for row in rows
+        if isinstance(row, Mapping)
+        and (
+            (timestamp := _acceptance_event_timestamp(row)) is None
+            or timestamp <= as_of
+        )
+    ]
+
+
+def _acceptance_rows_in_window(
+    rows: list[Mapping[str, Any]],
+    *,
+    start: datetime,
+    end: datetime,
+) -> list[Mapping[str, Any]]:
+    return [
+        row for row in rows
+        if isinstance(row, Mapping)
+        and (
+            (timestamp := _acceptance_event_timestamp(row)) is None
+            or start <= timestamp <= end
+        )
+    ]
+
+
+def _acceptance_non_negative_int(
+    value: Any,
+    *,
+    field_name: str,
+    default: int | None = None,
+) -> int | None:
+    if value is None and default is not None:
+        return default
+    if isinstance(value, bool) or not isinstance(value, int) or value < 0:
+        raise ProgressContractError(
+            f"{field_name} must be a non-negative integer"
+        )
+    return value
+
+
+def _acceptance_latency_ms(row: Mapping[str, Any]) -> int | None:
+    for field_name in ("sweep_elapsed_ms", "elapsed_ms", "latency_ms"):
+        if field_name in row:
+            return _acceptance_non_negative_int(
+                row[field_name],
+                field_name=field_name,
+            )
+    return None
+
+
+def _acceptance_p95(values: list[int]) -> int | None:
+    if not values:
+        return None
+    ordered = sorted(values)
+    rank = (95 * len(ordered) + 99) // 100
+    return ordered[rank - 1]
+
+
+def _acceptance_blocker(
+    code: str,
+    *,
+    owner: str = "agent",
+    **details: Any,
+) -> dict[str, Any]:
+    _safe_token(code, field_name="acceptance blocker code")
+    result: dict[str, Any] = {"code": code, "owner": owner}
+    result.update(details)
+    return result
+
+
+def _acceptance_failure_fingerprint(row: Mapping[str, Any]) -> str:
+    value = str(row.get("failure_fingerprint") or "")
+    if not value:
+        raise ProgressContractError(
+            "failure observation lacks failure_fingerprint"
+        )
+    return _sha256(value, field_name="failure_fingerprint")
+
+
+def _acceptance_internal_user_action(row: Mapping[str, Any]) -> bool:
+    if row.get("user_action_required") is not True:
+        return False
+    failure = row.get("failure")
+    return (
+        isinstance(failure, Mapping)
+        and str(failure.get("category") or "")
+        in _INTERNAL_FAILURE_CATEGORIES
+    )
+
+
+def _acceptance_generic_wait(row: Mapping[str, Any]) -> bool:
+    if row.get("event") == "generic_wait":
+        return True
+    code = str(row.get("code") or "")
+    failure = row.get("failure")
+    if isinstance(failure, Mapping):
+        code = code or str(failure.get("code") or "")
+    if code in _GENERIC_WAIT_CODES:
+        return True
+    progress = row.get("writer_progress")
+    if not isinstance(progress, Mapping):
+        return False
+    details = progress.get("details")
+    return (
+        progress.get("status") == "wait_until"
+        and isinstance(details, Mapping)
+        and str(details.get("code") or "") in _GENERIC_WAIT_CODES
+    )
+
+
+def _acceptance_duplicate_counts(row: Mapping[str, Any]) -> dict[str, int]:
+    counts = {kind: 0 for kind in sorted(_DUPLICATE_EFFECT_KINDS)}
+    raw_counts = row.get("duplicate_effect_counts")
+    if isinstance(raw_counts, Mapping):
+        for kind, value in raw_counts.items():
+            token = _safe_token(kind, field_name="duplicate effect kind")
+            count = _acceptance_non_negative_int(
+                value,
+                field_name="duplicate effect count",
+            )
+            if token in counts:
+                counts[token] += int(count or 0)
+    raw_effects = row.get("duplicate_effects")
+    if isinstance(raw_effects, list):
+        for kind in raw_effects:
+            token = _safe_token(kind, field_name="duplicate effect kind")
+            if token in counts:
+                counts[token] += 1
+    for kind in _DUPLICATE_EFFECT_KINDS:
+        field_name = f"duplicate_{kind}_count"
+        if field_name in row:
+            counts[kind] += int(
+                _acceptance_non_negative_int(
+                    row[field_name],
+                    field_name=field_name,
+                )
+                or 0
+            )
+    total = _acceptance_non_negative_int(
+        row.get("duplicate_count"),
+        field_name="duplicate_count",
+        default=0,
+    ) or 0
+    if sum(counts.values()) < total:
+        counts["publication"] += total - sum(counts.values())
+    return counts
+
+
+def _acceptance_effect_identity(value: Mapping[str, Any]) -> str | None:
+    for field_name in (
+        "idempotency_key",
+        "idempotencyKey",
+        "receipt",
+        "receiptId",
+        "receipt_id",
+        "trade_id",
+        "id",
+    ):
+        candidate = value.get(field_name)
+        if candidate is None or candidate == "":
+            continue
+        if isinstance(candidate, Mapping):
+            return _digest(candidate)
+        return str(candidate)
+    return None
+
+
+def _acceptance_recomputed_duplicate_counts(
+    daily_rows: list[Mapping[str, Any]],
+) -> dict[str, int]:
+    effect_fields = {
+        "publication": ("gray_report", {"published"}),
+        "reminder": ("alert", {"delivered"}),
+        "book": ("book_kol_us", {"filled"}),
+        "knowledge": ("knowledge", {"published", "completed"}),
+        "ack": ("ack", {"acked", "already_acked"}),
+    }
+    seen: dict[str, set[str]] = {
+        kind: set() for kind in effect_fields
+    }
+    duplicates = {kind: 0 for kind in sorted(effect_fields)}
+    for row in daily_rows:
+        if row.get("event") != "source_completed":
+            continue
+        result = row.get("result")
+        if not isinstance(result, Mapping):
+            continue
+        events = result.get("events")
+        if not isinstance(events, list):
+            continue
+        for event in events:
+            if not isinstance(event, Mapping):
+                continue
+            for kind, (field_name, statuses) in effect_fields.items():
+                effect = event.get(field_name)
+                if not isinstance(effect, Mapping):
+                    continue
+                if effect.get("status") not in statuses:
+                    continue
+                identity = _acceptance_effect_identity(effect)
+                if identity is None:
+                    continue
+                if identity in seen[kind]:
+                    duplicates[kind] += 1
+                else:
+                    seen[kind].add(identity)
+    return duplicates
+
+
+def _acceptance_active_active(row: Mapping[str, Any]) -> bool:
+    if (
+        row.get("event") == "peer_gate_observed"
+        and row.get("gate_result") == "no_op"
+    ):
+        return True
+    if row.get("active_active") is True or row.get("active-active") is True:
+        return True
+    if row.get("event") in {
+        "active_active_detected",
+        "active-active",
+    }:
+        return True
+    count = _acceptance_non_negative_int(
+        row.get("active_writer_count"),
+        field_name="active_writer_count",
+        default=0,
+    ) or 0
+    if count > 1:
+        return True
+    writer_ids = row.get("active_writer_ids")
+    return isinstance(writer_ids, list) and len(writer_ids) > 1
+
+
+def _acceptance_fingerprint_report(
+    convergence_rows: list[Mapping[str, Any]],
+    *,
+    start: datetime | None,
+    recent_start_date: date,
+    baseline: Mapping[str, Any],
+) -> dict[str, Any]:
+    fingerprint_rows: dict[str, list[Mapping[str, Any]]] = {}
+    for row in convergence_rows:
+        if row.get("event") not in {
+            "failure_observed",
+            "repair_closed",
+            "repair_resumed",
+        }:
+            continue
+        fingerprint = _acceptance_failure_fingerprint(row)
+        fingerprint_rows.setdefault(fingerprint, []).append(row)
+
+    known_from_baseline: set[str] = set()
+    raw_known = baseline.get("known_failure_fingerprints")
+    if raw_known is not None:
+        if not isinstance(raw_known, list):
+            raise ProgressContractError(
+                "known_failure_fingerprints must be a list"
+            )
+        for fingerprint in raw_known:
+            known_from_baseline.add(_sha256(
+                fingerprint,
+                field_name="known failure fingerprint",
+            ))
+    known_fingerprints = set(fingerprint_rows) | known_from_baseline
+    open_fingerprints: list[str] = []
+    closed_fingerprints: set[str] = set()
+    recurrence_rows: list[tuple[str, Mapping[str, Any]]] = []
+    closure_receipt_missing: set[str] = set()
+    blockers: list[dict[str, Any]] = []
+    for fingerprint in sorted(known_fingerprints):
+        rows = fingerprint_rows.get(fingerprint, [])
+        closed_once = False
+        latest_event: str | None = None
+        latest_owner = "agent"
+        for row in rows:
+            event = str(row.get("event") or "")
+            if event == "failure_observed":
+                if closed_once:
+                    event_timestamp = _acceptance_event_timestamp(row)
+                    if (
+                        event_timestamp is None
+                        or start is None
+                        or event_timestamp >= start
+                    ):
+                        recurrence_rows.append((fingerprint, row))
+                latest_event = event
+                latest_owner = str(row.get("ownership") or "agent")
+            elif event == "repair_closed":
+                receipt = row.get("repair_receipt")
+                if (
+                    not isinstance(receipt, Mapping)
+                    or receipt.get("failure_fingerprint") != fingerprint
+                ):
+                    closure_receipt_missing.add(fingerprint)
+                    latest_event = event
+                    continue
+                closed_once = True
+                latest_event = event
+                latest_owner = "none"
+            elif event == "repair_resumed" and closed_once:
+                latest_event = event
+                latest_owner = "none"
+        if closed_once and fingerprint not in closure_receipt_missing:
+            closed_fingerprints.add(fingerprint)
+        if (
+            latest_event not in {"repair_closed", "repair_resumed"}
+            or fingerprint in closure_receipt_missing
+        ):
+            open_fingerprints.append(fingerprint)
+            blockers.append(_acceptance_blocker(
+                "fingerprint_closure_incomplete",
+                fingerprint=fingerprint,
+                owner=latest_owner,
+            ))
+    for fingerprint in sorted(closure_receipt_missing):
+        blockers.append(_acceptance_blocker(
+            "repair_closure_receipt_missing",
+            fingerprint=fingerprint,
+        ))
+    if recurrence_rows:
+        for fingerprint in sorted({row[0] for row in recurrence_rows}):
+            blockers.append(_acceptance_blocker(
+                "repair_after_same_root_recurrence",
+                fingerprint=fingerprint,
+            ))
+    recent_recurrence = [
+        row for _fingerprint, row in recurrence_rows
+        if (
+            (timestamp := _acceptance_event_timestamp(row)) is not None
+            and timestamp.astimezone(_ACCEPTANCE_TIMEZONE).date()
+            >= recent_start_date
+        )
+    ]
+    fingerprints_at_rollout = {
+        fingerprint
+        for fingerprint, rows in fingerprint_rows.items()
+        if any(
+            (
+                (timestamp := _acceptance_event_timestamp(row)) is None
+                or start is None
+                or timestamp <= start
+            )
+            for row in rows
+        )
+    }
+    baseline_count = baseline.get("failure_fingerprints")
+    hard_failure = bool(recurrence_rows)
+    if baseline_count is not None:
+        baseline_count = _acceptance_non_negative_int(
+            baseline_count,
+            field_name="baseline failure_fingerprints",
+        )
+        inventory_at_rollout = fingerprints_at_rollout | known_from_baseline
+        if int(baseline_count or 0) != len(inventory_at_rollout):
+            blockers.append(_acceptance_blocker(
+                (
+                    "known_fingerprint_inventory_missing"
+                    if baseline_count and not inventory_at_rollout
+                    else "known_fingerprint_inventory_mismatch"
+                ),
+                expected=int(baseline_count or 0),
+                observed=len(inventory_at_rollout),
+            ))
+            hard_failure = True
+    return {
+        "fingerprints": {
+            "observed": len(known_fingerprints),
+            "closed": len(closed_fingerprints),
+            "open": open_fingerprints,
+            "same_root_recurrence": len(recurrence_rows),
+            "recent_same_root_recurrence": len(recent_recurrence),
+        },
+        "blockers": blockers,
+        "hard_failure": hard_failure,
+        "repairs": {
+            "required": sum(
+                row.get("event") == "failure_observed"
+                for row in convergence_rows
+            ),
+            "closed": sum(
+                row.get("event") == "repair_closed"
+                for row in convergence_rows
+            ),
+        },
+    }
+
+
+def _acceptance_clean_sweep(row: Mapping[str, Any]) -> bool:
+    if row.get("event") != "sweep_completed" or row.get("health") != "healthy":
+        return False
+    if int(row.get("coordinator_source_video_bytes") or 0) != 0:
+        return False
+    states = row.get("source_states")
+    if not isinstance(states, list):
+        return True
+    for state in states:
+        if not isinstance(state, Mapping):
+            return False
+        if state.get("user_action_required") is True:
+            return False
+        if state.get("failure") or state.get("repair_required") is True:
+            return False
+        if int(state.get("new_external_effect_count") or 0) != 0:
+            return False
+        if state.get("status") not in {"no_update", "terminal"}:
+            return False
+    return True
+
+
+def _acceptance_next_window(
+    *,
+    status: str,
+    start: datetime | None,
+    as_of: datetime,
+    scheduled_slots: int,
+) -> dict[str, Any]:
+    if status == "failed":
+        return {
+            "kind": "new_rollout",
+            "reason_code": "restart_stability_window_after_failed_acceptance",
+        }
+    if start is None:
+        return {
+            "kind": "rollout_readback",
+            "reason_code": "await_authoritative_rollout_readback",
+        }
+    return {
+        "kind": "stability_window",
+        "not_before": max(
+            as_of,
+            start + timedelta(days=_REQUIRED_STABILITY_DAYS),
+        ).isoformat(timespec="seconds"),
+        "scheduled_slots_remaining": max(
+            0,
+            _REQUIRED_STABILITY_SLOTS - scheduled_slots,
+        ),
+    }
+
+
+def build_stability_acceptance_report(
+    daily_events: list[Mapping[str, Any]],
+    convergence_events: list[Mapping[str, Any]],
+    *,
+    as_of: str,
+) -> dict[str, Any]:
+    """Recompute the seven-day acceptance gates from append-only ledgers.
+
+    ``pending_observation`` is deliberately a normal result.  It means the
+    authoritative rollout or the required future sample is not available yet;
+    only ``passed`` is permission to close issue06.
+    """
+
+    end = _report_timestamp(as_of, field_name="as_of")
+    daily_rows = _acceptance_rows_until(daily_events, as_of=end)
+    convergence_rows = _acceptance_rows_until(convergence_events, as_of=end)
+    rollout_rows = [
+        row for row in convergence_rows
+        if row.get("event") == "rollout_readback"
+    ]
+    if not rollout_rows:
+        return {
+            "schema_version": 1,
+            "status": "pending_observation",
+            "as_of": as_of,
+            "rollout": {"status": "not_recorded"},
+            "window": {
+                "start": None,
+                "as_of": as_of,
+                "elapsed_days": 0,
+                "scheduled_slots": 0,
+                "observed_days": 0,
+                "missing_observation_dates": [],
+                "required_days": _REQUIRED_STABILITY_DAYS,
+                "required_scheduled_slots": _REQUIRED_STABILITY_SLOTS,
+                "last_three_days_scheduled_slots": 0,
+                "required_last_three_days": _REQUIRED_RECENT_DAYS,
+                "required_last_twenty_slots": _REQUIRED_RECENT_SLOTS,
+            },
+            "latency": {
+                "peer_gate": {
+                    "sample_count": 0,
+                    "p95_ms": None,
+                    "limit_ms": _PEER_GATE_P95_LIMIT_MS,
+                    "status": "pending_observation",
+                },
+                "clean_sweep": {
+                    "sample_count": 0,
+                    "p95_ms": None,
+                    "limit_ms": _CLEAN_SWEEP_P95_LIMIT_MS,
+                    "status": "pending_observation",
+                },
+            },
+            "fingerprints": {
+                "observed": 0,
+                "closed": 0,
+                "open": [],
+                "same_root_recurrence": 0,
+            },
+            "repairs": {"required": 0, "closed": 0},
+            "safety": {
+                "active_active": 0,
+                "duplicate_effects": 0,
+                "duplicate_effect_audits": 0,
+                "source_video_bytes": 0,
+                "internal_user_dependencies": 0,
+                "generic_waits": 0,
+                "p0_safety_incidents": 0,
+                "excluded_by_reason": {},
+            },
+            "blockers": [_acceptance_blocker("rollout_readback_missing")],
+            "next_verification_window": _acceptance_next_window(
+                status="pending_observation",
+                start=None,
+                as_of=end,
+                scheduled_slots=0,
+            ),
+        }
+
+    blockers: list[dict[str, Any]] = []
+    hard_failure = False
+    if any(
+        row.get("restart_after_failed_acceptance") is not True
+        for row in rollout_rows[1:]
+    ):
+        blockers.append(_acceptance_blocker("multiple_rollout_readbacks"))
+        hard_failure = True
+    rollout = rollout_rows[-1]
+    readback_value = rollout.get("readback")
+    readback: RolloutReadback | None = None
+    try:
+        readback = RolloutReadback.from_dict(readback_value)
+    except ProgressContractError:
+        blockers.append(_acceptance_blocker("rollout_readback_invalid"))
+        hard_failure = True
+    start_raw = rollout.get("stability_window_start") or rollout.get("slot")
+    start = (
+        _report_timestamp(start_raw, field_name="stability_window_start")
+        if start_raw
+        else None
+    )
+    if start is None:
+        blockers.append(_acceptance_blocker("stability_window_start_missing"))
+        hard_failure = True
+    elif start > end:
+        blockers.append(_acceptance_blocker("as_of_before_rollout"))
+        hard_failure = True
+
+    window_daily = (
+        _acceptance_rows_in_window(daily_rows, start=start, end=end)
+        if start is not None
+        else []
+    )
+    window_convergence = (
+        _acceptance_rows_in_window(convergence_rows, start=start, end=end)
+        if start is not None
+        else []
+    )
+
+    scheduled_slots = sorted({
+        str(row.get("slot"))
+        for row in window_daily
+        if row.get("event") == "sweep_completed" and row.get("slot")
+    })
+    parsed_scheduled_slots = [
+        _report_timestamp(slot, field_name="scheduled slot")
+        for slot in scheduled_slots
+    ]
+    local_end = end.astimezone(_ACCEPTANCE_TIMEZONE)
+    recent_start_date = local_end.date() - timedelta(days=2)
+    recent_slots = [
+        slot for slot in parsed_scheduled_slots
+        if recent_start_date <= slot.astimezone(_ACCEPTANCE_TIMEZONE).date()
+        <= local_end.date()
+    ]
+    scheduled_dates = {
+        slot.astimezone(_ACCEPTANCE_TIMEZONE).date()
+        for slot in parsed_scheduled_slots
+    }
+    missing_observation_dates: list[str] = []
+    if start is not None:
+        window_start_date = start.astimezone(_ACCEPTANCE_TIMEZONE).date()
+        window_end_date = local_end.date()
+        expected_dates = {
+            window_start_date + timedelta(days=offset)
+            for offset in range((window_end_date - window_start_date).days + 1)
+        }
+        missing_observation_dates = sorted(
+            date_value.isoformat()
+            for date_value in expected_dates - scheduled_dates
+        )
+    elapsed_days = (
+        round((end - start).total_seconds() / 86400, 10)
+        if start is not None
+        else 0
+    )
+    if start is not None and elapsed_days < _REQUIRED_STABILITY_DAYS:
+        blockers.append(_acceptance_blocker("observation_days_incomplete"))
+    if elapsed_days >= _REQUIRED_STABILITY_DAYS and missing_observation_dates:
+        blockers.append(_acceptance_blocker(
+            "observation_days_discontinuous",
+            count=len(missing_observation_dates),
+        ))
+    if len(scheduled_slots) < _REQUIRED_STABILITY_SLOTS:
+        blockers.append(_acceptance_blocker("scheduled_slots_incomplete"))
+    if len({
+        slot.astimezone(_ACCEPTANCE_TIMEZONE).date() for slot in recent_slots
+    }) < _REQUIRED_RECENT_DAYS:
+        blockers.append(_acceptance_blocker("recent_observation_days_incomplete"))
+    if len(recent_slots) < _REQUIRED_RECENT_SLOTS:
+        blockers.append(_acceptance_blocker("recent_scheduled_slots_incomplete"))
+
+    excluded_by_reason: dict[str, int] = {}
+    for row in window_daily:
+        if row.get("event") != "slot_excluded":
+            continue
+        reason = str(row.get("reason") or row.get("code") or "")
+        if not reason:
+            blockers.append(_acceptance_blocker("excluded_slot_reason_missing"))
+            hard_failure = True
+            continue
+        try:
+            reason = _safe_token(reason, field_name="slot exclusion reason")
+        except ProgressContractError:
+            blockers.append(_acceptance_blocker("excluded_slot_reason_invalid"))
+            hard_failure = True
+            continue
+        excluded_by_reason[reason] = excluded_by_reason.get(reason, 0) + 1
+
+    all_window_rows = window_daily + window_convergence
+    active_active = sum(
+        _acceptance_active_active(row) for row in all_window_rows
+    )
+    if readback is not None and readback.active_writer_count != 1:
+        active_active += 1
+    if active_active:
+        blockers.append(_acceptance_blocker(
+            "active_active_detected",
+            count=active_active,
+        ))
+        hard_failure = True
+
+    duplicate_effects = {kind: 0 for kind in sorted(_DUPLICATE_EFFECT_KINDS)}
+    duplicate_audit_rows = [
+        row for row in all_window_rows
+        if row.get("event") == "duplicate_effect_audit"
+    ]
+    for row in duplicate_audit_rows:
+        for kind, count in _acceptance_duplicate_counts(row).items():
+            duplicate_effects[kind] += count
+    recomputed_duplicate_effects = _acceptance_recomputed_duplicate_counts(
+        window_daily
+    )
+    audit_slots = {
+        str(row.get("slot"))
+        for row in duplicate_audit_rows
+        if row.get("slot")
+    }
+    missing_duplicate_audit_slots = set(scheduled_slots) - audit_slots
+    if missing_duplicate_audit_slots:
+        blockers.append(_acceptance_blocker(
+            "duplicate_effect_audit_missing",
+            count=len(missing_duplicate_audit_slots),
+        ))
+    if duplicate_effects != recomputed_duplicate_effects:
+        blockers.append(_acceptance_blocker(
+            "duplicate_effect_audit_mismatch",
+        ))
+        hard_failure = True
+    duplicate_total = sum(duplicate_effects.values())
+    if duplicate_total:
+        blockers.append(_acceptance_blocker(
+            "duplicate_effects_detected",
+            count=duplicate_total,
+        ))
+        hard_failure = True
+
+    source_video_bytes = 0
+    internal_user_dependencies = 0
+    generic_waits = 0
+    for row in all_window_rows:
+        source_video_bytes += int(
+            _acceptance_non_negative_int(
+                row.get("coordinator_source_video_bytes"),
+                field_name="coordinator_source_video_bytes",
+                default=0,
+            )
+            or 0
+        )
+        for state in row.get("source_states") or []:
+            if not isinstance(state, Mapping):
+                continue
+            internal_user_dependencies += int(
+                _acceptance_internal_user_action(state)
+            )
+            generic_waits += int(_acceptance_generic_wait(state))
+        internal_user_dependencies += int(
+            _acceptance_internal_user_action(row)
+        )
+        generic_waits += int(_acceptance_generic_wait(row))
+    if source_video_bytes:
+        blockers.append(_acceptance_blocker(
+            "source_video_bytes_detected",
+            count=source_video_bytes,
+        ))
+        hard_failure = True
+    if internal_user_dependencies:
+        blockers.append(_acceptance_blocker(
+            "internal_failure_user_dependency",
+            count=internal_user_dependencies,
+        ))
+        hard_failure = True
+    if generic_waits:
+        blockers.append(_acceptance_blocker(
+            "generic_wait_detected",
+            count=generic_waits,
+        ))
+        hard_failure = True
+
+    def is_p0_incident(row: Mapping[str, Any]) -> bool:
+        failure = row.get("failure")
+        failure_severity = (
+            failure.get("severity")
+            if isinstance(failure, Mapping)
+            else None
+        )
+        failure_priority = (
+            failure.get("priority")
+            if isinstance(failure, Mapping)
+            else None
+        )
+        return bool(
+            row.get("severity") == "P0"
+            or row.get("priority") == "P0"
+            or failure_severity == "P0"
+            or failure_priority == "P0"
+            or row.get("p0_safety_incident") is True
+            or row.get("safety_status") in {"failed", "unsafe", "P0"}
+            or row.get("event") in {
+                "p0_safety_incident",
+                "safety_incident",
+                "safety_failure",
+            }
+        )
+
+    p0_incidents = sum(is_p0_incident(row) for row in all_window_rows)
+    if p0_incidents:
+        blockers.append(_acceptance_blocker(
+            "p0_safety_incident",
+            count=p0_incidents,
+        ))
+        hard_failure = True
+
+    peer_latencies = [
+        int(latency)
+        for row in window_convergence
+        if row.get("event") == "peer_gate_observed"
+        for latency in [_acceptance_latency_ms(row)]
+        if latency is not None
+    ]
+    clean_sweep_latencies: list[int] = []
+    missing_clean_sweep_latency = 0
+    for row in window_daily:
+        if not _acceptance_clean_sweep(row):
+            continue
+        latency = _acceptance_latency_ms(row)
+        if latency is None:
+            missing_clean_sweep_latency += 1
+        else:
+            clean_sweep_latencies.append(latency)
+    peer_p95 = _acceptance_p95(peer_latencies)
+    clean_sweep_p95 = _acceptance_p95(clean_sweep_latencies)
+    if not peer_latencies:
+        blockers.append(_acceptance_blocker("peer_gate_latency_missing"))
+    elif len(peer_latencies) < _MIN_LATENCY_SAMPLES:
+        blockers.append(_acceptance_blocker(
+            "peer_gate_latency_samples_insufficient",
+            count=len(peer_latencies),
+            required=_MIN_LATENCY_SAMPLES,
+        ))
+    elif peer_p95 is not None and peer_p95 > _PEER_GATE_P95_LIMIT_MS:
+        blockers.append(_acceptance_blocker(
+            "peer_gate_p95_exceeded",
+            p95_ms=peer_p95,
+            limit_ms=_PEER_GATE_P95_LIMIT_MS,
+        ))
+        hard_failure = True
+    if not clean_sweep_latencies or missing_clean_sweep_latency:
+        blockers.append(_acceptance_blocker("clean_sweep_latency_missing"))
+    elif len(clean_sweep_latencies) < _MIN_LATENCY_SAMPLES:
+        blockers.append(_acceptance_blocker(
+            "clean_sweep_latency_samples_insufficient",
+            count=len(clean_sweep_latencies),
+            required=_MIN_LATENCY_SAMPLES,
+        ))
+    elif clean_sweep_p95 is not None and clean_sweep_p95 > _CLEAN_SWEEP_P95_LIMIT_MS:
+        blockers.append(_acceptance_blocker(
+            "clean_sweep_p95_exceeded",
+            p95_ms=clean_sweep_p95,
+            limit_ms=_CLEAN_SWEEP_P95_LIMIT_MS,
+        ))
+        hard_failure = True
+
+    baseline = rollout.get("baseline")
+    if baseline is not None and not isinstance(baseline, Mapping):
+        raise ProgressContractError("rollout baseline must be an object")
+    baseline = baseline or {}
+    fingerprint_report = _acceptance_fingerprint_report(
+        convergence_rows,
+        start=start,
+        recent_start_date=recent_start_date,
+        baseline=baseline,
+    )
+    blockers.extend(fingerprint_report["blockers"])
+    hard_failure = hard_failure or fingerprint_report["hard_failure"]
+
+    window = {
+        "start": (
+            start.isoformat(timespec="seconds") if start is not None else None
+        ),
+        "as_of": as_of,
+        "elapsed_days": elapsed_days,
+        "scheduled_slots": len(scheduled_slots),
+        "observed_days": len(scheduled_dates),
+        "missing_observation_dates": missing_observation_dates,
+        "required_days": _REQUIRED_STABILITY_DAYS,
+        "required_scheduled_slots": _REQUIRED_STABILITY_SLOTS,
+        "last_three_days_scheduled_slots": len(recent_slots),
+        "required_last_three_days": _REQUIRED_RECENT_DAYS,
+        "required_last_twenty_slots": _REQUIRED_RECENT_SLOTS,
+    }
+    latency = {
+        "peer_gate": {
+            "sample_count": len(peer_latencies),
+            "p95_ms": peer_p95,
+            "limit_ms": _PEER_GATE_P95_LIMIT_MS,
+            "status": (
+                "pending_observation"
+                if peer_p95 is None or len(peer_latencies) < _MIN_LATENCY_SAMPLES
+                else "failed"
+                if peer_p95 > _PEER_GATE_P95_LIMIT_MS
+                else "passed"
+            ),
+        },
+        "clean_sweep": {
+            "sample_count": len(clean_sweep_latencies),
+            "missing_sample_count": missing_clean_sweep_latency,
+            "p95_ms": clean_sweep_p95,
+            "limit_ms": _CLEAN_SWEEP_P95_LIMIT_MS,
+            "status": (
+                "pending_observation"
+                if (
+                    clean_sweep_p95 is None
+                    or missing_clean_sweep_latency
+                    or len(clean_sweep_latencies) < _MIN_LATENCY_SAMPLES
+                )
+                else "failed"
+                if clean_sweep_p95 > _CLEAN_SWEEP_P95_LIMIT_MS
+                else "passed"
+            ),
+        },
+    }
+    safety = {
+        "active_active": active_active,
+        "duplicate_effects": duplicate_total,
+        "duplicate_effect_audits": len(duplicate_audit_rows),
+        "duplicate_effects_by_kind": duplicate_effects,
+        "source_video_bytes": source_video_bytes,
+        "internal_user_dependencies": internal_user_dependencies,
+        "generic_waits": generic_waits,
+        "p0_safety_incidents": p0_incidents,
+        "excluded_by_reason": dict(sorted(excluded_by_reason.items())),
+    }
+    fingerprints = fingerprint_report["fingerprints"]
+    repairs = {
+        "required": sum(
+            row.get("event") == "failure_observed"
+            for row in window_convergence
+        ),
+        "closed": sum(
+            row.get("event") == "repair_closed"
+            for row in window_convergence
+        ),
+    }
+    if readback is not None:
+        rollout_report = {
+            "status": "accepted",
+            "automation_id": readback.automation_id,
+            "writer_task_id": readback.writer_task_id,
+            "target_revision": readback.target_revision,
+            "stability_window_start": rollout.get(
+                "stability_window_start", rollout.get("slot")
+            ),
+            "security_validation": {
+                "automation_readback": readback.automation_readback,
+                "worktree_protected": readback.worktree_protected,
+                "dependencies_ready": readback.dependencies_ready,
+                "private_config_ready": readback.private_config_ready,
+                "restored_state_ready": readback.restored_state_ready,
+            },
+        }
+    else:
+        rollout_report = {"status": "invalid"}
+    pending_blockers = {
+        "observation_days_incomplete",
+        "observation_days_discontinuous",
+        "scheduled_slots_incomplete",
+        "recent_observation_days_incomplete",
+        "recent_scheduled_slots_incomplete",
+        "peer_gate_latency_missing",
+        "peer_gate_latency_samples_insufficient",
+        "clean_sweep_latency_missing",
+        "clean_sweep_latency_samples_insufficient",
+        "duplicate_effect_audit_missing",
+        "fingerprint_closure_incomplete",
+        "repair_closure_receipt_missing",
+        "known_fingerprint_inventory_missing",
+    }
+    has_pending = any(blocker["code"] in pending_blockers for blocker in blockers)
+    status = (
+        "failed" if hard_failure
+        else "pending_observation" if has_pending
+        else "passed"
+    )
+    blockers = sorted(
+        blockers,
+        key=lambda blocker: (
+            str(blocker.get("code")),
+            str(blocker.get("fingerprint") or ""),
+        ),
+    )
+    return {
+        "schema_version": 1,
+        "status": status,
+        "as_of": as_of,
+        "rollout": rollout_report,
+        "window": window,
+        "latency": latency,
+        "fingerprints": fingerprints,
+        "repairs": repairs,
+        "safety": safety,
+        "blockers": blockers,
+        "next_verification_window": _acceptance_next_window(
+            status=status,
+            start=start,
+            as_of=end,
+            scheduled_slots=len(scheduled_slots),
+        ),
+    }
 
 
 def build_convergence_report(
@@ -2449,13 +3477,14 @@ def build_convergence_report(
         if row.get("event") == "rollout_readback"
     ]
     latest_rollout = rollout_rows[-1] if rollout_rows else None
-    rollout_starts = [
-        str(row.get("stability_window_start") or row.get("slot"))
-        for row in all_convergence
-        if row.get("event") == "rollout_readback"
-        and (row.get("stability_window_start") or row.get("slot"))
-    ]
-    stability_start = min(rollout_starts, default=None)
+    stability_start = (
+        str(
+            latest_rollout.get("stability_window_start")
+            or latest_rollout.get("slot")
+        )
+        if latest_rollout is not None
+        else None
+    )
     latest_event = max(
         (
             row.get("slot") or row.get("occurred_at")

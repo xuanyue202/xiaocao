@@ -12,6 +12,7 @@ import hashlib
 import json
 import re
 import threading
+import time
 from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
@@ -1562,6 +1563,60 @@ class DailyCoordinator:
         return states
 
     @staticmethod
+    def _duplicate_effect_audit(results: list[dict[str, Any]]) -> dict[str, Any]:
+        effect_fields = {
+            "publication": ("gray_report", {"published"}),
+            "reminder": ("alert", {"delivered"}),
+            "book": ("book_kol_us", {"filled"}),
+            "knowledge": ("knowledge", {"published", "completed"}),
+            "ack": ("ack", {"acked", "already_acked"}),
+        }
+        seen = {kind: set() for kind in effect_fields}
+        duplicates = {kind: 0 for kind in sorted(effect_fields)}
+        for result in results:
+            for event in result.get("events") or []:
+                if not isinstance(event, Mapping):
+                    continue
+                for kind, (field_name, statuses) in effect_fields.items():
+                    effect = event.get(field_name)
+                    if not isinstance(effect, Mapping):
+                        continue
+                    if effect.get("status") not in statuses:
+                        continue
+                    identity = next(
+                        (
+                            value
+                            for name in (
+                                "idempotency_key",
+                                "idempotencyKey",
+                                "receipt",
+                                "receiptId",
+                                "receipt_id",
+                                "trade_id",
+                                "id",
+                                )
+                            if (
+                                (value := effect.get(name)) is not None
+                                and value != ""
+                            )
+                        ),
+                        None,
+                    )
+                    if isinstance(identity, Mapping):
+                        identity = canonical_sha256(identity)
+                    if identity is None:
+                        continue
+                    identity = str(identity)
+                    if identity in seen[kind]:
+                        duplicates[kind] += 1
+                    else:
+                        seen[kind].add(identity)
+        return {
+            "duplicate_count": sum(duplicates.values()),
+            "duplicate_effect_counts": duplicates,
+        }
+
+    @staticmethod
     def _sweep_health(results: list[dict[str, Any]]) -> str:
         if any(row.get("user_action_required") for row in results):
             return "blocked"
@@ -1585,6 +1640,7 @@ class DailyCoordinator:
                 "beijing_time": now.isoformat(timespec="seconds"),
             }
         slot = now.strftime("%Y-%m-%dT%H:00+08:00")
+        sweep_started_monotonic = time.monotonic()
         ordered = sorted(
             sources,
             key=lambda row: (int(row.get("priority", 100)), str(row.get("name", ""))),
@@ -2175,6 +2231,7 @@ class DailyCoordinator:
                 )
             source_states = self._source_states(results)
             health = self._sweep_health(results)
+            duplicate_audit = self._duplicate_effect_audit(results)
             self._append(
                 "sweep_completed",
                 slot=slot,
@@ -2182,7 +2239,16 @@ class DailyCoordinator:
                 health=health,
                 source_count=len(results),
                 source_states=source_states,
+                elapsed_ms=max(
+                    0,
+                    int((time.monotonic() - sweep_started_monotonic) * 1000),
+                ),
                 coordinator_source_video_bytes=0,
+            )
+            self._append(
+                "duplicate_effect_audit",
+                slot=slot,
+                **duplicate_audit,
             )
         silent = (
             all(row["status"] in {"no_update", "waiting"} for row in results)
@@ -2240,6 +2306,17 @@ class DailyCoordinator:
             self.events(),
             period_start=start,
             period_end=end,
+        )
+
+    def stability_acceptance_report(
+        self,
+        *,
+        as_of: str | None = None,
+    ) -> dict[str, Any]:
+        end = as_of or self._beijing_now().isoformat(timespec="seconds")
+        return self.convergence.acceptance_report(
+            self.events(),
+            as_of=end,
         )
 
     def audit(self) -> dict[str, Any]:

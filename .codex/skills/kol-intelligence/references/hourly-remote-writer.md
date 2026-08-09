@@ -16,6 +16,7 @@ PYTHONPATH=src .venv/bin/python scripts/kol_daily.py run
 PYTHONPATH=src .venv/bin/python scripts/kol_daily.py status
 PYTHONPATH=src .venv/bin/python scripts/kol_daily.py audit
 PYTHONPATH=src .venv/bin/python scripts/kol_daily.py convergence-report
+PYTHONPATH=src .venv/bin/python scripts/kol_daily.py stability-acceptance
 ```
 
 Each run is one sweep; a sweep with no concrete item is silent. Every concrete
@@ -138,9 +139,9 @@ Automation ownership:
 PYTHONPATH=src .venv/bin/python scripts/kol_daily.py rollout-readback
 ```
 
-Use exact self-hashed Automation-interface evidence. Local facts are re-read
-and a peer-gate pass from the prior ten minutes is required. Only acceptance
-starts the seven-day/50-scheduled-slot window; never backfill business slots.
+Use self-hashed Automation evidence; require recent peer-gate readback.
+Acceptance starts seven-day/50-scheduled-slot observation; never backfill.
+`stability-acceptance` is read-only: pending until gates, passed if all pass.
 
 At provider steps, use installed OpenCLI once with exact identity/version,
 bytes, hashes, and receipts. The no-MCP capture rule permits the

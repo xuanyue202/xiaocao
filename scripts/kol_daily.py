@@ -3115,6 +3115,7 @@ def main() -> int:
             "status",
             "audit",
             "convergence-report",
+            "stability-acceptance",
             "record-peer-gate",
             "rollout-readback",
         ),
@@ -3318,6 +3319,9 @@ def main() -> int:
             period_end=args.period_end,
         ))
         return 0
+    if args.command == "stability-acceptance":
+        _print(service.stability_acceptance_report(as_of=args.period_end))
+        return 0
     if args.command == "record-peer-gate":
         try:
             payload = json.loads(sys.stdin.readline())
@@ -3343,12 +3347,16 @@ def main() -> int:
             raise DailyError(
                 "rollout-readback requires one JSON object on stdin"
             ) from exc
-        if not isinstance(payload, dict) or set(payload) != {
+        rollout_fields = {
             "readback",
             "automation_evidence",
             "baseline",
             "slot",
-        }:
+        }
+        if not isinstance(payload, dict) or not (
+            set(payload) <= rollout_fields | {"restart_after_failed_acceptance"}
+            and rollout_fields <= set(payload)
+        ):
             raise DailyError(
                 "rollout-readback requires readback, Automation evidence, baseline, and slot"
             )
@@ -3368,6 +3376,10 @@ def main() -> int:
             readback,
             slot=str(payload["slot"]),
             baseline=payload["baseline"],
+            restart_after_failed_acceptance=payload.get(
+                "restart_after_failed_acceptance",
+                False,
+            ),
         )
         _print({"rollout_readback": receipt})
         return 0
