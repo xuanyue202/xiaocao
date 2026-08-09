@@ -2197,6 +2197,11 @@ try {
             "wrong_share",
         }
         retryable_codes = {
+            # OpenCLI deliberately does not retry a detached command because
+            # arbitrary browser commands may have uncertain effects.  This
+            # surface is only the read-only share listing, so reopening the
+            # exact share and evaluating it once more is safe and bounded.
+            "detached_mid_command",
             "opencli_timeout",
             "opencli_command_failed",
             "opencli_invalid_json",

@@ -272,6 +272,90 @@ def test_repair_validation_accepts_subscription_private_listing_profile(
     assert receipt.failure_fingerprint == "6" * 64
 
 
+@pytest.mark.parametrize("adapter", ["lv_text_image", "subscription_video"])
+def test_repair_validation_accepts_shared_lv_listing_browser_eval_profile(
+    tmp_path,
+    adapter,
+) -> None:
+    context = {
+        "adapter": adapter,
+        "message_id": "7" * 64,
+        "content_sha256": "8" * 64,
+        "failure_fingerprint": "9" * 64,
+        "failure_revision": FAILURE_REVISION,
+        "category": "transport_error",
+        "code": "detached_mid_command",
+        "stage": "browser_eval",
+        "targeted_test_profile": f"kol_{adapter}_browser_eval",
+    }
+
+    def git(command: tuple[str, ...]) -> CompletedProcess[str]:
+        if command == ("branch", "--show-current"):
+            return CompletedProcess(command, 0, "main\n", "")
+        if command == ("rev-parse", "--verify", "HEAD^{commit}"):
+            return CompletedProcess(command, 0, f"{REPAIR_REVISION}\n", "")
+        if command == ("rev-parse", "--verify", "origin/main^{commit}"):
+            return CompletedProcess(command, 0, f"{REPAIR_REVISION}\n", "")
+        if command[:2] == ("diff-tree", "--no-commit-id"):
+            return CompletedProcess(
+                command,
+                0,
+                (
+                    "src/xiaocao/kol/lv_subscription.py\n"
+                    "tests/test_kol_lv_subscription.py\n"
+                ),
+                "",
+            )
+        if command == ("show", "-s", "--format=%B", REPAIR_REVISION):
+            return CompletedProcess(
+                command,
+                0,
+                (
+                    "Repair shared listing eval\n\n"
+                    f"Repair-Fingerprint: {'9' * 64}\n"
+                ),
+                "",
+            )
+        if command[:2] == ("merge-base", "--is-ancestor"):
+            return CompletedProcess(command, 0, "", "")
+        raise AssertionError(command)
+
+    expected_command = (
+        "env",
+        "PYTHONPATH=src",
+        ".venv/bin/python",
+        "-m",
+        "pytest",
+        "tests/test_kol_lv_subscription.py",
+        "tests/test_kol_repair_validation.py",
+        "-q",
+        "-k",
+        (
+            "listing_recovers_once_after_detached_read_only_eval or "
+            "repair_validation_accepts_shared_lv_listing_browser_eval_profile"
+        ),
+    )
+    service = RepairValidationService(
+        tmp_path,
+        ledger=RepairValidationLedger(tmp_path / "repair-validation.jsonl"),
+        git_runner=git,
+        test_runner=lambda command: CompletedProcess(
+            command,
+            0 if command == expected_command else 1,
+            "3 passed\n",
+            "",
+        ),
+        now=lambda: "2026-08-09T19:45:00+08:00",
+    )
+
+    receipt = service.validate(context, repair_revision=REPAIR_REVISION)
+
+    assert receipt.targeted_test_profile == (
+        "kol_shared_lv_listing_browser_eval"
+    )
+    assert receipt.failure_fingerprint == "9" * 64
+
+
 def test_repair_validation_rejects_unpushed_or_failed_repair(tmp_path) -> None:
     def unpushed_git(command: tuple[str, ...]) -> CompletedProcess[str]:
         if command == ("branch", "--show-current"):

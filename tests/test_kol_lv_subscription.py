@@ -461,6 +461,67 @@ def test_listing_recovers_once_after_transient_full_scan_failure(
     assert open_calls == 2
 
 
+def test_listing_recovers_once_after_detached_read_only_eval(tmp_path):
+    listing_calls = 0
+    open_calls = 0
+
+    def browser_runner(command, **_kwargs):
+        nonlocal listing_calls, open_calls
+        tail = command[3:]
+        if tail[:1] == ["open"]:
+            open_calls += 1
+            return SimpleNamespace(
+                returncode=0,
+                stdout=json.dumps({"url": "redacted", "page": "page-1"}),
+                stderr="",
+            )
+        if tail[:1] == ["eval"] and "/share/list" in tail[1]:
+            listing_calls += 1
+            if listing_calls == 1:
+                return SimpleNamespace(
+                    returncode=1,
+                    stdout=json.dumps({
+                        "error": {"code": "detached_mid_command"},
+                    }),
+                    stderr="",
+                )
+            return SimpleNamespace(
+                returncode=0,
+                stdout=json.dumps({
+                    "status": "ok",
+                    "complete_scan": True,
+                    "entries": _representative_subscription_entries(),
+                }),
+                stderr="",
+            )
+        raise AssertionError(command)
+
+    service = LvSubscriptionService(
+        tmp_path / "out",
+        now=lambda: NOW,
+        runner=browser_runner,
+        opencli_command=("opencli",),
+        share_url="https://pan.baidu.com/s/private-share-token",
+        share_code="a1b2",
+        sleep=lambda _seconds: None,
+    )
+
+    listing = service._read_opencli_listing(session="ticket04")
+
+    assert listing["complete_scan"] is True
+    assert listing["recovery"] == {
+        "status": "recovered",
+        "attempts": 2,
+        "initial_failure": {
+            "category": "transport_error",
+            "code": "detached_mid_command",
+            "stage": "browser_eval",
+        },
+    }
+    assert listing_calls == 2
+    assert open_calls == 2
+
+
 def test_cursor_advances_only_after_complete_listing(tmp_path):
     calls = 0
 

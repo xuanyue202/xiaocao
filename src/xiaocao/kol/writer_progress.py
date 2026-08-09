@@ -635,6 +635,21 @@ TARGETED_REPAIR_TESTS: dict[str, tuple[str, ...]] = {
             "repair_validation_accepts_subscription_private_listing_profile"
         ),
     ),
+    "kol_shared_lv_listing_browser_eval": (
+        "env",
+        "PYTHONPATH=src",
+        ".venv/bin/python",
+        "-m",
+        "pytest",
+        "tests/test_kol_lv_subscription.py",
+        "tests/test_kol_repair_validation.py",
+        "-q",
+        "-k",
+        (
+            "listing_recovers_once_after_detached_read_only_eval or "
+            "repair_validation_accepts_shared_lv_listing_browser_eval_profile"
+        ),
+    ),
 }
 
 _TARGETED_REPAIR_IMPLEMENTATION_PATHS: dict[str, frozenset[str]] = {
@@ -660,6 +675,12 @@ _TARGETED_REPAIR_IMPLEMENTATION_PATHS: dict[str, frozenset[str]] = {
             "src/xiaocao/kol/writer_progress.py",
         }
     ),
+    "kol_shared_lv_listing_browser_eval": frozenset(
+        {
+            "src/xiaocao/kol/lv_subscription.py",
+            "src/xiaocao/kol/writer_progress.py",
+        }
+    ),
 }
 
 _TARGETED_REPAIR_TEST_PATHS: dict[str, frozenset[str]] = {
@@ -680,6 +701,12 @@ _TARGETED_REPAIR_TEST_PATHS: dict[str, frozenset[str]] = {
         {
             "tests/test_kol_subscription_video.py",
             "tests/test_kol_daily.py",
+            "tests/test_kol_repair_validation.py",
+        }
+    ),
+    "kol_shared_lv_listing_browser_eval": frozenset(
+        {
+            "tests/test_kol_lv_subscription.py",
             "tests/test_kol_repair_validation.py",
         }
     ),
@@ -738,6 +765,27 @@ def _canonical_subscription_private_listing_repair_profile(
         and str(context.get("stage") or "") == "private_listing_validation"
     ):
         return _SUBSCRIPTION_PRIVATE_LISTING_REPAIR_PROFILE
+    return None
+
+
+_SHARED_LV_LISTING_BROWSER_EVAL_REPAIR_PROFILE = (
+    "kol_shared_lv_listing_browser_eval"
+)
+
+
+def _canonical_shared_lv_listing_browser_eval_repair_profile(
+    context: Mapping[str, Any],
+) -> str | None:
+    adapter = str(context.get("adapter") or "")
+    if (
+        adapter in {"lv_text_image", "subscription_video"}
+        and str(context.get("targeted_test_profile") or "")
+        == f"kol_{adapter}_browser_eval"
+        and str(context.get("category") or "") == "transport_error"
+        and str(context.get("code") or "") == "detached_mid_command"
+        and str(context.get("stage") or "") == "browser_eval"
+    ):
+        return _SHARED_LV_LISTING_BROWSER_EVAL_REPAIR_PROFILE
     return None
 
 
@@ -812,6 +860,11 @@ class RepairValidationService:
         )
         if subscription_profile is not None:
             return subscription_profile
+        browser_eval_profile = (
+            _canonical_shared_lv_listing_browser_eval_repair_profile(context)
+        )
+        if browser_eval_profile is not None:
+            return browser_eval_profile
         if (
             str(context.get("stage") or "").startswith("mailbox_")
             and str(context.get("category") or "")
@@ -902,6 +955,14 @@ class RepairValidationService:
             and not (
                 profile == _LV_DOWNLOAD_REPAIR_PROFILE
                 and declared_profile in _LV_DOWNLOAD_REPAIR_PROFILE_ALIASES
+            )
+            and not (
+                profile == _SHARED_LV_LISTING_BROWSER_EVAL_REPAIR_PROFILE
+                and declared_profile
+                in {
+                    "kol_lv_text_image_browser_eval",
+                    "kol_subscription_video_browser_eval",
+                }
             )
         ):
             raise ProgressContractError("repair validation test profile changed")
