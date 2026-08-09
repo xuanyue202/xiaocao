@@ -118,13 +118,12 @@ PYTHONPATH=src .venv/bin/python scripts/kol_daily.py resume-mailbox \
   --mailbox-message-id <exact-64-hex-message-id> [--repair-revision <exact-40-hex-commit>]
 ```
 
-`validate-repair` runs the repo test, verifies commit lineage/branch readback,
-and persists `RepairValidationReceipt`. `resume-mailbox` defaults to `HEAD`,
-requires that receipt for code/contract repairs, and performs exactly one
-`get_mailbox_message(message_id, expected_content_sha256)`—never a list.
-Missing/changed/acked/unavailable targets fail closed; provider waits reuse a
-revision only after their durable TZ-aware deadline is due, with uncertain
-effects reconciled before retry.
+`validate-repair` persists `RepairValidationReceipt` for tested pushed lineage;
+`resume-mailbox` calls one exact `get_mailbox_message`, never list. Targets
+fail closed on mismatch; provider waits honor their deadline and reconcile
+uncertain effects. Source repairs use `validate-source-repair` then
+`resume-source-repair` with exact adapter/fingerprint; resume consumes only
+`narrow_resume_surface` and reads neither mailbox nor another source.
 
 `convergence-report` is the credential-safe daily report: stable failure codes,
 repair required/closed and same-root recurrence, generic waits, internal user

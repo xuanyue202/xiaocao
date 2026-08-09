@@ -15,7 +15,7 @@ import tempfile
 import time
 from datetime import datetime, timezone
 from pathlib import Path, PurePosixPath
-from typing import Any, Callable
+from typing import Any, Callable, Mapping, Sequence
 from urllib.parse import quote, urlencode, urlparse
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
@@ -122,6 +122,9 @@ _DIRECT_DOWNLOAD_CONTENT_TYPES = {
 }
 _UI_DIRECT_DOWNLOAD_MEDIA = {"pdf", "text"}
 _OWNER_CLOUD_ROOT = PurePosixPath("/xiaocao/lv_subscription")
+_HISTORICAL_RETIREMENT_PATH = Path(__file__).with_name(
+    "lv_historical_retirement_20260808.json"
+)
 
 
 def _is_supported_baidu_download_path(path: str) -> bool:
@@ -1788,6 +1791,215 @@ try {
         if not isinstance(value, dict) or not isinstance(value.get("items"), dict):
             raise EnrichmentError("subscription manifest is invalid")
         return value
+
+    @staticmethod
+    def _reviewed_version_rows(
+        value: Sequence[Mapping[str, Any]],
+    ) -> list[dict[str, str]]:
+        if isinstance(value, (str, bytes)) or not isinstance(value, Sequence):
+            raise EnrichmentError(
+                "subscription historical eligibility review is invalid"
+            )
+        normalized: dict[tuple[str, str], dict[str, str]] = {}
+        for raw in value:
+            if not isinstance(raw, Mapping):
+                raise EnrichmentError(
+                    "subscription historical eligibility review is invalid"
+                )
+            identity = str(raw.get("identity") or "").strip()
+            version_key = str(raw.get("version_key") or "").strip()
+            if not re.fullmatch(r"[0-9a-f]{64}", identity) or not re.fullmatch(
+                r"[0-9a-f]{64}", version_key
+            ):
+                raise EnrichmentError(
+                    "subscription historical eligibility review is incomplete"
+                )
+            normalized[(identity, version_key)] = {
+                "identity": identity,
+                "version_key": version_key,
+            }
+        if not normalized:
+            raise EnrichmentError(
+                "subscription historical eligibility review is empty"
+            )
+        return sorted(
+            normalized.values(),
+            key=lambda row: (row["identity"], row["version_key"]),
+        )
+
+    def _write_manifest_if_unchanged(
+        self,
+        expected_digest: str,
+        manifest: dict[str, Any],
+    ) -> bool:
+        current = self._load_manifest()
+        current_digest = hashlib.sha256(
+            _canonical(current).encode("utf-8")
+        ).hexdigest()
+        if current_digest != expected_digest:
+            return False
+        _atomic_write_json(self.manifest_path, manifest)
+        return True
+
+    @_exclusive("manifest")
+    def retire_historical_versions(
+        self,
+        reviewed_versions: Sequence[Mapping[str, Any]],
+        *,
+        cutoff_modified_at: int,
+    ) -> dict[str, Any]:
+        """Retire one audited historical set without fabricating completion."""
+
+        reviewed = self._reviewed_version_rows(reviewed_versions)
+        try:
+            cutoff = int(cutoff_modified_at)
+        except (TypeError, ValueError) as exc:
+            raise EnrichmentError(
+                "subscription historical eligibility cutoff is invalid"
+            ) from exc
+        if cutoff <= 0:
+            raise EnrichmentError(
+                "subscription historical eligibility cutoff is invalid"
+            )
+        manifest = self._load_manifest()
+        manifest_digest = hashlib.sha256(
+            _canonical(manifest).encode("utf-8")
+        ).hexdigest()
+        items = manifest["items"]
+        targets: list[tuple[dict[str, Any], dict[str, str]]] = []
+        for reviewed_row in reviewed:
+            row = items.get(reviewed_row["identity"])
+            if not isinstance(row, dict):
+                raise EnrichmentError(
+                    "subscription reviewed historical version is missing"
+                )
+            if row.get("version_key") != reviewed_row["version_key"]:
+                raise EnrichmentError(
+                    "subscription reviewed historical version changed"
+                )
+            if int(row.get("modified_at") or 0) > cutoff:
+                raise EnrichmentError(
+                    "subscription reviewed version is newer than eligibility cutoff"
+                )
+            targets.append((row, reviewed_row))
+
+        source_watermark = {
+            "cursor": str(manifest.get("cursor") or ""),
+            "observed_at": str(manifest.get("observed_at") or ""),
+            "max_modified_at": max(
+                (
+                    int(row.get("modified_at") or 0)
+                    for row in items.values()
+                    if isinstance(row, dict)
+                ),
+                default=0,
+            ),
+        }
+        migration_id = hashlib.sha256(
+            _canonical({
+                "reviewed_versions": reviewed,
+                "cutoff_modified_at": cutoff,
+                "source_watermark": source_watermark,
+            }).encode("utf-8")
+        ).hexdigest()
+        prior_migrations = manifest.get("eligibility_migrations")
+        if not isinstance(prior_migrations, list):
+            prior_migrations = []
+        for prior in prior_migrations:
+            if isinstance(prior, dict) and prior.get("migration_id") == migration_id:
+                return {**prior, "status": "already_completed"}
+
+        current_manifest = self._load_manifest()
+        if hashlib.sha256(
+            _canonical(current_manifest).encode("utf-8")
+        ).hexdigest() != manifest_digest:
+            blocked = {
+                "event": "subscription_historical_eligibility_migration",
+                "status": "blocked",
+                "code": "eligibility_migration_concurrent_writer",
+                "migration_id": migration_id,
+                "external_business_effects_replayed": False,
+            }
+            _append_jsonl(self.events_path, blocked)
+            return blocked
+
+        retired: list[dict[str, str]] = []
+        for row, reviewed_row in targets:
+            if (
+                row.get("work_eligible") is True
+                and row.get("completed_version_key") != row.get("version_key")
+            ):
+                row["work_eligible"] = False
+                row["pause_reason"] = "historical_backlog_retired"
+                retired.append(dict(reviewed_row))
+        migration = {
+            "event": "subscription_historical_eligibility_migration",
+            "status": "completed",
+            "migration_id": migration_id,
+            "observed_at": self._time().isoformat(timespec="seconds"),
+            "source_watermark": source_watermark,
+            "cutoff_modified_at": cutoff,
+            "reviewed_count": len(reviewed),
+            "reviewed_versions_sha256": hashlib.sha256(
+                _canonical(reviewed).encode("utf-8")
+            ).hexdigest(),
+            "retired_count": len(retired),
+            "retired_versions_sha256": hashlib.sha256(
+                _canonical(retired).encode("utf-8")
+            ).hexdigest(),
+            "completed_version_keys_written": 0,
+            "claims_and_receipts_preserved": True,
+            "external_business_effects_replayed": False,
+        }
+        manifest["historical_eligibility_migration"] = migration
+        manifest["eligibility_migrations"] = [*prior_migrations, migration]
+        if not self._write_manifest_if_unchanged(manifest_digest, manifest):
+            blocked = {
+                "event": "subscription_historical_eligibility_migration",
+                "status": "blocked",
+                "code": "eligibility_migration_concurrent_writer",
+                "migration_id": migration_id,
+                "external_business_effects_replayed": False,
+            }
+            _append_jsonl(self.events_path, blocked)
+            return blocked
+        _append_jsonl(self.events_path, migration)
+        return migration
+
+    def retire_packaged_historical_backlog(self) -> dict[str, Any] | None:
+        """Apply the reviewed 2026-08-08 migration only to unchanged versions."""
+
+        try:
+            value = json.loads(
+                _HISTORICAL_RETIREMENT_PATH.read_text(encoding="utf-8")
+            )
+        except (OSError, json.JSONDecodeError) as exc:
+            raise EnrichmentError(
+                "subscription historical eligibility package is invalid"
+            ) from exc
+        if (
+            not isinstance(value, dict)
+            or value.get("schema_version") != 1
+            or not isinstance(value.get("reviewed_versions"), list)
+        ):
+            raise EnrichmentError(
+                "subscription historical eligibility package is invalid"
+            )
+        manifest = self._load_manifest()
+        current = manifest["items"]
+        unchanged = [
+            row
+            for row in self._reviewed_version_rows(value["reviewed_versions"])
+            if isinstance(current.get(row["identity"]), dict)
+            and current[row["identity"]].get("version_key")
+            == row["version_key"]
+        ]
+        if not unchanged:
+            return None
+        return self.retire_historical_versions(
+            unchanged,
+            cutoff_modified_at=int(value.get("cutoff_modified_at") or 0),
+        )
 
     def status(self) -> dict[str, Any]:
         """Return the credential-free durable cursor and item states."""
@@ -4550,6 +4762,7 @@ try {
             if exc.diagnostic_code not in {
                 "provider_download_link_errno_2",
                 "provider_download_metadata_missing",
+                "provider_download_filtered",
             }:
                 raise
         try:
@@ -4563,6 +4776,8 @@ try {
                 "provider_web_download_client_only",
                 "provider_frontend_signed_link_not_captured",
             }:
+                raise
+            if str(item.get("media_type") or "") != "pdf":
                 raise
         return self._owner_cloud_download(
             item,
@@ -5036,6 +5251,27 @@ try {
                 claim_id=str(claim["claim_id"]),
                 acquisition_transport=str(direct["acquisition_transport"]),
             )
+
+        if normalized["media_type"] == "image":
+            try:
+                direct = self._download_provider_small_file(
+                    direct_item,
+                    claim,
+                    session=session,
+                    profile=profile,
+                )
+            except EnrichmentDiagnosticError as exc:
+                if exc.diagnostic_code != "provider_download_link_failed":
+                    raise
+            else:
+                return self.complete_browser_download(
+                    str(item["identity"]),
+                    Path(str(direct["path"])),
+                    claim_id=str(claim["claim_id"]),
+                    acquisition_transport=str(
+                        direct["acquisition_transport"]
+                    ),
+                )
 
         # OpenCLI serializes commands per browser session. Starting `wait`
         # first prevents the trigger eval from running until the wait times

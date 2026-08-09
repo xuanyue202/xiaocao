@@ -1822,7 +1822,41 @@ class DailyRuntime:
             profile=self.args.opencli_profile,
             listing=listing,
         )
+        migration_handler = getattr(
+            service,
+            "retire_packaged_historical_backlog",
+            None,
+        )
+        eligibility_migration = (
+            migration_handler() if callable(migration_handler) else None
+        )
+        if (
+            eligibility_migration is not None
+            and eligibility_migration.get("status") == "blocked"
+        ):
+            raise DailyError(
+                "Lv historical eligibility migration did not pass its CAS gate"
+            )
         pending = service.pending_items()
+        if only_identity is not None and not any(
+            str(row.get("identity") or "") == only_identity for row in pending
+        ):
+            retired = (
+                service.status().get("items", {}).get(only_identity)
+            )
+            if (
+                isinstance(retired, dict)
+                and retired.get("pause_reason")
+                == "historical_backlog_retired"
+            ):
+                return {
+                    "status": "no_update",
+                    "historical_retirement": {
+                        "identity": only_identity,
+                        "version_key": str(retired.get("version_key") or ""),
+                        "pause_reason": "historical_backlog_retired",
+                    },
+                }
         pending.sort(
             key=lambda row: (
                 -int(row.get("modified_at") or 0),
@@ -3019,6 +3053,35 @@ class DailyRuntime:
         )
 
 
+def _source_repair_context(progress: WriterProgress) -> dict[str, Any]:
+    failure = progress.failure
+    adapter = str(failure.get("adapter") or "")
+    subject_id = hashlib.sha256(
+        (
+            "kol-source-repair\n"
+            f"{adapter}\n"
+            f"{progress.item_identity}"
+        ).encode("utf-8")
+    ).hexdigest()
+    return {
+        "adapter": adapter,
+        "message_id": subject_id,
+        "content_sha256": str(progress.details["affected_set_digest"]),
+        "failure_fingerprint": progress.failure_fingerprint,
+        "failure_revision": str(failure["failure_revision"]),
+        "category": str(failure["category"]),
+        "code": str(failure["code"]),
+        "stage": str(failure["stage"]),
+        "targeted_test_profile": str(
+            progress.details["targeted_test_profile"]
+        ),
+    }
+
+
+def _source_repair_slot(service: DailyCoordinator) -> str:
+    return service._beijing_now().strftime("%Y-%m-%dT%H:00+08:00")
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
@@ -3034,6 +3097,8 @@ def main() -> int:
             "process-wechat-official",
             "resume-mailbox",
             "validate-repair",
+            "validate-source-repair",
+            "resume-source-repair",
             "status",
             "audit",
             "convergence-report",
@@ -3066,6 +3131,8 @@ def main() -> int:
         default=DEFAULT_MAILBOX_OUTPUT,
     )
     parser.add_argument("--mailbox-message-id")
+    parser.add_argument("--source-adapter")
+    parser.add_argument("--failure-fingerprint")
     parser.add_argument("--repair-revision")
     parser.add_argument("--period-start")
     parser.add_argument("--period-end")
@@ -3144,6 +3211,70 @@ def main() -> int:
             repair_revision=args.repair_revision,
         )
         _print({"repair_validation": result})
+        return 0
+    if args.command == "validate-source-repair":
+        if not args.source_adapter or not args.failure_fingerprint:
+            raise DailyError(
+                "validate-source-repair requires source adapter and fingerprint"
+            )
+        service = DailyCoordinator(args.output_dir)
+        progress = service.convergence.active_progress(args.source_adapter)
+        if (
+            progress is None
+            or progress.failure_fingerprint != args.failure_fingerprint
+        ):
+            raise DailyError("source repair target is not the active fingerprint")
+        ledger = RepairValidationLedger(
+            args.mailbox_output_dir / "repair_validation.jsonl"
+        )
+        validator = RepairValidationService(
+            Path(__file__).resolve().parents[1],
+            ledger=ledger,
+        )
+        receipt = validator.validate(
+            _source_repair_context(progress),
+            repair_revision=args.repair_revision,
+        )
+        closure = service.convergence.close_repair(
+            progress.failure_fingerprint,
+            repair_receipt=receipt,
+            validation_ledger=ledger,
+            slot=_source_repair_slot(service),
+        )
+        _print({
+            "source_repair_validation": receipt.to_dict(),
+            "repair_closure": closure,
+        })
+        return 0
+    if args.command == "resume-source-repair":
+        if not args.source_adapter or not args.failure_fingerprint:
+            raise DailyError(
+                "resume-source-repair requires source adapter and fingerprint"
+            )
+        service = DailyCoordinator(args.output_dir)
+        pending = service.convergence.pending_resume(args.source_adapter)
+        if pending is None:
+            raise DailyError("source repair has no validated narrow resume")
+        progress, _closure = pending
+        if progress.failure_fingerprint != args.failure_fingerprint:
+            raise DailyError("source repair fingerprint changed before resume")
+        runtime = DailyRuntime(args)
+        if args.source_adapter != "lv_text_image":
+            raise DailyError("source repair adapter has no CLI narrow resume")
+        outcome = _classified_narrow_source(
+            "lv_text_image",
+            runtime.lv_narrow_resume,
+        )(str(progress.details["narrow_resume_surface"]))
+        following = WriterProgress.from_dict(outcome["writer_progress"])
+        resume_receipt = service.convergence.record_resume(
+            progress.failure_fingerprint,
+            following=following,
+            slot=_source_repair_slot(service),
+        )
+        _print({
+            "source_repair_resume": outcome,
+            "repair_resume_receipt": resume_receipt,
+        })
         return 0
     service = DailyCoordinator(args.output_dir)
     if args.command == "status":

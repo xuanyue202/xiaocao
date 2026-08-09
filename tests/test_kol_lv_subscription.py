@@ -175,6 +175,64 @@ def test_isolated_item_failure_does_not_change_existing_claim(tmp_path):
     assert service.pending_items()[0]["identity"] == item["identity"]
 
 
+def test_reviewed_historical_small_items_retire_without_fabricating_completion_and_new_version_reopens(
+    tmp_path,
+):
+    service = LvSubscriptionService(tmp_path / "out", now=lambda: NOW)
+    entries = _representative_subscription_entries()
+    service.observe_browser_listing(entries)
+    target = service.pending_items()[0]
+    claim_path = (
+        tmp_path
+        / "out"
+        / "artifacts"
+        / target["version_key"]
+        / "browser_download_claim.json"
+    )
+    service.claim_browser_download(target["identity"])
+    claim_before = claim_path.read_bytes()
+
+    migration = service.retire_historical_versions(
+        [{
+            "identity": target["identity"],
+            "version_key": target["version_key"],
+        }],
+        cutoff_modified_at=target["modified_at"],
+    )
+
+    retired = json.loads(
+        service.manifest_path.read_text(encoding="utf-8")
+    )["items"][target["identity"]]
+    assert migration["status"] == "completed"
+    assert migration["retired_count"] == 1
+    assert migration["claims_and_receipts_preserved"] is True
+    assert migration["completed_version_keys_written"] == 0
+    assert retired["work_eligible"] is False
+    assert retired["pause_reason"] == "historical_backlog_retired"
+    assert retired.get("completed_version_key") is None
+    assert claim_path.read_bytes() == claim_before
+    assert target["identity"] not in {
+        row["identity"] for row in service.pending_items()
+    }
+
+    newer = [
+        {
+            **row,
+            "modified_at": row["modified_at"] + 60,
+        }
+        if row["provider_file_id"] == entries[0]["provider_file_id"]
+        else row
+        for row in entries
+    ]
+    service.observe_browser_listing(newer)
+    reopened = json.loads(
+        service.manifest_path.read_text(encoding="utf-8")
+    )["items"][target["identity"]]
+    assert reopened["version_key"] != target["version_key"]
+    assert reopened["work_eligible"] is True
+    assert "pause_reason" not in reopened
+
+
 def test_disappearing_item_keeps_identity_and_only_a_new_version_is_rediscovered(
     tmp_path,
 ):
@@ -759,6 +817,8 @@ def test_opencli_download_claims_before_one_browser_trigger_and_replays(tmp_path
                 "complete_scan": True,
                 "entries": [entry],
             }
+        elif tail[:1] == ["eval"] and "ticket04_provider_direct_link" in tail[1]:
+            payload = {"status": "unsupported"}
         elif tail[:1] == ["eval"] and "ticket04_exact_ui_download" in tail[1]:
             claim_path = (
                 tmp_path
@@ -2142,6 +2202,70 @@ def test_direct_image_api_maps_provider_errno_2_to_filtered_media(tmp_path):
     assert captured.value.diagnostic_stage == "provider_download_link"
 
 
+def test_new_image_claim_uses_single_frontend_intercept_when_provider_filters_direct_api(
+    tmp_path,
+):
+    payload = b"\x89PNG\r\n\x1a\n" + b"i" * 1024
+    entry = {
+        **_representative_subscription_entries()[0],
+        "size": len(payload),
+    }
+    service = LvSubscriptionService(tmp_path / "out", now=lambda: NOW)
+    update = service.observe_browser_listing([entry])["updates"][0]
+    service._opencli_listing = (
+        "ticket04",
+        None,
+        {"status": "ok", "complete_scan": True, "entries": [entry]},
+    )
+    direct_calls = 0
+    frontend_calls = 0
+
+    def filtered(*_args, **_kwargs):
+        nonlocal direct_calls
+        direct_calls += 1
+        raise EnrichmentDiagnosticError(
+            "provider filtered the direct image link",
+            category="provider_error",
+            code="provider_download_filtered",
+            stage="provider_download_link",
+        )
+
+    def frontend(item, **_kwargs):
+        nonlocal frontend_calls
+        frontend_calls += 1
+        destination = (
+            service.download_inbox
+            / item["version_key"]
+            / item["name"]
+        )
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        destination.write_bytes(payload)
+        return {
+            "path": str(destination),
+            "actual_size": len(payload),
+            "sha256": hashlib.sha256(payload).hexdigest(),
+            "content_type": "image/png",
+            "acquisition_transport": (
+                "provider_frontend_intercepted_small_file"
+            ),
+        }
+
+    service._provider_direct_download = filtered
+    service._provider_frontend_intercepted_download = frontend
+    service._prepare_opencli_download_confirmation = lambda *_args, **_kwargs: (
+        pytest.fail("image recovery must not dispatch a separate first click")
+    )
+
+    result = service.download_opencli(update["identity"], session="ticket04")
+
+    assert result["status"] == "completed"
+    assert result["acquisition_transport"] == (
+        "provider_frontend_intercepted_small_file"
+    )
+    assert direct_calls == 1
+    assert frontend_calls == 1
+
+
 def test_one_poll_listing_is_reused_for_all_claim_reconciliations(tmp_path):
     entries = [
         {
@@ -2298,6 +2422,8 @@ def test_explicit_pretrigger_browser_failure_can_resume_safely(tmp_path):
                 "complete_scan": True,
                 "entries": [entry],
             }
+        elif tail[:1] == ["eval"] and "ticket04_provider_direct_link" in tail[1]:
+            payload = {"status": "unsupported"}
         elif tail[:1] == ["eval"] and "ticket04_exact_ui_download" in tail[1]:
             trigger_attempts += 1
             payload = (
@@ -2815,6 +2941,8 @@ def test_one_runner_resumes_after_analysis_failure_without_repeating_browser_or_
                 "complete_scan": True,
                 "entries": [entry],
             }
+        elif tail[:1] == ["eval"] and "ticket04_provider_direct_link" in tail[1]:
+            payload = {"status": "unsupported"}
         elif tail[:1] == ["eval"] and "ticket04_exact_ui_download" in tail[1]:
             payload = {
                 "status": "download_confirmation_ready",

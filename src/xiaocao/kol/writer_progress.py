@@ -571,6 +571,18 @@ TARGETED_REPAIR_TESTS: dict[str, tuple[str, ...]] = {
         "tests/test_kol_mailbox.py",
         "-q",
     ),
+    "kol_lv_download_recovery": (
+        ".venv/bin/python",
+        "-m",
+        "pytest",
+        "tests/test_kol_lv_subscription.py",
+        "-q",
+        "-k",
+        (
+            "reviewed_historical_small_items_retire or "
+            "new_image_claim_uses_single_frontend_intercept"
+        ),
+    ),
 }
 
 _TARGETED_REPAIR_IMPLEMENTATION_PATHS: dict[str, frozenset[str]] = {
@@ -581,12 +593,26 @@ _TARGETED_REPAIR_IMPLEMENTATION_PATHS: dict[str, frozenset[str]] = {
             "src/xiaocao/kol/writer_progress.py",
         }
     ),
+    "kol_lv_download_recovery": frozenset(
+        {
+            "scripts/kol_daily.py",
+            "src/xiaocao/kol/lv_subscription.py",
+            "src/xiaocao/kol/lv_historical_retirement_20260808.json",
+            "src/xiaocao/kol/writer_progress.py",
+        }
+    ),
 }
 
 _TARGETED_REPAIR_TEST_PATHS: dict[str, frozenset[str]] = {
     "kol_mailbox_exact_resume": frozenset(
         {
             "tests/test_kol_mailbox.py",
+            "tests/test_kol_repair_validation.py",
+        }
+    ),
+    "kol_lv_download_recovery": frozenset(
+        {
+            "tests/test_kol_lv_subscription.py",
             "tests/test_kol_repair_validation.py",
         }
     ),
@@ -656,6 +682,19 @@ class RepairValidationService:
         return value
 
     def _expected_profile(self, context: Mapping[str, Any]) -> str:
+        if (
+            str(context.get("adapter") or "") == "lv_text_image"
+            and str(context.get("targeted_test_profile") or "")
+            == "kol_lv_download_recovery"
+            and str(context.get("code") or "")
+            in {
+                "blocked_download_frame_missing",
+                "provider_download_filtered",
+            }
+            and str(context.get("stage") or "")
+            in {"browser_download_recovery", "provider_download_link"}
+        ):
+            return "kol_lv_download_recovery"
         if (
             str(context.get("stage") or "").startswith("mailbox_")
             and str(context.get("category") or "")
