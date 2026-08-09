@@ -16,7 +16,7 @@ import subprocess
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Callable, Protocol
-from urllib.parse import urlsplit, urlunsplit
+from urllib.parse import parse_qs, urlsplit, urlunsplit
 from uuid import uuid4
 from zoneinfo import ZoneInfo
 
@@ -42,6 +42,7 @@ _TERMINAL = {"historical_baseline", "superseded", "completed"}
 _SHA256 = re.compile(r"^[0-9a-f]{64}$")
 _MAX_HANDOFF_BYTES = 1024 * 1024
 _PLAYBACK_PAGE_STATES = {
+    "account_login_required",
     "waiting_to_start",
     "live",
     "replay_generating",
@@ -497,6 +498,38 @@ class XiaocaoWechatLiveSubscription:
             raise EnrichmentError("browser did not resolve a Xiaoetong live page") from exc
         return canonical, source["source_identity"]
 
+    @classmethod
+    def _is_bound_account_login_redirect(
+        cls,
+        page_url: str,
+        *,
+        expected_page_url: str,
+        expected_source_identity: str,
+    ) -> bool:
+        parsed = urlsplit(page_url.strip())
+        expected = urlsplit(expected_page_url)
+        if (
+            parsed.scheme != "https"
+            or (parsed.hostname or "").lower()
+            != (expected.hostname or "").lower()
+            or parsed.path
+            != "/p/t/free/v1/basic-platform/h5_basic/login/auth"
+        ):
+            return False
+        redirect_urls = parse_qs(parsed.query).get("redirect_url", [])
+        if len(redirect_urls) != 1:
+            return False
+        try:
+            redirect_page, redirect_identity = cls._canonical_page(
+                redirect_urls[0]
+            )
+        except EnrichmentError:
+            return False
+        return (
+            redirect_page == expected_page_url
+            and redirect_identity == expected_source_identity
+        )
+
     @staticmethod
     def _validate_browser_response(
         request: dict[str, Any],
@@ -768,8 +801,8 @@ class XiaocaoWechatLiveSubscription:
                 "subscription_id": item["identity"],
                 "page_url": item["page_url"],
                 "page_state": (
-                    "waiting_to_start|live|replay_generating|playable|"
-                    "password_required|unknown"
+                    "account_login_required|waiting_to_start|live|"
+                    "replay_generating|playable|password_required|unknown"
                 ),
                 "activated": "boolean",
                 "password_used": "boolean",
@@ -777,14 +810,24 @@ class XiaocaoWechatLiveSubscription:
         }
         response = self.browser_exchange(request)
         self._validate_browser_response(request, response)
-        response_page, response_identity = self._canonical_page(
-            str(response.get("page_url") or "")
-        )
+        response_url = str(response.get("page_url") or "")
         activated = response.get("activated") is True
         page_state = str(
             response.get("page_state")
             or ("playable" if activated else "unknown")
         ).strip()
+        if (
+            not activated
+            and response.get("password_used") is not True
+            and page_state in {"account_login_required", "unknown"}
+            and self._is_bound_account_login_redirect(
+                response_url,
+                expected_page_url=item["page_url"],
+                expected_source_identity=item["source_identity"],
+            )
+        ):
+            raise EnrichmentError("Xiaoetong account login is required")
+        response_page, response_identity = self._canonical_page(response_url)
         if (
             response_page != item["page_url"]
             or response_identity != item["source_identity"]

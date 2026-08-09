@@ -1289,6 +1289,13 @@ def _classified_source(name: str, runner):
                     f"{name}-opencli-login",
                     "请在已授权浏览器中重新登录百度网盘，并保持既有 OpenCLI 会话可访问。",
                 ) from exc
+            if message == "Xiaoetong account login is required":
+                raise UserActionBlocker(
+                    "xiaocao-wechat-live-xiaoetong-login",
+                    "请在本次保留的页面完成小鹅通账号登录，并保持该 Browser "
+                    "标签页可用；不要把直播口令填入账号密码框。完成后，下一小时"
+                    "会复核同一视频。",
+                ) from exc
             if message == "captcha_required":
                 raise UserActionBlocker(
                     f"{name}-captcha",

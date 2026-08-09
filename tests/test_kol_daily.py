@@ -3780,6 +3780,22 @@ def test_source_classifier_promotes_wechat_opencli_captcha_to_blocker():
     assert "循环重试" in captured.value.action
 
 
+def test_source_classifier_promotes_xiaoetong_account_login_to_blocker():
+    runner = _classified_source(
+        "xiaocao_wechat_live",
+        lambda: (_ for _ in ()).throw(
+            EnrichmentError("Xiaoetong account login is required")
+        ),
+    )
+
+    with pytest.raises(UserActionBlocker) as captured:
+        runner()
+
+    assert captured.value.blocker_key == "xiaocao-wechat-live-xiaoetong-login"
+    assert "小鹅通账号登录" in captured.value.action
+    assert "666" not in captured.value.action
+
+
 def test_status_classifies_legacy_retryable_failure_as_degraded(tmp_path):
     service = DailyCoordinator(
         tmp_path / "daily",

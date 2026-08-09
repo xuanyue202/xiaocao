@@ -101,8 +101,11 @@ For `daily_browser_input_required`, keep the same process alive and use
    (reapply after refresh/navigation), start it, and prove advancing media time.
    Only then return `activated=true`, bound URL, and password-use state.
 
-Message text such as “密码666” is not evidence; visible page state is. Never
-read cookies, storage, or credentials. An `awaiting_playback` source job keeps
+Account-login redirect: keep tab; return URL with
+`account_login_required`, `activated=false`, `password_used=false`; never enter `666`.
+
+`密码666` text is not a visible gate. Never inspect cookies, storage, or
+credentials. An `awaiting_playback` source job keeps
 the same capture/source identities and rechecks the same bound page on the next
 hourly sweep until it becomes playable; never wait inside one sweep or create a
 replacement job. Later capture, artifact, proxy cleanup, upload, and handoff

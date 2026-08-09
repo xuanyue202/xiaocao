@@ -3,7 +3,11 @@ from __future__ import annotations
 import json
 import hashlib
 from base64 import urlsafe_b64encode
+from urllib.parse import quote
 
+import pytest
+
+from xiaocao.kol.enrichment_types import EnrichmentError
 from xiaocao.kol.xiaocao_wechat import (
     XiaocaoLiveCaptureDriver,
     XiaocaoWechatLiveSubscription,
@@ -439,6 +443,57 @@ def test_awaiting_playback_rechecks_the_bound_page_each_hour_until_playable(
     item = next(iter(manifest["items"].values()))
     assert item["status"] == "playback_activated"
     assert item["observed_page_state"] == "playable"
+
+
+def test_xiaoetong_account_login_redirect_is_reported_explicitly(tmp_path):
+    payload = _history(
+        "[2026-08-09 16:42] 福利官小花四: 草神直播："
+        "https://appsnm3rlcp3566.h5.xiaoeknow.com/v4/course/"
+        "alive/l_6a75cf66e4b0694c5bf6d228",
+    )
+    page_url = (
+        "https://appsnm3rlcp3566.h5.xiaoeknow.com/v4/course/"
+        "alive/l_6a75cf66e4b0694c5bf6d228"
+    )
+
+    def browser_exchange(request: dict) -> dict:
+        if request["action"] == "resolve_xiaoetong_page":
+            return {
+                "action": request["action"],
+                "subscription_id": request["subscription_id"],
+                "page_url": page_url,
+                "page_state": "unknown",
+            }
+        assert "account_login_required" in request["required_response"][
+            "page_state"
+        ]
+        return {
+            "action": request["action"],
+            "subscription_id": request["subscription_id"],
+            "page_url": (
+                "https://appsnm3rlcp3566.h5.xiaoeknow.com/p/t/free/v1/"
+                "basic-platform/h5_basic/login/auth?redirect_url="
+                f"{quote(page_url, safe='')}"
+            ),
+            "page_state": "unknown",
+            "activated": False,
+            "password_used": False,
+        }
+
+    subscription = XiaocaoWechatLiveSubscription(
+        tmp_path / "wechat",
+        history_reader=lambda: payload,
+        browser_exchange=browser_exchange,
+        capture_driver=_CaptureDriver(),
+        contact=CONTACT,
+        password="666",
+    )
+
+    with pytest.raises(
+        EnrichmentError,
+        match="Xiaoetong account login is required",
+    ):
+        subscription.run_once(opencli_session="xiaocao-lv-subscription")
 
 
 def test_pending_cloud_handoff_resumes_exact_job_without_rescanning(tmp_path):
