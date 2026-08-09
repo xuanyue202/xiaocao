@@ -1899,7 +1899,6 @@ try {
             _canonical({
                 "reviewed_versions": reviewed,
                 "cutoff_modified_at": cutoff,
-                "source_watermark": source_watermark,
             }).encode("utf-8")
         ).hexdigest()
         prior_migrations = manifest.get("eligibility_migrations")
@@ -1925,13 +1924,16 @@ try {
 
         retired: list[dict[str, str]] = []
         for row, reviewed_row in targets:
-            if (
-                row.get("work_eligible") is True
-                and row.get("completed_version_key") != row.get("version_key")
-            ):
+            if row.get("completed_version_key") != row.get("version_key"):
+                changed = (
+                    row.get("work_eligible") is True
+                    or row.get("pause_reason")
+                    != "historical_backlog_retired"
+                )
                 row["work_eligible"] = False
                 row["pause_reason"] = "historical_backlog_retired"
-                retired.append(dict(reviewed_row))
+                if changed:
+                    retired.append(dict(reviewed_row))
         migration = {
             "event": "subscription_historical_eligibility_migration",
             "status": "completed",

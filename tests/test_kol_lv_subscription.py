@@ -221,6 +221,14 @@ def test_reviewed_historical_small_items_retire_without_fabricating_completion_a
     )["items"][target["identity"]]
     assert unchanged["work_eligible"] is False
     assert unchanged["pause_reason"] == "historical_backlog_retired"
+    replay = service.retire_historical_versions(
+        [{
+            "identity": target["identity"],
+            "version_key": target["version_key"],
+        }],
+        cutoff_modified_at=target["modified_at"],
+    )
+    assert replay["status"] == "already_completed"
 
     newer = [
         {
