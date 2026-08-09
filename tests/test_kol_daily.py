@@ -14,6 +14,7 @@ import pytest
 
 from scripts import kol_daily as kol_daily_script
 from scripts.kol_daily import (
+    _classified_narrow_source,
     _classified_source,
     _latest_lv_video_goal,
     _lv_publication_context,
@@ -107,6 +108,19 @@ def test_standalone_writer_result_keeps_seven_state_contract():
         lambda: {"status": "no_update"},
     )
     assert terminal["writer_progress"]["status"] == "terminal"
+
+
+def test_narrow_source_no_update_keeps_seven_state_contract(monkeypatch):
+    monkeypatch.setattr(kol_daily_script, "_writer_failure_revision", lambda: "a" * 40)
+
+    result = _classified_narrow_source(
+        "lv_text_image",
+        lambda surface: {"status": "no_update", "surface": surface},
+    )("lv_text_image:item-1")
+
+    assert result["surface"] == "lv_text_image:item-1"
+    assert result["writer_progress"]["status"] == "terminal"
+    assert result["resume_policy"] == "stop"
 
     user_action = _standalone_writer_result(
         "wechat_official_accounts",

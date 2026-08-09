@@ -1336,7 +1336,20 @@ def _classified_source(name: str, runner):
 
 def _classified_narrow_source(name: str, runner):
     def run(surface: str):
-        return _classified_source(name, lambda: runner(surface))()
+        outcome = _classified_source(name, lambda: runner(surface))()
+        if isinstance(outcome.get("writer_progress"), dict):
+            return outcome
+        progress = normalize_source_result(
+            name,
+            outcome,
+            failure_revision=_writer_failure_revision(),
+            provider_contract_version="xiaocao_writer_v1",
+        )
+        return {
+            **{key: value for key, value in outcome.items() if key != "retryable"},
+            "resume_policy": progress.next_action,
+            "writer_progress": progress.to_dict(),
+        }
 
     return run
 
