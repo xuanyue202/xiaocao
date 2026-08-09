@@ -12,6 +12,7 @@ from xiaocao.kol.semantic_bundle import (
     SemanticBundleError,
     ValidatedBundleReceipt,
     build_validated_bundle,
+    build_validated_bundle_from_files,
     read_validated_bundle,
     validate_existing_bundle,
 )
@@ -288,6 +289,33 @@ def test_build_validated_bundle_persists_receipt_before_consumer_use(tmp_path):
     assert stored_receipt["bundle_sha256"] == receipt.bundle_sha256
     assert stored_receipt["receipt_sha256"] == receipt.receipt_sha256
     assert receipt.bindings["message_sha256"] == request["message_sha256"]
+    assert receipt.bindings["market_evidence_sha256"] == "4" * 64
+
+
+def test_file_builder_keeps_market_evidence_out_of_semantic_draft(tmp_path):
+    request, draft, _, _, _ = _fixture(tmp_path)
+    market_evidence = request.pop("market_evidence")
+    request["artifact_dir"] = str(tmp_path / "artifacts")
+    request_path = tmp_path / "analysis_request.json"
+    draft_path = tmp_path / "semantic_draft.json"
+    market_path = tmp_path / "market_evidence.json"
+    request_path.write_text(json.dumps(request, ensure_ascii=False), encoding="utf-8")
+    draft_path.write_text(json.dumps(draft, ensure_ascii=False), encoding="utf-8")
+    market_path.write_text(
+        json.dumps(market_evidence, ensure_ascii=False),
+        encoding="utf-8",
+    )
+
+    receipt = build_validated_bundle_from_files(
+        request_path,
+        draft_path,
+        market_path,
+    )
+
+    assert Path(receipt.bundle_path).is_file()
+    assert Path(receipt.bundle_path).with_name(
+        "validated_bundle_receipt.json"
+    ).is_file()
     assert receipt.bindings["market_evidence_sha256"] == "4" * 64
 
 

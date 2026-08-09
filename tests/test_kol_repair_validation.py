@@ -51,7 +51,14 @@ def test_repair_validation_runs_repo_owned_profile_and_persists_matching_receipt
             return CompletedProcess(
                 command,
                 0,
-                "src/xiaocao/kol/mailbox.py\n",
+                "src/xiaocao/kol/mailbox.py\ntests/test_kol_mailbox.py\n",
+                "",
+            )
+        if command == ("show", "-s", "--format=%B", REPAIR_REVISION):
+            return CompletedProcess(
+                command,
+                0,
+                f"Repair exact mailbox resume\n\nRepair-Fingerprint: {'e' * 64}\n",
                 "",
             )
         if command[:2] == ("merge-base", "--is-ancestor"):
@@ -133,4 +140,49 @@ def test_repair_validation_rejects_unrelated_commit_before_tests(tmp_path) -> No
     )
 
     with pytest.raises(ProgressContractError, match="unrelated"):
+        service.validate(_context(), repair_revision=REPAIR_REVISION)
+
+
+@pytest.mark.parametrize(
+    ("changed_files", "message", "expected"),
+    [
+        (
+            "src/xiaocao/kol/mailbox.py\n",
+            f"Repair\n\nRepair-Fingerprint: {'e' * 64}\n",
+            "targeted regression",
+        ),
+        (
+            "src/xiaocao/kol/mailbox.py\ntests/test_kol_mailbox.py\n",
+            "Repair without binding\n",
+            "failure fingerprint",
+        ),
+    ],
+)
+def test_repair_validation_requires_regression_and_fingerprint_trailer(
+    tmp_path,
+    changed_files: str,
+    message: str,
+    expected: str,
+) -> None:
+    def git(command: tuple[str, ...]) -> CompletedProcess[str]:
+        if command == ("branch", "--show-current"):
+            return CompletedProcess(command, 0, "main\n", "")
+        if command == ("rev-parse", "--verify", "HEAD^{commit}"):
+            return CompletedProcess(command, 0, f"{REPAIR_REVISION}\n", "")
+        if command == ("rev-parse", "--verify", "origin/main^{commit}"):
+            return CompletedProcess(command, 0, f"{REPAIR_REVISION}\n", "")
+        if command[:2] == ("diff-tree", "--no-commit-id"):
+            return CompletedProcess(command, 0, changed_files, "")
+        if command == ("show", "-s", "--format=%B", REPAIR_REVISION):
+            return CompletedProcess(command, 0, message, "")
+        raise AssertionError(command)
+
+    service = RepairValidationService(
+        tmp_path,
+        ledger=RepairValidationLedger(tmp_path / "repair-validation.jsonl"),
+        git_runner=git,
+        test_runner=lambda command: pytest.fail("tests must not run"),
+    )
+
+    with pytest.raises(ProgressContractError, match=expected):
         service.validate(_context(), repair_revision=REPAIR_REVISION)

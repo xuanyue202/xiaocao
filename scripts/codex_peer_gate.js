@@ -9,7 +9,7 @@
  * takeover behavior: it only discovers and reads persisted task state.
  */
 
-const { spawn } = require("node:child_process");
+const { spawn, spawnSync } = require("node:child_process");
 const fs = require("node:fs");
 
 const AUTOMATION_ID = process.env.CODEX_AUTOMATION_ID || "";
@@ -33,6 +33,8 @@ const SOURCE_KINDS = [
   "unknown",
 ];
 
+const GATE_STARTED_AT = Date.now();
+
 function fail(code, stage, detail = {}) {
   return {
     schema_version: 1,
@@ -46,6 +48,31 @@ function fail(code, stage, detail = {}) {
 
 function safeJson(value) {
   return JSON.stringify(value, null, 2);
+}
+
+function recordAudit(result, attemptCount) {
+  const payload = {
+    gate_result: result.gate_result,
+    attempt_count: attemptCount,
+    elapsed_ms: Math.max(0, Date.now() - GATE_STARTED_AT),
+  };
+  const recorded = spawnSync(
+    ".venv/bin/python",
+    ["scripts/kol_daily.py", "record-peer-gate"],
+    {
+      cwd: CWD,
+      env: { ...process.env, PYTHONPATH: "src" },
+      input: `${JSON.stringify(payload)}\n`,
+      encoding: "utf8",
+      timeout: REQUEST_TIMEOUT_MS,
+    },
+  );
+  if (recorded.status !== 0) {
+    return fail("peer_gate_audit_persist_failed", "peer_gate_audit", {
+      recorder_status: recorded.status,
+    });
+  }
+  return { ...result, ...payload };
 }
 
 function request(server, method, params, id) {
@@ -281,7 +308,14 @@ async function oneAttempt() {
 
 async function main() {
   if (!AUTOMATION_ID || !CURRENT_THREAD_ID || !CWD || CWD !== EXPECTED_CWD) {
-    console.log(safeJson(fail("gate_identity_incomplete", "peer_discovery")));
+    console.log(
+      safeJson(
+        recordAudit(
+          fail("gate_identity_incomplete", "peer_discovery"),
+          1,
+        ),
+      ),
+    );
     process.exitCode = 2;
     return;
   }
@@ -289,8 +323,9 @@ async function main() {
   for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt += 1) {
     try {
       const result = await oneAttempt();
-      console.log(safeJson({ ...result, attempt }));
-      process.exitCode = result.gate_result === "repair_required" ? 2 : 0;
+      const recorded = recordAudit(result, attempt);
+      console.log(safeJson(recorded));
+      process.exitCode = recorded.gate_result === "repair_required" ? 2 : 0;
       return;
     } catch (error) {
       last = error;
@@ -303,11 +338,19 @@ async function main() {
     : message.includes("timeout")
       ? "app_server_request_timeout"
       : "app_server_handler_error";
-  console.log(safeJson(fail(code, "peer_discovery", { message, attempts: MAX_ATTEMPTS })));
+  const result = recordAudit(
+    fail(code, "peer_discovery", { message, attempts: MAX_ATTEMPTS }),
+    MAX_ATTEMPTS,
+  );
+  console.log(safeJson(result));
   process.exitCode = 2;
 }
 
 main().catch((error) => {
-  console.log(safeJson(fail("peer_gate_unhandled_error", "peer_discovery", { message: String(error) })));
+  const result = recordAudit(
+    fail("peer_gate_unhandled_error", "peer_discovery", { message: String(error) }),
+    MAX_ATTEMPTS,
+  );
+  console.log(safeJson(result));
   process.exitCode = 2;
 });

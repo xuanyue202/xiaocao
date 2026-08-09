@@ -3743,7 +3743,7 @@ class SubscriptionVideoService:
             evidence_sha256=str(state["transcript_sha256"]),
         )
         request = {
-            "schema_version": 1,
+            "schema_version": 2,
             "event": "subscription_video_analysis_input_required",
             "source": item["source"],
             "author": item["author"],
@@ -3754,12 +3754,19 @@ class SubscriptionVideoService:
                 else item["name"]
             ),
             "publication_time": publication_time,
+            "published_at": publication_time,
             "publication_time_precision": publication_time_precision,
             "capture_time": item["version_first_seen_at"],
+            "captured_at": item["version_first_seen_at"],
             "media_type": "video",
             "source_path": item["path"],
             "source_identity": item["identity"],
             "source_version_key": item["version_key"],
+            "handoff_id": item["identity"],
+            "message_sha256": state["transcript_sha256"],
+            "content_sha256": state["transcript_sha256"],
+            "media_identity": f"not_applicable:{item['identity']}",
+            "artifact_dir": str(request_path.parent.resolve()),
             "source_size": item["size"],
             "source_modified_at": item["modified_at"],
             "evidence_path": state["transcript_path"],

@@ -8,6 +8,8 @@ from xiaocao.kol.writer_progress import (
     ConvergenceLedger,
     FailureFingerprint,
     ProgressContractError,
+    RepairValidationLedger,
+    RepairValidationReceipt,
     normalize_source_result,
     WriterProgress,
 )
@@ -34,6 +36,29 @@ def _claim_summary() -> dict[str, int]:
         "receipt_count": 0,
         "uncertain_effect_count": 0,
     }
+
+
+def _repair_receipt(
+    progress: WriterProgress,
+    *,
+    profile: str = "kol_lv_download_recovery",
+) -> RepairValidationReceipt:
+    failure = progress.failure
+    return RepairValidationReceipt.create(
+        message_id="c" * 64,
+        content_sha256="d" * 64,
+        failure_fingerprint=progress.failure_fingerprint,
+        failure_revision=failure["failure_revision"],
+        failure_code=failure["code"],
+        failure_stage=failure["stage"],
+        repair_revision=REPAIR_REVISION,
+        target_branch="main",
+        target_branch_revision=REPAIR_REVISION,
+        targeted_test_profile=profile,
+        test_command_digest="e" * 64,
+        test_result_sha256="f" * 64,
+        validated_at="2026-08-08T08:40:00+08:00",
+    )
 
 
 def _progress_rows() -> dict[str, WriterProgress]:
@@ -215,14 +240,12 @@ def test_convergence_ledger_recovers_counts_owner_and_matching_closure(tmp_path)
         "closed": False,
     }
 
+    validation = RepairValidationLedger(tmp_path / "repair-validation.jsonl")
+    receipt = validation.append(_repair_receipt(progress))
     ledger.close_repair(
         progress.failure_fingerprint,
-        repair_receipt={
-            "receipt_id": "receipt-1",
-            "failure_fingerprint": progress.failure_fingerprint,
-            "repair_revision": REPAIR_REVISION,
-            "targeted_test_profile": "kol_lv_download_recovery",
-        },
+        repair_receipt=receipt,
+        validation_ledger=validation,
         slot="2026-08-08T08:00+08:00",
     )
 
@@ -402,14 +425,29 @@ def test_repair_closure_must_match_required_test_profile(tmp_path):
     )
     ledger.record(progress, slot="2026-08-08T07:00+08:00")
 
+    validation = RepairValidationLedger(tmp_path / "repair-validation.jsonl")
+    receipt = validation.append(
+        _repair_receipt(progress, profile="unrelated_profile")
+    )
     with pytest.raises(ProgressContractError, match="test profile does not match"):
         ledger.close_repair(
             progress.failure_fingerprint,
-            repair_receipt={
-                "receipt_id": "receipt-1",
-                "failure_fingerprint": progress.failure_fingerprint,
-                "repair_revision": REPAIR_REVISION,
-                "targeted_test_profile": "unrelated_profile",
-            },
+            repair_receipt=receipt,
+            validation_ledger=validation,
+            slot="2026-08-08T07:00+08:00",
+        )
+
+
+def test_repair_closure_rejects_unpersisted_receipt(tmp_path):
+    progress = _progress_rows()["repair_required"]
+    ledger = ConvergenceLedger(tmp_path / "convergence.jsonl")
+    ledger.record(progress, slot="2026-08-08T07:00+08:00")
+    validation = RepairValidationLedger(tmp_path / "repair-validation.jsonl")
+
+    with pytest.raises(ProgressContractError, match="validation ledger"):
+        ledger.close_repair(
+            progress.failure_fingerprint,
+            repair_receipt=_repair_receipt(progress),
+            validation_ledger=validation,
             slot="2026-08-08T07:00+08:00",
         )

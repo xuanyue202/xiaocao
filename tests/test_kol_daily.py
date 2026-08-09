@@ -5,6 +5,7 @@ import io
 import json
 import sys
 import termios
+from subprocess import CompletedProcess
 from datetime import datetime
 from pathlib import Path
 from types import SimpleNamespace
@@ -18,6 +19,8 @@ from scripts.kol_daily import (
     _lv_publication_context,
     _read_agent_json,
     _standalone_writer_result,
+    _require_rollout_peer_gate,
+    _verify_rollout_evidence,
     _video_publication_context,
     DailyRuntime,
     SemanticInputUnavailable,
@@ -47,8 +50,12 @@ from xiaocao.kol.publication import (
     report_id,
     viewpoint_id,
 )
+from xiaocao.kol.semantic_bundle import SemanticBundleError
 from xiaocao.kol.writer_progress import (
     FailureFingerprint,
+    RepairValidationLedger,
+    RepairValidationReceipt,
+    RolloutReadback,
     WriterProgress,
     affected_set_digest,
 )
@@ -60,6 +67,38 @@ class Clock:
 
     def __call__(self) -> datetime:
         return self.value
+
+
+def _close_validated_repair(
+    coordinator: DailyCoordinator,
+    progress: WriterProgress,
+    *,
+    tmp_path: Path,
+    slot: str,
+) -> None:
+    failure = progress.failure
+    validation = RepairValidationLedger(tmp_path / "repair-validation.jsonl")
+    receipt = validation.append(RepairValidationReceipt.create(
+        message_id="c" * 64,
+        content_sha256="d" * 64,
+        failure_fingerprint=progress.failure_fingerprint,
+        failure_revision=failure["failure_revision"],
+        failure_code=failure["code"],
+        failure_stage=failure["stage"],
+        repair_revision="b" * 40,
+        target_branch="main",
+        target_branch_revision="b" * 40,
+        targeted_test_profile=progress.details["targeted_test_profile"],
+        test_command_digest="e" * 64,
+        test_result_sha256="f" * 64,
+        validated_at="2026-08-08T08:40:00+08:00",
+    ))
+    coordinator.convergence.close_repair(
+        progress.failure_fingerprint,
+        repair_receipt=receipt,
+        validation_ledger=validation,
+        slot=slot,
+    )
 
 
 def test_standalone_writer_result_keeps_seven_state_contract():
@@ -84,6 +123,94 @@ def test_standalone_writer_result_keeps_seven_state_contract():
         lambda: (_ for _ in ()).throw(RuntimeError("internal")),
     )
     assert repair["writer_progress"]["status"] == "repair_required"
+
+
+def test_rollout_verification_uses_local_git_config_state_and_peer_gate(
+    tmp_path,
+    monkeypatch,
+):
+    revision = "a" * 40
+    root = Path(kol_daily_script.__file__).resolve().parents[1]
+    config = tmp_path / "xiaocao.yaml"
+    config.write_text("paper_only: true\n", encoding="utf-8")
+    config.chmod(0o600)
+    output = tmp_path / "daily"
+    output.mkdir()
+    (output / "events.jsonl").write_text("{}\n", encoding="utf-8")
+    args = SimpleNamespace(config=config, output_dir=output)
+    readback = RolloutReadback(
+        automation_id="automation-1",
+        writer_task_id="task-1",
+        target_revision=revision,
+        active_writer_count=1,
+        duplicate_automation_count=0,
+        automation_owner="automation-1",
+        automation_readback=True,
+        worktree_protected=True,
+        dependencies_ready=True,
+        private_config_ready=True,
+        restored_state_ready=True,
+    )
+    unsigned = {
+        "schema_version": 1,
+        "automation_id": "automation-1",
+        "writer_task_id": "task-1",
+        "active_writer_task_ids": ["task-1"],
+        "duplicate_automation_ids": [],
+        "automation_owner": "automation-1",
+        "cwd": str(root),
+        "target_revision": revision,
+        "observed_at": "2026-08-09T10:05:00+08:00",
+        "enabled": True,
+        "schedule": "RRULE:FREQ=HOURLY;BYMINUTE=0",
+        "prompt_sha256": "b" * 64,
+    }
+    evidence = {
+        **unsigned,
+        "receipt_sha256": hashlib.sha256(
+            json.dumps(
+                unsigned,
+                ensure_ascii=False,
+                sort_keys=True,
+                separators=(",", ":"),
+            ).encode("utf-8")
+        ).hexdigest(),
+    }
+    monkeypatch.setattr(
+        kol_daily_script,
+        "resolve_repository_revision",
+        lambda _root: revision,
+    )
+
+    def git(command, **_kwargs):
+        if command[:3] == ("git", "rev-parse", "--verify"):
+            return CompletedProcess(command, 0, f"{revision}\n", "")
+        if command[:2] == ("git", "status"):
+            return CompletedProcess(
+                command,
+                0,
+                "?? .scratch/kol-writer-self-repair/spec.md\n",
+                "",
+            )
+        raise AssertionError(command)
+
+    monkeypatch.setattr(kol_daily_script.subprocess, "run", git)
+    _verify_rollout_evidence(readback, evidence, args=args)
+
+    coordinator = DailyCoordinator(
+        tmp_path / "coordinator",
+        now=Clock("2026-08-09T10:00:00+08:00"),
+    )
+    coordinator.convergence.record_peer_gate({
+        "gate_result": "pass",
+        "attempt_count": 1,
+        "elapsed_ms": 12,
+    })
+    gate = _require_rollout_peer_gate(
+        coordinator,
+        automation_observed_at=evidence["observed_at"],
+    )
+    assert gate["gate_result"] == "pass"
 
 
 def test_agent_json_disables_canonical_tty_for_long_response(
@@ -2447,7 +2574,7 @@ def test_transient_source_failure_is_structured_and_does_not_notify(tmp_path):
     source = result["source_results"][0]
     assert source["name"] == "lucifer"
     assert source["status"] == "waiting"
-    assert source["retryable"] is False
+    assert source["resume_policy"] == "validate_repair_then_narrow_resume"
     assert source["repair_required"] is True
     assert source["user_action_required"] is False
     assert source["failure"] == {
@@ -2483,15 +2610,13 @@ def test_transient_source_failure_is_structured_and_does_not_notify(tmp_path):
         calls += 1
         return {"status": "no_update"}
 
-    progress = result["source_results"][0]["writer_progress"]
-    service.convergence.close_repair(
-        progress["failure_fingerprint"],
-        repair_receipt={
-            "receipt_id": "lucifer-repair",
-            "failure_fingerprint": progress["failure_fingerprint"],
-            "repair_revision": "b" * 40,
-            "targeted_test_profile": progress["targeted_test_profile"],
-        },
+    progress = WriterProgress.from_dict(
+        result["source_results"][0]["writer_progress"]
+    )
+    _close_validated_repair(
+        service,
+        progress,
+        tmp_path=tmp_path,
         slot="2026-07-27T14:00+08:00",
     )
     service.run([
@@ -2695,6 +2820,11 @@ def test_lv_pending_failure_isolated_without_blocking_later_pdf(
         "_read_agent_path",
         lambda *_args, **_kwargs: bundle_path,
     )
+    monkeypatch.setattr(
+        kol_daily_script,
+        "_require_canonical_semantic_artifact",
+        lambda path, _request: path,
+    )
     runtime = DailyRuntime.__new__(DailyRuntime)
     runtime.args = SimpleNamespace(
         lv_output_dir=tmp_path / "lv",
@@ -2845,6 +2975,11 @@ def test_video_history_failure_isolated_after_latest_lv_priority(
             failures.append((item["identity"], failure, retryable))
 
     monkeypatch.setattr(kol_daily_script, "SubscriptionVideoService", FakeVideos)
+    monkeypatch.setattr(
+        kol_daily_script,
+        "_require_canonical_semantic_artifact",
+        lambda path, _request: path,
+    )
     runtime = DailyRuntime.__new__(DailyRuntime)
     runtime.args = SimpleNamespace(
         video_output_dir=tmp_path / "videos",
@@ -3062,6 +3197,11 @@ def test_video_semantic_eof_waits_and_next_run_reuses_persisted_request(
             return {"decision_result_path": str(result_path)}
 
     monkeypatch.setattr(kol_daily_script, "SubscriptionVideoService", FakeVideos)
+    monkeypatch.setattr(
+        kol_daily_script,
+        "_require_canonical_semantic_artifact",
+        lambda path, _request: path,
+    )
     runtime = DailyRuntime.__new__(DailyRuntime)
     runtime.args = SimpleNamespace(
         video_output_dir=video_output,
@@ -3113,6 +3253,21 @@ def test_video_semantic_eof_waits_and_next_run_reuses_persisted_request(
     assert second["status"] == "completed"
     assert advance_calls == [identity]
     assert decision_calls == [(identity, bundle.resolve())]
+
+
+def test_hourly_semantic_consumer_rejects_bundle_without_receipt(tmp_path):
+    bundle = tmp_path / "legacy-bundle.json"
+    bundle.write_text('{"schema_version":1,"items":[]}', encoding="utf-8")
+
+    with pytest.raises(SemanticBundleError, match="receipt"):
+        kol_daily_script._require_canonical_semantic_artifact(
+            bundle,
+            {
+                "source_identity": "i" * 64,
+                "source_version_key": "v" * 64,
+                "evidence_sha256": "e" * 64,
+            },
+        )
 
 
 def test_pdf_companion_publication_context_merges_explicit_source_parts(tmp_path):
@@ -3329,7 +3484,7 @@ def test_lv_download_frame_fault_returns_repair_progress_and_stops_fanout(
     assert calls == ["identity-1"]
     assert result["status"] == "waiting"
     assert result["repair_required"] is True
-    assert result["retryable"] is False
+    assert result["resume_policy"] == "validate_repair_then_narrow_resume"
     assert result["user_action_required"] is False
     progress = WriterProgress.from_dict(result["writer_progress"])
     assert progress.status == "repair_required"
@@ -3485,14 +3640,10 @@ def test_open_writer_repair_remains_authoritative_until_matching_closure(tmp_pat
     assert audit["repair_required_count"] == 2
     assert audit["repair_closed_count"] == 0
 
-    coordinator.convergence.close_repair(
-        progress.failure_fingerprint,
-        repair_receipt={
-            "receipt_id": "repair-receipt-1",
-            "failure_fingerprint": progress.failure_fingerprint,
-            "repair_revision": "b" * 40,
-            "targeted_test_profile": "kol_lv_download_recovery",
-        },
+    _close_validated_repair(
+        coordinator,
+        progress,
+        tmp_path=tmp_path,
         slot="2026-08-08T08:00+08:00",
     )
     clock.value = datetime.fromisoformat("2026-08-08T09:30:00+08:00")

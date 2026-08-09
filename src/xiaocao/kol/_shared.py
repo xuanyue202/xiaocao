@@ -36,6 +36,12 @@ def canonical(value: Any) -> str:
     return json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
 
 
+def canonical_sha256(value: Any) -> str:
+    """Return the repository-wide digest for canonical JSON evidence."""
+
+    return hashlib.sha256(canonical(value).encode("utf-8")).hexdigest()
+
+
 def append_jsonl(path: Path, row: dict[str, Any]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     with path.open("a", encoding="utf-8") as handle:
@@ -53,9 +59,7 @@ def append_integrity_jsonl(
     """Append and fsync one hash-bound JSONL row under the caller's lock."""
 
     value = dict(row)
-    value["event_id"] = hashlib.sha256(
-        canonical(value).encode("utf-8")
-    ).hexdigest()
+    value["event_id"] = canonical_sha256(value)
     payload = (canonical(value) + "\n").encode("utf-8")
     if len(payload) > max_line_bytes:
         raise error_factory(f"{label} event exceeds limit")
@@ -110,9 +114,7 @@ def read_integrity_jsonl(
         event_id = str(row.get("event_id") or "")
         unsigned = dict(row)
         unsigned.pop("event_id", None)
-        expected = hashlib.sha256(
-            canonical(unsigned).encode("utf-8")
-        ).hexdigest()
+        expected = canonical_sha256(unsigned)
         if event_id != expected:
             raise error_factory(
                 f"{label} line {number} failed integrity validation"

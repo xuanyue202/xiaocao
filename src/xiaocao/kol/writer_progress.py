@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import fcntl
 import hashlib
-import json
 import re
 import subprocess
 import threading
@@ -14,7 +13,11 @@ from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any, Callable, Iterator, Mapping
 
-from ._shared import append_integrity_jsonl, read_integrity_jsonl
+from ._shared import (
+    append_integrity_jsonl,
+    canonical_sha256,
+    read_integrity_jsonl,
+)
 
 
 PROGRESS_STATUSES = frozenset(
@@ -38,6 +41,42 @@ NEXT_ACTIONS = {
     "reconcile_required": "perform_authoritative_readback",
     "user_action_required": "await_user_action",
     "terminal": "stop",
+}
+STATUS_REQUIRED_FIELDS = {
+    "continue": frozenset({"completed_stage", "next_stage"}),
+    "structured_input": frozenset({
+        "request_kind",
+        "request_id",
+        "request_schema_version",
+        "immutable_bindings",
+        "response_field",
+    }),
+    "wait_until": frozenset({"category", "code", "deadline", "attempt_budget"}),
+    "repair_required": frozenset({
+        "failure",
+        "failure_fingerprint",
+        "failure_revision",
+        "repair_revision",
+        "affected_set_digest",
+        "targeted_test_profile",
+        "narrow_resume_surface",
+    }),
+    "reconcile_required": frozenset({
+        "effect_kind",
+        "claim_identity",
+        "readback_operation",
+        "retry_forbidden",
+    }),
+    "user_action_required": frozenset({"action", "blocker_identity", "dedup_key"}),
+    "terminal": frozenset({
+        "content_terminal",
+        "gray_report_terminal",
+        "reminder_terminal",
+        "book_terminal",
+        "knowledge_terminal",
+        "ack_status",
+        "new_external_effect_count",
+    }),
 }
 
 _SAFE_TOKEN = re.compile(r"[a-z0-9][a-z0-9._-]{0,127}")
@@ -75,17 +114,8 @@ def resolve_repository_revision(root: Path | str) -> str:
     return revision
 
 
-def _canonical(value: Any) -> str:
-    return json.dumps(
-        value,
-        ensure_ascii=False,
-        sort_keys=True,
-        separators=(",", ":"),
-    )
-
-
 def _digest(value: Any) -> str:
-    return hashlib.sha256(_canonical(value).encode("utf-8")).hexdigest()
+    return canonical_sha256(value)
 
 
 def _safe_token(value: Any, *, field_name: str) -> str:
@@ -347,12 +377,6 @@ class RepairValidationReceipt:
             "receipt_sha256": self.receipt_sha256,
         }
 
-    @property
-    def branch_lineage(self) -> dict[str, Any]:
-        """Compatibility name for callers auditing the target branch proof."""
-
-        return dict(self.target_branch_lineage)
-
     @classmethod
     def create(
         cls,
@@ -549,12 +573,21 @@ TARGETED_REPAIR_TESTS: dict[str, tuple[str, ...]] = {
     ),
 }
 
-_TARGETED_REPAIR_PATHS: dict[str, frozenset[str]] = {
+_TARGETED_REPAIR_IMPLEMENTATION_PATHS: dict[str, frozenset[str]] = {
     "kol_mailbox_exact_resume": frozenset(
         {
             "scripts/kol_daily.py",
             "src/xiaocao/kol/mailbox.py",
             "src/xiaocao/kol/writer_progress.py",
+        }
+    ),
+}
+
+_TARGETED_REPAIR_TEST_PATHS: dict[str, frozenset[str]] = {
+    "kol_mailbox_exact_resume": frozenset(
+        {
+            "tests/test_kol_mailbox.py",
+            "tests/test_kol_repair_validation.py",
         }
     ),
 }
@@ -739,8 +772,27 @@ class RepairValidationService:
             for line in str(getattr(changed_files_result, "stdout", "") or "").splitlines()
             if line.strip()
         }
-        if not changed_files & _TARGETED_REPAIR_PATHS[profile]:
+        if not changed_files & _TARGETED_REPAIR_IMPLEMENTATION_PATHS[profile]:
             raise ProgressContractError("repair commit is unrelated to target")
+        if not changed_files & _TARGETED_REPAIR_TEST_PATHS[profile]:
+            raise ProgressContractError(
+                "repair commit lacks a targeted regression change"
+            )
+        message_result = self.git_runner(
+            ("show", "-s", "--format=%B", resolved_revision)
+        )
+        if getattr(message_result, "returncode", 1) != 0:
+            raise ProgressContractError("repair commit message readback failed")
+        trailers = {
+            line.strip()
+            for line in str(
+                getattr(message_result, "stdout", "") or ""
+            ).splitlines()
+        }
+        if f"Repair-Fingerprint: {failure_fingerprint}" not in trailers:
+            raise ProgressContractError(
+                "repair commit does not bind the failure fingerprint"
+            )
         lineage = (
             "merge-base",
             "--is-ancestor",
@@ -824,48 +876,13 @@ class WriterProgress:
         return dict(value) if isinstance(value, Mapping) else {}
 
     def _validate_details(self, details: dict[str, Any]) -> None:
-        required_by_status = {
-            "continue": {"completed_stage", "next_stage"},
-            "structured_input": {
-                "request_kind",
-                "request_id",
-                "request_schema_version",
-                "immutable_bindings",
-                "response_field",
-            },
-            "wait_until": {"category", "code", "deadline", "attempt_budget"},
-            "repair_required": {
-                "failure",
-                "failure_fingerprint",
-                "failure_revision",
-                "repair_revision",
-                "affected_set_digest",
-                "targeted_test_profile",
-                "narrow_resume_surface",
-            },
-            "reconcile_required": {
-                "effect_kind",
-                "claim_identity",
-                "readback_operation",
-                "retry_forbidden",
-            },
-            "user_action_required": {"action", "blocker_identity", "dedup_key"},
-            "terminal": {
-                "content_terminal",
-                "gray_report_terminal",
-                "reminder_terminal",
-                "book_terminal",
-                "knowledge_terminal",
-                "ack_status",
-                "new_external_effect_count",
-            },
-        }
-        missing = sorted(required_by_status[self.status] - set(details))
+        required = STATUS_REQUIRED_FIELDS[self.status]
+        missing = sorted(required - set(details))
         if missing:
             raise ProgressContractError(
                 f"{self.status} lacks required field {', '.join(missing)}"
             )
-        allowed = required_by_status[self.status] | {"claim_receipt_summary"}
+        allowed = required | {"claim_receipt_summary"}
         extra = sorted(set(details) - allowed)
         if extra:
             raise ProgressContractError(
@@ -1793,38 +1810,26 @@ class ConvergenceLedger:
         self,
         failure_fingerprint: str,
         *,
-        repair_receipt: Mapping[str, Any],
+        repair_receipt: RepairValidationReceipt | Mapping[str, Any],
+        validation_ledger: RepairValidationLedger,
         slot: str,
     ) -> dict[str, Any]:
         digest = _sha256(
             failure_fingerprint,
             field_name="failure_fingerprint",
         )
-        receipt = dict(repair_receipt)
-        required = {
-            "receipt_id",
-            "failure_fingerprint",
-            "repair_revision",
-            "targeted_test_profile",
-        }
-        missing = sorted(required - set(receipt))
-        if missing:
+        if not isinstance(validation_ledger, RepairValidationLedger):
             raise ProgressContractError(
-                f"repair receipt lacks {', '.join(missing)}"
+                "repair closure requires its validation ledger"
             )
-        extra = sorted(set(receipt) - required)
-        if extra:
-            raise ProgressContractError(
-                f"repair receipt contains unsupported field {', '.join(extra)}"
-            )
-        if receipt["failure_fingerprint"] != digest:
-            raise ProgressContractError("repair receipt fingerprint does not match")
-        _safe_identity(receipt["receipt_id"], field_name="receipt_id")
-        _revision(receipt["repair_revision"], field_name="repair_revision")
-        _safe_token(
-            receipt["targeted_test_profile"],
-            field_name="targeted_test_profile",
+        receipt_value = (
+            repair_receipt.to_dict()
+            if isinstance(repair_receipt, RepairValidationReceipt)
+            else dict(repair_receipt)
         )
+        receipt = RepairValidationReceipt.from_dict(receipt_value)
+        if receipt.failure_fingerprint != digest:
+            raise ProgressContractError("repair receipt fingerprint does not match")
         _timezone_aware(slot, field_name="slot")
         with self._locked():
             observations = [
@@ -1837,11 +1842,35 @@ class ConvergenceLedger:
                 raise ProgressContractError("repair closure has no matching failure")
             open_progress = WriterProgress.from_dict(observations[-1]["progress"])
             if (
-                receipt["targeted_test_profile"]
+                receipt.targeted_test_profile
                 != open_progress.details["targeted_test_profile"]
             ):
                 raise ProgressContractError(
                     "repair receipt test profile does not match open repair"
+                )
+            failure = open_progress.failure
+            if (
+                receipt.failure_revision != failure["failure_revision"]
+                or receipt.failure_code != failure["code"]
+                or receipt.failure_stage != failure["stage"]
+            ):
+                raise ProgressContractError(
+                    "repair receipt does not match the open failure"
+                )
+            persisted = validation_ledger.find_matching(
+                {
+                    "message_id": receipt.message_id,
+                    "content_sha256": receipt.content_sha256,
+                    "failure_fingerprint": digest,
+                    "failure_revision": receipt.failure_revision,
+                    "code": receipt.failure_code,
+                    "stage": receipt.failure_stage,
+                },
+                repair_revision=receipt.repair_revision,
+            )
+            if persisted != receipt:
+                raise ProgressContractError(
+                    "repair receipt is not present in the validation ledger"
                 )
             latest_matching = [
                 row
@@ -1856,7 +1885,7 @@ class ConvergenceLedger:
                     "closed_at": self._now(),
                     "slot": slot,
                     "failure_fingerprint": digest,
-                    "repair_receipt": receipt,
+                    "repair_receipt": receipt.to_dict(),
                 }
             )
 
@@ -1953,6 +1982,7 @@ class ConvergenceLedger:
             return self._append(
                 {
                     "event": "peer_gate_observed",
+                    "observed_at": self._now(),
                     "slot": slot,
                     "attempt_count": attempt_count,
                     "elapsed_ms": elapsed_ms,

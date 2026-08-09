@@ -139,9 +139,9 @@ Automation ownership:
 PYTHONPATH=src .venv/bin/python scripts/kol_daily.py rollout-readback
 ```
 
-The command consumes one credential-safe JSON line on stdin and starts the
-seven-day/50-scheduled-slot stability window only after that readback is
-accepted; it never backfills historical business slots.
+Use exact self-hashed Automation-interface evidence. Local facts are re-read
+and a peer-gate pass from the prior ten minutes is required. Only acceptance
+starts the seven-day/50-scheduled-slot window; never backfill business slots.
 
 At provider steps, use installed OpenCLI once with exact identity/version,
 bytes, hashes, and receipts. The no-MCP capture rule permits the
@@ -153,11 +153,11 @@ and stable URL.
 
 ## Semantic loading gate
 
-For `daily_analysis_input_required` in the same process:
-Read `full-contract.md` completely before analysis, reopen the evidence, and verify
-its current SHA-256 against the request. If reusable knowledge is written also
-read `durable-knowledge.md`; create the evidence-bound Ticket 01 JSON and write
-exactly `{"bundle_path":"<absolute-json-path>"}` plus a newline to stdin.
+For `daily_analysis_input_required`, Read `full-contract.md` completely before
+analysis and verify its current SHA-256 against the request. Run
+`scripts/kol_semantic_bundle.py` with that request, a judgment-only draft, and
+separate market evidence. Return only its validated absolute `bundle_path`;
+hand-built/legacy new-event bundles cannot pass the persisted receipt.
 
 For `daily_official_article_image_input_required`, inspect every image once and
 write UTF-8 Markdown headed `# 图片信息转写` with index/SHA,

@@ -8,10 +8,13 @@ import functools
 import hashlib
 import json
 import re
+import stat
+import subprocess
 import sys
 import termios
 from collections.abc import Collection
 from contextvars import ContextVar
+from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 from time import sleep as _cloud_handoff_sleep
@@ -31,6 +34,7 @@ from xiaocao.kol.daily import (
     triggered_evaluation_terminal,
 )
 from xiaocao.kol.decisions import DecisionPipeline
+from xiaocao.kol.claim_coverage import build_claim_extraction_request
 from xiaocao.kol.enrichment_types import (
     EnrichmentDiagnosticError,
     EnrichmentError,
@@ -46,6 +50,10 @@ from xiaocao.kol.mailbox import (
     RemoteMailboxDrain,
 )
 from xiaocao.kol.publication import PublicationLedger, read_published_publication
+from xiaocao.kol.semantic_bundle import (
+    read_validated_bundle,
+    validate_receipt_bindings,
+)
 from xiaocao.kol.subscription_video import LV_SOURCE, SubscriptionVideoService
 from xiaocao.kol.wechat_official import (
     DEFAULT_PUBLISHERS as DEFAULT_WECHAT_OFFICIAL_PUBLISHERS,
@@ -78,6 +86,30 @@ from xiaocao.kol.writer_progress import (
     WriterProgress,
 )
 from xiaocao.live.notify import notify
+
+
+@dataclass(frozen=True)
+class SourceAdapter:
+    """Typed coordinator adapter; optional operations stay explicit."""
+
+    name: str
+    priority: int
+    run: Any
+    narrow_resume: Any
+    reconcile: Any
+    structured_input: Any | None = None
+
+    def coordinator_entry(self) -> dict[str, Any]:
+        entry = {
+            "name": self.name,
+            "priority": self.priority,
+            "run": self.run,
+            "narrow_resume": self.narrow_resume,
+            "reconcile": self.reconcile,
+        }
+        if self.structured_input is not None:
+            entry["structured_input"] = self.structured_input
+        return entry
 
 
 DEFAULT_OUTPUT = Path("output/live/kol_daily")
@@ -668,6 +700,215 @@ def _read_agent_path(request: dict[str, Any], field: str) -> Path:
     return path
 
 
+def _require_canonical_semantic_artifact(
+    bundle_path: Path,
+    request: dict[str, Any],
+) -> Path:
+    """Fail closed unless the hourly response has a bound v2 receipt."""
+
+    binding_request = request
+    request_path_value = request.get("analysis_request_path") or request.get(
+        "request_path"
+    )
+    if request_path_value:
+        request_path = Path(str(request_path_value)).expanduser().resolve()
+        try:
+            persisted = json.loads(request_path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError) as exc:
+            raise DailyError("canonical semantic request is invalid") from exc
+        if not isinstance(persisted, dict):
+            raise DailyError("canonical semantic request is invalid")
+        binding_request = persisted
+    receipt, _bundle = read_validated_bundle(bundle_path)
+    validate_receipt_bindings(
+        receipt,
+        {
+            "message_sha256": binding_request.get("message_sha256"),
+            "content_sha256": binding_request.get("content_sha256"),
+            "handoff_id": binding_request.get("handoff_id"),
+            "media_identity": binding_request.get("media_identity"),
+            "media_sha256": binding_request.get("media_sha256"),
+            "transcript_sha256": (
+                binding_request.get("evidence_sha256")
+                or binding_request.get("transcript_sha256")
+            ),
+            "source_identity": (
+                binding_request.get("source_identity")
+                or binding_request.get("identity")
+            ),
+            "source_version_key": (
+                binding_request.get("source_version_key")
+                or binding_request.get("version_key")
+            ),
+        },
+    )
+    return bundle_path
+
+
+def _persist_semantic_request(
+    request: dict[str, Any],
+    *,
+    output_dir: Path,
+    request_id: str,
+) -> dict[str, Any]:
+    artifact_dir = (output_dir / "semantic_requests" / request_id).resolve()
+    request_path = artifact_dir / "analysis_request.json"
+    value = {
+        **request,
+        "artifact_dir": str(artifact_dir),
+        "analysis_request_path": str(request_path),
+    }
+    artifact_dir.mkdir(parents=True, exist_ok=True)
+    if request_path.is_file():
+        try:
+            prior = json.loads(request_path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError) as exc:
+            raise DailyError("persisted semantic request is invalid") from exc
+        if prior != value:
+            raise DailyError("persisted semantic request changed after claim")
+        return value
+    temporary = request_path.with_name(f".{request_path.name}.partial")
+    temporary.write_text(
+        json.dumps(value, ensure_ascii=False, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+    temporary.replace(request_path)
+    return value
+
+
+def _verify_rollout_evidence(
+    readback: RolloutReadback,
+    evidence: dict[str, Any],
+    *,
+    args: argparse.Namespace,
+) -> None:
+    """Verify local rollout facts and one self-hashed Automation readback."""
+
+    required = {
+        "schema_version",
+        "automation_id",
+        "writer_task_id",
+        "active_writer_task_ids",
+        "duplicate_automation_ids",
+        "automation_owner",
+        "cwd",
+        "target_revision",
+        "observed_at",
+        "enabled",
+        "schedule",
+        "prompt_sha256",
+        "receipt_sha256",
+    }
+    if not isinstance(evidence, dict) or set(evidence) != required:
+        raise DailyError("rollout Automation readback evidence is incomplete")
+    unsigned = {key: evidence[key] for key in required - {"receipt_sha256"}}
+    receipt_sha = hashlib.sha256(
+        _canonical(unsigned).encode("utf-8")
+    ).hexdigest()
+    if evidence["receipt_sha256"] != receipt_sha:
+        raise DailyError("rollout Automation readback receipt hash changed")
+    observed_at = str(evidence["observed_at"])
+    try:
+        if datetime.fromisoformat(observed_at.replace("Z", "+00:00")).tzinfo is None:
+            raise ValueError
+    except ValueError as exc:
+        raise DailyError("rollout Automation readback time is invalid") from exc
+    active_ids = evidence["active_writer_task_ids"]
+    duplicate_ids = evidence["duplicate_automation_ids"]
+    repository_root = Path(__file__).resolve().parents[1]
+    if (
+        evidence["schema_version"] != 1
+        or evidence["automation_id"] != readback.automation_id
+        or evidence["writer_task_id"] != readback.writer_task_id
+        or active_ids != [readback.writer_task_id]
+        or duplicate_ids != []
+        or evidence["automation_owner"] != readback.automation_id
+        or Path(str(evidence["cwd"])).resolve() != repository_root
+        or evidence["target_revision"] != readback.target_revision
+        or evidence["enabled"] is not True
+        or not str(evidence["schedule"] or "").startswith("RRULE:")
+        or not re.fullmatch(r"[0-9a-f]{64}", str(evidence["prompt_sha256"] or ""))
+    ):
+        raise DailyError("rollout Automation readback does not prove one writer")
+
+    head = resolve_repository_revision(repository_root)
+    remote = subprocess.run(
+        ("git", "rev-parse", "--verify", "origin/main^{commit}"),
+        cwd=repository_root,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+        check=False,
+        timeout=15,
+    )
+    remote_revision = remote.stdout.strip()
+    if remote.returncode != 0 or head != readback.target_revision or remote_revision != head:
+        raise DailyError("rollout target revision is not current pushed main")
+    status_result = subprocess.run(
+        ("git", "status", "--porcelain", "--untracked-files=all"),
+        cwd=repository_root,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+        check=False,
+        timeout=15,
+    )
+    if status_result.returncode != 0:
+        raise DailyError("rollout worktree readback failed")
+    unsafe_wip = [
+        line
+        for line in status_result.stdout.splitlines()
+        if line and not line[3:].startswith(".scratch/")
+    ]
+    if unsafe_wip:
+        raise DailyError("rollout worktree contains unprotected source WIP")
+    config_path = Path(args.config).expanduser().resolve()
+    if (
+        not config_path.is_file()
+        or stat.S_IMODE(config_path.stat().st_mode) & 0o077
+    ):
+        raise DailyError("rollout private config is missing or not private")
+    if not Path(sys.executable).is_file():
+        raise DailyError("rollout dependency runtime is unavailable")
+    events_path = Path(args.output_dir).expanduser().resolve() / "events.jsonl"
+    if not events_path.is_file():
+        raise DailyError("rollout restored writer state is unavailable")
+
+
+def _require_rollout_peer_gate(
+    service: DailyCoordinator,
+    *,
+    automation_observed_at: str,
+) -> dict[str, Any]:
+    """Bind rollout acceptance to a recent persisted pass from the real gate."""
+
+    rows = [
+        row
+        for row in service.convergence.events()
+        if row.get("event") == "peer_gate_observed"
+    ]
+    if not rows or rows[-1].get("gate_result") != "pass":
+        raise DailyError("rollout requires a persisted passing peer gate")
+    gate = rows[-1]
+    try:
+        gate_time = datetime.fromisoformat(
+            str(gate["observed_at"]).replace("Z", "+00:00")
+        )
+        automation_time = datetime.fromisoformat(
+            automation_observed_at.replace("Z", "+00:00")
+        )
+    except (KeyError, ValueError) as exc:
+        raise DailyError("rollout peer gate time is invalid") from exc
+    if (
+        gate_time.tzinfo is None
+        or automation_time.tzinfo is None
+        or gate_time > automation_time
+        or (automation_time - gate_time).total_seconds() > 600
+    ):
+        raise DailyError("rollout peer gate is stale or out of order")
+    return gate
+
+
 def _semantic_waiting_item(
     request: dict[str, Any],
     *,
@@ -1003,7 +1244,11 @@ def _standalone_writer_result(adapter: str, runner) -> dict[str, Any]:
         provider_contract_version="xiaocao_writer_v1",
         user_action=user_action,
     )
-    return {**outcome, "writer_progress": progress.to_dict()}
+    return {
+        **{key: value for key, value in outcome.items() if key != "retryable"},
+        "resume_policy": progress.next_action,
+        "writer_progress": progress.to_dict(),
+    }
 
 
 def _classified_source(name: str, runner):
@@ -1687,7 +1932,7 @@ class DailyRuntime:
                         "waiting_count": waiting,
                         "waiting_items": waiting_items,
                         "suppressed_companion_count": suppressed,
-                        "retryable": False,
+                        "resume_policy": progress.next_action,
                         "repair_key": progress.failure_fingerprint,
                         "repair_required": True,
                         "user_action_required": False,
@@ -1700,17 +1945,14 @@ class DailyRuntime:
             ingest = service.ingest_browser_download(identity)
             request = service.prepare_analysis_request(ingest)
             semantic_request = {
-                    "event": "daily_analysis_input_required",
-                    "adapter": "lv_text_image",
-                    "identity": ingest["identity"],
-                    "version_key": ingest["version_key"],
-                    "analysis_request_path": request["request_path"],
-                    "evidence_path": ingest["evidence_path"],
-                    "evidence_sha256": ingest["evidence_sha256"],
-                    "required_content_value": (
-                        "low_density|promoted(report_only|alert_eligible)"
-                    ),
-                }
+                **request,
+                "event": "daily_analysis_input_required",
+                "adapter": "lv_text_image",
+                "analysis_request_path": request["request_path"],
+                "required_content_value": (
+                    "low_density|promoted(report_only|alert_eligible)"
+                ),
+            }
             try:
                 bundle_path = _read_agent_path(
                     semantic_request,
@@ -1730,6 +1972,10 @@ class DailyRuntime:
                 # stdin EOF closes the semantic channel for this sweep. Do not
                 # acquire more pending items that cannot receive a bundle.
                 break
+            bundle_path = _require_canonical_semantic_artifact(
+                bundle_path,
+                semantic_request,
+            )
             if ingest["media_type"] == "pdf":
                 relationship = service.record_pdf_relationship(
                     identity,
@@ -1898,7 +2144,7 @@ class DailyRuntime:
                         "status": "waiting",
                         "waiting_count": waiting,
                         "waiting_items": waiting_items,
-                        "retryable": False,
+                        "resume_policy": progress.next_action,
                         "repair_key": progress.failure_fingerprint,
                         "repair_required": True,
                         "user_action_required": False,
@@ -1962,6 +2208,10 @@ class DailyRuntime:
                 # closing the channel for the whole adapter sweep so historical
                 # backlog cannot trigger more acquisition work.
                 break
+            bundle_path = _require_canonical_semantic_artifact(
+                bundle_path,
+                semantic_request,
+            )
             context = _video_publication_context(item, state)
             decision = service.decide_item(
                 item,
@@ -2270,18 +2520,55 @@ class DailyRuntime:
                     waiting_item["next_poll_not_before"] = next_poll
                 waiting_items.append(waiting_item)
                 continue
-            bundle_path = _read_agent_path(
+            semantic_request = _persist_semantic_request(
                 {
+                    "schema_version": 2,
                     "event": "daily_analysis_input_required",
                     "adapter": "xiaocao_live",
+                    "source": "小草直播",
+                    "author": "小草",
+                    "title": str(
+                        handoff.get("media_basename")
+                        or handoff["capture_job_id"]
+                    ),
+                    "published_at": handoff["published_at"],
+                    "captured_at": str(
+                        handoff.get("captured_at") or handoff["published_at"]
+                    ),
+                    "media_type": "video",
                     "capture_job_id": handoff["capture_job_id"],
-                    "transcript_path": state["transcript_path"],
-                    "transcript_sha256": state["transcript_sha256"],
+                    "source_identity": handoff["capture_job_id"],
+                    "source_version_key": state["transcript_sha256"],
+                    "handoff_id": str(
+                        handoff.get("handoff_id") or handoff["capture_job_id"]
+                    ),
+                    "message_sha256": str(
+                        handoff.get("handoff_sha256")
+                        or handoff.get("media_sha256")
+                    ),
+                    "content_sha256": str(
+                        handoff.get("handoff_sha256")
+                        or handoff.get("media_sha256")
+                    ),
+                    "media_sha256": handoff.get("media_sha256"),
+                    "media_identity": str(handoff.get("media_sha256") or ""),
+                    "evidence_path": state["transcript_path"],
+                    "evidence_sha256": state["transcript_sha256"],
+                    "investment_claim_extraction": build_claim_extraction_request(
+                        state["transcript_path"],
+                        evidence_sha256=str(state["transcript_sha256"]),
+                    ),
                     "required_content_value": (
                         "low_density|promoted(report_only|alert_eligible)"
                     ),
                 },
-                "bundle_path",
+                output_dir=Path(self.args.xiaocao_output_dir),
+                request_id=str(handoff["capture_job_id"]),
+            )
+            bundle_path = _read_agent_path(semantic_request, "bundle_path")
+            bundle_path = _require_canonical_semantic_artifact(
+                bundle_path,
+                semantic_request,
             )
             validate_decision_bundle(
                 bundle_path,
@@ -2567,6 +2854,10 @@ class DailyRuntime:
                     )
                 )
                 break
+            bundle_path = _require_canonical_semantic_artifact(
+                bundle_path,
+                request,
+            )
             evidence_path = Path(str(item["evidence_path"])).resolve()
             context = DailyPublicationContext(
                 adapter="wechat_official_account",
@@ -2746,6 +3037,7 @@ def main() -> int:
             "status",
             "audit",
             "convergence-report",
+            "record-peer-gate",
             "rollout-readback",
         ),
     )
@@ -2882,6 +3174,24 @@ def main() -> int:
             period_end=args.period_end,
         ))
         return 0
+    if args.command == "record-peer-gate":
+        try:
+            payload = json.loads(sys.stdin.readline())
+        except json.JSONDecodeError as exc:
+            raise DailyError(
+                "record-peer-gate requires one JSON object on stdin"
+            ) from exc
+        if not isinstance(payload, dict) or set(payload) != {
+            "gate_result",
+            "attempt_count",
+            "elapsed_ms",
+        }:
+            raise DailyError(
+                "record-peer-gate requires gate_result, attempt_count, and elapsed_ms"
+            )
+        receipt = service.convergence.record_peer_gate(payload)
+        _print({"peer_gate_observed": receipt})
+        return 0
     if args.command == "rollout-readback":
         try:
             payload = json.loads(sys.stdin.readline())
@@ -2891,14 +3201,27 @@ def main() -> int:
             ) from exc
         if not isinstance(payload, dict) or set(payload) != {
             "readback",
+            "automation_evidence",
             "baseline",
             "slot",
         }:
             raise DailyError(
-                "rollout-readback requires readback, baseline, and slot"
+                "rollout-readback requires readback, Automation evidence, baseline, and slot"
             )
+        readback = RolloutReadback.from_dict(payload["readback"])
+        _verify_rollout_evidence(
+            readback,
+            payload["automation_evidence"],
+            args=args,
+        )
+        _require_rollout_peer_gate(
+            service,
+            automation_observed_at=str(
+                payload["automation_evidence"]["observed_at"]
+            ),
+        )
         receipt = service.convergence.record_rollout_readback(
-            RolloutReadback.from_dict(payload["readback"]),
+            readback,
             slot=str(payload["slot"]),
             baseline=payload["baseline"],
         )
@@ -2911,7 +3234,9 @@ def main() -> int:
         if mailbox_reconciliation:
             _print({"mailbox_reconciliation": mailbox_reconciliation})
         result = service.run(
-            [{
+            [
+                SourceAdapter(**source).coordinator_entry()
+                for source in [{
                 "name": "xiaocao_wechat_live",
                 "priority": 10,
                 "run": _classified_source(
@@ -2952,7 +3277,8 @@ def main() -> int:
                         "authoritative reconciliation",
                     ),
                 ),
-            }],
+            }]
+            ],
             blocker_sender=_sender,
         )
         if not result.get("silent"):
@@ -2996,6 +3322,8 @@ def main() -> int:
         _print({"mailbox_drain": mailbox_result})
     result = service.run(
         [
+            SourceAdapter(**source).coordinator_entry()
+            for source in [
             {
                 "name": "lv_text_image",
                 "priority": 10,
@@ -3155,6 +3483,7 @@ def main() -> int:
                     ),
                 ),
             },
+        ]
         ],
         blocker_sender=_sender,
     )

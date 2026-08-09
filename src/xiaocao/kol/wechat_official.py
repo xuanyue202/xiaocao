@@ -22,6 +22,7 @@ from urllib.parse import parse_qs, unquote, urlencode, urlsplit, urlunsplit
 from uuid import uuid4
 from zoneinfo import ZoneInfo
 
+from .claim_coverage import build_claim_extraction_request
 from .enrichment_types import EnrichmentDiagnosticError, EnrichmentError
 from .semantic_bundle import read_validated_bundle, validate_receipt_bindings
 
@@ -1184,6 +1185,17 @@ class OfficialAccountInbox:
             "adapter": "wechat_official_account",
             "identity": item["source_identity"],
             "version_key": item["publication_version"],
+            "source_identity": item["source_identity"],
+            "source_version_key": item["publication_version"],
+            "handoff_id": item["handoff_id"],
+            "message_sha256": str(
+                item.get("handoff_sha256") or item["evidence_sha256"]
+            ),
+            "content_sha256": str(
+                item.get("handoff_sha256") or item["evidence_sha256"]
+            ),
+            "media_identity": f"not_applicable:{item['source_identity']}",
+            "artifact_dir": str(request_path.parent.resolve()),
             "kol_id": item["kol_id"],
             "author": item["author"],
             "source": item["source"],
@@ -1193,6 +1205,10 @@ class OfficialAccountInbox:
             "page_publish_time": item["page_publish_time"],
             "evidence_path": str(evidence_path),
             "evidence_sha256": item["evidence_sha256"],
+            "investment_claim_extraction": build_claim_extraction_request(
+                evidence_path,
+                evidence_sha256=str(item["evidence_sha256"]),
+            ),
             "evidence_scope": item["evidence_scope"],
             "author_reference_policy": (
                 "作者身份代词尚未审定；读者文案使用公众号全名，"

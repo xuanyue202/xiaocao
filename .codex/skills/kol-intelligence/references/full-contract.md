@@ -270,7 +270,7 @@ work and never authorizes replaying publication, reminder, or Book side effects.
      AI-note outcome is not report evidence and cannot block analysis.
   7. On the Netdisk folder page, semantically dismiss the known `.nd-operate-guidance` operation-ad overlay through its unique `img[alt="close"]` control before upload inspection or reconciliation; never use click coordinates. As soon as the complete `文稿` is ready and AI-note submission has been recorded, the stepper opens the exact player and performs one atomic OpenCLI DOM action. It first closes a semantically identified advertisement dialog; if that exact ad overlay cannot be closed, it hides only that identified overlay. It then activates `文稿`, waits for content, and captures the unique initial `.ai-draft__wrap-list` as immutable UTF-8 text. Never refresh as an ad workaround.
   8. DOM capture is valid only when it proves `scrollTop=0`, nontrivial paragraph/sentence counts, the last sentence is already in DOM and below the initial viewport when content overflows, and there are no virtual/loading/load-more markers. Run `verify --audit-file <json>` with excerpts from the opening, middle, and ending thirds, bound to both source-video and transcript hashes.
-  9. Create one ticket-01 source-neutral bundle whose `evidence_path` is that verified transcript, then run `decide --bundle <json>`. Publish the complete event report to 灰常亮 first. Only after its durable publication receipt may a newly eligible event fan out one concise reminder to the distinct `XIAOCAO_KOL_WECOM_USER_IDS` set (currently `Chen,FeiFei`): lead with the key insight, add the coherent compact synthesis, and end with exactly one stable report link, all within the 2,048-byte safe-send limit. Do not split the complete report across messages. The legacy chunked notifier is reconciliation-only for already-claimed historical sends. Before any makeup send, compare the recipient configuration time with the original send time and send only to a proven-missing recipient—never replay the full decision pipeline or duplicate a recipient that already succeeded. Completion requires the 灰常亮 receipt, the eligible event's all-recipient short-reminder receipt or a legal no-alert reason, and a result with `book=KOL-US`, `paper_only=true`, plus a fill or an explicit nonempty `no_trade.reason`.
+  9. Build one canonical Ticket-01 source-neutral bundle from the emitted `analysis_request.json`, a judgment-only semantic draft, and a separate current market-evidence JSON by running `PYTHONPATH=src .venv/bin/python scripts/kol_semantic_bundle.py --analysis-request <path> --semantic-draft <path> --market-evidence <path>`. Only its validated `bundle_path` may return to the still-running writer; a hand-built or legacy-validated bundle is not a new-event builder. The persisted `ValidatedBundleReceipt` must exist before `decide` prepares any business effect. Publish the complete event report to 灰常亮 first. Only after its durable publication receipt may a newly eligible event fan out one concise reminder to the distinct `XIAOCAO_KOL_WECOM_USER_IDS` set (currently `Chen,FeiFei`): lead with the key insight, add the coherent compact synthesis, and end with exactly one stable report link, all within the 2,048-byte safe-send limit. Do not split the complete report across messages. The legacy chunked notifier is reconciliation-only for already-claimed historical sends. Before any makeup send, compare the recipient configuration time with the original send time and send only to a proven-missing recipient—never replay the full decision pipeline or duplicate a recipient that already succeeded. Completion requires the 灰常亮 receipt, the eligible event's all-recipient short-reminder receipt or a legal no-alert reason, and a result with `book=KOL-US`, `paper_only=true`, plus a fill or an explicit nonempty `no_trade.reason`.
      The delivery claim must hash the exact title/body bytes passed to the Relay.
      `reader_title` is the full report title. When the WeChat entry needs shorter
      copy, put its natural-language `title` and `summary` in `reader_reminder`;
@@ -457,10 +457,12 @@ work and never authorizes replaying publication, reminder, or Book side effects.
 - When the still-running command emits
   `subscription_analysis_input_required`, reopen the referenced immutable
   evidence and `analysis_request.json`, validate current market and household
-  facts, build the complete coverage matrix and source-neutral decision bundle,
-  then write exactly `{"bundle_path":"<absolute-json-path>"}` followed by a
-  newline to that same process. Do not exit and manually chain `poll`,
-  `claim-download`, `ingest`, and `decide`.
+  facts, and write the complete coverage matrix and decision judgment to a
+  semantic draft while keeping current market facts in a separate market-
+  evidence JSON. Run `scripts/kol_semantic_bundle.py` with all three files and
+  write exactly its validated `{"bundle_path":"<absolute-json-path>"}` followed
+  by a newline to that same process. Do not hand-build a new-event bundle, or
+  exit and manually chain `poll`, `claim-download`, `ingest`, and `decide`.
 - Completion requires a durable household notification outcome plus a
   paper-only Book KOL-US result for every processed item, except a pure
   durable-only `底层逻辑` report may complete with a reasoned `not_created`
@@ -562,8 +564,11 @@ work and never authorizes replaying publication, reminder, or Book side effects.
   as immutable evidence, and record `large_payload_local_bytes=0`.
 - When the runner emits `subscription_video_analysis_input_required`, reopen
   the referenced transcript and SHA-256, build all seven coverage rows and the
-  full entity inventory, then write `{"bundle_path":"<absolute-json-path>"}`
-  followed by a newline to the same process. The bundle must use exactly
+  full entity inventory in a judgment-only semantic draft, write current market
+  facts separately, and run `scripts/kol_semantic_bundle.py` against those two
+  files plus the emitted request. Write only its validated
+  `{"bundle_path":"<absolute-json-path>"}` followed by a newline to the same
+  process. The bundle must use exactly
   `decision_status=actionable_signal|no_actionable_signal` and
   `knowledge_status=reusable_knowledge|no_reusable_knowledge`, include an
   explicit Xiaocao consensus/conflict/unrelated assessment, and state that the

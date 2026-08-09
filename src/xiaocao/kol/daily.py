@@ -20,7 +20,10 @@ from typing import Any, Callable, Iterator, Mapping
 from zoneinfo import ZoneInfo
 
 from .enrichment_types import EnrichmentError, is_durable_report_only
-from ._shared import append_integrity_jsonl, read_integrity_jsonl
+from ._shared import (
+    append_integrity_jsonl,
+    read_integrity_jsonl,
+)
 from .publication import (
     PublicationError,
     PublicationLedger,
@@ -143,15 +146,6 @@ class UserActionBlocker(DailyError):
         super().__init__(self.action)
 
 
-def _canonical(value: Any) -> str:
-    return json.dumps(
-        value,
-        ensure_ascii=False,
-        sort_keys=True,
-        separators=(",", ":"),
-    )
-
-
 def _utc_iso8601(value: str) -> str:
     try:
         parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
@@ -167,7 +161,7 @@ def _utc_iso8601(value: str) -> str:
 
 
 def _sha256(value: Any) -> str:
-    return hashlib.sha256(_canonical(value).encode("utf-8")).hexdigest()
+    return canonical_sha256(value)
 
 
 def _required_reason(value: Any, *, label: str) -> str:
@@ -1317,7 +1311,7 @@ class DailyCoordinator:
                 "retryable": True,
             },
             "repair_required": True,
-            "retryable": False,
+            "resume_policy": progress.next_action,
             "user_action_required": False,
             "writer_progress": progress.to_dict(),
         }, progress)
@@ -1534,6 +1528,48 @@ class DailyCoordinator:
             label="daily ledger",
             error_factory=DailyError,
         )
+
+    @staticmethod
+    def _source_states(results: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        states: list[dict[str, Any]] = []
+        for row in results:
+            state = {
+                key: row[key]
+                for key in (
+                    "name",
+                    "status",
+                    "resume_policy",
+                    "repair_required",
+                    "repair_key",
+                    "user_action_required",
+                    "waiting_count",
+                    "waiting_items",
+                    "failure",
+                    "writer_progress",
+                )
+                if key in row
+            }
+            effect_count = sum(
+                int(event.get("gray_report", {}).get("status") == "published")
+                + int(event.get("alert", {}).get("status") == "delivered")
+                + int(event.get("book_kol_us", {}).get("status") == "filled")
+                for event in row.get("events") or []
+                if isinstance(event, Mapping)
+            )
+            if effect_count:
+                state["new_external_effect_count"] = effect_count
+            states.append(state)
+        return states
+
+    @staticmethod
+    def _sweep_health(results: list[dict[str, Any]]) -> str:
+        if any(row.get("user_action_required") for row in results):
+            return "blocked"
+        if any(row.get("failure") or row.get("repair_required") for row in results):
+            return "degraded"
+        if any(row.get("status") == "waiting" for row in results):
+            return "waiting"
+        return "healthy"
 
     def run(
         self,
@@ -2073,7 +2109,12 @@ class DailyCoordinator:
                         external_business_effects_replayed=False,
                     )
                 outcome = {
-                    **outcome,
+                    **{
+                        key: value
+                        for key, value in outcome.items()
+                        if key != "retryable"
+                    },
+                    "resume_policy": progress.next_action,
                     "writer_progress": progress.to_dict(),
                 }
                 if progress.status == "repair_required":
@@ -2081,7 +2122,6 @@ class DailyCoordinator:
                     outcome = {
                         **outcome,
                         "status": "waiting",
-                        "retryable": False,
                         "failure": {
                             "category": failure["category"],
                             "code": failure["code"],
@@ -2133,56 +2173,8 @@ class DailyCoordinator:
                     result=outcome,
                     coordinator_source_video_bytes=0,
                 )
-            source_states: list[dict[str, Any]] = []
-            for row in results:
-                state = {
-                    key: row[key]
-                    for key in (
-                        "name",
-                        "status",
-                        "retryable",
-                        "repair_required",
-                        "repair_key",
-                        "user_action_required",
-                        "waiting_count",
-                        "waiting_items",
-                        "failure",
-                        "writer_progress",
-                    )
-                    if key in row
-                }
-                new_external_effect_count = sum(
-                    int(
-                        event.get("gray_report", {}).get("status")
-                        == "published"
-                    )
-                    + int(
-                        event.get("alert", {}).get("status")
-                        == "delivered"
-                    )
-                    + int(
-                        event.get("book_kol_us", {}).get("status")
-                        == "filled"
-                    )
-                    for event in row.get("events") or []
-                    if isinstance(event, Mapping)
-                )
-                if new_external_effect_count:
-                    state["new_external_effect_count"] = (
-                        new_external_effect_count
-                    )
-                source_states.append(state)
-            if any(row.get("user_action_required") for row in results):
-                health = "blocked"
-            elif any(
-                row.get("failure") or row.get("repair_required")
-                for row in results
-            ):
-                health = "degraded"
-            elif any(row.get("status") == "waiting" for row in results):
-                health = "waiting"
-            else:
-                health = "healthy"
+            source_states = self._source_states(results)
+            health = self._sweep_health(results)
             self._append(
                 "sweep_completed",
                 slot=slot,

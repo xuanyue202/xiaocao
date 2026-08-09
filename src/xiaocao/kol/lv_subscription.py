@@ -5935,6 +5935,7 @@ try {
         artifact_dir = self.output_dir / "artifacts" / version_key
         request_path = artifact_dir / "analysis_request.json"
         request = {
+            "schema_version": 2,
             "event": "subscription_analysis_requested",
             "status": "waiting_for_analysis",
             "source": ingest["source"],
@@ -5942,6 +5943,13 @@ try {
             "author_profile": semantic_author_profile(ingest["author"]),
             "identity": identity,
             "version_key": version_key,
+            "source_identity": identity,
+            "source_version_key": version_key,
+            "handoff_id": identity,
+            "message_sha256": ingest["evidence_sha256"],
+            "content_sha256": ingest["evidence_sha256"],
+            "media_identity": f"not_applicable:{identity}",
+            "artifact_dir": str(artifact_dir.resolve()),
             "title": ingest["title"],
             "media_type": ingest["media_type"],
             "published_at": ingest["published_at"],

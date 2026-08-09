@@ -1,13 +1,14 @@
 from __future__ import annotations
 
 import argparse
-import hashlib
 import json
 import time
 from collections.abc import Mapping, Sequence, Set
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Callable
+
+from ._shared import canonical_sha256
 
 
 REMOTE_SUMMARIES_PREFIX = "remote-thread-summaries-v2:"
@@ -128,13 +129,7 @@ def _matches_identity(
 
 
 def _failure_fingerprint(failure: Mapping[str, str]) -> str:
-    payload = json.dumps(
-        dict(failure),
-        ensure_ascii=False,
-        sort_keys=True,
-        separators=(",", ":"),
-    )
-    return hashlib.sha256(payload.encode("utf-8")).hexdigest()
+    return canonical_sha256(dict(failure))
 
 
 def _repair_gate_result(

@@ -154,10 +154,6 @@ class SemanticBundleError(EnrichmentError):
         return value
 
 
-# A descriptive alias for callers that prefer the domain term.
-CanonicalSemanticError = SemanticBundleError
-
-
 def _sha256_bytes(value: bytes) -> str:
     return hashlib.sha256(value).hexdigest()
 
@@ -1640,6 +1636,62 @@ def build_validated_bundle(
     return receipt
 
 
+def build_validated_bundle_from_files(
+    analysis_request_path: Path | str,
+    semantic_draft_path: Path | str,
+    market_evidence_path: Path | str,
+) -> ValidatedBundleReceipt:
+    """Build one canonical artifact from three independently owned inputs.
+
+    The deterministic adapter owns ``analysis_request_path``; the Agent owns
+    only the judgment draft and the separately captured current-market
+    evidence.  Keeping market evidence out of the draft prevents a caller from
+    silently projecting two different market states into one item.
+    """
+
+    def read_object(path_value: Path | str, *, label: str) -> tuple[Path, dict[str, Any]]:
+        path = Path(path_value).expanduser().resolve()
+        try:
+            value = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
+            raise _fail(
+                f"{label} is invalid",
+                error_code=f"{label.replace(' ', '_')}_invalid",
+                stage="semantic_input",
+            ) from exc
+        if not isinstance(value, dict):
+            raise _fail(
+                f"{label} must be an object",
+                error_code=f"{label.replace(' ', '_')}_invalid",
+                stage="semantic_input",
+            )
+        return path, value
+
+    request_path, request = read_object(
+        analysis_request_path,
+        label="analysis request",
+    )
+    _, draft = read_object(semantic_draft_path, label="semantic draft")
+    _, market_evidence = read_object(
+        market_evidence_path,
+        label="market evidence",
+    )
+    if request.get("market_evidence") is not None:
+        raise _fail(
+            "analysis request already contains mutable market evidence",
+            error_code="market_evidence_ownership_invalid",
+            stage="market_validation",
+            field="market_evidence",
+        )
+    artifact_dir = request.get("artifact_dir") or request_path.parent
+    canonical_request = {
+        **request,
+        "artifact_dir": str(Path(str(artifact_dir)).expanduser().resolve()),
+        "market_evidence": market_evidence,
+    }
+    return build_validated_bundle(canonical_request, draft)
+
+
 def validate_existing_bundle(
     request: Mapping[str, Any],
     existing_bundle: Mapping[str, Any],
@@ -1781,10 +1833,10 @@ def validate_receipt_bindings(
 __all__ = [
     "BUNDLE_SCHEMA_VERSION",
     "VALIDATOR_VERSION",
-    "CanonicalSemanticError",
     "SemanticBundleError",
     "ValidatedBundleReceipt",
     "build_validated_bundle",
+    "build_validated_bundle_from_files",
     "read_validated_bundle",
     "validate_receipt_bindings",
     "validate_existing_bundle",
