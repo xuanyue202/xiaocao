@@ -2456,6 +2456,8 @@ try {
             )
             if same_supported_version:
                 persisted["work_eligible"] = prior["work_eligible"] is True
+                if prior.get("pause_reason"):
+                    persisted["pause_reason"] = str(prior["pause_reason"])
             else:
                 within_small_boundary = (
                     row["media_type"] != "pdf"

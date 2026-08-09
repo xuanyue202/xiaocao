@@ -215,6 +215,13 @@ def test_reviewed_historical_small_items_retire_without_fabricating_completion_a
         row["identity"] for row in service.pending_items()
     }
 
+    service.observe_browser_listing(entries)
+    unchanged = json.loads(
+        service.manifest_path.read_text(encoding="utf-8")
+    )["items"][target["identity"]]
+    assert unchanged["work_eligible"] is False
+    assert unchanged["pause_reason"] == "historical_backlog_retired"
+
     newer = [
         {
             **row,
