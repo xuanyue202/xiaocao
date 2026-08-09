@@ -131,8 +131,7 @@ def _exclusive(scope: str) -> Callable:
 
 
 _PRIVATE_SCAN_SCRIPT = r"""(async () => {
-  const rootDir = __ROOT_DIR__;
-  const recursive = __RECURSIVE__;
+  const dir = __DIRECTORY__;
   const routeFor = dir => '/index?category=all&path=' + encodeURIComponent(dir);
   const currentDir = () => {
     const hash = String(location.hash || '');
@@ -200,37 +199,7 @@ _PRIVATE_SCAN_SCRIPT = r"""(async () => {
     }
     return {status: 'private_directory_load_timeout', rows: []};
   };
-  const pending = [rootDir];
-  const seen = new Set();
-  const entries = [];
-  while (pending.length > 0) {
-    if (seen.size >= 200 || entries.length >= 10000) {
-      return {status: 'private_listing_bounds_exceeded', entries: []};
-    }
-    const dir = pending.shift();
-    if (seen.has(dir)) continue;
-    seen.add(dir);
-    const result = await readDirectory(dir);
-    if (result.status !== 'ok') {
-      return {status: result.status, entries: []};
-    }
-    for (const item of result.rows) {
-      entries.push(item);
-      if (
-        recursive
-        && item.is_dir
-        && item.path.startsWith(rootDir + '/')
-      ) {
-        pending.push(item.path);
-      }
-    }
-  }
-  return {
-    status: 'ok',
-    complete_scan: true,
-    directories_scanned: seen.size,
-    entries
-  };
+  return await readDirectory(dir);
 })()"""
 
 
@@ -737,6 +706,22 @@ class SubscriptionVideoService:
                 stage=stage,
             ) from exc
         if result.returncode != 0:
+            provider_code = ""
+            try:
+                error_payload = json.loads(str(result.stdout or ""))
+                if isinstance(error_payload, dict):
+                    error_value = error_payload.get("error")
+                    if isinstance(error_value, dict):
+                        provider_code = str(error_value.get("code") or "")
+            except (TypeError, json.JSONDecodeError):
+                pass
+            if provider_code == "cdp_timeout":
+                raise EnrichmentDiagnosticError(
+                    "Ticket 05 browser evaluation exceeded the OpenCLI CDP deadline",
+                    category="timeout",
+                    code="opencli_cdp_timeout",
+                    stage=stage,
+                )
             raise EnrichmentDiagnosticError(
                 "Ticket 05 browser command failed",
                 category="transport_error",
@@ -780,55 +765,91 @@ class SubscriptionVideoService:
             profile=profile,
             timeout_seconds=30,
         )
-        script = (
-            _PRIVATE_SCAN_SCRIPT.replace(
-                "__ROOT_DIR__",
-                json.dumps(root, ensure_ascii=False),
+        pending = [root]
+        seen: set[str] = set()
+        entries: list[dict[str, Any]] = []
+
+        while pending:
+            if len(seen) >= 200 or len(entries) >= 10000:
+                raise EnrichmentDiagnosticError(
+                    "private Netdisk listing exceeded its safety bounds",
+                    category="incomplete_scan",
+                    code="private_listing_bounds_exceeded",
+                    stage="private_listing_validation",
+                )
+            directory = pending.pop(0)
+            if directory in seen:
+                continue
+            script = _PRIVATE_SCAN_SCRIPT.replace(
+                "__DIRECTORY__",
+                json.dumps(directory, ensure_ascii=False),
             )
-            .replace("__RECURSIVE__", "true" if recursive else "false")
-        )
-        payload = self._opencli_json(
-            session,
-            "eval",
-            script,
-            profile=profile,
-            timeout_seconds=180,
-        )
-        if (
-            payload.get("status") != "ok"
-            or payload.get("complete_scan") is not True
-            or not isinstance(payload.get("entries"), list)
-        ):
-            status = str(payload.get("status") or "")
-            code = {
-                "listing_timeout": "private_listing_timeout",
-                "private_directory_load_timeout": (
-                    "private_directory_load_timeout"
-                ),
-                "wrong_origin": "private_wrong_browser_origin",
-                "wrong_path": "private_wrong_directory",
-                "listing_bounds_exceeded": "private_listing_bounds_exceeded",
-                "private_listing_bounds_exceeded": (
-                    "private_listing_bounds_exceeded"
-                ),
-                "private_directory_page_bound_exceeded": (
-                    "private_directory_page_bound_exceeded"
-                ),
-            }.get(status, "private_listing_incomplete")
-            raise EnrichmentDiagnosticError(
-                "private Netdisk listing is unavailable",
-                category=(
-                    "timeout"
-                    if status in {
-                        "listing_timeout",
-                        "private_directory_load_timeout",
-                    }
-                    else "incomplete_scan"
-                ),
-                code=code,
-                stage="private_listing_validation",
+            # OpenCLI 1.8.6 caps Runtime.evaluate at 115 seconds and exposes no
+            # timeout option.  Keep each read below that provider deadline and
+            # perform the recursive walk serially in Python.
+            payload = self._opencli_json(
+                session,
+                "eval",
+                script,
+                profile=profile,
+                timeout_seconds=45,
             )
-        return payload
+            if payload.get("status") != "ok" or not isinstance(
+                payload.get("rows"), list
+            ):
+                self._raise_private_listing_failure(payload)
+            seen.add(directory)
+            for item in payload["rows"]:
+                if not isinstance(item, dict):
+                    raise EnrichmentDiagnosticError(
+                        "private Netdisk listing returned invalid metadata",
+                        category="incomplete_scan",
+                        code="private_listing_incomplete",
+                        stage="private_listing_validation",
+                    )
+                entries.append(item)
+                path = str(item.get("path") or "")
+                if (
+                    recursive
+                    and bool(item.get("is_dir"))
+                    and path.startswith(root + "/")
+                ):
+                    pending.append(path)
+
+        return {
+            "status": "ok",
+            "complete_scan": True,
+            "directories_scanned": len(seen),
+            "entries": entries,
+        }
+
+    @staticmethod
+    def _raise_private_listing_failure(payload: Mapping[str, Any]) -> None:
+        status = str(payload.get("status") or "")
+        code = {
+            "listing_timeout": "private_listing_timeout",
+            "private_directory_load_timeout": "private_directory_load_timeout",
+            "wrong_origin": "private_wrong_browser_origin",
+            "wrong_path": "private_wrong_directory",
+            "listing_bounds_exceeded": "private_listing_bounds_exceeded",
+            "private_listing_bounds_exceeded": "private_listing_bounds_exceeded",
+            "private_directory_page_bound_exceeded": (
+                "private_directory_page_bound_exceeded"
+            ),
+        }.get(status, "private_listing_incomplete")
+        raise EnrichmentDiagnosticError(
+            "private Netdisk listing is unavailable",
+            category=(
+                "timeout"
+                if status in {
+                    "listing_timeout",
+                    "private_directory_load_timeout",
+                }
+                else "incomplete_scan"
+            ),
+            code=code,
+            stage="private_listing_validation",
+        )
 
     @staticmethod
     def _normalize(

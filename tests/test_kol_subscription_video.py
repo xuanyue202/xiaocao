@@ -1022,9 +1022,7 @@ def test_private_scan_uses_exact_vue_metadata_without_file_download(tmp_path):
             assert "download" not in tail[1].lower()
             payload = {
                 "status": "ok",
-                "complete_scan": True,
-                "directories_scanned": 1,
-                "entries": [
+                "rows": [
                     _row(
                         "lucifer-c",
                         "/课程/路西法全套/鹿7.5/7月5日（三）.mp4",
@@ -1057,6 +1055,92 @@ def test_private_scan_uses_exact_vue_metadata_without_file_download(tmp_path):
 def test_private_scan_allows_slow_directory_settlement():
     assert "const deadline = Date.now() + 30000" in _PRIVATE_SCAN_SCRIPT
     assert "!/正在加载中/.test(text)" in _PRIVATE_SCAN_SCRIPT
+
+
+def test_private_scan_chunks_recursive_eval_below_opencli_deadline(tmp_path):
+    commands = []
+
+    def runner(command, **kwargs):
+        commands.append((command, kwargs))
+        operation = command[5]
+        if operation == "open":
+            payload = {"url": command[6]}
+        elif operation == "eval":
+            assert kwargs["timeout"] == 45
+            assert "while (pending.length" not in command[6]
+            if json.dumps("/课程/路西法全套", ensure_ascii=False) in command[6]:
+                payload = {
+                    "status": "ok",
+                    "rows": [
+                        _row(
+                            "child",
+                            "/课程/路西法全套/子目录",
+                            size=0,
+                            modified_at=1,
+                            is_dir=True,
+                        )
+                    ],
+                }
+            else:
+                assert json.dumps(
+                    "/课程/路西法全套/子目录", ensure_ascii=False
+                ) in command[6]
+                payload = {
+                    "status": "ok",
+                    "rows": [
+                        _row(
+                            "video",
+                            "/课程/路西法全套/子目录/新视频.mp4",
+                            size=123,
+                            modified_at=2,
+                        )
+                    ],
+                }
+        else:
+            raise AssertionError(command)
+        return SimpleNamespace(
+            returncode=0,
+            stdout=json.dumps(payload, ensure_ascii=False),
+            stderr="",
+        )
+
+    result = _service(tmp_path, runner=runner)._scan_private(
+        session="ticket05",
+        profile="work",
+        root="/课程/路西法全套",
+        recursive=True,
+    )
+
+    assert result["complete_scan"] is True
+    assert result["directories_scanned"] == 2
+    assert [row["provider_file_id"] for row in result["entries"]] == [
+        "child",
+        "video",
+    ]
+    assert len(commands) == 3
+
+
+def test_opencli_json_classifies_cdp_timeout(tmp_path):
+    def runner(_command, **_kwargs):
+        return SimpleNamespace(
+            returncode=1,
+            stdout=json.dumps({"error": {"code": "cdp_timeout"}}),
+            stderr="provider detail must stay out of the diagnostic",
+        )
+
+    service = _service(tmp_path, runner=runner)
+
+    with pytest.raises(EnrichmentDiagnosticError) as captured:
+        service._opencli_json(
+            "ticket05",
+            "eval",
+            "({status: 'ok'})",
+            profile="work",
+        )
+
+    assert captured.value.diagnostic_category == "timeout"
+    assert captured.value.diagnostic_code == "opencli_cdp_timeout"
+    assert captured.value.diagnostic_stage == "browser_eval"
 
 
 @pytest.mark.parametrize(

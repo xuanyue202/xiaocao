@@ -635,6 +635,24 @@ TARGETED_REPAIR_TESTS: dict[str, tuple[str, ...]] = {
             "repair_validation_accepts_subscription_private_listing_profile"
         ),
     ),
+    "kol_subscription_video_browser_eval": (
+        "env",
+        "PYTHONPATH=src",
+        ".venv/bin/python",
+        "-m",
+        "pytest",
+        "tests/test_kol_subscription_video.py",
+        "tests/test_kol_repair_validation.py",
+        "tests/test_kol_writer_progress.py",
+        "-q",
+        "-k",
+        (
+            "private_scan_chunks_recursive_eval_below_opencli_deadline or "
+            "opencli_json_classifies_cdp_timeout or "
+            "repair_validation_accepts_subscription_video_browser_eval_profile or "
+            "repair_closure_accepts_subscription_video_browser_eval_profile"
+        ),
+    ),
     "kol_shared_lv_listing_browser_eval": (
         "env",
         "PYTHONPATH=src",
@@ -677,6 +695,12 @@ _TARGETED_REPAIR_IMPLEMENTATION_PATHS: dict[str, frozenset[str]] = {
             "src/xiaocao/kol/writer_progress.py",
         }
     ),
+    "kol_subscription_video_browser_eval": frozenset(
+        {
+            "src/xiaocao/kol/subscription_video.py",
+            "src/xiaocao/kol/writer_progress.py",
+        }
+    ),
     "kol_shared_lv_listing_browser_eval": frozenset(
         {
             "src/xiaocao/kol/lv_subscription.py",
@@ -704,6 +728,13 @@ _TARGETED_REPAIR_TEST_PATHS: dict[str, frozenset[str]] = {
             "tests/test_kol_subscription_video.py",
             "tests/test_kol_daily.py",
             "tests/test_kol_repair_validation.py",
+        }
+    ),
+    "kol_subscription_video_browser_eval": frozenset(
+        {
+            "tests/test_kol_subscription_video.py",
+            "tests/test_kol_repair_validation.py",
+            "tests/test_kol_writer_progress.py",
         }
     ),
     "kol_shared_lv_listing_browser_eval": frozenset(
@@ -774,6 +805,25 @@ def _canonical_subscription_private_listing_repair_profile(
 _SHARED_LV_LISTING_BROWSER_EVAL_REPAIR_PROFILE = (
     "kol_shared_lv_listing_browser_eval"
 )
+
+_SUBSCRIPTION_VIDEO_BROWSER_EVAL_REPAIR_PROFILE = (
+    "kol_subscription_video_browser_eval"
+)
+
+
+def _canonical_subscription_video_browser_eval_repair_profile(
+    context: Mapping[str, Any],
+) -> str | None:
+    if (
+        str(context.get("adapter") or "") == "subscription_video"
+        and str(context.get("targeted_test_profile") or "")
+        == _SUBSCRIPTION_VIDEO_BROWSER_EVAL_REPAIR_PROFILE
+        and str(context.get("code") or "")
+        in {"opencli_command_failed", "opencli_cdp_timeout"}
+        and str(context.get("stage") or "") == "browser_eval"
+    ):
+        return _SUBSCRIPTION_VIDEO_BROWSER_EVAL_REPAIR_PROFILE
+    return None
 
 
 def _canonical_shared_lv_listing_browser_eval_repair_profile(
@@ -863,6 +913,11 @@ class RepairValidationService:
         )
         if subscription_profile is not None:
             return subscription_profile
+        subscription_browser_eval_profile = (
+            _canonical_subscription_video_browser_eval_repair_profile(context)
+        )
+        if subscription_browser_eval_profile is not None:
+            return subscription_browser_eval_profile
         browser_eval_profile = (
             _canonical_shared_lv_listing_browser_eval_repair_profile(context)
         )
@@ -2142,6 +2197,16 @@ class ConvergenceLedger:
             )
             if canonical_browser_eval_profile is not None:
                 expected_profile = canonical_browser_eval_profile
+            canonical_subscription_browser_eval_profile = (
+                _canonical_subscription_video_browser_eval_repair_profile({
+                    "adapter": open_progress.failure["adapter"],
+                    "targeted_test_profile": expected_profile,
+                    "code": open_progress.failure["code"],
+                    "stage": open_progress.failure["stage"],
+                })
+            )
+            if canonical_subscription_browser_eval_profile is not None:
+                expected_profile = canonical_subscription_browser_eval_profile
             if (
                 receipt.targeted_test_profile
                 != expected_profile
