@@ -18,37 +18,33 @@ PYTHONPATH=src .venv/bin/python scripts/kol_daily.py audit
 PYTHONPATH=src .venv/bin/python scripts/kol_daily.py convergence-report
 ```
 
-Each run is one sweep. A sweep with no concrete item is silent.
-Every concrete item remains reportable while waiting, unchanged, exceptional,
-handoff-completed, or fully completed; never imply that handoff completion is
-downstream completion. Retryable failures expose only credential-safe
-`category`, `code`, and `stage`. A started task owns recoverable items through
-repair and exact continuation; do not defer obtainable work.
+Each run is one sweep; a sweep with no concrete item is silent. Every concrete
+item remains reportable while waiting, unchanged, exceptional, handoff-completed,
+or fully completed; distinguish handoff from downstream completion. Retryable
+failures expose only credential-safe `category`, `code`, and `stage`; a started
+task owns repair and exact continuation, so do not defer obtainable work.
 
 Obey seven-state `writer_progress.next_action`; bind input and readback
 receipts; retryability never changes owner.
 
 `repair_required` is work for the current Agent, not a user blocker: reconcile
-claims/receipts, patch regressions, validate, commit, and push without user WIP. Continue on
-the same stdin when possible. If it exited, never run `run` twice for one slot;
-recheck peers/receipts and use `resume-mailbox` for only the repaired message.
-After matching repair closure, run only `narrow_resume_surface`.
+claims/receipts, patch/test/commit/push without user WIP, and continue on the
+same stdin. If it exited, never run `run` twice for one slot; use
+`resume-mailbox` only for the repaired message. After matching repair closure,
+run only `narrow_resume_surface`.
 
-Every source result must carry the seven-state `writer_progress` object. A raw
-`waiting` result without an immutable provider `next_poll_not_before` is an
-internal contract failure and becomes `repair_required`; known diagnostic
-exceptions never manufacture an hourly `wait_until` or a user blocker. Provider
-deadlines, authentication/CAPTCHA, and uncertain external effects retain their
-own legal progress states.
+Every source result carries seven-state `writer_progress`. A raw `waiting` result
+without an immutable provider `next_poll_not_before` is an internal contract
+failure and becomes `repair_required`; diagnostic exceptions never manufacture
+an hourly `wait_until` or user blocker. Provider deadlines, auth/CAPTCHA, and
+uncertain external effects retain their legal progress states.
 
 This machine is the only KOL writer. It consumes Xiaocao `scope=post_handoff`
-capsules and URL-only `wechat_official_article` capsules from LiangHuiMCP. The
-capsule is discovery metadata, not the full article. It never scans the local
-WeChat contact and never reads or downloads source-video bytes, activates a
-player, or uses Computer Use. The manual `import-wechat-official`,
-`process-wechat-official`, and `process-xiaocao-handoff` commands remain
-reconciliation surfaces only; normal hourly delivery is the mailbox drain at
-the start of `run`.
+and URL-only `wechat_official_article` capsules from LiangHuiMCP; each capsule
+is discovery metadata, not the full article. It never scans the local
+WeChat contact, never reads or downloads source-video bytes, activates a player,
+or uses Computer Use. Manual import/process commands are reconciliation surfaces;
+normal delivery is the mailbox drain at `run` start.
 
 When reconciling an already imported official-account capsule outside the
 normal hourly path, process only that inbox with `PYTHONPATH=src
@@ -63,21 +59,39 @@ Run once and keep it alive for input; do not rerun the full `run` command.
 ## Active-peer gate and LiangHuiMCP drain
 
 A **peer task** is another Codex task with the same Automation ID, current host,
-and current working directory. Before Python, call standalone `list_threads`
-with `{"limit":20}`. Read active same-host/cwd candidates using `read_thread`
-with `{"threadId":"<candidate-id>","hostId":"<current-host>",
-"turnLimit":3,"includeOutputs":false}` until the in-progress turn matches this
-run's Automation ID and prompt metadata. Ignore titles and exclude that current
-task. An active/needs-attention peer owns continuation: exit successfully
-without mailbox access.
+and current working directory. The desktop `codex_app__list_threads` wrapper is
+not transport: it has stalled before delivery. Use the repository helper and
+exclude that current task (`CODEX_THREAD_ID`):
 
-Bind list to `hostId`/`projectId`/`cwd`; never reuse old host. Serial gate: await
-each call; if its wrapper yields a cell handle, wait/terminate it before
-the next. Never overlap list/readback or retry pending. Tuple drift: discard and
-make one fresh list. Two terminal failures => `repair_required`, no third. Apply
-5 Why; task-list failure blocks business effects, not repair. Never defer to the
-next Automation.
-Do not add a Python global lock, lease, heartbeat, fencing token, or stale takeover.
+```bash
+CODEX_HOME=/Users/xuanyue202/.codex \
+CODEX_AUTOMATION_ID=xiaocao-kol-hourly-low-bandwidth-operation \
+CODEX_REMOTE_HOST=MacBook-Pro-6.local \
+node scripts/codex_peer_gate.js
+```
+
+The helper starts `codex app-server --stdio`, performs `initialize`/`initialized`,
+then serially calls `thread/list` with `{"limit":20}`, exact `cwd`, supported
+`sourceKinds`, and `useStateDbOnly=true`, followed by `thread/read` for matching
+same-cwd prompts. It verifies host/cwd/Automation identity and reads rollout
+events only for the latest `task_complete`. A candidate without that terminal
+event is an authoritative active peer: return `no_op` before mailbox access.
+All-terminal candidates return `pass`; the helper emits only `pass`, `no_op`, or
+`repair_required`, with at most two sequential attempts.
+
+The official protocol does not expose the desktop project UUID; the binding is
+the current app-server host identity (`remoteControl/status/changed.serverName`)
+plus the exact canonical cwd. Do not substitute a stale project/host cache.
+`codex app-server` is documented as experimental/unsupported for production,
+so a helper error remains `repair_required` and blocks business effects; never
+silently fall back to the hanging wrapper or infer a successful no-op.
+
+Serial gate rule: invoke it with local permissions for the Codex state runtime;
+never overlap attempts/requests/readbacks or reuse a stale host. A state-runtime
+permission/init or identity/readback failure is control-plane `repair_required`:
+it blocks business effects, not repair. Apply 5 Why in this task and never defer
+to the next Automation. Do not add a Python global lock, lease, heartbeat,
+fencing token, or stale takeover.
 
 If there is no active peer, run `scripts/kol_daily.py run` exactly once. For
 each `daily_lianghui_mailbox_input_required`, call the exact operation and
@@ -89,17 +103,12 @@ arguments, then return one compact JSON line to the same process:
 - `ack_mailbox_message`: return `{"operation":"ack_mailbox_message",
   "outcome":<tool outcome>,"receipt":<exact receipt>}`.
 
-The runner validates mailbox `kol.handoff`, message type
-`xiaocao.kol_handoff`, schema version `1`, exact family/message/content-hash
-bindings, then imports and processes each message through its existing
-post-handoff business pipeline. It maintains this run's
-`attempted_message_ids`. After a batch, query again and process only new
-eligible messages. Do not repeat an unchanged wait inside one drain. If the
-process exits, call `resume-mailbox` for that message when due in this task. Call
-`ack_mailbox_message` only after that exact message has completed every
-downstream business effect and durable receipt. Authoritative `acked` or
-`already_acked` is reported as `全部完成`; handoff creation alone is never
-reported as downstream completion.
+The runner validates mailbox `kol.handoff`, type `xiaocao.kol_handoff`, schema
+`1`, and exact family/message/content-hash bindings before its post-handoff
+pipeline. It maintains `attempted_message_ids`; after each batch query only new
+eligible messages, keep unchanged waits once, and use `resume-mailbox` when due
+if the process exits. Ack only after every downstream effect and durable
+receipt; `acked|already_acked` is `全部完成`, never handoff creation alone.
 
 ### Narrow repair resume
 
@@ -109,24 +118,22 @@ PYTHONPATH=src .venv/bin/python scripts/kol_daily.py resume-mailbox \
   --mailbox-message-id <exact-64-hex-message-id> [--repair-revision <exact-40-hex-commit>]
 ```
 
-`validate-repair` runs the repo test, verifies commit
-lineage/branch readback, and persists `RepairValidationReceipt`.
-`resume-mailbox` defaults to `HEAD`, requires that receipt for code or
-contract repairs, and performs exactly one
+`validate-repair` runs the repo test, verifies commit lineage/branch readback,
+and persists `RepairValidationReceipt`. `resume-mailbox` defaults to `HEAD`,
+requires that receipt for code/contract repairs, and performs exactly one
 `get_mailbox_message(message_id, expected_content_sha256)`—never a list.
-Missing/changed/acked/unavailable targets fail closed pre-processor.
-Provider waits may reuse a revision only after their durable TZ-aware
-poll deadline is due; reconcile uncertain effects before retry.
+Missing/changed/acked/unavailable targets fail closed; provider waits reuse a
+revision only after their durable TZ-aware deadline is due, with uncertain
+effects reconciled before retry.
 
-`convergence-report` is the credential-safe daily report. It aggregates stable
-failure codes, repair required/closed and same-root recurrence, generic waits,
-internal user dependency, peer-gate attempts/latency, runner starts,
-side-effect reconciliation, duplicate-effect audits, scheduled/clean/business
-slots, and explicit exclusions. It reads append-only ledgers and never deletes
-or rewrites a failed slot. A first rollout may be recorded only after the
-authoritative single-writer readback proves one writer, the target revision,
-protected WIP, dependencies/private config/restored state, and Automation
-ownership:
+`convergence-report` is the credential-safe daily report: stable failure codes,
+repair required/closed and same-root recurrence, generic waits, internal user
+dependency, peer-gate attempts/latency, runner starts, side-effect
+reconciliation, duplicate-effect audits, scheduled/clean/business slots, and
+exclusions. It reads append-only ledgers and never rewrites failed slots. A
+first rollout requires authoritative single-writer readback of one writer,
+target revision, protected WIP, dependencies/private config/restored state, and
+Automation ownership:
 
 ```bash
 PYTHONPATH=src .venv/bin/python scripts/kol_daily.py rollout-readback
@@ -136,58 +143,54 @@ The command consumes one credential-safe JSON line on stdin and starts the
 seven-day/50-scheduled-slot stability window only after that readback is
 accepted; it never backfills historical business slots.
 
-At provider steps, use installed OpenCLI once and bind exact identity/version,
+At provider steps, use installed OpenCLI once with exact identity/version,
 bytes, hashes, and receipts. The no-MCP capture rule permits the
 repository-designated LiangHui client only after read-only exact-receipt
-reconciliation; CAPTCHA/auth/consent or materially incompatible business
-outcomes may ask. Reconcile the exact handoff/media SHA before advancing;
-latest content is incomplete until analysis, 灰常亮 receipt, and stable URL.
+reconciliation; auth/CAPTCHA/consent or materially incompatible business
+outcomes may ask. Reconcile the
+handoff/media SHA; latest content is incomplete until analysis, 灰常亮 receipt,
+and stable URL.
 
 ## Semantic loading gate
 
 For `daily_analysis_input_required` in the same process:
-
-1. Read the request and locate its evidence and bindings.
-2. Read `full-contract.md` completely before analysis.
-3. Reopen immutable evidence and verify its current SHA-256 against the request.
-4. If reusable knowledge will be written, also read `durable-knowledge.md`
-   completely.
-5. Create complete evidence-bound Ticket 01 JSON beside runtime artifacts.
-6. Write exactly `{"bundle_path":"<absolute-json-path>"}` followed by a
-   newline to the same process.
+Read `full-contract.md` completely before analysis, reopen the evidence, and verify
+its current SHA-256 against the request. If reusable knowledge is written also
+read `durable-knowledge.md`; create the evidence-bound Ticket 01 JSON and write
+exactly `{"bundle_path":"<absolute-json-path>"}` plus a newline to stdin.
 
 For `daily_official_article_image_input_required`, inspect every image once and
-write UTF-8 Markdown headed `# 图片信息转写` with each index/SHA,
+write UTF-8 Markdown headed `# 图片信息转写` with index/SHA,
 information/decorative status, relevant text/chart/table content, and
-uncertainty. Do not copy the body or serialize note content as JSON. Then write
-exactly `{"image_notes_path":"<absolute-md-path>"}` followed by a newline to
-the same process. The runner appends notes to full Markdown before analysis.
+uncertainty. Do not copy the body or serialize notes as JSON; write exactly
+`{"image_notes_path":"<absolute-md-path>"}` plus a newline. The runner appends
+notes to full Markdown before analysis.
 
 Keep stdin open. EOF persists `waiting_semantic_input`, preserving the original
 request, evidence SHA, and item claim. The next sweep reuses that exact
-request/evidence, skips completed acquisition/transcript work, and never
-replays publication, notification, or Book effects. Stop that adapter before
-later backlog items.
+request/evidence, skips completed acquisition/transcript work, never replays
+publication, notification, or Book effects. Stop that adapter before later
+backlog items.
 
 Small downloads are unattended: use `Page.setDownloadBehavior` with a
-controlled inbox or bind one memory-only link to the exact provider identity.
+controlled inbox or one memory-only link bound to the exact provider identity.
 A Save prompt is not a user blocker. Only auth, SMS, CAPTCHA, or consent may
-ask; never edit ordinary Chrome/a global extension or issue a second trigger.
+ask; never edit ordinary Chrome or a global extension, or issue a second
+trigger.
 
 Every item includes `content_value.status=low_density|promoted`; promoted items
-add `content_value.tier=report_only|alert_eligible`, accepted `alert_basis`, and
-reviewed natural-Chinese publication fields. Every promoted item also decides
-`longitudinal_projection`: `promoted` carries evidence-bound viewpoints and an
-initial `current|expired|invalidated|uncertain` evaluation; `none` carries an
-empty list and a concrete reason. Missing this decision fails closed rather
-than defaulting to an empty viewpoint list.
+add `content_value.tier=report_only|alert_eligible`, accepted `alert_basis`,
+reviewed publication fields, and a `longitudinal_projection`: `promoted` carries
+evidence-bound viewpoints with an initial `current|expired|invalidated|uncertain`
+evaluation; `none` carries an empty list and concrete reason. Missing this
+decision fails closed rather than defaulting to an empty viewpoint list.
 
 Low-density creates neither report nor reminder. A promoted event gets its
 durable 灰常亮 receipt and stable URL before Book KOL-US or reminder effects;
 report-only records a no-alert reason, while alert-eligible sends one reminder.
-Missing independent verification, no uniquely mapped instrument, low
-confidence, or Book KOL-US `no_trade` do not justify report-only when current
-market posture or direction is present; retain those limits in the reminder.
+Missing independent verification, no uniquely mapped instrument, low confidence,
+or Book KOL-US `no_trade` do not justify report-only when current market
+posture/direction is present; retain those limits in the reminder.
 
 ## Remote schedule
 
@@ -203,23 +206,20 @@ not create, edit, or assume ownership of the local capture Automation here.
 
 ## Discovery and recovery
 
-Reuse the configured Lv share, `/课程/路西法全套`, handoffs, and receipts. One
-sweep reuses one complete recursive listing and validates identity/version/
-path/name/size/target before advancing. Preserve safe diagnostics, reconcile
-claims without replay, and fail closed on ambiguous evidence. Maintenance uses
-new-publication, due-horizon, material fact, or user currentness CAS triggers
-under `output/live/kol_daily/viewpoint_triggers/`; run
-`PYTHONPATH=src .venv/bin/python scripts/kol_daily.py viewpoints` only for those
-triggers, preserving the stable report URL/manifest with no reminder or Book
-action.
+Reuse the configured Lv share `/课程/路西法全套`, handoffs, and receipts. One
+sweep reuses one recursive listing, validates identity/version/path/name/size/
+target, reconciles claims without replay, and fails closed on ambiguity.
+Maintenance uses new-publication, due-horizon, material fact, or user-currentness
+CAS triggers under `output/live/kol_daily/viewpoint_triggers/`; run
+`PYTHONPATH=src .venv/bin/python scripts/kol_daily.py viewpoints` only for
+those triggers, preserving the stable report URL/manifest without reminder or
+Book action.
 
 The append-only ledger resumes without resending. Report every concrete item,
 including waits and retryable exceptions; distinguish handoff from downstream
-completion. Report an unchanged blocker only once.
-Repeated source/stage/code or acquisition stalls append one
-exhausted audit with `repair_required=true`; repetition does not make them
-`user_action_required`. Reserve that status for authentication, SMS, CAPTCHA,
-consent, a fact only the user can provide, or an external side effect whose
-outcome cannot be reconciled. A timeout, selector drift, schema mismatch,
-missing internal UI path, or repository defect is never by itself
-`user_action_required`.
+completion and report an unchanged blocker once. Repeated source/stage/code or
+acquisition stalls append one exhausted audit with `repair_required=true`;
+repetition does not make them `user_action_required`. Reserve that status for
+authentication, SMS, CAPTCHA, consent, a user-only fact, or an external effect
+whose outcome cannot be reconciled. Timeout, selector drift, schema mismatch,
+missing UI path, or repository defect is never by itself `user_action_required`.
