@@ -386,6 +386,64 @@ def test_convergence_report_aggregates_credential_safe_operational_metrics():
     assert "https://" not in str(report)
 
 
+def test_convergence_report_ignores_source_terminal_replay_audits():
+    report = build_convergence_report(
+        [
+            {
+                "event": "sweep_completed",
+                "slot": "2026-08-10T07:00:00+08:00",
+                "health": "healthy",
+                "source_states": [],
+            },
+            {
+                "event": "duplicate_effect_audit",
+                "slot": "2026-08-10T07:00:00+08:00",
+                "source": "viewpoint_maintenance",
+                "audited": True,
+                "duplicate_count": 3,
+            },
+            {
+                "event": "duplicate_effect_audit",
+                "slot": "2026-08-10T07:00:00+08:00",
+                "duplicate_count": 0,
+                "duplicate_effect_counts": {
+                    "ack": 0,
+                    "book": 0,
+                    "knowledge": 0,
+                    "publication": 0,
+                    "reminder": 0,
+                },
+            },
+        ],
+        [],
+        period_start="2026-08-10T00:00:00+08:00",
+        period_end="2026-08-10T23:59:59+08:00",
+    )
+
+    assert report["metrics"]["duplicate_effect_audits"] == 1
+    assert report["metrics"]["duplicate_effect_findings"] == 0
+
+
+def test_stability_acceptance_ignores_source_terminal_replay_audits():
+    daily, convergence = _stable_window_events()
+    daily.append({
+        "event": "duplicate_effect_audit",
+        "slot": "2026-08-07T12:00:00+08:00",
+        "source": "viewpoint_maintenance",
+        "audited": True,
+        "duplicate_count": 3,
+    })
+
+    report = build_stability_acceptance_report(
+        daily,
+        convergence,
+        as_of="2026-08-08T23:00:00+08:00",
+    )
+
+    assert report["status"] == "passed"
+    assert report["safety"]["duplicate_effects"] == 0
+
+
 def test_stability_window_counts_slots_only_after_rollout_readback():
     report = build_convergence_report(
         [

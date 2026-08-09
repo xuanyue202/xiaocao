@@ -2026,10 +2026,10 @@ class DailyCoordinator:
                                 "replayed_terminal_count": replayed_count,
                             }
                         self._append(
-                            "duplicate_effect_audit",
+                            "terminal_replay_audit",
                             slot=slot,
                             source=name,
-                            duplicate_count=replayed_count,
+                            replayed_terminal_count=replayed_count,
                             audited=True,
                         )
                     _validate_source_outcome(outcome)

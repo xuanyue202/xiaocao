@@ -2724,6 +2724,15 @@ def _acceptance_duplicate_counts(row: Mapping[str, Any]) -> dict[str, int]:
     return counts
 
 
+def _is_sweep_duplicate_effect_audit(row: Mapping[str, Any]) -> bool:
+    """Select the business-effect audit, not legacy source replay audits."""
+
+    return (
+        row.get("event") == "duplicate_effect_audit"
+        and not row.get("source")
+    )
+
+
 def _acceptance_effect_identity(value: Mapping[str, Any]) -> str | None:
     for field_name in (
         "idempotency_key",
@@ -3220,7 +3229,7 @@ def build_stability_acceptance_report(
     duplicate_effects = {kind: 0 for kind in sorted(_DUPLICATE_EFFECT_KINDS)}
     duplicate_audit_rows = [
         row for row in all_window_rows
-        if row.get("event") == "duplicate_effect_audit"
+        if _is_sweep_duplicate_effect_audit(row)
     ]
     for row in duplicate_audit_rows:
         for kind, count in _acceptance_duplicate_counts(row).items():
@@ -3673,7 +3682,7 @@ def build_convergence_report(
     )
     duplicate_audits = [
         row for row in daily + convergence
-        if row.get("event") == "duplicate_effect_audit"
+        if _is_sweep_duplicate_effect_audit(row)
     ]
     duplicate_findings = sum(
         int(row.get("duplicate_count") or 0) for row in duplicate_audits
