@@ -141,7 +141,10 @@ _PRIVATE_SCAN_SCRIPT = r"""(async () => {
   };
   const readDirectory = async dir => {
     location.hash = routeFor(dir);
-    const deadline = Date.now() + 15000;
+    // Deep private folders occasionally need more than 15 seconds to settle
+    // on a metered remote session. Keep one bounded read, but let that same
+    // navigation finish instead of turning a slow directory into a repair.
+    const deadline = Date.now() + 30000;
     while (Date.now() < deadline) {
       if (
         location.origin !== 'https://pan.baidu.com'
@@ -181,10 +184,19 @@ _PRIVATE_SCAN_SCRIPT = r"""(async () => {
           }))
         };
       }
-      if (/当前列表为空|暂无文件/.test(text)) {
+      if (
+        !/正在加载中/.test(text)
+        && /当前列表为空|暂无文件/.test(text)
+      ) {
         return {status: 'ok', rows: []};
       }
       await new Promise(resolve => setTimeout(resolve, 100));
+    }
+    if (location.origin !== 'https://pan.baidu.com') {
+      return {status: 'wrong_origin', rows: []};
+    }
+    if (location.pathname !== '/disk/main' || currentDir() !== dir) {
+      return {status: 'wrong_path', rows: []};
     }
     return {status: 'private_directory_load_timeout', rows: []};
   };
@@ -790,13 +802,29 @@ class SubscriptionVideoService:
             status = str(payload.get("status") or "")
             code = {
                 "listing_timeout": "private_listing_timeout",
+                "private_directory_load_timeout": (
+                    "private_directory_load_timeout"
+                ),
                 "wrong_origin": "private_wrong_browser_origin",
                 "wrong_path": "private_wrong_directory",
                 "listing_bounds_exceeded": "private_listing_bounds_exceeded",
+                "private_listing_bounds_exceeded": (
+                    "private_listing_bounds_exceeded"
+                ),
+                "private_directory_page_bound_exceeded": (
+                    "private_directory_page_bound_exceeded"
+                ),
             }.get(status, "private_listing_incomplete")
             raise EnrichmentDiagnosticError(
                 "private Netdisk listing is unavailable",
-                category=("timeout" if status == "listing_timeout" else "incomplete_scan"),
+                category=(
+                    "timeout"
+                    if status in {
+                        "listing_timeout",
+                        "private_directory_load_timeout",
+                    }
+                    else "incomplete_scan"
+                ),
                 code=code,
                 stage="private_listing_validation",
             )

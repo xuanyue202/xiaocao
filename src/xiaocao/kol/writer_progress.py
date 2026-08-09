@@ -617,6 +617,24 @@ TARGETED_REPAIR_TESTS: dict[str, tuple[str, ...]] = {
             "repair_validation_accepts_exact_lv_download_recovery_profile"
         ),
     ),
+    "kol_subscription_video_private_listing_validation": (
+        "env",
+        "PYTHONPATH=src",
+        ".venv/bin/python",
+        "-m",
+        "pytest",
+        "tests/test_kol_subscription_video.py",
+        "tests/test_kol_daily.py",
+        "tests/test_kol_repair_validation.py",
+        "-q",
+        "-k",
+        (
+            "private_scan_allows_slow_directory_settlement or "
+            "private_scan_classifies_directory_failure or "
+            "source_cli_narrow_runner_supports_subscription_video or "
+            "repair_validation_accepts_subscription_private_listing_profile"
+        ),
+    ),
 }
 
 _TARGETED_REPAIR_IMPLEMENTATION_PATHS: dict[str, frozenset[str]] = {
@@ -635,6 +653,13 @@ _TARGETED_REPAIR_IMPLEMENTATION_PATHS: dict[str, frozenset[str]] = {
             "src/xiaocao/kol/writer_progress.py",
         }
     ),
+    "kol_subscription_video_private_listing_validation": frozenset(
+        {
+            "scripts/kol_daily.py",
+            "src/xiaocao/kol/subscription_video.py",
+            "src/xiaocao/kol/writer_progress.py",
+        }
+    ),
 }
 
 _TARGETED_REPAIR_TEST_PATHS: dict[str, frozenset[str]] = {
@@ -648,6 +673,13 @@ _TARGETED_REPAIR_TEST_PATHS: dict[str, frozenset[str]] = {
         {
             "tests/test_kol_lv_subscription.py",
             "tests/test_kol_writer_progress.py",
+            "tests/test_kol_repair_validation.py",
+        }
+    ),
+    "kol_subscription_video_private_listing_validation": frozenset(
+        {
+            "tests/test_kol_subscription_video.py",
+            "tests/test_kol_daily.py",
             "tests/test_kol_repair_validation.py",
         }
     ),
@@ -677,6 +709,35 @@ def _canonical_lv_download_repair_profile(
         in {"browser_download_recovery", "provider_download_link"}
     ):
         return _LV_DOWNLOAD_REPAIR_PROFILE
+    return None
+
+
+_SUBSCRIPTION_PRIVATE_LISTING_REPAIR_PROFILE = (
+    "kol_subscription_video_private_listing_validation"
+)
+_SUBSCRIPTION_PRIVATE_LISTING_REPAIR_CODES = frozenset({
+    "private_listing_incomplete",
+    "private_listing_timeout",
+    "private_directory_load_timeout",
+    "private_wrong_browser_origin",
+    "private_wrong_directory",
+    "private_listing_bounds_exceeded",
+    "private_directory_page_bound_exceeded",
+})
+
+
+def _canonical_subscription_private_listing_repair_profile(
+    context: Mapping[str, Any],
+) -> str | None:
+    if (
+        str(context.get("adapter") or "") == "subscription_video"
+        and str(context.get("targeted_test_profile") or "")
+        == _SUBSCRIPTION_PRIVATE_LISTING_REPAIR_PROFILE
+        and str(context.get("code") or "")
+        in _SUBSCRIPTION_PRIVATE_LISTING_REPAIR_CODES
+        and str(context.get("stage") or "") == "private_listing_validation"
+    ):
+        return _SUBSCRIPTION_PRIVATE_LISTING_REPAIR_PROFILE
     return None
 
 
@@ -746,6 +807,11 @@ class RepairValidationService:
         lv_profile = _canonical_lv_download_repair_profile(context)
         if lv_profile is not None:
             return lv_profile
+        subscription_profile = (
+            _canonical_subscription_private_listing_repair_profile(context)
+        )
+        if subscription_profile is not None:
+            return subscription_profile
         if (
             str(context.get("stage") or "").startswith("mailbox_")
             and str(context.get("category") or "")

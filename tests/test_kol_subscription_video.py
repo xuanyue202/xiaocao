@@ -8,10 +8,14 @@ from types import SimpleNamespace
 import pytest
 
 from tests.kol_claim_fixture import attach_claim_contract
-from xiaocao.kol.enrichment_types import EnrichmentError
+from xiaocao.kol.enrichment_types import (
+    EnrichmentDiagnosticError,
+    EnrichmentError,
+)
 from xiaocao.kol.netdisk_enrichment import NetdiskEnrichmentService
 from xiaocao.kol.subscription_video import (
     _CREATE_FOLDER_SCRIPT,
+    _PRIVATE_SCAN_SCRIPT,
     _PRIVATE_SEARCH_SCRIPT,
     _TRANSFER_OUTCOME_SCRIPT,
     _TRANSFER_SCRIPT,
@@ -1048,6 +1052,60 @@ def test_private_scan_uses_exact_vue_metadata_without_file_download(tmp_path):
 
     assert result["entries"][0]["size"] == 744_292_790
     assert len(commands) == 2
+
+
+def test_private_scan_allows_slow_directory_settlement():
+    assert "const deadline = Date.now() + 30000" in _PRIVATE_SCAN_SCRIPT
+    assert "!/正在加载中/.test(text)" in _PRIVATE_SCAN_SCRIPT
+
+
+@pytest.mark.parametrize(
+    ("status", "category", "code"),
+    [
+        (
+            "private_directory_load_timeout",
+            "timeout",
+            "private_directory_load_timeout",
+        ),
+        (
+            "private_directory_page_bound_exceeded",
+            "incomplete_scan",
+            "private_directory_page_bound_exceeded",
+        ),
+    ],
+)
+def test_private_scan_classifies_directory_failure(
+    tmp_path,
+    status,
+    category,
+    code,
+):
+    def runner(command, **_kwargs):
+        operation = command[5]
+        payload = (
+            {"url": command[6]}
+            if operation == "open"
+            else {"status": status, "entries": []}
+        )
+        return SimpleNamespace(
+            returncode=0,
+            stdout=json.dumps(payload),
+            stderr="",
+        )
+
+    service = _service(tmp_path, runner=runner)
+
+    with pytest.raises(EnrichmentDiagnosticError) as captured:
+        service._scan_private(
+            session="ticket05",
+            profile="work",
+            root="/课程/路西法全套",
+            recursive=True,
+        )
+
+    assert captured.value.diagnostic_category == category
+    assert captured.value.diagnostic_code == code
+    assert captured.value.diagnostic_stage == "private_listing_validation"
 
 
 def test_explicit_episode_spec_maps_arbitrary_real_source_names(tmp_path):

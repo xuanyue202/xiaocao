@@ -1361,6 +1361,19 @@ def _classified_progress_source(name: str, runner):
     return run
 
 
+def _source_cli_narrow_runner(runtime: "DailyRuntime", adapter: str):
+    runners = {
+        "lv_text_image": runtime.lv_narrow_resume,
+        "subscription_video": runtime.videos_narrow_resume,
+    }
+    try:
+        return runners[adapter]
+    except KeyError as exc:
+        raise DailyError(
+            "source repair adapter has no CLI narrow resume"
+        ) from exc
+
+
 def _exact_progress_surface(adapter: str, surface: str) -> str:
     prefix = f"{adapter}:"
     value = str(surface or "")
@@ -3273,11 +3286,13 @@ def main() -> int:
         if progress.failure_fingerprint != args.failure_fingerprint:
             raise DailyError("source repair fingerprint changed before resume")
         runtime = DailyRuntime(args)
-        if args.source_adapter != "lv_text_image":
-            raise DailyError("source repair adapter has no CLI narrow resume")
+        narrow_runner = _source_cli_narrow_runner(
+            runtime,
+            args.source_adapter,
+        )
         outcome = _classified_narrow_source(
-            "lv_text_image",
-            runtime.lv_narrow_resume,
+            args.source_adapter,
+            narrow_runner,
         )(str(progress.details["narrow_resume_surface"]))
         following = WriterProgress.from_dict(outcome["writer_progress"])
         resume_receipt = service.convergence.record_resume(

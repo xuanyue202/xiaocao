@@ -20,6 +20,7 @@ from scripts.kol_daily import (
     _lv_publication_context,
     _read_agent_json,
     _standalone_writer_result,
+    _source_cli_narrow_runner,
     _require_rollout_peer_gate,
     _verify_rollout_evidence,
     _video_publication_context,
@@ -137,6 +138,19 @@ def test_narrow_source_no_update_keeps_seven_state_contract(monkeypatch):
         lambda: (_ for _ in ()).throw(RuntimeError("internal")),
     )
     assert repair["writer_progress"]["status"] == "repair_required"
+
+
+def test_source_cli_narrow_runner_supports_subscription_video():
+    subscription = lambda surface: {"surface": surface}
+    runtime = SimpleNamespace(
+        lv_narrow_resume=lambda surface: {"lv": surface},
+        videos_narrow_resume=subscription,
+    )
+
+    assert _source_cli_narrow_runner(
+        runtime,
+        "subscription_video",
+    ) is subscription
 
 
 def test_rollout_verification_uses_local_git_config_state_and_peer_gate(
