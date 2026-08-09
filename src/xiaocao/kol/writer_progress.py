@@ -576,11 +576,15 @@ TARGETED_REPAIR_TESTS: dict[str, tuple[str, ...]] = {
         "-m",
         "pytest",
         "tests/test_kol_lv_subscription.py",
+        "tests/test_kol_writer_progress.py",
+        "tests/test_kol_repair_validation.py",
         "-q",
         "-k",
         (
             "reviewed_historical_small_items_retire or "
-            "new_image_claim_uses_single_frontend_intercept"
+            "new_image_claim_uses_single_frontend_intercept or "
+            "newer_repair_lifecycle_supersedes_old_fingerprint or "
+            "repair_validation_accepts_exact_lv_download_recovery_profile"
         ),
     ),
 }
@@ -613,10 +617,37 @@ _TARGETED_REPAIR_TEST_PATHS: dict[str, frozenset[str]] = {
     "kol_lv_download_recovery": frozenset(
         {
             "tests/test_kol_lv_subscription.py",
+            "tests/test_kol_writer_progress.py",
             "tests/test_kol_repair_validation.py",
         }
     ),
 }
+
+_LV_DOWNLOAD_REPAIR_PROFILE = "kol_lv_download_recovery"
+_LV_DOWNLOAD_REPAIR_PROFILE_ALIASES = frozenset({
+    _LV_DOWNLOAD_REPAIR_PROFILE,
+    "kol_lv_text_image_provider_download_link",
+})
+_LV_DOWNLOAD_REPAIR_CODES = frozenset({
+    "blocked_download_frame_missing",
+    "provider_download_filtered",
+    "provider_download_link_errno_2",
+})
+
+
+def _canonical_lv_download_repair_profile(
+    context: Mapping[str, Any],
+) -> str | None:
+    if (
+        str(context.get("adapter") or "") == "lv_text_image"
+        and str(context.get("targeted_test_profile") or "")
+        in _LV_DOWNLOAD_REPAIR_PROFILE_ALIASES
+        and str(context.get("code") or "") in _LV_DOWNLOAD_REPAIR_CODES
+        and str(context.get("stage") or "")
+        in {"browser_download_recovery", "provider_download_link"}
+    ):
+        return _LV_DOWNLOAD_REPAIR_PROFILE
+    return None
 
 
 class RepairValidationService:
@@ -682,19 +713,9 @@ class RepairValidationService:
         return value
 
     def _expected_profile(self, context: Mapping[str, Any]) -> str:
-        if (
-            str(context.get("adapter") or "") == "lv_text_image"
-            and str(context.get("targeted_test_profile") or "")
-            == "kol_lv_download_recovery"
-            and str(context.get("code") or "")
-            in {
-                "blocked_download_frame_missing",
-                "provider_download_filtered",
-            }
-            and str(context.get("stage") or "")
-            in {"browser_download_recovery", "provider_download_link"}
-        ):
-            return "kol_lv_download_recovery"
+        lv_profile = _canonical_lv_download_repair_profile(context)
+        if lv_profile is not None:
+            return lv_profile
         if (
             str(context.get("stage") or "").startswith("mailbox_")
             and str(context.get("category") or "")
@@ -779,7 +800,14 @@ class RepairValidationService:
         _revision(failure_revision, field_name="failure_revision")
         profile = self._expected_profile(context)
         declared_profile = str(context.get("targeted_test_profile") or "")
-        if declared_profile and declared_profile != profile:
+        if (
+            declared_profile
+            and declared_profile != profile
+            and not (
+                profile == _LV_DOWNLOAD_REPAIR_PROFILE
+                and declared_profile in _LV_DOWNLOAD_REPAIR_PROFILE_ALIASES
+            )
+        ):
             raise ProgressContractError("repair validation test profile changed")
         resolved_revision = repair_revision or self.resolve_head()
         _revision(resolved_revision, field_name="repair_revision")
@@ -1726,21 +1754,64 @@ class ConvergenceLedger:
                 }
             )
 
+    @staticmethod
+    def _latest_repair_lifecycle_by_target(
+        rows: list[dict[str, Any]],
+    ) -> tuple[
+        dict[str, tuple[tuple[str, str], dict[str, Any]]],
+        dict[tuple[str, str], tuple[int, dict[str, Any]]],
+    ]:
+        """Bind repair lifecycle events to their exact narrow resume target.
+
+        A diagnosis may become more precise while the same item stays on the
+        same narrow resume surface, producing a new failure fingerprint. Once
+        that newer lifecycle is closed or resumed, an older fingerprint for
+        the same target must not become active again.
+        """
+
+        observation_by_fingerprint: dict[
+            str, tuple[tuple[str, str], dict[str, Any]]
+        ] = {}
+        latest_by_target: dict[
+            tuple[str, str], tuple[int, dict[str, Any]]
+        ] = {}
+        for index, row in enumerate(rows):
+            fingerprint = str(row.get("failure_fingerprint") or "")
+            if not fingerprint:
+                continue
+            if row.get("event") == "failure_observed":
+                progress_value = row.get("progress")
+                if not isinstance(progress_value, Mapping):
+                    raise ProgressContractError(
+                        "active convergence row lacks persisted progress"
+                    )
+                progress = WriterProgress.from_dict(progress_value)
+                target = (
+                    str(progress.failure["adapter"]),
+                    str(progress.details["narrow_resume_surface"]),
+                )
+                observation_by_fingerprint[fingerprint] = (target, row)
+            binding = observation_by_fingerprint.get(fingerprint)
+            if binding is not None:
+                latest_by_target[binding[0]] = (index, row)
+        return observation_by_fingerprint, latest_by_target
+
     def active_progress(self, adapter: str) -> WriterProgress | None:
         """Recover the latest unclosed repair owned by one adapter."""
 
         adapter_name = _safe_token(adapter, field_name="adapter")
         rows = self.events()
-        latest_by_fingerprint: dict[str, dict[str, Any]] = {}
-        for row in rows:
-            fingerprint = str(row.get("failure_fingerprint") or "")
-            if fingerprint:
-                latest_by_fingerprint[fingerprint] = row
-        for row in reversed(rows):
-            if row.get("event") != "failure_observed":
+        _observations, latest_by_target = (
+            self._latest_repair_lifecycle_by_target(rows)
+        )
+        for (target_adapter, _surface), (_index, row) in sorted(
+            latest_by_target.items(),
+            key=lambda item: item[1][0],
+            reverse=True,
+        ):
+            if target_adapter != adapter_name:
                 continue
-            fingerprint = str(row.get("failure_fingerprint") or "")
-            if latest_by_fingerprint.get(fingerprint) is not row:
+            if row.get("event") != "failure_observed":
                 continue
             failure = row.get("failure")
             if (
@@ -1764,28 +1835,23 @@ class ConvergenceLedger:
 
         adapter_name = _safe_token(adapter, field_name="adapter")
         rows = self.events()
-        latest_by_fingerprint: dict[str, dict[str, Any]] = {}
-        for row in rows:
-            fingerprint = str(row.get("failure_fingerprint") or "")
-            if fingerprint:
-                latest_by_fingerprint[fingerprint] = row
-        for closure in reversed(rows):
+        observation_by_fingerprint, latest_by_target = (
+            self._latest_repair_lifecycle_by_target(rows)
+        )
+        for (target_adapter, _surface), (_index, closure) in sorted(
+            latest_by_target.items(),
+            key=lambda item: item[1][0],
+            reverse=True,
+        ):
+            if target_adapter != adapter_name:
+                continue
             if closure.get("event") != "repair_closed":
                 continue
             fingerprint = str(closure.get("failure_fingerprint") or "")
-            if latest_by_fingerprint.get(fingerprint) is not closure:
-                continue
-            observation = next(
-                (
-                    row
-                    for row in reversed(rows)
-                    if row.get("event") == "failure_observed"
-                    and row.get("failure_fingerprint") == fingerprint
-                ),
-                None,
-            )
-            if observation is None:
+            binding = observation_by_fingerprint.get(fingerprint)
+            if binding is None:
                 raise ProgressContractError("repair closure lost its observation")
+            _target, observation = binding
             failure = observation.get("failure")
             if (
                 not isinstance(failure, Mapping)
@@ -1880,9 +1946,20 @@ class ConvergenceLedger:
             if not observations:
                 raise ProgressContractError("repair closure has no matching failure")
             open_progress = WriterProgress.from_dict(observations[-1]["progress"])
+            expected_profile = str(
+                open_progress.details["targeted_test_profile"]
+            )
+            canonical_lv_profile = _canonical_lv_download_repair_profile({
+                "adapter": open_progress.failure["adapter"],
+                "targeted_test_profile": expected_profile,
+                "code": open_progress.failure["code"],
+                "stage": open_progress.failure["stage"],
+            })
+            if canonical_lv_profile is not None:
+                expected_profile = canonical_lv_profile
             if (
                 receipt.targeted_test_profile
-                != open_progress.details["targeted_test_profile"]
+                != expected_profile
             ):
                 raise ProgressContractError(
                     "repair receipt test profile does not match open repair"

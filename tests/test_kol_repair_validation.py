@@ -91,8 +91,20 @@ def test_repair_validation_runs_repo_owned_profile_and_persists_matching_receipt
     assert ("merge-base", "--is-ancestor", FAILURE_REVISION, REPAIR_REVISION) in git_calls
 
 
+@pytest.mark.parametrize(
+    ("code", "declared_profile"),
+    [
+        ("provider_download_filtered", "kol_lv_download_recovery"),
+        (
+            "provider_download_link_errno_2",
+            "kol_lv_text_image_provider_download_link",
+        ),
+    ],
+)
 def test_repair_validation_accepts_exact_lv_download_recovery_profile(
     tmp_path,
+    code,
+    declared_profile,
 ) -> None:
     context = {
         "adapter": "lv_text_image",
@@ -101,9 +113,9 @@ def test_repair_validation_accepts_exact_lv_download_recovery_profile(
         "failure_fingerprint": "3" * 64,
         "failure_revision": FAILURE_REVISION,
         "category": "provider_error",
-        "code": "provider_download_filtered",
+        "code": code,
         "stage": "provider_download_link",
-        "targeted_test_profile": "kol_lv_download_recovery",
+        "targeted_test_profile": declared_profile,
     }
 
     def git(command: tuple[str, ...]) -> CompletedProcess[str]:
@@ -139,11 +151,15 @@ def test_repair_validation_accepts_exact_lv_download_recovery_profile(
         "-m",
         "pytest",
         "tests/test_kol_lv_subscription.py",
+        "tests/test_kol_writer_progress.py",
+        "tests/test_kol_repair_validation.py",
         "-q",
         "-k",
         (
             "reviewed_historical_small_items_retire or "
-            "new_image_claim_uses_single_frontend_intercept"
+            "new_image_claim_uses_single_frontend_intercept or "
+            "newer_repair_lifecycle_supersedes_old_fingerprint or "
+            "repair_validation_accepts_exact_lv_download_recovery_profile"
         ),
     )
     service = RepairValidationService(

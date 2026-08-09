@@ -269,6 +269,55 @@ def test_open_progress_restores_the_authoritative_repair_contract(tmp_path):
     ).active_progress("lv_text_image") == progress
 
 
+def test_newer_repair_lifecycle_supersedes_old_fingerprint_on_same_surface(
+    tmp_path,
+):
+    clock_values = iter(
+        [
+            datetime.fromisoformat("2026-08-08T07:30:00+08:00"),
+            datetime.fromisoformat("2026-08-08T07:31:00+08:00"),
+            datetime.fromisoformat("2026-08-08T07:32:00+08:00"),
+        ]
+    )
+    ledger = ConvergenceLedger(
+        tmp_path / "convergence.jsonl",
+        now=lambda: next(clock_values),
+    )
+    older = _progress_rows()["repair_required"]
+    newer = WriterProgress.repair_required(
+        item_identity=older.item_identity,
+        fingerprint=FailureFingerprint(
+            adapter="lv_text_image",
+            category="provider_error",
+            code="provider_download_filtered",
+            stage="provider_download_link",
+            failure_revision=FAILURE_REVISION,
+            provider_contract_version="baidu_netdisk_download_v1",
+        ),
+        repair_revision=None,
+        affected_set_digest="e" * 64,
+        claim_receipt_summary=_claim_summary(),
+        targeted_test_profile="kol_lv_download_recovery",
+        narrow_resume_surface="lv_text_image:item-1",
+        retryability="not_retryable",
+    )
+    ledger.record(older, slot="2026-08-08T07:00+08:00")
+    ledger.record(newer, slot="2026-08-08T07:00+08:00")
+    validation = RepairValidationLedger(tmp_path / "repair-validation.jsonl")
+    receipt = validation.append(_repair_receipt(newer))
+    ledger.close_repair(
+        newer.failure_fingerprint,
+        repair_receipt=receipt,
+        validation_ledger=validation,
+        slot="2026-08-08T07:00+08:00",
+    )
+
+    assert ledger.active_progress("lv_text_image") is None
+    pending = ledger.pending_resume("lv_text_image")
+    assert pending is not None
+    assert pending[0] == newer
+
+
 @pytest.mark.parametrize(
     ("outcome", "expected_status"),
     [
