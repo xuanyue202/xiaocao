@@ -643,11 +643,13 @@ TARGETED_REPAIR_TESTS: dict[str, tuple[str, ...]] = {
         "pytest",
         "tests/test_kol_lv_subscription.py",
         "tests/test_kol_repair_validation.py",
+        "tests/test_kol_writer_progress.py",
         "-q",
         "-k",
         (
             "listing_recovers_once_after_detached_read_only_eval or "
-            "repair_validation_accepts_shared_lv_listing_browser_eval_profile"
+            "repair_validation_accepts_shared_lv_listing_browser_eval_profile or "
+            "repair_closure_accepts_shared_lv_listing_browser_eval_profile"
         ),
     ),
 }
@@ -708,6 +710,7 @@ _TARGETED_REPAIR_TEST_PATHS: dict[str, frozenset[str]] = {
         {
             "tests/test_kol_lv_subscription.py",
             "tests/test_kol_repair_validation.py",
+            "tests/test_kol_writer_progress.py",
         }
     ),
 }
@@ -2128,6 +2131,17 @@ class ConvergenceLedger:
             })
             if canonical_lv_profile is not None:
                 expected_profile = canonical_lv_profile
+            canonical_browser_eval_profile = (
+                _canonical_shared_lv_listing_browser_eval_repair_profile({
+                    "adapter": open_progress.failure["adapter"],
+                    "targeted_test_profile": expected_profile,
+                    "category": open_progress.failure["category"],
+                    "code": open_progress.failure["code"],
+                    "stage": open_progress.failure["stage"],
+                })
+            )
+            if canonical_browser_eval_profile is not None:
+                expected_profile = canonical_browser_eval_profile
             if (
                 receipt.targeted_test_profile
                 != expected_profile

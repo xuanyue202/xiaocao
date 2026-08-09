@@ -328,11 +328,13 @@ def test_repair_validation_accepts_shared_lv_listing_browser_eval_profile(
         "pytest",
         "tests/test_kol_lv_subscription.py",
         "tests/test_kol_repair_validation.py",
+        "tests/test_kol_writer_progress.py",
         "-q",
         "-k",
         (
             "listing_recovers_once_after_detached_read_only_eval or "
-            "repair_validation_accepts_shared_lv_listing_browser_eval_profile"
+            "repair_validation_accepts_shared_lv_listing_browser_eval_profile or "
+            "repair_closure_accepts_shared_lv_listing_browser_eval_profile"
         ),
     )
     service = RepairValidationService(
