@@ -2085,11 +2085,10 @@ class DailyRuntime:
         }
 
     def lv_narrow_resume(self, surface: str) -> dict[str, Any]:
-        prefix = "lv_text_image:"
-        identity = str(surface or "")
-        if not identity.startswith(prefix) or identity == f"{prefix}source":
-            raise DailyError("lv narrow repair surface is invalid")
-        return self.lv(only_identity=identity[len(prefix):])
+        identity = _exact_progress_surface("lv_text_image", surface)
+        if identity == "source":
+            return self.lv()
+        return self.lv(only_identity=identity)
 
     def lv_reconcile(self, progress: WriterProgress) -> dict[str, Any]:
         raise DailyError(

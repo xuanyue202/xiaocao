@@ -153,6 +153,17 @@ def test_source_cli_narrow_runner_supports_subscription_video():
     ) is subscription
 
 
+def test_lv_narrow_resume_supports_declared_source_surface():
+    runtime = DailyRuntime.__new__(DailyRuntime)
+    calls = []
+    runtime.lv = lambda **kwargs: calls.append(kwargs) or {"status": "no_update"}
+
+    result = runtime.lv_narrow_resume("lv_text_image:source")
+
+    assert result == {"status": "no_update"}
+    assert calls == [{}]
+
+
 def test_rollout_verification_uses_local_git_config_state_and_peer_gate(
     tmp_path,
     monkeypatch,
