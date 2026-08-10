@@ -71,6 +71,7 @@ def test_repair_validation_runs_repo_owned_profile_and_persists_matching_receipt
             "-m",
             "pytest",
             "tests/test_kol_mailbox.py",
+            "tests/test_kol_semantic_bundle.py",
             "-q",
         )
         return CompletedProcess(command, 0, "42 passed\n", "")

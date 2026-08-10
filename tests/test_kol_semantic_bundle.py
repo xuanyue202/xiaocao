@@ -493,6 +493,10 @@ def test_persisted_artifact_readback_revalidates_receipt_and_corrupt_receipt_reb
     persisted, bundle = read_validated_bundle(bundle_path)
     assert persisted.reused is True
     assert bundle["validator_version"] == first.validator_version
+    assert bundle["household_context_provider"] == {
+        "type": "lianghui_mcp",
+        "fresh_read_per_run": True,
+    }
 
     receipt_path.write_text("{\"receipt_sha256\": \"broken\"}\n", encoding="utf-8")
     rebuilt = build_validated_bundle(

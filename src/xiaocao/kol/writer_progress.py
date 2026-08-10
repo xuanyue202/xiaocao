@@ -601,6 +601,7 @@ TARGETED_REPAIR_TESTS: dict[str, tuple[str, ...]] = {
         "-m",
         "pytest",
         "tests/test_kol_mailbox.py",
+        "tests/test_kol_semantic_bundle.py",
         "-q",
     ),
     "kol_lv_download_recovery": (
@@ -725,6 +726,7 @@ _TARGETED_REPAIR_IMPLEMENTATION_PATHS: dict[str, frozenset[str]] = {
         {
             "scripts/kol_daily.py",
             "src/xiaocao/kol/mailbox.py",
+            "src/xiaocao/kol/semantic_bundle.py",
             "src/xiaocao/kol/writer_progress.py",
         }
     ),

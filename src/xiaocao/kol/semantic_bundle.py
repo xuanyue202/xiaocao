@@ -29,7 +29,7 @@ from .enrichment_types import EnrichmentError
 
 
 BUNDLE_SCHEMA_VERSION = 2
-VALIDATOR_VERSION = "kol-semantic-bundle-v1"
+VALIDATOR_VERSION = "kol-semantic-bundle-v2"
 _SHA256 = re.compile(r"^[0-9a-f]{64}$")
 
 _DECISION_STATUSES = {"actionable_signal", "no_actionable_signal"}
@@ -92,6 +92,7 @@ _PROTECTED_DRAFT_FIELDS = {
     "items",
     "prior_bundle",
     "existing_bundle",
+    "household_context_provider",
 }
 _REQUEST_METADATA_FIELDS = {
     "source",
@@ -1224,6 +1225,10 @@ def _canonical_bundle(request: Mapping[str, Any], draft: Mapping[str, Any], vali
     bundle = {
         "schema_version": BUNDLE_SCHEMA_VERSION,
         "validator_version": VALIDATOR_VERSION,
+        "household_context_provider": {
+            "type": "lianghui_mcp",
+            "fresh_read_per_run": True,
+        },
         "items": [item],
         "cross_source": draft.get("cross_source") or {"agreements": [], "conflicts": []},
     }
