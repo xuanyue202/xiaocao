@@ -3175,6 +3175,24 @@ def _source_repair_validation_progress(
     return progress
 
 
+def _resume_source_repair_outcome(
+    runtime: DailyRuntime,
+    adapter: str,
+    surface: str,
+) -> dict[str, Any]:
+    narrow_runner = _source_cli_narrow_runner(runtime, adapter)
+    outcome = _classified_narrow_source(adapter, narrow_runner)(surface)
+    if adapter != "xiaocao_wechat_live":
+        return outcome
+    followed = _follow_cloud_handoff(runtime, outcome)
+    if followed is None:
+        return outcome
+    return _classified_narrow_source(
+        adapter,
+        lambda _surface: followed,
+    )(surface)
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
@@ -3352,14 +3370,12 @@ def main() -> int:
         if progress.failure_fingerprint != args.failure_fingerprint:
             raise DailyError("source repair fingerprint changed before resume")
         runtime = DailyRuntime(args)
-        narrow_runner = _source_cli_narrow_runner(
+        surface = str(progress.details["narrow_resume_surface"])
+        outcome = _resume_source_repair_outcome(
             runtime,
             args.source_adapter,
+            surface,
         )
-        outcome = _classified_narrow_source(
-            args.source_adapter,
-            narrow_runner,
-        )(str(progress.details["narrow_resume_surface"]))
         following = WriterProgress.from_dict(outcome["writer_progress"])
         resume_receipt = service.convergence.record_resume(
             progress.failure_fingerprint,

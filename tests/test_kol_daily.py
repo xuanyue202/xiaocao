@@ -240,6 +240,53 @@ def test_source_cli_narrow_runner_supports_xiaocao_wechat_live():
     ]
 
 
+def test_source_repair_resume_follows_bound_xiaocao_cloud_handoff(monkeypatch):
+    calls: list[tuple[str, str]] = []
+    monkeypatch.setattr(
+        kol_daily_script,
+        "_writer_failure_revision",
+        lambda: "a" * 40,
+    )
+    monkeypatch.setattr(
+        kol_daily_script,
+        "_cloud_handoff_sleep",
+        lambda _seconds: None,
+    )
+
+    runtime = SimpleNamespace(
+        xiaocao_wechat_narrow_resume=lambda _surface: {
+            "status": "waiting",
+            "waiting_count": 1,
+            "waiting_items": [{
+                "identity": "kol-wechat-current",
+                "capture_job_id": "kol-capture-current",
+                "stage": "cloud_handoff",
+                "status": "upload_claimed",
+                "next_poll_not_before": "2026-08-10T16:12:43+08:00",
+            }],
+        },
+        xiaocao_cloud_handoff=lambda identity, capture_job_id: (
+            calls.append((identity, capture_job_id))
+            or {
+                "status": "no_update",
+                "handoff_dispatched": True,
+                "identity": identity,
+                "capture_job_id": capture_job_id,
+            }
+        ),
+    )
+
+    result = kol_daily_script._resume_source_repair_outcome(
+        runtime,
+        "xiaocao_wechat_live",
+        "xiaocao_wechat_live:kol-wechat-current",
+    )
+
+    assert calls == [("kol-wechat-current", "kol-capture-current")]
+    assert result["handoff_dispatched"] is True
+    assert result["writer_progress"]["status"] == "terminal"
+
+
 def test_rollout_verification_uses_local_git_config_state_and_peer_gate(
     tmp_path,
     monkeypatch,
