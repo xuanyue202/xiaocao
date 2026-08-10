@@ -2115,6 +2115,69 @@ def test_structured_input_resume_uses_bound_handler_instead_of_source(tmp_path):
     assert result["source_results"][0]["status"] == "no_update"
 
 
+def test_resume_structured_input_consumes_exact_request_without_new_sweep(
+    tmp_path,
+):
+    clock = Clock("2026-08-08T07:30:00+08:00")
+    service = DailyCoordinator(tmp_path / "daily", now=clock)
+    service.run([{
+        "name": "subscription_video",
+        "run": lambda: {"status": "no_update"},
+    }])
+    progress = WriterProgress.structured_input(
+        item_identity="video-1",
+        stage="waiting_semantic_input",
+        request_kind="subscription_video_analysis_input_required",
+        request_id="request-1",
+        request_schema_version=1,
+        immutable_bindings={
+            "identity": "video-1",
+            "version_key": "version-1",
+            "evidence_sha256": "b" * 64,
+        },
+        response_field="bundle_path",
+        claim_receipt_summary={
+            "claim_count": 0,
+            "receipt_count": 0,
+            "uncertain_effect_count": 0,
+        },
+    )
+    receipt = {
+        "event": "structured_input_consumed",
+        "request_id": "request-1",
+        "request_schema_version": 1,
+        "response_field": "bundle_path",
+        "immutable_bindings_sha256": hashlib.sha256(
+            json.dumps(
+                progress.details["immutable_bindings"],
+                ensure_ascii=False,
+                sort_keys=True,
+                separators=(",", ":"),
+            ).encode()
+        ).hexdigest(),
+        "request_sha256": "c" * 64,
+        "response_sha256": "d" * 64,
+    }
+
+    result = service.resume_structured_input(
+        {
+            "name": "subscription_video",
+            "structured_input": lambda seen: {
+                "outcome": {"status": "no_update"},
+                "structured_input_receipt": receipt,
+            },
+        },
+        progress=progress,
+    )
+
+    assert result["continuation_only"] is True
+    assert result["health"] == "healthy"
+    source = result["source_result"]
+    assert source["status"] == "no_update"
+    assert source["structured_input_receipt"] == receipt
+    assert source["writer_progress"]["status"] == "terminal"
+
+
 def test_structured_input_without_consumption_receipt_becomes_agent_repair(
     tmp_path,
 ):

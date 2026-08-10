@@ -138,9 +138,11 @@ Use self-hashed Automation evidence; require recent peer-gate readback.
 Acceptance starts seven-day/50-scheduled-slot observation; never backfill.
 `stability-acceptance` is read-only: pending until gates, passed if all pass.
 
-A provider `wait_until` persists one exact `resume-source-wait` command. Run it
-only at/after the deadline; it calls only the bound `narrow_resume`, never the
-mailbox, another source, or a new sweep. Any mismatch is Agent-owned repair.
+Run `resume-source-wait` only at/after its deadline and only on its
+bound surface. If it then persists `structured_input`, run exact
+`resume-source-input --source-adapter subscription_video --source-identity
+<identity>` and return the bundle in that process. Neither command reads the
+mailbox or starts sweep; mismatches are Agent-owned repair.
 
 At provider steps, use installed OpenCLI once with exact identity/version,
 bytes, hashes, and receipts. The no-MCP capture rule permits the

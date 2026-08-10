@@ -1399,6 +1399,50 @@ def _source_cli_narrow_runner(runtime: "DailyRuntime", adapter: str):
     raise DailyError("source repair adapter has no CLI narrow resume")
 
 
+def _subscription_video_structured_progress(
+    runtime: "DailyRuntime",
+    identity: str,
+) -> WriterProgress:
+    service = SubscriptionVideoService(
+        runtime.args.video_output_dir,
+        config_path=runtime.args.config,
+    )
+    exact = _one_exact_pending(
+        service.pending_items(),
+        identity,
+        label="video structured input",
+    )
+    if len(exact) != 1:
+        raise DailyError("video structured input target is not pending")
+    item = exact[0]
+    request = _persisted_video_analysis_request(
+        runtime.args.video_output_dir,
+        item,
+    )
+    if request is None:
+        raise DailyError("video structured input request is missing")
+    waiting_item = _semantic_waiting_item(
+        request,
+        identity=str(item["identity"]),
+        version_key=str(item["version_key"]),
+        name=str(item.get("name") or ""),
+        author=str(item.get("author") or "吕晓彤"),
+    )
+    progress = normalize_source_result(
+        "subscription_video",
+        {
+            "status": "waiting",
+            "waiting_count": 1,
+            "waiting_items": [waiting_item],
+        },
+        failure_revision=_writer_failure_revision(),
+        provider_contract_version="xiaocao_writer_v1",
+    )
+    if progress.status != "structured_input":
+        raise DailyError("video structured input request did not normalize")
+    return progress
+
+
 def _exact_progress_surface(adapter: str, surface: str) -> str:
     prefix = f"{adapter}:"
     value = str(surface or "")
@@ -2119,18 +2163,23 @@ class DailyRuntime:
             lambda: self.lv(only_identity=progress.item_identity),
         )
 
-    def videos(self, *, only_identity: str | None = None) -> dict[str, Any]:
-        lv_listing = self._lv_listing_for_sweep()
+    def videos(
+        self,
+        *,
+        only_identity: str | None = None,
+        refresh_listing: bool = True,
+    ) -> dict[str, Any]:
         service = SubscriptionVideoService(
             self.args.video_output_dir,
             config_path=self.args.config,
         )
-        service.scan_opencli(
-            lv_session=self.args.lv_session,
-            private_session=self.args.private_session,
-            profile=self.args.opencli_profile,
-            lv_listing=lv_listing,
-        )
+        if refresh_listing:
+            service.scan_opencli(
+                lv_session=self.args.lv_session,
+                private_session=self.args.private_session,
+                profile=self.args.opencli_profile,
+                lv_listing=self._lv_listing_for_sweep(),
+            )
         pending = service.pending_items()
         pending = _one_exact_pending(
             pending,
@@ -2401,7 +2450,10 @@ class DailyRuntime:
     ) -> dict[str, Any]:
         return _consume_structured_input(
             progress,
-            lambda: self.videos(only_identity=progress.item_identity),
+            lambda: self.videos(
+                only_identity=progress.item_identity,
+                refresh_listing=False,
+            ),
         )
 
     @staticmethod
@@ -3229,6 +3281,7 @@ def main() -> int:
             "validate-source-repair",
             "resume-source-repair",
             "resume-source-wait",
+            "resume-source-input",
             "status",
             "audit",
             "convergence-report",
@@ -3353,6 +3406,29 @@ def main() -> int:
             item_identity=args.source_identity,
         )
         _print({"source_wait_resume": result})
+        return 0
+    if args.command == "resume-source-input":
+        if not args.source_adapter or not args.source_identity:
+            raise DailyError(
+                "resume-source-input requires source adapter and identity"
+            )
+        if args.source_adapter != "subscription_video":
+            raise DailyError(
+                "resume-source-input adapter has no exact CLI binding"
+            )
+        runtime = DailyRuntime(args)
+        progress = _subscription_video_structured_progress(
+            runtime,
+            args.source_identity,
+        )
+        result = DailyCoordinator(args.output_dir).resume_structured_input(
+            {
+                "name": args.source_adapter,
+                "structured_input": runtime.videos_structured_input,
+            },
+            progress=progress,
+        )
+        _print({"source_input_resume": result})
         return 0
     if args.command == "validate-repair":
         if not args.mailbox_message_id:

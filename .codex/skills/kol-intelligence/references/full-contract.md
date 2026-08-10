@@ -564,6 +564,12 @@ work and never authorizes replaying publication, reminder, or Book side effects.
   <exact-identity>` command. That command consumes only the exact item's narrow
   source surface; it does not drain the mailbox, discover another item, or
   start another hourly sweep.
+- If an exact continuation reaches `structured_input` after the original stdin
+  closes, run `kol_daily.py resume-source-input --source-adapter
+  subscription_video --source-identity <exact-identity>` and return the
+  validated bundle to that same process. The command rebuilds only the
+  persisted request bindings and records the structured-input receipt; it does
+  not run source discovery or a new sweep.
 - Both sources use Ticket 02's exact-player transcript and `tpl_no=1` note
   contract. Register the cloud metadata version without inventing a payload
   hash, bind the player to the complete path, preserve the complete transcript

@@ -2429,6 +2429,179 @@ class DailyCoordinator:
             "source_result": {"name": name, **result},
         }
 
+    def resume_structured_input(
+        self,
+        source: dict[str, Any],
+        *,
+        progress: WriterProgress,
+    ) -> dict[str, Any]:
+        """Consume one exact persisted semantic request without a new sweep."""
+
+        name = str(source.get("name") or "").strip()
+        handler = source.get("structured_input")
+        if (
+            not name
+            or not callable(handler)
+            or progress.status != "structured_input"
+        ):
+            raise DailyError(
+                "structured input resume needs one source and bound request"
+            )
+        started = time.monotonic()
+        with self._locked():
+            prior_rows = self._events_unlocked()
+            prior_sweep = self._last_sweep_state(prior_rows)
+            if prior_sweep is None:
+                raise DailyError(
+                    "structured input resume lost its originating sweep"
+                )
+            prior_states = prior_sweep.get("source_states")
+            if not isinstance(prior_states, list) or not any(
+                isinstance(row, Mapping) and row.get("name") == name
+                for row in prior_states
+            ):
+                raise DailyError(
+                    "structured input resume lost its source state"
+                )
+            slot = str(prior_sweep.get("slot") or "")
+            self._append(
+                "source_structured_input_resume_started",
+                slot=slot,
+                source=name,
+                item_identity=progress.item_identity,
+                request_id=progress.details["request_id"],
+            )
+            try:
+                wrapped = handler(progress)
+                outcome, receipt = self._structured_input_result(
+                    progress,
+                    wrapped,
+                )
+            except BaseException as exc:
+                self._append(
+                    "source_structured_input_resume_interrupted",
+                    slot=slot,
+                    source=name,
+                    item_identity=progress.item_identity,
+                    error_type=type(exc).__name__,
+                )
+                raise
+            if not isinstance(outcome, dict):
+                raise DailyError(
+                    "structured input handler returned invalid output"
+                )
+            if outcome.get("status") == "completed":
+                events = outcome.get("events")
+                if not isinstance(events, list):
+                    raise DailyError(
+                        "structured input completion lacks terminal events"
+                    )
+                recorded_terminal_ids = {
+                    str(event.get("event_id"))
+                    for row in prior_rows
+                    if row.get("event") == "source_completed"
+                    for event in (row.get("result", {}).get("events") or [])
+                    if isinstance(event, Mapping) and event.get("event_id")
+                }
+                fresh_events = [
+                    event
+                    for event in events
+                    if isinstance(event, dict)
+                    and str(event.get("event_id") or "")
+                    not in recorded_terminal_ids
+                ]
+                replayed_count = len(events) - len(fresh_events)
+                outcome = (
+                    {**outcome, "events": fresh_events}
+                    if fresh_events
+                    else {
+                        "status": "no_update",
+                        "replayed_terminal_count": replayed_count,
+                    }
+                )
+                if fresh_events and replayed_count:
+                    outcome["replayed_terminal_count"] = replayed_count
+                self._append(
+                    "terminal_replay_audit",
+                    slot=slot,
+                    source=name,
+                    replayed_terminal_count=replayed_count,
+                    audited=True,
+                    continuation_only=True,
+                )
+            _validate_source_outcome(outcome)
+            progress_value = outcome.get("writer_progress")
+            following = (
+                WriterProgress.from_dict(progress_value)
+                if isinstance(progress_value, Mapping)
+                else normalize_source_result(
+                    name,
+                    outcome,
+                    failure_revision=self._failure_revision(),
+                    provider_contract_version="xiaocao_writer_v1",
+                )
+            )
+            progress.validate_transition_to(following, evidence=receipt)
+            result = {
+                **{
+                    key: value
+                    for key, value in outcome.items()
+                    if key != "retryable"
+                },
+                "resume_policy": following.next_action,
+                "structured_input_receipt": receipt,
+                "writer_progress": following.to_dict(),
+            }
+            if following.status == "repair_required":
+                self.convergence.record(following, slot=slot)
+            self._append(
+                "source_progressed",
+                slot=slot,
+                source=name,
+                progress=following.to_dict(),
+            )
+            self._append(
+                "source_completed",
+                slot=slot,
+                source=name,
+                result=result,
+                coordinator_source_video_bytes=0,
+            )
+            target_state = self._source_states([{"name": name, **result}])[0]
+            source_states = [
+                target_state if row.get("name") == name else dict(row)
+                for row in prior_states
+                if isinstance(row, Mapping)
+            ]
+            health = self._sweep_health(source_states)
+            self._append(
+                "sweep_completed",
+                slot=slot,
+                status="completed",
+                health=health,
+                source_count=len(source_states),
+                source_states=source_states,
+                elapsed_ms=max(0, int((time.monotonic() - started) * 1000)),
+                coordinator_source_video_bytes=0,
+                continuation_only=True,
+            )
+            duplicate_audit = self._duplicate_effect_audit([
+                {"name": name, **result}
+            ])
+            self._append(
+                "duplicate_effect_audit",
+                slot=slot,
+                continuation_only=True,
+                **duplicate_audit,
+            )
+        return {
+            "status": "completed",
+            "slot": slot,
+            "health": health,
+            "continuation_only": True,
+            "source_result": {"name": name, **result},
+        }
+
     def status(self) -> dict[str, Any]:
         rows = self.events()
         last = self._last_sweep_state(rows)
