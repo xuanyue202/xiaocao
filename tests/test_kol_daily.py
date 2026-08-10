@@ -21,6 +21,7 @@ from scripts.kol_daily import (
     _read_agent_json,
     _standalone_writer_result,
     _source_cli_narrow_runner,
+    _source_repair_validation_progress,
     _require_rollout_peer_gate,
     _verify_rollout_evidence,
     _video_publication_context,
@@ -175,6 +176,21 @@ def test_source_cli_narrow_runner_supports_subscription_video():
         runtime,
         "subscription_video",
     ) is subscription
+
+
+def test_source_repair_validation_accepts_pending_resume():
+    progress = SimpleNamespace(failure_fingerprint="a" * 64)
+    convergence = SimpleNamespace(
+        active_progress=lambda _adapter: None,
+        pending_resume=lambda _adapter: (progress, {"event": "repair_closed"}),
+    )
+    service = SimpleNamespace(convergence=convergence)
+
+    assert _source_repair_validation_progress(
+        service,
+        "subscription_video",
+        "a" * 64,
+    ) is progress
 
 
 def test_lv_narrow_resume_supports_declared_source_surface():

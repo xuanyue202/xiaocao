@@ -3120,6 +3120,24 @@ def _source_repair_slot(service: DailyCoordinator) -> str:
     return service._beijing_now().strftime("%Y-%m-%dT%H:00+08:00")
 
 
+def _source_repair_validation_progress(
+    service: DailyCoordinator,
+    adapter: str,
+    failure_fingerprint: str,
+) -> WriterProgress:
+    progress = service.convergence.active_progress(adapter)
+    if progress is None:
+        pending = service.convergence.pending_resume(adapter)
+        if pending is not None:
+            progress = pending[0]
+    if (
+        progress is None
+        or progress.failure_fingerprint != failure_fingerprint
+    ):
+        raise DailyError("source repair target is not the active fingerprint")
+    return progress
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
@@ -3255,14 +3273,13 @@ def main() -> int:
         if not args.source_adapter or not args.failure_fingerprint:
             raise DailyError(
                 "validate-source-repair requires source adapter and fingerprint"
-            )
+        )
         service = DailyCoordinator(args.output_dir)
-        progress = service.convergence.active_progress(args.source_adapter)
-        if (
-            progress is None
-            or progress.failure_fingerprint != args.failure_fingerprint
-        ):
-            raise DailyError("source repair target is not the active fingerprint")
+        progress = _source_repair_validation_progress(
+            service,
+            args.source_adapter,
+            args.failure_fingerprint,
+        )
         ledger = RepairValidationLedger(
             args.mailbox_output_dir / "repair_validation.jsonl"
         )

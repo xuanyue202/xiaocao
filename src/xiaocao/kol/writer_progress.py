@@ -651,6 +651,7 @@ TARGETED_REPAIR_TESTS: dict[str, tuple[str, ...]] = {
             "private_scan_chunks_recursive_eval_below_opencli_deadline or "
             "opencli_json_classifies_cdp_timeout or "
             "narrow_source_failure_keeps_seven_state_contract or "
+            "source_repair_validation_accepts_pending_resume or "
             "repair_validation_accepts_subscription_video_browser_eval_profile or "
             "repair_closure_accepts_subscription_video_browser_eval_profile or "
             "repair_resume_persists_following_repair"
