@@ -392,6 +392,12 @@ def test_browser_listing_recurses_without_parent_mtime_pruning_in_bounded_batche
     assert "share_list_timeout" in script
     assert ".includes('已失效')" not in script
     assert "exact_visible_terminal" in script
+    assert "localValue('shareid')" not in script
+    assert "localValue('share_uk')" not in script
+    assert (
+        script.index("exact_visible_terminal")
+        < script.index("share_root_template_missing")
+    )
     assert "provider_errno" in script
     assert "json_error_position" in script
     assert "item.server_mtime" not in script[

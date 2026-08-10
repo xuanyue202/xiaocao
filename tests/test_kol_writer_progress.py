@@ -538,6 +538,56 @@ def test_repair_closure_accepts_shared_lv_listing_browser_eval_profile(
     )
 
 
+@pytest.mark.parametrize("adapter", ["lv_text_image", "subscription_video"])
+def test_repair_closure_accepts_shared_lv_listing_validation_profile(
+    tmp_path,
+    adapter,
+):
+    progress = WriterProgress.repair_required(
+        item_identity=f"{adapter}:source",
+        fingerprint=FailureFingerprint(
+            adapter=adapter,
+            category="incomplete_scan",
+            code="share_metadata_missing",
+            stage="listing_validation",
+            failure_revision=FAILURE_REVISION,
+            provider_contract_version="xiaocao_writer_v1",
+        ),
+        repair_revision=None,
+        affected_set_digest="d" * 64,
+        claim_receipt_summary={
+            "claim_count": 0,
+            "receipt_count": 0,
+            "uncertain_effect_count": 0,
+        },
+        targeted_test_profile=f"kol_{adapter}_listing_validation",
+        narrow_resume_surface=f"{adapter}:source",
+        retryability="retryable",
+    )
+    ledger = ConvergenceLedger(
+        tmp_path / "convergence.jsonl",
+        now=lambda: datetime.fromisoformat("2026-08-10T11:50:00+08:00"),
+    )
+    ledger.record(progress, slot="2026-08-10T11:00+08:00")
+    validation = RepairValidationLedger(tmp_path / "repair-validation.jsonl")
+    receipt = validation.append(_repair_receipt(
+        progress,
+        profile="kol_shared_lv_listing_validation",
+    ))
+
+    closure = ledger.close_repair(
+        progress.failure_fingerprint,
+        repair_receipt=receipt,
+        validation_ledger=validation,
+        slot="2026-08-10T11:00+08:00",
+    )
+
+    assert closure["event"] == "repair_closed"
+    assert closure["repair_receipt"]["targeted_test_profile"] == (
+        "kol_shared_lv_listing_validation"
+    )
+
+
 @pytest.mark.parametrize(
     "failure_code",
     ["opencli_command_failed", "opencli_cdp_timeout", "opencli_timeout"],

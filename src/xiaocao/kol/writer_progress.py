@@ -675,6 +675,23 @@ TARGETED_REPAIR_TESTS: dict[str, tuple[str, ...]] = {
             "repair_closure_accepts_shared_lv_listing_browser_eval_profile"
         ),
     ),
+    "kol_shared_lv_listing_validation": (
+        "env",
+        "PYTHONPATH=src",
+        ".venv/bin/python",
+        "-m",
+        "pytest",
+        "tests/test_kol_lv_subscription.py",
+        "tests/test_kol_repair_validation.py",
+        "tests/test_kol_writer_progress.py",
+        "-q",
+        "-k",
+        (
+            "browser_listing_recurses_without_parent_mtime_pruning_in_bounded_batches or "
+            "repair_validation_accepts_shared_lv_listing_validation_profile or "
+            "repair_closure_accepts_shared_lv_listing_validation_profile"
+        ),
+    ),
     "kol_xiaocao_wechat_live_source_run": (
         "env",
         "PYTHONPATH=src",
@@ -734,6 +751,12 @@ _TARGETED_REPAIR_IMPLEMENTATION_PATHS: dict[str, frozenset[str]] = {
             "src/xiaocao/kol/writer_progress.py",
         }
     ),
+    "kol_shared_lv_listing_validation": frozenset(
+        {
+            "src/xiaocao/kol/lv_subscription.py",
+            "src/xiaocao/kol/writer_progress.py",
+        }
+    ),
     "kol_xiaocao_wechat_live_source_run": frozenset(
         {
             "scripts/kol_daily.py",
@@ -773,6 +796,13 @@ _TARGETED_REPAIR_TEST_PATHS: dict[str, frozenset[str]] = {
         }
     ),
     "kol_shared_lv_listing_browser_eval": frozenset(
+        {
+            "tests/test_kol_lv_subscription.py",
+            "tests/test_kol_repair_validation.py",
+            "tests/test_kol_writer_progress.py",
+        }
+    ),
+    "kol_shared_lv_listing_validation": frozenset(
         {
             "tests/test_kol_lv_subscription.py",
             "tests/test_kol_repair_validation.py",
@@ -849,6 +879,10 @@ _SHARED_LV_LISTING_BROWSER_EVAL_REPAIR_PROFILE = (
     "kol_shared_lv_listing_browser_eval"
 )
 
+_SHARED_LV_LISTING_VALIDATION_REPAIR_PROFILE = (
+    "kol_shared_lv_listing_validation"
+)
+
 _SUBSCRIPTION_VIDEO_BROWSER_EVAL_REPAIR_PROFILE = (
     "kol_subscription_video_browser_eval"
 )
@@ -895,6 +929,22 @@ _XIAOCAO_WECHAT_SOURCE_REPAIR_PROFILE = (
 _XIAOCAO_WECHAT_COMPRESSED_CAPTURE_REPAIR_PROFILE = (
     "kol_xiaocao_wechat_live_compressed_capture"
 )
+
+
+def _canonical_shared_lv_listing_validation_repair_profile(
+    context: Mapping[str, Any],
+) -> str | None:
+    adapter = str(context.get("adapter") or "")
+    if (
+        adapter in {"lv_text_image", "subscription_video"}
+        and str(context.get("targeted_test_profile") or "")
+        == f"kol_{adapter}_listing_validation"
+        and str(context.get("category") or "") == "incomplete_scan"
+        and str(context.get("code") or "") == "share_metadata_missing"
+        and str(context.get("stage") or "") == "listing_validation"
+    ):
+        return _SHARED_LV_LISTING_VALIDATION_REPAIR_PROFILE
+    return None
 
 
 def _canonical_xiaocao_wechat_source_repair_profile(
@@ -1011,6 +1061,11 @@ class RepairValidationService:
         )
         if browser_eval_profile is not None:
             return browser_eval_profile
+        listing_validation_profile = (
+            _canonical_shared_lv_listing_validation_repair_profile(context)
+        )
+        if listing_validation_profile is not None:
+            return listing_validation_profile
         xiaocao_wechat_profile = (
             _canonical_xiaocao_wechat_source_repair_profile(context)
         )
@@ -1119,6 +1174,14 @@ class RepairValidationService:
                 profile == _XIAOCAO_WECHAT_SOURCE_REPAIR_PROFILE
                 and declared_profile
                 == _XIAOCAO_WECHAT_COMPRESSED_CAPTURE_REPAIR_PROFILE
+            )
+            and not (
+                profile == _SHARED_LV_LISTING_VALIDATION_REPAIR_PROFILE
+                and declared_profile
+                in {
+                    "kol_lv_text_image_listing_validation",
+                    "kol_subscription_video_listing_validation",
+                }
             )
         ):
             raise ProgressContractError("repair validation test profile changed")
@@ -2311,6 +2374,17 @@ class ConvergenceLedger:
             )
             if canonical_browser_eval_profile is not None:
                 expected_profile = canonical_browser_eval_profile
+            canonical_listing_validation_profile = (
+                _canonical_shared_lv_listing_validation_repair_profile({
+                    "adapter": open_progress.failure["adapter"],
+                    "targeted_test_profile": expected_profile,
+                    "category": open_progress.failure["category"],
+                    "code": open_progress.failure["code"],
+                    "stage": open_progress.failure["stage"],
+                })
+            )
+            if canonical_listing_validation_profile is not None:
+                expected_profile = canonical_listing_validation_profile
             canonical_subscription_browser_eval_profile = (
                 _canonical_subscription_video_browser_eval_repair_profile({
                     "adapter": open_progress.failure["adapter"],

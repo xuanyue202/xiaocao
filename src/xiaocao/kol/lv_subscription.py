@@ -153,36 +153,22 @@ _BROWSER_LISTING_SCRIPT_TEMPLATE = r"""(async () => {
     return style.display !== 'none' && style.visibility !== 'hidden'
       && rect.width > 0 && rect.height > 0;
   };
-  const localValue = key => {
-    try {
-      return window.locals && typeof window.locals.get === 'function'
-        ? window.locals.get(key)
-        : undefined;
-    } catch (_error) {
-      return undefined;
-    }
-  };
-  const shareid = localValue('shareid');
-  const shareUk = localValue('share_uk') || localValue('uk');
-  if (!shareid || !shareUk) {
-    const exactExpiredMessages = new Set([
-      '分享已失效',
-      '该分享已失效',
-      '分享的文件已失效',
-      '分享的文件已经被取消了',
-      '分享的文件已经被删除了'
-    ]);
-    const terminalTexts = [...document.querySelectorAll(
-      '[role="alert"], .share-error, .error-msg, .error-message, '
-      + '[class*="share-error"], [class*="expire"]'
-    )].filter(visible).map(node => (
-      String(node.innerText || node.textContent || '')
-        .replace(/\s+/g, ' ').trim()
-    ));
-    if (terminalTexts.some(text => exactExpiredMessages.has(text))) {
-      return fail('share_expired', {basis: 'exact_visible_terminal'});
-    }
-    return fail('share_metadata_missing');
+  const exactExpiredMessages = new Set([
+    '分享已失效',
+    '该分享已失效',
+    '分享的文件已失效',
+    '分享的文件已经被取消了',
+    '分享的文件已经被删除了'
+  ]);
+  const terminalTexts = [...document.querySelectorAll(
+    '[role="alert"], .share-error, .error-msg, .error-message, '
+    + '[class*="share-error"], [class*="expire"]'
+  )].filter(visible).map(node => (
+    String(node.innerText || node.textContent || '')
+      .replace(/\s+/g, ' ').trim()
+  ));
+  if (terminalTexts.some(text => exactExpiredMessages.has(text))) {
+    return fail('share_expired', {basis: 'exact_visible_terminal'});
   }
   const observedListUrls = () => performance.getEntriesByType('resource')
     .map(entry => String(entry.name || ''))
