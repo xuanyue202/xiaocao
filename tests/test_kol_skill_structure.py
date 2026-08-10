@@ -17,6 +17,9 @@ HOURLY_REMOTE_WRITER_MD = (
 OPENCLI_CHROME_RECOVERY_MD = (
     SKILL_DIR / "references" / "opencli-chrome-recovery.md"
 )
+XIAOETONG_SMS_LOGIN_MD = (
+    SKILL_DIR / "references" / "xiaoetong-sms-login.md"
+)
 REMOTE_WRITER_LEASE_MD = (
     SKILL_DIR / "references" / "remote-writer-lease.md"
 )
@@ -542,6 +545,27 @@ def test_opencli_chrome_recovery_exhausts_self_repair_before_user_action() -> No
         "never duplicate",
     ):
         assert marker in recovery
+
+
+def test_hourly_local_capture_routes_authorized_xiaoetong_sms_login() -> None:
+    hourly = HOURLY_LOCAL_CAPTURE_MD.read_text(encoding="utf-8")
+    sms_login = " ".join(
+        XIAOETONG_SMS_LOGIN_MD.read_text(encoding="utf-8").split()
+    )
+
+    assert "xiaoetong-sms-login.md" in hourly
+    for marker in (
+        "pageAssets",
+        "drag_distance_css",
+        "tab.cua.drag()",
+        "验证码已发送成功",
+        "#SpToast",
+        "Enter the newest OTP once",
+        "Enter `666` only after reaching that exact course resource",
+        "video.muted = true",
+        "video.volume = 0",
+    ):
+        assert marker in sms_login
 
 
 def test_durable_branch_preserves_authority_and_provenance_boundaries() -> None:

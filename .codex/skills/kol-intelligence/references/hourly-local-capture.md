@@ -101,10 +101,10 @@ For `daily_browser_input_required`, keep the same process alive and use
    (reapply after refresh/navigation), start it, and prove advancing media time.
    Only then return `activated=true`, bound URL, and password-use state.
 
-Account-login redirect: keep tab; return URL with
-`account_login_required`, `activated=false`, `password_used=false`; never enter `666`.
+Login: keep tab; report account_login_required with activated/password_used=false;
+never enter 666. See [SOP](xiaoetong-sms-login.md).
 
-`密码666` text is not a visible gate. Never inspect cookies, storage, or
+`密码666` text is not a visible gate. Do not inspect cookies, storage, or
 credentials. An `awaiting_playback` source job keeps
 the same capture/source identities and rechecks the same bound page on the next
 hourly sweep until it becomes playable; never wait inside one sweep or create a
