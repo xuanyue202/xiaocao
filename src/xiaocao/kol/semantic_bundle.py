@@ -36,6 +36,15 @@ _DECISION_STATUSES = {"actionable_signal", "no_actionable_signal"}
 _KNOWLEDGE_STATUSES = {"reusable_knowledge", "no_reusable_knowledge"}
 _CONTENT_STATUSES = {"low_density", "promoted"}
 _CONTENT_TIERS = {"report_only", "alert_eligible"}
+_ALERT_BASES = {
+    "market_posture",
+    "buy",
+    "sell",
+    "hold",
+    "position_boundary",
+    "direction",
+    "actionable_trigger",
+}
 _PROJECTION_STATUSES = {"none", "promoted"}
 _MARKET_STATUSES = {"support", "qualify", "conflict", "invalidate"}
 _ACTIONS = {"buy", "add", "hold", "reduce", "sell", "wait"}
@@ -885,13 +894,19 @@ def _validate_content_routing(item: Mapping[str, Any]) -> dict[str, Any]:
                 stage="content_routing",
                 field="content_value.no_alert_reason",
             )
-        if tier == "alert_eligible" and not isinstance(content.get("alert_basis"), list):
-            raise _fail(
-                "alert-eligible content needs an alert basis",
-                error_code="content_value_invalid",
-                stage="content_routing",
-                field="content_value.alert_basis",
-            )
+        if tier == "alert_eligible":
+            alert_basis = content.get("alert_basis")
+            if (
+                not isinstance(alert_basis, list)
+                or not alert_basis
+                or not set(str(value) for value in alert_basis) <= _ALERT_BASES
+            ):
+                raise _fail(
+                    "alert-eligible content needs a supported alert basis",
+                    error_code="content_value_invalid",
+                    stage="content_routing",
+                    field="content_value.alert_basis",
+                )
         publication = item.get("publication")
         if not isinstance(publication, dict) or any(
             not _nonblank(publication.get(field))

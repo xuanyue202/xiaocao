@@ -435,6 +435,30 @@ def test_market_and_decision_cardinality_are_terminal_constraints(tmp_path):
     assert caught.value.error_code == "decision_semantics_invalid"
 
 
+def test_alert_basis_is_validated_before_business_publication(tmp_path):
+    request, draft, bundle_path, receipt_path, _ = _fixture(tmp_path)
+    draft["content_value"] = {
+        "status": "promoted",
+        "tier": "alert_eligible",
+        "reason": "来源给出当前市场姿态。",
+        "alert_basis": ["market_posture", "risk_boundary"],
+    }
+
+    with pytest.raises(SemanticBundleError) as caught:
+        build_validated_bundle(
+            request,
+            draft,
+            bundle_path=bundle_path,
+            receipt_path=receipt_path,
+        )
+
+    assert caught.value.error_code == "content_value_invalid"
+    assert caught.value.stage == "content_routing"
+    assert caught.value.field == "content_value.alert_basis"
+    assert not bundle_path.exists()
+    assert not receipt_path.exists()
+
+
 def test_receipt_reuse_does_not_change_external_identity_or_scan_evidence_again(tmp_path):
     request, draft, bundle_path, receipt_path, _ = _fixture(tmp_path)
     first = build_validated_bundle(
