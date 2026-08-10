@@ -140,7 +140,9 @@ _PRIVATE_SCAN_SCRIPT = r"""(async () => {
     return new URLSearchParams(query).get('path');
   };
   const readDirectory = async dir => {
-    location.hash = routeFor(dir);
+    if (currentDir() !== dir) {
+      location.hash = routeFor(dir);
+    }
     // Deep private folders occasionally need more than 15 seconds to settle
     // on a metered remote session. Keep one bounded read, but let that same
     // navigation finish instead of turning a slow directory into a repair.

@@ -1055,6 +1055,7 @@ def test_private_scan_uses_exact_vue_metadata_without_file_download(tmp_path):
 def test_private_scan_allows_slow_directory_settlement():
     assert "const deadline = Date.now() + 30000" in _PRIVATE_SCAN_SCRIPT
     assert "!/正在加载中/.test(text)" in _PRIVATE_SCAN_SCRIPT
+    assert "if (currentDir() !== dir)" in _PRIVATE_SCAN_SCRIPT
 
 
 def test_private_scan_chunks_recursive_eval_below_opencli_deadline(tmp_path):
