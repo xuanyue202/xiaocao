@@ -662,6 +662,29 @@ TARGETED_REPAIR_TESTS: dict[str, tuple[str, ...]] = {
             "repair_resume_persists_following_repair"
         ),
     ),
+    "kol_subscription_video_source_run": (
+        "env",
+        "PYTHONPATH=src",
+        ".venv/bin/python",
+        "-m",
+        "pytest",
+        "tests/test_kol_subscription_video.py",
+        "tests/test_kol_decisions.py",
+        "tests/test_kol_daily.py",
+        "tests/test_kol_repair_validation.py",
+        "tests/test_kol_writer_progress.py",
+        "-q",
+        "-k",
+        (
+            "semantic_duplicate_requires_receipted_household_and_paper_ledgers or "
+            "no_trade_is_an_idempotent_book_decision or "
+            "each_replay_uses_fresh_household_context or "
+            "source_cli_narrow_runner_supports_subscription_video or "
+            "source_repair_validation_accepts_pending_resume or "
+            "repair_validation_accepts_subscription_video_source_run_profile or "
+            "repair_resume_persists_following_repair"
+        ),
+    ),
     "kol_shared_lv_listing_browser_eval": (
         "env",
         "PYTHONPATH=src",
@@ -754,6 +777,15 @@ _TARGETED_REPAIR_IMPLEMENTATION_PATHS: dict[str, frozenset[str]] = {
             "src/xiaocao/kol/writer_progress.py",
         }
     ),
+    "kol_subscription_video_source_run": frozenset(
+        {
+            "scripts/kol_daily.py",
+            "src/xiaocao/kol/decisions.py",
+            "src/xiaocao/kol/household.py",
+            "src/xiaocao/kol/lv_subscription.py",
+            "src/xiaocao/kol/writer_progress.py",
+        }
+    ),
     "kol_shared_lv_listing_browser_eval": frozenset(
         {
             "src/xiaocao/kol/lv_subscription.py",
@@ -802,6 +834,15 @@ _TARGETED_REPAIR_TEST_PATHS: dict[str, frozenset[str]] = {
         {
             "tests/test_kol_daily.py",
             "tests/test_kol_subscription_video.py",
+            "tests/test_kol_repair_validation.py",
+            "tests/test_kol_writer_progress.py",
+        }
+    ),
+    "kol_subscription_video_source_run": frozenset(
+        {
+            "tests/test_kol_subscription_video.py",
+            "tests/test_kol_decisions.py",
+            "tests/test_kol_daily.py",
             "tests/test_kol_repair_validation.py",
             "tests/test_kol_writer_progress.py",
         }
@@ -943,6 +984,25 @@ _XIAOCAO_WECHAT_COMPRESSED_CAPTURE_REPAIR_PROFILE = (
 _XIAOCAO_WECHAT_CLOUD_HANDOFF_REPAIR_PROFILE = (
     "kol_xiaocao_wechat_live_cloud_handoff"
 )
+_SUBSCRIPTION_VIDEO_SOURCE_REPAIR_PROFILE = (
+    "kol_subscription_video_source_run"
+)
+
+
+def _canonical_subscription_video_source_repair_profile(
+    context: Mapping[str, Any],
+) -> str | None:
+    if (
+        str(context.get("adapter") or "") == "subscription_video"
+        and str(context.get("targeted_test_profile") or "")
+        == _SUBSCRIPTION_VIDEO_SOURCE_REPAIR_PROFILE
+        and str(context.get("category") or "") == "source_error"
+        and str(context.get("code") or "")
+        == "source_temporarily_unavailable"
+        and str(context.get("stage") or "") == "source_run"
+    ):
+        return _SUBSCRIPTION_VIDEO_SOURCE_REPAIR_PROFILE
+    return None
 
 
 def _canonical_shared_lv_listing_validation_repair_profile(
@@ -1093,6 +1153,11 @@ class RepairValidationService:
         )
         if xiaocao_wechat_profile is not None:
             return xiaocao_wechat_profile
+        subscription_source_profile = (
+            _canonical_subscription_video_source_repair_profile(context)
+        )
+        if subscription_source_profile is not None:
+            return subscription_source_profile
         if (
             str(context.get("stage") or "").startswith("mailbox_")
             and str(context.get("category") or "")
