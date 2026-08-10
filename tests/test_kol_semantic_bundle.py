@@ -292,6 +292,19 @@ def test_build_validated_bundle_persists_receipt_before_consumer_use(tmp_path):
     assert receipt.bindings["market_evidence_sha256"] == "4" * 64
 
 
+def test_build_validated_bundle_requires_captured_at(tmp_path):
+    request, draft, bundle_path, receipt_path, _ = _fixture(tmp_path)
+    request.pop("captured_at")
+
+    with pytest.raises(SemanticBundleError, match="source metadata is incomplete"):
+        build_validated_bundle(
+            request,
+            draft,
+            bundle_path=bundle_path,
+            receipt_path=receipt_path,
+        )
+
+
 def test_file_builder_keeps_market_evidence_out_of_semantic_draft(tmp_path):
     request, draft, _, _, _ = _fixture(tmp_path)
     market_evidence = request.pop("market_evidence")

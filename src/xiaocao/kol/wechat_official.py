@@ -1202,6 +1202,7 @@ class OfficialAccountInbox:
             "publisher": item["publisher"],
             "title": item["title"],
             "published_at": item["published_at"],
+            "captured_at": item["received_at"],
             "page_publish_time": item["page_publish_time"],
             "evidence_path": str(evidence_path),
             "evidence_sha256": item["evidence_sha256"],
@@ -1229,7 +1230,11 @@ class OfficialAccountInbox:
                 raise EnrichmentError(
                     "official-account analysis request is invalid"
                 ) from exc
-            if prior != request:
+            legacy_request = dict(request)
+            legacy_request.pop("captured_at", None)
+            if prior == legacy_request:
+                _atomic_json(request_path, request)
+            elif prior != request:
                 raise EnrichmentError(
                     "official-account analysis request changed after claim"
                 )

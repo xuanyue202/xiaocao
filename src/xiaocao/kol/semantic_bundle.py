@@ -1204,7 +1204,10 @@ def _source_metadata(request: Mapping[str, Any], validated: Mapping[str, Any]) -
             "evidence_sha256": validated["evidence_sha256"],
         }
     )
-    if "source" not in metadata or "author" not in metadata or "title" not in metadata:
+    if any(
+        field not in metadata
+        for field in ("source", "author", "title", "captured_at")
+    ):
         raise _fail(
             "source metadata is incomplete",
             error_code="source_metadata_invalid",
