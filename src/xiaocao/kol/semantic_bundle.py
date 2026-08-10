@@ -960,7 +960,7 @@ def _validate_synthesis(item: Mapping[str, Any]) -> None:
     if not isinstance(synthesis, dict) or any(
         not _nonblank(synthesis.get(field))
         for field in ("summary", "confidence")
-    ):
+    ) or synthesis.get("confidence") not in {"low", "medium", "high"}:
         raise _fail(
             "system synthesis is incomplete",
             error_code="reader_copy_invalid",

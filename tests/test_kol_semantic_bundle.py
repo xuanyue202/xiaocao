@@ -518,6 +518,17 @@ def test_synthesis_is_validated_before_business_publication(tmp_path):
     assert not bundle_path.exists()
     assert not receipt_path.exists()
 
+    request, draft, bundle_path, receipt_path, _ = _fixture(tmp_path)
+    draft["synthesis"]["confidence"] = "certain"
+    with pytest.raises(SemanticBundleError) as caught:
+        build_validated_bundle(
+            request,
+            draft,
+            bundle_path=bundle_path,
+            receipt_path=receipt_path,
+        )
+    assert caught.value.field == "synthesis"
+
 
 def test_receipt_reuse_does_not_change_external_identity_or_scan_evidence_again(tmp_path):
     request, draft, bundle_path, receipt_path, _ = _fixture(tmp_path)
