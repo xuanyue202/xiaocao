@@ -675,6 +675,21 @@ TARGETED_REPAIR_TESTS: dict[str, tuple[str, ...]] = {
             "repair_closure_accepts_shared_lv_listing_browser_eval_profile"
         ),
     ),
+    "kol_xiaocao_wechat_live_source_run": (
+        "env",
+        "PYTHONPATH=src",
+        ".venv/bin/python",
+        "-m",
+        "pytest",
+        "tests/test_kol_daily.py",
+        "tests/test_kol_repair_validation.py",
+        "-q",
+        "-k",
+        (
+            "source_cli_narrow_runner_supports_xiaocao_wechat_live or "
+            "repair_validation_accepts_xiaocao_wechat_source_profile"
+        ),
+    ),
 }
 
 _TARGETED_REPAIR_IMPLEMENTATION_PATHS: dict[str, frozenset[str]] = {
@@ -710,6 +725,12 @@ _TARGETED_REPAIR_IMPLEMENTATION_PATHS: dict[str, frozenset[str]] = {
     "kol_shared_lv_listing_browser_eval": frozenset(
         {
             "src/xiaocao/kol/lv_subscription.py",
+            "src/xiaocao/kol/writer_progress.py",
+        }
+    ),
+    "kol_xiaocao_wechat_live_source_run": frozenset(
+        {
+            "scripts/kol_daily.py",
             "src/xiaocao/kol/writer_progress.py",
         }
     ),
@@ -749,6 +770,12 @@ _TARGETED_REPAIR_TEST_PATHS: dict[str, frozenset[str]] = {
             "tests/test_kol_lv_subscription.py",
             "tests/test_kol_repair_validation.py",
             "tests/test_kol_writer_progress.py",
+        }
+    ),
+    "kol_xiaocao_wechat_live_source_run": frozenset(
+        {
+            "tests/test_kol_daily.py",
+            "tests/test_kol_repair_validation.py",
         }
     ),
 }
@@ -853,6 +880,22 @@ def _canonical_shared_lv_listing_browser_eval_repair_profile(
     return None
 
 
+def _canonical_xiaocao_wechat_source_repair_profile(
+    context: Mapping[str, Any],
+) -> str | None:
+    profile = "kol_xiaocao_wechat_live_source_run"
+    if (
+        str(context.get("adapter") or "") == "xiaocao_wechat_live"
+        and str(context.get("targeted_test_profile") or "") == profile
+        and str(context.get("category") or "") == "source_error"
+        and str(context.get("code") or "")
+        == "source_temporarily_unavailable"
+        and str(context.get("stage") or "") == "source_run"
+    ):
+        return profile
+    return None
+
+
 class RepairValidationService:
     """Resolve, test, and persist one exact repository repair proof."""
 
@@ -934,6 +977,11 @@ class RepairValidationService:
         )
         if browser_eval_profile is not None:
             return browser_eval_profile
+        xiaocao_wechat_profile = (
+            _canonical_xiaocao_wechat_source_repair_profile(context)
+        )
+        if xiaocao_wechat_profile is not None:
+            return xiaocao_wechat_profile
         if (
             str(context.get("stage") or "").startswith("mailbox_")
             and str(context.get("category") or "")
