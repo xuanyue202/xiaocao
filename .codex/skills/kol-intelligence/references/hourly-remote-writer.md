@@ -19,11 +19,10 @@ PYTHONPATH=src .venv/bin/python scripts/kol_daily.py convergence-report
 PYTHONPATH=src .venv/bin/python scripts/kol_daily.py stability-acceptance
 ```
 
-Each run is one sweep; a sweep with no concrete item is silent. Every concrete
-item remains reportable while waiting, unchanged, exceptional, handoff-completed,
-or fully completed; distinguish handoff from downstream completion. Retryable
-failures expose only credential-safe `category`, `code`, and `stage`; a started
-task owns repair and exact continuation, so do not defer obtainable work.
+Each run is one sweep; a sweep with no concrete item is silent. Report every
+concrete wait, change, exception, handoff, or completion, and distinguish
+handoff from downstream completion. Expose only credential-safe failure fields;
+the started task owns repair and exact continuation.
 
 Obey seven-state `writer_progress.next_action`; bind input and readback
 receipts; retryability never changes owner.
@@ -126,14 +125,10 @@ uncertain effects. Source repairs use `validate-source-repair` then
 `resume-source-repair` with exact adapter/fingerprint; resume consumes only
 `narrow_resume_surface` and reads neither mailbox nor another source.
 
-`convergence-report` is the credential-safe daily report: stable failure codes,
-repair required/closed and same-root recurrence, generic waits, internal user
-dependency, peer-gate attempts/latency, runner starts, side-effect
-reconciliation, duplicate-effect audits, scheduled/clean/business slots, and
-exclusions. It reads append-only ledgers and never rewrites failed slots. A
-first rollout requires authoritative single-writer readback of one writer,
-target revision, protected WIP, dependencies/private config/restored state, and
-Automation ownership:
+`convergence-report` reads append-only ledgers for credential-safe repairs,
+waits, gate/runner timing, effects, duplicates, slots, and exclusions; it never
+rewrites failures. First rollout requires authoritative one-writer, revision,
+WIP, dependency/config/state, and Automation-ownership readback:
 
 ```bash
 PYTHONPATH=src .venv/bin/python scripts/kol_daily.py rollout-readback
@@ -143,18 +138,9 @@ Use self-hashed Automation evidence; require recent peer-gate readback.
 Acceptance starts seven-day/50-scheduled-slot observation; never backfill.
 `stability-acceptance` is read-only: pending until gates, passed if all pass.
 
-A provider-owned `wait_until` prints and persists one exact
-`resume_command`. At or after its `deadline`, run only that command:
-
-```bash
-PYTHONPATH=src .venv/bin/python scripts/kol_daily.py resume-source-wait \
-  --source-adapter <exact-adapter> --source-identity <exact-item-identity>
-```
-
-This continuation calls only the adapter's bound `narrow_resume` surface. It
-does not drain the mailbox, rescan other sources, or count as a new scheduled
-sweep. Before the deadline it fails closed; an identity or surface mismatch is
-an Agent-owned control-plane repair, never authority to run the full sweep.
+A provider `wait_until` persists one exact `resume-source-wait` command. Run it
+only at/after the deadline; it calls only the bound `narrow_resume`, never the
+mailbox, another source, or a new sweep. Any mismatch is Agent-owned repair.
 
 At provider steps, use installed OpenCLI once with exact identity/version,
 bytes, hashes, and receipts. The no-MCP capture rule permits the
