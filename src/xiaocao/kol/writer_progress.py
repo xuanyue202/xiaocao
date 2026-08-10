@@ -713,6 +713,7 @@ TARGETED_REPAIR_TESTS: dict[str, tuple[str, ...]] = {
             "new_source_account_login_redirect_resolves_exact_page or "
             "account_login_state_is_authoritative_when_page_url_stays_bound or "
             "cloud_handoff_wait_has_durable_poll_deadline or "
+            "compressed_capture_wait_has_durable_poll_deadline or "
             "pending_cloud_handoff_resumes_exact_job_after_stale_playback_state or "
             "repair_closure_accepts_xiaocao_wechat_source_profile"
         ),

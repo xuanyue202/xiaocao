@@ -41,7 +41,7 @@ _URL = re.compile(r"https://[^\s）)】》>，,；;]+")
 _TERMINAL = {"historical_baseline", "superseded", "completed"}
 _SHA256 = re.compile(r"^[0-9a-f]{64}$")
 _MAX_HANDOFF_BYTES = 1024 * 1024
-_CLOUD_HANDOFF_POLL_SECONDS = 30
+_CAPTURE_PROGRESS_POLL_SECONDS = 30
 _PLAYBACK_PAGE_STATES = {
     "account_login_required",
     "waiting_to_start",
@@ -580,13 +580,13 @@ class XiaocaoWechatLiveSubscription:
             "stage": stage,
             "capture_job_id": str(item.get("capture_job_id") or ""),
         }
-        if stage == "cloud_handoff":
+        if status != "awaiting_playback":
             deadline_base = self.clock()
             if deadline_base.tzinfo is None:
                 raise EnrichmentError("Xiaocao WeChat clock needs a timezone")
             waiting_item["next_poll_not_before"] = (
                 deadline_base.astimezone(BEIJING)
-                + timedelta(seconds=_CLOUD_HANDOFF_POLL_SECONDS)
+                + timedelta(seconds=_CAPTURE_PROGRESS_POLL_SECONDS)
             ).isoformat(timespec="seconds")
         return {
             "status": "waiting",

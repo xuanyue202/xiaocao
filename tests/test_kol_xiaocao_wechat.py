@@ -140,6 +140,41 @@ def test_cloud_handoff_wait_has_durable_poll_deadline(tmp_path):
     assert progress.next_action == "resume_after_deadline"
 
 
+def test_compressed_capture_wait_has_durable_poll_deadline(tmp_path):
+    subscription = XiaocaoWechatLiveSubscription(
+        tmp_path / "wechat",
+        history_reader=lambda: {},
+        browser_exchange=lambda request: request,
+        capture_driver=_CaptureDriver(),
+        clock=lambda: datetime.fromisoformat("2026-08-10T16:03:00+08:00"),
+    )
+
+    result = subscription._waiting(
+        {
+            "identity": "kol-wechat-current",
+            "published_at": "2026-08-09T16:42:00+08:00",
+            "capture_job_id": "kol-capture-current",
+            "status": "playback_activated",
+        },
+        {
+            "event": "xiaocao_live_pending",
+            "status": "downloading",
+        },
+    )
+
+    assert result["waiting_items"][0]["next_poll_not_before"] == (
+        "2026-08-10T16:03:30+08:00"
+    )
+    progress = normalize_source_result(
+        "xiaocao_wechat_live",
+        result,
+        failure_revision="a" * 40,
+        provider_contract_version="xiaocao_writer_v1",
+    )
+    assert progress.status == "wait_until"
+    assert progress.next_action == "resume_after_deadline"
+
+
 def test_live_capture_driver_reconciles_sniffer_before_pending_advance(tmp_path):
     calls: list[object] = []
 
