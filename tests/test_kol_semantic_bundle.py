@@ -426,6 +426,53 @@ def test_candidate_projection_fails_before_artifact_or_receipt(tmp_path):
     assert not receipt_path.exists()
 
 
+def test_promoted_projection_requires_downstream_timestamp_and_basis(tmp_path):
+    request, draft, bundle_path, receipt_path, _ = _fixture(tmp_path)
+    claim_id = draft["claims"][0]["claim_id"]
+    projection = {
+        "status": "promoted",
+        "reason": "这条量能纪律可以跨交易日复用。",
+        "viewpoints": [{
+            "local_thesis_id": "volume-confirmation",
+            "subject": "量能确认",
+            "stance": "量能恢复前不追涨。",
+            "horizon": "跨交易日",
+            "reasoning": "缩量环境降低突破可靠性。",
+            "evidence_refs": [{
+                "claim_id": claim_id,
+                "excerpt": "下一交易日先看成交额是否恢复",
+            }],
+            "evaluation": {
+                "status": "current",
+                "basis": "最新市场事实仍显示量能不足。",
+            },
+        }],
+    }
+    draft["longitudinal_projection"] = projection
+
+    with pytest.raises(SemanticBundleError) as caught:
+        build_validated_bundle(
+            request,
+            draft,
+            bundle_path=bundle_path,
+            receipt_path=receipt_path,
+        )
+
+    assert caught.value.field == "longitudinal_projection.evaluated_at"
+    projection["evaluated_at"] = "2026-08-08T07:00:00+08:00"
+    del projection["viewpoints"][0]["evaluation"]["basis"]
+
+    with pytest.raises(SemanticBundleError) as caught:
+        build_validated_bundle(
+            request,
+            draft,
+            bundle_path=bundle_path,
+            receipt_path=receipt_path,
+        )
+
+    assert caught.value.field.endswith("evaluation.basis")
+
+
 def test_market_projection_and_segment_identity_are_single_source_of_truth(tmp_path):
     request, draft, bundle_path, receipt_path, _ = _fixture(tmp_path)
     draft["market_outlook"]["current_validation"] = {

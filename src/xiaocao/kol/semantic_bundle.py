@@ -613,6 +613,26 @@ def _validate_projection(item: dict[str, Any]) -> None:
             field="longitudinal_projection.viewpoints",
         )
     if status == "promoted":
+        try:
+            evaluated_at = datetime.fromisoformat(
+                str(projection.get("evaluated_at") or "").replace(
+                    "Z", "+00:00"
+                )
+            )
+        except ValueError as exc:
+            raise _fail(
+                "longitudinal projection timestamp is invalid",
+                error_code="longitudinal_projection_invalid",
+                stage="longitudinal_projection",
+                field="longitudinal_projection.evaluated_at",
+            ) from exc
+        if evaluated_at.tzinfo is None:
+            raise _fail(
+                "longitudinal projection timestamp has no timezone",
+                error_code="longitudinal_projection_invalid",
+                stage="longitudinal_projection",
+                field="longitudinal_projection.evaluated_at",
+            )
         claims = {
             str(row.get("claim_id"))
             for row in item.get("claims") or []
@@ -670,6 +690,13 @@ def _validate_projection(item: dict[str, Any]) -> None:
                     "longitudinal viewpoint evaluation is invalid",
                     error_code="longitudinal_projection_invalid",
                     stage="longitudinal_projection",
+                )
+            if not _nonblank(evaluation.get("basis")):
+                raise _fail(
+                    "longitudinal viewpoint evaluation basis is missing",
+                    error_code="longitudinal_projection_invalid",
+                    stage="longitudinal_projection",
+                    field="longitudinal_projection.viewpoints.evaluation.basis",
                 )
 
 
