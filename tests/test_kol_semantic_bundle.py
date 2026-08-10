@@ -375,6 +375,23 @@ def test_builder_rejects_claim_quote_not_bound_to_evidence(tmp_path):
     assert caught.value.field == "claims[liquidity-claim].quote"
 
 
+def test_builder_rejects_non_object_claim_before_downstream_processing(tmp_path):
+    request, draft, bundle_path, receipt_path, _ = _fixture(tmp_path)
+    draft["claims"] = ["not-an-object"]
+
+    with pytest.raises(SemanticBundleError, match="claim row is invalid") as caught:
+        build_validated_bundle(
+            request=request,
+            semantic_draft=draft,
+            bundle_path=bundle_path,
+            receipt_path=receipt_path,
+        )
+
+    assert caught.value.error_code == "coverage_not_evidence_bound"
+    assert caught.value.stage == "coverage"
+    assert caught.value.field == "claims[0]"
+
+
 def test_two_argument_builder_uses_request_artifact_directory(tmp_path):
     request, draft, _, _, _ = _fixture(tmp_path)
     request["artifact_dir"] = str(tmp_path / "artifacts")

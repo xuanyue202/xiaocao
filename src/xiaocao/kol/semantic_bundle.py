@@ -1021,9 +1021,14 @@ def _validate_segments(item: Mapping[str, Any], known: Mapping[str, Mapping[str,
             stage="evidence_binding",
             field="segment_id",
         )
-    for claim in item.get("claims") or []:
+    for index, claim in enumerate(item.get("claims") or []):
         if not isinstance(claim, Mapping):
-            continue
+            raise _fail(
+                "claim row is invalid",
+                error_code="coverage_not_evidence_bound",
+                stage="coverage",
+                field=f"claims[{index}]",
+            )
         quote = claim.get("quote")
         if not isinstance(quote, str) or not quote.strip() or quote not in text:
             claim_id = str(claim.get("claim_id") or "<unknown>")
