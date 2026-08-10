@@ -213,6 +213,7 @@ def _fixture(tmp_path: Path) -> tuple[dict, dict, Path, Path, Path]:
         "content_value": {
             "status": "promoted",
             "tier": "report_only",
+            "reason": "有决策价值，但当前没有即时动作。",
             "no_alert_reason": "当前没有需要即时提醒的新增动作。",
         },
         "publication": {
@@ -471,6 +472,22 @@ def test_promoted_projection_requires_downstream_timestamp_and_basis(tmp_path):
         )
 
     assert caught.value.field.endswith("evaluation.basis")
+
+
+def test_content_value_requires_independent_terminal_reason(tmp_path):
+    request, draft, bundle_path, receipt_path, _ = _fixture(tmp_path)
+    del draft["content_value"]["reason"]
+
+    with pytest.raises(SemanticBundleError) as caught:
+        build_validated_bundle(
+            request,
+            draft,
+            bundle_path=bundle_path,
+            receipt_path=receipt_path,
+        )
+
+    assert caught.value.error_code == "content_value_invalid"
+    assert caught.value.field == "content_value.reason"
 
 
 def test_market_projection_and_segment_identity_are_single_source_of_truth(tmp_path):

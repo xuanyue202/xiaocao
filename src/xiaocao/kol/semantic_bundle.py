@@ -29,7 +29,7 @@ from .enrichment_types import EnrichmentError
 
 
 BUNDLE_SCHEMA_VERSION = 2
-VALIDATOR_VERSION = "kol-semantic-bundle-v2"
+VALIDATOR_VERSION = "kol-semantic-bundle-v3"
 _SHA256 = re.compile(r"^[0-9a-f]{64}$")
 
 _DECISION_STATUSES = {"actionable_signal", "no_actionable_signal"}
@@ -902,6 +902,13 @@ def _validate_content_routing(item: Mapping[str, Any]) -> dict[str, Any]:
             error_code="content_value_invalid",
             stage="content_routing",
             field="content_value.status",
+        )
+    if not _nonblank(content.get("reason")):
+        raise _fail(
+            "content value needs a terminal reason",
+            error_code="content_value_invalid",
+            stage="content_routing",
+            field="content_value.reason",
         )
     if content["status"] == "promoted":
         tier = content.get("tier")
