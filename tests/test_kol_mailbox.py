@@ -13,6 +13,7 @@ from xiaocao.kol.mailbox import (
     RemoteMailboxDrain,
 )
 from xiaocao.kol.enrichment_types import EnrichmentDiagnosticError
+from xiaocao.kol.publication import PublicationError
 
 
 def _official_capsule() -> dict[str, object]:
@@ -579,6 +580,38 @@ def test_remote_drain_preserves_structured_exception_diagnostics(tmp_path) -> No
     assert result["items"][0]["writer_progress"]["status"] == (
         "repair_required"
     )
+
+
+def test_remote_drain_normalizes_unstructured_exception_code(tmp_path) -> None:
+    message = _mailbox_message("a" * 64)
+    pages = iter([[message], []])
+
+    def exchange(request: dict[str, object]) -> dict[str, object]:
+        assert request["operation"] == "list_mailbox_messages"
+        return {
+            "operation": "list_mailbox_messages",
+            "page": {
+                "items": next(pages),
+                "next_cursor": None,
+                "has_more": False,
+            },
+        }
+
+    def process(_message: dict[str, object]) -> dict[str, object]:
+        raise PublicationError("reader payload is invalid")
+
+    client = LiangHuiMailboxClient(
+        MailboxLedger(tmp_path / "mailbox"),
+        exchange=exchange,
+    )
+    result = RemoteMailboxDrain(client, processor=process).run()
+
+    assert result["items"][0]["category"] == "processor_error"
+    assert result["items"][0]["code"] == "publication_error"
+    assert result["items"][0]["writer_progress"]["status"] == (
+        "repair_required"
+    )
+    assert client.ledger.events()[-1]["code"] == "publication_error"
 
 
 def test_remote_drain_preserves_legal_user_action_progress(tmp_path) -> None:

@@ -33,6 +33,18 @@ class MailboxError(EnrichmentError):
     """The mailbox request, response, or ledger could not be proved."""
 
 
+def _exception_code(exc: Exception) -> str:
+    """Return a stable progress-safe token for an unstructured exception."""
+
+    name = type(exc).__name__
+    token = re.sub(r"([a-z0-9])([A-Z])", r"\1_\2", name)
+    token = re.sub(r"([A-Z]+)([A-Z][a-z])", r"\1_\2", token)
+    token = re.sub(r"[^a-z0-9_]+", "_", token.lower()).strip("_")
+    if not token or not token[0].isalpha():
+        return "processor_exception"
+    return token[:64].rstrip("_") or "processor_exception"
+
+
 def _empty_claim_receipt_summary() -> dict[str, int]:
     return {
         "claim_count": 0,
@@ -1105,7 +1117,7 @@ class RemoteMailboxDrain:
                     else:
                         details = {
                             "category": "processor_error",
-                            "code": type(exc).__name__[:80],
+                            "code": _exception_code(exc),
                             "stage": "business_processing",
                         }
                     details = self._safe_waiting_details(
