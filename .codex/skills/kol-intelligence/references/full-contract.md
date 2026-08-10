@@ -570,6 +570,10 @@ work and never authorizes replaying publication, reminder, or Book side effects.
   validated bundle to that same process. The command rebuilds only the
   persisted request bindings and records the structured-input receipt; it does
   not run source discovery or a new sweep.
+- If that process proves the exact decision, gray-report receipt, and Book
+  terminal but fails while projecting the daily terminal, use
+  `reconcile-source-terminal` for the exact identity. It performs readback
+  only and records `external_business_effects_replayed=false`.
 - Both sources use Ticket 02's exact-player transcript and `tpl_no=1` note
   contract. Register the cloud metadata version without inventing a payload
   hash, bind the player to the complete path, preserve the complete transcript

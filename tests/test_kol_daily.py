@@ -2178,6 +2178,92 @@ def test_resume_structured_input_consumes_exact_request_without_new_sweep(
     assert source["writer_progress"]["status"] == "terminal"
 
 
+def test_resume_reconciliation_projects_readback_terminal_without_replay(
+    tmp_path,
+):
+    clock = Clock("2026-08-08T07:30:00+08:00")
+    service = DailyCoordinator(tmp_path / "daily", now=clock)
+    service.run([{
+        "name": "subscription_video",
+        "run": lambda: {"status": "no_update"},
+    }])
+    progress = WriterProgress.reconcile_required(
+        item_identity="video-1",
+        stage="business_terminal_reconciliation",
+        effect_kind="source_terminal",
+        claim_identity="terminal-claim-1",
+        readback_operation="read_subscription_video_terminal_receipts",
+        claim_receipt_summary={
+            "claim_count": 2,
+            "receipt_count": 2,
+            "uncertain_effect_count": 0,
+        },
+    )
+    terminal = {
+        "kind": "source_event",
+        "event_id": "video-1",
+        "content_value": {
+            "status": "promoted",
+            "tier": "report_only",
+            "reason": "值得归档，但没有即时动作。",
+        },
+        "gray_report": {
+            "status": "published",
+            "receipt": "publish-1",
+            "detail_url": "https://example.test/report-1",
+            "terminal_order": 1,
+        },
+        "alert": {
+            "status": "not_eligible",
+            "reason": "没有即时动作。",
+            "terminal_order": 3,
+        },
+        "book_kol_us": {
+            "book": "KOL-US",
+            "paper_only": True,
+            "status": "no_trade",
+            "reason": "没有完整执行参数。",
+            "terminal_order": 2,
+        },
+        "coordinator_source_video_bytes": 0,
+    }
+    readback = {
+        "status": "no_update",
+        "terminal_event": terminal,
+        "external_business_effects_replayed": False,
+    }
+    receipt = {
+        "event": "reconciliation_completed",
+        "claim_identity": "terminal-claim-1",
+        "readback_operation": "read_subscription_video_terminal_receipts",
+        "readback_evidence_sha256": hashlib.sha256(
+            json.dumps(
+                readback,
+                ensure_ascii=False,
+                sort_keys=True,
+                separators=(",", ":"),
+            ).encode()
+        ).hexdigest(),
+        "external_business_effects_replayed": False,
+    }
+
+    result = service.resume_reconciliation(
+        {
+            "name": "subscription_video",
+            "reconcile": lambda _progress: {
+                "outcome": readback,
+                "reconciliation_receipt": receipt,
+            },
+        },
+        progress=progress,
+    )
+
+    assert result["health"] == "healthy"
+    assert result["source_result"]["status"] == "completed"
+    assert result["source_result"]["writer_progress"]["status"] == "terminal"
+    assert result["source_result"]["events"] == [terminal]
+
+
 def test_structured_input_without_consumption_receipt_becomes_agent_repair(
     tmp_path,
 ):

@@ -2602,6 +2602,121 @@ class DailyCoordinator:
             "source_result": {"name": name, **result},
         }
 
+    def resume_reconciliation(
+        self,
+        source: dict[str, Any],
+        *,
+        progress: WriterProgress,
+    ) -> dict[str, Any]:
+        """Complete one source from an exact authoritative terminal readback."""
+
+        name = str(source.get("name") or "").strip()
+        handler = source.get("reconcile")
+        if (
+            not name
+            or not callable(handler)
+            or progress.status != "reconcile_required"
+        ):
+            raise DailyError(
+                "source reconciliation needs one source and exact claim"
+            )
+        started = time.monotonic()
+        with self._locked():
+            prior_rows = self._events_unlocked()
+            prior_sweep = self._last_sweep_state(prior_rows)
+            if prior_sweep is None:
+                raise DailyError("source reconciliation lost its sweep")
+            prior_states = prior_sweep.get("source_states")
+            if not isinstance(prior_states, list) or not any(
+                isinstance(row, Mapping) and row.get("name") == name
+                for row in prior_states
+            ):
+                raise DailyError("source reconciliation lost its source state")
+            slot = str(prior_sweep.get("slot") or "")
+            self._append(
+                "source_reconciliation_resume_started",
+                slot=slot,
+                source=name,
+                item_identity=progress.item_identity,
+                claim_identity=progress.details["claim_identity"],
+                readback_operation=progress.details["readback_operation"],
+            )
+            wrapped = handler(progress)
+            outcome, receipt = self._reconciliation_result(progress, wrapped)
+            terminal = outcome.pop("terminal_event", None)
+            if terminal is not None:
+                validate_source_event(terminal)
+                outcome = {**outcome, "status": "completed", "events": [terminal]}
+            _validate_source_outcome(outcome)
+            following = normalize_source_result(
+                name,
+                outcome,
+                failure_revision=self._failure_revision(),
+                provider_contract_version="xiaocao_writer_v1",
+            )
+            progress.validate_transition_to(following, evidence=receipt)
+            result = {
+                **outcome,
+                "resume_policy": following.next_action,
+                "reconciliation_receipt": receipt,
+                "writer_progress": following.to_dict(),
+            }
+            self._append(
+                "side_effect_reconciled",
+                slot=slot,
+                source=name,
+                claim_identity=receipt["claim_identity"],
+                readback_operation=receipt["readback_operation"],
+                external_business_effects_replayed=False,
+            )
+            self._append(
+                "source_progressed",
+                slot=slot,
+                source=name,
+                progress=following.to_dict(),
+            )
+            self._append(
+                "source_completed",
+                slot=slot,
+                source=name,
+                result=result,
+                coordinator_source_video_bytes=0,
+            )
+            target_state = self._source_states([{"name": name, **result}])[0]
+            source_states = [
+                target_state if row.get("name") == name else dict(row)
+                for row in prior_states
+                if isinstance(row, Mapping)
+            ]
+            health = self._sweep_health(source_states)
+            self._append(
+                "sweep_completed",
+                slot=slot,
+                status="completed",
+                health=health,
+                source_count=len(source_states),
+                source_states=source_states,
+                elapsed_ms=max(0, int((time.monotonic() - started) * 1000)),
+                coordinator_source_video_bytes=0,
+                continuation_only=True,
+            )
+            duplicate_audit = self._duplicate_effect_audit([
+                {"name": name, **result}
+            ])
+            self._append(
+                "duplicate_effect_audit",
+                slot=slot,
+                continuation_only=True,
+                **duplicate_audit,
+            )
+        return {
+            "status": "completed",
+            "slot": slot,
+            "health": health,
+            "continuation_only": True,
+            "source_result": {"name": name, **result},
+        }
+
     def status(self) -> dict[str, Any]:
         rows = self.events()
         last = self._last_sweep_state(rows)

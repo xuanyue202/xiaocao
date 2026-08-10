@@ -1443,6 +1443,46 @@ def _subscription_video_structured_progress(
     return progress
 
 
+def _subscription_video_terminal_progress(
+    runtime: "DailyRuntime",
+    identity: str,
+) -> WriterProgress:
+    manifest = SubscriptionVideoService(
+        runtime.args.video_output_dir,
+        config_path=runtime.args.config,
+    ).status()
+    candidates = []
+    for collection_name in ("items", "episodes"):
+        collection = manifest.get(collection_name)
+        if isinstance(collection, dict):
+            candidate = collection.get(identity)
+            if isinstance(candidate, dict):
+                candidates.append(candidate)
+    if len(candidates) != 1:
+        raise DailyError("video terminal reconciliation target changed")
+    item = candidates[0]
+    result_sha256 = str(item.get("decision_result_sha256") or "")
+    if (
+        item.get("completed_version_key") != item.get("version_key")
+        or not re.fullmatch(r"[0-9a-f]{64}", result_sha256)
+    ):
+        raise DailyError("video terminal reconciliation is not complete")
+    return WriterProgress.reconcile_required(
+        item_identity=identity,
+        stage="business_terminal_reconciliation",
+        effect_kind="source_terminal",
+        claim_identity=(
+            f"subscription_video_terminal:{identity}:{result_sha256}"
+        ),
+        readback_operation="read_subscription_video_terminal_receipts",
+        claim_receipt_summary={
+            "claim_count": 2,
+            "receipt_count": 2,
+            "uncertain_effect_count": 0,
+        },
+    )
+
+
 def _exact_progress_surface(adapter: str, surface: str) -> str:
     prefix = f"{adapter}:"
     value = str(surface or "")
@@ -2438,6 +2478,83 @@ class DailyRuntime:
             outcome,
         )
 
+    def videos_terminal_reconcile(
+        self,
+        progress: WriterProgress,
+    ) -> dict[str, Any]:
+        if (
+            progress.details["effect_kind"] != "source_terminal"
+            or progress.details["readback_operation"]
+            != "read_subscription_video_terminal_receipts"
+        ):
+            raise DailyError("video terminal readback operation is unsupported")
+        service = SubscriptionVideoService(
+            self.args.video_output_dir,
+            config_path=self.args.config,
+        )
+        manifest = service.status()
+        candidates = []
+        for collection_name in ("items", "episodes"):
+            collection = manifest.get(collection_name)
+            if isinstance(collection, dict):
+                candidate = collection.get(progress.item_identity)
+                if isinstance(candidate, dict):
+                    candidates.append(candidate)
+        if len(candidates) != 1:
+            raise DailyError("video terminal readback target changed")
+        item = candidates[0]
+        result_path = Path(
+            str(item.get("decision_result_path") or "")
+        ).expanduser().resolve()
+        result_sha256 = str(item.get("decision_result_sha256") or "")
+        if (
+            item.get("completed_version_key") != item.get("version_key")
+            or not result_path.is_file()
+            or not re.fullmatch(r"[0-9a-f]{64}", result_sha256)
+            or hashlib.sha256(result_path.read_bytes()).hexdigest()
+            != result_sha256
+        ):
+            raise DailyError("video terminal decision receipt is incomplete")
+        result = json.loads(result_path.read_text(encoding="utf-8"))
+        try:
+            terminal = dict(result["items"][0]["daily_terminal"])
+        except (KeyError, IndexError, TypeError) as exc:
+            raise DailyError("video terminal result lacks daily receipt") from exc
+        content = dict(terminal.get("content_value") or {})
+        if not str(content.get("reason") or "").strip():
+            content["reason"] = str(
+                content.get("no_alert_reason") or ""
+            ).strip()
+        terminal["content_value"] = content
+        publication_key = (
+            "xiaocao:subscription_video:" + progress.item_identity
+        )
+        publication = self.publications.status(publication_key)
+        receipt = publication.get("publish_receipt") or {}
+        if (
+            publication.get("completed") is not True
+            or receipt.get("detailUrl")
+            != (terminal.get("gray_report") or {}).get("detail_url")
+        ):
+            raise DailyError("video terminal publication receipt changed")
+        outcome = {
+            "status": "no_update",
+            "terminal_event": terminal,
+            "authoritative_readback": {
+                "decision_result_sha256": result_sha256,
+                "publication_receipt_id": str(
+                    receipt.get("idempotencyKey")
+                    or receipt.get("receiptId")
+                    or ""
+                ),
+                "book_terminal": str(
+                    (terminal.get("book_kol_us") or {}).get("status") or ""
+                ),
+                "external_business_effects_replayed": False,
+            },
+        }
+        return _reconciliation_result(progress, outcome)
+
     def videos_narrow_resume(self, surface: str) -> dict[str, Any]:
         identity = _exact_progress_surface("subscription_video", surface)
         if identity == "source":
@@ -3282,6 +3399,7 @@ def main() -> int:
             "resume-source-repair",
             "resume-source-wait",
             "resume-source-input",
+            "reconcile-source-terminal",
             "status",
             "audit",
             "convergence-report",
@@ -3429,6 +3547,29 @@ def main() -> int:
             progress=progress,
         )
         _print({"source_input_resume": result})
+        return 0
+    if args.command == "reconcile-source-terminal":
+        if not args.source_adapter or not args.source_identity:
+            raise DailyError(
+                "reconcile-source-terminal requires source adapter and identity"
+            )
+        if args.source_adapter != "subscription_video":
+            raise DailyError(
+                "reconcile-source-terminal adapter has no exact CLI binding"
+            )
+        runtime = DailyRuntime(args)
+        progress = _subscription_video_terminal_progress(
+            runtime,
+            args.source_identity,
+        )
+        result = DailyCoordinator(args.output_dir).resume_reconciliation(
+            {
+                "name": args.source_adapter,
+                "reconcile": runtime.videos_terminal_reconcile,
+            },
+            progress=progress,
+        )
+        _print({"source_terminal_reconciliation": result})
         return 0
     if args.command == "validate-repair":
         if not args.mailbox_message_id:
