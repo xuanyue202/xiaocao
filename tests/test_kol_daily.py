@@ -2016,6 +2016,28 @@ def test_real_structured_input_receipt_binds_lv_evidence(
     ).hexdigest()
 
 
+def test_missing_agent_path_preserves_structured_input_request(
+    tmp_path,
+    monkeypatch,
+):
+    request = {
+        "event": "daily_analysis_input_required",
+        "handoff_id": "handoff-1",
+    }
+    missing_path = tmp_path / "missing.json"
+    monkeypatch.setattr(
+        sys,
+        "stdin",
+        io.StringIO(json.dumps({"bundle_path": str(missing_path)}) + "\n"),
+    )
+
+    with pytest.raises(SemanticInputUnavailable) as caught:
+        kol_daily_script._read_agent_path(request, "bundle_path")
+
+    assert caught.value.request == request
+    assert caught.value.field == "bundle_path"
+
+
 def test_invalid_post_run_schema_becomes_agent_owned_repair(tmp_path):
     service = DailyCoordinator(
         tmp_path / "daily",

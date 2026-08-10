@@ -654,17 +654,13 @@ def _read_agent_path(request: dict[str, Any], field: str) -> Path:
         try:
             value = json.loads(raw)
         except json.JSONDecodeError as exc:
-            raise SemanticInputUnavailable(
-                "daily runner response is invalid JSON"
-            ) from exc
+            raise SemanticInputUnavailable(request, field) from exc
         raw = str(value.get(field) or "").strip()
     if not raw:
-        raise SemanticInputUnavailable(
-            f"daily runner response lacks {field}"
-        )
+        raise SemanticInputUnavailable(request, field)
     path = Path(raw).expanduser().resolve()
     if not path.is_file():
-        raise SemanticInputUnavailable(f"daily runner {field} is missing")
+        raise SemanticInputUnavailable(request, field)
     structured_state = _STRUCTURED_INPUT_STATE.get()
     if structured_state is not None:
         progress = structured_state["progress"]
