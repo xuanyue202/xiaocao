@@ -876,11 +876,26 @@ class XiaocaoWechatLiveSubscription:
         *,
         opencli_session: str,
         opencli_profile: str | None = None,
+        only_identity: str | None = None,
     ) -> dict[str, Any]:
         manifest = self._load()
-        self._poll(manifest)
-        self._supersede_older_unarmed_previews(manifest)
-        item = self._next_pending(manifest)
+        if only_identity is None:
+            self._poll(manifest)
+            self._supersede_older_unarmed_previews(manifest)
+            item = self._next_pending(manifest)
+        else:
+            item = manifest["items"].get(only_identity)
+            if not isinstance(item, dict):
+                raise EnrichmentError(
+                    "Xiaocao narrow resume item is missing"
+                )
+            item = dict(item)
+            if item.get("status") in _TERMINAL:
+                return {
+                    "status": "no_update",
+                    "identity": only_identity,
+                    "already_completed": True,
+                }
         if item is None:
             return {"status": "no_update"}
 

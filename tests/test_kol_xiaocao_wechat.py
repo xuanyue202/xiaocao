@@ -572,6 +572,7 @@ def test_account_login_state_is_authoritative_when_page_url_stays_bound(
         "waiting_to_start",
         "account_login_required",
     ])
+    browser_requests: list[dict] = []
     capture = _CaptureDriver()
     capture.next_result = {
         "event": "xiaocao_live_pending",
@@ -582,6 +583,7 @@ def test_account_login_state_is_authoritative_when_page_url_stays_bound(
     }
 
     def browser_exchange(request: dict) -> dict:
+        browser_requests.append(request)
         if request["action"] == "resolve_xiaoetong_page":
             return {
                 "action": request["action"],
@@ -610,11 +612,30 @@ def test_account_login_state_is_authoritative_when_page_url_stays_bound(
     assert subscription.run_once(
         opencli_session="xiaocao-lv-subscription"
     )["status"] == "waiting"
+    manifest_path = tmp_path / "wechat" / "manifest.json"
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    target_identity = next(iter(manifest["items"]))
+    manifest["items"]["newer-other-item"] = {
+        **manifest["items"][target_identity],
+        "identity": "newer-other-item",
+        "published_at": "2026-08-10T09:45:00+08:00",
+    }
+    manifest_path.write_text(
+        json.dumps(manifest, ensure_ascii=False),
+        encoding="utf-8",
+    )
+    subscription.history_reader = lambda: pytest.fail(
+        "exact resume must not rescan WeChat"
+    )
     with pytest.raises(
         EnrichmentError,
         match="Xiaoetong account login is required",
     ):
-        subscription.run_once(opencli_session="xiaocao-lv-subscription")
+        subscription.run_once(
+            opencli_session="xiaocao-lv-subscription",
+            only_identity=target_identity,
+        )
+    assert browser_requests[-1]["subscription_id"] == target_identity
 
 
 def test_pending_cloud_handoff_resumes_exact_job_without_rescanning(tmp_path):

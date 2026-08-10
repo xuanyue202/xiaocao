@@ -1394,21 +1394,13 @@ def _classified_progress_source(name: str, runner):
 
 
 def _source_cli_narrow_runner(runtime: "DailyRuntime", adapter: str):
-    runners = {
-        "lv_text_image": runtime.lv_narrow_resume,
-        "subscription_video": runtime.videos_narrow_resume,
-        "xiaocao_wechat_live": lambda surface: _adapter_scope_resume(
-            "xiaocao_wechat_live",
-            surface,
-            runtime.xiaocao_wechat,
-        ),
-    }
-    try:
-        return runners[adapter]
-    except KeyError as exc:
-        raise DailyError(
-            "source repair adapter has no CLI narrow resume"
-        ) from exc
+    if adapter == "lv_text_image":
+        return runtime.lv_narrow_resume
+    if adapter == "subscription_video":
+        return runtime.videos_narrow_resume
+    if adapter == "xiaocao_wechat_live":
+        return runtime.xiaocao_wechat_narrow_resume
+    raise DailyError("source repair adapter has no CLI narrow resume")
 
 
 def _exact_progress_surface(adapter: str, surface: str) -> str:
@@ -2759,7 +2751,11 @@ class DailyRuntime:
             f"{progress.details['readback_operation']}"
         )
 
-    def xiaocao_wechat(self) -> dict[str, Any]:
+    def xiaocao_wechat(
+        self,
+        *,
+        only_identity: str | None = None,
+    ) -> dict[str, Any]:
         history = WechatCliHistoryReader(
             self.args.xiaocao_wechat_contact,
             executable=self.args.wechat_cli,
@@ -2778,14 +2774,29 @@ class DailyRuntime:
             contact=self.args.xiaocao_wechat_contact,
             password=self.args.xiaocao_live_password,
         )
-        return subscription.run_once(
-            opencli_session=getattr(
+        run_kwargs: dict[str, Any] = {
+            "opencli_session": getattr(
                 self.args,
                 "xiaocao_enrichment_session",
                 self.args.enrichment_session,
             ),
-            opencli_profile=self.args.opencli_profile,
+            "opencli_profile": self.args.opencli_profile,
+        }
+        if only_identity is not None:
+            run_kwargs["only_identity"] = only_identity
+        return subscription.run_once(**run_kwargs)
+
+    def xiaocao_wechat_narrow_resume(
+        self,
+        surface: str,
+    ) -> dict[str, Any]:
+        identity = _exact_progress_surface(
+            "xiaocao_wechat_live",
+            surface,
         )
+        if identity == "source":
+            return self.xiaocao_wechat()
+        return self.xiaocao_wechat(only_identity=identity)
 
     def xiaocao_handoff_local(self) -> dict[str, Any]:
         capture = XiaocaoLiveCaptureDriver(
