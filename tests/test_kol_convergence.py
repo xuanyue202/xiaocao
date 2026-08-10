@@ -323,6 +323,11 @@ def test_convergence_report_aggregates_credential_safe_operational_metrics():
             "failure_fingerprint": FINGERPRINT,
         },
         {
+            "event": "repair_closed",
+            "slot": "2026-08-08T08:00+08:00",
+            "failure_fingerprint": FINGERPRINT,
+        },
+        {
             "event": "failure_observed",
             "slot": "2026-08-08T09:00+08:00",
             "failure_fingerprint": FINGERPRINT,

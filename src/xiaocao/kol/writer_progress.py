@@ -3673,9 +3673,12 @@ def build_convergence_report(
     repair_required = sum(
         row.get("event") == "failure_observed" for row in convergence
     )
-    repair_closed = sum(
-        row.get("event") == "repair_closed" for row in convergence
-    )
+    repair_closed = len({
+        str(row.get("failure_fingerprint"))
+        for row in convergence
+        if row.get("event") == "repair_closed"
+        and str(row.get("failure_fingerprint") or "")
+    })
     closed_fingerprints: set[str] = set()
     recurrence = 0
     for row in convergence:
