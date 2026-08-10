@@ -456,8 +456,29 @@ def test_repair_validation_accepts_shared_lv_listing_browser_eval_profile(
     assert receipt.failure_fingerprint == "9" * 64
 
 
+@pytest.mark.parametrize(
+    ("category", "code", "stage", "targeted_test_profile"),
+    [
+        (
+            "source_error",
+            "source_temporarily_unavailable",
+            "source_run",
+            "kol_xiaocao_wechat_live_source_run",
+        ),
+        (
+            "internal_state_error",
+            "progress_deadline_missing",
+            "compressed_capture",
+            "kol_xiaocao_wechat_live_compressed_capture",
+        ),
+    ],
+)
 def test_repair_validation_accepts_xiaocao_wechat_source_profile(
     tmp_path,
+    category,
+    code,
+    stage,
+    targeted_test_profile,
 ) -> None:
     context = {
         "adapter": "xiaocao_wechat_live",
@@ -465,10 +486,10 @@ def test_repair_validation_accepts_xiaocao_wechat_source_profile(
         "content_sha256": "8" * 64,
         "failure_fingerprint": "9" * 64,
         "failure_revision": FAILURE_REVISION,
-        "category": "source_error",
-        "code": "source_temporarily_unavailable",
-        "stage": "source_run",
-        "targeted_test_profile": "kol_xiaocao_wechat_live_source_run",
+        "category": category,
+        "code": code,
+        "stage": stage,
+        "targeted_test_profile": targeted_test_profile,
     }
 
     def git(command: tuple[str, ...]) -> CompletedProcess[str]:
@@ -515,13 +536,16 @@ def test_repair_validation_accepts_xiaocao_wechat_source_profile(
         "tests/test_kol_daily.py",
         "tests/test_kol_repair_validation.py",
         "tests/test_kol_xiaocao_wechat.py",
+        "tests/test_kol_writer_progress.py",
         "-q",
         "-k",
         (
             "source_cli_narrow_runner_supports_xiaocao_wechat_live or "
             "narrow_source_user_action_keeps_seven_state_contract or "
             "repair_validation_accepts_xiaocao_wechat_source_profile or "
-            "new_source_account_login_redirect_resolves_exact_page"
+            "new_source_account_login_redirect_resolves_exact_page or "
+            "account_login_state_is_authoritative_when_page_url_stays_bound or "
+            "repair_closure_accepts_xiaocao_wechat_source_profile"
         ),
     )
     service = RepairValidationService(

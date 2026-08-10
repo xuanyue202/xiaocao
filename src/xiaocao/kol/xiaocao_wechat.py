@@ -843,10 +843,16 @@ class XiaocaoWechatLiveSubscription:
             not activated
             and response.get("password_used") is not True
             and page_state in {"account_login_required", "unknown"}
-            and self._is_bound_account_login_redirect(
-                response_url,
-                expected_page_url=item["page_url"],
-                expected_source_identity=item["source_identity"],
+            and (
+                (
+                    page_state == "account_login_required"
+                    and response_url == item["page_url"]
+                )
+                or self._is_bound_account_login_redirect(
+                    response_url,
+                    expected_page_url=item["page_url"],
+                    expected_source_identity=item["source_identity"],
+                )
             )
         ):
             raise EnrichmentError("Xiaoetong account login is required")

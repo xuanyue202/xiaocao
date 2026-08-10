@@ -588,6 +588,75 @@ def test_repair_closure_accepts_subscription_video_browser_eval_profile(
     assert closure["event"] == "repair_closed"
 
 
+@pytest.mark.parametrize(
+    ("category", "code", "stage", "targeted_test_profile"),
+    [
+        (
+            "source_error",
+            "source_temporarily_unavailable",
+            "source_run",
+            "kol_xiaocao_wechat_live_source_run",
+        ),
+        (
+            "internal_state_error",
+            "progress_deadline_missing",
+            "compressed_capture",
+            "kol_xiaocao_wechat_live_compressed_capture",
+        ),
+    ],
+)
+def test_repair_closure_accepts_xiaocao_wechat_source_profile(
+    tmp_path,
+    category,
+    code,
+    stage,
+    targeted_test_profile,
+):
+    progress = WriterProgress.repair_required(
+        item_identity="xiaocao_wechat_live:source",
+        fingerprint=FailureFingerprint(
+            adapter="xiaocao_wechat_live",
+            category=category,
+            code=code,
+            stage=stage,
+            failure_revision=FAILURE_REVISION,
+            provider_contract_version="xiaocao_writer_v1",
+        ),
+        repair_revision=None,
+        affected_set_digest="e" * 64,
+        claim_receipt_summary={
+            "claim_count": 0,
+            "receipt_count": 0,
+            "uncertain_effect_count": 0,
+        },
+        targeted_test_profile=targeted_test_profile,
+        narrow_resume_surface="xiaocao_wechat_live:source",
+        retryability="retryable",
+    )
+    ledger = ConvergenceLedger(
+        tmp_path / "convergence.jsonl",
+        now=lambda: datetime.fromisoformat("2026-08-10T11:30:00+08:00"),
+    )
+    ledger.record(progress, slot="2026-08-10T11:00+08:00")
+    validation = RepairValidationLedger(tmp_path / "repair-validation.jsonl")
+    receipt = validation.append(_repair_receipt(
+        progress,
+        profile="kol_xiaocao_wechat_live_source_run",
+    ))
+
+    closure = ledger.close_repair(
+        progress.failure_fingerprint,
+        repair_receipt=receipt,
+        validation_ledger=validation,
+        slot="2026-08-10T11:00+08:00",
+    )
+
+    assert closure["event"] == "repair_closed"
+    assert closure["repair_receipt"]["targeted_test_profile"] == (
+        "kol_xiaocao_wechat_live_source_run"
+    )
+
+
 def test_repair_closure_refreshes_pending_resume(tmp_path):
     progress = _progress_rows()["repair_required"]
     ledger = ConvergenceLedger(

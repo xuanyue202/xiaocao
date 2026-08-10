@@ -684,13 +684,16 @@ TARGETED_REPAIR_TESTS: dict[str, tuple[str, ...]] = {
         "tests/test_kol_daily.py",
         "tests/test_kol_repair_validation.py",
         "tests/test_kol_xiaocao_wechat.py",
+        "tests/test_kol_writer_progress.py",
         "-q",
         "-k",
         (
             "source_cli_narrow_runner_supports_xiaocao_wechat_live or "
             "narrow_source_user_action_keeps_seven_state_contract or "
             "repair_validation_accepts_xiaocao_wechat_source_profile or "
-            "new_source_account_login_redirect_resolves_exact_page"
+            "new_source_account_login_redirect_resolves_exact_page or "
+            "account_login_state_is_authoritative_when_page_url_stays_bound or "
+            "repair_closure_accepts_xiaocao_wechat_source_profile"
         ),
     ),
 }
@@ -781,6 +784,7 @@ _TARGETED_REPAIR_TEST_PATHS: dict[str, frozenset[str]] = {
             "tests/test_kol_daily.py",
             "tests/test_kol_repair_validation.py",
             "tests/test_kol_xiaocao_wechat.py",
+            "tests/test_kol_writer_progress.py",
         }
     ),
 }
@@ -885,19 +889,44 @@ def _canonical_shared_lv_listing_browser_eval_repair_profile(
     return None
 
 
+_XIAOCAO_WECHAT_SOURCE_REPAIR_PROFILE = (
+    "kol_xiaocao_wechat_live_source_run"
+)
+_XIAOCAO_WECHAT_COMPRESSED_CAPTURE_REPAIR_PROFILE = (
+    "kol_xiaocao_wechat_live_compressed_capture"
+)
+
+
 def _canonical_xiaocao_wechat_source_repair_profile(
     context: Mapping[str, Any],
 ) -> str | None:
-    profile = "kol_xiaocao_wechat_live_source_run"
+    if str(context.get("adapter") or "") != "xiaocao_wechat_live":
+        return None
+    declared_profile = str(context.get("targeted_test_profile") or "")
+    failure = (
+        str(context.get("category") or ""),
+        str(context.get("code") or ""),
+        str(context.get("stage") or ""),
+    )
     if (
-        str(context.get("adapter") or "") == "xiaocao_wechat_live"
-        and str(context.get("targeted_test_profile") or "") == profile
-        and str(context.get("category") or "") == "source_error"
-        and str(context.get("code") or "")
-        == "source_temporarily_unavailable"
-        and str(context.get("stage") or "") == "source_run"
+        declared_profile == _XIAOCAO_WECHAT_SOURCE_REPAIR_PROFILE
+        and failure
+        == (
+            "source_error",
+            "source_temporarily_unavailable",
+            "source_run",
+        )
+    ) or (
+        declared_profile
+        == _XIAOCAO_WECHAT_COMPRESSED_CAPTURE_REPAIR_PROFILE
+        and failure
+        == (
+            "internal_state_error",
+            "progress_deadline_missing",
+            "compressed_capture",
+        )
     ):
-        return profile
+        return _XIAOCAO_WECHAT_SOURCE_REPAIR_PROFILE
     return None
 
 
@@ -1085,6 +1114,11 @@ class RepairValidationService:
                     "kol_lv_text_image_browser_eval",
                     "kol_subscription_video_browser_eval",
                 }
+            )
+            and not (
+                profile == _XIAOCAO_WECHAT_SOURCE_REPAIR_PROFILE
+                and declared_profile
+                == _XIAOCAO_WECHAT_COMPRESSED_CAPTURE_REPAIR_PROFILE
             )
         ):
             raise ProgressContractError("repair validation test profile changed")
@@ -2287,6 +2321,17 @@ class ConvergenceLedger:
             )
             if canonical_subscription_browser_eval_profile is not None:
                 expected_profile = canonical_subscription_browser_eval_profile
+            canonical_xiaocao_wechat_profile = (
+                _canonical_xiaocao_wechat_source_repair_profile({
+                    "adapter": open_progress.failure["adapter"],
+                    "targeted_test_profile": expected_profile,
+                    "category": open_progress.failure["category"],
+                    "code": open_progress.failure["code"],
+                    "stage": open_progress.failure["stage"],
+                })
+            )
+            if canonical_xiaocao_wechat_profile is not None:
+                expected_profile = canonical_xiaocao_wechat_profile
             if (
                 receipt.targeted_test_profile
                 != expected_profile
