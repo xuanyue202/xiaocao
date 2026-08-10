@@ -1547,6 +1547,7 @@ class DailyCoordinator:
                     "waiting_items",
                     "failure",
                     "writer_progress",
+                    "resume_command",
                 )
                 if key in row
             }
@@ -2173,6 +2174,13 @@ class DailyCoordinator:
                     "resume_policy": progress.next_action,
                     "writer_progress": progress.to_dict(),
                 }
+                if progress.status == "wait_until":
+                    outcome["resume_command"] = (
+                        "PYTHONPATH=src .venv/bin/python scripts/kol_daily.py "
+                        "resume-source-wait "
+                        f"--source-adapter {name} "
+                        f"--source-identity {progress.item_identity}"
+                    )
                 if progress.status == "repair_required":
                     failure = progress.failure
                     outcome = {
@@ -2261,6 +2269,164 @@ class DailyCoordinator:
             "health": health,
             "silent": silent,
             "source_results": results,
+        }
+
+    def resume_wait(
+        self,
+        source: dict[str, Any],
+        *,
+        item_identity: str,
+    ) -> dict[str, Any]:
+        """Resume one exact provider-owned wait without starting a new sweep."""
+
+        now = self._beijing_now()
+        name = str(source.get("name") or "").strip()
+        narrow_runner = source.get("narrow_resume")
+        identity = str(item_identity or "").strip()
+        if not name or not callable(narrow_runner) or not identity:
+            raise DailyError(
+                "provider wait resume needs one source and exact item identity"
+            )
+        started = time.monotonic()
+        with self._locked():
+            prior_rows = self._events_unlocked()
+            progress_row = next(
+                (
+                    row
+                    for row in reversed(prior_rows)
+                    if row.get("event") == "source_progressed"
+                    and row.get("source") == name
+                ),
+                None,
+            )
+            if progress_row is None:
+                raise DailyError("provider wait resume has no persisted progress")
+            prior = WriterProgress.from_dict(progress_row["progress"])
+            if prior.status != "wait_until":
+                raise DailyError("source is not waiting for a provider deadline")
+            if prior.item_identity != identity:
+                raise DailyError("provider wait resume item identity changed")
+            deadline = datetime.fromisoformat(
+                str(prior.details["deadline"]).replace("Z", "+00:00")
+            )
+            if now < deadline:
+                raise DailyError("provider wait deadline has not elapsed")
+            surface = str(
+                prior.details.get("narrow_resume_surface")
+                or f"{name}:{identity}"
+            )
+            if surface != f"{name}:{identity}":
+                raise DailyError("provider wait narrow resume surface changed")
+            prior_sweep = self._last_sweep_state(prior_rows)
+            if prior_sweep is None:
+                raise DailyError("provider wait resume lost its originating sweep")
+            prior_states = prior_sweep.get("source_states")
+            if not isinstance(prior_states, list) or not any(
+                isinstance(row, Mapping) and row.get("name") == name
+                for row in prior_states
+            ):
+                raise DailyError("provider wait resume lost its source state")
+            slot = str(progress_row.get("slot") or prior_sweep.get("slot") or "")
+            self._append(
+                "source_wait_resume_started",
+                slot=slot,
+                source=name,
+                item_identity=identity,
+                deadline=prior.details["deadline"],
+                narrow_resume_surface=surface,
+            )
+            try:
+                outcome = narrow_runner(surface)
+            except BaseException as exc:
+                self._append(
+                    "source_wait_resume_interrupted",
+                    slot=slot,
+                    source=name,
+                    item_identity=identity,
+                    error_type=type(exc).__name__,
+                )
+                raise
+            if outcome is None:
+                outcome = {"status": "no_update"}
+            if not isinstance(outcome, dict):
+                raise DailyError("provider wait narrow resume returned invalid output")
+            _validate_source_outcome(outcome)
+            progress_value = outcome.get("writer_progress")
+            following = (
+                WriterProgress.from_dict(progress_value)
+                if isinstance(progress_value, Mapping)
+                else normalize_source_result(
+                    name,
+                    outcome,
+                    failure_revision=self._failure_revision(),
+                    provider_contract_version="xiaocao_writer_v1",
+                )
+            )
+            prior.validate_transition_to(following, now=now)
+            result = {
+                **{
+                    key: value
+                    for key, value in outcome.items()
+                    if key != "retryable"
+                },
+                "resume_policy": following.next_action,
+                "writer_progress": following.to_dict(),
+            }
+            if following.status == "wait_until":
+                result["resume_command"] = (
+                    "PYTHONPATH=src .venv/bin/python scripts/kol_daily.py "
+                    "resume-source-wait "
+                    f"--source-adapter {name} "
+                    f"--source-identity {following.item_identity}"
+                )
+            if following.status == "repair_required":
+                self.convergence.record(following, slot=slot)
+            self._append(
+                "source_progressed",
+                slot=slot,
+                source=name,
+                progress=following.to_dict(),
+            )
+            self._append(
+                "source_completed",
+                slot=slot,
+                source=name,
+                result=result,
+                coordinator_source_video_bytes=0,
+            )
+            target_state = self._source_states([{"name": name, **result}])[0]
+            source_states = [
+                target_state if row.get("name") == name else dict(row)
+                for row in prior_states
+                if isinstance(row, Mapping)
+            ]
+            health = self._sweep_health(source_states)
+            self._append(
+                "sweep_completed",
+                slot=slot,
+                status="completed",
+                health=health,
+                source_count=len(source_states),
+                source_states=source_states,
+                elapsed_ms=max(0, int((time.monotonic() - started) * 1000)),
+                coordinator_source_video_bytes=0,
+                continuation_only=True,
+            )
+            duplicate_audit = self._duplicate_effect_audit([
+                {"name": name, **result}
+            ])
+            self._append(
+                "duplicate_effect_audit",
+                slot=slot,
+                continuation_only=True,
+                **duplicate_audit,
+            )
+        return {
+            "status": "completed",
+            "slot": slot,
+            "health": health,
+            "continuation_only": True,
+            "source_result": {"name": name, **result},
         }
 
     def status(self) -> dict[str, Any]:

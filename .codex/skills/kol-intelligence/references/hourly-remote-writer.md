@@ -143,6 +143,19 @@ Use self-hashed Automation evidence; require recent peer-gate readback.
 Acceptance starts seven-day/50-scheduled-slot observation; never backfill.
 `stability-acceptance` is read-only: pending until gates, passed if all pass.
 
+A provider-owned `wait_until` prints and persists one exact
+`resume_command`. At or after its `deadline`, run only that command:
+
+```bash
+PYTHONPATH=src .venv/bin/python scripts/kol_daily.py resume-source-wait \
+  --source-adapter <exact-adapter> --source-identity <exact-item-identity>
+```
+
+This continuation calls only the adapter's bound `narrow_resume` surface. It
+does not drain the mailbox, rescan other sources, or count as a new scheduled
+sweep. Before the deadline it fails closed; an identity or surface mismatch is
+an Agent-owned control-plane repair, never authority to run the full sweep.
+
 At provider steps, use installed OpenCLI once with exact identity/version,
 bytes, hashes, and receipts. The no-MCP capture rule permits the
 repository-designated LiangHui client only after read-only exact-receipt

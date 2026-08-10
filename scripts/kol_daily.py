@@ -3228,6 +3228,7 @@ def main() -> int:
             "validate-repair",
             "validate-source-repair",
             "resume-source-repair",
+            "resume-source-wait",
             "status",
             "audit",
             "convergence-report",
@@ -3262,6 +3263,7 @@ def main() -> int:
     )
     parser.add_argument("--mailbox-message-id")
     parser.add_argument("--source-adapter")
+    parser.add_argument("--source-identity")
     parser.add_argument("--failure-fingerprint")
     parser.add_argument("--repair-revision")
     parser.add_argument("--period-start")
@@ -3332,6 +3334,25 @@ def main() -> int:
             repair_revision=args.repair_revision,
         )
         _print({"mailbox_repair_resume": result})
+        return 0
+    if args.command == "resume-source-wait":
+        if not args.source_adapter or not args.source_identity:
+            raise DailyError(
+                "resume-source-wait requires source adapter and identity"
+            )
+        runtime = DailyRuntime(args)
+        result = DailyCoordinator(args.output_dir).resume_wait(
+            {
+                "name": args.source_adapter,
+                "narrow_resume": lambda surface: _resume_source_repair_outcome(
+                    runtime,
+                    args.source_adapter,
+                    surface,
+                ),
+            },
+            item_identity=args.source_identity,
+        )
+        _print({"source_wait_resume": result})
         return 0
     if args.command == "validate-repair":
         if not args.mailbox_message_id:

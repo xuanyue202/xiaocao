@@ -558,6 +558,12 @@ work and never authorizes replaying publication, reminder, or Book side effects.
   Two reconciled trigger attempts without a copy become the structured
   `lv-cloud-transfer-not-materialized` user-action blocker. Never wait or
   retrigger indefinitely.
+- When the hourly writer persists a cloud-transfer `wait_until`, resume it only
+  at or after the bound deadline with the emitted `kol_daily.py
+  resume-source-wait --source-adapter subscription_video --source-identity
+  <exact-identity>` command. That command consumes only the exact item's narrow
+  source surface; it does not drain the mailbox, discover another item, or
+  start another hourly sweep.
 - Both sources use Ticket 02's exact-player transcript and `tpl_no=1` note
   contract. Register the cloud metadata version without inventing a payload
   hash, bind the player to the complete path, preserve the complete transcript

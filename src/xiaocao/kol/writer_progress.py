@@ -1351,6 +1351,8 @@ class WriterProgress:
                 f"{self.status} lacks required field {', '.join(missing)}"
             )
         allowed = required | {"claim_receipt_summary"}
+        if self.status == "wait_until":
+            allowed = allowed | {"narrow_resume_surface"}
         extra = sorted(set(details) - allowed)
         if extra:
             raise ProgressContractError(
@@ -1398,6 +1400,11 @@ class WriterProgress:
             if self.ownership == "agent":
                 raise ProgressContractError(
                     "agent-owned deterministic failures cannot wait indefinitely"
+                )
+            if "narrow_resume_surface" in details:
+                _safe_identity(
+                    details["narrow_resume_surface"],
+                    field_name="narrow_resume_surface",
                 )
         elif self.status == "repair_required":
             failure = FailureFingerprint.from_dict(details["failure"])
@@ -1588,7 +1595,13 @@ class WriterProgress:
         attempt_budget: Mapping[str, int],
         claim_receipt_summary: Mapping[str, int],
         ownership: str = "provider",
+        narrow_resume_surface: str | None = None,
     ) -> "WriterProgress":
+        resume_binding = (
+            {"narrow_resume_surface": narrow_resume_surface}
+            if narrow_resume_surface is not None
+            else {}
+        )
         return cls._build(
             "wait_until",
             ownership=ownership,
@@ -1599,6 +1612,7 @@ class WriterProgress:
             code=code,
             deadline=deadline,
             attempt_budget=dict(attempt_budget),
+            **resume_binding,
             claim_receipt_summary=claim_receipt_summary,
         )
 
@@ -2033,6 +2047,7 @@ def normalize_source_result(
             stage=stage,
             deadline=deadline,
             attempt_budget={"attempted": attempted, "maximum": max(3, attempted)},
+            narrow_resume_surface=f"{adapter_name}:{item_identity}",
             claim_receipt_summary=summary,
         )
     if not failure and outcome.get("repair_required") is not True:
