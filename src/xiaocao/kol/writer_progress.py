@@ -654,6 +654,7 @@ TARGETED_REPAIR_TESTS: dict[str, tuple[str, ...]] = {
             "source_repair_validation_accepts_pending_resume or "
             "repair_validation_accepts_subscription_video_browser_eval_profile or "
             "repair_closure_accepts_subscription_video_browser_eval_profile or "
+            "repair_closure_refreshes_pending_resume or "
             "repair_resume_persists_following_repair"
         ),
     ),
@@ -2269,7 +2270,13 @@ class ConvergenceLedger:
                 for row in self.events()
                 if row.get("failure_fingerprint") == digest
             ][-1]
-            if latest_matching.get("event") != "failure_observed":
+            if latest_matching.get("event") == "repair_closed":
+                if (
+                    latest_matching.get("repair_receipt")
+                    == receipt.to_dict()
+                ):
+                    return latest_matching
+            elif latest_matching.get("event") != "failure_observed":
                 raise ProgressContractError("repair is not currently open")
             return self._append(
                 {

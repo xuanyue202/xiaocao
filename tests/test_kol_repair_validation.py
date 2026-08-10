@@ -345,6 +345,7 @@ def test_repair_validation_accepts_subscription_video_browser_eval_profile(
             "source_repair_validation_accepts_pending_resume or "
             "repair_validation_accepts_subscription_video_browser_eval_profile or "
             "repair_closure_accepts_subscription_video_browser_eval_profile or "
+            "repair_closure_refreshes_pending_resume or "
             "repair_resume_persists_following_repair"
         ),
     )

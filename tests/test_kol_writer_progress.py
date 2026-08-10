@@ -42,6 +42,7 @@ def _repair_receipt(
     progress: WriterProgress,
     *,
     profile: str = "kol_lv_download_recovery",
+    repair_revision: str = REPAIR_REVISION,
 ) -> RepairValidationReceipt:
     failure = progress.failure
     return RepairValidationReceipt.create(
@@ -51,9 +52,9 @@ def _repair_receipt(
         failure_revision=failure["failure_revision"],
         failure_code=failure["code"],
         failure_stage=failure["stage"],
-        repair_revision=REPAIR_REVISION,
+        repair_revision=repair_revision,
         target_branch="main",
-        target_branch_revision=REPAIR_REVISION,
+        target_branch_revision=repair_revision,
         targeted_test_profile=profile,
         test_command_digest="e" * 64,
         test_result_sha256="f" * 64,
@@ -585,6 +586,43 @@ def test_repair_closure_accepts_subscription_video_browser_eval_profile(
     )
 
     assert closure["event"] == "repair_closed"
+
+
+def test_repair_closure_refreshes_pending_resume(tmp_path):
+    progress = _progress_rows()["repair_required"]
+    ledger = ConvergenceLedger(
+        tmp_path / "convergence.jsonl",
+        now=lambda: datetime.fromisoformat("2026-08-10T08:45:00+08:00"),
+    )
+    ledger.record(progress, slot="2026-08-10T08:00+08:00")
+    validation = RepairValidationLedger(tmp_path / "repair-validation.jsonl")
+    first = validation.append(_repair_receipt(progress))
+    ledger.close_repair(
+        progress.failure_fingerprint,
+        repair_receipt=first,
+        validation_ledger=validation,
+        slot="2026-08-10T08:00+08:00",
+    )
+    refreshed_revision = "c" * 40
+    refreshed = validation.append(
+        _repair_receipt(
+            progress,
+            repair_revision=refreshed_revision,
+        )
+    )
+
+    closure = ledger.close_repair(
+        progress.failure_fingerprint,
+        repair_receipt=refreshed,
+        validation_ledger=validation,
+        slot="2026-08-10T08:00+08:00",
+    )
+
+    assert closure["event"] == "repair_closed"
+    assert closure["repair_receipt"]["repair_revision"] == (
+        refreshed_revision
+    )
+    assert ledger.pending_resume("lv_text_image")[1] == closure
 
 
 def test_repair_resume_persists_following_repair(tmp_path):
