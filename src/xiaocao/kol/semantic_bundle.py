@@ -955,6 +955,20 @@ def _validate_household_recommendation(item: Mapping[str, Any]) -> None:
         )
 
 
+def _validate_synthesis(item: Mapping[str, Any]) -> None:
+    synthesis = item.get("synthesis") or {}
+    if not isinstance(synthesis, dict) or any(
+        not _nonblank(synthesis.get(field))
+        for field in ("summary", "confidence")
+    ):
+        raise _fail(
+            "system synthesis is incomplete",
+            error_code="reader_copy_invalid",
+            stage="reader_copy",
+            field="synthesis",
+        )
+
+
 def _validate_book_intent(item: Mapping[str, Any]) -> None:
     book = item.get("book_kol_us")
     if not isinstance(book, dict) or book.get("book") != "KOL-US" or book.get("paper_only") is not True:
@@ -979,6 +993,7 @@ def _validate_reader_and_terminals(item: dict[str, Any]) -> None:
     decision_status = _validate_decision_and_knowledge(item)
     _validate_content_routing(item)
     _validate_reader_copy(item, decision_status)
+    _validate_synthesis(item)
     _validate_household_recommendation(item)
     _validate_book_intent(item)
 

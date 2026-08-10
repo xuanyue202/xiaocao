@@ -495,6 +495,30 @@ def test_alert_basis_is_validated_before_business_publication(tmp_path):
     assert not receipt_path.exists()
 
 
+def test_synthesis_is_validated_before_business_publication(tmp_path):
+    request, draft, bundle_path, receipt_path, _ = _fixture(tmp_path)
+    draft["synthesis"] = {
+        "kol_signal": "来源认为市场仍在轮动。",
+        "system_judgment": "系统判断继续等待。",
+        "household_action": "等待。",
+        "book_action": "不交易。",
+    }
+
+    with pytest.raises(SemanticBundleError) as caught:
+        build_validated_bundle(
+            request,
+            draft,
+            bundle_path=bundle_path,
+            receipt_path=receipt_path,
+        )
+
+    assert caught.value.error_code == "reader_copy_invalid"
+    assert caught.value.stage == "reader_copy"
+    assert caught.value.field == "synthesis"
+    assert not bundle_path.exists()
+    assert not receipt_path.exists()
+
+
 def test_receipt_reuse_does_not_change_external_identity_or_scan_evidence_again(tmp_path):
     request, draft, bundle_path, receipt_path, _ = _fixture(tmp_path)
     first = build_validated_bundle(
