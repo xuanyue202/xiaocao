@@ -484,9 +484,11 @@ def test_repair_validation_accepts_xiaocao_wechat_source_profile(
                 0,
                 (
                     "scripts/kol_daily.py\n"
+                    "src/xiaocao/kol/xiaocao_wechat.py\n"
                     "src/xiaocao/kol/writer_progress.py\n"
                     "tests/test_kol_daily.py\n"
                     "tests/test_kol_repair_validation.py\n"
+                    "tests/test_kol_xiaocao_wechat.py\n"
                 ),
                 "",
             )
@@ -512,11 +514,13 @@ def test_repair_validation_accepts_xiaocao_wechat_source_profile(
         "pytest",
         "tests/test_kol_daily.py",
         "tests/test_kol_repair_validation.py",
+        "tests/test_kol_xiaocao_wechat.py",
         "-q",
         "-k",
         (
             "source_cli_narrow_runner_supports_xiaocao_wechat_live or "
-            "repair_validation_accepts_xiaocao_wechat_source_profile"
+            "repair_validation_accepts_xiaocao_wechat_source_profile or "
+            "new_source_account_login_redirect_resolves_exact_page"
         ),
     )
     service = RepairValidationService(
