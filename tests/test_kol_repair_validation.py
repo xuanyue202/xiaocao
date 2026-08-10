@@ -66,7 +66,13 @@ def test_repair_validation_runs_repo_owned_profile_and_persists_matching_receipt
         raise AssertionError(command)
 
     def tests(command: tuple[str, ...]) -> CompletedProcess[str]:
-        assert command == ("pytest", "tests/test_kol_mailbox.py", "-q")
+        assert command == (
+            ".venv/bin/python",
+            "-m",
+            "pytest",
+            "tests/test_kol_mailbox.py",
+            "-q",
+        )
         return CompletedProcess(command, 0, "42 passed\n", "")
 
     ledger = RepairValidationLedger(tmp_path / "repair-validation.jsonl")

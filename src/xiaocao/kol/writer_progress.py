@@ -597,6 +597,8 @@ class RepairValidationLedger:
 
 TARGETED_REPAIR_TESTS: dict[str, tuple[str, ...]] = {
     "kol_mailbox_exact_resume": (
+        ".venv/bin/python",
+        "-m",
         "pytest",
         "tests/test_kol_mailbox.py",
         "-q",
