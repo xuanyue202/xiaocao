@@ -36,6 +36,7 @@ def _context() -> dict[str, str]:
             "src/xiaocao/kol/semantic_bundle.py",
             "tests/test_kol_semantic_bundle.py",
         ),
+        ("scripts/kol_daily.py", "tests/test_kol_daily.py"),
     ],
 )
 def test_repair_validation_runs_repo_owned_profile_and_persists_matching_receipt(
@@ -84,6 +85,7 @@ def test_repair_validation_runs_repo_owned_profile_and_persists_matching_receipt
             "pytest",
             "tests/test_kol_mailbox.py",
             "tests/test_kol_semantic_bundle.py",
+            "tests/test_kol_daily.py",
             "-q",
         )
         return CompletedProcess(command, 0, "42 passed\n", "")
