@@ -42,6 +42,7 @@ _TERMINAL = {"historical_baseline", "superseded", "completed"}
 _SHA256 = re.compile(r"^[0-9a-f]{64}$")
 _MAX_HANDOFF_BYTES = 1024 * 1024
 _CAPTURE_PROGRESS_POLL_SECONDS = 30
+_LOCAL_CAPTURE_FIRST_HOUR = 7
 _PLAYBACK_PAGE_STATES = {
     "account_login_required",
     "waiting_to_start",
@@ -580,14 +581,23 @@ class XiaocaoWechatLiveSubscription:
             "stage": stage,
             "capture_job_id": str(item.get("capture_job_id") or ""),
         }
-        if status != "awaiting_playback":
-            deadline_base = self.clock()
-            if deadline_base.tzinfo is None:
-                raise EnrichmentError("Xiaocao WeChat clock needs a timezone")
-            waiting_item["next_poll_not_before"] = (
-                deadline_base.astimezone(BEIJING)
-                + timedelta(seconds=_CAPTURE_PROGRESS_POLL_SECONDS)
-            ).isoformat(timespec="seconds")
+        deadline_base = self.clock()
+        if deadline_base.tzinfo is None:
+            raise EnrichmentError("Xiaocao WeChat clock needs a timezone")
+        deadline = deadline_base.astimezone(BEIJING)
+        if status == "awaiting_playback":
+            deadline = (deadline + timedelta(hours=1)).replace(
+                minute=0,
+                second=0,
+                microsecond=0,
+            )
+            if deadline.hour < _LOCAL_CAPTURE_FIRST_HOUR:
+                deadline = deadline.replace(hour=_LOCAL_CAPTURE_FIRST_HOUR)
+        else:
+            deadline += timedelta(seconds=_CAPTURE_PROGRESS_POLL_SECONDS)
+        waiting_item["next_poll_not_before"] = deadline.isoformat(
+            timespec="seconds"
+        )
         return {
             "status": "waiting",
             "waiting_count": 1,

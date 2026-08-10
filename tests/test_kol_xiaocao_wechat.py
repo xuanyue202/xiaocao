@@ -175,6 +175,55 @@ def test_compressed_capture_wait_has_durable_poll_deadline(tmp_path):
     assert progress.next_action == "resume_after_deadline"
 
 
+@pytest.mark.parametrize(
+    ("observed_at", "expected_deadline"),
+    [
+        (
+            "2026-08-10T18:06:00+08:00",
+            "2026-08-10T19:00:00+08:00",
+        ),
+        (
+            "2026-08-10T23:06:00+08:00",
+            "2026-08-11T07:00:00+08:00",
+        ),
+    ],
+)
+def test_awaiting_playback_compressed_capture_wait_has_durable_poll_deadline(
+    tmp_path,
+    observed_at,
+    expected_deadline,
+):
+    subscription = XiaocaoWechatLiveSubscription(
+        tmp_path / "wechat",
+        history_reader=lambda: {},
+        browser_exchange=lambda request: request,
+        capture_driver=_CaptureDriver(),
+        clock=lambda: datetime.fromisoformat(observed_at),
+    )
+
+    result = subscription._waiting(
+        {
+            "identity": "kol-wechat-current",
+            "published_at": "2026-08-10T17:06:00+08:00",
+            "capture_job_id": "kol-capture-current",
+            "status": "awaiting_playback",
+        },
+        {"status": "awaiting_playback"},
+    )
+
+    assert result["waiting_items"][0]["next_poll_not_before"] == (
+        expected_deadline
+    )
+    progress = normalize_source_result(
+        "xiaocao_wechat_live",
+        result,
+        failure_revision="a" * 40,
+        provider_contract_version="xiaocao_writer_v1",
+    )
+    assert progress.status == "wait_until"
+    assert progress.next_action == "resume_after_deadline"
+
+
 def test_live_capture_driver_reconciles_sniffer_before_pending_advance(tmp_path):
     calls: list[object] = []
 
