@@ -28,8 +28,20 @@ def _context() -> dict[str, str]:
     }
 
 
+@pytest.mark.parametrize(
+    ("implementation_path", "regression_path"),
+    [
+        ("src/xiaocao/kol/mailbox.py", "tests/test_kol_mailbox.py"),
+        (
+            "src/xiaocao/kol/semantic_bundle.py",
+            "tests/test_kol_semantic_bundle.py",
+        ),
+    ],
+)
 def test_repair_validation_runs_repo_owned_profile_and_persists_matching_receipt(
     tmp_path,
+    implementation_path: str,
+    regression_path: str,
 ) -> None:
     git_calls: list[tuple[str, ...]] = []
 
@@ -51,7 +63,7 @@ def test_repair_validation_runs_repo_owned_profile_and_persists_matching_receipt
             return CompletedProcess(
                 command,
                 0,
-                "src/xiaocao/kol/mailbox.py\ntests/test_kol_mailbox.py\n",
+                f"{implementation_path}\n{regression_path}\n",
                 "",
             )
         if command == ("show", "-s", "--format=%B", REPAIR_REVISION):

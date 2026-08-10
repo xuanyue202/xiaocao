@@ -778,6 +778,7 @@ _TARGETED_REPAIR_TEST_PATHS: dict[str, frozenset[str]] = {
     "kol_mailbox_exact_resume": frozenset(
         {
             "tests/test_kol_mailbox.py",
+            "tests/test_kol_semantic_bundle.py",
             "tests/test_kol_repair_validation.py",
         }
     ),
