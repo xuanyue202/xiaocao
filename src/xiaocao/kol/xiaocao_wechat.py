@@ -499,6 +499,29 @@ class XiaocaoWechatLiveSubscription:
         return canonical, source["source_identity"]
 
     @classmethod
+    def _canonical_browser_page(
+        cls,
+        page_url: str,
+        *,
+        page_state: str,
+    ) -> tuple[str, str]:
+        if page_state != "account_login_required":
+            return cls._canonical_page(page_url)
+        parsed = urlsplit(page_url.strip())
+        redirect_urls = parse_qs(parsed.query).get("redirect_url", [])
+        if (
+            parsed.scheme != "https"
+            or parsed.path
+            != "/p/t/free/v1/basic-platform/h5_basic/login/auth"
+            or len(redirect_urls) != 1
+        ):
+            raise EnrichmentError("browser account login redirect is invalid")
+        redirect = urlsplit(redirect_urls[0])
+        if (parsed.hostname or "").lower() != (redirect.hostname or "").lower():
+            raise EnrichmentError("browser account login redirect changed host")
+        return cls._canonical_page(redirect_urls[0])
+
+    @classmethod
     def _is_bound_account_login_redirect(
         cls,
         page_url: str,
@@ -866,13 +889,19 @@ class XiaocaoWechatLiveSubscription:
                     "action": "resolve_xiaoetong_page",
                     "subscription_id": item["identity"],
                     "page_url": "current Xiaoetong MP wrapper or H5 page URL",
-                    "page_state": "playable|password_required|unknown",
+                    "page_state": (
+                        "account_login_required|playable|password_required|unknown"
+                    ),
                 },
             }
             response = self.browser_exchange(request)
             self._validate_browser_response(request, response)
-            page_url, source_identity = self._canonical_page(
-                str(response.get("page_url") or "")
+            observed_page_state = str(
+                response.get("page_state") or "unknown"
+            ).strip()
+            page_url, source_identity = self._canonical_browser_page(
+                str(response.get("page_url") or ""),
+                page_state=observed_page_state,
             )
             item = self._transition(
                 manifest,
@@ -880,7 +909,7 @@ class XiaocaoWechatLiveSubscription:
                 "page_resolved",
                 page_url=page_url,
                 source_identity=source_identity,
-                observed_page_state=str(response.get("page_state") or "unknown"),
+                observed_page_state=observed_page_state,
             )
 
         if item["status"] == "page_resolved":

@@ -496,6 +496,67 @@ def test_xiaoetong_account_login_redirect_is_reported_explicitly(tmp_path):
         subscription.run_once(opencli_session="xiaocao-lv-subscription")
 
 
+def test_new_source_account_login_redirect_resolves_exact_page(tmp_path):
+    payload = _history(
+        "[2026-08-10 08:45] 福利官小花四: 草神直播："
+        "https://yv9lc.xetslk.com/sl/TYpKp",
+    )
+    page_url = (
+        "https://appsnm3rlcp3566.h5.xiaoeknow.com/v4/course/"
+        "alive/l_6a787961e4b0694c35385519"
+    )
+    login_url = (
+        "https://appsnm3rlcp3566.h5.xiaoeknow.com/p/t/free/v1/"
+        "basic-platform/h5_basic/login/auth?redirect_url="
+        f"{quote(page_url, safe='')}"
+    )
+    browser_requests: list[dict] = []
+
+    def browser_exchange(request: dict) -> dict:
+        browser_requests.append(request)
+        return {
+            "action": request["action"],
+            "subscription_id": request["subscription_id"],
+            "page_url": login_url,
+            "page_state": "account_login_required",
+            "activated": False,
+            "password_used": False,
+        }
+
+    subscription = XiaocaoWechatLiveSubscription(
+        tmp_path / "wechat",
+        history_reader=lambda: payload,
+        browser_exchange=browser_exchange,
+        capture_driver=_CaptureDriver(),
+        contact=CONTACT,
+        password="666",
+    )
+
+    with pytest.raises(
+        EnrichmentError,
+        match="Xiaoetong account login is required",
+    ):
+        subscription.run_once(opencli_session="xiaocao-lv-subscription")
+
+    assert [request["action"] for request in browser_requests] == [
+        "resolve_xiaoetong_page",
+        "activate_xiaoetong_playback",
+    ]
+    assert "account_login_required" in browser_requests[0][
+        "required_response"
+    ]["page_state"]
+    manifest = json.loads(
+        (tmp_path / "wechat" / "manifest.json").read_text(encoding="utf-8")
+    )
+    item = next(iter(manifest["items"].values()))
+    assert item["page_url"] == page_url
+    assert item["source_identity"] == (
+        "xiaoetong:appsnm3rlcp3566:l_6a787961e4b0694c35385519"
+    )
+    assert item["status"] == "capture_armed"
+    assert item["capture_job_id"]
+
+
 def test_pending_cloud_handoff_resumes_exact_job_without_rescanning(tmp_path):
     payload = _history(
         "[2026-08-04 08:29] 福利官小花四: 9点20草神直播地址：https://yv9lc.xetslk.com/sl/4EKPYp",
