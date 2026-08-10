@@ -999,3 +999,79 @@ def test_remote_repair_resume_revision_repolls_only_after_explicit_due_time(
     assert [request["operation"] for request in requests] == [
         "get_mailbox_message"
     ]
+
+
+def test_interrupted_mailbox_resume_requires_a_new_validated_revision(
+    tmp_path,
+) -> None:
+    target = _mailbox_message("a" * 64)
+    ledger = MailboxLedger(tmp_path / "mailbox")
+    ledger.append(
+        "mailbox_message_attempted",
+        occurred_at="2026-08-07T10:37:00.000Z",
+        handoff_id=target["message_id"],
+        content_sha256=target["content_sha256"],
+    )
+    waiting = ledger.append(
+        "mailbox_message_waiting",
+        occurred_at="2026-08-07T10:37:01.000Z",
+        handoff_id=target["message_id"],
+        category="provider_wait",
+        code="transcript_pending",
+        stage="cloud_transcript",
+        next_poll_not_before="2026-08-07T10:38:00+00:00",
+    )
+    ledger.append(
+        "mailbox_message_repair_resumed",
+        occurred_at="2026-08-07T10:38:01.000Z",
+        handoff_id=target["message_id"],
+        content_sha256=target["content_sha256"],
+        repair_revision="b" * 40,
+        prior_waiting_event_id=waiting["event_id"],
+    )
+    context = ledger.repair_resume_context(str(target["message_id"]))
+
+    assert context["category"] == "control_plane_handler_error"
+    assert context["code"] == "mailbox_resume_interrupted"
+    assert context["stage"] == "mailbox_resume"
+    assert context["failure_revision"] == "b" * 40
+    assert context["targeted_test_profile"] == "kol_mailbox_exact_resume"
+    assert len(context["failure_fingerprint"]) == 64
+
+    requests: list[str] = []
+
+    def exchange(request: dict[str, object]) -> dict[str, object]:
+        requests.append(str(request["operation"]))
+        if request["operation"] == "get_mailbox_message":
+            return {"operation": "get_mailbox_message", "message": target}
+        arguments = request["arguments"]
+        assert isinstance(arguments, dict)
+        return {
+            "operation": "ack_mailbox_message",
+            "outcome": "acked",
+            "receipt": {
+                "operation": "ack_mailbox_message",
+                "family_id": "family-one",
+                "mailbox_id": "kol.handoff",
+                "message_id": arguments["message_id"],
+                "content_sha256": arguments["expected_content_sha256"],
+                "acked_by": "user-two",
+                "acked_at": "2026-08-07T10:40:00.000Z",
+            },
+        }
+
+    authorized: list[tuple[str, str]] = []
+    result = RemoteMailboxDrain(
+        LiangHuiMailboxClient(ledger, exchange=exchange),
+        processor=lambda _message: {"business_complete": True},
+        repair_authorizer=lambda claim, revision: authorized.append(
+            (claim["failure_fingerprint"], revision)
+        ),
+    ).run(
+        only_message_id=str(target["message_id"]),
+        repair_revision="c" * 40,
+    )
+
+    assert result["status"] == "completed"
+    assert requests == ["get_mailbox_message", "ack_mailbox_message"]
+    assert authorized == [(context["failure_fingerprint"], "c" * 40)]

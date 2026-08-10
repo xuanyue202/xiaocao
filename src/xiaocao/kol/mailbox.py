@@ -182,6 +182,7 @@ class MailboxLedger:
         waiting: dict[str, Any] | None = None
         acked = False
         used_revisions: set[str] = set()
+        waiting_events: dict[str, dict[str, Any]] = {}
         for row in self.events():
             if str(row.get("handoff_id") or "") != normalized_id:
                 continue
@@ -196,8 +197,39 @@ class MailboxLedger:
                     used_revisions.add(str(row.get("repair_revision") or ""))
             elif event == "mailbox_message_waiting" and attempt is not None:
                 waiting = row
+                waiting_events[str(row.get("event_id") or "")] = row
             elif event == "mailbox_ack_receipted":
                 acked = True
+        if (
+            attempt is not None
+            and attempt.get("event") == "mailbox_message_repair_resumed"
+            and waiting is None
+        ):
+            prior_waiting_event_id = str(
+                attempt.get("prior_waiting_event_id") or ""
+            )
+            prior_waiting = waiting_events.get(prior_waiting_event_id)
+            failure_revision = str(attempt.get("repair_revision") or "")
+            if prior_waiting is not None and re.fullmatch(
+                r"[a-f0-9]{40}", failure_revision
+            ):
+                fingerprint = FailureFingerprint(
+                    adapter="mailbox",
+                    category="control_plane_handler_error",
+                    code="mailbox_resume_interrupted",
+                    stage="mailbox_resume",
+                    failure_revision=failure_revision,
+                    provider_contract_version="lianghui_mailbox_v1",
+                )
+                waiting = {
+                    "event_id": prior_waiting_event_id,
+                    "category": "control_plane_handler_error",
+                    "code": "mailbox_resume_interrupted",
+                    "stage": "mailbox_resume",
+                    "failure_fingerprint": fingerprint.digest,
+                    "failure_revision": failure_revision,
+                    "targeted_test_profile": "kol_mailbox_exact_resume",
+                }
         return attempt, waiting, acked, used_revisions
 
     @staticmethod
