@@ -272,8 +272,13 @@ def test_repair_validation_accepts_subscription_private_listing_profile(
     assert receipt.failure_fingerprint == "6" * 64
 
 
+@pytest.mark.parametrize(
+    "failure_code",
+    ["opencli_command_failed", "opencli_cdp_timeout", "opencli_timeout"],
+)
 def test_repair_validation_accepts_subscription_video_browser_eval_profile(
     tmp_path,
+    failure_code,
 ) -> None:
     context = {
         "adapter": "subscription_video",
@@ -282,7 +287,7 @@ def test_repair_validation_accepts_subscription_video_browser_eval_profile(
         "failure_fingerprint": "c" * 64,
         "failure_revision": FAILURE_REVISION,
         "category": "transport_error",
-        "code": "opencli_command_failed",
+        "code": failure_code,
         "stage": "browser_eval",
         "targeted_test_profile": "kol_subscription_video_browser_eval",
     }

@@ -60,6 +60,7 @@ REQUIRED_COVERAGE_ROWS = {
 }
 _SHA256 = re.compile(r"^[0-9a-f]{64}$")
 _OPENCLI_NAME = re.compile(r"^[A-Za-z0-9_.-]{1,128}$")
+_PRIVATE_DIRECTORY_EVAL_PROCESS_TIMEOUT_SECONDS = 120
 
 
 def _canonical(value: Any) -> str:
@@ -784,15 +785,21 @@ class SubscriptionVideoService:
                 "__DIRECTORY__",
                 json.dumps(directory, ensure_ascii=False),
             )
-            # OpenCLI 1.8.6 caps Runtime.evaluate at 115 seconds and exposes no
-            # timeout option.  Keep each read below that provider deadline and
-            # perform the recursive walk serially in Python.
+            # The page script remains bounded to 30 seconds, but the OpenCLI
+            # process also owns connection and structured command-result
+            # deadlines.  Its 1.8.6 defaults are 45 seconds for connection and
+            # 60 seconds for the browser command, so a 45-second subprocess
+            # timeout can kill the client before it reports the authoritative
+            # result. Keep the recursive walk serial and give the full client
+            # lifecycle bounded headroom without extending the in-page read.
             payload = self._opencli_json(
                 session,
                 "eval",
                 script,
                 profile=profile,
-                timeout_seconds=45,
+                timeout_seconds=(
+                    _PRIVATE_DIRECTORY_EVAL_PROCESS_TIMEOUT_SECONDS
+                ),
             )
             if payload.get("status") != "ok" or not isinstance(
                 payload.get("rows"), list

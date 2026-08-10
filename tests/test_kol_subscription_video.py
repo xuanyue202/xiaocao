@@ -1066,7 +1066,7 @@ def test_private_scan_chunks_recursive_eval_below_opencli_deadline(tmp_path):
         if operation == "open":
             payload = {"url": command[6]}
         elif operation == "eval":
-            assert kwargs["timeout"] == 45
+            assert kwargs["timeout"] == 120
             assert "while (pending.length" not in command[6]
             if json.dumps("/课程/路西法全套", ensure_ascii=False) in command[6]:
                 payload = {

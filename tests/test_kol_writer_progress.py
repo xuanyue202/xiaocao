@@ -537,15 +537,20 @@ def test_repair_closure_accepts_shared_lv_listing_browser_eval_profile(
     )
 
 
+@pytest.mark.parametrize(
+    "failure_code",
+    ["opencli_command_failed", "opencli_cdp_timeout", "opencli_timeout"],
+)
 def test_repair_closure_accepts_subscription_video_browser_eval_profile(
     tmp_path,
+    failure_code,
 ):
     progress = WriterProgress.repair_required(
         item_identity="subscription_video:source",
         fingerprint=FailureFingerprint(
             adapter="subscription_video",
             category="transport_error",
-            code="opencli_command_failed",
+            code=failure_code,
             stage="browser_eval",
             failure_revision=FAILURE_REVISION,
             provider_contract_version="xiaocao_writer_v1",

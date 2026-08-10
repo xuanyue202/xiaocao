@@ -819,7 +819,11 @@ def _canonical_subscription_video_browser_eval_repair_profile(
         and str(context.get("targeted_test_profile") or "")
         == _SUBSCRIPTION_VIDEO_BROWSER_EVAL_REPAIR_PROFILE
         and str(context.get("code") or "")
-        in {"opencli_command_failed", "opencli_cdp_timeout"}
+        in {
+            "opencli_command_failed",
+            "opencli_cdp_timeout",
+            "opencli_timeout",
+        }
         and str(context.get("stage") or "") == "browser_eval"
     ):
         return _SUBSCRIPTION_VIDEO_BROWSER_EVAL_REPAIR_PROFILE
