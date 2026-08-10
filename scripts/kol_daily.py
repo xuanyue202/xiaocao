@@ -1343,8 +1343,26 @@ def _classified_source(name: str, runner):
 
 def _classified_narrow_source(name: str, runner):
     def run(surface: str):
+        user_action: dict[str, str] | None = None
         try:
             outcome = _classified_source(name, lambda: runner(surface))()
+        except UserActionBlocker as exc:
+            user_action = {
+                "action": exc.action,
+                "blocker_identity": exc.blocker_key,
+                "dedup_key": exc.blocker_key,
+            }
+            outcome = {
+                "status": "waiting",
+                "user_action_required": True,
+                "waiting_count": 1,
+                "waiting_items": [{
+                    "identity": f"{name}:source",
+                    "stage": "external_authorization",
+                    "user_action_required": True,
+                    **user_action,
+                }],
+            }
         except TransientSourceError as exc:
             outcome = {
                 "status": "waiting",
@@ -1357,6 +1375,7 @@ def _classified_narrow_source(name: str, runner):
             outcome,
             failure_revision=_writer_failure_revision(),
             provider_contract_version="xiaocao_writer_v1",
+            user_action=user_action,
         )
         return {
             **{key: value for key, value in outcome.items() if key != "retryable"},

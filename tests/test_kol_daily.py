@@ -165,6 +165,22 @@ def test_narrow_source_failure_keeps_seven_state_contract(monkeypatch):
     )
 
 
+def test_narrow_source_user_action_keeps_seven_state_contract(monkeypatch):
+    monkeypatch.setattr(kol_daily_script, "_writer_failure_revision", lambda: "a" * 40)
+
+    result = _classified_narrow_source(
+        "xiaocao_wechat_live",
+        lambda _surface: (_ for _ in ()).throw(
+            UserActionBlocker("xiaocao-login", "完成小鹅通账号登录")
+        ),
+    )("xiaocao_wechat_live:source")
+
+    assert result["writer_progress"]["status"] == "user_action_required"
+    assert result["writer_progress"]["next_action"] == "await_user_action"
+    assert result["writer_progress"]["blocker_identity"] == "xiaocao-login"
+    assert result["writer_progress"]["action"] == "完成小鹅通账号登录"
+
+
 def test_source_cli_narrow_runner_supports_subscription_video():
     subscription = lambda surface: {"surface": surface}
     runtime = SimpleNamespace(

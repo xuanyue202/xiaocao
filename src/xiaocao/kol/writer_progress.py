@@ -688,6 +688,7 @@ TARGETED_REPAIR_TESTS: dict[str, tuple[str, ...]] = {
         "-k",
         (
             "source_cli_narrow_runner_supports_xiaocao_wechat_live or "
+            "narrow_source_user_action_keeps_seven_state_contract or "
             "repair_validation_accepts_xiaocao_wechat_source_profile or "
             "new_source_account_login_redirect_resolves_exact_page"
         ),
