@@ -1127,6 +1127,99 @@ def test_xiaocao_wait_preserves_exact_transcript_poll_state(
     }
 
 
+def test_xiaocao_ai_note_pretrigger_failure_preserves_no_click_resume_context(
+    tmp_path,
+    monkeypatch,
+):
+    handoff_dir = tmp_path / "xiaocao" / "imported_handoffs"
+    handoff_dir.mkdir(parents=True)
+    handoff_id = "a" * 64
+    media_sha256 = "b" * 64
+    job_id = "kol-netdisk-current"
+    handoff = {
+        "schema_version": 1,
+        "handoff_id": handoff_id,
+        "capture_job_id": "kol-capture-current",
+        "netdisk_job_id": job_id,
+        "media_sha256": media_sha256,
+        "media_basename": "current-compressed.mp4",
+        "published_at": "2026-08-07T18:00:00+08:00",
+        "large_payload_local_bytes": 0,
+    }
+    handoff["handoff_sha256"] = _canonical_sha256(handoff)
+    (handoff_dir / "kol-capture-current.json").write_text(
+        json.dumps(handoff),
+        encoding="utf-8",
+    )
+
+    advance_calls = 0
+
+    class FakeNetdisk:
+        @staticmethod
+        def status(requested_job_id):
+            assert requested_job_id == job_id
+            if advance_calls == 0:
+                return {"status": "transcript_ready"}
+            return {
+                "status": "ai_note_pretrigger_failed",
+                "ai_note_trigger_attempt": 1,
+                "ai_note_pretrigger_proof": {
+                    "button_matches": 0,
+                    "click_dispatched": False,
+                    "target_bound": True,
+                    "template_no": 1,
+                },
+            }
+
+        @staticmethod
+        def advance_opencli(requested_job_id, **_kwargs):
+            nonlocal advance_calls
+            assert requested_job_id == job_id
+            advance_calls += 1
+            if advance_calls == 1:
+                raise EnrichmentError(
+                    "Netdisk AI-note template submission failed"
+                )
+            return {
+                "status": "ai_note_requested",
+                "ai_note_trigger_attempt": 2,
+                "next_poll_not_before": "2026-08-07T21:08:10+08:00",
+            }
+
+    class FakeService:
+        def __init__(self, *_args, **_kwargs):
+            self.netdisk = FakeNetdisk()
+
+    monkeypatch.setattr(kol_daily_script, "XiaocaoLiveService", FakeService)
+    runtime = DailyRuntime.__new__(DailyRuntime)
+    runtime.args = SimpleNamespace(
+        xiaocao_output_dir=tmp_path / "xiaocao",
+        decision_output_dir=tmp_path / "decisions",
+        enrichment_session="xiaocao-lv-subscription",
+        opencli_profile=None,
+    )
+
+    result = runtime.xiaocao(handoff_id=handoff_id)
+
+    assert advance_calls == 2
+    assert result == {
+        "status": "waiting",
+        "waiting_count": 1,
+        "waiting_items": [{
+            "identity": "kol-capture-current",
+            "version_key": media_sha256,
+            "name": "current-compressed.mp4",
+            "author": "小草",
+            "status": "ai_note_requested",
+            "category": "provider_wait",
+            "code": "ai_note_requested",
+            "stage": "cloud_enrichment",
+            "reconciliation": "exact_job_pending",
+            "next_poll_not_before": "2026-08-07T21:08:10+08:00",
+        }],
+    }
+
+
 def test_xiaocao_validated_bundle_uses_message_handoff_binding(
     tmp_path,
     monkeypatch,

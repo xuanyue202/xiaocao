@@ -2552,11 +2552,33 @@ class DailyRuntime:
                 completed_handoff_ids.append(str(handoff["handoff_id"]))
                 continue
             if state.get("status") not in {"transcript_captured", "verified"}:
-                state = service.netdisk.advance_opencli(
-                    job_id,
-                    session=self.args.enrichment_session,
-                    profile=self.args.opencli_profile,
-                )
+                try:
+                    state = service.netdisk.advance_opencli(
+                        job_id,
+                        session=self.args.enrichment_session,
+                        profile=self.args.opencli_profile,
+                    )
+                except EnrichmentError:
+                    failed = service.netdisk.status(job_id)
+                    proof = failed.get("ai_note_pretrigger_proof")
+                    safe_pretrigger_retry = (
+                        failed.get("status") == "ai_note_pretrigger_failed"
+                        and isinstance(proof, dict)
+                        and proof.get("click_dispatched") is False
+                        and proof.get("target_bound") is True
+                        and int(proof.get("template_no") or 0) == 1
+                        and int(proof.get("button_matches") or 0) == 0
+                        and int(
+                            failed.get("ai_note_trigger_attempt") or 0
+                        ) == 1
+                    )
+                    if not safe_pretrigger_retry:
+                        raise
+                    state = service.netdisk.advance_opencli(
+                        job_id,
+                        session=self.args.enrichment_session,
+                        profile=self.args.opencli_profile,
+                    )
             if state.get("status") == "transcript_captured":
                 audit_path = _read_agent_path(
                     {
