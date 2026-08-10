@@ -587,6 +587,73 @@ def test_repair_closure_accepts_subscription_video_browser_eval_profile(
     assert closure["event"] == "repair_closed"
 
 
+def test_repair_resume_persists_following_repair(tmp_path):
+    prior = WriterProgress.repair_required(
+        item_identity="subscription_video:source",
+        fingerprint=FailureFingerprint(
+            adapter="subscription_video",
+            category="timeout",
+            code="opencli_timeout",
+            stage="browser_eval",
+            failure_revision=FAILURE_REVISION,
+            provider_contract_version="xiaocao_writer_v1",
+        ),
+        repair_revision=None,
+        affected_set_digest="e" * 64,
+        claim_receipt_summary=_claim_summary(),
+        targeted_test_profile="kol_subscription_video_browser_eval",
+        narrow_resume_surface="subscription_video:source",
+        retryability="retryable",
+    )
+    following = WriterProgress.repair_required(
+        item_identity="subscription_video:source",
+        fingerprint=FailureFingerprint(
+            adapter="subscription_video",
+            category="timeout",
+            code="private_directory_load_timeout",
+            stage="private_listing_validation",
+            failure_revision=REPAIR_REVISION,
+            provider_contract_version="xiaocao_writer_v1",
+        ),
+        repair_revision=None,
+        affected_set_digest="e" * 64,
+        claim_receipt_summary=_claim_summary(),
+        targeted_test_profile=(
+            "kol_subscription_video_private_listing_validation"
+        ),
+        narrow_resume_surface="subscription_video:source",
+        retryability="retryable",
+    )
+    ledger = ConvergenceLedger(
+        tmp_path / "convergence.jsonl",
+        now=lambda: datetime.fromisoformat("2026-08-10T08:45:00+08:00"),
+    )
+    ledger.record(prior, slot="2026-08-10T08:00+08:00")
+    validation = RepairValidationLedger(tmp_path / "repair-validation.jsonl")
+    receipt = validation.append(
+        _repair_receipt(
+            prior,
+            profile="kol_subscription_video_browser_eval",
+        )
+    )
+    ledger.close_repair(
+        prior.failure_fingerprint,
+        repair_receipt=receipt,
+        validation_ledger=validation,
+        slot="2026-08-10T08:00+08:00",
+    )
+
+    resume = ledger.record_resume(
+        prior.failure_fingerprint,
+        following=following,
+        slot="2026-08-10T08:00+08:00",
+    )
+
+    assert resume["event"] == "repair_resumed"
+    assert ledger.active_progress("subscription_video") == following
+    assert ledger.pending_resume("subscription_video") is None
+
+
 def test_repair_closure_rejects_unpersisted_receipt(tmp_path):
     progress = _progress_rows()["repair_required"]
     ledger = ConvergenceLedger(tmp_path / "convergence.jsonl")

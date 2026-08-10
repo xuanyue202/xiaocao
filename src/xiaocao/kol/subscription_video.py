@@ -792,15 +792,22 @@ class SubscriptionVideoService:
             # timeout can kill the client before it reports the authoritative
             # result. Keep the recursive walk serial and give the full client
             # lifecycle bounded headroom without extending the in-page read.
-            payload = self._opencli_json(
-                session,
-                "eval",
-                script,
-                profile=profile,
-                timeout_seconds=(
-                    _PRIVATE_DIRECTORY_EVAL_PROCESS_TIMEOUT_SECONDS
-                ),
-            )
+            for attempt in range(2):
+                payload = self._opencli_json(
+                    session,
+                    "eval",
+                    script,
+                    profile=profile,
+                    timeout_seconds=(
+                        _PRIVATE_DIRECTORY_EVAL_PROCESS_TIMEOUT_SECONDS
+                    ),
+                )
+                if (
+                    payload.get("status")
+                    != "private_directory_load_timeout"
+                    or attempt == 1
+                ):
+                    break
             if payload.get("status") != "ok" or not isinstance(
                 payload.get("rows"), list
             ):

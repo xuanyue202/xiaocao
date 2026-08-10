@@ -1343,7 +1343,13 @@ def _classified_source(name: str, runner):
 
 def _classified_narrow_source(name: str, runner):
     def run(surface: str):
-        outcome = _classified_source(name, lambda: runner(surface))()
+        try:
+            outcome = _classified_source(name, lambda: runner(surface))()
+        except TransientSourceError as exc:
+            outcome = {
+                "status": "waiting",
+                "failure": exc.diagnostic(),
+            }
         if isinstance(outcome.get("writer_progress"), dict):
             return outcome
         progress = normalize_source_result(

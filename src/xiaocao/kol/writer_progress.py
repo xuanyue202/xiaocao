@@ -642,6 +642,7 @@ TARGETED_REPAIR_TESTS: dict[str, tuple[str, ...]] = {
         "-m",
         "pytest",
         "tests/test_kol_subscription_video.py",
+        "tests/test_kol_daily.py",
         "tests/test_kol_repair_validation.py",
         "tests/test_kol_writer_progress.py",
         "-q",
@@ -649,8 +650,10 @@ TARGETED_REPAIR_TESTS: dict[str, tuple[str, ...]] = {
         (
             "private_scan_chunks_recursive_eval_below_opencli_deadline or "
             "opencli_json_classifies_cdp_timeout or "
+            "narrow_source_failure_keeps_seven_state_contract or "
             "repair_validation_accepts_subscription_video_browser_eval_profile or "
-            "repair_closure_accepts_subscription_video_browser_eval_profile"
+            "repair_closure_accepts_subscription_video_browser_eval_profile or "
+            "repair_resume_persists_following_repair"
         ),
     ),
     "kol_shared_lv_listing_browser_eval": (
@@ -697,6 +700,7 @@ _TARGETED_REPAIR_IMPLEMENTATION_PATHS: dict[str, frozenset[str]] = {
     ),
     "kol_subscription_video_browser_eval": frozenset(
         {
+            "scripts/kol_daily.py",
             "src/xiaocao/kol/subscription_video.py",
             "src/xiaocao/kol/writer_progress.py",
         }
@@ -732,6 +736,7 @@ _TARGETED_REPAIR_TEST_PATHS: dict[str, frozenset[str]] = {
     ),
     "kol_subscription_video_browser_eval": frozenset(
         {
+            "tests/test_kol_daily.py",
             "tests/test_kol_subscription_video.py",
             "tests/test_kol_repair_validation.py",
             "tests/test_kol_writer_progress.py",
@@ -2131,7 +2136,7 @@ class ConvergenceLedger:
                     "repair_revision": receipt["repair_revision"],
                 },
             )
-            return self._append(
+            resume = self._append(
                 {
                     "event": "repair_resumed",
                     "resumed_at": self._now(),
@@ -2143,6 +2148,22 @@ class ConvergenceLedger:
                     "result_status": following.status,
                 }
             )
+            if following.status == "repair_required":
+                self._append(
+                    {
+                        "event": "failure_observed",
+                        "observed_at": self._now(),
+                        "slot": slot,
+                        "failure": following.failure,
+                        "failure_fingerprint": (
+                            following.failure_fingerprint
+                        ),
+                        "ownership": following.ownership,
+                        "progress": following.to_dict(),
+                        "retryability": following.retryability,
+                    }
+                )
+            return resume
 
     def close_repair(
         self,

@@ -333,6 +333,7 @@ def test_repair_validation_accepts_subscription_video_browser_eval_profile(
         "-m",
         "pytest",
         "tests/test_kol_subscription_video.py",
+        "tests/test_kol_daily.py",
         "tests/test_kol_repair_validation.py",
         "tests/test_kol_writer_progress.py",
         "-q",
@@ -340,8 +341,10 @@ def test_repair_validation_accepts_subscription_video_browser_eval_profile(
         (
             "private_scan_chunks_recursive_eval_below_opencli_deadline or "
             "opencli_json_classifies_cdp_timeout or "
+            "narrow_source_failure_keeps_seven_state_contract or "
             "repair_validation_accepts_subscription_video_browser_eval_profile or "
-            "repair_closure_accepts_subscription_video_browser_eval_profile"
+            "repair_closure_accepts_subscription_video_browser_eval_profile or "
+            "repair_resume_persists_following_repair"
         ),
     )
     service = RepairValidationService(

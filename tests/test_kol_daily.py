@@ -140,6 +140,30 @@ def test_narrow_source_no_update_keeps_seven_state_contract(monkeypatch):
     assert repair["writer_progress"]["status"] == "repair_required"
 
 
+def test_narrow_source_failure_keeps_seven_state_contract(monkeypatch):
+    monkeypatch.setattr(kol_daily_script, "_writer_failure_revision", lambda: "a" * 40)
+
+    result = _classified_narrow_source(
+        "subscription_video",
+        lambda _surface: (_ for _ in ()).throw(
+            TransientSourceError(
+                "private listing unavailable",
+                category="timeout",
+                code="private_directory_load_timeout",
+                stage="private_listing_validation",
+            )
+        ),
+    )("subscription_video:source")
+
+    assert result["writer_progress"]["status"] == "repair_required"
+    assert result["writer_progress"]["next_action"] == (
+        "validate_repair_then_narrow_resume"
+    )
+    assert result["writer_progress"]["failure"]["code"] == (
+        "private_directory_load_timeout"
+    )
+
+
 def test_source_cli_narrow_runner_supports_subscription_video():
     subscription = lambda surface: {"surface": surface}
     runtime = SimpleNamespace(

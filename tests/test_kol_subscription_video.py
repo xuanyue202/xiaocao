@@ -1059,8 +1059,10 @@ def test_private_scan_allows_slow_directory_settlement():
 
 def test_private_scan_chunks_recursive_eval_below_opencli_deadline(tmp_path):
     commands = []
+    root_attempts = 0
 
     def runner(command, **kwargs):
+        nonlocal root_attempts
         commands.append((command, kwargs))
         operation = command[5]
         if operation == "open":
@@ -1069,18 +1071,26 @@ def test_private_scan_chunks_recursive_eval_below_opencli_deadline(tmp_path):
             assert kwargs["timeout"] == 120
             assert "while (pending.length" not in command[6]
             if json.dumps("/课程/路西法全套", ensure_ascii=False) in command[6]:
-                payload = {
-                    "status": "ok",
-                    "rows": [
-                        _row(
-                            "child",
-                            "/课程/路西法全套/子目录",
-                            size=0,
-                            modified_at=1,
-                            is_dir=True,
-                        )
-                    ],
-                }
+                root_attempts += 1
+                payload = (
+                    {
+                        "status": "private_directory_load_timeout",
+                        "rows": [],
+                    }
+                    if root_attempts == 1
+                    else {
+                        "status": "ok",
+                        "rows": [
+                            _row(
+                                "child",
+                                "/课程/路西法全套/子目录",
+                                size=0,
+                                modified_at=1,
+                                is_dir=True,
+                            )
+                        ],
+                    }
+                )
             else:
                 assert json.dumps(
                     "/课程/路西法全套/子目录", ensure_ascii=False
@@ -1117,7 +1127,7 @@ def test_private_scan_chunks_recursive_eval_below_opencli_deadline(tmp_path):
         "child",
         "video",
     ]
-    assert len(commands) == 3
+    assert len(commands) == 4
 
 
 def test_opencli_json_classifies_cdp_timeout(tmp_path):
