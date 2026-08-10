@@ -586,6 +586,7 @@ class XiaocaoWechatLiveSubscription:
             raise EnrichmentError("Xiaocao WeChat clock needs a timezone")
         deadline = deadline_base.astimezone(BEIJING)
         if status == "awaiting_playback":
+            # Lifecycle rechecks follow the configured local hourly window.
             deadline = (deadline + timedelta(hours=1)).replace(
                 minute=0,
                 second=0,
