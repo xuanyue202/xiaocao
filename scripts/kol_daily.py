@@ -1378,6 +1378,11 @@ def _source_cli_narrow_runner(runtime: "DailyRuntime", adapter: str):
     runners = {
         "lv_text_image": runtime.lv_narrow_resume,
         "subscription_video": runtime.videos_narrow_resume,
+        "xiaocao_wechat_live": lambda surface: _adapter_scope_resume(
+            "xiaocao_wechat_live",
+            surface,
+            runtime.xiaocao_wechat,
+        ),
     }
     try:
         return runners[adapter]

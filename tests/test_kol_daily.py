@@ -204,6 +204,22 @@ def test_lv_narrow_resume_supports_declared_source_surface():
     assert calls == [{}]
 
 
+def test_source_cli_narrow_runner_supports_xiaocao_wechat_live():
+    calls: list[str] = []
+    runtime = SimpleNamespace(
+        lv_narrow_resume=lambda surface: {"lv": surface},
+        videos_narrow_resume=lambda surface: {"video": surface},
+        xiaocao_wechat=lambda: calls.append("xiaocao") or {"status": "no_update"},
+    )
+
+    runner = _source_cli_narrow_runner(runtime, "xiaocao_wechat_live")
+
+    assert runner("xiaocao_wechat_live:source") == {"status": "no_update"}
+    assert calls == ["xiaocao"]
+    with pytest.raises(DailyError, match="cannot widen"):
+        runner("xiaocao_wechat_live:other")
+
+
 def test_rollout_verification_uses_local_git_config_state_and_peer_gate(
     tmp_path,
     monkeypatch,
