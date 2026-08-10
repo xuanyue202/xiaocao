@@ -1551,12 +1551,16 @@ class DailyCoordinator:
                 )
                 if key in row
             }
-            effect_count = sum(
-                int(event.get("gray_report", {}).get("status") == "published")
-                + int(event.get("alert", {}).get("status") == "delivered")
-                + int(event.get("book_kol_us", {}).get("status") == "filled")
-                for event in row.get("events") or []
-                if isinstance(event, Mapping)
+            effect_count = (
+                0
+                if row.get("external_business_effects_replayed") is False
+                else sum(
+                    int(event.get("gray_report", {}).get("status") == "published")
+                    + int(event.get("alert", {}).get("status") == "delivered")
+                    + int(event.get("book_kol_us", {}).get("status") == "filled")
+                    for event in row.get("events") or []
+                    if isinstance(event, Mapping)
+                )
             )
             if effect_count:
                 state["new_external_effect_count"] = effect_count
@@ -2654,6 +2658,21 @@ class DailyCoordinator:
                 failure_revision=self._failure_revision(),
                 provider_contract_version="xiaocao_writer_v1",
             )
+            if terminal is not None and following.status == "terminal":
+                following = WriterProgress.terminal(
+                    item_identity=progress.item_identity,
+                    stage=following.stage,
+                    content_terminal=following.details["content_terminal"],
+                    gray_report_terminal=following.details["gray_report_terminal"],
+                    reminder_terminal=following.details["reminder_terminal"],
+                    book_terminal=following.details["book_terminal"],
+                    knowledge_terminal=following.details["knowledge_terminal"],
+                    ack_status=following.details["ack_status"],
+                    new_external_effect_count=0,
+                    claim_receipt_summary=following.details[
+                        "claim_receipt_summary"
+                    ],
+                )
             progress.validate_transition_to(following, evidence=receipt)
             result = {
                 **outcome,

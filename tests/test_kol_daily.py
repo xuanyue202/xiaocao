@@ -2261,6 +2261,11 @@ def test_resume_reconciliation_projects_readback_terminal_without_replay(
     assert result["health"] == "healthy"
     assert result["source_result"]["status"] == "completed"
     assert result["source_result"]["writer_progress"]["status"] == "terminal"
+    assert (
+        result["source_result"]["writer_progress"]["new_external_effect_count"]
+        == 0
+    )
+    assert result["source_result"]["writer_progress"]["item_identity"] == "video-1"
     assert result["source_result"]["events"] == [terminal]
 
 
