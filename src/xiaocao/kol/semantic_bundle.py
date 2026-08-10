@@ -1306,6 +1306,11 @@ def _bindings(request: Mapping[str, Any], validated: Mapping[str, Any], market_s
         "market_evidence_sha256": market_sha,
         "source_identity": validated["source_identity"],
         "source_version_key": validated["source_version_key"],
+        "source_metadata_sha256": _sha256_canonical({
+            field: request[field]
+            for field in sorted(_REQUEST_METADATA_FIELDS)
+            if request.get(field) is not None
+        }),
         "semantic_draft_sha256": _sha256_canonical(draft),
     }
 
@@ -1413,6 +1418,11 @@ def _request_binding_preview(
         "market_evidence_sha256": market_sha,
         "source_identity": source_identity,
         "source_version_key": source_version,
+        "source_metadata_sha256": _sha256_canonical({
+            field: request[field]
+            for field in sorted(_REQUEST_METADATA_FIELDS)
+            if request.get(field) is not None
+        }),
         "semantic_draft_sha256": _sha256_canonical(draft),
     }
 

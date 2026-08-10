@@ -305,6 +305,29 @@ def test_build_validated_bundle_requires_captured_at(tmp_path):
         )
 
 
+def test_source_metadata_change_invalidates_reusable_receipt(tmp_path):
+    request, draft, bundle_path, receipt_path, _ = _fixture(tmp_path)
+    first = build_validated_bundle(
+        request,
+        draft,
+        bundle_path=bundle_path,
+        receipt_path=receipt_path,
+    )
+    request["captured_at"] = "2026-08-08T06:41:00+08:00"
+
+    second = build_validated_bundle(
+        request,
+        draft,
+        bundle_path=bundle_path,
+        receipt_path=receipt_path,
+    )
+
+    assert second.reused is False
+    assert second.receipt_sha256 != first.receipt_sha256
+    bundle = json.loads(bundle_path.read_text(encoding="utf-8"))
+    assert bundle["items"][0]["captured_at"] == request["captured_at"]
+
+
 def test_file_builder_keeps_market_evidence_out_of_semantic_draft(tmp_path):
     request, draft, _, _, _ = _fixture(tmp_path)
     market_evidence = request.pop("market_evidence")
