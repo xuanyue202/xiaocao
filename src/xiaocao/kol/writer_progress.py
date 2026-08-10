@@ -710,6 +710,8 @@ TARGETED_REPAIR_TESTS: dict[str, tuple[str, ...]] = {
             "repair_validation_accepts_xiaocao_wechat_source_profile or "
             "new_source_account_login_redirect_resolves_exact_page or "
             "account_login_state_is_authoritative_when_page_url_stays_bound or "
+            "cloud_handoff_wait_has_durable_poll_deadline or "
+            "pending_cloud_handoff_resumes_exact_job_after_stale_playback_state or "
             "repair_closure_accepts_xiaocao_wechat_source_profile"
         ),
     ),
@@ -929,6 +931,9 @@ _XIAOCAO_WECHAT_SOURCE_REPAIR_PROFILE = (
 _XIAOCAO_WECHAT_COMPRESSED_CAPTURE_REPAIR_PROFILE = (
     "kol_xiaocao_wechat_live_compressed_capture"
 )
+_XIAOCAO_WECHAT_CLOUD_HANDOFF_REPAIR_PROFILE = (
+    "kol_xiaocao_wechat_live_cloud_handoff"
+)
 
 
 def _canonical_shared_lv_listing_validation_repair_profile(
@@ -974,6 +979,14 @@ def _canonical_xiaocao_wechat_source_repair_profile(
             "internal_state_error",
             "progress_deadline_missing",
             "compressed_capture",
+        )
+    ) or (
+        declared_profile == _XIAOCAO_WECHAT_CLOUD_HANDOFF_REPAIR_PROFILE
+        and failure
+        == (
+            "internal_state_error",
+            "progress_deadline_missing",
+            "cloud_handoff",
         )
     ):
         return _XIAOCAO_WECHAT_SOURCE_REPAIR_PROFILE
@@ -1173,7 +1186,10 @@ class RepairValidationService:
             and not (
                 profile == _XIAOCAO_WECHAT_SOURCE_REPAIR_PROFILE
                 and declared_profile
-                == _XIAOCAO_WECHAT_COMPRESSED_CAPTURE_REPAIR_PROFILE
+                in {
+                    _XIAOCAO_WECHAT_COMPRESSED_CAPTURE_REPAIR_PROFILE,
+                    _XIAOCAO_WECHAT_CLOUD_HANDOFF_REPAIR_PROFILE,
+                }
             )
             and not (
                 profile == _SHARED_LV_LISTING_VALIDATION_REPAIR_PROFILE

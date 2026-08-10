@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import hashlib
 from base64 import urlsafe_b64encode
+from datetime import datetime
 from urllib.parse import quote
 
 import pytest
@@ -13,6 +14,7 @@ from xiaocao.kol.xiaocao_wechat import (
     XiaocaoWechatLiveSubscription,
     parse_xiaocao_live_messages,
 )
+from xiaocao.kol.writer_progress import normalize_source_result
 
 
 CONTACT = "福利官小花四-刘丹（执业编号:A0380125080026）"
@@ -101,6 +103,41 @@ class _CaptureDriver:
     ) -> dict | None:
         del identity, capture_job_id
         return None
+
+
+def test_cloud_handoff_wait_has_durable_poll_deadline(tmp_path):
+    subscription = XiaocaoWechatLiveSubscription(
+        tmp_path / "wechat",
+        history_reader=lambda: {},
+        browser_exchange=lambda request: request,
+        capture_driver=_CaptureDriver(),
+        clock=lambda: datetime.fromisoformat("2026-08-10T15:03:00+08:00"),
+    )
+
+    result = subscription._waiting(
+        {
+            "identity": "kol-wechat-current",
+            "published_at": "2026-08-10T08:45:00+08:00",
+            "capture_job_id": "kol-capture-current",
+            "status": "playback_activated",
+        },
+        {
+            "event": "xiaocao_live_upload_pending",
+            "status": "upload_claimed",
+        },
+    )
+
+    assert result["waiting_items"][0]["next_poll_not_before"] == (
+        "2026-08-10T15:03:30+08:00"
+    )
+    progress = normalize_source_result(
+        "xiaocao_wechat_live",
+        result,
+        failure_revision="a" * 40,
+        provider_contract_version="xiaocao_writer_v1",
+    )
+    assert progress.status == "wait_until"
+    assert progress.next_action == "resume_after_deadline"
 
 
 def test_live_capture_driver_reconciles_sniffer_before_pending_advance(tmp_path):
@@ -638,7 +675,9 @@ def test_account_login_state_is_authoritative_when_page_url_stays_bound(
     assert browser_requests[-1]["subscription_id"] == target_identity
 
 
-def test_pending_cloud_handoff_resumes_exact_job_without_rescanning(tmp_path):
+def test_pending_cloud_handoff_resumes_exact_job_after_stale_playback_state(
+    tmp_path,
+):
     payload = _history(
         "[2026-08-04 08:29] 福利官小花四: 9点20草神直播地址：https://yv9lc.xetslk.com/sl/4EKPYp",
     )
@@ -711,6 +750,16 @@ def test_pending_cloud_handoff_resumes_exact_job_without_rescanning(tmp_path):
         "activate_xiaoetong_playback",
     ]
 
+    manifest_path = tmp_path / "wechat" / "manifest.json"
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    target_identity = first["waiting_items"][0]["identity"]
+    assert manifest["items"][target_identity]["status"] == "playback_activated"
+    manifest["items"][target_identity]["status"] = "awaiting_playback"
+    manifest_path.write_text(
+        json.dumps(manifest, ensure_ascii=False),
+        encoding="utf-8",
+    )
+
     handoff_path = tmp_path / "handoff.json"
     capsule = {
         "schema_version": 2,
@@ -736,7 +785,7 @@ def test_pending_cloud_handoff_resumes_exact_job_without_rescanning(tmp_path):
         "handoff_path": str(handoff_path),
     }
     second = subscription.continue_cloud_handoff(
-        first["waiting_items"][0]["identity"],
+        target_identity,
         "kol-capture-current",
         opencli_session="xiaocao-lv-subscription",
     )

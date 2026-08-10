@@ -653,6 +653,12 @@ def test_repair_closure_accepts_subscription_video_browser_eval_profile(
             "compressed_capture",
             "kol_xiaocao_wechat_live_compressed_capture",
         ),
+        (
+            "internal_state_error",
+            "progress_deadline_missing",
+            "cloud_handoff",
+            "kol_xiaocao_wechat_live_cloud_handoff",
+        ),
     ],
 )
 def test_repair_closure_accepts_xiaocao_wechat_source_profile(

@@ -555,6 +555,12 @@ def test_repair_validation_accepts_shared_lv_listing_validation_profile(
             "compressed_capture",
             "kol_xiaocao_wechat_live_compressed_capture",
         ),
+        (
+            "internal_state_error",
+            "progress_deadline_missing",
+            "cloud_handoff",
+            "kol_xiaocao_wechat_live_cloud_handoff",
+        ),
     ],
 )
 def test_repair_validation_accepts_xiaocao_wechat_source_profile(
@@ -629,6 +635,8 @@ def test_repair_validation_accepts_xiaocao_wechat_source_profile(
             "repair_validation_accepts_xiaocao_wechat_source_profile or "
             "new_source_account_login_redirect_resolves_exact_page or "
             "account_login_state_is_authoritative_when_page_url_stays_bound or "
+            "cloud_handoff_wait_has_durable_poll_deadline or "
+            "pending_cloud_handoff_resumes_exact_job_after_stale_playback_state or "
             "repair_closure_accepts_xiaocao_wechat_source_profile"
         ),
     )

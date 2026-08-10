@@ -13,7 +13,7 @@ import json
 import os
 import re
 import subprocess
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any, Callable, Protocol
 from urllib.parse import parse_qs, urlsplit, urlunsplit
@@ -41,6 +41,7 @@ _URL = re.compile(r"https://[^\s）)】》>，,；;]+")
 _TERMINAL = {"historical_baseline", "superseded", "completed"}
 _SHA256 = re.compile(r"^[0-9a-f]{64}$")
 _MAX_HANDOFF_BYTES = 1024 * 1024
+_CLOUD_HANDOFF_POLL_SECONDS = 30
 _PLAYBACK_PAGE_STATES = {
     "account_login_required",
     "waiting_to_start",
@@ -572,16 +573,25 @@ class XiaocaoWechatLiveSubscription:
             if state.get("event") == "xiaocao_live_upload_pending"
             else "compressed_capture"
         )
+        waiting_item = {
+            "identity": item["identity"],
+            "published_at": item["published_at"],
+            "status": status,
+            "stage": stage,
+            "capture_job_id": str(item.get("capture_job_id") or ""),
+        }
+        if stage == "cloud_handoff":
+            deadline_base = self.clock()
+            if deadline_base.tzinfo is None:
+                raise EnrichmentError("Xiaocao WeChat clock needs a timezone")
+            waiting_item["next_poll_not_before"] = (
+                deadline_base.astimezone(BEIJING)
+                + timedelta(seconds=_CLOUD_HANDOFF_POLL_SECONDS)
+            ).isoformat(timespec="seconds")
         return {
             "status": "waiting",
             "waiting_count": 1,
-            "waiting_items": [{
-                "identity": item["identity"],
-                "published_at": item["published_at"],
-                "status": status,
-                "stage": stage,
-                "capture_job_id": str(item.get("capture_job_id") or ""),
-            }],
+            "waiting_items": [waiting_item],
         }
 
     @staticmethod
@@ -766,7 +776,11 @@ class XiaocaoWechatLiveSubscription:
             }
         if item.get("status") == "handoff_ready":
             return self._dispatch_handoff(manifest, item)
-        if item.get("status") != "playback_activated":
+        if item.get("status") not in {
+            "capture_armed",
+            "awaiting_playback",
+            "playback_activated",
+        }:
             raise EnrichmentError("Xiaocao cloud handoff is not resumable")
 
         state = self.capture_driver.advance(
@@ -791,6 +805,8 @@ class XiaocaoWechatLiveSubscription:
             return self._dispatch_handoff(manifest, item)
         if state.get("event") != "xiaocao_live_upload_pending":
             raise EnrichmentError("Xiaocao cloud handoff regressed before upload")
+        if item.get("status") != "playback_activated":
+            item = self._transition(manifest, item, "playback_activated")
         return self._waiting(item, state)
 
     def _check_playback(
@@ -994,4 +1010,9 @@ class XiaocaoWechatLiveSubscription:
                 handoff_path=str(state.get("handoff_path") or ""),
             )
             return self._dispatch_handoff(manifest, item)
+        if (
+            state.get("event") == "xiaocao_live_upload_pending"
+            and item.get("status") != "playback_activated"
+        ):
+            item = self._transition(manifest, item, "playback_activated")
         return self._waiting(item, state)
