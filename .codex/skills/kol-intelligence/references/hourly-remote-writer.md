@@ -19,10 +19,10 @@ PYTHONPATH=src .venv/bin/python scripts/kol_daily.py convergence-report
 PYTHONPATH=src .venv/bin/python scripts/kol_daily.py stability-acceptance
 ```
 
-Each run is one sweep; a sweep with no concrete item is silent. Report every
-concrete wait, change, exception, handoff, or completion, and distinguish
-handoff from downstream completion. Expose only credential-safe failure fields;
-the started task owns repair and exact continuation.
+Each run is one sweep; a sweep with no concrete item is silent. Every concrete
+item remains reportable, including waits and retryable exceptions; distinguish
+handoff from downstream completion. Expose only credential-safe failures. The
+started task owns exact repair; do not defer obtainable work.
 
 Obey seven-state `writer_progress.next_action`; bind input and readback
 receipts; retryability never changes owner.
@@ -125,8 +125,8 @@ uncertain effects. Source repairs use `validate-source-repair` then
 `resume-source-repair` with exact adapter/fingerprint; resume consumes only
 `narrow_resume_surface` and reads neither mailbox nor another source.
 
-`convergence-report` reads append-only ledgers for credential-safe repairs,
-waits, gate/runner timing, effects, duplicates, slots, and exclusions; it never
+`convergence-report` reads append-only ledgers for repairs, generic waits,
+gate/runner timing, effects, duplicate-effect audits, slots, and exclusions; it never
 rewrites failures. First rollout requires authoritative one-writer, revision,
 WIP, dependency/config/state, and Automation-ownership readback:
 
