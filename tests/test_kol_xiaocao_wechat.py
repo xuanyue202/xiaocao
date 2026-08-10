@@ -186,6 +186,10 @@ def test_compressed_capture_wait_has_durable_poll_deadline(tmp_path):
             "2026-08-10T23:06:00+08:00",
             "2026-08-11T07:00:00+08:00",
         ),
+        (
+            "2026-08-11T06:03:00+08:00",
+            "2026-08-11T07:00:00+08:00",
+        ),
     ],
 )
 def test_awaiting_playback_compressed_capture_wait_has_durable_poll_deadline(

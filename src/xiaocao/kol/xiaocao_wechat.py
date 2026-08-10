@@ -67,6 +67,19 @@ def _sha256_text(value: str) -> str:
     return hashlib.sha256(value.encode("utf-8")).hexdigest()
 
 
+def _next_local_playback_recheck(observed_at: datetime) -> datetime:
+    if observed_at.tzinfo is None:
+        raise EnrichmentError("Xiaocao WeChat clock needs a timezone")
+    deadline = (observed_at.astimezone(BEIJING) + timedelta(hours=1)).replace(
+        minute=0,
+        second=0,
+        microsecond=0,
+    )
+    if deadline.hour < _LOCAL_CAPTURE_FIRST_HOUR:
+        deadline = deadline.replace(hour=_LOCAL_CAPTURE_FIRST_HOUR)
+    return deadline
+
+
 def _atomic_json(path: Path, value: dict[str, Any]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     temporary = path.with_name(f".{path.name}.{uuid4().hex}.tmp")
@@ -582,20 +595,15 @@ class XiaocaoWechatLiveSubscription:
             "capture_job_id": str(item.get("capture_job_id") or ""),
         }
         deadline_base = self.clock()
-        if deadline_base.tzinfo is None:
-            raise EnrichmentError("Xiaocao WeChat clock needs a timezone")
-        deadline = deadline_base.astimezone(BEIJING)
         if status == "awaiting_playback":
             # Lifecycle rechecks follow the configured local hourly window.
-            deadline = (deadline + timedelta(hours=1)).replace(
-                minute=0,
-                second=0,
-                microsecond=0,
-            )
-            if deadline.hour < _LOCAL_CAPTURE_FIRST_HOUR:
-                deadline = deadline.replace(hour=_LOCAL_CAPTURE_FIRST_HOUR)
+            deadline = _next_local_playback_recheck(deadline_base)
         else:
-            deadline += timedelta(seconds=_CAPTURE_PROGRESS_POLL_SECONDS)
+            if deadline_base.tzinfo is None:
+                raise EnrichmentError("Xiaocao WeChat clock needs a timezone")
+            deadline = deadline_base.astimezone(BEIJING) + timedelta(
+                seconds=_CAPTURE_PROGRESS_POLL_SECONDS
+            )
         waiting_item["next_poll_not_before"] = deadline.isoformat(
             timespec="seconds"
         )
