@@ -1,0 +1,93 @@
+{
+  "date": "2026-08-10",
+  "kind": "review",
+  "author": "A也叫艾利克斯",
+  "source": "微信公众号",
+  "evidence": [
+    {
+      "path": "/Users/xuanyue202/Documents/project/xiaocao/output/live/kol_wechat_official/evidence/289822ec59eb5f24c38bf1021b75ef23499b4b94a55d254144761299dd5bf137.md",
+      "sha256": "c814d3364a42b527d997a19d8fbdb052a9d95cbb7e05c49fdc87480b8dfdfd2b",
+      "size": 8439
+    }
+  ],
+  "summary": "把当日A股的广度走强与科技成长回调解释为轮动而非一致主升；产业层面把存储扩产按开工、洁净室、设备搬入和量产分层，并要求光模块等高资本开支公司用产能、订单、现金流和每股稀释共同验证估值。",
+  "posture": {
+    "regime": "not_applied_other_author",
+    "dominant_style": "rotation_and_capex_execution_validation",
+    "risk": "单日广度偏强不能消除成长回调风险，远期扩产公告不能替代量产兑现，高资本开支还可能被现金流压力与股本稀释抵消",
+    "style_ranking": [
+      "先区分市场广度与成长风格相对强弱",
+      "再把重资产扩产放入完整投产时间轴",
+      "最后用订单、收入、现金流和每股价值验证估值"
+    ]
+  },
+  "regime_call": {
+    "horizon": "当日至未来数周",
+    "call": "市场广度偏强但科技成长回调，当前更接近健康轮动而非所有风格同步主升；不因单日普涨追逐科技。",
+    "what_would_falsify": "科技成长恢复持续相对强度并重新带动市场，或市场广度快速转弱且回调扩散为普遍风险收缩。"
+  },
+  "directions": [
+    {
+      "name": "存储与HBM",
+      "view": "新增晶圆厂需要数年才能量产，近端紧缺与远端供给增加必须分开判断。"
+    },
+    {
+      "name": "光模块与人工智能基础设施",
+      "view": "需求和量产方向仍在推进，但公司价值取决于产能爬坡、订单转收入、现金流和稀释的共同兑现。"
+    }
+  ],
+  "stocks": [],
+  "method_principles": [
+    "重资产供需研究要把宣布投资、开工、洁净室启用、设备搬入、良率爬坡和量产放在同一时间轴，不能把远期产能公告直接当成近端供给。",
+    "高资本开支公司的估值验证要同时检查订单、有效产能、收入、自由现金流和股本稀释，避免把扩产规模直接等同于每股价值增长。",
+    "市场广度与风格强弱要分开读取；普涨可以与成长板块回调并存，单日轮动不能自动证明中期趋势结束。"
+  ],
+  "exit_lessons": [
+    "若新增产能提前量产、需求显著下修或HBM配置下降，应停止把投产时滞解释为近端紧缺保护。",
+    "若资本开支持续上升而产能、收入和现金流未兑现，或稀释快于盈利增长，应降低对高估值扩产公司的判断。"
+  ],
+  "hypotheses": [
+    {
+      "claim": "半导体重资产扩产公告对近端供给的解释力弱于实际开工、设备搬入、良率和量产节点；投产时滞较长时，近端价格仍主要由现有有效产能与需求决定。",
+      "implied_rule": "把扩产公告与实际量产里程碑分开编码，不在公告日直接下调近端供需紧张度。",
+      "falsifiable_test": "对存储和先进制造扩产事件建立公告、开工、设备搬入与量产面板，比较各节点后1、3、6、12个月的现货价格、交期、库存和公司毛利率变化。",
+      "expected_effect": "若量产节点比公告节点更稳定解释供需缓解，则保留分层时间轴；若公告即持续领先供需数据，则拒绝该先验。",
+      "category": "capacity_cycle"
+    },
+    {
+      "claim": "高资本开支人工智能硬件公司只有在产能爬坡和订单转化带来收入与自由现金流改善、且每股稀释受控时，扩产才更可能转化为可持续的每股价值。",
+      "implied_rule": "公司事件研究联合跟踪产能利用率、订单转收入、自由现金流、融资和摊薄股数，不按单一订单或资本开支增速排序。",
+      "falsifiable_test": "在光模块和人工智能硬件扩产样本中，按产能兑现、自由现金流改善和稀释受控三项分组，比较未来1、4个季度的盈利修正、每股自由现金流与超额收益。",
+      "expected_effect": "三项共同兑现组应有更稳定的每股价值增长；若现金流和稀释不增加解释力，则拒绝联合验证框架。",
+      "category": "capex_execution"
+    }
+  ],
+  "timing_notes": [
+    "短期观察A股科技成长能否恢复持续相对强度。",
+    "未来数季观察800G、1.6T产能爬坡、订单转收入和自由现金流。",
+    "未来数年观察存储新厂开工、设备搬入、良率与量产是否按计划兑现。"
+  ],
+  "typo_corrections": [],
+  "decision_trace": [
+    "观察：8月10日A股上涨4068家、下跌1391家，但创业板和科创50回落。",
+    "推演：市场可以处于广度偏强而成长回调的轮动状态，存储与光模块则需按产能兑现而非公告规模判断。",
+    "约束：美国就业、SK海力士、OpenAI、长鑫存储、伯克希尔和AAOI多项数字未取得同日一手回读。",
+    "行动：家庭账户等待，Book KOL-US不交易；两条方法只以authority=0进入研究候选。"
+  ],
+  "judgment_heuristics": [
+    "远期扩产解决的是未来供给，不能自动缓解当前短缺。",
+    "订单和产能是收入的前提，现金流与稀释决定收入能否转化为每股价值。",
+    "广度强不等于所有风格强，风格分化必须单独验证。"
+  ],
+  "action_summary": {
+    "posture_update": "not_applied_other_author",
+    "playbook_update": "no_change",
+    "hypothesis_update": "two_new_candidates",
+    "audit_evidence": "bound_to_complete_official_article_markdown_sha256",
+    "instrumentation_todo": "research_capacity_milestones_and_capex_cashflow_dilution",
+    "routing": [
+      "authority_0_durable_knowledge",
+      "research_backlog_candidate"
+    ]
+  }
+}
