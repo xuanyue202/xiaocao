@@ -2348,6 +2348,62 @@ def test_new_image_claim_uses_single_frontend_intercept_when_provider_filters_di
     assert frontend_calls == 1
 
 
+def test_frontend_intercept_installs_before_first_provider_trigger(tmp_path):
+    entry = {
+        **_representative_subscription_entries()[0],
+        "provider_file_id": "123456789012345",
+        "path": "/彤商学院/报告/8月11日马车.png",
+        "name": "8月11日马车.png",
+        "size": 421751,
+    }
+    operations = []
+
+    service = LvSubscriptionService(
+        tmp_path / "out",
+        now=lambda: NOW,
+        share_url="https://pan.baidu.com/s/private-share-token",
+        share_code="a1b2",
+    )
+
+    def read_browser(_session, operation, *args, **_kwargs):
+        operations.append(operation)
+        if operation == "open":
+            return {"url": "redacted", "page": "page-1"}
+        if operation == "click":
+            pytest.fail("frontend interceptor must precede the first trigger")
+        script = args[0]
+        if "ticket04_target_route_readback" in script:
+            return {"status": "target_route_ready"}
+        if "ticket04_exact_ui_download" in script:
+            return {"status": "download_control_ready"}
+        if "ticket04_signed_link_intercept_and_trigger" in script:
+            return {
+                "status": "download_link_ready",
+                "download_url": (
+                    "https://d.pcs.baidu.com/file/signed-evidence?token=redacted"
+                ),
+                "scheme": "https:",
+                "host": "d.pcs.baidu.com",
+                "path": "/file/signed-evidence",
+                "provider_file_id": entry["provider_file_id"],
+            }
+        raise AssertionError(args[0])
+
+    service._opencli_json = read_browser
+    service._fetch_provider_small_file = lambda *_args, **_kwargs: {
+        "status": "completed"
+    }
+
+    result = service._provider_frontend_intercepted_download(
+        LvSubscriptionService._normalize_entry(entry),
+        session="ticket04",
+        profile=None,
+    )
+
+    assert result == {"status": "completed"}
+    assert operations == ["open", "eval", "eval", "eval"]
+
+
 def test_one_poll_listing_is_reused_for_all_claim_reconciliations(tmp_path):
     entries = [
         {

@@ -1211,8 +1211,15 @@ _PROVIDER_FRONTEND_INTERCEPT_INSTALL_SCRIPT_TEMPLATE = r"""(async () => {
   const confirmations = Array.from(document.querySelectorAll(
     "a[data-xiaocao-download-confirmation='1']"
   )).filter(visible);
-  if (confirmations.length !== 1) {
-    return result('download_confirmation_missing');
+  const initialDownloads = Array.from(document.querySelectorAll(
+    "a[data-xiaocao-download-open='1']"
+  )).filter(visible);
+  if (confirmations.length > 1 || initialDownloads.length > 1) {
+    return result('download_trigger_ambiguous');
+  }
+  const trigger = confirmations[0] || initialDownloads[0];
+  if (!trigger) {
+    return result('download_trigger_missing');
   }
   const stateKey = '__xiaocaoTicket04SignedLink';
   const prior = window[stateKey];
@@ -1338,7 +1345,8 @@ _PROVIDER_FRONTEND_INTERCEPT_INSTALL_SCRIPT_TEMPLATE = r"""(async () => {
   observer.observe(document.documentElement, {
     subtree: true, attributes: true, attributeFilter: ['src']
   });
-  confirmations[0].click();
+  let secondaryConfirmationTriggered = confirmations.length === 1;
+  trigger.click();
   const deadline = Date.now() + 15000;
   while (Date.now() < deadline) {
     if (state.downloadUrl) {
@@ -1349,6 +1357,22 @@ _PROVIDER_FRONTEND_INTERCEPT_INSTALL_SCRIPT_TEMPLATE = r"""(async () => {
         path: state.path,
         provider_file_id: state.providerFileId
       });
+    }
+    if (!secondaryConfirmationTriggered) {
+      const secondaryConfirmations = Array.from(document.querySelectorAll(
+        'a.g-button'
+      )).filter(control => (
+        visible(control)
+        && String(control.innerText || control.textContent || '').trim()
+          === '普通下载'
+      ));
+      if (secondaryConfirmations.length > 1) {
+        return result('download_confirmation_ambiguous');
+      }
+      if (secondaryConfirmations.length === 1) {
+        secondaryConfirmationTriggered = true;
+        secondaryConfirmations[0].click();
+      }
     }
     await new Promise(resolve => setTimeout(resolve, 100));
   }
@@ -3220,6 +3244,7 @@ try {
         *,
         session: str,
         profile: str | None,
+        defer_trigger: bool = False,
     ) -> dict[str, Any]:
         """Select one provider row and natively open its download choice."""
         script = _browser_download_script(
@@ -3249,6 +3274,8 @@ try {
         if prepared.get("status") == "download_confirmation_ready":
             return prepared
         if prepared.get("status") != "download_control_ready":
+            return prepared
+        if defer_trigger:
             return prepared
         clicked = self._opencli_json(
             session,
@@ -4409,8 +4436,12 @@ try {
             item,
             session=session,
             profile=profile,
+            defer_trigger=True,
         )
-        if prepared.get("status") != "download_confirmation_ready":
+        if prepared.get("status") not in {
+            "download_confirmation_ready",
+            "download_control_ready",
+        }:
             code = (
                 "provider_web_download_client_only"
                 if prepared.get("status")
