@@ -5283,6 +5283,14 @@ def test_initial_projection_backfills_report_only_history_without_side_effects(
             "claim_id": "industry-profit-check",
             "quote": "行业景气仍需订单和利润验证。",
         }],
+        "report_copy": {
+            "title": "示例达人：行业景气需要订单与利润确认",
+            "summary": "这是一条需要持续核对订单和利润的行业判断。",
+            "report_body": (
+                "# 行业景气的验证条件\n\n"
+                "行业景气仍需订单和利润共同验证。"
+            ),
+        },
         "longitudinal_projection": {
             "status": "promoted",
             "reason": "主张有明确对象和验证条件。",
@@ -5321,6 +5329,17 @@ def test_initial_projection_backfills_report_only_history_without_side_effects(
     assert updated_report["payload"]["viewpoint_ids"] == [
         viewpoints[0]["record_id"]
     ]
+    assert updated_report["payload"]["title"] == (
+        "示例达人：行业景气需要订单与利润确认"
+    )
+    assert updated_report["payload"]["summary"] == (
+        "这是一条需要持续核对订单和利润的行业判断。"
+    )
+    assert updated_report["payload"]["report_body"].startswith(
+        "# 行业景气的验证条件"
+    )
+    assert updated_report["payload"]["alert_eligible"] is False
+    assert candidate["metadata"]["report_copy_corrected"] is True
     assert candidate["publish_request"]["expected_content_sha256"] == (
         report["content_sha256"]
     )
@@ -5337,6 +5356,95 @@ def test_initial_projection_backfills_report_only_history_without_side_effects(
     assert terminal["viewpoint_count"] == 1
     assert terminal["alert"]["status"] == "not_created"
     assert terminal["book_kol_us"]["status"] == "not_created"
+
+
+def test_initial_projection_rejects_report_copy_side_effect_fields(tmp_path):
+    evidence_path = tmp_path / "evidence.md"
+    evidence_path.write_text("行业景气仍需验证。\n", encoding="utf-8")
+    evidence_sha256 = hashlib.sha256(evidence_path.read_bytes()).hexdigest()
+    publication_id = publication_id_for_source(
+        adapter="wechat_official_account",
+        source_identity="report-copy-side-effect-rejected",
+    )
+    report_id_value = report_id(publication_id)
+    source_binding = {
+        "publication_id": publication_id,
+        "publication_version": "article-v1",
+        "evidence_sha256": evidence_sha256,
+        "decision_result_sha256": "b" * 64,
+        "extraction_contract_version": "kol-intelligence-v1",
+    }
+    report = build_record(
+        kind="report",
+        record_id_value=report_id_value,
+        idempotency_key="put-existing-report",
+        created_at="2026-08-04T08:00:00Z",
+        source_binding=source_binding,
+        payload={
+            "report_id": report_id_value,
+            "report_kind": "publication_event",
+            "kol_id": "kol-example",
+            "author": "示例达人",
+            "source": "微信公众号",
+            "title": "原报告",
+            "summary": "原摘要",
+            "source_published_at": "2026-08-04T08:00:00Z",
+            "media_types": ["text"],
+            "source_parts": [],
+            "report_format": "markdown",
+            "report_body": "# 原报告\n\n原正文。",
+            "viewpoint_ids": [],
+            "alert_eligible": False,
+            "alert_reason": "历史文章只归档，不补发即时提醒。",
+            "reader_insight": {
+                "status": "useful",
+                "reason": "仍有检索价值。",
+            },
+        },
+    )
+    request = {
+        "operation": "initial_projection",
+        "trigger": "user_request",
+        "report_id": report_id_value,
+        "evidence_path": str(evidence_path),
+        "evidence_sha256": evidence_sha256,
+        "claims": [{
+            "claim_id": "industry-check",
+            "quote": "行业景气仍需验证。",
+        }],
+        "report_copy": {
+            "title": "修订报告",
+            "summary": "修订摘要",
+            "report_body": "# 修订报告\n\n修订正文。",
+            "alert_eligible": True,
+        },
+        "longitudinal_projection": {
+            "status": "promoted",
+            "reason": "观点可持续复核。",
+            "evaluated_at": "2026-08-05T18:20:00+08:00",
+            "viewpoints": [{
+                "local_thesis_id": "industry-check",
+                "subject": "行业景气",
+                "stance": "行业景气仍需后续数据验证。",
+                "horizon": "未来数周",
+                "reasoning": "来源给出了持续验证边界。",
+                "evidence_refs": [{
+                    "claim_id": "industry-check",
+                    "excerpt": "行业景气仍需验证。",
+                }],
+                "evaluation": {
+                    "status": "uncertain",
+                    "basis": "尚缺后续数据。",
+                },
+            }],
+        },
+    }
+
+    with pytest.raises(DailyError, match="report copy fields"):
+        build_initial_projection_candidate(
+            {"report": report, "records": [report]},
+            request,
+        )
 
 
 def test_viewpoint_maintenance_uses_lianghui_evaluation_statuses():

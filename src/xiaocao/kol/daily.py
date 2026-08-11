@@ -716,6 +716,25 @@ def build_initial_projection_candidate(
         source_binding=report["source_binding"],
         projection=projection,
     )
+    report_copy = request.get("report_copy")
+    report_payload_updates: dict[str, str] | None = None
+    if report_copy is not None:
+        if not isinstance(report_copy, dict):
+            raise DailyError("initial viewpoint report copy must be an object")
+        allowed_report_copy_fields = {"title", "summary", "report_body"}
+        if set(report_copy) != allowed_report_copy_fields:
+            raise DailyError(
+                "initial viewpoint report copy fields must be exactly title, "
+                "summary, and report_body"
+            )
+        report_payload_updates = {
+            field: str(report_copy.get(field) or "").strip()
+            for field in allowed_report_copy_fields
+        }
+        if any(not value for value in report_payload_updates.values()):
+            raise DailyError(
+                "initial viewpoint report copy fields cannot be empty"
+            )
     projection_id = canonical_sha256(
         {
             "report_id": report["record_id"],
@@ -729,7 +748,13 @@ def build_initial_projection_candidate(
         viewpoint_ids=viewpoint_ids,
         created_at=projection["evaluated_at"],
         revision=f"initial-projection-{projection_id}",
-        reason="补齐来源证据支持的初始长期观点；不创建提醒或 Book 动作。",
+        reason=(
+            "补齐来源证据支持的初始长期观点并修订同一报告正文；"
+            "不创建提醒或 Book 动作。"
+            if report_payload_updates
+            else "补齐来源证据支持的初始长期观点；不创建提醒或 Book 动作。"
+        ),
+        report_payload_updates=report_payload_updates,
     )
     return {
         "publication_key": f"viewpoint-projection:{projection_id}",
@@ -742,6 +767,7 @@ def build_initial_projection_candidate(
             "evaluation_count": len(
                 [row for row in additions if row["kind"] == "viewpoint_evaluation"]
             ),
+            "report_copy_corrected": bool(report_payload_updates),
             "notification_claim_authorized": False,
             "book_kol_us_replay_authorized": False,
             "large_payload_local_bytes": 0,
