@@ -1512,6 +1512,154 @@ def test_replayed_claim_reports_missing_blocked_download_frame_exactly(tmp_path)
     assert waits == 1
 
 
+def test_filtered_image_repair_records_identity_bound_preview_derivative(
+    tmp_path,
+):
+    preview = b"\xff\xd8\xff" + b"p" * 4096
+    entry = _representative_subscription_entries()[0]
+    entry["provider_file_id"] = "27287808569041"
+    entry["size"] = 421751
+    listing = {
+        "status": "ok",
+        "complete_scan": True,
+        "entries": [entry],
+    }
+    operations = []
+
+    def browser_runner(command, **_kwargs):
+        tail = command[3:]
+        operations.append(tail[0])
+        if tail[:1] == ["open"]:
+            payload = {"url": "redacted", "page": "page-1"}
+        elif (
+            tail[:1] == ["eval"]
+            and "ticket04_filtered_image_preview_readback" in tail[1]
+        ):
+            payload = {
+                "status": "preview_ready",
+                "download_url": (
+                    "https://thumbnail0.baidupcs.com/thumbnail/evidence?"
+                    "fid=4053260286-250528-27287808569041&signed=redacted"
+                ),
+                "host": "thumbnail0.baidupcs.com",
+                "path": "/thumbnail/evidence",
+                "provider_file_id": entry["provider_file_id"],
+                "natural_width": 1084,
+                "natural_height": 900,
+            }
+        else:
+            raise AssertionError(command)
+        return SimpleNamespace(
+            returncode=0,
+            stdout=json.dumps(payload),
+            stderr="",
+        )
+
+    def preview_fetcher(_url, destination):
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        destination.write_bytes(preview)
+        return {
+            "path": str(destination),
+            "actual_size": len(preview),
+            "content_type": "image/jpeg",
+            "sha256": hashlib.sha256(preview).hexdigest(),
+        }
+
+    service = LvSubscriptionService(
+        tmp_path / "out",
+        now=lambda: NOW,
+        runner=browser_runner,
+        opencli_command=("opencli",),
+        share_url="https://pan.baidu.com/s/private-share-token",
+        share_code="a1b2",
+        preview_fetcher=preview_fetcher,
+    )
+    update = service.observe_browser_listing([entry])["updates"][0]
+    claim = service.claim_browser_download(update["identity"])
+
+    receipt = service.reconcile_filtered_image_preview(
+        update["identity"],
+        session="ticket04",
+        profile=None,
+        listing=listing,
+    )
+
+    assert receipt["status"] == "completed"
+    assert receipt["claim_id"] == claim["claim_id"]
+    assert receipt["acquisition_transport"] == "provider_preview_derivative"
+    assert receipt["source_byte_exact"] is False
+    assert receipt["expected_size"] == entry["size"]
+    assert receipt["actual_size"] == len(preview)
+    assert receipt["source_provider_file_id"] == entry["provider_file_id"]
+    assert receipt["preview_pixel_width"] == 1084
+    assert receipt["preview_pixel_height"] == 900
+    assert operations == ["open", "eval"]
+
+    ingest = service.ingest_browser_download(
+        update["identity"],
+        ocr_runner=lambda _path: {
+            "engine": "macos_vision",
+            "lines": [{
+                "text": "市场缩量，下一交易日观察成交额是否恢复。",
+                "confidence": 0.99,
+                "bounding_box": [0.1, 0.7, 0.8, 0.1],
+            }],
+        },
+    )
+    request = service.prepare_analysis_request(ingest)
+
+    for result in (ingest, request):
+        assert result["acquisition_transport"] == "provider_preview_derivative"
+        assert result["source_byte_exact"] is False
+        assert result["source_expected_size"] == entry["size"]
+        assert result["acquired_size"] == len(preview)
+        assert result["source_provider_file_id"] == entry["provider_file_id"]
+        assert result["preview_pixel_width"] == 1084
+        assert result["preview_pixel_height"] == 900
+
+
+def test_preview_fetch_transport_failure_removes_partial_file(
+    tmp_path,
+    monkeypatch,
+):
+    class Headers:
+        @staticmethod
+        def get_content_type():
+            return "image/jpeg"
+
+    class Response:
+        headers = Headers()
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            return False
+
+        def read(self, _size):
+            if not hasattr(self, "read_once"):
+                self.read_once = True
+                return b"\xff\xd8\xffpartial"
+            raise OSError("transport interrupted")
+
+    monkeypatch.setattr(
+        lv_subscription,
+        "urlopen",
+        lambda *_args, **_kwargs: Response(),
+    )
+    destination = tmp_path / "preview" / "provider_preview.jpg"
+
+    with pytest.raises(EnrichmentDiagnosticError) as captured:
+        LvSubscriptionService._default_preview_fetcher(
+            "https://thumbnail0.baidupcs.com/thumbnail/evidence?fid=1",
+            destination,
+        )
+
+    assert captured.value.diagnostic_code == "provider_preview_transport_failed"
+    assert not destination.exists()
+    assert not destination.with_name(".provider_preview.jpg.partial").exists()
+
+
 def test_session_download_policy_ack_uses_controlled_inbox_without_profile_edit(
     tmp_path,
 ):

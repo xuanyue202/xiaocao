@@ -16,7 +16,7 @@ import time
 from datetime import datetime, timezone
 from pathlib import Path, PurePosixPath
 from typing import Any, Callable, Mapping, Sequence
-from urllib.parse import quote, urlencode, urlparse
+from urllib.parse import parse_qs, quote, urlencode, urlparse
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
@@ -95,6 +95,7 @@ _OPENCLI_ERROR_CATEGORIES = {
 
 _DIRECT_DOWNLOAD_MEDIA = {"image", "pdf", "text"}
 _DIRECT_DOWNLOAD_HOSTS = {"d.pcs.baidu.com"}
+_PREVIEW_DOWNLOAD_HOST = re.compile(r"thumbnail\d*\.baidupcs\.com")
 BLOCKED_DOWNLOAD_PROVIDER_CONTRACT_VERSION = "baidu_netdisk_download_v1"
 _DIRECT_DOWNLOAD_PATHS = {"/rest/2.0/pcs/file"}
 _DIRECT_DOWNLOAD_CONTENT_TYPES = {
@@ -568,6 +569,110 @@ _BROWSER_DOWNLOAD_CONFIRMATION_SCRIPT = r"""(async () => {
     operation
   };
 })()"""
+
+
+_FILTERED_IMAGE_PREVIEW_SCRIPT_TEMPLATE = r"""(async () => {
+  const operation = 'ticket04_filtered_image_preview_readback';
+  const expectedSharePath = __EXPECTED_SHARE_PATH_JSON__;
+  const expectedProviderFileId = __EXPECTED_PROVIDER_FILE_ID_JSON__;
+  const expectedItemPath = __EXPECTED_ITEM_PATH_JSON__;
+  const expectedName = __EXPECTED_NAME_JSON__;
+  const result = (status, extra = {}) => ({status, operation, ...extra});
+  if (
+    location.origin !== 'https://pan.baidu.com'
+    || location.pathname !== expectedSharePath
+    || !/^\d+$/.test(expectedProviderFileId)
+    || !expectedItemPath.endsWith('/' + expectedName)
+  ) return result('preview_target_invalid');
+  const parentPath = expectedItemPath.slice(
+    0, expectedItemPath.length - expectedName.length - 1
+  ) || '/';
+  const prefix = '#list/path=';
+  let currentParentPath = '';
+  try {
+    currentParentPath = location.hash.startsWith(prefix)
+      ? decodeURIComponent(location.hash.slice(prefix.length)) : '';
+  } catch (_error) {}
+  if (currentParentPath !== parentPath) {
+    return result('preview_parent_mismatch');
+  }
+  const visible = element => {
+    const style = getComputedStyle(element);
+    const rect = element.getBoundingClientRect();
+    return style.display !== 'none' && style.visibility !== 'hidden'
+      && rect.width > 0 && rect.height > 0;
+  };
+  const targetDeadline = Date.now() + 10000;
+  let targets = [];
+  while (Date.now() < targetDeadline) {
+    targets = Array.from(document.querySelectorAll('#shareqr dd')).filter(row => {
+      const filename = row.querySelector('a.filename');
+      return filename
+        && String(filename.getAttribute('title') || '') === expectedName;
+    });
+    if (targets.length === 1) break;
+    await new Promise(resolve => setTimeout(resolve, 100));
+  }
+  if (targets.length !== 1) {
+    return result(
+      targets.length === 0 ? 'preview_target_missing' : 'preview_target_ambiguous'
+    );
+  }
+  const filename = targets[0].querySelector('a.filename');
+  if (!filename || !visible(filename)) return result('preview_target_not_visible');
+  filename.click();
+  const previewDeadline = Date.now() + 15000;
+  while (Date.now() < previewDeadline) {
+    const candidates = Array.from(document.querySelectorAll('img'))
+      .filter(image => {
+        if (!visible(image) || image.naturalWidth < 512 || image.naturalHeight < 512) {
+          return false;
+        }
+        let url;
+        try { url = new URL(String(image.currentSrc || image.src || '')); }
+        catch (_error) { return false; }
+        const fid = String(url.searchParams.get('fid') || '').split('-').pop();
+        return /^thumbnail\d*\.baidupcs\.com$/.test(url.hostname)
+          && url.pathname.startsWith('/thumbnail/')
+          && fid === expectedProviderFileId;
+      });
+    if (candidates.length > 1) return result('preview_image_ambiguous');
+    if (candidates.length === 1) {
+      const image = candidates[0];
+      const url = new URL(String(image.currentSrc || image.src || ''));
+      return result('preview_ready', {
+        download_url: url.href,
+        host: url.hostname,
+        path: url.pathname,
+        provider_file_id: expectedProviderFileId,
+        natural_width: Number(image.naturalWidth || 0),
+        natural_height: Number(image.naturalHeight || 0)
+      });
+    }
+    await new Promise(resolve => setTimeout(resolve, 100));
+  }
+  return result('preview_image_missing');
+})()"""
+
+
+def _filtered_image_preview_script(
+    *,
+    expected_share_path: str,
+    expected_provider_file_id: str,
+    expected_item_path: str,
+    expected_name: str,
+) -> str:
+    return (
+        _FILTERED_IMAGE_PREVIEW_SCRIPT_TEMPLATE.replace(
+            "__EXPECTED_SHARE_PATH_JSON__", json.dumps(expected_share_path)
+        )
+        .replace(
+            "__EXPECTED_PROVIDER_FILE_ID_JSON__",
+            json.dumps(expected_provider_file_id),
+        )
+        .replace("__EXPECTED_ITEM_PATH_JSON__", json.dumps(expected_item_path))
+        .replace("__EXPECTED_NAME_JSON__", json.dumps(expected_name))
+    )
 
 
 def _browser_download_script(
@@ -1543,6 +1648,7 @@ class LvSubscriptionService:
             [str, Path, int, str], dict[str, Any]
         ]
         | None = None,
+        preview_fetcher: Callable[[str, Path], dict[str, Any]] | None = None,
         owner_cloud_operator: Callable[
             [dict[str, Any], dict[str, Any], str, str | None],
             dict[str, Any],
@@ -1600,6 +1706,7 @@ class LvSubscriptionService:
         self.direct_download_fetcher = (
             direct_download_fetcher or self._default_direct_download_fetcher
         )
+        self.preview_fetcher = preview_fetcher or self._default_preview_fetcher
         self.owner_cloud_operator = (
             owner_cloud_operator or self._default_owner_cloud_operator
         )
@@ -2990,6 +3097,167 @@ try {
         )
         return failed
 
+    def reconcile_filtered_image_preview(
+        self,
+        identity: str,
+        *,
+        session: str,
+        profile: str | None,
+        listing: dict[str, Any],
+    ) -> dict[str, Any]:
+        """Complete one filtered image claim from an exact read-only preview."""
+        item = self._manifest_item(str(identity))
+        completed = self._completed_browser_receipt(item)
+        if completed is not None:
+            return {**completed, "idempotent_replay": True}
+        if (
+            item.get("media_type") != "image"
+            or listing.get("status") != "ok"
+            or listing.get("complete_scan") is not True
+            or not isinstance(listing.get("entries"), list)
+        ):
+            raise EnrichmentDiagnosticError(
+                "filtered image preview lacks a complete source listing",
+                category="incomplete_scan",
+                code="provider_preview_listing_invalid",
+                stage="provider_preview_reconciliation",
+            )
+        matches: list[dict[str, Any]] = []
+        for raw in listing["entries"]:
+            if not isinstance(raw, dict):
+                continue
+            normalized = self._normalize_entry(raw)
+            if (
+                normalized["identity"] == item["identity"]
+                and normalized["version_key"] == item["version_key"]
+                and normalized["path"] == item["path"]
+                and normalized["name"] == item["name"]
+                and normalized["size"] == item["size"]
+            ):
+                matches.append(raw)
+        if len(matches) != 1:
+            raise EnrichmentDiagnosticError(
+                "filtered image preview target is not unique",
+                category="identity_error",
+                code="provider_preview_target_not_unique",
+                stage="provider_preview_reconciliation",
+            )
+        provider_file_id = str(
+            matches[0].get("provider_file_id") or ""
+        ).strip()
+        if not provider_file_id.isdigit():
+            raise EnrichmentDiagnosticError(
+                "filtered image preview provider identity is invalid",
+                category="identity_error",
+                code="provider_preview_identity_invalid",
+                stage="provider_preview_reconciliation",
+            )
+        artifact_dir = self.output_dir / "artifacts" / str(item["version_key"])
+        claim_path = artifact_dir / "browser_download_claim.json"
+        try:
+            claim = json.loads(claim_path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError) as exc:
+            raise EnrichmentError(
+                "filtered image preview claim is invalid"
+            ) from exc
+        if (
+            claim.get("status") != "claimed"
+            or claim.get("identity") != item["identity"]
+            or claim.get("version_key") != item["version_key"]
+            or claim.get("media_type") != "image"
+            or int(claim.get("expected_size") or 0) != int(item["size"])
+        ):
+            raise EnrichmentError(
+                "filtered image preview changed the acquisition claim"
+            )
+        parent_path = str(PurePosixPath(str(item["path"])).parent)
+        route = urlparse(
+            _authorized_share_url(self.share_url, self.share_code)
+        )._replace(fragment=f"list/path={quote(parent_path, safe='')}").geturl()
+        self._opencli_json(
+            session,
+            "open",
+            route,
+            profile=profile,
+            timeout_seconds=30,
+        )
+        preview = self._opencli_json(
+            session,
+            "eval",
+            _filtered_image_preview_script(
+                expected_share_path=urlparse(self.share_url).path,
+                expected_provider_file_id=provider_file_id,
+                expected_item_path=str(item["path"]),
+                expected_name=str(item["name"]),
+            ),
+            profile=profile,
+            timeout_seconds=30,
+        )
+        if preview.get("status") != "preview_ready":
+            raise EnrichmentDiagnosticError(
+                "provider preview did not expose exact image evidence",
+                category="provider_error",
+                code="provider_preview_not_ready",
+                stage="provider_preview_reconciliation",
+            )
+        preview_url = str(preview.get("download_url") or "")
+        parsed = urlparse(preview_url)
+        fid_values = parse_qs(parsed.query).get("fid") or []
+        fid = str(fid_values[0] if len(fid_values) == 1 else "")
+        width = int(preview.get("natural_width") or 0)
+        height = int(preview.get("natural_height") or 0)
+        if (
+            parsed.scheme != "https"
+            or _PREVIEW_DOWNLOAD_HOST.fullmatch(parsed.hostname or "") is None
+            or not parsed.path.startswith("/thumbnail/")
+            or not parsed.query
+            or fid.split("-")[-1] != provider_file_id
+            or preview.get("provider_file_id") != provider_file_id
+            or preview.get("host") != parsed.hostname
+            or preview.get("path") != parsed.path
+            or width < 512
+            or height < 512
+        ):
+            raise EnrichmentDiagnosticError(
+                "provider preview changed source identity",
+                category="identity_error",
+                code="provider_preview_binding_invalid",
+                stage="provider_preview_reconciliation",
+            )
+        destination = (
+            self.download_inbox / str(item["version_key"]) / "provider_preview.jpg"
+        ).resolve()
+        if destination.parent.parent != self.download_inbox:
+            raise EnrichmentError("provider preview destination is invalid")
+        fetched = self.preview_fetcher(preview_url, destination)
+        preview.pop("download_url", None)
+        path = Path(str(fetched.get("path") or "")).resolve()
+        if (
+            path != destination
+            or not path.is_file()
+            or path.stat().st_size <= 0
+            or int(fetched.get("actual_size") or 0) != path.stat().st_size
+            or fetched.get("content_type") != "image/jpeg"
+            or fetched.get("sha256") != _sha256_file(path)
+            or not path.read_bytes()[:3].startswith(b"\xff\xd8\xff")
+        ):
+            raise EnrichmentDiagnosticError(
+                "provider preview derivative receipt is invalid",
+                category="identity_error",
+                code="provider_preview_receipt_invalid",
+                stage="provider_preview_reconciliation",
+            )
+        return self.complete_browser_download(
+            str(item["identity"]),
+            path,
+            claim_id=str(claim["claim_id"]),
+            acquisition_transport="provider_preview_derivative",
+            source_byte_exact=False,
+            source_provider_file_id=provider_file_id,
+            preview_pixel_width=width,
+            preview_pixel_height=height,
+        )
+
     @_exclusive("item")
     def complete_browser_download(
         self,
@@ -2998,6 +3266,10 @@ try {
         *,
         claim_id: str,
         acquisition_transport: str = "browser_download",
+        source_byte_exact: bool = True,
+        source_provider_file_id: str | None = None,
+        preview_pixel_width: int | None = None,
+        preview_pixel_height: int | None = None,
     ) -> dict[str, Any]:
         """Snapshot one browser download against its pre-action source claim."""
         item = self._manifest_item(str(identity))
@@ -3055,13 +3327,37 @@ try {
             raise EnrichmentError(
                 "subscription evidence size is outside the small-file boundary"
             )
-        if int(item.get("size") or 0) and actual_size != int(item["size"]):
-            raise EnrichmentError("browser-downloaded subscription file size changed")
-        if source.name != item.get("name"):
-            raise EnrichmentError("browser-downloaded subscription filename changed")
+        if source_byte_exact:
+            if int(item.get("size") or 0) and actual_size != int(item["size"]):
+                raise EnrichmentError(
+                    "browser-downloaded subscription file size changed"
+                )
+            if source.name != item.get("name"):
+                raise EnrichmentError(
+                    "browser-downloaded subscription filename changed"
+                )
+        else:
+            if (
+                acquisition_transport != "provider_preview_derivative"
+                or item.get("media_type") != "image"
+                or source.name != "provider_preview.jpg"
+                or not str(source_provider_file_id or "").isdigit()
+                or not isinstance(preview_pixel_width, int)
+                or not isinstance(preview_pixel_height, int)
+                or preview_pixel_width < 512
+                or preview_pixel_height < 512
+                or not source.read_bytes()[:3].startswith(b"\xff\xd8\xff")
+            ):
+                raise EnrichmentError(
+                    "provider preview derivative is not evidence-bound"
+                )
 
         artifact_dir.mkdir(parents=True, exist_ok=True)
-        immutable = artifact_dir / f"browser_original{source.suffix.lower()}"
+        immutable = artifact_dir / (
+            "browser_preview.jpg"
+            if not source_byte_exact
+            else f"browser_original{source.suffix.lower()}"
+        )
         temporary = artifact_dir / f".{immutable.name}.partial"
         shutil.copyfile(source, temporary)
         temporary.replace(immutable)
@@ -3078,6 +3374,18 @@ try {
             "expected_size": int(item.get("size") or 0),
             "actual_size": actual_size,
             "acquisition_transport": acquisition_transport,
+            "source_byte_exact": source_byte_exact,
+            "source_provider_file_id": (
+                str(source_provider_file_id)
+                if not source_byte_exact
+                else None
+            ),
+            "preview_pixel_width": (
+                preview_pixel_width if not source_byte_exact else None
+            ),
+            "preview_pixel_height": (
+                preview_pixel_height if not source_byte_exact else None
+            ),
             "immutable_path": str(immutable.resolve()),
             "sha256": _sha256_file(immutable),
             "claimed_at": claim["claimed_at"],
@@ -3451,6 +3759,116 @@ try {
                     code="provider_download_content_invalid",
                     stage="provider_direct_download",
                 ) from exc
+        return {
+            "path": str(destination),
+            "actual_size": actual_size,
+            "content_type": content_type,
+            "sha256": digest.hexdigest(),
+        }
+
+    @staticmethod
+    def _default_preview_fetcher(
+        preview_url: str,
+        destination: Path,
+    ) -> dict[str, Any]:
+        """Stream one identity-bound provider preview without logging its URL."""
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        if destination.exists():
+            raise EnrichmentDiagnosticError(
+                "controlled preview inbox contains an unreconciled file",
+                category="uncertain_state",
+                code="preview_inbox_collision",
+                stage="provider_preview_reconciliation",
+            )
+        request = Request(
+            preview_url,
+            headers={
+                "Accept": "image/jpeg",
+                "Referer": "https://pan.baidu.com/",
+                "User-Agent": "Mozilla/5.0",
+            },
+            method="GET",
+        )
+        temporary = destination.with_name(f".{destination.name}.partial")
+        if temporary.exists():
+            raise EnrichmentDiagnosticError(
+                "controlled preview inbox has an unfinished transfer",
+                category="uncertain_state",
+                code="preview_inbox_partial_exists",
+                stage="provider_preview_reconciliation",
+            )
+        digest = hashlib.sha256()
+        actual_size = 0
+        content_type = ""
+        stream_completed = False
+        try:
+            with urlopen(request, timeout=60) as response:  # noqa: S310
+                content_type = str(
+                    response.headers.get_content_type() or ""
+                ).lower()
+                if content_type != "image/jpeg":
+                    raise EnrichmentDiagnosticError(
+                        "provider preview content type is invalid",
+                        category="content_error",
+                        code="provider_preview_content_type_invalid",
+                        stage="provider_preview_reconciliation",
+                    )
+                with temporary.open("xb") as handle:
+                    while True:
+                        chunk = response.read(1024 * 1024)
+                        if not chunk:
+                            break
+                        actual_size += len(chunk)
+                        if actual_size > MAX_SMALL_EVIDENCE_BYTES:
+                            raise EnrichmentDiagnosticError(
+                                "provider preview exceeded the evidence boundary",
+                                category="content_error",
+                                code="provider_preview_oversized",
+                                stage="provider_preview_reconciliation",
+                            )
+                        digest.update(chunk)
+                        handle.write(chunk)
+            stream_completed = True
+        except HTTPError as exc:
+            if exc.code in {401, 403}:
+                raise EnrichmentDiagnosticError(
+                    "provider preview authentication is required",
+                    category="authentication_error",
+                    code="provider_authentication_required",
+                    stage="browser_download_authorization",
+                ) from exc
+            raise EnrichmentDiagnosticError(
+                "provider preview fetch failed",
+                category="provider_error",
+                code="provider_preview_http_failed",
+                stage="provider_preview_reconciliation",
+            ) from exc
+        except (URLError, TimeoutError, OSError) as exc:
+            raise EnrichmentDiagnosticError(
+                "provider preview transport failed",
+                category="transport_error",
+                code="provider_preview_transport_failed",
+                stage="provider_preview_reconciliation",
+            ) from exc
+        finally:
+            if temporary.exists() and not stream_completed:
+                temporary.unlink()
+        if actual_size <= 0:
+            raise EnrichmentDiagnosticError(
+                "provider preview is empty",
+                category="content_error",
+                code="provider_preview_empty",
+                stage="provider_preview_reconciliation",
+            )
+        if not temporary.read_bytes()[:3].startswith(b"\xff\xd8\xff"):
+            temporary.unlink()
+            raise EnrichmentDiagnosticError(
+                "provider preview is not a JPEG image",
+                category="content_error",
+                code="provider_preview_content_invalid",
+                stage="provider_preview_reconciliation",
+            )
+        temporary.replace(destination)
         return {
             "path": str(destination),
             "actual_size": actual_size,
@@ -5648,6 +6066,15 @@ try {
             "first_observed_at": first_observed_at,
             "original_path": str(original.resolve()),
             "original_sha256": original_sha,
+            "acquisition_transport": str(
+                receipt.get("acquisition_transport") or "browser_download"
+            ),
+            "source_byte_exact": receipt.get("source_byte_exact") is not False,
+            "source_expected_size": int(receipt.get("expected_size") or 0),
+            "acquired_size": int(receipt.get("actual_size") or 0),
+            "source_provider_file_id": receipt.get("source_provider_file_id"),
+            "preview_pixel_width": receipt.get("preview_pixel_width"),
+            "preview_pixel_height": receipt.get("preview_pixel_height"),
             "evidence_path": str(evidence_path.resolve()),
             "evidence_sha256": _sha256_file(evidence_path),
             "ocr_path": str(ocr_path.resolve()) if ocr_path else None,
@@ -6222,6 +6649,13 @@ try {
             "evidence_sha256": ingest["evidence_sha256"],
             "original_evidence_path": ingest["original_path"],
             "original_evidence_sha256": ingest["original_sha256"],
+            "acquisition_transport": ingest.get("acquisition_transport"),
+            "source_byte_exact": ingest.get("source_byte_exact") is not False,
+            "source_expected_size": ingest.get("source_expected_size"),
+            "acquired_size": ingest.get("acquired_size"),
+            "source_provider_file_id": ingest.get("source_provider_file_id"),
+            "preview_pixel_width": ingest.get("preview_pixel_width"),
+            "preview_pixel_height": ingest.get("preview_pixel_height"),
             "ocr_path": ingest.get("ocr_path"),
             "ocr_sha256": ingest.get("ocr_sha256"),
             "pdf_coverage_path": ingest.get("pdf_coverage_path"),

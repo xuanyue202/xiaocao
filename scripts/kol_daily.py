@@ -2192,6 +2192,27 @@ class DailyRuntime:
             return self.lv()
         return self.lv(only_identity=identity)
 
+    def lv_filtered_image_reconcile(self, surface: str) -> dict[str, Any]:
+        identity = _exact_progress_surface("lv_text_image", surface)
+        if identity == "source":
+            raise DailyError(
+                "filtered image preview requires one exact item identity"
+            )
+        service = self._lv_service_for_sweep()
+        listing = self._lv_listing_for_sweep()
+        service.poll_opencli(
+            session=self.args.lv_session,
+            profile=self.args.opencli_profile,
+            listing=listing,
+        )
+        service.reconcile_filtered_image_preview(
+            identity,
+            session=self.args.lv_session,
+            profile=self.args.opencli_profile,
+            listing=listing,
+        )
+        return self.lv(only_identity=identity)
+
     def lv_reconcile(self, progress: WriterProgress) -> dict[str, Any]:
         raise DailyError(
             f"Lv has no authoritative {progress.details['readback_operation']}"
@@ -3451,8 +3472,17 @@ def _resume_source_repair_outcome(
     runtime: DailyRuntime,
     adapter: str,
     surface: str,
+    *,
+    failure_code: str | None = None,
 ) -> dict[str, Any]:
-    narrow_runner = _source_cli_narrow_runner(runtime, adapter)
+    narrow_runner = (
+        runtime.lv_filtered_image_reconcile
+        if (
+            adapter == "lv_text_image"
+            and failure_code == "provider_download_filtered"
+        )
+        else _source_cli_narrow_runner(runtime, adapter)
+    )
     outcome = _classified_narrow_source(adapter, narrow_runner)(surface)
     if adapter != "xiaocao_wechat_live":
         return outcome
@@ -3742,6 +3772,7 @@ def main() -> int:
             runtime,
             args.source_adapter,
             surface,
+            failure_code=str(progress.details["failure"]["code"]),
         )
         following = WriterProgress.from_dict(outcome["writer_progress"])
         resume_receipt = service.convergence.record_resume(

@@ -338,6 +338,28 @@ def test_source_repair_resume_follows_bound_xiaocao_cloud_handoff(monkeypatch):
     assert result["writer_progress"]["status"] == "terminal"
 
 
+def test_filtered_image_repair_uses_read_only_preview_surface():
+    calls = []
+    runtime = SimpleNamespace(
+        lv_narrow_resume=lambda _surface: pytest.fail(
+            "filtered image repair must not use the normal replay surface"
+        ),
+        lv_filtered_image_reconcile=lambda surface: (
+            calls.append(surface) or {"status": "no_update"}
+        ),
+    )
+
+    result = kol_daily_script._resume_source_repair_outcome(
+        runtime,
+        "lv_text_image",
+        "lv_text_image:item-1",
+        failure_code="provider_download_filtered",
+    )
+
+    assert calls == ["lv_text_image:item-1"]
+    assert result["writer_progress"]["status"] == "terminal"
+
+
 def test_rollout_verification_uses_local_git_config_state_and_peer_gate(
     tmp_path,
     monkeypatch,
