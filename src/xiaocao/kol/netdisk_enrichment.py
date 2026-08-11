@@ -51,6 +51,60 @@ _NETDISK_FOLDER_URL = (
 )
 
 
+_OPENCLI_PLAYER_PAUSE_GUARD = r"""(async () => {
+  const expectedPath = __EXPECTED_NETDISK_PATH__;
+  const currentUrl = new URL(location.href);
+  const targetBound = currentUrl.origin === 'https://pan.baidu.com'
+    && currentUrl.pathname === '/pfile/video'
+    && currentUrl.searchParams.getAll('path').length === 1
+    && currentUrl.searchParams.get('path') === expectedPath;
+  if (!targetBound) {
+    return {
+      target_bound: false,
+      video_count: 0,
+      playing_before_pause: 0,
+      all_video_paused: false,
+      pause_guard_installed: false
+    };
+  }
+  const guardKey = '__xiaocaoNetdiskPauseGuardV1';
+  const pauseVideo = node => {
+    if (!(node instanceof HTMLVideoElement)) return;
+    node.autoplay = false;
+    node.removeAttribute('autoplay');
+    if (!node.paused) node.pause();
+  };
+  if (!window[guardKey]) {
+    const onPlay = event => pauseVideo(event.target);
+    document.addEventListener('play', onPlay, true);
+    const observer = new MutationObserver(() => {
+      document.querySelectorAll('video').forEach(pauseVideo);
+    });
+    observer.observe(document.documentElement, {childList: true, subtree: true});
+    window[guardKey] = {observer, onPlay};
+  }
+  const deadline = Date.now() + 10000;
+  let videos = [];
+  let playingBeforePause = 0;
+  while (Date.now() < deadline) {
+    videos = [...document.querySelectorAll('video')];
+    playingBeforePause += videos.filter(node => !node.paused).length;
+    videos.forEach(pauseVideo);
+    if (videos.length > 0 && videos.every(node => node.paused)) break;
+    await new Promise(resolve => setTimeout(resolve, 100));
+  }
+  videos = [...document.querySelectorAll('video')];
+  videos.forEach(pauseVideo);
+  return {
+    target_bound: true,
+    video_count: videos.length,
+    playing_before_pause: playingBeforePause,
+    all_video_paused: videos.length > 0 && videos.every(node => node.paused),
+    pause_guard_installed: !!window[guardKey]
+  };
+})()"""
+
+
 def _validate_canonical_semantic_artifact(
     bundle_file: Path,
     bundle: dict[str, Any],
@@ -85,6 +139,16 @@ _OPENCLI_CAPTURE_PROBE = r"""(async () => {
     && currentUrl.searchParams.getAll('path').length === 1
     && currentUrl.searchParams.get('path') === expectedPath;
   if (!targetBound) return {url: location.href, target_bound: false};
+  const pauseVideos = () => {
+    const videos = [...document.querySelectorAll('video')];
+    videos.forEach(node => {
+      node.autoplay = false;
+      node.removeAttribute('autoplay');
+      if (!node.paused) node.pause();
+    });
+    return videos;
+  };
+  pauseVideos();
   const visible = node => {
     const rect = node.getBoundingClientRect();
     const style = getComputedStyle(node);
@@ -192,6 +256,7 @@ _OPENCLI_CAPTURE_PROBE = r"""(async () => {
   const markers = [...new Set(markerNodes.map(
     node => (node.className || '').toString()
   ).filter(Boolean))];
+  const finalVideos = pauseVideos();
   return {
     url: location.href,
     target_bound: true,
@@ -201,6 +266,12 @@ _OPENCLI_CAPTURE_PROBE = r"""(async () => {
       text: active?.textContent || ''
     },
     transcript: {text: transcriptText, segments},
+    playback: {
+      video_count: finalVideos.length,
+      all_video_paused: finalVideos.length > 0
+        && finalVideos.every(node => node.paused),
+      pause_guard_installed: !!window.__xiaocaoNetdiskPauseGuardV1
+    },
     render: {
       list_matches: document.querySelectorAll('.ai-draft__wrap-list').length,
       scroll_top: scroller?.scrollTop,
@@ -1194,15 +1265,15 @@ class NetdiskEnrichmentService:
             raise EnrichmentError("OpenCLI player does not match the prepared Netdisk path")
         return page_url
 
-    def _open_opencli_player(
+    def _open_opencli_player_receipt(
         self,
         *,
         session: str,
         profile: str | None,
         target_name: str,
-    ) -> str:
+    ) -> dict[str, Any]:
         player_url = self._player_url(target_name)
-        self._opencli_json(
+        opened = self._opencli_json(
             session,
             "open",
             player_url,
@@ -1219,7 +1290,154 @@ class NetdiskEnrichmentService:
         actual_url = observed.get("current_url")
         if not isinstance(actual_url, str):
             raise EnrichmentError("OpenCLI did not return the current player URL")
-        return self._validate_player_url(actual_url, target_name=target_name)
+        validated_url = self._validate_player_url(
+            actual_url,
+            target_name=target_name,
+        )
+        page = opened.get("page")
+        if not isinstance(page, str) or not page.strip():
+            raise EnrichmentError("OpenCLI did not return the exact player tab identity")
+        pause_receipt = self._opencli_json(
+            session,
+            "eval",
+            _OPENCLI_PLAYER_PAUSE_GUARD.replace(
+                "__EXPECTED_NETDISK_PATH__",
+                json.dumps(self._netdisk_path(target_name)),
+            ),
+            profile=profile,
+            timeout_seconds=20,
+            attempts=1,
+        )
+        if (
+            pause_receipt.get("target_bound") is not True
+            or pause_receipt.get("pause_guard_installed") is not True
+            or not isinstance(pause_receipt.get("video_count"), int)
+            or pause_receipt["video_count"] < 1
+            or pause_receipt.get("all_video_paused") is not True
+        ):
+            raise EnrichmentError(
+                "Netdisk player video is not proven paused"
+            )
+        return {
+            "player_url": validated_url,
+            "page": page,
+            "pause_receipt": {
+                "video_count": pause_receipt["video_count"],
+                "playing_before_pause": int(
+                    pause_receipt.get("playing_before_pause") or 0
+                ),
+                "all_video_paused": True,
+                "pause_guard_installed": True,
+            },
+        }
+
+    def _open_opencli_player(
+        self,
+        *,
+        session: str,
+        profile: str | None,
+        target_name: str,
+    ) -> str:
+        receipt = self._open_opencli_player_receipt(
+            session=session,
+            profile=profile,
+            target_name=target_name,
+        )
+        return str(receipt["player_url"])
+
+    def _opencli_tab_list(
+        self,
+        *,
+        session: str,
+        profile: str | None,
+    ) -> list[dict[str, Any]]:
+        result = self._run_opencli(
+            session,
+            "tab",
+            "list",
+            profile=profile,
+            timeout_seconds=30,
+            attempts=1,
+        )
+        try:
+            payload = json.loads(str(result.stdout))
+        except (TypeError, json.JSONDecodeError) as exc:
+            raise EnrichmentError("OpenCLI returned an invalid tab list") from exc
+        if not isinstance(payload, list) or any(
+            not isinstance(row, dict) for row in payload
+        ):
+            raise EnrichmentError("OpenCLI returned an invalid tab list")
+        return payload
+
+    def _close_opencli_player(
+        self,
+        *,
+        session: str,
+        profile: str | None,
+        target_name: str,
+        page: str,
+    ) -> dict[str, Any]:
+        if not page.strip():
+            raise EnrichmentError("OpenCLI player tab identity is invalid")
+        closed_pages: list[str] = []
+        pending_pages = [page]
+        final_rows: list[dict[str, Any]] = []
+        while pending_pages:
+            target_page = pending_pages.pop(0)
+            if target_page in closed_pages:
+                continue
+            try:
+                result = self._opencli_json(
+                    session,
+                    "tab",
+                    "close",
+                    target_page,
+                    profile=profile,
+                    timeout_seconds=30,
+                    attempts=1,
+                )
+            except EnrichmentError:
+                rows = self._opencli_tab_list(session=session, profile=profile)
+                if any(row.get("page") == target_page for row in rows):
+                    raise
+            else:
+                if result.get("closed") != target_page:
+                    raise EnrichmentError(
+                        "OpenCLI did not confirm the exact player tab close"
+                    )
+            closed_pages.append(target_page)
+            rows = self._opencli_tab_list(session=session, profile=profile)
+            final_rows = rows
+            exact_matches: list[str] = []
+            for row in rows:
+                row_url = row.get("url")
+                row_page = row.get("page")
+                if not isinstance(row_url, str) or not isinstance(row_page, str):
+                    continue
+                try:
+                    self._validate_player_url(row_url, target_name=target_name)
+                except EnrichmentError:
+                    continue
+                exact_matches.append(row_page)
+            pending_pages.extend(
+                candidate
+                for candidate in exact_matches
+                if candidate not in closed_pages and candidate not in pending_pages
+            )
+        for row in final_rows:
+            row_url = row.get("url")
+            if not isinstance(row_url, str):
+                continue
+            try:
+                self._validate_player_url(row_url, target_name=target_name)
+            except EnrichmentError:
+                continue
+            raise EnrichmentError("Exact Netdisk player tab remains open")
+        return {
+            "closed_page": page,
+            "closed_pages": closed_pages,
+            "exact_player_absent": True,
+        }
 
     def _select_opencli_tab(
         self,
@@ -1302,12 +1520,30 @@ class NetdiskEnrichmentService:
       && currentUrl.searchParams.getAll('path').length === 1
       && currentUrl.searchParams.get('path') === expectedPath;
     if (!target_bound) break;
+    const videos = [...document.querySelectorAll('video')];
+    videos.forEach(node => {
+      node.autoplay = false;
+      node.removeAttribute('autoplay');
+      if (!node.paused) node.pause();
+    });
     const active = document.querySelector('.vp-tabs__header-item--active');
     active_tab = (active?.textContent || '').trim();
     if (active_tab === expected_tab) break;
     await new Promise(resolve => setTimeout(resolve, 100));
   }
-  return {active_tab, expected_tab, target_bound};
+  const finalVideos = [...document.querySelectorAll('video')];
+  finalVideos.forEach(node => {
+    if (!node.paused) node.pause();
+  });
+  return {
+    active_tab,
+    expected_tab,
+    target_bound,
+    video_count: finalVideos.length,
+    all_video_paused: finalVideos.length > 0
+      && finalVideos.every(node => node.paused),
+    pause_guard_installed: !!window.__xiaocaoNetdiskPauseGuardV1
+  };
 })()""" % (
             json.dumps(label),
             json.dumps(self._netdisk_path(target_name)),
@@ -1324,6 +1560,15 @@ class NetdiskEnrichmentService:
             raise EnrichmentError("OpenCLI player path changed while activating tab")
         if payload.get("active_tab") != label:
             raise EnrichmentError(f"Netdisk {label} tab did not become active")
+        if (
+            not isinstance(payload.get("video_count"), int)
+            or payload["video_count"] < 1
+            or payload.get("all_video_paused") is not True
+            or payload.get("pause_guard_installed") is not True
+        ):
+            raise EnrichmentError(
+                f"Netdisk {label} tab did not preserve paused playback"
+            )
 
     def _probe_opencli_transcript(
         self,
@@ -3237,12 +3482,14 @@ class NetdiskEnrichmentService:
                 )
             try:
                 try:
-                    self._open_opencli_player(
+                    player_receipt = self._open_opencli_player_receipt(
                         session=session,
                         profile=profile,
                         target_name=str(current["video_basename"]),
                     )
-                except EnrichmentError:
+                except EnrichmentError as exc:
+                    if str(exc) == "Netdisk player video is not proven paused":
+                        reject("player_not_paused", str(exc))
                     reject(
                         "target_url_mismatch",
                         "OpenCLI player does not match the prepared Netdisk path",
@@ -3286,6 +3533,18 @@ class NetdiskEnrichmentService:
                     reject(
                         "target_url_mismatch",
                         "OpenCLI page changed before transcript DOM capture",
+                    )
+                playback = capture_result.get("playback")
+                if (
+                    not isinstance(playback, dict)
+                    or not isinstance(playback.get("video_count"), int)
+                    or playback["video_count"] < 1
+                    or playback.get("all_video_paused") is not True
+                    or playback.get("pause_guard_installed") is not True
+                ):
+                    reject(
+                        "player_not_paused",
+                        "Netdisk player video is not proven paused during transcript capture",
                     )
                 parsed = urlsplit(page_url)
 
@@ -3459,6 +3718,18 @@ class NetdiskEnrichmentService:
             binding_bytes = json.dumps(
                 binding, ensure_ascii=False, sort_keys=True, separators=(",", ":")
             ).encode("utf-8")
+            try:
+                player_close_receipt = self._close_opencli_player(
+                    session=session,
+                    profile=profile,
+                    target_name=str(current["video_basename"]),
+                    page=str(player_receipt["page"]),
+                )
+            except EnrichmentError:
+                reject(
+                    "player_close_unverified",
+                    "Netdisk transcript was captured but the exact player tab close was not proven",
+                )
             row = {
                 **current,
                 "event": "netdisk_transcript_dom_captured",
@@ -3483,6 +3754,13 @@ class NetdiskEnrichmentService:
                 "dom_ad_overlays_dismissed": int(
                     capture_result.get("ad_overlays_dismissed") or 0
                 ),
+                "player_pause_receipt": player_receipt["pause_receipt"],
+                "player_capture_pause_receipt": {
+                    "video_count": playback["video_count"],
+                    "all_video_paused": True,
+                    "pause_guard_installed": True,
+                },
+                "player_close_receipt": player_close_receipt,
                 "updated_at": observed_at.isoformat(timespec="seconds"),
             }
             _clear_transient_failures(row)

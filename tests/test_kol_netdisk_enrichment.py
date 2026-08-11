@@ -37,6 +37,7 @@ def _opencli_capture_runner(
     *,
     virtualized: bool = False,
     profile: str | None = None,
+    command_log: list[list[str]] | None = None,
 ):
     transcript = (
         "开头明确说市场连续下跌后可能修复，但仓位必须很轻。\n\n"
@@ -49,6 +50,8 @@ def _opencli_capture_runner(
     ]
 
     def runner(command, **kwargs):
+        if command_log is not None:
+            command_log.append(list(command))
         if command[0] == "ffprobe":
             return _runner(command, **kwargs)
         prefix = ["opencli"]
@@ -60,6 +63,14 @@ def _opencli_capture_runner(
         tail = command[len(prefix):]
         if tail[:1] == ["open"]:
             payload = {"url": command[len(prefix) + 1], "page": "page-1"}
+        elif tail[:1] == ["eval"] and "const guardKey = '__xiaocaoNetdiskPauseGuardV1'" in tail[1]:
+            payload = {
+                "target_bound": True,
+                "video_count": 1,
+                "playing_before_pause": 1,
+                "all_video_paused": True,
+                "pause_guard_installed": True,
+            }
         elif tail[:1] == ["eval"] and "current_url: location.href" in tail[1]:
             payload = {
                 "current_url": "https://pan.baidu.com/pfile/video?path="
@@ -80,6 +91,11 @@ def _opencli_capture_runner(
                 "target_bound": True,
                 "active": {"matches": 1, "text": "文稿"},
                 "transcript": {"text": transcript, "segments": segments},
+                "playback": {
+                    "video_count": 1,
+                    "all_video_paused": True,
+                    "pause_guard_installed": True,
+                },
                 "render": {
                     "list_matches": 1,
                     "scroll_top": 0,
@@ -105,6 +121,10 @@ def _opencli_capture_runner(
                     "has_load_more": False,
                 },
             }
+        elif tail[:2] == ["tab", "close"] and tail[2:] == ["page-1"]:
+            payload = {"closed": "page-1"}
+        elif tail[:2] == ["tab", "list"]:
+            payload = []
         else:
             raise AssertionError(command)
         return SimpleNamespace(
@@ -857,6 +877,14 @@ def _opencli_transcript_runner(video_name: str):
         tail = command[5:]
         if tail[:1] == ["open"]:
             payload = {"url": command[6], "page": "page-1"}
+        elif tail[:1] == ["eval"] and "const guardKey = '__xiaocaoNetdiskPauseGuardV1'" in tail[1]:
+            payload = {
+                "target_bound": True,
+                "video_count": 1,
+                "playing_before_pause": 0,
+                "all_video_paused": True,
+                "pause_guard_installed": True,
+            }
         elif tail[:1] == ["eval"] and "current_url: location.href" in tail[1]:
             payload = {
                 "current_url": "https://pan.baidu.com/pfile/video?path="
@@ -878,6 +906,9 @@ def _opencli_transcript_runner(video_name: str):
                 "active_tab": "文稿",
                 "expected_tab": "文稿",
                 "target_bound": True,
+                "video_count": 1,
+                "all_video_paused": True,
+                "pause_guard_installed": True,
             }
         elif tail[:1] == ["eval"] and "transcript_state" in tail[1]:
             transcript_probe_count += 1
@@ -1031,6 +1062,14 @@ def _opencli_ai_note_runner(
         tail = command[5:]
         if tail[:1] == ["open"]:
             payload = {"url": command[6], "page": "page-1"}
+        elif tail[:1] == ["eval"] and "const guardKey = '__xiaocaoNetdiskPauseGuardV1'" in tail[1]:
+            payload = {
+                "target_bound": True,
+                "video_count": 1,
+                "playing_before_pause": 0,
+                "all_video_paused": True,
+                "pause_guard_installed": True,
+            }
         elif tail[:1] == ["eval"] and "current_url: location.href" in tail[1]:
             payload = {
                 "current_url": "https://pan.baidu.com/pfile/video?path="
@@ -1075,6 +1114,9 @@ def _opencli_ai_note_runner(
                 "active_tab": "笔记",
                 "expected_tab": "笔记",
                 "target_bound": True,
+                "video_count": 1,
+                "all_video_paused": True,
+                "pause_guard_installed": True,
             }
         else:
             raise AssertionError(command)
@@ -1736,11 +1778,14 @@ def test_opencli_step_waits_for_semantic_tab_activation_before_probing(tmp_path)
             return SimpleNamespace(
                 returncode=0,
                 stdout=json.dumps(
-                    {
-                        "active_tab": "笔记",
-                        "expected_tab": "笔记",
-                        "target_bound": True,
-                    },
+                        {
+                            "active_tab": "笔记",
+                            "expected_tab": "笔记",
+                            "target_bound": True,
+                            "video_count": 1,
+                            "all_video_paused": True,
+                            "pause_guard_installed": True,
+                        },
                     ensure_ascii=False,
                 ),
                 stderr="",
@@ -2158,6 +2203,97 @@ def test_opencli_dom_capture_materializes_complete_immutable_transcript(tmp_path
     assert "access_token" not in ledger
 
 
+def test_opencli_dom_capture_pauses_video_and_closes_exact_player_tab(tmp_path):
+    commands: list[list[str]] = []
+    video = tmp_path / "20260717 traffic-safe-compressed.mp4"
+    video.write_bytes(b"real-video")
+    service = NetdiskEnrichmentService(
+        tmp_path / "out",
+        runner=_opencli_capture_runner(video.name, command_log=commands),
+        now=lambda: NOW,
+        opencli_command=("opencli",),
+    )
+    job_id = service.prepare(video)["job_id"]
+    service.record_browser_liveness(
+        job_id,
+        surface="opencli",
+        evidence=_liveness_evidence(),
+    )
+    service.record_browser_state(
+        job_id,
+        step="video_ready",
+        evidence=_evidence(video.name, "目标视频已存在"),
+        source_mode="existing",
+    )
+    service.record_browser_state(
+        job_id,
+        step="transcript_ready",
+        evidence=_evidence(video.name, "文稿 已生成"),
+        reconcile_existing=True,
+    )
+    service.claim_browser_action(job_id, action="ai_note")
+    service.record_browser_state(
+        job_id,
+        step="ai_note_requested",
+        evidence=_evidence(video.name, "AI笔记生成中"),
+    )
+
+    captured = service.capture_opencli_transcript(
+        job_id,
+        session="ticket02-test",
+    )
+
+    assert captured["player_pause_receipt"]["all_video_paused"] is True
+    assert captured["player_pause_receipt"]["pause_guard_installed"] is True
+    assert captured["player_close_receipt"]["closed_page"] == "page-1"
+    assert captured["player_close_receipt"]["closed_pages"] == ["page-1"]
+    assert captured["player_close_receipt"]["exact_player_absent"] is True
+    assert any(
+        command[-2:-1] == ["eval"]
+        and "__xiaocaoNetdiskPauseGuardV1" in command[-1]
+        for command in commands
+    )
+    assert any(command[-3:] == ["tab", "close", "page-1"] for command in commands)
+    assert commands[-2][-3:] == ["tab", "close", "page-1"]
+    assert commands[-1][-2:] == ["tab", "list"]
+
+
+def test_opencli_dom_capture_fails_closed_when_video_cannot_be_paused(tmp_path):
+    service, job_id = _prepare_opencli_dom_capture(tmp_path)
+    base_runner = service.runner
+    commands: list[list[str]] = []
+
+    def runner(command, **kwargs):
+        commands.append(list(command))
+        if (
+            command[0] == "opencli"
+            and command[-2:-1] == ["eval"]
+            and "const guardKey = '__xiaocaoNetdiskPauseGuardV1'" in command[-1]
+        ):
+            return SimpleNamespace(
+                returncode=0,
+                stdout=json.dumps(
+                    {
+                        "target_bound": True,
+                        "video_count": 1,
+                        "playing_before_pause": 1,
+                        "all_video_paused": False,
+                        "pause_guard_installed": True,
+                    }
+                ),
+                stderr="",
+            )
+        return base_runner(command, **kwargs)
+
+    service.runner = runner
+
+    with pytest.raises(EnrichmentError, match="not proven paused"):
+        service.capture_opencli_transcript(job_id, session="ticket02-test")
+
+    assert not any("ad_overlays_dismissed" in command[-1] for command in commands)
+    assert not any(command[-3:-1] == ["tab", "close"] for command in commands)
+
+
 def test_opencli_dom_capture_requires_ai_note_submission_state(tmp_path):
     video = tmp_path / "20260720 submission-gate-compressed.mp4"
     video.write_bytes(b"real-video")
@@ -2284,7 +2420,7 @@ def test_opencli_dom_capture_retries_one_transient_command_timeout(tmp_path):
     )
 
     assert captured["status"] == "transcript_captured"
-    assert opencli_calls == 4
+    assert opencli_calls == 7
 
 
 def test_opencli_dom_capture_rejects_virtualized_or_partial_render(tmp_path):

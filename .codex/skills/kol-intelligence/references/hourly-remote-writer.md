@@ -150,6 +150,9 @@ outcomes may ask. Reconcile the
 handoff/media SHA; latest content is incomplete until analysis, 灰常亮 receipt,
 and stable URL.
 
+Baidu: pause guard + paused readback; after transcript hash close exact tab,
+else `repair_required`.
+
 ### Cloud discovery coverage
 
 Cloud scans and absence claims first read

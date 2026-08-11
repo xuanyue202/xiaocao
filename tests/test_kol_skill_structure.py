@@ -259,6 +259,23 @@ def test_kol_skill_has_one_resumable_ticket05_cloud_video_runner() -> None:
         assert marker in text
 
 
+def test_kol_skill_requires_paused_and_closed_baidu_transcript_players() -> None:
+    hourly = " ".join(
+        HOURLY_REMOTE_WRITER_MD.read_text(encoding="utf-8").split()
+    )
+    full = " ".join(FULL_CONTRACT_MD.read_text(encoding="utf-8").split())
+
+    for text in (hourly, full):
+        assert "pause guard" in text
+        assert "paused" in text
+        assert "close" in text
+        assert "repair_required" in text
+    assert "吕晓彤" in full
+    assert "小草" in full
+    assert "muting is not a substitute for pausing" in full
+    assert "do not keep the page open" in full
+
+
 def test_hourly_semantic_stdin_eof_is_fail_resumable() -> None:
     text = " ".join(
         HOURLY_REMOTE_WRITER_MD.read_text(encoding="utf-8").split()
