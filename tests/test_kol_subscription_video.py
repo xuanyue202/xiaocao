@@ -1131,6 +1131,89 @@ def test_private_scan_chunks_recursive_eval_below_opencli_deadline(tmp_path):
     assert len(commands) == 4
 
 
+def test_hourly_scan_uses_bounded_lucifer_roots_after_bootstrap(tmp_path):
+    service = _service(tmp_path)
+    lv, lucifer = _source_rows()
+    service.observe(lv, lucifer)
+    calls = []
+
+    service.lv._read_opencli_listing = lambda **_kwargs: {
+        "status": "ok",
+        "complete_scan": False,
+        "entries": lv,
+        "coverage": {
+            "direct_roots": ["/"],
+            "recursive_roots": ["/share/2026年7月"],
+        },
+    }
+
+    def scan_private(**kwargs):
+        calls.append((kwargs["root"], kwargs["recursive"]))
+        if kwargs["root"] == "/课程/路西法全套":
+            return {
+                "status": "ok",
+                "complete_scan": True,
+                "entries": [
+                    _row(
+                        "lucifer-root",
+                        "/课程/路西法全套/鹿7.5",
+                        size=0,
+                        modified_at=1_784_456_551,
+                        is_dir=True,
+                    )
+                ],
+            }
+        return {
+            "status": "ok",
+            "complete_scan": True,
+            "entries": lucifer,
+        }
+
+    service._scan_private = scan_private
+
+    service.scan_opencli(
+        lv_session="ticket04",
+        private_session="ticket05",
+        profile="work",
+    )
+
+    assert calls[0] == ("/课程/路西法全套", False)
+    assert ("/课程/路西法全套", True) not in calls
+    assert len(calls) <= 6
+
+
+def test_partial_video_listing_preserves_unscanned_lucifer_root(tmp_path):
+    service = _service(tmp_path)
+    lv, lucifer = _source_rows()
+    cold = _row(
+        "lucifer-cold",
+        "/课程/路西法全套/历史课程/2024.mp4",
+        size=123,
+        modified_at=1_700_000_000,
+    )
+    service.observe(lv, [*lucifer, cold])
+
+    service.observe(
+        lv,
+        lucifer,
+        lv_coverage={
+            "direct_roots": ["/"],
+            "recursive_roots": ["/share"],
+        },
+        lucifer_coverage={
+            "direct_roots": ["/课程/路西法全套"],
+            "recursive_roots": ["/课程/路西法全套/鹿7.5"],
+        },
+    )
+
+    cold_state = next(
+        row
+        for row in service.status()["items"].values()
+        if row["path"] == cold["path"]
+    )
+    assert cold_state["present"] is True
+
+
 def test_opencli_json_classifies_cdp_timeout(tmp_path):
     def runner(_command, **_kwargs):
         return SimpleNamespace(

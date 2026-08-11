@@ -13,7 +13,7 @@ import sqlite3
 import subprocess
 import tempfile
 import time
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path, PurePosixPath
 from typing import Any, Callable, Mapping, Sequence
 from urllib.parse import parse_qs, quote, urlencode, urlparse
@@ -43,6 +43,8 @@ TEXT_SUFFIXES = {".md", ".txt"}
 PDF_SUFFIXES = {".pdf"}
 SUPPORTED_SMALL_MEDIA = {"image", "text", "pdf"}
 MAX_SMALL_EVIDENCE_BYTES = 50 * 1024 * 1024
+_DISCOVERY_HOT_WINDOW = timedelta(days=14)
+_DISCOVERY_HOT_ROOT_LIMIT = 3
 MAX_PDF_PAGES = 200
 PDF_BOOTSTRAP_WINDOW_SECONDS = 24 * 60 * 60
 MIN_NATIVE_PDF_PAGE_TEXT = 20
@@ -139,6 +141,12 @@ _BROWSER_LISTING_SCRIPT_TEMPLATE = r"""(async () => {
     diagnostic
   });
   const expectedPath = __EXPECTED_PATH_JSON__;
+  const configuredRecursiveRoots = __RECURSIVE_ROOTS_JSON__;
+  const knownRootDirectories = new Set(__KNOWN_ROOTS_JSON__);
+  const discoveryRoots = new Set(__DISCOVERY_ROOTS_JSON__);
+  const activeRecursiveRoots = new Set(
+    Array.isArray(configuredRecursiveRoots) ? configuredRecursiveRoots : []
+  );
   if (location.origin !== 'https://pan.baidu.com') {
     return fail('wrong_origin');
   }
@@ -212,7 +220,20 @@ _BROWSER_LISTING_SCRIPT_TEMPLATE = r"""(async () => {
         item.server_mtime || item.local_mtime || item.mtime || 0
       )
     });
-    if (isDir && !seenDirs.has(path)) {
+    const slash = path.lastIndexOf('/');
+    const parent = slash > 0 ? path.slice(0, slash) : '/';
+    const isDiscoveryChild = discoveryRoots.size === 0
+      ? parent === '/'
+      : discoveryRoots.has(parent);
+    if (isDiscoveryChild && !knownRootDirectories.has(path)) {
+      activeRecursiveRoots.add(path);
+    }
+    const shouldRecurse = configuredRecursiveRoots === null
+      || discoveryRoots.has(path)
+      || [...activeRecursiveRoots].some(root => (
+        path === root || path.startsWith(root + '/')
+      ));
+    if (isDir && shouldRecurse && !seenDirs.has(path)) {
       seenDirs.add(path);
       pendingDirs.push(path);
     }
@@ -361,17 +382,135 @@ _BROWSER_LISTING_SCRIPT_TEMPLATE = r"""(async () => {
   return {
     status: 'ok',
     entries,
-    complete_scan: true,
+    complete_scan: configuredRecursiveRoots === null,
+    coverage: configuredRecursiveRoots === null ? null : {
+      direct_roots: ['/', ...discoveryRoots].sort(),
+      recursive_roots: [...activeRecursiveRoots].sort(),
+      policy: 'hourly_hot_roots_plus_rotating_cold_shard'
+    },
     observed_count: entries.length
   };
 })()"""
 
 
-def _browser_listing_script(expected_path: str) -> str:
-    return _BROWSER_LISTING_SCRIPT_TEMPLATE.replace(
-        "__EXPECTED_PATH_JSON__",
-        json.dumps(expected_path),
+def _browser_listing_script(
+    expected_path: str,
+    *,
+    recursive_roots: list[str] | None = None,
+    known_roots: list[str] | None = None,
+    discovery_roots: list[str] | None = None,
+) -> str:
+    return (
+        _BROWSER_LISTING_SCRIPT_TEMPLATE.replace(
+            "__EXPECTED_PATH_JSON__",
+            json.dumps(expected_path),
+        )
+        .replace("__RECURSIVE_ROOTS_JSON__", json.dumps(recursive_roots))
+        .replace("__KNOWN_ROOTS_JSON__", json.dumps(known_roots or []))
+        .replace("__DISCOVERY_ROOTS_JSON__", json.dumps(discovery_roots or []))
     )
+
+
+def _parent_path(path: str) -> str:
+    parent = str(PurePosixPath(path).parent)
+    return parent if parent != "." else "/"
+
+
+def _is_within(path: str, root: str) -> bool:
+    return path == root or path.startswith(root.rstrip("/") + "/")
+
+
+def _tiered_share_roots(
+    items: Mapping[str, Any], now: datetime
+) -> tuple[list[str], list[str], list[str]]:
+    rows = [value for value in items.values() if isinstance(value, Mapping)]
+    discovery_roots: list[str] = []
+    candidate_parent = "/"
+    while True:
+        directory_children = sorted(
+            {
+                str(row.get("path") or "")
+                for row in rows
+                if row.get("is_dir") is True
+                and _parent_path(str(row.get("path") or ""))
+                == candidate_parent
+            }
+        )
+        if len(directory_children) != 1:
+            break
+        wrapper = directory_children[0]
+        nested_directories = {
+            str(row.get("path") or "")
+            for row in rows
+            if row.get("is_dir") is True
+            and _parent_path(str(row.get("path") or "")) == wrapper
+        }
+        if not nested_directories:
+            break
+        discovery_roots.append(wrapper)
+        candidate_parent = wrapper
+
+    collection_roots = sorted(
+        {
+            str(row.get("path") or "")
+            for row in rows
+            if row.get("is_dir") is True
+            and _parent_path(str(row.get("path") or "")) == candidate_parent
+        }
+    )
+    if len(collection_roots) > 1:
+        discovery_roots.extend(collection_roots)
+        candidate_parents = set(collection_roots)
+    else:
+        candidate_parents = {candidate_parent}
+
+    activities: dict[str, int] = {}
+    known = {
+        str(row.get("path") or "")
+        for row in rows
+        if row.get("is_dir") is True
+        and _parent_path(str(row.get("path") or "")) in candidate_parents
+    }
+    for value in rows:
+        path = str(value.get("path") or "")
+        containing = [root for root in known if _is_within(path, root)]
+        if not containing:
+            continue
+        try:
+            activity = max(
+                int(value.get("modified_at") or 0),
+                int(value.get("uploaded_at") or 0),
+            )
+        except (TypeError, ValueError):
+            activity = 0
+        for root in containing:
+            activities[root] = max(activities.get(root, 0), activity)
+    ranked = sorted(
+        known,
+        key=lambda path: (activities.get(path, 0), path),
+        reverse=True,
+    )
+    cutoff = int((now - _DISCOVERY_HOT_WINDOW).timestamp())
+    hot = [path for path in ranked if activities.get(path, 0) >= cutoff]
+    selected = list(dict.fromkeys([*hot, *ranked[:_DISCOVERY_HOT_ROOT_LIMIT]]))[
+        :_DISCOVERY_HOT_ROOT_LIMIT
+    ]
+    cold = sorted(known.difference(selected))
+    if cold:
+        selected.append(cold[(int(now.timestamp()) // 3600) % len(cold)])
+    return discovery_roots, sorted({*discovery_roots, *known}), selected
+
+
+def _covered_by_listing(path: str, coverage: Mapping[str, Any]) -> bool:
+    recursive = coverage.get("recursive_roots")
+    if isinstance(recursive, list) and any(
+        _is_within(path, str(root)) for root in recursive
+    ):
+        return True
+    direct = coverage.get("direct_roots")
+    return isinstance(direct, list) and _parent_path(path) in {
+        str(root) for root in direct
+    }
 
 
 def _authorized_share_url(share_url: str, share_code: str) -> str:
@@ -2293,15 +2432,52 @@ try {
         *,
         session: str,
         profile: str | None = None,
+        exact_path: str | None = None,
     ) -> dict[str, Any]:
-        """Read one complete listing with one bounded read-only recovery."""
+        """Read a planned listing with one bounded read-only recovery."""
         self._validate_private_config()
         expected_path = urlparse(self.share_url).path
         authorized_share_url = _authorized_share_url(
             self.share_url,
             self.share_code,
         )
-        listing_script = _browser_listing_script(expected_path)
+        manifest = self._load_manifest()
+        prior_items = manifest.get("items", {})
+        now = self._time()
+        full_topology_audit = (
+            exact_path is None
+            and (not prior_items or (now.weekday() == 0 and now.hour == 3))
+        )
+        discovery_roots: list[str] = []
+        known_roots: list[str] = []
+        recursive_roots: list[str] | None = None
+        if exact_path is not None:
+            target = PurePosixPath(str(exact_path))
+            if not target.is_absolute() or str(target) == "/":
+                raise EnrichmentError("subscription exact listing path is invalid")
+            parent = target.parent
+            current = PurePosixPath("/")
+            for component in parent.parts[1:]:
+                current /= component
+                discovery_roots.append(str(current))
+            known_roots = sorted(
+                {
+                    str(row.get("path") or "")
+                    for row in prior_items.values()
+                    if isinstance(row, Mapping) and row.get("is_dir") is True
+                }
+            )
+            recursive_roots = []
+        elif not full_topology_audit:
+            discovery_roots, known_roots, recursive_roots = _tiered_share_roots(
+                prior_items, now
+            )
+        listing_script = _browser_listing_script(
+            expected_path,
+            recursive_roots=recursive_roots,
+            known_roots=known_roots,
+            discovery_roots=discovery_roots,
+        )
 
         retryable_statuses = {
             "share_list_failed",
@@ -2381,8 +2557,11 @@ try {
                 raise EnrichmentError("Lv subscription share is expired")
             if (
                 listing.get("status") == "ok"
-                and listing.get("complete_scan") is True
                 and isinstance(listing.get("entries"), list)
+                and (
+                    listing.get("complete_scan") is True
+                    or isinstance(listing.get("coverage"), Mapping)
+                )
             ):
                 if recovered_from is not None:
                     listing = {
@@ -2457,8 +2636,11 @@ try {
             )
         if (
             listing.get("status") != "ok"
-            or listing.get("complete_scan") is not True
             or not isinstance(listing.get("entries"), list)
+            or (
+                listing.get("complete_scan") is not True
+                and not isinstance(listing.get("coverage"), Mapping)
+            )
         ):
             raise EnrichmentDiagnosticError(
                 "subscription shared listing is incomplete",
@@ -2467,20 +2649,34 @@ try {
                 stage="listing_validation",
             )
         self._opencli_listing = (session, profile, listing)
-        return self.observe_browser_listing(listing["entries"])
+        return self.observe_browser_listing(
+            listing["entries"],
+            coverage=(
+                listing.get("coverage")
+                if listing.get("complete_scan") is not True
+                else None
+            ),
+        )
 
     def _download_listing(
         self,
         *,
         session: str,
         profile: str | None,
+        exact_path: str,
     ) -> dict[str, Any]:
         cached = self._opencli_listing
         if cached is not None and cached[:2] == (session, profile):
-            return cached[2]
+            cached_listing = cached[2]
+            if cached_listing.get("complete_scan") is True or (
+                isinstance(cached_listing.get("coverage"), Mapping)
+                and _covered_by_listing(exact_path, cached_listing["coverage"])
+            ):
+                return cached_listing
         listing = self._read_opencli_listing(
             session=session,
             profile=profile,
+            exact_path=exact_path,
         )
         self._opencli_listing = (session, profile, listing)
         return listing
@@ -2530,8 +2726,10 @@ try {
     def observe_browser_listing(
         self,
         entries: list[dict[str, Any]],
+        *,
+        coverage: Mapping[str, Any] | None = None,
     ) -> dict[str, Any] | None:
-        """Record one complete browser listing; return only unseen/changed items."""
+        """Record a complete or explicitly covered browser listing."""
         if not isinstance(entries, list):
             raise EnrichmentError("browser subscription listing must be a list")
         observed_time = self._time()
@@ -2547,11 +2745,16 @@ try {
             isinstance(value, dict) and "work_eligible" in value
             for value in previous.values()
         )
-        current: dict[str, dict[str, Any]] = {
-            key: {**value, "present": False}
-            for key, value in previous.items()
-            if isinstance(value, dict)
-        }
+        current: dict[str, dict[str, Any]] = {}
+        for key, value in previous.items():
+            if not isinstance(value, dict):
+                continue
+            present = value.get("present") is True
+            if coverage is None or _covered_by_listing(
+                str(value.get("path") or ""), coverage
+            ):
+                present = False
+            current[key] = {**value, "present": present}
         updates: list[dict[str, Any]] = []
         excluded_count = 0
         paused_count = 0
@@ -2624,6 +2827,27 @@ try {
             ):
                 updates.append(row)
 
+        if coverage is not None:
+            observed_identities = {row["identity"] for row in normalized}
+            direct_roots = coverage.get("direct_roots")
+            removed_directories = [
+                row
+                for identity, row in previous.items()
+                if (
+                    isinstance(row, dict)
+                    and row.get("is_dir") is True
+                    and isinstance(direct_roots, list)
+                    and _parent_path(str(row.get("path") or ""))
+                    in {str(root) for root in direct_roots}
+                    and identity not in observed_identities
+                )
+            ]
+            for removed in removed_directories:
+                removed_path = str(removed.get("path") or "")
+                for item in current.values():
+                    if _is_within(str(item.get("path") or ""), removed_path):
+                        item["present"] = False
+
         bootstrap_baseline_count = 0
         if bootstrap_baseline:
             selected: dict[str, dict[str, Any]] = {}
@@ -2681,12 +2905,20 @@ try {
                 "work_eligible_count": len(selected_versions),
             }
 
+        present_rows = sorted(
+            (
+                row
+                for row in current.values()
+                if isinstance(row, dict) and row.get("present") is True
+            ),
+            key=lambda row: (row["path"], row["identity"]),
+        )
         cursor_payload = [
             {
                 "identity": row["identity"],
                 "version_key": row["version_key"],
             }
-            for row in normalized
+            for row in present_rows
         ]
         cursor = hashlib.sha256(_canonical(cursor_payload).encode("utf-8")).hexdigest()
         manifest.update(
@@ -2694,6 +2926,9 @@ try {
                 "cursor": cursor,
                 "observed_at": observed_at,
                 "items": current,
+                "discovery_coverage": (
+                    dict(coverage) if coverage is not None else "complete"
+                ),
             }
         )
         _atomic_write_json(self.manifest_path, manifest)
@@ -3113,8 +3348,16 @@ try {
         if (
             item.get("media_type") != "image"
             or listing.get("status") != "ok"
-            or listing.get("complete_scan") is not True
             or not isinstance(listing.get("entries"), list)
+            or (
+                listing.get("complete_scan") is not True
+                and not (
+                    isinstance(listing.get("coverage"), Mapping)
+                    and _covered_by_listing(
+                        str(item.get("path") or ""), listing["coverage"]
+                    )
+                )
+            )
         ):
             raise EnrichmentDiagnosticError(
                 "filtered image preview lacks a complete source listing",
@@ -5566,6 +5809,7 @@ try {
         listing = self._download_listing(
             session=session,
             profile=profile,
+            exact_path=str(item["path"]),
         )
         matches: list[tuple[dict[str, Any], dict[str, Any]]] = []
         for raw in listing["entries"]:

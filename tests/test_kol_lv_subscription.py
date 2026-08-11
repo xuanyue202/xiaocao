@@ -110,6 +110,64 @@ def test_browser_listing_discovers_text_and_image_then_same_poll_is_quiet(tmp_pa
     assert "7月25日.mp4" in persisted
 
 
+def test_partial_listing_preserves_unscanned_cold_root(tmp_path):
+    service = LvSubscriptionService(tmp_path / "out", now=lambda: NOW)
+    entries = _representative_subscription_entries()
+    cold = {
+        "provider_file_id": "cold-text",
+        "path": "/老课程/2024/历史.txt",
+        "name": "历史.txt",
+        "is_dir": False,
+        "size": 100,
+        "modified_at": 1_700_000_000,
+    }
+    service.observe_browser_listing([*entries, cold])
+
+    assert service.observe_browser_listing(
+        entries,
+        coverage={
+            "direct_roots": ["/"],
+            "recursive_roots": ["/彤商学院防断更新zk7897897"],
+            "policy": "hourly_hot_roots_plus_rotating_cold_shard",
+        },
+    ) is None
+
+    manifest = service.status()
+    cold_state = next(
+        row for row in manifest["items"].values() if row["path"] == cold["path"]
+    )
+    assert cold_state["present"] is True
+
+
+def test_exact_download_listing_reads_only_target_ancestor_chain(tmp_path):
+    service = LvSubscriptionService(tmp_path / "out", now=lambda: NOW)
+    captured = []
+    service._read_opencli_listing = lambda **kwargs: (
+        captured.append(kwargs)
+        or {
+            "status": "ok",
+            "complete_scan": False,
+            "coverage": {
+                "direct_roots": ["/wrapper", "/wrapper/直播回放"],
+                "recursive_roots": [],
+            },
+            "entries": [],
+        }
+    )
+
+    service._download_listing(
+        session="ticket04",
+        profile="work",
+        exact_path="/wrapper/直播回放/8月10日.mp4",
+    )
+
+    assert captured == [{
+        "session": "ticket04",
+        "profile": "work",
+        "exact_path": "/wrapper/直播回放/8月10日.mp4",
+    }]
+
+
 def test_bootstrap_baselines_history_and_keeps_only_latest_supported_versions(
     tmp_path,
 ):
@@ -401,9 +459,62 @@ def test_browser_listing_recurses_without_parent_mtime_pruning_in_bounded_batche
     assert "provider_errno" in script
     assert "json_error_position" in script
     assert "item.server_mtime" not in script[
-        script.index("if (isDir && !seenDirs.has(path))") :
+        script.index("if (isDir && shouldRecurse && !seenDirs.has(path))") :
         script.index("const maxDirectories")
     ]
+
+
+def test_hourly_listing_script_limits_recursion_to_selected_and_new_roots():
+    script = lv_subscription._browser_listing_script(
+        "/s/private-share-token",
+        recursive_roots=["/直播回放", "/报告"],
+        known_roots=["/直播回放", "/报告", "/老课程"],
+    )
+
+    assert json.dumps(["/直播回放", "/报告"]) in script
+    assert "knownRootDirectories.has(path)" in script
+    assert "activeRecursiveRoots.add(path)" in script
+    assert "complete_scan: configuredRecursiveRoots === null" in script
+    assert "hourly_hot_roots_plus_rotating_cold_shard" in script
+
+
+def test_tiered_share_plan_descends_below_single_real_wrapper_directory():
+    wrapper = "/彤商学院防断更新zk7897897"
+    hot = wrapper + "/直播回放"
+    cold = wrapper + "/2024老课程"
+    hot_month = hot + "/2026年8月"
+    cold_archive = cold + "/归档"
+    items = {
+        "wrapper": {"path": wrapper, "is_dir": True, "modified_at": 1},
+        "hot-dir": {
+            "path": hot,
+            "is_dir": True,
+            "modified_at": int(NOW.timestamp()),
+        },
+        "hot-file": {
+            "path": hot_month + "/8月10日.mp4",
+            "is_dir": False,
+            "modified_at": int(NOW.timestamp()),
+        },
+        "cold-dir": {"path": cold, "is_dir": True, "modified_at": 1},
+        "hot-month": {
+            "path": hot_month,
+            "is_dir": True,
+            "modified_at": int(NOW.timestamp()),
+        },
+        "cold-archive": {
+            "path": cold_archive,
+            "is_dir": True,
+            "modified_at": 1,
+        },
+    }
+
+    discovery, known, selected = lv_subscription._tiered_share_roots(items, NOW)
+
+    assert discovery == [wrapper, cold, hot]
+    assert known == sorted([wrapper, hot, cold, hot_month, cold_archive])
+    assert hot_month in selected
+    assert wrapper not in selected
 
 
 @pytest.mark.parametrize(

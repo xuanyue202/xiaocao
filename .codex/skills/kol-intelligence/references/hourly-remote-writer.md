@@ -79,12 +79,10 @@ event is an authoritative active peer: return `no_op` before mailbox access.
 All-terminal candidates return `pass`; the helper emits only `pass`, `no_op`, or
 `repair_required`, with at most two sequential attempts.
 
-The official protocol does not expose the desktop project UUID; the binding is
-the current app-server host identity (`remoteControl/status/changed.serverName`)
-plus the exact canonical cwd. Do not substitute a stale project/host cache.
-`codex app-server` is documented as experimental/unsupported for production,
-so a helper error remains `repair_required` and blocks business effects; never
-silently fall back to the hanging wrapper or infer a successful no-op.
+Bind the experimental app-server protocol to its current host identity
+(`remoteControl/status/changed.serverName`) and exact canonical cwd, never a
+stale project cache. Any helper error is `repair_required` and blocks effects;
+never fall back to the hanging wrapper or infer a successful no-op.
 
 Serial gate rule: invoke it with local permissions for the Codex state runtime;
 never overlap attempts/requests/readbacks or reuse a stale host. A state-runtime
@@ -152,6 +150,11 @@ outcomes may ask. Reconcile the
 handoff/media SHA; latest content is incomplete until analysis, 灰常亮 receipt,
 and stable URL.
 
+### Cloud discovery coverage
+
+Cloud scans and absence claims first read
+[cloud-discovery-coverage.md](cloud-discovery-coverage.md) completely.
+
 ## Semantic loading gate
 
 For `daily_analysis_input_required`, Read `full-contract.md` completely before
@@ -207,9 +210,8 @@ not create, edit, or assume ownership of the local capture Automation here.
 
 ## Discovery and recovery
 
-Reuse the configured Lv share `/课程/路西法全套`, handoffs, and receipts. One
-sweep reuses one recursive listing, validates identity/version/path/name/size/
-target, reconciles claims without replay, and fails closed on ambiguity.
+Reuse the configured Lv share `/课程/路西法全套`, handoffs, and receipts;
+validate exact identity/version/path/name/size/target and reconcile claims.
 Maintenance uses new-publication, due-horizon, material fact, or user-currentness
 CAS triggers under `output/live/kol_daily/viewpoint_triggers/`; run
 `PYTHONPATH=src .venv/bin/python scripts/kol_daily.py viewpoints` only for

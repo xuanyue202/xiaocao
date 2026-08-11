@@ -61,6 +61,9 @@ REQUIRED_COVERAGE_ROWS = {
 _SHA256 = re.compile(r"^[0-9a-f]{64}$")
 _OPENCLI_NAME = re.compile(r"^[A-Za-z0-9_.-]{1,128}$")
 _PRIVATE_DIRECTORY_EVAL_PROCESS_TIMEOUT_SECONDS = 120
+_DISCOVERY_HOT_WINDOW = timedelta(days=14)
+_DISCOVERY_HOT_ROOT_LIMIT = 3
+_DISCOVERY_COLD_ROOTS_PER_HOUR = 1
 
 
 def _canonical(value: Any) -> str:
@@ -94,6 +97,82 @@ def _remote_activity_at(row: dict[str, Any]) -> int:
     if modified_at < 0 or uploaded_at < 0:
         raise EnrichmentError("Ticket 05 remote time metadata is invalid")
     return max(modified_at, uploaded_at)
+
+
+def _parent_path(path: str) -> str:
+    parent = str(PurePosixPath(path).parent)
+    return parent if parent != "." else "/"
+
+
+def _is_within(path: str, root: str) -> bool:
+    return path == root or path.startswith(root.rstrip("/") + "/")
+
+
+def _tiered_discovery_roots(
+    items: Mapping[str, Any],
+    *,
+    source: str,
+    root: str,
+    now: datetime,
+) -> tuple[list[str], list[str]]:
+    """Select bounded hot roots plus one rotating cold shard.
+
+    The persisted complete baseline is the topology authority. Directory mtimes
+    are only ranking hints; they never authorize pruning an unscanned subtree.
+    """
+    activities: dict[str, int] = {}
+    known_roots: set[str] = set()
+    prefix = root.rstrip("/") + "/" if root != "/" else "/"
+    for value in items.values():
+        if not isinstance(value, Mapping) or value.get("source") != source:
+            continue
+        path = str(value.get("path") or "")
+        if not path.startswith(prefix) or path == root:
+            continue
+        relative = path[len(prefix) :]
+        component = relative.split("/", 1)[0]
+        if not component:
+            continue
+        top = (root.rstrip("/") + "/" + component) if root != "/" else "/" + component
+        known_roots.add(top)
+        try:
+            activity = max(
+                int(value.get("modified_at") or 0),
+                int(value.get("uploaded_at") or 0),
+            )
+        except (TypeError, ValueError):
+            activity = 0
+        activities[top] = max(activities.get(top, 0), activity)
+
+    ranked = sorted(
+        known_roots,
+        key=lambda path: (activities.get(path, 0), path),
+        reverse=True,
+    )
+    cutoff = int((now - _DISCOVERY_HOT_WINDOW).timestamp())
+    hot = [path for path in ranked if activities.get(path, 0) >= cutoff]
+    selected = list(dict.fromkeys([*hot, *ranked[:_DISCOVERY_HOT_ROOT_LIMIT]]))[
+        :_DISCOVERY_HOT_ROOT_LIMIT
+    ]
+    cold = sorted(known_roots.difference(selected))
+    if cold:
+        hour_bucket = int(now.timestamp()) // 3600
+        start = hour_bucket % len(cold)
+        for offset in range(min(_DISCOVERY_COLD_ROOTS_PER_HOUR, len(cold))):
+            selected.append(cold[(start + offset) % len(cold)])
+    return sorted(known_roots), selected
+
+
+def _covered_by_listing(path: str, coverage: Mapping[str, Any]) -> bool:
+    recursive_roots = coverage.get("recursive_roots")
+    direct_roots = coverage.get("direct_roots")
+    if isinstance(recursive_roots, list) and any(
+        _is_within(path, str(root)) for root in recursive_roots
+    ):
+        return True
+    return isinstance(direct_roots, list) and _parent_path(path) in {
+        str(root) for root in direct_roots
+    }
 
 
 def _atomic_write_json(path: Path, value: dict[str, Any]) -> None:
@@ -1385,6 +1464,9 @@ class SubscriptionVideoService:
         self,
         lv_entries: list[dict[str, Any]],
         lucifer_entries: list[dict[str, Any]],
+        *,
+        lv_coverage: Mapping[str, Any] | None = None,
+        lucifer_coverage: Mapping[str, Any] | None = None,
     ) -> dict[str, Any] | None:
         observed_at = self._time().isoformat(timespec="seconds")
         normalized = [
@@ -1422,11 +1504,21 @@ class SubscriptionVideoService:
             for row in selected_rows
             if isinstance(row, dict)
         }
-        current = {
-            identity: {**row, "present": False}
-            for identity, row in previous.items()
-            if isinstance(row, dict)
+        coverage_by_source = {
+            LV_SOURCE: lv_coverage,
+            LUCIFER_SOURCE: lucifer_coverage,
         }
+        current: dict[str, dict[str, Any]] = {}
+        for identity, row in previous.items():
+            if not isinstance(row, dict):
+                continue
+            coverage = coverage_by_source.get(str(row.get("source") or ""))
+            present = row.get("present") is True
+            if coverage is None or _covered_by_listing(
+                str(row.get("path") or ""), coverage
+            ):
+                present = False
+            current[identity] = {**row, "present": present}
         changed_identities: set[str] = set()
         eligible_changed_identities: set[str] = set()
         for row in normalized:
@@ -1500,6 +1592,34 @@ class SubscriptionVideoService:
                             "remote_time_not_newer_than_watermark"
                         )
             current[row["identity"]] = persisted
+
+        observed_identities = {row["identity"] for row in normalized}
+        for source, coverage in coverage_by_source.items():
+            if coverage is None:
+                continue
+            direct_roots = coverage.get("direct_roots")
+            if not isinstance(direct_roots, list):
+                continue
+            removed_directories = [
+                row
+                for identity, row in previous.items()
+                if (
+                    isinstance(row, dict)
+                    and row.get("source") == source
+                    and row.get("is_dir") is True
+                    and _parent_path(str(row.get("path") or ""))
+                    in {str(root) for root in direct_roots}
+                    and identity not in observed_identities
+                )
+            ]
+            for removed in removed_directories:
+                removed_path = str(removed.get("path") or "")
+                for item in current.values():
+                    if (
+                        item.get("source") == source
+                        and _is_within(str(item.get("path") or ""), removed_path)
+                    ):
+                        item["present"] = False
 
         for item in current.values():
             for key in (
@@ -1858,6 +1978,14 @@ class SubscriptionVideoService:
                 observed_watermarks[row["source"]],
                 _remote_activity_at(row),
             )
+        present_rows = sorted(
+            (
+                row
+                for row in current.values()
+                if isinstance(row, dict) and row.get("present") is True
+            ),
+            key=lambda row: (row["source"], row["path"], row["identity"]),
+        )
         cursor = _sha256_text(
             _canonical(
                 [
@@ -1865,7 +1993,7 @@ class SubscriptionVideoService:
                         "identity": row["identity"],
                         "version_key": row["version_key"],
                     }
-                    for row in normalized
+                    for row in present_rows
                 ]
             )
         )
@@ -1878,8 +2006,18 @@ class SubscriptionVideoService:
                 "episode_pauses": episode_pauses,
                 "source_remote_time_watermarks": observed_watermarks,
                 "source_counts": {
-                    source: sum(row["source"] == source for row in normalized)
+                    source: sum(row["source"] == source for row in present_rows)
                     for source in (LV_SOURCE, LUCIFER_SOURCE)
+                },
+                "discovery_coverage": {
+                    LV_SOURCE: (
+                        dict(lv_coverage) if lv_coverage is not None else "complete"
+                    ),
+                    LUCIFER_SOURCE: (
+                        dict(lucifer_coverage)
+                        if lucifer_coverage is not None
+                        else "complete"
+                    ),
                 },
             }
         )
@@ -1962,8 +2100,11 @@ class SubscriptionVideoService:
             )
         if (
             lv_listing.get("status") != "ok"
-            or lv_listing.get("complete_scan") is not True
             or not isinstance(lv_listing.get("entries"), list)
+            or (
+                lv_listing.get("complete_scan") is not True
+                and not isinstance(lv_listing.get("coverage"), Mapping)
+            )
         ):
             raise EnrichmentDiagnosticError(
                 "shared Lv listing is incomplete",
@@ -1971,12 +2112,68 @@ class SubscriptionVideoService:
                 code="shared_listing_incomplete",
                 stage="listing_validation",
             )
-        lucifer_listing = self._scan_private(
-            session=private_session,
-            profile=profile,
-            root=LUCIFER_ROOT,
-            recursive=True,
+        manifest = self._load_manifest()
+        prior_items = manifest.get("items", {})
+        has_lucifer_baseline = any(
+            isinstance(row, Mapping) and row.get("source") == LUCIFER_SOURCE
+            for row in prior_items.values()
         )
+        now = self._time()
+        full_topology_audit = (
+            not has_lucifer_baseline
+            or (now.weekday() == 0 and now.hour == 3)
+        )
+        lucifer_coverage: Mapping[str, Any] | None = None
+        if full_topology_audit:
+            lucifer_listing = self._scan_private(
+                session=private_session,
+                profile=profile,
+                root=LUCIFER_ROOT,
+                recursive=True,
+            )
+        else:
+            root_listing = self._scan_private(
+                session=private_session,
+                profile=profile,
+                root=LUCIFER_ROOT,
+                recursive=False,
+            )
+            known_roots, planned_roots = _tiered_discovery_roots(
+                prior_items,
+                source=LUCIFER_SOURCE,
+                root=LUCIFER_ROOT,
+                now=now,
+            )
+            root_directories = sorted(
+                {
+                    str(row.get("path") or "")
+                    for row in root_listing["entries"]
+                    if isinstance(row, Mapping) and row.get("is_dir") is True
+                }
+            )
+            new_roots = [path for path in root_directories if path not in known_roots]
+            selected_roots = list(
+                dict.fromkeys([*new_roots[:2], *planned_roots])
+            )[:4]
+            lucifer_entries = list(root_listing["entries"])
+            for selected_root in selected_roots:
+                listing = self._scan_private(
+                    session=private_session,
+                    profile=profile,
+                    root=selected_root,
+                    recursive=True,
+                )
+                lucifer_entries.extend(listing["entries"])
+            lucifer_listing = {
+                "status": "ok",
+                "complete_scan": False,
+                "entries": lucifer_entries,
+            }
+            lucifer_coverage = {
+                "direct_roots": [LUCIFER_ROOT],
+                "recursive_roots": selected_roots,
+                "policy": "hourly_hot_roots_plus_rotating_cold_shard",
+            }
         lv_entries = lv_listing["entries"]
         lucifer_entries = lucifer_listing["entries"]
         if episode_spec_path is not None:
@@ -1988,6 +2185,12 @@ class SubscriptionVideoService:
         return self.observe(
             lv_entries,
             lucifer_entries,
+            lv_coverage=(
+                lv_listing.get("coverage")
+                if lv_listing.get("complete_scan") is not True
+                else None
+            ),
+            lucifer_coverage=lucifer_coverage,
         )
 
     @staticmethod

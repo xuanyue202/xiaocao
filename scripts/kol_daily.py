@@ -1981,14 +1981,20 @@ class DailyRuntime:
             raise DailyError("source Ticket 07 terminal is invalid")
         return terminal
 
-    def lv(self, *, only_identity: str | None = None) -> dict[str, Any]:
+    def lv(
+        self,
+        *,
+        only_identity: str | None = None,
+        refresh_listing: bool = True,
+    ) -> dict[str, Any]:
         service = self._lv_service_for_sweep()
-        listing = self._lv_listing_for_sweep()
-        service.poll_opencli(
-            session=self.args.lv_session,
-            profile=self.args.opencli_profile,
-            listing=listing,
-        )
+        if refresh_listing:
+            listing = self._lv_listing_for_sweep()
+            service.poll_opencli(
+                session=self.args.lv_session,
+                profile=self.args.opencli_profile,
+                listing=listing,
+            )
         migration_handler = getattr(
             service,
             "retire_packaged_historical_backlog",
@@ -2222,7 +2228,7 @@ class DailyRuntime:
         identity = _exact_progress_surface("lv_text_image", surface)
         if identity == "source":
             return self.lv()
-        return self.lv(only_identity=identity)
+        return self.lv(only_identity=identity, refresh_listing=False)
 
     def lv_filtered_image_reconcile(self, surface: str) -> dict[str, Any]:
         identity = _exact_progress_surface("lv_text_image", surface)
@@ -2231,7 +2237,14 @@ class DailyRuntime:
                 "filtered image preview requires one exact item identity"
             )
         service = self._lv_service_for_sweep()
-        listing = self._lv_listing_for_sweep()
+        item = service.status().get("items", {}).get(identity)
+        if not isinstance(item, dict):
+            raise DailyError("filtered image preview identity is unknown")
+        listing = service._read_opencli_listing(
+            session=self.args.lv_session,
+            profile=self.args.opencli_profile,
+            exact_path=str(item.get("path") or ""),
+        )
         service.poll_opencli(
             session=self.args.lv_session,
             profile=self.args.opencli_profile,
@@ -2243,7 +2256,7 @@ class DailyRuntime:
             profile=self.args.opencli_profile,
             listing=listing,
         )
-        return self.lv(only_identity=identity)
+        return self.lv(only_identity=identity, refresh_listing=False)
 
     def lv_reconcile(self, progress: WriterProgress) -> dict[str, Any]:
         raise DailyError(
@@ -2253,7 +2266,10 @@ class DailyRuntime:
     def lv_structured_input(self, progress: WriterProgress) -> dict[str, Any]:
         return _consume_structured_input(
             progress,
-            lambda: self.lv(only_identity=progress.item_identity),
+            lambda: self.lv(
+                only_identity=progress.item_identity,
+                refresh_listing=False,
+            ),
         )
 
     def videos(

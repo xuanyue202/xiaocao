@@ -299,6 +299,17 @@ def test_lv_narrow_resume_supports_declared_source_surface():
     assert calls == [{}]
 
 
+def test_lv_narrow_resume_skips_global_discovery_for_exact_identity():
+    runtime = DailyRuntime.__new__(DailyRuntime)
+    calls = []
+    runtime.lv = lambda **kwargs: calls.append(kwargs) or {"status": "no_update"}
+
+    result = runtime.lv_narrow_resume("lv_text_image:item-1")
+
+    assert result == {"status": "no_update"}
+    assert calls == [{"only_identity": "item-1", "refresh_listing": False}]
+
+
 def test_source_cli_narrow_runner_supports_xiaocao_wechat_live():
     calls: list[str] = []
     runtime = SimpleNamespace(
