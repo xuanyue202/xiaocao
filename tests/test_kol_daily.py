@@ -209,6 +209,57 @@ def test_source_repair_validation_accepts_pending_resume():
     ) is progress
 
 
+def test_source_repair_validation_recovers_missing_convergence_observation():
+    progress = WriterProgress.repair_required(
+        item_identity="video-1",
+        fingerprint=FailureFingerprint(
+            adapter="subscription_video",
+            category="internal_state_error",
+            code="cloud_transfer_unobserved_reconciled_absent",
+            stage="source_run",
+            failure_revision="a" * 40,
+            provider_contract_version="xiaocao_writer_v1",
+        ),
+        repair_revision=None,
+        affected_set_digest="b" * 64,
+        claim_receipt_summary={
+            "claim_count": 0,
+            "receipt_count": 0,
+            "uncertain_effect_count": 0,
+        },
+        targeted_test_profile="kol_subscription_video_source_run",
+        narrow_resume_surface="subscription_video:video-1",
+        retryability="not_retryable",
+    )
+    recorded = []
+    convergence = SimpleNamespace(
+        active_progress=lambda _adapter: None,
+        pending_resume=lambda _adapter: None,
+        record=lambda candidate, *, slot: recorded.append((candidate, slot)),
+    )
+    service = SimpleNamespace(
+        convergence=convergence,
+        status=lambda: {
+            "last_sweep": {
+                "slot": "2026-08-11T07:00+08:00",
+                "source_states": [{
+                    "name": "subscription_video",
+                    "writer_progress": progress.to_dict(),
+                }],
+            },
+        },
+    )
+
+    recovered = _source_repair_validation_progress(
+        service,
+        "subscription_video",
+        progress.failure_fingerprint,
+    )
+
+    assert recovered == progress
+    assert recorded == [(progress, "2026-08-11T07:00+08:00")]
+
+
 def test_lv_narrow_resume_supports_declared_source_surface():
     runtime = DailyRuntime.__new__(DailyRuntime)
     calls = []

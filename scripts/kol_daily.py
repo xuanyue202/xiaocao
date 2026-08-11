@@ -3409,6 +3409,36 @@ def _source_repair_validation_progress(
         pending = service.convergence.pending_resume(adapter)
         if pending is not None:
             progress = pending[0]
+    if progress is None:
+        status = service.status()
+        last_sweep = status.get("last_sweep")
+        states = (
+            last_sweep.get("source_states")
+            if isinstance(last_sweep, dict)
+            else None
+        )
+        matches = [
+            row
+            for row in (states if isinstance(states, list) else [])
+            if isinstance(row, dict) and row.get("name") == adapter
+        ]
+        if (
+            len(matches) == 1
+            and isinstance(matches[0].get("writer_progress"), dict)
+            and isinstance(last_sweep, dict)
+        ):
+            candidate = WriterProgress.from_dict(
+                matches[0]["writer_progress"]
+            )
+            if (
+                candidate.status == "repair_required"
+                and candidate.failure_fingerprint == failure_fingerprint
+            ):
+                service.convergence.record(
+                    candidate,
+                    slot=str(last_sweep.get("slot") or ""),
+                )
+                progress = candidate
     if (
         progress is None
         or progress.failure_fingerprint != failure_fingerprint
