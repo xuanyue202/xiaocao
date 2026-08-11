@@ -20,11 +20,13 @@ already-sent OTP. Never reuse an OTP across a page-session reset. Never click
 `获取验证码` again while the current CAPTCHA is open or while an accepted SMS
 countdown remains. An unknown send outcome requires readback, not a resend.
 
-## CAPTCHA visibility and user confirmation
+## CAPTCHA visibility and SMS authorization scope
 
-Text or DOM presence alone does not prove the CAPTCHA is visible. Require all
-of the following before requesting user confirmation for the current CAPTCHA
-instance and attempting one drag:
+Text or DOM presence alone does not prove the CAPTCHA is visible. One explicit
+user request to send an SMS or complete SMS login authorizes the CAPTCHA work
+needed for that login attempt; do not insert an extra allow/deny prompt for an
+Agent-owned geometry check, drag, or narrow DOM repair. Require all of the
+following before attempting one drag on the current CAPTCHA instance:
 
 - the root, background, puzzle piece, track, and knob exist;
 - `display != none`, `visibility` is visible, and `opacity > 0`;
@@ -34,8 +36,9 @@ instance and attempting one drag:
 - the background and puzzle assets plus their geometry are loaded.
 
 A root with `display:block`, `opacity:0`, or an offscreen position is hidden.
-Do not drag it. A refreshed or replaced challenge is a new CAPTCHA instance and
-requires fresh user confirmation.
+Do not drag it. A refreshed or replaced challenge is a new CAPTCHA instance;
+recompute its assets and geometry, but do not ask for another confirmation while
+the same user-authorized SMS login attempt remains active.
 
 ## Asset fallback and current geometry
 
@@ -90,7 +93,8 @@ minor vertical variation. Never jump directly to the end and never replay an
 old path. If the knob and puzzle piece do not move at all, no CAPTCHA attempt
 was submitted; diagnose the current hit target and coordinates before another
 action. If the challenge reports failure or is replaced, recompute from the
-new instance and obtain fresh user confirmation.
+new instance within the same SMS authorization. Never reuse the old geometry or
+add an Agent-owned repair approval prompt.
 
 After the drag, wait for a short bounded UI stabilization window. Mark the SMS
 state `accepted` only when readback proves all three:
@@ -103,22 +107,26 @@ The drag returning, CAPTCHA disappearance, a stale Toast string, or the send
 button click alone is insufficient. On success, stop at the empty OTP field and
 ask the user for the newest SMS code.
 
-## Stale full-screen Toast
+## Stale or duplicated full-screen Toast
 
-Before OTP submission inspect `#SpToast`: its display, opacity,
-`pointer-events`, position, z-index, rectangle, and the login-button-center
-hit target. The dangerous state is an invisible (`opacity:0`) fixed,
-full-viewport Toast with `pointer-events:auto`; it swallows normal clicks even
-though it looks gone. Never blind-click or treat a forced-click return as a
-login receipt.
+Before SMS resend and OTP submission inspect every `[id="SpToast"]`: its
+display, opacity, `pointer-events`, position, z-index, rectangle, and the
+send/login-button-center hit target. Do not rely on `querySelector('#SpToast')`:
+Xiaoetong can insert a second element with the same ID after a successful send,
+while the first one is already hidden. The dangerous state is the exact node
+returned by `elementFromPoint()` at the control center when that node is an
+invisible (`opacity:0`) fixed, full-viewport Toast with `pointer-events:auto`;
+it swallows normal clicks even though it looks gone. Never blind-click or treat
+a forced-click return as an SMS or login receipt.
 
 Wait for the CSS transition's bounded dismissal interval, then read the hit
-target again. If the confirmed stale Toast still intercepts the button, obtain
-explicit authorization for this page-local DOM repair. With that authorization,
-change only `#SpToast` to `display:none !important` and
-`pointer-events:none !important`, then read back both values and prove the
-button-center hit target is the real login control. Do not remove other
-overlays or modify login fields. Without authorization, stop for user action.
+target again. If the confirmed stale Toast still intercepts the control, this
+is an Agent-owned repair inside the already-authorized SMS login: change only
+that exact intercepting Toast node to `display:none !important` and
+`pointer-events:none !important`. Do not bulk-edit all duplicate IDs. Read back
+both values and prove `elementFromPoint()` at the control center now returns the
+real send or login control. Do not remove other overlays or modify login fields,
+and do not stop for an additional allow/deny prompt.
 
 A refresh is the last resort. After a refresh, mark the SMS page session
 `invalidated`; do not reuse the prior OTP unless the page authoritatively proves
@@ -127,7 +135,8 @@ that session remains valid.
 ## OTP, consent, course password, and muted playback
 
 Before submitting, prove the same tab/resource, `SMS=accepted`, an empty OTP
-field, a non-blocking Toast, and a correct login-button hit target. Enter the
+field, a non-blocking Toast, and a correct login-button hit target. If a consent
+checkbox is required, check it once and read back the checked state. Enter the
 newest OTP once and click Login once. From then on, use URL/DOM readback only;
 never submit the same OTP or click Login again while the outcome is unknown.
 
@@ -149,6 +158,27 @@ video.muted = true;
 video.volume = 0;
 ```
 
+`open <the-same-url>` may only reuse/focus the existing OpenCLI page; it is not
+an authoritative reload. After a proven stuck player, use one real
+`location.reload()` and reapply page mute. Invoke playback non-blockingly with
+`video.play().catch(() => {})`; never `await video.play()` inside an OpenCLI eval,
+because an unresolved promise can pin the command even when `paused` already
+changed to `false`.
+
+If the exact page reports `document.visibilityState == "hidden"` while OpenCLI
+reports the session tab active, test a fresh empty `MediaSource` with a short
+bounded `sourceopen` readback. When it does not open, stop rebuilding the player:
+OpenCLI 1.8.6 can focus an existing minimized owned window without restoring it
+to a normal visible state. Release only the same browser-session lease, launch
+the exact Chrome extension profile (this capture node uses `Default`) in a new
+normal foreground window at the canonical resource URL, and bind the same
+OpenCLI session to that exact current tab. The bind receipt must return the
+canonical URL, and DOM readback must prove `visibilityState == "visible"` before
+playback activation. If `browser bind` returns `about:blank`, it bound the
+reusable placeholder rather than the course; fail closed and use a no-preconnect
+bind through the pinned OpenCLI transport, then repeat the exact URL/visibility
+readback. Never create a second session or resend an OTP for this recovery.
+
 Activation requires `muted == true`, `volume == 0`, `paused == false`,
 `ended == false`, adequate `readyState`, and a later `currentTime` sample
 strictly greater than the earlier one. System mute is only an extra safeguard;
@@ -159,13 +189,13 @@ it never replaces the page-level readback.
 | Stage | Stop condition | Narrow retry boundary |
 |---|---|---|
 | Identity | tab/resource/capture job differs | Read-only recover the original identity; never create a replacement job |
-| CAPTCHA | hidden, offscreen, zero-sized, or intercepted | Wait for the current instance; never click send again |
+| CAPTCHA | hidden, offscreen, zero-sized, or intercepted | Re-read the current instance inside the existing SMS authorization; never click send again |
 | Assets | background/piece missing or challenge changed | List/bundle assets for the current instance |
 | Geometry | scale mismatch or out-of-range distance | Re-read current DOM/assets; never use historical distance |
-| Drag | no submitted movement, failure, or replacement | Diagnose hit target; for a new instance recompute and reconfirm |
+| Drag | no submitted movement, failure, or replacement | Diagnose hit target; for a new instance recompute without another approval prompt |
 | SMS | success Toast and countdown present | Stop and wait for the newest OTP |
-| Toast | invisible full-screen layer intercepts | Bounded wait; authorized repair of only confirmed `#SpToast` |
+| Toast | invisible full-screen layer intercepts | Bounded wait; Agent-owned repair of only the exact `elementFromPoint()` Toast |
 | OTP | Login clicked but result unknown | Read URL/DOM only; never click twice |
 | Consent | consent clicked but navigation unknown | Read and wait for the exact course path |
 | Course gate | no visible course-password prompt | Do not enter `666`; try direct playback |
-| Playback | mute readback fails or time does not advance | Reapply page mute and read back; never mark activated early |
+| Playback | mute readback fails or time does not advance | Reapply mute; real reload once; recover a hidden minimized container into the same session; never mark activated early |

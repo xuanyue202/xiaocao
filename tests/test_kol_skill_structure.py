@@ -567,10 +567,18 @@ def test_hourly_local_capture_routes_authorized_xiaoetong_sms_login() -> None:
         "tab.cua.drag()",
         "验证码已发送成功",
         "#SpToast",
+        '[id="SpToast"]',
+        "elementFromPoint()",
+        "Agent-owned repair",
         "Enter the newest OTP once",
+        "check it once and read back the checked state",
         "Enter `666` only after reaching that exact course resource",
         "video.muted = true",
         "video.volume = 0",
+        "location.reload()",
+        "video.play().catch(() => {})",
+        'visibilityState == "visible"',
+        "no-preconnect",
     ):
         assert marker in sms_login
 
