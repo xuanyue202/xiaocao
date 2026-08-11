@@ -2463,16 +2463,43 @@ class DailyRuntime:
                 if resolved
                 else None
             ),
-            "effect_observed": "completed" if resolved else "uncertain",
+            "effect_observed": "completed" if resolved else "absent",
         }
-        outcome = (
-            {"status": "no_update", "authoritative_readback": readback}
-            if resolved
-            else {
-                **_reconciliation_pending(progress),
+        if resolved:
+            outcome = {
+                "status": "no_update",
                 "authoritative_readback": readback,
             }
-        )
+        else:
+            readback_evidence_sha256 = hashlib.sha256(
+                _canonical(readback).encode("utf-8")
+            ).hexdigest()
+            claim_id = str(progress.details["claim_identity"]).rsplit(
+                ":", 1
+            )[-1]
+            service.record_lv_transfer_absence_reconciliation(
+                exact[0],
+                claim_id=claim_id,
+                readback_evidence_sha256=readback_evidence_sha256,
+            )
+            outcome = {
+                "status": "waiting",
+                "waiting_count": 1,
+                "waiting_items": [{
+                    "identity": progress.item_identity,
+                    "version_key": version,
+                    "stage": "source_run",
+                    "failure": {
+                        "category": "internal_state_error",
+                        "code": (
+                            "cloud_transfer_unobserved_reconciled_absent"
+                        ),
+                        "stage": "source_run",
+                        "retryable": False,
+                    },
+                }],
+                "authoritative_readback": readback,
+            }
         return _reconciliation_result(
             progress,
             outcome,

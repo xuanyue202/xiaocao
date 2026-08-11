@@ -1360,6 +1360,115 @@ def test_lv_transfer_unobserved_native_click_requires_reconciliation(tmp_path):
     assert "next_poll_not_before" not in claim
 
 
+def test_lv_transfer_retries_once_after_authoritative_absence_reconciliation(
+    tmp_path,
+):
+    service = _service(tmp_path, sleep=lambda _seconds: None)
+    item = service._normalize(
+        _source_rows()[0][1],
+        source=LV_SOURCE,
+        author=LV_AUTHOR,
+    )
+    item.update(
+        {
+            "version_first_seen_at": NOW.isoformat(),
+            "first_seen_at": NOW.isoformat(),
+            "present": True,
+            "work_eligible": True,
+        }
+    )
+    service.ensure_lv_destination = lambda **_kwargs: {"status": "completed"}
+    target_ready = False
+
+    def direct_entries(*, directory, **_kwargs):
+        if directory != LV_DESTINATION_DIRECTORY or not target_ready:
+            return []
+        return [
+            _row(
+                "private-reconciled-copy",
+                f"{LV_DESTINATION_DIRECTORY}/{item['name']}",
+                size=item["size"],
+                modified_at=item["modified_at"] + 1,
+            )
+        ]
+
+    service._direct_private_entries = direct_entries
+    service._search_private_exact = lambda **_kwargs: []
+    receipt_name = f"lv_transfer_{item['version_key']}"
+    claim_path = service._claim_path(receipt_name)
+    claim_path.parent.mkdir(parents=True)
+    claim_path.write_text(
+        json.dumps(
+            {
+                "schema_version": 1,
+                "event": "lv_cloud_transfer_outcome_uncertain",
+                "status": "native_click_uncertain",
+                "claim_id": "uncertain-claim",
+                "claimed_at": (NOW - timedelta(minutes=31)).isoformat(),
+                "triggered_at": (NOW - timedelta(minutes=31)).isoformat(),
+                "trigger_attempt": 2,
+                "source_identity": item["identity"],
+                "source_version_key": item["version_key"],
+                "source_path": item["path"],
+                "source_size": item["size"],
+                "target_path": f"{LV_DESTINATION_DIRECTORY}/{item['name']}",
+                "large_payload_local_bytes": 0,
+                "provider_outcome": "unobserved",
+                "side_effect_uncertain": True,
+            }
+        ),
+        encoding="utf-8",
+    )
+    reconciled = service.record_lv_transfer_absence_reconciliation(
+        item,
+        claim_id="uncertain-claim",
+        readback_evidence_sha256="a" * 64,
+    )
+    assert reconciled["status"] == "reconciled_absent"
+    assert reconciled["side_effect_uncertain"] is False
+    assert reconciled["trigger_attempt_maximum"] == 3
+
+    def opencli(_session, *args, **_kwargs):
+        nonlocal target_ready
+        if args[0] == "open":
+            return {"url": "sanitized"}
+        if args[0] == "click":
+            return {"clicked": True, "target": args[1], "matches_n": 1}
+        if "destinationSegments" in args[1]:
+            return {
+                "status": "save_confirmation_ready",
+                "confirmation_selector": (
+                    '[data-xiaocao-lv-confirm="ready"]'
+                ),
+                "triggered": False,
+            }
+        target_ready = True
+        return {
+            "status": "cloud_transfer_accepted",
+            "triggered": True,
+            "provider_outcome": "accepted",
+        }
+
+    service._opencli_json = opencli
+
+    completed = service.transfer_lv_video(
+        item,
+        lv_session="lv",
+        private_session="private",
+        profile="work",
+    )
+
+    assert completed["status"] == "completed"
+    assert completed["target_size"] == item["size"]
+    recovery = next(
+        json.loads(line)
+        for line in service.events_path.read_text(encoding="utf-8").splitlines()
+        if "lv_cloud_transfer_recovery_claimed" in line
+    )
+    assert recovery["trigger_attempt"] == 3
+    assert recovery["trigger_attempt_maximum"] == 3
+
+
 def test_lv_transfer_claim_precedes_click_and_unobserved_outcome_reconciles(
     tmp_path,
 ):

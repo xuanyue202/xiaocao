@@ -3017,6 +3017,61 @@ class SubscriptionVideoService:
         _append_jsonl(self.events_path, blocked)
         return blocked
 
+    def record_lv_transfer_absence_reconciliation(
+        self,
+        item: dict[str, Any],
+        *,
+        claim_id: str,
+        readback_evidence_sha256: str,
+    ) -> dict[str, Any]:
+        receipt_name = f"lv_transfer_{item['version_key']}"
+        claim_path = self._claim_path(receipt_name)
+        if not claim_path.is_file():
+            raise EnrichmentError(
+                "Lv cloud transfer absence reconciliation requires its claim"
+            )
+        try:
+            claim = json.loads(claim_path.read_text(encoding="utf-8"))
+        except json.JSONDecodeError as exc:
+            raise EnrichmentError(
+                "Lv cloud transfer claim is invalid"
+            ) from exc
+        if (
+            claim.get("claim_id") != claim_id
+            or claim.get("source_identity") != item["identity"]
+            or claim.get("source_version_key") != item["version_key"]
+            or claim.get("provider_outcome") != "unobserved"
+        ):
+            raise EnrichmentError(
+                "Lv cloud transfer absence reconciliation changed binding"
+            )
+        if (
+            claim.get("status") == "reconciled_absent"
+            and claim.get("readback_evidence_sha256")
+            == readback_evidence_sha256
+        ):
+            return claim
+        reconciled = {
+            **claim,
+            "event": "lv_cloud_transfer_absence_reconciled",
+            "status": "reconciled_absent",
+            "stage": "cloud_transfer_reconciliation",
+            "pending": True,
+            "side_effect_uncertain": False,
+            "reconciliation_status": "exact_private_copy_absent",
+            "readback_evidence_sha256": readback_evidence_sha256,
+            "reconciled_absent_at": self._time().isoformat(
+                timespec="seconds"
+            ),
+            "trigger_attempt_maximum": max(
+                LV_TRANSFER_MAX_TRIGGER_ATTEMPTS,
+                int(claim.get("trigger_attempt") or 1) + 1,
+            ),
+        }
+        _atomic_write_json(claim_path, reconciled)
+        _append_jsonl(self.events_path, reconciled)
+        return reconciled
+
     def _direct_private_entries(
         self,
         *,
@@ -3352,6 +3407,13 @@ class SubscriptionVideoService:
             now = self._time()
             retry_not_before = triggered_at + LV_TRANSFER_RETRY_DELAY
             trigger_attempt = int(claim.get("trigger_attempt") or 1)
+            trigger_attempt_maximum = max(
+                trigger_attempt,
+                int(
+                    claim.get("trigger_attempt_maximum")
+                    or LV_TRANSFER_MAX_TRIGGER_ATTEMPTS
+                ),
+            )
             if claim.get("provider_trigger_status") == "cloud_transfer_rejected":
                 self._record_transfer_blocker(
                     receipt_name,
@@ -3368,6 +3430,7 @@ class SubscriptionVideoService:
             if (
                 not readback_only
                 and claim.get("provider_outcome") == "unobserved"
+                and claim.get("status") != "reconciled_absent"
             ):
                 raise EnrichmentError(
                     "Lv cloud transfer native click outcome is uncertain"
@@ -3380,9 +3443,7 @@ class SubscriptionVideoService:
                     "pending": True,
                     "side_effect_uncertain": True,
                     "trigger_attempt": trigger_attempt,
-                    "trigger_attempt_maximum": (
-                        LV_TRANSFER_MAX_TRIGGER_ATTEMPTS
-                    ),
+                    "trigger_attempt_maximum": trigger_attempt_maximum,
                     "next_poll_not_before": retry_not_before.isoformat(
                         timespec="seconds"
                     ),
@@ -3412,12 +3473,10 @@ class SubscriptionVideoService:
                     "pending": True,
                     "side_effect_uncertain": True,
                     "trigger_attempt": trigger_attempt,
-                    "trigger_attempt_maximum": (
-                        LV_TRANSFER_MAX_TRIGGER_ATTEMPTS
-                    ),
+                    "trigger_attempt_maximum": trigger_attempt_maximum,
                     "reconciliation_status": "exact_private_copy_absent",
                 }
-            if trigger_attempt >= LV_TRANSFER_MAX_TRIGGER_ATTEMPTS:
+            if trigger_attempt >= trigger_attempt_maximum:
                 self._record_transfer_blocker(
                     receipt_name,
                     claim,
@@ -3446,6 +3505,7 @@ class SubscriptionVideoService:
                 "claimed_at": retry_claimed_at,
                 "retry_of": claim["claim_id"],
                 "trigger_attempt": trigger_attempt + 1,
+                "trigger_attempt_maximum": trigger_attempt_maximum,
                 "prior_triggered_at": claim["triggered_at"],
                 "reconciled_absent_at": now.isoformat(timespec="seconds"),
                 "reconciliation_basis": (
@@ -3458,6 +3518,9 @@ class SubscriptionVideoService:
                 "reconciliation_status",
                 "side_effect_uncertain",
                 "pending",
+                "provider_outcome",
+                "provider_trigger_status",
+                "readback_evidence_sha256",
             ):
                 retry_claim.pop(field, None)
             _atomic_write_json(
@@ -3670,7 +3733,10 @@ class SubscriptionVideoService:
             "stage": "cloud_transfer_confirmation",
             "pending": True,
             "side_effect_uncertain": True,
-            "trigger_attempt_maximum": LV_TRANSFER_MAX_TRIGGER_ATTEMPTS,
+            "trigger_attempt_maximum": int(
+                triggered.get("trigger_attempt_maximum")
+                or LV_TRANSFER_MAX_TRIGGER_ATTEMPTS
+            ),
         }
 
     def _enrichment_service(
