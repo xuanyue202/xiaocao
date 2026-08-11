@@ -562,14 +562,22 @@ def test_hourly_local_capture_routes_authorized_xiaoetong_sms_login() -> None:
         assert marker in entrypoint
     assert "xiaoetong-sms-login.md" in hourly
     for marker in (
+        "## Contents",
+        "## One-pass path",
         "pageAssets",
         "drag_distance_css",
         "tab.cua.drag()",
+        "Browser tab's input primitive, not the Computer Use skill",
         "验证码已发送成功",
         "#SpToast",
         '[id="SpToast"]',
         "elementFromPoint()",
+        ".custom-button.login-verify-code",
         "Agent-owned repair",
+        "performance.timeOrigin",
+        "accepted | expired | invalidated",
+        "Pass the phone/OTP only once to the intended Browser input",
+        "already present in the current user message",
         "Enter the newest OTP once",
         "check it once and read back the checked state",
         "Enter `666` only after reaching that exact course resource",
@@ -579,6 +587,8 @@ def test_hourly_local_capture_routes_authorized_xiaoetong_sms_login() -> None:
         "video.play().catch(() => {})",
         'visibilityState == "visible"',
         "no-preconnect",
+        "readyState >= 2",
+        "3–5",
     ):
         assert marker in sms_login
 
