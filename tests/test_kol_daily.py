@@ -1773,6 +1773,81 @@ def test_resume_source_wait_cli_uses_only_exact_persisted_item(
     }
 
 
+def test_reconcile_source_effect_cli_uses_declared_readback_only(
+    tmp_path,
+    monkeypatch,
+    capsys,
+):
+    observed: dict[str, object] = {}
+    progress = WriterProgress.reconcile_required(
+        item_identity="video-1",
+        stage="cloud_transfer_reconciliation",
+        effect_kind="cloud_transfer",
+        claim_identity="lv_transfer:version-1:claim-1",
+        readback_operation="read_lv_transfer_claim_receipt",
+        claim_receipt_summary={
+            "claim_count": 1,
+            "receipt_count": 0,
+            "uncertain_effect_count": 1,
+        },
+    )
+
+    class FakeRuntime:
+        def __init__(self, args):
+            observed["args"] = args
+
+        @staticmethod
+        def videos_reconcile(seen):
+            observed["progress"] = seen
+            return {"outcome": {"status": "no_update"}}
+
+    class FakeCoordinator:
+        def __init__(self, output_dir):
+            assert output_dir == tmp_path / "daily"
+
+        @staticmethod
+        def resume_reconciliation(source, *, progress):
+            observed["source"] = source["name"]
+            source["reconcile"](progress)
+            return {"status": "completed", "continuation_only": True}
+
+    monkeypatch.setattr(kol_daily_script, "DailyRuntime", FakeRuntime)
+    monkeypatch.setattr(kol_daily_script, "DailyCoordinator", FakeCoordinator)
+    monkeypatch.setattr(
+        kol_daily_script,
+        "_source_effect_reconciliation_progress",
+        lambda _service, adapter, identity: (
+            progress
+            if (adapter, identity) == ("subscription_video", "video-1")
+            else pytest.fail("readback binding changed")
+        ),
+    )
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "kol_daily.py",
+            "reconcile-source-effect",
+            "--source-adapter",
+            "subscription_video",
+            "--source-identity",
+            "video-1",
+            "--output-dir",
+            str(tmp_path / "daily"),
+        ],
+    )
+
+    assert kol_daily_script.main() == 0
+    assert observed["source"] == "subscription_video"
+    assert observed["progress"] == progress
+    assert json.loads(capsys.readouterr().out) == {
+        "source_effect_reconciliation": {
+            "status": "completed",
+            "continuation_only": True,
+        },
+    }
+
+
 def test_daily_runtime_runs_wechat_official_account_subscription(
     tmp_path,
     monkeypatch,
@@ -2500,6 +2575,52 @@ def test_daily_resume_wait_runs_only_exact_due_source(tmp_path):
     assert sum(
         row["event"] == "runner_started" for row in service.events()
     ) == 1
+
+
+def test_source_effect_readback_recovers_exact_active_progress(tmp_path):
+    service = DailyCoordinator(
+        tmp_path / "daily",
+        now=Clock("2026-08-11T08:40:00+08:00"),
+    )
+    service.run([{
+        "name": "subscription_video",
+        "run": lambda: {
+            "status": "waiting",
+            "waiting_count": 1,
+            "waiting_items": [{
+                "identity": "video-1",
+                "version_key": "version-1",
+                "stage": "cloud_transfer_reconciliation",
+                "failure": {
+                    "category": "uncertain_state",
+                    "code": "transfer_receipt_reconciliation_required",
+                    "stage": "cloud_transfer_reconciliation",
+                    "retryable": False,
+                },
+                "effect_kind": "cloud_transfer",
+                "claim_identity": "lv_transfer:version-1:claim-1",
+                "readback_operation": "read_lv_transfer_claim_receipt",
+            }],
+        },
+    }])
+
+    progress = kol_daily_script._source_effect_reconciliation_progress(
+        service,
+        "subscription_video",
+        "video-1",
+    )
+
+    assert progress.status == "reconcile_required"
+    assert progress.item_identity == "video-1"
+    assert progress.details["readback_operation"] == (
+        "read_lv_transfer_claim_receipt"
+    )
+    with pytest.raises(DailyError, match="target is not active"):
+        kol_daily_script._source_effect_reconciliation_progress(
+            service,
+            "subscription_video",
+            "other-video",
+        )
 
 
 def _low_density_event() -> dict:

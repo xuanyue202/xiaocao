@@ -3344,6 +3344,37 @@ def _source_repair_slot(service: DailyCoordinator) -> str:
     return service._beijing_now().strftime("%Y-%m-%dT%H:00+08:00")
 
 
+def _source_effect_reconciliation_progress(
+    service: DailyCoordinator,
+    adapter: str,
+    identity: str,
+) -> WriterProgress:
+    status = service.status()
+    last_sweep = status.get("last_sweep")
+    states = (
+        last_sweep.get("source_states")
+        if isinstance(last_sweep, dict)
+        else None
+    )
+    matches = [
+        row
+        for row in (states if isinstance(states, list) else [])
+        if isinstance(row, dict) and row.get("name") == adapter
+    ]
+    if len(matches) != 1 or not isinstance(
+        matches[0].get("writer_progress"),
+        dict,
+    ):
+        raise DailyError("source effect readback lost its active progress")
+    progress = WriterProgress.from_dict(matches[0]["writer_progress"])
+    if (
+        progress.status != "reconcile_required"
+        or progress.item_identity != identity
+    ):
+        raise DailyError("source effect readback target is not active")
+    return progress
+
+
 def _source_repair_validation_progress(
     service: DailyCoordinator,
     adapter: str,
@@ -3399,6 +3430,7 @@ def main() -> int:
             "resume-source-repair",
             "resume-source-wait",
             "resume-source-input",
+            "reconcile-source-effect",
             "reconcile-source-terminal",
             "status",
             "audit",
@@ -3547,6 +3579,31 @@ def main() -> int:
             progress=progress,
         )
         _print({"source_input_resume": result})
+        return 0
+    if args.command == "reconcile-source-effect":
+        if not args.source_adapter or not args.source_identity:
+            raise DailyError(
+                "reconcile-source-effect requires source adapter and identity"
+            )
+        if args.source_adapter != "subscription_video":
+            raise DailyError(
+                "reconcile-source-effect adapter has no exact CLI binding"
+            )
+        service = DailyCoordinator(args.output_dir)
+        progress = _source_effect_reconciliation_progress(
+            service,
+            args.source_adapter,
+            args.source_identity,
+        )
+        runtime = DailyRuntime(args)
+        result = service.resume_reconciliation(
+            {
+                "name": args.source_adapter,
+                "reconcile": runtime.videos_reconcile,
+            },
+            progress=progress,
+        )
+        _print({"source_effect_reconciliation": result})
         return 0
     if args.command == "reconcile-source-terminal":
         if not args.source_adapter or not args.source_identity:
