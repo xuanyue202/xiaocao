@@ -120,6 +120,10 @@ def test_repair_validation_runs_repo_owned_profile_and_persists_matching_receipt
             "provider_download_link_errno_2",
             "kol_lv_text_image_provider_download_link",
         ),
+        (
+            "provider_frontend_target_not_ready",
+            "kol_lv_text_image_provider_download_link",
+        ),
     ],
 )
 def test_repair_validation_accepts_exact_lv_download_recovery_profile(

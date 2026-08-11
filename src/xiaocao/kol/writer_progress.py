@@ -882,6 +882,7 @@ _LV_DOWNLOAD_REPAIR_CODES = frozenset({
     "blocked_download_frame_missing",
     "provider_download_filtered",
     "provider_download_link_errno_2",
+    "provider_frontend_target_not_ready",
 })
 
 
