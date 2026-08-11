@@ -5340,6 +5340,16 @@ def test_initial_projection_backfills_report_only_history_without_side_effects(
     )
     assert updated_report["payload"]["alert_eligible"] is False
     assert candidate["metadata"]["report_copy_corrected"] is True
+    assert candidate["publication_key"].startswith("viewpoint-projection:")
+    uncorrected = build_initial_projection_candidate(
+        {"report": report, "records": [report]},
+        {
+            key: value
+            for key, value in request.items()
+            if key != "report_copy"
+        },
+    )
+    assert uncorrected["publication_key"] != candidate["publication_key"]
     assert candidate["publish_request"]["expected_content_sha256"] == (
         report["content_sha256"]
     )

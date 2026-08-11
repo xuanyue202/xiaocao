@@ -740,6 +740,7 @@ def build_initial_projection_candidate(
             "report_id": report["record_id"],
             "evidence_sha256": request["evidence_sha256"],
             "projection": projection,
+            "report_copy": report_payload_updates,
         }
     )
     updated_records, publish = build_append_only_publication_update(
