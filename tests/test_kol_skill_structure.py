@@ -220,6 +220,30 @@ def test_kol_skill_reuses_one_ticket04_listing_only_within_one_runner() -> None:
         assert marker in text
 
 
+def test_kol_skill_treats_lv_macheng_as_the_current_cycle_core_pool() -> None:
+    text = " ".join(FULL_CONTRACT_MD.read_text(encoding="utf-8").split())
+
+    for marker in (
+        "吕晓彤“马车”周期推荐池",
+        "current-cycle core recommendation pool",
+        "stable user-provided author/product fact",
+        "Every ETF, stock, or theme",
+        "role `primary_recommendation`",
+        "does not demote it to a generic watchlist",
+        "priority research and screening universe",
+        "longitudinal_projection.status=promoted",
+        "latest current `马车` viewpoint",
+        "appends an `expired` evaluation",
+        "with `replaces`",
+        "partial add/remove amendment uses `refines`",
+        "additions, removals, and unchanged members",
+        "current direction choice",
+        "is `alert_eligible`",
+        "creates no reminder or Book replay",
+    ):
+        assert marker in text
+
+
 def test_kol_skill_has_one_resumable_ticket05_cloud_video_runner() -> None:
     text = FULL_CONTRACT_MD.read_text(encoding="utf-8")
 

@@ -444,6 +444,46 @@ work and never authorizes replaying publication, reminder, or Book side effects.
   report-only `底层逻辑` knowledge entry, no alert, and KOL-US
   `decision=not_applicable` with a reason. This durable-only route creates no
   Book row; lack of a direct buy/sell instruction is not `low_density`.
+
+### 吕晓彤“马车”周期推荐池
+
+- Treat an authoritative 吕晓彤 source title or reader-visible heading that
+  identifies the product as `马车` as his **current-cycle core recommendation
+  pool**. This is a stable user-provided author/product fact: apply it on later
+  runs without asking again. Every ETF, stock, or theme listed in that `马车`
+  is a current primary recommendation and a `must_surface` claim. Preserve the
+  complete set and use role `primary_recommendation`; absence of a code,
+  weight, entry, position size, or exit rule does not demote it to a generic
+  watchlist.
+- Keep product meaning and execution authority separate. Bind every listed
+  member to the exact image/text evidence and named-asset inventory, and group
+  them as one basket thesis only when their direction, horizon, and conditions
+  agree. The report title, summary, and opening identify `马车` as the current
+  cycle's core recommendation pool and name every member. Preserve an
+  unspecified order and weight as unspecified; never invent a product code,
+  internal ranking, allocation, entry, stop, or exit. The household conclusion
+  treats the set as the priority research and screening universe, while a buy
+  or allocation recommendation still requires its own evidence-bound execution
+  conditions.
+- Use `longitudinal_projection.status=promoted` for every complete current
+  `马车` snapshot. The viewpoint subject is 吕晓彤's current-cycle core
+  recommendation pool; its horizon ends when he publishes the next complete
+  `马车` or explicitly changes the set. Compare the full member set with the
+  latest current `马车` viewpoint. A new complete snapshot appends one new
+  `current` viewpoint, appends an `expired` evaluation to the prior snapshot,
+  and links the new viewpoint to the prior one with `replaces`. An explicit
+  partial add/remove amendment uses `refines`. Keep the prior report,
+  viewpoint, evaluations, and relations in history; the set diff must state
+  additions, removals, and unchanged members.
+- A newly observed current `马车` snapshot is a current direction choice and
+  is `alert_eligible` when it is a new publication event. Its concise reminder
+  leads with the core pool and any set diff, then states the missing execution
+  conditions. A historical initialization, report correction, maintenance
+  evaluation, or replay retains the stable report URL and creates no reminder
+  or Book replay. Book KOL-US remains paper-only and acts only when a supported
+  US-listed instrument and execution conditions exist; otherwise record the
+  complete source signal and an explicit `no_trade` reason.
+
 - Preserve the original underlying-logic evidence and normalized text with
   SHA-256, distill reusable material under `reference/experience/distilled/`,
   and route candidate hypotheses to the backlog with `authority=0`. Lv is an
