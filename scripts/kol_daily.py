@@ -2412,12 +2412,6 @@ class DailyRuntime:
             self.args.video_output_dir,
             config_path=self.args.config,
         )
-        service.scan_opencli(
-            lv_session=self.args.lv_session,
-            private_session=self.args.private_session,
-            profile=self.args.opencli_profile,
-            lv_listing=self._lv_listing_for_sweep(),
-        )
         exact = [
             row
             for row in service.pending_items()
@@ -2586,7 +2580,10 @@ class DailyRuntime:
         identity = _exact_progress_surface("subscription_video", surface)
         if identity == "source":
             return self.videos()
-        return self.videos(only_identity=identity)
+        return self.videos(
+            only_identity=identity,
+            refresh_listing=False,
+        )
 
     def videos_structured_input(
         self,

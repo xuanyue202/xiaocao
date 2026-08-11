@@ -2344,6 +2344,77 @@ def test_resume_reconciliation_projects_readback_terminal_without_replay(
     assert result["source_result"]["events"] == [terminal]
 
 
+def test_resume_reconciliation_records_following_agent_repair(tmp_path):
+    service = DailyCoordinator(
+        tmp_path / "daily",
+        now=Clock("2026-08-11T08:40:00+08:00"),
+    )
+    service.run([{
+        "name": "subscription_video",
+        "run": lambda: {"status": "no_update"},
+    }])
+    progress = WriterProgress.reconcile_required(
+        item_identity="video-1",
+        stage="cloud_transfer_reconciliation",
+        effect_kind="cloud_transfer",
+        claim_identity="lv_transfer:version-1:claim-1",
+        readback_operation="read_lv_transfer_claim_receipt",
+        claim_receipt_summary={
+            "claim_count": 1,
+            "receipt_count": 0,
+            "uncertain_effect_count": 1,
+        },
+    )
+    outcome = {
+        "status": "waiting",
+        "waiting_count": 1,
+        "waiting_items": [{
+            "identity": "video-1",
+            "version_key": "version-1",
+            "stage": "source_run",
+            "failure": {
+                "category": "internal_state_error",
+                "code": "cloud_transfer_unobserved_reconciled_absent",
+                "stage": "source_run",
+                "retryable": False,
+            },
+        }],
+    }
+    receipt = {
+        "event": "reconciliation_completed",
+        "claim_identity": "lv_transfer:version-1:claim-1",
+        "readback_operation": "read_lv_transfer_claim_receipt",
+        "readback_evidence_sha256": hashlib.sha256(
+            json.dumps(
+                outcome,
+                ensure_ascii=False,
+                sort_keys=True,
+                separators=(",", ":"),
+            ).encode()
+        ).hexdigest(),
+        "external_business_effects_replayed": False,
+    }
+
+    result = service.resume_reconciliation(
+        {
+            "name": "subscription_video",
+            "reconcile": lambda _progress: {
+                "outcome": outcome,
+                "reconciliation_receipt": receipt,
+            },
+        },
+        progress=progress,
+    )
+
+    following = WriterProgress.from_dict(
+        result["source_result"]["writer_progress"]
+    )
+    assert following.status == "repair_required"
+    assert service.convergence.active_progress(
+        "subscription_video"
+    ) == following
+
+
 def test_structured_input_without_consumption_receipt_becomes_agent_repair(
     tmp_path,
 ):
@@ -2621,6 +2692,102 @@ def test_source_effect_readback_recovers_exact_active_progress(tmp_path):
             "subscription_video",
             "other-video",
         )
+
+
+def test_video_exact_continuations_skip_historical_source_listing(
+    tmp_path,
+    monkeypatch,
+):
+    identity = "video-1"
+    version = "version-1"
+    video_output = tmp_path / "videos"
+    claim_path = video_output / "claims" / f"lv_transfer_{version}.json"
+    claim_path.parent.mkdir(parents=True)
+    claim_path.write_text(
+        json.dumps({
+            "claim_id": "claim-1",
+            "source_identity": identity,
+            "source_version_key": version,
+        }),
+        encoding="utf-8",
+    )
+    item = {"identity": identity, "version_key": version}
+    observed: dict[str, object] = {}
+
+    class FakeVideoService:
+        def __init__(self, output_dir, *, config_path):
+            assert output_dir == video_output
+            observed["config_path"] = config_path
+
+        @staticmethod
+        def pending_items():
+            return [item]
+
+        @staticmethod
+        def transfer_lv_video(_item, **kwargs):
+            assert _item == item
+            assert kwargs["readback_only"] is True
+            observed["readback"] = True
+            return {
+                "status": "waiting_cloud_transfer_receipt",
+                "reconciliation_status": "exact_private_copy_absent",
+            }
+
+        @staticmethod
+        def record_lv_transfer_absence_reconciliation(
+            _item,
+            *,
+            claim_id,
+            readback_evidence_sha256,
+        ):
+            observed["absence"] = (
+                _item,
+                claim_id,
+                readback_evidence_sha256,
+            )
+            return {"status": "reconciled_absent"}
+
+    monkeypatch.setattr(
+        kol_daily_script,
+        "SubscriptionVideoService",
+        FakeVideoService,
+    )
+    runtime = object.__new__(DailyRuntime)
+    runtime.args = SimpleNamespace(
+        video_output_dir=video_output,
+        config=tmp_path / "config.yaml",
+        lv_session="lv",
+        private_session="private",
+        opencli_profile="work",
+    )
+    runtime._lv_listing_for_sweep = lambda: pytest.fail(
+        "exact readback must not traverse historical source folders"
+    )
+    progress = WriterProgress.reconcile_required(
+        item_identity=identity,
+        stage="cloud_transfer_reconciliation",
+        effect_kind="cloud_transfer",
+        claim_identity=f"lv_transfer:{version}:claim-1",
+        readback_operation="read_lv_transfer_claim_receipt",
+        claim_receipt_summary={
+            "claim_count": 1,
+            "receipt_count": 0,
+            "uncertain_effect_count": 1,
+        },
+    )
+
+    wrapped = runtime.videos_reconcile(progress)
+
+    assert observed["readback"] is True
+    assert observed["absence"][0] == item
+    assert wrapped["outcome"]["authoritative_readback"][
+        "effect_observed"
+    ] == "absent"
+
+    runtime.videos = lambda **kwargs: kwargs
+    assert runtime.videos_narrow_resume(
+        f"subscription_video:{identity}"
+    ) == {"only_identity": identity, "refresh_listing": False}
 
 
 def _low_density_event() -> dict:

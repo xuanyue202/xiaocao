@@ -2680,6 +2680,8 @@ class DailyCoordinator:
                 "reconciliation_receipt": receipt,
                 "writer_progress": following.to_dict(),
             }
+            if following.status == "repair_required":
+                self.convergence.record(following, slot=slot)
             self._append(
                 "side_effect_reconciled",
                 slot=slot,
