@@ -548,11 +548,18 @@ def test_opencli_chrome_recovery_exhausts_self_repair_before_user_action() -> No
 
 
 def test_hourly_local_capture_routes_authorized_xiaoetong_sms_login() -> None:
+    entrypoint = " ".join(SKILL_MD.read_text(encoding="utf-8").split())
     hourly = HOURLY_LOCAL_CAPTURE_MD.read_text(encoding="utf-8")
     sms_login = " ".join(
         XIAOETONG_SMS_LOGIN_MD.read_text(encoding="utf-8").split()
     )
 
+    for marker in (
+        "Xiaoetong phone/SMS login",
+        "xiaoetong-sms-login.md",
+        "completely",
+    ):
+        assert marker in entrypoint
     assert "xiaoetong-sms-login.md" in hourly
     for marker in (
         "pageAssets",

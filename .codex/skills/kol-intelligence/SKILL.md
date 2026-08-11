@@ -37,13 +37,14 @@ or bypass a human gate.
 - For an unambiguous Xiaocao replay capture, read
   [xiaocao-capture-start.md](references/xiaocao-capture-start.md) completely
   and start within 10 seconds. Do not read `full-contract.md` before Ready.
-- For local hourly `capture-local`, read
-  [hourly-local-capture.md](references/hourly-local-capture.md) completely. On
-  OpenCLI/Chrome failure also read
-  [opencli-chrome-recovery.md](references/opencli-chrome-recovery.md).
-  Do not load remote-writer/full contracts locally.
-- For the remote hourly `scripts/kol_daily.py run|status|audit` Automation or a
-  normal no-update/retryable sweep, read
+- For local `capture-local`, read
+  [hourly-local-capture.md](references/hourly-local-capture.md) completely; on
+  OpenCLI/Chrome failure read
+  [opencli-chrome-recovery.md](references/opencli-chrome-recovery.md). Skip
+  remote/full contracts.
+- For Xiaoetong phone/SMS login, read
+  [xiaoetong-sms-login.md](references/xiaoetong-sms-login.md) completely.
+- For remote hourly `scripts/kol_daily.py run|status|audit`, read
   [hourly-remote-writer.md](references/hourly-remote-writer.md) completely. Do
   not read the full contract before starting the runner.
 - If the hourly runner emits `daily_analysis_input_required`, keep that same
