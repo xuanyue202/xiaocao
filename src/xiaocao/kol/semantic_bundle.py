@@ -1355,6 +1355,61 @@ def _validate_complete_bundle(bundle: dict[str, Any], validated: Mapping[str, An
     _validate_actionable_signals(item, item["market_validation"])
     _validate_reader_and_terminals(item)
     _validate_projection(item)
+    _validate_cross_source(bundle)
+
+
+def _validate_cross_source(bundle: Mapping[str, Any]) -> None:
+    """Reject malformed cross-source rows before downstream processing."""
+
+    cross_source = bundle.get("cross_source")
+    if not isinstance(cross_source, dict):
+        raise _fail(
+            "semantic cross-source assessment is invalid",
+            error_code="cross_source_invalid",
+            stage="semantic_validation",
+            field="cross_source",
+        )
+    claim_authors = {
+        str(claim.get("claim_id") or ""): str(item.get("author") or "")
+        for item in bundle.get("items") or []
+        if isinstance(item, dict)
+        for claim in item.get("claims") or []
+        if isinstance(claim, dict)
+    }
+    for relation_type in ("agreements", "conflicts"):
+        relations = cross_source.get(relation_type)
+        if not isinstance(relations, list):
+            raise _fail(
+                "semantic cross-source relations must be lists",
+                error_code="cross_source_invalid",
+                stage="semantic_validation",
+                field=f"cross_source.{relation_type}",
+            )
+        for index, relation in enumerate(relations):
+            field = f"cross_source.{relation_type}[{index}]"
+            if not isinstance(relation, dict):
+                raise _fail(
+                    "semantic cross-source relation must be an object",
+                    error_code="cross_source_invalid",
+                    stage="semantic_validation",
+                    field=field,
+                )
+            linked = relation.get("claim_ids")
+            if (
+                not _nonblank(relation.get("topic"))
+                or not _nonblank(relation.get("judgment"))
+                or not isinstance(linked, list)
+                or len(linked) < 2
+                or any(not _nonblank(claim_id) for claim_id in linked)
+                or not set(map(str, linked)).issubset(claim_authors)
+                or len({claim_authors[str(claim_id)] for claim_id in linked}) < 2
+            ):
+                raise _fail(
+                    "semantic cross-source relation is not evidence-bound",
+                    error_code="cross_source_invalid",
+                    stage="semantic_validation",
+                    field=field,
+                )
 
 
 def _bindings(request: Mapping[str, Any], validated: Mapping[str, Any], market_sha: str, draft: Mapping[str, Any]) -> dict[str, Any]:

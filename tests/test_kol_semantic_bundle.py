@@ -306,6 +306,31 @@ def test_build_validated_bundle_requires_captured_at(tmp_path):
         )
 
 
+def test_builder_rejects_non_object_cross_source_before_downstream_processing(
+    tmp_path,
+):
+    request, draft, bundle_path, receipt_path, _ = _fixture(tmp_path)
+    draft["cross_source"] = {
+        "agreements": ["同日观点一致"],
+        "conflicts": [],
+    }
+
+    with pytest.raises(
+        SemanticBundleError,
+        match="cross-source relation must be an object",
+    ) as caught:
+        build_validated_bundle(
+            request,
+            draft,
+            bundle_path=bundle_path,
+            receipt_path=receipt_path,
+        )
+
+    assert caught.value.error_code == "cross_source_invalid"
+    assert caught.value.stage == "semantic_validation"
+    assert caught.value.field == "cross_source.agreements[0]"
+
+
 def test_source_metadata_change_invalidates_reusable_receipt(tmp_path):
     request, draft, bundle_path, receipt_path, _ = _fixture(tmp_path)
     first = build_validated_bundle(
