@@ -22,6 +22,7 @@ from scripts.kol_daily import (
     _standalone_writer_result,
     _source_cli_narrow_runner,
     _source_repair_validation_progress,
+    _transcript_audit_contract,
     _require_rollout_peer_gate,
     _verify_rollout_evidence,
     _video_publication_context,
@@ -70,6 +71,33 @@ class Clock:
 
     def __call__(self) -> datetime:
         return self.value
+
+
+def test_transcript_audit_contract_exposes_exact_character_thirds():
+    assert _transcript_audit_contract({
+        "transcript_character_count": 4641,
+    }) == {
+        "character_count": 4641,
+        "excerpt_rule": "exact_contiguous_substring",
+        "normalization": "none",
+        "ranges": [
+            {
+                "position": "opening",
+                "start_char_inclusive": 0,
+                "end_char_exclusive": 1547,
+            },
+            {
+                "position": "middle",
+                "start_char_inclusive": 1547,
+                "end_char_exclusive": 3094,
+            },
+            {
+                "position": "ending",
+                "start_char_inclusive": 3094,
+                "end_char_exclusive": 4641,
+            },
+        ],
+    }
 
 
 def _close_validated_repair(

@@ -696,6 +696,38 @@ def _read_agent_path(request: dict[str, Any], field: str) -> Path:
     return path
 
 
+def _transcript_audit_contract(state: dict[str, Any]) -> dict[str, Any]:
+    """Describe the exact character thirds consumed by transcript audit."""
+
+    character_count = int(state.get("transcript_character_count") or 0)
+    if character_count < 3:
+        raise DailyError("transcript audit requires a nontrivial character count")
+    first_boundary = (character_count + 2) // 3
+    second_boundary = (character_count * 2 + 2) // 3
+    return {
+        "character_count": character_count,
+        "excerpt_rule": "exact_contiguous_substring",
+        "normalization": "none",
+        "ranges": [
+            {
+                "position": "opening",
+                "start_char_inclusive": 0,
+                "end_char_exclusive": first_boundary,
+            },
+            {
+                "position": "middle",
+                "start_char_inclusive": first_boundary,
+                "end_char_exclusive": second_boundary,
+            },
+            {
+                "position": "ending",
+                "start_char_inclusive": second_boundary,
+                "end_char_exclusive": character_count,
+            },
+        ],
+    }
+
+
 def _require_canonical_semantic_artifact(
     bundle_path: Path,
     request: dict[str, Any],
@@ -2800,6 +2832,7 @@ class DailyRuntime:
                         "capture_job_id": handoff["capture_job_id"],
                         "transcript_path": state["transcript_path"],
                         "transcript_sha256": state["transcript_sha256"],
+                        "audit_contract": _transcript_audit_contract(state),
                     },
                     "audit_path",
                 )
