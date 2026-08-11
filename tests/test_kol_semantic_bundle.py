@@ -286,6 +286,7 @@ def test_build_validated_bundle_persists_receipt_before_consumer_use(tmp_path):
     assert bundle["items"][0]["market_validation"] == (
         request["market_evidence"]["validation"]
     )
+    assert "cross_source" not in bundle["items"][0]
     assert "idempotency_key" not in json.dumps(bundle, ensure_ascii=False)
     assert stored_receipt["bundle_sha256"] == receipt.bundle_sha256
     assert stored_receipt["receipt_sha256"] == receipt.receipt_sha256

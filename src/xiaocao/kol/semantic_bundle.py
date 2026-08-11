@@ -1287,7 +1287,7 @@ def _canonical_bundle(request: Mapping[str, Any], draft: Mapping[str, Any], vali
     market, _ = _market_projection(request, draft)
     item = _source_metadata(request, validated)
     for key, value in draft.items():
-        if key not in {"market_validation"}:
+        if key not in {"cross_source", "market_validation"}:
             item[key] = value
     item["market_validation"] = market
     outlook = item.get("market_outlook")
