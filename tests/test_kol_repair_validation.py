@@ -682,8 +682,28 @@ def test_repair_validation_accepts_xiaocao_wechat_source_profile(
     assert receipt.failure_fingerprint == "9" * 64
 
 
+@pytest.mark.parametrize(
+    ("category", "code", "changed_source"),
+    (
+        (
+            "source_error",
+            "source_temporarily_unavailable",
+            "src/xiaocao/kol/writer_progress.py",
+        ),
+        (
+            "internal_state_error",
+            "cloud_transfer_unobserved_reconciled_absent",
+            "src/xiaocao/kol/subscription_video.py",
+        ),
+        (
+            "internal_state_error",
+            "cloud_transfer_unobserved_reconciled_absent",
+            "src/xiaocao/kol/daily.py",
+        ),
+    ),
+)
 def test_repair_validation_accepts_subscription_video_source_run_profile(
-    tmp_path,
+    tmp_path, category: str, code: str, changed_source: str
 ) -> None:
     context = {
         "adapter": "subscription_video",
@@ -691,8 +711,8 @@ def test_repair_validation_accepts_subscription_video_source_run_profile(
         "content_sha256": "2" * 64,
         "failure_fingerprint": "3" * 64,
         "failure_revision": FAILURE_REVISION,
-        "category": "source_error",
-        "code": "source_temporarily_unavailable",
+        "category": category,
+        "code": code,
         "stage": "source_run",
         "targeted_test_profile": "kol_subscription_video_source_run",
     }
@@ -709,7 +729,7 @@ def test_repair_validation_accepts_subscription_video_source_run_profile(
                 command,
                 0,
                 (
-                    "src/xiaocao/kol/writer_progress.py\n"
+                    f"{changed_source}\n"
                     "tests/test_kol_repair_validation.py\n"
                 ),
                 "",

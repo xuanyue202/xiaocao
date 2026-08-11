@@ -780,9 +780,11 @@ _TARGETED_REPAIR_IMPLEMENTATION_PATHS: dict[str, frozenset[str]] = {
     "kol_subscription_video_source_run": frozenset(
         {
             "scripts/kol_daily.py",
+            "src/xiaocao/kol/daily.py",
             "src/xiaocao/kol/decisions.py",
             "src/xiaocao/kol/household.py",
             "src/xiaocao/kol/lv_subscription.py",
+            "src/xiaocao/kol/subscription_video.py",
             "src/xiaocao/kol/writer_progress.py",
         }
     ),
@@ -992,14 +994,28 @@ _SUBSCRIPTION_VIDEO_SOURCE_REPAIR_PROFILE = (
 def _canonical_subscription_video_source_repair_profile(
     context: Mapping[str, Any],
 ) -> str | None:
+    failure = (
+        str(context.get("category") or ""),
+        str(context.get("code") or ""),
+        str(context.get("stage") or ""),
+    )
     if (
         str(context.get("adapter") or "") == "subscription_video"
         and str(context.get("targeted_test_profile") or "")
         == _SUBSCRIPTION_VIDEO_SOURCE_REPAIR_PROFILE
-        and str(context.get("category") or "") == "source_error"
-        and str(context.get("code") or "")
-        == "source_temporarily_unavailable"
-        and str(context.get("stage") or "") == "source_run"
+        and failure
+        in {
+            (
+                "source_error",
+                "source_temporarily_unavailable",
+                "source_run",
+            ),
+            (
+                "internal_state_error",
+                "cloud_transfer_unobserved_reconciled_absent",
+                "source_run",
+            ),
+        }
     ):
         return _SUBSCRIPTION_VIDEO_SOURCE_REPAIR_PROFILE
     return None
