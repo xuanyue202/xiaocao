@@ -2105,13 +2105,20 @@ def normalize_source_result(
     deadline = str((item or {}).get("next_poll_not_before") or "").strip()
     if deadline:
         attempted = int((item or {}).get("trigger_attempt") or 1)
+        maximum = max(
+            attempted,
+            int(
+                (item or {}).get("trigger_attempt_maximum")
+                or max(3, attempted)
+            ),
+        )
         return WriterProgress.wait_until(
             item_identity=item_identity,
             category=category,
             code=code,
             stage=stage,
             deadline=deadline,
-            attempt_budget={"attempted": attempted, "maximum": max(3, attempted)},
+            attempt_budget={"attempted": attempted, "maximum": maximum},
             narrow_resume_surface=f"{adapter_name}:{item_identity}",
             claim_receipt_summary=summary,
         )

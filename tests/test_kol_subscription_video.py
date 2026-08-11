@@ -1294,7 +1294,75 @@ def test_lv_transfer_observes_provider_outcome_after_confirmation():
     assert "provider_outcome: 'unobserved'" in _TRANSFER_OUTCOME_SCRIPT
 
 
-def test_lv_transfer_claim_precedes_trigger_and_replay_only_reconciles(tmp_path):
+def test_lv_transfer_unobserved_native_click_requires_reconciliation(tmp_path):
+    service = _service(tmp_path, sleep=lambda _seconds: None)
+    item = service._normalize(
+        _source_rows()[0][1],
+        source=LV_SOURCE,
+        author=LV_AUTHOR,
+    )
+    item.update(
+        {
+            "version_first_seen_at": NOW.isoformat(),
+            "first_seen_at": NOW.isoformat(),
+            "present": True,
+            "work_eligible": True,
+        }
+    )
+    service.ensure_lv_destination = lambda **_kwargs: {"status": "completed"}
+    service._direct_private_entries = lambda **_kwargs: []
+    service._search_private_exact = lambda **_kwargs: []
+
+    def opencli(_session, *args, **_kwargs):
+        if args[0] == "open":
+            return {"url": "sanitized"}
+        if args[0] == "click":
+            return {
+                "clicked": True,
+                "target": args[1],
+                "matches_n": 1,
+            }
+        if "destinationSegments" in args[1]:
+            return {
+                "status": "save_confirmation_ready",
+                "confirmation_selector": (
+                    '[data-xiaocao-lv-confirm="ready"]'
+                ),
+                "triggered": False,
+            }
+        return {
+            "status": "cloud_transfer_triggered",
+            "triggered": True,
+            "provider_outcome": "unobserved",
+        }
+
+    service._opencli_json = opencli
+
+    with pytest.raises(
+        EnrichmentError,
+        match="Lv cloud transfer native click outcome is uncertain",
+    ):
+        service.transfer_lv_video(
+            item,
+            lv_session="lv",
+            private_session="private",
+            profile="work",
+        )
+
+    claim = json.loads(
+        service._claim_path(
+            f"lv_transfer_{item['version_key']}"
+        ).read_text(encoding="utf-8")
+    )
+    assert claim["status"] == "native_click_uncertain"
+    assert claim["side_effect_uncertain"] is True
+    assert claim["provider_outcome"] == "unobserved"
+    assert "next_poll_not_before" not in claim
+
+
+def test_lv_transfer_claim_precedes_click_and_unobserved_outcome_reconciles(
+    tmp_path,
+):
     triggered = False
     native_click_calls = 0
     service = _service(tmp_path, sleep=lambda _seconds: None)
@@ -1386,7 +1454,7 @@ def test_lv_transfer_claim_precedes_trigger_and_replay_only_reconciles(tmp_path)
         [
             row
             for row in service.events_path.read_text().splitlines()
-            if "lv_cloud_transfer_triggered" in row
+            if "lv_cloud_transfer_outcome_uncertain" in row
         ]
     ) == 1
 

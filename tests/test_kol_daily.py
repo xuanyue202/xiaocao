@@ -2399,6 +2399,7 @@ def test_daily_status_preserves_specific_video_waiting_stage(tmp_path):
         "status": "waiting_cloud_transfer_receipt",
         "stage": "cloud_transfer_confirmation",
         "trigger_attempt": 2,
+        "trigger_attempt_maximum": 2,
         "next_poll_not_before": "2026-07-27T10:30:00+08:00",
         "reconciliation_status": "exact_private_copy_absent",
     }
@@ -2436,6 +2437,7 @@ def test_daily_status_preserves_specific_video_waiting_stage(tmp_path):
     )
     assert progress["status"] == "wait_until"
     assert progress["next_action"] == "resume_after_deadline"
+    assert progress["attempt_budget"] == {"attempted": 2, "maximum": 2}
 
     clock.value = datetime.fromisoformat("2026-07-27T10:15:00+08:00")
     service.run([{"name": "subscription_video", "run": waiting}])
