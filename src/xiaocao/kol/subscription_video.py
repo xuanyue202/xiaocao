@@ -40,7 +40,7 @@ LUCIFER_AUTHOR = "路西法"
 LUCIFER_ROOT = "/课程/路西法全套"
 LV_DESTINATION_PARENT = "/课程/自己的课"
 LV_DESTINATION_DIRECTORY = "/课程/自己的课/吕晓彤"
-LV_TRANSFER_RETRY_DELAY = timedelta(minutes=30)
+LV_TRANSFER_CONFIRMATION_WINDOW = timedelta(seconds=30)
 LV_TRANSFER_MAX_TRIGGER_ATTEMPTS = 2
 VIDEO_SUFFIXES = {".avi", ".flv", ".m4v", ".mkv", ".mov", ".mp4"}
 MAX_EPISODE_SPEC_BYTES = 16 * 1024 * 1024
@@ -3405,7 +3405,9 @@ class SubscriptionVideoService:
                     "Lv cloud transfer claim has invalid triggered_at"
                 ) from exc
             now = self._time()
-            retry_not_before = triggered_at + LV_TRANSFER_RETRY_DELAY
+            retry_not_before = (
+                triggered_at + LV_TRANSFER_CONFIRMATION_WINDOW
+            )
             trigger_attempt = int(claim.get("trigger_attempt") or 1)
             trigger_attempt_maximum = max(
                 trigger_attempt,

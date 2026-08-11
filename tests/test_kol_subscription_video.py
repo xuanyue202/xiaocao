@@ -1909,6 +1909,57 @@ def test_lv_transfer_readback_never_retries_the_uncertain_effect(tmp_path):
     assert json.loads(claim_path.read_text(encoding="utf-8")) == claim
 
 
+def test_lv_transfer_confirmation_window_is_bounded_to_thirty_seconds(
+    tmp_path,
+):
+    service = _service(tmp_path, sleep=lambda _seconds: None)
+    item = service._normalize(
+        _source_rows()[0][1],
+        source=LV_SOURCE,
+        author=LV_AUTHOR,
+    )
+    service.ensure_lv_destination = lambda **_kwargs: (_ for _ in ()).throw(
+        AssertionError("readback must not create the destination")
+    )
+    service._direct_private_entries = lambda **_kwargs: []
+    service._search_private_exact = lambda **_kwargs: []
+    service._opencli_json = lambda *_args, **_kwargs: (_ for _ in ()).throw(
+        AssertionError("confirmation readback must not repeat the transfer")
+    )
+    receipt_name = f"lv_transfer_{item['version_key']}"
+    claim_path = service._claim_path(receipt_name)
+    claim_path.parent.mkdir(parents=True)
+    claim = {
+        "schema_version": 1,
+        "event": "lv_transfer_claimed",
+        "status": "triggered",
+        "claim_id": "fresh-claim",
+        "claimed_at": NOW.isoformat(),
+        "triggered_at": NOW.isoformat(),
+        "trigger_attempt": 1,
+        "source_identity": item["identity"],
+        "source_version_key": item["version_key"],
+        "source_path": item["path"],
+        "source_size": item["size"],
+        "target_path": f"{LV_DESTINATION_DIRECTORY}/{item['name']}",
+        "large_payload_local_bytes": 0,
+    }
+    claim_path.write_text(json.dumps(claim), encoding="utf-8")
+
+    result = service.transfer_lv_video(
+        item,
+        lv_session="lv",
+        private_session="private",
+        profile="work",
+        readback_only=True,
+    )
+
+    assert result["status"] == "waiting_cloud_transfer_receipt"
+    assert result["next_poll_not_before"] == (
+        NOW + timedelta(seconds=30)
+    ).isoformat()
+
+
 def test_lv_transfer_blocker_recovers_by_read_only_target_reconciliation(
     tmp_path,
 ):
