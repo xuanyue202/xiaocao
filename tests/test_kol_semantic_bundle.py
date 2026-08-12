@@ -294,6 +294,34 @@ def test_build_validated_bundle_persists_receipt_before_consumer_use(tmp_path):
     assert receipt.bindings["market_evidence_sha256"] == "4" * 64
 
 
+def test_builder_rejects_reader_session_conflict_before_business_processing(
+    tmp_path,
+):
+    request, draft, bundle_path, receipt_path, evidence = _fixture(tmp_path)
+    source_evidence = tmp_path / "20260812 盘前大师班-compressed.txt"
+    evidence.replace(source_evidence)
+    request["evidence_path"] = str(source_evidence)
+    draft["reader_title"] = "8月12日早盘大师班"
+    draft["publication"]["report_body"] = (
+        "# 核心判断\n\n早盘先观察量能，不在确认不足时追涨。"
+    )
+
+    with pytest.raises(
+        SemanticBundleError,
+        match="reader session identity conflicts",
+    ) as caught:
+        build_validated_bundle(
+            request,
+            draft,
+            bundle_path=bundle_path,
+            receipt_path=receipt_path,
+        )
+
+    assert caught.value.error_code == "reader_source_identity_invalid"
+    assert caught.value.stage == "reader_copy"
+    assert caught.value.field == "reader_title"
+
+
 def test_build_validated_bundle_requires_captured_at(tmp_path):
     request, draft, bundle_path, receipt_path, _ = _fixture(tmp_path)
     request.pop("captured_at")

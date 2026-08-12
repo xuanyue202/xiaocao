@@ -26,6 +26,8 @@ from .claim_coverage import (
     validate_claim_coverage,
 )
 from .enrichment_types import EnrichmentError
+from .reader_copy import ReaderCopyError, validate_reader_source_identity
+from .rendering import reader_source_title
 
 
 BUNDLE_SCHEMA_VERSION = 2
@@ -973,6 +975,21 @@ def _validate_reader_copy(item: Mapping[str, Any], decision_status: str) -> None
                 stage="reader_copy",
                 field="reader_insight",
             )
+    publication = item.get("publication") or {}
+    if isinstance(publication, Mapping) and publication:
+        try:
+            validate_reader_source_identity(
+                source_name=Path(str(item.get("evidence_path") or "")).name,
+                reader_title=reader_source_title(dict(item)),
+                report_body=publication.get("report_body"),
+            )
+        except ReaderCopyError as exc:
+            raise _fail(
+                str(exc),
+                error_code="reader_source_identity_invalid",
+                stage="reader_copy",
+                field="reader_title",
+            ) from exc
 
 
 def _validate_household_recommendation(item: Mapping[str, Any]) -> None:
