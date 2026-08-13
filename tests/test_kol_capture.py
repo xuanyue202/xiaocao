@@ -76,6 +76,23 @@ def test_xiaoetong_source_identity_strips_share_and_signed_state():
     assert "url" not in json.dumps(source).lower()
 
 
+def test_xiaoetong_recorded_video_source_identity_is_stable():
+    source = canonical_xiaoetong_source(
+        "https://appsnm3rlcp3566.h5.xiaoeknow.com/p/course/video/"
+        "v_6a7db774e4b0694c5bfa7583?share_user_id=private&share_type=5"
+    )
+
+    assert source == {
+        "source_kind": "xiaoetong",
+        "source_host": "appsnm3rlcp3566.h5.xiaoeknow.com",
+        "source_app_id": "appsnm3rlcp3566",
+        "source_resource_id": "v_6a7db774e4b0694c5bfa7583",
+        "source_identity": (
+            "xiaoetong:appsnm3rlcp3566:v_6a7db774e4b0694c5bfa7583"
+        ),
+    }
+
+
 def test_xiaoetong_mp_wrapper_resolves_bound_h5_page():
     params = urlsafe_b64encode(json.dumps({
         "app_id": "appsnm3rlcp3566",
@@ -123,6 +140,8 @@ def test_xiaoetong_source_identity_rejects_untrusted_page():
     for page_url in (
         "https://example.test/v4/course/alive/l_123",
         "https://appsnm3rlcp3566.h5.xiaoeknow.com/not-a-course/l_123",
+        "https://appsnm3rlcp3566.h5.xiaoeknow.com/p/course/video/l_123",
+        "https://appsnm3rlcp3566.h5.xiaoeknow.com/v4/course/alive/v_123",
         "javascript:alert(1)",
     ):
         try:

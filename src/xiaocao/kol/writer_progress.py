@@ -725,6 +725,7 @@ TARGETED_REPAIR_TESTS: dict[str, tuple[str, ...]] = {
         ".venv/bin/python",
         "-m",
         "pytest",
+        "tests/test_kol_capture.py",
         "tests/test_kol_daily.py",
         "tests/test_kol_repair_validation.py",
         "tests/test_kol_xiaocao_wechat.py",
@@ -733,6 +734,8 @@ TARGETED_REPAIR_TESTS: dict[str, tuple[str, ...]] = {
         "-k",
         (
             "source_cli_narrow_runner_supports_xiaocao_wechat_live or "
+            "xiaoetong_recorded_video_source_identity_is_stable or "
+            "recorded_video_page_arms_bound_capture or "
             "runtime_initialization_defers_lianghui_config or "
             "narrow_source_user_action_keeps_seven_state_contract or "
             "source_repair_resume_follows_bound_xiaocao_cloud_handoff or "
@@ -806,6 +809,7 @@ _TARGETED_REPAIR_IMPLEMENTATION_PATHS: dict[str, frozenset[str]] = {
     "kol_xiaocao_wechat_live_source_run": frozenset(
         {
             "scripts/kol_daily.py",
+            "src/xiaocao/kol/capture.py",
             "src/xiaocao/kol/xiaocao_wechat.py",
             "src/xiaocao/kol/writer_progress.py",
         }
@@ -868,6 +872,7 @@ _TARGETED_REPAIR_TEST_PATHS: dict[str, frozenset[str]] = {
     ),
     "kol_xiaocao_wechat_live_source_run": frozenset(
         {
+            "tests/test_kol_capture.py",
             "tests/test_kol_daily.py",
             "tests/test_kol_repair_validation.py",
             "tests/test_kol_xiaocao_wechat.py",

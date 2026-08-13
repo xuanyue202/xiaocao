@@ -224,7 +224,8 @@ class InvalidSourcePage(ValueError):
     """A page URL is not a supported Xiaocao capture source."""
 
 
-_XIAOETONG_RESOURCE = re.compile(r"^l_[A-Za-z0-9_-]+$")
+_XIAOETONG_LIVE_RESOURCE = re.compile(r"^l_[A-Za-z0-9_-]+$")
+_XIAOETONG_VIDEO_RESOURCE = re.compile(r"^v_[A-Za-z0-9_-]+$")
 _XIAOETONG_PAGE_VERSION = re.compile(r"^v[0-9]+$")
 
 
@@ -233,13 +234,21 @@ def canonical_xiaoetong_source(page_url: str) -> dict[str, str]:
     parsed = urlsplit(str(page_url or "").strip())
     host = (parsed.hostname or "").lower()
     pieces = [piece for piece in parsed.path.split("/") if piece]
+    live_page = (
+        len(pieces) == 4
+        and _XIAOETONG_PAGE_VERSION.fullmatch(pieces[0]) is not None
+        and pieces[1:3] == ["course", "alive"]
+        and _XIAOETONG_LIVE_RESOURCE.fullmatch(pieces[3]) is not None
+    )
+    recorded_video_page = (
+        len(pieces) == 4
+        and pieces[:3] == ["p", "course", "video"]
+        and _XIAOETONG_VIDEO_RESOURCE.fullmatch(pieces[3]) is not None
+    )
     if (
         parsed.scheme != "https"
         or not host.endswith(".xiaoeknow.com")
-        or len(pieces) != 4
-        or not _XIAOETONG_PAGE_VERSION.fullmatch(pieces[0])
-        or pieces[1:3] != ["course", "alive"]
-        or not _XIAOETONG_RESOURCE.fullmatch(pieces[3])
+        or not (live_page or recorded_video_page)
     ):
         raise InvalidSourcePage("unsupported Xiaoetong replay page")
     app_id = host.split(".", 1)[0]

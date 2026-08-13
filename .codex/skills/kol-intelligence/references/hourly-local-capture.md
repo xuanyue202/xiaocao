@@ -89,8 +89,10 @@ For `daily_browser_input_required`, keep the same process alive and use
 `browser`, never Computer Use:
 
 1. `resolve_xiaoetong_page`: open the supplied `source_url`; return the current
-   URL and page state. Convert an MP wrapper to H5 only after validating its
-   embedded app/resource identity; strip share parameters.
+   URL and page state. Accept only a bound H5 live page
+   (`/vN/course/alive/l_*`) or recorded-video page
+   (`/p/course/video/v_*`). Convert an MP wrapper to H5 only after validating
+   its embedded app/resource identity; strip share parameters.
 2. Let the runner arm that exact H5 source job.
 3. `activate_xiaoetong_playback`: refresh; enter `666` only at a visible
    password gate. If waiting/live-only/generating, return its visible state with

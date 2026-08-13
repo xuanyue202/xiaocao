@@ -645,18 +645,21 @@ def test_repair_validation_accepts_xiaocao_wechat_source_profile(
     expected_command = (
         "env",
         "PYTHONPATH=src",
-        ".venv/bin/python",
-        "-m",
-        "pytest",
-        "tests/test_kol_daily.py",
-        "tests/test_kol_repair_validation.py",
+            ".venv/bin/python",
+            "-m",
+            "pytest",
+            "tests/test_kol_capture.py",
+            "tests/test_kol_daily.py",
+            "tests/test_kol_repair_validation.py",
         "tests/test_kol_xiaocao_wechat.py",
         "tests/test_kol_writer_progress.py",
         "-q",
-        "-k",
-        (
-                "source_cli_narrow_runner_supports_xiaocao_wechat_live or "
-                "runtime_initialization_defers_lianghui_config or "
+            "-k",
+            (
+                    "source_cli_narrow_runner_supports_xiaocao_wechat_live or "
+                    "xiaoetong_recorded_video_source_identity_is_stable or "
+                    "recorded_video_page_arms_bound_capture or "
+                    "runtime_initialization_defers_lianghui_config or "
                 "narrow_source_user_action_keeps_seven_state_contract or "
             "source_repair_resume_follows_bound_xiaocao_cloud_handoff or "
                 "repair_validation_accepts_xiaocao_wechat_source_profile or "

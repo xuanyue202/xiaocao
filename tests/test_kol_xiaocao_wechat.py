@@ -387,6 +387,59 @@ def test_first_poll_baselines_history_and_arms_only_latest_live(tmp_path):
     assert statuses == ["historical_baseline", "playback_activated"]
 
 
+def test_recorded_video_page_arms_bound_capture(tmp_path):
+    payload = _history(
+        "[2026-08-13 21:46] 福利官小花四: 8月13日大师班复盘直播："
+        "https://yv9lc.xetslk.com/s/5ftVx"
+    )
+    page_url = (
+        "https://appsnm3rlcp3566.h5.xiaoeknow.com/p/course/video/"
+        "v_6a7db774e4b0694c5bfa7583"
+    )
+
+    def browser_exchange(request: dict) -> dict:
+        if request["action"] == "resolve_xiaoetong_page":
+            return {
+                "action": request["action"],
+                "subscription_id": request["subscription_id"],
+                "page_url": page_url + "?share_user_id=private",
+                "page_state": "playable",
+            }
+        return {
+            "action": request["action"],
+            "subscription_id": request["subscription_id"],
+            "page_url": page_url,
+            "page_state": "playable",
+            "activated": True,
+            "password_used": False,
+        }
+
+    capture = _CaptureDriver()
+    subscription = XiaocaoWechatLiveSubscription(
+        tmp_path / "wechat",
+        history_reader=lambda: payload,
+        browser_exchange=browser_exchange,
+        capture_driver=capture,
+        contact=CONTACT,
+        password="666",
+    )
+
+    result = subscription.run_once(
+        opencli_session="xiaocao-lv-subscription",
+    )
+
+    assert result["status"] == "waiting"
+    assert capture.arms == [(result["waiting_items"][0]["identity"], page_url)]
+    manifest = json.loads(
+        (tmp_path / "wechat" / "manifest.json").read_text(encoding="utf-8")
+    )
+    item = next(iter(manifest["items"].values()))
+    assert item["page_url"] == page_url
+    assert item["source_identity"] == (
+        "xiaoetong:appsnm3rlcp3566:v_6a7db774e4b0694c5bfa7583"
+    )
+
+
 def test_newer_preview_is_not_starved_by_an_older_unfinished_capture(tmp_path):
     old_message = (
         "[2026-08-04 16:44] 福利官小花四: 草神直播："
