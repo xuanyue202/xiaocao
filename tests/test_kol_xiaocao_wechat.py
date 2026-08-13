@@ -621,6 +621,121 @@ def test_xiaoetong_account_login_redirect_is_reported_explicitly(tmp_path):
         subscription.run_once(opencli_session="xiaocao-lv-subscription")
 
 
+def test_xiaoetong_bound_provider_block_waits_for_the_same_page(tmp_path):
+    payload = _history(
+        "[2026-08-13 08:42] 福利官小花四: 草神直播："
+        "https://appsnm3rlcp3566.h5.xiaoeknow.com/v4/course/"
+        "alive/l_6a7c2ed8e4b023c0d633fabb",
+    )
+    page_url = (
+        "https://appsnm3rlcp3566.h5.xiaoeknow.com/v4/course/"
+        "alive/l_6a7c2ed8e4b023c0d633fabb"
+    )
+    block_url = (
+        "https://appsnm3rlcp3566.block.xiaoeeye.com/v4/course/"
+        "alive/l_6a7c2ed8e4b023c0d633fabb"
+    )
+
+    def browser_exchange(request: dict) -> dict:
+        if request["action"] == "resolve_xiaoetong_page":
+            return {
+                "action": request["action"],
+                "subscription_id": request["subscription_id"],
+                "page_url": page_url,
+                "page_state": "unknown",
+            }
+        assert "source_temporarily_unavailable" in request[
+            "required_response"
+        ]["page_state"]
+        return {
+            "action": request["action"],
+            "subscription_id": request["subscription_id"],
+            "page_url": block_url,
+            "page_state": "source_temporarily_unavailable",
+            "activated": False,
+            "password_used": False,
+        }
+
+    subscription = XiaocaoWechatLiveSubscription(
+        tmp_path / "wechat",
+        history_reader=lambda: payload,
+        browser_exchange=browser_exchange,
+        capture_driver=_CaptureDriver(),
+        contact=CONTACT,
+        password="666",
+        clock=lambda: datetime.fromisoformat("2026-08-13T14:08:00+08:00"),
+    )
+
+    result = subscription.run_once(opencli_session="xiaocao-lv-subscription")
+
+    assert result["status"] == "waiting"
+    assert result["waiting_items"][0]["status"] == "awaiting_playback"
+    assert result["waiting_items"][0]["next_poll_not_before"] == (
+        "2026-08-13T15:00:00+08:00"
+    )
+    manifest = json.loads(
+        (tmp_path / "wechat" / "manifest.json").read_text(encoding="utf-8")
+    )
+    item = next(iter(manifest["items"].values()))
+    assert item["page_url"] == page_url
+    assert item["observed_page_state"] == "source_temporarily_unavailable"
+
+
+@pytest.mark.parametrize(
+    "block_url",
+    [
+        (
+            "https://anotherapp.block.xiaoeeye.com/v4/course/"
+            "alive/l_6a7c2ed8e4b023c0d633fabb"
+        ),
+        (
+            "https://appsnm3rlcp3566.block.xiaoeeye.com/v4/course/"
+            "alive/l_another_resource"
+        ),
+    ],
+)
+def test_xiaoetong_unbound_provider_block_fails_closed(tmp_path, block_url):
+    page_url = (
+        "https://appsnm3rlcp3566.h5.xiaoeknow.com/v4/course/"
+        "alive/l_6a7c2ed8e4b023c0d633fabb"
+    )
+    payload = _history(
+        "[2026-08-13 08:42] 福利官小花四: 草神直播：" + page_url,
+    )
+
+    def browser_exchange(request: dict) -> dict:
+        if request["action"] == "resolve_xiaoetong_page":
+            return {
+                "action": request["action"],
+                "subscription_id": request["subscription_id"],
+                "page_url": page_url,
+                "page_state": "unknown",
+            }
+        return {
+            "action": request["action"],
+            "subscription_id": request["subscription_id"],
+            "page_url": block_url,
+            "page_state": "source_temporarily_unavailable",
+            "activated": False,
+            "password_used": False,
+        }
+
+    subscription = XiaocaoWechatLiveSubscription(
+        tmp_path / "wechat",
+        history_reader=lambda: payload,
+        browser_exchange=browser_exchange,
+        capture_driver=_CaptureDriver(),
+        contact=CONTACT,
+        password="666",
+    )
+
+    with pytest.raises(
+        EnrichmentError,
+        match="browser provider block is not bound to the live page",
+    ):
+        subscription.run_once(opencli_session="xiaocao-lv-subscription")
+
+
 def test_new_source_account_login_redirect_resolves_exact_page(tmp_path):
     payload = _history(
         "[2026-08-10 08:45] 福利官小花四: 草神直播："

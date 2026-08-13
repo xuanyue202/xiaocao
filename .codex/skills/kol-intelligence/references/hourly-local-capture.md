@@ -1,7 +1,7 @@
 # Hourly Local Capture Node
 
-Local WeChat/broadband node only: capture, exact-publisher discovery, upload,
-and credential-free handoff. Remote work follows
+Local node only: WeChat capture, publisher discovery, upload, and
+credential-free handoff. Remote work follows
 [hourly-remote-writer.md](hourly-remote-writer.md).
 
 ## Runner and boundary
@@ -12,23 +12,21 @@ Run exactly once and keep the process alive for input requests:
 PYTHONPATH=src .venv/bin/python scripts/kol_daily.py capture-local
 ```
 
-Use an interactive PTY (`tty=true`) and keep stdin alive for Browser and
-LiangHuiMCP request/response JSON. The normal handoff path does not inject a
+Use an interactive PTY (`tty=true`); keep stdin alive for Browser/LiangHuiMCP JSON.
+The normal handoff path does not inject a
 Codex task message and does not invoke the remote capsule importer directly.
 
 `capture-local` runs only `xiaocao_wechat_live` and
 `wechat_official_accounts`; it never scans Lv, analyzes, publishes, notifies,
 or writes Book. Do not substitute the remote coordinator here.
 
-Each invocation performs one discovery sweep. A sweep with no concrete article
-or video item is silent. Every concrete item remains reportable while waiting,
-unchanged, exceptional, handoff-completed, or fully completed. Handoff is not
-downstream completion. Retryable failures expose only credential-safe
-`category`, `code`, and `stage`. Reconcile armed captures; never duplicate them.
+Each invocation performs one discovery sweep; no concrete item is silent.
+Report every item while waiting, unchanged, exceptional, handoff-completed, or
+fully completed. Handoff is not downstream completion. Failures expose only
+safe `category`, `code`, and `stage`. Never duplicate armed captures.
 
-Within one sweep, prefer the newest browser-critical item, then the newest
-`playback_activated` capture, then the oldest `handoff_ready`; all stay
-resumable.
+Prefer the newest browser-critical item, then newest `playback_activated`, then
+oldest `handoff_ready`; all stay resumable.
 
 An `upload_claimed` or other `cloud_handoff` wait is nonterminal. After the full
 discovery sweep, the same `capture-local` process must keep reconciling that
@@ -60,10 +58,9 @@ PYTHONPATH=src .venv/bin/python scripts/kol_daily.py capture-wechat-official
 Never schedule this as another hourly runner or use it before remote ambiguity
 is resolved.
 
-The local adapter may use Browser, never Computer Use, to activate the bound
-player. `wx_channels_download` alone owns video bytes and inline compression.
-The coordinator and remote control plane receive only metadata, receipts, and
-the self-hashed handoff capsule.
+The local adapter may use Browser, never Computer Use, to activate the player.
+`wx_channels_download` alone owns video bytes and compression. Other nodes
+receive only metadata, receipts, and the self-hashed capsule.
 
 Before any media upload, read
 [opencli-baidu-netdisk-upload.md](opencli-baidu-netdisk-upload.md) completely.
@@ -99,7 +96,10 @@ For `daily_browser_input_required`, keep the same process alive and use
    password gate. If waiting/live-only/generating, return its visible state with
    `activated=false`. If playable, set and read back `muted=true`, `volume=0`
    (reapply after refresh/navigation), start it, and prove advancing media time.
-   Only then return `activated=true`, bound URL, and password-use state.
+   Only then return `activated=true`, bound URL, and password-use state. An
+   exact app/resource redirect to `<app_id>.block.xiaoeeye.com` is
+   `source_temporarily_unavailable` with both booleans false; return its current
+   URL for the runner's bound hourly retry. Never use it for another identity.
 
 Login: keep tab; report account_login_required with activated/password_used=false;
 never enter 666. See [SOP](xiaoetong-sms-login.md).
@@ -141,8 +141,8 @@ Never rewrite emitted MCP arguments. Before first send, repair the sender plus
 tests and resume the same job; after a creation receipt, keep the immutable
 message and apply the repair only to future handoffs.
 
-At the start of the next local sweep, use `get_mailbox_message` to reconcile
-every locally receipted but unobserved handoff by exact mailbox ID and the same
+Next sweep, use `get_mailbox_message` to reconcile each locally receipted but
+unobserved handoff by exact mailbox ID and the same
 `handoff_id`. `pending` remains `Handoff完成`. A bound `acked` message with its
 authoritative ack receipt becomes `全部完成`. A timeout or ambiguous response
 never authorizes another message ID or changed content; retry only the same

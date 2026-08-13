@@ -50,6 +50,7 @@ _PLAYBACK_PAGE_STATES = {
     "replay_generating",
     "playable",
     "password_required",
+    "source_temporarily_unavailable",
     "unknown",
 }
 
@@ -568,6 +569,42 @@ class XiaocaoWechatLiveSubscription:
             and redirect_identity == expected_source_identity
         )
 
+    @classmethod
+    def _is_bound_provider_block_redirect(
+        cls,
+        page_url: str,
+        *,
+        expected_page_url: str,
+        expected_source_identity: str,
+    ) -> bool:
+        parsed = urlsplit(page_url.strip())
+        expected = urlsplit(expected_page_url)
+        identity_parts = expected_source_identity.split(":", 2)
+        if (
+            len(identity_parts) != 3
+            or identity_parts[0] != "xiaoetong"
+            or not identity_parts[1]
+        ):
+            return False
+        app_id = identity_parts[1]
+        if (
+            parsed.scheme != "https"
+            or parsed.netloc.lower() != f"{app_id}.block.xiaoeeye.com"
+            or expected.netloc.lower() != f"{app_id}.h5.xiaoeknow.com"
+            or parsed.path != expected.path
+        ):
+            return False
+        try:
+            canonical_page, canonical_identity = cls._canonical_page(
+                expected_page_url
+            )
+        except EnrichmentError:
+            return False
+        return (
+            canonical_page == expected_page_url
+            and canonical_identity == expected_source_identity
+        )
+
     @staticmethod
     def _validate_browser_response(
         request: dict[str, Any],
@@ -852,7 +889,9 @@ class XiaocaoWechatLiveSubscription:
                 "If a password gate is visible, enter the supplied password and "
                 "submit it, then start playback. If it is waiting to start, live "
                 "without replay, or generating a replay, return that state without "
-                "waiting for it to change."
+                "waiting for it to change. If the same app and resource redirect "
+                "to its block.xiaoeeye.com page, return "
+                "source_temporarily_unavailable."
             ),
             "required_response": {
                 "action": "activate_xiaoetong_playback",
@@ -861,6 +900,7 @@ class XiaocaoWechatLiveSubscription:
                 "page_state": (
                     "account_login_required|waiting_to_start|live|"
                     "replay_generating|playable|password_required|unknown"
+                    "|source_temporarily_unavailable"
                 ),
                 "activated": "boolean",
                 "password_used": "boolean",
@@ -891,6 +931,26 @@ class XiaocaoWechatLiveSubscription:
             )
         ):
             raise EnrichmentError("Xiaoetong account login is required")
+        if page_state == "source_temporarily_unavailable":
+            if (
+                activated
+                or response.get("password_used") is True
+                or not self._is_bound_provider_block_redirect(
+                    response_url,
+                    expected_page_url=item["page_url"],
+                    expected_source_identity=item["source_identity"],
+                )
+            ):
+                raise EnrichmentError(
+                    "browser provider block is not bound to the live page"
+                )
+            return self._transition(
+                manifest,
+                item,
+                "awaiting_playback",
+                observed_page_state=page_state,
+                password_used=False,
+            )
         response_page, response_identity = self._canonical_page(response_url)
         if (
             response_page != item["page_url"]
