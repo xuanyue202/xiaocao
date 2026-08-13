@@ -252,6 +252,26 @@ def test_recorded_media_url_rehydrates_only_exact_signed_path():
         )
 
 
+def test_recorded_candidate_rehydrates_by_file_when_ephemeral_id_rotates():
+    current = {
+        "candidate_key": "id:expired-candidate",
+        "expected_source": {
+            "source_resource_id": "v_6a7db774e4b0694c5bfa7583",
+        },
+        "expected_media_file_id": "5001834815942190711",
+    }
+    refreshed = {
+        "id": "fresh-candidate",
+        "media_type": "m3u8",
+        "url": (
+            "https://encrypt-k-vod.xet.tech/vod/"
+            "773e679a5001834815942190711/drm/v.f421220.m3u8"
+        ),
+    }
+
+    assert resolve_candidate(current, [refreshed]) == refreshed
+
+
 def test_sniffer_arms_xiaoetong_source_job_without_persisting_response_url():
     seen = {}
 

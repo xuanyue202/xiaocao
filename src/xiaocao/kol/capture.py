@@ -289,6 +289,18 @@ def resolve_candidate(
         )
         == expected
     ]
+    expected_source = current.get("expected_source") or {}
+    media_file_id = str(current.get("expected_media_file_id") or "")
+    if (
+        not matches
+        and str(expected_source.get("source_resource_id") or "").startswith("v_")
+        and media_file_id
+    ):
+        matches = [
+            row
+            for row in candidates
+            if _matches_recorded_media_file(row, media_file_id)
+        ]
     return max(matches, key=_captured_sort_key) if matches else None
 
 

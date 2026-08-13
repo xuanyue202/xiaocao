@@ -343,6 +343,13 @@ class XiaocaoLiveCaptureDriver:
                 opencli_profile=opencli_profile,
                 recorded_media_url=recorded_media_url,
             )
+        except InvalidSourcePage as exc:
+            raise EnrichmentDiagnosticError(
+                "Xiaocao recorded media URL binding failed",
+                category="contract_error",
+                code="recorded_media_url_binding_invalid",
+                stage="compressed_capture",
+            ) from exc
         except SnifferError as exc:
             raise EnrichmentDiagnosticError(
                 "Xiaocao sniffer request failed",
@@ -1194,13 +1201,21 @@ class XiaocaoWechatLiveSubscription:
         if item["status"] == "handoff_ready":
             return self._dispatch_handoff(manifest, item)
 
-        state = self.capture_driver.advance(
-            item["identity"],
-            item["capture_job_id"],
-            opencli_session=opencli_session,
-            opencli_profile=opencli_profile,
-            recorded_media_url=self._media_url_if_needed(item),
-        )
+        try:
+            state = self.capture_driver.advance(
+                item["identity"],
+                item["capture_job_id"],
+                opencli_session=opencli_session,
+                opencli_profile=opencli_profile,
+                recorded_media_url=self._media_url_if_needed(item),
+            )
+        except InvalidSourcePage as exc:
+            raise EnrichmentDiagnosticError(
+                "Xiaocao recorded media URL binding failed",
+                category="contract_error",
+                code="recorded_media_url_binding_invalid",
+                stage="compressed_capture",
+            ) from exc
         if (
             not playback_checked
             and item["status"] in {"awaiting_playback", "playback_activated"}
