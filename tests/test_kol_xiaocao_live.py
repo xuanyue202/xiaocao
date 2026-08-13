@@ -8,7 +8,11 @@ from types import SimpleNamespace
 import pytest
 
 from tests.kol_claim_fixture import attach_claim_contract
-from xiaocao.kol.capture import CaptureJobStore, SnifferError
+from xiaocao.kol.capture import (
+    CaptureJobStore,
+    SnifferError,
+    canonical_xiaoetong_source,
+)
 from xiaocao.kol.enrichment_types import EnrichmentError
 from xiaocao.kol.xiaocao_live import (
     REQUIRED_COVERAGE_ROWS,
@@ -131,6 +135,48 @@ def _capture_fixture(tmp_path: Path) -> tuple[Path, str, Path, float]:
     )
     assert downloaded is not None
     return ledger, armed["job_id"], media, 120.0
+
+
+def test_recorded_capture_contract_accepts_file_bound_candidate(tmp_path):
+    ledger = tmp_path / "capture.jsonl"
+    store = CaptureJobStore(ledger)
+    source = canonical_xiaoetong_source(
+        "https://appsnm3rlcp3566.h5.xiaoeknow.com/p/course/video/"
+        "v_6a7db774e4b0694c5bfa7583"
+    )
+    armed = store.arm(
+        [],
+        expected_source=source,
+        expected_media_file_id="5001834815942190711",
+    )
+    candidate = {
+        "id": "vod-capture",
+        "live_id": "l_stale",
+        "media_type": "m3u8",
+        "url": (
+            "https://encrypt-k-vod.xet.tech/vod/"
+            "773e679a5001834815942190711/drm/v.f421220.m3u8"
+        ),
+    }
+    detected = store.detect_capture(armed, [candidate])
+    downloaded = store.transition(
+        detected,
+        "download_completed",
+        status="downloaded",
+        download_task={
+            "meta": {"labels": {
+                "live_id": "l_stale",
+                "type": "live_capture",
+                "compress": "true",
+                "compress_inline": "true",
+            }}
+        },
+    )
+
+    identity = XiaocaoLiveService._capture_contract(downloaded)
+
+    assert identity["capture_id"] == "vod-capture"
+    assert identity["live_id"] == "l_stale"
 
 
 class _Netdisk:

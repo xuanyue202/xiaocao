@@ -1448,12 +1448,31 @@ class XiaocaoLiveService:
         task = capture.get("download_task")
         labels = ((task or {}).get("meta") or {}).get("labels") or {}
         live_id = str((candidate or {}).get("live_id") or "")
+        expected_source = capture.get("expected_source") or {}
+        resource_id = str(expected_source.get("source_resource_id") or "")
+        recorded = resource_id.startswith("v_")
+        candidate_key = str(capture.get("candidate_key") or "")
+        candidate_id = str((candidate or {}).get("id") or "")
+        baseline = set(capture.get("baseline_candidate_keys") or [])
+        identity_proven = (
+            recorded
+            and candidate_id
+            and candidate_key == f"id:{candidate_id}"
+            and candidate_key not in baseline
+            and _MEDIA_FILE_ID.fullmatch(
+                str(capture.get("expected_media_file_id") or "")
+            )
+            is not None
+        ) or (
+            not recorded
+            and live_id
+            and candidate_key == f"live:{live_id}"
+            and candidate_key not in baseline
+            and str(labels.get("live_id") or "") == live_id
+        )
         if (
             capture.get("status") != "downloaded"
-            or not live_id
-            or capture.get("candidate_key") != f"live:{live_id}"
-            or f"live:{live_id}" in set(capture.get("baseline_candidate_keys") or [])
-            or str(labels.get("live_id") or "") != live_id
+            or not identity_proven
             or str(labels.get("type") or "") != "live_capture"
             or str(labels.get("compress") or "").lower() != "true"
             or str(labels.get("compress_inline") or "").lower() != "true"
@@ -1461,7 +1480,7 @@ class XiaocaoLiveService:
             raise EnrichmentError("capture ledger does not prove the Ticket 03 path")
         return {
             "live_id": live_id,
-            "capture_id": str((candidate or {}).get("id") or ""),
+            "capture_id": candidate_id,
             "captured_at": str((candidate or {}).get("captured") or ""),
             "title": str((candidate or {}).get("title") or ""),
         }
