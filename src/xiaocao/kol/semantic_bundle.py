@@ -457,6 +457,13 @@ def _validate_market(value: Mapping[str, Any]) -> None:
                 stage="market_validation",
                 field="market_validation.facts.observed_at",
             )
+        if observed_at > checked_at:
+            raise _fail(
+                "market validation fact is future-dated at validation time",
+                error_code="market_validation_invalid",
+                stage="market_validation",
+                field="market_validation.facts.observed_at",
+            )
 
 
 def _validate_coverage(item: dict[str, Any], text: str) -> None:

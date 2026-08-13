@@ -626,6 +626,27 @@ def test_market_and_decision_cardinality_are_terminal_constraints(tmp_path):
     assert caught.value.error_code == "decision_semantics_invalid"
 
 
+def test_builder_rejects_market_fact_after_currentness_check(tmp_path):
+    request, draft, bundle_path, receipt_path, _ = _fixture(tmp_path)
+    request["market_evidence"]["validation"]["facts"][0][
+        "observed_at"
+    ] = "2026-08-08T07:01:00+08:00"
+
+    with pytest.raises(SemanticBundleError) as caught:
+        build_validated_bundle(
+            request,
+            draft,
+            bundle_path=bundle_path,
+            receipt_path=receipt_path,
+        )
+
+    assert caught.value.error_code == "market_validation_invalid"
+    assert caught.value.stage == "market_validation"
+    assert caught.value.field == "market_validation.facts.observed_at"
+    assert not bundle_path.exists()
+    assert not receipt_path.exists()
+
+
 def test_alert_basis_is_validated_before_business_publication(tmp_path):
     request, draft, bundle_path, receipt_path, _ = _fixture(tmp_path)
     draft["content_value"] = {
