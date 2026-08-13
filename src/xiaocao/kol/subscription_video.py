@@ -3635,7 +3635,8 @@ class SubscriptionVideoService:
             if (
                 not readback_only
                 and claim.get("provider_outcome") == "unobserved"
-                and claim.get("status") != "reconciled_absent"
+                and claim.get("status")
+                in {"native_click_claimed", "native_click_uncertain"}
             ):
                 raise EnrichmentError(
                     "Lv cloud transfer native click outcome is uncertain"
@@ -3850,44 +3851,6 @@ class SubscriptionVideoService:
                 _TRANSFER_OUTCOME_SCRIPT,
                 profile=profile,
                 timeout_seconds=30,
-            )
-        if result.get("provider_outcome") == "unobserved":
-            uncertain = {
-                **action_claim,
-                "event": "lv_cloud_transfer_outcome_uncertain",
-                "status": "native_click_uncertain",
-                "stage": "cloud_transfer_reconciliation",
-                "pending": True,
-                "side_effect_uncertain": True,
-                "trigger_attempt": int(
-                    action_claim.get("trigger_attempt") or 1
-                ),
-                "provider_trigger_status": str(
-                    result.get("status")
-                    or "cloud_transfer_outcome_unobserved"
-                ),
-                "provider_outcome": "unobserved",
-                "triggered_at": str(
-                    action_claim.get("triggered_at")
-                    or self._time().isoformat(timespec="microseconds")
-                ),
-            }
-            _atomic_write_json(
-                self._claim_path(receipt_name),
-                uncertain,
-            )
-            _append_jsonl(self.events_path, uncertain)
-            reconciled = self.transfer_lv_video(
-                item,
-                lv_session=lv_session,
-                private_session=private_session,
-                profile=profile,
-                readback_only=True,
-            )
-            if reconciled.get("status") == "completed":
-                return reconciled
-            raise EnrichmentError(
-                "Lv cloud transfer native click outcome is uncertain"
             )
         if result.get("triggered") is not True:
             self._record_pretrigger_failure(

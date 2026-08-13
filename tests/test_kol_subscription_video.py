@@ -23,6 +23,7 @@ from xiaocao.kol.subscription_video import (
     LV_AUTHOR,
     LV_DESTINATION_DIRECTORY,
     LV_SOURCE,
+    LV_TRANSFER_CONFIRMATION_WINDOW,
     REQUIRED_COVERAGE_ROWS,
     SubscriptionVideoService,
 )
@@ -1377,7 +1378,7 @@ def test_lv_transfer_observes_provider_outcome_after_confirmation():
     assert "provider_outcome: 'unobserved'" in _TRANSFER_OUTCOME_SCRIPT
 
 
-def test_lv_transfer_unobserved_native_click_requires_reconciliation(tmp_path):
+def test_lv_transfer_unobserved_toast_waits_for_bound_receipt(tmp_path):
     service = _service(tmp_path, sleep=lambda _seconds: None)
     item = service._normalize(
         _source_rows()[0][1],
@@ -1414,33 +1415,36 @@ def test_lv_transfer_unobserved_native_click_requires_reconciliation(tmp_path):
                 "triggered": False,
             }
         return {
-            "status": "cloud_transfer_triggered",
+            "status": "cloud_transfer_outcome_unobserved",
             "triggered": True,
             "provider_outcome": "unobserved",
         }
 
     service._opencli_json = opencli
 
-    with pytest.raises(
-        EnrichmentError,
-        match="Lv cloud transfer native click outcome is uncertain",
-    ):
-        service.transfer_lv_video(
-            item,
-            lv_session="lv",
-            private_session="private",
-            profile="work",
-        )
+    result = service.transfer_lv_video(
+        item,
+        lv_session="lv",
+        private_session="private",
+        profile="work",
+    )
 
     claim = json.loads(
         service._claim_path(
             f"lv_transfer_{item['version_key']}"
         ).read_text(encoding="utf-8")
     )
-    assert claim["status"] == "native_click_uncertain"
+    assert result["status"] == "waiting_cloud_transfer_receipt"
+    assert result["next_poll_not_before"] == (
+        NOW + LV_TRANSFER_CONFIRMATION_WINDOW
+    ).isoformat(timespec="seconds")
+    assert claim["status"] == "waiting_cloud_transfer_receipt"
     assert claim["side_effect_uncertain"] is True
     assert claim["provider_outcome"] == "unobserved"
-    assert "next_poll_not_before" not in claim
+    assert claim["provider_trigger_status"] == (
+        "cloud_transfer_outcome_unobserved"
+    )
+    assert claim["next_poll_not_before"] == result["next_poll_not_before"]
 
 
 def test_lv_transfer_retries_once_after_authoritative_absence_reconciliation(
@@ -1552,7 +1556,7 @@ def test_lv_transfer_retries_once_after_authoritative_absence_reconciliation(
     assert recovery["trigger_attempt_maximum"] == 3
 
 
-def test_lv_transfer_claim_precedes_click_and_unobserved_outcome_reconciles(
+def test_lv_transfer_claim_precedes_click_and_exact_copy_readback_completes(
     tmp_path,
 ):
     triggered = False
@@ -1642,13 +1646,11 @@ def test_lv_transfer_claim_precedes_click_and_unobserved_outcome_reconciles(
     assert first["large_payload_local_bytes"] == 0
     assert second["status"] == "completed"
     assert native_click_calls == 1
-    assert len(
-        [
-            row
-            for row in service.events_path.read_text().splitlines()
-            if "lv_cloud_transfer_outcome_uncertain" in row
-        ]
-    ) == 1
+    events = service.events_path.read_text().splitlines()
+    assert sum("lv_cloud_transfer_triggered" in row for row in events) == 1
+    assert not any(
+        "lv_cloud_transfer_outcome_uncertain" in row for row in events
+    )
 
 
 def test_lv_transfer_reconciles_observed_default_root_save_without_resend(

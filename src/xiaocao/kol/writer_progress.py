@@ -679,6 +679,7 @@ TARGETED_REPAIR_TESTS: dict[str, tuple[str, ...]] = {
             "semantic_duplicate_requires_receipted_household_and_paper_ledgers or "
             "no_trade_is_an_idempotent_book_decision or "
             "each_replay_uses_fresh_household_context or "
+            "lv_transfer_unobserved_toast_waits_for_bound_receipt or "
             "source_cli_narrow_runner_supports_subscription_video or "
             "source_repair_validation_accepts_pending_resume or "
             "repair_validation_accepts_subscription_video_source_run_profile or "
