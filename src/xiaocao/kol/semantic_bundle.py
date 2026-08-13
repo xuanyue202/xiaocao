@@ -992,12 +992,19 @@ def _validate_reader_copy(item: Mapping[str, Any], decision_status: str) -> None
             )
     raw_reminder = item.get("reader_reminder")
     if raw_reminder is not None:
-        if not isinstance(raw_reminder, Mapping) or any(
+        if not isinstance(raw_reminder, Mapping):
+            raise _fail(
+                "reader reminder must be an object",
+                error_code="reader_copy_invalid",
+                stage="reader_copy",
+                field="reader_reminder",
+            )
+        if any(
             not _nonblank(raw_reminder.get(field))
             for field in ("title", "summary")
         ):
             raise _fail(
-                "reader reminder must be an object with title and summary",
+                "reader reminder requires title and summary",
                 error_code="reader_copy_invalid",
                 stage="reader_copy",
                 field="reader_reminder",
