@@ -965,11 +965,19 @@ def _validate_content_routing(item: Mapping[str, Any]) -> dict[str, Any]:
 
 
 def _validate_reader_copy(item: Mapping[str, Any], decision_status: str) -> None:
-    insight = item.get("reader_insight") or {}
-    if decision_status == "no_actionable_signal":
+    raw_insight = item.get("reader_insight")
+    if raw_insight is not None and not isinstance(raw_insight, Mapping):
+        raise _fail(
+            "reader insight must be an object",
+            error_code="reader_insight_invalid",
+            stage="reader_copy",
+            field="reader_insight",
+        )
+    insight = raw_insight or {}
+    if insight or decision_status == "no_actionable_signal":
         if insight.get("status") not in {"useful", "none"}:
             raise _fail(
-                "no-action result needs a useful or none reader insight",
+                "reader insight needs a useful or none status",
                 error_code="reader_insight_invalid",
                 stage="reader_copy",
                 field="reader_insight.status",
@@ -981,6 +989,18 @@ def _validate_reader_copy(item: Mapping[str, Any], decision_status: str) -> None
                 error_code="reader_insight_invalid",
                 stage="reader_copy",
                 field="reader_insight",
+            )
+    raw_reminder = item.get("reader_reminder")
+    if raw_reminder is not None:
+        if not isinstance(raw_reminder, Mapping) or any(
+            not _nonblank(raw_reminder.get(field))
+            for field in ("title", "summary")
+        ):
+            raise _fail(
+                "reader reminder must be an object with title and summary",
+                error_code="reader_copy_invalid",
+                stage="reader_copy",
+                field="reader_reminder",
             )
     publication = item.get("publication") or {}
     if isinstance(publication, Mapping) and publication:
