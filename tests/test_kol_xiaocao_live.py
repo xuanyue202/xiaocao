@@ -1285,6 +1285,102 @@ def test_start_with_xiaoetong_page_arms_bound_source_job_without_query_state(
     assert page_url not in persisted
 
 
+def test_start_with_recorded_video_page_arms_file_bound_capture_without_source_job(
+    tmp_path,
+):
+    binary = tmp_path / "wx_video_download_macos_arm64"
+    binary.write_bytes(b"binary")
+    calls = []
+
+    class Sniffer:
+        @staticmethod
+        def status():
+            return {"version": "test", "running": True}
+
+        @staticmethod
+        def candidates():
+            calls.append("baseline")
+            return [{"id": "candidate-old", "live_id": "l_stale"}]
+
+        @staticmethod
+        def arm_xiaoetong_source(_page_url):
+            raise AssertionError("recorded video must not use live source jobs")
+
+    def runner(command, **_kwargs):
+        if command[0] == "ps":
+            return SimpleNamespace(stdout=f"1234 {binary}\n")
+        raise AssertionError(command)
+
+    ledger = tmp_path / "capture.jsonl"
+    service = XiaocaoLiveService(
+        tmp_path / "live",
+        capture_ledger=ledger,
+        sniffer_binary=binary,
+        sniffer_client=Sniffer(),
+        runner=runner,
+        sleep=lambda _seconds: None,
+    )
+    page_url = (
+        "https://appsnm3rlcp3566.h5.xiaoeknow.com/p/course/video/"
+        "v_6a7db774e4b0694c5bfa7583"
+    )
+
+    result = service.start(
+        page_url=page_url,
+        media_file_id="5001834815942190711",
+    )
+    capture = CaptureJobStore(ledger).latest(result["capture_job_id"])
+
+    assert calls == ["baseline"]
+    assert "source_job_id" not in result
+    assert result["source_identity"] == (
+        "xiaoetong:appsnm3rlcp3566:v_6a7db774e4b0694c5bfa7583"
+    )
+    assert capture is not None
+    assert capture["expected_media_file_id"] == "5001834815942190711"
+
+
+def test_start_rejects_recorded_video_without_media_file_binding(tmp_path):
+    service = XiaocaoLiveService(tmp_path / "live")
+
+    with pytest.raises(EnrichmentError, match="recorded media file binding"):
+        service.start(
+            page_url=(
+                "https://appsnm3rlcp3566.h5.xiaoeknow.com/p/course/video/"
+                "v_6a7db774e4b0694c5bfa7583"
+            )
+        )
+
+
+def test_start_classifies_sniffer_candidate_baseline_failure(tmp_path):
+    binary = tmp_path / "wx_video_download_macos_arm64"
+    binary.write_bytes(b"binary")
+
+    class Sniffer:
+        @staticmethod
+        def status():
+            return {"version": "test", "running": True}
+
+        @staticmethod
+        def candidates():
+            raise SnifferError("candidate baseline timed out")
+
+    def runner(command, **_kwargs):
+        if command[0] == "ps":
+            return SimpleNamespace(stdout=f"1234 {binary}\n")
+        raise AssertionError(command)
+
+    service = XiaocaoLiveService(
+        tmp_path / "live",
+        sniffer_binary=binary,
+        sniffer_client=Sniffer(),
+        runner=runner,
+    )
+
+    with pytest.raises(EnrichmentError, match="baseline is unavailable"):
+        service.start()
+
+
 def test_advance_xiaoetong_source_reuses_auto_created_download_task(tmp_path):
     ledger = tmp_path / "capture.jsonl"
     source = {

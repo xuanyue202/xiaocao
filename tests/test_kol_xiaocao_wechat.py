@@ -68,7 +68,7 @@ def test_wechat_history_accepts_xiaoetong_link_without_message_keywords():
 
 class _CaptureDriver:
     def __init__(self):
-        self.arms: list[tuple[str, str]] = []
+        self.arms: list[tuple[str, str, str | None]] = []
         self.advances = 0
         self.next_result = {
             "event": "xiaocao_live_pending",
@@ -77,8 +77,14 @@ class _CaptureDriver:
             "next": "rerun",
         }
 
-    def arm(self, identity: str, page_url: str) -> dict:
-        self.arms.append((identity, page_url))
+    def arm(
+        self,
+        identity: str,
+        page_url: str,
+        *,
+        media_file_id: str | None = None,
+    ) -> dict:
+        self.arms.append((identity, page_url, media_file_id))
         return {"capture_job_id": "kol-capture-current"}
 
     def advance(
@@ -379,6 +385,7 @@ def test_first_poll_baselines_history_and_arms_only_latest_live(tmp_path):
         result["waiting_items"][0]["identity"],
         "https://appsnm3rlcp3566.h5.xiaoeknow.com/v2/course/alive/"
         "l_6a708838e4b0694c5bf42e55",
+        None,
     )]
     manifest = json.loads(
         (tmp_path / "wechat" / "manifest.json").read_text(encoding="utf-8")
@@ -404,6 +411,7 @@ def test_recorded_video_page_arms_bound_capture(tmp_path):
                 "subscription_id": request["subscription_id"],
                 "page_url": page_url + "?share_user_id=private",
                 "page_state": "playable",
+                "media_file_id": "5001834815942190711",
             }
         return {
             "action": request["action"],
@@ -429,7 +437,11 @@ def test_recorded_video_page_arms_bound_capture(tmp_path):
     )
 
     assert result["status"] == "waiting"
-    assert capture.arms == [(result["waiting_items"][0]["identity"], page_url)]
+    assert capture.arms == [(
+        result["waiting_items"][0]["identity"],
+        page_url,
+        "5001834815942190711",
+    )]
     manifest = json.loads(
         (tmp_path / "wechat" / "manifest.json").read_text(encoding="utf-8")
     )
@@ -438,6 +450,74 @@ def test_recorded_video_page_arms_bound_capture(tmp_path):
     assert item["source_identity"] == (
         "xiaoetong:appsnm3rlcp3566:v_6a7db774e4b0694c5bfa7583"
     )
+    assert item["media_file_id"] == "5001834815942190711"
+
+
+def test_existing_recorded_video_page_resolves_media_file_before_arming(tmp_path):
+    output = tmp_path / "wechat"
+    output.mkdir(parents=True)
+    identity = "kol-wechat-recorded"
+    page_url = (
+        "https://appsnm3rlcp3566.h5.xiaoeknow.com/p/course/video/"
+        "v_6a7db774e4b0694c5bfa7583"
+    )
+    (output / "manifest.json").write_text(
+        json.dumps({
+            "schema_version": 1,
+            "items": {
+                identity: {
+                    "identity": identity,
+                    "contact": CONTACT,
+                    "contact_username": USERNAME,
+                    "published_at": "2026-08-13T21:46:00+08:00",
+                    "source_url": "https://yv9lc.xetslk.com/s/5ftVx",
+                    "page_url": page_url,
+                    "source_identity": (
+                        "xiaoetong:appsnm3rlcp3566:"
+                        "v_6a7db774e4b0694c5bfa7583"
+                    ),
+                    "observed_page_state": "playable",
+                    "status": "page_resolved",
+                }
+            },
+        }),
+        encoding="utf-8",
+    )
+    requests = []
+
+    def browser_exchange(request: dict) -> dict:
+        requests.append(request)
+        return {
+            "action": request["action"],
+            "subscription_id": request["subscription_id"],
+            "page_url": page_url,
+            "page_state": "playable",
+            "media_file_id": "5001834815942190711",
+            "activated": request["action"] == "activate_xiaoetong_playback",
+            "password_used": False,
+        }
+
+    capture = _CaptureDriver()
+    subscription = XiaocaoWechatLiveSubscription(
+        output,
+        history_reader=lambda: pytest.fail("narrow resume must not rescan WeChat"),
+        browser_exchange=browser_exchange,
+        capture_driver=capture,
+        contact=CONTACT,
+        password="666",
+    )
+
+    result = subscription.run_once(
+        opencli_session="xiaocao-lv-subscription",
+        only_identity=identity,
+    )
+
+    assert result["status"] == "waiting"
+    assert [request["action"] for request in requests] == [
+        "resolve_xiaoetong_page",
+        "activate_xiaoetong_playback",
+    ]
+    assert capture.arms == [(identity, page_url, "5001834815942190711")]
 
 
 def test_newer_preview_is_not_starved_by_an_older_unfinished_capture(tmp_path):

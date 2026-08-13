@@ -69,6 +69,7 @@ REQUIRED_COVERAGE_ROWS = {
     "named_asset_inventory",
 }
 _SHA256 = re.compile(r"^[0-9a-f]{64}$")
+_MEDIA_FILE_ID = re.compile(r"^[0-9]{8,32}$")
 _TERMINAL_NETDISK = {
     "video_ready",
     "transcript_claimed",
@@ -849,14 +850,32 @@ class XiaocaoLiveService:
         except SnifferError:
             return None
 
-    def start(self, *, page_url: str | None = None) -> dict[str, Any]:
+    def start(
+        self,
+        *,
+        page_url: str | None = None,
+        media_file_id: str | None = None,
+    ) -> dict[str, Any]:
         """Start or reconcile the sniffer, arm baseline, and emit one prompt."""
         expected_source: dict[str, str] | None = None
+        expected_media_file_id = str(media_file_id or "").strip()
         if page_url:
             try:
                 expected_source = canonical_xiaoetong_source(page_url)
             except InvalidSourcePage as exc:
                 raise EnrichmentError(str(exc)) from exc
+        resource_id = str(
+            (expected_source or {}).get("source_resource_id") or ""
+        )
+        recorded_video = resource_id.startswith("v_")
+        if (
+            (
+                recorded_video
+                and not _MEDIA_FILE_ID.fullmatch(expected_media_file_id)
+            )
+            or (not recorded_video and expected_media_file_id)
+        ):
+            raise EnrichmentError("recorded media file binding is invalid")
         armed = self._event("capture_armed")
         if armed is not None:
             if expected_source is not None:
@@ -864,6 +883,13 @@ class XiaocaoLiveService:
                 if armed_identity != expected_source["source_identity"]:
                     raise EnrichmentError(
                         "active capture is bound to another Xiaoetong page"
+                    )
+                if (
+                    str(armed.get("media_file_id") or "")
+                    != expected_media_file_id
+                ):
+                    raise EnrichmentError(
+                        "active capture changed its recorded media binding"
                     )
             pids = self._sniffer_pids()
             try:
@@ -963,24 +989,33 @@ class XiaocaoLiveService:
             sniffer_version=str(sniffer_status.get("version") or ""),
             start_claim_idempotency_key=claim["idempotency_key"],
         )
-        baseline_candidates = self.sniffer.candidates()
-        source_job: dict[str, str] | None = None
-        if page_url:
-            source_job = self.sniffer.arm_xiaoetong_source(page_url)
+        try:
+            baseline_candidates = self.sniffer.candidates()
+            source_job: dict[str, str] | None = None
+            if page_url and not recorded_video:
+                source_job = self.sniffer.arm_xiaoetong_source(page_url)
+        except SnifferError as exc:
+            raise EnrichmentError("Xiaocao sniffer baseline is unavailable") from exc
         capture = self.capture_store.arm(
             baseline_candidates,
             sniffer_status=sniffer_status,
             expected_source=expected_source,
+            expected_media_file_id=(
+                expected_media_file_id if recorded_video else None
+            ),
             source_job_id=(source_job or {}).get("id"),
         )
         prompt_id = _sha256_text(f"prompt:{capture['job_id']}")
         source_fields: dict[str, str] = {}
-        if expected_source is not None and source_job is not None:
+        if expected_source is not None:
             source_fields = {
-                "source_job_id": source_job["id"],
                 "source_identity": expected_source["source_identity"],
                 "source_resource_id": expected_source["source_resource_id"],
             }
+            if source_job is not None:
+                source_fields["source_job_id"] = source_job["id"]
+            if recorded_video:
+                source_fields["media_file_id"] = expected_media_file_id
         armed = self._append(
             "capture_armed",
             status="awaiting_capture",

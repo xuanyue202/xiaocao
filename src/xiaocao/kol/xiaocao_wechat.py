@@ -22,6 +22,7 @@ from zoneinfo import ZoneInfo
 
 from .capture import (
     InvalidSourcePage,
+    SnifferError,
     canonical_xiaoetong_source,
     resolve_xiaoetong_h5_page,
 )
@@ -40,6 +41,7 @@ _MESSAGE = re.compile(r"^\[(?P<time>\d{4}-\d{2}-\d{2} \d{2}:\d{2})\]")
 _URL = re.compile(r"https://[^\s）)】》>，,；;]+")
 _TERMINAL = {"historical_baseline", "superseded", "completed"}
 _SHA256 = re.compile(r"^[0-9a-f]{64}$")
+_MEDIA_FILE_ID = re.compile(r"^[0-9]{8,32}$")
 _MAX_HANDOFF_BYTES = 1024 * 1024
 _CAPTURE_PROGRESS_POLL_SECONDS = 30
 _LOCAL_CAPTURE_FIRST_HOUR = 7
@@ -162,7 +164,7 @@ def parse_xiaocao_live_messages(payload: dict[str, Any]) -> list[dict[str, Any]]
         ).replace(tzinfo=BEIJING)
         # Discovery is already bound to the exact registered contact.  Message
         # copy is not a stable contract, so iterate every URL and rely on the
-        # Xiaoetong allowlist here plus exact ``/course/alive/`` browser binding
+        # Xiaoetong allowlist here plus exact live/recorded browser binding
         # before a capture job can be armed.
         for match in _URL.findall(raw_message):
             source_url = _normalized_live_url(match)
@@ -186,7 +188,13 @@ def parse_xiaocao_live_messages(payload: dict[str, Any]) -> list[dict[str, Any]]
 
 
 class CaptureDriver(Protocol):
-    def arm(self, identity: str, page_url: str) -> dict[str, Any]: ...
+    def arm(
+        self,
+        identity: str,
+        page_url: str,
+        *,
+        media_file_id: str | None = None,
+    ) -> dict[str, Any]: ...
 
     def advance(
         self,
@@ -291,8 +299,25 @@ class XiaocaoLiveCaptureDriver:
             decision_output=self.decision_output,
         )
 
-    def arm(self, identity: str, page_url: str) -> dict[str, Any]:
-        return self._service(identity).start(page_url=page_url)
+    def arm(
+        self,
+        identity: str,
+        page_url: str,
+        *,
+        media_file_id: str | None = None,
+    ) -> dict[str, Any]:
+        try:
+            return self._service(identity).start(
+                page_url=page_url,
+                media_file_id=media_file_id,
+            )
+        except SnifferError as exc:
+            raise EnrichmentDiagnosticError(
+                "Xiaocao sniffer request failed",
+                category="transport_error",
+                code="sniffer_request_failed",
+                stage="source_run",
+            ) from exc
 
     def advance(
         self,
@@ -309,11 +334,19 @@ class XiaocaoLiveCaptureDriver:
         capture = service.capture_store.latest(capture_job_id)
         if capture is None or capture.get("status") != "downloaded":
             service.start()
-        return service.advance(
-            capture_job_id,
-            opencli_session=opencli_session,
-            opencli_profile=opencli_profile,
-        )
+        try:
+            return service.advance(
+                capture_job_id,
+                opencli_session=opencli_session,
+                opencli_profile=opencli_profile,
+            )
+        except SnifferError as exc:
+            raise EnrichmentDiagnosticError(
+                "Xiaocao sniffer request failed",
+                category="transport_error",
+                code="sniffer_request_failed",
+                stage="source_run",
+            ) from exc
 
     def published_handoff(
         self,
@@ -966,6 +999,63 @@ class XiaocaoWechatLiveSubscription:
             password_used=response.get("password_used") is True,
         )
 
+    def _resolve_page(
+        self,
+        manifest: dict[str, Any],
+        item: dict[str, Any],
+    ) -> dict[str, Any]:
+        request = {
+            "event": "daily_browser_input_required",
+            "adapter": "xiaocao_wechat_live",
+            "action": "resolve_xiaoetong_page",
+            "subscription_id": item["identity"],
+            "source_url": item["source_url"],
+            "required_response": {
+                "action": "resolve_xiaoetong_page",
+                "subscription_id": item["identity"],
+                "page_url": "current Xiaoetong MP wrapper or H5 page URL",
+                "page_state": (
+                    "account_login_required|playable|password_required|unknown"
+                ),
+                "media_file_id": (
+                    "digits from the bound video element for a recorded-video "
+                    "page; omit for a live page"
+                ),
+            },
+        }
+        response = self.browser_exchange(request)
+        self._validate_browser_response(request, response)
+        observed_page_state = str(
+            response.get("page_state") or "unknown"
+        ).strip()
+        page_url, source_identity = self._canonical_browser_page(
+            str(response.get("page_url") or ""),
+            page_state=observed_page_state,
+        )
+        resource_id = source_identity.rsplit(":", 1)[-1]
+        media_file_id = str(response.get("media_file_id") or "").strip()
+        if (
+            (
+                resource_id.startswith("v_")
+                and not _MEDIA_FILE_ID.fullmatch(media_file_id)
+            )
+            or (not resource_id.startswith("v_") and media_file_id)
+        ):
+            raise EnrichmentError("browser recorded media binding is invalid")
+        fields: dict[str, Any] = {
+            "page_url": page_url,
+            "source_identity": source_identity,
+            "observed_page_state": observed_page_state,
+        }
+        if media_file_id:
+            fields["media_file_id"] = media_file_id
+        return self._transition(
+            manifest,
+            item,
+            "page_resolved",
+            **fields,
+        )
+
     def run_once(
         self,
         *,
@@ -995,41 +1085,23 @@ class XiaocaoWechatLiveSubscription:
             return {"status": "no_update"}
 
         if item["status"] == "discovered":
-            request = {
-                "event": "daily_browser_input_required",
-                "adapter": "xiaocao_wechat_live",
-                "action": "resolve_xiaoetong_page",
-                "subscription_id": item["identity"],
-                "source_url": item["source_url"],
-                "required_response": {
-                    "action": "resolve_xiaoetong_page",
-                    "subscription_id": item["identity"],
-                    "page_url": "current Xiaoetong MP wrapper or H5 page URL",
-                    "page_state": (
-                        "account_login_required|playable|password_required|unknown"
-                    ),
-                },
-            }
-            response = self.browser_exchange(request)
-            self._validate_browser_response(request, response)
-            observed_page_state = str(
-                response.get("page_state") or "unknown"
-            ).strip()
-            page_url, source_identity = self._canonical_browser_page(
-                str(response.get("page_url") or ""),
-                page_state=observed_page_state,
-            )
-            item = self._transition(
-                manifest,
-                item,
-                "page_resolved",
-                page_url=page_url,
-                source_identity=source_identity,
-                observed_page_state=observed_page_state,
-            )
+            item = self._resolve_page(manifest, item)
+
+        if (
+            item["status"] == "page_resolved"
+            and str(item.get("source_identity") or "")
+            .rsplit(":", 1)[-1]
+            .startswith("v_")
+            and not item.get("media_file_id")
+        ):
+            item = self._resolve_page(manifest, item)
 
         if item["status"] == "page_resolved":
-            armed = self.capture_driver.arm(item["identity"], item["page_url"])
+            armed = self.capture_driver.arm(
+                item["identity"],
+                item["page_url"],
+                media_file_id=str(item.get("media_file_id") or "") or None,
+            )
             capture_job_id = str(armed.get("capture_job_id") or "")
             if not capture_job_id:
                 raise EnrichmentError("Xiaocao capture did not return a job identity")

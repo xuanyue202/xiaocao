@@ -645,28 +645,34 @@ def test_repair_validation_accepts_xiaocao_wechat_source_profile(
     expected_command = (
         "env",
         "PYTHONPATH=src",
-            ".venv/bin/python",
-            "-m",
-            "pytest",
-            "tests/test_kol_capture.py",
-            "tests/test_kol_daily.py",
-            "tests/test_kol_repair_validation.py",
+        ".venv/bin/python",
+        "-m",
+        "pytest",
+        "tests/test_kol_capture.py",
+        "tests/test_kol_daily.py",
+        "tests/test_kol_repair_validation.py",
+        "tests/test_kol_xiaocao_live.py",
         "tests/test_kol_xiaocao_wechat.py",
         "tests/test_kol_writer_progress.py",
         "-q",
-            "-k",
-            (
-                    "source_cli_narrow_runner_supports_xiaocao_wechat_live or "
-                    "xiaoetong_recorded_video_source_identity_is_stable or "
-                    "recorded_video_page_arms_bound_capture or "
-                    "runtime_initialization_defers_lianghui_config or "
-                "narrow_source_user_action_keeps_seven_state_contract or "
+        "-k",
+        (
+            "source_cli_narrow_runner_supports_xiaocao_wechat_live or "
+            "xiaoetong_recorded_video_source_identity_is_stable or "
+            "recorded_video_capture_uses_file_binding_not_stale_live_context or "
+            "start_with_recorded_video_page_arms_file_bound_capture_without_source_job or "
+            "start_rejects_recorded_video_without_media_file_binding or "
+            "start_classifies_sniffer_candidate_baseline_failure or "
+            "recorded_video_page_arms_bound_capture or "
+            "existing_recorded_video_page_resolves_media_file_before_arming or "
+            "runtime_initialization_defers_lianghui_config or "
+            "narrow_source_user_action_keeps_seven_state_contract or "
             "source_repair_resume_follows_bound_xiaocao_cloud_handoff or "
-                "repair_validation_accepts_xiaocao_wechat_source_profile or "
-                "new_source_account_login_redirect_resolves_exact_page or "
-                "bound_provider_block_waits_for_the_same_page or "
-                "unbound_provider_block_fails_closed or "
-                "account_login_state_is_authoritative_when_page_url_stays_bound or "
+            "repair_validation_accepts_xiaocao_wechat_source_profile or "
+            "new_source_account_login_redirect_resolves_exact_page or "
+            "bound_provider_block_waits_for_the_same_page or "
+            "unbound_provider_block_fails_closed or "
+            "account_login_state_is_authoritative_when_page_url_stays_bound or "
             "cloud_handoff_wait_has_durable_poll_deadline or "
             "compressed_capture_wait_has_durable_poll_deadline or "
             "pending_cloud_handoff_resumes_exact_job_after_stale_playback_state or "

@@ -35,6 +35,13 @@ CHECKPOINT_STATUSES = {
     "analysis_completed",
     "notified",
 }
+_MEDIA_FILE_ID = re.compile(r"^[0-9]{8,32}$")
+_MEDIA_PATH_COMPONENT = re.compile(r"^[A-Za-z0-9_-]+$")
+_TRUSTED_XIAOETONG_MEDIA_SUFFIXES = (
+    ".myqcloud.com",
+    ".xet.tech",
+    ".xiaoeknow.com",
+)
 
 
 def _now_iso() -> str:
@@ -53,6 +60,45 @@ def _candidate_key(row: dict[str, Any]) -> str:
     stable_path = f"{parsed.scheme}://{parsed.netloc}{parsed.path}"
     digest = hashlib.sha256(stable_path.encode("utf-8")).hexdigest()
     return f"url-sha256:{digest}"
+
+
+def _candidate_key_for_capture(
+    row: dict[str, Any],
+    *,
+    expected_source: dict[str, Any] | None = None,
+    expected_media_file_id: str | None = None,
+) -> str:
+    resource_id = str((expected_source or {}).get("source_resource_id") or "")
+    if resource_id.startswith("v_") and expected_media_file_id:
+        candidate_id = str(row.get("id") or "").strip()
+        if candidate_id:
+            return f"id:{candidate_id}"
+    return _candidate_key(row)
+
+
+def _matches_recorded_media_file(
+    row: dict[str, Any],
+    media_file_id: str,
+) -> bool:
+    if not _MEDIA_FILE_ID.fullmatch(media_file_id):
+        return False
+    parsed = urlsplit(str(row.get("url") or "").strip())
+    host = (parsed.hostname or "").lower()
+    if (
+        parsed.scheme != "https"
+        or not any(
+            host.endswith(suffix)
+            for suffix in _TRUSTED_XIAOETONG_MEDIA_SUFFIXES
+        )
+        or str(row.get("media_type") or "m3u8").lower() != "m3u8"
+    ):
+        return False
+    return any(
+        _MEDIA_PATH_COMPONENT.fullmatch(piece) is not None
+        and piece.endswith(media_file_id)
+        for piece in parsed.path.split("/")
+        if piece
+    )
 
 
 def _captured_sort_key(row: dict[str, Any]) -> tuple[str, str]:
@@ -208,7 +254,18 @@ def resolve_candidate(
 ) -> dict[str, Any] | None:
     """Rehydrate a signed candidate only in memory for the local API call."""
     expected = str(current.get("candidate_key") or "")
-    matches = [row for row in candidates if _candidate_key(row) == expected]
+    matches = [
+        row
+        for row in candidates
+        if _candidate_key_for_capture(
+            row,
+            expected_source=current.get("expected_source"),
+            expected_media_file_id=str(
+                current.get("expected_media_file_id") or ""
+            ),
+        )
+        == expected
+    ]
     return max(matches, key=_captured_sort_key) if matches else None
 
 
@@ -543,9 +600,29 @@ class CaptureJobStore:
         author: str = "小草",
         sniffer_status: dict[str, Any] | None = None,
         expected_source: dict[str, Any] | None = None,
+        expected_media_file_id: str | None = None,
         source_job_id: str | None = None,
     ) -> dict[str, Any]:
-        baseline = sorted({_candidate_key(row) for row in candidates})
+        media_file_id = str(expected_media_file_id or "").strip()
+        resource_id = str(
+            (expected_source or {}).get("source_resource_id") or ""
+        )
+        if (
+            resource_id.startswith("v_")
+            and not _MEDIA_FILE_ID.fullmatch(media_file_id)
+        ) or (
+            media_file_id
+            and not resource_id.startswith("v_")
+        ):
+            raise InvalidSourcePage("recorded media file binding is invalid")
+        baseline = sorted({
+            _candidate_key_for_capture(
+                row,
+                expected_source=expected_source,
+                expected_media_file_id=media_file_id,
+            )
+            for row in candidates
+        })
         now = _now_iso()
         row = {
                 "schema_version": 1,
@@ -562,6 +639,8 @@ class CaptureJobStore:
             row["sniffer_status"] = _safe_sniffer_status(sniffer_status)
         if expected_source is not None:
             row["expected_source"] = _safe_expected_source(expected_source)
+        if media_file_id:
+            row["expected_media_file_id"] = media_file_id
         if source_job_id:
             row["source_job_id"] = str(source_job_id)
         return self._append(row)
@@ -593,10 +672,25 @@ class CaptureJobStore:
         candidates: Iterable[dict[str, Any]],
     ) -> dict[str, Any] | None:
         baseline = set(current.get("baseline_candidate_keys") or [])
-        unseen = [row for row in candidates if _candidate_key(row) not in baseline]
         expected_source = current.get("expected_source") or {}
         expected_resource_id = str(expected_source.get("source_resource_id") or "")
-        if expected_resource_id:
+        expected_media_file_id = str(
+            current.get("expected_media_file_id") or ""
+        )
+        def candidate_key(row: dict[str, Any]) -> str:
+            return _candidate_key_for_capture(
+                row,
+                expected_source=expected_source,
+                expected_media_file_id=expected_media_file_id,
+            )
+        unseen = [row for row in candidates if candidate_key(row) not in baseline]
+        if expected_resource_id.startswith("v_"):
+            unseen = [
+                row
+                for row in unseen
+                if _matches_recorded_media_file(row, expected_media_file_id)
+            ]
+        elif expected_resource_id:
             unseen = [
                 row
                 for row in unseen
@@ -611,7 +705,7 @@ class CaptureJobStore:
             "capture_detected",
             status="captured",
             candidate=_safe_candidate(candidate),
-            candidate_key=_candidate_key(candidate),
+            candidate_key=candidate_key(candidate),
         )
 
     def bind_source_candidate(

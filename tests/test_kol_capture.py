@@ -174,6 +174,57 @@ def test_arm_binds_expected_xiaoetong_source_and_filters_other_candidates(tmp_pa
     assert "http" not in (tmp_path / "jobs.jsonl").read_text(encoding="utf-8")
 
 
+def test_recorded_video_capture_uses_file_binding_not_stale_live_context(tmp_path):
+    store = CaptureJobStore(tmp_path / "jobs.jsonl")
+    source = canonical_xiaoetong_source(
+        "https://appsnm3rlcp3566.h5.xiaoeknow.com/p/course/video/"
+        "v_6a7db774e4b0694c5bfa7583"
+    )
+    old = {
+        "id": "candidate-before-arm",
+        "live_id": "l_stale_context",
+        "url": (
+            "https://encrypt-k-vod.xet.tech/vod/"
+            "773e679a5001834815942190711/drm/v.f421220.m3u8"
+        ),
+    }
+    armed = store.arm(
+        [old],
+        expected_source=source,
+        expected_media_file_id="5001834815942190711",
+    )
+
+    detected = store.detect_capture(
+        armed,
+        [
+            old,
+            {
+                "id": "candidate-other-video",
+                "live_id": "l_stale_context",
+                "url": (
+                    "https://encrypt-k-vod.xet.tech/vod/"
+                    "773e679a5001834815000000000/drm/v.f421220.m3u8"
+                ),
+            },
+            {
+                "id": "candidate-bound-video",
+                "live_id": "l_stale_context",
+                "url": (
+                    "https://encrypt-k-vod.xet.tech/vod/"
+                    "773e679a5001834815942190711/drm/v.f421220.m3u8"
+                    "?sign=fresh"
+                ),
+            },
+        ],
+    )
+
+    assert detected is not None
+    assert detected["candidate"]["id"] == "candidate-bound-video"
+    assert detected["candidate_key"] == "id:candidate-bound-video"
+    persisted = (tmp_path / "jobs.jsonl").read_text(encoding="utf-8")
+    assert "sign=fresh" not in persisted
+
+
 def test_sniffer_arms_xiaoetong_source_job_without_persisting_response_url():
     seen = {}
 
