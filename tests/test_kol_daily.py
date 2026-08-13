@@ -330,6 +330,22 @@ def test_source_cli_narrow_runner_supports_xiaocao_wechat_live():
     ]
 
 
+def test_runtime_initialization_defers_lianghui_config(monkeypatch, tmp_path):
+    monkeypatch.setattr(
+        kol_daily_script.LiangHuiMcpClient,
+        "from_config",
+        lambda *_args, **_kwargs: pytest.fail(
+            "local source repair must not load LiangHui config"
+        ),
+    )
+
+    runtime = DailyRuntime(
+        SimpleNamespace(lianghui_config=None, output_dir=tmp_path)
+    )
+
+    assert runtime.args.output_dir == tmp_path
+
+
 def test_source_repair_resume_follows_bound_xiaocao_cloud_handoff(monkeypatch):
     calls: list[tuple[str, str]] = []
     monkeypatch.setattr(

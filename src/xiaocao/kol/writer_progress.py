@@ -733,6 +733,7 @@ TARGETED_REPAIR_TESTS: dict[str, tuple[str, ...]] = {
         "-k",
         (
             "source_cli_narrow_runner_supports_xiaocao_wechat_live or "
+            "runtime_initialization_defers_lianghui_config or "
             "narrow_source_user_action_keeps_seven_state_contract or "
             "source_repair_resume_follows_bound_xiaocao_cloud_handoff or "
             "repair_validation_accepts_xiaocao_wechat_source_profile or "

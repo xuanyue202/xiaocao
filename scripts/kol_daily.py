@@ -1692,15 +1692,22 @@ def _follow_cloud_handoff(
 class DailyRuntime:
     def __init__(self, args: argparse.Namespace):
         self.args = args
-        self.client = (
-            LiangHuiMcpClient.from_config(args.lianghui_config)
-            if args.lianghui_config is not None
-            else LiangHuiMcpClient.from_config()
-        )
+        self._client: LiangHuiMcpClient | None = None
         self.publications = PublicationLedger(args.output_dir / "publications")
         self._lv_service: LvSubscriptionService | None = None
         self._lv_listing: dict[str, Any] | None = None
         self._lv_listing_error: EnrichmentError | None = None
+
+    def _lianghui_client(self) -> LiangHuiMcpClient:
+        client = getattr(self, "_client", None)
+        if client is None:
+            client = (
+                LiangHuiMcpClient.from_config(self.args.lianghui_config)
+                if self.args.lianghui_config is not None
+                else LiangHuiMcpClient.from_config()
+            )
+            self._client = client
+        return client
 
     def _mailbox(self) -> LiangHuiMailboxClient:
         return LiangHuiMailboxClient(
@@ -1961,12 +1968,12 @@ class DailyRuntime:
     ) -> DailyPublicationPipeline:
         delegate = DecisionPipeline(
             self.args.decision_output_dir,
-            household_context_loader=self.client.load_context,
+            household_context_loader=self._lianghui_client().load_context,
         )
         return DailyPublicationPipeline(
             delegate,
             ledger=self.publications,
-            client=self.client,
+            client=self._lianghui_client(),
             context=context,
         )
 
@@ -3356,7 +3363,7 @@ class DailyRuntime:
             if not isinstance(request, dict):
                 raise DailyError("viewpoint trigger must be a JSON object")
             current = read_published_publication(
-                self.client,
+                self._lianghui_client(),
                 str(request.get("report_id") or ""),
             )
             if request.get("operation") == "initial_projection":
@@ -3371,7 +3378,7 @@ class DailyRuntime:
             )
             state = self.publications.run(
                 candidate["publication_key"],
-                self.client,
+                self._lianghui_client(),
             )
             if request.get("operation") == "initial_projection":
                 terminal = initial_projection_terminal(candidate, state)
