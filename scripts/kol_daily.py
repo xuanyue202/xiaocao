@@ -20,6 +20,7 @@ from pathlib import Path
 from time import sleep as _cloud_handoff_sleep
 from typing import Any
 
+from xiaocao.kol._shared import DecisionError
 from xiaocao.kol.daily import (
     AGENT_OWNED_FAILURE_CATEGORIES,
     build_initial_projection_candidate,
@@ -120,6 +121,19 @@ DEFAULT_XIAOCAO_OUTPUT = Path("output/live/kol_xiaocao_live")
 DEFAULT_XIAOCAO_WECHAT_OUTPUT = (
     DEFAULT_XIAOCAO_OUTPUT / "wechat_subscription"
 )
+
+
+def _load_household_context_with_retry(
+    client: LiangHuiMcpClient,
+) -> dict[str, Any]:
+    """Retry one transient read-only provider failure in the same task."""
+
+    try:
+        return client.load_context()
+    except DecisionError as exc:
+        if str(exc) != "亮灰 MCP request failed":
+            raise
+    return client.load_context()
 DEFAULT_WECHAT_OFFICIAL_OUTPUT = Path("output/live/kol_wechat_official")
 DEFAULT_MAILBOX_OUTPUT = Path("output/live/kol_mailbox")
 MAX_HANDOFF_BYTES = 1024 * 1024
@@ -1966,14 +1980,18 @@ class DailyRuntime:
         self,
         context: DailyPublicationContext,
     ) -> DailyPublicationPipeline:
+        lianghui = self._lianghui_client()
         delegate = DecisionPipeline(
             self.args.decision_output_dir,
-            household_context_loader=self._lianghui_client().load_context,
+            household_context_loader=functools.partial(
+                _load_household_context_with_retry,
+                lianghui,
+            ),
         )
         return DailyPublicationPipeline(
             delegate,
             ledger=self.publications,
-            client=self._lianghui_client(),
+            client=lianghui,
             context=context,
         )
 

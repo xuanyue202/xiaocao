@@ -17,6 +17,7 @@ from scripts.kol_daily import (
     _classified_narrow_source,
     _classified_source,
     _latest_lv_video_goal,
+    _load_household_context_with_retry,
     _lv_publication_context,
     _read_agent_json,
     _standalone_writer_result,
@@ -46,6 +47,7 @@ from xiaocao.kol.enrichment_types import (
     EnrichmentDiagnosticError,
     EnrichmentError,
 )
+from xiaocao.kol._shared import DecisionError
 from xiaocao.kol.household import LiangHuiMcpError
 from xiaocao.kol.publication import (
     PublicationLedger,
@@ -344,6 +346,38 @@ def test_runtime_initialization_defers_lianghui_config(monkeypatch, tmp_path):
     )
 
     assert runtime.args.output_dir == tmp_path
+
+
+def test_household_context_retries_one_transient_read_failure():
+    calls = 0
+
+    class Client:
+        def load_context(self):
+            nonlocal calls
+            calls += 1
+            if calls == 1:
+                raise DecisionError("亮灰 MCP request failed")
+            return {"family_id": "family", "positions": []}
+
+    assert _load_household_context_with_retry(Client()) == {
+        "family_id": "family",
+        "positions": [],
+    }
+    assert calls == 2
+
+
+def test_household_context_does_not_retry_non_transient_failure():
+    calls = 0
+
+    class Client:
+        def load_context(self):
+            nonlocal calls
+            calls += 1
+            raise DecisionError("亮灰 MCP omitted familyId or portfolio positions")
+
+    with pytest.raises(DecisionError, match="omitted familyId"):
+        _load_household_context_with_retry(Client())
+    assert calls == 1
 
 
 def test_source_repair_resume_follows_bound_xiaocao_cloud_handoff(monkeypatch):
