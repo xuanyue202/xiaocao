@@ -27,6 +27,7 @@ from .capture import (
     InvalidSourcePage,
     SnifferClient,
     SnifferError,
+    bind_recorded_media_url,
     canonical_xiaoetong_source,
     resolve_candidate,
 )
@@ -1094,7 +1095,12 @@ class XiaocaoLiveService:
         }
         return {key: value for key, value in candidate.items() if value}
 
-    def advance_capture(self, capture_job_id: str) -> dict[str, Any]:
+    def advance_capture(
+        self,
+        capture_job_id: str,
+        *,
+        recorded_media_url: str | None = None,
+    ) -> dict[str, Any]:
         current = self.capture_store.latest(capture_job_id)
         if current is None:
             raise EnrichmentError("capture job does not exist")
@@ -1255,6 +1261,14 @@ class XiaocaoLiveService:
                 candidate = resolve_candidate(current, self.sniffer.candidates())
                 if candidate is None:
                     raise EnrichmentError("captured live is unavailable for download")
+                if recorded_media_url:
+                    candidate = bind_recorded_media_url(
+                        candidate,
+                        recorded_media_url,
+                        media_file_id=str(
+                            current.get("expected_media_file_id") or ""
+                        ),
+                    )
                 task_id = self.sniffer.start_download(candidate)
             current = self.capture_store.transition(
                 current,
@@ -1300,6 +1314,14 @@ class XiaocaoLiveService:
             candidate = resolve_candidate(current, self.sniffer.candidates())
             if candidate is None:
                 raise EnrichmentError("failed live is unavailable for exact retry")
+            if recorded_media_url:
+                candidate = bind_recorded_media_url(
+                    candidate,
+                    recorded_media_url,
+                    media_file_id=str(
+                        current.get("expected_media_file_id") or ""
+                    ),
+                )
             claimed = self.capture_store.transition(
                 current,
                 "download_retry_claimed",
@@ -1894,6 +1916,7 @@ class XiaocaoLiveService:
         audit_path: Path | str | None = None,
         bundle_path: Path | str | None = None,
         sender: Callable[[str, str], dict[str, Any]] | None = None,
+        recorded_media_url: str | None = None,
     ) -> dict[str, Any]:
         capture = self.capture_store.latest(capture_job_id)
         if capture is None:
@@ -1909,7 +1932,10 @@ class XiaocaoLiveService:
                 sender=sender,
             )
         if capture.get("status") != "downloaded":
-            capture = self.advance_capture(capture_job_id)
+            capture = self.advance_capture(
+                capture_job_id,
+                recorded_media_url=recorded_media_url,
+            )
             if capture.get("status") != "downloaded":
                 pending = {
                     "event": "xiaocao_live_pending",

@@ -70,6 +70,8 @@ class _CaptureDriver:
     def __init__(self):
         self.arms: list[tuple[str, str, str | None]] = []
         self.advances = 0
+        self.media_urls: list[str | None] = []
+        self.needs_media_url = False
         self.next_result = {
             "event": "xiaocao_live_pending",
             "status": "downloading",
@@ -94,13 +96,24 @@ class _CaptureDriver:
         *,
         opencli_session: str,
         opencli_profile: str | None,
+        recorded_media_url: str | None = None,
     ) -> dict:
+        self.media_urls.append(recorded_media_url)
         assert identity
         assert capture_job_id == "kol-capture-current"
         assert opencli_session == "xiaocao-lv-subscription"
         assert opencli_profile is None
         self.advances += 1
         return dict(self.next_result)
+
+    def needs_recorded_media_url(
+        self,
+        identity: str,
+        capture_job_id: str,
+    ) -> bool:
+        assert identity
+        assert capture_job_id == "kol-capture-current"
+        return self.needs_media_url
 
     def published_handoff(
         self,
@@ -253,7 +266,15 @@ def test_live_capture_driver_reconciles_sniffer_before_pending_advance(tmp_path)
             calls.append("start")
             return {"capture_job_id": "kol-capture-current"}
 
-        def advance(self, capture_job_id, *, opencli_session, opencli_profile):
+        def advance(
+            self,
+            capture_job_id,
+            *,
+            opencli_session,
+            opencli_profile,
+            recorded_media_url=None,
+        ):
+            del recorded_media_url
             calls.append((capture_job_id, opencli_session, opencli_profile))
             return {"event": "capture_pending", "status": "awaiting_capture"}
 
@@ -296,7 +317,15 @@ def test_live_capture_driver_does_not_restart_sniffer_after_download(tmp_path):
         def start(self):
             calls.append("start")
 
-        def advance(self, capture_job_id, *, opencli_session, opencli_profile):
+        def advance(
+            self,
+            capture_job_id,
+            *,
+            opencli_session,
+            opencli_profile,
+            recorded_media_url=None,
+        ):
+            del recorded_media_url
             calls.append((capture_job_id, opencli_session, opencli_profile))
             return {"event": "xiaocao_live_upload_pending", "status": "prepared"}
 
@@ -413,6 +442,18 @@ def test_recorded_video_page_arms_bound_capture(tmp_path):
                 "page_state": "playable",
                 "media_file_id": "5001834815942190711",
             }
+        if request["action"] == "resolve_xiaoetong_media_url":
+            return {
+                "action": request["action"],
+                "subscription_id": request["subscription_id"],
+                "page_url": page_url,
+                "media_file_id": "5001834815942190711",
+                "media_url": (
+                    "https://encrypt-k-vod.xet.tech/vod/"
+                    "773e679a5001834815942190711/drm/v.f421220.m3u8"
+                    "?sign=fresh&t=expires&us=user"
+                ),
+            }
         return {
             "action": request["action"],
             "subscription_id": request["subscription_id"],
@@ -423,6 +464,7 @@ def test_recorded_video_page_arms_bound_capture(tmp_path):
         }
 
     capture = _CaptureDriver()
+    capture.needs_media_url = True
     subscription = XiaocaoWechatLiveSubscription(
         tmp_path / "wechat",
         history_reader=lambda: payload,
@@ -442,6 +484,11 @@ def test_recorded_video_page_arms_bound_capture(tmp_path):
         page_url,
         "5001834815942190711",
     )]
+    assert capture.media_urls == [
+        "https://encrypt-k-vod.xet.tech/vod/"
+        "773e679a5001834815942190711/drm/v.f421220.m3u8"
+        "?sign=fresh&t=expires&us=user"
+    ]
     manifest = json.loads(
         (tmp_path / "wechat" / "manifest.json").read_text(encoding="utf-8")
     )

@@ -1,7 +1,7 @@
 # Hourly Local Capture Node
 
-Local node only: WeChat capture, publisher discovery, upload, and
-credential-free handoff. Remote work follows
+Local node: WeChat capture, publisher discovery, upload, and credential-free
+handoff. Remote work follows
 [hourly-remote-writer.md](hourly-remote-writer.md).
 
 ## Runner and boundary
@@ -12,29 +12,25 @@ Run exactly once and keep the process alive for input requests:
 PYTHONPATH=src .venv/bin/python scripts/kol_daily.py capture-local
 ```
 
-Use an interactive PTY (`tty=true`); keep stdin alive for Browser/LiangHuiMCP JSON.
-The normal handoff path does not inject a
-Codex task message and does not invoke the remote capsule importer directly.
+Use an interactive PTY (`tty=true`) and keep stdin alive for Browser/MCP JSON.
+The normal handoff path does not inject a Codex task message or call the remote importer.
 
 `capture-local` runs only `xiaocao_wechat_live` and
-`wechat_official_accounts`; it never scans Lv, analyzes, publishes, notifies,
-or writes Book. Do not substitute the remote coordinator here.
+`wechat_official_accounts`; it never scans Lv, analyzes, publishes or writes
+Book. Do not substitute the remote coordinator.
 
-Each invocation performs one discovery sweep; no concrete item is silent.
-Report every item while waiting, unchanged, exceptional, handoff-completed, or
-fully completed. Handoff is not downstream completion. Failures expose only
-safe `category`, `code`, and `stage`. Never duplicate armed captures.
+Each invocation performs one sweep. Report every concrete item, including waits,
+exceptions and completions; handoff is not downstream completion. Expose only
+safe failure `category`, `code`, and `stage`. Never duplicate armed captures.
 
 Prefer the newest browser-critical item, then newest `playback_activated`, then
 oldest `handoff_ready`; all stay resumable.
 
-An `upload_claimed` or other `cloud_handoff` wait is nonterminal. After the full
-discovery sweep, the same `capture-local` process must keep reconciling that
-exact identity, capture job, Netdisk job, and upload claim until it receives
+An `upload_claimed`/`cloud_handoff` wait is nonterminal. The same `capture-local` process must
+reconcile the exact identity, capture/Netdisk job and claim through
 `cloud_handoff_published` and authoritative LiangHuiMCP
-`created|already_present` readback. That creation receipt is `Handoff完成`.
-Waiting for a cloud receipt must not end the task, rely on the next
-hourly run, rescan WeChat, or create another upload/handoff claim.
+`created|already_present` (`Handoff完成`). This wait must not end the task, rescan,
+defer to the next hour, or create another upload/handoff claim.
 
 If an older process died after publishing `cloud_handoff_published`, do not
 rerun the full sweep. Run this read-only response exchange exactly once:
@@ -43,35 +39,29 @@ rerun the full sweep. Run this read-only response exchange exactly once:
 PYTHONPATH=src .venv/bin/python scripts/kol_daily.py capture-xiaocao-handoff
 ```
 
-It reads the item ledger, syncs `handoff_ready`, and dispatches only that
-published capsule. A dispatch lock prevents duplicates; it does not scan
-WeChat, use Browser, advance capture, or re-upload.
+It syncs `handoff_ready` from the item ledger and dispatches only that capsule.
+Its lock prevents duplicates; it never scans, advances capture, or re-uploads.
 
-If the live source stops before official handoffs receive creation readback,
-do not rerun the full sweep. Reconcile the same mailbox message, then run this
-official-only response exchange exactly once:
+If official handoffs lack creation readback, reconcile the same mailbox message,
+then run this official-only response exchange once, without a full sweep:
 
 ```bash
 PYTHONPATH=src .venv/bin/python scripts/kol_daily.py capture-wechat-official
 ```
 
-Never schedule this as another hourly runner or use it before remote ambiguity
-is resolved.
+Never schedule it hourly or use it before remote ambiguity is resolved.
 
-The local adapter may use Browser, never Computer Use, to activate the player.
-`wx_channels_download` alone owns video bytes and compression. Other nodes
-receive only metadata, receipts, and the self-hashed capsule.
+Use Browser, not Computer Use. `wx_channels_download` alone owns video bytes;
+other nodes receive metadata and receipts.
 
 Before any media upload, read
 [opencli-baidu-netdisk-upload.md](opencli-baidu-netdisk-upload.md) completely.
 
 ## WeChat and Xiaoetong gate
 
-Scan only `福利官小花四-刘丹（执业编号:A0380125080026）` through local
-`wechat-cli`. First scan baselines older links and arms only the newest; later
-scans add unseen links. A newer preview may use the existing singleton sniffer;
-keep armed jobs resumable and supersede only older unarmed previews. Never
-replace an armed job or duplicate a preview identity.
+Scan only `福利官小花四-刘丹（执业编号:A0380125080026）` via local `wechat-cli`.
+Baseline older links and arm only the newest; later add unseen links. Reuse the
+singleton sniffer, preserve armed jobs, and supersede only older unarmed previews.
 
 In the same sweep, use the stateless local command
 `subscription-updates --within 48h` to scan exactly these registered KOL
@@ -80,10 +70,9 @@ publishers:
 - `刘少狙击营` (`kol-liushao-jujiying`)
 - `A也叫艾利克斯` (`kol-a-alex`)
 
-Repeat `--publisher` for both exact names and require `failures=[]`. Baseline
-older articles once; later use unseen stable IDs. Persist only identity,
-publisher/title, times, normalized public URL, and hashes. Summary metadata is
-not article evidence. Never fetch the article locally or drive WeChat GUI.
+Repeat `--publisher` for both and require `failures=[]`. Baseline older articles;
+later use unseen stable IDs. Persist identity, publisher/title, times, normalized
+public URL and hashes only. Never fetch articles locally or drive WeChat GUI.
 
 For `daily_browser_input_required`, keep the same process alive and use
 `browser`, never Computer Use:
@@ -105,6 +94,11 @@ For `daily_browser_input_required`, keep the same process alive and use
    exact app/resource redirect to `<app_id>.block.xiaoeeye.com` is
    `source_temporarily_unavailable` with both booleans false; return its current
    URL for the runner's bound hourly retry. Never use it for another identity.
+4. For a recorded-video download, `resolve_xiaoetong_media_url` returns only
+   the currently observed signed HTTPS m3u8 URL whose host and path bind the
+   supplied `media_file_id`. The runner uses this short-lived value in memory
+   for the exact download call; never return cookies or DRM keys, and never
+   persist the signature in Xiaocao manifests or append-only ledgers.
 
 Login: keep tab; report account_login_required with activated/password_used=false;
 never enter 666. See [SOP](xiaoetong-sms-login.md).
@@ -161,10 +155,9 @@ Codex Automation schedules exactly one local capture task with:
 RRULE:FREQ=DAILY;BYHOUR=7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23;BYMINUTE=0
 ```
 
-Use Beijing wall time; omit `DTSTART` and `TZID`. Do not run 23:01–06:59. After
-any change, reopen the existing Automation and verify its next run and that no
-duplicate exists. Do not create, edit, or assume ownership of the remote writer
-Automation from this node.
+Use Beijing wall time; omit `DTSTART`/`TZID`. Do not run 23:01–06:59. Reopen a
+changed Automation, verify its next run/no duplicate, and never alter the remote
+writer Automation here.
 
 The append-only local ledger resumes only unfinished capture/upload/handoff
 work. A restart or replay reconciles existing claims and never repeats a cloud

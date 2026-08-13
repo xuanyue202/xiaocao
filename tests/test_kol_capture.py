@@ -4,10 +4,13 @@ import io
 import json
 from base64 import urlsafe_b64encode
 
+import pytest
+
 from xiaocao.kol.capture import (
     CaptureJobStore,
     InvalidSourcePage,
     SnifferClient,
+    bind_recorded_media_url,
     canonical_xiaoetong_source,
     resolve_xiaoetong_h5_page,
     resolve_candidate,
@@ -223,6 +226,30 @@ def test_recorded_video_capture_uses_file_binding_not_stale_live_context(tmp_pat
     assert detected["candidate_key"] == "id:candidate-bound-video"
     persisted = (tmp_path / "jobs.jsonl").read_text(encoding="utf-8")
     assert "sign=fresh" not in persisted
+
+
+def test_recorded_media_url_rehydrates_only_exact_signed_path():
+    candidate = {
+        "id": "candidate-bound-video",
+        "media_type": "m3u8",
+        "url": (
+            "https://encrypt-k-vod.xet.tech/vod/"
+            "773e679a5001834815942190711/drm/v.f421220.m3u8"
+        ),
+    }
+    signed = candidate["url"] + "?sign=fresh&t=expires&us=user"
+
+    assert bind_recorded_media_url(
+        candidate,
+        signed,
+        media_file_id="5001834815942190711",
+    )["url"] == signed
+    with pytest.raises(InvalidSourcePage):
+        bind_recorded_media_url(
+            candidate,
+            candidate["url"],
+            media_file_id="5001834815942190711",
+        )
 
 
 def test_sniffer_arms_xiaoetong_source_job_without_persisting_response_url():

@@ -101,6 +101,29 @@ def _matches_recorded_media_file(
     )
 
 
+def bind_recorded_media_url(
+    candidate: dict[str, Any],
+    media_url: str,
+    *,
+    media_file_id: str,
+) -> dict[str, Any]:
+    """Rehydrate one short-lived VOD URL without persisting its signature."""
+
+    unsigned = urlsplit(str(candidate.get("url") or "").strip())
+    signed = urlsplit(str(media_url or "").strip())
+    if (
+        not signed.query
+        or (signed.scheme, signed.netloc, signed.path)
+        != (unsigned.scheme, unsigned.netloc, unsigned.path)
+        or not _matches_recorded_media_file(
+            {**candidate, "url": media_url},
+            media_file_id,
+        )
+    ):
+        raise InvalidSourcePage("recorded media URL binding is invalid")
+    return {**candidate, "url": media_url}
+
+
 def _captured_sort_key(row: dict[str, Any]) -> tuple[str, str]:
     return (str(row.get("captured") or ""), _candidate_key(row))
 

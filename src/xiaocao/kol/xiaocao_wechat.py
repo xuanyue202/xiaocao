@@ -203,6 +203,7 @@ class CaptureDriver(Protocol):
         *,
         opencli_session: str,
         opencli_profile: str | None,
+        recorded_media_url: str | None = None,
     ) -> dict[str, Any]: ...
 
     def published_handoff(
@@ -326,6 +327,7 @@ class XiaocaoLiveCaptureDriver:
         *,
         opencli_session: str,
         opencli_profile: str | None,
+        recorded_media_url: str | None = None,
     ) -> dict[str, Any]:
         service = self._service(identity)
         published = self.published_handoff(identity, capture_job_id)
@@ -339,6 +341,7 @@ class XiaocaoLiveCaptureDriver:
                 capture_job_id,
                 opencli_session=opencli_session,
                 opencli_profile=opencli_profile,
+                recorded_media_url=recorded_media_url,
             )
         except SnifferError as exc:
             raise EnrichmentDiagnosticError(
@@ -362,6 +365,20 @@ class XiaocaoLiveCaptureDriver:
                 and event.get("capture_job_id") == capture_job_id
             ),
             None,
+        )
+
+    def needs_recorded_media_url(
+        self,
+        identity: str,
+        capture_job_id: str,
+    ) -> bool:
+        capture = self._service(identity).capture_store.latest(capture_job_id)
+        expected = (capture or {}).get("expected_source") or {}
+        resource_id = str(expected.get("source_resource_id") or "")
+        return bool(
+            capture
+            and resource_id.startswith("v_")
+            and capture.get("status") != "downloaded"
         )
 
 
@@ -877,6 +894,7 @@ class XiaocaoWechatLiveSubscription:
             capture_job_id,
             opencli_session=opencli_session,
             opencli_profile=opencli_profile,
+            recorded_media_url=self._media_url_if_needed(item),
         )
         state_capture_job_id = str(state.get("capture_job_id") or "")
         if state_capture_job_id and state_capture_job_id != capture_job_id:
@@ -998,6 +1016,56 @@ class XiaocaoWechatLiveSubscription:
             observed_page_state=page_state,
             password_used=response.get("password_used") is True,
         )
+
+    def _recorded_media_url(self, item: dict[str, Any]) -> str | None:
+        resource_id = str(item.get("source_identity") or "").rsplit(":", 1)[-1]
+        if not resource_id.startswith("v_"):
+            return None
+        request = {
+            "event": "daily_browser_input_required",
+            "adapter": "xiaocao_wechat_live",
+            "action": "resolve_xiaoetong_media_url",
+            "subscription_id": item["identity"],
+            "page_url": item["page_url"],
+            "media_file_id": item["media_file_id"],
+            "instructions": (
+                "Read the currently playing page's actual HTTPS m3u8 network "
+                "request. Return the full short-lived URL whose path is bound "
+                "to the supplied media_file_id. Do not return cookies, DRM "
+                "keys, or unrelated request headers."
+            ),
+            "required_response": {
+                "action": "resolve_xiaoetong_media_url",
+                "subscription_id": item["identity"],
+                "page_url": item["page_url"],
+                "media_file_id": item["media_file_id"],
+                "media_url": "full short-lived signed HTTPS m3u8 URL",
+            },
+        }
+        response = self.browser_exchange(request)
+        self._validate_browser_response(request, response)
+        if (
+            response.get("page_url") != item["page_url"]
+            or response.get("media_file_id") != item["media_file_id"]
+        ):
+            raise EnrichmentError("browser media URL response is not bound")
+        media_url = str(response.get("media_url") or "").strip()
+        if not media_url:
+            raise EnrichmentError("browser media URL response is missing")
+        return media_url
+
+    def _media_url_if_needed(self, item: dict[str, Any]) -> str | None:
+        predicate = getattr(
+            self.capture_driver,
+            "needs_recorded_media_url",
+            None,
+        )
+        if not callable(predicate) or not predicate(
+            item["identity"],
+            item["capture_job_id"],
+        ):
+            return None
+        return self._recorded_media_url(item)
 
     def _resolve_page(
         self,
@@ -1131,6 +1199,7 @@ class XiaocaoWechatLiveSubscription:
             item["capture_job_id"],
             opencli_session=opencli_session,
             opencli_profile=opencli_profile,
+            recorded_media_url=self._media_url_if_needed(item),
         )
         if (
             not playback_checked
@@ -1149,6 +1218,7 @@ class XiaocaoWechatLiveSubscription:
                 item["capture_job_id"],
                 opencli_session=opencli_session,
                 opencli_profile=opencli_profile,
+                recorded_media_url=self._media_url_if_needed(item),
             )
         if (
             state.get("event") == "cloud_handoff_published"
