@@ -66,6 +66,19 @@ def test_wechat_history_accepts_xiaoetong_link_without_message_keywords():
     assert items[0]["source_url"] == "https://yv9lc.xetslk.com/sl/3qV2x"
 
 
+def test_wechat_history_accepts_h5_xeknow_short_live_links():
+    payload = _history(
+        "[2026-08-14 16:53] 福利官小花四: 17:30草神重磅直播："
+        "https://9ozbz.h5.xeknow.com/sl/2AjX90"
+    )
+
+    items = parse_xiaocao_live_messages(payload)
+
+    assert len(items) == 1
+    assert items[0]["published_at"] == "2026-08-14T16:53:00+08:00"
+    assert items[0]["source_url"] == "https://9ozbz.h5.xeknow.com/sl/2AjX90"
+
+
 class _CaptureDriver:
     def __init__(self):
         self.arms: list[tuple[str, str, str | None]] = []

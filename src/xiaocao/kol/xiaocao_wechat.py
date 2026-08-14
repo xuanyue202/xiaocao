@@ -120,6 +120,11 @@ def _normalized_live_url(raw: str) -> str | None:
             and len(pieces) == 2
             and pieces[0] in {"s", "sl"}
         )
+        or (
+            host.endswith(".h5.xeknow.com")
+            and len(pieces) == 2
+            and pieces[0] in {"s", "sl"}
+        )
     )
     if is_short:
         return urlunsplit(("https", host, parsed.path.rstrip("/"), "", ""))
