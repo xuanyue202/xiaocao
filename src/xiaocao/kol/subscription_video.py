@@ -40,7 +40,7 @@ LUCIFER_AUTHOR = "路西法"
 LUCIFER_ROOT = "/课程/路西法全套"
 LV_DESTINATION_PARENT = "/课程/自己的课"
 LV_DESTINATION_DIRECTORY = "/课程/自己的课/吕晓彤"
-LV_TRANSFER_CONFIRMATION_WINDOW = timedelta(seconds=30)
+LV_TRANSFER_CONFIRMATION_WINDOW = timedelta(minutes=30)
 LV_TRANSFER_MAX_TRIGGER_ATTEMPTS = 2
 VIDEO_SUFFIXES = {".avi", ".flv", ".m4v", ".mkv", ".mov", ".mp4"}
 MAX_EPISODE_SPEC_BYTES = 16 * 1024 * 1024
@@ -3673,6 +3673,7 @@ class SubscriptionVideoService:
         private_session: str,
         profile: str | None,
         readback_only: bool = False,
+        observability_repair_revision: str | None = None,
     ) -> dict[str, Any]:
         if item.get("source") != LV_SOURCE or item.get("author") != LV_AUTHOR:
             raise EnrichmentError("cloud transfer accepts only Lv Xiaotong items")
@@ -3917,27 +3918,54 @@ class SubscriptionVideoService:
                     "trigger_attempt_maximum": trigger_attempt_maximum,
                     "reconciliation_status": "exact_private_copy_absent",
                 }
+            legacy_observability_gap = (
+                trigger_attempt >= LV_TRANSFER_MAX_TRIGGER_ATTEMPTS
+                and claim.get("provider_outcome") == "unobserved"
+                and "provider_request_observed" not in claim
+                and "provider_response_observed" not in claim
+            )
+            observability_recovery = False
             if trigger_attempt >= trigger_attempt_maximum:
-                self._record_transfer_blocker(
-                    receipt_name,
-                    claim,
-                    blocker_key="lv-cloud-transfer-not-materialized",
-                    failure_reason=(
-                        "two confirmed transfer attempts produced no exact "
-                        "private copy"
-                    ),
-                    reconciliation_status=(
-                        "exact_private_copy_absent_after_bounded_retry"
-                    ),
-                )
-                raise EnrichmentError(
-                    "Lv cloud transfer did not materialize after bounded "
-                    "exact reconciliation"
-                )
+                if legacy_observability_gap:
+                    if observability_repair_revision is None:
+                        raise EnrichmentDiagnosticError(
+                            "legacy Lv transfer attempts lack provider response evidence",
+                            category="provider_contract_error",
+                            code="lv_transfer_response_unobserved_legacy",
+                            stage="cloud_transfer_confirmation",
+                        )
+                    if not re.fullmatch(
+                        r"[0-9a-f]{40}", observability_repair_revision
+                    ):
+                        raise EnrichmentError(
+                            "Lv transfer observability repair revision is invalid"
+                        )
+                    observability_recovery = True
+                else:
+                    self._record_transfer_blocker(
+                        receipt_name,
+                        claim,
+                        blocker_key="lv-cloud-transfer-not-materialized",
+                        failure_reason=(
+                            "two confirmed transfer attempts produced no exact "
+                            "private copy"
+                        ),
+                        reconciliation_status=(
+                            "exact_private_copy_absent_after_bounded_retry"
+                        ),
+                    )
+                    raise EnrichmentError(
+                        "Lv cloud transfer did not materialize after bounded "
+                        "exact reconciliation"
+                    )
             retry_claimed_at = now.isoformat(timespec="microseconds")
             retry_claim = {
                 **claim,
-                "event": "lv_cloud_transfer_recovery_claimed",
+                "event": (
+                    "lv_cloud_transfer_observability_recovery_claimed"
+                    if observability_recovery
+                    else "lv_cloud_transfer_recovery_claimed"
+                ),
                 "status": "claimed",
                 "claim_id": _sha256_text(
                     f"{receipt_name}\n{retry_claimed_at}\n"
@@ -3946,11 +3974,27 @@ class SubscriptionVideoService:
                 "claimed_at": retry_claimed_at,
                 "retry_of": claim["claim_id"],
                 "trigger_attempt": trigger_attempt + 1,
-                "trigger_attempt_maximum": trigger_attempt_maximum,
+                "trigger_attempt_maximum": (
+                    trigger_attempt + 1
+                    if observability_recovery
+                    else trigger_attempt_maximum
+                ),
                 "prior_triggered_at": claim["triggered_at"],
                 "reconciled_absent_at": now.isoformat(timespec="seconds"),
                 "reconciliation_basis": (
                     "intended_directory_and_settled_private_exact_search"
+                ),
+                **(
+                    {
+                        "observability_repair_revision": (
+                            observability_repair_revision
+                        ),
+                        "recovery_reason": (
+                            "legacy_attempts_predated_provider_response_observer"
+                        ),
+                    }
+                    if observability_recovery
+                    else {}
                 ),
             }
             for field in (
@@ -3962,6 +4006,11 @@ class SubscriptionVideoService:
                 "provider_outcome",
                 "provider_trigger_status",
                 "readback_evidence_sha256",
+                "blocked_at",
+                "blocker_key",
+                "failure_reason",
+                "user_action_required",
+                *_TRANSFER_DIAGNOSTIC_FIELDS,
             ):
                 retry_claim.pop(field, None)
             _atomic_write_json(
@@ -4128,6 +4177,9 @@ class SubscriptionVideoService:
                 lv_session=lv_session,
                 private_session=private_session,
                 profile=profile,
+                observability_repair_revision=(
+                    observability_repair_revision
+                ),
             )
             if ready.get("status") == "completed":
                 return ready
@@ -4762,6 +4814,7 @@ class SubscriptionVideoService:
         private_session: str,
         enrichment_session: str,
         profile: str | None,
+        observability_repair_revision: str | None = None,
     ) -> dict[str, Any]:
         if item["source"] == LV_SOURCE:
             receipt = self.transfer_lv_video(
@@ -4769,6 +4822,9 @@ class SubscriptionVideoService:
                 lv_session=lv_session,
                 private_session=private_session,
                 profile=profile,
+                observability_repair_revision=(
+                    observability_repair_revision
+                ),
             )
             if receipt.get("status") != "completed":
                 return {**receipt, "pending": True}
@@ -4830,6 +4886,7 @@ class SubscriptionVideoService:
         private_session: str,
         enrichment_session: str,
         profile: str | None,
+        observability_repair_revision: str | None = None,
     ) -> dict[str, Any]:
         if item.get("is_episode") is not True:
             state = self._advance_part_to_verified(
@@ -4838,6 +4895,9 @@ class SubscriptionVideoService:
                 private_session=private_session,
                 enrichment_session=enrichment_session,
                 profile=profile,
+                observability_repair_revision=(
+                    observability_repair_revision
+                ),
             )
             if state.get("status") == "verified":
                 return self._analysis_request(item, state)
@@ -4875,6 +4935,9 @@ class SubscriptionVideoService:
                 private_session=private_session,
                 enrichment_session=enrichment_session,
                 profile=profile,
+                observability_repair_revision=(
+                    observability_repair_revision
+                ),
             )
             state = {**state, "part_index": int(part["part_index"])}
             component_states.append(state)

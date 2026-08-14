@@ -239,6 +239,57 @@ def test_source_repair_validation_accepts_pending_resume():
     ) is progress
 
 
+def test_blocked_legacy_transfer_can_reenter_exact_reconciliation():
+    blocked = WriterProgress.user_action_required(
+        item_identity="subscription_video:source",
+        stage="source_run",
+        action="manual save",
+        blocker_identity="lv-cloud-transfer-not-materialized",
+        dedup_key="lv-cloud-transfer-not-materialized",
+        claim_receipt_summary={
+            "claim_count": 0,
+            "receipt_count": 0,
+            "uncertain_effect_count": 0,
+        },
+    )
+    expected = WriterProgress.reconcile_required(
+        item_identity="video-1",
+        stage="cloud_transfer_reconciliation",
+        effect_kind="cloud_transfer",
+        claim_identity="lv_transfer:version-1:claim-2",
+        readback_operation="read_lv_transfer_claim_receipt",
+        claim_receipt_summary={
+            "claim_count": 1,
+            "receipt_count": 0,
+            "uncertain_effect_count": 1,
+        },
+    )
+    service = SimpleNamespace(
+        status=lambda: {
+            "last_sweep": {
+                "source_states": [{
+                    "name": "subscription_video",
+                    "writer_progress": blocked.to_dict(),
+                }],
+            },
+        },
+    )
+    runtime = SimpleNamespace(
+        videos_blocked_reconciliation_progress=(
+            lambda identity: expected
+            if identity == "video-1"
+            else pytest.fail("blocked identity changed")
+        ),
+    )
+
+    assert kol_daily_script._source_effect_reconciliation_progress(
+        service,
+        "subscription_video",
+        "video-1",
+        runtime=runtime,
+    ) == expected
+
+
 def test_source_repair_validation_recovers_missing_convergence_observation():
     progress = WriterProgress.repair_required(
         item_identity="video-1",
@@ -1978,7 +2029,7 @@ def test_reconcile_source_effect_cli_uses_declared_readback_only(
     monkeypatch.setattr(
         kol_daily_script,
         "_source_effect_reconciliation_progress",
-        lambda _service, adapter, identity: (
+        lambda _service, adapter, identity, **_kwargs: (
             progress
             if (adapter, identity) == ("subscription_video", "video-1")
             else pytest.fail("readback binding changed")
@@ -2921,6 +2972,7 @@ def test_video_exact_continuations_skip_historical_source_listing(
         lv_session="lv",
         private_session="private",
         opencli_profile="work",
+        repair_revision="a" * 40,
     )
     runtime._lv_listing_for_sweep = lambda: pytest.fail(
         "exact readback must not traverse historical source folders"
@@ -2949,7 +3001,11 @@ def test_video_exact_continuations_skip_historical_source_listing(
     runtime.videos = lambda **kwargs: kwargs
     assert runtime.videos_narrow_resume(
         f"subscription_video:{identity}"
-    ) == {"only_identity": identity, "refresh_listing": False}
+    ) == {
+        "only_identity": identity,
+        "refresh_listing": False,
+        "observability_repair_revision": "a" * 40,
+    }
 
 
 def _low_density_event() -> dict:

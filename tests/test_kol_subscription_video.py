@@ -2022,7 +2022,7 @@ def test_lv_transfer_readback_never_retries_the_uncertain_effect(tmp_path):
     assert json.loads(claim_path.read_text(encoding="utf-8")) == claim
 
 
-def test_lv_transfer_confirmation_window_is_bounded_to_thirty_seconds(
+def test_lv_transfer_confirmation_window_is_bounded_to_thirty_minutes(
     tmp_path,
 ):
     service = _service(tmp_path, sleep=lambda _seconds: None)
@@ -2069,8 +2069,164 @@ def test_lv_transfer_confirmation_window_is_bounded_to_thirty_seconds(
 
     assert result["status"] == "waiting_cloud_transfer_receipt"
     assert result["next_poll_not_before"] == (
-        NOW + timedelta(seconds=30)
+        NOW + timedelta(minutes=30)
     ).isoformat()
+
+
+def test_lv_transfer_legacy_unobserved_blocker_requires_repair_revision(
+    tmp_path,
+):
+    service = _service(tmp_path, sleep=lambda _seconds: None)
+    item = service._normalize(
+        _source_rows()[0][1],
+        source=LV_SOURCE,
+        author=LV_AUTHOR,
+    )
+    service.ensure_lv_destination = lambda **_kwargs: {"status": "completed"}
+    service._direct_private_entries = lambda **_kwargs: []
+    service._search_private_exact = lambda **_kwargs: []
+    service._opencli_json = lambda *_args, **_kwargs: pytest.fail(
+        "legacy blocker must require validated repair before another trigger"
+    )
+    receipt_name = f"lv_transfer_{item['version_key']}"
+    claim_path = service._claim_path(receipt_name)
+    claim_path.parent.mkdir(parents=True)
+    claim_path.write_text(
+        json.dumps(
+            {
+                "schema_version": 1,
+                "event": "lv_cloud_transfer_blocked",
+                "status": "blocked",
+                "claim_id": "legacy-second-claim",
+                "claimed_at": (NOW - timedelta(hours=2)).isoformat(),
+                "triggered_at": (NOW - timedelta(hours=2)).isoformat(),
+                "trigger_attempt": 2,
+                "trigger_attempt_maximum": 2,
+                "provider_outcome": "unobserved",
+                "source_identity": item["identity"],
+                "source_version_key": item["version_key"],
+                "source_path": item["path"],
+                "source_size": item["size"],
+                "target_path": f"{LV_DESTINATION_DIRECTORY}/{item['name']}",
+                "large_payload_local_bytes": 0,
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(EnrichmentDiagnosticError) as failure:
+        service.transfer_lv_video(
+            item,
+            lv_session="lv",
+            private_session="private",
+            profile="work",
+        )
+
+    assert failure.value.diagnostic_category == "provider_contract_error"
+    assert failure.value.diagnostic_code == (
+        "lv_transfer_response_unobserved_legacy"
+    )
+    assert json.loads(claim_path.read_text(encoding="utf-8"))["status"] == (
+        "blocked"
+    )
+
+
+def test_lv_transfer_legacy_observability_repair_runs_one_bound_probe(
+    tmp_path,
+):
+    service = _service(tmp_path, sleep=lambda _seconds: None)
+    item = service._normalize(
+        _source_rows()[0][1],
+        source=LV_SOURCE,
+        author=LV_AUTHOR,
+    )
+    service.ensure_lv_destination = lambda **_kwargs: {"status": "completed"}
+    copy_ready = False
+    click_calls = 0
+
+    def direct_entries(**_kwargs):
+        if not copy_ready:
+            return []
+        return [
+            _row(
+                "observed-repair-copy",
+                f"{LV_DESTINATION_DIRECTORY}/{item['name']}",
+                size=item["size"],
+                modified_at=item["modified_at"] + 1,
+            )
+        ]
+
+    service._direct_private_entries = direct_entries
+    service._search_private_exact = lambda **_kwargs: []
+    receipt_name = f"lv_transfer_{item['version_key']}"
+    claim_path = service._claim_path(receipt_name)
+    claim_path.parent.mkdir(parents=True)
+    claim_path.write_text(
+        json.dumps(
+            {
+                "schema_version": 1,
+                "event": "lv_cloud_transfer_blocked",
+                "status": "blocked",
+                "claim_id": "legacy-second-claim",
+                "claimed_at": (NOW - timedelta(hours=2)).isoformat(),
+                "triggered_at": (NOW - timedelta(hours=2)).isoformat(),
+                "trigger_attempt": 2,
+                "trigger_attempt_maximum": 2,
+                "provider_outcome": "unobserved",
+                "source_identity": item["identity"],
+                "source_version_key": item["version_key"],
+                "source_path": item["path"],
+                "source_size": item["size"],
+                "target_path": f"{LV_DESTINATION_DIRECTORY}/{item['name']}",
+                "large_payload_local_bytes": 0,
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    def opencli(_session, *args, **_kwargs):
+        nonlocal copy_ready, click_calls
+        if args[0] == "open":
+            return {"url": "sanitized"}
+        if args[0] == "click":
+            click_calls += 1
+            copy_ready = True
+            return {"clicked": True, "matches_n": 1}
+        assert args[0] == "eval"
+        if "destinationSegments" in args[1]:
+            return {
+                "status": "save_confirmation_ready",
+                "confirmation_selector": (
+                    '[data-xiaocao-lv-confirm="ready"]'
+                ),
+                "triggered": False,
+            }
+        return {
+            "status": "cloud_transfer_accepted",
+            "triggered": True,
+            "provider_outcome": "accepted",
+            "provider_request_observed": True,
+            "provider_response_observed": True,
+            "provider_http_status": 200,
+            "provider_errno": 0,
+            "provider_observation": "response_accepted",
+        }
+
+    service._opencli_json = opencli
+    repaired_revision = "a" * 40
+    result = service.transfer_lv_video(
+        item,
+        lv_session="lv",
+        private_session="private",
+        profile="work",
+        observability_repair_revision=repaired_revision,
+    )
+
+    assert result["status"] == "completed"
+    assert click_calls == 1
+    events = service.events_path.read_text(encoding="utf-8")
+    assert "lv_cloud_transfer_observability_recovery_claimed" in events
+    assert repaired_revision in events
 
 
 def test_lv_transfer_blocker_recovers_by_read_only_target_reconciliation(

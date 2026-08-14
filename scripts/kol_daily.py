@@ -2302,6 +2302,7 @@ class DailyRuntime:
         *,
         only_identity: str | None = None,
         refresh_listing: bool = True,
+        observability_repair_revision: str | None = None,
     ) -> dict[str, Any]:
         service = SubscriptionVideoService(
             self.args.video_output_dir,
@@ -2349,6 +2350,9 @@ class DailyRuntime:
                         private_session=self.args.private_session,
                         enrichment_session=self.args.enrichment_session,
                         profile=self.args.opencli_profile,
+                        observability_repair_revision=(
+                            observability_repair_revision
+                        ),
                     )
             except EnrichmentError as exc:
                 if str(exc) in {
@@ -2530,6 +2534,24 @@ class DailyRuntime:
         )
         if binding.get("claim_identity") != progress.details["claim_identity"]:
             raise DailyError("video readback claim identity changed")
+        version = str(exact[0].get("version_key") or "")
+        claim_path = (
+            self.args.video_output_dir
+            / "claims"
+            / f"lv_transfer_{version}.json"
+        )
+        try:
+            claim_before = json.loads(claim_path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError) as exc:
+            raise DailyError("video readback claim is invalid") from exc
+        legacy_observability_gap = (
+            claim_before.get("status") == "blocked"
+            and claim_before.get("blocker_key")
+            == "lv-cloud-transfer-not-materialized"
+            and claim_before.get("provider_outcome") == "unobserved"
+            and "provider_request_observed" not in claim_before
+            and "provider_response_observed" not in claim_before
+        )
         service.transfer_lv_video(
             exact[0],
             lv_session=self.args.lv_session,
@@ -2537,7 +2559,6 @@ class DailyRuntime:
             profile=self.args.opencli_profile,
             readback_only=True,
         )
-        version = str(exact[0].get("version_key") or "")
         receipt_path = (
             self.args.video_output_dir
             / "receipts"
@@ -2556,6 +2577,29 @@ class DailyRuntime:
         if resolved:
             outcome = {
                 "status": "no_update",
+                "authoritative_readback": readback,
+            }
+        elif legacy_observability_gap:
+            outcome = {
+                "status": "waiting",
+                "waiting_count": 1,
+                "waiting_items": [{
+                    "identity": progress.item_identity,
+                    "version_key": version,
+                    "stage": "cloud_transfer_confirmation",
+                    "failure": {
+                        "category": "provider_contract_error",
+                        "code": "lv_transfer_response_unobserved_legacy",
+                        "stage": "cloud_transfer_confirmation",
+                        "retryable": True,
+                    },
+                }],
+                "failure": {
+                    "category": "provider_contract_error",
+                    "code": "lv_transfer_response_unobserved_legacy",
+                    "stage": "cloud_transfer_confirmation",
+                    "retryable": True,
+                },
                 "authoritative_readback": readback,
             }
         else:
@@ -2591,6 +2635,64 @@ class DailyRuntime:
         return _reconciliation_result(
             progress,
             outcome,
+        )
+
+    def videos_blocked_reconciliation_progress(
+        self,
+        identity: str,
+    ) -> WriterProgress:
+        service = SubscriptionVideoService(
+            self.args.video_output_dir,
+            config_path=self.args.config,
+        )
+        exact = _one_exact_pending(
+            service.pending_items(),
+            identity,
+            label="blocked video readback",
+        )
+        item = exact[0]
+        binding = _lv_transfer_claim_binding(
+            self.args.video_output_dir,
+            item,
+        )
+        if set(binding) != {
+            "effect_kind",
+            "claim_identity",
+            "readback_operation",
+        }:
+            raise DailyError("blocked video readback lost its claim binding")
+        version = str(item.get("version_key") or "")
+        claim_path = (
+            self.args.video_output_dir
+            / "claims"
+            / f"lv_transfer_{version}.json"
+        )
+        try:
+            claim = json.loads(claim_path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError) as exc:
+            raise DailyError("blocked video readback claim is invalid") from exc
+        if not (
+            claim.get("status") == "blocked"
+            and claim.get("blocker_key")
+            == "lv-cloud-transfer-not-materialized"
+            and claim.get("provider_outcome") == "unobserved"
+            and "provider_request_observed" not in claim
+            and "provider_response_observed" not in claim
+        ):
+            raise DailyError(
+                "blocked video is not a legacy observability repair target"
+            )
+        return WriterProgress.reconcile_required(
+            item_identity=identity,
+            stage="cloud_transfer_reconciliation",
+            effect_kind=binding["effect_kind"],
+            claim_identity=binding["claim_identity"],
+            readback_operation=binding["readback_operation"],
+            claim_receipt_summary={
+                "claim_count": 1,
+                "receipt_count": 0,
+                "uncertain_effect_count": 1,
+            },
         )
 
     def videos_terminal_reconcile(
@@ -2677,6 +2779,11 @@ class DailyRuntime:
         return self.videos(
             only_identity=identity,
             refresh_listing=False,
+            observability_repair_revision=getattr(
+                self.args,
+                "repair_revision",
+                None,
+            ),
         )
 
     def videos_structured_input(
@@ -3467,6 +3574,8 @@ def _source_effect_reconciliation_progress(
     service: DailyCoordinator,
     adapter: str,
     identity: str,
+    *,
+    runtime: DailyRuntime | None = None,
 ) -> WriterProgress:
     status = service.status()
     last_sweep = status.get("last_sweep")
@@ -3487,11 +3596,20 @@ def _source_effect_reconciliation_progress(
         raise DailyError("source effect readback lost its active progress")
     progress = WriterProgress.from_dict(matches[0]["writer_progress"])
     if (
-        progress.status != "reconcile_required"
-        or progress.item_identity != identity
+        progress.status == "reconcile_required"
+        and progress.item_identity == identity
     ):
-        raise DailyError("source effect readback target is not active")
-    return progress
+        return progress
+    progress_value = progress.to_dict()
+    if (
+        adapter == "subscription_video"
+        and progress.status == "user_action_required"
+        and progress_value.get("blocker_identity")
+        == "lv-cloud-transfer-not-materialized"
+        and runtime is not None
+    ):
+        return runtime.videos_blocked_reconciliation_progress(identity)
+    raise DailyError("source effect readback target is not active")
 
 
 def _source_repair_validation_progress(
@@ -3748,12 +3866,13 @@ def main() -> int:
                 "reconcile-source-effect adapter has no exact CLI binding"
             )
         service = DailyCoordinator(args.output_dir)
+        runtime = DailyRuntime(args)
         progress = _source_effect_reconciliation_progress(
             service,
             args.source_adapter,
             args.source_identity,
+            runtime=runtime,
         )
-        runtime = DailyRuntime(args)
         result = service.resume_reconciliation(
             {
                 "name": args.source_adapter,
@@ -3837,9 +3956,17 @@ def main() -> int:
         pending = service.convergence.pending_resume(args.source_adapter)
         if pending is None:
             raise DailyError("source repair has no validated narrow resume")
-        progress, _closure = pending
+        progress, closure = pending
         if progress.failure_fingerprint != args.failure_fingerprint:
             raise DailyError("source repair fingerprint changed before resume")
+        repair_revision = str(
+            (closure.get("repair_receipt") or {}).get("repair_revision") or ""
+        )
+        if not re.fullmatch(r"[0-9a-f]{40}", repair_revision):
+            raise DailyError("source repair closure lost its repair revision")
+        if args.repair_revision and args.repair_revision != repair_revision:
+            raise DailyError("source repair revision changed before resume")
+        args.repair_revision = repair_revision
         runtime = DailyRuntime(args)
         surface = str(progress.details["narrow_resume_surface"])
         outcome = _resume_source_repair_outcome(

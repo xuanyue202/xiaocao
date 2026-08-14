@@ -613,6 +613,16 @@ work and never authorizes replaying publication, reminder, or Book side effects.
   Two reconciled trigger attempts without a copy become the structured
   `lv-cloud-transfer-not-materialized` user-action blocker. Never wait or
   retrigger indefinitely.
+- Legacy observability repair is the only exception to that two-trigger bound.
+  If both historical attempts predate the provider request/response observer,
+  retain `provider_outcome=unobserved`, prove the exact private copy is still
+  absent, and surface `lv_transfer_response_unobserved_legacy` as Agent-owned
+  `repair_required`. After a matching fingerprint, pushed revision, targeted
+  tests, and repair closure, the declared exact-item narrow resume may issue
+  one final response-observed probe. Bind its repair revision, request/response
+  diagnostics, and attempt number; its maximum is three. An accepted response
+  still waits the full 30-minute exact-copy window. A rejected, unobserved, or
+  non-materialized final probe stops without another automatic trigger.
 - When the hourly writer persists a cloud-transfer `wait_until`, resume it only
   at or after the bound deadline with the emitted `kol_daily.py
   resume-source-wait --source-adapter subscription_video --source-identity
