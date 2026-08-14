@@ -597,6 +597,8 @@ class RepairValidationLedger:
 
 TARGETED_REPAIR_TESTS: dict[str, tuple[str, ...]] = {
     "kol_mailbox_exact_resume": (
+        "env",
+        "PYTHONPATH=src",
         ".venv/bin/python",
         "-m",
         "pytest",
@@ -1212,9 +1214,7 @@ class RepairValidationService:
         if subscription_source_profile is not None:
             return subscription_source_profile
         if (
-            str(context.get("targeted_test_profile") or "")
-            == "kol_mailbox_exact_resume"
-            and str(context.get("category") or "")
+            str(context.get("category") or "")
             in {"configuration", "source_error", "timeout"}
             and str(context.get("code") or "").startswith("wechat_official_")
             and str(context.get("stage") or "").startswith("wechat_official_")

@@ -84,6 +84,8 @@ def test_repair_validation_runs_repo_owned_profile_and_persists_matching_receipt
 
     def tests(command: tuple[str, ...]) -> CompletedProcess[str]:
         assert command == (
+            "env",
+            "PYTHONPATH=src",
             ".venv/bin/python",
             "-m",
             "pytest",
@@ -131,6 +133,7 @@ def test_repair_validation_maps_wechat_source_failure_to_exact_mailbox_profile(
         "code": "wechat_official_opencli_unsuccessful",
         "stage": "wechat_official_opencli",
     }
+    context.pop("targeted_test_profile")
 
     assert service._expected_profile(context) == "kol_mailbox_exact_resume"
 
