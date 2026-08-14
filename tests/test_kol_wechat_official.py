@@ -360,12 +360,142 @@ def test_opencli_acquisition_materializes_complete_markdown_and_images(tmp_path)
     assert command[:3] == ["opencli", "weixin", "download"]
     assert command[command.index("--download-images") + 1] == "true"
     assert command[command.index("--window") + 1] == "background"
+    assert command[command.index("--site-session") + 1] == "persistent"
+    assert command[command.index("--keep-tab") + 1] == "true"
     assert kwargs == {
         "check": False,
         "capture_output": True,
         "text": True,
         "timeout": 120,
     }
+
+
+def test_opencli_recovers_bound_type_10_text_share_without_refetching_mailbox(
+    tmp_path,
+):
+    capsule = _capture_one(
+        tmp_path,
+        payload={
+            "updates": [
+                _article(
+                    "c" * 64,
+                    "刘少狙击营",
+                    _long_body(),
+                    "2026-08-04T16:57:14+08:00",
+                )
+            ],
+            "failures": [],
+        },
+    )
+    inbox = OfficialAccountInbox(tmp_path / "remote")
+    inbox.import_capsule(capsule)
+    [item] = inbox.pending_items()
+    calls: list[list[str]] = []
+
+    def runner(command, **_kwargs):
+        calls.append(command)
+        if command[1:3] == ["weixin", "download"]:
+            return SimpleNamespace(
+                returncode=0,
+                stdout=json.dumps([{
+                    "title": "Error",
+                    "author": "-",
+                    "publish_time": "-",
+                    "status": "failed — no title",
+                    "size": "-",
+                    "saved": "-",
+                }], ensure_ascii=False),
+                stderr="",
+            )
+        if "eval" in command:
+            return SimpleNamespace(
+                returncode=0,
+                stdout=json.dumps({
+                    "url": item["source_url"],
+                    "ready_state": "complete",
+                    "item_show_type": "10",
+                    "title": item["title"],
+                    "author": item["publisher"],
+                    "publish_time": "2026-08-04 16:57",
+                    "body": item["title"],
+                    "image_urls": [],
+                    "verification_required": False,
+                }, ensure_ascii=False),
+                stderr="",
+            )
+        return SimpleNamespace(returncode=0, stdout="{}", stderr="")
+
+    acquired = inbox.acquire(
+        item,
+        acquirer=OfficialAccountOpenCliAcquirer(
+            tmp_path / "remote" / "opencli",
+            runner=runner,
+        ),
+    )
+
+    assert acquired["status"] == "acquired"
+    assert acquired["opencli_recovery"] == "text_share_page"
+    assert acquired["image_count"] == 0
+    assert Path(acquired["raw_markdown_path"]).read_text(encoding="utf-8").endswith(
+        f"{item['title']}\n"
+    )
+    assert calls[1][:4] == ["opencli", "browser", "site:weixin", "open"]
+    assert calls[2][:4] == ["opencli", "browser", "site:weixin", "eval"]
+    assert calls[3] == ["opencli", "browser", "site:weixin", "close"]
+
+
+def test_opencli_text_share_recovery_rejects_non_text_page(tmp_path):
+    capsule = _capture_one(tmp_path)
+    inbox = OfficialAccountInbox(tmp_path / "remote")
+    inbox.import_capsule(capsule)
+    [item] = inbox.pending_items()
+
+    def runner(command, **_kwargs):
+        if command[1:3] == ["weixin", "download"]:
+            payload = [{
+                "title": "Error",
+                "author": "-",
+                "publish_time": "-",
+                "status": "failed — no title",
+                "size": "-",
+                "saved": "-",
+            }]
+            return SimpleNamespace(
+                returncode=0,
+                stdout=json.dumps(payload, ensure_ascii=False),
+                stderr="",
+            )
+        if "eval" in command:
+            return SimpleNamespace(
+                returncode=0,
+                stdout=json.dumps({
+                    "ready_state": "complete",
+                    "item_show_type": "0",
+                    "title": item["title"],
+                    "author": item["publisher"],
+                    "publish_time": "2026-08-04 16:57",
+                    "body": item["title"],
+                    "image_urls": [],
+                    "verification_required": False,
+                }, ensure_ascii=False),
+                stderr="",
+            )
+        return SimpleNamespace(returncode=0, stdout="{}", stderr="")
+
+    with pytest.raises(EnrichmentDiagnosticError) as captured:
+        inbox.acquire(
+            item,
+            acquirer=OfficialAccountOpenCliAcquirer(
+                tmp_path / "remote" / "opencli",
+                runner=runner,
+            ),
+        )
+
+    assert captured.value.diagnostic_category == "source_error"
+    assert (
+        captured.value.diagnostic_code
+        == "wechat_official_text_share_recovery_invalid"
+    )
 
 
 def test_opencli_challenge_is_user_action_and_does_not_create_evidence(tmp_path):

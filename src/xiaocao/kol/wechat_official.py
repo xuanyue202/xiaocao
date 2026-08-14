@@ -579,6 +579,184 @@ class OfficialAccountOpenCliAcquirer:
         self._runner = runner
         self.timeout = int(timeout)
 
+    def _run_opencli(self, command: list[str]) -> Any:
+        try:
+            result = self._runner(
+                command,
+                check=False,
+                capture_output=True,
+                text=True,
+                timeout=self.timeout,
+            )
+        except subprocess.TimeoutExpired as exc:
+            raise EnrichmentDiagnosticError(
+                "official-account OpenCLI timed out",
+                category="timeout",
+                code="wechat_official_opencli_timeout",
+                stage="wechat_official_opencli",
+            ) from exc
+        except OSError as exc:
+            raise EnrichmentDiagnosticError(
+                "official-account OpenCLI is unavailable",
+                category="configuration",
+                code="wechat_official_opencli_missing",
+                stage="wechat_official_opencli",
+            ) from exc
+        if result.returncode != 0:
+            raise EnrichmentDiagnosticError(
+                "official-account OpenCLI command failed",
+                category="source_error",
+                code="wechat_official_opencli_failed",
+                stage="wechat_official_opencli",
+                exit_code=int(result.returncode),
+            )
+        return result
+
+    def _recover_text_share(
+        self,
+        *,
+        item: dict[str, Any],
+        source_root: Path,
+    ) -> dict[str, Any]:
+        """Recover WeChat type-10 text shares from the same OpenCLI site session."""
+        session = "site:weixin"
+        source_url = str(item["source_url"])
+        self._run_opencli([
+            *self.opencli_command,
+            "browser",
+            session,
+            "open",
+            source_url,
+            "--window",
+            "background",
+        ])
+        script = r"""JSON.stringify((() => {
+  const cgi = window.cgiDataNew || {};
+  const content = document.querySelector('#js_content');
+  const text = (value) => String(value || '').replace(/\s+/g, ' ').trim();
+  const itemShowType = String(window.item_show_type ?? cgi.item_show_type ?? '');
+  const textShare = document.querySelector('#js_text_desc');
+  const bodyElement = itemShowType === '10' ? textShare : content;
+  const body = bodyElement
+    ? (bodyElement.innerText || bodyElement.textContent || '').trim()
+    : '';
+  const title = text(
+    cgi.title || window.msg_title ||
+    document.querySelector('meta[property="og:title"]')?.content ||
+    document.querySelector('#js_text_desc')?.textContent
+  );
+  const author = text(
+    cgi.nick_name || document.querySelector('#js_name')?.textContent ||
+    document.querySelector('meta[name="author"]')?.content
+  );
+  const publishTime = text(
+    cgi.create_time || document.querySelector('#publish_time')?.textContent
+  );
+  const visible = document.body ? document.body.innerText : '';
+  const html = document.documentElement ? document.documentElement.innerHTML : '';
+  return {
+    url: location.href,
+    ready_state: document.readyState,
+    item_show_type: itemShowType,
+    title,
+    author,
+    publish_time: publishTime,
+    body,
+    image_urls: content ? [...content.querySelectorAll('img')]
+      .map((image) => image.getAttribute('data-src') || image.getAttribute('src') || '')
+      .filter(Boolean) : [],
+    verification_required:
+      (/环境异常/.test(visible) && /(完成验证后即可继续访问|去验证)/.test(visible)) ||
+      /secitptpage\/verify\.html/.test(html) || !!document.querySelector('#js_verify')
+  };
+})())"""
+        try:
+            result = self._run_opencli([
+                *self.opencli_command,
+                "browser",
+                session,
+                "eval",
+                script,
+            ])
+        finally:
+            try:
+                self._runner(
+                    [*self.opencli_command, "browser", session, "close"],
+                    check=False,
+                    capture_output=True,
+                    text=True,
+                    timeout=self.timeout,
+                )
+            except (OSError, subprocess.TimeoutExpired):
+                pass
+        try:
+            page = json.loads(result.stdout)
+        except (json.JSONDecodeError, TypeError) as exc:
+            raise EnrichmentDiagnosticError(
+                "official-account text-share recovery returned invalid JSON",
+                category="source_error",
+                code="wechat_official_text_share_recovery_invalid",
+                stage="wechat_official_opencli",
+            ) from exc
+        if not isinstance(page, dict):
+            raise EnrichmentDiagnosticError(
+                "official-account text-share recovery returned invalid data",
+                category="source_error",
+                code="wechat_official_text_share_recovery_invalid",
+                stage="wechat_official_opencli",
+            )
+        if page.get("verification_required") is True:
+            raise EnrichmentDiagnosticError(
+                "wechat_official_captcha_required",
+                category="user_action",
+                code="wechat_official_captcha_required",
+                stage="wechat_official_opencli",
+            )
+        title = _normalized_text(page.get("title"))
+        author = _normalized_text(page.get("author"))
+        body = str(page.get("body") or "").strip()
+        image_urls = page.get("image_urls")
+        try:
+            observed_url = _article_url(page.get("url"))
+        except EnrichmentError:
+            observed_url = ""
+        if (
+            page.get("ready_state") != "complete"
+            or page.get("item_show_type") != "10"
+            or not body
+            or observed_url != source_url
+            or title != _normalized_text(item["title"])
+            or _normalized_text(body) != title
+            or author != _normalized_text(item["publisher"])
+            or not isinstance(image_urls, list)
+            or any(str(value or "").strip() for value in image_urls)
+        ):
+            raise EnrichmentDiagnosticError(
+                "official-account text-share recovery failed closed",
+                category="source_error",
+                code="wechat_official_text_share_recovery_invalid",
+                stage="wechat_official_validation",
+            )
+        page_time = _page_publish_time(page.get("publish_time"))
+        saved = source_root / "text-share" / "article.md"
+        markdown = (
+            f"# {title}\n\n"
+            f"公众号：{author}\n\n"
+            f"发布时间：{page_time.strftime('%Y年%m月%d日 %H:%M')}\n\n"
+            f"来源：{source_url}\n\n"
+            f"{body}\n"
+        )
+        _atomic_bytes(saved, markdown.encode("utf-8"))
+        return {
+            "title": title,
+            "author": author,
+            "publish_time": page_time.isoformat(timespec="minutes"),
+            "status": "success",
+            "size": f"{saved.stat().st_size} B",
+            "saved": str(saved),
+            "recovery": "text_share_page",
+        }
+
     def _images(self, markdown_path: Path, source_root: Path) -> list[dict[str, Any]]:
         markdown = markdown_path.read_text(encoding="utf-8")
         refs = [left or right for left, right in _IMAGE_LINK.findall(markdown)]
@@ -635,39 +813,14 @@ class OfficialAccountOpenCliAcquirer:
             "true",
             "--window",
             "background",
+            "--site-session",
+            "persistent",
+            "--keep-tab",
+            "true",
             "-f",
             "json",
         ]
-        try:
-            result = self._runner(
-                command,
-                check=False,
-                capture_output=True,
-                text=True,
-                timeout=self.timeout,
-            )
-        except subprocess.TimeoutExpired as exc:
-            raise EnrichmentDiagnosticError(
-                "official-account OpenCLI timed out",
-                category="timeout",
-                code="wechat_official_opencli_timeout",
-                stage="wechat_official_opencli",
-            ) from exc
-        except OSError as exc:
-            raise EnrichmentDiagnosticError(
-                "official-account OpenCLI is unavailable",
-                category="configuration",
-                code="wechat_official_opencli_missing",
-                stage="wechat_official_opencli",
-            ) from exc
-        if result.returncode != 0:
-            raise EnrichmentDiagnosticError(
-                "official-account OpenCLI command failed",
-                category="source_error",
-                code="wechat_official_opencli_failed",
-                stage="wechat_official_opencli",
-                exit_code=int(result.returncode),
-            )
+        result = self._run_opencli(command)
         try:
             rows = json.loads(result.stdout)
         except json.JSONDecodeError as exc:
@@ -692,7 +845,10 @@ class OfficialAccountOpenCliAcquirer:
                 code="wechat_official_captcha_required",
                 stage="wechat_official_opencli",
             )
-        if status != "success":
+        if "no title" in status_lower:
+            row = self._recover_text_share(item=item, source_root=source_root)
+            status = str(row["status"])
+        elif status != "success":
             raise EnrichmentDiagnosticError(
                 "official-account OpenCLI did not produce an article",
                 category="source_error",
@@ -762,6 +918,7 @@ class OfficialAccountOpenCliAcquirer:
         images = self._images(saved, source_root)
         return {
             "opencli_status": status,
+            "opencli_recovery": row.get("recovery"),
             "opencli_saved_path": str(saved),
             "raw_markdown_path": str(saved),
             "raw_markdown_bytes": len(payload),
