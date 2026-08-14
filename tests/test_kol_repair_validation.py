@@ -699,27 +699,45 @@ def test_repair_validation_accepts_xiaocao_wechat_source_profile(
 
 
 @pytest.mark.parametrize(
-    ("category", "code", "changed_source"),
+    ("category", "code", "stage", "declared_profile", "changed_source"),
     (
         (
             "source_error",
             "source_temporarily_unavailable",
+            "source_run",
+            "kol_subscription_video_source_run",
             "src/xiaocao/kol/writer_progress.py",
         ),
         (
             "internal_state_error",
             "cloud_transfer_unobserved_reconciled_absent",
+            "source_run",
+            "kol_subscription_video_source_run",
             "src/xiaocao/kol/subscription_video.py",
         ),
         (
             "internal_state_error",
             "cloud_transfer_unobserved_reconciled_absent",
+            "source_run",
+            "kol_subscription_video_source_run",
             "src/xiaocao/kol/daily.py",
+        ),
+        (
+            "provider_contract_error",
+            "lv_transfer_response_unobserved_legacy",
+            "cloud_transfer_confirmation",
+            "kol_subscription_video_cloud_transfer_confirmation",
+            "src/xiaocao/kol/writer_progress.py",
         ),
     ),
 )
 def test_repair_validation_accepts_subscription_video_source_run_profile(
-    tmp_path, category: str, code: str, changed_source: str
+    tmp_path,
+    category: str,
+    code: str,
+    stage: str,
+    declared_profile: str,
+    changed_source: str,
 ) -> None:
     context = {
         "adapter": "subscription_video",
@@ -729,8 +747,8 @@ def test_repair_validation_accepts_subscription_video_source_run_profile(
         "failure_revision": FAILURE_REVISION,
         "category": category,
         "code": code,
-        "stage": "source_run",
-        "targeted_test_profile": "kol_subscription_video_source_run",
+        "stage": stage,
+        "targeted_test_profile": declared_profile,
     }
 
     def git(command: tuple[str, ...]) -> CompletedProcess[str]:
@@ -782,6 +800,9 @@ def test_repair_validation_accepts_subscription_video_source_run_profile(
             "no_trade_is_an_idempotent_book_decision or "
             "each_replay_uses_fresh_household_context or "
             "lv_transfer_unobserved_toast_waits_for_bound_receipt or "
+            "lv_transfer_legacy_unobserved_blocker_requires_repair_revision or "
+            "lv_transfer_legacy_observability_repair_runs_one_bound_probe or "
+            "blocked_legacy_transfer_can_reenter_exact_reconciliation or "
             "source_cli_narrow_runner_supports_subscription_video or "
             "source_repair_validation_accepts_pending_resume or "
             "repair_validation_accepts_subscription_video_source_run_profile or "

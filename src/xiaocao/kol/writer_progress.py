@@ -680,6 +680,9 @@ TARGETED_REPAIR_TESTS: dict[str, tuple[str, ...]] = {
             "no_trade_is_an_idempotent_book_decision or "
             "each_replay_uses_fresh_household_context or "
             "lv_transfer_unobserved_toast_waits_for_bound_receipt or "
+            "lv_transfer_legacy_unobserved_blocker_requires_repair_revision or "
+            "lv_transfer_legacy_observability_repair_runs_one_bound_probe or "
+            "blocked_legacy_transfer_can_reenter_exact_reconciliation or "
             "source_cli_narrow_runner_supports_subscription_video or "
             "source_repair_validation_accepts_pending_resume or "
             "repair_validation_accepts_subscription_video_source_run_profile or "
@@ -1007,6 +1010,9 @@ _XIAOCAO_WECHAT_CLOUD_HANDOFF_REPAIR_PROFILE = (
 _SUBSCRIPTION_VIDEO_SOURCE_REPAIR_PROFILE = (
     "kol_subscription_video_source_run"
 )
+_SUBSCRIPTION_VIDEO_OBSERVABILITY_REPAIR_PROFILE_ALIAS = (
+    "kol_subscription_video_cloud_transfer_confirmation"
+)
 
 
 def _canonical_subscription_video_source_repair_profile(
@@ -1020,7 +1026,10 @@ def _canonical_subscription_video_source_repair_profile(
     if (
         str(context.get("adapter") or "") == "subscription_video"
         and str(context.get("targeted_test_profile") or "")
-        == _SUBSCRIPTION_VIDEO_SOURCE_REPAIR_PROFILE
+        in {
+            _SUBSCRIPTION_VIDEO_SOURCE_REPAIR_PROFILE,
+            _SUBSCRIPTION_VIDEO_OBSERVABILITY_REPAIR_PROFILE_ALIAS,
+        }
         and failure
         in {
             (
@@ -1032,6 +1041,11 @@ def _canonical_subscription_video_source_repair_profile(
                 "internal_state_error",
                 "cloud_transfer_unobserved_reconciled_absent",
                 "source_run",
+            ),
+            (
+                "provider_contract_error",
+                "lv_transfer_response_unobserved_legacy",
+                "cloud_transfer_confirmation",
             ),
         }
     ):
@@ -1298,6 +1312,11 @@ class RepairValidationService:
                     _XIAOCAO_WECHAT_COMPRESSED_CAPTURE_REPAIR_PROFILE,
                     _XIAOCAO_WECHAT_CLOUD_HANDOFF_REPAIR_PROFILE,
                 }
+            )
+            and not (
+                profile == _SUBSCRIPTION_VIDEO_SOURCE_REPAIR_PROFILE
+                and declared_profile
+                == _SUBSCRIPTION_VIDEO_OBSERVABILITY_REPAIR_PROFILE_ALIAS
             )
             and not (
                 profile == _SHARED_LV_LISTING_VALIDATION_REPAIR_PROFILE
