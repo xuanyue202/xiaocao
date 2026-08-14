@@ -686,6 +686,7 @@ TARGETED_REPAIR_TESTS: dict[str, tuple[str, ...]] = {
             "source_cli_narrow_runner_supports_subscription_video or "
             "source_repair_validation_accepts_pending_resume or "
             "repair_validation_accepts_subscription_video_source_run_profile or "
+            "repair_closure_accepts_subscription_video_observability_profile_alias or "
             "repair_resume_persists_following_repair"
         ),
     ),
