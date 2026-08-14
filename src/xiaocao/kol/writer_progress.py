@@ -603,6 +603,8 @@ TARGETED_REPAIR_TESTS: dict[str, tuple[str, ...]] = {
         "tests/test_kol_mailbox.py",
         "tests/test_kol_semantic_bundle.py",
         "tests/test_kol_daily.py",
+        "tests/test_kol_wechat_official.py",
+        "tests/test_kol_repair_validation.py",
         "-q",
     ),
     "kol_lv_download_recovery": (
@@ -770,6 +772,7 @@ _TARGETED_REPAIR_IMPLEMENTATION_PATHS: dict[str, frozenset[str]] = {
             "src/xiaocao/kol/mailbox.py",
             "src/xiaocao/kol/semantic_bundle.py",
             "src/xiaocao/kol/writer_progress.py",
+            "src/xiaocao/kol/wechat_official.py",
         }
     ),
     "kol_lv_download_recovery": frozenset(
@@ -835,6 +838,7 @@ _TARGETED_REPAIR_TEST_PATHS: dict[str, frozenset[str]] = {
             "tests/test_kol_semantic_bundle.py",
             "tests/test_kol_daily.py",
             "tests/test_kol_repair_validation.py",
+            "tests/test_kol_wechat_official.py",
         }
     ),
     "kol_lv_download_recovery": frozenset(
@@ -1207,6 +1211,15 @@ class RepairValidationService:
         )
         if subscription_source_profile is not None:
             return subscription_source_profile
+        if (
+            str(context.get("targeted_test_profile") or "")
+            == "kol_mailbox_exact_resume"
+            and str(context.get("category") or "")
+            in {"configuration", "source_error", "timeout"}
+            and str(context.get("code") or "").startswith("wechat_official_")
+            and str(context.get("stage") or "").startswith("wechat_official_")
+        ):
+            return "kol_mailbox_exact_resume"
         if (
             str(context.get("stage") or "").startswith("mailbox_")
             and str(context.get("category") or "")

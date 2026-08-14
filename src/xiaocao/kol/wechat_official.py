@@ -31,6 +31,7 @@ BEIJING = ZoneInfo("Asia/Shanghai")
 DEFAULT_WECHAT_CLI = Path("/opt/homebrew/bin/wechat-cli")
 DEFAULT_WITHIN = "48h"
 DEFAULT_OPENCLI_COMMAND = ("opencli",)
+_WECHAT_OPENCLI_SESSION = "site:weixin"
 OFFICIAL_ACCOUNT_KOLS: dict[str, dict[str, str]] = {
     "刘少狙击营": {
         "kol_id": "kol-liushao-jujiying",
@@ -619,7 +620,7 @@ class OfficialAccountOpenCliAcquirer:
         source_root: Path,
     ) -> dict[str, Any]:
         """Recover WeChat type-10 text shares from the same OpenCLI site session."""
-        session = "site:weixin"
+        session = _WECHAT_OPENCLI_SESSION
         source_url = str(item["source_url"])
         self._run_opencli([
             *self.opencli_command,

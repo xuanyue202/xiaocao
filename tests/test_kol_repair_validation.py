@@ -37,6 +37,10 @@ def _context() -> dict[str, str]:
             "tests/test_kol_semantic_bundle.py",
         ),
         ("scripts/kol_daily.py", "tests/test_kol_daily.py"),
+        (
+            "src/xiaocao/kol/wechat_official.py",
+            "tests/test_kol_wechat_official.py",
+        ),
     ],
 )
 def test_repair_validation_runs_repo_owned_profile_and_persists_matching_receipt(
@@ -86,6 +90,8 @@ def test_repair_validation_runs_repo_owned_profile_and_persists_matching_receipt
             "tests/test_kol_mailbox.py",
             "tests/test_kol_semantic_bundle.py",
             "tests/test_kol_daily.py",
+            "tests/test_kol_wechat_official.py",
+            "tests/test_kol_repair_validation.py",
             "-q",
         )
         return CompletedProcess(command, 0, "42 passed\n", "")
@@ -110,6 +116,23 @@ def test_repair_validation_runs_repo_owned_profile_and_persists_matching_receipt
     assert ledger.find_matching(_context(), repair_revision=REPAIR_REVISION) == receipt
     assert ("branch", "--show-current") in git_calls
     assert ("merge-base", "--is-ancestor", FAILURE_REVISION, REPAIR_REVISION) in git_calls
+
+
+def test_repair_validation_maps_wechat_source_failure_to_exact_mailbox_profile(
+    tmp_path,
+) -> None:
+    service = RepairValidationService(
+        tmp_path,
+        ledger=RepairValidationLedger(tmp_path / "repair-validation.jsonl"),
+    )
+    context = {
+        **_context(),
+        "category": "source_error",
+        "code": "wechat_official_opencli_unsuccessful",
+        "stage": "wechat_official_opencli",
+    }
+
+    assert service._expected_profile(context) == "kol_mailbox_exact_resume"
 
 
 @pytest.mark.parametrize(

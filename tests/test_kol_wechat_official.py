@@ -436,6 +436,7 @@ def test_opencli_recovers_bound_type_10_text_share_without_refetching_mailbox(
     assert acquired["status"] == "acquired"
     assert acquired["opencli_recovery"] == "text_share_page"
     assert acquired["image_count"] == 0
+    assert acquired["publish_time_delta_seconds"] == 14
     assert Path(acquired["raw_markdown_path"]).read_text(encoding="utf-8").endswith(
         f"{item['title']}\n"
     )
