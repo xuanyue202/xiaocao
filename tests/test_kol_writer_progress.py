@@ -638,6 +638,56 @@ def test_repair_closure_accepts_subscription_video_browser_eval_profile(
     assert closure["event"] == "repair_closed"
 
 
+def test_repair_closure_accepts_subscription_video_observability_profile_alias(
+    tmp_path,
+):
+    progress = WriterProgress.repair_required(
+        item_identity="video-1",
+        fingerprint=FailureFingerprint(
+            adapter="subscription_video",
+            category="provider_contract_error",
+            code="lv_transfer_response_unobserved_legacy",
+            stage="cloud_transfer_confirmation",
+            failure_revision=FAILURE_REVISION,
+            provider_contract_version="xiaocao_writer_v1",
+        ),
+        repair_revision=None,
+        affected_set_digest="e" * 64,
+        claim_receipt_summary={
+            "claim_count": 0,
+            "receipt_count": 0,
+            "uncertain_effect_count": 0,
+        },
+        targeted_test_profile=(
+            "kol_subscription_video_cloud_transfer_confirmation"
+        ),
+        narrow_resume_surface="subscription_video:video-1",
+        retryability="retryable",
+    )
+    ledger = ConvergenceLedger(
+        tmp_path / "convergence.jsonl",
+        now=lambda: datetime.fromisoformat("2026-08-14T15:15:00+08:00"),
+    )
+    ledger.record(progress, slot="2026-08-14T14:00+08:00")
+    validation = RepairValidationLedger(tmp_path / "repair-validation.jsonl")
+    receipt = validation.append(_repair_receipt(
+        progress,
+        profile="kol_subscription_video_source_run",
+    ))
+
+    closure = ledger.close_repair(
+        progress.failure_fingerprint,
+        repair_receipt=receipt,
+        validation_ledger=validation,
+        slot="2026-08-14T14:00+08:00",
+    )
+
+    assert closure["event"] == "repair_closed"
+    assert closure["repair_receipt"]["targeted_test_profile"] == (
+        "kol_subscription_video_source_run"
+    )
+
+
 @pytest.mark.parametrize(
     ("category", "code", "stage", "targeted_test_profile"),
     [
