@@ -649,31 +649,245 @@ _TRANSFER_SCRIPT = r"""(async () => {
       triggered: false
     };
   }
+  const installNetworkObserver = () => {
+    const existing = window.__xiaocaoLvTransferNetwork;
+    if (existing && existing.installed === true) return existing;
+    const state = {
+      installed: true,
+      installedAt: Date.now(),
+      requestSeen: false,
+      responseSeen: false,
+      records: []
+    };
+    const pathOf = value => {
+      try {
+        return new URL(String(value || ''), location.href).pathname;
+      } catch (_) {
+        return String(value || '');
+      }
+    };
+    const requestSummary = body => {
+      if (body == null) return null;
+      let text = '';
+      if (typeof body === 'string') text = body;
+      else if (body instanceof URLSearchParams) text = body.toString();
+      return {
+        kind: typeof body,
+        length: text.length,
+        keys: [...new Set(
+          (text.match(/(?:^|&)([^=&]+)/g) || [])
+            .map(value => value.replace(/^&/, '').split('=')[0])
+            .filter(Boolean)
+        )].slice(0, 32)
+      };
+    };
+    const responseSummary = (status, text, error) => {
+      const summary = {http_status: Number(status) || 0};
+      if (error) summary.response_error = String(error).slice(0, 160);
+      if (!text) return summary;
+      try {
+        const payload = JSON.parse(text);
+        for (const key of [
+          'errno', 'show_msg', 'error_msg', 'taskid', 'status',
+          'task_errno', 'error_code'
+        ]) {
+          if (payload && Object.prototype.hasOwnProperty.call(payload, key)) {
+            const value = payload[key];
+            summary[key] = typeof value === 'string'
+              ? value.slice(0, 240)
+              : value;
+          }
+        }
+      } catch (_) {
+        summary.response_parse_error = true;
+      }
+      return summary;
+    };
+    const record = (kind, method, url, body, response) => {
+      if (pathOf(url) !== '/share/transfer') return;
+      state.requestSeen = true;
+      const entry = {
+        kind,
+        method: String(method || 'GET'),
+        path: '/share/transfer',
+        request: requestSummary(body),
+        observedAt: Date.now()
+      };
+      if (response) {
+        Object.assign(entry, response);
+        state.responseSeen = Number(response.http_status || 0) > 0;
+      }
+      state.records.push(entry);
+      if (state.records.length > 8) state.records.shift();
+    };
+    if (typeof window.fetch === 'function') {
+      const originalFetch = window.fetch;
+      window.fetch = function(input, init) {
+        const url = typeof input === 'string' ? input : input?.url;
+        const method = init?.method || input?.method || 'GET';
+        const body = init?.body || input?.body;
+        if (pathOf(url) !== '/share/transfer') {
+          return originalFetch.apply(this, arguments);
+        }
+        state.requestSeen = true;
+        return originalFetch.apply(this, arguments).then(response => {
+          let clone;
+          try { clone = response.clone(); } catch (_) {
+            record(
+              'fetch', method, url, body,
+              responseSummary(response.status, '', 'response_clone_failed')
+            );
+            return response;
+          }
+          return clone.text().catch(() => '').then(text => {
+            record(
+              'fetch', method, url, body,
+              responseSummary(response.status, text)
+            );
+            return response;
+          });
+        }).catch(error => {
+          record(
+            'fetch', method, url, body,
+            responseSummary(0, '', error)
+          );
+          throw error;
+        });
+      };
+    }
+    if (window.XMLHttpRequest) {
+      const originalOpen = XMLHttpRequest.prototype.open;
+      const originalSend = XMLHttpRequest.prototype.send;
+      XMLHttpRequest.prototype.open = function(method, url) {
+        this.__xiaocaoLvTransferRequest = {method, url};
+        return originalOpen.apply(this, arguments);
+      };
+      XMLHttpRequest.prototype.send = function(body) {
+        const request = this.__xiaocaoLvTransferRequest || {};
+        if (pathOf(request.url) !== '/share/transfer') {
+          return originalSend.apply(this, arguments);
+        }
+        state.requestSeen = true;
+        let finished = false;
+        const finish = error => {
+          if (finished) return;
+          finished = true;
+          let text = '';
+          try { text = this.responseText || ''; } catch (_) {}
+          record(
+            'xhr', request.method, request.url, body,
+            responseSummary(this.status, text, error)
+          );
+        };
+        this.addEventListener('loadend', () => finish(), {once: true});
+        this.addEventListener('error', () => finish('network_error'), {
+          once: true
+        });
+        this.addEventListener('abort', () => finish('aborted'), {
+          once: true
+        });
+        try {
+          return originalSend.apply(this, arguments);
+        } catch (error) {
+          finish(error);
+          throw error;
+        }
+      };
+    }
+    window.__xiaocaoLvTransferNetwork = state;
+    return state;
+  };
   const beforeLines = new Set(
     String(document.body?.innerText || '')
       .split(/\n+/)
       .map(value => value.replace(/\s+/g, ' ').trim())
       .filter(Boolean)
   );
+  const network = installNetworkObserver();
   window.__xiaocaoLvTransferConfirmation = {
     beforeLines: [...beforeLines],
-    preparedAt: Date.now()
+    preparedAt: Date.now(),
+    network
   };
   confirms[0].setAttribute('data-xiaocao-lv-confirm', 'ready');
   return {
     status: 'save_confirmation_ready',
     confirmation_selector: '[data-xiaocao-lv-confirm="ready"]',
     triggered: false,
-    provider_outcome: 'unobserved'
+    provider_outcome: 'unobserved',
+    provider_request_observed: network.requestSeen,
+    provider_response_observed: network.responseSeen
   };
 })()"""
 
 
 _TRANSFER_OUTCOME_SCRIPT = r"""(async () => {
   const checkpoint = window.__xiaocaoLvTransferConfirmation || {};
+  const network = checkpoint.network
+    || window.__xiaocaoLvTransferNetwork
+    || {};
   const beforeLines = new Set(checkpoint.beforeLines || []);
+  const networkRecords = () => (
+    Array.isArray(network.records) ? network.records.slice(-8) : []
+  );
+  const networkState = () => ({
+    provider_request_observed: network.requestSeen === true
+      || networkRecords().length > 0,
+    provider_response_observed: network.responseSeen === true
+      || networkRecords().some(record => (
+        Number(record.http_status || 0) > 0
+        || record.errno !== undefined
+      )),
+    provider_network_records: networkRecords()
+  });
+  const providerResult = () => {
+    const records = networkRecords();
+    for (const record of records) {
+      const httpStatus = Number(record.http_status || 0);
+      const errno = record.errno === undefined || record.errno === null
+        ? null
+        : Number(record.errno);
+      const rejected = httpStatus >= 400
+        || (Number.isFinite(errno) && errno !== 0);
+      const accepted = httpStatus >= 200 && httpStatus < 300
+        && (errno === 0 || (errno === null && !record.response_parse_error));
+      const details = {
+        ...networkState(),
+        provider_http_status: httpStatus,
+        provider_errno: Number.isFinite(errno) ? errno : undefined,
+        provider_message: String(
+          record.show_msg || record.error_msg || record.response_error || ''
+        ).slice(0, 240),
+        provider_task_id: record.taskid === undefined
+          ? undefined : String(record.taskid),
+        provider_observation: accepted
+          ? 'response_accepted' : rejected ? 'response_rejected'
+          : 'response_unclassified'
+      };
+      if (rejected) {
+        return {
+          status: 'cloud_transfer_rejected',
+          triggered: true,
+          provider_outcome: 'rejected',
+          ...details
+        };
+      }
+      if (accepted) {
+        return {
+          status: 'cloud_transfer_accepted',
+          triggered: true,
+          provider_outcome: 'accepted',
+          ...details
+        };
+      }
+    }
+    return null;
+  };
+  let providerDomState = '';
   const outcomeDeadline = Date.now() + 10000;
   while (Date.now() < outcomeDeadline) {
+    const observed = providerResult();
+    if (observed) return observed;
     const newText = String(document.body?.innerText || '')
       .split(/\n+/)
       .map(value => value.replace(/\s+/g, ' ').trim())
@@ -686,24 +900,45 @@ _TRANSFER_OUTCOME_SCRIPT = r"""(async () => {
       return {
         status: 'cloud_transfer_rejected',
         triggered: true,
-        provider_outcome: 'rejected'
+        provider_outcome: 'rejected',
+        ...networkState(),
+        provider_observation: 'dom_rejected'
       };
     }
-    if (/保存成功|转存成功|保存完成|已保存到|正在转存/.test(newText)) {
-      return {
-        status: 'cloud_transfer_accepted',
-        triggered: true,
-        provider_outcome: 'accepted'
-      };
+    if (/保存成功|转存成功|保存完成|已保存到/.test(newText)) {
+      providerDomState = 'success_toast_without_provider_response';
+    } else if (/正在转存|转存中|文件转存中/.test(newText)) {
+      providerDomState = 'transfer_in_progress_without_provider_response';
     }
     await new Promise(resolve => setTimeout(resolve, 200));
   }
+  const finalNetwork = networkState();
+  const observation = finalNetwork.provider_request_observed
+    ? finalNetwork.provider_response_observed
+      ? 'response_unclassified' : 'response_unobserved'
+    : 'request_unobserved';
   return {
     status: 'cloud_transfer_outcome_unobserved',
     triggered: true,
-    provider_outcome: 'unobserved'
+    provider_outcome: 'unobserved',
+    ...finalNetwork,
+    provider_observation: observation,
+    provider_dom_state: providerDomState
   };
 })()"""
+
+
+_TRANSFER_DIAGNOSTIC_FIELDS = (
+    "provider_request_observed",
+    "provider_response_observed",
+    "provider_network_records",
+    "provider_http_status",
+    "provider_errno",
+    "provider_message",
+    "provider_task_id",
+    "provider_observation",
+    "provider_dom_state",
+)
 
 
 class SubscriptionVideoService:
@@ -3878,6 +4113,9 @@ class SubscriptionVideoService:
                 or self._time().isoformat(timespec="microseconds")
             ),
         }
+        for field in _TRANSFER_DIAGNOSTIC_FIELDS:
+            if field in result:
+                triggered[field] = result[field]
         _atomic_write_json(self._claim_path(receipt_name), triggered)
         _append_jsonl(
             self.events_path,

@@ -1373,6 +1373,11 @@ def test_lv_transfer_observes_provider_outcome_after_confirmation():
     assert "const beforeLines = new Set(" in _TRANSFER_SCRIPT
     assert "data-xiaocao-lv-confirm" in _TRANSFER_SCRIPT
     assert "confirms[0].click()" not in _TRANSFER_SCRIPT
+    assert "XMLHttpRequest.prototype.send" in _TRANSFER_SCRIPT
+    assert "window.fetch" in _TRANSFER_SCRIPT
+    assert "'/share/transfer'" in _TRANSFER_SCRIPT
+    assert "provider_request_observed" in _TRANSFER_OUTCOME_SCRIPT
+    assert "provider_response_observed" in _TRANSFER_OUTCOME_SCRIPT
     assert "cloud_transfer_rejected" in _TRANSFER_OUTCOME_SCRIPT
     assert "cloud_transfer_accepted" in _TRANSFER_OUTCOME_SCRIPT
     assert "provider_outcome: 'unobserved'" in _TRANSFER_OUTCOME_SCRIPT
@@ -1418,6 +1423,20 @@ def test_lv_transfer_unobserved_toast_waits_for_bound_receipt(tmp_path):
             "status": "cloud_transfer_outcome_unobserved",
             "triggered": True,
             "provider_outcome": "unobserved",
+            "provider_request_observed": True,
+            "provider_response_observed": False,
+            "provider_observation": "response_unobserved",
+            "provider_dom_state": (
+                "transfer_in_progress_without_provider_response"
+            ),
+            "provider_network_records": [
+                {
+                    "kind": "xhr",
+                    "method": "POST",
+                    "path": "/share/transfer",
+                    "request": {"kind": "string", "length": 126},
+                }
+            ],
         }
 
     service._opencli_json = opencli
@@ -1443,6 +1462,15 @@ def test_lv_transfer_unobserved_toast_waits_for_bound_receipt(tmp_path):
     assert claim["provider_outcome"] == "unobserved"
     assert claim["provider_trigger_status"] == (
         "cloud_transfer_outcome_unobserved"
+    )
+    assert claim["provider_request_observed"] is True
+    assert claim["provider_response_observed"] is False
+    assert claim["provider_observation"] == "response_unobserved"
+    assert claim["provider_dom_state"] == (
+        "transfer_in_progress_without_provider_response"
+    )
+    assert claim["provider_network_records"][0]["path"] == (
+        "/share/transfer"
     )
     assert claim["next_poll_not_before"] == result["next_poll_not_before"]
 
