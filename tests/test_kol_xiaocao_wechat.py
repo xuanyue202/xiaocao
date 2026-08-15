@@ -758,7 +758,7 @@ def test_awaiting_playback_rechecks_the_bound_page_each_hour_until_playable(
         for request in browser_requests
         if request["action"] == "activate_xiaoetong_playback"
     ] == ["initial", "awaiting_playback", "awaiting_playback"]
-    assert capture.advances == 3
+    assert capture.advances == 1
     manifest = json.loads(
         (tmp_path / "wechat" / "manifest.json").read_text(encoding="utf-8")
     )
@@ -853,11 +853,12 @@ def test_xiaoetong_bound_provider_block_waits_for_the_same_page(tmp_path):
             "password_used": False,
         }
 
+    capture = _CaptureDriver()
     subscription = XiaocaoWechatLiveSubscription(
         tmp_path / "wechat",
         history_reader=lambda: payload,
         browser_exchange=browser_exchange,
-        capture_driver=_CaptureDriver(),
+        capture_driver=capture,
         contact=CONTACT,
         password="666",
         clock=lambda: datetime.fromisoformat("2026-08-13T14:08:00+08:00"),
@@ -876,6 +877,13 @@ def test_xiaoetong_bound_provider_block_waits_for_the_same_page(tmp_path):
     item = next(iter(manifest["items"].values()))
     assert item["page_url"] == page_url
     assert item["observed_page_state"] == "source_temporarily_unavailable"
+
+    # A blocked provider page must be rechecked before touching the capture
+    # job again; the source job may already have failed behind that page.
+    second = subscription.run_once(opencli_session="xiaocao-lv-subscription")
+    assert second["status"] == "waiting"
+    assert second["waiting_items"][0]["status"] == "awaiting_playback"
+    assert capture.advances == 0
 
 
 @pytest.mark.parametrize(
