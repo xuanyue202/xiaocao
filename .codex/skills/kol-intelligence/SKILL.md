@@ -81,9 +81,9 @@ for already-persisted legacy `awaiting_user_confirmation` states.
 
 ## Non-negotiable semantic boundaries
 
-- Xiaoetong: enter `666` only at a visible password gate. Before playback and
-  after refresh/navigation, set and read back `video.muted=true`
-  and `video.volume=0`; otherwise do not mark it activated.
+- Xiaoetong: enter `666` at a visible course-password gate. Set/read
+  `video.muted=true` and `video.volume=0` before playback
+  (`cdp`/`Runtime.evaluate` if controls are hidden); OS mute is insufficient.
 - Resolve code/state conflicts from first principles without asking by default:
   preserve a reversible snapshot and unrelated WIP, identify both intents,
   integrate compatible behavior, verify it, and continue. Ask only when the

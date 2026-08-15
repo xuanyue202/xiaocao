@@ -120,6 +120,11 @@ def _normalized_live_url(raw: str) -> str | None:
             and len(pieces) == 2
             and pieces[0] in {"s", "sl"}
         )
+        or (
+            host.endswith(".h5.xeknow.com")
+            and len(pieces) == 2
+            and pieces[0] in {"s", "sl"}
+        )
     )
     if is_short:
         return urlunsplit(("https", host, parsed.path.rstrip("/"), "", ""))
@@ -944,10 +949,15 @@ class XiaocaoWechatLiveSubscription:
             "instructions": (
                 "Refresh the bound page and inspect its visible lifecycle state. "
                 "If it is directly playable, play it without entering a password. "
-                "If a password gate is visible, enter the supplied password and "
-                "submit it, then start playback. If it is waiting to start, live "
-                "without replay, or generating a replay, return that state without "
-                "waiting for it to change. If the same app and resource redirect "
+                "If a course-password gate is visible, enter the supplied password "
+                "and submit it. As soon as the bound page has a current video, use "
+                "the same Browser tab's page-level control to set and read back "
+                "video.muted=true and video.volume=0; use the tab cdp capability's "
+                "scoped Runtime.evaluate when custom player controls are hidden. "
+                "Then start playback and prove advancing media time. If it is "
+                "waiting to start, live without replay, or generating a replay, "
+                "return that state without waiting for it to change. If the same "
+                "app and resource redirect "
                 "to its block.xiaoeeye.com page, return "
                 "source_temporarily_unavailable."
             ),

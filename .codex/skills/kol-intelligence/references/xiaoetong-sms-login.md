@@ -213,6 +213,17 @@ video.muted = true;
 video.volume = 0;
 ```
 
+This is the page-level control required for activation.
+
+Do this as soon as the bound page has a current `<video>` element; do not wait
+for meaningful playback. If a visible course-password gate appears before the
+element exists, submit `666` first, then mute immediately when the player is
+mounted. In the Codex Browser, use the same bound tab's `cdp` capability and a
+scoped `Runtime.evaluate` when custom controls are hidden. Read a CDP event
+cursor before and after, and return only the current media state. Target the
+current `<video>`; never replace this with system/browser mute,
+cookies/storage inspection, Computer Use, or unrelated DOM changes.
+
 `open <the-same-url>` may only reuse/focus the existing OpenCLI page; it is not
 an authoritative reload. After a proven stuck player, use one real
 `location.reload()` and reapply page mute. Invoke playback non-blockingly with
