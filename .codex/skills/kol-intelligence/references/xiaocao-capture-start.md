@@ -24,10 +24,13 @@ Before Ready, do only this:
    prompt. The command itself proves the exact binary, local API health, and the
    candidate baseline before it emits that result.
 4. Ask the user to open the target enterprise-WeChat card. The player only
-   needs to appear; continued playback and a fixed wait are unnecessary. If
-   the agent starts media to trigger capture, it must first set and read back
-   `video.muted=true` and `video.volume=0`, and must reapply this after a page
-   refresh or navigation.
+   needs to appear; continued playback and a fixed wait are unnecessary. As
+   soon as the bound page has a current `<video>` element, if the agent starts
+   media to trigger capture it must first set and read back
+   `video.muted=true` and `video.volume=0` through the bound Browser tab's
+   page-level control (use the tab `cdp` capability's scoped `Runtime.evaluate`
+   when player controls are hidden), and must reapply this after a page refresh,
+   navigation, or player rebuild. System/browser mute alone is not sufficient.
 
 Do not inspect Git or scan historical ledgers before Ready. Do not contact the
 remote writer, load market or portfolio data, or read `full-contract.md` before

@@ -394,6 +394,10 @@ def test_first_poll_baselines_history_and_arms_only_latest_live(tmp_path):
             "only_if_password_gate_visible": True,
             "password": "666",
         }
+        assert "page-level control" in request["instructions"]
+        assert "video.muted=true" in request["instructions"]
+        assert "video.volume=0" in request["instructions"]
+        assert "Runtime.evaluate" in request["instructions"]
         return {
             "action": request["action"],
             "subscription_id": request["subscription_id"],

@@ -87,13 +87,14 @@ For `daily_browser_input_required`, keep the same process alive and use
    identity; strip share parameters.
 2. Let the runner arm that exact H5 source job.
 3. `activate_xiaoetong_playback`: refresh; enter `666` only at a visible
-   password gate. If waiting/live-only/generating, return its visible state with
-   `activated=false`. If playable, set and read back `muted=true`, `volume=0`
-   (reapply after refresh/navigation), start it, and prove advancing media time.
-   Only then return `activated=true`, bound URL, and password-use state. An
-   exact app/resource redirect to `<app_id>.block.xiaoeeye.com` is
-   `source_temporarily_unavailable` with both booleans false; return its current
-   URL for the runner's bound hourly retry. Never use it for another identity.
+   course-password gate. If waiting/live-only/generating, return `activated=false`.
+   Once `<video>` exists, set/read `muted=true`, `volume=0` via page control
+   before playback; hidden controls use tab `cdp`/`Runtime.evaluate`. Reapply
+   after refresh/rebuild, prove two advancing `currentTime` samples, then
+   return `activated=true` and bound URL/password state. An app/resource
+   redirect to `<app_id>.block.xiaoeeye.com` is
+   `source_temporarily_unavailable` with both booleans false; return its URL for
+   retry. Never use it for another identity.
 4. For a recorded-video download, `resolve_xiaoetong_media_url` returns only
    the currently observed signed HTTPS m3u8 URL whose host and path bind the
    supplied `media_file_id`. The runner uses this short-lived value in memory
