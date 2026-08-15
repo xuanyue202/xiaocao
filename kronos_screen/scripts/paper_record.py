@@ -39,6 +39,10 @@ from xiaocao.strategy.mode_switch import (  # noqa: E402
     plan_board_lot_orders,
     select_executable_candidates,
 )
+from xiaocao.strategy.kol_reference import (  # noqa: E402
+    DEFAULT_KOL_PUBLICATION_LEDGER,
+    load_current_macheng_reference,
+)
 from xiaocao.strategy.trend_rules import (  # noqa: E402
     TREND_EXIT_POSTURE_MISMATCH,
     TREND_EXIT_REBALANCE,
@@ -64,6 +68,24 @@ DEFAULT_DEPLOY_RATIO = 0.5
 DEFAULT_MAX_TOTAL_EXPOSURE_RATIO = 1.0
 DEFAULT_TREND_MAX_EXPOSURE_RATIO = 1.0
 A_SHARE_TZ = ZoneInfo("Asia/Shanghai")
+
+KOL_REFERENCE_FIELDS = (
+    "kol_reference_status",
+    "kol_reference_source",
+    "kol_reference_authority",
+    "kol_reference_match",
+    "kol_reference_matches",
+    "kol_reference_member_ids",
+    "kol_reference_members",
+    "kol_reference_viewpoint_id",
+    "kol_reference_report_id",
+    "kol_reference_source_published_at",
+    "kol_reference_evaluated_at",
+    "kol_reference_rank_effect",
+    "kol_reference_eligibility_effect",
+    "kol_reference_base_rank",
+    "kol_reference_shadow_rank",
+)
 
 
 def _now_iso() -> str:
@@ -99,6 +121,10 @@ def _append_quality_audit(records: list[dict]) -> None:
     with QUALITY_AUDIT.open("a", encoding="utf-8") as f:
         for record in records:
             f.write(json.dumps(record, ensure_ascii=False, sort_keys=True) + "\n")
+
+
+def _kol_reference_fields(record: dict) -> dict:
+    return {field: record.get(field) for field in KOL_REFERENCE_FIELDS}
 
 
 def _num(value: object) -> float | None:
@@ -583,6 +609,14 @@ def _main_locked():
                     help="target number of Book T positions")
     ap.add_argument("--trend-max-total-exposure-ratio", type=float, default=DEFAULT_TREND_MAX_EXPOSURE_RATIO,
                     help="Book T open gross exposure cap / Book T initial capital")
+    ap.add_argument(
+        "--trend-kol-publication-ledger",
+        default=str(DEFAULT_KOL_PUBLICATION_LEDGER),
+        help=(
+            "published KOL ledger used for authority-zero Book T MaChe reference telemetry; "
+            "never changes eligibility/order/fills"
+        ),
+    )
     a = ap.parse_args()
     _parse_hhmm(a.fill_window_start)
     _parse_hhmm(a.fill_window_end)
@@ -1249,10 +1283,18 @@ def _record_book_t(client: XiaocaoClient, a, *, wait_for_fill_window: bool = Fal
         )
         return
 
+    kol_reference = load_current_macheng_reference(
+        getattr(
+            a,
+            "trend_kol_publication_ledger",
+            DEFAULT_KOL_PUBLICATION_LEDGER,
+        )
+    )
     picks = generate_trend_picks(
         client,
         a.date,
         max_positions=target_positions + len(open_codes) + len(switch_exit_plans),
+        kol_reference=kol_reference,
     )
     candidate_pool = [
         r for r in picks
@@ -1291,6 +1333,7 @@ def _record_book_t(client: XiaocaoClient, a, *, wait_for_fill_window: bool = Fal
             "basket_price": r.get("basket_price"), "open": r.get("open"),
             "category_code": r.get("category_code"),
             "category_rank": r.get("category_rank"),
+            **_kol_reference_fields(r),
         })
     buyable = buyable[:available_slots]
     if not buyable:
@@ -1403,6 +1446,7 @@ def _record_book_t(client: XiaocaoClient, a, *, wait_for_fill_window: bool = Fal
             "status": "open",
             "source": "auto:trend_book",
             "reason": r.get("reason"),
+            **_kol_reference_fields(r),
         }
         new_rows.append(row)
         new_trades.append({
@@ -1426,6 +1470,7 @@ def _record_book_t(client: XiaocaoClient, a, *, wait_for_fill_window: bool = Fal
             "fill_window_vwap": fill_meta.get("fill_window_vwap"),
             "fill_window_last": fill_meta.get("fill_window_last"),
             "fill_limit_price": fill_meta.get("fill_limit_price"),
+            **_kol_reference_fields(r),
         })
         run_fees = round(run_fees + entry_fee, 2)
         n += 1
@@ -1465,7 +1510,8 @@ def _record_book_t(client: XiaocaoClient, a, *, wait_for_fill_window: bool = Fal
         f"paired_switches={len(selected_switches)} -> {POS} "
         f"(cash_T_after={cash:.2f}, initial_T={float(account.get('initial_capital', trend_initial_capital)):.2f}, "
         f"slot_notional={slot_notional:.2f}, trail_dd={TREND_TRAIL_DD:.1f}%, "
-        f"rebalance_days={TREND_REBALANCE_R})"
+        f"rebalance_days={TREND_REBALANCE_R}, "
+        f"macheng_ref={kol_reference.get('status', 'unavailable')})"
     )
 
 

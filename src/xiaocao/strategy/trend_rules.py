@@ -11,6 +11,7 @@ from __future__ import annotations
 from typing import Any, Iterable
 
 from xiaocao.strategy.bigcap import bigcap_codes
+from xiaocao.strategy.kol_reference import annotate_macheng_reference
 from xiaocao.strategy.params import TREND_LOOKBACK_L, TREND_REBALANCE_R, TREND_TOP_M, TREND_TRAIL_DD
 
 TREND_MODE = "趋势主线"
@@ -239,6 +240,7 @@ def generate_trend_picks(
     max_positions: int = TREND_TOP_M,
     category_count: int | None = None,
     basket_premium_pct: float = DEFAULT_BASKET_PREMIUM_PCT,
+    kol_reference: dict[str, Any] | None = None,
 ) -> list[dict[str, Any]]:
     """Generate a small Book-T basket for paper recording.
 
@@ -314,6 +316,30 @@ def generate_trend_picks(
             str(row.get("code") or ""),
         ),
     )
+    candidates = [
+        annotate_macheng_reference(candidate, kol_reference)
+        for candidate in candidates
+    ]
+    shadow_order = sorted(
+        candidates,
+        key=lambda row: (
+            0 if row.get("kol_reference_match") else 1,
+            ALIGNMENT_PRIORITY.get(str(row.get("trend_alignment") or "neutral"), 9),
+            int(_num(row.get("category_rank"), 9999)),
+            -_num(row.get("category_score")),
+            str(row.get("code") or ""),
+        ),
+    )
+    shadow_rank = {
+        str(row.get("code") or ""): rank
+        for rank, row in enumerate(shadow_order, 1)
+    }
+    for base_rank, candidate in enumerate(candidates, 1):
+        candidate["kol_reference_base_rank"] = base_rank
+        candidate["kol_reference_shadow_rank"] = shadow_rank.get(
+            str(candidate.get("code") or ""),
+            base_rank,
+        )
 
     if not candidates:
         return []
@@ -353,7 +379,8 @@ def generate_trend_picks(
             "reason": (
                 f"Book T {c['category_name'] or c['category_code']} "
                 f"r{c['category_rank']} bigcap={bool(c['is_big_cap'])} "
-                f"alignment={alignment['trend_alignment']}"
+                f"alignment={alignment['trend_alignment']} "
+                f"macheng_shadow={','.join(c.get('kol_reference_matches') or []) or 'none'}"
             ),
         })
         out.append(enriched)

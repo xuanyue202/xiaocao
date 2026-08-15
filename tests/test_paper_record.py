@@ -628,6 +628,20 @@ def test_book_t_records_independent_trend_account(tmp_path, monkeypatch) -> None
     monkeypatch.setattr(pr, "ACCOUNT_T", account_t)
     monkeypatch.setattr(pr, "TRADES", trades)
     monkeypatch.setattr(pr, "SKIPS", skips)
+    monkeypatch.setattr(
+        pr,
+        "load_current_macheng_reference",
+        lambda _path: {
+            "status": "current",
+            "source": "吕晓彤“马车”",
+            "authority": "shadow_only",
+            "viewpoint_id": "vp-macheng",
+            "report_id": "kr-macheng",
+            "source_published_at": "2026-08-11T02:08:05Z",
+            "evaluated_at": "2026-08-11T09:52:56Z",
+            "members": [{"member_id": "main", "label": "主线 ETF"}],
+        },
+    )
 
     args = Namespace(
         date="2026-07-01",
@@ -655,12 +669,19 @@ def test_book_t_records_independent_trend_account(tmp_path, monkeypatch) -> None
     assert row["entry_price_basis"] == "opening_window_vwap_capped_by_limit"
     assert row["trend_alignment"] == "neutral"
     assert "兜底" in row["trend_alignment_reason"]
+    assert row["kol_reference_authority"] == "shadow_only"
+    assert row["kol_reference_match"] is True
+    assert row["kol_reference_matches"] == ["主线 ETF"]
+    assert row["kol_reference_rank_effect"] == "none_shadow_only"
+    assert row["kol_reference_eligibility_effect"] == "none_shadow_only"
     assert row["shares"] == 900
     account = json.loads(account_t.read_text(encoding="utf-8"))
     assert account["initial_capital"] == 30000.0
     [trade] = [json.loads(line) for line in trades.read_text(encoding="utf-8").splitlines()]
     assert trade["book"] == "T" and trade["side"] == "BUY"
     assert trade["trend_alignment"] == "neutral"
+    assert trade["kol_reference_match"] is True
+    assert trade["kol_reference_viewpoint_id"] == "vp-macheng"
 
 
 def test_book_t_switches_external_position_only_with_paired_replacement(tmp_path, monkeypatch) -> None:

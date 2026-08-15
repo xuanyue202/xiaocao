@@ -1,9 +1,9 @@
 # 小草运营契约（Operating Contract, SSOT）
 
-**版本**：2.3
+**版本**：2.4
 **状态**：现行
 **适用范围**：所有 paper / 未来 real 的实盘环（live_recommend → paper_record → live_monitor → eod）与回测
-**关联实现**：`src/xiaocao/live/safety.py`、`src/xiaocao/live/intelligence_policy.py`、`src/xiaocao/strategy/{mode_switch,trend_rules}.py`、`kronos_screen/scripts/{capture_signals,forward_eval,paper_record,settle_book_a,settle_book_t,decompose_pnl,quality_governor}.py`、`scripts/{live_monitor,research_mode_switch_replay}.py`
+**关联实现**：`src/xiaocao/live/safety.py`、`src/xiaocao/live/intelligence_policy.py`、`src/xiaocao/strategy/{mode_switch,trend_rules,kol_reference}.py`、`kronos_screen/scripts/{capture_signals,forward_eval,paper_record,settle_book_a,settle_book_t,decompose_pnl,quality_governor}.py`、`scripts/{live_monitor,research_mode_switch_replay}.py`
 **回归测试**：`tests/test_operating_contract.py`
 **借鉴**：QuantDinger `docs/SIGNAL_EXECUTION_STANDARD_CN.md`（契约 SSOT 结构）+ `docs/agent/MCP_SETUP.md`（paper-only 默认 / 双钥匙 live gate）
 
@@ -72,6 +72,7 @@
 ## 4b. Book T — 趋势模拟口径（paper-only，独立生命周期）
 
 - **建仓**：`paper_record.py --trend-only` 调 `strategy.trend_rules.generate_trend_picks`，从当前主线大类中选少量大票/中军候选，写入 `positions.jsonl` 的 `book="T"` 行；同 code 可同时有 B/T 两行，互不阻塞、互不 net。候选分为 `aligned / neutral / external`：电子、半导体、存储、光电、元器件、通信、机器人等与当前小草主线相关者优先；中性候选只作保持趋势仓位的兜底；银行/保险/证券/医药/白酒等外部旧方向是 `external`，不得作为新趋势买入。
+- **吕晓彤“马车”参考信号**：Book T 生成候选时，只读 `output/live/kol_daily/publications/events.jsonl` 中已经取得 `publication_receipt`（`published / superseded`）的最新 `current` “马车”长期观点，把完整核心推荐池、来源报告/观点身份、来源时点、候选命中主题和“命中优先”的影子名次写入 Book-T 候选、成交和持仓遥测。该因子固定为 `authority=shadow_only`：**不得**改变确定性候选顺序、`aligned / neutral / external` 资格、成交、仓位、换股或退出；因此创新药等现行 `external` 方向即使命中“马车”也不能越权建仓。缺少已发布当前观点或本地账本不可用时记录 `unavailable` 并按原 Book-T 规则继续。只有通过 `research_run.py` 护栏并经 §10 人工门，才可把该影子证据升级为排序或资格规则。
 - **账户**：`paper_account_T.json`，默认初始资金 = `initial_capital × TREND_BUDGET_RATIO`；统一 `paper_trades.jsonl` 记录 `book:"T"`。
 - **状态快照一致性**：`status.py` 的持仓数量只取 `positions.jsonl` open T 行。`paper_holdings_T.json` 只有在日期、`(code,entry_date,shares)` 身份集和 account totals 全部匹配时才有估值权；否则 `equity` 降级为 cash + open entry cost，`unrealized_pnl=N/A` 并显式给出 `stale/mismatch/missing`，禁止跨版本拼接。
 - **出场 / 换股**：`live_monitor.py --book T` 和 `settle_book_t.py` 只认冻结趋势参数：`TREND_TRAIL_DD` 宽回撤；方向错配和 `TREND_REBALANCE_R` 低换手到期都不在 EOD 单边卖出。已持仓若被分类为 `external` 且过 T+1，或达到低换手 rebalance 周期，下一次 morning 只有在 `paper_record.py --trend-only` 已找到可成交替代候选时，才按 `TREND_POSTURE_MISMATCH` / `TREND_REBALANCE_R` 做成对 SELL+BUY；无替代则继续持有，避免趋势袖子空仓断档。普通排名变化不触发换仓，避免手续费和噪音换手。**不得调用** Book B 的 `strong_hold_reason` / composite 逻辑，也不得让“方向还在”这类皮层判断抑制 B 的止损。
@@ -168,3 +169,4 @@
 | 2.1 | 2026-07-10 | 修正模式统计与资金执行错位：信号日按 25%/45%/50% 批次资金权重聚合，ACTIVE 同时要求候选池/四指数 LCB80 为正；近期任一双基准 alpha 均值转负时降为最多 1 只的 PROVISIONAL，模式置信度取双基准保守侧。仍仅 paper/simulation。 |
 | 2.2 | 2026-07-11 | Book-B 模拟盘采用六个月、扩展八个月和近期可执行回放共同占优的进攻候选：近期双 alpha 均值与多数日转正直接 ACTIVE；每模式只取第一名；存在 ACTIVE 时批次目标 50%，单票上限 50%。证据聚合权重保持原验证口径，real-capital 双钥匙边界不变。 |
 | 2.3 | 2026-07-14 | 收紧运行与账本诚实性：Book-T 阻卖事实优先、四指数完整覆盖、T 状态快照降级、严格配对 A/B 归因、14:25/14:55 拆分、posture 到期、agent-review 有界汇合、run-flow 双层状态，以及 A/B/T 显式 book 身份与可审计历史回填。 |
+| 2.4 | 2026-08-15 | Book T 只读已发布且当前的吕晓彤“马车”长期观点，记录主题命中与影子名次；固定 `authority=shadow_only`，不改候选顺序、资格、成交、仓位或退出，升级仍需研究护栏与 §10 人工门。 |

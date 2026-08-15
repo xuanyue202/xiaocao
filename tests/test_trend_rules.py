@@ -165,3 +165,75 @@ def test_classify_trend_alignment_marks_external_direction():
 
     assert alignment["trend_alignment"] == "external"
     assert "银行" in alignment["trend_alignment_reason"]
+
+
+class FakeMachengShadowClient(FakeTrendClient):
+    def stock_info(self):
+        return [
+            {"code": "600MAIN.XSHG", "codeName": "主线中军", "statusType": 1, "tradableAShare": 20_000},
+            {"code": "600GOLD.XSHG", "codeName": "黄金龙头", "statusType": 1, "tradableAShare": 18_000},
+            {"code": "600DRUG.XSHG", "codeName": "创新药龙头", "statusType": 1, "tradableAShare": 17_000},
+        ]
+
+    def get_block_category_rank_v3(self, date, model=0):
+        return [
+            {"categoryCode": "MAIN.BKDL", "name": "高端制造", "num": 200},
+            {"categoryCode": "GOLD.BKDL", "name": "黄金", "num": 190},
+            {"categoryCode": "DRUG.BKDL", "name": "创新药", "num": 180},
+        ]
+
+    def get_code_by_xiao_cao_block(self, date, **filters):
+        return {
+            "MAIN.BKDL": ["600MAIN.XSHG"],
+            "GOLD.BKDL": ["600GOLD.XSHG"],
+            "DRUG.BKDL": ["600DRUG.XSHG"],
+        }.get(filters.get("categoryCodeList"), [])
+
+    def second_line_detail_info(self, codes):
+        return {
+            "600MAIN.XSHG": {"code": "600MAIN.XSHG", "codeName": "主线中军", "open": 10.0},
+            "600GOLD.XSHG": {"code": "600GOLD.XSHG", "codeName": "黄金龙头", "open": 11.0},
+            "600DRUG.XSHG": {"code": "600DRUG.XSHG", "codeName": "创新药龙头", "open": 12.0},
+        }
+
+
+def _macheng_reference() -> dict:
+    return {
+        "status": "current",
+        "source": "吕晓彤“马车”",
+        "authority": "shadow_only",
+        "viewpoint_id": "vp-macheng",
+        "report_id": "kr-macheng",
+        "source_published_at": "2026-08-11T02:08:05Z",
+        "evaluated_at": "2026-08-11T09:52:56Z",
+        "members": [
+            {"member_id": "gold", "label": "黄金 ETF"},
+            {"member_id": "drug", "label": "创新药 ETF"},
+        ],
+    }
+
+
+def test_macheng_reference_changes_only_shadow_rank_not_book_t_order_or_eligibility():
+    client = FakeMachengShadowClient()
+    base = generate_trend_picks(client, "2026-08-15", max_positions=2)
+    referenced = generate_trend_picks(
+        client,
+        "2026-08-15",
+        max_positions=2,
+        kol_reference=_macheng_reference(),
+    )
+
+    assert [row["code"] for row in referenced] == [row["code"] for row in base] == [
+        "600MAIN.XSHG",
+        "600GOLD.XSHG",
+    ]
+    assert all(row["code"] != "600DRUG.XSHG" for row in referenced)
+    assert referenced[0]["kol_reference_match"] is False
+    assert referenced[0]["kol_reference_base_rank"] == 1
+    assert referenced[0]["kol_reference_shadow_rank"] == 2
+    assert referenced[1]["kol_reference_match"] is True
+    assert referenced[1]["kol_reference_matches"] == ["黄金 ETF"]
+    assert referenced[1]["kol_reference_base_rank"] == 2
+    assert referenced[1]["kol_reference_shadow_rank"] == 1
+    assert referenced[1]["kol_reference_rank_effect"] == "none_shadow_only"
+    assert referenced[1]["kol_reference_eligibility_effect"] == "none_shadow_only"
