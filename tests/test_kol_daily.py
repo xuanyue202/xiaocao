@@ -4986,6 +4986,21 @@ def test_source_classifier_promotes_provider_transfer_rejection_to_blocker():
     assert "/课程/自己的课/吕晓彤" in captured.value.action
 
 
+def test_source_classifier_promotes_opencli_login_to_blocker():
+    runner = _classified_source(
+        "subscription_video",
+        lambda: (_ for _ in ()).throw(
+            EnrichmentError("OpenCLI login is required")
+        ),
+    )
+
+    with pytest.raises(UserActionBlocker) as captured:
+        runner()
+
+    assert captured.value.blocker_key == "subscription_video-opencli-login"
+    assert "重新登录百度网盘" in captured.value.action
+
+
 def test_source_classifier_promotes_wechat_opencli_captcha_to_blocker():
     runner = _classified_source(
         "wechat_official_accounts",

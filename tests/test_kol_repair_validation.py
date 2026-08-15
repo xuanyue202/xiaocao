@@ -298,6 +298,7 @@ def test_repair_validation_accepts_subscription_private_listing_profile(
         (
             "private_scan_allows_slow_directory_settlement or "
             "private_scan_classifies_directory_failure or "
+            "source_classifier_promotes_opencli_login_to_blocker or "
             "source_cli_narrow_runner_supports_subscription_video or "
             "repair_validation_accepts_subscription_private_listing_profile"
         ),

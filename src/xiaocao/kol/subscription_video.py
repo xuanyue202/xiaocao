@@ -228,6 +228,12 @@ _PRIVATE_SCAN_SCRIPT = r"""(async () => {
     const deadline = Date.now() + 30000;
     while (Date.now() < deadline) {
       if (
+        location.origin === 'https://pan.baidu.com'
+        && location.pathname === '/login'
+      ) {
+        return {status: 'authentication_required', rows: []};
+      }
+      if (
         location.origin !== 'https://pan.baidu.com'
         || location.pathname !== '/disk/main'
         || currentDir() !== dir
@@ -275,6 +281,9 @@ _PRIVATE_SCAN_SCRIPT = r"""(async () => {
     }
     if (location.origin !== 'https://pan.baidu.com') {
       return {status: 'wrong_origin', rows: []};
+    }
+    if (location.pathname === '/login') {
+      return {status: 'authentication_required', rows: []};
     }
     if (location.pathname !== '/disk/main' || currentDir() !== dir) {
       return {status: 'wrong_path', rows: []};
@@ -1156,6 +1165,8 @@ class SubscriptionVideoService:
     @staticmethod
     def _raise_private_listing_failure(payload: Mapping[str, Any]) -> None:
         status = str(payload.get("status") or "")
+        if status == "authentication_required":
+            raise EnrichmentError("OpenCLI login is required")
         code = {
             "listing_timeout": "private_listing_timeout",
             "private_directory_load_timeout": "private_directory_load_timeout",

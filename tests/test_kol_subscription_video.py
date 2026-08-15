@@ -1057,6 +1057,8 @@ def test_private_scan_allows_slow_directory_settlement():
     assert "const deadline = Date.now() + 30000" in _PRIVATE_SCAN_SCRIPT
     assert "!/正在加载中/.test(text)" in _PRIVATE_SCAN_SCRIPT
     assert "if (currentDir() !== dir)" in _PRIVATE_SCAN_SCRIPT
+    assert "location.pathname === '/login'" in _PRIVATE_SCAN_SCRIPT
+    assert "status: 'authentication_required'" in _PRIVATE_SCAN_SCRIPT
 
 
 def test_private_scan_chunks_recursive_eval_below_opencli_deadline(tmp_path):
@@ -1285,6 +1287,31 @@ def test_private_scan_classifies_directory_failure(
     assert captured.value.diagnostic_category == category
     assert captured.value.diagnostic_code == code
     assert captured.value.diagnostic_stage == "private_listing_validation"
+
+
+def test_private_scan_classifies_directory_failure_as_authentication(tmp_path):
+    def runner(command, **_kwargs):
+        operation = command[5]
+        payload = (
+            {"url": command[6]}
+            if operation == "open"
+            else {"status": "authentication_required", "rows": []}
+        )
+        return SimpleNamespace(
+            returncode=0,
+            stdout=json.dumps(payload),
+            stderr="",
+        )
+
+    service = _service(tmp_path, runner=runner)
+
+    with pytest.raises(EnrichmentError, match="OpenCLI login is required"):
+        service._scan_private(
+            session="ticket05",
+            profile="work",
+            root="/课程/路西法全套",
+            recursive=True,
+        )
 
 
 def test_explicit_episode_spec_maps_arbitrary_real_source_names(tmp_path):
