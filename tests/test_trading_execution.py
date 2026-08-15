@@ -16,6 +16,7 @@ from xiaocao.live.trading_execution import (
     TradePlan,
     TradingAccountLedger,
     TradingExecution,
+    TradingTakeoverStore,
     trade_plan_from_frozen_row,
 )
 
@@ -46,6 +47,7 @@ def _plan(
         market_guard_status=guard,
         created_at=datetime(2026, 8, 15, 1, 0, tzinfo=timezone.utc),
         recovery_deadline=deadline or datetime.now(timezone.utc) + timedelta(minutes=15),
+        allocation_proof_hash="test-allocation-proof",
     )
 
 
@@ -249,7 +251,12 @@ def test_sell_is_bounded_by_book_b_owned_and_sellable_shares(tmp_path: Path) -> 
         sellable_shares=100,
         position_source="account_readback",
     )
-    plan = replace(_plan(), side="SELL", shares=200, basket_price=None)
+    plan = replace(
+        _plan(), side="SELL", shares=200, basket_price=None,
+        owned_lot_id="lot-1", sell_authorized=True,
+        sell_reason="HARD_STOP", sell_decision_phase="risk_floor",
+        sell_decision_at=datetime(2026, 8, 15, 1, 1, tzinfo=timezone.utc),
+    )
     engine = TradingExecution(store=InMemoryExecutionStore(tmp_path / "events.jsonl"))
 
     receipt = engine.execute(plan, broker)
@@ -272,7 +279,15 @@ def test_sell_with_ledger_cannot_consume_unattributed_manual_shares(tmp_path: Pa
         ledger=ledger,
     )
 
-    receipt = engine.execute(replace(_plan(), side="SELL", shares=100, basket_price=None), broker)
+    receipt = engine.execute(
+        replace(
+            _plan(), side="SELL", shares=100, basket_price=None,
+            owned_lot_id="lot-1", sell_authorized=True,
+            sell_reason="HARD_STOP", sell_decision_phase="risk_floor",
+            sell_decision_at=datetime(2026, 8, 15, 1, 1, tzinfo=timezone.utc),
+        ),
+        broker,
+    )
     assert receipt.state == ExecutionState.SKIPPED
     assert receipt.reason == "OWNED_LEDGER_BOUND"
     assert broker.submit_calls == 0
@@ -326,6 +341,9 @@ def test_live_plan_reuses_shared_limit_down_guard() -> None:
             "name": "测试标的",
             "book": "B",
             "is_live": True,
+            "mode_exec_star": True,
+            "mode_trade_eligible": True,
+            "executable_fillable": True,
             "open": 10.0,
             "basket_price": 10.10,
             "mode_exec_planned_shares": 100,
@@ -468,3 +486,84 @@ def test_book_b_ledger_records_proved_fill_once_and_rebuilds_ownership(tmp_path:
     rows = [json.loads(line) for line in (tmp_path / "book_b_ledger.jsonl").read_text().splitlines()]
     assert len(rows) == 1
     assert rows[0]["source_execution_event_id"] == first.event_id
+
+
+def test_account_writer_fence_and_takeover_capsule_are_durable(tmp_path: Path) -> None:
+    class UnknownBroker(FakeBroker):
+        def submit(self, plan: TradePlan, claim_id: str, *, requested_shares: int | None = None) -> BrokerReceipt:
+            self.submit_calls += 1
+            return BrokerReceipt(
+                status=BrokerStatus.UNKNOWN,
+                reason="response_lost",
+                conclusive=False,
+                template_name="test-template",
+                template_version="1",
+                account_binding="fingerprint:abc",
+                locator_proof={"route": "manual-limit", "secret": "must-not-matter"},
+            )
+
+        def reconcile(self, plan: TradePlan, previous: dict) -> BrokerReceipt:
+            self.reconcile_calls += 1
+            return BrokerReceipt(status=BrokerStatus.UNKNOWN, reason="response_lost", conclusive=False)
+
+    notifications: list[object] = []
+    broker = UnknownBroker()
+    store = InMemoryExecutionStore(tmp_path / "events.jsonl")
+
+    def notify(_title: str, _body: str) -> object:
+        notifications.append(object())
+        return "ok" if len(notifications) > 1 else "failed"
+
+    engine = TradingExecution(store=store, notifier=notify)
+    first = engine.execute(_plan(), broker)
+    second = engine.execute(_plan(), broker)
+    assert first.state == second.state == ExecutionState.UNKNOWN
+    assert broker.submit_calls == 1
+    assert len(notifications) == 2
+    takeover_path = tmp_path / "trading_takeovers.jsonl"
+    capsule = json.loads(takeover_path.read_text(encoding="utf-8").splitlines()[0])
+    assert capsule["safe_next_action"] == "reconcile_only"
+    assert capsule["forbidden_actions"] == ["submit", "blind_retry", "create_new_plan"]
+    assert capsule["receipt"]["template_name"] == "test-template"
+    assert capsule["receipt"]["event_id"]
+    assert "secret" not in json.dumps(capsule, ensure_ascii=False).lower()
+    assert any(path.name.startswith("account-") for path in (tmp_path / "account_writer_locks").iterdir())
+    assert any(row.get("status") == "delivered" for row in (
+        json.loads(line) for line in (tmp_path / "trading_incidents.jsonl").read_text().splitlines()
+    ))
+
+
+def test_ownership_evidence_rejects_canonical_account_files(tmp_path: Path) -> None:
+    with pytest.raises(ValueError, match="canonical account files"):
+        TradingAccountLedger(tmp_path / "positions.jsonl")
+
+
+def test_sell_builder_requires_monitor_authorization_and_owned_lot() -> None:
+    base = {
+        "date": "2026-08-15",
+        "code": "000001.XSHE",
+        "name": "测试标的",
+        "shares": 100,
+        "limit_price": 10.0,
+    }
+    with pytest.raises(ValueError, match="OWNED_LOT_ID_MISSING"):
+        trade_plan_from_frozen_row(
+            base,
+            environment="mock",
+            logical_account_id="primary",
+            side="SELL",
+        )
+    authorized = trade_plan_from_frozen_row(
+        {
+            **base,
+            "owned_lot_id": "book-b:000001:2026-08-14",
+            "sell_authorized": True,
+            "sell_reason": "HARD_STOP",
+            "decision_phase": "risk_floor",
+            "decision_at": "2026-08-15T01:01:00+00:00",
+        },
+        environment="mock",
+        logical_account_id="primary",
+        side="SELL",
+    )
+    assert authorized.validation_error() is None

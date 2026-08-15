@@ -1,9 +1,9 @@
 """Safe orchestration helpers for frozen Book B execution plans.
 
-This module intentionally does not select candidates or allocate cash.  The
-caller supplies rows already emitted by the deterministic morning freeze (or
-explicit intent JSON); this layer only materializes immutable plans and
-advances them through :class:`TradingExecution`.
+This module intentionally does not select candidates or change strategy
+weights.  It validates or materializes board-lot sizing through the canonical
+mode-switch allocator, then advances immutable plans through
+:class:`TradingExecution`.
 """
 from __future__ import annotations
 
@@ -12,12 +12,17 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, Iterable
 
+from .book_b_allocation import (
+    BookBAllocationFacts,
+    allocate_frozen_rows,
+    validate_allocation_rows,
+)
 from .foundersc_opencli import FounderscQuantOpenCLIAdapter
 from .trading_execution import (
+    BookBOwnershipEvidence,
     ExecutionReceipt,
     ExecutionStore,
     TradePlan,
-    TradingAccountLedger,
     TradingExecution,
     TradingIncidentOutbox,
     trade_plan_from_frozen_row,
@@ -54,6 +59,7 @@ def plans_from_frozen_rows(
     strategy_sha: str = "unknown",
     now: datetime | None = None,
     side: str = "BUY",
+    allocation: BookBAllocationFacts | None = None,
 ) -> list[TradePlan]:
     """Materialize all plans before executing any of them.
 
@@ -61,13 +67,19 @@ def plans_from_frozen_rows(
     a partially started batch.  Selection, rank, and sizing remain upstream.
     """
     rows_list = [dict(row) for row in rows]
+    normalized_side = str(side or "BUY").upper()
+    if normalized_side == "BUY":
+        if allocation is None:
+            raise ValueError("ALLOCATION_PROOF_MISSING")
+        if any(row.get("mode_exec_planned_shares") in (None, "") for row in rows_list):
+            rows_list = allocate_frozen_rows(rows_list, allocation)
     for row in rows_list:
         if environment == "live" and row.get("book") in (None, ""):
             raise ValueError(f"live execution freeze must prove Book B: {row.get('code')}")
         row_book = str(row.get("book") or "B").strip().upper()
         if row_book != "B":
             raise ValueError(f"execution freeze is not Book B: {row.get('code')}")
-        if side.upper() == "BUY":
+        if normalized_side == "BUY":
             if row.get("mode_exec_star") is not True:
                 raise ValueError(f"execution freeze row is not ★E: {row.get('code')}")
             if row.get("mode_trade_eligible") is not True:
@@ -76,6 +88,30 @@ def plans_from_frozen_rows(
                 raise ValueError(f"execution freeze row is not fillable: {row.get('code')}")
             if environment == "live" and row.get("is_live") is not True:
                 raise ValueError(f"live execution requires a live freeze row: {row.get('code')}")
+        else:
+            # A SELL intent is not a generic opposite-side order.  It must be
+            # an explicit Book-B monitor decision bound to one owned lot and
+            # still sellable under the current T+1/liquidity facts.
+            if row.get("sell_authorized") is not True:
+                if row.get("alert") == "SELL_TRIGGERED" and row.get("triggered") is True:
+                    row["sell_authorized"] = True
+                else:
+                    raise ValueError(f"SELL_MONITOR_AUTHORIZATION_MISSING:{row.get('code')}")
+            if not row.get("owned_lot_id"):
+                raise ValueError(f"SELL_OWNED_LOT_MISSING:{row.get('code')}")
+            if row.get("t1_blocked") is True:
+                raise ValueError(f"SELL_T1_BLOCKED:{row.get('code')}")
+            if any(row.get(key) for key in ("sell_block_reason", "sell_blocked_reason", "liquidity_block_reason")):
+                raise ValueError(f"SELL_LIQUIDITY_BLOCKED:{row.get('code')}")
+            if environment == "live" and row.get("is_live") is not True:
+                raise ValueError(f"live execution requires a live freeze row: {row.get('code')}")
+    if normalized_side == "BUY":
+        _total, proof = validate_allocation_rows(rows_list, allocation)
+        for row in rows_list:
+            supplied = row.get("allocation_proof_hash")
+            if supplied not in (None, "", proof):
+                raise ValueError(f"ALLOCATION_PROOF_MISMATCH:{row.get('code')}")
+            row["allocation_proof_hash"] = proof
     plans = [
         trade_plan_from_frozen_row(
             row,
@@ -83,7 +119,7 @@ def plans_from_frozen_rows(
             logical_account_id=logical_account_id,
             strategy_sha=strategy_sha,
             now=now,
-            side=side,
+            side=normalized_side,
         )
         for row in rows_list
     ]
@@ -121,7 +157,7 @@ def build_foundersc_execution(
     execution = TradingExecution(
         store=store,
         broker=adapter,
-        ledger=TradingAccountLedger(root / "book_b_ledger.jsonl"),
+        ledger=BookBOwnershipEvidence(root / "book_b_ownership_evidence.jsonl"),
         outbox=outbox,
         now=now,
         notifier=notifier,

@@ -27,6 +27,11 @@ Completion means the requested command reached a terminal state and the branch-s
 - Xiaocao is paper-only unless both live-capital keys pass `src/xiaocao/live/safety.py`. An automation never creates either key.
 - Judgment artifacts (`XIAOCAO_PLAYBOOK`, posture timeline, candidate hypotheses) are priors only. They cannot filter deterministic picks, tune parameters or validate a strategy. For posture/exit judgment, start at `reference/experience/README.md` and follow only its relevant pointer.
 - Keep Books A, B and T separate. Same-code overlap is valid. For current truth, prefer `positions.jsonl`, `paper_trades.jsonl` and matching account files over stale holdings snapshots.
+- Book-B phase-one broker seam is manual/read-only and non-runtime: it must never
+  replace the canonical `paper_record.py` writer or invent a fill. It requires
+  ★E/allocation proof for BUY, monitor-authorized owned-lot evidence for SELL,
+  account-level writer fencing and durable takeover/reconcile evidence; no real
+  submit is permitted while the Founder template reports `submit_capability=false`.
 - Before trusting A/B or repaired ledger state, run `scripts/data_doctor.py`. Raw cumulative A-B PnL is accounting information; exit comparison requires the identical-entry paired cohort.
 - Cache first and rate-limit Xiaocao API calls. The market-data branch contains endpoint-specific traps.
 
@@ -42,6 +47,8 @@ Completion means the requested command reached a terminal state and the branch-s
 | Quotes, environment, minute/K-line, pools, sectors, indices or indicators | [`references/market-data.md`](references/market-data.md) |
 | Reports, strategy runs, backtests, cohorts or paper-vs-market research | [`references/strategy-and-backtests.md`](references/strategy-and-backtests.md) |
 | Kronos variants, training rows, research guards, verdict ledger or flywheel states | [`references/research-flywheels.md`](references/research-flywheels.md) |
+| Founder Securities Web/OpenCLI read-only probe, prepare, reconcile or recover | [`references/foundersc-opencli.md`](references/foundersc-opencli.md) |
+| Book-B phase-one execution seam, ownership evidence or allocation proof | [`references/automation-morning.md`](references/automation-morning.md), [`references/automation-intraday.md`](references/automation-intraday.md), [`references/foundersc-opencli.md`](references/foundersc-opencli.md) |
 | “What should the trading system do?” or a behavior change | `docs/OPERATING_CONTRACT.md`, then the owning code/tests |
 | Posture, discretionary exit triage or distilled 小草 knowledge | `reference/experience/README.md`, then only the routed playbook/timeline artifact |
 

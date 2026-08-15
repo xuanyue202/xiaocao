@@ -17,6 +17,7 @@ import hashlib
 import json
 import os
 import uuid
+from contextlib import contextmanager
 from dataclasses import asdict, dataclass, field, replace
 from datetime import datetime, timezone
 from enum import Enum
@@ -73,6 +74,13 @@ _UNAVAILABLE_GUARD_STATUSES = frozenset({
     "", "unknown", "stale", "unavailable", "s", "suspended", "halt",
     "stopped", "停牌", "暂停交易",
 })
+_SELL_AUTHORIZED_REASONS = frozenset({
+    "AI_EVENT_RISK_EXIT",
+    "HARD_STOP",
+    "TRAILING_STOP",
+    "EOD_DISCIPLINE_1455",
+})
+_SELL_AUTHORIZED_PHASES = frozenset({"event_risk", "risk_floor", "eod_discipline"})
 
 
 def _utcnow() -> datetime:
@@ -97,6 +105,19 @@ def _parse_datetime(value: object) -> datetime | None:
     return parsed
 
 
+def _parse_tz_aware_datetime(value: object) -> datetime | None:
+    """Parse a decision timestamp without inventing a timezone."""
+    if isinstance(value, datetime):
+        return value if value.tzinfo is not None else None
+    if value in (None, ""):
+        return None
+    try:
+        parsed = datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+    except (TypeError, ValueError):
+        return None
+    return parsed if parsed.tzinfo is not None else None
+
+
 def _canonical(value: object) -> bytes:
     return json.dumps(
         value,
@@ -105,6 +126,38 @@ def _canonical(value: object) -> bytes:
         separators=(",", ":"),
         default=str,
     ).encode("utf-8")
+
+
+_SENSITIVE_EVIDENCE_MARKERS = (
+    "password",
+    "passwd",
+    "secret",
+    "token",
+    "cookie",
+    "credential",
+    "authorization",
+    "otp",
+)
+
+
+def _safe_evidence(value: object, *, depth: int = 0) -> object:
+    """Keep small locator proofs useful while excluding credential material."""
+    if depth > 3:
+        return "<depth-limit>"
+    if isinstance(value, dict):
+        safe: dict[str, object] = {}
+        for raw_key, raw_value in list(value.items())[:64]:
+            key = str(raw_key)
+            lowered = key.lower()
+            if any(marker in lowered for marker in _SENSITIVE_EVIDENCE_MARKERS):
+                continue
+            safe[key[:128]] = _safe_evidence(raw_value, depth=depth + 1)
+        return safe
+    if isinstance(value, (list, tuple)):
+        return [_safe_evidence(item, depth=depth + 1) for item in list(value)[:64]]
+    if isinstance(value, (str, int, float, bool)) or value is None:
+        return value if not isinstance(value, str) else value[:512]
+    return str(value)[:512]
 
 
 def _optional_int(value: object) -> int | None:
@@ -162,6 +215,12 @@ class TradePlan:
     market_guard_observed_at: datetime | None = None
     market_guard_latest_price: float | None = None
     market_guard_down_price: float | None = None
+    allocation_proof_hash: str | None = None
+    sell_authorized: bool = False
+    sell_reason: str | None = None
+    sell_decision_phase: str | None = None
+    sell_decision_at: datetime | None = None
+    sell_block_reason: str | None = None
 
     @property
     def notional(self) -> float:
@@ -197,6 +256,12 @@ class TradePlan:
             "market_guard_observed_at": _iso(self.market_guard_observed_at),
             "market_guard_latest_price": self.market_guard_latest_price,
             "market_guard_down_price": self.market_guard_down_price,
+            "allocation_proof_hash": self.allocation_proof_hash,
+            "sell_authorized": self.sell_authorized,
+            "sell_reason": self.sell_reason,
+            "sell_decision_phase": self.sell_decision_phase,
+            "sell_decision_at": _iso(self.sell_decision_at),
+            "sell_block_reason": self.sell_block_reason,
         }
 
     def validation_error(self) -> str | None:
@@ -221,12 +286,27 @@ class TradePlan:
                 return "BASKET_PRICE_MISSING"
             if float(self.limit_price) > float(self.basket_price) + 1e-6:
                 return "LIMIT_ABOVE_BASKET"
+            if self.environment == "live" and not self.allocation_proof_hash:
+                return "ALLOCATION_PROOF_MISSING"
             if str(self.market_guard_status or "").strip().lower() not in (
                 _TRADING_GUARD_STATUSES
                 | _LIMIT_DOWN_GUARD_STATUSES
                 | _UNAVAILABLE_GUARD_STATUSES
             ):
                 return "MARKET_GUARD_INVALID"
+        else:
+            if not self.owned_lot_id:
+                return "OWNED_LOT_ID_MISSING"
+            if not self.sell_authorized:
+                return "SELL_AUTHORIZATION_MISSING"
+            if self.sell_reason not in _SELL_AUTHORIZED_REASONS:
+                return "SELL_REASON_NOT_AUTHORIZED"
+            if self.sell_decision_phase not in _SELL_AUTHORIZED_PHASES:
+                return "SELL_PHASE_NOT_AUTHORIZED"
+            if self.sell_block_reason:
+                return f"SELL_BLOCKED:{self.sell_block_reason}"
+            if self.sell_decision_at is None or self.sell_decision_at.tzinfo is None:
+                return "SELL_DECISION_AT_NOT_TZ_AWARE"
         if self.recovery_deadline.tzinfo is None:
             return "RECOVERY_DEADLINE_NOT_TZ_AWARE"
         if self.submit_not_before is not None and self.submit_not_before.tzinfo is None:
@@ -270,7 +350,8 @@ class TradePlan:
             f"book={self.book} env={self.environment} account={self.logical_account_id} "
             f"{self.side.upper()} {self.code} {self.name} price={self.limit_price:.4f} "
             f"basket={self.basket_price if self.basket_price is not None else '-'} shares={shares} "
-            f"trade_date={self.trade_date} deadline={_iso(self.recovery_deadline)} plan_id={self.plan_id}"
+            f"trade_date={self.trade_date} deadline={_iso(self.recovery_deadline)} plan_id={self.plan_id} "
+            f"lot={self.owned_lot_id or '-'} sell_reason={self.sell_reason or '-'}"
         )
 
 
@@ -293,11 +374,14 @@ class BrokerCapability:
     sellable_shares: int | None = None
     t1_blocked: bool | None = None
     position_source: str = ""
+    template_name: str | None = None
+    template_version: str | None = None
 
     @classmethod
     def from_template(cls, payload: dict[str, Any]) -> "BrokerCapability":
         caps = payload.get("capabilities")
         caps = dict(caps) if isinstance(caps, dict) else {}
+        locator_proof = _safe_evidence(payload.get("locator_proof") or {})
         return cls(
             ready=str(payload.get("status") or "").lower() in {"ok", "ready", "prepared"},
             environment=str(payload.get("environment") or ""),
@@ -306,7 +390,7 @@ class BrokerCapability:
             supports_reconcile=bool(payload.get("reconcile_capability", True)),
             route=str(payload.get("route") or ""),
             account_binding=str(payload.get("account_binding") or ""),
-            locator_proof=dict(payload.get("locator_proof") or {}),
+            locator_proof=locator_proof if isinstance(locator_proof, dict) else {},
             capabilities=caps,
             reason=str(payload.get("reason") or ""),
             manual_position_shares=_optional_int(payload.get("manual_position_shares")),
@@ -314,6 +398,8 @@ class BrokerCapability:
             sellable_shares=_optional_int(payload.get("sellable_shares")),
             t1_blocked=payload.get("t1_blocked") if isinstance(payload.get("t1_blocked"), bool) else None,
             position_source=str(payload.get("position_source") or ""),
+            template_name=str(payload.get("template_name") or "") or None,
+            template_version=str(payload.get("template_version") or "") or None,
         )
 
 
@@ -341,6 +427,10 @@ class BrokerReceipt:
     market_guard_status: str | None = None
     market_guard_observed_at: datetime | None = None
     market_guard_down_price: float | None = None
+    template_name: str | None = None
+    template_version: str | None = None
+    account_binding: str | None = None
+    locator_proof: dict[str, Any] = field(default_factory=dict)
     reason: str = ""
     error_code: str | None = None
     observed_at: datetime | None = None
@@ -398,6 +488,10 @@ class ExecutionReceipt:
     market_guard_status: str | None = None
     market_guard_observed_at: datetime | None = None
     market_guard_down_price: float | None = None
+    template_name: str | None = None
+    template_version: str | None = None
+    account_binding: str | None = None
+    locator_proof: dict[str, Any] = field(default_factory=dict)
     attempt: int = 0
     next_action: str = ""
     event_id: str | None = None
@@ -420,6 +514,10 @@ class ExecutionReceipt:
             "market_guard_status": self.market_guard_status,
             "market_guard_observed_at": _iso(self.market_guard_observed_at),
             "market_guard_down_price": self.market_guard_down_price,
+            "template_name": self.template_name,
+            "template_version": self.template_version,
+            "account_binding": self.account_binding,
+            "locator_proof": _safe_evidence(self.locator_proof),
             "attempt": self.attempt,
             "next_action": self.next_action,
             "event_id": self.event_id,
@@ -428,6 +526,7 @@ class ExecutionReceipt:
 
     @classmethod
     def from_dict(cls, payload: dict[str, Any]) -> "ExecutionReceipt":
+        locator_proof = _safe_evidence(payload.get("locator_proof") or {})
         return cls(
             plan_id=str(payload.get("plan_id") or ""),
             plan_hash=str(payload.get("plan_hash") or ""),
@@ -444,6 +543,10 @@ class ExecutionReceipt:
             market_guard_status=payload.get("market_guard_status"),
             market_guard_observed_at=_parse_datetime(payload.get("market_guard_observed_at")),
             market_guard_down_price=_optional_float(payload.get("market_guard_down_price")),
+            template_name=payload.get("template_name"),
+            template_version=payload.get("template_version"),
+            account_binding=payload.get("account_binding"),
+            locator_proof=locator_proof if isinstance(locator_proof, dict) else {},
             attempt=_optional_int(payload.get("attempt")) or 0,
             next_action=str(payload.get("next_action") or ""),
             event_id=payload.get("event_id"),
@@ -545,17 +648,21 @@ class ExecutionStore:
 InMemoryExecutionStore = ExecutionStore
 
 
-class TradingAccountLedger:
-    """Append-only Book B fill ownership ledger.
+class BookBOwnershipEvidence:
+    """Append-only broker-ownership evidence, never the account ledger.
 
     The broker remains the cash/position authority.  This ledger records only
     fills that the broker adapter has already proved, so mixed-account SELL
     guards can distinguish Xiaocao-owned deltas from manual holdings.  Each
-    plan is idempotent by its plan-level cumulative filled quantity.
+    plan is idempotent by its plan-level cumulative filled quantity.  It must
+    never be pointed at ``positions.jsonl`` or ``paper_trades.jsonl``: those
+    files and ``paper_ledger.lock`` remain the canonical paper account writer.
     """
 
     def __init__(self, path: Path):
         self.path = Path(path)
+        if self.path.name in {"positions.jsonl", "paper_trades.jsonl", "paper_ledger.lock"}:
+            raise ValueError("ownership evidence cannot replace canonical account files")
         self.lock_path = self.path.with_suffix(self.path.suffix + ".lock")
 
     def _locked(self):
@@ -621,6 +728,7 @@ class TradingAccountLedger:
             previous_hash = rows[-1].get("event_hash") if rows else None
             event = {
                 "schema_version": 1,
+                "evidence_kind": "book_b_ownership",
                 "event_id": uuid.uuid4().hex,
                 "ts": _iso(_utcnow()),
                 "kind": "fill_observed",
@@ -652,6 +760,11 @@ class TradingAccountLedger:
             handle.close()
 
 
+# Compatibility name for callers written during the phase-one seam.  New code
+# should use the explicit non-canonical name above.
+TradingAccountLedger = BookBOwnershipEvidence
+
+
 class TradingIncidentOutbox:
     """Durable, idempotent incident handoff independent of the order ledger."""
 
@@ -677,8 +790,14 @@ class TradingIncidentOutbox:
         fcntl.flock(handle.fileno(), fcntl.LOCK_EX)
         try:
             rows = self._rows()
-            if any(row.get("incident_id") == incident_id for row in rows):
+            matching = [row for row in rows if row.get("incident_id") == incident_id]
+            # A delivered incident is terminal and must remain exactly-once.
+            # A pending incident is an outstanding delivery claim: let the
+            # caller retry the same body without appending duplicate claims.
+            if any(row.get("status") == "delivered" for row in matching):
                 return False
+            if any(row.get("status") == "pending" for row in matching):
+                return True
             row = {
                 "schema_version": 1,
                 "incident_id": incident_id,
@@ -717,10 +836,103 @@ class TradingIncidentOutbox:
             handle.close()
 
     def delivered(self, incident_id: str) -> bool:
-        return any(
-            row.get("incident_id") == incident_id and row.get("status") == "delivered"
-            for row in self._rows()
-        )
+        self.path.parent.mkdir(parents=True, exist_ok=True)
+        handle = self.lock_path.open("a+", encoding="utf-8")
+        fcntl.flock(handle.fileno(), fcntl.LOCK_EX)
+        try:
+            return any(
+                row.get("incident_id") == incident_id and row.get("status") == "delivered"
+                for row in self._rows()
+            )
+        finally:
+            fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
+            handle.close()
+
+
+class TradingTakeoverStore:
+    """Durable, credential-free capsule for a human/agent takeover.
+
+    A capsule is deliberately separate from the execution event stream: it is
+    the compact handoff surface a recovery agent can consume after a crash or
+    an UNKNOWN broker response.  It contains only the immutable plan, the
+    normalized receipt, and locator/account proof summaries already emitted by
+    the broker adapter; raw DOM, credentials, and arbitrary page text never
+    enter this file.
+    """
+
+    def __init__(self, path: Path):
+        self.path = Path(path)
+        self.lock_path = self.path.with_suffix(self.path.suffix + ".lock")
+
+    def _rows(self) -> list[dict[str, Any]]:
+        if not self.path.exists():
+            return []
+        rows: list[dict[str, Any]] = []
+        with self.path.open(encoding="utf-8") as stream:
+            for line in stream:
+                try:
+                    row = json.loads(line)
+                except (TypeError, ValueError):
+                    continue
+                if isinstance(row, dict):
+                    rows.append(row)
+        return rows
+
+    def write(
+        self,
+        plan: TradePlan,
+        receipt: ExecutionReceipt,
+        *,
+        incident_id: str | None = None,
+    ) -> dict[str, Any]:
+        stable_incident_id = incident_id or hashlib.sha256(
+            _canonical({
+                "plan_hash": plan.plan_hash,
+                "state": receipt.state.value,
+                "reason": receipt.reason,
+                "order_id": receipt.broker_order_id,
+                "filled": receipt.filled_shares,
+                "remaining": receipt.remaining_shares,
+            })
+        ).hexdigest()
+        payload = {
+            "schema_version": 1,
+            "incident_id": stable_incident_id,
+            "plan": plan.canonical_payload(),
+            "receipt": receipt.as_dict(),
+            "template_name": receipt.template_name,
+            "template_version": receipt.template_version,
+            "account_binding": receipt.account_binding,
+            "locator_proof": _safe_evidence(receipt.locator_proof),
+            "safe_next_action": (
+                "reconcile_only"
+                if receipt.state == ExecutionState.UNKNOWN
+                else receipt.next_action
+            ),
+            "forbidden_actions": ["submit", "blind_retry", "create_new_plan"],
+            "reconcile_required": receipt.state == ExecutionState.UNKNOWN
+            or receipt.next_action in {"reconcile", "reconcile_only"},
+        }
+        capsule_id = hashlib.sha256(_canonical({"incident_id": stable_incident_id})).hexdigest()
+        capsule = {
+            **payload,
+            "capsule_id": capsule_id,
+            "created_at": _iso(_utcnow()),
+        }
+        self.path.parent.mkdir(parents=True, exist_ok=True)
+        handle = self.lock_path.open("a+", encoding="utf-8")
+        fcntl.flock(handle.fileno(), fcntl.LOCK_EX)
+        try:
+            if any(row.get("capsule_id") == capsule_id for row in self._rows()):
+                return capsule
+            with self.path.open("a", encoding="utf-8") as stream:
+                stream.write(json.dumps(capsule, ensure_ascii=False, sort_keys=True, default=str) + "\n")
+                stream.flush()
+                os.fsync(stream.fileno())
+            return capsule
+        finally:
+            fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
+            handle.close()
 
 
 Notifier = Callable[[str, str], object]
@@ -734,33 +946,73 @@ class TradingExecution:
         *,
         store: ExecutionStore,
         broker: BrokerAdapter | None = None,
-        ledger: TradingAccountLedger | None = None,
+        ledger: BookBOwnershipEvidence | None = None,
         outbox: TradingIncidentOutbox | None = None,
+        takeovers: TradingTakeoverStore | None = None,
         notifier: Notifier | None = None,
         now: Callable[[], datetime] | None = None,
         safety_env: dict[str, str] | None = None,
         auth_path: Path = DEFAULT_AUTH_PATH,
         audit_path: Path | None = DEFAULT_AUDIT_PATH,
+        account_lock_dir: Path | None = None,
     ):
         self.store = store
         self.broker = broker
         self.ledger = ledger
         self.outbox = outbox or TradingIncidentOutbox(store.path.with_name("trading_incidents.jsonl"))
+        self.takeovers = takeovers or TradingTakeoverStore(store.path.with_name("trading_takeovers.jsonl"))
         self.notifier = notifier if notifier is not None else self._default_notifier
         self.now = now or _utcnow
         self.safety_env = safety_env
         self.auth_path = auth_path
         self.audit_path = audit_path
+        self.account_lock_dir = Path(account_lock_dir or store.path.parent / "account_writer_locks")
 
     @staticmethod
     def _default_notifier(title: str, body: str) -> object:
         return notify_module.notify(title, body, audience="trading")
+
+    @staticmethod
+    def _with_capability_evidence(
+        receipt: ExecutionReceipt,
+        capability: BrokerCapability,
+    ) -> ExecutionReceipt:
+        return replace(
+            receipt,
+            template_name=receipt.template_name or capability.template_name,
+            template_version=receipt.template_version or capability.template_version,
+            account_binding=receipt.account_binding or capability.account_binding,
+            locator_proof=_safe_evidence(
+                receipt.locator_proof or capability.locator_proof
+            ),
+        )
+
+    @contextmanager
+    def _account_writer_lock(self, logical_account_id: str):
+        """Fence every transition for one logical account, not just one file."""
+        account = str(logical_account_id or "").strip()
+        if not account:
+            raise ValueError("logical account id is required for writer fencing")
+        digest = hashlib.sha256(account.encode("utf-8")).hexdigest()[:24]
+        self.account_lock_dir.mkdir(parents=True, exist_ok=True)
+        path = self.account_lock_dir / f"account-{digest}.lock"
+        handle = path.open("a+", encoding="utf-8")
+        fcntl.flock(handle.fileno(), fcntl.LOCK_EX)
+        try:
+            yield
+        finally:
+            fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
+            handle.close()
 
     def execute(self, plan: TradePlan, broker: BrokerAdapter | None = None) -> ExecutionReceipt:
         """Advance one immutable plan, never replaying an uncertain submit."""
         broker = broker or self.broker
         if broker is None:
             raise ValueError("a broker adapter must be configured before execute")
+        with self._account_writer_lock(plan.logical_account_id):
+            return self._execute_locked(plan, broker)
+
+    def _execute_locked(self, plan: TradePlan, broker: BrokerAdapter) -> ExecutionReceipt:
         existing = self.store.current(plan.plan_id)
         if existing is not None and existing.plan_hash != plan.plan_hash:
             return self._record(
@@ -852,7 +1104,10 @@ class TradingExecution:
         if not capability.ready or capability.environment != plan.environment or capability.logical_account_id != plan.logical_account_id:
             failed = self._record(
                 plan,
-                replace(previous, reason="BROKER_BINDING_MISMATCH", next_action="probe"),
+                self._with_capability_evidence(
+                    replace(previous, reason="BROKER_BINDING_MISMATCH", next_action="probe"),
+                    capability,
+                ),
                 kind="binding_mismatch",
                 details={"capability": asdict(capability)},
             )
@@ -876,7 +1131,10 @@ class TradingExecution:
             } else ExecutionState.REJECTED
             blocked = self._record(
                 plan,
-                replace(previous, state=state, reason=ownership_reason, next_action="human_review" if state == ExecutionState.REJECTED else "stop"),
+                self._with_capability_evidence(
+                    replace(previous, state=state, reason=ownership_reason, next_action="human_review" if state == ExecutionState.REJECTED else "stop"),
+                    capability,
+                ),
                 kind="ownership_guard",
                 details={"capability": asdict(capability)},
             )
@@ -886,8 +1144,12 @@ class TradingExecution:
         if not capability.supports_submit:
             denied = self._record(
                 plan,
-                replace(previous, state=ExecutionState.REJECTED, reason="NO_ROUTE_PROVEN", next_action="human_review"),
+                self._with_capability_evidence(
+                    replace(previous, state=ExecutionState.REJECTED, reason="NO_ROUTE_PROVEN", next_action="human_review"),
+                    capability,
+                ),
                 kind="submit_capability_missing",
+                details={"capability": asdict(capability)},
             )
             if plan.environment == "live":
                 self._incident(plan, denied)
@@ -898,7 +1160,10 @@ class TradingExecution:
         }:
             blocked = self._record(
                 plan,
-                replace(previous, state=ExecutionState.REJECTED, reason="ACCOUNT_BINDING_UNPROVEN", next_action="human_review"),
+                self._with_capability_evidence(
+                    replace(previous, state=ExecutionState.REJECTED, reason="ACCOUNT_BINDING_UNPROVEN", next_action="human_review"),
+                    capability,
+                ),
                 kind="account_binding_unproven",
                 details={"account_binding": capability.account_binding},
             )
@@ -906,6 +1171,13 @@ class TradingExecution:
             return blocked
         try:
             prepared = broker.prepare(plan)
+            prepared = replace(
+                prepared,
+                template_name=prepared.template_name or capability.template_name,
+                template_version=prepared.template_version or capability.template_version,
+                account_binding=prepared.account_binding or capability.account_binding,
+                locator_proof=prepared.locator_proof or capability.locator_proof,
+            )
         except Exception as exc:
             failed = self._record(
                 plan,
@@ -917,10 +1189,13 @@ class TradingExecution:
             return failed
         prepared_status = prepared.normalized_status()
         if prepared_status == BrokerStatus.UNKNOWN or not prepared.conclusive:
+            prepared_unknown = self._receipt_from_broker(
+                plan, previous, prepared, ExecutionState.UNKNOWN, plan.shares
+            )
             unknown = self._record(
                 plan,
                 replace(
-                    previous,
+                    prepared_unknown,
                     state=ExecutionState.UNKNOWN,
                     reason=prepared.reason or "PREPARE_RESPONSE_UNKNOWN",
                     next_action="reconcile_only",
@@ -935,7 +1210,14 @@ class TradingExecution:
                 plan,
                 replace(previous, state=ExecutionState.REJECTED, reason="PREPARE_MISMATCH", next_action="human_review"),
                 kind="prepare_mismatch",
-                details={"field_readback": prepared.field_readback, "echoed": prepared.echoed},
+                details={
+                    "field_readback": prepared.field_readback,
+                    "echoed": prepared.echoed,
+                    "template_name": prepared.template_name,
+                    "template_version": prepared.template_version,
+                    "account_binding": prepared.account_binding,
+                    "locator_proof": prepared.locator_proof,
+                },
             )
             if plan.environment == "live":
                 self._incident(plan, failed)
@@ -1005,9 +1287,17 @@ class TradingExecution:
             self._incident(plan, unknown)
             return unknown
         if broker_receipt.normalized_status() == BrokerStatus.UNKNOWN or not broker_receipt.conclusive:
+            unknown_base = self._receipt_from_broker(
+                plan,
+                claimed,
+                broker_receipt,
+                ExecutionState.UNKNOWN,
+                requested_shares,
+                already_filled=already_filled,
+            )
             unknown = self._record(
                 plan,
-                replace(claimed, state=ExecutionState.UNKNOWN, reason=broker_receipt.reason or "SUBMIT_RESPONSE_UNKNOWN", next_action="reconcile_only"),
+                replace(unknown_base, state=ExecutionState.UNKNOWN, reason=broker_receipt.reason or "SUBMIT_RESPONSE_UNKNOWN", next_action="reconcile_only"),
                 kind="submit_unknown",
                 details={"claim_id": claim_id, "error_code": broker_receipt.error_code},
             )
@@ -1038,9 +1328,12 @@ class TradingExecution:
             self._incident(plan, unknown)
             return unknown
         if broker_receipt.normalized_status() == BrokerStatus.UNKNOWN or not broker_receipt.conclusive:
+            unknown_base = self._receipt_from_broker(
+                plan, reconciling, broker_receipt, ExecutionState.UNKNOWN, plan.shares
+            )
             unknown = self._record(
                 plan,
-                replace(reconciling, state=ExecutionState.UNKNOWN, reason=broker_receipt.reason or "RECONCILE_UNKNOWN", next_action="reconcile_only"),
+                replace(unknown_base, state=ExecutionState.UNKNOWN, reason=broker_receipt.reason or "RECONCILE_UNKNOWN", next_action="reconcile_only"),
                 kind="reconcile_unknown",
             )
             self._incident(plan, unknown)
@@ -1059,18 +1352,41 @@ class TradingExecution:
         try:
             capability = broker.probe(plan)
             if not capability.ready or not capability.supports_submit:
-                failed = self._record(plan, replace(reconciled, reason="RETRY_ROUTE_UNAVAILABLE", next_action="stop"), kind="retry_route_unavailable")
+                failed = self._record(
+                    plan,
+                    self._with_capability_evidence(
+                        replace(reconciled, reason="RETRY_ROUTE_UNAVAILABLE", next_action="stop"),
+                        capability,
+                    ),
+                    kind="retry_route_unavailable",
+                    details={"capability": asdict(capability)},
+                )
                 if plan.environment == "live":
                     self._incident(plan, failed)
                 return failed
             requested = reconciled.remaining_shares
             prepared = broker.prepare(plan, requested_shares=requested)
+            prepared = replace(
+                prepared,
+                template_name=prepared.template_name or capability.template_name,
+                template_version=prepared.template_version or capability.template_version,
+                account_binding=prepared.account_binding or capability.account_binding,
+                locator_proof=prepared.locator_proof or capability.locator_proof,
+            )
             prepared_status = prepared.normalized_status()
             if prepared_status == BrokerStatus.UNKNOWN or not prepared.conclusive:
+                retry_unknown_base = self._receipt_from_broker(
+                    plan,
+                    reconciled,
+                    prepared,
+                    ExecutionState.UNKNOWN,
+                    requested,
+                    already_filled=reconciled.filled_shares,
+                )
                 unknown = self._record(
                     plan,
                     replace(
-                        reconciled,
+                        retry_unknown_base,
                         state=ExecutionState.UNKNOWN,
                         reason=prepared.reason or "RETRY_PREPARE_RESPONSE_UNKNOWN",
                         next_action="reconcile_only",
@@ -1081,7 +1397,19 @@ class TradingExecution:
                     self._incident(plan, unknown)
                 return unknown
             if prepared_status != BrokerStatus.PREPARED or not self._echo_matches(plan, prepared.echoed, requested):
-                failed = self._record(plan, replace(reconciled, state=ExecutionState.REJECTED, reason="RETRY_PREPARE_MISMATCH", next_action="human_review"), kind="retry_prepare_mismatch")
+                failed = self._record(
+                    plan,
+                    replace(reconciled, state=ExecutionState.REJECTED, reason="RETRY_PREPARE_MISMATCH", next_action="human_review"),
+                    kind="retry_prepare_mismatch",
+                    details={
+                        "field_readback": prepared.field_readback,
+                        "echoed": prepared.echoed,
+                        "template_name": prepared.template_name,
+                        "template_version": prepared.template_version,
+                        "account_binding": prepared.account_binding,
+                        "locator_proof": prepared.locator_proof,
+                    },
+                )
                 if plan.environment == "live":
                     self._incident(plan, failed)
                 return failed
@@ -1185,6 +1513,10 @@ class TradingExecution:
             market_guard_status=broker.market_guard_status,
             market_guard_observed_at=broker.market_guard_observed_at or broker.observed_at,
             market_guard_down_price=broker.market_guard_down_price,
+            template_name=broker.template_name or previous.template_name,
+            template_version=broker.template_version or previous.template_version,
+            account_binding=broker.account_binding or previous.account_binding,
+            locator_proof=_safe_evidence(broker.locator_proof or previous.locator_proof),
             next_action=(
                 "reconcile" if state in {ExecutionState.ACKNOWLEDGED, ExecutionState.PARTIAL} else
                 "reconcile_only" if state == ExecutionState.UNKNOWN else
@@ -1323,11 +1655,14 @@ class TradingExecution:
             f"操作：{plan.describe()}\n"
             f"state={receipt.state.value} reason={receipt.reason} order_id={receipt.broker_order_id or '-'}\n"
             f"filled={receipt.filled_shares} remaining={receipt.remaining_shares} next={receipt.next_action}\n"
+            f"template={receipt.template_name or '-'}@{receipt.template_version or '-'} "
+            f"account_binding={receipt.account_binding or '-'} locator_proof={json.dumps(_safe_evidence(receipt.locator_proof), ensure_ascii=False, sort_keys=True)}\n"
             "已完成安全检查：Book B 身份、计划哈希、账户/环境绑定、价格/数量回读、"
             f"real-capital 双钥匙={'已通过' if plan.environment == 'live' else '不适用（mock）'}\n"
             f"是否需要用户介入：{'是' if receipt.next_action == 'human_review' or receipt.state == ExecutionState.UNKNOWN else '否（继续安全对账）'}\n"
             "未知状态只允许继续对账，不会盲目重发。"
         )
+        self.takeovers.write(plan, receipt, incident_id=incident_id)
         fresh = self.outbox.enqueue(incident_id=incident_id, title="Book B 交易异常", body=body)
         if not fresh or self.outbox.delivered(incident_id):
             return
@@ -1376,6 +1711,15 @@ def trade_plan_from_frozen_row(
     row_book = str(raw_book or "B").strip().upper()
     if row_book != "B":
         raise ValueError(f"frozen row is not Book B: {trade_date} {code} book={row_book}")
+    if environment == "live" and normalized_side == "BUY":
+        if row.get("mode_exec_star") is not True:
+            raise ValueError(f"live frozen BUY row is not ★E: {trade_date} {code}")
+        if row.get("mode_trade_eligible") is not True:
+            raise ValueError(f"live frozen BUY row is not executable: {trade_date} {code}")
+        if "executable_fillable" in row and row.get("executable_fillable") is not True:
+            raise ValueError(f"live frozen BUY row is not fillable: {trade_date} {code}")
+        if row.get("is_live") is not True:
+            raise ValueError(f"live frozen BUY row must be live: {trade_date} {code}")
     shares_value = row.get("mode_exec_planned_shares") if normalized_side == "BUY" else row.get("shares")
     if shares_value in (None, ""):
         shares_value = row.get("planned_shares")
@@ -1418,7 +1762,7 @@ def trade_plan_from_frozen_row(
     down_price = _optional_float(
         row.get("down_price") or row.get("downPrice") or row.get("limit_down_price")
     )
-    return TradePlan(
+    plan = TradePlan(
         plan_id=plan_id,
         strategy_run_id=str(strategy_run_id or row.get("strategy_run_id") or f"morning-{trade_date}"),
         snapshot_ref=str(row.get("snapshot_ref") or f"signal_snapshots.jsonl:{trade_date}:{code}"),
@@ -1446,4 +1790,25 @@ def trade_plan_from_frozen_row(
         market_guard_observed_at=observed_at,
         market_guard_latest_price=latest_price,
         market_guard_down_price=down_price,
+        allocation_proof_hash=str(row.get("allocation_proof_hash") or "") or None,
+        sell_authorized=bool(row.get("sell_authorized") is True),
+        sell_reason=str(row.get("sell_reason") or "") or None,
+        sell_decision_phase=str(row.get("decision_phase") or row.get("sell_decision_phase") or "") or None,
+        sell_decision_at=_parse_tz_aware_datetime(
+            row.get("sell_decision_at") or row.get("decision_at")
+        ),
+        sell_block_reason=(
+            str(
+                row.get("sell_block_reason")
+                or row.get("sell_blocked_reason")
+                or row.get("liquidity_block_reason")
+                or ("T1_BLOCKED" if row.get("t1_blocked") is True else "")
+            )
+            or None
+        ),
     )
+    if normalized_side == "SELL":
+        error = plan.validation_error()
+        if error:
+            raise ValueError(error)
+    return plan

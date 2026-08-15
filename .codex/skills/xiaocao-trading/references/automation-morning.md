@@ -35,6 +35,16 @@ The orchestration must reach these stages:
 
 The 9:25 emitted set is the day’s stable recommendation reference. Later prices/fills may change; do not relabel the frozen signal set as unstable after close.
 
+The checked-in `scripts/book_b_execute.py` is a phase-one manual/read-only
+execution seam, not a third morning writer. `auto_daily.sh` remains unchanged
+and continues to call the canonical `paper_record.py` path. If the seam is
+used for a dry run, BUY rows must carry an allocation proof produced by the
+shared `strategy.mode_switch.plan_board_lot_orders` allocator, using rolling
+settled NAV (the 30,000 yuan value is only the initial mock basis). Missing or
+inconsistent proof, cash, batch, exposure, slot, or board-lot facts fail closed.
+Its market guard records `LIMIT_DOWN_BUY_BLOCKED` or
+`LIMIT_DOWN_CHECK_UNAVAILABLE`; neither is a fill.
+
 ## Two-stage reporting
 
 The prerecommendation Automation must return a final/inbox Chinese result as soon

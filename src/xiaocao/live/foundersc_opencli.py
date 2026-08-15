@@ -20,6 +20,7 @@ from .trading_execution import (
     BrokerReceipt,
     BrokerStatus,
     TradePlan,
+    _safe_evidence,
 )
 
 
@@ -174,6 +175,8 @@ class FounderscQuantOpenCLIAdapter(BrokerAdapter):
                 reason="OPENCLI_BINDING_FIELDS_MISSING",
                 locator_proof=capability.locator_proof,
                 capabilities=capability.capabilities,
+                template_name=capability.template_name,
+                template_version=capability.template_version,
             )
         return capability
 
@@ -299,6 +302,8 @@ class FounderscQuantOpenCLIAdapter(BrokerAdapter):
 
         field_readback = row.get("field_readback")
         field_readback = dict(field_readback) if isinstance(field_readback, dict) else {}
+        locator_proof = row.get("locator_proof")
+        locator_proof = dict(locator_proof) if isinstance(locator_proof, dict) else {}
         echoed: dict[str, Any] = {}
         if stage == "prepare":
             echoed_code = field_readback.get("code") or field_readback.get("stock_code")
@@ -339,6 +344,10 @@ class FounderscQuantOpenCLIAdapter(BrokerAdapter):
                 if row.get("market_guard_down_price") not in (None, "")
                 else row.get("down_price") or row.get("downPrice")
             ),
+            template_name=str(row.get("template_name") or "foundersc-quant") or None,
+            template_version=str(row.get("template_version") or "") or None,
+            account_binding=str(row.get("account_binding") or "") or None,
+            locator_proof=_safe_evidence(locator_proof),
             reason=reason,
             error_code=str(error_code) if error_code not in (None, "") else None,
             observed_at=_parse_datetime(row.get("observed_at") or row.get("market_observed_at")),

@@ -8,6 +8,10 @@ __pycache__/
 # 本地配置可能包含私有环境信息。
 xiaocao.yaml
 
+# 方正量化 OpenCLI 本地凭据与运行配置；只提交 .env.example。
+opencli/config/foundersc-quant.env
+opencli/config/foundersc-quant.*.env
+
 # Egg-info / build
 src/xiaocao.egg-info/
 build/

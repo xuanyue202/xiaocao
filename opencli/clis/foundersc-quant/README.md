@@ -1,6 +1,6 @@
 # Founder Securities OpenCLI templates
 
-Template version: `1`
+Template version: `2`
 Site: `foundersc-quant`
 Scope: read-only probe/recovery/reconciliation and no-submit form preparation.
 
@@ -116,9 +116,12 @@ time, not a broker event timestamp.
 
 `reconcile` includes account assets, query orders/deals, active strategy
 surfaces, and—when the app exposes exactly one same-origin opaque link—the
-manual order/deal page and its read-only withdraw-control count. It reports
-`reconciled` only when every requested surface has a complete visible scan
-with no detected pagination or virtual-list boundary.
+manual order/deal page and its read-only withdraw-control count. It walks
+bounded pagination and virtual-scroll surfaces, requiring a unique next
+control or a proven terminal scroll position before a surface is complete.
+It reports `reconciled` only when every requested surface has a complete
+visible scan, the route is still bound, and the page has proven the target
+account binding.
 If a table is paginated, virtualized, missing, its tab cannot be read, or the
 opaque manual route is not unique, it
 returns `reconciled_partial`, `reconcile_complete=false`, and
@@ -132,6 +135,10 @@ returns `reconciled_partial`, `reconcile_complete=false`, and
   returns `status=unknown` from `probe` with
   `status_reason=account_fingerprint_not_proven`; it is not readiness for a
   write.
+- `prepare` compares every requested code, side, quantity, price, date and
+  trigger-time field with the actual page readback. A mismatch is a
+  `capability_gap`; a matching form is still not submit-ready unless the
+  account binding is proven.
 - A non-unique environment container, route shell, or required field returns
   `status=unknown` or `status=capability_gap` with `reconcile_required=true`
   where the page state may be ambiguous.
@@ -159,6 +166,9 @@ The templates preserve the research gaps rather than hiding them:
   row-level cancellation fact has been proven.
 - The opening-auction route does not natively express
   `min(frozen_open * 1.005, basket_price)`.
+- Pagination/virtual-scroll scans are bounded at 100 pages/steps and remain
+  incomplete when the page exposes an ambiguous control or fails to reach a
+  terminal boundary.
 - The mock manual-limit route has previously redirected to the account page;
   that route is reported as a capability gap rather than being treated as a
   successful form.

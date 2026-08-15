@@ -43,6 +43,14 @@ T+1 remains binding. Report an entry-day hard/event risk as unresolved rather th
 
 All writers share `output/live/paper_ledger.lock`. If `.ledger_txn/pending.json` exists, let the next writer recover it under the lock; never delete it manually. A concurrent second writer may become a no-op but must not duplicate a SELL.
 
+Any future real SELL intent must be derived from this monitor's authorized
+`HARD_STOP`, `AI_EVENT_RISK_EXIT`, or 14:55 `TRAILING_STOP` /
+`EOD_DISCIPLINE_1455` decision, bound to a Book-B-owned sellable lot and free
+of T+1/liquidity blocks. The phase-one broker seam only records/reconciles such
+an intent; it does not replace the simulated sell writer or infer a SELL from
+an ordinary freeze row. Its broker ownership evidence is supporting evidence,
+not the canonical `positions.jsonl`/`paper_trades.jsonl` account ledger.
+
 ## Verify
 
 Inspect:

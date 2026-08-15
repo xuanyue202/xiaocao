@@ -1,6 +1,6 @@
 # 小草运营契约（Operating Contract, SSOT）
 
-**版本**：2.4
+**版本**：2.5
 **状态**：现行
 **适用范围**：所有 paper / 未来 real 的实盘环（live_recommend → paper_record → live_monitor → eod）与回测
 **关联实现**：`src/xiaocao/live/safety.py`、`src/xiaocao/live/intelligence_policy.py`、`src/xiaocao/strategy/{mode_switch,trend_rules,kol_reference}.py`、`kronos_screen/scripts/{capture_signals,forward_eval,paper_record,settle_book_a,settle_book_t,decompose_pnl,quality_governor}.py`、`scripts/{live_monitor,research_mode_switch_replay}.py`
@@ -48,6 +48,14 @@
 
 ## 4. Book B — 实盘策略口径（分阶段出场）
 
+- **阶段一执行缝**：`src/xiaocao/live/trading_execution.py` 与
+  `scripts/book_b_execute.py` 只提供人工调用的、可审计的 broker-neutral
+  probe/prepare/reconcile/recover 边界；当前 Founder Web/OpenCLI 模板没有
+  `submit` 路由，故不会被 `auto_daily.sh` 调用，也不会替代现行
+  `paper_record.py` 单写者。任何未来 SELL intent 必须来自本节
+  `live_monitor` 已授权的 Book-B 退出事件和可卖 lot，不能由普通冻结行反向
+  生成。
+
 - **默认建仓集合**：`paper_record.py --pick mode_exec_star` 只成交 `★E`。`★B`（K/P+竞价）和 `★M`（旧模式分轮动）继续前向留样，但没有默认成交权限。
 - **唯一模式证据源**：`output/live/training_rows.parquet` 中 `is_live=true`、`book=B`、`executable_fillable=true`、非北交所的 `executable_net_ret`。该标签复用第 5 节开盘成交模型并扣双边费用；理论 `net_realized_ret`、SQLite `mode_history`、实际已买子集和不可交易北交所信号均不得打开模式资格。
 - **无未来信息与证据口径**：D 日信号在 D+1 收盘结算，最早只能进入 D+2 早盘的模式判断。正式门依次检查首个样本充足的 20/60/120 交易日窗口，最低活跃日/信号数分别为 8/12、15/20、8/10。模式信号日保留已完成回放验证的 1/2/3 信号 25%/45%/50% 证据权重；模式相对同日全可执行候选池和四指数的 alpha 必须各自满足单侧 80% 下置信界大于 0 才为 `ACTIVE`，否则为 `COLD`。四指数证据缺失或样本不足为 `UNKNOWN`。
@@ -87,6 +95,9 @@
 - 窗口最低价 > `L` → 先视为初始限价未成/可能被交易所价格笼子拦截，再检查窗口最后价（实时补单代理）：若 `last <= basket_price`，按 `last` 成交并记录 `retry_realtime_after_limit_reject`；若 `last > basket_price` 或缺少可用实时价 → **SKIP**（`paper_skips.jsonl`，`LIMIT_NOT_REACHED` + `skip_detail`，**不静默丢弃**）。
 - 无窗口数据 → 回退到 L（`fill_fallback`）。
 - 唯一实现：`paper_record._fill_price_from_window`。
+- 买入重试与实时补单必须复用 `buy_guards.evaluate_buy_market_guard`；跌停、
+  停牌或权威状态不可得分别记录 `LIMIT_DOWN_BUY_BLOCKED` /
+  `LIMIT_DOWN_CHECK_UNAVAILABLE`，不得把缺行情当作可成交。
 - **数据源单一性（OHLCV 故意不接公共源 fallback）**：止损/peak-dd 依赖的分钟线 OHLCV **只**来自专有 API（`client.minute_line`）。**MUST NOT** 把公共源（akshare/腾讯等）价格接入 live 止损路径：不同复权/时间戳/坏tick 会算出不同的 peak/dd，使 book B 与验证 next-close 口径及 API 喂的回测**静默漂移**——正是 data_health 要抓的"真的谎言"。OHLCV 不可得时应 **fail-safe（持有/跳过）**，而非用二手数据动作。公共源仅允许用于**带 provenance 标记、经对账的研究/回填工具**，且 book A/B 记账永不读 `source='public'`。
 - **四指数与成熟样本完整性**：`refresh_daily_cache.py` 每日必须把上证、深成指、创业板指、中证1000、持仓、当日信号，以及上一交易日 live Book-B 信号批次一起做分钟重建，并按显式 `--date` 选择目标日。上一批信号的 D+1 日线必须在 `forward_eval` 前齐备；当天指数重建已经开始但成熟批次仍有缺口时，`data_doctor` 必须 CRITICAL 并阻断学习。`forward_eval` 的 `market_return_pct` 与 paper-vs-market 均要求四项指数齐全；任一缺失时聚合值/超额收益为 N/A，禁止把缺失当 0 或用部分指数冒充四指数均值。
 - Book T 使用同一成交模型与同一专有 OHLCV 边界；`basket_price` 仍只是放弃线。
@@ -94,6 +105,11 @@
 ## 6. 仓位与资金
 
 - Book B 每日新批次预算上限 = **已结算净资产 × 50%**，不是剩余现金 × 50%；D 与尚未在 D+1 退出的前一批可重叠，总敞口上限 = **已结算净资产 × 100%**。实际买入仍同时受可用现金约束。
+- 阶段一执行计划必须携带由 `strategy.mode_switch.plan_board_lot_orders` 生成或
+  校验的 allocation proof：结算 NAV 是滚动基数（初始值仅为第一天的
+  30,000 元），同时验证 50% 批次、100% 总敞口、可用现金、最多三席、每模式一只、
+  单票 50% 和整手数量；proof 缺失或不匹配即拒绝。不得以冻结行自报的手数/金额
+  绕过该分配器。
 - 存在至少一个 `ACTIVE` 候选时，批次目标总仓位固定 50%：1 只为 50%，2 只各 25%，3 只各约 16.7%；`ACTIVE + PROVISIONAL` 时先给临时模式约 16.7%，余量给 ACTIVE。仅 `PROVISIONAL` 时每只约 16.7%，空槽不重分配。每模式每日最多 1 只，单票上限 50%，整 100 股，单边费率 1bp；联合分配器先最大化可表达的不同模式数，再看排序、目标偏差和资金利用率。
 - 被 quality-governor 过滤的 slot **留现金、不再分配**（保守）。
 - Book T 默认预算为独立 T 账户 `TREND_BUDGET_RATIO=30%`、目标 `TREND_TOP_M=3` 个 slot；这只是 paper 仪器参数，不是已验证 alpha。Book T 的目标是“趋势袖子尽量保持仓位”，不是每日追排名；换股要有主线错配或 rebalance 到期证据，并记录估算往返手续费。
@@ -121,7 +137,9 @@
 - 任一缺失/签名被篡改（含非 ASCII 签名）/过期/越权/**或越权属性缺省**（如限定 max_notional 却未指定 notional、限定 side/code 却为 None）→ **硬拒**（fail-closed）。
 - 审计：real_capital **ALLOW 必须可持久审计**——若审计写失败则转为 DENY（不下不可审计的真实单）；DENY/always-allowed 行为 best-effort（审计永不让交易回路崩溃）。`require_capital_action` 拒绝时**只**抛 `CapitalActionDenied`。
 - 唯一实现 `src/xiaocao/live/safety.py`；真实下单 **MUST** 经 `require_capital_action(...)`，仅在 ALLOW 时下单。
-- **现状**：尚无 real-capital 调用点（paper-only）；本节是 paper→real 的结构缝，使切换=配置翻转而非重构。
+- **现状**：阶段一执行缝已在任何 broker adapter 之前调用
+  `require_capital_action(...)`，但 Founder 模板仍无 submit 路由、没有自动化调用点，
+  因而目前仍不会产生真实订单；未来启用仍需本节双钥匙和独立激活审查。
 
 ## 10. 快速探索期的自动迭代 / 升级策略（agent 皮层）
 
@@ -149,6 +167,9 @@
 - [x] Book T snapshot/account/monitor key 均带 `book` 命名空间；B/T 同票同日不互相覆盖；T 宽止损不调用短线 strong-hold/composite。
 - [x] Book B 与历史回放共用 `strategy.mode_switch`；D-1 outcome 不进入 D 日早盘状态；`COLD/UNKNOWN/BJSE` 无成交权限；`--notional` 不能绕过 3 席位、每模式 1 只和批次 50% 上限。
 - [x] 模式证据保留 25%/45%/50% 验证权重；`ACTIVE` 同时通过候选池和四指数证据，近期双基准均值与多数日转正可直接升格，任一均值转负只冷却到 `PROVISIONAL`。
+- [x] 阶段一 Book-B seam 无 submit 路由、不接 automation；SELL 仅接受 monitor 授权、Book-B owned lot、无 T+1/流动性阻断的退出 intent。
+- [x] allocation proof 复用 `mode_switch.plan_board_lot_orders`，以滚动结算 NAV 验证批次/敞口/现金/slot 上限；ownership evidence 不得替代 canonical paper ledger。
+- [x] 同一 logical account 由 account-level writer lock 串行推进；异常写入 durable takeover capsule，WeCom pending incident 可重试且已送达事件幂等。
 - [ ] （后续）settle_book_a 只用 next_close 且幂等；decompose_pnl 三项金额求和 = account realized_pnl（容差=取整）。
 
 ## 12. 修订记录
@@ -170,3 +191,4 @@
 | 2.2 | 2026-07-11 | Book-B 模拟盘采用六个月、扩展八个月和近期可执行回放共同占优的进攻候选：近期双 alpha 均值与多数日转正直接 ACTIVE；每模式只取第一名；存在 ACTIVE 时批次目标 50%，单票上限 50%。证据聚合权重保持原验证口径，real-capital 双钥匙边界不变。 |
 | 2.3 | 2026-07-14 | 收紧运行与账本诚实性：Book-T 阻卖事实优先、四指数完整覆盖、T 状态快照降级、严格配对 A/B 归因、14:25/14:55 拆分、posture 到期、agent-review 有界汇合、run-flow 双层状态，以及 A/B/T 显式 book 身份与可审计历史回填。 |
 | 2.4 | 2026-08-15 | Book T 只读已发布且当前的吕晓彤“马车”长期观点，记录主题命中与影子名次；固定 `authority=shadow_only`，不改候选顺序、资格、成交、仓位或退出，升级仍需研究护栏与 §10 人工门。 |
+| 2.5 | 2026-08-15 | 阶段一 Book-B broker-neutral seam 固化为无 submit 的人工/只读边界；SELL 绑定 monitor 授权与 owned lot；allocation proof 复用统一整手分配器并以滚动 NAV 验证预算；新增账户级 writer fencing、durable takeover capsule、pending WeCom 重试；broker ownership evidence 明确不替代 canonical paper ledger。 |

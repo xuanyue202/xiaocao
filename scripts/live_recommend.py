@@ -1114,10 +1114,12 @@ def main() -> None:
         # their candidate solely because the detail endpoint is unavailable.
         opn, entry_source, pre_close = _entry_price(client, code, date_iso)
         cached_detail = _ENTRY_DETAIL_CACHE.pop((date_iso, str(code)), _MISSING_ENTRY_DETAIL)
-        market_detail = (
-            _market_detail_for_date(client, code, date_iso)
-            if cached_detail is _MISSING_ENTRY_DETAIL else cached_detail
-        )
+        # `_entry_price` already performs the one realtime-detail read and
+        # stores its result.  A missing cache means a compatibility caller
+        # replaced that function; do not issue a second API request merely to
+        # enrich a row (the market guard will fail closed if authoritative
+        # detail was not supplied).
+        market_detail = None if cached_detail is _MISSING_ENTRY_DETAIL else cached_detail
         if not opn:
             continue
         open_pct_change = _open_pct_from_entry(opn, pre_close, r.get("openPctChange"))

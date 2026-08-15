@@ -14,7 +14,7 @@ def _source(name: str) -> str:
 
 
 def test_foundersc_template_registry_is_versioned_and_read_only_first_phase():
-    assert _source("common.mjs").count("TEMPLATE_VERSION = 1") == 1
+    assert _source("common.mjs").count("TEMPLATE_VERSION = 2") == 1
     for command in COMMANDS:
         source = _source(f"{command}.js")
         assert "site: SITE" in source
@@ -22,6 +22,13 @@ def test_foundersc_template_registry_is_versioned_and_read_only_first_phase():
         assert "./common.mjs" in source
         assert "submitted: false" in _source("common.mjs")
     assert not (TEMPLATE_ROOT / "submit.js").exists()
+
+
+def test_template_javascript_uses_repository_four_space_indentation():
+    for name in ("common.mjs", "probe.js", "prepare.js", "reconcile.js", "recover.js"):
+        for line_number, line in enumerate(_source(name).splitlines(), start=1):
+            leading = len(line) - len(line.lstrip(" "))
+            assert leading % 4 == 0, f"{name}:{line_number} uses {leading} spaces"
 
 
 def test_common_receipt_contains_optional_broker_neutral_fields():
@@ -80,6 +87,8 @@ def test_prepare_uses_exact_route_containers_and_safe_close_controls():
     ):
         assert marker in source
     assert "form_closed_after_readback" in source
+    assert "opening_auction_field_readback_mismatch" in source
+    assert "timed_order_field_readback_mismatch" in source
     assert "ready_for_submit: false" in source
 
 
@@ -114,6 +123,9 @@ def test_unknown_page_states_require_reconciliation_and_never_retry():
     assert "page_shell_not_ready" in recover
     assert "route_not_reached" in recover
     assert "reconcile_required: !healthy" in recover
+    assert "MANUAL_ROUTE_DISCOVERY_SCRIPT" in recover
+    assert "routeMatches(" in recover
+    assert "startsWith(ROUTES.manual)" not in recover
 
 
 def test_reconcile_does_not_claim_complete_when_lists_are_not_fully_read():
@@ -123,6 +135,9 @@ def test_reconcile_does_not_claim_complete_when_lists_are_not_fully_read():
     assert "reconciled_partial" in source
     assert "reconcile_complete: reconcileComplete" in source
     assert "reconcile_required: !reconcileComplete" in source
+    assert "pagination_complete" in source
+    assert "virtual_complete" in source
+    assert "account_fingerprint_not_proven" in source
 
 
 def test_readme_publishes_the_broker_neutral_contract_and_no_submit_gate():
@@ -137,3 +152,14 @@ def test_readme_publishes_the_broker_neutral_contract_and_no_submit_gate():
     assert "reconcile_complete=false" in readme
     assert "account_binding" in readme
     assert "NO_ROUTE_PROVEN" in readme
+
+
+def test_skill_routes_foundersc_read_only_work_to_its_reference():
+    skill = (ROOT / ".codex" / "skills" / "xiaocao-trading" / "SKILL.md").read_text(
+        encoding="utf-8"
+    )
+    reference = (ROOT / ".codex" / "skills" / "xiaocao-trading" / "references"
+                 / "foundersc-opencli.md").read_text(encoding="utf-8")
+    assert "references/foundersc-opencli.md" in skill
+    assert "submit_capability=false" in reference
+    assert "no Codex Automation" in reference

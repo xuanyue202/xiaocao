@@ -1,6 +1,6 @@
 # Book B 正式交易模块 PRD
 
-Status: IMPLEMENTING_SAFE_SEAM
+Status: IMPLEMENTING_GUARDED_SEAM
 
 - Confirmed by: user
 - Confirmed at: 2026-08-15
@@ -227,7 +227,10 @@ Task `01a003f6-eb36-7180-910b-f02837410fd0` 已确认：
 - Xiaocao owns the broker-neutral Book B execution seam, immutable plan,
   append-only state/claim ledger, reconciliation-only UNKNOWN handling, the
   09:45 basket-bounded retry policy, mixed-account ownership guards, proved-fill
-  ownership ledger, and incident outbox.
+  ownership evidence, canonical mode-switch allocation proof, account-level
+  writer fencing, durable takeover capsule, and retryable incident outbox. The
+  ownership evidence file is deliberately not `positions.jsonl` or
+  `paper_trades.jsonl`; those remain the canonical paper account writer.
 - The Founder task owns only the versioned OpenCLI source templates and their
   read-only probe/prepare/reconcile/recover contract.  Its current
   `submit_capability=false` is consumed as `NO_ROUTE_PROVEN`; no submit command
@@ -235,10 +238,16 @@ Task `01a003f6-eb36-7180-910b-f02837410fd0` 已确认：
 - The existing `auto_daily.sh` paper writer remains unchanged until a proven
   broker route, account binding, receipt mapping, and a separate user-approved
   activation pass exist.
+- SELL plans are accepted only when a current Book-B `live_monitor` decision
+  explicitly authorizes a supported exit reason, binds an owned lot, and proves
+  no T+1 or liquidity block. Ordinary frozen rows cannot become SELL plans.
+- BUY plans are sized/validated by the existing `mode_switch.plan_board_lot_orders`
+  allocator using rolling settled NAV; `¥30,000` is only the initial mock basis.
 
 ## 9. Explicit non-goals for this implementation increment
 
-- 不修改 `docs/OPERATING_CONTRACT.md` 的当前 paper-only 事实。
+- 同步更新 Operating Contract/skill references to describe this non-runtime,
+  no-submit seam; this does not authorize real capital.
 - 不改 Codex Automation。
 - 不提交、保存、启动、撤销任何模拟或真实券商订单。
 - 不启用 real-capital keys。
