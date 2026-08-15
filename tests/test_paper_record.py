@@ -225,6 +225,43 @@ def test_fill_limit_is_bounded_by_basket() -> None:
     assert meta["fill_limit_price"] == 10.20
 
 
+def test_fill_skips_buy_at_authoritative_limit_down() -> None:
+    price, basis, _, meta = _fill_price_from_window(
+        {
+            "basket_price": 10.20,
+            "basket_rule": "entry+0.2%",
+            "open": 10.18,
+            "market_guard_required": True,
+            "trade_status": "T",
+            "down_price": 10.13,
+            "market_price": 10.13,
+        },
+        window={"vwap": 10.13, "low": 10.13, "high": 10.13, "time": "0931"},
+        limit_premium_pct=0.5,
+    )
+
+    assert price is None
+    assert basis == "skipped_market_guard"
+    assert meta["skip_reason"] == "LIMIT_DOWN_BUY_BLOCKED"
+
+
+def test_fill_skips_when_live_market_guard_facts_are_unavailable() -> None:
+    price, basis, _, meta = _fill_price_from_window(
+        {
+            "basket_price": 10.20,
+            "basket_rule": "entry+0.2%",
+            "open": 10.18,
+            "market_guard_required": True,
+        },
+        window={"vwap": 10.13, "low": 10.13, "high": 10.13, "time": "0931"},
+        limit_premium_pct=0.5,
+    )
+
+    assert price is None
+    assert basis == "skipped_market_guard"
+    assert meta["skip_reason"] == "LIMIT_DOWN_CHECK_UNAVAILABLE"
+
+
 def test_fill_window_stats_uses_only_configured_opening_minutes() -> None:
     client = FakeClient([
         {"tradeTime": "0929", "close": 11.0, "high": 11.0, "low": 11.0, "amt": 1100.0, "vol": 100},

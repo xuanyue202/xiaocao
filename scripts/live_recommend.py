@@ -72,6 +72,8 @@ DEFAULT_READY_POLL_SEC = 1.0
 DEFAULT_READY_CONFIRM_SEC = 8.0
 DEFAULT_READY_STABLE_SAMPLES = 2
 STANDBY_MAX_RANK_GAP = 3.0
+_ENTRY_DETAIL_CACHE: dict[tuple[str, str], dict[str, object] | None] = {}
+_MISSING_ENTRY_DETAIL = object()
 BASKET_POLICY = {
     "接力低弱转1": {"premium": 2.0, "min": 1.5, "max": 2.5, "cap_pct": 10.0, "exec_cap_pct": 6.0},
     "接力低弱转2": {"premium": 1.2, "min": 0.8, "max": 1.8, "cap_pct": 8.0, "exec_cap_pct": 5.5},
@@ -648,28 +650,51 @@ def _open_pct_from_entry(entry_price: float, pre_close: float | None, fallback: 
     return _num(fallback)
 
 
-def _entry_price(client: XiaocaoClient, code: str, date_iso: str) -> tuple[float | None, str, float | None]:
+def _market_detail_for_date(client: XiaocaoClient, code: str, date_iso: str) -> dict[str, object] | None:
+    if date_iso != _today_iso():
+        return None
+    try:
+        detail = _extract_realtime_detail_row(client.second_line_detail_info(code), code)
+    except Exception:
+        return None
+    if not detail:
+        return None
+    td = _normal_date(detail.get("tradeDate") or "")
+    return detail if td == date_iso else None
+
+
+def _normalize_market_observed_at(value: object, date_iso: str) -> object:
+    """Bind the API's HHMMSS auction clock to the dated China session."""
+    text = str(value or "").strip()
+    if len(text) == 6 and text.isdigit():
+        try:
+            parsed = datetime.strptime(f"{date_iso} {text}", "%Y-%m-%d %H%M%S")
+        except ValueError:
+            return value
+        return parsed.replace(tzinfo=A_SHARE_TZ).isoformat(timespec="seconds")
+    return value
+
+
+def _entry_price_with_detail(
+    client: XiaocaoClient,
+    code: str,
+    date_iso: str,
+) -> tuple[float | None, str, float | None, dict[str, object] | None]:
     """Fetch the best available early-session entry price for `code`.
 
     For today's live run, 9:25 call-auction completion should already expose
     the final opening price via the realtime detail `open` field. Indicative
     auction rows before 09:25 are not a stable entry price and are ignored.
     """
-    if date_iso == _today_iso():
+    detail = _market_detail_for_date(client, code, date_iso)
+    if detail:
         try:
-            detail = _extract_realtime_detail_row(client.second_line_detail_info(code), code)
-        except Exception:
-            detail = None
-        if detail:
-            td = _normal_date(detail.get("tradeDate") or "")
-            if td == date_iso:
-                try:
-                    price = float(detail.get("open") or 0) or None
-                except (TypeError, ValueError):
-                    price = None
-                if price:
-                    pre_close = _to_float(detail.get("preClose"))
-                    return price, "realtime_open", pre_close
+            price = float(detail.get("open") or 0) or None
+        except (TypeError, ValueError):
+            price = None
+        if price:
+            pre_close = _to_float(detail.get("preClose"))
+            return price, "realtime_open", pre_close, detail
 
     try:
         rows = client.date_kline(code, count=10, freq="D", adj="qfq")
@@ -692,7 +717,7 @@ def _entry_price(client: XiaocaoClient, code: str, date_iso: str) -> tuple[float
                     price = None
                 if price:
                     pre_close = _to_float(r.get("preClose"))
-                    return price, "open", pre_close
+                    return price, "open", pre_close, detail
 
     try:
         auction_rows = client.stock_call_auction(code, date_iso)
@@ -710,8 +735,15 @@ def _entry_price(client: XiaocaoClient, code: str, date_iso: str) -> tuple[float
                 price = None
             if price:
                 pre_close = _to_float(r.get("preClose"))
-                return price, "auction", pre_close
-    return None, "", None
+                return price, "auction", pre_close, detail
+    return None, "", None, detail
+
+
+def _entry_price(client: XiaocaoClient, code: str, date_iso: str) -> tuple[float | None, str, float | None]:
+    """Compatibility wrapper used by existing callers and tests."""
+    price, source, pre_close, detail = _entry_price_with_detail(client, code, date_iso)
+    _ENTRY_DETAIL_CACHE[(date_iso, str(code))] = detail
+    return price, source, pre_close
 
 
 def _basket_params(
@@ -1041,6 +1073,8 @@ def main() -> None:
                         help="K→P 流水线标记的 ★ 优先候选数，默认 3")
     args = parser.parse_args()
 
+    _ENTRY_DETAIL_CACHE.clear()
+
     date_iso = _resolve_date(args.date)
     _wait_for_recommendation_start(date_iso)
     OUT_DIR.mkdir(parents=True, exist_ok=True)
@@ -1073,10 +1107,21 @@ def main() -> None:
         code = r.get("code")
         if not code:
             continue
+        # Keep the historical three-value seam here.  A few downstream callers
+        # (and, more importantly, offline recommendation fixtures) replace
+        # ``_entry_price`` directly.  The realtime detail is an optional
+        # enrichment for the market guard and must not make those fixtures lose
+        # their candidate solely because the detail endpoint is unavailable.
         opn, entry_source, pre_close = _entry_price(client, code, date_iso)
+        cached_detail = _ENTRY_DETAIL_CACHE.pop((date_iso, str(code)), _MISSING_ENTRY_DETAIL)
+        market_detail = (
+            _market_detail_for_date(client, code, date_iso)
+            if cached_detail is _MISSING_ENTRY_DETAIL else cached_detail
+        )
         if not opn:
             continue
         open_pct_change = _open_pct_from_entry(opn, pre_close, r.get("openPctChange"))
+        market_status = str((market_detail or {}).get("tradeStatus") or "")
         candidates.append({
             "code": code,
             "name": r.get("name") or "",
@@ -1094,6 +1139,15 @@ def main() -> None:
             "open": opn,
             "pre_close": pre_close,
             "entry_source": entry_source,
+            "market_guard_required": bool(_is_today_live_run(date_iso)),
+            "market_guard_status": market_status or None,
+            "trade_status": market_status or None,
+            "market_price": (market_detail or {}).get("trade"),
+            "down_price": (market_detail or {}).get("downPrice"),
+            "up_price": (market_detail or {}).get("upPrice"),
+            "market_observed_at": _normalize_market_observed_at(
+                (market_detail or {}).get("tradeTimestamp"), date_iso
+            ),
             "v5_stop_initial": _profile_stop(opn, 2.0),
             "v6_stop_initial": _profile_stop(opn, 0.5),
             "is_main_line": bool(r.get("is_main_line")),

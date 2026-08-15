@@ -27,6 +27,8 @@ sys.path.insert(0, str(SCRIPTS))
 
 from xiaocao.api.client import XiaocaoClient  # noqa: E402
 from xiaocao.live import accounts, intelligence_policy  # noqa: E402
+from xiaocao.live.book_b_pricing import initial_limit_price  # noqa: E402
+from xiaocao.live.buy_guards import evaluate_buy_market_guard  # noqa: E402
 from xiaocao.strategy.params import (  # noqa: E402
     TREND_BUDGET_RATIO,
     TREND_REBALANCE_R,
@@ -251,11 +253,14 @@ def _fill_price_from_window(
     basket_px = _num(record.get("basket_price"))
     open_px = _num(record.get("open"))
     metadata: dict[str, object] = {}
-    limit_px: float | None = None
-    if open_px and open_px > 0:
-        limit_px = open_px * (1 + limit_premium_pct / 100)
-        if basket_px and basket_px > 0:
-            limit_px = min(limit_px, basket_px)
+    guard_ok, guard_reason, guard_evidence = evaluate_buy_market_guard(record)
+    metadata.update(guard_evidence)
+    if not guard_ok:
+        metadata["skip_reason"] = guard_reason
+        metadata["skip_detail"] = "MARKET_GUARD"
+        return None, "skipped_market_guard", record.get("basket_rule"), metadata
+    limit_px = initial_limit_price(open_px, basket_px, premium_pct=limit_premium_pct)
+    if limit_px is not None:
         metadata["fill_limit_price"] = round(limit_px, 4)
         metadata["fill_limit_premium_pct"] = limit_premium_pct
     if window:
@@ -720,6 +725,11 @@ def _main_locked():
             "window_vwap": meta.get("fill_window_vwap"),
             "window_last": meta.get("fill_window_last"),
             "basket_price": r.get("basket_price"), "open": r.get("open"),
+            "market_guard_required": meta.get("market_guard_required"),
+            "market_guard_status": meta.get("market_guard_status"),
+            "market_down_price": meta.get("down_price"),
+            "market_latest_price": meta.get("latest_price"),
+            "market_observed_at": meta.get("observed_at"),
             "primary_score": r.get("primary_score"),
             "p_score": r.get("p_score"),
             "quality_tag": r.get("quality_tag"),
