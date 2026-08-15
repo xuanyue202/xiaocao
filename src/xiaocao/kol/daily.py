@@ -2307,16 +2307,18 @@ class DailyCoordinator:
         source: dict[str, Any],
         *,
         item_identity: str,
+        _completed_user_action: bool = False,
     ) -> dict[str, Any]:
-        """Resume one exact provider-owned wait without starting a new sweep."""
+        """Resume one exact paused source without starting a new sweep."""
 
         now = self._beijing_now()
         name = str(source.get("name") or "").strip()
         narrow_runner = source.get("narrow_resume")
         identity = str(item_identity or "").strip()
         if not name or not callable(narrow_runner) or not identity:
+            kind = "user action" if _completed_user_action else "provider wait"
             raise DailyError(
-                "provider wait resume needs one source and exact item identity"
+                f"{kind} resume needs one source and exact item identity"
             )
         started = time.monotonic()
         with self._locked():
@@ -2331,23 +2333,35 @@ class DailyCoordinator:
                 None,
             )
             if progress_row is None:
-                raise DailyError("provider wait resume has no persisted progress")
+                raise DailyError("source resume has no persisted progress")
             prior = WriterProgress.from_dict(progress_row["progress"])
-            if prior.status != "wait_until":
+            expected_status = (
+                "user_action_required" if _completed_user_action else "wait_until"
+            )
+            if prior.status != expected_status:
+                if _completed_user_action:
+                    raise DailyError("source is not waiting for user action")
                 raise DailyError("source is not waiting for a provider deadline")
             if prior.item_identity != identity:
-                raise DailyError("provider wait resume item identity changed")
-            deadline = datetime.fromisoformat(
-                str(prior.details["deadline"]).replace("Z", "+00:00")
-            )
-            if now < deadline:
-                raise DailyError("provider wait deadline has not elapsed")
-            surface = str(
-                prior.details.get("narrow_resume_surface")
-                or f"{name}:{identity}"
-            )
-            if surface != f"{name}:{identity}":
-                raise DailyError("provider wait narrow resume surface changed")
+                raise DailyError("source resume item identity changed")
+            if _completed_user_action:
+                surface = (
+                    identity
+                    if identity.startswith(f"{name}:")
+                    else f"{name}:{identity}"
+                )
+            else:
+                deadline = datetime.fromisoformat(
+                    str(prior.details["deadline"]).replace("Z", "+00:00")
+                )
+                if now < deadline:
+                    raise DailyError("provider wait deadline has not elapsed")
+                surface = str(
+                    prior.details.get("narrow_resume_surface")
+                    or f"{name}:{identity}"
+                )
+                if surface != f"{name}:{identity}":
+                    raise DailyError("provider wait narrow resume surface changed")
             prior_sweep = self._last_sweep_state(prior_rows)
             if prior_sweep is None:
                 raise DailyError("provider wait resume lost its originating sweep")
@@ -2358,19 +2372,33 @@ class DailyCoordinator:
             ):
                 raise DailyError("provider wait resume lost its source state")
             slot = str(progress_row.get("slot") or prior_sweep.get("slot") or "")
-            self._append(
-                "source_wait_resume_started",
-                slot=slot,
-                source=name,
-                item_identity=identity,
-                deadline=prior.details["deadline"],
-                narrow_resume_surface=surface,
+            resume_event = (
+                "source_user_action_resume_started"
+                if _completed_user_action
+                else "source_wait_resume_started"
             )
+            resume_fields: dict[str, Any] = {
+                "slot": slot,
+                "source": name,
+                "item_identity": identity,
+                "narrow_resume_surface": surface,
+            }
+            if _completed_user_action:
+                resume_fields["blocker_identity"] = prior.details[
+                    "blocker_identity"
+                ]
+            else:
+                resume_fields["deadline"] = prior.details["deadline"]
+            self._append(resume_event, **resume_fields)
             try:
                 outcome = narrow_runner(surface)
             except BaseException as exc:
                 self._append(
-                    "source_wait_resume_interrupted",
+                    (
+                        "source_user_action_resume_interrupted"
+                        if _completed_user_action
+                        else "source_wait_resume_interrupted"
+                    ),
                     slot=slot,
                     source=name,
                     item_identity=identity,
@@ -2380,7 +2408,7 @@ class DailyCoordinator:
             if outcome is None:
                 outcome = {"status": "no_update"}
             if not isinstance(outcome, dict):
-                raise DailyError("provider wait narrow resume returned invalid output")
+                raise DailyError("source narrow resume returned invalid output")
             _validate_source_outcome(outcome)
             progress_value = outcome.get("writer_progress")
             following = (
@@ -2412,6 +2440,16 @@ class DailyCoordinator:
                 )
             if following.status == "repair_required":
                 self.convergence.record(following, slot=slot)
+            if (
+                _completed_user_action
+                and following.status != "user_action_required"
+            ):
+                self._append(
+                    "blocker_cleared",
+                    slot=slot,
+                    source=name,
+                    blocker_key=prior.details["dedup_key"],
+                )
             self._append(
                 "source_progressed",
                 slot=slot,
@@ -2459,6 +2497,20 @@ class DailyCoordinator:
             "continuation_only": True,
             "source_result": {"name": name, **result},
         }
+
+    def resume_user_action(
+        self,
+        source: dict[str, Any],
+        *,
+        item_identity: str,
+    ) -> dict[str, Any]:
+        """Resume one exact source after its declared user action completed."""
+
+        return self.resume_wait(
+            source,
+            item_identity=item_identity,
+            _completed_user_action=True,
+        )
 
     def resume_structured_input(
         self,

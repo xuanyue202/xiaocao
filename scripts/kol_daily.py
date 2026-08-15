@@ -3716,6 +3716,7 @@ def main() -> int:
             "validate-source-repair",
             "resume-source-repair",
             "resume-source-wait",
+            "resume-source-user-action",
             "resume-source-input",
             "reconcile-source-effect",
             "reconcile-source-terminal",
@@ -3843,6 +3844,29 @@ def main() -> int:
             item_identity=args.source_identity,
         )
         _print({"source_wait_resume": result})
+        return 0
+    if args.command == "resume-source-user-action":
+        if not args.source_adapter or not args.source_identity:
+            raise DailyError(
+                "resume-source-user-action requires source adapter and identity"
+            )
+        if args.source_adapter != "subscription_video":
+            raise DailyError(
+                "resume-source-user-action adapter has no exact CLI binding"
+            )
+        runtime = DailyRuntime(args)
+        result = DailyCoordinator(args.output_dir).resume_user_action(
+            {
+                "name": args.source_adapter,
+                "narrow_resume": lambda surface: _resume_source_repair_outcome(
+                    runtime,
+                    args.source_adapter,
+                    surface,
+                ),
+            },
+            item_identity=args.source_identity,
+        )
+        _print({"source_user_action_resume": result})
         return 0
     if args.command == "resume-source-input":
         if not args.source_adapter or not args.source_identity:

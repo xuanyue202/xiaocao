@@ -2066,6 +2066,89 @@ def test_resume_source_wait_cli_uses_only_exact_persisted_item(
     }
 
 
+def test_resume_source_user_action_cli_uses_only_exact_source(
+    tmp_path,
+    monkeypatch,
+    capsys,
+):
+    observed: dict[str, object] = {}
+
+    class FakeRuntime:
+        def __init__(self, args):
+            observed["args"] = args
+
+        @staticmethod
+        def videos_narrow_resume(surface):
+            observed["surface"] = surface
+            return {"status": "no_update"}
+
+    class FakeCoordinator:
+        def __init__(self, output_dir):
+            assert output_dir == tmp_path / "daily"
+
+        @staticmethod
+        def resume_user_action(source, *, item_identity):
+            observed["item_identity"] = item_identity
+            outcome = source["narrow_resume"](item_identity)
+            return {
+                "status": "completed",
+                "continuation_only": True,
+                "source_result": outcome,
+            }
+
+    monkeypatch.setattr(kol_daily_script, "DailyRuntime", FakeRuntime)
+    monkeypatch.setattr(kol_daily_script, "DailyCoordinator", FakeCoordinator)
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "kol_daily.py",
+            "resume-source-user-action",
+            "--source-adapter",
+            "subscription_video",
+            "--source-identity",
+            "subscription_video:source",
+            "--output-dir",
+            str(tmp_path / "daily"),
+        ],
+    )
+
+    assert kol_daily_script.main() == 0
+    assert observed["item_identity"] == "subscription_video:source"
+    assert observed["surface"] == "subscription_video:source"
+    assert json.loads(capsys.readouterr().out) == {
+        "source_user_action_resume": {
+            "status": "completed",
+            "continuation_only": True,
+            "source_result": {
+                "status": "no_update",
+                "resume_policy": "stop",
+                "writer_progress": {
+                    "schema_version": 1,
+                    "status": "terminal",
+                    "ownership": "none",
+                    "retryability": "not_retryable",
+                    "item_identity": "subscription_video:source",
+                    "stage": "source_run",
+                    "next_action": "stop",
+                    "content_terminal": "no_update",
+                    "gray_report_terminal": "not_created",
+                    "reminder_terminal": "not_created",
+                    "book_terminal": "not_created",
+                    "knowledge_terminal": "not_created",
+                    "ack_status": "not_applicable",
+                    "new_external_effect_count": 0,
+                    "claim_receipt_summary": {
+                        "claim_count": 0,
+                        "receipt_count": 0,
+                        "uncertain_effect_count": 0,
+                    },
+                },
+            },
+        },
+    }
+
+
 def test_reconcile_source_effect_cli_uses_declared_readback_only(
     tmp_path,
     monkeypatch,
@@ -2939,6 +3022,57 @@ def test_daily_resume_wait_runs_only_exact_due_source(tmp_path):
     assert sum(
         row["event"] == "runner_started" for row in service.events()
     ) == 1
+
+
+def test_daily_resume_user_action_runs_only_exact_blocked_source(tmp_path):
+    service = DailyCoordinator(
+        tmp_path / "daily",
+        now=Clock("2026-08-15T17:00:00+08:00"),
+    )
+    broad_calls = 0
+    narrow_surfaces: list[str] = []
+
+    def blocked():
+        nonlocal broad_calls
+        broad_calls += 1
+        raise UserActionBlocker(
+            "subscription_video-opencli-login",
+            "请重新登录百度网盘",
+        )
+
+    def narrow(surface: str):
+        narrow_surfaces.append(surface)
+        return {"status": "no_update"}
+
+    source = {
+        "name": "subscription_video",
+        "priority": 20,
+        "run": blocked,
+        "narrow_resume": narrow,
+    }
+    first = service.run([source], blocker_sender=lambda _title, _body: None)
+
+    assert first["source_results"][0]["writer_progress"]["status"] == (
+        "user_action_required"
+    )
+    result = service.resume_user_action(
+        source,
+        item_identity="subscription_video:source",
+    )
+
+    assert broad_calls == 1
+    assert narrow_surfaces == ["subscription_video:source"]
+    assert result["source_result"]["status"] == "no_update"
+    assert result["source_result"]["writer_progress"]["status"] == "terminal"
+    assert service.status()["last_sweep"]["source_states"][0][
+        "writer_progress"
+    ]["status"] == "terminal"
+    assert sum(
+        row["event"] == "runner_started" for row in service.events()
+    ) == 1
+    assert any(
+        row["event"] == "blocker_cleared" for row in service.events()
+    )
 
 
 def test_source_effect_readback_recovers_exact_active_progress(tmp_path):
