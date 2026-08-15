@@ -2966,7 +2966,18 @@ class DailyRuntime:
                             failed.get("ai_note_trigger_attempt") or 0
                         ) == 1
                     )
-                    if not safe_pretrigger_retry:
+                    safe_claimed_capture_resume = (
+                        failed.get("status") == "ai_note_claimed"
+                        and int(
+                            failed.get("ai_note_trigger_attempt") or 0
+                        ) == 1
+                        and not failed.get("ai_note_triggered_at")
+                        and not failed.get("ai_note_submission_proof")
+                    )
+                    if not (
+                        safe_pretrigger_retry
+                        or safe_claimed_capture_resume
+                    ):
                         raise
                     state = service.netdisk.advance_opencli(
                         job_id,
