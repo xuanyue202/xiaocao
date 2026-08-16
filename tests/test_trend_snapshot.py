@@ -537,6 +537,18 @@ def test_replaced_viewpoint_is_not_used_as_current_support():
     assert mache["status"] == "active"
     assert mache["viewpoint_ids"] == [new_viewpoint["record_id"]]
     assert old_viewpoint["record_id"] in mache["replaced_viewpoint_ids"]
+    new_evidence = next(
+        row for row in mache["source_evidence"] if row["source_key"] == "new-mache"
+    )
+    assert new_evidence["relations"] == [
+        {
+            "relation_id": relation_payload["relation_id"],
+            "from_viewpoint_id": new_viewpoint["record_id"],
+            "to_viewpoint_id": old_viewpoint["record_id"],
+            "relation_type": "replaces",
+            "asserted_at": "2026-08-10T02:01:00Z",
+        }
+    ]
 
     bad_relation = build_record(
         kind="viewpoint_relation",
@@ -561,6 +573,46 @@ def test_replaced_viewpoint_is_not_used_as_current_support():
     with pytest.raises(PublicationBindingError, match="relation source binding"):
         _build(
             sources=[old, bad_source],
+            draft=_draft(source_keys=["old-mache", "new-mache"]),
+        )
+
+    unknown_relation_payload = {
+        **relation_payload,
+        "relation_id": relation_id(
+            new_viewpoint["record_id"],
+            "unbound-viewpoint",
+            "replaces",
+            "2026-08-10T02:02:00Z",
+        ),
+        "to_viewpoint_id": "unbound-viewpoint",
+        "asserted_at": "2026-08-10T02:02:00Z",
+    }
+    unknown_relation = build_record(
+        kind="viewpoint_relation",
+        record_id_value=unknown_relation_payload["relation_id"],
+        idempotency_key="put-replacement-relation-unbound-target",
+        created_at="2026-08-10T02:02:00Z",
+        source_binding=binding,
+        payload=unknown_relation_payload,
+    )
+    unknown_records = [*new_records[:-1], unknown_relation]
+    unknown_request = build_publish_request(
+        unknown_records,
+        idempotency_key="publish-new-mache-unbound-target",
+        reason="replacement",
+    )
+    unknown_source = dict(new)
+    unknown_source["artifact"] = {
+        "records": unknown_records,
+        "publish_request": unknown_request,
+    }
+    unknown_source["publish_receipt"] = {
+        **new["publish_receipt"],
+        "manifestSha256": unknown_request["manifest_sha256"],
+    }
+    with pytest.raises(PublicationBindingError, match="relation target viewpoint is not bound"):
+        _build(
+            sources=[old, unknown_source],
             draft=_draft(source_keys=["old-mache", "new-mache"]),
         )
 

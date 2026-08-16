@@ -1055,6 +1055,13 @@ def _source_identity(source: _SourceEvidence, *, state: Mapping[str, Any]) -> di
         "viewpoint_content_sha256": source.viewpoint_content_sha256,
         "manifest_sha256": source.manifest_sha256,
         "horizon": list(source.horizon),
+        "relations": [
+            dict(relation)
+            for relation in sorted(
+                source.relations,
+                key=lambda relation: str(relation.get("relation_id") or ""),
+            )
+        ],
         **dict(state),
     }
 
@@ -1541,17 +1548,38 @@ def _normalize_sources(
 
 
 def _replacement_index(sources: Iterable[_SourceEvidence]) -> dict[str, str]:
+    source_list = list(sources)
+    by_viewpoint: dict[str, _SourceEvidence] = {}
+    for source in source_list:
+        prior = by_viewpoint.get(source.viewpoint_id)
+        if prior is not None:
+            raise PublicationBindingError(
+                f"duplicate bound viewpoint_id {source.viewpoint_id}"
+            )
+        by_viewpoint[source.viewpoint_id] = source
+
     replaced_by: dict[str, str] = {}
-    for source in sources:
+    for source in source_list:
         for relation in source.relations:
+            if relation.get("from_viewpoint_id") != source.viewpoint_id:
+                raise PublicationBindingError(
+                    f"{source.source_key} relation source viewpoint does not match bound viewpoint"
+                )
+            old_id = str(relation.get("to_viewpoint_id") or "").strip()
+            if old_id not in by_viewpoint:
+                raise PublicationBindingError(
+                    f"{source.source_key} relation target viewpoint is not bound"
+                )
+            if old_id == source.viewpoint_id:
+                raise PublicationBindingError(
+                    f"{source.source_key} relation cannot target its source viewpoint"
+                )
             if relation.get("relation_type") != "replaces":
                 continue
-            old_id = str(relation.get("to_viewpoint_id") or "").strip()
             new_id = str(relation.get("from_viewpoint_id") or "").strip()
-            if old_id and new_id:
-                prior = replaced_by.get(old_id)
-                if prior is None or new_id > prior:
-                    replaced_by[old_id] = new_id
+            prior = replaced_by.get(old_id)
+            if prior is None or new_id > prior:
+                replaced_by[old_id] = new_id
     return replaced_by
 
 
@@ -1688,6 +1716,13 @@ def build_trend_snapshot(
                 "evidence_refs": [dict(ref) for ref in source.evidence_refs],
                 "theme_ids": list(source.theme_ids),
                 "horizon": list(source.horizon),
+                "relations": [
+                    dict(relation)
+                    for relation in sorted(
+                        source.relations,
+                        key=lambda relation: str(relation.get("relation_id") or ""),
+                    )
+                ],
             }
         )
     input_summary = {
