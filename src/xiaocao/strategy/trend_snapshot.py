@@ -1035,6 +1035,7 @@ def _source_status(
 
 
 def _source_identity(source: _SourceEvidence, *, state: Mapping[str, Any]) -> dict[str, Any]:
+    relation_evidence = _relation_evidence(source.relations)
     return {
         "source_key": source.source_key,
         "role": source.role,
@@ -1055,15 +1056,21 @@ def _source_identity(source: _SourceEvidence, *, state: Mapping[str, Any]) -> di
         "viewpoint_content_sha256": source.viewpoint_content_sha256,
         "manifest_sha256": source.manifest_sha256,
         "horizon": list(source.horizon),
-        "relations": [
-            dict(relation)
-            for relation in sorted(
-                source.relations,
-                key=lambda relation: str(relation.get("relation_id") or ""),
-            )
-        ],
+        "relations": relation_evidence,
         **dict(state),
     }
+
+
+def _relation_evidence(
+    relations: Iterable[Mapping[str, Any]],
+) -> list[dict[str, Any]]:
+    return [
+        dict(relation)
+        for relation in sorted(
+            relations,
+            key=lambda relation: str(relation.get("relation_id") or ""),
+        )
+    ]
 
 
 def _source_keys_for_theme(
@@ -1716,13 +1723,7 @@ def build_trend_snapshot(
                 "evidence_refs": [dict(ref) for ref in source.evidence_refs],
                 "theme_ids": list(source.theme_ids),
                 "horizon": list(source.horizon),
-                "relations": [
-                    dict(relation)
-                    for relation in sorted(
-                        source.relations,
-                        key=lambda relation: str(relation.get("relation_id") or ""),
-                    )
-                ],
+                "relations": _relation_evidence(source.relations),
             }
         )
     input_summary = {
