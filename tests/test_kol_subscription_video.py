@@ -17,6 +17,7 @@ from xiaocao.kol.netdisk_enrichment import NetdiskEnrichmentService
 from xiaocao.kol.subscription_video import (
     _CREATE_FOLDER_SCRIPT,
     _PRIVATE_SCAN_SCRIPT,
+    _PRIVATE_RELOAD_SCRIPT,
     _PRIVATE_SEARCH_SCRIPT,
     _TRANSFER_OUTCOME_SCRIPT,
     _TRANSFER_SCRIPT,
@@ -1139,7 +1140,8 @@ def test_private_scan_retries_open_after_wrong_preclaim_readback(tmp_path):
 
 
 def test_private_scan_allows_slow_directory_settlement():
-    assert "const deadline = Date.now() + 30000" in _PRIVATE_SCAN_SCRIPT
+    assert "new Promise" not in _PRIVATE_SCAN_SCRIPT
+    assert "status: 'private_directory_loading'" in _PRIVATE_SCAN_SCRIPT
     assert "!/正在加载中/.test(text)" in _PRIVATE_SCAN_SCRIPT
     assert "if (currentDir() !== dir)" in _PRIVATE_SCAN_SCRIPT
     assert "location.pathname === '/login'" in _PRIVATE_SCAN_SCRIPT
@@ -1157,6 +1159,14 @@ def test_private_scan_chunks_recursive_eval_below_opencli_deadline(tmp_path):
         if operation == "open":
             payload = {"url": command[6]}
         elif operation == "eval":
+            if command[6] == _PRIVATE_RELOAD_SCRIPT:
+                assert kwargs["timeout"] == 30
+                payload = {"status": "reload_started"}
+                return SimpleNamespace(
+                    returncode=0,
+                    stdout=json.dumps(payload),
+                    stderr="",
+                )
             assert kwargs["timeout"] == 120
             assert "while (pending.length" not in command[6]
             if json.dumps("/课程/路西法全套", ensure_ascii=False) in command[6]:
@@ -1216,7 +1226,94 @@ def test_private_scan_chunks_recursive_eval_below_opencli_deadline(tmp_path):
         "child",
         "video",
     ]
-    assert len(commands) == 4
+    assert len(commands) == 5
+
+
+def test_private_scan_retries_one_preclaim_browser_eval_timeout(tmp_path):
+    commands = []
+    eval_count = 0
+
+    def runner(command, **_kwargs):
+        nonlocal eval_count
+        commands.append(command)
+        operation = command[5]
+        if operation == "open":
+            payload = {"url": command[6]}
+            returncode = 0
+        elif operation == "eval":
+            eval_count += 1
+            if eval_count == 1:
+                payload = {"error": {"code": "cdp_timeout"}}
+                returncode = 1
+            else:
+                payload = {"status": "ok", "rows": []}
+                returncode = 0
+        else:
+            raise AssertionError(command)
+        return SimpleNamespace(
+            returncode=returncode,
+            stdout=json.dumps(payload),
+            stderr="",
+        )
+
+    result = _service(
+        tmp_path,
+        runner=runner,
+        sleep=lambda _seconds: None,
+    )._scan_private(
+        session="ticket05",
+        profile="work",
+        root="/课程/路西法全套",
+        recursive=False,
+    )
+
+    assert result["entries"] == []
+    assert [command[5] for command in commands] == ["open", "eval", "eval"]
+
+
+def test_private_scan_reloads_one_bound_shell_before_second_read(tmp_path):
+    commands = []
+    scan_count = 0
+
+    def runner(command, **_kwargs):
+        nonlocal scan_count
+        commands.append(command)
+        operation = command[5]
+        if operation == "open":
+            payload = {"url": command[6]}
+        elif command[6] == _PRIVATE_RELOAD_SCRIPT:
+            payload = {"status": "reload_started"}
+        else:
+            scan_count += 1
+            payload = (
+                {"status": "private_directory_load_timeout", "rows": []}
+                if scan_count == 1
+                else {"status": "ok", "rows": []}
+            )
+        return SimpleNamespace(
+            returncode=0,
+            stdout=json.dumps(payload),
+            stderr="",
+        )
+
+    result = _service(
+        tmp_path,
+        runner=runner,
+        sleep=lambda _seconds: None,
+    )._scan_private(
+        session="ticket05",
+        profile="work",
+        root="/课程/路西法全套",
+        recursive=False,
+    )
+
+    assert result["entries"] == []
+    assert [command[5] for command in commands] == [
+        "open",
+        "eval",
+        "eval",
+        "eval",
+    ]
 
 
 def test_hourly_scan_uses_bounded_lucifer_roots_after_bootstrap(tmp_path):
@@ -1348,11 +1445,12 @@ def test_private_scan_classifies_directory_failure(
 ):
     def runner(command, **_kwargs):
         operation = command[5]
-        payload = (
-            {"url": command[6]}
-            if operation == "open"
-            else {"status": status, "entries": []}
-        )
+        if operation == "open":
+            payload = {"url": command[6]}
+        elif command[6] == _PRIVATE_RELOAD_SCRIPT:
+            payload = {"status": "reload_started"}
+        else:
+            payload = {"status": status, "entries": []}
         return SimpleNamespace(
             returncode=0,
             stdout=json.dumps(payload),

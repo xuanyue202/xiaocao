@@ -658,6 +658,8 @@ TARGETED_REPAIR_TESTS: dict[str, tuple[str, ...]] = {
         "-k",
         (
             "private_scan_chunks_recursive_eval_below_opencli_deadline or "
+            "private_scan_retries_one_preclaim_browser_eval_timeout or "
+            "private_scan_reloads_one_bound_shell_before_second_read or "
             "opencli_json_classifies_cdp_timeout or "
             "narrow_source_failure_keeps_seven_state_contract or "
             "source_repair_validation_accepts_pending_resume or "

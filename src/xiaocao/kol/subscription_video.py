@@ -227,7 +227,7 @@ def _exclusive(scope: str) -> Callable:
     return decorate
 
 
-_PRIVATE_SCAN_SCRIPT = r"""(async () => {
+_PRIVATE_SCAN_SCRIPT = r"""(() => {
   const dir = __DIRECTORY__;
   const routeFor = dir => '/index?category=all&path=' + encodeURIComponent(dir);
   const currentDir = () => {
@@ -235,79 +235,56 @@ _PRIVATE_SCAN_SCRIPT = r"""(async () => {
     const query = hash.includes('?') ? hash.slice(hash.indexOf('?') + 1) : '';
     return new URLSearchParams(query).get('path');
   };
-  const readDirectory = async dir => {
-    if (currentDir() !== dir) {
-      location.hash = routeFor(dir);
+  if (currentDir() !== dir) {
+    location.hash = routeFor(dir);
+    return {status: 'private_directory_loading', rows: []};
+  }
+  if (
+    location.origin === 'https://pan.baidu.com'
+    && location.pathname === '/login'
+  ) {
+    return {status: 'authentication_required', rows: []};
+  }
+  if (
+    location.origin !== 'https://pan.baidu.com'
+    || location.pathname !== '/disk/main'
+  ) {
+    return {status: 'wrong_path', rows: []};
+  }
+  const rows = [...document.querySelectorAll('tr[data-id]')];
+  const items = rows.map(row => row.__vue__?._props?.item).filter(Boolean);
+  const exact = items.length === rows.length && items.every(item => {
+    const path = String(item.path || '');
+    const parent = path.slice(0, path.lastIndexOf('/')) || '/';
+    return path.startsWith('/') && parent === dir;
+  });
+  const text = String(document.body?.innerText || '');
+  if (rows.length > 0 && exact) {
+    if (rows.length >= 100) {
+      return {status: 'private_directory_page_bound_exceeded', rows: []};
     }
-    // Deep private folders occasionally need more than 15 seconds to settle
-    // on a metered remote session. Keep one bounded read, but let that same
-    // navigation finish instead of turning a slow directory into a repair.
-    const deadline = Date.now() + 30000;
-    while (Date.now() < deadline) {
-      if (
-        location.origin === 'https://pan.baidu.com'
-        && location.pathname === '/login'
-      ) {
-        return {status: 'authentication_required', rows: []};
-      }
-      if (
-        location.origin !== 'https://pan.baidu.com'
-        || location.pathname !== '/disk/main'
-        || currentDir() !== dir
-      ) {
-        await new Promise(resolve => setTimeout(resolve, 100));
-        continue;
-      }
-      const rows = [...document.querySelectorAll('tr[data-id]')];
-      const items = rows.map(row => row.__vue__?._props?.item).filter(Boolean);
-      const exact = items.length === rows.length && items.every(item => {
-        const path = String(item.path || '');
-        const parent = path.slice(0, path.lastIndexOf('/')) || '/';
-        return path.startsWith('/')
-          && parent === dir;
-      });
-      const text = String(document.body?.innerText || '');
-      if (rows.length > 0 && exact) {
-        if (rows.length >= 100) {
-          return {status: 'private_directory_page_bound_exceeded', rows: []};
-        }
-        return {
-          status: 'ok',
-          rows: items.map(item => ({
-            provider_file_id: String(item.fs_id || ''),
-            path: String(item.path || ''),
-            name: String(item.server_filename || ''),
-            is_dir: item.isdir === 1 || item.isdir === true,
-            size: Number(item.size || 0),
-            uploaded_at: Number(
-              item.server_ctime || item.local_ctime || 0
-            ),
-            modified_at: Number(
-              item.server_mtime || item.local_mtime || 0
-            )
-          }))
-        };
-      }
-      if (
-        !/正在加载中/.test(text)
-        && /当前列表为空|暂无文件/.test(text)
-      ) {
-        return {status: 'ok', rows: []};
-      }
-      await new Promise(resolve => setTimeout(resolve, 100));
-    }
-    if (location.origin !== 'https://pan.baidu.com') {
-      return {status: 'wrong_origin', rows: []};
-    }
-    if (location.pathname === '/login') {
-      return {status: 'authentication_required', rows: []};
-    }
-    if (location.pathname !== '/disk/main' || currentDir() !== dir) {
-      return {status: 'wrong_path', rows: []};
-    }
-    return {status: 'private_directory_load_timeout', rows: []};
-  };
-  return await readDirectory(dir);
+    return {
+      status: 'ok',
+      rows: items.map(item => ({
+        provider_file_id: String(item.fs_id || ''),
+        path: String(item.path || ''),
+        name: String(item.server_filename || ''),
+        is_dir: item.isdir === 1 || item.isdir === true,
+        size: Number(item.size || 0),
+        uploaded_at: Number(item.server_ctime || item.local_ctime || 0),
+        modified_at: Number(item.server_mtime || item.local_mtime || 0)
+      }))
+    };
+  }
+  if (!/正在加载中/.test(text) && /当前列表为空|暂无文件/.test(text)) {
+    return {status: 'ok', rows: []};
+  }
+  return {status: 'private_directory_loading', rows: []};
+})()"""
+
+_PRIVATE_RELOAD_SCRIPT = r"""(() => {
+  location.reload();
+  return {status: 'reload_started'};
 })()"""
 
 
@@ -1121,29 +1098,68 @@ class SubscriptionVideoService:
                 "__DIRECTORY__",
                 json.dumps(directory, ensure_ascii=False),
             )
-            # The page script remains bounded to 30 seconds, but the OpenCLI
-            # process also owns connection and structured command-result
-            # deadlines.  Its 1.8.6 defaults are 45 seconds for connection and
-            # 60 seconds for the browser command, so a 45-second subprocess
-            # timeout can kill the client before it reports the authoritative
-            # result. Keep the recursive walk serial and give the full client
-            # lifecycle bounded headroom without extending the in-page read.
-            for attempt in range(2):
-                payload = self._opencli_json(
-                    session,
-                    "eval",
-                    script,
-                    profile=profile,
-                    timeout_seconds=(
-                        _PRIVATE_DIRECTORY_EVAL_PROCESS_TIMEOUT_SECONDS
-                    ),
-                )
+            # Keep each CDP evaluation synchronous and short. Python owns the
+            # bounded settlement window so a slow page cannot strand one
+            # long-running Promise beyond OpenCLI's command deadline.
+            transport_retry_used = False
+            payload: dict[str, Any] = {
+                "status": "private_directory_loading",
+                "rows": [],
+            }
+            for read_attempt in range(2):
+                for poll in range(31):
+                    try:
+                        payload = self._opencli_json(
+                            session,
+                            "eval",
+                            script,
+                            profile=profile,
+                            timeout_seconds=(
+                                _PRIVATE_DIRECTORY_EVAL_PROCESS_TIMEOUT_SECONDS
+                            ),
+                        )
+                    except EnrichmentDiagnosticError as exc:
+                        if (
+                            not transport_retry_used
+                            and exc.diagnostic_stage == "browser_eval"
+                            and exc.diagnostic_code
+                            in {"opencli_cdp_timeout", "opencli_timeout"}
+                        ):
+                            transport_retry_used = True
+                            self.sleep(1)
+                            continue
+                        raise
+                    status = str(payload.get("status") or "")
+                    if status == "private_directory_loading":
+                        if poll < 30:
+                            self.sleep(1)
+                            continue
+                        payload = {
+                            "status": "private_directory_load_timeout",
+                            "rows": [],
+                        }
+                    break
                 if (
                     payload.get("status")
                     != "private_directory_load_timeout"
-                    or attempt == 1
+                    or read_attempt == 1
                 ):
                     break
+                reload_result = self._opencli_json(
+                    session,
+                    "eval",
+                    _PRIVATE_RELOAD_SCRIPT,
+                    profile=profile,
+                    timeout_seconds=30,
+                )
+                if reload_result.get("status") != "reload_started":
+                    raise EnrichmentDiagnosticError(
+                        "private Netdisk reload did not start",
+                        category="protocol_error",
+                        code="opencli_invalid_json",
+                        stage="browser_eval",
+                    )
+                self.sleep(5)
             if payload.get("status") != "ok" or not isinstance(
                 payload.get("rows"), list
             ):
