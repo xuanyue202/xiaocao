@@ -844,6 +844,8 @@ def test_xiaoetong_bound_provider_block_waits_for_the_same_page(tmp_path):
         assert "source_temporarily_unavailable" in request[
             "required_response"
         ]["page_state"]
+        assert "personal-center shell" in request["instructions"]
+        assert "block.xiaoeeye.com" in request["instructions"]
         return {
             "action": request["action"],
             "subscription_id": request["subscription_id"],

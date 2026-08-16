@@ -959,7 +959,12 @@ class XiaocaoWechatLiveSubscription:
                 "return that state without waiting for it to change. If the same "
                 "app and resource redirect "
                 "to its block.xiaoeeye.com page, return "
-                "source_temporarily_unavailable."
+                "source_temporarily_unavailable. If the page first lands on a "
+                "generic Xiaoetong unavailable or personal-center shell, derive "
+                "the same app/resource block URL by replacing the .h5.xiaoeknow.com "
+                "host suffix with .block.xiaoeeye.com, navigate the same tab to "
+                "that exact path, and return the resulting bound block URL. Do not "
+                "report source_temporarily_unavailable for an unrelated URL."
             ),
             "required_response": {
                 "action": "activate_xiaoetong_playback",
