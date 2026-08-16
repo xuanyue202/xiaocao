@@ -14,6 +14,7 @@ from xiaocao.live.instrument_contract import (
     contract_from_record,
     exit_fee_for,
     is_sellable,
+    validate_sell_market_data,
 )
 
 
@@ -183,6 +184,26 @@ def execute_simulated_sells(
                         )
                         break
                 detail = detail_provider(str(position.get("code") or ""))
+                validated_detail = None
+                if contract is not None and contract.instrument_type == "etf":
+                    validation = validate_sell_market_data(
+                        position,
+                        detail,
+                        as_of=trade_date,
+                    )
+                    if not validation.ok:
+                        blocked += 1
+                        _record_sell_block(
+                            alerts_path,
+                            alert,
+                            position,
+                            trade_date=trade_date,
+                            reason=validation.reason,
+                            detail=dict(validation.details),
+                            timestamp_provider=timestamp_provider,
+                        )
+                        break
+                    validated_detail = validation
                 blocked_reason = sell_block_reason(detail)
                 if blocked_reason:
                     blocked += 1
@@ -198,7 +219,11 @@ def execute_simulated_sells(
                 instrument_fields: dict[str, Any] = {}
                 if contract is not None:
                     instrument_fields = contract_record_fields(contract)
-                exit_price = float(alert["latest_price"])
+                exit_price = float(
+                    validated_detail.price
+                    if validated_detail is not None and validated_detail.price is not None
+                    else alert["latest_price"]
+                )
                 fee_rate = float(
                     contract.sell_fee_rate
                     if contract is not None

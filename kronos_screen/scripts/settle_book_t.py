@@ -28,6 +28,7 @@ from xiaocao.live.instrument_contract import (  # noqa: E402
     contract_from_record,
     exit_fee_for,
     is_sellable,
+    validate_market_data,
 )
 from xiaocao.live.sell_blocks import load_blocked_sell_keys as _load_blocked_sell_keys  # noqa: E402
 from xiaocao.strategy.params import TREND_BUDGET_RATIO, TREND_REBALANCE_R, TREND_TRAIL_DD  # noqa: E402
@@ -125,6 +126,72 @@ def _kline_map(
     return {k: v for k, v in ser.items() if k}
 
 
+def _current_detail(client: XiaocaoClient, code: str) -> dict[str, Any] | None:
+    try:
+        payload = client.second_line_detail_info(code)
+    except Exception:
+        return None
+    if isinstance(payload, dict):
+        if isinstance(payload.get(code), dict):
+            row = dict(payload[code])
+        elif payload.get("code") == code:
+            row = dict(payload)
+        else:
+            row = None
+    elif isinstance(payload, list):
+        row = next(
+            (dict(item) for item in payload if isinstance(item, dict) and item.get("code") == code),
+            None,
+        )
+    else:
+        row = None
+    if row is not None:
+        row.setdefault("_source", "xiaocao_api")
+    return row
+
+
+def _validate_etf_settlement_market(
+    client: XiaocaoClient,
+    position: dict[str, Any],
+    contract: Any,
+    *,
+    exit_date: str,
+    daily_row: dict[str, Any],
+) -> Any:
+    """Require fresh proprietary facts before a daily ETF settlement SELL."""
+    if contract is None or contract.instrument_type != "etf":
+        return None
+    detail = _current_detail(client, str(position.get("code") or ""))
+    try:
+        minute_rows = client.minute_line(
+            str(position.get("code") or ""),
+            "1min",
+            "bfq",
+            trade_date=exit_date.replace("-", ""),
+            count=241,
+        )
+    except Exception:
+        minute_rows = []
+    liquidity = None
+    if isinstance(detail, dict):
+        raw_liquidity = detail.get("liquidity")
+        if isinstance(raw_liquidity, dict):
+            liquidity = raw_liquidity
+        elif detail.get("liquidity_status") or detail.get("liquidityStatus"):
+            liquidity = {
+                "status": detail.get("liquidity_status") or detail.get("liquidityStatus"),
+            }
+    return validate_market_data(
+        position,
+        realtime=detail,
+        minute_rows=minute_rows,
+        daily_rows=[daily_row],
+        liquidity=liquidity,
+        as_of=exit_date,
+        source=(detail or {}).get("_source") if isinstance(detail, dict) else "",
+    )
+
+
 def _load_account() -> dict[str, Any]:
     return accounts.load_account(
         ACCOUNT_T,
@@ -185,6 +252,14 @@ def _close_position(
             contract = contract_from_record(p, strict=True)
             assert contract is not None
         except InstrumentContractError:
+            return None
+        if shares <= 0 or shares % contract.lot_size:
+            return None
+        if not is_sellable(
+            contract,
+            entry_date=str(p.get("entry_date") or ""),
+            as_of=exit_date,
+        ):
             return None
     fee_rate = float(
         contract.sell_fee_rate
@@ -318,6 +393,19 @@ def _main_locked() -> None:
             continue
         close_px = _f(ser[exit_date].get("close"))
         if not close_px:
+            continue
+        market_validation = _validate_etf_settlement_market(
+            client,
+            p,
+            instrument_contract,
+            exit_date=exit_date,
+            daily_row=ser[exit_date],
+        )
+        if market_validation is not None and not market_validation.ok:
+            p["trend_exit_blocked_date"] = exit_date
+            p["trend_exit_blocked_reason"] = market_validation.reason
+            blocked_count += 1
+            state_changed = True
             continue
         peak = entry_price
         for d in dts[i0 : i1 + 1]:

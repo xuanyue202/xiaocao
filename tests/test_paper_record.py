@@ -385,6 +385,7 @@ def test_attach_etf_fill_uses_verified_contract_and_trade_price() -> None:
             "realtime": "verified",
             "minute": "verified",
             "daily": "verified",
+            "fill": "verified",
         },
         "provenance": {
             "source": "xiaocao_api",

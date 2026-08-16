@@ -877,6 +877,35 @@ def _etf_contract_reasons(contract: Mapping[str, Any]) -> list[str]:
     return reasons
 
 
+def _fee_rate(row: Mapping[str, Any], side: str) -> float | None:
+    direct = _number(row.get(f"{side}_fee_rate"))
+    if direct is not None:
+        return float(direct)
+    fees = row.get("fees") or row.get("fee_contract") or row.get("transaction_cost")
+    if not isinstance(fees, Mapping):
+        return None
+    value = fees.get(f"{side}_fee_rate")
+    if value in (None, ""):
+        value = fees.get(side)
+    if isinstance(value, Mapping):
+        nested_value = value.get("fee_rate")
+        if nested_value in (None, ""):
+            nested_value = value.get("rate")
+        if nested_value in (None, ""):
+            nested_value = value.get("commission")
+        value = nested_value
+    parsed = _number(value)
+    return float(parsed) if parsed is not None else None
+
+
+def _etf_liquidity_status(row: Mapping[str, Any]) -> str:
+    value = row.get("liquidity_status") or row.get("liquidityStatus")
+    liquidity = row.get("liquidity")
+    if value in (None, "") and isinstance(liquidity, Mapping):
+        value = liquidity.get("status")
+    return _text(value, field="instrument.liquidity_status").casefold()
+
+
 def _row_reasons(row: Mapping[str, Any]) -> list[str]:
     values: list[str] = []
     for key in ("non_tradable_reasons", "not_tradable_reasons", "tradability_reasons"):
@@ -925,6 +954,34 @@ def _instrument_record(
     status = _text(contract.get("status"), field="market_data_contract.status").casefold()
     if kind == "etf":
         reasons.extend(_etf_contract_reasons(contract))
+        buy_fee_rate = _fee_rate(row, "buy")
+        sell_fee_rate = _fee_rate(row, "sell")
+        if buy_fee_rate is None:
+            reasons.append("etf_buy_fee_unknown")
+        if sell_fee_rate is None:
+            reasons.append("etf_sell_fee_unknown")
+        catalog_trade_date = _text(
+            row.get("catalog_trade_date") or row.get("tradeDate") or row.get("trade_date"),
+            field="instrument.catalog_trade_date",
+        )
+        if not catalog_trade_date:
+            reasons.append("etf_catalog_date_unknown")
+        market_status = _text(
+            row.get("market_status")
+            or row.get("trading_status")
+            or row.get("current_status")
+            or row.get("status"),
+            field="instrument.market_status",
+        ).casefold()
+        if not market_status:
+            reasons.append("etf_market_status_unknown")
+        elif market_status in {"halted", "suspended", "stop", "inactive", "delisted", "停牌"}:
+            reasons.append("etf_market_status_not_tradable")
+        liquidity_status = _etf_liquidity_status(row)
+        if not liquidity_status:
+            reasons.append("etf_liquidity_status_unknown")
+        elif liquidity_status in {"illiquid", "insufficient", "blocked", "halted", "suspended"}:
+            reasons.append("etf_liquidity_not_sufficient")
     elif status not in _MARKET_DATA_OK_STATUSES:
         reasons.append("market_data_contract_unverified")
     if any(edge.get("provenance_status") != "complete" for edge in edges):
@@ -957,6 +1014,23 @@ def _instrument_record(
         "catalog_kind": kind,
         "catalog_provenance": _json_copy(row.get("provenance"), field="catalog_provenance"),
     }
+    if instrument_type == "etf":
+        record.update({
+            "buy_fee_rate": _fee_rate(row, "buy"),
+            "sell_fee_rate": _fee_rate(row, "sell"),
+            "catalog_trade_date": _text(
+                row.get("catalog_trade_date") or row.get("tradeDate") or row.get("trade_date"),
+                field="instrument.catalog_trade_date",
+            ) or None,
+            "market_status": _text(
+                row.get("market_status")
+                or row.get("trading_status")
+                or row.get("current_status")
+                or row.get("status"),
+                field="instrument.market_status",
+            ) or None,
+            "liquidity_status": _etf_liquidity_status(row) or None,
+        })
     return record
 
 

@@ -90,7 +90,6 @@ class XiaocaoClient:
             cached = self.cache.get(path, payload)
             if cached is not None:
                 return cached
-        self._respect_endpoint_rate_limit(path)
         result = self._do_post(path, payload)
         if self.cache is not None:
             try:
@@ -127,6 +126,11 @@ class XiaocaoClient:
         last_error: Exception | None = None
         for attempt in range(self.retries + 1):
             try:
+                # Apply endpoint-specific spacing to every actual request,
+                # including retries.  A retry must not bypass the ETF
+                # catalog's rate-limit policy merely because the first
+                # attempt failed quickly.
+                self._respect_endpoint_rate_limit(path)
                 # Context manager ensures response is closed even on exceptions,
                 # preventing CLOSE_WAIT socket pile-up in concurrent workloads.
                 with self._session.post(

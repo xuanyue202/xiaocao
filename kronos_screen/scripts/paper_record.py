@@ -40,6 +40,7 @@ from xiaocao.live.instrument_contract import (  # noqa: E402
     market_contract_verified,
     minute_trade_price,
     shares_for_budget,
+    is_sellable,
     validate_market_data,
 )
 from xiaocao.strategy.params import (  # noqa: E402
@@ -231,6 +232,7 @@ def _fill_window_stats(
     end_key = _minute_key(end_hhmm)
     amt = vol = 0.0
     closes: list[float] = []
+    matching_rows: list[dict] = []
     lo: float | None = None
     hi: float | None = None
     last_time: str | None = None
@@ -245,6 +247,7 @@ def _fill_window_stats(
         l = _num(row.get("low")) or c
         if not c or c <= 0:
             continue
+        matching_rows.append(dict(row))
         closes.append(c)
         if h and h > 0:
             hi = h if hi is None else max(hi, h)
@@ -258,7 +261,75 @@ def _fill_window_stats(
     if not closes:
         return None
     vwap = amt / vol if vol > 0 else sum(closes) / len(closes)
-    return {"vwap": vwap, "low": lo, "high": hi, "last": closes[-1], "time": last_time}
+    return {
+        "vwap": vwap,
+        "low": lo,
+        "high": hi,
+        "last": closes[-1],
+        "time": last_time,
+        # Keep the exact rows used to calculate the fill attached to the
+        # window.  ETF validation must never validate a detached candidate
+        # fact while pricing a different set of bars.
+        "code": code,
+        "trade_date": date_iso,
+        "source": "xiaocao_api",
+        "minute_rows": matching_rows,
+    }
+
+
+def _market_date(value: object) -> str:
+    text = str(value or "").strip()
+    if len(text) == 8 and text.isdigit():
+        return f"{text[:4]}-{text[4:6]}-{text[6:]}"
+    return text[:10]
+
+
+def _validate_etf_market_facts(
+    record: dict,
+    window: dict | None,
+    contract: InstrumentContract,
+) -> tuple[str | None, dict]:
+    """Validate current facts plus the exact minute rows used by a fill."""
+    if contract.instrument_type != "etf":
+        return None, {}
+    facts = record.get("market_data_facts")
+    if not isinstance(facts, dict):
+        return "MARKET_DATA_FACTS_MISSING", {
+            "message": "ETF execution requires current proprietary market facts",
+        }
+    window_date = _market_date((window or {}).get("trade_date"))
+    facts_date = _market_date(facts.get("as_of") or facts.get("trade_date"))
+    if not window_date or not facts_date:
+        return "MARKET_DATA_DATE_MISSING", {
+            "message": "ETF market facts and fill bars must carry a trade date",
+        }
+    if window_date != facts_date:
+        return "MARKET_DATA_DATE_MISMATCH", {
+            "window_date": window_date,
+            "facts_date": facts_date,
+        }
+    facts_code = str(facts.get("code") or "").strip().upper()
+    if facts_code and facts_code != contract.code.upper():
+        return "MARKET_DATA_CODE_MISMATCH", {
+            "facts_code": facts_code,
+            "contract_code": contract.code,
+        }
+    source = str(facts.get("source") or "").strip().lower()
+    validation = validate_market_data(
+        record,
+        realtime=facts.get("realtime"),
+        minute_rows=(window or {}).get("minute_rows"),
+        daily_rows=facts.get("daily_rows"),
+        liquidity=facts.get("liquidity"),
+        as_of=window_date,
+        source=source,
+    )
+    if not validation.ok:
+        return validation.reason, dict(validation.details)
+    return None, {
+        "market_data_source": validation.source,
+        "market_data_trade_date": window_date,
+    }
 
 
 def _fill_price_from_window(
@@ -305,58 +376,17 @@ def _fill_price_from_window(
                     return None, "skipped_public_source", record.get("basket_rule"), metadata
                 if not market_contract_verified(contract):
                     metadata["skip_reason"] = "MARKET_CONTRACT_UNVERIFIED"
-                    metadata["skip_detail"] = "realtime/minute/daily contract must be verified"
+                    metadata["skip_detail"] = "realtime/minute/daily/fill contract must be verified"
                     return None, "skipped_market_contract", record.get("basket_rule"), metadata
-                market_facts = record.get("market_data_facts")
-                if not isinstance(market_facts, dict):
-                    metadata["skip_reason"] = "MARKET_DATA_FACTS_MISSING"
-                    metadata["skip_detail"] = "ETF fill requires validated realtime/minute/daily/liquidity facts"
-                    return None, "skipped_market_data", record.get("basket_rule"), metadata
-                validation = validate_market_data(
+                validation_reason, validation_details = _validate_etf_market_facts(
                     record,
-                    realtime=market_facts.get("realtime"),
-                    minute_rows=market_facts.get("minute_rows"),
-                    daily_rows=market_facts.get("daily_rows"),
-                    liquidity=market_facts.get("liquidity"),
-                    as_of=market_facts.get("as_of") or market_facts.get("trade_date"),
-                    source=market_facts.get("source") or provenance_source,
+                    window,
+                    contract,
                 )
-                if not validation.ok:
-                    metadata["skip_reason"] = validation.reason
-                    metadata["skip_detail"] = dict(validation.details)
+                if validation_reason:
+                    metadata["skip_reason"] = validation_reason
+                    metadata["skip_detail"] = validation_details
                     return None, "skipped_market_data", record.get("basket_rule"), metadata
-                market_status = str(
-                    record.get("market_status")
-                    or record.get("trading_status")
-                    or record.get("status")
-                    or (market_facts.get("realtime") or {}).get("status")
-                    or ""
-                ).strip().lower()
-                if not market_status:
-                    metadata["skip_reason"] = "REALTIME_STATUS_UNKNOWN"
-                    metadata["skip_detail"] = "ETF realtime trading status is required"
-                    return None, "skipped_market_data", record.get("basket_rule"), metadata
-                if market_status in {"halted", "suspended", "stop", "停牌"}:
-                    metadata["skip_reason"] = "HALTED"
-                    metadata["skip_detail"] = "ETF market status is not tradable"
-                    return None, "skipped_halted", record.get("basket_rule"), metadata
-                liquidity_status = str(
-                    record.get("liquidity_status")
-                    or (market_facts.get("liquidity") or {}).get("status")
-                    or ""
-                ).strip().lower()
-                if not liquidity_status:
-                    metadata["skip_reason"] = "LIQUIDITY_UNKNOWN"
-                    metadata["skip_detail"] = "ETF liquidity status is required"
-                    return None, "skipped_market_data", record.get("basket_rule"), metadata
-                if liquidity_status in {"illiquid", "insufficient", "blocked"}:
-                    metadata["skip_reason"] = "ILLIQUID"
-                    metadata["skip_detail"] = "ETF liquidity contract is not sufficient"
-                    return None, "skipped_illiquid", record.get("basket_rule"), metadata
-                if window is None:
-                    metadata["skip_reason"] = "MINUTE_MISSING"
-                    metadata["skip_detail"] = "ETF opening fill requires proprietary minute trade prices"
-                    return None, "skipped_minute_data", record.get("basket_rule"), metadata
         except InstrumentContractError as exc:
             metadata["skip_reason"] = "INSTRUMENT_CONTRACT_UNVERIFIED"
             metadata["skip_detail"] = str(exc)
@@ -1239,6 +1269,21 @@ def _book_t_switch_exit_plan(
     shares = int(row.get("shares") or 0)
     if not code or shares <= 0:
         return None
+    contract = None
+    if row.get("instrument_contract") or row.get("instrument_type"):
+        try:
+            contract = contract_from_record(row, strict=True)
+            assert contract is not None
+        except InstrumentContractError:
+            return None
+        if shares % contract.lot_size:
+            return None
+        if not is_sellable(
+            contract,
+            entry_date=str(row.get("entry_date") or ""),
+            as_of=date_iso,
+        ):
+            return None
     window = _fill_window_stats(
         client,
         code,
@@ -1256,11 +1301,13 @@ def _book_t_switch_exit_plan(
     exit_price = _num(window.get("vwap"))
     if exit_price is None or exit_price <= 0:
         return None
-    contract = None
-    if row.get("instrument_contract") or row.get("instrument_type"):
-        try:
-            contract = contract_from_record(row, strict=True)
-        except InstrumentContractError:
+    if contract is not None and contract.instrument_type == "etf":
+        validation_reason, _validation_details = _validate_etf_market_facts(
+            row,
+            window,
+            contract,
+        )
+        if validation_reason:
             return None
     fee_rate = float(
         contract.sell_fee_rate

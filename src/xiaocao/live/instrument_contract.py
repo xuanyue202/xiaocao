@@ -211,7 +211,7 @@ def contract_from_record(
 def market_contract_verified(
     contract: InstrumentContract,
     *,
-    required: Sequence[str] = ("realtime", "minute", "daily"),
+    required: Sequence[str] = ("realtime", "minute", "daily", "fill"),
 ) -> bool:
     """Whether the named proprietary quote contracts were explicitly verified."""
     return all(
@@ -277,12 +277,15 @@ def validate_market_data(
         if age < 0 or age > max(0, int(max_catalog_age_days)):
             return _failure("CATALOG_STALE", normalized_source, age_days=age)
 
-    for field_name in ("realtime", "minute", "daily"):
+    for field_name in ("realtime", "minute", "daily", "fill"):
         if not _market_component_verified(contract.market_data_contract, field_name):
             return _failure("MARKET_CONTRACT_UNVERIFIED", normalized_source, field=field_name)
 
     if not isinstance(realtime, Mapping):
         return _failure("REALTIME_MISSING", normalized_source)
+    realtime_code = _row_code(realtime)
+    if realtime_code and not _same_instrument(realtime_code, contract.code):
+        return _failure("MARKET_DATA_CODE_MISMATCH", normalized_source, code=realtime_code)
     realtime_status = _trading_status(realtime)
     if realtime_status == "halted":
         return _failure("HALTED", normalized_source)
@@ -292,19 +295,30 @@ def validate_market_data(
     if realtime_price is None:
         return _failure("REALTIME_TRADE_MISSING", normalized_source)
     realtime_date = _row_date(realtime)
-    if normalized_as_of and realtime_date and realtime_date != normalized_as_of:
-        return _failure("REALTIME_STALE", normalized_source, trade_date=realtime_date)
+    if normalized_as_of:
+        if not realtime_date:
+            return _failure("REALTIME_DATE_MISSING", normalized_source)
+        if realtime_date != normalized_as_of:
+            return _failure("REALTIME_STALE", normalized_source, trade_date=realtime_date)
 
     if not isinstance(minute_rows, Sequence) or isinstance(minute_rows, (str, bytes)) or not minute_rows:
         return _failure("MINUTE_MISSING", normalized_source)
-    matching_minutes = [
-        row for row in minute_rows
-        if isinstance(row, Mapping)
-        and (not normalized_as_of or not _row_date(row) or _row_date(row) == normalized_as_of)
-    ]
+    matching_minutes: list[Mapping[str, Any]] = []
+    for row in minute_rows:
+        if not isinstance(row, Mapping):
+            continue
+        row_date = _row_date(row)
+        if normalized_as_of and not row_date:
+            return _failure("MINUTE_DATE_MISSING", normalized_source)
+        if normalized_as_of and row_date != normalized_as_of:
+            continue
+        matching_minutes.append(row)
     if not matching_minutes:
         return _failure("MINUTE_STALE", normalized_source)
     for row in matching_minutes:
+        row_code = _row_code(row)
+        if row_code and not _same_instrument(row_code, contract.code):
+            return _failure("MARKET_DATA_CODE_MISMATCH", normalized_source, code=row_code)
         if minute_trade_price(row, instrument_type=contract.instrument_type) is None:
             return _failure(
                 "MINUTE_TRADE_MISSING" if contract.instrument_type == "etf" else "MINUTE_PRICE_MISSING",
@@ -313,14 +327,22 @@ def validate_market_data(
 
     if not isinstance(daily_rows, Sequence) or isinstance(daily_rows, (str, bytes)) or not daily_rows:
         return _failure("DAILY_MISSING", normalized_source)
-    matching_daily = [
-        row for row in daily_rows
-        if isinstance(row, Mapping)
-        and (not normalized_as_of or not _row_date(row) or _row_date(row) == normalized_as_of)
-    ]
+    matching_daily: list[Mapping[str, Any]] = []
+    for row in daily_rows:
+        if not isinstance(row, Mapping):
+            continue
+        row_date = _row_date(row)
+        if normalized_as_of and not row_date:
+            return _failure("DAILY_DATE_MISSING", normalized_source)
+        if normalized_as_of and row_date != normalized_as_of:
+            continue
+        matching_daily.append(row)
     if not matching_daily:
         return _failure("DAILY_STALE", normalized_source)
     for row in matching_daily:
+        row_code = _row_code(row)
+        if row_code and not _same_instrument(row_code, contract.code):
+            return _failure("MARKET_DATA_CODE_MISMATCH", normalized_source, code=row_code)
         if any(_positive_float(row.get(field)) is None for field in ("open", "high", "low", "close")):
             return _failure("DAILY_OHLC_MISSING", normalized_source)
 
@@ -332,19 +354,80 @@ def validate_market_data(
     if liquidity_status in {"illiquid", "insufficient", "blocked"}:
         return _failure("ILLIQUID", normalized_source)
     if liquidity_status not in {"liquid", "ok", "sufficient", "verified"}:
-        amount = _positive_float(
-            liquidity.get("average_daily_amount")
-            or liquidity.get("avg_daily_amount")
-            or liquidity.get("amount")
-        )
-        if amount is None or amount <= 0:
-            return _failure("LIQUIDITY_UNKNOWN", normalized_source)
+        return _failure("LIQUIDITY_UNKNOWN", normalized_source)
 
     return MarketDataValidation(
         status="ready",
         reason="READY",
         source=normalized_source,
         price=realtime_price,
+        details={"code": contract.code, "instrument_type": contract.instrument_type},
+    )
+
+
+def validate_sell_market_data(
+    record: Mapping[str, Any],
+    detail: Mapping[str, Any] | None,
+    *,
+    as_of: str,
+    source: str | None = None,
+) -> MarketDataValidation:
+    """Validate the current proprietary facts used by an explicit SELL.
+
+    The full fill/settlement validator requires historical minute and daily
+    rows.  A live SELL already has a current quote detail, so this seam checks
+    the facts that must be fresh at the point of the side effect: proprietary
+    source, current date, active trading state, a trade price, and explicit
+    liquidity state.  Missing state is deliberately not inferred from order
+    book amounts.
+    """
+    if not isinstance(detail, Mapping):
+        return _failure("REALTIME_MISSING", str(source or "unknown"))
+    source_value = str(
+        source
+        or detail.get("_source")
+        or detail.get("source")
+        or _nested_source(detail.get("provenance"))
+        or _nested_source(detail.get("market_data_facts"))
+        or ""
+    ).strip().lower()
+    if source_value not in PROPRIETARY_SOURCES:
+        return _failure("PUBLIC_SOURCE_FORBIDDEN", source_value or "unknown")
+    try:
+        contract = contract_from_record(record, strict=True)
+    except InstrumentContractError as exc:
+        return _failure("INSTRUMENT_CONTRACT_UNVERIFIED", source_value, error=str(exc))
+    assert contract is not None
+    if not market_contract_verified(contract):
+        return _failure("MARKET_CONTRACT_UNVERIFIED", source_value)
+
+    normalized_as_of = _normalize_date(as_of)
+    detail_date = _row_date(detail)
+    if normalized_as_of:
+        if not detail_date:
+            return _failure("REALTIME_DATE_MISSING", source_value)
+        if detail_date != normalized_as_of:
+            return _failure("REALTIME_STALE", source_value, trade_date=detail_date)
+    status = _trading_status(detail)
+    if status == "halted":
+        return _failure("HALTED", source_value)
+    if status != "active":
+        return _failure("REALTIME_STATUS_UNKNOWN", source_value)
+    price = _positive_float(detail.get("trade"))
+    if price is None:
+        return _failure("REALTIME_TRADE_MISSING", source_value)
+    liquidity_status = _liquidity_status(detail)
+    if liquidity_status in {"halted", "suspended"}:
+        return _failure("HALTED", source_value)
+    if liquidity_status in {"illiquid", "insufficient", "blocked"}:
+        return _failure("ILLIQUID", source_value)
+    if liquidity_status not in {"liquid", "ok", "sufficient", "verified"}:
+        return _failure("LIQUIDITY_UNKNOWN", source_value)
+    return MarketDataValidation(
+        status="ready",
+        reason="READY",
+        source=source_value,
+        price=price,
         details={"code": contract.code, "instrument_type": contract.instrument_type},
     )
 
@@ -443,7 +526,11 @@ def _normalize_settlement_cycle(value: Any) -> str:
 
 def _fee_rate_value(value: Any) -> Any:
     if isinstance(value, Mapping):
-        return value.get("fee_rate") or value.get("rate") or value.get("commission")
+        for key in ("fee_rate", "rate", "commission"):
+            nested = value.get(key)
+            if nested not in (None, ""):
+                return nested
+        return None
     return value
 
 
@@ -488,6 +575,8 @@ def _market_component_verified(
     value = market_data_contract.get(name)
     if value is None and name == "daily":
         value = market_data_contract.get("settlement_data") or market_data_contract.get("settlement")
+    if value is None and name == "fill":
+        value = market_data_contract.get("fill_semantics")
     if isinstance(value, Mapping):
         state = str(value.get("status") or "").strip().lower()
         verified = value.get("verified") is True
@@ -543,10 +632,45 @@ def _row_date(row: Mapping[str, Any]) -> str | None:
     return _normalize_date(row.get("tradeDate") or row.get("trade_date") or row.get("date"))
 
 
+def _row_code(row: Mapping[str, Any]) -> str:
+    return str(
+        row.get("code")
+        or row.get("stockId")
+        or row.get("stockCode")
+        or row.get("fundCode")
+        or ""
+    ).strip().upper()
+
+
+def _same_instrument(actual: str, expected: str) -> bool:
+    actual_base = actual.split(".", 1)[0]
+    expected_base = expected.upper().split(".", 1)[0]
+    return actual == expected.upper() or actual_base == expected_base
+
+
+def _nested_source(value: Any) -> str:
+    if isinstance(value, Mapping):
+        return str(value.get("source") or value.get("_source") or "")
+    return ""
+
+
+def _liquidity_status(row: Mapping[str, Any]) -> str:
+    raw = row.get("liquidity_status") or row.get("liquidityStatus") or row.get("liquidity")
+    if isinstance(raw, Mapping):
+        raw = raw.get("status")
+    return str(raw or "").strip().lower()
+
+
 def _trading_status(row: Mapping[str, Any]) -> str:
     if row.get("isSuspended") is True or row.get("suspended") is True:
         return "halted"
-    raw = row.get("status") or row.get("tradeStatus") or row.get("tradingStatus") or row.get("state")
+    raw = (
+        row.get("status")
+        or row.get("tradeStatus")
+        or row.get("tradingStatus")
+        or row.get("state")
+        or row.get("statusType")
+    )
     if isinstance(raw, bool):
         return "active" if raw else "halted"
     text = str(raw or "").strip().lower()

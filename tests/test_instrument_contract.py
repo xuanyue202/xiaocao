@@ -29,6 +29,7 @@ def _etf_record(**overrides):
             "realtime": "verified",
             "minute": "verified",
             "daily": "verified",
+            "fill": "verified",
         },
         "provenance": {
             "source": "xiaocao_api",
@@ -97,6 +98,7 @@ def test_resolver_shape_accepts_nested_quote_contract_and_edge_provenance() -> N
             "realtime": {"status": "verified"},
             "minute": {"status": "verified", "price_field": "trade"},
             "daily": {"status": "verified"},
+            "fill": {"status": "verified"},
         },
     }
 
@@ -192,6 +194,22 @@ def test_market_contract_rejects_stale_catalog_and_public_source() -> None:
     )
     assert public.ok is False
     assert public.reason == "PUBLIC_SOURCE_FORBIDDEN"
+
+
+def test_market_contract_requires_explicit_liquidity_and_dated_rows() -> None:
+    unknown_liquidity = validate_market_data(
+        _etf_record(),
+        as_of="2026-08-14",
+        **_market_inputs(liquidity={"average_daily_amount": 10_000_000}),
+    )
+    assert unknown_liquidity.reason == "LIQUIDITY_UNKNOWN"
+
+    undated_minutes = validate_market_data(
+        _etf_record(),
+        as_of="2026-08-14",
+        **_market_inputs(minute_rows=[{"trade": 3.1}]),
+    )
+    assert undated_minutes.reason == "MINUTE_DATE_MISSING"
 
 
 def test_lot_fee_and_sellability_use_contract_metadata() -> None:

@@ -18,10 +18,23 @@ def _contract(*, settlement_cycle: str = "T+0") -> dict:
             "endpoint": "/stock/etf_info",
             "trade_date": "2026-08-14",
         },
+        "market_data_contract": {
+            "realtime": "verified",
+            "minute": "verified",
+            "daily": "verified",
+            "fill": "verified",
+        },
     }
 
 
-def _run(tmp_path, *, settlement_cycle: str = "T+0", shares: int = 200):
+def _run(
+    tmp_path,
+    *,
+    settlement_cycle: str = "T+0",
+    shares: int = 200,
+    detail: dict | None = None,
+):
+    tmp_path.mkdir(parents=True, exist_ok=True)
     positions = tmp_path / "positions.jsonl"
     account = tmp_path / "paper_account_T.json"
     trades = tmp_path / "paper_trades.jsonl"
@@ -50,8 +63,15 @@ def _run(tmp_path, *, settlement_cycle: str = "T+0", shares: int = 200):
         "book": "T",
         "code": "510300.XSHG",
         "entry_date": "2026-08-14",
-        "latest_price": 3.1,
+        "latest_price": 3.2,
         "sell_reason": "TREND_TRAIL_STOP",
+    }
+    current_detail = detail if detail is not None else {
+        "_source": "xiaocao_api",
+        "trade": 3.1,
+        "tradeDate": "20260814",
+        "status": "active",
+        "liquidity_status": "liquid",
     }
     return execute_simulated_sells(
         [alert],
@@ -64,7 +84,7 @@ def _run(tmp_path, *, settlement_cycle: str = "T+0", shares: int = 200):
         initial_capital=30000.0,
         default_fee_rate=0.0001,
         trade_date="2026-08-14",
-        detail_provider=lambda _code: {},
+        detail_provider=lambda _code: current_detail,
         timestamp_provider=lambda _alert: "2026-08-14T10:00:00",
     ), positions, account, trades, alerts
 
@@ -98,3 +118,19 @@ def test_etf_partial_lot_is_blocked(tmp_path) -> None:
     assert result == (0, 1)
     assert json.loads(positions.read_text(encoding="utf-8"))["status"] == "open"
     assert json.loads(alerts.read_text(encoding="utf-8"))["reason"] == "LOT_SIZE_INVALID"
+
+
+def test_etf_sell_requires_current_status_liquidity_and_source(tmp_path) -> None:
+    result, positions, _account, _trades, alerts = _run(
+        tmp_path,
+        detail={
+            "_source": "xiaocao_api",
+            "trade": 3.1,
+            "tradeDate": "20260814",
+            "status": "active",
+        },
+    )
+
+    assert result == (0, 1)
+    assert json.loads(positions.read_text(encoding="utf-8"))["status"] == "open"
+    assert json.loads(alerts.read_text(encoding="utf-8"))["reason"] == "LIQUIDITY_UNKNOWN"
