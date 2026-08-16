@@ -1211,6 +1211,16 @@ class XiaocaoWechatLiveSubscription:
         if item["status"] == "handoff_ready":
             return self._dispatch_handoff(manifest, item)
 
+        if item["status"] == "awaiting_playback":
+            item = self._check_playback(
+                manifest,
+                item,
+                reason="awaiting_playback",
+            )
+            playback_checked = True
+            if item["status"] == "awaiting_playback":
+                return self._waiting(item, {"status": "awaiting_playback"})
+
         try:
             state = self.capture_driver.advance(
                 item["identity"],
