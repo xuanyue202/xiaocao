@@ -453,9 +453,17 @@ def _bind_publication(
     if len(reports) != 1 or not viewpoints:
         raise PublicationBindingError(
             f"{source_key} publication must bind one report and one or more viewpoints"
-        )
+    )
     report = reports[0]
     report_payload = _record_payload(report, field=f"{source_key}.report")
+    report_id = str(report.get("record_id") or "").strip()
+    if report_payload.get("report_id") != report_id:
+        raise PublicationBindingError(f"{source_key} report identity does not match its envelope")
+    receipt_record_id = str(
+        receipt.get("recordId") or receipt.get("record_id") or ""
+    ).strip()
+    if not receipt_record_id or receipt_record_id != report_id:
+        raise PublicationBindingError(f"{source_key} receipt record identity does not match report")
     viewpoint_hint = str(raw.get("viewpoint_id") or "").strip()
     candidates = viewpoints
     if viewpoint_hint:
@@ -482,6 +490,11 @@ def _bind_publication(
         as_of=as_of,
         source_key=source_key,
     )
+    evaluation_id = str(evaluation.get("record_id") or "").strip()
+    if evaluation_payload.get("evaluation_id") != evaluation_id:
+        raise PublicationBindingError(
+            f"{source_key} evaluation identity does not match its envelope"
+        )
     source_binding = report.get("source_binding")
     if not isinstance(source_binding, Mapping):
         raise PublicationBindingError(f"{source_key} report source binding is missing")
@@ -567,7 +580,13 @@ def _normalize_source(
                 f"{source_key} evaluation review_not_after precedes evaluated_at"
             )
         review_not_after = _iso(review_not_after_dt)
-    kol_id = str(viewpoint_payload.get("kol_id") or report_payload.get("kol_id") or "").strip()
+    report_kol_id = str(report_payload.get("kol_id") or "").strip()
+    viewpoint_kol_id = str(viewpoint_payload.get("kol_id") or "").strip()
+    if not report_kol_id or not viewpoint_kol_id:
+        raise PublicationBindingError(f"{source_key} stable KOL identity is required")
+    if report_kol_id != viewpoint_kol_id:
+        raise PublicationBindingError(f"{source_key} report and viewpoint KOL identity mismatch")
+    kol_id = viewpoint_kol_id
     subject = str(viewpoint_payload.get("subject") or "").strip()
     role = _role_for_source(
         kol_id=kol_id,
@@ -929,7 +948,7 @@ def _source_status(
             "freshness_basis": "missing_horizon_rapid_decay_1d",
             "review_not_after": _iso(expiry),
         }
-    if source.role == "other_kol" and not source.review_not_after:
+    if source.role != "mache" and source.horizon and not source.review_not_after:
         return {
             "status": "pending",
             "current": False,
@@ -1272,7 +1291,7 @@ def _theme_horizon(
     ):
         horizon_basis = f"{horizon_basis};missing_horizon_rapid_decay_1d"
     if any(
-        source.role == "other_kol"
+        source.role != "mache"
         and source.horizon
         and not source.review_not_after
         for source in selected_sources.values()

@@ -32,6 +32,9 @@ def _source(
     evaluation_review_not_after: str | None = None,
     subject: str = "人工智能趋势",
     report_title: str = "当前趋势判断",
+    viewpoint_kol_id: str | None = None,
+    evaluation_payload_id: str | None = None,
+    receipt_record_id: str | None = None,
     publication_state: str = "published",
     binding_suffix: str | None = None,
 ) -> dict:
@@ -79,7 +82,7 @@ def _source(
     viewpoint_payload = {
         "viewpoint_id": vid,
         "report_id": rid,
-        "kol_id": kol_id,
+        "kol_id": viewpoint_kol_id if viewpoint_kol_id is not None else kol_id,
         "local_thesis_id": f"{source_key}-thesis",
         "subject": subject,
         "stance": "保持方向并等待市场条件确认。",
@@ -97,7 +100,7 @@ def _source(
         payload=viewpoint_payload,
     )
     evaluation_payload = {
-        "evaluation_id": f"evaluation-{source_key}-{evaluation_status}",
+        "evaluation_id": evaluation_payload_id or f"evaluation-{source_key}-{evaluation_status}",
         "viewpoint_id": vid,
         "status": evaluation_status,
         "as_of": evaluated_at,
@@ -127,7 +130,7 @@ def _source(
         "publish_receipt": {
             "recordState": publication_state,
             "manifestSha256": request["manifest_sha256"],
-            "recordId": rid,
+            "recordId": receipt_record_id or rid,
             "serverTime": evaluated_at,
         },
     }
@@ -284,6 +287,56 @@ def test_role_uses_bound_kol_identity_not_free_text():
 
     assert theme["source_evidence"][0]["role"] == "other_kol"
     assert theme["mache_support"]["status"] == "none"
+
+
+def test_missing_kol_identity_is_rejected():
+    with pytest.raises(PublicationBindingError, match="stable KOL identity"):
+        _build(
+            sources=[_source(source_key="other", kol_id="")],
+            draft=_draft(source_keys=["other"]),
+        )
+
+
+def test_mismatched_report_and_viewpoint_kol_identity_is_rejected():
+    with pytest.raises(PublicationBindingError, match="KOL identity"):
+        _build(
+            sources=[
+                _source(
+                    source_key="other",
+                    kol_id="kol-report",
+                    viewpoint_kol_id="kol-viewpoint",
+                )
+            ],
+            draft=_draft(source_keys=["other"]),
+        )
+
+
+def test_receipt_report_identity_mismatch_is_rejected():
+    with pytest.raises(PublicationBindingError, match="receipt record identity"):
+        _build(
+            sources=[
+                _source(
+                    source_key="other",
+                    kol_id="kol-other",
+                    receipt_record_id="wrong-report-id",
+                )
+            ],
+            draft=_draft(source_keys=["other"]),
+        )
+
+
+def test_evaluation_envelope_identity_mismatch_is_rejected():
+    with pytest.raises(PublicationBindingError, match="evaluation identity"):
+        _build(
+            sources=[
+                _source(
+                    source_key="other",
+                    kol_id="kol-other",
+                    evaluation_payload_id="wrong-evaluation-id",
+                )
+            ],
+            draft=_draft(source_keys=["other"]),
+        )
 
 
 def test_missing_theme_source_binding_does_not_attach_every_published_source():
@@ -517,6 +570,26 @@ def test_other_kol_horizon_deadline_controls_freshness_without_parsing_text():
     assert other["freshness_basis"] == "source_review_not_after"
     assert other["source_evidence"]["horizon"] == ["未来两周"]
     assert other["source_evidence"]["review_not_after"] == "2026-08-10T02:00:00Z"
+
+
+def test_xiaocao_horizon_requires_machine_review_deadline():
+    snapshot = _build(
+        sources=[
+            _source(
+                source_key="xiaocao",
+                kol_id="kol-xiaocao",
+                horizon=["当前阶段"],
+            )
+        ],
+        draft=_draft(source_keys=["xiaocao"], review_not_after=None),
+    )
+
+    source = snapshot.to_dict()["themes"][0]["source_evidence"][0]
+
+    assert source["role"] == "xiaocao"
+    assert source["current"] is False
+    assert source["status"] == "pending"
+    assert source["freshness_basis"] == "horizon_requires_machine_review_not_after"
 
 
 def test_snapshot_replay_is_deterministic_when_generation_time_is_bound():
