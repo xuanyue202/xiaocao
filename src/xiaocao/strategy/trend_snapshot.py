@@ -46,6 +46,7 @@ ELIGIBILITIES = frozenset({"eligible", "wait", "conflicted", "invalidated"})
 MARKET_STATUSES = frozenset({"support", "qualify", "conflict", "invalidate"})
 PUBLISHED_STATES = frozenset({"published", "superseded"})
 CURRENT_EVALUATION_STATES = frozenset({"current"})
+CONFLICTED_EVALUATION_STATES = frozenset({"conflicted", "conflict"})
 INVALID_EVALUATION_STATES = frozenset({"invalidated", "expired"})
 
 _DIRECTION_ALIASES = {
@@ -901,6 +902,12 @@ def _source_status(
     status = source.evaluation_status
     if status in INVALID_EVALUATION_STATES:
         return {"status": status, "current": False, "freshness_basis": f"evaluation_{status}"}
+    if status in CONFLICTED_EVALUATION_STATES:
+        return {
+            "status": "conflicted",
+            "current": False,
+            "freshness_basis": "evaluation_conflicted",
+        }
     if status not in CURRENT_EVALUATION_STATES:
         return {"status": "pending", "current": False, "freshness_basis": "evaluation_not_current"}
     if source.viewpoint_id in replaced_by:
@@ -1229,7 +1236,7 @@ def _theme_active_sources(
     selected_sources: Mapping[str, _SourceEvidence],
     *,
     states: Mapping[str, Mapping[str, Any]],
-) -> tuple[list[_SourceEvidence], list[_SourceEvidence]]:
+) -> tuple[list[_SourceEvidence], list[_SourceEvidence], list[_SourceEvidence]]:
     active = [
         source
         for source in selected_sources.values()
@@ -1240,7 +1247,12 @@ def _theme_active_sources(
         for source in selected_sources.values()
         if states[source.source_key].get("status") == "invalidated"
     ]
-    return active, invalidated
+    conflicted = [
+        source
+        for source in selected_sources.values()
+        if states[source.source_key].get("status") == "conflicted"
+    ]
+    return active, invalidated, conflicted
 
 
 def _theme_effective_from(
@@ -1323,6 +1335,7 @@ def _theme_eligibility(
     market_current: bool,
     active_sources: list[_SourceEvidence],
     invalidated_sources: list[_SourceEvidence],
+    conflicted_sources: list[_SourceEvidence],
 ) -> tuple[str, str]:
     draft_eligibility = str(draft_theme.get("eligibility") or "wait")
     timing_status = str(timing.get("timing_status") or "").lower()
@@ -1336,6 +1349,8 @@ def _theme_eligibility(
         return "conflicted", "agent_judgment_conflict"
     if invalidated_sources and not active_sources:
         return "invalidated", "all_bound_sources_invalidated"
+    if conflicted_sources:
+        return "conflicted", "bound_source_conflict"
     if not market_current:
         return "wait", "market_validation_not_current"
     if context.get("status") != "current":
@@ -1417,7 +1432,7 @@ def _build_theme(
             if source.viewpoint_id in replaced_by
         ),
     )
-    active_sources, invalidated_sources = _theme_active_sources(
+    active_sources, invalidated_sources, conflicted_sources = _theme_active_sources(
         selected,
         states=states,
     )
@@ -1447,6 +1462,7 @@ def _build_theme(
         market_current=market_current,
         active_sources=active_sources,
         invalidated_sources=invalidated_sources,
+        conflicted_sources=conflicted_sources,
     )
     source_states = {
         source_key: states[source_key] for source_key in sorted(states)

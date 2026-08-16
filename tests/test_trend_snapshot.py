@@ -368,6 +368,26 @@ def test_conflict_is_explicit_and_does_not_average_into_a_bullish_vote():
     assert theme["confidence"] == 0.8
 
 
+def test_conflicted_evaluation_is_preserved_as_theme_conflict():
+    snapshot = _build(
+        sources=[
+            _source(
+                source_key="other",
+                kol_id="kol-other",
+                evaluation_status="conflicted",
+            )
+        ],
+        draft=_draft(source_keys=["other"], eligibility="eligible"),
+    )
+
+    theme = snapshot.to_dict()["themes"][0]
+
+    assert theme["eligibility"] == "conflicted"
+    assert theme["eligibility_reason"] == "bound_source_conflict"
+    assert theme["source_evidence"][0]["status"] == "conflicted"
+    assert theme["source_evidence"][0]["current"] is False
+
+
 def test_market_invalidation_is_a_hard_theme_state():
     snapshot = _build(market=_market(status="invalidate"))
 
