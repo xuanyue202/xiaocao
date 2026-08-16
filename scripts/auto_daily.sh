@@ -19,6 +19,21 @@ TODAY="$(date +%F)"
 LOG_DIR="$ROOT/output/live/auto"; mkdir -p "$LOG_DIR"
 LOG="$LOG_DIR/${TODAY}_${STEP}.log"
 log() { echo "[$(date '+%F %T')] $*" | tee -a "$LOG"; }
+run_book_t_shadow_if_frozen() {
+  local input="output/live/book_t_v2_shadow_input_${TODAY}.json"
+  if [ ! -f "$input" ]; then
+    log "Book T v2 shadow: no dated frozen input — keep v1 control consumer (pending_observation)"
+    return 0
+  fi
+  log "Book T v2 shadow: consume ${input} (research namespace only)"
+  if ! "$PY" scripts/book_t_shadow.py \
+    --input "$input" \
+    --output-dir "output/research/book_t_v2_shadow" \
+    --run-id "${TODAY}-book-t-v2-shadow" >>"$LOG" 2>&1; then
+    log "Book T v2 shadow DEGRADED: frozen research input was not consumed; keep successful v1 control result"
+    return 0
+  fi
+}
 _finalize_flow() {
   local status=$?
   if [ -n "${STEP:-}" ] && [ -f "${LOG:-}" ]; then
@@ -100,7 +115,11 @@ case "$STEP" in
       exit 1
     fi
     log "paper-record Book T trend basket (paper-only, independent account)"
-    "$PY" kronos_screen/scripts/paper_record.py --date "$TODAY" --initial-capital 100000 --fee-rate 0.0001 --trend-only >>"$LOG" 2>&1 || true
+    if ! "$PY" kronos_screen/scripts/paper_record.py --date "$TODAY" --initial-capital 100000 --fee-rate 0.0001 --trend-only >>"$LOG" 2>&1; then
+      log "morning execute FAILED: Book T paper-record failed"
+      exit 1
+    fi
+    run_book_t_shadow_if_frozen
     log "surface 小草 posture prior (judgment lens only; NOT a filter on the deterministic picks)"
     "$PY" scripts/xiaocao_knowledge.py --posture >>"$LOG" 2>&1 || true
     log "record standing posture call (judgment-calibration loop; scored fwd at eod)"
@@ -118,7 +137,11 @@ case "$STEP" in
     log "paper-record ★E mode-qualified picks"
     "$PY" kronos_screen/scripts/paper_record.py --date "$TODAY" --pick mode_exec_star --initial-capital 100000 --fee-rate 0.0001 --deploy-ratio 0.5 --max-total-exposure-ratio 1.0 --quality-governor shadow --intelligence-trade shadow >>"$LOG" 2>&1
     log "paper-record Book T trend basket (paper-only, independent account)"
-    "$PY" kronos_screen/scripts/paper_record.py --date "$TODAY" --initial-capital 100000 --fee-rate 0.0001 --trend-only >>"$LOG" 2>&1 || true
+    if ! "$PY" kronos_screen/scripts/paper_record.py --date "$TODAY" --initial-capital 100000 --fee-rate 0.0001 --trend-only >>"$LOG" 2>&1; then
+      log "morning FAILED: Book T paper-record failed"
+      exit 1
+    fi
+    run_book_t_shadow_if_frozen
     log "surface 小草 posture prior (judgment lens only; NOT a filter on the deterministic picks)"
     "$PY" scripts/xiaocao_knowledge.py --posture >>"$LOG" 2>&1 || true
     log "record standing posture call (judgment-calibration loop; scored fwd at eod)"

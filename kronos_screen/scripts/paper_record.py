@@ -14,6 +14,7 @@ Reads output/live/signal_snapshots.jsonl; updates output/live/positions.jsonl.
 """
 from __future__ import annotations
 import argparse, json
+import hashlib
 import sys
 import time
 from datetime import datetime, timedelta
@@ -26,6 +27,7 @@ SCRIPTS = Path(__file__).resolve().parent
 sys.path.insert(0, str(SCRIPTS))
 
 from xiaocao.api.client import XiaocaoClient  # noqa: E402
+from xiaocao.kol.publication import canonical_sha256  # noqa: E402
 from xiaocao.live import accounts, intelligence_policy  # noqa: E402
 from xiaocao.live.book_b_pricing import initial_limit_price  # noqa: E402
 from xiaocao.live.buy_guards import evaluate_buy_market_guard  # noqa: E402
@@ -77,6 +79,7 @@ ACCOUNT = Path("output/live/paper_account.json")
 ACCOUNT_A = Path("output/live/paper_account_A.json")
 ACCOUNT_T = Path("output/live/paper_account_T.json")
 TRADES = Path("output/live/paper_trades.jsonl")
+BOOK_T_CONTROL_RECEIPT = Path("output/live/book_t_v1_control_receipt_{date}.json")
 SKIPS = Path("output/live/paper_skips.jsonl")
 QUALITY_AUDIT = Path("output/live/quality_governor_audit.jsonl")
 DEFAULT_STARTING_CAPITAL = 100000.0
@@ -138,6 +141,40 @@ def _append_quality_audit(records: list[dict]) -> None:
     with QUALITY_AUDIT.open("a", encoding="utf-8") as f:
         for record in records:
             f.write(json.dumps(record, ensure_ascii=False, sort_keys=True) + "\n")
+
+
+def _write_book_t_control_receipt(date_iso: str) -> Path:
+    """Snapshot the successful v1 T artifacts for an optional shadow consumer."""
+
+    paths = {
+        "positions": "output/live/positions.jsonl",
+        "account": "output/live/paper_account_T.json",
+        "trades": "output/live/paper_trades.jsonl",
+    }
+    hashes: dict[str, str] = {}
+    for name, relative_path in paths.items():
+        path = ROOT / relative_path
+        if not path.exists():
+            if name == "trades":
+                path.parent.mkdir(parents=True, exist_ok=True)
+                path.touch()
+            else:
+                raise FileNotFoundError(path)
+        hashes[name] = hashlib.sha256(path.read_bytes()).hexdigest()
+    body = {
+        "consumer": "book_t_v1_control",
+        "producer": "kronos_screen/scripts/paper_record.py",
+        "mode": "trend-only",
+        "book": "T",
+        "as_of": date_iso,
+        "artifact_paths": paths,
+        "artifact_hashes": hashes,
+    }
+    receipt = {**body, "receipt_sha256": canonical_sha256(body)}
+    path = ROOT / BOOK_T_CONTROL_RECEIPT.format(date=date_iso)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(receipt, ensure_ascii=False, sort_keys=True, indent=2) + "\n", encoding="utf-8")
+    return path
 
 
 def _kol_reference_fields(record: dict) -> dict:
@@ -790,6 +827,11 @@ def _main_locked():
     if a.trend_only:
         client = XiaocaoClient()
         _record_book_t(client, a, wait_for_fill_window=not a.no_wait_fill_window)
+        try:
+            receipt_path = _write_book_t_control_receipt(a.date)
+            print(f"{a.date}: Book T v1 control receipt -> {receipt_path}")
+        except OSError as exc:
+            print(f"{a.date}: Book T v1 control receipt DEGRADED: {exc}")
         return
     if not SNAP.exists():
         print("no snapshots; run live_recommend first"); return

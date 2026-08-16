@@ -10,7 +10,11 @@ def test_default_strategy_protocol_registry_is_valid():
     registry = protocols.load_registry()
     assert protocols.validate_registry(registry) == []
     ids = protocols.protocol_ids()
-    assert {"shortline-book-b-v1", "trend-book-t-v1"}.issubset(ids)
+    assert {
+        "shortline-book-b-v1",
+        "trend-book-t-v1",
+        "trend-book-t-v2-shadow-v1",
+    }.issubset(ids)
 
 
 def test_find_protocol_exposes_required_manifest_fields():

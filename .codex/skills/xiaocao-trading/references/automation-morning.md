@@ -33,6 +33,27 @@ The orchestration must reach these stages:
 5. `paper_record.py --pick mode_exec_star --intelligence-trade shadow` records only executable ★E Book-B fills plus the matching Book-A reference rows. K/P, auxiliary indicators, intelligence and manual notional cannot restore a failed mode gate.
 6. `paper_record.py --trend-only` first checks whether Book T has an empty slot or a sellable switch candidate. A full aligned book returns immediately; otherwise it waits for the opening window and fills or performs a paired switch. No candidate or an unfilled replacement is normal.
 
+The current formal Book T consumer remains the v1 control path until Issue 06's
+research-consumption and human gates pass. `scripts/book_t_shadow.py
+--runtime-check` is a read-only next-run preflight. If a dated,
+hash-bound `output/live/book_t_v2_shadow_input_<date>.json` exists,
+`auto_daily.sh morning-execute` may consume it after the v1 paper record; the
+result is written only under `output/research/book_t_v2_shadow/<run-id>/` and
+must never touch `positions.jsonl`, `paper_account_T.json`, or
+`paper_trades.jsonl`. The consumer replays and accumulates prior isolated
+frozen inputs so the 20/60/50 research floors cannot be reset by a daily
+single-file run. A missing v2 input is the normal `pending_observation` state.
+A consumed input must carry the v1 T receipt and raw SHA-256 hashes for the
+positions, account, and trades artifacts; the CLI verifies those hashes before
+research evaluation.
+`paper_record.py --trend-only` emits the dated receipt after its formal T
+result; receipt-write failure is supporting degradation and never rewrites the
+successful v1 account result.
+If the optional shadow input is malformed or its research write fails, the
+automation records supporting-layer degradation and preserves the successful
+v1 control result. A real Book T `paper_record.py --trend-only` error is
+deterministic failure and must not be hidden by a blanket `|| true`.
+
 Book T ETF candidates are admitted only with the explicit instrument contract and
 validated proprietary realtime/minute/daily/liquidity facts described in the
 Operating Contract. Missing metadata or current execution facts is a bounded

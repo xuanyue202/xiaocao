@@ -92,3 +92,57 @@ protocols:
       auto_applied: "Allowed only for Book T paper/simulation/research/tooling when manifest, evidence_bundle, validation, and rollback are complete."
       proposal_only: "Required for real-capital, shared allocator policy, account history, raw truth source, safety, unclear attribution, or missing manifest."
     rollback: "git revert <commit> plus remove any generated output/research run artifacts if needed."
+
+  - id: trend-book-t-v2-shadow-v1
+    name: Book T v2 control/shadow research protocol
+    scope: "Book T v2 paper-only theme selection compared with the existing v1 control on hash-bound frozen market inputs."
+    strategy_kernel:
+      - "Control and v2 shadow consume the same market input, budget, fee, fill, settlement, and liquidity assumptions."
+      - "The v2 shadow namespace is research-only and cannot write formal positions, paper accounts, or paper trades."
+      - "Strategy evidence is judged with trend_guards on non-overlapping hold paths; engineering burn-in is reported separately."
+    allowed_change_surfaces:
+      - "Book T v2 shadow artifacts and reports"
+      - "Book T paper/simulation research instrumentation and attribution fields"
+      - "research scripts and protocol diagnostics"
+    forbidden_change_surfaces:
+      - "formal Book T positions, paper_account_T, paper_trades, or ledger history"
+      - "Book T v1 paper writer, Book B short-line exit policy, or shared allocator policy"
+      - "real-capital authorization or order placement"
+      - "TREND_* parameter changes without a PASS plus explicit Research Consumption Gate and human approval"
+    sample_policy:
+      unit: "daily hash-bound theme decision and non-overlapping hold path"
+      guard: "scripts/book_t_shadow.py / trend_guards.py"
+      requirements:
+        - "same frozen market input and execution assumptions for control and shadow"
+        - "at least 20 trading days for engineering burn-in"
+        - "at least 60 trading days and 50 valid theme decisions for strategy promotion evidence"
+        - "compounded return, max drawdown, left-tail, turnover, concentration, walk-forward, and non-bull survival"
+        - "no PASS driven by one winner, one theme, one source role, or non-tradable returns"
+    required_manifest_fields:
+      - "schema_version"
+      - "namespace"
+      - "run_id"
+      - "protocol_id"
+      - "parameters.n_tried"
+      - "inputs.frozen_input_sha256"
+      - "inputs.n_days"
+      - "inputs.n_valid_decisions"
+      - "artifacts.verdict"
+      - "artifacts.report"
+      - "verdict.status"
+      - "diagnostics.coverage"
+      - "formal_ledger_mutations"
+      - "git.commit"
+      - "git.dirty"
+    required_artifacts:
+      - "manifest.json"
+      - "frozen_inputs.json"
+      - "daily_runs.jsonl"
+      - "simulated_fills.jsonl"
+      - "hold_paths.jsonl"
+      - "verdict.json"
+      - "report.md"
+    promotion_boundary:
+      auto_applied: "Never promotes the selector. A PASS only makes evidence consumable by the separate Research Consumption Gate; Issue 06 still requires a human-approved contract and rollback readback."
+      proposal_only: "Required for any formal ledger, writer, allocator, safety, real-capital, or selector cutover change, and whenever sample/diversity/hash gates are incomplete."
+    rollback: "Delete only the isolated output/research/book_t_v2_shadow/<run_id> artifact or revert the research-tool commit; the v1 control account and writer remain unchanged."

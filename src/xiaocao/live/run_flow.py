@@ -17,6 +17,8 @@ LOG_LINE_RE = re.compile(r"^\[(?P<ts>[^\]]+)\]\s*(?P<message>.*)$")
 
 def classify_message(message: str) -> str:
     text = message.lower()
+    if "degraded" in text or "supporting-layer" in text:
+        return "degraded"
     if ("data health" in text and ("critical" in text or "skip" in text)) or "fallback_timeout" in text:
         return "degraded"
     if "hard_stop" in text or "critical" in text or "failed" in text or "error" in text:

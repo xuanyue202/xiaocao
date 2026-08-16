@@ -30,6 +30,12 @@ def test_events_from_log_and_snapshot(tmp_path: Path) -> None:
     assert snapshot["counts"]["degraded"] == 1
 
 
+def test_optional_shadow_degradation_is_machine_readable() -> None:
+    assert run_flow.classify_message(
+        "Book T v2 shadow DEGRADED: keep successful v1 control result"
+    ) == "degraded"
+
+
 def test_optional_health_degrades_success_without_faking_main_chain_failure() -> None:
     events = [run_flow.event(
         automation="morning", market_date="2026-07-14", step="done", status="succeeded"
