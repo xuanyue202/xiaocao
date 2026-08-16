@@ -29,6 +29,9 @@ def _source(
     evaluated_at: str = "2026-08-16T02:00:00Z",
     evaluation_status: str = "current",
     horizon: list[str] | None = None,
+    evaluation_review_not_after: str | None = None,
+    subject: str = "人工智能趋势",
+    report_title: str = "当前趋势判断",
     publication_state: str = "published",
     binding_suffix: str | None = None,
 ) -> dict:
@@ -62,7 +65,7 @@ def _source(
                 else "其他作者"
             ),
             "source": "研究报告",
-            "title": "当前趋势判断",
+            "title": report_title,
             "summary": "当前观点与市场条件需要绑定复核。",
             "source_published_at": published_at,
             "media_types": ["text"],
@@ -78,7 +81,7 @@ def _source(
         "report_id": rid,
         "kol_id": kol_id,
         "local_thesis_id": f"{source_key}-thesis",
-        "subject": "人工智能趋势",
+        "subject": subject,
         "stance": "保持方向并等待市场条件确认。",
         "source_published_at": published_at,
         "evidence_refs": refs,
@@ -93,20 +96,23 @@ def _source(
         source_binding=source_binding,
         payload=viewpoint_payload,
     )
+    evaluation_payload = {
+        "evaluation_id": f"evaluation-{source_key}-{evaluation_status}",
+        "viewpoint_id": vid,
+        "status": evaluation_status,
+        "as_of": evaluated_at,
+        "evaluated_at": evaluated_at,
+        "basis": "根据当前市场事实复核该观点。",
+    }
+    if evaluation_review_not_after is not None:
+        evaluation_payload["review_not_after"] = evaluation_review_not_after
     evaluation = build_record(
         kind="viewpoint_evaluation",
         record_id_value=f"evaluation-{source_key}-{evaluation_status}",
         idempotency_key=f"put-evaluation-{source_key}-{evaluation_status}",
         created_at=evaluated_at,
         source_binding=source_binding,
-        payload={
-            "evaluation_id": f"evaluation-{source_key}-{evaluation_status}",
-            "viewpoint_id": vid,
-            "status": evaluation_status,
-            "as_of": evaluated_at,
-            "evaluated_at": evaluated_at,
-            "basis": "根据当前市场事实复核该观点。",
-        },
+        payload=evaluation_payload,
     )
     records = [report, viewpoint, evaluation]
     request = build_publish_request(
@@ -259,6 +265,25 @@ def test_snapshot_waits_when_market_validation_is_not_current():
 
     assert theme["eligibility"] == "wait"
     assert theme["eligibility_reason"] == "market_validation_not_current"
+
+
+def test_role_uses_bound_kol_identity_not_free_text():
+    snapshot = _build(
+        sources=[
+            _source(
+                source_key="other",
+                kol_id="kol-other",
+                subject="马车主题观察",
+                report_title="马车主题观察",
+            )
+        ],
+        draft=_draft(source_keys=["other"]),
+    )
+
+    theme = snapshot.to_dict()["themes"][0]
+
+    assert theme["source_evidence"][0]["role"] == "other_kol"
+    assert theme["mache_support"]["status"] == "none"
 
 
 def test_missing_theme_source_binding_does_not_attach_every_published_source():
@@ -449,6 +474,49 @@ def test_other_kol_without_horizon_uses_explicit_rapid_decay():
     assert other["current"] is False
     assert other["freshness_basis"] == "missing_horizon_rapid_decay_1d"
     assert other["status"] == "stale"
+
+
+def test_other_kol_horizon_requires_machine_review_deadline():
+    snapshot = _build(
+        sources=[
+            _source(
+                source_key="other",
+                kol_id="kol-other",
+                horizon=["未来两周"],
+            )
+        ],
+        draft=_draft(source_keys=["other"], review_not_after=None),
+    )
+
+    other = snapshot.to_dict()["themes"][0]["other_kol"]["confirmations"][0]
+
+    assert other["current"] is False
+    assert other["status"] == "pending"
+    assert other["freshness_basis"] == "horizon_requires_machine_review_not_after"
+
+
+def test_other_kol_horizon_deadline_controls_freshness_without_parsing_text():
+    snapshot = _build(
+        sources=[
+            _source(
+                source_key="other",
+                kol_id="kol-other",
+                horizon=["未来两周"],
+                evaluated_at="2026-08-02T02:00:00Z",
+                evaluation_review_not_after="2026-08-10T02:00:00Z",
+            )
+        ],
+        draft=_draft(source_keys=["other"], review_not_after=None),
+    )
+
+    theme = snapshot.to_dict()["themes"][0]
+    other = theme["other_kol"]["confirmations"][0]
+
+    assert other["current"] is False
+    assert other["status"] == "stale"
+    assert other["freshness_basis"] == "source_review_not_after"
+    assert other["source_evidence"]["horizon"] == ["未来两周"]
+    assert other["source_evidence"]["review_not_after"] == "2026-08-10T02:00:00Z"
 
 
 def test_snapshot_replay_is_deterministic_when_generation_time_is_bound():
