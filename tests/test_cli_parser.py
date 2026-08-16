@@ -113,6 +113,15 @@ def test_market_kline_parser_accepts_batch_codes() -> None:
     assert args.handler.__name__ == "market_kline"
 
 
+def test_market_etf_info_parser_accepts_trade_date() -> None:
+    args = build_parser().parse_args(["market", "etf-info", "--date", "2026-08-14"])
+
+    assert args.command == "market"
+    assert args.market_command == "etf-info"
+    assert args.date == "2026-08-14"
+    assert args.handler.__name__ == "market_etf_info"
+
+
 def test_data_sort_parser_accepts_sort_key_and_semantic_controls() -> None:
     args = build_parser().parse_args(
         [

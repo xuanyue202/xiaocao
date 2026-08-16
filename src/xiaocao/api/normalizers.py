@@ -39,6 +39,60 @@ def as_list(result: Any) -> list[Any]:
     return []
 
 
+def normalize_etf_info_rows(
+    result: Any,
+    *,
+    trade_date: str | None = None,
+    endpoint: str = "/stock/etf_info",
+) -> list[dict[str, Any]]:
+    """Normalize the ETF catalog without pretending it is ``stock_info``.
+
+    The ETF endpoint has returned both a list and ``{"list": [...]}`` in
+    observed clients. Raw fields are retained, while the canonical identity
+    and provenance fields let later resolver code reject stale or ambiguous
+    rows without guessing a ticker.
+    """
+    rows: list[Any]
+    if isinstance(result, list):
+        rows = result
+    elif isinstance(result, dict):
+        rows = []
+        for key in ("list", "data", "rows", "result"):
+            if isinstance(result.get(key), list):
+                rows = result[key]
+                break
+    else:
+        rows = []
+
+    requested_date = normalize_api_date(str(trade_date)) if trade_date else None
+    output: list[dict[str, Any]] = []
+    for raw in rows:
+        if not isinstance(raw, dict):
+            continue
+        code = raw.get("code") or raw.get("stockId")
+        if not code:
+            continue
+        name = raw.get("name") or raw.get("stockName") or raw.get("codeName") or raw.get("fundsname") or ""
+        row_date = normalize_api_date(str(raw.get("tradeDate"))) if raw.get("tradeDate") else requested_date
+        output.append(
+            {
+                **raw,
+                "code": code,
+                "stockId": raw.get("stockId") or code,
+                "stockName": raw.get("stockName") or raw.get("codeName") or raw.get("fundsname") or name,
+                "name": name,
+                "instrument_type": "etf",
+                "catalog_trade_date": row_date,
+                "provenance": {
+                    "source": "xiaocao_api",
+                    "endpoint": endpoint,
+                    "trade_date": row_date,
+                },
+            }
+        )
+    return output
+
+
 def split_code(value: Any) -> tuple[str | None, str | None]:
     if not value:
         return None, None

@@ -286,6 +286,175 @@ def test_fill_window_stats_uses_only_configured_opening_minutes() -> None:
     assert stats["time"] == "0931"
 
 
+def test_etf_fill_window_uses_trade_not_close() -> None:
+    client = FakeClient([
+        {
+            "tradeTime": "0930",
+            "tradeDate": "20260814",
+            "trade": 3.10,
+            "close": 99.0,
+            "high": 3.12,
+            "low": 3.08,
+            "amt": 310.0,
+            "vol": 100,
+        },
+        {
+            "tradeTime": "0931",
+            "tradeDate": "20260814",
+            "trade": 3.20,
+            "close": 98.0,
+            "high": 3.21,
+            "low": 3.19,
+            "amt": 320.0,
+            "vol": 100,
+        },
+    ])
+
+    stats = _fill_window_stats(
+        client,
+        "510300.XSHG",
+        "2026-08-14",
+        start_hhmm="0930",
+        end_hhmm="0931",
+        instrument_contract={
+            "code": "510300.XSHG",
+            "instrument_type": "etf",
+            "lot_size": 100,
+            "settlement_cycle": "T+1",
+            "fee_rate": 0.0001,
+        },
+    )
+
+    assert stats is not None
+    assert stats["vwap"] == 3.15
+    assert stats["low"] == 3.08
+    assert stats["high"] == 3.21
+
+
+def test_etf_fill_fails_closed_when_contract_is_unknown() -> None:
+    price, basis, _, meta = _fill_price_from_window(
+        {
+            "code": "510300.XSHG",
+            "instrument_type": "etf",
+            "open": 3.10,
+            "basket_price": 3.20,
+        },
+        window={"vwap": 3.11, "low": 3.10, "high": 3.12, "time": "0931"},
+        limit_premium_pct=0.5,
+    )
+
+    assert price is None
+    assert basis == "skipped_instrument_contract"
+    assert meta["skip_reason"] == "INSTRUMENT_CONTRACT_UNVERIFIED"
+
+
+def test_attach_etf_fill_uses_verified_contract_and_trade_price() -> None:
+    client = FakeClient([
+        {
+            "tradeTime": "0930",
+            "tradeDate": "20260814",
+            "trade": 3.10,
+            "close": 99.0,
+            "high": 3.12,
+            "low": 3.08,
+            "amt": 310.0,
+            "vol": 100,
+        },
+        {
+            "tradeTime": "0931",
+            "tradeDate": "20260814",
+            "trade": 3.11,
+            "close": 98.0,
+            "high": 3.12,
+            "low": 3.10,
+            "amt": 311.0,
+            "vol": 100,
+        },
+    ])
+    candidate = {
+        "code": "510300.XSHG",
+        "name": "沪深300ETF",
+        "instrument_type": "etf",
+        "open": 3.10,
+        "basket_price": 3.20,
+        "lot_size": 200,
+        "settlement_cycle": "T+0",
+        "buy_fee_rate": 0.001,
+        "sell_fee_rate": 0.002,
+        "market_data_contract": {
+            "realtime": "verified",
+            "minute": "verified",
+            "daily": "verified",
+            "fill": "verified",
+        },
+        "provenance": {
+            "source": "xiaocao_api",
+            "endpoint": "/stock/etf_info",
+            "trade_date": "2026-08-14",
+        },
+        "market_status": "active",
+        "liquidity_status": "liquid",
+        "market_data_facts": {
+            "code": "510300.XSHG",
+            "as_of": "2026-08-14",
+            "source": "xiaocao_api",
+            "realtime": {"code": "510300.XSHG", "trade": 3.10, "tradeDate": "20260814", "status": "active"},
+            "minute_rows": [
+                {"code": "510300.XSHG", "trade": 3.10, "tradeDate": "20260814"},
+                {"code": "510300.XSHG", "trade": 3.11, "tradeDate": "20260814"},
+            ],
+            "daily_rows": [{
+                "code": "510300.XSHG",
+                "tradeDate": "20260814",
+                "open": 3.0,
+                "high": 3.2,
+                "low": 2.9,
+                "close": 3.1,
+            }],
+            "liquidity": {"status": "liquid"},
+        },
+    }
+
+    fillable, skipped = _attach_fill_prices(
+        client,
+        [candidate],
+        "2026-08-14",
+        start_hhmm="0930",
+        end_hhmm="0931",
+        limit_premium_pct=0.5,
+    )
+
+    assert not skipped
+    [record] = fillable
+    price, basis, _ = _fill_price(record)
+    assert price == 3.105
+    assert basis == "opening_window_vwap_capped_by_limit"
+    assert record["_paper_fill"]["instrument_type"] == "etf"
+    assert record["_paper_fill"]["lot_size"] == 200
+
+    missing_facts = dict(candidate)
+    missing_facts.pop("market_data_facts")
+    _, skipped_missing_facts = _attach_fill_prices(
+        client,
+        [missing_facts],
+        "2026-08-14",
+        start_hhmm="0930",
+        end_hhmm="0931",
+        limit_premium_pct=0.5,
+    )
+    assert skipped_missing_facts[0]["_paper_fill"]["skip_reason"] == "MARKET_DATA_FACTS_MISSING"
+
+    no_provenance = dict(candidate)
+    no_provenance["provenance"] = {}
+    price, _, _, meta = _fill_price_from_window(
+        no_provenance,
+        window={"vwap": 3.10, "low": 3.09, "high": 3.11, "time": "0931"},
+        limit_premium_pct=0.5,
+    )
+    assert price is None
+    assert meta["skip_reason"] == "PUBLIC_SOURCE_FORBIDDEN"
+
+
 def test_attach_fill_prices_splits_fillable_and_skipped() -> None:
     client = FakeClient([
         {"tradeTime": "0930", "close": 5.08, "high": 5.08, "low": 5.07, "amt": 508.0, "vol": 100},

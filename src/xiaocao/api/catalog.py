@@ -387,6 +387,16 @@ ENDPOINTS: dict[str, EndpointSpec] = {
         cli_command="market stock-info",
         client_method="stock_info",
     ),
+    "etf_info": EndpointSpec(
+        "etf_info",
+        "/stock/etf_info",
+        "ETF 目录与交易日元数据",
+        "tradeDate",
+        "ETF 目录列表；client 保留原始字段及 trade-date provenance",
+        source_evidence=f"{_JS}: etf_info wrapper (~23387), daily cache (~23433)",
+        cli_command="market etf-info",
+        client_method="etf_info",
+    ),
     "market_overview": EndpointSpec(
         "market_overview",
         "/stock/market_overview",

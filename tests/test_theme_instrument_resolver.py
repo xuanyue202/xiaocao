@@ -7,6 +7,7 @@ from xiaocao.strategy.theme_instrument_resolver import (
     ThemeInstrumentUniverse,
     resolve_theme_instruments,
 )
+from xiaocao.live.instrument_contract import contract_from_record
 from xiaocao.strategy.trend_snapshot import build_trend_snapshot
 
 
@@ -80,6 +81,10 @@ def _catalog() -> dict:
                 "instrument_type": "etf",
                 "lot_size": 100,
                 "settlement_cycle": "T+1",
+                "buy_fee_rate": 0.0002,
+                "sell_fee_rate": 0.0003,
+                "catalog_trade_date": "2026-08-16",
+                "market_status": "active",
                 "market_data_contract": {
                     "status": "verified",
                     "source": "p-xcapi",
@@ -89,7 +94,7 @@ def _catalog() -> dict:
                     "daily": {"status": "verified"},
                     "fill": {"status": "verified"},
                 },
-                "liquidity": {"turnover_20d": 120000000},
+                "liquidity": {"status": "liquid", "turnover_20d": 120000000},
                 "trend": {"quality": "supportive"},
                 "expression_role": "broad_etf",
                 "provenance": {
@@ -173,6 +178,22 @@ def test_resolver_maps_theme_to_block_etf_and_multiple_stocks_with_provenance():
     )
     assert payload["snapshot_sha256"] == universe.snapshot_sha256
     assert payload["binding_receipt"]["universe_sha256"] == universe.universe_sha256
+
+
+def test_resolver_etf_output_is_executable_contract_shape():
+    universe = resolve_theme_instruments(
+        _snapshot(_theme("theme-ai", "人工智能")),
+        _catalog(),
+    ).to_dict()
+    etf = next(row for row in universe["themes"][0]["instruments"] if row["instrument_type"] == "etf")
+
+    contract = contract_from_record(etf, strict=True)
+
+    assert contract is not None
+    assert contract.buy_fee_rate == 0.0002
+    assert contract.sell_fee_rate == 0.0003
+    assert contract.catalog_trade_date == "2026-08-16"
+    assert contract.provenance["mapping_evidence"]
 
 
 def test_resolver_keeps_multiple_etf_expressions_in_one_theme():
@@ -336,6 +357,40 @@ def test_missing_etf_contract_metadata_is_visible_and_fail_closed():
         "etf_lot_size_unknown",
         "etf_settlement_cycle_unknown",
         "market_data_contract_unverified",
+    }.issubset(instrument["non_tradable_reasons"])
+
+
+def test_malformed_or_stale_etf_contract_remains_ineligible():
+    catalog = _catalog()
+    catalog["etfs"][0] = {
+        **catalog["etfs"][0],
+        "lot_size": 100.5,
+        "settlement_cycle": "T+99",
+        "buy_fee_rate": -0.1,
+        "sell_fee_rate": -0.2,
+        "catalog_trade_date": "2026-08-10",
+        "market_status": "mystery",
+        "liquidity": {"status": "mystery"},
+    }
+
+    instrument = next(
+        row
+        for row in resolve_theme_instruments(
+            _snapshot(_theme("theme-ai", "人工智能")),
+            catalog,
+        ).to_dict()["themes"][0]["instruments"]
+        if row["instrument_type"] == "etf"
+    )
+
+    assert instrument["instrument_status"] == "ineligible"
+    assert {
+        "etf_lot_size_unknown",
+        "etf_settlement_cycle_invalid",
+        "etf_buy_fee_invalid",
+        "etf_sell_fee_invalid",
+        "etf_catalog_stale",
+        "etf_market_status_unknown",
+        "etf_liquidity_status_unknown",
     }.issubset(instrument["non_tradable_reasons"])
 
 

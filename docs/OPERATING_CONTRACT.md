@@ -1,6 +1,6 @@
 # 小草运营契约（Operating Contract, SSOT）
 
-**版本**：2.5
+**版本**：2.6
 **状态**：现行
 **适用范围**：所有 paper / 未来 real 的实盘环（live_recommend → paper_record → live_monitor → eod）与回测
 **关联实现**：`src/xiaocao/live/safety.py`、`src/xiaocao/live/intelligence_policy.py`、`src/xiaocao/strategy/{mode_switch,trend_rules,kol_reference}.py`、`kronos_screen/scripts/{capture_signals,forward_eval,paper_record,settle_book_a,settle_book_t,decompose_pnl,quality_governor}.py`、`scripts/{live_monitor,research_mode_switch_replay}.py`
@@ -101,6 +101,7 @@
 - **数据源单一性（OHLCV 故意不接公共源 fallback）**：止损/peak-dd 依赖的分钟线 OHLCV **只**来自专有 API（`client.minute_line`）。**MUST NOT** 把公共源（akshare/腾讯等）价格接入 live 止损路径：不同复权/时间戳/坏tick 会算出不同的 peak/dd，使 book B 与验证 next-close 口径及 API 喂的回测**静默漂移**——正是 data_health 要抓的"真的谎言"。OHLCV 不可得时应 **fail-safe（持有/跳过）**，而非用二手数据动作。公共源仅允许用于**带 provenance 标记、经对账的研究/回填工具**，且 book A/B 记账永不读 `source='public'`。
 - **四指数与成熟样本完整性**：`refresh_daily_cache.py` 每日必须把上证、深成指、创业板指、中证1000、持仓、当日信号，以及上一交易日 live Book-B 信号批次一起做分钟重建，并按显式 `--date` 选择目标日。上一批信号的 D+1 日线必须在 `forward_eval` 前齐备；当天指数重建已经开始但成熟批次仍有缺口时，`data_doctor` 必须 CRITICAL 并阻断学习。`forward_eval` 的 `market_return_pct` 与 paper-vs-market 均要求四项指数齐全；任一缺失时聚合值/超额收益为 N/A，禁止把缺失当 0 或用部分指数冒充四指数均值。
 - Book T 使用同一成交模型与同一专有 OHLCV 边界；`basket_price` 仍只是放弃线。
+- **ETF 表达契约**：Book T v2 的 ETF 候选必须携带经校验的 `instrument_type=etf`、`lot_size`、`settlement_cycle`、买卖费率、目录交易日与 provenance；realtime/minute/daily（或 settlement）行情事实、当前交易状态和流动性状态缺失或未验证时，新开仓、主动换仓和模拟成交 **MUST** fail-closed。ETF 分钟成交价只读专有 API 的 `trade` 字段；不得回退到 `close`、股票 100 股假设或公共源。
 
 ## 6. 仓位与资金
 
@@ -192,3 +193,4 @@
 | 2.3 | 2026-07-14 | 收紧运行与账本诚实性：Book-T 阻卖事实优先、四指数完整覆盖、T 状态快照降级、严格配对 A/B 归因、14:25/14:55 拆分、posture 到期、agent-review 有界汇合、run-flow 双层状态，以及 A/B/T 显式 book 身份与可审计历史回填。 |
 | 2.4 | 2026-08-15 | Book T 只读已发布且当前的吕晓彤“马车”长期观点，记录主题命中与影子名次；固定 `authority=shadow_only`，不改候选顺序、资格、成交、仓位或退出，升级仍需研究护栏与 §10 人工门。 |
 | 2.5 | 2026-08-15 | 阶段一 Book-B broker-neutral seam 固化为无 submit 的人工/只读边界；SELL 绑定 monitor 授权与 owned lot；allocation proof 复用统一整手分配器并以滚动 NAV 验证预算；新增账户级 writer fencing、durable takeover capsule、pending WeCom 重试；broker ownership evidence 明确不替代 canonical paper ledger。 |
+| 2.6 | 2026-08-16 | Book T v2 增加 ETF 目录的 cache-first/限流 API seam 与显式 instrument contract；ETF 的 lot、T+0/T+1、买卖费、专有 realtime/minute/daily contract、当前状态和流动性均缺失即 fail-closed，旧股票账本保持兼容。 |

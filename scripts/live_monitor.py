@@ -77,6 +77,12 @@ from xiaocao.live.exit_policy import (  # noqa: E402
     strong_hold_reason as _strong_hold_reason,
 )
 from xiaocao.live import accounts, contexts, intelligence_policy, journal, paper_exit  # noqa: E402
+from xiaocao.live.instrument_contract import (  # noqa: E402
+    InstrumentContractError,
+    contract_from_record,
+    has_explicit_instrument_contract,
+    is_sellable,
+)
 from xiaocao.live.notify import notify as _notify  # noqa: E402
 from xiaocao.strategy.params import TREND_BUDGET_RATIO, TREND_REBALANCE_R, TREND_TRAIL_DD  # noqa: E402
 
@@ -167,6 +173,15 @@ def _write_holdings_snapshot(statuses: list[dict], *, book: str = "B") -> dict:
         shares = int(p.get("shares") or s.get("shares") or 0)
         latest_price = float(s.get("latest_price") or p.get("entry_price") or 0.0)
         fee_rate = float(p.get("fee_rate", account.get("fee_rate", DEFAULT_FEE_RATE)))
+        if has_explicit_instrument_contract(p):
+            try:
+                contract = contract_from_record(p, strict=True)
+                assert contract is not None
+                fee_rate = contract.sell_fee_rate
+            except InstrumentContractError:
+                # Keep valuation conservative and visible for an unverified
+                # row; execution remains fail-closed elsewhere.
+                fee_rate = float(p.get("sell_fee_rate") or fee_rate)
         market_value = round(shares * latest_price, 2)
         liquidation_value = round(market_value * (1 - fee_rate), 2)
         cost = round(float(p.get("entry_cash_out") or 0.0), 2)
@@ -237,19 +252,25 @@ def _client() -> XiaocaoClient:
 
 
 def _realtime_detail(client: XiaocaoClient, code: str) -> dict:
+    def _mark_source(row: dict) -> dict:
+        result = dict(row)
+        result.setdefault("code", code)
+        result.setdefault("_source", "xiaocao_api")
+        return result
+
     try:
         payload = client.second_line_detail_info(code)
     except Exception:
         return {}
     if isinstance(payload, dict):
         if isinstance(payload.get(code), dict):
-            return payload.get(code) or {}
+            return _mark_source(payload.get(code) or {})
         if payload.get("code") == code:
-            return payload
+            return _mark_source(payload)
     if isinstance(payload, list):
         for row in payload:
             if isinstance(row, dict) and row.get("code") == code:
-                return row
+                return _mark_source(row)
     return {}
 
 
@@ -611,7 +632,8 @@ def _compute_status(
     else:
         dd_threshold = PROFILE_DD.get(profile, 2.0)
         hard_dd_threshold = PROFILE_HARD_DD.get(profile, 8.0)
-    fee_rate = float(position.get("fee_rate", 0.0001))
+    entry_fee_rate = float(position.get("fee_rate", 0.0001))
+    exit_fee_rate = entry_fee_rate
 
     # Trading days from entry_date to today
     trade_days = _trading_dates_between(entry_date, today_iso, client)
@@ -671,10 +693,40 @@ def _compute_status(
 
     dd_pct = (peak - latest_price) / peak * 100 if peak > 0 else 0.0
     ret_pct = (latest_price - entry_price) / entry_price * 100
-    net_ret_pct = ((latest_price * (1 - fee_rate)) / (entry_price * (1 + fee_rate)) - 1) * 100
-
-    # T+1 logic: if today == entry_date, we can't sell
-    t1_blocked = (today_iso == entry_date)
+    # T+1/T+0 comes from the explicit instrument contract. Legacy equity rows
+    # keep the old T+1 behaviour until they are migrated; an ETF without a
+    # verified contract is blocked rather than treated as a stock.
+    instrument_contract = None
+    instrument_contract_status = "legacy_equity"
+    sellability_reason = None
+    has_instrument_metadata = bool(
+        has_explicit_instrument_contract(position)
+    )
+    if has_instrument_metadata:
+        try:
+            instrument_contract = contract_from_record(position, strict=True)
+            assert instrument_contract is not None
+            entry_fee_rate = instrument_contract.buy_fee_rate
+            exit_fee_rate = instrument_contract.sell_fee_rate
+            t1_blocked = not is_sellable(
+                instrument_contract,
+                entry_date=entry_date,
+                as_of=today_iso,
+            )
+            instrument_contract_status = "verified"
+            if t1_blocked:
+                sellability_reason = instrument_contract.settlement_cycle
+        except InstrumentContractError as exc:
+            t1_blocked = True
+            instrument_contract_status = "unverified"
+            sellability_reason = str(exc)
+    else:
+        t1_blocked = (today_iso == entry_date)
+    net_ret_pct = (
+        (latest_price * (1 - exit_fee_rate))
+        / (entry_price * (1 + entry_fee_rate))
+        - 1
+    ) * 100
     smallgrass_context = _smallgrass_context(client, code)
     stock_sentiment_context = _stock_sentiment_context(
         code,
@@ -727,10 +779,15 @@ def _compute_status(
         "dd_pct": round(dd_pct, 4),
         "ret_pct": round(ret_pct, 4),
         "net_ret_pct": round(net_ret_pct, 4),
-        "fee_rate": fee_rate,
+        "fee_rate": entry_fee_rate,
+        "entry_fee_rate": entry_fee_rate,
+        "exit_fee_rate": exit_fee_rate,
         "days_processed": days_processed,
         "hold_days": hold_days,
         "t1_blocked": t1_blocked,
+        "instrument_contract_status": instrument_contract_status,
+        "sellability_reason": sellability_reason,
+        "lot_size": instrument_contract.lot_size if instrument_contract is not None else position.get("lot_size", 100),
         "strong_hold_reason": decision["hold_reason"],
         "sell_reason": decision["sell_reason"],
         "deferred_sell_reason": decision.get("deferred_sell_reason"),

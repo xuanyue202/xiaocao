@@ -65,6 +65,9 @@ ENDPOINT_POLICY: dict[str, dict[str, Any]] = {
     # Always live
     "/stock/market_overview": {"date_arg": None, "persist": False, "live_ttl": 10},
     "/stock/stock_info": {"date_arg": None, "persist": True, "live_ttl": 86400},
+    # Daily ETF catalog. The explicit tradeDate is part of the cache key so a
+    # current-day read cannot silently reuse yesterday's universe.
+    "/stock/etf_info": {"date_arg": "tradeDate", "persist": True, "live_ttl": 86400, "min_interval": 0.5},
     "/stock/minute_line": {"date_arg": "tradeDate", "requires_count_for_history": True, "live_ttl": 5},
     "/stock/each_trade": {"date_arg": None, "persist": False, "live_ttl": 3},
     "/stock/get_technical_index": {"date_arg": None, "persist": False, "live_ttl": 10},

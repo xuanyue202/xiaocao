@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import threading
 import time
 import warnings
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -22,6 +23,7 @@ from .normalizers import (
     as_list as _as_list,
     as_list_of_dicts as _as_list_of_dicts,
     normalize_api_date as _normalize_api_date,
+    normalize_etf_info_rows as _normalize_etf_info_rows,
     normalize_kline_rows as _normalize_kline_rows,
     normalize_minute_line_rows as _normalize_minute_line_rows,
     normalize_technical_rows as _normalize_technical_rows,
@@ -29,7 +31,7 @@ from .normalizers import (
     split_code as _split_code,
     technical_payload as _technical_payload,
 )
-from xiaocao.utils.dates import compact_date
+from xiaocao.utils.dates import compact_date, today_str
 
 
 DEFAULT_HEADERS = {
@@ -74,6 +76,8 @@ class XiaocaoClient:
         self._session.mount("http://", adapter)
         self._session.mount("https://", adapter)
         self._session.headers.update(DEFAULT_HEADERS)
+        self._rate_limit_lock = threading.Lock()
+        self._last_rate_limited_request: dict[str, float] = {}
 
     def post(self, path: str, params: dict[str, Any]) -> Any:
         return self._post_json(path, {"params": params})
@@ -94,11 +98,39 @@ class XiaocaoClient:
                 pass  # cache failures must never break the call
         return result
 
+    def _respect_endpoint_rate_limit(self, path: str) -> None:
+        """Throttle only endpoints whose cache policy declares an interval."""
+        from .cache import ENDPOINT_POLICY
+
+        interval = float(ENDPOINT_POLICY.get(path, {}).get("min_interval", 0.0) or 0.0)
+        if interval <= 0:
+            return
+        lock = getattr(self, "_rate_limit_lock", None)
+        if lock is None:
+            lock = threading.Lock()
+            self._rate_limit_lock = lock
+        last_requests = getattr(self, "_last_rate_limited_request", None)
+        if last_requests is None:
+            last_requests = {}
+            self._last_rate_limited_request = last_requests
+        with lock:
+            now = time.monotonic()
+            last = last_requests.get(path)
+            wait_for = interval - (now - last) if last is not None else 0.0
+            if wait_for > 0:
+                time.sleep(wait_for)
+            last_requests[path] = time.monotonic()
+
     def _do_post(self, path: str, payload: dict[str, Any]) -> Any:
         url = f"{self.base_url.rstrip('/')}/{path.lstrip('/')}"
         last_error: Exception | None = None
         for attempt in range(self.retries + 1):
             try:
+                # Apply endpoint-specific spacing to every actual request,
+                # including retries.  A retry must not bypass the ETF
+                # catalog's rate-limit policy merely because the first
+                # attempt failed quickly.
+                self._respect_endpoint_rate_limit(path)
                 # Context manager ensures response is closed even on exceptions,
                 # preventing CLOSE_WAIT socket pile-up in concurrent workloads.
                 with self._session.post(
@@ -279,6 +311,17 @@ class XiaocaoClient:
                 }
             )
         return output
+
+    def etf_info(self, trade_date: str | None = None) -> list[dict[str, Any]]:
+        """Return the proprietary ETF catalog for one explicit trade date.
+
+        A current date is put on the wire even when the caller omits it. This
+        prevents a SQLite cache key from serving yesterday's catalog after the
+        day rolls over, while preserving the endpoint's trade-date semantics.
+        """
+        requested_date = compact_date(trade_date or today_str())
+        result = self.post("/stock/etf_info", {"tradeDate": requested_date})
+        return _normalize_etf_info_rows(result, trade_date=requested_date)
 
     def market_overview(self) -> Any:
         return self.post("/stock/market_overview", {})

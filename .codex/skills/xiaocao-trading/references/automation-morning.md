@@ -33,6 +33,11 @@ The orchestration must reach these stages:
 5. `paper_record.py --pick mode_exec_star --intelligence-trade shadow` records only executable ★E Book-B fills plus the matching Book-A reference rows. K/P, auxiliary indicators, intelligence and manual notional cannot restore a failed mode gate.
 6. `paper_record.py --trend-only` first checks whether Book T has an empty slot or a sellable switch candidate. A full aligned book returns immediately; otherwise it waits for the opening window and fills or performs a paired switch. No candidate or an unfilled replacement is normal.
 
+Book T ETF candidates are admitted only with the explicit instrument contract and
+validated proprietary realtime/minute/daily/liquidity facts described in the
+Operating Contract. Missing metadata or current execution facts is a bounded
+skip, never a stock-shaped 100-share fallback.
+
 The 9:25 emitted set is the day’s stable recommendation reference. Later prices/fills may change; do not relabel the frozen signal set as unstable after close.
 
 The checked-in `scripts/book_b_execute.py` is a phase-one manual/read-only
