@@ -25,6 +25,7 @@
 |---|---|---|---|---|---|---|---|
 | `date_kline` | `date_kline` | `quote history` | params | XC | yes | stable | reference/index-f3118026.js: date_kline wrapper, freq enum (~5728) |
 | `each_trade` | `each_trade` | `market each-trade` | params | XC | yes | stable | reference/index-f3118026.js: each_trade wrapper |
+| `etf_info` | `etf_info` | `market etf-info` | params | XC | yes | stable | reference/index-f3118026.js: etf_info wrapper (~23387), daily cache (~23433) |
 | `get_code_by_xiao_cao_block` | `get_code_by_xiao_cao_block` | `block stocks` | params | XC | yes | stable | reference/index-f3118026.js: get_code_by_xiao_cao_block wrapper |
 | `get_code_list_v2` | `get_code_list_v2` | `data pool` | params | XC | yes | stable | reference/index-f3118026.js: focus_xiao_cao_index pool fetch |
 | `get_technical_index` | `get_technical_index` | `indicator smallgrass current` | raw | XC | yes | stable | reference/index-f3118026.js: T9 (~16850) — se.post(path, t) raw body, NOT {params: t} |
@@ -65,6 +66,7 @@ _(none)_
 |---|---|---|---|
 | `date_kline` | 股票日/周/月等 K 线 | count, code, freq, adj, codeType, paramTime | K 线列表，含 OHLC、涨跌幅、换手率、量额等 |
 | `each_trade` | 逐笔成交 | code, count, codeType, isLess 等 | 逐笔列表，前端映射 trade/oneVol/oneAmt/bsFlag/time |
+| `etf_info` | ETF 目录与交易日元数据 | tradeDate | ETF 目录列表；client 保留原始字段及 trade-date provenance |
 | `get_code_by_xiao_cao_block` | 按方向/行业/分类/模式反查股票池 | blockCodeList, industryBlockCodeList, categoryCodeList, patternCodeList, tradeDate 等 | 股票代码列表、嵌套列表或对象，datasource 会抽取代码 |
 | `get_code_list_v2` | 按小草模式拉股票池 | groups, date, hpqbState, lpdxState | result.data 或 result 列表中的股票代码 |
 | `get_technical_index` | 技术指标当前值/分时指标 | code, indicators (smallGrass\|vol\|amt\|macd\|rsi\|kdj\|boll), freq, adj | 原始指标对象或列表 |

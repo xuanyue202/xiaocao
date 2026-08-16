@@ -239,6 +239,10 @@ def _market(parser: argparse.ArgumentParser) -> None:
     p = sub.add_parser("stock-info")
     p.set_defaults(handler=market_stock_info)
 
+    p = sub.add_parser("etf-info")
+    p.add_argument("--date", help="目录交易日 YYYY-MM-DD 或 YYYYMMDD；默认今天")
+    p.set_defaults(handler=market_etf_info)
+
     p = sub.add_parser("environment")
     p.add_argument("--date", required=True)
     p.add_argument("--codes", default="9A0001,9A0002,9A0003,9B0001,9B0002,9B0003,9C0001,9A0004,9B0004,9A0005,9B0005,9C0002")
@@ -733,6 +737,11 @@ def market_overview(args: argparse.Namespace) -> None:
 
 def market_stock_info(args: argparse.Namespace) -> None:
     write_output(_client(args).stock_info(), _fmt(args), args.output)
+
+
+def market_etf_info(args: argparse.Namespace) -> None:
+    date_value = _resolve_simple_date(args.date) if args.date else None
+    write_output(_client(args).etf_info(date_value), _fmt(args), args.output)
 
 
 def market_environment(args: argparse.Namespace) -> None:

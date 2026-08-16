@@ -77,6 +77,11 @@ from xiaocao.live.exit_policy import (  # noqa: E402
     strong_hold_reason as _strong_hold_reason,
 )
 from xiaocao.live import accounts, contexts, intelligence_policy, journal, paper_exit  # noqa: E402
+from xiaocao.live.instrument_contract import (  # noqa: E402
+    InstrumentContractError,
+    contract_from_record,
+    is_sellable,
+)
 from xiaocao.live.notify import notify as _notify  # noqa: E402
 from xiaocao.strategy.params import TREND_BUDGET_RATIO, TREND_REBALANCE_R, TREND_TRAIL_DD  # noqa: E402
 
@@ -673,8 +678,33 @@ def _compute_status(
     ret_pct = (latest_price - entry_price) / entry_price * 100
     net_ret_pct = ((latest_price * (1 - fee_rate)) / (entry_price * (1 + fee_rate)) - 1) * 100
 
-    # T+1 logic: if today == entry_date, we can't sell
-    t1_blocked = (today_iso == entry_date)
+    # T+1/T+0 comes from the explicit instrument contract. Legacy equity rows
+    # keep the old T+1 behaviour until they are migrated; an ETF without a
+    # verified contract is blocked rather than treated as a stock.
+    instrument_contract = None
+    instrument_contract_status = "legacy_equity"
+    sellability_reason = None
+    has_instrument_metadata = bool(
+        position.get("instrument_contract") or position.get("instrument_type")
+    )
+    if has_instrument_metadata:
+        try:
+            instrument_contract = contract_from_record(position, strict=True)
+            assert instrument_contract is not None
+            t1_blocked = not is_sellable(
+                instrument_contract,
+                entry_date=entry_date,
+                as_of=today_iso,
+            )
+            instrument_contract_status = "verified"
+            if t1_blocked:
+                sellability_reason = instrument_contract.settlement_cycle
+        except InstrumentContractError as exc:
+            t1_blocked = True
+            instrument_contract_status = "unverified"
+            sellability_reason = str(exc)
+    else:
+        t1_blocked = (today_iso == entry_date)
     smallgrass_context = _smallgrass_context(client, code)
     stock_sentiment_context = _stock_sentiment_context(
         code,
@@ -731,6 +761,9 @@ def _compute_status(
         "days_processed": days_processed,
         "hold_days": hold_days,
         "t1_blocked": t1_blocked,
+        "instrument_contract_status": instrument_contract_status,
+        "sellability_reason": sellability_reason,
+        "lot_size": instrument_contract.lot_size if instrument_contract is not None else position.get("lot_size", 100),
         "strong_hold_reason": decision["hold_reason"],
         "sell_reason": decision["sell_reason"],
         "deferred_sell_reason": decision.get("deferred_sell_reason"),

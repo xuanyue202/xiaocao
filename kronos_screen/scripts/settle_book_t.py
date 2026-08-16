@@ -22,6 +22,12 @@ from xiaocao.api.cache import SQLiteCache  # noqa: E402
 from xiaocao.api.client import XiaocaoClient  # noqa: E402
 from xiaocao.config.settings import load_settings  # noqa: E402
 from xiaocao.live import accounts  # noqa: E402
+from xiaocao.live.instrument_contract import (  # noqa: E402
+    InstrumentContractError,
+    contract_from_record,
+    exit_fee_for,
+    is_sellable,
+)
 from xiaocao.live.sell_blocks import load_blocked_sell_keys as _load_blocked_sell_keys  # noqa: E402
 from xiaocao.strategy.params import TREND_BUDGET_RATIO, TREND_REBALANCE_R, TREND_TRAIL_DD  # noqa: E402
 from xiaocao.strategy.trend_rules import (  # noqa: E402
@@ -170,14 +176,41 @@ def _close_position(
     dd_pct: float,
     hold_days: int,
     account: dict[str, Any],
-) -> None:
+) -> dict[str, Any] | None:
     shares = int(p.get("shares") or 0)
-    fee_rate = float(p.get("fee_rate") or account.get("fee_rate", DEFAULT_FEE_RATE))
+    contract = None
+    if p.get("instrument_contract") or p.get("instrument_type"):
+        try:
+            contract = contract_from_record(p, strict=True)
+            assert contract is not None
+        except InstrumentContractError:
+            return None
+    fee_rate = float(
+        contract.sell_fee_rate
+        if contract is not None
+        else (p.get("fee_rate") or account.get("fee_rate", DEFAULT_FEE_RATE))
+    )
     gross = round(exit_price * shares, 2)
-    exit_fee = round(gross * fee_rate, 2)
+    exit_fee = exit_fee_for(contract, gross) if contract is not None else round(gross * fee_rate, 2)
     cash_in = round(gross - exit_fee, 2)
-    entry_cash_out = float(p.get("entry_cash_out") or 0.0)
+    entry_price = float(p.get("entry_price") or 0.0)
+    entry_cash_out = float(
+        p.get("entry_cash_out")
+        or entry_price
+        * shares
+        * (1 + (contract.buy_fee_rate if contract is not None else fee_rate))
+    )
     realized = round(cash_in - entry_cash_out, 2)
+    instrument_fields: dict[str, Any] = {}
+    if contract is not None:
+        instrument_fields = {
+            "instrument_type": contract.instrument_type,
+            "lot_size": contract.lot_size,
+            "settlement_cycle": contract.settlement_cycle,
+            "buy_fee_rate": contract.buy_fee_rate,
+            "sell_fee_rate": contract.sell_fee_rate,
+            "instrument_contract": contract.to_dict(),
+        }
     p.update({
         "status": "closed",
         "exit_date": exit_date,
@@ -189,6 +222,7 @@ def _close_position(
         "trend_exit_peak": round(peak_price, 4),
         "trend_exit_dd_pct": round(dd_pct, 4),
         "trend_hold_days": hold_days,
+        **instrument_fields,
     })
     p.pop("trend_exit_blocked_date", None)
     p.pop("trend_exit_blocked_reason", None)
@@ -218,6 +252,7 @@ def _close_position(
         "trend_alignment_reason": p.get("trend_alignment_reason"),
         "trend_switch_policy": p.get("trend_switch_policy"),
         "trend_switch_est_roundtrip_fee_bps": p.get("trend_switch_est_roundtrip_fee_bps"),
+        **instrument_fields,
     }
     return trade
 
@@ -261,6 +296,15 @@ def _main_locked() -> None:
         entry_price = _f(p.get("entry_price"))
         if not code or not entry_date or not entry_price:
             continue
+        instrument_contract = None
+        if p.get("instrument_contract") or p.get("instrument_type"):
+            try:
+                instrument_contract = contract_from_record(p, strict=True)
+                assert instrument_contract is not None
+            except InstrumentContractError:
+                # An ETF with an unknown contract must remain open; a daily
+                # close is not permission to invent its lot/T+1 semantics.
+                continue
         ser = _kline_map(client, code, reconstructed)
         dts = sorted(d for d in ser if d <= settle_through)
         if entry_date not in dts:
@@ -270,6 +314,14 @@ def _main_locked() -> None:
             continue
         i1 = len(dts) - 1
         exit_date = dts[i1]
+        if instrument_contract is not None and not is_sellable(
+            instrument_contract,
+            entry_date=entry_date,
+            as_of=exit_date,
+        ):
+            continue
+        if instrument_contract is not None and int(p.get("shares") or 0) % instrument_contract.lot_size:
+            continue
         close_px = _f(ser[exit_date].get("close"))
         if not close_px:
             continue
@@ -285,7 +337,11 @@ def _main_locked() -> None:
         hold_days = i1 - i0
         rebalance_days = int(p.get("trend_rebalance_days") or TREND_REBALANCE_R)
         trail_dd = float(p.get("trend_trail_dd_pct") or TREND_TRAIL_DD)
-        fee_rate = float(p.get("fee_rate") or account.get("fee_rate", DEFAULT_FEE_RATE))
+        fee_rate = (
+            (instrument_contract.buy_fee_rate + instrument_contract.sell_fee_rate) / 2
+            if instrument_contract is not None
+            else float(p.get("fee_rate") or account.get("fee_rate", DEFAULT_FEE_RATE))
+        )
         alignment = _trend_alignment_for_position(p)
         _mark_trend_switch_context(p, fee_rate=fee_rate, alignment=alignment)
         reason = _trend_exit_reason(
@@ -310,7 +366,7 @@ def _main_locked() -> None:
             blocked_count += 1
             state_changed = True
             continue
-        new_trades.append(_close_position(
+        trade = _close_position(
             p,
             exit_date=exit_date,
             exit_price=close_px,
@@ -319,7 +375,10 @@ def _main_locked() -> None:
             dd_pct=dd_pct,
             hold_days=hold_days,
             account=account,
-        ))
+        )
+        if trade is None:
+            continue
+        new_trades.append(trade)
         settled += 1
         state_changed = True
 

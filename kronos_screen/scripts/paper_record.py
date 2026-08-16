@@ -29,6 +29,17 @@ from xiaocao.api.client import XiaocaoClient  # noqa: E402
 from xiaocao.live import accounts, intelligence_policy  # noqa: E402
 from xiaocao.live.book_b_pricing import initial_limit_price  # noqa: E402
 from xiaocao.live.buy_guards import evaluate_buy_market_guard  # noqa: E402
+from xiaocao.live.instrument_contract import (  # noqa: E402
+    InstrumentContract,
+    InstrumentContractError,
+    PROPRIETARY_SOURCES,
+    contract_from_record,
+    entry_fee_for,
+    exit_fee_for,
+    market_contract_verified,
+    minute_trade_price,
+    shares_for_budget,
+)
 from xiaocao.strategy.params import (  # noqa: E402
     TREND_BUDGET_RATIO,
     TREND_REBALANCE_R,
@@ -185,6 +196,7 @@ def _fill_window_stats(
     *,
     start_hhmm: str,
     end_hhmm: str,
+    instrument_contract: dict | InstrumentContract | None = None,
 ) -> dict | None:
     """VWAP / low / high of the opening fill window from 1-min bars.
     VWAP is the realistic small-order fill; window high systematically
@@ -201,6 +213,18 @@ def _fill_window_stats(
         return None
     if not isinstance(rows, list):
         return None
+    instrument_type = "equity"
+    if instrument_contract is not None:
+        try:
+            contract = (
+                instrument_contract
+                if isinstance(instrument_contract, InstrumentContract)
+                else contract_from_record(instrument_contract, strict=True)
+            )
+            assert contract is not None
+            instrument_type = contract.instrument_type
+        except InstrumentContractError:
+            return None
     start_key = _minute_key(start_hhmm)
     end_key = _minute_key(end_hhmm)
     amt = vol = 0.0
@@ -214,7 +238,7 @@ def _fill_window_stats(
         trade_time = _minute_key(row.get("tradeTime"))
         if not trade_time or trade_time < start_key or trade_time > end_key:
             continue
-        c = _num(row.get("close")) or _num(row.get("trade"))
+        c = minute_trade_price(row, instrument_type=instrument_type)
         h = _num(row.get("high")) or c
         l = _num(row.get("low")) or c
         if not c or c <= 0:
@@ -253,6 +277,47 @@ def _fill_price_from_window(
     basket_px = _num(record.get("basket_price"))
     open_px = _num(record.get("open"))
     metadata: dict[str, object] = {}
+    if record.get("instrument_contract") or record.get("instrument_type"):
+        try:
+            contract = contract_from_record(record, strict=True)
+            assert contract is not None
+            metadata["instrument_type"] = contract.instrument_type
+            metadata["lot_size"] = contract.lot_size
+            metadata["settlement_cycle"] = contract.settlement_cycle
+            metadata["buy_fee_rate"] = contract.buy_fee_rate
+            metadata["sell_fee_rate"] = contract.sell_fee_rate
+            if contract.instrument_type == "etf":
+                if str(contract.provenance.get("source") or "xiaocao_api").strip().lower() not in PROPRIETARY_SOURCES:
+                    metadata["skip_reason"] = "PUBLIC_SOURCE_FORBIDDEN"
+                    metadata["skip_detail"] = "live/paper ETF OHLCV must use xiaocao_api"
+                    return None, "skipped_public_source", record.get("basket_rule"), metadata
+                if not market_contract_verified(contract):
+                    metadata["skip_reason"] = "MARKET_CONTRACT_UNVERIFIED"
+                    metadata["skip_detail"] = "realtime/minute/daily contract must be verified"
+                    return None, "skipped_market_contract", record.get("basket_rule"), metadata
+                market_status = str(
+                    record.get("market_status")
+                    or record.get("trading_status")
+                    or record.get("status")
+                    or "active"
+                ).strip().lower()
+                if market_status in {"halted", "suspended", "stop", "停牌"}:
+                    metadata["skip_reason"] = "HALTED"
+                    metadata["skip_detail"] = "ETF market status is not tradable"
+                    return None, "skipped_halted", record.get("basket_rule"), metadata
+                liquidity_status = str(record.get("liquidity_status") or "liquid").strip().lower()
+                if liquidity_status in {"illiquid", "insufficient", "blocked"}:
+                    metadata["skip_reason"] = "ILLIQUID"
+                    metadata["skip_detail"] = "ETF liquidity contract is not sufficient"
+                    return None, "skipped_illiquid", record.get("basket_rule"), metadata
+                if window is None:
+                    metadata["skip_reason"] = "MINUTE_MISSING"
+                    metadata["skip_detail"] = "ETF opening fill requires proprietary minute trade prices"
+                    return None, "skipped_minute_data", record.get("basket_rule"), metadata
+        except InstrumentContractError as exc:
+            metadata["skip_reason"] = "INSTRUMENT_CONTRACT_UNVERIFIED"
+            metadata["skip_detail"] = str(exc)
+            return None, "skipped_instrument_contract", record.get("basket_rule"), metadata
     guard_ok, guard_reason, guard_evidence = evaluate_buy_market_guard(record)
     metadata.update(guard_evidence)
     if not guard_ok:
@@ -357,6 +422,11 @@ def _attach_fill_prices(
             date_iso,
             start_hhmm=start_hhmm,
             end_hhmm=end_hhmm,
+            instrument_contract=(
+                record
+                if record.get("instrument_type") or record.get("instrument_contract")
+                else None
+            ),
         )
         price, basis, basket_rule, metadata = _fill_price_from_window(
             record,
@@ -377,10 +447,23 @@ def _attach_fill_prices(
     return out, skipped
 
 
-def _board_lot_cost(price: float, fee_rate: float) -> float:
-    gross_notional = 100.0 * price
+def _board_lot_cost(price: float, fee_rate: float, lot_size: int = 100) -> float:
+    gross_notional = float(lot_size) * price
     entry_fee = round(gross_notional * fee_rate, 2)
     return round(gross_notional + entry_fee, 2)
+
+
+def _entry_lot_cost(record: dict, price: float, fallback_fee_rate: float) -> float | None:
+    """Return one executable lot cost, with ETF metadata taking precedence."""
+    if record.get("instrument_contract") or record.get("instrument_type"):
+        try:
+            contract = contract_from_record(record, strict=True)
+        except InstrumentContractError:
+            return None
+        assert contract is not None
+        gross_notional = float(contract.lot_size) * price
+        return round(gross_notional + entry_fee_for(contract, gross_notional), 2)
+    return _board_lot_cost(price, fallback_fee_rate)
 
 
 def _filter_affordable_equal_weight(
@@ -397,8 +480,8 @@ def _filter_affordable_equal_weight(
             px, _, _ = _fill_price(record)
             if not px:
                 continue
-            min_lot_cost = _board_lot_cost(float(px), fee_rate)
-            if min_lot_cost <= min(target_notional, cash):
+            min_lot_cost = _entry_lot_cost(record, float(px), fee_rate)
+            if min_lot_cost is not None and min_lot_cost <= min(target_notional, cash):
                 filtered.append(record)
         if len(filtered) == len(remaining):
             return filtered, target_notional
@@ -422,8 +505,8 @@ def _filter_affordable_fixed_slot(
         px, _, _ = _fill_price(record)
         if not px:
             continue
-        min_lot_cost = _board_lot_cost(float(px), fee_rate)
-        if min_lot_cost <= min(target_notional, cash):
+        min_lot_cost = _entry_lot_cost(record, float(px), fee_rate)
+        if min_lot_cost is not None and min_lot_cost <= min(target_notional, cash):
             out.append(record)
     return out
 
@@ -1119,15 +1202,30 @@ def _book_t_switch_exit_plan(
         date_iso,
         start_hhmm=start_hhmm,
         end_hhmm=end_hhmm,
+        instrument_contract=(
+            row
+            if row.get("instrument_type") or row.get("instrument_contract")
+            else None
+        ),
     )
     if not window:
         return None
     exit_price = _num(window.get("vwap"))
     if exit_price is None or exit_price <= 0:
         return None
-    fee_rate = float(row.get("fee_rate") or account.get("fee_rate", DEFAULT_FEE_RATE))
+    contract = None
+    if row.get("instrument_contract") or row.get("instrument_type"):
+        try:
+            contract = contract_from_record(row, strict=True)
+        except InstrumentContractError:
+            return None
+    fee_rate = float(
+        contract.sell_fee_rate
+        if contract is not None
+        else (row.get("fee_rate") or account.get("fee_rate", DEFAULT_FEE_RATE))
+    )
     gross = round(float(exit_price) * shares, 2)
-    exit_fee = round(gross * fee_rate, 2)
+    exit_fee = exit_fee_for(contract, gross) if contract is not None else round(gross * fee_rate, 2)
     cash_in = round(gross - exit_fee, 2)
     entry_cash_out = _num(row.get("entry_cash_out"))
     if entry_cash_out is None:
@@ -1390,11 +1488,52 @@ def _record_book_t(client: XiaocaoClient, a, *, wait_for_fill_window: bool = Fal
             continue
         px = float(px)
         fill_meta = r.get("_paper_fill") if isinstance(r.get("_paper_fill"), dict) else {}
-        shares = int((min(slot_notional, cash) / (px * (1 + fee_rate))) / 100) * 100
-        if shares < 100:
+        contract = None
+        if r.get("instrument_contract") or r.get("instrument_type"):
+            try:
+                contract = contract_from_record(r, strict=True)
+            except InstrumentContractError:
+                continue
+        if contract is not None:
+            shares = shares_for_budget(
+                contract,
+                price=px,
+                budget=min(slot_notional, cash),
+            )
+            lot_size = contract.lot_size
+            entry_fee_rate = contract.buy_fee_rate
+            exit_fee_rate = contract.sell_fee_rate
+        else:
+            lot_size = 100
+            entry_fee_rate = fee_rate
+            exit_fee_rate = fee_rate
+            shares = int((min(slot_notional, cash) / (px * (1 + entry_fee_rate))) / lot_size) * lot_size
+        if shares < lot_size:
             continue
+        contract_row_fields: dict[str, Any] = {}
+        contract_trade_fields: dict[str, Any] = {}
+        if contract is not None:
+            contract_row_fields = {
+                "instrument_type": contract.instrument_type,
+                "lot_size": contract.lot_size,
+                "settlement_cycle": contract.settlement_cycle,
+                "buy_fee_rate": contract.buy_fee_rate,
+                "sell_fee_rate": contract.sell_fee_rate,
+                "instrument_contract": contract.to_dict(),
+                "market_data_contract": dict(contract.market_data_contract),
+                "instrument_provenance": dict(contract.provenance),
+            }
+            contract_trade_fields = {
+                key: value
+                for key, value in contract_row_fields.items()
+                if key not in {"market_data_contract", "instrument_provenance"}
+            }
         gross_notional = round(shares * px, 2)
-        entry_fee = round(gross_notional * fee_rate, 2)
+        entry_fee = (
+            entry_fee_for(contract, gross_notional)
+            if contract is not None
+            else round(gross_notional * entry_fee_rate, 2)
+        )
         entry_cash_out = round(gross_notional + entry_fee, 2)
         if entry_cash_out > cash + 1e-6:
             continue
@@ -1420,6 +1559,7 @@ def _record_book_t(client: XiaocaoClient, a, *, wait_for_fill_window: bool = Fal
             "trend_rebalance_days": r.get("trend_rebalance_days", TREND_REBALANCE_R),
             "trend_trail_dd_pct": r.get("trend_trail_dd_pct", TREND_TRAIL_DD),
             "tradableAShare": r.get("tradableAShare"),
+            **contract_row_fields,
             "trend_alignment": r.get("trend_alignment"),
             "trend_alignment_reason": r.get("trend_alignment_reason"),
             "trend_switch_policy": r.get("trend_switch_policy"),
@@ -1447,7 +1587,7 @@ def _record_book_t(client: XiaocaoClient, a, *, wait_for_fill_window: bool = Fal
             "basket_price": round(float(r["basket_price"]), 3) if r.get("basket_price") else None,
             "basket_rule": basket_rule,
             "initial_capital": round(float(account.get("initial_capital", trend_initial_capital)), 2),
-            "fee_rate": fee_rate,
+            "fee_rate": entry_fee_rate,
             "allocation_rule": (
                 f"book_t_trend_budget_{trend_ratio:.0%}"
                 f"_slots_{target_positions}"
@@ -1464,6 +1604,7 @@ def _record_book_t(client: XiaocaoClient, a, *, wait_for_fill_window: bool = Fal
             "code": r["code"], "name": r.get("name", ""),
             "price": round(px, 3), "shares": shares,
             "gross_notional": gross_notional, "fee": entry_fee,
+            **contract_trade_fields,
             "cash_after": cash, "source": "auto:trend_book",
             "price_basis": fill_basis,
             "category_code": r.get("category_code"),

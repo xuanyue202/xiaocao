@@ -111,3 +111,39 @@ def test_sell_block_key_is_book_scoped(tmp_path) -> None:
     assert sbt._settlement_block_reason(
         blocked, book="B", exit_date="2026-07-13", code="SAME", entry_date="2026-07-07",
     ) is None
+
+
+def test_book_t_close_uses_explicit_instrument_fee_and_lot() -> None:
+    position = {
+        "book": "T",
+        "code": "510300.XSHG",
+        "entry_date": "2026-08-14",
+        "entry_price": 3.0,
+        "shares": 200,
+        "entry_cash_out": 600.60,
+        "instrument_contract": {
+            "code": "510300.XSHG",
+            "instrument_type": "etf",
+            "lot_size": 200,
+            "settlement_cycle": "T+0",
+            "buy_fee_rate": 0.001,
+            "sell_fee_rate": 0.002,
+        },
+    }
+    account = {"cash": 0.0, "realized_pnl": 0.0, "total_fees": 0.0}
+
+    trade = sbt._close_position(
+        position,
+        exit_date="2026-08-14",
+        exit_price=3.1,
+        exit_reason="TREND_DAILY_TRAIL_STOP",
+        peak_price=3.2,
+        dd_pct=3.125,
+        hold_days=0,
+        account=account,
+    )
+
+    assert trade is not None
+    assert trade["fee"] == 1.24
+    assert trade["lot_size"] == 200
+    assert account["cash"] == 618.76
