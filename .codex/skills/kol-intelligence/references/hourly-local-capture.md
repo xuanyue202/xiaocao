@@ -94,7 +94,11 @@ For `daily_browser_input_required`, keep the same process alive and use
    return `activated=true` and bound URL/password state. An app/resource
    redirect to `<app_id>.block.xiaoeeye.com` is
    `source_temporarily_unavailable` with both booleans false; return its URL for
-   retry. Never use it for another identity.
+   retry. If the same page first lands on a generic Xiaoetong unavailable or
+   personal-center shell, derive that exact app/resource block URL by replacing
+   the `.h5.xiaoeknow.com` host suffix with `.block.xiaoeeye.com`, navigate the
+   same tab to it, and return the resulting bound block URL. Never report the
+   state for an unrelated URL or use it for another identity.
 4. For a recorded-video download, `resolve_xiaoetong_media_url` returns only
    the currently observed signed HTTPS m3u8 URL whose host and path bind the
    supplied `media_file_id`. The runner uses this short-lived value in memory
