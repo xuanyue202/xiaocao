@@ -27,6 +27,7 @@ from xiaocao.live.instrument_contract import (  # noqa: E402
     contract_record_fields,
     contract_from_record,
     exit_fee_for,
+    has_explicit_instrument_contract,
     is_sellable,
     validate_market_data,
 )
@@ -80,6 +81,47 @@ def _settlement_block_reason(
     return blocked.get((book, exit_date, code, entry_date))
 
 
+def _record_settlement_sell_block(
+    position: dict[str, Any],
+    *,
+    exit_date: str,
+    reason: str,
+    detail: dict[str, Any] | None = None,
+) -> None:
+    """Persist one idempotent EOD SELL_BLOCKED fact for an ETF position."""
+    code = str(position.get("code") or "")
+    entry_date = str(position.get("entry_date") or "")
+    if ALERTS.exists():
+        for raw in ALERTS.read_text(encoding="utf-8").splitlines():
+            try:
+                prior = json.loads(raw)
+            except (TypeError, ValueError):
+                continue
+            if (
+                prior.get("alert") == "SELL_BLOCKED"
+                and prior.get("book") == "T"
+                and str(prior.get("code") or "") == code
+                and str(prior.get("entry_date") or "") == entry_date
+                and str(prior.get("ts") or "")[:10] == exit_date
+                and str(prior.get("reason") or "") == reason
+            ):
+                return
+    accounts.append_jsonl(
+        {
+            "ts": f"{exit_date}T15:00:00",
+            "alert": "SELL_BLOCKED",
+            "book": "T",
+            "reason": reason,
+            "code": code,
+            "name": position.get("name", ""),
+            "entry_date": entry_date,
+            "detail": detail or {},
+            "source": "settle_book_t",
+        },
+        ALERTS,
+    )
+
+
 def _load_reconstructed_daily(path: Path = RECONSTRUCTED_DAILY) -> dict[str, dict[str, dict[str, Any]]]:
     out: dict[str, dict[str, dict[str, Any]]] = {}
     if not path.exists():
@@ -123,7 +165,11 @@ def _kline_map(
         if isinstance(r, dict) and _normal_date(r.get("tradeDate"))
     }
     ser.update(reconstructed.get(str(code), {}))
-    return {k: v for k, v in ser.items() if k}
+    return {
+        k: {**dict(v), "code": v.get("code") or code}
+        for k, v in ser.items()
+        if k and isinstance(v, dict)
+    }
 
 
 def _current_detail(client: XiaocaoClient, code: str) -> dict[str, Any] | None:
@@ -146,6 +192,7 @@ def _current_detail(client: XiaocaoClient, code: str) -> dict[str, Any] | None:
     else:
         row = None
     if row is not None:
+        row.setdefault("code", code)
         row.setdefault("_source", "xiaocao_api")
     return row
 
@@ -247,7 +294,7 @@ def _close_position(
 ) -> dict[str, Any] | None:
     shares = int(p.get("shares") or 0)
     contract = None
-    if p.get("instrument_contract") or p.get("instrument_type"):
+    if has_explicit_instrument_contract(p):
         try:
             contract = contract_from_record(p, strict=True)
             assert contract is not None
@@ -366,7 +413,7 @@ def _main_locked() -> None:
         if not code or not entry_date or not entry_price:
             continue
         instrument_contract = None
-        if p.get("instrument_contract") or p.get("instrument_type"):
+        if has_explicit_instrument_contract(p):
             try:
                 instrument_contract = contract_from_record(p, strict=True)
                 assert instrument_contract is not None
@@ -404,6 +451,12 @@ def _main_locked() -> None:
         if market_validation is not None and not market_validation.ok:
             p["trend_exit_blocked_date"] = exit_date
             p["trend_exit_blocked_reason"] = market_validation.reason
+            _record_settlement_sell_block(
+                p,
+                exit_date=exit_date,
+                reason=market_validation.reason,
+                detail=dict(market_validation.details),
+            )
             blocked_count += 1
             state_changed = True
             continue

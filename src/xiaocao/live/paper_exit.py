@@ -13,6 +13,7 @@ from xiaocao.live.instrument_contract import (
     contract_record_fields,
     contract_from_record,
     exit_fee_for,
+    has_explicit_instrument_contract,
     is_sellable,
     validate_sell_market_data,
 )
@@ -139,7 +140,7 @@ def execute_simulated_sells(
                 if shares <= 0:
                     break
                 contract = None
-                if position.get("instrument_contract") or position.get("instrument_type"):
+                if has_explicit_instrument_contract(position):
                     try:
                         contract = contract_from_record(position, strict=True)
                         assert contract is not None

@@ -395,14 +395,16 @@ def test_attach_etf_fill_uses_verified_contract_and_trade_price() -> None:
         "market_status": "active",
         "liquidity_status": "liquid",
         "market_data_facts": {
+            "code": "510300.XSHG",
             "as_of": "2026-08-14",
             "source": "xiaocao_api",
-            "realtime": {"trade": 3.10, "tradeDate": "20260814", "status": "active"},
+            "realtime": {"code": "510300.XSHG", "trade": 3.10, "tradeDate": "20260814", "status": "active"},
             "minute_rows": [
-                {"trade": 3.10, "tradeDate": "20260814"},
-                {"trade": 3.11, "tradeDate": "20260814"},
+                {"code": "510300.XSHG", "trade": 3.10, "tradeDate": "20260814"},
+                {"code": "510300.XSHG", "trade": 3.11, "tradeDate": "20260814"},
             ],
             "daily_rows": [{
+                "code": "510300.XSHG",
                 "tradeDate": "20260814",
                 "open": 3.0,
                 "high": 3.2,

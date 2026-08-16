@@ -208,6 +208,31 @@ def contract_from_record(
         return None
 
 
+def has_explicit_instrument_contract(record: Mapping[str, Any]) -> bool:
+    """Whether a row must use the strict instrument-contract path.
+
+    ETF rows are never interpreted through the legacy stock fallback.  An
+    equity row emitted by the resolver may still carry only the historical
+    identity/lot fields; it remains compatible until it has a complete nested
+    or side-fee contract.
+    """
+    if not isinstance(record, Mapping):
+        return False
+    if isinstance(record.get("instrument_contract"), Mapping):
+        return True
+    instrument_type = str(record.get("instrument_type") or "").strip().lower()
+    if instrument_type == "etf":
+        return True
+    if instrument_type == "equity":
+        return all(record.get(key) not in (None, "") for key in (
+            "lot_size",
+            "settlement_cycle",
+            "buy_fee_rate",
+            "sell_fee_rate",
+        ))
+    return False
+
+
 def market_contract_verified(
     contract: InstrumentContract,
     *,
@@ -284,7 +309,9 @@ def validate_market_data(
     if not isinstance(realtime, Mapping):
         return _failure("REALTIME_MISSING", normalized_source)
     realtime_code = _row_code(realtime)
-    if realtime_code and not _same_instrument(realtime_code, contract.code):
+    if not realtime_code:
+        return _failure("MARKET_DATA_CODE_MISSING", normalized_source)
+    if not _same_instrument(realtime_code, contract.code):
         return _failure("MARKET_DATA_CODE_MISMATCH", normalized_source, code=realtime_code)
     realtime_status = _trading_status(realtime)
     if realtime_status == "halted":
@@ -317,7 +344,9 @@ def validate_market_data(
         return _failure("MINUTE_STALE", normalized_source)
     for row in matching_minutes:
         row_code = _row_code(row)
-        if row_code and not _same_instrument(row_code, contract.code):
+        if not row_code:
+            return _failure("MARKET_DATA_CODE_MISSING", normalized_source)
+        if not _same_instrument(row_code, contract.code):
             return _failure("MARKET_DATA_CODE_MISMATCH", normalized_source, code=row_code)
         if minute_trade_price(row, instrument_type=contract.instrument_type) is None:
             return _failure(
@@ -341,7 +370,9 @@ def validate_market_data(
         return _failure("DAILY_STALE", normalized_source)
     for row in matching_daily:
         row_code = _row_code(row)
-        if row_code and not _same_instrument(row_code, contract.code):
+        if not row_code:
+            return _failure("MARKET_DATA_CODE_MISSING", normalized_source)
+        if not _same_instrument(row_code, contract.code):
             return _failure("MARKET_DATA_CODE_MISMATCH", normalized_source, code=row_code)
         if any(_positive_float(row.get(field)) is None for field in ("open", "high", "low", "close")):
             return _failure("DAILY_OHLC_MISSING", normalized_source)
@@ -398,6 +429,11 @@ def validate_sell_market_data(
     except InstrumentContractError as exc:
         return _failure("INSTRUMENT_CONTRACT_UNVERIFIED", source_value, error=str(exc))
     assert contract is not None
+    detail_code = _row_code(detail)
+    if not detail_code:
+        return _failure("MARKET_DATA_CODE_MISSING", source_value)
+    if not _same_instrument(detail_code, contract.code):
+        return _failure("MARKET_DATA_CODE_MISMATCH", source_value, code=detail_code)
     if not market_contract_verified(contract):
         return _failure("MARKET_CONTRACT_UNVERIFIED", source_value)
 

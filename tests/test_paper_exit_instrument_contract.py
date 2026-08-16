@@ -67,6 +67,7 @@ def _run(
         "sell_reason": "TREND_TRAIL_STOP",
     }
     current_detail = detail if detail is not None else {
+        "code": "510300.XSHG",
         "_source": "xiaocao_api",
         "trade": 3.1,
         "tradeDate": "20260814",
@@ -124,6 +125,7 @@ def test_etf_sell_requires_current_status_liquidity_and_source(tmp_path) -> None
     result, positions, _account, _trades, alerts = _run(
         tmp_path,
         detail={
+            "code": "510300.XSHG",
             "_source": "xiaocao_api",
             "trade": 3.1,
             "tradeDate": "20260814",

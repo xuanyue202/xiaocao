@@ -360,6 +360,40 @@ def test_missing_etf_contract_metadata_is_visible_and_fail_closed():
     }.issubset(instrument["non_tradable_reasons"])
 
 
+def test_malformed_or_stale_etf_contract_remains_ineligible():
+    catalog = _catalog()
+    catalog["etfs"][0] = {
+        **catalog["etfs"][0],
+        "lot_size": 100.5,
+        "settlement_cycle": "T+99",
+        "buy_fee_rate": -0.1,
+        "sell_fee_rate": -0.2,
+        "catalog_trade_date": "2026-08-10",
+        "market_status": "mystery",
+        "liquidity": {"status": "mystery"},
+    }
+
+    instrument = next(
+        row
+        for row in resolve_theme_instruments(
+            _snapshot(_theme("theme-ai", "人工智能")),
+            catalog,
+        ).to_dict()["themes"][0]["instruments"]
+        if row["instrument_type"] == "etf"
+    )
+
+    assert instrument["instrument_status"] == "ineligible"
+    assert {
+        "etf_lot_size_unknown",
+        "etf_settlement_cycle_invalid",
+        "etf_buy_fee_invalid",
+        "etf_sell_fee_invalid",
+        "etf_catalog_stale",
+        "etf_market_status_unknown",
+        "etf_liquidity_status_unknown",
+    }.issubset(instrument["non_tradable_reasons"])
+
+
 def test_unreviewed_author_specific_alias_is_not_a_registry_mapping():
     catalog = _catalog()
     catalog["theme_registry"]["themes"][0]["aliases"] = [

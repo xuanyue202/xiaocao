@@ -17,9 +17,11 @@ from __future__ import annotations
 
 import copy
 import json
+import math
 import re
 import unicodedata
 from dataclasses import dataclass
+from datetime import date
 from typing import Any, Iterable, Mapping, Sequence
 
 from xiaocao.kol.publication import canonical_sha256
@@ -906,6 +908,27 @@ def _etf_liquidity_status(row: Mapping[str, Any]) -> str:
     return _text(value, field="instrument.liquidity_status").casefold()
 
 
+def _date_only(value: Any) -> str | None:
+    text = str(value or "").strip()
+    if len(text) >= 10 and text[4] == "-" and text[7] == "-":
+        text = text[:10]
+    elif len(text) == 8 and text.isdigit():
+        text = f"{text[:4]}-{text[4:6]}-{text[6:]}"
+    try:
+        return date.fromisoformat(text).isoformat()
+    except ValueError:
+        return None
+
+
+def _settlement_key(value: Any) -> str:
+    text = str(value or "").strip().casefold().replace(" ", "").replace("_", "").replace("-", "")
+    if text in {"t+0", "t0", "0", "sameday"}:
+        return "T+0"
+    if text in {"t+1", "t1", "1", "nextday"}:
+        return "T+1"
+    return ""
+
+
 def _row_reasons(row: Mapping[str, Any]) -> list[str]:
     values: list[str] = []
     for key in ("non_tradable_reasons", "not_tradable_reasons", "tradability_reasons"):
@@ -927,6 +950,7 @@ def _instrument_record(
     kind: str,
     edges: Iterable[Mapping[str, Any]],
     snapshot_eligibility: str,
+    snapshot_as_of: str | None = None,
 ) -> dict[str, Any]:
     code = _code(row.get("code"), field="instrument.code")
     instrument_type = _row_instrument_type(row, kind=kind)
@@ -940,11 +964,19 @@ def _instrument_record(
         row.get("settlement_cycle") or row.get("settlement") or row.get("t_plus"),
         field="settlement_cycle",
     )
+    normalized_catalog_date: str | None = None
+    buy_fee_rate: float | None = None
+    sell_fee_rate: float | None = None
     if kind == "etf":
-        if lot_size is None or lot_size <= 0:
+        if lot_size is None or not isinstance(lot_size, int) or lot_size <= 0:
             reasons.append("etf_lot_size_unknown")
+        normalized_settlement = _settlement_key(settlement_cycle)
         if not settlement_cycle:
             reasons.append("etf_settlement_cycle_unknown")
+        elif not normalized_settlement:
+            reasons.append("etf_settlement_cycle_invalid")
+        else:
+            settlement_cycle = normalized_settlement
     else:
         if lot_size is None:
             lot_size = 100
@@ -958,18 +990,37 @@ def _instrument_record(
         sell_fee_rate = _fee_rate(row, "sell")
         if buy_fee_rate is None:
             reasons.append("etf_buy_fee_unknown")
+        elif not math.isfinite(buy_fee_rate) or buy_fee_rate < 0:
+            reasons.append("etf_buy_fee_invalid")
         if sell_fee_rate is None:
             reasons.append("etf_sell_fee_unknown")
+        elif not math.isfinite(sell_fee_rate) or sell_fee_rate < 0:
+            reasons.append("etf_sell_fee_invalid")
         catalog_trade_date = _text(
             row.get("catalog_trade_date") or row.get("tradeDate") or row.get("trade_date"),
             field="instrument.catalog_trade_date",
         )
         if not catalog_trade_date:
             reasons.append("etf_catalog_date_unknown")
+            normalized_catalog_date = None
+        else:
+            normalized_catalog_date = _date_only(catalog_trade_date)
+            if not normalized_catalog_date:
+                reasons.append("etf_catalog_date_invalid")
+            elif snapshot_as_of:
+                normalized_as_of = _date_only(snapshot_as_of)
+                if normalized_as_of:
+                    age_days = (
+                        date.fromisoformat(normalized_as_of)
+                        - date.fromisoformat(normalized_catalog_date)
+                    ).days
+                    if age_days < 0 or age_days > 1:
+                        reasons.append("etf_catalog_stale")
         market_status = _text(
             row.get("market_status")
             or row.get("trading_status")
             or row.get("current_status")
+            or row.get("statusType")
             or row.get("status"),
             field="instrument.market_status",
         ).casefold()
@@ -977,11 +1028,15 @@ def _instrument_record(
             reasons.append("etf_market_status_unknown")
         elif market_status in {"halted", "suspended", "stop", "inactive", "delisted", "停牌"}:
             reasons.append("etf_market_status_not_tradable")
+        elif market_status not in {"active", "tradable", "trading", "normal", "1", "true", "t"}:
+            reasons.append("etf_market_status_unknown")
         liquidity_status = _etf_liquidity_status(row)
         if not liquidity_status:
             reasons.append("etf_liquidity_status_unknown")
         elif liquidity_status in {"illiquid", "insufficient", "blocked", "halted", "suspended"}:
             reasons.append("etf_liquidity_not_sufficient")
+        elif liquidity_status not in {"liquid", "ok", "sufficient", "verified"}:
+            reasons.append("etf_liquidity_status_unknown")
     elif status not in _MARKET_DATA_OK_STATUSES:
         reasons.append("market_data_contract_unverified")
     if any(edge.get("provenance_status") != "complete" for edge in edges):
@@ -1015,17 +1070,25 @@ def _instrument_record(
         "catalog_provenance": _json_copy(row.get("provenance"), field="catalog_provenance"),
     }
     if instrument_type == "etf":
+        output_buy_fee = (
+            buy_fee_rate
+            if buy_fee_rate is not None and math.isfinite(buy_fee_rate) and buy_fee_rate >= 0
+            else None
+        )
+        output_sell_fee = (
+            sell_fee_rate
+            if sell_fee_rate is not None and math.isfinite(sell_fee_rate) and sell_fee_rate >= 0
+            else None
+        )
         record.update({
-            "buy_fee_rate": _fee_rate(row, "buy"),
-            "sell_fee_rate": _fee_rate(row, "sell"),
-            "catalog_trade_date": _text(
-                row.get("catalog_trade_date") or row.get("tradeDate") or row.get("trade_date"),
-                field="instrument.catalog_trade_date",
-            ) or None,
+            "buy_fee_rate": output_buy_fee,
+            "sell_fee_rate": output_sell_fee,
+            "catalog_trade_date": normalized_catalog_date if instrument_type == "etf" else None,
             "market_status": _text(
                 row.get("market_status")
                 or row.get("trading_status")
                 or row.get("current_status")
+                or row.get("statusType")
                 or row.get("status"),
                 field="instrument.market_status",
             ) or None,
@@ -1048,6 +1111,7 @@ def _resolve_theme(
     *,
     identity: Mapping[str, Any],
     catalog: _Catalog,
+    snapshot_as_of: str | None = None,
 ) -> tuple[dict[str, Any], list[dict[str, Any]]]:
     if identity["status"] != "resolved":
         unresolved = {
@@ -1248,6 +1312,7 @@ def _resolve_theme(
                 kind=candidate["kind"],
                 edges=candidate["edges"],
                 snapshot_eligibility=_text(raw_theme.get("eligibility"), field="snapshot.theme.eligibility") or "wait",
+                snapshot_as_of=snapshot_as_of,
             )
         )
     if not instruments:
@@ -1360,6 +1425,7 @@ class ThemeInstrumentResolver:
                 raw_theme,
                 identity=identity,
                 catalog=self._catalog,
+                snapshot_as_of=str(snapshot_value.get("as_of") or "") or None,
             )
             themes.append(theme_output)
             unresolved.extend(theme_unresolved)

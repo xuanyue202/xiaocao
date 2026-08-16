@@ -37,6 +37,7 @@ from xiaocao.live.instrument_contract import (  # noqa: E402
     contract_record_fields,
     entry_fee_for,
     exit_fee_for,
+    has_explicit_instrument_contract,
     market_contract_verified,
     minute_trade_price,
     shares_for_budget,
@@ -247,7 +248,7 @@ def _fill_window_stats(
         l = _num(row.get("low")) or c
         if not c or c <= 0:
             continue
-        matching_rows.append(dict(row))
+        matching_rows.append({**row, "code": row.get("code") or code})
         closes.append(c)
         if h and h > 0:
             hi = h if hi is None else max(hi, h)
@@ -309,7 +310,11 @@ def _validate_etf_market_facts(
             "facts_date": facts_date,
         }
     facts_code = str(facts.get("code") or "").strip().upper()
-    if facts_code and facts_code != contract.code.upper():
+    if not facts_code:
+        return "MARKET_DATA_CODE_MISSING", {
+            "message": "ETF market facts must be bound to the instrument code",
+        }
+    if facts_code.split(".", 1)[0] != contract.code.upper().split(".", 1)[0]:
         return "MARKET_DATA_CODE_MISMATCH", {
             "facts_code": facts_code,
             "contract_code": contract.code,
@@ -350,7 +355,7 @@ def _fill_price_from_window(
     basket_px = _num(record.get("basket_price"))
     open_px = _num(record.get("open"))
     metadata: dict[str, object] = {}
-    if record.get("instrument_contract") or record.get("instrument_type"):
+    if has_explicit_instrument_contract(record):
         try:
             contract = contract_from_record(record, strict=True)
             assert contract is not None
@@ -497,7 +502,7 @@ def _attach_fill_prices(
             end_hhmm=end_hhmm,
             instrument_contract=(
                 record
-                if record.get("instrument_type") or record.get("instrument_contract")
+                if has_explicit_instrument_contract(record)
                 else None
             ),
         )
@@ -528,7 +533,7 @@ def _board_lot_cost(price: float, fee_rate: float, lot_size: int = 100) -> float
 
 def _entry_lot_cost(record: dict, price: float, fallback_fee_rate: float) -> float | None:
     """Return one executable lot cost, with ETF metadata taking precedence."""
-    if record.get("instrument_contract") or record.get("instrument_type"):
+    if has_explicit_instrument_contract(record):
         try:
             contract = contract_from_record(record, strict=True)
         except InstrumentContractError:
@@ -1270,7 +1275,7 @@ def _book_t_switch_exit_plan(
     if not code or shares <= 0:
         return None
     contract = None
-    if row.get("instrument_contract") or row.get("instrument_type"):
+    if has_explicit_instrument_contract(row):
         try:
             contract = contract_from_record(row, strict=True)
             assert contract is not None
@@ -1292,7 +1297,7 @@ def _book_t_switch_exit_plan(
         end_hhmm=end_hhmm,
         instrument_contract=(
             row
-            if row.get("instrument_type") or row.get("instrument_contract")
+            if has_explicit_instrument_contract(row)
             else None
         ),
     )
@@ -1345,6 +1350,11 @@ def _book_t_switch_exit_plan(
 
 def _apply_book_t_switch_exit(plan: dict, account: dict, *, date_iso: str) -> dict:
     row = plan["position"]
+    instrument_fields: dict[str, Any] = {}
+    if has_explicit_instrument_contract(row):
+        contract = contract_from_record(row, strict=True)
+        assert contract is not None
+        instrument_fields = contract_record_fields(contract)
     row.update({
         "status": "closed",
         "exit_date": date_iso,
@@ -1359,6 +1369,7 @@ def _apply_book_t_switch_exit(plan: dict, account: dict, *, date_iso: str) -> di
         "trend_switch_exit_window_end": plan.get("fill_window_end"),
         "trend_switch_exit_window_vwap": plan.get("fill_window_vwap"),
         "trend_switch_exit_window_last": plan.get("fill_window_last"),
+        **instrument_fields,
     })
     account["cash"] = round(float(account.get("cash", 0.0)) + float(plan["cash_in"]), 2)
     account["realized_pnl"] = round(
@@ -1395,6 +1406,7 @@ def _apply_book_t_switch_exit(plan: dict, account: dict, *, date_iso: str) -> di
         "fill_window_end": plan.get("fill_window_end"),
         "fill_window_vwap": plan.get("fill_window_vwap"),
         "fill_window_last": plan.get("fill_window_last"),
+        **instrument_fields,
     }
 
 
@@ -1579,7 +1591,7 @@ def _record_book_t(client: XiaocaoClient, a, *, wait_for_fill_window: bool = Fal
         px = float(px)
         fill_meta = r.get("_paper_fill") if isinstance(r.get("_paper_fill"), dict) else {}
         contract = None
-        if r.get("instrument_contract") or r.get("instrument_type"):
+        if has_explicit_instrument_contract(r):
             try:
                 contract = contract_from_record(r, strict=True)
             except InstrumentContractError:

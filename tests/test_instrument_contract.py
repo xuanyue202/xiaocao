@@ -48,13 +48,14 @@ def _market_inputs(*, realtime=_MISSING, minute_rows=_MISSING, daily_rows=_MISSI
     return {
         "realtime": realtime
         if realtime is not _MISSING
-        else {"trade": 3.10, "tradeDate": "20260814", "status": "active"},
+        else {"code": "510300.XSHG", "trade": 3.10, "tradeDate": "20260814", "status": "active"},
         "minute_rows": minute_rows
         if minute_rows is not _MISSING
-        else [{"trade": 3.10, "close": 99.0, "tradeDate": "20260814"}],
+        else [{"code": "510300.XSHG", "trade": 3.10, "close": 99.0, "tradeDate": "20260814"}],
         "daily_rows": daily_rows
         if daily_rows is not _MISSING
         else [{
+            "code": "510300.XSHG",
             "tradeDate": "20260814",
             "open": 3.00,
             "high": 3.20,
@@ -141,6 +142,7 @@ def test_market_contract_uses_trade_for_etf_minutes_and_rejects_close_only() -> 
         _etf_record(),
         as_of="2026-08-14",
         **_market_inputs(minute_rows=[{
+            "code": "510300.XSHG",
             "tradeDate": "20260814",
             "close": 3.10,
         }]),
@@ -154,7 +156,7 @@ def test_market_contract_uses_trade_for_etf_minutes_and_rejects_close_only() -> 
     "inputs, reason",
     [
         ({"realtime": None}, "REALTIME_MISSING"),
-        ({"realtime": {"trade": 3.1, "tradeDate": "20260814", "status": "halted"}}, "HALTED"),
+        ({"realtime": {"code": "510300.XSHG", "trade": 3.1, "tradeDate": "20260814", "status": "halted"}}, "HALTED"),
         ({"liquidity": {"status": "illiquid"}}, "ILLIQUID"),
         ({"minute_rows": []}, "MINUTE_MISSING"),
     ],
@@ -207,7 +209,7 @@ def test_market_contract_requires_explicit_liquidity_and_dated_rows() -> None:
     undated_minutes = validate_market_data(
         _etf_record(),
         as_of="2026-08-14",
-        **_market_inputs(minute_rows=[{"trade": 3.1}]),
+        **_market_inputs(minute_rows=[{"code": "510300.XSHG", "trade": 3.1}]),
     )
     assert undated_minutes.reason == "MINUTE_DATE_MISSING"
 
