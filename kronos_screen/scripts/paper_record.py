@@ -34,6 +34,7 @@ from xiaocao.live.instrument_contract import (  # noqa: E402
     InstrumentContractError,
     PROPRIETARY_SOURCES,
     contract_from_record,
+    contract_record_fields,
     entry_fee_for,
     exit_fee_for,
     market_contract_verified,
@@ -288,6 +289,15 @@ def _fill_price_from_window(
             metadata["buy_fee_rate"] = contract.buy_fee_rate
             metadata["sell_fee_rate"] = contract.sell_fee_rate
             if contract.instrument_type == "etf":
+                instrument_status = str(
+                    record.get("instrument_status")
+                    or record.get("tradability_status")
+                    or ""
+                ).strip().lower()
+                if instrument_status and instrument_status not in {"eligible", "tradable", "active", "ok"}:
+                    metadata["skip_reason"] = "INSTRUMENT_INELIGIBLE"
+                    metadata["skip_detail"] = instrument_status
+                    return None, "skipped_instrument_status", record.get("basket_rule"), metadata
                 provenance_source = str(contract.provenance.get("source") or "").strip().lower()
                 if provenance_source not in PROPRIETARY_SOURCES:
                     metadata["skip_reason"] = "PUBLIC_SOURCE_FORBIDDEN"
@@ -1546,21 +1556,12 @@ def _record_book_t(client: XiaocaoClient, a, *, wait_for_fill_window: bool = Fal
         contract_row_fields: dict[str, Any] = {}
         contract_trade_fields: dict[str, Any] = {}
         if contract is not None:
-            contract_row_fields = {
-                "instrument_type": contract.instrument_type,
-                "lot_size": contract.lot_size,
-                "settlement_cycle": contract.settlement_cycle,
-                "buy_fee_rate": contract.buy_fee_rate,
-                "sell_fee_rate": contract.sell_fee_rate,
-                "instrument_contract": contract.to_dict(),
-                "market_data_contract": dict(contract.market_data_contract),
-                "instrument_provenance": dict(contract.provenance),
-            }
-            contract_trade_fields = {
-                key: value
-                for key, value in contract_row_fields.items()
-                if key not in {"market_data_contract", "instrument_provenance"}
-            }
+            contract_row_fields = contract_record_fields(
+                contract,
+                include_market_data=True,
+                include_provenance=True,
+            )
+            contract_trade_fields = contract_record_fields(contract)
         gross_notional = round(shares * px, 2)
         entry_fee = (
             entry_fee_for(contract, gross_notional)

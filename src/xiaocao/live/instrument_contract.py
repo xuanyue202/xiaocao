@@ -143,6 +143,28 @@ class InstrumentContract:
         }
 
 
+def contract_record_fields(
+    contract: InstrumentContract,
+    *,
+    include_market_data: bool = False,
+    include_provenance: bool = False,
+) -> dict[str, Any]:
+    """Return the durable row fields shared by paper writers and receipts."""
+    fields: dict[str, Any] = {
+        "instrument_type": contract.instrument_type,
+        "lot_size": contract.lot_size,
+        "settlement_cycle": contract.settlement_cycle,
+        "buy_fee_rate": contract.buy_fee_rate,
+        "sell_fee_rate": contract.sell_fee_rate,
+        "instrument_contract": contract.to_dict(),
+    }
+    if include_market_data:
+        fields["market_data_contract"] = dict(contract.market_data_contract)
+    if include_provenance:
+        fields["instrument_provenance"] = dict(contract.provenance)
+    return fields
+
+
 @dataclass(frozen=True)
 class MarketDataValidation:
     """Result of checking the facts required for a paper fill or valuation."""

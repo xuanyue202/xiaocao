@@ -24,6 +24,7 @@ from xiaocao.config.settings import load_settings  # noqa: E402
 from xiaocao.live import accounts  # noqa: E402
 from xiaocao.live.instrument_contract import (  # noqa: E402
     InstrumentContractError,
+    contract_record_fields,
     contract_from_record,
     exit_fee_for,
     is_sellable,
@@ -203,14 +204,7 @@ def _close_position(
     realized = round(cash_in - entry_cash_out, 2)
     instrument_fields: dict[str, Any] = {}
     if contract is not None:
-        instrument_fields = {
-            "instrument_type": contract.instrument_type,
-            "lot_size": contract.lot_size,
-            "settlement_cycle": contract.settlement_cycle,
-            "buy_fee_rate": contract.buy_fee_rate,
-            "sell_fee_rate": contract.sell_fee_rate,
-            "instrument_contract": contract.to_dict(),
-        }
+        instrument_fields = contract_record_fields(contract)
     p.update({
         "status": "closed",
         "exit_date": exit_date,

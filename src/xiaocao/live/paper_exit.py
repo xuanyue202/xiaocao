@@ -10,6 +10,7 @@ from xiaocao.live import accounts
 from xiaocao.live.exit_policy import sell_block_reason
 from xiaocao.live.instrument_contract import (
     InstrumentContractError,
+    contract_record_fields,
     contract_from_record,
     exit_fee_for,
     is_sellable,
@@ -196,14 +197,7 @@ def execute_simulated_sells(
                     break
                 instrument_fields: dict[str, Any] = {}
                 if contract is not None:
-                    instrument_fields = {
-                        "instrument_type": contract.instrument_type,
-                        "lot_size": contract.lot_size,
-                        "settlement_cycle": contract.settlement_cycle,
-                        "buy_fee_rate": contract.buy_fee_rate,
-                        "sell_fee_rate": contract.sell_fee_rate,
-                        "instrument_contract": contract.to_dict(),
-                    }
+                    instrument_fields = contract_record_fields(contract)
                 exit_price = float(alert["latest_price"])
                 fee_rate = float(
                     contract.sell_fee_rate
