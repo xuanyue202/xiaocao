@@ -1,6 +1,6 @@
 # 02 — 建立标准主题与标的解析器
 
-**What to build:** 建立 `resolve_theme_instruments(snapshot) -> ThemeInstrumentUniverse`，把 KOL 原始主题表述映射为标准主题，再连接小草 block、ETF 目录和趋势股成分，输出带 provenance 的候选宇宙。
+**What to build:** 建立 `resolve_theme_instruments(snapshot, catalog) -> ThemeInstrumentUniverse`，把 KOL 原始主题表述映射为标准主题，再连接小草 block、ETF 目录和趋势股成分，输出带 provenance 的候选宇宙。
 
 **Blocked by:** 01 — snapshot schema and evidence identities.
 

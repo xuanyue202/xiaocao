@@ -156,6 +156,22 @@ _Avoid_: Trading gate, runtime gate, capital gate
 A named research-governance contract that defines the strategy surface, stable kernel, allowed changes, forbidden changes, sample policy, required manifest fields, promotion boundary, and rollback expectation for a class of hypotheses.
 _Avoid_: Strategy parameter, playbook rule, trading profile
 
+**Book T 主题槽位**:
+Book T 中代表一笔共同趋势风险的组合单位；同一主题可由 ETF、核心趋势股或两者共同表达，但无论包含多少证券都只占一个主题风险槽位。
+_Avoid_: 证券槽位、KOL 槽位、固定行业配额
+
+**趋势研判快照**:
+在明确时点冻结的、证据绑定的主题判断集合，分别表达小草节奏、马车主题窗口、其他 KOL 的确认或冲突以及市场验证；它是 Agent 皮层判断，不是交易指令。
+_Avoid_: KOL 投票分、关键词热度、自动买入信号
+
+**主题标的宇宙**:
+把已解析的标准主题映射为可核验 ETF 与趋势股表达，并携带交易制度、流动性和解析证据的只读候选集合；无法可靠映射的来源主题保持未解析。
+_Avoid_: 股票池、ETF 白名单、名称模糊匹配结果
+
+**Book T 选择计划**:
+确定性脊柱基于趋势研判快照、主题标的宇宙和现有组合生成的 paper-only 候选、保留、等待或成对换仓意图；它不包含成交结果，也不绕过账本与交易安全门。
+_Avoid_: Agent 下单建议、成交回执、第二本趋势账
+
 **Research Run Manifest**:
 The durable record of one judged research run, including its protocol id, hypothesis id, input hash, guard parameters, verdict artifact, git state, and optional ledger entry. It is evidence for research consumption, not a trading signal.
 _Avoid_: Backtest log, terminal output, report summary
