@@ -98,3 +98,48 @@ def test_kol_local_automation_uses_lianghui_mailbox_without_task_injection() -> 
     assert "Handoff完成" in automation["prompt"]
     assert "Never use `send_message_to_thread`" in automation["prompt"]
     assert automation["rrule"].endswith(";BYMINUTE=0")
+
+
+def test_kol_remote_writer_automation_is_a_thin_fail_closed_bootstrap() -> None:
+    automation = _automation("xiaocao-kol-hourly-remote-writer")
+    prompt = automation["prompt"]
+
+    assert automation["id"] == "xiaocao-kol-hourly-low-bandwidth-operation"
+    assert automation["name"] == "xiaocao KOL hourly remote writer"
+    assert automation["cwds"] == [
+        "/Users/xuanyue202/Documents/project/xiaocao"
+    ]
+    assert automation["rrule"] == (
+        "RRULE:FREQ=DAILY;"
+        "BYHOUR=7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23;"
+        "BYMINUTE=30"
+    )
+    assert "DTSTART" not in automation["rrule"]
+    assert "TZID" not in automation["rrule"]
+
+    for marker in (
+        "kol-intelligence",
+        "references/hourly-remote-writer.md",
+        "MacBook-Pro-6.local",
+        "node scripts/codex_peer_gate.js",
+        "读取 mailbox、status、convergence 前",
+        "`pass` 才可继续",
+        "`no_op` 立即结束",
+        "`repair_required` 或没有有效结构化结果",
+        "不得改用桌面 thread wrapper",
+        "runner 签发的 exact continuation",
+        "空队列静默",
+    ):
+        assert marker in prompt
+
+    for implementation_detail in (
+        "initialize",
+        "thread/list",
+        "thread/read",
+        "sourceKinds",
+        "useStateDbOnly",
+        "video.paused=true",
+        "stability-acceptance",
+    ):
+        assert implementation_detail not in prompt
+    assert len(prompt) < 1_200

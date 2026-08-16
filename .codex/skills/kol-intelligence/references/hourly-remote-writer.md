@@ -19,10 +19,12 @@ PYTHONPATH=src .venv/bin/python scripts/kol_daily.py convergence-report
 PYTHONPATH=src .venv/bin/python scripts/kol_daily.py stability-acceptance
 ```
 
-Each run is one sweep; a sweep with no concrete item is silent. Every concrete
-item remains reportable, including waits and retryable exceptions; distinguish
-handoff from downstream completion. Expose only credential-safe failures. The
-started task owns exact repair; do not defer obtainable work.
+Each run is one sweep; no concrete item is silent. Report concrete waits and
+exceptions, distinguishing handoff from completion. Expose only credential-safe
+failures. The started task owns repair; do not defer obtainable work.
+
+Report concrete items in a compact Markdown table `对象 | 状态 | 说明`. Prefix
+each object with `[视频]` or `[文章]`; never label `Handoff完成` as `全部完成`.
 
 Obey seven-state `writer_progress.next_action`; bind input and readback
 receipts; retryability never changes owner.
@@ -42,9 +44,10 @@ uncertain external effects retain their legal progress states.
 This machine is the only KOL writer. It consumes Xiaocao `scope=post_handoff`
 and URL-only `wechat_official_article` capsules from LiangHuiMCP; each capsule
 is discovery metadata, not the full article. It never scans the local
-WeChat contact, never reads or downloads source-video bytes, activates a player,
-or uses Computer Use. Manual import/process commands are reconciliation surfaces;
-normal delivery is the mailbox drain at `run` start.
+WeChat contact, never reads or downloads source-video bytes, starts playback,
+or uses Computer Use. It may bind the exact paused player DOM only under
+`video-player-safety.md`. Manual import/process commands are reconciliation
+surfaces; normal delivery is the mailbox drain at `run` start.
 
 When reconciling an already imported official-account capsule outside the
 normal hourly path, process only that inbox with `PYTHONPATH=src
@@ -59,9 +62,10 @@ Run once and keep it alive for input; do not rerun the full `run` command.
 ## Active-peer gate and LiangHuiMCP drain
 
 A **peer task** is another Codex task with the same Automation ID, current host,
-and current working directory. The desktop `codex_app__list_threads` wrapper is
-not transport: it has stalled before delivery. Use the repository helper and
-exclude that current task (`CODEX_THREAD_ID`):
+and current working directory. The Automation runtime supplies
+`CODEX_THREAD_ID`; never synthesize it. The desktop `codex_app__list_threads`
+wrapper is not transport: it has stalled before delivery. Use the repository
+helper and exclude the current task:
 
 ```bash
 CODEX_HOME=/Users/xuanyue202/.codex \
@@ -70,14 +74,10 @@ CODEX_REMOTE_HOST=MacBook-Pro-6.local \
 node scripts/codex_peer_gate.js
 ```
 
-The helper starts `codex app-server --stdio`, performs `initialize`/`initialized`,
-then serially calls `thread/list` with `{"limit":20}`, exact `cwd`, supported
-`sourceKinds`, and `useStateDbOnly=true`, followed by `thread/read` for matching
-same-cwd prompts. It verifies host/cwd/Automation identity and reads rollout
-events only for the latest `task_complete`. A candidate without that terminal
-event is an authoritative active peer: return `no_op` before mailbox access.
-All-terminal candidates return `pass`; the helper emits only `pass`, `no_op`, or
-`repair_required`, with at most two sequential attempts.
+The helper owns app-server, exhausts every `thread/list` cursor, serially reads
+matches, verifies host/cwd/Automation/current-task identity, and reads rollout
+`task_complete`. Active peer returns `no_op`; complete all-terminal pagination
+returns `pass`; incomplete identity/page/response/readback is `repair_required`.
 
 Bind the experimental app-server protocol to its current host identity
 (`remoteControl/status/changed.serverName`) and exact canonical cwd, never a
@@ -135,6 +135,10 @@ PYTHONPATH=src .venv/bin/python scripts/kol_daily.py rollout-readback
 Use self-hashed Automation evidence; require recent peer-gate readback.
 Acceptance starts seven-day/50-scheduled-slot observation; never backfill.
 `stability-acceptance` is read-only: pending until gates, passed if all pass.
+Run it with `--period-end <as_of>` only when acceptance is due.
+`pending_observation` is not completion; only `passed` closes Issue 06. A failed
+acceptance requires an explicit new rollout, never historical backfill or a
+second hourly writer.
 
 Resumes skip mailbox/sweep; mismatch is repair. Use
 `resume-source-wait` after its deadline, `resume-source-input` for persisted
@@ -142,7 +146,10 @@ input, or `resume-source-user-action` after authentication, with
 `--source-adapter subscription_video --source-identity <identity>`. Auth uses
 identity `subscription_video:source`; clear after `user_action_required`.
 
-At provider steps, use installed OpenCLI once with exact identity/version,
+Before binding or switching to a Baidu player, read
+[video-player-safety.md](video-player-safety.md) completely. At provider steps,
+use only the installed OpenCLI provider; keep every effect at-most-once with
+exact identity/version,
 bytes, hashes, and receipts. The no-MCP capture rule permits the
 repository-designated LiangHui client only after read-only exact-receipt
 reconciliation; auth/CAPTCHA/consent or materially incompatible business
@@ -150,8 +157,8 @@ outcomes may ask. Reconcile the
 handoff/media SHA; latest content is incomplete until analysis, 灰常亮 receipt,
 and stable URL.
 
-Baidu: pause guard + paused readback; after transcript hash close exact tab,
-else `repair_required`.
+Baidu player work requires a pause guard, paused readback, transcript integrity,
+and exact-tab-close receipts; a missing receipt is `repair_required`.
 
 ### Cloud discovery coverage
 
@@ -163,8 +170,9 @@ Cloud scans and absence claims first read
 For `daily_analysis_input_required`, Read `full-contract.md` completely before
 analysis and verify its current SHA-256 against the request. Run
 `scripts/kol_semantic_bundle.py` with that request, a judgment-only draft, and
-separate market evidence. Return only its validated absolute `bundle_path`;
-hand-built/legacy new-event bundles cannot pass the persisted receipt.
+separate market evidence. Return exactly one compact JSON line
+`{"bundle_path":"<validated-absolute-json-path>"}`; hand-built or legacy
+new-event bundles cannot pass the persisted receipt.
 
 For `daily_official_article_image_input_required`, inspect every image once and
 write UTF-8 Markdown headed `# 图片信息转写` with index/SHA,
@@ -199,18 +207,6 @@ Missing independent verification, no uniquely mapped instrument, low confidence,
 or Book KOL-US `no_trade` do not justify report-only when current market
 posture/direction is present; retain those limits in the reminder.
 
-## Remote schedule
-
-Codex Automation schedules exactly one remote writer with:
-
-```text
-RRULE:FREQ=DAILY;BYHOUR=7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23;BYMINUTE=30
-```
-
-Use Beijing wall time; omit `DTSTART` and `TZID`. After changes, reopen the
-existing Automation and verify its next run and that no duplicate exists. Do
-not create, edit, or assume ownership of the local capture Automation here.
-
 ## Discovery and recovery
 
 Reuse the configured Lv share `/课程/路西法全套`, handoffs, and receipts;
@@ -221,9 +217,9 @@ CAS triggers under `output/live/kol_daily/viewpoint_triggers/`; run
 those triggers, preserving the stable report URL/manifest without reminder or
 Book action.
 
-The append-only ledger resumes without resending. Report every concrete item,
-including waits and retryable exceptions; distinguish handoff from downstream
-completion and report an unchanged blocker once. Repeated source/stage/code or
+The append-only ledger resumes without resending. Report waits and exceptions;
+distinguish handoff from completion and report an unchanged blocker once.
+Repeated source/stage/code or
 acquisition stalls append one exhausted audit with `repair_required=true`;
 repetition does not make them `user_action_required`. Reserve that status for
 authentication, SMS, CAPTCHA, consent, a user-only fact, or an external effect

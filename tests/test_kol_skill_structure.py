@@ -14,6 +14,9 @@ HOURLY_LOCAL_CAPTURE_MD = (
 HOURLY_REMOTE_WRITER_MD = (
     SKILL_DIR / "references" / "hourly-remote-writer.md"
 )
+VIDEO_PLAYER_SAFETY_MD = (
+    SKILL_DIR / "references" / "video-player-safety.md"
+)
 OPENCLI_CHROME_RECOVERY_MD = (
     SKILL_DIR / "references" / "opencli-chrome-recovery.md"
 )
@@ -264,8 +267,11 @@ def test_kol_skill_requires_paused_and_closed_baidu_transcript_players() -> None
         HOURLY_REMOTE_WRITER_MD.read_text(encoding="utf-8").split()
     )
     full = " ".join(FULL_CONTRACT_MD.read_text(encoding="utf-8").split())
+    safety = " ".join(
+        VIDEO_PLAYER_SAFETY_MD.read_text(encoding="utf-8").split()
+    )
 
-    for text in (hourly, full):
+    for text in (hourly, full, safety):
         assert "pause guard" in text
         assert "paused" in text
         assert "close" in text
@@ -274,6 +280,15 @@ def test_kol_skill_requires_paused_and_closed_baidu_transcript_players() -> None
     assert "小草" in full
     assert "muting is not a substitute for pausing" in full
     assert "do not keep the page open" in full
+    for marker in (
+        "video.paused=true",
+        "DOM completeness",
+        "SHA-256",
+        "page ID",
+        "tab list",
+        "Do not continue to analysis",
+    ):
+        assert marker in safety
 
 
 def test_hourly_semantic_stdin_eof_is_fail_resumable() -> None:
@@ -363,8 +378,6 @@ def test_kol_skill_has_one_ticket07_scheduled_runner() -> None:
         "scripts/kol_daily.py status",
         "scripts/kol_daily.py audit",
         "scripts/kol_daily.py convergence-report",
-        "RRULE:FREQ=DAILY;BYHOUR=7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23;BYMINUTE=30",
-        "omit `DTSTART` and `TZID`",
         "/课程/路西法全套",
         "never reads or downloads source-video bytes",
         "content_value.status=low_density|promoted",
@@ -375,8 +388,7 @@ def test_kol_skill_has_one_ticket07_scheduled_runner() -> None:
         "viewpoint_triggers",
         "material fact",
         "no concrete item is silent",
-        "Every concrete item remains reportable",
-        "including waits and retryable exceptions",
+        "Report concrete waits and exceptions",
         '"image_notes_path":"<absolute-md-path>"',
     ):
         assert marker in text
@@ -493,10 +505,11 @@ def test_remote_writer_guards_active_peer_and_drains_each_message_once() -> None
         "same automation id",
         "current host",
         "current working directory",
-        "exclude that current task",
+        "exclude the current task",
         "active peer",
         "peer task",
-        '"limit":20',
+        "exhausts every `thread/list` cursor",
+        "complete all-terminal pagination",
         "5 why",
         "blocks business effects, not repair",
         "never defer to the next automation",
@@ -516,6 +529,25 @@ def test_remote_writer_guards_active_peer_and_drains_each_message_once() -> None
         "do not add a python global lock, lease, heartbeat, fencing token, "
         "or stale takeover"
     ) in remote
+
+
+def test_remote_writer_owns_reporting_and_acceptance_copy() -> None:
+    remote = " ".join(
+        HOURLY_REMOTE_WRITER_MD.read_text(encoding="utf-8").split()
+    )
+
+    for marker in (
+        "`对象 | 状态 | 说明`",
+        "`[视频]`",
+        "`[文章]`",
+        "never label `Handoff完成` as `全部完成`",
+        "`--period-end <as_of>`",
+        "`pending_observation` is not completion",
+        "only `passed` closes Issue 06",
+        "explicit new rollout",
+        "never historical backfill or a second hourly writer",
+    ):
+        assert marker in remote
 
 
 def test_kol_skill_repairs_recoverable_failures_in_the_current_task() -> None:

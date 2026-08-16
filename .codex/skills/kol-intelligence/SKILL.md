@@ -47,6 +47,8 @@ or bypass a human gate.
 - For remote hourly `scripts/kol_daily.py run|status|audit`, read
   [hourly-remote-writer.md](references/hourly-remote-writer.md) completely. Do
   not read the full contract before starting the runner.
+- Before remote Baidu player work, read
+  [video-player-safety.md](references/video-player-safety.md) completely.
 - If the hourly runner emits `daily_analysis_input_required`, keep that same
   process alive, then read
   [full-contract.md](references/full-contract.md) completely before reading
@@ -109,12 +111,9 @@ for already-persisted legacy `awaiting_user_confirmation` states.
 - Bind every notification claim to the exact final title/body bytes passed to
   the Relay. A wrapper must not claim generic copy and substitute different
   report copy inside its sender callback.
-- For the latest Lv Xiaotong video, discovery, cloud transfer, transcript
-  readiness, and completed analysis are checkpoints, not success. Keep the
-  exact identity/version eligible across hourly sweeps until `status` proves a
-  complete 灰常亮 publication receipt and stable detail URL. Every unfinished
-  state must expose its concrete stage, retry boundary, and safe next action;
-  a generic `waiting_count` is not an acceptable terminal explanation.
+- Keep the latest Lv Xiaotong identity/version eligible until `status` proves a
+  published 灰常亮 receipt and stable URL. Expose a concrete stage, retry
+  boundary, and safe next action for every unfinished state.
 - Reconcile every external claim and receipt before retry. Corrections,
   maintenance, restarts, and replays never resend a prior reminder or paper
   action.

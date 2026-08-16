@@ -203,59 +203,100 @@ async function oneAttempt() {
       1,
     );
     server.child.stdin.write('{"method":"initialized"}\n');
-    const listing = await request(
+    const result = await discoverPeers({ server });
+    return { ...result, initialize_user_agent: init?.userAgent || "" };
+  } catch (error) {
+    const stderr = server.stderr.trim();
+    if (stderr) error.message = `${error.message}; stderr=${stderr}`;
+    throw error;
+  } finally {
+    stopServer(server);
+  }
+}
+
+async function discoverPeers({
+  server,
+  requestFn = request,
+  automationId = AUTOMATION_ID,
+  currentThreadId = CURRENT_THREAD_ID,
+  cwd = CWD,
+  expectedHost = EXPECTED_HOST,
+  readTaskComplete = hasTaskComplete,
+}) {
+  const candidates = [];
+  const readback = [];
+  const seenCursors = new Set();
+  const seenThreadIds = new Set();
+  let cursor = null;
+  let pageCount = 0;
+  let requestId = 2;
+
+  while (true) {
+    const listing = await requestFn(
       server,
       "thread/list",
       {
-        cursor: null,
+        cursor,
         limit: LIMIT,
         sortKey: "updated_at",
         sortDirection: "desc",
-        cwd: CWD,
+        cwd,
         sourceKinds: SOURCE_KINDS,
         useStateDbOnly: true,
       },
-      2,
+      requestId++,
     );
-    const rows = Array.isArray(listing?.data) ? listing.data : null;
-    if (!rows) return fail("thread_list_response_invalid", "peer_discovery");
+    pageCount += 1;
+    if (
+      !Array.isArray(listing?.data) ||
+      !Object.prototype.hasOwnProperty.call(listing, "nextCursor")
+    ) {
+      return fail("thread_list_response_invalid", "peer_discovery", {
+        page_count: pageCount,
+      });
+    }
     if (!server.host) {
       return fail("host_identity_unavailable", "peer_discovery", {
-        expected_host: EXPECTED_HOST,
+        expected_host: expectedHost,
         stderr: server.stderr.trim(),
       });
     }
-    if (server.host !== EXPECTED_HOST) {
+    if (server.host !== expectedHost) {
       return fail("host_identity_mismatch", "peer_discovery", {
-        expected_host: EXPECTED_HOST,
+        expected_host: expectedHost,
         observed_host: server.host,
       });
     }
 
-    const candidateRows = rows.filter(
-      (row) => row.id && row.id !== CURRENT_THREAD_ID && row.cwd === CWD,
+    const candidateRows = listing.data.filter(
+      (row) => row.id && row.id !== currentThreadId && row.cwd === cwd,
     );
-    const candidates = [];
-    const readback = [];
     for (const candidate of candidateRows) {
-      const result = await request(
+      if (seenThreadIds.has(candidate.id)) {
+        return fail("thread_list_duplicate_thread", "peer_discovery", {
+          thread_id: candidate.id,
+          page_count: pageCount,
+        });
+      }
+      seenThreadIds.add(candidate.id);
+      const result = await requestFn(
         server,
         "thread/read",
         { threadId: candidate.id, includeTurns: true },
-        100 + readback.length,
+        requestId++,
       );
       const thread = result?.thread;
       const turns = Array.isArray(thread?.turns) ? thread.turns : [];
       const promptMatches = turns.some((turn) =>
-        userText(turn).includes(`Automation ID: ${AUTOMATION_ID}`),
+        userText(turn).includes(`Automation ID: ${automationId}`),
       );
-      if (!thread || thread.id !== candidate.id || thread.cwd !== CWD) {
+      if (!thread || thread.id !== candidate.id || thread.cwd !== cwd) {
         return fail("thread_read_identity_mismatch", "peer_readback", {
           thread_id: candidate.id,
         });
       }
       const previewMatches = String(candidate.preview || "").includes(
-        `Automation ID: ${AUTOMATION_ID}`,
+        `Automation ID: ${automationId}`,
       );
       if (!promptMatches) {
         if (previewMatches) {
@@ -266,7 +307,7 @@ async function oneAttempt() {
         continue;
       }
       candidates.push(candidate);
-      const complete = hasTaskComplete(thread.path);
+      const complete = readTaskComplete(thread.path);
       if (complete === null) {
         return fail("thread_rollout_unavailable", "peer_readback", {
           thread_id: candidate.id,
@@ -281,29 +322,39 @@ async function oneAttempt() {
           retryability: "not_retryable",
           authoritative_peer_thread_id: candidate.id,
           host: server.host,
-          cwd: CWD,
+          cwd,
+          page_count: pageCount,
           readback,
         };
       }
     }
-    return {
-      schema_version: 1,
-      gate_result: "pass",
-      ownership: "none",
-      retryability: "not_retryable",
-      host: server.host,
-      cwd: CWD,
-      candidate_count: candidates.length,
-      readback,
-      initialize_user_agent: init?.userAgent || "",
-    };
-  } catch (error) {
-    const stderr = server.stderr.trim();
-    if (stderr) error.message = `${error.message}; stderr=${stderr}`;
-    throw error;
-  } finally {
-    stopServer(server);
+
+    const nextCursor = listing.nextCursor;
+    if (nextCursor === null) break;
+    if (
+      typeof nextCursor !== "string" ||
+      nextCursor.length === 0 ||
+      seenCursors.has(nextCursor)
+    ) {
+      return fail("thread_list_cursor_invalid", "peer_discovery", {
+        page_count: pageCount,
+      });
+    }
+    seenCursors.add(nextCursor);
+    cursor = nextCursor;
   }
+
+  return {
+    schema_version: 1,
+    gate_result: "pass",
+    ownership: "none",
+    retryability: "not_retryable",
+    host: server.host,
+    cwd,
+    candidate_count: candidates.length,
+    page_count: pageCount,
+    readback,
+  };
 }
 
 async function main() {
@@ -346,11 +397,15 @@ async function main() {
   process.exitCode = 2;
 }
 
-main().catch((error) => {
-  const result = recordAudit(
-    fail("peer_gate_unhandled_error", "peer_discovery", { message: String(error) }),
-    MAX_ATTEMPTS,
-  );
-  console.log(safeJson(result));
-  process.exitCode = 2;
-});
+if (require.main === module) {
+  main().catch((error) => {
+    const result = recordAudit(
+      fail("peer_gate_unhandled_error", "peer_discovery", { message: String(error) }),
+      MAX_ATTEMPTS,
+    );
+    console.log(safeJson(result));
+    process.exitCode = 2;
+  });
+}
+
+module.exports = { discoverPeers };
