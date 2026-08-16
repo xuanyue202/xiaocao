@@ -10,6 +10,7 @@ from xiaocao.live.instrument_contract import (
     entry_fee_for,
     exit_fee_for,
     is_sellable,
+    market_contract_verified,
     shares_for_budget,
     validate_market_data,
 )
@@ -72,6 +73,40 @@ def test_etf_contract_requires_explicit_execution_metadata() -> None:
     assert contract.settlement_cycle == "T+1"
     assert contract.buy_fee_rate == 0.0001
     assert contract.sell_fee_rate == 0.0001
+
+
+def test_resolver_shape_accepts_nested_quote_contract_and_edge_provenance() -> None:
+    row = {
+        "code": "159001.XSHE",
+        "instrument_type": "etf",
+        "lot_size": 100,
+        "settlement_cycle": "T+1",
+        "fees": {"buy": {"rate": 0.0002}, "sell": {"rate": 0.0003}},
+        "catalog_trade_date": "2026-08-14",
+        "provenance": [{
+            "edge_type": "theme_to_etf",
+            "source": "theme_registry",
+            "source_version": "theme-v1",
+            "source_id": "theme:ai",
+            "evidence_id": "edge-1",
+        }],
+        "market_data_contract": {
+            "status": "verified",
+            "source": "p-xcapi",
+            "version": "quote-v1",
+            "realtime": {"status": "verified"},
+            "minute": {"status": "verified", "price_field": "trade"},
+            "daily": {"status": "verified"},
+        },
+    }
+
+    contract = InstrumentContract.from_mapping(row)
+
+    assert contract.buy_fee_rate == 0.0002
+    assert contract.sell_fee_rate == 0.0003
+    assert contract.provenance["source"] == "p-xcapi"
+    assert contract.provenance["mapping_evidence"][0]["edge_type"] == "theme_to_etf"
+    assert market_contract_verified(contract) is True
 
 
 @pytest.mark.parametrize(

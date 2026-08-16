@@ -41,6 +41,11 @@ Intraday executes only `HARD_STOP`, authorized structured `AI_EVENT_RISK_EXIT`, 
 
 T+1 remains binding. Report an entry-day hard/event risk as unresolved rather than as an executed sale. If a triggered sale is limit-down with no bid, record/report `SELL_BLOCKED / LIMIT_DOWN_NO_BID`, keep the position open and leave cash/PnL/trades unchanged.
 
+For Book T ETF positions, use the persisted instrument contract for lot size,
+settlement cycle and sell fee. Unknown contract, non-whole-lot shares, entry-day
+T+1, missing proprietary quote/status or insufficient liquidity is a blocked
+paper action, not permission to apply stock defaults.
+
 All writers share `output/live/paper_ledger.lock`. If `.ledger_txn/pending.json` exists, let the next writer recover it under the lock; never delete it manually. A concurrent second writer may become a no-op but must not duplicate a SELL.
 
 Any future real SELL intent must be derived from this monitor's authorized

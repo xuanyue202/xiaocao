@@ -391,6 +391,25 @@ def test_attach_etf_fill_uses_verified_contract_and_trade_price() -> None:
             "endpoint": "/stock/etf_info",
             "trade_date": "2026-08-14",
         },
+        "market_status": "active",
+        "liquidity_status": "liquid",
+        "market_data_facts": {
+            "as_of": "2026-08-14",
+            "source": "xiaocao_api",
+            "realtime": {"trade": 3.10, "tradeDate": "20260814", "status": "active"},
+            "minute_rows": [
+                {"trade": 3.10, "tradeDate": "20260814"},
+                {"trade": 3.11, "tradeDate": "20260814"},
+            ],
+            "daily_rows": [{
+                "tradeDate": "20260814",
+                "open": 3.0,
+                "high": 3.2,
+                "low": 2.9,
+                "close": 3.1,
+            }],
+            "liquidity": {"status": "liquid"},
+        },
     }
 
     fillable, skipped = _attach_fill_prices(
@@ -409,6 +428,28 @@ def test_attach_etf_fill_uses_verified_contract_and_trade_price() -> None:
     assert basis == "opening_window_vwap_capped_by_limit"
     assert record["_paper_fill"]["instrument_type"] == "etf"
     assert record["_paper_fill"]["lot_size"] == 200
+
+    missing_facts = dict(candidate)
+    missing_facts.pop("market_data_facts")
+    _, skipped_missing_facts = _attach_fill_prices(
+        client,
+        [missing_facts],
+        "2026-08-14",
+        start_hhmm="0930",
+        end_hhmm="0931",
+        limit_premium_pct=0.5,
+    )
+    assert skipped_missing_facts[0]["_paper_fill"]["skip_reason"] == "MARKET_DATA_FACTS_MISSING"
+
+    no_provenance = dict(candidate)
+    no_provenance["provenance"] = {}
+    price, _, _, meta = _fill_price_from_window(
+        no_provenance,
+        window={"vwap": 3.10, "low": 3.09, "high": 3.11, "time": "0931"},
+        limit_premium_pct=0.5,
+    )
+    assert price is None
+    assert meta["skip_reason"] == "PUBLIC_SOURCE_FORBIDDEN"
 
 
 def test_attach_fill_prices_splits_fillable_and_skipped() -> None:

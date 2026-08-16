@@ -23,7 +23,9 @@ INSTRUMENT_CONTRACT_SCHEMA_VERSION = 1
 VALID_INSTRUMENT_TYPES = frozenset({"equity", "etf"})
 VALID_SETTLEMENT_CYCLES = frozenset({"T+0", "T+1"})
 VERIFIED_MARKET_CONTRACT_STATES = frozenset({"verified", "valid", "ok", "available"})
-PROPRIETARY_SOURCES = frozenset({"xiaocao_api", "xiaocao", "proprietary_api"})
+PROPRIETARY_SOURCES = frozenset(
+    {"xiaocao_api", "xiaocao", "proprietary_api", "p-xcapi", "p-xcapi.kjap1.cn"}
+)
 
 
 class InstrumentContractError(ValueError):
@@ -71,22 +73,23 @@ class InstrumentContract:
         lot_size = _normalize_lot_size(raw.get("lot_size"))
         settlement_cycle = _normalize_settlement_cycle(raw.get("settlement_cycle"))
 
+        fees = raw.get("fees") or raw.get("fee_contract") or raw.get("transaction_cost") or {}
+        if not isinstance(fees, Mapping):
+            raise UnknownInstrumentContract("fees must be an object")
         shared_fee = raw.get("fee_rate")
+        if shared_fee in (None, ""):
+            shared_fee = _first_present(fees, ("fee_rate", "rate", "commission"))
+        buy_fee = raw.get("buy_fee_rate")
+        if buy_fee in (None, ""):
+            buy_fee = _first_present(fees, ("buy_fee_rate", "buy"), default=shared_fee)
+        sell_fee = raw.get("sell_fee_rate")
+        if sell_fee in (None, ""):
+            sell_fee = _first_present(fees, ("sell_fee_rate", "sell"), default=shared_fee)
         buy_fee_rate = _normalize_fee(
-            raw.get("buy_fee_rate", shared_fee), "buy_fee_rate"
+            _fee_rate_value(buy_fee), "buy_fee_rate"
         )
         sell_fee_rate = _normalize_fee(
-            raw.get("sell_fee_rate", shared_fee), "sell_fee_rate"
-        )
-
-        provenance = raw.get("provenance") or raw.get("source_metadata") or {}
-        if not isinstance(provenance, Mapping):
-            raise UnknownInstrumentContract("provenance must be an object")
-        provenance_copy = {str(key): value for key, value in provenance.items()}
-        catalog_trade_date = _normalize_date(
-            provenance_copy.get("trade_date")
-            or raw.get("catalog_trade_date")
-            or raw.get("tradeDate")
+            _fee_rate_value(sell_fee), "sell_fee_rate"
         )
 
         market_data_contract = (
@@ -96,6 +99,15 @@ class InstrumentContract:
         )
         if not isinstance(market_data_contract, Mapping):
             raise UnknownInstrumentContract("market_data_contract must be an object")
+        provenance_copy = _normalize_provenance(
+            raw.get("provenance") or raw.get("source_metadata"),
+            market_data_contract,
+        )
+        catalog_trade_date = _normalize_date(
+            provenance_copy.get("trade_date")
+            or raw.get("catalog_trade_date")
+            or raw.get("tradeDate")
+        )
 
         return cls(
             code=code,
@@ -181,8 +193,7 @@ def market_contract_verified(
 ) -> bool:
     """Whether the named proprietary quote contracts were explicitly verified."""
     return all(
-        str(contract.market_data_contract.get(name) or "").strip().lower()
-        in VERIFIED_MARKET_CONTRACT_STATES
+        _market_component_verified(contract.market_data_contract, name)
         for name in required
     )
 
@@ -229,7 +240,7 @@ def validate_market_data(
         return _failure("INSTRUMENT_CONTRACT_UNVERIFIED", normalized_source, error=str(exc))
     assert contract is not None
 
-    provenance_source = str(contract.provenance.get("source") or normalized_source).strip().lower()
+    provenance_source = str(contract.provenance.get("source") or "").strip().lower()
     if provenance_source not in PROPRIETARY_SOURCES:
         return _failure("PUBLIC_SOURCE_FORBIDDEN", provenance_source or "unknown")
 
@@ -245,8 +256,7 @@ def validate_market_data(
             return _failure("CATALOG_STALE", normalized_source, age_days=age)
 
     for field_name in ("realtime", "minute", "daily"):
-        state = str(contract.market_data_contract.get(field_name) or "").strip().lower()
-        if state not in VERIFIED_MARKET_CONTRACT_STATES:
+        if not _market_component_verified(contract.market_data_contract, field_name):
             return _failure("MARKET_CONTRACT_UNVERIFIED", normalized_source, field=field_name)
 
     if not isinstance(realtime, Mapping):
@@ -407,6 +417,66 @@ def _normalize_settlement_cycle(value: Any) -> str:
     if text in {"t+1", "t1", "1", "nextday"}:
         return "T+1"
     raise UnknownInstrumentContract("settlement_cycle must be T+0 or T+1")
+
+
+def _fee_rate_value(value: Any) -> Any:
+    if isinstance(value, Mapping):
+        return value.get("fee_rate") or value.get("rate") or value.get("commission")
+    return value
+
+
+def _first_present(mapping: Mapping[str, Any], keys: Sequence[str], *, default: Any = None) -> Any:
+    for key in keys:
+        value = mapping.get(key)
+        if value not in (None, ""):
+            return value
+    return default
+
+
+def _normalize_provenance(
+    raw: Any,
+    market_data_contract: Mapping[str, Any],
+) -> dict[str, Any]:
+    """Normalize catalog/mapping provenance without losing resolver edges."""
+    if isinstance(raw, Mapping):
+        normalized: dict[str, Any] = {str(key): value for key, value in raw.items()}
+    elif isinstance(raw, Sequence) and not isinstance(raw, (str, bytes)):
+        normalized = {"mapping_evidence": [dict(item) if isinstance(item, Mapping) else item for item in raw]}
+    elif raw not in (None, ""):
+        normalized = {"source": str(raw).strip()}
+    else:
+        normalized = {}
+
+    market_source = str(market_data_contract.get("source") or "").strip()
+    current_source = str(normalized.get("source") or "").strip()
+    if market_source and current_source.lower() not in PROPRIETARY_SOURCES:
+        if current_source:
+            normalized["catalog_source"] = current_source
+        normalized["source"] = market_source
+        market_version = market_data_contract.get("version") or market_data_contract.get("source_version")
+        if market_version and not normalized.get("source_version"):
+            normalized["source_version"] = market_version
+    return normalized
+
+
+def _market_component_verified(
+    market_data_contract: Mapping[str, Any],
+    name: str,
+) -> bool:
+    value = market_data_contract.get(name)
+    if value is None and name == "daily":
+        value = market_data_contract.get("settlement_data") or market_data_contract.get("settlement")
+    if isinstance(value, Mapping):
+        state = str(value.get("status") or "").strip().lower()
+        verified = value.get("verified") is True
+        if state not in VERIFIED_MARKET_CONTRACT_STATES and not verified:
+            return False
+        if name == "minute":
+            price_field = str(value.get("price_field") or value.get("trade_field") or "").strip().lower()
+            if price_field and price_field != "trade":
+                return False
+        return True
+    return str(value or "").strip().lower() in VERIFIED_MARKET_CONTRACT_STATES
 
 
 def _normalize_fee(value: Any, field_name: str) -> float:

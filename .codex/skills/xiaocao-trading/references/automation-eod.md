@@ -52,6 +52,10 @@ Cross-check same-day sells from the journal/trades; the EOD monitor may be quiet
 
 For Book T, use marked equity/unrealized only when `valuation_status=fresh`. Otherwise report cost-basis equity and `unrealized=N/A`; never combine a newer ledger with an older holdings mark. A post-14:55 `SELL_BLOCKED` remains open through settlement.
 
+Book T ETF settlement must preserve the explicit instrument contract and use its
+sell fee, lot size and T+0/T+1 rule. If the contract or authoritative market
+facts are unknown, leave the position open and report the bounded block.
+
 ## Chinese audit order
 
 1. Terminal status: shell exit, run-flow `deterministic_status`, supporting degradation and step count.

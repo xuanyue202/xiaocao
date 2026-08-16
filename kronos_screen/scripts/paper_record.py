@@ -39,6 +39,7 @@ from xiaocao.live.instrument_contract import (  # noqa: E402
     market_contract_verified,
     minute_trade_price,
     shares_for_budget,
+    validate_market_data,
 )
 from xiaocao.strategy.params import (  # noqa: E402
     TREND_BUDGET_RATIO,
@@ -287,25 +288,57 @@ def _fill_price_from_window(
             metadata["buy_fee_rate"] = contract.buy_fee_rate
             metadata["sell_fee_rate"] = contract.sell_fee_rate
             if contract.instrument_type == "etf":
-                if str(contract.provenance.get("source") or "xiaocao_api").strip().lower() not in PROPRIETARY_SOURCES:
+                provenance_source = str(contract.provenance.get("source") or "").strip().lower()
+                if provenance_source not in PROPRIETARY_SOURCES:
                     metadata["skip_reason"] = "PUBLIC_SOURCE_FORBIDDEN"
-                    metadata["skip_detail"] = "live/paper ETF OHLCV must use xiaocao_api"
+                    metadata["skip_detail"] = "live/paper ETF OHLCV must use the proprietary Xiaocao API"
                     return None, "skipped_public_source", record.get("basket_rule"), metadata
                 if not market_contract_verified(contract):
                     metadata["skip_reason"] = "MARKET_CONTRACT_UNVERIFIED"
                     metadata["skip_detail"] = "realtime/minute/daily contract must be verified"
                     return None, "skipped_market_contract", record.get("basket_rule"), metadata
+                market_facts = record.get("market_data_facts")
+                if not isinstance(market_facts, dict):
+                    metadata["skip_reason"] = "MARKET_DATA_FACTS_MISSING"
+                    metadata["skip_detail"] = "ETF fill requires validated realtime/minute/daily/liquidity facts"
+                    return None, "skipped_market_data", record.get("basket_rule"), metadata
+                validation = validate_market_data(
+                    record,
+                    realtime=market_facts.get("realtime"),
+                    minute_rows=market_facts.get("minute_rows"),
+                    daily_rows=market_facts.get("daily_rows"),
+                    liquidity=market_facts.get("liquidity"),
+                    as_of=market_facts.get("as_of") or market_facts.get("trade_date"),
+                    source=market_facts.get("source") or provenance_source,
+                )
+                if not validation.ok:
+                    metadata["skip_reason"] = validation.reason
+                    metadata["skip_detail"] = dict(validation.details)
+                    return None, "skipped_market_data", record.get("basket_rule"), metadata
                 market_status = str(
                     record.get("market_status")
                     or record.get("trading_status")
                     or record.get("status")
-                    or "active"
+                    or (market_facts.get("realtime") or {}).get("status")
+                    or ""
                 ).strip().lower()
+                if not market_status:
+                    metadata["skip_reason"] = "REALTIME_STATUS_UNKNOWN"
+                    metadata["skip_detail"] = "ETF realtime trading status is required"
+                    return None, "skipped_market_data", record.get("basket_rule"), metadata
                 if market_status in {"halted", "suspended", "stop", "停牌"}:
                     metadata["skip_reason"] = "HALTED"
                     metadata["skip_detail"] = "ETF market status is not tradable"
                     return None, "skipped_halted", record.get("basket_rule"), metadata
-                liquidity_status = str(record.get("liquidity_status") or "liquid").strip().lower()
+                liquidity_status = str(
+                    record.get("liquidity_status")
+                    or (market_facts.get("liquidity") or {}).get("status")
+                    or ""
+                ).strip().lower()
+                if not liquidity_status:
+                    metadata["skip_reason"] = "LIQUIDITY_UNKNOWN"
+                    metadata["skip_detail"] = "ETF liquidity status is required"
+                    return None, "skipped_market_data", record.get("basket_rule"), metadata
                 if liquidity_status in {"illiquid", "insufficient", "blocked"}:
                     metadata["skip_reason"] = "ILLIQUID"
                     metadata["skip_detail"] = "ETF liquidity contract is not sufficient"
