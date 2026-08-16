@@ -422,6 +422,92 @@ def test_repair_validation_accepts_subscription_video_browser_eval_profile(
     assert receipt.failure_fingerprint == "c" * 64
 
 
+def test_repair_validation_accepts_subscription_video_browser_open_profile(
+    tmp_path,
+) -> None:
+    context = {
+        "adapter": "subscription_video",
+        "message_id": "1" * 64,
+        "content_sha256": "2" * 64,
+        "failure_fingerprint": "3" * 64,
+        "failure_revision": FAILURE_REVISION,
+        "category": "timeout",
+        "code": "opencli_timeout",
+        "stage": "browser_open",
+        "targeted_test_profile": "kol_subscription_video_browser_open",
+    }
+
+    def git(command: tuple[str, ...]) -> CompletedProcess[str]:
+        if command == ("branch", "--show-current"):
+            return CompletedProcess(command, 0, "main\n", "")
+        if command == ("rev-parse", "--verify", "HEAD^{commit}"):
+            return CompletedProcess(command, 0, f"{REPAIR_REVISION}\n", "")
+        if command == ("rev-parse", "--verify", "origin/main^{commit}"):
+            return CompletedProcess(command, 0, f"{REPAIR_REVISION}\n", "")
+        if command[:2] == ("diff-tree", "--no-commit-id"):
+            return CompletedProcess(
+                command,
+                0,
+                (
+                    "src/xiaocao/kol/subscription_video.py\n"
+                    "src/xiaocao/kol/writer_progress.py\n"
+                    "tests/test_kol_subscription_video.py\n"
+                    "tests/test_kol_repair_validation.py\n"
+                    "tests/test_kol_writer_progress.py\n"
+                ),
+                "",
+            )
+        if command == ("show", "-s", "--format=%B", REPAIR_REVISION):
+            return CompletedProcess(
+                command,
+                0,
+                "Reconcile timed-out browser open\n\n"
+                f"Repair-Fingerprint: {'3' * 64}\n",
+                "",
+            )
+        if command[:2] == ("merge-base", "--is-ancestor"):
+            return CompletedProcess(command, 0, "", "")
+        raise AssertionError(command)
+
+    expected_command = (
+        "env",
+        "PYTHONPATH=src",
+        ".venv/bin/python",
+        "-m",
+        "pytest",
+        "tests/test_kol_subscription_video.py",
+        "tests/test_kol_repair_validation.py",
+        "tests/test_kol_writer_progress.py",
+        "-q",
+        "-k",
+        (
+            "private_scan_retries_one_preclaim_browser_open_timeout or "
+            "private_scan_retries_open_after_wrong_preclaim_readback or "
+            "repair_validation_accepts_subscription_video_browser_open_profile or "
+            "repair_closure_accepts_subscription_video_browser_open_profile"
+        ),
+    )
+    service = RepairValidationService(
+        tmp_path,
+        ledger=RepairValidationLedger(tmp_path / "repair-validation.jsonl"),
+        git_runner=git,
+        test_runner=lambda command: CompletedProcess(
+            command,
+            0 if command == expected_command else 1,
+            "4 passed\n",
+            "",
+        ),
+        now=lambda: "2026-08-16T17:50:00+08:00",
+    )
+
+    receipt = service.validate(context, repair_revision=REPAIR_REVISION)
+
+    assert receipt.targeted_test_profile == (
+        "kol_subscription_video_browser_open"
+    )
+    assert receipt.failure_fingerprint == "3" * 64
+
+
 @pytest.mark.parametrize("adapter", ["lv_text_image", "subscription_video"])
 def test_repair_validation_accepts_shared_lv_listing_browser_eval_profile(
     tmp_path,

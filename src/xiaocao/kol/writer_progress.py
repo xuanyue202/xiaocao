@@ -667,6 +667,24 @@ TARGETED_REPAIR_TESTS: dict[str, tuple[str, ...]] = {
             "repair_resume_persists_following_repair"
         ),
     ),
+    "kol_subscription_video_browser_open": (
+        "env",
+        "PYTHONPATH=src",
+        ".venv/bin/python",
+        "-m",
+        "pytest",
+        "tests/test_kol_subscription_video.py",
+        "tests/test_kol_repair_validation.py",
+        "tests/test_kol_writer_progress.py",
+        "-q",
+        "-k",
+        (
+            "private_scan_retries_one_preclaim_browser_open_timeout or "
+            "private_scan_retries_open_after_wrong_preclaim_readback or "
+            "repair_validation_accepts_subscription_video_browser_open_profile or "
+            "repair_closure_accepts_subscription_video_browser_open_profile"
+        ),
+    ),
     "kol_subscription_video_source_run": (
         "env",
         "PYTHONPATH=src",
@@ -800,6 +818,12 @@ _TARGETED_REPAIR_IMPLEMENTATION_PATHS: dict[str, frozenset[str]] = {
             "src/xiaocao/kol/writer_progress.py",
         }
     ),
+    "kol_subscription_video_browser_open": frozenset(
+        {
+            "src/xiaocao/kol/subscription_video.py",
+            "src/xiaocao/kol/writer_progress.py",
+        }
+    ),
     "kol_subscription_video_source_run": frozenset(
         {
             "scripts/kol_daily.py",
@@ -861,6 +885,13 @@ _TARGETED_REPAIR_TEST_PATHS: dict[str, frozenset[str]] = {
     "kol_subscription_video_browser_eval": frozenset(
         {
             "tests/test_kol_daily.py",
+            "tests/test_kol_subscription_video.py",
+            "tests/test_kol_repair_validation.py",
+            "tests/test_kol_writer_progress.py",
+        }
+    ),
+    "kol_subscription_video_browser_open": frozenset(
+        {
             "tests/test_kol_subscription_video.py",
             "tests/test_kol_repair_validation.py",
             "tests/test_kol_writer_progress.py",
@@ -969,6 +1000,24 @@ _SHARED_LV_LISTING_VALIDATION_REPAIR_PROFILE = (
 _SUBSCRIPTION_VIDEO_BROWSER_EVAL_REPAIR_PROFILE = (
     "kol_subscription_video_browser_eval"
 )
+_SUBSCRIPTION_VIDEO_BROWSER_OPEN_REPAIR_PROFILE = (
+    "kol_subscription_video_browser_open"
+)
+
+
+def _canonical_subscription_video_browser_open_repair_profile(
+    context: Mapping[str, Any],
+) -> str | None:
+    if (
+        str(context.get("adapter") or "") == "subscription_video"
+        and str(context.get("targeted_test_profile") or "")
+        == _SUBSCRIPTION_VIDEO_BROWSER_OPEN_REPAIR_PROFILE
+        and str(context.get("category") or "") == "timeout"
+        and str(context.get("code") or "") == "opencli_timeout"
+        and str(context.get("stage") or "") == "browser_open"
+    ):
+        return _SUBSCRIPTION_VIDEO_BROWSER_OPEN_REPAIR_PROFILE
+    return None
 
 
 def _canonical_subscription_video_browser_eval_repair_profile(
@@ -1189,6 +1238,13 @@ class RepairValidationService:
         )
         if subscription_profile is not None:
             return subscription_profile
+        subscription_browser_open_profile = (
+            _canonical_subscription_video_browser_open_repair_profile(
+                context
+            )
+        )
+        if subscription_browser_open_profile is not None:
+            return subscription_browser_open_profile
         subscription_browser_eval_profile = (
             _canonical_subscription_video_browser_eval_repair_profile(context)
         )

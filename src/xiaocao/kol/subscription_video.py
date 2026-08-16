@@ -16,7 +16,7 @@ from difflib import SequenceMatcher
 from datetime import datetime, timedelta, timezone
 from pathlib import Path, PurePosixPath
 from typing import Any, Callable
-from urllib.parse import quote, urlparse
+from urllib.parse import parse_qs, quote, urlparse
 
 from ._shared import DecisionError
 from .claim_coverage import (
@@ -64,6 +64,23 @@ _PRIVATE_DIRECTORY_EVAL_PROCESS_TIMEOUT_SECONDS = 120
 _DISCOVERY_HOT_WINDOW = timedelta(days=14)
 _DISCOVERY_HOT_ROOT_LIMIT = 3
 _DISCOVERY_COLD_ROOTS_PER_HOUR = 1
+
+
+def _private_directory_url_matches(value: Any, directory: str) -> bool:
+    try:
+        parsed = urlparse(str(value or ""))
+    except ValueError:
+        return False
+    if (
+        parsed.scheme != "https"
+        or parsed.netloc != "pan.baidu.com"
+        or parsed.path != "/disk/main"
+    ):
+        return False
+    _route, separator, query = parsed.fragment.partition("?")
+    if not separator:
+        return False
+    return parse_qs(query).get("path") == [directory]
 
 
 def _canonical(value: Any) -> str:
@@ -1080,16 +1097,10 @@ class SubscriptionVideoService:
         root: str,
         recursive: bool,
     ) -> dict[str, Any]:
-        url = (
-            "https://pan.baidu.com/disk/main#/index?category=all&path="
-            + quote(root, safe="")
-        )
-        self._opencli_json(
-            session,
-            "open",
-            url,
+        self._open_private_directory(
+            session=session,
             profile=profile,
-            timeout_seconds=30,
+            directory=root,
         )
         pending = [root]
         seen: set[str] = set()
@@ -1161,6 +1172,70 @@ class SubscriptionVideoService:
             "directories_scanned": len(seen),
             "entries": entries,
         }
+
+    def _open_private_directory(
+        self,
+        *,
+        session: str,
+        profile: str | None,
+        directory: str,
+    ) -> None:
+        url = (
+            "https://pan.baidu.com/disk/main#/index?category=all&path="
+            + quote(directory, safe="")
+        )
+        readback_script = "({status: 'ok', url: location.href})"
+        last_timeout: EnrichmentDiagnosticError | None = None
+        for attempt in range(2):
+            try:
+                opened = self._opencli_json(
+                    session,
+                    "open",
+                    url,
+                    profile=profile,
+                    timeout_seconds=30,
+                )
+            except EnrichmentDiagnosticError as exc:
+                if not (
+                    exc.diagnostic_code == "opencli_timeout"
+                    and exc.diagnostic_stage == "browser_open"
+                ):
+                    raise
+                last_timeout = exc
+            else:
+                if _private_directory_url_matches(
+                    opened.get("url"), directory
+                ):
+                    return
+
+            readback = self._opencli_json(
+                session,
+                "eval",
+                readback_script,
+                profile=profile,
+                timeout_seconds=30,
+            )
+            readback_url = str(readback.get("url") or "")
+            if _private_directory_url_matches(readback_url, directory):
+                return
+            if urlparse(readback_url).path == "/login":
+                raise EnrichmentDiagnosticError(
+                    "private Netdisk browser requires authentication",
+                    category="authentication",
+                    code="authentication_required",
+                    stage="private_listing_validation",
+                )
+            if attempt == 0:
+                self.sleep(1)
+                continue
+            if last_timeout is not None:
+                raise last_timeout
+            raise EnrichmentDiagnosticError(
+                "private Netdisk browser opened the wrong directory",
+                category="wrong_target",
+                code="private_wrong_directory",
+                stage="private_listing_validation",
+            )
 
     @staticmethod
     def _raise_private_listing_failure(payload: Mapping[str, Any]) -> None:

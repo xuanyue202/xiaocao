@@ -638,6 +638,53 @@ def test_repair_closure_accepts_subscription_video_browser_eval_profile(
     assert closure["event"] == "repair_closed"
 
 
+def test_repair_closure_accepts_subscription_video_browser_open_profile(
+    tmp_path,
+):
+    progress = WriterProgress.repair_required(
+        item_identity="subscription_video:source",
+        fingerprint=FailureFingerprint(
+            adapter="subscription_video",
+            category="timeout",
+            code="opencli_timeout",
+            stage="browser_open",
+            failure_revision=FAILURE_REVISION,
+            provider_contract_version="xiaocao_writer_v1",
+        ),
+        repair_revision=None,
+        affected_set_digest="e" * 64,
+        claim_receipt_summary={
+            "claim_count": 0,
+            "receipt_count": 0,
+            "uncertain_effect_count": 0,
+        },
+        targeted_test_profile="kol_subscription_video_browser_open",
+        narrow_resume_surface="subscription_video:source",
+        retryability="retryable",
+    )
+    ledger = ConvergenceLedger(
+        tmp_path / "convergence.jsonl",
+        now=lambda: datetime.fromisoformat("2026-08-16T17:50:00+08:00"),
+    )
+    ledger.record(progress, slot="2026-08-16T17:00+08:00")
+    validation = RepairValidationLedger(tmp_path / "repair-validation.jsonl")
+    receipt = validation.append(
+        _repair_receipt(
+            progress,
+            profile="kol_subscription_video_browser_open",
+        )
+    )
+
+    closure = ledger.close_repair(
+        progress.failure_fingerprint,
+        repair_receipt=receipt,
+        validation_ledger=validation,
+        slot="2026-08-16T17:00+08:00",
+    )
+
+    assert closure["event"] == "repair_closed"
+
+
 def test_repair_closure_accepts_subscription_video_observability_profile_alias(
     tmp_path,
 ):

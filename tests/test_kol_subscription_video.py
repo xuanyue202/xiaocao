@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import subprocess
 from datetime import datetime, timedelta
 from pathlib import Path
 from types import SimpleNamespace
@@ -1051,6 +1052,90 @@ def test_private_scan_uses_exact_vue_metadata_without_file_download(tmp_path):
 
     assert result["entries"][0]["size"] == 744_292_790
     assert len(commands) == 2
+
+
+def test_private_scan_retries_one_preclaim_browser_open_timeout(tmp_path):
+    commands = []
+
+    def runner(command, **_kwargs):
+        commands.append(command)
+        operation = command[5]
+        if operation == "open" and sum(
+            row[5] == "open" for row in commands
+        ) == 1:
+            raise subprocess.TimeoutExpired(command, timeout=30)
+        if operation == "open":
+            payload = {"url": command[6]}
+        elif "location.href" in command[6]:
+            payload = {
+                "status": "ok",
+                "url": (
+                    "https://pan.baidu.com/disk/main#/index?category=all&"
+                    "path=%2F%E8%AF%BE%E7%A8%8B%2F%E8%B7%AF%E8%A5%BF%E6%B3%95%"
+                    "E5%85%A8%E5%A5%97"
+                ),
+            }
+        else:
+            payload = {"status": "ok", "rows": []}
+        return SimpleNamespace(
+            returncode=0,
+            stdout=json.dumps(payload),
+            stderr="",
+        )
+
+    result = _service(tmp_path, runner=runner)._scan_private(
+        session="ticket05",
+        profile="work",
+        root="/课程/路西法全套",
+        recursive=False,
+    )
+
+    assert result["entries"] == []
+    assert [command[5] for command in commands] == ["open", "eval", "eval"]
+
+
+def test_private_scan_retries_open_after_wrong_preclaim_readback(tmp_path):
+    commands = []
+
+    def runner(command, **_kwargs):
+        commands.append(command)
+        operation = command[5]
+        open_count = sum(row[5] == "open" for row in commands)
+        if operation == "open" and open_count == 1:
+            raise subprocess.TimeoutExpired(command, timeout=30)
+        if operation == "open":
+            payload = {"url": command[6]}
+        elif "location.href" in command[6]:
+            payload = {
+                "status": "ok",
+                "url": "https://pan.baidu.com/disk/main#/index?path=%2F",
+            }
+        else:
+            payload = {"status": "ok", "rows": []}
+        return SimpleNamespace(
+            returncode=0,
+            stdout=json.dumps(payload),
+            stderr="",
+        )
+
+    result = _service(
+        tmp_path,
+        runner=runner,
+        sleep=lambda _seconds: None,
+    )._scan_private(
+        session="ticket05",
+        profile="work",
+        root="/课程/路西法全套",
+        recursive=False,
+    )
+
+    assert result["entries"] == []
+    assert [command[5] for command in commands] == [
+        "open",
+        "eval",
+        "open",
+        "eval",
+    ]
 
 
 def test_private_scan_allows_slow_directory_settlement():

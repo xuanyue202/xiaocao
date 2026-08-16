@@ -413,6 +413,9 @@ work and never authorizes replaying publication, reminder, or Book side effects.
 - Before any small-item claim, discovery-only `wrong_share`, `wrong_origin`,
   `about:blank`, OpenCLI timeout/invalid JSON, or incomplete `/share/list` may
   reopen the configured page, back off, and retry the full read exactly once.
+  If an `open` command times out after navigation, first reconcile its exact
+  origin and directory from the same session; a matching readback continues
+  without another navigation, while a mismatch permits the one bounded retry.
   Preserve the original and final credential-safe category/code/stage. This
   bounded authority never extends to download, transfer, publication,
   notification, or Book actions; uncertain side effects reconcile receipts.
