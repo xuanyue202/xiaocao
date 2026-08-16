@@ -35,6 +35,7 @@ def _source(
     viewpoint_kol_id: str | None = None,
     evaluation_payload_id: str | None = None,
     receipt_record_id: str | None = None,
+    receipt_manifest_sha256: str | None = None,
     publication_state: str = "published",
     binding_suffix: str | None = None,
 ) -> dict:
@@ -129,7 +130,7 @@ def _source(
         "artifact": {"records": records, "publish_request": request},
         "publish_receipt": {
             "recordState": publication_state,
-            "manifestSha256": request["manifest_sha256"],
+            "manifestSha256": receipt_manifest_sha256 or request["manifest_sha256"],
             "recordId": receipt_record_id or rid,
             "serverTime": evaluated_at,
         },
@@ -325,6 +326,20 @@ def test_receipt_report_identity_mismatch_is_rejected():
         )
 
 
+def test_receipt_manifest_hash_mismatch_is_rejected():
+    with pytest.raises(PublicationBindingError, match="manifest hash mismatch"):
+        _build(
+            sources=[
+                _source(
+                    source_key="other",
+                    kol_id="kol-other",
+                    receipt_manifest_sha256="wrong-manifest-hash",
+                )
+            ],
+            draft=_draft(source_keys=["other"]),
+        )
+
+
 def test_evaluation_envelope_identity_mismatch_is_rejected():
     with pytest.raises(PublicationBindingError, match="evaluation identity"):
         _build(
@@ -503,6 +518,32 @@ def test_replaced_viewpoint_is_not_used_as_current_support():
     assert mache["status"] == "active"
     assert mache["viewpoint_ids"] == [new_viewpoint["record_id"]]
     assert old_viewpoint["record_id"] in mache["replaced_viewpoint_ids"]
+
+    bad_relation = build_record(
+        kind="viewpoint_relation",
+        record_id_value=relation_payload["relation_id"],
+        idempotency_key="put-replacement-relation-wrong-binding",
+        created_at="2026-08-10T02:00:00Z",
+        source_binding=old["artifact"]["records"][0]["source_binding"],
+        payload=relation_payload,
+    )
+    bad_records = [*new_records[:-1], bad_relation]
+    bad_request = build_publish_request(
+        bad_records,
+        idempotency_key="publish-new-mache-wrong-relation-binding",
+        reason="replacement",
+    )
+    bad_source = dict(new)
+    bad_source["artifact"] = {"records": bad_records, "publish_request": bad_request}
+    bad_source["publish_receipt"] = {
+        **new["publish_receipt"],
+        "manifestSha256": bad_request["manifest_sha256"],
+    }
+    with pytest.raises(PublicationBindingError, match="relation source binding"):
+        _build(
+            sources=[old, bad_source],
+            draft=_draft(source_keys=["old-mache", "new-mache"]),
+        )
 
 
 def test_publication_prepared_without_receipt_is_rejected():

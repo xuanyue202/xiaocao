@@ -325,18 +325,25 @@ def _validate_manifest(
     supplied_entries = request.get("records") or artifact.get("manifest")
     if supplied_entries is not None and supplied_entries != computed_entries:
         raise PublicationBindingError("publication binding manifest records mismatch")
-    supplied_hashes = [
-        request.get("manifest_sha256"),
-        artifact.get("manifest_sha256"),
-        receipt.get("manifestSha256"),
-        receipt.get("manifest_sha256"),
-    ]
-    supplied_hash = next((str(value) for value in supplied_hashes if value), "")
-    if not supplied_hash:
-        raise PublicationBindingError("publication receipt is missing manifest hash")
     expected_hash = manifest_sha256(computed_entries)
-    if supplied_hash != expected_hash:
-        raise PublicationBindingError("publication receipt manifest hash mismatch")
+    supplied_hashes = (
+        ("publish_request.manifest_sha256", request.get("manifest_sha256")),
+        ("artifact.manifest_sha256", artifact.get("manifest_sha256")),
+        ("publish_receipt.manifestSha256", receipt.get("manifestSha256")),
+        ("publish_receipt.manifest_sha256", receipt.get("manifest_sha256")),
+    )
+    for field, value in supplied_hashes:
+        if value not in (None, "") and str(value).strip() != expected_hash:
+            raise PublicationBindingError(
+                f"publication receipt manifest hash mismatch at {field}"
+            )
+    receipt_hashes = [
+        value
+        for field, value in supplied_hashes
+        if field.startswith("publish_receipt.") and value not in (None, "")
+    ]
+    if not receipt_hashes:
+        raise PublicationBindingError("publication receipt is missing manifest hash")
     return expected_hash
 
 
@@ -393,10 +400,23 @@ def _normalize_relations(
     relations: Iterable[Any],
     *,
     source_key: str,
+    source_binding: Mapping[str, Any],
 ) -> tuple[dict[str, Any], ...]:
     parsed: list[dict[str, Any]] = []
     for relation in relations:
         relation_payload = _record_payload(relation, field=f"{source_key}.relation")
+        relation_id = str(relation.get("record_id") or "").strip()
+        if not relation_id or relation_payload.get("relation_id") != relation_id:
+            raise PublicationBindingError(
+                f"{source_key} relation identity does not match its envelope"
+            )
+        relation_source_binding = relation.get("source_binding")
+        if not isinstance(relation_source_binding, Mapping):
+            raise PublicationBindingError(f"{source_key} relation source binding is missing")
+        if dict(relation_source_binding) != dict(source_binding):
+            raise PublicationBindingError(
+                f"{source_key} relation source binding does not match publication"
+            )
         if not all(
             str(relation_payload.get(field) or "").strip()
             for field in ("from_viewpoint_id", "to_viewpoint_id", "relation_type")
@@ -405,9 +425,7 @@ def _normalize_relations(
         parsed.append(
             {
                 "relation_id": str(
-                    relation.get("record_id")
-                    or relation_payload.get("relation_id")
-                    or ""
+                    relation_id
                 ),
                 "from_viewpoint_id": str(relation_payload["from_viewpoint_id"]),
                 "to_viewpoint_id": str(relation_payload["to_viewpoint_id"]),
@@ -520,7 +538,11 @@ def _bind_publication(
         viewpoint_payload=viewpoint_payload,
         evaluation=evaluation,
         evaluation_payload=evaluation_payload,
-        relations=_normalize_relations(relations, source_key=source_key),
+        relations=_normalize_relations(
+            relations,
+            source_key=source_key,
+            source_binding=binding,
+        ),
         source_binding=binding,
     )
 
