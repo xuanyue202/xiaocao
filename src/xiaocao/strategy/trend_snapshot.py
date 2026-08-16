@@ -44,6 +44,8 @@ MISSING_HORIZON_DECAY_DAYS = 1
 
 ELIGIBILITIES = frozenset({"eligible", "wait", "conflicted", "invalidated"})
 MARKET_STATUSES = frozenset({"support", "qualify", "conflict", "invalidate"})
+# ``superseded`` is a terminal publication receipt state, not viewpoint
+# invalidation; the bound evaluation and explicit relations decide currentness.
 PUBLISHED_STATES = frozenset({"published", "superseded"})
 CURRENT_EVALUATION_STATES = frozenset({"current"})
 CONFLICTED_EVALUATION_STATES = frozenset({"conflicted", "conflict"})
@@ -401,6 +403,7 @@ def _normalize_relations(
     *,
     source_key: str,
     source_binding: Mapping[str, Any],
+    as_of: datetime,
 ) -> tuple[dict[str, Any], ...]:
     parsed: list[dict[str, Any]] = []
     for relation in relations:
@@ -422,15 +425,22 @@ def _normalize_relations(
             for field in ("from_viewpoint_id", "to_viewpoint_id", "relation_type")
         ):
             raise PublicationBindingError(f"{source_key} relation identity is incomplete")
+        asserted_at_value = str(relation_payload.get("asserted_at") or "").strip()
+        if not asserted_at_value:
+            raise PublicationBindingError(f"{source_key} relation asserted_at is required")
+        asserted_at = _parse_time(
+            asserted_at_value,
+            field=f"{source_key}.relation.asserted_at",
+        )
+        if asserted_at > as_of:
+            raise PublicationBindingError(f"{source_key} relation asserted_at is future-dated")
         parsed.append(
             {
-                "relation_id": str(
-                    relation_id
-                ),
+                "relation_id": relation_id,
                 "from_viewpoint_id": str(relation_payload["from_viewpoint_id"]),
                 "to_viewpoint_id": str(relation_payload["to_viewpoint_id"]),
                 "relation_type": str(relation_payload["relation_type"]),
-                "asserted_at": str(relation_payload.get("asserted_at") or ""),
+                "asserted_at": _iso(asserted_at),
             }
         )
     return tuple(parsed)
@@ -542,6 +552,7 @@ def _bind_publication(
             relations,
             source_key=source_key,
             source_binding=binding,
+            as_of=as_of,
         ),
         source_binding=binding,
     )

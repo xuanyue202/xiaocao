@@ -271,6 +271,25 @@ def test_snapshot_waits_when_market_validation_is_not_current():
     assert theme["eligibility_reason"] == "market_validation_not_current"
 
 
+def test_superseded_receipt_with_current_evaluation_remains_authoritative():
+    snapshot = _build(
+        sources=[
+            _source(
+                source_key="xiaocao",
+                kol_id="kol-xiaocao",
+                publication_state="superseded",
+            )
+        ],
+        draft=_draft(source_keys=["xiaocao"]),
+    )
+
+    theme = snapshot.to_dict()["themes"][0]
+
+    assert theme["eligibility"] == "eligible"
+    assert theme["source_evidence"][0]["publication_state"] == "superseded"
+    assert theme["source_evidence"][0]["current"] is True
+
+
 def test_role_uses_bound_kol_identity_not_free_text():
     snapshot = _build(
         sources=[
@@ -542,6 +561,45 @@ def test_replaced_viewpoint_is_not_used_as_current_support():
     with pytest.raises(PublicationBindingError, match="relation source binding"):
         _build(
             sources=[old, bad_source],
+            draft=_draft(source_keys=["old-mache", "new-mache"]),
+        )
+
+    future_relation_payload = {
+        **relation_payload,
+        "relation_id": relation_id(
+            new_viewpoint["record_id"],
+            old_viewpoint["record_id"],
+            "replaces",
+            "2026-08-17T02:01:00Z",
+        ),
+        "asserted_at": "2026-08-17T02:01:00Z",
+    }
+    future_relation = build_record(
+        kind="viewpoint_relation",
+        record_id_value=future_relation_payload["relation_id"],
+        idempotency_key="put-replacement-relation-future",
+        created_at="2026-08-17T02:01:00Z",
+        source_binding=binding,
+        payload=future_relation_payload,
+    )
+    future_records = [*new_records[:-1], future_relation]
+    future_request = build_publish_request(
+        future_records,
+        idempotency_key="publish-new-mache-future-relation",
+        reason="replacement",
+    )
+    future_source = dict(new)
+    future_source["artifact"] = {
+        "records": future_records,
+        "publish_request": future_request,
+    }
+    future_source["publish_receipt"] = {
+        **new["publish_receipt"],
+        "manifestSha256": future_request["manifest_sha256"],
+    }
+    with pytest.raises(PublicationBindingError, match="future-dated"):
+        _build(
+            sources=[old, future_source],
             draft=_draft(source_keys=["old-mache", "new-mache"]),
         )
 
