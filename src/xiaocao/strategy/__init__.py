@@ -1,4 +1,9 @@
 from .runner import run_strategy
+from .book_t_selector import (
+    BookTSelectionError,
+    BookTSelectionPlan,
+    select_book_t,
+)
 from .theme_instrument_resolver import (
     ThemeInstrumentResolver,
     ThemeInstrumentResolverError,
@@ -13,6 +18,8 @@ from .trend_snapshot import (
 )
 
 __all__ = [
+    "BookTSelectionError",
+    "BookTSelectionPlan",
     "PublicationBindingError",
     "TrendJudgmentSnapshot",
     "TrendSnapshotError",
@@ -21,5 +28,6 @@ __all__ = [
     "ThemeInstrumentResolverError",
     "ThemeInstrumentUniverse",
     "resolve_theme_instruments",
+    "select_book_t",
     "run_strategy",
 ]
