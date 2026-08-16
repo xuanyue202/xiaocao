@@ -290,6 +290,53 @@ def test_superseded_receipt_with_current_evaluation_remains_authoritative():
     assert theme["source_evidence"][0]["current"] is True
 
 
+def test_xiaocao_without_review_deadline_is_not_automatically_renewed():
+    snapshot = _build(
+        sources=[
+            _source(
+                source_key="xiaocao",
+                kol_id="kol-xiaocao",
+                evaluated_at="2026-08-02T02:00:00Z",
+            )
+        ],
+        draft=_draft(source_keys=["xiaocao"], review_not_after=None),
+    )
+
+    theme = snapshot.to_dict()["themes"][0]
+    source = theme["source_evidence"][0]
+
+    assert theme["eligibility"] == "wait"
+    assert source["current"] is False
+    assert source["status"] == "pending"
+    assert source["freshness_basis"] == (
+        "current_evaluation_requires_machine_review_not_after"
+    )
+
+
+def test_mache_uses_earlier_evaluation_review_deadline():
+    snapshot = _build(
+        sources=[
+            _source(
+                source_key="mache",
+                kol_id="kol-lv-xiaotong",
+                evaluated_at="2026-08-02T02:00:00Z",
+                evaluation_review_not_after="2026-08-10T02:00:00Z",
+            )
+        ],
+        draft=_draft(source_keys=["mache"]),
+    )
+
+    theme = snapshot.to_dict()["themes"][0]
+    mache = theme["mache_support"]
+    source = theme["source_evidence"][0]
+
+    assert mache["status"] == "expired"
+    assert mache["expires_not_after"] == "2026-08-10T02:00:00Z"
+    assert source["status"] == "expired"
+    assert source["freshness_basis"] == "source_review_not_after"
+    assert source["review_not_after"] == "2026-08-10T02:00:00Z"
+
+
 def test_role_uses_bound_kol_identity_not_free_text():
     snapshot = _build(
         sources=[

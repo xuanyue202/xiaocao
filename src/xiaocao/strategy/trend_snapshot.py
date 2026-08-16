@@ -957,23 +957,39 @@ def _source_status(
                 "current": False,
                 "freshness_basis": "mache_publication_time_missing",
             }
-        expiry = _add_month(
-            _parse_time(
-                source.source_published_at,
-                field="mache.source_published_at",
+        deadlines: list[tuple[datetime, str]] = [
+            (
+                _add_month(
+                    _parse_time(
+                        source.source_published_at,
+                        field="mache.source_published_at",
+                    )
+                ),
+                "mache_one_calendar_month_cap",
             )
-        )
+        ]
+        if source.review_not_after:
+            deadlines.append(
+                (
+                    _parse_time(
+                        source.review_not_after,
+                        field="mache.source_review_not_after",
+                    ),
+                    "source_review_not_after",
+                )
+            )
+        expiry, freshness_basis = min(deadlines, key=lambda item: item[0])
         if as_of > expiry:
             return {
                 "status": "expired",
                 "current": False,
-                "freshness_basis": "mache_one_calendar_month_cap",
+                "freshness_basis": freshness_basis,
                 "review_not_after": _iso(expiry),
             }
         return {
             "status": "current",
             "current": True,
-            "freshness_basis": "mache_one_calendar_month_cap",
+            "freshness_basis": freshness_basis,
             "review_not_after": _iso(expiry),
         }
     if source.role == "other_kol" and not source.horizon:
@@ -1028,9 +1044,9 @@ def _source_status(
             "review_not_after": _iso(review_not_after),
         }
     return {
-        "status": "current",
-        "current": True,
-        "freshness_basis": "published_current_evaluation",
+        "status": "pending",
+        "current": False,
+        "freshness_basis": "current_evaluation_requires_machine_review_not_after",
     }
 
 
