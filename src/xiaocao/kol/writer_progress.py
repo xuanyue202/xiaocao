@@ -852,6 +852,7 @@ _TARGETED_REPAIR_IMPLEMENTATION_PATHS: dict[str, frozenset[str]] = {
     "kol_xiaocao_wechat_live_source_run": frozenset(
         {
             "scripts/kol_daily.py",
+            "src/xiaocao/kol/daily.py",
             "src/xiaocao/kol/capture.py",
             "src/xiaocao/kol/xiaocao_live.py",
             "src/xiaocao/kol/xiaocao_wechat.py",
