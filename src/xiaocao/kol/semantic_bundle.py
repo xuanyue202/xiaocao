@@ -26,12 +26,16 @@ from .claim_coverage import (
     validate_claim_coverage,
 )
 from .enrichment_types import EnrichmentError
-from .reader_copy import ReaderCopyError, validate_reader_source_identity
+from .reader_copy import (
+    ReaderCopyError,
+    validate_reader_payload,
+    validate_reader_source_identity,
+)
 from .rendering import reader_source_title
 
 
 BUNDLE_SCHEMA_VERSION = 2
-VALIDATOR_VERSION = "kol-semantic-bundle-v3"
+VALIDATOR_VERSION = "kol-semantic-bundle-v4"
 _SHA256 = re.compile(r"^[0-9a-f]{64}$")
 
 _DECISION_STATUSES = {"actionable_signal", "no_actionable_signal"}
@@ -1015,6 +1019,23 @@ def _validate_reader_copy(item: Mapping[str, Any], decision_status: str) -> None
             )
     publication = item.get("publication") or {}
     if isinstance(publication, Mapping) and publication:
+        try:
+            validate_reader_payload(
+                "report",
+                {
+                    "author": item.get("author"),
+                    "title": reader_source_title(dict(item)),
+                    "summary": publication.get("summary"),
+                    "report_body": publication.get("report_body"),
+                },
+            )
+        except ReaderCopyError as exc:
+            raise _fail(
+                str(exc),
+                error_code="reader_copy_invalid",
+                stage="reader_copy",
+                field="publication",
+            ) from exc
         try:
             validate_reader_source_identity(
                 source_name=Path(str(item.get("evidence_path") or "")).name,

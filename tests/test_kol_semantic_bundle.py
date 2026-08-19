@@ -322,6 +322,28 @@ def test_builder_rejects_reader_session_conflict_before_business_processing(
     assert caught.value.field == "reader_title"
 
 
+def test_builder_rejects_internal_action_labels_in_publication_copy(tmp_path):
+    request, draft, bundle_path, receipt_path, _ = _fixture(tmp_path)
+    draft["publication"]["report_body"] = (
+        "# 核心判断\n\n当前先观察，不把这条内容转成 no_trade。"
+    )
+
+    with pytest.raises(
+        SemanticBundleError,
+        match="internal action label",
+    ) as caught:
+        build_validated_bundle(
+            request,
+            draft,
+            bundle_path=bundle_path,
+            receipt_path=receipt_path,
+        )
+
+    assert caught.value.error_code == "reader_copy_invalid"
+    assert caught.value.stage == "reader_copy"
+    assert caught.value.field == "publication"
+
+
 def test_build_validated_bundle_requires_captured_at(tmp_path):
     request, draft, bundle_path, receipt_path, _ = _fixture(tmp_path)
     request.pop("captured_at")
