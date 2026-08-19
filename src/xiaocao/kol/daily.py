@@ -1487,6 +1487,87 @@ class DailyCoordinator:
             raise DailyError("daily coordinator clock needs a timezone")
         return value.astimezone(BEIJING)
 
+    def _xiaocao_provider_wait_after_failure(
+        self,
+        name: str,
+        failure: Mapping[str, Any],
+        prior_rows: list[dict[str, Any]],
+    ) -> dict[str, Any] | None:
+        """Keep one exact playback wait alive across a provider outage."""
+
+        if (
+            name != "xiaocao_wechat_live"
+            or str(failure.get("category") or "") != "source_error"
+            or str(failure.get("code") or "")
+            != "source_temporarily_unavailable"
+            or str(failure.get("stage") or "") != "source_run"
+        ):
+            return None
+        prior_result = next(
+            (
+                row.get("result")
+                for row in reversed(prior_rows)
+                if row.get("event") == "source_completed"
+                and row.get("source") == name
+            ),
+            None,
+        )
+        if not isinstance(prior_result, dict) or prior_result.get("status") != (
+            "waiting"
+        ):
+            return None
+        prior_progress = next(
+            (
+                row.get("progress")
+                for row in reversed(prior_rows)
+                if row.get("event") == "source_progressed"
+                and row.get("source") == name
+            ),
+            None,
+        )
+        if (
+            not isinstance(prior_progress, dict)
+            or prior_progress.get("status") != "wait_until"
+        ):
+            return None
+        summary = prior_progress.get("claim_receipt_summary")
+        if (
+            not isinstance(summary, Mapping)
+            or int(summary.get("claim_count", -1))
+            != int(summary.get("receipt_count", -2))
+            or int(summary.get("uncertain_effect_count", -1)) != 0
+        ):
+            return None
+        waiting_items = prior_result.get("waiting_items")
+        if not isinstance(waiting_items, list) or len(waiting_items) != 1:
+            return None
+        item = waiting_items[0]
+        if not isinstance(item, Mapping):
+            return None
+        rebound = dict(item)
+        if not (
+            str(rebound.get("identity") or "")
+            and str(rebound.get("capture_job_id") or "")
+            and rebound.get("status") == "awaiting_playback"
+        ):
+            return None
+        deadline = (
+            self._beijing_now() + timedelta(hours=1)
+        ).replace(minute=0, second=0, microsecond=0)
+        if deadline.hour < 7:
+            deadline = deadline.replace(hour=7)
+        rebound["next_poll_not_before"] = deadline.isoformat(
+            timespec="seconds"
+        )
+        rebound["failure"] = dict(failure)
+        return {
+            "status": "waiting",
+            "retryable": True,
+            "failure": dict(failure),
+            "waiting_count": 1,
+            "waiting_items": [rebound],
+        }
+
     @contextmanager
     def _locked(self) -> Iterator[None]:
         self.output_dir.mkdir(parents=True, exist_ok=True)
@@ -2003,6 +2084,13 @@ class DailyCoordinator:
                             "retryable": True,
                             "failure": failure,
                         }
+                    provider_wait = self._xiaocao_provider_wait_after_failure(
+                        name,
+                        failure,
+                        prior_rows,
+                    )
+                    if provider_wait is not None:
+                        outcome = provider_wait
                 except Exception:
                     outcome, progress_override = self._agent_repair(
                         name,

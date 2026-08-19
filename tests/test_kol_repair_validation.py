@@ -785,6 +785,7 @@ def test_repair_validation_accepts_xiaocao_wechat_source_profile(
                 0,
                 (
                     "scripts/kol_daily.py\n"
+                    "src/xiaocao/kol/daily.py\n"
                     "src/xiaocao/kol/xiaocao_wechat.py\n"
                     "src/xiaocao/kol/writer_progress.py\n"
                     "tests/test_kol_daily.py\n"

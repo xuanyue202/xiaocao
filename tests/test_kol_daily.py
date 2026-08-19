@@ -4020,6 +4020,62 @@ def test_transient_source_failure_is_structured_and_does_not_notify(tmp_path):
     assert service.status()["last_sweep"]["health"] == "healthy"
 
 
+def test_xiaocao_provider_unavailability_reuses_exact_playback_wait(tmp_path):
+    clock = Clock("2026-08-17T07:00:00+08:00")
+    service = DailyCoordinator(tmp_path / "daily", now=clock)
+    calls = 0
+    waiting_item = {
+        "identity": "kol-wechat-live",
+        "published_at": "2026-08-12T16:48:00+08:00",
+        "status": "awaiting_playback",
+        "stage": "compressed_capture",
+        "capture_job_id": "kol-capture-live",
+        "next_poll_not_before": "2026-08-17T08:00:00+08:00",
+    }
+
+    def source():
+        nonlocal calls
+        calls += 1
+        if calls == 1:
+            return {
+                "status": "waiting",
+                "waiting_count": 1,
+                "waiting_items": [waiting_item],
+            }
+        raise TransientSourceError(
+            "provider temporarily unavailable",
+            category="source_error",
+            code="source_temporarily_unavailable",
+            stage="source_run",
+        )
+
+    first = service.run([{"name": "xiaocao_wechat_live", "run": source}])
+    assert first["health"] == "waiting"
+
+    clock.value = datetime.fromisoformat("2026-08-17T08:03:00+08:00")
+    second = service.run([{"name": "xiaocao_wechat_live", "run": source}])
+
+    result = second["source_results"][0]
+    assert result["status"] == "waiting"
+    assert result.get("repair_required") is not True
+    assert result["failure"] == {
+        "category": "source_error",
+        "code": "source_temporarily_unavailable",
+        "stage": "source_run",
+        "retryable": True,
+    }
+    assert result["waiting_items"] == [{
+        **waiting_item,
+        "failure": result["failure"],
+        "next_poll_not_before": "2026-08-17T09:00:00+08:00",
+    }]
+    progress = WriterProgress.from_dict(result["writer_progress"])
+    assert progress.status == "wait_until"
+    assert progress.item_identity == "kol-wechat-live"
+    assert progress.details["deadline"] == "2026-08-17T09:00:00+08:00"
+    assert calls == 2
+
+
 def test_source_classifier_preserves_safe_timeout_diagnostic():
     runner = _classified_source(
         "lv_text_image",
