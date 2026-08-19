@@ -289,6 +289,30 @@ def test_repair_validation_accepts_subscription_video_source_alias_profile(
     )
 
 
+def test_repair_validation_accepts_subscription_video_cloud_enrichment_profile(
+    tmp_path,
+):
+    service = RepairValidationService(
+        tmp_path,
+        ledger=RepairValidationLedger(tmp_path / "repair-validation.jsonl"),
+    )
+    context = {
+        "adapter": "subscription_video",
+        "message_id": "7" * 64,
+        "content_sha256": "8" * 64,
+        "failure_fingerprint": "9" * 64,
+        "failure_revision": FAILURE_REVISION,
+        "category": "internal_state_error",
+        "code": "progress_deadline_missing",
+        "stage": "cloud_enrichment",
+        "targeted_test_profile": "kol_subscription_video_cloud_enrichment",
+    }
+
+    assert service._expected_profile(context) == (
+        "kol_subscription_video_source_run"
+    )
+
+
 def test_repair_validation_accepts_subscription_private_listing_profile(
     tmp_path,
 ) -> None:
@@ -964,6 +988,7 @@ def test_repair_validation_accepts_subscription_video_source_run_profile(
         "tests/test_kol_subscription_video.py",
         "tests/test_kol_decisions.py",
         "tests/test_kol_daily.py",
+        "tests/test_kol_netdisk_enrichment.py",
         "tests/test_kol_repair_validation.py",
         "tests/test_kol_writer_progress.py",
         "-q",
@@ -977,6 +1002,7 @@ def test_repair_validation_accepts_subscription_video_source_run_profile(
             "lv_transfer_legacy_observability_repair_runs_one_bound_probe or "
             "blocked_legacy_transfer_can_reenter_exact_reconciliation or "
             "source_cli_narrow_runner_supports_subscription_video or "
+            "transcript_claim_replay_never_repeats_generation_interaction or "
             "source_repair_validation_accepts_pending_resume or "
             "repair_validation_accepts_subscription_video_source_run_profile or "
             "repair_validation_accepts_subscription_video_source_alias_profile or "

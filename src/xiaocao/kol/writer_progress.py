@@ -717,6 +717,7 @@ TARGETED_REPAIR_TESTS: dict[str, tuple[str, ...]] = {
         "tests/test_kol_subscription_video.py",
         "tests/test_kol_decisions.py",
         "tests/test_kol_daily.py",
+        "tests/test_kol_netdisk_enrichment.py",
         "tests/test_kol_repair_validation.py",
         "tests/test_kol_writer_progress.py",
         "-q",
@@ -730,6 +731,7 @@ TARGETED_REPAIR_TESTS: dict[str, tuple[str, ...]] = {
             "lv_transfer_legacy_observability_repair_runs_one_bound_probe or "
             "blocked_legacy_transfer_can_reenter_exact_reconciliation or "
             "source_cli_narrow_runner_supports_subscription_video or "
+            "transcript_claim_replay_never_repeats_generation_interaction or "
             "source_repair_validation_accepts_pending_resume or "
             "repair_validation_accepts_subscription_video_source_run_profile or "
             "repair_validation_accepts_subscription_video_source_alias_profile or "
@@ -863,6 +865,7 @@ _TARGETED_REPAIR_IMPLEMENTATION_PATHS: dict[str, frozenset[str]] = {
             "src/xiaocao/kol/decisions.py",
             "src/xiaocao/kol/household.py",
             "src/xiaocao/kol/lv_subscription.py",
+            "src/xiaocao/kol/netdisk_enrichment.py",
             "src/xiaocao/kol/subscription_video.py",
             "src/xiaocao/kol/writer_progress.py",
         }
@@ -943,6 +946,7 @@ _TARGETED_REPAIR_TEST_PATHS: dict[str, frozenset[str]] = {
             "tests/test_kol_subscription_video.py",
             "tests/test_kol_decisions.py",
             "tests/test_kol_daily.py",
+            "tests/test_kol_netdisk_enrichment.py",
             "tests/test_kol_repair_validation.py",
             "tests/test_kol_writer_progress.py",
         }
@@ -1135,6 +1139,7 @@ _SUBSCRIPTION_VIDEO_SOURCE_REPAIR_PROFILE_ALIASES = frozenset({
     _SUBSCRIPTION_VIDEO_OBSERVABILITY_REPAIR_PROFILE_ALIAS,
     "kol_subscription_video_source_recovery",
     "kol_subscription_video_source_acquisition",
+    "kol_subscription_video_cloud_enrichment",
 })
 
 
@@ -1171,6 +1176,11 @@ def _canonical_subscription_video_source_repair_profile(
                 "provider_contract_error",
                 "lv_transfer_response_unobserved_legacy",
                 "cloud_transfer_confirmation",
+            ),
+            (
+                "internal_state_error",
+                "progress_deadline_missing",
+                "cloud_enrichment",
             ),
         }
     ):
