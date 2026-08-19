@@ -118,6 +118,10 @@ _REQUEST_METADATA_FIELDS = {
     "source_path",
     "publication_version",
 }
+_EPISODE_RELATIONSHIP_SOURCE_BINDING_PATH = (
+    "episode_relationship",
+    "related_source_part",
+)
 
 
 class SemanticBundleError(EnrichmentError):
@@ -1282,7 +1286,7 @@ def _check_draft_fields(
                 protected_metadata = depth == 0 and field in _REQUEST_METADATA_FIELDS
                 protected_field = field in _PROTECTED_DRAFT_FIELDS and field not in _REQUEST_METADATA_FIELDS
                 relationship_binding = (
-                    path == ("episode_relationship", "related_source_part")
+                    path == _EPISODE_RELATIONSHIP_SOURCE_BINDING_PATH
                     and field in {"identity", "version_key"}
                 )
                 if (

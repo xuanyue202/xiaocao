@@ -2409,7 +2409,7 @@ class DailyRuntime:
                             else None
                         ),
                         provider_contract_version="subscription_video_source_v1",
-                        targeted_test_profile="kol_subscription_video_source_recovery",
+                        targeted_test_profile="kol_subscription_video_source_run",
                     )
                     return {
                         "status": "waiting",

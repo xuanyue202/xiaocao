@@ -863,6 +863,7 @@ def test_analysis_request_replay_backfills_first_observed_at(tmp_path):
         },
     )
     first = service.prepare_analysis_request(ingest)
+    assert first["first_observed_at"] == ingest["first_observed_at"]
     request_path = Path(first["request_path"])
     persisted = json.loads(request_path.read_text(encoding="utf-8"))
     persisted.pop("first_observed_at")

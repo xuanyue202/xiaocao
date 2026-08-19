@@ -280,6 +280,13 @@ def test_repair_validation_accepts_subscription_video_source_alias_profile(
     }
 
     assert service._expected_profile(context) == "kol_subscription_video_source_run"
+    canonical_context = {
+        **context,
+        "targeted_test_profile": "kol_subscription_video_source_run",
+    }
+    assert service._expected_profile(canonical_context) == (
+        "kol_subscription_video_source_run"
+    )
 
 
 def test_repair_validation_accepts_subscription_private_listing_profile(

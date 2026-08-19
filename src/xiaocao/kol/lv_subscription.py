@@ -7005,7 +7005,7 @@ try {
                 and persisted_first_observed_at != expected_first_observed_at
             ):
                 raise EnrichmentError(
-                    "subscription analysis request changed source observation"
+                    "subscription analysis request changed first_observed_at"
                 )
             if (
                 persisted_first_observed_at is None
