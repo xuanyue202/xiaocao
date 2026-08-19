@@ -1667,6 +1667,7 @@ class NetdiskEnrichmentService:
     ) -> dict[str, Any]:
         current = self.store.latest(job_id)
         status = str(current.get("status") or "")
+        reconcile_claim = False
         if status == "video_ready":
             claim = self.claim_browser_action(job_id, action="transcript")
             if claim.get("idempotent_replay") is True:
@@ -1677,12 +1678,11 @@ class NetdiskEnrichmentService:
                     "idempotent_replay": True,
                 }
         elif status == "transcript_claimed":
-            return {
-                **current,
-                "pending": True,
-                "side_effect_uncertain": True,
-                "idempotent_replay": True,
-            }
+            # The claim is an uncertain browser-side effect, so recovery may
+            # only read the exact player state.  If the request was dispatched
+            # before the process failed, this readback advances the durable
+            # checkpoint without clicking generation again.
+            reconcile_claim = True
         elif status == "transcript_requested":
             raw_not_before = current.get("next_poll_not_before")
             try:
@@ -1750,6 +1750,7 @@ class NetdiskEnrichmentService:
                     observed_at=observed_at,
                     page_url=player_url,
                 ),
+                reconcile_existing=reconcile_claim,
             )
         raise EnrichmentError("Netdisk transcript generation did not start")
 

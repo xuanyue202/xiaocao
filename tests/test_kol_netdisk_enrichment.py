@@ -1006,20 +1006,26 @@ def test_transcript_claim_replay_never_repeats_generation_interaction(tmp_path):
         source_mode="existing",
     )
     service.claim_browser_action(job_id, action="transcript")
-
-    def no_browser_mutation(command, **_kwargs):
-        raise AssertionError(command)
-
-    service.runner = no_browser_mutation
+    service.runner = _opencli_transcript_runner(video.name)
+    service.opencli_command = ("opencli",)
     replay = service.advance_opencli(
         job_id,
         session="ticket02-transcript",
         profile="work",
     )
 
-    assert replay["status"] == "transcript_claimed"
-    assert replay["side_effect_uncertain"] is True
-    assert replay["idempotent_replay"] is True
+    assert replay["status"] == "transcript_requested"
+    assert replay["next_poll_not_before"] == (
+        NOW + timedelta(minutes=1)
+    ).isoformat(timespec="microseconds")
+    events = [
+        json.loads(line)["event"]
+        for line in (tmp_path / "out" / "events.jsonl")
+        .read_text(encoding="utf-8")
+        .splitlines()
+    ]
+    assert events.count("netdisk_transcript_claimed") == 1
+    assert events[-1] == "netdisk_transcript_requested"
 
 
 def _opencli_ai_note_runner(
