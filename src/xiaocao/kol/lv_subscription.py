@@ -6889,6 +6889,7 @@ try {
             "published_at_basis": ingest["published_at_basis"],
             "source_modified_at": ingest["source_modified_at"],
             "captured_at": ingest["captured_at"],
+            "first_observed_at": ingest.get("first_observed_at"),
             "evidence_path": ingest["evidence_path"],
             "evidence_sha256": ingest["evidence_sha256"],
             "original_evidence_path": ingest["original_path"],
@@ -6997,6 +6998,24 @@ try {
                 raise EnrichmentError(
                     "subscription analysis request changed evidence"
                 )
+            expected_first_observed_at = ingest.get("first_observed_at")
+            persisted_first_observed_at = prior.get("first_observed_at")
+            if (
+                persisted_first_observed_at is not None
+                and persisted_first_observed_at != expected_first_observed_at
+            ):
+                raise EnrichmentError(
+                    "subscription analysis request changed source observation"
+                )
+            if (
+                persisted_first_observed_at is None
+                and expected_first_observed_at is not None
+            ):
+                prior = {
+                    **prior,
+                    "first_observed_at": expected_first_observed_at,
+                }
+                _atomic_write_json(request_path, prior)
             return {
                 **prior,
                 "evidence_path": ingest["evidence_path"],

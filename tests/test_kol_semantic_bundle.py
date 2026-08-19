@@ -661,6 +661,37 @@ def test_request_owns_metadata_and_segment_identity(tmp_path):
     assert caught.value.error_code == "segment_identity_invalid"
 
 
+def test_builder_allows_episode_relationship_source_binding(tmp_path):
+    request, draft, bundle_path, receipt_path, _ = _fixture(tmp_path)
+    draft["episode_relationship"] = {
+        "document_role": "video_summary",
+        "primary_source_status": "pending",
+        "semantic_comparison": {
+            "substantive_new_points": True,
+        },
+        "related_source_part": {
+            "identity": "video-identity",
+            "version_key": "video-version",
+        },
+    }
+
+    receipt = build_validated_bundle(
+        request,
+        draft,
+        bundle_path=bundle_path,
+        receipt_path=receipt_path,
+    )
+    bundle = json.loads(bundle_path.read_text(encoding="utf-8"))
+
+    assert receipt.bundle_sha256 == _sha(bundle_path)
+    assert bundle["items"][0]["episode_relationship"][
+        "related_source_part"
+    ] == {
+        "identity": "video-identity",
+        "version_key": "video-version",
+    }
+
+
 def test_market_and_decision_cardinality_are_terminal_constraints(tmp_path):
     request, draft, bundle_path, receipt_path, _ = _fixture(tmp_path)
     del request["market_evidence"]["validation"]["currentness"]

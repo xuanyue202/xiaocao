@@ -848,6 +848,36 @@ def test_pdf_replay_does_not_repeat_ingest_or_analysis_request(tmp_path):
     assert first_request["evidence_sha256"] == second_request["evidence_sha256"]
 
 
+def test_analysis_request_replay_backfills_first_observed_at(tmp_path):
+    service = LvSubscriptionService(tmp_path / "out", now=lambda: NOW)
+    identity, _downloaded = _captured_pdf(service, tmp_path)
+    ingest = service.ingest_browser_download(
+        identity,
+        pdf_text_extractor=lambda _path: {
+            "engine": "test-local",
+            "pages": [{
+                "page": 1,
+                "text": "来源观察时间必须保留在决策元数据中，且回放时仍应保持证据绑定。",
+                "has_visuals": False,
+            }],
+        },
+    )
+    first = service.prepare_analysis_request(ingest)
+    request_path = Path(first["request_path"])
+    persisted = json.loads(request_path.read_text(encoding="utf-8"))
+    persisted.pop("first_observed_at")
+    request_path.write_text(
+        json.dumps(persisted, ensure_ascii=False),
+        encoding="utf-8",
+    )
+
+    replay = service.prepare_analysis_request(ingest)
+
+    assert replay["first_observed_at"] == ingest["first_observed_at"]
+    repaired = json.loads(request_path.read_text(encoding="utf-8"))
+    assert repaired["first_observed_at"] == ingest["first_observed_at"]
+
+
 def test_unknown_and_oversized_pdf_fail_closed(tmp_path):
     service = LvSubscriptionService(tmp_path / "out", now=lambda: NOW)
     oversized = _pdf_entry(size=50 * 1024 * 1024 + 1)

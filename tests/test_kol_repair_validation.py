@@ -232,6 +232,56 @@ def test_repair_validation_accepts_exact_lv_download_recovery_profile(
     assert receipt.failure_fingerprint == "3" * 64
 
 
+def test_repair_validation_accepts_lv_text_image_source_run_profile(tmp_path):
+    service = RepairValidationService(
+        tmp_path,
+        ledger=RepairValidationLedger(tmp_path / "repair-validation.jsonl"),
+    )
+    context = {
+        "adapter": "lv_text_image",
+        "message_id": "1" * 64,
+        "content_sha256": "2" * 64,
+        "failure_fingerprint": "3" * 64,
+        "failure_revision": FAILURE_REVISION,
+        "category": "source_error",
+        "code": "source_temporarily_unavailable",
+        "stage": "source_run",
+        "targeted_test_profile": "kol_lv_text_image_source_run",
+    }
+
+    assert service._expected_profile(context) == "kol_lv_text_image_source_run"
+
+
+@pytest.mark.parametrize(
+    "declared_profile",
+    [
+        "kol_subscription_video_source_acquisition",
+        "kol_subscription_video_source_recovery",
+    ],
+)
+def test_repair_validation_accepts_subscription_video_source_alias_profile(
+    tmp_path,
+    declared_profile,
+):
+    service = RepairValidationService(
+        tmp_path,
+        ledger=RepairValidationLedger(tmp_path / "repair-validation.jsonl"),
+    )
+    context = {
+        "adapter": "subscription_video",
+        "message_id": "1" * 64,
+        "content_sha256": "2" * 64,
+        "failure_fingerprint": "3" * 64,
+        "failure_revision": FAILURE_REVISION,
+        "category": "item_error",
+        "code": "item_processing_failed",
+        "stage": "source_acquisition",
+        "targeted_test_profile": declared_profile,
+    }
+
+    assert service._expected_profile(context) == "kol_subscription_video_source_run"
+
+
 def test_repair_validation_accepts_subscription_private_listing_profile(
     tmp_path,
 ) -> None:
@@ -921,6 +971,7 @@ def test_repair_validation_accepts_subscription_video_source_run_profile(
             "source_cli_narrow_runner_supports_subscription_video or "
             "source_repair_validation_accepts_pending_resume or "
             "repair_validation_accepts_subscription_video_source_run_profile or "
+            "repair_validation_accepts_subscription_video_source_alias_profile or "
             "repair_closure_accepts_subscription_video_observability_profile_alias or "
             "repair_resume_persists_following_repair"
         ),

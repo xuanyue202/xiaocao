@@ -1257,7 +1257,12 @@ def _check_draft_fields(
     *,
     evidence_sha256: str | None = None,
 ) -> None:
-    def walk(value: Any, *, depth: int = 0) -> None:
+    def walk(
+        value: Any,
+        *,
+        depth: int = 0,
+        path: tuple[str, ...] = (),
+    ) -> None:
         if isinstance(value, Mapping):
             for field, child in value.items():
                 if field == "evidence_sha256":
@@ -1269,24 +1274,30 @@ def _check_draft_fields(
                             field="evidence_sha256",
                         )
                     if evidence_sha256 == child:
-                        walk(child, depth=depth + 1)
+                        walk(child, depth=depth + 1, path=path + (str(field),))
                     continue
                 if field == "contract_version" and child == CONTRACT_VERSION:
-                    walk(child, depth=depth + 1)
+                    walk(child, depth=depth + 1, path=path + (str(field),))
                     continue
                 protected_metadata = depth == 0 and field in _REQUEST_METADATA_FIELDS
                 protected_field = field in _PROTECTED_DRAFT_FIELDS and field not in _REQUEST_METADATA_FIELDS
-                if protected_metadata or protected_field or field.endswith("_idempotency_key"):
+                relationship_binding = (
+                    path == ("episode_relationship", "related_source_part")
+                    and field in {"identity", "version_key"}
+                )
+                if (
+                    (protected_metadata or protected_field) and not relationship_binding
+                ) or field.endswith("_idempotency_key"):
                     raise _fail(
                         "semantic draft contains a request-owned or business-owned field",
                         error_code="semantic_draft_forbidden_field",
                         stage="semantic_input",
                         field=str(field),
                     )
-                walk(child, depth=depth + 1)
+                walk(child, depth=depth + 1, path=path + (str(field),))
         elif isinstance(value, list):
             for child in value:
-                walk(child, depth=depth + 1)
+                walk(child, depth=depth + 1, path=path)
 
     walk(draft)
 

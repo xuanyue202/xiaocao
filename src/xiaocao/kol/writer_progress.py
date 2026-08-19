@@ -625,6 +625,23 @@ TARGETED_REPAIR_TESTS: dict[str, tuple[str, ...]] = {
             "repair_validation_accepts_exact_lv_download_recovery_profile"
         ),
     ),
+    "kol_lv_text_image_source_run": (
+        "env",
+        "PYTHONPATH=src",
+        ".venv/bin/python",
+        "-m",
+        "pytest",
+        "tests/test_kol_lv_subscription.py",
+        "tests/test_kol_semantic_bundle.py",
+        "tests/test_kol_repair_validation.py",
+        "-q",
+        "-k",
+        (
+            "analysis_request_replay_backfills_first_observed_at or "
+            "builder_allows_episode_relationship_source_binding or "
+            "repair_validation_accepts_lv_text_image_source_run_profile"
+        ),
+    ),
     "kol_subscription_video_private_listing_validation": (
         "env",
         "PYTHONPATH=src",
@@ -711,6 +728,7 @@ TARGETED_REPAIR_TESTS: dict[str, tuple[str, ...]] = {
             "source_cli_narrow_runner_supports_subscription_video or "
             "source_repair_validation_accepts_pending_resume or "
             "repair_validation_accepts_subscription_video_source_run_profile or "
+            "repair_validation_accepts_subscription_video_source_alias_profile or "
             "repair_closure_accepts_subscription_video_observability_profile_alias or "
             "repair_resume_persists_following_repair"
         ),
@@ -806,6 +824,13 @@ _TARGETED_REPAIR_IMPLEMENTATION_PATHS: dict[str, frozenset[str]] = {
             "src/xiaocao/kol/writer_progress.py",
         }
     ),
+    "kol_lv_text_image_source_run": frozenset(
+        {
+            "src/xiaocao/kol/lv_subscription.py",
+            "src/xiaocao/kol/semantic_bundle.py",
+            "src/xiaocao/kol/writer_progress.py",
+        }
+    ),
     "kol_subscription_video_private_listing_validation": frozenset(
         {
             "scripts/kol_daily.py",
@@ -874,6 +899,13 @@ _TARGETED_REPAIR_TEST_PATHS: dict[str, frozenset[str]] = {
         {
             "tests/test_kol_lv_subscription.py",
             "tests/test_kol_writer_progress.py",
+            "tests/test_kol_repair_validation.py",
+        }
+    ),
+    "kol_lv_text_image_source_run": frozenset(
+        {
+            "tests/test_kol_lv_subscription.py",
+            "tests/test_kol_semantic_bundle.py",
             "tests/test_kol_repair_validation.py",
         }
     ),
@@ -959,6 +991,25 @@ def _canonical_lv_download_repair_profile(
         in {"browser_download_recovery", "provider_download_link"}
     ):
         return _LV_DOWNLOAD_REPAIR_PROFILE
+    return None
+
+
+_LV_TEXT_IMAGE_SOURCE_REPAIR_PROFILE = "kol_lv_text_image_source_run"
+
+
+def _canonical_lv_text_image_source_repair_profile(
+    context: Mapping[str, Any],
+) -> str | None:
+    if (
+        str(context.get("adapter") or "") == "lv_text_image"
+        and str(context.get("targeted_test_profile") or "")
+        == _LV_TEXT_IMAGE_SOURCE_REPAIR_PROFILE
+        and str(context.get("category") or "") == "source_error"
+        and str(context.get("code") or "")
+        == "source_temporarily_unavailable"
+        and str(context.get("stage") or "") == "source_run"
+    ):
+        return _LV_TEXT_IMAGE_SOURCE_REPAIR_PROFILE
     return None
 
 
@@ -1072,6 +1123,12 @@ _SUBSCRIPTION_VIDEO_SOURCE_REPAIR_PROFILE = (
 _SUBSCRIPTION_VIDEO_OBSERVABILITY_REPAIR_PROFILE_ALIAS = (
     "kol_subscription_video_cloud_transfer_confirmation"
 )
+_SUBSCRIPTION_VIDEO_SOURCE_REPAIR_PROFILE_ALIASES = frozenset({
+    _SUBSCRIPTION_VIDEO_SOURCE_REPAIR_PROFILE,
+    _SUBSCRIPTION_VIDEO_OBSERVABILITY_REPAIR_PROFILE_ALIAS,
+    "kol_subscription_video_source_recovery",
+    "kol_subscription_video_source_acquisition",
+})
 
 
 def _canonical_subscription_video_source_repair_profile(
@@ -1085,16 +1142,18 @@ def _canonical_subscription_video_source_repair_profile(
     if (
         str(context.get("adapter") or "") == "subscription_video"
         and str(context.get("targeted_test_profile") or "")
-        in {
-            _SUBSCRIPTION_VIDEO_SOURCE_REPAIR_PROFILE,
-            _SUBSCRIPTION_VIDEO_OBSERVABILITY_REPAIR_PROFILE_ALIAS,
-        }
+        in _SUBSCRIPTION_VIDEO_SOURCE_REPAIR_PROFILE_ALIASES
         and failure
         in {
             (
                 "source_error",
                 "source_temporarily_unavailable",
                 "source_run",
+            ),
+            (
+                "item_error",
+                "item_processing_failed",
+                "source_acquisition",
             ),
             (
                 "internal_state_error",
@@ -1235,6 +1294,11 @@ class RepairValidationService:
         lv_profile = _canonical_lv_download_repair_profile(context)
         if lv_profile is not None:
             return lv_profile
+        lv_source_profile = _canonical_lv_text_image_source_repair_profile(
+            context
+        )
+        if lv_source_profile is not None:
+            return lv_source_profile
         subscription_profile = (
             _canonical_subscription_private_listing_repair_profile(context)
         )
@@ -1389,7 +1453,7 @@ class RepairValidationService:
             and not (
                 profile == _SUBSCRIPTION_VIDEO_SOURCE_REPAIR_PROFILE
                 and declared_profile
-                == _SUBSCRIPTION_VIDEO_OBSERVABILITY_REPAIR_PROFILE_ALIAS
+                in _SUBSCRIPTION_VIDEO_SOURCE_REPAIR_PROFILE_ALIASES
             )
             and not (
                 profile == _SHARED_LV_LISTING_VALIDATION_REPAIR_PROFILE
