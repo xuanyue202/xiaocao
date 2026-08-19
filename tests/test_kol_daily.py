@@ -197,11 +197,9 @@ def test_narrow_source_failure_keeps_seven_state_contract(monkeypatch):
         ),
     )("subscription_video:source")
 
-    assert result["writer_progress"]["status"] == "repair_required"
-    assert result["writer_progress"]["next_action"] == (
-        "validate_repair_then_narrow_resume"
-    )
-    assert result["writer_progress"]["failure"]["code"] == (
+    assert result["writer_progress"]["status"] == "wait_until"
+    assert result["writer_progress"]["next_action"] == "resume_after_deadline"
+    assert result["writer_progress"]["code"] == (
         "private_directory_load_timeout"
     )
 
@@ -358,9 +356,11 @@ def test_lv_narrow_resume_supports_declared_source_surface():
     runtime.lv = lambda **kwargs: calls.append(kwargs) or {"status": "no_update"}
 
     result = runtime.lv_narrow_resume("lv_text_image:source")
+    nested_result = runtime.lv_narrow_resume("lv_text_image:lv_text_image:source")
 
     assert result == {"status": "no_update"}
-    assert calls == [{}]
+    assert nested_result == {"status": "no_update"}
+    assert calls == [{}, {}]
 
 
 def test_lv_narrow_resume_skips_global_discovery_for_exact_identity():

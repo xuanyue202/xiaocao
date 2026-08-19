@@ -1574,7 +1574,12 @@ def _exact_progress_surface(adapter: str, surface: str) -> str:
     value = str(surface or "")
     if not value.startswith(prefix) or value == prefix:
         raise DailyError(f"{adapter} narrow progress surface is invalid")
-    return value[len(prefix):]
+    value = value[len(prefix):]
+    while value.startswith(prefix):
+        value = value[len(prefix):]
+    if not value:
+        raise DailyError(f"{adapter} narrow progress surface is invalid")
+    return value
 
 
 def _adapter_scope_resume(adapter: str, surface: str, runner):
