@@ -4739,6 +4739,128 @@ def test_video_semantic_eof_waits_and_next_run_reuses_persisted_request(
     assert decision_calls == [(identity, bundle.resolve())]
 
 
+def test_video_structured_resume_reuses_persisted_bundle_and_records_receipt(
+    monkeypatch,
+    tmp_path,
+):
+    video_output = tmp_path / "videos"
+    version_key = "v" * 64
+    identity = "i" * 64
+    evidence = tmp_path / "transcript.txt"
+    evidence.write_text("完整逐字稿证据", encoding="utf-8")
+    evidence_sha256 = hashlib.sha256(evidence.read_bytes()).hexdigest()
+    artifact_dir = video_output / "artifacts" / version_key
+    artifact_dir.mkdir(parents=True)
+    bundle_path = artifact_dir / "validated_bundle.json"
+    bundle_path.write_text("canonical bundle", encoding="utf-8")
+    request_path = artifact_dir / "analysis_request.json"
+    request_path.write_text(
+        json.dumps({
+            "event": "subscription_video_analysis_input_required",
+            "source": "baidu_subscription_share_browser",
+            "author": "吕晓彤",
+            "title": "8月3日.mp4",
+            "publication_time": "2026-08-03T00:00:00+08:00",
+            "source_identity": identity,
+            "source_version_key": version_key,
+            "evidence_path": str(evidence.resolve()),
+            "evidence_sha256": evidence_sha256,
+            "artifact_dir": str(artifact_dir.resolve()),
+        }),
+        encoding="utf-8",
+    )
+    item = {
+        "identity": identity,
+        "version_key": version_key,
+        "name": "8月3日.mp4",
+        "path": "/直播回放/2026年8月/8月3日.mp4",
+        "source": "baidu_subscription_share_browser",
+        "author": "吕晓彤",
+        "media_type": "video",
+        "size": 5,
+        "modified_at": 1_785_772_456,
+    }
+    decisions = []
+
+    class FakeVideos:
+        def __init__(self, *_args, **_kwargs):
+            pass
+
+        @staticmethod
+        def pending_items():
+            return [item]
+
+        @staticmethod
+        def decide_item(requested, *, bundle_path, **_kwargs):
+            decisions.append((requested["identity"], Path(bundle_path)))
+            result_path = tmp_path / "decision-result.json"
+            result_path.write_text(
+                json.dumps({
+                    "items": [{
+                        "daily_terminal": {
+                            "kind": "source_event",
+                            "event_id": identity,
+                        },
+                    }],
+                }),
+                encoding="utf-8",
+            )
+            return {"decision_result_path": str(result_path)}
+
+    monkeypatch.setattr(kol_daily_script, "SubscriptionVideoService", FakeVideos)
+    monkeypatch.setattr(
+        kol_daily_script,
+        "_require_canonical_semantic_artifact",
+        lambda path, _request: path,
+    )
+    monkeypatch.setattr(
+        kol_daily_script,
+        "_video_publication_context",
+        lambda _item, _state: object(),
+    )
+    monkeypatch.setattr(kol_daily_script.sys, "stdin", io.StringIO(""))
+    runtime = DailyRuntime.__new__(DailyRuntime)
+    runtime.args = SimpleNamespace(
+        video_output_dir=video_output,
+        config=tmp_path / "config.yaml",
+        decision_output_dir=tmp_path / "decisions",
+        lv_session="lv-session",
+        private_session="private-session",
+        enrichment_session="enrichment-session",
+        opencli_profile=None,
+    )
+    runtime._pipeline = lambda _context: object()
+    progress = WriterProgress.structured_input(
+        item_identity=identity,
+        stage="waiting_semantic_input",
+        request_kind="subscription_video_analysis_input_required",
+        request_id="request-1",
+        request_schema_version=1,
+        immutable_bindings={
+            "identity": identity,
+            "version_key": version_key,
+            "evidence_sha256": evidence_sha256,
+        },
+        response_field="bundle_path",
+        claim_receipt_summary={
+            "claim_count": 0,
+            "receipt_count": 0,
+            "uncertain_effect_count": 0,
+        },
+    )
+
+    result = runtime.videos_structured_input(progress)
+
+    assert result["outcome"]["status"] == "completed"
+    assert result["structured_input_receipt"]["event"] == (
+        "structured_input_consumed"
+    )
+    assert result["structured_input_receipt"]["response_sha256"] == hashlib.sha256(
+        bundle_path.read_bytes()
+    ).hexdigest()
+    assert decisions == [(identity, bundle_path.resolve())]
+
+
 def test_hourly_semantic_consumer_rejects_bundle_without_receipt(tmp_path):
     bundle = tmp_path / "legacy-bundle.json"
     bundle.write_text('{"schema_version":1,"items":[]}', encoding="utf-8")

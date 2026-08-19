@@ -655,6 +655,49 @@ def _read_agent_line(request: dict[str, Any]) -> str:
             )
 
 
+def _record_structured_input_consumption(
+    request: dict[str, Any],
+    *,
+    field: str,
+    path: Path,
+) -> None:
+    """Record one bound response, including a durable bundle reuse path."""
+
+    structured_state = _STRUCTURED_INPUT_STATE.get()
+    if structured_state is None:
+        return
+    progress = structured_state["progress"]
+    details = progress.details
+    request_values = {
+        str(value)
+        for value in request.values()
+        if isinstance(value, (str, int)) and not isinstance(value, bool)
+    }
+    bindings = details["immutable_bindings"]
+    if (
+        structured_state.get("receipt") is not None
+        or request.get("event") != details["request_kind"]
+        or field != details["response_field"]
+        or any(str(value) not in request_values for value in bindings.values())
+    ):
+        raise DailyError(
+            "structured input does not match its persisted request binding"
+        )
+    structured_state["receipt"] = {
+        "event": "structured_input_consumed",
+        "request_id": details["request_id"],
+        "request_schema_version": details["request_schema_version"],
+        "response_field": details["response_field"],
+        "immutable_bindings_sha256": hashlib.sha256(
+            _canonical(bindings).encode("utf-8")
+        ).hexdigest(),
+        "request_sha256": hashlib.sha256(
+            _canonical(request).encode("utf-8")
+        ).hexdigest(),
+        "response_sha256": hashlib.sha256(path.read_bytes()).hexdigest(),
+    }
+
+
 def _read_agent_path(request: dict[str, Any], field: str) -> Path:
     response = _read_agent_line(request)
     if not response:
@@ -675,38 +718,7 @@ def _read_agent_path(request: dict[str, Any], field: str) -> Path:
     path = Path(raw).expanduser().resolve()
     if not path.is_file():
         raise SemanticInputUnavailable(request, field)
-    structured_state = _STRUCTURED_INPUT_STATE.get()
-    if structured_state is not None:
-        progress = structured_state["progress"]
-        details = progress.details
-        request_values = {
-            str(value)
-            for value in request.values()
-            if isinstance(value, (str, int)) and not isinstance(value, bool)
-        }
-        bindings = details["immutable_bindings"]
-        if (
-            structured_state.get("receipt") is not None
-            or request.get("event") != details["request_kind"]
-            or field != details["response_field"]
-            or any(str(value) not in request_values for value in bindings.values())
-        ):
-            raise DailyError(
-                "structured input does not match its persisted request binding"
-            )
-        structured_state["receipt"] = {
-            "event": "structured_input_consumed",
-            "request_id": details["request_id"],
-            "request_schema_version": details["request_schema_version"],
-            "response_field": details["response_field"],
-            "immutable_bindings_sha256": hashlib.sha256(
-                _canonical(bindings).encode("utf-8")
-            ).hexdigest(),
-            "request_sha256": hashlib.sha256(
-                _canonical(request).encode("utf-8")
-            ).hexdigest(),
-            "response_sha256": hashlib.sha256(path.read_bytes()).hexdigest(),
-        }
+    _record_structured_input_consumption(request, field=field, path=path)
     return path
 
 
@@ -2506,30 +2518,39 @@ class DailyRuntime:
                         "low_density|promoted(report_only|alert_eligible)"
                     ),
                 }
-            try:
-                bundle_path = _read_agent_path(
-                    semantic_request,
-                    "bundle_path",
-                )
-            except SemanticInputUnavailable as exc:
-                if not exc.request:
-                    raise
-                waiting += 1
-                waiting_items.append(_semantic_waiting_item(
-                    exc.request,
-                    identity=str(item.get("identity") or ""),
-                    version_key=str(item.get("version_key") or ""),
-                    name=str(item.get("name") or ""),
-                    author=str(item.get("author") or ""),
-                ))
-                # A TTY can report EOF for only the current read. Treat it as
-                # closing the channel for the whole adapter sweep so historical
-                # backlog cannot trigger more acquisition work.
-                break
+            bundle_path = _persisted_validated_bundle(semantic_request)
+            reused_bundle = bundle_path is not None
+            if bundle_path is None:
+                try:
+                    bundle_path = _read_agent_path(
+                        semantic_request,
+                        "bundle_path",
+                    )
+                except SemanticInputUnavailable as exc:
+                    if not exc.request:
+                        raise
+                    waiting += 1
+                    waiting_items.append(_semantic_waiting_item(
+                        exc.request,
+                        identity=str(item.get("identity") or ""),
+                        version_key=str(item.get("version_key") or ""),
+                        name=str(item.get("name") or ""),
+                        author=str(item.get("author") or ""),
+                    ))
+                    # A TTY can report EOF for only the current read. Treat it as
+                    # closing the channel for the whole adapter sweep so historical
+                    # backlog cannot trigger more acquisition work.
+                    break
             bundle_path = _require_canonical_semantic_artifact(
                 bundle_path,
                 semantic_request,
             )
+            if reused_bundle:
+                _record_structured_input_consumption(
+                    semantic_request,
+                    field="bundle_path",
+                    path=bundle_path,
+                )
             context = _video_publication_context(item, state)
             decision = service.decide_item(
                 item,
