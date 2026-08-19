@@ -98,6 +98,23 @@ _OPENCLI_ERROR_CATEGORIES = {
 _DIRECT_DOWNLOAD_MEDIA = {"image", "pdf", "text"}
 _DIRECT_DOWNLOAD_HOSTS = {"d.pcs.baidu.com"}
 _PREVIEW_DOWNLOAD_HOST = re.compile(r"thumbnail\d*\.baidupcs\.com")
+
+
+def _subscription_decision_pipeline_error(exc: Exception) -> EnrichmentError:
+    """Preserve the safe provider boundary for household-context failures."""
+
+    if isinstance(exc, DecisionError) and str(exc) == "亮灰 MCP request failed":
+        return EnrichmentDiagnosticError(
+            "household context provider is temporarily unavailable",
+            category="provider_error",
+            code="lianghui_mcp_request_failed",
+            stage="household_context",
+        )
+    if isinstance(exc, EnrichmentError):
+        return exc
+    return EnrichmentError("subscription decision pipeline failed")
+
+
 BLOCKED_DOWNLOAD_PROVIDER_CONTRACT_VERSION = "baidu_netdisk_download_v1"
 _DIRECT_DOWNLOAD_PATHS = {"/rest/2.0/pcs/file"}
 _DIRECT_DOWNLOAD_CONTENT_TYPES = {
@@ -7624,7 +7641,7 @@ try {
         except Exception as exc:
             if isinstance(exc, EnrichmentError):
                 raise
-            raise EnrichmentError("subscription decision pipeline failed") from exc
+            raise _subscription_decision_pipeline_error(exc) from exc
 
         result_path = artifact_dir / "decision_result.json"
         _atomic_write_json(result_path, result)

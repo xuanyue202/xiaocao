@@ -15,7 +15,7 @@ import termios
 from collections.abc import Collection
 from contextvars import ContextVar
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from time import sleep as _cloud_handoff_sleep
 from typing import Any
@@ -1396,6 +1396,18 @@ def _classified_source(name: str, runner):
     return run
 
 
+def _next_source_poll_not_before() -> str:
+    """Bound a provider retry to the next local wall-clock hour."""
+
+    observed = datetime.now().astimezone()
+    deadline = (observed + timedelta(hours=1)).replace(
+        minute=0,
+        second=0,
+        microsecond=0,
+    )
+    return deadline.isoformat(timespec="seconds")
+
+
 def _classified_narrow_source(name: str, runner):
     def run(surface: str):
         user_action: dict[str, str] | None = None
@@ -1419,9 +1431,24 @@ def _classified_narrow_source(name: str, runner):
                 }],
             }
         except TransientSourceError as exc:
+            failure = exc.diagnostic()
+            waiting_item = {
+                "identity": f"{name}:source",
+                "stage": failure["stage"],
+                "failure": failure,
+            }
+            if failure["category"] in {
+                "provider_error",
+                "timeout",
+                "transport_error",
+            }:
+                waiting_item["next_poll_not_before"] = (
+                    _next_source_poll_not_before()
+                )
             outcome = {
                 "status": "waiting",
-                "failure": exc.diagnostic(),
+                "failure": failure,
+                "waiting_items": [waiting_item],
             }
         if isinstance(outcome.get("writer_progress"), dict):
             return outcome

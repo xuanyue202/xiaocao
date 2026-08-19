@@ -4111,6 +4111,34 @@ def test_source_classifier_preserves_safe_timeout_diagnostic():
     }
 
 
+def test_narrow_source_provider_failure_becomes_bounded_wait(monkeypatch):
+    monkeypatch.setattr(
+        kol_daily_script,
+        "_next_source_poll_not_before",
+        lambda: "2026-08-19T17:00:00+08:00",
+    )
+    runner = _classified_narrow_source(
+        "lv_text_image",
+        lambda _surface: (_ for _ in ()).throw(
+            EnrichmentDiagnosticError(
+                "household context provider is temporarily unavailable",
+                category="provider_error",
+                code="lianghui_mcp_request_failed",
+                stage="household_context",
+            )
+        ),
+    )
+
+    result = runner("lv_text_image:source")
+    progress = WriterProgress.from_dict(result["writer_progress"])
+
+    assert progress.status == "wait_until"
+    assert progress.details["deadline"] == "2026-08-19T17:00:00+08:00"
+    assert result["waiting_items"][0]["next_poll_not_before"] == (
+        "2026-08-19T17:00:00+08:00"
+    )
+
+
 def test_source_classifier_isolates_unavailable_semantic_input():
     runner = _classified_source(
         "subscription_video",

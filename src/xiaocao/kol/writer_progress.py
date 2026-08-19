@@ -641,7 +641,9 @@ TARGETED_REPAIR_TESTS: dict[str, tuple[str, ...]] = {
             "analysis_request_replay_backfills_first_observed_at or "
             "builder_allows_episode_relationship_source_binding or "
             "repair_validation_accepts_lv_text_image_source_run_profile or "
-            "persisted_validated_bundle_is_reused"
+            "persisted_validated_bundle_is_reused or "
+            "narrow_source_provider_failure_becomes_bounded_wait or "
+            "subscription_decision_pipeline_provider_error_is_diagnostic"
         ),
     ),
     "kol_subscription_video_private_listing_validation": (

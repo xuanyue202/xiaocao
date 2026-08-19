@@ -16,15 +16,35 @@ import pytest
 
 from tests.kol_claim_fixture import attach_claim_contract
 import xiaocao.kol.lv_subscription as lv_subscription
+from xiaocao.kol._shared import DecisionError
 from xiaocao.kol.decisions import DecisionPipeline
 from xiaocao.kol.enrichment_types import (
     EnrichmentDiagnosticError,
     EnrichmentError,
 )
-from xiaocao.kol.lv_subscription import LvSubscriptionService
+from xiaocao.kol.lv_subscription import (
+    LvSubscriptionService,
+    _subscription_decision_pipeline_error,
+)
 
 
 NOW = datetime.fromisoformat("2026-07-25T10:00:00+08:00")
+
+
+def test_subscription_decision_pipeline_provider_error_is_diagnostic():
+    error = _subscription_decision_pipeline_error(
+        DecisionError("亮灰 MCP request failed")
+    )
+
+    assert isinstance(error, EnrichmentDiagnosticError)
+    assert error.diagnostic_category == "provider_error"
+    assert error.diagnostic_code == "lianghui_mcp_request_failed"
+    assert error.diagnostic_stage == "household_context"
+
+    internal = _subscription_decision_pipeline_error(
+        DecisionError("household context is invalid")
+    )
+    assert type(internal) is EnrichmentError
 
 
 def _representative_subscription_entries() -> list[dict]:
