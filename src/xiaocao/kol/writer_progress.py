@@ -1134,12 +1134,15 @@ _SUBSCRIPTION_VIDEO_SOURCE_REPAIR_PROFILE = (
 _SUBSCRIPTION_VIDEO_OBSERVABILITY_REPAIR_PROFILE_ALIAS = (
     "kol_subscription_video_cloud_transfer_confirmation"
 )
+_SUBSCRIPTION_VIDEO_CLOUD_ENRICHMENT_REPAIR_PROFILE = (
+    "kol_subscription_video_cloud_enrichment"
+)
 _SUBSCRIPTION_VIDEO_SOURCE_REPAIR_PROFILE_ALIASES = frozenset({
     _SUBSCRIPTION_VIDEO_SOURCE_REPAIR_PROFILE,
     _SUBSCRIPTION_VIDEO_OBSERVABILITY_REPAIR_PROFILE_ALIAS,
     "kol_subscription_video_source_recovery",
     "kol_subscription_video_source_acquisition",
-    "kol_subscription_video_cloud_enrichment",
+    _SUBSCRIPTION_VIDEO_CLOUD_ENRICHMENT_REPAIR_PROFILE,
 })
 
 

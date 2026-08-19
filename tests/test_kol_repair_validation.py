@@ -289,8 +289,16 @@ def test_repair_validation_accepts_subscription_video_source_alias_profile(
     )
 
 
+@pytest.mark.parametrize(
+    "declared_profile",
+    [
+        "kol_subscription_video_cloud_enrichment",
+        "kol_subscription_video_source_run",
+    ],
+)
 def test_repair_validation_accepts_subscription_video_cloud_enrichment_profile(
     tmp_path,
+    declared_profile,
 ):
     service = RepairValidationService(
         tmp_path,
@@ -305,7 +313,7 @@ def test_repair_validation_accepts_subscription_video_cloud_enrichment_profile(
         "category": "internal_state_error",
         "code": "progress_deadline_missing",
         "stage": "cloud_enrichment",
-        "targeted_test_profile": "kol_subscription_video_cloud_enrichment",
+        "targeted_test_profile": declared_profile,
     }
 
     assert service._expected_profile(context) == (
