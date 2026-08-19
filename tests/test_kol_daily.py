@@ -19,6 +19,7 @@ from scripts.kol_daily import (
     _latest_lv_video_goal,
     _load_household_context_with_retry,
     _lv_publication_context,
+    _persisted_validated_bundle,
     _read_agent_json,
     _standalone_writer_result,
     _source_cli_narrow_runner,
@@ -73,6 +74,16 @@ class Clock:
 
     def __call__(self) -> datetime:
         return self.value
+
+
+def test_persisted_validated_bundle_is_reused(tmp_path):
+    bundle_path = tmp_path / "validated_bundle.json"
+    bundle_path.write_text("{}", encoding="utf-8")
+
+    assert _persisted_validated_bundle({"artifact_dir": str(tmp_path)}) == (
+        bundle_path.resolve()
+    )
+    assert _persisted_validated_bundle({}) is None
 
 
 def test_transcript_audit_contract_exposes_exact_character_thirds():

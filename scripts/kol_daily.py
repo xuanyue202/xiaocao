@@ -710,6 +710,19 @@ def _read_agent_path(request: dict[str, Any], field: str) -> Path:
     return path
 
 
+def _persisted_validated_bundle(request: dict[str, Any]) -> Path | None:
+    """Reuse a bundle already persisted for this semantic request."""
+
+    artifact_dir = str(request.get("artifact_dir") or "").strip()
+    if not artifact_dir:
+        return None
+    candidate = (
+        Path(artifact_dir).expanduser().resolve()
+        / "validated_bundle.json"
+    )
+    return candidate if candidate.is_file() else None
+
+
 def _transcript_audit_contract(state: dict[str, Any]) -> dict[str, Any]:
     """Describe the exact character thirds consumed by transcript audit."""
 
@@ -2185,25 +2198,27 @@ class DailyRuntime:
                     "low_density|promoted(report_only|alert_eligible)"
                 ),
             }
-            try:
-                bundle_path = _read_agent_path(
-                    semantic_request,
-                    "bundle_path",
-                )
-            except SemanticInputUnavailable as exc:
-                if not exc.request:
-                    raise
-                waiting += 1
-                waiting_items.append(_semantic_waiting_item(
-                    exc.request,
-                    identity=identity,
-                    version_key=str(row.get("version_key") or ""),
-                    name=str(row.get("name") or ""),
-                    author=str(row.get("author") or "吕晓彤"),
-                ))
-                # stdin EOF closes the semantic channel for this sweep. Do not
-                # acquire more pending items that cannot receive a bundle.
-                break
+            bundle_path = _persisted_validated_bundle(semantic_request)
+            if bundle_path is None:
+                try:
+                    bundle_path = _read_agent_path(
+                        semantic_request,
+                        "bundle_path",
+                    )
+                except SemanticInputUnavailable as exc:
+                    if not exc.request:
+                        raise
+                    waiting += 1
+                    waiting_items.append(_semantic_waiting_item(
+                        exc.request,
+                        identity=identity,
+                        version_key=str(row.get("version_key") or ""),
+                        name=str(row.get("name") or ""),
+                        author=str(row.get("author") or "吕晓彤"),
+                    ))
+                    # stdin EOF closes the semantic channel for this sweep. Do not
+                    # acquire more pending items that cannot receive a bundle.
+                    break
             bundle_path = _require_canonical_semantic_artifact(
                 bundle_path,
                 semantic_request,
