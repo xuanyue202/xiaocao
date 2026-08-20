@@ -4400,6 +4400,11 @@ def test_lv_claimed_pdf_companion_is_not_suppressed_retroactively(tmp_path):
     runtime._lv_listing_error = None
     runtime._complete_lv_video_transcripts = lambda: []
 
+    assert not runtime._metadata_companion_suppression_is_safe({
+        "media_type": "pdf",
+        "stage": "download_claimed",
+    })
+
     result = runtime.lv()
 
     assert calls == ["claimed-pdf"]

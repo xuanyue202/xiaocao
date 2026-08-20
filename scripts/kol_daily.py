@@ -2063,6 +2063,16 @@ class DailyRuntime:
             raise DailyError("source Ticket 07 terminal is invalid")
         return terminal
 
+    @staticmethod
+    def _metadata_companion_suppression_is_safe(
+        row: dict[str, Any],
+    ) -> bool:
+        """Allow companion suppression only before acquisition begins."""
+        return (
+            row.get("media_type") == "pdf"
+            and row.get("stage") == "discovered"
+        )
+
     def lv(
         self,
         *,
@@ -2126,10 +2136,7 @@ class DailyRuntime:
         )
         complete_video_transcripts = self._complete_lv_video_transcripts()
         for row in pending:
-            if (
-                row.get("media_type") != "pdf"
-                or row.get("stage") != "discovered"
-            ):
+            if not self._metadata_companion_suppression_is_safe(row):
                 continue
             proof = service.metadata_companion_proof(
                 str(row["identity"]),
