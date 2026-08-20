@@ -2126,7 +2126,10 @@ class DailyRuntime:
         )
         complete_video_transcripts = self._complete_lv_video_transcripts()
         for row in pending:
-            if row.get("media_type") != "pdf":
+            if (
+                row.get("media_type") != "pdf"
+                or row.get("stage") != "discovered"
+            ):
                 continue
             proof = service.metadata_companion_proof(
                 str(row["identity"]),

@@ -4342,6 +4342,79 @@ def test_lv_pending_failure_isolated_without_blocking_later_pdf(
     )]
 
 
+def test_lv_claimed_pdf_companion_is_not_suppressed_retroactively(tmp_path):
+    calls = []
+    failures = []
+
+    class FakeLv:
+        @staticmethod
+        def poll_opencli(**_kwargs):
+            return None
+
+        @staticmethod
+        def pending_items():
+            return [{
+                "identity": "claimed-pdf",
+                "version_key": "claimed-version",
+                "name": "8月17日会员直播gpt总结.pdf",
+                "path": "/直播回放/2026年8月/8月17日会员直播gpt总结.pdf",
+                "media_type": "pdf",
+                "size": 100,
+                "modified_at": 200,
+                "stage": "download_claimed",
+            }]
+
+        @staticmethod
+        def metadata_companion_proof(*_args, **_kwargs):
+            return {"document_role": "video_summary"}
+
+        @staticmethod
+        def record_metadata_companion_suppression(*_args, **_kwargs):
+            raise AssertionError(
+                "an acquired PDF must not be retroactively suppressed"
+            )
+
+        @staticmethod
+        def download_opencli(identity, **_kwargs):
+            calls.append(identity)
+            raise EnrichmentError(
+                "subscription browser download receipt is not evidence-bound"
+            )
+
+        @staticmethod
+        def record_item_failure(identity, *, failure, retryable):
+            failures.append((identity, failure, retryable))
+            return {"claim_status": "claimed"}
+
+    runtime = DailyRuntime.__new__(DailyRuntime)
+    runtime.args = SimpleNamespace(
+        lv_session="lv-session",
+        opencli_profile=None,
+    )
+    runtime._lv_service = FakeLv()
+    runtime._lv_listing = {
+        "status": "ok",
+        "complete_scan": True,
+        "entries": [],
+    }
+    runtime._lv_listing_error = None
+    runtime._complete_lv_video_transcripts = lambda: []
+
+    result = runtime.lv()
+
+    assert calls == ["claimed-pdf"]
+    assert result["status"] == "waiting"
+    assert failures == [(
+        "claimed-pdf",
+        {
+            "category": "state_error",
+            "code": "download_receipt_not_evidence_bound",
+            "stage": "download_reconciliation",
+        },
+        False,
+    )]
+
+
 def test_lv_native_save_prompt_stays_internal_and_does_not_request_user(tmp_path):
     failures = []
 
