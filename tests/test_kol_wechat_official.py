@@ -370,6 +370,40 @@ def test_opencli_acquisition_materializes_complete_markdown_and_images(tmp_path)
     }
 
 
+def test_opencli_profile_is_bound_to_official_account_download(tmp_path):
+    capsule = _capture_one(tmp_path)
+    inbox = OfficialAccountInbox(tmp_path / "remote")
+    inbox.import_capsule(capsule)
+    [item] = inbox.pending_items()
+    markdown = "# 业绩炸裂\n\n公众号：刘少狙击营\n\n" + _long_body()
+    runner, calls = _opencli_runner(
+        markdown=markdown,
+        title="业绩炸裂",
+        author="刘少狙击营",
+        publish_time="2026年8月4日 16:57",
+        with_image=False,
+    )
+
+    inbox.acquire(
+        item,
+        acquirer=OfficialAccountOpenCliAcquirer(
+            tmp_path / "remote" / "opencli",
+            runner=runner,
+            opencli_profile="du6r9r44",
+        ),
+    )
+
+    [command_call] = calls
+    command, _kwargs = command_call
+    assert command[:5] == [
+        "opencli",
+        "--profile",
+        "du6r9r44",
+        "weixin",
+        "download",
+    ]
+
+
 def test_opencli_recovers_bound_type_10_text_share_without_refetching_mailbox(
     tmp_path,
 ):

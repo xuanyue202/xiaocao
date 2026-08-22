@@ -570,6 +570,7 @@ class OfficialAccountOpenCliAcquirer:
         output_dir: Path | str,
         *,
         opencli_command: tuple[str, ...] = DEFAULT_OPENCLI_COMMAND,
+        opencli_profile: str | None = None,
         runner: Callable[..., Any] = subprocess.run,
         timeout: int = 120,
     ):
@@ -577,8 +578,17 @@ class OfficialAccountOpenCliAcquirer:
         self.opencli_command = tuple(opencli_command)
         if not self.opencli_command:
             raise EnrichmentError("official-account OpenCLI command is empty")
+        profile = str(opencli_profile or "").strip()
+        self.opencli_profile = profile or None
         self._runner = runner
         self.timeout = int(timeout)
+
+    def _command(self, *arguments: str) -> list[str]:
+        command = list(self.opencli_command)
+        if self.opencli_profile:
+            command.extend(["--profile", self.opencli_profile])
+        command.extend(arguments)
+        return command
 
     def _run_opencli(self, command: list[str]) -> Any:
         try:
@@ -622,15 +632,14 @@ class OfficialAccountOpenCliAcquirer:
         """Recover WeChat type-10 text shares from the same OpenCLI site session."""
         session = _WECHAT_OPENCLI_SESSION
         source_url = str(item["source_url"])
-        self._run_opencli([
-            *self.opencli_command,
+        self._run_opencli(self._command(
             "browser",
             session,
             "open",
             source_url,
             "--window",
             "background",
-        ])
+        ))
         script = r"""JSON.stringify((() => {
   const cgi = window.cgiDataNew || {};
   const content = document.querySelector('#js_content');
@@ -672,17 +681,16 @@ class OfficialAccountOpenCliAcquirer:
   };
 })())"""
         try:
-            result = self._run_opencli([
-                *self.opencli_command,
+            result = self._run_opencli(self._command(
                 "browser",
                 session,
                 "eval",
                 script,
-            ])
+            ))
         finally:
             try:
                 self._runner(
-                    [*self.opencli_command, "browser", session, "close"],
+                    self._command("browser", session, "close"),
                     check=False,
                     capture_output=True,
                     text=True,
@@ -802,8 +810,7 @@ class OfficialAccountOpenCliAcquirer:
         handoff_id = str(item["handoff_id"])
         source_root = (self.output_dir / handoff_id).resolve()
         source_root.mkdir(parents=True, exist_ok=True)
-        command = [
-            *self.opencli_command,
+        command = self._command(
             "weixin",
             "download",
             "--url",
@@ -820,7 +827,7 @@ class OfficialAccountOpenCliAcquirer:
             "true",
             "-f",
             "json",
-        ]
+        )
         result = self._run_opencli(command)
         try:
             rows = json.loads(result.stdout)

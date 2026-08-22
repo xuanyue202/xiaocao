@@ -3371,7 +3371,8 @@ class DailyRuntime:
     ) -> dict[str, Any]:
         inbox = OfficialAccountInbox(self.args.wechat_official_output_dir)
         acquirer = OfficialAccountOpenCliAcquirer(
-            self.args.wechat_official_output_dir / "opencli"
+            self.args.wechat_official_output_dir / "opencli",
+            opencli_profile=getattr(self.args, "opencli_profile", None),
         )
         if handoff_id is not None and only_identity is not None:
             raise DailyError("official exact selectors are mutually exclusive")
