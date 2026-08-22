@@ -591,14 +591,21 @@ class OfficialAccountOpenCliAcquirer:
         return command
 
     def _run_opencli(self, command: list[str]) -> Any:
+        runner_kwargs: dict[str, Any] = {
+            "check": False,
+            "capture_output": True,
+            "text": True,
+            "timeout": self.timeout,
+        }
+        if self.timeout > 30:
+            runner_kwargs["env"] = {
+                **os.environ,
+                "OPENCLI_BROWSER_COMMAND_TIMEOUT": str(
+                    max(1, self.timeout - 10)
+                ),
+            }
         try:
-            result = self._runner(
-                command,
-                check=False,
-                capture_output=True,
-                text=True,
-                timeout=self.timeout,
-            )
+            result = self._runner(command, **runner_kwargs)
         except subprocess.TimeoutExpired as exc:
             raise EnrichmentDiagnosticError(
                 "official-account OpenCLI timed out",

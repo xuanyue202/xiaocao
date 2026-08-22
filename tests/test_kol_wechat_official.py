@@ -362,12 +362,16 @@ def test_opencli_acquisition_materializes_complete_markdown_and_images(tmp_path)
     assert command[command.index("--window") + 1] == "background"
     assert command[command.index("--site-session") + 1] == "persistent"
     assert command[command.index("--keep-tab") + 1] == "true"
-    assert kwargs == {
+    assert {
+        key: kwargs[key]
+        for key in ("check", "capture_output", "text", "timeout")
+    } == {
         "check": False,
         "capture_output": True,
         "text": True,
         "timeout": 120,
     }
+    assert kwargs["env"]["OPENCLI_BROWSER_COMMAND_TIMEOUT"] == "110"
 
 
 def test_opencli_profile_is_bound_to_official_account_download(tmp_path):
