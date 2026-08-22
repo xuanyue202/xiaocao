@@ -269,6 +269,7 @@ def test_repair_validation_accepts_lv_text_image_browser_open_profile(tmp_path):
         "targeted_test_profile": "kol_lv_text_image_browser_open",
     }
 
+    # The same profile is reused for each newly fingerprinted pre-claim retry.
     assert service._expected_profile(context) == (
         "kol_lv_text_image_browser_open"
     )

@@ -1106,7 +1106,8 @@ def _canonical_subscription_private_listing_repair_profile(
 _SHARED_LV_LISTING_BROWSER_EVAL_REPAIR_PROFILE = (
     "kol_shared_lv_listing_browser_eval"
 )
-# The LV image adapter reports a failed OpenCLI command before any claim.
+# The LV image adapter reports failed OpenCLI commands before any claim;
+# repeated retries remain bound to the latest exact fingerprint.
 _SHARED_LV_LISTING_BROWSER_EVAL_CODES = frozenset({
     "detached_mid_command",
     "opencli_command_failed",
