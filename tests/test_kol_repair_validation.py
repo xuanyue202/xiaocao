@@ -626,7 +626,8 @@ def test_repair_validation_accepts_subscription_video_browser_open_profile(
     ("adapter", "failure_code"),
     [
         ("lv_text_image", "detached_mid_command"),
-        # Covers the observed pre-claim OpenCLI transport failure.
+        # Covers the observed pre-claim OpenCLI transport failure, including
+        # a later retry at the listing-evaluation stage.
         ("lv_text_image", "opencli_command_failed"),
         ("subscription_video", "detached_mid_command"),
     ],
