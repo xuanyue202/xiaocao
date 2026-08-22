@@ -146,7 +146,12 @@ def _normalized_text(value: Any) -> str:
 
 def _page_publish_time(value: Any) -> datetime:
     raw = str(value or "").strip()
-    for pattern in ("%Y年%m月%d日 %H:%M:%S", "%Y年%m月%d日 %H:%M"):
+    for pattern in (
+        "%Y年%m月%d日 %H:%M:%S",
+        "%Y年%m月%d日 %H:%M",
+        "%b %d, %Y, %I:%M %p",
+        "%B %d, %Y, %I:%M %p",
+    ):
         try:
             return datetime.strptime(raw, pattern).replace(tzinfo=BEIJING)
         except ValueError:
@@ -773,6 +778,68 @@ class OfficialAccountOpenCliAcquirer:
             "recovery": "text_share_page",
         }
 
+    def _recover_materialized_article(
+        self,
+        *,
+        item: dict[str, Any],
+        source_root: Path,
+    ) -> dict[str, Any] | None:
+        """Use a complete same-handoff artifact after OpenCLI timed out."""
+        candidates = sorted(
+            path.resolve()
+            for path in source_root.rglob("*.md")
+            if path.is_file() and path.resolve().is_relative_to(source_root)
+        )
+        for saved in candidates:
+            try:
+                size = saved.stat().st_size
+                if size <= 0 or size > _MAX_ARTICLE_BYTES:
+                    continue
+                payload = saved.read_bytes()
+                markdown = payload.decode("utf-8")
+                title_match = re.search(r"^#\s+(.+?)\s*$", markdown, re.MULTILINE)
+                author_match = re.search(
+                    r"^>\s*(?:公众号|作者)\s*:\s*(.+?)\s*$",
+                    markdown,
+                    re.MULTILINE,
+                )
+                publish_match = re.search(
+                    r"^>\s*发布时间\s*:\s*(.+?)\s*$",
+                    markdown,
+                    re.MULTILINE,
+                )
+                source_match = re.search(
+                    r"^>\s*原文链接\s*:\s*(\S+)\s*$",
+                    markdown,
+                    re.MULTILINE,
+                )
+                if not all((title_match, author_match, publish_match, source_match)):
+                    continue
+                title = _normalized_text(title_match.group(1))
+                author = _normalized_text(author_match.group(1))
+                observed_url = _article_url(source_match.group(1))
+                if (
+                    title != _normalized_text(item["title"])
+                    or author != _normalized_text(item["publisher"])
+                    or observed_url != str(item["source_url"])
+                    or _looks_like_challenge(markdown)
+                    or _article_text_characters(markdown) < 100
+                ):
+                    continue
+                page_time = _page_publish_time(publish_match.group(1))
+            except (OSError, UnicodeDecodeError, EnrichmentError):
+                continue
+            return {
+                "title": title,
+                "author": author,
+                "publish_time": page_time.isoformat(timespec="minutes"),
+                "status": "success",
+                "size": f"{size} B",
+                "saved": str(saved),
+                "recovery": "materialized_after_opencli_failure",
+            }
+        return None
+
     def _images(self, markdown_path: Path, source_root: Path) -> list[dict[str, Any]]:
         markdown = markdown_path.read_text(encoding="utf-8")
         refs = [left or right for left, right in _IMAGE_LINK.findall(markdown)]
@@ -835,19 +902,37 @@ class OfficialAccountOpenCliAcquirer:
             "-f",
             "json",
         )
-        result = self._run_opencli(command)
         try:
-            rows = json.loads(result.stdout)
-        except json.JSONDecodeError as exc:
-            raise EnrichmentDiagnosticError(
-                "official-account OpenCLI returned invalid JSON",
-                category="source_error",
-                code="wechat_official_opencli_invalid_json",
-                stage="wechat_official_opencli",
-            ) from exc
-        if not isinstance(rows, list) or len(rows) != 1 or not isinstance(rows[0], dict):
-            raise EnrichmentError("official-account OpenCLI result is invalid")
-        row = rows[0]
+            result = self._run_opencli(command)
+        except EnrichmentDiagnosticError as exc:
+            if exc.diagnostic_code not in {
+                "wechat_official_opencli_failed",
+                "wechat_official_opencli_timeout",
+            }:
+                raise
+            row = self._recover_materialized_article(
+                item=item,
+                source_root=source_root,
+            )
+            if row is None:
+                raise
+        else:
+            try:
+                rows = json.loads(result.stdout)
+            except json.JSONDecodeError as exc:
+                raise EnrichmentDiagnosticError(
+                    "official-account OpenCLI returned invalid JSON",
+                    category="source_error",
+                    code="wechat_official_opencli_invalid_json",
+                    stage="wechat_official_opencli",
+                ) from exc
+            if (
+                not isinstance(rows, list)
+                or len(rows) != 1
+                or not isinstance(rows[0], dict)
+            ):
+                raise EnrichmentError("official-account OpenCLI result is invalid")
+            row = rows[0]
         status = str(row.get("status") or "").strip()
         status_lower = status.lower()
         if "verification required" in status_lower or any(

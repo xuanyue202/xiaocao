@@ -408,6 +408,41 @@ def test_opencli_profile_is_bound_to_official_account_download(tmp_path):
     ]
 
 
+def test_opencli_failure_recovers_complete_materialized_article(tmp_path):
+    capsule = _capture_one(tmp_path)
+    inbox = OfficialAccountInbox(tmp_path / "remote")
+    inbox.import_capsule(capsule)
+    [item] = inbox.pending_items()
+    source_root = tmp_path / "remote" / "opencli" / item["handoff_id"]
+    article_dir = source_root / item["title"]
+    article_dir.mkdir(parents=True)
+    saved = article_dir / f"{item['title']}.md"
+    saved.write_text(
+        f"# {item['title']}\n"
+        f"> 公众号: {item['publisher']}\n"
+        "> 发布时间: 2026年8月4日 16:57\n"
+        f"> 原文链接: {item['source_url']}\n\n"
+        + _long_body(),
+        encoding="utf-8",
+    )
+
+    def runner(_command, **_kwargs):
+        return SimpleNamespace(returncode=75, stdout="", stderr="TIMEOUT")
+
+    acquired = inbox.acquire(
+        item,
+        acquirer=OfficialAccountOpenCliAcquirer(
+            tmp_path / "remote" / "opencli",
+            runner=runner,
+            opencli_profile="du6r9r44",
+        ),
+    )
+
+    assert acquired["status"] == "acquired"
+    assert acquired["opencli_recovery"] == "materialized_after_opencli_failure"
+    assert acquired["raw_markdown_path"] == str(saved.resolve())
+
+
 def test_opencli_recovers_bound_type_10_text_share_without_refetching_mailbox(
     tmp_path,
 ):
