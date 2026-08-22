@@ -1108,7 +1108,7 @@ _SHARED_LV_LISTING_BROWSER_EVAL_REPAIR_PROFILE = (
 )
 # The LV image adapter reports failed OpenCLI commands before any claim;
 # repeated retries remain bound to the latest exact fingerprint, including
-# read-only listing evaluation failures.
+# read-only listing evaluation failures that recover on the next read.
 _SHARED_LV_LISTING_BROWSER_EVAL_CODES = frozenset({
     "detached_mid_command",
     "opencli_command_failed",

@@ -598,7 +598,14 @@ def test_listing_recovers_once_after_transient_full_scan_failure(
     assert open_calls == 2
 
 
-def test_listing_recovers_once_after_detached_read_only_eval(tmp_path):
+@pytest.mark.parametrize(
+    "failure_code",
+    ["detached_mid_command", "opencli_command_failed"],
+)
+def test_listing_recovers_once_after_detached_read_only_eval(
+    tmp_path,
+    failure_code,
+):
     listing_calls = 0
     open_calls = 0
 
@@ -618,7 +625,7 @@ def test_listing_recovers_once_after_detached_read_only_eval(tmp_path):
                 return SimpleNamespace(
                     returncode=1,
                     stdout=json.dumps({
-                        "error": {"code": "detached_mid_command"},
+                        "error": {"code": failure_code},
                     }),
                     stderr="",
                 )
@@ -651,7 +658,7 @@ def test_listing_recovers_once_after_detached_read_only_eval(tmp_path):
         "attempts": 2,
         "initial_failure": {
             "category": "transport_error",
-            "code": "detached_mid_command",
+            "code": failure_code,
             "stage": "browser_eval",
         },
     }
