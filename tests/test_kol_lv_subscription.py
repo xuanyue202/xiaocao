@@ -659,6 +659,41 @@ def test_listing_recovers_once_after_detached_read_only_eval(tmp_path):
     assert open_calls == 2
 
 
+def test_lv_text_image_browser_open_exposes_diagnostic(tmp_path):
+    open_calls = 0
+
+    def browser_runner(command, **_kwargs):
+        nonlocal open_calls
+        assert command[2] == "ticket04"
+        assert command[3] == "open"
+        open_calls += 1
+        return SimpleNamespace(
+            returncode=1,
+            stdout=json.dumps({
+                "error": {"code": "opencli_command_failed"},
+            }),
+            stderr="",
+        )
+
+    service = LvSubscriptionService(
+        tmp_path / "out",
+        now=lambda: NOW,
+        runner=browser_runner,
+        opencli_command=("opencli",),
+        share_url="https://pan.baidu.com/s/private-share-token",
+        share_code="a1b2",
+        sleep=lambda _seconds: None,
+    )
+
+    with pytest.raises(EnrichmentDiagnosticError) as captured:
+        service.poll_opencli(session="ticket04")
+
+    assert captured.value.diagnostic_category == "transport_error"
+    assert captured.value.diagnostic_code == "opencli_command_failed"
+    assert captured.value.diagnostic_stage == "browser_open"
+    assert open_calls == 2
+
+
 def test_cursor_advances_only_after_complete_listing(tmp_path):
     calls = 0
 

@@ -646,6 +646,23 @@ TARGETED_REPAIR_TESTS: dict[str, tuple[str, ...]] = {
             "subscription_decision_pipeline_provider_error_is_diagnostic"
         ),
     ),
+    "kol_lv_text_image_browser_open": (
+        "env",
+        "PYTHONPATH=src",
+        ".venv/bin/python",
+        "-m",
+        "pytest",
+        "tests/test_kol_lv_subscription.py",
+        "tests/test_kol_repair_validation.py",
+        "tests/test_kol_writer_progress.py",
+        "-q",
+        "-k",
+        (
+            "lv_text_image_browser_open_exposes_diagnostic or "
+            "repair_validation_accepts_lv_text_image_browser_open_profile or "
+            "repair_closure_accepts_lv_text_image_browser_open_profile"
+        ),
+    ),
     "kol_subscription_video_private_listing_validation": (
         "env",
         "PYTHONPATH=src",
@@ -838,6 +855,12 @@ _TARGETED_REPAIR_IMPLEMENTATION_PATHS: dict[str, frozenset[str]] = {
             "src/xiaocao/kol/writer_progress.py",
         }
     ),
+    "kol_lv_text_image_browser_open": frozenset(
+        {
+            "src/xiaocao/kol/lv_subscription.py",
+            "src/xiaocao/kol/writer_progress.py",
+        }
+    ),
     "kol_subscription_video_private_listing_validation": frozenset(
         {
             "scripts/kol_daily.py",
@@ -917,6 +940,13 @@ _TARGETED_REPAIR_TEST_PATHS: dict[str, frozenset[str]] = {
             "tests/test_kol_lv_subscription.py",
             "tests/test_kol_semantic_bundle.py",
             "tests/test_kol_repair_validation.py",
+        }
+    ),
+    "kol_lv_text_image_browser_open": frozenset(
+        {
+            "tests/test_kol_lv_subscription.py",
+            "tests/test_kol_repair_validation.py",
+            "tests/test_kol_writer_progress.py",
         }
     ),
     "kol_subscription_video_private_listing_validation": frozenset(
@@ -1021,6 +1051,26 @@ def _canonical_lv_text_image_source_repair_profile(
         and str(context.get("stage") or "") == "source_run"
     ):
         return _LV_TEXT_IMAGE_SOURCE_REPAIR_PROFILE
+    return None
+
+
+_LV_TEXT_IMAGE_BROWSER_OPEN_REPAIR_PROFILE = (
+    "kol_lv_text_image_browser_open"
+)
+
+
+def _canonical_lv_text_image_browser_open_repair_profile(
+    context: Mapping[str, Any],
+) -> str | None:
+    if (
+        str(context.get("adapter") or "") == "lv_text_image"
+        and str(context.get("targeted_test_profile") or "")
+        == _LV_TEXT_IMAGE_BROWSER_OPEN_REPAIR_PROFILE
+        and str(context.get("category") or "") == "transport_error"
+        and str(context.get("code") or "") == "opencli_command_failed"
+        and str(context.get("stage") or "") == "browser_open"
+    ):
+        return _LV_TEXT_IMAGE_BROWSER_OPEN_REPAIR_PROFILE
     return None
 
 
@@ -1325,6 +1375,11 @@ class RepairValidationService:
         )
         if lv_source_profile is not None:
             return lv_source_profile
+        lv_browser_open_profile = (
+            _canonical_lv_text_image_browser_open_repair_profile(context)
+        )
+        if lv_browser_open_profile is not None:
+            return lv_browser_open_profile
         subscription_profile = (
             _canonical_subscription_private_listing_repair_profile(context)
         )

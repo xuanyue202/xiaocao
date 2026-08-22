@@ -252,6 +252,28 @@ def test_repair_validation_accepts_lv_text_image_source_run_profile(tmp_path):
     assert service._expected_profile(context) == "kol_lv_text_image_source_run"
 
 
+def test_repair_validation_accepts_lv_text_image_browser_open_profile(tmp_path):
+    service = RepairValidationService(
+        tmp_path,
+        ledger=RepairValidationLedger(tmp_path / "repair-validation.jsonl"),
+    )
+    context = {
+        "adapter": "lv_text_image",
+        "message_id": "4" * 64,
+        "content_sha256": "5" * 64,
+        "failure_fingerprint": "6" * 64,
+        "failure_revision": FAILURE_REVISION,
+        "category": "transport_error",
+        "code": "opencli_command_failed",
+        "stage": "browser_open",
+        "targeted_test_profile": "kol_lv_text_image_browser_open",
+    }
+
+    assert service._expected_profile(context) == (
+        "kol_lv_text_image_browser_open"
+    )
+
+
 @pytest.mark.parametrize(
     "declared_profile",
     [
