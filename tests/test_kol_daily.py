@@ -86,6 +86,99 @@ def test_persisted_validated_bundle_is_reused(tmp_path):
     assert _persisted_validated_bundle({}) is None
 
 
+def test_official_writer_reuses_persisted_bundle_without_stdin(
+    monkeypatch,
+    tmp_path,
+):
+    bundle_path = tmp_path / "analysis_requests" / "validated_bundle.json"
+    bundle_path.parent.mkdir(parents=True)
+    bundle_path.write_text("validated", encoding="utf-8")
+    decision_result = tmp_path / "decision.json"
+    decision_result.write_text("{}", encoding="utf-8")
+    observed = {}
+
+    item = {
+        "handoff_id": "handoff-1",
+        "source_identity": "source-1",
+        "publication_version": "version-1",
+        "kol_id": "kol-1",
+        "published_at": "2026-08-22T00:00:00+08:00",
+        "received_at": "2026-08-22T00:01:00+08:00",
+        "title": "标题",
+        "author": "作者",
+        "status": "evidence_ready",
+        "evidence_path": str(tmp_path / "evidence.md"),
+        "evidence_sha256": "e" * 64,
+    }
+    Path(item["evidence_path"]).write_text("证据", encoding="utf-8")
+
+    class FakeInbox:
+        def __init__(self, *_args, **_kwargs):
+            pass
+
+        @staticmethod
+        def pending_items():
+            return [item]
+
+        @staticmethod
+        def acquire(value, *, acquirer):
+            return value
+
+        @staticmethod
+        def prepare_image_request(_item):
+            return None
+
+        @staticmethod
+        def materialize_evidence(value):
+            return value
+
+        @staticmethod
+        def prepare_analysis_request(_item):
+            return {
+                "artifact_dir": str(bundle_path.parent),
+                "analysis_request_path": str(tmp_path / "request.json"),
+            }
+
+        @staticmethod
+        def decide(_item, *, bundle_path, pipeline, sender):
+            observed["bundle_path"] = bundle_path
+            return {"decision_result_path": str(decision_result)}
+
+    class FakeAcquirer:
+        def __init__(self, *_args, **_kwargs):
+            pass
+
+    monkeypatch.setattr(kol_daily_script, "OfficialAccountInbox", FakeInbox)
+    monkeypatch.setattr(
+        kol_daily_script,
+        "OfficialAccountOpenCliAcquirer",
+        FakeAcquirer,
+    )
+    monkeypatch.setattr(
+        kol_daily_script,
+        "_require_canonical_semantic_artifact",
+        lambda path, _request: path,
+    )
+    monkeypatch.setattr(
+        kol_daily_script,
+        "_sender",
+        lambda: None,
+        raising=False,
+    )
+    runtime = DailyRuntime.__new__(DailyRuntime)
+    runtime.args = SimpleNamespace(
+        wechat_official_output_dir=tmp_path / "official",
+        opencli_profile=None,
+    )
+    runtime._terminal = lambda path: {"decision_result_path": str(path)}
+    runtime._pipeline = lambda _context: None
+
+    result = runtime.wechat_official()
+
+    assert result["status"] == "completed"
+    assert observed["bundle_path"] == bundle_path
+
+
 def test_transcript_audit_contract_exposes_exact_character_thirds():
     assert _transcript_audit_contract({
         "transcript_character_count": 4641,

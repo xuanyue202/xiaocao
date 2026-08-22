@@ -3453,23 +3453,32 @@ class DailyRuntime:
             elif item.get("status") != "evidence_ready":
                 item = inbox.materialize_evidence(item)
             request = inbox.prepare_analysis_request(item)
-            try:
-                bundle_path = _read_agent_path(request, "bundle_path")
-            except SemanticInputUnavailable as exc:
-                waiting_items.append(
-                    _semantic_waiting_item(
-                        exc.request,
-                        identity=str(item["source_identity"]),
-                        version_key=str(item["publication_version"]),
-                        name=str(item["title"]),
-                        author=str(item["author"]),
+            bundle_path = _persisted_validated_bundle(request)
+            reused_bundle = bundle_path is not None
+            if bundle_path is None:
+                try:
+                    bundle_path = _read_agent_path(request, "bundle_path")
+                except SemanticInputUnavailable as exc:
+                    waiting_items.append(
+                        _semantic_waiting_item(
+                            exc.request,
+                            identity=str(item["source_identity"]),
+                            version_key=str(item["publication_version"]),
+                            name=str(item["title"]),
+                            author=str(item["author"]),
+                        )
                     )
-                )
-                break
+                    break
             bundle_path = _require_canonical_semantic_artifact(
                 bundle_path,
                 request,
             )
+            if reused_bundle:
+                _record_structured_input_consumption(
+                    request,
+                    field="bundle_path",
+                    path=bundle_path,
+                )
             evidence_path = Path(str(item["evidence_path"])).resolve()
             context = DailyPublicationContext(
                 adapter="wechat_official_account",
