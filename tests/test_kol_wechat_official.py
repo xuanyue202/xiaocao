@@ -443,6 +443,42 @@ def test_opencli_failure_recovers_complete_materialized_article(tmp_path):
     assert acquired["raw_markdown_path"] == str(saved.resolve())
 
 
+def test_opencli_reuses_materialized_article_after_recorded_failure(tmp_path):
+    capsule = _capture_one(tmp_path)
+    inbox = OfficialAccountInbox(tmp_path / "remote")
+    inbox.import_capsule(capsule)
+    [item] = inbox.pending_items()
+    source_root = tmp_path / "remote" / "opencli" / item["handoff_id"]
+    article_dir = source_root / item["title"]
+    article_dir.mkdir(parents=True)
+    saved = article_dir / f"{item['title']}.md"
+    saved.write_text(
+        f"# {item['title']}\n"
+        f"> 公众号: {item['publisher']}\n"
+        "> 发布时间: 2026年8月4日 16:57\n"
+        f"> 原文链接: {item['source_url']}\n\n"
+        + _long_body(),
+        encoding="utf-8",
+    )
+    item["last_acquisition_failure"] = {
+        "category": "source_error",
+        "code": "wechat_official_opencli_failed",
+        "stage": "wechat_official_opencli",
+    }
+
+    def runner(*_args, **_kwargs):
+        pytest.fail("must reuse the validated same-handoff artifact")
+
+    result = OfficialAccountOpenCliAcquirer(
+        tmp_path / "remote" / "opencli",
+        runner=runner,
+        opencli_profile="du6r9r44",
+    )(item)
+
+    assert result["opencli_recovery"] == "materialized_after_opencli_failure"
+    assert result["raw_markdown_path"] == str(saved.resolve())
+
+
 def test_opencli_recovers_bound_type_10_text_share_without_refetching_mailbox(
     tmp_path,
 ):

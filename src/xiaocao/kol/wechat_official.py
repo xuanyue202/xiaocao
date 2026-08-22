@@ -902,37 +902,44 @@ class OfficialAccountOpenCliAcquirer:
             "-f",
             "json",
         )
-        try:
-            result = self._run_opencli(command)
-        except EnrichmentDiagnosticError as exc:
-            if exc.diagnostic_code not in {
-                "wechat_official_opencli_failed",
-                "wechat_official_opencli_timeout",
-            }:
-                raise
+        row = None
+        if isinstance(item.get("last_acquisition_failure"), dict):
             row = self._recover_materialized_article(
                 item=item,
                 source_root=source_root,
             )
-            if row is None:
-                raise
-        else:
+        if row is None:
             try:
-                rows = json.loads(result.stdout)
-            except json.JSONDecodeError as exc:
-                raise EnrichmentDiagnosticError(
-                    "official-account OpenCLI returned invalid JSON",
-                    category="source_error",
-                    code="wechat_official_opencli_invalid_json",
-                    stage="wechat_official_opencli",
-                ) from exc
-            if (
-                not isinstance(rows, list)
-                or len(rows) != 1
-                or not isinstance(rows[0], dict)
-            ):
-                raise EnrichmentError("official-account OpenCLI result is invalid")
-            row = rows[0]
+                result = self._run_opencli(command)
+            except EnrichmentDiagnosticError as exc:
+                if exc.diagnostic_code not in {
+                    "wechat_official_opencli_failed",
+                    "wechat_official_opencli_timeout",
+                }:
+                    raise
+                row = self._recover_materialized_article(
+                    item=item,
+                    source_root=source_root,
+                )
+                if row is None:
+                    raise
+            else:
+                try:
+                    rows = json.loads(result.stdout)
+                except json.JSONDecodeError as exc:
+                    raise EnrichmentDiagnosticError(
+                        "official-account OpenCLI returned invalid JSON",
+                        category="source_error",
+                        code="wechat_official_opencli_invalid_json",
+                        stage="wechat_official_opencli",
+                    ) from exc
+                if (
+                    not isinstance(rows, list)
+                    or len(rows) != 1
+                    or not isinstance(rows[0], dict)
+                ):
+                    raise EnrichmentError("official-account OpenCLI result is invalid")
+                row = rows[0]
         status = str(row.get("status") or "").strip()
         status_lower = status.lower()
         if "verification required" in status_lower or any(
