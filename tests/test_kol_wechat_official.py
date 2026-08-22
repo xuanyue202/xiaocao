@@ -777,6 +777,45 @@ def test_image_notes_must_cover_every_image_sha(tmp_path):
         inbox.materialize_evidence(acquired, image_notes_path=notes_path)
 
 
+def test_image_notes_must_start_with_required_heading(tmp_path):
+    capsule = _capture_one(tmp_path)
+    inbox = OfficialAccountInbox(tmp_path / "remote")
+    inbox.import_capsule(capsule)
+    [item] = inbox.pending_items()
+    markdown = (
+        "# 业绩炸裂\n\n公众号：刘少狙击营\n\n"
+        + _long_body()
+        + "\n\n![关键图](images/image-1.png)\n"
+    )
+    runner, _calls = _opencli_runner(
+        markdown=markdown,
+        title="业绩炸裂",
+        author="刘少狙击营",
+        publish_time="2026年8月4日 16:57",
+    )
+    acquired = inbox.acquire(
+        item,
+        acquirer=OfficialAccountOpenCliAcquirer(
+            tmp_path / "remote" / "opencli", runner=runner
+        ),
+    )
+    image_request = inbox.prepare_image_request(acquired)
+    assert image_request is not None
+    image_sha = image_request["images"][0]["sha256"]
+    notes_path = tmp_path / "wrong-heading-notes.md"
+    notes_path.write_text(
+        "# 错误标题\n\n"
+        "图片信息转写应当出现在正文中，但不是标题。\n"
+        f"- SHA-256：`{image_sha}`\n"
+        "- 信息属性：包含正文增量。\n"
+        "- 边界：小字号脚注仍需谨慎核对。\n",
+        encoding="utf-8",
+    )
+
+    with pytest.raises(EnrichmentError, match="required heading"):
+        inbox.materialize_evidence(acquired, image_notes_path=notes_path)
+
+
 def test_decided_item_completion_requires_hash_bound_daily_terminal(tmp_path):
     inbox = OfficialAccountInbox(tmp_path / "remote")
     handoff_id = "a" * 64

@@ -1374,8 +1374,10 @@ class OfficialAccountInbox:
                 notes_text = notes_payload.decode("utf-8").strip()
             except UnicodeDecodeError as exc:
                 raise EnrichmentError("official-account image notes are not UTF-8") from exc
-            if "图片信息转写" not in notes_text or len(notes_text) < 50:
-                raise EnrichmentError("official-account image notes are incomplete")
+            if not notes_text.startswith("# 图片信息转写") or len(notes_text) < 50:
+                raise EnrichmentError(
+                    "official-account image notes must start with the required heading"
+                )
             for image in images:
                 self._verify_file(
                     image.get("path"), image.get("sha256"), label="image artifact"
