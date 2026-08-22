@@ -1056,6 +1056,10 @@ def _canonical_subscription_private_listing_repair_profile(
 _SHARED_LV_LISTING_BROWSER_EVAL_REPAIR_PROFILE = (
     "kol_shared_lv_listing_browser_eval"
 )
+_SHARED_LV_LISTING_BROWSER_EVAL_CODES = frozenset({
+    "detached_mid_command",
+    "opencli_command_failed",
+})
 
 _SHARED_LV_LISTING_VALIDATION_REPAIR_PROFILE = (
     "kol_shared_lv_listing_validation"
@@ -1112,7 +1116,8 @@ def _canonical_shared_lv_listing_browser_eval_repair_profile(
         and str(context.get("targeted_test_profile") or "")
         == f"kol_{adapter}_browser_eval"
         and str(context.get("category") or "") == "transport_error"
-        and str(context.get("code") or "") == "detached_mid_command"
+        and str(context.get("code") or "")
+        in _SHARED_LV_LISTING_BROWSER_EVAL_CODES
         and str(context.get("stage") or "") == "browser_eval"
     ):
         return _SHARED_LV_LISTING_BROWSER_EVAL_REPAIR_PROFILE

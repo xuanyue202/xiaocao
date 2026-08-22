@@ -599,10 +599,18 @@ def test_repair_validation_accepts_subscription_video_browser_open_profile(
     assert receipt.failure_fingerprint == "3" * 64
 
 
-@pytest.mark.parametrize("adapter", ["lv_text_image", "subscription_video"])
+@pytest.mark.parametrize(
+    ("adapter", "failure_code"),
+    [
+        ("lv_text_image", "detached_mid_command"),
+        ("lv_text_image", "opencli_command_failed"),
+        ("subscription_video", "detached_mid_command"),
+    ],
+)
 def test_repair_validation_accepts_shared_lv_listing_browser_eval_profile(
     tmp_path,
     adapter,
+    failure_code,
 ) -> None:
     context = {
         "adapter": adapter,
@@ -611,7 +619,7 @@ def test_repair_validation_accepts_shared_lv_listing_browser_eval_profile(
         "failure_fingerprint": "9" * 64,
         "failure_revision": FAILURE_REVISION,
         "category": "transport_error",
-        "code": "detached_mid_command",
+        "code": failure_code,
         "stage": "browser_eval",
         "targeted_test_profile": f"kol_{adapter}_browser_eval",
     }
