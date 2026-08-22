@@ -726,7 +726,7 @@ def _validate_actionable_signals(
         for row in item.get("claims") or []
         if isinstance(row, dict) and _nonblank(row.get("claim_id"))
     }
-    signals = item.get("actionable_signals") or []
+    signals = item.get("actionable_signals")
     if not isinstance(signals, list):
         raise _fail(
             "actionable signals must be a list",
@@ -1076,6 +1076,61 @@ def _validate_synthesis(item: Mapping[str, Any]) -> None:
             error_code="reader_copy_invalid",
             stage="reader_copy",
             field="synthesis",
+        )
+    if synthesis.get("reader_render_mode") != "kol_context_corrected":
+        return
+    claims_by_id = {
+        str(claim.get("claim_id")): claim
+        for claim in item.get("claims") or []
+        if isinstance(claim, Mapping)
+    }
+    reader_quote_ids = synthesis.get("reader_quote_ids")
+    normalized_reader_quote_ids = (
+        [str(claim_id) for claim_id in reader_quote_ids]
+        if isinstance(reader_quote_ids, list)
+        else []
+    )
+    if (
+        not isinstance(reader_quote_ids, list)
+        or not reader_quote_ids
+        or len(normalized_reader_quote_ids)
+        != len(set(normalized_reader_quote_ids))
+        or any(
+            claim_id not in claims_by_id
+            for claim_id in normalized_reader_quote_ids
+        )
+    ):
+        raise _fail(
+            "context-corrected synthesis requires unique valid reader quote ids",
+            error_code="reader_copy_invalid",
+            stage="reader_copy",
+            field="synthesis.reader_quote_ids",
+        )
+    if any(
+        not _nonblank(claims_by_id[claim_id].get("reader_quote"))
+        for claim_id in normalized_reader_quote_ids
+    ):
+        raise _fail(
+            "context-corrected synthesis requires every reader quote",
+            error_code="reader_copy_invalid",
+            stage="reader_copy",
+            field="claims.reader_quote",
+        )
+    if (
+        not isinstance(synthesis.get("analysis_points"), list)
+        or not synthesis["analysis_points"]
+        or any(
+            not isinstance(value, str) or not value.strip()
+            for value in synthesis["analysis_points"]
+        )
+        or not _nonblank(synthesis.get("system_check"))
+        or not _nonblank(synthesis.get("system_advice"))
+    ):
+        raise _fail(
+            "context-corrected synthesis requires analysis, check, and advice",
+            error_code="reader_copy_invalid",
+            stage="reader_copy",
+            field="synthesis.analysis_points",
         )
 
 
