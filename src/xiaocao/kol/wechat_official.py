@@ -54,6 +54,7 @@ _REMOTE_TERMINAL = {"decided"}
 _MAX_CAPSULE_BYTES = 64 * 1024
 _MAX_ARTICLE_BYTES = 20 * 1024 * 1024
 _MAX_IMAGE_NOTES_BYTES = 1024 * 1024
+_IMAGE_NOTES_HEADING = "# 图片信息转写"
 
 
 def _canonical(value: Any) -> str:
@@ -1317,7 +1318,7 @@ class OfficialAccountInbox:
             "images": verified,
             "image_request_path": str(request_path),
             "required_output": (
-                "Write UTF-8 Markdown headed `# 图片信息转写`. Inspect every image "
+                f"Write UTF-8 Markdown headed `{_IMAGE_NOTES_HEADING}`. Inspect every image "
                 "exactly once. For each image include its index and SHA-256, mark "
                 "information-bearing or decorative, transcribe all decision-relevant "
                 "text/chart/table information, and state uncertainty. Do not copy the "
@@ -1374,7 +1375,7 @@ class OfficialAccountInbox:
                 notes_text = notes_payload.decode("utf-8").strip()
             except UnicodeDecodeError as exc:
                 raise EnrichmentError("official-account image notes are not UTF-8") from exc
-            if not notes_text.startswith("# 图片信息转写") or len(notes_text) < 50:
+            if not notes_text.startswith(_IMAGE_NOTES_HEADING) or len(notes_text) < 50:
                 raise EnrichmentError(
                     "official-account image notes must start with the required heading"
                 )
@@ -1391,7 +1392,7 @@ class OfficialAccountInbox:
         else:
             if image_notes_path is not None:
                 raise EnrichmentError("official-account article has no images to annotate")
-            notes_text = "# 图片信息转写\n\n正文没有需要逐图读取的图片。"
+            notes_text = f"{_IMAGE_NOTES_HEADING}\n\n正文没有需要逐图读取的图片。"
         evidence_text = (
             raw_text
             + "\n\n---\n\n"

@@ -663,6 +663,9 @@ def test_image_notes_are_markdown_covered_then_analysis_is_idempotent(tmp_path):
     )
     image_request = inbox.prepare_image_request(acquired)
     assert image_request is not None
+    assert image_request["required_output"].startswith(
+        "Write UTF-8 Markdown headed `# 图片信息转写`."
+    )
     image_sha = image_request["images"][0]["sha256"]
     notes_path = tmp_path / "image-notes.md"
     notes_path.write_text(
