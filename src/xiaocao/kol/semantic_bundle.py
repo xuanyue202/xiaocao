@@ -35,7 +35,7 @@ from .rendering import reader_source_title
 
 
 BUNDLE_SCHEMA_VERSION = 2
-VALIDATOR_VERSION = "kol-semantic-bundle-v4"
+VALIDATOR_VERSION = "kol-semantic-bundle-v5"
 _SHA256 = re.compile(r"^[0-9a-f]{64}$")
 
 _DECISION_STATUSES = {"actionable_signal", "no_actionable_signal"}

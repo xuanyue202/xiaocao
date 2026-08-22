@@ -857,6 +857,31 @@ def test_context_corrected_synthesis_is_validated_before_business_publication(
     assert not receipt_path.exists()
 
 
+def test_context_corrected_synthesis_requires_analysis_sections(tmp_path):
+    request, draft, bundle_path, receipt_path, _ = _fixture(tmp_path)
+    draft["claims"][0]["reader_quote"] = "作者指出市场缩量。"
+    draft["synthesis"] = {
+        "summary": "系统结合最新市场事实后保留等待建议。",
+        "confidence": "medium",
+        "reader_render_mode": "kol_context_corrected",
+        "reader_quote_ids": ["liquidity-claim"],
+    }
+
+    with pytest.raises(SemanticBundleError) as caught:
+        build_validated_bundle(
+            request,
+            draft,
+            bundle_path=bundle_path,
+            receipt_path=receipt_path,
+        )
+
+    assert caught.value.error_code == "reader_copy_invalid"
+    assert caught.value.stage == "reader_copy"
+    assert caught.value.field == "synthesis.analysis_points"
+    assert not bundle_path.exists()
+    assert not receipt_path.exists()
+
+
 def test_receipt_reuse_does_not_change_external_identity_or_scan_evidence_again(tmp_path):
     request, draft, bundle_path, receipt_path, _ = _fixture(tmp_path)
     first = build_validated_bundle(
