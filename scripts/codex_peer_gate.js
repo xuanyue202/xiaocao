@@ -20,18 +20,7 @@ const EXPECTED_HOST = process.env.CODEX_REMOTE_HOST || "MacBook-Pro-6.local";
 const LIMIT = 20;
 const REQUEST_TIMEOUT_MS = 12_000;
 const MAX_ATTEMPTS = 2;
-const SOURCE_KINDS = [
-  "cli",
-  "vscode",
-  "exec",
-  "appServer",
-  "subAgent",
-  "subAgentReview",
-  "subAgentCompact",
-  "subAgentThreadSpawn",
-  "subAgentOther",
-  "unknown",
-];
+const SOURCE_KINDS = ["vscode"];
 
 const GATE_STARTED_AT = Date.now();
 
@@ -287,24 +276,25 @@ async function discoverPeers({
       );
       const thread = result?.thread;
       const turns = Array.isArray(thread?.turns) ? thread.turns : [];
-      const promptMatches = turns.some((turn) =>
-        userText(turn).includes(`Automation ID: ${automationId}`),
-      );
       if (!thread || thread.id !== candidate.id || thread.cwd !== cwd) {
         return fail("thread_read_identity_mismatch", "peer_readback", {
           thread_id: candidate.id,
         });
       }
-      const previewMatches = String(candidate.preview || "").includes(
-        `Automation ID: ${automationId}`,
-      );
-      if (!promptMatches) {
-        if (previewMatches) {
-          return fail("thread_prompt_identity_mismatch", "peer_readback", {
-            thread_id: candidate.id,
-          });
-        }
+      if (thread.source !== "vscode" || thread.parentThreadId !== null) {
         continue;
+      }
+      const identityMarker = `Automation ID: ${automationId}`;
+      const previewMatches = String(thread.preview || "").includes(identityMarker);
+      const firstTurnMatches = turns.length > 0 &&
+        userText(turns[0]).includes(identityMarker);
+      if (!previewMatches && !firstTurnMatches) {
+        continue;
+      }
+      if (!previewMatches || !firstTurnMatches) {
+        return fail("thread_prompt_identity_mismatch", "peer_readback", {
+          thread_id: candidate.id,
+        });
       }
       candidates.push(candidate);
       const complete = readTaskComplete(thread.path);
@@ -313,7 +303,12 @@ async function discoverPeers({
           thread_id: candidate.id,
         });
       }
-      readback.push({ thread_id: candidate.id, task_complete: complete });
+      readback.push({
+        thread_id: candidate.id,
+        source: thread.source,
+        parent_thread_id: thread.parentThreadId,
+        task_complete: complete,
+      });
       if (!complete) {
         return {
           schema_version: 1,

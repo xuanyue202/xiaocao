@@ -8,32 +8,63 @@ const CWD = "/Users/xuanyue202/Documents/project/xiaocao";
 const HOST = "MacBook-Pro-6.local";
 
 function candidate(id) {
-  return { id, cwd: CWD, preview: `Automation ID: ${AUTOMATION_ID}` };
+  return {
+    id,
+    cwd: CWD,
+    preview: `Automation ID: ${AUTOMATION_ID}`,
+    source: "vscode",
+  };
 }
 
-function thread(id) {
+function automationTurn(id, status = "completed") {
+  return {
+    id,
+    status,
+    items: [
+      {
+        type: "userMessage",
+        content: [{ type: "text", text: `Automation ID: ${AUTOMATION_ID}` }],
+      },
+    ],
+  };
+}
+
+function unrelatedTurn(id, status = "inProgress") {
+  return {
+    id,
+    status,
+    items: [
+      {
+        type: "userMessage",
+        content: [{ type: "text", text: "Design Book T selection logic" }],
+      },
+    ],
+  };
+}
+
+function thread(
+  id,
+  {
+    source = "vscode",
+    parentThreadId = null,
+    preview = `Automation ID: ${AUTOMATION_ID}`,
+    turns = [automationTurn(`${id}-completed`)],
+  } = {},
+) {
   return {
     thread: {
       id,
       cwd: CWD,
       path: id,
-      turns: [
-        {
-          items: [
-            {
-              type: "userMessage",
-              content: [
-                { type: "text", text: `Automation ID: ${AUTOMATION_ID}` },
-              ],
-            },
-          ],
-        },
-      ],
+      source,
+      parentThreadId,
+      preview,
+      turns,
     },
   };
 }
 
-function fixture(pages) {
+function fixture(pages, threadOverrides = new Map()) {
   const cursors = [];
   return {
     cursors,
@@ -42,7 +73,9 @@ function fixture(pages) {
         cursors.push(params.cursor);
         return pages.get(params.cursor);
       }
-      if (method === "thread/read") return thread(params.threadId);
+      if (method === "thread/read") {
+        return threadOverrides.get(params.threadId) || thread(params.threadId);
+      }
       throw new Error(`unexpected method ${method}`);
     },
   };
@@ -57,7 +90,17 @@ test("discovers an active peer beyond the first thread page", async () => {
     [null, { data: firstPage, nextCursor: "page-two" }],
     ["page-two", { data: [active], nextCursor: null }],
   ]);
-  const { cursors, requestFn } = fixture(pages);
+  const { cursors, requestFn } = fixture(
+    pages,
+    new Map([
+      [
+        active.id,
+        thread(active.id, {
+          turns: [automationTurn(`${active.id}-automation`, "inProgress")],
+        }),
+      ],
+    ]),
+  );
 
   const result = await discoverPeers({
     server: { host: HOST, stderr: "" },
@@ -75,7 +118,84 @@ test("discovers an active peer beyond the first thread page", async () => {
   assert.deepEqual(cursors, [null, "page-two"]);
 });
 
-test("passes only after every thread page is terminal", async () => {
+test("ignores a subagent that inherited the automation prompt", async () => {
+  const inherited = candidate("inherited-subagent");
+  const pages = new Map([
+    [null, { data: [inherited], nextCursor: null }],
+  ]);
+  const { requestFn } = fixture(
+    pages,
+    new Map([
+      [
+        inherited.id,
+        thread(inherited.id, {
+          source: {
+            subAgent: {
+              threadSpawn: {
+                parentThreadId: "parent",
+              },
+            },
+          },
+          parentThreadId: "parent",
+          turns: [
+            automationTurn(`${inherited.id}-inherited`, "completed"),
+            unrelatedTurn(`${inherited.id}-book-t`, "interrupted"),
+          ],
+        }),
+      ],
+    ]),
+  );
+
+  const result = await discoverPeers({
+    server: { host: HOST, stderr: "" },
+    requestFn,
+    automationId: AUTOMATION_ID,
+    currentThreadId: "current",
+    cwd: CWD,
+    expectedHost: HOST,
+    readTaskComplete: () => false,
+  });
+
+  assert.equal(result.gate_result, "pass");
+  assert.equal(result.candidate_count, 0);
+});
+
+test("ignores automation wording that appears only in a later turn", async () => {
+  const unrelated = candidate("unrelated-top-level");
+  const pages = new Map([
+    [null, { data: [unrelated], nextCursor: null }],
+  ]);
+  const { requestFn } = fixture(
+    pages,
+    new Map([
+      [
+        unrelated.id,
+        thread(unrelated.id, {
+          preview: "Design Book T selection logic",
+          turns: [
+            unrelatedTurn(`${unrelated.id}-book-t`, "completed"),
+            automationTurn(`${unrelated.id}-quoted`, "inProgress"),
+          ],
+        }),
+      ],
+    ]),
+  );
+
+  const result = await discoverPeers({
+    server: { host: HOST, stderr: "" },
+    requestFn,
+    automationId: AUTOMATION_ID,
+    currentThreadId: "current",
+    cwd: CWD,
+    expectedHost: HOST,
+    readTaskComplete: () => false,
+  });
+
+  assert.equal(result.gate_result, "pass");
+  assert.equal(result.candidate_count, 0);
+});
+
+test("passes only after every thread page has no incomplete top-level peer", async () => {
   const firstPage = Array.from({ length: 20 }, (_, index) =>
     candidate(`terminal-${index}`),
   );
@@ -98,6 +218,37 @@ test("passes only after every thread page is terminal", async () => {
   assert.equal(result.gate_result, "pass");
   assert.equal(result.candidate_count, 21);
   assert.equal(result.page_count, 2);
+});
+
+test("fails closed when preview and first-turn identity disagree", async () => {
+  const inconsistent = candidate("inconsistent-identity");
+  const pages = new Map([
+    [null, { data: [inconsistent], nextCursor: null }],
+  ]);
+  const { requestFn } = fixture(
+    pages,
+    new Map([
+      [
+        inconsistent.id,
+        thread(inconsistent.id, {
+          turns: [unrelatedTurn(`${inconsistent.id}-unrelated`, "inProgress")],
+        }),
+      ],
+    ]),
+  );
+
+  const result = await discoverPeers({
+    server: { host: HOST, stderr: "" },
+    requestFn,
+    automationId: AUTOMATION_ID,
+    currentThreadId: "current",
+    cwd: CWD,
+    expectedHost: HOST,
+    readTaskComplete: () => false,
+  });
+
+  assert.equal(result.gate_result, "repair_required");
+  assert.equal(result.failure.code, "thread_prompt_identity_mismatch");
 });
 
 test("fails closed when thread pagination is incomplete", async () => {
