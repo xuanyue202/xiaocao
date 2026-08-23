@@ -629,6 +629,8 @@ TARGETED_REPAIR_TESTS: dict[str, tuple[str, ...]] = {
             "new_filtered_image_claim_uses_preview_without_frontend_trigger or "
             "read_only_provider_reconciliation_wait_is_not_an_uncertain_effect or "
             "newer_repair_lifecycle_supersedes_old_fingerprint or "
+            "completed_owner_cloud_receipt_bypasses_detached_source_listing or "
+            "default_owner_stream_keeps_signed_url_and_httponly_cookie_in_process or "
             "repair_validation_accepts_exact_lv_download_recovery_profile"
         ),
     ),
@@ -1025,6 +1027,7 @@ _LV_DOWNLOAD_REPAIR_PROFILE_ALIASES = frozenset({
     "kol_lv_text_image_browser_download_recovery",
     "kol_lv_text_image_provider_download_link",
     "kol_lv_text_image_provider_preview_reconciliation",
+    "kol_lv_text_image_owner_cloud_download",
 })
 _LV_DOWNLOAD_REPAIR_CODES = frozenset({
     "blocked_download_frame_missing",
@@ -1035,6 +1038,7 @@ _LV_DOWNLOAD_REPAIR_CODES = frozenset({
     "opencli_command_failed",
     "opencli_timeout",
     "uncertain_effect_lacks_readback_binding",
+    "owner_stream_failed",
 })
 
 
@@ -1052,6 +1056,7 @@ def _canonical_lv_download_repair_profile(
             "provider_download_link",
             "provider_download_trigger",
             "provider_preview_reconciliation",
+            "owner_cloud_download",
         }
     ):
         return _LV_DOWNLOAD_REPAIR_PROFILE

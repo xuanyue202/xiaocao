@@ -2609,7 +2609,9 @@ def test_default_owner_stream_keeps_signed_url_and_httponly_cookie_in_process(
         tmp_path / "out",
         opencli_command=("opencli",),
     )
-    service._opencli_json = lambda *_args, **_kwargs: {"status": "opened"}
+    service._opencli_json = lambda *_args, **_kwargs: pytest.fail(
+        "owner stream must retain page identity in one process"
+    )
     fake_bin = tmp_path / "bin"
     fake_bin.mkdir()
     opencli = fake_bin / "opencli"
@@ -2626,9 +2628,14 @@ def test_default_owner_stream_keeps_signed_url_and_httponly_cookie_in_process(
     def run(command, **_kwargs):
         assert "Network.getAllCookies" in command[3]
         assert "httpOnly" in command[3]
+        assert "'foreground'" in command[3]
+        assert "await page.goto(input.ownerRoute" in command[3]
         request = json.loads(command[-1])
         assert "signed=" not in command[-1]
         assert "BDUSS" not in command[-1]
+        assert request["ownerRoute"].startswith(
+            "https://pan.baidu.com/disk/main#/index?"
+        )
         destination = Path(request["destination"])
         destination.parent.mkdir(parents=True, exist_ok=True)
         destination.write_bytes(payload)

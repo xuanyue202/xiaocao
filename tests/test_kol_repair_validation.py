@@ -171,6 +171,12 @@ def test_repair_validation_maps_wechat_source_failure_to_exact_mailbox_profile(
             "provider_preview_reconciliation",
             "kol_lv_text_image_provider_preview_reconciliation",
         ),
+        (
+            "provider_error",
+            "owner_stream_failed",
+            "owner_cloud_download",
+            "kol_lv_text_image_owner_cloud_download",
+        ),
     ],
 )
 def test_repair_validation_accepts_exact_lv_download_recovery_profile(
@@ -240,6 +246,8 @@ def test_repair_validation_accepts_exact_lv_download_recovery_profile(
             "new_filtered_image_claim_uses_preview_without_frontend_trigger or "
             "read_only_provider_reconciliation_wait_is_not_an_uncertain_effect or "
             "newer_repair_lifecycle_supersedes_old_fingerprint or "
+            "completed_owner_cloud_receipt_bypasses_detached_source_listing or "
+            "default_owner_stream_keeps_signed_url_and_httponly_cookie_in_process or "
             "repair_validation_accepts_exact_lv_download_recovery_profile"
         ),
     )

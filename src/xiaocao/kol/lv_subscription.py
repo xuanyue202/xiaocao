@@ -4388,13 +4388,6 @@ console.log(JSON.stringify({cookies}));
             "https://pan.baidu.com/disk/main#/index?"
             + urlencode({"category": "all", "path": destination_directory})
         )
-        self._opencli_json(
-            session,
-            "open",
-            owner_route,
-            profile=profile,
-            timeout_seconds=30,
-        )
         opencli_binary = shutil.which(str(self.opencli_command[0]))
         node_binary = shutil.which("node")
         if not opencli_binary or not node_binary:
@@ -4416,6 +4409,7 @@ console.log(JSON.stringify({cookies}));
             "module": str(page_module),
             "session": session,
             "profile": profile,
+            "ownerRoute": owner_route,
             "expression": _owner_download_link_script(
                 expected_provider_file_id=str(owner["owner_provider_file_id"]),
                 expected_name=str(item["name"]),
@@ -4460,8 +4454,9 @@ try {
   }
   const {Page} = await import(pathToFileURL(input.module).href);
   const page = new Page(
-    input.session, 30, input.profile || undefined, 'background'
+    input.session, 30, input.profile || undefined, 'foreground'
   );
+  await page.goto(input.ownerRoute, {settleMs: 1000});
   const evaluated = await page.cdp('Runtime.evaluate', {
     expression: input.expression,
     awaitPromise: true,
