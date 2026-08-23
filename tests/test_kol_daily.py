@@ -4647,7 +4647,7 @@ def test_lv_pending_failure_isolated_without_blocking_later_pdf(
             return {"request_path": "/runtime/request.json"}
 
         @staticmethod
-        def record_pdf_relationship(_identity, *, bundle_path):
+        def record_pdf_relationship(_identity, *, bundle_path, **_kwargs):
             assert bundle_path == globals_bundle_path
             return {"route": "companion_suppressed"}
 

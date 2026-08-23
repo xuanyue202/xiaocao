@@ -2473,6 +2473,7 @@ class DailyRuntime:
                 relationship = service.record_pdf_relationship(
                     identity,
                     bundle_path=bundle_path,
+                    complete_video_transcripts=complete_video_transcripts,
                 )
                 if relationship["route"] == "companion_suppressed":
                     suppressed += 1

@@ -6880,6 +6880,7 @@ try {
                 "report": "not_created",
                 "notification": "not_created",
                 "book_kol_us": "not_created",
+                "durable_knowledge": "not_created",
             },
             "resolved_at": self._time().isoformat(timespec="seconds"),
             "idempotent_replay": False,
@@ -6899,6 +6900,8 @@ try {
         self,
         ingest: dict[str, Any],
         decision_item: dict[str, Any],
+        *,
+        complete_video_transcripts: Sequence[Mapping[str, Any]] = (),
     ) -> tuple[dict[str, Any], str]:
         relationship = decision_item.get("episode_relationship")
         if not isinstance(relationship, dict):
@@ -6964,6 +6967,48 @@ try {
                     "subscription PDF related source metadata is incomplete"
                 )
         if primary_status == "complete":
+            authoritative_matches = []
+            if isinstance(related, dict):
+                for video in complete_video_transcripts:
+                    transcript_path = Path(
+                        str(video.get("transcript_path") or "")
+                    ).expanduser()
+                    transcript_sha256 = str(
+                        video.get("transcript_sha256") or ""
+                    )
+                    if (
+                        str(video.get("provider_identity_sha256") or "")
+                        == str(related.get("identity") or "")
+                        and str(video.get("path") or "")
+                        == str(related.get("path") or "")
+                        and str(video.get("name") or "")
+                        == str(related.get("name") or "")
+                        and int(video.get("size") or 0)
+                        == int(related.get("size") or 0)
+                        and int(video.get("modified_at") or 0)
+                        == int(related.get("modified_at") or 0)
+                        and video.get("transcript_complete") is True
+                        and re.fullmatch(r"[0-9a-f]{64}", transcript_sha256)
+                        and transcript_path.is_file()
+                        and _sha256_file(transcript_path) == transcript_sha256
+                    ):
+                        authoritative_matches.append(video)
+            if len(authoritative_matches) == 1 and isinstance(related, dict):
+                video = authoritative_matches[0]
+                related = {
+                    **related,
+                    "transcript_complete": True,
+                    "transcript_path": str(
+                        Path(str(video["transcript_path"])).resolve()
+                    ),
+                    "transcript_sha256": str(video["transcript_sha256"]),
+                    "processed_source_identity": str(video["identity"]),
+                    "processed_source_version_key": str(video["version_key"]),
+                }
+                relationship = {
+                    **relationship,
+                    "related_source_part": related,
+                }
             if (
                 not isinstance(related, dict)
                 or not re.fullmatch(
@@ -7008,6 +7053,7 @@ try {
         identity: str,
         *,
         bundle_path: Path | str,
+        complete_video_transcripts: Sequence[Mapping[str, Any]] = (),
     ) -> dict[str, Any]:
         """Persist the primary-source routing gate before any publication effect."""
         item = self._manifest_item(str(identity))
@@ -7035,6 +7081,7 @@ try {
         relationship, route = self._validated_pdf_relationship(
             ingest,
             decision_item,
+            complete_video_transcripts=complete_video_transcripts,
         )
         relationship_sha256 = hashlib.sha256(
             _canonical(relationship).encode("utf-8")
@@ -7087,6 +7134,7 @@ try {
                 "report": "not_created",
                 "notification": "not_created",
                 "book_kol_us": "not_created",
+                "durable_knowledge": "not_created",
             },
             "idempotent_replay": False,
         }

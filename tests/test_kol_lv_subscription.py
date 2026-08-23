@@ -1159,6 +1159,7 @@ def test_metadata_sufficient_companion_skips_pdf_download_and_side_effects(tmp_p
         "report": "not_created",
         "notification": "not_created",
         "book_kol_us": "not_created",
+        "durable_knowledge": "not_created",
     }
     artifact_dir = service.output_dir / "artifacts" / update["version_key"]
     assert not (artifact_dir / "browser_download_claim.json").exists()
@@ -1166,6 +1167,107 @@ def test_metadata_sufficient_companion_skips_pdf_download_and_side_effects(tmp_p
     assert not (artifact_dir / "ingest_result.json").exists()
     assert not (artifact_dir / "analysis_request.json").exists()
     assert service.pending_items() == []
+
+
+def test_downloaded_pdf_relationship_binds_authoritative_complete_transcript(
+    tmp_path,
+):
+    service = LvSubscriptionService(tmp_path / "out", now=lambda: NOW)
+    modified_at = int(NOW.timestamp())
+    video = {
+        "provider_file_id": "video-aug-17",
+        "path": "/彤商学院/直播回放/2026年8月/8月17日.mp4",
+        "name": "8月17日.mp4",
+        "is_dir": False,
+        "size": 4_484_347_295,
+        "modified_at": modified_at,
+    }
+    pdf = {
+        "provider_file_id": "summary-aug-17",
+        "path": "/彤商学院/直播回放/2026年8月/GPT会员直播总结8月17日.pdf",
+        "name": "GPT会员直播总结8月17日.pdf",
+        "is_dir": False,
+        "size": 4096,
+        "modified_at": modified_at + 60,
+    }
+    service.observe_browser_listing([video, pdf])
+    item = next(
+        row
+        for row in service.status()["items"].values()
+        if row.get("media_type") == "pdf"
+    )
+    downloaded = tmp_path / pdf["name"]
+    downloaded.write_bytes(b"%PDF-1.7\n" + b"x" * (pdf["size"] - 9))
+    _capture_browser_download(service, item["identity"], downloaded)
+    ingest = service.ingest_browser_download(
+        item["identity"],
+        pdf_text_extractor=lambda _path: {
+            "engine": "test-local",
+            "pages": [{
+                "page": 1,
+                "text": (
+                    "存储长期逻辑，没有新增观点，完整回放已经覆盖"
+                    "该摘要中的全部投资内容。"
+                ),
+                "has_visuals": False,
+            }],
+        },
+    )
+    transcript = tmp_path / "8月17日.txt"
+    transcript.write_text("完整回放逐字稿", encoding="utf-8")
+    transcript_sha = hashlib.sha256(transcript.read_bytes()).hexdigest()
+    normalized_video = LvSubscriptionService._normalize_entry(video)
+    bundle = tmp_path / "bundle.json"
+    bundle.write_text(
+        json.dumps({
+            "items": [{
+                "episode_relationship": {
+                    "document_role": "video_summary",
+                    "primary_source_status": "complete",
+                    "reason": "完整回放已覆盖本摘要。",
+                    "provider_metadata_basis": ["同目录、同日期和同一来源文件"],
+                    "semantic_comparison": {
+                        "substantive_new_points": False,
+                        "summary": "PDF没有超出完整回放的新观点。",
+                    },
+                    "content_evidence_quotes": ["存储长期逻辑"],
+                    "related_source_part": {
+                        key: normalized_video[key]
+                        for key in (
+                            "identity",
+                            "version_key",
+                            "path",
+                            "name",
+                            "size",
+                            "modified_at",
+                        )
+                    },
+                },
+            }],
+        }, ensure_ascii=False),
+        encoding="utf-8",
+    )
+
+    state = service.record_pdf_relationship(
+        item["identity"],
+        bundle_path=bundle,
+        complete_video_transcripts=[{
+            **normalized_video,
+            "identity": "processed-video-identity",
+            "version_key": "processed-video-version",
+            "provider_identity_sha256": normalized_video["identity"],
+            "transcript_complete": True,
+            "transcript_path": str(transcript),
+            "transcript_sha256": transcript_sha,
+        }],
+    )
+
+    assert state["route"] == "companion_suppressed"
+    assert state["related_source_part"]["transcript_sha256"] == transcript_sha
+    assert state["related_source_part"]["processed_source_identity"] == (
+        "processed-video-identity"
+    )
+    assert ingest["evidence_sha256"]
 
 
 def test_ambiguous_pdf_relation_creates_only_one_download_claim(tmp_path):
