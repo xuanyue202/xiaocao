@@ -150,6 +150,16 @@ def test_kol_remote_writer_automation_is_a_thin_fail_closed_bootstrap() -> None:
         "`repair_required` 或没有有效结构化结果",
         "不得改用桌面 thread wrapper",
         "runner 签发的 exact continuation",
+        "`structured_input`",
+        "`writer_progress.status=terminal`",
+        "`next_action=stop`",
+        "claim=receipt",
+        "uncertain=0",
+        "5 Why",
+        "exact narrow resume",
+        "`对象 | 状态 | 说明`",
+        "`[视频]`",
+        "`[文章]`",
         "空队列静默",
     ):
         assert marker in prompt
@@ -164,4 +174,4 @@ def test_kol_remote_writer_automation_is_a_thin_fail_closed_bootstrap() -> None:
         "stability-acceptance",
     ):
         assert implementation_detail not in prompt
-    assert len(prompt) < 1_200
+    assert len(prompt) < 2_200
