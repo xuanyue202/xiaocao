@@ -379,7 +379,7 @@ _PRIVATE_SEARCH_SCRIPT = r"""(async () => {
   input.dispatchEvent(new KeyboardEvent('keyup', {
     key: 'Enter', code: 'Enter', keyCode: 13, which: 13, bubbles: true
   }));
-  const deadline = Date.now() + 15000;
+  const deadline = Date.now() + 24000;
   let stableSignature = '';
   let stablePolls = 0;
   let lastSearchActive = false;
@@ -418,8 +418,9 @@ _PRIVATE_SEARCH_SCRIPT = r"""(async () => {
       searchActive
       && (
         matches.length > 0
-        || /无搜索结果|暂无/.test(bodyText)
+        || /无搜索结果|暂无|当前列表为空/.test(bodyText)
         || (items.length > 0 && stablePolls >= 5)
+        || (items.length === 0 && stablePolls >= 40)
       )
     ) {
       return {
@@ -3773,13 +3774,16 @@ class SubscriptionVideoService:
             or payload.get("search_settled") is not True
             or not isinstance(payload.get("entries"), list)
         ):
-            raise EnrichmentError(
+            raise EnrichmentDiagnosticError(
                 "private Netdisk search failed: "
                 f"{payload.get('status')} "
                 f"(active={payload.get('search_active')}, "
                 f"heading={payload.get('search_heading_seen')}, "
                 f"items={payload.get('item_count')}, "
-                f"stable_polls={payload.get('stable_polls')})"
+                f"stable_polls={payload.get('stable_polls')})",
+                category="provider_error",
+                code="private_search_not_settled",
+                stage="cloud_transfer_reconciliation",
             )
         return payload["entries"]
 

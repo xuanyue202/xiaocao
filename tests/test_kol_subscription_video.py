@@ -1673,6 +1673,8 @@ def test_lv_destination_triggered_claim_has_poll_deadline(tmp_path):
 def test_private_search_accepts_stable_fuzzy_results_as_exact_zero_matches():
     assert "bodyText.includes('搜索：' + targetName)" in _PRIVATE_SEARCH_SCRIPT
     assert "items.length > 0 && stablePolls >= 5" in _PRIVATE_SEARCH_SCRIPT
+    assert "当前列表为空" in _PRIVATE_SEARCH_SCRIPT
+    assert "items.length === 0 && stablePolls >= 40" in _PRIVATE_SEARCH_SCRIPT
     assert "search_settled: true" in _PRIVATE_SEARCH_SCRIPT
 
 
