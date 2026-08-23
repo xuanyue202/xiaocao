@@ -80,8 +80,19 @@ to agree with top-level available cash. The live logical account and first
 Book-B basis are fixed to `primary` and 30,000 yuan in this phase, with no CLI
 override.
 Unproven account binding, missing broker allocation facts, missing capital
-keys, incomplete reconciliation, or an ambiguous submit receipt remain
-terminal fail-closed states. Trading-hours final-submit/order-id proof,
+keys or missing reconcile capability block submit. The first-order probe may
+leave receipt mapping pending; after the durable claim, the one allowed submit
+must return the same account binding plus unique order-id/strategy-id mapping.
+An ambiguous submit becomes UNKNOWN/reconcile-only and is never clicked again.
+Any prepare/submit/reconcile chain uncertainty permanently blocks automatic
+replacement. Reconcile must return the same proved order-id and preserve that
+order's submit strategy-id evidence; a new order-id cannot reuse old strategy
+evidence. A rejection without mapping is terminal only when the receipt proves
+no submit/save/start happened. Only a never-ambiguous first order with proved
+terminality, cancellation or rejection, remaining quantity and fresh market
+guard may receive one controlled replacement; the submit boundary caps total
+attempts at two.
+Trading-hours final-submit/order-id proof,
 row-level cancellation, Book-B's at-most-one controlled retry, and unattended
 native PassGuard recovery are still pending. The paper writer and its
 Automation stay unchanged.

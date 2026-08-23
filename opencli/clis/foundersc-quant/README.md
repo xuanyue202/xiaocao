@@ -100,9 +100,18 @@ SMS, ambiguous controls or a failed readback return `auth_required` or
 remain compatible. It opens the package create page and reports
 `submit=true` / `submit_capability=true` only when the exact empty create-page
 DOM and account/environment binding are proven. `receipt_mapping` remains
-false until a trading-hours response proves the broker order-id shape; the
-production engine therefore blocks a real submit rather than using real money
-as a schema probe. Explicit probes for `manual-limit`, `opening-auction`, or
+false until a trading-hours response proves the broker order-id shape. The
+production engine permits only one durable-claim canary submit after every
+other gate passes; that same submit must prove account binding, order-id,
+strategy-id and receipt mapping or it becomes UNKNOWN/reconcile-only without a
+second click. Any submit-uncertain plan stays ineligible for automatic
+replacement even if a later readback is partial; the engine applies the same
+block to prepare/reconcile uncertainty. Reconcile must map the same captured
+order-id while preserving its submit strategy-id evidence. An unmapped reject
+is terminal only with no-click/no-save/no-start proof. A never-ambiguous first
+order may receive at most one controlled replacement only after exact
+terminality and fresh-market proof, with two total attempts enforced at the
+submit boundary. Explicit probes for `manual-limit`, `opening-auction`, or
 `timed-order` report all write capabilities as false.
 
 `prepare` supports `manual-limit`, `opening-auction`, `package-limit`, and

@@ -35,7 +35,7 @@ TEMPLATE_FILES = (
 # Pinned at template version 6; update this list only with an intentional
 # template change and a corresponding review.
 EXPECTED_SHA256 = {
-    "README.md": "acf9e6636d82e68658cd7d288c4b9e938a4e18954b19f99d0617ec2f5788dbd6",
+    "README.md": "40eb97e40ba3941e5c9e18adff8d5ad2d7c51d4b6ee750d4639b9bab2920b3f1",
     "common.mjs": "7d245bc9d425e258e5351911b9b1847ae0b11f20afc03f148942459b64f5cab3",
     "environment.js": "fdf24c5c14ef26caee540923f5837691beb0d6cabe5ef2d7106273cd580060ba",
     "login.js": "51d38b8e5cdf12a384c0d95723c7f69673019036d65be6d7f4b7e6fcb11f851c",

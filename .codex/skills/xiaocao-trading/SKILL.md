@@ -34,8 +34,11 @@ Completion means the requested command reached a terminal state and the branch-s
   ★E/allocation proof for BUY, monitor-authorized owned-lot evidence for SELL,
   account-level writer fencing and durable takeover/reconcile evidence. The
   only candidate write route is Founder `package-limit`; a real submit still
-  requires exact account binding, route/receipt proof and both capital keys.
-  Unproved cancellation or retry semantics remain fail-closed.
+  requires exact account binding, route/reconcile proof and both capital keys.
+  First-order receipt, UNKNOWN, reconcile, rejection and replacement semantics
+  are governed exclusively by `docs/OPERATING_CONTRACT.md` §4/§9; never restate,
+  relax or infer them from browser visibility. Unproved cancellation or retry
+  semantics remain fail-closed.
   Its non-empty freeze must be hash/count bound to the consumed snapshot; its
   producer strategy Git SHA must be bound by the freeze manifest; its
   allocation facts must come from a complete dated live asset readback bound

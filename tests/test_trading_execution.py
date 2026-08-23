@@ -61,7 +61,18 @@ class FakeBroker:
             supports_submit=True,
             supports_reconcile=True,
         )
-        self.submit_results = list(submit or [BrokerReceipt(status=BrokerStatus.ACCEPTED, order_id="o-1")])
+        self.submit_results = list(
+            submit
+            or [
+                BrokerReceipt(
+                    status=BrokerStatus.ACCEPTED,
+                    order_id="o-1",
+                    strategy_id="s-1",
+                    receipt_mapping=True,
+                    account_binding="proven",
+                )
+            ]
+        )
         self.reconcile_results = list(reconcile or [BrokerReceipt(status=BrokerStatus.FILLED, order_id="o-1", filled_shares=200)])
         self.probe_calls = 0
         self.prepare_calls = 0
@@ -86,7 +97,13 @@ class FakeBroker:
         self.submit_calls += 1
         self.claim_ids.append(claim_id)
         if not self.submit_results:
-            return BrokerReceipt(status=BrokerStatus.ACCEPTED, order_id="o-1")
+            return BrokerReceipt(
+                status=BrokerStatus.ACCEPTED,
+                order_id="o-1",
+                strategy_id="s-1",
+                receipt_mapping=True,
+                account_binding="proven",
+            )
         return self.submit_results.pop(0)
 
     def reconcile(self, plan: TradePlan, previous: dict) -> BrokerReceipt:
@@ -250,7 +267,7 @@ def test_live_switch_can_be_rehearsed_with_fake_adapter_but_never_without_gate(t
     assert broker.submit_calls == 1
 
 
-def test_live_route_without_receipt_mapping_is_rejected_before_submit(
+def test_first_live_submit_can_prove_receipt_mapping_when_probe_is_pending(
     tmp_path: Path,
 ) -> None:
     now = datetime(2026, 8, 15, 1, 1, tzinfo=timezone.utc)
@@ -287,9 +304,438 @@ def test_live_route_without_receipt_mapping_is_rejected_before_submit(
         broker,
     )
 
+    assert receipt.state == ExecutionState.ACKNOWLEDGED
+    assert broker.submit_calls == 1
+
+
+def test_live_route_without_reconcile_capability_is_rejected_before_submit(
+    tmp_path: Path,
+) -> None:
+    now = datetime(2026, 8, 15, 1, 1, tzinfo=timezone.utc)
+    signing_key = "test-human-key"
+    auth = make_authorization(
+        scope="isolated-test",
+        max_notional=10000.0,
+        signing_key=signing_key,
+        sides=["BUY"],
+        codes=["000001.XSHE"],
+        issued_at=now.isoformat(),
+        expires_at="2026-08-16T00:00:00+00:00",
+    )
+    auth_path = tmp_path / "live_authorization.json"
+    auth_path.write_text(json.dumps(auth), encoding="utf-8")
+    broker = FakeBroker()
+    broker.capability = replace(
+        broker.capability,
+        account_binding="proven",
+        manual_position_shares=0,
+        supports_reconcile=False,
+        capabilities={"receipt_mapping": False},
+    )
+    engine = TradingExecution(
+        store=InMemoryExecutionStore(tmp_path / "events.jsonl"),
+        safety_env={ENV_LIVE_ENABLED: "true", ENV_SIGNING_KEY: signing_key},
+        auth_path=auth_path,
+        audit_path=tmp_path / "audit.jsonl",
+        notifier=lambda _title, _body: "ok",
+        now=lambda: now,
+    )
+
+    receipt = engine.execute(
+        _plan(environment="live", deadline=now + timedelta(minutes=15)),
+        broker,
+    )
+
     assert receipt.state == ExecutionState.REJECTED
-    assert receipt.reason == "BROKER_RECEIPT_MAPPING_UNPROVEN"
+    assert receipt.reason == "BROKER_RECONCILE_UNPROVEN"
     assert broker.submit_calls == 0
+
+
+def test_live_submit_without_receipt_mapping_becomes_unknown_and_is_not_replayed(
+    tmp_path: Path,
+) -> None:
+    now = datetime(2026, 8, 15, 1, 1, tzinfo=timezone.utc)
+    signing_key = "test-human-key"
+    auth = make_authorization(
+        scope="isolated-test",
+        max_notional=10000.0,
+        signing_key=signing_key,
+        sides=["BUY"],
+        codes=["000001.XSHE"],
+        issued_at=now.isoformat(),
+        expires_at="2026-08-16T00:00:00+00:00",
+    )
+    auth_path = tmp_path / "live_authorization.json"
+    auth_path.write_text(json.dumps(auth), encoding="utf-8")
+    broker = FakeBroker(
+        submit=[
+            BrokerReceipt(
+                status=BrokerStatus.ACCEPTED,
+                order_id="o-1",
+                strategy_id="s-1",
+                receipt_mapping=False,
+                account_binding="proven",
+            )
+        ],
+        reconcile=[
+            BrokerReceipt(
+                status=BrokerStatus.UNKNOWN,
+                reason="order mapping still unavailable",
+                conclusive=False,
+            )
+        ],
+    )
+    broker.capability = replace(
+        broker.capability,
+        account_binding="proven",
+        manual_position_shares=0,
+        capabilities={"receipt_mapping": False},
+    )
+    engine = TradingExecution(
+        store=InMemoryExecutionStore(tmp_path / "events.jsonl"),
+        safety_env={ENV_LIVE_ENABLED: "true", ENV_SIGNING_KEY: signing_key},
+        auth_path=auth_path,
+        audit_path=tmp_path / "audit.jsonl",
+        notifier=lambda _title, _body: "ok",
+        now=lambda: now,
+    )
+    plan = _plan(environment="live", deadline=now + timedelta(minutes=15))
+
+    first = engine.execute(plan, broker)
+    second = engine.execute(plan, broker)
+
+    assert first.state == second.state == ExecutionState.UNKNOWN
+    assert first.reason == "LIVE_SUBMIT_RECEIPT_UNPROVEN"
+    assert first.next_action == "reconcile_only"
+    assert broker.submit_calls == 1
+    assert broker.reconcile_calls == 1
+
+
+def test_uncertain_live_submit_cannot_retry_after_partial_reconcile(
+    tmp_path: Path,
+) -> None:
+    now = datetime(2026, 8, 15, 1, 1, tzinfo=timezone.utc)
+    signing_key = "test-human-key"
+    auth = make_authorization(
+        scope="isolated-test",
+        max_notional=10000.0,
+        signing_key=signing_key,
+        sides=["BUY"],
+        codes=["000001.XSHE"],
+        issued_at=now.isoformat(),
+        expires_at="2026-08-16T00:00:00+00:00",
+    )
+    auth_path = tmp_path / "live_authorization.json"
+    auth_path.write_text(json.dumps(auth), encoding="utf-8")
+    broker = FakeBroker(
+        submit=[
+            BrokerReceipt(
+                status=BrokerStatus.ACCEPTED,
+                order_id="o-1",
+                strategy_id="s-1",
+                receipt_mapping=False,
+                account_binding="proven",
+            )
+        ],
+        reconcile=[
+            BrokerReceipt(
+                status=BrokerStatus.PARTIAL,
+                order_id="o-1",
+                strategy_id="s-1",
+                receipt_mapping=True,
+                account_binding="proven",
+                filled_shares=100,
+                remaining_shares=100,
+                latest_price=10.05,
+                active=False,
+                retry_allowed=True,
+                observed_at=now,
+                field_readback={"order_terminal": True},
+            ),
+            BrokerReceipt(
+                status=BrokerStatus.PARTIAL,
+                order_id="o-1",
+                strategy_id="s-1",
+                receipt_mapping=True,
+                account_binding="proven",
+                filled_shares=100,
+                remaining_shares=100,
+                latest_price=10.05,
+                active=False,
+                retry_allowed=True,
+                observed_at=now,
+                field_readback={"order_terminal": True},
+            ),
+        ],
+    )
+    broker.capability = replace(
+        broker.capability,
+        account_binding="proven",
+        manual_position_shares=0,
+        capabilities={"receipt_mapping": False},
+    )
+    engine = TradingExecution(
+        store=InMemoryExecutionStore(tmp_path / "events.jsonl"),
+        safety_env={ENV_LIVE_ENABLED: "true", ENV_SIGNING_KEY: signing_key},
+        auth_path=auth_path,
+        audit_path=tmp_path / "audit.jsonl",
+        notifier=lambda _title, _body: "ok",
+        now=lambda: now,
+    )
+    plan = _plan(environment="live", deadline=now + timedelta(minutes=15))
+
+    first = engine.execute(plan, broker)
+    second = engine.execute(plan, broker)
+    third = engine.execute(plan, broker)
+
+    assert first.state == ExecutionState.UNKNOWN
+    assert second.state == third.state == ExecutionState.PARTIAL
+    assert second.reason == third.reason == "UNCERTAIN_SUBMIT_NO_RETRY"
+    assert broker.submit_calls == 1
+    assert broker.reconcile_calls == 2
+
+
+def test_live_reconcile_without_strategy_id_remains_unknown(tmp_path: Path) -> None:
+    now = datetime(2026, 8, 15, 1, 1, tzinfo=timezone.utc)
+    signing_key = "test-human-key"
+    auth = make_authorization(
+        scope="isolated-test",
+        max_notional=10000.0,
+        signing_key=signing_key,
+        sides=["BUY"],
+        codes=["000001.XSHE"],
+        issued_at=now.isoformat(),
+        expires_at="2026-08-16T00:00:00+00:00",
+    )
+    auth_path = tmp_path / "live_authorization.json"
+    auth_path.write_text(json.dumps(auth), encoding="utf-8")
+    broker = FakeBroker(
+        submit=[
+            BrokerReceipt(
+                status=BrokerStatus.ACCEPTED,
+                order_id="o-1",
+                receipt_mapping=False,
+                account_binding="proven",
+            )
+        ],
+        reconcile=[
+            BrokerReceipt(
+                status=BrokerStatus.FILLED,
+                order_id="o-1",
+                receipt_mapping=True,
+                account_binding="proven",
+                filled_shares=200,
+            )
+        ],
+    )
+    broker.capability = replace(
+        broker.capability,
+        account_binding="proven",
+        manual_position_shares=0,
+        capabilities={"receipt_mapping": False},
+    )
+    engine = TradingExecution(
+        store=InMemoryExecutionStore(tmp_path / "events.jsonl"),
+        safety_env={ENV_LIVE_ENABLED: "true", ENV_SIGNING_KEY: signing_key},
+        auth_path=auth_path,
+        audit_path=tmp_path / "audit.jsonl",
+        notifier=lambda _title, _body: "ok",
+        now=lambda: now,
+    )
+    plan = _plan(environment="live", deadline=now + timedelta(minutes=15))
+
+    first = engine.execute(plan, broker)
+    second = engine.execute(plan, broker)
+
+    assert first.state == second.state == ExecutionState.UNKNOWN
+    assert second.reason == "LIVE_RECONCILE_RECEIPT_UNPROVEN"
+    assert broker.submit_calls == 1
+
+
+def test_live_reconcile_cannot_bind_a_new_order_to_a_stale_strategy(
+    tmp_path: Path,
+) -> None:
+    now = datetime(2026, 8, 15, 1, 1, tzinfo=timezone.utc)
+    signing_key = "test-human-key"
+    auth = make_authorization(
+        scope="isolated-test",
+        max_notional=10000.0,
+        signing_key=signing_key,
+        sides=["BUY"],
+        codes=["000001.XSHE"],
+        issued_at=now.isoformat(),
+        expires_at="2026-08-16T00:00:00+00:00",
+    )
+    auth_path = tmp_path / "live_authorization.json"
+    auth_path.write_text(json.dumps(auth), encoding="utf-8")
+    broker = FakeBroker(
+        submit=[
+            BrokerReceipt(
+                status=BrokerStatus.ACCEPTED,
+                order_id="o-1",
+                strategy_id="s-1",
+                receipt_mapping=False,
+                account_binding="proven",
+            )
+        ],
+        reconcile=[
+            BrokerReceipt(
+                status=BrokerStatus.FILLED,
+                order_id="o-2",
+                receipt_mapping=True,
+                account_binding="proven",
+                filled_shares=200,
+            )
+        ],
+    )
+    broker.capability = replace(
+        broker.capability,
+        account_binding="proven",
+        manual_position_shares=0,
+        capabilities={"receipt_mapping": False},
+    )
+    engine = TradingExecution(
+        store=InMemoryExecutionStore(tmp_path / "events.jsonl"),
+        safety_env={ENV_LIVE_ENABLED: "true", ENV_SIGNING_KEY: signing_key},
+        auth_path=auth_path,
+        audit_path=tmp_path / "audit.jsonl",
+        notifier=lambda _title, _body: "ok",
+        now=lambda: now,
+    )
+    plan = _plan(environment="live", deadline=now + timedelta(minutes=15))
+
+    first = engine.execute(plan, broker)
+    second = engine.execute(plan, broker)
+
+    assert first.state == second.state == ExecutionState.UNKNOWN
+    assert second.reason == "LIVE_RECONCILE_RECEIPT_UNPROVEN"
+    assert second.broker_order_id == "o-2"
+    assert broker.submit_calls == 1
+
+
+def test_capability_parser_fails_closed_without_explicit_reconcile_proof() -> None:
+    base = {
+        "status": "ready",
+        "environment": "live",
+        "logical_account_id": "primary",
+        "capabilities": {"submit": True},
+    }
+
+    assert BrokerCapability.from_template(base).supports_reconcile is False
+    assert BrokerCapability.from_template(
+        {**base, "capabilities": {"submit": True, "reconcile": False}}
+    ).supports_reconcile is False
+    assert BrokerCapability.from_template(
+        {**base, "capabilities": {"submit": True, "reconcile": True}}
+    ).supports_reconcile is True
+    assert BrokerCapability(
+        ready=True,
+        environment="live",
+        logical_account_id="primary",
+        supports_submit=True,
+    ).supports_reconcile is False
+
+
+def test_unproved_live_rejection_becomes_unknown(tmp_path: Path) -> None:
+    now = datetime(2026, 8, 15, 1, 1, tzinfo=timezone.utc)
+    signing_key = "test-human-key"
+    auth = make_authorization(
+        scope="isolated-test",
+        max_notional=10000.0,
+        signing_key=signing_key,
+        sides=["BUY"],
+        codes=["000001.XSHE"],
+        issued_at=now.isoformat(),
+        expires_at="2026-08-16T00:00:00+00:00",
+    )
+    auth_path = tmp_path / "live_authorization.json"
+    auth_path.write_text(json.dumps(auth), encoding="utf-8")
+    broker = FakeBroker(
+        submit=[
+            BrokerReceipt(
+                status=BrokerStatus.REJECTED,
+                reason="ambiguous rejection",
+                conclusive=True,
+            )
+        ]
+    )
+    broker.capability = replace(
+        broker.capability,
+        account_binding="proven",
+        manual_position_shares=0,
+        capabilities={"receipt_mapping": False},
+    )
+    engine = TradingExecution(
+        store=InMemoryExecutionStore(tmp_path / "events.jsonl"),
+        safety_env={ENV_LIVE_ENABLED: "true", ENV_SIGNING_KEY: signing_key},
+        auth_path=auth_path,
+        audit_path=tmp_path / "audit.jsonl",
+        notifier=lambda _title, _body: "ok",
+        now=lambda: now,
+    )
+
+    receipt = engine.execute(
+        _plan(environment="live", deadline=now + timedelta(minutes=15)),
+        broker,
+    )
+
+    assert receipt.state == ExecutionState.UNKNOWN
+    assert receipt.reason == "LIVE_SUBMIT_RECEIPT_UNPROVEN"
+    assert receipt.submit_chain_uncertain is True
+
+
+def test_proved_no_click_live_rejection_is_terminal(tmp_path: Path) -> None:
+    now = datetime(2026, 8, 15, 1, 1, tzinfo=timezone.utc)
+    signing_key = "test-human-key"
+    auth = make_authorization(
+        scope="isolated-test",
+        max_notional=10000.0,
+        signing_key=signing_key,
+        sides=["BUY"],
+        codes=["000001.XSHE"],
+        issued_at=now.isoformat(),
+        expires_at="2026-08-16T00:00:00+00:00",
+    )
+    auth_path = tmp_path / "live_authorization.json"
+    auth_path.write_text(json.dumps(auth), encoding="utf-8")
+    broker = FakeBroker(
+        submit=[
+            BrokerReceipt(
+                status=BrokerStatus.REJECTED,
+                reason="non_trading_time",
+                account_binding="proven",
+                conclusive=True,
+                field_readback={
+                    "submitted": False,
+                    "saved": False,
+                    "started": False,
+                },
+            )
+        ]
+    )
+    broker.capability = replace(
+        broker.capability,
+        account_binding="proven",
+        manual_position_shares=0,
+        capabilities={"receipt_mapping": False},
+    )
+    engine = TradingExecution(
+        store=InMemoryExecutionStore(tmp_path / "events.jsonl"),
+        safety_env={ENV_LIVE_ENABLED: "true", ENV_SIGNING_KEY: signing_key},
+        auth_path=auth_path,
+        audit_path=tmp_path / "audit.jsonl",
+        notifier=lambda _title, _body: "ok",
+        now=lambda: now,
+    )
+
+    receipt = engine.execute(
+        _plan(environment="live", deadline=now + timedelta(minutes=15)),
+        broker,
+    )
+
+    assert receipt.state == ExecutionState.REJECTED
+    assert receipt.reason == "non_trading_time"
+    assert receipt.submit_chain_uncertain is False
 
 
 @pytest.mark.parametrize("guard,reason", [("limit_down", "LIMIT_DOWN_BUY_BLOCKED"), ("unavailable", "LIMIT_DOWN_CHECK_UNAVAILABLE")])
@@ -356,6 +802,60 @@ def test_prepare_unknown_is_reconcile_only_and_never_submits(tmp_path: Path) -> 
     receipt = engine.execute(_plan(), broker)
     assert receipt.state == ExecutionState.UNKNOWN
     assert receipt.next_action == "reconcile_only"
+    assert broker.submit_calls == 0
+
+
+def test_prepare_unknown_permanently_blocks_automatic_submit(tmp_path: Path) -> None:
+    now = datetime(2026, 8, 15, 1, 1, tzinfo=timezone.utc)
+
+    class UnknownPrepareBroker(FakeBroker):
+        def prepare(self, plan: TradePlan, *, requested_shares: int | None = None) -> BrokerReceipt:
+            self.prepare_calls += 1
+            return BrokerReceipt(
+                status=BrokerStatus.UNKNOWN,
+                reason="page_transition_lost",
+                conclusive=False,
+            )
+
+    broker = UnknownPrepareBroker(
+        reconcile=[
+            BrokerReceipt(
+                status=BrokerStatus.PARTIAL,
+                order_id="unexpected-order",
+                filled_shares=100,
+                remaining_shares=100,
+                latest_price=10.05,
+                active=False,
+                retry_allowed=True,
+                observed_at=now,
+                field_readback={"order_terminal": True},
+            ),
+            BrokerReceipt(
+                status=BrokerStatus.PARTIAL,
+                order_id="unexpected-order",
+                filled_shares=100,
+                remaining_shares=100,
+                latest_price=10.05,
+                active=False,
+                retry_allowed=True,
+                observed_at=now,
+                field_readback={"order_terminal": True},
+            ),
+        ]
+    )
+    engine = TradingExecution(
+        store=InMemoryExecutionStore(tmp_path / "events.jsonl"),
+        now=lambda: now,
+    )
+    plan = _plan()
+
+    first = engine.execute(plan, broker)
+    second = engine.execute(plan, broker)
+    third = engine.execute(plan, broker)
+
+    assert first.state == ExecutionState.UNKNOWN
+    assert second.state == third.state == ExecutionState.PARTIAL
+    assert second.reason == third.reason == "UNCERTAIN_SUBMIT_NO_RETRY"
     assert broker.submit_calls == 0
 
 
@@ -533,6 +1033,73 @@ def test_partial_fill_retries_only_when_realtime_price_is_within_basket(tmp_path
     final = engine.execute(_plan(), broker)
     assert final.state == ExecutionState.FILLED
     assert final.filled_shares == 200
+    assert broker.submit_calls == 2
+
+
+def test_partial_fill_never_submits_more_than_one_controlled_retry(tmp_path: Path) -> None:
+    now = datetime(2026, 8, 15, 1, 1, tzinfo=timezone.utc)
+    broker = FakeBroker(
+        submit=[
+            BrokerReceipt(status=BrokerStatus.PARTIAL, order_id="o-1", filled_shares=50),
+            BrokerReceipt(status=BrokerStatus.PARTIAL, order_id="o-2", filled_shares=50),
+            BrokerReceipt(status=BrokerStatus.FILLED, order_id="o-3", filled_shares=100),
+        ],
+        reconcile=[
+            BrokerReceipt(
+                status=BrokerStatus.PARTIAL,
+                order_id="o-1",
+                filled_shares=50,
+                latest_price=10.05,
+                active=False,
+                observed_at=now,
+                field_readback={"order_terminal": True},
+            ),
+            BrokerReceipt(
+                status=BrokerStatus.PARTIAL,
+                order_id="o-2",
+                filled_shares=50,
+                latest_price=10.05,
+                active=False,
+                observed_at=now,
+                field_readback={"order_terminal": True},
+            ),
+        ],
+    )
+    engine = TradingExecution(
+        store=InMemoryExecutionStore(tmp_path / "events.jsonl"),
+        now=lambda: now,
+    )
+    plan = _plan()
+
+    first = engine.execute(plan, broker)
+    second = engine.execute(plan, broker)
+    third = engine.execute(plan, broker)
+
+    assert first.state == second.state == third.state == ExecutionState.PARTIAL
+    assert third.reason == "RETRY_LIMIT_REACHED"
+    assert broker.submit_calls == 2
+
+
+def test_submit_boundary_blocks_a_third_attempt_from_any_state(tmp_path: Path) -> None:
+    broker = FakeBroker(
+        submit=[
+            BrokerReceipt(status=BrokerStatus.PREPARED),
+            BrokerReceipt(status=BrokerStatus.PREPARED),
+            BrokerReceipt(status=BrokerStatus.FILLED, order_id="o-3", filled_shares=200),
+        ]
+    )
+    engine = TradingExecution(
+        store=InMemoryExecutionStore(tmp_path / "events.jsonl")
+    )
+    plan = _plan()
+
+    first = engine.execute(plan, broker)
+    second = engine.execute(plan, broker)
+    third = engine.execute(plan, broker)
+
+    assert first.state == second.state == ExecutionState.PREPARED
+    assert third.state == ExecutionState.REJECTED
+    assert third.reason == "RETRY_LIMIT_REACHED"
     assert broker.submit_calls == 2
 
 

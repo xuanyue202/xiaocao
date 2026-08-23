@@ -1049,6 +1049,7 @@ class FounderscQuantOpenCLIAdapter(BrokerAdapter):
             status=status,
             order_id=str(row.get("order_id") or "") or None,
             strategy_id=str(row.get("strategy_id") or "") or None,
+            receipt_mapping=receipt_mapping,
             requested_shares=_optional_int(row.get("requested_shares")) or requested_shares,
             filled_shares=_optional_int(row.get("filled_shares")) or 0,
             remaining_shares=_optional_int(row.get("remaining_shares")),

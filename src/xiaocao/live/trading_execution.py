@@ -7,9 +7,10 @@ incident handoff.  A broker adapter is deliberately small so a Web/OpenCLI
 implementation can change without leaking DOM details into Xiaocao.
 
 The module is broker-neutral.  A live adapter may submit only after it proves
-an exact route, account binding and receipt-mapping capability; otherwise live
-plans stop fail-closed and no submit is attempted.  Paper/simulation adapters
-are used by the contract tests.
+an exact route, account binding and reconciliation capability.  A first-order
+probe may leave receipt mapping pending; the one claimed submit must then prove
+its broker order and strategy identifiers or become reconcile-only UNKNOWN.
+Paper/simulation adapters are used by the contract tests.
 """
 from __future__ import annotations
 
@@ -364,7 +365,7 @@ class BrokerCapability:
     environment: str
     logical_account_id: str
     supports_submit: bool = False
-    supports_reconcile: bool = True
+    supports_reconcile: bool = False
     route: str = ""
     account_binding: str = ""
     locator_proof: dict[str, Any] = field(default_factory=dict)
@@ -388,7 +389,11 @@ class BrokerCapability:
             environment=str(payload.get("environment") or ""),
             logical_account_id=str(payload.get("logical_account_id") or ""),
             supports_submit=bool(payload.get("submit_capability") or caps.get("submit")),
-            supports_reconcile=bool(payload.get("reconcile_capability", True)),
+            supports_reconcile=bool(
+                payload.get("reconcile_capability")
+                if "reconcile_capability" in payload
+                else caps.get("reconcile", False)
+            ),
             route=str(payload.get("route") or ""),
             account_binding=str(payload.get("account_binding") or ""),
             locator_proof=locator_proof if isinstance(locator_proof, dict) else {},
@@ -417,6 +422,7 @@ class BrokerReceipt:
     status: str | BrokerStatus
     order_id: str | None = None
     strategy_id: str | None = None
+    receipt_mapping: bool | None = None
     requested_shares: int | None = None
     filled_shares: int = 0
     remaining_shares: int | None = None
@@ -481,7 +487,10 @@ class ExecutionReceipt:
     filled_shares: int = 0
     remaining_shares: int = 0
     broker_order_id: str | None = None
+    broker_strategy_id: str | None = None
     broker_status: str | None = None
+    receipt_mapping: bool | None = None
+    submit_chain_uncertain: bool = False
     order_price: float | None = None
     fill_price: float | None = None
     latest_price: float | None = None
@@ -507,7 +516,10 @@ class ExecutionReceipt:
             "filled_shares": self.filled_shares,
             "remaining_shares": self.remaining_shares,
             "broker_order_id": self.broker_order_id,
+            "broker_strategy_id": self.broker_strategy_id,
             "broker_status": self.broker_status,
+            "receipt_mapping": self.receipt_mapping,
+            "submit_chain_uncertain": self.submit_chain_uncertain,
             "order_price": self.order_price,
             "fill_price": self.fill_price,
             "latest_price": self.latest_price,
@@ -536,7 +548,17 @@ class ExecutionReceipt:
             filled_shares=int(payload.get("filled_shares") or 0),
             remaining_shares=int(payload.get("remaining_shares") or 0),
             broker_order_id=payload.get("broker_order_id"),
+            broker_strategy_id=payload.get("broker_strategy_id"),
             broker_status=payload.get("broker_status"),
+            receipt_mapping=(
+                payload.get("receipt_mapping")
+                if isinstance(payload.get("receipt_mapping"), bool)
+                else None
+            ),
+            submit_chain_uncertain=(
+                payload.get("submit_chain_uncertain") is True
+                or payload.get("submit_uncertain") is True
+            ),
             order_price=_optional_float(payload.get("order_price")),
             fill_price=_optional_float(payload.get("fill_price")),
             latest_price=_optional_float(payload.get("latest_price")),
@@ -1172,22 +1194,19 @@ class TradingExecution:
             if plan.environment == "live":
                 self._incident(plan, denied)
             return denied
-        if plan.environment == "live" and (
-            not capability.supports_reconcile
-            or capability.capabilities.get("receipt_mapping") is not True
-        ):
+        if plan.environment == "live" and not capability.supports_reconcile:
             blocked = self._record(
                 plan,
                 self._with_capability_evidence(
                     replace(
                         previous,
                         state=ExecutionState.REJECTED,
-                        reason="BROKER_RECEIPT_MAPPING_UNPROVEN",
+                        reason="BROKER_RECONCILE_UNPROVEN",
                         next_action="human_review",
                     ),
                     capability,
                 ),
-                kind="receipt_mapping_unproven",
+                kind="reconcile_capability_unproven",
                 details={"capability": asdict(capability)},
             )
             self._incident(plan, blocked)
@@ -1237,6 +1256,7 @@ class TradingExecution:
                     state=ExecutionState.UNKNOWN,
                     reason=prepared.reason or "PREPARE_RESPONSE_UNKNOWN",
                     next_action="reconcile_only",
+                    submit_chain_uncertain=True,
                 ),
                 kind="prepare_unknown",
             )
@@ -1303,6 +1323,20 @@ class TradingExecution:
         requested_shares: int,
         already_filled: int = 0,
     ) -> ExecutionReceipt:
+        if previous.attempt >= 2:
+            blocked = self._record(
+                plan,
+                replace(
+                    previous,
+                    state=ExecutionState.REJECTED,
+                    reason="RETRY_LIMIT_REACHED",
+                    next_action="stop",
+                ),
+                kind="submit_attempt_limit_reached",
+            )
+            if plan.environment == "live":
+                self._incident(plan, blocked)
+            return blocked
         claim_id = f"{plan.plan_id}:{previous.attempt + 1}:{uuid.uuid4().hex}"
         claimed = self._record(
             plan,
@@ -1321,7 +1355,13 @@ class TradingExecution:
         except Exception as exc:
             unknown = self._record(
                 plan,
-                replace(claimed, state=ExecutionState.UNKNOWN, reason=f"SUBMIT_RESPONSE_UNKNOWN:{type(exc).__name__}", next_action="reconcile_only"),
+                replace(
+                    claimed,
+                    state=ExecutionState.UNKNOWN,
+                    reason=f"SUBMIT_RESPONSE_UNKNOWN:{type(exc).__name__}",
+                    next_action="reconcile_only",
+                    submit_chain_uncertain=True,
+                ),
                 kind="submit_unknown",
                 details={"claim_id": claim_id},
             )
@@ -1338,9 +1378,40 @@ class TradingExecution:
             )
             unknown = self._record(
                 plan,
-                replace(unknown_base, state=ExecutionState.UNKNOWN, reason=broker_receipt.reason or "SUBMIT_RESPONSE_UNKNOWN", next_action="reconcile_only"),
+                replace(
+                    unknown_base,
+                    state=ExecutionState.UNKNOWN,
+                    reason=broker_receipt.reason or "SUBMIT_RESPONSE_UNKNOWN",
+                    next_action="reconcile_only",
+                    submit_chain_uncertain=True,
+                ),
                 kind="submit_unknown",
                 details={"claim_id": claim_id, "error_code": broker_receipt.error_code},
+            )
+            self._incident(plan, unknown)
+            return unknown
+        if plan.environment == "live" and not self._live_submit_receipt_proven(
+            broker_receipt
+        ):
+            unknown_base = self._receipt_from_broker(
+                plan,
+                claimed,
+                broker_receipt,
+                ExecutionState.UNKNOWN,
+                requested_shares,
+                already_filled=already_filled,
+            )
+            unknown = self._record(
+                plan,
+                replace(
+                    unknown_base,
+                    state=ExecutionState.UNKNOWN,
+                    reason="LIVE_SUBMIT_RECEIPT_UNPROVEN",
+                    next_action="reconcile_only",
+                    submit_chain_uncertain=True,
+                ),
+                kind="submit_receipt_unproven",
+                details={"claim_id": claim_id},
             )
             self._incident(plan, unknown)
             return unknown
@@ -1363,7 +1434,13 @@ class TradingExecution:
         except Exception as exc:
             unknown = self._record(
                 plan,
-                replace(reconciling, state=ExecutionState.UNKNOWN, reason=f"RECONCILE_FAILED:{type(exc).__name__}", next_action="reconcile_only"),
+                replace(
+                    reconciling,
+                    state=ExecutionState.UNKNOWN,
+                    reason=f"RECONCILE_FAILED:{type(exc).__name__}",
+                    next_action="reconcile_only",
+                    submit_chain_uncertain=True,
+                ),
                 kind="reconcile_unknown",
             )
             self._incident(plan, unknown)
@@ -1374,8 +1451,37 @@ class TradingExecution:
             )
             unknown = self._record(
                 plan,
-                replace(unknown_base, state=ExecutionState.UNKNOWN, reason=broker_receipt.reason or "RECONCILE_UNKNOWN", next_action="reconcile_only"),
+                replace(
+                    unknown_base,
+                    state=ExecutionState.UNKNOWN,
+                    reason=broker_receipt.reason or "RECONCILE_UNKNOWN",
+                    next_action="reconcile_only",
+                    submit_chain_uncertain=True,
+                ),
                 kind="reconcile_unknown",
+            )
+            self._incident(plan, unknown)
+            return unknown
+        if plan.environment == "live" and not self._live_reconcile_receipt_proven(
+            previous,
+            broker_receipt,
+        ):
+            unknown_base = self._receipt_from_broker(
+                plan,
+                reconciling,
+                broker_receipt,
+                ExecutionState.UNKNOWN,
+                plan.shares,
+            )
+            unknown = self._record(
+                plan,
+                replace(
+                    unknown_base,
+                    state=ExecutionState.UNKNOWN,
+                    reason="LIVE_RECONCILE_RECEIPT_UNPROVEN",
+                    next_action="reconcile_only",
+                ),
+                kind="reconcile_receipt_unproven",
             )
             self._incident(plan, unknown)
             return unknown
@@ -1387,6 +1493,26 @@ class TradingExecution:
         )
         if state != ExecutionState.PARTIAL or reconciled.remaining_shares <= 0:
             return reconciled
+        if reconciled.submit_chain_uncertain:
+            return self._record(
+                plan,
+                replace(
+                    reconciled,
+                    reason="UNCERTAIN_SUBMIT_NO_RETRY",
+                    next_action="stop",
+                ),
+                kind="uncertain_submit_retry_blocked",
+            )
+        if reconciled.attempt >= 2:
+            return self._record(
+                plan,
+                replace(
+                    reconciled,
+                    reason="RETRY_LIMIT_REACHED",
+                    next_action="stop",
+                ),
+                kind="retry_limit_reached",
+            )
         if not self._retry_allowed(plan, broker_receipt):
             reason = self._retry_block_reason(plan, broker_receipt)
             return self._record(plan, replace(reconciled, reason=reason, next_action="wait_for_basket" if reason == "REALTIME_ABOVE_BASKET" else "stop"))
@@ -1434,6 +1560,7 @@ class TradingExecution:
                         state=ExecutionState.UNKNOWN,
                         reason=prepared.reason or "RETRY_PREPARE_RESPONSE_UNKNOWN",
                         next_action="reconcile_only",
+                        submit_chain_uncertain=True,
                     ),
                     kind="retry_prepare_unknown",
                 )
@@ -1473,7 +1600,17 @@ class TradingExecution:
                 already_filled=reconciled.filled_shares,
             )
         except Exception as exc:
-            failed = self._record(plan, replace(reconciled, state=ExecutionState.UNKNOWN, reason=f"RETRY_PREPARE_UNKNOWN:{type(exc).__name__}", next_action="reconcile_only"), kind="retry_unknown")
+            failed = self._record(
+                plan,
+                replace(
+                    reconciled,
+                    state=ExecutionState.UNKNOWN,
+                    reason=f"RETRY_PREPARE_UNKNOWN:{type(exc).__name__}",
+                    next_action="reconcile_only",
+                    submit_chain_uncertain=True,
+                ),
+                kind="retry_unknown",
+            )
             if plan.environment == "live":
                 self._incident(plan, failed)
             return failed
@@ -1514,6 +1651,53 @@ class TradingExecution:
             BrokerStatus.UNKNOWN: ExecutionState.UNKNOWN,
         }[receipt.normalized_status()]
 
+    @staticmethod
+    def _account_binding_proven(receipt: BrokerReceipt) -> bool:
+        return str(receipt.account_binding or "").strip().lower() in {
+            "proven",
+            "bound",
+        }
+
+    @classmethod
+    def _live_submit_receipt_proven(cls, receipt: BrokerReceipt) -> bool:
+        status = receipt.normalized_status()
+        if status == BrokerStatus.REJECTED:
+            return (
+                cls._account_binding_proven(receipt)
+                and receipt.conclusive
+                and all(
+                    receipt.field_readback.get(key) is False
+                    for key in ("submitted", "saved", "started")
+                )
+            )
+        return (
+            status
+            in {
+                BrokerStatus.ACCEPTED,
+                BrokerStatus.PARTIAL,
+                BrokerStatus.FILLED,
+                BrokerStatus.CANCELLED,
+            }
+            and cls._account_binding_proven(receipt)
+            and receipt.receipt_mapping is True
+            and bool(receipt.order_id)
+            and bool(receipt.strategy_id)
+        )
+
+    @classmethod
+    def _live_reconcile_receipt_proven(
+        cls,
+        previous: ExecutionReceipt,
+        receipt: BrokerReceipt,
+    ) -> bool:
+        return (
+            cls._account_binding_proven(receipt)
+            and receipt.receipt_mapping is True
+            and bool(previous.broker_order_id)
+            and receipt.order_id == previous.broker_order_id
+            and bool(previous.broker_strategy_id)
+        )
+
     def _receipt_from_broker(
         self,
         plan: TradePlan,
@@ -1552,7 +1736,13 @@ class TradingExecution:
             filled_shares=filled,
             remaining_shares=remaining,
             broker_order_id=broker.order_id or previous.broker_order_id,
+            broker_strategy_id=broker.strategy_id or previous.broker_strategy_id,
             broker_status=broker.normalized_status().value,
+            receipt_mapping=(
+                broker.receipt_mapping
+                if isinstance(broker.receipt_mapping, bool)
+                else previous.receipt_mapping
+            ),
             order_price=broker.order_price,
             fill_price=broker.fill_price,
             latest_price=broker.latest_price,

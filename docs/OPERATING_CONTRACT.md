@@ -1,6 +1,6 @@
 # 小草运营契约（Operating Contract, SSOT）
 
-**版本**：2.8
+**版本**：2.9
 **状态**：现行
 **适用范围**：所有 paper / 未来 real 的实盘环（live_recommend → paper_record → live_monitor → eod）与回测
 **关联实现**：`src/xiaocao/live/safety.py`、`src/xiaocao/live/intelligence_policy.py`、`src/xiaocao/strategy/{mode_switch,trend_rules,kol_reference}.py`、`kronos_screen/scripts/{capture_signals,forward_eval,paper_record,settle_book_a,settle_book_t,decompose_pnl,quality_governor}.py`、`scripts/{live_monitor,research_mode_switch_replay}.py`
@@ -70,8 +70,20 @@
   单证券的精确数值限价和整手数量；条件单、网格、定时/定投、集合竞价、
   TWAP/VWAP/POV/冰山及价格/时间分段均因引入触发、相对价格、重复、竞价或拆单
   语义而不得替代。09:20 只做登录、live/account/allocation/prepare 预检并维持心跳，
-  BUY 最早 09:30 才允许进入 submit。提交前必须同时通过账户绑定、回执映射、市场
-  guard 与双钥匙；最终点击一旦可能发生就绝不自动重试，必须按同一 plan reconcile。
+  BUY 最早 09:30 才允许进入 submit。提交前必须同时通过账户绑定、可对账能力、表单
+  回读、市场 guard 与双钥匙。首笔订单在 probe 阶段允许 `receipt_mapping=false`，因为
+  此时尚不存在可映射的 broker order；durable claim 后只允许一次 canary submit，且
+  submit 回执必须同时证明同账户绑定、唯一 broker order-id、strategy-id 与
+  `receipt_mapping=true` 才能 ACK。最终点击一旦可能发生，缺任一回执证明即进入
+  `UNKNOWN/reconcile_only`，绝不自动重试，后续只能按同一 plan reconcile；prepare、
+  submit 或 reconcile 任一阶段曾进入 chain-uncertain 的计划，即使随后查到 partial
+  也永久禁止自动补单。live reconcile 必须映射回前次已证明的同一 order-id，并保留
+  该 order 的 submit strategy-id 证据；不得用新 order-id 复用旧 strategy-id。
+  无 order mapping 的 `REJECTED` 只有同时证明 submitted/saved/started 均为 false
+  才能作为“未点击”的终态，否则同样进入 UNKNOWN。只有首单回执
+  从未歧义、且 reconcile 明确证明原单终态、撤单/拒单、fresh market guard 和剩余
+  数量时，才允许最多一次受控 replacement；总 submit attempt 上限为 2，且该上限
+  在唯一 submit boundary 再次强制，不依赖调用路径。
   当前交易时段最终提交及 broker order-id 形状、撤单终态、最多一次受控补单、
   fresh-login 原生 PassGuard 恢复仍未验收，缺任一证明继续 fail-closed，且绝不替代现行
   `paper_record.py` 单写者。任何未来 SELL intent 必须来自本节
@@ -168,7 +180,8 @@
 - **现状**：阶段一执行缝已在任何 broker adapter 之前调用
   `require_capital_action(...)`；独立 09:20 Automation 只启动隔离 live seam，
   不改变 09:25 模拟任务。Founder v6 仅对 account-bound `package-limit`
-  暴露 receipt-gated submit；交易时段 order-id、撤单/一次补单、unattended
+  暴露 receipt-proving first-order submit；probe mapping 可以 pending，但 submit
+  结果只有在 order-id/strategy-id 映射完整时才能 ACK。交易时段首单、撤单/一次补单、unattended
   PassGuard 仍未完整证明，且当前双钥匙缺失时仍不会产生真实订单。未来启用仍需
   本节双钥匙和独立激活审查。
 
@@ -198,7 +211,7 @@
 - [x] Book T snapshot/account/monitor key 均带 `book` 命名空间；B/T 同票同日不互相覆盖；T 宽止损不调用短线 strong-hold/composite。
 - [x] Book B 与历史回放共用 `strategy.mode_switch`；D-1 outcome 不进入 D 日早盘状态；`COLD/UNKNOWN/BJSE` 无成交权限；`--notional` 不能绕过 3 席位、每模式 1 只和批次 50% 上限。
 - [x] 模式证据保留 25%/45%/50% 验证权重；`ACTIVE` 同时通过候选池和四指数证据，近期双基准均值与多数日转正可直接升格，任一均值转负只冷却到 `PROVISIONAL`。
-- [x] 独立 09:20 Book-B live morning 与 09:25 模拟任务隔离；唯一候选写路由为 account-bound `package-limit`，09:30 前只预检/心跳；不读写模拟成交或 canonical paper ledger；交易时段 submit/order-id、撤单/一次补单和 unattended PassGuard 证明仍 fail-closed pending。
+- [x] 独立 09:20 Book-B live morning 与 09:25 模拟任务隔离；唯一候选写路由为 account-bound `package-limit`，09:30 前只预检/心跳；不读写模拟成交或 canonical paper ledger；首单 probe mapping 可 pending，但一次 canary submit 后只认 order-id/strategy-id 映射完整的 ACK，歧义保持 UNKNOWN/reconcile-only；真实交易时段首单、撤单/一次补单和 unattended PassGuard 证据仍 pending。
 - [x] allocation proof 复用 `mode_switch.plan_board_lot_orders`，以滚动结算 NAV 验证批次/敞口/现金/slot 上限；ownership evidence 不得替代 canonical paper ledger。
 - [x] 同一 logical account 由 account-level writer lock 串行推进；异常写入 durable takeover capsule，WeCom pending incident 可重试且已送达事件幂等。
 - [ ] （后续）settle_book_a 只用 next_close 且幂等；decompose_pnl 三项金额求和 = account realized_pnl（容差=取整）。
@@ -226,3 +239,4 @@
 | 2.6 | 2026-08-16 | Book T v2 增加 ETF 目录的 cache-first/限流 API seam 与显式 instrument contract；ETF 的 lot、T+0/T+1、买卖费、专有 realtime/minute/daily contract、当前状态和流动性均缺失即 fail-closed，旧股票账本保持兼容。 |
 | 2.7 | 2026-08-23 | Book-B live morning 拆为独立 09:20 seam：只消费冻结 ★E 与 broker allocation facts，不等待或回写 09:25 模拟成交；Founder submit/account/receipt 和双钥匙未通过时继续 fail-closed。 |
 | 2.8 | 2026-08-24 | 全量核对 Founder 条件、网格、单证券/组合算法及组合交易后，唯一候选写路由固定为 `按证券组合 -> 指定价格`；09:20 预检、09:30 submit floor、账户/回执门禁落地，交易时段 order-id、撤单/一次补单、PassGuard 与双钥匙仍 pending。Book T v2 的 5 日 daily-stability soak 与 20 日 engineering burn-in 拆为独立真实时间门，均保持无 promotion 权限。 |
+| 2.9 | 2026-08-24 | 消除首单回执映射的循环门禁：probe 阶段允许 mapping pending，durable claim 后只允许一次初始 canary submit，且必须由同次回执证明账户、order-id、strategy-id 与 mapping；prepare/submit/reconcile 任一 chain uncertainty 都永久禁止自动补单。同 order reconcile 可保留 submit strategy-id，新 order 不得复用旧证据；无 mapping 的 REJECTED 仅在证明从未点击时可终态。无歧义首单经终态/撤单/市场 guard 证明后可最多一次受控 replacement，总 attempt 上限 2 且在 submit boundary 强制。真实交易时段证据和双钥匙状态仍 pending。 |

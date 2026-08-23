@@ -43,11 +43,19 @@ settled-NAV receipt exists. The complete allocation capsule binds its capital
 basis source, NAV, cash, exposure and broker summary under one canonical hash,
 and broker-summary cash must equal top-level available cash. The task verifies restoration to
 mock on every exit.
-Unless the Founder adapter proves the account-bound `package-limit` submit and
-receipt-mapping capabilities, account binding, broker allocation facts and both
-capital keys, it reports the exact fail-closed reason and produces no real
-order. Trading-hours order-id, cancellation/one-retry and native PassGuard gaps
-remain terminal pending evidence rather than inferred readiness.
+Unless the Founder adapter proves the account-bound `package-limit` route,
+reconcile capability, account binding, broker allocation facts and both capital
+keys, it reports the exact fail-closed reason and produces no real order. A
+first-order probe may leave receipt mapping pending; the single claimed submit
+must itself prove the order-id/strategy-id mapping or become UNKNOWN and
+reconcile-only. Any prepare/submit/reconcile chain uncertainty permanently
+disables automatic replacement. Reconcile must bind the same proved order-id
+and preserve its submit strategy-id evidence; an unmapped rejection is terminal
+only with explicit no-click/no-save/no-start proof. A never-ambiguous first order
+may receive at most one controlled replacement only after terminality and
+fresh-market proof, with a submit-boundary cap of two attempts. Trading-hours order-id,
+cancellation/one-retry and native
+PassGuard gaps remain terminal pending evidence rather than inferred readiness.
 
 The execution stage must never rerun `live_recommend.py`. Keep its shell alive
 through the agent-review rendezvous and paper recording. Do not restart it while
