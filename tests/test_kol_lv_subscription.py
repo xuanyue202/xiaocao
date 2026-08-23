@@ -101,11 +101,26 @@ def test_ticket_records_sanitized_iab_policy_failure_and_opencli_bootstrap():
     assert "browser_security_policy_denied" in ticket
     assert "built-in browser" in ticket
     assert "Microsoft Edge" in ticket
-    assert "Google Chrome" in ticket
+    assert "Google Chrome" not in ticket
     assert "OpenCLI Browser Bridge" in ticket
     assert "OpenCLI" in ticket
     assert "attach that exact tab" not in ticket
     assert "https://pan.baidu.com/s/" not in ticket
+
+
+def test_native_save_runtime_targets_microsoft_edge_only(tmp_path):
+    helper = Path(__file__).parents[1] / "scripts" / "macos_edge_save_helper.swift"
+    source = helper.read_text(encoding="utf-8")
+    service = LvSubscriptionService(tmp_path / "out", now=lambda: NOW)
+
+    assert helper.is_file()
+    assert 'withBundleIdentifier: "com.microsoft.edgemac"' in source
+    assert "com.google.Chrome" not in source
+    assert service.edge_profile_dir == (
+        Path.home()
+        / "Library/Application Support/Microsoft Edge/Default"
+    ).resolve()
+    assert not (helper.parent / "macos_chrome_save_helper.swift").exists()
 
 
 def test_browser_listing_discovers_text_and_image_then_same_poll_is_quiet(tmp_path):
@@ -609,15 +624,23 @@ def test_listing_recovers_once_after_detached_read_only_eval(
 ):
     listing_calls = 0
     open_calls = 0
+    bind_calls = 0
 
     def browser_runner(command, **_kwargs):
-        nonlocal listing_calls, open_calls
+        nonlocal listing_calls, open_calls, bind_calls
         tail = command[3:]
         if tail[:1] == ["open"]:
             open_calls += 1
             return SimpleNamespace(
                 returncode=0,
                 stdout=json.dumps({"url": "redacted", "page": "page-1"}),
+                stderr="",
+            )
+        if tail[:1] == ["bind"]:
+            bind_calls += 1
+            return SimpleNamespace(
+                returncode=0,
+                stdout=json.dumps({"session": "ticket04"}),
                 stderr="",
             )
         if tail[:1] == ["eval"] and "/share/list" in tail[1]:
@@ -665,6 +688,7 @@ def test_listing_recovers_once_after_detached_read_only_eval(
     }
     assert listing_calls == 2
     assert open_calls == 2
+    assert bind_calls == 1
 
 
 def test_lv_text_image_browser_open_exposes_diagnostic(tmp_path):
@@ -1412,8 +1436,8 @@ def test_replayed_download_claim_reconciles_without_retriggering_browser(tmp_pat
 def test_replayed_claim_reconciles_exact_native_save_history_without_click(tmp_path):
     downloads_dir = tmp_path / "Downloads"
     downloads_dir.mkdir()
-    chrome_profile_dir = tmp_path / "Default"
-    chrome_profile_dir.mkdir()
+    edge_profile_dir = tmp_path / "Default"
+    edge_profile_dir.mkdir()
     downloaded = downloads_dir / "12.png"
     downloaded.write_bytes(b"\x89PNG\r\nnative-save-receipt")
     entry = _representative_subscription_entries()[0]
@@ -1429,7 +1453,7 @@ def test_replayed_claim_reconciles_exact_native_save_history_without_click(tmp_p
         share_url="https://pan.baidu.com/s/private-share-token",
         share_code="a1b2",
         downloads_dir=downloads_dir,
-        chrome_profile_dir=chrome_profile_dir,
+        edge_profile_dir=edge_profile_dir,
     )
     update = service.observe_browser_listing([entry])["updates"][0]
     claim = service.claim_browser_download(update["identity"])
@@ -1438,7 +1462,7 @@ def test_replayed_claim_reconciles_exact_native_save_history_without_click(tmp_p
         None,
         {"status": "ok", "complete_scan": True, "entries": [entry]},
     )
-    history = sqlite3.connect(chrome_profile_dir / "History")
+    history = sqlite3.connect(edge_profile_dir / "History")
     history.execute(
         """CREATE TABLE downloads (
           id INTEGER PRIMARY KEY,
@@ -1452,7 +1476,7 @@ def test_replayed_claim_reconciles_exact_native_save_history_without_click(tmp_p
           end_time INTEGER
         )"""
     )
-    chrome_epoch_us = 11_644_473_600 * 1_000_000
+    edge_epoch_us = 11_644_473_600 * 1_000_000
     claimed_us = int(datetime.fromisoformat(claim["claimed_at"]).timestamp() * 1_000_000)
     history.execute(
         "INSERT INTO downloads VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
@@ -1464,8 +1488,8 @@ def test_replayed_claim_reconciles_exact_native_save_history_without_click(tmp_p
             downloaded.stat().st_size,
             1,
             0,
-            chrome_epoch_us + claimed_us + 1_000_000,
-            chrome_epoch_us + claimed_us + 2_000_000,
+            edge_epoch_us + claimed_us + 1_000_000,
+            edge_epoch_us + claimed_us + 2_000_000,
         ),
     )
     history.commit()
@@ -1544,7 +1568,7 @@ def _native_save_service(tmp_path, monkeypatch, first, final, *, payload=b""):
     )
     monkeypatch.setattr(
         service,
-        "_chrome_history_download_completed",
+        "_edge_history_download_completed",
         lambda *_args, **_kwargs: True,
     )
     return service, item, claim

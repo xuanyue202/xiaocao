@@ -46,7 +46,7 @@ func role(_ element: AXUIElement) -> String {
     return attributeString(element, kAXRoleAttribute)
 }
 
-func chromeSheets(_ application: AXUIElement) -> [AXUIElement] {
+func edgeSheets(_ application: AXUIElement) -> [AXUIElement] {
     let windows = attribute(application, kAXWindowsAttribute) as? [AXUIElement] ?? []
     return windows.flatMap { window in
         descendants(window).filter { role($0) == kAXSheetRole }
@@ -100,20 +100,20 @@ guard AXIsProcessTrusted() else {
     emit("accessibility_not_trusted", ["accessibility_trusted": false])
     exit(4)
 }
-guard let chrome = NSRunningApplication.runningApplications(
-    withBundleIdentifier: "com.google.Chrome"
+guard let edge = NSRunningApplication.runningApplications(
+    withBundleIdentifier: "com.microsoft.edgemac"
 ).first else {
-    emit("chrome_not_running", ["accessibility_trusted": true])
+    emit("edge_not_running", ["accessibility_trusted": true])
     exit(5)
 }
-let application = AXUIElementCreateApplication(chrome.processIdentifier)
+let application = AXUIElementCreateApplication(edge.processIdentifier)
 emit("ready", ["accessibility_trusted": true])
 
 let overwriteWords = ["replace", "overwrite", "替换", "覆盖", "已存在"]
 let deadline = Date().addingTimeInterval(30)
 var saveSheet: AXUIElement?
 while Date() < deadline {
-    for sheet in chromeSheets(application) {
+    for sheet in edgeSheets(application) {
         let values = strings(sheet)
         if values.contains(where: { text in
             overwriteWords.contains(where: {
@@ -139,7 +139,7 @@ guard strings(initialSheet).contains(expectedName) else {
     emit("save_sheet_filename_mismatch")
     exit(8)
 }
-guard postGoToFolder(chrome.processIdentifier) else {
+guard postGoToFolder(edge.processIdentifier) else {
     emit("go_to_folder_shortcut_failed")
     exit(9)
 }
@@ -148,7 +148,7 @@ var folderField: AXUIElement?
 var folderContainer: AXUIElement?
 let folderDeadline = Date().addingTimeInterval(5)
 while Date() < folderDeadline {
-    for sheet in chromeSheets(application) {
+    for sheet in edgeSheets(application) {
         let fields = descendants(sheet).filter {
             role($0) == kAXTextFieldRole
                 && attributeString($0, kAXValueAttribute) != expectedName
@@ -180,7 +180,7 @@ guard let go = button(folderSheet, titles: ["Go", "前往"]), press(go) else {
 var confirmedSheet: AXUIElement?
 let confirmationDeadline = Date().addingTimeInterval(5)
 while Date() < confirmationDeadline {
-    for sheet in chromeSheets(application) {
+    for sheet in edgeSheets(application) {
         let values = strings(sheet)
         if values.contains(expectedName)
             && values.contains(destinationDirectory.lastPathComponent) {

@@ -1813,7 +1813,7 @@ class LvSubscriptionService:
         share_code: str | None = None,
         sleep: Callable[[float], None] = time.sleep,
         downloads_dir: Path | str | None = None,
-        chrome_profile_dir: Path | str | None = None,
+        edge_profile_dir: Path | str | None = None,
         download_policy_configurer: Callable[
             [str, str | None, Path], dict[str, Any]
         ]
@@ -1864,11 +1864,11 @@ class LvSubscriptionService:
         self.downloads_dir = Path(
             downloads_dir or (Path.home() / "Downloads")
         ).expanduser().resolve()
-        self.chrome_profile_dir = Path(
-            chrome_profile_dir
+        self.edge_profile_dir = Path(
+            edge_profile_dir
             or (
                 Path.home()
-                / "Library/Application Support/Google/Chrome/Default"
+                / "Library/Application Support/Microsoft Edge/Default"
             )
         ).expanduser().resolve()
         self.download_inbox = (self.output_dir / "download_inbox").resolve()
@@ -2559,10 +2559,19 @@ try {
                         "code": exc.diagnostic_code,
                         "stage": exc.diagnostic_stage,
                     }
-                    if (
-                        exc.diagnostic_code == "opencli_timeout"
-                        and exc.diagnostic_stage == "browser_open"
-                    ):
+                    needs_rebind = (
+                        exc.diagnostic_stage == "browser_open"
+                        and exc.diagnostic_code == "opencli_timeout"
+                    ) or (
+                        exc.diagnostic_stage == "browser_eval"
+                        and exc.diagnostic_code
+                        in {
+                            "detached_mid_command",
+                            "opencli_command_failed",
+                            "opencli_timeout",
+                        }
+                    )
+                    if needs_rebind:
                         try:
                             self.bind_opencli(
                                 session=session,
@@ -5215,7 +5224,7 @@ try {
         profile: str | None,
         confirmation_prepared: bool = False,
     ) -> dict[str, Any]:
-        """Recover one exact PDF through a trusted, bounded Chrome Save sheet."""
+        """Recover one exact PDF through a trusted, bounded Edge Save sheet."""
         if str(item.get("media_type") or "") != "pdf":
             raise EnrichmentDiagnosticError(
                 "native Save recovery is limited to small PDFs",
@@ -5282,7 +5291,7 @@ try {
                     stage="native_save_automation",
                 )
 
-        helper = Path(__file__).parents[3] / "scripts/macos_chrome_save_helper.swift"
+        helper = Path(__file__).parents[3] / "scripts/macos_edge_save_helper.swift"
         swift = shutil.which("swift")
         if not swift or not helper.is_file():
             raise EnrichmentDiagnosticError(
@@ -5407,7 +5416,7 @@ try {
             )
         history_confirmed = False
         for _attempt in range(20):
-            if self._chrome_history_download_completed(
+            if self._edge_history_download_completed(
                 item, claim, destination
             ):
                 history_confirmed = True
@@ -5415,7 +5424,7 @@ try {
             self.sleep(0.25)
         if not history_confirmed:
             raise EnrichmentDiagnosticError(
-                "Chrome completed-download history receipt is missing",
+                "Edge completed-download history receipt is missing",
                 category="uncertain_state",
                 code="native_save_history_receipt_missing",
                 stage="download_reconciliation",
@@ -5546,7 +5555,7 @@ try {
         *,
         profile: str | None,
     ) -> Path | None:
-        """Bind one exact post-claim Save dialog result to Chrome History."""
+        """Bind one exact post-claim Save dialog result to Edge History."""
         if profile is not None:
             return None
         candidate = (self.downloads_dir / str(item["name"])).resolve()
@@ -5561,18 +5570,18 @@ try {
             )
         return (
             candidate
-            if self._chrome_history_download_completed(item, claim, candidate)
+            if self._edge_history_download_completed(item, claim, candidate)
             else None
         )
 
-    def _chrome_history_download_completed(
+    def _edge_history_download_completed(
         self,
         item: dict[str, Any],
         claim: dict[str, Any],
         candidate: Path,
     ) -> bool:
-        """Read one exact completed Chrome History row after the claim."""
-        history_path = self.chrome_profile_dir / "History"
+        """Read one exact completed Edge History row after the claim."""
+        history_path = self.edge_profile_dir / "History"
         if not history_path.is_file():
             return False
         try:
@@ -5581,13 +5590,13 @@ try {
             raise EnrichmentError(
                 "subscription browser download claim is invalid"
             ) from exc
-        chrome_epoch_us = 11_644_473_600 * 1_000_000
-        claimed_chrome_us = (
-            chrome_epoch_us + int(claimed_at.timestamp() * 1_000_000)
+        edge_epoch_us = 11_644_473_600 * 1_000_000
+        claimed_edge_us = (
+            edge_epoch_us + int(claimed_at.timestamp() * 1_000_000)
         )
         try:
             with tempfile.TemporaryDirectory(
-                prefix="xiaocao-chrome-history-"
+                prefix="xiaocao-edge-history-"
             ) as temporary_dir:
                 snapshot = Path(temporary_dir) / "History"
                 shutil.copy2(history_path, snapshot)
@@ -5609,7 +5618,7 @@ try {
                         (
                             str(candidate),
                             str(candidate),
-                            claimed_chrome_us,
+                            claimed_edge_us,
                         ),
                     ).fetchall()
                 finally:
@@ -5623,7 +5632,7 @@ try {
             and int(row[3]) == int(item["size"])
             and int(row[4]) == 1
             and int(row[5]) == 0
-            and int(row[6]) >= claimed_chrome_us
+            and int(row[6]) >= claimed_edge_us
             and int(row[7]) >= int(row[6])
         ]
         if not completed:
@@ -5833,7 +5842,7 @@ try {
                 timeout_seconds=30,
             )
         except EnrichmentError as exc:
-            # Chrome may report a navigation error after converting the URL
+            # Edge may report a navigation error after converting the URL
             # into a download. The observer receipt, not navigation status,
             # decides whether recovery completed.
             open_error = exc
