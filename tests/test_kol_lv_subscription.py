@@ -1397,6 +1397,8 @@ def test_owner_download_selection_binds_exact_fsid_name_and_checkbox_state():
     assert "rowName(row)" in script
     assert "aria-selected" in script
     assert "aria-checked" in script
+    assert "row.classList.contains('selected')" in script
+    assert "control?.classList.contains('is-select')" in script
     assert "selectedRows.length !== 1" in script
     assert "JS-item-active" not in script
 
@@ -2626,10 +2628,13 @@ def test_default_owner_stream_keeps_signed_url_and_httponly_cookie_in_process(
         return str(opencli if name == "opencli" else node if name == "node" else "")
 
     def run(command, **_kwargs):
-        assert "Network.getAllCookies" in command[3]
+        assert "page.evaluate(input.expression)" in command[3]
+        assert "page.getCookies({domain: 'baidu.com'})" in command[3]
+        assert "page.cdp(" not in command[3]
         assert "httpOnly" in command[3]
         assert "'foreground'" in command[3]
         assert "await page.goto(input.ownerRoute" in command[3]
+        assert "^nd\\d+\\.baidupcs\\.com$" in command[3]
         request = json.loads(command[-1])
         assert "signed=" not in command[-1]
         assert "BDUSS" not in command[-1]

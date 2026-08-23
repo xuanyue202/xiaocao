@@ -1381,7 +1381,9 @@ _OWNER_DOWNLOAD_LINK_SCRIPT_TEMPLATE = r"""(async () => {
     const control = selectionControl(row);
     return row.getAttribute('aria-selected') === 'true'
       || control?.getAttribute('aria-checked') === 'true'
-      || control?.checked === true;
+      || control?.checked === true
+      || row.classList.contains('selected')
+      || control?.classList.contains('is-select');
   };
   const visibleRows = [...new Set(Array.from(document.querySelectorAll(
     'dd, tr, [role="row"], [class*="table-row"], [class*="file-item"]'
@@ -4457,12 +4459,7 @@ try {
     input.session, 30, input.profile || undefined, 'foreground'
   );
   await page.goto(input.ownerRoute, {settleMs: 1000});
-  const evaluated = await page.cdp('Runtime.evaluate', {
-    expression: input.expression,
-    awaitPromise: true,
-    returnByValue: true
-  });
-  const link = evaluated?.result?.result?.value || {};
+  const link = await page.evaluate(input.expression);
   if (link.status !== 'download_link_ready') {
     output({status: String(link.status || 'owner_download_link_failed')});
     process.exit(0);
@@ -4475,8 +4472,7 @@ try {
     || parsed.hostname !== 'd.pcs.baidu.com'
     || !parsed.search
   ) failure('owner_download_link_invalid');
-  const cookieReply = await page.cdp('Network.getAllCookies');
-  const cookies = (cookieReply.cookies || []).filter(row => {
+  const cookies = (await page.getCookies({domain: 'baidu.com'})).filter(row => {
     const domain = String(row.domain || '').replace(/^\./, '');
     return domain === 'baidu.com' || domain.endsWith('.baidu.com');
   });
@@ -4497,10 +4493,12 @@ try {
     }
   });
   const finalUrl = new URL(response.url);
+  const finalHostAllowed = finalUrl.hostname === 'd.pcs.baidu.com'
+    || /^nd\d+\.baidupcs\.com$/.test(finalUrl.hostname);
   if (
     response.status !== 200
     || finalUrl.protocol !== 'https:'
-    || finalUrl.hostname !== 'd.pcs.baidu.com'
+    || !finalHostAllowed
   ) failure('owner_download_http_invalid');
   const contentType = String(response.headers.get('content-type') || '')
     .split(';', 1)[0].trim().toLowerCase();
