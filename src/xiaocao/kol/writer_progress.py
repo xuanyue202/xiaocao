@@ -610,10 +610,13 @@ TARGETED_REPAIR_TESTS: dict[str, tuple[str, ...]] = {
         "-q",
     ),
     "kol_lv_download_recovery": (
+        "env",
+        "PYTHONPATH=src",
         ".venv/bin/python",
         "-m",
         "pytest",
         "tests/test_kol_lv_subscription.py",
+        "tests/test_kol_daily.py",
         "tests/test_kol_writer_progress.py",
         "tests/test_kol_repair_validation.py",
         "-q",
@@ -621,6 +624,8 @@ TARGETED_REPAIR_TESTS: dict[str, tuple[str, ...]] = {
         (
             "reviewed_historical_small_items_retire or "
             "new_image_claim_uses_single_frontend_intercept or "
+            "filtered_image_repair_records_identity_bound_preview_derivative or "
+            "filtered_image_repair_uses_read_only_preview_surface or "
             "newer_repair_lifecycle_supersedes_old_fingerprint or "
             "repair_validation_accepts_exact_lv_download_recovery_profile"
         ),
@@ -931,6 +936,7 @@ _TARGETED_REPAIR_TEST_PATHS: dict[str, frozenset[str]] = {
     ),
     "kol_lv_download_recovery": frozenset(
         {
+            "tests/test_kol_daily.py",
             "tests/test_kol_lv_subscription.py",
             "tests/test_kol_writer_progress.py",
             "tests/test_kol_repair_validation.py",
