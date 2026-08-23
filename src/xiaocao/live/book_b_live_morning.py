@@ -398,12 +398,13 @@ def _assert_prepare_only(plan: TradePlan, receipt: BrokerReceipt) -> dict:
         "hour": "9",
         "minute": "30",
     }
-    if any(
+    has_timed_readback = any(key in readback for key in timed_readback)
+    if has_timed_readback and any(
         str(readback.get(key) or "") != value
         for key, value in timed_readback.items()
     ):
         raise ValueError("LIVE_PREPARE_ONLY_TIMED_FIELD_READBACK_MISMATCH")
-    return {
+    result = {
         "plan_id": plan.plan_id,
         "plan_hash": plan.plan_hash,
         "status": BrokerStatus.PREPARED.value,
@@ -411,12 +412,14 @@ def _assert_prepare_only(plan: TradePlan, receipt: BrokerReceipt) -> dict:
         "template_name": receipt.template_name,
         "template_version": receipt.template_version,
         "echoed": dict(receipt.echoed),
-        **timed_readback,
         "submitted": False,
         "saved": False,
         "started": False,
         "form_closed": True,
     }
+    if has_timed_readback:
+        result.update(timed_readback)
+    return result
 
 
 def run_book_b_live_morning(
@@ -428,6 +431,8 @@ def run_book_b_live_morning(
     read_allocation_facts: Callable[[], dict] | None = None,
     wait_for_dated_freeze: Callable[[], dict] | None = None,
     prepare_only: Callable[[TradePlan], BrokerReceipt] | None = None,
+    wait_for_submit_window: Callable[[datetime], None] | None = None,
+    wait_for_reconcile: Callable[[], None] | None = None,
     now: Callable[[], datetime] = lambda: datetime.now(timezone.utc),
 ) -> BookBLiveMorningReceipt:
     """Consume one dated freeze and advance immutable live plans exactly once.
@@ -485,7 +490,33 @@ def run_book_b_live_morning(
                             _assert_prepare_only(plan, prepare_only(plan))
                             for plan in plans
                         ]
-                    execution_receipts = [execute(plan) for plan in plans]
+                    if wait_for_submit_window is not None:
+                        submit_at = max(
+                            plan.submit_not_before or plan.created_at
+                            for plan in plans
+                        )
+                        if now() < submit_at:
+                            wait_for_submit_window(submit_at)
+                        if now() < submit_at:
+                            raise ValueError("LIVE_SUBMIT_WINDOW_NOT_REACHED")
+                    execution_receipts = []
+                    for plan in plans:
+                        execution_receipt = execute(plan)
+                        for _attempt in range(3):
+                            needs_mapping = (
+                                execution_receipt.state == ExecutionState.UNKNOWN
+                                or (
+                                    execution_receipt.next_action
+                                    in {"reconcile", "reconcile_only"}
+                                    and not execution_receipt.broker_order_id
+                                )
+                            )
+                            if not needs_mapping:
+                                break
+                            if wait_for_reconcile is not None:
+                                wait_for_reconcile()
+                            execution_receipt = execute(plan)
+                        execution_receipts.append(execution_receipt)
                     status, reason = _rollup(execution_receipts)
                     receipt = BookBLiveMorningReceipt(
                         trade_date=config.trade_date,

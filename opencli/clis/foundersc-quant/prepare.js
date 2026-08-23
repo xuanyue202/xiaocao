@@ -348,11 +348,122 @@ async function closeOpeningAuctionSecurityDialog(page) {
     return proof;
 }
 
+function packageLimitAddSecurityScript() {
+    return pageScript(String.raw`
+        const attribute = ${JSON.stringify(PREPARE_TARGET_ATTRIBUTE)};
+        for (const node of document.querySelectorAll('[' + attribute + ']')) {
+            node.removeAttribute(attribute);
+        }
+        const dataOptions = [...document.querySelectorAll('.pdc-data-option')]
+            .filter(visible);
+        const scope = dataOptions.length === 1 ? dataOptions[0] : null;
+        const addMatches = exactLeaves(scope, '添加证券');
+        const dataAreas = [...document.querySelectorAll('.pdc-data')]
+            .filter(visible);
+        const dataEmpty = dataAreas.length === 1
+            && /暂无数据/.test(dataAreas[0].innerText || '');
+        if (dataOptions.length === 1 && addMatches.length === 1 && dataEmpty) {
+            addMatches[0].setAttribute(attribute, 'package-limit-add-security');
+        }
+        return {
+            route_available: dataOptions.length === 1
+                && addMatches.length === 1 && dataEmpty,
+            reason: dataOptions.length !== 1 || addMatches.length !== 1
+                ? 'package_limit_add_security_locator_not_unique'
+                : !dataEmpty
+                    ? 'package_limit_page_not_empty'
+                    : null,
+            data_option_count: dataOptions.length,
+            data_area_count: dataAreas.length,
+            add_matches: addMatches.length,
+            page_empty_before_readback: dataEmpty,
+        };
+    `, {async: true});
+}
+
+async function openPackageLimitSecurityDialog(page) {
+    const target = await page.evaluate(packageLimitAddSecurityScript());
+    if (target?.route_available !== true) return target;
+    await page.click(
+        `[${PREPARE_TARGET_ATTRIBUTE}="package-limit-add-security"]`
+    );
+    return {
+        ...target,
+        trusted_clicks: ['package-limit-add-security'],
+    };
+}
+
+function packageLimitCancelScript() {
+    return pageScript(String.raw`
+        const attribute = ${JSON.stringify(PREPARE_TARGET_ATTRIBUTE)};
+        for (const node of document.querySelectorAll('[' + attribute + ']')) {
+            node.removeAttribute(attribute);
+        }
+        const modals = [...document.querySelectorAll('.al-modal-container')]
+            .filter(visible);
+        const dataAreas = [...document.querySelectorAll('.pdc-data')]
+            .filter(visible);
+        const pageCleared = dataAreas.length === 1
+            && /暂无数据/.test(dataAreas[0].innerText || '');
+        if (modals.length === 0) {
+            return {
+                route_available: pageCleared,
+                reason: pageCleared ? null : 'package_limit_page_not_cleared',
+                form_closed: true,
+                page_cleared_after_readback: pageCleared,
+                modal_count: 0,
+                cancel_count: 0,
+            };
+        }
+        const cancel = modals.length === 1
+            ? [...modals[0].querySelectorAll('.al-modal-cancel-button')]
+                .filter(visible).filter((node) => (
+                    (node.textContent || '').trim() === '取消'
+                ))
+            : [];
+        if (modals.length === 1 && cancel.length === 1) {
+            cancel[0].setAttribute(attribute, 'package-limit-cancel');
+        }
+        return {
+            route_available: modals.length === 1 && cancel.length === 1,
+            reason: modals.length === 1 && cancel.length === 1
+                ? null
+                : 'package_limit_cancel_locator_not_unique',
+            form_closed: false,
+            page_cleared_after_readback: false,
+            modal_count: modals.length,
+            cancel_count: cancel.length,
+        };
+    `, {async: true});
+}
+
+async function closePackageLimitSecurityDialog(page) {
+    let proof = await page.evaluate(packageLimitCancelScript());
+    if (proof?.form_closed === true) return proof;
+    if (proof?.route_available !== true) return proof;
+    await page.click(
+        `[${PREPARE_TARGET_ATTRIBUTE}="package-limit-cancel"]`
+    );
+    for (let attempt = 0; attempt < 20; attempt += 1) {
+        await page.evaluate(PREPARE_WAIT_SCRIPT);
+        proof = await page.evaluate(packageLimitCancelScript());
+        if (proof?.form_closed === true) break;
+    }
+    return proof;
+}
+
 function parseInput(kwargs) {
     try {
         const route = String(kwargs.route || 'manual-limit').trim();
-        if (!['manual-limit', 'opening-auction', 'timed-order'].includes(route)) {
-            throw new Error('--route must be manual-limit, opening-auction or timed-order');
+        if (![
+            'manual-limit',
+            'opening-auction',
+            'package-limit',
+            'timed-order',
+        ].includes(route)) {
+            throw new Error(
+                '--route must be manual-limit, opening-auction, package-limit or timed-order'
+            );
         }
         const input = {
             route,
@@ -383,6 +494,171 @@ function parseInput(kwargs) {
     } catch (error) {
         throw new ArgumentError(error.message);
     }
+}
+
+function packageLimitScript(input) {
+    return pageScript(String.raw`
+        let modals = [];
+        for (let attempt = 0; attempt < 20; attempt += 1) {
+            await waitForPage(100);
+            modals = [...document.querySelectorAll('.al-modal-container')]
+                .filter(visible);
+            if (modals.length === 1) break;
+        }
+        const modal = modals.length === 1 ? modals[0] : null;
+        const result = {
+            route_available: false,
+            modal_count: modals.length,
+            field_readback: {},
+            form_closed_after_readback: false,
+            page_cleared_after_readback: false,
+        };
+        if (!modal || exactLeaves(modal, '添加证券').length !== 1) {
+            result.reason = 'package_limit_security_modal_not_unique';
+            return result;
+        }
+        const forms = [...modal.querySelectorAll('form')].filter(visible);
+        const codeFields = [...modal.querySelectorAll(
+            'input[name="stockCode"]'
+        )].filter(visible);
+        const sideFields = [...modal.querySelectorAll(
+            'select#delegateDirection'
+        )].filter(visible);
+        const priceModeFields = [...modal.querySelectorAll(
+            'select#priceMode'
+        )].filter(visible);
+        const priceFields = [...modal.querySelectorAll(
+            'input#basicPrice[name="basicPrice"]'
+        )].filter(visible);
+        const quantityFields = [...modal.querySelectorAll(
+            'input#quantity[name="quantity"]'
+        )].filter(visible);
+        const confirmButtons = [...modal.querySelectorAll(
+            '.al-modal-positive-button'
+        )].filter(visible).filter((node) => (
+            (node.textContent || '').trim() === '确定'
+        ));
+        const cancelButtons = [...modal.querySelectorAll(
+            '.al-modal-cancel-button'
+        )].filter(visible).filter((node) => (
+            (node.textContent || '').trim() === '取消'
+        ));
+        result.form_count = forms.length;
+        result.code_field_count = codeFields.length;
+        result.side_field_count = sideFields.length;
+        result.price_mode_field_count = priceModeFields.length;
+        result.price_field_count = priceFields.length;
+        result.quantity_field_count = quantityFields.length;
+        result.confirm_button_count = confirmButtons.length;
+        result.cancel_button_count = cancelButtons.length;
+        if (forms.length !== 1 || codeFields.length !== 1
+                || sideFields.length !== 1 || priceModeFields.length !== 1
+                || priceFields.length !== 1 || quantityFields.length !== 1
+                || confirmButtons.length !== 1 || cancelButtons.length !== 1) {
+            result.reason = 'package_limit_field_not_unique';
+            return result;
+        }
+        const selectExactText = (select, wanted) => {
+            const matches = [...select.options].filter((option) => (
+                (option.textContent || '').trim() === wanted
+            ));
+            if (matches.length !== 1) return false;
+            setSelect(select, matches[0].value);
+            return true;
+        };
+        const code = codeFields[0];
+        setValue(code, ${JSON.stringify(input.code)});
+        await waitForPage(1000);
+        const stableSide = [...modal.querySelectorAll(
+            'select#delegateDirection'
+        )].filter(visible);
+        const stableMode = [...modal.querySelectorAll(
+            'select#priceMode'
+        )].filter(visible);
+        if (stableSide.length !== 1 || stableMode.length !== 1) {
+            result.reason = 'package_limit_field_not_stable';
+            return result;
+        }
+        if (!selectExactText(stableSide[0], ${JSON.stringify(input.side)})) {
+            result.reason = 'package_limit_side_option_not_unique';
+            return result;
+        }
+        if (!selectExactText(stableMode[0], '指定价格')) {
+            result.reason = 'package_limit_price_mode_not_unique';
+            return result;
+        }
+        await waitForPage(200);
+        const stablePrice = [...modal.querySelectorAll(
+            'input#basicPrice[name="basicPrice"]'
+        )].filter(visible);
+        const stableQuantity = [...modal.querySelectorAll(
+            'input#quantity[name="quantity"]'
+        )].filter(visible);
+        if (stablePrice.length !== 1 || stableQuantity.length !== 1) {
+            result.reason = 'package_limit_field_not_stable';
+            return result;
+        }
+        setValue(stablePrice[0], ${JSON.stringify(String(input.price))});
+        setValue(stableQuantity[0], ${JSON.stringify(String(input.quantity))});
+        await waitForPage(200);
+        const readCode = [...modal.querySelectorAll('input[name="stockCode"]')]
+            .filter(visible);
+        const readSide = [...modal.querySelectorAll('select#delegateDirection')]
+            .filter(visible);
+        const readMode = [...modal.querySelectorAll('select#priceMode')]
+            .filter(visible);
+        const readPrice = [...modal.querySelectorAll(
+            'input#basicPrice[name="basicPrice"]'
+        )].filter(visible);
+        const readQuantity = [...modal.querySelectorAll(
+            'input#quantity[name="quantity"]'
+        )].filter(visible);
+        if ([readCode, readSide, readMode, readPrice, readQuantity]
+                .some((nodes) => nodes.length !== 1)) {
+            result.reason = 'package_limit_field_not_stable';
+            return result;
+        }
+        const fieldReadback = {
+            code: readCode[0].value,
+            side: readSide[0].selectedOptions[0]?.textContent?.trim() || '',
+            price_mode:
+                readMode[0].selectedOptions[0]?.textContent?.trim() || '',
+            price: readPrice[0].value,
+            quantity: readQuantity[0].value,
+            submitted: false,
+            saved: false,
+            started: false,
+        };
+        const numericEqual = (actual, expected) => Number.isFinite(Number(actual))
+            && Number(actual) === Number(expected);
+        const readbackMismatches = {};
+        if (fieldReadback.code !== ${JSON.stringify(input.code)}) {
+            readbackMismatches.code = fieldReadback.code;
+        }
+        if (fieldReadback.side !== ${JSON.stringify(input.side)}) {
+            readbackMismatches.side = fieldReadback.side;
+        }
+        if (fieldReadback.price_mode !== '指定价格') {
+            readbackMismatches.price_mode = fieldReadback.price_mode;
+        }
+        if (!numericEqual(fieldReadback.price, ${JSON.stringify(input.price)})) {
+            readbackMismatches.price = fieldReadback.price;
+        }
+        if (!numericEqual(
+            fieldReadback.quantity,
+            ${JSON.stringify(input.quantity)}
+        )) {
+            readbackMismatches.quantity = fieldReadback.quantity;
+        }
+        result.field_readback = fieldReadback;
+        result.readback_mismatches = readbackMismatches;
+        result.readback_match = Object.keys(readbackMismatches).length === 0;
+        result.route_available = result.readback_match;
+        if (!result.readback_match) {
+            result.reason = 'package_limit_field_readback_mismatch';
+        }
+        return result;
+    `, {async: true});
 }
 
 function manualLimitScript(_input) {
@@ -867,6 +1143,12 @@ function routeDetails(input) {
             script: openingAuctionScript(input, {dialogAlreadyOpen: true}),
         };
     }
+    if (input.route === 'package-limit') {
+        return {
+            route: ROUTES.packageCreate,
+            script: packageLimitScript(input),
+        };
+    }
     return {
         route: ROUTES.conditionActive,
         script: timedOrderScript(input, {dialogAlreadyOpen: true}),
@@ -888,7 +1170,7 @@ cli({
         {
             name: 'route',
             default: 'manual-limit',
-            help: 'manual-limit, opening-auction or timed-order',
+            help: 'manual-limit, opening-auction, package-limit or timed-order',
         },
         {name: 'expected-environment', default: 'mock', help: 'Expected mock or live environment'},
         {name: 'logical-account-id', default: 'primary', help: 'Caller logical account id'},
@@ -959,6 +1241,8 @@ cli({
             let trustedInteraction = null;
             if (input.route === 'opening-auction') {
                 trustedInteraction = await openOpeningAuctionSecurityDialog(page);
+            } else if (input.route === 'package-limit') {
+                trustedInteraction = await openPackageLimitSecurityDialog(page);
             } else if (input.route === 'timed-order') {
                 trustedInteraction = await openTimedOrderDialog(page, input);
             }
@@ -996,6 +1280,17 @@ cli({
                             reason: `opening_auction_close_failed:${closeError.name || 'Error'}`,
                         };
                     }
+                } else if (input.route === 'package-limit') {
+                    try {
+                        postInteraction = await closePackageLimitSecurityDialog(page);
+                    } catch (closeError) {
+                        postInteraction = {
+                            route_available: false,
+                            form_closed: false,
+                            page_cleared_after_readback: false,
+                            reason: `package_limit_close_failed:${closeError.name || 'Error'}`,
+                        };
+                    }
                 }
             }
             if (!result || typeof result !== 'object') {
@@ -1007,6 +1302,18 @@ cli({
                 if (!result.form_closed_after_readback) {
                     result.route_available = false;
                     result.reason = result.reason || 'opening_auction_form_not_closed';
+                }
+            } else if (input.route === 'package-limit') {
+                result.form_closed_after_readback = postInteraction?.form_closed === true;
+                result.page_cleared_after_readback =
+                    postInteraction?.page_cleared_after_readback === true;
+                result.close_proof = postInteraction || {};
+                if (!result.form_closed_after_readback) {
+                    result.route_available = false;
+                    result.reason = result.reason || 'package_limit_form_not_closed';
+                } else if (!result.page_cleared_after_readback) {
+                    result.route_available = false;
+                    result.reason = result.reason || 'package_limit_page_not_cleared';
                 }
             }
             const readbackPrice = result.field_readback?.price

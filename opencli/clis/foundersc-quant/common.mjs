@@ -1,4 +1,4 @@
-export const TEMPLATE_VERSION = 5;
+export const TEMPLATE_VERSION = 6;
 export const SITE = 'foundersc-quant';
 export const DEFAULT_BASE_URL = (
     'https://quant.foundersc.com/qtassets/dist/index.html'
@@ -9,6 +9,8 @@ export const ROUTES = Object.freeze({
     query: '#/home/myAccount/query',
     conditionActive: '#/home/conditionStrategy/active',
     combo: '#/home/combAlgorithm',
+    packageList: '#/home/packageDeal',
+    packageCreate: '#/home/packageDeal/create?type=security',
     manual: '#/home/orderByHand',
     auction: '#/home/combAlgorithm/create?type=%E7%9B%98%E5%89%8D%E9%9B%86%E5%90%88%E7%AB%9E%E4%BB%B7',
 });
@@ -214,6 +216,12 @@ export const PAGE_HELPERS = String.raw`
     const fundAccountColumnIndexes = (table) => tableHeaders(table)
         .map((header, index) => header === '资金账号' ? index : -1)
         .filter((index) => index >= 0);
+    const orderIdColumnIndexes = (table) => {
+        const aliases = new Set(['订单编号', '委托编号', '合同编号', '申报编号']);
+        return tableHeaders(table)
+            .map((header, index) => aliases.has(header) ? index : -1)
+            .filter((index) => index >= 0);
+    };
     const tableFundAccounts = [...document.querySelectorAll('table')]
         .flatMap((table) => {
             const indexes = fundAccountColumnIndexes(table);
@@ -230,21 +238,29 @@ export const PAGE_HELPERS = String.raw`
                 });
         });
     const knownFundAccounts = [...new Set(tableFundAccounts)];
-    const sanitize = (value) => {
+    const sanitizeKnownAccounts = (value) => {
         let sanitized = String(value || '');
         for (const account of knownFundAccounts) {
             sanitized = sanitized.split(account).join(maskAccount(account));
         }
-        return sanitized.replace(/\b\d{8,20}\b/g, maskAccount);
+        return sanitized;
+    };
+    const sanitize = (value) => {
+        return sanitizeKnownAccounts(value).replace(/\b\d{8,20}\b/g, maskAccount);
     };
     const sanitizeTableRow = (table, row) => {
         const indexes = fundAccountColumnIndexes(table);
+        const orderIndexes = orderIdColumnIndexes(table);
         const cells = [...row.querySelectorAll('th,td')];
         return cells.map((cell, index) => {
             const value = (cell.innerText || cell.textContent || '').trim();
             if (indexes.includes(index)
                     && /^\d{6,20}$/.test(value)) {
                 return maskAccount(value);
+            }
+            if (orderIndexes.includes(index)
+                    && /^[A-Za-z0-9_.:-]{1,64}$/.test(value)) {
+                return sanitizeKnownAccounts(value);
             }
             return sanitize(value);
         });
@@ -606,6 +622,27 @@ export async function navigateFresh(page, route) {
         timeout: 45000,
     });
     await page.wait({time: 1});
+    let ready = false;
+    for (let attempt = 0; attempt < 5; attempt += 1) {
+        const probe = await page.evaluate(String.raw`(() => ({
+            opencli_fresh_body_present: Boolean((document.body?.innerText || '').trim()),
+            ready_state: document.readyState,
+        }))()`);
+        ready = probe?.opencli_fresh_body_present === true
+            && probe?.ready_state === 'complete';
+        if (ready) break;
+        await page.wait({time: 1});
+    }
+    if (!ready) {
+        const exactUrl = routeUrl(route);
+        await page.goto(exactUrl, {
+            waitUntil: 'domcontentloaded',
+            settleMs: 1000,
+            timeout: 45000,
+        });
+        await page.wait({time: 1});
+        return exactUrl;
+    }
     return url;
 }
 
@@ -720,6 +757,19 @@ export function carryEnvironmentProof(preflightState, currentState) {
         && (currentNamespace === 'unknown'
             || currentNamespace === preflight.environment_data_namespace);
     const carriedProof = !currentProofComplete && sameTabEnvironment;
+    const preflightAccountProven = preflight.fund_account_match_count === 1
+        && /^\d{3}\*{6}\d{3}$/.test(
+            String(preflight.fund_account_fingerprint || '')
+        );
+    const currentAccountAbsent = Number(
+        current.fund_account_match_count || 0
+    ) === 0 && !String(current.fund_account_fingerprint || '').trim();
+    const currentAccountSame = current.fund_account_match_count === 1
+        && String(current.fund_account_fingerprint || '')
+            === String(preflight.fund_account_fingerprint || '');
+    const carriedAccount = sameTabEnvironment
+        && preflightAccountProven
+        && (currentAccountAbsent || currentAccountSame);
     return {
         ...current,
         environment_data_namespace: carriedProof
@@ -729,6 +779,18 @@ export function carryEnvironmentProof(preflightState, currentState) {
         environment_proof_source: carriedProof
             ? 'same_tab_assets_preflight'
             : current.environment_proof_source || '',
+        fund_account_fingerprint: carriedAccount
+            ? preflight.fund_account_fingerprint
+            : current.fund_account_fingerprint || '',
+        fund_account_match_count: carriedAccount
+            ? 1
+            : Number(current.fund_account_match_count || 0),
+        fund_account_proof_source: carriedAccount
+            ? 'same_tab_assets_preflight'
+            : current.fund_account_proof_source || '',
+        account_binding: carriedAccount
+            ? 'proven'
+            : current.account_binding || 'not_proven',
     };
 }
 

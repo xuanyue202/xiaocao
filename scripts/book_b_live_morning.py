@@ -11,6 +11,7 @@ from __future__ import annotations
 import argparse
 import json
 import sys
+import time
 from datetime import datetime
 from pathlib import Path
 from zoneinfo import ZoneInfo
@@ -36,6 +37,34 @@ def _china_date() -> str:
     return datetime.now(ZoneInfo("Asia/Shanghai")).date().isoformat()
 
 
+def _wait_for_submit_window(target: datetime, *, heartbeat=None) -> None:
+    """Keep the 09:20 task alive, but never wait across an unexpected window."""
+    while True:
+        current = datetime.now(target.tzinfo or ZoneInfo("Asia/Shanghai"))
+        remaining = (target - current).total_seconds()
+        if remaining <= 0:
+            return
+        if remaining > 15 * 60:
+            raise RuntimeError("LIVE_SUBMIT_WINDOW_TOO_FAR")
+        if heartbeat is not None:
+            heartbeat()
+        time.sleep(min(30.0, remaining))
+
+
+def _bounded_no_order_retry(action, *, attempts: int = 3):
+    """Retry only login/readback/environment actions that cannot place an order."""
+    last_error = None
+    for attempt in range(max(1, attempts)):
+        try:
+            return action()
+        except Exception as error:
+            last_error = error
+            if attempt + 1 < attempts:
+                time.sleep(1.0)
+    assert last_error is not None
+    raise last_error
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--date", default="today", help="YYYY-MM-DD or today")
@@ -49,8 +78,8 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--profile", default=None)
     parser.add_argument(
         "--route",
-        choices=("manual-limit", "opening-auction", "timed-order"),
-        default="manual-limit",
+        choices=("package-limit", "manual-limit", "opening-auction", "timed-order"),
+        default="package-limit",
     )
     parser.add_argument("--freeze-wait-seconds", type=float, default=600.0)
     parser.add_argument("--poll-seconds", type=float, default=1.0)
@@ -60,12 +89,27 @@ def main(argv: list[str] | None = None) -> int:
     allocation_path = Path(str(args.allocation_facts).format(date=trade_date))
     profile = resolve_connected_opencli_profile(args.profile)
     release_foundersc_opencli_site_session(profile)
+    keychain = FounderscKeychainPreflight()
+    keychain_receipt = keychain.run(read_secrets=True)
+    if not all(
+        keychain_receipt.get(key) is True
+        for key in (
+            "login_secret_readable",
+            "login_secret_nonempty",
+            "trade_secret_readable",
+            "trade_secret_nonempty",
+        )
+    ):
+        raise RuntimeError("FOUNDER_KEYCHAIN_SECRETS_NOT_READABLE")
+    trade_account_fingerprint = keychain.trade_account_fingerprint()
+    if not trade_account_fingerprint:
+        raise RuntimeError("FOUNDER_TRADE_ACCOUNT_FINGERPRINT_MISSING")
     execution, broker = build_foundersc_execution(
         args.state_dir,
         profile=profile,
         route=args.route,
+        expected_fund_account_fingerprint=trade_account_fingerprint,
     )
-    trade_account_fingerprint = FounderscKeychainPreflight().trade_account_fingerprint()
 
     def read_allocation_facts() -> dict:
         basis = load_book_b_live_capital_basis(Path(args.state_dir))
@@ -81,11 +125,13 @@ def main(argv: list[str] | None = None) -> int:
         )
 
     def preflight() -> dict:
-        broker.ensure_login()
-        return broker.ensure_environment(
-            target="live",
-            expected_current="mock",
-            logical_account_id="primary",
+        _bounded_no_order_retry(broker.ensure_login)
+        return _bounded_no_order_retry(
+            lambda: broker.ensure_environment(
+                target="live",
+                expected_current="any",
+                logical_account_id="primary",
+            )
         )
 
     receipt = run_book_b_live_morning(
@@ -97,10 +143,12 @@ def main(argv: list[str] | None = None) -> int:
             logical_account_id="primary",
         ),
         preflight=preflight,
-        restore_environment=lambda: broker.ensure_environment(
-            target="mock",
-            expected_current="any",
-            logical_account_id="primary",
+        restore_environment=lambda: _bounded_no_order_retry(
+            lambda: broker.ensure_environment(
+                target="mock",
+                expected_current="any",
+                logical_account_id="primary",
+            )
         ),
         read_allocation_facts=read_allocation_facts,
         wait_for_dated_freeze=lambda: wait_for_morning_freeze(
@@ -114,6 +162,17 @@ def main(argv: list[str] | None = None) -> int:
             plan,
             expected_fund_account_fingerprint=trade_account_fingerprint,
         ),
+        wait_for_submit_window=lambda target: _wait_for_submit_window(
+            target,
+            heartbeat=lambda: _bounded_no_order_retry(
+                lambda: broker.ensure_environment(
+                    target="live",
+                    expected_current="live",
+                    logical_account_id="primary",
+                )
+            ),
+        ),
+        wait_for_reconcile=lambda: time.sleep(1.0),
         execute=lambda plan: execution.execute(plan, broker),
     )
     print(json.dumps(receipt.as_dict(), ensure_ascii=False, sort_keys=True))

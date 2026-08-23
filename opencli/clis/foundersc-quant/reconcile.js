@@ -7,10 +7,16 @@ import {
     MANUAL_ROUTE_DISCOVERY_SCRIPT,
     asSingleReceipt,
     baseReceipt,
+    carryEnvironmentProof,
     environmentGate,
     navigate,
+    normalizeCode,
+    normalizeDate,
     normalizeEnvironment,
     normalizeLogicalAccountId,
+    normalizeNonNegativeNumber,
+    normalizePositiveInteger,
+    normalizeSide,
     pageScript,
     readEnvironment,
     unknownReceipt,
@@ -24,12 +30,43 @@ function parseInput(kwargs) {
         if (!['assets', 'orders', 'strategies', 'all'].includes(scope)) {
             throw new Error('--scope must be assets, orders, strategies or all');
         }
+        const rawMatch = {
+            code: String(kwargs.code || '').trim(),
+            side: String(kwargs.side || '').trim(),
+            quantity: String(kwargs.quantity || '').trim(),
+            price: String(kwargs.price || '').trim(),
+            date: String(kwargs.date || '').trim(),
+            orderId: String(kwargs['order-id'] || '').trim(),
+        };
+        const matchRequested = Object.values(rawMatch).some(Boolean);
+        if (matchRequested && (!rawMatch.code || !rawMatch.side
+                || !rawMatch.quantity || !rawMatch.price || !rawMatch.date)) {
+            throw new Error(
+                '--code, --side, --quantity, --price and --date are required together'
+            );
+        }
+        if (rawMatch.orderId
+                && !/^[A-Za-z0-9_.:-]{1,64}$/.test(rawMatch.orderId)) {
+            throw new Error('--order-id must be a bounded broker identifier');
+        }
+        const orderMatch = matchRequested ? {
+            code: normalizeCode(rawMatch.code),
+            side: normalizeSide(rawMatch.side),
+            quantity: normalizePositiveInteger(rawMatch.quantity, '--quantity'),
+            price: normalizeNonNegativeNumber(rawMatch.price, '--price'),
+            date: normalizeDate(rawMatch.date),
+            orderId: rawMatch.orderId,
+        } : null;
+        if (orderMatch && orderMatch.price <= 0) {
+            throw new Error('--price must be greater than zero');
+        }
         return {
             scope,
             expectedEnvironment: normalizeEnvironment(kwargs['expected-environment'] || 'mock'),
             logicalAccountId: normalizeLogicalAccountId(
                 kwargs['logical-account-id'] || 'primary'
             ),
+            orderMatch,
         };
     } catch (error) {
         throw new ArgumentError(error.message);
@@ -411,6 +448,180 @@ const CONDITION_SCRIPT = pageScript(String.raw`
         };
 `, {async: true});
 
+const ORDER_HEADERS = Object.freeze({
+    code: ['代码/名称', '证券代码', '代码'],
+    side: ['买/卖', '买卖方向', '委托方向', '方向'],
+    quantity: ['委托量', '委托数量', '数量'],
+    price: ['委托价', '委托价格', '价格'],
+    status: ['状态', '委托状态'],
+    orderId: ['订单编号', '委托编号', '合同编号', '申报编号'],
+    filled: ['成交量', '已成量', '成交数量'],
+});
+
+const DEAL_HEADERS = Object.freeze({
+    orderId: ORDER_HEADERS.orderId,
+    quantity: ['成交量', '成交数量', '数量'],
+    price: ['成交价', '成交价格', '价格'],
+});
+
+function tableCell(table, row, aliases) {
+    const headers = Array.isArray(table?.headers) ? table.headers : [];
+    const indexes = headers
+        .map((header, index) => aliases.includes(String(header || '').trim()) ? index : -1)
+        .filter((index) => index >= 0);
+    if (indexes.length !== 1 || !Array.isArray(row)) return null;
+    return row[indexes[0]] ?? null;
+}
+
+function numericCell(value) {
+    const normalized = String(value ?? '')
+        .replace(/[\s,，￥¥股元]/g, '')
+        .trim();
+    if (!/^[-+]?\d+(?:\.\d+)?$/.test(normalized)) return null;
+    const number = Number(normalized);
+    return Number.isFinite(number) ? number : null;
+}
+
+function codeCell(value) {
+    const match = /(?:^|\D)(\d{6})(?:\D|$)/.exec(String(value || ''));
+    return match ? match[1] : '';
+}
+
+function brokerStatus(value) {
+    const status = String(value || '').replace(/\s+/g, '');
+    if (/全部成交|已成交|已成$|成交$/.test(status)) return 'filled';
+    if (/部分成交|部成/.test(status)) return 'partial';
+    if (/已撤|部撤|撤单/.test(status)) return 'cancelled';
+    if (/拒绝|废单|无效/.test(status)) return 'rejected';
+    if (/已报|未成|待报|已提交|已受理|已确认/.test(status)) return 'accepted';
+    return 'unknown';
+}
+
+function chinaTradeDate() {
+    const parts = Object.fromEntries(
+        new Intl.DateTimeFormat('en-US', {
+            timeZone: 'Asia/Shanghai',
+            year: 'numeric',
+            month: '2-digit',
+            day: '2-digit',
+        }).formatToParts(new Date())
+            .filter((part) => ['year', 'month', 'day'].includes(part.type))
+            .map((part) => [part.type, part.value])
+    );
+    return `${parts.year}-${parts.month}-${parts.day}`;
+}
+
+function mapExactOrderReceipt(querySnapshot, expected, observedTradeDate) {
+    const empty = {
+        status: 'unknown',
+        statusReason: 'ambiguous_or_missing_exact_order',
+        orderId: null,
+        exactOrderMatchCount: 0,
+        exactDealMatchCount: 0,
+        requestedShares: expected?.quantity || null,
+        filledShares: 0,
+        remainingShares: expected?.quantity || null,
+        orderPrice: expected?.price || null,
+        fillPrice: null,
+        active: null,
+        receiptMapping: false,
+    };
+    if (!expected?.orderId) {
+        return {...empty, statusReason: 'broker_order_id_required'};
+    }
+    if (expected.date !== observedTradeDate) {
+        return {...empty, statusReason: 'trade_date_not_current'};
+    }
+    const orderTab = querySnapshot?.tabs?.['当日委托'];
+    const dealTab = querySnapshot?.tabs?.['当日成交'];
+    const orderTable = orderTab?.table;
+    const dealTable = dealTab?.table;
+    if (orderTab?.complete_scan !== true
+            || dealTab?.complete_scan !== true
+            || !Array.isArray(orderTable?.rows)
+            || !Array.isArray(dealTable?.rows)) {
+        return empty;
+    }
+    const exactOrders = orderTable.rows.filter((row) => {
+        const observedCode = codeCell(tableCell(orderTable, row, ORDER_HEADERS.code));
+        const observedSide = String(
+            tableCell(orderTable, row, ORDER_HEADERS.side) || ''
+        ).trim();
+        const observedQuantity = numericCell(
+            tableCell(orderTable, row, ORDER_HEADERS.quantity)
+        );
+        const observedPrice = numericCell(
+            tableCell(orderTable, row, ORDER_HEADERS.price)
+        );
+        const observedOrderId = String(
+            tableCell(orderTable, row, ORDER_HEADERS.orderId) || ''
+        ).trim();
+        return observedCode === expected.code
+            && observedSide === expected.side
+            && observedQuantity === expected.quantity
+            && observedPrice !== null
+            && Math.abs(observedPrice - expected.price) < 0.000001
+            && observedOrderId === expected.orderId;
+    });
+    if (exactOrders.length !== 1) {
+        return {...empty, exactOrderMatchCount: exactOrders.length};
+    }
+    const orderRow = exactOrders[0];
+    const orderId = String(
+        tableCell(orderTable, orderRow, ORDER_HEADERS.orderId) || ''
+    ).trim();
+    if (!orderId) {
+        return {...empty, exactOrderMatchCount: 1};
+    }
+    const status = brokerStatus(tableCell(orderTable, orderRow, ORDER_HEADERS.status));
+    const exactDeals = dealTable.rows.filter((row) => (
+        String(tableCell(dealTable, row, DEAL_HEADERS.orderId) || '').trim() === orderId
+    ));
+    const dealLegs = exactDeals.map((row) => ({
+        quantity: numericCell(tableCell(dealTable, row, DEAL_HEADERS.quantity)),
+        price: numericCell(tableCell(dealTable, row, DEAL_HEADERS.price)),
+    }));
+    const dealLegsComplete = dealLegs.every((leg) => (
+        leg.quantity !== null && leg.quantity > 0 && leg.price !== null
+    ));
+    const dealFilledShares = dealLegsComplete
+        ? dealLegs.reduce((total, leg) => total + leg.quantity, 0)
+        : null;
+    const orderFilledShares = numericCell(
+        tableCell(orderTable, orderRow, ORDER_HEADERS.filled)
+    );
+    const filledShares = dealFilledShares !== null
+        ? dealFilledShares
+        : orderFilledShares ?? 0;
+    const fillPrice = dealLegsComplete && filledShares > 0
+        ? dealLegs.reduce((total, leg) => total + leg.quantity * leg.price, 0)
+            / filledShares
+        : null;
+    const fillProofComplete = !['filled', 'partial'].includes(status)
+        || (exactDeals.length > 0 && dealLegsComplete && filledShares > 0);
+    const mapping = {exactOrderMatchCount: exactOrders.length};
+    const receiptMapping = mapping.exactOrderMatchCount === 1
+        && status !== 'unknown'
+        && fillProofComplete
+        && filledShares <= expected.quantity;
+    return {
+        status: receiptMapping ? status : 'unknown',
+        statusReason: receiptMapping
+            ? 'exact_account_query_order_mapped'
+            : 'order_status_or_fill_mapping_unproven',
+        orderId,
+        exactOrderMatchCount: 1,
+        exactDealMatchCount: exactDeals.length,
+        requestedShares: expected.quantity,
+        filledShares,
+        remainingShares: Math.max(0, expected.quantity - filledShares),
+        orderPrice: expected.price,
+        fillPrice,
+        active: receiptMapping ? ['accepted', 'partial'].includes(status) : null,
+        receiptMapping,
+    };
+}
+
 function collectScope(scope) {
     return {
         assets: scope === 'assets' || scope === 'all',
@@ -434,6 +645,12 @@ cli({
         {name: 'scope', default: 'all', help: 'assets, orders, strategies or all'},
         {name: 'expected-environment', default: 'mock', help: 'Expected mock or live environment'},
         {name: 'logical-account-id', default: 'primary', help: 'Caller logical account id'},
+        {name: 'code', help: 'Expected six-digit security code'},
+        {name: 'side', help: 'Expected buy or sell side'},
+        {name: 'quantity', help: 'Expected order quantity'},
+        {name: 'price', help: 'Expected numeric limit price'},
+        {name: 'date', help: 'Expected trade date in YYYY-MM-DD'},
+        {name: 'order-id', help: 'Previously claimed broker order id'},
     ],
     columns: RECEIPT_COLUMNS,
     func: async (page, kwargs) => {
@@ -462,28 +679,30 @@ cli({
             }
             if (scopes.assets) snapshots.assets = await page.evaluate(ASSETS_SCRIPT);
             if (scopes.orders) {
-                const manualRoute = await page.evaluate(MANUAL_ROUTE_DISCOVERY_SCRIPT);
-                snapshots.manual_route_discovery = {
-                    route_available: manualRoute?.route_available === true,
-                    link_count: Number(manualRoute?.link_count || 0),
-                    unique_route_count: Number(manualRoute?.unique_route_count || 0),
-                };
                 await navigate(page, ROUTES.query);
                 snapshots.orders = await page.evaluate(QUERY_SCRIPT);
-                if (manualRoute?.route_available === true && manualRoute.route) {
-                    await navigate(page, manualRoute.route);
-                    snapshots.manual = await page.evaluate(MANUAL_ORDERS_SCRIPT);
-                } else {
-                    snapshots.manual = {
-                        route_available: false,
-                        reason: 'manual_entrust_route_not_unique',
-                        complete_scan: false,
-                        stable_keys: {
-                            order_id: null,
-                            strategy_id: null,
-                            task_id: null,
-                        },
+                if (!input.orderMatch) {
+                    const manualRoute = await page.evaluate(MANUAL_ROUTE_DISCOVERY_SCRIPT);
+                    snapshots.manual_route_discovery = {
+                        route_available: manualRoute?.route_available === true,
+                        link_count: Number(manualRoute?.link_count || 0),
+                        unique_route_count: Number(manualRoute?.unique_route_count || 0),
                     };
+                    if (manualRoute?.route_available === true && manualRoute.route) {
+                        await navigate(page, manualRoute.route);
+                        snapshots.manual = await page.evaluate(MANUAL_ORDERS_SCRIPT);
+                    } else {
+                        snapshots.manual = {
+                            route_available: false,
+                            reason: 'manual_entrust_route_not_unique',
+                            complete_scan: false,
+                            stable_keys: {
+                                order_id: null,
+                                strategy_id: null,
+                                task_id: null,
+                            },
+                        };
+                    }
                 }
             }
             if (scopes.strategies) {
@@ -492,7 +711,10 @@ cli({
                 await navigate(page, ROUTES.conditionActive);
                 snapshots.condition = await page.evaluate(CONDITION_SCRIPT);
             }
-            const finalState = await readEnvironment(page);
+            const finalState = carryEnvironmentProof(
+                state,
+                await readEnvironment(page),
+            );
             if (finalState.environment !== input.expectedEnvironment
                     || finalState.switcher_count !== 1) {
                 return asSingleReceipt(baseReceipt(
@@ -515,28 +737,53 @@ cli({
             const pageScansComplete = snapshotValues.length > 0
                 && snapshotValues.every((snapshot) => snapshot?.complete_scan === true);
             const accountBindingProven = finalState.account_binding === 'proven';
-            const reconcileComplete = accountBindingProven && pageScansComplete;
+            const mapping = mapExactOrderReceipt(
+                snapshots.orders,
+                input.orderMatch,
+                chinaTradeDate(),
+            );
+            const mappingRequested = input.orderMatch !== null;
+            const reconcileComplete = accountBindingProven
+                && pageScansComplete
+                && (!mappingRequested || mapping.receiptMapping);
             return asSingleReceipt(baseReceipt(
                 TEMPLATE_NAME,
                 finalState.route || ROUTES.assets,
                 input.expectedEnvironment,
                 finalState,
                 {
-                    status: reconcileComplete ? 'reconciled' : 'reconciled_partial',
+                    status: mappingRequested
+                        ? mapping.status
+                        : reconcileComplete ? 'reconciled' : 'reconciled_partial',
                     status_reason: !accountBindingProven
                         ? 'account_fingerprint_not_proven'
+                        : mappingRequested
+                            ? mapping.statusReason
                         : reconcileComplete
                             ? 'page_readback_completed'
                             : 'page_readback_incomplete_or_route_unproven',
                     logical_account_id: input.logicalAccountId,
                     reconcile_required: !reconcileComplete,
                     reconcile_complete: reconcileComplete,
+                    order_id: mappingRequested ? mapping.orderId : null,
+                    requested_shares: mappingRequested ? mapping.requestedShares : null,
+                    filled_shares: mappingRequested ? mapping.filledShares : null,
+                    remaining_shares: mappingRequested ? mapping.remainingShares : null,
+                    order_price: mappingRequested ? mapping.orderPrice : null,
+                    fill_price: mappingRequested ? mapping.fillPrice : null,
+                    active: mappingRequested ? mapping.active : null,
                     field_readback: snapshots,
                     locator_proof: {
                         assets_route: scopes.assets ? ROUTES.assets : null,
                         orders_route: scopes.orders ? ROUTES.query : null,
                         manual_entrust_route: scopes.orders
                             ? snapshots.manual_route_discovery
+                            : null,
+                        exact_order_match_count: mappingRequested
+                            ? mapping.exactOrderMatchCount
+                            : null,
+                        exact_deal_match_count: mappingRequested
+                            ? mapping.exactDealMatchCount
                             : null,
                         combo_route: scopes.strategies ? ROUTES.combo : null,
                         condition_route: scopes.strategies ? ROUTES.conditionActive : null,
@@ -545,7 +792,7 @@ cli({
                         submit: false,
                         reconcile: true,
                         account_binding: accountBindingProven,
-                        receipt_mapping: false,
+                        receipt_mapping: mapping.receiptMapping,
                         cancellation: false,
                     },
                 }

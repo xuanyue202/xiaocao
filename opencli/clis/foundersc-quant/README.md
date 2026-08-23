@@ -1,16 +1,16 @@
 # Founder Securities OpenCLI templates
 
-Template version: `5`
+Template version: `6`
 Site: `foundersc-quant`
-Scope: secure persistent-session login, no-submit
-probe/preparation/reconciliation/recovery, and verified mock/live environment
-switching.
+Scope: secure Edge persistent-session login, route-aware
+probe/preparation/reconciliation/recovery, verified mock/live environment
+switching, and one package-limit submit route.
 
 These templates are the browser-side adapter surface for the Xiaocao
-`BookBLiveExecution.execute(plan, broker_adapter)` seam. They deliberately do
-not expose a `submit` command in this phase. The route research result remains
-`NO_ROUTE_PROVEN`; a page field or a successful navigation is not a broker
-receipt.
+`BookBLiveExecution.execute(plan, broker_adapter)` seam. Only the observed
+`package-limit` route exposes a write command. `manual-limit`, `opening-auction`, and `timed-order`
+remain no-submit routes; a page field or a
+successful navigation is not a broker receipt.
 
 Before running the commands, verify or explicitly install the versioned
 templates from the repository:
@@ -53,6 +53,7 @@ not place that mode in unattended morning automation until it returns
 opencli foundersc-quant login -f json
 
 opencli foundersc-quant probe \
+  --route package-limit \
   --expected-environment mock \
   --logical-account-id primary \
   -f json
@@ -63,10 +64,19 @@ opencli foundersc-quant environment \
   -f json
 
 opencli foundersc-quant prepare \
-  --route manual-limit \
+  --route package-limit \
   --expected-environment mock \
   --logical-account-id primary \
   --code 600000 --side buy --quantity 100 --price 10.00 \
+  -f json
+
+opencli foundersc-quant submit --route package-limit \
+  --expected-environment mock \
+  --logical-account-id primary \
+  --expected-fund-account-fingerprint '123******789' \
+  --claim-id bookb-20260824-001 \
+  --strategy-name XC0824 \
+  --code 510300 --side buy --quantity 100 --price 4.22 \
   -f json
 
 opencli foundersc-quant reconcile \
@@ -86,18 +96,63 @@ unique `登录模拟盘` control. It then requires the same safe mock proof. CAP
 SMS, ambiguous controls or a failed readback return `auth_required` or
 `unknown`; the command does not retry a login.
 
-`prepare` supports `manual-limit`, `opening-auction`, and `timed-order`.
+`probe` defaults to `--route package-limit` so callers that omit the route
+remain compatible. It opens the package create page and reports
+`submit=true` / `submit_capability=true` only when the exact empty create-page
+DOM and account/environment binding are proven. `receipt_mapping` remains
+false until a trading-hours response proves the broker order-id shape; the
+production engine therefore blocks a real submit rather than using real money
+as a schema probe. Explicit probes for `manual-limit`, `opening-auction`, or
+`timed-order` report all write capabilities as false.
+
+`prepare` supports `manual-limit`, `opening-auction`, `package-limit`, and
+`timed-order`.
 Manual limit never clicks `买入` or `卖出`; because the observed page does not
 prove a separate non-submitting side selector, `prepare --route manual-limit`
 reports a capability gap instead of claiming the requested side was selected.
+Package limit opens `组合交易 -> 按证券组合 -> 添加证券`, uniquely selects the
+visible `.al-modal-container`, fills `stockCode`, 买入/卖出, `指定价格`, numeric
+price and quantity, reads every field back, and clicks only the exact
+`.al-modal-cancel-button`. It then proves the modal is closed and the create
+page still says `暂无数据`; it never clicks the add-modal confirmation, 保存, or
+下单.
 Opening auction opens the form, fills only the requested fields, reads them
 back, and closes the empty form with its exact `取消` control. Timed order must
 first prove that the requested numeric limit is one native price option. The
 observed timed-order widget instead offers quote-derived values such as
 `现价`, `买一`, `卖一`, and `开盘价`; writing a decimal into its inner input does
 not select the Angular model. In that shape `prepare --route timed-order`
-returns `timed_order_numeric_limit_not_supported` and closes the form. These
-read-only routes never click `保存`, `启动`, or `确定`.
+returns `timed_order_numeric_limit_not_supported` and closes the form. The
+other read-only routes never click `保存`, `启动`, or `确定`.
+
+`submit --route package-limit` is the sole write route. It first proves the
+expected environment and masked fund-account fingerprint, reads the strategy
+list, and rejects an already-used exact strategy name. Names are limited to
+eight letters/numbers/CJK characters, `_`, or `-`. It then uses only trusted
+UI controls on `#/home/packageDeal/create?type=security`: add one security,
+select `指定价格`, confirm the local row, verify the exact code/name leaf and
+numeric `input#input-inline-0` / `input#quantity-0`, and check the unique
+security and the unique `.risk-agreement-link input[type="checkbox"]` controls
+before clicking the unique `下单` button. The security checkbox must
+independently be the only `input[type="checkbox"][id="<code>"]`; header,
+suspension, and other checkboxes never satisfy either proof. If the click opens
+the observed `名称设置` modal, the command then fills and reads back the unique
+`input#name[name="newName"]` and clicks the modal's unique `确定` control. It
+does not assume that the strategy-name input exists on the create page.
+`claim-id` is a required bounded caller correlation id returned as `task_id`;
+it is not used as the strategy name or broker order identifier.
+
+The browser interceptor observes, but never directly calls, the page's
+first-party `preEntrust`, `save`, and `entrust` responses under
+`/qt/packageTask/{mock?}/`. The first click must yield one successful
+preEntrust response and one exact `确定提交委托？` table before the command clicks
+its unique `提交` control. A success requires one stable strategy id from save,
+one stable order/entrust id from a known entrust-response field, one successful
+entrust response, the `下单成功` UI, and exactly one post-submit strategy-name
+match. A known non-trading response is `status=rejected` with
+`submitted=false`. Once the final submit click may have happened, any missing
+or ambiguous receipt is `status=unknown`, `submitted=null`, and
+`reconcile_required=true`. The command never retries a write click.
 
 `environment` changes only the unique mock/live switcher and then requires the
 same tab to agree at two layers: the visible mock/live label and the most
@@ -122,7 +177,7 @@ are:
 ```json
 {
   "template_name": "foundersc-quant/reconcile",
-  "template_version": 5,
+  "template_version": 6,
   "status": "reconciled",
   "environment": "mock",
   "expected_environment": "mock",
@@ -160,14 +215,49 @@ are:
 ```
 
 The broker identifiers and fill quantities remain `null` when the current
-page has no actual row or the visible table does not expose the identifier.
+page has no exact order-id-bound row or the visible table does not expose the
+identifier.
 `field_readback` contains only the requested form fields and sanitized page
 facts. It does not infer a fill, order id, status mapping, basket rule,
-T+1 ownership, or retry permission. In particular, `filled_shares` and
-`remaining_shares` are `null` in this phase: no page contract currently
-proves whether a displayed fill value would be cumulative for one order or
-an aggregate across orders. `observed_at` is the local template readback
-time, not a broker event timestamp.
+T+1 ownership, or retry permission. An exact current-day reconcile may return
+`filled_shares` and `remaining_shares` only when a previously captured broker
+order id uniquely maps the order row and any fill rows; a missing order id,
+duplicate row, wrong date, or incomplete fill legs remains UNKNOWN.
+`observed_at` is the local template readback time, not a broker event timestamp.
+
+## Strategy-surface decision
+
+The Founder UI surfaces inspected for the Book-B route are:
+
+- condition strategies: `止盈止损`, `定价单`, `移动止损`, `底部反弹买入`,
+  `顶部下跌卖出`, `定时单`, `通用回购逆回购`, `分批建仓`, `分批清仓`,
+  `指数跟随`, `定投单`, and `开板卖出`;
+- grid strategies: `基础网格` and `高级网格`;
+- single-security algorithms: `TWAP`, `VWAP`, `冰山`, `黑色冰山`,
+  `价格分段`, and `时间分段`;
+- combination algorithms: `TWAP_PRO`, `VWAP_PRO`, `POV_PLUS`, `POV_PRO`,
+  and `盘前集合竞价`;
+- combination trading: `按证券组合`, `按交易金额`, `按交易份额`, and
+  `按当前持仓`.
+
+Backtest and multifactor pages are research surfaces, not order routes. The
+selected production candidate is `组合交易 -> 按证券组合 -> 添加证券 -> 指定价格`:
+it is the only observed surface that expresses one exact numeric limit and one
+exact board-lot quantity for each security without changing the order into a
+threshold trigger, quote-relative price, recurring schedule, auction policy,
+or sliced execution algorithm. This is the closest faithful representation of
+Book B's `min(frozen_open * 1.005, basket_price)` one-shot initial order.
+Selection of the route does not prove trading-hours submission, broker order-id
+shape, cancellation finality, or the at-most-one retry policy.
+
+For a successful package-limit command, `strategy_id` is the bounded id from
+the save response, `order_id` is the bounded id from an explicit known
+order/entrust field, `submitted=true`, and `started=false` because this is an
+immediate package order rather than a started scheduling strategy. Fills, deal
+finality, and cancellation finality remain unproven, so the receipt still
+requests downstream reconciliation. Receipts contain only the masked account
+fingerprint and canonical status codes, never intercepted response bodies,
+raw accounts, passwords, cookies, or security-control values.
 
 `reconcile` includes account assets, query orders/deals, active strategy
 surfaces, and—when the app exposes exactly one same-origin opaque link—the
@@ -182,7 +272,7 @@ opaque manual route is not unique, it
 returns `reconciled_partial`, `reconcile_complete=false`, and
 `reconcile_required=true`; this is not a conclusive broker outcome.
 
-Template v5 also exposes a strict `allocation_summary` from either one unique
+Template v6 also exposes a strict `allocation_summary` from either one unique
 asset-summary card set or one unique table row containing `总资产`, `证券市值`,
 and `可用资金`. Ambiguous/missing labels or disagreeing sources keep the summary
 incomplete. The page-side `fund_account_fingerprint` is masked; Xiaocao compares
@@ -209,6 +299,15 @@ evidence.
   trigger-time field with the actual page readback. A mismatch is a
   `capability_gap`; a matching form is still not submit-ready unless the
   account binding is proven.
+- `submit` rejects an environment/account mismatch, duplicate exact strategy
+  name, non-unique DOM, non-numeric readback, unchecked required checkbox, or
+  unproven server confirmation before its final submit click.
+- Explicit preEntrust non-trading failures return `rejected` and
+  `submitted=false`. Missing captures are not treated as rejection.
+- After the final `提交` may have been clicked, exceptions and incomplete
+  save/entrust/UI evidence return `unknown`, `submitted=null`,
+  `retry_allowed=false`, and `reconcile_required=true`; callers must never
+  retry that intent.
 - A visible environment label whose request namespace belongs to the other
   environment returns `environment_ui_data_namespace_mismatch`; no prepare or
   switch receipt may treat that tab as ready.
@@ -219,10 +318,9 @@ evidence.
   `status=unknown`; callers must reconcile before any later write operation.
 - `environment_mismatch` is a clean precondition failure, not a retryable
   browser error.
-- There is no submit or withdraw action in this version. `cancelled` remains
-  false for a form that was merely closed; `form_closed` in the readback means
-  the empty preparation dialog was closed locally, not that a broker order was
-  cancelled.
+- There is no withdraw action in this version. `cancelled` remains false for a
+  form that was merely closed; `form_closed` means the empty preparation
+  dialog was closed locally, not that a broker order was cancelled.
 
 ## Known evidence gaps
 
@@ -233,9 +331,11 @@ The templates preserve the research gaps rather than hiding them:
   response. If that masked fingerprint does not match the Keychain
   trade-account metadata, `logical_account_id=primary` remains unproven and
   live allocation facts are not emitted.
-- The current runtime has not proven a stable strategy/order/deal receipt
-  chain, quantization cancellation finality, mixed-account ownership, T+1
-  semantics, or authoritative market-state timestamps.
+- The current runtime has code for the observed package save-id and entrust
+  acknowledgement chain, but the live-market final-submit branch is still
+  unverified. Stable broker order/deal identifiers, cancellation finality,
+  mixed-account ownership, T+1 semantics, and authoritative market-state
+  timestamps remain unproven.
 - The manual order route contains an opaque account segment. If the page does
   not expose exactly one same-origin link to that route, the adapter records
   the manual surface as unavailable; `can_withdraw` remains `null` because no

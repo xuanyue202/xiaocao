@@ -158,15 +158,20 @@ def build_foundersc_execution(
     state_dir: Path | str,
     *,
     profile: str | None = None,
-    route: str = "manual-limit",
+    route: str = "package-limit",
+    expected_fund_account_fingerprint: str | None = None,
     now=None,
     notifier=None,
 ) -> tuple[TradingExecution, FounderscQuantOpenCLIAdapter]:
-    """Build the durable Xiaocao engine and the read-only Founder adapter."""
+    """Build the durable Xiaocao engine and account-bound Founder adapter."""
     root = Path(state_dir)
     store = ExecutionStore(root / "events.jsonl")
     outbox = TradingIncidentOutbox(root / "incidents.jsonl")
-    adapter = FounderscQuantOpenCLIAdapter(profile=profile, route=route)
+    adapter = FounderscQuantOpenCLIAdapter(
+        profile=profile,
+        route=route,
+        expected_fund_account_fingerprint=expected_fund_account_fingerprint,
+    )
     execution = TradingExecution(
         store=store,
         broker=adapter,

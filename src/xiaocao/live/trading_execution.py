@@ -6,9 +6,10 @@ broker receipt lifecycle, real-capital gate, retry/reconcile policy, and
 incident handoff.  A broker adapter is deliberately small so a Web/OpenCLI
 implementation can change without leaking DOM details into Xiaocao.
 
-This module does not contain a live broker implementation.  Until an adapter
-proves an exact route, live plans stop at ``NO_ROUTE_PROVEN`` and no submit is
-attempted.  Paper/simulation adapters are used by the contract tests.
+The module is broker-neutral.  A live adapter may submit only after it proves
+an exact route, account binding and receipt-mapping capability; otherwise live
+plans stop fail-closed and no submit is attempted.  Paper/simulation adapters
+are used by the contract tests.
 """
 from __future__ import annotations
 
@@ -1058,26 +1059,40 @@ class TradingExecution:
                 plan,
                 replace(receipt, state=ExecutionState.SKIPPED, reason="RECOVERY_DEADLINE_REACHED", next_action="stop"),
             )
-        if plan.environment == "live":
-            try:
-                require_capital_action(
-                    kind="real_capital",
-                    side=plan.side,
-                    code=plan.code,
-                    notional=plan.notional,
-                    auth_path=self.auth_path,
-                    audit_path=self.audit_path,
-                    env=self.safety_env,
-                    now=self.now(),
-                )
-            except Exception as exc:  # CapitalActionDenied and malformed gate inputs are both fail-closed.
-                denied = self._record(
-                    plan,
-                    replace(receipt, state=ExecutionState.REJECTED, reason=f"SAFETY_DENIED:{exc}", next_action="human_review"),
-                )
-                self._incident(plan, denied)
-                return denied
         return self._continue(plan, broker, replace(receipt, state=ExecutionState.VALIDATED))
+
+    def _capital_denial(
+        self,
+        plan: TradePlan,
+        previous: ExecutionReceipt,
+    ) -> ExecutionReceipt | None:
+        """Recheck both capital keys before every live submit-capable phase."""
+        if plan.environment != "live":
+            return None
+        try:
+            require_capital_action(
+                kind="real_capital",
+                side=plan.side,
+                code=plan.code,
+                notional=plan.notional,
+                auth_path=self.auth_path,
+                audit_path=self.audit_path,
+                env=self.safety_env,
+                now=self.now(),
+            )
+        except Exception as exc:  # Gate errors are capital denials, never fallbacks.
+            denied = self._record(
+                plan,
+                replace(
+                    previous,
+                    state=ExecutionState.REJECTED,
+                    reason=f"SAFETY_DENIED:{exc}",
+                    next_action="human_review",
+                ),
+            )
+            self._incident(plan, denied)
+            return denied
+        return None
 
     def _continue(self, plan: TradePlan, broker: BrokerAdapter, previous: ExecutionReceipt) -> ExecutionReceipt:
         if plan.submit_not_before is not None and self.now() < plan.submit_not_before:
@@ -1090,6 +1105,9 @@ class TradingExecution:
                 plan,
                 replace(previous, state=ExecutionState.SKIPPED, reason="RECOVERY_DEADLINE_REACHED", next_action="stop"),
             )
+        denied = self._capital_denial(plan, previous)
+        if denied is not None:
+            return denied
         try:
             capability = broker.probe(plan)
         except Exception as exc:  # Probe has no external side effect; keep the plan retryable.
@@ -1154,6 +1172,26 @@ class TradingExecution:
             if plan.environment == "live":
                 self._incident(plan, denied)
             return denied
+        if plan.environment == "live" and (
+            not capability.supports_reconcile
+            or capability.capabilities.get("receipt_mapping") is not True
+        ):
+            blocked = self._record(
+                plan,
+                self._with_capability_evidence(
+                    replace(
+                        previous,
+                        state=ExecutionState.REJECTED,
+                        reason="BROKER_RECEIPT_MAPPING_UNPROVEN",
+                        next_action="human_review",
+                    ),
+                    capability,
+                ),
+                kind="receipt_mapping_unproven",
+                details={"capability": asdict(capability)},
+            )
+            self._incident(plan, blocked)
+            return blocked
         if plan.environment == "live" and str(capability.account_binding or "").strip().lower() not in {
             "proven",
             "bound",
@@ -1224,6 +1262,9 @@ class TradingExecution:
             return failed
         prepared_receipt = self._receipt_from_broker(plan, previous, prepared, ExecutionState.PREPARED, plan.shares)
         prepared_receipt = self._record(plan, prepared_receipt)
+        denied = self._capital_denial(plan, prepared_receipt)
+        if denied is not None:
+            return denied
         return self._submit_claimed(plan, broker, prepared_receipt, requested_shares=plan.shares)
 
     @staticmethod
@@ -1349,6 +1390,9 @@ class TradingExecution:
         if not self._retry_allowed(plan, broker_receipt):
             reason = self._retry_block_reason(plan, broker_receipt)
             return self._record(plan, replace(reconciled, reason=reason, next_action="wait_for_basket" if reason == "REALTIME_ABOVE_BASKET" else "stop"))
+        denied = self._capital_denial(plan, reconciled)
+        if denied is not None:
+            return denied
         try:
             capability = broker.probe(plan)
             if not capability.ready or not capability.supports_submit:
@@ -1418,6 +1462,9 @@ class TradingExecution:
                 self._receipt_from_broker(plan, reconciled, prepared, ExecutionState.PREPARED, requested, already_filled=reconciled.filled_shares),
                 kind="retry_prepared",
             )
+            denied = self._capital_denial(plan, prepared_retry)
+            if denied is not None:
+                return denied
             return self._submit_claimed(
                 plan,
                 broker,
@@ -1742,9 +1789,20 @@ def trade_plan_from_frozen_row(
         limit_price = float(price_raw)
         basket = None
     created = now or _utcnow()
+    local_date = datetime.fromisoformat(trade_date).replace(
+        tzinfo=ZoneInfo("Asia/Shanghai")
+    )
     if recovery_deadline is None:
-        local_date = datetime.fromisoformat(trade_date).replace(tzinfo=ZoneInfo("Asia/Shanghai"))
         recovery_deadline = local_date.replace(hour=9, minute=45, second=0, microsecond=0).astimezone(timezone.utc)
+    submit_not_before = _parse_datetime(row.get("submit_not_before")) or created
+    if environment == "live" and normalized_side == "BUY":
+        opening_submit = local_date.replace(
+            hour=9,
+            minute=30,
+            second=0,
+            microsecond=0,
+        ).astimezone(timezone.utc)
+        submit_not_before = max(submit_not_before, opening_submit)
     plan_id = f"book-b:{trade_date}:{code}:{normalized_side}"
     raw_guard = row.get("market_guard_status") or row.get("trade_status") or row.get("tradeStatus")
     if raw_guard in (None, "") and environment == "mock" and not bool(row.get("market_guard_required")):
@@ -1781,7 +1839,7 @@ def trade_plan_from_frozen_row(
         created_at=created,
         recovery_deadline=recovery_deadline,
         owned_lot_id=row.get("owned_lot_id"),
-        submit_not_before=_parse_datetime(row.get("submit_not_before")) or created,
+        submit_not_before=submit_not_before,
         price_rule=(
             "min(frozen_open*1.005,basket_price)"
             if normalized_side == "BUY" else "frozen_sell_limit"

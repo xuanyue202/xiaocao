@@ -166,6 +166,45 @@ def test_live_order_is_denied_before_adapter_side_effect_without_two_keys(tmp_pa
     assert broker.submit_calls == 0
 
 
+def test_live_order_resumed_at_submit_window_rechecks_two_keys(tmp_path: Path) -> None:
+    before = datetime(2026, 8, 24, 1, 20, tzinfo=timezone.utc)
+    submit_at = datetime(2026, 8, 24, 1, 30, tzinfo=timezone.utc)
+    clock = [before]
+    broker = FakeBroker()
+    broker.capability = replace(
+        broker.capability,
+        account_binding="proven",
+        manual_position_shares=0,
+    )
+    engine = TradingExecution(
+        store=InMemoryExecutionStore(tmp_path / "events.jsonl"),
+        safety_env={},
+        auth_path=tmp_path / "missing-auth.json",
+        audit_path=tmp_path / "audit.jsonl",
+        notifier=lambda _title, _body: "ok",
+        now=lambda: clock[0],
+    )
+    plan = replace(
+        _plan(
+            environment="live",
+            deadline=submit_at + timedelta(minutes=15),
+        ),
+        submit_not_before=submit_at,
+    )
+
+    waiting = engine.execute(plan, broker)
+    assert waiting.state == ExecutionState.VALIDATED
+    assert waiting.reason == "SUBMIT_NOT_BEFORE"
+    assert broker.probe_calls == 0
+
+    clock[0] = submit_at
+    denied = engine.execute(plan, broker)
+
+    assert denied.state == ExecutionState.REJECTED
+    assert denied.reason.startswith("SAFETY_DENIED")
+    assert broker.submit_calls == 0
+
+
 def test_live_switch_can_be_rehearsed_with_fake_adapter_but_never_without_gate(tmp_path: Path) -> None:
     now = datetime(2026, 8, 15, 1, 1, tzinfo=timezone.utc)
     signing_key = "test-human-key"
@@ -185,6 +224,7 @@ def test_live_switch_can_be_rehearsed_with_fake_adapter_but_never_without_gate(t
         broker.capability,
         account_binding="bound",
         manual_position_shares=0,
+        capabilities={"receipt_mapping": True},
     )
     engine = TradingExecution(
         store=InMemoryExecutionStore(tmp_path / "events.jsonl"),
@@ -208,6 +248,48 @@ def test_live_switch_can_be_rehearsed_with_fake_adapter_but_never_without_gate(t
     assert receipt.state == ExecutionState.ACKNOWLEDGED
     assert broker.probe_calls == 1
     assert broker.submit_calls == 1
+
+
+def test_live_route_without_receipt_mapping_is_rejected_before_submit(
+    tmp_path: Path,
+) -> None:
+    now = datetime(2026, 8, 15, 1, 1, tzinfo=timezone.utc)
+    signing_key = "test-human-key"
+    auth = make_authorization(
+        scope="isolated-test",
+        max_notional=10000.0,
+        signing_key=signing_key,
+        sides=["BUY"],
+        codes=["000001.XSHE"],
+        issued_at=now.isoformat(),
+        expires_at="2026-08-16T00:00:00+00:00",
+    )
+    auth_path = tmp_path / "live_authorization.json"
+    auth_path.write_text(json.dumps(auth), encoding="utf-8")
+    broker = FakeBroker()
+    broker.capability = replace(
+        broker.capability,
+        account_binding="proven",
+        manual_position_shares=0,
+        capabilities={"receipt_mapping": False},
+    )
+    engine = TradingExecution(
+        store=InMemoryExecutionStore(tmp_path / "events.jsonl"),
+        safety_env={ENV_LIVE_ENABLED: "true", ENV_SIGNING_KEY: signing_key},
+        auth_path=auth_path,
+        audit_path=tmp_path / "audit.jsonl",
+        notifier=lambda _title, _body: "ok",
+        now=lambda: now,
+    )
+
+    receipt = engine.execute(
+        _plan(environment="live", deadline=now + timedelta(minutes=15)),
+        broker,
+    )
+
+    assert receipt.state == ExecutionState.REJECTED
+    assert receipt.reason == "BROKER_RECEIPT_MAPPING_UNPROVEN"
+    assert broker.submit_calls == 0
 
 
 @pytest.mark.parametrize("guard,reason", [("limit_down", "LIMIT_DOWN_BUY_BLOCKED"), ("unavailable", "LIMIT_DOWN_CHECK_UNAVAILABLE")])

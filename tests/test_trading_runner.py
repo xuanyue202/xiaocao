@@ -7,6 +7,7 @@ from pathlib import Path
 import pytest
 
 from xiaocao.live.trading_runner import (
+    build_foundersc_execution,
     plans_from_frozen_rows,
     read_frozen_rows,
 )
@@ -122,3 +123,29 @@ def test_runner_sell_requires_authorized_owned_lot_and_tz_timestamp() -> None:
             [dict(sell, t1_blocked=True)],
             environment="mock", logical_account_id="primary", side="SELL"
         )
+
+
+def test_foundersc_runtime_defaults_to_account_bound_package_limit(
+    tmp_path: Path,
+) -> None:
+    _execution, adapter = build_foundersc_execution(
+        tmp_path,
+        expected_fund_account_fingerprint="987******210",
+    )
+
+    assert adapter.route == "package-limit"
+    assert adapter.expected_fund_account_fingerprint == "987******210"
+
+
+def test_live_buy_plan_starts_at_0920_but_cannot_submit_before_0930() -> None:
+    plan = plans_from_frozen_rows(
+        [_row()],
+        environment="live",
+        logical_account_id="primary",
+        now=datetime(2026, 8, 15, 1, 23, tzinfo=timezone.utc),
+        allocation=BookBAllocationFacts(settled_nav=30000, available_cash=30000),
+    )[0]
+
+    assert plan.submit_not_before == datetime(
+        2026, 8, 15, 1, 30, tzinfo=timezone.utc
+    )

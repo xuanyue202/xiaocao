@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import subprocess
+from dataclasses import replace
 from datetime import datetime, timezone
 
 import pytest
@@ -336,7 +337,7 @@ def test_prepare_readonly_rejects_receipt_without_environment_namespace_proof() 
         "fund_account_fingerprint": "987******210",
         "submitted": False,
         "saved": False,
-        "started": False,
+        "started": True,
         "ready_for_submit": False,
         "form_closed": True,
         "field_readback": {},
@@ -424,13 +425,247 @@ def test_prepare_readonly_fails_closed_on_page_keychain_account_mismatch() -> No
     assert receipt.error_code == "LIVE_PREPARE_READBACK_UNPROVEN"
 
 
-def test_submit_is_a_no_route_guard_and_never_invokes_runner() -> None:
-    runner = Runner({"status": "ready", "environment": "mock", "logical_account_id": "primary"})
-    adapter = FounderscQuantOpenCLIAdapter(opencli_command=("opencli",), runner=runner)
+def test_package_limit_submit_returns_one_account_bound_order_receipt() -> None:
+    runner = Runner({
+        "status": "submitted",
+        "environment": "mock",
+        "environment_data_namespace": "mock",
+        "environment_proof_complete": True,
+        "fund_account_match_count": 1,
+        "fund_account_fingerprint": "987******210",
+        "logical_account_id": "primary",
+        "account_binding": "not_proven",
+        "submitted": True,
+        "saved": True,
+        "started": False,
+        "strategy_id": "1881339527",
+        "order_id": "order-123",
+        "requested_shares": 200,
+        "remaining_shares": 200,
+        "order_price": 10.05,
+        "reconcile_required": False,
+        "field_readback": {
+            "code": "000001",
+            "side": "买入",
+            "quantity": "200",
+            "price": "10.05",
+        },
+        "capabilities": {
+            "submit": True,
+            "receipt_mapping": True,
+            "cancellation": True,
+        },
+    })
+    adapter = FounderscQuantOpenCLIAdapter(
+        opencli_command=("opencli",),
+        runner=runner,
+        route="package-limit",
+        expected_fund_account_fingerprint="987******210",
+    )
+
     receipt = adapter.submit(_plan(), "claim-1")
+
+    assert receipt.status == BrokerStatus.ACCEPTED
+    assert receipt.order_id == "order-123"
+    assert receipt.strategy_id == "1881339527"
+    assert receipt.account_binding == "proven"
+    assert receipt.echoed == {
+        "code": "000001.XSHE",
+        "side": "BUY",
+        "shares": 200,
+        "limit_price": 10.05,
+    }
+    command = runner.commands[0]
+    assert command[1:3] == ["foundersc-quant", "submit"]
+    assert command[command.index("--route") + 1] == "package-limit"
+    assert command[command.index("--claim-id") + 1] == "claim-1"
+    assert command[command.index("--expected-fund-account-fingerprint") + 1] == (
+        "987******210"
+    )
+    assert command.count("--strategy-name") == 1
+    assert len(command[command.index("--strategy-name") + 1]) <= 8
+
+
+def test_package_limit_submit_with_conflicting_namespace_is_unknown_not_retryable() -> None:
+    runner = Runner({
+        "status": "submitted",
+        "environment": "live",
+        "environment_data_namespace": "mock",
+        "environment_proof_complete": False,
+        "fund_account_match_count": 1,
+        "fund_account_fingerprint": "987******210",
+        "logical_account_id": "primary",
+        "submitted": True,
+        "saved": True,
+        "started": False,
+        "strategy_id": "1881339527",
+        "order_id": "order-uncertain",
+        "requested_shares": 200,
+        "order_price": 10.05,
+        "field_readback": {
+            "code": "000001",
+            "side": "买入",
+            "quantity": "200",
+            "price": "10.05",
+        },
+        "capabilities": {"submit": True, "receipt_mapping": True},
+    })
+    plan = replace(_plan(), environment="live")
+    adapter = FounderscQuantOpenCLIAdapter(
+        opencli_command=("opencli",),
+        runner=runner,
+        route="package-limit",
+        expected_fund_account_fingerprint="987******210",
+    )
+
+    receipt = adapter.submit(plan, "claim-conflict")
+
+    assert receipt.status == BrokerStatus.UNKNOWN
+    assert receipt.conclusive is False
+    assert receipt.error_code == "LIVE_SUBMIT_RECEIPT_UNPROVEN"
+    assert receipt.order_id == "order-uncertain"
+    assert len(runner.commands) == 1
+
+
+def test_submit_claim_id_is_not_misreported_as_a_broker_strategy_id() -> None:
+    runner = Runner({
+        "status": "capability_gap",
+        "status_reason": "package_draft_readback_not_proven",
+        "environment": "mock",
+        "environment_data_namespace": "mock",
+        "environment_proof_complete": True,
+        "fund_account_match_count": 1,
+        "fund_account_fingerprint": "987******210",
+        "logical_account_id": "primary",
+        "task_id": "claim-1",
+        "submitted": False,
+        "saved": False,
+        "started": False,
+        "reconcile_required": True,
+        "capabilities": {"submit": True, "receipt_mapping": True},
+    })
+    adapter = FounderscQuantOpenCLIAdapter(
+        opencli_command=("opencli",),
+        runner=runner,
+        route="package-limit",
+        expected_fund_account_fingerprint="987******210",
+    )
+
+    receipt = adapter.submit(_plan(), "claim-1")
+
+    assert receipt.status == BrokerStatus.UNKNOWN
+    assert receipt.strategy_id is None
+    assert receipt.field_readback["submitted"] is False
+    assert receipt.field_readback["saved"] is False
+    assert receipt.field_readback["started"] is False
+
+
+def test_package_limit_preserves_conclusive_nontrading_rejection() -> None:
+    runner = Runner({
+        "status": "rejected",
+        "status_reason": "non_trading_time",
+        "environment": "mock",
+        "environment_data_namespace": "mock",
+        "environment_proof_complete": True,
+        "fund_account_match_count": 1,
+        "fund_account_fingerprint": "987******210",
+        "logical_account_id": "primary",
+        "submitted": False,
+        "saved": False,
+        "started": False,
+        "reconcile_required": False,
+        "form_closed": True,
+        "capabilities": {"submit": True, "receipt_mapping": True},
+    })
+    adapter = FounderscQuantOpenCLIAdapter(
+        opencli_command=("opencli",),
+        runner=runner,
+        route="package-limit",
+        expected_fund_account_fingerprint="987******210",
+    )
+
+    receipt = adapter.submit(_plan(), "claim-nontrading")
+
     assert receipt.status == BrokerStatus.REJECTED
-    assert receipt.reason == "NO_ROUTE_PROVEN"
-    assert runner.commands == []
+    assert receipt.reason == "non_trading_time"
+    assert receipt.account_binding == "proven"
+    assert receipt.conclusive is True
+    assert receipt.field_readback["submitted"] is False
+    assert receipt.field_readback["form_closed"] is True
+
+
+def test_package_limit_probe_binds_browser_account_to_expected_fingerprint() -> None:
+    runner = Runner({
+        "status": "ready",
+        "environment": "live",
+        "environment_data_namespace": "live",
+        "environment_proof_complete": True,
+        "fund_account_match_count": 1,
+        "fund_account_fingerprint": "987******210",
+        "logical_account_id": "primary",
+        "account_binding": "not_proven",
+        "manual_position_shares": 0,
+        "capabilities": {
+            "submit": True,
+            "reconcile": True,
+            "receipt_mapping": True,
+            "cancellation": True,
+        },
+    })
+    adapter = FounderscQuantOpenCLIAdapter(
+        opencli_command=("opencli",),
+        runner=runner,
+        route="package-limit",
+        expected_fund_account_fingerprint="987******210",
+    )
+
+    capability = adapter.probe(replace(_plan(), environment="live"))
+
+    assert capability.ready is True
+    assert capability.supports_submit is True
+    assert capability.account_binding == "proven"
+    command = runner.commands[0]
+    assert command[command.index("--route") + 1] == "package-limit"
+
+
+def test_package_limit_prepare_uses_the_constructor_account_binding() -> None:
+    runner = Runner({
+        "status": "unknown",
+        "status_reason": "account_fingerprint_not_proven",
+        "environment": "live",
+        "environment_data_namespace": "live",
+        "environment_proof_complete": True,
+        "fund_account_match_count": 1,
+        "fund_account_fingerprint": "987******210",
+        "logical_account_id": "primary",
+        "account_binding": "not_proven",
+        "requested_shares": 200,
+        "order_price": 10.05,
+        "submitted": False,
+        "saved": False,
+        "started": False,
+        "ready_for_submit": False,
+        "form_closed": True,
+        "field_readback": {
+            "code": "000001",
+            "side": "买入",
+            "quantity": "200",
+            "price": "10.05",
+        },
+        "capabilities": {"submit": False, "form_readback": True},
+    })
+    adapter = FounderscQuantOpenCLIAdapter(
+        opencli_command=("opencli",),
+        runner=runner,
+        route="package-limit",
+        expected_fund_account_fingerprint="987******210",
+    )
+
+    receipt = adapter.prepare(replace(_plan(), environment="live"))
+
+    assert receipt.status == BrokerStatus.PREPARED
+    assert receipt.account_binding == "proven"
+    assert receipt.conclusive is True
 
 
 def test_reconcile_without_receipt_mapping_is_unknown_not_a_fill() -> None:
@@ -448,6 +683,75 @@ def test_reconcile_without_receipt_mapping_is_unknown_not_a_fill() -> None:
     assert receipt.conclusive is False
     assert receipt.filled_shares == 0
     assert "BROKER_RECEIPT_MAPPING_UNPROVEN" in receipt.reason
+
+
+def test_package_limit_reconcile_maps_the_claimed_order_and_account() -> None:
+    runner = Runner({
+        "status": "filled",
+        "environment": "live",
+        "environment_data_namespace": "live",
+        "environment_proof_complete": True,
+        "fund_account_match_count": 1,
+        "fund_account_fingerprint": "987******210",
+        "logical_account_id": "primary",
+        "account_binding": "not_proven",
+        "order_id": "order-123",
+        "requested_shares": 200,
+        "filled_shares": 200,
+        "remaining_shares": 0,
+        "order_price": 10.05,
+        "fill_price": 10.04,
+        "reconcile_required": False,
+        "reconcile_complete": True,
+        "capabilities": {"receipt_mapping": True, "cancellation": True},
+    })
+    adapter = FounderscQuantOpenCLIAdapter(
+        opencli_command=("opencli",),
+        runner=runner,
+        route="package-limit",
+        expected_fund_account_fingerprint="987******210",
+    )
+    plan = replace(_plan(), environment="live")
+
+    receipt = adapter.reconcile(plan, {"broker_order_id": "order-123"})
+
+    assert receipt.status == BrokerStatus.FILLED
+    assert receipt.account_binding == "proven"
+    assert receipt.filled_shares == 200
+    command = runner.commands[0]
+    assert command[command.index("--scope") + 1] == "orders"
+    assert command[command.index("--order-id") + 1] == "order-123"
+    assert command[command.index("--code") + 1] == "000001"
+    assert command[command.index("--side") + 1] == "buy"
+
+
+def test_package_limit_reconcile_keeps_account_proof_when_mapping_is_pending() -> None:
+    runner = Runner({
+        "status": "unknown",
+        "status_reason": "broker_order_id_required",
+        "environment": "live",
+        "environment_data_namespace": "live",
+        "environment_proof_complete": True,
+        "fund_account_match_count": 1,
+        "fund_account_fingerprint": "987******210",
+        "logical_account_id": "primary",
+        "reconcile_complete": False,
+        "reconcile_required": True,
+        "capabilities": {"receipt_mapping": False},
+    })
+    adapter = FounderscQuantOpenCLIAdapter(
+        opencli_command=("opencli",),
+        runner=runner,
+        route="package-limit",
+        expected_fund_account_fingerprint="987******210",
+    )
+
+    receipt = adapter.reconcile(replace(_plan(), environment="live"), {})
+
+    assert receipt.status == BrokerStatus.UNKNOWN
+    assert receipt.reason == "broker_order_id_required"
+    assert receipt.account_binding == "proven"
+    assert receipt.conclusive is False
 
 
 def test_invalid_command_output_is_unknown_and_safe() -> None:

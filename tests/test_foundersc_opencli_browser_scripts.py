@@ -36,6 +36,75 @@ def _assets_body() -> str:
     return match.group("body")
 
 
+def _order_mapping_source() -> str:
+    source = (TEMPLATE_ROOT / "reconcile.js").read_text(encoding="utf-8")
+    start = source.index("const ORDER_HEADERS")
+    end = source.index("function collectScope", start)
+    return source[start:end]
+
+
+def test_exact_order_mapping_accepts_one_stable_order_and_rejects_duplicates():
+    node_script = r"""
+const mapping = new Function(
+    `${MAPPING_SOURCE}; return mapExactOrderReceipt;`,
+)();
+const orderTable = {
+    headers: ['代码/名称', '订单编号', '买/卖', '委托量', '委托价', '状态'],
+    rows: [['510300 300ETF', 'order-123', '买入', '100', '4.22', '全部成交']],
+};
+const dealTable = {
+    headers: ['订单编号', '成交量', '成交价'],
+    rows: [['order-123', '40', '4.21'], ['order-123', '60', '4.22']],
+};
+const snapshot = {
+    tabs: {
+        '当日委托': {complete_scan: true, table: orderTable},
+        '当日成交': {complete_scan: true, table: dealTable},
+    },
+};
+const expected = {
+    code: '510300', side: '买入', quantity: 100, price: 4.22,
+    date: '2026-08-24', orderId: 'order-123',
+};
+const exact = mapping(snapshot, expected, '2026-08-24');
+const duplicate = mapping({
+    tabs: {
+        '当日委托': {
+            complete_scan: true,
+            table: {...orderTable, rows: [...orderTable.rows, ...orderTable.rows]},
+        },
+        '当日成交': {complete_scan: true, table: dealTable},
+    },
+}, expected, '2026-08-24');
+const missingOrderId = mapping(
+    snapshot,
+    {...expected, orderId: ''},
+    '2026-08-24',
+);
+const wrongDate = mapping(snapshot, expected, '2026-08-25');
+console.log(JSON.stringify({exact, duplicate, missingOrderId, wrongDate}));
+""".replace("MAPPING_SOURCE", json.dumps(_order_mapping_source()))
+    completed = subprocess.run(
+        [_node(), "--input-type=module", "--eval", node_script],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+    assert completed.returncode == 0, completed.stderr
+    payload = json.loads(completed.stdout)
+    assert payload["exact"]["receiptMapping"] is True
+    assert payload["exact"]["status"] == "filled"
+    assert payload["exact"]["filledShares"] == 100
+    assert payload["exact"]["fillPrice"] == pytest.approx(4.216)
+    assert payload["duplicate"]["receiptMapping"] is False
+    assert payload["duplicate"]["exactOrderMatchCount"] == 2
+    assert payload["missingOrderId"]["receiptMapping"] is False
+    assert payload["missingOrderId"]["statusReason"] == "broker_order_id_required"
+    assert payload["wrongDate"]["receiptMapping"] is False
+    assert payload["wrongDate"]["statusReason"] == "trade_date_not_current"
+
+
 def test_browser_scripts_execute_normal_and_fail_closed_readbacks(tmp_path: Path):
     common_url = (TEMPLATE_ROOT / "common.mjs").as_uri()
     prepare_path = str(TEMPLATE_ROOT / "prepare.js")
@@ -431,7 +500,12 @@ const staleEnvironment = await evaluate(
 );
 const staleEnvironmentGate = common.environmentGate(staleEnvironment, 'mock');
 const carriedEnvironment = common.carryEnvironmentProof(
-    environment,
+    {
+        ...environment,
+        fund_account_fingerprint: '987******210',
+        fund_account_match_count: 1,
+        account_binding: 'proven',
+    },
     {
         ...environment,
         route: '#/home/conditionStrategy/active',
@@ -456,6 +530,40 @@ const rejectedOppositeNamespaceCarry = common.carryEnvironmentProof(
         route: '#/home/conditionStrategy/active',
         environment_data_namespace: 'live',
         environment_proof_complete: false,
+    },
+);
+const rejectedConflictingAccountCarry = common.carryEnvironmentProof(
+    {
+        ...environment,
+        fund_account_fingerprint: '987******210',
+        fund_account_match_count: 1,
+        account_binding: 'proven',
+    },
+    {
+        ...environment,
+        route: '#/home/myAccount/query',
+        environment_data_namespace: 'unknown',
+        environment_proof_complete: false,
+        fund_account_fingerprint: '123******456',
+        fund_account_match_count: 1,
+        account_binding: 'proven',
+    },
+);
+const sameAccountStaleBindingCarry = common.carryEnvironmentProof(
+    {
+        ...environment,
+        fund_account_fingerprint: '987******210',
+        fund_account_match_count: 1,
+        account_binding: 'proven',
+    },
+    {
+        ...environment,
+        route: '#/home/myAccount/query',
+        environment_data_namespace: 'unknown',
+        environment_proof_complete: false,
+        fund_account_fingerprint: '987******210',
+        fund_account_match_count: 1,
+        account_binding: 'not_proven',
     },
 );
 const missingAuthenticatedAccountGate = common.environmentGate(
@@ -510,6 +618,8 @@ console.log(JSON.stringify({
     carriedEnvironment,
     rejectedCarry,
     rejectedOppositeNamespaceCarry,
+    rejectedConflictingAccountCarry,
+    sameAccountStaleBindingCarry,
     missingAuthenticatedAccountGate,
     accountApi,
     shortAccountApi,
@@ -573,6 +683,11 @@ console.log(JSON.stringify({
     assert payload["carriedEnvironment"]["route"] == (
         "#/home/conditionStrategy/active"
     )
+    assert payload["carriedEnvironment"]["fund_account_fingerprint"] == (
+        "987******210"
+    )
+    assert payload["carriedEnvironment"]["fund_account_match_count"] == 1
+    assert payload["carriedEnvironment"]["account_binding"] == "proven"
     assert payload["rejectedCarry"]["environment_proof_complete"] is False
     assert (
         payload["rejectedOppositeNamespaceCarry"]["environment_data_namespace"]
@@ -582,6 +697,10 @@ console.log(JSON.stringify({
         payload["rejectedOppositeNamespaceCarry"]["environment_proof_complete"]
         is False
     )
+    assert payload["rejectedConflictingAccountCarry"]["fund_account_fingerprint"] == (
+        "123******456"
+    )
+    assert payload["sameAccountStaleBindingCarry"]["account_binding"] == "proven"
     assert payload["missingAuthenticatedAccountGate"] == {
         "status": "unknown",
         "reason": "environment_authenticated_account_readback_missing",

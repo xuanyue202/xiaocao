@@ -1,9 +1,9 @@
 """Founder Securities OpenCLI adapter for the broker-neutral Book B seam.
 
-The browser templates deliberately expose only ``probe``, ``prepare``,
-``reconcile`` and ``recover`` today.  This adapter keeps that boundary honest:
-it consumes one sanitized JSON receipt, never parses DOM text, and its
-``submit`` method is an explicit no-route guard rather than a hidden fallback.
+The browser templates expose route-aware probe/prepare/reconcile/recover
+commands plus one UI-only ``package-limit`` submit command.  This adapter keeps
+that boundary honest: it consumes one sanitized JSON receipt, never parses DOM
+text, and rejects every unproved route or ambiguous submit receipt.
 """
 from __future__ import annotations
 
@@ -271,7 +271,7 @@ def _one_receipt(stdout: object) -> dict[str, Any]:
 
 
 class FounderscQuantOpenCLIAdapter(BrokerAdapter):
-    """Read-only Founder template adapter with a permanent submit fail-closed."""
+    """Founder template adapter with one receipt-gated package-limit route."""
 
     def __init__(
         self,
@@ -281,11 +281,22 @@ class FounderscQuantOpenCLIAdapter(BrokerAdapter):
         runner: Runner = subprocess.run,
         timeout_seconds: int = 90,
         route: str = "manual-limit",
+        expected_fund_account_fingerprint: str | None = None,
     ) -> None:
         if profile is not None and not profile.strip():
             raise ValueError("profile must be non-empty when supplied")
-        if route not in {"manual-limit", "opening-auction", "timed-order"}:
+        if route not in {
+            "package-limit",
+            "manual-limit",
+            "opening-auction",
+            "timed-order",
+        }:
             raise ValueError("unsupported Founder preparation route")
+        expected_fingerprint = str(expected_fund_account_fingerprint or "").strip()
+        if expected_fingerprint and not _ACCOUNT_FINGERPRINT_PATTERN.fullmatch(
+            expected_fingerprint
+        ):
+            raise ValueError("invalid expected Founder fund-account fingerprint")
         self.profile = profile
         installed = shutil.which("opencli")
         self.opencli_command = tuple(opencli_command or ((installed,) if installed else (
@@ -294,6 +305,7 @@ class FounderscQuantOpenCLIAdapter(BrokerAdapter):
         self.runner = runner
         self.timeout_seconds = max(1, int(timeout_seconds))
         self.route = route
+        self.expected_fund_account_fingerprint = expected_fingerprint
 
     def _command(self, operation: str, args: list[str]) -> list[str]:
         return [
@@ -587,7 +599,10 @@ class FounderscQuantOpenCLIAdapter(BrokerAdapter):
 
     def probe(self, plan: TradePlan) -> BrokerCapability:
         try:
-            row = self._run("probe", self._plan_args(plan))
+            row = self._run(
+                "probe",
+                ["--route", self.route, *self._plan_args(plan)],
+            )
         except OpenCLIAdapterError as exc:
             return BrokerCapability(
                 ready=False,
@@ -598,6 +613,28 @@ class FounderscQuantOpenCLIAdapter(BrokerAdapter):
                 reason=str(exc),
             )
         capability = BrokerCapability.from_template(row)
+        expected = self.expected_fund_account_fingerprint
+        binding_safe = (
+            bool(expected)
+            and str(row.get("environment") or "").strip().lower()
+            == plan.environment
+            and row.get("environment_proof_complete") is True
+            and str(row.get("environment_data_namespace") or "").strip().lower()
+            == plan.environment
+            and str(row.get("logical_account_id") or "").strip()
+            == plan.logical_account_id
+            and row.get("fund_account_match_count") == 1
+            and str(row.get("fund_account_fingerprint") or "").strip()
+            == expected
+        )
+        if not binding_safe:
+            return replace(
+                capability,
+                ready=False,
+                supports_submit=False,
+                account_binding="not_proven",
+                reason="OPENCLI_BINDING_PROOF_UNPROVEN",
+            )
         # A malformed template receipt must never be treated as a binding for
         # the requested plan simply because it omitted identity fields.
         if not capability.environment or not capability.logical_account_id:
@@ -613,9 +650,17 @@ class FounderscQuantOpenCLIAdapter(BrokerAdapter):
                 template_name=capability.template_name,
                 template_version=capability.template_version,
             )
-        return capability
+        return replace(capability, account_binding="proven")
 
     def prepare(self, plan: TradePlan, *, requested_shares: int | None = None) -> BrokerReceipt:
+        if self.route == "package-limit":
+            return self.prepare_readonly(
+                plan,
+                expected_fund_account_fingerprint=(
+                    self.expected_fund_account_fingerprint
+                ),
+                requested_shares=requested_shares,
+            )
         shares = int(requested_shares or plan.shares)
         args = self._prepare_args(plan, shares)
         try:
@@ -640,7 +685,8 @@ class FounderscQuantOpenCLIAdapter(BrokerAdapter):
 
         The browser template cannot read Keychain.  This production-only seam
         binds its masked page account to the fingerprint obtained by the
-        caller from Keychain, while preserving the permanent no-submit route.
+        caller from Keychain.  This method itself always closes the form and
+        never calls the separate submit command.
         """
         expected = str(expected_fund_account_fingerprint or "").strip()
         if not _ACCOUNT_FINGERPRINT_PATTERN.fullmatch(expected):
@@ -730,22 +776,135 @@ class FounderscQuantOpenCLIAdapter(BrokerAdapter):
         *,
         requested_shares: int | None = None,
     ) -> BrokerReceipt:
-        # There is intentionally no `foundersc-quant submit` command yet.  Do
-        # not turn a template capability gap into a direct browser click.
-        return BrokerReceipt(
-            status=BrokerStatus.REJECTED,
-            reason="NO_ROUTE_PROVEN",
-            error_code="NO_ROUTE_PROVEN",
+        if self.route != "package-limit":
+            return BrokerReceipt(
+                status=BrokerStatus.REJECTED,
+                reason="NO_ROUTE_PROVEN",
+                error_code="NO_ROUTE_PROVEN",
+                conclusive=True,
+                field_readback={"submitted": False, "claim_id": claim_id},
+            )
+        expected = self.expected_fund_account_fingerprint
+        if not expected:
+            return BrokerReceipt(
+                status=BrokerStatus.REJECTED,
+                reason="LIVE_SUBMIT_EXPECTED_ACCOUNT_MISSING",
+                error_code="LIVE_SUBMIT_EXPECTED_ACCOUNT_MISSING",
+                conclusive=True,
+                field_readback={"submitted": False, "claim_id": claim_id},
+            )
+        shares = int(requested_shares or plan.shares)
+        strategy_name = "XC" + hashlib.sha256(
+            str(claim_id).encode("utf-8")
+        ).hexdigest()[:6].upper()
+        args = [
+            "--route",
+            self.route,
+            *self._plan_args(plan),
+            "--code",
+            _bare_code(plan.code),
+            "--side",
+            plan.side.lower(),
+            "--quantity",
+            str(shares),
+            "--price",
+            f"{plan.limit_price:.6f}".rstrip("0").rstrip("."),
+            "--expected-fund-account-fingerprint",
+            expected,
+            "--claim-id",
+            str(claim_id),
+            "--strategy-name",
+            strategy_name,
+        ]
+        try:
+            row = self._run("submit", args)
+        except OpenCLIAdapterError as exc:
+            return BrokerReceipt(
+                status=BrokerStatus.UNKNOWN,
+                reason=str(exc),
+                error_code=str(exc).split(":", 1)[0],
+                conclusive=False,
+            )
+        receipt = self._receipt_from_row(
+            plan,
+            row,
+            stage="submit",
+            requested_shares=shares,
+        )
+        capabilities = row.get("capabilities")
+        capabilities = capabilities if isinstance(capabilities, dict) else {}
+        binding_safe = (
+            str(row.get("environment") or "").strip().lower() == plan.environment
+            and row.get("environment_proof_complete") is True
+            and str(row.get("environment_data_namespace") or "").strip().lower()
+            == plan.environment
+            and row.get("fund_account_match_count") == 1
+            and str(row.get("fund_account_fingerprint") or "").strip() == expected
+            and str(row.get("logical_account_id") or "").strip()
+            == plan.logical_account_id
+        )
+        conclusive_rejection = (
+            binding_safe
+            and receipt.normalized_status() == BrokerStatus.REJECTED
+            and row.get("submitted") is False
+            and row.get("saved") is False
+            and row.get("started") is False
+            and row.get("reconcile_required") is False
+            and receipt.conclusive
+        )
+        if conclusive_rejection:
+            return replace(
+                receipt,
+                account_binding="proven",
+                error_code=None,
+            )
+        safe = (
+            binding_safe
+            and row.get("submitted") is True
+            and row.get("saved") is True
+            and bool(row.get("order_id"))
+            and bool(row.get("strategy_id"))
+            and capabilities.get("submit") is True
+            and capabilities.get("receipt_mapping") is True
+        )
+        if not safe:
+            return replace(
+                receipt,
+                status=BrokerStatus.UNKNOWN,
+                reason=str(row.get("status_reason") or "LIVE_SUBMIT_RECEIPT_UNPROVEN"),
+                error_code="LIVE_SUBMIT_RECEIPT_UNPROVEN",
+                conclusive=False,
+            )
+        return replace(
+            receipt,
+            status=BrokerStatus.ACCEPTED,
+            account_binding="proven",
+            reason=str(row.get("status_reason") or "order_submitted"),
+            error_code=None,
             conclusive=True,
-            field_readback={"submitted": False, "claim_id": claim_id},
         )
 
     def reconcile(self, plan: TradePlan, previous: dict[str, Any]) -> BrokerReceipt:
+        expected_order_id = str(
+            previous.get("broker_order_id") or previous.get("order_id") or ""
+        ).strip()
         args = [
             "--scope",
-            "all",
+            "orders" if self.route == "package-limit" else "all",
             *self._plan_args(plan),
+            "--code",
+            _bare_code(plan.code),
+            "--side",
+            plan.side.lower(),
+            "--quantity",
+            str(plan.shares),
+            "--price",
+            f"{plan.limit_price:.6f}".rstrip("0").rstrip("."),
+            "--date",
+            plan.trade_date,
         ]
+        if expected_order_id:
+            args.extend(["--order-id", expected_order_id])
         try:
             row = self._run("reconcile", args)
         except OpenCLIAdapterError as exc:
@@ -755,7 +914,49 @@ class FounderscQuantOpenCLIAdapter(BrokerAdapter):
                 error_code=str(exc).split(":", 1)[0],
                 conclusive=False,
             )
-        return self._receipt_from_row(plan, row, stage="reconcile")
+        receipt = self._receipt_from_row(plan, row, stage="reconcile")
+        if self.route != "package-limit":
+            return receipt
+        expected_fingerprint = self.expected_fund_account_fingerprint
+        capabilities = row.get("capabilities")
+        capabilities = capabilities if isinstance(capabilities, dict) else {}
+        observed_order_id = str(row.get("order_id") or "").strip()
+        binding_safe = (
+            bool(expected_fingerprint)
+            and str(row.get("environment") or "").strip().lower()
+            == plan.environment
+            and row.get("environment_proof_complete") is True
+            and str(row.get("environment_data_namespace") or "").strip().lower()
+            == plan.environment
+            and row.get("fund_account_match_count") == 1
+            and str(row.get("fund_account_fingerprint") or "").strip()
+            == expected_fingerprint
+            and str(row.get("logical_account_id") or "").strip()
+            == plan.logical_account_id
+        )
+        mapping_safe = (
+            binding_safe
+            and capabilities.get("receipt_mapping") is True
+            and bool(observed_order_id)
+            and (not expected_order_id or observed_order_id == expected_order_id)
+            and row.get("reconcile_complete") is True
+            and receipt.normalized_status() != BrokerStatus.UNKNOWN
+            and receipt.conclusive
+        )
+        if not mapping_safe:
+            return replace(
+                receipt,
+                status=BrokerStatus.UNKNOWN,
+                account_binding="proven" if binding_safe else "not_proven",
+                reason=str(
+                    row.get("status_reason")
+                    or row.get("reason")
+                    or "LIVE_RECONCILE_RECEIPT_UNPROVEN"
+                ),
+                error_code="LIVE_RECONCILE_RECEIPT_UNPROVEN",
+                conclusive=False,
+            )
+        return replace(receipt, account_binding="proven")
 
     def recover(self, plan: TradePlan, error: str) -> BrokerReceipt:
         args = [
@@ -819,14 +1020,14 @@ class FounderscQuantOpenCLIAdapter(BrokerAdapter):
 
         field_readback = row.get("field_readback")
         field_readback = dict(field_readback) if isinstance(field_readback, dict) else {}
-        if stage == "prepare":
+        if stage in {"prepare", "submit"}:
             for key in ("submitted", "saved", "started", "form_closed"):
                 if key in row:
                     field_readback[key] = row[key]
         locator_proof = row.get("locator_proof")
         locator_proof = dict(locator_proof) if isinstance(locator_proof, dict) else {}
         echoed: dict[str, Any] = {}
-        if stage == "prepare":
+        if stage in {"prepare", "submit"}:
             echoed_code = field_readback.get("code") or field_readback.get("stock_code")
             echoed_side = field_readback.get("side") or field_readback.get("requested_side")
             echoed_shares = field_readback.get("quantity") or field_readback.get("shares")
@@ -847,7 +1048,7 @@ class FounderscQuantOpenCLIAdapter(BrokerAdapter):
         return BrokerReceipt(
             status=status,
             order_id=str(row.get("order_id") or "") or None,
-            strategy_id=str(row.get("strategy_id") or row.get("task_id") or "") or None,
+            strategy_id=str(row.get("strategy_id") or "") or None,
             requested_shares=_optional_int(row.get("requested_shares")) or requested_shares,
             filled_shares=_optional_int(row.get("filled_shares")) or 0,
             remaining_shares=_optional_int(row.get("remaining_shares")),

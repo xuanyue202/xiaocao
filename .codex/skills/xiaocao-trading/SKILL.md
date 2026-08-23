@@ -32,8 +32,10 @@ Completion means the requested command reached a terminal state and the branch-s
   the canonical `paper_record.py` writer, consume a simulated fill, or invent
   a broker fill. It requires
   ★E/allocation proof for BUY, monitor-authorized owned-lot evidence for SELL,
-  account-level writer fencing and durable takeover/reconcile evidence; no real
-  submit is permitted while the Founder template reports `submit_capability=false`.
+  account-level writer fencing and durable takeover/reconcile evidence. The
+  only candidate write route is Founder `package-limit`; a real submit still
+  requires exact account binding, route/receipt proof and both capital keys.
+  Unproved cancellation or retry semantics remain fail-closed.
   Its non-empty freeze must be hash/count bound to the consumed snapshot; its
   producer strategy Git SHA must be bound by the freeze manifest; its
   allocation facts must come from a complete dated live asset readback bound
@@ -43,6 +45,11 @@ Completion means the requested command reached a terminal state and the branch-s
 - Before trusting A/B or repaired ledger state, run `scripts/data_doctor.py`. Raw cumulative A-B PnL is accounting information; exit comparison requires the identical-entry paired cohort.
 - Cache first and rate-limit Xiaocao API calls. The market-data branch contains endpoint-specific traps.
 - Book T v2 ETF expressions are paper-only and must use the explicit contract seam in `src/xiaocao/live/instrument_contract.py`; missing lot/T+0-T+1/fees, proprietary quote contract, current trading status, liquidity status or provenance stays fail-closed. See `docs/OPERATING_CONTRACT.md` §4b/§5 for the SSOT.
+- Book T v2 daily stability and formal burn-in are distinct time gates. Run
+  `scripts/book_t_v2_soak.py --gate daily-stability --required-days 5` for the
+  stage-3 soak, and `--gate engineering-burn-in --required-days 20` for stage
+  4. Neither rehearsal evidence nor the five-day acceptance may satisfy or
+  lower the twenty-real-trading-day gate.
 
 ## Route by consumer task
 
@@ -56,7 +63,7 @@ Completion means the requested command reached a terminal state and the branch-s
 | Quotes, environment, minute/K-line, pools, sectors, indices or indicators | [`references/market-data.md`](references/market-data.md) |
 | Reports, strategy runs, backtests, cohorts or paper-vs-market research | [`references/strategy-and-backtests.md`](references/strategy-and-backtests.md) |
 | Kronos variants, training rows, research guards, verdict ledger or flywheel states | [`references/research-flywheels.md`](references/research-flywheels.md) |
-| Founder Securities Web/OpenCLI read-only probe, prepare, reconcile or recover | [`references/foundersc-opencli.md`](references/foundersc-opencli.md) |
+| Founder Securities Web/OpenCLI login, route probe, prepare, package-limit submit, reconcile or recover | [`references/foundersc-opencli.md`](references/foundersc-opencli.md) |
 | Book-B phase-one execution seam, ownership evidence or allocation proof | [`references/automation-morning.md`](references/automation-morning.md), [`references/automation-intraday.md`](references/automation-intraday.md), [`references/foundersc-opencli.md`](references/foundersc-opencli.md) |
 | “What should the trading system do?” or a behavior change | `docs/OPERATING_CONTRACT.md`, then the owning code/tests |
 | Posture, discretionary exit triage or distilled 小草 knowledge | `reference/experience/README.md`, then only the routed playbook/timeline artifact |

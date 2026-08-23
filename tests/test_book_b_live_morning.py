@@ -588,6 +588,122 @@ def test_live_morning_runs_auditable_prepare_only_before_execution(tmp_path: Pat
     assert receipt.preparation_receipts[0]["minute"] == "30"
 
 
+def test_live_morning_package_limit_prepares_then_waits_for_0930_submit(
+    tmp_path: Path,
+) -> None:
+    freeze = tmp_path / "signal_snapshots.jsonl"
+    freeze.write_text(json.dumps(_frozen_row()) + "\n", encoding="utf-8")
+    allocation = tmp_path / "allocation.json"
+    allocation.write_text(json.dumps(_live_allocation_payload()), encoding="utf-8")
+    clock = [datetime(2026, 8, 24, 1, 24, tzinfo=timezone.utc)]
+    events: list[str] = []
+
+    def prepare_only(plan):
+        events.append("prepare")
+        return BrokerReceipt(
+            status=BrokerStatus.PREPARED,
+            account_binding="proven",
+            echoed={
+                "code": plan.code,
+                "side": plan.side,
+                "shares": plan.shares,
+                "limit_price": plan.limit_price,
+            },
+            field_readback={
+                "submitted": False,
+                "saved": False,
+                "started": False,
+                "form_closed": True,
+            },
+        )
+
+    def wait_for_submit_window(target):
+        events.append("wait")
+        assert target == datetime(2026, 8, 24, 1, 30, tzinfo=timezone.utc)
+        clock[0] = target
+
+    def execute(plan):
+        events.append("execute")
+        assert clock[0] >= plan.submit_not_before
+        return ExecutionReceipt(
+            plan.plan_id,
+            plan.plan_hash,
+            ExecutionState.REJECTED,
+            reason="NO_ROUTE_PROVEN",
+        )
+
+    receipt = run_book_b_live_morning(
+        BookBLiveMorningConfig(
+            trade_date="2026-08-24",
+            freeze_path=freeze,
+            allocation_facts_path=allocation,
+            state_dir=tmp_path / "state",
+            dated_freeze_receipt=_ready_freeze(),
+        ),
+        prepare_only=prepare_only,
+        wait_for_submit_window=wait_for_submit_window,
+        execute=execute,
+        now=lambda: clock[0],
+    )
+
+    assert events == ["prepare", "wait", "execute"]
+    assert receipt.reason == "NO_ROUTE_PROVEN"
+    assert "strategy_name" not in receipt.preparation_receipts[0]
+
+
+def test_live_morning_reconciles_an_uncertain_submit_without_resubmitting(
+    tmp_path: Path,
+) -> None:
+    freeze = tmp_path / "signal_snapshots.jsonl"
+    freeze.write_text(json.dumps(_frozen_row()) + "\n", encoding="utf-8")
+    allocation = tmp_path / "allocation.json"
+    allocation.write_text(json.dumps(_live_allocation_payload()), encoding="utf-8")
+    calls = 0
+    waits = 0
+
+    def execute(plan):
+        nonlocal calls
+        calls += 1
+        if calls == 1:
+            return ExecutionReceipt(
+                plan.plan_id,
+                plan.plan_hash,
+                ExecutionState.UNKNOWN,
+                reason="submit_outcome_requires_reconciliation",
+                next_action="reconcile_only",
+            )
+        return ExecutionReceipt(
+            plan.plan_id,
+            plan.plan_hash,
+            ExecutionState.ACKNOWLEDGED,
+            reason="exact_account_query_order_mapped",
+            broker_order_id="order-123",
+            next_action="reconcile",
+        )
+
+    def wait_for_reconcile():
+        nonlocal waits
+        waits += 1
+
+    receipt = run_book_b_live_morning(
+        BookBLiveMorningConfig(
+            trade_date="2026-08-24",
+            freeze_path=freeze,
+            allocation_facts_path=allocation,
+            state_dir=tmp_path / "state",
+            dated_freeze_receipt=_ready_freeze(),
+        ),
+        execute=execute,
+        wait_for_reconcile=wait_for_reconcile,
+        now=lambda: datetime(2026, 8, 24, 1, 30, tzinfo=timezone.utc),
+    )
+
+    assert calls == 2
+    assert waits == 1
+    assert receipt.execution_receipts[0]["state"] == "acknowledged"
+    assert receipt.execution_receipts[0]["broker_order_id"] == "order-123"
+
+
 @pytest.mark.parametrize(
     ("prepare_receipt", "reason"),
     [

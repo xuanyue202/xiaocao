@@ -6,22 +6,158 @@ from pathlib import Path
 
 ROOT = Path(__file__).parents[1]
 TEMPLATE_ROOT = ROOT / "opencli" / "clis" / "foundersc-quant"
-COMMANDS = ("login", "probe", "prepare", "reconcile", "recover", "environment")
+COMMANDS = (
+    "login",
+    "probe",
+    "prepare",
+    "submit",
+    "reconcile",
+    "recover",
+    "environment",
+)
 
 
 def _source(name: str) -> str:
     return (TEMPLATE_ROOT / name).read_text(encoding="utf-8")
 
 
-def test_foundersc_template_registry_is_versioned_and_read_only_first_phase():
-    assert _source("common.mjs").count("TEMPLATE_VERSION = 5") == 1
+def test_package_limit_route_is_exposed_only_through_trusted_ui_commands():
+    common = _source("common.mjs")
+    prepare = _source("prepare.js")
+    submit = _source("submit.js")
+
+    assert "#/home/packageDeal/create?type=security" in common
+    assert "#/home/packageDeal" in common
+    assert "package-limit" in prepare
+    assert "siteSession: 'persistent'" in prepare
+    assert "name: 'submit'" in submit
+    assert "route !== 'package-limit'" in submit
+    assert "strategy: Strategy.UI" in submit
+    assert "siteSession: 'persistent'" in submit
+    assert "fetch(" not in submit
+
+
+def test_package_limit_prepare_reads_back_then_cancels_an_empty_form():
+    source = _source("prepare.js")
+
+    for marker in (
+        "function packageLimitScript(input)",
+        'input[name="stockCode"]',
+        'select#delegateDirection',
+        'select#priceMode',
+        'input#basicPrice[name="basicPrice"]',
+        'input#quantity[name="quantity"]',
+        "指定价格",
+        "package_limit_field_readback_mismatch",
+        "package_limit_form_not_closed",
+        "page_cleared_after_readback",
+        "openPackageLimitSecurityDialog(page)",
+        "closePackageLimitSecurityDialog(page)",
+        ".al-modal-positive-button",
+        ".al-modal-cancel-button",
+    ):
+        assert marker in source
+    assert "numericEqual" in source
+    assert "package-limit-confirm" not in source
+
+
+def test_package_limit_submit_is_single_shot_and_receipt_gated():
+    source = _source("submit.js")
+
+    for argument in (
+        "route",
+        "expected-environment",
+        "logical-account-id",
+        "expected-fund-account-fingerprint",
+        "claim-id",
+        "strategy-name",
+        "code",
+        "side",
+        "price",
+        "quantity",
+    ):
+        assert f"name: '{argument}'" in source
+    for marker in (
+        "environmentGate(state, input.expectedEnvironment)",
+        "fund_account_fingerprint !== input.expectedFundAccountFingerprint",
+        "strategyName.length > 8",
+        "exact_strategy_name_match_count",
+        "unique_dom_proven",
+        "numeric_readback_proven",
+        "readDraftWithWait",
+        "strategyNameModalScript",
+        "package-limit-name-confirm",
+        "risk_checkbox_checked",
+        '.risk-agreement-link input[type="checkbox"]',
+        'input[type="checkbox"][id=',
+        "installInterceptor('/qt/packageTask/')",
+        "waitForCapture",
+        "getInterceptedRequests",
+        "确定提交委托？",
+        "preEntrust",
+        "strategy_id",
+        "order_id",
+        "orderIdFrom",
+        "entrust",
+        "non_trading_time",
+        "submitted: null",
+        "reconcile_required: true",
+        "retry_allowed: false",
+    ):
+        assert marker in source
+    assert source.count("package-limit-submit-order") == 2
+    assert source.count("package-limit-server-confirm") == 2
+    assert "task_id: input.claimId" in source
+    assert "started: false" in source
+    assert "Boolean(orderIdFrom(entrustReceipt))" in source
+    assert "order_id: stableOrderId" in source
+    assert "submitted: true" in source
+    for forbidden in ("fetch(", "page.fetchJson", "XMLHttpRequest", "$http"):
+        assert forbidden not in source
+
+
+def test_probe_proves_package_surface_but_keeps_receipt_mapping_pending():
+    source = _source("probe.js")
+
+    assert "name: 'route'" in source
+    assert "kwargs.route || 'package-limit'" in source
+    assert "normalizeProbeRoute" in source
+    assert "input.route === 'package-limit'" in source
+    assert "PACKAGE_ROUTE_SCRIPT" in source
+    assert "ROUTES.packageCreate" in source
+    assert "carryEnvironmentProof" in source
+    assert "submit: packageLimit && routeProven" in source
+    assert "receipt_mapping: false" in source
+    assert "submit_capability: packageLimit && routeProven" in source
+    for route in ("manual-limit", "opening-auction", "timed-order"):
+        assert route in source
+
+
+def test_reconcile_requires_one_exact_account_query_order_mapping():
+    source = _source("reconcile.js")
+
+    for argument in ("code", "side", "quantity", "price", "date", "order-id"):
+        assert f"name: '{argument}'" in source
+    assert "function mapExactOrderReceipt" in source
+    assert "carryEnvironmentProof" in source
+    assert "exact_order_match_count" in source
+    assert "exact_deal_match_count" in source
+    assert "receipt_mapping: mapping.receiptMapping" in source
+    assert "mapping.exactOrderMatchCount === 1" in source
+    assert "ambiguous_or_missing_exact_order" in source
+
+
+def test_foundersc_template_registry_is_versioned_with_one_scoped_write_command():
+    assert _source("common.mjs").count("TEMPLATE_VERSION = 6") == 1
     for command in COMMANDS:
         source = _source(f"{command}.js")
         assert "site: SITE" in source
         assert f"name: '{command}'" in source
         assert "./common.mjs" in source
         assert "submitted: false" in _source("common.mjs")
-    assert not (TEMPLATE_ROOT / "submit.js").exists()
+    assert (TEMPLATE_ROOT / "submit.js").exists()
+    assert "access: 'write'" in _source("submit.js")
+    assert "route !== 'package-limit'" in _source("submit.js")
 
 
 def test_shared_navigation_is_bounded_and_edge_compatible():
@@ -35,6 +171,8 @@ def test_shared_navigation_is_bounded_and_edge_compatible():
     assert "state.auth_state !== 'unknown'" in common
     assert "await page.wait({time: 1})" in common
     assert "export async function navigateFresh" in common
+    assert "opencli_fresh_body_present" in common
+    assert "const exactUrl = routeUrl(route)" in common
     assert "opencli_env_probe=" in common
 
 
@@ -56,9 +194,9 @@ def test_account_binding_uses_same_origin_base_info_without_returning_raw_accoun
     assert "资金账号[^0-9]" not in common
 
 
-def test_common_receipt_documentation_matches_template_version_five():
+def test_common_receipt_documentation_matches_template_version_six():
     readme = _source("README.md")
-    assert '"template_version": 5' in readme
+    assert '"template_version": 6' in readme
     assert '"template_version": 1' not in readme
 
 
@@ -69,6 +207,7 @@ def test_template_javascript_uses_repository_four_space_indentation():
         "environment.js",
         "probe.js",
         "prepare.js",
+        "submit.js",
         "reconcile.js",
         "recover.js",
     ):
@@ -107,7 +246,7 @@ def test_common_receipt_contains_optional_broker_neutral_fields():
 
 
 def test_templates_bind_environment_before_form_work():
-    for command in ("probe", "prepare", "reconcile", "recover"):
+    for command in ("probe", "prepare", "submit", "reconcile", "recover"):
         source = _source(f"{command}.js")
         assert "readEnvironment(page)" in source
         assert "environmentGate(state, input.expectedEnvironment)" in source
@@ -266,27 +405,35 @@ def test_reconcile_does_not_claim_complete_when_lists_are_not_fully_read():
     assert "account_fingerprint_not_proven" in source
 
 
-def test_readme_publishes_the_broker_neutral_contract_and_no_submit_gate():
+def test_readme_publishes_the_package_limit_submit_and_fail_closed_contract():
     readme = _source("README.md")
     assert "probe" in readme
     assert "prepare" in readme
     assert "reconcile" in readme
     assert "recover" in readme
-    assert "not expose a `submit` command" in readme
+    assert "submit --route package-limit" in readme
+    assert "preEntrust" in readme
+    assert "save" in readme
+    assert "entrust" in readme
+    assert "never retries" in readme
     assert "order_id" in readme
     assert "filled_shares` and" in readme
     assert "reconcile_complete=false" in readme
     assert "account_binding" in readme
-    assert "NO_ROUTE_PROVEN" in readme
+    assert "manual-limit`, `opening-auction`, and `timed-order`" in readme
+    assert "Strategy-surface decision" in readme
+    assert "按证券组合" in readme
+    assert "TWAP_PRO" in readme
 
 
-def test_skill_routes_foundersc_read_only_work_to_its_reference():
+def test_skill_routes_foundersc_package_limit_work_to_its_reference():
     skill = (ROOT / ".codex" / "skills" / "xiaocao-trading" / "SKILL.md").read_text(
         encoding="utf-8"
     )
     reference = (ROOT / ".codex" / "skills" / "xiaocao-trading" / "references"
                  / "foundersc-opencli.md").read_text(encoding="utf-8")
     assert "references/foundersc-opencli.md" in skill
-    assert "submit_capability=false" in reference
+    assert "UI-only `package-limit` submit route" in reference
+    assert "at-most-one controlled retry" in reference
     assert "separate 09:20 Book-B live-morning" in reference
     assert "never calls or waits for the 09:25" in reference

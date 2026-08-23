@@ -19,7 +19,7 @@ Future Book-B real-capital execution is a third, deliberately independent
 09:20 Automation and process:
 
 ```bash
-PYTHONPATH=src .venv/bin/python scripts/book_b_live_morning.py --date today --route timed-order
+PYTHONPATH=src .venv/bin/python scripts/book_b_live_morning.py --date today --route package-limit
 ```
 
 It may start before the dated freeze exists and wait only for that freeze. It
@@ -43,9 +43,11 @@ settled-NAV receipt exists. The complete allocation capsule binds its capital
 basis source, NAV, cash, exposure and broker summary under one canonical hash,
 and broker-summary cash must equal top-level available cash. The task verifies restoration to
 mock on every exit.
-While the Founder adapter reports `submit_capability=false`, account binding is
-not proven, broker allocation facts cannot be produced, or either capital key
-fails, it reports the exact fail-closed reason and produces no real order.
+Unless the Founder adapter proves the account-bound `package-limit` submit and
+receipt-mapping capabilities, account binding, broker allocation facts and both
+capital keys, it reports the exact fail-closed reason and produces no real
+order. Trading-hours order-id, cancellation/one-retry and native PassGuard gaps
+remain terminal pending evidence rather than inferred readiness.
 
 The execution stage must never rerun `live_recommend.py`. Keep its shell alive
 through the agent-review rendezvous and paper recording. Do not restart it while
@@ -74,10 +76,15 @@ result is written only under `output/research/book_t_v2_shadow/<run-id>/` and
 must never touch `positions.jsonl`, `paper_account_T.json`, or
 `paper_trades.jsonl`. The consumer replays and accumulates prior isolated
 frozen inputs so the 20/60/50 research floors cannot be reset by a daily
+process restart.
 A dated producer/input missing from a scheduled run is a supporting-layer
 failure and must be reported as such. Only an intact, consumed real-day input
 whose cumulative sample is still below the 20/60/50 floors is the normal
 `pending_observation` state.
+Run `scripts/book_t_v2_soak.py --gate daily-stability --required-days 5` for
+the separate stage-3 five-real-trading-day acceptance. Stage 4 remains
+`--gate engineering-burn-in --required-days 20`; the five-day verdict cannot
+lower or substitute for that formal burn-in.
 A consumed input must carry the v1 T receipt and raw SHA-256 hashes for the
 positions, account, and trades artifacts; the CLI verifies those hashes before
 research evaluation.

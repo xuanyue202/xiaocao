@@ -1,10 +1,11 @@
 #!/usr/bin/env python3
-"""Run the twenty-trading-day Book T v2 engineering burn-in gate.
+"""Run Book T v2 daily-stability and engineering burn-in gates.
 
 This command only consumes already-frozen shadow inputs and manifests.  It
 does not create dates, call the market API, mutate formal ledgers, or count
-rehearsal evidence as real trading days.  It is an engineering acceptance,
-never a strategy-promotion gate.
+rehearsal evidence as real trading days.  The five-day daily-stability soak
+and twenty-day engineering burn-in are separate acceptances; neither is a
+strategy-promotion gate.
 """
 
 from __future__ import annotations
@@ -72,13 +73,18 @@ def _load_inputs(root: Path) -> list[dict[str, Any]]:
     return rows
 
 
-def evaluate_engineering_burn_in(
+def _evaluate_soak(
     inputs: list[dict[str, Any]],
     *,
-    required_days: int = 20,
+    required_days: int,
+    minimum_days: int,
+    minimum_label: str,
+    gate: str,
 ) -> dict[str, Any]:
-    if required_days < 20:
-        raise ValueError("required_days cannot be below twenty trading days")
+    if required_days < minimum_days:
+        raise ValueError(
+            f"required_days cannot be below {minimum_label} trading days"
+        )
     runs: list[dict[str, Any]] = []
     for value in inputs:
         first = run_book_t_shadow(value)
@@ -133,6 +139,7 @@ def evaluate_engineering_burn_in(
     )
     return {
         "status": "accepted" if accepted else "pending",
+        "gate": gate,
         "required_real_trading_days": required_days,
         "real_trading_days": len(real),
         "rehearsal_days_excluded": len(lifecycles) - len(real),
@@ -145,22 +152,68 @@ def evaluate_engineering_burn_in(
     }
 
 
+def evaluate_daily_stability_soak(
+    inputs: list[dict[str, Any]],
+    *,
+    required_days: int = 5,
+) -> dict[str, Any]:
+    """Evaluate stage 3 without weakening the stage-4 twenty-day gate."""
+
+    return _evaluate_soak(
+        inputs,
+        required_days=required_days,
+        minimum_days=5,
+        minimum_label="five",
+        gate="daily_stability_soak",
+    )
+
+
+def evaluate_engineering_burn_in(
+    inputs: list[dict[str, Any]],
+    *,
+    required_days: int = 20,
+) -> dict[str, Any]:
+    """Evaluate the formal stage-4 twenty-real-trading-day burn-in."""
+
+    return _evaluate_soak(
+        inputs,
+        required_days=required_days,
+        minimum_days=20,
+        minimum_label="twenty",
+        gate="engineering_burn_in",
+    )
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--root", default=os.environ.get("XIAOCAO_ROOT", str(ROOT)))
-    parser.add_argument("--required-days", type=int, default=20)
+    parser.add_argument(
+        "--gate",
+        choices=("daily-stability", "engineering-burn-in"),
+        default="engineering-burn-in",
+    )
+    parser.add_argument("--required-days", type=int, default=None)
     parser.add_argument("--json", action="store_true")
     args = parser.parse_args(argv)
     root = Path(args.root).resolve()
     try:
-        result = evaluate_engineering_burn_in(
-            _load_inputs(root),
-            required_days=args.required_days,
-        )
+        inputs = _load_inputs(root)
+        if args.gate == "daily-stability":
+            result = evaluate_daily_stability_soak(
+                inputs,
+                required_days=args.required_days if args.required_days is not None else 5,
+            )
+            verdict_name = "daily_stability_soak_verdict.json"
+        else:
+            result = evaluate_engineering_burn_in(
+                inputs,
+                required_days=args.required_days if args.required_days is not None else 20,
+            )
+            verdict_name = "engineering_burn_in_verdict.json"
     except (OSError, ValueError, KeyError, TypeError, json.JSONDecodeError, BookTShadowError, BookTV2EvidenceError) as exc:
         print(f"Book T v2 soak blocked: {exc}", file=sys.stderr)
         return 2
-    output = root / "output/research/book_t_v2_shadow/engineering_burn_in_verdict.json"
+    output = root / "output/research/book_t_v2_shadow" / verdict_name
     output.parent.mkdir(parents=True, exist_ok=True)
     temporary = output.with_name(f".{output.name}.tmp")
     temporary.write_text(
@@ -172,7 +225,7 @@ def main(argv: list[str] | None = None) -> int:
         print(json.dumps(result, ensure_ascii=False, indent=2, sort_keys=True))
     else:
         print(
-            f"Book T v2 twenty-day engineering burn-in: {result['status']} "
+            f"Book T v2 {result['gate']}: {result['status']} "
             f"(real_days={result['real_trading_days']}, "
             f"rehearsal_excluded={result['rehearsal_days_excluded']})"
         )
