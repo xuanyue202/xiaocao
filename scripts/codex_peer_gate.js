@@ -359,13 +359,19 @@ async function discoverPeers({
           task_complete: complete,
         });
       }
-      if (latestTurnStatus === "inProgress") {
+      // `task_complete` is the durable terminal fence.  App-server can expose
+      // an interrupted snapshot while compaction is handing execution back to
+      // the same task; allowing a new runner here creates a resume-after-check
+      // race.  Keep peer ownership for every incomplete matching task, even
+      // when the latest snapshot is not inProgress.
+      if (!complete) {
         return {
           schema_version: 1,
           gate_result: "no_op",
           ownership: "peer",
           retryability: "not_retryable",
           authoritative_peer_thread_id: candidate.id,
+          authoritative_peer_turn_status: latestTurnStatus,
           host: server.host,
           cwd,
           page_count: pageCount,

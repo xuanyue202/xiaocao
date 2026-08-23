@@ -124,7 +124,7 @@ test("discovers an active peer beyond the first thread page", async () => {
   assert.deepEqual(cursors, [null, "page-two"]);
 });
 
-test("does not treat an interrupted automation turn as an active peer", async () => {
+test("keeps peer ownership for an incomplete interrupted automation turn", async () => {
   const interrupted = candidate("interrupted-without-task-complete");
   const pages = new Map([
     [null, { data: [interrupted], nextCursor: null }],
@@ -151,9 +151,43 @@ test("does not treat an interrupted automation turn as an active peer", async ()
     readTaskComplete: () => false,
   });
 
-  assert.equal(result.gate_result, "pass");
-  assert.equal(result.candidate_count, 1);
+  assert.equal(result.gate_result, "no_op");
+  assert.equal(result.ownership, "peer");
+  assert.equal(result.authoritative_peer_thread_id, interrupted.id);
+  assert.equal(result.authoritative_peer_turn_status, "interrupted");
   assert.equal(result.readback[0].latest_turn_status, "interrupted");
+});
+
+test("keeps peer ownership when a completed snapshot lacks the terminal fence", async () => {
+  const incomplete = candidate("completed-snapshot-without-task-complete");
+  const pages = new Map([
+    [null, { data: [incomplete], nextCursor: null }],
+  ]);
+  const { requestFn } = fixture(
+    pages,
+    new Map([
+      [
+        incomplete.id,
+        thread(incomplete.id, {
+          turns: [automationTurn(`${incomplete.id}-automation`, "completed")],
+        }),
+      ],
+    ]),
+  );
+
+  const result = await discoverPeers({
+    server: { host: HOST, stderr: "" },
+    requestFn,
+    automationId: AUTOMATION_ID,
+    currentThreadId: "current",
+    cwd: CWD,
+    expectedHost: HOST,
+    readTaskComplete: () => false,
+  });
+
+  assert.equal(result.gate_result, "no_op");
+  assert.equal(result.authoritative_peer_thread_id, incomplete.id);
+  assert.equal(result.authoritative_peer_turn_status, "completed");
 });
 
 test("stops peer discovery at the twelve-hour update boundary", async () => {
@@ -194,7 +228,7 @@ test("stops peer discovery at the twelve-hour update boundary", async () => {
     currentThreadId: "current",
     cwd: CWD,
     expectedHost: HOST,
-    readTaskComplete: () => false,
+    readTaskComplete: (path) => path !== old.id,
     nowSeconds: NOW_SECONDS,
   });
 
