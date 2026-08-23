@@ -2330,6 +2330,7 @@ class DailyRuntime:
                 ),
             }
             bundle_path = _persisted_validated_bundle(semantic_request)
+            reused_bundle = bundle_path is not None
             if bundle_path is None:
                 try:
                     bundle_path = _read_agent_path(
@@ -2354,6 +2355,12 @@ class DailyRuntime:
                 bundle_path,
                 semantic_request,
             )
+            if reused_bundle:
+                _record_structured_input_consumption(
+                    semantic_request,
+                    field="bundle_path",
+                    path=bundle_path,
+                )
             if ingest["media_type"] == "pdf":
                 relationship = service.record_pdf_relationship(
                     identity,

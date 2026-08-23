@@ -3037,6 +3037,66 @@ def test_real_structured_input_receipt_binds_lv_evidence(
     ).hexdigest()
 
 
+def test_structured_input_resume_receipts_prebuilt_validated_bundle(
+    tmp_path,
+    monkeypatch,
+):
+    artifact_dir = tmp_path / "artifact"
+    artifact_dir.mkdir()
+    bundle_path = artifact_dir / "validated_bundle.json"
+    bundle_path.write_text('{"schema_version": 2}\n', encoding="utf-8")
+    progress = WriterProgress.structured_input(
+        item_identity="lv-item-1",
+        stage="waiting_semantic_input",
+        request_kind="daily_analysis_input_required",
+        request_id="request-1",
+        request_schema_version=1,
+        immutable_bindings={
+            "identity": "lv-item-1",
+            "version_key": "version-1",
+            "evidence_sha256": "e" * 64,
+        },
+        response_field="bundle_path",
+        claim_receipt_summary={
+            "claim_count": 0,
+            "receipt_count": 0,
+            "uncertain_effect_count": 0,
+        },
+    )
+    request = {
+        "event": "daily_analysis_input_required",
+        "identity": "lv-item-1",
+        "version_key": "version-1",
+        "evidence_sha256": "e" * 64,
+        "artifact_dir": str(artifact_dir),
+    }
+    monkeypatch.setattr(
+        sys,
+        "stdin",
+        io.StringIO(""),
+    )
+
+    def reuse_prebuilt_bundle():
+        reused = kol_daily_script._persisted_validated_bundle(request)
+        assert reused == bundle_path.resolve()
+        kol_daily_script._record_structured_input_consumption(
+            request,
+            field="bundle_path",
+            path=reused,
+        )
+        return {"bundle_path": str(reused)}
+
+    result = kol_daily_script._consume_structured_input(
+        progress,
+        reuse_prebuilt_bundle,
+    )
+
+    assert result["outcome"]["bundle_path"] == str(bundle_path.resolve())
+    assert result["structured_input_receipt"]["response_sha256"] == (
+        hashlib.sha256(bundle_path.read_bytes()).hexdigest()
+    )
+
+
 def test_missing_agent_path_preserves_structured_input_request(
     tmp_path,
     monkeypatch,
