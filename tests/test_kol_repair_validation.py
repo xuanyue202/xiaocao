@@ -173,6 +173,12 @@ def test_repair_validation_maps_wechat_source_failure_to_exact_mailbox_profile(
         ),
         (
             "provider_error",
+            "owner_download_control_ambiguous",
+            "owner_cloud_download",
+            "kol_lv_text_image_owner_cloud_download",
+        ),
+        (
+            "provider_error",
             "owner_stream_failed",
             "owner_cloud_download",
             "kol_lv_text_image_owner_cloud_download",
