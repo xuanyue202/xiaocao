@@ -150,6 +150,10 @@ def test_repair_validation_maps_wechat_source_failure_to_exact_mailbox_profile(
             "provider_frontend_target_not_ready",
             "kol_lv_text_image_provider_download_link",
         ),
+        (
+            "opencli_command_failed",
+            "kol_lv_text_image_browser_download_recovery",
+        ),
     ],
 )
 def test_repair_validation_accepts_exact_lv_download_recovery_profile(
@@ -163,9 +167,17 @@ def test_repair_validation_accepts_exact_lv_download_recovery_profile(
         "content_sha256": "2" * 64,
         "failure_fingerprint": "3" * 64,
         "failure_revision": FAILURE_REVISION,
-        "category": "provider_error",
+        "category": (
+            "transport_error"
+            if code == "opencli_command_failed"
+            else "provider_error"
+        ),
         "code": code,
-        "stage": "provider_download_link",
+        "stage": (
+            "browser_download_recovery"
+            if code == "opencli_command_failed"
+            else "provider_download_link"
+        ),
         "targeted_test_profile": declared_profile,
     }
 
@@ -211,9 +223,10 @@ def test_repair_validation_accepts_exact_lv_download_recovery_profile(
         "-k",
         (
             "reviewed_historical_small_items_retire or "
-            "new_image_claim_uses_single_frontend_intercept or "
             "filtered_image_repair_records_identity_bound_preview_derivative or "
             "filtered_image_repair_uses_read_only_preview_surface or "
+            "existing_image_claim_uses_read_only_preview_after_zero_download_readback or "
+            "new_filtered_image_claim_uses_preview_without_frontend_trigger or "
             "newer_repair_lifecycle_supersedes_old_fingerprint or "
             "repair_validation_accepts_exact_lv_download_recovery_profile"
         ),
@@ -718,6 +731,8 @@ def test_repair_validation_accepts_shared_lv_listing_browser_eval_profile(
         "-k",
         (
             "listing_recovers_once_after_detached_read_only_eval or "
+            "existing_image_claim_uses_read_only_preview_after_zero_download_readback or "
+            "new_filtered_image_claim_uses_preview_without_frontend_trigger or "
             "repair_validation_accepts_shared_lv_listing_browser_eval_profile or "
             "repair_closure_accepts_shared_lv_listing_browser_eval_profile"
         ),

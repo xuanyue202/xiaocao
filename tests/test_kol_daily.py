@@ -5358,6 +5358,54 @@ def test_lv_provider_filtered_fault_preserves_claim_and_stops_retry(
     }
 
 
+def test_lv_generic_browser_failure_preserves_pending_claim_summary():
+    class FakeService:
+        @staticmethod
+        def pending_items():
+            return [{
+                "identity": "identity-browser-failure",
+                "version_key": "version-browser-failure",
+                "name": "fixture-browser-failure.png",
+                "media_type": "image",
+                "modified_at": 2,
+                "path": "/fixture-browser-failure.png",
+            }]
+
+        @staticmethod
+        def metadata_companion_proof(*_args, **_kwargs):
+            return None
+
+        @staticmethod
+        def download_opencli(*_args, **_kwargs):
+            raise EnrichmentDiagnosticError(
+                "provider browser command failed",
+                category="transport_error",
+                code="opencli_command_failed",
+                stage="browser_download_recovery",
+            )
+
+        @staticmethod
+        def record_item_failure(*_args, **_kwargs):
+            return {"claim_status": "claimed"}
+
+    runtime = DailyRuntime.__new__(DailyRuntime)
+    runtime.args = SimpleNamespace(
+        lv_session="lv-session",
+        opencli_profile=None,
+    )
+    runtime._lv_service_for_sweep = lambda: FakeService()
+    runtime._complete_lv_video_transcripts = lambda: []
+
+    result = runtime.lv(refresh_listing=False)
+
+    assert result["status"] == "waiting"
+    assert result["claim_receipt_summary"] == {
+        "claim_count": 1,
+        "receipt_count": 0,
+        "uncertain_effect_count": 0,
+    }
+
+
 def test_open_writer_repair_remains_authoritative_until_matching_closure(tmp_path):
     clock = Clock("2026-08-08T07:30:00+08:00")
     coordinator = DailyCoordinator(tmp_path / "daily", now=clock)

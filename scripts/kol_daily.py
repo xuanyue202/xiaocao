@@ -2312,6 +2312,7 @@ class DailyRuntime:
                 "waiting_count": waiting,
                 "waiting_items": waiting_items,
                 "suppressed_companion_count": suppressed,
+                "claim_receipt_summary": claim_receipt_summary,
             }
         return {
             "status": "no_update",

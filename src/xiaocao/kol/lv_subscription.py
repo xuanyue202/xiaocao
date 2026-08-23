@@ -5654,10 +5654,11 @@ try {
         profile: str | None,
     ) -> Path | None:
         """Reuse one blocked signed URL in a top-level tab without re-clicking."""
-        browser_error = self._opencli_json(
-            session,
-            "eval",
-            """(() => {
+        try:
+            browser_error = self._opencli_json(
+                session,
+                "eval",
+                """(() => {
               const operation = 'blocked_download_frame_probe';
               const text = document.body?.innerText || '';
               const match = text.match(/ERR_[A-Z_]+/);
@@ -5670,11 +5671,19 @@ try {
                 operation
               };
             })()""",
-            "--frame",
-            "0",
-            profile=profile,
-            timeout_seconds=15,
-        )
+                "--frame",
+                "0",
+                profile=profile,
+                timeout_seconds=15,
+            )
+        except EnrichmentDiagnosticError as exc:
+            raise EnrichmentDiagnosticError(
+                "blocked browser download reconciliation failed",
+                category=exc.diagnostic_category,
+                code=exc.diagnostic_code,
+                stage="browser_download_recovery",
+                exit_code=exc.diagnostic_exit_code,
+            ) from exc
         if (
             browser_error.get("status") != "blocked_by_client"
             or browser_error.get("error_code") != "ERR_BLOCKED_BY_CLIENT"
@@ -5984,6 +5993,38 @@ try {
             except EnrichmentDiagnosticError as exc:
                 if exc.diagnostic_code != "download_not_seen":
                     raise
+                if normalized["media_type"] == "image":
+                    try:
+                        direct = self._provider_direct_download(
+                            direct_item,
+                            session=session,
+                            profile=profile,
+                        )
+                    except EnrichmentDiagnosticError as direct_error:
+                        if direct_error.diagnostic_code in {
+                            "provider_download_filtered",
+                            "provider_download_link_errno_2",
+                            "provider_download_metadata_missing",
+                        }:
+                            return self.reconcile_filtered_image_preview(
+                                str(item["identity"]),
+                                session=session,
+                                profile=profile,
+                                listing=listing,
+                            )
+                        if direct_error.diagnostic_code != (
+                            "provider_download_link_failed"
+                        ):
+                            raise
+                    else:
+                        return self.complete_browser_download(
+                            str(item["identity"]),
+                            Path(str(direct["path"])),
+                            claim_id=str(claim["claim_id"]),
+                            acquisition_transport=str(
+                                direct["acquisition_transport"]
+                            ),
+                        )
                 downloaded_path = self._recover_blocked_client_download(
                     direct_item,
                     session=session,
@@ -6016,17 +6057,44 @@ try {
             )
 
         if normalized["media_type"] == "image":
+            direct = None
             try:
-                direct = self._download_provider_small_file(
+                direct = self._provider_direct_download(
                     direct_item,
-                    claim,
                     session=session,
                     profile=profile,
                 )
             except EnrichmentDiagnosticError as exc:
-                if exc.diagnostic_code != "provider_download_link_failed":
+                if exc.diagnostic_code == "provider_download_filtered":
+                    return self.reconcile_filtered_image_preview(
+                        str(item["identity"]),
+                        session=session,
+                        profile=profile,
+                        listing=listing,
+                    )
+                if exc.diagnostic_code == "provider_download_link_failed":
+                    pass
+                elif exc.diagnostic_code not in {
+                    "provider_download_link_errno_2",
+                    "provider_download_metadata_missing",
+                }:
                     raise
+                else:
+                    direct = self._provider_frontend_intercepted_download(
+                        direct_item,
+                        session=session,
+                        profile=profile,
+                    )
             else:
+                return self.complete_browser_download(
+                    str(item["identity"]),
+                    Path(str(direct["path"])),
+                    claim_id=str(claim["claim_id"]),
+                    acquisition_transport=str(
+                        direct["acquisition_transport"]
+                    ),
+                )
+            if direct is not None:
                 return self.complete_browser_download(
                     str(item["identity"]),
                     Path(str(direct["path"])),

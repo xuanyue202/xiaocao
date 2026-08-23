@@ -1731,13 +1731,14 @@ def test_replayed_claim_recovers_exact_blocked_download_frame_once(tmp_path):
     assert opens == ["ticket04", "ticket04"]
 
 
-def test_replayed_claim_reports_missing_blocked_download_frame_exactly(tmp_path):
+def test_replayed_filtered_claim_uses_preview_without_blocked_frame(tmp_path):
     entry = _representative_subscription_entries()[0]
     entry["provider_file_id"] = "123456789012345"
     waits = 0
+    preview_reads = 0
 
     def browser_runner(command, **_kwargs):
-        nonlocal waits
+        nonlocal waits, preview_reads
         tail = command[3:]
         if tail[:1] == ["open"]:
             payload = {"url": "redacted", "page": "page-1"}
@@ -1759,16 +1760,11 @@ def test_replayed_claim_reports_missing_blocked_download_frame_exactly(tmp_path)
                 stdout=json.dumps({"error": {"code": "download_not_seen"}}),
                 stderr="",
             )
-        elif tail[:1] == ["eval"] and "blocked_download_frame_probe" in tail[1]:
-            payload = {
-                "status": "blocked_by_client",
-                "error_code": "ERR_BLOCKED_BY_CLIENT",
-            }
-        elif tail[:1] == ["eval"] and "blocked_download_url_probe" in tail[1]:
-            payload = {
-                "status": "download_url_missing",
-                "frame_count": 0,
-            }
+        elif tail[:1] == ["eval"] and "ticket04_filtered_image_preview_readback" in tail[1]:
+            preview_reads += 1
+            payload = {"status": "preview_image_missing"}
+        elif tail[:1] == ["eval"] and "blocked_download" in tail[1]:
+            raise AssertionError("filtered claims must not use blocked-frame recovery")
         else:
             raise AssertionError(command)
         return SimpleNamespace(
@@ -1791,9 +1787,10 @@ def test_replayed_claim_reports_missing_blocked_download_frame_exactly(tmp_path)
     with pytest.raises(EnrichmentDiagnosticError) as captured:
         service.download_opencli(update["identity"], session="ticket04")
 
-    assert captured.value.diagnostic_code == "provider_download_filtered"
-    assert captured.value.diagnostic_stage == "provider_download_link"
+    assert captured.value.diagnostic_code == "provider_preview_not_ready"
+    assert captured.value.diagnostic_stage == "provider_preview_reconciliation"
     assert waits == 1
+    assert preview_reads == 1
 
 
 def test_filtered_image_repair_records_identity_bound_preview_derivative(
@@ -2197,7 +2194,7 @@ def test_existing_image_claim_uses_direct_page_api_without_second_ui_trigger(
 
     assert claim["status"] == "claimed"
     assert result["status"] == "completed"
-    assert result["acquisition_transport"] == "browser_download"
+    assert result["acquisition_transport"] == "provider_direct_small_file"
     assert result["sha256"] == hashlib.sha256(payload).hexdigest()
     assert trigger_calls == 0
     assert len(direct_calls) == 1
@@ -2729,13 +2726,72 @@ def test_direct_image_api_maps_provider_errno_2_to_filtered_media(tmp_path):
     assert captured.value.diagnostic_stage == "provider_download_link"
 
 
-def test_new_image_claim_uses_single_frontend_intercept_when_provider_filters_direct_api(
+def test_existing_image_claim_uses_read_only_preview_after_zero_download_readback(
     tmp_path,
 ):
-    payload = b"\x89PNG\r\n\x1a\n" + b"i" * 1024
     entry = {
         **_representative_subscription_entries()[0],
-        "size": len(payload),
+        "provider_file_id": "123456789012345",
+    }
+    service = LvSubscriptionService(tmp_path / "out", now=lambda: NOW)
+    update = service.observe_browser_listing([entry])["updates"][0]
+    service._opencli_listing = (
+        "ticket04",
+        None,
+        {"status": "ok", "complete_scan": True, "entries": [entry]},
+    )
+    preview_calls = 0
+    service._provider_frontend_intercepted_download = lambda *_args, **_kwargs: (
+        pytest.fail("claimed images must not retrigger a provider download")
+    )
+    service._provider_direct_download = lambda *_args, **_kwargs: (
+        (_ for _ in ()).throw(EnrichmentDiagnosticError(
+            "provider filtered the direct image link",
+            category="provider_error",
+            code="provider_download_filtered",
+            stage="provider_download_link",
+        ))
+    )
+    claim = service.claim_browser_download(update["identity"])
+    service._wait_opencli_download = lambda *_args, **_kwargs: (_ for _ in ()).throw(
+        EnrichmentDiagnosticError(
+            "download not observed",
+            category="provider_error",
+            code="download_not_seen",
+            stage="browser_wait",
+        )
+    )
+
+    def preview(identity, *, session, profile, listing):
+        nonlocal preview_calls
+        preview_calls += 1
+        assert identity == update["identity"]
+        assert session == "ticket04"
+        assert profile is None
+        assert listing["entries"] == [entry]
+        return {
+            "status": "completed",
+            "identity": update["identity"],
+            "version_key": update["version_key"],
+            "claim_id": claim["claim_id"],
+            "acquisition_transport": "provider_preview_derivative",
+        }
+
+    service.reconcile_filtered_image_preview = preview
+
+    result = service.download_opencli(update["identity"], session="ticket04")
+
+    assert result["status"] == "completed"
+    assert result["acquisition_transport"] == (
+        "provider_preview_derivative"
+    )
+    assert preview_calls == 1
+
+
+def test_new_filtered_image_claim_uses_preview_without_frontend_trigger(tmp_path):
+    entry = {
+        **_representative_subscription_entries()[0],
+        "provider_file_id": "123456789012345",
     }
     service = LvSubscriptionService(tmp_path / "out", now=lambda: NOW)
     update = service.observe_browser_listing([entry])["updates"][0]
@@ -2745,7 +2801,7 @@ def test_new_image_claim_uses_single_frontend_intercept_when_provider_filters_di
         {"status": "ok", "complete_scan": True, "entries": [entry]},
     )
     direct_calls = 0
-    frontend_calls = 0
+    preview_calls = 0
 
     def filtered(*_args, **_kwargs):
         nonlocal direct_calls
@@ -2757,40 +2813,32 @@ def test_new_image_claim_uses_single_frontend_intercept_when_provider_filters_di
             stage="provider_download_link",
         )
 
-    def frontend(item, **_kwargs):
-        nonlocal frontend_calls
-        frontend_calls += 1
-        destination = (
-            service.download_inbox
-            / item["version_key"]
-            / item["name"]
-        )
-        destination.parent.mkdir(parents=True, exist_ok=True)
-        destination.write_bytes(payload)
+    def preview(identity, *, session, profile, listing):
+        nonlocal preview_calls
+        preview_calls += 1
+        claim = json.loads(next(
+            (tmp_path / "out").rglob("browser_download_claim.json")
+        ).read_text(encoding="utf-8"))
         return {
-            "path": str(destination),
-            "actual_size": len(payload),
-            "sha256": hashlib.sha256(payload).hexdigest(),
-            "content_type": "image/png",
-            "acquisition_transport": (
-                "provider_frontend_intercepted_small_file"
-            ),
+            "status": "completed",
+            "identity": identity,
+            "version_key": update["version_key"],
+            "claim_id": claim["claim_id"],
+            "acquisition_transport": "provider_preview_derivative",
         }
 
     service._provider_direct_download = filtered
-    service._provider_frontend_intercepted_download = frontend
-    service._prepare_opencli_download_confirmation = lambda *_args, **_kwargs: (
-        pytest.fail("image recovery must not dispatch a separate first click")
+    service._provider_frontend_intercepted_download = lambda *_args, **_kwargs: (
+        pytest.fail("filtered images must not trigger a provider download")
     )
+    service.reconcile_filtered_image_preview = preview
 
     result = service.download_opencli(update["identity"], session="ticket04")
 
     assert result["status"] == "completed"
-    assert result["acquisition_transport"] == (
-        "provider_frontend_intercepted_small_file"
-    )
+    assert result["acquisition_transport"] == "provider_preview_derivative"
     assert direct_calls == 1
-    assert frontend_calls == 1
+    assert preview_calls == 1
 
 
 def test_frontend_intercept_installs_before_first_provider_trigger(tmp_path):

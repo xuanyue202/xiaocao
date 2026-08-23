@@ -623,9 +623,10 @@ TARGETED_REPAIR_TESTS: dict[str, tuple[str, ...]] = {
         "-k",
         (
             "reviewed_historical_small_items_retire or "
-            "new_image_claim_uses_single_frontend_intercept or "
             "filtered_image_repair_records_identity_bound_preview_derivative or "
             "filtered_image_repair_uses_read_only_preview_surface or "
+            "existing_image_claim_uses_read_only_preview_after_zero_download_readback or "
+            "new_filtered_image_claim_uses_preview_without_frontend_trigger or "
             "newer_repair_lifecycle_supersedes_old_fingerprint or "
             "repair_validation_accepts_exact_lv_download_recovery_profile"
         ),
@@ -776,6 +777,8 @@ TARGETED_REPAIR_TESTS: dict[str, tuple[str, ...]] = {
         "-k",
         (
             "listing_recovers_once_after_detached_read_only_eval or "
+            "existing_image_claim_uses_read_only_preview_after_zero_download_readback or "
+            "new_filtered_image_claim_uses_preview_without_frontend_trigger or "
             "repair_validation_accepts_shared_lv_listing_browser_eval_profile or "
             "repair_closure_accepts_shared_lv_listing_browser_eval_profile"
         ),
@@ -1018,6 +1021,7 @@ _TARGETED_REPAIR_TEST_PATHS: dict[str, frozenset[str]] = {
 _LV_DOWNLOAD_REPAIR_PROFILE = "kol_lv_download_recovery"
 _LV_DOWNLOAD_REPAIR_PROFILE_ALIASES = frozenset({
     _LV_DOWNLOAD_REPAIR_PROFILE,
+    "kol_lv_text_image_browser_download_recovery",
     "kol_lv_text_image_provider_download_link",
 })
 _LV_DOWNLOAD_REPAIR_CODES = frozenset({
@@ -1025,6 +1029,9 @@ _LV_DOWNLOAD_REPAIR_CODES = frozenset({
     "provider_download_filtered",
     "provider_download_link_errno_2",
     "provider_frontend_target_not_ready",
+    "detached_mid_command",
+    "opencli_command_failed",
+    "opencli_timeout",
 })
 
 
@@ -1037,7 +1044,11 @@ def _canonical_lv_download_repair_profile(
         in _LV_DOWNLOAD_REPAIR_PROFILE_ALIASES
         and str(context.get("code") or "") in _LV_DOWNLOAD_REPAIR_CODES
         and str(context.get("stage") or "")
-        in {"browser_download_recovery", "provider_download_link"}
+        in {
+            "browser_download_recovery",
+            "provider_download_link",
+            "provider_download_trigger",
+        }
     ):
         return _LV_DOWNLOAD_REPAIR_PROFILE
     return None
