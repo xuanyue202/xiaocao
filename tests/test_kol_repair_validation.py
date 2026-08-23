@@ -252,7 +252,18 @@ def test_repair_validation_accepts_lv_text_image_source_run_profile(tmp_path):
     assert service._expected_profile(context) == "kol_lv_text_image_source_run"
 
 
-def test_repair_validation_accepts_lv_text_image_browser_open_profile(tmp_path):
+@pytest.mark.parametrize(
+    ("category", "code"),
+    [
+        ("transport_error", "opencli_command_failed"),
+        ("timeout", "opencli_timeout"),
+    ],
+)
+def test_repair_validation_accepts_lv_text_image_browser_open_profile(
+    tmp_path,
+    category,
+    code,
+):
     service = RepairValidationService(
         tmp_path,
         ledger=RepairValidationLedger(tmp_path / "repair-validation.jsonl"),
@@ -263,8 +274,8 @@ def test_repair_validation_accepts_lv_text_image_browser_open_profile(tmp_path):
         "content_sha256": "5" * 64,
         "failure_fingerprint": "6" * 64,
         "failure_revision": FAILURE_REVISION,
-        "category": "transport_error",
-        "code": "opencli_command_failed",
+        "category": category,
+        "code": code,
         "stage": "browser_open",
         "targeted_test_profile": "kol_lv_text_image_browser_open",
     }

@@ -1068,8 +1068,14 @@ def _canonical_lv_text_image_browser_open_repair_profile(
         str(context.get("adapter") or "") == "lv_text_image"
         and str(context.get("targeted_test_profile") or "")
         == _LV_TEXT_IMAGE_BROWSER_OPEN_REPAIR_PROFILE
-        and str(context.get("category") or "") == "transport_error"
-        and str(context.get("code") or "") == "opencli_command_failed"
+        and (
+            str(context.get("category") or ""),
+            str(context.get("code") or ""),
+        )
+        in {
+            ("transport_error", "opencli_command_failed"),
+            ("timeout", "opencli_timeout"),
+        }
         and str(context.get("stage") or "") == "browser_open"
     ):
         return _LV_TEXT_IMAGE_BROWSER_OPEN_REPAIR_PROFILE
