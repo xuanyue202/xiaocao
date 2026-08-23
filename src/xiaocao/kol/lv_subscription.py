@@ -1373,17 +1373,18 @@ _OWNER_DOWNLOAD_LINK_SCRIPT_TEMPLATE = r"""(async () => {
   }
   if (targets.length === 0) return result('owner_target_not_visible');
   if (targets.length !== 1) return result('owner_target_not_unique');
-  const selectionControl = row => row.querySelector(
-    '[role="checkbox"], input[type="checkbox"], [aria-checked], '
-    + '[class*="checkbox"]'
+  const selectionControl = row => (
+    row.querySelector('input[type="checkbox"]')
+    || row.querySelector(
+      '[role="checkbox"], [aria-checked], [class*="checkbox"]'
+    )
   );
   const selected = row => {
     const control = selectionControl(row);
     return row.getAttribute('aria-selected') === 'true'
       || control?.getAttribute('aria-checked') === 'true'
       || control?.checked === true
-      || row.classList.contains('selected')
-      || control?.classList.contains('is-select');
+      || row.classList.contains('selected');
   };
   const visibleRows = [...new Set(Array.from(document.querySelectorAll(
     'dd, tr, [role="row"], [class*="table-row"], [class*="file-item"]'
