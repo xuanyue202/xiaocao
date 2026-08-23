@@ -48,7 +48,7 @@ contract on 2026-07-25
   same-name local file is not an ingestion path.
 - The shortest bootstrap-to-output operation is one resumable process:
   `PYTHONPATH=src python3 scripts/kol_lv_subscription.py run --bootstrap-bind --opencli-session xiaocao-lv-subscription --opencli-profile <connected-profile>`.
-  It binds the active authorized Google Chrome tab once through the OpenCLI
+  It binds the active authorized Microsoft Edge tab once through the OpenCLI
   Browser Bridge, polls, claims and downloads
   every pending small text/image, extracts evidence, persists
   `analysis_request.json`, accepts the evidence-bound bundle path on the same
@@ -66,7 +66,7 @@ contract on 2026-07-25
   the real URL nor extraction code is recorded, and those surfaces are not
   retried or treated as the product adapter.
 - The product adapter is the same route proven by Ticket 02: the OpenCLI Browser Bridge
-  in Google Chrome. The operator opened the configured link there,
+  in Microsoft Edge. The operator opened the configured link there,
   completed extraction, and left the visible file list active. OpenCLI doctor
   then proved the extension/daemon profile connected before the one-time bind.
 - The real page exposed two `/share/list` shapes: a root request carrying

@@ -61,7 +61,7 @@ aggregate published to 灰常亮 and re-read without historical side-effect repl
   publication ledger owns report claims, double-CAS, receipts and replay.
 
 - [x] Both already-authorized entry points were proved read-only through the
-  Google Chrome OpenCLI Browser Bridge and now run unattended from one runner.
+  Microsoft Edge OpenCLI Browser Bridge and now run unattended from one runner.
 - [x] A real Lv Xiaotong video was detected by low-bandwidth Baidu metadata
   polling rather than by a user reminder.
 - [x] Netdisk-side transfer/enrichment kept both large videos off the 7×24
@@ -95,7 +95,7 @@ aggregate published to 灰常亮 and re-read without historical side-effect repl
   --opencli-profile <connected-profile>`. Discovery, cloud transfer,
   enrichment, evidence request, result ingestion and both outputs resume from
   the same durable manifest and ledgers.
-- The only browser adapter is the Google Chrome OpenCLI Browser Bridge. The
+- The only browser adapter is the Microsoft Edge OpenCLI Browser Bridge. The
   connected extension/daemon and the existing stable
   `xiaocao-lv-subscription` session were proved before implementation. The
   built-in browser, Computer Use, coordinate clicks and raw CDP were not used.

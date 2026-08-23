@@ -39,8 +39,8 @@ or bypass a human gate.
   and start within 10 seconds. Do not read `full-contract.md` before Ready.
 - For local `capture-local`, read
   [hourly-local-capture.md](references/hourly-local-capture.md) completely; on
-  OpenCLI/Chrome failure read
-  [opencli-chrome-recovery.md](references/opencli-chrome-recovery.md). Skip
+  OpenCLI/Edge failure read
+  [opencli-edge-recovery.md](references/opencli-edge-recovery.md). Skip
   remote/full contracts.
 - For Xiaoetong phone/SMS login, read
   [xiaoetong-sms-login.md](references/xiaoetong-sms-login.md) completely.

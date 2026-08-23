@@ -17,8 +17,8 @@ HOURLY_REMOTE_WRITER_MD = (
 VIDEO_PLAYER_SAFETY_MD = (
     SKILL_DIR / "references" / "video-player-safety.md"
 )
-OPENCLI_CHROME_RECOVERY_MD = (
-    SKILL_DIR / "references" / "opencli-chrome-recovery.md"
+OPENCLI_EDGE_RECOVERY_MD = (
+    SKILL_DIR / "references" / "opencli-edge-recovery.md"
 )
 XIAOETONG_SMS_LOGIN_MD = (
     SKILL_DIR / "references" / "xiaoetong-sms-login.md"
@@ -318,7 +318,7 @@ def test_hourly_small_download_is_unattended_and_prompt_is_internal() -> None:
         "controlled inbox",
         "exact provider identity",
         "Save prompt is not a user blocker",
-        "never edit ordinary Chrome",
+        "never edit the ordinary Microsoft Edge profile",
         "global extension",
         "Only auth, SMS, CAPTCHA",
         "second trigger",
@@ -597,27 +597,29 @@ def test_remote_writer_has_a_xiaocao_only_post_handoff_entrypoint() -> None:
     assert "do not rerun the full `run` command" in remote
 
 
-def test_opencli_chrome_recovery_exhausts_self_repair_before_user_action() -> None:
+def test_opencli_edge_recovery_exhausts_self_repair_before_user_action() -> None:
     entrypoint = SKILL_MD.read_text(encoding="utf-8")
-    recovery = OPENCLI_CHROME_RECOVERY_MD.read_text(encoding="utf-8")
+    recovery = OPENCLI_EDGE_RECOVERY_MD.read_text(encoding="utf-8")
 
-    assert "opencli-chrome-recovery.md" in entrypoint
+    assert "opencli-edge-recovery.md" in entrypoint
     for marker in (
         "opencli daemon status",
         "opencli doctor",
-        'open -a "Google Chrome"',
+        'open -a "Microsoft Edge"',
         "Restart the OpenCLI daemon at most once",
         "credentialed `/api/list`",
-        "Computer Use is allowed only for the minimum Chrome UI",
+        "Computer Use is allowed only for the minimum Edge UI",
         "click **Keep**, enable Developer mode, and enable",
         "Without that explicit",
         "Preferences/Secure Preferences",
         "prefer **账号登录** over QR or SMS",
-        "Chrome's already-saved Baidu",
+        "Edge's already-saved Baidu",
         "Never inspect,",
         "never duplicate",
     ):
         assert marker in recovery
+
+    assert "Google Chrome" not in recovery
 
 
 def test_hourly_local_capture_routes_authorized_xiaoetong_sms_login() -> None:

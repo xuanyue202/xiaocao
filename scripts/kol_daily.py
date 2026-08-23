@@ -1371,7 +1371,7 @@ def _classified_source(name: str, runner):
             if message == "wechat_official_captcha_required":
                 raise UserActionBlocker(
                     "wechat-official-opencli-captcha",
-                    "请在远端现有 OpenCLI Chrome 会话中打开对应公众号文章并完成"
+                    "请在远端现有 OpenCLI Edge 会话中打开对应公众号文章并完成"
                     "微信验证；不要新建抓取器或循环重试。完成后保持该会话可用，"
                     "下一小时会重新验收同一文章。",
                 ) from exc
@@ -1383,7 +1383,7 @@ def _classified_source(name: str, runner):
                     "lv-cloud-transfer-not-materialized",
                     "百度网盘已两次确认转存，但目标目录和全局精确搜索均无"
                     "对应文件。请检查网盘容量或转存限制，并手动把最新吕晓彤"
-                    "视频保存到 /课程/自己的课/吕晓彤；完成后保持 Chrome "
+                    "视频保存到 /课程/自己的课/吕晓彤；完成后保持 Edge "
                     "登录，下一小时会只读对账并继续解析。",
                 ) from exc
             if message == "Lv cloud transfer was rejected by provider":
@@ -1391,7 +1391,7 @@ def _classified_source(name: str, runner):
                     "lv-cloud-transfer-provider-rejected",
                     "百度网盘明确拒绝了吕晓彤视频转存。请检查网盘容量、"
                     "会员文件大小或转存上限，处理后手动把最新视频保存到 "
-                    "/课程/自己的课/吕晓彤；保持 Chrome 登录后，下一小时"
+                    "/课程/自己的课/吕晓彤；保持 Edge 登录后，下一小时"
                     "会只读对账并继续解析。",
                 ) from exc
             raise TransientSourceError(

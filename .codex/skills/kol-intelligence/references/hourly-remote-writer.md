@@ -19,45 +19,36 @@ PYTHONPATH=src .venv/bin/python scripts/kol_daily.py convergence-report
 PYTHONPATH=src .venv/bin/python scripts/kol_daily.py stability-acceptance
 ```
 
-Each run is one sweep; no concrete item is silent. Report concrete waits and
-exceptions, distinguishing handoff from completion. Expose only credential-safe
-failures. The started task owns repair; do not defer obtainable work.
-
-Report concrete items in a compact Markdown table `对象 | 状态 | 说明`. Prefix
-each object with `[视频]` or `[文章]`; never label `Handoff完成` as `全部完成`.
+Each run is one sweep; no concrete item is silent. Report concrete waits and exceptions,
+plus credential-safe failures, in `对象 | 状态 | 说明`, prefixing each object
+with `[视频]` or `[文章]`; never label `Handoff完成` as `全部完成`.
+The started task owns repair; do not defer obtainable work.
 
 Obey seven-state `writer_progress.next_action`; bind input and readback
 receipts; retryability never changes owner.
 
-`repair_required` is work for the current Agent, not a user blocker: reconcile
-claims/receipts, patch/test/commit/push without user WIP, and continue on the
-same stdin. If it exited, never run `run` twice for one slot; use
-`resume-mailbox` only for the repaired message. After matching repair closure,
-run only `narrow_resume_surface`.
+`repair_required` is work for the current Agent, not a user blocker: reconcile,
+patch/test/commit/push without user WIP, then continue on the same stdin. Never
+run `run` twice for one slot; after matching repair closure use `resume-mailbox`
+for that message and run only `narrow_resume_surface`.
 
-Every source result carries seven-state `writer_progress`. A raw `waiting` result
-without an immutable provider `next_poll_not_before` is an internal contract
-failure and becomes `repair_required`; diagnostic exceptions never manufacture
-an hourly `wait_until` or user blocker. Provider deadlines, auth/CAPTCHA, and
-uncertain external effects retain their legal progress states.
+A raw `waiting` result without an immutable provider `next_poll_not_before`
+becomes `repair_required`; diagnostics never manufacture `wait_until` or a user
+blocker. Provider deadlines, auth/CAPTCHA, and uncertain effects retain their
+seven-state `writer_progress` states.
 
-This machine is the only KOL writer. It consumes Xiaocao `scope=post_handoff`
-and URL-only `wechat_official_article` capsules from LiangHuiMCP; each capsule
-is discovery metadata, not the full article. It never scans the local
-WeChat contact, never reads or downloads source-video bytes, starts playback,
-or uses Computer Use. It may bind the exact paused player DOM only under
-`video-player-safety.md`. Manual import/process commands are reconciliation
-surfaces; normal delivery is the mailbox drain at `run` start.
+This sole writer consumes Xiaocao `scope=post_handoff` and URL-only
+`wechat_official_article` LiangHuiMCP capsules as discovery metadata, not full
+articles: each is not the full article. It never scans the local
+WeChat contact and never reads or downloads
+source-video bytes, starts playback, or uses Computer Use. Player DOM binding
+requires `video-player-safety.md`; normal delivery is the mailbox drain.
 
-When reconciling an already imported official-account capsule outside the
-normal hourly path, process only that inbox with `PYTHONPATH=src
-.venv/bin/python scripts/kol_daily.py process-wechat-official`. Run it exactly
-once and keep the same process alive for image/semantic input; do not rerun the
-full `run` command merely to pick up the handoff.
-
-For a late Xiaocao video capsule, process only imported post-handoff state with
-`PYTHONPATH=src .venv/bin/python scripts/kol_daily.py process-xiaocao-handoff`.
-Run once and keep it alive for input; do not rerun the full `run` command.
+For an already imported official-account capsule use only `PYTHONPATH=src
+.venv/bin/python scripts/kol_daily.py process-wechat-official`; for a late
+Xiaocao video capsule use only `PYTHONPATH=src .venv/bin/python
+scripts/kol_daily.py process-xiaocao-handoff`. Run once, keep that process alive
+for input, and do not rerun the full `run` command.
 
 ## Active-peer gate and LiangHuiMCP drain
 
@@ -196,8 +187,8 @@ backlog items.
 Small downloads are unattended: use `Page.setDownloadBehavior` with a
 controlled inbox or one memory-only link bound to the exact provider identity.
 A Save prompt is not a user blocker. Only auth, SMS, CAPTCHA, or consent may
-ask; never edit ordinary Chrome or a global extension, or issue a second
-trigger.
+ask; never edit the ordinary Microsoft Edge profile or a global extension, or
+issue a second trigger.
 
 Every item includes `content_value.status=low_density|promoted`; promoted items
 add `content_value.tier=report_only|alert_eligible`, accepted `alert_basis`,

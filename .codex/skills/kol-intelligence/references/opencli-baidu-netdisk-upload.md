@@ -29,6 +29,6 @@ reconcile the exact target and transfer UI, never attach the file again. A later
 exact match completes the original claim without resubmission.
 
 Recover a closed/unresponsive tab under
-[opencli-chrome-recovery.md](opencli-chrome-recovery.md). Authentication,
+[opencli-edge-recovery.md](opencli-edge-recovery.md). Authentication,
 consent, or CAPTCHA remains a user-action gate. Upload stays local/transfer-only;
 the remote capsule contains no source-video bytes or local path.

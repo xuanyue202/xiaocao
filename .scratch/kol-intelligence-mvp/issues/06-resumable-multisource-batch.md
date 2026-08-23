@@ -158,7 +158,7 @@ paper-only `no_trade` is reconciled without replay.
 
 ## Real source rescan and pause noise
 
-The private source was rescanned only through the logged-in Chrome OpenCLI
+The private source was rescanned only through the logged-in Microsoft Edge OpenCLI
 Browser Bridge. No raw HTTP, Computer Use, source-video open, or download was
 used. A transient private-directory timeout failed before manifest write; one
 safe read-only retry completed.

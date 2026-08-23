@@ -259,7 +259,7 @@ work and never authorizes replaying publication, reminder, or Book side effects.
   1. Run `prepare --video <runtime-named-compressed.mp4>`. It hashes and probes the exact local source and returns the stable job ID required by every later command; this local preparation has no browser side effect.
   2. Before asking the user for anything, run the OpenCLI doctor/profile checks and inspect the exact cloud folder through the logged-in page. A manually clickable tab or an empty session list is not proof. Do not use raw CDP, Computer Use, or absolute coordinates.
   3. Repeatedly run `advance-opencli --job-id <id> --opencli-session <stable-name> [--opencli-profile <profile>]`. Each invocation advances at most one durable external checkpoint or observes one asynchronous completion; it is a manual resumable stepper, not a batcher or scheduler. While transcript generation is pending, honor `next_poll_not_before` and use the runtime's fixed one-minute polling interval. Do not poll AI-note completion.
-  4. The stepper scans every logged-in folder-API page and reconciles the exact basename only after a complete scan. If absent, it claims upload before mutation, opens the prepared source once, verifies size and SHA-256, and copies those bytes to a private temporary immutable snapshot with the exact target basename. Both direct OpenCLI and any fallback read that same verified snapshot, so the contract works through either a direct binary or an `npx` runtime. After the snapshot is complete, revalidate the real folder hash-route, mark only the current folder's file input with an unguessable one-shot selector, and install capture-phase route guards that block both input and change events if navigation occurs. Only when Chrome returns the specific `Not allowed` failure may it serve the snapshot from an unguessable `127.0.0.1` route; that one DOM action revalidates the folder both before and after fetching the snapshot, constructs a native DOM `File`, verifies its browser-reported size, and dispatches the file-input events. The marker, temporary path, and loopback URL are never persisted, and readiness still requires a later exact cloud-file proof.
+  4. The stepper scans every logged-in folder-API page and reconciles the exact basename only after a complete scan. If absent, it claims upload before mutation, opens the prepared source once, verifies size and SHA-256, and copies those bytes to a private temporary immutable snapshot with the exact target basename. Both direct OpenCLI and any fallback read that same verified snapshot, so the contract works through either a direct binary or an `npx` runtime. After the snapshot is complete, revalidate the real folder hash-route, mark only the current folder's file input with an unguessable one-shot selector, and install capture-phase route guards that block both input and change events if navigation occurs. Only when Microsoft Edge returns the specific `Not allowed` failure may it serve the snapshot from an unguessable `127.0.0.1` route; that one DOM action revalidates the folder both before and after fetching the snapshot, constructs a native DOM `File`, verifies its browser-reported size, and dispatches the file-input events. The marker, temporary path, and loopback URL are never persisted, and readiness still requires a later exact cloud-file proof.
   5. Before any player DOM mutation, validate the real `location.href` against the complete `/课程/自己的课/小草/<target-basename>` path, not just the basename. The stepper then activates `文稿`, waits for the semantic active-tab state, claims generation before the triggering interaction, and records requested/ready separately. An already-ready transcript is reconciled without regenerating it.
      Immediately after every exact player bind, install the repository-owned
      continuous pause guard. It removes autoplay, pauses every current video,
@@ -361,18 +361,17 @@ work and never authorizes replaying publication, reminder, or Book side effects.
 
 - Ticket 04 has exactly one discovery/download provider: the ignored
   `xiaocao.yaml` values under `kol_intelligence.lv_xiaotong`, opened through the
-  logged-in OpenCLI Browser Bridge in Google Chrome. The separately installed
-  Codex browser connector may be hosted in Microsoft Edge; it is not the
-  Ticket 04 OpenCLI session. Do not add subscription-message parsing,
-  another link source, a raw HTTP client, Computer Use, or a second long-lived
-  adapter.
+  logged-in OpenCLI Browser Bridge in Microsoft Edge. The separately installed
+  Codex browser connector is not the Ticket 04 OpenCLI session. Do not add
+  subscription-message parsing, another link source, a raw HTTP client,
+  Computer Use, or a second long-lived adapter.
 - Codex's built-in browser can enumerate an already-open private-share tab but
   policy rejects DOM reads against the real `/s/...` page. Record this only as
   `browser_security_policy_denied`; never log the real URL/code, retry the same
   IAB read, ask for an IAB tab attachment, or switch browser-control mechanisms
   to evade the policy.
 - The one-time bootstrap action is: the user opens the configured link in
-  Google Chrome with the OpenCLI Browser Bridge installed, verifies that the
+  Microsoft Edge with the OpenCLI Browser Bridge installed, verifies that the
   file list is visible, and leaves that tab active. Then start the single
   resumable runner:
   `PYTHONPATH=src python3 scripts/kol_lv_subscription.py run --bootstrap-bind --opencli-session xiaocao-lv-subscription`.
@@ -395,8 +394,8 @@ work and never authorizes replaying publication, reminder, or Book side effects.
   and prefer successful share metadata plus complete `/share/list` evidence.
   A replayed/uncertain download claim may only reconcile the prior download
   event; it must never retrigger it.
-- Small-file acquisition is unattended. Do not change the ordinary Chrome
-  profile, its `prompt_for_download` preference, or global extensions. First
+- Small-file acquisition is unattended. Do not change the ordinary Microsoft
+  Edge profile, its `prompt_for_download` preference, or global extensions. First
   apply target-scoped `Page.setDownloadBehavior` to the exact bound OpenCLI
   session and runtime-controlled inbox, and persist a credential-free command
   acknowledgement/readback. If OpenCLI explicitly rejects that CDP method,
@@ -534,8 +533,8 @@ work and never authorizes replaying publication, reminder, or Book side effects.
 
 ## Lv Xiaotong and Lucifer cloud videos
 
-- Ticket 05 has exactly two metadata entry points on the same logged-in Google
-  Chrome OpenCLI Browser Bridge: the Ticket 04 configured Lv Xiaotong share
+- Ticket 05 has exactly two metadata entry points on the same logged-in Microsoft
+  Edge OpenCLI Browser Bridge: the Ticket 04 configured Lv Xiaotong share
   and the private directory `/课程/路西法全套`. Do not use the Codex built-in
   browser, another share, raw CDP, Computer Use, coordinates, a direct HTTP
   client, marketplace search, or an automated purchase.
@@ -547,7 +546,7 @@ work and never authorizes replaying publication, reminder, or Book side effects.
   `PYTHONPATH=src python3 scripts/kol_subscription_videos.py run --opencli-profile <connected-profile>`.
   Its default Lv, private-folder, and enrichment session is the already-bound
   `xiaocao-lv-subscription` session. Override a session only after explicitly
-  binding and proving that exact Google Chrome OpenCLI session.
+  binding and proving that exact Microsoft Edge OpenCLI session.
 - A publication may consist of any number of source videos. Treat it as one
   logical episode, not one decision per file. Prefer explicit source metadata
   (`episode_id`, title, `part_index`, and optional declared count). Otherwise

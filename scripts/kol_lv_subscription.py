@@ -95,7 +95,7 @@ def main() -> int:
         "--bootstrap-bind",
         action="store_true",
         help=(
-            "bind the active user-authorized Chrome OpenCLI share tab before "
+            "bind the active user-authorized Microsoft Edge OpenCLI share tab before "
             "the one-shot run"
         ),
     )

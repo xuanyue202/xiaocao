@@ -47,7 +47,7 @@ Use this sequence before taking any exceptional branch:
 
 ## Identity and exactly-once state
 
-Record the OpenCLI `session`, Chrome profile, current `tab_id`, Xiaoetong
+Record the OpenCLI `session`, Microsoft Edge profile, current `tab_id`, Xiaoetong
 `resource_id`, canonical course path, `capture_job_id`, page-attempt number,
 and these separate states:
 
@@ -236,7 +236,7 @@ reports the session tab active, test a fresh empty `MediaSource` with a short
 bounded `sourceopen` readback. When it does not open, stop rebuilding the player:
 OpenCLI 1.8.6 can focus an existing minimized owned window without restoring it
 to a normal visible state. Release only the same browser-session lease, launch
-the exact Chrome extension profile (this capture node uses `Default`) in a new
+the exact Edge extension profile (this capture node uses `Default`) in a new
 normal foreground window at the canonical resource URL, and bind the same
 OpenCLI session to that exact current tab. The bind receipt must return the
 canonical URL, and DOM readback must prove `visibilityState == "visible"` before

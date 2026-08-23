@@ -30,7 +30,7 @@ agent then reads every image exactly once and writes an auditable Markdown
 description bound to each image SHA. The program appends those notes to the
 article; only that final Markdown enters the common semantic, 灰常亮,
 notification, and paper-only gates. Verification UI or `请输入验证码` stops the
-item for same-Chrome-session user verification; it never starts MCP or a
+item for same-Edge-session user verification; it never starts MCP or a
 second HTTP fetcher.
 
 ## Baidu Netdisk browser enrichment
@@ -276,7 +276,7 @@ PYTHONPATH=src python3 scripts/kol_enrich_video.py decide \
 
 The append-only ledger persists stable paths, hashes, task IDs, timing gates,
 and delivery/book summaries. It never persists credentials, tokens, cookies,
-presigned URLs, URL query strings, or household positions. The logged-in Chrome
+presigned URLs, URL query strings, or household positions. The logged-in Edge
 spike on 2026-07-19 was explicitly denied access to the Netdisk consumer page
 by a surface-specific policy. That failure is not bypassed with raw CDP,
 Computer Use, desktop coordinates, or secret extraction; the documented

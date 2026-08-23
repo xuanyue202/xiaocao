@@ -88,7 +88,7 @@ current. Before moving the hourly Automation, verify all of the following on
   fallback is `npx --yes @jackwener/opencli@1.8.6`, but an unattended hourly
   runtime must install `@jackwener/opencli@1.8.6` directly and verify its
   version instead of depending on an on-demand network download.
-- Google Chrome with the compatible OpenCLI Browser Bridge, plus a proven
+- Microsoft Edge with the compatible OpenCLI Browser Bridge, plus a proven
   logged-in `xiaocao-lv-subscription` session that can read both the configured
   Lv Xiaotong share and the private `/课程/路西法全套` directory. Browser
   installation alone is not session proof.

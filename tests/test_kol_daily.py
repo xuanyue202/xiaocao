@@ -5594,7 +5594,7 @@ def test_source_classifier_promotes_wechat_opencli_captcha_to_blocker():
         runner()
 
     assert captured.value.blocker_key == "wechat-official-opencli-captcha"
-    assert "现有 OpenCLI Chrome 会话" in captured.value.action
+    assert "现有 OpenCLI Edge 会话" in captured.value.action
     assert "循环重试" in captured.value.action
 
 
