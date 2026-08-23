@@ -42,6 +42,12 @@ _OPENCLI_UPLOAD_TIMEOUT_SECONDS = 300
 _OPENCLI_UPLOAD_TEMPLATE_SESSION = "site:baidu-netdisk"
 _OPENCLI_FOLDER_READY_ATTEMPTS = 6
 _OPENCLI_FOLDER_READY_WAIT_SECONDS = 2
+_OPENCLI_READBACK_REBIND_CODES = frozenset(
+    {"opencli_timeout", "opencli_command_failed"}
+)
+_OPENCLI_READBACK_REBIND_STAGES = frozenset(
+    {"browser_open", "browser_eval", "browser_wait"}
+)
 _NETDISK_GENERATION_POLL_INTERVAL = timedelta(minutes=1)
 _AI_NOTE_MAX_TRIGGER_ATTEMPTS = 2
 _AI_NOTE_POSTCLICK_ZERO_MIN_AGE = timedelta(minutes=5)
@@ -1779,8 +1785,8 @@ class NetdiskEnrichmentService:
                 if (
                     attempt == 0
                     and readback_rebind_allowed
-                    and exc.diagnostic_code
-                    in {"opencli_timeout", "opencli_command_failed"}
+                    and exc.diagnostic_code in _OPENCLI_READBACK_REBIND_CODES
+                    and exc.diagnostic_stage in _OPENCLI_READBACK_REBIND_STAGES
                 ):
                     self._bind_opencli(session=session, profile=profile)
                     continue

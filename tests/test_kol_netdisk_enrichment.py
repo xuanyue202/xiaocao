@@ -1080,7 +1080,11 @@ def test_transcript_claim_replay_never_repeats_generation_interaction_after_brow
 
     assert replay["status"] == "transcript_requested"
     assert bind_calls == 1
-    assert any(command[5:6] == ["bind"] for command in commands)
+    bind_index = next(
+        index for index, command in enumerate(commands)
+        if command[5:6] == ["bind"]
+    )
+    assert commands[bind_index + 1][5:6] == ["open"]
     assert not any(command[5:6] == ["click"] for command in commands)
 
 
