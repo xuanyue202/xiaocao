@@ -584,6 +584,9 @@ def test_repair_closure_accepts_shared_lv_listing_validation_profile(
 
     assert closure["event"] == "repair_closed"
     assert closure["repair_receipt"]["targeted_test_profile"] == (
+        "kol_subscription_video_browser_eval"
+    )
+    assert closure["repair_receipt"]["targeted_test_profile"] == (
         "kol_shared_lv_listing_validation"
     )
 

@@ -2773,17 +2773,28 @@ class ConvergenceLedger:
             })
             if canonical_lv_profile is not None:
                 expected_profile = canonical_lv_profile
-            canonical_browser_eval_profile = (
-                _canonical_shared_lv_listing_browser_eval_repair_profile({
+            canonical_subscription_browser_eval_profile = (
+                _canonical_subscription_video_browser_eval_repair_profile({
                     "adapter": open_progress.failure["adapter"],
                     "targeted_test_profile": expected_profile,
-                    "category": open_progress.failure["category"],
                     "code": open_progress.failure["code"],
                     "stage": open_progress.failure["stage"],
                 })
             )
-            if canonical_browser_eval_profile is not None:
-                expected_profile = canonical_browser_eval_profile
+            if canonical_subscription_browser_eval_profile is not None:
+                expected_profile = canonical_subscription_browser_eval_profile
+            else:
+                canonical_browser_eval_profile = (
+                    _canonical_shared_lv_listing_browser_eval_repair_profile({
+                        "adapter": open_progress.failure["adapter"],
+                        "targeted_test_profile": expected_profile,
+                        "category": open_progress.failure["category"],
+                        "code": open_progress.failure["code"],
+                        "stage": open_progress.failure["stage"],
+                    })
+                )
+                if canonical_browser_eval_profile is not None:
+                    expected_profile = canonical_browser_eval_profile
             canonical_listing_validation_profile = (
                 _canonical_shared_lv_listing_validation_repair_profile({
                     "adapter": open_progress.failure["adapter"],
@@ -2795,16 +2806,6 @@ class ConvergenceLedger:
             )
             if canonical_listing_validation_profile is not None:
                 expected_profile = canonical_listing_validation_profile
-            canonical_subscription_browser_eval_profile = (
-                _canonical_subscription_video_browser_eval_repair_profile({
-                    "adapter": open_progress.failure["adapter"],
-                    "targeted_test_profile": expected_profile,
-                    "code": open_progress.failure["code"],
-                    "stage": open_progress.failure["stage"],
-                })
-            )
-            if canonical_subscription_browser_eval_profile is not None:
-                expected_profile = canonical_subscription_browser_eval_profile
             canonical_xiaocao_wechat_profile = (
                 _canonical_xiaocao_wechat_source_repair_profile({
                     "adapter": open_progress.failure["adapter"],
