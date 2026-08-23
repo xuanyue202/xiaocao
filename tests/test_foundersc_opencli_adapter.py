@@ -228,6 +228,8 @@ def test_probe_and_prepare_consume_only_template_receipt() -> None:
             "side": "买入",
             "quantity": "200",
             "price": "10.05",
+            "price_semantics": "numeric_limit",
+            "numeric_price_option_count": 1,
             "date": "2026-08-15",
             "hour": "9",
             "minute": "30",
@@ -263,6 +265,9 @@ def test_prepare_readonly_binds_page_account_to_keychain_proof() -> None:
         "status": "unknown",
         "status_reason": "account_fingerprint_not_proven",
         "environment": "mock",
+        "environment_data_namespace": "mock",
+        "environment_proof_complete": True,
+        "fund_account_match_count": 1,
         "logical_account_id": "primary",
         "account_binding": "not_proven",
         "fund_account_fingerprint": "987******210",
@@ -279,6 +284,8 @@ def test_prepare_readonly_binds_page_account_to_keychain_proof() -> None:
             "side": "买入",
             "quantity": "200",
             "price": "10.05",
+            "price_semantics": "numeric_limit",
+            "numeric_price_option_count": 1,
             "date": "2026-08-15",
             "hour": "9",
             "minute": "30",
@@ -318,6 +325,74 @@ def test_prepare_readonly_binds_page_account_to_keychain_proof() -> None:
     assert command[command.index("--strategy-name") + 1] == (
         "xiaocao-readback-2026-08-15-000001"
     )
+
+
+def test_prepare_readonly_rejects_receipt_without_environment_namespace_proof() -> None:
+    runner = Runner({
+        "status": "unknown",
+        "status_reason": "account_fingerprint_not_proven",
+        "environment": "mock",
+        "logical_account_id": "primary",
+        "fund_account_fingerprint": "987******210",
+        "submitted": False,
+        "saved": False,
+        "started": False,
+        "ready_for_submit": False,
+        "form_closed": True,
+        "field_readback": {},
+        "capabilities": {"submit": False, "form_readback": True},
+    })
+    adapter = FounderscQuantOpenCLIAdapter(
+        opencli_command=("opencli",),
+        runner=runner,
+    )
+
+    receipt = adapter.prepare_readonly(
+        _plan(),
+        expected_fund_account_fingerprint="987******210",
+    )
+
+    assert receipt.status == BrokerStatus.UNKNOWN
+    assert receipt.error_code == "LIVE_PREPARE_READBACK_UNPROVEN"
+
+
+def test_timed_prepare_rejects_dom_only_numeric_price_echo() -> None:
+    runner = Runner({
+        "status": "unknown",
+        "status_reason": "account_fingerprint_not_proven",
+        "environment": "mock",
+        "logical_account_id": "primary",
+        "fund_account_fingerprint": "987******210",
+        "submitted": False,
+        "saved": False,
+        "started": False,
+        "ready_for_submit": False,
+        "form_closed": True,
+        "field_readback": {
+            "strategy_name": "xiaocao-readback-2026-08-15-000001",
+            "code": "000001",
+            "side": "买入",
+            "quantity": "200",
+            "price": "10.05",
+            "date": "2026-08-15",
+            "hour": "9",
+            "minute": "30",
+        },
+        "capabilities": {"submit": False, "form_readback": True},
+    })
+    adapter = FounderscQuantOpenCLIAdapter(
+        opencli_command=("opencli",),
+        runner=runner,
+        route="timed-order",
+    )
+
+    receipt = adapter.prepare_readonly(
+        _plan(),
+        expected_fund_account_fingerprint="987******210",
+    )
+
+    assert receipt.status == BrokerStatus.UNKNOWN
+    assert receipt.error_code == "LIVE_PREPARE_READBACK_UNPROVEN"
 
 
 def test_prepare_readonly_fails_closed_on_page_keychain_account_mismatch() -> None:
@@ -391,6 +466,9 @@ def test_adapter_accepts_real_opencli_multiline_json_after_diagnostic() -> None:
     row = {
         "status": "environment_ready",
         "environment": "mock",
+        "environment_data_namespace": "mock",
+        "environment_proof_complete": True,
+        "fund_account_match_count": 1,
         "logical_account_id": "primary",
         "submitted": False,
         "saved": False,
@@ -451,6 +529,9 @@ def test_environment_preflight_switches_only_the_requested_environment() -> None
     runner = Runner({
         "status": "environment_switched",
         "environment": "live",
+        "environment_data_namespace": "live",
+        "environment_proof_complete": True,
+        "fund_account_match_count": 1,
         "expected_environment": "live",
         "logical_account_id": "primary",
         "account_binding": "not_proven",
@@ -481,10 +562,97 @@ def test_environment_preflight_switches_only_the_requested_environment() -> None
     assert command[-2:] == ["-f", "json"]
 
 
+def test_environment_preflight_rejects_old_receipt_without_namespace_proof() -> None:
+    runner = Runner({
+        "status": "environment_ready",
+        "environment": "mock",
+        "logical_account_id": "primary",
+        "submitted": False,
+        "saved": False,
+        "started": False,
+    })
+    adapter = FounderscQuantOpenCLIAdapter(
+        opencli_command=("opencli",),
+        runner=runner,
+    )
+
+    with pytest.raises(OpenCLIAdapterError, match="OPENCLI_ENVIRONMENT_PROOF_UNPROVEN"):
+        adapter.ensure_environment(target="mock")
+
+
+def test_environment_preflight_rejects_namespace_without_authenticated_account() -> None:
+    runner = Runner({
+        "status": "environment_ready",
+        "environment": "mock",
+        "environment_data_namespace": "mock",
+        "environment_proof_complete": True,
+        "logical_account_id": "primary",
+        "submitted": False,
+        "saved": False,
+        "started": False,
+    })
+    adapter = FounderscQuantOpenCLIAdapter(
+        opencli_command=("opencli",),
+        runner=runner,
+    )
+
+    with pytest.raises(OpenCLIAdapterError, match="OPENCLI_ENVIRONMENT_ACCOUNT_UNPROVEN"):
+        adapter.ensure_environment(target="mock")
+
+
+def test_login_preflight_requires_authenticated_mock_namespace_proof() -> None:
+    runner = Runner({
+        "status": "login_authenticated",
+        "environment": "mock",
+        "environment_data_namespace": "mock",
+        "environment_proof_complete": True,
+        "fund_account_match_count": 1,
+        "logical_account_id": "primary",
+        "submitted": False,
+        "saved": False,
+        "started": False,
+        "capabilities": {"submit": False, "login": True},
+    })
+    adapter = FounderscQuantOpenCLIAdapter(
+        opencli_command=("opencli",),
+        runner=runner,
+    )
+
+    receipt = adapter.ensure_login()
+
+    assert receipt["status"] == "login_authenticated"
+    assert receipt["environment"] == "mock"
+    assert runner.commands[0][1:3] == ["foundersc-quant", "login"]
+
+
+def test_login_preflight_rejects_live_or_unproven_authenticated_receipt() -> None:
+    runner = Runner({
+        "status": "login_authenticated",
+        "environment": "live",
+        "environment_data_namespace": "live",
+        "environment_proof_complete": True,
+        "fund_account_match_count": 1,
+        "logical_account_id": "primary",
+        "submitted": False,
+        "saved": False,
+        "started": False,
+        "capabilities": {"submit": False, "login": True},
+    })
+    adapter = FounderscQuantOpenCLIAdapter(
+        opencli_command=("opencli",),
+        runner=runner,
+    )
+
+    with pytest.raises(OpenCLIAdapterError, match="OPENCLI_LOGIN_SAFE_MOCK_UNPROVEN"):
+        adapter.ensure_login()
+
+
 def test_live_allocation_facts_are_derived_from_complete_broker_asset_readback() -> None:
     runner = Runner({
         "status": "reconciled_partial",
         "environment": "live",
+        "environment_data_namespace": "live",
+        "environment_proof_complete": True,
         "logical_account_id": "primary",
         "account_binding": "not_proven",
         "fund_account_fingerprint": "987******210",
@@ -538,6 +706,8 @@ def test_live_allocation_facts_reject_unproven_account_binding() -> None:
     runner = Runner({
         "status": "reconciled_partial",
         "environment": "live",
+        "environment_data_namespace": "live",
+        "environment_proof_complete": True,
         "logical_account_id": "primary",
         "account_binding": "not_proven",
         "fund_account_fingerprint": "",
@@ -563,6 +733,8 @@ def test_live_allocation_facts_reject_stale_broker_receipt() -> None:
     runner = Runner({
         "status": "reconciled_partial",
         "environment": "live",
+        "environment_data_namespace": "live",
+        "environment_proof_complete": True,
         "logical_account_id": "primary",
         "account_binding": "not_proven",
         "fund_account_fingerprint": "987******210",

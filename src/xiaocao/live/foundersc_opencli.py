@@ -389,17 +389,54 @@ class FounderscQuantOpenCLIAdapter(BrokerAdapter):
         environment = str(row.get("environment") or "").strip().lower()
         if status not in {"environment_ready", "environment_switched"} or environment != normalized_target:
             raise OpenCLIAdapterError(f"OPENCLI_ENVIRONMENT_NOT_READY:{status or 'unknown'}")
+        if (
+            row.get("environment_proof_complete") is not True
+            or str(row.get("environment_data_namespace") or "").strip().lower()
+            != normalized_target
+        ):
+            raise OpenCLIAdapterError("OPENCLI_ENVIRONMENT_PROOF_UNPROVEN")
+        if row.get("fund_account_match_count") != 1:
+            raise OpenCLIAdapterError("OPENCLI_ENVIRONMENT_ACCOUNT_UNPROVEN")
         if any(row.get(key) is True for key in ("submitted", "saved", "started")):
             raise OpenCLIAdapterError("OPENCLI_ENVIRONMENT_UNSAFE_SIDE_EFFECT")
         return {
             "status": status,
             "environment": environment,
+            "environment_data_namespace": normalized_target,
+            "environment_proof_complete": True,
             "logical_account_id": str(row.get("logical_account_id") or ""),
             "account_binding": str(row.get("account_binding") or "unknown"),
             "submitted": False,
             "saved": False,
             "started": False,
             "field_readback": _safe_evidence(row.get("field_readback") or {}),
+            "capabilities": _safe_evidence(row.get("capabilities") or {}),
+        }
+
+    def ensure_login(self) -> dict[str, Any]:
+        """Authenticate the persistent session and prove a safe mock baseline."""
+        row = self._run("login", [])
+        safe = (
+            str(row.get("status") or "").strip().lower()
+            == "login_authenticated"
+            and str(row.get("environment") or "").strip().lower() == "mock"
+            and str(row.get("environment_data_namespace") or "").strip().lower()
+            == "mock"
+            and row.get("environment_proof_complete") is True
+            and row.get("fund_account_match_count") == 1
+            and all(row.get(key) is not True for key in ("submitted", "saved", "started"))
+        )
+        if not safe:
+            raise OpenCLIAdapterError("OPENCLI_LOGIN_SAFE_MOCK_UNPROVEN")
+        return {
+            "status": "login_authenticated",
+            "environment": "mock",
+            "environment_data_namespace": "mock",
+            "environment_proof_complete": True,
+            "logical_account_id": str(row.get("logical_account_id") or ""),
+            "submitted": False,
+            "saved": False,
+            "started": False,
             "capabilities": _safe_evidence(row.get("capabilities") or {}),
         }
 
@@ -441,6 +478,12 @@ class FounderscQuantOpenCLIAdapter(BrokerAdapter):
         )
         if str(row.get("environment") or "").strip().lower() != "live":
             raise OpenCLIAdapterError("LIVE_ALLOCATION_ENVIRONMENT_NOT_LIVE")
+        if (
+            row.get("environment_proof_complete") is not True
+            or str(row.get("environment_data_namespace") or "").strip().lower()
+            != "live"
+        ):
+            raise OpenCLIAdapterError("LIVE_ALLOCATION_ENVIRONMENT_PROOF_UNPROVEN")
         if str(row.get("logical_account_id") or "").strip() != account:
             raise OpenCLIAdapterError("LIVE_ALLOCATION_ACCOUNT_MISMATCH")
         observed_fingerprint = str(row.get("fund_account_fingerprint") or "").strip()
@@ -624,15 +667,24 @@ class FounderscQuantOpenCLIAdapter(BrokerAdapter):
         capabilities = capabilities if isinstance(capabilities, dict) else {}
         field_readback = row.get("field_readback")
         field_readback = field_readback if isinstance(field_readback, dict) else {}
+        timed_price = _broker_number(field_readback.get("price"))
         timed_readback_safe = self.route != "timed-order" or (
             str(field_readback.get("strategy_name") or "")
             == f"xiaocao-readback-{plan.trade_date}-{_bare_code(plan.code)}"
             and str(field_readback.get("date") or "") == plan.trade_date
             and str(field_readback.get("hour") or "") == "9"
             and str(field_readback.get("minute") or "") == "30"
+            and str(field_readback.get("price_semantics") or "")
+            == "numeric_limit"
+            and field_readback.get("numeric_price_option_count") == 1
+            and timed_price is not None
+            and math.isclose(timed_price, plan.limit_price, abs_tol=1e-6)
         )
         safe = (
             str(row.get("environment") or "").strip().lower() == plan.environment
+            and row.get("environment_proof_complete") is True
+            and str(row.get("environment_data_namespace") or "").strip().lower()
+            == plan.environment
             and str(row.get("logical_account_id") or "").strip()
             == plan.logical_account_id
             and str(row.get("fund_account_fingerprint") or "").strip() == expected

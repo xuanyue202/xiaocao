@@ -52,6 +52,7 @@ def test_default_verify_is_read_only_and_install_requires_explicit_flag(tmp_path
         "README.md",
         "common.mjs",
         "environment.js",
+        "login.js",
         "probe.js",
         "prepare.js",
         "reconcile.js",

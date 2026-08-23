@@ -1,4 +1,4 @@
-export const TEMPLATE_VERSION = 3;
+export const TEMPLATE_VERSION = 5;
 export const SITE = 'foundersc-quant';
 export const DEFAULT_BASE_URL = (
     'https://quant.foundersc.com/qtassets/dist/index.html'
@@ -19,6 +19,10 @@ export const RECEIPT_COLUMNS = Object.freeze([
     'status',
     'environment',
     'expected_environment',
+    'environment_data_namespace',
+    'environment_proof_complete',
+    'environment_resource_count',
+    'fund_account_match_count',
     'logical_account_id',
     'account_binding',
     'login_account_fingerprint',
@@ -89,6 +93,29 @@ export const ENVIRONMENT_SCRIPT = String.raw`(() => {
         : liveLabelMatches === 1 && mockLabelMatches === 0
             ? 'live'
             : 'unknown';
+    const resourceNames = typeof performance?.getEntriesByType === 'function'
+        ? performance.getEntriesByType('resource')
+            .map((entry) => String(entry?.name || ''))
+        : [];
+    const namespaceForResource = (name) => {
+        let path = '';
+        try {
+            path = new URL(name, location.href).pathname;
+        } catch {
+            return '';
+        }
+        if (/^\/qt\/(?:user|task)\/mock\//.test(path)) return 'mock';
+        if (/^\/qt\/task\/(?!mock\/)/.test(path)) return 'live';
+        if (/^\/qt\/user\/(?:getFund|getStock|getEntrust|getDeal)/.test(path)) {
+            return 'live';
+        }
+        return '';
+    };
+    const dataNamespaces = resourceNames.map(namespaceForResource)
+        .filter((value) => value);
+    const environmentDataNamespace = dataNamespaces.at(-1) || 'unknown';
+    const environmentProofComplete = environment !== 'unknown'
+        && environmentDataNamespace === environment;
     const accountMatches = [...body.matchAll(/\b1\d{10}\b/g)]
         .map((match) => match[0]);
     const maskedAccount = accountMatches.length > 0
@@ -108,6 +135,9 @@ export const ENVIRONMENT_SCRIPT = String.raw`(() => {
         live_label_matches: liveLabelMatches,
         mock_action_matches: mockActionMatches,
         live_action_matches: liveActionMatches,
+        environment_data_namespace: environmentDataNamespace,
+        environment_proof_complete: environmentProofComplete,
+        environment_resource_count: dataNamespaces.length,
         login_account_fingerprint: maskedAccount,
         fund_account_fingerprint: '',
         fund_account_match_count: 0,
@@ -568,8 +598,21 @@ export async function navigate(page, route) {
     return url;
 }
 
+export async function navigateFresh(page, route) {
+    const url = `${configuredBaseUrl()}?opencli_env_probe=${Date.now()}${route}`;
+    await page.goto(url, {
+        waitUntil: 'domcontentloaded',
+        settleMs: 1000,
+        timeout: 45000,
+    });
+    await page.wait({time: 1});
+    return url;
+}
+
 export async function readEnvironment(page) {
     let state = null;
+    let stableSignature = '';
+    let stableReadCount = 0;
     for (let attempt = 0; attempt < 30; attempt += 1) {
         state = await page.evaluate(ENVIRONMENT_SCRIPT);
         if (!state || typeof state !== 'object') {
@@ -577,6 +620,22 @@ export async function readEnvironment(page) {
         }
         if (state.environment !== 'unknown'
                 || state.auth_state !== 'unknown') {
+            const signature = JSON.stringify([
+                state.environment,
+                state.auth_state,
+                state.route,
+                state.environment_data_namespace,
+                state.environment_proof_complete,
+            ]);
+            if (signature === stableSignature) stableReadCount += 1;
+            else {
+                stableSignature = signature;
+                stableReadCount = 1;
+            }
+            if (stableReadCount < 5) {
+                await page.wait({time: 0.5});
+                continue;
+            }
             if (state.environment !== 'unknown'
                     && state.fund_account_match_count !== 1) {
                 for (let accountAttempt = 0; accountAttempt < 3; accountAttempt += 1) {
@@ -624,7 +683,53 @@ export function environmentGate(state, expectedEnvironment) {
             reconcile_required: false,
         };
     }
+    if (state.environment_proof_complete !== true
+            || state.environment_data_namespace !== expectedEnvironment) {
+        return {
+            status: 'unknown',
+            reason: 'environment_ui_data_namespace_mismatch',
+            reconcile_required: true,
+        };
+    }
+    if (state.fund_account_match_count !== 1) {
+        return {
+            status: 'unknown',
+            reason: 'environment_authenticated_account_readback_missing',
+            reconcile_required: true,
+        };
+    }
     return null;
+}
+
+export function carryEnvironmentProof(preflightState, currentState) {
+    const preflight = preflightState && typeof preflightState === 'object'
+        ? preflightState
+        : {};
+    const current = currentState && typeof currentState === 'object'
+        ? currentState
+        : {};
+    const currentNamespace = current.environment_data_namespace || 'unknown';
+    const currentProofComplete = current.environment_proof_complete === true
+        && ['mock', 'live'].includes(current.environment)
+        && currentNamespace === current.environment;
+    const sameTabEnvironment = preflight.environment_proof_complete === true
+        && ['mock', 'live'].includes(preflight.environment)
+        && current.environment === preflight.environment
+        && current.auth_state === 'authenticated'
+        && current.switcher_count === 1
+        && (currentNamespace === 'unknown'
+            || currentNamespace === preflight.environment_data_namespace);
+    const carriedProof = !currentProofComplete && sameTabEnvironment;
+    return {
+        ...current,
+        environment_data_namespace: carriedProof
+            ? preflight.environment_data_namespace
+            : currentNamespace,
+        environment_proof_complete: currentProofComplete || carriedProof,
+        environment_proof_source: carriedProof
+            ? 'same_tab_assets_preflight'
+            : current.environment_proof_source || '',
+    };
 }
 
 export function baseReceipt(templateName, route, expectedEnvironment, state, fields = {}) {
@@ -634,6 +739,14 @@ export function baseReceipt(templateName, route, expectedEnvironment, state, fie
         status: 'unknown',
         environment: state?.environment || 'unknown',
         expected_environment: expectedEnvironment,
+        environment_data_namespace:
+            state?.environment_data_namespace || 'unknown',
+        environment_proof_complete:
+            state?.environment_proof_complete === true,
+        environment_resource_count:
+            Number(state?.environment_resource_count || 0),
+        fund_account_match_count:
+            Number(state?.fund_account_match_count || 0),
         logical_account_id: fields.logical_account_id || 'primary',
         account_binding: state?.account_binding || 'not_proven',
         login_account_fingerprint: state?.login_account_fingerprint || '',

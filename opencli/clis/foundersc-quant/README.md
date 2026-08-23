@@ -1,9 +1,10 @@
 # Founder Securities OpenCLI templates
 
-Template version: `3`
+Template version: `5`
 Site: `foundersc-quant`
-Scope: no-submit probe/preparation/reconciliation/recovery plus verified
-mock/live environment switching.
+Scope: secure persistent-session login, no-submit
+probe/preparation/reconciliation/recovery, and verified mock/live environment
+switching.
 
 These templates are the browser-side adapter surface for the Xiaocao
 `BookBLiveExecution.execute(plan, broker_adapter)` seam. They deliberately do
@@ -21,7 +22,11 @@ python3 scripts/install_opencli_foundersc_quant_template.py --install
 
 The first command is the default, read-only hash check. Only `--install`
 writes the fixed template file set into `~/.opencli/clis/foundersc-quant`;
-the installer does not read credentials or account configuration.
+the installer does not read credentials or account configuration. The
+installed `login` command is the only template command allowed to read a
+credential: it reads the fixed `xiaocao.foundersc.quant.login` Keychain item
+inside the OpenCLI process and never accepts or emits the account or password
+as an argument, log field, receipt field, or exception message.
 
 Run the repository preflight separately when Keychain readiness must be
 checked. It emits only presence, length, match and access-status booleans; it
@@ -45,6 +50,8 @@ not place that mode in unattended morning automation until it returns
 ## Commands
 
 ```text
+opencli foundersc-quant login -f json
+
 opencli foundersc-quant probe \
   --expected-environment mock \
   --logical-account-id primary \
@@ -71,25 +78,41 @@ opencli foundersc-quant recover \
   --logical-account-id primary -f json
 ```
 
+`login` visits the persistent session and accepts an existing session only
+when it proves an authenticated mock baseline: UI label, mock request namespace
+and the authenticated fund-account readback must all agree. Otherwise it fills
+the unique phone/password controls from the fixed Keychain item and clicks the
+unique `登录模拟盘` control. It then requires the same safe mock proof. CAPTCHA,
+SMS, ambiguous controls or a failed readback return `auth_required` or
+`unknown`; the command does not retry a login.
+
 `prepare` supports `manual-limit`, `opening-auction`, and `timed-order`.
 Manual limit never clicks `买入` or `卖出`; because the observed page does not
 prove a separate non-submitting side selector, `prepare --route manual-limit`
 reports a capability gap instead of claiming the requested side was selected.
-Opening auction and timed order
-open the form, fill only the requested fields, read them back, and close the
-empty form with its exact `取消` control. They never click `保存`, `启动`, or
-`确定`.
+Opening auction opens the form, fills only the requested fields, reads them
+back, and closes the empty form with its exact `取消` control. Timed order must
+first prove that the requested numeric limit is one native price option. The
+observed timed-order widget instead offers quote-derived values such as
+`现价`, `买一`, `卖一`, and `开盘价`; writing a decimal into its inner input does
+not select the Angular model. In that shape `prepare --route timed-order`
+returns `timed_order_numeric_limit_not_supported` and closes the form. These
+read-only routes never click `保存`, `启动`, or `确定`.
 
-`environment` changes only the unique mock/live switcher and then requires an
-exact environment readback. It never logs in, reads credentials, prepares a
-capital action, saves a strategy, or submits an order. Use a second verified
-call with `--target mock --expected-current live` to restore the sensor-safe
-default after an isolated live-page probe.
+`environment` changes only the unique mock/live switcher and then requires the
+same tab to agree at two layers: the visible mock/live label and the most
+recent environment-specific request namespace (`/qt/.../mock/...` versus the
+live namespace). This catches an already-open tab whose in-memory UI did not
+follow a shared local-storage change. It never logs in, reads credentials,
+prepares a capital action, saves a strategy, or submits an order. Use a second
+verified call with `--target mock --expected-current live` to restore the
+sensor-safe default after an isolated live-page probe.
 
 `FZZQ_QUANT_BASE_URL` may override the configured page root, but it is accepted
 only when it remains the exact Founder Securities origin and path. Credentials,
 passwords, Keychain values, cookies, local storage and security-control data
-are not read or printed by these templates.
+are not read or printed by any other command. The login password is used only
+for the bounded login action and is never returned.
 
 ## Common JSON receipt
 
@@ -99,7 +122,7 @@ are:
 ```json
 {
   "template_name": "foundersc-quant/reconcile",
-  "template_version": 3,
+  "template_version": 5,
   "status": "reconciled",
   "environment": "mock",
   "expected_environment": "mock",
@@ -159,7 +182,7 @@ opaque manual route is not unique, it
 returns `reconciled_partial`, `reconcile_complete=false`, and
 `reconcile_required=true`; this is not a conclusive broker outcome.
 
-Template v3 also exposes a strict `allocation_summary` from either one unique
+Template v5 also exposes a strict `allocation_summary` from either one unique
 asset-summary card set or one unique table row containing `总资产`, `证券市值`,
 and `可用资金`. Ambiguous/missing labels or disagreeing sources keep the summary
 incomplete. The page-side `fund_account_fingerprint` is masked; Xiaocao compares
@@ -174,8 +197,10 @@ evidence.
 
 ## Failure and recovery contract
 
-- A login/security-control page returns `status=auth_required`; the template
-  stops and waits for the user. It never fills a password.
+- Read-only commands return `status=auth_required` on a login/security-control
+  page. The explicit `login` command alone may fill the Keychain-backed login
+  password; CAPTCHA, SMS or an unproven post-login state still stops for the
+  user.
 - A correctly identified environment without a proven fund-account binding
   returns `status=unknown` from `probe` with
   `status_reason=account_fingerprint_not_proven`; it is not readiness for a
@@ -184,6 +209,9 @@ evidence.
   trigger-time field with the actual page readback. A mismatch is a
   `capability_gap`; a matching form is still not submit-ready unless the
   account binding is proven.
+- A visible environment label whose request namespace belongs to the other
+  environment returns `environment_ui_data_namespace_mismatch`; no prepare or
+  switch receipt may treat that tab as ready.
 - A non-unique environment container, route shell, or required field returns
   `status=unknown` or `status=capability_gap` with `reconcile_required=true`
   where the page state may be ambiguous.
@@ -214,6 +242,18 @@ The templates preserve the research gaps rather than hiding them:
   row-level cancellation fact has been proven.
 - The opening-auction route does not natively express
   `min(frozen_open * 1.005, basket_price)`.
+- The timed-order route has a native create/start/stop lifecycle in mock, but
+  its quote-derived price selector cannot express that numeric limit either.
+  `开盘价` at 09:30 is only an experiment approximation: it omits the 0.5%
+  tolerance and basket abandon cap. A pricing condition is also not equivalent
+  because it waits for a threshold crossing before sending a quote-relative
+  order.
+- Price-segment and time-segment algorithms also use a numeric entry trigger
+  followed by the same quote-derived price selector, then intentionally emit
+  repeated child orders by price or time interval. They change both trigger
+  and slicing semantics, so they cannot substitute for Book B's one-shot
+  bounded limit order. TWAP, VWAP, iceberg and combination algorithms remain
+  separate execution policies rather than fallback routes.
 - Pagination/virtual-scroll scans are bounded at 100 pages/steps and remain
   incomplete when the page exposes an ambiguous control or fails to reach a
   terminal boundary.

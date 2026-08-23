@@ -10,12 +10,16 @@ browser templates under `opencli/clis/foundersc-quant/`.
 2. Install only after an explicit user request:
    `python3 scripts/install_opencli_foundersc_quant_template.py --install`.
 3. Run `scripts/foundersc_keychain_preflight.py` when credential readiness or
-   the masked login-page binding must be checked. `--read-secrets` is bounded
-   and must remain outside unattended automation while it reports an ACL
-   prompt.
-4. Use `probe`, then the needed `environment`, `prepare`, `reconcile`, or
+   the masked login-page binding must be checked. The user has authorized the
+   fixed login item for unattended use after its Keychain ACL is configured.
+4. Use `login` to read only the fixed
+   `xiaocao.foundersc.quant.login` item. It may pass the phone and login secret
+   directly into the unique native login controls, but must never print, log,
+   persist, or return either raw value. All other templates remain
+   credential-free.
+5. Use `probe`, then the needed `environment`, `prepare`, `reconcile`, or
    `recover` command.
-5. Treat `unknown`, `capability_gap`, and `reconciled_partial` as readback
+6. Treat `unknown`, `capability_gap`, and `reconciled_partial` as readback
    gaps. Reconcile the same session before any future action.
 
 When more than one Browser Bridge is connected, the live-morning runner selects
@@ -27,8 +31,10 @@ including a short diagnostic prefix, but never parses arbitrary page text.
 
 ## Current contract
 
-The templates are no-submit phase-one adapters. They do not read credentials,
-save or start strategies, submit orders, or withdraw orders.
+The templates are no-submit phase-one adapters. Only `login` reads the fixed
+login Keychain item under the bounded contract above. No template reads the
+trade password, saves or starts strategies, submits orders, or withdraws
+orders.
 `environment` may change only the unique mock/live switcher and must verify the
 exact target environment readback; it is not a submit route and should be
 restored to mock after an isolated live-page probe. `submit_capability=false`
@@ -72,7 +78,7 @@ binding, missing broker allocation facts, missing capital keys, or incomplete
 reconciliation remain terminal fail-closed states. The paper writer and its
 Automation stay unchanged.
 
-Template v3 extracts `总资产` / `证券市值` / `可用资金` from one unique asset
+Template v5 extracts `总资产` / `证券市值` / `可用资金` from one unique asset
 card set or one unique agreeing table shape. It compares the page's masked
 fund-account fingerprint with Keychain trade-account metadata in-process,
 persists only the binding hash, and rejects missing, mismatched, wrong-date, or

@@ -6,8 +6,10 @@ import {
     SITE,
     asSingleReceipt,
     baseReceipt,
+    carryEnvironmentProof,
     environmentGate,
     navigate,
+    navigateFresh,
     normalizeAuctionMinute,
     normalizeAuctionSeconds,
     normalizeCode,
@@ -696,7 +698,6 @@ function timedOrderScript(input, {dialogAlreadyOpen = false} = {}) {
         setValue(taskName, ${JSON.stringify(input.strategyName)});
         setValue(code, ${JSON.stringify(input.code)});
         setValue(quantity, ${JSON.stringify(String(input.quantity))});
-        setValue(price, ${JSON.stringify(String(input.price))});
         direction.click();
         let sideMatches = [];
         for (let attempt = 0; attempt < 20; attempt += 1) {
@@ -715,6 +716,49 @@ function timedOrderScript(input, {dialogAlreadyOpen = false} = {}) {
         await waitForPage(100);
         if (direction.value !== ${JSON.stringify(input.side)}) {
             result.reason = 'timed_order_side_readback_mismatch';
+            await close();
+            return result;
+        }
+        price.click();
+        const knownPriceTypes = [
+            '现价', '买一', '买二', '买三', '买四', '买五',
+            '卖一', '卖二', '卖三', '卖四', '卖五',
+            '涨停价', '跌停价', '开盘价', '昨收价', '最高价', '最低价',
+        ];
+        let availablePriceTypes = [];
+        let numericPriceMatches = [];
+        for (let attempt = 0; attempt < 20; attempt += 1) {
+            await waitForPage(100);
+            availablePriceTypes = knownPriceTypes.filter((text) => (
+                exactLeaves(document.body, text)
+                    .filter((node) => node.tagName === 'LI').length === 1
+            ));
+            numericPriceMatches = exactLeaves(
+                document.body,
+                ${JSON.stringify(String(input.price))}
+            ).filter((node) => node.tagName === 'LI');
+            if (availablePriceTypes.length > 0 || numericPriceMatches.length > 0) {
+                break;
+            }
+        }
+        result.locator_counts.price_type_options = availablePriceTypes.length;
+        result.locator_counts.numeric_price_options = numericPriceMatches.length;
+        if (numericPriceMatches.length !== 1) {
+            result.reason = 'timed_order_numeric_limit_not_supported';
+            result.field_readback = {
+                available_price_types: availablePriceTypes,
+                requested_limit_price: ${JSON.stringify(String(input.price))},
+                submitted: false,
+                saved: false,
+                started: false,
+            };
+            await close();
+            return result;
+        }
+        numericPriceMatches[0].click();
+        await waitForPage(100);
+        if (price.value !== ${JSON.stringify(String(input.price))}) {
+            result.reason = 'timed_order_price_readback_mismatch';
             await close();
             return result;
         }
@@ -761,6 +805,8 @@ function timedOrderScript(input, {dialogAlreadyOpen = false} = {}) {
             code: code.value,
             side: direction.value,
             price: price.value,
+            price_semantics: 'numeric_limit',
+            numeric_price_option_count: numericPriceMatches.length,
             quantity: quantity.value,
             date: date.value,
             hour: hourSelects[0].selectedOptions[0]?.textContent?.trim() || '',
@@ -863,8 +909,37 @@ cli({
         const details = routeDetails(input);
         let state;
         try {
+            await navigateFresh(page, ROUTES.assets);
+            const preflightState = await readEnvironment(page);
+            const preflightGate = environmentGate(
+                preflightState,
+                input.expectedEnvironment
+            );
+            if (preflightGate) {
+                return asSingleReceipt(baseReceipt(
+                    TEMPLATE_NAME,
+                    details.route,
+                    input.expectedEnvironment,
+                    preflightState,
+                    {
+                        status: preflightGate.status,
+                        status_reason: preflightGate.reason,
+                        logical_account_id: input.logicalAccountId,
+                        reconcile_required: preflightGate.reconcile_required,
+                        field_readback: {},
+                        locator_proof: {
+                            environment_preflight_route: ROUTES.assets,
+                            environment_proof_complete:
+                                preflightState.environment_proof_complete === true,
+                            environment_data_namespace:
+                                preflightState.environment_data_namespace || 'unknown',
+                        },
+                    }
+                ));
+            }
             await navigate(page, details.route);
-            state = await readEnvironment(page);
+            const routeState = await readEnvironment(page);
+            state = carryEnvironmentProof(preflightState, routeState);
             const gate = environmentGate(state, input.expectedEnvironment);
             if (gate) {
                 return asSingleReceipt(baseReceipt(

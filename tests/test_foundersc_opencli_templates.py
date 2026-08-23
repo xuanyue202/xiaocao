@@ -6,7 +6,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).parents[1]
 TEMPLATE_ROOT = ROOT / "opencli" / "clis" / "foundersc-quant"
-COMMANDS = ("probe", "prepare", "reconcile", "recover", "environment")
+COMMANDS = ("login", "probe", "prepare", "reconcile", "recover", "environment")
 
 
 def _source(name: str) -> str:
@@ -14,7 +14,7 @@ def _source(name: str) -> str:
 
 
 def test_foundersc_template_registry_is_versioned_and_read_only_first_phase():
-    assert _source("common.mjs").count("TEMPLATE_VERSION = 3") == 1
+    assert _source("common.mjs").count("TEMPLATE_VERSION = 5") == 1
     for command in COMMANDS:
         source = _source(f"{command}.js")
         assert "site: SITE" in source
@@ -30,8 +30,12 @@ def test_shared_navigation_is_bounded_and_edge_compatible():
     assert "waitUntil: 'domcontentloaded'" in common
     assert "timeout: 45000" in common
     assert "for (let attempt = 0; attempt < 30; attempt += 1)" in common
+    assert "stableReadCount < 5" in common
+    assert "JSON.stringify([" in common
     assert "state.auth_state !== 'unknown'" in common
     assert "await page.wait({time: 1})" in common
+    assert "export async function navigateFresh" in common
+    assert "opencli_env_probe=" in common
 
 
 def test_account_binding_uses_same_origin_base_info_without_returning_raw_account():
@@ -52,15 +56,16 @@ def test_account_binding_uses_same_origin_base_info_without_returning_raw_accoun
     assert "资金账号[^0-9]" not in common
 
 
-def test_common_receipt_documentation_matches_template_version_three():
+def test_common_receipt_documentation_matches_template_version_five():
     readme = _source("README.md")
-    assert '"template_version": 3' in readme
+    assert '"template_version": 5' in readme
     assert '"template_version": 1' not in readme
 
 
 def test_template_javascript_uses_repository_four_space_indentation():
     for name in (
         "common.mjs",
+        "login.js",
         "environment.js",
         "probe.js",
         "prepare.js",
@@ -169,6 +174,56 @@ def test_no_template_clicks_a_broker_action_or_reads_credentials():
     assert r"\b\d{8,20}\b" in source
 
 
+def test_login_reads_only_the_fixed_keychain_item_and_redacts_process_output():
+    source = _source("login.js")
+
+    assert "xiaocao.foundersc.quant.login" in source
+    assert "spawnSync" in source
+    assert "find-generic-password" in source
+    assert "'-w'" in source
+    assert "timeout: 8000" in source
+    assert "maxBuffer: 16384" in source
+    assert "access: 'write'" in source
+    assert "password_secret_present" in source
+    assert "login_account_fingerprint" in source
+    assert "password_value" not in source
+    assert "account_value" not in source
+    assert "console.log" not in source
+    assert "process.argv" not in source
+    assert "kwargs.password" not in source
+    assert "kwargs.account" not in source
+    for forbidden in ("保存", "启动", "买入", "卖出", "撤单"):
+        assert forbidden not in source
+
+
+def test_login_uses_exact_login_controls_and_requires_authenticated_readback():
+    source = _source("login.js")
+
+    for marker in (
+        'input[placeholder="请输入手机号码"]',
+        'input[placeholder="请输入量化平台密码"]',
+        "登录模拟盘",
+        "data-opencli-foundersc-login-target",
+        "page.evaluate(loginFillScript(account, secret))",
+        "await page.click",
+        "for (let attempt = 0; attempt < 10; attempt += 1)",
+        "readEnvironment(page)",
+        "login_authenticated",
+        "login_readback_not_authenticated",
+        "login_button_disabled",
+        "password_error",
+        "captcha_required",
+        "sms_required",
+        "account_locked",
+        "observed_route",
+    ):
+        assert marker in source
+    assert "submitted: false" in source
+    assert "saved: false" in source
+    assert "started: false" in source
+    assert "submit_capability: false" in source
+
+
 def test_environment_command_only_switches_the_unique_environment_control():
     source = _source("environment.js")
     assert "data-opencli-foundersc-environment-target" in source
@@ -176,6 +231,9 @@ def test_environment_command_only_switches_the_unique_environment_control():
     assert "点击切换至模拟盘" in source
     assert "await page.click" in source
     assert "environment_switch_readback_mismatch" in source
+    assert "environment_data_namespace" in source
+    assert "environment_proof_complete" in source
+    assert "environment_ui_data_namespace_mismatch" in source
     assert "submit_capability: false" in source
     for forbidden in ("保存", "启动", "买入", "卖出", "撤单"):
         assert forbidden not in source

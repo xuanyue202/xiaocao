@@ -52,7 +52,7 @@ def test_live_morning_is_a_separate_0920_fail_closed_task() -> None:
     assert live["id"] != paper["id"]
     assert live["rrule"].endswith(";BYHOUR=9;BYMINUTE=20")
     assert "scripts/book_b_live_morning.py" in live["prompt"]
-    assert "--route timed-order" in live["prompt"]
+    assert "--route manual-limit" in live["prompt"]
     assert "dated deterministic freeze" in live["prompt"]
     assert "broker-sourced allocation facts" in live["prompt"]
     assert "never run or wait for `morning-execute`" in live["prompt"]
@@ -64,6 +64,7 @@ def test_live_morning_is_a_separate_0920_fail_closed_task() -> None:
         encoding="utf-8"
     )
     assert "release_foundersc_opencli_site_session(profile)" in live_script
+    assert "broker.ensure_login()" in live_script
 
 
 def test_auto_daily_exposes_separate_morning_stage_commands() -> None:

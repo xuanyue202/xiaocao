@@ -50,7 +50,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument(
         "--route",
         choices=("manual-limit", "opening-auction", "timed-order"),
-        default="timed-order",
+        default="manual-limit",
     )
     parser.add_argument("--freeze-wait-seconds", type=float, default=600.0)
     parser.add_argument("--poll-seconds", type=float, default=1.0)
@@ -80,6 +80,14 @@ def main(argv: list[str] | None = None) -> int:
             ),
         )
 
+    def preflight() -> dict:
+        broker.ensure_login()
+        return broker.ensure_environment(
+            target="live",
+            expected_current="mock",
+            logical_account_id="primary",
+        )
+
     receipt = run_book_b_live_morning(
         BookBLiveMorningConfig(
             trade_date=trade_date,
@@ -88,11 +96,7 @@ def main(argv: list[str] | None = None) -> int:
             state_dir=Path(args.state_dir),
             logical_account_id="primary",
         ),
-        preflight=lambda: broker.ensure_environment(
-            target="live",
-            expected_current="any",
-            logical_account_id="primary",
-        ),
+        preflight=preflight,
         restore_environment=lambda: broker.ensure_environment(
             target="mock",
             expected_current="any",

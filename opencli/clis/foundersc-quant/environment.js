@@ -6,7 +6,7 @@ import {
     SITE,
     asSingleReceipt,
     baseReceipt,
-    navigate,
+    navigateFresh,
     normalizeEnvironment,
     normalizeLogicalAccountId,
     pageScript,
@@ -108,7 +108,7 @@ cli({
         const input = parseInput(kwargs);
         let state;
         try {
-            await navigate(page, ROUTES.assets);
+            await navigateFresh(page, ROUTES.assets);
             state = await readEnvironment(page);
             if (state.auth_state !== 'authenticated' || state.environment === 'unknown') {
                 return receipt(state, input, {
@@ -147,17 +147,35 @@ cli({
             }
             const fromEnvironment = state.environment;
             if (fromEnvironment === input.target) {
+                const namespaceProof = state.environment_proof_complete === true
+                    && state.environment_data_namespace === input.target;
+                const accountProof = state.fund_account_match_count === 1;
+                const proofComplete = namespaceProof && accountProof;
                 return receipt(state, input, {
-                    status: 'environment_ready',
-                    status_reason: 'already_in_target_environment',
+                    status: proofComplete ? 'environment_ready' : 'unknown',
+                    status_reason: proofComplete
+                        ? 'already_in_target_environment'
+                        : namespaceProof
+                            ? 'environment_authenticated_account_readback_missing'
+                            : 'environment_ui_data_namespace_mismatch',
                     field_readback: {
                         from_environment: fromEnvironment,
                         to_environment: state.environment,
                         changed: false,
                     },
-                    reconcile_required: state.account_binding !== 'proven',
-                    locator_proof: {switch_action_count: 0, readback_match: true},
-                    capabilities: {submit: false, environment_switch: true},
+                    reconcile_required: !proofComplete
+                        || state.account_binding !== 'proven',
+                    locator_proof: {
+                        switch_action_count: 0,
+                        readback_match: proofComplete,
+                        environment_data_namespace:
+                            state.environment_data_namespace || 'unknown',
+                        environment_proof_complete: proofComplete,
+                    },
+                    capabilities: {
+                        submit: false,
+                        environment_switch: proofComplete,
+                    },
                 });
             }
             const target = await page.evaluate(switchTargetScript(input.target));
@@ -176,25 +194,48 @@ cli({
                 });
             }
             await page.click(`[${TARGET_ATTRIBUTE}="switch-environment"]`);
+            await navigateFresh(page, ROUTES.assets);
             let finalState = state;
             for (let attempt = 0; attempt < 30; attempt += 1) {
                 await page.evaluate(WAIT_SCRIPT);
                 finalState = await readEnvironment(page);
-                if (finalState.environment === input.target) break;
+                if (finalState.environment === input.target
+                        && finalState.environment_proof_complete === true
+                        && finalState.environment_data_namespace === input.target
+                        && finalState.fund_account_match_count === 1) {
+                    break;
+                }
             }
-            const readbackMatch = finalState.environment === input.target;
+            const readbackMatch = finalState.environment === input.target
+                && finalState.environment_proof_complete === true
+                && finalState.environment_data_namespace === input.target
+                && finalState.fund_account_match_count === 1;
+            const namespaceMatch = finalState.environment === input.target
+                && finalState.environment_proof_complete === true
+                && finalState.environment_data_namespace === input.target;
             return receipt(finalState, input, {
                 status: readbackMatch ? 'environment_switched' : 'unknown',
                 status_reason: readbackMatch
                     ? 'environment_switch_readback_completed'
-                    : 'environment_switch_readback_mismatch',
+                    : namespaceMatch
+                        ? 'environment_authenticated_account_readback_missing'
+                        : finalState.environment === input.target
+                            ? 'environment_ui_data_namespace_mismatch'
+                        : 'environment_switch_readback_mismatch',
                 field_readback: {
                     from_environment: fromEnvironment,
                     to_environment: finalState.environment,
                     changed: readbackMatch,
                 },
                 reconcile_required: true,
-                locator_proof: {...target, readback_match: readbackMatch},
+                locator_proof: {
+                    ...target,
+                    readback_match: readbackMatch,
+                    environment_data_namespace:
+                        finalState.environment_data_namespace || 'unknown',
+                    environment_proof_complete:
+                        finalState.environment_proof_complete === true,
+                },
                 capabilities: {
                     submit: false,
                     environment_switch: readbackMatch,

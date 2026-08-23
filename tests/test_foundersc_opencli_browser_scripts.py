@@ -153,6 +153,11 @@ function context(body, hash) {
         setTimeout,
         clearTimeout,
         AbortController,
+        performance: {
+            getEntriesByType: (type) => type === 'resource'
+                ? (body.resourceEntries || [])
+                : [],
+        },
         URL,
         Promise,
         Set,
@@ -242,8 +247,19 @@ const sideList = element('ul', '', {}, [
     element('li', '买入'),
     element('li', '卖出'),
 ]);
+const timedPriceList = element('ul', '', {}, [
+    element('li', '现价'),
+    element('li', '买一'),
+    element('li', '卖一'),
+    element('li', '开盘价'),
+]);
 direction.click = () => {
     if (!timedBody.children.includes(sideList)) timedBody.children.push(sideList);
+};
+price.click = () => {
+    if (!timedBody.children.includes(timedPriceList)) {
+        timedBody.children.push(timedPriceList);
+    }
 };
 sideList.children[0].click = () => {
     direction.value = '买入';
@@ -386,15 +402,68 @@ const ambiguousManual = await evaluate(
     ]),
     '#/home/myAccount/assets',
 );
+const mockEnvironmentBody = element('body', '', {}, [
+    element('div', '', {class: 'switcher___KVAWw'}, [
+        element('span', '模拟盘交易'),
+    ]),
+    element('span', '资金账号：9876543210'),
+]);
+mockEnvironmentBody.resourceEntries = [
+    {name: 'https://quant.foundersc.com/qt/user/mock/getFund'},
+];
 const environment = await evaluate(
     common.ENVIRONMENT_SCRIPT,
-    element('body', '', {}, [
-        element('div', '', {class: 'switcher___KVAWw'}, [
-            element('span', '模拟盘交易'),
-        ]),
-        element('span', '资金账号：9876543210'),
-    ]),
+    mockEnvironmentBody,
     '#/home/myAccount/assets',
+);
+const staleMockBody = element('body', '', {}, [
+    element('div', '', {class: 'switcher___KVAWw'}, [
+        element('span', '模拟盘交易'),
+    ]),
+]);
+staleMockBody.resourceEntries = [
+    {name: 'https://quant.foundersc.com/qt/user/getFund'},
+];
+const staleEnvironment = await evaluate(
+    common.ENVIRONMENT_SCRIPT,
+    staleMockBody,
+    '#/home/myAccount/assets',
+);
+const staleEnvironmentGate = common.environmentGate(staleEnvironment, 'mock');
+const carriedEnvironment = common.carryEnvironmentProof(
+    environment,
+    {
+        ...environment,
+        route: '#/home/conditionStrategy/active',
+        environment_data_namespace: 'unknown',
+        environment_proof_complete: false,
+    },
+);
+const rejectedCarry = common.carryEnvironmentProof(
+    environment,
+    {
+        ...environment,
+        environment: 'live',
+        route: '#/home/conditionStrategy/active',
+        environment_data_namespace: 'unknown',
+        environment_proof_complete: false,
+    },
+);
+const rejectedOppositeNamespaceCarry = common.carryEnvironmentProof(
+    environment,
+    {
+        ...environment,
+        route: '#/home/conditionStrategy/active',
+        environment_data_namespace: 'live',
+        environment_proof_complete: false,
+    },
+);
+const missingAuthenticatedAccountGate = common.environmentGate(
+    {
+        ...environment,
+        fund_account_match_count: 0,
+    },
+    'mock',
 );
 const accountApi = await vm.runInNewContext(
     common.FUND_ACCOUNT_SCRIPT,
@@ -436,6 +505,12 @@ console.log(JSON.stringify({
     uniqueManual,
     ambiguousManual,
     environment,
+    staleEnvironment,
+    staleEnvironmentGate,
+    carriedEnvironment,
+    rejectedCarry,
+    rejectedOppositeNamespaceCarry,
+    missingAuthenticatedAccountGate,
     accountApi,
     shortAccountApi,
     exactRoute,
@@ -476,9 +551,42 @@ console.log(JSON.stringify({
     assert payload["uniqueManual"]["route_available"] is True
     assert payload["ambiguousManual"]["route_available"] is False
     assert payload["environment"]["environment"] == "mock"
+    assert payload["environment"]["environment_data_namespace"] == "mock"
+    assert payload["environment"]["environment_proof_complete"] is True
+    assert payload["environment"]["environment_resource_count"] == 1
     assert payload["environment"]["switcher_count"] == 1
     assert payload["environment"]["fund_account_fingerprint"] == ""
     assert payload["environment"]["fund_account_match_count"] == 0
+    assert payload["staleEnvironment"]["environment"] == "mock"
+    assert payload["staleEnvironment"]["environment_data_namespace"] == "live"
+    assert payload["staleEnvironment"]["environment_proof_complete"] is False
+    assert payload["staleEnvironmentGate"] == {
+        "status": "unknown",
+        "reason": "environment_ui_data_namespace_mismatch",
+        "reconcile_required": True,
+    }
+    assert payload["carriedEnvironment"]["environment_proof_complete"] is True
+    assert (
+        payload["carriedEnvironment"]["environment_proof_source"]
+        == "same_tab_assets_preflight"
+    )
+    assert payload["carriedEnvironment"]["route"] == (
+        "#/home/conditionStrategy/active"
+    )
+    assert payload["rejectedCarry"]["environment_proof_complete"] is False
+    assert (
+        payload["rejectedOppositeNamespaceCarry"]["environment_data_namespace"]
+        == "live"
+    )
+    assert (
+        payload["rejectedOppositeNamespaceCarry"]["environment_proof_complete"]
+        is False
+    )
+    assert payload["missingAuthenticatedAccountGate"] == {
+        "status": "unknown",
+        "reason": "environment_authenticated_account_readback_missing",
+        "reconcile_required": True,
+    }
     assert payload["accountApi"] == {
         "fund_account_fingerprint": "987******210",
         "fund_account_match_count": 1,
@@ -504,19 +612,134 @@ console.log(JSON.stringify({
     assert payload["manualGap"]["reason"] == "manual_limit_form_or_field_not_unique"
     assert payload["timedTitleClicks"] == 1
     assert payload["timedMenuClicks"] == 1
-    assert payload["timedExpandedMenu"]["route_available"] is True
+    assert payload["timedExpandedMenu"]["route_available"] is False
+    assert (
+        payload["timedExpandedMenu"]["reason"]
+        == "timed_order_numeric_limit_not_supported"
+    )
     assert payload["timedExpandedMenu"]["field_readback"] == {
-        "strategy_name": "readback-probe",
-        "code": "600000",
-        "side": "买入",
-        "price": "10",
-        "quantity": "100",
-        "date": "2026-08-15",
-        "hour": "9",
-        "minute": "30",
-        "risk_agreement_checked": False,
+        "available_price_types": ["现价", "买一", "卖一", "开盘价"],
+        "requested_limit_price": "10",
         "submitted": False,
         "saved": False,
         "started": False,
     }
     assert payload["timedExpandedMenu"]["form_closed_after_readback"] is True
+
+
+def test_login_fill_script_executes_exactly_once_and_returns_no_secret() -> None:
+    common_url = (TEMPLATE_ROOT / "common.mjs").as_uri()
+    login_path = str(TEMPLATE_ROOT / "login.js")
+    node_script = r"""
+import vm from 'node:vm';
+import {readFileSync} from 'node:fs';
+const common = await import(COMMON_URL);
+const source = readFileSync(LOGIN_PATH, 'utf8');
+const functions = source.slice(
+    source.indexOf('const LOGIN_DISCOVERY_SCRIPT'),
+    source.indexOf('function loginReceipt'),
+);
+const login = new Function(
+    'pageScript',
+    'TARGET_ATTRIBUTE',
+    `${functions}; return {loginFillScript};`,
+)(common.pageScript, 'data-opencli-foundersc-login-target');
+
+function node(tag, text, attrs = {}) {
+    return {
+        tagName: tag.toUpperCase(),
+        innerText: text,
+        textContent: text,
+        attrs: {...attrs},
+        value: '',
+        disabled: false,
+        children: [],
+        style: {display: 'block', visibility: 'visible', opacity: '1'},
+        classList: {contains: () => false},
+        getBoundingClientRect: () => ({width: 100, height: 20}),
+        getAttribute(name) { return Object.hasOwn(this.attrs, name) ? this.attrs[name] : null; },
+        setAttribute(name, value) { this.attrs[name] = String(value); },
+        removeAttribute(name) { delete this.attrs[name]; },
+        dispatchEvent: () => true,
+    };
+}
+
+function run(passwordCount) {
+    const phone = node('input', '', {placeholder: '请输入手机号码'});
+    const passwords = Array.from({length: passwordCount}, () => (
+        node('input', '', {placeholder: '请输入量化平台密码'})
+    ));
+    const button = node('button', '登录模拟盘');
+    const all = [phone, ...passwords, button];
+    const document = {
+        body: node('body'),
+        querySelectorAll(selector) {
+            if (selector === 'input[placeholder="请输入手机号码"]') return [phone];
+            if (selector === 'input[placeholder="请输入量化平台密码"]') return passwords;
+            if (selector === 'button') return [button];
+            if (selector === '[data-opencli-foundersc-login-target]') {
+                return all.filter((item) => item.getAttribute(
+                    'data-opencli-foundersc-login-target'
+                ) !== null);
+            }
+            return [];
+        },
+    };
+    const result = vm.runInNewContext(
+        login.loginFillScript('13800138000', 'sensitive-password'),
+        {
+            document,
+            getComputedStyle: (item) => item.style,
+            HTMLInputElement: {prototype: {}},
+            Event: class Event {},
+            setTimeout,
+            Promise,
+            Set,
+            JSON,
+            Number,
+            Object,
+            Array,
+            String,
+        },
+    );
+    return {result, phone, passwords, button};
+}
+
+const exact = run(1);
+const ambiguous = run(2);
+console.log(JSON.stringify({
+    exactResult: exact.result,
+    exactPhoneValue: exact.phone.value,
+    exactPasswordValue: exact.passwords[0].value,
+    exactTarget: exact.button.getAttribute('data-opencli-foundersc-login-target'),
+    ambiguousResult: ambiguous.result,
+}));
+"""
+    node_script = node_script.replace("COMMON_URL", json.dumps(common_url))
+    node_script = node_script.replace("LOGIN_PATH", json.dumps(login_path))
+    result = subprocess.run(
+        [_node(), "--input-type=module", "-e", node_script],
+        cwd=ROOT,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert result.returncode == 0, result.stderr
+    payload = json.loads(result.stdout)
+
+    assert payload["exactResult"] == {
+        "ready": True,
+        "phone_input_count": 1,
+        "password_input_count": 1,
+        "login_button_count": 1,
+        "phone_binding_match": True,
+        "password_secret_present": True,
+        "login_button_disabled": False,
+    }
+    assert payload["exactPhoneValue"] == "13800138000"
+    assert payload["exactPasswordValue"] == "sensitive-password"
+    assert payload["exactTarget"] == "submit-login"
+    assert "13800138000" not in json.dumps(payload["exactResult"])
+    assert "sensitive-password" not in json.dumps(payload["exactResult"])
+    assert payload["ambiguousResult"]["ready"] is False
+    assert payload["ambiguousResult"]["password_input_count"] == 2
