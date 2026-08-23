@@ -4168,6 +4168,25 @@ class SubscriptionVideoService:
             profile=profile,
             timeout_seconds=60,
         )
+        if result.get("status") == "transfer_target_not_unique":
+            # The share UI can finish the hash navigation after the first
+            # bounded read expires.  This status is pre-trigger and carries
+            # no provider effect, so reopen the same bound share once before
+            # classifying the source item as failed.
+            self._opencli_json(
+                lv_session,
+                "open",
+                self.lv.share_url,
+                profile=profile,
+                timeout_seconds=30,
+            )
+            result = self._opencli_json(
+                lv_session,
+                "eval",
+                transfer_script,
+                profile=profile,
+                timeout_seconds=60,
+            )
         action_claim = claim
         if result.get("status") == "save_confirmation_ready":
             selector = str(result.get("confirmation_selector") or "")

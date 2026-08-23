@@ -1042,6 +1042,7 @@ def test_repair_validation_accepts_subscription_video_source_run_profile(
             "lv_transfer_legacy_unobserved_blocker_requires_repair_revision or "
             "lv_transfer_legacy_observability_repair_runs_one_bound_probe or "
             "blocked_legacy_transfer_can_reenter_exact_reconciliation or "
+            "lv_transfer_reopens_share_once_after_target_not_unique or "
             "source_cli_narrow_runner_supports_subscription_video or "
             "transcript_claim_replay_never_repeats_generation_interaction or "
             "source_repair_validation_accepts_pending_resume or "

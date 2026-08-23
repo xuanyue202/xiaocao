@@ -1593,6 +1593,79 @@ def test_lv_transfer_observes_provider_outcome_after_confirmation():
     assert "provider_outcome: 'unobserved'" in _TRANSFER_OUTCOME_SCRIPT
 
 
+def test_lv_transfer_reopens_share_once_after_target_not_unique(tmp_path):
+    service = _service(tmp_path, sleep=lambda _seconds: None)
+    item = service._normalize(
+        _source_rows()[0][1],
+        source=LV_SOURCE,
+        author=LV_AUTHOR,
+    )
+    item.update(
+        {
+            "version_first_seen_at": NOW.isoformat(),
+            "first_seen_at": NOW.isoformat(),
+            "present": True,
+            "work_eligible": True,
+        }
+    )
+    service.ensure_lv_destination = lambda **_kwargs: {"status": "completed"}
+    service._direct_private_entries = lambda **_kwargs: []
+    service._search_private_exact = lambda **_kwargs: []
+    open_calls = 0
+    transfer_eval_calls = 0
+    click_calls = 0
+
+    def opencli(_session, *args, **_kwargs):
+        nonlocal open_calls, transfer_eval_calls, click_calls
+        if args[0] == "open":
+            open_calls += 1
+            return {"url": "sanitized"}
+        if args[0] == "click":
+            click_calls += 1
+            return {"clicked": True, "matches_n": 1}
+        assert args[0] == "eval"
+        if "destinationSegments" in args[1]:
+            transfer_eval_calls += 1
+            if transfer_eval_calls == 1:
+                return {
+                    "status": "transfer_target_not_unique",
+                    "triggered": False,
+                }
+            return {
+                "status": "save_confirmation_ready",
+                "confirmation_selector": (
+                    '[data-xiaocao-lv-confirm="ready"]'
+                ),
+                "triggered": False,
+            }
+        return {
+            "status": "cloud_transfer_accepted",
+            "triggered": True,
+            "provider_outcome": "accepted",
+        }
+
+    service._opencli_json = opencli
+
+    result = service.transfer_lv_video(
+        item,
+        lv_session="lv",
+        private_session="private",
+        profile="work",
+    )
+
+    assert result["status"] == "waiting_cloud_transfer_receipt"
+    assert open_calls == 2
+    assert transfer_eval_calls == 2
+    assert click_calls == 1
+    claim = json.loads(
+        service._claim_path(f"lv_transfer_{item['version_key']}").read_text(
+            encoding="utf-8"
+        )
+    )
+    assert claim["status"] == "waiting_cloud_transfer_receipt"
+    assert claim["side_effect_uncertain"] is True
+
+
 def test_lv_transfer_unobserved_toast_waits_for_bound_receipt(tmp_path):
     service = _service(tmp_path, sleep=lambda _seconds: None)
     item = service._normalize(
