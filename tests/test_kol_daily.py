@@ -4649,7 +4649,18 @@ def test_lv_pending_failure_isolated_without_blocking_later_pdf(
         @staticmethod
         def record_pdf_relationship(_identity, *, bundle_path, **_kwargs):
             assert bundle_path == globals_bundle_path
-            return {"route": "companion_suppressed"}
+            return {
+                "status": "completed",
+                "route": "companion_suppressed",
+                "identity": "new-good",
+                "version_key": "new-version",
+                "business_effects": {
+                    "report": "not_created",
+                    "notification": "not_created",
+                    "book_kol_us": "not_created",
+                    "durable_knowledge": "not_created",
+                },
+            }
 
         @staticmethod
         def record_item_failure(identity, *, failure, retryable):
@@ -4685,9 +4696,13 @@ def test_lv_pending_failure_isolated_without_blocking_later_pdf(
     result = runtime.lv()
 
     assert calls == ["historical-bad", "new-good"]
-    assert result["status"] == "waiting"
+    assert result["status"] == "completed"
     assert result["suppressed_companion_count"] == 1
     assert result["waiting_count"] == 1
+    assert result["events"][0]["event_id"] == "new-good"
+    assert result["events"][0]["knowledge_effect"]["status"] == (
+        "no_reusable_knowledge"
+    )
     assert failures == [(
         "historical-bad",
         {

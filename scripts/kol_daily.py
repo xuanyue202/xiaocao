@@ -1221,6 +1221,57 @@ def _lv_publication_context(
     )
 
 
+def _lv_suppressed_companion_terminal(
+    relationship: dict[str, Any],
+) -> dict[str, Any]:
+    effects = relationship.get("business_effects") or {}
+    if (
+        relationship.get("status") != "completed"
+        or relationship.get("route") != "companion_suppressed"
+        or not str(relationship.get("identity") or "")
+        or not str(relationship.get("version_key") or "")
+        or effects != {
+            "report": "not_created",
+            "notification": "not_created",
+            "book_kol_us": "not_created",
+            "durable_knowledge": "not_created",
+        }
+    ):
+        raise DailyError("suppressed Lv companion terminal is incomplete")
+    identity = str(relationship["identity"])
+    version = str(relationship["version_key"])
+    return {
+        "kind": "source_event",
+        "event_id": identity,
+        "source_binding": {
+            "source_identity": identity,
+            "publication_version": version,
+        },
+        "content_value": {
+            "status": "low_density",
+            "reason": (
+                "完整主视频已覆盖该伴随摘要，且语义比较确认没有新增观点。"
+            ),
+        },
+        "gray_report": {"status": "not_created"},
+        "alert": {"status": "not_created"},
+        "book_kol_us": {
+            "book": "KOL-US",
+            "paper_only": True,
+            "status": "no_trade",
+            "reason": "同一真实事件已完成纸面终态；伴随摘要不重复建仓。",
+        },
+        "knowledge_effect": {
+            "status": "no_reusable_knowledge",
+            "reason": "完整主视频已覆盖该摘要，未形成新增知识。",
+        },
+        "relationship_receipt_sha256": hashlib.sha256(
+            _canonical(relationship).encode("utf-8")
+        ).hexdigest(),
+        "coordinator_source_video_bytes": 0,
+    }
+
+
 def _sender(title: str, body: str) -> dict[str, str]:
     result = notify(title, body, macos=False, audience="kol")
     if not isinstance(result, dict):
@@ -2476,6 +2527,9 @@ class DailyRuntime:
                     complete_video_transcripts=complete_video_transcripts,
                 )
                 if relationship["route"] == "companion_suppressed":
+                    events.append(
+                        _lv_suppressed_companion_terminal(relationship)
+                    )
                     suppressed += 1
                     continue
                 if relationship["route"] == "waiting_primary_source":
