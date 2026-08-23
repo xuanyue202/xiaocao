@@ -1594,6 +1594,8 @@ def test_lv_transfer_observes_provider_outcome_after_confirmation():
 
 
 def test_lv_transfer_reopens_share_once_after_target_not_unique(tmp_path):
+    assert "const legacy = row.querySelector('span.EOGexf')" in _TRANSFER_SCRIPT
+    assert "return legacy ? row : null" in _TRANSFER_SCRIPT
     service = _service(tmp_path, sleep=lambda _seconds: None)
     item = service._normalize(
         _source_rows()[0][1],

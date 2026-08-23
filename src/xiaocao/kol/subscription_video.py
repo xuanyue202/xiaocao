@@ -500,7 +500,8 @@ _TRANSFER_SCRIPT = r"""(async () => {
       )
     );
     if (semantic.length === 1) return semantic[0];
-    return row.querySelector('span.EOGexf');
+    const legacy = row.querySelector('span.EOGexf');
+    return legacy ? row : null;
   };
   const rowSelected = row => {
     const control = selectionControl(row);
