@@ -6,13 +6,16 @@ const { discoverPeers } = require("../scripts/codex_peer_gate.js");
 const AUTOMATION_ID = "xiaocao-kol-hourly-low-bandwidth-operation";
 const CWD = "/Users/xuanyue202/Documents/project/xiaocao";
 const HOST = "MacBook-Pro-6.local";
+const NOW_SECONDS = 2_000_000_000;
+const LOOKBACK_SECONDS = 12 * 60 * 60;
 
-function candidate(id) {
+function candidate(id, { updatedAt = NOW_SECONDS - 60 } = {}) {
   return {
     id,
     cwd: CWD,
     preview: `Automation ID: ${AUTOMATION_ID}`,
     source: "vscode",
+    updatedAt,
   };
 }
 
@@ -66,14 +69,17 @@ function thread(
 
 function fixture(pages, threadOverrides = new Map()) {
   const cursors = [];
+  const reads = [];
   return {
     cursors,
+    reads,
     requestFn: async (_server, method, params) => {
       if (method === "thread/list") {
         cursors.push(params.cursor);
         return pages.get(params.cursor);
       }
       if (method === "thread/read") {
+        reads.push(params.threadId);
         return threadOverrides.get(params.threadId) || thread(params.threadId);
       }
       throw new Error(`unexpected method ${method}`);
@@ -116,6 +122,86 @@ test("discovers an active peer beyond the first thread page", async () => {
   assert.equal(result.authoritative_peer_thread_id, active.id);
   assert.equal(result.page_count, 2);
   assert.deepEqual(cursors, [null, "page-two"]);
+});
+
+test("does not treat an interrupted automation turn as an active peer", async () => {
+  const interrupted = candidate("interrupted-without-task-complete");
+  const pages = new Map([
+    [null, { data: [interrupted], nextCursor: null }],
+  ]);
+  const { requestFn } = fixture(
+    pages,
+    new Map([
+      [
+        interrupted.id,
+        thread(interrupted.id, {
+          turns: [automationTurn(`${interrupted.id}-automation`, "interrupted")],
+        }),
+      ],
+    ]),
+  );
+
+  const result = await discoverPeers({
+    server: { host: HOST, stderr: "" },
+    requestFn,
+    automationId: AUTOMATION_ID,
+    currentThreadId: "current",
+    cwd: CWD,
+    expectedHost: HOST,
+    readTaskComplete: () => false,
+  });
+
+  assert.equal(result.gate_result, "pass");
+  assert.equal(result.candidate_count, 1);
+  assert.equal(result.readback[0].latest_turn_status, "interrupted");
+});
+
+test("stops peer discovery at the twelve-hour update boundary", async () => {
+  const recent = candidate("recent-terminal");
+  const old = candidate("old-in-progress", {
+    updatedAt: NOW_SECONDS - LOOKBACK_SECONDS - 1,
+  });
+  const pages = new Map([
+    [null, { data: [recent, old], nextCursor: "older-page" }],
+    [
+      "older-page",
+      {
+        data: [
+          candidate("older-in-progress", {
+            updatedAt: NOW_SECONDS - LOOKBACK_SECONDS - 2,
+          }),
+        ],
+        nextCursor: null,
+      },
+    ],
+  ]);
+  const { cursors, reads, requestFn } = fixture(
+    pages,
+    new Map([
+      [
+        old.id,
+        thread(old.id, {
+          turns: [automationTurn(`${old.id}-automation`, "inProgress")],
+        }),
+      ],
+    ]),
+  );
+
+  const result = await discoverPeers({
+    server: { host: HOST, stderr: "" },
+    requestFn,
+    automationId: AUTOMATION_ID,
+    currentThreadId: "current",
+    cwd: CWD,
+    expectedHost: HOST,
+    readTaskComplete: () => false,
+    nowSeconds: NOW_SECONDS,
+  });
+
+  assert.equal(result.gate_result, "pass");
+  assert.equal(result.candidate_count, 1);
+  assert.deepEqual(cursors, [null]);
+  assert.deepEqual(reads, [recent.id]);
 });
 
 test("ignores a subagent that inherited the automation prompt", async () => {

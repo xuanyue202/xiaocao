@@ -74,15 +74,20 @@ CODEX_REMOTE_HOST=MacBook-Pro-6.local \
 node scripts/codex_peer_gate.js
 ```
 
-The helper owns app-server, exhausts every `thread/list` cursor, and serially
-reads matches. A candidate must be a top-level `source=vscode` task with no
-parent thread, and both its persisted preview and first turn must contain the
-exact Automation ID. Subagents and later turns that merely inherited or quoted
-an Automation prompt are not peers. Only after that structured identity check
-does the helper read rollout `task_complete`: an incomplete matching top-level
-peer returns `no_op`; complete all-page pagination with no incomplete peer
-returns `pass`; missing or contradictory source, identity, page, response, or
-readback is `repair_required`.
+The helper owns app-server and scans only the descending `thread/list` pages
+needed to cover the authoritative 12-hour `updatedAt` window. It serially reads
+matches and stops at that boundary; older history cannot own the current slot.
+A candidate must be a top-level `source=vscode` task with no parent thread, and
+both its persisted preview and first turn must contain the exact Automation ID.
+Subagents and later turns that merely inherited or quoted an Automation prompt
+are not peers. Only after that structured identity check
+does the helper reconcile the latest official turn status with rollout
+`task_complete`: only a matching top-level peer whose latest turn is
+`inProgress` returns `no_op`. `completed`, `interrupted`, and `failed` turns are
+terminal even when an interrupted rollout lacks `task_complete`. Complete
+all-page pagination with no active peer returns `pass`; missing, unknown, or
+contradictory source, identity, turn status, page, response, or readback is
+`repair_required`.
 
 Bind the experimental app-server protocol to its current host identity
 (`remoteControl/status/changed.serverName`) and exact canonical cwd, never a

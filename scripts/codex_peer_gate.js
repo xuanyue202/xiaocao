@@ -21,6 +21,8 @@ const LIMIT = 20;
 const REQUEST_TIMEOUT_MS = 12_000;
 const MAX_ATTEMPTS = 2;
 const SOURCE_KINDS = ["vscode"];
+const TURN_STATUSES = new Set(["completed", "interrupted", "failed", "inProgress"]);
+const PEER_LOOKBACK_SECONDS = 12 * 60 * 60;
 
 const GATE_STARTED_AT = Date.now();
 
@@ -211,6 +213,8 @@ async function discoverPeers({
   cwd = CWD,
   expectedHost = EXPECTED_HOST,
   readTaskComplete = hasTaskComplete,
+  nowSeconds = Math.floor(Date.now() / 1000),
+  lookbackSeconds = PEER_LOOKBACK_SECONDS,
 }) {
   const candidates = [];
   const readback = [];
@@ -219,6 +223,16 @@ async function discoverPeers({
   let cursor = null;
   let pageCount = 0;
   let requestId = 2;
+  let previousUpdatedAt = Number.POSITIVE_INFINITY;
+  const cutoffUpdatedAt = nowSeconds - lookbackSeconds;
+
+  if (
+    !Number.isInteger(nowSeconds) ||
+    !Number.isInteger(lookbackSeconds) ||
+    lookbackSeconds <= 0
+  ) {
+    return fail("peer_lookback_invalid", "peer_discovery");
+  }
 
   while (true) {
     const listing = await requestFn(
@@ -257,7 +271,28 @@ async function discoverPeers({
       });
     }
 
-    const candidateRows = listing.data.filter(
+    let reachedLookbackBoundary = false;
+    const recentRows = [];
+    for (const row of listing.data) {
+      if (!Number.isInteger(row.updatedAt) || row.updatedAt > previousUpdatedAt) {
+        return fail("thread_list_updated_at_invalid", "peer_discovery", {
+          thread_id: row.id || null,
+          updated_at: row.updatedAt ?? null,
+          previous_updated_at: Number.isFinite(previousUpdatedAt)
+            ? previousUpdatedAt
+            : null,
+          page_count: pageCount,
+        });
+      }
+      previousUpdatedAt = row.updatedAt;
+      if (row.updatedAt < cutoffUpdatedAt) {
+        reachedLookbackBoundary = true;
+      } else {
+        recentRows.push(row);
+      }
+    }
+
+    const candidateRows = recentRows.filter(
       (row) => row.id && row.id !== currentThreadId && row.cwd === cwd,
     );
     for (const candidate of candidateRows) {
@@ -296,6 +331,13 @@ async function discoverPeers({
           thread_id: candidate.id,
         });
       }
+      const latestTurnStatus = turns.at(-1)?.status;
+      if (!TURN_STATUSES.has(latestTurnStatus)) {
+        return fail("thread_turn_status_invalid", "peer_readback", {
+          thread_id: candidate.id,
+          latest_turn_status: latestTurnStatus ?? null,
+        });
+      }
       candidates.push(candidate);
       const complete = readTaskComplete(thread.path);
       if (complete === null) {
@@ -308,8 +350,16 @@ async function discoverPeers({
         source: thread.source,
         parent_thread_id: thread.parentThreadId,
         task_complete: complete,
+        latest_turn_status: latestTurnStatus,
       });
-      if (!complete) {
+      if (latestTurnStatus === "inProgress" && complete) {
+        return fail("thread_terminal_state_contradictory", "peer_readback", {
+          thread_id: candidate.id,
+          latest_turn_status: latestTurnStatus,
+          task_complete: complete,
+        });
+      }
+      if (latestTurnStatus === "inProgress") {
         return {
           schema_version: 1,
           gate_result: "no_op",
@@ -319,10 +369,14 @@ async function discoverPeers({
           host: server.host,
           cwd,
           page_count: pageCount,
+          lookback_seconds: lookbackSeconds,
+          cutoff_updated_at: cutoffUpdatedAt,
           readback,
         };
       }
     }
+
+    if (reachedLookbackBoundary) break;
 
     const nextCursor = listing.nextCursor;
     if (nextCursor === null) break;
@@ -348,6 +402,8 @@ async function discoverPeers({
     cwd,
     candidate_count: candidates.length,
     page_count: pageCount,
+    lookback_seconds: lookbackSeconds,
+    cutoff_updated_at: cutoffUpdatedAt,
     readback,
   };
 }
