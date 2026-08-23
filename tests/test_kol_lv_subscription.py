@@ -1785,12 +1785,24 @@ def test_filtered_image_repair_records_identity_bound_preview_derivative(
         "entries": [entry],
     }
     operations = []
+    open_calls = 0
+    bind_calls = 0
 
-    def browser_runner(command, **_kwargs):
+    def browser_runner(command, **kwargs):
+        nonlocal open_calls, bind_calls
         tail = command[3:]
         operations.append(tail[0])
         if tail[:1] == ["open"]:
+            open_calls += 1
+            if open_calls == 1:
+                raise subprocess.TimeoutExpired(
+                    command,
+                    kwargs.get("timeout", 30),
+                )
             payload = {"url": "redacted", "page": "page-1"}
+        elif tail[:1] == ["bind"]:
+            bind_calls += 1
+            payload = {"session": "ticket04"}
         elif (
             tail[:1] == ["eval"]
             and "ticket04_filtered_image_preview_readback" in tail[1]
@@ -1853,7 +1865,8 @@ def test_filtered_image_repair_records_identity_bound_preview_derivative(
     assert receipt["source_provider_file_id"] == entry["provider_file_id"]
     assert receipt["preview_pixel_width"] == 1084
     assert receipt["preview_pixel_height"] == 900
-    assert operations == ["open", "eval"]
+    assert operations == ["open", "bind", "open", "eval"]
+    assert bind_calls == 1
 
     ingest = service.ingest_browser_download(
         update["identity"],

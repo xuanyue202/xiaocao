@@ -756,10 +756,17 @@ _FILTERED_IMAGE_PREVIEW_SCRIPT_TEMPLATE = r"""(async () => {
   ) || '/';
   const prefix = '#list/path=';
   let currentParentPath = '';
-  try {
-    currentParentPath = location.hash.startsWith(prefix)
-      ? decodeURIComponent(location.hash.slice(prefix.length)) : '';
-  } catch (_error) {}
+  const routeDeadline = Date.now() + 10000;
+  while (Date.now() < routeDeadline) {
+    try {
+      currentParentPath = location.hash.startsWith(prefix)
+        ? decodeURIComponent(location.hash.slice(prefix.length)) : '';
+    } catch (_error) {
+      currentParentPath = '';
+    }
+    if (currentParentPath === parentPath) break;
+    await new Promise(resolve => setTimeout(resolve, 100));
+  }
   if (currentParentPath !== parentPath) {
     return result('preview_parent_mismatch');
   }
@@ -3456,25 +3463,45 @@ try {
         route = urlparse(
             _authorized_share_url(self.share_url, self.share_code)
         )._replace(fragment=f"list/path={quote(parent_path, safe='')}").geturl()
-        self._opencli_json(
-            session,
-            "open",
-            route,
-            profile=profile,
-            timeout_seconds=30,
+        preview_script = _filtered_image_preview_script(
+            expected_share_path=urlparse(self.share_url).path,
+            expected_provider_file_id=provider_file_id,
+            expected_item_path=str(item["path"]),
+            expected_name=str(item["name"]),
         )
-        preview = self._opencli_json(
-            session,
-            "eval",
-            _filtered_image_preview_script(
-                expected_share_path=urlparse(self.share_url).path,
-                expected_provider_file_id=provider_file_id,
-                expected_item_path=str(item["path"]),
-                expected_name=str(item["name"]),
-            ),
-            profile=profile,
-            timeout_seconds=30,
-        )
+        for attempt in range(2):
+            try:
+                self._opencli_json(
+                    session,
+                    "open",
+                    route,
+                    profile=profile,
+                    timeout_seconds=30,
+                )
+                preview = self._opencli_json(
+                    session,
+                    "eval",
+                    preview_script,
+                    profile=profile,
+                    timeout_seconds=30,
+                )
+                break
+            except EnrichmentDiagnosticError as exc:
+                if (
+                    attempt == 0
+                    and exc.diagnostic_code
+                    in {"opencli_timeout", "opencli_command_failed"}
+                    and exc.diagnostic_stage in {"browser_open", "browser_eval"}
+                ):
+                    try:
+                        self.bind_opencli(
+                            session=session,
+                            profile=profile,
+                        )
+                    except EnrichmentError as bind_error:
+                        raise exc from bind_error
+                    continue
+                raise
         if preview.get("status") != "preview_ready":
             raise EnrichmentDiagnosticError(
                 "provider preview did not expose exact image evidence",
