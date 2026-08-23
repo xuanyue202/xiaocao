@@ -14,7 +14,7 @@ def _source(name: str) -> str:
 
 
 def test_foundersc_template_registry_is_versioned_and_read_only_first_phase():
-    assert _source("common.mjs").count("TEMPLATE_VERSION = 2") == 1
+    assert _source("common.mjs").count("TEMPLATE_VERSION = 3") == 1
     for command in COMMANDS:
         source = _source(f"{command}.js")
         assert "site: SITE" in source
@@ -22,6 +22,40 @@ def test_foundersc_template_registry_is_versioned_and_read_only_first_phase():
         assert "./common.mjs" in source
         assert "submitted: false" in _source("common.mjs")
     assert not (TEMPLATE_ROOT / "submit.js").exists()
+
+
+def test_shared_navigation_is_bounded_and_edge_compatible():
+    common = _source("common.mjs")
+
+    assert "waitUntil: 'domcontentloaded'" in common
+    assert "timeout: 45000" in common
+    assert "for (let attempt = 0; attempt < 30; attempt += 1)" in common
+    assert "state.auth_state !== 'unknown'" in common
+    assert "await page.wait({time: 1})" in common
+
+
+def test_account_binding_uses_same_origin_base_info_without_returning_raw_account():
+    common = _source("common.mjs")
+
+    assert "fetch('/qt/user/getBaseInfo'" in common
+    assert "credentials: 'same-origin'" in common
+    assert "new AbortController()" in common
+    assert "clearTimeout(timeoutId)" in common
+    assert "signal: controller.signal" in common
+    assert "for (let accountAttempt = 0; accountAttempt < 3; accountAttempt += 1)" in common
+    assert "fund_account_fingerprint" in common
+    assert "fund_account_proof_source" in common
+    assert "fund_account_value" not in common
+    assert "raw_fund_account" not in common
+    assert "sanitizeTableRow" in common
+    assert "fundAccountColumnIndexes" in common
+    assert "资金账号[^0-9]" not in common
+
+
+def test_common_receipt_documentation_matches_template_version_three():
+    readme = _source("README.md")
+    assert '"template_version": 3' in readme
+    assert '"template_version": 1' not in readme
 
 
 def test_template_javascript_uses_repository_four_space_indentation():
@@ -132,6 +166,7 @@ def test_no_template_clicks_a_broker_action_or_reads_credentials():
         "checkTradePassword",
     ):
         assert forbidden not in source
+    assert r"\b\d{8,20}\b" in source
 
 
 def test_environment_command_only_switches_the_unique_environment_control():
@@ -195,4 +230,5 @@ def test_skill_routes_foundersc_read_only_work_to_its_reference():
                  / "foundersc-opencli.md").read_text(encoding="utf-8")
     assert "references/foundersc-opencli.md" in skill
     assert "submit_capability=false" in reference
-    assert "no Codex Automation" in reference
+    assert "separate 09:20 Book-B live-morning" in reference
+    assert "never calls or waits for the 09:25" in reference

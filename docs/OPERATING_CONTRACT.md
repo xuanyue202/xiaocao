@@ -1,6 +1,6 @@
 # 小草运营契约（Operating Contract, SSOT）
 
-**版本**：2.6
+**版本**：2.7
 **状态**：现行
 **适用范围**：所有 paper / 未来 real 的实盘环（live_recommend → paper_record → live_monitor → eod）与回测
 **关联实现**：`src/xiaocao/live/safety.py`、`src/xiaocao/live/intelligence_policy.py`、`src/xiaocao/strategy/{mode_switch,trend_rules,kol_reference}.py`、`kronos_screen/scripts/{capture_signals,forward_eval,paper_record,settle_book_a,settle_book_t,decompose_pnl,quality_governor}.py`、`scripts/{live_monitor,research_mode_switch_replay}.py`
@@ -48,13 +48,32 @@
 
 ## 4. Book B — 实盘策略口径（分阶段出场）
 
-- **阶段一执行缝**：`src/xiaocao/live/trading_execution.py` 与
-  `scripts/book_b_execute.py` 只提供人工调用的、可审计的 broker-neutral
-  probe/prepare/reconcile/recover 边界；当前 Founder Web/OpenCLI 模板没有
-  `submit` 路由，故不会被 `auto_daily.sh` 调用，也不会替代现行
+- **阶段一执行缝**：`src/xiaocao/live/trading_execution.py`、
+  `scripts/book_b_execute.py` 与独立的 `scripts/book_b_live_morning.py` 提供
+  可审计的 broker-neutral probe/prepare/reconcile/recover 边界。09:20 live
+  morning 只消费当日冻结的确定性 ★E 与 broker-sourced allocation facts，
+  不调用或等待 `auto_daily.sh morning-execute`，不读取模拟成交，也不写
+  canonical paper ledger。该 seam 先切 live，调用只读 `reconcile --scope assets`
+  探测 session/account/资产，并且只有回执同时绑定当日、live、逻辑账户、
+  已证明的资金账号与完整资产表时，才原子生成 dated allocation facts；完成或
+  失败后都验证恢复 mock。非空 freeze 还必须绑定实际同日 snapshot 的 canonical
+  SHA-256 与行数，且 digest/run id/producer strategy Git SHA 必须由 queue producer 在冻结时写入 manifest，
+  consumer 只做重新核对，不能用稍后追加的 rows 重定义 freeze。资金账号只在
+  进程内将页面掩码与 Keychain trade-account 元数据比对，持久化绑定 hash；资产
+  回读必须是当日且不超过 5 分钟。allocation capsule 必须将结算基数来源、NAV、
+  可用现金、当前敞口和券商资产摘要一起纳入 canonical SHA-256，且券商摘要现金
+  必须与顶层现金一致。混合券商账户的“总资产/证券市值”不得冒充
+  Book-B NAV/敞口：首次批次只用明确的 30,000 元 Book-B 初始基数和券商可用现金；
+  一旦已有 Book-B owned fill 而尚无结算 NAV 回执，后续批次以
+  `LIVE_BOOK_B_SETTLED_NAV_RECONCILE_REQUIRED` fail-closed。当前 Founder Web/OpenCLI 模板没有 `submit` 路由，
+  因而独立任务必须以 `NO_ROUTE_PROVEN` fail-closed，且绝不替代现行
   `paper_record.py` 单写者。任何未来 SELL intent 必须来自本节
   `live_monitor` 已授权的 Book-B 退出事件和可卖 lot，不能由普通冻结行反向
   生成。
+  该阶段 live 逻辑账户固定为 `primary`、首次基数固定为 30,000 元，不提供 CLI
+  覆盖。execution events 中只要出现 submitted/acknowledged/partial/filled/unknown/
+  reconciling，或任何正成交数量，即使 ownership evidence 落盘失败，也不得再次
+  使用首次基数。
 
 - **默认建仓集合**：`paper_record.py --pick mode_exec_star` 只成交 `★E`。`★B`（K/P+竞价）和 `★M`（旧模式分轮动）继续前向留样，但没有默认成交权限。
 - **唯一模式证据源**：`output/live/training_rows.parquet` 中 `is_live=true`、`book=B`、`executable_fillable=true`、非北交所的 `executable_net_ret`。该标签复用第 5 节开盘成交模型并扣双边费用；理论 `net_realized_ret`、SQLite `mode_history`、实际已买子集和不可交易北交所信号均不得打开模式资格。
@@ -139,8 +158,9 @@
 - 审计：real_capital **ALLOW 必须可持久审计**——若审计写失败则转为 DENY（不下不可审计的真实单）；DENY/always-allowed 行为 best-effort（审计永不让交易回路崩溃）。`require_capital_action` 拒绝时**只**抛 `CapitalActionDenied`。
 - 唯一实现 `src/xiaocao/live/safety.py`；真实下单 **MUST** 经 `require_capital_action(...)`，仅在 ALLOW 时下单。
 - **现状**：阶段一执行缝已在任何 broker adapter 之前调用
-  `require_capital_action(...)`，但 Founder 模板仍无 submit 路由、没有自动化调用点，
-  因而目前仍不会产生真实订单；未来启用仍需本节双钥匙和独立激活审查。
+  `require_capital_action(...)`；独立 09:20 Automation 只启动隔离 live seam，
+  不改变 09:25 模拟任务。Founder 模板仍无 submit 路由，账户/回执映射也未
+  完整证明，因而目前仍不会产生真实订单；未来启用仍需本节双钥匙和独立激活审查。
 
 ## 10. 快速探索期的自动迭代 / 升级策略（agent 皮层）
 
@@ -168,7 +188,7 @@
 - [x] Book T snapshot/account/monitor key 均带 `book` 命名空间；B/T 同票同日不互相覆盖；T 宽止损不调用短线 strong-hold/composite。
 - [x] Book B 与历史回放共用 `strategy.mode_switch`；D-1 outcome 不进入 D 日早盘状态；`COLD/UNKNOWN/BJSE` 无成交权限；`--notional` 不能绕过 3 席位、每模式 1 只和批次 50% 上限。
 - [x] 模式证据保留 25%/45%/50% 验证权重；`ACTIVE` 同时通过候选池和四指数证据，近期双基准均值与多数日转正可直接升格，任一均值转负只冷却到 `PROVISIONAL`。
-- [x] 阶段一 Book-B seam 无 submit 路由、不接 automation；SELL 仅接受 monitor 授权、Book-B owned lot、无 T+1/流动性阻断的退出 intent。
+- [x] 阶段一 Book-B seam 无 submit 路由；独立 09:20 live morning 不调用/等待 09:25 模拟任务、不读写模拟成交或 canonical paper ledger；SELL 仅接受 monitor 授权、Book-B owned lot、无 T+1/流动性阻断的退出 intent。
 - [x] allocation proof 复用 `mode_switch.plan_board_lot_orders`，以滚动结算 NAV 验证批次/敞口/现金/slot 上限；ownership evidence 不得替代 canonical paper ledger。
 - [x] 同一 logical account 由 account-level writer lock 串行推进；异常写入 durable takeover capsule，WeCom pending incident 可重试且已送达事件幂等。
 - [ ] （后续）settle_book_a 只用 next_close 且幂等；decompose_pnl 三项金额求和 = account realized_pnl（容差=取整）。
@@ -194,3 +214,4 @@
 | 2.4 | 2026-08-15 | Book T 只读已发布且当前的吕晓彤“马车”长期观点，记录主题命中与影子名次；固定 `authority=shadow_only`，不改候选顺序、资格、成交、仓位或退出，升级仍需研究护栏与 §10 人工门。 |
 | 2.5 | 2026-08-15 | 阶段一 Book-B broker-neutral seam 固化为无 submit 的人工/只读边界；SELL 绑定 monitor 授权与 owned lot；allocation proof 复用统一整手分配器并以滚动 NAV 验证预算；新增账户级 writer fencing、durable takeover capsule、pending WeCom 重试；broker ownership evidence 明确不替代 canonical paper ledger。 |
 | 2.6 | 2026-08-16 | Book T v2 增加 ETF 目录的 cache-first/限流 API seam 与显式 instrument contract；ETF 的 lot、T+0/T+1、买卖费、专有 realtime/minute/daily contract、当前状态和流动性均缺失即 fail-closed，旧股票账本保持兼容。 |
+| 2.7 | 2026-08-23 | Book-B live morning 拆为独立 09:20 seam：只消费冻结 ★E 与 broker allocation facts，不等待或回写 09:25 模拟成交；Founder submit/account/receipt 和双钥匙未通过时继续 fail-closed。 |

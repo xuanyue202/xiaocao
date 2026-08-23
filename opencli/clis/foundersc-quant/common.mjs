@@ -1,4 +1,4 @@
-export const TEMPLATE_VERSION = 2;
+export const TEMPLATE_VERSION = 3;
 export const SITE = 'foundersc-quant';
 export const DEFAULT_BASE_URL = (
     'https://quant.foundersc.com/qtassets/dist/index.html'
@@ -22,6 +22,7 @@ export const RECEIPT_COLUMNS = Object.freeze([
     'logical_account_id',
     'account_binding',
     'login_account_fingerprint',
+    'fund_account_fingerprint',
     'route',
     'order_id',
     'strategy_id',
@@ -72,6 +73,10 @@ export const ENVIRONMENT_SCRIPT = String.raw`(() => {
             && (node.textContent || '').trim() === text
         )).length;
     };
+    const accountFingerprint = (account) => {
+        if (account.length < 8) return '';
+        return account.slice(0, 3) + '******' + account.slice(-3);
+    };
     const body = (document.body?.innerText || '').trim();
     const switchers = [...document.querySelectorAll('div.switcher___KVAWw')];
     const switcher = switchers.length === 1 ? switchers[0] : null;
@@ -87,7 +92,7 @@ export const ENVIRONMENT_SCRIPT = String.raw`(() => {
     const accountMatches = [...body.matchAll(/\b1\d{10}\b/g)]
         .map((match) => match[0]);
     const maskedAccount = accountMatches.length > 0
-        ? accountMatches[0].slice(0, 3) + '******' + accountMatches[0].slice(-3)
+        ? accountFingerprint(accountMatches[0])
         : '';
     const authState = environment !== 'unknown'
         ? 'authenticated'
@@ -104,9 +109,52 @@ export const ENVIRONMENT_SCRIPT = String.raw`(() => {
         mock_action_matches: mockActionMatches,
         live_action_matches: liveActionMatches,
         login_account_fingerprint: maskedAccount,
+        fund_account_fingerprint: '',
+        fund_account_match_count: 0,
+        fund_account_proof_source: '',
         account_binding: 'not_proven',
         logical_account_id: null,
     };
+})()`;
+
+export const FUND_ACCOUNT_SCRIPT = String.raw`(async () => {
+    const empty = {
+        fund_account_fingerprint: '',
+        fund_account_match_count: 0,
+        fund_account_proof_source: '',
+    };
+    const accountFingerprint = (account) => {
+        if (account.length < 8) return '';
+        return account.slice(0, 3) + '******' + account.slice(-3);
+    };
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 3000);
+    try {
+        const response = await fetch('/qt/user/getBaseInfo', {
+            credentials: 'same-origin',
+            signal: controller.signal,
+        });
+        if (!response.ok) return empty;
+        const payload = await response.json();
+        const info = payload && typeof payload.info === 'object'
+            ? payload.info
+            : {};
+        const accounts = [info.fund_id, info.fundId]
+            .map((value) => String(value || '').trim())
+            .filter((value) => /^\d{6,20}$/.test(value));
+        const uniqueAccounts = [...new Set(accounts)];
+        if (uniqueAccounts.length !== 1) return empty;
+        const account = uniqueAccounts[0];
+        return {
+            fund_account_fingerprint: accountFingerprint(account),
+            fund_account_match_count: 1,
+            fund_account_proof_source: 'same_origin_getBaseInfo',
+        };
+    } catch {
+        return empty;
+    } finally {
+        clearTimeout(timeoutId);
+    }
 })()`;
 
 export const PAGE_HELPERS = String.raw`
@@ -126,10 +174,51 @@ export const PAGE_HELPERS = String.raw`
             && (node.textContent || '').trim() === text
         ))
         : [];
-    const sanitize = (value) => String(value || '')
-        .replace(/\b1\d{10}\b/g, (phone) => (
-            phone.slice(0, 3) + '******' + phone.slice(-3)
-        ));
+    const maskAccount = (account) => account.length < 8
+        ? '******'
+        : account.slice(0, 3) + '******' + account.slice(-3);
+    const tableHeaders = (table) => (
+        [...table.querySelectorAll('thead th')]
+            .map((cell) => (cell.innerText || cell.textContent || '').trim())
+    );
+    const fundAccountColumnIndexes = (table) => tableHeaders(table)
+        .map((header, index) => header === '资金账号' ? index : -1)
+        .filter((index) => index >= 0);
+    const tableFundAccounts = [...document.querySelectorAll('table')]
+        .flatMap((table) => {
+            const indexes = fundAccountColumnIndexes(table);
+            if (indexes.length !== 1) return [];
+            return [...table.querySelectorAll('tbody tr')]
+                .flatMap((row) => {
+                    const cells = [...row.querySelectorAll('th,td')];
+                    const account = String(
+                        cells[indexes[0]]?.innerText
+                            || cells[indexes[0]]?.textContent
+                            || ''
+                    ).trim();
+                    return /^\d{6,20}$/.test(account) ? [account] : [];
+                });
+        });
+    const knownFundAccounts = [...new Set(tableFundAccounts)];
+    const sanitize = (value) => {
+        let sanitized = String(value || '');
+        for (const account of knownFundAccounts) {
+            sanitized = sanitized.split(account).join(maskAccount(account));
+        }
+        return sanitized.replace(/\b\d{8,20}\b/g, maskAccount);
+    };
+    const sanitizeTableRow = (table, row) => {
+        const indexes = fundAccountColumnIndexes(table);
+        const cells = [...row.querySelectorAll('th,td')];
+        return cells.map((cell, index) => {
+            const value = (cell.innerText || cell.textContent || '').trim();
+            if (indexes.includes(index)
+                    && /^\d{6,20}$/.test(value)) {
+                return maskAccount(value);
+            }
+            return sanitize(value);
+        });
+    };
     const paginationSelectors = [
         '.ant-pagination',
         '.el-pagination',
@@ -470,15 +559,38 @@ export function normalizeParticipation(value) {
 
 export async function navigate(page, route) {
     const url = routeUrl(route);
-    await page.goto(url, {waitUntil: 'load', settleMs: 1000});
+    await page.goto(url, {
+        waitUntil: 'domcontentloaded',
+        settleMs: 1000,
+        timeout: 45000,
+    });
     await page.wait({time: 1});
     return url;
 }
 
 export async function readEnvironment(page) {
-    const state = await page.evaluate(ENVIRONMENT_SCRIPT);
-    if (!state || typeof state !== 'object') {
-        throw new Error('environment probe returned a malformed object');
+    let state = null;
+    for (let attempt = 0; attempt < 30; attempt += 1) {
+        state = await page.evaluate(ENVIRONMENT_SCRIPT);
+        if (!state || typeof state !== 'object') {
+            throw new Error('environment probe returned a malformed object');
+        }
+        if (state.environment !== 'unknown'
+                || state.auth_state !== 'unknown') {
+            if (state.environment !== 'unknown'
+                    && state.fund_account_match_count !== 1) {
+                for (let accountAttempt = 0; accountAttempt < 3; accountAttempt += 1) {
+                    const account = await page.evaluate(FUND_ACCOUNT_SCRIPT);
+                    if (account && typeof account === 'object') {
+                        state = {...state, ...account};
+                    }
+                    if (state.fund_account_match_count === 1) break;
+                    if (accountAttempt < 2) await page.wait({time: 0.5});
+                }
+            }
+            return state;
+        }
+        await page.wait({time: 1});
     }
     return state;
 }
@@ -525,6 +637,7 @@ export function baseReceipt(templateName, route, expectedEnvironment, state, fie
         logical_account_id: fields.logical_account_id || 'primary',
         account_binding: state?.account_binding || 'not_proven',
         login_account_fingerprint: state?.login_account_fingerprint || '',
+        fund_account_fingerprint: state?.fund_account_fingerprint || '',
         route,
         order_id: null,
         strategy_id: null,

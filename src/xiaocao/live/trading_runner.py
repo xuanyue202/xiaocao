@@ -7,6 +7,7 @@ mode-switch allocator, then advances immutable plans through
 """
 from __future__ import annotations
 
+import hashlib
 import json
 from datetime import datetime
 from pathlib import Path
@@ -49,6 +50,18 @@ def read_frozen_rows(path: Path | str, *, date: str | None = None) -> list[dict[
                 continue
             rows.append(dict(row))
     return rows
+
+
+def frozen_rows_digest(rows: Iterable[dict[str, Any]]) -> str:
+    """Hash one ordered frozen-row set without depending on JSONL whitespace."""
+    payload = json.dumps(
+        [dict(row) for row in rows],
+        ensure_ascii=False,
+        sort_keys=True,
+        separators=(",", ":"),
+        default=str,
+    ).encode("utf-8")
+    return hashlib.sha256(payload).hexdigest()
 
 
 def plans_from_frozen_rows(
@@ -168,6 +181,7 @@ def build_foundersc_execution(
 __all__ = [
     "build_foundersc_execution",
     "execute_plans",
+    "frozen_rows_digest",
     "plans_from_frozen_rows",
     "read_frozen_rows",
 ]

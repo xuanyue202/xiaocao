@@ -1,11 +1,14 @@
 """Build a zero-fetch queue for agent intelligence reviews."""
 from __future__ import annotations
 
+import hashlib
 import json
 from collections import Counter
 from datetime import datetime
 from pathlib import Path
 from typing import Any
+
+from .trading_runner import frozen_rows_digest
 
 
 def _read_jsonl(path: Path) -> list[dict[str, Any]]:
@@ -98,6 +101,7 @@ def build_review_queue(
     market_date: str,
     limit: int = 8,
     now: datetime | None = None,
+    strategy_sha: str = "unknown",
 ) -> dict[str, Any]:
     market_date = market_date[:10]
     now = now or datetime.now()
@@ -161,8 +165,15 @@ def build_review_queue(
 
     items.sort(key=lambda item: (-int(item.get("priority") or 0), str(item.get("code") or "")))
     selected = items[: max(0, limit)]
+    snapshot_rows = _date_rows(
+        _read_jsonl(live_dir / "signal_snapshots.jsonl"),
+        market_date,
+    )
+    snapshot_sha256 = frozen_rows_digest(snapshot_rows)
+    report = live_dir / f"recommend_{market_date}.md"
+    report_sha256 = hashlib.sha256(report.read_bytes()).hexdigest() if report.is_file() else ""
     return {
-        "schema_version": 1,
+        "schema_version": 2,
         "market_date": market_date,
         "generated_at": now.isoformat(timespec="seconds"),
         "fetch_policy": "zero_fetch_existing_artifacts_only",
@@ -174,6 +185,14 @@ def build_review_queue(
             "selected_items": len(selected),
             "open_book_b_positions": len(open_book_b),
             "score_source": dict(Counter(str(r.get("score_source") or "pending_agent_review") for r in reviews.values())),
+        },
+        "freeze_binding": {
+            "strategy_run_id": f"morning-freeze:{market_date}:{snapshot_sha256[:16]}",
+            "strategy_sha": str(strategy_sha or "unknown"),
+            "snapshot_path": str(live_dir / "signal_snapshots.jsonl"),
+            "snapshot_row_count": len(snapshot_rows),
+            "snapshot_sha256": snapshot_sha256,
+            "report_sha256": report_sha256,
         },
         "items": selected,
     }

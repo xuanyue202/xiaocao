@@ -16,6 +16,11 @@ def _parser() -> argparse.ArgumentParser:
         help="Masked page fingerprint, for example 123******789",
     )
     parser.add_argument(
+        "--observed-trade-fingerprint",
+        default="",
+        help="Masked page trade-account fingerprint; the full account is never accepted",
+    )
+    parser.add_argument(
         "--read-secrets",
         action="store_true",
         help="Attempt bounded secret reads; values are never printed",
@@ -30,6 +35,7 @@ def main() -> int:
         timeout_seconds=args.timeout_seconds,
     ).run(
         observed_login_fingerprint=args.observed_login_fingerprint,
+        observed_trade_fingerprint=args.observed_trade_fingerprint,
         read_secrets=args.read_secrets,
     )
     print(json.dumps(receipt, ensure_ascii=False, sort_keys=True))

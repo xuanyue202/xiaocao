@@ -45,6 +45,27 @@ def test_morning_automations_separate_user_visible_prerecommend_from_execution()
     assert "never use keyword scoring" in execution["prompt"]
 
 
+def test_live_morning_is_a_separate_0920_fail_closed_task() -> None:
+    live = _automation("xiaocao-book-b-live-morning")
+    paper = _automation("xiaocao-daily-morning-execution")
+
+    assert live["id"] != paper["id"]
+    assert live["rrule"].endswith(";BYHOUR=9;BYMINUTE=20")
+    assert "scripts/book_b_live_morning.py" in live["prompt"]
+    assert "--route timed-order" in live["prompt"]
+    assert "dated deterministic freeze" in live["prompt"]
+    assert "broker-sourced allocation facts" in live["prompt"]
+    assert "never run or wait for `morning-execute`" in live["prompt"]
+    assert "never read or write simulated fills" in live["prompt"]
+    assert "NO_ROUTE_PROVEN" in live["prompt"]
+    assert "auto_daily.sh" not in live["prompt"]
+    assert "book_b_live_morning.py" not in paper["prompt"]
+    live_script = (ROOT / "scripts" / "book_b_live_morning.py").read_text(
+        encoding="utf-8"
+    )
+    assert "release_foundersc_opencli_site_session(profile)" in live_script
+
+
 def test_auto_daily_exposes_separate_morning_stage_commands() -> None:
     script = (ROOT / "scripts" / "auto_daily.sh").read_text(encoding="utf-8")
 
@@ -74,6 +95,7 @@ def test_all_china_market_automations_use_dtstart_free_local_wall_clock() -> Non
     expected = {
         "xiaocao-daily-morning": ("BYHOUR=9", "BYMINUTE=23"),
         "xiaocao-daily-morning-execution": ("BYHOUR=9", "BYMINUTE=25"),
+        "xiaocao-book-b-live-morning": ("BYHOUR=9", "BYMINUTE=20"),
         "xiaocao-intraday-monitor": ("BYHOUR=9", "BYMINUTE=35,45,55"),
         "xiaocao-intraday-monitor-05": ("BYHOUR=10,13", "BYMINUTE=25,55"),
         "xiaocao-intraday-risk-precheck-1425": ("BYHOUR=14", "BYMINUTE=25"),

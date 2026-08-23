@@ -5,6 +5,7 @@ Read this file only when creating, changing or auditing Xiaocao schedules.
 ## Intended China-local cadence
 
 - Morning prerecommendation: 09:23 trading weekdays.
+- Book-B Founder live morning: 09:20 trading weekdays; independent of paper execution.
 - Morning execution: 09:25 trading weekdays.
 - Opening dense: 09:35, 09:45, 09:55.
 - Sparse monitor: 10:25, 10:55, 13:25, 13:55.

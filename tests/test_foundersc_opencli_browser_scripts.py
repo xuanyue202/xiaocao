@@ -151,6 +151,8 @@ function context(body, hash) {
             }
         },
         setTimeout,
+        clearTimeout,
+        AbortController,
         URL,
         Promise,
         Set,
@@ -294,17 +296,65 @@ const manualGap = await evaluate(
     '#/home/orderByHand',
 );
 const normalTable = element('table', '', {}, [
-    element('thead', '', {}, [
-        element('th', '总资产'),
-        element('th', '可用资金'),
-    ]),
-    element('tbody', '', {}, [
-        element('tr', '', {}, [element('td', '100000'), element('td', '50000')]),
+        element('thead', '', {}, [
+            element('th', '总资产'),
+            element('th', '证券市值'),
+            element('th', '可用资金'),
+            element('th', '资金账号'),
+        ]),
+        element('tbody', '', {}, [
+            element('tr', '', {}, [
+                element('td', '100000'),
+                element('td', '25000'),
+                element('td', '50000'),
+                element('td', '123456'),
+            ]),
     ]),
 ]);
 const normal = await evaluate(
     assetsScript,
     element('body', '', {}, [normalTable]),
+    '#/home/myAccount/assets',
+);
+const duplicateAccountTable = element('table', '', {}, [
+    element('thead', '', {}, [
+        element('th', '总资产'),
+        element('th', '证券市值'),
+        element('th', '可用资金'),
+        element('th', '资金账号'),
+        element('th', '资金账号'),
+    ]),
+    element('tbody', '', {}, [
+        element('tr', '', {}, [
+            element('td', '100000'),
+            element('td', '25000'),
+            element('td', '50000'),
+            element('td', '123456'),
+            element('td', '7654321'),
+        ]),
+    ]),
+]);
+const duplicateAccounts = await evaluate(
+    assetsScript,
+    element('body', '', {}, [duplicateAccountTable]),
+    '#/home/myAccount/assets',
+);
+const assetCards = element('body', '', {}, [
+    element('div', '', {}, [element('span', '总资产'), element('strong', '100,000.00')]),
+    element('div', '', {}, [element('span', '证券市值'), element('strong', '25,000.00')]),
+    element('div', '', {}, [element('span', '可用资金'), element('strong', '70,000.00')]),
+]);
+const cards = await evaluate(
+    assetsScript,
+    assetCards,
+    '#/home/myAccount/assets',
+);
+const outsideShortAccount = await evaluate(
+    assetsScript,
+    element('body', '', {}, [
+        ...assetCards.children,
+        element('span', '资金账号：7654321'),
+    ]),
     '#/home/myAccount/assets',
 );
 const blank = await evaluate(
@@ -338,10 +388,33 @@ const ambiguousManual = await evaluate(
 );
 const environment = await evaluate(
     common.ENVIRONMENT_SCRIPT,
-    element('body', '', {}, [element('div', '', {class: 'switcher___KVAWw'}, [
-        element('span', '模拟盘交易'),
-    ])]),
+    element('body', '', {}, [
+        element('div', '', {class: 'switcher___KVAWw'}, [
+            element('span', '模拟盘交易'),
+        ]),
+        element('span', '资金账号：9876543210'),
+    ]),
     '#/home/myAccount/assets',
+);
+const accountApi = await vm.runInNewContext(
+    common.FUND_ACCOUNT_SCRIPT,
+    {
+        ...context(element('body'), '#/home/myAccount/assets'),
+        fetch: async () => ({
+            ok: true,
+            json: async () => ({info: {fund_id: '9876543210'}}),
+        }),
+    },
+);
+const shortAccountApi = await vm.runInNewContext(
+    common.FUND_ACCOUNT_SCRIPT,
+    {
+        ...context(element('body'), '#/home/myAccount/assets'),
+        fetch: async () => ({
+            ok: true,
+            json: async () => ({info: {fund_id: '123456'}}),
+        }),
+    },
 );
 const exactRoute = common.routeMatches(
     'manual',
@@ -355,11 +428,16 @@ const wrongRoute = common.routeMatches(
 );
 console.log(JSON.stringify({
     normal,
+    duplicateAccounts,
+    cards,
+    outsideShortAccount,
     blank,
     ambiguousPagination,
     uniqueManual,
     ambiguousManual,
     environment,
+    accountApi,
+    shortAccountApi,
     exactRoute,
     wrongRoute,
     manualGap,
@@ -384,6 +462,13 @@ console.log(JSON.stringify({
     assert payload["normal"]["surface_ready"] is True
     assert payload["normal"]["complete_scan"] is True
     assert payload["normal"]["pagination_complete"] is True
+    assert payload["normal"]["allocation_summary"]["complete"] is True
+    assert payload["cards"]["allocation_summary"]["complete"] is True
+    assert payload["cards"]["allocation_summary"]["values"] == {
+        "总资产": "100,000.00",
+        "证券市值": "25,000.00",
+        "可用资金": "70,000.00",
+    }
     assert payload["blank"]["surface_ready"] is False
     assert payload["blank"]["complete_scan"] is False
     assert payload["ambiguousPagination"]["pagination_complete"] is False
@@ -392,6 +477,27 @@ console.log(JSON.stringify({
     assert payload["ambiguousManual"]["route_available"] is False
     assert payload["environment"]["environment"] == "mock"
     assert payload["environment"]["switcher_count"] == 1
+    assert payload["environment"]["fund_account_fingerprint"] == ""
+    assert payload["environment"]["fund_account_match_count"] == 0
+    assert payload["accountApi"] == {
+        "fund_account_fingerprint": "987******210",
+        "fund_account_match_count": 1,
+        "fund_account_proof_source": "same_origin_getBaseInfo",
+    }
+    assert payload["shortAccountApi"] == {
+        "fund_account_fingerprint": "",
+        "fund_account_match_count": 1,
+        "fund_account_proof_source": "same_origin_getBaseInfo",
+    }
+    assert payload["normal"]["table"]["rows"][0][-1] == "******"
+    assert "123456" not in payload["normal"]["body_text"]
+    assert payload["duplicateAccounts"]["table"]["rows"][0][-2:] == [
+        "******",
+        "******",
+    ]
+    assert "123456" not in payload["duplicateAccounts"]["body_text"]
+    assert "7654321" not in payload["duplicateAccounts"]["body_text"]
+    assert "7654321" not in payload["outsideShortAccount"]["body_text"]
     assert payload["exactRoute"] is True
     assert payload["wrongRoute"] is False
     assert payload["manualGap"]["route_available"] is False

@@ -48,9 +48,7 @@ const ASSETS_SCRIPT = pageScript(String.raw`
                 )))];
                 const rows = tables.flatMap((table) => (
                         [...table.querySelectorAll('tbody tr')].filter(visible).map((row) => (
-                                [...row.querySelectorAll('th,td')].map((cell) => (
-                                        sanitize((cell.innerText || '').trim())
-                                ))
+                                sanitizeTableRow(table, row)
                         ))
                 ));
                 return {
@@ -62,7 +60,60 @@ const ASSETS_SCRIPT = pageScript(String.raw`
         };
         const pageScan = await scanTablePages(root, () => tableSnapshot(root));
         const table = mergeTablePages(pageScan.pages);
-        const bodyText = sanitize((root?.innerText || '').trim()).slice(0, 6000);
+        const allocationLabels = ['总资产', '证券市值', '可用资金'];
+        const numericText = (value) => /^[-+]?\s*(?:¥|￥)?\s*\d[\d,]*(?:\.\d+)?$/
+                .test(String(value || '').trim());
+        const cardValues = {};
+        let cardsComplete = true;
+        for (const label of allocationLabels) {
+                const labels = exactLeaves(root, label);
+                if (labels.length !== 1) {
+                        cardsComplete = false;
+                        break;
+                }
+                let container = labels[0].parentNode;
+                let value = '';
+                for (let depth = 0; container && depth < 4; depth += 1) {
+                        const leaves = [container, ...container.querySelectorAll('*')]
+                                .filter((node) => node.children.length === 0 && visible(node));
+                        const numbers = [...new Set(leaves
+                                .map((node) => (node.innerText || node.textContent || '').trim())
+                                .filter((text) => text !== label && numericText(text)))];
+                        if (numbers.length === 1) {
+                                value = numbers[0];
+                                break;
+                        }
+                        container = container.parentNode;
+                }
+                if (!value) {
+                        cardsComplete = false;
+                        break;
+                }
+                cardValues[label] = value;
+        }
+        const tableValues = {};
+        const tableComplete = table.rows.length === 1
+                && allocationLabels.every((label) => (
+                        table.headers.filter((header) => header === label).length === 1
+                ));
+        if (tableComplete) {
+                for (const label of allocationLabels) {
+                        tableValues[label] = table.rows[0][table.headers.indexOf(label)];
+                }
+        }
+        const summaryCandidates = [];
+        if (cardsComplete) summaryCandidates.push(cardValues);
+        if (tableComplete) summaryCandidates.push(tableValues);
+        const uniqueSummaries = [...new Map(summaryCandidates.map((values) => (
+                [JSON.stringify(values), values]
+        ))).values()];
+        const allocationSummary = {
+                complete: uniqueSummaries.length === 1,
+                source_count: summaryCandidates.length,
+                unique_source_count: uniqueSummaries.length,
+                values: uniqueSummaries.length === 1 ? uniqueSummaries[0] : {},
+        };
+        const bodyTextPresent = (root?.innerText || '').trim().length > 0;
         const assetLabelMatches = [
                 '总资产',
                 '证券市值',
@@ -73,16 +124,17 @@ const ASSETS_SCRIPT = pageScript(String.raw`
         const pageReady = document.readyState === 'complete';
         const routeMatch = route === '#/home/myAccount/assets'
                 || route.startsWith('#/home/myAccount/assets?');
-        const surfaceReady = pageReady && bodyText.length > 0
+        const surfaceReady = pageReady && bodyTextPresent
                 && (assetLabelMatches >= 2
                         || (pageScan.pages[0]?.table_count === 1 && table.headers.length > 0));
         return {
                 route,
                 route_match: routeMatch,
                 page_ready: pageReady,
-                body_text: bodyText,
+                body_text: '',
                 asset_label_matches: assetLabelMatches,
                 table,
+                allocation_summary: allocationSummary,
                 surface_ready: surfaceReady,
                 pagination_present: pageScan.pagination_present,
                 pagination_complete: pageScan.pagination_complete,
@@ -108,9 +160,7 @@ const QUERY_SCRIPT = pageScript(String.raw`
                 )))];
                 const rows = tables.flatMap((table) => (
                         [...table.querySelectorAll('tbody tr')].filter(visible).map((row) => (
-                                [...row.querySelectorAll('th,td')].map((cell) => (
-                                        sanitize((cell.innerText || '').trim())
-                                ))
+                                sanitizeTableRow(table, row)
                         ))
                 ));
                 return {
@@ -177,7 +227,7 @@ const QUERY_SCRIPT = pageScript(String.raw`
                                 && scan.pagination_complete,
                 };
         }
-        result.body_text = sanitize((container.innerText || '').trim()).slice(0, 6000);
+        result.body_text = '';
         const tabResults = Object.values(result.tabs);
         result.complete_scan = result.route_match
                 && tabResults.length === 4
@@ -205,8 +255,7 @@ const MANUAL_ORDERS_SCRIPT = pageScript(String.raw`
                         .map((cell) => (cell.innerText || '').trim()).filter(Boolean);
                 const rows = [...table.querySelectorAll('tbody tr')]
                         .filter(visible)
-                        .map((row) => [...row.querySelectorAll('th,td')]
-                                .map((cell) => sanitize((cell.innerText || '').trim())));
+                        .map((row) => sanitizeTableRow(table, row));
                 return {
                         table_count: tables.length,
                         relevant_table_count: relevantTables.length,
@@ -252,7 +301,7 @@ const MANUAL_ORDERS_SCRIPT = pageScript(String.raw`
                         && firstPage.relevant_table_count === 1
                         && firstPage.headers.length > 0
                         && scan.pagination_complete,
-                body_text: sanitize((document.body?.innerText || '').trim()).slice(0, 6000),
+                body_text: '',
                 stable_keys: {
                         order_id: null,
                         strategy_id: null,
@@ -296,7 +345,7 @@ const COMBO_SCRIPT = pageScript(String.raw`
                         && scan.virtual_complete,
                 rows: scan.rows,
                 row_count: scan.rows.length,
-                body_text: body.slice(0, 6000),
+                body_text: '',
                 stable_keys: {
                         strategy_id: null,
                         task_id: null,
@@ -353,7 +402,7 @@ const CONDITION_SCRIPT = pageScript(String.raw`
                         && !pagination.present,
                 rows: scan.rows,
                 row_count: scan.rows.length,
-                body_text: sanitize((document.body?.innerText || '').trim()).slice(0, 6000),
+                body_text: '',
                 stable_keys: {
                         strategy_id: null,
                         task_id: null,

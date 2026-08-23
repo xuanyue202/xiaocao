@@ -6,6 +6,7 @@ access status, never the account identifiers or secret values themselves.
 """
 from __future__ import annotations
 
+import hmac
 import re
 import subprocess
 from dataclasses import dataclass
@@ -32,7 +33,7 @@ class _ItemRead:
 
 def _masked_fingerprint(account: str) -> str:
     value = str(account or "")
-    if len(value) < 6:
+    if len(value) < 8:
         return ""
     return f"{value[:3]}******{value[-3:]}"
 
@@ -106,16 +107,30 @@ class FounderscKeychainPreflight:
             secret_status=status,
         )
 
+    def trade_account_fingerprint(self) -> str:
+        """Return only the masked trade-account metadata fingerprint."""
+        present, account = self._metadata(TRADE_SERVICE)
+        return _masked_fingerprint(account) if present else ""
+
     def run(
         self,
         *,
         observed_login_fingerprint: str = "",
+        observed_trade_fingerprint: str = "",
         read_secrets: bool = False,
     ) -> dict[str, object]:
         login = self._item(LOGIN_SERVICE, read_secret=read_secrets)
         trade = self._item(TRADE_SERVICE, read_secret=read_secrets)
         observed = str(observed_login_fingerprint or "").strip()
-        login_match = bool(observed) and _masked_fingerprint(login.account) == observed
+        observed_trade = str(observed_trade_fingerprint or "").strip()
+        login_match = bool(observed) and hmac.compare_digest(
+            _masked_fingerprint(login.account),
+            observed,
+        )
+        trade_match = bool(observed_trade) and hmac.compare_digest(
+            _masked_fingerprint(trade.account),
+            observed_trade,
+        )
 
         if not login.item_present or not trade.item_present:
             status = "keychain_item_missing"
@@ -128,10 +143,22 @@ class FounderscKeychainPreflight:
             status = "keychain_secret_access_blocked"
         elif observed and not login_match:
             status = "login_binding_mismatch"
+        elif observed_trade and not trade_match:
+            status = "trade_binding_mismatch"
+        elif login_match and trade_match:
+            status = "account_binding_proven"
         elif login_match:
             status = "login_binding_match_trade_page_binding_unavailable"
         else:
             status = "metadata_ready"
+
+        account_binding = "proven" if login_match and trade_match else "not_proven"
+        if account_binding == "proven":
+            binding_reason = "page_and_keychain_fingerprints_match"
+        elif observed_trade and not trade_match:
+            binding_reason = "trade_account_fingerprint_mismatch"
+        else:
+            binding_reason = "trade_account_fingerprint_unavailable_on_page"
 
         return {
             "status": status,
@@ -143,12 +170,14 @@ class FounderscKeychainPreflight:
             "trade_account_length": len(trade.account),
             "page_fingerprint_present": bool(observed),
             "login_page_binding_match": login_match,
+            "trade_page_fingerprint_present": bool(observed_trade),
+            "trade_page_binding_match": trade_match,
             "login_secret_readable": login.secret_readable,
             "login_secret_nonempty": login.secret_nonempty,
             "login_secret_status": login.secret_status,
             "trade_secret_readable": trade.secret_readable,
             "trade_secret_nonempty": trade.secret_nonempty,
             "trade_secret_status": trade.secret_status,
-            "account_binding": "not_proven",
-            "account_binding_reason": "trade_account_fingerprint_unavailable_on_page",
+            "account_binding": account_binding,
+            "account_binding_reason": binding_reason,
         }

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Run the five-trading-day Book T v2 engineering soak acceptance.
+"""Run the twenty-trading-day Book T v2 engineering burn-in gate.
 
 This command only consumes already-frozen shadow inputs and manifests.  It
 does not create dates, call the market API, mutate formal ledgers, or count
@@ -72,13 +72,13 @@ def _load_inputs(root: Path) -> list[dict[str, Any]]:
     return rows
 
 
-def evaluate_five_day_soak(
+def evaluate_engineering_burn_in(
     inputs: list[dict[str, Any]],
     *,
-    required_days: int = 5,
+    required_days: int = 20,
 ) -> dict[str, Any]:
-    if required_days < 5:
-        raise ValueError("required_days cannot be below five trading days")
+    if required_days < 20:
+        raise ValueError("required_days cannot be below twenty trading days")
     runs: list[dict[str, Any]] = []
     for value in inputs:
         first = run_book_t_shadow(value)
@@ -148,19 +148,19 @@ def evaluate_five_day_soak(
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--root", default=os.environ.get("XIAOCAO_ROOT", str(ROOT)))
-    parser.add_argument("--required-days", type=int, default=5)
+    parser.add_argument("--required-days", type=int, default=20)
     parser.add_argument("--json", action="store_true")
     args = parser.parse_args(argv)
     root = Path(args.root).resolve()
     try:
-        result = evaluate_five_day_soak(
+        result = evaluate_engineering_burn_in(
             _load_inputs(root),
             required_days=args.required_days,
         )
     except (OSError, ValueError, KeyError, TypeError, json.JSONDecodeError, BookTShadowError, BookTV2EvidenceError) as exc:
         print(f"Book T v2 soak blocked: {exc}", file=sys.stderr)
         return 2
-    output = root / "output/research/book_t_v2_shadow/soak_5d_verdict.json"
+    output = root / "output/research/book_t_v2_shadow/engineering_burn_in_verdict.json"
     output.parent.mkdir(parents=True, exist_ok=True)
     temporary = output.with_name(f".{output.name}.tmp")
     temporary.write_text(
@@ -172,7 +172,7 @@ def main(argv: list[str] | None = None) -> int:
         print(json.dumps(result, ensure_ascii=False, indent=2, sort_keys=True))
     else:
         print(
-            f"Book T v2 five-day soak: {result['status']} "
+            f"Book T v2 twenty-day engineering burn-in: {result['status']} "
             f"(real_days={result['real_trading_days']}, "
             f"rehearsal_excluded={result['rehearsal_days_excluded']})"
         )

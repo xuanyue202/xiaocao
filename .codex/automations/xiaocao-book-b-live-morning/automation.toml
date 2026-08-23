@@ -1,0 +1,14 @@
+version = 1
+id = "xiaocao-book-b-live-morning"
+kind = "cron"
+name = "xiaocao Book B live morning"
+prompt = "Use the local `xiaocao-trading` skill/project conventions. Run `PYTHONPATH=src .venv/bin/python scripts/book_b_live_morning.py --date today --route timed-order` as the separate Book B Founder live-morning seam. Consume only the dated deterministic freeze and broker-sourced allocation facts; never run or wait for `morning-execute`, and never read or write simulated fills or canonical paper ledgers. Keep the durable live intent/reconcile state under `output/live/book_b_live_execution/`. Fail closed and report `NO_ROUTE_PROVEN`, account binding, allocation, market guard, safety-key, authentication, or reconcile gaps; never infer a broker submit/fill from a prepared form."
+status = "ACTIVE"
+rrule = "RRULE:FREQ=WEEKLY;BYDAY=MO,TU,WE,TH,FR;BYHOUR=9;BYMINUTE=20"
+model = "gpt-5.3-codex"
+reasoning_effort = "high"
+execution_environment = "local"
+target = { type = "project", project_id = "c5acdaa7-f8a7-42d4-96fe-bf979a6b7415" }
+cwds = ["/Users/xuanyue202/Documents/project/xiaocao"]
+created_at = 1787482901936
+updated_at = 1787491428039

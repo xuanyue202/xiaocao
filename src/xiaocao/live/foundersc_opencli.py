@@ -7,12 +7,18 @@ it consumes one sanitized JSON receipt, never parses DOM text, and its
 """
 from __future__ import annotations
 
+import hashlib
 import json
+import math
+import re
 import shutil
 import subprocess
-from datetime import datetime
+import time
+from dataclasses import replace
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable
+from zoneinfo import ZoneInfo
 
 from .trading_execution import (
     BrokerAdapter,
@@ -25,10 +31,165 @@ from .trading_execution import (
 
 
 Runner = Callable[..., Any]
+_CONNECTED_PROFILE_PATTERN = re.compile(
+    r"^\s*(?P<context>\S+)(?:\s+(?P<alias>\S+))?\s+—\s+connected\b",
+    re.MULTILINE,
+)
+_ACCOUNT_FINGERPRINT_PATTERN = re.compile(r"\d{3}\*{6}\d{3}")
 
 
 class OpenCLIAdapterError(RuntimeError):
     """A command or receipt failed before any broker-side submit action."""
+
+
+def resolve_connected_opencli_profile(
+    profile: str | None = None,
+    *,
+    opencli_command: tuple[str, ...] | None = None,
+    runner: Runner = subprocess.run,
+    timeout_seconds: int = 10,
+    launch_edge: Callable[[], None] | None = None,
+    poll_attempts: int = 10,
+    poll_seconds: float = 0.5,
+) -> str:
+    """Resolve one Edge Browser Bridge context without exposing page data."""
+    requested = str(profile or "").strip()
+    installed = shutil.which("opencli")
+    command = tuple(
+        opencli_command
+        or ((installed,) if installed else ("npx", "--yes", "@jackwener/opencli@1.8.6"))
+    )
+    timeout = max(1, int(timeout_seconds))
+
+    def connected_contexts() -> list[tuple[str, bool]]:
+        try:
+            result = runner(
+                [*command, "profile", "list"],
+                capture_output=True,
+                text=True,
+                check=False,
+                timeout=timeout,
+            )
+        except subprocess.TimeoutExpired as exc:
+            raise OpenCLIAdapterError("OPENCLI_PROFILE_LIST_TIMEOUT") from exc
+        except OSError as exc:
+            raise OpenCLIAdapterError("OPENCLI_PROFILE_LIST_FAILED") from exc
+        if int(getattr(result, "returncode", 1)) != 0:
+            raise OpenCLIAdapterError("OPENCLI_PROFILE_LIST_FAILED")
+        output = getattr(result, "stdout", "") or ""
+        if isinstance(output, bytes):
+            output = output.decode("utf-8", errors="replace")
+        return [
+            (
+                str(match.group("context")),
+                str(match.group("alias") or "").strip().lower() == "default",
+            )
+            for match in _CONNECTED_PROFILE_PATTERN.finditer(str(output))
+        ]
+
+    def is_edge(context: str) -> bool:
+        try:
+            result = runner(
+                [
+                    *command,
+                    "--profile",
+                    context,
+                    "browser",
+                    "xiaocao-edge-profile-probe",
+                    "eval",
+                    "navigator.userAgent",
+                ],
+                capture_output=True,
+                text=True,
+                check=False,
+                timeout=timeout,
+            )
+        except (OSError, subprocess.TimeoutExpired):
+            return False
+        output = getattr(result, "stdout", "") or ""
+        if isinstance(output, bytes):
+            output = output.decode("utf-8", errors="replace")
+        return int(getattr(result, "returncode", 1)) == 0 and " Edg/" in str(output)
+
+    def start_edge() -> None:
+        if launch_edge is not None:
+            launch_edge()
+            return
+        try:
+            subprocess.run(
+                ["/usr/bin/open", "-g", "-a", "Microsoft Edge"],
+                capture_output=True,
+                check=False,
+                timeout=5,
+            )
+        except (OSError, subprocess.TimeoutExpired) as exc:
+            raise OpenCLIAdapterError("OPENCLI_EDGE_LAUNCH_FAILED") from exc
+
+    attempts = max(1, int(poll_attempts))
+    for attempt in range(attempts):
+        contexts = connected_contexts()
+        resolved: str | None = None
+        if len(contexts) == 1:
+            resolved = contexts[0][0]
+        elif len(contexts) > 1:
+            defaults = [context for context, is_default in contexts if is_default]
+            if len(defaults) == 1:
+                resolved = defaults[0]
+            else:
+                raise OpenCLIAdapterError("OPENCLI_PROFILE_AMBIGUOUS")
+        if resolved is not None:
+            if requested and requested != resolved:
+                raise OpenCLIAdapterError("OPENCLI_EDGE_PROFILE_MISMATCH")
+            if is_edge(resolved):
+                return resolved
+        if attempt == 0:
+            start_edge()
+        if attempt + 1 < attempts:
+            time.sleep(max(0.0, float(poll_seconds)))
+    raise OpenCLIAdapterError("OPENCLI_EDGE_PROFILE_NOT_CONNECTED")
+
+
+def release_foundersc_opencli_site_session(
+    profile: str,
+    *,
+    opencli_command: tuple[str, ...] | None = None,
+    runner: Runner = subprocess.run,
+    timeout_seconds: int = 10,
+) -> None:
+    """Release only the Founder adapter's stale Edge tab lease.
+
+    OpenCLI's persistent adapter session keeps the authenticated Edge tab warm,
+    but an interrupted browser recovery can leave that exact session leased.
+    Releasing the scoped lease before the morning process starts is idempotent;
+    it neither closes Edge nor reads page contents.
+    """
+    context = str(profile or "").strip()
+    if not context:
+        raise ValueError("profile must be non-empty")
+    installed = shutil.which("opencli")
+    command = tuple(
+        opencli_command
+        or ((installed,) if installed else ("npx", "--yes", "@jackwener/opencli@1.8.6"))
+    )
+    try:
+        result = runner(
+            [
+                *command,
+                "--profile",
+                context,
+                "browser",
+                "site:foundersc-quant",
+                "close",
+            ],
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout=max(1, int(timeout_seconds)),
+        )
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        raise OpenCLIAdapterError("OPENCLI_SITE_SESSION_RELEASE_FAILED") from exc
+    if int(getattr(result, "returncode", 1)) != 0:
+        raise OpenCLIAdapterError("OPENCLI_SITE_SESSION_RELEASE_FAILED")
 
 
 def _bare_code(value: object) -> str:
@@ -63,21 +224,43 @@ def _optional_float(value: object) -> float | None:
         return None
 
 
+def _broker_number(value: object) -> float | None:
+    raw = str(value or "").strip().replace(",", "").replace("¥", "")
+    try:
+        number = float(raw)
+    except ValueError:
+        return None
+    return number if math.isfinite(number) and number >= 0 else None
+
+
 def _one_receipt(stdout: object) -> dict[str, Any]:
     """Parse the template's strict one-row JSON output.
 
-    OpenCLI may print a short diagnostic before the formatted row.  We accept
-    only the final non-empty line and still require it to be exactly one JSON
-    object (or a one-element JSON array); arbitrary text is never interpreted
-    as a successful broker result.
+    OpenCLI may print a short diagnostic before a compact or pretty-printed
+    result.  Parse only a complete JSON suffix and still require exactly one
+    object (or a one-element array); arbitrary text is never interpreted as a
+    successful broker result.
     """
     lines = [line.strip() for line in str(stdout or "").splitlines() if line.strip()]
     if not lines:
         raise OpenCLIAdapterError("OPENCLI_EMPTY_RECEIPT")
-    try:
-        payload = json.loads(lines[-1])
-    except (TypeError, json.JSONDecodeError) as exc:
-        raise OpenCLIAdapterError("OPENCLI_INVALID_RECEIPT") from exc
+    payload: object | None = None
+    payload_start: int | None = None
+    last_error: json.JSONDecodeError | None = None
+    for start in range(len(lines) - 1, -1, -1):
+        if not lines[start].startswith(("{", "[")):
+            continue
+        try:
+            payload = json.loads("\n".join(lines[start:]))
+        except json.JSONDecodeError as exc:
+            last_error = exc
+            continue
+        payload_start = start
+        break
+    if payload is None:
+        raise OpenCLIAdapterError("OPENCLI_INVALID_RECEIPT") from last_error
+    if any(line.startswith(("{", "[")) for line in lines[: payload_start or 0]):
+        raise OpenCLIAdapterError("OPENCLI_RECEIPT_CARDINALITY")
     if isinstance(payload, list):
         if len(payload) != 1 or not isinstance(payload[0], dict):
             raise OpenCLIAdapterError("OPENCLI_RECEIPT_CARDINALITY")
@@ -96,7 +279,7 @@ class FounderscQuantOpenCLIAdapter(BrokerAdapter):
         profile: str | None = None,
         opencli_command: tuple[str, ...] | None = None,
         runner: Runner = subprocess.run,
-        timeout_seconds: int = 30,
+        timeout_seconds: int = 90,
         route: str = "manual-limit",
     ) -> None:
         if profile is not None and not profile.strip():
@@ -150,6 +333,215 @@ class FounderscQuantOpenCLIAdapter(BrokerAdapter):
             plan.logical_account_id,
         ]
 
+    def _prepare_args(self, plan: TradePlan, shares: int) -> list[str]:
+        args = [
+            "--route",
+            self.route,
+            *self._plan_args(plan),
+            "--code",
+            _bare_code(plan.code),
+            "--side",
+            plan.side.lower(),
+            "--quantity",
+            str(shares),
+            "--price",
+            f"{plan.limit_price:.6f}".rstrip("0").rstrip("."),
+        ]
+        if self.route == "timed-order":
+            args.extend(
+                [
+                    "--date",
+                    plan.trade_date,
+                    "--time",
+                    "09:30",
+                    "--strategy-name",
+                    f"xiaocao-readback-{plan.trade_date}-{_bare_code(plan.code)}",
+                ]
+            )
+        return args
+
+    def ensure_environment(
+        self,
+        *,
+        target: str,
+        expected_current: str = "any",
+        logical_account_id: str = "primary",
+    ) -> dict[str, Any]:
+        """Switch only the Founder mock/live selector and verify exact readback."""
+        normalized_target = str(target or "").strip().lower()
+        normalized_expected = str(expected_current or "any").strip().lower()
+        if normalized_target not in {"mock", "live"}:
+            raise ValueError("unsupported Founder environment target")
+        if normalized_expected not in {"any", "mock", "live"}:
+            raise ValueError("unsupported Founder expected environment")
+        row = self._run(
+            "environment",
+            [
+                "--target",
+                normalized_target,
+                "--expected-current",
+                normalized_expected,
+                "--logical-account-id",
+                str(logical_account_id or "primary").strip(),
+            ],
+        )
+        status = str(row.get("status") or "").strip().lower()
+        environment = str(row.get("environment") or "").strip().lower()
+        if status not in {"environment_ready", "environment_switched"} or environment != normalized_target:
+            raise OpenCLIAdapterError(f"OPENCLI_ENVIRONMENT_NOT_READY:{status or 'unknown'}")
+        if any(row.get(key) is True for key in ("submitted", "saved", "started")):
+            raise OpenCLIAdapterError("OPENCLI_ENVIRONMENT_UNSAFE_SIDE_EFFECT")
+        return {
+            "status": status,
+            "environment": environment,
+            "logical_account_id": str(row.get("logical_account_id") or ""),
+            "account_binding": str(row.get("account_binding") or "unknown"),
+            "submitted": False,
+            "saved": False,
+            "started": False,
+            "field_readback": _safe_evidence(row.get("field_readback") or {}),
+            "capabilities": _safe_evidence(row.get("capabilities") or {}),
+        }
+
+    def read_live_allocation_facts(
+        self,
+        *,
+        trade_date: str,
+        settled_nav: float,
+        current_open_exposure: float,
+        capital_basis_source: str,
+        expected_fund_account_fingerprint: str,
+        logical_account_id: str = "primary",
+        now: datetime | None = None,
+    ) -> dict[str, Any]:
+        """Read one complete, live, account-bound Founder asset snapshot."""
+        account = str(logical_account_id or "").strip()
+        nav = float(settled_nav)
+        exposure = float(current_open_exposure)
+        basis_source = str(capital_basis_source or "").strip()
+        if not math.isfinite(nav) or nav <= 0:
+            raise ValueError("LIVE_BOOK_B_SETTLED_NAV_INVALID")
+        if not math.isfinite(exposure) or exposure < 0 or exposure > nav:
+            raise ValueError("LIVE_BOOK_B_OPEN_EXPOSURE_INVALID")
+        if basis_source != "initial_book_b_capital":
+            raise ValueError("LIVE_BOOK_B_CAPITAL_BASIS_UNPROVEN")
+        expected_fingerprint = str(expected_fund_account_fingerprint or "").strip()
+        if not _ACCOUNT_FINGERPRINT_PATTERN.fullmatch(expected_fingerprint):
+            raise OpenCLIAdapterError("LIVE_ALLOCATION_EXPECTED_ACCOUNT_MISSING")
+        row = self._run(
+            "reconcile",
+            [
+                "--scope",
+                "assets",
+                "--expected-environment",
+                "live",
+                "--logical-account-id",
+                account,
+            ],
+        )
+        if str(row.get("environment") or "").strip().lower() != "live":
+            raise OpenCLIAdapterError("LIVE_ALLOCATION_ENVIRONMENT_NOT_LIVE")
+        if str(row.get("logical_account_id") or "").strip() != account:
+            raise OpenCLIAdapterError("LIVE_ALLOCATION_ACCOUNT_MISMATCH")
+        observed_fingerprint = str(row.get("fund_account_fingerprint") or "").strip()
+        if observed_fingerprint != expected_fingerprint:
+            raise OpenCLIAdapterError("LIVE_ALLOCATION_ACCOUNT_BINDING_UNPROVEN")
+        status = str(row.get("status") or "").strip().lower()
+        status_reason = str(row.get("status_reason") or "").strip().lower()
+        if status not in {"reconciled", "reconciled_partial"} or (
+            status == "reconciled_partial" and status_reason not in {
+                "",
+                "account_fingerprint_not_proven",
+            }
+        ):
+            raise OpenCLIAdapterError("LIVE_ALLOCATION_RECONCILE_INCOMPLETE")
+        observed_at = _parse_datetime(row.get("observed_at"))
+        current = now or datetime.now(timezone.utc)
+        if observed_at is None or observed_at.tzinfo is None:
+            raise OpenCLIAdapterError("LIVE_ALLOCATION_OBSERVED_AT_UNPROVEN")
+        if current.tzinfo is None:
+            raise ValueError("LIVE_ALLOCATION_NOW_NOT_TZ_AWARE")
+        if observed_at.astimezone(ZoneInfo("Asia/Shanghai")).date().isoformat() != str(
+            trade_date
+        )[:10]:
+            raise OpenCLIAdapterError("LIVE_ALLOCATION_OBSERVED_DATE_MISMATCH")
+        age_seconds = (current.astimezone(timezone.utc) - observed_at.astimezone(timezone.utc)).total_seconds()
+        if age_seconds < -30 or age_seconds > 300:
+            raise OpenCLIAdapterError("LIVE_ALLOCATION_RECEIPT_STALE")
+        if any(row.get(key) is True for key in ("submitted", "saved", "started")):
+            raise OpenCLIAdapterError("LIVE_ALLOCATION_UNSAFE_SIDE_EFFECT")
+        readback = row.get("field_readback")
+        assets = readback.get("assets") if isinstance(readback, dict) else None
+        if assets is None or assets.get("complete_scan") is not True:
+            raise OpenCLIAdapterError("LIVE_ALLOCATION_ASSET_SCAN_INCOMPLETE")
+        summary = assets.get("allocation_summary")
+        values = summary.get("values") if isinstance(summary, dict) else None
+        if not isinstance(values, dict) or summary.get("complete") is not True:
+            raise OpenCLIAdapterError("LIVE_ALLOCATION_ASSET_SUMMARY_UNPROVEN")
+        required = ("总资产", "证券市值", "可用资金")
+        if set(values) != set(required):
+            raise OpenCLIAdapterError("LIVE_ALLOCATION_ASSET_COLUMNS_UNPROVEN")
+        parsed = {
+            label: _broker_number(values[label])
+            for label in required
+        }
+        if parsed["总资产"] is None or parsed["总资产"] <= 0 or any(
+            parsed[label] is None for label in ("证券市值", "可用资金")
+        ):
+            raise OpenCLIAdapterError("LIVE_ALLOCATION_ASSET_VALUES_INVALID")
+        binding_hash = hashlib.sha256(expected_fingerprint.encode("utf-8")).hexdigest()
+        safe_receipt = {
+            "template_name": str(row.get("template_name") or "foundersc-quant/reconcile"),
+            "template_version": row.get("template_version"),
+            "status": "allocation_reconciled",
+            "trade_date": str(trade_date or "")[:10],
+            "environment": "live",
+            "logical_account_id": account,
+            "account_binding": "proven",
+            "fund_account_binding_sha256": binding_hash,
+            "observed_at": observed_at.isoformat(),
+            "allocation_summary": {
+                "complete": True,
+                "values": parsed,
+            },
+        }
+        receipt_hash = hashlib.sha256(
+            json.dumps(
+                safe_receipt,
+                ensure_ascii=False,
+                sort_keys=True,
+                separators=(",", ":"),
+                default=str,
+            ).encode("utf-8")
+        ).hexdigest()
+        allocation_capsule = {
+            "trade_date": str(trade_date or "")[:10],
+            "environment": "live",
+            "logical_account_id": account,
+            "account_binding": "proven",
+            "fund_account_binding_sha256": binding_hash,
+            "settled_nav": nav,
+            "available_cash": parsed["可用资金"],
+            "current_open_exposure": exposure,
+            "capital_basis_source": basis_source,
+            "broker_total_assets": parsed["总资产"],
+            "broker_securities_market_value": parsed["证券市值"],
+            "source": "foundersc_reconcile",
+            "broker_observed_at": observed_at.isoformat(),
+            "broker_receipt": safe_receipt,
+            "broker_receipt_sha256": receipt_hash,
+        }
+        allocation_capsule["allocation_capsule_sha256"] = hashlib.sha256(
+            json.dumps(
+                allocation_capsule,
+                ensure_ascii=False,
+                sort_keys=True,
+                separators=(",", ":"),
+                default=str,
+            ).encode("utf-8")
+        ).hexdigest()
+        return allocation_capsule
+
     def probe(self, plan: TradePlan) -> BrokerCapability:
         try:
             row = self._run("probe", self._plan_args(plan))
@@ -182,19 +574,7 @@ class FounderscQuantOpenCLIAdapter(BrokerAdapter):
 
     def prepare(self, plan: TradePlan, *, requested_shares: int | None = None) -> BrokerReceipt:
         shares = int(requested_shares or plan.shares)
-        args = [
-            "--route",
-            self.route,
-            *self._plan_args(plan),
-            "--code",
-            _bare_code(plan.code),
-            "--side",
-            plan.side.lower(),
-            "--quantity",
-            str(shares),
-            "--price",
-            f"{plan.limit_price:.6f}".rstrip("0").rstrip("."),
-        ]
+        args = self._prepare_args(plan, shares)
         try:
             row = self._run("prepare", args)
         except OpenCLIAdapterError as exc:
@@ -205,6 +585,91 @@ class FounderscQuantOpenCLIAdapter(BrokerAdapter):
                 conclusive=False,
             )
         return self._receipt_from_row(plan, row, stage="prepare", requested_shares=shares)
+
+    def prepare_readonly(
+        self,
+        plan: TradePlan,
+        *,
+        expected_fund_account_fingerprint: str,
+        requested_shares: int | None = None,
+    ) -> BrokerReceipt:
+        """Prepare, read back and close one form with external account proof.
+
+        The browser template cannot read Keychain.  This production-only seam
+        binds its masked page account to the fingerprint obtained by the
+        caller from Keychain, while preserving the permanent no-submit route.
+        """
+        expected = str(expected_fund_account_fingerprint or "").strip()
+        if not _ACCOUNT_FINGERPRINT_PATTERN.fullmatch(expected):
+            return BrokerReceipt(
+                status=BrokerStatus.UNKNOWN,
+                reason="LIVE_PREPARE_EXPECTED_ACCOUNT_MISSING",
+                error_code="LIVE_PREPARE_EXPECTED_ACCOUNT_MISSING",
+                conclusive=False,
+            )
+        shares = int(requested_shares or plan.shares)
+        args = self._prepare_args(plan, shares)
+        try:
+            row = self._run("prepare", args)
+        except OpenCLIAdapterError as exc:
+            return BrokerReceipt(
+                status=BrokerStatus.UNKNOWN,
+                reason=str(exc),
+                error_code=str(exc).split(":", 1)[0],
+                conclusive=False,
+            )
+        status = str(row.get("status") or "").strip().lower()
+        reason = str(row.get("status_reason") or row.get("reason") or "").strip()
+        capabilities = row.get("capabilities")
+        capabilities = capabilities if isinstance(capabilities, dict) else {}
+        field_readback = row.get("field_readback")
+        field_readback = field_readback if isinstance(field_readback, dict) else {}
+        timed_readback_safe = self.route != "timed-order" or (
+            str(field_readback.get("strategy_name") or "")
+            == f"xiaocao-readback-{plan.trade_date}-{_bare_code(plan.code)}"
+            and str(field_readback.get("date") or "") == plan.trade_date
+            and str(field_readback.get("hour") or "") == "9"
+            and str(field_readback.get("minute") or "") == "30"
+        )
+        safe = (
+            str(row.get("environment") or "").strip().lower() == plan.environment
+            and str(row.get("logical_account_id") or "").strip()
+            == plan.logical_account_id
+            and str(row.get("fund_account_fingerprint") or "").strip() == expected
+            and status in {"prepared", "prepared_readback", "unknown"}
+            and (
+                status != "unknown"
+                or reason == "account_fingerprint_not_proven"
+            )
+            and capabilities.get("form_readback") is True
+            and capabilities.get("submit") is False
+            and timed_readback_safe
+            and row.get("ready_for_submit") is False
+            and row.get("form_closed") is True
+            and all(row.get(key) is False for key in ("submitted", "saved", "started"))
+        )
+        receipt = self._receipt_from_row(
+            plan,
+            row,
+            stage="prepare",
+            requested_shares=shares,
+        )
+        if not safe:
+            return replace(
+                receipt,
+                status=BrokerStatus.UNKNOWN,
+                reason=reason or "LIVE_PREPARE_READBACK_UNPROVEN",
+                error_code="LIVE_PREPARE_READBACK_UNPROVEN",
+                conclusive=False,
+            )
+        return replace(
+            receipt,
+            status=BrokerStatus.PREPARED,
+            account_binding="proven",
+            reason="form_readback_completed_without_submit",
+            error_code=None,
+            conclusive=True,
+        )
 
     def submit(
         self,
@@ -302,6 +767,10 @@ class FounderscQuantOpenCLIAdapter(BrokerAdapter):
 
         field_readback = row.get("field_readback")
         field_readback = dict(field_readback) if isinstance(field_readback, dict) else {}
+        if stage == "prepare":
+            for key in ("submitted", "saved", "started", "form_closed"):
+                if key in row:
+                    field_readback[key] = row[key]
         locator_proof = row.get("locator_proof")
         locator_proof = dict(locator_proof) if isinstance(locator_proof, dict) else {}
         echoed: dict[str, Any] = {}
@@ -359,4 +828,9 @@ class FounderscQuantOpenCLIAdapter(BrokerAdapter):
         )
 
 
-__all__ = ["FounderscQuantOpenCLIAdapter", "OpenCLIAdapterError"]
+__all__ = [
+    "FounderscQuantOpenCLIAdapter",
+    "OpenCLIAdapterError",
+    "release_foundersc_opencli_site_session",
+    "resolve_connected_opencli_profile",
+]

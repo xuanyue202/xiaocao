@@ -57,11 +57,25 @@ def test_review_queue_prioritizes_open_positions_over_new_candidates(tmp_path: P
             "evidence": [{"title": "done title"}],
         },
     ])
+    _jsonl(live / "signal_snapshots.jsonl", [
+        {"date": "2026-07-06", "code": "NEW.XSHE", "book": "B"},
+    ])
+    (live / "recommend_2026-07-06.md").write_text("# frozen\n", encoding="utf-8")
 
-    queue = build_review_queue(live_dir=live, market_date="2026-07-06", limit=8)
+    queue = build_review_queue(
+        live_dir=live,
+        market_date="2026-07-06",
+        limit=8,
+        strategy_sha="d" * 40,
+    )
 
     assert queue["status"] == "ready"
     assert [item["code"] for item in queue["items"]] == ["OLD.XSHE", "NEW.XSHE"]
     assert queue["items"][0]["priority_reasons"][0] == "open_book_b_position"
     assert queue["items"][1]["priority_reasons"][0] == "mode_exec_star"
     assert queue["items"][1]["candidate_context"]["mode_state"] == "ACTIVE"
+    assert queue["freeze_binding"]["snapshot_row_count"] == 1
+    assert len(queue["freeze_binding"]["snapshot_sha256"]) == 64
+    assert len(queue["freeze_binding"]["report_sha256"]) == 64
+    assert queue["freeze_binding"]["strategy_run_id"].startswith("morning-freeze:")
+    assert queue["freeze_binding"]["strategy_sha"] == "d" * 40

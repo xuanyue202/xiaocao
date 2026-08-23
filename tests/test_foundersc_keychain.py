@@ -57,6 +57,8 @@ def test_preflight_matches_login_fingerprint_without_exposing_credentials() -> N
         "trade_account_length": 10,
         "page_fingerprint_present": True,
         "login_page_binding_match": True,
+        "trade_page_fingerprint_present": False,
+        "trade_page_binding_match": False,
         "login_secret_readable": True,
         "login_secret_nonempty": True,
         "login_secret_status": "readable",
@@ -107,3 +109,50 @@ def test_metadata_only_mode_never_requests_secret_values() -> None:
     assert all("-w" not in command for command in runner.commands)
     assert receipt["login_secret_status"] == "not_requested"
     assert receipt["trade_secret_status"] == "not_requested"
+
+
+def test_trade_account_fingerprint_reads_metadata_only_and_never_returns_account() -> None:
+    runner = Runner(
+        {LOGIN_SERVICE: "13912345888", TRADE_SERVICE: "9876543210"},
+        {LOGIN_SERVICE: b"unused", TRADE_SERVICE: b"unused"},
+    )
+
+    fingerprint = FounderscKeychainPreflight(runner=runner).trade_account_fingerprint()
+
+    assert fingerprint == "987******210"
+    assert "9876543210" not in fingerprint
+    assert len(runner.commands) == 1
+    assert "-w" not in runner.commands[0]
+
+
+def test_short_trade_account_fingerprint_fails_closed() -> None:
+    runner = Runner(
+        {LOGIN_SERVICE: "13912345888", TRADE_SERVICE: "123456"},
+        {LOGIN_SERVICE: b"unused", TRADE_SERVICE: b"unused"},
+    )
+
+    fingerprint = FounderscKeychainPreflight(runner=runner).trade_account_fingerprint()
+
+    assert fingerprint == ""
+
+
+def test_preflight_proves_trade_binding_from_masked_page_fingerprint() -> None:
+    runner = Runner(
+        {LOGIN_SERVICE: "13912345888", TRADE_SERVICE: "9876543210"},
+        {LOGIN_SERVICE: b"login-password", TRADE_SERVICE: b"trade-password"},
+    )
+
+    receipt = FounderscKeychainPreflight(runner=runner).run(
+        observed_login_fingerprint="139******888",
+        observed_trade_fingerprint="987******210",
+        read_secrets=True,
+    )
+
+    assert receipt["status"] == "account_binding_proven"
+    assert receipt["login_page_binding_match"] is True
+    assert receipt["trade_page_binding_match"] is True
+    assert receipt["account_binding"] == "proven"
+    assert receipt["account_binding_reason"] == "page_and_keychain_fingerprints_match"
+    rendered = repr(receipt)
+    assert "13912345888" not in rendered
+    assert "9876543210" not in rendered

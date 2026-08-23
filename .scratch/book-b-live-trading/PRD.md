@@ -183,7 +183,9 @@ Codex 只消费 capsule 完成当前 intent；完成后基于同一故障证据�
 ```text
 09:20 writer starts and probes session/account
       |
-dated freeze ready -> build immutable plans -> deterministic guards
+read-only assets receipt -> dated allocation facts or exact fail-closed gap
+      |
+hash/count-bound dated freeze -> build immutable plans -> deterministic guards
       |                                      |
       |                                      +-> skip + audit
       v
@@ -197,6 +199,20 @@ unfilled/partial -> current price and basket guard -> reconcile/cancel/retry rem
 ```
 
 09:45 是恢复和补单截止，不是等待开始时间。达到截止后不得继续新增 BUY 风险；未决活动委托必须按已验证的券商能力处理并保留明确状态。
+当前 phase-one runner 在每条终止路径都验证恢复 mock，避免独立 09:20
+任务把共享 Founder UI 选择器状态泄漏给后续流程。只有完整 live 资产扫描、
+当日 trade_date、`logical_account_id`、已证明资金账号绑定和 broker receipt hash
+同时成立时，才落盘 live allocation facts；完整 allocation capsule（包括
+Book-B 结算基数来源、NAV、现金、敞口和券商摘要）必须有 canonical SHA-256，
+且券商摘要现金必须与顶层可用现金一致。券商混合账户总资产/总证券市值仅作
+readback evidence，不得替代 Book-B 滚动结算 NAV/owned exposure。首次批次使用
+明确的 30,000 元基数；出现 owned fill 后若尚无结算 NAV 回执，后续批次保持
+`LIVE_BOOK_B_SETTLED_NAV_RECONCILE_REQUIRED`。页面资产摘要必须由 v3 模板从
+唯一 cards/table 结构化提取，页面资金账号掩码与 Keychain trade-account 元数据
+只在进程内比对，落盘只保留绑定 hash；回读必须是当日且不超过 5 分钟。queue
+producer 在冻结时写入 report/snapshot digest、row count、strategy run id 和
+producer strategy Git SHA，
+consumer 不得用后续追加行重新定义 freeze。否则文件不生成并报告具体 Gap。
 
 ## 6. Evidence and acceptance gates
 
@@ -235,20 +251,32 @@ Task `01a003f6-eb36-7180-910b-f02837410fd0` 已确认：
   read-only probe/prepare/reconcile/recover contract.  Its current
   `submit_capability=false` is consumed as `NO_ROUTE_PROVEN`; no submit command
   is invoked.
-- The existing `auto_daily.sh` paper writer remains unchanged until a proven
-  broker route, account binding, receipt mapping, and a separate user-approved
-  activation pass exist.
+- The runner resolves exactly one connected Browser Bridge profile (the unique
+  `default` alias, or the only connected profile) before any environment
+  action. Multiple unaliased profiles fail closed. Adapter receipt parsing
+  supports OpenCLI's real compact/pretty JSON shape but never DOM text.
+- The existing `auto_daily.sh` paper writer remains unchanged. A separate
+  09:20 `book_b_live_morning.py` process may switch/verify the Founder live
+  environment and wait only for the dated deterministic freeze. It writes only
+  the live execution namespace and remains `NO_ROUTE_PROVEN` until broker
+  submit, account binding, receipt mapping and the activation pass all succeed.
+- Phase one fixes the only live logical account to `primary` and the first
+  settled Book-B basis to `¥30,000`; neither is exposed as a CLI override. Any
+  submitted/acknowledged/partial/filled/unknown/reconciling execution evidence,
+  including a fill whose ownership-ledger write failed, blocks reuse of the
+  first-batch basis until a later settled-NAV contract is implemented.
 - SELL plans are accepted only when a current Book-B `live_monitor` decision
   explicitly authorizes a supported exit reason, binds an owned lot, and proves
   no T+1 or liquidity block. Ordinary frozen rows cannot become SELL plans.
 - BUY plans are sized/validated by the existing `mode_switch.plan_board_lot_orders`
-  allocator using rolling settled NAV; `¥30,000` is only the initial mock basis.
+  allocator using rolling settled NAV; `¥30,000` is the fixed initial live
+  Book-B basis in this phase, not a configurable mixed-account total.
 
 ## 9. Explicit non-goals for this implementation increment
 
-- 同步更新 Operating Contract/skill references to describe this non-runtime,
-  no-submit seam; this does not authorize real capital.
-- 不改 Codex Automation。
+- 同步更新 Operating Contract/skill references to describe this isolated,
+  no-submit live-morning seam; this does not authorize real capital.
+- 不把 live seam 合入或等待 09:25 模拟 Automation，也不读取/回写模拟成交。
 - 不提交、保存、启动、撤销任何模拟或真实券商订单。
 - 不启用 real-capital keys。
 - 不设计 Mac App adapter。

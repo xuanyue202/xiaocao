@@ -30,15 +30,15 @@ TEMPLATE_FILES = (
     "reconcile.js",
     "recover.js",
 )
-# Pinned at template version 2; update this list only with an intentional
+# Pinned at template version 3; update this list only with an intentional
 # template change and a corresponding review.
 EXPECTED_SHA256 = {
-    "README.md": "3d078950547aa1c914ade4df73579cb6a85d0fd88b946cd08edc033ab932e651",
-    "common.mjs": "0c41594842ee5a8686932206ce66cfecf7cdbeebc26cb37dd3ef629384aa0ffb",
+    "README.md": "9271ab9b3fd1a0bca73329c6d8cee38028ee512fec5799179d3a236089385c20",
+    "common.mjs": "1dfcbb75e16f5e5d5aa3b598941f0bbf6337644933f992d35ab923c250a95248",
     "environment.js": "7c824d2490f6a9efe60f34ed75b9bfe9facf79eae7fd8cb625b804819a380516",
     "probe.js": "a8c26df6b895d898286e3582d2ee8235e152e410cdf9f2cb6495248e916b2d1c",
     "prepare.js": "648c80f2a3adbf45e11d64745460346983492d38c3d8e034da644323bfcbe116",
-    "reconcile.js": "c2277f0b8783f13f28b789ab22e65b3d96e5f2e6f90f3ae6f2f05dcf5ce5dae5",
+    "reconcile.js": "33e9cb6a9743a9c432d82894313ecd9929a984f49a8e4a6a0abb185154b59b3b",
     "recover.js": "47535dd065cb527d8254b99dd44bf0e1f61155e942855376e9e8467c29b63d12",
 }
 

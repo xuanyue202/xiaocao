@@ -15,6 +15,38 @@ bash scripts/auto_daily.sh morning-prerecommend
 bash scripts/auto_daily.sh morning-execute
 ```
 
+Future Book-B real-capital execution is a third, deliberately independent
+09:20 Automation and process:
+
+```bash
+PYTHONPATH=src .venv/bin/python scripts/book_b_live_morning.py --date today --route timed-order
+```
+
+It may start before the dated freeze exists and wait only for that freeze. It
+must never run or await `morning-execute`, read a paper fill, or write
+`positions.jsonl`, `paper_trades.jsonl`, `paper_account.json`, or
+`paper_account_T.json`. Its state lives only under
+`output/live/book_b_live_execution/`. Before waiting, it switches to live and
+uses the read-only Founder asset reconcile to probe session/account/assets and
+atomically produce `book_b_live_allocation_facts_<date>.json` only from a
+complete, account-bound receipt. A non-empty dated freeze is valid for this
+consumer only when the queue producer manifest already binds its actual
+same-day snapshot rows, report, strategy run id, producer strategy Git SHA,
+hash and count; the consumer
+recomputes and compares them rather than defining a new digest. Broker total assets and total securities market value
+are evidence only, never the mixed-account Book-B basis: the first batch uses
+the fixed 30,000 yuan Book-B capital basis on logical account `primary`; neither
+value has a live CLI override. Any submitted, acknowledged, partial, filled,
+unknown or reconciling execution evidence (including a fill followed by an
+ownership-ledger write failure) blocks reuse of the first-batch basis until a
+settled-NAV receipt exists. The complete allocation capsule binds its capital
+basis source, NAV, cash, exposure and broker summary under one canonical hash,
+and broker-summary cash must equal top-level available cash. The task verifies restoration to
+mock on every exit.
+While the Founder adapter reports `submit_capability=false`, account binding is
+not proven, broker allocation facts cannot be produced, or either capital key
+fails, it reports the exact fail-closed reason and produces no real order.
+
 The execution stage must never rerun `live_recommend.py`. Keep its shell alive
 through the agent-review rendezvous and paper recording. Do not restart it while
 it is waiting for the opening window. For an explicit manual one-shell recovery,
@@ -42,7 +74,10 @@ result is written only under `output/research/book_t_v2_shadow/<run-id>/` and
 must never touch `positions.jsonl`, `paper_account_T.json`, or
 `paper_trades.jsonl`. The consumer replays and accumulates prior isolated
 frozen inputs so the 20/60/50 research floors cannot be reset by a daily
-single-file run. A missing v2 input is the normal `pending_observation` state.
+A dated producer/input missing from a scheduled run is a supporting-layer
+failure and must be reported as such. Only an intact, consumed real-day input
+whose cumulative sample is still below the 20/60/50 floors is the normal
+`pending_observation` state.
 A consumed input must carry the v1 T receipt and raw SHA-256 hashes for the
 positions, account, and trades artifacts; the CLI verifies those hashes before
 research evaluation.
@@ -61,12 +96,13 @@ skip, never a stock-shaped 100-share fallback.
 
 The 9:25 emitted set is the day’s stable recommendation reference. Later prices/fills may change; do not relabel the frozen signal set as unstable after close.
 
-The checked-in `scripts/book_b_execute.py` is a phase-one manual/read-only
-execution seam, not a third morning writer. `auto_daily.sh` remains unchanged
+The checked-in `scripts/book_b_execute.py` is the lower-level phase-one
+execution seam, not another paper writer. `auto_daily.sh` remains unchanged
 and continues to call the canonical `paper_record.py` path. If the seam is
 used for a dry run, BUY rows must carry an allocation proof produced by the
 shared `strategy.mode_switch.plan_board_lot_orders` allocator, using rolling
-settled NAV (the 30,000 yuan value is only the initial mock basis). Missing or
+settled NAV (the 30,000 yuan value is the fixed initial live Book-B basis in
+this phase). Missing or
 inconsistent proof, cash, batch, exposure, slot, or board-lot facts fail closed.
 Its market guard records `LIMIT_DOWN_BUY_BLOCKED` or
 `LIMIT_DOWN_CHECK_UNAVAILABLE`; neither is a fill.

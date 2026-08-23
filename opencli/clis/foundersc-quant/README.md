@@ -1,6 +1,6 @@
 # Founder Securities OpenCLI templates
 
-Template version: `2`
+Template version: `3`
 Site: `foundersc-quant`
 Scope: no-submit probe/preparation/reconciliation/recovery plus verified
 mock/live environment switching.
@@ -29,10 +29,12 @@ never prints account identifiers or password bytes:
 
 ```text
 PYTHONPATH=src .venv/bin/python scripts/foundersc_keychain_preflight.py \
-  --observed-login-fingerprint '123******789'
+  --observed-login-fingerprint '123******789' \
+  --observed-trade-fingerprint '987******210'
 
 PYTHONPATH=src .venv/bin/python scripts/foundersc_keychain_preflight.py \
-  --observed-login-fingerprint '123******789' --read-secrets
+  --observed-login-fingerprint '123******789' \
+  --observed-trade-fingerprint '987******210' --read-secrets
 ```
 
 The secret-read mode is bounded by a timeout and reports
@@ -97,12 +99,13 @@ are:
 ```json
 {
   "template_name": "foundersc-quant/reconcile",
-  "template_version": 1,
+  "template_version": 3,
   "status": "reconciled",
   "environment": "mock",
   "expected_environment": "mock",
   "logical_account_id": "primary",
   "account_binding": "not_proven",
+  "fund_account_fingerprint": "123******789",
   "route": "#/home/myAccount/query",
   "order_id": null,
   "strategy_id": null,
@@ -156,6 +159,19 @@ opaque manual route is not unique, it
 returns `reconciled_partial`, `reconcile_complete=false`, and
 `reconcile_required=true`; this is not a conclusive broker outcome.
 
+Template v3 also exposes a strict `allocation_summary` from either one unique
+asset-summary card set or one unique table row containing `总资产`, `证券市值`,
+and `可用资金`. Ambiguous/missing labels or disagreeing sources keep the summary
+incomplete. The page-side `fund_account_fingerprint` is masked; Xiaocao compares
+it in-process with the separately read Keychain trade-account metadata and
+persists only a hash of that binding. Neither mixed-account total assets nor
+total securities market value becomes the Book-B settled-NAV basis.
+When the visible asset page omits the label, the fingerprint comes from the
+platform's authenticated, same-origin, read-only `/qt/user/getBaseInfo`
+response. The browser template masks the numeric account before returning from
+page context; the raw account never enters OpenCLI output, logs, arguments, or
+evidence.
+
 ## Failure and recovery contract
 
 - A login/security-control page returns `status=auth_required`; the template
@@ -184,8 +200,11 @@ returns `reconciled_partial`, `reconcile_complete=false`, and
 
 The templates preserve the research gaps rather than hiding them:
 
-- The page exposes only a masked login-account hint; a stable fund-account
-  fingerprint for `logical_account_id=primary` is not proven.
+- The page parser requires exactly one numeric fund account from either the
+  exact visible `资金账号` label or the authenticated same-origin base-info
+  response. If that masked fingerprint does not match the Keychain
+  trade-account metadata, `logical_account_id=primary` remains unproven and
+  live allocation facts are not emitted.
 - The current runtime has not proven a stable strategy/order/deal receipt
   chain, quantization cancellation finality, mixed-account ownership, T+1
   semantics, or authoritative market-state timestamps.

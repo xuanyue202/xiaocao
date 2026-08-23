@@ -27,11 +27,19 @@ Completion means the requested command reached a terminal state and the branch-s
 - Xiaocao is paper-only unless both live-capital keys pass `src/xiaocao/live/safety.py`. An automation never creates either key.
 - Judgment artifacts (`XIAOCAO_PLAYBOOK`, posture timeline, candidate hypotheses) are priors only. They cannot filter deterministic picks, tune parameters or validate a strategy. For posture/exit judgment, start at `reference/experience/README.md` and follow only its relevant pointer.
 - Keep Books A, B and T separate. Same-code overlap is valid. For current truth, prefer `positions.jsonl`, `paper_trades.jsonl` and matching account files over stale holdings snapshots.
-- Book-B phase-one broker seam is manual/read-only and non-runtime: it must never
-  replace the canonical `paper_record.py` writer or invent a fill. It requires
+- Book-B phase-one broker seam is isolated from the paper runtime: the separate
+  09:20 task must never call or wait for the 09:25 `morning-execute`, replace
+  the canonical `paper_record.py` writer, consume a simulated fill, or invent
+  a broker fill. It requires
   ★E/allocation proof for BUY, monitor-authorized owned-lot evidence for SELL,
   account-level writer fencing and durable takeover/reconcile evidence; no real
   submit is permitted while the Founder template reports `submit_capability=false`.
+  Its non-empty freeze must be hash/count bound to the consumed snapshot; its
+  producer strategy Git SHA must be bound by the freeze manifest; its
+  allocation facts must come from a complete dated live asset readback bound
+  to the logical/fund account and protect the complete economic capsule with a
+  canonical hash. Phase one fixes the live logical account to `primary` and the
+  initial Book-B basis to 30,000 yuan; every exit must verify restoration to mock.
 - Before trusting A/B or repaired ledger state, run `scripts/data_doctor.py`. Raw cumulative A-B PnL is accounting information; exit comparison requires the identical-entry paired cohort.
 - Cache first and rate-limit Xiaocao API calls. The market-data branch contains endpoint-specific traps.
 - Book T v2 ETF expressions are paper-only and must use the explicit contract seam in `src/xiaocao/live/instrument_contract.py`; missing lot/T+0-T+1/fees, proprietary quote contract, current trading status, liquidity status or provenance stays fail-closed. See `docs/OPERATING_CONTRACT.md` §4b/§5 for the SSOT.
