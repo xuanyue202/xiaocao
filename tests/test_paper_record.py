@@ -1081,6 +1081,28 @@ def test_book_t_full_aligned_portfolio_returns_before_fill_window_wait(tmp_path,
     _record_book_t(FakeBookTSwitchClient([]), args, wait_for_fill_window=True)
 
 
+def test_write_book_t_control_receipt_formats_dated_path(tmp_path, monkeypatch) -> None:
+    import kronos_screen.scripts.paper_record as pr
+
+    live = tmp_path / "output" / "live"
+    live.mkdir(parents=True)
+    (live / "positions.jsonl").write_text("position\n", encoding="utf-8")
+    (live / "paper_account_T.json").write_text("{}\n", encoding="utf-8")
+    (live / "paper_trades.jsonl").write_text("trade\n", encoding="utf-8")
+    monkeypatch.setattr(pr, "ROOT", tmp_path)
+
+    path = pr._write_book_t_control_receipt("2026-08-17")
+
+    assert path == live / "book_t_v1_control_receipt_2026-08-17.json"
+    receipt = json.loads(path.read_text(encoding="utf-8"))
+    assert receipt["as_of"] == "2026-08-17"
+    assert receipt["book"] == "T"
+    assert set(receipt["artifact_hashes"]) == {"positions", "account", "trades"}
+    assert receipt["daily_semantics"]["as_of"] == "2026-08-17"
+    assert receipt["daily_semantics_sha256"]
+    assert receipt["receipt_sha256"]
+
+
 def test_validate_fill_window_rejects_reversed_window() -> None:
     try:
         _validate_fill_window("0931", "0930")

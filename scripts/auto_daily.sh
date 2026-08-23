@@ -15,14 +15,27 @@ PY="$ROOT/.venv/bin/python"
 cd "$ROOT" || exit 1
 export PYTHONPATH="$ROOT/src${PYTHONPATH:+:$PYTHONPATH}"
 STEP="${1:-}"
-TODAY="$(date +%F)"
+if [ "${XIAOCAO_BOOK_T_V2_RUN_MODE:-real}" = "rehearsal" ] && [ -n "${XIAOCAO_BOOK_T_V2_REHEARSAL_DATE:-}" ]; then
+  TODAY="$XIAOCAO_BOOK_T_V2_REHEARSAL_DATE"
+else
+  TODAY="$(date +%F)"
+fi
 LOG_DIR="$ROOT/output/live/auto"; mkdir -p "$LOG_DIR"
 LOG="$LOG_DIR/${TODAY}_${STEP}.log"
 log() { echo "[$(date '+%F %T')] $*" | tee -a "$LOG"; }
 run_book_t_shadow_if_frozen() {
   local input="output/live/book_t_v2_shadow_input_${TODAY}.json"
+  local producer_args=(--prepare --date "$TODAY" --root "$ROOT" --run-mode "${XIAOCAO_BOOK_T_V2_RUN_MODE:-real}")
+  if [ -n "${XIAOCAO_BOOK_T_V2_CAPSULE:-}" ]; then
+    producer_args+=(--capsule "$XIAOCAO_BOOK_T_V2_CAPSULE")
+  fi
+  log "Book T v2 shadow: production producer (research namespace only)"
+  if ! "$PY" scripts/book_t_v2_daily.py "${producer_args[@]}" >>"$LOG" 2>&1; then
+    log "Book T v2 shadow DEGRADED: dated producer input was not created; this is a producer/readback failure, not sample-floor evidence"
+    return 0
+  fi
   if [ ! -f "$input" ]; then
-    log "Book T v2 shadow: no dated frozen input — keep v1 control consumer (pending_observation)"
+    log "Book T v2 shadow DEGRADED: producer returned without a dated frozen input"
     return 0
   fi
   log "Book T v2 shadow: consume ${input} (research namespace only)"
@@ -31,6 +44,18 @@ run_book_t_shadow_if_frozen() {
     --output-dir "output/research/book_t_v2_shadow" \
     --run-id "${TODAY}-book-t-v2-shadow" >>"$LOG" 2>&1; then
     log "Book T v2 shadow DEGRADED: frozen research input was not consumed; keep successful v1 control result"
+    return 0
+  fi
+}
+run_book_t_v2_daily_mark_if_frozen() {
+  local input="output/live/book_t_v2_shadow_input_${TODAY}.json"
+  if [ ! -f "$input" ]; then
+    log "Book T v2 evidence: no morning input — daily mark not attempted (producer failure remains visible)"
+    return 0
+  fi
+  log "Book T v2 evidence: append daily_mark to immutable decision"
+  if ! "$PY" scripts/book_t_v2_daily.py --daily-mark --date "$TODAY" --root "$ROOT" >>"$LOG" 2>&1; then
+    log "Book T v2 evidence DEGRADED: daily mark was not appended; formal paper ledger remains authoritative"
     return 0
   fi
 }
@@ -156,6 +181,7 @@ case "$STEP" in
     # current. Rate-limited (API throttles on bursts). Non-fatal.
     log "refresh daily bars from minute (bypass lagging date_kline feed)"
     "$PY" scripts/refresh_daily_cache.py >>"$LOG" 2>&1 || true
+    run_book_t_v2_daily_mark_if_frozen
     # data health GATES the capability (learning) half: a critical finding (e.g.
     # duplicate snapshots) must NOT be fed into training_rows/the ledger, or the
     # flywheel learns from a 真的谎言. The capital half (monitor/settle/digest)

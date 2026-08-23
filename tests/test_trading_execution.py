@@ -19,6 +19,7 @@ from xiaocao.live.trading_execution import (
     TradingTakeoverStore,
     trade_plan_from_frozen_row,
 )
+from xiaocao.live.safety import ENV_LIVE_ENABLED, ENV_SIGNING_KEY, make_authorization
 
 
 def _plan(
@@ -163,6 +164,50 @@ def test_live_order_is_denied_before_adapter_side_effect_without_two_keys(tmp_pa
     assert broker.probe_calls == 0
     assert broker.prepare_calls == 0
     assert broker.submit_calls == 0
+
+
+def test_live_switch_can_be_rehearsed_with_fake_adapter_but_never_without_gate(tmp_path: Path) -> None:
+    now = datetime(2026, 8, 15, 1, 1, tzinfo=timezone.utc)
+    signing_key = "test-human-key"
+    auth = make_authorization(
+        scope="isolated-test",
+        max_notional=10000.0,
+        signing_key=signing_key,
+        sides=["BUY"],
+        codes=["000001.XSHE"],
+        issued_at=now.isoformat(),
+        expires_at="2026-08-16T00:00:00+00:00",
+    )
+    auth_path = tmp_path / "live_authorization.json"
+    auth_path.write_text(json.dumps(auth), encoding="utf-8")
+    broker = FakeBroker()
+    broker.capability = replace(
+        broker.capability,
+        account_binding="bound",
+        manual_position_shares=0,
+    )
+    engine = TradingExecution(
+        store=InMemoryExecutionStore(tmp_path / "events.jsonl"),
+        safety_env={ENV_LIVE_ENABLED: "true", ENV_SIGNING_KEY: signing_key},
+        auth_path=auth_path,
+        audit_path=tmp_path / "audit.jsonl",
+        notifier=lambda _title, _body: "ok",
+        now=lambda: now,
+    )
+
+    receipt = engine.execute(
+        replace(
+            _plan(
+                environment="live",
+                deadline=now + timedelta(minutes=15),
+            )
+        ),
+        broker,
+    )
+
+    assert receipt.state == ExecutionState.ACKNOWLEDGED
+    assert broker.probe_calls == 1
+    assert broker.submit_calls == 1
 
 
 @pytest.mark.parametrize("guard,reason", [("limit_down", "LIMIT_DOWN_BUY_BLOCKED"), ("unavailable", "LIMIT_DOWN_CHECK_UNAVAILABLE")])

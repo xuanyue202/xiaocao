@@ -30,6 +30,12 @@ from xiaocao.live.instrument_contract import (
     validate_market_data,
 )
 from xiaocao.research import trend_guards
+from xiaocao.research.book_t_v2_lifecycle import (
+    BookTV2EvidenceError,
+    engineering_burn_in_gate,
+    lifecycle_summary,
+    validate_lifecycle,
+)
 
 
 BOOK_T_SHADOW_SCHEMA_VERSION = 1
@@ -196,7 +202,13 @@ def _selection_codes(selection: Mapping[str, Any]) -> list[str]:
     return sorted(set(codes))
 
 
-def _bind_variant(value: Mapping[str, Any], *, shadow: bool, market_hash: str) -> dict[str, Any]:
+def _bind_variant(
+    value: Mapping[str, Any],
+    *,
+    shadow: bool,
+    market_hash: str,
+    lifecycle: bool = False,
+) -> dict[str, Any]:
     variant = _json_copy(value)
     if not isinstance(variant, dict):
         raise BookTShadowError("variant must be an object")
@@ -231,14 +243,15 @@ def _bind_variant(value: Mapping[str, Any], *, shadow: bool, market_hash: str) -
         if {_text(code) for code in expected_codes if _text(code)} != derived_codes:
             raise BookTShadowError("variant.expected_fill_codes do not match the bound selection")
     variant["expected_fill_codes"] = [str(code) for code in expected_codes if _text(code)]
-    if not variant["expected_fill_codes"]:
+    if not variant["expected_fill_codes"] and not lifecycle:
         raise BookTShadowError("variant.expected_fill_codes must not be empty")
 
     roles = _list(variant.get("source_roles"), "variant.source_roles")
     variant["source_roles"] = sorted({_text(role) for role in roles if _text(role)})
 
     for field in ("fills", "holds"):
-        rows = _list(variant.get(field), f"variant.{field}")
+        raw_rows = variant.get(field, []) if lifecycle else variant.get(field)
+        rows = _list(raw_rows, f"variant.{field}")
         bound_rows: list[dict[str, Any]] = []
         for index, row in enumerate(rows):
             item = _mapping(row, f"variant.{field}[{index}]")
@@ -298,7 +311,12 @@ def _validate_input_dates(body: Mapping[str, Any]) -> None:
             _assert_same_day(hold_day, frozen_day, f"{name}.holds[{index}]")
 
 
-def _validate_control_receipt(receipt: Mapping[str, Any], *, as_of: str) -> dict[str, Any]:
+def _validate_control_receipt(
+    receipt: Mapping[str, Any],
+    *,
+    as_of: str,
+    require_daily_semantics: bool = False,
+) -> dict[str, Any]:
     value = _mapping(receipt, "control.control_receipt")
     _require_hash(value, "receipt_sha256", "control.control_receipt")
     expected = {
@@ -328,6 +346,36 @@ def _validate_control_receipt(receipt: Mapping[str, Any], *, as_of: str) -> dict
             artifact_hashes.get(artifact),
             f"control.control_receipt.artifact_hashes.{artifact}",
         )
+    if require_daily_semantics:
+        semantics = _mapping(
+            value.get("daily_semantics"),
+            "control.control_receipt.daily_semantics",
+        )
+        _assert_same_day(
+            _row_date(
+                semantics,
+                "control.control_receipt.daily_semantics",
+                ("as_of", "trade_date", "date"),
+            ),
+            as_of,
+            "control.control_receipt.daily_semantics",
+        )
+        _list(
+            semantics.get("actions"),
+            "control.control_receipt.daily_semantics.actions",
+        )
+        _mapping(
+            semantics.get("selection"),
+            "control.control_receipt.daily_semantics.selection",
+        )
+        semantics_hash = _require_digest(
+            value.get("daily_semantics_sha256"),
+            "control.control_receipt.daily_semantics_sha256",
+        )
+        if canonical_sha256(semantics) != semantics_hash:
+            raise BookTShadowError(
+                "control.control_receipt.daily_semantics_sha256 does not match payload"
+            )
     return value
 
 
@@ -350,6 +398,7 @@ def bind_book_t_shadow_input(value: Mapping[str, Any]) -> dict[str, Any]:
         raise BookTShadowError(f"unexpected shadow input namespace: {namespace}")
     body["namespace"] = BOOK_T_SHADOW_INPUT_NAMESPACE
     _date(body.get("as_of"))
+    lifecycle = isinstance(body.get("evidence_lifecycle"), Mapping)
 
     market = _mapping(body.get("market_input"), "market_input")
     market = _bind_market_input(market)
@@ -363,7 +412,18 @@ def bind_book_t_shadow_input(value: Mapping[str, Any]) -> dict[str, Any]:
             raise BookTShadowError(f"assumptions.{name} is required")
 
     for name, shadow in (("control", False), ("shadow", True)):
-        body[name] = _bind_variant(_mapping(body.get(name), name), shadow=shadow, market_hash=market_hash)
+        body[name] = _bind_variant(
+            _mapping(body.get(name), name),
+            shadow=shadow,
+            market_hash=market_hash,
+            lifecycle=lifecycle,
+        )
+
+    if lifecycle:
+        try:
+            body["evidence_lifecycle"] = validate_lifecycle(body["evidence_lifecycle"])
+        except (BookTV2EvidenceError, KeyError, TypeError) as exc:
+            raise BookTShadowError(f"invalid evidence_lifecycle: {exc}") from exc
 
     _validate_input_dates(body)
     body.pop("input_sha256", None)
@@ -380,6 +440,12 @@ def _validate_bound_input(value: Mapping[str, Any]) -> dict[str, Any]:
     if int(body.get("schema_version", 0)) != BOOK_T_SHADOW_SCHEMA_VERSION:
         raise BookTShadowError("unsupported Book T shadow input schema_version")
     _date(body.get("as_of"))
+    lifecycle = isinstance(body.get("evidence_lifecycle"), Mapping)
+    if lifecycle:
+        try:
+            body["evidence_lifecycle"] = validate_lifecycle(body["evidence_lifecycle"])
+        except (BookTV2EvidenceError, KeyError, TypeError) as exc:
+            raise BookTShadowError(f"invalid evidence_lifecycle: {exc}") from exc
     actual = _text(body.get("input_sha256"))
     if not actual:
         raise BookTShadowError("input_sha256 is required")
@@ -391,7 +457,12 @@ def _validate_bound_input(value: Mapping[str, Any]) -> dict[str, Any]:
     market = _mapping(body.get("market_input"), "market_input")
     market_hash = _require_hash(market, "market_input_sha256", "market_input")
     for name in ("control", "shadow"):
-        _bind_variant(_mapping(body.get(name), name), shadow=name == "shadow", market_hash=market_hash)
+        _bind_variant(
+            _mapping(body.get(name), name),
+            shadow=name == "shadow",
+            market_hash=market_hash,
+            lifecycle=lifecycle,
+        )
     _validate_input_dates(body)
     return body
 
@@ -744,10 +815,22 @@ def _validate_variant(
     market_hash: str,
     as_of: str,
     assumptions: Mapping[str, Any],
+    lifecycle: bool = False,
 ) -> tuple[dict[str, Any], list[dict[str, Any]], list[dict[str, Any]]]:
     variant = _mapping(value, name)
+    receipt: dict[str, Any] | None = None
     if not shadow:
-        _validate_control_receipt(_mapping(variant.get("control_receipt"), f"{name}.control_receipt"), as_of=as_of)
+        receipt = _validate_control_receipt(
+            _mapping(variant.get("control_receipt"), f"{name}.control_receipt"),
+            as_of=as_of,
+            require_daily_semantics=lifecycle,
+        )
+        if lifecycle and _text(variant.get("daily_semantics_sha256")) != _text(
+            receipt.get("daily_semantics_sha256")
+        ):
+            raise BookTShadowError(
+                f"{name}.daily_semantics_sha256 does not match the control receipt"
+            )
     if shadow:
         plan = _mapping(variant.get("selection_plan"), f"{name}.selection_plan")
         _require_hash(plan, "selection_plan_sha256", f"{name}.selection_plan")
@@ -805,6 +888,8 @@ def run_book_t_shadow(value: Mapping[str, Any]) -> dict[str, Any]:
     assumptions = _mapping(frozen.get("assumptions"), "assumptions")
     market = _mapping(frozen.get("market_input"), "market_input")
     market_hash = _text(market["market_input_sha256"])
+    lifecycle_value = frozen.get("evidence_lifecycle")
+    lifecycle = isinstance(lifecycle_value, Mapping)
     control, control_fills, control_holds = _validate_variant(
         frozen["control"],
         name="control",
@@ -812,6 +897,7 @@ def run_book_t_shadow(value: Mapping[str, Any]) -> dict[str, Any]:
         market_hash=market_hash,
         as_of=as_of,
         assumptions=assumptions,
+        lifecycle=lifecycle,
     )
     shadow, shadow_fills, shadow_holds = _validate_variant(
         frozen["shadow"],
@@ -820,6 +906,7 @@ def run_book_t_shadow(value: Mapping[str, Any]) -> dict[str, Any]:
         market_hash=market_hash,
         as_of=as_of,
         assumptions=assumptions,
+        lifecycle=lifecycle,
     )
 
     shadow_plan = _mapping(shadow.get("selection_plan"), "shadow.selection_plan")
@@ -831,16 +918,50 @@ def run_book_t_shadow(value: Mapping[str, Any]) -> dict[str, Any]:
         if _text(row.get("status")).lower() == "filled"
     }
     valid_reasons: list[str] = []
-    if not expected_codes.issubset(filled_codes):
-        valid_reasons.append("shadow_fill_outcome_incomplete")
-    if any(row.get("executable") is not True for row in shadow.get("holds", [])):
-        valid_reasons.append("non_executable_hold_path")
-    if shadow_plan.get("plan_status") != "ready":
-        valid_reasons.append("selection_plan_not_executable")
-    if not shadow.get("holds"):
-        valid_reasons.append("shadow_hold_path_missing")
-    if not shadow_plan.get("selected_themes"):
-        valid_reasons.append("no_theme_decision")
+    if lifecycle:
+        try:
+            frozen_lifecycle = validate_lifecycle(lifecycle_value)
+        except (BookTV2EvidenceError, TypeError) as exc:
+            raise BookTShadowError(f"invalid evidence_lifecycle: {exc}") from exc
+        lifecycle_decision = next(
+            event
+            for event in frozen_lifecycle["stages"]
+            if event.get("stage") == "decision"
+        )
+        decision_data = _mapping(lifecycle_decision.get("data"), "evidence_lifecycle.decision.data")
+        control_receipt = _mapping(control.get("control_receipt"), "control.control_receipt")
+        if _text(decision_data.get("control_receipt_sha256")) != _text(
+            control_receipt.get("receipt_sha256")
+        ):
+            valid_reasons.append("control_receipt_lifecycle_mismatch")
+        if _text(decision_data.get("selection_plan_sha256")) != _text(
+            shadow_plan.get("selection_plan_sha256")
+        ):
+            valid_reasons.append("selection_plan_lifecycle_mismatch")
+        status_by_code = {
+            _text(row.get("code")): _text(row.get("status")).lower()
+            for row in shadow.get("fills", [])
+        }
+        if not expected_codes.issubset(status_by_code):
+            valid_reasons.append("shadow_fill_outcome_incomplete")
+        if any(status not in {"filled", "skipped", "blocked"} for status in status_by_code.values()):
+            valid_reasons.append("shadow_fill_status_invalid")
+        if shadow_plan.get("daily_reevaluation_complete") is not True:
+            valid_reasons.append("daily_reevaluation_incomplete")
+        # An empty selection with an explicit selector plan is a valid
+        # engineering day: the producer has proven the full chain and chosen
+        # not to invent an instrument when the evidence is insufficient.
+    else:
+        if not expected_codes.issubset(filled_codes):
+            valid_reasons.append("shadow_fill_outcome_incomplete")
+        if any(row.get("executable") is not True for row in shadow.get("holds", [])):
+            valid_reasons.append("non_executable_hold_path")
+        if shadow_plan.get("plan_status") != "ready":
+            valid_reasons.append("selection_plan_not_executable")
+        if not shadow.get("holds"):
+            valid_reasons.append("shadow_hold_path_missing")
+        if not shadow_plan.get("selected_themes"):
+            valid_reasons.append("no_theme_decision")
 
     control_comp = control["summary"]["returns"]["strat_compounded"]
     shadow_comp = shadow["summary"]["returns"]["strat_compounded"]
@@ -861,6 +982,7 @@ def run_book_t_shadow(value: Mapping[str, Any]) -> dict[str, Any]:
         "market_input_sha256": market_hash,
         "assumptions": assumptions,
         "frozen_input": copy.deepcopy(frozen),
+        **({"evidence_lifecycle": copy.deepcopy(frozen_lifecycle)} if lifecycle else {}),
         "source_roles": shadow["source_roles"],
         "control": {**control, "fills": control["fills"], "holds": control["holds"]},
         "shadow": {**shadow, "fills": shadow["fills"], "holds": shadow["holds"]},
@@ -882,6 +1004,16 @@ def run_book_t_shadow(value: Mapping[str, Any]) -> dict[str, Any]:
             "daily_reevaluation_complete": shadow_plan.get("daily_reevaluation_complete") is True,
             "fills_complete": not valid_reasons,
             "valid_theme_decision": not valid_reasons,
+            "engineering_day_valid": not valid_reasons if lifecycle else None,
+            "evidence_lifecycle_bound": lifecycle,
+            "outcome_status": (
+                _text(frozen_lifecycle.get("outcome_status")) if lifecycle else "matured"
+            ),
+            "outcome_matured": (
+                any(event.get("stage") == "matured" for event in frozen_lifecycle.get("stages", []))
+                if lifecycle
+                else True
+            ),
             "formal_ledger_mutations": {"positions": 0, "account": 0, "trades": 0},
         },
         "validity_reasons": valid_reasons,
@@ -943,6 +1075,118 @@ def _run_values(runs: Sequence[Mapping[str, Any]]) -> list[dict[str, Any]]:
                 seen_hold_intervals[name].append((code, entry, exit_value))
         values.append(run)
     return sorted(values, key=lambda row: str(row.get("as_of")))
+
+
+def _validated_lifecycle_events(
+    events: Sequence[Mapping[str, Any]],
+) -> list[dict[str, Any]]:
+    values: list[dict[str, Any]] = []
+    seen_stages: set[tuple[str, str]] = set()
+    stage_order = {"daily_mark": 0, "exit": 1, "matured": 2}
+    last_stage_by_decision: dict[str, int] = {}
+    for index, raw in enumerate(events):
+        event = _mapping(raw, f"lifecycle_events[{index}]")
+        event_id = _text(event.get("event_id"))
+        unsigned = dict(event)
+        unsigned.pop("event_id", None)
+        if not event_id or event_id != canonical_sha256(unsigned):
+            raise BookTShadowError(f"lifecycle_events[{index}] failed integrity validation")
+        decision_id = _text(event.get("decision_id"))
+        stage = _text(event.get("stage"))
+        if not decision_id or stage not in {"daily_mark", "exit", "matured"}:
+            raise BookTShadowError(f"lifecycle_events[{index}] has an invalid decision/stage")
+        if event.get("namespace") != "book_t_v2_evidence" or event.get(
+            "protocol_id"
+        ) != "book-t-v2-evidence-lifecycle-v1":
+            raise BookTShadowError(f"lifecycle_events[{index}] protocol is invalid")
+        try:
+            schema_version = int(event.get("schema_version", 0))
+        except (TypeError, ValueError) as exc:
+            raise BookTShadowError(f"lifecycle_events[{index}] schema is invalid") from exc
+        if schema_version != 1:
+            raise BookTShadowError(f"lifecycle_events[{index}] schema is invalid")
+        if not isinstance(event.get("data"), Mapping):
+            raise BookTShadowError(f"lifecycle_events[{index}].data must be an object")
+        key = (decision_id, stage)
+        if key in seen_stages:
+            raise BookTShadowError(f"duplicate lifecycle event stage: {decision_id}:{stage}")
+        previous_rank = last_stage_by_decision.get(decision_id, -1)
+        if stage_order[stage] < previous_rank:
+            raise BookTShadowError(f"lifecycle event stages are out of order: {decision_id}")
+        seen_stages.add(key)
+        last_stage_by_decision[decision_id] = stage_order[stage]
+        values.append(event)
+    stages_by_decision: dict[str, set[str]] = defaultdict(set)
+    for event in values:
+        stages_by_decision[_text(event.get("decision_id"))].add(_text(event.get("stage")))
+    for decision_id, stages in stages_by_decision.items():
+        if "exit" in stages and "daily_mark" not in stages:
+            raise BookTShadowError(f"exit event has no daily mark: {decision_id}")
+        if "matured" in stages and "exit" not in stages:
+            raise BookTShadowError(f"matured event has no exit: {decision_id}")
+    return values
+
+
+def _matured_holds(
+    run: Mapping[str, Any],
+    *,
+    lifecycle: Mapping[str, Any],
+    events: Sequence[Mapping[str, Any]],
+) -> list[dict[str, Any]]:
+    matured = [event for event in events if _text(event.get("stage")) == "matured"]
+    if not matured:
+        return []
+    fill_by_code = {
+        _text(row.get("code")): row
+        for row in _list(_mapping(run.get("shadow"), "run.shadow").get("fills"), "run.shadow.fills")
+        if _text(row.get("code")) and _text(row.get("status")).lower() == "filled"
+    }
+    rows: list[dict[str, Any]] = []
+    seen_codes: set[str] = set()
+    decision_day = _date(lifecycle.get("as_of"))
+    for event in matured:
+        data = _mapping(event.get("data"), "lifecycle_event.data")
+        outcome_rows = _list(data.get("rows"), "lifecycle_event.data.rows")
+        for index, raw in enumerate(outcome_rows):
+            outcome = _mapping(raw, f"lifecycle_event.data.rows[{index}]")
+            code = _text(outcome.get("code"))
+            if not code or code in seen_codes:
+                raise BookTShadowError("matured outcome codes must be unique and non-empty")
+            fill = fill_by_code.get(code)
+            if fill is None:
+                raise BookTShadowError(
+                    f"matured outcome has no canonical shadow fill: {code}"
+                )
+            outcome_day = _row_date(
+                outcome,
+                f"lifecycle_event.data.rows[{index}]",
+                ("as_of", "trade_date", "date"),
+            )
+            if outcome_day < decision_day:
+                raise BookTShadowError("matured outcome precedes its decision day")
+            rows.append(
+                {
+                    "hold_id": f"matured:{_text(lifecycle.get('decision_id'))}:{code}",
+                    "code": code,
+                    "entry": decision_day,
+                    "exit": outcome_day,
+                    "as_of": decision_day,
+                    "fill_reference": _text(fill.get("fill_id")),
+                    "executable": True,
+                    "strat_ret": _finite(outcome.get("strat_ret"), "matured.strat_ret"),
+                    "base_ret": _finite(outcome.get("base_ret"), "matured.base_ret"),
+                    "theme_id": _text(outcome.get("theme_id") or fill.get("theme_id")) or "unresolved",
+                    "instrument_type": _text(
+                        outcome.get("instrument_type") or fill.get("instrument_type")
+                    ) or "unknown",
+                    "expression_type": _text(
+                        outcome.get("expression_type") or fill.get("expression_type")
+                    ) or "unknown",
+                    "outcome_event_id": _text(event.get("event_id")),
+                }
+            )
+            seen_codes.add(code)
+    return rows
 
 
 def _coverage(runs: Sequence[Mapping[str, Any]], holds: Sequence[Mapping[str, Any]]) -> dict[str, Any]:
@@ -1031,6 +1275,7 @@ def evaluate_book_t_shadow(
     min_valid_decisions: int = BOOK_T_SHADOW_MIN_VALID_DECISIONS,
     n_tried: int = 1,
     min_holds: int = 8,
+    lifecycle_events: Sequence[Mapping[str, Any]] = (),
 ) -> dict[str, Any]:
     """Evaluate daily shadow artifacts without authorizing promotion."""
 
@@ -1052,15 +1297,55 @@ def evaluate_book_t_shadow(
     if int(n_tried) < 1:
         raise BookTShadowError("n_tried must be >= 1")
     ordered = _run_values(runs)
+    lifecycle_mode = any(isinstance(run.get("evidence_lifecycle"), Mapping) for run in ordered)
+    if lifecycle_mode and any(
+        not isinstance(run.get("evidence_lifecycle"), Mapping) for run in ordered
+    ):
+        raise BookTShadowError("cannot mix lifecycle and legacy shadow runs")
+    validated_events = _validated_lifecycle_events(lifecycle_events)
+    if validated_events and not lifecycle_mode:
+        raise BookTShadowError("lifecycle events require lifecycle shadow runs")
+    events_by_decision: dict[str, list[dict[str, Any]]] = defaultdict(list)
+    for event in validated_events:
+        events_by_decision[_text(event.get("decision_id"))].append(event)
+    effective_runs: list[dict[str, Any]] = [copy.deepcopy(run) for run in ordered]
+    lifecycle_rows = [
+        validate_lifecycle(_mapping(run.get("evidence_lifecycle"), "run.evidence_lifecycle"))
+        for run in ordered
+    ] if lifecycle_mode else []
+    known_decision_ids = {_text(row.get("decision_id")) for row in lifecycle_rows}
+    if any(_text(event.get("decision_id")) not in known_decision_ids for event in validated_events):
+        raise BookTShadowError("lifecycle event is not bound to a supplied frozen decision")
+    for run, lifecycle in zip(effective_runs, lifecycle_rows):
+        decision_events = events_by_decision.get(_text(lifecycle.get("decision_id")), [])
+        matured_holds = _matured_holds(
+            run,
+            lifecycle=lifecycle,
+            events=decision_events,
+        )
+        if matured_holds:
+            shadow = _mapping(run.get("shadow"), "run.shadow")
+            shadow["holds"] = list(shadow.get("holds", [])) + matured_holds
+            run["shadow"] = shadow
+        engineering = _mapping(run.get("engineering"), "run.engineering")
+        engineering["outcome_matured"] = any(
+            _text(event.get("stage")) == "matured" for event in decision_events
+        )
+        engineering["outcome_status"] = (
+            "matured"
+            if engineering["outcome_matured"]
+            else _text(lifecycle.get("outcome_status"))
+        )
+        run["engineering"] = engineering
     shadow_holds = [
         row
-        for run in ordered
+        for run in effective_runs
         for row in _mapping(run["shadow"], "run.shadow").get("holds", [])
         if _mapping(row, "run.shadow.hold").get("executable") is True
     ]
     control_holds = [
         row
-        for run in ordered
+        for run in effective_runs
         for row in _mapping(run["control"], "run.control").get("holds", [])
         if _mapping(row, "run.control.hold").get("executable") is True
     ]
@@ -1076,14 +1361,43 @@ def evaluate_book_t_shadow(
         cache_only=True,
         min_holds=min_holds,
     )
-    coverage = _coverage(ordered, shadow_holds)
+    coverage = _coverage(effective_runs, shadow_holds)
     valid_decision_fingerprints = {
         _text(_mapping(run.get("engineering"), "run.engineering").get("decision_fingerprint"))
-        for run in ordered
+        for run in effective_runs
         if _mapping(run.get("engineering"), "run.engineering").get("valid_theme_decision") is True
+        and (
+            not lifecycle_mode
+            or _mapping(run.get("engineering"), "run.engineering").get("outcome_matured") is True
+        )
     }
     valid_decisions = len(valid_decision_fingerprints - {""})
-    trading_days = len(ordered)
+    real_lifecycle_rows = [
+        row
+        for row in lifecycle_rows
+        if row.get("run_mode") == "real"
+        and _mapping(row.get("provenance"), "run.evidence_lifecycle.provenance").get("is_rehearsal") is False
+    ]
+    matured_decision_ids = {
+        _text(event.get("decision_id"))
+        for event in validated_events
+        if _text(event.get("stage")) == "matured"
+    }
+    matured_real_days = sum(
+        _text(row.get("decision_id")) in matured_decision_ids
+        for row in real_lifecycle_rows
+    )
+    counted_runs = [
+        run
+        for run in ordered
+        if not lifecycle_mode
+        or (
+            isinstance(run.get("evidence_lifecycle"), Mapping)
+            and _text(run["evidence_lifecycle"].get("run_mode")).lower() == "real"
+            and _mapping(run["evidence_lifecycle"].get("provenance"), "run.evidence_lifecycle.provenance").get("is_rehearsal") is False
+        )
+    ]
+    trading_days = len(counted_runs)
     trading_day_indices = sorted(
         int(
             _mapping(
@@ -1091,7 +1405,7 @@ def evaluate_book_t_shadow(
                 "run.frozen_input.market_input",
             ).get("trading_day_index")
         )
-        for run in ordered
+        for run in counted_runs
     )
     trading_days_contiguous = (
         not trading_day_indices
@@ -1113,26 +1427,37 @@ def evaluate_book_t_shadow(
         hard_rejections.append("decision_unbound")
     if not trading_days_contiguous:
         hard_rejections.append("trading_day_gap")
-    if coverage["unique_themes"] < 2:
-        hard_rejections.append("single_theme")
-    if coverage["source_roles"] < 2:
-        hard_rejections.append("single_kol")
-    if coverage["instrument_types"] < 2 or coverage["expression_types"] < 2:
-        hard_rejections.append("single_expression_type")
-    if coverage["non_tradable_filled_outcomes"]:
-        hard_rejections.append("non_tradable_return")
-    if coverage["non_executable_hold_paths"]:
-        hard_rejections.append("non_executable_hold_path")
-    if coverage["winner_alpha_share"] >= 0.5:
-        hard_rejections.append("single_winner")
+    if not lifecycle_mode:
+        if coverage["unique_themes"] < 2:
+            hard_rejections.append("single_theme")
+        if coverage["source_roles"] < 2:
+            hard_rejections.append("single_kol")
+        if coverage["instrument_types"] < 2 or coverage["expression_types"] < 2:
+            hard_rejections.append("single_expression_type")
+        if coverage["non_tradable_filled_outcomes"]:
+            hard_rejections.append("non_tradable_return")
+        if coverage["non_executable_hold_paths"]:
+            hard_rejections.append("non_executable_hold_path")
+        if coverage["winner_alpha_share"] >= 0.5:
+            hard_rejections.append("single_winner")
     if ordered and any(not _text(run.get("market_input_sha256")) for run in ordered):
         hard_rejections.append("market_input_unbound")
 
+    evidence_summary = (
+        lifecycle_summary(lifecycle_rows, events=validated_events)
+        if lifecycle_mode
+        else None
+    )
     pending: list[str] = []
     if trading_days < int(min_burn_in_days):
         pending.append("engineering_burn_in")
     if trading_days < int(min_strategy_days) or valid_decisions < int(min_valid_decisions):
         pending.append("strategy_sample_floor")
+    outcome_pending = 0
+    if lifecycle_mode:
+        outcome_pending = int((evidence_summary or {}).get("outcome_pending", 0))
+        if outcome_pending:
+            pending.append("outcome_pending")
     if hard_rejections:
         status = "REJECTED"
     elif pending:
@@ -1143,16 +1468,25 @@ def evaluate_book_t_shadow(
     else:
         status = "PASS"
 
+    burn_in_gate = (
+        engineering_burn_in_gate(
+            lifecycle_rows,
+            required_days=int(min_burn_in_days),
+        )
+        if lifecycle_mode
+        else None
+    )
+
     def aggregate_summary(name: str) -> dict[str, Any]:
         all_fill_rows = [
             row
-            for run in ordered
+            for run in effective_runs
             for row in _mapping(run[name], f"run.{name}").get("fills", [])
         ]
         all_fills = [row for row in all_fill_rows if _text(row.get("status")).lower() == "filled"]
         all_holds = [
             row
-            for run in ordered
+            for run in effective_runs
             for row in _mapping(run[name], f"run.{name}").get("holds", [])
             if _mapping(row, f"run.{name}.hold").get("executable") is True
         ]
@@ -1183,6 +1517,10 @@ def evaluate_book_t_shadow(
             "min_valid_decisions": int(min_valid_decisions),
             "burn_in_complete": trading_days >= int(min_burn_in_days),
             "strategy_floor_complete": trading_days >= int(min_strategy_days) and valid_decisions >= int(min_valid_decisions),
+            "real_trading_days": len(real_lifecycle_rows) if lifecycle_mode else trading_days,
+            "rehearsal_days_excluded": len(ordered) - len(real_lifecycle_rows) if lifecycle_mode else 0,
+            "outcome_pending": outcome_pending,
+            "outcome_matured": matured_real_days if lifecycle_mode else len(shadow_holds),
         },
         "engineering": {
             "hash_bound": all(bool(_text(run.get("input_sha256")) and _text(run.get("market_input_sha256"))) for run in ordered),
@@ -1190,6 +1528,8 @@ def evaluate_book_t_shadow(
             "daily_reevaluation_complete": all(_mapping(run.get("engineering"), "run.engineering").get("daily_reevaluation_complete") is True for run in ordered),
             "burn_in_complete": trading_days >= int(min_burn_in_days),
             "trading_days_contiguous": trading_days_contiguous,
+            "real_day_only_gate": lifecycle_mode,
+            "outcome_pending": outcome_pending,
         },
         "coverage": coverage,
         "metrics": {
@@ -1214,6 +1554,8 @@ def evaluate_book_t_shadow(
             ),
         },
         "parameters": {"n_tried": int(n_tried), "min_holds": int(min_holds)},
+        "evidence_lifecycle": evidence_summary,
+        "burn_in_gate": burn_in_gate,
     }
 
 
@@ -1263,6 +1605,7 @@ def _render_report(evaluation: Mapping[str, Any], *, run_id: str) -> str:
             f"- trading days: {sample.get('trading_days', 0)} / {sample.get('min_strategy_days', 0)}",
             f"- valid theme decisions: {sample.get('valid_theme_decisions', 0)} / {sample.get('min_valid_decisions', 0)}",
             f"- engineering burn-in: `{sample.get('burn_in_complete')}`",
+            f"- outcome lifecycle: pending {sample.get('outcome_pending', 0)} / matured {sample.get('outcome_matured', 0)}",
             f"- trend guards: `{shadow.get('verdict')}`",
             f"- pending: `{', '.join(evaluation.get('pending_reasons') or []) or 'none'}`",
             f"- rejected: `{', '.join(evaluation.get('rejected_reasons') or []) or 'none'}`",
@@ -1410,6 +1753,8 @@ def write_book_t_shadow_artifacts(
             "engineering": evaluation.get("engineering", {}),
             "sample": evaluation.get("sample", {}),
             "comparison": evaluation.get("comparison", {}),
+            "evidence_lifecycle": evaluation.get("evidence_lifecycle"),
+            "burn_in_gate": evaluation.get("burn_in_gate"),
         },
         "formal_ledger_mutations": {"positions": 0, "account": 0, "trades": 0},
         "git": dict(git_state or {"commit": None, "dirty": False}),

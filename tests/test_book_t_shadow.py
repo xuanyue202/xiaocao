@@ -17,6 +17,12 @@ from xiaocao.research.book_t_shadow import (
     run_book_t_shadow,
     write_book_t_shadow_artifacts,
 )
+from xiaocao.research.book_t_v2_lifecycle import (
+    build_daily_mark_event,
+    build_exit_event,
+    build_initial_lifecycle,
+    build_matured_outcome_event,
+)
 from scripts.book_t_shadow import _load_historical_days, _merge_days, runtime_check
 
 
@@ -299,6 +305,46 @@ def _bound_day(index: int, **kwargs) -> dict:
     return bind_book_t_shadow_input(_day(index, **kwargs))
 
 
+def _bound_lifecycle_day(index: int) -> dict:
+    value = _day(index)
+    date = (calendar_date(2026, 1, 1) + timedelta(days=index)).isoformat()
+    code = value["shadow"]["fills"][0]["code"]
+    semantics = {
+        "as_of": date,
+        "book": "T",
+        "selection": {"as_of": date, "selected_codes": [code], "actions": [{"code": code, "kind": "trade", "side": "BUY"}]},
+        "actions": [{"code": code, "kind": "trade", "side": "BUY"}],
+        "trade_count": 1,
+        "skip_count": 0,
+        "position_transition_count": 0,
+    }
+    receipt = dict(value["control"]["control_receipt"])
+    receipt["daily_semantics"] = semantics
+    receipt["daily_semantics_sha256"] = canonical_sha256(semantics)
+    receipt.pop("receipt_sha256", None)
+    receipt["receipt_sha256"] = canonical_sha256(receipt)
+    value["control"]["control_receipt"] = receipt
+    value["control"]["daily_semantics_sha256"] = receipt["daily_semantics_sha256"]
+    value["control"]["holds"] = []
+    value["shadow"]["holds"] = []
+    plan = value["shadow"]["selection_plan"]
+    value["evidence_lifecycle"] = build_initial_lifecycle(
+        decision_id=f"book-t-v2:{date}:real",
+        as_of=date,
+        observed_at=f"{date}T08:00:00Z",
+        trading_day_index=index,
+        run_mode="real",
+        snapshot_sha256=plan["snapshot_sha256"],
+        universe_sha256=plan["universe_sha256"],
+        selection_plan_sha256=plan["selection_plan_sha256"],
+        portfolio_sha256=plan["portfolio_sha256"],
+        control_receipt_sha256=receipt["receipt_sha256"],
+        fills=value["shadow"]["fills"],
+        daily_reevaluation_complete=True,
+    )
+    return bind_book_t_shadow_input(value)
+
+
 def test_shadow_run_is_hash_bound_and_never_mutates_formal_ledger() -> None:
     frozen = _bound_day(1)
 
@@ -317,6 +363,47 @@ def test_shadow_run_is_hash_bound_and_never_mutates_formal_ledger() -> None:
     }
     assert first["engineering"]["valid_theme_decision"] is True
     assert first["shadow"]["fills"][0]["market_input_sha256"] == first["market_input_sha256"]
+
+
+def test_matured_events_feed_metrics_only_after_explicit_lifecycle_events() -> None:
+    frozen = _bound_lifecycle_day(1)
+    run = run_book_t_shadow(frozen)
+    before = evaluate_book_t_shadow([run])
+    lifecycle = frozen["evidence_lifecycle"]
+    date = frozen["as_of"][:10]
+    code = frozen["shadow"]["fills"][0]["code"]
+    daily_mark = build_daily_mark_event(
+        lifecycle,
+        observed_at=f"{date}T09:00:00Z",
+        marks=[{"as_of": date, "code": code, "price": 10.2}],
+    )
+    exit_event = build_exit_event(
+        lifecycle,
+        observed_at="2026-01-03T07:10:00Z",
+        exits=[{"as_of": "2026-01-03", "code": code, "exit_price": 10.5}],
+    )
+    matured = build_matured_outcome_event(
+        lifecycle,
+        observed_at="2026-01-04T07:10:00Z",
+        outcomes=[
+            {
+                "as_of": "2026-01-04",
+                "code": code,
+                "strat_ret": 5.0,
+                "base_ret": 3.0,
+            }
+        ],
+    )
+    after = evaluate_book_t_shadow(
+        [run],
+        lifecycle_events=[daily_mark, exit_event, matured],
+    )
+
+    assert before["sample"]["outcome_pending"] == 1
+    assert before["sample"]["valid_theme_decisions"] == 0
+    assert after["sample"]["outcome_pending"] == 0
+    assert after["sample"]["outcome_matured"] == 1
+    assert after["sample"]["valid_theme_decisions"] == 1
 
 
 def test_shadow_run_fails_closed_on_mixed_market_input() -> None:
@@ -470,7 +557,14 @@ def test_runtime_check_preserves_v1_control_as_tomorrows_consumer(tmp_path: Path
     (tmp_path / "kronos_screen" / "scripts").mkdir(parents=True)
     (tmp_path / "output" / "live").mkdir(parents=True)
     (tmp_path / "scripts" / "auto_daily.sh").write_text(
-        "paper_record.py --trend-only\n", encoding="utf-8"
+        "paper_record.py --trend-only\nbook_t_v2_daily.py --prepare\n", encoding="utf-8"
+    )
+    (tmp_path / "scripts" / "book_t_v2_daily.py").write_text(
+        "# production producer\n", encoding="utf-8"
+    )
+    (tmp_path / "reference" / "experience").mkdir(parents=True)
+    (tmp_path / "reference" / "experience" / "book_t_v2_theme_registry.json").write_text(
+        "{}\n", encoding="utf-8"
     )
     (tmp_path / "scripts" / "live_monitor.py").write_text(
         'parser.add_argument("--book", choices=["B", "T"])\n', encoding="utf-8"
@@ -486,7 +580,8 @@ def test_runtime_check_preserves_v1_control_as_tomorrows_consumer(tmp_path: Path
 
     result = runtime_check(root=tmp_path, target_date="2026-08-18")
 
-    assert result["status"] == "ready", result
+    assert result["status"] == "pending_observation", result
+    assert result["evidence_pending"] is True
     assert result["consumer"] == "book_t_v1_control"
     assert result["v2_shadow"] == "separate_research_namespace_only"
     assert result["next_command"] == "bash scripts/auto_daily.sh morning-execute"

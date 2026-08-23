@@ -79,7 +79,7 @@ ACCOUNT = Path("output/live/paper_account.json")
 ACCOUNT_A = Path("output/live/paper_account_A.json")
 ACCOUNT_T = Path("output/live/paper_account_T.json")
 TRADES = Path("output/live/paper_trades.jsonl")
-BOOK_T_CONTROL_RECEIPT = Path("output/live/book_t_v1_control_receipt_{date}.json")
+BOOK_T_CONTROL_RECEIPT = "output/live/book_t_v1_control_receipt_{date}.json"
 SKIPS = Path("output/live/paper_skips.jsonl")
 QUALITY_AUDIT = Path("output/live/quality_governor_audit.jsonl")
 DEFAULT_STARTING_CAPITAL = 100000.0
@@ -143,7 +143,106 @@ def _append_quality_audit(records: list[dict]) -> None:
             f.write(json.dumps(record, ensure_ascii=False, sort_keys=True) + "\n")
 
 
-def _write_book_t_control_receipt(date_iso: str) -> Path:
+def _jsonl_rows(path: Path) -> list[dict]:
+    if not path.exists():
+        return []
+    rows: list[dict] = []
+    for line in path.read_text(encoding="utf-8").splitlines():
+        if not line.strip():
+            continue
+        try:
+            value = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        if isinstance(value, dict):
+            rows.append(value)
+    return rows
+
+
+def _book_t_daily_semantics(date_iso: str) -> dict:
+    """Read back the exact v1 T actions/fills observed for one date.
+
+    The cumulative artifact hashes remain useful for recovery, but they are
+    not sufficient evidence for a shadow comparison.  This projection binds
+    the dated T trades, skips, and position transitions to the receipt without
+    changing the formal ledger writer.
+    """
+
+    positions = _jsonl_rows(POS)
+    trades = [
+        row
+        for row in _jsonl_rows(TRADES)
+        if str(row.get("date") or row.get("trade_date") or "")[:10] == date_iso
+        and str(row.get("book") or "") == "T"
+    ]
+    skips = [
+        row
+        for row in _jsonl_rows(SKIPS)
+        if str(row.get("date") or row.get("trade_date") or "")[:10] == date_iso
+        and str(row.get("book") or "") in {"", "T"}
+        and str(row.get("source") or "").endswith("trend_book")
+    ]
+    transitions = [
+        row
+        for row in positions
+        if str(row.get("book") or "") == "T"
+        and date_iso in {
+            str(row.get("entry_date") or "")[:10],
+            str(row.get("exit_date") or "")[:10],
+        }
+    ]
+
+    def event(row: dict, kind: str) -> dict:
+        return {
+            "kind": kind,
+            "event_sha256": canonical_sha256(row),
+            "code": row.get("code"),
+            "side": row.get("side"),
+            "status": row.get("status") or row.get("reason"),
+            "price": row.get("price") or row.get("entry_price") or row.get("exit_price"),
+            "shares": row.get("shares"),
+            "notional": row.get("gross_notional") or row.get("entry_cash_out"),
+            "fee": row.get("fee") or row.get("entry_fee"),
+            "reason": row.get("reason") or row.get("exit_reason"),
+        }
+
+    all_actions = [event(row, "trade") for row in trades]
+    all_actions.extend(event(row, "skip") for row in skips)
+    all_actions.extend(event(row, "position_transition") for row in transitions)
+    all_actions.sort(key=lambda row: (str(row.get("code") or ""), str(row.get("kind") or ""), str(row.get("event_sha256") or "")))
+    buy_codes = sorted(
+        {
+            str(row.get("code"))
+            for row in trades
+            if str(row.get("side") or "").upper() == "BUY" and row.get("code")
+        }
+        | {str(row.get("code")) for row in skips if row.get("code")}
+    )
+    return {
+        "as_of": date_iso,
+        "book": "T",
+        "selection": {
+            "as_of": date_iso,
+            "selected_codes": buy_codes,
+            "actions": [
+                row
+                for row in all_actions
+                if row.get("kind") in {"trade", "skip"}
+                and (row.get("side") or "BUY").upper() == "BUY"
+            ],
+        },
+        "actions": all_actions,
+        "trade_count": len(trades),
+        "skip_count": len(skips),
+        "position_transition_count": len(transitions),
+    }
+
+
+def _write_book_t_control_receipt(
+    date_iso: str,
+    *,
+    daily_semantics: dict | None = None,
+) -> Path:
     """Snapshot the successful v1 T artifacts for an optional shadow consumer."""
 
     paths = {
@@ -170,10 +269,20 @@ def _write_book_t_control_receipt(date_iso: str) -> Path:
         "artifact_paths": paths,
         "artifact_hashes": hashes,
     }
+    semantics = daily_semantics or _book_t_daily_semantics(date_iso)
+    if str(semantics.get("as_of") or "")[:10] != date_iso:
+        raise ValueError("daily semantics date does not match control receipt")
+    body["daily_semantics"] = semantics
+    body["daily_semantics_sha256"] = canonical_sha256(semantics)
     receipt = {**body, "receipt_sha256": canonical_sha256(body)}
     path = ROOT / BOOK_T_CONTROL_RECEIPT.format(date=date_iso)
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(receipt, ensure_ascii=False, sort_keys=True, indent=2) + "\n", encoding="utf-8")
+    temporary = path.with_name(f".{path.name}.tmp")
+    temporary.write_text(
+        json.dumps(receipt, ensure_ascii=False, sort_keys=True, indent=2) + "\n",
+        encoding="utf-8",
+    )
+    temporary.replace(path)
     return path
 
 

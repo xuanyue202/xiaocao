@@ -38,6 +38,7 @@ from xiaocao.research.book_t_shadow import (  # noqa: E402
     run_book_t_shadow,
     write_book_t_shadow_artifacts,
 )
+from xiaocao.research.book_t_v2_lifecycle import read_events  # noqa: E402
 from xiaocao.kol.publication import canonical_sha256  # noqa: E402
 
 
@@ -163,6 +164,16 @@ def _verify_control_receipts(days: list[dict[str, Any]], *, root: Path = ROOT) -
                 )
 
 
+def _load_lifecycle_events(root: Path = ROOT) -> list[dict[str, Any]]:
+    path = root / "output/research/book_t_v2_shadow/evidence_events.jsonl"
+    if not path.exists():
+        return []
+    try:
+        return read_events(path)
+    except (OSError, ValueError) as exc:
+        raise BookTShadowError(f"cannot read lifecycle events: {path}") from exc
+
+
 def _git_state() -> dict[str, Any]:
     def run(args: list[str]) -> str | None:
         try:
@@ -211,6 +222,8 @@ def runtime_check(*, root: Path = ROOT, target_date: str | None = None) -> dict[
     live = root / "output" / "live"
     required = {
         "automation": root / "scripts" / "auto_daily.sh",
+        "producer": root / "scripts" / "book_t_v2_daily.py",
+        "theme_registry": root / "reference/experience/book_t_v2_theme_registry.json",
         "paper_record": root / "kronos_screen" / "scripts" / "paper_record.py",
         "monitor": root / "scripts" / "live_monitor.py",
         "settle": root / "kronos_screen" / "scripts" / "settle_book_t.py",
@@ -226,13 +239,25 @@ def runtime_check(*, root: Path = ROOT, target_date: str | None = None) -> dict[
     checks["automation"]["has_trend_only_consumer"] = "paper_record.py" in automation and "--trend-only" in automation
     checks["paper_record"]["has_trend_only_mode"] = "--trend-only" in paper_record
     checks["monitor"]["has_explicit_book_t"] = "--book T" in monitor or 'choices=["B", "T"]' in monitor
+    resolved_target_date = target_date or (date.today() + timedelta(days=1)).isoformat()
+    input_path = live / f"book_t_v2_shadow_input_{resolved_target_date}.json"
+    manifest_path = root / "output/research/book_t_v2_shadow" / f"{resolved_target_date}-book-t-v2-shadow" / "manifest.json"
+    checks["v2_evidence"] = {
+        "target_date": resolved_target_date,
+        "input": str(input_path),
+        "input_exists": input_path.exists(),
+        "manifest": str(manifest_path),
+        "manifest_exists": manifest_path.exists(),
+        "producer_present": required["producer"].exists(),
+        "producer_wired": "book_t_v2_daily.py" in automation,
+    }
 
     positions, invalid_json_rows = _position_rows(required["positions"])
     open_positions = [
         row for row in positions if row.get("book") == "T" and row.get("status", "open") == "open"
     ]
     checks["state"] = {
-        "target_date": target_date or (date.today() + timedelta(days=1)).isoformat(),
+        "target_date": resolved_target_date,
         "open_positions": len(open_positions),
         "target_slots": 3,
         "full_slots": len(open_positions) >= 3,
@@ -243,6 +268,8 @@ def runtime_check(*, root: Path = ROOT, target_date: str | None = None) -> dict[
 
     failures: list[str] = []
     for name, item in checks.items():
+        if name in {"v2_evidence"}:
+            continue
         if name == "state":
             continue
         if not item.get("exists"):
@@ -253,6 +280,8 @@ def runtime_check(*, root: Path = ROOT, target_date: str | None = None) -> dict[
         failures.append("paper_record_missing_trend_only")
     if not checks["monitor"].get("has_explicit_book_t"):
         failures.append("monitor_missing_explicit_book_t")
+    if not checks["v2_evidence"].get("producer_wired"):
+        failures.append("automation_missing_book_t_v2_producer")
     if checks["state"]["pending_ledger_transaction"]:
         failures.append("pending_ledger_transaction")
     if checks["state"]["invalid_book_rows"]:
@@ -260,13 +289,19 @@ def runtime_check(*, root: Path = ROOT, target_date: str | None = None) -> dict[
     if checks["state"]["invalid_json_rows"]:
         failures.append("invalid_positions_json")
 
+    evidence_pending = not (
+        checks["v2_evidence"]["input_exists"]
+        and checks["v2_evidence"]["manifest_exists"]
+    )
+    status = "blocked" if failures else ("pending_observation" if evidence_pending else "ready")
     return {
         "namespace": BOOK_T_SHADOW_NAMESPACE,
         "consumer": "book_t_v1_control",
         "v2_shadow": "separate_research_namespace_only",
-        "status": "ready" if not failures else "blocked",
+        "status": status,
         "failures": failures,
         "checks": checks,
+        "evidence_pending": evidence_pending,
         "next_command": "bash scripts/auto_daily.sh morning-execute",
         "v2_input_namespace": BOOK_T_SHADOW_INPUT_NAMESPACE,
     }
@@ -283,13 +318,14 @@ def main() -> int:
     parser.add_argument("--n-tried", type=int, default=1)
     parser.add_argument("--json", action="store_true", help="print structured output")
     parser.add_argument("--runtime-check", action="store_true", help="read-only next-run preflight")
+    parser.add_argument("--target-date", default=None, help="target date for --runtime-check")
     args = parser.parse_args()
 
     try:
         if args.runtime_check:
-            result = runtime_check()
+            result = runtime_check(target_date=args.target_date)
             print(json.dumps(result, ensure_ascii=False, indent=2, sort_keys=True))
-            return 0 if result["status"] == "ready" else 2
+            return 0 if result["status"] in {"ready", "pending_observation"} else 2
         if not args.input:
             parser.error("--input is required unless --runtime-check is used")
         input_path = Path(args.input)
@@ -306,6 +342,7 @@ def main() -> int:
             min_strategy_days=args.min_strategy_days,
             min_valid_decisions=args.min_valid_decisions,
             n_tried=args.n_tried,
+            lifecycle_events=_load_lifecycle_events(),
         )
         run_id = args.run_id or f"{runs[-1]['market_date']}-book-t-v2-shadow"
         paths = write_book_t_shadow_artifacts(

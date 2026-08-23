@@ -1,0 +1,74 @@
+{
+  "schema_version": 1,
+  "version": "book-t-v2-theme-registry-2026-08-23",
+  "review_status": "reviewed_for_shadow_only",
+  "authority": "research_shadow_input_only",
+  "changes": [
+    {
+      "change_id": "book-t-v2-theme-semiconductor-aliases-2026-08-23",
+      "kind": "add_alias",
+      "theme_id": "theme-semiconductor",
+      "reason": "reviewed canonical shadow-only theme aliases"
+    },
+    {
+      "change_id": "book-t-v2-theme-ai-aliases-2026-08-23",
+      "kind": "add_alias",
+      "theme_id": "theme-ai",
+      "reason": "reviewed canonical shadow-only theme aliases"
+    },
+    {
+      "change_id": "book-t-v2-theme-energy-aliases-2026-08-23",
+      "kind": "add_alias",
+      "theme_id": "theme-energy",
+      "reason": "reviewed canonical shadow-only theme aliases"
+    },
+    {
+      "change_id": "book-t-v2-theme-healthcare-aliases-2026-08-23",
+      "kind": "add_alias",
+      "theme_id": "theme-healthcare",
+      "reason": "reviewed canonical shadow-only theme aliases"
+    }
+  ],
+  "themes": [
+    {
+      "theme_id": "theme-semiconductor",
+      "display_name": "半导体/芯片",
+      "aliases": [
+        {"alias": "半导体", "approved": true, "change_id": "book-t-v2-theme-semiconductor-aliases-2026-08-23"},
+        {"alias": "芯片", "approved": true, "change_id": "book-t-v2-theme-semiconductor-aliases-2026-08-23"}
+      ],
+      "status": "active",
+      "mapping_status": "catalog_bound_only"
+    },
+    {
+      "theme_id": "theme-ai",
+      "display_name": "人工智能",
+      "aliases": [
+        {"alias": "人工智能", "approved": true, "change_id": "book-t-v2-theme-ai-aliases-2026-08-23"},
+        {"alias": "AI", "approved": true, "change_id": "book-t-v2-theme-ai-aliases-2026-08-23"}
+      ],
+      "status": "active",
+      "mapping_status": "catalog_bound_only"
+    },
+    {
+      "theme_id": "theme-energy",
+      "display_name": "新能源",
+      "aliases": [
+        {"alias": "新能源", "approved": true, "change_id": "book-t-v2-theme-energy-aliases-2026-08-23"}
+      ],
+      "status": "active",
+      "mapping_status": "catalog_bound_only"
+    },
+    {
+      "theme_id": "theme-healthcare",
+      "display_name": "医药健康",
+      "aliases": [
+        {"alias": "医药", "approved": true, "change_id": "book-t-v2-theme-healthcare-aliases-2026-08-23"},
+        {"alias": "创新药", "approved": true, "change_id": "book-t-v2-theme-healthcare-aliases-2026-08-23"}
+      ],
+      "status": "active",
+      "mapping_status": "catalog_bound_only"
+    }
+  ],
+  "rejected_aliases": []
+}
