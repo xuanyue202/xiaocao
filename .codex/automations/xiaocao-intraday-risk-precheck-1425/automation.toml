@@ -8,6 +8,7 @@ rrule = "RRULE:FREQ=WEEKLY;BYDAY=MO,TU,WE,TH,FR;BYHOUR=14;BYMINUTE=25"
 model = "gpt-5.6-sol"
 reasoning_effort = "xhigh"
 execution_environment = "local"
-cwds = ["~/coding/xiaocao"]
-created_at = 1783996620466
-updated_at = 1783996620466
+target = { type = "project", project_id = "c5acdaa7-f8a7-42d4-96fe-bf979a6b7415" }
+cwds = ["/Users/xuanyue202/Documents/project/xiaocao"]
+created_at = 1785639808073
+updated_at = 1787493122484
