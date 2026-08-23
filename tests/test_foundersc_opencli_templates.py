@@ -6,7 +6,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).parents[1]
 TEMPLATE_ROOT = ROOT / "opencli" / "clis" / "foundersc-quant"
-COMMANDS = ("probe", "prepare", "reconcile", "recover")
+COMMANDS = ("probe", "prepare", "reconcile", "recover", "environment")
 
 
 def _source(name: str) -> str:
@@ -25,7 +25,14 @@ def test_foundersc_template_registry_is_versioned_and_read_only_first_phase():
 
 
 def test_template_javascript_uses_repository_four_space_indentation():
-    for name in ("common.mjs", "probe.js", "prepare.js", "reconcile.js", "recover.js"):
+    for name in (
+        "common.mjs",
+        "environment.js",
+        "probe.js",
+        "prepare.js",
+        "reconcile.js",
+        "recover.js",
+    ):
         for line_number, line in enumerate(_source(name).splitlines(), start=1):
             leading = len(line) - len(line.lstrip(" "))
             assert leading % 4 == 0, f"{name}:{line_number} uses {leading} spaces"
@@ -80,7 +87,11 @@ def test_prepare_uses_exact_route_containers_and_safe_close_controls():
         ".pdc-data-option",
         ".al-modal-container",
         "div.new-condition-strategy",
+        ".new-condition-strategy-title",
         ".new-condition-strategy-dropDown",
+        "data-opencli-foundersc-prepare-target",
+        "timed-date-open",
+        "timed-date-day",
         "[role=\"dialog\"]",
         "exactLeaves(modal, '取消')",
         "exactLeaves(dialog, '取消')",
@@ -90,12 +101,22 @@ def test_prepare_uses_exact_route_containers_and_safe_close_controls():
     assert "opening_auction_field_readback_mismatch" in source
     assert "timed_order_field_readback_mismatch" in source
     assert "ready_for_submit: false" in source
+    assert "await page.click" in source
+    assert "PREPARE_WAIT_SCRIPT" in source
+    assert "page.evaluate(PREPARE_WAIT_SCRIPT)" in source
 
 
 def test_no_template_clicks_a_broker_action_or_reads_credentials():
     source = "\n".join(
         _source(name)
-        for name in ("common.mjs", "probe.js", "prepare.js", "reconcile.js", "recover.js")
+        for name in (
+            "common.mjs",
+            "probe.js",
+            "prepare.js",
+            "reconcile.js",
+            "recover.js",
+            "environment.js",
+        )
     )
     dangerous_click = re.compile(
         r"(?:买入|卖出|保存|启动|确定|全部撤单)[^\n]*\.click\(|\.click\([^\n]*(?:买入|卖出|保存|启动|确定|全部撤单)"
@@ -110,6 +131,18 @@ def test_no_template_clicks_a_broker_action_or_reads_credentials():
         "pwdSetSk",
         "checkTradePassword",
     ):
+        assert forbidden not in source
+
+
+def test_environment_command_only_switches_the_unique_environment_control():
+    source = _source("environment.js")
+    assert "data-opencli-foundersc-environment-target" in source
+    assert "点击切换至实盘" in source
+    assert "点击切换至模拟盘" in source
+    assert "await page.click" in source
+    assert "environment_switch_readback_mismatch" in source
+    assert "submit_capability: false" in source
+    for forbidden in ("保存", "启动", "买入", "卖出", "撤单"):
         assert forbidden not in source
 
 

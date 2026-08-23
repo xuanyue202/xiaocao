@@ -2,7 +2,8 @@
 
 Template version: `2`
 Site: `foundersc-quant`
-Scope: read-only probe/recovery/reconciliation and no-submit form preparation.
+Scope: no-submit probe/preparation/reconciliation/recovery plus verified
+mock/live environment switching.
 
 These templates are the browser-side adapter surface for the Xiaocao
 `BookBLiveExecution.execute(plan, broker_adapter)` seam. They deliberately do
@@ -22,11 +23,33 @@ The first command is the default, read-only hash check. Only `--install`
 writes the fixed template file set into `~/.opencli/clis/foundersc-quant`;
 the installer does not read credentials or account configuration.
 
+Run the repository preflight separately when Keychain readiness must be
+checked. It emits only presence, length, match and access-status booleans; it
+never prints account identifiers or password bytes:
+
+```text
+PYTHONPATH=src .venv/bin/python scripts/foundersc_keychain_preflight.py \
+  --observed-login-fingerprint '123******789'
+
+PYTHONPATH=src .venv/bin/python scripts/foundersc_keychain_preflight.py \
+  --observed-login-fingerprint '123******789' --read-secrets
+```
+
+The secret-read mode is bounded by a timeout and reports
+`timeout_or_acl_prompt` when macOS requires interactive Keychain consent. Do
+not place that mode in unattended morning automation until it returns
+`readable` for both fixed services.
+
 ## Commands
 
 ```text
 opencli foundersc-quant probe \
   --expected-environment mock \
+  --logical-account-id primary \
+  -f json
+
+opencli foundersc-quant environment \
+  --target live --expected-current mock \
   --logical-account-id primary \
   -f json
 
@@ -54,6 +77,12 @@ Opening auction and timed order
 open the form, fill only the requested fields, read them back, and close the
 empty form with its exact `取消` control. They never click `保存`, `启动`, or
 `确定`.
+
+`environment` changes only the unique mock/live switcher and then requires an
+exact environment readback. It never logs in, reads credentials, prepares a
+capital action, saves a strategy, or submits an order. Use a second verified
+call with `--target mock --expected-current live` to restore the sensor-safe
+default after an isolated live-page probe.
 
 `FZZQ_QUANT_BASE_URL` may override the configured page root, but it is accepted
 only when it remains the exact Founder Securities origin and path. Credentials,

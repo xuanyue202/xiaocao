@@ -9,17 +9,25 @@ browser templates under `opencli/clis/foundersc-quant/`.
    `python3 scripts/install_opencli_foundersc_quant_template.py`.
 2. Install only after an explicit user request:
    `python3 scripts/install_opencli_foundersc_quant_template.py --install`.
-3. Use `probe`, then the needed `prepare`, `reconcile`, or `recover` command.
-4. Treat `unknown`, `capability_gap`, and `reconciled_partial` as readback
+3. Run `scripts/foundersc_keychain_preflight.py` when credential readiness or
+   the masked login-page binding must be checked. `--read-secrets` is bounded
+   and must remain outside unattended automation while it reports an ACL
+   prompt.
+4. Use `probe`, then the needed `environment`, `prepare`, `reconcile`, or
+   `recover` command.
+5. Treat `unknown`, `capability_gap`, and `reconciled_partial` as readback
    gaps. Reconcile the same session before any future action.
 
 ## Current contract
 
-The templates are read-only phase-one adapters. They do not read credentials,
-switch environments, save or start strategies, submit orders, or withdraw
-orders. `submit_capability=false` remains the hard gate. Account binding is
-not proven unless the page supplies a stable fund-account fingerprint, so a
-complete page scan is not a formal Book B readiness proof by itself.
+The templates are no-submit phase-one adapters. They do not read credentials,
+save or start strategies, submit orders, or withdraw orders.
+`environment` may change only the unique mock/live switcher and must verify the
+exact target environment readback; it is not a submit route and should be
+restored to mock after an isolated live-page probe. `submit_capability=false`
+remains the hard gate. Account binding is not proven unless the page supplies a
+stable fund-account fingerprint, so a complete page scan is not a formal Book
+B readiness proof by itself.
 
 Pagination and virtual lists must be scanned to a proven terminal boundary.
 An absent table, loading shell, non-unique route/container, ambiguous next

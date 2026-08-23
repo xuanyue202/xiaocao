@@ -24,6 +24,7 @@ TARGET_ROOT = Path.home() / ".opencli" / "clis" / "foundersc-quant"
 TEMPLATE_FILES = (
     "README.md",
     "common.mjs",
+    "environment.js",
     "probe.js",
     "prepare.js",
     "reconcile.js",
@@ -32,10 +33,11 @@ TEMPLATE_FILES = (
 # Pinned at template version 2; update this list only with an intentional
 # template change and a corresponding review.
 EXPECTED_SHA256 = {
-    "README.md": "00c20af9def515f1e42dc1a9708027ceda0b3f252029384995a38cbb9ce84929",
+    "README.md": "3d078950547aa1c914ade4df73579cb6a85d0fd88b946cd08edc033ab932e651",
     "common.mjs": "0c41594842ee5a8686932206ce66cfecf7cdbeebc26cb37dd3ef629384aa0ffb",
+    "environment.js": "7c824d2490f6a9efe60f34ed75b9bfe9facf79eae7fd8cb625b804819a380516",
     "probe.js": "a8c26df6b895d898286e3582d2ee8235e152e410cdf9f2cb6495248e916b2d1c",
-    "prepare.js": "3c24a3bd105f53d6765d2a9992821f108cb1bc88b2d01fbf21ac24a679fae489",
+    "prepare.js": "648c80f2a3adbf45e11d64745460346983492d38c3d8e034da644323bfcbe116",
     "reconcile.js": "c2277f0b8783f13f28b789ab22e65b3d96e5f2e6f90f3ae6f2f05dcf5ce5dae5",
     "recover.js": "47535dd065cb527d8254b99dd44bf0e1f61155e942855376e9e8467c29b63d12",
 }

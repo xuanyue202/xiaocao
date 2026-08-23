@@ -25,6 +25,326 @@ import {
 } from './common.mjs';
 
 const TEMPLATE_NAME = `${SITE}/prepare`;
+const PREPARE_TARGET_ATTRIBUTE = 'data-opencli-foundersc-prepare-target';
+const PREPARE_WAIT_SCRIPT = pageScript(String.raw`
+    await waitForPage(100);
+    return true;
+`, {async: true});
+
+function timedOrderTriggerScript() {
+    return pageScript(String.raw`
+        const attribute = ${JSON.stringify(PREPARE_TARGET_ATTRIBUTE)};
+        for (const node of document.querySelectorAll('[' + attribute + ']')) {
+            node.removeAttribute(attribute);
+        }
+        const outer = [...document.querySelectorAll('div.new-condition-strategy')]
+            .filter(visible);
+        const triggers = outer.length === 1
+            ? [...outer[0].querySelectorAll('.new-condition-strategy-title')]
+                    .filter(visible)
+            : [];
+        if (outer.length === 1 && triggers.length === 1) {
+            triggers[0].setAttribute(attribute, 'timed-trigger');
+        }
+        return {
+            route_available: outer.length === 1 && triggers.length === 1,
+            reason: outer.length === 1 && triggers.length === 1
+                ? null
+                : 'timed_order_trigger_locator_not_unique',
+            strategy_container_count: outer.length,
+            strategy_trigger_count: triggers.length,
+        };
+    `, {async: true});
+}
+
+function timedOrderMenuScript() {
+    return pageScript(String.raw`
+        const attribute = ${JSON.stringify(PREPARE_TARGET_ATTRIBUTE)};
+        let menuRoots = [];
+        let menuMatches = [];
+        const outer = [...document.querySelectorAll('div.new-condition-strategy')]
+            .filter(visible);
+        for (let attempt = 0; attempt < 20 && outer.length === 1; attempt += 1) {
+            await waitForPage(100);
+            menuRoots = [
+                ...outer[0].querySelectorAll('.new-condition-strategy-dropDown'),
+            ].filter(visible);
+            menuMatches = menuRoots.length === 1
+                ? exactLeaves(menuRoots[0], '定时单')
+                : [];
+            if (menuRoots.length === 1 && menuMatches.length === 1) break;
+        }
+        if (menuRoots.length === 1 && menuMatches.length === 1) {
+            menuMatches[0].setAttribute(attribute, 'timed-menu');
+        }
+        return {
+            route_available: outer.length === 1
+                && menuRoots.length === 1 && menuMatches.length === 1,
+            reason: outer.length === 1
+                    && menuRoots.length === 1 && menuMatches.length === 1
+                ? null
+                : 'timed_order_menu_locator_not_unique',
+            strategy_container_count: outer.length,
+            menu_count: menuRoots.length,
+            timed_order_matches: menuMatches.length,
+        };
+    `, {async: true});
+}
+
+function timedOrderDateStepScript(targetDate) {
+    return pageScript(String.raw`
+        const attribute = ${JSON.stringify(PREPARE_TARGET_ATTRIBUTE)};
+        for (const node of document.querySelectorAll('[' + attribute + ']')) {
+            node.removeAttribute(attribute);
+        }
+        const dialogs = [...document.querySelectorAll('[role="dialog"]')]
+            .filter(visible);
+        const dateFields = dialogs.length === 1
+            ? [...dialogs[0].querySelectorAll('input.al-modal-date-input')]
+                    .filter(visible)
+            : [];
+        if (dialogs.length !== 1 || dateFields.length !== 1) {
+            return {
+                route_available: false,
+                reason: 'timed_order_date_field_not_unique',
+                dialog_count: dialogs.length,
+                date_field_count: dateFields.length,
+            };
+        }
+        const date = dateFields[0];
+        const targetDate = ${JSON.stringify(targetDate)};
+        if (date.value === targetDate) {
+            return {
+                route_available: true,
+                reason: null,
+                date_selected: true,
+                action: 'complete',
+            };
+        }
+        const datePickers = [...document.querySelectorAll('.ui-datepicker')]
+            .filter(visible);
+        if (datePickers.length === 0) {
+            date.setAttribute(attribute, 'timed-date-open');
+            return {
+                route_available: true,
+                reason: null,
+                date_selected: false,
+                action: 'timed-date-open',
+            };
+        }
+        if (datePickers.length !== 1) {
+            return {
+                route_available: false,
+                reason: 'timed_order_datepicker_not_unique',
+                datepicker_count: datePickers.length,
+            };
+        }
+        const [targetYear, targetMonth, targetDay] = targetDate
+            .split('-').map(Number);
+        const monthNames = [
+            '一月', '二月', '三月', '四月', '五月', '六月',
+            '七月', '八月', '九月', '十月', '十一月', '十二月',
+        ];
+        const datePicker = datePickers[0];
+        const years = [...datePicker.querySelectorAll('.ui-datepicker-year')]
+            .filter(visible);
+        const months = [...datePicker.querySelectorAll('.ui-datepicker-month')]
+            .filter(visible);
+        const year = years.length === 1
+            ? Number((years[0].textContent || '').trim())
+            : 0;
+        const month = months.length === 1
+            ? monthNames.indexOf((months[0].textContent || '').trim()) + 1
+            : 0;
+        if (!year || !month) {
+            return {
+                route_available: false,
+                reason: 'timed_order_datepicker_month_not_readable',
+                year_count: years.length,
+                month_count: months.length,
+            };
+        }
+        const current = year * 12 + month;
+        const target = targetYear * 12 + targetMonth;
+        if (current !== target) {
+            const selector = current < target
+                ? '.ui-datepicker-next'
+                : '.ui-datepicker-prev';
+            const controls = [...datePicker.querySelectorAll(selector)]
+                .filter(visible).filter((node) => !disabled(node));
+            if (controls.length !== 1) {
+                return {
+                    route_available: false,
+                    reason: 'timed_order_datepicker_navigation_not_unique',
+                    navigation_count: controls.length,
+                    observed_year: year,
+                    observed_month: month,
+                };
+            }
+            const action = current < target ? 'timed-date-next' : 'timed-date-prev';
+            controls[0].setAttribute(attribute, action);
+            return {
+                route_available: true,
+                reason: null,
+                date_selected: false,
+                action,
+            };
+        }
+        const dayMatches = [...datePicker.querySelectorAll('a.ui-state-default')]
+            .filter(visible).filter((node) => (
+                (node.textContent || '').trim() === String(targetDay)
+            ));
+        if (dayMatches.length !== 1) {
+            return {
+                route_available: false,
+                reason: 'timed_order_date_not_unique_or_not_selectable',
+                date_matches: dayMatches.length,
+            };
+        }
+        dayMatches[0].setAttribute(attribute, 'timed-date-day');
+        return {
+            route_available: true,
+            reason: null,
+            date_selected: false,
+            action: 'timed-date-day',
+        };
+    `, {async: true});
+}
+
+async function openTimedOrderDialog(page, input) {
+    const trigger = await page.evaluate(timedOrderTriggerScript());
+    if (trigger?.route_available !== true) return trigger;
+    await page.click(`[${PREPARE_TARGET_ATTRIBUTE}="timed-trigger"]`);
+    const menu = await page.evaluate(timedOrderMenuScript());
+    if (menu?.route_available !== true) return {...trigger, ...menu};
+    await page.click(`[${PREPARE_TARGET_ATTRIBUTE}="timed-menu"]`);
+    const trustedClicks = ['timed-trigger', 'timed-menu'];
+    let dateStep = null;
+    for (let attempt = 0; attempt < 27; attempt += 1) {
+        dateStep = await page.evaluate(timedOrderDateStepScript(input.date));
+        if (dateStep?.route_available !== true) {
+            return {...trigger, ...menu, ...dateStep, trusted_clicks: trustedClicks};
+        }
+        if (dateStep.date_selected === true) break;
+        await page.click(
+            `[${PREPARE_TARGET_ATTRIBUTE}="${dateStep.action}"]`
+        );
+        trustedClicks.push(dateStep.action);
+    }
+    if (dateStep?.date_selected !== true) {
+        return {
+            ...trigger,
+            ...menu,
+            route_available: false,
+            reason: 'timed_order_date_not_selected_within_bound',
+            trusted_clicks: trustedClicks,
+        };
+    }
+    return {
+        route_available: true,
+        reason: null,
+        trusted_clicks: trustedClicks,
+        date_selected: true,
+        ...trigger,
+        ...menu,
+    };
+}
+
+function openingAuctionAddSecurityScript() {
+    return pageScript(String.raw`
+        const attribute = ${JSON.stringify(PREPARE_TARGET_ATTRIBUTE)};
+        for (const node of document.querySelectorAll('[' + attribute + ']')) {
+            node.removeAttribute(attribute);
+        }
+        const dataOptions = [...document.querySelectorAll('.pdc-data-option')]
+            .filter(visible);
+        const scope = dataOptions.length === 1 ? dataOptions[0] : null;
+        const addMatches = exactLeaves(scope, '添加证券');
+        const dataAreas = [...document.querySelectorAll('.pdc-data')]
+            .filter(visible);
+        const data = dataAreas.length === 1 ? dataAreas[0] : null;
+        const dataEmpty = dataAreas.length === 1
+            && !!data && /暂无数据/.test(data.innerText || '');
+        if (dataOptions.length === 1 && addMatches.length === 1 && dataEmpty) {
+            addMatches[0].setAttribute(attribute, 'opening-auction-add-security');
+        }
+        return {
+            route_available: dataOptions.length === 1
+                && addMatches.length === 1 && dataEmpty,
+            reason: dataOptions.length !== 1 || addMatches.length !== 1
+                ? 'opening_auction_add_security_locator_not_unique'
+                : !dataEmpty
+                    ? 'opening_auction_data_area_not_unique_or_not_empty'
+                    : null,
+            data_option_count: dataOptions.length,
+            data_area_count: dataAreas.length,
+            add_matches: addMatches.length,
+            data_empty: dataEmpty,
+        };
+    `, {async: true});
+}
+
+async function openOpeningAuctionSecurityDialog(page) {
+    const target = await page.evaluate(openingAuctionAddSecurityScript());
+    if (target?.route_available !== true) return target;
+    await page.click(
+        `[${PREPARE_TARGET_ATTRIBUTE}="opening-auction-add-security"]`
+    );
+    return {
+        ...target,
+        trusted_clicks: ['opening-auction-add-security'],
+    };
+}
+
+function openingAuctionCancelScript() {
+    return pageScript(String.raw`
+        const attribute = ${JSON.stringify(PREPARE_TARGET_ATTRIBUTE)};
+        for (const node of document.querySelectorAll('[' + attribute + ']')) {
+            node.removeAttribute(attribute);
+        }
+        const modals = [...document.querySelectorAll('.al-modal-container')]
+            .filter(visible);
+        if (modals.length === 0) {
+            return {
+                route_available: true,
+                reason: null,
+                form_closed: true,
+                modal_count: 0,
+                cancel_count: 0,
+            };
+        }
+        const cancel = modals.length === 1
+            ? exactLeaves(modals[0], '取消')
+            : [];
+        if (modals.length === 1 && cancel.length === 1) {
+            cancel[0].setAttribute(attribute, 'opening-auction-cancel');
+        }
+        return {
+            route_available: modals.length === 1 && cancel.length === 1,
+            reason: modals.length === 1 && cancel.length === 1
+                ? null
+                : 'opening_auction_cancel_not_unique',
+            form_closed: false,
+            modal_count: modals.length,
+            cancel_count: cancel.length,
+        };
+    `, {async: true});
+}
+
+async function closeOpeningAuctionSecurityDialog(page) {
+    let proof = await page.evaluate(openingAuctionCancelScript());
+    if (proof?.form_closed === true) return proof;
+    if (proof?.route_available !== true) return proof;
+    await page.click(
+        `[${PREPARE_TARGET_ATTRIBUTE}="opening-auction-cancel"]`
+    );
+    for (let attempt = 0; attempt < 20; attempt += 1) {
+        await page.evaluate(PREPARE_WAIT_SCRIPT);
+        proof = await page.evaluate(openingAuctionCancelScript());
+        if (proof?.form_closed === true) break;
+    }
+    return proof;
+}
 
 function parseInput(kwargs) {
     try {
@@ -105,7 +425,7 @@ function manualLimitScript(_input) {
     `, {async: true});
 }
 
-function openingAuctionScript(input) {
+function openingAuctionScript(input, {dialogAlreadyOpen = false} = {}) {
     return pageScript(String.raw`
         const visibleSelects = (root) => [...root.querySelectorAll('select')]
             .filter(visible);
@@ -117,32 +437,22 @@ function openingAuctionScript(input) {
         });
         const dataOptions = [...document.querySelectorAll('.pdc-data-option')]
             .filter(visible);
-        const scope = dataOptions.length === 1 ? dataOptions[0] : null;
-        const addMatches = exactLeaves(scope, '添加证券');
         const dataAreas = [...document.querySelectorAll('.pdc-data')]
             .filter(visible);
-        const data = dataAreas.length === 1 ? dataAreas[0] : null;
-        if (dataOptions.length !== 1 || addMatches.length !== 1) {
+        if (!${JSON.stringify(dialogAlreadyOpen)}) {
             return {
                 route_available: false,
-                reason: 'opening_auction_add_security_locator_not_unique',
-                data_option_count: dataOptions.length,
-                add_matches: addMatches.length,
+                reason: 'opening_auction_trusted_dialog_open_required',
                 field_readback: {},
             };
         }
-        if (dataAreas.length !== 1 || !data || !/暂无数据/.test(data.innerText || '')) {
-            return {
-                route_available: false,
-                reason: 'opening_auction_data_area_not_unique_or_not_empty',
-                data_area_count: dataAreas.length,
-                add_matches: 1,
-                field_readback: {},
-            };
+        let modals = [];
+        for (let attempt = 0; attempt < 20; attempt += 1) {
+            await waitForPage(100);
+            modals = [...document.querySelectorAll('.al-modal-container')]
+                .filter(visible);
+            if (modals.length === 1) break;
         }
-        addMatches[0].click();
-        const modals = [...document.querySelectorAll('.al-modal-container')]
-            .filter(visible);
         const modal = modals.length === 1 ? modals[0] : null;
         const result = {
             route_available: false,
@@ -166,7 +476,7 @@ function openingAuctionScript(input) {
             'input[placeholder="请输入目标数量"]'
         )].filter(visible);
         const participationFields = [...modal.querySelectorAll(
-            'input[name="mPercentage"]'
+            'input[name="max_percentage"], input[name="mPercentage"]'
         )].filter(visible);
         result.form_count = form.length;
         result.code_field_count = codeFields.length;
@@ -174,10 +484,7 @@ function openingAuctionScript(input) {
         result.participation_field_count = participationFields.length;
         const cancel = exactLeaves(modal, '取消');
         const close = () => {
-            if (cancel.length === 1) cancel[0].click();
-            result.form_closed_after_readback = document.querySelectorAll(
-                '.al-modal-container'
-            ).length === 0;
+            result.form_closed_after_readback = false;
         };
         if (form.length !== 1 || codeFields.length !== 1
                 || quantityFields.length !== 1 || participationFields.length !== 1) {
@@ -190,10 +497,10 @@ function openingAuctionScript(input) {
         const limitFlagSelects = selectWithOptions(modal, [
             '涨停能卖跌停能买', '涨停不卖跌停不买'
         ]);
-        const secondsFields = [
-            ...modal.querySelectorAll('input[name="triggerTimeSecond"]'),
-            ...modal.querySelectorAll('input[name="seconds"]'),
-        ].filter(visible);
+        const secondsFields = [...modal.querySelectorAll(
+            'input[name="triggerTimeSecond"], input[name="seconds"], '
+            + 'input[ng-model="vm.triggerTimeSecond"]'
+        )].filter(visible);
         const limitPriceFields = [...modal.querySelectorAll(
             'input[placeholder="默认为0, 表示不限价"]'
         )].filter(visible);
@@ -219,8 +526,25 @@ function openingAuctionScript(input) {
         setValue(participation, ${JSON.stringify(String(input.participation))});
         setValue(seconds, ${JSON.stringify(String(input.seconds))});
         setValue(limitPrice, ${JSON.stringify(String(input.price))});
-        setSelect(sideSelects[0], ${JSON.stringify(input.side)});
-        setSelect(minuteSelects[0], ${JSON.stringify(String(input.minute))});
+        const setSelectText = (select, wanted) => {
+            const matches = [...select.options].filter((option) => (
+                (option.textContent || '').trim() === String(wanted)
+            ));
+            if (matches.length !== 1) return false;
+            select.value = matches[0].value;
+            select.dispatchEvent(new Event('change', {bubbles: true}));
+            return true;
+        };
+        if (!setSelectText(sideSelects[0], ${JSON.stringify(input.side)})) {
+            result.reason = 'opening_auction_side_option_not_unique';
+            close();
+            return result;
+        }
+        if (!setSelectText(minuteSelects[0], ${JSON.stringify(String(input.minute))})) {
+            result.reason = 'opening_auction_minute_option_not_unique';
+            close();
+            return result;
+        }
         const fieldReadback = {
             code: code.value,
             side: sideSelects[0].selectedOptions[0]?.textContent?.trim() || '',
@@ -269,31 +593,23 @@ function openingAuctionScript(input) {
     `, {async: true});
 }
 
-function timedOrderScript(input) {
+function timedOrderScript(input, {dialogAlreadyOpen = false} = {}) {
     const [hour, minute] = input.time.split(':').map(Number);
     return pageScript(String.raw`
-        const outer = [...document.querySelectorAll('div.new-condition-strategy')]
-            .filter(visible);
-        const menuRoots = outer.length === 1
-            ? [...outer[0].querySelectorAll('.new-condition-strategy-dropDown')]
-                    .filter(visible)
-            : [];
-        const menuMatches = menuRoots.length === 1
-            ? exactLeaves(menuRoots[0], '定时单')
-            : [];
-        if (outer.length !== 1 || menuRoots.length !== 1 || menuMatches.length !== 1) {
+        if (!${JSON.stringify(dialogAlreadyOpen)}) {
             return {
                 route_available: false,
-                reason: 'timed_order_menu_locator_not_unique',
-                strategy_container_count: outer.length,
-                menu_count: menuRoots.length,
-                timed_order_matches: menuMatches.length,
+                reason: 'timed_order_trusted_dialog_open_required',
                 field_readback: {},
             };
         }
-        menuMatches[0].click();
-        const dialogs = [...document.querySelectorAll('[role="dialog"]')]
-            .filter(visible);
+        let dialogs = [];
+        for (let attempt = 0; attempt < 20; attempt += 1) {
+            await waitForPage(100);
+            dialogs = [...document.querySelectorAll('[role="dialog"]')]
+                .filter(visible);
+            if (dialogs.length === 1) break;
+        }
         const dialog = dialogs.length === 1 ? dialogs[0] : null;
         const result = {
             route_available: false,
@@ -311,17 +627,29 @@ function timedOrderScript(input) {
             ));
             return nodes.length === 1 ? nodes[0] : null;
         };
+        const inputRows = [...dialog.querySelectorAll('.al-modal-input-row')]
+            .filter(visible);
+        const rowByLabel = (label) => inputRows.filter((row) => (
+            exactLeaves(row, label).filter((node) => node.tagName === 'LABEL')
+                .length === 1
+        ));
+        const directionRows = rowByLabel('委托方向:');
+        const priceRows = rowByLabel('委托价格:');
+        const visibleInputs = (row) => row
+            ? [...row.querySelectorAll('input')].filter(visible)
+            : [];
+        const directionFields = directionRows.length === 1
+            ? visibleInputs(directionRows[0])
+            : [];
+        const priceFields = priceRows.length === 1
+            ? visibleInputs(priceRows[0])
+            : [];
         const taskName = uniqueField(['input[name="taskName"]']);
         const code = uniqueField(['input[name="stockCode"]']);
         const quantity = uniqueField(['input[name="quantity"]']);
-        const date = uniqueField([
-            'input[name="executeDate"]',
-            'input[type="date"]',
-        ]);
-        const price = uniqueField([
-            'input[name="entrustPrice"]',
-            'input[name="price"]',
-        ]);
+        const date = uniqueField(['input.al-modal-date-input']);
+        const direction = directionFields.length === 1 ? directionFields[0] : null;
+        const price = priceFields.length === 1 ? priceFields[0] : null;
         const selects = [...dialog.querySelectorAll('select')].filter(visible);
         const optionSelect = (wanted) => selects.filter((select) => {
             const options = [...select.options].map((option) => (
@@ -329,17 +657,20 @@ function timedOrderScript(input) {
             ));
             return wanted.every((text) => options.includes(text));
         });
-        const sideSelects = optionSelect(['买入', '卖出']);
         const hourSelects = optionSelect(['9', '10', '11', '13', '14']);
-        let minuteSelects = selects.filter((select) => (
-            [...select.options].some((option) => (option.textContent || '').trim() === String(${minute}))
-        ));
         const cancel = exactLeaves(dialog, '取消');
-        const close = () => {
+        const close = async () => {
             if (cancel.length === 1) cancel[0].click();
-            result.form_closed_after_readback = document.querySelectorAll(
-                '[role="dialog"]'
-            ).length === 0;
+            for (let attempt = 0; attempt < 20; attempt += 1) {
+                await waitForPage(100);
+                const remainingDialogs = [
+                    ...document.querySelectorAll('[role="dialog"]'),
+                ].filter(visible);
+                if (remainingDialogs.length === 0) break;
+            }
+            result.form_closed_after_readback = [
+                ...document.querySelectorAll('[role="dialog"]'),
+            ].filter(visible).length === 0;
         };
         result.locator_counts = {
             task_name: taskName ? 1 : 0,
@@ -347,43 +678,92 @@ function timedOrderScript(input) {
             quantity: quantity ? 1 : 0,
             date: date ? 1 : 0,
             price: price ? 1 : 0,
-            side_select: sideSelects.length,
+            direction_row: directionRows.length,
+            direction_input: directionFields.length,
+            price_row: priceRows.length,
+            price_input: priceFields.length,
             hour_select: hourSelects.length,
-            minute_select: minuteSelects.length,
+            native_select: selects.length,
             cancel: cancel.length,
         };
         if (!taskName || !code || !quantity || !date || !price
-                || sideSelects.length !== 1 || hourSelects.length !== 1
-                || minuteSelects.length !== 1 || cancel.length !== 1) {
+                || !direction || hourSelects.length !== 1
+                || selects.length !== 2 || cancel.length !== 1) {
             result.reason = 'timed_order_field_not_unique';
-            close();
+            await close();
             return result;
         }
         setValue(taskName, ${JSON.stringify(input.strategyName)});
         setValue(code, ${JSON.stringify(input.code)});
         setValue(quantity, ${JSON.stringify(String(input.quantity))});
-        setValue(date, ${JSON.stringify(input.date)});
         setValue(price, ${JSON.stringify(String(input.price))});
-        setSelect(sideSelects[0], ${JSON.stringify(input.side)});
-        setSelect(hourSelects[0], ${JSON.stringify(String(hour))});
-        minuteSelects = [...dialog.querySelectorAll('select')].filter(visible)
-            .filter((select) => [...select.options].some((option) => (
-                (option.textContent || '').trim() === String(${minute})
-            )));
-        if (minuteSelects.length !== 1) {
-            result.reason = 'timed_order_minute_select_changed_or_not_unique';
-            close();
+        direction.click();
+        let sideMatches = [];
+        for (let attempt = 0; attempt < 20; attempt += 1) {
+            await waitForPage(100);
+            sideMatches = exactLeaves(document.body, ${JSON.stringify(input.side)})
+                .filter((node) => node.tagName === 'LI');
+            if (sideMatches.length === 1) break;
+        }
+        if (sideMatches.length !== 1) {
+            result.reason = 'timed_order_side_option_not_unique';
+            result.locator_counts.side_option = sideMatches.length;
+            await close();
             return result;
         }
-        setSelect(minuteSelects[0], ${JSON.stringify(String(minute))});
+        sideMatches[0].click();
+        await waitForPage(100);
+        if (direction.value !== ${JSON.stringify(input.side)}) {
+            result.reason = 'timed_order_side_readback_mismatch';
+            await close();
+            return result;
+        }
+        if (date.value !== ${JSON.stringify(input.date)}) {
+            result.reason = 'timed_order_date_readback_mismatch';
+            await close();
+            return result;
+        }
+        const setSelectText = (select, wanted) => {
+            const matches = [...select.options].filter((option) => (
+                (option.textContent || '').trim() === String(wanted)
+            ));
+            if (matches.length !== 1) return false;
+            select.value = matches[0].value;
+            select.dispatchEvent(new Event('change', {bubbles: true}));
+            return true;
+        };
+        if (!setSelectText(hourSelects[0], ${JSON.stringify(String(hour))})) {
+            result.reason = 'timed_order_hour_option_not_unique';
+            await close();
+            return result;
+        }
+        let minuteSelects = [];
+        for (let attempt = 0; attempt < 20; attempt += 1) {
+            await waitForPage(100);
+            minuteSelects = [...dialog.querySelectorAll('select')].filter(visible)
+                .filter((select) => [...select.options].some((option) => (
+                    (option.textContent || '').trim() === String(${minute})
+                )));
+            if (minuteSelects.length === 1) break;
+        }
+        if (minuteSelects.length !== 1) {
+            result.reason = 'timed_order_minute_select_changed_or_not_unique';
+            await close();
+            return result;
+        }
+        if (!setSelectText(minuteSelects[0], ${JSON.stringify(String(minute))})) {
+            result.reason = 'timed_order_minute_option_not_unique';
+            await close();
+            return result;
+        }
         const fieldReadback = {
             strategy_name: taskName.value,
             code: code.value,
-            side: sideSelects[0].selectedOptions[0]?.textContent?.trim() || '',
+            side: direction.value,
             price: price.value,
             quantity: quantity.value,
             date: date.value,
-            hour: hourSelects[0].value,
+            hour: hourSelects[0].selectedOptions[0]?.textContent?.trim() || '',
             minute: minuteSelects[0].selectedOptions[0]?.textContent?.trim() || '',
             risk_agreement_checked: !!dialog.querySelector(
                 'input[type="checkbox"]:checked'
@@ -426,7 +806,7 @@ function timedOrderScript(input) {
         if (!result.readback_match) {
             result.reason = 'timed_order_field_readback_mismatch';
         }
-        close();
+        await close();
         return result;
     `, {async: true});
 }
@@ -436,11 +816,14 @@ function routeDetails(input) {
         return {route: ROUTES.manual, script: manualLimitScript(input)};
     }
     if (input.route === 'opening-auction') {
-        return {route: ROUTES.auction, script: openingAuctionScript(input)};
+        return {
+            route: ROUTES.auction,
+            script: openingAuctionScript(input, {dialogAlreadyOpen: true}),
+        };
     }
     return {
         route: ROUTES.conditionActive,
-        script: timedOrderScript(input),
+        script: timedOrderScript(input, {dialogAlreadyOpen: true}),
     };
 }
 
@@ -498,9 +881,58 @@ cli({
                     }
                 ));
             }
-            const result = await page.evaluate(details.script);
+            let trustedInteraction = null;
+            if (input.route === 'opening-auction') {
+                trustedInteraction = await openOpeningAuctionSecurityDialog(page);
+            } else if (input.route === 'timed-order') {
+                trustedInteraction = await openTimedOrderDialog(page, input);
+            }
+            if (trustedInteraction && trustedInteraction.route_available !== true) {
+                return asSingleReceipt(baseReceipt(
+                    TEMPLATE_NAME,
+                    details.route,
+                    input.expectedEnvironment,
+                    state,
+                    {
+                        status: 'capability_gap',
+                        status_reason: trustedInteraction?.reason
+                            || 'trusted_prepare_dialog_open_failed',
+                        logical_account_id: input.logicalAccountId,
+                        field_readback: {},
+                        locator_proof: trustedInteraction || {},
+                        reconcile_required: true,
+                        form_closed: false,
+                        ready_for_submit: false,
+                    }
+                ));
+            }
+            let result;
+            let postInteraction = null;
+            try {
+                result = await page.evaluate(details.script);
+            } finally {
+                if (input.route === 'opening-auction') {
+                    try {
+                        postInteraction = await closeOpeningAuctionSecurityDialog(page);
+                    } catch (closeError) {
+                        postInteraction = {
+                            route_available: false,
+                            form_closed: false,
+                            reason: `opening_auction_close_failed:${closeError.name || 'Error'}`,
+                        };
+                    }
+                }
+            }
             if (!result || typeof result !== 'object') {
                 throw new Error('prepare form returned a malformed object');
+            }
+            if (input.route === 'opening-auction') {
+                result.form_closed_after_readback = postInteraction?.form_closed === true;
+                result.close_proof = postInteraction || {};
+                if (!result.form_closed_after_readback) {
+                    result.route_available = false;
+                    result.reason = result.reason || 'opening_auction_form_not_closed';
+                }
             }
             const readbackPrice = result.field_readback?.price
                 ?? result.field_readback?.limit_price;
@@ -531,7 +963,9 @@ cli({
                         ? null
                         : Number(readbackPrice),
                     field_readback: result.field_readback || {},
-                    locator_proof: result,
+                    locator_proof: trustedInteraction
+                        ? {...trustedInteraction, form: result}
+                        : result,
                     reconcile_required: !prepareReady,
                     form_closed: result.form_closed_after_readback === true,
                     ready_for_submit: false,

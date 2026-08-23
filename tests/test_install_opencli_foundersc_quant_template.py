@@ -51,6 +51,7 @@ def test_default_verify_is_read_only_and_install_requires_explicit_flag(tmp_path
     assert set(installed_payload["files"]) == {
         "README.md",
         "common.mjs",
+        "environment.js",
         "probe.js",
         "prepare.js",
         "reconcile.js",
