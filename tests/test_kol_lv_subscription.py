@@ -467,6 +467,7 @@ def test_browser_listing_recurses_without_parent_mtime_pruning_in_bounded_batche
     )
     assert "await Promise.all(batch.map(async dir =>" in script
     assert "const controller = new AbortController();" in script
+    assert "const rootDeadline = Date.now() + 10000;" in script
     assert "share_list_timeout" in script
     assert ".includes('已失效')" not in script
     assert "exact_visible_terminal" in script

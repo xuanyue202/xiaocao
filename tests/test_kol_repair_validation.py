@@ -727,10 +727,18 @@ def test_repair_validation_accepts_shared_lv_listing_browser_eval_profile(
     assert receipt.failure_fingerprint == "9" * 64
 
 
-@pytest.mark.parametrize("adapter", ["lv_text_image", "subscription_video"])
+@pytest.mark.parametrize(
+    ("adapter", "code"),
+    [
+        ("lv_text_image", "share_metadata_missing"),
+        ("lv_text_image", "share_root_template_missing"),
+        ("subscription_video", "share_directory_template_missing"),
+    ],
+)
 def test_repair_validation_accepts_shared_lv_listing_validation_profile(
     tmp_path,
     adapter,
+    code,
 ) -> None:
     context = {
         "adapter": adapter,
@@ -739,7 +747,7 @@ def test_repair_validation_accepts_shared_lv_listing_validation_profile(
         "failure_fingerprint": "3" * 64,
         "failure_revision": FAILURE_REVISION,
         "category": "incomplete_scan",
-        "code": "share_metadata_missing",
+        "code": code,
         "stage": "listing_validation",
         "targeted_test_profile": f"kol_{adapter}_listing_validation",
     }

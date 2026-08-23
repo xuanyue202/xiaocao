@@ -207,11 +207,22 @@ _BROWSER_LISTING_SCRIPT_TEMPLATE = r"""(async () => {
         return false;
       }
     });
-  const rootTemplate = observedListUrls().find(name => {
+  let rootTemplate = observedListUrls().find(name => {
     const parsed = new URL(name);
     return parsed.searchParams.get('root') === '1'
       && parsed.searchParams.has('shorturl');
   });
+  if (!rootTemplate) {
+    const rootDeadline = Date.now() + 10000;
+    while (Date.now() < rootDeadline && !rootTemplate) {
+      await new Promise(resolve => setTimeout(resolve, 100));
+      rootTemplate = observedListUrls().find(name => {
+        const parsed = new URL(name);
+        return parsed.searchParams.get('root') === '1'
+          && parsed.searchParams.has('shorturl');
+      });
+    }
+  }
   if (!rootTemplate) {
     return fail('share_root_template_missing');
   }

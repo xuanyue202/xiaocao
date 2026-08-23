@@ -1266,7 +1266,12 @@ def _canonical_shared_lv_listing_validation_repair_profile(
         and str(context.get("targeted_test_profile") or "")
         == f"kol_{adapter}_listing_validation"
         and str(context.get("category") or "") == "incomplete_scan"
-        and str(context.get("code") or "") == "share_metadata_missing"
+        and str(context.get("code") or "")
+        in {
+            "share_metadata_missing",
+            "share_root_template_missing",
+            "share_directory_template_missing",
+        }
         and str(context.get("stage") or "") == "listing_validation"
     ):
         return _SHARED_LV_LISTING_VALIDATION_REPAIR_PROFILE
