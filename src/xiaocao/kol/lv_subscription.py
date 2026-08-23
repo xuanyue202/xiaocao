@@ -1379,6 +1379,12 @@ _OWNER_DOWNLOAD_LINK_SCRIPT_TEMPLATE = r"""(async () => {
       '[role="checkbox"], [aria-checked], [class*="checkbox"]'
     )
   );
+  const itemRow = row => [
+    row, ...row.querySelectorAll('[data-id], [data-fsid]')
+  ].some(node => (
+    String(node.getAttribute('data-id') || '') !== ''
+    || String(node.getAttribute('data-fsid') || '') !== ''
+  ));
   const selected = row => {
     const control = selectionControl(row);
     return row.getAttribute('aria-selected') === 'true'
@@ -1388,7 +1394,7 @@ _OWNER_DOWNLOAD_LINK_SCRIPT_TEMPLATE = r"""(async () => {
   };
   const visibleRows = [...new Set(Array.from(document.querySelectorAll(
     'dd, tr, [role="row"], [class*="table-row"], [class*="file-item"]'
-  )).map(rowFor))].filter(visible);
+  )).map(rowFor))].filter(row => itemRow(row) && visible(row));
   for (const row of visibleRows.filter(row => row !== targets[0] && selected(row))) {
     const control = selectionControl(row);
     if (!control) return result('owner_selection_control_missing');

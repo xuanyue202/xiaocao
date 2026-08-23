@@ -1400,6 +1400,7 @@ def test_owner_download_selection_binds_exact_fsid_name_and_checkbox_state():
     assert "aria-checked" in script
     assert "row.classList.contains('selected')" in script
     assert "control?.classList.contains('is-select')" not in script
+    assert "filter(row => itemRow(row) && visible(row))" in script
     assert "selectedRows.length !== 1" in script
     assert "JS-item-active" not in script
 

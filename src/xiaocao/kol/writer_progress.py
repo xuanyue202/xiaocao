@@ -1039,6 +1039,7 @@ _LV_DOWNLOAD_REPAIR_CODES = frozenset({
     "opencli_timeout",
     "uncertain_effect_lacks_readback_binding",
     "owner_download_control_ambiguous",
+    "owner_selection_mismatch",
     "owner_stream_failed",
 })
 
