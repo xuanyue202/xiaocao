@@ -2497,6 +2497,12 @@ try {
             self.share_url,
             self.share_code,
         )
+        listing_navigation_url = authorized_share_url
+        if exact_path is not None:
+            target_parent = str(PurePosixPath(str(exact_path)).parent)
+            listing_navigation_url = urlparse(authorized_share_url)._replace(
+                fragment=f"list/path={quote(target_parent, safe='')}"
+            ).geturl()
         manifest = self._load_manifest()
         prior_items = manifest.get("items", {})
         now = self._time()
@@ -2562,7 +2568,7 @@ try {
                 self._opencli_json(
                     session,
                     "open",
-                    authorized_share_url,
+                    listing_navigation_url,
                     profile=profile,
                     timeout_seconds=30,
                 )
@@ -2604,7 +2610,7 @@ try {
                             self._opencli_json(
                                 session,
                                 "open",
-                                authorized_share_url,
+                                listing_navigation_url,
                                 "--window",
                                 "foreground",
                                 profile=profile,
@@ -2634,7 +2640,7 @@ try {
                 self._opencli_json(
                     session,
                     "open",
-                    authorized_share_url,
+                    listing_navigation_url,
                     profile=profile,
                     timeout_seconds=30,
                 )

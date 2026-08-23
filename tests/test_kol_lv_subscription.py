@@ -203,6 +203,53 @@ def test_exact_download_listing_reads_only_target_ancestor_chain(tmp_path):
     }]
 
 
+def test_exact_listing_navigates_to_parent_before_read_only_eval(tmp_path):
+    opened_urls = []
+
+    def browser_runner(command, **_kwargs):
+        tail = command[3:]
+        if tail[:1] == ["open"]:
+            opened_urls.append(tail[1])
+            payload = {"url": "redacted", "page": "page-1"}
+        elif tail[:1] == ["eval"]:
+            payload = {
+                "status": "ok",
+                "complete_scan": False,
+                "coverage": {
+                    "direct_roots": ["/wrapper", "/wrapper/直播回放"],
+                    "recursive_roots": [],
+                },
+                "entries": [],
+            }
+        else:
+            raise AssertionError(command)
+        return SimpleNamespace(
+            returncode=0,
+            stdout=json.dumps(payload, ensure_ascii=False),
+            stderr="",
+        )
+
+    service = LvSubscriptionService(
+        tmp_path / "out",
+        runner=browser_runner,
+        opencli_command=("opencli",),
+        share_url=(
+            "https://pan.baidu.com/s/private-share-token#list/path=%2F"
+        ),
+        share_code="a1b2",
+    )
+
+    service._read_opencli_listing(
+        session="ticket04",
+        exact_path="/wrapper/直播回放/8月10日.mp4",
+    )
+
+    assert opened_urls == [
+        "https://pan.baidu.com/s/private-share-token?pwd=a1b2"
+        "#list/path=%2Fwrapper%2F%E7%9B%B4%E6%92%AD%E5%9B%9E%E6%94%BE"
+    ]
+
+
 def test_bootstrap_baselines_history_and_keeps_only_latest_supported_versions(
     tmp_path,
 ):
