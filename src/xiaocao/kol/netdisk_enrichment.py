@@ -1827,6 +1827,13 @@ class NetdiskEnrichmentService:
                 ),
                 reconcile_existing=reconcile_claim,
             )
+        if reconcile_claim:
+            return {
+                **self.store.latest(job_id),
+                "pending": True,
+                "side_effect_uncertain": True,
+                "idempotent_replay": True,
+            }
         raise EnrichmentError("Netdisk transcript generation did not start")
 
     def _probe_opencli_ai_note(

@@ -865,8 +865,28 @@ def test_cdp_upload_records_sanitized_opencli_command_failure(tmp_path):
     assert "netdisk_upload_started" not in [row["event"] for row in events]
 
 
-def _opencli_transcript_runner(video_name: str):
+def _opencli_transcript_runner(
+    video_name: str,
+    *,
+    transcript_states: list[dict] | None = None,
+):
     transcript_probe_count = 0
+    probe_states = transcript_states or [
+        {
+            "transcript_state": "generating",
+            "active_tab": "文稿",
+            "content_chars": 0,
+            "export_available": False,
+            "target_bound": True,
+        },
+        {
+            "transcript_state": "ready",
+            "active_tab": "文稿",
+            "content_chars": 1842,
+            "export_available": True,
+            "target_bound": True,
+        },
+    ]
 
     def runner(command, **kwargs):
         nonlocal transcript_probe_count
@@ -912,23 +932,9 @@ def _opencli_transcript_runner(video_name: str):
             }
         elif tail[:1] == ["eval"] and "transcript_state" in tail[1]:
             transcript_probe_count += 1
-            payload = (
-                {
-                    "transcript_state": "generating",
-                    "active_tab": "文稿",
-                    "content_chars": 0,
-                    "export_available": False,
-                    "target_bound": True,
-                }
-                if transcript_probe_count == 1
-                else {
-                    "transcript_state": "ready",
-                    "active_tab": "文稿",
-                    "content_chars": 1842,
-                    "export_available": True,
-                    "target_bound": True,
-                }
-            )
+            payload = probe_states[
+                min(transcript_probe_count - 1, len(probe_states) - 1)
+            ]
         else:
             raise AssertionError(command)
         if tail[:1] == ["eval"] and "baidu-netdisk/probe-transcript" in tail[1]:
@@ -1026,6 +1032,55 @@ def test_transcript_claim_replay_never_repeats_generation_interaction(tmp_path):
     ]
     assert events.count("netdisk_transcript_claimed") == 1
     assert events[-1] == "netdisk_transcript_requested"
+
+
+def test_transcript_claim_replay_stays_uncertain_when_readback_is_missing(tmp_path):
+    service, video, prepared = _prepare(tmp_path)
+    job_id = prepared["job_id"]
+    service.record_browser_liveness(
+        job_id,
+        surface="opencli",
+        evidence=_liveness_evidence(),
+    )
+    service.record_browser_state(
+        job_id,
+        step="video_ready",
+        evidence=_evidence(video.name, "目标视频已存在"),
+        source_mode="existing",
+    )
+    service.claim_browser_action(job_id, action="transcript")
+    service.runner = _opencli_transcript_runner(
+        video.name,
+        transcript_states=[
+            {
+                "transcript_state": "missing",
+                "active_tab": "文稿",
+                "content_chars": 0,
+                "export_available": False,
+                "target_bound": True,
+            }
+        ],
+    )
+    service.opencli_command = ("opencli",)
+
+    replay = service.advance_opencli(
+        job_id,
+        session="ticket02-transcript",
+        profile="work",
+    )
+
+    assert replay["status"] == "transcript_claimed"
+    assert replay["pending"] is True
+    assert replay["side_effect_uncertain"] is True
+    assert replay["idempotent_replay"] is True
+    events = [
+        json.loads(line)["event"]
+        for line in (tmp_path / "out" / "events.jsonl")
+        .read_text(encoding="utf-8")
+        .splitlines()
+    ]
+    assert events.count("netdisk_transcript_claimed") == 1
+    assert "netdisk_transcript_requested" not in events
 
 
 def test_transcript_claim_replay_never_repeats_generation_interaction_after_browser_rebind(
