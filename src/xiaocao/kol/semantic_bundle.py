@@ -81,6 +81,8 @@ _PROTECTED_DRAFT_FIELDS = {
     "media_identity",
     "source_identity",
     "source_version_key",
+    "full_contract_path",
+    "full_contract_sha256",
     "source",
     "author",
     "title",
@@ -901,12 +903,51 @@ def _validate_decision_and_knowledge(item: Mapping[str, Any]) -> str:
     if knowledge_status == "reusable_knowledge":
         knowledge = item.get("knowledge") or {}
         if not isinstance(knowledge, dict) or not _nonblank(
-            knowledge.get("summary") or item.get("durable_distillation_path")
+            knowledge.get("summary")
         ):
             raise _fail(
                 "reusable knowledge branch is incomplete",
                 error_code="knowledge_branch_invalid",
                 stage="knowledge",
+            )
+        distillation_value = str(
+            item.get("durable_distillation_path") or ""
+        ).strip()
+        if not distillation_value:
+            raise _fail(
+                "reusable knowledge requires a durable distillation file",
+                error_code="knowledge_distillation_missing",
+                stage="knowledge",
+                field="durable_distillation_path",
+            )
+        distillation_path = Path(distillation_value).expanduser().resolve()
+        expected_sha = str(
+            item.get("durable_distillation_sha256") or ""
+        ).strip()
+        try:
+            distillation_bytes = distillation_path.read_bytes()
+            distillation = json.loads(distillation_bytes)
+        except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
+            raise _fail(
+                "reusable knowledge durable distillation is invalid",
+                error_code="knowledge_distillation_invalid",
+                stage="knowledge",
+                field="durable_distillation_path",
+            ) from exc
+        if not isinstance(distillation, dict):
+            raise _fail(
+                "reusable knowledge durable distillation is invalid",
+                error_code="knowledge_distillation_invalid",
+                stage="knowledge",
+                field="durable_distillation_path",
+            )
+        actual_sha = hashlib.sha256(distillation_bytes).hexdigest()
+        if not _SHA256.fullmatch(expected_sha) or expected_sha != actual_sha:
+            raise _fail(
+                "reusable knowledge durable distillation changed",
+                error_code="knowledge_distillation_invalid",
+                stage="knowledge",
+                field="durable_distillation_sha256",
             )
     return str(decision_status)
 
@@ -1225,6 +1266,41 @@ def _validate_request(request: Mapping[str, Any]) -> dict[str, Any]:
             stage="request_binding",
         )
     path, evidence_sha, text = _read_evidence(request)
+    if request.get("event") == "subscription_video_analysis_input_required":
+        contract_path_value = str(
+            request.get("full_contract_path") or ""
+        ).strip()
+        contract_sha_value = str(
+            request.get("full_contract_sha256") or ""
+        ).strip()
+        if not contract_path_value or not contract_sha_value:
+            raise _fail(
+                "subscription video request is not bound to the full contract",
+                error_code="full_contract_binding_missing",
+                stage="request_binding",
+                field="full_contract_sha256",
+            )
+        contract_path = Path(contract_path_value).expanduser().resolve()
+        try:
+            contract_bytes = contract_path.read_bytes()
+        except OSError as exc:
+            raise _fail(
+                "subscription video full contract is missing",
+                error_code="full_contract_binding_invalid",
+                stage="request_binding",
+                field="full_contract_path",
+            ) from exc
+        actual_contract_sha = hashlib.sha256(contract_bytes).hexdigest()
+        if (
+            not _SHA256.fullmatch(contract_sha_value)
+            or contract_sha_value != actual_contract_sha
+        ):
+            raise _fail(
+                "subscription video full contract changed after request creation",
+                error_code="full_contract_binding_invalid",
+                stage="request_binding",
+                field="full_contract_sha256",
+            )
     message_sha = request.get("message_sha256") or request.get("content_sha256")
     if not message_sha:
         raise _fail(

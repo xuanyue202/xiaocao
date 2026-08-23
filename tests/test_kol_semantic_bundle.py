@@ -357,6 +357,30 @@ def test_build_validated_bundle_requires_captured_at(tmp_path):
         )
 
 
+def test_reusable_knowledge_requires_a_durable_distillation_file(tmp_path):
+    request, draft, bundle_path, receipt_path, _ = _fixture(tmp_path)
+    draft["knowledge_status"] = "reusable_knowledge"
+    draft.pop("knowledge_reason")
+    draft["knowledge"] = {
+        "summary": "量能确认纪律可以跨来源复用。",
+    }
+
+    with pytest.raises(
+        SemanticBundleError,
+        match="durable distillation",
+    ) as caught:
+        build_validated_bundle(
+            request,
+            draft,
+            bundle_path=bundle_path,
+            receipt_path=receipt_path,
+        )
+
+    assert caught.value.error_code == "knowledge_distillation_missing"
+    assert caught.value.stage == "knowledge"
+    assert caught.value.field == "durable_distillation_path"
+
+
 def test_builder_rejects_non_object_cross_source_before_downstream_processing(
     tmp_path,
 ):

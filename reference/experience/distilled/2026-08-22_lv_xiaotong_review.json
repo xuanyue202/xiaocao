@@ -1,0 +1,111 @@
+{
+  "date": "2026-08-22",
+  "kind": "review",
+  "author": "吕晓彤",
+  "source": "baidu_subscription_share_browser",
+  "evidence": [
+    {
+      "path": "reference/experience/transcripts/2026-08/2026-08-22_lv_xiaotong_quant_fund_lecture.txt",
+      "sha256": "f13ea0adb23ade8f5a12bf474359d6403433f88b09aa35cbc894fb5e9f7f2f7f",
+      "size": 117088
+    }
+  ],
+  "summary": "把量化产品评估拆成选股、择时、风险预算、产品适配、容量衰减和跨市场可迁移性；所有胜率、年化和回撤口述都需滚动样本外与成本证据，三倍杠杆示例不进入家庭建议。",
+  "posture": {
+    "regime": "not_applied_other_author",
+    "dominant_style": "量化产品证据与风险预算审查",
+    "risk": "历史业绩外推、模型衰减、规模容量、杠杆尾部风险和跨市场错配。",
+    "style_ranking": [
+      "先核验滚动样本外和成本",
+      "再检查规模容量与策略拥挤",
+      "按资金期限匹配产品",
+      "跨市场重新验证"
+    ]
+  },
+  "regime_call": {
+    "horizon": "中长期研究窗口",
+    "call": "本条提供量化产品评估框架，不改变小草当前市场姿态或确定性策略参数。",
+    "what_would_falsify": "独立审计与跨市场滚动样本外证明来源业绩、容量和迁移主张稳定成立。"
+  },
+  "directions": [
+    {
+      "name": "量化基金评估",
+      "view": "同时核验选股、择时、仓位、成本、容量和样本外稳定性。"
+    },
+    {
+      "name": "多管理人配置",
+      "view": "按底层暴露和压力期相关性判断互补，不按历史排名机械分散。"
+    },
+    {
+      "name": "跨市场迁移",
+      "view": "A 股模型不能直接迁移到港股、美股、数字资产或商品。"
+    }
+  ],
+  "stocks": [],
+  "method_principles": [
+    "胜率、年化和最大回撤必须绑定样本区间、基准、费用、冲击成本和滚动样本外结果。",
+    "仓位是风险预算工具；产品选择先匹配资金期限、现金流和最大可承受回撤。",
+    "管理人历史强势不能外推，规模增长、容量、换手和策略拥挤必须进入持续评估。",
+    "跨市场迁移必须重做数据、流动性、成本、制度和容量验证。",
+    "避免无依据频繁交易，但长期持有不能覆盖反证、止损和退出纪律。"
+  ],
+  "exit_lessons": [
+    "模型滚动样本外失效、成本吞噬超额或规模增长伴随持续衰减时，停止沿用历史表现。",
+    "资金期限、赎回约束或最大回撤与产品不匹配时，不用高收益目标掩盖流动性风险。",
+    "杠杆压力测试无法覆盖跳空、保证金和连续亏损时，不建立高杠杆敞口。"
+  ],
+  "hypotheses": [
+    {
+      "claim": "量化管理人的未来超额会随资产规模扩张、策略容量接近上限和交易成本上升而衰减，历史排名不能单独预测后续表现。",
+      "implied_rule": "管理人评估必须同时记录资产规模变化、换手、冲击成本、策略容量和滚动样本外超额；缺少任一项时不按历史收益率提高权重。",
+      "falsifiable_test": "按管理人资产规模增速和容量利用率分组，比较后续3、6、12个月扣费超额、最大回撤、换手与压力期相关性。",
+      "expected_effect": "规模快速扩张且接近容量上限的组，后续扣费超额应更低、回撤或相关性应更高。",
+      "category": "quant_capacity_decay"
+    }
+  ],
+  "timing_notes": [
+    "来源自称周二并给出未来两日看跌，但文件修改日为2026-08-22，不能可靠绑定具体交易日。",
+    "最新可用A股收盘为2026-08-21；当前只保留方法知识，不延长已过期预测。"
+  ],
+  "typo_corrections": [
+    {
+      "raw": "下普",
+      "corrected": "夏普",
+      "basis": "上下文为风险调整收益指标。"
+    },
+    {
+      "raw": "卡马",
+      "corrected": "Calmar",
+      "basis": "上下文为年化收益与最大回撤的比值。"
+    },
+    {
+      "raw": "权a",
+      "corrected": "全A",
+      "basis": "上下文为A股宽基表现。"
+    }
+  ],
+  "decision_trace": [
+    "观察：来源完整讲解量化模型、产品业绩、仓位、杠杆、管理人选择和跨市场差异。",
+    "推演：风险预算、产品适配、容量衰减和跨市场重验可跨来源复用；两日看跌和产品业绩口述需要独立验证。",
+    "约束：来源时间锚不可靠，最新指数点位不同，缺少审计净值、费用、家庭账户和杠杆压力测试。",
+    "行动：生成完整报告并合法不提醒，Book KOL-US纸面不交易；知识以authority=0进入研究候选，不修改全局姿态。"
+  ],
+  "judgment_heuristics": [
+    "先问证据口径，再看收益数字。",
+    "先匹配资金期限和最大回撤，再选择产品类型。",
+    "历史排名必须经过规模、容量、成本和滚动样本外复核。",
+    "跨市场必须重新验证，不能复制参数。"
+  ],
+  "action_summary": {
+    "posture_update": "not_applied_other_author：吕晓彤是其他作者，本条不修改posture_current或REGIME_TIMELINE。",
+    "playbook_update": "no_deterministic_change：仅新增authority=0量化产品评估候选。",
+    "hypothesis_update": "one_new_candidate：管理人规模与容量衰减，等待滚动样本外检验。",
+    "audit_evidence": "bound_to_complete_transcript_sha256_f13ea0adb23ade8f5a12bf474359d6403433f88b09aa35cbc894fb5e9f7f2f7f",
+    "instrumentation_todo": "建立管理人AUM、容量、换手、成本与后续3/6/12个月扣费超额面板。",
+    "routing": [
+      "authority_0_durable_knowledge",
+      "research_backlog_candidate",
+      "no_posture_update"
+    ]
+  }
+}

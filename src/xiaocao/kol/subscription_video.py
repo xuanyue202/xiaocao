@@ -64,6 +64,27 @@ _PRIVATE_DIRECTORY_EVAL_PROCESS_TIMEOUT_SECONDS = 120
 _DISCOVERY_HOT_WINDOW = timedelta(days=14)
 _DISCOVERY_HOT_ROOT_LIMIT = 3
 _DISCOVERY_COLD_ROOTS_PER_HOUR = 1
+FULL_CONTRACT_PATH = (
+    Path(__file__).resolve().parents[3]
+    / ".codex"
+    / "skills"
+    / "kol-intelligence"
+    / "references"
+    / "full-contract.md"
+)
+
+
+def analysis_contract_binding() -> dict[str, str]:
+    """Return the exact semantic contract bound into an analysis request."""
+
+    if not FULL_CONTRACT_PATH.is_file():
+        raise EnrichmentError(
+            "Ticket 05 full semantic contract is missing"
+        )
+    return {
+        "full_contract_path": str(FULL_CONTRACT_PATH),
+        "full_contract_sha256": _sha256_file(FULL_CONTRACT_PATH),
+    }
 
 
 def _private_directory_url_matches(value: Any, directory: str) -> bool:
@@ -4608,6 +4629,7 @@ class SubscriptionVideoService:
         request = {
             "schema_version": 2,
             "event": "subscription_video_analysis_input_required",
+            **analysis_contract_binding(),
             "source": item["source"],
             "author": item["author"],
             "author_profile": semantic_author_profile(item["author"]),

@@ -485,6 +485,18 @@ def test_episode_analysis_request_binds_all_component_evidence(tmp_path):
     request = service._analysis_request(episode, state)
 
     assert request["title"] == "7月5日"
+    contract_path = Path(request["full_contract_path"])
+    assert contract_path == (
+        Path(__file__).resolve().parents[1]
+        / ".codex"
+        / "skills"
+        / "kol-intelligence"
+        / "references"
+        / "full-contract.md"
+    )
+    assert request["full_contract_sha256"] == __import__("hashlib").sha256(
+        contract_path.read_bytes()
+    ).hexdigest()
     assert request["author_profile"] == {
         "gender": "male",
         "subject_pronoun": "他",
