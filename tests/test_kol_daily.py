@@ -3466,8 +3466,143 @@ def _low_density_event() -> dict:
             "paper_only": True,
             "reason": "没有可执行且可归属的美股主张。",
         },
+        "knowledge_effect": {
+            "status": "no_reusable_knowledge",
+            "reason": "没有新增的可复用知识。",
+        },
         "coordinator_source_video_bytes": 0,
     }
+
+
+def _write_lv_terminal_fixture(
+    tmp_path: Path,
+    *,
+    identity: str = "lv-image-20260727",
+    version: str = "a" * 64,
+) -> tuple[Path, dict]:
+    output_dir = tmp_path / "lv"
+    artifact_dir = output_dir / "artifacts" / version
+    artifact_dir.mkdir(parents=True)
+    terminal = {
+        **_low_density_event(),
+        "event_id": identity,
+        "source_binding": {
+            "source_identity": identity,
+            "publication_version": version,
+        },
+    }
+    result = {
+        "status": "completed",
+        "items": [{
+            "decision_status": "no_actionable_signal",
+            "reader_insight": {"status": "none"},
+            "notification": {
+                "status": "suppressed",
+                "reason": "没有新增信息。",
+            },
+            "book_kol_us": terminal["book_kol_us"],
+            "content_value": terminal["content_value"],
+            "daily_terminal": terminal,
+        }],
+    }
+    result_path = artifact_dir / "decision_result.json"
+    result_path.write_text(
+        json.dumps(result, ensure_ascii=False),
+        encoding="utf-8",
+    )
+    result_sha256 = hashlib.sha256(result_path.read_bytes()).hexdigest()
+    (artifact_dir / "decision_state.json").write_text(
+        json.dumps({
+            "status": "decided",
+            "identity": identity,
+            "version_key": version,
+            "decision_result_path": str(result_path.resolve()),
+            "decision_result_sha256": result_sha256,
+        }),
+        encoding="utf-8",
+    )
+    return output_dir, terminal
+
+
+def test_lv_terminal_reconciliation_is_exact_and_read_only(tmp_path):
+    identity = "lv-image-20260727"
+    version = "a" * 64
+    output_dir, terminal = _write_lv_terminal_fixture(
+        tmp_path,
+        identity=identity,
+        version=version,
+    )
+    item = {"identity": identity, "version_key": version}
+    runtime = object.__new__(DailyRuntime)
+    runtime.args = SimpleNamespace(lv_output_dir=output_dir)
+    runtime._lv_service_for_sweep = lambda: SimpleNamespace(
+        status=lambda: {"items": {identity: item}},
+    )
+    runtime.publications = SimpleNamespace(
+        status=lambda _key: pytest.fail(
+            "low-density terminal must not read or replay publication"
+        ),
+    )
+
+    progress, reconcile = kol_daily_script._source_cli_terminal_binding(
+        runtime,
+        "lv_text_image",
+        identity,
+    )
+    wrapped = reconcile(progress)
+
+    assert progress.status == "reconcile_required"
+    assert progress.details["claim_receipt_summary"] == {
+        "claim_count": 0,
+        "receipt_count": 0,
+        "uncertain_effect_count": 0,
+    }
+    assert wrapped["outcome"]["terminal_event"] == terminal
+    assert wrapped["outcome"]["authoritative_readback"] == {
+        "decision_result_sha256": hashlib.sha256(
+            (
+                output_dir
+                / "artifacts"
+                / version
+                / "decision_result.json"
+            ).read_bytes()
+        ).hexdigest(),
+        "publication_receipt_id": "",
+        "book_terminal": "no_trade",
+        "knowledge_terminal": "no_reusable_knowledge",
+        "external_business_effects_replayed": False,
+    }
+    assert wrapped["reconciliation_receipt"][
+        "external_business_effects_replayed"
+    ] is False
+
+
+def test_lv_terminal_reconciliation_rejects_changed_result(tmp_path):
+    identity = "lv-image-20260727"
+    version = "a" * 64
+    output_dir, _terminal = _write_lv_terminal_fixture(
+        tmp_path,
+        identity=identity,
+        version=version,
+    )
+    result_path = output_dir / "artifacts" / version / "decision_result.json"
+    result_path.write_text("{}", encoding="utf-8")
+    runtime = SimpleNamespace(
+        args=SimpleNamespace(lv_output_dir=output_dir),
+        _lv_service_for_sweep=lambda: SimpleNamespace(
+            status=lambda: {
+                "items": {
+                    identity: {
+                        "identity": identity,
+                        "version_key": version,
+                    },
+                },
+            },
+        ),
+    )
+
+    with pytest.raises(DailyError, match="receipt is incomplete"):
+        kol_daily_script._lv_text_image_terminal_progress(runtime, identity)
 
 
 def _promoted_event(*, event_id: str, tier: str) -> dict:

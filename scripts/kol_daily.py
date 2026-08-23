@@ -33,12 +33,14 @@ from xiaocao.kol.daily import (
     TransientSourceError,
     UserActionBlocker,
     triggered_evaluation_terminal,
+    validate_source_event,
 )
 from xiaocao.kol.decisions import DecisionPipeline
 from xiaocao.kol.claim_coverage import build_claim_extraction_request
 from xiaocao.kol.enrichment_types import (
     EnrichmentDiagnosticError,
     EnrichmentError,
+    validate_decision_completion,
 )
 from xiaocao.kol.household import LiangHuiMcpClient
 from xiaocao.kol.lv_subscription import (
@@ -1658,6 +1660,112 @@ def _subscription_video_terminal_progress(
     )
 
 
+def _lv_text_image_terminal_decision(
+    runtime: "DailyRuntime",
+    identity: str,
+) -> dict[str, Any]:
+    service = runtime._lv_service_for_sweep()
+    item = (service.status().get("items") or {}).get(identity)
+    if not isinstance(item, dict):
+        raise DailyError("Lv terminal reconciliation target changed")
+    version = str(item.get("version_key") or "")
+    artifact_dir = (
+        runtime.args.lv_output_dir / "artifacts" / version
+    ).expanduser().resolve()
+    state_path = artifact_dir / "decision_state.json"
+    try:
+        state = json.loads(state_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        raise DailyError("Lv terminal decision state is incomplete") from exc
+    result_path = Path(
+        str(state.get("decision_result_path") or "")
+    ).expanduser().resolve()
+    result_sha256 = str(state.get("decision_result_sha256") or "")
+    if (
+        state.get("status") != "decided"
+        or state.get("identity") != identity
+        or state.get("version_key") != version
+        or result_path != artifact_dir / "decision_result.json"
+        or not result_path.is_file()
+        or not re.fullmatch(r"[0-9a-f]{64}", result_sha256)
+        or hashlib.sha256(result_path.read_bytes()).hexdigest()
+        != result_sha256
+    ):
+        raise DailyError("Lv terminal decision receipt is incomplete")
+    try:
+        result = json.loads(result_path.read_text(encoding="utf-8"))
+        validate_decision_completion(result)
+        terminal = dict(result["items"][0]["daily_terminal"])
+        validate_source_event(terminal)
+    except (
+        OSError,
+        json.JSONDecodeError,
+        EnrichmentError,
+        KeyError,
+        IndexError,
+        TypeError,
+    ) as exc:
+        raise DailyError("Lv terminal result lacks a valid daily receipt") from exc
+    source_binding = terminal.get("source_binding") or {}
+    if (
+        terminal.get("event_id") != identity
+        or source_binding.get("source_identity") != identity
+        or source_binding.get("publication_version") != version
+    ):
+        raise DailyError("Lv terminal result changed its source binding")
+    return {
+        "item": item,
+        "state": state,
+        "terminal": terminal,
+        "result_sha256": result_sha256,
+    }
+
+
+def _lv_text_image_terminal_progress(
+    runtime: "DailyRuntime",
+    identity: str,
+) -> WriterProgress:
+    decision = _lv_text_image_terminal_decision(runtime, identity)
+    terminal = decision["terminal"]
+    promoted = (terminal.get("gray_report") or {}).get("status") == "published"
+    effect_count = 2 if promoted else 0
+    return WriterProgress.reconcile_required(
+        item_identity=identity,
+        stage="business_terminal_reconciliation",
+        effect_kind="source_terminal",
+        claim_identity=(
+            f"lv_text_image_terminal:{identity}:"
+            f"{decision['result_sha256']}"
+        ),
+        readback_operation="read_lv_text_image_terminal_receipts",
+        claim_receipt_summary={
+            "claim_count": effect_count,
+            "receipt_count": effect_count,
+            "uncertain_effect_count": 0,
+        },
+    )
+
+
+def _source_cli_terminal_binding(
+    runtime: "DailyRuntime",
+    adapter: str,
+    identity: str,
+) -> tuple[WriterProgress, Any]:
+    if adapter == "lv_text_image":
+        return (
+            _lv_text_image_terminal_progress(runtime, identity),
+            runtime.lv_terminal_reconcile,
+        )
+    if adapter == "subscription_video":
+        return (
+            _subscription_video_terminal_progress(runtime, identity),
+            runtime.videos_terminal_reconcile,
+        )
+    raise DailyError(
+        "reconcile-source-terminal adapter has no exact CLI binding"
+    )
+
+
 def _exact_progress_surface(adapter: str, surface: str) -> str:
     prefix = f"{adapter}:"
     value = str(surface or "")
@@ -2441,6 +2549,58 @@ class DailyRuntime:
         raise DailyError(
             f"Lv has no authoritative {progress.details['readback_operation']}"
         )
+
+    def lv_terminal_reconcile(
+        self,
+        progress: WriterProgress,
+    ) -> dict[str, Any]:
+        if (
+            progress.details["effect_kind"] != "source_terminal"
+            or progress.details["readback_operation"]
+            != "read_lv_text_image_terminal_receipts"
+        ):
+            raise DailyError("Lv terminal readback operation is unsupported")
+        decision = _lv_text_image_terminal_decision(
+            self,
+            progress.item_identity,
+        )
+        terminal = decision["terminal"]
+        report = terminal.get("gray_report") or {}
+        publication_receipt_id = ""
+        if report.get("status") == "published":
+            publication_key = publication_id_for_source(
+                adapter="lv_text_image",
+                source_identity=progress.item_identity,
+            )
+            publication = self.publications.status(publication_key)
+            receipt = publication.get("publish_receipt") or {}
+            if (
+                publication.get("completed") is not True
+                or receipt.get("detailUrl") != report.get("detail_url")
+            ):
+                raise DailyError("Lv terminal publication receipt changed")
+            publication_receipt_id = str(
+                receipt.get("idempotencyKey")
+                or receipt.get("receiptId")
+                or ""
+            )
+        outcome = {
+            "status": "no_update",
+            "terminal_event": terminal,
+            "authoritative_readback": {
+                "decision_result_sha256": decision["result_sha256"],
+                "publication_receipt_id": publication_receipt_id,
+                "book_terminal": str(
+                    (terminal.get("book_kol_us") or {}).get("status") or ""
+                ),
+                "knowledge_terminal": str(
+                    (terminal.get("knowledge_effect") or {}).get("status")
+                    or ""
+                ),
+                "external_business_effects_replayed": False,
+            },
+        }
+        return _reconciliation_result(progress, outcome)
 
     def lv_structured_input(self, progress: WriterProgress) -> dict[str, Any]:
         return _consume_structured_input(
@@ -4092,19 +4252,16 @@ def main() -> int:
             raise DailyError(
                 "reconcile-source-terminal requires source adapter and identity"
             )
-        if args.source_adapter != "subscription_video":
-            raise DailyError(
-                "reconcile-source-terminal adapter has no exact CLI binding"
-            )
         runtime = DailyRuntime(args)
-        progress = _subscription_video_terminal_progress(
+        progress, reconcile = _source_cli_terminal_binding(
             runtime,
+            args.source_adapter,
             args.source_identity,
         )
         result = DailyCoordinator(args.output_dir).resume_reconciliation(
             {
                 "name": args.source_adapter,
-                "reconcile": runtime.videos_terminal_reconcile,
+                "reconcile": reconcile,
             },
             progress=progress,
         )
