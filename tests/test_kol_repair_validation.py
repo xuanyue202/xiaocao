@@ -139,26 +139,45 @@ def test_repair_validation_maps_wechat_source_failure_to_exact_mailbox_profile(
 
 
 @pytest.mark.parametrize(
-    ("code", "declared_profile"),
+    ("category", "code", "stage", "declared_profile"),
     [
-        ("provider_download_filtered", "kol_lv_download_recovery"),
         (
+            "provider_error",
+            "provider_download_filtered",
+            "provider_download_link",
+            "kol_lv_download_recovery",
+        ),
+        (
+            "provider_error",
             "provider_download_link_errno_2",
+            "provider_download_link",
             "kol_lv_text_image_provider_download_link",
         ),
         (
+            "provider_error",
             "provider_frontend_target_not_ready",
+            "provider_download_link",
             "kol_lv_text_image_provider_download_link",
         ),
         (
+            "transport_error",
             "opencli_command_failed",
+            "browser_download_recovery",
             "kol_lv_text_image_browser_download_recovery",
+        ),
+        (
+            "control_plane_handler_error",
+            "uncertain_effect_lacks_readback_binding",
+            "provider_preview_reconciliation",
+            "kol_lv_text_image_provider_preview_reconciliation",
         ),
     ],
 )
 def test_repair_validation_accepts_exact_lv_download_recovery_profile(
     tmp_path,
+    category,
     code,
+    stage,
     declared_profile,
 ) -> None:
     context = {
@@ -167,17 +186,9 @@ def test_repair_validation_accepts_exact_lv_download_recovery_profile(
         "content_sha256": "2" * 64,
         "failure_fingerprint": "3" * 64,
         "failure_revision": FAILURE_REVISION,
-        "category": (
-            "transport_error"
-            if code == "opencli_command_failed"
-            else "provider_error"
-        ),
+        "category": category,
         "code": code,
-        "stage": (
-            "browser_download_recovery"
-            if code == "opencli_command_failed"
-            else "provider_download_link"
-        ),
+        "stage": stage,
         "targeted_test_profile": declared_profile,
     }
 
@@ -227,6 +238,7 @@ def test_repair_validation_accepts_exact_lv_download_recovery_profile(
             "filtered_image_repair_uses_read_only_preview_surface or "
             "existing_image_claim_uses_read_only_preview_after_zero_download_readback or "
             "new_filtered_image_claim_uses_preview_without_frontend_trigger or "
+            "read_only_provider_reconciliation_wait_is_not_an_uncertain_effect or "
             "newer_repair_lifecycle_supersedes_old_fingerprint or "
             "repair_validation_accepts_exact_lv_download_recovery_profile"
         ),

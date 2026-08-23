@@ -470,6 +470,42 @@ def test_uncertain_effect_without_exact_claim_binding_is_agent_repair():
     )
 
 
+def test_read_only_provider_reconciliation_wait_is_not_an_uncertain_effect():
+    progress = normalize_source_result(
+        "lv_text_image",
+        {
+            "status": "waiting",
+            "claim_receipt_summary": {
+                "claim_count": 1,
+                "receipt_count": 0,
+                "uncertain_effect_count": 0,
+            },
+            "waiting_items": [{
+                "identity": "image-1",
+                "version_key": "version-1",
+                "stage": "provider_preview_reconciliation",
+                "failure": {
+                    "category": "provider_error",
+                    "code": "provider_preview_not_ready",
+                    "stage": "provider_preview_reconciliation",
+                },
+                "next_poll_not_before": "2026-08-08T12:30:00+08:00",
+            }],
+        },
+        failure_revision=FAILURE_REVISION,
+        provider_contract_version="xiaocao_writer_v1",
+    )
+
+    assert progress.status == "wait_until"
+    assert progress.ownership == "provider"
+    assert progress.details["code"] == "provider_preview_not_ready"
+    assert progress.details["claim_receipt_summary"] == {
+        "claim_count": 1,
+        "receipt_count": 0,
+        "uncertain_effect_count": 0,
+    }
+
+
 def test_source_wait_without_durable_deadline_becomes_repair_required():
     progress = normalize_source_result(
         "lv_text_image",

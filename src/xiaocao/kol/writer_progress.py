@@ -627,6 +627,7 @@ TARGETED_REPAIR_TESTS: dict[str, tuple[str, ...]] = {
             "filtered_image_repair_uses_read_only_preview_surface or "
             "existing_image_claim_uses_read_only_preview_after_zero_download_readback or "
             "new_filtered_image_claim_uses_preview_without_frontend_trigger or "
+            "read_only_provider_reconciliation_wait_is_not_an_uncertain_effect or "
             "newer_repair_lifecycle_supersedes_old_fingerprint or "
             "repair_validation_accepts_exact_lv_download_recovery_profile"
         ),
@@ -1023,6 +1024,7 @@ _LV_DOWNLOAD_REPAIR_PROFILE_ALIASES = frozenset({
     _LV_DOWNLOAD_REPAIR_PROFILE,
     "kol_lv_text_image_browser_download_recovery",
     "kol_lv_text_image_provider_download_link",
+    "kol_lv_text_image_provider_preview_reconciliation",
 })
 _LV_DOWNLOAD_REPAIR_CODES = frozenset({
     "blocked_download_frame_missing",
@@ -1032,6 +1034,7 @@ _LV_DOWNLOAD_REPAIR_CODES = frozenset({
     "detached_mid_command",
     "opencli_command_failed",
     "opencli_timeout",
+    "uncertain_effect_lacks_readback_binding",
 })
 
 
@@ -1048,6 +1051,7 @@ def _canonical_lv_download_repair_profile(
             "browser_download_recovery",
             "provider_download_link",
             "provider_download_trigger",
+            "provider_preview_reconciliation",
         }
     ):
         return _LV_DOWNLOAD_REPAIR_PROFILE
@@ -2402,7 +2406,7 @@ def normalize_source_result(
         or (item or {}).get("code")
         or "progress_deadline_missing"
     )
-    if category == "uncertain_state" or "reconciliation" in stage:
+    if category == "uncertain_state" or summary["uncertain_effect_count"]:
         claim_identity = str((item or {}).get("claim_identity") or "")
         readback_operation = str(
             (item or {}).get("readback_operation") or ""

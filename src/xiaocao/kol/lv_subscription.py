@@ -98,6 +98,17 @@ _OPENCLI_ERROR_CATEGORIES = {
 _DIRECT_DOWNLOAD_MEDIA = {"image", "pdf", "text"}
 _DIRECT_DOWNLOAD_HOSTS = {"d.pcs.baidu.com"}
 _PREVIEW_DOWNLOAD_HOST = re.compile(r"thumbnail\d*\.baidupcs\.com")
+MIN_PREVIEW_SHORT_EDGE = 256
+MIN_PREVIEW_LONG_EDGE = 512
+
+
+def _valid_preview_dimensions(width: int, height: int) -> bool:
+    """Accept evidence-sized landscape and portrait preview derivatives."""
+
+    return (
+        min(width, height) >= MIN_PREVIEW_SHORT_EDGE
+        and max(width, height) >= MIN_PREVIEW_LONG_EDGE
+    )
 
 
 def _subscription_decision_pipeline_error(exc: Exception) -> EnrichmentError:
@@ -744,6 +755,8 @@ _FILTERED_IMAGE_PREVIEW_SCRIPT_TEMPLATE = r"""(async () => {
   const expectedProviderFileId = __EXPECTED_PROVIDER_FILE_ID_JSON__;
   const expectedItemPath = __EXPECTED_ITEM_PATH_JSON__;
   const expectedName = __EXPECTED_NAME_JSON__;
+  const minPreviewShortEdge = __MIN_PREVIEW_SHORT_EDGE__;
+  const minPreviewLongEdge = __MIN_PREVIEW_LONG_EDGE__;
   const result = (status, extra = {}) => ({status, operation, ...extra});
   if (
     location.origin !== 'https://pan.baidu.com'
@@ -799,7 +812,13 @@ _FILTERED_IMAGE_PREVIEW_SCRIPT_TEMPLATE = r"""(async () => {
   while (Date.now() < previewDeadline) {
     const candidates = Array.from(document.querySelectorAll('img'))
       .filter(image => {
-        if (!visible(image) || image.naturalWidth < 512 || image.naturalHeight < 512) {
+        const shortEdge = Math.min(image.naturalWidth, image.naturalHeight);
+        const longEdge = Math.max(image.naturalWidth, image.naturalHeight);
+        if (
+          !visible(image)
+          || shortEdge < minPreviewShortEdge
+          || longEdge < minPreviewLongEdge
+        ) {
           return false;
         }
         let url;
@@ -846,6 +865,8 @@ def _filtered_image_preview_script(
         )
         .replace("__EXPECTED_ITEM_PATH_JSON__", json.dumps(expected_item_path))
         .replace("__EXPECTED_NAME_JSON__", json.dumps(expected_name))
+        .replace("__MIN_PREVIEW_SHORT_EDGE__", str(MIN_PREVIEW_SHORT_EDGE))
+        .replace("__MIN_PREVIEW_LONG_EDGE__", str(MIN_PREVIEW_LONG_EDGE))
     )
 
 
@@ -3533,8 +3554,7 @@ try {
             or preview.get("provider_file_id") != provider_file_id
             or preview.get("host") != parsed.hostname
             or preview.get("path") != parsed.path
-            or width < 512
-            or height < 512
+            or not _valid_preview_dimensions(width, height)
         ):
             raise EnrichmentDiagnosticError(
                 "provider preview changed source identity",
@@ -3662,8 +3682,10 @@ try {
                 or not str(source_provider_file_id or "").isdigit()
                 or not isinstance(preview_pixel_width, int)
                 or not isinstance(preview_pixel_height, int)
-                or preview_pixel_width < 512
-                or preview_pixel_height < 512
+                or not _valid_preview_dimensions(
+                    preview_pixel_width,
+                    preview_pixel_height,
+                )
                 or not source.read_bytes()[:3].startswith(b"\xff\xd8\xff")
             ):
                 raise EnrichmentError(

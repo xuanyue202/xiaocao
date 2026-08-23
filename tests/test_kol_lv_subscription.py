@@ -1837,7 +1837,7 @@ def test_filtered_image_repair_records_identity_bound_preview_derivative(
                 "host": "thumbnail0.baidupcs.com",
                 "path": "/thumbnail/evidence",
                 "provider_file_id": entry["provider_file_id"],
-                "natural_width": 1084,
+                "natural_width": 414,
                 "natural_height": 900,
             }
         else:
@@ -1884,7 +1884,7 @@ def test_filtered_image_repair_records_identity_bound_preview_derivative(
     assert receipt["expected_size"] == entry["size"]
     assert receipt["actual_size"] == len(preview)
     assert receipt["source_provider_file_id"] == entry["provider_file_id"]
-    assert receipt["preview_pixel_width"] == 1084
+    assert receipt["preview_pixel_width"] == 414
     assert receipt["preview_pixel_height"] == 900
     assert operations == ["open", "bind", "open", "eval"]
     assert bind_calls == 1
@@ -1908,7 +1908,7 @@ def test_filtered_image_repair_records_identity_bound_preview_derivative(
         assert result["source_expected_size"] == entry["size"]
         assert result["acquired_size"] == len(preview)
         assert result["source_provider_file_id"] == entry["provider_file_id"]
-        assert result["preview_pixel_width"] == 1084
+        assert result["preview_pixel_width"] == 414
         assert result["preview_pixel_height"] == 900
 
 
