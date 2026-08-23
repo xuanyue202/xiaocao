@@ -1541,6 +1541,79 @@ def _subscription_video_structured_progress(
     return progress
 
 
+def _lv_text_image_structured_progress(
+    runtime: "DailyRuntime",
+    identity: str,
+) -> WriterProgress:
+    service = runtime._lv_service_for_sweep()
+    exact = _one_exact_pending(
+        service.pending_items(),
+        identity,
+        label="Lv structured input",
+    )
+    if len(exact) != 1:
+        raise DailyError("Lv structured input target is not pending")
+    item = exact[0]
+    request_path = (
+        runtime.args.lv_output_dir
+        / "artifacts"
+        / str(item["version_key"])
+        / "analysis_request.json"
+    )
+    try:
+        request = json.loads(request_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        raise DailyError("Lv structured input request is missing") from exc
+    if (
+        not isinstance(request, dict)
+        or request.get("identity") != item.get("identity")
+        or request.get("version_key") != item.get("version_key")
+        or not re.fullmatch(
+            r"[0-9a-f]{64}",
+            str(request.get("evidence_sha256") or ""),
+        )
+    ):
+        raise DailyError("Lv structured input request changed")
+    waiting_item = _semantic_waiting_item(
+        request,
+        identity=str(item["identity"]),
+        version_key=str(item["version_key"]),
+        name=str(item.get("name") or ""),
+        author=str(item.get("author") or "吕晓彤"),
+    )
+    progress = normalize_source_result(
+        "lv_text_image",
+        {
+            "status": "waiting",
+            "waiting_count": 1,
+            "waiting_items": [waiting_item],
+        },
+        failure_revision=_writer_failure_revision(),
+        provider_contract_version="xiaocao_writer_v1",
+    )
+    if progress.status != "structured_input":
+        raise DailyError("Lv structured input request did not normalize")
+    return progress
+
+
+def _source_cli_structured_input_binding(
+    runtime: "DailyRuntime",
+    adapter: str,
+    identity: str,
+) -> tuple[WriterProgress, Any]:
+    if adapter == "lv_text_image":
+        return (
+            _lv_text_image_structured_progress(runtime, identity),
+            runtime.lv_structured_input,
+        )
+    if adapter == "subscription_video":
+        return (
+            _subscription_video_structured_progress(runtime, identity),
+            runtime.videos_structured_input,
+        )
+    raise DailyError("resume-source-input adapter has no exact CLI binding")
+
+
 def _subscription_video_terminal_progress(
     runtime: "DailyRuntime",
     identity: str,
@@ -3962,19 +4035,16 @@ def main() -> int:
             raise DailyError(
                 "resume-source-input requires source adapter and identity"
             )
-        if args.source_adapter != "subscription_video":
-            raise DailyError(
-                "resume-source-input adapter has no exact CLI binding"
-            )
         runtime = DailyRuntime(args)
-        progress = _subscription_video_structured_progress(
+        progress, structured_input = _source_cli_structured_input_binding(
             runtime,
+            args.source_adapter,
             args.source_identity,
         )
         result = DailyCoordinator(args.output_dir).resume_structured_input(
             {
                 "name": args.source_adapter,
-                "structured_input": runtime.videos_structured_input,
+                "structured_input": structured_input,
             },
             progress=progress,
         )

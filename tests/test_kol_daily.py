@@ -326,6 +326,71 @@ def test_source_cli_narrow_runner_supports_subscription_video():
     ) is subscription
 
 
+def test_source_cli_structured_input_binding_supports_exact_lv_item(
+    tmp_path,
+    monkeypatch,
+):
+    identity = "i" * 64
+    version_key = "v" * 64
+    artifact_dir = tmp_path / "lv" / "artifacts" / version_key
+    artifact_dir.mkdir(parents=True)
+    evidence_path = artifact_dir / "evidence.txt"
+    evidence_path.write_text("做空不是闹着玩的\n", encoding="utf-8")
+    evidence_sha256 = hashlib.sha256(evidence_path.read_bytes()).hexdigest()
+    (artifact_dir / "analysis_request.json").write_text(
+        json.dumps({
+            "event": "daily_analysis_input_required",
+            "identity": identity,
+            "version_key": version_key,
+            "evidence_sha256": evidence_sha256,
+            "evidence_path": str(evidence_path),
+            "analysis_request_path": str(
+                artifact_dir / "analysis_request.json"
+            ),
+        }),
+        encoding="utf-8",
+    )
+
+    class FakeService:
+        @staticmethod
+        def pending_items():
+            return [{
+                "identity": identity,
+                "version_key": version_key,
+                "name": "fixture.png",
+                "author": "吕晓彤",
+            }]
+
+    handler = lambda progress: {"progress": progress}
+    runtime = SimpleNamespace(
+        args=SimpleNamespace(lv_output_dir=tmp_path / "lv"),
+        _lv_service_for_sweep=lambda: FakeService(),
+        lv_structured_input=handler,
+    )
+    monkeypatch.setattr(
+        kol_daily_script,
+        "_writer_failure_revision",
+        lambda: "a" * 40,
+    )
+
+    progress, bound = (
+        kol_daily_script._source_cli_structured_input_binding(
+            runtime,
+            "lv_text_image",
+            identity,
+        )
+    )
+
+    assert progress.status == "structured_input"
+    assert progress.item_identity == identity
+    assert progress.details["immutable_bindings"] == {
+        "identity": identity,
+        "version_key": version_key,
+        "evidence_sha256": evidence_sha256,
+    }
+    assert bound is handler
+
+
 def test_source_repair_validation_accepts_pending_resume():
     progress = SimpleNamespace(failure_fingerprint="a" * 64)
     convergence = SimpleNamespace(
