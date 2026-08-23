@@ -624,13 +624,16 @@ def test_listing_recovers_once_after_detached_read_only_eval(
 ):
     listing_calls = 0
     open_calls = 0
+    foreground_open_calls = 0
     bind_calls = 0
 
     def browser_runner(command, **_kwargs):
-        nonlocal listing_calls, open_calls, bind_calls
+        nonlocal listing_calls, open_calls, foreground_open_calls, bind_calls
         tail = command[3:]
         if tail[:1] == ["open"]:
             open_calls += 1
+            if tail[-2:] == ["--window", "foreground"]:
+                foreground_open_calls += 1
             return SimpleNamespace(
                 returncode=0,
                 stdout=json.dumps({"url": "redacted", "page": "page-1"}),
@@ -687,7 +690,8 @@ def test_listing_recovers_once_after_detached_read_only_eval(
         },
     }
     assert listing_calls == 2
-    assert open_calls == 2
+    assert open_calls == 3
+    assert foreground_open_calls == 1
     assert bind_calls == 1
 
 
@@ -728,14 +732,17 @@ def test_lv_text_image_browser_open_exposes_diagnostic(tmp_path):
 
 def test_lv_text_image_browser_open_exposes_diagnostic_after_rebind(tmp_path):
     open_calls = 0
+    foreground_open_calls = 0
     bind_calls = 0
 
     def browser_runner(command, **kwargs):
-        nonlocal open_calls, bind_calls
+        nonlocal open_calls, foreground_open_calls, bind_calls
         assert command[2] == "ticket04"
         operation = command[3]
         if operation == "open":
             open_calls += 1
+            if command[-2:] == ["--window", "foreground"]:
+                foreground_open_calls += 1
             if open_calls == 1:
                 raise subprocess.TimeoutExpired(
                     command,
@@ -777,7 +784,8 @@ def test_lv_text_image_browser_open_exposes_diagnostic_after_rebind(tmp_path):
         "code": "opencli_timeout",
         "stage": "browser_open",
     }
-    assert open_calls == 2
+    assert open_calls == 3
+    assert foreground_open_calls == 1
     assert bind_calls == 1
 
 

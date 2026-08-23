@@ -2594,6 +2594,22 @@ try {
                     )
                     if needs_rebind:
                         try:
+                            # A named OpenCLI session can survive while its
+                            # former page is detached (often leaving only an
+                            # about:blank background target). Re-open the same
+                            # authorized share in a foreground target before
+                            # binding; binding first can attach the session to
+                            # that dead/background page and reproduce the same
+                            # read-only eval failure indefinitely.
+                            self._opencli_json(
+                                session,
+                                "open",
+                                authorized_share_url,
+                                "--window",
+                                "foreground",
+                                profile=profile,
+                                timeout_seconds=30,
+                            )
                             self.bind_opencli(
                                 session=session,
                                 profile=profile,
