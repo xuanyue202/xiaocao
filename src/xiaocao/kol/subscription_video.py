@@ -1129,6 +1129,23 @@ class SubscriptionVideoService:
             )
         return value
 
+    def _bind_opencli(
+        self,
+        *,
+        session: str,
+        profile: str | None,
+    ) -> None:
+        bound = self._opencli_json(
+            session,
+            "bind",
+            profile=profile,
+            timeout_seconds=30,
+        )
+        if bound.get("session") != session:
+            raise EnrichmentError(
+                "Ticket 05 browser bootstrap did not bind the requested session"
+            )
+
     def _scan_private(
         self,
         *,
@@ -1265,6 +1282,7 @@ class SubscriptionVideoService:
         )
         readback_script = "({status: 'ok', url: location.href})"
         last_timeout: EnrichmentDiagnosticError | None = None
+        rebind_used = False
         for attempt in range(2):
             try:
                 opened = self._opencli_json(
@@ -1287,13 +1305,28 @@ class SubscriptionVideoService:
                 ):
                     return
 
-            readback = self._opencli_json(
-                session,
-                "eval",
-                readback_script,
-                profile=profile,
-                timeout_seconds=30,
-            )
+            try:
+                readback = self._opencli_json(
+                    session,
+                    "eval",
+                    readback_script,
+                    profile=profile,
+                    timeout_seconds=30,
+                )
+            except EnrichmentDiagnosticError as exc:
+                if (
+                    not rebind_used
+                    and exc.diagnostic_stage == "browser_eval"
+                    and exc.diagnostic_code
+                    in {"opencli_cdp_timeout", "opencli_timeout"}
+                ):
+                    rebind_used = True
+                    try:
+                        self._bind_opencli(session=session, profile=profile)
+                    except EnrichmentError as bind_error:
+                        raise exc from bind_error
+                    continue
+                raise
             readback_url = str(readback.get("url") or "")
             if _private_directory_url_matches(readback_url, directory):
                 return

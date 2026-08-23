@@ -1271,6 +1271,65 @@ def test_private_scan_retries_one_preclaim_browser_eval_timeout(tmp_path):
     assert [command[5] for command in commands] == ["open", "eval", "eval"]
 
 
+def test_private_scan_retries_one_preclaim_browser_eval_timeout_after_session_rebind(
+    tmp_path,
+):
+    commands = []
+    readback_count = 0
+    directory_url = ""
+
+    def runner(command, **_kwargs):
+        nonlocal directory_url, readback_count
+        commands.append(command)
+        operation = command[5]
+        if operation == "open":
+            directory_url = command[6]
+            payload = {"url": "about:blank"}
+            returncode = 0
+        elif operation == "bind":
+            payload = {"session": "ticket05"}
+            returncode = 0
+        elif operation == "eval":
+            if "url: location.href" in command[6]:
+                readback_count += 1
+                if readback_count == 1:
+                    raise subprocess.TimeoutExpired(
+                        command, _kwargs.get("timeout", 30)
+                    )
+                payload = {"status": "ok", "url": directory_url}
+            else:
+                payload = {"status": "ok", "rows": []}
+            returncode = 0
+        else:
+            raise AssertionError(command)
+        return SimpleNamespace(
+            returncode=returncode,
+            stdout=json.dumps(payload),
+            stderr="",
+        )
+
+    result = _service(
+        tmp_path,
+        runner=runner,
+        sleep=lambda _seconds: None,
+    )._scan_private(
+        session="ticket05",
+        profile="work",
+        root="/课程/路西法全套",
+        recursive=False,
+    )
+
+    assert result["entries"] == []
+    assert [command[5] for command in commands] == [
+        "open",
+        "eval",
+        "bind",
+        "open",
+        "eval",
+        "eval",
+    ]
+
+
 def test_private_scan_reloads_one_bound_shell_before_second_read(tmp_path):
     commands = []
     scan_count = 0
