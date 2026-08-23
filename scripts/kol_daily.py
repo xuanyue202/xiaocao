@@ -1574,6 +1574,10 @@ def _lv_text_image_structured_progress(
         )
     ):
         raise DailyError("Lv structured input request changed")
+    request = {
+        **request,
+        "analysis_request_path": str(request_path.resolve()),
+    }
     waiting_item = _semantic_waiting_item(
         request,
         identity=str(item["identity"]),

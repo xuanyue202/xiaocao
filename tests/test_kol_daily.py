@@ -344,9 +344,7 @@ def test_source_cli_structured_input_binding_supports_exact_lv_item(
             "version_key": version_key,
             "evidence_sha256": evidence_sha256,
             "evidence_path": str(evidence_path),
-            "analysis_request_path": str(
-                artifact_dir / "analysis_request.json"
-            ),
+            "request_path": str(artifact_dir / "analysis_request.json"),
         }),
         encoding="utf-8",
     )
