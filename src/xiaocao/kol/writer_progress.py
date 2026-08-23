@@ -2204,6 +2204,20 @@ def _source_item_identity(adapter: str, item: Mapping[str, Any] | None) -> str:
     return f"{adapter}:source"
 
 
+def _completed_source_identity(
+    adapter: str,
+    events: list[dict[str, Any]],
+) -> str:
+    identities = list(dict.fromkeys(
+        str(event.get("event_id") or "").strip()
+        for event in events
+        if _SAFE_IDENTITY.fullmatch(
+            str(event.get("event_id") or "").strip()
+        )
+    ))
+    return identities[0] if len(identities) == 1 else f"{adapter}:source"
+
+
 def _progress_claim_summary(outcome: Mapping[str, Any]) -> dict[str, int]:
     supplied = outcome.get("claim_receipt_summary")
     if isinstance(supplied, Mapping):
@@ -2270,7 +2284,7 @@ def normalize_source_result(
             else summary
         )
         return WriterProgress.terminal(
-            item_identity=source_identity,
+            item_identity=_completed_source_identity(adapter_name, events),
             stage="source_run",
             content_terminal=_aggregate_terminal(
                 events,

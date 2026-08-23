@@ -186,6 +186,29 @@ def test_writer_progress_rejects_missing_required_field_and_illegal_transition()
     )
 
 
+def test_completed_source_progress_preserves_event_identity_and_knowledge():
+    progress = normalize_source_result(
+        "subscription_video",
+        {
+            "status": "completed",
+            "events": [{
+                "kind": "source_event",
+                "event_id": "video-1",
+                "content_value": {"status": "promoted"},
+                "gray_report": {"status": "published"},
+                "alert": {"status": "not_eligible"},
+                "book_kol_us": {"status": "no_trade"},
+                "knowledge_effect": {"status": "reusable_knowledge"},
+            }],
+        },
+        failure_revision=FAILURE_REVISION,
+        provider_contract_version="xiaocao_writer_v1",
+    )
+
+    assert progress.item_identity == "video-1"
+    assert progress.details["knowledge_terminal"] == "reusable_knowledge"
+
+
 def test_failure_fingerprint_is_stable_and_contains_only_safe_contract_fields():
     first = _fingerprint()
     second = _fingerprint()
@@ -583,9 +606,6 @@ def test_repair_closure_accepts_shared_lv_listing_validation_profile(
     )
 
     assert closure["event"] == "repair_closed"
-    assert closure["repair_receipt"]["targeted_test_profile"] == (
-        "kol_subscription_video_browser_eval"
-    )
     assert closure["repair_receipt"]["targeted_test_profile"] == (
         "kol_shared_lv_listing_validation"
     )

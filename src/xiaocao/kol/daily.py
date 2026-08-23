@@ -1035,6 +1035,40 @@ def _reader_reminder_copy(
     return title, body
 
 
+def knowledge_terminal_for_item(item: Mapping[str, Any]) -> dict[str, Any]:
+    """Project the independently completed knowledge branch into its terminal."""
+
+    status = str(item.get("knowledge_status") or "").strip()
+    if status == "no_reusable_knowledge":
+        return {
+            "status": status,
+            "reason": _required_reason(
+                item.get("knowledge_reason"),
+                label="knowledge branch",
+            ),
+        }
+    if status != "reusable_knowledge":
+        raise DailyError("daily knowledge branch has no terminal status")
+    path_value = str(item.get("durable_distillation_path") or "").strip()
+    sha256 = str(item.get("durable_distillation_sha256") or "").strip()
+    path = Path(path_value).expanduser().resolve()
+    try:
+        actual_sha256 = hashlib.sha256(path.read_bytes()).hexdigest()
+    except OSError as exc:
+        raise DailyError(
+            "reusable knowledge terminal lost its durable distillation"
+        ) from exc
+    if not re.fullmatch(r"[0-9a-f]{64}", sha256) or sha256 != actual_sha256:
+        raise DailyError(
+            "reusable knowledge terminal changed its durable distillation"
+        )
+    return {
+        "status": status,
+        "distillation_path": str(path),
+        "distillation_sha256": sha256,
+    }
+
+
 class DailyPublicationPipeline:
     """Publish one event report before delegating Book and reminder effects."""
 
@@ -1119,6 +1153,7 @@ class DailyPublicationPipeline:
         item = result["items"][0]
         content = self._content or {}
         book = item.get("book_kol_us") or {}
+        knowledge = knowledge_terminal_for_item(item)
         if content.get("status") == "low_density":
             terminal = {
                 "kind": "source_event",
@@ -1133,6 +1168,7 @@ class DailyPublicationPipeline:
                 "gray_report": {"status": "not_created"},
                 "alert": {"status": "not_created"},
                 "book_kol_us": book,
+                "knowledge_effect": knowledge,
                 "coordinator_source_video_bytes": 0,
             }
         else:
@@ -1186,6 +1222,7 @@ class DailyPublicationPipeline:
                 },
                 "alert": alert,
                 "book_kol_us": {**book, "terminal_order": 2},
+                "knowledge_effect": knowledge,
                 "coordinator_source_video_bytes": 0,
             }
         item["daily_terminal"] = terminal

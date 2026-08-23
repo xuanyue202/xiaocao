@@ -3572,6 +3572,8 @@ def _publication_bundle(tier: str = "alert_eligible") -> dict:
             "title": "早盘轮动与仓位边界",
             "published_at": "2026-07-27T09:30:00+08:00",
             "evidence_sha256": "a" * 64,
+            "knowledge_status": "no_reusable_knowledge",
+            "knowledge_reason": "本测试只验证事件发布顺序。",
             "content_value": {
                 "status": "promoted",
                 "tier": tier,
@@ -3783,6 +3785,10 @@ def test_publication_pipeline_publishes_before_book_and_one_link_reminder(
     assert terminal["gray_report"]["terminal_order"] == 1
     assert terminal["book_kol_us"]["terminal_order"] == 2
     assert terminal["alert"]["terminal_order"] == 3
+    assert terminal["knowledge_effect"] == {
+        "status": "no_reusable_knowledge",
+        "reason": "本测试只验证事件发布顺序。",
+    }
     publication_key = publication_id_for_source(
         adapter="xiaocao_live",
         source_identity="live-20260727-am",
