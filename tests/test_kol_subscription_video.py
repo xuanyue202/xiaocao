@@ -1563,6 +1563,42 @@ def test_folder_creation_recovers_the_observed_baidu_inline_editor():
     )
 
 
+def test_lv_destination_triggered_claim_has_poll_deadline(tmp_path):
+    service = _service(tmp_path)
+    claim_path = service._claim_path("lv_destination_folder")
+    claim_path.parent.mkdir(parents=True)
+    claim_path.write_text(
+        json.dumps(
+            {
+                "schema_version": 1,
+                "event": "lv_destination_folder_triggered",
+                "status": "triggered",
+                "claim_id": "destination-claim",
+                "claimed_at": NOW.isoformat(),
+                "triggered_at": NOW.isoformat(),
+                "parent": "/课程/自己的课",
+                "path": LV_DESTINATION_DIRECTORY,
+            }
+        ),
+        encoding="utf-8",
+    )
+    service._direct_private_entries = lambda **_kwargs: []
+    service._opencli_json = lambda *_args, **_kwargs: pytest.fail(
+        "an uncertain folder claim must wait before retrying"
+    )
+
+    waiting = service.ensure_lv_destination(session="private", profile="work")
+
+    assert waiting["status"] == "waiting_cloud_enrichment"
+    assert waiting["pending"] is True
+    assert waiting["side_effect_uncertain"] is True
+    assert waiting["next_poll_not_before"] == (
+        NOW + LV_TRANSFER_CONFIRMATION_WINDOW
+    ).isoformat(timespec="seconds")
+    persisted = json.loads(claim_path.read_text(encoding="utf-8"))
+    assert persisted["next_poll_not_before"] == waiting["next_poll_not_before"]
+
+
 def test_private_search_accepts_stable_fuzzy_results_as_exact_zero_matches():
     assert "bodyText.includes('搜索：' + targetName)" in _PRIVATE_SEARCH_SCRIPT
     assert "items.length > 0 && stablePolls >= 5" in _PRIVATE_SEARCH_SCRIPT
@@ -1572,7 +1608,7 @@ def test_private_search_accepts_stable_fuzzy_results_as_exact_zero_matches():
 def test_lv_transfer_observes_provider_outcome_after_confirmation():
     assert "row.querySelectorAll('[role=\"checkbox\"]')" in _TRANSFER_SCRIPT
     assert "node.getAttribute('aria-checked')" in _TRANSFER_SCRIPT
-    assert "return row.querySelector('span.EOGexf')" in _TRANSFER_SCRIPT
+    assert "const legacy = row.querySelector('span.EOGexf')" in _TRANSFER_SCRIPT
     assert ".filter(row => rowSelected(row) === true)" in _TRANSFER_SCRIPT
     assert "'#share-save-dialog-title'" in _TRANSFER_SCRIPT
     assert "node.closest('[role=\"dialog\"]')" in _TRANSFER_SCRIPT

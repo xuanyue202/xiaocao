@@ -96,6 +96,49 @@ def _sha256_text(value: str) -> str:
     return hashlib.sha256(value.encode("utf-8")).hexdigest()
 
 
+def _lv_destination_waiting_claim(
+    claim: dict[str, Any],
+    *,
+    now: datetime,
+) -> dict[str, Any]:
+    """Project an uncertain folder claim into a durable bounded wait."""
+    raw_triggered_at = str(claim.get("triggered_at") or "").strip()
+    try:
+        triggered_at = datetime.fromisoformat(raw_triggered_at)
+    except ValueError as exc:
+        raise EnrichmentError(
+            "Lv destination folder claim has invalid triggered_at"
+        ) from exc
+    if triggered_at.tzinfo is None:
+        raise EnrichmentError(
+            "Lv destination folder claim triggered_at needs a timezone"
+        )
+    raw_deadline = str(claim.get("next_poll_not_before") or "").strip()
+    if raw_deadline:
+        try:
+            deadline = datetime.fromisoformat(raw_deadline)
+        except ValueError as exc:
+            raise EnrichmentError(
+                "Lv destination folder claim has invalid poll deadline"
+            ) from exc
+        if deadline.tzinfo is None:
+            raise EnrichmentError(
+                "Lv destination folder claim poll deadline needs a timezone"
+            )
+    else:
+        deadline = triggered_at + LV_TRANSFER_CONFIRMATION_WINDOW
+    if deadline.astimezone(timezone.utc) <= now.astimezone(timezone.utc):
+        deadline = now + timedelta(minutes=1)
+    return {
+        **claim,
+        "status": "waiting_cloud_enrichment",
+        "stage": "cloud_enrichment",
+        "pending": True,
+        "side_effect_uncertain": True,
+        "next_poll_not_before": deadline.isoformat(timespec="seconds"),
+    }
+
+
 def _sha256_file(path: Path) -> str:
     digest = hashlib.sha256()
     with path.open("rb") as handle:
@@ -512,6 +555,18 @@ _TRANSFER_SCRIPT = r"""(async () => {
     }
     return row.classList.contains('JS-item-active');
   };
+  const setSelected = async (row, expected) => {
+    const control = selectionControl(row);
+    if (!control) return false;
+    if (rowSelected(row) === expected) return true;
+    control.click();
+    const deadline = Date.now() + 3000;
+    while (Date.now() < deadline) {
+      if (rowSelected(row) === expected) return true;
+      await new Promise(resolve => setTimeout(resolve, 50));
+    }
+    return rowSelected(row) === expected;
+  };
   location.hash = 'list/path=' + encodeURIComponent(sourceParent);
   const targetDeadline = Date.now() + 10000;
   let targets = [];
@@ -531,15 +586,22 @@ _TRANSFER_SCRIPT = r"""(async () => {
     if (selected === null) {
       return {status: 'transfer_selection_control_missing', triggered: false};
     }
-    if (selected) selectionControl(row).click();
+    if (selected && !(await setSelected(row, false))) {
+      return {status: 'transfer_selection_clear_failed', triggered: false};
+    }
   }
-  await new Promise(resolve => setTimeout(resolve, 200));
+  const remainingSelected = [...document.querySelectorAll('#shareqr dd')]
+    .filter(row => rowSelected(row) === true);
+  if (remainingSelected.length !== 0) {
+    return {status: 'transfer_selection_clear_failed', triggered: false};
+  }
   const targetSelection = selectionControl(targets[0]);
   if (!targetSelection) {
     return {status: 'transfer_selection_control_missing', triggered: false};
   }
-  if (rowSelected(targets[0]) !== true) targetSelection.click();
-  await new Promise(resolve => setTimeout(resolve, 200));
+  if (!(await setSelected(targets[0], true))) {
+    return {status: 'transfer_target_selection_failed', triggered: false};
+  }
   const selectedNames = [...document.querySelectorAll('#shareqr dd')]
     .filter(row => rowSelected(row) === true)
     .map(row => row.querySelector('a.filename'))
@@ -3713,7 +3775,12 @@ class SubscriptionVideoService:
             },
         )
         if claim.get("triggered_at"):
-            return {**claim, "pending": True, "side_effect_uncertain": True}
+            waiting = _lv_destination_waiting_claim(
+                claim,
+                now=self._time(),
+            )
+            _atomic_write_json(self._claim_path("lv_destination_folder"), waiting)
+            return waiting
         if claim.get("status") == "failed_pretrigger":
             self._claim_path("lv_destination_folder").unlink()
             claim = self._write_claim(
