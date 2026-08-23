@@ -2552,6 +2552,17 @@ try {
                         "code": exc.diagnostic_code,
                         "stage": exc.diagnostic_stage,
                     }
+                    if (
+                        exc.diagnostic_code == "opencli_timeout"
+                        and exc.diagnostic_stage == "browser_open"
+                    ):
+                        try:
+                            self.bind_opencli(
+                                session=session,
+                                profile=profile,
+                            )
+                        except EnrichmentError as bind_error:
+                            raise exc from bind_error
                     self.sleep(1.0)
                     continue
                 raise

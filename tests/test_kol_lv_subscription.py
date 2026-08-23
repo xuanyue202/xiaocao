@@ -702,6 +702,61 @@ def test_lv_text_image_browser_open_exposes_diagnostic(tmp_path):
     assert open_calls == 2
 
 
+def test_lv_text_image_browser_open_exposes_diagnostic_after_rebind(tmp_path):
+    open_calls = 0
+    bind_calls = 0
+
+    def browser_runner(command, **kwargs):
+        nonlocal open_calls, bind_calls
+        assert command[2] == "ticket04"
+        operation = command[3]
+        if operation == "open":
+            open_calls += 1
+            if open_calls == 1:
+                raise subprocess.TimeoutExpired(
+                    command,
+                    kwargs.get("timeout", 30),
+                )
+            payload = {"url": "redacted", "page": "page-1"}
+        elif operation == "bind":
+            bind_calls += 1
+            payload = {"session": "ticket04"}
+        elif operation == "eval":
+            payload = {
+                "status": "ok",
+                "complete_scan": True,
+                "entries": [],
+            }
+        else:
+            raise AssertionError(command)
+        return SimpleNamespace(
+            returncode=0,
+            stdout=json.dumps(payload),
+            stderr="",
+        )
+
+    service = LvSubscriptionService(
+        tmp_path / "out",
+        now=lambda: NOW,
+        runner=browser_runner,
+        opencli_command=("opencli",),
+        share_url="https://pan.baidu.com/s/private-share-token",
+        share_code="a1b2",
+        sleep=lambda _seconds: None,
+    )
+
+    listing = service._read_opencli_listing(session="ticket04")
+
+    assert listing["status"] == "ok"
+    assert listing["recovery"]["initial_failure"] == {
+        "category": "timeout",
+        "code": "opencli_timeout",
+        "stage": "browser_open",
+    }
+    assert open_calls == 2
+    assert bind_calls == 1
+
+
 def test_cursor_advances_only_after_complete_listing(tmp_path):
     calls = 0
 

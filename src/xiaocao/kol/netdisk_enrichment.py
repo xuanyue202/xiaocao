@@ -17,6 +17,7 @@ from urllib.parse import parse_qs, quote, urlsplit, urlunsplit
 
 from .enrichment_store import EnrichmentJobStore
 from .enrichment_types import (
+    EnrichmentDiagnosticError,
     EnrichmentError,
     validate_decision_completion,
     validate_decision_process_result,
@@ -552,6 +553,17 @@ class NetdiskEnrichmentService:
     def _runtime_path(self, value: Path | str) -> Path:
         return resolve_repo_owned_path(value, anchor=self.output_dir)
 
+    @staticmethod
+    def _opencli_stage(args: tuple[str, ...]) -> str:
+        operation = str(args[0] if args else "unknown").strip().lower()
+        return {
+            "bind": "browser_bind",
+            "click": "browser_click",
+            "eval": "browser_eval",
+            "open": "browser_open",
+            "wait": "browser_wait",
+        }.get(operation, "browser_command")
+
     def _run(self, command: list[str], *, timeout_seconds: int = 30) -> Any:
         try:
             result = self.runner(
@@ -603,7 +615,12 @@ class NetdiskEnrichmentService:
         try:
             return self.runner(command, **runner_kwargs)
         except subprocess.TimeoutExpired as exc:
-            raise EnrichmentError("OpenCLI browser command timed out") from exc
+            raise EnrichmentDiagnosticError(
+                "OpenCLI browser command timed out",
+                category="timeout",
+                code="opencli_timeout",
+                stage=self._opencli_stage(args),
+            ) from exc
 
     def _run_opencli(
         self,
@@ -623,7 +640,13 @@ class NetdiskEnrichmentService:
                     timeout_seconds=timeout_seconds,
                 )
                 if result.returncode != 0:
-                    raise EnrichmentError("OpenCLI browser command failed")
+                    raise EnrichmentDiagnosticError(
+                        "OpenCLI browser command failed",
+                        category="transport_error",
+                        code="opencli_command_failed",
+                        stage=self._opencli_stage(args),
+                        exit_code=int(result.returncode),
+                    )
                 return result
             except EnrichmentError as exc:
                 last_error = exc
@@ -758,10 +781,39 @@ class NetdiskEnrichmentService:
         try:
             payload = json.loads(str(result.stdout))
         except (TypeError, json.JSONDecodeError) as exc:
-            raise EnrichmentError("OpenCLI returned invalid JSON") from exc
+            raise EnrichmentDiagnosticError(
+                "OpenCLI returned invalid JSON",
+                category="protocol_error",
+                code="opencli_invalid_json",
+                stage=self._opencli_stage(args),
+            ) from exc
         if not isinstance(payload, dict):
-            raise EnrichmentError("OpenCLI returned a non-object result")
+            raise EnrichmentDiagnosticError(
+                "OpenCLI returned a non-object result",
+                category="protocol_error",
+                code="opencli_non_object",
+                stage=self._opencli_stage(args),
+            )
         return payload
+
+    def _bind_opencli(
+        self,
+        *,
+        session: str,
+        profile: str | None,
+    ) -> dict[str, str]:
+        bound = self._opencli_json(
+            session,
+            "bind",
+            profile=profile,
+            timeout_seconds=30,
+            attempts=1,
+        )
+        if bound.get("session") != session:
+            raise EnrichmentError(
+                "OpenCLI bootstrap did not bind the requested session"
+            )
+        return {"status": "bound", "session": session}
 
     def _opencli_template_json(
         self,
@@ -1668,6 +1720,7 @@ class NetdiskEnrichmentService:
         current = self.store.latest(job_id)
         status = str(current.get("status") or "")
         reconcile_claim = False
+        readback_rebind_allowed = False
         if status == "video_ready":
             claim = self.claim_browser_action(job_id, action="transcript")
             if claim.get("idempotent_replay") is True:
@@ -1677,12 +1730,14 @@ class NetdiskEnrichmentService:
                     "side_effect_uncertain": True,
                     "idempotent_replay": True,
                 }
+            readback_rebind_allowed = True
         elif status == "transcript_claimed":
             # The claim is an uncertain browser-side effect, so recovery may
             # only read the exact player state.  If the request was dispatched
             # before the process failed, this readback advances the durable
             # checkpoint without clicking generation again.
             reconcile_claim = True
+            readback_rebind_allowed = True
         elif status == "transcript_requested":
             raw_not_before = current.get("next_poll_not_before")
             try:
@@ -1693,29 +1748,43 @@ class NetdiskEnrichmentService:
                 raise EnrichmentError("transcript poll checkpoint needs a timezone")
             if self._time().astimezone(timezone.utc) < not_before.astimezone(timezone.utc):
                 return {**current, "pending": True, "idempotent_replay": True}
+            readback_rebind_allowed = True
         target_name = str(current["video_basename"])
-        player_url = self._open_opencli_player(
-            session=session,
-            profile=profile,
-            target_name=target_name,
-        )
-        self._select_opencli_tab(
-            session=session,
-            profile=profile,
-            label="文稿",
-            target_name=target_name,
-        )
-        self._wait_opencli_active_tab(
-            session=session,
-            profile=profile,
-            label="文稿",
-            target_name=target_name,
-        )
-        probe = self._probe_opencli_transcript(
-            session=session,
-            profile=profile,
-            target_name=target_name,
-        )
+        for attempt in range(2):
+            try:
+                player_url = self._open_opencli_player(
+                    session=session,
+                    profile=profile,
+                    target_name=target_name,
+                )
+                self._select_opencli_tab(
+                    session=session,
+                    profile=profile,
+                    label="文稿",
+                    target_name=target_name,
+                )
+                self._wait_opencli_active_tab(
+                    session=session,
+                    profile=profile,
+                    label="文稿",
+                    target_name=target_name,
+                )
+                probe = self._probe_opencli_transcript(
+                    session=session,
+                    profile=profile,
+                    target_name=target_name,
+                )
+                break
+            except EnrichmentDiagnosticError as exc:
+                if (
+                    attempt == 0
+                    and readback_rebind_allowed
+                    and exc.diagnostic_code
+                    in {"opencli_timeout", "opencli_command_failed"}
+                ):
+                    self._bind_opencli(session=session, profile=profile)
+                    continue
+                raise
         observed_at = self._time()
         if probe["transcript_state"] == "generating":
             if status == "transcript_requested":

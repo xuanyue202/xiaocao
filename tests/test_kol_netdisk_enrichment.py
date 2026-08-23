@@ -1028,6 +1028,62 @@ def test_transcript_claim_replay_never_repeats_generation_interaction(tmp_path):
     assert events[-1] == "netdisk_transcript_requested"
 
 
+def test_transcript_claim_replay_never_repeats_generation_interaction_after_browser_rebind(
+    tmp_path,
+):
+    service, video, prepared = _prepare(tmp_path)
+    job_id = prepared["job_id"]
+    service.record_browser_liveness(
+        job_id,
+        surface="opencli",
+        evidence=_liveness_evidence(),
+    )
+    service.record_browser_state(
+        job_id,
+        step="video_ready",
+        evidence=_evidence(video.name, "目标视频已存在"),
+        source_mode="existing",
+    )
+    service.claim_browser_action(job_id, action="transcript")
+
+    base_runner = _opencli_transcript_runner(video.name)
+    open_failures = 3
+    bind_calls = 0
+    commands: list[list[str]] = []
+
+    def runner(command, **kwargs):
+        nonlocal open_failures, bind_calls
+        commands.append(command)
+        tail = command[5:]
+        if tail[:1] == ["bind"]:
+            bind_calls += 1
+            return SimpleNamespace(
+                returncode=0,
+                stdout=json.dumps({"session": "ticket02-transcript"}),
+                stderr="",
+            )
+        if tail[:1] == ["open"] and open_failures:
+            open_failures -= 1
+            raise subprocess.TimeoutExpired(
+                command,
+                kwargs.get("timeout", 30),
+            )
+        return base_runner(command, **kwargs)
+
+    service.runner = runner
+    service.opencli_command = ("opencli",)
+    replay = service.advance_opencli(
+        job_id,
+        session="ticket02-transcript",
+        profile="work",
+    )
+
+    assert replay["status"] == "transcript_requested"
+    assert bind_calls == 1
+    assert any(command[5:6] == ["bind"] for command in commands)
+    assert not any(command[5:6] == ["click"] for command in commands)
+
+
 def _opencli_ai_note_runner(
     video_name: str,
     *,
