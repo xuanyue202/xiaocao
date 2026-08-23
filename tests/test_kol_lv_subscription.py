@@ -2533,6 +2533,72 @@ def test_owner_cloud_zero_match_transfers_once_and_streams_with_httponly_cookie(
     assert "BDUSS" not in persisted
 
 
+def test_completed_owner_cloud_receipt_bypasses_detached_source_listing(
+    tmp_path,
+):
+    payload = b"%PDF-1.7\n" + b"r" * 1024
+    entry = _pdf_entry(size=len(payload))
+    entry["provider_file_id"] = "162571713959724"
+    transfer_calls = 0
+    stream_calls = 0
+
+    def owner_cloud(item, _claim, _session, _profile):
+        nonlocal transfer_calls
+        transfer_calls += 1
+        return _owner_ready(item, transfer_performed=True)
+
+    def owner_stream(item, _owner, _session, _profile, destination):
+        nonlocal stream_calls
+        stream_calls += 1
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        destination.write_bytes(payload)
+        return {
+            "status": "completed",
+            "path": str(destination),
+            "actual_size": len(payload),
+            "content_type": "application/pdf",
+            "http_status": 200,
+            "sha256": hashlib.sha256(payload).hexdigest(),
+        }
+
+    service = LvSubscriptionService(
+        tmp_path / "out",
+        now=lambda: NOW,
+        share_url="https://pan.baidu.com/s/private-share-token",
+        share_code="a1b2",
+        owner_cloud_operator=owner_cloud,
+        owner_authenticated_streamer=owner_stream,
+    )
+    update = service.observe_browser_listing([entry])["updates"][0]
+    claim = service.claim_browser_download(update["identity"])
+    item = {
+        **service._manifest_item(update["identity"]),
+        "provider_file_id": entry["provider_file_id"],
+    }
+    service._owner_cloud_transfer(
+        item,
+        claim,
+        session="ticket04",
+        profile=None,
+    )
+    service._download_listing = lambda **_kwargs: pytest.fail(
+        "completed owner receipt must bypass the detached source listing"
+    )
+
+    receipt = service.download_opencli(
+        update["identity"],
+        session="ticket04",
+    )
+
+    assert receipt["status"] == "completed"
+    assert receipt["claim_id"] == claim["claim_id"]
+    assert receipt["acquisition_transport"] == (
+        "owner_cloud_opencli_cookie_stream"
+    )
+    assert transfer_calls == 1
+    assert stream_calls == 1
+
+
 def test_default_owner_stream_keeps_signed_url_and_httponly_cookie_in_process(
     tmp_path, monkeypatch
 ):

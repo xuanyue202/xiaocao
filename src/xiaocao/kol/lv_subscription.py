@@ -5934,6 +5934,67 @@ try {
         if completed is not None:
             return {**completed, "idempotent_replay": True}
 
+        # A completed owner-cloud transfer is the durable, exact readback for
+        # an interrupted small-PDF acquisition.  Do not make recovery depend
+        # on re-evaluating the ephemeral source-share tab: the named OpenCLI
+        # session may retain a stale about:blank target even though the owner
+        # copy and its receipt are complete.  Revalidate the persisted parent
+        # claim and owner receipt in _owner_cloud_download, then stream only
+        # that exact owner-side object.
+        artifact_dir = self.output_dir / "artifacts" / str(item["version_key"])
+        if (
+            item.get("media_type") == "pdf"
+            and (artifact_dir / "browser_download_claim.json").is_file()
+            and (artifact_dir / "owner_cloud_transfer_receipt.json").is_file()
+        ):
+            try:
+                owner_receipt = json.loads(
+                    (
+                        artifact_dir / "owner_cloud_transfer_receipt.json"
+                    ).read_text(encoding="utf-8")
+                )
+            except (OSError, json.JSONDecodeError) as exc:
+                raise EnrichmentError(
+                    "owner cloud recovery receipt is invalid"
+                ) from exc
+            owner_provider_file_id = str(
+                owner_receipt.get("source_provider_file_id") or ""
+            )
+            if (
+                owner_receipt.get("status") != "completed"
+                or owner_receipt.get("source_identity") != item["identity"]
+                or owner_receipt.get("source_version_key")
+                != item["version_key"]
+                or owner_receipt.get("source_name") != item["name"]
+                or int(owner_receipt.get("source_size") or 0)
+                != int(item["size"])
+                or not owner_provider_file_id.isdigit()
+            ):
+                raise EnrichmentError(
+                    "owner cloud recovery receipt changed source identity"
+                )
+            claim = self.claim_browser_download(str(identity))
+            if claim.get("idempotent_replay") is not True:
+                raise EnrichmentError(
+                    "owner cloud recovery requires an existing acquisition claim"
+                )
+            direct_item = {
+                **item,
+                "provider_file_id": owner_provider_file_id,
+            }
+            direct = self._owner_cloud_download(
+                direct_item,
+                claim,
+                session=session,
+                profile=profile,
+            )
+            return self.complete_browser_download(
+                str(item["identity"]),
+                Path(str(direct["path"])),
+                claim_id=str(claim["claim_id"]),
+                acquisition_transport=str(direct["acquisition_transport"]),
+            )
+
         listing = self._download_listing(
             session=session,
             profile=profile,
