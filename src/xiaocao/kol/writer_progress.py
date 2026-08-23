@@ -1135,8 +1135,14 @@ def _canonical_subscription_video_browser_open_repair_profile(
         str(context.get("adapter") or "") == "subscription_video"
         and str(context.get("targeted_test_profile") or "")
         == _SUBSCRIPTION_VIDEO_BROWSER_OPEN_REPAIR_PROFILE
-        and str(context.get("category") or "") == "timeout"
-        and str(context.get("code") or "") == "opencli_timeout"
+        and (
+            str(context.get("category") or ""),
+            str(context.get("code") or ""),
+        )
+        in {
+            ("timeout", "opencli_timeout"),
+            ("transport_error", "opencli_command_failed"),
+        }
         and str(context.get("stage") or "") == "browser_open"
     ):
         return _SUBSCRIPTION_VIDEO_BROWSER_OPEN_REPAIR_PROFILE
