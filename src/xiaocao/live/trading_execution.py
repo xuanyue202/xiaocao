@@ -31,6 +31,7 @@ from . import notify as notify_module
 from .book_b_pricing import initial_limit_price
 from .buy_guards import evaluate_buy_market_guard
 from .safety import DEFAULT_AUTH_PATH, DEFAULT_AUDIT_PATH, require_capital_action
+from .capital_keychain import CapitalRuntimeUnavailable
 
 
 class ExecutionState(str, Enum):
@@ -975,6 +976,7 @@ class TradingExecution:
         notifier: Notifier | None = None,
         now: Callable[[], datetime] | None = None,
         safety_env: dict[str, str] | None = None,
+        safety_env_provider: Callable[[], dict[str, str]] | None = None,
         auth_path: Path = DEFAULT_AUTH_PATH,
         audit_path: Path | None = DEFAULT_AUDIT_PATH,
         account_lock_dir: Path | None = None,
@@ -986,7 +988,10 @@ class TradingExecution:
         self.takeovers = takeovers or TradingTakeoverStore(store.path.with_name("trading_takeovers.jsonl"))
         self.notifier = notifier if notifier is not None else self._default_notifier
         self.now = now or _utcnow
+        if safety_env is not None and safety_env_provider is not None:
+            raise ValueError("configure safety_env or safety_env_provider, not both")
         self.safety_env = safety_env
+        self.safety_env_provider = safety_env_provider
         self.auth_path = auth_path
         self.audit_path = audit_path
         self.account_lock_dir = Path(account_lock_dir or store.path.parent / "account_writer_locks")
@@ -1092,6 +1097,11 @@ class TradingExecution:
         if plan.environment != "live":
             return None
         try:
+            env = (
+                self.safety_env_provider()
+                if self.safety_env_provider is not None
+                else self.safety_env
+            )
             require_capital_action(
                 kind="real_capital",
                 side=plan.side,
@@ -1099,9 +1109,21 @@ class TradingExecution:
                 notional=plan.notional,
                 auth_path=self.auth_path,
                 audit_path=self.audit_path,
-                env=self.safety_env,
+                env=env,
                 now=self.now(),
             )
+        except CapitalRuntimeUnavailable as exc:
+            denied = self._record(
+                plan,
+                replace(
+                    previous,
+                    state=ExecutionState.REJECTED,
+                    reason=f"SAFETY_DENIED:CAPITAL_RUNTIME_UNAVAILABLE:{exc}",
+                    next_action="human_review",
+                ),
+            )
+            self._incident(plan, denied)
+            return denied
         except Exception as exc:  # Gate errors are capital denials, never fallbacks.
             denied = self._record(
                 plan,
@@ -1895,7 +1917,7 @@ class TradingExecution:
             f"template={receipt.template_name or '-'}@{receipt.template_version or '-'} "
             f"account_binding={receipt.account_binding or '-'} locator_proof={json.dumps(_safe_evidence(receipt.locator_proof), ensure_ascii=False, sort_keys=True)}\n"
             "已完成安全检查：Book B 身份、计划哈希、账户/环境绑定、价格/数量回读、"
-            f"real-capital 双钥匙={'已通过' if plan.environment == 'live' else '不适用（mock）'}\n"
+            f"real-capital Keychain两条件资金门={'已通过' if plan.environment == 'live' else '不适用（mock）'}\n"
             f"是否需要用户介入：{'是' if receipt.next_action == 'human_review' or receipt.state == ExecutionState.UNKNOWN else '否（继续安全对账）'}\n"
             "未知状态只允许继续对账，不会盲目重发。"
         )

@@ -906,6 +906,48 @@ def test_environment_preflight_rejects_namespace_without_authenticated_account()
 
 def test_login_preflight_requires_authenticated_mock_namespace_proof() -> None:
     runner = Runner({
+        "template_name": "foundersc-quant/login",
+        "template_version": 7,
+        "status": "login_authenticated",
+        "environment": "mock",
+        "environment_data_namespace": "mock",
+        "environment_proof_complete": True,
+        "fund_account_match_count": 1,
+        "logical_account_id": "primary",
+        "submitted": False,
+        "saved": False,
+        "started": False,
+        "authentication_path": "session_reuse",
+        "status_reason": "persistent_session_already_authenticated",
+        "initial_auth_state": "authenticated",
+        "keychain_login_read": "not_attempted",
+        "login_form_binding_proven": False,
+        "login_submit_click_count": 0,
+        "post_auth_readback_proven": True,
+        "session_reuse_proven": True,
+        "fresh_login_proven": False,
+        "capabilities": {"submit": False, "login": True},
+    })
+    adapter = FounderscQuantOpenCLIAdapter(
+        opencli_command=("opencli",),
+        runner=runner,
+    )
+
+    receipt = adapter.ensure_login()
+
+    assert receipt["status"] == "login_authenticated"
+    assert receipt["environment"] == "mock"
+    assert receipt["session_reuse_proven"] is True
+    assert receipt["fresh_login_proven"] is False
+    assert receipt["template_name"] == "foundersc-quant/login"
+    assert receipt["template_version"] == 7
+    assert runner.commands[0][1:3] == ["foundersc-quant", "login"]
+
+
+def test_login_preflight_rejects_authenticated_receipt_without_authentication_path_proof() -> None:
+    runner = Runner({
+        "template_name": "foundersc-quant/login",
+        "template_version": 7,
         "status": "login_authenticated",
         "environment": "mock",
         "environment_data_namespace": "mock",
@@ -922,15 +964,92 @@ def test_login_preflight_requires_authenticated_mock_namespace_proof() -> None:
         runner=runner,
     )
 
+    with pytest.raises(OpenCLIAdapterError, match="OPENCLI_LOGIN_PATH_UNPROVEN"):
+        adapter.ensure_login()
+
+
+def test_login_preflight_preserves_keychain_fresh_login_proof() -> None:
+    runner = Runner({
+        "template_name": "foundersc-quant/login",
+        "template_version": 7,
+        "status": "login_authenticated",
+        "environment": "mock",
+        "environment_data_namespace": "mock",
+        "environment_proof_complete": True,
+        "fund_account_match_count": 1,
+        "logical_account_id": "primary",
+        "submitted": False,
+        "saved": False,
+        "started": False,
+        "authentication_path": "keychain_website_password",
+        "status_reason": "login_authenticated_readback_completed",
+        "initial_auth_state": "login_required",
+        "keychain_login_read": "succeeded",
+        "login_form_binding_proven": True,
+        "login_submit_click_count": 1,
+        "post_auth_readback_proven": True,
+        "session_reuse_proven": False,
+        "fresh_login_proven": True,
+        "capabilities": {"submit": False, "login": True},
+    })
+    adapter = FounderscQuantOpenCLIAdapter(
+        opencli_command=("opencli",),
+        runner=runner,
+    )
+
     receipt = adapter.ensure_login()
 
-    assert receipt["status"] == "login_authenticated"
-    assert receipt["environment"] == "mock"
-    assert runner.commands[0][1:3] == ["foundersc-quant", "login"]
+    assert receipt["authentication_path"] == "keychain_website_password"
+    assert receipt["fresh_login_proven"] is True
+    assert receipt["session_reuse_proven"] is False
+
+
+@pytest.mark.parametrize(
+    ("template_name", "template_version", "login_capability"),
+    [
+        ("foundersc-quant/probe", 7, True),
+        ("foundersc-quant/login", 6, True),
+        ("foundersc-quant/login", 7, False),
+    ],
+)
+def test_login_preflight_binds_proof_to_v7_login_template_capability(
+    template_name, template_version, login_capability
+) -> None:
+    runner = Runner({
+        "template_name": template_name,
+        "template_version": template_version,
+        "status": "login_authenticated",
+        "environment": "mock",
+        "environment_data_namespace": "mock",
+        "environment_proof_complete": True,
+        "fund_account_match_count": 1,
+        "logical_account_id": "primary",
+        "submitted": False,
+        "saved": False,
+        "started": False,
+        "authentication_path": "session_reuse",
+        "initial_auth_state": "authenticated",
+        "keychain_login_read": "not_attempted",
+        "login_form_binding_proven": False,
+        "login_submit_click_count": 0,
+        "post_auth_readback_proven": True,
+        "session_reuse_proven": True,
+        "fresh_login_proven": False,
+        "capabilities": {"submit": False, "login": login_capability},
+    })
+    adapter = FounderscQuantOpenCLIAdapter(
+        opencli_command=("opencli",),
+        runner=runner,
+    )
+
+    with pytest.raises(OpenCLIAdapterError, match="OPENCLI_LOGIN_TEMPLATE_UNPROVEN"):
+        adapter.ensure_login()
 
 
 def test_login_preflight_rejects_live_or_unproven_authenticated_receipt() -> None:
     runner = Runner({
+        "template_name": "foundersc-quant/login",
+        "template_version": 7,
         "status": "login_authenticated",
         "environment": "live",
         "environment_data_namespace": "live",

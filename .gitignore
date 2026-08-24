@@ -95,6 +95,8 @@ output/live/intelligence_veto_audit.jsonl
 output/live/training_rows.parquet
 output/live/decision_journal.jsonl
 output/live/daily_reconstructed.jsonl
+output/live/live_authorization.json
+output/live/safety_audit.jsonl
 output/live/kol_enrichment/
 output/live/kol_netdisk_enrichment/
 output/live/kol*/

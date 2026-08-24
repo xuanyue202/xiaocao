@@ -16,7 +16,10 @@ browser templates under `opencli/clis/foundersc-quant/`.
    `xiaocao.foundersc.quant.login` item. It may pass the phone and login secret
    directly into the unique native login controls, but must never print, log,
    persist, or return either raw value. All other templates remain
-   credential-free.
+credential-free.
+   Its receipt must keep an existing authenticated session
+   (`session_reuse_proven`) distinct from a fresh Keychain website-password
+   login (`fresh_login_proven`); neither proves native PassGuard trade auth.
 5. Use `probe`, then the needed `environment`, `prepare`, `submit`, `reconcile`,
    or `recover` command. `submit` is allowed only for the exact account-bound
    `package-limit` route and never retries its final click.
@@ -33,7 +36,8 @@ including a short diagnostic prefix, but never parses arbitrary page text.
 ## Current contract
 
 Only `login` reads the fixed login Keychain item under the bounded contract
-above. No template reads or emits the trade password. Template v6 adds one
+above. No template reads or emits the trade password. Template v7 adds explicit,
+mutually exclusive session-reuse/fresh-login evidence while retaining the v6
 UI-only `package-limit` submit route; the other routes remain no-submit, and no
 route withdraws orders.
 `environment` may change only the unique mock/live switcher and must verify the
@@ -94,10 +98,14 @@ guard may receive one controlled replacement; the submit boundary caps total
 attempts at two.
 Trading-hours final-submit/order-id proof,
 row-level cancellation, Book-B's at-most-one controlled retry, and unattended
-native PassGuard recovery are still pending. The paper writer and its
+native PassGuard recovery are still pending. A currently authenticated session
+does not close the separate fresh-login gap. The paper writer and its
 Automation stay unchanged.
 
-Template v6 extracts `总资产` / `证券市值` / `可用资金` from one unique asset
+Apply `docs/OPERATING_CONTRACT.md` section 9 for the capital-gate semantics;
+this reference does not redefine them.
+
+Template v7 retains v6's extraction of `总资产` / `证券市值` / `可用资金` from one unique asset
 card set or one unique agreeing table shape. It compares the page's masked
 fund-account fingerprint with Keychain trade-account metadata in-process,
 persists only the binding hash, and rejects missing, mismatched, wrong-date, or

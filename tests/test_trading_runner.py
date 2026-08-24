@@ -137,6 +137,20 @@ def test_foundersc_runtime_defaults_to_account_bound_package_limit(
     assert adapter.expected_fund_account_fingerprint == "987******210"
 
 
+def test_foundersc_runtime_accepts_process_local_capital_environment_provider(
+    tmp_path: Path,
+) -> None:
+    provider = lambda: {"XIAOCAO_LIVE_TRADING_ENABLED": "true"}
+
+    execution, _adapter = build_foundersc_execution(
+        tmp_path,
+        safety_env_provider=provider,
+    )
+
+    assert execution.safety_env is None
+    assert execution.safety_env_provider is provider
+
+
 def test_live_buy_plan_starts_at_0920_but_cannot_submit_before_0930() -> None:
     plan = plans_from_frozen_rows(
         [_row()],

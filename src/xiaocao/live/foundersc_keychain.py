@@ -118,9 +118,21 @@ class FounderscKeychainPreflight:
         observed_login_fingerprint: str = "",
         observed_trade_fingerprint: str = "",
         read_secrets: bool = False,
+        read_login_secret: bool | None = None,
+        read_trade_secret: bool | None = None,
     ) -> dict[str, object]:
-        login = self._item(LOGIN_SERVICE, read_secret=read_secrets)
-        trade = self._item(TRADE_SERVICE, read_secret=read_secrets)
+        login_secret_requested = (
+            bool(read_secrets)
+            if read_login_secret is None
+            else bool(read_login_secret)
+        )
+        trade_secret_requested = (
+            bool(read_secrets)
+            if read_trade_secret is None
+            else bool(read_trade_secret)
+        )
+        login = self._item(LOGIN_SERVICE, read_secret=login_secret_requested)
+        trade = self._item(TRADE_SERVICE, read_secret=trade_secret_requested)
         observed = str(observed_login_fingerprint or "").strip()
         observed_trade = str(observed_trade_fingerprint or "").strip()
         login_match = bool(observed) and hmac.compare_digest(
@@ -134,11 +146,12 @@ class FounderscKeychainPreflight:
 
         if not login.item_present or not trade.item_present:
             status = "keychain_item_missing"
-        elif read_secrets and not (
-            login.secret_readable
-            and login.secret_nonempty
-            and trade.secret_readable
-            and trade.secret_nonempty
+        elif (
+            login_secret_requested
+            and not (login.secret_readable and login.secret_nonempty)
+        ) or (
+            trade_secret_requested
+            and not (trade.secret_readable and trade.secret_nonempty)
         ):
             status = "keychain_secret_access_blocked"
         elif observed and not login_match:

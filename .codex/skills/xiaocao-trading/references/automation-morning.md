@@ -43,10 +43,13 @@ settled-NAV receipt exists. The complete allocation capsule binds its capital
 basis source, NAV, cash, exposure and broker summary under one canonical hash,
 and broker-summary cash must equal top-level available cash. The task verifies restoration to
 mock on every exit.
+Apply `docs/OPERATING_CONTRACT.md` section 9 for the capital-gate semantics.
 Unless the Founder adapter proves the account-bound `package-limit` route,
-reconcile capability, account binding, broker allocation facts and both capital
-keys, it reports the exact fail-closed reason and produces no real order. A
-first-order probe may leave receipt mapping pending; the single claimed submit
+reconcile capability, account binding and broker allocation facts, the task
+reports the exact fail-closed reason and produces no real order. Persist the
+sanitized preflight receipt with separate existing-session, fresh-login and
+PassGuard fields; never infer one capability from another. A first-order
+probe may leave receipt mapping pending; the single claimed submit
 must itself prove the order-id/strategy-id mapping or become UNKNOWN and
 reconcile-only. Any prepare/submit/reconcile chain uncertainty permanently
 disables automatic replacement. Reconcile must bind the same proved order-id

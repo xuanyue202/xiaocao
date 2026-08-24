@@ -1,4 +1,4 @@
-export const TEMPLATE_VERSION = 6;
+export const TEMPLATE_VERSION = 7;
 export const SITE = 'foundersc-quant';
 export const DEFAULT_BASE_URL = (
     'https://quant.foundersc.com/qtassets/dist/index.html'
@@ -28,6 +28,14 @@ export const RECEIPT_COLUMNS = Object.freeze([
     'logical_account_id',
     'account_binding',
     'login_account_fingerprint',
+    'authentication_path',
+    'initial_auth_state',
+    'keychain_login_read',
+    'login_form_binding_proven',
+    'login_submit_click_count',
+    'post_auth_readback_proven',
+    'session_reuse_proven',
+    'fresh_login_proven',
     'fund_account_fingerprint',
     'route',
     'order_id',

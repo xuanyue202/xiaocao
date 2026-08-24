@@ -267,6 +267,55 @@ def test_live_switch_can_be_rehearsed_with_fake_adapter_but_never_without_gate(t
     assert broker.submit_calls == 1
 
 
+def test_live_order_loads_capital_keys_at_submit_time_from_runtime_provider(
+    tmp_path: Path,
+) -> None:
+    now = datetime(2026, 8, 24, 1, 30, tzinfo=timezone.utc)
+    signing_key = "test-runtime-key"
+    auth = make_authorization(
+        scope="book-b-live-morning",
+        max_notional=15_000.0,
+        signing_key=signing_key,
+        sides=["BUY"],
+        issued_at=now.isoformat(),
+        expires_at=(now + timedelta(hours=1)).isoformat(),
+    )
+    auth_path = tmp_path / "live_authorization.json"
+    auth_path.write_text(json.dumps(auth), encoding="utf-8")
+    calls: list[str] = []
+
+    def safety_env_provider() -> dict[str, str]:
+        calls.append("read")
+        return {
+            ENV_LIVE_ENABLED: "true",
+            ENV_SIGNING_KEY: signing_key,
+        }
+
+    broker = FakeBroker()
+    broker.capability = replace(
+        broker.capability,
+        account_binding="proven",
+        manual_position_shares=0,
+        capabilities={"receipt_mapping": False},
+    )
+    engine = TradingExecution(
+        store=InMemoryExecutionStore(tmp_path / "events.jsonl"),
+        safety_env_provider=safety_env_provider,
+        auth_path=auth_path,
+        audit_path=tmp_path / "audit.jsonl",
+        notifier=lambda _title, _body: "ok",
+        now=lambda: now,
+    )
+
+    receipt = engine.execute(
+        _plan(environment="live", deadline=now + timedelta(minutes=15)),
+        broker,
+    )
+
+    assert receipt.state == ExecutionState.ACKNOWLEDGED
+    assert calls == ["read", "read"]
+
+
 def test_first_live_submit_can_prove_receipt_mapping_when_probe_is_pending(
     tmp_path: Path,
 ) -> None:

@@ -168,6 +168,14 @@ function loginReceipt(state, fields = {}) {
             saved: false,
             started: false,
             submit_capability: false,
+            authentication_path: 'unknown',
+            initial_auth_state: state?.auth_state || 'unknown',
+            keychain_login_read: 'not_attempted',
+            login_form_binding_proven: false,
+            login_submit_click_count: 0,
+            post_auth_readback_proven: false,
+            session_reuse_proven: false,
+            fresh_login_proven: false,
             capabilities: {
                 submit: false,
                 login: false,
@@ -208,6 +216,14 @@ cli({
                 return loginReceipt(state, {
                     status: 'login_authenticated',
                     status_reason: 'persistent_session_already_authenticated',
+                    authentication_path: 'session_reuse',
+                    initial_auth_state: 'authenticated',
+                    keychain_login_read: 'not_attempted',
+                    login_form_binding_proven: false,
+                    login_submit_click_count: 0,
+                    post_auth_readback_proven: true,
+                    session_reuse_proven: true,
+                    fresh_login_proven: false,
                     reconcile_required: true,
                     field_readback: {
                         authenticated: true,
@@ -226,6 +242,9 @@ cli({
                 return loginReceipt(state, {
                     status: 'unknown',
                     status_reason: 'login_authenticated_safe_mock_unproven',
+                    authentication_path: 'session_reuse',
+                    initial_auth_state: 'authenticated',
+                    post_auth_readback_proven: false,
                     reconcile_required: true,
                     field_readback: {
                         authenticated: true,
@@ -248,6 +267,9 @@ cli({
                 return loginReceipt(state, {
                     status: 'auth_required',
                     status_reason: 'keychain_login_unavailable',
+                    authentication_path: 'keychain_website_password',
+                    initial_auth_state: 'login_required',
+                    keychain_login_read: 'failed',
                     reconcile_required: false,
                 });
             }
@@ -271,6 +293,9 @@ cli({
                 return loginReceipt(state, {
                     status: 'auth_required',
                     status_reason: 'login_controls_not_unique',
+                    authentication_path: 'keychain_website_password',
+                    initial_auth_state: 'login_required',
+                    keychain_login_read: 'succeeded',
                     login_account_fingerprint: fingerprint,
                     reconcile_required: false,
                     locator_proof: discovery || {},
@@ -285,6 +310,10 @@ cli({
                 return loginReceipt(state, {
                     status: 'auth_required',
                     status_reason: 'login_field_readback_mismatch',
+                    authentication_path: 'keychain_website_password',
+                    initial_auth_state: 'login_required',
+                    keychain_login_read: 'succeeded',
+                    login_form_binding_proven: false,
                     login_account_fingerprint: fingerprint,
                     reconcile_required: false,
                     locator_proof: filled || {},
@@ -304,6 +333,14 @@ cli({
                 status_reason: authenticated
                     ? 'login_authenticated_readback_completed'
                     : 'login_readback_not_authenticated',
+                authentication_path: 'keychain_website_password',
+                initial_auth_state: 'login_required',
+                keychain_login_read: 'succeeded',
+                login_form_binding_proven: true,
+                login_submit_click_count: 1,
+                post_auth_readback_proven: authenticated,
+                session_reuse_proven: false,
+                fresh_login_proven: authenticated,
                 login_account_fingerprint: fingerprint,
                 reconcile_required: authenticated,
                 field_readback: {

@@ -1,9 +1,9 @@
 # 小草运营契约（Operating Contract, SSOT）
 
-**版本**：2.9
+**版本**：3.1
 **状态**：现行
 **适用范围**：所有 paper / 未来 real 的实盘环（live_recommend → paper_record → live_monitor → eod）与回测
-**关联实现**：`src/xiaocao/live/safety.py`、`src/xiaocao/live/intelligence_policy.py`、`src/xiaocao/strategy/{mode_switch,trend_rules,kol_reference}.py`、`kronos_screen/scripts/{capture_signals,forward_eval,paper_record,settle_book_a,settle_book_t,decompose_pnl,quality_governor}.py`、`scripts/{live_monitor,research_mode_switch_replay}.py`
+**关联实现**：`src/xiaocao/live/{safety,capital_keychain}.py`、`src/xiaocao/live/intelligence_policy.py`、`src/xiaocao/strategy/{mode_switch,trend_rules,kol_reference}.py`、`kronos_screen/scripts/{capture_signals,forward_eval,paper_record,settle_book_a,settle_book_t,decompose_pnl,quality_governor}.py`、`scripts/{live_monitor,research_mode_switch_replay}.py`
 **回归测试**：`tests/test_operating_contract.py`
 **借鉴**：QuantDinger `docs/SIGNAL_EXECUTION_STANDARD_CN.md`（契约 SSOT 结构）+ `docs/agent/MCP_SETUP.md`（paper-only 默认 / 双钥匙 live gate）
 
@@ -66,7 +66,7 @@
   Book-B NAV/敞口：首次批次只用明确的 30,000 元 Book-B 初始基数和券商可用现金；
   一旦已有 Book-B owned fill 而尚无结算 NAV 回执，后续批次以
   `LIVE_BOOK_B_SETTLED_NAV_RECONCILE_REQUIRED` fail-closed。Founder Web/OpenCLI
-  v6 的唯一候选写路径固定为 `组合交易 -> 按证券组合 -> 指定价格`：它可以表达
+  v7 的唯一候选写路径固定为 `组合交易 -> 按证券组合 -> 指定价格`：它可以表达
   单证券的精确数值限价和整手数量；条件单、网格、定时/定投、集合竞价、
   TWAP/VWAP/POV/冰山及价格/时间分段均因引入触发、相对价格、重复、竞价或拆单
   语义而不得替代。09:20 只做登录、live/account/allocation/prepare 预检并维持心跳，
@@ -85,7 +85,8 @@
   数量时，才允许最多一次受控 replacement；总 submit attempt 上限为 2，且该上限
   在唯一 submit boundary 再次强制，不依赖调用路径。
   当前交易时段最终提交及 broker order-id 形状、撤单终态、最多一次受控补单、
-  fresh-login 原生 PassGuard 恢复仍未验收，缺任一证明继续 fail-closed，且绝不替代现行
+  网站密码 fresh-login 与原生 PassGuard 恢复仍分别未完成真实验收，缺任一当次所需证明
+  继续 fail-closed，且绝不替代现行
   `paper_record.py` 单写者。任何未来 SELL intent 必须来自本节
   `live_monitor` 已授权的 Book-B 退出事件和可卖 lot，不能由普通冻结行反向
   生成。
@@ -168,22 +169,26 @@
 - **短线模式辅助指标无准入权限**：state/regime fitness、前日结构及生态代理只保留为 `shadow_ranking_only` 遥测，不能放宽或收紧模式近期收益阈值，也不能把证据不足或失效模式提升为临时可交易。2026-07-10 的 `N字低吸`、`接力低弱转1` 灰区机制确认均为 `REJECTED`；未完成 as-of 历史面板和 OOS 的真实生态指标统一记为 `UNTESTED`。唯一运行实现是 `strategy.adaptive` 写出 `adaptive_regime_fitness` 与 `adaptive_auxiliary_authority`，但 `adaptive_active` 只读滚动收益证据。
 - Book T 不新增第二部署闸；它独立 paper 运行，用 trend_guards 评估，不反向改动 Book B。
 
-## 9. 双钥匙资金动作边界（real-capital，借 QuantDinger 双钥匙）
+## 9. Keychain-backed 两条件资金动作边界（real-capital）
 
 - **paper / sensor / research / simulation 永远放行**（research 永不被资金门阻塞，传感器永不停）。
 - **real_capital 必须同时**：
-  1. env `XIAOCAO_LIVE_TRADING_ENABLED=true`；
-  2. 签名授权 `output/live/live_authorization.json`（HMAC 对 `XIAOCAO_LIVE_SIGNING_KEY` 校验，**agent 无法自签**——签名密钥由人持有，automation 环境不携带；由交互式 `scripts/authorize_live.py` 铸造）。授权**带 scope（max_notional / side / code 白名单）与到期**。
+  1. 固定 macOS Keychain 项 `xiaocao.live.capital.toggle` / account `runtime` 的值严格为 `true`；
+  2. 签名授权 `output/live/live_authorization.json`（HMAC 对固定 Keychain 项 `xiaocao.live.capital.signing` / account `runtime` 校验）。授权**带 scope（max_notional / side / code 白名单）与到期**。
+- 09:20 runner 先做无敏感信息 preflight，并在每个 submit-capable 资金门重新现读两项 Keychain runtime material；只把兼容映射作为函数参数传给 `safety.py`，不得写入 `os.environ`、argv、日志、回执、takeover capsule 或任何落盘证据。Keychain 可读本身不是订单授权；仍必须有同一密钥验证通过且未过期、未越权的授权文件。
+- 两个 Keychain 项与 HMAC 授权都属于同一 macOS 登录主体，因此这是用户明确批准的**同主体运行门**，不是两个安全主体的密码学隔离；不得再声称“agent 从技术上绝对无法自签”。交互命令 `scripts/configure_live_capital_keychain.py` 用于创建/启用固定 runtime 项，`scripts/authorize_live.py` 用于铸造 scoped authorization；09:20 Automation 的运行契约禁止调用两者、创建/旋转密钥或铸权。
 - 任一缺失/签名被篡改（含非 ASCII 签名）/过期/越权/**或越权属性缺省**（如限定 max_notional 却未指定 notional、限定 side/code 却为 None）→ **硬拒**（fail-closed）。
 - 审计：real_capital **ALLOW 必须可持久审计**——若审计写失败则转为 DENY（不下不可审计的真实单）；DENY/always-allowed 行为 best-effort（审计永不让交易回路崩溃）。`require_capital_action` 拒绝时**只**抛 `CapitalActionDenied`。
 - 唯一实现 `src/xiaocao/live/safety.py`；真实下单 **MUST** 经 `require_capital_action(...)`，仅在 ALLOW 时下单。
 - **现状**：阶段一执行缝已在任何 broker adapter 之前调用
   `require_capital_action(...)`；独立 09:20 Automation 只启动隔离 live seam，
-  不改变 09:25 模拟任务。Founder v6 仅对 account-bound `package-limit`
+  不改变 09:25 模拟任务。Founder v7 仅对 account-bound `package-limit`
   暴露 receipt-proving first-order submit；probe mapping 可以 pending，但 submit
-  结果只有在 order-id/strategy-id 映射完整时才能 ACK。交易时段首单、撤单/一次补单、unattended
-  PassGuard 仍未完整证明，且当前双钥匙缺失时仍不会产生真实订单。未来启用仍需
-  本节双钥匙和独立激活审查。
+  结果只有在 order-id/strategy-id 映射完整时才能 ACK。登录回执必须区分
+  `session_reuse_proven` 与 `fresh_login_proven`；当前 authenticated session 不得冒充
+  网站密码 fresh-login。最终 run receipt 必须持久化净化后的登录路径证据，并把 native
+  PassGuard 单列为 `pending` / `unattended_recovery_proven=false` / `fail_closed_if_prompted`；
+  交易时段首单、撤单/一次补单、网站密码 fresh-login 和 unattended PassGuard 仍按各自真实证据判定。
 
 ## 10. 快速探索期的自动迭代 / 升级策略（agent 皮层）
 
@@ -195,7 +200,7 @@
 - **AUTO_APPLIED 候选格式**：weekly finalize 必须收到至少一个 auto-apply candidate（plan 内或 `--auto-apply-candidate` JSON/JSONL），字段包括 `id`、`title`、`source`、`recommended_change`、`evidence_bundle`；策略收益类还需要 `change_type`（如 `paper_strategy`）、`protocol_id`、`research_manifest`。脚本会校验 source 是否属于固定输入清单、bundle 是否完整、protocol 是否存在、manifest 是否满足 protocol、validation 是否不含失败标记；校验失败不得提交为 `AUTO_APPLIED`。
 - **固定输入清单**：自动改动只能来自 weekly plan 的固定输入：`flywheel_selfcheck.py`、`flywheel_sweep.py --json --top 30`、`distill_action_log.jsonl`、`kronos_screen/HYPOTHESES.jsonl`、`output/research/*`、`output/research/runs/*/manifest.json`、`reference/experience/research_protocols.yaml`、`pnl_decompose.csv`、`paper_vs_market_*.md`、`posture_calibration.jsonl`、`exit_calibration.jsonl`、`git status --porcelain`。固定输入之外的发现一律写 proposal 等用户确认。
 - **允许自动改**：paper/simulation 策略参数、emitted modes、Book B/T 模拟策略、研究脚本、报告字段、cohort 规则、模型配置、蒸馏/action-log/schema/observability 工具。策略收益类改动必须有 PASS / fill-aware PASS / baseline-vs-variant 明确改善，并说明不过拟合证据；工具类改动必须能归因到具体审计/验证缺口。
-- **不得自动改**：账户历史、成交账本、原始缓存、数据口径真相源、安全校验、real-capital 授权逻辑、live authorization、手工改账。即使未来上小资金，真实资金边界仍走双钥匙。
+- **不得自动改**：账户历史、成交账本、原始缓存、数据口径真相源、安全校验、real-capital 授权逻辑、live authorization、手工改账。即使未来上小资金，真实资金边界仍走本节两条件资金门。
 - **dirty-file 边界**：weekly 开始时记录 `git status --porcelain`。运行前已 dirty 的文件不得自动修改；若证据明确指向该文件，周报第一屏写 `NEEDS_HUMAN_CONFIRMATION`，创建 `.scratch/weekly-deep-review/...` proposal，等待用户明确确认。
 - **提交与审计**：weekly finalize 写 `output/live/weekly_review_YYYY-MM-DD.md`、追加 `output/live/flywheel_change_ledger.jsonl`、只 stage allowlist 文件并直接提交当前分支。`AUTO_APPLIED` 和 `PROPOSAL_ONLY` 都可以 commit；commit body 必须列 validation、报告路径、rollback。不得 `git add -A`。
 - **非异常（正常）**：`SELL_DEFERRED`（盘中只诊断）、`T+1_blocked`、非交易日 skip、book A 单独结算、Book T 无候选/无到期结算、**③ 策略飞轮 `open`**（无 PASS 可应用，策略正确地冻结，无需动作）。
@@ -204,14 +209,14 @@
 ## 11. 契约不变量（可执行回归 → `tests/test_operating_contract.py`）
 
 - [x] paper/sensor/research 永远放行；unknown kind 默认拒。
-- [x] real_capital 缺任一钥匙 / 签名篡改 / 过期 / 越权 / 超额 → 拒；双钥匙 in-scope → 放行；每个决定入审计。
+- [x] real_capital 缺任一 Keychain runtime 项 / 授权文件 / 签名篡改 / 过期 / 非有限或非正金额 / 越权 / 超额 → 拒；两条件 in-scope → 放行；每个决定入审计；敏感值不进环境、参数或回执。
 - [x] `require_capital_action` 拒时抛 `CapitalActionDenied`。
 - [x] 成交 ≤ basket 放弃线（`_fill_price_from_window`）；窗口最低价 > L 时，实时价仍在 basket 内则补单成交，否则 SKIP。
 - [x] book A/B fixture 回放：同组 picks 过 A/B，realized 差 **完全等于出场口径差**（逐仓可归因，无记账漂移）；无 stop 触发时 book A == book B（消灭 iteration-7 的 -4,191 漂移）。`tests/test_operating_contract.py::test_ab_replay_*`
 - [x] Book T snapshot/account/monitor key 均带 `book` 命名空间；B/T 同票同日不互相覆盖；T 宽止损不调用短线 strong-hold/composite。
 - [x] Book B 与历史回放共用 `strategy.mode_switch`；D-1 outcome 不进入 D 日早盘状态；`COLD/UNKNOWN/BJSE` 无成交权限；`--notional` 不能绕过 3 席位、每模式 1 只和批次 50% 上限。
 - [x] 模式证据保留 25%/45%/50% 验证权重；`ACTIVE` 同时通过候选池和四指数证据，近期双基准均值与多数日转正可直接升格，任一均值转负只冷却到 `PROVISIONAL`。
-- [x] 独立 09:20 Book-B live morning 与 09:25 模拟任务隔离；唯一候选写路由为 account-bound `package-limit`，09:30 前只预检/心跳；不读写模拟成交或 canonical paper ledger；首单 probe mapping 可 pending，但一次 canary submit 后只认 order-id/strategy-id 映射完整的 ACK，歧义保持 UNKNOWN/reconcile-only；真实交易时段首单、撤单/一次补单和 unattended PassGuard 证据仍 pending。
+- [x] 独立 09:20 Book-B live morning 与 09:25 模拟任务隔离；唯一候选写路由为 account-bound `package-limit`，09:30 前只预检/心跳；不读写模拟成交或 canonical paper ledger；首单 probe mapping 可 pending，但一次 canary submit 后只认 order-id/strategy-id 映射完整的 ACK，歧义保持 UNKNOWN/reconcile-only；session reuse 与网站密码 fresh-login 分证，真实交易时段首单、撤单/一次补单、fresh-login 和 unattended PassGuard 证据仍按真实状态 pending。
 - [x] allocation proof 复用 `mode_switch.plan_board_lot_orders`，以滚动结算 NAV 验证批次/敞口/现金/slot 上限；ownership evidence 不得替代 canonical paper ledger。
 - [x] 同一 logical account 由 account-level writer lock 串行推进；异常写入 durable takeover capsule，WeCom pending incident 可重试且已送达事件幂等。
 - [ ] （后续）settle_book_a 只用 next_close 且幂等；decompose_pnl 三项金额求和 = account realized_pnl（容差=取整）。
@@ -240,3 +245,5 @@
 | 2.7 | 2026-08-23 | Book-B live morning 拆为独立 09:20 seam：只消费冻结 ★E 与 broker allocation facts，不等待或回写 09:25 模拟成交；Founder submit/account/receipt 和双钥匙未通过时继续 fail-closed。 |
 | 2.8 | 2026-08-24 | 全量核对 Founder 条件、网格、单证券/组合算法及组合交易后，唯一候选写路由固定为 `按证券组合 -> 指定价格`；09:20 预检、09:30 submit floor、账户/回执门禁落地，交易时段 order-id、撤单/一次补单、PassGuard 与双钥匙仍 pending。Book T v2 的 5 日 daily-stability soak 与 20 日 engineering burn-in 拆为独立真实时间门，均保持无 promotion 权限。 |
 | 2.9 | 2026-08-24 | 消除首单回执映射的循环门禁：probe 阶段允许 mapping pending，durable claim 后只允许一次初始 canary submit，且必须由同次回执证明账户、order-id、strategy-id 与 mapping；prepare/submit/reconcile 任一 chain uncertainty 都永久禁止自动补单。同 order reconcile 可保留 submit strategy-id，新 order 不得复用旧证据；无 mapping 的 REJECTED 仅在证明从未点击时可终态。无歧义首单经终态/撤单/市场 guard 证明后可最多一次受控 replacement，总 attempt 上限 2 且在 submit boundary 强制。真实交易时段证据和双钥匙状态仍 pending。 |
+| 3.0 | 2026-08-24 | 双钥匙 runtime 改为固定 macOS Keychain 项：09:20 先做净化 preflight、每个资金门进程内现读，敏感值不进环境/argv/日志/回执；scoped expiring authorization 仍独立且只可人工交互铸造。Founder 登录回执把 persistent session reuse 与 Keychain 网站密码 fresh-login 设为互斥证据；现有会话不再冒充密码登录，native PassGuard 继续独立 pending。 |
+| 3.1 | 2026-08-24 | 按用户授权把资金边界准确重述为同一 macOS principal 下的 Keychain-backed 两条件运行门，不再宣称双主体密码学隔离；严格只接受精确 `true`，拒绝非有限/非正授权与订单金额，登录证据绑定 Founder v7 模板能力并持久化，PassGuard 继续独立 pending/fail-closed。 |

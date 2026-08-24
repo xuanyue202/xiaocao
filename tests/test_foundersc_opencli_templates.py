@@ -148,7 +148,7 @@ def test_reconcile_requires_one_exact_account_query_order_mapping():
 
 
 def test_foundersc_template_registry_is_versioned_with_one_scoped_write_command():
-    assert _source("common.mjs").count("TEMPLATE_VERSION = 6") == 1
+    assert _source("common.mjs").count("TEMPLATE_VERSION = 7") == 1
     for command in COMMANDS:
         source = _source(f"{command}.js")
         assert "site: SITE" in source
@@ -355,6 +355,14 @@ def test_login_uses_exact_login_controls_and_requires_authenticated_readback():
         "sms_required",
         "account_locked",
         "observed_route",
+        "authentication_path",
+        "initial_auth_state",
+        "keychain_login_read",
+        "login_form_binding_proven",
+        "login_submit_click_count",
+        "post_auth_readback_proven",
+        "session_reuse_proven",
+        "fresh_login_proven",
     ):
         assert marker in source
     assert "submitted: false" in source

@@ -31,7 +31,7 @@
 | 盘中 | staged exit：盘中仅 HARD_STOP(dd≥8%)，其余诊断递延 14:55；每轮写决策日志；卖点→WeCom relay | `live_monitor.py` → `live/exit_policy.py`, `live/journal.py`, `live/notify.py` |
 | 15:05 eod | settle book A(验证口径) / decompose PnL / **status 摘要→WeCom relay** / pipeline 健康检查 | `auto_daily.sh eod` → `settle_book_a.py`, `decompose_pnl.py`, `status.py`, `continuous_optimize.py` |
 
-复利的护栏：**双钥匙资金安全边界**（`live/safety.py`，paper→real 需两把钥匙，agent 无法自签）、**book A vs book B** 双账本（实盘止损口径 vs 验证 next-close 口径，差值即"止损层是否帮倒忙"）、**kill-switch**（book A 近5出场日 <-3% 减半 / <-5% 停买，sensor 永不停）。一切口径见 `docs/OPERATING_CONTRACT.md`。
+复利的护栏：**Keychain-backed 两条件资金门**（`live/safety.py`；同一 macOS principal 下的运行门，不宣称双主体密码学隔离）、**book A vs book B** 双账本（实盘止损口径 vs 验证 next-close 口径，差值即"止损层是否帮倒忙"）、**kill-switch**（book A 近5出场日 <-3% 减半 / <-5% 停买，sensor 永不停）。一切口径见 `docs/OPERATING_CONTRACT.md`。
 
 ## ② 能力复利（the system gets smarter）
 

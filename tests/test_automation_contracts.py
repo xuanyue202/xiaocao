@@ -58,6 +58,10 @@ def test_live_morning_is_a_separate_0920_fail_closed_task() -> None:
     assert "never run or wait for `morning-execute`" in live["prompt"]
     assert "never read or write simulated fills" in live["prompt"]
     assert "09:30 submit floor" in live["prompt"]
+    assert "sanitized Keychain capital-runtime" in live["prompt"]
+    assert "Never run `configure_live_capital_keychain.py`" in live["prompt"]
+    assert "session_reuse_proven" in live["prompt"]
+    assert "fresh_login_proven" in live["prompt"]
     assert "never repeat a final submit click" in live["prompt"]
     assert "auto_daily.sh" not in live["prompt"]
     assert "book_b_live_morning.py" not in paper["prompt"]
@@ -66,11 +70,40 @@ def test_live_morning_is_a_separate_0920_fail_closed_task() -> None:
     )
     assert "release_foundersc_opencli_site_session(profile)" in live_script
     assert "_bounded_no_order_retry(broker.ensure_login)" in live_script
-    assert "keychain.run(read_secrets=True)" in live_script
+    assert "keychain.run(read_login_secret=True)" in live_script
+    assert "keychain.run(read_secrets=True)" not in live_script
+    assert "KeychainCapitalRuntime" in live_script
+    assert "capital_runtime.preflight()" in live_script
+    assert "safety_env_provider=capital_runtime.safety_env" in live_script
     assert "expected_fund_account_fingerprint=trade_account_fingerprint" in live_script
     assert "wait_for_submit_window" in live_script
     assert "_bounded_no_order_retry" in live_script
     assert 'expected_current="live"' in live_script
+
+
+def test_live_authorization_mint_reads_keychain_but_remains_human_interactive() -> None:
+    script = (ROOT / "scripts" / "authorize_live.py").read_text(encoding="utf-8")
+
+    assert "KeychainCapitalRuntime" in script
+    assert "capital_runtime.safety_env()" in script
+    assert "sys.stdin.isatty()" in script
+    assert "--yes" not in script
+    assert "os.environ" not in script
+
+
+def test_live_capital_keychain_setup_never_places_secret_in_command_arguments() -> None:
+    script = (ROOT / "scripts" / "configure_live_capital_keychain.py").read_text(
+        encoding="utf-8"
+    )
+
+    assert "sys.stdin.isatty()" in script
+    assert "secrets.token_urlsafe" in script
+    assert 'EXPECT_COMMAND = "/usr/bin/expect"' in script
+    assert "log_user 0" in script
+    assert "input=secret.encode" in script
+    assert "add-generic-password -U -a runtime -s $service -w" in script
+    assert 'command.extend(["-w", secret])' not in script
+    assert "--yes" not in script
 
 
 def test_auto_daily_exposes_separate_morning_stage_commands() -> None:

@@ -1,6 +1,6 @@
 # Founder Securities OpenCLI templates
 
-Template version: `6`
+Template version: `7`
 Site: `foundersc-quant`
 Scope: secure Edge persistent-session login, route-aware
 probe/preparation/reconciliation/recovery, verified mock/live environment
@@ -95,6 +95,12 @@ the unique phone/password controls from the fixed Keychain item and clicks the
 unique `登录模拟盘` control. It then requires the same safe mock proof. CAPTCHA,
 SMS, ambiguous controls or a failed readback return `auth_required` or
 `unknown`; the command does not retry a login.
+The receipt makes these paths mutually exclusive:
+`session_reuse_proven=true` means only that an existing authenticated session
+was proved; `fresh_login_proven=true` additionally requires an initial
+`login_required` state, a successful fixed-Keychain read, unique form binding,
+exactly one login click and a post-click authenticated readback. Neither field
+proves native PassGuard trade-password recovery.
 
 `probe` defaults to `--route package-limit` so callers that omit the route
 remain compatible. It opens the package create page and reports
@@ -281,7 +287,7 @@ opaque manual route is not unique, it
 returns `reconciled_partial`, `reconcile_complete=false`, and
 `reconcile_required=true`; this is not a conclusive broker outcome.
 
-Template v6 also exposes a strict `allocation_summary` from either one unique
+Template v7 also exposes a strict `allocation_summary` from either one unique
 asset-summary card set or one unique table row containing `总资产`, `证券市值`,
 and `可用资金`. Ambiguous/missing labels or disagreeing sources keep the summary
 incomplete. The page-side `fund_account_fingerprint` is masked; Xiaocao compares

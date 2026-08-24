@@ -1,12 +1,13 @@
 """Operating-contract invariants (docs/OPERATING_CONTRACT.md).
 
-This slice covers the two-key capital-action safety boundary: the structural
-guarantee that no real-capital order can be placed without BOTH keys, that an
-agent cannot self-grant either, and that paper/sensor/research are never blocked.
+This slice covers the Keychain-backed capital-action boundary: no real-capital
+order can pass without both configured conditions, while paper/sensor/research
+remain unblocked. It does not claim principal-level separation on the same Mac.
 """
 from __future__ import annotations
 
 import json
+import math
 from datetime import datetime, timedelta, timezone
 
 import pytest
@@ -88,7 +89,7 @@ def test_real_capital_denied_when_signing_key_absent(tmp_path):
 
 
 def test_real_capital_denied_when_signature_tampered(tmp_path):
-    # The agent cannot forge: editing scope/notional without the key breaks HMAC.
+    # Editing scope/notional without recomputing the HMAC is detected.
     auth = _valid_auth_file(tmp_path)
     obj = json.loads(auth.read_text())
     obj["max_notional"] = 10_000_000.0  # tamper to widen the limit
@@ -119,6 +120,40 @@ def test_real_capital_denied_when_over_notional(tmp_path):
     assert not d.allowed and "exceeds authorized max" in d.reason
 
 
+@pytest.mark.parametrize("invalid", [math.nan, math.inf, -math.inf, 0.0, -1.0])
+def test_authorization_rejects_nonfinite_or_nonpositive_max_notional(invalid):
+    with pytest.raises(ValueError, match="max_notional"):
+        make_authorization(
+            scope="test",
+            max_notional=invalid,
+            signing_key=KEY,
+            expires_at=(NOW + timedelta(hours=1)).isoformat(timespec="seconds"),
+        )
+
+
+@pytest.mark.parametrize("invalid", [math.nan, math.inf, -math.inf, -1.0])
+def test_real_capital_denies_nonfinite_or_negative_order_notional(tmp_path, invalid):
+    auth = _valid_auth_file(tmp_path)
+    d = authorize_capital_action(
+        kind="real_capital",
+        side="BUY",
+        code="000001.XSHG",
+        notional=invalid,
+        auth_path=auth,
+        audit_path=tmp_path / "audit.jsonl",
+        env=_both_keys_env(),
+        now=NOW,
+    )
+
+    assert not d.allowed and "notional" in d.reason
+    audit_rows = [
+        json.loads(line)
+        for line in (tmp_path / "audit.jsonl").read_text().splitlines()
+        if line.strip()
+    ]
+    assert audit_rows[-1]["notional"] is None
+
+
 def test_real_capital_denied_when_side_or_code_out_of_scope(tmp_path):
     auth = _valid_auth_file(tmp_path, sides=["BUY"], codes=["000001.XSHG"])
     d_side = authorize_capital_action(
@@ -140,7 +175,7 @@ def test_real_capital_allowed_with_both_keys_in_scope(tmp_path):
         kind="real_capital", side="BUY", code="000001.XSHG", notional=15000.0,
         auth_path=auth, audit_path=audit, env=_both_keys_env(), now=NOW,
     )
-    assert d.allowed and d.reason == "two-key authorized"
+    assert d.allowed and d.reason == "keychain-backed capital gate authorized"
     rows = [json.loads(l) for l in audit.read_text().splitlines() if l.strip()]
     assert rows and rows[-1]["allowed"] is True and rows[-1]["kind"] == "real_capital"
 

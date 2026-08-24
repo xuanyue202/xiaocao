@@ -804,6 +804,52 @@ def test_live_morning_does_not_wait_for_simulated_fill_fields(tmp_path: Path) ->
     assert len(calls) == 1
 
 
+def test_live_morning_persists_sanitized_authentication_and_passguard_evidence(
+    tmp_path: Path,
+) -> None:
+    freeze = tmp_path / "freeze.jsonl"
+    freeze.write_text("", encoding="utf-8")
+    state_dir = tmp_path / "state"
+    preflight_receipt = {
+        "environment": "live",
+        "website_authentication": {
+            "template_name": "foundersc-quant/login",
+            "template_version": 7,
+            "authentication_path": "session_reuse",
+            "session_reuse_proven": True,
+            "fresh_login_proven": False,
+        },
+        "passguard": {
+            "status": "pending",
+            "unattended_recovery_proven": False,
+            "policy": "fail_closed_if_prompted",
+        },
+    }
+
+    receipt = run_book_b_live_morning(
+        BookBLiveMorningConfig(
+            trade_date="2026-08-24",
+            freeze_path=freeze,
+            allocation_facts_path=tmp_path / "allocation.json",
+            state_dir=state_dir,
+            dated_freeze_receipt={
+                **_ready_freeze(),
+                "snapshot_row_count": 0,
+                "snapshot_sha256": frozen_rows_digest([]),
+            },
+        ),
+        preflight=lambda: preflight_receipt,
+        restore_environment=lambda: {"environment": "mock"},
+        execute=lambda _plan: pytest.fail("empty freeze must not execute"),
+    )
+
+    assert receipt.preflight_receipt == preflight_receipt
+    persisted = json.loads(
+        (state_dir / "runs" / "2026-08-24.json").read_text(encoding="utf-8")
+    )
+    assert persisted["preflight_receipt"] == preflight_receipt
+
+
 def test_live_morning_cli_is_independent_of_auto_daily() -> None:
     root = Path(__file__).resolve().parents[1]
     result = subprocess.run(

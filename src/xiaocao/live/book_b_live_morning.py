@@ -68,6 +68,7 @@ class BookBLiveMorningReceipt:
     freeze_path: str
     allocation_facts_path: str
     state_path: str
+    preflight_receipt: dict | None = None
 
     def as_dict(self) -> dict:
         return asdict(self)
@@ -446,6 +447,7 @@ def run_book_b_live_morning(
         raise ValueError("LIVE_LOGICAL_ACCOUNT_MUST_BE_PRIMARY")
     _assert_isolated_state(config)
     preflight_attempted = False
+    environment_receipt: dict | None = None
     preparation_receipts: list[dict] = []
     receipt: BookBLiveMorningReceipt
     restore_failure: str | None = None
@@ -545,6 +547,8 @@ def run_book_b_live_morning(
                 restore_failure = f"ENVIRONMENT_RESTORE_FAILED:{exc}"
     if restore_failure is not None:
         receipt = replace(receipt, status="blocked", reason=restore_failure)
+    if environment_receipt is not None:
+        receipt = replace(receipt, preflight_receipt=environment_receipt)
     _write_receipt(config, receipt)
     return receipt
 

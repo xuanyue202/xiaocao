@@ -103,8 +103,11 @@ def validate_skill(skill_dir: Path) -> None:
         *(skill_dir / "references" / name for name in SKILL_REFERENCE_FILES),
         runtime / "src" / "xiaocao" / "cli.py",
         runtime / "src" / "xiaocao" / "live" / "safety.py",
+        runtime / "src" / "xiaocao" / "live" / "capital_keychain.py",
         runtime / "scripts" / "auto_daily.sh",
         runtime / "scripts" / "authorize_live.py",
+        runtime / "scripts" / "configure_live_capital_keychain.py",
+        runtime / "scripts" / "live_capital_preflight.py",
         runtime / "scripts" / "live_recommend.py",
         runtime / "scripts" / "live_monitor.py",
         runtime / "kronos_screen" / "scripts" / "paper_record.py",
@@ -124,8 +127,10 @@ def validate_skill(skill_dir: Path) -> None:
 def smoke_test(runtime_dir: Path) -> None:
     env = os.environ.copy()
     env["PYTHONPATH"] = "src"
+    project_python = ROOT / ".venv" / "bin" / "python"
+    python = str(project_python) if project_python.is_file() else sys.executable
     subprocess.run(
-        [sys.executable, "-m", "xiaocao", "--help"],
+        [python, "-m", "xiaocao", "--help"],
         cwd=runtime_dir,
         env=env,
         check=True,
@@ -136,14 +141,17 @@ def smoke_test(runtime_dir: Path) -> None:
     subprocess.run(["bash", "-n", "scripts/auto_daily.sh"], cwd=runtime_dir, check=True)
     subprocess.run(
         [
-            sys.executable,
+            python,
             "-m",
             "py_compile",
             "scripts/authorize_live.py",
+            "scripts/configure_live_capital_keychain.py",
+            "scripts/live_capital_preflight.py",
             "scripts/live_recommend.py",
             "scripts/live_monitor.py",
             "kronos_screen/scripts/paper_record.py",
             "src/xiaocao/live/safety.py",
+            "src/xiaocao/live/capital_keychain.py",
         ],
         cwd=runtime_dir,
         env=env,

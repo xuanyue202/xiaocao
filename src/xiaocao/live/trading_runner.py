@@ -11,7 +11,7 @@ import hashlib
 import json
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Iterable
+from typing import Any, Callable, Iterable
 
 from .book_b_allocation import (
     BookBAllocationFacts,
@@ -160,6 +160,7 @@ def build_foundersc_execution(
     profile: str | None = None,
     route: str = "package-limit",
     expected_fund_account_fingerprint: str | None = None,
+    safety_env_provider: Callable[[], dict[str, str]] | None = None,
     now=None,
     notifier=None,
 ) -> tuple[TradingExecution, FounderscQuantOpenCLIAdapter]:
@@ -179,6 +180,7 @@ def build_foundersc_execution(
         outbox=outbox,
         now=now,
         notifier=notifier,
+        safety_env_provider=safety_env_provider,
     )
     return execution, adapter
 

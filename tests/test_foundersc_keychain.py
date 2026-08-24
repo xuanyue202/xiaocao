@@ -111,6 +111,23 @@ def test_metadata_only_mode_never_requests_secret_values() -> None:
     assert receipt["trade_secret_status"] == "not_requested"
 
 
+def test_login_only_preflight_never_reads_unused_trade_password() -> None:
+    runner = Runner(
+        {LOGIN_SERVICE: "13912345888", TRADE_SERVICE: "9876543210"},
+        {LOGIN_SERVICE: b"login-password", TRADE_SERVICE: b"trade-password"},
+    )
+
+    receipt = FounderscKeychainPreflight(runner=runner).run(
+        read_login_secret=True,
+    )
+
+    assert receipt["login_secret_status"] == "readable"
+    assert receipt["trade_secret_status"] == "not_requested"
+    secret_commands = [command for command in runner.commands if "-w" in command]
+    assert len(secret_commands) == 1
+    assert secret_commands[0][-1] == LOGIN_SERVICE
+
+
 def test_trade_account_fingerprint_reads_metadata_only_and_never_returns_account() -> None:
     runner = Runner(
         {LOGIN_SERVICE: "13912345888", TRADE_SERVICE: "9876543210"},

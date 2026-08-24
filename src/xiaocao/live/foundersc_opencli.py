@@ -428,6 +428,14 @@ class FounderscQuantOpenCLIAdapter(BrokerAdapter):
     def ensure_login(self) -> dict[str, Any]:
         """Authenticate the persistent session and prove a safe mock baseline."""
         row = self._run("login", [])
+        capabilities = row.get("capabilities")
+        if (
+            str(row.get("template_name") or "") != "foundersc-quant/login"
+            or row.get("template_version") != 7
+            or not isinstance(capabilities, dict)
+            or capabilities.get("login") is not True
+        ):
+            raise OpenCLIAdapterError("OPENCLI_LOGIN_TEMPLATE_UNPROVEN")
         safe = (
             str(row.get("status") or "").strip().lower()
             == "login_authenticated"
@@ -440,6 +448,37 @@ class FounderscQuantOpenCLIAdapter(BrokerAdapter):
         )
         if not safe:
             raise OpenCLIAdapterError("OPENCLI_LOGIN_SAFE_MOCK_UNPROVEN")
+        authentication_path = str(row.get("authentication_path") or "").strip()
+        status_reason = str(row.get("status_reason") or "").strip()
+        initial_auth_state = str(row.get("initial_auth_state") or "").strip()
+        keychain_login_read = str(row.get("keychain_login_read") or "").strip()
+        click_count = row.get("login_submit_click_count")
+        session_reuse_proven = row.get("session_reuse_proven") is True
+        fresh_login_proven = row.get("fresh_login_proven") is True
+        post_auth_readback_proven = row.get("post_auth_readback_proven") is True
+        session_path_proven = (
+            authentication_path == "session_reuse"
+            and status_reason == "persistent_session_already_authenticated"
+            and initial_auth_state == "authenticated"
+            and keychain_login_read == "not_attempted"
+            and click_count == 0
+            and session_reuse_proven
+            and not fresh_login_proven
+            and post_auth_readback_proven
+        )
+        fresh_path_proven = (
+            authentication_path == "keychain_website_password"
+            and status_reason == "login_authenticated_readback_completed"
+            and initial_auth_state == "login_required"
+            and keychain_login_read == "succeeded"
+            and row.get("login_form_binding_proven") is True
+            and click_count == 1
+            and not session_reuse_proven
+            and fresh_login_proven
+            and post_auth_readback_proven
+        )
+        if session_path_proven == fresh_path_proven:
+            raise OpenCLIAdapterError("OPENCLI_LOGIN_PATH_UNPROVEN")
         return {
             "status": "login_authenticated",
             "environment": "mock",
@@ -449,7 +488,18 @@ class FounderscQuantOpenCLIAdapter(BrokerAdapter):
             "submitted": False,
             "saved": False,
             "started": False,
-            "capabilities": _safe_evidence(row.get("capabilities") or {}),
+            "authentication_path": authentication_path,
+            "status_reason": status_reason,
+            "template_name": "foundersc-quant/login",
+            "template_version": 7,
+            "initial_auth_state": initial_auth_state,
+            "keychain_login_read": keychain_login_read,
+            "login_form_binding_proven": row.get("login_form_binding_proven") is True,
+            "login_submit_click_count": click_count,
+            "post_auth_readback_proven": post_auth_readback_proven,
+            "session_reuse_proven": session_reuse_proven,
+            "fresh_login_proven": fresh_login_proven,
+            "capabilities": _safe_evidence(capabilities),
         }
 
     def read_live_allocation_facts(

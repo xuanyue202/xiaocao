@@ -1,8 +1,7 @@
-"""Two-key capital-action safety boundary.
+"""Keychain-backed two-condition capital-action safety boundary.
 
-xiaocao is **paper-only today**. This module is the *seam* that keeps it that way
-by construction, and makes the eventual paper -> real transition a config flip
-rather than a refactor. It is borrowed in spirit from QuantDinger's two
+xiaocao remains paper-by-default. This module is the seam that gates the isolated
+Book-B real-capital path. It is borrowed in spirit from QuantDinger's two
 non-negotiable safety properties (MCP_SETUP.md): *paper-only by default*, and
 *live execution requires BOTH a token flag AND a server flag*; plus the design
 principle that **research never shares a code path with live capital**.
@@ -13,28 +12,33 @@ Contract (also stated in docs/OPERATING_CONTRACT.md):
     blocked by the capital gate, and the daily sensor (book A, data capture) must
     never stop.
   - A REAL-CAPITAL action (an order that moves real money at a broker) requires
-    TWO independent keys, **neither of which an agent operating the repo can
-    self-grant**:
-      1. ENV  `XIAOCAO_LIVE_TRADING_ENABLED=true`            (operational toggle)
+    TWO required conditions, neither of which the scheduled live task creates:
+      1. `XIAOCAO_LIVE_TRADING_ENABLED=true`                 (operational toggle)
       2. A signed authorization file (default `output/live/live_authorization.json`)
-         whose HMAC validates against `XIAOCAO_LIVE_SIGNING_KEY` — a secret the
-         *human* holds and that an automation's environment does not carry. The
+         whose HMAC validates against `XIAOCAO_LIVE_SIGNING_KEY`.  The 09:20
+         runner obtains both values from fixed macOS Keychain items through
+         `capital_keychain.py` and passes this mapping in-process only; neither
+         value is installed in `os.environ`, argv, logs, or receipts.  The
          authorization is **scoped** (max per-order notional, optional side/code
-         allowlist) and **expires**. It is minted only by the interactive
-         `scripts/authorize_live.py`, never by an automation.
+         allowlist) and **expires**. It is normally minted by the interactive
+         `scripts/authorize_live.py`, never by the scheduled task.
+
+  Both Keychain items and the authorization HMAC belong to the same macOS login
+  principal. This is therefore an operator-approved runtime gate, not two
+  cryptographically independent principals and not proof that another process
+  running as the same user could never mint a file.
 
   Every decision — ALLOW or DENY — is appended to `output/live/safety_audit.jsonl`.
 
-There are intentionally NO real-capital call sites yet: this module exists so that
-when a broker bridge is added, the *only* way to place a real order is to pass
-through `require_capital_action(...)`, and the contract test proves a missing key
-hard-denies it.
+The Founder bridge must pass through `require_capital_action(...)` before its
+single submit boundary, and the contract tests prove missing conditions deny it.
 """
 from __future__ import annotations
 
 import hashlib
 import hmac
 import json
+import math
 import os
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
@@ -100,9 +104,12 @@ def make_authorization(
 
     Used by the interactive minting CLI; the agent path only ever *verifies*.
     """
+    normalized_max = float(max_notional)
+    if not math.isfinite(normalized_max) or normalized_max <= 0:
+        raise ValueError("max_notional must be finite and positive")
     auth: dict[str, Any] = {
         "scope": scope,
-        "max_notional": float(max_notional),
+        "max_notional": normalized_max,
         "sides": sorted(sides) if sides else None,
         "codes": sorted(codes) if codes else None,
         "expires_at": expires_at,
@@ -136,7 +143,7 @@ def _parse_iso(value: Any) -> datetime | None:
 
 def live_trading_enabled(env: dict[str, str] | None = None) -> bool:
     src = os.environ if env is None else env
-    return str(src.get(ENV_LIVE_ENABLED, "")).strip().lower() == "true"
+    return src.get(ENV_LIVE_ENABLED) == "true"
 
 
 def load_authorization(
@@ -177,6 +184,12 @@ def load_authorization(
         return None, "authorization missing/invalid expires_at"
     if (now or _utcnow()) >= expires:
         return None, f"authorization expired at {auth.get('expires_at')}"
+    try:
+        max_notional = float(auth.get("max_notional"))
+    except (TypeError, ValueError):
+        return None, "authorization missing/invalid max_notional"
+    if not math.isfinite(max_notional) or max_notional <= 0:
+        return None, "authorization missing/invalid max_notional"
     return auth, "authorization valid"
 
 
@@ -207,7 +220,7 @@ def authorize_capital_action(
         _audit(decision, audit_path)
         return decision
 
-    # Real-capital path: require BOTH keys.
+    # Real-capital path: require BOTH configured conditions.
     if not live_trading_enabled(env):
         decision = Decision(False, kind, f"key 1 missing: {ENV_LIVE_ENABLED} != true", code, side, notional)
         _audit(decision, audit_path)
@@ -234,18 +247,31 @@ def authorize_capital_action(
         _audit(decision, audit_path)
         return decision
 
-    max_notional = auth.get("max_notional")
-    if max_notional is not None and (notional is None or float(notional) > float(max_notional) + 1e-6):
+    max_notional = float(auth["max_notional"])
+    try:
+        normalized_notional = float(notional) if notional is not None else None
+    except (TypeError, ValueError):
+        normalized_notional = None
+    notional_is_valid = (
+        normalized_notional is not None
+        and math.isfinite(normalized_notional)
+        and normalized_notional > 0
+    )
+    if (
+        not notional_is_valid
+        or normalized_notional > max_notional + 1e-6
+    ):
+        audited_notional = normalized_notional if notional_is_valid else None
         decision = Decision(
             False, kind,
-            f"notional {notional!r} unspecified or exceeds authorized max {float(max_notional):.2f}",
-            code, side, notional,
+            f"notional {notional!r} invalid, unspecified, or exceeds authorized max {max_notional:.2f}",
+            code, side, audited_notional,
         )
         _audit(decision, audit_path)
         return decision
 
     decision = Decision(
-        True, kind, "two-key authorized",
+        True, kind, "keychain-backed capital gate authorized",
         code, side, notional,
         details={"scope": auth.get("scope"), "expires_at": auth.get("expires_at")},
     )
