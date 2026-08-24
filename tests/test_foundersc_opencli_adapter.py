@@ -54,6 +54,22 @@ class Runner:
         )
 
 
+class SequenceRunner:
+    def __init__(self, rows: list[dict]):
+        self.rows = list(rows)
+        self.commands: list[list[str]] = []
+
+    def __call__(self, command, **_kwargs):
+        self.commands.append(list(command))
+        row = self.rows[len(self.commands) - 1]
+        return subprocess.CompletedProcess(
+            command,
+            0,
+            stdout=json.dumps([row], ensure_ascii=False),
+            stderr="",
+        )
+
+
 def test_profile_resolution_selects_global_default_then_requires_edge() -> None:
     class ProfileRunner:
         def __call__(self, command, **_kwargs):
@@ -626,6 +642,87 @@ def test_package_limit_probe_binds_browser_account_to_expected_fingerprint() -> 
     assert capability.account_binding == "proven"
     command = runner.commands[0]
     assert command[command.index("--route") + 1] == "package-limit"
+
+
+def test_live_buy_probe_derives_zero_manual_holding_from_complete_asset_scan() -> None:
+    probe = {
+        "status": "ready",
+        "environment": "live",
+        "environment_data_namespace": "live",
+        "environment_proof_complete": True,
+        "fund_account_match_count": 1,
+        "fund_account_fingerprint": "987******210",
+        "logical_account_id": "primary",
+        "capabilities": {"submit": True, "reconcile": True},
+    }
+    assets = {
+        **probe,
+        "status": "reconciled",
+        "field_readback": {
+            "assets": {
+                "complete_scan": True,
+                "table": {
+                    "headers": ["代码/名称", "市值", "持仓", "可用"],
+                    "row_count": 1,
+                    "rows": [["600000 浦发银行", "1,000.00", "100", "100"]],
+                },
+            }
+        },
+    }
+    runner = SequenceRunner([probe, assets])
+    adapter = FounderscQuantOpenCLIAdapter(
+        opencli_command=("opencli",),
+        runner=runner,
+        route="package-limit",
+        expected_fund_account_fingerprint="987******210",
+    )
+
+    capability = adapter.probe(replace(_plan(), environment="live"))
+
+    assert capability.ready is True
+    assert capability.manual_position_shares == 0
+    assert capability.position_source == "foundersc_complete_asset_scan"
+    assert runner.commands[1][runner.commands[1].index("--scope") + 1] == "assets"
+
+
+def test_live_buy_probe_keeps_manual_holding_unknown_when_asset_scan_is_incomplete() -> None:
+    probe = {
+        "status": "ready",
+        "environment": "live",
+        "environment_data_namespace": "live",
+        "environment_proof_complete": True,
+        "fund_account_match_count": 1,
+        "fund_account_fingerprint": "987******210",
+        "logical_account_id": "primary",
+        "capabilities": {"submit": True, "reconcile": True},
+    }
+    assets = {
+        **probe,
+        "status": "reconciled_partial",
+        "field_readback": {
+            "assets": {
+                "complete_scan": False,
+                "table": {
+                    "headers": ["代码/名称", "持仓", "可用"],
+                    "row_count": 0,
+                    "rows": [],
+                },
+            }
+        },
+    }
+    runner = SequenceRunner([probe, assets])
+    adapter = FounderscQuantOpenCLIAdapter(
+        opencli_command=("opencli",),
+        runner=runner,
+        route="package-limit",
+        expected_fund_account_fingerprint="987******210",
+    )
+
+    capability = adapter.probe(replace(_plan(), environment="live"))
+
+    assert capability.ready is True
+    assert capability.manual_position_shares is None
+    assert capability.position_source == ""
 
 
 def test_package_limit_prepare_uses_the_constructor_account_binding() -> None:

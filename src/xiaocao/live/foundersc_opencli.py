@@ -372,6 +372,75 @@ class FounderscQuantOpenCLIAdapter(BrokerAdapter):
             )
         return args
 
+    def _binding_matches_plan(self, row: dict[str, Any], plan: TradePlan) -> bool:
+        expected = self.expected_fund_account_fingerprint
+        return (
+            bool(expected)
+            and str(row.get("environment") or "").strip().lower()
+            == plan.environment
+            and row.get("environment_proof_complete") is True
+            and str(row.get("environment_data_namespace") or "").strip().lower()
+            == plan.environment
+            and str(row.get("logical_account_id") or "").strip()
+            == plan.logical_account_id
+            and row.get("fund_account_match_count") == 1
+            and str(row.get("fund_account_fingerprint") or "").strip()
+            == expected
+        )
+
+    def _read_manual_position_shares(self, plan: TradePlan) -> int | None:
+        """Return the target-code holding from a complete broker asset scan.
+
+        A missing target row proves zero only when every row in the complete,
+        account-bound table has an unambiguous six-digit code.  Any malformed,
+        partial or duplicate readback remains unknown and therefore fail-closed.
+        """
+        try:
+            row = self._run(
+                "reconcile",
+                ["--scope", "assets", *self._plan_args(plan)],
+            )
+        except OpenCLIAdapterError:
+            return None
+        if not self._binding_matches_plan(row, plan):
+            return None
+        field_readback = row.get("field_readback")
+        field_readback = field_readback if isinstance(field_readback, dict) else {}
+        assets = field_readback.get("assets")
+        assets = assets if isinstance(assets, dict) else {}
+        if assets.get("complete_scan") is not True:
+            return None
+        table = assets.get("table")
+        table = table if isinstance(table, dict) else {}
+        headers = table.get("headers")
+        rows = table.get("rows")
+        if not isinstance(headers, list) or not isinstance(rows, list):
+            return None
+        if headers.count("代码/名称") != 1 or headers.count("持仓") != 1:
+            return None
+        if _optional_int(table.get("row_count")) != len(rows):
+            return None
+        code_index = headers.index("代码/名称")
+        shares_index = headers.index("持仓")
+        target_code = _bare_code(plan.code)
+        matches: list[object] = []
+        for asset_row in rows:
+            if not isinstance(asset_row, list) or len(asset_row) <= max(code_index, shares_index):
+                return None
+            code_match = re.match(r"^\s*(\d{6})(?:\s|$)", str(asset_row[code_index] or ""))
+            if code_match is None:
+                return None
+            if code_match.group(1) == target_code:
+                matches.append(asset_row[shares_index])
+        if not matches:
+            return 0
+        if len(matches) != 1:
+            return None
+        raw_shares = str(matches[0] or "").strip().replace(",", "")
+        if not re.fullmatch(r"\d+", raw_shares):
+            return None
+        return int(raw_shares)
+
     def ensure_environment(
         self,
         *,
@@ -663,20 +732,7 @@ class FounderscQuantOpenCLIAdapter(BrokerAdapter):
                 reason=str(exc),
             )
         capability = BrokerCapability.from_template(row)
-        expected = self.expected_fund_account_fingerprint
-        binding_safe = (
-            bool(expected)
-            and str(row.get("environment") or "").strip().lower()
-            == plan.environment
-            and row.get("environment_proof_complete") is True
-            and str(row.get("environment_data_namespace") or "").strip().lower()
-            == plan.environment
-            and str(row.get("logical_account_id") or "").strip()
-            == plan.logical_account_id
-            and row.get("fund_account_match_count") == 1
-            and str(row.get("fund_account_fingerprint") or "").strip()
-            == expected
-        )
+        binding_safe = self._binding_matches_plan(row, plan)
         if not binding_safe:
             return replace(
                 capability,
@@ -700,7 +756,20 @@ class FounderscQuantOpenCLIAdapter(BrokerAdapter):
                 template_name=capability.template_name,
                 template_version=capability.template_version,
             )
-        return replace(capability, account_binding="proven")
+        capability = replace(capability, account_binding="proven")
+        if (
+            plan.environment == "live"
+            and plan.side.upper() == "BUY"
+            and capability.manual_position_shares is None
+        ):
+            manual_position_shares = self._read_manual_position_shares(plan)
+            if manual_position_shares is not None:
+                capability = replace(
+                    capability,
+                    manual_position_shares=manual_position_shares,
+                    position_source="foundersc_complete_asset_scan",
+                )
+        return capability
 
     def prepare(self, plan: TradePlan, *, requested_shares: int | None = None) -> BrokerReceipt:
         if self.route == "package-limit":
