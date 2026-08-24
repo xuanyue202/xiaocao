@@ -169,6 +169,15 @@ match. A known non-trading response is `status=rejected` with
 or ambiguous receipt is `status=unknown`, `submitted=null`, and
 `reconcile_required=true`. The command never retries a write click.
 
+For no-order diagnosis, `submit --preflight-only true` follows the same
+account-bound form and first-party `preEntrust` validation but stops before the
+`确定提交委托？` server-confirm control. It clears the local draft and proves
+`submitted=false`, `saved=false`, `started=false`, and final-submit click count
+zero. Known pre-entrust failures are reduced to fixed categories such as
+`gem_permission_missing` or `agreement_required`; raw broker response messages
+and bodies are never returned. This mode is diagnostic evidence only and can
+never be treated as an accepted order.
+
 `environment` changes only the unique mock/live switcher and then requires the
 same tab to agree at two layers: the visible mock/live label and the most
 recent environment-specific request namespace (`/qt/.../mock/...` versus the

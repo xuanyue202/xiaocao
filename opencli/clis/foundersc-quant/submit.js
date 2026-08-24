@@ -46,6 +46,12 @@ function parseInput(kwargs) {
         }
         const price = normalizeNonNegativeNumber(kwargs.price, '--price');
         if (price <= 0) throw new Error('--price must be greater than zero');
+        const preflightOnlyRaw = String(
+            kwargs['preflight-only'] ?? 'false'
+        ).trim().toLowerCase();
+        if (!['true', 'false'].includes(preflightOnlyRaw)) {
+            throw new Error('--preflight-only must be true or false');
+        }
         return {
             route,
             expectedEnvironment: normalizeEnvironment(
@@ -61,6 +67,7 @@ function parseInput(kwargs) {
             side: normalizeSide(kwargs.side),
             price,
             quantity: normalizePositiveInteger(kwargs.quantity, '--quantity'),
+            preflightOnly: preflightOnlyRaw === 'true',
         };
     } catch (error) {
         throw new ArgumentError(error.message);
@@ -489,6 +496,45 @@ function responseText(payload) {
     }
 }
 
+function classifyPreEntrustFailure(payload, requestedCode) {
+    const message = String(payload?.message ?? '').trim();
+    const known = {
+        '无创业版权限': 'gem_permission_missing',
+        '无沪市股东账号': 'shanghai_account_missing',
+        '无深市股东账号': 'shenzhen_account_missing',
+        '超出标的范围': 'security_scope_rejected',
+    };
+    let category = known[message] || 'broker_pre_entrust_rejected';
+    if (/创业板/.test(message)) category = 'gem_permission_missing';
+    else if (/沪市.*(账号|股东)|上海.*(账号|股东)/.test(message)) {
+        category = 'shanghai_account_missing';
+    } else if (/深市.*(账号|股东)|深圳.*(账号|股东)/.test(message)) {
+        category = 'shenzhen_account_missing';
+    } else if (/(程序化|量化|极速).*(权限|开通|报备|报告)|未开通.*(程序化|量化|极速)/
+            .test(message)) {
+        category = 'program_trading_permission_missing';
+    } else if (/(协议|风险测评|适当性).*(未|需|请)|未.*(协议|风险测评|适当性)/
+            .test(message)) {
+        category = 'agreement_required';
+    } else if (/(交易密码|密码控件|密码)/.test(message)) {
+        category = 'trade_password_required';
+    } else if (/(资金不足|余额不足|可用资金)/.test(message)) {
+        category = 'insufficient_cash';
+    } else if (/(标的范围|不支持交易|不可交易|证券范围)/.test(message)) {
+        category = 'security_scope_rejected';
+    }
+    const code = String(requestedCode || '').trim();
+    if (category === 'broker_pre_entrust_rejected'
+            && /^\d{6}/.test(message)
+            && message.slice(0, 6) === code) {
+        category = 'security_validation_rejected';
+    }
+    return {
+        category,
+        response_code: responseCode(payload),
+    };
+}
+
 function isNonTradingResponse(payload) {
     return /非交易时间|休市|闭市|未开市|不在交易时间/
         .test(responseText(payload));
@@ -589,6 +635,7 @@ cli({
         {name: 'side', required: true, help: 'buy or sell'},
         {name: 'price', required: true},
         {name: 'quantity', required: true},
+        {name: 'preflight-only', default: 'false'},
     ],
     columns: RECEIPT_COLUMNS,
     func: async (page, kwargs) => {
@@ -779,6 +826,9 @@ cli({
             if (preEntrust.length !== 1 || isExplicitFailure(preEntrust[0])) {
                 const explicit = preEntrust.length === 1
                     && isExplicitFailure(preEntrust[0]);
+                const failure = explicit
+                    ? classifyPreEntrustFailure(preEntrust[0], input.code)
+                    : null;
                 const cleared = await clearLocalDraft(page);
                 return asSingleReceipt(packageReceipt(input, state, {
                     status: explicit ? 'rejected' : 'unknown',
@@ -790,7 +840,17 @@ cli({
                     started: false,
                     reconcile_required: !explicit,
                     form_closed: cleared,
-                    field_readback: draft.field_readback,
+                    error_code: failure?.category || null,
+                    field_readback: {
+                        ...draft.field_readback,
+                        pre_entrust_failure_category: failure?.category || null,
+                        pre_entrust_response_code: failure?.response_code ?? null,
+                    },
+                    locator_proof: {
+                        pre_entrust_failure_category: failure?.category || null,
+                        pre_entrust_response_code: failure?.response_code ?? null,
+                        final_submit_click_count: 0,
+                    },
                 }));
             }
             if (!isExplicitSuccess(preEntrust[0])) {
@@ -801,6 +861,26 @@ cli({
                     submitted: false,
                     reconcile_required: true,
                     field_readback: draft.field_readback,
+                }));
+            }
+            if (input.preflightOnly) {
+                const cleared = await clearLocalDraft(page);
+                return asSingleReceipt(packageReceipt(input, state, {
+                    status: 'prepared_readback',
+                    status_reason: 'pre_entrust_validated_without_submit',
+                    submitted: false,
+                    saved: false,
+                    started: false,
+                    reconcile_required: false,
+                    form_closed: cleared,
+                    field_readback: {
+                        ...draft.field_readback,
+                        pre_entrust_validated: true,
+                    },
+                    locator_proof: {
+                        pre_entrust_validated: true,
+                        final_submit_click_count: 0,
+                    },
                 }));
             }
             const confirmation = await page.evaluate(

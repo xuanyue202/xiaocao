@@ -75,6 +75,7 @@ def test_package_limit_submit_is_single_shot_and_receipt_gated():
         "side",
         "price",
         "quantity",
+        "preflight-only",
     ):
         assert f"name: '{argument}'" in source
     for marker in (
@@ -95,6 +96,18 @@ def test_package_limit_submit_is_single_shot_and_receipt_gated():
         "getInterceptedRequests",
         "确定提交委托？",
         "preEntrust",
+        "classifyPreEntrustFailure",
+        "gem_permission_missing",
+        "shanghai_account_missing",
+        "shenzhen_account_missing",
+        "security_scope_rejected",
+        "program_trading_permission_missing",
+        "agreement_required",
+        "trade_password_required",
+        "insufficient_cash",
+        "pre_entrust_failure_category",
+        "pre_entrust_response_code",
+        "pre_entrust_validated_without_submit",
         "strategy_id",
         "order_id",
         "orderIdFrom",
@@ -112,6 +125,7 @@ def test_package_limit_submit_is_single_shot_and_receipt_gated():
     assert "Boolean(orderIdFrom(entrustReceipt))" in source
     assert "order_id: stableOrderId" in source
     assert "submitted: true" in source
+    assert "pre_entrust_message" not in source
     for forbidden in ("fetch(", "page.fetchJson", "XMLHttpRequest", "$http"):
         assert forbidden not in source
 
