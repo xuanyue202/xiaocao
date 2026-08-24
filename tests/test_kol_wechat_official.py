@@ -745,6 +745,98 @@ def test_image_notes_are_markdown_covered_then_analysis_is_idempotent(tmp_path):
     assert inbox.status()["pending_count"] == 0
 
 
+def test_official_analysis_artifacts_are_namespaced_per_handoff(tmp_path):
+    inbox = OfficialAccountInbox(tmp_path / "remote")
+    shared_dir = (tmp_path / "remote" / "analysis_requests").resolve()
+    shared_dir.mkdir(parents=True)
+    (shared_dir / "validated_bundle.json").write_text(
+        "stale bundle from another handoff",
+        encoding="utf-8",
+    )
+
+    def ready_item(handoff_id: str, title: str) -> dict:
+        evidence_path = tmp_path / "remote" / "evidence" / f"{handoff_id}.md"
+        evidence_path.parent.mkdir(parents=True, exist_ok=True)
+        evidence_path.write_text(f"# {title}\n\n正文证据。", encoding="utf-8")
+        return {
+            "status": "evidence_ready",
+            "handoff_id": handoff_id,
+            "source_identity": f"wechat-official:{handoff_id}",
+            "publication_version": f"version-{handoff_id}",
+            "kol_id": "kol-a-alex",
+            "author": "A也叫艾利克斯",
+            "source": "微信公众号",
+            "publisher": "A也叫艾利克斯",
+            "title": title,
+            "published_at": "2026-08-24T16:32:35+08:00",
+            "received_at": "2026-08-24T16:33:21+08:00",
+            "page_publish_time": "2026年8月24日 16:32",
+            "evidence_path": str(evidence_path),
+            "evidence_sha256": hashlib.sha256(
+                evidence_path.read_bytes()
+            ).hexdigest(),
+            "evidence_scope": "complete_article_markdown_with_image_notes",
+        }
+
+    first = inbox.prepare_analysis_request(
+        ready_item("a" * 64, "第一篇")
+    )
+    second = inbox.prepare_analysis_request(
+        ready_item("b" * 64, "第二篇")
+    )
+
+    assert first["artifact_dir"] == str((shared_dir / ("a" * 64)).resolve())
+    assert second["artifact_dir"] == str((shared_dir / ("b" * 64)).resolve())
+    assert first["artifact_dir"] != second["artifact_dir"]
+
+
+def test_official_analysis_request_migrates_legacy_shared_artifact_dir(tmp_path):
+    inbox = OfficialAccountInbox(tmp_path / "remote")
+    handoff_id = "c" * 64
+    item = {
+        "status": "evidence_ready",
+        "handoff_id": handoff_id,
+        "source_identity": f"wechat-official:{handoff_id}",
+        "publication_version": "version-c",
+        "kol_id": "kol-a-alex",
+        "author": "A也叫艾利克斯",
+        "source": "微信公众号",
+        "publisher": "A也叫艾利克斯",
+        "title": "旧请求",
+        "published_at": "2026-08-24T16:32:35+08:00",
+        "received_at": "2026-08-24T16:33:21+08:00",
+        "page_publish_time": "2026年8月24日 16:32",
+        "evidence_scope": "complete_article_markdown_with_image_notes",
+    }
+    evidence_path = tmp_path / "remote" / "evidence" / f"{handoff_id}.md"
+    evidence_path.parent.mkdir(parents=True)
+    evidence_path.write_text("# 旧请求\n\n正文证据。", encoding="utf-8")
+    item["evidence_path"] = str(evidence_path)
+    item["evidence_sha256"] = hashlib.sha256(
+        evidence_path.read_bytes()
+    ).hexdigest()
+
+    request = inbox.prepare_analysis_request(item)
+    legacy_artifact_dir = (
+        tmp_path / "remote" / "analysis_requests"
+    ).resolve()
+    legacy = {**request, "artifact_dir": str(legacy_artifact_dir)}
+    Path(request["analysis_request_path"]).write_text(
+        json.dumps(legacy, ensure_ascii=False, indent=2) + "\n",
+        encoding="utf-8",
+    )
+
+    migrated = inbox.prepare_analysis_request(item)
+
+    assert migrated["artifact_dir"] == str(
+        (legacy_artifact_dir / handoff_id).resolve()
+    )
+    persisted = json.loads(
+        Path(request["analysis_request_path"]).read_text(encoding="utf-8")
+    )
+    assert persisted["artifact_dir"] == migrated["artifact_dir"]
+
+
 def test_image_notes_must_cover_every_image_sha(tmp_path):
     capsule = _capture_one(tmp_path)
     inbox = OfficialAccountInbox(tmp_path / "remote")

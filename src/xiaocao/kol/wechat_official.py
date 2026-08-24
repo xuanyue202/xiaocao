@@ -1445,7 +1445,15 @@ class OfficialAccountInbox:
             item.get("evidence_sha256"),
             label="evidence Markdown",
         )
-        request_path = self.output_dir / "analysis_requests" / f"{item['handoff_id']}.json"
+        analysis_requests_dir = self.output_dir / "analysis_requests"
+        request_path = analysis_requests_dir / f"{item['handoff_id']}.json"
+        # Keep the request file's historical flat path for readback, but put
+        # every validated bundle and receipt below its immutable handoff. A
+        # shared ``analysis_requests/validated_bundle.json`` can belong to a
+        # different article and must never be considered for this request.
+        artifact_dir = (
+            analysis_requests_dir / str(item["handoff_id"])
+        ).resolve()
         request = {
             "schema_version": 2,
             "event": "daily_analysis_input_required",
@@ -1462,7 +1470,7 @@ class OfficialAccountInbox:
                 item.get("handoff_sha256") or item["evidence_sha256"]
             ),
             "media_identity": f"not_applicable:{item['source_identity']}",
-            "artifact_dir": str(request_path.parent.resolve()),
+            "artifact_dir": str(artifact_dir),
             "kol_id": item["kol_id"],
             "author": item["author"],
             "source": item["source"],
@@ -1499,7 +1507,27 @@ class OfficialAccountInbox:
                 ) from exc
             legacy_request = dict(request)
             legacy_request.pop("captured_at", None)
-            if prior == legacy_request:
+            prior_without_capture = dict(prior)
+            prior_without_capture.pop("captured_at", None)
+            legacy_shared_artifact_dir = str(request_path.parent.resolve())
+            is_legacy_shared_request = (
+                prior_without_capture.get("artifact_dir")
+                == legacy_shared_artifact_dir
+                and {
+                    key: value
+                    for key, value in prior_without_capture.items()
+                    if key != "artifact_dir"
+                }
+                == {
+                    key: value
+                    for key, value in legacy_request.items()
+                    if key != "artifact_dir"
+                }
+            )
+            if (
+                prior_without_capture == legacy_request
+                or is_legacy_shared_request
+            ):
                 _atomic_json(request_path, request)
             elif prior != request:
                 raise EnrichmentError(
