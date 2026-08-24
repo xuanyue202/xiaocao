@@ -23,6 +23,7 @@ from scripts.kol_daily import (
     _read_agent_json,
     _standalone_writer_result,
     _source_cli_narrow_runner,
+    _source_repair_context,
     _source_repair_validation_progress,
     _transcript_audit_contract,
     _require_rollout_peer_gate,
@@ -402,6 +403,38 @@ def test_source_repair_validation_accepts_pending_resume():
         "subscription_video",
         "a" * 64,
     ) is progress
+
+
+def test_source_repair_context_preserves_claim_state_for_download_repair():
+    progress = WriterProgress.repair_required(
+        item_identity="pdf-1",
+        fingerprint=FailureFingerprint(
+            adapter="lv_text_image",
+            category="transport_error",
+            code="detached_mid_command",
+            stage="browser_eval",
+            failure_revision="a" * 40,
+            provider_contract_version="xiaocao_writer_v1",
+        ),
+        repair_revision=None,
+        affected_set_digest="b" * 64,
+        claim_receipt_summary={
+            "claim_count": 1,
+            "receipt_count": 0,
+            "uncertain_effect_count": 0,
+        },
+        targeted_test_profile="kol_lv_text_image_browser_eval",
+        narrow_resume_surface="lv_text_image:pdf-1",
+        retryability="retryable",
+    )
+
+    context = _source_repair_context(progress)
+
+    assert context["claim_receipt_summary"] == {
+        "claim_count": 1,
+        "receipt_count": 0,
+        "uncertain_effect_count": 0,
+    }
 
 
 def test_blocked_legacy_transfer_can_reenter_exact_reconciliation():

@@ -2840,6 +2840,9 @@ class ConvergenceLedger:
                 "targeted_test_profile": expected_profile,
                 "code": open_progress.failure["code"],
                 "stage": open_progress.failure["stage"],
+                "claim_receipt_summary": open_progress.details[
+                    "claim_receipt_summary"
+                ],
             })
             if canonical_lv_profile is not None:
                 expected_profile = canonical_lv_profile
@@ -2861,6 +2864,9 @@ class ConvergenceLedger:
                         "category": open_progress.failure["category"],
                         "code": open_progress.failure["code"],
                         "stage": open_progress.failure["stage"],
+                        "claim_receipt_summary": open_progress.details[
+                            "claim_receipt_summary"
+                        ],
                     })
                 )
                 if canonical_browser_eval_profile is not None:

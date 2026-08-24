@@ -3959,6 +3959,9 @@ def _source_repair_context(progress: WriterProgress) -> dict[str, Any]:
         "category": str(failure["category"]),
         "code": str(failure["code"]),
         "stage": str(failure["stage"]),
+        "claim_receipt_summary": dict(
+            progress.details["claim_receipt_summary"]
+        ),
         "targeted_test_profile": str(
             progress.details["targeted_test_profile"]
         ),

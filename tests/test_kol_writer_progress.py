@@ -983,6 +983,45 @@ def test_repair_closure_refreshes_pending_resume(tmp_path):
     assert ledger.pending_resume("lv_text_image")[1] == closure
 
 
+def test_repair_closure_maps_post_claim_lv_browser_eval_to_download_recovery(
+    tmp_path,
+):
+    progress = WriterProgress.repair_required(
+        item_identity="pdf-1",
+        fingerprint=FailureFingerprint(
+            adapter="lv_text_image",
+            category="transport_error",
+            code="detached_mid_command",
+            stage="browser_eval",
+            failure_revision=FAILURE_REVISION,
+            provider_contract_version="xiaocao_writer_v1",
+        ),
+        repair_revision=None,
+        affected_set_digest="d" * 64,
+        claim_receipt_summary=_claim_summary(),
+        targeted_test_profile="kol_lv_text_image_browser_eval",
+        narrow_resume_surface="lv_text_image:pdf-1",
+        retryability="retryable",
+    )
+    ledger = ConvergenceLedger(tmp_path / "convergence.jsonl")
+    ledger.record(progress, slot="2026-08-10T08:00+08:00")
+    validation = RepairValidationLedger(tmp_path / "repair-validation.jsonl")
+    receipt = validation.append(
+        _repair_receipt(progress, profile="kol_lv_download_recovery")
+    )
+
+    closure = ledger.close_repair(
+        progress.failure_fingerprint,
+        repair_receipt=receipt,
+        validation_ledger=validation,
+        slot="2026-08-10T08:00+08:00",
+    )
+
+    assert closure["repair_receipt"]["targeted_test_profile"] == (
+        "kol_lv_download_recovery"
+    )
+
+
 def test_repair_resume_persists_following_repair(tmp_path):
     prior = WriterProgress.repair_required(
         item_identity="subscription_video:source",
