@@ -1529,6 +1529,19 @@ class OfficialAccountInbox:
                 or is_legacy_shared_request
             ):
                 _atomic_json(request_path, request)
+                if is_legacy_shared_request:
+                    _append_jsonl(
+                        self.events_path,
+                        {
+                            "schema_version": 2,
+                            "event": (
+                                "official_account_analysis_request_artifact_migrated"
+                            ),
+                            "handoff_id": str(item["handoff_id"]),
+                            "from_artifact_dir": legacy_shared_artifact_dir,
+                            "to_artifact_dir": str(artifact_dir),
+                        },
+                    )
             elif prior != request:
                 raise EnrichmentError(
                     "official-account analysis request changed after claim"

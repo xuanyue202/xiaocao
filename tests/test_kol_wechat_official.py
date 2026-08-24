@@ -838,6 +838,20 @@ def test_official_analysis_request_migrates_legacy_shared_artifact_dir(tmp_path)
         Path(request["analysis_request_path"]).read_text(encoding="utf-8")
     )
     assert persisted["artifact_dir"] == migrated["artifact_dir"]
+    events = [
+        json.loads(line)
+        for line in (tmp_path / "remote" / "inbox_events.jsonl")
+        .read_text(encoding="utf-8")
+        .splitlines()
+        if line.strip()
+    ]
+    assert events[-1] == {
+        "schema_version": 2,
+        "event": "official_account_analysis_request_artifact_migrated",
+        "handoff_id": handoff_id,
+        "from_artifact_dir": str(legacy_artifact_dir),
+        "to_artifact_dir": migrated["artifact_dir"],
+    }
 
 
 def test_image_notes_must_cover_every_image_sha(tmp_path):
