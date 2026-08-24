@@ -165,7 +165,9 @@ def test_live_morning_accepts_a_proven_empty_freeze_without_snapshot_rows(
     assert receipt.reason == "NO_EXECUTABLE_STAR_E"
 
 
-def test_live_morning_requires_explicit_fillable_evidence(tmp_path: Path) -> None:
+def test_live_morning_defers_missing_future_fillability_to_submit_guards(
+    tmp_path: Path,
+) -> None:
     freeze = tmp_path / "signal_snapshots.jsonl"
     row = _frozen_row()
     row.pop("executable_fillable")
@@ -173,11 +175,47 @@ def test_live_morning_requires_explicit_fillable_evidence(tmp_path: Path) -> Non
     allocation = tmp_path / "allocation.json"
     allocation.write_text(json.dumps(_live_allocation_payload()), encoding="utf-8")
 
+    seen = []
+
+    def execute(plan):
+        seen.append(plan)
+        return ExecutionReceipt(
+            plan.plan_id,
+            plan.plan_hash,
+            ExecutionState.REJECTED,
+            reason="NO_ROUTE_PROVEN",
+            remaining_shares=plan.shares,
+        )
+
     receipt = run_book_b_live_morning(
         BookBLiveMorningConfig(
             trade_date="2026-08-24",
             freeze_path=freeze,
             allocation_facts_path=allocation,
+            state_dir=tmp_path / "state",
+            dated_freeze_receipt={
+                **_ready_freeze(),
+                "snapshot_sha256": frozen_rows_digest([row]),
+            },
+        ),
+        execute=execute,
+    )
+
+    assert receipt.status == "blocked"
+    assert receipt.reason == "NO_ROUTE_PROVEN"
+    assert len(seen) == 1
+
+
+def test_live_morning_rejects_explicitly_unfillable_snapshot(tmp_path: Path) -> None:
+    freeze = tmp_path / "signal_snapshots.jsonl"
+    row = {**_frozen_row(), "executable_fillable": False}
+    freeze.write_text(json.dumps(row) + "\n", encoding="utf-8")
+
+    receipt = run_book_b_live_morning(
+        BookBLiveMorningConfig(
+            trade_date="2026-08-24",
+            freeze_path=freeze,
+            allocation_facts_path=tmp_path / "missing-allocation.json",
             state_dir=tmp_path / "state",
             dated_freeze_receipt={
                 **_ready_freeze(),

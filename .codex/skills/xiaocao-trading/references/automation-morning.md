@@ -32,8 +32,12 @@ atomically produce `book_b_live_allocation_facts_<date>.json` only from a
 complete, account-bound receipt. A non-empty dated freeze is valid for this
 consumer only when the queue producer manifest already binds its actual
 same-day snapshot rows, report, strategy run id, producer strategy Git SHA,
-hash and count; the consumer
-recomputes and compares them rather than defining a new digest. Broker total assets and total securities market value
+hash and count. Before any agent review can enrich the canonical snapshots,
+the producer atomically writes those exact rows to
+`output/live/book_b_live_freeze_<date>.jsonl`; an existing different artifact
+must never be overwritten. The live consumer reads and recomputes only that
+immutable dated copy rather than defining a new digest from later-reviewed
+`signal_snapshots.jsonl`. Broker total assets and total securities market value
 are evidence only, never the mixed-account Book-B basis: the first batch uses
 the fixed 30,000 yuan Book-B capital basis on logical account `primary`; neither
 value has a live CLI override. Any submitted, acknowledged, partial, filled,
@@ -43,6 +47,13 @@ settled-NAV receipt exists. The complete allocation capsule binds its capital
 basis source, NAV, cash, exposure and broker summary under one canonical hash,
 and broker-summary cash must equal top-level available cash. The task verifies restoration to
 mock on every exit.
+At 09:20-09:30 the later `forward_eval` field `executable_fillable` may be
+absent. Absence is not false and must be deferred to the current submit-time
+market guard; an explicitly false value remains ineligible.
+The live-plan consumer binds proprietary `HH:MM:SS:millisecond` clocks to the
+dated China session and accepts only the documented continuous-auction `T`
+status family (`T` or `T` plus digits). Numeric BUY limits are floored, never
+rounded up, to the 0.01-yuan stock tick before broker readback.
 Apply `docs/OPERATING_CONTRACT.md` section 9 for the capital-gate semantics.
 Unless the Founder adapter proves the account-bound `package-limit` route,
 reconcile capability, account binding and broker allocation facts, the task

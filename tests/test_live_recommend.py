@@ -16,6 +16,7 @@ from scripts.live_recommend import (
     _open_fit,
     _open_risk_penalty,
     _open_pct_from_entry,
+    _normalize_market_observed_at,
     _price_limit_pct,
     _profile_stop,
     _rank_candidates,
@@ -81,6 +82,13 @@ def test_entry_price_prefers_final_realtime_open_over_indicative_auction(monkeyp
 
 def test_open_pct_is_derived_from_final_entry_price() -> None:
     assert round(_open_pct_from_entry(145.0, 152.3, -6.11), 2) == -4.79
+
+
+def test_normalize_market_observed_at_accepts_vendor_clock_with_milliseconds() -> None:
+    assert (
+        _normalize_market_observed_at("09:25:00:480", "2026-08-24")
+        == "2026-08-24T09:25:00.480000+08:00"
+    )
 
 
 def test_open_fit_prefers_controlled_low_open_for_rebound_modes() -> None:

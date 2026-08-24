@@ -1,6 +1,6 @@
 # 小草运营契约（Operating Contract, SSOT）
 
-**版本**：3.1
+**版本**：3.2
 **状态**：现行
 **适用范围**：所有 paper / 未来 real 的实盘环（live_recommend → paper_record → live_monitor → eod）与回测
 **关联实现**：`src/xiaocao/live/{safety,capital_keychain}.py`、`src/xiaocao/live/intelligence_policy.py`、`src/xiaocao/strategy/{mode_switch,trend_rules,kol_reference}.py`、`kronos_screen/scripts/{capture_signals,forward_eval,paper_record,settle_book_a,settle_book_t,decompose_pnl,quality_governor}.py`、`scripts/{live_monitor,research_mode_switch_replay}.py`
@@ -57,8 +57,11 @@
   探测 session/account/资产，并且只有回执同时绑定当日、live、逻辑账户、
   已证明的资金账号与完整资产表时，才原子生成 dated allocation facts；完成或
   失败后都验证恢复 mock。非空 freeze 还必须绑定实际同日 snapshot 的 canonical
-  SHA-256 与行数，且 digest/run id/producer strategy Git SHA 必须由 queue producer 在冻结时写入 manifest，
-  consumer 只做重新核对，不能用稍后追加的 rows 重定义 freeze。资金账号只在
+  SHA-256 与行数，且 digest/run id/producer strategy Git SHA 必须由 queue producer 在冻结时写入 manifest。
+  queue producer 必须在任何 agent review 写回前把这些行原子物化为
+  `book_b_live_freeze_<date>.jsonl`；该 dated artifact 已存在但 hash 不同时禁止覆盖。
+  live consumer 只读并重新核对这份不可变副本，不能用稍后追加或情报富化后的
+  `signal_snapshots.jsonl` rows 重定义 freeze。资金账号只在
   进程内将页面掩码与 Keychain trade-account 元数据比对，持久化绑定 hash；资产
   回读必须是当日且不超过 5 分钟。allocation capsule 必须将结算基数来源、NAV、
   可用现金、当前敞口和券商资产摘要一起纳入 canonical SHA-256，且券商摘要现金
@@ -67,11 +70,17 @@
   一旦已有 Book-B owned fill 而尚无结算 NAV 回执，后续批次以
   `LIVE_BOOK_B_SETTLED_NAV_RECONCILE_REQUIRED` fail-closed。Founder Web/OpenCLI
   v7 的唯一候选写路径固定为 `组合交易 -> 按证券组合 -> 指定价格`：它可以表达
-  单证券的精确数值限价和整手数量；条件单、网格、定时/定投、集合竞价、
+  单证券的精确数值限价和整手数量；BUY 数值限价必须在 execution boundary 向下
+  对齐 0.01 元股票 tick，禁止四舍五入越过原始限价；条件单、网格、定时/定投、集合竞价、
   TWAP/VWAP/POV/冰山及价格/时间分段均因引入触发、相对价格、重复、竞价或拆单
-  语义而不得替代。09:20 只做登录、live/account/allocation/prepare 预检并维持心跳，
+  语义而不得替代。09:20 只做登录、live/account/allocation/prepare 预检并维持心跳；
+  此时 `forward_eval` 的事后 `executable_fillable` 尚不可知，字段缺省不得冒充 false，
+  但显式 false 仍必须拒绝，并由 submit 前实时 market guard 决定当下可交易性。
   BUY 最早 09:30 才允许进入 submit。提交前必须同时通过账户绑定、可对账能力、表单
-  回读、市场 guard 与双钥匙。首笔订单在 probe 阶段允许 `receipt_mapping=false`，因为
+  回读、市场 guard 与双钥匙。market guard 可把 proprietary feed 的 `HH:MM:SS:毫秒`
+  时钟绑定到 immutable trade date，并仅把上游 UI 已定义的连续竞价 `T` family
+  （`T` 或 `T` 后接数字）归一为 trading；其他未知前缀继续 fail-closed。首笔订单在
+  probe 阶段允许 `receipt_mapping=false`，因为
   此时尚不存在可映射的 broker order；durable claim 后只允许一次 canary submit，且
   submit 回执必须同时证明同账户绑定、唯一 broker order-id、strategy-id 与
   `receipt_mapping=true` 才能 ACK。最终点击一旦可能发生，缺任一回执证明即进入
@@ -247,3 +256,4 @@
 | 2.9 | 2026-08-24 | 消除首单回执映射的循环门禁：probe 阶段允许 mapping pending，durable claim 后只允许一次初始 canary submit，且必须由同次回执证明账户、order-id、strategy-id 与 mapping；prepare/submit/reconcile 任一 chain uncertainty 都永久禁止自动补单。同 order reconcile 可保留 submit strategy-id，新 order 不得复用旧证据；无 mapping 的 REJECTED 仅在证明从未点击时可终态。无歧义首单经终态/撤单/市场 guard 证明后可最多一次受控 replacement，总 attempt 上限 2 且在 submit boundary 强制。真实交易时段证据和双钥匙状态仍 pending。 |
 | 3.0 | 2026-08-24 | 双钥匙 runtime 改为固定 macOS Keychain 项：09:20 先做净化 preflight、每个资金门进程内现读，敏感值不进环境/argv/日志/回执；scoped expiring authorization 仍独立且只可人工交互铸造。Founder 登录回执把 persistent session reuse 与 Keychain 网站密码 fresh-login 设为互斥证据；现有会话不再冒充密码登录，native PassGuard 继续独立 pending。 |
 | 3.1 | 2026-08-24 | 按用户授权把资金边界准确重述为同一 macOS principal 下的 Keychain-backed 两条件运行门，不再宣称双主体密码学隔离；严格只接受精确 `true`，拒绝非有限/非正授权与订单金额，登录证据绑定 Founder v7 模板能力并持久化，PassGuard 继续独立 pending/fail-closed。 |
+| 3.2 | 2026-08-24 | 修复 Book-B live freeze 与 agent review 的并发漂移：queue producer 在 review 前物化不可变 dated snapshot，live consumer 不再读取会被情报富化的 canonical snapshot；同时把事后 `executable_fillable` 缺省与显式 false 分开，缺省交由 submit 前实时 market guard，显式 false 继续 fail-closed。补齐 proprietary `T` family 与毫秒时钟归一化，并在 live execution boundary 把 BUY 限价向下对齐股票 tick。 |

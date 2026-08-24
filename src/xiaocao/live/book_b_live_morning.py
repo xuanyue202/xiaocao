@@ -133,7 +133,10 @@ def _eligible_buy_rows(rows: list[dict]) -> list[dict]:
         and row.get("is_live") is True
         and row.get("mode_exec_star") is True
         and row.get("mode_trade_eligible") is True
-        and row.get("executable_fillable") is True
+        and (
+            "executable_fillable" not in row
+            or row.get("executable_fillable") is True
+        )
     ]
 
 

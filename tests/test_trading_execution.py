@@ -991,6 +991,25 @@ def test_frozen_row_builder_only_materializes_existing_book_b_limit_rule() -> No
     assert plan.recovery_deadline.isoformat() == "2026-08-15T01:45:00+00:00"
 
 
+def test_frozen_row_builder_floors_buy_limit_to_valid_stock_tick() -> None:
+    plan = trade_plan_from_frozen_row(
+        {
+            "date": "2026-08-24",
+            "code": "601011.XSHG",
+            "name": "宝泰隆",
+            "open": 2.71,
+            "basket_price": 2.7661,
+            "mode_exec_planned_shares": 1800,
+            "market_guard_status": "ok",
+        },
+        environment="mock",
+        logical_account_id="primary",
+    )
+
+    assert plan.limit_price == 2.72
+    assert plan.limit_price <= 2.71 * 1.005
+
+
 def test_frozen_row_builder_normalizes_realtime_trade_status() -> None:
     plan = trade_plan_from_frozen_row(
         {
@@ -1007,6 +1026,38 @@ def test_frozen_row_builder_normalizes_realtime_trade_status() -> None:
     )
     assert plan.market_guard_status == "ok"
     assert plan.validation_error() is None
+
+
+def test_live_plan_normalizes_sse_trading_status_and_vendor_clock() -> None:
+    now = datetime(2026, 8, 24, 1, 30, tzinfo=timezone.utc)
+    plan = trade_plan_from_frozen_row(
+        {
+            "date": "2026-08-24",
+            "code": "601011.XSHG",
+            "name": "宝泰隆",
+            "book": "B",
+            "is_live": True,
+            "mode_exec_star": True,
+            "mode_trade_eligible": True,
+            "open": 2.71,
+            "basket_price": 2.7661,
+            "mode_exec_planned_shares": 100,
+            "market_guard_required": True,
+            "trade_status": "T100",
+            "market_price": 2.71,
+            "down_price": 2.59,
+            "market_observed_at": "09:25:00:480",
+            "allocation_proof_hash": "proof",
+        },
+        environment="live",
+        logical_account_id="primary",
+        now=now,
+    )
+
+    assert plan.market_guard_status == "ok"
+    assert plan.market_guard_observed_at is not None
+    assert plan.market_guard_observed_at.isoformat() == "2026-08-24T09:25:00.480000+08:00"
+    assert plan.guard_reason(now=now) is None
 
 
 def test_live_plan_reuses_shared_limit_down_guard() -> None:

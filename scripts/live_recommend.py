@@ -666,12 +666,14 @@ def _market_detail_for_date(client: XiaocaoClient, code: str, date_iso: str) -> 
 def _normalize_market_observed_at(value: object, date_iso: str) -> object:
     """Bind the API's HHMMSS auction clock to the dated China session."""
     text = str(value or "").strip()
-    if len(text) == 6 and text.isdigit():
+    formats = ("%H%M%S", "%H:%M:%S:%f", "%H:%M:%S")
+    for clock_format in formats:
         try:
-            parsed = datetime.strptime(f"{date_iso} {text}", "%Y-%m-%d %H%M%S")
+            clock = datetime.strptime(text, clock_format).time()
+            parsed = datetime.combine(_date.fromisoformat(date_iso), clock)
         except ValueError:
-            return value
-        return parsed.replace(tzinfo=A_SHARE_TZ).isoformat(timespec="seconds")
+            continue
+        return parsed.replace(tzinfo=A_SHARE_TZ).isoformat()
     return value
 
 

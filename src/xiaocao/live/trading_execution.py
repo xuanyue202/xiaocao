@@ -183,11 +183,35 @@ def _optional_float(value: object) -> float | None:
 
 def _normalize_guard_status(value: object) -> str:
     raw = str(value or "").strip().lower()
-    if raw in _TRADING_GUARD_STATUSES:
+    # Xiaocao's current SSE detail feed emits values such as ``T100`` while
+    # the bundled upstream UI documents the leading ``T`` as continuous
+    # auction.  Preserve fail-closed handling for every other unknown prefix.
+    if raw in _TRADING_GUARD_STATUSES or (
+        raw.startswith("t") and raw[1:].isdigit()
+    ):
         return "ok"
     if raw in _LIMIT_DOWN_GUARD_STATUSES:
         return "limit_down"
     return "unavailable"
+
+
+def _parse_market_guard_observed_at(value: object, trade_date: str) -> datetime | None:
+    """Bind the proprietary feed clock to its immutable China trade date."""
+    parsed = _parse_datetime(value)
+    if parsed is not None:
+        return parsed
+    text = str(value or "").strip()
+    for clock_format in ("%H:%M:%S:%f", "%H:%M:%S", "%H%M%S"):
+        try:
+            clock = datetime.strptime(text, clock_format).time()
+        except ValueError:
+            continue
+        try:
+            day = datetime.fromisoformat(trade_date).date()
+        except ValueError:
+            return None
+        return datetime.combine(day, clock, tzinfo=ZoneInfo("Asia/Shanghai"))
+    return None
 
 
 @dataclass(frozen=True)
@@ -1991,7 +2015,10 @@ def trade_plan_from_frozen_row(
         open_raw = row.get("open")
         if open_raw in (None, "") or basket is None or basket <= 0:
             raise ValueError(f"frozen BUY row requires open and basket_price: {trade_date} {code}")
-        limit_price = initial_limit_price(open_raw, basket)
+        # A broker order price must be one valid stock tick.  Keep the shared
+        # paper/allocation formula unchanged and apply the floor only at this
+        # live-capable execution boundary.
+        limit_price = initial_limit_price(open_raw, basket, tick_size=0.01)
         if limit_price is None:
             raise ValueError(f"frozen BUY row has invalid open/basket: {trade_date} {code}")
     else:
@@ -2021,10 +2048,11 @@ def trade_plan_from_frozen_row(
         normalized_guard = "ok"
     else:
         normalized_guard = _normalize_guard_status(raw_guard)
-    observed_at = _parse_datetime(
+    observed_at = _parse_market_guard_observed_at(
         row.get("market_observed_at")
         or row.get("trade_timestamp")
-        or row.get("tradeTimestamp")
+        or row.get("tradeTimestamp"),
+        trade_date,
     )
     latest_price = _optional_float(
         row.get("market_price") or row.get("latest_price") or row.get("trade")

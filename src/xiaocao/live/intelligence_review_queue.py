@@ -3,12 +3,13 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 from collections import Counter
 from datetime import datetime
 from pathlib import Path
 from typing import Any
 
-from .trading_runner import frozen_rows_digest
+from .trading_runner import frozen_rows_digest, read_frozen_rows
 
 
 def _read_jsonl(path: Path) -> list[dict[str, Any]]:
@@ -31,6 +32,68 @@ def _read_jsonl(path: Path) -> list[dict[str, Any]]:
 
 def _date_rows(rows: list[dict[str, Any]], market_date: str) -> list[dict[str, Any]]:
     return [r for r in rows if str(r.get("date") or r.get("market_date") or "")[:10] == market_date]
+
+
+def _assert_existing_live_freeze(
+    path: Path,
+    *,
+    market_date: str,
+    expected_rows: list[dict[str, Any]],
+) -> None:
+    try:
+        existing_rows = read_frozen_rows(path, date=market_date)
+    except (FileNotFoundError, OSError, ValueError) as exc:
+        raise RuntimeError("BOOK_B_LIVE_FREEZE_EXISTING_ARTIFACT_INVALID") from exc
+    if (
+        len(existing_rows) != len(expected_rows)
+        or frozen_rows_digest(existing_rows) != frozen_rows_digest(expected_rows)
+    ):
+        raise RuntimeError("BOOK_B_LIVE_FREEZE_IMMUTABILITY_VIOLATION")
+
+
+def _materialize_book_b_live_freeze(
+    *,
+    live_dir: Path,
+    market_date: str,
+    rows: list[dict[str, Any]],
+) -> Path:
+    """Write the queue-time snapshot once so later review merges cannot alter it."""
+    target = live_dir / f"book_b_live_freeze_{market_date}.jsonl"
+    target.parent.mkdir(parents=True, exist_ok=True)
+    if target.exists():
+        _assert_existing_live_freeze(
+            target,
+            market_date=market_date,
+            expected_rows=rows,
+        )
+        return target
+
+    payload = "\n".join(
+        json.dumps(row, ensure_ascii=False, sort_keys=True, default=str)
+        for row in rows
+    )
+    if payload:
+        payload += "\n"
+    temporary = target.with_name(f".{target.name}.{os.getpid()}.tmp")
+    try:
+        with temporary.open("x", encoding="utf-8") as stream:
+            stream.write(payload)
+            stream.flush()
+            os.fsync(stream.fileno())
+        try:
+            os.link(temporary, target)
+        except FileExistsError:
+            _assert_existing_live_freeze(
+                target,
+                market_date=market_date,
+                expected_rows=rows,
+            )
+    finally:
+        try:
+            temporary.unlink()
+        except FileNotFoundError:
+            pass
+    return target
 
 
 def _stock_review_map(live_dir: Path, market_date: str) -> dict[str, dict[str, Any]]:
@@ -170,6 +233,11 @@ def build_review_queue(
         market_date,
     )
     snapshot_sha256 = frozen_rows_digest(snapshot_rows)
+    live_freeze_path = _materialize_book_b_live_freeze(
+        live_dir=live_dir,
+        market_date=market_date,
+        rows=snapshot_rows,
+    )
     report = live_dir / f"recommend_{market_date}.md"
     report_sha256 = hashlib.sha256(report.read_bytes()).hexdigest() if report.is_file() else ""
     return {
@@ -189,7 +257,9 @@ def build_review_queue(
         "freeze_binding": {
             "strategy_run_id": f"morning-freeze:{market_date}:{snapshot_sha256[:16]}",
             "strategy_sha": str(strategy_sha or "unknown"),
-            "snapshot_path": str(live_dir / "signal_snapshots.jsonl"),
+            "snapshot_path": str(live_freeze_path),
+            "snapshot_artifact": "immutable_book_b_live_freeze_v1",
+            "source_snapshot_path": str(live_dir / "signal_snapshots.jsonl"),
             "snapshot_row_count": len(snapshot_rows),
             "snapshot_sha256": snapshot_sha256,
             "report_sha256": report_sha256,

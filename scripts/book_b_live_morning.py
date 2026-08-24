@@ -98,7 +98,11 @@ def _passguard_evidence() -> dict:
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--date", default="today", help="YYYY-MM-DD or today")
-    parser.add_argument("--freeze", default="output/live/signal_snapshots.jsonl")
+    parser.add_argument(
+        "--freeze",
+        default="output/live/book_b_live_freeze_{date}.jsonl",
+        help="Immutable dated producer freeze; {date} is expanded",
+    )
     parser.add_argument(
         "--allocation-facts",
         default="output/live/book_b_live_allocation_facts_{date}.json",
@@ -116,6 +120,7 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
 
     trade_date = _china_date() if args.date == "today" else args.date
+    freeze_path = Path(str(args.freeze).format(date=trade_date))
     allocation_path = Path(str(args.allocation_facts).format(date=trade_date))
     capital_runtime = KeychainCapitalRuntime()
     capital_receipt = capital_runtime.preflight()
@@ -186,7 +191,7 @@ def main(argv: list[str] | None = None) -> int:
     receipt = run_book_b_live_morning(
         BookBLiveMorningConfig(
             trade_date=trade_date,
-            freeze_path=Path(args.freeze),
+            freeze_path=freeze_path,
             allocation_facts_path=allocation_path,
             state_dir=Path(args.state_dir),
             logical_account_id="primary",
@@ -202,10 +207,10 @@ def main(argv: list[str] | None = None) -> int:
         read_allocation_facts=read_allocation_facts,
         wait_for_dated_freeze=lambda: wait_for_morning_freeze(
             date=trade_date,
-            live_dir=Path(args.freeze).parent,
+            live_dir=freeze_path.parent,
             timeout_sec=args.freeze_wait_seconds,
             poll_sec=args.poll_seconds,
-            snapshot_path=Path(args.freeze),
+            snapshot_path=freeze_path,
         ),
         prepare_only=lambda plan: broker.prepare_readonly(
             plan,
