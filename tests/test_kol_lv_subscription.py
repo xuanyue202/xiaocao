@@ -1433,12 +1433,14 @@ def test_download_confirmation_recovers_detached_eval_before_trigger(tmp_path):
     downloaded = tmp_path / entry["name"]
     downloaded.write_bytes(b"%PDF-1.7\n" + b"x" * (entry["size"] - 9))
     confirmation_evals = 0
+    route_readback_evals = 0
     foreground_open_calls = 0
     bind_calls = 0
     trigger_calls = 0
 
     def browser_runner(command, **_kwargs):
-        nonlocal confirmation_evals, foreground_open_calls, bind_calls
+        nonlocal confirmation_evals, route_readback_evals
+        nonlocal foreground_open_calls, bind_calls
         nonlocal trigger_calls
         tail = command[3:]
         if tail[:1] == ["open"]:
@@ -1453,6 +1455,18 @@ def test_download_confirmation_recovers_detached_eval_before_trigger(tmp_path):
                 "status": "ok",
                 "complete_scan": True,
                 "entries": [entry],
+            }
+        elif (
+            tail[:1] == ["eval"]
+            and "ticket04_download_confirmation_route_readback" in tail[1]
+        ):
+            route_readback_evals += 1
+            payload = {
+                "status": (
+                    "target_route_mismatch"
+                    if route_readback_evals == 1
+                    else "target_route_ready"
+                )
             }
         elif tail[:1] == ["eval"] and "ticket04_exact_ui_download" in tail[1]:
             confirmation_evals += 1
@@ -1505,8 +1519,9 @@ def test_download_confirmation_recovers_detached_eval_before_trigger(tmp_path):
 
     assert result["status"] == "completed"
     assert confirmation_evals == 2
-    assert foreground_open_calls == 1
-    assert bind_calls == 1
+    assert route_readback_evals == 2
+    assert foreground_open_calls == 2
+    assert bind_calls == 2
     assert trigger_calls == 1
 
 
