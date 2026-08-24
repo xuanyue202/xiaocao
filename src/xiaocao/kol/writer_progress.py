@@ -628,6 +628,9 @@ TARGETED_REPAIR_TESTS: dict[str, tuple[str, ...]] = {
             "existing_image_claim_uses_read_only_preview_after_zero_download_readback or "
             "new_filtered_image_claim_uses_preview_without_frontend_trigger or "
             "read_only_provider_reconciliation_wait_is_not_an_uncertain_effect or "
+            "download_confirmation_recovers_detached_eval_before_trigger or "
+            "post_claim_lv_browser_eval_projects_download_repair_profile or "
+            "repair_validation_maps_legacy_post_claim_lv_browser_eval_to_download_recovery or "
             "newer_repair_lifecycle_supersedes_old_fingerprint or "
             "completed_owner_cloud_receipt_bypasses_detached_source_listing or "
             "default_owner_stream_keeps_signed_url_and_httponly_cookie_in_process or "
@@ -1024,6 +1027,7 @@ _TARGETED_REPAIR_TEST_PATHS: dict[str, frozenset[str]] = {
 _LV_DOWNLOAD_REPAIR_PROFILE = "kol_lv_download_recovery"
 _LV_DOWNLOAD_REPAIR_PROFILE_ALIASES = frozenset({
     _LV_DOWNLOAD_REPAIR_PROFILE,
+    "kol_lv_text_image_browser_eval",
     "kol_lv_text_image_browser_download_recovery",
     "kol_lv_text_image_provider_download_link",
     "kol_lv_text_image_provider_preview_reconciliation",
@@ -1047,19 +1051,33 @@ _LV_DOWNLOAD_REPAIR_CODES = frozenset({
 def _canonical_lv_download_repair_profile(
     context: Mapping[str, Any],
 ) -> str | None:
+    declared_profile = str(context.get("targeted_test_profile") or "")
+    stage = str(context.get("stage") or "")
+    summary = context.get("claim_receipt_summary")
+    try:
+        claim_count = (
+            int(summary.get("claim_count") or 0)
+            if isinstance(summary, Mapping)
+            else 0
+        )
+    except (TypeError, ValueError):
+        claim_count = 0
+    post_claim_browser_eval = stage == "browser_eval" and claim_count > 0
     if (
         str(context.get("adapter") or "") == "lv_text_image"
-        and str(context.get("targeted_test_profile") or "")
-        in _LV_DOWNLOAD_REPAIR_PROFILE_ALIASES
+        and declared_profile in _LV_DOWNLOAD_REPAIR_PROFILE_ALIASES
         and str(context.get("code") or "") in _LV_DOWNLOAD_REPAIR_CODES
-        and str(context.get("stage") or "")
-        in {
-            "browser_download_recovery",
-            "provider_download_link",
-            "provider_download_trigger",
-            "provider_preview_reconciliation",
-            "owner_cloud_download",
-        }
+        and (
+            stage
+            in {
+                "browser_download_recovery",
+                "provider_download_link",
+                "provider_download_trigger",
+                "provider_preview_reconciliation",
+                "owner_cloud_download",
+            }
+            or post_claim_browser_eval
+        )
     ):
         return _LV_DOWNLOAD_REPAIR_PROFILE
     return None
@@ -1142,9 +1160,8 @@ def _canonical_subscription_private_listing_repair_profile(
 _SHARED_LV_LISTING_BROWSER_EVAL_REPAIR_PROFILE = (
     "kol_shared_lv_listing_browser_eval"
 )
-# The LV image adapter reports failed OpenCLI commands before any claim;
-# repeated retries remain bound to the latest exact fingerprint, including
-# read-only listing evaluation failures that recover on the next read.
+# Pre-claim OpenCLI listing failures share one repair profile; post-claim
+# browser evaluation failures use the download recovery profile instead.
 _SHARED_LV_LISTING_BROWSER_EVAL_CODES = frozenset({
     "detached_mid_command",
     "opencli_command_failed",
@@ -1206,6 +1223,15 @@ def _canonical_shared_lv_listing_browser_eval_repair_profile(
     context: Mapping[str, Any],
 ) -> str | None:
     adapter = str(context.get("adapter") or "")
+    summary = context.get("claim_receipt_summary")
+    try:
+        claim_count = (
+            int(summary.get("claim_count") or 0)
+            if isinstance(summary, Mapping)
+            else 0
+        )
+    except (TypeError, ValueError):
+        claim_count = 0
     if (
         adapter in {"lv_text_image", "subscription_video"}
         and str(context.get("targeted_test_profile") or "")
@@ -1214,6 +1240,7 @@ def _canonical_shared_lv_listing_browser_eval_repair_profile(
         and str(context.get("code") or "")
         in _SHARED_LV_LISTING_BROWSER_EVAL_CODES
         and str(context.get("stage") or "") == "browser_eval"
+        and claim_count == 0
     ):
         return _SHARED_LV_LISTING_BROWSER_EVAL_REPAIR_PROFILE
     return None
@@ -2475,13 +2502,20 @@ def normalize_source_result(
             "version_key": str((item or {}).get("version_key") or "current"),
         }
     ]
+    targeted_test_profile = f"kol_{adapter_name}_{stage}"[:128]
+    if (
+        adapter_name == "lv_text_image"
+        and stage == "browser_eval"
+        and summary["claim_count"] > 0
+    ):
+        targeted_test_profile = _LV_DOWNLOAD_REPAIR_PROFILE
     return WriterProgress.repair_required(
         item_identity=item_identity,
         fingerprint=fingerprint,
         repair_revision=None,
         affected_set_digest=affected_set_digest(affected_rows),
         claim_receipt_summary=summary,
-        targeted_test_profile=f"kol_{adapter_name}_{stage}"[:128],
+        targeted_test_profile=targeted_test_profile,
         narrow_resume_surface=(
             f"{adapter_name}:{item_identity}"
             if item is not None

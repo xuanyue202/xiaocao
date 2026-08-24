@@ -3917,6 +3917,72 @@ try {
             )
         return Path(filename)
 
+    def _rebind_download_confirmation_session(
+        self,
+        item: dict[str, Any],
+        *,
+        session: str,
+        profile: str | None,
+    ) -> None:
+        """Rebind the exact source-share parent before a safe pre-trigger retry."""
+        parent_path = str(PurePosixPath(str(item["path"])).parent)
+        route = urlparse(
+            _authorized_share_url(self.share_url, self.share_code)
+        )._replace(fragment=f"list/path={quote(parent_path, safe='')}").geturl()
+        self._opencli_json(
+            session,
+            "open",
+            route,
+            "--window",
+            "foreground",
+            profile=profile,
+            timeout_seconds=30,
+        )
+        self.bind_opencli(session=session, profile=profile)
+
+    def _download_confirmation_eval(
+        self,
+        item: dict[str, Any],
+        *,
+        session: str,
+        profile: str | None,
+        script: str,
+    ) -> dict[str, Any]:
+        """Evaluate the pre-trigger selector with one exact-tab recovery."""
+        retryable_codes = {
+            "detached_mid_command",
+            "opencli_command_failed",
+            "opencli_timeout",
+        }
+        for attempt in range(2):
+            try:
+                return self._opencli_json(
+                    session,
+                    "eval",
+                    script,
+                    profile=profile,
+                    timeout_seconds=30,
+                )
+            except EnrichmentDiagnosticError as exc:
+                if (
+                    attempt != 0
+                    or exc.diagnostic_stage != "browser_eval"
+                    or exc.diagnostic_code not in retryable_codes
+                ):
+                    raise
+                try:
+                    # This script only selects the exact provider row and
+                    # marks its download control; it has not triggered a
+                    # download, so reopening the same parent route is safe.
+                    self._rebind_download_confirmation_session(
+                        item,
+                        session=session,
+                        profile=profile,
+                    )
+                except EnrichmentError as bind_error:
+                    raise exc from bind_error
+        raise AssertionError("download confirmation eval retry exhausted")
+
     def _prepare_opencli_download_confirmation(
         self,
         item: dict[str, Any],
@@ -3931,24 +3997,22 @@ try {
             expected_item_path=str(item["path"]),
             expected_name=str(item["name"]),
         )
-        prepared = self._opencli_json(
-            session,
-            "eval",
-            script,
+        prepared = self._download_confirmation_eval(
+            item,
+            session=session,
             profile=profile,
-            timeout_seconds=30,
+            script=script,
         )
         if prepared.get("status") in {
             "target_not_visible",
             "download_confirmation_missing",
         }:
             self.sleep(1.0)
-            prepared = self._opencli_json(
-                session,
-                "eval",
-                script,
+            prepared = self._download_confirmation_eval(
+                item,
+                session=session,
                 profile=profile,
-                timeout_seconds=30,
+                script=script,
             )
         if prepared.get("status") == "download_confirmation_ready":
             return prepared

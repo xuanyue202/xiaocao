@@ -257,6 +257,9 @@ def test_repair_validation_accepts_exact_lv_download_recovery_profile(
             "existing_image_claim_uses_read_only_preview_after_zero_download_readback or "
             "new_filtered_image_claim_uses_preview_without_frontend_trigger or "
             "read_only_provider_reconciliation_wait_is_not_an_uncertain_effect or "
+            "download_confirmation_recovers_detached_eval_before_trigger or "
+            "post_claim_lv_browser_eval_projects_download_repair_profile or "
+            "repair_validation_maps_legacy_post_claim_lv_browser_eval_to_download_recovery or "
             "newer_repair_lifecycle_supersedes_old_fingerprint or "
             "completed_owner_cloud_receipt_bypasses_detached_source_listing or "
             "default_owner_stream_keeps_signed_url_and_httponly_cookie_in_process or "
@@ -788,6 +791,33 @@ def test_repair_validation_accepts_shared_lv_listing_browser_eval_profile(
         "kol_shared_lv_listing_browser_eval"
     )
     assert receipt.failure_fingerprint == "9" * 64
+
+
+def test_repair_validation_maps_legacy_post_claim_lv_browser_eval_to_download_recovery(
+    tmp_path,
+) -> None:
+    service = RepairValidationService(
+        tmp_path,
+        ledger=RepairValidationLedger(tmp_path / "repair-validation.jsonl"),
+    )
+    context = {
+        "adapter": "lv_text_image",
+        "message_id": "1" * 64,
+        "content_sha256": "2" * 64,
+        "failure_fingerprint": "3" * 64,
+        "failure_revision": FAILURE_REVISION,
+        "category": "transport_error",
+        "code": "detached_mid_command",
+        "stage": "browser_eval",
+        "targeted_test_profile": "kol_lv_text_image_browser_eval",
+        "claim_receipt_summary": {
+            "claim_count": 1,
+            "receipt_count": 0,
+            "uncertain_effect_count": 0,
+        },
+    }
+
+    assert service._expected_profile(context) == "kol_lv_download_recovery"
 
 
 @pytest.mark.parametrize(

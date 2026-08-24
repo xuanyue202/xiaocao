@@ -506,6 +506,37 @@ def test_read_only_provider_reconciliation_wait_is_not_an_uncertain_effect():
     }
 
 
+def test_post_claim_lv_browser_eval_projects_download_repair_profile():
+    progress = normalize_source_result(
+        "lv_text_image",
+        {
+            "status": "waiting",
+            "claim_receipt_summary": {
+                "claim_count": 1,
+                "receipt_count": 0,
+                "uncertain_effect_count": 0,
+            },
+            "waiting_items": [{
+                "identity": "pdf-1",
+                "version_key": "version-1",
+                "stage": "browser_eval",
+                "failure": {
+                    "category": "transport_error",
+                    "code": "detached_mid_command",
+                    "stage": "browser_eval",
+                },
+            }],
+        },
+        failure_revision=FAILURE_REVISION,
+        provider_contract_version="xiaocao_writer_v1",
+    )
+
+    assert progress.status == "repair_required"
+    assert progress.details["targeted_test_profile"] == (
+        "kol_lv_download_recovery"
+    )
+
+
 def test_source_wait_without_durable_deadline_becomes_repair_required():
     progress = normalize_source_result(
         "lv_text_image",

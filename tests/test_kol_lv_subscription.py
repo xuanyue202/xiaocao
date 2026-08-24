@@ -1427,6 +1427,89 @@ def test_opencli_download_claims_before_one_browser_trigger_and_replays(tmp_path
     assert private_code not in durable
 
 
+def test_download_confirmation_recovers_detached_eval_before_trigger(tmp_path):
+    entry = _pdf_entry()
+    entry["provider_file_id"] = "123456789012345"
+    downloaded = tmp_path / entry["name"]
+    downloaded.write_bytes(b"%PDF-1.7\n" + b"x" * (entry["size"] - 9))
+    confirmation_evals = 0
+    foreground_open_calls = 0
+    bind_calls = 0
+    trigger_calls = 0
+
+    def browser_runner(command, **_kwargs):
+        nonlocal confirmation_evals, foreground_open_calls, bind_calls
+        nonlocal trigger_calls
+        tail = command[3:]
+        if tail[:1] == ["open"]:
+            if tail[-2:] == ["--window", "foreground"]:
+                foreground_open_calls += 1
+            payload = {"url": "redacted", "page": "page-1"}
+        elif tail[:1] == ["bind"]:
+            bind_calls += 1
+            payload = {"session": "ticket04"}
+        elif tail[:1] == ["eval"] and "/share/list" in tail[1]:
+            payload = {
+                "status": "ok",
+                "complete_scan": True,
+                "entries": [entry],
+            }
+        elif tail[:1] == ["eval"] and "ticket04_exact_ui_download" in tail[1]:
+            confirmation_evals += 1
+            if confirmation_evals == 1:
+                return SimpleNamespace(
+                    returncode=1,
+                    stdout=json.dumps({
+                        "error": {"code": "detached_mid_command"},
+                    }),
+                    stderr="",
+                )
+            payload = {
+                "status": "download_confirmation_ready",
+                "name": entry["name"],
+            }
+        elif tail[:1] == ["click"]:
+            trigger_calls += 1
+            payload = {"clicked": True, "matches_n": 1}
+        elif tail[:2] == ["wait", "download"]:
+            payload = {
+                "downloaded": True,
+                "filename": str(downloaded),
+                "state": "complete",
+            }
+        else:
+            raise AssertionError(command)
+        return SimpleNamespace(
+            returncode=0,
+            stdout=json.dumps(payload, ensure_ascii=False),
+            stderr="",
+        )
+
+    service = LvSubscriptionService(
+        tmp_path / "out",
+        now=lambda: NOW,
+        runner=browser_runner,
+        opencli_command=("opencli",),
+        share_url="https://pan.baidu.com/s/private-share-token",
+        share_code="a1b2",
+        sleep=lambda _seconds: None,
+        download_policy_configurer=lambda *_args: {
+            "configured": True,
+            "method": "Page.setDownloadBehavior",
+            "command_ack": True,
+        },
+    )
+
+    update = service.poll_opencli(session="ticket04")["updates"][0]
+    result = service.download_opencli(update["identity"], session="ticket04")
+
+    assert result["status"] == "completed"
+    assert confirmation_evals == 2
+    assert foreground_open_calls == 1
+    assert bind_calls == 1
+    assert trigger_calls == 1
+
+
 def test_provider_row_selection_does_not_treat_js_item_active_as_selected():
     script = lv_subscription._browser_download_script(
         expected_share_path="/s/private-share-token",
