@@ -8,6 +8,7 @@ from types import SimpleNamespace
 
 import pytest
 
+from scripts.kol_daily import _persisted_validated_bundle
 from xiaocao.kol.enrichment_types import (
     EnrichmentDiagnosticError,
     EnrichmentError,
@@ -788,6 +789,8 @@ def test_official_analysis_artifacts_are_namespaced_per_handoff(tmp_path):
     assert first["artifact_dir"] == str((shared_dir / ("a" * 64)).resolve())
     assert second["artifact_dir"] == str((shared_dir / ("b" * 64)).resolve())
     assert first["artifact_dir"] != second["artifact_dir"]
+    assert _persisted_validated_bundle(first) is None
+    assert _persisted_validated_bundle(second) is None
 
 
 def test_official_analysis_request_migrates_legacy_shared_artifact_dir(tmp_path):
