@@ -173,7 +173,10 @@ For no-order diagnosis, `submit --preflight-only true` follows the same
 account-bound form and first-party `preEntrust` validation but stops before the
 `确定提交委托？` server-confirm control. It clears the local draft and proves
 `submitted=false`, `saved=false`, `started=false`, and final-submit click count
-zero. Known pre-entrust failures are reduced to fixed categories such as
+zero. It also validates the current official confirmation model's single
+`ul.scroll > li` entrust row (with the legacy single table row retained as a
+fail-closed compatibility shape), but never clicks its submit control. Known
+pre-entrust failures are reduced to fixed categories such as
 `gem_permission_missing` or `agreement_required`; raw broker response messages
 and bodies are never returned. This mode is diagnostic evidence only and can
 never be treated as an accepted order.

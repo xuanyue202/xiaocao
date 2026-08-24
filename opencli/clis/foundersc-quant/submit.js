@@ -356,15 +356,28 @@ function serverConfirmationScript(input) {
             .filter(visible);
         const model = models.length === 1 ? models[0] : null;
         const titleMatches = model ? exactLeaves(model, '确定提交委托？') : [];
-        const rows = model
+        const tableRows = model
             ? [...model.querySelectorAll('tbody tr')].filter(visible)
             : [];
+        // The current official PackageDealCreateOrderModel template renders
+        // entrust rows as ul.scroll > li rather than a table. Accept only
+        // that exact account-bound model shape or the legacy table shape, and
+        // still require one combined row so an unrelated list can never satisfy
+        // the confirmation proof.
+        const listRows = model
+            ? [...model.querySelectorAll(
+                '.pdc-data-model-body .pd-data-title ul.scroll > li'
+            )].filter(visible)
+            : [];
+        const rows = [...tableRows, ...listRows];
         const submits = model
-            ? [...model.querySelectorAll('button')].filter(visible)
+            ? [...model.querySelectorAll(
+                'button.al-modal-positive-button[type="submit"]'
+            )].filter(visible)
                 .filter((node) => (node.textContent || '').trim() === '提交')
             : [];
         const cells = rows.length === 1
-            ? [...rows[0].querySelectorAll('td')]
+            ? [...rows[0].querySelectorAll('td, span')].filter(visible)
                 .map((node) => (node.textContent || '').trim())
             : [];
         const numericEqual = (actual, expected) => Number.isFinite(Number(actual))
@@ -400,6 +413,8 @@ function serverConfirmationScript(input) {
             code_readback_proven: codeReadback,
             side_readback_proven: sideReadback,
             confirmation_row_count: rows.length,
+            confirmation_table_row_count: tableRows.length,
+            confirmation_list_row_count: listRows.length,
             confirmation_submit_count: submits.length,
         };
     `, {async: true});
@@ -864,10 +879,18 @@ cli({
                 }));
             }
             if (input.preflightOnly) {
+                const confirmation = await page.evaluate(
+                    serverConfirmationScript(input)
+                );
                 const cleared = await clearLocalDraft(page);
                 return asSingleReceipt(packageReceipt(input, state, {
-                    status: 'prepared_readback',
-                    status_reason: 'pre_entrust_validated_without_submit',
+                    status: confirmation?.server_confirmation_proven === true
+                        ? 'prepared_readback'
+                        : 'unknown',
+                    status_reason:
+                        confirmation?.server_confirmation_proven === true
+                            ? 'pre_entrust_validated_without_submit'
+                            : 'server_confirmation_not_proven_without_submit',
                     submitted: false,
                     saved: false,
                     started: false,
@@ -878,6 +901,7 @@ cli({
                         pre_entrust_validated: true,
                     },
                     locator_proof: {
+                        ...(confirmation || {}),
                         pre_entrust_validated: true,
                         final_submit_click_count: 0,
                     },
