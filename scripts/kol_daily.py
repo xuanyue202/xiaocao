@@ -1401,6 +1401,27 @@ def _classified_source(name: str, runner):
                     "lv-share-expired",
                     "请更新 xiaocao.yaml 中吕晓彤唯一百度分享链接和提取码；当前分享页已失效。",
                 ) from exc
+            if message == "subscription share authorization requires user confirmation":
+                raise UserActionBlocker(
+                    f"{name}-share-authorization",
+                    "请在已授权百度网盘页面完成当前分享的访问确认，并保持既有"
+                    " OpenCLI 会话可访问；完成后下一小时会复核同一来源。",
+                ) from exc
+            diagnostic_code = str(
+                getattr(exc, "diagnostic_code", "")
+            )
+            if diagnostic_code == "provider_authentication_required":
+                raise UserActionBlocker(
+                    f"{name}-provider-authentication",
+                    "请在已授权百度网盘页面重新完成登录或访问授权，并保持既有"
+                    " OpenCLI 会话可访问；完成后下一小时会复核同一来源。",
+                ) from exc
+            if diagnostic_code == "provider_captcha_required":
+                raise UserActionBlocker(
+                    f"{name}-provider-captcha",
+                    "请在已授权百度网盘页面完成验证码，并保持既有 OpenCLI 会话可访问；"
+                    "完成后下一小时会复核同一来源。",
+                ) from exc
             if message in {
                 "OpenCLI session is not authenticated",
                 "OpenCLI login is required",

@@ -4563,6 +4563,43 @@ def test_source_classifier_preserves_safe_timeout_diagnostic():
     }
 
 
+def test_source_classifier_surfaces_share_authorization_as_user_action():
+    runner = _classified_source(
+        "lv_text_image",
+        lambda: (_ for _ in ()).throw(
+            EnrichmentError(
+                "subscription share authorization requires user confirmation"
+            )
+        ),
+    )
+
+    with pytest.raises(UserActionBlocker) as captured:
+        runner()
+
+    assert captured.value.blocker_key == "lv_text_image-share-authorization"
+    assert "访问确认" in captured.value.action
+
+
+def test_source_classifier_surfaces_provider_authentication_as_user_action():
+    runner = _classified_source(
+        "lv_text_image",
+        lambda: (_ for _ in ()).throw(
+            EnrichmentDiagnosticError(
+                "provider authentication is required",
+                category="authentication_error",
+                code="provider_authentication_required",
+                stage="browser_download_authorization",
+            )
+        ),
+    )
+
+    with pytest.raises(UserActionBlocker) as captured:
+        runner()
+
+    assert captured.value.blocker_key == "lv_text_image-provider-authentication"
+    assert "重新完成登录或访问授权" in captured.value.action
+
+
 def test_narrow_source_provider_failure_becomes_bounded_wait(monkeypatch):
     monkeypatch.setattr(
         kol_daily_script,
