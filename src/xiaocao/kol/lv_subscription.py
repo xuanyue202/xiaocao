@@ -2492,6 +2492,89 @@ try {
             "session": session,
         }
 
+    def _rebind_opencli_parent_route(
+        self,
+        *,
+        session: str,
+        profile: str | None,
+        route: str,
+        expected_parent_path: str | None,
+        operation: str,
+    ) -> None:
+        """Rebind a foreground page and prove its share parent before retry."""
+        route_readback_script = """(() => {
+          const operation = %s;
+          const expectedSharePath = %s;
+          const expectedParentPath = %s;
+          const prefix = '#list/path=';
+          let currentParentPath = '';
+          try {
+            currentParentPath = location.hash.startsWith(prefix)
+              ? decodeURIComponent(location.hash.slice(prefix.length))
+              : '';
+          } catch (_error) {}
+          return {
+            status: (
+              location.origin === 'https://pan.baidu.com'
+              && location.pathname === expectedSharePath
+              && (
+                expectedParentPath === null
+                || currentParentPath === expectedParentPath
+              )
+            ) ? 'target_route_ready' : 'target_route_mismatch',
+            operation
+          };
+        })()""" % (
+            json.dumps(operation),
+            json.dumps(urlparse(self.share_url).path),
+            json.dumps(expected_parent_path),
+        )
+        retryable_codes = {
+            "detached_mid_command",
+            "opencli_command_failed",
+            "opencli_timeout",
+        }
+        for attempt in range(2):
+            self._opencli_json(
+                session,
+                "open",
+                route,
+                "--window",
+                "foreground",
+                profile=profile,
+                timeout_seconds=30,
+            )
+            self.bind_opencli(session=session, profile=profile)
+            try:
+                route_readback = self._opencli_json(
+                    session,
+                    "eval",
+                    route_readback_script,
+                    profile=profile,
+                    timeout_seconds=30,
+                )
+            except EnrichmentDiagnosticError as exc:
+                if (
+                    attempt == 0
+                    and exc.diagnostic_stage == "browser_eval"
+                    and exc.diagnostic_code in retryable_codes
+                ):
+                    self.sleep(1.0)
+                    continue
+                raise
+            if route_readback.get("status") == "target_route_ready":
+                return
+            if attempt == 0:
+                self.sleep(1.0)
+                continue
+            raise EnrichmentDiagnosticError(
+                "provider frontend target route did not bind",
+                category="identity_error",
+                code="provider_frontend_target_route_mismatch",
+                stage="browser_eval",
+            )
+        raise AssertionError("OpenCLI parent route recovery exhausted")
+
     def _read_opencli_listing(
         self,
         *,
@@ -2507,6 +2590,7 @@ try {
             self.share_code,
         )
         listing_navigation_url = authorized_share_url
+        target_parent: str | None = None
         if exact_path is not None:
             target_parent = str(PurePosixPath(str(exact_path)).parent)
             listing_navigation_url = urlparse(authorized_share_url)._replace(
@@ -2612,22 +2696,17 @@ try {
                             # A named OpenCLI session can survive while its
                             # former page is detached (often leaving only an
                             # about:blank background target). Re-open the same
-                            # authorized share in a foreground target before
-                            # binding; binding first can attach the session to
+                            # authorized share in a foreground target and
+                            # prove the route before retrying the read-only
+                            # listing; binding first can attach the session to
                             # that dead/background page and reproduce the same
-                            # read-only eval failure indefinitely.
-                            self._opencli_json(
-                                session,
-                                "open",
-                                listing_navigation_url,
-                                "--window",
-                                "foreground",
-                                profile=profile,
-                                timeout_seconds=30,
-                            )
-                            self.bind_opencli(
+                            # eval failure indefinitely.
+                            self._rebind_opencli_parent_route(
                                 session=session,
                                 profile=profile,
+                                route=listing_navigation_url,
+                                expected_parent_path=target_parent,
+                                operation="ticket04_listing_route_readback",
                             )
                         except EnrichmentError as bind_error:
                             raise exc from bind_error
@@ -3929,74 +4008,13 @@ try {
         route = urlparse(
             _authorized_share_url(self.share_url, self.share_code)
         )._replace(fragment=f"list/path={quote(parent_path, safe='')}").geturl()
-        route_readback_script = """(() => {
-          const operation = 'ticket04_download_confirmation_route_readback';
-          const expectedSharePath = %s;
-          const expectedParentPath = %s;
-          const prefix = '#list/path=';
-          let currentParentPath = '';
-          try {
-            currentParentPath = location.hash.startsWith(prefix)
-              ? decodeURIComponent(location.hash.slice(prefix.length))
-              : '';
-          } catch (_error) {}
-          return {
-            status: (
-              location.origin === 'https://pan.baidu.com'
-              && location.pathname === expectedSharePath
-              && currentParentPath === expectedParentPath
-            ) ? 'target_route_ready' : 'target_route_mismatch',
-            operation
-          };
-        })()""" % (
-            json.dumps(urlparse(self.share_url).path),
-            json.dumps(parent_path),
+        self._rebind_opencli_parent_route(
+            session=session,
+            profile=profile,
+            route=route,
+            expected_parent_path=parent_path,
+            operation="ticket04_download_confirmation_route_readback",
         )
-        retryable_codes = {
-            "detached_mid_command",
-            "opencli_command_failed",
-            "opencli_timeout",
-        }
-        for attempt in range(2):
-            self._opencli_json(
-                session,
-                "open",
-                route,
-                "--window",
-                "foreground",
-                profile=profile,
-                timeout_seconds=30,
-            )
-            self.bind_opencli(session=session, profile=profile)
-            try:
-                route_readback = self._opencli_json(
-                    session,
-                    "eval",
-                    route_readback_script,
-                    profile=profile,
-                    timeout_seconds=30,
-                )
-            except EnrichmentDiagnosticError as exc:
-                if (
-                    attempt == 0
-                    and exc.diagnostic_stage == "browser_eval"
-                    and exc.diagnostic_code in retryable_codes
-                ):
-                    self.sleep(1.0)
-                    continue
-                raise
-            if route_readback.get("status") == "target_route_ready":
-                return
-            if attempt == 0:
-                self.sleep(1.0)
-                continue
-            raise EnrichmentDiagnosticError(
-                "provider frontend target route did not bind",
-                category="identity_error",
-                code="provider_frontend_target_route_mismatch",
-                stage="browser_eval",
-            )
-        raise AssertionError("download confirmation route recovery exhausted")
 
     def _download_confirmation_eval(
         self,

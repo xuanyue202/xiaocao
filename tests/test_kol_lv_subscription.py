@@ -670,12 +670,14 @@ def test_listing_recovers_once_after_detached_read_only_eval(
     failure_code,
 ):
     listing_calls = 0
+    route_readback_calls = 0
     open_calls = 0
     foreground_open_calls = 0
     bind_calls = 0
 
     def browser_runner(command, **_kwargs):
-        nonlocal listing_calls, open_calls, foreground_open_calls, bind_calls
+        nonlocal listing_calls, route_readback_calls
+        nonlocal open_calls, foreground_open_calls, bind_calls
         tail = command[3:]
         if tail[:1] == ["open"]:
             open_calls += 1
@@ -691,6 +693,22 @@ def test_listing_recovers_once_after_detached_read_only_eval(
             return SimpleNamespace(
                 returncode=0,
                 stdout=json.dumps({"session": "ticket04"}),
+                stderr="",
+            )
+        if (
+            tail[:1] == ["eval"]
+            and "ticket04_listing_route_readback" in tail[1]
+        ):
+            route_readback_calls += 1
+            return SimpleNamespace(
+                returncode=0,
+                stdout=json.dumps({
+                    "status": (
+                        "target_route_mismatch"
+                        if route_readback_calls == 1
+                        else "target_route_ready"
+                    )
+                }),
                 stderr="",
             )
         if tail[:1] == ["eval"] and "/share/list" in tail[1]:
@@ -737,9 +755,10 @@ def test_listing_recovers_once_after_detached_read_only_eval(
         },
     }
     assert listing_calls == 2
-    assert open_calls == 3
-    assert foreground_open_calls == 1
-    assert bind_calls == 1
+    assert route_readback_calls == 2
+    assert open_calls == 4
+    assert foreground_open_calls == 2
+    assert bind_calls == 2
 
 
 def test_lv_text_image_browser_open_exposes_diagnostic(tmp_path):
@@ -800,11 +819,14 @@ def test_lv_text_image_browser_open_exposes_diagnostic_after_rebind(tmp_path):
             bind_calls += 1
             payload = {"session": "ticket04"}
         elif operation == "eval":
-            payload = {
-                "status": "ok",
-                "complete_scan": True,
-                "entries": [],
-            }
+            if "ticket04_listing_route_readback" in command[4]:
+                payload = {"status": "target_route_ready"}
+            else:
+                payload = {
+                    "status": "ok",
+                    "complete_scan": True,
+                    "entries": [],
+                }
         else:
             raise AssertionError(command)
         return SimpleNamespace(
