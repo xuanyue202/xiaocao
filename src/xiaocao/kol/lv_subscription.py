@@ -100,6 +100,7 @@ _DIRECT_DOWNLOAD_HOSTS = {"d.pcs.baidu.com"}
 _PREVIEW_DOWNLOAD_HOST = re.compile(r"thumbnail\d*\.baidupcs\.com")
 MIN_PREVIEW_SHORT_EDGE = 256
 MIN_PREVIEW_LONG_EDGE = 512
+_READ_ONLY_ROUTE_REBIND_ATTEMPTS = 3
 
 
 def _valid_preview_dimensions(width: int, height: int) -> bool:
@@ -2534,18 +2535,23 @@ try {
             "opencli_command_failed",
             "opencli_timeout",
         }
-        for attempt in range(2):
-            self._opencli_json(
-                session,
-                "open",
-                route,
-                "--window",
-                "foreground",
-                profile=profile,
-                timeout_seconds=30,
-            )
-            self.bind_opencli(session=session, profile=profile)
+        # Navigation, bind, and route readback are all read-only recovery
+        # operations. Treat the complete sequence as the retry unit: any one
+        # of its browser commands can detach while the named session is being
+        # rebound, and retrying only the final eval leaves the session
+        # ownership unproven. No download control is selected in this helper.
+        for attempt in range(_READ_ONLY_ROUTE_REBIND_ATTEMPTS):
             try:
+                self._opencli_json(
+                    session,
+                    "open",
+                    route,
+                    "--window",
+                    "foreground",
+                    profile=profile,
+                    timeout_seconds=30,
+                )
+                self.bind_opencli(session=session, profile=profile)
                 route_readback = self._opencli_json(
                     session,
                     "eval",
@@ -2555,8 +2561,9 @@ try {
                 )
             except EnrichmentDiagnosticError as exc:
                 if (
-                    attempt == 0
-                    and exc.diagnostic_stage == "browser_eval"
+                    attempt + 1 < _READ_ONLY_ROUTE_REBIND_ATTEMPTS
+                    and exc.diagnostic_stage
+                    in {"browser_open", "browser_bind", "browser_eval"}
                     and exc.diagnostic_code in retryable_codes
                 ):
                     self.sleep(1.0)
@@ -2564,7 +2571,7 @@ try {
                 raise
             if route_readback.get("status") == "target_route_ready":
                 return
-            if attempt == 0:
+            if attempt + 1 < _READ_ONLY_ROUTE_REBIND_ATTEMPTS:
                 self.sleep(1.0)
                 continue
             raise EnrichmentDiagnosticError(

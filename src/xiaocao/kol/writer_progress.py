@@ -629,6 +629,7 @@ TARGETED_REPAIR_TESTS: dict[str, tuple[str, ...]] = {
             "new_filtered_image_claim_uses_preview_without_frontend_trigger or "
             "read_only_provider_reconciliation_wait_is_not_an_uncertain_effect or "
             "download_confirmation_recovers_detached_eval_before_trigger or "
+            "download_confirmation_recovers_detached_route_readback_within_bound or "
             "post_claim_lv_browser_eval_projects_download_repair_profile or "
             "repair_validation_maps_legacy_post_claim_lv_browser_eval_to_download_recovery or "
             "newer_repair_lifecycle_supersedes_old_fingerprint or "
