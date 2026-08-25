@@ -2576,9 +2576,14 @@ try {
         # of its browser commands can detach while the named session is being
         # rebound, and retrying only the final eval leaves the session
         # ownership unproven. No download control is selected in this helper.
-        self.edge_route_launcher(route)
         for attempt in range(_READ_ONLY_ROUTE_REBIND_ATTEMPTS):
             try:
+                # A detached route readback can leave the foreground target
+                # unusable even though the named session still exists. Wake
+                # the same Edge target for every bounded recovery attempt;
+                # retrying bind/open on the stale target alone reproduces the
+                # detach and never proves session ownership.
+                self.edge_route_launcher(route)
                 self._opencli_json(
                     session,
                     "open",

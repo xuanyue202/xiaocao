@@ -981,6 +981,60 @@ def test_route_rebind_wakes_edge_target_before_opencli_recovery(tmp_path):
     assert launcher_routes == [route]
 
 
+def test_route_rebind_reawakens_edge_after_detached_readback(tmp_path):
+    route = "https://pan.baidu.com/s/private-share-token#list/path=%2Fparent"
+    launcher_routes = []
+    route_readback_calls = 0
+
+    def browser_runner(command, **_kwargs):
+        nonlocal route_readback_calls
+        tail = command[3:]
+        if tail[:1] == ["open"]:
+            payload = {"url": "redacted", "page": "page-1"}
+        elif tail[:1] == ["bind"]:
+            payload = {"session": "ticket04"}
+        elif tail[:1] == ["eval"]:
+            route_readback_calls += 1
+            if route_readback_calls == 1:
+                return SimpleNamespace(
+                    returncode=1,
+                    stdout=json.dumps({
+                        "error": {"code": "detached_mid_command"},
+                    }),
+                    stderr="",
+                )
+            payload = {"status": "target_route_ready"}
+        else:
+            raise AssertionError(command)
+        return SimpleNamespace(
+            returncode=0,
+            stdout=json.dumps(payload),
+            stderr="",
+        )
+
+    service = LvSubscriptionService(
+        tmp_path / "out",
+        now=lambda: NOW,
+        runner=browser_runner,
+        opencli_command=("opencli",),
+        share_url="https://pan.baidu.com/s/private-share-token",
+        share_code="a1b2",
+        sleep=lambda _seconds: None,
+        edge_route_launcher=launcher_routes.append,
+    )
+
+    service._rebind_opencli_parent_route(
+        session="ticket04",
+        profile=None,
+        route=route,
+        expected_parent_path="/parent",
+        operation="ticket04_listing_route_readback",
+    )
+
+    assert route_readback_calls == 2
+    assert launcher_routes == [route, route]
+
+
 def test_provider_direct_link_does_not_retry_detached_command(tmp_path):
     entry = _pdf_entry()
     item = {
