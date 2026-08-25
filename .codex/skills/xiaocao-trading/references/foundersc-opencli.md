@@ -36,8 +36,9 @@ including a short diagnostic prefix, but never parses arbitrary page text.
 ## Current contract
 
 Only `login` reads the fixed login Keychain item under the bounded contract
-above. No template reads or emits the trade password. Template v7 adds explicit,
-mutually exclusive session-reuse/fresh-login evidence while retaining the v6
+above. No template reads or emits the trade password. Template v8 retains v7's
+explicit, mutually exclusive session-reuse/fresh-login evidence and adds one
+strict prior-day absence reconciliation while retaining the v6
 UI-only `package-limit` submit route; the other routes remain no-submit, and no
 route withdraws orders.
 `environment` may change only the unique mock/live switcher and must verify the
@@ -92,10 +93,25 @@ Any prepare/submit/reconcile chain uncertainty permanently blocks automatic
 replacement. Reconcile must return the same proved order-id and preserve that
 order's submit strategy-id evidence; a new order-id cannot reuse old strategy
 evidence. A rejection without mapping is terminal only when the receipt proves
-no submit/save/start happened. Only a never-ambiguous first order with proved
+no submit/save/start happened. One prior-day UNKNOWN without an order id may
+also close as no-submit only when `reconcile --scope settlement` binds both
+historical tables to that one exact trade date, proves complete zero related
+order/deal rows, and proves zero current target holding on the same live
+account. Same-day absence, a broad date range, an empty but unterminated table,
+or any related activity remains UNKNOWN. Only a never-ambiguous first order with proved
 terminality, cancellation or rejection, remaining quantity and fresh market
 guard may receive one controlled replacement; the submit boundary caps total
 attempts at two.
+Before any ordinary live prepare/submit, persist the complete canonical plan
+and hash under `output/live/book_b_live_execution/plan_intents/`. A restarted
+process must load that exact intent and reconcile its existing event; it must
+not regenerate the plan from a new clock or changed available cash, reallocate
+shares, reopen prepare, or call submit. Treat a durable `CLAIMED` event as a
+possibly-started broker side effect: mark the chain uncertain and reconcile
+only. Keep reconciling ACK/UNKNOWN/SUBMITTED/PARTIAL states under the same plan
+and order/strategy mapping. A mapped broker CANCELLED/REJECTED terminal may
+release the initial basis only with a complete event hash chain and zero fill;
+any positive fill still requires settled-NAV reconciliation.
 Trading-hours final-submit/order-id proof,
 row-level cancellation, Book-B's at-most-one controlled retry, and unattended
 native PassGuard recovery are still pending. A currently authenticated session
@@ -105,7 +121,7 @@ Automation stay unchanged.
 Apply `docs/OPERATING_CONTRACT.md` section 9 for the capital-gate semantics;
 this reference does not redefine them.
 
-Template v7 retains v6's extraction of `总资产` / `证券市值` / `可用资金` from one unique asset
+Template v8 retains v7's extraction of `总资产` / `证券市值` / `可用资金` from one unique asset
 card set or one unique agreeing table shape. It compares the page's masked
 fund-account fingerprint with Keychain trade-account metadata in-process,
 persists only the binding hash, and rejects missing, mismatched, wrong-date, or

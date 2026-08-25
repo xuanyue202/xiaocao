@@ -500,7 +500,7 @@ class FounderscQuantOpenCLIAdapter(BrokerAdapter):
         capabilities = row.get("capabilities")
         if (
             str(row.get("template_name") or "") != "foundersc-quant/login"
-            or row.get("template_version") != 7
+            or row.get("template_version") != 8
             or not isinstance(capabilities, dict)
             or capabilities.get("login") is not True
         ):
@@ -560,7 +560,7 @@ class FounderscQuantOpenCLIAdapter(BrokerAdapter):
             "authentication_path": authentication_path,
             "status_reason": status_reason,
             "template_name": "foundersc-quant/login",
-            "template_version": 7,
+            "template_version": 8,
             "initial_auth_state": initial_auth_state,
             "keychain_login_read": keychain_login_read,
             "login_form_binding_proven": row.get("login_form_binding_proven") is True,
@@ -1007,9 +1007,19 @@ class FounderscQuantOpenCLIAdapter(BrokerAdapter):
         expected_order_id = str(
             previous.get("broker_order_id") or previous.get("order_id") or ""
         ).strip()
+        prior_day_without_order_id = (
+            not expected_order_id
+            and plan.trade_date
+            < datetime.now(ZoneInfo("Asia/Shanghai")).date().isoformat()
+        )
         args = [
             "--scope",
-            "orders" if self.route == "package-limit" else "all",
+            (
+                "settlement"
+                if self.route == "package-limit" and prior_day_without_order_id
+                else "orders" if self.route == "package-limit"
+                else "all"
+            ),
             *self._plan_args(plan),
             "--code",
             _bare_code(plan.code),
@@ -1062,6 +1072,50 @@ class FounderscQuantOpenCLIAdapter(BrokerAdapter):
             and receipt.normalized_status() != BrokerStatus.UNKNOWN
             and receipt.conclusive
         )
+        locator_proof = row.get("locator_proof")
+        locator_proof = locator_proof if isinstance(locator_proof, dict) else {}
+        order_filter = locator_proof.get("historical_order_date_filter")
+        deal_filter = locator_proof.get("historical_deal_date_filter")
+        absence_safe = (
+            prior_day_without_order_id
+            and binding_safe
+            and str(row.get("status") or "").strip().lower() == "not_submitted"
+            and str(row.get("status_reason") or "").strip()
+            == "prior_day_broker_absence_proven"
+            and row.get("absence_proof") is True
+            and capabilities.get("absence_proof") is True
+            and row.get("reconcile_complete") is True
+            and row.get("reconcile_required") is False
+            and locator_proof.get("exact_order_match_count") == 0
+            and locator_proof.get("exact_deal_match_count") == 0
+            and locator_proof.get("target_holding_shares") == 0
+            and isinstance(order_filter, dict)
+            and isinstance(deal_filter, dict)
+            and order_filter.get("applied") is True
+            and deal_filter.get("applied") is True
+            and order_filter.get("start") == plan.trade_date
+            and order_filter.get("end") == plan.trade_date
+            and deal_filter.get("start") == plan.trade_date
+            and deal_filter.get("end") == plan.trade_date
+            and all(row.get(key) is False for key in ("submitted", "saved", "started"))
+            and not observed_order_id
+            and receipt.filled_shares == 0
+        )
+        if absence_safe:
+            return replace(
+                receipt,
+                status=BrokerStatus.REJECTED,
+                absence_proof=True,
+                account_binding="proven",
+                reason="prior_day_broker_absence_proven",
+                error_code=None,
+                conclusive=True,
+                field_readback={
+                    "submitted": False,
+                    "saved": False,
+                    "started": False,
+                },
+            )
         if not mapping_safe:
             return replace(
                 receipt,
@@ -1169,6 +1223,11 @@ class FounderscQuantOpenCLIAdapter(BrokerAdapter):
             order_id=str(row.get("order_id") or "") or None,
             strategy_id=str(row.get("strategy_id") or "") or None,
             receipt_mapping=receipt_mapping,
+            absence_proof=(
+                row.get("absence_proof")
+                if isinstance(row.get("absence_proof"), bool)
+                else None
+            ),
             requested_shares=_optional_int(row.get("requested_shares")) or requested_shares,
             filled_shares=_optional_int(row.get("filled_shares")) or 0,
             remaining_shares=_optional_int(row.get("remaining_shares")),

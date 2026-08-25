@@ -164,8 +164,23 @@ def test_reconcile_requires_one_exact_account_query_order_mapping():
     assert "ambiguous_or_missing_exact_order" in source
 
 
+def test_reconcile_prior_day_absence_is_date_bounded_and_read_only():
+    source = _source("reconcile.js")
+
+    assert "prior_day_broker_absence_proven" in source
+    assert "date_filter" in source
+    assert "absence_proof" in source
+    assert "submitted: mapping.absenceProof ? false : null" in source
+    assert "saved: mapping.absenceProof ? false : null" in source
+    assert "started: mapping.absenceProof ? false : null" in source
+    assert "scope === 'settlement'" in source
+    assert "page.evaluate(queryScript(" in source
+    for forbidden in ("fetch(", "XMLHttpRequest", "$http"):
+        assert forbidden not in source
+
+
 def test_foundersc_template_registry_is_versioned_with_one_scoped_write_command():
-    assert _source("common.mjs").count("TEMPLATE_VERSION = 7") == 1
+    assert _source("common.mjs").count("TEMPLATE_VERSION = 8") == 1
     for command in COMMANDS:
         source = _source(f"{command}.js")
         assert "site: SITE" in source
@@ -211,9 +226,9 @@ def test_account_binding_uses_same_origin_base_info_without_returning_raw_accoun
     assert "资金账号[^0-9]" not in common
 
 
-def test_common_receipt_documentation_matches_template_version_six():
+def test_common_receipt_documentation_matches_template_version_eight():
     readme = _source("README.md")
-    assert '"template_version": 6' in readme
+    assert '"template_version": 8' in readme
     assert '"template_version": 1' not in readme
 
 

@@ -22,6 +22,8 @@ sys.path.insert(0, str(ROOT / "src"))
 from xiaocao.live.book_b_live_morning import (  # noqa: E402
     BookBLiveMorningConfig,
     load_book_b_live_capital_basis,
+    reconcile_open_book_b_plans,
+    reconcile_prior_day_canary_unknowns,
     run_book_b_live_morning,
 )
 from xiaocao.live.capital_keychain import KeychainCapitalRuntime  # noqa: E402
@@ -157,8 +159,21 @@ def main(argv: list[str] | None = None) -> int:
         expected_fund_account_fingerprint=trade_account_fingerprint,
         safety_env_provider=capital_runtime.safety_env,
     )
+    prior_reconciliations: tuple[dict, ...] = ()
+    open_plan_reconciliations: tuple[dict, ...] = ()
 
     def read_allocation_facts() -> dict:
+        nonlocal open_plan_reconciliations, prior_reconciliations
+        open_plan_reconciliations = reconcile_open_book_b_plans(
+            Path(args.state_dir),
+            trade_date=trade_date,
+            execute=lambda plan: execution.execute(plan, broker),
+        )
+        prior_reconciliations = reconcile_prior_day_canary_unknowns(
+            Path(args.state_dir),
+            trade_date=trade_date,
+            execute=lambda plan: execution.execute(plan, broker),
+        )
         basis = load_book_b_live_capital_basis(Path(args.state_dir))
         return broker.read_live_allocation_facts(
             trade_date=trade_date,
@@ -231,6 +246,8 @@ def main(argv: list[str] | None = None) -> int:
     )
     payload = receipt.as_dict()
     payload["capital_runtime"] = capital_receipt
+    payload["open_plan_reconciliations"] = list(open_plan_reconciliations)
+    payload["prior_reconciliations"] = list(prior_reconciliations)
     print(json.dumps(payload, ensure_ascii=False, sort_keys=True))
     return 0 if receipt.status in {"completed", "no_action", "skipped"} else 2
 

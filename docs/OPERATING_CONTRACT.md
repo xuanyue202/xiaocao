@@ -1,6 +1,6 @@
 # 小草运营契约（Operating Contract, SSOT）
 
-**版本**：3.2
+**版本**：3.4
 **状态**：现行
 **适用范围**：所有 paper / 未来 real 的实盘环（live_recommend → paper_record → live_monitor → eod）与回测
 **关联实现**：`src/xiaocao/live/{safety,capital_keychain}.py`、`src/xiaocao/live/intelligence_policy.py`、`src/xiaocao/strategy/{mode_switch,trend_rules,kol_reference}.py`、`kronos_screen/scripts/{capture_signals,forward_eval,paper_record,settle_book_a,settle_book_t,decompose_pnl,quality_governor}.py`、`scripts/{live_monitor,research_mode_switch_replay}.py`
@@ -69,7 +69,7 @@
   Book-B NAV/敞口：首次批次只用明确的 30,000 元 Book-B 初始基数和券商可用现金；
   一旦已有 Book-B owned fill 而尚无结算 NAV 回执，后续批次以
   `LIVE_BOOK_B_SETTLED_NAV_RECONCILE_REQUIRED` fail-closed。Founder Web/OpenCLI
-  v7 的唯一候选写路径固定为 `组合交易 -> 按证券组合 -> 指定价格`：它可以表达
+  v8 的唯一候选写路径固定为 `组合交易 -> 按证券组合 -> 指定价格`：它可以表达
   单证券的精确数值限价和整手数量；BUY 数值限价必须在 execution boundary 向下
   对齐 0.01 元股票 tick，禁止四舍五入越过原始限价；条件单、网格、定时/定投、集合竞价、
   TWAP/VWAP/POV/冰山及价格/时间分段均因引入触发、相对价格、重复、竞价或拆单
@@ -89,8 +89,23 @@
   也永久禁止自动补单。live reconcile 必须映射回前次已证明的同一 order-id，并保留
   该 order 的 submit strategy-id 证据；不得用新 order-id 复用旧 strategy-id。
   无 order mapping 的 `REJECTED` 只有同时证明 submitted/saved/started 均为 false
-  才能作为“未点击”的终态，否则同样进入 UNKNOWN。只有首单回执
-  从未歧义、且 reconcile 明确证明原单终态、撤单/拒单、fresh market guard 和剩余
+  才能作为“未点击”的终态，否则同样进入 UNKNOWN。无 order-id 的前日 UNKNOWN
+  只允许通过 settlement scope 终结：券商历史委托和历史成交必须各自绑定该 plan 的
+  精确交易日起止日并证明相关记录数均为零，当前完整持仓扫描必须证明目标持仓为零，
+  且 submitted/saved/started 均为 false；该 absence proof 必须写入同一 plan 的
+  append-only hash chain。同日、日期范围不匹配、分页不完整、任一记录/持仓非零或
+  任一副作用字段非 false 都继续 UNKNOWN/reconcile_only，绝不触发 submit。
+  每个普通 Book-B live plan 必须在 prepare/submit 前把完整 canonical intent 与
+  plan hash 原子写入 `output/live/book_b_live_execution/plan_intents/`。进程恢复时必须
+  先以该 intent 和原 execution event hash 对账，不能用新的时钟、现金或 allocation
+  重建订单，也不能再次 prepare 或 submit。durable `CLAIMED` 表示 broker side effect
+  可能已经开始，必须立即升级为 chain-uncertain reconcile-only，并与 UNKNOWN/
+  SUBMITTED/ACKNOWLEDGED/PARTIAL/RECONCILING 一样阻断首次资金基数复用。ACK 取得
+  order-id/strategy-id 后仍须沿同一 plan 继续 reconcile；跨进程恢复只允许 broker
+  reconcile。只有 hash-chain 完整、同一 mapped order/strategy、账户绑定和 broker
+  CANCELLED/REJECTED 零成交终态都证明后，才可释放该零成交订单占用的首次基数；任一
+  正成交仍要求 settled-NAV 回执。只有首单回执从未歧义、且 reconcile 明确证明
+  原单终态、撤单/拒单、fresh market guard 和剩余
   数量时，才允许最多一次受控 replacement；总 submit attempt 上限为 2，且该上限
   在唯一 submit boundary 再次强制，不依赖调用路径。
   当前交易时段最终提交及 broker order-id 形状、撤单终态、最多一次受控补单、
@@ -101,7 +116,7 @@
   生成。
   该阶段 live 逻辑账户固定为 `primary`、首次基数固定为 30,000 元，不提供 CLI
   覆盖。execution events 中只要出现 submitted/acknowledged/partial/filled/unknown/
-  reconciling，或任何正成交数量，即使 ownership evidence 落盘失败，也不得再次
+  claimed/reconciling，或任何正成交数量，即使 ownership evidence 落盘失败，也不得再次
   使用首次基数。
 
 - **默认建仓集合**：`paper_record.py --pick mode_exec_star` 只成交 `★E`。`★B`（K/P+竞价）和 `★M`（旧模式分轮动）继续前向留样，但没有默认成交权限。
@@ -191,7 +206,7 @@
 - 唯一实现 `src/xiaocao/live/safety.py`；真实下单 **MUST** 经 `require_capital_action(...)`，仅在 ALLOW 时下单。
 - **现状**：阶段一执行缝已在任何 broker adapter 之前调用
   `require_capital_action(...)`；独立 09:20 Automation 只启动隔离 live seam，
-  不改变 09:25 模拟任务。Founder v7 仅对 account-bound `package-limit`
+  不改变 09:25 模拟任务。Founder v8 仅对 account-bound `package-limit`
   暴露 receipt-proving first-order submit；probe mapping 可以 pending，但 submit
   结果只有在 order-id/strategy-id 映射完整时才能 ACK。登录回执必须区分
   `session_reuse_proven` 与 `fresh_login_proven`；当前 authenticated session 不得冒充
@@ -257,3 +272,5 @@
 | 3.0 | 2026-08-24 | 双钥匙 runtime 改为固定 macOS Keychain 项：09:20 先做净化 preflight、每个资金门进程内现读，敏感值不进环境/argv/日志/回执；scoped expiring authorization 仍独立且只可人工交互铸造。Founder 登录回执把 persistent session reuse 与 Keychain 网站密码 fresh-login 设为互斥证据；现有会话不再冒充密码登录，native PassGuard 继续独立 pending。 |
 | 3.1 | 2026-08-24 | 按用户授权把资金边界准确重述为同一 macOS principal 下的 Keychain-backed 两条件运行门，不再宣称双主体密码学隔离；严格只接受精确 `true`，拒绝非有限/非正授权与订单金额，登录证据绑定 Founder v7 模板能力并持久化，PassGuard 继续独立 pending/fail-closed。 |
 | 3.2 | 2026-08-24 | 修复 Book-B live freeze 与 agent review 的并发漂移：queue producer 在 review 前物化不可变 dated snapshot，live consumer 不再读取会被情报富化的 canonical snapshot；同时把事后 `executable_fillable` 缺省与显式 false 分开，缺省交由 submit 前实时 market guard，显式 false 继续 fail-closed。补齐 proprietary `T` family 与毫秒时钟归一化，并在 live execution boundary 把 BUY 限价向下对齐股票 tick。 |
+| 3.3 | 2026-08-25 | Founder v8 增加无 order-id 的前日 UNKNOWN 只读 settlement：仅在精确历史日期、相关委托零、相关成交零、目标持仓零和 submitted/saved/started 全 false 时，以同 plan hash chain 的 absence proof 终结；同日、日期不匹配或不完整证据继续 reconcile-only，禁止重放 submit。 |
+| 3.4 | 2026-08-25 | 补齐真实订单跨进程 exact-once：普通 Book-B plan 在任何 prepare/submit 前原子持久化完整 intent；恢复时禁止按新时钟/现金重分配或重开表单，durable CLAIMED 一律视为 chain-uncertain 并只对账。ACK/order-id 后继续同 plan reconcile；只有同 order/strategy 映射、账户绑定和 hash-chain 完整的 CANCELLED/REJECTED 零成交终态可释放首次基数，正成交仍要求 settled NAV。 |

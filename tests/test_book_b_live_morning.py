@@ -4,6 +4,7 @@ import hashlib
 import json
 import subprocess
 import sys
+from dataclasses import replace
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -12,13 +13,17 @@ import pytest
 from xiaocao.live.book_b_live_morning import (
     BookBLiveMorningConfig,
     load_book_b_live_capital_basis,
+    reconcile_open_book_b_plans,
     run_book_b_live_morning,
 )
 from xiaocao.live.trading_execution import (
     BrokerReceipt,
     BrokerStatus,
     ExecutionReceipt,
+    ExecutionStore,
     ExecutionState,
+    TradePlan,
+    TradingExecution,
 )
 from xiaocao.live.trading_runner import frozen_rows_digest
 
@@ -483,6 +488,137 @@ def test_live_capital_basis_blocks_after_fill_event_even_if_ownership_write_fail
         load_book_b_live_capital_basis(tmp_path)
 
 
+def test_live_capital_basis_accepts_latest_hash_chained_prior_day_absence(
+    tmp_path: Path,
+) -> None:
+    plan = TradePlan(
+        plan_id="book-b-canary:2026-08-24:603801.XSHG:BUY:800:v1",
+        strategy_run_id="run",
+        snapshot_ref="freeze#603801",
+        strategy_sha="a" * 40,
+        trade_date="2026-08-24",
+        book="B",
+        logical_account_id="primary",
+        environment="live",
+        code="603801.XSHG",
+        name="志邦家居",
+        side="BUY",
+        shares=800,
+        limit_price=6.62,
+        basket_price=6.7218,
+        market_guard_status="ok",
+        created_at=datetime(2026, 8, 24, tzinfo=timezone.utc),
+        recovery_deadline=datetime(2026, 8, 24, 7, tzinfo=timezone.utc),
+        submit_not_before=datetime(2026, 8, 24, tzinfo=timezone.utc),
+        allocation_proof_hash="b" * 64,
+    )
+    store = ExecutionStore(tmp_path / "events.jsonl")
+    unknown = store.append(
+        plan=plan,
+        receipt=ExecutionReceipt(
+            plan_id=plan.plan_id,
+            plan_hash=plan.plan_hash,
+            state=ExecutionState.UNKNOWN,
+            reason="server_confirmation_not_proven",
+            remaining_shares=plan.shares,
+            submit_chain_uncertain=True,
+            order_price=plan.limit_price,
+        ),
+        kind="submit_receipt_unproven",
+    )
+    store.append(
+        plan=plan,
+        receipt=replace(
+            unknown,
+            state=ExecutionState.REJECTED,
+            reason="prior_day_broker_absence_proven",
+            absence_proof=True,
+            account_binding="proven",
+            locator_proof={
+                "exact_order_match_count": 0,
+                "exact_deal_match_count": 0,
+                "target_holding_shares": 0,
+                "historical_order_date_filter": {
+                    "start": plan.trade_date,
+                    "end": plan.trade_date,
+                    "applied": True,
+                },
+                "historical_deal_date_filter": {
+                    "start": plan.trade_date,
+                    "end": plan.trade_date,
+                    "applied": True,
+                },
+            },
+            next_action="stop",
+        ),
+        kind="reconcile_receipt",
+    )
+
+    basis = load_book_b_live_capital_basis(tmp_path)
+
+    assert basis.settled_nav == 30_000
+    assert basis.current_open_exposure == 0
+
+
+def test_live_capital_basis_accepts_mapped_terminal_order_with_zero_fill(
+    tmp_path: Path,
+) -> None:
+    plan = TradePlan(
+        plan_id="book-b:2026-08-24:000001.XSHE:BUY",
+        strategy_run_id="run",
+        snapshot_ref="freeze#000001",
+        strategy_sha="a" * 40,
+        trade_date="2026-08-24",
+        book="B",
+        logical_account_id="primary",
+        environment="live",
+        code="000001.XSHE",
+        name="测试标的",
+        side="BUY",
+        shares=100,
+        limit_price=10.0,
+        basket_price=10.1,
+        market_guard_status="ok",
+        created_at=datetime(2026, 8, 24, tzinfo=timezone.utc),
+        recovery_deadline=datetime(2026, 8, 24, 1, 45, tzinfo=timezone.utc),
+        allocation_proof_hash="b" * 64,
+    )
+    store = ExecutionStore(tmp_path / "events.jsonl")
+    acknowledged = store.append(
+        plan=plan,
+        receipt=ExecutionReceipt(
+            plan_id=plan.plan_id,
+            plan_hash=plan.plan_hash,
+            state=ExecutionState.ACKNOWLEDGED,
+            broker_order_id="order-1",
+            broker_strategy_id="strategy-1",
+            broker_status="accepted",
+            receipt_mapping=True,
+            account_binding="proven",
+            attempt=1,
+            remaining_shares=plan.shares,
+            next_action="reconcile",
+        ),
+        kind="submit_receipt",
+    )
+    store.append(
+        plan=plan,
+        receipt=replace(
+            acknowledged,
+            state=ExecutionState.CANCELLED,
+            reason="broker_terminal_cancelled",
+            broker_status="cancelled",
+            next_action="stop",
+        ),
+        kind="reconcile_receipt",
+    )
+
+    basis = load_book_b_live_capital_basis(tmp_path)
+
+    assert basis.settled_nav == 30_000
+    assert basis.current_open_exposure == 0
+
+
 def test_live_morning_consumes_freeze_without_paper_fill_or_ledger_mutation(
     tmp_path: Path,
 ) -> None:
@@ -710,13 +846,25 @@ def test_live_morning_reconciles_an_uncertain_submit_without_resubmitting(
                 reason="submit_outcome_requires_reconciliation",
                 next_action="reconcile_only",
             )
+        if calls == 2:
+            return ExecutionReceipt(
+                plan.plan_id,
+                plan.plan_hash,
+                ExecutionState.ACKNOWLEDGED,
+                reason="exact_account_query_order_mapped",
+                broker_order_id="order-123",
+                broker_strategy_id="strategy-456",
+                next_action="reconcile",
+            )
         return ExecutionReceipt(
             plan.plan_id,
             plan.plan_hash,
-            ExecutionState.ACKNOWLEDGED,
-            reason="exact_account_query_order_mapped",
+            ExecutionState.FILLED,
+            reason="broker_fill_proven",
+            filled_shares=plan.shares,
             broker_order_id="order-123",
-            next_action="reconcile",
+            broker_strategy_id="strategy-456",
+            next_action="stop",
         )
 
     def wait_for_reconcile():
@@ -736,10 +884,247 @@ def test_live_morning_reconciles_an_uncertain_submit_without_resubmitting(
         now=lambda: datetime(2026, 8, 24, 1, 30, tzinfo=timezone.utc),
     )
 
-    assert calls == 2
-    assert waits == 1
-    assert receipt.execution_receipts[0]["state"] == "acknowledged"
+    assert calls == 3
+    assert waits == 2
+    assert receipt.status == "completed"
+    assert receipt.execution_receipts[0]["state"] == "filled"
     assert receipt.execution_receipts[0]["broker_order_id"] == "order-123"
+    assert receipt.execution_receipts[0]["broker_strategy_id"] == "strategy-456"
+
+
+def test_live_morning_reuses_the_exact_durable_plan_across_process_runs(
+    tmp_path: Path,
+) -> None:
+    freeze = tmp_path / "signal_snapshots.jsonl"
+    freeze.write_text(json.dumps(_frozen_row()) + "\n", encoding="utf-8")
+    allocation = tmp_path / "allocation.json"
+    allocation.write_text(json.dumps(_live_allocation_payload()), encoding="utf-8")
+    state_dir = tmp_path / "state"
+    observed: list[TradePlan] = []
+
+    def execute(plan: TradePlan) -> ExecutionReceipt:
+        observed.append(plan)
+        return ExecutionReceipt(
+            plan.plan_id,
+            plan.plan_hash,
+            ExecutionState.REJECTED,
+            reason="NO_ROUTE_PROVEN",
+        )
+
+    for current in (
+        datetime(2026, 8, 24, 1, 30, tzinfo=timezone.utc),
+        datetime(2026, 8, 24, 1, 31, tzinfo=timezone.utc),
+    ):
+        run_book_b_live_morning(
+            BookBLiveMorningConfig(
+                trade_date="2026-08-24",
+                freeze_path=freeze,
+                allocation_facts_path=allocation,
+                state_dir=state_dir,
+                dated_freeze_receipt=_ready_freeze(),
+            ),
+            execute=execute,
+            now=lambda current=current: current,
+        )
+
+    assert len(observed) == 2
+    assert observed[0].plan_hash == observed[1].plan_hash
+    assert observed[0].created_at == observed[1].created_at
+    intents = list((state_dir / "plan_intents").glob("*.json"))
+    assert len(intents) == 1
+    payload = json.loads(intents[0].read_text(encoding="utf-8"))
+    assert payload["plan_hash"] == observed[0].plan_hash
+    assert payload["plan"] == observed[0].canonical_payload()
+
+
+def test_open_plan_recovery_reconciles_durable_ack_without_submit(
+    tmp_path: Path,
+) -> None:
+    freeze = tmp_path / "signal_snapshots.jsonl"
+    freeze.write_text(json.dumps(_frozen_row()) + "\n", encoding="utf-8")
+    allocation = tmp_path / "allocation.json"
+    allocation.write_text(json.dumps(_live_allocation_payload()), encoding="utf-8")
+    state_dir = tmp_path / "state"
+    store = ExecutionStore(state_dir / "events.jsonl")
+
+    def persist_ack(plan: TradePlan) -> ExecutionReceipt:
+        return store.append(
+            plan=plan,
+            receipt=ExecutionReceipt(
+                plan_id=plan.plan_id,
+                plan_hash=plan.plan_hash,
+                state=ExecutionState.ACKNOWLEDGED,
+                broker_order_id="order-123",
+                broker_strategy_id="strategy-456",
+                broker_status="accepted",
+                receipt_mapping=True,
+                account_binding="proven",
+                attempt=1,
+                remaining_shares=plan.shares,
+                next_action="reconcile",
+            ),
+            kind="submit_receipt",
+        )
+
+    run_book_b_live_morning(
+        BookBLiveMorningConfig(
+            trade_date="2026-08-24",
+            freeze_path=freeze,
+            allocation_facts_path=allocation,
+            state_dir=state_dir,
+            dated_freeze_receipt=_ready_freeze(),
+        ),
+        execute=persist_ack,
+        wait_for_reconcile=lambda: (_ for _ in ()).throw(
+            RuntimeError("simulated process stop after ack")
+        ),
+        now=lambda: datetime(2026, 8, 24, 1, 30, tzinfo=timezone.utc),
+    )
+
+    class ReconcileOnlyBroker:
+        submit_calls = 0
+        reconcile_calls = 0
+
+        def submit(self, *_args, **_kwargs):
+            self.submit_calls += 1
+            raise AssertionError("submit must never be called during recovery")
+
+        def reconcile(self, plan, _previous):
+            self.reconcile_calls += 1
+            return BrokerReceipt(
+                status=BrokerStatus.FILLED,
+                order_id="order-123",
+                strategy_id="strategy-456",
+                receipt_mapping=True,
+                account_binding="proven",
+                filled_shares=plan.shares,
+            )
+
+    broker = ReconcileOnlyBroker()
+    engine = TradingExecution(
+        store=store,
+        notifier=lambda _title, _body: "ok",
+    )
+
+    receipts = reconcile_open_book_b_plans(
+        state_dir,
+        trade_date="2026-08-24",
+        execute=lambda plan: engine.execute(plan, broker),
+    )
+    repeated = reconcile_open_book_b_plans(
+        state_dir,
+        trade_date="2026-08-24",
+        execute=lambda plan: engine.execute(plan, broker),
+    )
+
+    assert len(receipts) == 1
+    assert receipts[0]["state"] == "filled"
+    assert receipts[0]["broker_order_id"] == "order-123"
+    assert receipts[0]["broker_strategy_id"] == "strategy-456"
+    assert broker.submit_calls == 0
+    assert broker.reconcile_calls == 1
+    assert repeated == ()
+
+
+def test_live_morning_restores_post_submit_plan_before_reallocation_or_prepare(
+    tmp_path: Path,
+) -> None:
+    freeze = tmp_path / "signal_snapshots.jsonl"
+    freeze.write_text(json.dumps(_frozen_row()) + "\n", encoding="utf-8")
+    allocation = tmp_path / "allocation.json"
+    allocation.write_text(json.dumps(_live_allocation_payload()), encoding="utf-8")
+    state_dir = tmp_path / "state"
+    store = ExecutionStore(state_dir / "events.jsonl")
+    original: list[TradePlan] = []
+
+    def persist_ack(plan: TradePlan) -> ExecutionReceipt:
+        original.append(plan)
+        return store.append(
+            plan=plan,
+            receipt=ExecutionReceipt(
+                plan_id=plan.plan_id,
+                plan_hash=plan.plan_hash,
+                state=ExecutionState.ACKNOWLEDGED,
+                broker_order_id="order-123",
+                broker_strategy_id="strategy-456",
+                broker_status="accepted",
+                receipt_mapping=True,
+                account_binding="proven",
+                attempt=1,
+                remaining_shares=plan.shares,
+                next_action="reconcile",
+            ),
+            kind="submit_receipt",
+        )
+
+    run_book_b_live_morning(
+        BookBLiveMorningConfig(
+            trade_date="2026-08-24",
+            freeze_path=freeze,
+            allocation_facts_path=allocation,
+            state_dir=state_dir,
+            dated_freeze_receipt=_ready_freeze(),
+        ),
+        execute=persist_ack,
+        wait_for_reconcile=lambda: (_ for _ in ()).throw(
+            RuntimeError("simulated process stop after ack")
+        ),
+        now=lambda: datetime(2026, 8, 24, 1, 30, tzinfo=timezone.utc),
+    )
+
+    changed = _live_allocation_payload()
+    changed["available_cash"] = 1_000
+    changed["broker_receipt"]["allocation_summary"]["values"]["可用资金"] = 1_000
+    changed["broker_receipt_sha256"] = _canonical_sha256(
+        changed["broker_receipt"]
+    )
+    changed.pop("allocation_capsule_sha256")
+    changed["allocation_capsule_sha256"] = _canonical_sha256(changed)
+    allocation.write_text(json.dumps(changed), encoding="utf-8")
+
+    class ReconcileOnlyBroker:
+        submit_calls = 0
+        reconcile_calls = 0
+
+        def submit(self, *_args, **_kwargs):
+            self.submit_calls += 1
+            raise AssertionError("submit must not be called")
+
+        def reconcile(self, plan, _previous):
+            self.reconcile_calls += 1
+            assert plan.plan_hash == original[0].plan_hash
+            assert plan.shares == original[0].shares == 1_400
+            return BrokerReceipt(
+                status=BrokerStatus.CANCELLED,
+                order_id="order-123",
+                strategy_id="strategy-456",
+                receipt_mapping=True,
+                account_binding="proven",
+                filled_shares=0,
+            )
+
+    broker = ReconcileOnlyBroker()
+    engine = TradingExecution(store=store, notifier=lambda _title, _body: "ok")
+    receipt = run_book_b_live_morning(
+        BookBLiveMorningConfig(
+            trade_date="2026-08-24",
+            freeze_path=freeze,
+            allocation_facts_path=allocation,
+            state_dir=state_dir,
+            dated_freeze_receipt=_ready_freeze(),
+        ),
+        prepare_only=lambda _plan: pytest.fail(
+            "post-submit recovery must not prepare a second form"
+        ),
+        execute=lambda plan: engine.execute(plan, broker),
+        now=lambda: datetime(2026, 8, 24, 1, 31, tzinfo=timezone.utc),
+    )
+
+    assert receipt.status == "completed"
+    assert receipt.execution_receipts[0]["state"] == "cancelled"
+    assert receipt.preparation_receipts == ()
+    assert broker.submit_calls == 0
+    assert broker.reconcile_calls == 1
 
 
 @pytest.mark.parametrize(

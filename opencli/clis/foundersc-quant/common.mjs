@@ -1,4 +1,4 @@
-export const TEMPLATE_VERSION = 7;
+export const TEMPLATE_VERSION = 8;
 export const SITE = 'foundersc-quant';
 export const DEFAULT_BASE_URL = (
     'https://quant.foundersc.com/qtassets/dist/index.html'

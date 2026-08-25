@@ -27,8 +27,10 @@ const TEMPLATE_NAME = `${SITE}/reconcile`;
 function parseInput(kwargs) {
     try {
         const scope = String(kwargs.scope || 'all').trim();
-        if (!['assets', 'orders', 'strategies', 'all'].includes(scope)) {
-            throw new Error('--scope must be assets, orders, strategies or all');
+        if (!['assets', 'orders', 'strategies', 'settlement', 'all'].includes(scope)) {
+            throw new Error(
+                '--scope must be assets, orders, strategies, settlement or all'
+            );
         }
         const rawMatch = {
             code: String(kwargs.code || '').trim(),
@@ -187,9 +189,15 @@ const ASSETS_SCRIPT = pageScript(String.raw`
         };
 `, {async: true});
 
-const QUERY_SCRIPT = pageScript(String.raw`
-        const readTable = (root) => {
-                const tables = [...root.querySelectorAll('table')].filter(visible);
+function queryScript(requestedDate = '', historicalOnly = false) {
+    const dateLiteral = JSON.stringify(String(requestedDate || ''));
+    const historicalLiteral = historicalOnly ? 'true' : 'false';
+    return pageScript(String.raw`
+        const targetDate = __XIAOCAO_TARGET_DATE__;
+        const historicalOnly = __XIAOCAO_HISTORICAL_ONLY__;
+        const readTable = (root, structural = false, emptyRoot = root) => {
+                const tables = [...root.querySelectorAll('table')]
+                        .filter((table) => structural || visible(table));
                 const headers = [...new Set(tables.flatMap((table) => (
                         [...table.querySelectorAll('thead th')].map((cell) => (
                                 (cell.innerText || '').trim()
@@ -205,9 +213,10 @@ const QUERY_SCRIPT = pageScript(String.raw`
                         headers,
                         rows,
                         row_count: rows.length,
+                        empty_state_count: exactLeaves(emptyRoot, '暂无数据').length,
                 };
         };
-        const container = document.querySelector('.ma-q-table-container');
+        let container = document.querySelector('.ma-q-table-container');
         const result = {
                 route: location.hash || '',
                 route_match: location.hash === '#/home/myAccount/query'
@@ -233,10 +242,11 @@ const QUERY_SCRIPT = pageScript(String.raw`
                 ))
         ));
         result.status_filter = status?.value || '';
-        const tabs = [...container.querySelectorAll('li.gs-tab-line')]
-                .filter(visible);
-        for (const label of ['当日委托', '当日成交', '历史委托', '历史成交']) {
-                const matches = tabs.filter((tab) => exactLeaves(tab, label).length > 0);
+        const requestedLabels = historicalOnly
+                ? ['历史委托', '历史成交']
+                : ['当日委托', '当日成交', '历史委托', '历史成交'];
+        for (const label of requestedLabels) {
+                const matches = exactLeaves(container, label);
                 if (matches.length !== 1) {
                         result.tabs[label] = {
                                 status: 'not_proven',
@@ -246,31 +256,130 @@ const QUERY_SCRIPT = pageScript(String.raw`
                         continue;
                 }
                 matches[0].click();
-                await waitForPage(100);
-                const scan = await scanTablePages(container, () => readTable(container));
+                await waitForPage(300);
+                const refreshedContainers = document.querySelectorAll(
+                        '.ma-q-table-container'
+                );
+                if (refreshedContainers.length !== 1) {
+                        result.tabs[label] = {
+                                status: 'not_proven',
+                                locator_count: matches.length,
+                                reason: 'account_query_container_changed',
+                                complete_scan: false,
+                        };
+                        continue;
+                }
+                container = refreshedContainers[0];
+                let dateFilter = null;
+                if (label.startsWith('历史')) {
+                        const dateInputs = [...container.querySelectorAll('input[type="text"]')]
+                                .filter(visible)
+                                .filter((input) => /^\d{4}-\d{2}-\d{2}$/.test(
+                                        String(input.value || '').trim()
+                                ));
+                        const queryControls = exactLeaves(container, '查询');
+                        if (targetDate && dateInputs.length === 2
+                                && queryControls.length === 1) {
+                                setValue(dateInputs[0], targetDate);
+                                setValue(dateInputs[1], targetDate);
+                                queryControls[0].click();
+                                await waitForPage(1000);
+                                const queriedContainers = document.querySelectorAll(
+                                        '.ma-q-table-container'
+                                );
+                                if (queriedContainers.length === 1) {
+                                        container = queriedContainers[0];
+                                }
+                        }
+                        dateFilter = {
+                                input_count: dateInputs.length,
+                                query_control_count: queryControls.length,
+                                start: dateInputs.length === 2
+                                        ? String(dateInputs[0].value || '').trim() : '',
+                                end: dateInputs.length === 2
+                                        ? String(dateInputs[1].value || '').trim() : '',
+                                applied: dateInputs.length === 2
+                                        && queryControls.length === 1
+                                        && (!targetDate || (
+                                                String(dateInputs[0].value || '').trim()
+                                                        === targetDate
+                                                && String(dateInputs[1].value || '').trim()
+                                                        === targetDate
+                                        )),
+                        };
+                }
+                let tableRoot = container;
+                let structuralTable = false;
+                if (label.startsWith('历史')) {
+                        const refreshedDateInputs = [
+                                ...container.querySelectorAll('input[type="text"]'),
+                        ].filter(visible).filter((input) => /^\d{4}-\d{2}-\d{2}$/
+                                .test(String(input.value || '').trim()));
+                        const roots = [];
+                        for (const input of refreshedDateInputs) {
+                                let candidate = input.parentNode;
+                                for (let depth = 0; candidate && depth < 5; depth += 1) {
+                                        const dates = [
+                                                ...candidate.querySelectorAll('input[type="text"]'),
+                                        ].filter(visible).filter((node) => /^\d{4}-\d{2}-\d{2}$/
+                                                .test(String(node.value || '').trim()));
+                                        const queries = exactLeaves(candidate, '查询');
+                                        const tables = [...candidate.querySelectorAll('table')]
+                                                .filter((table) => tableHeaders(table).length > 0);
+                                        if (dates.length === 2 && queries.length === 1
+                                                && tables.length === 1) {
+                                                roots.push(candidate);
+                                                break;
+                                        }
+                                        candidate = candidate.parentNode;
+                                }
+                        }
+                        const uniqueRoots = [...new Set(roots)];
+                        if (uniqueRoots.length === 1) {
+                                tableRoot = uniqueRoots[0];
+                                structuralTable = true;
+                        }
+                }
+                const scan = await scanTablePages(
+                        tableRoot,
+                        () => readTable(tableRoot, structuralTable, container)
+                );
                 const firstPage = scan.pages[0] || {table_count: 0, headers: []};
+                const terminalReadback = Number(firstPage.row_count || 0) > 0
+                        || firstPage.empty_state_count === 1;
+                const filterComplete = !label.startsWith('历史')
+                        || dateFilter?.applied === true;
                 result.tabs[label] = {
                         status: 'read',
                         locator_count: 1,
                         table: mergeTablePages(scan.pages),
                         table_count: firstPage.table_count,
                         surface_ready: firstPage.table_count === 1
-                                && firstPage.headers.length > 0,
+                                && firstPage.headers.length > 0
+                                && terminalReadback,
+                        empty_state_count: firstPage.empty_state_count,
+                        terminal_readback: terminalReadback,
+                        date_filter: dateFilter,
                         pagination_present: scan.pagination_present,
                         pagination_complete: scan.pagination_complete,
                         page_count: scan.page_count,
                         complete_scan: firstPage.table_count === 1
                                 && firstPage.headers.length > 0
+                                && terminalReadback
+                                && filterComplete
                                 && scan.pagination_complete,
                 };
         }
         result.body_text = '';
         const tabResults = Object.values(result.tabs);
         result.complete_scan = result.route_match
-                && tabResults.length === 4
+                && tabResults.length === requestedLabels.length
                 && tabResults.every((tab) => tab.complete_scan === true);
         return result;
-`, {async: true});
+`, {async: true})
+        .replace('__XIAOCAO_TARGET_DATE__', dateLiteral)
+        .replace('__XIAOCAO_HISTORICAL_ONLY__', historicalLiteral);
+}
 
 const MANUAL_ORDERS_SCRIPT = pageScript(String.raw`
         const readTable = (root) => {
@@ -460,6 +569,8 @@ const ORDER_HEADERS = Object.freeze({
 
 const DEAL_HEADERS = Object.freeze({
     orderId: ORDER_HEADERS.orderId,
+    code: ORDER_HEADERS.code,
+    side: ORDER_HEADERS.side,
     quantity: ['成交量', '成交数量', '数量'],
     price: ['成交价', '成交价格', '价格'],
 });
@@ -525,15 +636,105 @@ function mapExactOrderReceipt(querySnapshot, expected, observedTradeDate) {
         fillPrice: null,
         active: null,
         receiptMapping: false,
+        absenceProof: false,
     };
+    const combinedSnapshot = querySnapshot?.orders
+        ? querySnapshot
+        : {orders: querySnapshot, assets: null};
+    const ordersSnapshot = combinedSnapshot.orders;
+    if (expected?.date < observedTradeDate && !expected?.orderId) {
+        const orderTab = ordersSnapshot?.tabs?.['历史委托'];
+        const dealTab = ordersSnapshot?.tabs?.['历史成交'];
+        const orderTable = orderTab?.table;
+        const dealTable = dealTab?.table;
+        const assets = combinedSnapshot.assets;
+        const assetTable = assets?.table;
+        const exactFilter = (tab) => tab?.date_filter?.applied === true
+            && tab.date_filter.start === expected.date
+            && tab.date_filter.end === expected.date;
+        const tablesComplete = orderTab?.complete_scan === true
+            && dealTab?.complete_scan === true
+            && assets?.complete_scan === true
+            && exactFilter(orderTab)
+            && exactFilter(dealTab)
+            && Array.isArray(orderTable?.headers)
+            && Array.isArray(orderTable?.rows)
+            && Number(orderTable?.row_count) === orderTable.rows.length
+            && Array.isArray(dealTable?.headers)
+            && Array.isArray(dealTable?.rows)
+            && Number(dealTable?.row_count) === dealTable.rows.length
+            && Array.isArray(assetTable?.headers)
+            && Array.isArray(assetTable?.rows)
+            && Number(assetTable?.row_count) === assetTable.rows.length;
+        if (!tablesComplete) {
+            return {...empty, statusReason: 'prior_day_absence_scan_incomplete'};
+        }
+        const relatedOrders = orderTable.rows.filter((row) => (
+            codeCell(tableCell(orderTable, row, ORDER_HEADERS.code)) === expected.code
+            && String(tableCell(orderTable, row, ORDER_HEADERS.side) || '').trim()
+                === expected.side
+        ));
+        const relatedDeals = dealTable.rows.filter((row) => (
+            codeCell(tableCell(dealTable, row, DEAL_HEADERS.code)) === expected.code
+            && String(tableCell(dealTable, row, DEAL_HEADERS.side) || '').trim()
+                === expected.side
+        ));
+        const codeIndexes = assetTable.headers
+            .map((header, index) => String(header || '').trim() === '代码/名称'
+                ? index : -1)
+            .filter((index) => index >= 0);
+        const holdingIndexes = assetTable.headers
+            .map((header, index) => String(header || '').trim() === '持仓'
+                ? index : -1)
+            .filter((index) => index >= 0);
+        if (codeIndexes.length !== 1 || holdingIndexes.length !== 1) {
+            return {...empty, statusReason: 'prior_day_holding_scan_incomplete'};
+        }
+        const targetHoldings = [];
+        for (const row of assetTable.rows) {
+            if (!Array.isArray(row)
+                    || row.length <= Math.max(codeIndexes[0], holdingIndexes[0])) {
+                return {...empty, statusReason: 'prior_day_holding_scan_incomplete'};
+            }
+            const observedCode = codeCell(row[codeIndexes[0]]);
+            if (!observedCode) {
+                return {...empty, statusReason: 'prior_day_holding_scan_incomplete'};
+            }
+            if (observedCode === expected.code) {
+                const shares = numericCell(row[holdingIndexes[0]]);
+                if (shares === null || shares < 0) {
+                    return {...empty, statusReason: 'prior_day_holding_scan_incomplete'};
+                }
+                targetHoldings.push(shares);
+            }
+        }
+        const targetHoldingShares = targetHoldings.length === 0
+            ? 0
+            : targetHoldings.length === 1 ? targetHoldings[0] : null;
+        const absenceProof = relatedOrders.length === 0
+            && relatedDeals.length === 0
+            && targetHoldingShares === 0;
+        return {
+            ...empty,
+            status: absenceProof ? 'not_submitted' : 'unknown',
+            statusReason: absenceProof
+                ? 'prior_day_broker_absence_proven'
+                : 'prior_day_related_activity_or_holding_present',
+            exactOrderMatchCount: relatedOrders.length,
+            exactDealMatchCount: relatedDeals.length,
+            targetHoldingShares,
+            active: absenceProof ? false : null,
+            absenceProof,
+        };
+    }
     if (!expected?.orderId) {
         return {...empty, statusReason: 'broker_order_id_required'};
     }
     if (expected.date !== observedTradeDate) {
         return {...empty, statusReason: 'trade_date_not_current'};
     }
-    const orderTab = querySnapshot?.tabs?.['当日委托'];
-    const dealTab = querySnapshot?.tabs?.['当日成交'];
+    const orderTab = ordersSnapshot?.tabs?.['当日委托'];
+    const dealTab = ordersSnapshot?.tabs?.['当日成交'];
     const orderTable = orderTab?.table;
     const dealTable = dealTab?.table;
     if (orderTab?.complete_scan !== true
@@ -624,8 +825,8 @@ function mapExactOrderReceipt(querySnapshot, expected, observedTradeDate) {
 
 function collectScope(scope) {
     return {
-        assets: scope === 'assets' || scope === 'all',
-        orders: scope === 'orders' || scope === 'all',
+        assets: scope === 'assets' || scope === 'settlement' || scope === 'all',
+        orders: scope === 'orders' || scope === 'settlement' || scope === 'all',
         strategies: scope === 'strategies' || scope === 'all',
     };
 }
@@ -680,7 +881,15 @@ cli({
             if (scopes.assets) snapshots.assets = await page.evaluate(ASSETS_SCRIPT);
             if (scopes.orders) {
                 await navigate(page, ROUTES.query);
-                snapshots.orders = await page.evaluate(QUERY_SCRIPT);
+                const historicalOnly = Boolean(
+                    input.orderMatch
+                    && !input.orderMatch.orderId
+                    && input.orderMatch.date < chinaTradeDate()
+                );
+                snapshots.orders = await page.evaluate(queryScript(
+                    input.orderMatch?.date || '',
+                    historicalOnly,
+                ));
                 if (!input.orderMatch) {
                     const manualRoute = await page.evaluate(MANUAL_ROUTE_DISCOVERY_SCRIPT);
                     snapshots.manual_route_discovery = {
@@ -738,14 +947,16 @@ cli({
                 && snapshotValues.every((snapshot) => snapshot?.complete_scan === true);
             const accountBindingProven = finalState.account_binding === 'proven';
             const mapping = mapExactOrderReceipt(
-                snapshots.orders,
+                snapshots,
                 input.orderMatch,
                 chinaTradeDate(),
             );
             const mappingRequested = input.orderMatch !== null;
             const reconcileComplete = accountBindingProven
                 && pageScansComplete
-                && (!mappingRequested || mapping.receiptMapping);
+                && (!mappingRequested
+                    || mapping.receiptMapping
+                    || mapping.absenceProof);
             return asSingleReceipt(baseReceipt(
                 TEMPLATE_NAME,
                 finalState.route || ROUTES.assets,
@@ -765,6 +976,7 @@ cli({
                     logical_account_id: input.logicalAccountId,
                     reconcile_required: !reconcileComplete,
                     reconcile_complete: reconcileComplete,
+                    absence_proof: mappingRequested ? mapping.absenceProof : false,
                     order_id: mappingRequested ? mapping.orderId : null,
                     requested_shares: mappingRequested ? mapping.requestedShares : null,
                     filled_shares: mappingRequested ? mapping.filledShares : null,
@@ -772,6 +984,9 @@ cli({
                     order_price: mappingRequested ? mapping.orderPrice : null,
                     fill_price: mappingRequested ? mapping.fillPrice : null,
                     active: mappingRequested ? mapping.active : null,
+                    submitted: mapping.absenceProof ? false : null,
+                    saved: mapping.absenceProof ? false : null,
+                    started: mapping.absenceProof ? false : null,
                     field_readback: snapshots,
                     locator_proof: {
                         assets_route: scopes.assets ? ROUTES.assets : null,
@@ -785,6 +1000,15 @@ cli({
                         exact_deal_match_count: mappingRequested
                             ? mapping.exactDealMatchCount
                             : null,
+                        target_holding_shares: mappingRequested
+                            ? mapping.targetHoldingShares ?? null
+                            : null,
+                        historical_order_date_filter: mappingRequested
+                            ? snapshots.orders?.tabs?.['历史委托']?.date_filter ?? null
+                            : null,
+                        historical_deal_date_filter: mappingRequested
+                            ? snapshots.orders?.tabs?.['历史成交']?.date_filter ?? null
+                            : null,
                         combo_route: scopes.strategies ? ROUTES.combo : null,
                         condition_route: scopes.strategies ? ROUTES.conditionActive : null,
                     },
@@ -793,6 +1017,7 @@ cli({
                         reconcile: true,
                         account_binding: accountBindingProven,
                         receipt_mapping: mapping.receiptMapping,
+                        absence_proof: mapping.absenceProof,
                         cancellation: false,
                     },
                 }

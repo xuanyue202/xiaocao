@@ -1,6 +1,6 @@
 # Founder Securities OpenCLI templates
 
-Template version: `7`
+Template version: `8`
 Site: `foundersc-quant`
 Scope: secure Edge persistent-session login, route-aware
 probe/preparation/reconciliation/recovery, verified mock/live environment
@@ -204,7 +204,7 @@ are:
 ```json
 {
   "template_name": "foundersc-quant/reconcile",
-  "template_version": 6,
+  "template_version": 8,
   "status": "reconciled",
   "environment": "mock",
   "expected_environment": "mock",
@@ -298,6 +298,17 @@ If a table is paginated, virtualized, missing, its tab cannot be read, or the
 opaque manual route is not unique, it
 returns `reconciled_partial`, `reconcile_complete=false`, and
 `reconcile_required=true`; this is not a conclusive broker outcome.
+
+Template v8 retains v7's strict `allocation_summary` and adds a prior-day,
+read-only absence proof. For a plan that remains UNKNOWN without a broker
+order id, `reconcile --scope settlement` selects the exact prior trade date
+on both historical-order and historical-deal tabs, queries each once, scans
+their terminal table states, and combines zero related rows with a complete
+current asset scan proving zero target holding. Only that exact account-bound
+combination returns `prior_day_broker_absence_proven`; a same-day plan, broad
+date range, incomplete/ambiguous table, related order/deal, or target holding
+remains reconcile-only. The proof never calls a broker API directly and never
+clicks submit, save, start, or withdraw.
 
 Template v7 also exposes a strict `allocation_summary` from either one unique
 asset-summary card set or one unique table row containing `总资产`, `证券市值`,

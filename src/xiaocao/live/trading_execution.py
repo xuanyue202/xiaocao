@@ -448,6 +448,7 @@ class BrokerReceipt:
     order_id: str | None = None
     strategy_id: str | None = None
     receipt_mapping: bool | None = None
+    absence_proof: bool | None = None
     requested_shares: int | None = None
     filled_shares: int = 0
     remaining_shares: int | None = None
@@ -515,6 +516,7 @@ class ExecutionReceipt:
     broker_strategy_id: str | None = None
     broker_status: str | None = None
     receipt_mapping: bool | None = None
+    absence_proof: bool | None = None
     submit_chain_uncertain: bool = False
     order_price: float | None = None
     fill_price: float | None = None
@@ -544,6 +546,7 @@ class ExecutionReceipt:
             "broker_strategy_id": self.broker_strategy_id,
             "broker_status": self.broker_status,
             "receipt_mapping": self.receipt_mapping,
+            "absence_proof": self.absence_proof,
             "submit_chain_uncertain": self.submit_chain_uncertain,
             "order_price": self.order_price,
             "fill_price": self.fill_price,
@@ -578,6 +581,11 @@ class ExecutionReceipt:
             receipt_mapping=(
                 payload.get("receipt_mapping")
                 if isinstance(payload.get("receipt_mapping"), bool)
+                else None
+            ),
+            absence_proof=(
+                payload.get("absence_proof")
+                if isinstance(payload.get("absence_proof"), bool)
                 else None
             ),
             submit_chain_uncertain=(
@@ -1076,6 +1084,17 @@ class TradingExecution:
             return self._start(plan, broker)
         if existing.state in TERMINAL_STATES:
             return existing
+        if existing.state == ExecutionState.CLAIMED:
+            return self._reconcile(
+                plan,
+                broker,
+                replace(
+                    existing,
+                    reason="DURABLE_CLAIM_RECOVERY",
+                    next_action="reconcile_only",
+                    submit_chain_uncertain=True,
+                ),
+            )
         if existing.state in {ExecutionState.UNKNOWN, ExecutionState.SUBMITTED, ExecutionState.ACKNOWLEDGED, ExecutionState.PARTIAL, ExecutionState.RECONCILING}:
             return self._reconcile(plan, broker, existing)
         if existing.state in {ExecutionState.PLANNED, ExecutionState.VALIDATED, ExecutionState.PREPARED}:
@@ -1509,6 +1528,7 @@ class TradingExecution:
             self._incident(plan, unknown)
             return unknown
         if plan.environment == "live" and not self._live_reconcile_receipt_proven(
+            plan,
             previous,
             broker_receipt,
         ):
@@ -1733,9 +1753,39 @@ class TradingExecution:
     @classmethod
     def _live_reconcile_receipt_proven(
         cls,
+        plan: TradePlan,
         previous: ExecutionReceipt,
         receipt: BrokerReceipt,
     ) -> bool:
+        if (
+            receipt.normalized_status() == BrokerStatus.REJECTED
+            and receipt.absence_proof is True
+        ):
+            proof = receipt.locator_proof
+            order_filter = proof.get("historical_order_date_filter")
+            deal_filter = proof.get("historical_deal_date_filter")
+            return (
+                cls._account_binding_proven(receipt)
+                and receipt.conclusive
+                and not previous.broker_order_id
+                and not previous.broker_strategy_id
+                and previous.filled_shares == 0
+                and proof.get("exact_order_match_count") == 0
+                and proof.get("exact_deal_match_count") == 0
+                and proof.get("target_holding_shares") == 0
+                and isinstance(order_filter, dict)
+                and isinstance(deal_filter, dict)
+                and order_filter.get("applied") is True
+                and deal_filter.get("applied") is True
+                and order_filter.get("start") == plan.trade_date
+                and order_filter.get("end") == plan.trade_date
+                and deal_filter.get("start") == plan.trade_date
+                and deal_filter.get("end") == plan.trade_date
+                and all(
+                    receipt.field_readback.get(key) is False
+                    for key in ("submitted", "saved", "started")
+                )
+            )
         return (
             cls._account_binding_proven(receipt)
             and receipt.receipt_mapping is True
@@ -1789,6 +1839,11 @@ class TradingExecution:
                 if isinstance(broker.receipt_mapping, bool)
                 else previous.receipt_mapping
             ),
+            absence_proof=(
+                broker.absence_proof
+                if isinstance(broker.absence_proof, bool)
+                else previous.absence_proof
+            ),
             order_price=broker.order_price,
             fill_price=broker.fill_price,
             latest_price=broker.latest_price,
@@ -1803,6 +1858,7 @@ class TradingExecution:
             next_action=(
                 "reconcile" if state in {ExecutionState.ACKNOWLEDGED, ExecutionState.PARTIAL} else
                 "reconcile_only" if state == ExecutionState.UNKNOWN else
+                "stop" if state == ExecutionState.REJECTED and broker.absence_proof is True else
                 "human_review" if state == ExecutionState.REJECTED else "stop"
             ),
             observed_at=broker.observed_at or self.now(),

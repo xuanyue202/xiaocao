@@ -105,6 +105,91 @@ console.log(JSON.stringify({exact, duplicate, missingOrderId, wrongDate}));
     assert payload["wrongDate"]["statusReason"] == "trade_date_not_current"
 
 
+def test_prior_day_absence_requires_exact_history_filters_and_zero_holding():
+    node_script = r"""
+const mapping = new Function(
+    `${MAPPING_SOURCE}; return mapExactOrderReceipt;`,
+)();
+const emptyOrders = {
+    complete_scan: true,
+    date_filter: {
+        start: '2026-08-24', end: '2026-08-24', applied: true,
+    },
+    table: {
+        headers: ['时间', '代码/名称', '买/卖', '委托量', '委托价', '状态'],
+        row_count: 0,
+        rows: [],
+    },
+};
+const emptyDeals = {
+    complete_scan: true,
+    date_filter: {
+        start: '2026-08-24', end: '2026-08-24', applied: true,
+    },
+    table: {
+        headers: ['时间', '代码/名称', '买/卖', '成交量', '成交价', '成交金额'],
+        row_count: 0,
+        rows: [],
+    },
+};
+const emptyAssets = {
+    complete_scan: true,
+    table: {
+        headers: ['代码/名称', '持仓'],
+        row_count: 1,
+        rows: [['515120 创新药ETF广发', '65100']],
+    },
+};
+const expected = {
+    code: '603801', side: '买入', quantity: 800, price: 6.62,
+    date: '2026-08-24', orderId: '',
+};
+const snapshot = {
+    assets: emptyAssets,
+    orders: {tabs: {'历史委托': emptyOrders, '历史成交': emptyDeals}},
+};
+const absent = mapping(snapshot, expected, '2026-08-25');
+const wrongFilter = mapping({
+    ...snapshot,
+    orders: {tabs: {
+        '历史委托': {
+            ...emptyOrders,
+            date_filter: {...emptyOrders.date_filter, start: '2026-08-18'},
+        },
+        '历史成交': emptyDeals,
+    }},
+}, expected, '2026-08-25');
+const holdingPresent = mapping({
+    ...snapshot,
+    assets: {
+        ...emptyAssets,
+        table: {
+            ...emptyAssets.table,
+            row_count: 1,
+            rows: [['603801 志邦家居', '800']],
+        },
+    },
+}, expected, '2026-08-25');
+const sameDay = mapping(snapshot, expected, '2026-08-24');
+console.log(JSON.stringify({absent, wrongFilter, holdingPresent, sameDay}));
+""".replace("MAPPING_SOURCE", json.dumps(_order_mapping_source()))
+    completed = subprocess.run(
+        [_node(), "--input-type=module", "--eval", node_script],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+    assert completed.returncode == 0, completed.stderr
+    payload = json.loads(completed.stdout)
+    assert payload["absent"]["status"] == "not_submitted"
+    assert payload["absent"]["absenceProof"] is True
+    assert payload["absent"]["statusReason"] == "prior_day_broker_absence_proven"
+    assert payload["wrongFilter"]["absenceProof"] is False
+    assert payload["holdingPresent"]["absenceProof"] is False
+    assert payload["sameDay"]["absenceProof"] is False
+
+
 def test_browser_scripts_execute_normal_and_fail_closed_readbacks(tmp_path: Path):
     common_url = (TEMPLATE_ROOT / "common.mjs").as_uri()
     prepare_path = str(TEMPLATE_ROOT / "prepare.js")

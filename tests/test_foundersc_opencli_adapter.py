@@ -851,6 +851,71 @@ def test_package_limit_reconcile_keeps_account_proof_when_mapping_is_pending() -
     assert receipt.conclusive is False
 
 
+def test_prior_day_package_limit_absence_is_conclusive_without_an_order_id() -> None:
+    runner = Runner({
+        "status": "not_submitted",
+        "status_reason": "prior_day_broker_absence_proven",
+        "environment": "live",
+        "environment_data_namespace": "live",
+        "environment_proof_complete": True,
+        "fund_account_match_count": 1,
+        "fund_account_fingerprint": "987******210",
+        "logical_account_id": "primary",
+        "account_binding": "proven",
+        "order_id": None,
+        "requested_shares": 200,
+        "filled_shares": 0,
+        "remaining_shares": 200,
+        "order_price": 10.05,
+        "reconcile_required": False,
+        "reconcile_complete": True,
+        "absence_proof": True,
+        "submitted": False,
+        "saved": False,
+        "started": False,
+        "locator_proof": {
+            "exact_order_match_count": 0,
+            "exact_deal_match_count": 0,
+            "target_holding_shares": 0,
+            "historical_order_date_filter": {
+                "start": "2026-08-15",
+                "end": "2026-08-15",
+                "applied": True,
+            },
+            "historical_deal_date_filter": {
+                "start": "2026-08-15",
+                "end": "2026-08-15",
+                "applied": True,
+            },
+        },
+        "capabilities": {
+            "receipt_mapping": False,
+            "absence_proof": True,
+        },
+    })
+    adapter = FounderscQuantOpenCLIAdapter(
+        opencli_command=("opencli",),
+        runner=runner,
+        route="package-limit",
+        expected_fund_account_fingerprint="987******210",
+    )
+    plan = replace(_plan(), environment="live")
+
+    receipt = adapter.reconcile(plan, {})
+
+    assert receipt.status == BrokerStatus.REJECTED
+    assert receipt.absence_proof is True
+    assert receipt.conclusive is True
+    assert receipt.account_binding == "proven"
+    assert receipt.field_readback == {
+        "submitted": False,
+        "saved": False,
+        "started": False,
+    }
+    command = runner.commands[0]
+    assert command[command.index("--scope") + 1] == "settlement"
+
+
 def test_invalid_command_output_is_unknown_and_safe() -> None:
     class BadRunner:
         def __call__(self, command, **_kwargs):
@@ -1004,7 +1069,7 @@ def test_environment_preflight_rejects_namespace_without_authenticated_account()
 def test_login_preflight_requires_authenticated_mock_namespace_proof() -> None:
     runner = Runner({
         "template_name": "foundersc-quant/login",
-        "template_version": 7,
+        "template_version": 8,
         "status": "login_authenticated",
         "environment": "mock",
         "environment_data_namespace": "mock",
@@ -1037,14 +1102,14 @@ def test_login_preflight_requires_authenticated_mock_namespace_proof() -> None:
     assert receipt["session_reuse_proven"] is True
     assert receipt["fresh_login_proven"] is False
     assert receipt["template_name"] == "foundersc-quant/login"
-    assert receipt["template_version"] == 7
+    assert receipt["template_version"] == 8
     assert runner.commands[0][1:3] == ["foundersc-quant", "login"]
 
 
 def test_login_preflight_rejects_authenticated_receipt_without_authentication_path_proof() -> None:
     runner = Runner({
         "template_name": "foundersc-quant/login",
-        "template_version": 7,
+        "template_version": 8,
         "status": "login_authenticated",
         "environment": "mock",
         "environment_data_namespace": "mock",
@@ -1068,7 +1133,7 @@ def test_login_preflight_rejects_authenticated_receipt_without_authentication_pa
 def test_login_preflight_preserves_keychain_fresh_login_proof() -> None:
     runner = Runner({
         "template_name": "foundersc-quant/login",
-        "template_version": 7,
+        "template_version": 8,
         "status": "login_authenticated",
         "environment": "mock",
         "environment_data_namespace": "mock",
@@ -1146,7 +1211,7 @@ def test_login_preflight_binds_proof_to_v7_login_template_capability(
 def test_login_preflight_rejects_live_or_unproven_authenticated_receipt() -> None:
     runner = Runner({
         "template_name": "foundersc-quant/login",
-        "template_version": 7,
+        "template_version": 8,
         "status": "login_authenticated",
         "environment": "live",
         "environment_data_namespace": "live",

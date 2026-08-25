@@ -11,6 +11,7 @@ from xiaocao.live.trading_execution import (
     BrokerCapability,
     BrokerReceipt,
     BrokerStatus,
+    ExecutionReceipt,
     ExecutionState,
     InMemoryExecutionStore,
     TradePlan,
@@ -162,6 +163,119 @@ def test_unknown_after_submit_never_replays_submit(tmp_path: Path) -> None:
     assert broker.submit_calls == 1
     assert broker.reconcile_calls == 1
     assert len(messages) == 1
+
+
+def test_durable_claim_after_process_stop_reconciles_without_replaying_submit(
+    tmp_path: Path,
+) -> None:
+    plan = _plan()
+    store = InMemoryExecutionStore(tmp_path / "events.jsonl")
+    store.append(
+        plan=plan,
+        receipt=ExecutionReceipt(
+            plan_id=plan.plan_id,
+            plan_hash=plan.plan_hash,
+            state=ExecutionState.CLAIMED,
+            attempt=1,
+            remaining_shares=plan.shares,
+            next_action="submit_once",
+        ),
+        kind="durable_claim",
+        details={"claim_id": "claim-before-process-stop"},
+    )
+    broker = FakeBroker(
+        reconcile=[
+            BrokerReceipt(
+                status=BrokerStatus.FILLED,
+                order_id="o-1",
+                strategy_id="s-1",
+                filled_shares=plan.shares,
+            )
+        ]
+    )
+    engine = TradingExecution(store=store)
+
+    receipt = engine.execute(plan, broker)
+
+    assert receipt.state == ExecutionState.FILLED
+    assert receipt.submit_chain_uncertain is True
+    assert broker.submit_calls == 0
+    assert broker.reconcile_calls == 1
+
+
+@pytest.mark.parametrize(
+    ("filter_date", "expected_state"),
+    [
+        ("2026-08-15", ExecutionState.REJECTED),
+        ("2026-08-14", ExecutionState.UNKNOWN),
+    ],
+)
+def test_live_prior_day_absence_reconcile_never_submits_and_requires_exact_dates(
+    tmp_path: Path,
+    filter_date: str,
+    expected_state: ExecutionState,
+) -> None:
+    plan = _plan(environment="live")
+    broker = FakeBroker(
+        reconcile=[
+            BrokerReceipt(
+                status=BrokerStatus.REJECTED,
+                reason="prior_day_broker_absence_proven",
+                absence_proof=True,
+                conclusive=True,
+                account_binding="proven",
+                filled_shares=0,
+                locator_proof={
+                    "exact_order_match_count": 0,
+                    "exact_deal_match_count": 0,
+                    "target_holding_shares": 0,
+                    "historical_order_date_filter": {
+                        "start": filter_date,
+                        "end": filter_date,
+                        "applied": True,
+                    },
+                    "historical_deal_date_filter": {
+                        "start": filter_date,
+                        "end": filter_date,
+                        "applied": True,
+                    },
+                },
+                field_readback={
+                    "submitted": False,
+                    "saved": False,
+                    "started": False,
+                },
+            )
+        ]
+    )
+    store = InMemoryExecutionStore(tmp_path / "events.jsonl")
+    store.append(
+        plan=plan,
+        receipt=ExecutionReceipt(
+            plan_id=plan.plan_id,
+            plan_hash=plan.plan_hash,
+            state=ExecutionState.UNKNOWN,
+            reason="server_confirmation_not_proven",
+            filled_shares=0,
+            remaining_shares=plan.shares,
+            next_action="reconcile_only",
+            submit_chain_uncertain=True,
+        ),
+        kind="submit_receipt_unproven",
+    )
+    engine = TradingExecution(store=store, notifier=lambda _title, _body: "ok")
+
+    reconciled = engine.execute(plan, broker)
+    repeated = engine.execute(plan, broker)
+
+    assert reconciled.state == repeated.state == expected_state
+    assert broker.submit_calls == 0
+    assert broker.reconcile_calls == (1 if expected_state == ExecutionState.REJECTED else 2)
+    if expected_state == ExecutionState.REJECTED:
+        assert reconciled.absence_proof is True
+        assert reconciled.reason == "prior_day_broker_absence_proven"
+    else:
+        assert reconciled.reason == "LIVE_RECONCILE_RECEIPT_UNPROVEN"
 
 
 def test_live_order_is_denied_before_adapter_side_effect_without_two_keys(tmp_path: Path) -> None:

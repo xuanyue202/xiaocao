@@ -7,11 +7,13 @@ remain responsible for deciding whether an external submit is possible.
 """
 from __future__ import annotations
 
+import fcntl
 import hashlib
 import json
 import math
 import os
 import re
+from contextlib import contextmanager
 from dataclasses import asdict, dataclass, replace
 from datetime import datetime, timezone
 from pathlib import Path
@@ -22,8 +24,10 @@ from .trading_execution import (
     BrokerReceipt,
     BrokerStatus,
     ExecutionReceipt,
+    ExecutionStore,
     ExecutionState,
     TradePlan,
+    trade_plan_from_frozen_row,
 )
 from .trading_runner import (
     frozen_rows_digest,
@@ -43,7 +47,15 @@ _PAPER_LEDGER_NAMES = frozenset(
 )
 _BOOK_B_INITIAL_CAPITAL = 30_000.0
 _SETTLEMENT_REQUIRING_STATES = frozenset(
-    {"submitted", "acknowledged", "partial", "filled", "unknown", "reconciling"}
+    {
+        "claimed",
+        "submitted",
+        "acknowledged",
+        "partial",
+        "filled",
+        "unknown",
+        "reconciling",
+    }
 )
 
 
@@ -100,6 +112,7 @@ def load_book_b_live_capital_basis(
             lines = events.read_text(encoding="utf-8").splitlines()
         except OSError as exc:
             raise ValueError("LIVE_BOOK_B_EXECUTION_EVIDENCE_UNREADABLE") from exc
+        events_by_plan: dict[str, list[dict]] = {}
         for line in lines:
             if not line.strip():
                 continue
@@ -116,13 +129,529 @@ def load_book_b_live_capital_basis(
                 filled_shares = int(receipt.get("filled_shares") or 0)
             except (TypeError, ValueError) as exc:
                 raise ValueError("LIVE_BOOK_B_EXECUTION_EVIDENCE_INVALID") from exc
-            if state in _SETTLEMENT_REQUIRING_STATES or filled_shares > 0:
+            if filled_shares > 0:
+                raise ValueError("LIVE_BOOK_B_SETTLED_NAV_RECONCILE_REQUIRED")
+            plan_id = str(event.get("plan_id") or receipt.get("plan_id") or "").strip()
+            if not plan_id:
+                raise ValueError("LIVE_BOOK_B_EXECUTION_EVIDENCE_INVALID")
+            events_by_plan.setdefault(plan_id, []).append(event)
+        for plan_id, plan_events in events_by_plan.items():
+            latest = plan_events[-1]
+            receipt = latest.get("receipt")
+            receipt = receipt if isinstance(receipt, dict) else {}
+            latest_state = str(
+                latest.get("state") or receipt.get("state") or ""
+            ).strip().lower()
+            if latest_state in _SETTLEMENT_REQUIRING_STATES:
+                raise ValueError("LIVE_BOOK_B_SETTLED_NAV_RECONCILE_REQUIRED")
+            had_unsettled_boundary = any(
+                str(
+                    event.get("state")
+                    or (
+                        event.get("receipt", {}).get("state")
+                        if isinstance(event.get("receipt"), dict)
+                        else ""
+                    )
+                    or ""
+                ).strip().lower() in _SETTLEMENT_REQUIRING_STATES
+                for event in plan_events[:-1]
+            )
+            if not had_unsettled_boundary:
+                continue
+            if not (
+                _prior_day_absence_event_proven(plan_id, plan_events)
+                or _mapped_zero_fill_terminal_event_proven(plan_id, plan_events)
+            ):
                 raise ValueError("LIVE_BOOK_B_SETTLED_NAV_RECONCILE_REQUIRED")
     return BookBLiveCapitalBasis(
         settled_nav=_BOOK_B_INITIAL_CAPITAL,
         current_open_exposure=0.0,
         source="initial_book_b_capital",
     )
+
+
+def _event_chain_proven(
+    plan_id: str,
+    plan_events: list[dict],
+) -> bool:
+    previous_hash: str | None = None
+    expected_sequence = 1
+    for event in plan_events:
+        if event.get("plan_id") != plan_id:
+            return False
+        if event.get("sequence") != expected_sequence:
+            return False
+        if event.get("previous_hash") != previous_hash:
+            return False
+        claimed_hash = str(event.get("event_hash") or "")
+        if not re.fullmatch(r"[0-9a-f]{64}", claimed_hash):
+            return False
+        canonical = dict(event)
+        canonical.pop("event_hash", None)
+        recomputed = hashlib.sha256(
+            json.dumps(
+                canonical,
+                ensure_ascii=False,
+                sort_keys=True,
+                separators=(",", ":"),
+                default=str,
+            ).encode("utf-8")
+        ).hexdigest()
+        if recomputed != claimed_hash:
+            return False
+        previous_hash = claimed_hash
+        expected_sequence += 1
+    return True
+
+
+def _prior_day_absence_event_proven(
+    plan_id: str,
+    plan_events: list[dict],
+) -> bool:
+    """Verify one hash-chained terminal broker-absence transition."""
+    parts = plan_id.split(":")
+    if len(parts) < 4 or parts[0] not in {"book-b", "book-b-canary"}:
+        return False
+    trade_date = parts[1]
+    if (
+        not re.fullmatch(r"\d{4}-\d{2}-\d{2}", trade_date)
+        or not _event_chain_proven(plan_id, plan_events)
+    ):
+        return False
+    latest = plan_events[-1]
+    receipt = latest.get("receipt")
+    if not isinstance(receipt, dict):
+        return False
+    proof = receipt.get("locator_proof")
+    if not isinstance(proof, dict):
+        return False
+    order_filter = proof.get("historical_order_date_filter")
+    deal_filter = proof.get("historical_deal_date_filter")
+    filters = (order_filter, deal_filter)
+    return (
+        latest.get("kind") == "reconcile_receipt"
+        and latest.get("state") == "rejected"
+        and receipt.get("state") == "rejected"
+        and receipt.get("absence_proof") is True
+        and receipt.get("account_binding") == "proven"
+        and receipt.get("filled_shares") == 0
+        and receipt.get("reason") == "prior_day_broker_absence_proven"
+        and receipt.get("event_id") == latest.get("event_id")
+        and proof.get("exact_order_match_count") == 0
+        and proof.get("exact_deal_match_count") == 0
+        and proof.get("target_holding_shares") == 0
+        and all(isinstance(item, dict) for item in filters)
+        and all(item.get("applied") is True for item in filters)
+        and all(item.get("start") == trade_date for item in filters)
+        and all(item.get("end") == trade_date for item in filters)
+    )
+
+
+def _mapped_zero_fill_terminal_event_proven(
+    plan_id: str,
+    plan_events: list[dict],
+) -> bool:
+    """Accept a real mapped order only after a zero-fill broker terminal."""
+    if not _event_chain_proven(plan_id, plan_events):
+        return False
+    latest = plan_events[-1]
+    receipt = latest.get("receipt")
+    if not isinstance(receipt, dict):
+        return False
+    state = str(latest.get("state") or receipt.get("state") or "").strip().lower()
+    order_id = str(receipt.get("broker_order_id") or "").strip()
+    strategy_id = str(receipt.get("broker_strategy_id") or "").strip()
+    mapped_submit = any(
+        isinstance(event.get("receipt"), dict)
+        and event.get("kind") == "submit_receipt"
+        and event["receipt"].get("receipt_mapping") is True
+        and event["receipt"].get("broker_order_id") == order_id
+        and event["receipt"].get("broker_strategy_id") == strategy_id
+        for event in plan_events
+    )
+    return (
+        state in {"cancelled", "rejected"}
+        and latest.get("kind") in {"submit_receipt", "reconcile_receipt"}
+        and receipt.get("state") == state
+        and receipt.get("broker_status") == state
+        and receipt.get("receipt_mapping") is True
+        and receipt.get("account_binding") in {"proven", "bound"}
+        and receipt.get("filled_shares") == 0
+        and int(receipt.get("attempt") or 0) >= 1
+        and bool(order_id)
+        and bool(strategy_id)
+        and receipt.get("event_id") == latest.get("event_id")
+        and mapped_submit
+    )
+
+
+def _intent_datetime(value: object, *, required: bool) -> datetime | None:
+    if value in (None, ""):
+        if required:
+            raise ValueError("LIVE_PLAN_INTENT_DATETIME_MISSING")
+        return None
+    try:
+        parsed = datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+    except ValueError as exc:
+        raise ValueError("LIVE_PLAN_INTENT_DATETIME_INVALID") from exc
+    if parsed.tzinfo is None:
+        raise ValueError("LIVE_PLAN_INTENT_DATETIME_INVALID")
+    return parsed
+
+
+def _trade_plan_from_intent(
+    payload: dict,
+    *,
+    require_canary: bool = False,
+) -> TradePlan:
+    raw = payload.get("plan")
+    if not isinstance(raw, dict):
+        raise ValueError("LIVE_PLAN_INTENT_INVALID")
+    try:
+        plan = TradePlan(
+            plan_id=str(raw["plan_id"]),
+            strategy_run_id=str(raw["strategy_run_id"]),
+            snapshot_ref=str(raw["snapshot_ref"]),
+            strategy_sha=str(raw["strategy_sha"]),
+            trade_date=str(raw["trade_date"]),
+            book=str(raw["book"]),
+            logical_account_id=str(raw["logical_account_id"]),
+            environment=str(raw["environment"]),
+            code=str(raw["code"]),
+            name=str(raw["name"]),
+            side=str(raw["side"]),
+            shares=int(raw["shares"]),
+            limit_price=float(raw["limit_price"]),
+            basket_price=(
+                float(raw["basket_price"])
+                if raw.get("basket_price") is not None
+                else None
+            ),
+            market_guard_status=str(raw["market_guard_status"]),
+            created_at=_intent_datetime(raw["created_at"], required=True),
+            recovery_deadline=_intent_datetime(
+                raw["recovery_deadline"], required=True
+            ),
+            owned_lot_id=raw.get("owned_lot_id"),
+            submit_not_before=_intent_datetime(
+                raw.get("submit_not_before"), required=False
+            ),
+            price_rule=str(raw.get("price_rule") or ""),
+            market_guard_required=raw.get("market_guard_required") is True,
+            market_guard_observed_at=_intent_datetime(
+                raw.get("market_guard_observed_at"), required=False
+            ),
+            market_guard_latest_price=(
+                float(raw["market_guard_latest_price"])
+                if raw.get("market_guard_latest_price") is not None
+                else None
+            ),
+            market_guard_down_price=(
+                float(raw["market_guard_down_price"])
+                if raw.get("market_guard_down_price") is not None
+                else None
+            ),
+            allocation_proof_hash=raw.get("allocation_proof_hash"),
+            sell_authorized=raw.get("sell_authorized") is True,
+            sell_reason=raw.get("sell_reason"),
+            sell_decision_phase=raw.get("sell_decision_phase"),
+            sell_decision_at=_intent_datetime(
+                raw.get("sell_decision_at"), required=False
+            ),
+            sell_block_reason=raw.get("sell_block_reason"),
+        )
+    except (KeyError, TypeError, ValueError) as exc:
+        if isinstance(exc, ValueError) and str(exc).startswith("LIVE_PLAN_"):
+            raise
+        raise ValueError("LIVE_PLAN_INTENT_INVALID") from exc
+    if (
+        payload.get("schema_version") != 1
+        or payload.get("plan_hash") != plan.plan_hash
+        or plan.book != "B"
+        or plan.environment != "live"
+        or plan.logical_account_id != "primary"
+        or (
+            payload.get("plan_id") not in (None, plan.plan_id)
+            if require_canary
+            else payload.get("plan_id") != plan.plan_id
+        )
+        or not plan.plan_id.startswith(
+            "book-b-canary:" if require_canary else "book-b:"
+        )
+    ):
+        raise ValueError("LIVE_PLAN_INTENT_BINDING_MISMATCH")
+    return plan
+
+
+def _trade_plan_from_canary_intent(payload: dict) -> TradePlan:
+    return _trade_plan_from_intent(payload, require_canary=True)
+
+
+def _plan_intent_path(state_dir: Path, plan_id: str) -> Path:
+    digest = hashlib.sha256(plan_id.encode("utf-8")).hexdigest()[:24]
+    return Path(state_dir) / "plan_intents" / f"{digest}.json"
+
+
+@contextmanager
+def _plan_intent_lock(state_dir: Path):
+    intent_dir = Path(state_dir) / "plan_intents"
+    intent_dir.mkdir(parents=True, exist_ok=True)
+    handle = (intent_dir / ".lock").open("a+", encoding="utf-8")
+    fcntl.flock(handle.fileno(), fcntl.LOCK_EX)
+    try:
+        yield
+    finally:
+        fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
+        handle.close()
+
+
+def _plan_semantics(plan: TradePlan) -> dict:
+    payload = plan.canonical_payload()
+    # These timestamps record when the first process materialized the intent.
+    # Every economic, evidence and safety field must remain byte-equivalent.
+    payload.pop("created_at", None)
+    payload.pop("submit_not_before", None)
+    return payload
+
+
+def _bind_durable_plan_intents(
+    config: BookBLiveMorningConfig,
+    plans: list[TradePlan],
+) -> list[TradePlan]:
+    """Persist each immutable live plan before prepare/submit and reuse it.
+
+    A later process must reconcile with the original plan hash rather than
+    regenerating ``created_at`` and accidentally creating a conflicting plan.
+    """
+    store = ExecutionStore(Path(config.state_dir) / "events.jsonl")
+    bound: list[TradePlan] = []
+    with _plan_intent_lock(config.state_dir):
+        for generated in plans:
+            path = _plan_intent_path(config.state_dir, generated.plan_id)
+            if not path.exists():
+                if store.current(generated.plan_id) is not None:
+                    raise ValueError("LIVE_PLAN_INTENT_MISSING")
+                _write_json_atomic(
+                    path,
+                    {
+                        "schema_version": 1,
+                        "plan_id": generated.plan_id,
+                        "plan_hash": generated.plan_hash,
+                        "plan": generated.canonical_payload(),
+                    },
+                )
+            try:
+                payload = json.loads(path.read_text(encoding="utf-8"))
+            except (OSError, json.JSONDecodeError) as exc:
+                raise ValueError("LIVE_PLAN_INTENT_INVALID") from exc
+            if not isinstance(payload, dict):
+                raise ValueError("LIVE_PLAN_INTENT_INVALID")
+            persisted = _trade_plan_from_intent(payload)
+            if (
+                payload.get("schema_version") != 1
+                or payload.get("plan_id") != persisted.plan_id
+                or _plan_semantics(persisted) != _plan_semantics(generated)
+            ):
+                raise ValueError("LIVE_PLAN_INTENT_BINDING_MISMATCH")
+            current = store.current(persisted.plan_id)
+            if current is not None and current.plan_hash != persisted.plan_hash:
+                raise ValueError("LIVE_PLAN_INTENT_EVENT_HASH_MISMATCH")
+            bound.append(persisted)
+    return bound
+
+
+def _restore_durable_plan_for_row(
+    config: BookBLiveMorningConfig,
+    row: dict,
+    *,
+    strategy_sha: str,
+) -> TradePlan | None:
+    plan_id = f"book-b:{config.trade_date}:{row.get('code')}:BUY"
+    store = ExecutionStore(Path(config.state_dir) / "events.jsonl")
+    current = store.current(plan_id)
+    if current is None:
+        return None
+    path = _plan_intent_path(config.state_dir, plan_id)
+    if not path.is_file():
+        raise ValueError("LIVE_PLAN_INTENT_MISSING")
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        raise ValueError("LIVE_PLAN_INTENT_INVALID") from exc
+    if not isinstance(payload, dict):
+        raise ValueError("LIVE_PLAN_INTENT_INVALID")
+    persisted = _trade_plan_from_intent(payload)
+    if current.plan_hash != persisted.plan_hash:
+        raise ValueError("LIVE_PLAN_INTENT_EVENT_HASH_MISMATCH")
+
+    reconstruction_row = dict(row)
+    reconstruction_row["mode_exec_planned_shares"] = persisted.shares
+    reconstruction_row["allocation_proof_hash"] = persisted.allocation_proof_hash
+    reconstruction_row["submit_not_before"] = (
+        persisted.submit_not_before.isoformat()
+        if persisted.submit_not_before is not None
+        else None
+    )
+    reconstructed = trade_plan_from_frozen_row(
+        reconstruction_row,
+        environment="live",
+        logical_account_id=config.logical_account_id,
+        strategy_sha=strategy_sha,
+        now=persisted.created_at,
+        side="BUY",
+        recovery_deadline=persisted.recovery_deadline,
+    )
+    if reconstructed.plan_hash != persisted.plan_hash:
+        raise ValueError("LIVE_PLAN_INTENT_FREEZE_MISMATCH")
+    return persisted
+
+
+def _materialize_or_restore_plans(
+    config: BookBLiveMorningConfig,
+    rows: list[dict],
+    *,
+    strategy_sha: str,
+    allocation: BookBAllocationFacts,
+    now: datetime,
+) -> list[TradePlan]:
+    restored_by_id: dict[str, TradePlan] = {}
+    new_rows: list[dict] = []
+    for row in rows:
+        restored = _restore_durable_plan_for_row(
+            config,
+            row,
+            strategy_sha=strategy_sha,
+        )
+        if restored is None:
+            new_rows.append(row)
+        else:
+            restored_by_id[restored.plan_id] = restored
+    new_plans = plans_from_frozen_rows(
+        new_rows,
+        environment="live",
+        logical_account_id=config.logical_account_id,
+        strategy_sha=strategy_sha,
+        now=now,
+        side="BUY",
+        allocation=allocation,
+    ) if new_rows else []
+    new_by_id = {
+        plan.plan_id: plan
+        for plan in _bind_durable_plan_intents(config, new_plans)
+    }
+    return [
+        restored_by_id.get(
+            f"book-b:{config.trade_date}:{row.get('code')}:BUY"
+        )
+        or new_by_id[f"book-b:{config.trade_date}:{row.get('code')}:BUY"]
+        for row in rows
+    ]
+
+
+def reconcile_open_book_b_plans(
+    state_dir: Path,
+    *,
+    trade_date: str,
+    execute: Callable[[TradePlan], ExecutionReceipt],
+) -> tuple[dict, ...]:
+    """Advance only already-submitted durable plans through broker reconcile."""
+    root = Path(state_dir)
+    intent_dir = root / "plan_intents"
+    if not intent_dir.is_dir():
+        return ()
+    store = ExecutionStore(root / "events.jsonl")
+    open_states = {
+        ExecutionState.CLAIMED,
+        ExecutionState.UNKNOWN,
+        ExecutionState.SUBMITTED,
+        ExecutionState.ACKNOWLEDGED,
+        ExecutionState.PARTIAL,
+        ExecutionState.RECONCILING,
+    }
+    receipts: list[dict] = []
+    for path in sorted(intent_dir.glob("*.json")):
+        try:
+            payload = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError) as exc:
+            raise ValueError("LIVE_PLAN_INTENT_INVALID") from exc
+        if not isinstance(payload, dict):
+            raise ValueError("LIVE_PLAN_INTENT_INVALID")
+        plan = _trade_plan_from_intent(payload)
+        if plan.trade_date > trade_date:
+            continue
+        current = store.current(plan.plan_id)
+        if current is None or current.state not in open_states:
+            continue
+        if current.plan_hash != plan.plan_hash:
+            raise ValueError("LIVE_PLAN_INTENT_EVENT_HASH_MISMATCH")
+        reconciled = execute(plan)
+        durable = store.current(plan.plan_id)
+        if durable is None or durable.event_id != reconciled.event_id:
+            raise ValueError("LIVE_OPEN_PLAN_RECONCILE_NOT_DURABLE")
+        receipts.append(reconciled.as_dict())
+    return tuple(receipts)
+
+
+def _plan_requires_prepare(config: BookBLiveMorningConfig, plan: TradePlan) -> bool:
+    current = ExecutionStore(Path(config.state_dir) / "events.jsonl").current(
+        plan.plan_id
+    )
+    return current is None or current.state in {
+        ExecutionState.PLANNED,
+        ExecutionState.VALIDATED,
+        ExecutionState.PREPARED,
+    }
+
+
+def reconcile_prior_day_canary_unknowns(
+    state_dir: Path,
+    *,
+    trade_date: str,
+    execute: Callable[[TradePlan], ExecutionReceipt],
+) -> tuple[dict, ...]:
+    """Advance prior canary UNKNOWN plans through read-only broker reconcile.
+
+    The durable execution store decides the transition.  Calling ``execute``
+    for an existing UNKNOWN never enters the submit path; this helper then
+    requires a hash-chained terminal absence receipt before returning.
+    """
+    root = Path(state_dir)
+    store = ExecutionStore(root / "events.jsonl")
+    intent_dir = root / "canary_intents"
+    if not intent_dir.is_dir():
+        return ()
+    receipts: list[dict] = []
+    for path in sorted(intent_dir.glob("*.json")):
+        try:
+            payload = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError) as exc:
+            raise ValueError("LIVE_PRIOR_CANARY_INTENT_INVALID") from exc
+        if not isinstance(payload, dict) or not isinstance(payload.get("plan"), dict):
+            continue
+        plan = _trade_plan_from_canary_intent(payload)
+        current = store.current(plan.plan_id)
+        if current is None or current.state not in {
+            ExecutionState.UNKNOWN,
+            ExecutionState.RECONCILING,
+        }:
+            continue
+        if plan.trade_date >= trade_date:
+            continue
+        if current.filled_shares != 0 or current.broker_order_id:
+            raise ValueError("LIVE_PRIOR_UNKNOWN_RECONCILE_REQUIRED")
+        reconciled = execute(plan)
+        durable = store.current(plan.plan_id)
+        if (
+            reconciled.state != ExecutionState.REJECTED
+            or reconciled.absence_proof is not True
+            or reconciled.reason != "prior_day_broker_absence_proven"
+            or durable is None
+            or durable.event_id != reconciled.event_id
+            or durable.absence_proof is not True
+        ):
+            raise ValueError("LIVE_PRIOR_UNKNOWN_RECONCILE_REQUIRED")
+        receipts.append(reconciled.as_dict())
+    return tuple(receipts)
 
 
 def _eligible_buy_rows(rows: list[dict]) -> list[dict]:
@@ -481,19 +1010,18 @@ def run_book_b_live_morning(
                     receipt = _no_action_receipt(config)
                 else:
                     allocation = allocation or _load_allocation(config)
-                    plans = plans_from_frozen_rows(
+                    plans = _materialize_or_restore_plans(
+                        config,
                         rows,
-                        environment="live",
-                        logical_account_id=config.logical_account_id,
                         strategy_sha=str(dated_freeze_receipt["strategy_sha"]),
-                        now=now(),
-                        side="BUY",
                         allocation=allocation,
+                        now=now(),
                     )
                     if prepare_only is not None:
                         preparation_receipts = [
                             _assert_prepare_only(plan, prepare_only(plan))
                             for plan in plans
+                            if _plan_requires_prepare(config, plan)
                         ]
                     if wait_for_submit_window is not None:
                         submit_at = max(
@@ -508,15 +1036,20 @@ def run_book_b_live_morning(
                     for plan in plans:
                         execution_receipt = execute(plan)
                         for _attempt in range(3):
-                            needs_mapping = (
-                                execution_receipt.state == ExecutionState.UNKNOWN
-                                or (
-                                    execution_receipt.next_action
-                                    in {"reconcile", "reconcile_only"}
-                                    and not execution_receipt.broker_order_id
-                                )
+                            needs_reconcile = (
+                                execution_receipt.state
+                                in {
+                                    ExecutionState.CLAIMED,
+                                    ExecutionState.UNKNOWN,
+                                    ExecutionState.SUBMITTED,
+                                    ExecutionState.ACKNOWLEDGED,
+                                    ExecutionState.PARTIAL,
+                                    ExecutionState.RECONCILING,
+                                }
+                                or execution_receipt.next_action
+                                in {"reconcile", "reconcile_only"}
                             )
-                            if not needs_mapping:
+                            if not needs_reconcile:
                                 break
                             if wait_for_reconcile is not None:
                                 wait_for_reconcile()
@@ -561,5 +1094,7 @@ __all__ = [
     "BookBLiveMorningConfig",
     "BookBLiveMorningReceipt",
     "load_book_b_live_capital_basis",
+    "reconcile_open_book_b_plans",
+    "reconcile_prior_day_canary_unknowns",
     "run_book_b_live_morning",
 ]
