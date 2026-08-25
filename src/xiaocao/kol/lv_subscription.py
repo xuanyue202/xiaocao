@@ -102,6 +102,7 @@ MIN_PREVIEW_SHORT_EDGE = 256
 MIN_PREVIEW_LONG_EDGE = 512
 _READ_ONLY_ROUTE_REBIND_ATTEMPTS = 3
 _READ_ONLY_LISTING_ATTEMPTS = 3
+_READ_ONLY_PROVIDER_LINK_ATTEMPTS = 2
 
 
 def _valid_preview_dimensions(width: int, height: int) -> bool:
@@ -4049,6 +4050,7 @@ try {
         *,
         session: str,
         profile: str | None,
+        operation: str = "ticket04_download_confirmation_route_readback",
     ) -> None:
         """Rebind and read back the exact parent before a safe retry."""
         parent_path = str(PurePosixPath(str(item["path"])).parent)
@@ -4060,7 +4062,7 @@ try {
             profile=profile,
             route=route,
             expected_parent_path=parent_path,
-            operation="ticket04_download_confirmation_route_readback",
+            operation=operation,
         )
 
     def _download_confirmation_eval(
@@ -5290,19 +5292,46 @@ try {
                 code="provider_direct_identity_invalid",
                 stage="provider_download_link",
             )
-        link = self._opencli_json(
-            session,
-            "eval",
-            _provider_direct_link_script(
-                expected_share_path=urlparse(self.share_url).path,
-                expected_provider_file_id=provider_file_id,
-                expected_item_path=str(item["path"]),
-                expected_name=str(item["name"]),
-                expected_size=int(item["size"]),
-            ),
-            profile=profile,
-            timeout_seconds=30,
+        link_script = _provider_direct_link_script(
+            expected_share_path=urlparse(self.share_url).path,
+            expected_provider_file_id=provider_file_id,
+            expected_item_path=str(item["path"]),
+            expected_name=str(item["name"]),
+            expected_size=int(item["size"]),
         )
+        retryable_codes = {
+            "detached_mid_command",
+            "opencli_command_failed",
+            "opencli_timeout",
+        }
+        for attempt in range(_READ_ONLY_PROVIDER_LINK_ATTEMPTS):
+            try:
+                link = self._opencli_json(
+                    session,
+                    "eval",
+                    link_script,
+                    profile=profile,
+                    timeout_seconds=30,
+                )
+            except EnrichmentDiagnosticError as exc:
+                if (
+                    attempt + 1 < _READ_ONLY_PROVIDER_LINK_ATTEMPTS
+                    and exc.diagnostic_stage == "browser_eval"
+                    and exc.diagnostic_code in retryable_codes
+                ):
+                    try:
+                        self._rebind_download_confirmation_session(
+                            item,
+                            session=session,
+                            profile=profile,
+                            operation="ticket04_provider_direct_link_route_readback",
+                        )
+                    except EnrichmentError as bind_error:
+                        raise exc from bind_error
+                    self.sleep(1.0)
+                    continue
+                raise
+            break
         status = str(link.get("status") or "")
         if status in {"auth_required", "wrong_share"}:
             raise EnrichmentDiagnosticError(

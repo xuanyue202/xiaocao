@@ -909,6 +909,81 @@ def test_route_rebind_wakes_edge_target_before_opencli_recovery(tmp_path):
     assert launcher_routes == [route]
 
 
+def test_provider_direct_link_recovers_detached_read_only_eval(tmp_path):
+    entry = _pdf_entry()
+    item = {
+        **LvSubscriptionService._normalize_entry(entry),
+        "provider_file_id": "123456789012345",
+    }
+    provider_link_evals = 0
+    route_readback_evals = 0
+    launcher_routes = []
+
+    def browser_runner(command, **_kwargs):
+        nonlocal provider_link_evals, route_readback_evals
+        tail = command[3:]
+        if tail[:1] == ["open"]:
+            payload = {"url": "redacted", "page": "page-1"}
+        elif tail[:1] == ["bind"]:
+            payload = {"session": "ticket04"}
+        elif (
+            tail[:1] == ["eval"]
+            and "ticket04_provider_direct_link_route_readback" in tail[1]
+        ):
+            route_readback_evals += 1
+            payload = {"status": "target_route_ready"}
+        elif (
+            tail[:1] == ["eval"]
+            and "ticket04_provider_direct_link" in tail[1]
+        ):
+            provider_link_evals += 1
+            if provider_link_evals == 1:
+                return SimpleNamespace(
+                    returncode=1,
+                    stdout=json.dumps({
+                        "error": {"code": "detached_mid_command"},
+                    }),
+                    stderr="",
+                )
+            payload = {
+                "status": "download_link_ready",
+                "download_url": "https://d.pcs.baidu.com/file/redacted?x=1",
+                "provider_file_id": item["provider_file_id"],
+            }
+        else:
+            raise AssertionError(command)
+        return SimpleNamespace(
+            returncode=0,
+            stdout=json.dumps(payload),
+            stderr="",
+        )
+
+    service = LvSubscriptionService(
+        tmp_path / "out",
+        now=lambda: NOW,
+        runner=browser_runner,
+        opencli_command=("opencli",),
+        share_url="https://pan.baidu.com/s/private-share-token",
+        share_code="a1b2",
+        sleep=lambda _seconds: None,
+        edge_route_launcher=launcher_routes.append,
+    )
+    service._fetch_provider_small_file = lambda *_args, **_kwargs: {
+        "status": "completed"
+    }
+
+    result = service._provider_direct_download(
+        item,
+        session="ticket04",
+        profile=None,
+    )
+
+    assert result == {"status": "completed"}
+    assert provider_link_evals == 2
+    assert route_readback_evals == 1
+    assert len(launcher_routes) == 1
+
+
 def test_lv_text_image_browser_open_exposes_diagnostic(tmp_path):
     open_calls = 0
 
