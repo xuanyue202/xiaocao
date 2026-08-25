@@ -102,7 +102,11 @@ MIN_PREVIEW_SHORT_EDGE = 256
 MIN_PREVIEW_LONG_EDGE = 512
 _READ_ONLY_ROUTE_REBIND_ATTEMPTS = 3
 _READ_ONLY_LISTING_ATTEMPTS = 3
-_READ_ONLY_PROVIDER_LINK_ATTEMPTS = 3
+_PROVIDER_LINK_OWNER_CLOUD_FALLBACK_CODES = {
+    "detached_mid_command",
+    "opencli_command_failed",
+    "opencli_timeout",
+}
 
 
 def _valid_preview_dimensions(width: int, height: int) -> bool:
@@ -5299,39 +5303,17 @@ try {
             expected_name=str(item["name"]),
             expected_size=int(item["size"]),
         )
-        retryable_codes = {
-            "detached_mid_command",
-            "opencli_command_failed",
-            "opencli_timeout",
-        }
-        for attempt in range(_READ_ONLY_PROVIDER_LINK_ATTEMPTS):
-            try:
-                link = self._opencli_json(
-                    session,
-                    "eval",
-                    link_script,
-                    profile=profile,
-                    timeout_seconds=30,
-                )
-            except EnrichmentDiagnosticError as exc:
-                if (
-                    attempt + 1 < _READ_ONLY_PROVIDER_LINK_ATTEMPTS
-                    and exc.diagnostic_stage == "browser_eval"
-                    and exc.diagnostic_code in retryable_codes
-                ):
-                    try:
-                        self._rebind_download_confirmation_session(
-                            item,
-                            session=session,
-                            profile=profile,
-                            operation="ticket04_provider_direct_link_route_readback",
-                        )
-                    except EnrichmentError as bind_error:
-                        raise exc from bind_error
-                    self.sleep(1.0)
-                    continue
-                raise
-            break
+        # This script POSTs /api/sharedownload.  OpenCLI's detached-mid-command
+        # result means the browser-side command outcome is unknown; reopening
+        # the route and evaluating it again would violate at-most-once.  The
+        # caller owns the idempotent owner-cloud fallback for small PDFs.
+        link = self._opencli_json(
+            session,
+            "eval",
+            link_script,
+            profile=profile,
+            timeout_seconds=30,
+        )
         status = str(link.get("status") or "")
         if status in {"auth_required", "wrong_share"}:
             raise EnrichmentDiagnosticError(
@@ -5781,6 +5763,22 @@ try {
                 profile=profile,
             )
         except EnrichmentDiagnosticError as exc:
+            if (
+                str(item.get("media_type") or "") == "pdf"
+                and exc.diagnostic_code
+                in _PROVIDER_LINK_OWNER_CLOUD_FALLBACK_CODES
+            ):
+                # The source-link probe has an unknown browser-command
+                # outcome, but it has not claimed a second business object.
+                # Continue through the separately claimed, exact owner-cloud
+                # transfer/readback path; it reconciles an existing copy
+                # before performing any transfer and never replays the UI.
+                return self._owner_cloud_download(
+                    item,
+                    claim,
+                    session=session,
+                    profile=profile,
+                )
             if exc.diagnostic_code not in {
                 "provider_download_link_errno_2",
                 "provider_download_metadata_missing",

@@ -909,11 +909,7 @@ def test_route_rebind_wakes_edge_target_before_opencli_recovery(tmp_path):
     assert launcher_routes == [route]
 
 
-@pytest.mark.parametrize("detached_count", [1, 2])
-def test_provider_direct_link_recovers_detached_read_only_eval(
-    tmp_path,
-    detached_count,
-):
+def test_provider_direct_link_does_not_retry_detached_command(tmp_path):
     entry = _pdf_entry()
     item = {
         **LvSubscriptionService._normalize_entry(entry),
@@ -941,19 +937,13 @@ def test_provider_direct_link_recovers_detached_read_only_eval(
             and "ticket04_provider_direct_link" in tail[1]
         ):
             provider_link_evals += 1
-            if provider_link_evals <= detached_count:
-                return SimpleNamespace(
-                    returncode=1,
-                    stdout=json.dumps({
-                        "error": {"code": "detached_mid_command"},
-                    }),
-                    stderr="",
-                )
-            payload = {
-                "status": "download_link_ready",
-                "download_url": "https://d.pcs.baidu.com/file/redacted?x=1",
-                "provider_file_id": item["provider_file_id"],
-            }
+            return SimpleNamespace(
+                returncode=1,
+                stdout=json.dumps({
+                    "error": {"code": "detached_mid_command"},
+                }),
+                stderr="",
+            )
         else:
             raise AssertionError(command)
         return SimpleNamespace(
@@ -976,16 +966,17 @@ def test_provider_direct_link_recovers_detached_read_only_eval(
         "status": "completed"
     }
 
-    result = service._provider_direct_download(
-        item,
-        session="ticket04",
-        profile=None,
-    )
+    with pytest.raises(EnrichmentDiagnosticError) as captured:
+        service._provider_direct_download(
+            item,
+            session="ticket04",
+            profile=None,
+        )
 
-    assert result == {"status": "completed"}
-    assert provider_link_evals == detached_count + 1
-    assert route_readback_evals == detached_count
-    assert len(launcher_routes) == detached_count
+    assert captured.value.diagnostic_code == "detached_mid_command"
+    assert provider_link_evals == 1
+    assert route_readback_evals == 0
+    assert launcher_routes == []
 
 
 def test_lv_text_image_browser_open_exposes_diagnostic(tmp_path):
@@ -2837,6 +2828,81 @@ def test_image_recovery_provider_probe_is_versioned_opencli_template():
     assert "部分文件违规，已被过滤" in source
     assert "expectedProviderFileId = \"123456789012345\"" in source
     assert "12.png" in source
+
+
+def test_detached_provider_link_uses_idempotent_owner_cloud_fallback(
+    tmp_path,
+):
+    payload = b"%PDF-1.7\n" + b"f" * 4087
+    entry = _pdf_entry(size=len(payload))
+    entry["provider_file_id"] = "987654321012345"
+    provider_calls = 0
+    transfer_calls = 0
+    frontend_calls = 0
+
+    def owner_cloud(item, _claim, _session, _profile):
+        nonlocal transfer_calls
+        transfer_calls += 1
+        return _owner_ready(item, transfer_performed=False)
+
+    def owner_stream(item, _owner, _session, _profile, destination):
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        destination.write_bytes(payload)
+        return {
+            "status": "completed",
+            "path": str(destination),
+            "actual_size": len(payload),
+            "content_type": "application/pdf",
+            "http_status": 200,
+            "sha256": hashlib.sha256(payload).hexdigest(),
+        }
+
+    service = LvSubscriptionService(
+        tmp_path / "out",
+        now=lambda: NOW,
+        share_url="https://pan.baidu.com/s/private-share-token",
+        share_code="a1b2",
+        owner_cloud_operator=owner_cloud,
+        owner_authenticated_streamer=owner_stream,
+    )
+    update = service.observe_browser_listing([entry])["updates"][0]
+    claim = service.claim_browser_download(update["identity"])
+    item = {
+        **service._manifest_item(update["identity"]),
+        "provider_file_id": entry["provider_file_id"],
+    }
+
+    def detached(*_args, **_kwargs):
+        nonlocal provider_calls
+        provider_calls += 1
+        raise EnrichmentDiagnosticError(
+            "provider link command detached",
+            category="uncertain_state",
+            code="detached_mid_command",
+            stage="browser_eval",
+        )
+
+    def frontend(*_args, **_kwargs):
+        nonlocal frontend_calls
+        frontend_calls += 1
+        raise AssertionError("detached provider link must not trigger the UI")
+
+    service._provider_direct_download = detached
+    service._provider_frontend_intercepted_download = frontend
+
+    result = service._download_provider_small_file(
+        item,
+        claim,
+        session="ticket04",
+        profile=None,
+    )
+
+    assert result["acquisition_transport"] == (
+        "owner_cloud_opencli_cookie_stream"
+    )
+    assert provider_calls == 1
+    assert transfer_calls == 1
+    assert frontend_calls == 0
 
 
 def test_existing_pdf_claim_intercepts_one_frontend_signed_link_after_errno_2(
