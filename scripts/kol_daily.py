@@ -1419,7 +1419,8 @@ def _classified_source(name: str, runner):
             if diagnostic_code == "provider_captcha_required":
                 raise UserActionBlocker(
                     f"{name}-provider-captcha",
-                    "请在已授权百度网盘页面完成验证码，并保持既有 OpenCLI 会话可访问；"
+                    "请在已授权百度网盘页面完成验证码和访问授权，并保持既有"
+                    " OpenCLI 会话可访问；"
                     "完成后下一小时会复核同一来源。",
                 ) from exc
             if message in {
