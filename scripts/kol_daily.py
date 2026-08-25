@@ -1533,7 +1533,10 @@ def _classified_narrow_source(name: str, runner):
                 "provider_error",
                 "timeout",
                 "transport_error",
-            }:
+            } or (
+                failure["category"] == "source_error"
+                and failure["code"] == "source_temporarily_unavailable"
+            ):
                 waiting_item["next_poll_not_before"] = (
                     _next_source_poll_not_before()
                 )

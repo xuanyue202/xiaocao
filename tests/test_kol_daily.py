@@ -4754,6 +4754,31 @@ def test_narrow_source_provider_failure_becomes_bounded_wait(monkeypatch):
     )
 
 
+def test_narrow_xiaocao_source_unavailability_becomes_bounded_wait(monkeypatch):
+    monkeypatch.setattr(
+        kol_daily_script,
+        "_next_source_poll_not_before",
+        lambda: "2026-08-19T18:00:00+08:00",
+    )
+    runner = _classified_narrow_source(
+        "xiaocao_wechat_live",
+        lambda _surface: (_ for _ in ()).throw(
+            EnrichmentDiagnosticError(
+                "bound provider is temporarily unavailable",
+                category="source_error",
+                code="source_temporarily_unavailable",
+                stage="source_run",
+            )
+        ),
+    )
+
+    result = runner("xiaocao_wechat_live:source")
+
+    assert result["waiting_items"][0]["next_poll_not_before"] == (
+        "2026-08-19T18:00:00+08:00"
+    )
+
+
 def test_source_classifier_isolates_unavailable_semantic_input():
     runner = _classified_source(
         "subscription_video",
