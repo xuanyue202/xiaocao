@@ -5132,10 +5132,22 @@ try {
             "owner_directory_ambiguous": "owner_cloud_directory_ambiguous",
         }
         if status != "owner_ready":
+            provider_errno = owner.get("provider_errno")
+            if isinstance(provider_errno, int) and not isinstance(
+                provider_errno, bool
+            ):
+                errno_suffix = (
+                    str(provider_errno)
+                    if provider_errno >= 0
+                    else f"neg{abs(provider_errno)}"
+                )
+                provider_code = f"owner_cloud_transfer_errno_{errno_suffix}"
+            else:
+                provider_code = "owner_cloud_transfer_failed"
             raise EnrichmentDiagnosticError(
                 "owner cloud transfer did not produce one exact readback",
                 category=("identity_error" if status in codes else "provider_error"),
-                code=codes.get(status, "owner_cloud_transfer_failed"),
+                code=codes.get(status, provider_code),
                 stage="owner_cloud_transfer",
             )
         owner_provider_file_id = str(owner.get("owner_provider_file_id") or "")

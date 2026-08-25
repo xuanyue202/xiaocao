@@ -3599,6 +3599,36 @@ def test_owner_cloud_duplicate_exact_matches_fail_closed(tmp_path):
     assert captured.value.diagnostic_stage == "owner_cloud_transfer"
 
 
+def test_owner_cloud_provider_errno_is_preserved_in_diagnostic(tmp_path):
+    entry = _pdf_entry()
+    entry["provider_file_id"] = "162571713959724"
+    service = LvSubscriptionService(
+        tmp_path / "out",
+        now=lambda: NOW,
+        owner_cloud_operator=lambda *_args: {
+            "status": "provider_error",
+            "provider_errno": 2,
+        },
+    )
+    update = service.observe_browser_listing([entry])["updates"][0]
+    claim = service.claim_browser_download(update["identity"])
+    item = {
+        **service._manifest_item(update["identity"]),
+        "provider_file_id": entry["provider_file_id"],
+    }
+
+    with pytest.raises(EnrichmentDiagnosticError) as captured:
+        service._owner_cloud_transfer(
+            item,
+            claim,
+            session="ticket04",
+            profile=None,
+        )
+
+    assert captured.value.diagnostic_code == "owner_cloud_transfer_errno_2"
+    assert captured.value.diagnostic_stage == "owner_cloud_transfer"
+
+
 def test_owner_cloud_fallback_rejects_video_before_any_transfer(tmp_path):
     calls = 0
 
