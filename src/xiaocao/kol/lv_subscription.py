@@ -1844,6 +1844,7 @@ class LvSubscriptionService:
         share_url: str | None = None,
         share_code: str | None = None,
         sleep: Callable[[float], None] = time.sleep,
+        edge_route_launcher: Callable[[str], None] | None = None,
         downloads_dir: Path | str | None = None,
         edge_profile_dir: Path | str | None = None,
         download_policy_configurer: Callable[
@@ -1893,6 +1894,9 @@ class LvSubscriptionService:
         self.share_url = str(share_url or "").strip()
         self.share_code = str(share_code or "").strip()
         self.sleep = sleep
+        self.edge_route_launcher = (
+            edge_route_launcher or self._default_edge_route_launcher
+        )
         self.downloads_dir = Path(
             downloads_dir or (Path.home() / "Downloads")
         ).expanduser().resolve()
@@ -1946,6 +1950,32 @@ class LvSubscriptionService:
             str | None,
             dict[str, Any],
         ] | None = None
+
+    @staticmethod
+    def _default_edge_route_launcher(route: str) -> None:
+        """Wake the exact Edge target before rebinding a detached session."""
+        try:
+            result = subprocess.run(
+                ["/usr/bin/open", "-a", "Microsoft Edge", route],
+                capture_output=True,
+                check=False,
+                timeout=5,
+            )
+        except (OSError, subprocess.TimeoutExpired) as exc:
+            raise EnrichmentDiagnosticError(
+                "subscription Edge route recovery launch failed",
+                category="local_recovery",
+                code="opencli_edge_launch_failed",
+                stage="browser_open",
+            ) from exc
+        if int(getattr(result, "returncode", 1)) != 0:
+            raise EnrichmentDiagnosticError(
+                "subscription Edge route recovery launch failed",
+                category="local_recovery",
+                code="opencli_edge_launch_failed",
+                stage="browser_open",
+                exit_code=int(result.returncode),
+            )
 
     def _default_download_policy_configurer(
         self,
@@ -2541,6 +2571,7 @@ try {
         # of its browser commands can detach while the named session is being
         # rebound, and retrying only the final eval leaves the session
         # ownership unproven. No download control is selected in this helper.
+        self.edge_route_launcher(route)
         for attempt in range(_READ_ONLY_ROUTE_REBIND_ATTEMPTS):
             try:
                 self._opencli_json(

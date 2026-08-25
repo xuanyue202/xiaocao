@@ -740,6 +740,7 @@ def test_listing_recovers_once_after_detached_read_only_eval(
         share_url="https://pan.baidu.com/s/private-share-token",
         share_code="a1b2",
         sleep=lambda _seconds: None,
+        edge_route_launcher=lambda _route: None,
     )
 
     listing = service._read_opencli_listing(session="ticket04")
@@ -832,6 +833,7 @@ def test_listing_recovers_two_detached_read_only_evals_within_bound(
         share_url="https://pan.baidu.com/s/private-share-token",
         share_code="a1b2",
         sleep=lambda _seconds: None,
+        edge_route_launcher=lambda _route: None,
     )
 
     listing = service._read_opencli_listing(session="ticket04")
@@ -851,6 +853,60 @@ def test_listing_recovers_two_detached_read_only_evals_within_bound(
     assert open_calls == 5
     assert foreground_open_calls == 2
     assert bind_calls == 2
+
+
+def test_route_rebind_wakes_edge_target_before_opencli_recovery(tmp_path):
+    route = "https://pan.baidu.com/s/private-share-token#list/path=%2Fparent"
+    launcher_routes = []
+    edge_target_ready = False
+
+    def launch_edge(target_route):
+        nonlocal edge_target_ready
+        launcher_routes.append(target_route)
+        edge_target_ready = True
+
+    def browser_runner(command, **_kwargs):
+        tail = command[3:]
+        if tail[:1] == ["open"]:
+            payload = {"url": "redacted", "page": "page-1"}
+        elif tail[:1] == ["bind"]:
+            payload = {"session": "ticket04"}
+        elif tail[:1] == ["eval"]:
+            payload = {
+                "status": (
+                    "target_route_ready"
+                    if edge_target_ready
+                    else "target_route_mismatch"
+                )
+            }
+        else:
+            raise AssertionError(command)
+        return SimpleNamespace(
+            returncode=0,
+            stdout=json.dumps(payload),
+            stderr="",
+        )
+
+    service = LvSubscriptionService(
+        tmp_path / "out",
+        now=lambda: NOW,
+        runner=browser_runner,
+        opencli_command=("opencli",),
+        share_url="https://pan.baidu.com/s/private-share-token",
+        share_code="a1b2",
+        sleep=lambda _seconds: None,
+        edge_route_launcher=launch_edge,
+    )
+
+    service._rebind_opencli_parent_route(
+        session="ticket04",
+        profile=None,
+        route=route,
+        expected_parent_path="/parent",
+        operation="ticket04_listing_route_readback",
+    )
+
+    assert launcher_routes == [route]
 
 
 def test_lv_text_image_browser_open_exposes_diagnostic(tmp_path):
@@ -935,6 +991,7 @@ def test_lv_text_image_browser_open_exposes_diagnostic_after_rebind(tmp_path):
         share_url="https://pan.baidu.com/s/private-share-token",
         share_code="a1b2",
         sleep=lambda _seconds: None,
+        edge_route_launcher=lambda _route: None,
     )
 
     listing = service._read_opencli_listing(session="ticket04")
@@ -1621,6 +1678,7 @@ def test_download_confirmation_recovers_detached_eval_before_trigger(tmp_path):
         share_url="https://pan.baidu.com/s/private-share-token",
         share_code="a1b2",
         sleep=lambda _seconds: None,
+        edge_route_launcher=lambda _route: None,
         download_policy_configurer=lambda *_args: {
             "configured": True,
             "method": "Page.setDownloadBehavior",
@@ -1722,6 +1780,7 @@ def test_download_confirmation_recovers_detached_route_readback_within_bound(
         share_url="https://pan.baidu.com/s/private-share-token",
         share_code="a1b2",
         sleep=lambda _seconds: None,
+        edge_route_launcher=lambda _route: None,
         download_policy_configurer=lambda *_args: {
             "configured": True,
             "method": "Page.setDownloadBehavior",

@@ -260,6 +260,7 @@ def test_repair_validation_accepts_exact_lv_download_recovery_profile(
             "download_confirmation_recovers_detached_eval_before_trigger or "
             "download_confirmation_recovers_detached_route_readback_within_bound or "
             "listing_recovers_two_detached_read_only_evals_within_bound or "
+            "route_rebind_wakes_edge_target_before_opencli_recovery or "
             "post_claim_lv_browser_eval_projects_download_repair_profile or "
             "repair_validation_maps_legacy_post_claim_lv_browser_eval_to_download_recovery or "
             "newer_repair_lifecycle_supersedes_old_fingerprint or "
