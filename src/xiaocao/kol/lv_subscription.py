@@ -2700,15 +2700,31 @@ try {
             "opencli_non_object",
         }
         recovered_from: dict[str, str] | None = None
+        exact_route_bound = False
+        if exact_path is not None:
+            # Narrow download resumes often inherit a stale background target
+            # from the failed acquisition.  Prove the exact foreground parent
+            # before the first listing eval; otherwise the first detached eval
+            # is indistinguishable from a new source failure.  This helper is
+            # navigation/bind/readback only and never selects a download row.
+            self._rebind_opencli_parent_route(
+                session=session,
+                profile=profile,
+                route=listing_navigation_url,
+                expected_parent_path=target_parent,
+                operation="ticket04_exact_listing_route_readback",
+            )
+            exact_route_bound = True
         for attempt in range(1, _READ_ONLY_LISTING_ATTEMPTS + 1):
             try:
-                self._opencli_json(
-                    session,
-                    "open",
-                    listing_navigation_url,
-                    profile=profile,
-                    timeout_seconds=30,
-                )
+                if not (exact_route_bound and attempt == 1):
+                    self._opencli_json(
+                        session,
+                        "open",
+                        listing_navigation_url,
+                        profile=profile,
+                        timeout_seconds=30,
+                    )
                 listing = self._opencli_json(
                     session,
                     "eval",

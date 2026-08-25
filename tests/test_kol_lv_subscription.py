@@ -211,7 +211,77 @@ def test_exact_listing_navigates_to_parent_before_read_only_eval(tmp_path):
         if tail[:1] == ["open"]:
             opened_urls.append(tail[1])
             payload = {"url": "redacted", "page": "page-1"}
+        elif tail[:1] == ["bind"]:
+            payload = {"session": "ticket04"}
         elif tail[:1] == ["eval"]:
+            if "ticket04_exact_listing_route_readback" in tail[1]:
+                payload = {"status": "target_route_ready"}
+            else:
+                payload = {
+                    "status": "ok",
+                    "complete_scan": False,
+                    "coverage": {
+                        "direct_roots": ["/wrapper", "/wrapper/直播回放"],
+                        "recursive_roots": [],
+                    },
+                    "entries": [],
+                }
+        else:
+            raise AssertionError(command)
+        return SimpleNamespace(
+            returncode=0,
+            stdout=json.dumps(payload, ensure_ascii=False),
+            stderr="",
+        )
+
+    service = LvSubscriptionService(
+        tmp_path / "out",
+        runner=browser_runner,
+        opencli_command=("opencli",),
+        share_url=(
+            "https://pan.baidu.com/s/private-share-token#list/path=%2F"
+        ),
+        share_code="a1b2",
+        edge_route_launcher=lambda _route: None,
+    )
+
+    service._read_opencli_listing(
+        session="ticket04",
+        exact_path="/wrapper/直播回放/8月10日.mp4",
+    )
+
+    assert opened_urls == [
+        "https://pan.baidu.com/s/private-share-token?pwd=a1b2"
+        "#list/path=%2Fwrapper%2F%E7%9B%B4%E6%92%AD%E5%9B%9E%E6%94%BE"
+    ]
+
+
+def test_exact_listing_proves_parent_route_before_first_listing_eval(tmp_path):
+    operations = []
+
+    def browser_runner(command, **_kwargs):
+        tail = command[3:]
+        if tail[:1] == ["open"]:
+            operations.append(
+                "open_foreground"
+                if tail[-2:] == ["--window", "foreground"]
+                else "open"
+            )
+            payload = {"url": "redacted", "page": "page-1"}
+        elif tail[:1] == ["bind"]:
+            operations.append("bind")
+            payload = {"session": "ticket04"}
+        elif tail[:1] == ["eval"] and (
+            "ticket04_exact_listing_route_readback" in tail[1]
+        ):
+            operations.append("route_readback")
+            payload = {"status": "target_route_ready"}
+        elif tail[:1] == ["eval"] and "/share/list" in tail[1]:
+            if "route_readback" not in operations:
+                raise AssertionError(
+                    "exact listing must prove its parent before reading rows"
+                )
+            operations.append("listing")
             payload = {
                 "status": "ok",
                 "complete_scan": False,
@@ -233,10 +303,9 @@ def test_exact_listing_navigates_to_parent_before_read_only_eval(tmp_path):
         tmp_path / "out",
         runner=browser_runner,
         opencli_command=("opencli",),
-        share_url=(
-            "https://pan.baidu.com/s/private-share-token#list/path=%2F"
-        ),
+        share_url="https://pan.baidu.com/s/private-share-token",
         share_code="a1b2",
+        edge_route_launcher=lambda _route: operations.append("wake_edge"),
     )
 
     service._read_opencli_listing(
@@ -244,9 +313,12 @@ def test_exact_listing_navigates_to_parent_before_read_only_eval(tmp_path):
         exact_path="/wrapper/直播回放/8月10日.mp4",
     )
 
-    assert opened_urls == [
-        "https://pan.baidu.com/s/private-share-token?pwd=a1b2"
-        "#list/path=%2Fwrapper%2F%E7%9B%B4%E6%92%AD%E5%9B%9E%E6%94%BE"
+    assert operations == [
+        "wake_edge",
+        "open_foreground",
+        "bind",
+        "route_readback",
+        "listing",
     ]
 
 
