@@ -761,6 +761,98 @@ def test_listing_recovers_once_after_detached_read_only_eval(
     assert bind_calls == 2
 
 
+@pytest.mark.parametrize(
+    "failure_code",
+    ["detached_mid_command", "opencli_command_failed"],
+)
+def test_listing_recovers_two_detached_read_only_evals_within_bound(
+    tmp_path,
+    failure_code,
+):
+    listing_calls = 0
+    route_readback_calls = 0
+    open_calls = 0
+    foreground_open_calls = 0
+    bind_calls = 0
+
+    def browser_runner(command, **_kwargs):
+        nonlocal listing_calls, route_readback_calls
+        nonlocal open_calls, foreground_open_calls, bind_calls
+        tail = command[3:]
+        if tail[:1] == ["open"]:
+            open_calls += 1
+            if tail[-2:] == ["--window", "foreground"]:
+                foreground_open_calls += 1
+            return SimpleNamespace(
+                returncode=0,
+                stdout=json.dumps({"url": "redacted", "page": "page-1"}),
+                stderr="",
+            )
+        if tail[:1] == ["bind"]:
+            bind_calls += 1
+            return SimpleNamespace(
+                returncode=0,
+                stdout=json.dumps({"session": "ticket04"}),
+                stderr="",
+            )
+        if (
+            tail[:1] == ["eval"]
+            and "ticket04_listing_route_readback" in tail[1]
+        ):
+            route_readback_calls += 1
+            return SimpleNamespace(
+                returncode=0,
+                stdout=json.dumps({"status": "target_route_ready"}),
+                stderr="",
+            )
+        if tail[:1] == ["eval"] and "/share/list" in tail[1]:
+            listing_calls += 1
+            if listing_calls <= 2:
+                return SimpleNamespace(
+                    returncode=1,
+                    stdout=json.dumps({"error": {"code": failure_code}}),
+                    stderr="",
+                )
+            return SimpleNamespace(
+                returncode=0,
+                stdout=json.dumps({
+                    "status": "ok",
+                    "complete_scan": True,
+                    "entries": _representative_subscription_entries(),
+                }),
+                stderr="",
+            )
+        raise AssertionError(command)
+
+    service = LvSubscriptionService(
+        tmp_path / "out",
+        now=lambda: NOW,
+        runner=browser_runner,
+        opencli_command=("opencli",),
+        share_url="https://pan.baidu.com/s/private-share-token",
+        share_code="a1b2",
+        sleep=lambda _seconds: None,
+    )
+
+    listing = service._read_opencli_listing(session="ticket04")
+
+    assert listing["complete_scan"] is True
+    assert listing["recovery"] == {
+        "status": "recovered",
+        "attempts": 3,
+        "initial_failure": {
+            "category": "transport_error",
+            "code": failure_code,
+            "stage": "browser_eval",
+        },
+    }
+    assert listing_calls == 3
+    assert route_readback_calls == 2
+    assert open_calls == 5
+    assert foreground_open_calls == 2
+    assert bind_calls == 2
+
+
 def test_lv_text_image_browser_open_exposes_diagnostic(tmp_path):
     open_calls = 0
 
@@ -793,7 +885,7 @@ def test_lv_text_image_browser_open_exposes_diagnostic(tmp_path):
     assert captured.value.diagnostic_category == "transport_error"
     assert captured.value.diagnostic_code == "opencli_command_failed"
     assert captured.value.diagnostic_stage == "browser_open"
-    assert open_calls == 2
+    assert open_calls == 3
 
 
 def test_lv_text_image_browser_open_exposes_diagnostic_after_rebind(tmp_path):
@@ -891,7 +983,7 @@ def test_cursor_advances_only_after_complete_listing(tmp_path):
         service.poll_opencli(session="ticket04")
 
     assert captured.value.diagnostic_code == "share_list_invalid_json"
-    assert calls == 2
+    assert calls == 3
     assert not service.manifest_path.exists()
 
 

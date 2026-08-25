@@ -101,6 +101,7 @@ _PREVIEW_DOWNLOAD_HOST = re.compile(r"thumbnail\d*\.baidupcs\.com")
 MIN_PREVIEW_SHORT_EDGE = 256
 MIN_PREVIEW_LONG_EDGE = 512
 _READ_ONLY_ROUTE_REBIND_ATTEMPTS = 3
+_READ_ONLY_LISTING_ATTEMPTS = 3
 
 
 def _valid_preview_dimensions(width: int, height: int) -> bool:
@@ -2589,7 +2590,7 @@ try {
         profile: str | None = None,
         exact_path: str | None = None,
     ) -> dict[str, Any]:
-        """Read a planned listing with one bounded read-only recovery."""
+        """Read a planned listing with bounded read-only recovery."""
         self._validate_private_config()
         expected_path = urlparse(self.share_url).path
         authorized_share_url = _authorized_share_url(
@@ -2663,7 +2664,7 @@ try {
             "opencli_non_object",
         }
         recovered_from: dict[str, str] | None = None
-        for attempt in range(1, 3):
+        for attempt in range(1, _READ_ONLY_LISTING_ATTEMPTS + 1):
             try:
                 self._opencli_json(
                     session,
@@ -2680,12 +2681,16 @@ try {
                     timeout_seconds=120,
                 )
             except EnrichmentDiagnosticError as exc:
-                if attempt == 1 and exc.diagnostic_code in retryable_codes:
-                    recovered_from = {
-                        "category": exc.diagnostic_category,
-                        "code": exc.diagnostic_code,
-                        "stage": exc.diagnostic_stage,
-                    }
+                if (
+                    attempt < _READ_ONLY_LISTING_ATTEMPTS
+                    and exc.diagnostic_code in retryable_codes
+                ):
+                    if recovered_from is None:
+                        recovered_from = {
+                            "category": exc.diagnostic_category,
+                            "code": exc.diagnostic_code,
+                            "stage": exc.diagnostic_stage,
+                        }
                     needs_rebind = (
                         exc.diagnostic_stage == "browser_open"
                         and exc.diagnostic_code == "opencli_timeout"
@@ -2767,19 +2772,23 @@ try {
                     }
                 return listing
             observed_status = str(listing.get("status") or "")
-            if attempt == 1 and observed_status in retryable_statuses:
-                recovered_from = {
-                    "category": (
-                        "timeout"
-                        if observed_status == "share_list_timeout"
-                        else "incomplete_scan"
-                    ),
-                    "code": {
-                        "wrong_origin": "wrong_browser_origin",
-                        "wrong_share": "wrong_share_page",
-                    }.get(observed_status, observed_status),
-                    "stage": "listing_validation",
-                }
+            if (
+                attempt < _READ_ONLY_LISTING_ATTEMPTS
+                and observed_status in retryable_statuses
+            ):
+                if recovered_from is None:
+                    recovered_from = {
+                        "category": (
+                            "timeout"
+                            if observed_status == "share_list_timeout"
+                            else "incomplete_scan"
+                        ),
+                        "code": {
+                            "wrong_origin": "wrong_browser_origin",
+                            "wrong_share": "wrong_share_page",
+                        }.get(observed_status, observed_status),
+                        "stage": "listing_validation",
+                    }
                 self.sleep(1.0)
                 continue
             break
