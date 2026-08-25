@@ -3284,6 +3284,68 @@ def test_daily_resume_wait_runs_only_exact_due_source(tmp_path):
     ) == 1
 
 
+def test_daily_resume_wait_projects_each_identity_when_source_has_multiple_waits(
+    tmp_path,
+):
+    clock = Clock("2026-07-27T10:00:00+08:00")
+    service = DailyCoordinator(tmp_path / "daily", now=clock)
+    narrow_surfaces: list[str] = []
+    waiting_items = [
+        {
+            "identity": "video-one",
+            "version_key": "version-one",
+            "stage": "cloud_transfer_confirmation",
+            "trigger_attempt": 1,
+            "next_poll_not_before": "2026-07-27T10:01:00+08:00",
+        },
+        {
+            "identity": "video-two",
+            "version_key": "version-two",
+            "stage": "cloud_transfer_confirmation",
+            "trigger_attempt": 1,
+            "next_poll_not_before": "2026-07-27T10:02:00+08:00",
+        },
+    ]
+
+    def waiting():
+        return {
+            "status": "waiting",
+            "waiting_count": len(waiting_items),
+            "waiting_items": waiting_items,
+        }
+
+    def narrow(surface: str):
+        narrow_surfaces.append(surface)
+        return {"status": "no_update"}
+
+    source = {
+        "name": "subscription_video",
+        "priority": 20,
+        "run": waiting,
+        "narrow_resume": narrow,
+    }
+    service.run([source])
+
+    clock.value = datetime.fromisoformat("2026-07-27T10:02:00+08:00")
+    second = service.resume_wait(source, item_identity="video-two")
+
+    assert narrow_surfaces == ["subscription_video:video-two"]
+    assert second["source_result"]["writer_progress"]["status"] == "terminal"
+    state = service.status()["last_sweep"]["source_states"][0]
+    assert state["status"] == "waiting"
+    assert state["waiting_items"] == [waiting_items[0]]
+
+    clock.value = datetime.fromisoformat("2026-07-27T10:03:00+08:00")
+    first = service.resume_wait(source, item_identity="video-one")
+
+    assert narrow_surfaces == [
+        "subscription_video:video-two",
+        "subscription_video:video-one",
+    ]
+    assert first["source_result"]["writer_progress"]["status"] == "terminal"
+    assert service.status()["last_sweep"]["health"] == "healthy"
+
+
 def test_daily_resume_user_action_runs_only_exact_blocked_source(tmp_path):
     service = DailyCoordinator(
         tmp_path / "daily",

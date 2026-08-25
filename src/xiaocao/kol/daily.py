@@ -1713,6 +1713,137 @@ class DailyCoordinator:
         return states
 
     @staticmethod
+    def _source_progress_for_identity(
+        rows: list[dict[str, Any]],
+        source: str,
+        identity: str,
+    ) -> dict[str, Any] | None:
+        """Return the latest per-object projection, not only the source latest."""
+
+        for row in reversed(rows):
+            if (
+                row.get("event") != "source_progressed"
+                or row.get("source") != source
+            ):
+                continue
+            progress = row.get("progress")
+            if (
+                isinstance(progress, Mapping)
+                and str(progress.get("item_identity") or "") == identity
+            ):
+                return row
+        return None
+
+    @staticmethod
+    def _source_waiting_item_for_identity(
+        rows: list[dict[str, Any]],
+        source: str,
+        identity: str,
+    ) -> tuple[dict[str, Any], Mapping[str, Any]] | None:
+        """Find a durable waiting item when a source has several waiters."""
+
+        for row in reversed(rows):
+            if row.get("source") != source:
+                continue
+            candidates: list[Any] = []
+            if row.get("event") == "source_completed":
+                result = row.get("result")
+                if isinstance(result, Mapping):
+                    candidates = list(result.get("waiting_items") or [])
+                    container = result
+                else:
+                    container = {}
+            elif row.get("event") == "sweep_completed":
+                container = {}
+                for state in row.get("source_states") or []:
+                    if isinstance(state, Mapping) and state.get("name") == source:
+                        container = state
+                        candidates = list(state.get("waiting_items") or [])
+                        break
+            else:
+                continue
+            for item in candidates:
+                if (
+                    isinstance(item, Mapping)
+                    and str(item.get("identity") or "") == identity
+                ):
+                    return dict(item), container
+        return None
+
+    def _source_state_with_pending_waits(
+        self,
+        *,
+        source: str,
+        prior_rows: list[dict[str, Any]],
+        prior_state: Mapping[str, Any],
+        target_identity: str,
+        result: Mapping[str, Any],
+        following: WriterProgress,
+    ) -> dict[str, Any]:
+        """Project one narrow result while retaining unrelated pending objects."""
+
+        companions = [
+            dict(item)
+            for item in (prior_state.get("waiting_items") or [])
+            if (
+                isinstance(item, Mapping)
+                and str(item.get("identity") or "") != target_identity
+            )
+        ]
+        current_items = [
+            dict(item)
+            for item in (result.get("waiting_items") or [])
+            if isinstance(item, Mapping)
+        ]
+        pending = companions + (
+            current_items if following.status == "wait_until" else []
+        )
+        deduplicated: list[dict[str, Any]] = []
+        seen: set[str] = set()
+        for item in pending:
+            item_id = str(item.get("identity") or "")
+            if not item_id or item_id in seen:
+                continue
+            seen.add(item_id)
+            deduplicated.append(item)
+        if not deduplicated:
+            return dict(result)
+
+        projected = dict(result)
+        projected.update({
+            "status": "waiting",
+            "waiting_count": len(deduplicated),
+            "waiting_items": deduplicated,
+        })
+        if following.status != "wait_until":
+            companion_progress = self._source_progress_for_identity(
+                prior_rows,
+                source,
+                str(deduplicated[0].get("identity") or ""),
+            )
+            if companion_progress is not None:
+                projected["writer_progress"] = dict(
+                    companion_progress["progress"]
+                )
+                projected["resume_policy"] = WriterProgress.from_dict(
+                    companion_progress["progress"]
+                ).next_action
+            else:
+                projected_progress = normalize_source_result(
+                    source,
+                    {
+                        "status": "waiting",
+                        "waiting_count": 1,
+                        "waiting_items": [deduplicated[0]],
+                    },
+                    failure_revision=self._failure_revision(),
+                    provider_contract_version="xiaocao_writer_v1",
+                )
+                projected["writer_progress"] = projected_progress.to_dict()
+                projected["resume_policy"] = projected_progress.next_action
+        return projected
+
+    @staticmethod
     def _duplicate_effect_audit(results: list[dict[str, Any]]) -> dict[str, Any]:
         effect_fields = {
             "publication": ("gray_report", {"published"}),
@@ -2448,15 +2579,54 @@ class DailyCoordinator:
         started = time.monotonic()
         with self._locked():
             prior_rows = self._events_unlocked()
-            progress_row = next(
-                (
-                    row
-                    for row in reversed(prior_rows)
-                    if row.get("event") == "source_progressed"
-                    and row.get("source") == name
-                ),
-                None,
+            progress_row = self._source_progress_for_identity(
+                prior_rows,
+                name,
+                identity,
             )
+            projected_from_waiting_item = False
+            if progress_row is None and not _completed_user_action:
+                waiting_binding = self._source_waiting_item_for_identity(
+                    prior_rows,
+                    name,
+                    identity,
+                )
+                if waiting_binding is not None:
+                    waiting_item, waiting_container = waiting_binding
+                    waiting_outcome: dict[str, Any] = {
+                        "status": "waiting",
+                        "waiting_count": 1,
+                        "waiting_items": [waiting_item],
+                    }
+                    claim_summary = waiting_container.get(
+                        "claim_receipt_summary"
+                    )
+                    if isinstance(claim_summary, Mapping):
+                        waiting_outcome["claim_receipt_summary"] = dict(
+                            claim_summary
+                        )
+                    projected = normalize_source_result(
+                        name,
+                        waiting_outcome,
+                        failure_revision=self._failure_revision(),
+                        provider_contract_version="xiaocao_writer_v1",
+                    )
+                    progress_row = {
+                        "slot": "",
+                        "source": name,
+                        "progress": projected.to_dict(),
+                    }
+                    projected_from_waiting_item = True
+            if progress_row is None:
+                progress_row = next(
+                    (
+                        row
+                        for row in reversed(prior_rows)
+                        if row.get("event") == "source_progressed"
+                        and row.get("source") == name
+                    ),
+                    None,
+                )
             if progress_row is None:
                 raise DailyError("source resume has no persisted progress")
             prior = WriterProgress.from_dict(progress_row["progress"])
@@ -2514,6 +2684,15 @@ class DailyCoordinator:
                 ]
             else:
                 resume_fields["deadline"] = prior.details["deadline"]
+            if projected_from_waiting_item:
+                self._append(
+                    "source_wait_resume_projection_bound",
+                    slot=slot,
+                    source=name,
+                    item_identity=identity,
+                    projected_status=prior.status,
+                    projection_source="waiting_items",
+                )
             self._append(resume_event, **resume_fields)
             try:
                 outcome = narrow_runner(surface)
@@ -2587,10 +2766,22 @@ class DailyCoordinator:
                 source=name,
                 result=result,
                 coordinator_source_video_bytes=0,
+                continuation_only=True,
             )
-            target_state = self._source_states([{"name": name, **result}])[0]
             source_states = [
-                target_state if row.get("name") == name else dict(row)
+                self._source_states([{
+                    "name": name,
+                    **self._source_state_with_pending_waits(
+                        source=name,
+                        prior_rows=prior_rows,
+                        prior_state=row,
+                        target_identity=identity,
+                        result=result,
+                        following=following,
+                    ),
+                }])[0]
+                if row.get("name") == name
+                else dict(row)
                 for row in prior_states
                 if isinstance(row, Mapping)
             ]
