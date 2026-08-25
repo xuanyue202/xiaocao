@@ -851,18 +851,35 @@ function mapExactOrderReceipt(querySnapshot, expected, observedTradeDate) {
             absenceProof,
         };
     }
-    if (expected.date !== observedTradeDate) {
+    if (expected.date > observedTradeDate) {
         return {...empty, statusReason: 'trade_date_not_current'};
     }
-    const orderTab = ordersSnapshot?.tabs?.['当日委托'];
-    const dealTab = ordersSnapshot?.tabs?.['当日成交'];
+    const priorDay = expected.date < observedTradeDate;
+    const orderTab = ordersSnapshot?.tabs?.[
+        priorDay ? '历史委托' : '当日委托'
+    ];
+    const dealTab = ordersSnapshot?.tabs?.[
+        priorDay ? '历史成交' : '当日成交'
+    ];
     const orderTable = orderTab?.table;
     const dealTable = dealTab?.table;
+    const exactHistoryFilter = (tab) => !priorDay || (
+        tab?.date_filter?.applied === true
+        && tab.date_filter.start === expected.date
+        && tab.date_filter.end === expected.date
+    );
     if (orderTab?.complete_scan !== true
             || dealTab?.complete_scan !== true
+            || !exactHistoryFilter(orderTab)
+            || !exactHistoryFilter(dealTab)
             || !Array.isArray(orderTable?.rows)
             || !Array.isArray(dealTable?.rows)) {
-        return empty;
+        return {
+            ...empty,
+            statusReason: priorDay
+                ? 'prior_day_order_scan_incomplete'
+                : empty.statusReason,
+        };
     }
     const observedOrderTuples = orderTable.rows.map((row) => ({
         code: codeCell(tableCell(orderTable, row, ORDER_HEADERS.code)),
@@ -1052,14 +1069,16 @@ cli({
             }
             if (scopes.assets) snapshots.assets = await page.evaluate(ASSETS_SCRIPT);
             if (scopes.orders) {
-                await page.installInterceptor('/qt/user/todayEntrust');
-                await page.getInterceptedRequests();
-                await navigate(page, ROUTES.query);
                 const historicalOnly = Boolean(
                     input.orderMatch
-                    && !input.orderMatch.orderId
                     && input.orderMatch.date < chinaTradeDate()
                 );
+                const entrustEndpoint = historicalOnly
+                    ? '/qt/user/historyEntrust'
+                    : '/qt/user/todayEntrust';
+                await page.installInterceptor(entrustEndpoint);
+                await page.getInterceptedRequests();
+                await navigate(page, ROUTES.query);
                 const ordersScript = queryScript(
                     input.orderMatch?.date || '', historicalOnly
                 );
@@ -1069,10 +1088,10 @@ cli({
                         await navigateFresh(page, ROUTES.query);
                     }
                     snapshots.orders = await page.evaluate(ordersScript);
-                    if (!historicalOnly) {
+                    if (!historicalOnly || input.orderMatch?.orderId) {
                         entrustEvidence = await capturedEntrustEvidence(page);
                     }
-                    const apiReady = historicalOnly
+                    const apiReady = historicalOnly && !input.orderMatch?.orderId
                         || !input.orderMatch
                         || entrustEvidence?.capture_complete === true;
                     if (snapshots.orders?.complete_scan === true && apiReady) break;

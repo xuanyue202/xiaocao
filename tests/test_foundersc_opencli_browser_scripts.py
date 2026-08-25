@@ -123,7 +123,75 @@ console.log(JSON.stringify({
         == "broker_strategy_id_required_for_order_discovery"
     )
     assert payload["wrongDate"]["receiptMapping"] is False
-    assert payload["wrongDate"]["statusReason"] == "trade_date_not_current"
+    assert payload["wrongDate"]["statusReason"] == "prior_day_order_scan_incomplete"
+
+
+def test_known_prior_day_order_maps_from_exact_history_and_broker_id():
+    node_script = r"""
+const mapping = new Function(
+    `${MAPPING_SOURCE}; return mapExactOrderReceipt;`,
+)();
+const dateFilter = {
+    start: '2026-08-25', end: '2026-08-25', applied: true,
+};
+const snapshot = {
+    tabs: {
+        '历史委托': {
+            complete_scan: true,
+            date_filter: dateFilter,
+            table: {
+                headers: ['时间', '代码/名称', '买/卖', '委托量', '委托价', '状态'],
+                rows: [['14:50:40', '002742 冀衡医药', '买入', '3500', '4.23', '已撤']],
+            },
+        },
+        '历史成交': {
+            complete_scan: true,
+            date_filter: dateFilter,
+            table: {headers: [], rows: []},
+        },
+    },
+    api_entrust_evidence: {
+        capture_complete: true,
+        candidates: [{
+            code: '002742', quantity: 3500, price: 4.23,
+            orderId: 'order-456', strategyId: 'strategy-456',
+            statusName: '已撤',
+        }],
+    },
+};
+const expected = {
+    code: '002742', side: '买入', quantity: 3500, price: 4.23,
+    date: '2026-08-25', orderId: 'order-456', strategyId: 'strategy-456',
+};
+const mapped = mapping(snapshot, expected, '2026-08-26');
+const wrongFilter = mapping({
+    ...snapshot,
+    tabs: {
+        ...snapshot.tabs,
+        '历史委托': {
+            ...snapshot.tabs['历史委托'],
+            date_filter: {...dateFilter, start: '2026-08-24'},
+        },
+    },
+}, expected, '2026-08-26');
+console.log(JSON.stringify({mapped, wrongFilter}));
+""".replace("MAPPING_SOURCE", json.dumps(_order_mapping_source()))
+    completed = subprocess.run(
+        [_node(), "--input-type=module", "--eval", node_script],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+    assert completed.returncode == 0, completed.stderr
+    payload = json.loads(completed.stdout)
+    assert payload["mapped"]["receiptMapping"] is True
+    assert payload["mapped"]["status"] == "cancelled"
+    assert payload["mapped"]["orderId"] == "order-456"
+    assert payload["mapped"]["filledShares"] == 0
+    assert payload["mapped"]["active"] is False
+    assert payload["wrongFilter"]["receiptMapping"] is False
+    assert payload["wrongFilter"]["statusReason"] == "prior_day_order_scan_incomplete"
 
 
 def test_prior_day_absence_requires_exact_history_filters_and_zero_holding():

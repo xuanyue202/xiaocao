@@ -204,7 +204,7 @@ are:
 ```json
 {
   "template_name": "foundersc-quant/reconcile",
-  "template_version": 11,
+  "template_version": 12,
   "status": "reconciled",
   "environment": "mock",
   "expected_environment": "mock",
@@ -299,7 +299,12 @@ opaque manual route is not unique, it
 returns `reconciled_partial`, `reconcile_complete=false`, and
 `reconcile_required=true`; this is not a conclusive broker outcome.
 
-Template v11 retains v10's strict broker order-id mapping and retries the
+Template v12 carries a known broker order id across trade dates: it binds the
+historical-order and historical-deal tabs to the exact immutable plan date,
+captures only `/qt/user/historyEntrust`, and requires the same unique visible
+tuple/status plus API order-id mapping before returning a terminal or active
+receipt. An incomplete or broad history filter remains reconcile-only.
+Template v11 retained v10's strict broker order-id mapping and retries the
 read-only visible-table scan and intercepted `/qt/user/todayEntrust` capture as
 one bounded unit after a fresh-page navigation. A cached fresh site session
 therefore cannot turn a complete visible row with an absent capture into a

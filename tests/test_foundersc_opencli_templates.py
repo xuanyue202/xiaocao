@@ -175,6 +175,9 @@ def test_reconcile_requires_one_exact_account_query_and_api_order_mapping():
     assert "await navigateFresh(page, ROUTES.query)" in source
     assert "entrustEvidence?.capture_complete === true" in source
     assert "snapshots.orders?.complete_scan === true && apiReady" in source
+    assert "'/qt/user/historyEntrust'" in source
+    assert "priorDay ? '历史委托' : '当日委托'" in source
+    assert "prior_day_order_scan_incomplete" in source
     assert "carryEnvironmentProof" in source
     assert "exact_order_match_count" in source
     assert "exact_deal_match_count" in source
@@ -201,7 +204,7 @@ def test_reconcile_prior_day_absence_is_date_bounded_and_read_only():
 
 
 def test_foundersc_template_registry_is_versioned_with_one_scoped_write_command():
-    assert _source("common.mjs").count("TEMPLATE_VERSION = 11") == 1
+    assert _source("common.mjs").count("TEMPLATE_VERSION = 12") == 1
     for command in COMMANDS:
         source = _source(f"{command}.js")
         assert "site: SITE" in source
@@ -247,9 +250,10 @@ def test_account_binding_uses_same_origin_base_info_without_returning_raw_accoun
     assert "资金账号[^0-9]" not in common
 
 
-def test_common_receipt_documentation_matches_template_version_eleven():
+def test_common_receipt_documentation_matches_template_version_twelve():
     readme = _source("README.md")
-    assert '"template_version": 11' in readme
+    assert '"template_version": 12' in readme
+    assert '"template_version": 11' not in readme
     assert '"template_version": 10' not in readme
     assert '"template_version": 9' not in readme
 
