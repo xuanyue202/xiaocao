@@ -909,7 +909,11 @@ def test_route_rebind_wakes_edge_target_before_opencli_recovery(tmp_path):
     assert launcher_routes == [route]
 
 
-def test_provider_direct_link_recovers_detached_read_only_eval(tmp_path):
+@pytest.mark.parametrize("detached_count", [1, 2])
+def test_provider_direct_link_recovers_detached_read_only_eval(
+    tmp_path,
+    detached_count,
+):
     entry = _pdf_entry()
     item = {
         **LvSubscriptionService._normalize_entry(entry),
@@ -937,7 +941,7 @@ def test_provider_direct_link_recovers_detached_read_only_eval(tmp_path):
             and "ticket04_provider_direct_link" in tail[1]
         ):
             provider_link_evals += 1
-            if provider_link_evals == 1:
+            if provider_link_evals <= detached_count:
                 return SimpleNamespace(
                     returncode=1,
                     stdout=json.dumps({
@@ -979,9 +983,9 @@ def test_provider_direct_link_recovers_detached_read_only_eval(tmp_path):
     )
 
     assert result == {"status": "completed"}
-    assert provider_link_evals == 2
-    assert route_readback_evals == 1
-    assert len(launcher_routes) == 1
+    assert provider_link_evals == detached_count + 1
+    assert route_readback_evals == detached_count
+    assert len(launcher_routes) == detached_count
 
 
 def test_lv_text_image_browser_open_exposes_diagnostic(tmp_path):
