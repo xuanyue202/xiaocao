@@ -189,6 +189,12 @@ def test_repair_validation_maps_wechat_source_failure_to_exact_mailbox_profile(
             "owner_cloud_download",
             "kol_lv_text_image_owner_cloud_download",
         ),
+        (
+            "provider_error",
+            "owner_cloud_transfer_errno_2",
+            "owner_cloud_transfer",
+            "kol_lv_text_image_owner_cloud_transfer",
+        ),
     ],
 )
 def test_repair_validation_accepts_exact_lv_download_recovery_profile(
@@ -262,6 +268,13 @@ def test_repair_validation_accepts_exact_lv_download_recovery_profile(
             "listing_recovers_two_detached_read_only_evals_within_bound or "
             "route_rebind_wakes_edge_target_before_opencli_recovery or "
             "provider_direct_link_recovers_detached_read_only_eval or "
+            "provider_direct_link_does_not_retry_detached_command or "
+            "detached_provider_link_uses_idempotent_owner_cloud_fallback or "
+            "detached_frontend_link_uses_owner_cloud_without_retriggering_ui or "
+            "browser_eval_diagnostic_preserves_safe_script_operation or "
+            "owner_cloud_provider_errno_is_preserved_in_diagnostic or "
+            "exact_listing_proves_parent_route_before_first_listing_eval or "
+            "route_rebind_reawakens_edge_after_detached_readback or "
             "post_claim_lv_browser_eval_projects_download_repair_profile or "
             "repair_validation_maps_legacy_post_claim_lv_browser_eval_to_download_recovery or "
             "newer_repair_lifecycle_supersedes_old_fingerprint or "

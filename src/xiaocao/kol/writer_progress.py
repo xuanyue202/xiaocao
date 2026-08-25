@@ -633,6 +633,13 @@ TARGETED_REPAIR_TESTS: dict[str, tuple[str, ...]] = {
             "listing_recovers_two_detached_read_only_evals_within_bound or "
             "route_rebind_wakes_edge_target_before_opencli_recovery or "
             "provider_direct_link_recovers_detached_read_only_eval or "
+            "provider_direct_link_does_not_retry_detached_command or "
+            "detached_provider_link_uses_idempotent_owner_cloud_fallback or "
+            "detached_frontend_link_uses_owner_cloud_without_retriggering_ui or "
+            "browser_eval_diagnostic_preserves_safe_script_operation or "
+            "owner_cloud_provider_errno_is_preserved_in_diagnostic or "
+            "exact_listing_proves_parent_route_before_first_listing_eval or "
+            "route_rebind_reawakens_edge_after_detached_readback or "
             "post_claim_lv_browser_eval_projects_download_repair_profile or "
             "repair_validation_maps_legacy_post_claim_lv_browser_eval_to_download_recovery or "
             "newer_repair_lifecycle_supersedes_old_fingerprint or "
@@ -1036,6 +1043,7 @@ _LV_DOWNLOAD_REPAIR_PROFILE_ALIASES = frozenset({
     "kol_lv_text_image_provider_download_link",
     "kol_lv_text_image_provider_preview_reconciliation",
     "kol_lv_text_image_owner_cloud_download",
+    "kol_lv_text_image_owner_cloud_transfer",
 })
 _LV_DOWNLOAD_REPAIR_CODES = frozenset({
     "blocked_download_frame_missing",
@@ -1049,6 +1057,7 @@ _LV_DOWNLOAD_REPAIR_CODES = frozenset({
     "owner_download_control_ambiguous",
     "owner_selection_mismatch",
     "owner_stream_failed",
+    "owner_cloud_transfer_failed",
 })
 
 
@@ -1066,11 +1075,18 @@ def _canonical_lv_download_repair_profile(
         )
     except (TypeError, ValueError):
         claim_count = 0
+    failure_code = str(context.get("code") or "")
+    owner_transfer_errno = failure_code.startswith(
+        "owner_cloud_transfer_errno_"
+    )
     post_claim_browser_eval = stage == "browser_eval" and claim_count > 0
     if (
         str(context.get("adapter") or "") == "lv_text_image"
         and declared_profile in _LV_DOWNLOAD_REPAIR_PROFILE_ALIASES
-        and str(context.get("code") or "") in _LV_DOWNLOAD_REPAIR_CODES
+        and (
+            failure_code in _LV_DOWNLOAD_REPAIR_CODES
+            or owner_transfer_errno
+        )
         and (
             stage
             in {
@@ -1079,6 +1095,7 @@ def _canonical_lv_download_repair_profile(
                 "provider_download_trigger",
                 "provider_preview_reconciliation",
                 "owner_cloud_download",
+                "owner_cloud_transfer",
             }
             or post_claim_browser_eval
         )
