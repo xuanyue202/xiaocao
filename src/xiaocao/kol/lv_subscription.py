@@ -63,6 +63,9 @@ LV_CONTENT_PRODUCTS = {
     "unknown",
 }
 _OPENCLI_NAME = re.compile(r"[A-Za-z0-9_.-]{1,80}")
+_OPENCLI_SCRIPT_OPERATION = re.compile(
+    r"\boperation\s*=\s*['\"]([a-z][a-z0-9_]{0,63})['\"]"
+)
 _COVERAGE_ROWS = {
     "todays_market_diagnosis",
     "next_session_playbook",
@@ -2407,6 +2410,8 @@ try {
         }
         if failure.get("exit_code") is not None:
             row["failure"]["exit_code"] = int(failure["exit_code"])
+        if str(failure.get("operation") or "").strip():
+            row["failure"]["operation"] = str(failure["operation"])
         _append_jsonl(self.events_path, row)
         return row
 
@@ -2429,6 +2434,12 @@ try {
             "open": "browser_open",
             "wait": "browser_wait",
         }.get(operation, "browser_command")
+        operation_label = operation
+        for candidate in args[1:]:
+            match = _OPENCLI_SCRIPT_OPERATION.search(str(candidate))
+            if match is not None:
+                operation_label = match.group(1)
+                break
         command = [
             *self.opencli_command,
             *(["--profile", profile] if profile else []),
@@ -2445,12 +2456,14 @@ try {
                 timeout=timeout_seconds,
             )
         except subprocess.TimeoutExpired as exc:
-            raise EnrichmentDiagnosticError(
+            diagnostic = EnrichmentDiagnosticError(
                 "subscription browser command timed out",
                 category="timeout",
                 code="opencli_timeout",
                 stage=stage,
-            ) from exc
+            )
+            diagnostic.diagnostic_operation = operation_label
+            raise diagnostic from exc
         if result.returncode != 0:
             error_code = "opencli_command_failed"
             try:
@@ -2466,7 +2479,7 @@ try {
                 )
                 if _SAFE_OPENCLI_ERROR_CODE.fullmatch(candidate):
                     error_code = candidate
-            raise EnrichmentDiagnosticError(
+            diagnostic = EnrichmentDiagnosticError(
                 "subscription browser command failed",
                 category=_OPENCLI_ERROR_CATEGORIES.get(
                     error_code,
@@ -2476,22 +2489,28 @@ try {
                 stage=stage,
                 exit_code=int(result.returncode),
             )
+            diagnostic.diagnostic_operation = operation_label
+            raise diagnostic
         try:
             value = json.loads(str(result.stdout))
         except (TypeError, json.JSONDecodeError) as exc:
-            raise EnrichmentDiagnosticError(
+            diagnostic = EnrichmentDiagnosticError(
                 "subscription browser returned invalid JSON",
                 category="protocol_error",
                 code="opencli_invalid_json",
                 stage=stage,
-            ) from exc
+            )
+            diagnostic.diagnostic_operation = operation_label
+            raise diagnostic from exc
         if not isinstance(value, dict):
-            raise EnrichmentDiagnosticError(
+            diagnostic = EnrichmentDiagnosticError(
                 "subscription browser returned a non-object result",
                 category="protocol_error",
                 code="opencli_non_object",
                 stage=stage,
             )
+            diagnostic.diagnostic_operation = operation_label
+            raise diagnostic
         return value
 
     def _validate_private_config(self) -> None:

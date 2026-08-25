@@ -1140,6 +1140,36 @@ def test_lv_text_image_browser_open_exposes_diagnostic(tmp_path):
     assert open_calls == 3
 
 
+def test_browser_eval_diagnostic_preserves_safe_script_operation(tmp_path):
+    def browser_runner(command, **_kwargs):
+        return SimpleNamespace(
+            returncode=1,
+            stdout=json.dumps({
+                "error": {"code": "detached_mid_command"},
+            }),
+            stderr="",
+        )
+
+    service = LvSubscriptionService(
+        tmp_path / "out",
+        runner=browser_runner,
+        opencli_command=("opencli",),
+    )
+
+    with pytest.raises(EnrichmentDiagnosticError) as captured:
+        service._opencli_json(
+            "ticket04",
+            "eval",
+            "(() => { const operation = 'ticket04_provider_direct_link'; "
+            "return {}; })()",
+            profile=None,
+        )
+
+    assert captured.value.diagnostic_operation == (
+        "ticket04_provider_direct_link"
+    )
+
+
 def test_lv_text_image_browser_open_exposes_diagnostic_after_rebind(tmp_path):
     open_calls = 0
     foreground_open_calls = 0

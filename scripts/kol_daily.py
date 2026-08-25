@@ -258,6 +258,11 @@ def _isolated_item_failure(
         }
         if exc.diagnostic_exit_code is not None:
             failure["exit_code"] = exc.diagnostic_exit_code
+        operation = str(
+            getattr(exc, "diagnostic_operation", "") or ""
+        ).strip()
+        if operation:
+            failure["operation"] = operation
         return (
             failure,
             exc.diagnostic_code != "provider_download_filtered",
