@@ -500,7 +500,7 @@ class FounderscQuantOpenCLIAdapter(BrokerAdapter):
         capabilities = row.get("capabilities")
         if (
             str(row.get("template_name") or "") != "foundersc-quant/login"
-            or row.get("template_version") != 10
+            or row.get("template_version") != 11
             or not isinstance(capabilities, dict)
             or capabilities.get("login") is not True
         ):
@@ -560,7 +560,7 @@ class FounderscQuantOpenCLIAdapter(BrokerAdapter):
             "authentication_path": authentication_path,
             "status_reason": status_reason,
             "template_name": "foundersc-quant/login",
-            "template_version": 10,
+            "template_version": 11,
             "initial_auth_state": initial_auth_state,
             "keychain_login_read": keychain_login_read,
             "login_form_binding_proven": row.get("login_form_binding_proven") is True,

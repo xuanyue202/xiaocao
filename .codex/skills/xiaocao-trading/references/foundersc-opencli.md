@@ -36,7 +36,10 @@ including a short diagnostic prefix, but never parses arbitrary page text.
 ## Current contract
 
 Only `login` reads the fixed login Keychain item under the bounded contract
-above. No template reads or emits the trade password. Template v10 retains v9's
+above. No template reads or emits the trade password. Template v11 retains v10's
+strict order-id mapping and retries the read-only visible-table scan plus
+intercepted `/qt/user/todayEntrust` capture together after fresh navigation;
+bounded exhaustion remains reconcile-only. Template v10 retained v9's
 explicit, mutually exclusive session-reuse/fresh-login evidence, strict
 prior-day absence reconciliation, and credential-free response-shape
 diagnostic. It additionally recovers a missing broker order id from the
@@ -127,7 +130,7 @@ Automation stay unchanged.
 Apply `docs/OPERATING_CONTRACT.md` section 9 for the capital-gate semantics;
 this reference does not redefine them.
 
-Template v10 retains v8's extraction of `总资产` / `证券市值` / `可用资金` from one unique asset
+Template v11 retains v8's extraction of `总资产` / `证券市值` / `可用资金` from one unique asset
 card set or one unique agreeing table shape. It compares the page's masked
 fund-account fingerprint with Keychain trade-account metadata in-process,
 persists only the binding hash, and rejects missing, mismatched, wrong-date, or

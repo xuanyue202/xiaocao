@@ -1063,16 +1063,22 @@ cli({
                 const ordersScript = queryScript(
                     input.orderMatch?.date || '', historicalOnly
                 );
+                let entrustEvidence = null;
                 for (let scanAttempt = 0; scanAttempt < 3; scanAttempt += 1) {
                     if (scanAttempt > 0) {
                         await navigateFresh(page, ROUTES.query);
                     }
                     snapshots.orders = await page.evaluate(ordersScript);
-                    if (snapshots.orders?.complete_scan === true) break;
+                    if (!historicalOnly) {
+                        entrustEvidence = await capturedEntrustEvidence(page);
+                    }
+                    const apiReady = historicalOnly
+                        || !input.orderMatch
+                        || entrustEvidence?.capture_complete === true;
+                    if (snapshots.orders?.complete_scan === true && apiReady) break;
                     await page.wait({time: 1});
                 }
-                snapshots.orders.api_entrust_evidence =
-                    await capturedEntrustEvidence(page);
+                snapshots.orders.api_entrust_evidence = entrustEvidence;
                 if (!input.orderMatch) {
                     const manualRoute = await page.evaluate(MANUAL_ROUTE_DISCOVERY_SCRIPT);
                     snapshots.manual_route_discovery = {

@@ -204,7 +204,7 @@ are:
 ```json
 {
   "template_name": "foundersc-quant/reconcile",
-  "template_version": 10,
+  "template_version": 11,
   "status": "reconciled",
   "environment": "mock",
   "expected_environment": "mock",
@@ -299,7 +299,12 @@ opaque manual route is not unique, it
 returns `reconciled_partial`, `reconcile_complete=false`, and
 `reconcile_required=true`; this is not a conclusive broker outcome.
 
-Template v10 retains v9's credential-free response-shape diagnostic and maps
+Template v11 retains v10's strict broker order-id mapping and retries the
+read-only visible-table scan and intercepted `/qt/user/todayEntrust` capture as
+one bounded unit after a fresh-page navigation. A cached fresh site session
+therefore cannot turn a complete visible row with an absent capture into a
+false broker outcome; exhaustion remains reconcile-only. Template v10 retained
+v9's credential-free response-shape diagnostic and maps
 the read-only `/qt/user/todayEntrust` response only when its stable broker
 `orderId` is bound to the already-claimed strategy id, exact code, quantity,
 and price, while the visible current-order table independently has one exact
