@@ -3061,6 +3061,86 @@ def test_detached_provider_link_uses_idempotent_owner_cloud_fallback(
     assert frontend_calls == 0
 
 
+def test_detached_frontend_link_uses_owner_cloud_without_retriggering_ui(
+    tmp_path,
+):
+    payload = b"%PDF-1.7\n" + b"g" * 4087
+    entry = _pdf_entry(size=len(payload))
+    entry["provider_file_id"] = "987654321012345"
+    direct_calls = 0
+    frontend_calls = 0
+    transfer_calls = 0
+
+    def owner_cloud(item, _claim, _session, _profile):
+        nonlocal transfer_calls
+        transfer_calls += 1
+        return _owner_ready(item, transfer_performed=False)
+
+    def owner_stream(item, _owner, _session, _profile, destination):
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        destination.write_bytes(payload)
+        return {
+            "status": "completed",
+            "path": str(destination),
+            "actual_size": len(payload),
+            "content_type": "application/pdf",
+            "http_status": 200,
+            "sha256": hashlib.sha256(payload).hexdigest(),
+        }
+
+    service = LvSubscriptionService(
+        tmp_path / "out",
+        now=lambda: NOW,
+        share_url="https://pan.baidu.com/s/private-share-token",
+        share_code="a1b2",
+        owner_cloud_operator=owner_cloud,
+        owner_authenticated_streamer=owner_stream,
+    )
+    update = service.observe_browser_listing([entry])["updates"][0]
+    claim = service.claim_browser_download(update["identity"])
+    item = {
+        **service._manifest_item(update["identity"]),
+        "provider_file_id": entry["provider_file_id"],
+    }
+
+    def direct(*_args, **_kwargs):
+        nonlocal direct_calls
+        direct_calls += 1
+        raise EnrichmentDiagnosticError(
+            "provider direct link unavailable",
+            category="provider_error",
+            code="provider_download_link_errno_2",
+            stage="provider_download_link",
+        )
+
+    def frontend(*_args, **_kwargs):
+        nonlocal frontend_calls
+        frontend_calls += 1
+        raise EnrichmentDiagnosticError(
+            "signed-link interception detached",
+            category="transport_error",
+            code="detached_mid_command",
+            stage="browser_eval",
+        )
+
+    service._provider_direct_download = direct
+    service._provider_frontend_intercepted_download = frontend
+
+    result = service._download_provider_small_file(
+        item,
+        claim,
+        session="ticket04",
+        profile=None,
+    )
+
+    assert result["acquisition_transport"] == (
+        "owner_cloud_opencli_cookie_stream"
+    )
+    assert direct_calls == 1
+    assert frontend_calls == 1
+    assert transfer_calls == 1
+
+
 def test_existing_pdf_claim_intercepts_one_frontend_signed_link_after_errno_2(
     tmp_path,
 ):

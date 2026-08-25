@@ -5832,6 +5832,20 @@ try {
                 profile=profile,
             )
         except EnrichmentDiagnosticError as exc:
+            if (
+                str(item.get("media_type") or "") == "pdf"
+                and exc.diagnostic_code
+                in _PROVIDER_LINK_OWNER_CLOUD_FALLBACK_CODES
+            ):
+                # The interception script clicks the provider UI.  A detached
+                # command has an unknown click outcome, so never replay it;
+                # use the exact owner-cloud claim/readback path instead.
+                return self._owner_cloud_download(
+                    item,
+                    claim,
+                    session=session,
+                    profile=profile,
+                )
             if exc.diagnostic_code not in {
                 "provider_web_download_client_only",
                 "provider_frontend_signed_link_not_captured",
