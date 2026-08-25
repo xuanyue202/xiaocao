@@ -500,7 +500,7 @@ class FounderscQuantOpenCLIAdapter(BrokerAdapter):
         capabilities = row.get("capabilities")
         if (
             str(row.get("template_name") or "") != "foundersc-quant/login"
-            or row.get("template_version") != 8
+            or row.get("template_version") != 10
             or not isinstance(capabilities, dict)
             or capabilities.get("login") is not True
         ):
@@ -560,7 +560,7 @@ class FounderscQuantOpenCLIAdapter(BrokerAdapter):
             "authentication_path": authentication_path,
             "status_reason": status_reason,
             "template_name": "foundersc-quant/login",
-            "template_version": 8,
+            "template_version": 10,
             "initial_auth_state": initial_auth_state,
             "keychain_login_read": keychain_login_read,
             "login_form_binding_proven": row.get("login_form_binding_proven") is True,
@@ -1034,6 +1034,11 @@ class FounderscQuantOpenCLIAdapter(BrokerAdapter):
         ]
         if expected_order_id:
             args.extend(["--order-id", expected_order_id])
+        expected_strategy_id = str(
+            previous.get("broker_strategy_id") or previous.get("strategy_id") or ""
+        ).strip()
+        if expected_strategy_id:
+            args.extend(["--strategy-id", expected_strategy_id])
         try:
             row = self._run("reconcile", args)
         except OpenCLIAdapterError as exc:

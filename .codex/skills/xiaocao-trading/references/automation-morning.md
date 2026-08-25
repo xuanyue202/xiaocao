@@ -50,6 +50,14 @@ mock on every exit.
 At 09:20-09:30 the later `forward_eval` field `executable_fillable` may be
 absent. Absence is not false and must be deferred to the current submit-time
 market guard; an explicitly false value remains ineligible.
+The user has also authorized the same dated deterministic plan to continue
+during either continuous-auction session (`09:30-11:30` or `13:00-14:57`).
+Before materializing any new live intent, refresh the proprietary same-day
+trade status, current price, authoritative down price and timestamp with no
+cache; bind those facts into the durable plan. Lunch, the closing auction and
+post-close remain blocked. This changes no frozen selection, allocation,
+initial limit, capital scope or exact-once rule, and an existing intent is
+always reconciled rather than refreshed or resubmitted.
 The live-plan consumer binds proprietary `HH:MM:SS:millisecond` clocks to the
 dated China session and accepts only the documented continuous-auction `T`
 status family (`T` or `T` plus digits). Numeric BUY limits are floored, never

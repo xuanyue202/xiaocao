@@ -619,6 +619,64 @@ def test_live_capital_basis_accepts_mapped_terminal_order_with_zero_fill(
     assert basis.current_open_exposure == 0
 
 
+def test_live_capital_basis_accepts_proven_pre_entrust_rejection(
+    tmp_path: Path,
+) -> None:
+    plan = TradePlan(
+        plan_id="book-b-canary:2026-08-24:000001.XSHE:BUY:100:v1",
+        strategy_run_id="run",
+        snapshot_ref="freeze#000001",
+        strategy_sha="a" * 40,
+        trade_date="2026-08-24",
+        book="B",
+        logical_account_id="primary",
+        environment="live",
+        code="000001.XSHE",
+        name="测试标的",
+        side="BUY",
+        shares=100,
+        limit_price=10.0,
+        basket_price=10.1,
+        market_guard_status="ok",
+        created_at=datetime(2026, 8, 24, tzinfo=timezone.utc),
+        recovery_deadline=datetime(2026, 8, 24, 6, 57, tzinfo=timezone.utc),
+        allocation_proof_hash="b" * 64,
+    )
+    store = ExecutionStore(tmp_path / "events.jsonl")
+    claimed = store.append(
+        plan=plan,
+        receipt=ExecutionReceipt(
+            plan_id=plan.plan_id,
+            plan_hash=plan.plan_hash,
+            state=ExecutionState.CLAIMED,
+            account_binding="proven",
+            attempt=1,
+            remaining_shares=plan.shares,
+            next_action="submit_once",
+        ),
+        kind="durable_claim",
+    )
+    store.append(
+        plan=plan,
+        receipt=replace(
+            claimed,
+            state=ExecutionState.REJECTED,
+            reason="pre_entrust_rejected",
+            broker_status="rejected",
+            receipt_mapping=True,
+            filled_shares=0,
+            submit_chain_uncertain=False,
+            next_action="human_review",
+        ),
+        kind="submit_receipt",
+    )
+
+    basis = load_book_b_live_capital_basis(tmp_path)
+
+    assert basis.settled_nav == 30_000
+    assert basis.current_open_exposure == 0
+
+
 def test_live_morning_consumes_freeze_without_paper_fill_or_ledger_mutation(
     tmp_path: Path,
 ) -> None:

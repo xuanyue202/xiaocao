@@ -1124,6 +1124,11 @@ class TradingExecution:
                 plan,
                 replace(receipt, state=ExecutionState.VALIDATED, reason="SUBMIT_NOT_BEFORE", next_action="wait_until_submit_window"),
             )
+        if _outside_live_buy_continuous_auction(plan, self.now()):
+            return self._record(
+                plan,
+                replace(receipt, state=ExecutionState.SKIPPED, reason="OUTSIDE_CONTINUOUS_AUCTION", next_action="stop"),
+            )
         if plan.side.upper() == "BUY" and self.now() >= plan.recovery_deadline:
             return self._record(
                 plan,
@@ -1186,6 +1191,11 @@ class TradingExecution:
             return self._record(
                 plan,
                 replace(previous, reason="SUBMIT_NOT_BEFORE", next_action="wait_until_submit_window"),
+            )
+        if _outside_live_buy_continuous_auction(plan, self.now()):
+            return self._record(
+                plan,
+                replace(previous, state=ExecutionState.SKIPPED, reason="OUTSIDE_CONTINUOUS_AUCTION", next_action="stop"),
             )
         if plan.side.upper() == "BUY" and self.now() >= plan.recovery_deadline:
             return self._record(
@@ -1789,8 +1799,11 @@ class TradingExecution:
         return (
             cls._account_binding_proven(receipt)
             and receipt.receipt_mapping is True
-            and bool(previous.broker_order_id)
-            and receipt.order_id == previous.broker_order_id
+            and bool(receipt.order_id)
+            and (
+                not previous.broker_order_id
+                or receipt.order_id == previous.broker_order_id
+            )
             and bool(previous.broker_strategy_id)
         )
 
@@ -2020,6 +2033,25 @@ class TradingExecution:
 BookBLiveExecution = TradingExecution
 
 
+def _outside_live_buy_continuous_auction(plan: TradePlan, current: datetime) -> bool:
+    if (
+        plan.environment != "live"
+        or plan.side.upper() != "BUY"
+        or plan.price_rule != "min(frozen_open*1.005,basket_price)"
+    ):
+        return False
+    if current.tzinfo is None:
+        current = current.replace(tzinfo=timezone.utc)
+    local = current.astimezone(ZoneInfo("Asia/Shanghai"))
+    if local.date().isoformat() != plan.trade_date:
+        return True
+    clock = (local.hour, local.minute, local.second, local.microsecond)
+    return not (
+        (9, 30, 0, 0) <= clock < (11, 30, 0, 0)
+        or (13, 0, 0, 0) <= clock < (14, 57, 0, 0)
+    )
+
+
 def trade_plan_from_frozen_row(
     row: dict[str, Any],
     *,
@@ -2088,7 +2120,17 @@ def trade_plan_from_frozen_row(
         tzinfo=ZoneInfo("Asia/Shanghai")
     )
     if recovery_deadline is None:
-        recovery_deadline = local_date.replace(hour=9, minute=45, second=0, microsecond=0).astimezone(timezone.utc)
+        deadline_hour, deadline_minute = (
+            (14, 57)
+            if environment == "live" and normalized_side == "BUY"
+            else (9, 45)
+        )
+        recovery_deadline = local_date.replace(
+            hour=deadline_hour,
+            minute=deadline_minute,
+            second=0,
+            microsecond=0,
+        ).astimezone(timezone.utc)
     submit_not_before = _parse_datetime(row.get("submit_not_before")) or created
     if environment == "live" and normalized_side == "BUY":
         opening_submit = local_date.replace(

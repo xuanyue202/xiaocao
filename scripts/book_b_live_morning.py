@@ -12,7 +12,7 @@ import argparse
 import json
 import sys
 import time
-from datetime import datetime
+from datetime import date, datetime
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
@@ -33,6 +33,8 @@ from xiaocao.live.foundersc_opencli import (  # noqa: E402
     resolve_connected_opencli_profile,
 )
 from xiaocao.live.trading_runner import build_foundersc_execution  # noqa: E402
+from xiaocao.api.client import XiaocaoClient  # noqa: E402
+from xiaocao.config import load_settings  # noqa: E402
 from wait_for_morning_freeze import wait_for_morning_freeze  # noqa: E402
 
 
@@ -94,6 +96,46 @@ def _passguard_evidence() -> dict:
         "trade_password_keychain_read": False,
         "unattended_recovery_proven": False,
         "policy": "fail_closed_if_prompted",
+    }
+
+
+def _market_observed_at(value: object, trade_date: str) -> str:
+    text = str(value or "").strip()
+    for fmt in ("%H:%M:%S:%f", "%H:%M:%S", "%H%M%S"):
+        try:
+            clock = datetime.strptime(text, fmt).time()
+        except ValueError:
+            continue
+        return datetime.combine(
+            date.fromisoformat(trade_date),
+            clock,
+            tzinfo=ZoneInfo("Asia/Shanghai"),
+        ).isoformat()
+    raise RuntimeError("LIVE_MARKET_GUARD_TIMESTAMP_UNPROVEN")
+
+
+def _fresh_market_guard(client: XiaocaoClient, row: dict, trade_date: str) -> dict:
+    code = str(row.get("code") or "")
+    payload = client.second_line_detail_info(code)
+    detail = payload.get(code) if isinstance(payload, dict) else None
+    if not isinstance(detail, dict) or str(detail.get("code") or "") != code:
+        raise RuntimeError("LIVE_MARKET_GUARD_CODE_UNPROVEN")
+    raw_date = str(detail.get("tradeDate") or "")
+    observed_date = (
+        f"{raw_date[:4]}-{raw_date[4:6]}-{raw_date[6:8]}"
+        if len(raw_date) >= 8 and raw_date[:8].isdigit()
+        else raw_date[:10]
+    )
+    if observed_date != trade_date:
+        raise RuntimeError("LIVE_MARKET_GUARD_DATE_MISMATCH")
+    return {
+        "market_guard_required": True,
+        "market_guard_status": detail.get("tradeStatus"),
+        "market_price": detail.get("trade"),
+        "down_price": detail.get("downPrice"),
+        "market_observed_at": _market_observed_at(
+            detail.get("tradeTimestamp"), trade_date
+        ),
     }
 
 
@@ -161,6 +203,13 @@ def main(argv: list[str] | None = None) -> int:
     )
     prior_reconciliations: tuple[dict, ...] = ()
     open_plan_reconciliations: tuple[dict, ...] = ()
+    api_settings = load_settings(None)
+    market_client = XiaocaoClient(
+        base_url=api_settings.base_url,
+        timeout=api_settings.timeout,
+        retries=api_settings.retries,
+        cache=None,
+    )
 
     def read_allocation_facts() -> dict:
         nonlocal open_plan_reconciliations, prior_reconciliations
@@ -220,6 +269,9 @@ def main(argv: list[str] | None = None) -> int:
             )
         ),
         read_allocation_facts=read_allocation_facts,
+        refresh_market_guard=lambda row: _fresh_market_guard(
+            market_client, row, trade_date
+        ),
         wait_for_dated_freeze=lambda: wait_for_morning_freeze(
             date=trade_date,
             live_dir=freeze_path.parent,

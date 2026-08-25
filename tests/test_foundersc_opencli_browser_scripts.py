@@ -61,10 +61,18 @@ const snapshot = {
         '当日委托': {complete_scan: true, table: orderTable},
         '当日成交': {complete_scan: true, table: dealTable},
     },
+    api_entrust_evidence: {
+        capture_complete: true,
+        candidates: [{
+            code: '510300', quantity: 100, price: 4.22,
+            orderId: 'order-123', strategyId: 'strategy-123',
+            statusName: '全部成交',
+        }],
+    },
 };
 const expected = {
     code: '510300', side: '买入', quantity: 100, price: 4.22,
-    date: '2026-08-24', orderId: 'order-123',
+    date: '2026-08-24', orderId: 'order-123', strategyId: 'strategy-123',
 };
 const exact = mapping(snapshot, expected, '2026-08-24');
 const duplicate = mapping({
@@ -75,14 +83,22 @@ const duplicate = mapping({
         },
         '当日成交': {complete_scan: true, table: dealTable},
     },
+    api_entrust_evidence: snapshot.api_entrust_evidence,
 }, expected, '2026-08-24');
-const missingOrderId = mapping(
+const discoveredOrderId = mapping(
     snapshot,
     {...expected, orderId: ''},
     '2026-08-24',
 );
+const missingStableKeys = mapping(
+    snapshot,
+    {...expected, orderId: '', strategyId: ''},
+    '2026-08-24',
+);
 const wrongDate = mapping(snapshot, expected, '2026-08-25');
-console.log(JSON.stringify({exact, duplicate, missingOrderId, wrongDate}));
+console.log(JSON.stringify({
+    exact, duplicate, discoveredOrderId, missingStableKeys, wrongDate,
+}));
 """.replace("MAPPING_SOURCE", json.dumps(_order_mapping_source()))
     completed = subprocess.run(
         [_node(), "--input-type=module", "--eval", node_script],
@@ -99,8 +115,13 @@ console.log(JSON.stringify({exact, duplicate, missingOrderId, wrongDate}));
     assert payload["exact"]["fillPrice"] == pytest.approx(4.216)
     assert payload["duplicate"]["receiptMapping"] is False
     assert payload["duplicate"]["exactOrderMatchCount"] == 2
-    assert payload["missingOrderId"]["receiptMapping"] is False
-    assert payload["missingOrderId"]["statusReason"] == "broker_order_id_required"
+    assert payload["discoveredOrderId"]["receiptMapping"] is True
+    assert payload["discoveredOrderId"]["orderId"] == "order-123"
+    assert payload["missingStableKeys"]["receiptMapping"] is False
+    assert (
+        payload["missingStableKeys"]["statusReason"]
+        == "broker_strategy_id_required_for_order_discovery"
+    )
     assert payload["wrongDate"]["receiptMapping"] is False
     assert payload["wrongDate"]["statusReason"] == "trade_date_not_current"
 

@@ -36,9 +36,13 @@ including a short diagnostic prefix, but never parses arbitrary page text.
 ## Current contract
 
 Only `login` reads the fixed login Keychain item under the bounded contract
-above. No template reads or emits the trade password. Template v8 retains v7's
-explicit, mutually exclusive session-reuse/fresh-login evidence and adds one
-strict prior-day absence reconciliation while retaining the v6
+above. No template reads or emits the trade password. Template v10 retains v9's
+explicit, mutually exclusive session-reuse/fresh-login evidence, strict
+prior-day absence reconciliation, and credential-free response-shape
+diagnostic. It additionally recovers a missing broker order id from the
+read-only `/qt/user/todayEntrust` response only when the already-claimed
+strategy id plus exact code/quantity/price and one independently matching
+visible code/side/quantity/price/status row prove a unique mapping. It retains the v6
 UI-only `package-limit` submit route; the other routes remain no-submit, and no
 route withdraws orders.
 `environment` may change only the unique mock/live switcher and must verify the
@@ -70,8 +74,11 @@ one-shot limit. The manual route must be discovered as exactly one same-origin o
 every requested field with its page readback and close only through the exact
 read-only cancel control.
 
-This branch is invoked only by the separate 09:20 Book-B live-morning
-Automation. That task switches and verifies the live environment, performs a
+This branch is invoked by the separate 09:20 Book-B live-morning Automation
+and its explicitly authorized same-day continuous-auction continuation. New
+BUY intents may submit only during `09:30-11:30` or `13:00-14:57`, after a
+fresh proprietary market guard has been bound to the immutable plan. That
+task switches and verifies the live environment, performs a
 read-only `reconcile --scope assets`, and emits dated allocation facts only
 when the result proves a complete asset scan and exact environment/logical-
 account/fund-account binding. Mixed-account totals remain readback evidence;
@@ -112,8 +119,7 @@ only. Keep reconciling ACK/UNKNOWN/SUBMITTED/PARTIAL states under the same plan
 and order/strategy mapping. A mapped broker CANCELLED/REJECTED terminal may
 release the initial basis only with a complete event hash chain and zero fill;
 any positive fill still requires settled-NAV reconciliation.
-Trading-hours final-submit/order-id proof,
-row-level cancellation, Book-B's at-most-one controlled retry, and unattended
+Row-level cancellation, Book-B's at-most-one controlled retry, and unattended
 native PassGuard recovery are still pending. A currently authenticated session
 does not close the separate fresh-login gap. The paper writer and its
 Automation stay unchanged.
@@ -121,7 +127,7 @@ Automation stay unchanged.
 Apply `docs/OPERATING_CONTRACT.md` section 9 for the capital-gate semantics;
 this reference does not redefine them.
 
-Template v8 retains v7's extraction of `总资产` / `证券市值` / `可用资金` from one unique asset
+Template v10 retains v8's extraction of `总资产` / `证券市值` / `可用资金` from one unique asset
 card set or one unique agreeing table shape. It compares the page's masked
 fund-account fingerprint with Keychain trade-account metadata in-process,
 persists only the binding hash, and rejects missing, mismatched, wrong-date, or

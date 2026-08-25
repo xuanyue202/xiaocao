@@ -776,6 +776,67 @@ def test_live_reconcile_cannot_bind_a_new_order_to_a_stale_strategy(
     assert broker.submit_calls == 1
 
 
+def test_live_reconcile_can_discover_order_id_from_the_claimed_strategy(
+    tmp_path: Path,
+) -> None:
+    now = datetime(2026, 8, 15, 1, 1, tzinfo=timezone.utc)
+    signing_key = "test-human-key"
+    auth = make_authorization(
+        scope="isolated-test",
+        max_notional=10000.0,
+        signing_key=signing_key,
+        sides=["BUY"],
+        codes=["000001.XSHE"],
+        issued_at=now.isoformat(),
+        expires_at="2026-08-16T00:00:00+00:00",
+    )
+    auth_path = tmp_path / "live_authorization.json"
+    auth_path.write_text(json.dumps(auth), encoding="utf-8")
+    broker = FakeBroker(
+        submit=[
+            BrokerReceipt(
+                status=BrokerStatus.ACCEPTED,
+                strategy_id="s-1",
+                receipt_mapping=False,
+                account_binding="proven",
+            )
+        ],
+        reconcile=[
+            BrokerReceipt(
+                status=BrokerStatus.ACCEPTED,
+                order_id="o-1",
+                receipt_mapping=True,
+                account_binding="proven",
+                filled_shares=0,
+            )
+        ],
+    )
+    broker.capability = replace(
+        broker.capability,
+        account_binding="proven",
+        manual_position_shares=0,
+        capabilities={"receipt_mapping": False},
+    )
+    engine = TradingExecution(
+        store=InMemoryExecutionStore(tmp_path / "events.jsonl"),
+        safety_env={ENV_LIVE_ENABLED: "true", ENV_SIGNING_KEY: signing_key},
+        auth_path=auth_path,
+        audit_path=tmp_path / "audit.jsonl",
+        notifier=lambda _title, _body: "ok",
+        now=lambda: now,
+    )
+    plan = _plan(environment="live", deadline=now + timedelta(minutes=15))
+
+    first = engine.execute(plan, broker)
+    second = engine.execute(plan, broker)
+
+    assert first.state == ExecutionState.UNKNOWN
+    assert second.state == ExecutionState.ACKNOWLEDGED
+    assert second.broker_order_id == "o-1"
+    assert second.broker_strategy_id == "s-1"
+    assert broker.submit_calls == 1
+
+
 def test_capability_parser_fails_closed_without_explicit_reconcile_proof() -> None:
     base = {
         "status": "ready",
@@ -927,6 +988,32 @@ def test_buy_after_recovery_deadline_is_skipped_before_probe(tmp_path: Path) -> 
     )
     assert receipt.state == ExecutionState.SKIPPED
     assert receipt.reason == "RECOVERY_DEADLINE_REACHED"
+    assert broker.probe_calls == 0
+
+
+def test_live_buy_outside_continuous_auction_is_skipped_before_probe(
+    tmp_path: Path,
+) -> None:
+    now = datetime(2026, 8, 15, 4, 0, tzinfo=timezone.utc)
+    broker = FakeBroker()
+    engine = TradingExecution(
+        store=InMemoryExecutionStore(tmp_path / "events.jsonl"),
+        now=lambda: now,
+    )
+
+    receipt = engine.execute(
+        replace(
+            _plan(
+                environment="live",
+                deadline=datetime(2026, 8, 15, 6, 57, tzinfo=timezone.utc),
+            ),
+            price_rule="min(frozen_open*1.005,basket_price)",
+        ),
+        broker,
+    )
+
+    assert receipt.state == ExecutionState.SKIPPED
+    assert receipt.reason == "OUTSIDE_CONTINUOUS_AUCTION"
     assert broker.probe_calls == 0
 
 
@@ -1103,6 +1190,37 @@ def test_frozen_row_builder_only_materializes_existing_book_b_limit_rule() -> No
     assert plan.basket_price == 10.10
     assert plan.shares == 300
     assert plan.recovery_deadline.isoformat() == "2026-08-15T01:45:00+00:00"
+
+
+def test_live_frozen_row_builder_keeps_afternoon_continuation_open() -> None:
+    plan = trade_plan_from_frozen_row(
+        {
+            "date": "2026-08-15",
+            "book": "B",
+            "is_live": True,
+            "mode_exec_star": True,
+            "mode_trade_eligible": True,
+            "code": "000001.XSHE",
+            "name": "测试标的",
+            "open": 10.0,
+            "basket_price": 10.10,
+            "mode_exec_planned_shares": 300,
+            "market_guard_status": "T",
+            "market_guard_required": True,
+            "market_price": 10.0,
+            "down_price": 9.0,
+            "market_observed_at": "2026-08-15T14:40:00+08:00",
+            "allocation_proof_hash": "proof",
+        },
+        environment="live",
+        logical_account_id="primary",
+        now=datetime(2026, 8, 15, 6, 40, tzinfo=timezone.utc),
+    )
+
+    assert plan.recovery_deadline.isoformat() == "2026-08-15T06:57:00+00:00"
+    assert plan.guard_reason(
+        now=datetime(2026, 8, 15, 6, 40, tzinfo=timezone.utc)
+    ) is None
 
 
 def test_frozen_row_builder_floors_buy_limit_to_valid_stock_tick() -> None:

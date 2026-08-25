@@ -161,6 +161,9 @@ def load_book_b_live_capital_basis(
             if not (
                 _prior_day_absence_event_proven(plan_id, plan_events)
                 or _mapped_zero_fill_terminal_event_proven(plan_id, plan_events)
+                or _pre_entrust_zero_fill_terminal_event_proven(
+                    plan_id, plan_events
+                )
             ):
                 raise ValueError("LIVE_BOOK_B_SETTLED_NAV_RECONCILE_REQUIRED")
     return BookBLiveCapitalBasis(
@@ -282,6 +285,34 @@ def _mapped_zero_fill_terminal_event_proven(
         and bool(strategy_id)
         and receipt.get("event_id") == latest.get("event_id")
         and mapped_submit
+    )
+
+
+def _pre_entrust_zero_fill_terminal_event_proven(
+    plan_id: str,
+    plan_events: list[dict],
+) -> bool:
+    """Accept only a hash-chained broker rejection before order entrust."""
+    if not _event_chain_proven(plan_id, plan_events):
+        return False
+    latest = plan_events[-1]
+    receipt = latest.get("receipt")
+    if not isinstance(receipt, dict):
+        return False
+    return (
+        latest.get("kind") == "submit_receipt"
+        and latest.get("state") == "rejected"
+        and receipt.get("state") == "rejected"
+        and receipt.get("broker_status") == "rejected"
+        and receipt.get("reason") == "pre_entrust_rejected"
+        and receipt.get("receipt_mapping") is True
+        and receipt.get("account_binding") in {"proven", "bound"}
+        and receipt.get("filled_shares") == 0
+        and receipt.get("submit_chain_uncertain") is False
+        and not receipt.get("broker_order_id")
+        and not receipt.get("broker_strategy_id")
+        and int(receipt.get("attempt") or 0) == 1
+        and receipt.get("event_id") == latest.get("event_id")
     )
 
 
@@ -513,6 +544,7 @@ def _materialize_or_restore_plans(
     strategy_sha: str,
     allocation: BookBAllocationFacts,
     now: datetime,
+    refresh_market_guard: Callable[[dict], dict] | None = None,
 ) -> list[TradePlan]:
     restored_by_id: dict[str, TradePlan] = {}
     new_rows: list[dict] = []
@@ -523,7 +555,22 @@ def _materialize_or_restore_plans(
             strategy_sha=strategy_sha,
         )
         if restored is None:
-            new_rows.append(row)
+            materialized_row = dict(row)
+            if refresh_market_guard is not None:
+                guard = refresh_market_guard(dict(row))
+                if not isinstance(guard, dict):
+                    raise ValueError("LIVE_MARKET_GUARD_REFRESH_INVALID")
+                allowed = {
+                    "market_guard_required",
+                    "market_guard_status",
+                    "market_price",
+                    "down_price",
+                    "market_observed_at",
+                }
+                if set(guard) - allowed:
+                    raise ValueError("LIVE_MARKET_GUARD_REFRESH_UNSCOPED")
+                materialized_row.update(guard)
+            new_rows.append(materialized_row)
         else:
             restored_by_id[restored.plan_id] = restored
     new_plans = plans_from_frozen_rows(
@@ -962,6 +1009,7 @@ def run_book_b_live_morning(
     preflight: Callable[[], dict] | None = None,
     restore_environment: Callable[[], dict] | None = None,
     read_allocation_facts: Callable[[], dict] | None = None,
+    refresh_market_guard: Callable[[dict], dict] | None = None,
     wait_for_dated_freeze: Callable[[], dict] | None = None,
     prepare_only: Callable[[TradePlan], BrokerReceipt] | None = None,
     wait_for_submit_window: Callable[[datetime], None] | None = None,
@@ -1016,6 +1064,7 @@ def run_book_b_live_morning(
                         strategy_sha=str(dated_freeze_receipt["strategy_sha"]),
                         allocation=allocation,
                         now=now(),
+                        refresh_market_guard=refresh_market_guard,
                     )
                     if prepare_only is not None:
                         preparation_receipts = [

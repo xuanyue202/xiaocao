@@ -204,7 +204,7 @@ are:
 ```json
 {
   "template_name": "foundersc-quant/reconcile",
-  "template_version": 8,
+  "template_version": 10,
   "status": "reconciled",
   "environment": "mock",
   "expected_environment": "mock",
@@ -299,7 +299,14 @@ opaque manual route is not unique, it
 returns `reconciled_partial`, `reconcile_complete=false`, and
 `reconcile_required=true`; this is not a conclusive broker outcome.
 
-Template v8 retains v7's strict `allocation_summary` and adds a prior-day,
+Template v10 retains v9's credential-free response-shape diagnostic and maps
+the read-only `/qt/user/todayEntrust` response only when its stable broker
+`orderId` is bound to the already-claimed strategy id, exact code, quantity,
+and price, while the visible current-order table independently has one exact
+code/side/quantity/price row with the same normalized status. Duplicate
+captures are deduplicated and raw responses, account values, and task names are
+never returned. Missing or ambiguous strategy/order ids, tuple rows, response
+fields, status agreement, or zero-fill proof remain reconcile-only. Template v8 added a prior-day,
 read-only absence proof. For a plan that remains UNKNOWN without a broker
 order id, `reconcile --scope settlement` selects the exact prior trade date
 on both historical-order and historical-deal tabs, queries each once, scans

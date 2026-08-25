@@ -150,15 +150,33 @@ def test_probe_proves_package_surface_but_keeps_receipt_mapping_pending():
         assert route in source
 
 
-def test_reconcile_requires_one_exact_account_query_order_mapping():
+def test_reconcile_requires_one_exact_account_query_and_api_order_mapping():
     source = _source("reconcile.js")
 
-    for argument in ("code", "side", "quantity", "price", "date", "order-id"):
+    for argument in (
+        "code",
+        "side",
+        "quantity",
+        "price",
+        "date",
+        "order-id",
+        "strategy-id",
+    ):
         assert f"name: '{argument}'" in source
     assert "function mapExactOrderReceipt" in source
+    assert "capturedEntrustEvidence" in source
+    assert "api_entrust_evidence" in source
+    assert "candidate.strategyId === expected.strategyId" in source
+    assert "candidate.orderId === expected.orderId" in source
+    assert "broker_strategy_id_required_for_order_discovery" in source
+    assert "emptySurfaceReady" in source
+    assert "firstPage.empty_state_count === 1" in source
+    assert "for (let scanAttempt = 0; scanAttempt < 3; scanAttempt += 1)" in source
+    assert "await navigateFresh(page, ROUTES.query)" in source
     assert "carryEnvironmentProof" in source
     assert "exact_order_match_count" in source
     assert "exact_deal_match_count" in source
+    assert "api_entrust_match_count" in source
     assert "receipt_mapping: mapping.receiptMapping" in source
     assert "mapping.exactOrderMatchCount === 1" in source
     assert "ambiguous_or_missing_exact_order" in source
@@ -174,13 +192,14 @@ def test_reconcile_prior_day_absence_is_date_bounded_and_read_only():
     assert "saved: mapping.absenceProof ? false : null" in source
     assert "started: mapping.absenceProof ? false : null" in source
     assert "scope === 'settlement'" in source
-    assert "page.evaluate(queryScript(" in source
+    assert "const ordersScript = queryScript(" in source
+    assert "page.evaluate(ordersScript)" in source
     for forbidden in ("fetch(", "XMLHttpRequest", "$http"):
         assert forbidden not in source
 
 
 def test_foundersc_template_registry_is_versioned_with_one_scoped_write_command():
-    assert _source("common.mjs").count("TEMPLATE_VERSION = 8") == 1
+    assert _source("common.mjs").count("TEMPLATE_VERSION = 10") == 1
     for command in COMMANDS:
         source = _source(f"{command}.js")
         assert "site: SITE" in source
@@ -226,10 +245,10 @@ def test_account_binding_uses_same_origin_base_info_without_returning_raw_accoun
     assert "资金账号[^0-9]" not in common
 
 
-def test_common_receipt_documentation_matches_template_version_eight():
+def test_common_receipt_documentation_matches_template_version_ten():
     readme = _source("README.md")
-    assert '"template_version": 8' in readme
-    assert '"template_version": 1' not in readme
+    assert '"template_version": 10' in readme
+    assert '"template_version": 9' not in readme
 
 
 def test_template_javascript_uses_repository_four_space_indentation():
