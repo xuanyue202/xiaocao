@@ -2049,6 +2049,91 @@ class DailyRuntime:
             exchange=_read_agent_json,
         )
 
+    @staticmethod
+    def _mailbox_terminal_progress(
+        handoff_id: str,
+        result: dict[str, Any],
+    ) -> WriterProgress:
+        """Bind the source terminal to the mailbox ack progress snapshot."""
+
+        raw_progress = result.get("writer_progress")
+        if isinstance(raw_progress, dict):
+            progress = WriterProgress.from_dict(raw_progress)
+            if progress.status != "terminal":
+                raise DailyError(
+                    "completed mailbox result has non-terminal writer progress"
+                )
+            return progress
+
+        events = result.get("events")
+        if (
+            not isinstance(events, list)
+            or len(events) != 1
+            or not isinstance(events[0], dict)
+        ):
+            raise DailyError(
+                "completed mailbox result lacks one source terminal event"
+            )
+        terminal = events[0]
+        validate_source_event(terminal)
+
+        def terminal_status(field: str) -> str:
+            value = terminal.get(field)
+            if not isinstance(value, dict):
+                raise DailyError(
+                    f"mailbox source terminal lacks {field} status"
+                )
+            status = str(value.get("status") or "")
+            if not status or status == "not_applicable":
+                raise DailyError(
+                    f"mailbox source terminal has invalid {field} status"
+                )
+            return status
+
+        content = terminal.get("content_value")
+        if not isinstance(content, dict):
+            raise DailyError("mailbox source terminal lacks content value")
+        content_status = str(content.get("status") or "")
+        if not content_status or content_status == "not_applicable":
+            raise DailyError("mailbox source terminal has invalid content status")
+
+        gray_status = terminal_status("gray_report")
+        alert_status = terminal_status("alert")
+        book_status = terminal_status("book_kol_us")
+        knowledge_status = terminal_status("knowledge_effect")
+        inferred_effect_count = sum(
+            status in {"published", "delivered", "filled"}
+            for status in (gray_status, alert_status, book_status)
+        )
+        inferred_summary = {
+            "claim_count": inferred_effect_count,
+            "receipt_count": inferred_effect_count,
+            "uncertain_effect_count": 0,
+        }
+        supplied_summary = result.get("claim_receipt_summary")
+        summary = (
+            inferred_summary
+            if supplied_summary is None
+            else dict(supplied_summary)
+        )
+        if summary != inferred_summary:
+            raise DailyError(
+                "mailbox source terminal claim summary does not match receipts"
+            )
+
+        return WriterProgress.terminal(
+            item_identity=handoff_id,
+            stage="mailbox_ack",
+            content_terminal=content_status,
+            gray_report_terminal=gray_status,
+            reminder_terminal=alert_status,
+            book_terminal=book_status,
+            knowledge_terminal=knowledge_status,
+            ack_status="acked",
+            new_external_effect_count=inferred_effect_count,
+            claim_receipt_summary=summary,
+        )
+
     def _repair_validation(self) -> RepairValidationService:
         return RepairValidationService(
             Path(__file__).resolve().parents[1],
@@ -2137,10 +2222,19 @@ class DailyRuntime:
         completed = {
             str(value) for value in result.get("completed_handoff_ids", [])
         }
-        return {
+        response = {
             **result,
             "business_complete": handoff_id in completed,
         }
+        if handoff_id in completed and (
+            isinstance(result.get("writer_progress"), dict)
+            or isinstance(result.get("events"), list)
+        ):
+            response["writer_progress"] = self._mailbox_terminal_progress(
+                handoff_id,
+                result,
+            ).to_dict()
+        return response
 
     def mailbox(self) -> dict[str, Any]:
         return RemoteMailboxDrain(

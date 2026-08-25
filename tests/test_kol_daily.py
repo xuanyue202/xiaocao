@@ -1337,6 +1337,112 @@ def test_mailbox_processor_imports_and_completes_only_target_official_handoff(
     ]
 
 
+def test_mailbox_processor_binds_source_terminal_to_ack_progress(
+    tmp_path,
+    monkeypatch,
+):
+    handoff_id = "a" * 64
+    capsule = {
+        "schema_version": 2,
+        "handoff_id": handoff_id,
+        "handoff_sha256": "b" * 64,
+        "content_transport": "public_url_only",
+        "large_payload_local_bytes": 0,
+    }
+    terminal = {
+        "kind": "source_event",
+        "event_id": "source-1",
+        "source_binding": {
+            "source_identity": "source-1",
+            "publication_version": "version-1",
+        },
+        "content_value": {
+            "status": "promoted",
+            "tier": "alert_eligible",
+            "reason": "有当前决策价值。",
+        },
+        "gray_report": {
+            "status": "published",
+            "receipt": "gray-receipt",
+            "detail_url": "https://reader.example/report-1",
+            "terminal_order": 1,
+        },
+        "alert": {
+            "status": "delivered",
+            "receipt": "alert-receipt",
+            "all_recipients": True,
+            "stable_link_count": 1,
+            "stable_report_url": "https://reader.example/report-1",
+            "terminal_order": 3,
+        },
+        "book_kol_us": {
+            "book": "KOL-US",
+            "paper_only": True,
+            "status": "no_trade",
+            "reason": "没有可验证的美股入场条件。",
+            "terminal_order": 2,
+        },
+        "knowledge_effect": {
+            "status": "no_reusable_knowledge",
+            "reason": "没有可复用的方法规则。",
+        },
+        "coordinator_source_video_bytes": 0,
+    }
+
+    class FakeInbox:
+        def __init__(self, output_dir):
+            assert output_dir == tmp_path / "official"
+
+        @staticmethod
+        def import_capsule(value):
+            assert value == capsule
+            return {"status": "accepted", "handoff_id": handoff_id}
+
+    runtime = DailyRuntime.__new__(DailyRuntime)
+    runtime.args = SimpleNamespace(
+        wechat_official_output_dir=tmp_path / "official",
+    )
+
+    def process_target(handoff_id=None):
+        assert handoff_id == "a" * 64
+        return {
+            "status": "completed",
+            "completed_handoff_ids": [handoff_id],
+            "events": [terminal],
+        }
+
+    monkeypatch.setattr(kol_daily_script, "OfficialAccountInbox", FakeInbox)
+    monkeypatch.setattr(runtime, "wechat_official", process_target)
+
+    result = runtime._process_mailbox_message({
+        "message_id": handoff_id,
+        "payload": capsule,
+    })
+
+    assert result["business_complete"] is True
+    assert result["writer_progress"] == {
+        "schema_version": 1,
+        "status": "terminal",
+        "ownership": "none",
+        "retryability": "not_retryable",
+        "item_identity": handoff_id,
+        "stage": "mailbox_ack",
+        "next_action": "stop",
+        "content_terminal": "promoted",
+        "gray_report_terminal": "published",
+        "reminder_terminal": "delivered",
+        "book_terminal": "no_trade",
+        "knowledge_terminal": "no_reusable_knowledge",
+        "ack_status": "acked",
+        "new_external_effect_count": 2,
+        "claim_receipt_summary": {
+            "claim_count": 2,
+            "receipt_count": 2,
+            "uncertain_effect_count": 0,
+        },
+    }
+
+
 def test_mailbox_processor_reuses_post_handoff_video_runner_before_ack(
     tmp_path,
     monkeypatch,
