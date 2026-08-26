@@ -856,10 +856,8 @@ def test_xiaoetong_mp_wrapper_login_state_stays_bound(tmp_path):
         password="666",
     )
 
-    result = subscription.run_once(opencli_session="xiaocao-lv-subscription")
-
-    assert result["status"] == "waiting"
-    assert result["waiting_items"][0]["status"] == "awaiting_playback"
+    with pytest.raises(EnrichmentError, match="account login is required"):
+        subscription.run_once(opencli_session="xiaocao-lv-subscription")
 
 
 def test_xiaoetong_bound_provider_block_waits_for_the_same_page(tmp_path):

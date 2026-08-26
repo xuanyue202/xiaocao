@@ -634,6 +634,24 @@ class XiaocaoWechatLiveSubscription:
         )
 
     @classmethod
+    def _is_bound_account_login_page(
+        cls,
+        page_url: str,
+        *,
+        expected_page_url: str,
+        expected_source_identity: str,
+    ) -> bool:
+        """Accept a direct MP wrapper as a bound login observation."""
+        try:
+            canonical_page, canonical_identity = cls._canonical_page(page_url)
+        except EnrichmentError:
+            return False
+        return (
+            canonical_page == expected_page_url
+            and canonical_identity == expected_source_identity
+        )
+
+    @classmethod
     def _is_bound_provider_block_redirect(
         cls,
         page_url: str,
@@ -999,6 +1017,11 @@ class XiaocaoWechatLiveSubscription:
                     and response_url == item["page_url"]
                 )
                 or self._is_bound_account_login_redirect(
+                    response_url,
+                    expected_page_url=item["page_url"],
+                    expected_source_identity=item["source_identity"],
+                )
+                or self._is_bound_account_login_page(
                     response_url,
                     expected_page_url=item["page_url"],
                     expected_source_identity=item["source_identity"],
