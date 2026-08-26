@@ -140,6 +140,9 @@ DEFAULT_WECHAT_OFFICIAL_OUTPUT = Path("output/live/kol_wechat_official")
 DEFAULT_MAILBOX_OUTPUT = Path("output/live/kol_mailbox")
 MAX_HANDOFF_BYTES = 1024 * 1024
 CLOUD_HANDOFF_POLL_SECONDS = 30
+BOUNDED_SOURCE_FAILURES = frozenset({
+    ("source_error", "source_temporarily_unavailable"),
+})
 _STRUCTURED_INPUT_STATE: ContextVar[dict[str, Any] | None] = ContextVar(
     "kol_structured_input_state",
     default=None,
@@ -1534,9 +1537,8 @@ def _classified_narrow_source(name: str, runner):
                 "timeout",
                 "transport_error",
             } or (
-                failure["category"] == "source_error"
-                and failure["code"] == "source_temporarily_unavailable"
-            ):
+                failure["category"], failure["code"]
+            ) in BOUNDED_SOURCE_FAILURES:
                 waiting_item["next_poll_not_before"] = (
                     _next_source_poll_not_before()
                 )

@@ -4778,6 +4778,10 @@ def test_narrow_xiaocao_source_unavailability_becomes_bounded_wait(monkeypatch):
         "2026-08-19T18:00:00+08:00"
     )
 
+    assert kol_daily_script.BOUNDED_SOURCE_FAILURES == frozenset({
+        ("source_error", "source_temporarily_unavailable"),
+    })
+
 
 def test_source_classifier_isolates_unavailable_semantic_input():
     runner = _classified_source(
