@@ -586,6 +586,8 @@ class XiaocaoWechatLiveSubscription:
         if page_state != "account_login_required":
             return cls._canonical_page(page_url)
         parsed = urlsplit(page_url.strip())
+        if (parsed.hostname or "").lower().endswith(".mp.xiaoeknow.com"):
+            return cls._canonical_page(page_url)
         redirect_urls = parse_qs(parsed.query).get("redirect_url", [])
         if (
             parsed.scheme != "https"
