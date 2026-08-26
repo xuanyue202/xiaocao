@@ -860,6 +860,30 @@ def test_xiaoetong_mp_wrapper_login_state_stays_bound(tmp_path):
         subscription.run_once(opencli_session="xiaocao-lv-subscription")
 
 
+def test_xiaoetong_login_redirect_allows_bound_resource_version_rotation():
+    expected_page = (
+        "https://appsnm3rlcp3566.h5.xiaoeknow.com/v2/course/alive/"
+        "l_6a8dc972e4b0694c354119f2"
+    )
+    redirected_page = (
+        "https://appsnm3rlcp3566.h5.xiaoeknow.com/v3/course/alive/"
+        "l_6a8dc972e4b0694c354119f2"
+    )
+    login_url = (
+        "https://appsnm3rlcp3566.h5.xiaoeknow.com/p/t/free/v1/"
+        "basic-platform/h5_basic/login/auth?redirect_url="
+        f"{quote(redirected_page, safe='')}"
+    )
+
+    assert XiaocaoWechatLiveSubscription._is_bound_account_login_redirect(
+        login_url,
+        expected_page_url=expected_page,
+        expected_source_identity=(
+            "xiaoetong:appsnm3rlcp3566:l_6a8dc972e4b0694c354119f2"
+        ),
+    )
+
+
 def test_xiaoetong_bound_provider_block_waits_for_the_same_page(tmp_path):
     payload = _history(
         "[2026-08-13 08:42] 福利官小花四: 草神直播："

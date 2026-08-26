@@ -628,10 +628,7 @@ class XiaocaoWechatLiveSubscription:
             )
         except EnrichmentError:
             return False
-        return (
-            redirect_page == expected_page_url
-            and redirect_identity == expected_source_identity
-        )
+        return redirect_identity == expected_source_identity
 
     @classmethod
     def _is_bound_account_login_page(
@@ -646,10 +643,7 @@ class XiaocaoWechatLiveSubscription:
             canonical_page, canonical_identity = cls._canonical_page(page_url)
         except EnrichmentError:
             return False
-        return (
-            canonical_page == expected_page_url
-            and canonical_identity == expected_source_identity
-        )
+        return canonical_identity == expected_source_identity
 
     @classmethod
     def _is_bound_provider_block_redirect(
