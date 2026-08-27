@@ -818,6 +818,72 @@ def test_xiaoetong_account_login_redirect_is_reported_explicitly(tmp_path):
         subscription.run_once(opencli_session="xiaocao-lv-subscription")
 
 
+def test_xiaoetong_mp_wrapper_login_state_stays_bound(tmp_path):
+    page_url = (
+        "https://appsnm3rlcp3566.h5.xiaoeknow.com/v4/course/"
+        "alive/l_6a75cf66e4b0694c5bf6d228"
+    )
+    params = urlsafe_b64encode(json.dumps({
+        "apparid": "appsnm3rlcp3566",
+        "resource_id": "l_6a75cf66e4b0694c5bf6d228",
+        "h5_url": page_url,
+    }).encode()).decode().rstrip("=")
+    wrapper_url = (
+        "https://appsnm3rlcp3566.mp.xiaoeknow.com/"
+        f"?app_id=appsnm3rlcp3566&params={params}"
+    )
+    payload = _history(f"[2026-08-09 16:42] 福利官小花四: 草神直播：{page_url}")
+
+    def browser_exchange(request: dict) -> dict:
+        return {
+            "action": request["action"],
+            "subscription_id": request["subscription_id"],
+            "page_url": wrapper_url,
+            "page_state": "account_login_required",
+            **(
+                {"activated": False, "password_used": False}
+                if request["action"] == "activate_xiaoetong_playback"
+                else {}
+            ),
+        }
+
+    subscription = XiaocaoWechatLiveSubscription(
+        tmp_path / "wechat",
+        history_reader=lambda: payload,
+        browser_exchange=browser_exchange,
+        capture_driver=_CaptureDriver(),
+        contact=CONTACT,
+        password="666",
+    )
+
+    with pytest.raises(EnrichmentError, match="account login is required"):
+        subscription.run_once(opencli_session="xiaocao-lv-subscription")
+
+
+def test_xiaoetong_login_redirect_allows_bound_resource_version_rotation():
+    expected_page = (
+        "https://appsnm3rlcp3566.h5.xiaoeknow.com/v2/course/alive/"
+        "l_6a8dc972e4b0694c354119f2"
+    )
+    redirected_page = (
+        "https://appsnm3rlcp3566.h5.xiaoeknow.com/v3/course/alive/"
+        "l_6a8dc972e4b0694c354119f2"
+    )
+    login_url = (
+        "https://appsnm3rlcp3566.h5.xiaoeknow.com/p/t/free/v1/"
+        "basic-platform/h5_basic/login/auth?redirect_url="
+        f"{quote(redirected_page, safe='')}"
+    )
+
+    assert XiaocaoWechatLiveSubscription._is_bound_account_login_redirect(
+        login_url,
+        expected_page_url=expected_page,
+        expected_source_identity=(
+            "xiaoetong:appsnm3rlcp3566:l_6a8dc972e4b0694c354119f2"
+        ),
+    )
+
+
 def test_xiaoetong_bound_provider_block_waits_for_the_same_page(tmp_path):
     payload = _history(
         "[2026-08-13 08:42] 福利官小花四: 草神直播："
