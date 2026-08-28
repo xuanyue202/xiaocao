@@ -36,6 +36,8 @@ SKILL_REFERENCE_FILES = [
     "market-data.md",
     "strategy-and-backtests.md",
     "research-flywheels.md",
+    "foundersc-opencli.md",
+    "foundersc-native-ax.md",
 ]
 
 RUNTIME_ITEMS = [
@@ -47,6 +49,7 @@ RUNTIME_ITEMS = [
     "kronos_screen/model/spec.json",
     "kronos_screen/scripts",
     "reference/experience",
+    "native/foundersc_ax_executor",
     "pyproject.toml",
     "README.md",
     "xiaocao.yaml.example",
@@ -110,6 +113,15 @@ def validate_skill(skill_dir: Path) -> None:
         runtime / "scripts" / "live_capital_preflight.py",
         runtime / "scripts" / "live_recommend.py",
         runtime / "scripts" / "live_monitor.py",
+        runtime / "scripts" / "foundersc_native_ax.py",
+        runtime / "scripts" / "configure_foundersc_trade_keychain.py",
+        runtime / "native" / "foundersc_ax_executor" / "Package.swift",
+        runtime
+        / "native"
+        / "foundersc_ax_executor"
+        / "Sources"
+        / "FounderscNativeAX"
+        / "main.swift",
         runtime / "kronos_screen" / "scripts" / "paper_record.py",
         runtime / "kronos_screen" / "scripts" / "eod_capture.py",
         runtime / "kronos_screen" / "scripts" / "forward_eval.py",
@@ -149,9 +161,12 @@ def smoke_test(runtime_dir: Path) -> None:
             "scripts/live_capital_preflight.py",
             "scripts/live_recommend.py",
             "scripts/live_monitor.py",
+            "scripts/foundersc_native_ax.py",
+            "scripts/configure_foundersc_trade_keychain.py",
             "kronos_screen/scripts/paper_record.py",
             "src/xiaocao/live/safety.py",
             "src/xiaocao/live/capital_keychain.py",
+            "src/xiaocao/live/foundersc_native_ax.py",
         ],
         cwd=runtime_dir,
         env=env,

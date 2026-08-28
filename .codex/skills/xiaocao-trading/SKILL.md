@@ -67,6 +67,7 @@ Completion means the requested command reached a terminal state and the branch-s
 | Reports, strategy runs, backtests, cohorts or paper-vs-market research | [`references/strategy-and-backtests.md`](references/strategy-and-backtests.md) |
 | Kronos variants, training rows, research guards, verdict ledger or flywheel states | [`references/research-flywheels.md`](references/research-flywheels.md) |
 | Founder Securities Web/OpenCLI login, route probe, prepare, package-limit submit, reconcile or recover | [`references/foundersc-opencli.md`](references/foundersc-opencli.md) |
+| Founder Securities macOS native AX probe, password focus/unlock or remote runtime preflight | [`references/foundersc-native-ax.md`](references/foundersc-native-ax.md) |
 | Book-B phase-one execution seam, ownership evidence or allocation proof | [`references/automation-morning.md`](references/automation-morning.md), [`references/automation-intraday.md`](references/automation-intraday.md), [`references/foundersc-opencli.md`](references/foundersc-opencli.md) |
 | “What should the trading system do?” or a behavior change | `docs/OPERATING_CONTRACT.md`, then the owning code/tests |
 | Posture, discretionary exit triage or distilled 小草 knowledge | `reference/experience/README.md`, then only the routed playbook/timeline artifact |
