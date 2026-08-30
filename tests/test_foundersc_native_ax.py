@@ -8,6 +8,7 @@ import pytest
 
 from xiaocao.live.foundersc_keychain import SECURITY_COMMAND, TRADE_SERVICE
 from xiaocao.live.foundersc_native_ax import (
+    SCHEMA_VERSION,
     FounderscNativeAXClient,
     FounderscNativeAXError,
     expected_helper_path,
@@ -19,7 +20,7 @@ from xiaocao.live.foundersc_native_ax import (
 
 def _receipt(**overrides) -> bytes:
     payload = {
-        "schema_version": 1,
+        "schema_version": SCHEMA_VERSION,
         "helper_version": 1,
         "command": "probe",
         "status": "authentication_required",
@@ -89,7 +90,7 @@ def test_receipt_with_sensitive_key_is_rejected(tmp_path: Path) -> None:
 
 
 def test_schema_mismatch_fails_closed(tmp_path: Path) -> None:
-    runner = HelperRunner(_receipt(schema_version=2))
+    runner = HelperRunner(_receipt(schema_version=999))
     client = FounderscNativeAXClient(
         helper_path=_helper(tmp_path),
         runner=runner,
@@ -217,6 +218,98 @@ def test_client_login_fill_uses_stdin_and_never_requests_login_press(
     assert "test-secret" not in " ".join(helper_argv)
 
 
+def test_native_prepare_transports_bounded_order_fields_without_submit(
+    tmp_path: Path,
+) -> None:
+    runner = HelperRunner(_receipt(
+        status="prepared",
+        surface_state="trade_ready",
+        order_readback={
+            "code": "000001",
+            "side": "buy",
+            "price": "10",
+            "quantity": 100,
+            "field_mapping_proven": True,
+            "submit_control_count": 1,
+            "submitted": False,
+            "saved": False,
+            "started": False,
+            "form_cleared": True,
+        },
+    ))
+    client = FounderscNativeAXClient(
+        helper_path=_helper(tmp_path),
+        runner=runner,
+    )
+
+    receipt = client.prepare_order(
+        code="000001.XSHE",
+        side="BUY",
+        price=10.0,
+        quantity=100,
+        expected_fingerprint="123******890",
+        clear_after_readback=True,
+    )
+
+    assert receipt.status == "prepared"
+    argv, kwargs = runner.calls[-1]
+    assert argv[1:] == [
+        "prepare-order",
+        "--allow-order-prepare",
+        "--code",
+        "000001",
+        "--side",
+        "buy",
+        "--price",
+        "10",
+        "--quantity",
+        "100",
+        "--expected-fingerprint",
+        "123******890",
+        "--clear-after-readback",
+    ]
+    assert kwargs["input"] is None
+
+
+def test_native_submit_requires_explicit_enablement_and_one_helper_call(
+    tmp_path: Path,
+) -> None:
+    runner = HelperRunner(_receipt(
+        status="submit_clicked",
+        surface_state="trade_ready",
+    ))
+    client = FounderscNativeAXClient(
+        helper_path=_helper(tmp_path),
+        runner=runner,
+    )
+
+    with pytest.raises(
+        FounderscNativeAXError,
+        match="NATIVE_AX_SINGLE_SUBMIT_NOT_EXPLICITLY_ENABLED",
+    ):
+        client.submit_prepared_order(
+            code="000001.XSHE",
+            side="BUY",
+            price=10.0,
+            quantity=100,
+            expected_fingerprint="123******890",
+        )
+    assert runner.calls == []
+
+    receipt = client.submit_prepared_order(
+        code="000001.XSHE",
+        side="BUY",
+        price=10.0,
+        quantity=100,
+        expected_fingerprint="123******890",
+        explicitly_enabled=True,
+    )
+    assert receipt.status == "submit_clicked"
+    argv, _kwargs = runner.calls[-1]
+    assert argv[1] == "submit-prepared-order"
+    assert argv.count("--allow-single-submit") == 1
+
+
 def test_expected_helper_path_is_bound_to_source_digest() -> None:
     root = Path(__file__).resolve().parents[1]
 
@@ -331,3 +424,21 @@ def test_remote_bootstrap_guidance_is_bounded_state_machine(
     rendered = json.dumps(guidance)
     assert "test-secret" not in rendered
     assert "1234567890" not in rendered
+
+
+def test_swift_submit_confirmation_fallback_is_exact_and_single_point() -> None:
+    root = Path(__file__).resolve().parents[1]
+    source = (
+        root
+        / "native"
+        / "foundersc_ax_executor"
+        / "Sources"
+        / "FounderscNativeAX"
+        / "main.swift"
+    ).read_text(encoding="utf-8")
+
+    assert "confirmationMarker, confirmationOrderMatched" in source
+    assert "guardedOCRConfirmationPoint" in source
+    assert 'token.confidence >= 0.80' in source
+    assert 'guard candidates.count == 1' in source
+    assert 'ocr_guarded_order_confirmation' in source

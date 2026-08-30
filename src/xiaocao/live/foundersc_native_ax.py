@@ -1,9 +1,9 @@
 """Credential-safe client for the macOS Founder Securities AX helper.
 
-The native helper is intentionally narrower than :class:`BrokerAdapter` today:
-it proves application/lock/order-surface state and supports guarded unlocking,
-but it does not prepare or submit an order.  Keeping this seam separate avoids
-accidentally presenting an unaccepted native UI path as a real-capital route.
+The native helper exposes an account-bound order hot path in addition to the
+readiness/unlock foundation.  This client only transports bounded order fields;
+capital authorization, durable claims and broker reconciliation remain owned by
+``trading_execution.py`` and its BrokerAdapter.
 """
 from __future__ import annotations
 
@@ -23,7 +23,7 @@ from .foundersc_keychain import (
 )
 
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
 HELPER_NAME = "foundersc-native-ax"
 PACKAGE_RELATIVE_PATH = Path("native/foundersc_ax_executor")
 DEFAULT_TIMEOUT_SECONDS = 12.0
@@ -409,6 +409,54 @@ class FounderscNativeAXClient:
     def probe(self, *, table_audit: bool = False) -> NativeAXReceipt:
         return self._run("probe", ["--table-audit"] if table_audit else [])
 
+    def read_query(
+        self,
+        *,
+        kind: str,
+        expected_fingerprint: str,
+    ) -> NativeAXReceipt:
+        return self._run(
+            "read-query",
+            [
+                "--kind",
+                str(kind),
+                "--allow-query-navigation",
+                "--expected-fingerprint",
+                str(expected_fingerprint),
+            ],
+        )
+
+    def open_order_surface(
+        self,
+        *,
+        side: str,
+        expected_fingerprint: str,
+    ) -> NativeAXReceipt:
+        return self._run(
+            "open-order-surface",
+            [
+                "--side",
+                str(side).lower(),
+                "--allow-readonly-navigation",
+                "--expected-fingerprint",
+                str(expected_fingerprint),
+            ],
+        )
+
+    def open_query_surface(
+        self,
+        *,
+        expected_fingerprint: str,
+    ) -> NativeAXReceipt:
+        return self._run(
+            "open-query-surface",
+            [
+                "--allow-readonly-navigation",
+                "--expected-fingerprint",
+                str(expected_fingerprint),
+            ],
+        )
+
     def focus_unlock(self) -> NativeAXReceipt:
         return self._run("focus-unlock")
 
@@ -509,6 +557,85 @@ class FounderscNativeAXClient:
             enablement_error="NATIVE_AX_KEYCHAIN_UNLOCK_NOT_EXPLICITLY_ENABLED",
             keychain_runner=keychain_runner,
             keychain_timeout_seconds=keychain_timeout_seconds,
+        )
+
+    @staticmethod
+    def _order_args(
+        *,
+        code: str,
+        side: str,
+        price: float,
+        quantity: int,
+        expected_fingerprint: str,
+    ) -> list[str]:
+        bare_code = str(code or "").strip().split(".", 1)[0]
+        normalized_side = str(side or "").strip().lower()
+        normalized_price = f"{float(price):.6f}".rstrip("0").rstrip(".")
+        return [
+            "--code",
+            bare_code,
+            "--side",
+            normalized_side,
+            "--price",
+            normalized_price,
+            "--quantity",
+            str(int(quantity)),
+            "--expected-fingerprint",
+            str(expected_fingerprint or "").strip(),
+        ]
+
+    def prepare_order(
+        self,
+        *,
+        code: str,
+        side: str,
+        price: float,
+        quantity: int,
+        expected_fingerprint: str,
+        clear_after_readback: bool = False,
+    ) -> NativeAXReceipt:
+        """Set and exactly read back one order without pressing submit."""
+        args = [
+            "--allow-order-prepare",
+            *self._order_args(
+                code=code,
+                side=side,
+                price=price,
+                quantity=quantity,
+                expected_fingerprint=expected_fingerprint,
+            ),
+        ]
+        if clear_after_readback:
+            args.append("--clear-after-readback")
+        return self._run("prepare-order", args)
+
+    def submit_prepared_order(
+        self,
+        *,
+        code: str,
+        side: str,
+        price: float,
+        quantity: int,
+        expected_fingerprint: str,
+        explicitly_enabled: bool = False,
+    ) -> NativeAXReceipt:
+        """Re-read one prepared order and press its unique submit control once."""
+        if not explicitly_enabled:
+            raise FounderscNativeAXError(
+                "NATIVE_AX_SINGLE_SUBMIT_NOT_EXPLICITLY_ENABLED"
+            )
+        return self._run(
+            "submit-prepared-order",
+            [
+                "--allow-single-submit",
+                *self._order_args(
+                    code=code,
+                    side=side,
+                    price=price,
+                    quantity=quantity,
+                    expected_fingerprint=expected_fingerprint,
+                ),
+            ],
         )
 
 

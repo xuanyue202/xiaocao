@@ -18,6 +18,8 @@ from .book_b_allocation import (
     allocate_frozen_rows,
     validate_allocation_rows,
 )
+from .foundersc_native_ax import FounderscNativeAXClient, build_helper
+from .foundersc_native_broker import FounderscNativeAXBrokerAdapter
 from .foundersc_opencli import FounderscQuantOpenCLIAdapter
 from .trading_execution import (
     BookBOwnershipEvidence,
@@ -185,8 +187,42 @@ def build_foundersc_execution(
     return execution, adapter
 
 
+def build_foundersc_native_execution(
+    state_dir: Path | str,
+    *,
+    expected_fund_account_fingerprint: str,
+    native_client: FounderscNativeAXClient | None = None,
+    safety_env_provider: Callable[[], dict[str, str]] | None = None,
+    now=None,
+    notifier=None,
+) -> tuple[TradingExecution, FounderscNativeAXBrokerAdapter]:
+    """Build the App-only Founder route with native query reconciliation."""
+    root = Path(state_dir)
+    store = ExecutionStore(root / "events.jsonl")
+    outbox = TradingIncidentOutbox(root / "incidents.jsonl")
+    native = native_client
+    if native is None:
+        build_helper()
+        native = FounderscNativeAXClient()
+    adapter = FounderscNativeAXBrokerAdapter(
+        native=native,
+        expected_fund_account_fingerprint=expected_fund_account_fingerprint,
+    )
+    execution = TradingExecution(
+        store=store,
+        broker=adapter,
+        ledger=BookBOwnershipEvidence(root / "book_b_ownership_evidence.jsonl"),
+        outbox=outbox,
+        now=now,
+        notifier=notifier,
+        safety_env_provider=safety_env_provider,
+    )
+    return execution, adapter
+
+
 __all__ = [
     "build_foundersc_execution",
+    "build_foundersc_native_execution",
     "execute_plans",
     "frozen_rows_digest",
     "plans_from_frozen_rows",

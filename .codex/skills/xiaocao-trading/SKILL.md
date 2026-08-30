@@ -33,8 +33,8 @@ Completion means the requested command reached a terminal state and the branch-s
   a broker fill. It requires
   ★E/allocation proof for BUY, monitor-authorized owned-lot evidence for SELL,
   account-level writer fencing and durable takeover/reconcile evidence. The
-  only candidate write route is Founder `package-limit`; a real submit still
-  requires exact account binding, route/reconcile proof and both capital keys.
+  active write route is Founder `native-app`; a real submit still requires
+  exact App/account binding, native query reconciliation and both capital keys.
   First-order receipt, UNKNOWN, reconcile, rejection and replacement semantics
   are governed exclusively by `docs/OPERATING_CONTRACT.md` §4/§9; never restate,
   relax or infer them from browser visibility. Unproved cancellation or retry
@@ -44,7 +44,9 @@ Completion means the requested command reached a terminal state and the branch-s
   allocation facts must come from a complete dated live asset readback bound
   to the logical/fund account and protect the complete economic capsule with a
   canonical hash. Phase one fixes the live logical account to `primary` and the
-  initial Book-B basis to 30,000 yuan; every exit must verify restoration to mock.
+  initial Book-B basis to 30,000 yuan. The native App has no mock namespace, so
+  exit records `native_environment_restore_not_applicable` rather than claiming
+  a fake environment switch.
 - Before trusting A/B or repaired ledger state, run `scripts/data_doctor.py`. Raw cumulative A-B PnL is accounting information; exit comparison requires the identical-entry paired cohort.
 - Cache first and rate-limit Xiaocao API calls. The market-data branch contains endpoint-specific traps.
 - Book T v2 ETF expressions are paper-only and must use the explicit contract seam in `src/xiaocao/live/instrument_contract.py`; missing lot/T+0-T+1/fees, proprietary quote contract, current trading status, liquidity status or provenance stays fail-closed. See `docs/OPERATING_CONTRACT.md` §4b/§5 for the SSOT.
@@ -66,9 +68,9 @@ Completion means the requested command reached a terminal state and the branch-s
 | Quotes, environment, minute/K-line, pools, sectors, indices or indicators | [`references/market-data.md`](references/market-data.md) |
 | Reports, strategy runs, backtests, cohorts or paper-vs-market research | [`references/strategy-and-backtests.md`](references/strategy-and-backtests.md) |
 | Kronos variants, training rows, research guards, verdict ledger or flywheel states | [`references/research-flywheels.md`](references/research-flywheels.md) |
-| Founder Securities Web/OpenCLI login, route probe, prepare, package-limit submit, reconcile or recover | [`references/foundersc-opencli.md`](references/foundersc-opencli.md) |
-| Founder Securities macOS native AX probe, password focus/unlock or remote runtime preflight | [`references/foundersc-native-ax.md`](references/foundersc-native-ax.md) |
-| Book-B phase-one execution seam, ownership evidence or allocation proof | [`references/automation-morning.md`](references/automation-morning.md), [`references/automation-intraday.md`](references/automation-intraday.md), [`references/foundersc-opencli.md`](references/foundersc-opencli.md) |
+| Founder Securities Web/OpenCLI legacy route inspection only; never use it inside `native-app` | [`references/foundersc-opencli.md`](references/foundersc-opencli.md) |
+| Founder Securities macOS native App probe, unlock, prepare, submit, positions/orders/trades/funds readback or remote runtime preflight | [`references/foundersc-native-ax.md`](references/foundersc-native-ax.md) |
+| Book-B live execution seam, ownership evidence or allocation proof | [`references/automation-morning.md`](references/automation-morning.md), [`references/automation-intraday.md`](references/automation-intraday.md), [`references/foundersc-native-ax.md`](references/foundersc-native-ax.md) |
 | “What should the trading system do?” or a behavior change | `docs/OPERATING_CONTRACT.md`, then the owning code/tests |
 | Posture, discretionary exit triage or distilled 小草 knowledge | `reference/experience/README.md`, then only the routed playbook/timeline artifact |
 

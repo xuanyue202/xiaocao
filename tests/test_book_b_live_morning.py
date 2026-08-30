@@ -332,6 +332,60 @@ def test_live_morning_restores_mock_even_when_freeze_is_blocked(tmp_path: Path) 
     assert events == ["live", "mock"]
 
 
+def test_native_app_route_has_no_fake_mock_environment_to_restore(
+    tmp_path: Path,
+) -> None:
+    receipt = run_book_b_live_morning(
+        BookBLiveMorningConfig(
+            trade_date="2026-08-24",
+            freeze_path=tmp_path / "missing.jsonl",
+            allocation_facts_path=tmp_path / "missing-allocation.json",
+            state_dir=tmp_path / "state",
+        ),
+        preflight=lambda: {"status": "environment_ready", "environment": "live"},
+        restore_environment=lambda: {
+            "status": "native_environment_restore_not_applicable",
+            "environment": "not_applicable",
+            "route": "native-app",
+        },
+        execute=lambda plan: (_ for _ in ()).throw(AssertionError(plan)),
+    )
+
+    assert receipt.status == "blocked"
+    assert receipt.reason == "DATED_FREEZE_NOT_PROVEN"
+
+
+def test_live_morning_accepts_native_app_allocation_source(tmp_path: Path) -> None:
+    freeze = tmp_path / "freeze.jsonl"
+    freeze.write_text("", encoding="utf-8")
+    payload = {**_live_allocation_payload(), "source": "foundersc_native_app"}
+    payload["allocation_capsule_sha256"] = _canonical_sha256(
+        {
+            key: value
+            for key, value in payload.items()
+            if key != "allocation_capsule_sha256"
+        }
+    )
+
+    receipt = run_book_b_live_morning(
+        BookBLiveMorningConfig(
+            trade_date="2026-08-24",
+            freeze_path=freeze,
+            allocation_facts_path=tmp_path / "allocation.json",
+            state_dir=tmp_path / "state",
+            dated_freeze_receipt={
+                **_ready_freeze(),
+                "snapshot_row_count": 0,
+                "snapshot_sha256": frozen_rows_digest([]),
+            },
+        ),
+        read_allocation_facts=lambda: payload,
+        execute=lambda plan: (_ for _ in ()).throw(AssertionError(plan)),
+    )
+
+    assert receipt.status == "no_action"
+
+
 def test_live_morning_restores_mock_before_propagating_unexpected_error(
     tmp_path: Path,
 ) -> None:

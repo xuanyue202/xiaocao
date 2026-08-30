@@ -8,6 +8,7 @@ import pytest
 
 from xiaocao.live.trading_runner import (
     build_foundersc_execution,
+    build_foundersc_native_execution,
     plans_from_frozen_rows,
     read_frozen_rows,
 )
@@ -149,6 +150,19 @@ def test_foundersc_runtime_accepts_process_local_capital_environment_provider(
 
     assert execution.safety_env is None
     assert execution.safety_env_provider is provider
+
+
+def test_live_foundersc_runtime_defaults_to_app_only_native_route(
+    tmp_path: Path,
+) -> None:
+    _execution, adapter = build_foundersc_native_execution(
+        tmp_path,
+        expected_fund_account_fingerprint="987******210",
+    )
+
+    assert adapter.route == "native-app"
+    assert adapter.expected_fund_account_fingerprint == "987******210"
+    assert not hasattr(adapter, "readback")
 
 
 def test_live_buy_plan_starts_at_0920_but_cannot_submit_before_0930() -> None:

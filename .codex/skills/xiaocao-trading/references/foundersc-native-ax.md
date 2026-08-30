@@ -37,7 +37,7 @@ steps from an earlier receipt.
 | `fill_login_password_then_solve_captcha` | Requires current user authorization. Run the returned fill once, then fresh screenshot -> exactly four digits -> field readback -> one login press. Only an explicit transport timeout gets one retry. |
 | `unlock_trade_once` | Requires current user authorization. Run the returned command once. Unknown, mismatch, or `unlock_unproven` never retries. |
 | `open_ordinary_trade_surface_then_reprobe` | Navigate without touching code/price/quantity/submit controls, then rerun. |
-| `none` | Foundation ready only. Do not infer prepare/submit authority; OpenCLI still owns reconciliation. |
+| `none` | Helper foundation is ready. The live runner must still prove native positions/orders/trades/funds plus order-page capabilities before `supports_submit=true`. |
 | `inspect_native_receipt` | Stop on unknown/incomplete state; preserve the receipt and do not improvise clicks. |
 
 Manual password assistance is `focus-unlock`. It only raises the app and
@@ -76,15 +76,40 @@ Automation or without the user's action-time approval.
 
 ## Current contract
 
-The helper is not a `BrokerAdapter` and exposes no order preparation, submit,
-cancel, or replacement. Its receipts must keep `prepare=false`, `submit=false`,
-and `unattended_recovery_proven=false`. Native holdings values are not AX
-readable, so OpenCLI remains the assets/orders/deals reconciliation authority.
+`FounderscNativeAXBrokerAdapter` is the active App-only Book-B route. The Swift
+helper is still a bounded transport, not an independent capital authority. It
+provides:
 
-Do not infer capital permission from app unlock. Any future submit remains
-owned by `trading_execution.py`, requires persisted intent/durable claim,
-`safety.py`'s two real-capital conditions, exact field readback, one final
-click, and OpenCLI reconciliation. UNKNOWN never retries.
+- exact AX code/price/quantity set and readback, with a unique submit control;
+- one explicitly enabled submit action and an exact broker-confirmation action
+  only when the confirmation OCR matches the prepared tuple/title and exposes
+  one semantic control or one bounded high-confidence `确认/确定` token;
+- local macOS Vision OCR for positions, today orders, today trades and funds;
+- full-query and buy/sell surface navigation bound to one masked fund account.
+
+The native route must not construct, authenticate, query or reconcile through
+OpenCLI. `supports_submit=true` is dynamic and requires helper version 5 or
+newer, one unlocked account-bound App, all four native query surfaces, exact
+prepare and submit capabilities, and local reconciliation capability.
+
+OCR validation is structural, not a two-identical-frame vote. Each capture must
+prove the expected table headers, row geometry and exact critical numeric
+shapes. Stock names are non-authoritative. Before submit, persist the complete
+set of visible order ids and require zero pre-existing exact
+`code+side+price+quantity` matches. After the one click, accept only one new
+exact tuple with a new numeric order id; bind trades by
+`order_id+code+side`, enforce cumulative fill `<= requested`, and map broker
+status explicitly. Malformed/ambiguous fields or an unknown status become
+UNKNOWN with `retry_allowed=false`; take a targeted fresh read only when the
+first parse is structurally invalid, never to manufacture agreement.
+
+Do not infer capital permission from app unlock or `supports_submit`. Submit
+remains owned by `trading_execution.py`, requires persisted intent/durable
+claim and both `safety.py` real-capital conditions immediately before the
+single click. Cancellation/replacement is not implemented. A client restart
+with CAPTCHA remains the slow recovery plane and may require bounded visual
+assistance; the normal five-minute trading lock is recovered once from the
+fixed Keychain item.
 
 For `MacBook-Pro-6.local`, use the registered Codex Remote project at
 `/Users/xuanyue202/Documents/project/xiaocao`, pull with `git pull --ff-only`,

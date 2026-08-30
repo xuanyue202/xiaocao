@@ -26,8 +26,11 @@ from xiaocao.live.foundersc_native_ax import (  # noqa: E402
 RUNTIME_SOURCE_PATHS = (
     "native/foundersc_ax_executor",
     "src/xiaocao/live/foundersc_native_ax.py",
+    "src/xiaocao/live/foundersc_native_broker.py",
     "src/xiaocao/live/foundersc_keychain.py",
+    "src/xiaocao/live/trading_runner.py",
     "scripts/foundersc_native_ax.py",
+    "scripts/book_b_live_morning.py",
     "scripts/configure_foundersc_trade_keychain.py",
 )
 
@@ -208,7 +211,8 @@ def main() -> int:
                         "bootstrap_mutates_broker_ui": False,
                         "keychain_secrets_read": False,
                         "captcha_is_slow_recovery_only": True,
-                        "opencli_remains_reconciliation_authority": True,
+                        "native_broker_probe_still_required": True,
+                        "opencli_used_by_native_route": False,
                         "unknown_result_auto_retry_allowed": False,
                     },
                 }

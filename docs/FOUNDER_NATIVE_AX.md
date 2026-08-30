@@ -1,215 +1,166 @@
-# Founder Securities 6.12 native AX executor foundation
+# Founder Securities 6.12 native App executor
 
-Status: **bounded native foundation; not a production submit route**.
+Status: **production-capable Book-B route, fail-closed**.
 
-This component turns the locally installed macOS Founder Securities client into
-a versioned deterministic capability surface. Source is synchronized through
-Git; every Mac builds the helper locally from the same source digest. No user
-home path, account, password, compiled binary, Accessibility decision, or
-runtime receipt is committed.
+The active `native-app` route uses only the locally installed macOS Founder
+Securities App. It does not compose with OpenCLI for login, environment,
+assets, positions, orders, trades, prepare, submit, reconcile or recovery.
+OpenCLI remains a separate legacy compatibility route.
 
-## Current boundary
+## Architecture and authority
 
-Implemented:
+The implementation has three layers:
 
-- bounded application/window/surface probe;
-- locked-vs-trade-ready classification;
-- semantic discovery of the buy/sell submit control and editable field count;
-- holdings table shape audit without emitting account values;
-- manual unlock assistance by raising the window and focusing the unique secure
-  field;
-- initial-client-login assistance that fills only the Keychain-backed trade
-  password and focuses CAPTCHA without pressing login;
-- explicitly enabled, single-attempt Keychain-backed password injection with
-  masked account binding and semantic trade-ready readback.
+1. `native/foundersc_ax_executor/` is a source-hash-pinned Swift helper. It
+   performs bounded Accessibility actions, captures only the Founder window and
+   runs local macOS Vision OCR.
+2. `FounderscNativeAXBrokerAdapter` validates account/query/order evidence and
+   maps it to the broker-neutral receipt contract.
+3. `TradingExecution` owns immutable intent, durable claims, exact-once state,
+   writer fencing and the `safety.py` real-capital gate.
 
-Not implemented or authorized:
+App unlock or `supports_submit=true` is capability evidence, not capital
+authorization. A real submit still requires the existing Keychain-backed
+capital toggle plus a valid scoped signed authorization immediately before the
+single click.
 
-- setting order code, price, or quantity;
-- clicking buy/sell submit;
-- cancellation or replacement;
-- reading native holdings cell values (the current client exposes cell geometry
-  but not their text through AX);
-- replacing OpenCLI assets/orders/deals reconciliation;
-- claiming `unattended_recovery_proven=true`.
+## Implemented native capability
 
-The helper always reports `prepare=false`, `submit=false`, and
-`unattended_recovery_proven=false`. A successful password unlock proves only
-that one local unlock attempt reached a semantic trade surface. It grants no
-capital authority.
+- Application, window, macOS lock, Accessibility and broker-surface state
+  classification.
+- One masked fund-account fingerprint with exact Keychain metadata binding.
+- One-attempt in-session trade unlock using the fixed
+  `xiaocao.foundersc.quant.trade` Keychain item over stdin.
+- Buy/sell page navigation and exact mapping of code, price and quantity
+  controls.
+- Millisecond-scale field set, AX readback and optional clear without submit.
+- One explicitly enabled submit action. A broker confirmation is pressed only
+  when local OCR contains the exact prepared order tuple and confirmation
+  title, plus either one semantic confirm control or one high-confidence
+  `确认/确定` token inside the bounded center-dialog region.
+- Full-query native reads for positions, today orders, today trades and funds.
+- Complete native allocation capsule from the positions summary plus row-level
+  market values.
 
-## Build and probe
+Cancellation and replacement are not implemented. Any state that would need
+one remains fail-closed.
 
-From the repository root on each Mac:
+## OCR and reconciliation contract
 
-```bash
-PYTHONPATH=src python3 scripts/foundersc_native_ax.py remote-bootstrap
-PYTHONPATH=src python3 scripts/foundersc_native_ax.py build
-PYTHONPATH=src python3 scripts/foundersc_native_ax.py version
-PYTHONPATH=src python3 scripts/foundersc_native_ax.py preflight
-PYTHONPATH=src python3 scripts/foundersc_native_ax.py probe
-```
+The helper captures only the Founder window with `CGWindowListCreateImage` and
+uses `VNRecognizeTextRequest` locally with accurate recognition. Screenshots
+and raw account values are not persisted or returned. Fund/shareholder account
+cells are masked.
 
-`remote-bootstrap` is the canonical first command after a remote Mac pulls the
-reviewed commit. It builds or reuses the source-hash-pinned helper, performs a
-read-only native probe, reads only Keychain metadata, verifies the Git SHA and
-whether the runtime source scope is clean, and emits one JSON `guidance` next
-action. It never reads a Keychain secret and never mutates the broker UI.
-Expected states such as `action_required`, `limited`, and `blocked` are emitted
-as data; an Agent must interpret the JSON rather than treating process exit 0
-as readiness.
+Two identical OCR frames are not an authority gate: they share the same pixels,
+model and systematic failure modes. The accepted logic is:
 
-The build is cached under
-`output/.cache/foundersc_native_ax/bin/<source-sha256>/`. Callers use that
-source-hash-pinned path rather than SwiftPM's private layout. A source update
-therefore cannot silently reuse an old binary.
+1. One capture must prove the expected table headers, one table geometry and a
+   complete row parse. A second targeted capture is permitted only when the
+   first parse is structurally invalid.
+2. Security code, side, price, quantity, order id, filled quantity and status
+   are critical. They must pass exact shape/range checks; stock names are
+   descriptive and may not authorize a match.
+3. Before prepare, read all current order ids and require zero existing exact
+   `code+side+price+quantity` matches.
+4. After the one submit, require exactly one matching row whose numeric order
+   id was absent from the baseline.
+5. Match trades by `order_id+code+side`; cumulative fill must not exceed the
+   requested quantity and must agree with the order row when both are nonzero.
+6. Map known Chinese broker statuses explicitly. Malformed, duplicate,
+   missing or unknown data returns UNKNOWN with `retry_allowed=false`.
 
-The helper never requests Accessibility permission. If the receipt says
-`accessibility_denied`, grant the existing Codex/terminal runtime Accessibility
-access on that Mac and rerun the read-only probe.
+This is a before/after delta proof, not a fuzzy full-row comparison. It both
+avoids false failures from harmless name OCR and prevents uncertain critical
+numbers from becoming an order acknowledgment.
 
-`screen_locked` is a separate machine-state result. It must not be reported as
-an application failure and no password injection is attempted until the user
-has unlocked the macOS login session.
-`screen_lock_state_unavailable` is also fail-closed and permits no UI action.
-Keychain metadata inspection is deferred in both states to avoid reporting an
-inaccessible login Keychain as a missing item.
+## Dynamic promotion gate
 
-## Friendly password input
+`BrokerCapability.supports_submit` is true only when all of these are proven in
+the current process:
 
-The recommended first path is manual input with deterministic assistance:
+- helper version 5 or newer;
+- App running, Accessibility trusted and macOS session unlocked;
+- exactly one expected fund-account fingerprint;
+- positions, today-orders, today-trades and funds query surfaces all parse;
+- an ordinary buy/sell surface exposes exact prepare and submit capability;
+- native reconciliation is available.
 
-```bash
-PYTHONPATH=src python3 scripts/foundersc_native_ax.py focus-unlock
-```
+No hard-coded `supports_submit=False` remains in the native adapter. Probe
+failure returns `ready=false`, `supports_submit=false` and no order action.
 
-This raises the Founder window and focuses the one proven secure field. The user
-types the trade password and confirms in the app.
+## Password and recovery boundary
 
-After an app restart, Founder 6.12 presents a separate client-login surface
-with a CAPTCHA. The helper classifies it as `client_login_required`; one
-explicit command fills only the trade password and focuses CAPTCHA:
+The normal five-minute broker lock is `authentication_required`, distinct from
+macOS `screen_locked`. When already authorized by the live runner, the former
+may be recovered once from the fixed Keychain item; the latter is always a
+human blocker. Password bytes never enter argv, environment, logs, receipts or
+files.
 
-```bash
-PYTHONPATH=src python3 scripts/foundersc_native_ax.py \
-  fill-login-keychain --acknowledge-local-password-fill
-```
+An App restart presents `client_login_required` with CAPTCHA. The helper may
+fill only the Keychain-backed password and focus CAPTCHA; it never presses
+login automatically. CAPTCHA recognition is a slow, bounded visual recovery
+path and is outside the order hot path.
 
-The helper never presses `登录`; CAPTCHA must be completed before one login
-submission. This is intentionally not unattended recovery and is distinct from
-the later in-session trade unlock.
-
-CAPTCHA recognition is allowed to use the Codex visual/computer-control slow
-path: take a fresh screenshot, accept only four digits, fill the CAPTCHA field,
-read the value back, and press `登录` once. A clearly classified transport error
-such as `接收行情主站信息超时` may receive one bounded retry; password/CAPTCHA
-errors and unknown results do not loop. This recovery plane has no millisecond
-latency requirement and never enters the order hot path.
-
-For a machine whose fixed Keychain item has already been provisioned and whose
-ACL is accepted, one explicit local unlock attempt is available:
-
-```bash
-PYTHONPATH=src python3 scripts/foundersc_native_ax.py \
-  unlock-keychain --acknowledge-local-passguard-input
-```
-
-The password is read only from service `xiaocao.foundersc.quant.trade`, passed
-to the helper on stdin, and never decoded for receipts or placed in argv,
-environment variables, logs, or files. Before setting the secure field, the
-helper requires exactly one locked field, exactly one page account fingerprint,
-an exact match with Keychain metadata, and either one semantic confirmation or
-a tightly bounded point derived from the proven secure-field and window
-geometry. The current `确定` control is custom-drawn, so the guarded-coordinate
-branch is expected on 6.12. It clicks that point at most once. Missing readback
-becomes `unlock_unproven`; callers
-must not retry automatically.
-
-Provisioning or replacing the fixed item is a separate human-only operation:
+Provisioning remains human-only:
 
 ```bash
 PYTHONPATH=src python3 scripts/configure_foundersc_trade_keychain.py
 ```
 
-That command requires an interactive terminal and explicit phrase, uses hidden
-account/password prompts, refuses to overwrite a different fixed account, and
-does not enable real capital or mint an authorization.
+The 09:20 Automation must never run that command or mint/rotate a capital
+authorization.
 
-## Remote Mac reuse
+## Build and diagnostics
 
-For `MacBook-Pro-6.local`, use the registered Codex Remote Xiaocao project and
-its repository at `/Users/xuanyue202/Documents/project/xiaocao`:
+From the repository root:
 
 ```bash
-git pull --ff-only
-PYTHONPATH=src python3 scripts/foundersc_native_ax.py \
-  remote-bootstrap --table-audit
+PYTHONPATH=src python3 scripts/foundersc_native_ax.py build
+PYTHONPATH=src python3 scripts/foundersc_native_ax.py version
+PYTHONPATH=src python3 scripts/foundersc_native_ax.py probe --table-audit
+PYTHONPATH=src python3 scripts/foundersc_native_ax.py remote-bootstrap --table-audit
 ```
 
-The second command is the complete machine-local bootstrap readback. Its JSON
-contains the Git SHA, broad worktree cleanliness, runtime-source cleanliness,
-native source digest, helper build receipt, app/Accessibility/screen/surface
-state, credential-free Keychain metadata, and exactly one bounded next action.
-The Agent follows this state machine and reruns `remote-bootstrap` after every
-action:
+Build artifacts are cached under
+`output/.cache/foundersc_native_ax/bin/<source-sha256>/`; compiled binaries and
+runtime receipts are not committed. `remote-bootstrap` is credential-free and
+read-only. It proves helper foundation only; the live runner must still perform
+the full native broker probe before `supports_submit=true`.
 
-| `guidance.next_action` | Owner | Required behavior |
-|---|---|---|
-| `review_runtime_source_changes` | human | Stop and report; preserve the worktree. Never reset, clean, or claim the checked-out SHA is the running source. |
-| `unlock_macos` / `restore_verifiable_macos_login_state` | human | Restore the macOS login session, then rerun. Never inject a broker password while the machine session is locked or unverifiable. |
-| `launch_foundersc` | Agent | Run the returned fixed-bundle command once, wait for a stable window, then rerun. |
-| `grant_accessibility_to_codex_or_terminal` | human | Grant the already-running Codex/terminal runtime Accessibility permission, then rerun. |
-| `configure_trade_keychain` | human | Run the returned interactive configurator in that Mac's TTY. Never transfer a Keychain item or secret through Git, chat, env, argv, or a file. |
-| `fill_login_password_then_solve_captcha` | Agent with current user authorization | Run the returned explicit fill once; use a fresh screenshot for exactly four CAPTCHA digits, read the field back, press login once, and rerun. Only an explicit transport timeout permits one retry. |
-| `unlock_trade_once` | Agent with current user authorization | Run the returned explicit unlock once and rerun. `unlock_unproven`, unknown output, or account mismatch is terminal for the attempt. |
-| `open_ordinary_trade_surface_then_reprobe` | Agent | Open the ordinary trade page without touching code/price/quantity/submit controls, then rerun. |
-| `none` | Agent | Native readiness/unlock foundation is ready. This is not order authority; use OpenCLI for account/assets/orders/deals reconciliation. |
-| `inspect_native_receipt` | human | Unknown/incomplete state: stop, preserve evidence, and do not improvise UI clicks. |
+## Local acceptance, 2026-08-30
 
-If the remote app has restarted, validate `fill-login-keychain`, complete its
-CAPTCHA locally, and only then validate the in-session unlock path.
+- In-session Keychain unlock reached the same account-bound full-query surface.
+- Positions parsed 5 rows. Their `最新市值` sum equaled the displayed
+  `股票市值`.
+- Allocation readback proved
+  `可用 54459.32 + 股票市值 154835.40 = 资产 209294.72`.
+- The user-created non-trading-day order parsed exactly as
+  `515120 / 买入 / 0.6460 / 100 / 委托编号 6000002 / 未报 / 成交 0`.
+- A baseline prepare for that same tuple was rejected before form entry because
+  one exact order already existed.
+- Five consecutive `000001 / BUY / 10.00 / 100` read-only prepare cycles all
+  set, exactly read back and cleared the form with no submit. Warm end-to-end
+  cycles were approximately 0.58–0.90 seconds; the bounded helper hot path is
+  millisecond-scale.
+- A full real-App adapter probe returned `ready=true`,
+  `supports_submit=true`, `supports_reconcile=true` and `opencli_used=false`.
 
-Keychain state and Accessibility permission are machine-local and must never be
-copied through Git or an ad-hoc filesystem transfer. Remote connectivity alone
-does not prove this runtime readiness.
+No diagnostic order was submitted by the agent. Final submit behavior is
+covered by deterministic fake-App integration tests; the user-created order is
+the accepted real-App order/readback fixture until the next authorized market
+execution exercises the live click path.
 
-### Agent handoff contract
+## Runtime command
 
-The remote Agent must start from `remote-bootstrap`, not from screenshots or
-remembered coordinates. It may execute only the single state-matched action,
-must read back a fresh bootstrap receipt afterward, and must stop on dirty
-runtime source, unknown state, mismatched account, or unproven side effect.
-Bootstrap and unlock do not authorize order preparation or submission. Native
-holdings values remain unreadable through AX, so OpenCLI remains the
-reconciliation authority even when `guidance.status=ready`.
+The independent 09:20 Book-B task runs:
 
-## Local acceptance, 2026-08-28
+```bash
+PYTHONPATH=src .venv/bin/python scripts/book_b_live_morning.py \
+  --date today --route native-app
+```
 
-- Initial client login: Keychain password fill succeeded, one four-digit
-  CAPTCHA was visually recognized and read back, and one bounded retry
-  recovered an explicit market-server timeout.
-- Unlocked order surface: semantic buy form, three editable fields, one account
-  fingerprint, and a 5×11 holdings table were observed; native cell values
-  remained unreadable.
-- In-session unlock: after an intentional `锁定交易`, the helper activated the
-  app through the fixed bundle identifier, injected the Keychain password,
-  clicked the guarded `确定` coordinate once through HID, and reached
-  `trade_ready` in about 157 ms.
-- No code/price/quantity field, buy/sell control, cancellation, or order submit
-  was touched during acceptance.
-
-## Promotion gate for order execution
-
-Future native `prepare/submit` work must plug into
-`src/xiaocao/live/trading_execution.py`, not expose an independent order CLI.
-Before promotion it must prove at least:
-
-- exact side/page postconditions despite the custom-drawn top tabs;
-- exact code/price/quantity readback;
-- persisted canonical intent before prepare;
-- durable claim before the one final click;
-- both `safety.py` real-capital conditions immediately before submit;
-- same-account OpenCLI reconciliation and UNKNOWN/no-retry behavior;
-- local and remote app-version acceptance without active-active writers.
-
-Until all gates pass, native AX is only the fast readiness/unlock foundation.
+The native App has no mock namespace. Exit therefore records
+`native_environment_restore_not_applicable`; it must never report a fabricated
+switch to mock. Durable intent and reconciliation state remain under
+`output/live/book_b_live_execution/`, isolated from all paper ledgers.

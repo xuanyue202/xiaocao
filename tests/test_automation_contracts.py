@@ -52,7 +52,8 @@ def test_live_morning_is_a_separate_0920_fail_closed_task() -> None:
     assert live["id"] != paper["id"]
     assert live["rrule"].endswith(";BYHOUR=9;BYMINUTE=20")
     assert "scripts/book_b_live_morning.py" in live["prompt"]
-    assert "--route package-limit" in live["prompt"]
+    assert "--route native-app" in live["prompt"]
+    assert "do not initialize or use OpenCLI inside this route" in live["prompt"]
     assert "dated deterministic freeze" in live["prompt"]
     assert "broker-sourced allocation facts" in live["prompt"]
     assert "never run or wait for `morning-execute`" in live["prompt"]
@@ -60,16 +61,19 @@ def test_live_morning_is_a_separate_0920_fail_closed_task() -> None:
     assert "09:30 submit floor" in live["prompt"]
     assert "sanitized Keychain capital-runtime" in live["prompt"]
     assert "Never run `configure_live_capital_keychain.py`" in live["prompt"]
-    assert "session_reuse_proven" in live["prompt"]
-    assert "fresh_login_proven" in live["prompt"]
+    assert "zero pre-existing exact code/side/price/quantity" in live["prompt"]
+    assert "exactly one new numeric order id" in live["prompt"]
+    assert "native mock restoration as not applicable" in live["prompt"]
     assert "never repeat a final submit click" in live["prompt"]
     assert "auto_daily.sh" not in live["prompt"]
     assert "book_b_live_morning.py" not in paper["prompt"]
     live_script = (ROOT / "scripts" / "book_b_live_morning.py").read_text(
         encoding="utf-8"
     )
-    assert "release_foundersc_opencli_site_session(profile)" in live_script
+    assert 'if args.route == "native-app":' in live_script
+    assert "build_foundersc_native_execution" in live_script
     assert "_bounded_no_order_retry(broker.ensure_login)" in live_script
+    assert "keychain.run(read_trade_secret=True)" in live_script
     assert "keychain.run(read_login_secret=True)" in live_script
     assert "keychain.run(read_secrets=True)" not in live_script
     assert "KeychainCapitalRuntime" in live_script

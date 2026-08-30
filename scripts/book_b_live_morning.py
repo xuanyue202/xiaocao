@@ -32,7 +32,10 @@ from xiaocao.live.foundersc_opencli import (  # noqa: E402
     release_foundersc_opencli_site_session,
     resolve_connected_opencli_profile,
 )
-from xiaocao.live.trading_runner import build_foundersc_execution  # noqa: E402
+from xiaocao.live.trading_runner import (  # noqa: E402
+    build_foundersc_execution,
+    build_foundersc_native_execution,
+)
 from xiaocao.api.client import XiaocaoClient  # noqa: E402
 from xiaocao.config import load_settings  # noqa: E402
 from wait_for_morning_freeze import wait_for_morning_freeze  # noqa: E402
@@ -156,8 +159,14 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--profile", default=None)
     parser.add_argument(
         "--route",
-        choices=("package-limit", "manual-limit", "opening-auction", "timed-order"),
-        default="package-limit",
+        choices=(
+            "native-app",
+            "package-limit",
+            "manual-limit",
+            "opening-auction",
+            "timed-order",
+        ),
+        default="native-app",
     )
     parser.add_argument("--freeze-wait-seconds", type=float, default=600.0)
     parser.add_argument("--poll-seconds", type=float, default=1.0)
@@ -176,31 +185,48 @@ def main(argv: list[str] | None = None) -> int:
             "capital_runtime": capital_receipt,
         }, ensure_ascii=False, sort_keys=True))
         return 2
-    profile = resolve_connected_opencli_profile(args.profile)
-    release_foundersc_opencli_site_session(profile)
     keychain = FounderscKeychainPreflight()
-    keychain_receipt = keychain.run(read_login_secret=True)
-    if not all(
-        keychain_receipt.get(key) is True
-        for key in (
+    if args.route == "native-app":
+        profile = None
+        keychain_receipt = keychain.run(read_trade_secret=True)
+        required_keychain_fields = (
+            "trade_item_present",
+            "trade_account_present",
+            "trade_secret_readable",
+            "trade_secret_nonempty",
+        )
+        keychain_error = "FOUNDER_NATIVE_TRADE_KEYCHAIN_NOT_READY"
+    else:
+        profile = resolve_connected_opencli_profile(args.profile)
+        release_foundersc_opencli_site_session(profile)
+        keychain_receipt = keychain.run(read_login_secret=True)
+        required_keychain_fields = (
             "login_item_present",
             "login_secret_readable",
             "login_secret_nonempty",
             "trade_item_present",
             "trade_account_present",
         )
-    ):
-        raise RuntimeError("FOUNDER_LOGIN_KEYCHAIN_OR_TRADE_METADATA_NOT_READY")
+        keychain_error = "FOUNDER_LOGIN_KEYCHAIN_OR_TRADE_METADATA_NOT_READY"
+    if not all(keychain_receipt.get(key) is True for key in required_keychain_fields):
+        raise RuntimeError(keychain_error)
     trade_account_fingerprint = keychain.trade_account_fingerprint()
     if not trade_account_fingerprint:
         raise RuntimeError("FOUNDER_TRADE_ACCOUNT_FINGERPRINT_MISSING")
-    execution, broker = build_foundersc_execution(
-        args.state_dir,
-        profile=profile,
-        route=args.route,
-        expected_fund_account_fingerprint=trade_account_fingerprint,
-        safety_env_provider=capital_runtime.safety_env,
-    )
+    if args.route == "native-app":
+        execution, broker = build_foundersc_native_execution(
+            args.state_dir,
+            expected_fund_account_fingerprint=trade_account_fingerprint,
+            safety_env_provider=capital_runtime.safety_env,
+        )
+    else:
+        execution, broker = build_foundersc_execution(
+            args.state_dir,
+            profile=profile,
+            route=args.route,
+            expected_fund_account_fingerprint=trade_account_fingerprint,
+            safety_env_provider=capital_runtime.safety_env,
+        )
     prior_reconciliations: tuple[dict, ...] = ()
     open_plan_reconciliations: tuple[dict, ...] = ()
     api_settings = load_settings(None)
@@ -236,21 +262,84 @@ def main(argv: list[str] | None = None) -> int:
         )
 
     def preflight() -> dict:
-        login_receipt = _bounded_no_order_retry(broker.ensure_login)
-        environment_receipt = _bounded_no_order_retry(
-            lambda: broker.ensure_environment(
+        native_receipt = None
+        if args.route == "native-app":
+            login_receipt = broker.ensure_login()
+            native_receipt = broker.ensure_native_ready(
+                require_order_capability=True,
+                unlock_once=True,
+            )
+            environment_receipt = broker.ensure_environment(
                 target="live",
                 expected_current="any",
                 logical_account_id="primary",
             )
-        )
+        else:
+            login_receipt = _bounded_no_order_retry(broker.ensure_login)
+            environment_receipt = _bounded_no_order_retry(
+                lambda: broker.ensure_environment(
+                    target="live",
+                    expected_current="any",
+                    logical_account_id="primary",
+                )
+            )
         return {
             **environment_receipt,
-            "website_authentication": _website_authentication_evidence(
-                login_receipt
+            "website_authentication": (
+                {
+                    "status": "not_used",
+                    "route": "native-app",
+                    "reason": "Founder web/OpenCLI authentication is outside this route",
+                }
+                if args.route == "native-app"
+                else _website_authentication_evidence(login_receipt)
             ),
-            "passguard": _passguard_evidence(),
+            "passguard": (
+                {
+                    **_passguard_evidence(),
+                    "status": "native_trade_ready",
+                    "trade_password_keychain_read": True,
+                    "unattended_recovery_proven": True,
+                    "single_attempt_unlock_available": True,
+                }
+                if native_receipt is not None
+                else _passguard_evidence()
+            ),
+            "native_order_surface": native_receipt,
         }
+
+    if args.route == "native-app":
+        def restore_environment() -> dict:
+            return {
+                "status": "native_environment_restore_not_applicable",
+                "environment": "not_applicable",
+                "route": "native-app",
+            }
+
+        def live_heartbeat() -> dict:
+            return broker.ensure_environment(
+                target="live",
+                expected_current="live",
+                logical_account_id="primary",
+            )
+    else:
+        def restore_environment() -> dict:
+            return _bounded_no_order_retry(
+                lambda: broker.ensure_environment(
+                    target="mock",
+                    expected_current="any",
+                    logical_account_id="primary",
+                )
+            )
+
+        def live_heartbeat() -> dict:
+            return _bounded_no_order_retry(
+                lambda: broker.ensure_environment(
+                    target="live",
+                    expected_current="live",
+                    logical_account_id="primary",
+                )
+            )
 
     receipt = run_book_b_live_morning(
         BookBLiveMorningConfig(
@@ -261,13 +350,7 @@ def main(argv: list[str] | None = None) -> int:
             logical_account_id="primary",
         ),
         preflight=preflight,
-        restore_environment=lambda: _bounded_no_order_retry(
-            lambda: broker.ensure_environment(
-                target="mock",
-                expected_current="any",
-                logical_account_id="primary",
-            )
-        ),
+        restore_environment=restore_environment,
         read_allocation_facts=read_allocation_facts,
         refresh_market_guard=lambda row: _fresh_market_guard(
             market_client, row, trade_date
@@ -285,13 +368,7 @@ def main(argv: list[str] | None = None) -> int:
         ),
         wait_for_submit_window=lambda target: _wait_for_submit_window(
             target,
-            heartbeat=lambda: _bounded_no_order_retry(
-                lambda: broker.ensure_environment(
-                    target="live",
-                    expected_current="live",
-                    logical_account_id="primary",
-                )
-            ),
+            heartbeat=live_heartbeat,
         ),
         wait_for_reconcile=lambda: time.sleep(1.0),
         execute=lambda plan: execution.execute(plan, broker),

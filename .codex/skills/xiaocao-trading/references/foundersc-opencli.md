@@ -3,6 +3,11 @@
 Use this branch when inspecting or validating the versioned Founder Securities
 browser templates under `opencli/clis/foundersc-quant/`.
 
+This is a legacy compatibility route. The active 09:20 `native-app` route must
+not invoke it for login, environment, assets, positions, orders, trades,
+prepare, submit, reconcile or recovery. In particular, a browser password-field
+limitation must never be worked around by silently composing the two routes.
+
 ## Run order
 
 1. Verify the checked-in template manifest:
@@ -81,8 +86,8 @@ one-shot limit. The manual route must be discovered as exactly one same-origin o
 every requested field with its page readback and close only through the exact
 read-only cancel control.
 
-This branch is invoked by the separate 09:20 Book-B live-morning Automation
-and its explicitly authorized same-day continuous-auction continuation. New
+This branch is not invoked by the separate 09:20 Book-B live-morning
+Automation. If an operator explicitly selects this legacy route, new
 BUY intents may submit only during `09:30-11:30` or `13:00-14:57`, after a
 fresh proprietary market guard has been bound to the immutable plan. That
 task switches and verifies the live environment, performs a

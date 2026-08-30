@@ -789,7 +789,10 @@ def _load_allocation(
         raise ValueError("LIVE_ALLOCATION_ACCOUNT_MISMATCH")
     if str(payload.get("account_binding") or "").strip().lower() not in {"bound", "proven"}:
         raise ValueError("LIVE_ALLOCATION_ACCOUNT_BINDING_UNPROVEN")
-    if str(payload.get("source") or "").strip().lower() != "foundersc_reconcile":
+    if str(payload.get("source") or "").strip().lower() not in {
+        "foundersc_reconcile",
+        "foundersc_native_app",
+    }:
         raise ValueError("LIVE_ALLOCATION_SOURCE_UNPROVEN")
     if str(payload.get("capital_basis_source") or "").strip() != "initial_book_b_capital":
         raise ValueError("LIVE_ALLOCATION_CAPITAL_BASIS_UNPROVEN")
@@ -1126,7 +1129,17 @@ def run_book_b_live_morning(
         if preflight_attempted and restore_environment is not None:
             try:
                 restored = restore_environment()
-                if str(restored.get("environment") or "").strip().lower() != "mock":
+                restored_environment = str(
+                    restored.get("environment") or ""
+                ).strip().lower()
+                native_not_applicable = bool(
+                    restored_environment == "not_applicable"
+                    and str(restored.get("status") or "").strip()
+                    == "native_environment_restore_not_applicable"
+                    and str(restored.get("route") or "").strip()
+                    == "native-app"
+                )
+                if restored_environment != "mock" and not native_not_applicable:
                     raise ValueError("MOCK_ENVIRONMENT_NOT_PROVEN")
             except Exception as exc:
                 restore_failure = f"ENVIRONMENT_RESTORE_FAILED:{exc}"

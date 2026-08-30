@@ -1,9 +1,9 @@
 # 小草运营契约（Operating Contract, SSOT）
 
-**版本**：3.5
+**版本**：3.6
 **状态**：现行
 **适用范围**：所有 paper / 未来 real 的实盘环（live_recommend → paper_record → live_monitor → eod）与回测
-**关联实现**：`src/xiaocao/live/{safety,capital_keychain}.py`、`src/xiaocao/live/intelligence_policy.py`、`src/xiaocao/strategy/{mode_switch,trend_rules,kol_reference}.py`、`kronos_screen/scripts/{capture_signals,forward_eval,paper_record,settle_book_a,settle_book_t,decompose_pnl,quality_governor}.py`、`scripts/{live_monitor,research_mode_switch_replay}.py`
+**关联实现**：`src/xiaocao/live/{safety,capital_keychain,foundersc_native_ax,foundersc_native_broker,trading_execution}.py`、`src/xiaocao/live/intelligence_policy.py`、`src/xiaocao/strategy/{mode_switch,trend_rules,kol_reference}.py`、`native/foundersc_ax_executor/`、`kronos_screen/scripts/{capture_signals,forward_eval,paper_record,settle_book_a,settle_book_t,decompose_pnl,quality_governor}.py`、`scripts/{book_b_live_morning,live_monitor,research_mode_switch_replay}.py`
 **回归测试**：`tests/test_operating_contract.py`
 **借鉴**：QuantDinger `docs/SIGNAL_EXECUTION_STANDARD_CN.md`（契约 SSOT 结构）+ `docs/agent/MCP_SETUP.md`（paper-only 默认 / 双钥匙 live gate）
 
@@ -53,10 +53,13 @@
   可审计的 broker-neutral probe/prepare/reconcile/recover 边界。09:20 live
   morning 只消费当日冻结的确定性 ★E 与 broker-sourced allocation facts，
   不调用或等待 `auto_daily.sh morning-execute`，不读取模拟成交，也不写
-  canonical paper ledger。该 seam 先切 live，调用只读 `reconcile --scope assets`
-  探测 session/account/资产，并且只有回执同时绑定当日、live、逻辑账户、
-  已证明的资金账号与完整资产表时，才原子生成 dated allocation facts；完成或
-  失败后都验证恢复 mock。非空 freeze 还必须绑定实际同日 snapshot 的 canonical
+  canonical paper ledger。该 seam 只走方正证券原生 App；不得初始化、登录或
+  调用 OpenCLI 作为账户、资产、持仓、委托、成交、填单、提交或对账的一部分。
+  runner 通过同一个掩码资金账号绑定的 App 查询页读取持仓、当日委托、当日成交和
+  资金，并且只有回执同时绑定当日、live、逻辑账户、已证明的资金账号、完整表结构和
+  资产恒等式时，才原子生成 dated allocation facts。原生 App 没有 mock/live 数据
+  namespace，完成或失败后必须记录
+  `native_environment_restore_not_applicable`，不得伪造恢复 mock。非空 freeze 还必须绑定实际同日 snapshot 的 canonical
   SHA-256 与行数，且 digest/run id/producer strategy Git SHA 必须由 queue producer 在冻结时写入 manifest。
   queue producer 必须在任何 agent review 写回前把这些行原子物化为
   `book_b_live_freeze_<date>.jsonl`；该 dated artifact 已存在但 hash 不同时禁止覆盖。
@@ -68,49 +71,51 @@
   必须与顶层现金一致。混合券商账户的“总资产/证券市值”不得冒充
   Book-B NAV/敞口：首次批次只用明确的 30,000 元 Book-B 初始基数和券商可用现金；
   一旦已有 Book-B owned fill 而尚无结算 NAV 回执，后续批次以
-  `LIVE_BOOK_B_SETTLED_NAV_RECONCILE_REQUIRED` fail-closed。Founder Web/OpenCLI
-  v9 的唯一候选写路径固定为 `组合交易 -> 按证券组合 -> 指定价格`：它可以表达
-  单证券的精确数值限价和整手数量；BUY 数值限价必须在 execution boundary 向下
+  `LIVE_BOOK_B_SETTLED_NAV_RECONCILE_REQUIRED` fail-closed。唯一实盘写路径固定为
+  Founder `native-app` 的普通买入/卖出表单：它只表达单证券的精确数值限价和整手
+  数量；BUY 数值限价必须在 execution boundary 向下
   对齐 0.01 元股票 tick，禁止四舍五入越过原始限价；条件单、网格、定时/定投、集合竞价、
   TWAP/VWAP/POV/冰山及价格/时间分段均因引入触发、相对价格、重复、竞价或拆单
-  语义而不得替代。09:20 只做登录、live/account/allocation/prepare 预检并维持心跳；
+  语义而不得替代。09:20 只做 App/account/allocation/prepare 预检并维持心跳；
   此时 `forward_eval` 的事后 `executable_fillable` 尚不可知，字段缺省不得冒充 false，
   但显式 false 仍必须拒绝，并由 submit 前实时 market guard 决定当下可交易性。
-  BUY 最早 09:30 才允许进入 submit。提交前必须同时通过账户绑定、可对账能力、表单
-  回读、市场 guard 与双钥匙。market guard 可把 proprietary feed 的 `HH:MM:SS:毫秒`
+  BUY 最早 09:30 才允许进入 submit。提交前必须同时通过账户绑定、四类 native 查询、
+  可对账能力、表单回读、市场 guard 与双钥匙。market guard 可把 proprietary feed 的 `HH:MM:SS:毫秒`
   时钟绑定到 immutable trade date，并仅把上游 UI 已定义的连续竞价 `T` family
-  （`T` 或 `T` 后接数字）归一为 trading；其他未知前缀继续 fail-closed。首笔订单在
-  probe 阶段允许 `receipt_mapping=false`，因为
-  此时尚不存在可映射的 broker order；durable claim 后只允许一次 canary submit，且
-  submit 回执必须同时证明同账户绑定、唯一 broker order-id、strategy-id 与
-  `receipt_mapping=true` 才能 ACK。最终点击一旦可能发生，缺任一回执证明即进入
-  `UNKNOWN/reconcile_only`，绝不自动重试，后续只能按同一 plan reconcile；prepare、
+  （`T` 或 `T` 后接数字）归一为 trading；其他未知前缀继续 fail-closed。
+  OCR 不采用“两帧完全一致”作为真值：单帧必须证明预期表头、表格几何和完整行结构；
+  只有首帧结构无效时才允许一次定向重读。证券名称没有订单匹配权限；证券代码、方向、
+  价格、委托数量、委托编号、成交数量和状态必须通过精确形状/范围校验。
+  prepare 前必须读取全部当日委托编号，并证明目标
+  `code+side+price+quantity` 零匹配；durable claim 后只允许一次 submit。点击后只有
+  恰好一个目标 tuple 且委托编号不在 baseline 的新增行才能 `receipt_mapping=true`；
+  成交按 `order_id+code+side` 唯一绑定，累计成交不得超过委托数量。broker 未提供的
+  strategy-id 由 durable claim 派生的本地不可逆标识补齐，不得替代 broker order-id。
+  最终点击一旦可能发生，缺任一回执证明即进入 `UNKNOWN/reconcile_only` 且
+  `retry_allowed=false`，绝不自动重试，后续只能按同一 plan/order-id reconcile；prepare、
   submit 或 reconcile 任一阶段曾进入 chain-uncertain 的计划，即使随后查到 partial
-  也永久禁止自动补单。live reconcile 必须映射回前次已证明的同一 order-id，并保留
-  该 order 的 submit strategy-id 证据；不得用新 order-id 复用旧 strategy-id。
+  也永久禁止自动补单。live reconcile 必须映射回前次已证明的同一 order-id；不得用
+  新 order-id 复用旧 claim 标识。
   无 order mapping 的 `REJECTED` 只有同时证明 submitted/saved/started 均为 false
   才能作为“未点击”的终态，否则同样进入 UNKNOWN。无 order-id 的前日 UNKNOWN
-  只允许通过 settlement scope 终结：券商历史委托和历史成交必须各自绑定该 plan 的
-  精确交易日起止日并证明相关记录数均为零，当前完整持仓扫描必须证明目标持仓为零，
-  且 submitted/saved/started 均为 false；该 absence proof 必须写入同一 plan 的
-  append-only hash chain。同日、日期范围不匹配、分页不完整、任一记录/持仓非零或
-  任一副作用字段非 false 都继续 UNKNOWN/reconcile_only，绝不触发 submit。
+  不得通过“当前没有记录”推断未提交；没有 broker order-id 的历史 UNKNOWN 保持
+  UNKNOWN/reconcile_only，绝不触发 submit。
   每个普通 Book-B live plan 必须在 prepare/submit 前把完整 canonical intent 与
   plan hash 原子写入 `output/live/book_b_live_execution/plan_intents/`。进程恢复时必须
   先以该 intent 和原 execution event hash 对账，不能用新的时钟、现金或 allocation
   重建订单，也不能再次 prepare 或 submit。durable `CLAIMED` 表示 broker side effect
   可能已经开始，必须立即升级为 chain-uncertain reconcile-only，并与 UNKNOWN/
   SUBMITTED/ACKNOWLEDGED/PARTIAL/RECONCILING 一样阻断首次资金基数复用。ACK 取得
-  order-id/strategy-id 后仍须沿同一 plan 继续 reconcile；跨进程恢复只允许 broker
-  reconcile。只有 hash-chain 完整、同一 mapped order/strategy、账户绑定和 broker
+  order-id 后仍须沿同一 plan 继续 reconcile；跨进程恢复只允许 broker
+  reconcile。只有 hash-chain 完整、同一 mapped order、账户绑定和 broker
   CANCELLED/REJECTED 零成交终态都证明后，才可释放该零成交订单占用的首次基数；任一
   正成交仍要求 settled-NAV 回执。只有首单回执从未歧义、且 reconcile 明确证明
   原单终态、撤单/拒单、fresh market guard 和剩余
   数量时，才允许最多一次受控 replacement；总 submit attempt 上限为 2，且该上限
   在唯一 submit boundary 再次强制，不依赖调用路径。
-  当前交易时段最终提交及 broker order-id 形状、撤单终态、最多一次受控补单、
-  网站密码 fresh-login 与原生 PassGuard 恢复仍分别未完成真实验收，缺任一当次所需证明
-  继续 fail-closed，且绝不替代现行
+  原生填单/清空、查询、账户绑定与已有真实委托读取已在本机验收；下一次授权盘中订单
+  将作为最终 live-click 验收。撤单与受控补单仍未实现，任何需要它们的状态继续
+  fail-closed。App 重启后的 CAPTCHA 是独立慢恢复面，不属于毫秒级热路径，且绝不替代现行
   `paper_record.py` 单写者。任何未来 SELL intent 必须来自本节
   `live_monitor` 已授权的 Book-B 退出事件和可卖 lot，不能由普通冻结行反向
   生成。
@@ -206,18 +211,17 @@
 - 唯一实现 `src/xiaocao/live/safety.py`；真实下单 **MUST** 经 `require_capital_action(...)`，仅在 ALLOW 时下单。
 - **现状**：阶段一执行缝已在任何 broker adapter 之前调用
   `require_capital_action(...)`；独立 09:20 Automation 只启动隔离 live seam，
-  不改变 09:25 模拟任务。Founder v9 仅对 account-bound `package-limit`
-  暴露 receipt-proving first-order submit；probe mapping 可以 pending，但 submit
-  结果只有在 order-id/strategy-id 映射完整时才能 ACK。登录回执必须区分
-  `session_reuse_proven` 与 `fresh_login_proven`；当前 authenticated session 不得冒充
-  网站密码 fresh-login。最终 run receipt 必须持久化净化后的登录路径证据，并把 native
-  PassGuard 单列为 `pending` / `unattended_recovery_proven=false` / `fail_closed_if_prompted`；
+  不改变 09:25 模拟任务。Founder `native-app` 只有在 App/account、四类查询、表单和
+  本地对账均成立时才动态暴露 `supports_submit=true`；OpenCLI 不参与该 route。
+  最终 run receipt 必须持久化 `website_authentication.status=not_used`、native
+  PassGuard/Keychain 恢复证据和新委托 delta；submit 只有在唯一新增 order-id 映射完整时
+  才能 ACK，歧义一律 UNKNOWN/no-retry；
   用户已明确授权同一 dated freeze 在 A 股连续竞价盘中继续执行：BUY 只允许
   `09:30–11:30` 或 `13:00–14:57`，午休、收盘集合竞价和盘后继续硬阻断；每个
   新 plan 在持久化 intent 前必须从专有 API 刷新并绑定同日、15 分钟内的交易状态、
   现价、跌停价和时间戳。该 continuation 不得改变冻结选股、allocation、初始限价、
   资金门或 exact-once；恢复已有 intent 仍只对账，不重新刷新经济字段或提交。
-  撤单/一次补单、网站密码 fresh-login 和 unattended PassGuard 仍按各自真实证据判定。
+  撤单/一次补单仍未实现；App 重启后的 CAPTCHA 按独立慢恢复证据判定。
 
 ## 10. 快速探索期的自动迭代 / 升级策略（agent 皮层）
 
@@ -245,7 +249,7 @@
 - [x] Book T snapshot/account/monitor key 均带 `book` 命名空间；B/T 同票同日不互相覆盖；T 宽止损不调用短线 strong-hold/composite。
 - [x] Book B 与历史回放共用 `strategy.mode_switch`；D-1 outcome 不进入 D 日早盘状态；`COLD/UNKNOWN/BJSE` 无成交权限；`--notional` 不能绕过 3 席位、每模式 1 只和批次 50% 上限。
 - [x] 模式证据保留 25%/45%/50% 验证权重；`ACTIVE` 同时通过候选池和四指数证据，近期双基准均值与多数日转正可直接升格，任一均值转负只冷却到 `PROVISIONAL`。
-- [x] 独立 09:20 Book-B live morning 与 09:25 模拟任务隔离；唯一候选写路由为 account-bound `package-limit`，09:30 前只预检/心跳；用户授权的盘中 continuation 仅覆盖 `09:30–11:30` / `13:00–14:57` 且新 intent 前必须刷新专有实时 market guard；不读写模拟成交或 canonical paper ledger；首单 probe mapping 可 pending，但一次 submit 后只认 order-id/strategy-id 映射完整的 ACK，歧义保持 UNKNOWN/reconcile-only；session reuse 与网站密码 fresh-login 分证，撤单/一次补单、fresh-login 和 unattended PassGuard 证据仍按真实状态 pending。
+- [x] 独立 09:20 Book-B live morning 与 09:25 模拟任务隔离；唯一写路由为 account-bound `native-app`，OpenCLI 不参与 native 登录/查询/交易；09:30 前只预检/心跳；盘中 continuation 仅覆盖 `09:30–11:30` / `13:00–14:57` 且新 intent 前刷新专有实时 market guard；不读写模拟成交或 canonical paper ledger；submit 前零 exact-tuple baseline，submit 后只认唯一新增 order-id，歧义保持 UNKNOWN/reconcile-only/no-retry；撤单/补单未实现，App 重启 CAPTCHA 保持独立慢恢复。
 - [x] allocation proof 复用 `mode_switch.plan_board_lot_orders`，以滚动结算 NAV 验证批次/敞口/现金/slot 上限；ownership evidence 不得替代 canonical paper ledger。
 - [x] 同一 logical account 由 account-level writer lock 串行推进；异常写入 durable takeover capsule，WeCom pending incident 可重试且已送达事件幂等。
 - [ ] （后续）settle_book_a 只用 next_close 且幂等；decompose_pnl 三项金额求和 = account realized_pnl（容差=取整）。
@@ -280,3 +284,4 @@
 | 3.3 | 2026-08-25 | Founder v8 增加无 order-id 的前日 UNKNOWN 只读 settlement：仅在精确历史日期、相关委托零、相关成交零、目标持仓零和 submitted/saved/started 全 false 时，以同 plan hash chain 的 absence proof 终结；同日、日期不匹配或不完整证据继续 reconcile-only，禁止重放 submit。 |
 | 3.4 | 2026-08-25 | 补齐真实订单跨进程 exact-once：普通 Book-B plan 在任何 prepare/submit 前原子持久化完整 intent；恢复时禁止按新时钟/现金重分配或重开表单，durable CLAIMED 一律视为 chain-uncertain 并只对账。ACK/order-id 后继续同 plan reconcile；只有同 order/strategy 映射、账户绑定和 hash-chain 完整的 CANCELLED/REJECTED 零成交终态可释放首次基数，正成交仍要求 settled NAV。 |
 | 3.5 | 2026-08-25 | 按用户明确授权把 Book-B BUY 从旧 09:45 截止扩展为上午/午后连续竞价盘中 continuation；每个新 immutable intent 前刷新并绑定专有 API 的同日实时 market guard，午休、14:57 后、旧 intent 重物化及任何 duplicate submit 继续 fail-closed。严格 hash-chain 的 `pre_entrust_rejected`、账户绑定、attempt=1、零成交且 chain-certain 终态可释放第一批 30,000 元基数。 |
+| 3.6 | 2026-08-30 | 将 09:20 实盘路由切为方正证券 `native-app`：OpenCLI 完全退出 native 登录/查询/交易；本地 Vision OCR 读取持仓、委托、成交和资金；以 submit 前零匹配/order-id baseline 与 submit 后唯一新增 exact tuple 对账，UNKNOWN 永不重点击；原生填单清空、账户、资产恒等式及用户真实未报委托已本机验收，撤单/补单仍 fail-closed。 |

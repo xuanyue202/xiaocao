@@ -19,7 +19,7 @@ Future Book-B real-capital execution is a third, deliberately independent
 09:20 Automation and process:
 
 ```bash
-PYTHONPATH=src .venv/bin/python scripts/book_b_live_morning.py --date today --route package-limit
+PYTHONPATH=src .venv/bin/python scripts/book_b_live_morning.py --date today --route native-app
 ```
 
 It may start before the dated freeze exists and wait only for that freeze. It
@@ -27,9 +27,11 @@ must never run or await `morning-execute`, read a paper fill, or write
 `positions.jsonl`, `paper_trades.jsonl`, `paper_account.json`, or
 `paper_account_T.json`. Its state lives only under
 `output/live/book_b_live_execution/`. Before waiting, it switches to live and
-uses the read-only Founder asset reconcile to probe session/account/assets and
+uses the account-bound Founder App full-query surface to read
+positions/orders/trades/funds and
 atomically produce `book_b_live_allocation_facts_<date>.json` only from a
-complete, account-bound receipt. A non-empty dated freeze is valid for this
+complete, account-bound native receipt. It does not initialize or authenticate
+OpenCLI. A non-empty dated freeze is valid for this
 consumer only when the queue producer manifest already binds its actual
 same-day snapshot rows, report, strategy run id, producer strategy Git SHA,
 hash and count. Before any agent review can enrich the canonical snapshots,
@@ -45,8 +47,10 @@ unknown or reconciling execution evidence (including a fill followed by an
 ownership-ledger write failure) blocks reuse of the first-batch basis until a
 settled-NAV receipt exists. The complete allocation capsule binds its capital
 basis source, NAV, cash, exposure and broker summary under one canonical hash,
-and broker-summary cash must equal top-level available cash. The task verifies restoration to
-mock on every exit.
+and broker-summary cash must equal top-level available cash. Because the native
+App has no mock/live data namespace, every exit must record the explicit
+`native_environment_restore_not_applicable` receipt and must not claim a fake
+mock restoration.
 At 09:20-09:30 the later `forward_eval` field `executable_fillable` may be
 absent. Absence is not false and must be deferred to the current submit-time
 market guard; an explicitly false value remains ineligible.
@@ -63,21 +67,22 @@ dated China session and accepts only the documented continuous-auction `T`
 status family (`T` or `T` plus digits). Numeric BUY limits are floored, never
 rounded up, to the 0.01-yuan stock tick before broker readback.
 Apply `docs/OPERATING_CONTRACT.md` section 9 for the capital-gate semantics.
-Unless the Founder adapter proves the account-bound `package-limit` route,
-reconcile capability, account binding and broker allocation facts, the task
+Unless the Founder adapter proves the account-bound `native-app` route, helper
+version 5+, all four native query surfaces, exact prepare/submit capability,
+native reconcile capability and broker allocation facts, the task
 reports the exact fail-closed reason and produces no real order. Persist the
-sanitized preflight receipt with separate existing-session, fresh-login and
-PassGuard fields; never infer one capability from another. A first-order
-probe may leave receipt mapping pending; the single claimed submit
-must itself prove the order-id/strategy-id mapping or become UNKNOWN and
-reconcile-only. Any prepare/submit/reconcile chain uncertainty permanently
-disables automatic replacement. Reconcile must bind the same proved order-id
-and preserve its submit strategy-id evidence; an unmapped rejection is terminal
-only with explicit no-click/no-save/no-start proof. A never-ambiguous first order
-may receive at most one controlled replacement only after terminality and
-fresh-market proof, with a submit-boundary cap of two attempts. Trading-hours order-id,
-cancellation/one-retry and native
-PassGuard gaps remain terminal pending evidence rather than inferred readiness.
+sanitized preflight receipt with `website_authentication.status=not_used` and
+separate native PassGuard evidence; never infer one capability from another.
+Before prepare, the adapter requires zero existing exact
+`code+side+price+quantity` orders and snapshots all visible order ids. The
+single claimed submit must map to exactly one new numeric order id with that
+tuple, then bind any fills by `order_id+code+side`; otherwise it becomes
+UNKNOWN/reconcile-only with no click retry. OCR names are non-authoritative;
+critical numbers must be exact and invariant-checked. Any
+prepare/submit/reconcile chain uncertainty permanently disables automatic
+replacement. Cancellation and replacement remain unimplemented and fail
+closed. A five-minute trade lock has one Keychain-backed recovery; a client
+restart/CAPTCHA remains a separate bounded slow path.
 
 The execution stage must never rerun `live_recommend.py`. Keep its shell alive
 through the agent-review rendezvous and paper recording. Do not restart it while
