@@ -609,3 +609,23 @@ def test_swift_submit_confirmation_fallback_is_exact_and_single_point() -> None:
     assert '委托已提交' in source
     assert '撤单已提交' in source
     assert source.count('postSingleReturnKey()') == 2
+
+
+def test_swift_bounded_cancel_side_covers_exact_text_at_low_confidence() -> None:
+    root = Path(__file__).resolve().parents[1]
+    source = (
+        root
+        / "native"
+        / "foundersc_ax_executor"
+        / "Sources"
+        / "FounderscNativeAX"
+        / "main.swift"
+    ).read_text(encoding="utf-8")
+    start = source.index("let exactTargetIndices")
+    end = source.index("let boundedSideFallbackProven", start)
+    selection = source[start:end]
+
+    assert "if !query.parsingProven," in selection
+    assert "targetIndices.isEmpty" not in selection
+    assert 'Set(query.lowConfidenceCriticalHeaders) == Set(["买卖标志"])' in selection
+    assert 'selectionProofMode = "exact_numeric_tuple_bounded_side_suffix"' in selection

@@ -47,7 +47,10 @@ single click.
   market values.
 - Exact cancellation: zero all selections, identify one
   `order-id+code+side+price+quantity` row, prove that only its checkbox changed,
-  click `撤单` once, confirm once, then reconcile that same order id.
+  click `撤单` once, confirm once, then reconcile that same order id. If and
+  only if side is the sole low-confidence critical field, the exact unique
+  order-id/code/price/quantity tuple may be combined with a two-character OCR
+  suffix `入`/`出`; the receipt records that bounded selection proof mode.
 
 Automatic replacement remains disabled in the native adapter. Unknown action
 outcomes are reconciliation-only and never cause another Return, click or
@@ -81,11 +84,25 @@ model and systematic failure modes. The accepted logic is:
    the submit response is lost across a process restart, recovery is allowed
    only when exactly one new exact tuple exists outside that durable baseline;
    legacy UNKNOWN rows without both facts remain UNKNOWN.
-8. Require every non-empty token in a critical table cell to meet the local
-   Vision confidence floor (`0.50`, calibrated against the real two-order
-   Founder table). Side text is never typo-corrected for receipt or
-   cancellation authority; a malformed side triggers one fresh read and then
-   fails closed.
+8. Normally require every non-empty token in a critical table cell to meet the
+   local Vision confidence floor (`0.50`, calibrated against the real Founder
+   table). There are only two bounded second-read exceptions:
+   - Today-orders may accept low-confidence `成交数量`/`状态说明` only when
+     every fill is blank/zero, every status maps exactly to a known
+     working/cancelled/rejected state, and an independent today-trades query
+     proves zero traded quantity for every order id.
+   - Cancel selection may accept a low-confidence side alone when the exact
+     unique order-id/code/price/quantity tuple, two-character `入`/`出` suffix,
+     and unique checkbox visual delta all agree.
+   Both paths emit their bounded proof mode and low-confidence headers.
+   Baseline and post-submit/recovery evidence are phase-separated, so neither
+   can overwrite the other when their modes differ. Any other low-confidence
+   field, unknown status, nonzero fill or ambiguity fails closed.
+9. Preserve helper status, the helper-reported click fact, exact click proof,
+   confirmation state and selection proof mode as separate fields on every
+   post-click receipt, including raced terminal states and UNKNOWN. An
+   unproven confirmation must not erase a reported click, and a lost result
+   never authorizes a second click.
 
 This is a before/after delta proof, not a fuzzy full-row comparison. It both
 avoids false failures from harmless name OCR and prevents uncertain critical
@@ -145,7 +162,7 @@ runtime receipts are not committed. `remote-bootstrap` is credential-free and
 read-only. It proves helper foundation only; the live runner must still perform
 the full native broker probe before `supports_submit=true`.
 
-## Local acceptance, 2026-08-30
+## Local acceptance, 2026-08-30 through 2026-08-31
 
 - In-session Keychain unlock reached the same account-bound full-query surface.
 - Positions parsed 5 rows. Their `最新市值` sum equaled the displayed
@@ -178,6 +195,17 @@ the full native broker probe before `supports_submit=true`.
   quantity field, so another Return opened a second confirmation dialog. Both
   were safely cancelled and no order was created. Production code therefore
   sends one Return, then uses the focused dialog's unique native button.
+- A fresh complete regression submitted and cancelled both sides with the
+  durable engine: BUY `512010 / 100 @ 0.349` became broker order `6000010`, and
+  SELL `515120 / 100 @ 0.710` became `6000012`. Independent orders/trades/
+  positions readback proved both orders `已撤` with zero fills, no `512010`
+  position, and the existing `515120` quantity unchanged.
+- Those two actions exposed the only bounded OCR fallbacks documented above:
+  `6000010` had a low-confidence side token during exact cancel selection;
+  `6000012` had low-confidence zero-fill/status cells after cancellation. In
+  both cases the durable claim prevented replay while exact numeric identity,
+  visual selection evidence and independent zero-trade readback reconciled the
+  original action.
 
 The App may clear or reset fields after a completed submit, but that behavior
 is not an exact-once authority: it occurs too late to protect the uncertain
@@ -207,8 +235,8 @@ guard.
 
 Our OCR engine is Apple's local Vision framework, not DdddOCR. Founder macOS
 exposes AX table geometry but not readable cell values, so Vision fills a
-different gap. Code, side, price, quantity, order id, fill quantity and status
-stay exact, and low-confidence critical cell tokens invalidate the parse.
+different gap. Critical fields remain exact by default; only the two documented
+bounded, independently anchored second-read proofs may survive low confidence.
 Codex screenshots can diagnose a disputed read, but cannot authorize or repair
 a live receipt in the millisecond action path.
 

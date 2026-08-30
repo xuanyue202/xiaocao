@@ -1,6 +1,6 @@
 # 小草运营契约（Operating Contract, SSOT）
 
-**版本**：3.7
+**版本**：3.8
 **状态**：现行
 **适用范围**：所有 paper / 未来 real 的实盘环（live_recommend → paper_record → live_monitor → eod）与回测
 **关联实现**：`src/xiaocao/live/{safety,capital_keychain,foundersc_native_ax,foundersc_native_broker,trading_execution}.py`、`src/xiaocao/live/intelligence_policy.py`、`src/xiaocao/strategy/{mode_switch,trend_rules,kol_reference}.py`、`native/foundersc_ax_executor/`、`kronos_screen/scripts/{capture_signals,forward_eval,paper_record,settle_book_a,settle_book_t,decompose_pnl,quality_governor}.py`、`scripts/{book_b_live_morning,live_monitor,research_mode_switch_replay}.py`
@@ -85,7 +85,14 @@
   （`T` 或 `T` 后接数字）归一为 trading；其他未知前缀继续 fail-closed。
   OCR 不采用“两帧完全一致”作为真值：单帧必须证明预期表头、表格几何和完整行结构；
   只有首帧结构无效时才允许一次定向重读。证券名称没有订单匹配权限；证券代码、方向、
-  价格、委托数量、委托编号、成交数量和状态必须通过精确形状/范围校验。
+  价格、委托数量、委托编号、成交数量和状态必须通过精确形状/范围校验。唯一例外是定向
+  重读后的两类有界冗余证明：(a) 当日委托只有 `成交数量`/`状态说明` 属于低置信字段，
+  每行成交数量均为空或零、状态精确映射为 working/cancelled/rejected，且独立当日成交表按
+  order-id 汇总仍严格为零；(b) 撤单目标的 order-id/code/price/quantity 已精确且唯一，
+  唯一低置信字段为方向，二字 OCR token 以 `入`/`出` 结尾并与请求方向一致。前者必须把
+  submit 前 baseline 与 submit/recovery 后 readback mode 分相记录，禁止后者覆盖前者；
+  后者必须记录 selection proof mode 并继续证明唯一复选框
+  视觉变化；任何非零成交、未知状态、其他低置信字段或多行匹配仍 fail-closed。
   prepare 前必须读取全部当日委托编号，并证明目标
   `code+side+price+quantity` 零匹配；durable claim 后只允许一次 submit。点击后只有
   恰好一个目标 tuple 且委托编号不在 baseline 的新增行才能 `receipt_mapping=true`；
@@ -119,7 +126,10 @@
   原生填单/清空、查询、账户绑定、真实提交和 exact-order 撤单已在本机验收：数量框
   只发一次 Return，随后只按当前确认窗唯一原生按钮；连续 Return/Y 禁止。提交成功只认
   合同号与新增 exact tuple。撤单副作用前也必须落 durable cancel claim；进程中断或结果
-  未知后只回读同 order-id，禁止第二次撤单动作。撤单只认同 order-id 的 `已撤` 回读。
+  未知后只回读同 order-id，禁止第二次撤单动作。撤单只认同 order-id 的 `已撤` 回读，且
+  无论最终为 CANCELLED、与其他终态竞争或 UNKNOWN，均必须分别保留 helper status、
+  helper 报告的点击事实、exact click proof、确认是否按下和 selection proof mode；不能因
+  确认或字段证明不完整，把一次可能已经发生的写动作降格成无副作用失败。
   自动 replacement 仍由
   native adapter 禁用，任何需要补单的状态继续 fail-closed。App 重启后的 CAPTCHA 是
   独立慢恢复面，不属于毫秒级热路径，且绝不替代现行
@@ -293,3 +303,4 @@
 | 3.5 | 2026-08-25 | 按用户明确授权把 Book-B BUY 从旧 09:45 截止扩展为上午/午后连续竞价盘中 continuation；每个新 immutable intent 前刷新并绑定专有 API 的同日实时 market guard，午休、14:57 后、旧 intent 重物化及任何 duplicate submit 继续 fail-closed。严格 hash-chain 的 `pre_entrust_rejected`、账户绑定、attempt=1、零成交且 chain-certain 终态可释放第一批 30,000 元基数。 |
 | 3.6 | 2026-08-30 | 将 09:20 实盘路由切为方正证券 `native-app`：OpenCLI 完全退出 native 登录/查询/交易；本地 Vision OCR 读取持仓、委托、成交和资金；以 submit 前零匹配/order-id baseline 与 submit 后唯一新增 exact tuple 对账，UNKNOWN 永不重点击；原生填单清空、账户、资产恒等式及用户真实未报委托已本机验收，撤单/补单仍 fail-closed。 |
 | 3.7 | 2026-08-30 | 方正 native 热路径完成真实提交/撤单验收：数量框仅一次 Return，确认窗与成功提示只按唯一原生按钮一次，禁止连续 Return/Y；`6000005` 精确新增后撤为 `已撤`，随后另一次授权撤单把旧 `6000002` 也精确回读为 `已撤`。helper v8 自动收口成功提示；durable submit claim 持久化完整 order-id baseline，UNKNOWN 跨进程仅凭唯一 exact delta 恢复；撤单动作前另落 durable cancel claim，未知后只回读不重放；自动补单继续禁用。 |
+| 3.8 | 2026-08-31 | 完成方正 native BUY/SELL 各一次真实提交与对应撤单回归：`6000010`（BUY `512010` 100@0.349）与 `6000012`（SELL `515120` 100@0.710）均零成交回读为 `已撤`。针对实盘暴露的 Vision 低置信误判只增加两类有界冗余证明：撤单方向二字后缀须由精确唯一数值 tuple 与复选框视觉变化共同锚定；当日委托的低置信状态/成交数量须为已知零成交状态并由独立成交表逐 order-id 交叉证明，baseline 与 post-readback mode 分相留证。未知写结果分别保留 helper 点击事实、exact click proof、确认状态与 selection proof，仍禁止重放。 |

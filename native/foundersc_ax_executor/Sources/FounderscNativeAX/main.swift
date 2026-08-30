@@ -122,6 +122,7 @@ private struct CancelReadback: Codable {
     let orderStatus: String
     let targetMatchCount: Int
     let selectionProven: Bool
+    let selectionProofMode: String
     let cancelControlCount: Int
     let cancelClicked: Bool
     let confirmationPressed: Bool
@@ -1831,13 +1832,40 @@ private func normalizedBrokerSide(_ value: String) -> String {
     return ""
 }
 
-private func cancelRowMatches(_ row: [String: String], input: CancelInput) -> Bool {
+private func cancelNumericTupleMatches(
+    _ row: [String: String],
+    input: CancelInput
+) -> Bool {
     return row["委托编号"]?.trimmingCharacters(in: .whitespacesAndNewlines)
             == input.orderId
         && normalizedCode(row["证券代码"] ?? "") == input.order.code
-        && normalizedBrokerSide(row["买卖标志"] ?? "") == input.order.side
         && normalizedDecimal(row["委托价格"] ?? "") == input.order.price
         && normalizedQuantity(row["委托数量"] ?? "") == input.order.quantity
+}
+
+private func cancelRowMatches(_ row: [String: String], input: CancelInput) -> Bool {
+    return cancelNumericTupleMatches(row, input: input)
+        && normalizedBrokerSide(row["买卖标志"] ?? "") == input.order.side
+}
+
+private func boundedCancelSide(_ value: String) -> String {
+    let exact = normalizedBrokerSide(value)
+    if !exact.isEmpty { return exact }
+    let compact = value
+        .replacingOccurrences(of: " ", with: "")
+        .trimmingCharacters(in: .whitespacesAndNewlines)
+    guard compact.count == 2 else { return "" }
+    if compact.hasSuffix("入") { return "buy" }
+    if compact.hasSuffix("出") { return "sell" }
+    return ""
+}
+
+private func cancelRowMatchesWithBoundedSide(
+    _ row: [String: String],
+    input: CancelInput
+) -> Bool {
+    return cancelNumericTupleMatches(row, input: input)
+        && boundedCancelSide(row["买卖标志"] ?? "") == input.order.side
 }
 
 private func actionStripTokens(
@@ -2453,10 +2481,25 @@ private func performCancel(arguments: [String], selectionProbeOnly: Bool) -> Rec
         navigationLabelCount: 1,
         navigationClickMode: "ocr_guarded_coordinate"
     )
-    let targetIndices = query.rows.enumerated().compactMap { index, row in
+    let exactTargetIndices = query.rows.enumerated().compactMap { index, row in
         cancelRowMatches(row, input: input) ? index : nil
     }
-    guard query.parsingProven,
+    var targetIndices = exactTargetIndices
+    var selectionProofMode = "exact_order_tuple"
+    if !query.parsingProven,
+       Set(query.lowConfidenceCriticalHeaders) == Set(["买卖标志"]),
+       Set(query.headers).isSuperset(of: queryRequiredHeaders("today-orders")) {
+        let boundedTargets = query.rows.enumerated().compactMap { index, row in
+            cancelRowMatchesWithBoundedSide(row, input: input) ? index : nil
+        }
+        if boundedTargets.count == 1 {
+            targetIndices = boundedTargets
+            selectionProofMode = "exact_numeric_tuple_bounded_side_suffix"
+        }
+    }
+    let boundedSideFallbackProven = selectionProofMode
+        == "exact_numeric_tuple_bounded_side_suffix"
+    guard (query.parsingProven || boundedSideFallbackProven),
           query.rows.count == rowBounds.count,
           targetIndices.count == 1 else {
         receipt.status = "cancel_target_not_unique"
@@ -2470,6 +2513,7 @@ private func performCancel(arguments: [String], selectionProbeOnly: Bool) -> Rec
             orderStatus: "",
             targetMatchCount: targetIndices.count,
             selectionProven: false,
+            selectionProofMode: "none",
             cancelControlCount: 0,
             cancelClicked: false,
             confirmationPressed: false,
@@ -2558,6 +2602,7 @@ private func performCancel(arguments: [String], selectionProbeOnly: Bool) -> Rec
             orderStatus: targetRow["状态说明"] ?? "",
             targetMatchCount: 1,
             selectionProven: true,
+            selectionProofMode: selectionProofMode,
             cancelControlCount: cancelTokens.count,
             cancelClicked: false,
             confirmationPressed: false,
@@ -2627,6 +2672,7 @@ private func performCancel(arguments: [String], selectionProbeOnly: Bool) -> Rec
         orderStatus: targetRow["状态说明"] ?? "",
         targetMatchCount: 1,
         selectionProven: true,
+        selectionProofMode: selectionProofMode,
         cancelControlCount: 1,
         cancelClicked: true,
         confirmationPressed: confirmationPressed,

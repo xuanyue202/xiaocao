@@ -87,7 +87,9 @@ provides:
 - local macOS Vision OCR for positions, today orders, today trades and funds;
 - full-query and buy/sell surface navigation bound to one masked fund account;
 - exact-row cancellation with unique checkbox visual-delta proof and one
-  cancel/confirm action.
+  cancel/confirm action; when the side token alone is low-confidence, the exact
+  order-id/code/price/quantity tuple plus a unique two-character `入`/`出`
+  suffix may provide the bounded side proof recorded in the receipt.
 
 The native route must not construct, authenticate, query or reconcile through
 OpenCLI. `supports_submit=true` is dynamic and requires helper version 8 or
@@ -104,14 +106,26 @@ exact tuple with a new numeric order id; bind trades by
 status explicitly. Malformed/ambiguous fields or an unknown status become
 UNKNOWN with `retry_allowed=false`; take a targeted fresh read only when the
 first parse is structurally invalid, never to manufacture agreement.
+The only bounded today-orders fallback is on that second read: the low-
+confidence critical-header set must be a non-empty subset of `成交数量` and
+`状态说明`; every fill must be blank/zero; every status must map exactly to a
+known working/cancelled/rejected state; and an independent today-trades query
+must prove the per-order traded quantity is also zero. Persist the bounded
+headers and mode in locator evidence. Baseline and post-submit/recovery modes
+must use phase-separated fields so a later strict or bounded read cannot
+overwrite the durable baseline proof. Any nonzero fill, unknown status, other
+low-confidence field or cross-table mismatch remains fail-closed.
 Persist the baseline order ids and durable claim id so a lost submit response
 can recover across restart only from one exact new-row delta. Missing durable
 context stays UNKNOWN/no-retry.
 Persist a separate cancel claim before the one external cancel action. If that
 process stops or the response is lost, the same order id becomes readback-only;
-never issue another cancel click from the existing claim. Critical OCR cell
-tokens below the confidence floor and malformed side text fail closed after the
-single targeted reread.
+never issue another cancel click from the existing claim. Apart from the two
+bounded proofs above, critical OCR cells below the confidence floor and
+malformed side text fail closed after the single targeted reread. Every
+post-click outcome must separately preserve helper status, the helper-reported
+click fact, exact click proof, confirmation state and selection proof mode even
+when final broker readback stays UNKNOWN.
 
 Do not infer capital permission from app unlock or `supports_submit`. Submit
 remains owned by `trading_execution.py`, requires persisted intent/durable

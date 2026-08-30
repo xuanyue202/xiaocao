@@ -234,6 +234,7 @@ class FakeNative:
                 "order_status": "未报",
                 "target_match_count": 1,
                 "selection_proven": True,
+                "selection_proof_mode": "exact_order_tuple",
                 "cancel_control_count": 1,
                 "cancel_clicked": True,
                 "confirmation_pressed": True,
@@ -262,6 +263,105 @@ class TransientOrderQueryNative(FakeNative):
                 },
             )
         return super().read_query(kind=kind, **kwargs)
+
+
+class LowConfidenceZeroFillNative(FakeNative):
+    def __init__(self):
+        super().__init__()
+        self.low_headers = ["成交数量"]
+
+    def read_query(self, *, kind: str, **kwargs) -> NativeAXReceipt:
+        if kind != "today-orders":
+            return super().read_query(kind=kind, **kwargs)
+        self.query_calls.append(kind)
+        return self._receipt(
+            status="query_parse_unproven",
+            query_readback={
+                "kind": kind,
+                "capture_proven": True,
+                "parsing_proven": False,
+                "critical_confidence_proven": False,
+                "low_confidence_critical_headers": list(self.low_headers),
+                "headers": [
+                    "证券代码",
+                    "委托时间",
+                    "买卖标志",
+                    "状态说明",
+                    "委托价格",
+                    "委托数量",
+                    "委托编号",
+                    "成交数量",
+                ],
+                "rows": [dict(row) for row in self.orders],
+                "row_count": len(self.orders),
+                "observed_at": OBSERVED_AT,
+            },
+        )
+
+
+class BoundedBaselineStrictPostNative(LowConfidenceZeroFillNative):
+    def __init__(self):
+        super().__init__()
+        self.order_query_reads = 0
+
+    def read_query(self, *, kind: str, **kwargs) -> NativeAXReceipt:
+        if kind != "today-orders":
+            return super().read_query(kind=kind, **kwargs)
+        self.order_query_reads += 1
+        if self.order_query_reads <= 2:
+            return LowConfidenceZeroFillNative.read_query(
+                self,
+                kind=kind,
+                **kwargs,
+            )
+        return FakeNative.read_query(self, kind=kind, **kwargs)
+
+
+class StrictBaselineBoundedPostNative(LowConfidenceZeroFillNative):
+    def __init__(self):
+        super().__init__()
+        self.order_query_reads = 0
+
+    def read_query(self, *, kind: str, **kwargs) -> NativeAXReceipt:
+        if kind != "today-orders":
+            return super().read_query(kind=kind, **kwargs)
+        self.order_query_reads += 1
+        if self.order_query_reads == 1:
+            return FakeNative.read_query(self, kind=kind, **kwargs)
+        return LowConfidenceZeroFillNative.read_query(
+            self,
+            kind=kind,
+            **kwargs,
+        )
+
+
+class UnreconciledCancelNative(FakeNative):
+    def cancel_order(self, **kwargs) -> NativeAXReceipt:
+        receipt = super().cancel_order(**kwargs)
+        matches = [
+            row for row in self.orders
+            if row["委托编号"] == kwargs["order_id"]
+        ]
+        assert len(matches) == 1
+        matches[0]["状态说明"] = "未报"
+        return receipt
+
+
+class UnprovenConfirmationCancelNative(UnreconciledCancelNative):
+    def cancel_order(self, **kwargs) -> NativeAXReceipt:
+        receipt = super().cancel_order(**kwargs)
+        receipt.payload["status"] = "cancel_confirmation_unproven"
+        receipt.payload["cancel_readback"]["confirmation_pressed"] = False
+        receipt.payload["cancel_readback"]["confirmation_mode"] = "none"
+        return receipt
+
+
+class MalformedSelectionCancelNative(UnprovenConfirmationCancelNative):
+    def cancel_order(self, **kwargs) -> NativeAXReceipt:
+        receipt = super().cancel_order(**kwargs)
+        receipt.payload["cancel_readback"]["selection_proven"] = False
+        receipt.payload["cancel_readback"]["selection_proof_mode"] = ""
+        return receipt
 
 
 def _adapter(native: FakeNative | None = None) -> FounderscNativeAXBrokerAdapter:
@@ -310,6 +410,174 @@ def test_query_uses_one_targeted_reread_only_after_invalid_first_parse() -> None
     assert readback["row_count"] == 1
     assert readback["targeted_reread_used"] is True
     assert native.transient_order_reads == 1
+
+
+def test_query_accepts_only_targeted_low_confidence_zero_fill_fallback() -> None:
+    native = LowConfidenceZeroFillNative()
+    native.orders[0]["成交数量"] = "0"
+    adapter = _adapter(native)
+
+    readback = adapter._query("today-orders")
+
+    assert readback["bounded_order_readback_used"] is True
+    assert readback["targeted_reread_used"] is True
+    assert native.query_calls == ["today-orders", "today-orders"]
+
+
+def test_low_confidence_nonzero_fill_remains_fail_closed() -> None:
+    native = LowConfidenceZeroFillNative()
+    native.orders[0]["成交数量"] = "10"
+
+    with pytest.raises(FounderscNativeAXError, match="TODAY-ORDERS_UNPROVEN"):
+        _adapter(native)._query("today-orders")
+
+
+def test_exact_known_status_can_share_bounded_zero_fill_fallback() -> None:
+    native = LowConfidenceZeroFillNative()
+    native.low_headers = ["成交数量", "状态说明"]
+    native.orders[0]["成交数量"] = "0"
+    native.orders[0]["状态说明"] = "已撤"
+
+    readback = _adapter(native)._query("today-orders")
+
+    assert readback["bounded_order_readback_used"] is True
+    assert set(readback["bounded_low_confidence_headers"]) == {"成交数量", "状态说明"}
+
+
+def test_bounded_order_readback_is_exposed_in_reconcile_locator() -> None:
+    native = LowConfidenceZeroFillNative()
+    native.low_headers = ["成交数量", "状态说明"]
+    native.orders[0]["成交数量"] = "0"
+    native.orders[0]["状态说明"] = "已撤"
+    sample = replace(
+        _plan(),
+        code="515120.XSHG",
+        name="创新药",
+        limit_price=0.646,
+        basket_price=0.646,
+    )
+
+    receipt = _adapter(native)._reconcile_rows(
+        sample,
+        requested_shares=100,
+        expected_order_id="6000002",
+    )
+
+    assert receipt.normalized_status() == BrokerStatus.CANCELLED
+    assert receipt.locator_proof["order_readback_mode"] == (
+        "bounded_known_status_zero_fill"
+    )
+    assert set(receipt.locator_proof["bounded_low_confidence_headers"]) == {
+        "成交数量",
+        "状态说明",
+    }
+    assert receipt.locator_proof["targeted_order_reread_used"] is True
+
+
+def test_bounded_order_baseline_is_persisted_through_prepare_and_submit() -> None:
+    native = LowConfidenceZeroFillNative()
+    native.orders[0]["成交数量"] = "0"
+    adapter = _adapter(native)
+    plan = _plan()
+
+    prepared = adapter.prepare(plan)
+    submitted = adapter.submit(plan, "claim-bounded-baseline")
+
+    assert prepared.normalized_status() == BrokerStatus.PREPARED
+    assert prepared.locator_proof["baseline_order_readback_mode"] == (
+        "bounded_known_status_zero_fill"
+    )
+    assert prepared.locator_proof["baseline_order_ids"] == ["6000002"]
+    assert prepared.locator_proof["baseline_targeted_order_reread_used"] is True
+    assert submitted.normalized_status() == BrokerStatus.ACCEPTED
+    assert submitted.locator_proof["baseline_order_readback_mode"] == (
+        "bounded_known_status_zero_fill"
+    )
+    assert submitted.locator_proof["order_readback_mode"] == (
+        "bounded_known_status_zero_fill"
+    )
+    assert submitted.locator_proof["baseline_order_ids"] == ["6000002"]
+    assert submitted.locator_proof["baseline_order_count"] == 1
+
+
+@pytest.mark.parametrize(
+    ("native_type", "baseline_mode", "post_mode"),
+    [
+        (
+            BoundedBaselineStrictPostNative,
+            "bounded_known_status_zero_fill",
+            "strict_confidence",
+        ),
+        (
+            StrictBaselineBoundedPostNative,
+            "strict_confidence",
+            "bounded_known_status_zero_fill",
+        ),
+    ],
+)
+def test_submit_keeps_baseline_and_post_readback_modes_separate(
+    native_type: type[FakeNative],
+    baseline_mode: str,
+    post_mode: str,
+) -> None:
+    native = native_type()
+    native.orders[0]["成交数量"] = "0"
+    adapter = _adapter(native)
+    plan = _plan()
+
+    prepared = adapter.prepare(plan)
+    submitted = adapter.submit(plan, "claim-phase-separated")
+
+    assert prepared.normalized_status() == BrokerStatus.PREPARED
+    assert submitted.normalized_status() == BrokerStatus.ACCEPTED
+    assert submitted.locator_proof["baseline_order_readback_mode"] == baseline_mode
+    assert submitted.locator_proof["order_readback_mode"] == post_mode
+    assert submitted.locator_proof["baseline_order_ids"] == ["6000002"]
+
+
+def test_unknown_low_confidence_status_remains_fail_closed() -> None:
+    native = LowConfidenceZeroFillNative()
+    native.low_headers = ["成交数量", "状态说明"]
+    native.orders[0]["成交数量"] = "0"
+    native.orders[0]["状态说明"] = "撤单失败"
+
+    with pytest.raises(FounderscNativeAXError, match="TODAY-ORDERS_UNPROVEN"):
+        _adapter(native)._query("today-orders")
+
+
+def test_bounded_zero_fill_requires_independent_trade_crosscheck() -> None:
+    native = LowConfidenceZeroFillNative()
+    native.orders[0]["成交数量"] = "0"
+    native.trades.append(
+        {
+            "证券代码": "515120",
+            "证券名称": "创新药",
+            "成交时间": "092001",
+            "买卖标志": "买入",
+            "成交价格": "0.6460",
+            "成交数量": "100",
+            "成交金额": "64.60",
+            "成交编号": "7000001",
+            "委托编号": "6000002",
+        }
+    )
+    sample = replace(
+        _plan(),
+        code="515120.XSHG",
+        name="创新药",
+        limit_price=0.646,
+        basket_price=0.646,
+    )
+
+    with pytest.raises(
+        FounderscNativeAXError,
+        match="ZERO_FILL_CROSSCHECK_FAILED",
+    ):
+        _adapter(native)._reconcile_rows(
+            sample,
+            requested_shares=100,
+            expected_order_id="6000002",
+        )
 
 
 def test_native_prepare_submit_uses_new_unique_order_delta() -> None:
@@ -370,6 +638,53 @@ def test_native_prepare_persists_baseline_for_unknown_submit_recovery() -> None:
     assert recovered.order_id == "6000003"
     assert recovered.strategy_id == "NAX448444379404E09E"
     assert recovered.receipt_mapping is True
+    assert recovered.locator_proof["baseline_order_readback_mode"] == (
+        "strict_confidence"
+    )
+    assert recovered.locator_proof["order_readback_mode"] == "strict_confidence"
+    assert recovered.locator_proof["recovery_mode"] == "durable_exact_order_delta"
+
+
+def test_recovery_keeps_bounded_baseline_separate_from_strict_readback() -> None:
+    native = BoundedBaselineStrictPostNative()
+    native.orders[0]["成交数量"] = "0"
+    adapter = _adapter(native)
+    plan = _plan()
+    prepared = adapter.prepare(plan)
+    native.orders.append(
+        {
+            "证券代码": "000001",
+            "证券名称": "测试标的",
+            "委托时间": "092001",
+            "买卖标志": "买入",
+            "委托类别": "委托",
+            "状态说明": "已撤",
+            "委托价格": "10.0000",
+            "委托数量": "100",
+            "委托编号": "6000003",
+            "成交价格": "0.000",
+            "成交数量": "",
+            "报价方式": "买卖",
+            "股东代码": "A***",
+            "备注": "",
+        }
+    )
+
+    recovered = adapter.recover(
+        plan,
+        {
+            "requested_shares": 100,
+            "submit_chain_uncertain": True,
+            "submit_claim_id": "claim-bounded-recovery",
+            "locator_proof": prepared.locator_proof,
+        },
+    )
+
+    assert recovered.normalized_status() == BrokerStatus.CANCELLED
+    assert recovered.locator_proof["baseline_order_readback_mode"] == (
+        "bounded_known_status_zero_fill"
+    )
+    assert recovered.locator_proof["order_readback_mode"] == "strict_confidence"
     assert recovered.locator_proof["recovery_mode"] == "durable_exact_order_delta"
 
 
@@ -455,6 +770,13 @@ def test_native_cancel_uses_exact_order_id_once_and_reconciles() -> None:
     assert cancelled.filled_shares == 0
     assert cancelled.retry_allowed is False
     assert cancelled.field_readback["cancel_clicked"] is True
+    assert cancelled.locator_proof["cancel_clicked"] is True
+    assert cancelled.locator_proof["cancel_click_proven"] is True
+    assert cancelled.locator_proof["cancel_helper_status"] == "cancel_confirmed"
+    assert (
+        cancelled.locator_proof["cancel_selection_proof_mode"]
+        == "exact_order_tuple"
+    )
     assert native.cancel_calls == 1
 
     idempotent = adapter.cancel(
@@ -466,6 +788,86 @@ def test_native_cancel_uses_exact_order_id_once_and_reconciles() -> None:
         },
     )
     assert idempotent.normalized_status() == BrokerStatus.CANCELLED
+    assert native.cancel_calls == 1
+
+
+def test_unknown_cancel_keeps_click_and_selection_evidence_without_retry() -> None:
+    native = UnreconciledCancelNative()
+    adapter = _adapter(native)
+    plan = _plan()
+    adapter.prepare(plan)
+    submitted = adapter.submit(plan, "claim-1")
+
+    unresolved = adapter.cancel(
+        plan,
+        {
+            "broker_order_id": submitted.order_id,
+            "broker_strategy_id": submitted.strategy_id,
+            "requested_shares": 100,
+        },
+    )
+
+    assert unresolved.normalized_status() == BrokerStatus.UNKNOWN
+    assert unresolved.retry_allowed is False
+    assert unresolved.locator_proof["cancel_clicked"] is True
+    assert unresolved.locator_proof["cancel_click_proven"] is True
+    assert unresolved.locator_proof["cancel_helper_status"] == "cancel_confirmed"
+    assert (
+        unresolved.locator_proof["cancel_selection_proof_mode"]
+        == "exact_order_tuple"
+    )
+    assert native.cancel_calls == 1
+
+
+def test_unproven_cancel_confirmation_preserves_proven_click_fact() -> None:
+    native = UnprovenConfirmationCancelNative()
+    adapter = _adapter(native)
+    plan = _plan()
+    adapter.prepare(plan)
+    submitted = adapter.submit(plan, "claim-1")
+
+    unresolved = adapter.cancel(
+        plan,
+        {
+            "broker_order_id": submitted.order_id,
+            "broker_strategy_id": submitted.strategy_id,
+            "requested_shares": 100,
+        },
+    )
+
+    assert unresolved.normalized_status() == BrokerStatus.UNKNOWN
+    assert unresolved.retry_allowed is False
+    assert unresolved.locator_proof["cancel_helper_status"] == (
+        "cancel_confirmation_unproven"
+    )
+    assert unresolved.locator_proof["cancel_clicked"] is True
+    assert unresolved.locator_proof["cancel_click_proven"] is True
+    assert unresolved.locator_proof["cancel_confirmation_pressed"] is False
+    assert unresolved.field_readback["cancel_clicked"] is True
+    assert native.cancel_calls == 1
+
+
+def test_malformed_cancel_receipt_keeps_reported_click_but_not_proof() -> None:
+    native = MalformedSelectionCancelNative()
+    adapter = _adapter(native)
+    plan = _plan()
+    adapter.prepare(plan)
+    submitted = adapter.submit(plan, "claim-1")
+
+    unresolved = adapter.cancel(
+        plan,
+        {
+            "broker_order_id": submitted.order_id,
+            "broker_strategy_id": submitted.strategy_id,
+            "requested_shares": 100,
+        },
+    )
+
+    assert unresolved.normalized_status() == BrokerStatus.UNKNOWN
+    assert unresolved.retry_allowed is False
+    assert unresolved.locator_proof["cancel_clicked"] is True
+    assert unresolved.locator_proof["cancel_click_proven"] is False
+    assert unresolved.field_readback["cancel_clicked"] is True
     assert native.cancel_calls == 1
 
 
@@ -529,6 +931,30 @@ def test_preexisting_exact_order_blocks_prepare_before_form_write() -> None:
     assert receipt.normalized_status() == BrokerStatus.REJECTED
     assert receipt.reason == "NATIVE_PREEXISTING_EXACT_ORDER_BLOCKS_SUBMIT"
     assert receipt.field_readback["baseline_exact_order_match_count"] == 1
+    assert native.prepare_calls == 0
+
+
+def test_bounded_preexisting_order_rejection_keeps_baseline_locator() -> None:
+    native = LowConfidenceZeroFillNative()
+    native.orders[0]["成交数量"] = "0"
+    sample = replace(
+        _plan(),
+        plan_id="sample-515120",
+        code="515120.XSHG",
+        name="创新药",
+        limit_price=0.646,
+        basket_price=0.646,
+    )
+
+    receipt = _adapter(native).prepare(sample)
+
+    assert receipt.normalized_status() == BrokerStatus.REJECTED
+    assert receipt.reason == "NATIVE_PREEXISTING_EXACT_ORDER_BLOCKS_SUBMIT"
+    assert receipt.locator_proof["baseline_order_readback_mode"] == (
+        "bounded_known_status_zero_fill"
+    )
+    assert receipt.locator_proof["baseline_order_ids"] == ["6000002"]
+    assert receipt.locator_proof["baseline_exact_order_match_count"] == 1
     assert native.prepare_calls == 0
 
 

@@ -272,10 +272,10 @@ class FounderscNativeAXBrokerAdapter(BrokerAdapter):
             readback = payload.get("query_readback")
             readback = dict(readback) if isinstance(readback, dict) else {}
             basic_proven = bool(
-                str(payload.get("status") or "") == "query_read"
+                str(payload.get("status") or "")
+                    in {"query_read", "query_parse_unproven"}
                 and self._account_bound(payload)
                 and readback.get("capture_proven") is True
-                and readback.get("parsing_proven") is True
                 and str(readback.get("kind") or "") == kind
                 and isinstance(readback.get("rows"), list)
             )
@@ -290,15 +290,33 @@ class FounderscNativeAXBrokerAdapter(BrokerAdapter):
                         f"NATIVE_QUERY_{kind.upper()}_ROW_COUNT_MISMATCH"
                     )
                 else:
+                    parsing_proven = readback.get("parsing_proven") is True
+                    bounded_order_readback = bool(
+                        attempt == 1
+                        and self._bounded_order_readback(kind, readback, rows)
+                    )
                     try:
                         self._validate_rows(kind, rows)
                     except FounderscNativeAXError as exc:
                         last_error = str(exc)
                     else:
+                        if not parsing_proven and not bounded_order_readback:
+                            last_error = f"NATIVE_QUERY_{kind.upper()}_UNPROVEN"
+                            continue
                         return {
                             **readback,
                             "rows": rows,
                             "targeted_reread_used": attempt == 1,
+                            "bounded_order_readback_used": bounded_order_readback,
+                            "bounded_low_confidence_headers": (
+                                list(
+                                    readback.get(
+                                        "low_confidence_critical_headers"
+                                    ) or []
+                                )
+                                if bounded_order_readback
+                                else []
+                            ),
                         }
             elif self._account_bound(payload):
                 last_error = f"NATIVE_QUERY_{kind.upper()}_UNPROVEN"
@@ -309,6 +327,106 @@ class FounderscNativeAXBrokerAdapter(BrokerAdapter):
             if attempt == 0:
                 continue
         raise FounderscNativeAXError(last_error)
+
+    @staticmethod
+    def _bounded_order_readback(
+        kind: str,
+        readback: dict[str, Any],
+        rows: list[dict[str, Any]],
+    ) -> bool:
+        """Allow one narrow OCR fallback; trade rows must corroborate it later."""
+        if kind != "today-orders":
+            return False
+        low_headers = set(readback.get("low_confidence_critical_headers") or [])
+        if not low_headers or not low_headers.issubset({"成交数量", "状态说明"}):
+            return False
+        if readback.get("critical_confidence_proven") is not False:
+            return False
+        required_headers = {
+            "证券代码",
+            "委托时间",
+            "买卖标志",
+            "状态说明",
+            "委托价格",
+            "委托数量",
+            "委托编号",
+            "成交数量",
+        }
+        if not required_headers.issubset(set(readback.get("headers") or [])):
+            return False
+        for row in rows:
+            filled = str(row.get("成交数量") or "").strip()
+            if re.fullmatch(r"(?:0+(?:\.0+)?)?", filled) is None:
+                return False
+            if _status(row.get("状态说明")) not in {
+                BrokerStatus.ACCEPTED,
+                BrokerStatus.CANCELLED,
+                BrokerStatus.REJECTED,
+            }:
+                return False
+        return True
+
+    @staticmethod
+    def _validate_order_trade_cross_readback(
+        orders: dict[str, Any],
+        trades: dict[str, Any],
+    ) -> None:
+        if orders.get("bounded_order_readback_used") is not True:
+            return
+        traded_by_order: dict[str, int] = {}
+        for row in trades["rows"]:
+            order_id = str(row.get("委托编号") or "").strip()
+            traded_by_order[order_id] = traded_by_order.get(order_id, 0) + _integer(
+                row.get("成交数量"), field="TRADE_QUANTITY"
+            )
+        for row in orders["rows"]:
+            order_id = str(row.get("委托编号") or "").strip()
+            reported = _integer(
+                row.get("成交数量"),
+                field="ORDER_FILLED_QUANTITY",
+                blank_zero=True,
+            )
+            if reported != traded_by_order.get(order_id, 0):
+                raise FounderscNativeAXError(
+                    "NATIVE_ORDER_TRADE_ZERO_FILL_CROSSCHECK_FAILED"
+                )
+
+    @staticmethod
+    def _order_readback_locator(orders: dict[str, Any]) -> dict[str, Any]:
+        return {
+            "order_readback_mode": (
+                "bounded_known_status_zero_fill"
+                if orders.get("bounded_order_readback_used") is True
+                else "strict_confidence"
+            ),
+            "bounded_low_confidence_headers": list(
+                orders.get("bounded_low_confidence_headers") or []
+            ),
+            "targeted_order_reread_used": bool(
+                orders.get("targeted_reread_used")
+            ),
+        }
+
+    @classmethod
+    def _baseline_order_readback_locator(
+        cls,
+        orders: dict[str, Any],
+    ) -> dict[str, Any]:
+        current = cls._order_readback_locator(orders)
+        return {f"baseline_{key}": value for key, value in current.items()}
+
+    @staticmethod
+    def _durable_baseline_locator(locator: dict[str, Any]) -> dict[str, Any]:
+        keys = {
+            "baseline_order_ids",
+            "baseline_order_count",
+            "baseline_observed_at",
+            "baseline_order_readback_mode",
+            "baseline_bounded_low_confidence_headers",
+            "baseline_targeted_order_reread_used",
+            "comparison",
+        }
+        return {key: locator[key] for key in keys if key in locator}
 
     @staticmethod
     def _validate_rows(kind: str, rows: list[dict[str, Any]]) -> None:
@@ -380,8 +498,9 @@ class FounderscNativeAXBrokerAdapter(BrokerAdapter):
             ready = self.ensure_native_ready(unlock_once=True)
             self._open_query_surface()
             positions = self._query("positions")
-            self._query("today-orders")
-            self._query("today-trades")
+            orders = self._query("today-orders")
+            trades = self._query("today-trades")
+            self._validate_order_trade_cross_readback(orders, trades)
             self._query("funds")
             cancel_ready = self._open_cancel_surface()
             order_ready = self.ensure_native_ready(
@@ -465,12 +584,14 @@ class FounderscNativeAXBrokerAdapter(BrokerAdapter):
         *,
         requested_shares: int,
         field_readback: dict[str, Any] | None = None,
+        locator_proof: dict[str, Any] | None = None,
     ) -> BrokerReceipt:
         return BrokerReceipt(
             status=BrokerStatus.REJECTED,
             requested_shares=requested_shares,
             remaining_shares=requested_shares,
             account_binding="proven",
+            locator_proof=dict(locator_proof or {}),
             template_name="foundersc-native-ax",
             reason=reason,
             error_code=reason,
@@ -519,8 +640,25 @@ class FounderscNativeAXBrokerAdapter(BrokerAdapter):
         requested_shares: int | None = None,
     ) -> BrokerReceipt:
         shares = int(requested_shares or plan.shares)
+        baseline_locator: dict[str, Any] = {}
         try:
             orders = self._order_snapshot()
+            if orders.get("bounded_order_readback_used") is True:
+                self._open_query_surface()
+                self._validate_order_trade_cross_readback(
+                    orders,
+                    self._query("today-trades"),
+                )
+            baseline_ids = sorted(
+                str(row["委托编号"]).strip() for row in orders["rows"]
+            )
+            baseline_locator = {
+                **self._baseline_order_readback_locator(orders),
+                "baseline_order_ids": baseline_ids,
+                "baseline_order_count": len(baseline_ids),
+                "baseline_observed_at": orders.get("observed_at"),
+                "comparison": "code+side+price+quantity+new_order_id",
+            }
             matches = self._matching_orders(plan, orders["rows"], shares)
             if matches:
                 return self._safe_rejection(
@@ -528,10 +666,11 @@ class FounderscNativeAXBrokerAdapter(BrokerAdapter):
                     "NATIVE_PREEXISTING_EXACT_ORDER_BLOCKS_SUBMIT",
                     requested_shares=shares,
                     field_readback={"baseline_exact_order_match_count": len(matches)},
+                    locator_proof={
+                        **baseline_locator,
+                        "baseline_exact_order_match_count": len(matches),
+                    },
                 )
-            baseline_ids = {
-                str(row["委托编号"]).strip() for row in orders["rows"]
-            }
             self.ensure_native_ready(
                 require_order_capability=True,
                 unlock_once=True,
@@ -549,6 +688,7 @@ class FounderscNativeAXBrokerAdapter(BrokerAdapter):
                 plan,
                 f"NATIVE_PREPARE_FAILED:{type(exc).__name__}",
                 requested_shares=shares,
+                locator_proof=baseline_locator,
             )
         readback, matched = self._native_order_readback(plan, payload, shares)
         if str(payload.get("status") or "") != "prepared" or not matched:
@@ -557,12 +697,14 @@ class FounderscNativeAXBrokerAdapter(BrokerAdapter):
                 "NATIVE_PREPARE_FIELD_READBACK_MISMATCH",
                 requested_shares=shares,
                 field_readback=readback,
+                locator_proof=baseline_locator,
             )
         self._prepared[plan.plan_id] = {
             "plan_hash": plan.plan_hash,
             "shares": shares,
-            "baseline_order_ids": sorted(baseline_ids),
+            "baseline_order_ids": baseline_ids,
             "baseline_observed_at": orders.get("observed_at"),
+            "baseline_locator_proof": dict(baseline_locator),
         }
         return BrokerReceipt(
             status=BrokerStatus.PREPARED,
@@ -570,12 +712,7 @@ class FounderscNativeAXBrokerAdapter(BrokerAdapter):
             remaining_shares=shares,
             order_price=plan.limit_price,
             account_binding="proven",
-            locator_proof={
-                "baseline_order_ids": sorted(baseline_ids),
-                "baseline_order_count": len(baseline_ids),
-                "baseline_observed_at": orders.get("observed_at"),
-                "comparison": "code+side+price+quantity+new_order_id",
-            },
+            locator_proof=baseline_locator,
             template_name="foundersc-native-ax",
             template_version=str(payload.get("helper_version") or "") or None,
             reason="native_form_exact_readback_prepared",
@@ -676,6 +813,7 @@ class FounderscNativeAXBrokerAdapter(BrokerAdapter):
                 if str(row.get("委托编号") or "").strip() not in baseline_order_ids
             ]
         locator = {
+            **self._order_readback_locator(orders),
             "exact_order_match_count": len(matches),
             "baseline_order_count": (
                 len(baseline_order_ids) if baseline_order_ids is not None else None
@@ -705,6 +843,7 @@ class FounderscNativeAXBrokerAdapter(BrokerAdapter):
         normalized = _status(order.get("状态说明"))
         self._open_query_surface()
         trades = self._query("today-trades")
+        self._validate_order_trade_cross_readback(orders, trades)
         trade_matches = [
             row for row in trades["rows"]
             if str(row.get("委托编号") or "").strip() == order_id
@@ -783,6 +922,7 @@ class FounderscNativeAXBrokerAdapter(BrokerAdapter):
             or prepared.get("plan_hash") != plan.plan_hash
             or prepared.get("shares") != shares
             or not isinstance(prepared.get("baseline_order_ids"), list)
+            or not isinstance(prepared.get("baseline_locator_proof"), dict)
         ):
             return self._safe_rejection(
                 plan,
@@ -804,6 +944,7 @@ class FounderscNativeAXBrokerAdapter(BrokerAdapter):
                 requested_shares=shares,
                 remaining_shares=shares,
                 account_binding="proven",
+                locator_proof=dict(prepared["baseline_locator_proof"]),
                 template_name="foundersc-native-ax",
                 reason=f"NATIVE_SUBMIT_RESPONSE_UNKNOWN:{type(exc).__name__}",
                 error_code="NATIVE_SUBMIT_RESPONSE_UNKNOWN",
@@ -825,6 +966,7 @@ class FounderscNativeAXBrokerAdapter(BrokerAdapter):
                 requested_shares=shares,
                 remaining_shares=shares,
                 account_binding="proven",
+                locator_proof=dict(prepared["baseline_locator_proof"]),
                 template_name="foundersc-native-ax",
                 reason="NATIVE_INITIAL_SUBMIT_OUTCOME_UNPROVEN",
                 error_code="NATIVE_INITIAL_SUBMIT_OUTCOME_UNPROVEN",
@@ -852,6 +994,10 @@ class FounderscNativeAXBrokerAdapter(BrokerAdapter):
                         **last.__dict__,
                         "strategy_id": "NAX" + claim_hash[:16].upper(),
                         "reason": "native_submit_mapped_by_exact_order_delta",
+                        "locator_proof": {
+                            **prepared["baseline_locator_proof"],
+                            **last.locator_proof,
+                        },
                         "field_readback": {
                             **last.field_readback,
                             **readback,
@@ -871,7 +1017,10 @@ class FounderscNativeAXBrokerAdapter(BrokerAdapter):
             remaining_shares=last.remaining_shares if last else shares,
             order_price=plan.limit_price,
             account_binding="proven",
-            locator_proof=last.locator_proof if last else {},
+            locator_proof={
+                **prepared["baseline_locator_proof"],
+                **(last.locator_proof if last else {}),
+            },
             template_name="foundersc-native-ax",
             reason="NATIVE_SUBMIT_CLICKED_READBACK_UNPROVEN",
             error_code="NATIVE_SUBMIT_CLICKED_READBACK_UNPROVEN",
@@ -1010,11 +1159,25 @@ class FounderscNativeAXBrokerAdapter(BrokerAdapter):
         cancel_readback = (
             dict(cancel_readback) if isinstance(cancel_readback, dict) else {}
         )
+        helper_status = str(payload.get("status") or "")
+        cancel_clicked = cancel_readback.get("cancel_clicked") is True
         try:
-            cancel_clicked = bool(
-                str(payload.get("status") or "")
-                    in {"cancel_clicked", "cancel_confirmed"}
+            selection_proof_mode = str(
+                cancel_readback.get("selection_proof_mode") or ""
+            )
+            cancel_click_proven = bool(
+                cancel_clicked
+                and helper_status
+                    in {
+                        "cancel_clicked",
+                        "cancel_confirmed",
+                        "cancel_confirmation_unproven",
+                    }
                 and cancel_readback.get("selection_proven") is True
+                and selection_proof_mode in {
+                    "exact_order_tuple",
+                    "exact_numeric_tuple_bounded_side_suffix",
+                }
                 and cancel_readback.get("target_match_count") == 1
                 and cancel_readback.get("cancel_control_count") == 1
                 and cancel_readback.get("cancel_clicked") is True
@@ -1029,7 +1192,18 @@ class FounderscNativeAXBrokerAdapter(BrokerAdapter):
                     == Decimal(str(plan.limit_price))
             ) if cancel_readback else False
         except FounderscNativeAXError:
-            cancel_clicked = False
+            cancel_click_proven = False
+        cancel_locator_evidence = {
+            "cancel_helper_status": helper_status,
+            "cancel_clicked": cancel_clicked,
+            "cancel_click_proven": cancel_click_proven,
+            "cancel_confirmation_pressed": (
+                cancel_readback.get("confirmation_pressed") is True
+            ),
+            "cancel_selection_proof_mode": str(
+                cancel_readback.get("selection_proof_mode") or ""
+            ),
+        }
 
         last: BrokerReceipt | None = None
         for delay in self.reconcile_delays:
@@ -1049,10 +1223,15 @@ class FounderscNativeAXBrokerAdapter(BrokerAdapter):
                         **last.__dict__,
                         "strategy_id": strategy_id,
                         "reason": "native_exact_order_cancelled_and_reconciled",
+                        "locator_proof": {
+                            **last.locator_proof,
+                            **cancel_locator_evidence,
+                        },
                         "field_readback": {
                             **last.field_readback,
                             **cancel_readback,
                             "cancel_clicked": cancel_clicked,
+                            "cancel_click_proven": cancel_click_proven,
                         },
                     }
                 )
@@ -1065,6 +1244,16 @@ class FounderscNativeAXBrokerAdapter(BrokerAdapter):
                         **last.__dict__,
                         "strategy_id": strategy_id,
                         "reason": "native_cancel_raced_with_terminal_broker_state",
+                        "locator_proof": {
+                            **last.locator_proof,
+                            **cancel_locator_evidence,
+                        },
+                        "field_readback": {
+                            **last.field_readback,
+                            **cancel_readback,
+                            "cancel_clicked": cancel_clicked,
+                            "cancel_click_proven": cancel_click_proven,
+                        },
                     }
                 )
         return BrokerReceipt(
@@ -1079,12 +1268,16 @@ class FounderscNativeAXBrokerAdapter(BrokerAdapter):
             ),
             order_price=plan.limit_price,
             account_binding="proven",
-            locator_proof=last.locator_proof if last else current.locator_proof,
+            locator_proof={
+                **(last.locator_proof if last else current.locator_proof),
+                **cancel_locator_evidence,
+            },
             template_name="foundersc-native-ax",
             reason=(
                 "NATIVE_CANCEL_CLICKED_READBACK_UNPROVEN"
                 if cancel_clicked else
-                f"NATIVE_CANCEL_OUTCOME_UNKNOWN:{click_error or 'UNPROVEN'}"
+                "NATIVE_CANCEL_OUTCOME_UNKNOWN:"
+                f"{click_error or str(payload.get('status') or 'UNPROVEN')}"
             ),
             error_code="NATIVE_CANCEL_OUTCOME_UNKNOWN_NO_RETRY",
             conclusive=False,
@@ -1093,7 +1286,8 @@ class FounderscNativeAXBrokerAdapter(BrokerAdapter):
             field_readback={
                 **(last.field_readback if last else current.field_readback),
                 **cancel_readback,
-                "cancel_clicked": cancel_clicked or None,
+                "cancel_clicked": cancel_clicked,
+                "cancel_click_proven": cancel_click_proven,
             },
         )
 
@@ -1103,6 +1297,7 @@ class FounderscNativeAXBrokerAdapter(BrokerAdapter):
         claim_id = str(previous.get("submit_claim_id") or "").strip()
         locator = previous.get("locator_proof")
         locator = dict(locator) if isinstance(locator, dict) else {}
+        baseline_locator = self._durable_baseline_locator(locator)
         raw_baseline = locator.get("baseline_order_ids")
         baseline_ids: list[str] | None = (
             [str(item).strip() for item in raw_baseline]
@@ -1123,6 +1318,7 @@ class FounderscNativeAXBrokerAdapter(BrokerAdapter):
                 requested_shares=shares,
                 remaining_shares=shares,
                 account_binding="proven",
+                locator_proof=baseline_locator,
                 template_name="foundersc-native-ax",
                 reason="NATIVE_RECOVERY_DURABLE_CONTEXT_UNPROVEN",
                 error_code="NATIVE_RECOVERY_DURABLE_CONTEXT_UNPROVEN_NO_RETRY",
@@ -1141,12 +1337,22 @@ class FounderscNativeAXBrokerAdapter(BrokerAdapter):
                 requested_shares=shares,
                 remaining_shares=shares,
                 account_binding="proven",
+                locator_proof=baseline_locator,
                 template_name="foundersc-native-ax",
                 reason=f"NATIVE_RECOVERY_READBACK_FAILED:{type(exc).__name__}",
                 error_code="NATIVE_RECOVERY_READBACK_FAILED_NO_RETRY",
                 conclusive=False,
                 retry_allowed=False,
             )
+        recovered = BrokerReceipt(
+            **{
+                **recovered.__dict__,
+                "locator_proof": {
+                    **baseline_locator,
+                    **recovered.locator_proof,
+                },
+            }
+        )
         if not (
             recovered.receipt_mapping is True
             and recovered.order_id
