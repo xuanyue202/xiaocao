@@ -29,6 +29,8 @@ output/.cache/*-wal
 output/.cache/*-shm
 output/.cache/*-journal
 output/.cache/
+
+# Legacy malformed cache path from older tooling; the leading space is intentional.
 output/ .cache/
 
 # 顶层 ad-hoc artifacts（每次 backtest 产生）
@@ -83,6 +85,7 @@ output/live/quality_governor_audit.jsonl
 output/live/signal_snapshots.jsonl*
 output/live/stock_sentiment.json
 output/live/stock_sentiment_history.jsonl
+output/live/weekly_plan_*.json
 output/live/agent_signals.jsonl
 output/live/context_pack_*.json
 output/live/intelligence_review_queue_*.json
@@ -133,6 +136,9 @@ output/*.sha256
 
 # Legacy local skill staging path; canonical source is .codex/skills/.
 /skills/
+
+# Superseded one-off probe; the reusable Founder AX implementation lives under native/.
+.scratch/foundersc-mac-native-probe/
 
 # Local Claude state. Project-shared Claude links may be tracked.
 .claude/settings.local.json
