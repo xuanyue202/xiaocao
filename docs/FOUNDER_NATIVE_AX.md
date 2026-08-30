@@ -34,16 +34,24 @@ single click.
 - Buy/sell page navigation and exact mapping of code, price and quantity
   controls.
 - Millisecond-scale field set, AX readback and optional clear without submit.
-- One explicitly enabled submit action. A broker confirmation is pressed only
-  when local OCR contains the exact prepared order tuple and confirmation
-  title, plus either one semantic confirm control or one high-confidence
-  `确认/确定` token inside the bounded center-dialog region.
+- One explicitly enabled submit action. The quantity field receives exactly
+  one Return to open the broker confirmation. The focused dialog must expose
+  one native `确定/确认` control and retain the exact prepared tuple. OCR may
+  supplement marker/tuple evidence, but it never supplies the confirmation
+  click target.
+- Exact success-popup handling. `委托已提交,合同号是...` is parsed for one
+  numeric order id and `撤单已提交!` is matched exactly before the popup's
+  unique native confirm control is pressed once.
 - Full-query native reads for positions, today orders, today trades and funds.
 - Complete native allocation capsule from the positions summary plus row-level
   market values.
+- Exact cancellation: zero all selections, identify one
+  `order-id+code+side+price+quantity` row, prove that only its checkbox changed,
+  click `撤单` once, confirm once, then reconcile that same order id.
 
-Cancellation and replacement are not implemented. Any state that would need
-one remains fail-closed.
+Automatic replacement remains disabled in the native adapter. Unknown action
+outcomes are reconciliation-only and never cause another Return, click or
+submit.
 
 ## OCR and reconciliation contract
 
@@ -69,6 +77,15 @@ model and systematic failure modes. The accepted logic is:
    requested quantity and must agree with the order row when both are nonzero.
 6. Map known Chinese broker statuses explicitly. Malformed, duplicate,
    missing or unknown data returns UNKNOWN with `retry_allowed=false`.
+7. Persist the complete pre-submit order-id baseline and durable claim id. If
+   the submit response is lost across a process restart, recovery is allowed
+   only when exactly one new exact tuple exists outside that durable baseline;
+   legacy UNKNOWN rows without both facts remain UNKNOWN.
+8. Require every non-empty token in a critical table cell to meet the local
+   Vision confidence floor (`0.50`, calibrated against the real two-order
+   Founder table). Side text is never typo-corrected for receipt or
+   cancellation authority; a malformed side triggers one fresh read and then
+   fails closed.
 
 This is a before/after delta proof, not a fuzzy full-row comparison. It both
 avoids false failures from harmless name OCR and prevents uncertain critical
@@ -79,7 +96,7 @@ numbers from becoming an order acknowledgment.
 `BrokerCapability.supports_submit` is true only when all of these are proven in
 the current process:
 
-- helper version 5 or newer;
+- helper version 8 or newer;
 - App running, Accessibility trusted and macOS session unlocked;
 - exactly one expected fund-account fingerprint;
 - positions, today-orders, today-trades and funds query surfaces all parse;
@@ -144,12 +161,56 @@ the full native broker probe before `supports_submit=true`.
   cycles were approximately 0.58–0.90 seconds; the bounded helper hot path is
   millisecond-scale.
 - A full real-App adapter probe returned `ready=true`,
-  `supports_submit=true`, `supports_reconcile=true` and `opencli_used=false`.
+  `supports_submit=true`, `supports_reconcile=true`, `supports_cancel=true` and
+  `opencli_used=false`.
+- An authorized end-to-end test submitted
+  `512010 / BUY / 0.3500 / 100`. The App returned contract/order id `6000005`;
+  same-account today-orders readback found exactly that new tuple as `未报`.
+- The cancellation probe uniquely selected and cleared only `6000005`. The
+  one real cancel then returned `撤单已提交!`; final today-orders readback showed
+  `6000005 / 已撤 / 成交数量 0`, while the pre-existing `6000002` remained
+  `未报` and untouched during that action. A later separately authorized exact
+  cancel of `6000002 / 515120 / BUY / 0.6460 / 100` returned the same broker
+  success and independent readback proved `6000002 / 已撤` without replaying
+  the already-terminal `6000005`.
+- A repeated Return was deliberately rejected as an automation strategy. In
+  the observed UI the first confirmation dialog left focus on the underlying
+  quantity field, so another Return opened a second confirmation dialog. Both
+  were safely cancelled and no order was created. Production code therefore
+  sends one Return, then uses the focused dialog's unique native button.
 
-No diagnostic order was submitted by the agent. Final submit behavior is
-covered by deterministic fake-App integration tests; the user-created order is
-the accepted real-App order/readback fixture until the next authorized market
-execution exercises the live click path.
+The App may clear or reset fields after a completed submit, but that behavior
+is not an exact-once authority: it occurs too late to protect the uncertain
+interval between opening and resolving the confirmation dialog.
+
+## Qbot/easytrader reference comparison
+
+The implementation deliberately follows the proven part of
+[Qbot easytrader](https://github.com/UFund-Me/Qbot/blob/main/qbot/engine/trade/easytrader/easytrader/clienttrader.py)
+and its
+[grid strategies](https://github.com/UFund-Me/Qbot/blob/main/qbot/engine/trade/easytrader/easytrader/grid_strategies.py):
+bind one application/window, use native controls for fields and buttons, and
+read broker tables structurally. Qbot's normal easytrader path uses Windows
+`pywinauto` control ids, `set_edit_text/type_keys`, button `.click()`, and
+clipboard grid copy. It does not OCR ordinary order or holdings tables. Its
+`thsauto` path uses DdddOCR only for the anti-copy verification image; normal
+tables are still copied from the clipboard.
+
+The reusable ideas are native control ownership, exact row identity, shortcuts
+only after client-specific proof, and clipboard/table extraction when the
+client exposes it. Windows control ids and F-key mappings are not portable to
+Founder macOS. Qbot
+[`thsauto`](https://github.com/UFund-Me/Qbot/blob/main/qbot/engine/trade/trading/thsauto/thsauto.py)'s
+loop that sends `Y` repeatedly when the result is
+unknown is explicitly not adopted because it lacks a durable submit-delta
+guard.
+
+Our OCR engine is Apple's local Vision framework, not DdddOCR. Founder macOS
+exposes AX table geometry but not readable cell values, so Vision fills a
+different gap. Code, side, price, quantity, order id, fill quantity and status
+stay exact, and low-confidence critical cell tokens invalidate the parse.
+Codex screenshots can diagnose a disputed read, but cannot authorize or repair
+a live receipt in the millisecond action path.
 
 ## Runtime command
 

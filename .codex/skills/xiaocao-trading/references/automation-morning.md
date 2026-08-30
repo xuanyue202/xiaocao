@@ -68,7 +68,7 @@ status family (`T` or `T` plus digits). Numeric BUY limits are floored, never
 rounded up, to the 0.01-yuan stock tick before broker readback.
 Apply `docs/OPERATING_CONTRACT.md` section 9 for the capital-gate semantics.
 Unless the Founder adapter proves the account-bound `native-app` route, helper
-version 5+, all four native query surfaces, exact prepare/submit capability,
+version 8+, all four native query surfaces, exact prepare/submit capability,
 native reconcile capability and broker allocation facts, the task
 reports the exact fail-closed reason and produces no real order. Persist the
 sanitized preflight receipt with `website_authentication.status=not_used` and
@@ -80,8 +80,9 @@ tuple, then bind any fills by `order_id+code+side`; otherwise it becomes
 UNKNOWN/reconcile-only with no click retry. OCR names are non-authoritative;
 critical numbers must be exact and invariant-checked. Any
 prepare/submit/reconcile chain uncertainty permanently disables automatic
-replacement. Cancellation and replacement remain unimplemented and fail
-closed. A five-minute trade lock has one Keychain-backed recovery; a client
+replacement. Exact-order cancellation is available only after unique mapped
+order-id readback; it selects and confirms once, then reconciles that same id.
+Automatic replacement remains disabled. A five-minute trade lock has one Keychain-backed recovery; a client
 restart/CAPTCHA remains a separate bounded slow path.
 
 The execution stage must never rerun `live_recommend.py`. Keep its shell alive

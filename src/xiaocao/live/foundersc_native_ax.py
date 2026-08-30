@@ -457,6 +457,21 @@ class FounderscNativeAXClient:
             ],
         )
 
+    def open_cancel_surface(
+        self,
+        *,
+        expected_fingerprint: str,
+    ) -> NativeAXReceipt:
+        """Open the native cancel page without selecting or cancelling a row."""
+        return self._run(
+            "open-cancel-surface",
+            [
+                "--allow-readonly-navigation",
+                "--expected-fingerprint",
+                str(expected_fingerprint),
+            ],
+        )
+
     def focus_unlock(self) -> NativeAXReceipt:
         return self._run("focus-unlock")
 
@@ -629,6 +644,141 @@ class FounderscNativeAXClient:
             [
                 "--allow-single-submit",
                 *self._order_args(
+                    code=code,
+                    side=side,
+                    price=price,
+                    quantity=quantity,
+                    expected_fingerprint=expected_fingerprint,
+                ),
+            ],
+        )
+
+    def probe_pending_order_confirmation(
+        self,
+        *,
+        code: str,
+        side: str,
+        price: float,
+        quantity: int,
+        expected_fingerprint: str,
+    ) -> NativeAXReceipt:
+        """Prove one exact currently visible transaction confirmation."""
+        return self._run(
+            "probe-pending-order-confirmation",
+            self._order_args(
+                code=code,
+                side=side,
+                price=price,
+                quantity=quantity,
+                expected_fingerprint=expected_fingerprint,
+            ),
+        )
+
+    def confirm_pending_order(
+        self,
+        *,
+        code: str,
+        side: str,
+        price: float,
+        quantity: int,
+        expected_fingerprint: str,
+        explicitly_enabled: bool = False,
+    ) -> NativeAXReceipt:
+        """Press the unique focused button on one exact visible confirmation."""
+        if not explicitly_enabled:
+            raise FounderscNativeAXError(
+                "NATIVE_AX_SINGLE_ORDER_CONFIRMATION_NOT_EXPLICITLY_ENABLED"
+            )
+        return self._run(
+            "confirm-pending-order",
+            [
+                "--allow-single-order-confirmation",
+                *self._order_args(
+                    code=code,
+                    side=side,
+                    price=price,
+                    quantity=quantity,
+                    expected_fingerprint=expected_fingerprint,
+                ),
+            ],
+        )
+
+    @classmethod
+    def _cancel_args(
+        cls,
+        *,
+        order_id: str,
+        code: str,
+        side: str,
+        price: float,
+        quantity: int,
+        expected_fingerprint: str,
+    ) -> list[str]:
+        return [
+            "--order-id",
+            str(order_id or "").strip(),
+            *cls._order_args(
+                code=code,
+                side=side,
+                price=price,
+                quantity=quantity,
+                expected_fingerprint=expected_fingerprint,
+            ),
+        ]
+
+    def probe_cancel_selection(
+        self,
+        *,
+        order_id: str,
+        code: str,
+        side: str,
+        price: float,
+        quantity: int,
+        expected_fingerprint: str,
+        explicitly_enabled: bool = False,
+    ) -> NativeAXReceipt:
+        """Select and clear one exact cancel row without pressing cancel."""
+        if not explicitly_enabled:
+            raise FounderscNativeAXError(
+                "NATIVE_AX_CANCEL_SELECTION_PROBE_NOT_EXPLICITLY_ENABLED"
+            )
+        return self._run(
+            "probe-cancel-selection",
+            [
+                "--allow-cancel-selection-probe",
+                *self._cancel_args(
+                    order_id=order_id,
+                    code=code,
+                    side=side,
+                    price=price,
+                    quantity=quantity,
+                    expected_fingerprint=expected_fingerprint,
+                ),
+            ],
+        )
+
+    def cancel_order(
+        self,
+        *,
+        order_id: str,
+        code: str,
+        side: str,
+        price: float,
+        quantity: int,
+        expected_fingerprint: str,
+        explicitly_enabled: bool = False,
+    ) -> NativeAXReceipt:
+        """Select one exact order-id and press cancel at most once."""
+        if not explicitly_enabled:
+            raise FounderscNativeAXError(
+                "NATIVE_AX_SINGLE_CANCEL_NOT_EXPLICITLY_ENABLED"
+            )
+        return self._run(
+            "cancel-order",
+            [
+                "--allow-single-cancel",
+                *self._cancel_args(
+                    order_id=order_id,
                     code=code,
                     side=side,
                     price=price,

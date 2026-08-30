@@ -4,7 +4,7 @@ import Foundation
 import Vision
 
 private let schemaVersion = 2
-private let helperVersion = 5
+private let helperVersion = 8
 private let bundleIdentifier = "com.fzzq.Mac2020"
 private let maximumDepth = 12
 private let maximumNodes = 1_000
@@ -27,6 +27,7 @@ private let markerNeedles: [(String, String)] = [
     ("当日成交", "today_trades"),
     ("持仓", "positions"),
     ("撤单", "cancel"),
+    ("交易确认", "order_confirmation"),
     ("委托确认", "order_confirmation"),
     ("确认委托", "order_confirmation")
 ]
@@ -64,6 +65,7 @@ private struct Capabilities: Codable {
     let keychainClientLoginFillCandidate: Bool
     let prepare: Bool
     let submit: Bool
+    let cancel: Bool
     let readPositionValues: Bool
     let unattendedRecoveryProven: Bool
 }
@@ -103,7 +105,37 @@ private struct QueryReadback: Codable {
     let rowCount: Int
     let parsingProven: Bool
     let emptyStateProven: Bool
+    let criticalConfidenceFloor: Float
+    let criticalConfidenceProven: Bool
+    let minimumCriticalConfidenceObserved: Float?
+    let lowConfidenceCriticalHeaders: [String]
     let ocrLineCount: Int
+    let observedAt: String
+}
+
+private struct CancelReadback: Codable {
+    let orderId: String
+    let code: String
+    let side: String
+    let price: String
+    let quantity: Int
+    let orderStatus: String
+    let targetMatchCount: Int
+    let selectionProven: Bool
+    let cancelControlCount: Int
+    let cancelClicked: Bool
+    let confirmationPressed: Bool
+    let confirmationMode: String
+    let observedAt: String
+}
+
+private struct BrokerResultReadback: Codable {
+    let kind: String
+    let status: String
+    let brokerOrderId: String
+    let messageMatched: Bool
+    let acknowledgmentPressed: Bool
+    let acknowledgmentMode: String
     let observedAt: String
 }
 
@@ -139,6 +171,8 @@ private struct Receipt: Codable {
     var action: ActionResult?
     var orderReadback: OrderReadback?
     var queryReadback: QueryReadback?
+    var cancelReadback: CancelReadback?
+    var resultReadback: BrokerResultReadback?
     var timingMs: Double
 }
 
@@ -158,6 +192,19 @@ private struct Observation {
     let confirmButtons: [AXUIElement]
     let orderFields: OrderFields?
     let submitControls: [AXUIElement]
+}
+
+private struct TransactionDialogControls {
+    let markerPresent: Bool
+    let confirmButtons: [AXUIElement]
+    let cancelButtons: [AXUIElement]
+}
+
+private struct BrokerResultDialogControls {
+    let kind: String
+    let brokerOrderId: String
+    let messageMatched: Bool
+    let confirmButtons: [AXUIElement]
 }
 
 private func milliseconds(since start: DispatchTime) -> Double {
@@ -271,6 +318,8 @@ private struct OCRToken {
     let bounds: Bounds
 }
 
+private let minimumCriticalOCRConfidence: Float = 0.50
+
 private func captureFounderWindow(
     pid: pid_t,
     windowBounds: Bounds
@@ -376,8 +425,10 @@ private func structuredQueryReadback(
     navigationClickMode: String
 ) -> QueryReadback {
     guard tableShapes.count == 1,
+          tableShapes[0].auditComplete,
           let rawColumns = tableShapes[0].columns,
-          let rowBounds = tableShapes[0].rowBounds else {
+          let rowBounds = tableShapes[0].rowBounds,
+          rowBounds.count == tableShapes[0].rowCount else {
         return QueryReadback(
             kind: kind,
             captureProven: true,
@@ -389,6 +440,10 @@ private func structuredQueryReadback(
             rowCount: 0,
             parsingProven: false,
             emptyStateProven: false,
+            criticalConfidenceFloor: minimumCriticalOCRConfidence,
+            criticalConfidenceProven: false,
+            minimumCriticalConfidenceObserved: nil,
+            lowConfidenceCriticalHeaders: [],
             ocrLineCount: tokens.count,
             observedAt: isoTimestamp()
         )
@@ -399,6 +454,10 @@ private func structuredQueryReadback(
         return TableColumn(title: title, bounds: column.bounds)
     }
     let headers = columns.map(\.title)
+    let required = queryRequiredHeaders(kind)
+    var criticalConfidenceProven = true
+    var criticalConfidences: [Float] = []
+    var lowConfidenceCriticalHeaders = Set<String>()
     var rows: [[String: String]] = []
     for row in rowBounds {
         let rowTokens = tokens.filter { token in
@@ -413,6 +472,18 @@ private func structuredQueryReadback(
                 return centerX >= columnBounds.x - 2
                     && centerX <= columnBounds.x + columnBounds.width + 2
             }.sorted { $0.bounds.x < $1.bounds.x }
+            if required.contains(column.title),
+               !cellTokens.isEmpty {
+                criticalConfidences.append(
+                    contentsOf: cellTokens.map(\.confidence)
+                )
+                if cellTokens.contains(where: {
+                    $0.confidence < minimumCriticalOCRConfidence
+                }) {
+                    criticalConfidenceProven = false
+                    lowConfidenceCriticalHeaders.insert(column.title)
+                }
+            }
             var value = cellTokens.map(\.text).joined(separator: " ")
                 .trimmingCharacters(in: .whitespacesAndNewlines)
             if ["股东代码", "资金帐号"].contains(column.title) {
@@ -424,12 +495,15 @@ private func structuredQueryReadback(
             rows.append(values)
         }
     }
-    let required = queryRequiredHeaders(kind)
     let headerSet = Set(headers)
     let headersProven = required.isSubset(of: headerSet)
-    let emptyMessage = tokens.contains { $0.text.contains("没有相应的查询信息") }
+    let emptyMessage = tokens.contains {
+        $0.text.contains("没有相应的查询信息")
+            && $0.confidence >= minimumCriticalOCRConfidence
+    }
     let emptyStateProven = rowBounds.isEmpty && emptyMessage && headersProven
     let parsingProven = headersProven
+        && criticalConfidenceProven
         && (emptyStateProven || rows.count == rowBounds.count)
     return QueryReadback(
         kind: kind,
@@ -438,10 +512,16 @@ private func structuredQueryReadback(
         navigationClickMode: navigationClickMode,
         headers: headers,
         rows: rows,
-        summaryValues: querySummaryValues(tokens),
+        summaryValues: querySummaryValues(tokens.filter {
+            $0.confidence >= minimumCriticalOCRConfidence
+        }),
         rowCount: rows.count,
         parsingProven: parsingProven,
         emptyStateProven: emptyStateProven,
+        criticalConfidenceFloor: minimumCriticalOCRConfidence,
+        criticalConfidenceProven: criticalConfidenceProven,
+        minimumCriticalConfidenceObserved: criticalConfidences.min(),
+        lowConfidenceCriticalHeaders: lowConfidenceCriticalHeaders.sorted(),
         ocrLineCount: tokens.count,
         observedAt: isoTimestamp()
     )
@@ -460,29 +540,79 @@ private func pointForSubstring(_ needle: String, in token: OCRToken) -> CGPoint?
     )
 }
 
-private func guardedOCRConfirmationPoint(
-    _ tokens: [OCRToken],
-    window: Bounds
-) -> CGPoint? {
+private func guardedNavigationPoint(
+    label: String,
+    tokens: [OCRToken],
+    window: Bounds,
+    expectedNormalizedX: Double,
+    normalizedYRange: ClosedRange<Double>
+) -> (point: CGPoint?, count: Int) {
     let candidates = tokens.filter { token in
-        let text = token.text.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard ["确认", "确定"].contains(text), token.confidence >= 0.80 else {
-            return false
-        }
-        let normalizedX = (token.bounds.x - window.x) / window.width
-        let normalizedY = (token.bounds.y - window.y) / window.height
-        let normalizedWidth = token.bounds.width / window.width
-        let normalizedHeight = token.bounds.height / window.height
-        return (0.25...0.75).contains(normalizedX)
-            && (0.25...0.85).contains(normalizedY)
-            && (0.01...0.20).contains(normalizedWidth)
-            && (0.008...0.10).contains(normalizedHeight)
+        let centerY = token.bounds.y + token.bounds.height / 2
+        let normalizedY = (centerY - window.y) / window.height
+        let minimumX = (token.bounds.x - window.x) / window.width
+        let maximumX = (
+            token.bounds.x + token.bounds.width - window.x
+        ) / window.width
+        return token.text.contains(label)
+            && token.confidence >= 0.15
+            && normalizedYRange.contains(normalizedY)
+            && minimumX - 0.02 <= expectedNormalizedX
+            && maximumX + 0.02 >= expectedNormalizedX
     }
-    guard candidates.count == 1 else { return nil }
-    let bounds = candidates[0].bounds
-    return CGPoint(
-        x: bounds.x + bounds.width / 2,
-        y: bounds.y + bounds.height / 2
+    guard candidates.count == 1 else { return (nil, candidates.count) }
+    return (
+        CGPoint(
+            x: window.x + window.width * expectedNormalizedX,
+            y: candidates[0].bounds.y + candidates[0].bounds.height / 2
+        ),
+        1
+    )
+}
+
+private func guardedTopNavigationPoint(
+    label: String,
+    tokens: [OCRToken],
+    window: Bounds
+) -> (point: CGPoint?, count: Int) {
+    let expectedX = [
+        "买入": 0.083,
+        "卖出": 0.164,
+        "撤单": 0.402,
+        "查询": 0.482,
+    ][label]
+    guard let expectedX else { return (nil, 0) }
+    return guardedNavigationPoint(
+        label: label,
+        tokens: tokens,
+        window: window,
+        expectedNormalizedX: expectedX,
+        normalizedYRange: 0.025...0.065
+    )
+}
+
+private func guardedQueryNavigationPoint(
+    label: String,
+    kind: String,
+    surfaceState: String,
+    tokens: [OCRToken],
+    window: Bounds
+) -> (point: CGPoint?, count: Int) {
+    let expectedX: Double
+    switch kind {
+    case "positions": expectedX = 0.088
+    case "today-orders": expectedX = 0.168
+    case "today-trades": expectedX = 0.245
+    case "funds": expectedX = surfaceState == "query_only" ? 0.813 : 0.402
+    default: return (nil, 0)
+    }
+    return guardedNavigationPoint(
+        label: label,
+        tokens: tokens,
+        window: window,
+        expectedNormalizedX: expectedX,
+        normalizedYRange: surfaceState == "query_only"
+            ? 0.055...0.105 : 0.35...0.55
     )
 }
 
@@ -537,6 +667,7 @@ private func emptyCapabilities() -> Capabilities {
         keychainClientLoginFillCandidate: false,
         prepare: false,
         submit: false,
+        cancel: false,
         readPositionValues: false,
         unattendedRecoveryProven: false
     )
@@ -575,6 +706,8 @@ private func emptyReceipt(command: String, status: String, reason: String) -> Re
         action: nil,
         orderReadback: nil,
         queryReadback: nil,
+        cancelReadback: nil,
+        resultReadback: nil,
         timingMs: 0
     )
 }
@@ -662,6 +795,26 @@ private func postSingleLeftClick(at point: CGPoint) -> Bool {
         usleep(30_000)
         restore.post(tap: .cghidEventTap)
     }
+    return true
+}
+
+private func postSingleReturnKey() -> Bool {
+    guard let source = CGEventSource(stateID: .combinedSessionState),
+          let down = CGEvent(
+            keyboardEventSource: source,
+            virtualKey: 36,
+            keyDown: true
+          ),
+          let up = CGEvent(
+            keyboardEventSource: source,
+            virtualKey: 36,
+            keyDown: false
+          ) else {
+        return false
+    }
+    down.post(tap: .cghidEventTap)
+    usleep(30_000)
+    up.post(tap: .cghidEventTap)
     return true
 }
 
@@ -770,6 +923,231 @@ private func supportsPress(_ element: AXUIElement) -> Bool {
         return false
     }
     return actions.contains(kAXPressAction as String)
+}
+
+private func focusedConfirmationDialogControls(
+    _ observation: Observation,
+    marker: (String) -> Bool
+) -> TransactionDialogControls {
+    guard let application = observation.applicationElement,
+          let focusedWindow = elementAttribute(
+            application,
+            kAXFocusedWindowAttribute
+          ) else {
+        return TransactionDialogControls(
+            markerPresent: false,
+            confirmButtons: [],
+            cancelButtons: []
+        )
+    }
+    var markerPresent = false
+    var confirmButtons: [AXUIElement] = []
+    var cancelButtons: [AXUIElement] = []
+    var visited = 0
+    func walk(_ element: AXUIElement, depth: Int) {
+        guard depth <= maximumDepth, visited < maximumNodes else { return }
+        visited += 1
+        let role = stringAttribute(element, kAXRoleAttribute)
+        let text = [
+            stringAttribute(element, kAXTitleAttribute),
+            stringAttribute(element, kAXDescriptionAttribute),
+            stringAttribute(element, kAXValueAttribute),
+        ].joined(separator: " ")
+        markerPresent = markerPresent || marker(text)
+        if role == "AXButton" {
+            if ["确定", "确认"].contains(
+                stringAttribute(element, kAXTitleAttribute)
+            ) {
+                confirmButtons.append(element)
+            }
+            if stringAttribute(element, kAXTitleAttribute) == "取消" {
+                cancelButtons.append(element)
+            }
+        }
+        if Set(["AXOutline", "AXMenu", "AXMenuBar", "AXTable"]).contains(role) {
+            return
+        }
+        let children = attribute(element, kAXChildrenAttribute)
+            as? [AXUIElement] ?? []
+        for child in children {
+            walk(child, depth: depth + 1)
+        }
+    }
+    walk(focusedWindow, depth: 0)
+    return TransactionDialogControls(
+        markerPresent: markerPresent,
+        confirmButtons: confirmButtons,
+        cancelButtons: cancelButtons
+    )
+}
+
+private func focusedTransactionDialogControls(
+    _ observation: Observation
+) -> TransactionDialogControls {
+    return focusedConfirmationDialogControls(
+        observation,
+        marker: orderConfirmationMarker
+    )
+}
+
+private func focusedCancelDialogControls(
+    _ observation: Observation
+) -> TransactionDialogControls {
+    return focusedConfirmationDialogControls(
+        observation,
+        marker: cancelConfirmationMarker
+    )
+}
+
+private func pressUniqueFocusedDialogButton(
+    _ buttons: [AXUIElement]
+) -> (pressed: Bool, mode: String) {
+    guard buttons.count == 1 else { return (false, "none") }
+    let button = buttons[0]
+    if supportsPress(button) {
+        return (
+            AXUIElementPerformAction(
+                button,
+                kAXPressAction as CFString
+            ) == .success,
+            "semantic_focused_dialog_button"
+        )
+    }
+    guard let buttonBounds = bounds(of: button) else {
+        return (false, "none")
+    }
+    return (
+        postSingleLeftClick(at: CGPoint(
+            x: buttonBounds.x + buttonBounds.width / 2,
+            y: buttonBounds.y + buttonBounds.height / 2
+        )),
+        "focused_dialog_button_coordinate"
+    )
+}
+
+private func focusedBrokerResultDialogControls(
+    _ observation: Observation,
+    expectedKind: String
+) -> BrokerResultDialogControls {
+    guard let application = observation.applicationElement,
+          let focusedWindow = elementAttribute(
+            application,
+            kAXFocusedWindowAttribute
+          ) else {
+        return BrokerResultDialogControls(
+            kind: expectedKind,
+            brokerOrderId: "",
+            messageMatched: false,
+            confirmButtons: []
+        )
+    }
+    var textParts: [String] = []
+    var confirmButtons: [AXUIElement] = []
+    var visited = 0
+    func walk(_ element: AXUIElement, depth: Int) {
+        guard depth <= maximumDepth, visited < maximumNodes else { return }
+        visited += 1
+        let role = stringAttribute(element, kAXRoleAttribute)
+        for value in [
+            stringAttribute(element, kAXTitleAttribute),
+            stringAttribute(element, kAXDescriptionAttribute),
+            stringAttribute(element, kAXValueAttribute),
+        ] where !value.isEmpty {
+            textParts.append(value)
+        }
+        if role == "AXButton",
+           ["确定", "确认"].contains(
+            stringAttribute(element, kAXTitleAttribute)
+           ) {
+            confirmButtons.append(element)
+        }
+        if Set(["AXOutline", "AXMenu", "AXMenuBar", "AXTable"]).contains(role) {
+            return
+        }
+        let children = attribute(element, kAXChildrenAttribute)
+            as? [AXUIElement] ?? []
+        for child in children {
+            walk(child, depth: depth + 1)
+        }
+    }
+    walk(focusedWindow, depth: 0)
+    let rendered = textParts.joined(separator: " ")
+    if expectedKind == "submit" {
+        let pattern = #"委托已提交\s*[,，]?\s*合同号(?:是|为)?\s*(\d{1,32})"#
+        let regex = try? NSRegularExpression(pattern: pattern)
+        let range = NSRange(rendered.startIndex..<rendered.endIndex, in: rendered)
+        let matches = regex?.matches(in: rendered, range: range) ?? []
+        let orderIds = matches.compactMap { match -> String? in
+            guard match.numberOfRanges == 2,
+                  let valueRange = Range(match.range(at: 1), in: rendered) else {
+                return nil
+            }
+            return String(rendered[valueRange])
+        }
+        let uniqueOrderIds = Array(Set(orderIds)).sorted()
+        return BrokerResultDialogControls(
+            kind: expectedKind,
+            brokerOrderId: uniqueOrderIds.count == 1 ? uniqueOrderIds[0] : "",
+            messageMatched: uniqueOrderIds.count == 1,
+            confirmButtons: confirmButtons
+        )
+    }
+    let matched = rendered.contains("撤单已提交")
+    return BrokerResultDialogControls(
+        kind: expectedKind,
+        brokerOrderId: "",
+        messageMatched: matched,
+        confirmButtons: confirmButtons
+    )
+}
+
+private func acknowledgeBrokerResult(
+    expectedKind: String,
+    command: String
+) -> BrokerResultReadback {
+    var latest = BrokerResultDialogControls(
+        kind: expectedKind,
+        brokerOrderId: "",
+        messageMatched: false,
+        confirmButtons: []
+    )
+    for attempt in 0..<3 {
+        let observation = observe(command: command)
+        latest = focusedBrokerResultDialogControls(
+            observation,
+            expectedKind: expectedKind
+        )
+        if latest.messageMatched { break }
+        if attempt < 2 { usleep(80_000) }
+    }
+    guard latest.messageMatched else {
+        return BrokerResultReadback(
+            kind: expectedKind,
+            status: "\(expectedKind)_result_unobserved",
+            brokerOrderId: "",
+            messageMatched: false,
+            acknowledgmentPressed: false,
+            acknowledgmentMode: "none",
+            observedAt: isoTimestamp()
+        )
+    }
+    let pressed = pressUniqueFocusedDialogButton(latest.confirmButtons)
+    if pressed.pressed { usleep(80_000) }
+    let acknowledgedStatus = expectedKind == "submit"
+        ? "submit_result_acknowledged" : "cancel_result_acknowledged"
+    let unprovenStatus = expectedKind == "submit"
+        ? "submit_result_acknowledgment_unproven"
+        : "cancel_result_acknowledgment_unproven"
+    return BrokerResultReadback(
+        kind: expectedKind,
+        status: pressed.pressed
+            ? acknowledgedStatus : unprovenStatus,
+        brokerOrderId: latest.brokerOrderId,
+        messageMatched: true,
+        acknowledgmentPressed: pressed.pressed,
+        acknowledgmentMode: pressed.mode,
+        observedAt: isoTimestamp()
+    )
 }
 
 private func guardedSubmitPoint(
@@ -1187,6 +1565,9 @@ private func observe(command: String, auditTables: Bool = false) -> Observation 
         keychainClientLoginFillCandidate: canFillClientLogin,
         prepare: orderCapability,
         submit: orderCapability,
+        cancel: surfaceState == "query_only"
+            && tableShapes.count == 1
+            && tradeFingerprints.count == 1,
         readPositionValues: readablePositionValues,
         unattendedRecoveryProven: false
     )
@@ -1222,6 +1603,8 @@ private func observe(command: String, auditTables: Bool = false) -> Observation 
         action: nil,
         orderReadback: nil,
         queryReadback: nil,
+        cancelReadback: nil,
+        resultReadback: nil,
         timingMs: milliseconds(since: started)
     )
     return Observation(
@@ -1288,6 +1671,11 @@ private struct OrderInput {
     let expectedFingerprint: String
 }
 
+private struct CancelInput {
+    let order: OrderInput
+    let orderId: String
+}
+
 private func parseOrderInput(_ arguments: [String]) -> OrderInput? {
     let code = option("--code", in: arguments)
     let side = option("--side", in: arguments).lowercased()
@@ -1316,6 +1704,15 @@ private func parseOrderInput(_ arguments: [String]) -> OrderInput? {
         quantity: quantity,
         expectedFingerprint: fingerprint
     )
+}
+
+private func parseCancelInput(_ arguments: [String]) -> CancelInput? {
+    let orderId = option("--order-id", in: arguments)
+    guard let order = parseOrderInput(arguments),
+          orderId.range(of: #"^\d{1,32}$"#, options: .regularExpression) != nil else {
+        return nil
+    }
+    return CancelInput(order: order, orderId: orderId)
 }
 
 private func fieldString(_ element: AXUIElement) -> String {
@@ -1412,6 +1809,130 @@ private func ocrOrderMatches(_ tokens: [OCRToken], _ input: OrderInput) -> Bool 
         && priceMatches >= 1
         && quantityMatches >= 1
         && sideMatches >= 1
+}
+
+private func orderConfirmationMarker(_ rendered: String) -> Bool {
+    return rendered.contains("交易确认")
+        || rendered.contains("委托确认")
+        || rendered.contains("确认委托")
+}
+
+private func cancelConfirmationMarker(_ rendered: String) -> Bool {
+    return rendered.contains("确认撤单")
+        || rendered.contains("撤单确认")
+        || rendered.contains("是否撤")
+        || rendered.contains("撤销委托")
+}
+
+private func normalizedBrokerSide(_ value: String) -> String {
+    let text = value.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+    if ["买入", "买", "buy", "b"].contains(text) { return "buy" }
+    if ["卖出", "卖", "sell", "s"].contains(text) { return "sell" }
+    return ""
+}
+
+private func cancelRowMatches(_ row: [String: String], input: CancelInput) -> Bool {
+    return row["委托编号"]?.trimmingCharacters(in: .whitespacesAndNewlines)
+            == input.orderId
+        && normalizedCode(row["证券代码"] ?? "") == input.order.code
+        && normalizedBrokerSide(row["买卖标志"] ?? "") == input.order.side
+        && normalizedDecimal(row["委托价格"] ?? "") == input.order.price
+        && normalizedQuantity(row["委托数量"] ?? "") == input.order.quantity
+}
+
+private func actionStripTokens(
+    _ tokens: [OCRToken],
+    label: String,
+    window: Bounds
+) -> [OCRToken] {
+    return tokens.filter { token in
+        let centerX = token.bounds.x + token.bounds.width / 2
+        let centerY = token.bounds.y + token.bounds.height / 2
+        let normalizedX = (centerX - window.x) / window.width
+        let normalizedY = (centerY - window.y) / window.height
+        return token.text.trimmingCharacters(in: .whitespacesAndNewlines) == label
+            && token.confidence >= 0.25
+            && (0.0...0.25).contains(normalizedX)
+            && (0.015...0.12).contains(normalizedY)
+    }
+}
+
+private func imagePatchBytes(
+    image: CGImage,
+    screenBounds: Bounds,
+    center: CGPoint,
+    radius: Double = 9
+) -> [UInt8]? {
+    guard screenBounds.width > 0, screenBounds.height > 0 else { return nil }
+    let scaleX = Double(image.width) / screenBounds.width
+    let scaleY = Double(image.height) / screenBounds.height
+    let rect = CGRect(
+        x: max(0, (Double(center.x) - screenBounds.x - radius) * scaleX),
+        y: max(0, (Double(center.y) - screenBounds.y - radius) * scaleY),
+        width: min(Double(image.width), radius * 2 * scaleX),
+        height: min(Double(image.height), radius * 2 * scaleY)
+    ).integral
+    guard rect.width >= 2, rect.height >= 2,
+          let crop = image.cropping(to: rect) else { return nil }
+    let width = 24
+    let height = 24
+    var bytes = [UInt8](repeating: 0, count: width * height * 4)
+    guard let context = CGContext(
+        data: &bytes,
+        width: width,
+        height: height,
+        bitsPerComponent: 8,
+        bytesPerRow: width * 4,
+        space: CGColorSpaceCreateDeviceRGB(),
+        bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+    ) else { return nil }
+    context.interpolationQuality = .none
+    context.draw(crop, in: CGRect(x: 0, y: 0, width: width, height: height))
+    return bytes
+}
+
+private func imagePatchDifference(_ left: [UInt8], _ right: [UInt8]) -> Double? {
+    guard left.count == right.count, !left.isEmpty else { return nil }
+    let total = zip(left, right).reduce(0.0) { partial, pair in
+        partial + abs(Double(pair.0) - Double(pair.1))
+    }
+    return total / Double(left.count) / 255.0
+}
+
+private func cancelSelectionProven(
+    before: CGImage,
+    after: CGImage,
+    screenBounds: Bounds,
+    tableBounds: Bounds,
+    rowBounds: [Bounds],
+    targetIndex: Int
+) -> Bool {
+    guard rowBounds.indices.contains(targetIndex) else { return false }
+    var differences: [Double] = []
+    for row in rowBounds {
+        let point = CGPoint(
+            x: tableBounds.x + 9,
+            y: row.y + row.height / 2
+        )
+        guard let first = imagePatchBytes(
+            image: before,
+            screenBounds: screenBounds,
+            center: point
+        ), let second = imagePatchBytes(
+            image: after,
+            screenBounds: screenBounds,
+            center: point
+        ), let difference = imagePatchDifference(first, second) else {
+            return false
+        }
+        differences.append(difference)
+    }
+    let target = differences[targetIndex]
+    let others = differences.enumerated()
+        .filter { $0.offset != targetIndex }
+        .map(\.element)
+    return target >= 0.015
+        && (others.max() ?? 0) <= max(0.012, target * 0.45)
 }
 
 private func validateOrderSurface(
@@ -1625,25 +2146,13 @@ private func submitPreparedOrder(arguments: [String]) -> Receipt {
         return receipt
     }
 
-    let submitControl = initial.submitControls[0]
-    let clickMode: String
-    let clickSucceeded: Bool
-    if supportsPress(submitControl) {
-        clickMode = "semantic"
-        clickSucceeded = AXUIElementPerformAction(
-            submitControl,
-            kAXPressAction as CFString
-        ) == .success
-    } else if let point = guardedSubmitPoint(
-        control: submitControl,
-        window: receipt.windowBounds
-    ) {
-        clickMode = "guarded_coordinate"
-        clickSucceeded = postSingleLeftClick(at: point)
-    } else {
-        clickMode = "none"
-        clickSucceeded = false
-    }
+    let clickMode = "quantity_field_single_return"
+    let focusQuantity = AXUIElementSetAttributeValue(
+        fields.quantity,
+        kAXFocusedAttribute as CFString,
+        kCFBooleanTrue
+    ) == .success
+    let clickSucceeded = focusQuantity && postSingleReturnKey()
     guard clickSucceeded else {
         readback = OrderReadback(
             code: readback.code,
@@ -1676,15 +2185,24 @@ private func submitPreparedOrder(arguments: [String]) -> Receipt {
 
     usleep(180_000)
     let postClick = observe(command: "submit-prepared-order")
-    var confirmationCandidate = postClick.receipt.confirmButtonCount > 0
+    let focusedDialog = focusedTransactionDialogControls(postClick)
+    var confirmationCandidate = !focusedDialog.confirmButtons.isEmpty
         || postClick.receipt.windowCount > receipt.windowCount
         || postClick.receipt.markers.contains("order_confirmation")
-    var confirmationMarker = postClick.receipt.markers.contains(
-        "order_confirmation"
-    )
-    var confirmationOrderMatched = false
-    var ocrConfirmationPoint: CGPoint?
-    if let running = postClick.runningApplication,
+    var confirmationMarker = focusedDialog.markerPresent
+        || postClick.receipt.markers.contains("order_confirmation")
+    var confirmationOrderMatched = postClick.orderFields.map { fields in
+        orderReadbackMatches(
+            currentOrderReadback(
+                input: input,
+                fields: fields,
+                submitControlCount: postClick.submitControls.count
+            ),
+            input
+        )
+    } ?? false
+    if !(confirmationMarker && confirmationOrderMatched),
+       let running = postClick.runningApplication,
        let windowBounds = postClick.receipt.windowBounds,
        let capture = captureFounderWindow(
         pid: running.processIdentifier,
@@ -1696,40 +2214,32 @@ private func submitPreparedOrder(arguments: [String]) -> Receipt {
         )
         let rendered = tokens.map(\.text).joined(separator: " ")
         confirmationMarker = confirmationMarker
-            || rendered.contains("委托确认")
-            || rendered.contains("确认委托")
+            || orderConfirmationMarker(rendered)
         confirmationCandidate = confirmationCandidate || confirmationMarker
-        confirmationOrderMatched = ocrOrderMatches(tokens, input)
-        if confirmationMarker, confirmationOrderMatched {
-            ocrConfirmationPoint = guardedOCRConfirmationPoint(
-                tokens,
-                window: windowBounds
-            )
-        }
+        confirmationOrderMatched = confirmationOrderMatched
+            || ocrOrderMatches(tokens, input)
     }
     var brokerConfirmationPressed = false
     var brokerConfirmationMode = "none"
+    var brokerResult: BrokerResultReadback?
     if confirmationCandidate,
        confirmationMarker,
        confirmationOrderMatched {
-        if postClick.confirmButtons.count == 1,
-           supportsPress(postClick.confirmButtons[0]) {
-            brokerConfirmationMode = "semantic_order_confirmation"
-            brokerConfirmationPressed = AXUIElementPerformAction(
-                postClick.confirmButtons[0],
-                kAXPressAction as CFString
-            ) == .success
-        } else if let point = ocrConfirmationPoint {
-            brokerConfirmationMode = "ocr_guarded_order_confirmation"
-            brokerConfirmationPressed = postSingleLeftClick(at: point)
-        }
+        let pressed = pressUniqueFocusedDialogButton(
+            focusedDialog.confirmButtons
+        )
+        brokerConfirmationPressed = pressed.pressed
+        brokerConfirmationMode = pressed.mode
         if brokerConfirmationPressed {
             usleep(120_000)
+            brokerResult = acknowledgeBrokerResult(
+                expectedKind: "submit",
+                command: "submit-prepared-order"
+            )
         }
     }
-    let confirmationUnproven = confirmationCandidate
-        && !brokerConfirmationPressed
-    let submitted = !confirmationUnproven
+    let confirmationUnproven = !brokerConfirmationPressed
+    let submitted = brokerConfirmationPressed
     readback = OrderReadback(
         code: readback.code,
         side: readback.side,
@@ -1746,14 +2256,12 @@ private func submitPreparedOrder(arguments: [String]) -> Receipt {
         observedAt: isoTimestamp()
     )
     receipt.status = confirmationUnproven
-        ? "submit_confirmation_unproven"
-        : brokerConfirmationPressed ? "submit_confirmed" : "submit_clicked"
+        ? "submit_confirmation_unproven" : "submit_confirmed"
     receipt.reason = confirmationUnproven
         ? "initial submit was pressed but broker confirmation could not be proven exactly"
-        : brokerConfirmationPressed
-            ? "exact prepared order received one submit action and one exact broker confirmation"
-            : "exact prepared order received one direct submit action; native reconciliation is required"
+        : "exact prepared order received one submit action and one exact broker confirmation"
     receipt.orderReadback = readback
+    receipt.resultReadback = brokerResult
     receipt.action = ActionResult(
         attempted: true,
         succeeded: submitted,
@@ -1761,6 +2269,377 @@ private func submitPreparedOrder(arguments: [String]) -> Receipt {
         confirmPressed: brokerConfirmationPressed,
         confirmationMode: brokerConfirmationPressed
             ? brokerConfirmationMode : clickMode,
+        unlockPathProven: false
+    )
+    receipt.timingMs = milliseconds(since: started)
+    return receipt
+}
+
+private func pendingOrderConfirmation(
+    arguments: [String],
+    pressConfirmation: Bool
+) -> Receipt {
+    let started = DispatchTime.now()
+    let command = pressConfirmation
+        ? "confirm-pending-order" : "probe-pending-order-confirmation"
+    var observation = observe(command: command)
+    var receipt = observation.receipt
+    guard let input = parseOrderInput(arguments) else {
+        receipt.status = "order_confirmation_arguments_invalid"
+        receipt.reason = "exact order tuple and masked account are required"
+        receipt.timingMs = milliseconds(since: started)
+        return receipt
+    }
+    if pressConfirmation {
+        guard arguments.contains("--allow-single-order-confirmation") else {
+            receipt.status = "order_confirmation_not_explicitly_enabled"
+            receipt.reason = "--allow-single-order-confirmation is required"
+            receipt.timingMs = milliseconds(since: started)
+            return receipt
+        }
+        guard activateFounder(observation) else {
+            receipt.status = "app_activation_failed"
+            receipt.reason = "Founder window could not be proven frontmost"
+            receipt.timingMs = milliseconds(since: started)
+            return receipt
+        }
+        observation = observe(command: command)
+        receipt = observation.receipt
+    }
+    guard receipt.tradeAccountFingerprint == input.expectedFingerprint,
+          receipt.tradeAccountFingerprintCount == 1 else {
+        receipt.status = "trade_account_binding_unproven"
+        receipt.reason = "unique page and caller trade-account fingerprints did not match"
+        receipt.timingMs = milliseconds(since: started)
+        return receipt
+    }
+    let focusedDialog = focusedTransactionDialogControls(observation)
+    guard focusedDialog.markerPresent,
+          focusedDialog.confirmButtons.count == 1,
+          let fields = observation.orderFields else {
+        receipt.status = "order_confirmation_surface_unproven"
+        receipt.reason = "a unique native transaction confirmation was not proven"
+        receipt.timingMs = milliseconds(since: started)
+        return receipt
+    }
+    var readback = currentOrderReadback(
+        input: input,
+        fields: fields,
+        submitControlCount: observation.submitControls.count,
+        submitted: false,
+        saved: false,
+        started: true,
+        clickMode: "pending_confirmation"
+    )
+    guard orderReadbackMatches(readback, input) else {
+        receipt.status = "order_confirmation_tuple_mismatch"
+        receipt.reason = "visible confirmation did not retain the exact prepared order tuple"
+        receipt.orderReadback = readback
+        receipt.timingMs = milliseconds(since: started)
+        return receipt
+    }
+    guard pressConfirmation else {
+        receipt.status = "order_confirmation_ready"
+        receipt.reason = "unique native transaction confirmation and exact order tuple are proven"
+        receipt.orderReadback = readback
+        receipt.action = ActionResult(
+            attempted: false,
+            succeeded: true,
+            requiresUserInput: false,
+            confirmPressed: false,
+            confirmationMode: "focused_dialog_button_ready",
+            unlockPathProven: false
+        )
+        receipt.timingMs = milliseconds(since: started)
+        return receipt
+    }
+
+    let pressed = pressUniqueFocusedDialogButton(
+        focusedDialog.confirmButtons
+    )
+    let confirmed = pressed.pressed
+    if confirmed { usleep(120_000) }
+    let brokerResult = confirmed
+        ? acknowledgeBrokerResult(
+            expectedKind: "submit",
+            command: command
+          ) : nil
+    readback = OrderReadback(
+        code: readback.code,
+        side: readback.side,
+        price: readback.price,
+        quantity: readback.quantity,
+        fieldMappingProven: readback.fieldMappingProven,
+        submitControlCount: readback.submitControlCount,
+        submitted: confirmed,
+        saved: confirmed,
+        started: true,
+        formCleared: nil,
+        clickMode: pressed.mode,
+        observedAt: isoTimestamp()
+    )
+    receipt.status = confirmed ? "submit_confirmed" : "order_confirmation_key_failed"
+    receipt.reason = confirmed
+        ? "exact focused transaction confirmation received one native button action"
+        : "the unique focused transaction confirmation could not be pressed"
+    receipt.orderReadback = readback
+    receipt.resultReadback = brokerResult
+    receipt.action = ActionResult(
+        attempted: true,
+        succeeded: confirmed,
+        requiresUserInput: false,
+        confirmPressed: confirmed,
+        confirmationMode: pressed.mode,
+        unlockPathProven: false
+    )
+    receipt.timingMs = milliseconds(since: started)
+    return receipt
+}
+
+private func performCancel(arguments: [String], selectionProbeOnly: Bool) -> Receipt {
+    let started = DispatchTime.now()
+    let explicitFlag = selectionProbeOnly
+        ? "--allow-cancel-selection-probe" : "--allow-single-cancel"
+    let navigation = openCancelSurface(arguments: [
+        "--allow-readonly-navigation",
+        "--expected-fingerprint",
+        option("--expected-fingerprint", in: arguments),
+    ])
+    var receipt = navigation
+    guard arguments.contains(explicitFlag),
+          let input = parseCancelInput(arguments) else {
+        receipt.status = selectionProbeOnly
+            ? "cancel_selection_arguments_invalid" : "cancel_arguments_invalid"
+        receipt.reason = "exact order tuple, numeric order id, masked account and explicit action flag are required"
+        receipt.timingMs = milliseconds(since: started)
+        return receipt
+    }
+    guard navigation.status == "cancel_surface_ready" else {
+        receipt.status = "cancel_surface_unproven"
+        receipt.reason = "unique account-bound native cancel table is required"
+        receipt.timingMs = milliseconds(since: started)
+        return receipt
+    }
+
+    let observation = observe(command: selectionProbeOnly
+        ? "probe-cancel-selection" : "cancel-order", auditTables: true)
+    receipt = observation.receipt
+    guard observation.receipt.surfaceState == "query_only",
+          observation.receipt.tradeAccountFingerprintCount == 1,
+          observation.receipt.tradeAccountFingerprint
+            == input.order.expectedFingerprint,
+          observation.receipt.tableShapes.count == 1,
+          let tableBounds = observation.receipt.tableShapes[0].bounds,
+          let rowBounds = observation.receipt.tableShapes[0].rowBounds,
+          let running = observation.runningApplication,
+          let windowBounds = observation.receipt.windowBounds,
+          let baselineCapture = captureFounderWindow(
+            pid: running.processIdentifier,
+            windowBounds: windowBounds
+          ) else {
+        receipt.status = "cancel_table_capture_unproven"
+        receipt.reason = "cancel table geometry, account binding or window capture is incomplete"
+        receipt.timingMs = milliseconds(since: started)
+        return receipt
+    }
+    let baselineTokens = recognizeText(
+        image: baselineCapture.0,
+        screenBounds: baselineCapture.1
+    )
+    let query = structuredQueryReadback(
+        kind: "today-orders",
+        tokens: baselineTokens,
+        tableShapes: observation.receipt.tableShapes,
+        navigationLabelCount: 1,
+        navigationClickMode: "ocr_guarded_coordinate"
+    )
+    let targetIndices = query.rows.enumerated().compactMap { index, row in
+        cancelRowMatches(row, input: input) ? index : nil
+    }
+    guard query.parsingProven,
+          query.rows.count == rowBounds.count,
+          targetIndices.count == 1 else {
+        receipt.status = "cancel_target_not_unique"
+        receipt.reason = "exact order-id/code/side/price/quantity row was not unique on the cancel table"
+        receipt.cancelReadback = CancelReadback(
+            orderId: input.orderId,
+            code: input.order.code,
+            side: input.order.side,
+            price: input.order.priceText,
+            quantity: input.order.quantity,
+            orderStatus: "",
+            targetMatchCount: targetIndices.count,
+            selectionProven: false,
+            cancelControlCount: 0,
+            cancelClicked: false,
+            confirmationPressed: false,
+            confirmationMode: "none",
+            observedAt: isoTimestamp()
+        )
+        receipt.queryReadback = query
+        receipt.timingMs = milliseconds(since: started)
+        return receipt
+    }
+    let targetIndex = targetIndices[0]
+    let targetRow = query.rows[targetIndex]
+    receipt.queryReadback = query
+    let deselectTokens = actionStripTokens(
+        baselineTokens,
+        label: "全不选",
+        window: windowBounds
+    )
+    let cancelTokens = actionStripTokens(
+        baselineTokens,
+        label: "撤单",
+        window: windowBounds
+    )
+    guard deselectTokens.count == 1,
+          cancelTokens.count == 1,
+          let deselectPoint = pointForSubstring("全不选", in: deselectTokens[0]),
+          postSingleLeftClick(at: deselectPoint) else {
+        receipt.status = "cancel_controls_unproven"
+        receipt.reason = "unique deselect-all and cancel action controls were not proven"
+        receipt.timingMs = milliseconds(since: started)
+        return receipt
+    }
+    usleep(120_000)
+    guard let deselectedCapture = captureFounderWindow(
+        pid: running.processIdentifier,
+        windowBounds: windowBounds
+    ) else {
+        receipt.status = "cancel_deselected_capture_unproven"
+        receipt.reason = "post-deselect cancel table capture failed"
+        receipt.timingMs = milliseconds(since: started)
+        return receipt
+    }
+    let checkboxPoint = CGPoint(
+        x: tableBounds.x + 9,
+        y: rowBounds[targetIndex].y + rowBounds[targetIndex].height / 2
+    )
+    guard postSingleLeftClick(at: checkboxPoint) else {
+        receipt.status = "cancel_target_selection_failed"
+        receipt.reason = "exact target-row checkbox could not be clicked"
+        receipt.timingMs = milliseconds(since: started)
+        return receipt
+    }
+    usleep(120_000)
+    guard let selectedCapture = captureFounderWindow(
+        pid: running.processIdentifier,
+        windowBounds: windowBounds
+    ), cancelSelectionProven(
+        before: deselectedCapture.0,
+        after: selectedCapture.0,
+        screenBounds: selectedCapture.1,
+        tableBounds: tableBounds,
+        rowBounds: rowBounds,
+        targetIndex: targetIndex
+    ) else {
+        _ = postSingleLeftClick(at: deselectPoint)
+        receipt.status = "cancel_target_selection_unproven"
+        receipt.reason = "only the exact target checkbox did not produce a unique visual state delta"
+        receipt.timingMs = milliseconds(since: started)
+        return receipt
+    }
+
+    if selectionProbeOnly {
+        let cleared = postSingleLeftClick(at: deselectPoint)
+        usleep(120_000)
+        receipt.status = cleared
+            ? "cancel_selection_proven" : "cancel_selection_clear_unproven"
+        receipt.reason = cleared
+            ? "exact cancel row was uniquely selected and then cleared without cancellation"
+            : "exact cancel row selection was proven but clearing it was not proven"
+        receipt.cancelReadback = CancelReadback(
+            orderId: input.orderId,
+            code: input.order.code,
+            side: input.order.side,
+            price: input.order.priceText,
+            quantity: input.order.quantity,
+            orderStatus: targetRow["状态说明"] ?? "",
+            targetMatchCount: 1,
+            selectionProven: true,
+            cancelControlCount: cancelTokens.count,
+            cancelClicked: false,
+            confirmationPressed: false,
+            confirmationMode: "none",
+            observedAt: isoTimestamp()
+        )
+        receipt.action = ActionResult(
+            attempted: true,
+            succeeded: cleared,
+            requiresUserInput: false,
+            confirmPressed: false,
+            confirmationMode: "visual_delta_then_clear",
+            unlockPathProven: false
+        )
+        receipt.timingMs = milliseconds(since: started)
+        return receipt
+    }
+
+    guard let cancelPoint = pointForSubstring("撤单", in: cancelTokens[0]),
+          postSingleLeftClick(at: cancelPoint) else {
+        _ = postSingleLeftClick(at: deselectPoint)
+        receipt.status = "cancel_click_failed"
+        receipt.reason = "unique cancel action control could not be clicked"
+        receipt.timingMs = milliseconds(since: started)
+        return receipt
+    }
+    usleep(180_000)
+    let postClick = observe(command: "cancel-order")
+    let focusedDialog = focusedCancelDialogControls(postClick)
+    let confirmationCandidate = focusedDialog.markerPresent
+        || !focusedDialog.confirmButtons.isEmpty
+        || postClick.receipt.windowCount > observation.receipt.windowCount
+    let confirmationMarker = focusedDialog.markerPresent
+    var confirmationPressed = false
+    var confirmationMode = "none"
+    var brokerResult: BrokerResultReadback?
+    if confirmationCandidate && confirmationMarker {
+        let pressed = pressUniqueFocusedDialogButton(
+            focusedDialog.confirmButtons
+        )
+        confirmationPressed = pressed.pressed
+        confirmationMode = pressed.mode
+        if confirmationPressed {
+            usleep(120_000)
+            brokerResult = acknowledgeBrokerResult(
+                expectedKind: "cancel",
+                command: "cancel-order"
+            )
+        }
+    }
+    let confirmationUnproven = confirmationCandidate && !confirmationPressed
+    receipt = postClick.receipt
+    receipt.status = confirmationUnproven
+        ? "cancel_confirmation_unproven"
+        : confirmationPressed ? "cancel_confirmed" : "cancel_clicked"
+    receipt.reason = confirmationUnproven
+        ? "cancel was clicked but an exact broker confirmation could not be proven; reconcile only"
+        : confirmationPressed
+            ? "only the exact order row received one cancel action and one guarded confirmation"
+            : "only the exact order row received one direct cancel action; reconciliation is required"
+    receipt.cancelReadback = CancelReadback(
+        orderId: input.orderId,
+        code: input.order.code,
+        side: input.order.side,
+        price: input.order.priceText,
+        quantity: input.order.quantity,
+        orderStatus: targetRow["状态说明"] ?? "",
+        targetMatchCount: 1,
+        selectionProven: true,
+        cancelControlCount: 1,
+        cancelClicked: true,
+        confirmationPressed: confirmationPressed,
+        confirmationMode: confirmationMode,
+        observedAt: isoTimestamp()
+    )
+    receipt.resultReadback = brokerResult
+    receipt.action = ActionResult(
+        attempted: true,
+        succeeded: !confirmationUnproven,
+        requiresUserInput: false,
+        confirmPressed: confirmationPressed,
+        confirmationMode: confirmationMode,
         unlockPathProven: false
     )
     receipt.timingMs = milliseconds(since: started)
@@ -1819,14 +2698,16 @@ private func readQuery(arguments: [String]) -> Receipt {
             image: capture.0,
             screenBounds: capture.1
         )
-        let labels = queryNavigationTokens(
-            tokens,
+        let navigation = guardedQueryNavigationPoint(
             label: label,
-            windowBounds: windowBounds
+            kind: kind,
+            surfaceState: current.receipt.surfaceState,
+            tokens: tokens,
+            window: windowBounds
         )
-        lastLabelCount = labels.count
-        guard labels.count == 1,
-              let clickPoint = pointForSubstring(label, in: labels[0]),
+        lastLabelCount = navigation.count
+        guard navigation.count == 1,
+              let clickPoint = navigation.point,
               postSingleLeftClick(at: clickPoint) else {
             break
         }
@@ -1864,6 +2745,10 @@ private func readQuery(arguments: [String]) -> Receipt {
             rowCount: 0,
             parsingProven: false,
             emptyStateProven: false,
+            criticalConfidenceFloor: minimumCriticalOCRConfidence,
+            criticalConfidenceProven: false,
+            minimumCriticalConfidenceObserved: nil,
+            lowConfidenceCriticalHeaders: [],
             ocrLineCount: 0,
             observedAt: isoTimestamp()
         )
@@ -1930,21 +2815,17 @@ private func openOrderSurface(arguments: [String]) -> Receipt {
         return receipt
     }
     let label = side == "buy" ? "买入" : "卖出"
-    let candidates = recognizeText(
+    let tokens = recognizeText(
         image: capture.0,
         screenBounds: capture.1
-    ).filter { token in
-        let centerX = token.bounds.x + token.bounds.width / 2
-        let centerY = token.bounds.y + token.bounds.height / 2
-        let normalizedX = (centerX - windowBounds.x) / windowBounds.width
-        let normalizedY = (centerY - windowBounds.y) / windowBounds.height
-        return token.text == label
-            && token.confidence >= 0.25
-            && (0.0...0.45).contains(normalizedX)
-            && (0.0...0.15).contains(normalizedY)
-    }
-    guard candidates.count == 1,
-          let point = pointForSubstring(label, in: candidates[0]),
+    )
+    let navigation = guardedTopNavigationPoint(
+        label: label,
+        tokens: tokens,
+        window: windowBounds
+    )
+    guard navigation.count == 1,
+          let point = navigation.point,
           postSingleLeftClick(at: point) else {
         receipt.status = "order_navigation_label_unproven"
         receipt.reason = "requested top-level order label was not uniquely located"
@@ -1978,7 +2859,7 @@ private func openOrderSurface(arguments: [String]) -> Receipt {
 
 private func openQuerySurface(arguments: [String]) -> Receipt {
     let started = DispatchTime.now()
-    let initial = observe(command: "open-query-surface")
+    let initial = observe(command: "open-query-surface", auditTables: true)
     var receipt = initial.receipt
     let expectedFingerprint = option("--expected-fingerprint", in: arguments)
     guard arguments.contains("--allow-readonly-navigation"),
@@ -1996,12 +2877,6 @@ private func openQuerySurface(arguments: [String]) -> Receipt {
         receipt.timingMs = milliseconds(since: started)
         return receipt
     }
-    if receipt.surfaceState == "query_only" {
-        receipt.status = "query_surface_ready"
-        receipt.reason = "native query surface was already ready"
-        receipt.timingMs = milliseconds(since: started)
-        return receipt
-    }
     guard activateFounder(initial),
           let running = initial.runningApplication,
           let windowBounds = receipt.windowBounds,
@@ -2014,21 +2889,36 @@ private func openQuerySurface(arguments: [String]) -> Receipt {
         receipt.timingMs = milliseconds(since: started)
         return receipt
     }
-    let candidates = recognizeText(
+    let tokens = recognizeText(
         image: capture.0,
         screenBounds: capture.1
-    ).filter { token in
-        let centerX = token.bounds.x + token.bounds.width / 2
+    )
+    let fullQueryLabels = Set(tokens.compactMap { token -> String? in
         let centerY = token.bounds.y + token.bounds.height / 2
-        let normalizedX = (centerX - windowBounds.x) / windowBounds.width
         let normalizedY = (centerY - windowBounds.y) / windowBounds.height
-        return token.text == "查询"
-            && token.confidence >= 0.25
-            && (0.0...0.70).contains(normalizedX)
-            && (0.0...0.15).contains(normalizedY)
+        let text = token.text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard (0.015...0.12).contains(normalizedY),
+              ["资金股份", "当日委托", "当日成交", "资金明细"].contains(text) else {
+            return nil
+        }
+        return text
+    })
+    if receipt.surfaceState == "query_only",
+       receipt.tableShapes.count == 1,
+       receipt.tableShapes[0].auditComplete,
+       fullQueryLabels.count >= 3 {
+        receipt.status = "query_surface_ready"
+        receipt.reason = "native full-query surface was already structurally proven"
+        receipt.timingMs = milliseconds(since: started)
+        return receipt
     }
-    guard candidates.count == 1,
-          let point = pointForSubstring("查询", in: candidates[0]),
+    let navigation = guardedTopNavigationPoint(
+        label: "查询",
+        tokens: tokens,
+        window: windowBounds
+    )
+    guard navigation.count == 1,
+          let point = navigation.point,
           postSingleLeftClick(at: point) else {
         receipt.status = "query_surface_label_unproven"
         receipt.reason = "top-level query label was not uniquely located"
@@ -2038,13 +2928,124 @@ private func openQuerySurface(arguments: [String]) -> Receipt {
     usleep(500_000)
     let final = observe(command: "open-query-surface", auditTables: true)
     var result = final.receipt
+    var queryLabelsProven = false
+    if let finalRunning = final.runningApplication,
+       let finalBounds = result.windowBounds,
+       let finalCapture = captureFounderWindow(
+        pid: finalRunning.processIdentifier,
+        windowBounds: finalBounds
+       ) {
+        let finalTokens = recognizeText(
+            image: finalCapture.0,
+            screenBounds: finalCapture.1
+        )
+        let labels = Set(finalTokens.compactMap { token -> String? in
+            let centerY = token.bounds.y + token.bounds.height / 2
+            let normalizedY = (centerY - finalBounds.y) / finalBounds.height
+            let text = token.text.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard (0.015...0.12).contains(normalizedY),
+                  ["资金股份", "当日委托", "当日成交", "资金明细"].contains(text) else {
+                return nil
+            }
+            return text
+        })
+        queryLabelsProven = labels.count >= 3
+    }
     let proven = result.surfaceState == "query_only"
         && result.tradeAccountFingerprintCount == 1
         && result.tradeAccountFingerprint == expectedFingerprint
+        && queryLabelsProven
     result.status = proven ? "query_surface_ready" : "query_surface_navigation_unproven"
     result.reason = proven
         ? "native full-query surface was reached without submitting"
         : "top query navigation was clicked but query surface was not proven"
+    result.action = ActionResult(
+        attempted: true,
+        succeeded: proven,
+        requiresUserInput: false,
+        confirmPressed: false,
+        confirmationMode: "ocr_guarded_coordinate",
+        unlockPathProven: false
+    )
+    result.timingMs = milliseconds(since: started)
+    return result
+}
+
+private func openCancelSurface(arguments: [String]) -> Receipt {
+    let started = DispatchTime.now()
+    let initial = observe(command: "open-cancel-surface", auditTables: true)
+    var receipt = initial.receipt
+    let expectedFingerprint = option("--expected-fingerprint", in: arguments)
+    guard arguments.contains("--allow-readonly-navigation"),
+          validFingerprint(expectedFingerprint) else {
+        receipt.status = "cancel_surface_arguments_invalid"
+        receipt.reason = "masked account and explicit read-only navigation flag are required"
+        receipt.timingMs = milliseconds(since: started)
+        return receipt
+    }
+    guard ["trade_ready", "query_only"].contains(receipt.surfaceState),
+          receipt.tradeAccountFingerprintCount == 1,
+          receipt.tradeAccountFingerprint == expectedFingerprint,
+          activateFounder(initial),
+          let running = initial.runningApplication,
+          let windowBounds = receipt.windowBounds,
+          let capture = captureFounderWindow(
+            pid: running.processIdentifier,
+            windowBounds: windowBounds
+          ) else {
+        receipt.status = "cancel_surface_navigation_unproven"
+        receipt.reason = "account-bound unlocked Founder surface could not be captured"
+        receipt.timingMs = milliseconds(since: started)
+        return receipt
+    }
+    let tokens = recognizeText(
+        image: capture.0,
+        screenBounds: capture.1
+    )
+    let actionCancel = actionStripTokens(
+        tokens,
+        label: "撤单",
+        window: windowBounds
+    )
+    let deselectAll = actionStripTokens(
+        tokens,
+        label: "全不选",
+        window: windowBounds
+    )
+    if receipt.tableShapes.count == 1,
+       receipt.tableShapes[0].auditComplete,
+       actionCancel.count == 1,
+       deselectAll.count == 1 {
+        receipt.status = "cancel_surface_ready"
+        receipt.reason = "native cancel surface was already ready without selecting an order"
+        receipt.timingMs = milliseconds(since: started)
+        return receipt
+    }
+    let navigation = guardedTopNavigationPoint(
+        label: "撤单",
+        tokens: tokens,
+        window: windowBounds
+    )
+    guard navigation.count == 1,
+          let point = navigation.point,
+          postSingleLeftClick(at: point) else {
+        receipt.status = "cancel_surface_label_unproven"
+        receipt.reason = "top-level cancel label was not uniquely located"
+        receipt.timingMs = milliseconds(since: started)
+        return receipt
+    }
+    usleep(500_000)
+    let final = observe(command: "open-cancel-surface", auditTables: true)
+    var result = final.receipt
+    let proven = result.surfaceState == "query_only"
+        && result.tradeAccountFingerprintCount == 1
+        && result.tradeAccountFingerprint == expectedFingerprint
+        && result.tableShapes.count == 1
+        && result.tableShapes[0].auditComplete
+    result.status = proven ? "cancel_surface_ready" : "cancel_surface_navigation_unproven"
+    result.reason = proven
+        ? "native cancel surface was reached without selecting or cancelling an order"
+        : "top cancel navigation was clicked but a unique account-bound table was not proven"
     result.action = ActionResult(
         attempted: true,
         succeeded: proven,
@@ -2298,7 +3299,7 @@ guard let command = arguments.first else {
     var receipt = emptyReceipt(
         command: "invalid",
         status: "invalid_arguments",
-        reason: "expected version, probe, focus-unlock, fill-client-login-stdin, unlock-stdin, prepare-order, submit-prepared-order, read-query, open-order-surface, or open-query-surface"
+        reason: "expected version, probe, focus-unlock, fill-client-login-stdin, unlock-stdin, prepare-order, submit-prepared-order, probe-cancel-selection, cancel-order, read-query, open-order-surface, open-query-surface, or open-cancel-surface"
     )
     receipt.accessibilityTrusted = false
     emit(receipt)
@@ -2322,12 +3323,22 @@ case "prepare-order":
     emit(prepareOrder(arguments: arguments))
 case "submit-prepared-order":
     emit(submitPreparedOrder(arguments: arguments))
+case "probe-pending-order-confirmation":
+    emit(pendingOrderConfirmation(arguments: arguments, pressConfirmation: false))
+case "confirm-pending-order":
+    emit(pendingOrderConfirmation(arguments: arguments, pressConfirmation: true))
+case "probe-cancel-selection":
+    emit(performCancel(arguments: arguments, selectionProbeOnly: true))
+case "cancel-order":
+    emit(performCancel(arguments: arguments, selectionProbeOnly: false))
 case "read-query":
     emit(readQuery(arguments: arguments))
 case "open-order-surface":
     emit(openOrderSurface(arguments: arguments))
 case "open-query-surface":
     emit(openQuerySurface(arguments: arguments))
+case "open-cancel-surface":
+    emit(openCancelSurface(arguments: arguments))
 default:
     var receipt = emptyReceipt(
         command: command,

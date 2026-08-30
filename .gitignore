@@ -16,6 +16,7 @@ opencli/config/foundersc-quant.*.env
 src/xiaocao.egg-info/
 build/
 dist/
+native/foundersc_ax_executor/.build/
 
 # CLI/报告运行产物。
 # - reports/ 仍然 gitignored；要保留的报告用 `git add -f` 显式加入

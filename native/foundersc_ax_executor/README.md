@@ -19,10 +19,21 @@ Current commands:
   The client version's confirmation is custom-drawn, so the helper uses a
   tightly bounded secure-field-relative click only when its geometry matches
   the known locked surface; semantic trade-ready readback is still mandatory.
+- `open-order-surface`, `prepare-order`, `submit-prepared-order`: account-bound
+  deterministic order navigation, exact AX field set/readback, one Return to
+  open confirmation and one focused native confirm action.
+- `open-query-surface`, `read-query`: positions, orders, trades and funds using
+  AX geometry plus local Vision OCR.
+- `open-cancel-surface`, `probe-cancel-selection`, `cancel-order`: one exact
+  row selection proof and at most one cancel/confirmation action.
+- `probe-pending-order-confirmation`, `confirm-pending-order`: recovery tools
+  for one already-visible exact transaction confirmation; they never send a
+  second Return.
 
-`prepare`, `submit`, cancellation, and position-value extraction are
-deliberately unavailable. This helper cannot authorize capital and is not a
-replacement for `trading_execution.py`, `safety.py`, or OpenCLI reconciliation.
+The helper cannot authorize capital and is not a replacement for
+`trading_execution.py` or `safety.py`. The active native route performs all
+account, query, order and cancellation work in the Founder App; OpenCLI is a
+separate legacy route and is never composed into native reconciliation.
 
 Build and invoke it through `scripts/foundersc_native_ax.py`; do not depend on
 SwiftPM's internal `.build` path. After a reviewed checkout is pulled onto a

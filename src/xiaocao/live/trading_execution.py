@@ -154,10 +154,16 @@ def _safe_evidence(value: object, *, depth: int = 0) -> object:
             lowered = key.lower()
             if any(marker in lowered for marker in _SENSITIVE_EVIDENCE_MARKERS):
                 continue
-            safe[key[:128]] = _safe_evidence(raw_value, depth=depth + 1)
+            if key == "baseline_order_ids" and isinstance(raw_value, (list, tuple)):
+                # This is recovery authority, not display-only evidence.  A
+                # truncated baseline can turn an old order into an apparently
+                # new order after a lost submit response.
+                safe[key] = [str(item)[:32] for item in raw_value]
+            else:
+                safe[key[:128]] = _safe_evidence(raw_value, depth=depth + 1)
         return safe
     if isinstance(value, (list, tuple)):
-        return [_safe_evidence(item, depth=depth + 1) for item in list(value)[:64]]
+        return [_safe_evidence(item, depth=depth + 1) for item in list(value)[:128]]
     if isinstance(value, (str, int, float, bool)) or value is None:
         return value if not isinstance(value, str) else value[:512]
     return str(value)[:512]
@@ -391,6 +397,7 @@ class BrokerCapability:
     logical_account_id: str
     supports_submit: bool = False
     supports_reconcile: bool = False
+    supports_cancel: bool = False
     route: str = ""
     account_binding: str = ""
     locator_proof: dict[str, Any] = field(default_factory=dict)
@@ -418,6 +425,11 @@ class BrokerCapability:
                 payload.get("reconcile_capability")
                 if "reconcile_capability" in payload
                 else caps.get("reconcile", False)
+            ),
+            supports_cancel=bool(
+                payload.get("cancel_capability")
+                if "cancel_capability" in payload
+                else caps.get("cancel", False)
             ),
             route=str(payload.get("route") or ""),
             account_binding=str(payload.get("account_binding") or ""),
@@ -501,7 +513,9 @@ class BrokerAdapter(Protocol):
 
     def reconcile(self, plan: TradePlan, previous: dict[str, Any]) -> BrokerReceipt: ...
 
-    def recover(self, plan: TradePlan, error: str) -> BrokerReceipt: ...
+    def cancel(self, plan: TradePlan, previous: dict[str, Any]) -> BrokerReceipt: ...
+
+    def recover(self, plan: TradePlan, previous: dict[str, Any]) -> BrokerReceipt: ...
 
 
 @dataclass(frozen=True)
@@ -518,6 +532,9 @@ class ExecutionReceipt:
     receipt_mapping: bool | None = None
     absence_proof: bool | None = None
     submit_chain_uncertain: bool = False
+    submit_claim_id: str | None = None
+    cancel_chain_uncertain: bool = False
+    cancel_claim_id: str | None = None
     order_price: float | None = None
     fill_price: float | None = None
     latest_price: float | None = None
@@ -548,6 +565,9 @@ class ExecutionReceipt:
             "receipt_mapping": self.receipt_mapping,
             "absence_proof": self.absence_proof,
             "submit_chain_uncertain": self.submit_chain_uncertain,
+            "submit_claim_id": self.submit_claim_id,
+            "cancel_chain_uncertain": self.cancel_chain_uncertain,
+            "cancel_claim_id": self.cancel_claim_id,
             "order_price": self.order_price,
             "fill_price": self.fill_price,
             "latest_price": self.latest_price,
@@ -591,6 +611,15 @@ class ExecutionReceipt:
             submit_chain_uncertain=(
                 payload.get("submit_chain_uncertain") is True
                 or payload.get("submit_uncertain") is True
+            ),
+            submit_claim_id=(
+                str(payload.get("submit_claim_id") or "").strip() or None
+            ),
+            cancel_chain_uncertain=(
+                payload.get("cancel_chain_uncertain") is True
+            ),
+            cancel_claim_id=(
+                str(payload.get("cancel_claim_id") or "").strip() or None
             ),
             order_price=_optional_float(payload.get("order_price")),
             fill_price=_optional_float(payload.get("fill_price")),
@@ -1072,6 +1101,296 @@ class TradingExecution:
         with self._account_writer_lock(plan.logical_account_id):
             return self._execute_locked(plan, broker)
 
+    def cancel(self, plan: TradePlan, broker: BrokerAdapter | None = None) -> ExecutionReceipt:
+        """Cancel one known broker order once, then trust only reconciliation."""
+        broker = broker or self.broker
+        if broker is None:
+            raise ValueError("a broker adapter must be configured before cancel")
+        with self._account_writer_lock(plan.logical_account_id):
+            previous = self.store.current(plan.plan_id)
+            if previous is None:
+                return self._record(
+                    plan,
+                    ExecutionReceipt(
+                        plan.plan_id,
+                        plan.plan_hash,
+                        ExecutionState.REJECTED,
+                        "CANCEL_PLAN_NOT_FOUND",
+                        next_action="human_review",
+                    ),
+                    kind="cancel_rejected",
+                )
+            if previous.plan_hash != plan.plan_hash:
+                return self._record(
+                    plan,
+                    replace(
+                        previous,
+                        state=ExecutionState.REJECTED,
+                        reason="CANCEL_PLAN_HASH_MISMATCH",
+                        next_action="human_review",
+                    ),
+                    kind="cancel_rejected",
+                )
+            if previous.state in TERMINAL_STATES:
+                return previous
+            if previous.cancel_claim_id:
+                return self._reconcile_cancel_claim(plan, broker, previous)
+            if (
+                previous.state not in {ExecutionState.ACKNOWLEDGED, ExecutionState.PARTIAL}
+                or not previous.broker_order_id
+                or (
+                    previous.submit_chain_uncertain
+                    and not (
+                        previous.receipt_mapping is True
+                        and previous.broker_strategy_id
+                    )
+                )
+            ):
+                blocked = self._record(
+                    plan,
+                    replace(
+                        previous,
+                        state=ExecutionState.UNKNOWN,
+                        reason="CANCEL_BLOCKED_ORDER_MAPPING_UNPROVEN",
+                        next_action="reconcile_only",
+                        cancel_chain_uncertain=True,
+                    ),
+                    kind="cancel_blocked",
+                )
+                if plan.environment == "live":
+                    self._incident(plan, blocked)
+                return blocked
+            if plan.environment == "live":
+                try:
+                    env = (
+                        self.safety_env_provider()
+                        if self.safety_env_provider is not None
+                        else self.safety_env
+                    )
+                    require_capital_action(
+                        kind="real_capital",
+                        side=plan.side,
+                        code=plan.code,
+                        notional=plan.notional,
+                        auth_path=self.auth_path,
+                        audit_path=self.audit_path,
+                        env=env,
+                        now=self.now(),
+                    )
+                except Exception as exc:
+                    denied = self._record(
+                        plan,
+                        replace(
+                            previous,
+                            reason=f"CANCEL_SAFETY_DENIED:{exc}",
+                            next_action="human_review",
+                        ),
+                        kind="cancel_denied",
+                    )
+                    self._incident(plan, denied)
+                    return denied
+            try:
+                capability = broker.probe(plan)
+            except Exception as exc:
+                return self._record(
+                    plan,
+                    replace(
+                        previous,
+                        reason=f"CANCEL_PROBE_FAILED:{type(exc).__name__}",
+                        next_action="human_review",
+                    ),
+                    kind="cancel_probe_failed",
+                )
+            if not (
+                capability.ready
+                and capability.supports_cancel
+                and capability.supports_reconcile
+                and capability.environment == plan.environment
+                and capability.logical_account_id == plan.logical_account_id
+                and str(capability.account_binding or "").strip().lower()
+                    in {"proven", "bound"}
+            ):
+                return self._record(
+                    plan,
+                    self._with_capability_evidence(
+                        replace(
+                            previous,
+                            reason="CANCEL_CAPABILITY_UNPROVEN",
+                            next_action="human_review",
+                        ),
+                        capability,
+                    ),
+                    kind="cancel_capability_unproven",
+                    details={"capability": asdict(capability)},
+                )
+            cancel_claim_id = uuid.uuid4().hex
+            claimed = self._record(
+                plan,
+                replace(
+                    previous,
+                    cancel_claim_id=cancel_claim_id,
+                    cancel_chain_uncertain=True,
+                    next_action="cancel_once",
+                ),
+                kind="cancel_claimed",
+                details={
+                    "claim_id": cancel_claim_id,
+                    "broker_order_id": previous.broker_order_id,
+                },
+            )
+            try:
+                broker_receipt = broker.cancel(plan, claimed.as_dict())
+            except Exception as exc:
+                broker_receipt = BrokerReceipt(
+                    status=BrokerStatus.UNKNOWN,
+                    order_id=claimed.broker_order_id,
+                    requested_shares=plan.shares,
+                    filled_shares=claimed.filled_shares,
+                    remaining_shares=claimed.remaining_shares,
+                    reason=f"CANCEL_RESPONSE_UNKNOWN:{type(exc).__name__}",
+                    conclusive=False,
+                    retry_allowed=False,
+                )
+            status = broker_receipt.normalized_status()
+            if status == BrokerStatus.UNKNOWN or not broker_receipt.conclusive:
+                unknown = self._record(
+                    plan,
+                    replace(
+                        self._receipt_from_broker(
+                            plan,
+                            claimed,
+                            broker_receipt,
+                            ExecutionState.UNKNOWN,
+                            plan.shares,
+                        ),
+                        next_action="reconcile_only",
+                        cancel_chain_uncertain=True,
+                    ),
+                    kind="cancel_unknown",
+                )
+                if plan.environment == "live":
+                    self._incident(plan, unknown)
+                return unknown
+            if status not in {
+                BrokerStatus.CANCELLED,
+                BrokerStatus.FILLED,
+                BrokerStatus.REJECTED,
+            }:
+                unknown = self._record(
+                    plan,
+                    replace(
+                        claimed,
+                        state=ExecutionState.UNKNOWN,
+                        reason="CANCEL_NONTERMINAL_READBACK",
+                        next_action="reconcile_only",
+                        cancel_chain_uncertain=True,
+                    ),
+                    kind="cancel_unknown",
+                )
+                if plan.environment == "live":
+                    self._incident(plan, unknown)
+                return unknown
+            if plan.environment == "live" and not self._live_reconcile_receipt_proven(
+                plan, claimed, broker_receipt
+            ):
+                unknown = self._record(
+                    plan,
+                    replace(
+                        claimed,
+                        state=ExecutionState.UNKNOWN,
+                        reason="LIVE_CANCEL_RECEIPT_UNPROVEN",
+                        next_action="reconcile_only",
+                        cancel_chain_uncertain=True,
+                    ),
+                    kind="cancel_unknown",
+                )
+                self._incident(plan, unknown)
+                return unknown
+            return self._record(
+                plan,
+                replace(
+                    self._receipt_from_broker(
+                        plan,
+                        claimed,
+                        broker_receipt,
+                        self._state_for_broker(broker_receipt),
+                        plan.shares,
+                    ),
+                    cancel_chain_uncertain=False,
+                ),
+                kind="cancel_receipt",
+            )
+
+    def _reconcile_cancel_claim(
+        self,
+        plan: TradePlan,
+        broker: BrokerAdapter,
+        previous: ExecutionReceipt,
+    ) -> ExecutionReceipt:
+        """Resolve a durable cancel claim without replaying its broker action."""
+        try:
+            broker_receipt = broker.reconcile(plan, previous.as_dict())
+        except Exception as exc:
+            broker_receipt = BrokerReceipt(
+                status=BrokerStatus.UNKNOWN,
+                order_id=previous.broker_order_id,
+                strategy_id=previous.broker_strategy_id,
+                requested_shares=plan.shares,
+                filled_shares=previous.filled_shares,
+                remaining_shares=previous.remaining_shares,
+                reason=f"CANCEL_CLAIM_RECONCILE_UNKNOWN:{type(exc).__name__}",
+                conclusive=False,
+                retry_allowed=False,
+            )
+        status = broker_receipt.normalized_status()
+        terminal = status in {
+            BrokerStatus.CANCELLED,
+            BrokerStatus.FILLED,
+            BrokerStatus.REJECTED,
+        }
+        receipt_proven = broker_receipt.conclusive and (
+            plan.environment != "live"
+            or self._live_reconcile_receipt_proven(plan, previous, broker_receipt)
+        )
+        if terminal and receipt_proven:
+            return self._record(
+                plan,
+                replace(
+                    self._receipt_from_broker(
+                        plan,
+                        previous,
+                        broker_receipt,
+                        self._state_for_broker(broker_receipt),
+                        plan.shares,
+                    ),
+                    cancel_chain_uncertain=False,
+                ),
+                kind="cancel_claim_reconciled",
+            )
+        unknown = self._record(
+            plan,
+            replace(
+                self._receipt_from_broker(
+                    plan,
+                    previous,
+                    broker_receipt,
+                    ExecutionState.UNKNOWN,
+                    plan.shares,
+                ),
+                reason=(
+                    broker_receipt.reason
+                    if status == BrokerStatus.UNKNOWN
+                    else "CANCEL_CLAIM_NONTERMINAL_NO_RETRY"
+                ),
+                next_action="reconcile_only",
+                cancel_chain_uncertain=True,
+            ),
+            kind="cancel_claim_reconcile_only",
+        )
+        if plan.environment == "live":
+            self._incident(plan, unknown)
+        return unknown
+
     def _execute_locked(self, plan: TradePlan, broker: BrokerAdapter) -> ExecutionReceipt:
         existing = self.store.current(plan.plan_id)
         if existing is not None and existing.plan_hash != plan.plan_hash:
@@ -1419,6 +1738,7 @@ class TradingExecution:
                 previous,
                 state=ExecutionState.CLAIMED,
                 attempt=previous.attempt + 1,
+                submit_claim_id=claim_id,
                 remaining_shares=requested_shares,
                 next_action="submit_once",
             ),
@@ -1505,7 +1825,14 @@ class TradingExecution:
             kind="reconcile_started",
         )
         try:
-            broker_receipt = broker.reconcile(plan, reconciling.as_dict())
+            broker_receipt = (
+                broker.recover(plan, reconciling.as_dict())
+                if (
+                    not reconciling.broker_order_id
+                    and reconciling.submit_claim_id
+                )
+                else broker.reconcile(plan, reconciling.as_dict())
+            )
         except Exception as exc:
             unknown = self._record(
                 plan,
@@ -1796,6 +2123,7 @@ class TradingExecution:
                     for key in ("submitted", "saved", "started")
                 )
             )
+        strategy_id = receipt.strategy_id or previous.broker_strategy_id
         return (
             cls._account_binding_proven(receipt)
             and receipt.receipt_mapping is True
@@ -1804,7 +2132,11 @@ class TradingExecution:
                 not previous.broker_order_id
                 or receipt.order_id == previous.broker_order_id
             )
-            and bool(previous.broker_strategy_id)
+            and bool(strategy_id)
+            and (
+                not previous.broker_strategy_id
+                or receipt.strategy_id in {None, previous.broker_strategy_id}
+            )
         )
 
     def _receipt_from_broker(

@@ -275,7 +275,7 @@ def test_native_submit_requires_explicit_enablement_and_one_helper_call(
     tmp_path: Path,
 ) -> None:
     runner = HelperRunner(_receipt(
-        status="submit_clicked",
+        status="submit_confirmed",
         surface_state="trade_ready",
     ))
     client = FounderscNativeAXClient(
@@ -304,10 +304,161 @@ def test_native_submit_requires_explicit_enablement_and_one_helper_call(
         expected_fingerprint="123******890",
         explicitly_enabled=True,
     )
-    assert receipt.status == "submit_clicked"
+    assert receipt.status == "submit_confirmed"
     argv, _kwargs = runner.calls[-1]
     assert argv[1] == "submit-prepared-order"
     assert argv.count("--allow-single-submit") == 1
+
+
+def test_pending_order_confirmation_probe_and_single_confirm_are_separate(
+    tmp_path: Path,
+) -> None:
+    runner = HelperRunner(_receipt(
+        helper_version=7,
+        status="order_confirmation_ready",
+        surface_state="trade_ready",
+    ))
+    client = FounderscNativeAXClient(
+        helper_path=_helper(tmp_path),
+        runner=runner,
+    )
+
+    probe = client.probe_pending_order_confirmation(
+        code="512010.XSHG",
+        side="BUY",
+        price=0.35,
+        quantity=100,
+        expected_fingerprint="123******890",
+    )
+    assert probe.status == "order_confirmation_ready"
+    assert runner.calls[-1][0][1:] == [
+        "probe-pending-order-confirmation",
+        "--code",
+        "512010",
+        "--side",
+        "buy",
+        "--price",
+        "0.35",
+        "--quantity",
+        "100",
+        "--expected-fingerprint",
+        "123******890",
+    ]
+
+    with pytest.raises(
+        FounderscNativeAXError,
+        match="NATIVE_AX_SINGLE_ORDER_CONFIRMATION_NOT_EXPLICITLY_ENABLED",
+    ):
+        client.confirm_pending_order(
+            code="512010.XSHG",
+            side="BUY",
+            price=0.35,
+            quantity=100,
+            expected_fingerprint="123******890",
+        )
+    assert len(runner.calls) == 1
+
+    runner.stdout = _receipt(
+        helper_version=7,
+        status="submit_confirmed",
+        surface_state="trade_ready",
+    )
+    confirmed = client.confirm_pending_order(
+        code="512010.XSHG",
+        side="BUY",
+        price=0.35,
+        quantity=100,
+        expected_fingerprint="123******890",
+        explicitly_enabled=True,
+    )
+    assert confirmed.status == "submit_confirmed"
+    argv, _kwargs = runner.calls[-1]
+    assert argv[1] == "confirm-pending-order"
+    assert argv.count("--allow-single-order-confirmation") == 1
+    assert "--allow-single-submit" not in argv
+
+
+def test_native_cancel_requires_explicit_enablement_and_exact_order_id(
+    tmp_path: Path,
+) -> None:
+    runner = HelperRunner(_receipt(
+        helper_version=6,
+        status="cancel_confirmed",
+        surface_state="query_only",
+    ))
+    client = FounderscNativeAXClient(
+        helper_path=_helper(tmp_path),
+        runner=runner,
+    )
+
+    with pytest.raises(
+        FounderscNativeAXError,
+        match="NATIVE_AX_SINGLE_CANCEL_NOT_EXPLICITLY_ENABLED",
+    ):
+        client.cancel_order(
+            order_id="6000003",
+            code="515120.XSHG",
+            side="BUY",
+            price=0.6,
+            quantity=100,
+            expected_fingerprint="123******890",
+        )
+    assert runner.calls == []
+
+    receipt = client.cancel_order(
+        order_id="6000003",
+        code="515120.XSHG",
+        side="BUY",
+        price=0.6,
+        quantity=100,
+        expected_fingerprint="123******890",
+        explicitly_enabled=True,
+    )
+    assert receipt.status == "cancel_confirmed"
+    argv, _kwargs = runner.calls[-1]
+    assert argv[1:] == [
+        "cancel-order",
+        "--allow-single-cancel",
+        "--order-id",
+        "6000003",
+        "--code",
+        "515120",
+        "--side",
+        "buy",
+        "--price",
+        "0.6",
+        "--quantity",
+        "100",
+        "--expected-fingerprint",
+        "123******890",
+    ]
+
+
+def test_native_cancel_selection_probe_never_uses_cancel_flag(tmp_path: Path) -> None:
+    runner = HelperRunner(_receipt(
+        helper_version=6,
+        status="cancel_selection_proven",
+        surface_state="query_only",
+    ))
+    client = FounderscNativeAXClient(
+        helper_path=_helper(tmp_path),
+        runner=runner,
+    )
+
+    client.probe_cancel_selection(
+        order_id="6000002",
+        code="515120.XSHG",
+        side="BUY",
+        price=0.646,
+        quantity=100,
+        expected_fingerprint="123******890",
+        explicitly_enabled=True,
+    )
+
+    argv, _kwargs = runner.calls[-1]
+    assert argv[1] == "probe-cancel-selection"
+    assert argv.count("--allow-cancel-selection-probe") == 1
+    assert "--allow-single-cancel" not in argv
 
 
 def test_expected_helper_path_is_bound_to_source_digest() -> None:
@@ -437,8 +588,24 @@ def test_swift_submit_confirmation_fallback_is_exact_and_single_point() -> None:
         / "main.swift"
     ).read_text(encoding="utf-8")
 
-    assert "confirmationMarker, confirmationOrderMatched" in source
-    assert "guardedOCRConfirmationPoint" in source
-    assert 'token.confidence >= 0.80' in source
-    assert 'guard candidates.count == 1' in source
-    assert 'ocr_guarded_order_confirmation' in source
+    assert "confirmationCandidate,\n       confirmationMarker,\n       confirmationOrderMatched" in source
+    assert "guardedOCRConfirmationPoint" not in source
+    assert "ocr_guarded_order_confirmation" not in source
+    assert 'quantity_field_single_return' in source
+    assert 'semantic_focused_dialog_button' in source
+    assert 'postSingleReturnKey()' in source
+    assert 'rendered.contains("交易确认")' in source
+    assert 'case "probe-pending-order-confirmation"' in source
+    assert 'case "confirm-pending-order"' in source
+    assert 'arguments.contains("--allow-single-order-confirmation")' in source
+    assert 'tableShapes[0].auditComplete' in source
+    assert 'minimumCriticalOCRConfidence: Float = 0.50' in source
+    assert 'criticalConfidenceProven' in source
+    assert 'focusedCancelDialogControls(postClick)' in source
+    assert 'ocr_guarded_cancel_confirmation' not in source
+    assert 'func editDistance' not in source
+    assert 'submit_result_acknowledged' in source
+    assert 'cancel_result_acknowledged' in source
+    assert '委托已提交' in source
+    assert '撤单已提交' in source
+    assert source.count('postSingleReturnKey()') == 2

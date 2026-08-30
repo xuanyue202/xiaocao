@@ -81,14 +81,16 @@ helper is still a bounded transport, not an independent capital authority. It
 provides:
 
 - exact AX code/price/quantity set and readback, with a unique submit control;
-- one explicitly enabled submit action and an exact broker-confirmation action
-  only when the confirmation OCR matches the prepared tuple/title and exposes
-  one semantic control or one bounded high-confidence `确认/确定` token;
+- one Return from the exact quantity field, followed by one focused-dialog
+  native `确定/确认` action; never repeated Return/Y retries;
+- exact submit/cancel success-popup acknowledgment and broker order-id parsing;
 - local macOS Vision OCR for positions, today orders, today trades and funds;
-- full-query and buy/sell surface navigation bound to one masked fund account.
+- full-query and buy/sell surface navigation bound to one masked fund account;
+- exact-row cancellation with unique checkbox visual-delta proof and one
+  cancel/confirm action.
 
 The native route must not construct, authenticate, query or reconcile through
-OpenCLI. `supports_submit=true` is dynamic and requires helper version 5 or
+OpenCLI. `supports_submit=true` is dynamic and requires helper version 8 or
 newer, one unlocked account-bound App, all four native query surfaces, exact
 prepare and submit capabilities, and local reconciliation capability.
 
@@ -102,11 +104,20 @@ exact tuple with a new numeric order id; bind trades by
 status explicitly. Malformed/ambiguous fields or an unknown status become
 UNKNOWN with `retry_allowed=false`; take a targeted fresh read only when the
 first parse is structurally invalid, never to manufacture agreement.
+Persist the baseline order ids and durable claim id so a lost submit response
+can recover across restart only from one exact new-row delta. Missing durable
+context stays UNKNOWN/no-retry.
+Persist a separate cancel claim before the one external cancel action. If that
+process stops or the response is lost, the same order id becomes readback-only;
+never issue another cancel click from the existing claim. Critical OCR cell
+tokens below the confidence floor and malformed side text fail closed after the
+single targeted reread.
 
 Do not infer capital permission from app unlock or `supports_submit`. Submit
 remains owned by `trading_execution.py`, requires persisted intent/durable
 claim and both `safety.py` real-capital conditions immediately before the
-single click. Cancellation/replacement is not implemented. A client restart
+single action. Exact cancellation is implemented; automatic replacement stays
+disabled for this adapter. A client restart
 with CAPTCHA remains the slow recovery plane and may require bounded visual
 assistance; the normal five-minute trading lock is recovered once from the
 fixed Keychain item.

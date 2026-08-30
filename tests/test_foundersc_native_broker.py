@@ -41,7 +41,7 @@ class FakeNative:
     def __init__(self, **overrides):
         self.payload = {
             "schema_version": 2,
-            "helper_version": 5,
+            "helper_version": 8,
             "status": "trade_ready",
             "surface_state": "trade_ready",
             "app_running": True,
@@ -50,12 +50,13 @@ class FakeNative:
             "side": "buy",
             "trade_account_fingerprint": "123******890",
             "trade_account_fingerprint_count": 1,
-            "capabilities": {"prepare": True, "submit": True},
+            "capabilities": {"prepare": True, "submit": True, "cancel": True},
         }
         self.payload.update(overrides)
         self.surface = str(self.payload["surface_state"])
         self.prepare_calls = 0
         self.submit_calls = 0
+        self.cancel_calls = 0
         self.open_order_calls = 0
         self.query_calls: list[str] = []
         self.orders = [
@@ -114,6 +115,13 @@ class FakeNative:
     def open_query_surface(self, **_kwargs) -> NativeAXReceipt:
         self.surface = "query_only"
         return self._receipt(status="query_surface_opened")
+
+    def open_cancel_surface(self, **_kwargs) -> NativeAXReceipt:
+        self.surface = "query_only"
+        return self._receipt(
+            status="cancel_surface_ready",
+            capabilities={"prepare": False, "submit": False, "cancel": True},
+        )
 
     def open_order_surface(self, *, side: str, **_kwargs) -> NativeAXReceipt:
         self.open_order_calls += 1
@@ -191,7 +199,7 @@ class FakeNative:
             }
         )
         return self._receipt(
-            status="submit_clicked",
+            status="submit_confirmed",
             order_readback={
                 "code": kwargs["code"].split(".", 1)[0],
                 "side": kwargs["side"].lower(),
@@ -200,9 +208,36 @@ class FakeNative:
                 "field_mapping_proven": True,
                 "submit_control_count": 1,
                 "submitted": True,
-                "saved": False,
+                "saved": True,
                 "started": True,
                 "observed_at": OBSERVED_AT,
+            },
+        )
+
+    def cancel_order(self, **kwargs) -> NativeAXReceipt:
+        assert kwargs["explicitly_enabled"] is True
+        self.cancel_calls += 1
+        matches = [
+            row for row in self.orders
+            if row["委托编号"] == kwargs["order_id"]
+        ]
+        assert len(matches) == 1
+        matches[0]["状态说明"] = "已撤"
+        return self._receipt(
+            status="cancel_confirmed",
+            cancel_readback={
+                "order_id": kwargs["order_id"],
+                "code": kwargs["code"].split(".", 1)[0],
+                "side": kwargs["side"].lower(),
+                "price": str(kwargs["price"]),
+                "quantity": kwargs["quantity"],
+                "order_status": "未报",
+                "target_match_count": 1,
+                "selection_proven": True,
+                "cancel_control_count": 1,
+                "cancel_clicked": True,
+                "confirmation_pressed": True,
+                "confirmation_mode": "semantic_cancel_confirmation",
             },
         )
 
@@ -246,6 +281,7 @@ def test_native_probe_proves_app_only_submit_and_all_readbacks() -> None:
     assert capability.route == "native-app"
     assert capability.supports_submit is True
     assert capability.supports_reconcile is True
+    assert capability.supports_cancel is True
     assert capability.account_binding == "proven"
     assert capability.capabilities["opencli_used"] is False
     assert capability.capabilities["native_orders"] is True
@@ -294,6 +330,165 @@ def test_native_prepare_submit_uses_new_unique_order_delta() -> None:
     assert native.submit_calls == 1
 
 
+def test_native_prepare_persists_baseline_for_unknown_submit_recovery() -> None:
+    native = FakeNative()
+    adapter = _adapter(native)
+    plan = _plan()
+
+    prepared = adapter.prepare(plan)
+    native.orders.append(
+        {
+            "证券代码": "000001",
+            "证券名称": "测试标的",
+            "委托时间": "092001",
+            "买卖标志": "买入",
+            "委托类别": "委托",
+            "状态说明": "已撤",
+            "委托价格": "10.0000",
+            "委托数量": "100",
+            "委托编号": "6000003",
+            "成交价格": "0.000",
+            "成交数量": "",
+            "报价方式": "买卖",
+            "股东代码": "A***",
+            "备注": "",
+        }
+    )
+
+    recovered = adapter.recover(
+        plan,
+        {
+            "requested_shares": 100,
+            "submit_chain_uncertain": True,
+            "submit_claim_id": "claim-1",
+            "locator_proof": prepared.locator_proof,
+        },
+    )
+
+    assert prepared.locator_proof["baseline_order_ids"] == ["6000002"]
+    assert recovered.normalized_status() == BrokerStatus.CANCELLED
+    assert recovered.order_id == "6000003"
+    assert recovered.strategy_id == "NAX448444379404E09E"
+    assert recovered.receipt_mapping is True
+    assert recovered.locator_proof["recovery_mode"] == "durable_exact_order_delta"
+
+
+def test_native_unknown_recovery_without_durable_baseline_fails_closed() -> None:
+    adapter = _adapter()
+
+    recovered = adapter.recover(
+        _plan(),
+        {
+            "requested_shares": 100,
+            "submit_chain_uncertain": True,
+            "submit_claim_id": "claim-1",
+            "locator_proof": {},
+        },
+    )
+
+    assert recovered.normalized_status() == BrokerStatus.UNKNOWN
+    assert recovered.conclusive is False
+    assert recovered.reason == "NATIVE_RECOVERY_DURABLE_CONTEXT_UNPROVEN"
+
+
+def test_native_unknown_recovery_accepts_a_proven_empty_baseline() -> None:
+    native = FakeNative()
+    native.orders = []
+    adapter = _adapter(native)
+    plan = _plan()
+
+    prepared = adapter.prepare(plan)
+    native.orders.append(
+        {
+            "证券代码": "000001",
+            "证券名称": "测试标的",
+            "委托时间": "092001",
+            "买卖标志": "买入",
+            "委托类别": "委托",
+            "状态说明": "未报",
+            "委托价格": "10.0000",
+            "委托数量": "100",
+            "委托编号": "6000003",
+            "成交价格": "0.000",
+            "成交数量": "",
+            "报价方式": "买卖",
+            "股东代码": "A***",
+            "备注": "",
+        }
+    )
+
+    recovered = adapter.recover(
+        plan,
+        {
+            "requested_shares": 100,
+            "submit_chain_uncertain": True,
+            "submit_claim_id": "claim-empty-baseline",
+            "locator_proof": prepared.locator_proof,
+        },
+    )
+
+    assert prepared.locator_proof["baseline_order_ids"] == []
+    assert prepared.locator_proof["baseline_order_count"] == 0
+    assert recovered.normalized_status() == BrokerStatus.ACCEPTED
+    assert recovered.order_id == "6000003"
+    assert recovered.receipt_mapping is True
+
+
+def test_native_cancel_uses_exact_order_id_once_and_reconciles() -> None:
+    native = FakeNative()
+    adapter = _adapter(native)
+    plan = _plan()
+    adapter.prepare(plan)
+    submitted = adapter.submit(plan, "claim-1")
+
+    cancelled = adapter.cancel(
+        plan,
+        {
+            "broker_order_id": submitted.order_id,
+            "broker_strategy_id": submitted.strategy_id,
+            "requested_shares": 100,
+        },
+    )
+
+    assert cancelled.normalized_status() == BrokerStatus.CANCELLED
+    assert cancelled.order_id == "6000003"
+    assert cancelled.filled_shares == 0
+    assert cancelled.retry_allowed is False
+    assert cancelled.field_readback["cancel_clicked"] is True
+    assert native.cancel_calls == 1
+
+    idempotent = adapter.cancel(
+        plan,
+        {
+            "broker_order_id": submitted.order_id,
+            "broker_strategy_id": submitted.strategy_id,
+            "requested_shares": 100,
+        },
+    )
+    assert idempotent.normalized_status() == BrokerStatus.CANCELLED
+    assert native.cancel_calls == 1
+
+
+def test_side_ocr_typo_fails_closed_instead_of_authorizing_order_match() -> None:
+    native = FakeNative()
+    native.orders[0]["买卖标志"] = "头入"
+    adapter = _adapter(native)
+    sample = replace(
+        _plan(),
+        code="515120.XSHG",
+        name="创新药",
+        limit_price=0.646,
+        basket_price=0.646,
+    )
+
+    with pytest.raises(FounderscNativeAXError, match="SIDE_MALFORMED"):
+        adapter._reconcile_rows(
+            sample,
+            requested_shares=100,
+            expected_order_id="6000002",
+        )
+
+
 def test_user_manual_sample_is_exactly_reconciled_as_unfilled_accepted() -> None:
     adapter = _adapter()
     sample = replace(
@@ -340,6 +535,29 @@ def test_preexisting_exact_order_blocks_prepare_before_form_write() -> None:
 def test_unknown_order_status_is_no_retry() -> None:
     native = FakeNative()
     native.orders[0]["状态说明"] = "待人工核验"
+    adapter = _adapter(native)
+    sample = replace(
+        _plan(),
+        code="515120.XSHG",
+        name="创新药",
+        limit_price=0.646,
+        basket_price=0.646,
+    )
+
+    receipt = adapter._reconcile_rows(
+        sample,
+        requested_shares=100,
+        expected_order_id="6000002",
+    )
+
+    assert receipt.normalized_status() == BrokerStatus.UNKNOWN
+    assert receipt.conclusive is False
+    assert receipt.retry_allowed is False
+
+
+def test_cancel_failure_text_is_not_misclassified_as_cancelled() -> None:
+    native = FakeNative()
+    native.orders[0]["状态说明"] = "撤单失败"
     adapter = _adapter(native)
     sample = replace(
         _plan(),

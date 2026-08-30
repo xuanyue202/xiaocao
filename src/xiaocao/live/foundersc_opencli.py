@@ -1136,7 +1136,8 @@ class FounderscQuantOpenCLIAdapter(BrokerAdapter):
             )
         return replace(receipt, account_binding="proven")
 
-    def recover(self, plan: TradePlan, error: str) -> BrokerReceipt:
+    def recover(self, plan: TradePlan, previous: dict[str, Any]) -> BrokerReceipt:
+        error = str(previous.get("reason") or "LIVE_RECOVERY_REQUIRED")
         args = [
             "--route",
             "assets",

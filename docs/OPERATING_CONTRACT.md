@@ -1,6 +1,6 @@
 # 小草运营契约（Operating Contract, SSOT）
 
-**版本**：3.6
+**版本**：3.7
 **状态**：现行
 **适用范围**：所有 paper / 未来 real 的实盘环（live_recommend → paper_record → live_monitor → eod）与回测
 **关联实现**：`src/xiaocao/live/{safety,capital_keychain,foundersc_native_ax,foundersc_native_broker,trading_execution}.py`、`src/xiaocao/live/intelligence_policy.py`、`src/xiaocao/strategy/{mode_switch,trend_rules,kol_reference}.py`、`native/foundersc_ax_executor/`、`kronos_screen/scripts/{capture_signals,forward_eval,paper_record,settle_book_a,settle_book_t,decompose_pnl,quality_governor}.py`、`scripts/{book_b_live_morning,live_monitor,research_mode_switch_replay}.py`
@@ -96,26 +96,33 @@
   submit 或 reconcile 任一阶段曾进入 chain-uncertain 的计划，即使随后查到 partial
   也永久禁止自动补单。live reconcile 必须映射回前次已证明的同一 order-id；不得用
   新 order-id 复用旧 claim 标识。
+  durable claim 必须同时持久化 submit 前完整 order-id baseline 与 claim id；跨进程
+  UNKNOWN 只有在该 baseline 之外恰好出现一个 exact tuple 时才可恢复 order/strategy
+  mapping。缺 baseline/claim、重复 exact tuple 或关键字段不完整一律继续 UNKNOWN。
   无 order mapping 的 `REJECTED` 只有同时证明 submitted/saved/started 均为 false
   才能作为“未点击”的终态，否则同样进入 UNKNOWN。无 order-id 的前日 UNKNOWN
   不得通过“当前没有记录”推断未提交；没有 broker order-id 的历史 UNKNOWN 保持
-  UNKNOWN/reconcile_only，绝不触发 submit。
+  UNKNOWN/reconcile_only，绝不触发 submit；不得把“当前没有记录”当成 absence proof。
   每个普通 Book-B live plan 必须在 prepare/submit 前把完整 canonical intent 与
   plan hash 原子写入 `output/live/book_b_live_execution/plan_intents/`。进程恢复时必须
   先以该 intent 和原 execution event hash 对账，不能用新的时钟、现金或 allocation
   重建订单，也不能再次 prepare 或 submit。durable `CLAIMED` 表示 broker side effect
   可能已经开始，必须立即升级为 chain-uncertain reconcile-only，并与 UNKNOWN/
   SUBMITTED/ACKNOWLEDGED/PARTIAL/RECONCILING 一样阻断首次资金基数复用。ACK 取得
-  order-id 后仍须沿同一 plan 继续 reconcile；跨进程恢复只允许 broker
-  reconcile。只有 hash-chain 完整、同一 mapped order、账户绑定和 broker
+  order-id 后仍须沿同一 plan 继续 reconcile；跨进程恢复只允许 broker readback，
+  不允许重开表单或重发动作。只有 hash-chain 完整、同一 mapped order、账户绑定和 broker
   CANCELLED/REJECTED 零成交终态都证明后，才可释放该零成交订单占用的首次基数；任一
   正成交仍要求 settled-NAV 回执。只有首单回执从未歧义、且 reconcile 明确证明
   原单终态、撤单/拒单、fresh market guard 和剩余
   数量时，才允许最多一次受控 replacement；总 submit attempt 上限为 2，且该上限
   在唯一 submit boundary 再次强制，不依赖调用路径。
-  原生填单/清空、查询、账户绑定与已有真实委托读取已在本机验收；下一次授权盘中订单
-  将作为最终 live-click 验收。撤单与受控补单仍未实现，任何需要它们的状态继续
-  fail-closed。App 重启后的 CAPTCHA 是独立慢恢复面，不属于毫秒级热路径，且绝不替代现行
+  原生填单/清空、查询、账户绑定、真实提交和 exact-order 撤单已在本机验收：数量框
+  只发一次 Return，随后只按当前确认窗唯一原生按钮；连续 Return/Y 禁止。提交成功只认
+  合同号与新增 exact tuple。撤单副作用前也必须落 durable cancel claim；进程中断或结果
+  未知后只回读同 order-id，禁止第二次撤单动作。撤单只认同 order-id 的 `已撤` 回读。
+  自动 replacement 仍由
+  native adapter 禁用，任何需要补单的状态继续 fail-closed。App 重启后的 CAPTCHA 是
+  独立慢恢复面，不属于毫秒级热路径，且绝不替代现行
   `paper_record.py` 单写者。任何未来 SELL intent 必须来自本节
   `live_monitor` 已授权的 Book-B 退出事件和可卖 lot，不能由普通冻结行反向
   生成。
@@ -221,7 +228,7 @@
   新 plan 在持久化 intent 前必须从专有 API 刷新并绑定同日、15 分钟内的交易状态、
   现价、跌停价和时间戳。该 continuation 不得改变冻结选股、allocation、初始限价、
   资金门或 exact-once；恢复已有 intent 仍只对账，不重新刷新经济字段或提交。
-  撤单/一次补单仍未实现；App 重启后的 CAPTCHA 按独立慢恢复证据判定。
+  exact-order 撤单已实现并实盘验收；自动补单仍禁用；App 重启后的 CAPTCHA 按独立慢恢复证据判定。
 
 ## 10. 快速探索期的自动迭代 / 升级策略（agent 皮层）
 
@@ -249,7 +256,7 @@
 - [x] Book T snapshot/account/monitor key 均带 `book` 命名空间；B/T 同票同日不互相覆盖；T 宽止损不调用短线 strong-hold/composite。
 - [x] Book B 与历史回放共用 `strategy.mode_switch`；D-1 outcome 不进入 D 日早盘状态；`COLD/UNKNOWN/BJSE` 无成交权限；`--notional` 不能绕过 3 席位、每模式 1 只和批次 50% 上限。
 - [x] 模式证据保留 25%/45%/50% 验证权重；`ACTIVE` 同时通过候选池和四指数证据，近期双基准均值与多数日转正可直接升格，任一均值转负只冷却到 `PROVISIONAL`。
-- [x] 独立 09:20 Book-B live morning 与 09:25 模拟任务隔离；唯一写路由为 account-bound `native-app`，OpenCLI 不参与 native 登录/查询/交易；09:30 前只预检/心跳；盘中 continuation 仅覆盖 `09:30–11:30` / `13:00–14:57` 且新 intent 前刷新专有实时 market guard；不读写模拟成交或 canonical paper ledger；submit 前零 exact-tuple baseline，submit 后只认唯一新增 order-id，歧义保持 UNKNOWN/reconcile-only/no-retry；撤单/补单未实现，App 重启 CAPTCHA 保持独立慢恢复。
+- [x] 独立 09:20 Book-B live morning 与 09:25 模拟任务隔离；唯一写路由为 account-bound `native-app`，OpenCLI 不参与 native 登录/查询/交易；09:30 前只预检/心跳；盘中 continuation 仅覆盖 `09:30–11:30` / `13:00–14:57` 且新 intent 前刷新专有实时 market guard；不读写模拟成交或 canonical paper ledger；submit 前零 exact-tuple baseline，submit 后只认唯一新增 order-id，歧义保持 UNKNOWN/reconcile-only/no-retry；exact-order 撤单已实盘验收，自动补单禁用，App 重启 CAPTCHA 保持独立慢恢复。
 - [x] allocation proof 复用 `mode_switch.plan_board_lot_orders`，以滚动结算 NAV 验证批次/敞口/现金/slot 上限；ownership evidence 不得替代 canonical paper ledger。
 - [x] 同一 logical account 由 account-level writer lock 串行推进；异常写入 durable takeover capsule，WeCom pending incident 可重试且已送达事件幂等。
 - [ ] （后续）settle_book_a 只用 next_close 且幂等；decompose_pnl 三项金额求和 = account realized_pnl（容差=取整）。
@@ -285,3 +292,4 @@
 | 3.4 | 2026-08-25 | 补齐真实订单跨进程 exact-once：普通 Book-B plan 在任何 prepare/submit 前原子持久化完整 intent；恢复时禁止按新时钟/现金重分配或重开表单，durable CLAIMED 一律视为 chain-uncertain 并只对账。ACK/order-id 后继续同 plan reconcile；只有同 order/strategy 映射、账户绑定和 hash-chain 完整的 CANCELLED/REJECTED 零成交终态可释放首次基数，正成交仍要求 settled NAV。 |
 | 3.5 | 2026-08-25 | 按用户明确授权把 Book-B BUY 从旧 09:45 截止扩展为上午/午后连续竞价盘中 continuation；每个新 immutable intent 前刷新并绑定专有 API 的同日实时 market guard，午休、14:57 后、旧 intent 重物化及任何 duplicate submit 继续 fail-closed。严格 hash-chain 的 `pre_entrust_rejected`、账户绑定、attempt=1、零成交且 chain-certain 终态可释放第一批 30,000 元基数。 |
 | 3.6 | 2026-08-30 | 将 09:20 实盘路由切为方正证券 `native-app`：OpenCLI 完全退出 native 登录/查询/交易；本地 Vision OCR 读取持仓、委托、成交和资金；以 submit 前零匹配/order-id baseline 与 submit 后唯一新增 exact tuple 对账，UNKNOWN 永不重点击；原生填单清空、账户、资产恒等式及用户真实未报委托已本机验收，撤单/补单仍 fail-closed。 |
+| 3.7 | 2026-08-30 | 方正 native 热路径完成真实提交/撤单验收：数量框仅一次 Return，确认窗与成功提示只按唯一原生按钮一次，禁止连续 Return/Y；`6000005` 精确新增后撤为 `已撤`，随后另一次授权撤单把旧 `6000002` 也精确回读为 `已撤`。helper v8 自动收口成功提示；durable submit claim 持久化完整 order-id baseline，UNKNOWN 跨进程仅凭唯一 exact delta 恢复；撤单动作前另落 durable cancel claim，未知后只回读不重放；自动补单继续禁用。 |

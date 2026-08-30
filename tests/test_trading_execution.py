@@ -61,6 +61,8 @@ class FakeBroker:
             logical_account_id="primary",
             supports_submit=True,
             supports_reconcile=True,
+            supports_cancel=True,
+            account_binding="proven",
         )
         self.submit_results = list(
             submit
@@ -79,6 +81,7 @@ class FakeBroker:
         self.prepare_calls = 0
         self.submit_calls = 0
         self.reconcile_calls = 0
+        self.cancel_calls = 0
         self.claim_ids: list[str] = []
 
     def probe(self, plan: TradePlan) -> BrokerCapability:
@@ -113,8 +116,27 @@ class FakeBroker:
             return BrokerReceipt(status=BrokerStatus.UNKNOWN, reason="no test receipt", conclusive=False)
         return self.reconcile_results.pop(0)
 
-    def recover(self, plan: TradePlan, error: str) -> BrokerReceipt:
-        return BrokerReceipt(status=BrokerStatus.UNKNOWN, reason=error, conclusive=False)
+    def cancel(self, plan: TradePlan, previous: dict) -> BrokerReceipt:
+        self.cancel_calls += 1
+        return BrokerReceipt(
+            status=BrokerStatus.CANCELLED,
+            order_id=str(previous.get("broker_order_id") or "o-1"),
+            strategy_id=str(previous.get("broker_strategy_id") or "s-1"),
+            receipt_mapping=True,
+            requested_shares=plan.shares,
+            remaining_shares=plan.shares,
+            account_binding="proven",
+            conclusive=True,
+            retry_allowed=False,
+            reason="cancelled_for_test",
+        )
+
+    def recover(self, plan: TradePlan, previous: dict) -> BrokerReceipt:
+        return BrokerReceipt(
+            status=BrokerStatus.UNKNOWN,
+            reason=str(previous.get("reason") or "recover unknown"),
+            conclusive=False,
+        )
 
 
 def test_mock_order_claims_and_reconciles_to_filled(tmp_path: Path) -> None:
@@ -132,6 +154,107 @@ def test_mock_order_claims_and_reconciles_to_filled(tmp_path: Path) -> None:
     assert final.filled_shares == 200
     assert broker.submit_calls == 1
     assert broker.reconcile_calls == 1
+
+
+def test_cancel_is_one_shot_and_persists_terminal_receipt(tmp_path: Path) -> None:
+    broker = FakeBroker()
+    store = InMemoryExecutionStore(tmp_path / "events.jsonl")
+    engine = TradingExecution(
+        store=store,
+        now=lambda: datetime(2026, 8, 15, 1, 1, tzinfo=timezone.utc),
+    )
+    plan = _plan()
+
+    submitted = engine.execute(plan, broker)
+    assert submitted.state == ExecutionState.ACKNOWLEDGED
+
+    cancelled = engine.cancel(plan, broker)
+    assert cancelled.state == ExecutionState.CANCELLED
+    assert cancelled.broker_order_id == "o-1"
+    assert cancelled.cancel_claim_id
+    assert cancelled.cancel_chain_uncertain is False
+    assert broker.cancel_calls == 1
+    assert [row["kind"] for row in store.events(plan.plan_id)][-2:] == [
+        "cancel_claimed",
+        "cancel_receipt",
+    ]
+
+    same = engine.cancel(plan, broker)
+    assert same.state == ExecutionState.CANCELLED
+    assert broker.cancel_calls == 1
+
+
+def test_unknown_cancel_claim_reconciles_without_replaying_cancel(
+    tmp_path: Path,
+) -> None:
+    class LostCancelResponseBroker(FakeBroker):
+        def cancel(self, plan: TradePlan, previous: dict) -> BrokerReceipt:
+            self.cancel_calls += 1
+            assert previous["cancel_claim_id"]
+            raise TimeoutError("response lost after cancel click")
+
+    broker = LostCancelResponseBroker(
+        reconcile=[
+            BrokerReceipt(
+                status=BrokerStatus.CANCELLED,
+                order_id="o-1",
+                strategy_id="s-1",
+                receipt_mapping=True,
+                account_binding="proven",
+                conclusive=True,
+                retry_allowed=False,
+            )
+        ]
+    )
+    store = InMemoryExecutionStore(tmp_path / "events.jsonl")
+    engine = TradingExecution(
+        store=store,
+        now=lambda: datetime(2026, 8, 15, 1, 1, tzinfo=timezone.utc),
+    )
+    plan = _plan()
+    assert engine.execute(plan, broker).state == ExecutionState.ACKNOWLEDGED
+
+    unknown = engine.cancel(plan, broker)
+    assert unknown.state == ExecutionState.UNKNOWN
+    assert unknown.cancel_claim_id
+    assert unknown.cancel_chain_uncertain is True
+    assert broker.cancel_calls == 1
+
+    recovered = engine.cancel(plan, broker)
+    assert recovered.state == ExecutionState.CANCELLED
+    assert recovered.cancel_claim_id == unknown.cancel_claim_id
+    assert recovered.cancel_chain_uncertain is False
+    assert broker.cancel_calls == 1
+    assert broker.reconcile_calls == 1
+
+
+def test_complete_submit_baseline_is_not_truncated_in_durable_receipt(
+    tmp_path: Path,
+) -> None:
+    plan = _plan()
+    baseline = [str(6_000_000 + index) for index in range(200)]
+    store = InMemoryExecutionStore(tmp_path / "events.jsonl")
+    store.append(
+        plan=plan,
+        receipt=ExecutionReceipt(
+            plan_id=plan.plan_id,
+            plan_hash=plan.plan_hash,
+            state=ExecutionState.CLAIMED,
+            submit_chain_uncertain=True,
+            submit_claim_id="claim-complete-baseline",
+            remaining_shares=plan.shares,
+            locator_proof={
+                "baseline_order_ids": baseline,
+                "baseline_order_count": len(baseline),
+            },
+        ),
+        kind="durable_claim",
+    )
+
+    current = store.current(plan.plan_id)
+    assert current is not None
+    assert current.locator_proof["baseline_order_ids"] == baseline
+    assert current.locator_proof["baseline_order_count"] == len(baseline)
 
 
 def test_unknown_after_submit_never_replays_submit(tmp_path: Path) -> None:
@@ -572,6 +695,101 @@ def test_live_submit_without_receipt_mapping_becomes_unknown_and_is_not_replayed
     assert first.next_action == "reconcile_only"
     assert broker.submit_calls == 1
     assert broker.reconcile_calls == 1
+
+
+def test_unknown_live_submit_recovers_from_durable_claim_without_replay(
+    tmp_path: Path,
+) -> None:
+    now = datetime(2026, 8, 15, 1, 1, tzinfo=timezone.utc)
+    signing_key = "test-human-key"
+    auth = make_authorization(
+        scope="isolated-test",
+        max_notional=10000.0,
+        signing_key=signing_key,
+        sides=["BUY"],
+        codes=["000001.XSHE"],
+        issued_at=now.isoformat(),
+        expires_at="2026-08-16T00:00:00+00:00",
+    )
+    auth_path = tmp_path / "live_authorization.json"
+    auth_path.write_text(json.dumps(auth), encoding="utf-8")
+
+    class RecoveringBroker(FakeBroker):
+        def __init__(self) -> None:
+            super().__init__(
+                submit=[
+                    BrokerReceipt(
+                        status=BrokerStatus.UNKNOWN,
+                        account_binding="proven",
+                        reason="submit response unknown",
+                        conclusive=False,
+                    )
+                ]
+            )
+            self.recover_calls = 0
+
+        def prepare(
+            self,
+            plan: TradePlan,
+            *,
+            requested_shares: int | None = None,
+        ) -> BrokerReceipt:
+            receipt = super().prepare(plan, requested_shares=requested_shares)
+            return replace(
+                receipt,
+                order_id=None,
+                locator_proof={
+                    "baseline_order_ids": ["old-1"],
+                    "baseline_observed_at": now.isoformat(),
+                },
+            )
+
+        def recover(self, plan: TradePlan, previous: dict) -> BrokerReceipt:
+            self.recover_calls += 1
+            assert previous["submit_chain_uncertain"] is True
+            assert previous["submit_claim_id"]
+            assert previous["locator_proof"]["baseline_order_ids"] == ["old-1"]
+            return BrokerReceipt(
+                status=BrokerStatus.CANCELLED,
+                order_id="o-recovered",
+                strategy_id="s-recovered",
+                receipt_mapping=True,
+                account_binding="proven",
+                requested_shares=plan.shares,
+                remaining_shares=plan.shares,
+                conclusive=True,
+                reason="recovered exact delta",
+            )
+
+    broker = RecoveringBroker()
+    broker.capability = replace(
+        broker.capability,
+        account_binding="proven",
+        manual_position_shares=0,
+        capabilities={"receipt_mapping": False},
+    )
+    engine = TradingExecution(
+        store=InMemoryExecutionStore(tmp_path / "events.jsonl"),
+        safety_env={ENV_LIVE_ENABLED: "true", ENV_SIGNING_KEY: signing_key},
+        auth_path=auth_path,
+        audit_path=tmp_path / "audit.jsonl",
+        notifier=lambda _title, _body: "ok",
+        now=lambda: now,
+    )
+    plan = _plan(environment="live", deadline=now + timedelta(minutes=15))
+
+    unknown = engine.execute(plan, broker)
+    recovered = engine.execute(plan, broker)
+
+    assert unknown.state == ExecutionState.UNKNOWN
+    assert unknown.submit_claim_id
+    assert recovered.state == ExecutionState.CANCELLED
+    assert recovered.broker_order_id == "o-recovered"
+    assert recovered.broker_strategy_id == "s-recovered"
+    assert recovered.submit_chain_uncertain is True
+    assert broker.submit_calls == 1
+    assert broker.recover_calls == 1
+    assert broker.reconcile_calls == 0
 
 
 def test_uncertain_live_submit_cannot_retry_after_partial_reconcile(
