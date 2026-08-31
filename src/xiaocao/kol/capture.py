@@ -17,7 +17,7 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable, Iterable
-from urllib.parse import parse_qs, quote, urlsplit, urlunsplit
+from urllib.parse import parse_qs, quote, urlencode, urlsplit, urlunsplit
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 from uuid import uuid4
@@ -42,6 +42,42 @@ _TRUSTED_XIAOETONG_MEDIA_SUFFIXES = (
     ".xet.tech",
     ".xiaoeknow.com",
 )
+_XIAOETONG_SAFE_NAVIGATION_QUERY = (
+    "app_id",
+    "pro_id",
+    "type",
+    "alive_mode",
+)
+_XIAOETONG_PRO_ID = re.compile(r"course_[A-Za-z0-9_-]{1,128}")
+
+
+def _safe_xiaoetong_navigation_query(
+    parsed: Any,
+    *,
+    app_id: str,
+) -> str:
+    """Keep playback routing context without retaining share identities."""
+
+    query = parse_qs(parsed.query, keep_blank_values=False)
+    safe: list[tuple[str, str]] = []
+    for key in _XIAOETONG_SAFE_NAVIGATION_QUERY:
+        values = query.get(key, [])
+        if not values:
+            continue
+        if len(values) != 1:
+            raise InvalidSourcePage("Xiaoetong navigation context is invalid")
+        value = str(values[0]).strip()
+        valid = (
+            value == app_id
+            if key == "app_id"
+            else _XIAOETONG_PRO_ID.fullmatch(value) is not None
+            if key == "pro_id"
+            else re.fullmatch(r"[0-9]{1,4}", value) is not None
+        )
+        if not valid:
+            raise InvalidSourcePage("Xiaoetong navigation context is invalid")
+        safe.append((key, value))
+    return urlencode(safe)
 
 
 def _now_iso() -> str:
@@ -355,7 +391,7 @@ def canonical_xiaoetong_source(page_url: str) -> dict[str, str]:
 
 
 def resolve_xiaoetong_h5_page(page_url: str) -> str:
-    """Resolve a trusted MP wrapper or H5 URL to a query-free H5 page.
+    """Resolve a trusted MP wrapper or H5 URL to a safe H5 navigation page.
 
     Xiaoetong's ``*.mp.xiaoeknow.com`` wrapper embeds a base64 JSON payload
     containing the real H5 page.  Every outer/inner app and resource binding is
@@ -367,8 +403,12 @@ def resolve_xiaoetong_h5_page(page_url: str) -> str:
     if parsed.scheme != "https" or not host:
         raise InvalidSourcePage("unsupported Xiaoetong replay page")
     if host.endswith(".h5.xiaoeknow.com"):
-        canonical_xiaoetong_source(raw)
-        return urlunsplit(("https", host, parsed.path.rstrip("/"), "", ""))
+        source = canonical_xiaoetong_source(raw)
+        query = _safe_xiaoetong_navigation_query(
+            parsed,
+            app_id=source["source_app_id"],
+        )
+        return urlunsplit(("https", host, parsed.path.rstrip("/"), query, ""))
     if not host.endswith(".mp.xiaoeknow.com"):
         raise InvalidSourcePage("unsupported Xiaoetong replay page")
 
@@ -402,8 +442,18 @@ def resolve_xiaoetong_h5_page(page_url: str) -> str:
     ):
         raise InvalidSourcePage("Xiaoetong MP wrapper binding is invalid")
     h5 = urlsplit(h5_url)
+    safe_query = _safe_xiaoetong_navigation_query(
+        h5,
+        app_id=source["source_app_id"],
+    )
     return urlunsplit(
-        ("https", source["source_host"], h5.path.rstrip("/"), "", "")
+        (
+            "https",
+            source["source_host"],
+            h5.path.rstrip("/"),
+            safe_query,
+            "",
+        )
     )
 
 

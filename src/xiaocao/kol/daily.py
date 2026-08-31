@@ -1933,6 +1933,60 @@ class DailyCoordinator:
             return "waiting"
         return "healthy"
 
+    def _notify_user_action_unlocked(
+        self,
+        *,
+        source: str,
+        blocker_key: str,
+        action: str,
+        blocker_sender: Callable[[str, str], Any],
+    ) -> bool:
+        if not source or not blocker_key or not action:
+            raise DailyError("user-action notification binding is incomplete")
+        if not callable(blocker_sender):
+            raise DailyError("user-action blocker requires an operational sender")
+        blocker_state_rows = [
+            row
+            for row in self._events_unlocked()
+            if row.get("event") in {"blocker_notified", "blocker_cleared"}
+            and row.get("source") == source
+        ]
+        active_key = (
+            str(blocker_state_rows[-1].get("blocker_key"))
+            if blocker_state_rows
+            and blocker_state_rows[-1].get("event") == "blocker_notified"
+            else ""
+        )
+        if active_key == blocker_key:
+            return False
+        blocker_sender("KOL 日常运行需要你处理", action)
+        self._append(
+            "blocker_notified",
+            slot=self._beijing_now().strftime("%Y-%m-%dT%H:00+08:00"),
+            source=source,
+            blocker_key=blocker_key,
+            action=action,
+        )
+        return True
+
+    def notify_user_action(
+        self,
+        *,
+        source: str,
+        blocker_key: str,
+        action: str,
+        blocker_sender: Callable[[str, str], Any],
+    ) -> bool:
+        """Send one operational blocker notice until that source clears it."""
+
+        with self._locked():
+            return self._notify_user_action_unlocked(
+                source=source,
+                blocker_key=blocker_key,
+                action=action,
+                blocker_sender=blocker_sender,
+            )
+
     def run(
         self,
         sources: list[dict[str, Any]],
@@ -2178,34 +2232,16 @@ class DailyCoordinator:
                         ),
                     )
                 except UserActionBlocker as exc:
-                    blocker_state_rows = [
-                        row
-                        for row in self._events_unlocked()
-                        if row.get("event")
-                        in {"blocker_notified", "blocker_cleared"}
-                        and row.get("source") == name
-                    ]
-                    active_key = (
-                        str(blocker_state_rows[-1].get("blocker_key"))
-                        if blocker_state_rows
-                        and blocker_state_rows[-1].get("event")
-                        == "blocker_notified"
-                        else ""
+                    if blocker_sender is None:
+                        raise DailyError(
+                            "user-action blocker requires an operational sender"
+                        ) from exc
+                    notified = not self._notify_user_action_unlocked(
+                        source=name,
+                        blocker_key=exc.blocker_key,
+                        action=exc.action,
+                        blocker_sender=blocker_sender,
                     )
-                    notified = active_key == exc.blocker_key
-                    if not notified:
-                        if blocker_sender is None:
-                            raise DailyError(
-                                "user-action blocker requires an operational sender"
-                            ) from exc
-                        blocker_sender("KOL 日常运行需要你处理", exc.action)
-                        self._append(
-                            "blocker_notified",
-                            slot=slot,
-                            source=name,
-                            blocker_key=exc.blocker_key,
-                            action=exc.action,
-                        )
                     waiting_items = exc.waiting_items or [{
                         "identity": f"{name}:source",
                         "stage": "external_authorization",

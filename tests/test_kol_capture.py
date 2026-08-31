@@ -102,7 +102,9 @@ def test_xiaoetong_mp_wrapper_resolves_bound_h5_page():
         "resource_id": "l_6a699f8ce4b0694c5bf12013",
         "h5_url": (
             "https://appsnm3rlcp3566.h5.xiaoeknow.com/v2/course/alive/"
-            "l_6a699f8ce4b0694c5bf12013?share_user_id=private&share_type=5"
+            "l_6a699f8ce4b0694c5bf12013?"
+            "app_id=appsnm3rlcp3566&pro_id=course_safe&type=2&alive_mode=0&"
+            "share_user_id=private&union_id=private&share_type=5"
         ),
     }).encode()).decode().rstrip("=")
     wrapper = (
@@ -112,12 +114,28 @@ def test_xiaoetong_mp_wrapper_resolves_bound_h5_page():
 
     assert resolve_xiaoetong_h5_page(wrapper) == (
         "https://appsnm3rlcp3566.h5.xiaoeknow.com/v2/course/alive/"
-        "l_6a699f8ce4b0694c5bf12013"
+        "l_6a699f8ce4b0694c5bf12013?app_id=appsnm3rlcp3566&"
+        "pro_id=course_safe&type=2&alive_mode=0"
     )
     assert canonical_xiaoetong_source(
         resolve_xiaoetong_h5_page(wrapper)
     )["source_identity"] == (
         "xiaoetong:appsnm3rlcp3566:l_6a699f8ce4b0694c5bf12013"
+    )
+
+
+def test_xiaoetong_direct_h5_keeps_only_safe_navigation_context():
+    resolved = resolve_xiaoetong_h5_page(
+        "https://appsnm3rlcp3566.h5.xiaoeknow.com/v2/course/alive/"
+        "l_6a699f8ce4b0694c5bf12013?app_id=appsnm3rlcp3566&"
+        "pro_id=course_safe&type=2&alive_mode=0&share_user_id=private&"
+        "union_id=private&share_type=5"
+    )
+
+    assert resolved == (
+        "https://appsnm3rlcp3566.h5.xiaoeknow.com/v2/course/alive/"
+        "l_6a699f8ce4b0694c5bf12013?app_id=appsnm3rlcp3566&"
+        "pro_id=course_safe&type=2&alive_mode=0"
     )
 
 

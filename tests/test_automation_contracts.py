@@ -163,7 +163,7 @@ def test_kol_local_automation_uses_lianghui_mailbox_without_task_injection() -> 
     assert "get_mailbox_message" in automation["prompt"]
     assert "Handoff完成" in automation["prompt"]
     assert "Never use `send_message_to_thread`" in automation["prompt"]
-    assert automation["rrule"].endswith(";BYMINUTE=0")
+    assert automation["rrule"].endswith(";BYMINUTE=0,20,40")
 
 
 def test_kol_remote_writer_automation_is_a_thin_fail_closed_bootstrap() -> None:

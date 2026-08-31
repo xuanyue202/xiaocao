@@ -8,7 +8,10 @@ from urllib.parse import quote
 
 import pytest
 
-from xiaocao.kol.enrichment_types import EnrichmentError
+from xiaocao.kol.enrichment_types import (
+    EnrichmentDiagnosticError,
+    EnrichmentError,
+)
 from xiaocao.kol.xiaocao_wechat import (
     XiaocaoLiveCaptureDriver,
     XiaocaoWechatLiveSubscription,
@@ -212,7 +215,7 @@ def test_compressed_capture_wait_has_durable_poll_deadline(tmp_path):
     [
         (
             "2026-08-10T18:06:00+08:00",
-            "2026-08-10T19:00:00+08:00",
+            "2026-08-10T18:20:00+08:00",
         ),
         (
             "2026-08-10T23:06:00+08:00",
@@ -811,11 +814,11 @@ def test_xiaoetong_account_login_redirect_is_reported_explicitly(tmp_path):
         password="666",
     )
 
-    with pytest.raises(
-        EnrichmentError,
-        match="Xiaoetong account login is required",
-    ):
+    with pytest.raises(EnrichmentDiagnosticError) as captured:
         subscription.run_once(opencli_session="xiaocao-lv-subscription")
+    assert captured.value.diagnostic_category == "authentication_error"
+    assert captured.value.diagnostic_code == "xiaoetong_account_login_required"
+    assert captured.value.diagnostic_stage == "playback_authorization"
 
 
 def test_xiaoetong_mp_wrapper_login_state_stays_bound(tmp_path):
@@ -887,11 +890,11 @@ def test_xiaoetong_login_redirect_allows_bound_resource_version_rotation():
 def test_xiaoetong_bound_provider_block_waits_for_the_same_page(tmp_path):
     payload = _history(
         "[2026-08-13 08:42] 福利官小花四: 草神直播："
-        "https://appsnm3rlcp3566.h5.xiaoeknow.com/v4/course/"
+        "https://appsnm3rlcp3566.h5.xiaoeknow.com/v2/course/"
         "alive/l_6a7c2ed8e4b023c0d633fabb",
     )
     page_url = (
-        "https://appsnm3rlcp3566.h5.xiaoeknow.com/v4/course/"
+        "https://appsnm3rlcp3566.h5.xiaoeknow.com/v2/course/"
         "alive/l_6a7c2ed8e4b023c0d633fabb"
     )
     block_url = (
@@ -937,7 +940,7 @@ def test_xiaoetong_bound_provider_block_waits_for_the_same_page(tmp_path):
     assert result["status"] == "waiting"
     assert result["waiting_items"][0]["status"] == "awaiting_playback"
     assert result["waiting_items"][0]["next_poll_not_before"] == (
-        "2026-08-13T15:00:00+08:00"
+        "2026-08-13T14:20:00+08:00"
     )
     manifest = json.loads(
         (tmp_path / "wechat" / "manifest.json").read_text(encoding="utf-8")
@@ -952,6 +955,56 @@ def test_xiaoetong_bound_provider_block_waits_for_the_same_page(tmp_path):
     assert second["status"] == "waiting"
     assert second["waiting_items"][0]["status"] == "awaiting_playback"
     assert capture.advances == 0
+
+
+def test_xiaoetong_playable_page_accepts_bound_version_rotation(tmp_path):
+    payload = _history(
+        "[2026-08-13 08:42] 福利官小花四: 草神直播："
+        "https://appsnm3rlcp3566.h5.xiaoeknow.com/v2/course/"
+        "alive/l_6a7c2ed8e4b023c0d633fabb",
+    )
+    original_page = (
+        "https://appsnm3rlcp3566.h5.xiaoeknow.com/v2/course/"
+        "alive/l_6a7c2ed8e4b023c0d633fabb"
+    )
+    rotated_page = (
+        "https://appsnm3rlcp3566.h5.xiaoeknow.com/v4/course/"
+        "alive/l_6a7c2ed8e4b023c0d633fabb"
+    )
+
+    def browser_exchange(request: dict) -> dict:
+        if request["action"] == "resolve_xiaoetong_page":
+            return {
+                "action": request["action"],
+                "subscription_id": request["subscription_id"],
+                "page_url": original_page,
+                "page_state": "unknown",
+            }
+        return {
+            "action": request["action"],
+            "subscription_id": request["subscription_id"],
+            "page_url": rotated_page,
+            "page_state": "playable",
+            "activated": True,
+            "password_used": False,
+        }
+
+    subscription = XiaocaoWechatLiveSubscription(
+        tmp_path / "wechat",
+        history_reader=lambda: payload,
+        browser_exchange=browser_exchange,
+        capture_driver=_CaptureDriver(),
+        contact=CONTACT,
+        password="666",
+    )
+
+    subscription.run_once(opencli_session="xiaocao-lv-subscription")
+    manifest = json.loads(
+        (tmp_path / "wechat" / "manifest.json").read_text(encoding="utf-8")
+    )
+    item = next(iter(manifest["items"].values()))
+    assert item["page_url"] == rotated_page
+    assert item["status"] == "playback_activated"
 
 
 @pytest.mark.parametrize(

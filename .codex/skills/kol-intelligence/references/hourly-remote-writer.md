@@ -222,10 +222,6 @@ repetition does not make them `user_action_required`. Reserve that status for
 authentication, SMS, CAPTCHA, consent, a user-only fact, or an external effect
 whose outcome cannot be reconciled. Timeout, selector drift, schema mismatch,
 missing UI path, or repository defect is never by itself `user_action_required`.
-When a user directly instructs the Agent to finish an already bounded
-cloud-transfer blocker, the Agent owns the one-item recovery: bind the old
-claim, prove the exact target is still absent, persist one
-`operator_authorized_recovery` claim before the native click, and stop after
-that single third attempt. Do not turn that instruction into a request for the
-user to perform the save, and do not make the recovery branch part of the
-ordinary hourly sweep.
+User-directed bounded cloud-transfer repair is Agent-owned: bind the claim,
+prove target absence, persist `operator_authorized_recovery`, make one third
+native click and stop. Never ask user to save or add it to hourly.

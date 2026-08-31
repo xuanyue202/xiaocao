@@ -64,22 +64,14 @@ to complete the current-decision and reusable-knowledge branches.
 
 ## Route Xiaocao recap requests before analysis
 
-Treat “小草复盘” in a live/video context as a live-replay capture request first;
-let fast-start inspect the current Ticket 03 job and capture ledger before Ready. If no
-discoverable
-state disambiguates the request, ask only: “录入直播回放，还是复盘已有报告？”
-After selection, keep that route fixed through audit; later uses of “复盘” do
-not switch the task back to report commentary.
-Treat the run as complete only when the reader-facing report has been read back,
-the exact recipient set has durable reminder receipts, and the node that owns
-each side of the handoff has passed its own acceptance scope. The remote writer
-must use `scope=post_handoff`; it must never require local capture ledgers or
-video bytes that the handoff contract explicitly forbids transferring. These
-deterministic receipts complete a routine Ticket 03 run automatically; do not
-pause for report-quality or user confirmation. Human review is reserved for an
-explicit evidence ambiguity, requested editorial correction, or a separately
-specified historical aggregation gate. The `confirm` command is migration-only
-for already-persisted legacy `awaiting_user_confirmation` states.
+Treat “小草复盘” in live/video context as live-replay capture: let fast-start
+inspect the current Ticket 03 job and ledger. If still ambiguous ask only
+“录入直播回放，还是复盘已有报告？” and keep that route fixed through audit.
+Completion requires report readback, durable recipient receipts, and both node
+acceptances. Remote uses `scope=post_handoff`, never local ledgers/video bytes.
+Routine deterministic receipts close Ticket 03; human review is only for
+evidence ambiguity, requested edits, or explicit historical aggregation.
+`confirm` is migration-only for legacy `awaiting_user_confirmation`.
 
 ## Non-negotiable semantic boundaries
 
@@ -118,14 +110,10 @@ for already-persisted legacy `awaiting_user_confirmation` states.
   maintenance, restarts, and replays never resend a prior reminder or paper
   action.
 
-For an explicitly user-authorized repair of an existing bounded Lv cloud
-transfer blocker, the Agent owns the save rather than asking the user to do it.
-The recovery must remain one-item and one-click: bind the existing claim and
-source/version, prove the intended directory plus settled global exact search
-are both empty, require unobserved provider outcome with request/response flags
-false and an exhausted prior maximum, persist the recovery claim before the
-native OpenCLI click, and raise the maximum to three. A successful exact copy
-closes the item; rejection, another unobserved result, or non-materialization
-stops permanently after that single probe. This branch is never part of an
-ordinary hourly sweep and never bypasses identity, destination, rejection,
-authentication, or consent gates.
+An explicitly user-authorized bounded Lv cloud-transfer repair is Agent-owned,
+one-item/one-click: bind the existing claim/source/version, prove target and
+global exact search empty, require exhausted unobserved false flags, persist the
+claim before the native OpenCLI click, and raise the maximum to three. Stop after
+that probe on rejection, unobserved, or non-materialization. Never expose it to
+an ordinary hourly sweep or bypass identity, destination, auth, consent, or a
+provider rejection.

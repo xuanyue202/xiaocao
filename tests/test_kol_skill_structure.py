@@ -83,6 +83,22 @@ def test_kol_skill_owns_safe_self_repair_before_user_escalation() -> None:
         assert marker in full
 
 
+def test_kol_local_capture_reuses_side_browser_and_rechecks_short_lives() -> None:
+    text = " ".join(
+        HOURLY_LOCAL_CAPTURE_MD.read_text(encoding="utf-8").split()
+    )
+
+    for marker in (
+        "侧边栏浏览器",
+        "app_id",
+        "pro_id",
+        "alive_mode",
+        "20 分钟",
+        "企业微信",
+    ):
+        assert marker in text
+
+
 def test_kol_skill_routes_xiaocao_recap_to_live_replay_capture_first() -> None:
     text = SKILL_MD.read_text(encoding="utf-8")
 
