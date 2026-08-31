@@ -2017,7 +2017,11 @@ def test_lv_transfer_claim_precedes_click_and_exact_copy_readback_completes(
     def opencli(session, *args, **_kwargs):
         nonlocal triggered, native_click_calls
         if args[0] == "open":
-            return {"url": "sanitized"}
+            return {"url": "sanitized", "page": "page-1"}
+        if args[0] == "tab":
+            assert args[1:3] == ("select", "page-1")
+            assert args[3:5] == ("--window", "foreground")
+            return {"selected": "page-1"}
         claim_path = service._claim_path(f"lv_transfer_{item['version_key']}")
         claim = json.loads(claim_path.read_text(encoding="utf-8"))
         assert claim["large_payload_local_bytes"] == 0
@@ -2068,6 +2072,13 @@ def test_lv_transfer_claim_precedes_click_and_exact_copy_readback_completes(
     assert first["large_payload_local_bytes"] == 0
     assert second["status"] == "completed"
     assert native_click_calls == 1
+    final_claim = json.loads(
+        service._claim_path(f"lv_transfer_{item['version_key']}").read_text(
+            encoding="utf-8"
+        )
+    )
+    assert final_claim["native_click_page_id"] == "page-1"
+    assert final_claim["native_click_window"] == "foreground"
     events = service.events_path.read_text().splitlines()
     assert sum("lv_cloud_transfer_triggered" in row for row in events) == 1
     assert not any(

@@ -1151,6 +1151,37 @@ class SubscriptionVideoService:
             )
         return value
 
+    def _activate_opencli_page(
+        self,
+        session: str,
+        open_result: dict[str, Any],
+        *,
+        profile: str | None,
+    ) -> str:
+        """Make the opened transfer tab receive native input events."""
+
+        page_id = str(open_result.get("page") or "").strip()
+        if not page_id:
+            return ""
+        selected = self._opencli_json(
+            session,
+            "tab",
+            "select",
+            page_id,
+            "--window",
+            "foreground",
+            profile=profile,
+            timeout_seconds=30,
+        )
+        if selected.get("selected") != page_id:
+            raise EnrichmentDiagnosticError(
+                "Ticket 05 OpenCLI transfer tab was not activated",
+                category="provider_contract_error",
+                code="opencli_tab_activation_failed",
+                stage="browser_command",
+            )
+        return page_id
+
     def _bind_opencli(
         self,
         *,
@@ -4359,12 +4390,17 @@ class SubscriptionVideoService:
                     "retry_of": claim["claim_id"],
                 },
             )
-        self._opencli_json(
+        open_result = self._opencli_json(
             lv_session,
             "open",
             self.lv.share_url,
             profile=profile,
             timeout_seconds=30,
+        )
+        native_click_page_id = self._activate_opencli_page(
+            lv_session,
+            open_result,
+            profile=profile,
         )
         source_parent = str(PurePosixPath(str(item["path"])).parent)
         transfer_script = (
@@ -4397,12 +4433,17 @@ class SubscriptionVideoService:
             # bounded read expires.  This status is pre-trigger and carries
             # no provider effect, so reopen the same bound share once before
             # classifying the source item as failed.
-            self._opencli_json(
+            retry_open_result = self._opencli_json(
                 lv_session,
                 "open",
                 self.lv.share_url,
                 profile=profile,
                 timeout_seconds=30,
+            )
+            native_click_page_id = self._activate_opencli_page(
+                lv_session,
+                retry_open_result,
+                profile=profile,
             )
             result = self._opencli_json(
                 lv_session,
@@ -4436,6 +4477,8 @@ class SubscriptionVideoService:
                 "provider_trigger_status": "native_click_claimed",
                 "provider_outcome": "unobserved",
                 "native_click_selector": selector,
+                "native_click_page_id": native_click_page_id or None,
+                "native_click_window": "foreground",
                 "triggered_at": self._time().isoformat(
                     timespec="microseconds"
                 ),
