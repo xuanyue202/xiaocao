@@ -632,13 +632,23 @@ _TRANSFER_SCRIPT = r"""(async () => {
   if (selectedNames.length !== 1 || selectedNames[0] !== targetName) {
     return {status: 'transfer_selection_mismatch', triggered: false};
   }
-  const pathControls = [...document.querySelectorAll('.save-path')].filter(
-    visible
+  const uniqueVisible = nodes => {
+    const candidates = [...new Set(nodes)].filter(visible);
+    return candidates.length === 1 ? candidates[0] : null;
+  };
+  const pathControl = (
+    uniqueVisible([
+      ...document.querySelectorAll('a[node-type="shareSave"].save_btn')
+    ])
+    || uniqueVisible([...document.querySelectorAll('.save-path')])
+    || uniqueVisible([
+      ...document.querySelectorAll('a[node-type="shareSave"].first_btn')
+    ])
   );
-  if (pathControls.length !== 1) {
+  if (!pathControl) {
     return {status: 'save_path_control_ambiguous', triggered: false};
   }
-  pathControls[0].click();
+  pathControl.click();
   const dialogDeadline = Date.now() + 10000;
   let dialog = null;
   while (Date.now() < dialogDeadline) {
@@ -4074,18 +4084,56 @@ class SubscriptionVideoService:
             raise EnrichmentError(
                 "operator-authorized Lv recovery requires an existing claim"
             )
-        if operator_authorized_recovery and not claim.get("triggered_at"):
-            raise EnrichmentError(
-                "operator-authorized Lv recovery requires a settled trigger"
-            )
         if operator_authorized_recovery_correction and not operator_authorized_recovery:
             raise EnrichmentError(
                 "Lv recovery correction requires operator authorization"
             )
+        correction_pretrigger_reasons = {
+            "save_dialog_missing",
+            "save_path_control_ambiguous",
+            "save_confirmation_ambiguous",
+            "save_confirmation_selector_invalid",
+            "transfer_selection_control_missing",
+            "transfer_selection_clear_failed",
+            "transfer_target_selection_failed",
+            "transfer_selection_mismatch",
+            "destination_segment_not_unique",
+            "destination_segment_handler_missing",
+            "destination_not_selected",
+        }
+        correction_failed_pretrigger_eligible = (
+            operator_authorized_recovery_correction
+            and preexisting_claim
+            and claim.get("status") == "failed_pretrigger"
+            and claim.get("reason") in correction_pretrigger_reasons
+            and int(claim.get("trigger_attempt") or 0)
+            == LV_TRANSFER_MAX_TRIGGER_ATTEMPTS + 1
+            and int(claim.get("trigger_attempt_maximum") or 0)
+            == LV_TRANSFER_MAX_TRIGGER_ATTEMPTS + 1
+            and claim.get("recovery_reason")
+            == "inactive_tab_click_proven_no_input_event"
+            and claim.get("correction_does_not_consume_provider_attempt") is True
+            and "provider_outcome" not in claim
+            and "provider_request_observed" not in claim
+            and "provider_response_observed" not in claim
+            and not claim.get("native_click_page_id")
+            and not claim.get("native_click_window")
+        )
+        if (
+            operator_authorized_recovery
+            and not claim.get("triggered_at")
+            and not correction_failed_pretrigger_eligible
+        ):
+            raise EnrichmentError(
+                "operator-authorized Lv recovery requires a settled trigger"
+            )
         reconciled_absent = False
         if claim.get("triggered_at") or (
             claim.get("status") == "failed_pretrigger"
-            and claim.get("reason") == "save_dialog_missing"
+            and (
+                claim.get("reason") == "save_dialog_missing"
+                or correction_failed_pretrigger_eligible
+            )
         ):
             exact_matches = [
                 row
@@ -4464,18 +4512,49 @@ class SubscriptionVideoService:
             claim = retry_claim
         if claim.get("status") == "failed_pretrigger":
             self._claim_path(receipt_name).unlink()
-            claim = self._write_claim(
-                receipt_name,
-                {
-                    "source_identity": item["identity"],
-                    "source_version_key": item["version_key"],
-                    "source_path": item["path"],
-                    "source_size": item["size"],
-                    "target_path": target_path,
-                    "large_payload_local_bytes": 0,
-                    "retry_of": claim["claim_id"],
-                },
-            )
+            retry_payload = {
+                "source_identity": item["identity"],
+                "source_version_key": item["version_key"],
+                "source_path": item["path"],
+                "source_size": item["size"],
+                "target_path": target_path,
+                "large_payload_local_bytes": 0,
+                "retry_of": claim["claim_id"],
+            }
+            if correction_failed_pretrigger_eligible:
+                retry_payload.update(
+                    {
+                        "trigger_attempt": int(
+                            claim["trigger_attempt"]
+                        ),
+                        "trigger_attempt_maximum": int(
+                            claim["trigger_attempt_maximum"]
+                        ),
+                        "recovery_reason": (
+                            "inactive_tab_click_proven_no_input_event"
+                        ),
+                        "correction_of": claim.get(
+                            "correction_of", claim["claim_id"]
+                        ),
+                        "correction_basis": claim.get(
+                            "correction_basis",
+                            (
+                                "same_opencli_session_tab_was_inactive_and_native_click"
+                                "_returned_dom_match_without_a_trusted_event"
+                            ),
+                        ),
+                        "authorization_basis": (
+                            "explicit_user_request"
+                        ),
+                        "authorization_scope": (
+                            "one_exact_item_one_native_click"
+                        ),
+                        "authorized_recovery_consumed": True,
+                        "correction_does_not_consume_provider_attempt": True,
+                        "pretrigger_repair_of": claim["claim_id"],
+                    }
+                )
+            claim = self._write_claim(receipt_name, retry_payload)
         open_result = self._opencli_json(
             lv_session,
             "open",
