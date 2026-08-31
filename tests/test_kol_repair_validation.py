@@ -929,6 +929,92 @@ def test_repair_validation_accepts_shared_lv_listing_validation_profile(
     assert receipt.failure_fingerprint == "3" * 64
 
 
+def test_repair_validation_accepts_wechat_official_accounts_source_profile(
+    tmp_path,
+) -> None:
+    context = {
+        "adapter": "wechat_official_accounts",
+        "message_id": "4" * 64,
+        "content_sha256": "5" * 64,
+        "failure_fingerprint": "6" * 64,
+        "failure_revision": FAILURE_REVISION,
+        "category": "source_error",
+        "code": "source_temporarily_unavailable",
+        "stage": "source_run",
+        "targeted_test_profile": (
+            "kol_wechat_official_accounts_source_run"
+        ),
+    }
+
+    expected_command = (
+        "env",
+        "PYTHONPATH=src",
+        ".venv/bin/python",
+        "-m",
+        "pytest",
+        "tests/test_kol_wechat_official.py",
+        "tests/test_kol_repair_validation.py",
+        "-q",
+        "-k",
+        (
+            "official_account_parser_uses_exact_publishers_and_url_only_metadata or "
+            "official_account_reader_calls_one_stateless_combined_window or "
+            "repair_validation_accepts_wechat_official_accounts_source_profile"
+        ),
+    )
+
+    def git(command: tuple[str, ...]) -> CompletedProcess[str]:
+        if command == ("branch", "--show-current"):
+            return CompletedProcess(command, 0, "main\n", "")
+        if command == ("rev-parse", "--verify", "HEAD^{commit}"):
+            return CompletedProcess(command, 0, f"{REPAIR_REVISION}\n", "")
+        if command == ("rev-parse", "--verify", "origin/main^{commit}"):
+            return CompletedProcess(command, 0, f"{REPAIR_REVISION}\n", "")
+        if command[:2] == ("diff-tree", "--no-commit-id"):
+            return CompletedProcess(
+                command,
+                0,
+                (
+                    "src/xiaocao/kol/writer_progress.py\n"
+                    "tests/test_kol_repair_validation.py\n"
+                ),
+                "",
+            )
+        if command == ("show", "-s", "--format=%B", REPAIR_REVISION):
+            return CompletedProcess(
+                command,
+                0,
+                (
+                    "Register official source repair\n\n"
+                    f"Repair-Fingerprint: {'6' * 64}\n"
+                ),
+                "",
+            )
+        if command[:2] == ("merge-base", "--is-ancestor"):
+            return CompletedProcess(command, 0, "", "")
+        raise AssertionError(command)
+
+    service = RepairValidationService(
+        tmp_path,
+        ledger=RepairValidationLedger(tmp_path / "repair-validation.jsonl"),
+        git_runner=git,
+        test_runner=lambda command: CompletedProcess(
+            command,
+            0 if command == expected_command else 1,
+            "3 passed\n",
+            "",
+        ),
+        now=lambda: "2026-08-31T11:20:00+08:00",
+    )
+
+    receipt = service.validate(context, repair_revision=REPAIR_REVISION)
+
+    assert receipt.targeted_test_profile == (
+        "kol_wechat_official_accounts_source_run"
+    )
+    assert receipt.failure_fingerprint == "6" * 64
+
+
 @pytest.mark.parametrize(
     ("category", "code", "stage", "targeted_test_profile"),
     [

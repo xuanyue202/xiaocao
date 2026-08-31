@@ -131,12 +131,19 @@ def test_xiaoetong_direct_h5_keeps_only_safe_navigation_context():
         "pro_id=course_safe&type=2&alive_mode=0&share_user_id=private&"
         "union_id=private&share_type=5"
     )
-
     assert resolved == (
         "https://appsnm3rlcp3566.h5.xiaoeknow.com/v2/course/alive/"
         "l_6a699f8ce4b0694c5bf12013?app_id=appsnm3rlcp3566&"
         "pro_id=course_safe&type=2&alive_mode=0"
     )
+
+
+def test_xiaoetong_navigation_rejects_duplicate_safe_parameters():
+    with pytest.raises(InvalidSourcePage, match="navigation context"):
+        resolve_xiaoetong_h5_page(
+            "https://appsnm3rlcp3566.h5.xiaoeknow.com/v2/course/alive/"
+            "l_6a699f8ce4b0694c5bf12013?type=2&type=3"
+        )
 
 
 def test_xiaoetong_mp_wrapper_rejects_cross_app_h5_page():

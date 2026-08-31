@@ -817,6 +817,22 @@ TARGETED_REPAIR_TESTS: dict[str, tuple[str, ...]] = {
             "repair_closure_accepts_shared_lv_listing_validation_profile"
         ),
     ),
+    "kol_wechat_official_accounts_source_run": (
+        "env",
+        "PYTHONPATH=src",
+        ".venv/bin/python",
+        "-m",
+        "pytest",
+        "tests/test_kol_wechat_official.py",
+        "tests/test_kol_repair_validation.py",
+        "-q",
+        "-k",
+        (
+            "official_account_parser_uses_exact_publishers_and_url_only_metadata or "
+            "official_account_reader_calls_one_stateless_combined_window or "
+            "repair_validation_accepts_wechat_official_accounts_source_profile"
+        ),
+    ),
     "kol_xiaocao_wechat_live_source_run": (
         "env",
         "PYTHONPATH=src",
@@ -932,6 +948,12 @@ _TARGETED_REPAIR_IMPLEMENTATION_PATHS: dict[str, frozenset[str]] = {
             "src/xiaocao/kol/writer_progress.py",
         }
     ),
+    "kol_wechat_official_accounts_source_run": frozenset(
+        {
+            "src/xiaocao/kol/wechat_official.py",
+            "src/xiaocao/kol/writer_progress.py",
+        }
+    ),
     "kol_xiaocao_wechat_live_source_run": frozenset(
         {
             "scripts/kol_daily.py",
@@ -1021,6 +1043,12 @@ _TARGETED_REPAIR_TEST_PATHS: dict[str, frozenset[str]] = {
             "tests/test_kol_lv_subscription.py",
             "tests/test_kol_repair_validation.py",
             "tests/test_kol_writer_progress.py",
+        }
+    ),
+    "kol_wechat_official_accounts_source_run": frozenset(
+        {
+            "tests/test_kol_repair_validation.py",
+            "tests/test_kol_wechat_official.py",
         }
     ),
     "kol_xiaocao_wechat_live_source_run": frozenset(
@@ -1360,6 +1388,33 @@ def _canonical_shared_lv_listing_validation_repair_profile(
     return None
 
 
+_WECHAT_OFFICIAL_SOURCE_REPAIR_PROFILE = (
+    "kol_wechat_official_accounts_source_run"
+)
+
+
+def _canonical_wechat_official_source_repair_profile(
+    context: Mapping[str, Any],
+) -> str | None:
+    if (
+        str(context.get("adapter") or "") == "wechat_official_accounts"
+        and str(context.get("targeted_test_profile") or "")
+        == _WECHAT_OFFICIAL_SOURCE_REPAIR_PROFILE
+        and (
+            str(context.get("category") or ""),
+            str(context.get("code") or ""),
+            str(context.get("stage") or ""),
+        )
+        == (
+            "source_error",
+            "source_temporarily_unavailable",
+            "source_run",
+        )
+    ):
+        return _WECHAT_OFFICIAL_SOURCE_REPAIR_PROFILE
+    return None
+
+
 def _canonical_xiaocao_wechat_source_repair_profile(
     context: Mapping[str, Any],
 ) -> str | None:
@@ -1504,6 +1559,11 @@ class RepairValidationService:
         )
         if listing_validation_profile is not None:
             return listing_validation_profile
+        wechat_official_profile = (
+            _canonical_wechat_official_source_repair_profile(context)
+        )
+        if wechat_official_profile is not None:
+            return wechat_official_profile
         xiaocao_wechat_profile = (
             _canonical_xiaocao_wechat_source_repair_profile(context)
         )
