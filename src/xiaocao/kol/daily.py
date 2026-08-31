@@ -94,6 +94,18 @@ AGENT_OWNED_FAILURE_CATEGORIES = frozenset({
 _LOCAL_THESIS_ID = re.compile(r"[a-z0-9][a-z0-9._-]{0,127}")
 
 
+def _next_local_playback_recheck(value: datetime) -> datetime:
+    """Return the next China-time 20-minute capture boundary."""
+
+    if value.tzinfo is None:
+        raise DailyError("daily coordinator clock needs a timezone")
+    local = value.astimezone(BEIJING).replace(second=0, microsecond=0)
+    next_minute = ((local.minute // 20) + 1) * 20
+    if next_minute == 60:
+        return (local + timedelta(hours=1)).replace(minute=0)
+    return local.replace(minute=next_minute)
+
+
 class DailyError(EnrichmentError):
     """The daily coordination contract could not be proved."""
 
@@ -1614,11 +1626,7 @@ class DailyCoordinator:
             and rebound.get("status") == "awaiting_playback"
         ):
             return None
-        deadline = (
-            self._beijing_now() + timedelta(hours=1)
-        ).replace(minute=0, second=0, microsecond=0)
-        if deadline.hour < 7:
-            deadline = deadline.replace(hour=7)
+        deadline = _next_local_playback_recheck(self._beijing_now())
         rebound["next_poll_not_before"] = deadline.isoformat(
             timespec="seconds"
         )
@@ -2900,6 +2908,115 @@ class DailyCoordinator:
             item_identity=item_identity,
             _completed_user_action=True,
         )
+
+    def record_repair_resume(
+        self,
+        source: str,
+        *,
+        prior: WriterProgress,
+        outcome: Mapping[str, Any],
+        following: WriterProgress,
+        slot: str,
+    ) -> dict[str, Any]:
+        """Persist one validated repair continuation into the daily ledger."""
+
+        name = str(source or "").strip()
+        if (
+            not name
+            or prior.status != "repair_required"
+            or prior.failure["adapter"] != name
+        ):
+            raise DailyError("repair resume needs its exact source progress")
+        _validate_source_outcome(dict(outcome))
+        started = time.monotonic()
+        with self._locked():
+            prior_rows = self._events_unlocked()
+            prior_sweep = self._last_sweep_state(prior_rows)
+            if prior_sweep is None:
+                raise DailyError("repair resume lost its originating sweep")
+            prior_states = prior_sweep.get("source_states")
+            if not isinstance(prior_states, list) or not any(
+                isinstance(row, Mapping) and row.get("name") == name
+                for row in prior_states
+            ):
+                raise DailyError("repair resume lost its source state")
+            result = {
+                **{
+                    key: value
+                    for key, value in outcome.items()
+                    if key != "retryable"
+                },
+                "resume_policy": following.next_action,
+                "writer_progress": following.to_dict(),
+            }
+            if following.status == "wait_until":
+                result["resume_command"] = (
+                    "PYTHONPATH=src .venv/bin/python scripts/kol_daily.py "
+                    "resume-source-wait "
+                    f"--source-adapter {name} "
+                    f"--source-identity {following.item_identity}"
+                )
+            self._append(
+                "source_repair_resume_started",
+                slot=slot,
+                source=name,
+                failure_fingerprint=prior.failure_fingerprint,
+                item_identity=following.item_identity,
+                narrow_resume_surface=prior.details["narrow_resume_surface"],
+            )
+            resume = self.convergence.record_resume(
+                prior.failure_fingerprint,
+                following=following,
+                slot=slot,
+            )
+            self._append(
+                "source_progressed",
+                slot=slot,
+                source=name,
+                progress=following.to_dict(),
+            )
+            self._append(
+                "source_completed",
+                slot=slot,
+                source=name,
+                result=result,
+                coordinator_source_video_bytes=0,
+                continuation_only=True,
+            )
+            current_state = self._source_states([{
+                "name": name,
+                **result,
+            }])[0]
+            source_states = [
+                current_state
+                if isinstance(row, Mapping) and row.get("name") == name
+                else dict(row)
+                for row in prior_states
+                if isinstance(row, Mapping)
+            ]
+            health = self._sweep_health(source_states)
+            self._append(
+                "sweep_completed",
+                slot=slot,
+                status="completed",
+                health=health,
+                source_count=len(source_states),
+                source_states=source_states,
+                elapsed_ms=max(0, int((time.monotonic() - started) * 1000)),
+                coordinator_source_video_bytes=0,
+                continuation_only=True,
+            )
+            duplicate_audit = self._duplicate_effect_audit([{
+                "name": name,
+                **result,
+            }])
+            self._append(
+                "duplicate_effect_audit",
+                slot=slot,
+                continuation_only=True,
+                **duplicate_audit,
+            )
+        return resume
 
     def resume_structured_input(
         self,
