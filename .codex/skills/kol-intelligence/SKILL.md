@@ -117,3 +117,15 @@ for already-persisted legacy `awaiting_user_confirmation` states.
 - Reconcile every external claim and receipt before retry. Corrections,
   maintenance, restarts, and replays never resend a prior reminder or paper
   action.
+
+For an explicitly user-authorized repair of an existing bounded Lv cloud
+transfer blocker, the Agent owns the save rather than asking the user to do it.
+The recovery must remain one-item and one-click: bind the existing claim and
+source/version, prove the intended directory plus settled global exact search
+are both empty, require unobserved provider outcome with request/response flags
+false and an exhausted prior maximum, persist the recovery claim before the
+native OpenCLI click, and raise the maximum to three. A successful exact copy
+closes the item; rejection, another unobserved result, or non-materialization
+stops permanently after that single probe. This branch is never part of an
+ordinary hourly sweep and never bypasses identity, destination, rejection,
+authentication, or consent gates.

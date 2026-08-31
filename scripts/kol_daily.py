@@ -2991,9 +2991,9 @@ class DailyRuntime:
                         blocker_key="lv-cloud-transfer-not-materialized",
                         action=(
                             "百度网盘已两次确认转存，但目标目录和全局精确搜索均无"
-                            "对应文件。请检查网盘容量或转存限制，并手动把下列吕晓彤"
-                            "视频保存到 /课程/自己的课/吕晓彤；完成后保持 Edge 登录，"
-                            "下一小时会只读对账并继续解析。"
+                            "对应文件。该外部效果暂未可证实，本次运行已停止自动重试并"
+                            "保留精确账本；如果当前任务已有明确代理接管授权，应由代理执行"
+                            "一次受限修复，不要求用户代做。"
                         ),
                     ) from exc
                 if str(exc) == "Lv cloud transfer was rejected by provider":
@@ -3004,9 +3004,8 @@ class DailyRuntime:
                         blocker_key="lv-cloud-transfer-provider-rejected",
                         action=(
                             "百度网盘明确拒绝了吕晓彤视频转存。请检查网盘容量、会员"
-                            "文件大小或转存上限，处理后手动把下列视频保存到 "
-                            "/课程/自己的课/吕晓彤；保持 Edge 登录后，下一小时会只读"
-                            "对账并继续解析。"
+                            "文件大小或转存上限；这是提供方明确拒绝，代理不会绕过拒绝"
+                            "重试或要求用户代做。处理后由代理只读对账。"
                         ),
                     ) from exc
                 failure, retryable = _isolated_item_failure(

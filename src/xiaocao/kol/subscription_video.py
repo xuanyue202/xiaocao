@@ -3657,6 +3657,32 @@ class SubscriptionVideoService:
             claim.get("status") == "blocked"
             and claim.get("blocker_key") == blocker_key
         ):
+            if (
+                claim.get("provider_outcome") == "unobserved"
+                and claim.get("side_effect_uncertain") is not True
+            ):
+                corrected = {
+                    **claim,
+                    "side_effect_uncertain": True,
+                    "uncertainty_correction": (
+                        "provider_outcome_unobserved"
+                    ),
+                    "uncertainty_corrected_at": self._time().isoformat(
+                        timespec="seconds"
+                    ),
+                }
+                _atomic_write_json(
+                    self._claim_path(receipt_name),
+                    corrected,
+                )
+                _append_jsonl(
+                    self.events_path,
+                    {
+                        **corrected,
+                        "event": "lv_cloud_transfer_uncertainty_corrected",
+                    },
+                )
+                return corrected
             return claim
         blocked = {
             **claim,
@@ -3904,6 +3930,7 @@ class SubscriptionVideoService:
         profile: str | None,
         readback_only: bool = False,
         observability_repair_revision: str | None = None,
+        operator_authorized_recovery: bool = False,
     ) -> dict[str, Any]:
         if item.get("source") != LV_SOURCE or item.get("author") != LV_AUTHOR:
             raise EnrichmentError("cloud transfer accepts only Lv Xiaotong items")
@@ -3916,6 +3943,8 @@ class SubscriptionVideoService:
                 return {**destination, "pending": True}
         target_path = f"{LV_DESTINATION_DIRECTORY}/{item['name']}"
         receipt_name = f"lv_transfer_{item['version_key']}"
+        claim_path = self._claim_path(receipt_name)
+        preexisting_claim = claim_path.is_file()
         receipt_path = self._receipt_path(receipt_name)
         if receipt_path.is_file():
             try:
@@ -4008,6 +4037,14 @@ class SubscriptionVideoService:
                     "target_path": target_path,
                     "large_payload_local_bytes": 0,
                 },
+            )
+        if operator_authorized_recovery and not preexisting_claim:
+            raise EnrichmentError(
+                "operator-authorized Lv recovery requires an existing claim"
+            )
+        if operator_authorized_recovery and not claim.get("triggered_at"):
+            raise EnrichmentError(
+                "operator-authorized Lv recovery requires a settled trigger"
             )
         reconciled_absent = False
         if claim.get("triggered_at") or (
@@ -4148,6 +4185,25 @@ class SubscriptionVideoService:
                     "trigger_attempt_maximum": trigger_attempt_maximum,
                     "reconciliation_status": "exact_private_copy_absent",
                 }
+            if (
+                claim.get("status") == "blocked"
+                and claim.get("blocker_key")
+                == "lv-cloud-transfer-not-materialized"
+            ):
+                claim = self._record_transfer_blocker(
+                    receipt_name,
+                    claim,
+                    blocker_key="lv-cloud-transfer-not-materialized",
+                    failure_reason=str(
+                        claim.get("failure_reason")
+                        or "two confirmed transfer attempts produced no exact "
+                        "private copy"
+                    ),
+                    reconciliation_status=str(
+                        claim.get("reconciliation_status")
+                        or "exact_private_copy_absent_after_bounded_retry"
+                    ),
+                )
             legacy_observability_gap = (
                 trigger_attempt >= LV_TRANSFER_MAX_TRIGGER_ATTEMPTS
                 and claim.get("provider_outcome") == "unobserved"
@@ -4155,8 +4211,29 @@ class SubscriptionVideoService:
                 and "provider_response_observed" not in claim
             )
             observability_recovery = False
+            operator_recovery = False
             if trigger_attempt >= trigger_attempt_maximum:
-                if legacy_observability_gap:
+                operator_recovery_eligible = (
+                    operator_authorized_recovery
+                    and claim.get("status") == "blocked"
+                    and claim.get("blocker_key")
+                    == "lv-cloud-transfer-not-materialized"
+                    and claim.get("user_action_required") is True
+                    and claim.get("provider_outcome") == "unobserved"
+                    and claim.get("provider_request_observed") is False
+                    and claim.get("provider_response_observed") is False
+                    and claim.get("reconciliation_status")
+                    == "exact_private_copy_absent_after_bounded_retry"
+                    and claim.get("authorized_recovery_consumed") is not True
+                )
+                if operator_authorized_recovery and not operator_recovery_eligible:
+                    raise EnrichmentError(
+                        "operator-authorized Lv recovery target is not the exact "
+                        "settled bounded blocker"
+                    )
+                if operator_recovery_eligible:
+                    operator_recovery = True
+                elif legacy_observability_gap:
                     if observability_repair_revision is None:
                         raise EnrichmentDiagnosticError(
                             "legacy Lv transfer attempts lack provider response evidence",
@@ -4192,9 +4269,13 @@ class SubscriptionVideoService:
             retry_claim = {
                 **claim,
                 "event": (
-                    "lv_cloud_transfer_observability_recovery_claimed"
-                    if observability_recovery
-                    else "lv_cloud_transfer_recovery_claimed"
+                    "lv_cloud_transfer_operator_authorized_recovery_claimed"
+                    if operator_recovery
+                    else (
+                        "lv_cloud_transfer_observability_recovery_claimed"
+                        if observability_recovery
+                        else "lv_cloud_transfer_recovery_claimed"
+                    )
                 ),
                 "status": "claimed",
                 "claim_id": _sha256_text(
@@ -4206,7 +4287,7 @@ class SubscriptionVideoService:
                 "trigger_attempt": trigger_attempt + 1,
                 "trigger_attempt_maximum": (
                     trigger_attempt + 1
-                    if observability_recovery
+                    if observability_recovery or operator_recovery
                     else trigger_attempt_maximum
                 ),
                 "prior_triggered_at": claim["triggered_at"],
@@ -4224,7 +4305,22 @@ class SubscriptionVideoService:
                         ),
                     }
                     if observability_recovery
-                    else {}
+                    else (
+                        {
+                            "recovery_reason": (
+                                "explicit_current_task_instruction_after_bounded_zero_match"
+                            ),
+                            "authorization_basis": (
+                                "explicit_user_request"
+                            ),
+                            "authorization_scope": (
+                                "one_exact_item_one_native_click"
+                            ),
+                            "authorized_recovery_consumed": True,
+                        }
+                        if operator_recovery
+                        else {}
+                    )
                 ),
             }
             for field in (

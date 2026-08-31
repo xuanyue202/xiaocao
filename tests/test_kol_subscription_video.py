@@ -2375,6 +2375,123 @@ def test_lv_transfer_stops_after_bounded_reconciled_retry(tmp_path):
     assert blocked["user_action_required"] is True
 
 
+def test_lv_transfer_operator_authorized_recovery_is_one_exact_click(
+    tmp_path,
+):
+    service = _service(tmp_path, sleep=lambda _seconds: None)
+    item = service._normalize(
+        _source_rows()[0][1],
+        source=LV_SOURCE,
+        author=LV_AUTHOR,
+    )
+    service.ensure_lv_destination = lambda **_kwargs: {"status": "completed"}
+    target_ready = False
+    click_calls = 0
+
+    def direct_entries(*, directory, **_kwargs):
+        if directory != LV_DESTINATION_DIRECTORY or not target_ready:
+            return []
+        return [
+            _row(
+                "operator-recovered-copy",
+                f"{LV_DESTINATION_DIRECTORY}/{item['name']}",
+                size=item["size"],
+                modified_at=item["modified_at"] + 1,
+            )
+        ]
+
+    service._direct_private_entries = direct_entries
+    service._search_private_exact = lambda **_kwargs: []
+    receipt_name = f"lv_transfer_{item['version_key']}"
+    claim_path = service._claim_path(receipt_name)
+    claim_path.parent.mkdir(parents=True)
+    claim_path.write_text(
+        json.dumps(
+            {
+                "schema_version": 1,
+                "event": "lv_cloud_transfer_blocked",
+                "status": "blocked",
+                "claim_id": "blocked-claim",
+                "claimed_at": (NOW - timedelta(hours=2)).isoformat(),
+                "triggered_at": (NOW - timedelta(hours=2)).isoformat(),
+                "trigger_attempt": 2,
+                "trigger_attempt_maximum": 2,
+                "source_identity": item["identity"],
+                "source_version_key": item["version_key"],
+                "source_path": item["path"],
+                "source_size": item["size"],
+                "target_path": (
+                    f"{LV_DESTINATION_DIRECTORY}/{item['name']}"
+                ),
+                "large_payload_local_bytes": 0,
+                "provider_outcome": "unobserved",
+                "provider_request_observed": False,
+                "provider_response_observed": False,
+                "blocker_key": "lv-cloud-transfer-not-materialized",
+                "reconciliation_status": (
+                    "exact_private_copy_absent_after_bounded_retry"
+                ),
+                "user_action_required": True,
+                "side_effect_uncertain": False,
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    def opencli(_session, *args, **_kwargs):
+        nonlocal click_calls, target_ready
+        if args[0] == "open":
+            return {"url": "sanitized"}
+        if args[0] == "click":
+            click_calls += 1
+            claim = json.loads(claim_path.read_text(encoding="utf-8"))
+            assert claim["status"] == "native_click_claimed"
+            assert claim["trigger_attempt"] == 3
+            target_ready = True
+            return {"clicked": True, "matches_n": 1}
+        if "destinationSegments" in args[1]:
+            return {
+                "status": "save_confirmation_ready",
+                "confirmation_selector": (
+                    '[data-xiaocao-lv-confirm="ready"]'
+                ),
+                "triggered": False,
+            }
+        return {
+            "status": "cloud_transfer_accepted",
+            "triggered": True,
+            "provider_outcome": "accepted",
+            "provider_request_observed": True,
+            "provider_response_observed": True,
+        }
+
+    service._opencli_json = opencli
+
+    result = service.transfer_lv_video(
+        item,
+        lv_session="lv",
+        private_session="private",
+        profile="work",
+        operator_authorized_recovery=True,
+    )
+
+    assert result["status"] == "completed"
+    assert result["target_path"] == (
+        f"{LV_DESTINATION_DIRECTORY}/{item['name']}"
+    )
+    assert click_calls == 1
+    final_claim = json.loads(claim_path.read_text(encoding="utf-8"))
+    assert final_claim["status"] == "triggered"
+    assert final_claim["trigger_attempt"] == 3
+    assert final_claim["authorized_recovery_consumed"] is True
+    events = service.events_path.read_text(encoding="utf-8")
+    assert "lv_cloud_transfer_uncertainty_corrected" in events
+    assert "lv_cloud_transfer_operator_authorized_recovery_claimed" in events
+    assert "explicit_current_task_instruction_after_bounded_zero_match" in (
+        events
+    )
+
+
 def test_lv_transfer_readback_never_retries_the_uncertain_effect(tmp_path):
     service = _service(tmp_path, sleep=lambda _seconds: None)
     item = service._normalize(

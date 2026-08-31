@@ -615,7 +615,21 @@ work and never authorizes replaying publication, reminder, or Book side effects.
   Two reconciled trigger attempts without a copy become the structured
   `lv-cloud-transfer-not-materialized` user-action blocker. Never wait or
   retrigger indefinitely.
-- Legacy observability repair is the only exception to that two-trigger bound.
+- A direct user instruction to have the Agent finish an existing bounded
+  `lv-cloud-transfer-not-materialized` item is an explicit, one-item recovery
+  authorization; it is not permission to ask the user to perform the save.
+  The Agent may use `operator_authorized_recovery=True` only when the exact
+  existing claim is settled, its source/version and intended destination still
+  bind, the exact directory and settled global search are both zero-match, the
+  provider outcome remains unobserved with request/response flags false, and
+  the prior maximum attempt is exhausted. Persist the recovery claim before
+  one native OpenCLI click, raise the maximum to three, and stop permanently
+  after that one probe whether it is accepted, rejected, unobserved, or fails
+  to materialize. Never expose this branch to an ordinary hourly sweep or use
+  it to bypass a target mismatch, a provider rejection, or an unresolved
+  authentication/consent gate.
+- Legacy observability repair is the only non-user-authorized exception to that
+  two-trigger bound.
   If both historical attempts predate the provider request/response observer,
   retain `provider_outcome=unobserved`, prove the exact private copy is still
   absent, and surface `lv_transfer_response_unobserved_legacy` as Agent-owned
