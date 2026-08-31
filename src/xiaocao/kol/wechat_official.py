@@ -1002,6 +1002,8 @@ class OfficialAccountOpenCliAcquirer:
             page_time.date() == discovery_time.date()
             and delta <= _PUBLISH_TIME_TOLERANCE_SECONDS
         )
+        # The source feed can lead page materialization; a page time that
+        # matches the bound receipt time is valid only before that receipt.
         matches_received = (
             page_time.date() == received_time.date()
             and page_time <= received_time
