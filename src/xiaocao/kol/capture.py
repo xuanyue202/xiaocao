@@ -17,7 +17,14 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable, Iterable
-from urllib.parse import parse_qs, quote, urlencode, urlsplit, urlunsplit
+from urllib.parse import (
+    SplitResult,
+    parse_qs,
+    quote,
+    urlencode,
+    urlsplit,
+    urlunsplit,
+)
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 from uuid import uuid4
@@ -52,7 +59,7 @@ _XIAOETONG_PRO_ID = re.compile(r"course_[A-Za-z0-9_-]{1,128}")
 
 
 def _safe_xiaoetong_navigation_query(
-    parsed: Any,
+    parsed: SplitResult,
     *,
     app_id: str,
 ) -> str:
