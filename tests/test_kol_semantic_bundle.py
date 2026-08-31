@@ -776,6 +776,23 @@ def test_market_and_decision_cardinality_are_terminal_constraints(tmp_path):
     assert caught.value.field == "actionable_signals"
 
 
+def test_builder_rejects_actionable_signal_without_falsifiers(tmp_path):
+    request, draft, bundle_path, receipt_path, _ = _fixture(tmp_path)
+    draft["actionable_signals"][0].pop("falsifiers")
+
+    with pytest.raises(SemanticBundleError) as caught:
+        build_validated_bundle(
+            request,
+            draft,
+            bundle_path=bundle_path,
+            receipt_path=receipt_path,
+        )
+
+    assert caught.value.error_code == "decision_semantics_invalid"
+    assert caught.value.stage == "semantic_validation"
+    assert caught.value.field == "actionable_signals.falsifiers"
+
+
 def test_builder_rejects_market_fact_after_currentness_check(tmp_path):
     request, draft, bundle_path, receipt_path, _ = _fixture(tmp_path)
     request["market_evidence"]["validation"]["facts"][0][

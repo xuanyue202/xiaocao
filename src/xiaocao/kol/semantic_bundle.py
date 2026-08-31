@@ -794,6 +794,16 @@ def _validate_actionable_signals(
                 stage="semantic_validation",
                 field="actionable_signals",
             )
+        falsifiers = signal.get("falsifiers")
+        if not isinstance(falsifiers, list) or not falsifiers or any(
+            not _nonblank(value) for value in falsifiers
+        ):
+            raise _fail(
+                "actionable signal falsifiers are incomplete",
+                error_code="decision_semantics_invalid",
+                stage="semantic_validation",
+                field="actionable_signals.falsifiers",
+            )
         rationale = signal.get("rationale")
         if not isinstance(rationale, dict) or any(
             not isinstance(rationale.get(field), list)
