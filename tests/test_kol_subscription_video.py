@@ -2503,6 +2503,129 @@ def test_lv_transfer_operator_authorized_recovery_is_one_exact_click(
     )
 
 
+def test_lv_transfer_corrects_proven_inactive_tab_click_once(tmp_path):
+    service = _service(tmp_path, sleep=lambda _seconds: None)
+    item = service._normalize(
+        _source_rows()[0][1],
+        source=LV_SOURCE,
+        author=LV_AUTHOR,
+    )
+    service.ensure_lv_destination = lambda **_kwargs: {"status": "completed"}
+    target_ready = False
+    click_calls = 0
+
+    def direct_entries(*, directory, **_kwargs):
+        if directory != LV_DESTINATION_DIRECTORY or not target_ready:
+            return []
+        return [
+            _row(
+                "corrected-copy",
+                f"{LV_DESTINATION_DIRECTORY}/{item['name']}",
+                size=item["size"],
+                modified_at=item["modified_at"] + 1,
+            )
+        ]
+
+    service._direct_private_entries = direct_entries
+    service._search_private_exact = lambda **_kwargs: []
+    receipt_name = f"lv_transfer_{item['version_key']}"
+    claim_path = service._claim_path(receipt_name)
+    claim_path.parent.mkdir(parents=True)
+    claim_path.write_text(
+        json.dumps(
+            {
+                "schema_version": 1,
+                "event": "lv_cloud_transfer_operator_authorized_recovery_claimed",
+                "status": "waiting_cloud_transfer_receipt",
+                "claim_id": "inactive-tab-claim",
+                "claimed_at": (NOW - timedelta(minutes=1)).isoformat(),
+                "triggered_at": (NOW - timedelta(minutes=1)).isoformat(),
+                "trigger_attempt": 3,
+                "trigger_attempt_maximum": 3,
+                "source_identity": item["identity"],
+                "source_version_key": item["version_key"],
+                "source_path": item["path"],
+                "source_size": item["size"],
+                "target_path": f"{LV_DESTINATION_DIRECTORY}/{item['name']}",
+                "large_payload_local_bytes": 0,
+                "provider_outcome": "unobserved",
+                "provider_request_observed": False,
+                "provider_response_observed": False,
+                "reconciliation_status": "exact_private_copy_absent",
+                "side_effect_uncertain": True,
+                "recovery_reason": (
+                    "explicit_current_task_instruction_after_bounded_zero_match"
+                ),
+                "authorization_basis": "explicit_user_request",
+                "authorization_scope": "one_exact_item_one_native_click",
+                "authorized_recovery_consumed": True,
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    def opencli(_session, *args, **_kwargs):
+        nonlocal click_calls, target_ready
+        if args[0] == "open":
+            return {"url": "sanitized", "page": "page-1"}
+        if args[0] == "tab":
+            assert args[1:] == (
+                "select",
+                "page-1",
+                "--window",
+                "foreground",
+            )
+            return {"selected": "page-1"}
+        if args[0] == "click":
+            click_calls += 1
+            claim = json.loads(claim_path.read_text(encoding="utf-8"))
+            assert claim["status"] == "native_click_claimed"
+            assert claim["trigger_attempt"] == 3
+            assert claim["native_click_page_id"] == "page-1"
+            assert claim["native_click_window"] == "foreground"
+            target_ready = True
+            return {"clicked": True, "matches_n": 1}
+        if "destinationSegments" in args[1]:
+            return {
+                "status": "save_confirmation_ready",
+                "confirmation_selector": (
+                    '[data-xiaocao-lv-confirm="ready"]'
+                ),
+                "triggered": False,
+            }
+        return {
+            "status": "cloud_transfer_accepted",
+            "triggered": True,
+            "provider_outcome": "accepted",
+            "provider_request_observed": True,
+            "provider_response_observed": True,
+        }
+
+    service._opencli_json = opencli
+
+    result = service.transfer_lv_video(
+        item,
+        lv_session="lv",
+        private_session="private",
+        profile="work",
+        operator_authorized_recovery=True,
+        operator_authorized_recovery_correction=True,
+    )
+
+    assert result["status"] == "completed"
+    assert result["target_path"] == (
+        f"{LV_DESTINATION_DIRECTORY}/{item['name']}"
+    )
+    assert click_calls == 1
+    final_claim = json.loads(claim_path.read_text(encoding="utf-8"))
+    assert final_claim["trigger_attempt"] == 3
+    assert final_claim["trigger_attempt_maximum"] == 3
+    assert final_claim["correction_does_not_consume_provider_attempt"] is True
+    events = service.events_path.read_text(encoding="utf-8")
+    assert "lv_cloud_transfer_control_plane_correction_claimed" in events
+    assert "inactive_tab_click_proven_no_input_event" in events
+
+
 def test_lv_transfer_readback_never_retries_the_uncertain_effect(tmp_path):
     service = _service(tmp_path, sleep=lambda _seconds: None)
     item = service._normalize(

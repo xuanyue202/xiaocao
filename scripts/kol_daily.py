@@ -1471,17 +1471,17 @@ def _classified_source(name: str, runner):
                 raise UserActionBlocker(
                     "lv-cloud-transfer-not-materialized",
                     "百度网盘已两次确认转存，但目标目录和全局精确搜索均无"
-                    "对应文件。请检查网盘容量或转存限制，并手动把最新吕晓彤"
-                    "视频保存到 /课程/自己的课/吕晓彤；完成后保持 Edge "
-                    "登录，下一小时会只读对账并继续解析。",
+                    "对应文件。外部效果暂未可证实，已保留精确账本并停止自动重试；"
+                    "如当前任务有明确代理接管授权，由代理执行一次受限修复，"
+                    "不要求用户代做。",
                 ) from exc
             if message == "Lv cloud transfer was rejected by provider":
                 raise UserActionBlocker(
                     "lv-cloud-transfer-provider-rejected",
                     "百度网盘明确拒绝了吕晓彤视频转存。请检查网盘容量、"
-                    "会员文件大小或转存上限，处理后手动把最新视频保存到 "
-                    "/课程/自己的课/吕晓彤；保持 Edge 登录后，下一小时"
-                    "会只读对账并继续解析。",
+                    "会员文件大小或转存上限；代理不会绕过提供方拒绝或要求用户"
+                    "代做，处理提供方状态后由代理只读对账；目标目录为"
+                    " /课程/自己的课/吕晓彤。",
                 ) from exc
             raise TransientSourceError(
                 message,

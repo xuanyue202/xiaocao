@@ -3962,6 +3962,7 @@ class SubscriptionVideoService:
         readback_only: bool = False,
         observability_repair_revision: str | None = None,
         operator_authorized_recovery: bool = False,
+        operator_authorized_recovery_correction: bool = False,
     ) -> dict[str, Any]:
         if item.get("source") != LV_SOURCE or item.get("author") != LV_AUTHOR:
             raise EnrichmentError("cloud transfer accepts only Lv Xiaotong items")
@@ -4077,6 +4078,10 @@ class SubscriptionVideoService:
             raise EnrichmentError(
                 "operator-authorized Lv recovery requires a settled trigger"
             )
+        if operator_authorized_recovery_correction and not operator_authorized_recovery:
+            raise EnrichmentError(
+                "Lv recovery correction requires operator authorization"
+            )
         reconciled_absent = False
         if claim.get("triggered_at") or (
             claim.get("status") == "failed_pretrigger"
@@ -4153,6 +4158,41 @@ class SubscriptionVideoService:
                     or LV_TRANSFER_MAX_TRIGGER_ATTEMPTS
                 ),
             )
+            inactive_tab_click_correction_eligible = (
+                operator_authorized_recovery_correction
+                and preexisting_claim
+                and trigger_attempt == LV_TRANSFER_MAX_TRIGGER_ATTEMPTS + 1
+                and trigger_attempt_maximum == trigger_attempt
+                and claim.get("status")
+                in {"waiting_cloud_transfer_receipt", "blocked"}
+                and (
+                    claim.get("status") != "blocked"
+                    or (
+                        claim.get("blocker_key")
+                        == "lv-cloud-transfer-not-materialized"
+                        and claim.get("reconciliation_status")
+                        == "exact_private_copy_absent_after_bounded_retry"
+                    )
+                )
+                and claim.get("authorized_recovery_consumed") is True
+                and claim.get("authorization_basis") == "explicit_user_request"
+                and claim.get("authorization_scope")
+                == "one_exact_item_one_native_click"
+                and claim.get("recovery_reason")
+                == "explicit_current_task_instruction_after_bounded_zero_match"
+                and claim.get("provider_outcome") == "unobserved"
+                and claim.get("provider_request_observed") is False
+                and claim.get("provider_response_observed") is False
+                and not claim.get("native_click_page_id")
+                and not claim.get("native_click_window")
+            )
+            if (
+                operator_authorized_recovery_correction
+                and not inactive_tab_click_correction_eligible
+            ):
+                raise EnrichmentError(
+                    "Lv recovery correction is not the exact proven inactive-tab claim"
+                )
             if claim.get("provider_trigger_status") == "cloud_transfer_rejected":
                 self._record_transfer_blocker(
                     receipt_name,
@@ -4175,7 +4215,10 @@ class SubscriptionVideoService:
                 raise EnrichmentError(
                     "Lv cloud transfer native click outcome is uncertain"
                 )
-            if now < retry_not_before:
+            if (
+                now < retry_not_before
+                and not inactive_tab_click_correction_eligible
+            ):
                 waiting = {
                     **claim,
                     "status": "waiting_cloud_transfer_receipt",
@@ -4243,28 +4286,34 @@ class SubscriptionVideoService:
             )
             observability_recovery = False
             operator_recovery = False
+            control_plane_correction = inactive_tab_click_correction_eligible
             if trigger_attempt >= trigger_attempt_maximum:
-                operator_recovery_eligible = (
-                    operator_authorized_recovery
-                    and claim.get("status") == "blocked"
-                    and claim.get("blocker_key")
-                    == "lv-cloud-transfer-not-materialized"
-                    and claim.get("user_action_required") is True
-                    and claim.get("provider_outcome") == "unobserved"
-                    and claim.get("provider_request_observed") is False
-                    and claim.get("provider_response_observed") is False
-                    and claim.get("reconciliation_status")
-                    == "exact_private_copy_absent_after_bounded_retry"
-                    and claim.get("authorized_recovery_consumed") is not True
-                )
-                if operator_authorized_recovery and not operator_recovery_eligible:
-                    raise EnrichmentError(
-                        "operator-authorized Lv recovery target is not the exact "
-                        "settled bounded blocker"
+                if not control_plane_correction:
+                    operator_recovery_eligible = (
+                        operator_authorized_recovery
+                        and claim.get("status") == "blocked"
+                        and claim.get("blocker_key")
+                        == "lv-cloud-transfer-not-materialized"
+                        and claim.get("user_action_required") is True
+                        and claim.get("provider_outcome") == "unobserved"
+                        and claim.get("provider_request_observed") is False
+                        and claim.get("provider_response_observed") is False
+                        and claim.get("reconciliation_status")
+                        == "exact_private_copy_absent_after_bounded_retry"
+                        and claim.get("authorized_recovery_consumed") is not True
                     )
-                if operator_recovery_eligible:
-                    operator_recovery = True
-                elif legacy_observability_gap:
+                    if operator_authorized_recovery and not operator_recovery_eligible:
+                        raise EnrichmentError(
+                            "operator-authorized Lv recovery target is not the exact "
+                            "settled bounded blocker"
+                        )
+                    if operator_recovery_eligible:
+                        operator_recovery = True
+                if (
+                    not control_plane_correction
+                    and not operator_recovery
+                    and legacy_observability_gap
+                ):
                     if observability_repair_revision is None:
                         raise EnrichmentDiagnosticError(
                             "legacy Lv transfer attempts lack provider response evidence",
@@ -4279,7 +4328,7 @@ class SubscriptionVideoService:
                             "Lv transfer observability repair revision is invalid"
                         )
                     observability_recovery = True
-                else:
+                elif not control_plane_correction and not operator_recovery:
                     self._record_transfer_blocker(
                         receipt_name,
                         claim,
@@ -4297,30 +4346,44 @@ class SubscriptionVideoService:
                         "exact reconciliation"
                     )
             retry_claimed_at = now.isoformat(timespec="microseconds")
+            retry_attempt = (
+                trigger_attempt
+                if control_plane_correction
+                else trigger_attempt + 1
+            )
+            retry_attempt_maximum = (
+                trigger_attempt_maximum
+                if control_plane_correction
+                else (
+                    trigger_attempt + 1
+                    if observability_recovery or operator_recovery
+                    else trigger_attempt_maximum
+                )
+            )
             retry_claim = {
                 **claim,
                 "event": (
-                    "lv_cloud_transfer_operator_authorized_recovery_claimed"
-                    if operator_recovery
+                    "lv_cloud_transfer_control_plane_correction_claimed"
+                    if control_plane_correction
                     else (
-                        "lv_cloud_transfer_observability_recovery_claimed"
-                        if observability_recovery
-                        else "lv_cloud_transfer_recovery_claimed"
+                        "lv_cloud_transfer_operator_authorized_recovery_claimed"
+                        if operator_recovery
+                        else (
+                            "lv_cloud_transfer_observability_recovery_claimed"
+                            if observability_recovery
+                            else "lv_cloud_transfer_recovery_claimed"
+                        )
                     )
                 ),
                 "status": "claimed",
                 "claim_id": _sha256_text(
                     f"{receipt_name}\n{retry_claimed_at}\n"
-                    f"{claim['claim_id']}\n{trigger_attempt + 1}"
+                    f"{claim['claim_id']}\n{retry_attempt}"
                 ),
                 "claimed_at": retry_claimed_at,
                 "retry_of": claim["claim_id"],
-                "trigger_attempt": trigger_attempt + 1,
-                "trigger_attempt_maximum": (
-                    trigger_attempt + 1
-                    if observability_recovery or operator_recovery
-                    else trigger_attempt_maximum
-                ),
+                "trigger_attempt": retry_attempt,
+                "trigger_attempt_maximum": retry_attempt_maximum,
                 "prior_triggered_at": claim["triggered_at"],
                 "reconciled_absent_at": now.isoformat(timespec="seconds"),
                 "reconciliation_basis": (
@@ -4328,29 +4391,50 @@ class SubscriptionVideoService:
                 ),
                 **(
                     {
-                        "observability_repair_revision": (
-                            observability_repair_revision
-                        ),
                         "recovery_reason": (
-                            "legacy_attempts_predated_provider_response_observer"
+                            "inactive_tab_click_proven_no_input_event"
                         ),
+                        "correction_of": claim["claim_id"],
+                        "correction_basis": (
+                            "same_opencli_session_tab_was_inactive_and_native_click"
+                            "_returned_dom_match_without_a_trusted_event"
+                        ),
+                        "authorization_basis": (
+                            "explicit_user_request"
+                        ),
+                        "authorization_scope": (
+                            "one_exact_item_one_native_click"
+                        ),
+                        "authorized_recovery_consumed": True,
+                        "correction_does_not_consume_provider_attempt": True,
                     }
-                    if observability_recovery
+                    if control_plane_correction
                     else (
                         {
+                            "observability_repair_revision": (
+                                observability_repair_revision
+                            ),
                             "recovery_reason": (
-                                "explicit_current_task_instruction_after_bounded_zero_match"
+                                "legacy_attempts_predated_provider_response_observer"
                             ),
-                            "authorization_basis": (
-                                "explicit_user_request"
-                            ),
-                            "authorization_scope": (
-                                "one_exact_item_one_native_click"
-                            ),
-                            "authorized_recovery_consumed": True,
                         }
-                        if operator_recovery
-                        else {}
+                        if observability_recovery
+                        else (
+                            {
+                                "recovery_reason": (
+                                    "explicit_current_task_instruction_after_bounded_zero_match"
+                                ),
+                                "authorization_basis": (
+                                    "explicit_user_request"
+                                ),
+                                "authorization_scope": (
+                                    "one_exact_item_one_native_click"
+                                ),
+                                "authorized_recovery_consumed": True,
+                            }
+                            if operator_recovery
+                            else {}
+                        )
                     )
                 ),
             }
@@ -4367,6 +4451,8 @@ class SubscriptionVideoService:
                 "blocker_key",
                 "failure_reason",
                 "user_action_required",
+                "native_click_page_id",
+                "native_click_window",
                 *_TRANSFER_DIAGNOSTIC_FIELDS,
             ):
                 retry_claim.pop(field, None)

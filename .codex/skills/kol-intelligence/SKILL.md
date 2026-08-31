@@ -117,3 +117,6 @@ claim before the native OpenCLI click, and raise the maximum to three. Stop afte
 that probe on rejection, unobserved, or non-materialization. Never expose it to
 an ordinary hourly sweep or bypass identity, destination, auth, consent, or a
 provider rejection.
+
+After `open`, select its page with `tab select <page> --window foreground`
+before native input; `clicked=true`/`matches_n=1` only proves selector match.

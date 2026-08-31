@@ -602,7 +602,12 @@ work and never authorizes replaying publication, reminder, or Book side effects.
   bytes, persist a broadband-worker handoff and stop.
 - For the Lv share-side save, DOM evaluation may select the exact source and
   destination and mark the one visible `确定` control with a unique selector,
-  but the final provider confirmation must use OpenCLI's native
+  and the exact page returned by `open` must first be selected with
+  `browser <session> tab select <page> --window foreground` so native input is
+  delivered to the active tab. `open --window foreground` alone is not an
+  activation proof, and OpenCLI's `clicked=true`/`matches_n=1` only proves
+  selector resolution, not provider effect. The final provider confirmation
+  must use OpenCLI's native
   `browser <session> click <selector>` command. Persist the click claim before
   that command. Never use `element.click()` as confirmation proof; a timeout
   or ambiguous native-click result is side-effect-uncertain and must enter
@@ -628,6 +633,11 @@ work and never authorizes replaying publication, reminder, or Book side effects.
   to materialize. Never expose this branch to an ordinary hourly sweep or use
   it to bypass a target mismatch, a provider rejection, or an unresolved
   authentication/consent gate.
+  If that authorized click was issued while the exact tab was inactive and a
+  session-level event probe proves no input was delivered, the Agent may record
+  one `inactive_tab_click_proven_no_input_event` control-plane correction on the
+  same item/attempt after selecting the tab; this consumes no additional
+  provider-attempt budget and still allows only one effective native click.
 - Legacy observability repair is the only non-user-authorized exception to that
   two-trigger bound.
   If both historical attempts predate the provider request/response observer,
