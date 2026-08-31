@@ -139,9 +139,35 @@ class TransientSourceError(DailyError):
 class UserActionBlocker(DailyError):
     """A structured blocker whose exact user action may be notified once."""
 
-    def __init__(self, blocker_key: str, action: str):
+    def __init__(
+        self,
+        blocker_key: str,
+        action: str,
+        *,
+        waiting_items: list[Mapping[str, Any]] | None = None,
+        claim_receipt_summary: Mapping[str, int] | None = None,
+    ):
         self.blocker_key = str(blocker_key or "").strip()
         self.action = str(action or "").strip()
+        self.waiting_items = [dict(row) for row in (waiting_items or [])]
+        self.claim_receipt_summary = (
+            {
+                "claim_count": int(
+                    (claim_receipt_summary or {}).get("claim_count") or 0
+                ),
+                "receipt_count": int(
+                    (claim_receipt_summary or {}).get("receipt_count") or 0
+                ),
+                "uncertain_effect_count": int(
+                    (claim_receipt_summary or {}).get(
+                        "uncertain_effect_count"
+                    )
+                    or 0
+                ),
+            }
+            if claim_receipt_summary is not None
+            else None
+        )
         if not self.blocker_key or not self.action:
             raise ValueError("user-action blocker needs a key and exact action")
         super().__init__(self.action)
@@ -2180,12 +2206,23 @@ class DailyCoordinator:
                             blocker_key=exc.blocker_key,
                             action=exc.action,
                         )
+                    waiting_items = exc.waiting_items or [{
+                        "identity": f"{name}:source",
+                        "stage": "external_authorization",
+                        "user_action_required": True,
+                    }]
                     outcome = {
                         "status": "waiting",
                         "blocker_key": exc.blocker_key,
                         "user_action_required": True,
                         "notification_sent": not notified,
+                        "waiting_count": len(waiting_items),
+                        "waiting_items": waiting_items,
                     }
+                    if exc.claim_receipt_summary is not None:
+                        outcome["claim_receipt_summary"] = (
+                            exc.claim_receipt_summary
+                        )
                     user_action_context = {
                         "action": exc.action,
                         "blocker_identity": exc.blocker_key,

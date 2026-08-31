@@ -3503,6 +3503,57 @@ def test_daily_resume_user_action_runs_only_exact_blocked_source(tmp_path):
     )
 
 
+def test_user_blocker_preserves_concrete_items_and_claim_summary(tmp_path):
+    service = DailyCoordinator(
+        tmp_path / "daily",
+        now=Clock("2026-08-15T17:00:00+08:00"),
+    )
+    blocked_items = [{
+        "identity": "video-1",
+        "version_key": "version-1",
+        "name": "8月27日.mp4",
+        "stage": "cloud_transfer_confirmation",
+        "blocker_key": "lv-cloud-transfer-not-materialized",
+        "reconciliation_status": (
+            "exact_private_copy_absent_after_bounded_retry"
+        ),
+        "side_effect_uncertain": True,
+    }]
+    blocker = UserActionBlocker(
+        "lv-cloud-transfer-not-materialized",
+        "请处理吕晓彤视频转存",
+        waiting_items=[{
+            "identity": "subscription_video:source",
+            "stage": "cloud_transfer_confirmation",
+            "user_action_required": True,
+            "blocked_items": blocked_items,
+        }],
+        claim_receipt_summary={
+            "claim_count": 1,
+            "receipt_count": 0,
+            "uncertain_effect_count": 1,
+        },
+    )
+
+    result = service.run(
+        [{
+            "name": "subscription_video",
+            "run": lambda: (_ for _ in ()).throw(blocker),
+        }],
+        blocker_sender=lambda _title, _body: None,
+    )
+
+    source = result["source_results"][0]
+    assert source["waiting_count"] == 1
+    assert source["waiting_items"][0]["blocked_items"] == blocked_items
+    progress = WriterProgress.from_dict(source["writer_progress"])
+    assert progress.details["claim_receipt_summary"] == {
+        "claim_count": 1,
+        "receipt_count": 0,
+        "uncertain_effect_count": 1,
+    }
+
+
 def test_source_effect_readback_recovers_exact_active_progress(tmp_path):
     service = DailyCoordinator(
         tmp_path / "daily",
@@ -5231,6 +5282,109 @@ def test_video_history_failure_isolated_after_latest_lv_priority(
         },
         True,
     )]
+
+
+def test_video_transfer_blocker_projects_all_blocked_lv_claims(
+    monkeypatch,
+    tmp_path,
+):
+    video_output = tmp_path / "videos"
+    items = [
+        {
+            "identity": "latest-video",
+            "version_key": "latest-version",
+            "name": "8月27日.mp4",
+            "source": "baidu_subscription_share_browser",
+            "media_type": "video",
+            "remote_activity_at": 200,
+        },
+        {
+            "identity": "older-video",
+            "version_key": "older-version",
+            "name": "8月24日.mp4",
+            "source": "baidu_subscription_share_browser",
+            "media_type": "video",
+            "remote_activity_at": 100,
+        },
+    ]
+    for item in items:
+        claim_path = (
+            video_output
+            / "claims"
+            / f"lv_transfer_{item['version_key']}.json"
+        )
+        claim_path.parent.mkdir(parents=True, exist_ok=True)
+        claim_path.write_text(
+            json.dumps({
+                "claim_id": f"claim-{item['version_key']}",
+                "status": "blocked",
+                "blocker_key": "lv-cloud-transfer-not-materialized",
+                "reconciliation_status": (
+                    "exact_private_copy_absent_after_bounded_retry"
+                ),
+                "provider_outcome": "unobserved",
+                "side_effect_uncertain": False,
+                "trigger_attempt": 2,
+                "source_identity": item["identity"],
+                "source_version_key": item["version_key"],
+            }),
+            encoding="utf-8",
+        )
+
+    class FakeVideos:
+        def __init__(self, *_args, **_kwargs):
+            pass
+
+        @staticmethod
+        def scan_opencli(**_kwargs):
+            return None
+
+        @staticmethod
+        def pending_items():
+            return items
+
+        @staticmethod
+        def advance_item(_item, **_kwargs):
+            raise EnrichmentError(
+                "Lv cloud transfer did not materialize after bounded "
+                "exact reconciliation"
+            )
+
+    monkeypatch.setattr(
+        kol_daily_script,
+        "SubscriptionVideoService",
+        FakeVideos,
+    )
+    runtime = DailyRuntime.__new__(DailyRuntime)
+    runtime.args = SimpleNamespace(
+        video_output_dir=video_output,
+        config=tmp_path / "config.yaml",
+        lv_session="lv-session",
+        private_session="private-session",
+        enrichment_session="enrichment-session",
+        opencli_profile=None,
+    )
+    runtime._lv_listing_for_sweep = lambda: {
+        "status": "ok",
+        "complete_scan": True,
+        "entries": [],
+    }
+
+    with pytest.raises(UserActionBlocker) as captured:
+        runtime.videos()
+
+    blocker = captured.value
+    assert blocker.claim_receipt_summary == {
+        "claim_count": 2,
+        "receipt_count": 0,
+        "uncertain_effect_count": 2,
+    }
+    assert blocker.waiting_items[0]["identity"] == (
+        "subscription_video:source"
+    )
+    assert [
+        row["name"] for row in blocker.waiting_items[0]["blocked_items"]
+    ] == ["8月27日.mp4", "8月24日.mp4"]
 
 
 def test_video_deterministic_failure_stops_same_root_fanout_with_repair_progress(

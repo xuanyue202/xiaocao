@@ -1300,17 +1300,20 @@ def _standalone_writer_result(adapter: str, runner) -> dict[str, Any]:
             "blocker_identity": f"{adapter}:{exc.blocker_key}",
             "dedup_key": f"{adapter}:{exc.blocker_key}",
         }
+        waiting_items = exc.waiting_items or [{
+            "identity": identity,
+            "stage": "external_authorization",
+            "user_action_required": True,
+            **user_action,
+        }]
         outcome = {
             "status": "waiting",
             "user_action_required": True,
-            "waiting_count": 1,
-            "waiting_items": [{
-                "identity": identity,
-                "stage": "external_authorization",
-                "user_action_required": True,
-                **user_action,
-            }],
+            "waiting_count": len(waiting_items),
+            "waiting_items": waiting_items,
         }
+        if exc.claim_receipt_summary is not None:
+            outcome["claim_receipt_summary"] = exc.claim_receipt_summary
     except SemanticInputUnavailable as exc:
         outcome = {
             "status": "waiting",
@@ -1514,17 +1517,22 @@ def _classified_narrow_source(name: str, runner):
                 "blocker_identity": exc.blocker_key,
                 "dedup_key": exc.blocker_key,
             }
+            waiting_items = exc.waiting_items or [{
+                "identity": f"{name}:source",
+                "stage": "external_authorization",
+                "user_action_required": True,
+                **user_action,
+            }]
             outcome = {
                 "status": "waiting",
                 "user_action_required": True,
-                "waiting_count": 1,
-                "waiting_items": [{
-                    "identity": f"{name}:source",
-                    "stage": "external_authorization",
-                    "user_action_required": True,
-                    **user_action,
-                }],
+                "waiting_count": len(waiting_items),
+                "waiting_items": waiting_items,
             }
+            if exc.claim_receipt_summary is not None:
+                outcome["claim_receipt_summary"] = (
+                    exc.claim_receipt_summary
+                )
         except TransientSourceError as exc:
             failure = exc.diagnostic()
             waiting_item = {
@@ -1918,6 +1926,128 @@ def _lv_transfer_claim_binding(
         "claim_identity": f"lv_transfer:{version}:{claim_id}",
         "readback_operation": "read_lv_transfer_claim_receipt",
     }
+
+
+def _lv_transfer_blocked_item_projection(
+    output_dir: Path,
+    items: list[dict[str, Any]],
+) -> tuple[list[dict[str, Any]], dict[str, int]]:
+    """Expose blocked Lv objects without touching their external claims."""
+
+    blocked_items: list[dict[str, Any]] = []
+    for item in items:
+        if (
+            item.get("source") != LV_SOURCE
+            or item.get("media_type") != "video"
+        ):
+            continue
+        version = str(item.get("version_key") or "")
+        claim_path = output_dir / "claims" / f"lv_transfer_{version}.json"
+        if not claim_path.is_file():
+            continue
+        try:
+            claim = json.loads(claim_path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError) as exc:
+            raise DailyError("Lv transfer claim is invalid") from exc
+        if (
+            not str(claim.get("claim_id") or "")
+            or str(claim.get("source_identity") or "")
+            != str(item.get("identity") or "")
+            or str(claim.get("source_version_key") or "") != version
+        ):
+            raise DailyError("Lv transfer claim binding changed")
+        if claim.get("status") != "blocked":
+            continue
+        blocker_key = str(claim.get("blocker_key") or "")
+        if blocker_key not in {
+            "lv-cloud-transfer-not-materialized",
+            "lv-cloud-transfer-provider-rejected",
+        }:
+            continue
+        side_effect_uncertain = (
+            claim.get("side_effect_uncertain") is True
+            or claim.get("provider_outcome") == "unobserved"
+        )
+        blocked_items.append({
+            "identity": str(item.get("identity") or ""),
+            "version_key": version,
+            "name": str(item.get("name") or ""),
+            "stage": str(
+                claim.get("stage") or "cloud_transfer_confirmation"
+            ),
+            "status": "blocked",
+            "blocker_key": blocker_key,
+            "reconciliation_status": str(
+                claim.get("reconciliation_status") or ""
+            ),
+            "trigger_attempt": int(claim.get("trigger_attempt") or 0),
+            "side_effect_uncertain": side_effect_uncertain,
+        })
+    blocked_items.sort(
+        key=lambda row: (
+            -int(next(
+                (
+                    item.get("remote_activity_at")
+                    or item.get("modified_at")
+                    or 0
+                    for item in items
+                    if str(item.get("identity") or "") == row["identity"]
+                ),
+                0,
+            )),
+            row["name"],
+        )
+    )
+    return blocked_items, {
+        "claim_count": len(blocked_items),
+        "receipt_count": 0,
+        "uncertain_effect_count": sum(
+            int(row["side_effect_uncertain"])
+            for row in blocked_items
+        ),
+    }
+
+
+def _lv_transfer_user_action_blocker(
+    output_dir: Path,
+    pending: list[dict[str, Any]],
+    current: dict[str, Any],
+    *,
+    blocker_key: str,
+    action: str,
+) -> UserActionBlocker:
+    blocked_items, summary = _lv_transfer_blocked_item_projection(
+        output_dir,
+        pending,
+    )
+    if not blocked_items:
+        blocked_items = [{
+            "identity": str(current.get("identity") or ""),
+            "version_key": str(current.get("version_key") or ""),
+            "name": str(current.get("name") or ""),
+            "stage": "cloud_transfer_confirmation",
+            "status": "blocked",
+            "blocker_key": blocker_key,
+            "side_effect_uncertain": (
+                blocker_key != "lv-cloud-transfer-provider-rejected"
+            ),
+        }]
+        summary = {
+            "claim_count": 0,
+            "receipt_count": 0,
+            "uncertain_effect_count": 1,
+        }
+    return UserActionBlocker(
+        blocker_key,
+        action,
+        waiting_items=[{
+            "identity": "subscription_video:source",
+            "stage": "cloud_transfer_confirmation",
+            "user_action_required": True,
+            "blocked_items": blocked_items,
+        }],
+        claim_receipt_summary=summary,
+    )
 
 
 def _reconciliation_result(
@@ -2850,11 +2980,35 @@ class DailyRuntime:
                         ),
                     )
             except EnrichmentError as exc:
-                if str(exc) in {
-                    "Lv cloud transfer did not materialize after bounded exact reconciliation",
-                    "Lv cloud transfer was rejected by provider",
-                }:
-                    raise
+                if str(exc) == (
+                    "Lv cloud transfer did not materialize after bounded "
+                    "exact reconciliation"
+                ):
+                    raise _lv_transfer_user_action_blocker(
+                        self.args.video_output_dir,
+                        pending,
+                        item,
+                        blocker_key="lv-cloud-transfer-not-materialized",
+                        action=(
+                            "百度网盘已两次确认转存，但目标目录和全局精确搜索均无"
+                            "对应文件。请检查网盘容量或转存限制，并手动把下列吕晓彤"
+                            "视频保存到 /课程/自己的课/吕晓彤；完成后保持 Edge 登录，"
+                            "下一小时会只读对账并继续解析。"
+                        ),
+                    ) from exc
+                if str(exc) == "Lv cloud transfer was rejected by provider":
+                    raise _lv_transfer_user_action_blocker(
+                        self.args.video_output_dir,
+                        pending,
+                        item,
+                        blocker_key="lv-cloud-transfer-provider-rejected",
+                        action=(
+                            "百度网盘明确拒绝了吕晓彤视频转存。请检查网盘容量、会员"
+                            "文件大小或转存上限，处理后手动把下列视频保存到 "
+                            "/课程/自己的课/吕晓彤；保持 Edge 登录后，下一小时会只读"
+                            "对账并继续解析。"
+                        ),
+                    ) from exc
                 failure, retryable = _isolated_item_failure(
                     exc,
                     default_stage="source_acquisition",

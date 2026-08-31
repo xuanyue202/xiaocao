@@ -2341,6 +2341,12 @@ def test_lv_transfer_stops_after_bounded_reconciled_retry(tmp_path):
                     f"{LV_DESTINATION_DIRECTORY}/{item['name']}"
                 ),
                 "large_payload_local_bytes": 0,
+                "provider_outcome": "unobserved",
+                "provider_request_observed": False,
+                "provider_response_observed": False,
+                "provider_trigger_status": (
+                    "cloud_transfer_outcome_unobserved"
+                ),
             }
         ),
         encoding="utf-8",
@@ -2365,6 +2371,7 @@ def test_lv_transfer_stops_after_bounded_reconciled_retry(tmp_path):
     assert blocked["reconciliation_status"] == (
         "exact_private_copy_absent_after_bounded_retry"
     )
+    assert blocked["side_effect_uncertain"] is True
     assert blocked["user_action_required"] is True
 
 

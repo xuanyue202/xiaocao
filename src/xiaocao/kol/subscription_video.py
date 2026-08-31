@@ -3664,7 +3664,9 @@ class SubscriptionVideoService:
             "status": "blocked",
             "stage": "cloud_transfer_confirmation",
             "pending": False,
-            "side_effect_uncertain": False,
+            "side_effect_uncertain": (
+                claim.get("provider_outcome") == "unobserved"
+            ),
             "user_action_required": True,
             "blocker_key": blocker_key,
             "failure_reason": failure_reason,
