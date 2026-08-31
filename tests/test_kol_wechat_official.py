@@ -375,6 +375,61 @@ def test_opencli_acquisition_materializes_complete_markdown_and_images(tmp_path)
     assert kwargs["env"]["OPENCLI_BROWSER_COMMAND_TIMEOUT"] == "110"
 
 
+def test_opencli_accepts_page_time_bound_to_received_at_after_discovery_drift(
+    tmp_path,
+):
+    capsule = _capture_one(tmp_path)
+    inbox = OfficialAccountInbox(tmp_path / "remote")
+    inbox.import_capsule(capsule)
+    [item] = inbox.pending_items()
+    item["published_at"] = "2026-08-04T16:51:40+08:00"
+    item["received_at"] = "2026-08-04T16:57:40+08:00"
+    markdown = "# 业绩炸裂\n\n公众号：刘少狙击营\n\n" + _long_body()
+    runner, _calls = _opencli_runner(
+        markdown=markdown,
+        title="业绩炸裂",
+        author="刘少狙击营",
+        publish_time="2026年8月4日 16:57",
+        with_image=False,
+    )
+
+    acquired = OfficialAccountOpenCliAcquirer(
+        tmp_path / "remote" / "opencli",
+        runner=runner,
+    )(item)
+
+    assert acquired["page_publish_time"] == "2026-08-04T16:57:00+08:00"
+    assert acquired["publish_time_delta_seconds"] == 320
+    assert acquired["publish_time_match_basis"] == "received_at"
+
+
+def test_opencli_rejects_page_time_far_from_both_discovery_anchors(tmp_path):
+    capsule = _capture_one(tmp_path)
+    inbox = OfficialAccountInbox(tmp_path / "remote")
+    inbox.import_capsule(capsule)
+    [item] = inbox.pending_items()
+    item["published_at"] = "2026-08-04T16:51:40+08:00"
+    item["received_at"] = "2026-08-04T16:57:40+08:00"
+    markdown = "# 业绩炸裂\n\n公众号：刘少狙击营\n\n" + _long_body()
+    runner, _calls = _opencli_runner(
+        markdown=markdown,
+        title="业绩炸裂",
+        author="刘少狙击营",
+        publish_time="2026年8月4日 17:15",
+        with_image=False,
+    )
+
+    with pytest.raises(EnrichmentDiagnosticError) as captured:
+        OfficialAccountOpenCliAcquirer(
+            tmp_path / "remote" / "opencli",
+            runner=runner,
+        )(item)
+
+    assert captured.value.diagnostic_code == (
+        "wechat_official_publish_time_mismatch"
+    )
+
+
 def test_opencli_profile_is_bound_to_official_account_download(tmp_path):
     capsule = _capture_one(tmp_path)
     inbox = OfficialAccountInbox(tmp_path / "remote")

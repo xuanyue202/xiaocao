@@ -54,6 +54,7 @@ _REMOTE_TERMINAL = {"decided"}
 _MAX_CAPSULE_BYTES = 64 * 1024
 _MAX_ARTICLE_BYTES = 20 * 1024 * 1024
 _MAX_IMAGE_NOTES_BYTES = 1024 * 1024
+_PUBLISH_TIME_TOLERANCE_SECONDS = 5 * 60
 _IMAGE_NOTES_HEADING = "# 图片信息转写"
 
 
@@ -978,12 +979,35 @@ class OfficialAccountOpenCliAcquirer:
                 stage="wechat_official_validation",
             )
         page_time = _page_publish_time(row.get("publish_time"))
-        discovery_time = datetime.fromisoformat(str(item["published_at"]))
-        if discovery_time.tzinfo is None:
-            raise EnrichmentError("official-account discovery time is invalid")
+        try:
+            discovery_time = datetime.fromisoformat(
+                str(item["published_at"]).replace("Z", "+00:00")
+            )
+            received_time = datetime.fromisoformat(
+                str(item["received_at"]).replace("Z", "+00:00")
+            )
+        except ValueError as exc:
+            raise EnrichmentError(
+                "official-account discovery or received time is invalid"
+            ) from exc
+        if discovery_time.tzinfo is None or received_time.tzinfo is None:
+            raise EnrichmentError(
+                "official-account discovery or received time needs a timezone"
+            )
         discovery_time = discovery_time.astimezone(BEIJING)
+        received_time = received_time.astimezone(BEIJING)
         delta = abs((page_time - discovery_time).total_seconds())
-        if page_time.date() != discovery_time.date() or delta > 300:
+        received_delta = abs((page_time - received_time).total_seconds())
+        matches_discovery = (
+            page_time.date() == discovery_time.date()
+            and delta <= _PUBLISH_TIME_TOLERANCE_SECONDS
+        )
+        matches_received = (
+            page_time.date() == received_time.date()
+            and page_time <= received_time
+            and received_delta <= _PUBLISH_TIME_TOLERANCE_SECONDS
+        )
+        if not (matches_discovery or matches_received):
             raise EnrichmentDiagnosticError(
                 "official-account page publish time mismatch",
                 category="source_error",
@@ -1034,6 +1058,9 @@ class OfficialAccountOpenCliAcquirer:
             "body_text_characters": _article_text_characters(markdown),
             "page_publish_time": page_time.isoformat(timespec="seconds"),
             "publish_time_delta_seconds": int(delta),
+            "publish_time_match_basis": (
+                "published_at" if matches_discovery else "received_at"
+            ),
             "image_assets": images,
             "image_count": len(images),
         }
