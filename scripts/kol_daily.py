@@ -4685,8 +4685,10 @@ def main() -> int:
                 action=str(following.details["action"]),
                 blocker_sender=_sender,
             )
-        resume_receipt = service.convergence.record_resume(
-            progress.failure_fingerprint,
+        resume_receipt = service.record_repair_resume(
+            args.source_adapter,
+            prior=progress,
+            outcome=outcome,
             following=following,
             slot=_source_repair_slot(service),
         )

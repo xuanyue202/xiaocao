@@ -66,6 +66,7 @@ from xiaocao.kol.writer_progress import (
     RolloutReadback,
     WriterProgress,
     affected_set_digest,
+    normalize_source_result,
 )
 
 
@@ -4717,13 +4718,71 @@ def test_xiaocao_provider_unavailability_reuses_exact_playback_wait(tmp_path):
     assert result["waiting_items"] == [{
         **waiting_item,
         "failure": result["failure"],
-        "next_poll_not_before": "2026-08-17T09:00:00+08:00",
+        "next_poll_not_before": "2026-08-17T08:20:00+08:00",
     }]
     progress = WriterProgress.from_dict(result["writer_progress"])
     assert progress.status == "wait_until"
     assert progress.item_identity == "kol-wechat-live"
-    assert progress.details["deadline"] == "2026-08-17T09:00:00+08:00"
+    assert progress.details["deadline"] == "2026-08-17T08:20:00+08:00"
     assert calls == 2
+
+
+def test_repair_resume_persists_following_wait_for_narrow_recheck(tmp_path):
+    clock = Clock("2026-08-31T11:19:00+08:00")
+    service = DailyCoordinator(tmp_path / "daily", now=clock)
+    initial = service.run([{
+        "name": "xiaocao_wechat_live",
+        "run": lambda: (_ for _ in ()).throw(
+            TransientSourceError("temporarily unavailable")
+        ),
+    }])
+    prior = WriterProgress.from_dict(
+        initial["source_results"][0]["writer_progress"]
+    )
+    _close_validated_repair(
+        service,
+        prior,
+        tmp_path=tmp_path,
+        slot="2026-08-31T11:00+08:00",
+    )
+    waiting = {
+        "status": "waiting",
+        "waiting_count": 1,
+        "waiting_items": [{
+            "identity": "kol-wechat-latest",
+            "status": "awaiting_playback",
+            "stage": "compressed_capture",
+            "capture_job_id": "kol-capture-latest",
+            "next_poll_not_before": "2026-08-31T11:20:00+08:00",
+        }],
+    }
+    following = normalize_source_result(
+        "xiaocao_wechat_live",
+        waiting,
+        failure_revision="a" * 40,
+        provider_contract_version="xiaocao_writer_v1",
+    )
+
+    service.record_repair_resume(
+        "xiaocao_wechat_live",
+        prior=prior,
+        outcome=waiting,
+        following=following,
+        slot="2026-08-31T11:00+08:00",
+    )
+
+    progress_rows = [
+        row for row in service.events()
+        if row.get("event") == "source_progressed"
+        and row.get("source") == "xiaocao_wechat_live"
+    ]
+    assert progress_rows[-1]["progress"]["status"] == "wait_until"
+    assert progress_rows[-1]["progress"]["item_identity"] == (
+        "kol-wechat-latest"
+    )
+    assert service.status()["last_sweep"]["source_states"][0][
+        "waiting_items"
+    ][0]["next_poll_not_before"] == "2026-08-31T11:20:00+08:00"
 
 
 def test_source_classifier_preserves_safe_timeout_diagnostic():
