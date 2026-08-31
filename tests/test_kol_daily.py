@@ -4558,6 +4558,36 @@ def test_user_blocker_notifies_once_until_state_changes(tmp_path):
     assert service.audit()["operational_reminder_count"] == 3
 
 
+def test_repair_resume_user_blocker_uses_same_deduplicated_notification_path(
+    tmp_path,
+):
+    service = DailyCoordinator(
+        tmp_path / "daily",
+        now=Clock("2026-08-31T11:00:00+08:00"),
+    )
+    notices: list[tuple[str, str]] = []
+    sender = lambda title, body: notices.append((title, body))
+
+    first = service.notify_user_action(
+        source="xiaocao_wechat_live",
+        blocker_key="xiaocao-wechat-live-xiaoetong-login",
+        action="请在侧边栏浏览器完成当前视频登录。",
+        blocker_sender=sender,
+    )
+    second = service.notify_user_action(
+        source="xiaocao_wechat_live",
+        blocker_key="xiaocao-wechat-live-xiaoetong-login",
+        action="请在侧边栏浏览器完成当前视频登录。",
+        blocker_sender=sender,
+    )
+
+    assert first is True
+    assert second is False
+    assert notices == [
+        ("KOL 日常运行需要你处理", "请在侧边栏浏览器完成当前视频登录。")
+    ]
+
+
 def test_transient_source_failure_is_structured_and_does_not_notify(tmp_path):
     clock = Clock("2026-07-27T14:00:00+08:00")
     service = DailyCoordinator(tmp_path / "daily", now=clock)
@@ -4755,6 +4785,29 @@ def test_source_classifier_surfaces_provider_authentication_as_user_action():
 
     assert captured.value.blocker_key == "lv_text_image-provider-authentication"
     assert "重新完成登录或访问授权" in captured.value.action
+
+
+def test_source_classifier_surfaces_xiaoetong_login_with_exact_side_browser_action():
+    runner = _classified_source(
+        "xiaocao_wechat_live",
+        lambda: (_ for _ in ()).throw(
+            EnrichmentDiagnosticError(
+                "Xiaoetong account login is required",
+                category="authentication_error",
+                code="xiaoetong_account_login_required",
+                stage="playback_authorization",
+            )
+        ),
+    )
+
+    with pytest.raises(UserActionBlocker) as captured:
+        runner()
+
+    assert captured.value.blocker_key == (
+        "xiaocao-wechat-live-xiaoetong-login"
+    )
+    assert "侧边栏浏览器" in captured.value.action
+    assert "当前视频链接" in captured.value.action
 
 
 def test_source_classifier_surfaces_provider_captcha_as_user_action():

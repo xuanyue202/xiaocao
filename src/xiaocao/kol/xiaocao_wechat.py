@@ -44,7 +44,9 @@ _SHA256 = re.compile(r"^[0-9a-f]{64}$")
 _MEDIA_FILE_ID = re.compile(r"^[0-9]{8,32}$")
 _MAX_HANDOFF_BYTES = 1024 * 1024
 _CAPTURE_PROGRESS_POLL_SECONDS = 30
+_PLAYBACK_RECHECK_MINUTES = 20
 _LOCAL_CAPTURE_FIRST_HOUR = 7
+_LOCAL_CAPTURE_LAST_HOUR = 22
 _PLAYBACK_PAGE_STATES = {
     "account_login_required",
     "waiting_to_start",
@@ -73,13 +75,24 @@ def _sha256_text(value: str) -> str:
 def _next_local_playback_recheck(observed_at: datetime) -> datetime:
     if observed_at.tzinfo is None:
         raise EnrichmentError("Xiaocao WeChat clock needs a timezone")
-    deadline = (observed_at.astimezone(BEIJING) + timedelta(hours=1)).replace(
-        minute=0,
+    local = observed_at.astimezone(BEIJING)
+    elapsed = local.minute % _PLAYBACK_RECHECK_MINUTES
+    deadline = (local + timedelta(
+        minutes=_PLAYBACK_RECHECK_MINUTES - elapsed
+    )).replace(
         second=0,
         microsecond=0,
     )
     if deadline.hour < _LOCAL_CAPTURE_FIRST_HOUR:
-        deadline = deadline.replace(hour=_LOCAL_CAPTURE_FIRST_HOUR)
+        deadline = deadline.replace(
+            hour=_LOCAL_CAPTURE_FIRST_HOUR,
+            minute=0,
+        )
+    elif deadline.hour > _LOCAL_CAPTURE_LAST_HOUR:
+        deadline = (deadline + timedelta(days=1)).replace(
+            hour=_LOCAL_CAPTURE_FIRST_HOUR,
+            minute=0,
+        )
     return deadline
 
 
@@ -663,11 +676,15 @@ class XiaocaoWechatLiveSubscription:
         ):
             return False
         app_id = identity_parts[1]
+        pieces = [piece for piece in parsed.path.split("/") if piece]
         if (
             parsed.scheme != "https"
             or parsed.netloc.lower() != f"{app_id}.block.xiaoeeye.com"
             or expected.netloc.lower() != f"{app_id}.h5.xiaoeknow.com"
-            or parsed.path != expected.path
+            or len(pieces) != 4
+            or re.fullmatch(r"v[0-9]+", pieces[0]) is None
+            or pieces[1:3] != ["course", "alive"]
+            or pieces[3] != identity_parts[2]
         ):
             return False
         try:
@@ -709,7 +726,7 @@ class XiaocaoWechatLiveSubscription:
         }
         deadline_base = self.clock()
         if status == "awaiting_playback":
-            # Lifecycle rechecks follow the configured local hourly window.
+            # Short live windows need the next configured 20-minute boundary.
             deadline = _next_local_playback_recheck(deadline_base)
         else:
             if deadline_base.tzinfo is None:
@@ -1022,7 +1039,12 @@ class XiaocaoWechatLiveSubscription:
                 )
             )
         ):
-            raise EnrichmentError("Xiaoetong account login is required")
+            raise EnrichmentDiagnosticError(
+                "Xiaoetong account login is required",
+                category="authentication_error",
+                code="xiaoetong_account_login_required",
+                stage="playback_authorization",
+            )
         if page_state == "source_temporarily_unavailable":
             if (
                 activated
@@ -1045,8 +1067,7 @@ class XiaocaoWechatLiveSubscription:
             )
         response_page, response_identity = self._canonical_page(response_url)
         if (
-            response_page != item["page_url"]
-            or response_identity != item["source_identity"]
+            response_identity != item["source_identity"]
             or page_state not in _PLAYBACK_PAGE_STATES
         ):
             raise EnrichmentError("browser did not check the bound live page")
@@ -1054,6 +1075,7 @@ class XiaocaoWechatLiveSubscription:
             manifest,
             item,
             "playback_activated" if activated else "awaiting_playback",
+            page_url=response_page,
             observed_page_state=page_state,
             password_used=response.get("password_used") is True,
         )

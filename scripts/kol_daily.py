@@ -1421,6 +1421,16 @@ def _classified_source(name: str, runner):
             diagnostic_code = str(
                 getattr(exc, "diagnostic_code", "")
             )
+            if (
+                diagnostic_code == "xiaoetong_account_login_required"
+                or message == "Xiaoetong account login is required"
+            ):
+                raise UserActionBlocker(
+                    "xiaocao-wechat-live-xiaoetong-login",
+                    "请在侧边栏浏览器中保留的当前视频链接标签页完成小鹅通"
+                    "账号登录；不要把课程直播口令填入账号密码框。完成后"
+                    "保持该标签页可用，系统会在 20 分钟内复核并继续。",
+                ) from exc
             if diagnostic_code == "provider_authentication_required":
                 raise UserActionBlocker(
                     f"{name}-provider-authentication",
@@ -1441,13 +1451,6 @@ def _classified_source(name: str, runner):
                 raise UserActionBlocker(
                     f"{name}-opencli-login",
                     "请在已授权浏览器中重新登录百度网盘，并保持既有 OpenCLI 会话可访问。",
-                ) from exc
-            if message == "Xiaoetong account login is required":
-                raise UserActionBlocker(
-                    "xiaocao-wechat-live-xiaoetong-login",
-                    "请在本次保留的页面完成小鹅通账号登录，并保持该 Browser "
-                    "标签页可用；不要把直播口令填入账号密码框。完成后，下一小时"
-                    "会复核同一视频。",
                 ) from exc
             if message == "captcha_required":
                 raise UserActionBlocker(
@@ -4675,6 +4678,13 @@ def main() -> int:
             failure_code=str(progress.details["failure"]["code"]),
         )
         following = WriterProgress.from_dict(outcome["writer_progress"])
+        if following.status == "user_action_required":
+            outcome["notification_sent"] = service.notify_user_action(
+                source=args.source_adapter,
+                blocker_key=str(following.details["blocker_identity"]),
+                action=str(following.details["action"]),
+                blocker_sender=_sender,
+            )
         resume_receipt = service.convergence.record_resume(
             progress.failure_fingerprint,
             following=following,
