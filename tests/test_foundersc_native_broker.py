@@ -1358,3 +1358,109 @@ def test_native_allocation_rejects_position_sum_drift() -> None:
             expected_fund_account_fingerprint="123******890",
             now=datetime.fromisoformat(OBSERVED_AT.replace("Z", "+00:00")),
         )
+
+
+def test_native_allocation_uses_cash_balance_and_hashes_all_five_fund_fields() -> None:
+    native = FakeNative()
+    native.position_summary.update(
+        {
+            "资产": "43154.60",
+            "股票市值": "43054.60",
+            "余额": "100.00",
+            "可用": "50.00",
+            "可取": "40.00",
+        }
+    )
+    adapter = _adapter(native)
+    now = datetime.fromisoformat(OBSERVED_AT.replace("Z", "+00:00"))
+
+    first = adapter.read_live_allocation_facts(
+        trade_date="2026-08-30",
+        settled_nav=100000,
+        current_open_exposure=40000,
+        capital_basis_source="initial_book_b_capital",
+        expected_fund_account_fingerprint="123******890",
+        now=now,
+    )
+
+    assert first["available_cash"] == 50.0
+    assert first["cash_balance"] == 100.0
+    assert first["withdrawable_cash"] == 40.0
+    assert first["broker_receipt"]["allocation_summary"]["values"] == {
+        "总资产": 43154.6,
+        "证券市值": 43054.6,
+        "资金余额": 100.0,
+        "可用资金": 50.0,
+        "可取资金": 40.0,
+    }
+
+    native.position_summary["可用"] = "45.00"
+    second = adapter.read_live_allocation_facts(
+        trade_date="2026-08-30",
+        settled_nav=100000,
+        current_open_exposure=40000,
+        capital_basis_source="initial_book_b_capital",
+        expected_fund_account_fingerprint="123******890",
+        now=now,
+    )
+
+    assert second["broker_receipt_sha256"] != first["broker_receipt_sha256"]
+    assert second["allocation_capsule_sha256"] != first["allocation_capsule_sha256"]
+
+
+@pytest.mark.parametrize(
+    ("field", "value", "reason"),
+    [
+        ("可用", "100.01", "AVAILABLE_EXCEEDS_BALANCE"),
+        ("可取", "50.01", "WITHDRAWABLE_EXCEEDS_AVAILABLE"),
+    ],
+)
+def test_native_allocation_rejects_invalid_cash_ordering(
+    field: str,
+    value: str,
+    reason: str,
+) -> None:
+    native = FakeNative()
+    native.position_summary.update(
+        {
+            "资产": "43154.60",
+            "股票市值": "43054.60",
+            "余额": "100.00",
+            "可用": "50.00",
+            "可取": "40.00",
+            field: value,
+        }
+    )
+
+    with pytest.raises(FounderscNativeAXError, match=reason):
+        _adapter(native).read_live_allocation_facts(
+            trade_date="2026-08-30",
+            settled_nav=100000,
+            current_open_exposure=40000,
+            capital_basis_source="initial_book_b_capital",
+            expected_fund_account_fingerprint="123******890",
+            now=datetime.fromisoformat(OBSERVED_AT.replace("Z", "+00:00")),
+        )
+
+
+def test_native_allocation_rejects_one_cent_asset_equation_drift() -> None:
+    native = FakeNative()
+    native.position_summary.update(
+        {
+            "资产": "43154.61",
+            "股票市值": "43054.60",
+            "余额": "100.00",
+            "可用": "50.00",
+            "可取": "40.00",
+        }
+    )
+
+    with pytest.raises(FounderscNativeAXError, match="ASSET_EQUATION_FAILED"):
+        _adapter(native).read_live_allocation_facts(
+            trade_date="2026-08-30",
+            settled_nav=100000,
+            current_open_exposure=40000,
+            capital_basis_source="initial_book_b_capital",
+            expected_fund_account_fingerprint="123******890",
+            now=datetime.fromisoformat(OBSERVED_AT.replace("Z", "+00:00")),
+        )

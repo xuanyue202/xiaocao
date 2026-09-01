@@ -100,6 +100,16 @@ the `资产/股票市值/余额/可用/可取` summary from that same positions 
 capabilities, and local reconciliation capability. The separate `资金明细` tab
 is diagnostic only and must not gate submission.
 
+Native quantities must be exact positive integers. BUY remains restricted to
+100-share board lots; SELL may use the exact broker-proved owned-lot remainder,
+including a sub-100-share odd lot, and may never round or truncate it. Across
+partial fills and a controlled replacement, `ExecutionReceipt.fill_price` is
+the plan-level cumulative VWAP. Ownership evidence records each delta from the
+difference in cumulative fill notional; a conclusive CANCELLED receipt with a
+new positive cumulative fill is therefore still an ownership write. If that
+local write fails after a terminal broker receipt, replay may repair only the
+idempotent ownership row and must not query, cancel, or submit at the broker.
+
 OCR validation is structural, not a two-identical-frame vote. Each capture must
 prove the expected table headers, row geometry and exact critical numeric
 shapes. Stock names are non-authoritative. Before submit, persist the complete

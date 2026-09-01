@@ -23,6 +23,7 @@ import uuid
 from contextlib import contextmanager
 from dataclasses import asdict, dataclass, field, replace
 from datetime import datetime, timezone
+from decimal import Decimal, InvalidOperation
 from enum import Enum
 from pathlib import Path
 from typing import Any, Callable, Protocol
@@ -179,6 +180,19 @@ def _optional_int(value: object) -> int | None:
         return None
 
 
+def _exact_int(value: object) -> int | None:
+    """Return an integer only when the source value is exactly integral."""
+    if value in (None, "") or isinstance(value, bool):
+        return None
+    try:
+        number = Decimal(str(value).strip())
+    except (InvalidOperation, TypeError, ValueError):
+        return None
+    if not number.is_finite() or number != number.to_integral_value():
+        return None
+    return int(number)
+
+
 def _optional_float(value: object) -> float | None:
     if value in (None, ""):
         return None
@@ -311,7 +325,10 @@ class TradePlan:
             return "SECURITY_IDENTITY_MISSING"
         if self.side.upper() not in {"BUY", "SELL"}:
             return "SIDE_INVALID"
-        if int(self.shares) <= 0 or int(self.shares) % 100:
+        exact_shares = _exact_int(self.shares)
+        if exact_shares is None or exact_shares <= 0:
+            return "SHARES_INVALID"
+        if self.side.upper() == "BUY" and exact_shares % 100:
             return "SHARES_NOT_BOARD_LOT"
         if float(self.limit_price) <= 0:
             return "LIMIT_PRICE_INVALID"
@@ -825,26 +842,73 @@ class BookBOwnershipEvidence:
 
     def record(self, plan: TradePlan, receipt: ExecutionReceipt) -> dict[str, Any] | None:
         """Record only a newly observed cumulative fill delta."""
-        if receipt.state not in {ExecutionState.PARTIAL, ExecutionState.FILLED}:
+        if receipt.state not in {
+            ExecutionState.PARTIAL,
+            ExecutionState.FILLED,
+            ExecutionState.CANCELLED,
+        }:
             return None
         cumulative = max(0, min(int(plan.shares), int(receipt.filled_shares)))
         if cumulative <= 0:
             return None
+        try:
+            cumulative_price = Decimal(str(receipt.fill_price))
+        except (InvalidOperation, TypeError, ValueError) as exc:
+            raise ValueError("ownership cumulative fill price is unproven") from exc
+        if not cumulative_price.is_finite() or cumulative_price <= 0:
+            raise ValueError("ownership cumulative fill price is unproven")
         handle = self._locked()
         try:
             rows = self._rows()
+            matching = [
+                row
+                for row in rows
+                if row.get("plan_id") == plan.plan_id
+                and row.get("plan_hash") == plan.plan_hash
+            ]
             previous = max(
-                [
-                    int(row.get("cumulative_filled_shares") or 0)
-                    for row in rows
-                    if row.get("plan_id") == plan.plan_id
-                    and row.get("plan_hash") == plan.plan_hash
-                ]
+                [int(row.get("cumulative_filled_shares") or 0) for row in matching]
                 or [0]
             )
-            if cumulative <= previous:
-                return None
+            previous_notional = sum(
+                Decimal(str(row.get("fill_price")))
+                * int(row.get("shares") or 0)
+                for row in matching
+            )
+            cumulative_notional = cumulative_price * cumulative
+            if cumulative < previous:
+                raise ValueError("ownership ledger is ahead of execution receipt")
+            if cumulative == previous:
+                latest = matching[-1] if matching else None
+                try:
+                    persisted_price = Decimal(
+                        str(latest.get("cumulative_fill_price"))
+                    )
+                    persisted_notional = Decimal(
+                        str(latest.get("cumulative_fill_notional"))
+                    )
+                except (AttributeError, InvalidOperation, TypeError, ValueError):
+                    persisted_price = Decimal("NaN")
+                    persisted_notional = Decimal("NaN")
+                if (
+                    latest is None
+                    or not persisted_price.is_finite()
+                    or not persisted_notional.is_finite()
+                    or persisted_price != Decimal(str(float(cumulative_price)))
+                    or persisted_notional
+                    != Decimal(str(float(cumulative_notional)))
+                    or (
+                        receipt.broker_order_id
+                        and latest.get("broker_order_id") != receipt.broker_order_id
+                    )
+                ):
+                    raise ValueError("ownership replay parity is unproven")
+                return latest
             delta = cumulative - previous
+            delta_notional = cumulative_notional - previous_notional
+            if not delta_notional.is_finite() or delta_notional <= 0:
+                raise ValueError("ownership fill notional delta is unproven")
+            delta_price = delta_notional / delta
             previous_hash = rows[-1].get("event_hash") if rows else None
             event = {
                 "schema_version": 1,
@@ -863,7 +927,10 @@ class BookBOwnershipEvidence:
                 "side": plan.side.upper(),
                 "shares": delta,
                 "cumulative_filled_shares": cumulative,
-                "fill_price": receipt.fill_price,
+                "fill_price": float(delta_price),
+                "fill_notional": float(delta_notional),
+                "cumulative_fill_price": float(cumulative_price),
+                "cumulative_fill_notional": float(cumulative_notional),
                 "order_price": receipt.order_price,
                 "broker_order_id": receipt.broker_order_id,
                 "source_execution_event_id": receipt.event_id,
@@ -1167,7 +1234,7 @@ class TradingExecution:
                     kind="cancel_rejected",
                 )
             if previous.state in TERMINAL_STATES:
-                return previous
+                return self._repair_terminal_ownership(plan, previous)
             if previous.cancel_claim_id:
                 return self._reconcile_cancel_claim(plan, broker, previous)
             if (
@@ -1457,7 +1524,7 @@ class TradingExecution:
         if existing is None:
             return self._start(plan, broker)
         if existing.state in TERMINAL_STATES:
-            return existing
+            return self._repair_terminal_ownership(plan, existing)
         if existing.state == ExecutionState.CLAIMED:
             return self._reconcile(
                 plan,
@@ -2260,14 +2327,96 @@ class TradingExecution:
         # Broker fills are cumulative within one order.  A replacement order
         # starts a new counter and is added to the plan total; a reconcile of
         # the same order takes the monotonic maximum to avoid double counting.
-        filled = min(
-            int(plan.shares),
-            max(base_filled, broker_filled)
-            if same_order
-            else base_filled + broker_filled,
-        )
+        previous_proof = previous.locator_proof or {}
+        previous_price: Decimal | None
+        try:
+            previous_price = Decimal(str(previous.fill_price))
+        except (InvalidOperation, TypeError, ValueError):
+            previous_price = None
+        if (
+            previous_price is not None
+            and (not previous_price.is_finite() or previous_price <= 0)
+        ):
+            previous_price = None
+        aggregate_basis_proven = True
+        stale_order_fill = False
+        if same_order:
+            try:
+                if not {
+                    "current_order_base_filled_shares",
+                    "current_order_base_fill_notional",
+                }.issubset(previous_proof):
+                    raise ValueError("fill aggregate basis missing")
+                exact_order_base = _exact_int(
+                    previous_proof["current_order_base_filled_shares"]
+                )
+                if exact_order_base is None:
+                    raise ValueError("fill aggregate share basis is not integral")
+                order_base_filled = exact_order_base
+                order_base_notional = Decimal(
+                    str(previous_proof["current_order_base_fill_notional"])
+                )
+                if (
+                    order_base_filled < 0
+                    or order_base_filled > int(previous.filled_shares)
+                    or not order_base_notional.is_finite()
+                    or order_base_notional < 0
+                    or (order_base_filled == 0 and order_base_notional != 0)
+                    or (order_base_filled > 0 and order_base_notional <= 0)
+                ):
+                    raise ValueError("fill aggregate basis invalid")
+            except (InvalidOperation, TypeError, ValueError):
+                order_base_filled = 0
+                order_base_notional = Decimal("0")
+                aggregate_basis_proven = int(previous.filled_shares) == 0
+            prior_order_filled = max(0, int(previous.filled_shares) - order_base_filled)
+            if broker_filled < prior_order_filled:
+                stale_order_fill = True
+                filled = int(previous.filled_shares)
+            else:
+                filled = min(int(plan.shares), order_base_filled + broker_filled)
+        else:
+            order_base_filled = base_filled
+            if order_base_filled > 0 and previous_price is None:
+                order_base_notional = Decimal("0")
+                aggregate_basis_proven = False
+            else:
+                order_base_notional = (
+                    previous_price * order_base_filled
+                    if previous_price is not None
+                    else Decimal("0")
+                )
+            filled = min(int(plan.shares), order_base_filled + broker_filled)
         if state == ExecutionState.FILLED:
             filled = int(plan.shares)
+            broker_filled = max(0, filled - order_base_filled)
+            stale_order_fill = False
+        try:
+            order_fill_price = Decimal(str(broker.fill_price))
+        except (InvalidOperation, TypeError, ValueError):
+            order_fill_price = None
+        if (
+            order_fill_price is not None
+            and (not order_fill_price.is_finite() or order_fill_price <= 0)
+        ):
+            order_fill_price = None
+        if stale_order_fill:
+            plan_fill_price = (
+                float(previous_price) if previous_price is not None else None
+            )
+        elif not aggregate_basis_proven:
+            plan_fill_price = None
+        elif filled <= 0:
+            plan_fill_price = None
+        elif order_fill_price is not None and broker_filled > 0:
+            cumulative_notional = (
+                order_base_notional + order_fill_price * broker_filled
+            )
+            plan_fill_price = float(cumulative_notional / filled)
+        elif filled == int(previous.filled_shares) and previous_price is not None:
+            plan_fill_price = float(previous_price)
+        else:
+            plan_fill_price = None
         remaining = max(0, int(plan.shares) - filled)
         if state in {ExecutionState.CANCELLED, ExecutionState.REJECTED}:
             remaining = max(0, int(plan.shares) - filled)
@@ -2291,7 +2440,7 @@ class TradingExecution:
                 else previous.absence_proof
             ),
             order_price=broker.order_price,
-            fill_price=broker.fill_price,
+            fill_price=plan_fill_price,
             latest_price=broker.latest_price,
             active=broker.active,
             market_guard_status=broker.market_guard_status,
@@ -2304,6 +2453,11 @@ class TradingExecution:
                 {
                     **previous.locator_proof,
                     **broker.locator_proof,
+                    "current_order_base_filled_shares": order_base_filled,
+                    "current_order_base_fill_notional": float(
+                        order_base_notional
+                    ),
+                    "fill_aggregate_proven": aggregate_basis_proven,
                 }
             ),
             next_action=(
@@ -2313,6 +2467,40 @@ class TradingExecution:
                 "human_review" if state == ExecutionState.REJECTED else "stop"
             ),
             observed_at=broker.observed_at or self.now(),
+        )
+
+    def _repair_terminal_ownership(
+        self,
+        plan: TradePlan,
+        receipt: ExecutionReceipt,
+    ) -> ExecutionReceipt:
+        """Repair a failed local ownership append without touching the broker."""
+        if (
+            self.ledger is None
+            or receipt.filled_shares <= 0
+            or receipt.state not in {ExecutionState.FILLED, ExecutionState.CANCELLED}
+            or not (
+                receipt.next_action == "ledger_reconcile"
+                or str(receipt.reason or "").startswith("LEDGER_WRITE_FAILED:")
+            )
+        ):
+            return receipt
+        try:
+            event = self.ledger.record(plan, receipt)
+        except Exception:
+            return receipt
+        return self.store.append(
+            plan=plan,
+            receipt=replace(
+                receipt,
+                reason="LEDGER_RECONCILED",
+                next_action="stop",
+            ),
+            kind="ledger_reconciled",
+            details={
+                "ledger_path": str(self.ledger.path),
+                "ownership_event_id": event.get("event_id") if event else None,
+            },
         )
 
     def _retry_allowed(self, plan: TradePlan, broker: BrokerReceipt) -> bool:
@@ -2553,7 +2741,11 @@ def trade_plan_from_frozen_row(
         shares_value = row.get("planned_shares")
     if shares_value in (None, ""):
         raise ValueError(f"frozen row requires planned shares: {trade_date} {code}")
-    shares = int(shares_value)
+    shares = _exact_int(shares_value)
+    if shares is None or shares <= 0:
+        raise ValueError(
+            f"frozen row requires exact positive integer shares: {trade_date} {code}"
+        )
     basket_raw = row.get("basket_price")
     basket = None if basket_raw in (None, "") else float(basket_raw)
     if normalized_side == "BUY":

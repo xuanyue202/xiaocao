@@ -1819,16 +1819,32 @@ class FounderscNativeAXBrokerAdapter(BrokerAdapter):
         positions = self._query("positions")
         summary = positions.get("summary_values")
         summary = dict(summary) if isinstance(summary, dict) else {}
-        required = {"资产", "股票市值", "可用"}
+        required = {"资产", "股票市值", "余额", "可用", "可取"}
         if not required.issubset(summary):
             raise FounderscNativeAXError("LIVE_ALLOCATION_SUMMARY_UNPROVEN")
         total_assets = _decimal(summary["资产"], field="TOTAL_ASSETS")
         securities = _decimal(summary["股票市值"], field="SECURITIES_VALUE")
+        balance = _decimal(summary["余额"], field="CASH_BALANCE")
         available = _decimal(summary["可用"], field="AVAILABLE_CASH")
-        if total_assets <= 0 or securities < 0 or available < 0:
+        withdrawable = _decimal(summary["可取"], field="WITHDRAWABLE_CASH")
+        if (
+            total_assets <= 0
+            or securities < 0
+            or balance < 0
+            or available < 0
+            or withdrawable < 0
+        ):
             raise FounderscNativeAXError("LIVE_ALLOCATION_VALUES_INVALID")
-        if abs((available + securities) - total_assets) > Decimal("0.10"):
+        if balance + securities != total_assets:
             raise FounderscNativeAXError("LIVE_ALLOCATION_ASSET_EQUATION_FAILED")
+        if available > balance:
+            raise FounderscNativeAXError(
+                "LIVE_ALLOCATION_AVAILABLE_EXCEEDS_BALANCE"
+            )
+        if withdrawable > available:
+            raise FounderscNativeAXError(
+                "LIVE_ALLOCATION_WITHDRAWABLE_EXCEEDS_AVAILABLE"
+            )
         position_value = sum(
             _decimal(row.get("最新市值"), field="POSITION_VALUE")
             for row in positions["rows"]
@@ -1853,7 +1869,9 @@ class FounderscNativeAXBrokerAdapter(BrokerAdapter):
         values = {
             "总资产": float(total_assets),
             "证券市值": float(securities),
+            "资金余额": float(balance),
             "可用资金": float(available),
+            "可取资金": float(withdrawable),
         }
         safe_receipt = {
             "template_name": "foundersc-native-ax/query",
@@ -1883,6 +1901,8 @@ class FounderscNativeAXBrokerAdapter(BrokerAdapter):
             "fund_account_binding_sha256": binding_hash,
             "settled_nav": nav,
             "available_cash": float(available),
+            "cash_balance": float(balance),
+            "withdrawable_cash": float(withdrawable),
             "current_open_exposure": exposure,
             "capital_basis_source": capital_basis_source,
             "broker_total_assets": float(total_assets),

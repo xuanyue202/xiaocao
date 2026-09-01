@@ -2174,3 +2174,375 @@ def test_live_sell_builder_defaults_to_1457_deadline() -> None:
         ZoneInfo("Asia/Shanghai")
     ).strftime("%H:%M") == "14:57"
     assert plan.validation_error() is None
+
+
+def test_cancelled_terminal_records_new_fill_ownership_delta(tmp_path: Path) -> None:
+    class FilledOnCancelBroker(FakeBroker):
+        def cancel(self, plan: TradePlan, previous: dict) -> BrokerReceipt:
+            self.cancel_calls += 1
+            return BrokerReceipt(
+                status=BrokerStatus.CANCELLED,
+                order_id=str(previous["broker_order_id"]),
+                filled_shares=50,
+                fill_price=10.20,
+                remaining_shares=50,
+                conclusive=True,
+            )
+
+    broker = FilledOnCancelBroker()
+    ledger_path = tmp_path / "ownership.jsonl"
+    engine = TradingExecution(
+        store=InMemoryExecutionStore(tmp_path / "events.jsonl"),
+        ledger=TradingAccountLedger(ledger_path),
+    )
+    plan = _plan(shares=100)
+
+    assert engine.execute(plan, broker).state == ExecutionState.ACKNOWLEDGED
+    cancelled = engine.cancel(plan, broker)
+
+    assert cancelled.state == ExecutionState.CANCELLED
+    assert cancelled.filled_shares == 50
+    assert cancelled.fill_price == pytest.approx(10.20)
+    rows = [json.loads(line) for line in ledger_path.read_text().splitlines()]
+    assert [(row["shares"], row["cumulative_filled_shares"]) for row in rows] == [
+        (50, 50)
+    ]
+
+
+def test_partial_then_cancelled_records_only_incremental_fill_notional(
+    tmp_path: Path,
+) -> None:
+    class MoreFilledOnCancelBroker(FakeBroker):
+        def cancel(self, plan: TradePlan, previous: dict) -> BrokerReceipt:
+            self.cancel_calls += 1
+            return BrokerReceipt(
+                status=BrokerStatus.CANCELLED,
+                order_id=str(previous["broker_order_id"]),
+                filled_shares=150,
+                fill_price=10.20,
+                remaining_shares=50,
+                conclusive=True,
+            )
+
+    broker = MoreFilledOnCancelBroker(
+        submit=[
+            BrokerReceipt(
+                status=BrokerStatus.PARTIAL,
+                order_id="o-1",
+                filled_shares=100,
+                fill_price=10.00,
+            )
+        ]
+    )
+    ledger_path = tmp_path / "ownership.jsonl"
+    engine = TradingExecution(
+        store=InMemoryExecutionStore(tmp_path / "events.jsonl"),
+        ledger=TradingAccountLedger(ledger_path),
+    )
+    plan = _plan()
+
+    assert engine.execute(plan, broker).state == ExecutionState.PARTIAL
+    cancelled = engine.cancel(plan, broker)
+
+    assert cancelled.state == ExecutionState.CANCELLED
+    assert cancelled.filled_shares == 150
+    assert cancelled.fill_price == pytest.approx(10.20)
+    rows = [json.loads(line) for line in ledger_path.read_text().splitlines()]
+    assert [row["shares"] for row in rows] == [100, 50]
+    assert rows[0]["fill_price"] == pytest.approx(10.00)
+    # 150 * 10.20 cumulative less the first 100 * 10.00.
+    assert rows[1]["fill_notional"] == pytest.approx(530.00)
+    assert rows[1]["fill_price"] == pytest.approx(10.60)
+
+
+def test_terminal_replay_repairs_only_local_ownership_without_broker_call(
+    tmp_path: Path,
+) -> None:
+    class FailFirstFillLedger(TradingAccountLedger):
+        def __init__(self, path: Path):
+            super().__init__(path)
+            self.failed = False
+
+        def record(
+            self,
+            plan: TradePlan,
+            receipt: ExecutionReceipt,
+        ) -> dict | None:
+            if receipt.filled_shares > 0 and not self.failed:
+                self.failed = True
+                raise OSError("simulated ownership fsync failure")
+            return super().record(plan, receipt)
+
+    broker = FakeBroker(
+        submit=[
+            BrokerReceipt(
+                status=BrokerStatus.FILLED,
+                order_id="o-1",
+                filled_shares=200,
+                fill_price=10.03,
+            )
+        ]
+    )
+    ledger_path = tmp_path / "ownership.jsonl"
+    store = InMemoryExecutionStore(tmp_path / "events.jsonl")
+    engine = TradingExecution(
+        store=store,
+        ledger=FailFirstFillLedger(ledger_path),
+        notifier=lambda _title, _body: "ok",
+    )
+    plan = _plan()
+
+    failed = engine.execute(plan, broker)
+    assert failed.state == ExecutionState.FILLED
+    assert failed.next_action == "ledger_reconcile"
+    assert broker.submit_calls == 1
+
+    repaired = engine.execute(plan, broker)
+    replayed = engine.execute(plan, broker)
+
+    assert repaired.state == replayed.state == ExecutionState.FILLED
+    assert repaired.reason == replayed.reason == "LEDGER_RECONCILED"
+    assert broker.submit_calls == 1
+    assert broker.reconcile_calls == 0
+    assert broker.cancel_calls == 0
+    rows = [json.loads(line) for line in ledger_path.read_text().splitlines()]
+    assert len(rows) == 1
+    assert rows[0]["cumulative_filled_shares"] == 200
+    assert [row["kind"] for row in store.events(plan.plan_id)][-2:] == [
+        "ledger_write_failed",
+        "ledger_reconciled",
+    ]
+
+
+@pytest.mark.parametrize(
+    ("filled_shares", "fill_price", "broker_order_id"),
+    [
+        (100, 10.00, "o-1"),
+        (200, 10.10, "o-1"),
+        (200, 10.00, "o-2"),
+    ],
+)
+def test_terminal_ledger_repair_requires_exact_cumulative_parity(
+    tmp_path: Path,
+    filled_shares: int,
+    fill_price: float,
+    broker_order_id: str,
+) -> None:
+    plan = _plan()
+    ledger = TradingAccountLedger(tmp_path / "ownership.jsonl")
+    ledger.record(
+        plan,
+        ExecutionReceipt(
+            plan.plan_id,
+            plan.plan_hash,
+            ExecutionState.FILLED,
+            filled_shares=200,
+            fill_price=10.00,
+            broker_order_id="o-1",
+            event_id="original-fill",
+        ),
+    )
+    store = InMemoryExecutionStore(tmp_path / "events.jsonl")
+    failed = store.append(
+        plan=plan,
+        receipt=ExecutionReceipt(
+            plan.plan_id,
+            plan.plan_hash,
+            ExecutionState.CANCELLED,
+            reason="LEDGER_WRITE_FAILED:OSError",
+            filled_shares=filled_shares,
+            remaining_shares=plan.shares - filled_shares,
+            fill_price=fill_price,
+            broker_order_id=broker_order_id,
+            next_action="ledger_reconcile",
+        ),
+        kind="ledger_write_failed",
+    )
+    broker = FakeBroker()
+    engine = TradingExecution(store=store, ledger=ledger)
+
+    replay = engine.execute(plan, broker)
+
+    assert replay.event_id == failed.event_id
+    assert replay.next_action == "ledger_reconcile"
+    assert broker.submit_calls == broker.reconcile_calls == broker.cancel_calls == 0
+    assert [row["kind"] for row in store.events(plan.plan_id)] == [
+        "ledger_write_failed"
+    ]
+
+
+@pytest.mark.parametrize(
+    "locator_proof",
+    [
+        {},
+        {
+            "current_order_base_filled_shares": 37.5,
+            "current_order_base_fill_notional": 370.0,
+        },
+    ],
+)
+def test_malformed_prior_fill_aggregate_fails_closed_instead_of_fabricating_vwap(
+    tmp_path: Path,
+    locator_proof: dict,
+) -> None:
+    plan = _plan()
+    store = InMemoryExecutionStore(tmp_path / "events.jsonl")
+    store.append(
+        plan=plan,
+        receipt=ExecutionReceipt(
+            plan.plan_id,
+            plan.plan_hash,
+            ExecutionState.PARTIAL,
+            filled_shares=100,
+            remaining_shares=100,
+            fill_price=10.00,
+            broker_order_id="o-2",
+            locator_proof=locator_proof,
+            next_action="reconcile",
+        ),
+        kind="legacy_partial",
+    )
+    broker = FakeBroker(
+        reconcile=[
+            BrokerReceipt(
+                status=BrokerStatus.CANCELLED,
+                order_id="o-2",
+                filled_shares=150,
+                fill_price=10.20,
+                conclusive=True,
+            )
+        ]
+    )
+    engine = TradingExecution(
+        store=store,
+        ledger=TradingAccountLedger(tmp_path / "ownership.jsonl"),
+        notifier=lambda _title, _body: "ok",
+    )
+
+    result = engine.execute(plan, broker)
+
+    assert result.state == ExecutionState.CANCELLED
+    assert result.fill_price is None
+    assert result.reason == "LEDGER_WRITE_FAILED:ValueError"
+    assert result.next_action == "ledger_reconcile"
+    assert result.locator_proof["fill_aggregate_proven"] is False
+    assert broker.reconcile_calls == 1
+    assert broker.submit_calls == broker.cancel_calls == 0
+    assert not (tmp_path / "ownership.jsonl").exists()
+
+
+def test_replacement_fill_price_is_plan_vwap_and_ownership_uses_delta_notional(
+    tmp_path: Path,
+) -> None:
+    now = datetime(2026, 8, 15, 1, 1, tzinfo=timezone.utc)
+    broker = FakeBroker(
+        submit=[
+            BrokerReceipt(
+                status=BrokerStatus.PARTIAL,
+                order_id="o-1",
+                filled_shares=100,
+                fill_price=10.00,
+            ),
+            BrokerReceipt(
+                status=BrokerStatus.FILLED,
+                order_id="o-2",
+                filled_shares=100,
+                fill_price=11.00,
+            ),
+        ],
+        reconcile=[
+            BrokerReceipt(
+                status=BrokerStatus.PARTIAL,
+                order_id="o-1",
+                filled_shares=100,
+                fill_price=10.00,
+                latest_price=10.05,
+                active=False,
+                observed_at=now,
+                field_readback={"order_terminal": True},
+            )
+        ],
+    )
+    ledger_path = tmp_path / "ownership.jsonl"
+    engine = TradingExecution(
+        store=InMemoryExecutionStore(tmp_path / "events.jsonl"),
+        ledger=TradingAccountLedger(ledger_path),
+        now=lambda: now,
+    )
+
+    first = engine.execute(_plan(), broker)
+    final = engine.execute(_plan(), broker)
+
+    assert first.fill_price == pytest.approx(10.00)
+    assert final.state == ExecutionState.FILLED
+    assert final.fill_price == pytest.approx(10.50)
+    rows = [json.loads(line) for line in ledger_path.read_text().splitlines()]
+    assert [row["shares"] for row in rows] == [100, 100]
+    assert [row["fill_price"] for row in rows] == pytest.approx([10.00, 11.00])
+    assert rows[-1]["cumulative_fill_notional"] == pytest.approx(2100.00)
+
+
+def test_sell_accepts_exact_positive_odd_lot_but_buy_still_requires_board_lot() -> None:
+    sell = trade_plan_from_frozen_row(
+        {
+            "date": "2026-08-15",
+            "code": "000001.XSHE",
+            "name": "测试标的",
+            "shares": 37,
+            "limit_price": 10.0,
+            "owned_lot_id": "book-b:000001:2026-08-14",
+            "sell_authorized": True,
+            "sell_reason": "HARD_STOP",
+            "decision_phase": "risk_floor",
+            "decision_at": "2026-08-15T01:01:00+00:00",
+        },
+        environment="mock",
+        logical_account_id="primary",
+        side="SELL",
+    )
+
+    assert sell.shares == 37
+    assert sell.validation_error() is None
+    assert _plan(shares=37).validation_error() == "SHARES_NOT_BOARD_LOT"
+    assert replace(sell, shares=37.5).validation_error() == "SHARES_INVALID"
+    assert replace(_plan(), shares=100.5).validation_error() == "SHARES_INVALID"
+    with pytest.raises(ValueError, match="exact positive integer shares"):
+        trade_plan_from_frozen_row(
+            {
+                **sell.canonical_payload(),
+                "date": sell.trade_date,
+                "shares": 37.5,
+                "decision_phase": sell.sell_decision_phase,
+                "decision_at": sell.sell_decision_at.isoformat(),
+            },
+            environment="mock",
+            logical_account_id="primary",
+            side="SELL",
+        )
+
+    live_sell = trade_plan_from_frozen_row(
+        {
+            "date": "2026-08-15",
+            "book": "B",
+            "code": "000001.XSHE",
+            "name": "测试标的",
+            "shares": 37,
+            "limit_price": 10.0,
+            "owned_lot_id": "book-b:000001:2026-08-14",
+            "sell_authorized": True,
+            "sell_reason": "HARD_STOP",
+            "decision_phase": "risk_floor",
+            "decision_at": "2026-08-15T01:01:00+00:00",
+            "market_guard_required": True,
+            "market_guard_status": "T100",
+            "market_observed_at": "2026-08-15T01:01:00+00:00",
+            "market_price": 10.0,
+            "down_price": 9.0,
+        },
+        environment="live",
+        logical_account_id="primary",
+        side="SELL",
+        now=datetime(2026, 8, 15, 1, 1, tzinfo=timezone.utc),
+    )
+    assert live_sell.shares == 37
+    assert live_sell.validation_error() is None

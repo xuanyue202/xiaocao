@@ -1,6 +1,6 @@
 # 小草运营契约（Operating Contract, SSOT）
 
-**版本**：3.8
+**版本**：3.8.1
 **状态**：现行
 **适用范围**：所有 paper / 未来 real 的实盘环（live_recommend → paper_record → live_monitor → eod）与回测
 **关联实现**：`src/xiaocao/live/{safety,capital_keychain,foundersc_native_ax,foundersc_native_broker,trading_execution}.py`、`src/xiaocao/live/intelligence_policy.py`、`src/xiaocao/strategy/{mode_switch,trend_rules,kol_reference}.py`、`native/foundersc_ax_executor/`、`kronos_screen/scripts/{capture_signals,forward_eval,paper_record,settle_book_a,settle_book_t,decompose_pnl,quality_governor}.py`、`scripts/{book_b_live_morning,live_monitor,research_mode_switch_replay}.py`
@@ -55,9 +55,11 @@
   不调用或等待 `auto_daily.sh morning-execute`，不读取模拟成交，也不写
   canonical paper ledger。该 seam 只走方正证券原生 App；不得初始化、登录或
   调用 OpenCLI 作为账户、资产、持仓、委托、成交、填单、提交或对账的一部分。
-  runner 通过同一个掩码资金账号绑定的 App 查询页读取持仓、当日委托、当日成交和
-  资金，并且只有回执同时绑定当日、live、逻辑账户、已证明的资金账号、完整表结构和
-  资产恒等式时，才原子生成 dated allocation facts。原生 App 没有 mock/live 数据
+  runner 通过同一个掩码资金账号绑定的 App 查询页读取持仓、当日委托、当日成交；
+  资金权威来自同一次 `资金股份` positions capture 内嵌的
+  `资产/股票市值/余额/可用/可取` 五字段。只有回执同时绑定当日、live、逻辑账户、
+  已证明的资金账号、完整表结构，且精确满足 `余额+股票市值=资产` 与
+  `0<=可取<=可用<=余额` 时，才原子生成 dated allocation facts。原生 App 没有 mock/live 数据
   namespace，完成或失败后必须记录
   `native_environment_restore_not_applicable`，不得伪造恢复 mock。非空 freeze 还必须绑定实际同日 snapshot 的 canonical
   SHA-256 与行数，且 digest/run id/producer strategy Git SHA 必须由 queue producer 在冻结时写入 manifest。
@@ -66,14 +68,15 @@
   live consumer 只读并重新核对这份不可变副本，不能用稍后追加或情报富化后的
   `signal_snapshots.jsonl` rows 重定义 freeze。资金账号只在
   进程内将页面掩码与 Keychain trade-account 元数据比对，持久化绑定 hash；资产
-  回读必须是当日且不超过 5 分钟。allocation capsule 必须将结算基数来源、NAV、
-  可用现金、当前敞口和券商资产摘要一起纳入 canonical SHA-256，且券商摘要现金
-  必须与顶层现金一致。混合券商账户的“总资产/证券市值”不得冒充
+  回读必须是当日且不超过 5 分钟。allocation capsule 必须将结算基数来源、NAV、当前敞口和券商五字段资金摘要
+  一起纳入 canonical SHA-256；余额、可用、可取均须进入 broker receipt 与 capsule hash，
+  且券商摘要可用现金必须与顶层现金一致。混合券商账户的“总资产/证券市值”不得冒充
   Book-B NAV/敞口：首次批次只用明确的 30,000 元 Book-B 初始基数和券商可用现金；
   一旦已有 Book-B owned fill 而尚无结算 NAV 回执，后续批次以
   `LIVE_BOOK_B_SETTLED_NAV_RECONCILE_REQUIRED` fail-closed。唯一实盘写路径固定为
-  Founder `native-app` 的普通买入/卖出表单：它只表达单证券的精确数值限价和整手
-  数量；BUY 数值限价必须在 execution boundary 向下
+  Founder `native-app` 的普通买入/卖出表单：它只表达单证券的精确数值限价和整数
+  数量；BUY 必须为 100 股整手；SELL 可一次性卖出 broker-proved owned lot 的精确正整数
+  余额（包括不足 100 股的零股），禁止截断、取整或永久卡死。BUY 数值限价必须在 execution boundary 向下
   对齐 0.01 元股票 tick，禁止四舍五入越过原始限价；条件单、网格、定时/定投、集合竞价、
   TWAP/VWAP/POV/冰山及价格/时间分段均因引入触发、相对价格、重复、竞价或拆单
   语义而不得替代。09:20 只做 App/account/allocation/prepare 预检并维持心跳；
@@ -140,6 +143,13 @@
   覆盖。execution events 中只要出现 submitted/acknowledged/partial/filled/unknown/
   claimed/reconciling，或任何正成交数量，即使 ownership evidence 落盘失败，也不得再次
   使用首次基数。
+
+- **成交累计与 ownership**：`ExecutionReceipt.fill_price` 固定为 plan-level 累计成交
+  加权均价；部分成交或受控 replacement 的 ownership 增量价格/金额必须由前后累计
+  notional 差额计算，禁止把新 order 的均价冒充整笔计划均价。conclusive CANCELLED 若
+  累计成交增加，仍须补记该正成交增量。terminal receipt 后 ownership 首写失败只允许
+  本地精确幂等修复；累计数量、notional、价格或 order-id 任一不一致即继续 fail-closed，
+  且 replay 不得再调用 broker reconcile/cancel/submit。
 
 - **默认建仓集合**：`paper_record.py --pick mode_exec_star` 只成交 `★E`。`★B`（K/P+竞价）和 `★M`（旧模式分轮动）继续前向留样，但没有默认成交权限。
 - **唯一模式证据源**：`output/live/training_rows.parquet` 中 `is_live=true`、`book=B`、`executable_fillable=true`、非北交所的 `executable_net_ret`。该标签复用第 5 节开盘成交模型并扣双边费用；理论 `net_realized_ret`、SQLite `mode_history`、实际已买子集和不可交易北交所信号均不得打开模式资格。
@@ -304,3 +314,4 @@
 | 3.6 | 2026-08-30 | 将 09:20 实盘路由切为方正证券 `native-app`：OpenCLI 完全退出 native 登录/查询/交易；本地 Vision OCR 读取持仓、委托、成交和资金；以 submit 前零匹配/order-id baseline 与 submit 后唯一新增 exact tuple 对账，UNKNOWN 永不重点击；原生填单清空、账户、资产恒等式及用户真实未报委托已本机验收，撤单/补单仍 fail-closed。 |
 | 3.7 | 2026-08-30 | 方正 native 热路径完成真实提交/撤单验收：数量框仅一次 Return，确认窗与成功提示只按唯一原生按钮一次，禁止连续 Return/Y；`6000005` 精确新增后撤为 `已撤`，随后另一次授权撤单把旧 `6000002` 也精确回读为 `已撤`。helper v8 自动收口成功提示；durable submit claim 持久化完整 order-id baseline，UNKNOWN 跨进程仅凭唯一 exact delta 恢复；撤单动作前另落 durable cancel claim，未知后只回读不重放；自动补单继续禁用。 |
 | 3.8 | 2026-08-31 | 完成方正 native BUY/SELL 各一次真实提交与对应撤单回归：`6000010`（BUY `512010` 100@0.349）与 `6000012`（SELL `515120` 100@0.710）均零成交回读为 `已撤`。针对实盘暴露的 Vision 低置信误判只增加两类有界冗余证明：撤单方向二字后缀须由精确唯一数值 tuple 与复选框视觉变化共同锚定；当日委托的低置信状态/成交数量须为已知零成交状态并由独立成交表逐 order-id 交叉证明，baseline 与 post-readback mode 分相留证。未知写结果分别保留 helper 点击事实、exact click proof、确认状态与 selection proof，仍禁止重放。 |
+| 3.8.1 | 2026-09-01 | 收口 native 成交端不变量：CANCELLED 正成交补 ownership；terminal ledger replay 仅本地精确幂等修复；plan fill price 统一为累计 VWAP、ownership 按累计 notional 差额；BUY 仍为 100 股整手，SELL 允许 broker-proved 精确正整数零股；allocation 使用 positions 五字段并精确满足资金恒等式与顺序。 |
