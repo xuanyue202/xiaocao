@@ -507,6 +507,12 @@ class BrokerReceipt:
 class BrokerAdapter(Protocol):
     def probe(self, plan: TradePlan) -> BrokerCapability: ...
 
+    def probe_cancel(
+        self,
+        plan: TradePlan,
+        previous: dict[str, Any],
+    ) -> BrokerCapability: ...
+
     def prepare(self, plan: TradePlan, *, requested_shares: int | None = None) -> BrokerReceipt: ...
 
     def submit(self, plan: TradePlan, claim_id: str, *, requested_shares: int | None = None) -> BrokerReceipt: ...
@@ -1190,7 +1196,17 @@ class TradingExecution:
                     self._incident(plan, denied)
                     return denied
             try:
-                capability = broker.probe(plan)
+                # Cancellation has a different minimum capability surface
+                # from submission. A native broker may prove the exact active
+                # order and leave the App on its cancel screen without
+                # reopening an order-entry form. Older adapters retain the
+                # broker-neutral ``probe`` fallback.
+                cancel_probe = getattr(broker, "probe_cancel", None)
+                capability = (
+                    cancel_probe(plan, previous.as_dict())
+                    if callable(cancel_probe)
+                    else broker.probe(plan)
+                )
             except Exception as exc:
                 return self._record(
                     plan,

@@ -57,6 +57,7 @@ class FakeNative:
         self.prepare_calls = 0
         self.submit_calls = 0
         self.cancel_calls = 0
+        self.open_cancel_calls = 0
         self.open_order_calls = 0
         self.query_calls: list[str] = []
         self.orders = [
@@ -119,6 +120,7 @@ class FakeNative:
         return self._receipt(status="query_surface_opened")
 
     def open_cancel_surface(self, **_kwargs) -> NativeAXReceipt:
+        self.open_cancel_calls += 1
         self.surface = "query_only"
         return self._receipt(
             status="cancel_surface_ready",
@@ -243,6 +245,34 @@ class FakeNative:
                 "cancel_clicked": True,
                 "confirmation_pressed": True,
                 "confirmation_mode": "semantic_cancel_confirmation",
+            },
+        )
+
+    def probe_cancel_selection(self, **kwargs) -> NativeAXReceipt:
+        self.open_cancel_calls += 1
+        self.surface = "query_only"
+        matches = [
+            row for row in self.orders
+            if row["委托编号"] == kwargs["order_id"]
+        ]
+        assert len(matches) == 1
+        row = matches[0]
+        return self._receipt(
+            status="cancel_selection_proven",
+            cancel_readback={
+                "order_id": kwargs["order_id"],
+                "code": kwargs["code"].split(".", 1)[0],
+                "side": kwargs["side"].lower(),
+                "price": str(kwargs["price"]),
+                "quantity": kwargs["quantity"],
+                "order_status": row["状态说明"],
+                "target_match_count": 1,
+                "selection_proven": True,
+                "selection_proof_mode": "exact_order_tuple",
+                "cancel_control_count": 1,
+                "cancel_clicked": False,
+                "confirmation_pressed": False,
+                "confirmation_mode": "none",
             },
         )
 
@@ -794,6 +824,79 @@ def test_native_cancel_uses_exact_order_id_once_and_reconciles() -> None:
     )
     assert idempotent.normalized_status() == BrokerStatus.CANCELLED
     assert native.cancel_calls == 1
+
+
+def test_native_cancel_probe_leaves_exact_active_order_on_cancel_surface() -> None:
+    native = FakeNative()
+    adapter = _adapter(native)
+    plan = _plan()
+    adapter.prepare(plan)
+    submitted = adapter.submit(plan, "claim-1")
+    previous = {
+        "broker_order_id": submitted.order_id,
+        "broker_strategy_id": submitted.strategy_id,
+        "requested_shares": 100,
+    }
+    order_surface_calls = native.open_order_calls
+
+    capability = adapter.probe_cancel(plan, previous)
+    cancelled = adapter.cancel(plan, previous)
+
+    assert capability.ready is True
+    assert capability.supports_submit is False
+    assert capability.supports_cancel is True
+    assert native.open_order_calls == order_surface_calls
+    assert native.open_cancel_calls == 1
+    assert native.cancel_calls == 1
+    assert cancelled.normalized_status() == BrokerStatus.CANCELLED
+
+
+def test_native_reconcile_treats_cancel_transaction_as_zero_fill_event() -> None:
+    native = FakeNative()
+    native.orders = [
+        {
+            "证券代码": "000001",
+            "证券名称": "测试标的",
+            "委托时间": "095624",
+            "买卖标志": "买入",
+            "委托类别": "委托",
+            "状态说明": "已撤",
+            "委托价格": "10.0000",
+            "委托数量": "100",
+            "委托编号": "6005551",
+            "成交价格": "0.000",
+            "成交数量": "",
+            "报价方式": "买卖",
+            "股东代码": "A***",
+            "备注": "",
+        }
+    ]
+    native.trades = [
+        {
+            "证券代码": "000001",
+            "证券名称": "测试标的",
+            "成交时间": "103302",
+            "买卖标志": "买入",
+            "成交价格": "0.000",
+            "成交数量": "100.00",
+            "成交金额": "0.00",
+            "成交编号": "",
+            "委托编号": "6006576",
+            "股东代码": "A***",
+            "成交类型": "撤单",
+            "状态说明": "成交",
+        }
+    ]
+
+    receipt = _adapter(native)._reconcile_rows(
+        _plan(),
+        requested_shares=100,
+        expected_order_id="6005551",
+    )
+
+    assert receipt.normalized_status() == BrokerStatus.CANCELLED
+    assert receipt.filled_shares == 0
+    assert receipt.locator_proof["trade_match_count"] == 0
 
 
 def test_unknown_cancel_keeps_click_and_selection_evidence_without_retry() -> None:

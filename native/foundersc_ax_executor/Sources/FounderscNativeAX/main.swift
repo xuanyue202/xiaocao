@@ -313,6 +313,34 @@ private func primaryCoreGraphicsWindowID(pid: pid_t) -> CGWindowID? {
     }.max { left, right in left.1 < right.1 }?.0
 }
 
+private func normalizeFounderWindowForAction(_ window: AXUIElement) -> Bool {
+    guard let current = bounds(of: window) else { return false }
+    let display = CGDisplayBounds(CGMainDisplayID())
+    let fullyVisible = current.x >= display.minX
+        && current.y >= display.minY
+        && current.x + current.width <= display.maxX
+        && current.y + current.height <= display.maxY
+    if fullyVisible { return true }
+    guard current.width <= display.width,
+          current.height <= display.height else { return false }
+    var target = CGPoint(
+        x: display.minX,
+        y: display.minY + min(31, max(0, display.height - current.height))
+    )
+    guard let value = AXValueCreate(.cgPoint, &target),
+          AXUIElementSetAttributeValue(
+            window,
+            kAXPositionAttribute as CFString,
+            value
+          ) == .success else { return false }
+    usleep(180_000)
+    guard let final = bounds(of: window) else { return false }
+    return final.x >= display.minX
+        && final.y >= display.minY
+        && final.x + final.width <= display.maxX
+        && final.y + final.height <= display.maxY
+}
+
 private struct OCRToken {
     let text: String
     let confidence: Float
@@ -815,8 +843,33 @@ private func postSingleReturnKey() -> Bool {
     return true
 }
 
+private func dismissKnownFounderAccessoryWindow(
+    _ running: NSRunningApplication
+) -> Bool {
+    let application = AXUIElementCreateApplication(running.processIdentifier)
+    AXUIElementSetMessagingTimeout(application, messagingTimeoutSeconds)
+    let windows = attribute(application, kAXWindowsAttribute)
+        as? [AXUIElement] ?? []
+    let matches = windows.filter {
+        stringAttribute($0, kAXTitleAttribute) == "通达信键盘精灵"
+    }
+    guard matches.count <= 1 else { return false }
+    guard let accessory = matches.first else { return true }
+    guard let closeButton = elementAttribute(
+        accessory,
+        kAXCloseButtonAttribute
+    ) else { return false }
+    let closed = AXUIElementPerformAction(
+        closeButton,
+        kAXPressAction as CFString
+    ) == .success
+    if closed { usleep(150_000) }
+    return closed
+}
+
 private func activateFounder(_ observation: Observation) -> Bool {
     guard let running = observation.runningApplication else { return false }
+    guard dismissKnownFounderAccessoryWindow(running) else { return false }
     let process = Process()
     process.executableURL = URL(fileURLWithPath: "/usr/bin/open")
     process.arguments = ["-b", bundleIdentifier]
@@ -1289,15 +1342,22 @@ private func observe(command: String, auditTables: Bool = false) -> Observation 
     let windows = rawWindows as? [AXUIElement] ?? []
     let mainWindow = elementAttribute(application, kAXMainWindowAttribute)
     let focusedWindow = elementAttribute(application, kAXFocusedWindowAttribute)
-    let primaryWindow = mainWindow ?? focusedWindow ?? windows.first
-    let roots: [AXUIElement]
-    if !windows.isEmpty {
-        roots = windows
-    } else if let primaryWindow {
-        roots = [primaryWindow]
-    } else {
-        roots = []
+    // Founder can leave a small "通达信键盘精灵" accessory window focused.
+    // Scanning every AX window mixes its text field/table with the real
+    // trading window and turns a proven query/cancel surface into
+    // ``incomplete``. The CG/OCR path already binds to the largest layer-0
+    // Founder window, so make AX use the same primary-window rule.
+    let largestWindow = windows.max { left, right in
+        let leftArea = bounds(of: left).map { $0.width * $0.height } ?? 0
+        let rightArea = bounds(of: right).map { $0.width * $0.height } ?? 0
+        return leftArea < rightArea
     }
+    var primaryWindow = largestWindow ?? mainWindow ?? focusedWindow
+    if command != "probe", let selected = primaryWindow,
+       !normalizeFounderWindowForAction(selected) {
+        primaryWindow = nil
+    }
+    let roots: [AXUIElement] = primaryWindow.map { [$0] } ?? []
 
     var nodeCount = 1
     var roleCounts: [String: Int] = ["AXApplication": 1]
@@ -3267,9 +3327,14 @@ private func unlockFromStandardInput(arguments: [String]) -> Receipt {
         kAXValueAttribute as CFString,
         secret as CFTypeRef
     )
-    guard setResult == .success else {
+    let focusResult = AXUIElementSetAttributeValue(
+        initial.secureFields[0],
+        kAXFocusedAttribute as CFString,
+        kCFBooleanTrue
+    )
+    guard setResult == .success, focusResult == .success else {
         receipt.status = "trade_password_set_failed"
-        receipt.reason = "secure-field value could not be set"
+        receipt.reason = "secure-field value or focus could not be set"
         receipt.action = ActionResult(
             attempted: true,
             succeeded: false,
@@ -3289,9 +3354,13 @@ private func unlockFromStandardInput(arguments: [String]) -> Receipt {
             semanticConfirm,
             kAXPressAction as CFString
         ) == .success
-    } else if let guardedConfirm, initial.runningApplication != nil {
-        confirmationMode = "guarded_coordinate"
-        confirmSucceeded = postSingleLeftClick(at: guardedConfirm)
+    } else if guardedConfirm != nil, initial.runningApplication != nil {
+        // The unique secure field plus the bounded confirm geometry proves
+        // this is Founder's unlock form, but a multi-display window can make
+        // the coordinate itself stale. Return on the focused secure field is
+        // the stable native confirmation and is emitted exactly once.
+        confirmationMode = "secure_field_single_return"
+        confirmSucceeded = postSingleReturnKey()
     } else {
         confirmationMode = "none"
         confirmSucceeded = false

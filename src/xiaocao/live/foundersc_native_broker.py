@@ -110,6 +110,10 @@ def _status(value: object) -> BrokerStatus:
     return BrokerStatus.UNKNOWN
 
 
+def _is_cancel_trade_row(row: dict[str, Any]) -> bool:
+    return "撤" in str(row.get("成交类型") or "").strip()
+
+
 class FounderscNativeAXBrokerAdapter(BrokerAdapter):
     """Exact-account, exact-order adapter for the Founder desktop App."""
 
@@ -129,6 +133,7 @@ class FounderscNativeAXBrokerAdapter(BrokerAdapter):
         self.expected_fund_account_fingerprint = expected
         self.reconcile_delays = tuple(max(0.0, float(item)) for item in reconcile_delays)
         self._prepared: dict[str, dict[str, Any]] = {}
+        self._prepared_cancels: dict[str, dict[str, Any]] = {}
 
     def _account_bound(self, payload: dict[str, Any]) -> bool:
         return bool(
@@ -375,6 +380,8 @@ class FounderscNativeAXBrokerAdapter(BrokerAdapter):
             return
         traded_by_order: dict[str, int] = {}
         for row in trades["rows"]:
+            if _is_cancel_trade_row(row):
+                continue
             order_id = str(row.get("委托编号") or "").strip()
             traded_by_order[order_id] = traded_by_order.get(order_id, 0) + _integer(
                 row.get("成交数量"), field="TRADE_QUANTITY"
@@ -468,11 +475,27 @@ class FounderscNativeAXBrokerAdapter(BrokerAdapter):
                     raise FounderscNativeAXError(
                         "NATIVE_QUERY_TRADE_DATE_MALFORMED"
                     )
-                if _decimal(row.get("成交价格"), field="TRADE_PRICE") <= 0:
-                    raise FounderscNativeAXError("NATIVE_QUERY_TRADE_PRICE_INVALID")
                 if _integer(row.get("成交数量"), field="TRADE_QUANTITY") <= 0:
                     raise FounderscNativeAXError("NATIVE_QUERY_TRADE_QUANTITY_INVALID")
-                for field in ("成交编号", "委托编号"):
+                if _is_cancel_trade_row(row):
+                    if _decimal(row.get("成交价格"), field="TRADE_PRICE") != 0:
+                        raise FounderscNativeAXError(
+                            "NATIVE_QUERY_CANCEL_EVENT_PRICE_INVALID"
+                        )
+                    if str(row.get("成交编号") or "").strip() and re.fullmatch(
+                        r"\d+", str(row.get("成交编号") or "").strip()
+                    ) is None:
+                        raise FounderscNativeAXError(
+                            "NATIVE_QUERY_成交编号_MALFORMED"
+                        )
+                    fields = ("委托编号",)
+                else:
+                    if _decimal(row.get("成交价格"), field="TRADE_PRICE") <= 0:
+                        raise FounderscNativeAXError(
+                            "NATIVE_QUERY_TRADE_PRICE_INVALID"
+                        )
+                    fields = ("成交编号", "委托编号")
+                for field in fields:
                     if re.fullmatch(r"\d+", str(row.get(field) or "").strip()) is None:
                         raise FounderscNativeAXError(f"NATIVE_QUERY_{field}_MALFORMED")
             elif kind == "funds":
@@ -596,6 +619,132 @@ class FounderscNativeAXBrokerAdapter(BrokerAdapter):
                 reason=f"NATIVE_APP_PROBE_FAILED:{type(exc).__name__}",
                 template_name="foundersc-native-ax",
             )
+
+    def probe_cancel(
+        self,
+        plan: TradePlan,
+        previous: dict[str, Any],
+    ) -> BrokerCapability:
+        """Prove one exact cancel path without reopening order entry.
+
+        The submit probe deliberately ends on the BUY/SELL form. It is the
+        wrong precondition for cancellation and used to create the sequence
+        ``cancel -> query/order form -> stop``. This dedicated probe uses the
+        helper's non-cancelling exact-row selection/clear proof, leaves the App
+        on the cancel surface, and caches it for the one post-claim cancel.
+        """
+        order_id = str(
+            previous.get("broker_order_id") or previous.get("order_id") or ""
+        ).strip()
+        shares = int(previous.get("requested_shares") or plan.shares)
+        if not order_id:
+            raise FounderscNativeAXError("NATIVE_CANCEL_ORDER_ID_MISSING_NO_RETRY")
+        payload = self.native.probe_cancel_selection(
+            order_id=order_id,
+            code=plan.code,
+            side=plan.side,
+            price=plan.limit_price,
+            quantity=shares,
+            expected_fingerprint=self.expected_fund_account_fingerprint,
+            explicitly_enabled=True,
+        ).as_dict()
+        readback = payload.get("cancel_readback")
+        readback = dict(readback) if isinstance(readback, dict) else {}
+        try:
+            status = _status(readback.get("order_status"))
+            exact = bool(
+                str(payload.get("status") or "") == "cancel_selection_proven"
+                and self._account_bound(payload)
+                and int(payload.get("helper_version") or 0)
+                    >= NATIVE_CANCEL_HELPER_MIN_VERSION
+                and readback.get("selection_proven") is True
+                and str(readback.get("selection_proof_mode") or "") in {
+                    "exact_order_tuple",
+                    "exact_numeric_tuple_bounded_side_suffix",
+                }
+                and readback.get("target_match_count") == 1
+                and readback.get("cancel_control_count") == 1
+                and readback.get("cancel_clicked") is False
+                and str(readback.get("order_id") or "") == order_id
+                and str(readback.get("code") or "")
+                    == plan.code.split(".", 1)[0]
+                and _side(readback.get("side")) == plan.side.upper()
+                and _integer(readback.get("quantity"), field="CANCEL_QUANTITY")
+                    == shares
+                and _decimal(readback.get("price"), field="CANCEL_PRICE")
+                    == Decimal(str(plan.limit_price))
+            )
+        except FounderscNativeAXError:
+            exact = False
+            status = BrokerStatus.UNKNOWN
+        if not exact or status not in {
+            BrokerStatus.ACCEPTED,
+            BrokerStatus.PARTIAL,
+        }:
+            raise FounderscNativeAXError(
+                "NATIVE_CANCEL_PREFLIGHT_STATUS_UNPROVEN"
+            )
+        filled = int(previous.get("filled_shares") or 0)
+        current = BrokerReceipt(
+            status=status,
+            order_id=order_id,
+            strategy_id=str(
+                previous.get("broker_strategy_id")
+                or previous.get("strategy_id")
+                or ""
+            ).strip() or None,
+            receipt_mapping=True,
+            requested_shares=shares,
+            filled_shares=filled,
+            remaining_shares=max(0, shares - filled),
+            order_price=plan.limit_price,
+            active=True,
+            account_binding="proven",
+            locator_proof={
+                "cancel_preflight_target_match_count": 1,
+                "cancel_preflight_selection_proof_mode": str(
+                    readback.get("selection_proof_mode") or ""
+                ),
+                "cancel_preflight_selected_then_cleared": True,
+            },
+            template_name="foundersc-native-ax",
+            template_version=str(payload.get("helper_version") or ""),
+            reason="native_exact_cancel_row_selected_then_cleared",
+            conclusive=True,
+            retry_allowed=False,
+            echoed=self._echo(plan, shares),
+            field_readback={
+                **readback,
+                "cancel_clicked": False,
+            },
+        )
+        self._prepared_cancels[plan.plan_id] = {
+            "plan_hash": plan.plan_hash,
+            "order_id": order_id,
+            "requested_shares": shares,
+            "current": current,
+            "cancel_surface_ready": True,
+        }
+        helper_version = int(payload.get("helper_version") or 0)
+        return BrokerCapability(
+            ready=True,
+            environment="live",
+            logical_account_id=plan.logical_account_id,
+            supports_submit=False,
+            supports_reconcile=True,
+            supports_cancel=True,
+            route=self.route,
+            account_binding="proven",
+            capabilities={
+                "native_cancel": True,
+                "native_cancel_exact_order_preflight": True,
+                "native_cancel_surface_ready": True,
+                "opencli_used": False,
+            },
+            reason="",
+            template_name="foundersc-native-ax",
+            template_version=str(helper_version),
+        )
 
     @staticmethod
     def _echo(plan: TradePlan, requested_shares: int) -> dict[str, Any]:
@@ -875,7 +1024,8 @@ class FounderscNativeAXBrokerAdapter(BrokerAdapter):
         self._validate_order_trade_cross_readback(orders, trades)
         trade_matches = [
             row for row in trades["rows"]
-            if str(row.get("委托编号") or "").strip() == order_id
+            if not _is_cancel_trade_row(row)
+            and str(row.get("委托编号") or "").strip() == order_id
             and str(row.get("证券代码") or "") == plan.code.split(".", 1)[0]
             and _side(row.get("买卖标志")) == plan.side.upper()
         ]
@@ -1009,7 +1159,8 @@ class FounderscNativeAXBrokerAdapter(BrokerAdapter):
         trade_matches = [
             row
             for row in trades["rows"]
-            if str(row.get("成交日期") or "").strip() == compact_date
+            if not _is_cancel_trade_row(row)
+            and str(row.get("成交日期") or "").strip() == compact_date
             and str(row.get("证券代码") or "").strip() == bare
             and _side(row.get("买卖标志")) == plan.side.upper()
             and str(row.get("委托编号") or "").strip() == native_order_id
@@ -1285,11 +1436,23 @@ class FounderscNativeAXBrokerAdapter(BrokerAdapter):
                 conclusive=False,
                 retry_allowed=False,
             )
+        prepared = self._prepared_cancels.pop(plan.plan_id, None)
+        prepared_matches = bool(
+            isinstance(prepared, dict)
+            and prepared.get("plan_hash") == plan.plan_hash
+            and prepared.get("order_id") == order_id
+            and prepared.get("requested_shares") == shares
+            and isinstance(prepared.get("current"), BrokerReceipt)
+        )
         try:
-            current = self._reconcile_rows(
-                plan,
-                requested_shares=shares,
-                expected_order_id=order_id,
+            current = (
+                prepared["current"]
+                if prepared_matches
+                else self._reconcile_rows(
+                    plan,
+                    requested_shares=shares,
+                    expected_order_id=order_id,
+                )
             )
         except Exception as exc:
             return BrokerReceipt(
@@ -1334,7 +1497,11 @@ class FounderscNativeAXBrokerAdapter(BrokerAdapter):
         payload: dict[str, Any] = {}
         click_error: str | None = None
         try:
-            self._open_cancel_surface()
+            if not (
+                prepared_matches
+                and prepared.get("cancel_surface_ready") is True
+            ):
+                self._open_cancel_surface()
             payload = self.native.cancel_order(
                 order_id=order_id,
                 code=plan.code,

@@ -184,6 +184,46 @@ def test_cancel_is_one_shot_and_persists_terminal_receipt(tmp_path: Path) -> Non
     assert broker.cancel_calls == 1
 
 
+def test_cancel_prefers_dedicated_cancel_probe_over_submit_probe(
+    tmp_path: Path,
+) -> None:
+    class CancelAwareBroker(FakeBroker):
+        def __init__(self):
+            super().__init__()
+            self.cancel_probe_calls = 0
+
+        def probe_cancel(
+            self,
+            plan: TradePlan,
+            previous: dict,
+        ) -> BrokerCapability:
+            self.cancel_probe_calls += 1
+            assert previous["broker_order_id"] == "o-1"
+            return replace(
+                self.capability,
+                environment=plan.environment,
+                supports_submit=False,
+                supports_reconcile=True,
+                supports_cancel=True,
+            )
+
+    broker = CancelAwareBroker()
+    store = InMemoryExecutionStore(tmp_path / "events.jsonl")
+    engine = TradingExecution(
+        store=store,
+        now=lambda: datetime(2026, 8, 15, 1, 1, tzinfo=timezone.utc),
+    )
+    plan = _plan()
+    assert engine.execute(plan, broker).state == ExecutionState.ACKNOWLEDGED
+    submit_probe_calls = broker.probe_calls
+
+    cancelled = engine.cancel(plan, broker)
+
+    assert cancelled.state == ExecutionState.CANCELLED
+    assert broker.cancel_probe_calls == 1
+    assert broker.probe_calls == submit_probe_calls
+
+
 def test_unknown_cancel_claim_reconciles_without_replaying_cancel(
     tmp_path: Path,
 ) -> None:

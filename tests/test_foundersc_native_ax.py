@@ -613,6 +613,7 @@ def test_swift_submit_confirmation_fallback_is_exact_and_single_point() -> None:
     assert "guardedOCRConfirmationPoint" not in source
     assert "ocr_guarded_order_confirmation" not in source
     assert 'quantity_field_single_return' in source
+    assert 'secure_field_single_return' in source
     assert 'semantic_focused_dialog_button' in source
     assert 'postSingleReturnKey()' in source
     assert 'rendered.contains("交易确认")' in source
@@ -629,7 +630,28 @@ def test_swift_submit_confirmation_fallback_is_exact_and_single_point() -> None:
     assert 'cancel_result_acknowledged' in source
     assert '委托已提交' in source
     assert '撤单已提交' in source
-    assert source.count('postSingleReturnKey()') == 2
+    assert source.count('postSingleReturnKey()') == 3
+
+
+def test_swift_observation_ignores_focused_accessory_windows() -> None:
+    root = Path(__file__).resolve().parents[1]
+    source = (
+        root
+        / "native"
+        / "foundersc_ax_executor"
+        / "Sources"
+        / "FounderscNativeAX"
+        / "main.swift"
+    ).read_text(encoding="utf-8")
+
+    assert "let largestWindow = windows.max" in source
+    assert "let roots: [AXUIElement] = primaryWindow.map { [$0] } ?? []" in source
+    assert "roots = windows" not in source
+    assert '== "通达信键盘精灵"' in source
+    assert "kAXCloseButtonAttribute" in source
+    assert "guard dismissKnownFounderAccessoryWindow(running) else" in source
+    assert "normalizeFounderWindowForAction" in source
+    assert 'if command != "probe"' in source
 
 
 def test_swift_bounded_cancel_side_covers_exact_text_at_low_confidence() -> None:
