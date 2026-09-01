@@ -4734,7 +4734,7 @@ try {
   });
   const finalUrl = new URL(response.url);
   const finalHostAllowed = finalUrl.hostname === 'd.pcs.baidu.com'
-    || /^nd\d+\.baidupcs\.com$/.test(finalUrl.hostname);
+    || /^[a-z0-9-]+\.baidupcs\.com$/.test(finalUrl.hostname);
   if (
     response.status !== 200
     || finalUrl.protocol !== 'https:'

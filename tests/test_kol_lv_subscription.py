@@ -3491,7 +3491,7 @@ def test_default_owner_stream_keeps_signed_url_and_httponly_cookie_in_process(
         assert "httpOnly" in command[3]
         assert "'foreground'" in command[3]
         assert "await page.goto(input.ownerRoute" in command[3]
-        assert "^nd\\d+\\.baidupcs\\.com$" in command[3]
+        assert "^[a-z0-9-]+\\.baidupcs\\.com$" in command[3]
         request = json.loads(command[-1])
         assert "signed=" not in command[-1]
         assert "BDUSS" not in command[-1]
