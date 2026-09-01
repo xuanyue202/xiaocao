@@ -2418,6 +2418,54 @@ def test_terminal_ledger_repair_rejects_missing_authoritative_prior_notional(
 
 
 @pytest.mark.parametrize(
+    ("field", "value"),
+    [
+        ("fill_notional", "-1"),
+        ("fill_notional", "NaN"),
+        ("cumulative_fill_notional", "999.99"),
+        ("cumulative_filled_shares", 100.5),
+    ],
+)
+def test_next_ownership_delta_rejects_invalid_prior_cumulative_basis(
+    tmp_path: Path,
+    field: str,
+    value: object,
+) -> None:
+    plan = _plan()
+    ledger_path = tmp_path / "ownership.jsonl"
+    ledger = TradingAccountLedger(ledger_path)
+    ledger.record(
+        plan,
+        ExecutionReceipt(
+            plan.plan_id,
+            plan.plan_hash,
+            ExecutionState.PARTIAL,
+            filled_shares=100,
+            fill_price=10.00,
+            broker_order_id="o-1",
+            event_id="first-fill",
+        ),
+    )
+    row = json.loads(ledger_path.read_text())
+    row[field] = value
+    ledger_path.write_text(json.dumps(row) + "\n")
+
+    with pytest.raises(ValueError, match="ownership prior"):
+        ledger.record(
+            plan,
+            ExecutionReceipt(
+                plan.plan_id,
+                plan.plan_hash,
+                ExecutionState.CANCELLED,
+                filled_shares=150,
+                fill_price=10.20,
+                broker_order_id="o-1",
+                event_id="cancel-fill",
+            ),
+        )
+
+
+@pytest.mark.parametrize(
     "locator_proof",
     [
         {},

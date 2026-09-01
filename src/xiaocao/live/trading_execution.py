@@ -868,21 +868,46 @@ class BookBOwnershipEvidence:
                 if row.get("plan_id") == plan.plan_id
                 and row.get("plan_hash") == plan.plan_hash
             ]
-            previous = max(
-                [int(row.get("cumulative_filled_shares") or 0) for row in matching]
-                or [0]
-            )
+            prior_cumulatives = [
+                _exact_int(row.get("cumulative_filled_shares"))
+                for row in matching
+            ]
+            if any(value is None or value <= 0 for value in prior_cumulatives):
+                raise ValueError("ownership prior cumulative shares are unproven")
+            previous_cumulative_shares = max(prior_cumulatives or [0])
             try:
-                previous_notional = sum(
+                prior_notionals = [
                     Decimal(str(row["fill_notional"]))
                     for row in matching
-                )
+                ]
+                if any(
+                    not value.is_finite() or value <= 0
+                    for value in prior_notionals
+                ):
+                    raise ValueError("ownership prior fill notional is invalid")
+                previous_notional = sum(prior_notionals, Decimal("0"))
+                if matching:
+                    latest_cumulative = Decimal(
+                        str(matching[-1]["cumulative_fill_notional"])
+                    )
+                    latest_shares = _exact_int(
+                        matching[-1]["cumulative_filled_shares"]
+                    )
+                    if (
+                        not latest_cumulative.is_finite()
+                        or latest_cumulative <= 0
+                        or latest_cumulative != previous_notional
+                        or latest_shares != previous_cumulative_shares
+                    ):
+                        raise ValueError(
+                            "ownership prior cumulative notional is inconsistent"
+                        )
             except (InvalidOperation, KeyError, TypeError, ValueError) as exc:
                 raise ValueError("ownership prior fill notional is unproven") from exc
             cumulative_notional = cumulative_price * cumulative
-            if cumulative < previous:
+            if cumulative < previous_cumulative_shares:
                 raise ValueError("ownership ledger is ahead of execution receipt")
-            if cumulative == previous:
+            if cumulative == previous_cumulative_shares:
                 latest = matching[-1] if matching else None
                 try:
                     persisted_price = Decimal(
@@ -905,7 +930,7 @@ class BookBOwnershipEvidence:
                 ):
                     raise ValueError("ownership replay parity is unproven")
                 return latest
-            delta = cumulative - previous
+            delta = cumulative - previous_cumulative_shares
             delta_notional = cumulative_notional - previous_notional
             if not delta_notional.is_finite() or delta_notional <= 0:
                 raise ValueError("ownership fill notional delta is unproven")
