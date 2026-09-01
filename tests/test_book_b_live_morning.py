@@ -704,6 +704,112 @@ def test_live_capital_basis_accepts_reconcile_mapped_submit_then_terminal(
             plan_hash=plan.plan_hash,
             state=ExecutionState.CLAIMED,
             attempt=1,
+            submit_claim_id="claim-1",
+            remaining_shares=plan.shares,
+            locator_proof={
+                "baseline_order_ids": [],
+                "baseline_order_count": 0,
+                "baseline_observed_at": "2026-08-24T01:29:00+00:00",
+                "baseline_order_readback_mode": "strict_confidence",
+                "baseline_bounded_low_confidence_headers": [],
+                "baseline_targeted_order_reread_used": False,
+                "comparison": "code+side+price+quantity+new_order_id",
+            },
+            next_action="submit_once",
+        ),
+        kind="durable_claim",
+        details={"claim_id": "claim-1", "requested_shares": 100},
+    )
+    unknown = store.append(
+        plan=plan,
+        receipt=replace(
+            claimed,
+            state=ExecutionState.UNKNOWN,
+            broker_strategy_id="strategy-1",
+            receipt_mapping=True,
+            submit_chain_uncertain=True,
+            next_action="reconcile_only",
+        ),
+        kind="submit_unknown",
+    )
+    acknowledged = store.append(
+        plan=plan,
+        receipt=replace(
+            unknown,
+            state=ExecutionState.ACKNOWLEDGED,
+            broker_order_id="order-1",
+            broker_status="accepted",
+            receipt_mapping=True,
+            account_binding="proven",
+            next_action="reconcile",
+        ),
+        kind="reconcile_receipt",
+    )
+    store.append(
+        plan=plan,
+        receipt=replace(
+            acknowledged,
+            state=ExecutionState.CANCELLED,
+            reason="native_historical_order_and_trade_readback",
+            broker_status="cancelled",
+            locator_proof={
+                **acknowledged.locator_proof,
+                "native_order_id": "order-1",
+                "order_id_mapping": "exact",
+                "historical_order_date_filter": {
+                    "applied": True,
+                    "start": "2026-08-24",
+                    "end": "2026-08-24",
+                },
+                "historical_deal_date_filter": {
+                    "applied": True,
+                    "start": "2026-08-24",
+                    "end": "2026-08-24",
+                },
+            },
+            active=False,
+            next_action="stop",
+        ),
+        kind="reconcile_receipt",
+    )
+
+    basis = load_book_b_live_capital_basis(tmp_path)
+
+    assert basis.settled_nav == 30_000
+    assert basis.current_open_exposure == 0
+
+
+def test_live_capital_basis_rejects_recovered_submit_without_complete_claim(
+    tmp_path: Path,
+) -> None:
+    plan = TradePlan(
+        plan_id="book-b:2026-08-24:000001.XSHE:BUY",
+        strategy_run_id="run",
+        snapshot_ref="freeze#000001",
+        strategy_sha="a" * 40,
+        trade_date="2026-08-24",
+        book="B",
+        logical_account_id="primary",
+        environment="live",
+        code="000001.XSHE",
+        name="测试标的",
+        side="BUY",
+        shares=100,
+        limit_price=10.0,
+        basket_price=10.1,
+        market_guard_status="ok",
+        created_at=datetime(2026, 8, 24, tzinfo=timezone.utc),
+        recovery_deadline=datetime(2026, 8, 24, 1, 45, tzinfo=timezone.utc),
+        allocation_proof_hash="b" * 64,
+    )
+    store = ExecutionStore(tmp_path / "events.jsonl")
+    claimed = store.append(
+        plan=plan,
+        receipt=ExecutionReceipt(
+            plan_id=plan.plan_id,
+            plan_hash=plan.plan_hash,
+            state=ExecutionState.CLAIMED,
+            attempt=1,
             remaining_shares=plan.shares,
             next_action="submit_once",
         ),
@@ -739,7 +845,7 @@ def test_live_capital_basis_accepts_reconcile_mapped_submit_then_terminal(
         receipt=replace(
             acknowledged,
             state=ExecutionState.CANCELLED,
-            reason="native_prior_day_zero_fill_order_expired",
+            reason="broker_terminal_cancelled",
             broker_status="cancelled",
             active=False,
             next_action="stop",
@@ -747,10 +853,11 @@ def test_live_capital_basis_accepts_reconcile_mapped_submit_then_terminal(
         kind="reconcile_receipt",
     )
 
-    basis = load_book_b_live_capital_basis(tmp_path)
-
-    assert basis.settled_nav == 30_000
-    assert basis.current_open_exposure == 0
+    with pytest.raises(
+        ValueError,
+        match="LIVE_BOOK_B_SETTLED_NAV_RECONCILE_REQUIRED",
+    ):
+        load_book_b_live_capital_basis(tmp_path)
 
 
 def test_live_capital_basis_accepts_proven_pre_entrust_rejection(
@@ -952,7 +1059,12 @@ def test_live_morning_runs_auditable_prepare_only_before_execution(
     assert receipt.preparation_receipts[0]["submitted"] is False
     assert receipt.preparation_receipts[0]["saved"] is False
     assert receipt.preparation_receipts[0]["started"] is False
-    assert receipt.preparation_receipts[0]["form_closed"] is True
+    assert receipt.preparation_receipts[0]["form_closed"] is (
+        form_neutralization.get("form_closed") is True
+    )
+    assert receipt.preparation_receipts[0]["form_cleared"] is (
+        form_neutralization.get("form_cleared") is True
+    )
     assert receipt.preparation_receipts[0]["strategy_name"] == (
         "xiaocao-readback-2026-08-24-000001"
     )

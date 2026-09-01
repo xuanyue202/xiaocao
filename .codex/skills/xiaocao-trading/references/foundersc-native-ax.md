@@ -37,7 +37,7 @@ steps from an earlier receipt.
 | `fill_login_password_then_solve_captcha` | Requires current user authorization. Run the returned fill once, then fresh screenshot -> exactly four digits -> field readback -> one login press. Only an explicit transport timeout gets one retry. |
 | `unlock_trade_once` | Requires current user authorization. Run the returned command once. Unknown, mismatch, or `unlock_unproven` never retries. |
 | `open_ordinary_trade_surface_then_reprobe` | Navigate without touching code/price/quantity/submit controls, then rerun. |
-| `none` | Helper foundation is ready. The live runner must still prove native positions/orders/trades/funds plus order-page capabilities before `supports_submit=true`. |
+| `none` | Helper foundation is ready. The live runner must still prove native positions/orders/trades, the account-bound funds summary embedded in the positions capture, and order-page capabilities before `supports_submit=true`. |
 | `inspect_native_receipt` | Stop on unknown/incomplete state; preserve the receipt and do not improvise clicks. |
 
 Manual password assistance is `focus-unlock`. It only raises the app and
@@ -84,7 +84,8 @@ provides:
 - one Return from the exact quantity field, followed by one focused-dialog
   native `确定/确认` action; never repeated Return/Y retries;
 - exact submit/cancel success-popup acknowledgment and broker order-id parsing;
-- local macOS Vision OCR for positions, today orders, today trades and funds;
+- local macOS Vision OCR for positions, today orders and today trades, with
+  account-bound funds values read from the same `资金股份` positions capture;
 - full-query and buy/sell surface navigation bound to one masked fund account;
 - exact-row cancellation with unique checkbox visual-delta proof and one
   cancel/confirm action; when the side token alone is low-confidence, the exact
@@ -93,8 +94,11 @@ provides:
 
 The native route must not construct, authenticate, query or reconcile through
 OpenCLI. `supports_submit=true` is dynamic and requires helper version 8 or
-newer, one unlocked account-bound App, all four native query surfaces, exact
-prepare and submit capabilities, and local reconciliation capability.
+newer, one unlocked account-bound App, the three native row-query surfaces,
+the `资产/股票市值/余额/可用/可取` summary from that same positions capture,
+`余额+股票市值=资产`, `0<=可取<=可用<=余额`, exact prepare and submit
+capabilities, and local reconciliation capability. The separate `资金明细` tab
+is diagnostic only and must not gate submission.
 
 OCR validation is structural, not a two-identical-frame vote. Each capture must
 prove the expected table headers, row geometry and exact critical numeric

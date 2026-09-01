@@ -57,6 +57,7 @@ class FakeNative:
         self.prepare_calls = 0
         self.submit_calls = 0
         self.cancel_calls = 0
+        self.unlock_calls = 0
         self.open_cancel_calls = 0
         self.open_order_calls = 0
         self.query_calls: list[str] = []
@@ -101,6 +102,13 @@ class FakeNative:
         self.trades: list[dict[str, str]] = []
         self.history_orders: list[dict[str, str]] = []
         self.history_trades: list[dict[str, str]] = []
+        self.position_summary = {
+            "资产": "43054.60",
+            "股票市值": "43054.60",
+            "可用": "0.00",
+            "余额": "0.00",
+            "可取": "0.00",
+        }
 
     def _receipt(self, **values) -> NativeAXReceipt:
         return NativeAXReceipt({**self.payload, "surface_state": self.surface, **values})
@@ -112,6 +120,7 @@ class FakeNative:
 
     def unlock_from_keychain(self, *, explicitly_enabled: bool) -> NativeAXReceipt:
         assert explicitly_enabled is True
+        self.unlock_calls += 1
         self.surface = "query_only"
         return self._receipt(status="unlocked")
 
@@ -146,10 +155,7 @@ class FakeNative:
             "history-trades": self.history_trades,
             "funds": [{"资金余额": "1000.00", "可用资金": "100.00", "总资产": "43054.60"}],
         }[kind]
-        summary = (
-            {"资产": "43054.60", "股票市值": "43054.60", "可用": "0.00"}
-            if kind == "positions" else {}
-        )
+        summary = dict(self.position_summary) if kind == "positions" else {}
         return self._receipt(
             status="query_read",
             query_readback={
@@ -419,8 +425,32 @@ def test_native_probe_proves_app_only_submit_and_all_readbacks() -> None:
     assert capability.account_binding == "proven"
     assert capability.capabilities["opencli_used"] is False
     assert capability.capabilities["native_orders"] is True
+    assert capability.capabilities["native_position_funds_summary"] is True
+    assert capability.capabilities["native_funds_query"] is False
     assert capability.owned_position_shares == 100
-    assert "funds" not in adapter.native.query_calls
+    assert adapter.native.query_calls == [
+        "positions",
+        "today-orders",
+        "today-trades",
+    ]
+
+
+def test_native_probe_accepts_reserved_cash_without_breaking_asset_identity() -> None:
+    native = FakeNative()
+    native.position_summary.update(
+        {
+            "资产": "43154.60",
+            "余额": "100.00",
+            "可用": "50.00",
+            "可取": "40.00",
+        }
+    )
+
+    capability = _adapter(native).probe(_plan())
+
+    assert capability.ready is True
+    assert capability.supports_submit is True
+    assert capability.capabilities["native_position_funds_summary"] is True
 
 
 def test_native_ready_navigates_from_wrong_order_side() -> None:
@@ -851,6 +881,41 @@ def test_native_cancel_probe_leaves_exact_active_order_on_cancel_surface() -> No
     assert cancelled.normalized_status() == BrokerStatus.CANCELLED
 
 
+def test_native_cancel_probe_allows_one_unlock_recovery() -> None:
+    native = FakeNative(
+        status="authentication_required",
+        surface_state="authentication_required",
+    )
+    native.orders = [
+        {
+            "证券代码": "000001",
+            "证券名称": "测试标的",
+            "委托时间": "095624",
+            "买卖标志": "买入",
+            "委托类别": "委托",
+            "状态说明": "已报",
+            "委托价格": "10.0000",
+            "委托数量": "100",
+            "委托编号": "6005551",
+            "成交价格": "0.000",
+            "成交数量": "",
+            "报价方式": "买卖",
+            "股东代码": "A***",
+            "备注": "",
+        }
+    ]
+    adapter = _adapter(native)
+
+    capability = adapter.probe_cancel(
+        _plan(),
+        {"broker_order_id": "6005551", "requested_shares": 100},
+    )
+
+    assert capability.ready is True
+    assert capability.supports_cancel is True
+    assert native.unlock_calls == 1
+
+
 def test_native_reconcile_treats_cancel_transaction_as_zero_fill_event() -> None:
     native = FakeNative()
     native.orders = [
@@ -1022,7 +1087,7 @@ def test_user_manual_sample_is_exactly_reconciled_as_unfilled_accepted() -> None
     assert receipt.field_readback["order_status"] == "未报"
 
 
-def test_prior_day_native_history_closes_exact_zero_fill_order() -> None:
+def test_prior_day_native_history_does_not_infer_terminal_from_accepted() -> None:
     native = FakeNative()
     native.positions = [row for row in native.positions if row["证券代码"] != "000001"]
     native.history_orders = [
@@ -1044,21 +1109,92 @@ def test_prior_day_native_history_closes_exact_zero_fill_order() -> None:
 
     receipt = _adapter(native).reconcile(
         _plan(),
-        {"broker_order_id": "external-order-1", "requested_shares": 100},
+        {"broker_order_id": "6001324", "requested_shares": 100},
     )
 
-    assert receipt.normalized_status() == BrokerStatus.CANCELLED
-    assert receipt.reason == "native_prior_day_zero_fill_order_expired"
-    assert receipt.order_id == "external-order-1"
-    assert receipt.receipt_mapping is True
-    assert receipt.conclusive is True
+    assert receipt.normalized_status() == BrokerStatus.UNKNOWN
+    assert receipt.reason == "NATIVE_HISTORICAL_STATUS_UNPROVEN"
+    assert receipt.order_id == "6001324"
+    assert receipt.receipt_mapping is False
+    assert receipt.conclusive is False
     assert receipt.active is False
     assert receipt.filled_shares == 0
     assert receipt.locator_proof["native_order_id"] == "6001324"
+    assert receipt.locator_proof["order_id_mapping"] == "exact"
     assert receipt.locator_proof["exact_order_match_count"] == 1
     assert receipt.locator_proof["exact_trade_match_count"] == 0
     assert receipt.locator_proof["target_holding_shares"] == 0
     assert native.query_calls == ["history-orders", "history-trades", "positions"]
+
+
+def test_prior_day_native_history_accepts_explicit_exact_cancel_terminal() -> None:
+    native = FakeNative()
+    native.positions = [
+        row for row in native.positions if row["证券代码"] != "000001"
+    ]
+    native.history_orders = [
+        {
+            "证券代码": "000001",
+            "证券名称": "测试标的",
+            "委托日期": "20260830",
+            "委托时间": "145040",
+            "买卖标志": "买入",
+            "委托类别": "买卖",
+            "状态说明": "已撤",
+            "委托价格": "10.00000000",
+            "委托数量": "100.00",
+            "委托编号": "6001324",
+            "成交价格": "0.00000000",
+            "成交数量": "0.00",
+        }
+    ]
+
+    receipt = _adapter(native).reconcile(
+        _plan(),
+        {"broker_order_id": "6001324", "requested_shares": 100},
+    )
+
+    assert receipt.normalized_status() == BrokerStatus.CANCELLED
+    assert receipt.reason == "native_historical_order_and_trade_readback"
+    assert receipt.receipt_mapping is True
+    assert receipt.conclusive is True
+    assert receipt.filled_shares == 0
+
+
+def test_prior_day_native_history_rejects_cross_order_tuple_match() -> None:
+    native = FakeNative()
+    native.positions = [
+        row for row in native.positions if row["证券代码"] != "000001"
+    ]
+    native.history_orders = [
+        {
+            "证券代码": "000001",
+            "证券名称": "测试标的",
+            "委托日期": "20260830",
+            "委托时间": "145040",
+            "买卖标志": "买入",
+            "委托类别": "买卖",
+            "状态说明": "已报",
+            "委托价格": "10.00000000",
+            "委托数量": "100.00",
+            "委托编号": "6001324",
+            "成交价格": "0.00000000",
+            "成交数量": "0.00",
+        }
+    ]
+
+    receipt = _adapter(native).reconcile(
+        _plan(),
+        {"broker_order_id": "6009999", "requested_shares": 100},
+    )
+
+    assert receipt.normalized_status() == BrokerStatus.UNKNOWN
+    assert receipt.reason == "NATIVE_HISTORICAL_ORDER_ID_MISMATCH"
+    assert receipt.order_id == "6009999"
+    assert receipt.receipt_mapping is False
+    assert receipt.conclusive is False
+    assert receipt.locator_proof["native_order_id"] == "6001324"
+    assert receipt.locator_proof["order_id_mapping"] == "mismatch"
 
 
 def test_prior_day_native_history_wrong_date_remains_unknown() -> None:

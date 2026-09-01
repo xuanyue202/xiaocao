@@ -538,7 +538,7 @@ class FounderscNativeAXBrokerAdapter(BrokerAdapter):
             self._validate_order_trade_cross_readback(orders, trades)
             summary = positions.get("summary_values")
             summary = dict(summary) if isinstance(summary, dict) else {}
-            required_summary = {"资产", "股票市值", "可用"}
+            required_summary = {"资产", "股票市值", "余额", "可用", "可取"}
             if not required_summary.issubset(summary):
                 raise FounderscNativeAXError("NATIVE_POSITION_FUNDS_UNPROVEN")
             total_assets = _decimal(summary["资产"], field="TOTAL_ASSETS")
@@ -546,11 +546,17 @@ class FounderscNativeAXBrokerAdapter(BrokerAdapter):
                 summary["股票市值"], field="SECURITIES_VALUE"
             )
             available = _decimal(summary["可用"], field="AVAILABLE_CASH")
+            balance = _decimal(summary["余额"], field="CASH_BALANCE")
+            withdrawable = _decimal(summary["可取"], field="WITHDRAWABLE_CASH")
             if (
                 total_assets <= 0
                 or securities < 0
+                or balance < 0
                 or available < 0
-                or abs((available + securities) - total_assets)
+                or withdrawable < 0
+                or withdrawable > available
+                or available > balance
+                or abs((balance + securities) - total_assets)
                     > Decimal("0.10")
             ):
                 raise FounderscNativeAXError("NATIVE_POSITION_FUNDS_UNPROVEN")
@@ -593,7 +599,8 @@ class FounderscNativeAXBrokerAdapter(BrokerAdapter):
                     "native_positions": True,
                     "native_orders": True,
                     "native_trades": True,
-                    "native_funds": True,
+                    "native_position_funds_summary": True,
+                    "native_funds_query": False,
                     "native_cancel": True,
                     "opencli_used": False,
                 },
@@ -639,6 +646,10 @@ class FounderscNativeAXBrokerAdapter(BrokerAdapter):
         shares = int(previous.get("requested_shares") or plan.shares)
         if not order_id:
             raise FounderscNativeAXError("NATIVE_CANCEL_ORDER_ID_MISSING_NO_RETRY")
+        # A cancel probe is allowed the same single unattended unlock recovery
+        # as the ordinary native route. This is read-only with respect to the
+        # broker order: the helper only selects and clears the exact row.
+        self.ensure_native_ready(unlock_once=True)
         payload = self.native.probe_cancel_selection(
             order_id=order_id,
             code=plan.code,
@@ -1110,11 +1121,20 @@ class FounderscNativeAXBrokerAdapter(BrokerAdapter):
         compact_date = plan.trade_date.replace("-", "")
         bare = plan.code.split(".", 1)[0]
         expected_price = Decimal(str(plan.limit_price))
-        order_matches = [
+        order_rows = [
             row
             for row in orders["rows"]
             if str(row.get("委托日期") or "").strip() == compact_date
-            and str(row.get("证券代码") or "").strip() == bare
+        ]
+        trade_rows = [
+            row
+            for row in trades["rows"]
+            if str(row.get("成交日期") or "").strip() == compact_date
+        ]
+        order_matches = [
+            row
+            for row in order_rows
+            if str(row.get("证券代码") or "").strip() == bare
             and _side(row.get("买卖标志")) == plan.side.upper()
             and _decimal(row.get("委托价格"), field="ORDER_PRICE")
             == expected_price
@@ -1134,6 +1154,24 @@ class FounderscNativeAXBrokerAdapter(BrokerAdapter):
             "target_holding_shares": target_holding_shares,
             "historical_order_row_date": plan.trade_date,
             "historical_trade_row_date": plan.trade_date,
+            "historical_order_date_filter": {
+                "applied": False,
+                "post_capture_filtered": True,
+                "mode": "adapter_post_capture_exact_row_date",
+                "start": plan.trade_date,
+                "end": plan.trade_date,
+                "input_count": len(orders["rows"]),
+                "output_count": len(order_rows),
+            },
+            "historical_deal_date_filter": {
+                "applied": False,
+                "post_capture_filtered": True,
+                "mode": "adapter_post_capture_exact_row_date",
+                "start": plan.trade_date,
+                "end": plan.trade_date,
+                "input_count": len(trades["rows"]),
+                "output_count": len(trade_rows),
+            },
             "historical_order_observed_at": orders.get("observed_at"),
             "historical_trade_observed_at": trades.get("observed_at"),
             "position_observed_at": positions.get("observed_at"),
@@ -1156,18 +1194,35 @@ class FounderscNativeAXBrokerAdapter(BrokerAdapter):
             )
         order = order_matches[0]
         native_order_id = str(order.get("委托编号") or "").strip()
+        locator["native_order_id"] = native_order_id
+        if native_order_id != expected_order_id:
+            locator["order_id_mapping"] = "mismatch"
+            return BrokerReceipt(
+                status=BrokerStatus.UNKNOWN,
+                order_id=expected_order_id,
+                requested_shares=requested_shares,
+                remaining_shares=requested_shares,
+                receipt_mapping=False,
+                account_binding="proven",
+                locator_proof=locator,
+                template_name="foundersc-native-ax",
+                reason="NATIVE_HISTORICAL_ORDER_ID_MISMATCH",
+                error_code="NATIVE_HISTORICAL_ORDER_ID_MISMATCH",
+                conclusive=False,
+                retry_allowed=False,
+                echoed=self._echo(plan, requested_shares),
+            )
+        locator["order_id_mapping"] = "exact"
         trade_matches = [
             row
-            for row in trades["rows"]
+            for row in trade_rows
             if not _is_cancel_trade_row(row)
-            and str(row.get("成交日期") or "").strip() == compact_date
             and str(row.get("证券代码") or "").strip() == bare
             and _side(row.get("买卖标志")) == plan.side.upper()
             and str(row.get("委托编号") or "").strip() == native_order_id
         ]
         locator.update({
             "exact_trade_match_count": len(trade_matches),
-            "native_order_id": native_order_id,
         })
         order_filled = _integer(
             order.get("成交数量"),
@@ -1200,10 +1255,10 @@ class FounderscNativeAXBrokerAdapter(BrokerAdapter):
                 if trade_filled == requested_shares else BrokerStatus.PARTIAL
             )
         elif normalized == BrokerStatus.ACCEPTED:
-            if plan.side.upper() != "BUY" or target_holding_shares != 0:
-                normalized = BrokerStatus.UNKNOWN
-            else:
-                normalized = BrokerStatus.CANCELLED
+            # A historical day-order row that still says 已报 is not a broker
+            # terminal. Date/position inference must never manufacture a
+            # CANCELLED state or release capital.
+            normalized = BrokerStatus.UNKNOWN
         conclusive = normalized != BrokerStatus.UNKNOWN
         return BrokerReceipt(
             status=normalized,
@@ -1220,9 +1275,7 @@ class FounderscNativeAXBrokerAdapter(BrokerAdapter):
             locator_proof=locator,
             template_name="foundersc-native-ax",
             reason=(
-                "native_prior_day_zero_fill_order_expired"
-                if normalized == BrokerStatus.CANCELLED and trade_filled == 0
-                else "native_historical_order_and_trade_readback"
+                "native_historical_order_and_trade_readback"
                 if conclusive else "NATIVE_HISTORICAL_STATUS_UNPROVEN"
             ),
             error_code=None if conclusive else "NATIVE_HISTORICAL_STATUS_UNPROVEN",

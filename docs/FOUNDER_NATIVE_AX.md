@@ -42,9 +42,10 @@ single click.
 - Exact success-popup handling. `委托已提交,合同号是...` is parsed for one
   numeric order id and `撤单已提交!` is matched exactly before the popup's
   unique native confirm control is pressed once.
-- Full-query native reads for positions, today orders, today trades and funds.
-- Complete native allocation capsule from the positions summary plus row-level
-  market values.
+- Full-query native reads for positions, today orders and today trades.
+- Complete native funds/allocation capsule from the account-bound `资金股份`
+  positions summary plus row-level market values. The separate `资金明细` tab
+  is diagnostic only and is not a submit-capability dependency.
 - Exact cancellation: zero all selections, identify one
   `order-id+code+side+price+quantity` row, prove that only its checkbox changed,
   click `撤单` once, confirm once, then reconcile that same order id. If and
@@ -116,7 +117,9 @@ the current process:
 - helper version 8 or newer;
 - App running, Accessibility trusted and macOS session unlocked;
 - exactly one expected fund-account fingerprint;
-- positions, today-orders, today-trades and funds query surfaces all parse;
+- positions, today-orders and today-trades query surfaces all parse, and the
+  same positions capture proves `资产/股票市值/余额/可用/可取`; require
+  `余额+股票市值=资产` and `0<=可取<=可用<=余额`;
 - an ordinary buy/sell surface exposes exact prepare and submit capability;
 - native reconciliation is available.
 

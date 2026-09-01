@@ -4,6 +4,7 @@ import json
 from dataclasses import replace
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
+from zoneinfo import ZoneInfo
 
 import pytest
 
@@ -266,6 +267,109 @@ def test_unknown_cancel_claim_reconciles_without_replaying_cancel(
     assert recovered.cancel_chain_uncertain is False
     assert broker.cancel_calls == 1
     assert broker.reconcile_calls == 1
+
+
+def test_cancel_claim_reconcile_preserves_post_click_evidence(
+    tmp_path: Path,
+) -> None:
+    class UnknownThenTerminalCancelBroker(FakeBroker):
+        def cancel(self, plan: TradePlan, previous: dict) -> BrokerReceipt:
+            self.cancel_calls += 1
+            return BrokerReceipt(
+                status=BrokerStatus.UNKNOWN,
+                order_id="o-1",
+                strategy_id="s-1",
+                receipt_mapping=True,
+                account_binding="proven",
+                conclusive=False,
+                retry_allowed=False,
+                locator_proof={
+                    "cancel_clicked": True,
+                    "cancel_click_proven": True,
+                    "cancel_confirmation_pressed": True,
+                    "cancel_selection_proof_mode": "exact_order_tuple",
+                },
+                reason="cancel response unknown",
+            )
+
+    broker = UnknownThenTerminalCancelBroker(
+        reconcile=[
+            BrokerReceipt(
+                status=BrokerStatus.CANCELLED,
+                order_id="o-1",
+                strategy_id="s-1",
+                receipt_mapping=True,
+                account_binding="proven",
+                conclusive=True,
+                retry_allowed=False,
+                locator_proof={"exact_order_match_count": 1},
+            )
+        ]
+    )
+    store = InMemoryExecutionStore(tmp_path / "events.jsonl")
+    engine = TradingExecution(
+        store=store,
+        now=lambda: datetime(2026, 8, 15, 1, 1, tzinfo=timezone.utc),
+    )
+    plan = _plan()
+    assert engine.execute(plan, broker).state == ExecutionState.ACKNOWLEDGED
+    assert engine.cancel(plan, broker).state == ExecutionState.UNKNOWN
+
+    recovered = engine.cancel(plan, broker)
+
+    assert recovered.state == ExecutionState.CANCELLED
+    assert recovered.locator_proof["cancel_clicked"] is True
+    assert recovered.locator_proof["cancel_click_proven"] is True
+    assert recovered.locator_proof["cancel_confirmation_pressed"] is True
+    assert recovered.locator_proof["cancel_selection_proof_mode"] == (
+        "exact_order_tuple"
+    )
+    assert recovered.locator_proof["exact_order_match_count"] == 1
+    assert broker.cancel_calls == 1
+
+
+def test_nonterminal_cancel_readback_preserves_post_click_evidence(
+    tmp_path: Path,
+) -> None:
+    class NonterminalCancelBroker(FakeBroker):
+        def cancel(self, plan: TradePlan, previous: dict) -> BrokerReceipt:
+            self.cancel_calls += 1
+            return BrokerReceipt(
+                status=BrokerStatus.ACCEPTED,
+                order_id="o-1",
+                strategy_id="s-1",
+                receipt_mapping=True,
+                account_binding="proven",
+                conclusive=True,
+                locator_proof={
+                    "cancel_clicked": True,
+                    "cancel_click_proven": True,
+                    "cancel_confirmation_pressed": True,
+                    "cancel_selection_proof_mode": "exact_order_tuple",
+                },
+                reason="cancel nonterminal",
+            )
+
+    broker = NonterminalCancelBroker()
+    store = InMemoryExecutionStore(tmp_path / "events.jsonl")
+    engine = TradingExecution(
+        store=store,
+        now=lambda: datetime(2026, 8, 15, 1, 1, tzinfo=timezone.utc),
+    )
+    plan = _plan()
+    assert engine.execute(plan, broker).state == ExecutionState.ACKNOWLEDGED
+
+    receipt = engine.cancel(plan, broker)
+
+    assert receipt.state == ExecutionState.UNKNOWN
+    assert receipt.reason == "CANCEL_NONTERMINAL_READBACK"
+    assert receipt.locator_proof["cancel_clicked"] is True
+    assert receipt.locator_proof["cancel_click_proven"] is True
+    assert receipt.locator_proof["cancel_confirmation_pressed"] is True
+    assert receipt.locator_proof["cancel_selection_proof_mode"] == (
+        "exact_order_tuple"
+    )
+    assert broker.cancel_calls == 1
 
 
 def test_complete_submit_baseline_is_not_truncated_in_durable_receipt(
@@ -1275,6 +1379,193 @@ def test_live_buy_outside_continuous_auction_is_skipped_before_probe(
     assert broker.probe_calls == 0
 
 
+def _live_sell_plan(*, deadline: datetime) -> TradePlan:
+    return replace(
+        _plan(environment="live", deadline=deadline),
+        side="SELL",
+        basket_price=None,
+        price_rule="current_proprietary_trade_floor_tick",
+        market_guard_required=True,
+        market_guard_observed_at=datetime(
+            2026, 8, 15, 3, 59, tzinfo=timezone.utc
+        ),
+        market_guard_latest_price=10.05,
+        market_guard_down_price=9.00,
+        owned_lot_id="lot-1",
+        sell_authorized=True,
+        sell_reason="HARD_STOP",
+        sell_decision_phase="risk_floor",
+        sell_decision_at=datetime(2026, 8, 15, 3, 59, tzinfo=timezone.utc),
+    )
+
+
+def test_live_sell_outside_continuous_auction_is_skipped_before_probe(
+    tmp_path: Path,
+) -> None:
+    now = datetime(2026, 8, 15, 4, 0, tzinfo=timezone.utc)
+    broker = FakeBroker()
+    engine = TradingExecution(
+        store=InMemoryExecutionStore(tmp_path / "events.jsonl"),
+        now=lambda: now,
+    )
+
+    receipt = engine.execute(
+        _live_sell_plan(
+            deadline=datetime(2026, 8, 15, 6, 57, tzinfo=timezone.utc)
+        ),
+        broker,
+    )
+
+    assert receipt.state == ExecutionState.SKIPPED
+    assert receipt.reason == "OUTSIDE_CONTINUOUS_AUCTION"
+    assert broker.probe_calls == 0
+
+
+def test_live_sell_after_recovery_deadline_is_skipped_before_probe(
+    tmp_path: Path,
+) -> None:
+    now = datetime(2026, 8, 15, 6, 56, tzinfo=timezone.utc)
+    broker = FakeBroker()
+    engine = TradingExecution(
+        store=InMemoryExecutionStore(tmp_path / "events.jsonl"),
+        now=lambda: now,
+    )
+
+    receipt = engine.execute(
+        replace(
+            _live_sell_plan(deadline=now),
+            market_guard_observed_at=now,
+        ),
+        broker,
+    )
+
+    assert receipt.state == ExecutionState.SKIPPED
+    assert receipt.reason == "RECOVERY_DEADLINE_REACHED"
+    assert broker.probe_calls == 0
+
+
+@pytest.mark.parametrize(
+    "guard_change",
+    (
+        {"market_guard_observed_at": None},
+        {
+            "market_guard_observed_at": datetime(
+                2026, 8, 15, 3, 50, tzinfo=timezone.utc
+            )
+        },
+        {"market_guard_status": "suspended"},
+        {"market_guard_latest_price": None},
+        {"market_guard_down_price": None},
+    ),
+)
+def test_live_sell_unproven_market_guard_stops_before_probe(
+    tmp_path: Path,
+    guard_change: dict,
+) -> None:
+    now = datetime(2026, 8, 15, 4, 0, tzinfo=timezone.utc)
+    broker = FakeBroker()
+    engine = TradingExecution(
+        store=InMemoryExecutionStore(tmp_path / "events.jsonl"),
+        now=lambda: now,
+    )
+    plan = replace(
+        _live_sell_plan(
+            deadline=datetime(2026, 8, 15, 6, 57, tzinfo=timezone.utc)
+        ),
+        **guard_change,
+    )
+
+    receipt = engine.execute(plan, broker)
+
+    assert receipt.state == ExecutionState.SKIPPED
+    assert receipt.reason == "LIVE_SELL_MARKET_GUARD_UNPROVEN"
+    assert broker.probe_calls == 0
+    assert broker.prepare_calls == 0
+    assert broker.submit_calls == 0
+
+
+def test_live_sell_guard_is_rechecked_after_validated_recovery(
+    tmp_path: Path,
+) -> None:
+    plan = _live_sell_plan(
+        deadline=datetime(2026, 8, 15, 6, 57, tzinfo=timezone.utc)
+    )
+    store = InMemoryExecutionStore(tmp_path / "events.jsonl")
+    store.append(
+        plan=plan,
+        receipt=ExecutionReceipt(
+            plan_id=plan.plan_id,
+            plan_hash=plan.plan_hash,
+            state=ExecutionState.VALIDATED,
+            remaining_shares=plan.shares,
+            next_action="continue",
+        ),
+    )
+    broker = FakeBroker()
+    engine = TradingExecution(
+        store=store,
+        now=lambda: datetime(2026, 8, 15, 4, 5, 1, tzinfo=timezone.utc),
+    )
+
+    receipt = engine.execute(plan, broker)
+
+    assert receipt.state == ExecutionState.SKIPPED
+    assert receipt.reason == "LIVE_SELL_MARKET_GUARD_UNPROVEN"
+    assert broker.probe_calls == 0
+
+
+def test_live_sell_guard_is_rechecked_after_prepare_before_submit(
+    tmp_path: Path,
+) -> None:
+    clock = [datetime(2026, 8, 15, 3, 0, tzinfo=timezone.utc)]
+
+    class SlowPrepareBroker(FakeBroker):
+        def prepare(
+            self,
+            plan: TradePlan,
+            *,
+            requested_shares: int | None = None,
+        ) -> BrokerReceipt:
+            receipt = super().prepare(plan, requested_shares=requested_shares)
+            clock[0] = datetime(2026, 8, 15, 3, 5, 1, tzinfo=timezone.utc)
+            return receipt
+
+    class GuardTestExecution(TradingExecution):
+        def _capital_denial(
+            self,
+            plan: TradePlan,
+            previous: ExecutionReceipt,
+        ) -> ExecutionReceipt | None:
+            return None
+
+    broker = SlowPrepareBroker()
+    engine = GuardTestExecution(
+        store=InMemoryExecutionStore(tmp_path / "events.jsonl"),
+        now=lambda: clock[0],
+    )
+    plan = replace(
+        _live_sell_plan(
+            deadline=datetime(2026, 8, 15, 6, 57, tzinfo=timezone.utc)
+        ),
+        market_guard_observed_at=datetime(
+            2026, 8, 15, 2, 59, tzinfo=timezone.utc
+        ),
+    )
+    broker.capability = replace(
+        broker.capability,
+        owned_position_shares=plan.shares,
+        sellable_shares=plan.shares,
+    )
+
+    receipt = engine.execute(plan, broker)
+
+    assert receipt.state == ExecutionState.SKIPPED
+    assert receipt.reason == "LIVE_SELL_MARKET_GUARD_UNPROVEN"
+    assert broker.probe_calls == 1
+    assert broker.prepare_calls == 1
+    assert broker.submit_calls == 0
+
+
 def test_prepare_mismatch_is_rejected_without_submit(tmp_path: Path) -> None:
     class MismatchBroker(FakeBroker):
         def prepare(self, plan: TradePlan, *, requested_shares: int | None = None) -> BrokerReceipt:
@@ -1851,3 +2142,35 @@ def test_sell_builder_requires_monitor_authorization_and_owned_lot() -> None:
         side="SELL",
     )
     assert authorized.validation_error() is None
+
+
+def test_live_sell_builder_defaults_to_1457_deadline() -> None:
+    plan = trade_plan_from_frozen_row(
+        {
+            "date": "2026-08-15",
+            "book": "B",
+            "code": "000001.XSHE",
+            "name": "测试标的",
+            "shares": 100,
+            "limit_price": 10.0,
+            "owned_lot_id": "book-b:000001:2026-08-14",
+            "sell_authorized": True,
+            "sell_reason": "HARD_STOP",
+            "decision_phase": "risk_floor",
+            "decision_at": "2026-08-15T01:01:00+00:00",
+            "market_guard_required": True,
+            "market_guard_status": "T100",
+            "market_observed_at": "2026-08-15T01:01:00+00:00",
+            "market_price": 10.0,
+            "down_price": 9.0,
+        },
+        environment="live",
+        logical_account_id="primary",
+        side="SELL",
+        now=datetime(2026, 8, 15, 1, 1, tzinfo=timezone.utc),
+    )
+
+    assert plan.recovery_deadline.astimezone(
+        ZoneInfo("Asia/Shanghai")
+    ).strftime("%H:%M") == "14:57"
+    assert plan.validation_error() is None

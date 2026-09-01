@@ -264,6 +264,11 @@ def _mapped_zero_fill_terminal_event_proven(
     state = str(latest.get("state") or receipt.get("state") or "").strip().lower()
     order_id = str(receipt.get("broker_order_id") or "").strip()
     strategy_id = str(receipt.get("broker_strategy_id") or "").strip()
+    if receipt.get("reason") == "native_prior_day_zero_fill_order_expired":
+        # Older code manufactured CANCELLED from an ACCEPTED/已报 historical
+        # row. That inference is not a broker terminal and must never release
+        # capital, even if a legacy event was already persisted.
+        return False
     mapped_submit = any(
         isinstance(event.get("receipt"), dict)
         and event.get("kind") == "submit_receipt"
@@ -272,17 +277,25 @@ def _mapped_zero_fill_terminal_event_proven(
         and event["receipt"].get("broker_strategy_id") == strategy_id
         for event in plan_events[:-1]
     )
-    recovered_mapped_submit = (
-        any(
-            event.get("kind") == "durable_claim"
-            and isinstance(event.get("receipt"), dict)
-            and int(event["receipt"].get("attempt") or 0) >= 1
-            for event in plan_events[:-1]
-        )
+    durable_claims = [
+        event
+        for event in plan_events[:-1]
+        if event.get("kind") == "durable_claim"
+        and isinstance(event.get("receipt"), dict)
+        and int(event["receipt"].get("attempt") or 0) >= 1
+    ]
+    proven_claim_ids = {
+        str(event["receipt"].get("submit_claim_id") or "").strip()
+        for event in durable_claims
+        if _complete_submit_claim_event_proven(event)
+    }
+    recovered_mapped_submit = any(
+        claim_id
         and any(
             event.get("kind") == "submit_unknown"
             and isinstance(event.get("receipt"), dict)
             and event["receipt"].get("submit_chain_uncertain") is True
+            and event["receipt"].get("submit_claim_id") == claim_id
             and int(event["receipt"].get("attempt") or 0) >= 1
             for event in plan_events[:-1]
         )
@@ -293,12 +306,19 @@ def _mapped_zero_fill_terminal_event_proven(
             and event["receipt"].get("receipt_mapping") is True
             and event["receipt"].get("broker_order_id") == order_id
             and event["receipt"].get("broker_strategy_id") == strategy_id
+            and event["receipt"].get("submit_claim_id") == claim_id
             for event in plan_events[:-1]
         )
+        for claim_id in proven_claim_ids
     )
     return (
         state in {"cancelled", "rejected"}
-        and latest.get("kind") in {"submit_receipt", "reconcile_receipt"}
+        and latest.get("kind") in {
+            "submit_receipt",
+            "reconcile_receipt",
+            "cancel_receipt",
+            "cancel_claim_reconciled",
+        }
         and receipt.get("state") == state
         and receipt.get("broker_status") == state
         and receipt.get("receipt_mapping") is True
@@ -309,6 +329,42 @@ def _mapped_zero_fill_terminal_event_proven(
         and bool(strategy_id)
         and receipt.get("event_id") == latest.get("event_id")
         and (mapped_submit or recovered_mapped_submit)
+    )
+
+
+def _complete_submit_claim_event_proven(event: dict) -> bool:
+    """Require the durable claim id and the complete pre-submit baseline."""
+    receipt = event.get("receipt")
+    details = event.get("details")
+    if not isinstance(receipt, dict) or not isinstance(details, dict):
+        return False
+    claim_id = str(receipt.get("submit_claim_id") or "").strip()
+    proof = receipt.get("locator_proof")
+    if not claim_id or not isinstance(proof, dict):
+        return False
+    baseline_ids = proof.get("baseline_order_ids")
+    baseline_count = proof.get("baseline_order_count")
+    observed_at = str(proof.get("baseline_observed_at") or "").strip()
+    try:
+        parsed_observed_at = datetime.fromisoformat(
+            observed_at.replace("Z", "+00:00")
+        )
+    except ValueError:
+        return False
+    return bool(
+        details.get("claim_id") == claim_id
+        and isinstance(details.get("requested_shares"), int)
+        and details["requested_shares"] > 0
+        and isinstance(baseline_ids, list)
+        and all(str(order_id or "").strip() for order_id in baseline_ids)
+        and isinstance(baseline_count, int)
+        and baseline_count == len(baseline_ids)
+        and parsed_observed_at.tzinfo is not None
+        and proof.get("baseline_order_readback_mode")
+            in {"strict_confidence", "bounded_known_status_zero_fill"}
+        and isinstance(proof.get("baseline_bounded_low_confidence_headers"), list)
+        and isinstance(proof.get("baseline_targeted_order_reread_used"), bool)
+        and proof.get("comparison") == "code+side+price+quantity+new_order_id"
     )
 
 
@@ -1037,10 +1093,9 @@ def _assert_prepare_only(plan: TradePlan, receipt: BrokerReceipt) -> dict:
         "submitted": False,
         "saved": False,
         "started": False,
-        "form_closed": True,
+        "form_closed": readback.get("form_closed") is True,
+        "form_cleared": readback.get("form_cleared") is True,
     }
-    if readback.get("form_cleared") is True:
-        result["form_cleared"] = True
     if has_timed_readback:
         result.update(timed_readback)
     return result

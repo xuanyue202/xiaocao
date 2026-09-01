@@ -17,6 +17,7 @@ from __future__ import annotations
 import fcntl
 import hashlib
 import json
+import math
 import os
 import uuid
 from contextlib import contextmanager
@@ -347,6 +348,40 @@ class TradePlan:
         return None
 
     def guard_reason(self, *, now: datetime | None = None) -> str | None:
+        if self.side.upper() == "SELL":
+            if self.environment != "live":
+                return None
+            if (
+                not self.market_guard_required
+                or self.market_guard_observed_at is None
+                or self.market_guard_observed_at.tzinfo is None
+                or self.market_guard_latest_price is None
+                or self.market_guard_down_price is None
+            ):
+                return "LIVE_SELL_MARKET_GUARD_UNPROVEN"
+            observed = self.market_guard_observed_at
+            current = now or _utcnow()
+            if current.tzinfo is None:
+                current = current.replace(tzinfo=timezone.utc)
+            local_observed = observed.astimezone(ZoneInfo("Asia/Shanghai"))
+            age = (
+                current.astimezone(timezone.utc)
+                - observed.astimezone(timezone.utc)
+            ).total_seconds()
+            latest = float(self.market_guard_latest_price)
+            down_price = float(self.market_guard_down_price)
+            if (
+                local_observed.date().isoformat() != self.trade_date
+                or age < -30
+                or age > 300
+                or not math.isfinite(latest)
+                or latest <= 0
+                or not math.isfinite(down_price)
+                or down_price <= 0
+                or _normalize_guard_status(self.market_guard_status) != "ok"
+            ):
+                return "LIVE_SELL_MARKET_GUARD_UNPROVEN"
+            return None
         if self.side.upper() != "BUY":
             return None
         status = str(self.market_guard_status or "unavailable").strip().lower()
@@ -506,12 +541,6 @@ class BrokerReceipt:
 
 class BrokerAdapter(Protocol):
     def probe(self, plan: TradePlan) -> BrokerCapability: ...
-
-    def probe_cancel(
-        self,
-        plan: TradePlan,
-        previous: dict[str, Any],
-    ) -> BrokerCapability: ...
 
     def prepare(self, plan: TradePlan, *, requested_shares: int | None = None) -> BrokerReceipt: ...
 
@@ -1295,8 +1324,13 @@ class TradingExecution:
                 unknown = self._record(
                     plan,
                     replace(
-                        claimed,
-                        state=ExecutionState.UNKNOWN,
+                        self._receipt_from_broker(
+                            plan,
+                            claimed,
+                            broker_receipt,
+                            ExecutionState.UNKNOWN,
+                            plan.shares,
+                        ),
                         reason="CANCEL_NONTERMINAL_READBACK",
                         next_action="reconcile_only",
                         cancel_chain_uncertain=True,
@@ -1312,8 +1346,13 @@ class TradingExecution:
                 unknown = self._record(
                     plan,
                     replace(
-                        claimed,
-                        state=ExecutionState.UNKNOWN,
+                        self._receipt_from_broker(
+                            plan,
+                            claimed,
+                            broker_receipt,
+                            ExecutionState.UNKNOWN,
+                            plan.shares,
+                        ),
                         reason="LIVE_CANCEL_RECEIPT_UNPROVEN",
                         next_action="reconcile_only",
                         cancel_chain_uncertain=True,
@@ -1459,12 +1498,12 @@ class TradingExecution:
                 plan,
                 replace(receipt, state=ExecutionState.VALIDATED, reason="SUBMIT_NOT_BEFORE", next_action="wait_until_submit_window"),
             )
-        if _outside_live_buy_continuous_auction(plan, self.now()):
+        if _outside_live_initial_submit_window(plan, self.now()):
             return self._record(
                 plan,
                 replace(receipt, state=ExecutionState.SKIPPED, reason="OUTSIDE_CONTINUOUS_AUCTION", next_action="stop"),
             )
-        if plan.side.upper() == "BUY" and self.now() >= plan.recovery_deadline:
+        if _live_initial_submit_deadline_reached(plan, self.now()):
             return self._record(
                 plan,
                 replace(receipt, state=ExecutionState.SKIPPED, reason="RECOVERY_DEADLINE_REACHED", next_action="stop"),
@@ -1522,17 +1561,29 @@ class TradingExecution:
         return None
 
     def _continue(self, plan: TradePlan, broker: BrokerAdapter, previous: ExecutionReceipt) -> ExecutionReceipt:
+        guard_reason = plan.guard_reason(now=self.now())
+        if guard_reason:
+            return self._record(
+                plan,
+                replace(
+                    previous,
+                    state=ExecutionState.SKIPPED,
+                    reason=guard_reason,
+                    next_action="stop",
+                ),
+                kind="market_guard",
+            )
         if plan.submit_not_before is not None and self.now() < plan.submit_not_before:
             return self._record(
                 plan,
                 replace(previous, reason="SUBMIT_NOT_BEFORE", next_action="wait_until_submit_window"),
             )
-        if _outside_live_buy_continuous_auction(plan, self.now()):
+        if _outside_live_initial_submit_window(plan, self.now()):
             return self._record(
                 plan,
                 replace(previous, state=ExecutionState.SKIPPED, reason="OUTSIDE_CONTINUOUS_AUCTION", next_action="stop"),
             )
-        if plan.side.upper() == "BUY" and self.now() >= plan.recovery_deadline:
+        if _live_initial_submit_deadline_reached(plan, self.now()):
             return self._record(
                 plan,
                 replace(previous, state=ExecutionState.SKIPPED, reason="RECOVERY_DEADLINE_REACHED", next_action="stop"),
@@ -1692,6 +1743,40 @@ class TradingExecution:
             return failed
         prepared_receipt = self._receipt_from_broker(plan, previous, prepared, ExecutionState.PREPARED, plan.shares)
         prepared_receipt = self._record(plan, prepared_receipt)
+        final_guard_reason = plan.guard_reason(now=self.now())
+        if final_guard_reason:
+            return self._record(
+                plan,
+                replace(
+                    prepared_receipt,
+                    state=ExecutionState.SKIPPED,
+                    reason=final_guard_reason,
+                    next_action="stop",
+                ),
+                kind="final_submit_market_guard",
+            )
+        if _outside_live_initial_submit_window(plan, self.now()):
+            return self._record(
+                plan,
+                replace(
+                    prepared_receipt,
+                    state=ExecutionState.SKIPPED,
+                    reason="OUTSIDE_CONTINUOUS_AUCTION",
+                    next_action="stop",
+                ),
+                kind="final_submit_window_guard",
+            )
+        if _live_initial_submit_deadline_reached(plan, self.now()):
+            return self._record(
+                plan,
+                replace(
+                    prepared_receipt,
+                    state=ExecutionState.SKIPPED,
+                    reason="RECOVERY_DEADLINE_REACHED",
+                    next_action="stop",
+                ),
+                kind="final_submit_deadline_guard",
+            )
         denied = self._capital_denial(plan, prepared_receipt)
         if denied is not None:
             return denied
@@ -2215,7 +2300,12 @@ class TradingExecution:
             template_name=broker.template_name or previous.template_name,
             template_version=broker.template_version or previous.template_version,
             account_binding=broker.account_binding or previous.account_binding,
-            locator_proof=_safe_evidence(broker.locator_proof or previous.locator_proof),
+            locator_proof=_safe_evidence(
+                {
+                    **previous.locator_proof,
+                    **broker.locator_proof,
+                }
+            ),
             next_action=(
                 "reconcile" if state in {ExecutionState.ACKNOWLEDGED, ExecutionState.PARTIAL} else
                 "reconcile_only" if state == ExecutionState.UNKNOWN else
@@ -2381,11 +2471,30 @@ class TradingExecution:
 BookBLiveExecution = TradingExecution
 
 
-def _outside_live_buy_continuous_auction(plan: TradePlan, current: datetime) -> bool:
+def _live_initial_submit_deadline_reached(
+    plan: TradePlan,
+    current: datetime,
+) -> bool:
+    return bool(
+        current >= plan.recovery_deadline
+        and (
+            plan.side.upper() == "BUY"
+            or (plan.environment == "live" and plan.side.upper() == "SELL")
+        )
+    )
+
+
+def _outside_live_initial_submit_window(
+    plan: TradePlan,
+    current: datetime,
+) -> bool:
     if (
         plan.environment != "live"
-        or plan.side.upper() != "BUY"
-        or plan.price_rule != "min(frozen_open*1.005,basket_price)"
+        or plan.side.upper() not in {"BUY", "SELL"}
+        or (
+            plan.side.upper() == "BUY"
+            and plan.price_rule != "min(frozen_open*1.005,basket_price)"
+        )
     ):
         return False
     if current.tzinfo is None:
@@ -2470,7 +2579,7 @@ def trade_plan_from_frozen_row(
     if recovery_deadline is None:
         deadline_hour, deadline_minute = (
             (14, 57)
-            if environment == "live" and normalized_side == "BUY"
+            if environment == "live" and normalized_side in {"BUY", "SELL"}
             else (9, 45)
         )
         recovery_deadline = local_date.replace(
