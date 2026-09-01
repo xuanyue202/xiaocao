@@ -64,32 +64,45 @@ Also run stateless `subscription-updates --within 48h` for exactly:
 Repeat `--publisher`, require `failures=[]`, baseline old articles, and persist
 only stable identity, metadata, normalized URL, and hashes. Never fetch locally.
 
-For `daily_browser_input_required`, retain the process and use `browser`, never
-Computer Use. Claim the logged-in Codex 侧边栏浏览器 Xiaoetong tab; use
-Edge/OpenCLI only when durable job state names that existing session.
+The default Xiaocao playback route is now the native WeChat mini-program. The
+old direct-H5 playback route is archived: its code and historical evidence stay
+available for compatibility/readback, but it must not be used as a download
+fallback.
 
-1. `resolve_xiaoetong_page`: open the supplied `source_url`; return the current
-   URL and page state. Accept only a bound H5 live page
-   (`/vN/course/alive/l_*`) or recorded-video page
+For `daily_browser_input_required`, retain the process and use Browser only for
+credential-free H5 identity resolution; never use Computer Use. The H5 page may
+be provider-paused and is not playback proof. Claim the exact app/resource
+identity, then use the native WeChat mini-program as the playback surface.
+
+1. `resolve_xiaoetong_page`: open the supplied `source_url` only to obtain and
+   validate the bound Xiaoetong app/resource anchor. Accept only a bound H5 live
+   page (`/vN/course/alive/l_*`) or recorded-video page
    (`/p/course/video/v_*`). For a recorded-video page, also return the numeric
    `media_file_id` from the visible video. Validate MP wrapper app/resource;
    retain only `app_id`, `pro_id`, `type`, `alive_mode`, stripping share IDs.
-   Accept `/v2` to `/v4` rotation only for the same app/resource.
-2. Let the runner arm that exact H5 source job.
-3. `activate_xiaoetong_playback`: refresh; enter `666` only at a visible
-   course-password gate. If waiting/live-only/generating, return `activated=false`.
-   Once `<video>` exists, set/read `muted=true`, `volume=0`; hidden controls use
-   tab `cdp`/`Runtime.evaluate`. Prove two advancing `currentTime` samples.
-   A same-app/resource block redirect is `source_temporarily_unavailable` with
-   both booleans false. From a personal-center shell, derive only that bound
-   `.block.xiaoeeye.com` path. Never bind an unrelated URL.
-4. For a recorded-video download, `resolve_xiaoetong_media_url` returns only
-   the current signed HTTPS m3u8 bound to `media_file_id`; keep it in memory and
-   never return cookies/DRM keys or persist its signature.
+   Accept `/v2` to `/v4` rotation only for the same app/resource. A bound
+   `source_temporarily_unavailable` result is an expected H5 observation here.
+2. Let the runner arm the exact source job using that stable identity. Do not
+   arm another job when switching from the archived H5 route.
+3. `activate_xiaoetong_mini_program`: in native WeChat, open the same
+   `source_url` and select its matching live/replay record. Enter `666` only at
+   a visible course-password gate. Let the target start a media request; no
+   continuous playback or fixed wait is required. Return
+   `playback_surface=wechat_mini_program`, the exact `source_identity` and
+   `live_id`, plus `media_request_observed=true` only when the singleton
+   `wx_channels_download` sniffer saw the target request. A current-live
+   `liveplay` request alone is not a finite replay; prefer the matching VOD
+   `playlist_eof.m3u8` from the mini-program lookback path. Never return signed
+   URLs, cookies, keys, or request headers.
+4. The source job accepts only the newly observed candidate bound to the exact
+   `live_id` and finite playlist. The runner then starts the same
+   `type=live_capture`, `compress=true` task and validates the resulting
+   `-compressed.mp4`. H5 block-page status must never be reported as download
+   success.
 
-Login: keep the 侧边栏浏览器 tab; report account_login_required with both booleans
-false. Send one deduplicated 企业微信 current-video action even from
-`resume-source-repair`. See [SOP](xiaoetong-sms-login.md).
+If the native mini-program needs login, report `account_login_required` with
+`activated=false` and keep the same identity/job. Send one deduplicated user
+action even from `resume-source-repair`. See [SOP](xiaoetong-sms-login.md).
 
 `密码666` text is not a visible gate. Do not inspect cookies, storage, or
 credentials. `awaiting_playback` keeps identities and rechecks at the next

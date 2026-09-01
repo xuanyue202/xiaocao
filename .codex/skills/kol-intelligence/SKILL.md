@@ -78,6 +78,7 @@ evidence ambiguity, requested edits, or explicit historical aggregation.
 - Xiaoetong: enter `666` at a visible course-password gate. Set/read
   `video.muted=true` and `video.volume=0` before playback
   (`cdp`/`Runtime.evaluate` if controls are hidden); OS mute is insufficient.
+- Xiaocao: mini capture; H5 identity-only.
 - Resolve code/state conflicts from first principles without asking by default:
   preserve a reversible snapshot and unrelated WIP, identify both intents,
   integrate compatible behavior, verify it, and continue. Ask only when the

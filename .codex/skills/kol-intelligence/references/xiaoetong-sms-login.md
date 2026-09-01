@@ -1,11 +1,12 @@
 # Xiaoetong SMS Login, Slider CAPTCHA, and Muted Playback
 
 Use this only after the bound Xiaoetong resource redirects to account login
-and the user authorizes the interactive SMS login. Browser is the only UI
-control path; never use Computer Use. Keep the same OpenCLI session, resource
-identity, and capture job throughout. Preserve the original tab while its SMS
-page session is valid; replace the bound tab only at the explicit recovery
-boundaries below.
+and the user authorizes the interactive SMS login. Xiaocao's normal playback
+surface is the native WeChat mini-program; this Browser/OpenCLI SOP is only for
+an explicit account-login recovery or a legacy H5 identity check, not a new
+download route. Never use Computer Use. Keep the same resource identity and
+capture job throughout. Preserve the original tab while its SMS page session
+is valid; replace the bound tab only at the explicit recovery boundaries below.
 
 ## Contents
 

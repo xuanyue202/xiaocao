@@ -201,7 +201,12 @@ Keep the layers separate:
 2. Verify `http://127.0.0.1:2022/api/status` before asking the user to play anything.
 3. Arm a fresh Xiaocao job (source and author are fixed by this adapter):
    `PYTHONPATH=src python3 scripts/kol_capture.py arm`.
-4. Ask the user to open the enterprise-WeChat card. For a protected evening replay, the user enters the password; once the target player appears, no continued playback or fixed wait is required. Never store the password in source or job state.
+4. Use the native WeChat mini-program as the Xiaocao playback surface. The H5
+   link is retained only as the stable app/resource identity anchor; a paused H5
+   page is not a download failure or success signal. For a protected evening
+   replay, the user enters the password; once the matching mini-program player
+   emits a media request, no continued playback or fixed wait is required.
+   Never store the password in source or job state.
 5. Poll with the returned job id and start the download. This must reproduce the `/download/live` **保存** action (`type=live_capture`, `compress=true`), never the raw `仅保存原片` path:
    `PYTHONPATH=src python3 scripts/kol_capture.py poll --job-id <id> --download`.
 6. After `poll` records `status=downloaded`, verify the runtime-named `-compressed.mp4` exists and has nonzero size and duration. Then stop the exact `wx_video_download_macos_arm64` session gracefully with `Ctrl-C` so it restores the system proxy. Before any Netdisk/OpenCLI action, confirm the process is gone, ports 2022/2023 have no listener, `/api/status` is unavailable, and `scutil --proxy` reports `HTTPEnable`, `HTTPSEnable`, `ProxyAutoConfigEnable`, and `SOCKSEnable` all `0`. Treat cleanup failure as a hard block to enrichment/upload; do not kill unrelated applications merely because they retain `CLOSE_WAIT` or `CLOSED` sockets.

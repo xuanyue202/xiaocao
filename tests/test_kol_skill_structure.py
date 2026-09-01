@@ -89,12 +89,13 @@ def test_kol_local_capture_reuses_side_browser_and_rechecks_short_lives() -> Non
     )
 
     for marker in (
-        "侧边栏浏览器",
+        "native WeChat mini-program",
+        "activate_xiaoetong_mini_program",
         "app_id",
         "pro_id",
         "alive_mode",
         "20 分钟",
-        "企业微信",
+        "account_login_required",
     ):
         assert marker in text
 

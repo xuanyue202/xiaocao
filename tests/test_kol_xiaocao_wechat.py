@@ -15,6 +15,7 @@ from xiaocao.kol.enrichment_types import (
 from xiaocao.kol.xiaocao_wechat import (
     XiaocaoLiveCaptureDriver,
     XiaocaoWechatLiveSubscription,
+    XIAOCAO_PLAYBACK_ROUTE_WECHAT_MINI_PROGRAM,
     parse_xiaocao_live_messages,
 )
 from xiaocao.kol.writer_progress import normalize_source_result
@@ -441,6 +442,127 @@ def test_first_poll_baselines_history_and_arms_only_latest_live(tmp_path):
     )
     statuses = sorted(item["status"] for item in manifest["items"].values())
     assert statuses == ["historical_baseline", "playback_activated"]
+
+
+def test_wechat_mini_program_route_binds_media_to_the_exact_live_id(tmp_path):
+    page_url = (
+        "https://app6ums63as6516.h5.xiaoeknow.com/v2/course/alive/"
+        "l_6a9531fbe4b0694c35440d7e"
+    )
+    payload = _history(
+        "[2026-08-31 16:54] 福利官小花四: 盘前大师班：" + page_url,
+    )
+    requests: list[dict] = []
+    capture = _CaptureDriver()
+
+    def browser_exchange(request: dict) -> dict:
+        requests.append(request)
+        if request["action"] == "resolve_xiaoetong_page":
+            return {
+                "action": request["action"],
+                "subscription_id": request["subscription_id"],
+                "page_url": page_url,
+                "page_state": "unknown",
+            }
+        assert request["action"] == "activate_xiaoetong_mini_program"
+        assert request["playback_surface"] == (
+            XIAOCAO_PLAYBACK_ROUTE_WECHAT_MINI_PROGRAM
+        )
+        assert "浏览器 H5" in request["instructions"]
+        return {
+            "action": request["action"],
+            "subscription_id": request["subscription_id"],
+            "playback_surface": XIAOCAO_PLAYBACK_ROUTE_WECHAT_MINI_PROGRAM,
+            "source_identity": (
+                "xiaoetong:app6ums63as6516:l_6a9531fbe4b0694c35440d7e"
+            ),
+            "live_id": "l_6a9531fbe4b0694c35440d7e",
+            "page_state": "mini_program_media_observed",
+            "activated": True,
+            "media_request_observed": True,
+            "password_used": False,
+        }
+
+    subscription = XiaocaoWechatLiveSubscription(
+        tmp_path / "wechat",
+        history_reader=lambda: payload,
+        browser_exchange=browser_exchange,
+        capture_driver=capture,
+        contact=CONTACT,
+        playback_route=XIAOCAO_PLAYBACK_ROUTE_WECHAT_MINI_PROGRAM,
+    )
+
+    result = subscription.run_once(
+        opencli_session="xiaocao-lv-subscription",
+    )
+
+    assert result["status"] == "waiting"
+    assert capture.advances == 1
+    assert [request["action"] for request in requests] == [
+        "resolve_xiaoetong_page",
+        "activate_xiaoetong_mini_program",
+    ]
+    manifest = json.loads(
+        (tmp_path / "wechat" / "manifest.json").read_text(encoding="utf-8")
+    )
+    item = next(iter(manifest["items"].values()))
+    assert item["status"] == "playback_activated"
+    assert item["playback_route"] == (
+        XIAOCAO_PLAYBACK_ROUTE_WECHAT_MINI_PROGRAM
+    )
+    assert item["playback_surface"] == (
+        XIAOCAO_PLAYBACK_ROUTE_WECHAT_MINI_PROGRAM
+    )
+    assert item["media_request_observed"] is True
+
+
+def test_wechat_mini_program_route_rejects_a_different_live_id(tmp_path):
+    page_url = (
+        "https://app6ums63as6516.h5.xiaoeknow.com/v2/course/alive/"
+        "l_6a9531fbe4b0694c35440d7e"
+    )
+    payload = _history(
+        "[2026-08-31 16:54] 福利官小花四: 盘前大师班：" + page_url,
+    )
+    capture = _CaptureDriver()
+
+    def browser_exchange(request: dict) -> dict:
+        if request["action"] == "resolve_xiaoetong_page":
+            return {
+                "action": request["action"],
+                "subscription_id": request["subscription_id"],
+                "page_url": page_url,
+                "page_state": "unknown",
+            }
+        return {
+            "action": request["action"],
+            "subscription_id": request["subscription_id"],
+            "playback_surface": XIAOCAO_PLAYBACK_ROUTE_WECHAT_MINI_PROGRAM,
+            "source_identity": (
+                "xiaoetong:app6ums63as6516:l_6a9531fbe4b0694c35440d7e"
+            ),
+            "live_id": "l_wrong_resource",
+            "page_state": "mini_program_media_observed",
+            "activated": True,
+            "media_request_observed": True,
+            "password_used": False,
+        }
+
+    subscription = XiaocaoWechatLiveSubscription(
+        tmp_path / "wechat",
+        history_reader=lambda: payload,
+        browser_exchange=browser_exchange,
+        capture_driver=capture,
+        contact=CONTACT,
+        playback_route=XIAOCAO_PLAYBACK_ROUTE_WECHAT_MINI_PROGRAM,
+    )
+
+    with pytest.raises(
+        EnrichmentError,
+        match="WeChat mini-program playback binding is invalid",
+    ):
+        subscription.run_once(opencli_session="xiaocao-lv-subscription")
+    assert capture.advances == 0
 
 
 def test_recorded_video_page_arms_bound_capture(tmp_path):
