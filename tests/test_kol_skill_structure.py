@@ -91,6 +91,10 @@ def test_kol_local_capture_reuses_side_browser_and_rechecks_short_lives() -> Non
     for marker in (
         "native WeChat mini-program",
         "activate_xiaoetong_mini_program",
+        "Agent owns the native WeChat UI",
+        "one action at a time",
+        "no evidence for a magic safe interval",
+        "clipboard retry loops",
         "app_id",
         "pro_id",
         "alive_mode",
@@ -128,6 +132,9 @@ def test_kol_skill_has_a_bounded_under_ten_second_capture_ready_path() -> None:
     assert "Do not read `full-contract.md` before Ready" in flattened_entrypoint
     for marker in (
         "scripts/kol_xiaocao_live.py run",
+        "Agent opens the target",
+        "do not ask the user",
+        "event-based waits",
         "capture_armed",
         "Do not inspect Git",
         "Do not contact the remote writer",

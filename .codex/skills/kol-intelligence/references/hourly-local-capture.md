@@ -70,9 +70,11 @@ available for compatibility/readback, but it must not be used as a download
 fallback.
 
 For `daily_browser_input_required`, retain the process and use Browser only for
-credential-free H5 identity resolution; never use Computer Use. The H5 page may
-be provider-paused and is not playback proof. Claim the exact app/resource
-identity, then use the native WeChat mini-program as the playback surface.
+credential-free H5 identity resolution. The H5 page may be provider-paused and
+is not playback proof. Claim the exact app/resource identity, then let the
+Agent use the native WeChat mini-program as the playback surface under this UI
+policy. The Browser/OpenCLI route remains separate and must
+not be used to simulate or replace the mini-program playback.
 
 1. `resolve_xiaoetong_page`: open the supplied `source_url` only to obtain and
    validate the bound Xiaoetong app/resource anchor. Accept only a bound H5 live
@@ -84,10 +86,21 @@ identity, then use the native WeChat mini-program as the playback surface.
    `source_temporarily_unavailable` result is an expected H5 observation here.
 2. Let the runner arm the exact source job using that stable identity. Do not
    arm another job when switching from the archived H5 route.
-3. `activate_xiaoetong_mini_program`: in native WeChat, open the same
-   `source_url` and select its matching live/replay record. Enter `666` only at
-   a visible course-password gate. Let the target start a media request; no
-   continuous playback or fixed wait is required. Return
+3. `activate_xiaoetong_mini_program`: the Agent owns the native WeChat UI
+   action; never ask the user to open or select the replay. Use the reviewed
+   Computer Use exception (`node_repl` with `@oai/sky`) against visible WeChat,
+   inspect fresh state, keep one foreground session, one action at a time, and
+   read state back after each. Do
+   not use hooks, injection, webhooks, database/storage/cookie reads,
+   credential extraction, clipboard retry loops, or rapid/global-shortcut
+   retries. There is no evidence for a magic safe interval: wait only for a
+   visible state/sniffer event, and make at most one
+   activation attempt per scheduled boundary. If the app requires login,
+   SMS/OTP, CAPTCHA, consent, or shows an explicit protection screen, return
+   `account_login_required`/the corresponding blocked state and stop; that is
+   the only user-action boundary. Enter `666` only at a visible
+   course-password gate. Let the target start a media request; no continuous
+   playback or fixed wait is required. Return
    `playback_surface=wechat_mini_program`, the exact `source_identity` and
    `live_id`, plus `media_request_observed=true` only when the singleton
    `wx_channels_download` sniffer saw the target request. A current-live

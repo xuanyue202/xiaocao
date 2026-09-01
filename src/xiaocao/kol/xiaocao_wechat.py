@@ -1138,6 +1138,14 @@ class XiaocaoWechatLiveSubscription:
             "page_url": item["page_url"],
             "check_reason": reason,
             "playback_surface": XIAOCAO_PLAYBACK_ROUTE_WECHAT_MINI_PROGRAM,
+            "operator": "agent",
+            "user_action_required": False,
+            "ui_policy": {
+                "app_bundle_id": "com.tencent.xinWeChat",
+                "surface": "visible_foreground_ui",
+                "action_mode": "one_action_then_state_readback",
+                "max_activation_attempts": 1,
+            },
             "password_policy": {
                 "only_if_password_gate_visible": True,
                 "password": self.password,
@@ -1157,6 +1165,7 @@ class XiaocaoWechatLiveSubscription:
                 "playback_surface": XIAOCAO_PLAYBACK_ROUTE_WECHAT_MINI_PROGRAM,
                 "source_identity": item["source_identity"],
                 "live_id": expected_live_id,
+                "operator": "agent",
                 "page_state": (
                     "account_login_required|waiting_to_start|live|"
                     "replay_generating|playable|password_required|unknown|"

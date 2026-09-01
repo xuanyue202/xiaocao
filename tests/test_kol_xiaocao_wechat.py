@@ -468,6 +468,14 @@ def test_wechat_mini_program_route_binds_media_to_the_exact_live_id(tmp_path):
         assert request["playback_surface"] == (
             XIAOCAO_PLAYBACK_ROUTE_WECHAT_MINI_PROGRAM
         )
+        assert request["operator"] == "agent"
+        assert request["user_action_required"] is False
+        assert request["ui_policy"] == {
+            "app_bundle_id": "com.tencent.xinWeChat",
+            "surface": "visible_foreground_ui",
+            "action_mode": "one_action_then_state_readback",
+            "max_activation_attempts": 1,
+        }
         assert "浏览器 H5" in request["instructions"]
         return {
             "action": request["action"],

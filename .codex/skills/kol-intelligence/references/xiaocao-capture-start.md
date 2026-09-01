@@ -23,10 +23,15 @@ Before Ready, do only this:
    `status=awaiting_capture`, a `capture_job_id`, a process PID, and the playback
    prompt. The command itself proves the exact binary, local API health, and the
    candidate baseline before it emits that result.
-4. Ask the user to open the target in the native WeChat mini-program. The
-   matching player only needs to emit a media request; continued playback and a
-   fixed wait are unnecessary. The old direct-H5 player is archived and may be
-   used only to validate the stable app/resource identity, never as a playback
+4. The Agent opens the target in the native WeChat mini-program and selects the
+   matching replay through the reviewed, visible Computer Use exception; do not
+   ask the user to perform that step. Inspect fresh state before each action,
+   keep one foreground session, read state back after each action, and use only
+   event-based waits. Stop for login, SMS/OTP, CAPTCHA, consent, or an explicit
+   protection screen; those are the only user-action boundaries. The matching
+   player only needs to emit a media request; continued playback and a fixed
+   wait are unnecessary. The old direct-H5 player is archived and may be used
+   only to validate the stable app/resource identity, never as a playback
    fallback. The singleton `wx_channels_download` sniffer must report the exact
    `live_id` before capture can advance.
 
