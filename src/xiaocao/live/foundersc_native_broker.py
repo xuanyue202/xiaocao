@@ -1797,6 +1797,7 @@ class FounderscNativeAXBrokerAdapter(BrokerAdapter):
         settled_nav: float,
         current_open_exposure: float,
         capital_basis_source: str,
+        capital_basis_receipt_sha256: str | None = None,
         expected_fund_account_fingerprint: str,
         logical_account_id: str = "primary",
         now: datetime | None = None,
@@ -1807,8 +1808,18 @@ class FounderscNativeAXBrokerAdapter(BrokerAdapter):
             raise ValueError("LIVE_BOOK_B_SETTLED_NAV_INVALID")
         if not math.isfinite(exposure) or exposure < 0 or exposure > nav:
             raise ValueError("LIVE_BOOK_B_OPEN_EXPOSURE_INVALID")
-        if capital_basis_source != "initial_book_b_capital":
+        if capital_basis_source not in {
+            "initial_book_b_capital",
+            "broker_reconciled_book_b_nav",
+        }:
             raise ValueError("LIVE_BOOK_B_CAPITAL_BASIS_UNPROVEN")
+        basis_receipt = str(capital_basis_receipt_sha256 or "").strip().lower()
+        if capital_basis_source == "broker_reconciled_book_b_nav" and re.fullmatch(
+            r"[0-9a-f]{64}", basis_receipt
+        ) is None:
+            raise ValueError("LIVE_BOOK_B_CAPITAL_BASIS_RECEIPT_UNPROVEN")
+        if capital_basis_source == "initial_book_b_capital" and basis_receipt:
+            raise ValueError("LIVE_BOOK_B_CAPITAL_BASIS_RECEIPT_UNEXPECTED")
         if logical_account_id != "primary":
             raise FounderscNativeAXError("LIVE_ALLOCATION_ACCOUNT_MISMATCH")
         if str(expected_fund_account_fingerprint or "").strip() != (
@@ -1905,6 +1916,7 @@ class FounderscNativeAXBrokerAdapter(BrokerAdapter):
             "withdrawable_cash": float(withdrawable),
             "current_open_exposure": exposure,
             "capital_basis_source": capital_basis_source,
+            "capital_basis_receipt_sha256": basis_receipt or None,
             "broker_total_assets": float(total_assets),
             "broker_securities_market_value": float(securities),
             "source": "foundersc_native_app",
@@ -1922,6 +1934,160 @@ class FounderscNativeAXBrokerAdapter(BrokerAdapter):
             ).encode("utf-8")
         ).hexdigest()
         return capsule
+
+    def read_live_account_snapshot(
+        self,
+        *,
+        trade_date: str,
+        expected_fund_account_fingerprint: str,
+        logical_account_id: str = "primary",
+        now: datetime | None = None,
+        max_age_seconds: float = 300.0,
+    ) -> dict[str, Any]:
+        """Return three row tables plus the positions-embedded funds summary.
+
+        This is the read-only lifecycle port used after the transaction layer.
+        It exposes no prepare/submit/cancel operation and reuses the same strict
+        native table validators as exact-order reconciliation. The unstable
+        standalone funds page is diagnostic-only and is never required here.
+        """
+        if logical_account_id != "primary":
+            raise FounderscNativeAXError("LIVE_ACCOUNT_SNAPSHOT_ACCOUNT_MISMATCH")
+        if str(expected_fund_account_fingerprint or "").strip() != (
+            self.expected_fund_account_fingerprint
+        ):
+            raise FounderscNativeAXError(
+                "LIVE_ACCOUNT_SNAPSHOT_ACCOUNT_BINDING_UNPROVEN"
+            )
+        current = now or datetime.now(timezone.utc)
+        if current.tzinfo is None:
+            raise ValueError("LIVE_ACCOUNT_SNAPSHOT_NOW_NOT_TZ_AWARE")
+        self._open_query_surface()
+        kinds = ("positions", "today-orders", "today-trades")
+        readbacks = {kind: self._query(kind) for kind in kinds}
+        self._validate_order_trade_cross_readback(
+            readbacks["today-orders"], readbacks["today-trades"]
+        )
+
+        china = ZoneInfo("Asia/Shanghai")
+        observed_values: list[datetime] = []
+        tables: dict[str, dict[str, Any]] = {}
+        for kind in kinds:
+            readback = readbacks[kind]
+            observed = _parse_timestamp(readback.get("observed_at"))
+            if observed is None:
+                raise FounderscNativeAXError(
+                    f"LIVE_ACCOUNT_SNAPSHOT_{kind.upper()}_TIME_UNPROVEN"
+                )
+            if observed.astimezone(china).date().isoformat() != str(trade_date)[:10]:
+                raise FounderscNativeAXError(
+                    f"LIVE_ACCOUNT_SNAPSHOT_{kind.upper()}_DATE_MISMATCH"
+                )
+            age = (
+                current.astimezone(timezone.utc)
+                - observed.astimezone(timezone.utc)
+            ).total_seconds()
+            if age < -30 or age > float(max_age_seconds):
+                raise FounderscNativeAXError(
+                    f"LIVE_ACCOUNT_SNAPSHOT_{kind.upper()}_STALE"
+                )
+            observed_values.append(observed)
+            table = {
+                "kind": kind,
+                "rows": [dict(row) for row in readback["rows"]],
+                "row_count": len(readback["rows"]),
+                "observed_at": observed.isoformat(),
+                "targeted_reread_used": bool(
+                    readback.get("targeted_reread_used")
+                ),
+                "bounded_order_readback_used": bool(
+                    readback.get("bounded_order_readback_used")
+                ),
+            }
+            if kind == "positions":
+                table["summary_values"] = dict(
+                    readback.get("summary_values") or {}
+                )
+            tables[kind] = table
+
+        summary = tables["positions"].get("summary_values") or {}
+        required = {"资产", "股票市值", "可用", "余额", "可取"}
+        if not required.issubset(summary):
+            raise FounderscNativeAXError("LIVE_ACCOUNT_SNAPSHOT_SUMMARY_UNPROVEN")
+        total_assets = _decimal(summary["资产"], field="TOTAL_ASSETS")
+        securities = _decimal(summary["股票市值"], field="SECURITIES_VALUE")
+        available = _decimal(summary["可用"], field="AVAILABLE_CASH")
+        balance = _decimal(summary["余额"], field="CASH_BALANCE")
+        withdrawable = _decimal(summary["可取"], field="WITHDRAWABLE_CASH")
+        if (
+            total_assets <= 0
+            or securities < 0
+            or available < 0
+            or balance < 0
+            or withdrawable < 0
+        ):
+            raise FounderscNativeAXError("LIVE_ACCOUNT_SNAPSHOT_VALUES_INVALID")
+        if abs((balance + securities) - total_assets) > Decimal("0.10"):
+            raise FounderscNativeAXError(
+                "LIVE_ACCOUNT_SNAPSHOT_ASSET_EQUATION_FAILED"
+            )
+        if available > balance + Decimal("0.10"):
+            raise FounderscNativeAXError(
+                "LIVE_ACCOUNT_SNAPSHOT_AVAILABLE_EXCEEDS_BALANCE"
+            )
+        if withdrawable > available + Decimal("0.10"):
+            raise FounderscNativeAXError(
+                "LIVE_ACCOUNT_SNAPSHOT_WITHDRAWABLE_EXCEEDS_AVAILABLE"
+            )
+        position_value = sum(
+            _decimal(row.get("最新市值"), field="POSITION_VALUE")
+            for row in tables["positions"]["rows"]
+        )
+        if abs(position_value - securities) > Decimal("0.10"):
+            raise FounderscNativeAXError(
+                "LIVE_ACCOUNT_SNAPSHOT_POSITION_SUM_FAILED"
+            )
+        # Use the oldest table time so downstream freshness remains
+        # conservative when the three row-table reads span several seconds.
+        body = {
+            "schema_version": 1,
+            "status": "account_snapshot_reconciled",
+            "trade_date": str(trade_date)[:10],
+            "environment": "live",
+            "logical_account_id": logical_account_id,
+            "account_binding": "proven",
+            "fund_account_binding_sha256": hashlib.sha256(
+                self.expected_fund_account_fingerprint.encode("utf-8")
+            ).hexdigest(),
+            "source": "foundersc_native_app",
+            "observed_at": min(observed_values).isoformat(),
+            "broker_summary": {
+                "total_assets": float(total_assets),
+                "securities_market_value": float(securities),
+                "available_cash": float(available),
+                "cash_balance": float(balance),
+                "withdrawable_cash": float(withdrawable),
+            },
+            "funds_summary": {
+                "source": "positions_summary",
+                "total_assets": float(total_assets),
+                "securities_market_value": float(securities),
+                "available_cash": float(available),
+                "cash_balance": float(balance),
+                "withdrawable_cash": float(withdrawable),
+            },
+            "tables": tables,
+        }
+        body["snapshot_sha256"] = hashlib.sha256(
+            json.dumps(
+                body,
+                ensure_ascii=False,
+                sort_keys=True,
+                separators=(",", ":"),
+                default=str,
+            ).encode("utf-8")
+        ).hexdigest()
+        return body
 
 
 __all__ = [

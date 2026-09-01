@@ -46,6 +46,11 @@ single click.
 - Complete native funds/allocation capsule from the account-bound `资金股份`
   positions summary plus row-level market values. The separate `资金明细` tab
   is diagnostic only and is not a submit-capability dependency.
+- A read-only, hash-bound live-account snapshot port that captures the three
+  validated row tables plus the funds summary embedded in the same positions
+  capture under one account/date/freshness receipt. The Book-B
+  lifecycle consumes it for owned-lot reconciliation and EOD NAV; the port has
+  no prepare, submit or cancel capability.
 - Exact cancellation: zero all selections, identify one
   `order-id+code+side+price+quantity` row, prove that only its checkbox changed,
   click `撤单` once, confirm once, then reconcile that same order id. If and
@@ -56,6 +61,12 @@ single click.
 Automatic replacement remains disabled in the native adapter. Unknown action
 outcomes are reconciliation-only and never cause another Return, click or
 submit.
+
+The broker account may contain manual or non-Book-B positions. Its total cash,
+assets and securities value are corroborating evidence only. Book-B cash/NAV
+is projected separately from broker-proved ownership fills; the native snapshot
+must show at least those owned shares, but never assigns unrelated holdings to
+Book B.
 
 ## OCR and reconciliation contract
 

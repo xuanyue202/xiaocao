@@ -1,12 +1,16 @@
 from __future__ import annotations
 
+import hashlib
+import json
 from dataclasses import replace
 from datetime import datetime, timedelta, timezone
+from pathlib import Path
 
 import pytest
 
 from xiaocao.live.foundersc_native_ax import FounderscNativeAXError, NativeAXReceipt
 from xiaocao.live.foundersc_native_broker import FounderscNativeAXBrokerAdapter
+from xiaocao.live.book_b_live_lifecycle import project_book_b_live_account
 from xiaocao.live.trading_execution import BrokerStatus, TradePlan
 
 
@@ -1344,22 +1348,6 @@ def test_native_allocation_uses_position_summary_and_equations() -> None:
     assert len(facts["allocation_capsule_sha256"]) == 64
 
 
-def test_native_allocation_rejects_position_sum_drift() -> None:
-    native = FakeNative()
-    native.positions[0]["最新市值"] = "42000.00"
-    adapter = _adapter(native)
-
-    with pytest.raises(FounderscNativeAXError, match="POSITION_SUM_FAILED"):
-        adapter.read_live_allocation_facts(
-            trade_date="2026-08-30",
-            settled_nav=100000,
-            current_open_exposure=40000,
-            capital_basis_source="initial_book_b_capital",
-            expected_fund_account_fingerprint="123******890",
-            now=datetime.fromisoformat(OBSERVED_AT.replace("Z", "+00:00")),
-        )
-
-
 def test_native_allocation_uses_cash_balance_and_hashes_all_five_fund_fields() -> None:
     native = FakeNative()
     native.position_summary.update(
@@ -1461,6 +1449,102 @@ def test_native_allocation_rejects_one_cent_asset_equation_drift() -> None:
             settled_nav=100000,
             current_open_exposure=40000,
             capital_basis_source="initial_book_b_capital",
+            expected_fund_account_fingerprint="123******890",
+            now=datetime.fromisoformat(OBSERVED_AT.replace("Z", "+00:00")),
+        )
+
+
+def test_native_allocation_rejects_position_sum_drift() -> None:
+    native = FakeNative()
+    native.positions[0]["最新市值"] = "42000.00"
+    adapter = _adapter(native)
+
+    with pytest.raises(FounderscNativeAXError, match="POSITION_SUM_FAILED"):
+        adapter.read_live_allocation_facts(
+            trade_date="2026-08-30",
+            settled_nav=100000,
+            current_open_exposure=40000,
+            capital_basis_source="initial_book_b_capital",
+            expected_fund_account_fingerprint="123******890",
+            now=datetime.fromisoformat(OBSERVED_AT.replace("Z", "+00:00")),
+        )
+
+
+def test_native_allocation_accepts_hash_bound_rolling_book_b_nav() -> None:
+    adapter = _adapter()
+    facts = adapter.read_live_allocation_facts(
+        trade_date="2026-08-30",
+        settled_nav=30_123.45,
+        current_open_exposure=1_000,
+        capital_basis_source="broker_reconciled_book_b_nav",
+        capital_basis_receipt_sha256="c" * 64,
+        expected_fund_account_fingerprint="123******890",
+        now=datetime.fromisoformat(OBSERVED_AT.replace("Z", "+00:00")),
+    )
+
+    assert facts["capital_basis_source"] == "broker_reconciled_book_b_nav"
+    assert facts["capital_basis_receipt_sha256"] == "c" * 64
+
+
+def test_native_live_account_snapshot_reads_three_tables_and_position_funds(
+    tmp_path: Path,
+) -> None:
+    native = FakeNative()
+    adapter = _adapter(native)
+    now = datetime.fromisoformat(OBSERVED_AT.replace("Z", "+00:00"))
+
+    snapshot = adapter.read_live_account_snapshot(
+        trade_date="2026-08-30",
+        expected_fund_account_fingerprint="123******890",
+        now=now,
+    )
+
+    assert snapshot["status"] == "account_snapshot_reconciled"
+    assert snapshot["source"] == "foundersc_native_app"
+    assert set(snapshot["tables"]) == {
+        "positions", "today-orders", "today-trades"
+    }
+    assert snapshot["funds_summary"] == {
+        "source": "positions_summary",
+        "total_assets": 43054.6,
+        "securities_market_value": 43054.6,
+        "available_cash": 0.0,
+        "cash_balance": 0.0,
+        "withdrawable_cash": 0.0,
+    }
+    assert native.query_calls[-3:] == [
+        "positions", "today-orders", "today-trades"
+    ]
+    payload = dict(snapshot)
+    claimed = payload.pop("snapshot_sha256")
+    assert claimed == hashlib.sha256(
+        json.dumps(
+            payload,
+            ensure_ascii=False,
+            sort_keys=True,
+            separators=(",", ":"),
+            default=str,
+        ).encode("utf-8")
+    ).hexdigest()
+    account = project_book_b_live_account(
+        tmp_path,
+        snapshot,
+        trade_date="2026-08-30",
+        now=now,
+    )
+    assert account.settled_nav == 30_000
+    assert account.current_open_exposure == 0
+    assert account.lots == ()
+
+
+def test_native_live_account_snapshot_rejects_position_funds_asset_drift() -> None:
+    native = FakeNative()
+    adapter = _adapter(native)
+    native.position_summary["余额"] = "1.00"
+
+    with pytest.raises(FounderscNativeAXError, match="ASSET_EQUATION_FAILED"):
+        adapter.read_live_account_snapshot(
+            trade_date="2026-08-30",
             expected_fund_account_fingerprint="123******890",
             now=datetime.fromisoformat(OBSERVED_AT.replace("Z", "+00:00")),
         )

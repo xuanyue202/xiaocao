@@ -27,7 +27,7 @@ Completion means the requested command reached a terminal state and the branch-s
 - Xiaocao is paper-only unless both live-capital keys pass `src/xiaocao/live/safety.py`. An automation never creates either key.
 - Judgment artifacts (`XIAOCAO_PLAYBOOK`, posture timeline, candidate hypotheses) are priors only. They cannot filter deterministic picks, tune parameters or validate a strategy. For posture/exit judgment, start at `reference/experience/README.md` and follow only its relevant pointer.
 - Keep Books A, B and T separate. Same-code overlap is valid. For current truth, prefer `positions.jsonl`, `paper_trades.jsonl` and matching account files over stale holdings snapshots.
-- Book-B phase-one broker seam is isolated from the paper runtime: the separate
+- Book-B live lifecycle is isolated from the paper runtime: the separate
   09:20 task must never call or wait for the 09:25 `morning-execute`, replace
   the canonical `paper_record.py` writer, consume a simulated fill, or invent
   a broker fill. It requires
@@ -43,8 +43,13 @@ Completion means the requested command reached a terminal state and the branch-s
   producer strategy Git SHA must be bound by the freeze manifest; its
   allocation facts must come from a complete dated live asset readback bound
   to the logical/fund account and protect the complete economic capsule with a
-  canonical hash. Phase one fixes the live logical account to `primary` and the
-  initial Book-B basis to 30,000 yuan. The native App has no mock namespace, so
+  canonical hash. The live logical account is fixed to `primary`; 30,000 yuan
+  is only the pre-first-fill basis, after which a broker-reconciled EOD
+  settlement and unchanged ownership-chain head are mandatory. Intraday live
+  monitoring reads only broker-proved owned lots, reuses the production exit
+  policy, and hands authorized lot-bound SELL intents to the same exact-once
+  native execution port. It never reads or writes paper account files. The
+  native App has no mock namespace, so
   exit records `native_environment_restore_not_applicable` rather than claiming
   a fake environment switch.
 - Before trusting A/B or repaired ledger state, run `scripts/data_doctor.py`. Raw cumulative A-B PnL is accounting information; exit comparison requires the identical-entry paired cohort.
@@ -69,7 +74,7 @@ Completion means the requested command reached a terminal state and the branch-s
 | Reports, strategy runs, backtests, cohorts or paper-vs-market research | [`references/strategy-and-backtests.md`](references/strategy-and-backtests.md) |
 | Kronos variants, training rows, research guards, verdict ledger or flywheel states | [`references/research-flywheels.md`](references/research-flywheels.md) |
 | Founder Securities Web/OpenCLI legacy route inspection only; never use it inside `native-app` | [`references/foundersc-opencli.md`](references/foundersc-opencli.md) |
-| Founder Securities macOS native App probe, unlock, prepare, submit, positions/orders/trades/funds readback or remote runtime preflight | [`references/foundersc-native-ax.md`](references/foundersc-native-ax.md) |
+| Founder Securities macOS native App probe, unlock, prepare, submit, positions/orders/trades plus positions-embedded funds-summary readback or remote runtime preflight | [`references/foundersc-native-ax.md`](references/foundersc-native-ax.md) |
 | Book-B live execution seam, ownership evidence or allocation proof | [`references/automation-morning.md`](references/automation-morning.md), [`references/automation-intraday.md`](references/automation-intraday.md), [`references/foundersc-native-ax.md`](references/foundersc-native-ax.md) |
 | “What should the trading system do?” or a behavior change | `docs/OPERATING_CONTRACT.md`, then the owning code/tests |
 | Posture, discretionary exit triage or distilled 小草 knowledge | `reference/experience/README.md`, then only the routed playbook/timeline artifact |

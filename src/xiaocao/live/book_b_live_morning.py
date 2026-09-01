@@ -20,6 +20,11 @@ from pathlib import Path
 from typing import Callable
 
 from .book_b_allocation import BookBAllocationFacts
+from .book_b_live_lifecycle import (
+    load_latest_book_b_live_settlement,
+    open_execution_plan_ids,
+    ownership_head_sha256,
+)
 from .trading_execution import (
     BrokerReceipt,
     BrokerStatus,
@@ -91,6 +96,7 @@ class BookBLiveCapitalBasis:
     settled_nav: float
     current_open_exposure: float
     source: str
+    receipt_sha256: str | None = None
 
 
 def load_book_b_live_capital_basis(
@@ -98,6 +104,30 @@ def load_book_b_live_capital_basis(
 ) -> BookBLiveCapitalBasis:
     """Return the first-batch basis or require a settled post-fill receipt."""
     root = Path(state_dir)
+    settlement = load_latest_book_b_live_settlement(root)
+    if settlement is not None:
+        if open_execution_plan_ids(root):
+            raise ValueError("LIVE_BOOK_B_SETTLED_NAV_RECONCILE_REQUIRED")
+        if settlement.get("ownership_head_sha256") != ownership_head_sha256(root):
+            raise ValueError("LIVE_BOOK_B_SETTLED_NAV_RECONCILE_REQUIRED")
+        try:
+            settled_nav = float(settlement["settled_nav"])
+            exposure = float(settlement["current_open_exposure"])
+        except (KeyError, TypeError, ValueError) as exc:
+            raise ValueError("LIVE_BOOK_B_SETTLEMENT_INVALID") from exc
+        if (
+            not math.isfinite(settled_nav)
+            or settled_nav <= 0
+            or not math.isfinite(exposure)
+            or exposure < 0
+        ):
+            raise ValueError("LIVE_BOOK_B_SETTLEMENT_INVALID")
+        return BookBLiveCapitalBasis(
+            settled_nav=settled_nav,
+            current_open_exposure=exposure,
+            source="broker_reconciled_book_b_nav",
+            receipt_sha256=str(settlement.get("settlement_sha256") or "") or None,
+        )
     ownership = root / "book_b_ownership_evidence.jsonl"
     try:
         has_owned_fill = ownership.is_file() and bool(ownership.read_text(encoding="utf-8").strip())
@@ -170,6 +200,7 @@ def load_book_b_live_capital_basis(
         settled_nav=_BOOK_B_INITIAL_CAPITAL,
         current_open_exposure=0.0,
         source="initial_book_b_capital",
+        receipt_sha256=None,
     )
 
 
@@ -571,6 +602,27 @@ def _bind_durable_plan_intents(
     return bound
 
 
+def read_durable_live_plan_intent(payload: dict) -> TradePlan:
+    """Public lifecycle reader for one canonical live intent capsule."""
+    return _trade_plan_from_intent(payload)
+
+
+def bind_durable_live_plan_intents(
+    state_dir: Path,
+    plans: list[TradePlan],
+) -> list[TradePlan]:
+    """Public lifecycle writer using the morning seam's exact intent contract."""
+    return _bind_durable_plan_intents(
+        BookBLiveMorningConfig(
+            trade_date="",
+            freeze_path=Path("unused"),
+            allocation_facts_path=Path("unused"),
+            state_dir=Path(state_dir),
+        ),
+        plans,
+    )
+
+
 def _restore_durable_plan_for_row(
     config: BookBLiveMorningConfig,
     row: dict,
@@ -885,8 +937,21 @@ def _load_allocation(
         "foundersc_native_app",
     }:
         raise ValueError("LIVE_ALLOCATION_SOURCE_UNPROVEN")
-    if str(payload.get("capital_basis_source") or "").strip() != "initial_book_b_capital":
+    capital_basis_source = str(payload.get("capital_basis_source") or "").strip()
+    if capital_basis_source not in {
+        "initial_book_b_capital",
+        "broker_reconciled_book_b_nav",
+    }:
         raise ValueError("LIVE_ALLOCATION_CAPITAL_BASIS_UNPROVEN")
+    capital_basis_receipt = str(
+        payload.get("capital_basis_receipt_sha256") or ""
+    ).strip().lower()
+    if capital_basis_source == "broker_reconciled_book_b_nav" and not re.fullmatch(
+        r"[0-9a-f]{64}", capital_basis_receipt
+    ):
+        raise ValueError("LIVE_ALLOCATION_CAPITAL_BASIS_RECEIPT_UNPROVEN")
+    if capital_basis_source == "initial_book_b_capital" and capital_basis_receipt:
+        raise ValueError("LIVE_ALLOCATION_CAPITAL_BASIS_RECEIPT_UNEXPECTED")
     receipt_hash = str(payload.get("broker_receipt_sha256") or "").strip().lower()
     if not re.fullmatch(r"[0-9a-f]{64}", receipt_hash):
         raise ValueError("LIVE_ALLOCATION_RECEIPT_UNPROVEN")
@@ -1251,7 +1316,9 @@ __all__ = [
     "BookBLiveCapitalBasis",
     "BookBLiveMorningConfig",
     "BookBLiveMorningReceipt",
+    "bind_durable_live_plan_intents",
     "load_book_b_live_capital_basis",
+    "read_durable_live_plan_intent",
     "reconcile_open_book_b_plans",
     "reconcile_prior_day_canary_unknowns",
     "run_book_b_live_morning",

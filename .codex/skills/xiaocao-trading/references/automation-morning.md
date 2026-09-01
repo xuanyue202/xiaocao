@@ -15,7 +15,7 @@ bash scripts/auto_daily.sh morning-prerecommend
 bash scripts/auto_daily.sh morning-execute
 ```
 
-Future Book-B real-capital execution is a third, deliberately independent
+Book-B real-capital execution is a third, deliberately independent
 09:20 Automation and process:
 
 ```bash
@@ -28,7 +28,8 @@ must never run or await `morning-execute`, read a paper fill, or write
 `paper_account_T.json`. Its state lives only under
 `output/live/book_b_live_execution/`. Before waiting, it switches to live and
 uses the account-bound Founder App full-query surface to read
-positions/orders/trades/funds and
+positions/orders/trades plus the account-bound funds summary embedded in the
+positions capture and
 atomically produce `book_b_live_allocation_facts_<date>.json` only from a
 complete, account-bound native receipt. It does not initialize or authenticate
 OpenCLI. A non-empty dated freeze is valid for this
@@ -45,7 +46,10 @@ the fixed 30,000 yuan Book-B capital basis on logical account `primary`; neither
 value has a live CLI override. Any submitted, acknowledged, partial, filled,
 unknown or reconciling execution evidence (including a fill followed by an
 ownership-ledger write failure) blocks reuse of the first-batch basis until a
-settled-NAV receipt exists. The complete allocation capsule binds its capital
+hash-bound EOD settled-NAV receipt exists. A settlement is reusable only when
+its ownership-chain head still equals the current broker-proved ownership
+ledger; otherwise morning fails closed instead of reusing stale capital. The
+complete allocation capsule binds its capital
 basis source, NAV, cash, exposure and broker summary under one canonical hash,
 and broker-summary cash must equal top-level available cash. Because the native
 App has no mock/live data namespace, every exit must record the explicit
@@ -68,7 +72,8 @@ status family (`T` or `T` plus digits). Numeric BUY limits are floored, never
 rounded up, to the 0.01-yuan stock tick before broker readback.
 Apply `docs/OPERATING_CONTRACT.md` section 9 for the capital-gate semantics.
 Unless the Founder adapter proves the account-bound `native-app` route, helper
-version 8+, all four native query surfaces, exact prepare/submit capability,
+version 8+, the three positions/orders/trades row-query surfaces plus the
+positions-embedded funds summary, exact prepare/submit capability,
 native reconcile capability and broker allocation facts, the task
 reports the exact fail-closed reason and produces no real order. Persist the
 sanitized preflight receipt with `website_authentication.status=not_used` and
@@ -144,8 +149,8 @@ execution seam, not another paper writer. `auto_daily.sh` remains unchanged
 and continues to call the canonical `paper_record.py` path. If the seam is
 used for a dry run, BUY rows must carry an allocation proof produced by the
 shared `strategy.mode_switch.plan_board_lot_orders` allocator, using rolling
-settled NAV (the 30,000 yuan value is the fixed initial live Book-B basis in
-this phase). Missing or
+broker-reconciled settled NAV (the 30,000 yuan value is used only before the
+first owned fill). Missing or
 inconsistent proof, cash, batch, exposure, slot, or board-lot facts fail closed.
 Its market guard records `LIMIT_DOWN_BUY_BLOCKED` or
 `LIMIT_DOWN_CHECK_UNAVAILABLE`; neither is a fill.

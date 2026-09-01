@@ -291,6 +291,23 @@ def _detail_float(detail: dict, key: str) -> float | None:
         return None
 
 
+def _detail_observed_at(detail: dict, trade_date: str) -> datetime | None:
+    raw = str(detail.get("tradeTimestamp") or "").strip()
+    try:
+        parsed = datetime.fromisoformat(raw.replace("Z", "+00:00"))
+    except ValueError:
+        parsed = None
+    if parsed is not None:
+        return parsed if parsed.tzinfo is not None else parsed.replace(tzinfo=A_SHARE_TZ)
+    for fmt in ("%H:%M:%S:%f", "%H:%M:%S", "%H%M%S"):
+        try:
+            clock = datetime.strptime(raw, fmt).time()
+        except ValueError:
+            continue
+        return datetime.combine(_date.fromisoformat(trade_date), clock, tzinfo=A_SHARE_TZ)
+    return None
+
+
 def _find_code_row(payload: object, code: str) -> dict:
     if isinstance(payload, dict):
         direct = payload.get(code)
@@ -683,6 +700,7 @@ def _compute_status(
     detail_high = _detail_float(detail, "high")
     detail_date = _detail_trade_date(detail)
     detail_ts = str(detail.get("tradeTimestamp") or "")
+    detail_observed_at = _detail_observed_at(detail, today_iso)
 
     # Use realtime trade to mark current PnL. T+1 blocks selling, not valuation.
     if detail_date == today_iso and detail_trade and detail_trade > 0:
@@ -776,6 +794,14 @@ def _compute_status(
         "peak": round(peak, 4),
         "latest_price": round(latest_price, 4),
         "latest_time": latest_time,
+        "market_guard_status": detail.get("tradeStatus"),
+        "market_guard_observed_at": (
+            detail_observed_at.isoformat()
+            if detail_observed_at is not None
+            else None
+        ),
+        "market_guard_down_price": _detail_float(detail, "downPrice"),
+        "sell_block_reason": _sell_block_reason(detail),
         "dd_pct": round(dd_pct, 4),
         "ret_pct": round(ret_pct, 4),
         "net_ret_pct": round(net_ret_pct, 4),

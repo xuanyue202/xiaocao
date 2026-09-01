@@ -12,6 +12,7 @@ import pytest
 
 from xiaocao.live.book_b_live_morning import (
     BookBLiveMorningConfig,
+    _load_allocation,
     load_book_b_live_capital_basis,
     reconcile_open_book_b_plans,
     run_book_b_live_morning,
@@ -143,6 +144,29 @@ def test_live_morning_rejects_snapshot_rows_before_dated_freeze_is_complete(
     assert receipt.status == "blocked"
     assert receipt.reason == "DATED_FREEZE_NOT_PROVEN"
     assert calls == []
+
+
+def test_live_allocation_accepts_hash_bound_broker_reconciled_nav_basis(
+    tmp_path: Path,
+) -> None:
+    payload = _live_allocation_payload()
+    payload.pop("allocation_capsule_sha256")
+    payload["capital_basis_source"] = "broker_reconciled_book_b_nav"
+    payload["capital_basis_receipt_sha256"] = "c" * 64
+    payload["allocation_capsule_sha256"] = _canonical_sha256(payload)
+
+    facts = _load_allocation(
+        BookBLiveMorningConfig(
+            trade_date="2026-08-24",
+            freeze_path=tmp_path / "freeze.jsonl",
+            allocation_facts_path=tmp_path / "allocation.json",
+            state_dir=tmp_path / "state",
+        ),
+        payload,
+    )
+
+    assert facts.settled_nav == 30_000
+    assert facts.source == "foundersc_reconcile"
 
 
 def test_live_morning_accepts_a_proven_empty_freeze_without_snapshot_rows(

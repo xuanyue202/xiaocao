@@ -1,9 +1,9 @@
 # 小草运营契约（Operating Contract, SSOT）
 
-**版本**：3.8.1
+**版本**：3.9
 **状态**：现行
 **适用范围**：所有 paper / 未来 real 的实盘环（live_recommend → paper_record → live_monitor → eod）与回测
-**关联实现**：`src/xiaocao/live/{safety,capital_keychain,foundersc_native_ax,foundersc_native_broker,trading_execution}.py`、`src/xiaocao/live/intelligence_policy.py`、`src/xiaocao/strategy/{mode_switch,trend_rules,kol_reference}.py`、`native/foundersc_ax_executor/`、`kronos_screen/scripts/{capture_signals,forward_eval,paper_record,settle_book_a,settle_book_t,decompose_pnl,quality_governor}.py`、`scripts/{book_b_live_morning,live_monitor,research_mode_switch_replay}.py`
+**关联实现**：`src/xiaocao/live/{safety,capital_keychain,foundersc_native_ax,foundersc_native_broker,trading_execution,book_b_live_lifecycle,book_b_live_intraday}.py`、`src/xiaocao/live/intelligence_policy.py`、`src/xiaocao/strategy/{mode_switch,trend_rules,kol_reference}.py`、`native/foundersc_ax_executor/`、`kronos_screen/scripts/{capture_signals,forward_eval,paper_record,settle_book_a,settle_book_t,decompose_pnl,quality_governor}.py`、`scripts/{book_b_live_morning,book_b_live_intraday,live_monitor,research_mode_switch_replay}.py`
 **回归测试**：`tests/test_operating_contract.py`
 **借鉴**：QuantDinger `docs/SIGNAL_EXECUTION_STANDARD_CN.md`（契约 SSOT 结构）+ `docs/agent/MCP_SETUP.md`（paper-only 默认 / 双钥匙 live gate）
 
@@ -55,11 +55,9 @@
   不调用或等待 `auto_daily.sh morning-execute`，不读取模拟成交，也不写
   canonical paper ledger。该 seam 只走方正证券原生 App；不得初始化、登录或
   调用 OpenCLI 作为账户、资产、持仓、委托、成交、填单、提交或对账的一部分。
-  runner 通过同一个掩码资金账号绑定的 App 查询页读取持仓、当日委托、当日成交；
-  资金权威来自同一次 `资金股份` positions capture 内嵌的
-  `资产/股票市值/余额/可用/可取` 五字段。只有回执同时绑定当日、live、逻辑账户、
-  已证明的资金账号、完整表结构，且精确满足 `余额+股票市值=资产` 与
-  `0<=可取<=可用<=余额` 时，才原子生成 dated allocation facts。原生 App 没有 mock/live 数据
+  runner 通过同一个掩码资金账号绑定的 App 查询页读取持仓、当日委托、当日成交和
+  资金，并且只有回执同时绑定当日、live、逻辑账户、已证明的资金账号、完整表结构和
+  资产恒等式时，才原子生成 dated allocation facts。原生 App 没有 mock/live 数据
   namespace，完成或失败后必须记录
   `native_environment_restore_not_applicable`，不得伪造恢复 mock。非空 freeze 还必须绑定实际同日 snapshot 的 canonical
   SHA-256 与行数，且 digest/run id/producer strategy Git SHA 必须由 queue producer 在冻结时写入 manifest。
@@ -68,21 +66,22 @@
   live consumer 只读并重新核对这份不可变副本，不能用稍后追加或情报富化后的
   `signal_snapshots.jsonl` rows 重定义 freeze。资金账号只在
   进程内将页面掩码与 Keychain trade-account 元数据比对，持久化绑定 hash；资产
-  回读必须是当日且不超过 5 分钟。allocation capsule 必须将结算基数来源、NAV、当前敞口和券商五字段资金摘要
-  一起纳入 canonical SHA-256；余额、可用、可取均须进入 broker receipt 与 capsule hash，
-  且券商摘要可用现金必须与顶层现金一致。混合券商账户的“总资产/证券市值”不得冒充
+  回读必须是当日且不超过 5 分钟。allocation capsule 必须将结算基数来源、NAV、
+  可用现金、当前敞口和券商资产摘要一起纳入 canonical SHA-256，且券商摘要现金
+  必须与顶层现金一致。混合券商账户的“总资产/证券市值”不得冒充
   Book-B NAV/敞口：首次批次只用明确的 30,000 元 Book-B 初始基数和券商可用现金；
   一旦已有 Book-B owned fill 而尚无结算 NAV 回执，后续批次以
   `LIVE_BOOK_B_SETTLED_NAV_RECONCILE_REQUIRED` fail-closed。唯一实盘写路径固定为
   Founder `native-app` 的普通买入/卖出表单：它只表达单证券的精确数值限价和整数
-  数量；BUY 必须为 100 股整手；SELL 可一次性卖出 broker-proved owned lot 的精确正整数
-  余额（包括不足 100 股的零股），禁止截断、取整或永久卡死。BUY 数值限价必须在 execution boundary 向下
+  数量；BUY 必须为 100 股整手，SELL 则允许将 broker-proved owned lot 的不足
+  100 股余额一次性卖出，禁止把部分成交形成的零股永久卡死；BUY 数值限价必须在 execution boundary 向下
   对齐 0.01 元股票 tick，禁止四舍五入越过原始限价；条件单、网格、定时/定投、集合竞价、
   TWAP/VWAP/POV/冰山及价格/时间分段均因引入触发、相对价格、重复、竞价或拆单
   语义而不得替代。09:20 只做 App/account/allocation/prepare 预检并维持心跳；
   此时 `forward_eval` 的事后 `executable_fillable` 尚不可知，字段缺省不得冒充 false，
   但显式 false 仍必须拒绝，并由 submit 前实时 market guard 决定当下可交易性。
-  BUY 最早 09:30 才允许进入 submit。提交前必须同时通过账户绑定、四类 native 查询、
+  BUY 最早 09:30 才允许进入 submit。提交前必须同时通过账户绑定、三张 native 行表与
+  同次 positions 五字段资金摘要、
   可对账能力、表单回读、市场 guard 与双钥匙。market guard 可把 proprietary feed 的 `HH:MM:SS:毫秒`
   时钟绑定到 immutable trade date，并仅把上游 UI 已定义的连续竞价 `T` family
   （`T` 或 `T` 后接数字）归一为 trading；其他未知前缀继续 fail-closed。
@@ -144,12 +143,43 @@
   claimed/reconciling，或任何正成交数量，即使 ownership evidence 落盘失败，也不得再次
   使用首次基数。
 
-- **成交累计与 ownership**：`ExecutionReceipt.fill_price` 固定为 plan-level 累计成交
-  加权均价；部分成交或受控 replacement 的 ownership 增量价格/金额必须由前后累计
-  notional 差额计算，禁止把新 order 的均价冒充整笔计划均价。conclusive CANCELLED 若
-  累计成交增加，仍须补记该正成交增量。terminal receipt 后 ownership 首写失败只允许
-  本地精确幂等修复；累计数量、notional、价格或 order-id 任一不一致即继续 fail-closed，
-  且 replay 不得再调用 broker reconcile/cancel/submit。
+- **实盘全生命周期**：`BookBOwnershipEvidence` 只接收 native broker 已证明的
+  partial/filled 增量，以及 conclusive cancelled 终态中尚未落盘的正成交增量；
+  ownership 首写失败只能从 terminal execution receipt 幂等修复，不能触碰 broker；
+  `book_b_live_lifecycle.py` 校验其全局 hash chain，并结合
+  同一资金账号当日不超过 5 分钟的 positions / today-orders / today-trades 三张
+  行表，以及同一次 positions capture 内嵌的资产/股票市值/可用/余额/可取资金摘要，
+  投影 Book-B 自有 lot、策略子账户现金、当前敞口和退出费后 NAV。独立“资金明细”
+  页面只可诊断，不是 lifecycle/EOD 必需门；资金恒等式为余额+股票市值=总资产，且
+  0<=可取<=可用<=余额。
+  券商混合账户现金/总资产永远只是交叉证据，不能进入 Book-B 子账户计算；券商同
+  code 持仓必须覆盖 Book-B owned shares，否则全链 fail-closed。券商可卖数量是
+  账号级事实：Book-B 当日 lot 始终按 0 可卖处理，即使同代码人工老仓使账号显示
+  可卖；只有前日及更早 lot 才能承接该数量。SELL fill 必须从
+  durable intent 反向证明 `owned_lot_id`，不得从人工持仓或纸盘账本补造归属。
+  `book_b_live_intraday.py` 复用与纸盘相同的 `exit_policy`，但只监控这些实盘 lot：
+  opening/sparse/14:25 仅交接 `HARD_STOP` / `AI_EVENT_RISK_EXIT`，普通 trailing /
+  composite 只记录 deferred；且仅中国时间 14:55:00–14:56:59 的 `closing`
+  checkpoint 才允许 `TRAILING_STOP` / `EOD_DISCIPLINE_1455`，提前、迟到或错日
+  调用必须 fail-closed。每个 SELL intent 绑定 lot、同日 fresh proprietary quote、
+  精确当前价向下对齐 0.01 tick 的普通限价、决策原因/阶段/时间和 broker snapshot
+  hash；T+1、不可卖数量、跌停无买盘、缺少行情字段、非连续竞价或既有同 lot intent
+  都禁止新 handoff。handoff 后所有 broker 写动作仍只由 `TradingExecution` 和
+  native adapter 完成，继续受双钥匙、durable claim、UNKNOWN no-retry 约束。
+  任一既有 live plan 在一次只读 reconcile 后仍非终态时，当前 checkpoint 禁止读取
+  新退出授权或物化其他 SELL intent，避免未知资金动作与新写并发。
+  每个 live checkpoint 还必须持有独立的非阻塞 lifecycle writer lock；重叠实例直接
+  `LIVE_BOOK_B_CHECKPOINT_ALREADY_RUNNING` 结束，禁止并发切换 native 查询页。
+  每次运行写独立 archive receipt；`<date>-<phase>.json` 仅为 latest 指针，碰锁实例
+  只能写 collision archive，不能覆盖主实例结果。日间决策写独立 hash-chain ledger，
+  不触碰 paper `positions/account/trades`。
+  15:10 EOD 先 reconcile 全部 durable plan；`eod` 入口在中国时间 15:00 前或
+  非 trade_date 当日必须拒绝，且用于结算的三张行表最老 observed_at 也必须不早于
+  15:00，禁止把盘中/缓存 NAV 固化成不可变 settlement。只要仍有 claimed/submitted/
+  acknowledged/partial/unknown/reconciling 就拒绝结算。全部终态后，按实际 broker-proved
+  BUY/SELL fills 与最新持仓 mark 写当日不可变 settlement；下一交易日 morning 只有
+  settlement ownership head 与当前 ownership chain 完全一致时，才以
+  `broker_reconciled_book_b_nav` 作为滚动 NAV/敞口基准。
 
 - **默认建仓集合**：`paper_record.py --pick mode_exec_star` 只成交 `★E`。`★B`（K/P+竞价）和 `★M`（旧模式分轮动）继续前向留样，但没有默认成交权限。
 - **唯一模式证据源**：`output/live/training_rows.parquet` 中 `is_live=true`、`book=B`、`executable_fillable=true`、非北交所的 `executable_net_ret`。该标签复用第 5 节开盘成交模型并扣双边费用；理论 `net_realized_ret`、SQLite `mode_history`、实际已买子集和不可交易北交所信号均不得打开模式资格。
@@ -238,7 +268,8 @@
 - 唯一实现 `src/xiaocao/live/safety.py`；真实下单 **MUST** 经 `require_capital_action(...)`，仅在 ALLOW 时下单。
 - **现状**：阶段一执行缝已在任何 broker adapter 之前调用
   `require_capital_action(...)`；独立 09:20 Automation 只启动隔离 live seam，
-  不改变 09:25 模拟任务。Founder `native-app` 只有在 App/account、四类查询、表单和
+  不改变 09:25 模拟任务。Founder `native-app` 只有在 App/account、三张行表与
+  同次 positions 五字段资金摘要、表单和
   本地对账均成立时才动态暴露 `supports_submit=true`；OpenCLI 不参与该 route。
   最终 run receipt 必须持久化 `website_authentication.status=not_used`、native
   PassGuard/Keychain 恢复证据和新委托 delta；submit 只有在唯一新增 order-id 映射完整时
@@ -278,6 +309,7 @@
 - [x] 模式证据保留 25%/45%/50% 验证权重；`ACTIVE` 同时通过候选池和四指数证据，近期双基准均值与多数日转正可直接升格，任一均值转负只冷却到 `PROVISIONAL`。
 - [x] 独立 09:20 Book-B live morning 与 09:25 模拟任务隔离；唯一写路由为 account-bound `native-app`，OpenCLI 不参与 native 登录/查询/交易；09:30 前只预检/心跳；盘中 continuation 仅覆盖 `09:30–11:30` / `13:00–14:57` 且新 intent 前刷新专有实时 market guard；不读写模拟成交或 canonical paper ledger；submit 前零 exact-tuple baseline，submit 后只认唯一新增 order-id，歧义保持 UNKNOWN/reconcile-only/no-retry；exact-order 撤单已实盘验收，自动补单禁用，App 重启 CAPTCHA 保持独立慢恢复。
 - [x] allocation proof 复用 `mode_switch.plan_board_lot_orders`，以滚动结算 NAV 验证批次/敞口/现金/slot 上限；ownership evidence 不得替代 canonical paper ledger。
+- [x] Book-B 实盘 owned-lot / 三表+positions 资金摘要 / 日间退出 / SELL intent / EOD settlement 已形成独立生命周期；纸盘 writer 不参与，成交执行仍由 native `TradingExecution` 端口独占。
 - [x] 同一 logical account 由 account-level writer lock 串行推进；异常写入 durable takeover capsule，WeCom pending incident 可重试且已送达事件幂等。
 - [ ] （后续）settle_book_a 只用 next_close 且幂等；decompose_pnl 三项金额求和 = account realized_pnl（容差=取整）。
 
@@ -314,4 +346,4 @@
 | 3.6 | 2026-08-30 | 将 09:20 实盘路由切为方正证券 `native-app`：OpenCLI 完全退出 native 登录/查询/交易；本地 Vision OCR 读取持仓、委托、成交和资金；以 submit 前零匹配/order-id baseline 与 submit 后唯一新增 exact tuple 对账，UNKNOWN 永不重点击；原生填单清空、账户、资产恒等式及用户真实未报委托已本机验收，撤单/补单仍 fail-closed。 |
 | 3.7 | 2026-08-30 | 方正 native 热路径完成真实提交/撤单验收：数量框仅一次 Return，确认窗与成功提示只按唯一原生按钮一次，禁止连续 Return/Y；`6000005` 精确新增后撤为 `已撤`，随后另一次授权撤单把旧 `6000002` 也精确回读为 `已撤`。helper v8 自动收口成功提示；durable submit claim 持久化完整 order-id baseline，UNKNOWN 跨进程仅凭唯一 exact delta 恢复；撤单动作前另落 durable cancel claim，未知后只回读不重放；自动补单继续禁用。 |
 | 3.8 | 2026-08-31 | 完成方正 native BUY/SELL 各一次真实提交与对应撤单回归：`6000010`（BUY `512010` 100@0.349）与 `6000012`（SELL `515120` 100@0.710）均零成交回读为 `已撤`。针对实盘暴露的 Vision 低置信误判只增加两类有界冗余证明：撤单方向二字后缀须由精确唯一数值 tuple 与复选框视觉变化共同锚定；当日委托的低置信状态/成交数量须为已知零成交状态并由独立成交表逐 order-id 交叉证明，baseline 与 post-readback mode 分相留证。未知写结果分别保留 helper 点击事实、exact click proof、确认状态与 selection proof，仍禁止重放。 |
-| 3.8.1 | 2026-09-01 | 收口 native 成交端不变量：CANCELLED 正成交补 ownership；terminal ledger replay 仅本地精确幂等修复；plan fill price 统一为累计 VWAP、ownership 按累计 notional 差额；BUY 仍为 100 股整手，SELL 允许 broker-proved 精确正整数零股；allocation 使用 positions 五字段并精确满足资金恒等式与顺序。 |
+| 3.9 | 2026-09-01 | 补齐 Book-B 实盘成交之外的全生命周期：broker-proved ownership 投影为独立 owned lots 与滚动子账户 NAV；日间复用生产 exit policy 生成 lot-bound SELL intent；三张行表+positions 内嵌资金摘要、T+1/流动性/fresh quote、exact-once handoff 全部 fail-closed，独立资金明细页降为诊断；closing 扩权硬绑定 14:55–14:57，EOD settlement 硬绑定 15:00 后；15:10 reconcile 后写不可变 EOD settlement，并作为下一日 live allocation 基准。纸盘账本保持隔离，真实成交仍独占 native TradingExecution 端口。 |

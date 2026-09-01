@@ -250,15 +250,20 @@ def main(argv: list[str] | None = None) -> int:
             execute=lambda plan: execution.execute(plan, broker),
         )
         basis = load_book_b_live_capital_basis(Path(args.state_dir))
+        allocation_kwargs = {
+            "trade_date": trade_date,
+            "logical_account_id": "primary",
+            "settled_nav": basis.settled_nav,
+            "current_open_exposure": basis.current_open_exposure,
+            "capital_basis_source": basis.source,
+            "expected_fund_account_fingerprint": trade_account_fingerprint,
+        }
+        if args.route == "native-app":
+            allocation_kwargs["capital_basis_receipt_sha256"] = (
+                basis.receipt_sha256
+            )
         return broker.read_live_allocation_facts(
-            trade_date=trade_date,
-            logical_account_id="primary",
-            settled_nav=basis.settled_nav,
-            current_open_exposure=basis.current_open_exposure,
-            capital_basis_source=basis.source,
-            expected_fund_account_fingerprint=(
-                trade_account_fingerprint
-            ),
+            **allocation_kwargs,
         )
 
     def preflight() -> dict:
