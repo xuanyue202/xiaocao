@@ -270,7 +270,31 @@ def _mapped_zero_fill_terminal_event_proven(
         and event["receipt"].get("receipt_mapping") is True
         and event["receipt"].get("broker_order_id") == order_id
         and event["receipt"].get("broker_strategy_id") == strategy_id
-        for event in plan_events
+        for event in plan_events[:-1]
+    )
+    recovered_mapped_submit = (
+        any(
+            event.get("kind") == "durable_claim"
+            and isinstance(event.get("receipt"), dict)
+            and int(event["receipt"].get("attempt") or 0) >= 1
+            for event in plan_events[:-1]
+        )
+        and any(
+            event.get("kind") == "submit_unknown"
+            and isinstance(event.get("receipt"), dict)
+            and event["receipt"].get("submit_chain_uncertain") is True
+            and int(event["receipt"].get("attempt") or 0) >= 1
+            for event in plan_events[:-1]
+        )
+        and any(
+            event.get("kind") == "reconcile_receipt"
+            and event.get("state") in {"acknowledged", "partial"}
+            and isinstance(event.get("receipt"), dict)
+            and event["receipt"].get("receipt_mapping") is True
+            and event["receipt"].get("broker_order_id") == order_id
+            and event["receipt"].get("broker_strategy_id") == strategy_id
+            for event in plan_events[:-1]
+        )
     )
     return (
         state in {"cancelled", "rejected"}
@@ -284,7 +308,7 @@ def _mapped_zero_fill_terminal_event_proven(
         and bool(order_id)
         and bool(strategy_id)
         and receipt.get("event_id") == latest.get("event_id")
-        and mapped_submit
+        and (mapped_submit or recovered_mapped_submit)
     )
 
 
@@ -500,9 +524,9 @@ def _restore_durable_plan_for_row(
     plan_id = f"book-b:{config.trade_date}:{row.get('code')}:BUY"
     store = ExecutionStore(Path(config.state_dir) / "events.jsonl")
     current = store.current(plan_id)
-    if current is None:
-        return None
     path = _plan_intent_path(config.state_dir, plan_id)
+    if current is None and not path.is_file():
+        return None
     if not path.is_file():
         raise ValueError("LIVE_PLAN_INTENT_MISSING")
     try:
@@ -512,7 +536,7 @@ def _restore_durable_plan_for_row(
     if not isinstance(payload, dict):
         raise ValueError("LIVE_PLAN_INTENT_INVALID")
     persisted = _trade_plan_from_intent(payload)
-    if current.plan_hash != persisted.plan_hash:
+    if current is not None and current.plan_hash != persisted.plan_hash:
         raise ValueError("LIVE_PLAN_INTENT_EVENT_HASH_MISMATCH")
 
     reconstruction_row = dict(row)
@@ -523,6 +547,17 @@ def _restore_durable_plan_for_row(
         if persisted.submit_not_before is not None
         else None
     )
+    reconstruction_row.update({
+        "market_guard_required": persisted.market_guard_required,
+        "market_guard_status": persisted.market_guard_status,
+        "market_price": persisted.market_guard_latest_price,
+        "down_price": persisted.market_guard_down_price,
+        "market_observed_at": (
+            persisted.market_guard_observed_at.isoformat()
+            if persisted.market_guard_observed_at is not None
+            else None
+        ),
+    })
     reconstructed = trade_plan_from_frozen_row(
         reconstruction_row,
         environment="live",
@@ -963,7 +998,11 @@ def _assert_prepare_only(plan: TradePlan, receipt: BrokerReceipt) -> dict:
     readback = receipt.field_readback
     if any(readback.get(key) is not False for key in ("submitted", "saved", "started")):
         raise ValueError("LIVE_PREPARE_ONLY_SIDE_EFFECT_UNSAFE")
-    if readback.get("form_closed") is not True:
+    form_neutralized = bool(
+        readback.get("form_closed") is True
+        or readback.get("form_cleared") is True
+    )
+    if not form_neutralized:
         raise ValueError("LIVE_PREPARE_ONLY_FORM_NOT_CLOSED")
     expected = {
         "code": plan.code,
@@ -1000,6 +1039,8 @@ def _assert_prepare_only(plan: TradePlan, receipt: BrokerReceipt) -> dict:
         "started": False,
         "form_closed": True,
     }
+    if readback.get("form_cleared") is True:
+        result["form_cleared"] = True
     if has_timed_readback:
         result.update(timed_readback)
     return result

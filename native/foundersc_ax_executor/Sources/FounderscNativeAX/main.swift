@@ -4,7 +4,7 @@ import Foundation
 import Vision
 
 private let schemaVersion = 2
-private let helperVersion = 8
+private let helperVersion = 9
 private let bundleIdentifier = "com.fzzq.Mac2020"
 private let maximumDepth = 12
 private let maximumNodes = 1_000
@@ -407,9 +407,9 @@ private func queryRequiredHeaders(_ kind: String) -> Set<String> {
     switch kind {
     case "positions":
         return ["证券代码", "证券数量", "可卖数量", "当前价"]
-    case "today-orders":
+    case "today-orders", "history-orders":
         return ["证券代码", "委托时间", "买卖标志", "状态说明", "委托价格", "委托数量", "委托编号", "成交数量"]
-    case "today-trades":
+    case "today-trades", "history-trades":
         return ["证券代码", "成交时间", "买卖标志", "成交价格", "成交数量", "成交编号", "委托编号"]
     case "funds":
         return ["资金帐号", "资金余额", "可用资金", "总资产"]
@@ -562,13 +562,7 @@ private func guardedNavigationPoint(
             && maximumX + 0.02 >= expectedNormalizedX
     }
     guard candidates.count == 1 else { return (nil, candidates.count) }
-    return (
-        CGPoint(
-            x: window.x + window.width * expectedNormalizedX,
-            y: candidates[0].bounds.y + candidates[0].bounds.height / 2
-        ),
-        1
-    )
+    return (pointForSubstring(label, in: candidates[0]), 1)
 }
 
 private func guardedTopNavigationPoint(
@@ -604,7 +598,9 @@ private func guardedQueryNavigationPoint(
     case "positions": expectedX = 0.088
     case "today-orders": expectedX = 0.168
     case "today-trades": expectedX = 0.245
-    case "funds": expectedX = surfaceState == "query_only" ? 0.813 : 0.402
+    case "history-orders": expectedX = 0.428
+    case "history-trades": expectedX = 0.515
+    case "funds": expectedX = surfaceState == "query_only" ? 0.863 : 0.402
     default: return (nil, 0)
     }
     return guardedNavigationPoint(
@@ -2702,6 +2698,8 @@ private func readQuery(arguments: [String]) -> Receipt {
         "positions": "持仓",
         "today-orders": "当日委托",
         "today-trades": "当日成交",
+        "history-orders": "历史委托",
+        "history-trades": "历史成交",
         "funds": "资金明细",
     ]
     guard arguments.contains("--allow-query-navigation"),

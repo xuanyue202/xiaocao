@@ -471,6 +471,27 @@ def test_expected_helper_path_is_bound_to_source_digest() -> None:
     assert path.parts[-2:] == (digest, "foundersc-native-ax")
 
 
+def test_swift_read_query_supports_historical_order_and_trade_surfaces() -> None:
+    root = Path(__file__).resolve().parents[1]
+    source = (
+        root
+        / "native"
+        / "foundersc_ax_executor"
+        / "Sources"
+        / "FounderscNativeAX"
+        / "main.swift"
+    ).read_text(encoding="utf-8")
+
+    assert '"history-orders": "历史委托"' in source
+    assert '"history-trades": "历史成交"' in source
+    assert 'case "history-orders": expectedX = 0.428' in source
+    assert 'case "history-trades": expectedX = 0.515' in source
+    assert 'case "funds": expectedX = surfaceState == "query_only" ? 0.863' in source
+    assert 'return (pointForSubstring(label, in: candidates[0]), 1)' in source
+    assert 'case "today-orders", "history-orders":' in source
+    assert 'case "today-trades", "history-trades":' in source
+
+
 @pytest.mark.parametrize(
     ("overrides", "expected"),
     [

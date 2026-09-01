@@ -22,7 +22,8 @@ Current commands:
 - `open-order-surface`, `prepare-order`, `submit-prepared-order`: account-bound
   deterministic order navigation, exact AX field set/readback, one Return to
   open confirmation and one focused native confirm action.
-- `open-query-surface`, `read-query`: positions, orders, trades and funds using
+- `open-query-surface`, `read-query`: positions, current/historical orders,
+  current/historical trades and funds using
   AX geometry plus local Vision OCR.
 - `open-cancel-surface`, `probe-cancel-selection`, `cancel-order`: one exact
   numeric row selection proof and at most one cancel/confirmation action. The

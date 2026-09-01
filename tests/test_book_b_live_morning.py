@@ -673,6 +673,86 @@ def test_live_capital_basis_accepts_mapped_terminal_order_with_zero_fill(
     assert basis.current_open_exposure == 0
 
 
+def test_live_capital_basis_accepts_reconcile_mapped_submit_then_terminal(
+    tmp_path: Path,
+) -> None:
+    plan = TradePlan(
+        plan_id="book-b:2026-08-24:000001.XSHE:BUY",
+        strategy_run_id="run",
+        snapshot_ref="freeze#000001",
+        strategy_sha="a" * 40,
+        trade_date="2026-08-24",
+        book="B",
+        logical_account_id="primary",
+        environment="live",
+        code="000001.XSHE",
+        name="测试标的",
+        side="BUY",
+        shares=100,
+        limit_price=10.0,
+        basket_price=10.1,
+        market_guard_status="ok",
+        created_at=datetime(2026, 8, 24, tzinfo=timezone.utc),
+        recovery_deadline=datetime(2026, 8, 24, 1, 45, tzinfo=timezone.utc),
+        allocation_proof_hash="b" * 64,
+    )
+    store = ExecutionStore(tmp_path / "events.jsonl")
+    claimed = store.append(
+        plan=plan,
+        receipt=ExecutionReceipt(
+            plan_id=plan.plan_id,
+            plan_hash=plan.plan_hash,
+            state=ExecutionState.CLAIMED,
+            attempt=1,
+            remaining_shares=plan.shares,
+            next_action="submit_once",
+        ),
+        kind="durable_claim",
+    )
+    unknown = store.append(
+        plan=plan,
+        receipt=replace(
+            claimed,
+            state=ExecutionState.UNKNOWN,
+            broker_strategy_id="strategy-1",
+            receipt_mapping=True,
+            submit_chain_uncertain=True,
+            next_action="reconcile_only",
+        ),
+        kind="submit_unknown",
+    )
+    acknowledged = store.append(
+        plan=plan,
+        receipt=replace(
+            unknown,
+            state=ExecutionState.ACKNOWLEDGED,
+            broker_order_id="order-1",
+            broker_status="accepted",
+            receipt_mapping=True,
+            account_binding="proven",
+            next_action="reconcile",
+        ),
+        kind="reconcile_receipt",
+    )
+    store.append(
+        plan=plan,
+        receipt=replace(
+            acknowledged,
+            state=ExecutionState.CANCELLED,
+            reason="native_prior_day_zero_fill_order_expired",
+            broker_status="cancelled",
+            active=False,
+            next_action="stop",
+        ),
+        kind="reconcile_receipt",
+    )
+
+    basis = load_book_b_live_capital_basis(tmp_path)
+
+    assert basis.settled_nav == 30_000
+    assert basis.current_open_exposure == 0
+
+
 def test_live_capital_basis_accepts_proven_pre_entrust_rejection(
     tmp_path: Path,
 ) -> None:
@@ -802,7 +882,14 @@ def test_live_morning_consumes_freeze_without_paper_fill_or_ledger_mutation(
     assert (live_root / "book_b_live_execution" / "runs" / "2026-08-24.json").exists()
 
 
-def test_live_morning_runs_auditable_prepare_only_before_execution(tmp_path: Path) -> None:
+@pytest.mark.parametrize(
+    "form_neutralization",
+    ({"form_closed": True}, {"form_cleared": True}),
+)
+def test_live_morning_runs_auditable_prepare_only_before_execution(
+    tmp_path: Path,
+    form_neutralization: dict[str, bool],
+) -> None:
     freeze = tmp_path / "signal_snapshots.jsonl"
     freeze.write_text(json.dumps(_frozen_row(), ensure_ascii=False) + "\n", encoding="utf-8")
     allocation = tmp_path / "allocation.json"
@@ -829,7 +916,7 @@ def test_live_morning_runs_auditable_prepare_only_before_execution(tmp_path: Pat
                 "submitted": False,
                 "saved": False,
                 "started": False,
-                "form_closed": True,
+                **form_neutralization,
             },
         )
 
@@ -1047,6 +1134,105 @@ def test_live_morning_reuses_the_exact_durable_plan_across_process_runs(
     payload = json.loads(intents[0].read_text(encoding="utf-8"))
     assert payload["plan_hash"] == observed[0].plan_hash
     assert payload["plan"] == observed[0].canonical_payload()
+
+
+def test_live_morning_reuses_intent_written_before_prepare_block(
+    tmp_path: Path,
+) -> None:
+    freeze = tmp_path / "signal_snapshots.jsonl"
+    freeze.write_text(json.dumps(_frozen_row()) + "\n", encoding="utf-8")
+    allocation = tmp_path / "allocation.json"
+    allocation.write_text(json.dumps(_live_allocation_payload()), encoding="utf-8")
+    state_dir = tmp_path / "state"
+    prepared: list[TradePlan] = []
+
+    def blocked_prepare(plan: TradePlan) -> BrokerReceipt:
+        prepared.append(plan)
+        return BrokerReceipt(
+            status=BrokerStatus.PREPARED,
+            account_binding="proven",
+            echoed={
+                "code": plan.code,
+                "side": plan.side,
+                "shares": plan.shares,
+                "limit_price": plan.limit_price,
+            },
+            field_readback={
+                "submitted": False,
+                "saved": False,
+                "started": False,
+            },
+        )
+
+    first = run_book_b_live_morning(
+        BookBLiveMorningConfig(
+            trade_date="2026-08-24",
+            freeze_path=freeze,
+            allocation_facts_path=allocation,
+            state_dir=state_dir,
+            dated_freeze_receipt=_ready_freeze(),
+        ),
+        prepare_only=blocked_prepare,
+        execute=lambda _plan: pytest.fail("blocked prepare must not execute"),
+        refresh_market_guard=lambda _row: {
+            "market_guard_required": True,
+            "market_guard_status": "ok",
+            "market_price": 10.0,
+            "down_price": 9.0,
+            "market_observed_at": "2026-08-24T09:30:00+08:00",
+        },
+        now=lambda: datetime(2026, 8, 24, 1, 30, tzinfo=timezone.utc),
+    )
+    assert first.reason == "LIVE_PREPARE_ONLY_FORM_NOT_CLOSED"
+
+    changed = _live_allocation_payload()
+    changed["available_cash"] = 1_000
+    changed["broker_receipt"]["allocation_summary"]["values"]["可用资金"] = 1_000
+    changed["broker_receipt_sha256"] = _canonical_sha256(
+        changed["broker_receipt"]
+    )
+    changed.pop("allocation_capsule_sha256")
+    changed["allocation_capsule_sha256"] = _canonical_sha256(changed)
+    allocation.write_text(json.dumps(changed), encoding="utf-8")
+    executed: list[TradePlan] = []
+
+    second = run_book_b_live_morning(
+        BookBLiveMorningConfig(
+            trade_date="2026-08-24",
+            freeze_path=freeze,
+            allocation_facts_path=allocation,
+            state_dir=state_dir,
+            dated_freeze_receipt=_ready_freeze(),
+        ),
+        prepare_only=lambda plan: BrokerReceipt(
+            status=BrokerStatus.PREPARED,
+            account_binding="proven",
+            echoed={
+                "code": plan.code,
+                "side": plan.side,
+                "shares": plan.shares,
+                "limit_price": plan.limit_price,
+            },
+            field_readback={
+                "submitted": False,
+                "saved": False,
+                "started": False,
+                "form_cleared": True,
+            },
+        ),
+        execute=lambda plan: executed.append(plan) or ExecutionReceipt(
+            plan.plan_id,
+            plan.plan_hash,
+            ExecutionState.SKIPPED,
+            reason="test_stop",
+        ),
+        now=lambda: datetime(2026, 8, 24, 1, 31, tzinfo=timezone.utc),
+    )
+
+    assert second.status == "skipped"
+    assert len(prepared) == len(executed) == 1
+    assert executed[0].plan_hash == prepared[0].plan_hash
+    assert executed[0].shares == prepared[0].shares == 1_400
 
 
 def test_open_plan_recovery_reconciles_durable_ack_without_submit(
