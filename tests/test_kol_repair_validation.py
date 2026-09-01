@@ -191,6 +191,12 @@ def test_repair_validation_maps_wechat_source_failure_to_exact_mailbox_profile(
         ),
         (
             "provider_error",
+            "owner_download_http_invalid",
+            "owner_cloud_download",
+            "kol_lv_text_image_owner_cloud_download",
+        ),
+        (
+            "provider_error",
             "owner_cloud_transfer_errno_2",
             "owner_cloud_transfer",
             "kol_lv_text_image_owner_cloud_transfer",
