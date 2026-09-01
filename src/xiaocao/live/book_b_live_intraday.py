@@ -14,6 +14,7 @@ import hashlib
 import json
 import math
 import os
+import re
 from contextlib import contextmanager
 from dataclasses import asdict, dataclass
 from datetime import datetime, timezone
@@ -33,7 +34,8 @@ from .book_b_live_morning import (
     read_durable_live_plan_intent,
     reconcile_open_book_b_plans,
 )
-from .trading_execution import ExecutionReceipt, TradePlan
+from .trading_execution import ExecutionReceipt, TERMINAL_STATES, TradePlan
+from .trading_runner import frozen_rows_digest
 
 
 _AUTHORIZED_REASONS = frozenset(
@@ -182,7 +184,23 @@ def load_monitor_contexts(
                     rows.append(row)
         except (OSError, json.JSONDecodeError, ValueError) as exc:
             raise ValueError(f"LIVE_BOOK_B_MONITOR_FREEZE_INVALID:{entry_date}") from exc
+        digest = frozen_rows_digest(rows)
         for lot in dated_lots:
+            match = re.fullmatch(
+                r"(?P<path>.+):(?P<date>\d{4}-\d{2}-\d{2}):"
+                r"sha256:(?P<digest>[0-9a-f]{64}):(?P<code>[^:]+)",
+                lot.snapshot_ref,
+            )
+            if (
+                match is None
+                or Path(match.group("path")).resolve() != path.resolve()
+                or match.group("date") != entry_date
+                or match.group("digest") != digest
+                or match.group("code") != lot.code
+            ):
+                raise ValueError(
+                    f"LIVE_BOOK_B_MONITOR_FREEZE_BINDING_MISMATCH:{lot.code}"
+                )
             matches = [
                 row
                 for row in rows
@@ -439,9 +457,13 @@ def _run_book_b_live_intraday_locked(
         trade_date=trade_date,
         now=current,
     )
+    if provisional.lots and normalized_phase != "eod" and freeze_dir is None:
+        raise ValueError("LIVE_BOOK_B_MONITOR_FREEZE_DIR_REQUIRED")
     contexts = (
         load_monitor_contexts(Path(freeze_dir), provisional.lots)
-        if freeze_dir is not None and provisional.lots
+        if freeze_dir is not None
+        and provisional.lots
+        and normalized_phase != "eod"
         else {}
     )
     account = project_book_b_live_account(
@@ -582,6 +604,8 @@ def _run_book_b_live_intraday_locked(
             plan = existing
         receipt = execute(plan)
         receipts.append(receipt.as_dict())
+        if receipt.state not in TERMINAL_STATES:
+            break
     status_name = "executed" if receipts else "observed"
     reason_name = "SELL_INTENTS_HANDED_OFF" if receipts else "NO_NEW_LIVE_SELL_HANDOFF"
     return BookBLiveIntradayReceipt(

@@ -8,21 +8,26 @@ order and never treats the broker's mixed-account cash as Book B cash.
 """
 from __future__ import annotations
 
+import fcntl
 import hashlib
 import json
 import math
 import os
+from contextlib import contextmanager
 from dataclasses import asdict, dataclass
 from datetime import datetime, timezone
+from decimal import Decimal, InvalidOperation
 from pathlib import Path
 from typing import Any, Iterable
 from zoneinfo import ZoneInfo
 
+from .trading_execution import account_writer_lock
+
 
 BOOK_B_LIVE_INITIAL_CAPITAL = 30_000.0
 BOOK_B_LIVE_DEFAULT_FEE_RATE = 0.0001
-_ACTIVE_EXECUTION_STATES = frozenset(
-    {"claimed", "submitted", "acknowledged", "partial", "unknown", "reconciling"}
+_TERMINAL_EXECUTION_STATES = frozenset(
+    {"filled", "cancelled", "rejected", "skipped"}
 )
 
 
@@ -50,14 +55,23 @@ def _finite_float(value: object, *, reason: str) -> float:
     return result
 
 
-def _nonnegative_int(value: object, *, reason: str) -> int:
+def _finite_decimal(value: object, *, reason: str) -> Decimal:
+    if isinstance(value, bool):
+        raise ValueError(reason)
     try:
-        result = int(float(value))
-    except (TypeError, ValueError) as exc:
+        result = Decimal(str(value).strip())
+    except (InvalidOperation, TypeError, ValueError) as exc:
         raise ValueError(reason) from exc
-    if result < 0:
+    if not result.is_finite():
         raise ValueError(reason)
     return result
+
+
+def _nonnegative_int(value: object, *, reason: str) -> int:
+    number = _finite_decimal(value, reason=reason)
+    if number < 0 or number != number.to_integral_value():
+        raise ValueError(reason)
+    return int(number)
 
 
 def _post_close_timestamp(
@@ -169,31 +183,42 @@ def validate_broker_account_snapshot(
         or funds.get("source") != "positions_summary"
     ):
         raise ValueError("LIVE_BOOK_B_BROKER_FUNDS_SUMMARY_INCOMPLETE")
-    total_assets = _finite_float(
+    total_assets_decimal = _finite_decimal(
         funds.get("total_assets"), reason="LIVE_BOOK_B_BROKER_FUNDS_INVALID"
     )
-    securities = _finite_float(
+    securities_decimal = _finite_decimal(
         funds.get("securities_market_value"),
         reason="LIVE_BOOK_B_BROKER_FUNDS_INVALID",
     )
-    available = _finite_float(
+    available_decimal = _finite_decimal(
         funds.get("available_cash"), reason="LIVE_BOOK_B_BROKER_FUNDS_INVALID"
     )
-    balance = _finite_float(
+    balance_decimal = _finite_decimal(
         funds.get("cash_balance"), reason="LIVE_BOOK_B_BROKER_FUNDS_INVALID"
     )
-    withdrawable = _finite_float(
+    withdrawable_decimal = _finite_decimal(
         funds.get("withdrawable_cash"),
         reason="LIVE_BOOK_B_BROKER_FUNDS_INVALID",
     )
     if (
-        total_assets <= 0
-        or min(securities, available, balance, withdrawable) < 0
-        or abs((balance + securities) - total_assets) > 0.10
-        or available > balance + 0.10
-        or withdrawable > available + 0.10
+        total_assets_decimal <= 0
+        or min(
+            securities_decimal,
+            available_decimal,
+            balance_decimal,
+            withdrawable_decimal,
+        )
+        < 0
+        or balance_decimal + securities_decimal != total_assets_decimal
+        or available_decimal > balance_decimal
+        or withdrawable_decimal > available_decimal
     ):
         raise ValueError("LIVE_BOOK_B_BROKER_FUNDS_EQUATION_FAILED")
+    total_assets = float(total_assets_decimal)
+    securities = float(securities_decimal)
+    available = float(available_decimal)
+    balance = float(balance_decimal)
+    withdrawable = float(withdrawable_decimal)
     broker_summary = snapshot.get("broker_summary")
     expected_summary = {
         "total_assets": total_assets,
@@ -207,18 +232,22 @@ def validate_broker_account_snapshot(
     ):
         raise ValueError("LIVE_BOOK_B_BROKER_SUMMARY_INCOMPLETE")
     for field, expected in expected_summary.items():
-        actual = _finite_float(
+        actual = _finite_decimal(
             broker_summary.get(field), reason="LIVE_BOOK_B_BROKER_SUMMARY_INVALID"
         )
-        if abs(actual - expected) > 0.001:
+        if actual != Decimal(str(expected)):
             raise ValueError("LIVE_BOOK_B_BROKER_SUMMARY_MISMATCH")
     position_value = sum(
-        _finite_float(
-            row.get("最新市值"), reason="LIVE_BOOK_B_BROKER_POSITION_VALUE_INVALID"
-        )
-        for row in tables["positions"]["rows"]
+        (
+            _finite_decimal(
+                row.get("最新市值"),
+                reason="LIVE_BOOK_B_BROKER_POSITION_VALUE_INVALID",
+            )
+            for row in tables["positions"]["rows"]
+        ),
+        Decimal("0"),
     )
-    if abs(position_value - securities) > 0.10:
+    if position_value != securities_decimal:
         raise ValueError("LIVE_BOOK_B_BROKER_POSITION_SUM_MISMATCH")
     observed_raw = str(snapshot.get("observed_at") or "")
     try:
@@ -243,6 +272,7 @@ def _validate_ownership_chain(rows: Iterable[dict[str, Any]]) -> tuple[list[dict
     validated: list[dict[str, Any]] = []
     previous_hash: str | None = None
     cumulative_by_plan: dict[tuple[str, str], int] = {}
+    cumulative_notional_by_plan: dict[tuple[str, str], Decimal] = {}
     source_execution_event_ids: set[str] = set()
     for row in rows:
         event = dict(row)
@@ -281,6 +311,22 @@ def _validate_ownership_chain(rows: Iterable[dict[str, Any]]) -> tuple[list[dict
         if cumulative != cumulative_by_plan.get(key, 0) + shares:
             raise ValueError("LIVE_BOOK_B_OWNERSHIP_CUMULATIVE_MISMATCH")
         cumulative_by_plan[key] = cumulative
+        fill_notional = _finite_decimal(
+            event.get("fill_notional"),
+            reason="LIVE_BOOK_B_OWNERSHIP_FILL_NOTIONAL_INVALID",
+        )
+        cumulative_notional = _finite_decimal(
+            event.get("cumulative_fill_notional"),
+            reason="LIVE_BOOK_B_OWNERSHIP_CUMULATIVE_NOTIONAL_INVALID",
+        )
+        if (
+            fill_notional <= 0
+            or cumulative_notional <= 0
+            or cumulative_notional
+            != cumulative_notional_by_plan.get(key, Decimal("0")) + fill_notional
+        ):
+            raise ValueError("LIVE_BOOK_B_OWNERSHIP_NOTIONAL_MISMATCH")
+        cumulative_notional_by_plan[key] = cumulative_notional
         source_event_id = str(event.get("source_execution_event_id") or "")
         if (
             not source_event_id
@@ -291,6 +337,116 @@ def _validate_ownership_chain(rows: Iterable[dict[str, Any]]) -> tuple[list[dict
         validated.append({**event, "event_hash": claimed_hash})
         previous_hash = claimed_hash
     return validated, previous_hash
+
+
+def _broker_side(value: object) -> str:
+    text = str(value or "").strip().upper()
+    if text in {"B", "BUY", "买", "买入"}:
+        return "BUY"
+    if text in {"S", "SELL", "卖", "卖出"}:
+        return "SELL"
+    raise ValueError("LIVE_BOOK_B_BROKER_SIDE_INVALID")
+
+
+def _validate_same_day_broker_fill_coverage(
+    snapshot: dict[str, Any],
+    ownership_rows: list[dict[str, Any]],
+    *,
+    trade_date: str,
+) -> None:
+    """Bind every same-day owned fill delta to its exact broker order."""
+    fills_by_order: dict[tuple[str, str, str, str, str], dict[str, Any]] = {}
+    for row in ownership_rows:
+        if str(row.get("trade_date") or "")[:10] != str(trade_date)[:10]:
+            continue
+        order_id = str(row.get("broker_order_id") or "").strip()
+        code = _normalize_code(row.get("code"))
+        side = str(row.get("side") or "").upper()
+        key = (
+            str(row.get("plan_id") or ""),
+            str(row.get("plan_hash") or ""),
+            order_id,
+            code,
+            side,
+        )
+        aggregate = fills_by_order.setdefault(
+            key,
+            {"shares": 0, "notional": Decimal("0")},
+        )
+        aggregate["shares"] += _nonnegative_int(
+            row.get("shares"),
+            reason="LIVE_BOOK_B_BROKER_FILL_COVERAGE_INVALID",
+        )
+        aggregate["notional"] += _finite_decimal(
+            row.get("fill_notional"),
+            reason="LIVE_BOOK_B_BROKER_FILL_COVERAGE_INVALID",
+        )
+    if not fills_by_order:
+        return
+    tables = snapshot["tables"]
+    order_rows = tables["today-orders"]["rows"]
+    trade_rows = tables["today-trades"]["rows"]
+    for key, aggregate in fills_by_order.items():
+        _plan_id, _plan_hash, order_id, code, side = key
+        filled_shares = aggregate["shares"]
+        fill_notional = aggregate["notional"]
+        if not order_id or filled_shares <= 0 or fill_notional <= 0:
+            raise ValueError("LIVE_BOOK_B_BROKER_FILL_COVERAGE_INVALID")
+        matching_orders = [
+            row
+            for row in order_rows
+            if str(row.get("委托编号") or "").strip() == order_id
+            and _normalize_code(row.get("证券代码")) == code
+            and _broker_side(row.get("买卖标志")) == side
+        ]
+        if len(matching_orders) != 1:
+            raise ValueError("LIVE_BOOK_B_BROKER_ORDER_FILL_UNPROVEN")
+        order_filled = _nonnegative_int(
+            matching_orders[0].get("成交数量") or 0,
+            reason="LIVE_BOOK_B_BROKER_ORDER_FILL_UNPROVEN",
+        )
+        if order_filled != filled_shares:
+            raise ValueError("LIVE_BOOK_B_BROKER_ORDER_FILL_MISMATCH")
+        matching_trades: list[dict[str, Any]] = []
+        for row in trade_rows:
+            if (
+                str(row.get("委托编号") or "").strip() != order_id
+                or _normalize_code(row.get("证券代码")) != code
+                or _broker_side(row.get("买卖标志")) != side
+            ):
+                continue
+            price = _finite_decimal(
+                row.get("成交价格"),
+                reason="LIVE_BOOK_B_BROKER_TRADE_FILL_UNPROVEN",
+            )
+            if "撤" in str(row.get("成交类型") or "") or price == 0:
+                continue
+            if price < 0:
+                raise ValueError("LIVE_BOOK_B_BROKER_TRADE_FILL_UNPROVEN")
+            matching_trades.append(row)
+        trade_shares = sum(
+            _nonnegative_int(
+                row.get("成交数量"),
+                reason="LIVE_BOOK_B_BROKER_TRADE_FILL_UNPROVEN",
+            )
+            for row in matching_trades
+        )
+        trade_notional = sum(
+            (
+                _finite_decimal(
+                    row.get("成交价格"),
+                    reason="LIVE_BOOK_B_BROKER_TRADE_FILL_UNPROVEN",
+                )
+                * _nonnegative_int(
+                    row.get("成交数量"),
+                    reason="LIVE_BOOK_B_BROKER_TRADE_FILL_UNPROVEN",
+                )
+                for row in matching_trades
+            ),
+            Decimal("0"),
+        )
+        if trade_shares != filled_shares or trade_notional != fill_notional:
+            raise ValueError("LIVE_BOOK_B_BROKER_TRADE_FILL_MISMATCH")
 
 
 def _load_intent_index(state_dir: Path) -> dict[str, dict[str, Any]]:
@@ -309,6 +465,8 @@ def _load_intent_index(state_dir: Path) -> dict[str, dict[str, Any]]:
         plan_id = str(plan.get("plan_id") or "")
         if not plan_id or payload.get("plan_hash") != _sha256(plan):
             raise ValueError("LIVE_BOOK_B_PLAN_INTENT_HASH_MISMATCH")
+        if plan_id in index:
+            raise ValueError("LIVE_BOOK_B_PLAN_INTENT_DUPLICATE")
         index[plan_id] = dict(plan)
     return index
 
@@ -377,14 +535,28 @@ def _validate_execution_fill_coverage(
 
 
 def open_execution_plan_ids(state_dir: Path) -> tuple[str, ...]:
-    latest: dict[str, str] = {}
+    intents = _load_intent_index(Path(state_dir))
+    intent_hashes = {plan_id: _sha256(plan) for plan_id, plan in intents.items()}
+    latest = {plan_id: "" for plan_id in intents}
     for event in _read_jsonl_strict(Path(state_dir) / "events.jsonl"):
         receipt = event.get("receipt") if isinstance(event.get("receipt"), dict) else {}
         plan_id = str(event.get("plan_id") or receipt.get("plan_id") or "")
         state = str(event.get("state") or receipt.get("state") or "").lower()
         if plan_id:
+            if (
+                plan_id in intent_hashes
+                and str(event.get("plan_hash") or receipt.get("plan_hash") or "")
+                != intent_hashes[plan_id]
+            ):
+                raise ValueError("LIVE_BOOK_B_PLAN_INTENT_EVENT_HASH_MISMATCH")
             latest[plan_id] = state
-    return tuple(sorted(plan_id for plan_id, state in latest.items() if state in _ACTIVE_EXECUTION_STATES))
+    return tuple(
+        sorted(
+            plan_id
+            for plan_id, state in latest.items()
+            if state not in _TERMINAL_EXECUTION_STATES
+        )
+    )
 
 
 def ownership_head_sha256(state_dir: Path) -> str | None:
@@ -410,6 +582,7 @@ class BookBLiveOwnedLot:
     liquidation_value_after_fee: float
     buy_fee_rate: float
     sell_fee_rate: float
+    snapshot_ref: str
     monitor_context: dict[str, Any]
 
 
@@ -452,6 +625,11 @@ def project_book_b_live_account(
         _read_jsonl_strict(state_root / "book_b_ownership_evidence.jsonl")
     )
     _validate_execution_fill_coverage(state_root, evidence_rows)
+    _validate_same_day_broker_fill_coverage(
+        snapshot,
+        evidence_rows,
+        trade_date=trade_date,
+    )
     intents = _load_intent_index(state_root)
     contexts = monitor_context_by_lot or {}
 
@@ -473,22 +651,35 @@ def project_book_b_live_account(
         }
 
     lot_rows: dict[str, dict[str, Any]] = {}
-    cash = float(initial_capital)
+    cash = _finite_decimal(
+        initial_capital, reason="LIVE_BOOK_B_INITIAL_CAPITAL_INVALID"
+    )
     for event in evidence_rows:
         if event.get("logical_account_id") != "primary":
             raise ValueError("LIVE_BOOK_B_OWNERSHIP_ACCOUNT_MISMATCH")
         side = str(event["side"]).upper()
-        shares = int(event["shares"])
-        fill_price = float(event["fill_price"])
-        intent = intents.get(str(event.get("plan_id") or ""), {})
-        fee_rate = _finite_float(
+        shares = _nonnegative_int(
+            event.get("shares"), reason="LIVE_BOOK_B_OWNERSHIP_SHARES_INVALID"
+        )
+        fill_notional = _finite_decimal(
+            event.get("fill_notional"),
+            reason="LIVE_BOOK_B_OWNERSHIP_FILL_NOTIONAL_INVALID",
+        )
+        plan_id = str(event.get("plan_id") or "")
+        intent = intents.get(plan_id)
+        if intent is None or _sha256(intent) != str(event.get("plan_hash") or ""):
+            raise ValueError("LIVE_BOOK_B_OWNERSHIP_PLAN_INTENT_UNPROVEN")
+        fee_rate = _finite_decimal(
             intent.get("fee_rate", default_fee_rate),
             reason="LIVE_BOOK_B_FEE_RATE_INVALID",
         )
         if fee_rate < 0 or fee_rate >= 1:
             raise ValueError("LIVE_BOOK_B_FEE_RATE_INVALID")
         if side == "BUY":
-            lot_id = str(event.get("plan_id") or "")
+            lot_id = plan_id
+            snapshot_ref = str(intent.get("snapshot_ref") or "")
+            if not snapshot_ref:
+                raise ValueError("LIVE_BOOK_B_BUY_SNAPSHOT_REF_UNPROVEN")
             current = lot_rows.setdefault(
                 lot_id,
                 {
@@ -496,28 +687,30 @@ def project_book_b_live_account(
                     "code": str(event.get("code") or ""),
                     "name": str(event.get("name") or event.get("code") or ""),
                     "entry_date": str(event.get("trade_date") or "")[:10],
-                    "cost": 0.0,
+                    "cost": Decimal("0"),
                     "shares": 0,
                     "buy_fee_rate": fee_rate,
                     "sell_fee_rate": fee_rate,
+                    "snapshot_ref": snapshot_ref,
                 },
             )
-            current["cost"] += fill_price * shares
+            if current["snapshot_ref"] != snapshot_ref:
+                raise ValueError("LIVE_BOOK_B_BUY_SNAPSHOT_REF_MISMATCH")
+            current["cost"] += fill_notional
             current["shares"] += shares
-            cash -= fill_price * shares * (1.0 + fee_rate)
+            cash -= fill_notional * (Decimal("1") + fee_rate)
         else:
             lot_id = str(event.get("owned_lot_id") or intent.get("owned_lot_id") or "")
             if not lot_id or lot_id not in lot_rows:
                 raise ValueError("LIVE_BOOK_B_SELL_OWNED_LOT_UNPROVEN")
             if lot_rows[lot_id]["shares"] < shares:
                 raise ValueError("LIVE_BOOK_B_SELL_EXCEEDS_OWNED_LOT")
-            average_cost = (
-                float(lot_rows[lot_id]["cost"])
-                / int(lot_rows[lot_id]["shares"])
+            average_cost = lot_rows[lot_id]["cost"] / int(
+                lot_rows[lot_id]["shares"]
             )
             lot_rows[lot_id]["cost"] -= average_cost * shares
             lot_rows[lot_id]["shares"] -= shares
-            cash += fill_price * shares * (1.0 - fee_rate)
+            cash += fill_notional * (Decimal("1") - fee_rate)
 
     owned_by_code: dict[str, int] = {}
     for lot in lot_rows.values():
@@ -557,39 +750,50 @@ def project_book_b_live_account(
         price = float(broker["price"])
         if price <= 0:
             raise ValueError(f"LIVE_BOOK_B_BROKER_MARK_INVALID:{code6}")
-        entry_price = float(row["cost"]) / max(1, shares)
-        fee_rate = float(row["sell_fee_rate"])
+        entry_price = row["cost"] / shares
+        fee_rate = row["sell_fee_rate"]
         lots.append(
             BookBLiveOwnedLot(
                 owned_lot_id=lot_id,
                 code=str(row["code"]),
                 name=str(row["name"]),
                 entry_date=entry_date,
-                entry_price=round(entry_price, 6),
+                entry_price=round(float(entry_price), 6),
                 shares=shares,
                 sellable_shares=sellable,
                 current_price=round(price, 6),
                 market_value=round(price * shares, 2),
-                liquidation_value_after_fee=round(price * shares * (1.0 - fee_rate), 2),
+                liquidation_value_after_fee=round(
+                    price * shares * (1.0 - float(fee_rate)), 2
+                ),
                 buy_fee_rate=float(row["buy_fee_rate"]),
-                sell_fee_rate=fee_rate,
+                sell_fee_rate=float(fee_rate),
+                snapshot_ref=str(row["snapshot_ref"]),
                 monitor_context=dict(contexts.get(lot_id) or {}),
             )
         )
     exposure = round(sum(lot.market_value for lot in lots), 2)
     liquidation = round(sum(lot.liquidation_value_after_fee for lot in lots), 2)
-    cash = round(cash, 2)
-    if cash < -0.10:
+    cash = cash.quantize(Decimal("0.01"))
+    if cash < Decimal("-0.10"):
         raise ValueError("LIVE_BOOK_B_SUBACCOUNT_CASH_NEGATIVE")
-    nav = round(cash + liquidation, 2)
+    nav = cash + Decimal(str(liquidation))
     return BookBLiveAccountState(
         trade_date=str(trade_date)[:10],
         logical_account_id="primary",
-        cash=cash,
+        cash=float(cash),
         current_open_exposure=exposure,
         liquidation_value_after_fee=liquidation,
-        settled_nav=nav,
-        realized_cash_delta=round(cash - float(initial_capital), 2),
+        settled_nav=float(nav),
+        realized_cash_delta=float(
+            (
+                cash
+                - _finite_decimal(
+                    initial_capital,
+                    reason="LIVE_BOOK_B_INITIAL_CAPITAL_INVALID",
+                )
+            ).quantize(Decimal("0.01"))
+        ),
         ownership_head_sha256=ownership_head,
         broker_snapshot_sha256=str(snapshot["snapshot_sha256"]),
         broker_snapshot_observed_at=str(snapshot["observed_at"]),
@@ -601,6 +805,29 @@ def settlement_path(state_dir: Path, trade_date: str) -> Path:
     return Path(state_dir) / "settlements" / f"{str(trade_date)[:10]}.json"
 
 
+@contextmanager
+def _account_execution_ownership_snapshot_lock(state_dir: Path):
+    """Match the execution lock order while settlement is committed."""
+    root = Path(state_dir)
+    handles = []
+    with account_writer_lock(root / "account_writer_locks", "primary"):
+        try:
+            for path in (
+                root / "plan_intents" / ".lock",
+                root / "events.jsonl.lock",
+                root / "book_b_ownership_evidence.jsonl.lock",
+            ):
+                path.parent.mkdir(parents=True, exist_ok=True)
+                handle = path.open("a+", encoding="utf-8")
+                fcntl.flock(handle.fileno(), fcntl.LOCK_EX)
+                handles.append(handle)
+            yield
+        finally:
+            for handle in reversed(handles):
+                fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
+                handle.close()
+
+
 def write_book_b_live_settlement(
     state_dir: Path,
     account: BookBLiveAccountState,
@@ -608,47 +835,52 @@ def write_book_b_live_settlement(
     now: datetime | None = None,
 ) -> dict[str, Any]:
     """Write one immutable EOD settlement after all live plans are terminal."""
-    open_plans = open_execution_plan_ids(Path(state_dir))
-    if open_plans:
-        raise ValueError("LIVE_BOOK_B_EOD_OPEN_EXECUTION_RECONCILE_REQUIRED")
-    path = settlement_path(Path(state_dir), account.trade_date)
-    if path.exists():
-        existing = load_latest_book_b_live_settlement(Path(state_dir))
-        if existing is None or existing.get("trade_date") != account.trade_date:
-            raise ValueError("LIVE_BOOK_B_SETTLEMENT_INVALID")
-        # Crash recovery may read the same account through a newer three-table
-        # snapshot.  The already-written settlement remains authoritative as
-        # long as no new broker-proved ownership event appeared.
-        if existing.get("ownership_head_sha256") != account.ownership_head_sha256:
-            raise ValueError("LIVE_BOOK_B_SETTLEMENT_IMMUTABILITY_VIOLATION")
-        return existing
-    observed = now or datetime.now(timezone.utc)
-    if observed.tzinfo is None:
-        raise ValueError("LIVE_BOOK_B_NOW_NOT_TZ_AWARE")
-    _post_close_timestamp(
-        observed.isoformat(),
-        trade_date=account.trade_date,
-        reason="LIVE_BOOK_B_SETTLEMENT_WINDOW_NOT_OPEN",
-    )
-    _post_close_timestamp(
-        account.broker_snapshot_observed_at,
-        trade_date=account.trade_date,
-        reason="LIVE_BOOK_B_SETTLEMENT_SNAPSHOT_PRE_CLOSE",
-    )
-    body = {
-        "schema_version": 1,
-        "status": "settled",
-        "capital_basis_source": "broker_reconciled_book_b_nav",
-        "trade_date": account.trade_date,
-        "environment": "live",
-        "logical_account_id": account.logical_account_id,
-        "account_binding": "proven",
-        "settled_at": observed.isoformat(),
-        **account.as_dict(),
-    }
-    body["settlement_sha256"] = _sha256(body)
-    _write_json_atomic(path, body)
-    return body
+    root = Path(state_dir)
+    with _account_execution_ownership_snapshot_lock(root):
+        open_plans = open_execution_plan_ids(root)
+        if open_plans:
+            raise ValueError("LIVE_BOOK_B_EOD_OPEN_EXECUTION_RECONCILE_REQUIRED")
+        current_ownership_head = ownership_head_sha256(root)
+        if current_ownership_head != account.ownership_head_sha256:
+            raise ValueError("LIVE_BOOK_B_SETTLEMENT_OWNERSHIP_CHANGED")
+        path = settlement_path(root, account.trade_date)
+        if path.exists():
+            existing = load_latest_book_b_live_settlement(root)
+            if existing is None or existing.get("trade_date") != account.trade_date:
+                raise ValueError("LIVE_BOOK_B_SETTLEMENT_INVALID")
+            # Crash recovery may read the same account through a newer
+            # three-table snapshot. The already-written settlement remains
+            # authoritative only while the locked ownership head is unchanged.
+            if existing.get("ownership_head_sha256") != current_ownership_head:
+                raise ValueError("LIVE_BOOK_B_SETTLEMENT_IMMUTABILITY_VIOLATION")
+            return existing
+        observed = now or datetime.now(timezone.utc)
+        if observed.tzinfo is None:
+            raise ValueError("LIVE_BOOK_B_NOW_NOT_TZ_AWARE")
+        _post_close_timestamp(
+            observed.isoformat(),
+            trade_date=account.trade_date,
+            reason="LIVE_BOOK_B_SETTLEMENT_WINDOW_NOT_OPEN",
+        )
+        _post_close_timestamp(
+            account.broker_snapshot_observed_at,
+            trade_date=account.trade_date,
+            reason="LIVE_BOOK_B_SETTLEMENT_SNAPSHOT_PRE_CLOSE",
+        )
+        body = {
+            "schema_version": 1,
+            "status": "settled",
+            "capital_basis_source": "broker_reconciled_book_b_nav",
+            "trade_date": account.trade_date,
+            "environment": "live",
+            "logical_account_id": account.logical_account_id,
+            "account_binding": "proven",
+            "settled_at": observed.isoformat(),
+            **account.as_dict(),
+        }
+        body["settlement_sha256"] = _sha256(body)
+        _write_json_atomic(path, body)
+        return body
 
 
 def load_latest_book_b_live_settlement(state_dir: Path) -> dict[str, Any] | None:

@@ -1091,6 +1091,70 @@ def test_user_manual_sample_is_exactly_reconciled_as_unfilled_accepted() -> None
     assert receipt.field_readback["order_status"] == "未报"
 
 
+def test_reconcile_exposes_exact_multi_price_trade_notional() -> None:
+    native = FakeNative()
+    native.orders.append(
+        {
+            "证券代码": "000001",
+            "证券名称": "测试标的",
+            "委托时间": "103302",
+            "买卖标志": "买入",
+            "委托类别": "委托",
+            "状态说明": "已成",
+            "委托价格": "10.0000",
+            "委托数量": "700",
+            "委托编号": "6007001",
+            "成交价格": "10.015714",
+            "成交数量": "700",
+            "报价方式": "买卖",
+            "股东代码": "A***",
+            "备注": "",
+        }
+    )
+    native.trades = [
+        {
+            "证券代码": "000001",
+            "证券名称": "测试标的",
+            "成交时间": "103301",
+            "买卖标志": "买入",
+            "成交价格": "9.99",
+            "成交数量": "100",
+            "成交金额": "999.00",
+            "成交编号": "7007001",
+            "委托编号": "6007001",
+            "股东代码": "A***",
+            "成交类型": "成交",
+            "状态说明": "成交",
+        },
+        {
+            "证券代码": "000001",
+            "证券名称": "测试标的",
+            "成交时间": "103302",
+            "买卖标志": "买入",
+            "成交价格": "10.02",
+            "成交数量": "600",
+            "成交金额": "6012.00",
+            "成交编号": "7007002",
+            "委托编号": "6007001",
+            "股东代码": "A***",
+            "成交类型": "成交",
+            "状态说明": "成交",
+        },
+    ]
+
+    receipt = _adapter(native)._reconcile_rows(
+        replace(_plan(), shares=700),
+        requested_shares=700,
+        expected_order_id="6007001",
+    )
+
+    assert receipt.normalized_status() == BrokerStatus.FILLED
+    assert receipt.filled_shares == 700
+    assert receipt.locator_proof[
+        "current_order_cumulative_fill_notional"
+    ] == "7011.00"
+
+
 def test_prior_day_native_history_does_not_infer_terminal_from_accepted() -> None:
     native = FakeNative()
     native.positions = [row for row in native.positions if row["证券代码"] != "000001"]
@@ -1540,7 +1604,7 @@ def test_native_live_account_snapshot_reads_three_tables_and_position_funds(
 def test_native_live_account_snapshot_rejects_position_funds_asset_drift() -> None:
     native = FakeNative()
     adapter = _adapter(native)
-    native.position_summary["余额"] = "1.00"
+    native.position_summary["余额"] = "0.01"
 
     with pytest.raises(FounderscNativeAXError, match="ASSET_EQUATION_FAILED"):
         adapter.read_live_account_snapshot(

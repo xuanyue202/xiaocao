@@ -1053,13 +1053,16 @@ class FounderscNativeAXBrokerAdapter(BrokerAdapter):
                 if filled == requested_shares else BrokerStatus.PARTIAL
             )
         fill_price = None
+        fill_notional = Decimal("0")
         if trade_matches:
-            amount = sum(
+            fill_notional = sum(
                 _decimal(row.get("成交价格"), field="TRADE_PRICE")
                 * _integer(row.get("成交数量"), field="TRADE_QUANTITY")
                 for row in trade_matches
             )
-            fill_price = float(amount / Decimal(filled)) if filled else None
+            fill_price = (
+                float(fill_notional / Decimal(filled)) if filled else None
+            )
         conclusive = normalized != BrokerStatus.UNKNOWN
         return BrokerReceipt(
             status=normalized,
@@ -1078,6 +1081,7 @@ class FounderscNativeAXBrokerAdapter(BrokerAdapter):
             locator_proof={
                 **locator,
                 "trade_match_count": len(trade_matches),
+                "current_order_cumulative_fill_notional": str(fill_notional),
             },
             template_name="foundersc-native-ax",
             reason=(
@@ -1243,13 +1247,14 @@ class FounderscNativeAXBrokerAdapter(BrokerAdapter):
             )
         normalized = _status(order.get("状态说明"))
         fill_price = None
+        fill_notional = Decimal("0")
         if trade_filled:
-            amount = sum(
+            fill_notional = sum(
                 _decimal(row.get("成交价格"), field="TRADE_PRICE")
                 * _integer(row.get("成交数量"), field="TRADE_QUANTITY")
                 for row in trade_matches
             )
-            fill_price = float(amount / Decimal(trade_filled))
+            fill_price = float(fill_notional / Decimal(trade_filled))
             normalized = (
                 BrokerStatus.FILLED
                 if trade_filled == requested_shares else BrokerStatus.PARTIAL
@@ -1272,7 +1277,10 @@ class FounderscNativeAXBrokerAdapter(BrokerAdapter):
             active=normalized in {BrokerStatus.ACCEPTED, BrokerStatus.PARTIAL},
             retry_allowed=False,
             account_binding="proven",
-            locator_proof=locator,
+            locator_proof={
+                **locator,
+                "current_order_cumulative_fill_notional": str(fill_notional),
+            },
             template_name="foundersc-native-ax",
             reason=(
                 "native_historical_order_and_trade_readback"
@@ -2027,15 +2035,15 @@ class FounderscNativeAXBrokerAdapter(BrokerAdapter):
             or withdrawable < 0
         ):
             raise FounderscNativeAXError("LIVE_ACCOUNT_SNAPSHOT_VALUES_INVALID")
-        if abs((balance + securities) - total_assets) > Decimal("0.10"):
+        if balance + securities != total_assets:
             raise FounderscNativeAXError(
                 "LIVE_ACCOUNT_SNAPSHOT_ASSET_EQUATION_FAILED"
             )
-        if available > balance + Decimal("0.10"):
+        if available > balance:
             raise FounderscNativeAXError(
                 "LIVE_ACCOUNT_SNAPSHOT_AVAILABLE_EXCEEDS_BALANCE"
             )
-        if withdrawable > available + Decimal("0.10"):
+        if withdrawable > available:
             raise FounderscNativeAXError(
                 "LIVE_ACCOUNT_SNAPSHOT_WITHDRAWABLE_EXCEEDS_AVAILABLE"
             )
@@ -2043,7 +2051,7 @@ class FounderscNativeAXBrokerAdapter(BrokerAdapter):
             _decimal(row.get("最新市值"), field="POSITION_VALUE")
             for row in tables["positions"]["rows"]
         )
-        if abs(position_value - securities) > Decimal("0.10"):
+        if position_value != securities:
             raise FounderscNativeAXError(
                 "LIVE_ACCOUNT_SNAPSHOT_POSITION_SUM_FAILED"
             )

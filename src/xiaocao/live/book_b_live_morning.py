@@ -32,6 +32,7 @@ from .trading_execution import (
     ExecutionStore,
     ExecutionState,
     TradePlan,
+    account_writer_lock,
     trade_plan_from_frozen_row,
 )
 from .trading_runner import (
@@ -567,38 +568,42 @@ def _bind_durable_plan_intents(
     """
     store = ExecutionStore(Path(config.state_dir) / "events.jsonl")
     bound: list[TradePlan] = []
-    with _plan_intent_lock(config.state_dir):
-        for generated in plans:
-            path = _plan_intent_path(config.state_dir, generated.plan_id)
-            if not path.exists():
-                if store.current(generated.plan_id) is not None:
-                    raise ValueError("LIVE_PLAN_INTENT_MISSING")
-                _write_json_atomic(
-                    path,
-                    {
-                        "schema_version": 1,
-                        "plan_id": generated.plan_id,
-                        "plan_hash": generated.plan_hash,
-                        "plan": generated.canonical_payload(),
-                    },
-                )
-            try:
-                payload = json.loads(path.read_text(encoding="utf-8"))
-            except (OSError, json.JSONDecodeError) as exc:
-                raise ValueError("LIVE_PLAN_INTENT_INVALID") from exc
-            if not isinstance(payload, dict):
-                raise ValueError("LIVE_PLAN_INTENT_INVALID")
-            persisted = _trade_plan_from_intent(payload)
-            if (
-                payload.get("schema_version") != 1
-                or payload.get("plan_id") != persisted.plan_id
-                or _plan_semantics(persisted) != _plan_semantics(generated)
-            ):
-                raise ValueError("LIVE_PLAN_INTENT_BINDING_MISMATCH")
-            current = store.current(persisted.plan_id)
-            if current is not None and current.plan_hash != persisted.plan_hash:
-                raise ValueError("LIVE_PLAN_INTENT_EVENT_HASH_MISMATCH")
-            bound.append(persisted)
+    with account_writer_lock(
+        Path(config.state_dir) / "account_writer_locks",
+        config.logical_account_id,
+    ):
+        with _plan_intent_lock(config.state_dir):
+            for generated in plans:
+                path = _plan_intent_path(config.state_dir, generated.plan_id)
+                if not path.exists():
+                    if store.current(generated.plan_id) is not None:
+                        raise ValueError("LIVE_PLAN_INTENT_MISSING")
+                    _write_json_atomic(
+                        path,
+                        {
+                            "schema_version": 1,
+                            "plan_id": generated.plan_id,
+                            "plan_hash": generated.plan_hash,
+                            "plan": generated.canonical_payload(),
+                        },
+                    )
+                try:
+                    payload = json.loads(path.read_text(encoding="utf-8"))
+                except (OSError, json.JSONDecodeError) as exc:
+                    raise ValueError("LIVE_PLAN_INTENT_INVALID") from exc
+                if not isinstance(payload, dict):
+                    raise ValueError("LIVE_PLAN_INTENT_INVALID")
+                persisted = _trade_plan_from_intent(payload)
+                if (
+                    payload.get("schema_version") != 1
+                    or payload.get("plan_id") != persisted.plan_id
+                    or _plan_semantics(persisted) != _plan_semantics(generated)
+                ):
+                    raise ValueError("LIVE_PLAN_INTENT_BINDING_MISMATCH")
+                current = store.current(persisted.plan_id)
+                if current is not None and current.plan_hash != persisted.plan_hash:
+                    raise ValueError("LIVE_PLAN_INTENT_EVENT_HASH_MISMATCH")
+                bound.append(persisted)
     return bound
 
 
@@ -950,6 +955,20 @@ def _load_allocation(
         r"[0-9a-f]{64}", capital_basis_receipt
     ):
         raise ValueError("LIVE_ALLOCATION_CAPITAL_BASIS_RECEIPT_UNPROVEN")
+    if capital_basis_source == "broker_reconciled_book_b_nav":
+        settlement = load_latest_book_b_live_settlement(config.state_dir)
+        if (
+            settlement is None
+            or capital_basis_receipt
+            != str(settlement.get("settlement_sha256") or "").lower()
+            or open_execution_plan_ids(config.state_dir)
+            or settlement.get("ownership_head_sha256")
+            != ownership_head_sha256(config.state_dir)
+            or payload.get("settled_nav") != settlement.get("settled_nav")
+            or payload.get("current_open_exposure")
+            != settlement.get("current_open_exposure")
+        ):
+            raise ValueError("LIVE_ALLOCATION_CAPITAL_BASIS_RECEIPT_MISMATCH")
     if capital_basis_source == "initial_book_b_capital" and capital_basis_receipt:
         raise ValueError("LIVE_ALLOCATION_CAPITAL_BASIS_RECEIPT_UNEXPECTED")
     receipt_hash = str(payload.get("broker_receipt_sha256") or "").strip().lower()

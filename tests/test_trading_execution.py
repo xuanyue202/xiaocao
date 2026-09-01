@@ -2251,7 +2251,7 @@ def test_partial_then_cancelled_records_only_incremental_fill_notional(
     assert [row["shares"] for row in rows] == [100, 50]
     assert rows[0]["fill_price"] == pytest.approx(10.00)
     # 150 * 10.20 cumulative less the first 100 * 10.00.
-    assert rows[1]["fill_notional"] == pytest.approx(530.00)
+    assert rows[1]["fill_notional"] == "530.0"
     assert rows[1]["fill_price"] == pytest.approx(10.60)
 
 
@@ -2573,7 +2573,37 @@ def test_replacement_fill_price_is_plan_vwap_and_ownership_uses_delta_notional(
     rows = [json.loads(line) for line in ledger_path.read_text().splitlines()]
     assert [row["shares"] for row in rows] == [100, 100]
     assert [row["fill_price"] for row in rows] == pytest.approx([10.00, 11.00])
-    assert rows[-1]["cumulative_fill_notional"] == pytest.approx(2100.00)
+    assert rows[-1]["cumulative_fill_notional"] == "2100.0"
+
+
+def test_exact_trade_notional_survives_float_vwap_into_ownership(
+    tmp_path: Path,
+) -> None:
+    exact_notional = "7011.00"
+    broker = FakeBroker(
+        submit=[
+            BrokerReceipt(
+                status=BrokerStatus.FILLED,
+                order_id="o-multi-price",
+                filled_shares=700,
+                fill_price=7011.0 / 700,
+                locator_proof={
+                    "current_order_cumulative_fill_notional": exact_notional,
+                },
+            )
+        ]
+    )
+    ledger_path = tmp_path / "ownership.jsonl"
+    result = TradingExecution(
+        store=InMemoryExecutionStore(tmp_path / "events.jsonl"),
+        ledger=TradingAccountLedger(ledger_path),
+    ).execute(_plan(shares=700), broker)
+
+    assert result.state == ExecutionState.FILLED
+    assert result.locator_proof["plan_cumulative_fill_notional"] == exact_notional
+    row = json.loads(ledger_path.read_text(encoding="utf-8"))
+    assert row["fill_notional"] == exact_notional
+    assert row["cumulative_fill_notional"] == exact_notional
 
 
 def test_sell_accepts_exact_positive_odd_lot_but_buy_still_requires_board_lot() -> None:

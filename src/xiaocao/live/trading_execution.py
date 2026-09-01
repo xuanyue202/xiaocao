@@ -859,6 +859,25 @@ class BookBOwnershipEvidence:
             raise ValueError("ownership cumulative fill price is unproven") from exc
         if not cumulative_price.is_finite() or cumulative_price <= 0:
             raise ValueError("ownership cumulative fill price is unproven")
+        proof = receipt.locator_proof or {}
+        if proof.get("fill_aggregate_proven") is False:
+            raise ValueError("ownership cumulative fill notional is unproven")
+        if "plan_cumulative_fill_notional" in proof:
+            try:
+                cumulative_notional = Decimal(
+                    str(proof["plan_cumulative_fill_notional"])
+                )
+            except (InvalidOperation, TypeError, ValueError) as exc:
+                raise ValueError(
+                    "ownership cumulative fill notional is unproven"
+                ) from exc
+        else:
+            # Broker-neutral adapters do not necessarily expose exact trade
+            # notional.  Keep their historical VWAP-based contract, while the
+            # native adapter's exact Decimal trade-row sum takes precedence.
+            cumulative_notional = cumulative_price * cumulative
+        if not cumulative_notional.is_finite() or cumulative_notional <= 0:
+            raise ValueError("ownership cumulative fill notional is unproven")
         handle = self._locked()
         try:
             rows = self._rows()
@@ -904,7 +923,6 @@ class BookBOwnershipEvidence:
                         )
             except (InvalidOperation, KeyError, TypeError, ValueError) as exc:
                 raise ValueError("ownership prior fill notional is unproven") from exc
-            cumulative_notional = cumulative_price * cumulative
             if cumulative < previous_cumulative_shares:
                 raise ValueError("ownership ledger is ahead of execution receipt")
             if cumulative == previous_cumulative_shares:
@@ -924,8 +942,7 @@ class BookBOwnershipEvidence:
                     or not persisted_price.is_finite()
                     or not persisted_notional.is_finite()
                     or persisted_price != Decimal(str(float(cumulative_price)))
-                    or persisted_notional
-                    != Decimal(str(float(cumulative_notional)))
+                    or persisted_notional != cumulative_notional
                     or latest.get("broker_order_id") != receipt.broker_order_id
                 ):
                     raise ValueError("ownership replay parity is unproven")
@@ -954,9 +971,9 @@ class BookBOwnershipEvidence:
                 "shares": delta,
                 "cumulative_filled_shares": cumulative,
                 "fill_price": float(delta_price),
-                "fill_notional": float(delta_notional),
+                "fill_notional": str(delta_notional),
                 "cumulative_fill_price": float(cumulative_price),
-                "cumulative_fill_notional": float(cumulative_notional),
+                "cumulative_fill_notional": str(cumulative_notional),
                 "order_price": receipt.order_price,
                 "broker_order_id": receipt.broker_order_id,
                 "source_execution_event_id": receipt.event_id,
@@ -1151,6 +1168,24 @@ class TradingTakeoverStore:
 Notifier = Callable[[str, str], object]
 
 
+@contextmanager
+def account_writer_lock(account_lock_dir: Path, logical_account_id: str):
+    """Fence every state transition for one logical trading account."""
+    account = str(logical_account_id or "").strip()
+    if not account:
+        raise ValueError("logical account id is required for writer fencing")
+    digest = hashlib.sha256(account.encode("utf-8")).hexdigest()[:24]
+    lock_dir = Path(account_lock_dir)
+    lock_dir.mkdir(parents=True, exist_ok=True)
+    handle = (lock_dir / f"account-{digest}.lock").open("a+", encoding="utf-8")
+    fcntl.flock(handle.fileno(), fcntl.LOCK_EX)
+    try:
+        yield
+    finally:
+        fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
+        handle.close()
+
+
 class TradingExecution:
     """Deep Book B execution module behind one idempotent public method."""
 
@@ -1207,19 +1242,8 @@ class TradingExecution:
     @contextmanager
     def _account_writer_lock(self, logical_account_id: str):
         """Fence every transition for one logical account, not just one file."""
-        account = str(logical_account_id or "").strip()
-        if not account:
-            raise ValueError("logical account id is required for writer fencing")
-        digest = hashlib.sha256(account.encode("utf-8")).hexdigest()[:24]
-        self.account_lock_dir.mkdir(parents=True, exist_ok=True)
-        path = self.account_lock_dir / f"account-{digest}.lock"
-        handle = path.open("a+", encoding="utf-8")
-        fcntl.flock(handle.fileno(), fcntl.LOCK_EX)
-        try:
+        with account_writer_lock(self.account_lock_dir, logical_account_id):
             yield
-        finally:
-            fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
-            handle.close()
 
     def execute(self, plan: TradePlan, broker: BrokerAdapter | None = None) -> ExecutionReceipt:
         """Advance one immutable plan, never replaying an uncertain submit."""
@@ -2364,6 +2388,21 @@ class TradingExecution:
             and (not previous_price.is_finite() or previous_price <= 0)
         ):
             previous_price = None
+        previous_plan_notional: Decimal | None
+        try:
+            previous_plan_notional = Decimal(
+                str(previous_proof["plan_cumulative_fill_notional"])
+            )
+        except (InvalidOperation, KeyError, TypeError, ValueError):
+            previous_plan_notional = None
+        if (
+            previous_plan_notional is not None
+            and (
+                not previous_plan_notional.is_finite()
+                or previous_plan_notional <= 0
+            )
+        ):
+            previous_plan_notional = None
         aggregate_basis_proven = True
         stale_order_fill = False
         if same_order:
@@ -2403,7 +2442,9 @@ class TradingExecution:
                 filled = min(int(plan.shares), order_base_filled + broker_filled)
         else:
             order_base_filled = base_filled
-            if order_base_filled > 0 and previous_price is None:
+            if order_base_filled > 0 and previous_plan_notional is not None:
+                order_base_notional = previous_plan_notional
+            elif order_base_filled > 0 and previous_price is None:
                 order_base_notional = Decimal("0")
                 aggregate_basis_proven = False
             else:
@@ -2426,23 +2467,49 @@ class TradingExecution:
             and (not order_fill_price.is_finite() or order_fill_price <= 0)
         ):
             order_fill_price = None
+        try:
+            broker_order_notional = Decimal(
+                str(
+                    broker.locator_proof[
+                        "current_order_cumulative_fill_notional"
+                    ]
+                )
+            )
+        except (InvalidOperation, KeyError, TypeError, ValueError):
+            broker_order_notional = (
+                order_fill_price * broker_filled
+                if order_fill_price is not None and broker_filled > 0
+                else Decimal("0")
+            )
+        if (
+            not broker_order_notional.is_finite()
+            or broker_order_notional < 0
+            or (broker_filled == 0 and broker_order_notional != 0)
+            or (broker_filled > 0 and broker_order_notional <= 0)
+        ):
+            broker_order_notional = Decimal("0")
+            aggregate_basis_proven = False
+        plan_cumulative_notional: Decimal | None
         if stale_order_fill:
             plan_fill_price = (
                 float(previous_price) if previous_price is not None else None
             )
+            plan_cumulative_notional = previous_plan_notional
         elif not aggregate_basis_proven:
             plan_fill_price = None
+            plan_cumulative_notional = None
         elif filled <= 0:
             plan_fill_price = None
-        elif order_fill_price is not None and broker_filled > 0:
-            cumulative_notional = (
-                order_base_notional + order_fill_price * broker_filled
-            )
-            plan_fill_price = float(cumulative_notional / filled)
+            plan_cumulative_notional = Decimal("0")
+        elif broker_order_notional > 0 and broker_filled > 0:
+            plan_cumulative_notional = order_base_notional + broker_order_notional
+            plan_fill_price = float(plan_cumulative_notional / filled)
         elif filled == int(previous.filled_shares) and previous_price is not None:
             plan_fill_price = float(previous_price)
+            plan_cumulative_notional = previous_plan_notional
         else:
             plan_fill_price = None
+            plan_cumulative_notional = None
         remaining = max(0, int(plan.shares) - filled)
         if state in {ExecutionState.CANCELLED, ExecutionState.REJECTED}:
             remaining = max(0, int(plan.shares) - filled)
@@ -2480,8 +2547,11 @@ class TradingExecution:
                     **previous.locator_proof,
                     **broker.locator_proof,
                     "current_order_base_filled_shares": order_base_filled,
-                    "current_order_base_fill_notional": float(
-                        order_base_notional
+                    "current_order_base_fill_notional": str(order_base_notional),
+                    "plan_cumulative_fill_notional": (
+                        str(plan_cumulative_notional)
+                        if plan_cumulative_notional is not None
+                        else None
                     ),
                     "fill_aggregate_proven": aggregate_basis_proven,
                 }

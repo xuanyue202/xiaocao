@@ -149,10 +149,29 @@ def test_live_morning_rejects_snapshot_rows_before_dated_freeze_is_complete(
 def test_live_allocation_accepts_hash_bound_broker_reconciled_nav_basis(
     tmp_path: Path,
 ) -> None:
+    state_dir = tmp_path / "state"
+    settlement = {
+        "schema_version": 1,
+        "status": "settled",
+        "capital_basis_source": "broker_reconciled_book_b_nav",
+        "trade_date": "2026-08-23",
+        "environment": "live",
+        "logical_account_id": "primary",
+        "account_binding": "proven",
+        "settled_at": "2026-08-23T07:10:00+00:00",
+        "settled_nav": 30_000,
+        "current_open_exposure": 0,
+        "ownership_head_sha256": None,
+        "broker_snapshot_observed_at": "2026-08-23T07:09:00+00:00",
+    }
+    settlement["settlement_sha256"] = _canonical_sha256(settlement)
+    settlement_path = state_dir / "settlements" / "2026-08-23.json"
+    settlement_path.parent.mkdir(parents=True)
+    settlement_path.write_text(json.dumps(settlement), encoding="utf-8")
     payload = _live_allocation_payload()
     payload.pop("allocation_capsule_sha256")
     payload["capital_basis_source"] = "broker_reconciled_book_b_nav"
-    payload["capital_basis_receipt_sha256"] = "c" * 64
+    payload["capital_basis_receipt_sha256"] = settlement["settlement_sha256"]
     payload["allocation_capsule_sha256"] = _canonical_sha256(payload)
 
     facts = _load_allocation(
@@ -160,13 +179,36 @@ def test_live_allocation_accepts_hash_bound_broker_reconciled_nav_basis(
             trade_date="2026-08-24",
             freeze_path=tmp_path / "freeze.jsonl",
             allocation_facts_path=tmp_path / "allocation.json",
-            state_dir=tmp_path / "state",
+            state_dir=state_dir,
         ),
         payload,
     )
 
     assert facts.settled_nav == 30_000
     assert facts.source == "foundersc_reconcile"
+
+
+def test_live_allocation_rejects_unbound_settlement_receipt_hash(
+    tmp_path: Path,
+) -> None:
+    payload = _live_allocation_payload()
+    payload.pop("allocation_capsule_sha256")
+    payload["capital_basis_source"] = "broker_reconciled_book_b_nav"
+    payload["capital_basis_receipt_sha256"] = "c" * 64
+    payload["allocation_capsule_sha256"] = _canonical_sha256(payload)
+
+    with pytest.raises(
+        ValueError, match="LIVE_ALLOCATION_CAPITAL_BASIS_RECEIPT_MISMATCH"
+    ):
+        _load_allocation(
+            BookBLiveMorningConfig(
+                trade_date="2026-08-24",
+                freeze_path=tmp_path / "freeze.jsonl",
+                allocation_facts_path=tmp_path / "allocation.json",
+                state_dir=tmp_path / "state",
+            ),
+            payload,
+        )
 
 
 def test_live_morning_accepts_a_proven_empty_freeze_without_snapshot_rows(
