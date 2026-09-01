@@ -2320,13 +2320,14 @@ def test_terminal_replay_repairs_only_local_ownership_without_broker_call(
         (100, 10.00, "o-1"),
         (200, 10.10, "o-1"),
         (200, 10.00, "o-2"),
+        (200, 10.00, None),
     ],
 )
 def test_terminal_ledger_repair_requires_exact_cumulative_parity(
     tmp_path: Path,
     filled_shares: int,
     fill_price: float,
-    broker_order_id: str,
+    broker_order_id: str | None,
 ) -> None:
     plan = _plan()
     ledger = TradingAccountLedger(tmp_path / "ownership.jsonl")
@@ -2369,6 +2370,51 @@ def test_terminal_ledger_repair_requires_exact_cumulative_parity(
     assert [row["kind"] for row in store.events(plan.plan_id)] == [
         "ledger_write_failed"
     ]
+
+
+def test_terminal_ledger_repair_rejects_missing_authoritative_prior_notional(
+    tmp_path: Path,
+) -> None:
+    plan = _plan()
+    ledger_path = tmp_path / "ownership.jsonl"
+    ledger = TradingAccountLedger(ledger_path)
+    ledger.record(
+        plan,
+        ExecutionReceipt(
+            plan.plan_id,
+            plan.plan_hash,
+            ExecutionState.FILLED,
+            filled_shares=200,
+            fill_price=10.00,
+            broker_order_id="o-1",
+            event_id="original-fill",
+        ),
+    )
+    row = json.loads(ledger_path.read_text())
+    row.pop("fill_notional")
+    ledger_path.write_text(json.dumps(row) + "\n")
+    store = InMemoryExecutionStore(tmp_path / "events.jsonl")
+    failed = store.append(
+        plan=plan,
+        receipt=ExecutionReceipt(
+            plan.plan_id,
+            plan.plan_hash,
+            ExecutionState.FILLED,
+            reason="LEDGER_WRITE_FAILED:OSError",
+            filled_shares=200,
+            fill_price=10.00,
+            broker_order_id="o-1",
+            next_action="ledger_reconcile",
+        ),
+        kind="ledger_write_failed",
+    )
+    broker = FakeBroker()
+
+    replay = TradingExecution(store=store, ledger=ledger).execute(plan, broker)
+
+    assert replay.event_id == failed.event_id
+    assert replay.next_action == "ledger_reconcile"
+    assert broker.submit_calls == broker.reconcile_calls == broker.cancel_calls == 0
 
 
 @pytest.mark.parametrize(

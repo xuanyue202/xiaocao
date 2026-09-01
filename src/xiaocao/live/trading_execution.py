@@ -851,6 +851,8 @@ class BookBOwnershipEvidence:
         cumulative = max(0, min(int(plan.shares), int(receipt.filled_shares)))
         if cumulative <= 0:
             return None
+        if not str(receipt.broker_order_id or "").strip():
+            raise ValueError("ownership broker order id is unproven")
         try:
             cumulative_price = Decimal(str(receipt.fill_price))
         except (InvalidOperation, TypeError, ValueError) as exc:
@@ -870,11 +872,13 @@ class BookBOwnershipEvidence:
                 [int(row.get("cumulative_filled_shares") or 0) for row in matching]
                 or [0]
             )
-            previous_notional = sum(
-                Decimal(str(row.get("fill_price")))
-                * int(row.get("shares") or 0)
-                for row in matching
-            )
+            try:
+                previous_notional = sum(
+                    Decimal(str(row["fill_notional"]))
+                    for row in matching
+                )
+            except (InvalidOperation, KeyError, TypeError, ValueError) as exc:
+                raise ValueError("ownership prior fill notional is unproven") from exc
             cumulative_notional = cumulative_price * cumulative
             if cumulative < previous:
                 raise ValueError("ownership ledger is ahead of execution receipt")
@@ -897,10 +901,7 @@ class BookBOwnershipEvidence:
                     or persisted_price != Decimal(str(float(cumulative_price)))
                     or persisted_notional
                     != Decimal(str(float(cumulative_notional)))
-                    or (
-                        receipt.broker_order_id
-                        and latest.get("broker_order_id") != receipt.broker_order_id
-                    )
+                    or latest.get("broker_order_id") != receipt.broker_order_id
                 ):
                     raise ValueError("ownership replay parity is unproven")
                 return latest
