@@ -23,14 +23,17 @@ Before Ready, do only this:
    `status=awaiting_capture`, a `capture_job_id`, a process PID, and the playback
    prompt. The command itself proves the exact binary, local API health, and the
    candidate baseline before it emits that result.
-4. Ask the user to open the target enterprise-WeChat card. The player only
-   needs to appear; continued playback and a fixed wait are unnecessary. As
-   soon as the bound page has a current `<video>` element, if the agent starts
-   media to trigger capture it must first set and read back
-   `video.muted=true` and `video.volume=0` through the bound Browser tab's
-   page-level control (use the tab `cdp` capability's scoped `Runtime.evaluate`
-   when player controls are hidden), and must reapply this after a page refresh,
-   navigation, or player rebuild. System/browser mute alone is not sufficient.
+4. The Agent opens the target in the native WeChat mini-program and selects the
+   matching replay through the reviewed, visible Computer Use exception; do not
+   ask the user to perform that step. Inspect fresh state before each action,
+   keep one foreground session, read state back after each action, and use only
+   event-based waits. Stop for login, SMS/OTP, CAPTCHA, consent, or an explicit
+   protection screen; those are the only user-action boundaries. The matching
+   player only needs to emit a media request; continued playback and a fixed
+   wait are unnecessary. The old direct-H5 player is archived and may be used
+   only to validate the stable app/resource identity, never as a playback
+   fallback. The singleton `wx_channels_download` sniffer must report the exact
+   `live_id` before capture can advance.
 
 Do not inspect Git or scan historical ledgers before Ready. Do not contact the
 remote writer, load market or portfolio data, or read `full-contract.md` before

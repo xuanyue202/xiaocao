@@ -73,6 +73,7 @@ from xiaocao.kol.xiaocao_live import (
 from xiaocao.kol.xiaocao_wechat import (
     DEFAULT_CONTACT as DEFAULT_XIAOCAO_WECHAT_CONTACT,
     DEFAULT_WECHAT_CLI,
+    XIAOCAO_PLAYBACK_ROUTE_WECHAT_MINI_PROGRAM,
     WechatCliHistoryReader,
     XiaocaoLiveCaptureDriver,
     XiaocaoWechatLiveSubscription,
@@ -1427,9 +1428,9 @@ def _classified_source(name: str, runner):
             ):
                 raise UserActionBlocker(
                     "xiaocao-wechat-live-xiaoetong-login",
-                    "请在侧边栏浏览器中保留的当前视频链接标签页完成小鹅通"
-                    "账号登录；不要把课程直播口令填入账号密码框。完成后"
-                    "保持该标签页可用，系统会在 20 分钟内复核并继续。",
+                    "请在本机微信小程序中完成当前小鹅通账号登录；不要把课程"
+                    "直播口令填入账号密码框。完成后保持目标可访问，系统会在"
+                    " 20 分钟内复核同一任务并继续。",
                 ) from exc
             if diagnostic_code == "provider_authentication_required":
                 raise UserActionBlocker(
@@ -3859,6 +3860,7 @@ class DailyRuntime:
             capture_driver=capture,
             contact=self.args.xiaocao_wechat_contact,
             password=self.args.xiaocao_live_password,
+            playback_route=XIAOCAO_PLAYBACK_ROUTE_WECHAT_MINI_PROGRAM,
         )
         run_kwargs: dict[str, Any] = {
             "opencli_session": getattr(
@@ -3897,6 +3899,7 @@ class DailyRuntime:
             capture_driver=capture,
             contact=self.args.xiaocao_wechat_contact,
             password=self.args.xiaocao_live_password,
+            playback_route=XIAOCAO_PLAYBACK_ROUTE_WECHAT_MINI_PROGRAM,
         )
         return subscription.dispatch_published_handoff()
 
@@ -3917,6 +3920,7 @@ class DailyRuntime:
             capture_driver=capture,
             contact=self.args.xiaocao_wechat_contact,
             password=self.args.xiaocao_live_password,
+            playback_route=XIAOCAO_PLAYBACK_ROUTE_WECHAT_MINI_PROGRAM,
         )
         return subscription.continue_cloud_handoff(
             identity,

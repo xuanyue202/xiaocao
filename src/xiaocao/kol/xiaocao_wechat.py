@@ -57,6 +57,18 @@ _PLAYBACK_PAGE_STATES = {
     "source_temporarily_unavailable",
     "unknown",
 }
+XIAOCAO_PLAYBACK_ROUTE_H5 = "xiaoetong_h5"
+XIAOCAO_PLAYBACK_ROUTE_WECHAT_MINI_PROGRAM = "wechat_mini_program"
+_PLAYBACK_ROUTES = frozenset(
+    {
+        XIAOCAO_PLAYBACK_ROUTE_H5,
+        XIAOCAO_PLAYBACK_ROUTE_WECHAT_MINI_PROGRAM,
+    }
+)
+_MINI_PROGRAM_PLAYBACK_STATES = _PLAYBACK_PAGE_STATES | {
+    "mini_program_media_observed",
+    "mini_program_waiting",
+}
 
 
 def _canonical(value: Any) -> str:
@@ -408,7 +420,13 @@ class XiaocaoLiveCaptureDriver:
 
 
 class XiaocaoWechatLiveSubscription:
-    """Exactly-once WeChat discovery and browser/capture state machine."""
+    """Exactly-once WeChat discovery and capture state machine.
+
+    ``xiaoetong_h5`` remains a compatibility route for direct callers and
+    historical tests.  The local Xiaocao runtime selects
+    ``wechat_mini_program`` so a provider-paused H5 player is not a download
+    dependency.
+    """
 
     def __init__(
         self,
@@ -420,6 +438,7 @@ class XiaocaoWechatLiveSubscription:
         capture_driver: CaptureDriver,
         contact: str = DEFAULT_CONTACT,
         password: str = "666",
+        playback_route: str = XIAOCAO_PLAYBACK_ROUTE_H5,
         clock: Callable[[], datetime] | None = None,
     ):
         self.output_dir = Path(output_dir).expanduser().resolve()
@@ -431,6 +450,11 @@ class XiaocaoWechatLiveSubscription:
         self.capture_driver = capture_driver
         self.contact = str(contact)
         self.password = str(password)
+        self.playback_route = str(playback_route or "").strip()
+        if self.playback_route not in _PLAYBACK_ROUTES:
+            raise ValueError(
+                f"unsupported Xiaocao playback route: {self.playback_route}"
+            )
         self.clock = clock or (lambda: datetime.now(BEIJING))
 
     def _now(self) -> str:
@@ -737,6 +761,9 @@ class XiaocaoWechatLiveSubscription:
         waiting_item["next_poll_not_before"] = deadline.isoformat(
             timespec="seconds"
         )
+        waiting_item["playback_route"] = str(
+            item.get("playback_route") or self.playback_route
+        )
         return {
             "status": "waiting",
             "waiting_count": 1,
@@ -966,6 +993,12 @@ class XiaocaoWechatLiveSubscription:
         *,
         reason: str,
     ) -> dict[str, Any]:
+        if self.playback_route == XIAOCAO_PLAYBACK_ROUTE_WECHAT_MINI_PROGRAM:
+            return self._check_mini_program_playback(
+                manifest,
+                item,
+                reason=reason,
+            )
         request = {
             "event": "daily_browser_input_required",
             "adapter": "xiaocao_wechat_live",
@@ -1078,6 +1111,127 @@ class XiaocaoWechatLiveSubscription:
             page_url=response_page,
             observed_page_state=page_state,
             password_used=response.get("password_used") is True,
+            playback_route=self.playback_route,
+        )
+
+    def _check_mini_program_playback(
+        self,
+        manifest: dict[str, Any],
+        item: dict[str, Any],
+        *,
+        reason: str,
+    ) -> dict[str, Any]:
+        """Use native WeChat playback while keeping the H5 identity anchor.
+
+        The mini-program is the user-visible playback surface.  The local
+        ``wx_channels_download`` sniffer observes its requests and the source
+        job later proves the same ``live_id`` before creating a download task.
+        No signed media URL is accepted from this structured input.
+        """
+        expected_live_id = str(item["source_identity"]).rsplit(":", 1)[-1]
+        request = {
+            "event": "daily_browser_input_required",
+            "adapter": "xiaocao_wechat_live",
+            "action": "activate_xiaoetong_mini_program",
+            "subscription_id": item["identity"],
+            "source_url": item["source_url"],
+            "page_url": item["page_url"],
+            "check_reason": reason,
+            "playback_surface": XIAOCAO_PLAYBACK_ROUTE_WECHAT_MINI_PROGRAM,
+            "operator": "agent",
+            "user_action_required": False,
+            "ui_policy": {
+                "app_bundle_id": "com.tencent.xinWeChat",
+                "surface": "visible_foreground_ui",
+                "action_mode": "one_action_then_state_readback",
+                "max_activation_attempts": 1,
+            },
+            "password_policy": {
+                "only_if_password_gate_visible": True,
+                "password": self.password,
+            },
+            "instructions": (
+                "在本机微信中打开 source_url 对应的同一场小鹅通小程序回放，"
+                "不要打开或依赖浏览器 H5 播放页。若小程序显示课程口令门，"
+                "只在可见口令门输入提供的口令。选择与 source_url 对应的历史回放；"
+                "让目标画面开始请求媒体即可，不需要持续播放。确认本机"
+                "wx_channels_download 已观察到媒体请求，并从其无凭证日志确认"
+                "live_id 与要求的 live_id 完全一致。不要返回签名 m3u8、Cookie、"
+                "密钥或其他请求头；返回布尔型 media_request_observed 和绑定字段。"
+            ),
+            "required_response": {
+                "action": "activate_xiaoetong_mini_program",
+                "subscription_id": item["identity"],
+                "playback_surface": XIAOCAO_PLAYBACK_ROUTE_WECHAT_MINI_PROGRAM,
+                "source_identity": item["source_identity"],
+                "live_id": expected_live_id,
+                "operator": "agent",
+                "page_state": (
+                    "account_login_required|waiting_to_start|live|"
+                    "replay_generating|playable|password_required|unknown|"
+                    "mini_program_media_observed|mini_program_waiting"
+                ),
+                "activated": "boolean",
+                "media_request_observed": "boolean",
+                "password_used": "boolean",
+                "page_url": (
+                    "optional canonical H5 identity anchor; omit when the native "
+                    "mini-program supplied no page URL"
+                ),
+            },
+        }
+        response = self.browser_exchange(request)
+        self._validate_browser_response(request, response)
+        if (
+            response.get("playback_surface")
+            != XIAOCAO_PLAYBACK_ROUTE_WECHAT_MINI_PROGRAM
+            or response.get("source_identity") != item["source_identity"]
+            or str(response.get("live_id") or "") != expected_live_id
+        ):
+            raise EnrichmentError(
+                "WeChat mini-program playback binding is invalid"
+            )
+
+        response_url = str(response.get("page_url") or "").strip()
+        if response_url:
+            response_page, response_identity = self._canonical_page(response_url)
+            if response_identity != item["source_identity"]:
+                raise EnrichmentError(
+                    "WeChat mini-program page anchor changed its live binding"
+                )
+        else:
+            response_page = item["page_url"]
+
+        page_state = str(
+            response.get("page_state")
+            or ("playable" if response.get("activated") is True else "unknown")
+        ).strip()
+        if page_state not in _MINI_PROGRAM_PLAYBACK_STATES:
+            raise EnrichmentError(
+                "WeChat mini-program returned an unknown playback state"
+            )
+        if (
+            page_state == "account_login_required"
+            and response.get("activated") is not True
+        ):
+            raise EnrichmentDiagnosticError(
+                "Xiaoetong account login is required",
+                category="authentication_error",
+                code="xiaoetong_account_login_required",
+                stage="playback_authorization",
+            )
+        media_request_observed = response.get("media_request_observed") is True
+        activated = response.get("activated") is True and media_request_observed
+        return self._transition(
+            manifest,
+            item,
+            "playback_activated" if activated else "awaiting_playback",
+            page_url=response_page,
+            observed_page_state=page_state,
+            password_used=response.get("password_used") is True,
+            playback_route=self.playback_route,
+            playback_surface=XIAOCAO_PLAYBACK_ROUTE_WECHAT_MINI_PROGRAM,
+            media_request_observed=media_request_observed,
         )
 
     def _recorded_media_url(self, item: dict[str, Any]) -> str | None:
@@ -1141,6 +1295,15 @@ class XiaocaoWechatLiveSubscription:
             "action": "resolve_xiaoetong_page",
             "subscription_id": item["identity"],
             "source_url": item["source_url"],
+            "playback_route": self.playback_route,
+            "instructions": (
+                "Resolve only the stable Xiaoetong app/resource identity needed to "
+                "arm the capture job. The H5 page may be provider-paused; do not "
+                "treat H5 playback as proof of download readiness."
+                if self.playback_route
+                == XIAOCAO_PLAYBACK_ROUTE_WECHAT_MINI_PROGRAM
+                else "Resolve the current Xiaoetong page and its playback state."
+            ),
             "required_response": {
                 "action": "resolve_xiaoetong_page",
                 "subscription_id": item["identity"],
@@ -1177,6 +1340,7 @@ class XiaocaoWechatLiveSubscription:
             "page_url": page_url,
             "source_identity": source_identity,
             "observed_page_state": observed_page_state,
+            "playback_route": self.playback_route,
         }
         if media_file_id:
             fields["media_file_id"] = media_file_id

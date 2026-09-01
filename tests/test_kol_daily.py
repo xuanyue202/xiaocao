@@ -1082,12 +1082,18 @@ def test_daily_runtime_runs_xiaocao_wechat_subscription(tmp_path, monkeypatch):
             capture_driver,
             contact,
             password,
+            playback_route,
         ):
             assert callable(history_reader)
             assert callable(browser_exchange)
             assert callable(handoff_exchange)
             assert isinstance(capture_driver, FakeCaptureDriver)
-            calls.append(("subscription", (output_dir, contact, password)))
+            calls.append(
+                (
+                    "subscription",
+                    (output_dir, contact, password, playback_route),
+                )
+            )
 
         def run_once(self, *, opencli_session, opencli_profile=None):
             calls.append(("run", (opencli_session, opencli_profile)))
@@ -1127,7 +1133,12 @@ def test_daily_runtime_runs_xiaocao_wechat_subscription(tmp_path, monkeypatch):
         ("capture", (tmp_path / "wechat", tmp_path / "decisions")),
         (
             "subscription",
-            (tmp_path / "wechat", "福利官小花四-刘丹", "666"),
+            (
+                tmp_path / "wechat",
+                "福利官小花四-刘丹",
+                "666",
+                "wechat_mini_program",
+            ),
         ),
         ("run", ("xiaocao-lv-subscription", None)),
     ]
@@ -4568,25 +4579,28 @@ def test_repair_resume_user_blocker_uses_same_deduplicated_notification_path(
     )
     notices: list[tuple[str, str]] = []
     sender = lambda title, body: notices.append((title, body))
+    action = (
+        "请在本机微信小程序中完成当前小鹅通账号登录；不要把课程"
+        "直播口令填入账号密码框。完成后保持目标可访问，系统会在"
+        " 20 分钟内复核同一任务并继续。"
+    )
 
     first = service.notify_user_action(
         source="xiaocao_wechat_live",
         blocker_key="xiaocao-wechat-live-xiaoetong-login",
-        action="请在侧边栏浏览器完成当前视频登录。",
+        action=action,
         blocker_sender=sender,
     )
     second = service.notify_user_action(
         source="xiaocao_wechat_live",
         blocker_key="xiaocao-wechat-live-xiaoetong-login",
-        action="请在侧边栏浏览器完成当前视频登录。",
+        action=action,
         blocker_sender=sender,
     )
 
     assert first is True
     assert second is False
-    assert notices == [
-        ("KOL 日常运行需要你处理", "请在侧边栏浏览器完成当前视频登录。")
-    ]
+    assert notices == [("KOL 日常运行需要你处理", action)]
 
 
 def test_transient_source_failure_is_structured_and_does_not_notify(tmp_path):
@@ -4846,7 +4860,7 @@ def test_source_classifier_surfaces_provider_authentication_as_user_action():
     assert "重新完成登录或访问授权" in captured.value.action
 
 
-def test_source_classifier_surfaces_xiaoetong_login_with_exact_side_browser_action():
+def test_source_classifier_surfaces_xiaoetong_login_with_exact_mini_program_action():
     runner = _classified_source(
         "xiaocao_wechat_live",
         lambda: (_ for _ in ()).throw(
@@ -4865,8 +4879,8 @@ def test_source_classifier_surfaces_xiaoetong_login_with_exact_side_browser_acti
     assert captured.value.blocker_key == (
         "xiaocao-wechat-live-xiaoetong-login"
     )
-    assert "侧边栏浏览器" in captured.value.action
-    assert "当前视频链接" in captured.value.action
+    assert "本机微信小程序" in captured.value.action
+    assert "当前小鹅通账号登录" in captured.value.action
 
 
 def test_source_classifier_surfaces_provider_captcha_as_user_action():

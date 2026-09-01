@@ -6,9 +6,9 @@ description: Run resumable Xiaocao KOL capture, handoff, analysis, publication, 
 # KOL Intelligence
 
 Keep runs resumable and evidence-bound. Prefer deterministic local APIs,
-CLIs, and logged-in browser DOM automation. Do not use Computer Use unless a
-separately reviewed exception explicitly authorizes it. Never execute
-real-capital trades.
+CLIs, and logged-in browser DOM automation. Xiaocao playback exception permits
+Computer Use; do not ask user to open it. Never
+execute real-capital trades.
 
 ## Repair before escalating
 
@@ -78,6 +78,7 @@ evidence ambiguity, requested edits, or explicit historical aggregation.
 - Xiaoetong: enter `666` at a visible course-password gate. Set/read
   `video.muted=true` and `video.volume=0` before playback
   (`cdp`/`Runtime.evaluate` if controls are hidden); OS mute is insufficient.
+- Xiaocao: mini capture; H5 identity-only.
 - Resolve code/state conflicts from first principles without asking by default:
   preserve a reversible snapshot and unrelated WIP, identify both intents,
   integrate compatible behavior, verify it, and continue. Ask only when the
