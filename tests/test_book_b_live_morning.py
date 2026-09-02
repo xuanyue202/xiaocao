@@ -419,6 +419,19 @@ def test_native_app_route_has_no_fake_mock_environment_to_restore(
 
     assert receipt.status == "blocked"
     assert receipt.reason == "DATED_FREEZE_NOT_PROVEN"
+    assert receipt.environment_restoration == {
+        "status": "native_environment_restore_not_applicable",
+        "environment": "not_applicable",
+        "route": "native-app",
+    }
+    persisted = json.loads(
+        (tmp_path / "state" / "runs" / "2026-08-24.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    assert persisted["environment_restoration"] == (
+        receipt.environment_restoration
+    )
 
 
 def test_live_morning_accepts_native_app_allocation_source(tmp_path: Path) -> None:

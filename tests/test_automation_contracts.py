@@ -70,18 +70,19 @@ def test_live_morning_is_a_separate_0920_fail_closed_task() -> None:
     live_script = (ROOT / "scripts" / "book_b_live_morning.py").read_text(
         encoding="utf-8"
     )
-    assert 'if args.route == "native-app":' in live_script
     assert "build_foundersc_native_execution" in live_script
-    assert "_bounded_no_order_retry(broker.ensure_login)" in live_script
     assert "keychain.run(read_trade_secret=True)" in live_script
-    assert "keychain.run(read_login_secret=True)" in live_script
     assert "keychain.run(read_secrets=True)" not in live_script
+    assert "foundersc_opencli" not in live_script
+    assert "build_foundersc_execution" not in live_script
+    assert 'choices=("native-app",)' in live_script
+    assert "read_login_secret=True" not in live_script
+    assert "_bounded_no_order_retry" not in live_script
     assert "KeychainCapitalRuntime" in live_script
     assert "capital_runtime.preflight()" in live_script
     assert "safety_env_provider=capital_runtime.safety_env" in live_script
     assert "expected_fund_account_fingerprint=trade_account_fingerprint" in live_script
     assert "wait_for_submit_window" in live_script
-    assert "_bounded_no_order_retry" in live_script
     assert 'expected_current="live"' in live_script
 
 

@@ -4,12 +4,17 @@ import hashlib
 import json
 from dataclasses import replace
 from datetime import datetime, timedelta, timezone
+from decimal import Decimal
 from pathlib import Path
 
 import pytest
 
 from xiaocao.live.foundersc_native_ax import FounderscNativeAXError, NativeAXReceipt
-from xiaocao.live.foundersc_native_broker import FounderscNativeAXBrokerAdapter
+from xiaocao.live.foundersc_native_broker import (
+    FounderscNativeAXBrokerAdapter,
+    _decimal,
+    _integer,
+)
 from xiaocao.live.book_b_live_lifecycle import project_book_b_live_account
 from xiaocao.live.trading_execution import BrokerStatus, TradePlan
 
@@ -39,6 +44,15 @@ def _plan() -> TradePlan:
         recovery_deadline=now + timedelta(minutes=15),
         allocation_proof_hash="proof",
     )
+
+
+def test_native_numeric_normalization_distinguishes_decimal_comma_and_grouping(
+) -> None:
+    assert _decimal("17,3900", field="ORDER_PRICE") == Decimal("17.3900")
+    assert _decimal("54,528.94", field="TOTAL_ASSETS") == Decimal("54528.94")
+    assert _decimal("54.528,94", field="TOTAL_ASSETS") == Decimal("54528.94")
+    assert _integer("1,100", field="ORDER_QUANTITY") == 1100
+    assert _integer("800,00", field="ORDER_QUANTITY") == 800
 
 
 class FakeNative:
@@ -379,6 +393,108 @@ class StrictBaselineBoundedPostNative(LowConfidenceZeroFillNative):
         )
 
 
+class PopupOrderIdBeforeTableRefreshNative(FakeNative):
+    """Broker confirms one order id before the today-orders grid refreshes."""
+
+    def submit_prepared_order(self, **kwargs) -> NativeAXReceipt:
+        assert kwargs["explicitly_enabled"] is True
+        self.submit_calls += 1
+        return self._receipt(
+            status="submit_confirmed",
+            action={
+                "attempted": True,
+                "succeeded": True,
+                "requires_user_input": False,
+                "confirm_pressed": True,
+                "confirmation_mode": "focused_dialog_button",
+                "unlock_path_proven": False,
+            },
+            order_readback={
+                "code": kwargs["code"].split(".", 1)[0],
+                "side": kwargs["side"].lower(),
+                "price": str(kwargs["price"]),
+                "quantity": kwargs["quantity"],
+                "field_mapping_proven": True,
+                "submit_control_count": 1,
+                "submitted": True,
+                "saved": True,
+                "started": True,
+                "observed_at": OBSERVED_AT,
+            },
+            result_readback={
+                "kind": "submit",
+                "status": "submit_result_acknowledged",
+                "broker_order_id": "6000099",
+                "message_matched": True,
+                "acknowledgment_pressed": True,
+                "acknowledgment_mode": "focused_dialog_button",
+                "observed_at": OBSERVED_AT,
+            },
+        )
+
+
+class DelayedPopupOrderNative(PopupOrderIdBeforeTableRefreshNative):
+    def __init__(self):
+        super().__init__()
+        self.post_submit_order_reads = 0
+
+    def read_query(self, *, kind: str, **kwargs) -> NativeAXReceipt:
+        if kind == "today-orders" and self.submit_calls:
+            self.post_submit_order_reads += 1
+            if self.post_submit_order_reads == 3:
+                self.orders.append(
+                    {
+                        "证券代码": "000001",
+                        "证券名称": "测试标的",
+                        "委托时间": "93018",
+                        "买卖标志": "买入",
+                        "委托类别": "委托",
+                        "状态说明": "已报",
+                        "委托价格": "10,0000",
+                        "委托数量": "100",
+                        "委托编号": "6000099",
+                        "成交价格": "0.000",
+                        "成交数量": "",
+                        "报价方式": "买卖",
+                        "股东代码": "A***",
+                        "备注": "",
+                    }
+                )
+        return super().read_query(kind=kind, **kwargs)
+
+
+class DelayedRecoveryOrderNative(FakeNative):
+    """A restarted process sees the claimed order only after grid refresh."""
+
+    def __init__(self):
+        super().__init__()
+        self.recovery_order_reads = 0
+
+    def read_query(self, *, kind: str, **kwargs) -> NativeAXReceipt:
+        if kind == "today-orders":
+            self.recovery_order_reads += 1
+            if self.recovery_order_reads == 3:
+                self.orders.append(
+                    {
+                        "证券代码": "000001",
+                        "证券名称": "测试标的",
+                        "委托时间": "93018",
+                        "买卖标志": "买入",
+                        "委托类别": "委托",
+                        "状态说明": "已报",
+                        "委托价格": "10,0000",
+                        "委托数量": "100",
+                        "委托编号": "6000099",
+                        "成交价格": "0.000",
+                        "成交数量": "",
+                        "报价方式": "买卖",
+                        "股东代码": "A***",
+                        "备注": "",
+                    }
+                )
+        return super().read_query(kind=kind, **kwargs)
+
+
 class UnreconciledCancelNative(FakeNative):
     def cancel_order(self, **kwargs) -> NativeAXReceipt:
         receipt = super().cancel_order(**kwargs)
@@ -665,6 +781,159 @@ def test_native_prepare_submit_uses_new_unique_order_delta() -> None:
     assert submitted.locator_proof["trade_match_count"] == 0
     assert native.prepare_calls == 1
     assert native.submit_calls == 1
+
+
+def test_submit_unknown_retains_popup_order_id_and_native_action_evidence() -> None:
+    native = PopupOrderIdBeforeTableRefreshNative()
+    adapter = _adapter(native)
+
+    prepared = adapter.prepare(_plan())
+    submitted = adapter.submit(_plan(), "claim-popup-order-id")
+
+    assert prepared.normalized_status() == BrokerStatus.PREPARED
+    assert submitted.normalized_status() == BrokerStatus.UNKNOWN
+    assert submitted.receipt_mapping is False
+    assert submitted.order_id == "6000099"
+    assert submitted.field_readback["native_helper_status"] == "submit_confirmed"
+    assert submitted.field_readback["native_action"]["confirm_pressed"] is True
+    assert (
+        submitted.field_readback["native_result_readback"]["broker_order_id"]
+        == "6000099"
+    )
+    assert submitted.locator_proof["native_helper_status"] == "submit_confirmed"
+    assert submitted.locator_proof["native_action"]["confirm_pressed"] is True
+    assert (
+        submitted.locator_proof["native_result_readback"]["broker_order_id"]
+        == "6000099"
+    )
+    assert native.submit_calls == 1
+
+
+def test_unknown_submit_recovery_accepts_founder_decimal_comma_price() -> None:
+    native = FakeNative()
+    native.orders = [
+        {
+            "证券代码": "603029",
+            "证券名称": "天鹅股份",
+            "委托时间": "93018",
+            "买卖标志": "买入",
+            "委托类别": "委托",
+            "状态说明": "已成",
+            "委托价格": "17,3900",
+            "委托数量": "800",
+            "委托编号": "6000356",
+            "成交价格": "17.060",
+            "成交数量": "800",
+            "报价方式": "买卖",
+            "股东代码": "A***",
+            "备注": "",
+        }
+    ]
+    native.trades = [
+        {
+            "证券代码": "603029",
+            "证券名称": "天鹅股份",
+            "成交时间": "93042",
+            "买卖标志": "买入",
+            "成交价格": "17.060",
+            "成交数量": "800.00",
+            "成交金额": "13648.00",
+            "成交编号": "1560943",
+            "委托编号": "6000356",
+            "股东代码": "A***",
+            "成交类型": "买卖",
+            "状态说明": "成交",
+        }
+    ]
+    plan = replace(
+        _plan(),
+        plan_id="book-b:2026-09-02:603029.XSHG:BUY",
+        trade_date="2026-09-02",
+        code="603029.XSHG",
+        name="天鹅股份",
+        shares=800,
+        limit_price=17.39,
+        basket_price=17.6683,
+    )
+
+    recovered = _adapter(native).recover(
+        plan,
+        {
+            "requested_shares": 800,
+            "submit_chain_uncertain": True,
+            "submit_claim_id": "claim-603029",
+            "locator_proof": {
+                "baseline_order_ids": [],
+                "baseline_order_count": 0,
+                "baseline_observed_at": OBSERVED_AT,
+                "baseline_order_readback_mode": "strict_confidence",
+            },
+        },
+    )
+
+    assert recovered.normalized_status() == BrokerStatus.FILLED
+    assert recovered.order_id == "6000356"
+    assert recovered.filled_shares == 800
+    assert recovered.fill_price == 17.06
+    assert recovered.receipt_mapping is True
+    assert recovered.locator_proof["recovery_mode"] == (
+        "durable_exact_order_delta"
+    )
+
+
+def test_submit_self_heals_delayed_order_grid_without_second_submit() -> None:
+    native = DelayedPopupOrderNative()
+    adapter = FounderscNativeAXBrokerAdapter(
+        native=native,
+        expected_fund_account_fingerprint="123******890",
+        reconcile_delays=(0.0, 0.0, 0.0),
+    )
+
+    prepared = adapter.prepare(_plan())
+    submitted = adapter.submit(_plan(), "claim-delayed-order-grid")
+
+    assert prepared.normalized_status() == BrokerStatus.PREPARED
+    assert submitted.normalized_status() == BrokerStatus.ACCEPTED
+    assert submitted.order_id == "6000099"
+    assert submitted.receipt_mapping is True
+    assert submitted.locator_proof["observed_order_row_count"] == 2
+    assert submitted.locator_proof["exact_order_match_count"] == 1
+    assert native.submit_calls == 1
+    assert native.post_submit_order_reads == 3
+
+
+def test_unknown_recovery_self_heals_delayed_grid_without_submit() -> None:
+    native = DelayedRecoveryOrderNative()
+    adapter = FounderscNativeAXBrokerAdapter(
+        native=native,
+        expected_fund_account_fingerprint="123******890",
+        reconcile_delays=(0.0, 0.0, 0.0),
+    )
+
+    recovered = adapter.recover(
+        _plan(),
+        {
+            "requested_shares": 100,
+            "submit_chain_uncertain": True,
+            "submit_claim_id": "claim-delayed-recovery",
+            "broker_order_id": "6000099",
+            "locator_proof": {
+                "baseline_order_ids": [],
+                "baseline_order_count": 0,
+                "baseline_observed_at": OBSERVED_AT,
+                "baseline_order_readback_mode": "strict_confidence",
+            },
+        },
+    )
+
+    assert recovered.normalized_status() == BrokerStatus.ACCEPTED
+    assert recovered.order_id == "6000099"
+    assert recovered.receipt_mapping is True
+    assert recovered.locator_proof["recovery_read_attempts"] == 3
+    assert recovered.locator_proof["recovery_expected_order_id"] == "6000099"
+    assert recovered.locator_proof["recovery_actions"] == "native_readback_only"
+    assert native.recovery_order_reads == 3
+    assert native.submit_calls == 0
 
 
 def test_native_prepare_persists_baseline_for_unknown_submit_recovery() -> None:

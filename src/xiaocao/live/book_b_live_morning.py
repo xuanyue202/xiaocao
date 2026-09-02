@@ -87,6 +87,10 @@ class BookBLiveMorningReceipt:
     allocation_facts_path: str
     state_path: str
     preflight_receipt: dict | None = None
+    environment_restoration: dict | None = None
+    capital_runtime: dict | None = None
+    open_plan_reconciliations: tuple[dict, ...] = ()
+    prior_reconciliations: tuple[dict, ...] = ()
 
     def as_dict(self) -> dict:
         return asdict(self)
@@ -1096,6 +1100,14 @@ def _write_receipt(config: BookBLiveMorningConfig, receipt: BookBLiveMorningRece
     _write_json_atomic(target, receipt.as_dict())
 
 
+def write_book_b_live_morning_receipt(
+    config: BookBLiveMorningConfig,
+    receipt: BookBLiveMorningReceipt,
+) -> None:
+    """Persist the final enriched receipt after wrapper-owned reconciliation."""
+    _write_receipt(config, receipt)
+
+
 def _no_action_receipt(config: BookBLiveMorningConfig) -> BookBLiveMorningReceipt:
     return BookBLiveMorningReceipt(
         trade_date=config.trade_date,
@@ -1211,6 +1223,7 @@ def run_book_b_live_morning(
     _assert_isolated_state(config)
     preflight_attempted = False
     environment_receipt: dict | None = None
+    environment_restoration: dict | None = None
     preparation_receipts: list[dict] = []
     receipt: BookBLiveMorningReceipt
     restore_failure: str | None = None
@@ -1321,12 +1334,18 @@ def run_book_b_live_morning(
                 )
                 if restored_environment != "mock" and not native_not_applicable:
                     raise ValueError("MOCK_ENVIRONMENT_NOT_PROVEN")
+                environment_restoration = dict(restored)
             except Exception as exc:
                 restore_failure = f"ENVIRONMENT_RESTORE_FAILED:{exc}"
     if restore_failure is not None:
         receipt = replace(receipt, status="blocked", reason=restore_failure)
     if environment_receipt is not None:
         receipt = replace(receipt, preflight_receipt=environment_receipt)
+    if environment_restoration is not None:
+        receipt = replace(
+            receipt,
+            environment_restoration=environment_restoration,
+        )
     _write_receipt(config, receipt)
     return receipt
 
@@ -1341,4 +1360,5 @@ __all__ = [
     "reconcile_open_book_b_plans",
     "reconcile_prior_day_canary_unknowns",
     "run_book_b_live_morning",
+    "write_book_b_live_morning_receipt",
 ]

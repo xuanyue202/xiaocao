@@ -31,8 +31,9 @@ uses the account-bound Founder App full-query surface to read
 positions/orders/trades plus the account-bound funds summary embedded in the
 positions capture and
 atomically produce `book_b_live_allocation_facts_<date>.json` only from a
-complete, account-bound native receipt. It does not initialize or authenticate
-OpenCLI. A non-empty dated freeze is valid for this
+complete, account-bound native receipt. OpenCLI trading/view is sunset: this
+live entrypoint does not import, initialize, authenticate or query it. A
+non-empty dated freeze is valid for this
 consumer only when the queue producer manifest already binds its actual
 same-day snapshot rows, report, strategy run id, producer strategy Git SHA,
 hash and count. Before any agent review can enrich the canonical snapshots,
@@ -83,7 +84,12 @@ Before prepare, the adapter requires zero existing exact
 single claimed submit must map to exactly one new numeric order id with that
 tuple, then bind any fills by `order_id+code+side`; otherwise it becomes
 UNKNOWN/reconcile-only with no click retry. OCR names are non-authoritative;
-critical numbers must be exact and invariant-checked. Any
+critical numbers must be exact, locale-normalized by field (`17,3900` is a
+decimal price; `54,528.94` uses a grouping comma), and invariant-checked. Keep
+the validated success-popup order id and native action/result evidence while a
+grid refresh is pending. Immediate self-heal may retry only native
+orders/trades reads and exact reconciliation for the same durable claim; it
+must never repeat Return, confirmation or submit. Any
 prepare/submit/reconcile chain uncertainty permanently disables automatic
 replacement. Exact-order cancellation is available only after unique mapped
 order-id readback; it selects and confirms once, then reconciles that same id.

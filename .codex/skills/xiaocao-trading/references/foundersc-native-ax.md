@@ -92,8 +92,9 @@ provides:
   order-id/code/price/quantity tuple plus a unique two-character `入`/`出`
   suffix may provide the bounded side proof recorded in the receipt.
 
-The native route must not construct, authenticate, query or reconcile through
-OpenCLI. `supports_submit=true` is dynamic and requires helper version 8 or
+OpenCLI trading/view is sunset. The native route must not import, construct,
+authenticate, query or reconcile through OpenCLI. `supports_submit=true` is
+dynamic and requires helper version 8 or
 newer, one unlocked account-bound App, the three native row-query surfaces,
 the `资产/股票市值/余额/可用/可取` summary from that same positions capture,
 `余额+股票市值=资产`, `0<=可取<=可用<=余额`, exact prepare and submit
@@ -132,6 +133,13 @@ low-confidence field or cross-table mismatch remains fail-closed.
 Persist the baseline order ids and durable claim id so a lost submit response
 can recover across restart only from one exact new-row delta. Missing durable
 context stays UNKNOWN/no-retry.
+Normalize broker numeric cells by field and locale: a Vision decimal comma
+such as `17,3900` is 17.3900, while grouping commas such as `54,528.94` must
+remain grouping separators. Preserve a validated success-popup order id plus
+the native action/result evidence even when the order grid has not refreshed.
+Immediate self-heal may retry only native order/trade reads and exact
+reconciliation for that same durable submit claim. It must never repeat
+Return, confirmation or submit.
 Persist a separate cancel claim before the one external cancel action. If that
 process stops or the response is lost, the same order id becomes readback-only;
 never issue another cancel click from the existing claim. Apart from the two

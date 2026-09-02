@@ -55,7 +55,7 @@ def _parse_timestamp(value: object) -> datetime | None:
 
 
 def _decimal(value: object, *, field: str, blank_zero: bool = False) -> Decimal:
-    text = str(value or "").strip().replace(",", "")
+    text = _normalize_decimal_text(str(value or "").strip(), field=field)
     if blank_zero and not text:
         return Decimal("0")
     if not re.fullmatch(r"[+-]?\d+(?:\.\d+)?", text):
@@ -67,6 +67,51 @@ def _decimal(value: object, *, field: str, blank_zero: bool = False) -> Decimal:
     if not parsed.is_finite():
         raise FounderscNativeAXError(f"NATIVE_QUERY_{field}_MALFORMED")
     return parsed
+
+
+def _normalize_decimal_text(text: str, *, field: str) -> str:
+    """Normalize Founder/Vision locale separators without losing decimals.
+
+    Founder normally renders decimal points, but Vision can return the same
+    glyph as a comma (for example ``17,3900`` for an order price).  A blind
+    comma removal turns that price into ``173900`` and makes an exact broker
+    row invisible to recovery.  Thousands separators remain supported.
+    """
+    compact = text.replace(" ", "").replace("\u00a0", "")
+    if "," not in compact:
+        return compact
+    if "." in compact:
+        if compact.rfind(",") > compact.rfind("."):
+            integer, fraction = compact.rsplit(",", 1)
+            if not fraction.isdigit():
+                return compact
+            return integer.replace(".", "").replace(",", "") + "." + fraction
+        return compact.replace(",", "")
+
+    parts = compact.split(",")
+    if len(parts) == 2:
+        left, right = parts
+        left_digits = left.lstrip("+-")
+        if not left_digits.isdigit() or not right.isdigit() or not right:
+            return compact
+        decimal_field = any(
+            token in field.upper()
+            for token in ("PRICE", "RATE", "RATIO", "PCT", "COST")
+        )
+        if decimal_field or len(right) != 3 or left_digits == "0":
+            return f"{left}.{right}"
+        return left + right
+
+    if all(part.isdigit() and len(part) == 3 for part in parts[1:]):
+        return "".join(parts)
+    if (
+        parts[0].lstrip("+-").isdigit()
+        and all(part.isdigit() and len(part) == 3 for part in parts[1:-1])
+        and parts[-1].isdigit()
+        and len(parts[-1]) != 3
+    ):
+        return "".join(parts[:-1]) + "." + parts[-1]
+    return compact
 
 
 def _integer(value: object, *, field: str, blank_zero: bool = False) -> int:
@@ -412,7 +457,54 @@ class FounderscNativeAXBrokerAdapter(BrokerAdapter):
             "targeted_order_reread_used": bool(
                 orders.get("targeted_reread_used")
             ),
+            "observed_order_row_count": len(orders.get("rows") or []),
         }
+
+    @staticmethod
+    def _native_submit_evidence(payload: dict[str, Any]) -> dict[str, Any]:
+        action = payload.get("action")
+        action = dict(action) if isinstance(action, dict) else {}
+        result = payload.get("result_readback")
+        result = dict(result) if isinstance(result, dict) else {}
+        return {
+            "native_helper_status": str(payload.get("status") or ""),
+            "native_action": {
+                key: action.get(key)
+                for key in (
+                    "attempted",
+                    "succeeded",
+                    "requires_user_input",
+                    "confirm_pressed",
+                    "confirmation_mode",
+                )
+                if key in action
+            },
+            "native_result_readback": {
+                key: result.get(key)
+                for key in (
+                    "kind",
+                    "status",
+                    "broker_order_id",
+                    "message_matched",
+                    "acknowledgment_pressed",
+                    "acknowledgment_mode",
+                    "observed_at",
+                )
+                if key in result
+            },
+        }
+
+    @staticmethod
+    def _native_result_order_id(evidence: dict[str, Any]) -> str | None:
+        result = evidence.get("native_result_readback")
+        result = dict(result) if isinstance(result, dict) else {}
+        value = str(result.get("broker_order_id") or "").strip()
+        if (
+            result.get("message_matched") is True
+            and re.fullmatch(r"\d{1,32}", value)
+        ):
+            return value
+        return None
 
     @classmethod
     def _baseline_order_readback_locator(
@@ -432,6 +524,9 @@ class FounderscNativeAXBrokerAdapter(BrokerAdapter):
             "baseline_bounded_low_confidence_headers",
             "baseline_targeted_order_reread_used",
             "comparison",
+            "native_helper_status",
+            "native_action",
+            "native_result_readback",
         }
         return {key: locator[key] for key in keys if key in locator}
 
@@ -1348,6 +1443,8 @@ class FounderscNativeAXBrokerAdapter(BrokerAdapter):
                 echoed=self._echo(plan, shares),
             )
         readback, matched = self._native_order_readback(plan, payload, shares)
+        native_evidence = self._native_submit_evidence(payload)
+        result_order_id = self._native_result_order_id(native_evidence)
         clicked = bool(
             str(payload.get("status") or "") == "submit_confirmed"
             and matched
@@ -1358,17 +1455,26 @@ class FounderscNativeAXBrokerAdapter(BrokerAdapter):
         if not clicked:
             return BrokerReceipt(
                 status=BrokerStatus.UNKNOWN,
+                order_id=result_order_id,
                 requested_shares=shares,
                 remaining_shares=shares,
                 account_binding="proven",
-                locator_proof=dict(prepared["baseline_locator_proof"]),
+                locator_proof={
+                    **prepared["baseline_locator_proof"],
+                    **native_evidence,
+                },
                 template_name="foundersc-native-ax",
                 reason="NATIVE_INITIAL_SUBMIT_OUTCOME_UNPROVEN",
                 error_code="NATIVE_INITIAL_SUBMIT_OUTCOME_UNPROVEN",
                 conclusive=False,
                 retry_allowed=False,
                 echoed=self._echo(plan, shares),
-                field_readback={**readback, "submitted": None, "saved": None},
+                field_readback={
+                    **readback,
+                    **native_evidence,
+                    "submitted": None,
+                    "saved": None,
+                },
             )
         last: BrokerReceipt | None = None
         for delay in self.reconcile_delays:
@@ -1379,6 +1485,7 @@ class FounderscNativeAXBrokerAdapter(BrokerAdapter):
                     plan,
                     requested_shares=shares,
                     baseline_order_ids=set(prepared["baseline_order_ids"]),
+                    expected_order_id=result_order_id,
                 )
             except Exception:
                 continue
@@ -1392,10 +1499,12 @@ class FounderscNativeAXBrokerAdapter(BrokerAdapter):
                         "locator_proof": {
                             **prepared["baseline_locator_proof"],
                             **last.locator_proof,
+                            **native_evidence,
                         },
                         "field_readback": {
                             **last.field_readback,
                             **readback,
+                            **native_evidence,
                             "native_claim_binding_sha256": claim_hash,
                             "submitted": True,
                             "saved": True,
@@ -1405,7 +1514,7 @@ class FounderscNativeAXBrokerAdapter(BrokerAdapter):
                 )
         return BrokerReceipt(
             status=BrokerStatus.UNKNOWN,
-            order_id=last.order_id if last else None,
+            order_id=result_order_id or (last.order_id if last else None),
             receipt_mapping=last.receipt_mapping if last else False,
             requested_shares=shares,
             filled_shares=last.filled_shares if last else 0,
@@ -1415,6 +1524,7 @@ class FounderscNativeAXBrokerAdapter(BrokerAdapter):
             locator_proof={
                 **prepared["baseline_locator_proof"],
                 **(last.locator_proof if last else {}),
+                **native_evidence,
             },
             template_name="foundersc-native-ax",
             reason="NATIVE_SUBMIT_CLICKED_READBACK_UNPROVEN",
@@ -1425,6 +1535,7 @@ class FounderscNativeAXBrokerAdapter(BrokerAdapter):
             field_readback={
                 **(last.field_readback if last else {}),
                 **readback,
+                **native_evidence,
                 "submitted": True,
                 "saved": False,
                 "started": True,
@@ -1714,6 +1825,12 @@ class FounderscNativeAXBrokerAdapter(BrokerAdapter):
         """Recover an unknown submit only from its durable pre-submit delta."""
         shares = int(previous.get("requested_shares") or plan.shares)
         claim_id = str(previous.get("submit_claim_id") or "").strip()
+        raw_order_id = str(
+            previous.get("broker_order_id") or previous.get("order_id") or ""
+        ).strip()
+        expected_order_id = (
+            raw_order_id if re.fullmatch(r"\d{1,32}", raw_order_id) else None
+        )
         locator = previous.get("locator_proof")
         locator = dict(locator) if isinstance(locator, dict) else {}
         baseline_locator = self._durable_baseline_locator(locator)
@@ -1744,21 +1861,46 @@ class FounderscNativeAXBrokerAdapter(BrokerAdapter):
                 conclusive=False,
                 retry_allowed=False,
             )
-        try:
-            recovered = self._reconcile_rows(
-                plan,
-                requested_shares=shares,
-                baseline_order_ids=set(baseline_ids),
-            )
-        except Exception as exc:
+        recovered: BrokerReceipt | None = None
+        last_error: Exception | None = None
+        read_attempts = 0
+        for delay in self.reconcile_delays or (0.0,):
+            if delay:
+                time.sleep(delay)
+            read_attempts += 1
+            try:
+                candidate = self._reconcile_rows(
+                    plan,
+                    requested_shares=shares,
+                    baseline_order_ids=set(baseline_ids),
+                    expected_order_id=expected_order_id,
+                )
+            except Exception as exc:
+                last_error = exc
+                continue
+            recovered = candidate
+            if (
+                candidate.receipt_mapping is True
+                and candidate.order_id
+                and candidate.conclusive
+            ):
+                break
+        if recovered is None:
             return BrokerReceipt(
                 status=BrokerStatus.UNKNOWN,
                 requested_shares=shares,
                 remaining_shares=shares,
                 account_binding="proven",
-                locator_proof=baseline_locator,
+                locator_proof={
+                    **baseline_locator,
+                    "recovery_read_attempts": read_attempts,
+                    "recovery_expected_order_id": expected_order_id,
+                },
                 template_name="foundersc-native-ax",
-                reason=f"NATIVE_RECOVERY_READBACK_FAILED:{type(exc).__name__}",
+                reason=(
+                    "NATIVE_RECOVERY_READBACK_FAILED:"
+                    f"{type(last_error).__name__ if last_error else 'Unavailable'}"
+                ),
                 error_code="NATIVE_RECOVERY_READBACK_FAILED_NO_RETRY",
                 conclusive=False,
                 retry_allowed=False,
@@ -1769,6 +1911,9 @@ class FounderscNativeAXBrokerAdapter(BrokerAdapter):
                 "locator_proof": {
                     **baseline_locator,
                     **recovered.locator_proof,
+                    "recovery_read_attempts": read_attempts,
+                    "recovery_expected_order_id": expected_order_id,
+                    "recovery_actions": "native_readback_only",
                 },
             }
         )

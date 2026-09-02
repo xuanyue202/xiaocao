@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
-"""Run the isolated Founder/Book-B live morning seam.
+"""Run the isolated native-Founder/Book-B live morning seam.
 
-This command starts independently of ``auto_daily.sh``.  It switches only the
-Founder environment selector to live, waits only for the dated deterministic
-freeze, then advances immutable plans through the durable broker execution
-module.  It never waits for or writes a simulated fill.
+This command starts independently of ``auto_daily.sh`` and uses only the
+native Founder App.  It waits only for the dated deterministic freeze, then
+advances immutable plans through the durable broker execution module.  It
+never initializes OpenCLI or waits for/writes a simulated fill.
 """
 from __future__ import annotations
 
@@ -12,6 +12,7 @@ import argparse
 import json
 import sys
 import time
+from dataclasses import replace
 from datetime import date, datetime
 from pathlib import Path
 from zoneinfo import ZoneInfo
@@ -25,17 +26,11 @@ from xiaocao.live.book_b_live_morning import (  # noqa: E402
     reconcile_open_book_b_plans,
     reconcile_prior_day_canary_unknowns,
     run_book_b_live_morning,
+    write_book_b_live_morning_receipt,
 )
 from xiaocao.live.capital_keychain import KeychainCapitalRuntime  # noqa: E402
 from xiaocao.live.foundersc_keychain import FounderscKeychainPreflight  # noqa: E402
-from xiaocao.live.foundersc_opencli import (  # noqa: E402
-    release_foundersc_opencli_site_session,
-    resolve_connected_opencli_profile,
-)
-from xiaocao.live.trading_runner import (  # noqa: E402
-    build_foundersc_execution,
-    build_foundersc_native_execution,
-)
+from xiaocao.live.trading_runner import build_foundersc_native_execution  # noqa: E402
 from xiaocao.api.client import XiaocaoClient  # noqa: E402
 from xiaocao.config import load_settings  # noqa: E402
 from wait_for_morning_freeze import wait_for_morning_freeze  # noqa: E402
@@ -57,39 +52,6 @@ def _wait_for_submit_window(target: datetime, *, heartbeat=None) -> None:
         if heartbeat is not None:
             heartbeat()
         time.sleep(min(30.0, remaining))
-
-
-def _bounded_no_order_retry(action, *, attempts: int = 3):
-    """Retry only login/readback/environment actions that cannot place an order."""
-    last_error = None
-    for attempt in range(max(1, attempts)):
-        try:
-            return action()
-        except Exception as error:
-            last_error = error
-            if attempt + 1 < attempts:
-                time.sleep(1.0)
-    assert last_error is not None
-    raise last_error
-
-
-def _website_authentication_evidence(login_receipt: dict) -> dict:
-    """Keep only credential-free proof fields from the Founder login receipt."""
-    fields = (
-        "status",
-        "status_reason",
-        "template_name",
-        "template_version",
-        "authentication_path",
-        "initial_auth_state",
-        "keychain_login_read",
-        "login_form_binding_proven",
-        "login_submit_click_count",
-        "post_auth_readback_proven",
-        "session_reuse_proven",
-        "fresh_login_proven",
-    )
-    return {key: login_receipt.get(key) for key in fields}
 
 
 def _passguard_evidence() -> dict:
@@ -156,17 +118,11 @@ def main(argv: list[str] | None = None) -> int:
         help="Broker-sourced allocation facts; {date} is expanded",
     )
     parser.add_argument("--state-dir", default="output/live/book_b_live_execution")
-    parser.add_argument("--profile", default=None)
     parser.add_argument(
         "--route",
-        choices=(
-            "native-app",
-            "package-limit",
-            "manual-limit",
-            "opening-auction",
-            "timed-order",
-        ),
+        choices=("native-app",),
         default="native-app",
+        help="Native Founder App only; OpenCLI trading/view is sunset",
     )
     parser.add_argument("--freeze-wait-seconds", type=float, default=600.0)
     parser.add_argument("--poll-seconds", type=float, default=1.0)
@@ -186,47 +142,24 @@ def main(argv: list[str] | None = None) -> int:
         }, ensure_ascii=False, sort_keys=True))
         return 2
     keychain = FounderscKeychainPreflight()
-    if args.route == "native-app":
-        profile = None
-        keychain_receipt = keychain.run(read_trade_secret=True)
-        required_keychain_fields = (
-            "trade_item_present",
-            "trade_account_present",
-            "trade_secret_readable",
-            "trade_secret_nonempty",
-        )
-        keychain_error = "FOUNDER_NATIVE_TRADE_KEYCHAIN_NOT_READY"
-    else:
-        profile = resolve_connected_opencli_profile(args.profile)
-        release_foundersc_opencli_site_session(profile)
-        keychain_receipt = keychain.run(read_login_secret=True)
-        required_keychain_fields = (
-            "login_item_present",
-            "login_secret_readable",
-            "login_secret_nonempty",
-            "trade_item_present",
-            "trade_account_present",
-        )
-        keychain_error = "FOUNDER_LOGIN_KEYCHAIN_OR_TRADE_METADATA_NOT_READY"
+    keychain_receipt = keychain.run(read_trade_secret=True)
+    required_keychain_fields = (
+        "trade_item_present",
+        "trade_account_present",
+        "trade_secret_readable",
+        "trade_secret_nonempty",
+    )
+    keychain_error = "FOUNDER_NATIVE_TRADE_KEYCHAIN_NOT_READY"
     if not all(keychain_receipt.get(key) is True for key in required_keychain_fields):
         raise RuntimeError(keychain_error)
     trade_account_fingerprint = keychain.trade_account_fingerprint()
     if not trade_account_fingerprint:
         raise RuntimeError("FOUNDER_TRADE_ACCOUNT_FINGERPRINT_MISSING")
-    if args.route == "native-app":
-        execution, broker = build_foundersc_native_execution(
-            args.state_dir,
-            expected_fund_account_fingerprint=trade_account_fingerprint,
-            safety_env_provider=capital_runtime.safety_env,
-        )
-    else:
-        execution, broker = build_foundersc_execution(
-            args.state_dir,
-            profile=profile,
-            route=args.route,
-            expected_fund_account_fingerprint=trade_account_fingerprint,
-            safety_env_provider=capital_runtime.safety_env,
-        )
+    execution, broker = build_foundersc_native_execution(
+        args.state_dir,
+        expected_fund_account_fingerprint=trade_account_fingerprint,
+        safety_env_provider=capital_runtime.safety_env,
+    )
     prior_reconciliations: tuple[dict, ...] = ()
     open_plan_reconciliations: tuple[dict, ...] = ()
     api_settings = load_settings(None)
@@ -258,102 +191,62 @@ def main(argv: list[str] | None = None) -> int:
             "capital_basis_source": basis.source,
             "expected_fund_account_fingerprint": trade_account_fingerprint,
         }
-        if args.route == "native-app":
-            allocation_kwargs["capital_basis_receipt_sha256"] = (
-                basis.receipt_sha256
-            )
+        allocation_kwargs["capital_basis_receipt_sha256"] = basis.receipt_sha256
         return broker.read_live_allocation_facts(
             **allocation_kwargs,
         )
 
     def preflight() -> dict:
-        native_receipt = None
-        if args.route == "native-app":
-            login_receipt = broker.ensure_login()
-            native_receipt = broker.ensure_native_ready(
-                require_order_capability=True,
-                unlock_once=True,
-            )
-            environment_receipt = broker.ensure_environment(
-                target="live",
-                expected_current="any",
-                logical_account_id="primary",
-            )
-        else:
-            login_receipt = _bounded_no_order_retry(broker.ensure_login)
-            environment_receipt = _bounded_no_order_retry(
-                lambda: broker.ensure_environment(
-                    target="live",
-                    expected_current="any",
-                    logical_account_id="primary",
-                )
-            )
+        broker.ensure_login()
+        native_receipt = broker.ensure_native_ready(
+            require_order_capability=True,
+            unlock_once=True,
+        )
+        environment_receipt = broker.ensure_environment(
+            target="live",
+            expected_current="any",
+            logical_account_id="primary",
+        )
         return {
             **environment_receipt,
-            "website_authentication": (
-                {
-                    "status": "not_used",
-                    "route": "native-app",
-                    "reason": "Founder web/OpenCLI authentication is outside this route",
-                }
-                if args.route == "native-app"
-                else _website_authentication_evidence(login_receipt)
-            ),
-            "passguard": (
-                {
-                    **_passguard_evidence(),
-                    "status": "native_trade_ready",
-                    "trade_password_keychain_read": True,
-                    "unattended_recovery_proven": True,
-                    "single_attempt_unlock_available": True,
-                }
-                if native_receipt is not None
-                else _passguard_evidence()
-            ),
+            "website_authentication": {
+                "status": "not_used",
+                "route": "native-app",
+                "reason": "OpenCLI trading/view is sunset",
+            },
+            "passguard": {
+                **_passguard_evidence(),
+                "status": "native_trade_ready",
+                "trade_password_keychain_read": True,
+                "unattended_recovery_proven": True,
+                "single_attempt_unlock_available": True,
+            },
             "native_order_surface": native_receipt,
         }
 
-    if args.route == "native-app":
-        def restore_environment() -> dict:
-            return {
-                "status": "native_environment_restore_not_applicable",
-                "environment": "not_applicable",
-                "route": "native-app",
-            }
+    def restore_environment() -> dict:
+        return {
+            "status": "native_environment_restore_not_applicable",
+            "environment": "not_applicable",
+            "route": "native-app",
+        }
 
-        def live_heartbeat() -> dict:
-            return broker.ensure_environment(
-                target="live",
-                expected_current="live",
-                logical_account_id="primary",
-            )
-    else:
-        def restore_environment() -> dict:
-            return _bounded_no_order_retry(
-                lambda: broker.ensure_environment(
-                    target="mock",
-                    expected_current="any",
-                    logical_account_id="primary",
-                )
-            )
-
-        def live_heartbeat() -> dict:
-            return _bounded_no_order_retry(
-                lambda: broker.ensure_environment(
-                    target="live",
-                    expected_current="live",
-                    logical_account_id="primary",
-                )
-            )
-
-    receipt = run_book_b_live_morning(
-        BookBLiveMorningConfig(
-            trade_date=trade_date,
-            freeze_path=freeze_path,
-            allocation_facts_path=allocation_path,
-            state_dir=Path(args.state_dir),
+    def live_heartbeat() -> dict:
+        return broker.ensure_environment(
+            target="live",
+            expected_current="live",
             logical_account_id="primary",
-        ),
+        )
+
+    config = BookBLiveMorningConfig(
+        trade_date=trade_date,
+        freeze_path=freeze_path,
+        allocation_facts_path=allocation_path,
+        state_dir=Path(args.state_dir),
+        logical_account_id="primary",
+    )
+    receipt = run_book_b_live_morning(
+        config,
         preflight=preflight,
         restore_environment=restore_environment,
         read_allocation_facts=read_allocation_facts,
@@ -378,10 +271,14 @@ def main(argv: list[str] | None = None) -> int:
         wait_for_reconcile=lambda: time.sleep(1.0),
         execute=lambda plan: execution.execute(plan, broker),
     )
+    receipt = replace(
+        receipt,
+        capital_runtime=capital_receipt,
+        open_plan_reconciliations=open_plan_reconciliations,
+        prior_reconciliations=prior_reconciliations,
+    )
+    write_book_b_live_morning_receipt(config, receipt)
     payload = receipt.as_dict()
-    payload["capital_runtime"] = capital_receipt
-    payload["open_plan_reconciliations"] = list(open_plan_reconciliations)
-    payload["prior_reconciliations"] = list(prior_reconciliations)
     print(json.dumps(payload, ensure_ascii=False, sort_keys=True))
     return 0 if receipt.status in {"completed", "no_action", "skipped"} else 2
 

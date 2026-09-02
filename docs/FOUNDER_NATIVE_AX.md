@@ -3,9 +3,9 @@
 Status: **production-capable Book-B route, fail-closed**.
 
 The active `native-app` route uses only the locally installed macOS Founder
-Securities App. It does not compose with OpenCLI for login, environment,
-assets, positions, orders, trades, prepare, submit, reconcile or recovery.
-OpenCLI remains a separate legacy compatibility route.
+Securities App. OpenCLI trading/view is sunset: this live entrypoint does not
+import, initialize or call it for login, environment, assets, positions,
+orders, trades, prepare, submit, reconcile or recovery.
 
 ## Architecture and authority
 
@@ -115,6 +115,13 @@ model and systematic failure modes. The accepted logic is:
    post-click receipt, including raced terminal states and UNKNOWN. An
    unproven confirmation must not erase a reported click, and a lost result
    never authorizes a second click.
+10. Normalize broker numeric cells by field and locale. Vision may render a
+   decimal comma (`17,3900`) while account summaries may contain grouping
+   commas (`54,528.94`); neither may be handled by blind punctuation removal.
+11. Preserve a validated success-popup order id with the native action/result
+   evidence even while the grid is stale. Bounded self-heal may repeat only
+   native order/trade queries and exact reconciliation for the same durable
+   submit claim. It never repeats Return, confirmation or submit.
 
 This is a before/after delta proof, not a fuzzy full-row comparison. It both
 avoids false failures from harmless name OCR and prevents uncertain critical
@@ -267,3 +274,15 @@ The native App has no mock namespace. Exit therefore records
 `native_environment_restore_not_applicable`; it must never report a fabricated
 switch to mock. Durable intent and reconciliation state remain under
 `output/live/book_b_live_execution/`, isolated from all paper ledgers.
+
+## 2026-09-02 self-heal incident
+
+The App accepted Book-B order `6000356` and fully filled 800 shares of 603029,
+but the first local reconciliation reported no exact row. The root cause was
+not the AX submit action: Vision returned the order price as `17,3900`, and the
+Python adapter removed the comma, turning 17.3900 into 173900. The exact tuple
+therefore could not match. The adapter now uses field-aware locale
+normalization, retains the success-popup order id plus action/result evidence,
+and retries bounded read-only grid reconciliation for the same durable claim.
+This repair recovered order `6000356` and trade `1560943` at 17.06 without a
+second submit.
