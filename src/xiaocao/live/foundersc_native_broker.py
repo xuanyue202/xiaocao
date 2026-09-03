@@ -14,7 +14,7 @@ import re
 import time
 from datetime import datetime, timezone
 from decimal import Decimal, InvalidOperation
-from typing import Any
+from typing import Any, Callable
 from zoneinfo import ZoneInfo
 
 from .foundersc_native_ax import FounderscNativeAXClient, FounderscNativeAXError
@@ -41,6 +41,25 @@ _ORDER_FILLED_STATUSES = frozenset({"已成", "全成", "全部成交"})
 _ORDER_PARTIAL_STATUSES = frozenset({"部成", "部分成交", "部成待撤"})
 _ORDER_REJECTED_STATUSES = frozenset(
     {"废单", "已废", "拒单", "已拒绝", "委托失败", "无效委托"}
+)
+_READ_ONLY_SNAPSHOT_RETRYABLE_CODES = frozenset(
+    {
+        "LIVE_ACCOUNT_SNAPSHOT_SUMMARY_UNPROVEN",
+        "LIVE_ACCOUNT_SNAPSHOT_VALUES_INVALID",
+        "LIVE_ACCOUNT_SNAPSHOT_ASSET_EQUATION_FAILED",
+        "LIVE_ACCOUNT_SNAPSHOT_AVAILABLE_EXCEEDS_BALANCE",
+        "LIVE_ACCOUNT_SNAPSHOT_WITHDRAWABLE_EXCEEDS_AVAILABLE",
+        "LIVE_ACCOUNT_SNAPSHOT_POSITION_SUM_FAILED",
+        "LIVE_ALLOCATION_SUMMARY_UNPROVEN",
+        "LIVE_ALLOCATION_VALUES_INVALID",
+        "LIVE_ALLOCATION_ASSET_EQUATION_FAILED",
+        "LIVE_ALLOCATION_AVAILABLE_EXCEEDS_BALANCE",
+        "LIVE_ALLOCATION_WITHDRAWABLE_EXCEEDS_AVAILABLE",
+        "LIVE_ALLOCATION_POSITION_SUM_FAILED",
+        "LIVE_ALLOCATION_OBSERVED_AT_UNPROVEN",
+        "LIVE_ALLOCATION_RECEIPT_STALE",
+        "NATIVE_ORDER_TRADE_ZERO_FILL_CROSSCHECK_FAILED",
+    }
 )
 
 
@@ -170,6 +189,7 @@ class FounderscNativeAXBrokerAdapter(BrokerAdapter):
         native: FounderscNativeAXClient,
         expected_fund_account_fingerprint: str,
         reconcile_delays: tuple[float, ...] = (0.0, 0.25, 0.75, 1.5),
+        snapshot_read_delays: tuple[float, ...] = (0.0, 0.25, 0.75),
     ) -> None:
         expected = str(expected_fund_account_fingerprint or "").strip()
         if _ACCOUNT_FINGERPRINT_PATTERN.fullmatch(expected) is None:
@@ -177,8 +197,60 @@ class FounderscNativeAXBrokerAdapter(BrokerAdapter):
         self.native = native
         self.expected_fund_account_fingerprint = expected
         self.reconcile_delays = tuple(max(0.0, float(item)) for item in reconcile_delays)
+        self.snapshot_read_delays = tuple(
+            max(0.0, float(item)) for item in snapshot_read_delays
+        )
         self._prepared: dict[str, dict[str, Any]] = {}
         self._prepared_cancels: dict[str, dict[str, Any]] = {}
+
+    @staticmethod
+    def _read_error_code(exc: FounderscNativeAXError) -> str:
+        return str(exc).split(":", 1)[0]
+
+    @classmethod
+    def _retryable_read_error(cls, exc: FounderscNativeAXError) -> bool:
+        code = cls._read_error_code(exc)
+        return bool(
+            code in _READ_ONLY_SNAPSHOT_RETRYABLE_CODES
+            or (
+                code.startswith("LIVE_ACCOUNT_SNAPSHOT_")
+                and code.endswith(("_TIME_UNPROVEN", "_STALE"))
+            )
+            or (
+                code.startswith("NATIVE_QUERY_")
+                and code.endswith(("_UNPROVEN", "_MALFORMED"))
+            )
+        )
+
+    def _bounded_read_recovery(
+        self,
+        read_once: Callable[[], dict[str, Any]],
+    ) -> tuple[dict[str, Any], dict[str, Any]]:
+        """Retry only native reads after transient evidence/invariant failures."""
+        delays = self.snapshot_read_delays or (0.0,)
+        failure_codes: list[str] = []
+        for attempt, delay in enumerate(delays, 1):
+            if delay:
+                time.sleep(delay)
+            try:
+                payload = read_once()
+            except FounderscNativeAXError as exc:
+                if not self._retryable_read_error(exc):
+                    raise
+                failure_codes.append(self._read_error_code(exc))
+                if attempt == len(delays):
+                    raise FounderscNativeAXError(
+                        f"{failure_codes[-1]}:READ_ONLY_RECOVERY_EXHAUSTED:"
+                        f"attempts={attempt}"
+                    ) from exc
+                continue
+            return payload, {
+                "actions": "native_readback_only",
+                "attempts": attempt,
+                "failure_codes": failure_codes,
+                "recovered": bool(failure_codes),
+            }
+        raise AssertionError("unreachable read recovery state")
 
     def _account_bound(self, payload: dict[str, Any]) -> bool:
         return bool(
@@ -1955,6 +2027,45 @@ class FounderscNativeAXBrokerAdapter(BrokerAdapter):
         logical_account_id: str = "primary",
         now: datetime | None = None,
     ) -> dict[str, Any]:
+        capsule, recovery = self._bounded_read_recovery(
+            lambda: self._read_live_allocation_facts_once(
+                trade_date=trade_date,
+                settled_nav=settled_nav,
+                current_open_exposure=current_open_exposure,
+                capital_basis_source=capital_basis_source,
+                capital_basis_receipt_sha256=capital_basis_receipt_sha256,
+                expected_fund_account_fingerprint=(
+                    expected_fund_account_fingerprint
+                ),
+                logical_account_id=logical_account_id,
+                now=now,
+            )
+        )
+        capsule.pop("allocation_capsule_sha256", None)
+        capsule["read_recovery"] = recovery
+        capsule["allocation_capsule_sha256"] = hashlib.sha256(
+            json.dumps(
+                capsule,
+                ensure_ascii=False,
+                sort_keys=True,
+                separators=(",", ":"),
+                default=str,
+            ).encode("utf-8")
+        ).hexdigest()
+        return capsule
+
+    def _read_live_allocation_facts_once(
+        self,
+        *,
+        trade_date: str,
+        settled_nav: float,
+        current_open_exposure: float,
+        capital_basis_source: str,
+        capital_basis_receipt_sha256: str | None = None,
+        expected_fund_account_fingerprint: str,
+        logical_account_id: str = "primary",
+        now: datetime | None = None,
+    ) -> dict[str, Any]:
         nav = float(settled_nav)
         exposure = float(current_open_exposure)
         if not math.isfinite(nav) or nav <= 0:
@@ -2089,6 +2200,39 @@ class FounderscNativeAXBrokerAdapter(BrokerAdapter):
         return capsule
 
     def read_live_account_snapshot(
+        self,
+        *,
+        trade_date: str,
+        expected_fund_account_fingerprint: str,
+        logical_account_id: str = "primary",
+        now: datetime | None = None,
+        max_age_seconds: float = 300.0,
+    ) -> dict[str, Any]:
+        snapshot, recovery = self._bounded_read_recovery(
+            lambda: self._read_live_account_snapshot_once(
+                trade_date=trade_date,
+                expected_fund_account_fingerprint=(
+                    expected_fund_account_fingerprint
+                ),
+                logical_account_id=logical_account_id,
+                now=now,
+                max_age_seconds=max_age_seconds,
+            )
+        )
+        snapshot.pop("snapshot_sha256", None)
+        snapshot["read_recovery"] = recovery
+        snapshot["snapshot_sha256"] = hashlib.sha256(
+            json.dumps(
+                snapshot,
+                ensure_ascii=False,
+                sort_keys=True,
+                separators=(",", ":"),
+                default=str,
+            ).encode("utf-8")
+        ).hexdigest()
+        return snapshot
+
+    def _read_live_account_snapshot_once(
         self,
         *,
         trade_date: str,

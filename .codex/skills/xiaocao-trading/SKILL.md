@@ -76,6 +76,7 @@ Completion means the requested command reached a terminal state and the branch-s
 | Founder Securities Web/OpenCLI legacy route inspection only; never use it inside `native-app` | [`references/foundersc-opencli.md`](references/foundersc-opencli.md) |
 | Founder Securities macOS native App probe, unlock, prepare, submit, positions/orders/trades plus positions-embedded funds-summary readback or remote runtime preflight | [`references/foundersc-native-ax.md`](references/foundersc-native-ax.md) |
 | Book-B live execution seam, ownership evidence or allocation proof | [`references/automation-morning.md`](references/automation-morning.md), [`references/automation-intraday.md`](references/automation-intraday.md), [`references/foundersc-native-ax.md`](references/foundersc-native-ax.md) |
+| Book-B live non-normal result, self-repair, narrow resume or 5 Why | [`references/book-b-live-repair.md`](references/book-b-live-repair.md), then the owning live branch above |
 | “What should the trading system do?” or a behavior change | `docs/OPERATING_CONTRACT.md`, then the owning code/tests |
 | Posture, discretionary exit triage or distilled 小草 knowledge | `reference/experience/README.md`, then only the routed playbook/timeline artifact |
 

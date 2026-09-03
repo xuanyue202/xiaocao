@@ -31,6 +31,11 @@ requires fresh account-bound positions/orders/trades row tables plus the funds
 summary embedded in the same positions capture, projects
 only broker-proved Book-B owned fills, and writes the immutable settled NAV only
 when every live plan is terminal. Never add `--execute-sells` to the EOD call.
+Transient structural, freshness-evidence, asset-equation, or cross-table
+failure may trigger only the adapter's bounded whole-snapshot reread. Strict
+invariants remain unchanged, the receipt records every read-only recovery
+attempt, and exhaustion fails closed; never rerun the top-level EOD process or
+replay a broker action to manufacture settlement.
 
 A non-trading-day skip is a normal terminal state. Otherwise completion requires the dated run-flow to reach `eod done` and final artifacts to reconcile.
 

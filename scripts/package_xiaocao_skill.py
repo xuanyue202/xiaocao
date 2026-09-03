@@ -29,6 +29,7 @@ PACKAGE_DIR_NAME = "xiaocao-trading"
 
 SKILL_REFERENCE_FILES = [
     "automation-morning.md",
+    "book-b-live-repair.md",
     "automation-intraday.md",
     "automation-eod.md",
     "automation-weekly.md",

@@ -137,8 +137,13 @@ Normalize broker numeric cells by field and locale: a Vision decimal comma
 such as `17,3900` is 17.3900, while grouping commas such as `54,528.94` must
 remain grouping separators. Preserve a validated success-popup order id plus
 the native action/result evidence even when the order grid has not refreshed.
-Immediate self-heal may retry only native order/trade reads and exact
-reconciliation for that same durable submit claim. It must never repeat
+Immediate self-heal may retry only native reads and exact reconciliation for
+that same durable submit claim. Account/allocation/lifecycle reads use a
+bounded whole-snapshot retry after transient parsing, time-evidence, strict
+asset-equation, or cross-table failures. The retry never relaxes an invariant
+and records `actions=native_readback_only`, attempt count, failure codes, and
+whether recovery occurred. Account/date mismatch and every broker write remain
+non-retryable; exhausted read recovery fails closed. It must never repeat
 Return, confirmation or submit.
 Persist a separate cancel claim before the one external cancel action. If that
 process stops or the response is lost, the same order id becomes readback-only;

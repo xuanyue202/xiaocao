@@ -65,6 +65,17 @@ def test_live_morning_is_a_separate_0920_fail_closed_task() -> None:
     assert "exactly one new numeric order id" in live["prompt"]
     assert "native mock restoration as not applicable" in live["prompt"]
     assert "never repeat a final submit click" in live["prompt"]
+    for repair_marker in (
+        "started task owns repair",
+        "`repair_required`",
+        "tight red test",
+        "3–5 falsifiable hypotheses",
+        "exact narrow resume",
+        "5 Why",
+        "same failure fingerprint",
+        "do not defer to the next Automation",
+    ):
+        assert repair_marker in live["prompt"]
     assert "auto_daily.sh" not in live["prompt"]
     assert "book_b_live_morning.py" not in paper["prompt"]
     live_script = (ROOT / "scripts" / "book_b_live_morning.py").read_text(

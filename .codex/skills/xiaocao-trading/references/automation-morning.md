@@ -87,14 +87,23 @@ UNKNOWN/reconcile-only with no click retry. OCR names are non-authoritative;
 critical numbers must be exact, locale-normalized by field (`17,3900` is a
 decimal price; `54,528.94` uses a grouping comma), and invariant-checked. Keep
 the validated success-popup order id and native action/result evidence while a
-grid refresh is pending. Immediate self-heal may retry only native
-orders/trades reads and exact reconciliation for the same durable claim; it
-must never repeat Return, confirmation or submit. Any
+grid refresh is pending. Immediate self-heal may retry only native reads and
+exact reconciliation for the same durable claim. A transient structural,
+freshness-evidence, asset-equation, or cross-table failure triggers a bounded
+whole-snapshot reread with strict invariants unchanged; the receipt records
+read-only actions, attempts, failure codes, and exhaustion. It must never
+repeat Return, confirmation or submit. Any
 prepare/submit/reconcile chain uncertainty permanently disables automatic
 replacement. Exact-order cancellation is available only after unique mapped
 order-id readback; it selects and confirms once, then reconciles that same id.
 Automatic replacement remains disabled. A five-minute trade lock has one Keychain-backed recovery; a client
 restart/CAPTCHA remains a separate bounded slow path.
+
+After any non-normal live-morning result, follow
+[`book-b-live-repair.md`](book-b-live-repair.md). The started Automation owns
+recoverable diagnosis, test-first repair, exact narrow resume, terminal
+readback, and 5 Why; it must not leave a locally repairable failure for the
+next schedule.
 
 The execution stage must never rerun `live_recommend.py`. Keep its shell alive
 through the agent-review rendezvous and paper recording. Do not restart it while

@@ -289,7 +289,7 @@ def test_real_capital_allow_fails_closed_when_audit_unwritable(tmp_path):
 def test_contract_declares_book_b_live_lifecycle_and_settlement_authority():
     contract = (ROOT / "docs" / "OPERATING_CONTRACT.md").read_text(encoding="utf-8")
 
-    assert "**版本**：3.9" in contract
+    assert "**版本**：4.0" in contract
     assert "实盘全生命周期" in contract
     assert "broker_reconciled_book_b_nav" in contract
     assert "book_b_live_intraday.py" in contract

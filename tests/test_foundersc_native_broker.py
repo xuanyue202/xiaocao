@@ -323,6 +323,19 @@ class TransientOrderQueryNative(FakeNative):
         return super().read_query(kind=kind, **kwargs)
 
 
+class TransientAccountInvariantNative(FakeNative):
+    def __init__(self):
+        super().__init__()
+        self.transient_position_reads = 0
+
+    def read_query(self, *, kind: str, **kwargs) -> NativeAXReceipt:
+        receipt = super().read_query(kind=kind, **kwargs)
+        if kind == "positions" and self.transient_position_reads == 0:
+            self.transient_position_reads += 1
+            receipt.payload["query_readback"]["summary_values"]["余额"] = "0.01"
+        return receipt
+
+
 class LowConfidenceZeroFillNative(FakeNative):
     def __init__(self):
         super().__init__()
@@ -529,6 +542,7 @@ def _adapter(native: FakeNative | None = None) -> FounderscNativeAXBrokerAdapter
         native=native or FakeNative(),
         expected_fund_account_fingerprint="123******890",
         reconcile_delays=(0.0,),
+        snapshot_read_delays=(0.0,),
     )
 
 
@@ -1868,6 +1882,97 @@ def test_native_live_account_snapshot_reads_three_tables_and_position_funds(
     assert account.settled_nav == 30_000
     assert account.current_open_exposure == 0
     assert account.lots == ()
+
+
+def test_native_live_account_snapshot_recovers_transient_asset_drift_read_only(
+) -> None:
+    native = TransientAccountInvariantNative()
+    adapter = FounderscNativeAXBrokerAdapter(
+        native=native,
+        expected_fund_account_fingerprint="123******890",
+        reconcile_delays=(0.0,),
+        snapshot_read_delays=(0.0, 0.0),
+    )
+
+    snapshot = adapter.read_live_account_snapshot(
+        trade_date="2026-08-30",
+        expected_fund_account_fingerprint="123******890",
+        now=datetime.fromisoformat(OBSERVED_AT.replace("Z", "+00:00")),
+    )
+
+    assert snapshot["read_recovery"] == {
+        "actions": "native_readback_only",
+        "attempts": 2,
+        "failure_codes": ["LIVE_ACCOUNT_SNAPSHOT_ASSET_EQUATION_FAILED"],
+        "recovered": True,
+    }
+    assert native.query_calls == [
+        "positions", "today-orders", "today-trades",
+        "positions", "today-orders", "today-trades",
+    ]
+    assert native.prepare_calls == 0
+    assert native.submit_calls == 0
+    assert native.cancel_calls == 0
+
+
+def test_native_allocation_recovers_transient_asset_drift_read_only() -> None:
+    native = TransientAccountInvariantNative()
+    adapter = FounderscNativeAXBrokerAdapter(
+        native=native,
+        expected_fund_account_fingerprint="123******890",
+        reconcile_delays=(0.0,),
+        snapshot_read_delays=(0.0, 0.0),
+    )
+
+    facts = adapter.read_live_allocation_facts(
+        trade_date="2026-08-30",
+        settled_nav=30_000,
+        current_open_exposure=0,
+        capital_basis_source="initial_book_b_capital",
+        expected_fund_account_fingerprint="123******890",
+        now=datetime.fromisoformat(OBSERVED_AT.replace("Z", "+00:00")),
+    )
+
+    assert facts["read_recovery"] == {
+        "actions": "native_readback_only",
+        "attempts": 2,
+        "failure_codes": ["LIVE_ALLOCATION_ASSET_EQUATION_FAILED"],
+        "recovered": True,
+    }
+    assert native.query_calls == ["positions", "positions"]
+    assert native.prepare_calls == 0
+    assert native.submit_calls == 0
+    assert native.cancel_calls == 0
+
+
+def test_native_live_account_snapshot_reports_exhausted_read_recovery() -> None:
+    native = FakeNative()
+    native.position_summary["余额"] = "0.01"
+    adapter = FounderscNativeAXBrokerAdapter(
+        native=native,
+        expected_fund_account_fingerprint="123******890",
+        reconcile_delays=(0.0,),
+        snapshot_read_delays=(0.0, 0.0),
+    )
+
+    with pytest.raises(
+        FounderscNativeAXError,
+        match=(
+            "LIVE_ACCOUNT_SNAPSHOT_ASSET_EQUATION_FAILED:"
+            "READ_ONLY_RECOVERY_EXHAUSTED:attempts=2"
+        ),
+    ):
+        adapter.read_live_account_snapshot(
+            trade_date="2026-08-30",
+            expected_fund_account_fingerprint="123******890",
+            now=datetime.fromisoformat(OBSERVED_AT.replace("Z", "+00:00")),
+        )
+
+    assert native.query_calls == [
+        "positions", "today-orders", "today-trades",
+        "positions", "today-orders", "today-trades",
+    ]
+    assert native.submit_calls == 0
 
 
 def test_native_live_account_snapshot_rejects_position_funds_asset_drift() -> None:

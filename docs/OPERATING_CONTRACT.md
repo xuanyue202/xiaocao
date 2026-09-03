@@ -1,6 +1,6 @@
 # 小草运营契约（Operating Contract, SSOT）
 
-**版本**：3.9
+**版本**：4.0
 **状态**：现行
 **适用范围**：所有 paper / 未来 real 的实盘环（live_recommend → paper_record → live_monitor → eod）与回测
 **关联实现**：`src/xiaocao/live/{safety,capital_keychain,foundersc_native_ax,foundersc_native_broker,trading_execution,book_b_live_lifecycle,book_b_live_intraday}.py`、`src/xiaocao/live/intelligence_policy.py`、`src/xiaocao/strategy/{mode_switch,trend_rules,kol_reference}.py`、`native/foundersc_ax_executor/`、`kronos_screen/scripts/{capture_signals,forward_eval,paper_record,settle_book_a,settle_book_t,decompose_pnl,quality_governor}.py`、`scripts/{book_b_live_morning,book_b_live_intraday,live_monitor,research_mode_switch_replay}.py`
@@ -152,6 +152,10 @@
   投影 Book-B 自有 lot、策略子账户现金、当前敞口和退出费后 NAV。独立“资金明细”
   页面只可诊断，不是 lifecycle/EOD 必需门；资金恒等式为余额+股票市值=总资产，且
   0<=可取<=可用<=余额。
+  positions/orders/trades/account-summary/allocation 的纯读取若因结构、时效证明、上述
+  严格资金恒等式或跨表一致性瞬时失败，只允许有界地重读完整快照；任何恒等式、日期、
+  账户与订单匹配规则不得放宽。成功回执必须保留只读动作、尝试次数、历史失败码与是否
+  恢复；账户/日期不匹配和任何 broker 写动作均不可重试，耗尽后继续 fail-closed。
   券商混合账户现金/总资产永远只是交叉证据，不能进入 Book-B 子账户计算；券商同
   code 持仓必须覆盖 Book-B owned shares，否则全链 fail-closed。券商可卖数量是
   账号级事实：Book-B 当日 lot 始终按 0 可卖处理，即使同代码人工老仓使账号显示
@@ -347,3 +351,4 @@
 | 3.7 | 2026-08-30 | 方正 native 热路径完成真实提交/撤单验收：数量框仅一次 Return，确认窗与成功提示只按唯一原生按钮一次，禁止连续 Return/Y；`6000005` 精确新增后撤为 `已撤`，随后另一次授权撤单把旧 `6000002` 也精确回读为 `已撤`。helper v8 自动收口成功提示；durable submit claim 持久化完整 order-id baseline，UNKNOWN 跨进程仅凭唯一 exact delta 恢复；撤单动作前另落 durable cancel claim，未知后只回读不重放；自动补单继续禁用。 |
 | 3.8 | 2026-08-31 | 完成方正 native BUY/SELL 各一次真实提交与对应撤单回归：`6000010`（BUY `512010` 100@0.349）与 `6000012`（SELL `515120` 100@0.710）均零成交回读为 `已撤`。针对实盘暴露的 Vision 低置信误判只增加两类有界冗余证明：撤单方向二字后缀须由精确唯一数值 tuple 与复选框视觉变化共同锚定；当日委托的低置信状态/成交数量须为已知零成交状态并由独立成交表逐 order-id 交叉证明，baseline 与 post-readback mode 分相留证。未知写结果分别保留 helper 点击事实、exact click proof、确认状态与 selection proof，仍禁止重放。 |
 | 3.9 | 2026-09-01 | 补齐 Book-B 实盘成交之外的全生命周期：broker-proved ownership 投影为独立 owned lots 与滚动子账户 NAV；日间复用生产 exit policy 生成 lot-bound SELL intent；三张行表+positions 内嵌资金摘要、T+1/流动性/fresh quote、exact-once handoff 全部 fail-closed，独立资金明细页降为诊断；closing 扩权硬绑定 14:55–14:57，EOD settlement 硬绑定 15:00 后；15:10 reconcile 后写不可变 EOD settlement，并作为下一日 live allocation 基准。纸盘账本保持隔离，真实成交仍独占 native TradingExecution 端口。 |
+| 4.0 | 2026-09-03 | Book-B native account/allocation/lifecycle 纯读取增加有界完整快照自愈：只对瞬时结构、时效证明、严格资金恒等式或跨表失败重读并持久化尝试证据；不放宽任何 invariant，不重放 broker 写动作，账户/日期不匹配与耗尽状态继续 fail-closed。Automation 皮层负责 test-first 根因修复、durable-state 窄恢复和 5 Why，不改变确定性交易语义。 |
