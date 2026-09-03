@@ -4,7 +4,7 @@ Read this file only for Book-B/Book-T monitoring, the 14:25 precheck or the 14:5
 
 ## Execute and scope
 
-Start with:
+For opening, sparse and 14:25 precheck, start with:
 
 ```bash
 python3 scripts/show_journal.py --date today
@@ -24,6 +24,15 @@ checkpoint exactly once:
 ```bash
 PYTHONPATH=src .venv/bin/python scripts/book_b_live_intraday.py --date today --phase <opening|sparse|precheck|closing> --execute-sells
 ```
+
+The 14:55 closing pass is the deliberate ordering exception because its live
+authority exists for only two minutes. After reading this reference, its first
+executable business command must be the live `--phase closing` command above.
+Do not put journal inspection, git checks, paper monitoring, status, data-doctor
+or other diagnostics ahead of it. After that live process terminates, run the
+paper monitor exactly once and complete both branches' reconciliation. This
+priority changes orchestration only; it does not broaden the time gate, capital
+authority or exact-once rules.
 
 This second command reads no paper positions/account/trades. It first
 reconciles existing live intents, then consumes the native Founder
@@ -86,6 +95,16 @@ odd-lot balance; it must not be discarded from the lifecycle.
 The live command has a non-blocking checkpoint writer fence. If another live
 checkpoint still owns it, report `LIVE_BOOK_B_CHECKPOINT_ALREADY_RUNNING` and
 stop; do not queue a second native query/UI pass.
+
+After any non-normal live result, follow
+[`book-b-live-repair.md`](book-b-live-repair.md). The started task owns every
+locally recoverable code, configuration, parsing, orchestration or read-only
+evidence repair through a tight red test, root fix, scoped validation, safe
+exact narrow resume, terminal reconciliation and 5 Why. Do not defer it to the
+next Automation. A durable claim or possible broker effect remains
+reconcile-only. An expired closing window is never authority for a late SELL;
+repair and validate the future invocation path without replaying the missed
+business action.
 
 ## Verify
 

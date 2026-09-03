@@ -2,7 +2,7 @@ version = 1
 id = "xiaocao-intraday-monitor-1455"
 kind = "cron"
 name = "xiaocao intraday monitor closing discipline"
-prompt = "Use the local `xiaocao-trading` skill/project conventions. This is the 14:55 closing-discipline run. Start immediately when woken; do not wait for another time gate. Run the Xiaocao 14:55 closing execution workflow exactly once, report executed/blocked sells and unresolved risk, and stay quiet on a clean no-op."
+prompt = "Use the local `xiaocao-trading` skill/project conventions and read the intraday and Book-B live-repair references. This is the single 14:55 closing-discipline pass. Start immediately when woken and do not wait for another time gate. After reading those required instructions, the first executable business command must be `PYTHONPATH=src .venv/bin/python scripts/book_b_live_intraday.py --date today --phase closing --execute-sells`; do not put journal inspection, git checks, the paper monitor, status, data-doctor or other diagnostics ahead of it. Run that real-capital checkpoint exactly once. After it terminates, run `PYTHONPATH=src .venv/bin/python scripts/live_monitor.py --execute-sells` exactly once, then reconcile both branches while keeping paper and real-capital state separate. Only the code-bound 14:55:00-14:56:59 window may hand off monitor-authorized soft exits, and all account, owned-lot, T+1, liquidity, capital-key, durable-claim and UNKNOWN/no-retry invariants remain unchanged. After any non-normal live result, the started task owns repair; do not defer to the next Automation. Preserve the failure receipt, durable state and fingerprint, add a tight red test, rank 3-5 falsifiable hypotheses, patch the smallest owning boundary, run focused and live-safety regressions, commit and push only the repair allowlist, then take only the exact narrow resume permitted by durable state and time authority. A possible broker effect is reconcile-only and must never be replayed. An expired closing window never authorizes a late SELL or a second live run; repair and validate the future invocation path instead. Finish with terminal artifact reconciliation and a 5 Why containing the failure fingerprint and tested prevention. If the same failure fingerprint recurs, the prior prevention failed and a deeper boundary must be repaired before returning. Report actual sells, blocks, reconciliation gaps and unresolved risk; stay quiet only on a fully reconciled clean no-op."
 status = "ACTIVE"
 rrule = "RRULE:FREQ=WEEKLY;BYDAY=MO,TU,WE,TH,FR;BYHOUR=14;BYMINUTE=55"
 model = "gpt-5.6-sol"
@@ -11,4 +11,4 @@ execution_environment = "local"
 target = { type = "project", project_id = "c5acdaa7-f8a7-42d4-96fe-bf979a6b7415" }
 cwds = ["/Users/xuanyue202/Documents/project/xiaocao"]
 created_at = 1785639828046
-updated_at = 1787493122539
+updated_at = 1788442216193

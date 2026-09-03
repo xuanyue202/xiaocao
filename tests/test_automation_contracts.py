@@ -24,6 +24,29 @@ def test_1425_precheck_and_1455_execution_are_separate_wakeups() -> None:
     assert "do not wait" in closing["prompt"]
 
 
+def test_1455_live_closing_crosses_the_narrow_gate_before_paper_work() -> None:
+    closing = _automation("xiaocao-intraday-monitor-1455")
+    prompt = closing["prompt"]
+
+    live_command = (
+        "scripts/book_b_live_intraday.py --date today --phase closing --execute-sells"
+    )
+    paper_command = "scripts/live_monitor.py --execute-sells"
+    assert live_command in prompt
+    assert paper_command in prompt
+    assert prompt.index(live_command) < prompt.index(paper_command)
+    for repair_marker in (
+        "first executable business command",
+        "started task owns repair",
+        "do not defer to the next Automation",
+        "tight red test",
+        "exact narrow resume",
+        "5 Why",
+        "same failure fingerprint",
+    ):
+        assert repair_marker in prompt
+
+
 def test_morning_automations_separate_user_visible_prerecommend_from_execution() -> None:
     prerecommend = _automation("xiaocao-daily-morning")
     execution = _automation("xiaocao-daily-morning-execution")
