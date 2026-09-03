@@ -49,6 +49,8 @@ def test_live_morning_is_a_separate_0920_fail_closed_task() -> None:
     live = _automation("xiaocao-book-b-live-morning")
     paper = _automation("xiaocao-daily-morning-execution")
 
+    assert live["model"] == "gpt-5.6-sol"
+    assert live["reasoning_effort"] == "xhigh"
     assert live["id"] != paper["id"]
     assert live["rrule"].endswith(";BYHOUR=9;BYMINUTE=20")
     assert "scripts/book_b_live_morning.py" in live["prompt"]
