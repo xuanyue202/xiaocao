@@ -951,6 +951,55 @@ def test_xiaoetong_account_login_redirect_is_reported_explicitly(tmp_path):
     assert captured.value.diagnostic_stage == "playback_authorization"
 
 
+def test_wechat_mini_program_login_state_is_fail_closed(
+    tmp_path,
+):
+    page_url = (
+        "https://app6ums63as6516.h5.xiaoeknow.com/v4/course/alive/"
+        "l_6a75cf66e4b0694c5bf6d228"
+    )
+    payload = _history(
+        "[2026-08-09 16:42] 福利官小花四: 草神直播：" + page_url,
+    )
+
+    def browser_exchange(request: dict) -> dict:
+        if request["action"] == "resolve_xiaoetong_page":
+            return {
+                "action": request["action"],
+                "subscription_id": request["subscription_id"],
+                "page_url": page_url,
+                "page_state": "unknown",
+            }
+        return {
+            "action": request["action"],
+            "subscription_id": request["subscription_id"],
+            "playback_surface": XIAOCAO_PLAYBACK_ROUTE_WECHAT_MINI_PROGRAM,
+            "source_identity": (
+                "xiaoetong:app6ums63as6516:l_6a75cf66e4b0694c5bf6d228"
+            ),
+            "live_id": "l_6a75cf66e4b0694c5bf6d228",
+            "page_state": "account_login_required",
+            "activated": True,
+            "media_request_observed": True,
+            "password_used": False,
+        }
+
+    subscription = XiaocaoWechatLiveSubscription(
+        tmp_path / "wechat",
+        history_reader=lambda: payload,
+        browser_exchange=browser_exchange,
+        capture_driver=_CaptureDriver(),
+        contact=CONTACT,
+        playback_route=XIAOCAO_PLAYBACK_ROUTE_WECHAT_MINI_PROGRAM,
+    )
+
+    with pytest.raises(
+        EnrichmentDiagnosticError,
+        match="Xiaoetong account login is required",
+    ):
+        subscription.run_once(opencli_session="xiaocao-lv-subscription")
+
+
 def test_xiaoetong_mp_wrapper_login_state_stays_bound(tmp_path):
     page_url = (
         "https://appsnm3rlcp3566.h5.xiaoeknow.com/v4/course/"

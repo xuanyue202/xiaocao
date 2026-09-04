@@ -1210,10 +1210,7 @@ class XiaocaoWechatLiveSubscription:
             raise EnrichmentError(
                 "WeChat mini-program returned an unknown playback state"
             )
-        if (
-            page_state == "account_login_required"
-            and response.get("activated") is not True
-        ):
+        if page_state == "account_login_required":
             raise EnrichmentDiagnosticError(
                 "Xiaoetong account login is required",
                 category="authentication_error",
