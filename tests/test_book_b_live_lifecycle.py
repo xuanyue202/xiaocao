@@ -126,6 +126,7 @@ def _snapshot(
             "available_cash": cash_balance,
             "cash_balance": cash_balance,
             "withdrawable_cash": cash_balance,
+            "asset_equation_cash_field": "cash_balance",
         },
         "funds_summary": {
             "source": "positions_summary",
@@ -134,6 +135,7 @@ def _snapshot(
             "available_cash": cash_balance,
             "cash_balance": cash_balance,
             "withdrawable_cash": cash_balance,
+            "asset_equation_cash_field": "cash_balance",
         },
         "tables": tables,
     }
@@ -255,6 +257,54 @@ def test_project_empty_live_subaccount_keeps_initial_capital(tmp_path: Path) -> 
     assert account.settled_nav == 30_000
     assert account.current_open_exposure == 0
     assert account.lots == ()
+
+
+def test_project_accepts_hash_bound_same_day_sell_cash_equation(
+    tmp_path: Path,
+) -> None:
+    snapshot = _snapshot(
+        broker_fills=(("sell-order", "000001.XSHE", "SELL", 100, 10.0),)
+    )
+    snapshot.pop("snapshot_sha256")
+    for summary_key in ("broker_summary", "funds_summary"):
+        snapshot[summary_key].update(
+            {
+                "available_cash": 100_000.0,
+                "cash_balance": 90_000.0,
+                "withdrawable_cash": 90_000.0,
+                "asset_equation_cash_field": "available_cash",
+            }
+        )
+    snapshot["snapshot_sha256"] = _canonical_sha256(snapshot)
+
+    account = project_book_b_live_account(
+        tmp_path, snapshot, trade_date="2026-09-01", now=NOW
+    )
+
+    assert account.cash == 30_000
+    assert account.settled_nav == 30_000
+
+
+def test_project_rejects_available_cash_equation_without_same_day_sell(
+    tmp_path: Path,
+) -> None:
+    snapshot = _snapshot()
+    snapshot.pop("snapshot_sha256")
+    for summary_key in ("broker_summary", "funds_summary"):
+        snapshot[summary_key].update(
+            {
+                "available_cash": 100_000.0,
+                "cash_balance": 90_000.0,
+                "withdrawable_cash": 90_000.0,
+                "asset_equation_cash_field": "available_cash",
+            }
+        )
+    snapshot["snapshot_sha256"] = _canonical_sha256(snapshot)
+
+    with pytest.raises(ValueError, match="BROKER_FUNDS_EQUATION_FAILED"):
+        project_book_b_live_account(
+            tmp_path, snapshot, trade_date="2026-09-01", now=NOW
+        )
 
 
 def test_project_owned_buy_uses_broker_mark_but_not_mixed_account_cash(

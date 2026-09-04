@@ -97,9 +97,20 @@ authenticate, query or reconcile through OpenCLI. `supports_submit=true` is
 dynamic and requires helper version 8 or
 newer, one unlocked account-bound App, the three native row-query surfaces,
 the `资产/股票市值/余额/可用/可取` summary from that same positions capture,
-`余额+股票市值=资产`, `0<=可取<=可用<=余额`, exact prepare and submit
-capabilities, and local reconciliation capability. The separate `资金明细` tab
-is diagnostic only and must not gate submission.
+an exact settlement-aware asset equation, strict cash ordering, exact prepare
+and submit capabilities, and local reconciliation capability. The separate
+`资金明细` tab is diagnostic only and must not gate submission.
+
+The normal branch requires `余额+股票市值=资产` and
+`0<=可取<=可用<=余额`. For a three-table account snapshot, after the same
+snapshot's today-trades table proves a positive same-day SELL, proceeds may be
+tradable before settlement and withdrawal; only then may the alternate branch
+require `可用+股票市值=资产` and `0<=可取<=余额<=可用`. Live allocation
+facts remain on the normal cash-balance branch and cannot spend this exception.
+Persist
+`asset_equation_cash_field` as `cash_balance` or `available_cash`. If neither
+branch closes exactly, or its ordering fails, the snapshot remains invalid;
+never infer or calculate a missing broker summary field from position rows.
 
 Native quantities must be exact positive integers. BUY remains restricted to
 100-share board lots; SELL may use the exact broker-proved owned-lot remainder,
@@ -113,8 +124,12 @@ idempotent ownership row and must not query, cancel, or submit at the broker.
 
 OCR validation is structural, not a two-identical-frame vote. Each capture must
 prove the expected table headers, row geometry and exact critical numeric
-shapes. Stock names are non-authoritative. Before submit, persist the complete
-set of visible order ids and require zero pre-existing exact
+shapes. Vision's returned token-array order has zero authority for a funds
+summary: accept a complete embedded label/value token, or pair each label only
+with the nearest numeric token to its right on the same visual row. A missing,
+low-confidence or geometrically ambiguous value remains unproven. Stock names
+are non-authoritative. Before submit, persist the complete set of visible order
+ids and require zero pre-existing exact
 `code+side+price+quantity` matches. After the one click, accept only one new
 exact tuple with a new numeric order id; bind trades by
 `order_id+code+side`, enforce cumulative fill `<= requested`, and map broker

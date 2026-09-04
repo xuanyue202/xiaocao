@@ -176,6 +176,7 @@ def validate_broker_account_snapshot(
         "available_cash",
         "cash_balance",
         "withdrawable_cash",
+        "asset_equation_cash_field",
     }
     if (
         not isinstance(funds, dict)
@@ -200,19 +201,46 @@ def validate_broker_account_snapshot(
         funds.get("withdrawable_cash"),
         reason="LIVE_BOOK_B_BROKER_FUNDS_INVALID",
     )
-    if (
-        total_assets_decimal <= 0
-        or min(
-            securities_decimal,
-            available_decimal,
-            balance_decimal,
-            withdrawable_decimal,
+    asset_equation_cash_field = str(
+        funds.get("asset_equation_cash_field") or ""
+    )
+    common_invalid = total_assets_decimal <= 0 or min(
+        securities_decimal,
+        available_decimal,
+        balance_decimal,
+        withdrawable_decimal,
+    ) < 0
+    if asset_equation_cash_field == "cash_balance":
+        equation_invalid = (
+            balance_decimal + securities_decimal != total_assets_decimal
+            or available_decimal > balance_decimal
+            or withdrawable_decimal > available_decimal
         )
-        < 0
-        or balance_decimal + securities_decimal != total_assets_decimal
-        or available_decimal > balance_decimal
-        or withdrawable_decimal > available_decimal
-    ):
+    elif asset_equation_cash_field == "available_cash":
+        equation_invalid = (
+            available_decimal + securities_decimal != total_assets_decimal
+            or balance_decimal > available_decimal
+            or withdrawable_decimal > balance_decimal
+        )
+        if not equation_invalid:
+            equation_invalid = not any(
+                _broker_side(row.get("买卖标志")) == "SELL"
+                and _nonnegative_int(
+                    row.get("成交数量"),
+                    reason="LIVE_BOOK_B_BROKER_TRADE_FILL_UNPROVEN",
+                )
+                > 0
+                and _finite_decimal(
+                    row.get("成交价格"),
+                    reason="LIVE_BOOK_B_BROKER_TRADE_FILL_UNPROVEN",
+                )
+                > 0
+                and "撤" not in str(row.get("成交类型") or "")
+                for row in tables["today-trades"]["rows"]
+            )
+    else:
+        equation_invalid = True
+    if common_invalid or equation_invalid:
         raise ValueError("LIVE_BOOK_B_BROKER_FUNDS_EQUATION_FAILED")
     total_assets = float(total_assets_decimal)
     securities = float(securities_decimal)
@@ -226,12 +254,19 @@ def validate_broker_account_snapshot(
         "available_cash": available,
         "cash_balance": balance,
         "withdrawable_cash": withdrawable,
+        "asset_equation_cash_field": asset_equation_cash_field,
     }
     if not isinstance(broker_summary, dict) or set(broker_summary) != set(
         expected_summary
     ):
         raise ValueError("LIVE_BOOK_B_BROKER_SUMMARY_INCOMPLETE")
+    if broker_summary.get("asset_equation_cash_field") != (
+        asset_equation_cash_field
+    ):
+        raise ValueError("LIVE_BOOK_B_BROKER_SUMMARY_MISMATCH")
     for field, expected in expected_summary.items():
+        if field == "asset_equation_cash_field":
+            continue
         actual = _finite_decimal(
             broker_summary.get(field), reason="LIVE_BOOK_B_BROKER_SUMMARY_INVALID"
         )

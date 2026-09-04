@@ -1,6 +1,6 @@
 # 小草运营契约（Operating Contract, SSOT）
 
-**版本**：4.0
+**版本**：4.1
 **状态**：现行
 **适用范围**：所有 paper / 未来 real 的实盘环（live_recommend → paper_record → live_monitor → eod）与回测
 **关联实现**：`src/xiaocao/live/{safety,capital_keychain,foundersc_native_ax,foundersc_native_broker,trading_execution,book_b_live_lifecycle,book_b_live_intraday}.py`、`src/xiaocao/live/intelligence_policy.py`、`src/xiaocao/strategy/{mode_switch,trend_rules,kol_reference}.py`、`native/foundersc_ax_executor/`、`kronos_screen/scripts/{capture_signals,forward_eval,paper_record,settle_book_a,settle_book_t,decompose_pnl,quality_governor}.py`、`scripts/{book_b_live_morning,book_b_live_intraday,live_monitor,research_mode_switch_replay}.py`
@@ -150,8 +150,15 @@
   同一资金账号当日不超过 5 分钟的 positions / today-orders / today-trades 三张
   行表，以及同一次 positions capture 内嵌的资产/股票市值/可用/余额/可取资金摘要，
   投影 Book-B 自有 lot、策略子账户现金、当前敞口和退出费后 NAV。独立“资金明细”
-  页面只可诊断，不是 lifecycle/EOD 必需门；资金恒等式为余额+股票市值=总资产，且
-  0<=可取<=可用<=余额。
+  页面只可诊断，不是 lifecycle/EOD 必需门。常态资金恒等式严格为
+  余额+股票市值=总资产，且 0<=可取<=可用<=余额；仅对三表 account snapshot，
+  同一快照的 today-trades 表已证明正数量同日 SELL 后，卖出款可交易但尚不可取时，
+  才允许严格的可用+股票市值=总资产与 0<=可取<=余额<=可用分支。live allocation
+  facts 仍只认常态余额分支，不得用该例外扩大可买资金。回执必须持久化实际闭合等式的
+  `asset_equation_cash_field`。两者均不精确闭合或字段顺序不成立仍 fail-closed，
+  禁止用持仓行反算、近似或补造缺失资金字段。Vision 返回的 token 数组顺序没有
+  语义权威；资金摘要只能认完整 label/value token，或同一视觉行内标签右侧最近的
+  数值 token，缺失、低置信或几何歧义继续视为未证明。
   positions/orders/trades/account-summary/allocation 的纯读取若因结构、时效证明、上述
   严格资金恒等式或跨表一致性瞬时失败，只允许有界地重读完整快照；任何恒等式、日期、
   账户与订单匹配规则不得放宽。成功回执必须保留只读动作、尝试次数、历史失败码与是否
@@ -352,3 +359,4 @@
 | 3.8 | 2026-08-31 | 完成方正 native BUY/SELL 各一次真实提交与对应撤单回归：`6000010`（BUY `512010` 100@0.349）与 `6000012`（SELL `515120` 100@0.710）均零成交回读为 `已撤`。针对实盘暴露的 Vision 低置信误判只增加两类有界冗余证明：撤单方向二字后缀须由精确唯一数值 tuple 与复选框视觉变化共同锚定；当日委托的低置信状态/成交数量须为已知零成交状态并由独立成交表逐 order-id 交叉证明，baseline 与 post-readback mode 分相留证。未知写结果分别保留 helper 点击事实、exact click proof、确认状态与 selection proof，仍禁止重放。 |
 | 3.9 | 2026-09-01 | 补齐 Book-B 实盘成交之外的全生命周期：broker-proved ownership 投影为独立 owned lots 与滚动子账户 NAV；日间复用生产 exit policy 生成 lot-bound SELL intent；三张行表+positions 内嵌资金摘要、T+1/流动性/fresh quote、exact-once handoff 全部 fail-closed，独立资金明细页降为诊断；closing 扩权硬绑定 14:55–14:57，EOD settlement 硬绑定 15:00 后；15:10 reconcile 后写不可变 EOD settlement，并作为下一日 live allocation 基准。纸盘账本保持隔离，真实成交仍独占 native TradingExecution 端口。 |
 | 4.0 | 2026-09-03 | Book-B native account/allocation/lifecycle 纯读取增加有界完整快照自愈：只对瞬时结构、时效证明、严格资金恒等式或跨表失败重读并持久化尝试证据；不放宽任何 invariant，不重放 broker 写动作，账户/日期不匹配与耗尽状态继续 fail-closed。Automation 皮层负责 test-first 根因修复、durable-state 窄恢复和 5 Why，不改变确定性交易语义。 |
+| 4.1 | 2026-09-04 | 修正方正同日 SELL 后资金语义：常态继续要求余额闭合总资产；三表 account snapshot 仅在同一成交表证明正数量 SELL、可用资金与证券市值精确闭合且可取<=余额<=可用时接受未交收卖出款分支，并把实际现金字段写入 hash-bound 回执。live allocation 不消费该例外；两分支都不成立仍 fail-closed。 |

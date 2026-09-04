@@ -4,7 +4,7 @@ import Foundation
 import Vision
 
 private let schemaVersion = 2
-private let helperVersion = 9
+private let helperVersion = 10
 private let bundleIdentifier = "com.fzzq.Mac2020"
 private let maximumDepth = 12
 private let maximumNodes = 1_000
@@ -341,7 +341,7 @@ private func normalizeFounderWindowForAction(_ window: AXUIElement) -> Bool {
         && final.y + final.height <= display.maxY
 }
 
-private struct OCRToken {
+private struct OCRToken: Codable {
     let text: String
     let confidence: Float
     let bounds: Bounds
@@ -410,23 +410,68 @@ private func normalizedHeader(_ value: String) -> String {
         .trimmingCharacters(in: .whitespacesAndNewlines)
 }
 
-private func querySummaryValues(_ tokens: [OCRToken]) -> [String: String] {
-    let rendered = tokens.map(\.text).joined(separator: " ")
+private func summaryNumber(_ value: String) -> String? {
+    let normalized = value
+        .trimmingCharacters(in: CharacterSet(charactersIn: " \t\r\n:："))
         .replacingOccurrences(of: ",", with: "")
+    guard normalized.range(
+        of: #"^[+-]?\d+(?:\.\d+)?$"#,
+        options: .regularExpression
+    ) != nil else { return nil }
+    return normalized
+}
+
+private func querySummaryValues(_ tokens: [OCRToken]) -> [String: String] {
     let labels = ["余额", "可用", "可取", "股票市值", "资产", "盈亏"]
     var values: [String: String] = [:]
     for label in labels {
         let escaped = NSRegularExpression.escapedPattern(for: label)
-        guard let regex = try? NSRegularExpression(
+        guard let embeddedRegex = try? NSRegularExpression(
             pattern: "\(escaped)(?:资金)?\\s*[:：]?\\s*([+-]?\\d+(?:\\.\\d+)?)"
         ) else { continue }
-        let range = NSRange(rendered.startIndex..<rendered.endIndex, in: rendered)
-        guard let match = regex.firstMatch(in: rendered, range: range),
-              match.numberOfRanges == 2,
-              let valueRange = Range(match.range(at: 1), in: rendered) else {
-            continue
+        for token in tokens {
+            let rendered = token.text.replacingOccurrences(of: ",", with: "")
+            let range = NSRange(
+                rendered.startIndex..<rendered.endIndex,
+                in: rendered
+            )
+            guard let match = embeddedRegex.firstMatch(in: rendered, range: range),
+                  match.numberOfRanges == 2,
+                  let valueRange = Range(match.range(at: 1), in: rendered) else {
+                continue
+            }
+            values[label] = String(rendered[valueRange])
+            break
         }
-        values[label] = String(rendered[valueRange])
+        if values[label] != nil { continue }
+
+        let labelTokens = tokens.filter { token in
+            token.text.contains(label)
+                && labels.filter { token.text.contains($0) }.count == 1
+        }
+        var best: (gap: Double, value: String)?
+        for labelToken in labelTokens {
+            let labelCenterY = labelToken.bounds.y + labelToken.bounds.height / 2
+            let labelRight = labelToken.bounds.x + labelToken.bounds.width
+            for valueToken in tokens {
+                guard let number = summaryNumber(valueToken.text) else { continue }
+                let valueCenterY = valueToken.bounds.y + valueToken.bounds.height / 2
+                let verticalTolerance = max(
+                    4,
+                    max(labelToken.bounds.height, valueToken.bounds.height)
+                )
+                guard abs(labelCenterY - valueCenterY) <= verticalTolerance else {
+                    continue
+                }
+                let gap = valueToken.bounds.x - labelRight
+                let maximumGap = max(160, labelToken.bounds.width * 4)
+                guard gap >= -2, gap <= maximumGap else { continue }
+                if best == nil || gap < best!.gap {
+                    best = (gap, number)
+                }
+            }
+        }
+        if let best { values[label] = best.value }
     }
     return values
 }
@@ -3412,7 +3457,7 @@ guard let command = arguments.first else {
     var receipt = emptyReceipt(
         command: "invalid",
         status: "invalid_arguments",
-        reason: "expected version, probe, focus-unlock, fill-client-login-stdin, unlock-stdin, prepare-order, submit-prepared-order, probe-cancel-selection, cancel-order, read-query, open-order-surface, open-query-surface, or open-cancel-surface"
+        reason: "expected version, parse-query-summary-stdin, probe, focus-unlock, fill-client-login-stdin, unlock-stdin, prepare-order, submit-prepared-order, probe-cancel-selection, cancel-order, read-query, open-order-surface, open-query-surface, or open-cancel-surface"
     )
     receipt.accessibilityTrusted = false
     emit(receipt)
@@ -3424,6 +3469,16 @@ case "version":
     var receipt = emptyReceipt(command: "version", status: "ok", reason: "helper available")
     receipt.accessibilityTrusted = AXIsProcessTrusted()
     emit(receipt)
+case "parse-query-summary-stdin":
+    let data = FileHandle.standardInput.readDataToEndOfFile()
+    guard data.count <= 131_072,
+          let tokens = try? JSONDecoder().decode([OCRToken].self, from: data),
+          let encoded = try? JSONEncoder().encode(querySummaryValues(tokens)) else {
+        fputs("invalid summary token payload\n", stderr)
+        exit(2)
+    }
+    FileHandle.standardOutput.write(encoded)
+    FileHandle.standardOutput.write(Data("\n".utf8))
 case "probe":
     emit(observe(command: command, auditTables: arguments.contains("--table-audit")).receipt)
 case "focus-unlock":

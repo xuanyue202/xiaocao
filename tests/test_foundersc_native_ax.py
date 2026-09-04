@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import json
+import shutil
 import subprocess
+import sys
 from pathlib import Path
 
 import pytest
@@ -490,6 +492,82 @@ def test_swift_read_query_supports_historical_order_and_trade_surfaces() -> None
     assert 'return (pointForSubstring(label, in: candidates[0]), 1)' in source
     assert 'case "today-orders", "history-orders":' in source
     assert 'case "today-trades", "history-trades":' in source
+
+
+@pytest.mark.skipif(
+    sys.platform != "darwin" or shutil.which("swift") is None,
+    reason="Founder native Swift helper requires macOS Swift",
+)
+def test_swift_summary_parser_pairs_shuffled_vision_tokens() -> None:
+    root = Path(__file__).resolve().parents[1]
+    package = root / "native" / "foundersc_ax_executor"
+
+    def token(text: str, x: int, *, width: int = 45) -> dict:
+        return {
+            "text": text,
+            "confidence": 0.99,
+            "bounds": {"x": x, "y": 700, "width": width, "height": 18},
+        }
+
+    tokens = [
+        token("151492.20", 510),
+        token("股票市值", 430),
+        token("205683.21", 690),
+        token("资产", 640),
+        token("40875.80", 90),
+        token("余额", 40),
+        token("54191.01", 250),
+        token("可用", 200),
+        token("40875.80", 370),
+        token("可取", 320),
+    ]
+
+    result = subprocess.run(
+        [
+            "swift",
+            "run",
+            "--package-path",
+            str(package),
+            "foundersc-native-ax",
+            "parse-query-summary-stdin",
+        ],
+        input=json.dumps(tokens, ensure_ascii=False),
+        text=True,
+        capture_output=True,
+        check=True,
+        timeout=60,
+    )
+
+    assert json.loads(result.stdout) == {
+        "余额": "40875.80",
+        "可用": "54191.01",
+        "可取": "40875.80",
+        "股票市值": "151492.20",
+        "资产": "205683.21",
+    }
+
+    ambiguous = subprocess.run(
+        [
+            "swift",
+            "run",
+            "--package-path",
+            str(package),
+            "foundersc-native-ax",
+            "parse-query-summary-stdin",
+        ],
+        input=json.dumps(
+            [
+                token("余额 可用", 40, width=90),
+                token("54191.01", 140),
+            ],
+            ensure_ascii=False,
+        ),
+        text=True,
+        capture_output=True,
+        check=True,
+        timeout=60,
+    )
+    assert json.loads(ambiguous.stdout) == {}
 
 
 @pytest.mark.parametrize(

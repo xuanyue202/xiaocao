@@ -48,7 +48,10 @@ _READ_ONLY_SNAPSHOT_RETRYABLE_CODES = frozenset(
         "LIVE_ACCOUNT_SNAPSHOT_VALUES_INVALID",
         "LIVE_ACCOUNT_SNAPSHOT_ASSET_EQUATION_FAILED",
         "LIVE_ACCOUNT_SNAPSHOT_AVAILABLE_EXCEEDS_BALANCE",
+        "LIVE_ACCOUNT_SNAPSHOT_BALANCE_EXCEEDS_AVAILABLE",
         "LIVE_ACCOUNT_SNAPSHOT_WITHDRAWABLE_EXCEEDS_AVAILABLE",
+        "LIVE_ACCOUNT_SNAPSHOT_WITHDRAWABLE_EXCEEDS_BALANCE",
+        "LIVE_ACCOUNT_SNAPSHOT_AVAILABLE_CASH_SELL_UNPROVEN",
         "LIVE_ACCOUNT_SNAPSHOT_POSITION_SUM_FAILED",
         "LIVE_ALLOCATION_SUMMARY_UNPROVEN",
         "LIVE_ALLOCATION_VALUES_INVALID",
@@ -86,6 +89,47 @@ def _decimal(value: object, *, field: str, blank_zero: bool = False) -> Decimal:
     if not parsed.is_finite():
         raise FounderscNativeAXError(f"NATIVE_QUERY_{field}_MALFORMED")
     return parsed
+
+
+def _asset_equation_cash_field(
+    *,
+    total_assets: Decimal,
+    securities: Decimal,
+    balance: Decimal,
+    available: Decimal,
+    withdrawable: Decimal,
+    reason_prefix: str,
+) -> str:
+    """Bind total assets to the broker cash field that exactly closes it.
+
+    Founder normally closes assets with cash balance. After a same-day SELL,
+    the proceeds are tradable before they are withdrawable, so ``可用`` can
+    exceed ``余额`` and becomes the asset-bearing cash field until settlement.
+    Both branches remain exact and retain a strict withdrawable-cash ordering.
+    """
+    balance_closes = balance + securities == total_assets
+    available_closes = available + securities == total_assets
+    if balance_closes:
+        if available > balance:
+            raise FounderscNativeAXError(
+                f"{reason_prefix}_AVAILABLE_EXCEEDS_BALANCE"
+            )
+        if withdrawable > available:
+            raise FounderscNativeAXError(
+                f"{reason_prefix}_WITHDRAWABLE_EXCEEDS_AVAILABLE"
+            )
+        return "cash_balance"
+    if available_closes:
+        if balance > available:
+            raise FounderscNativeAXError(
+                f"{reason_prefix}_BALANCE_EXCEEDS_AVAILABLE"
+            )
+        if withdrawable > balance:
+            raise FounderscNativeAXError(
+                f"{reason_prefix}_WITHDRAWABLE_EXCEEDS_BALANCE"
+            )
+        return "available_cash"
+    raise FounderscNativeAXError(f"{reason_prefix}_ASSET_EQUATION_FAILED")
 
 
 def _normalize_decimal_text(text: str, *, field: str) -> str:
@@ -176,6 +220,16 @@ def _status(value: object) -> BrokerStatus:
 
 def _is_cancel_trade_row(row: dict[str, Any]) -> bool:
     return "撤" in str(row.get("成交类型") or "").strip()
+
+
+def _same_day_sell_fill_proven(rows: list[dict[str, Any]]) -> bool:
+    return any(
+        not _is_cancel_trade_row(row)
+        and _side(row.get("买卖标志")) == "SELL"
+        and _integer(row.get("成交数量"), field="TRADE_QUANTITY") > 0
+        and _decimal(row.get("成交价格"), field="TRADE_PRICE") > 0
+        for row in rows
+    )
 
 
 class FounderscNativeAXBrokerAdapter(BrokerAdapter):
@@ -2162,6 +2216,7 @@ class FounderscNativeAXBrokerAdapter(BrokerAdapter):
             raise FounderscNativeAXError(
                 "LIVE_ALLOCATION_WITHDRAWABLE_EXCEEDS_AVAILABLE"
             )
+        asset_equation_cash_field = "cash_balance"
         position_value = sum(
             _decimal(row.get("最新市值"), field="POSITION_VALUE")
             for row in positions["rows"]
@@ -2200,6 +2255,7 @@ class FounderscNativeAXBrokerAdapter(BrokerAdapter):
             "account_binding": "proven",
             "fund_account_binding_sha256": binding_hash,
             "observed_at": observed_at.isoformat(),
+            "asset_equation_cash_field": asset_equation_cash_field,
             "allocation_summary": {"complete": True, "values": values},
         }
         receipt_hash = hashlib.sha256(
@@ -2220,6 +2276,7 @@ class FounderscNativeAXBrokerAdapter(BrokerAdapter):
             "available_cash": float(available),
             "cash_balance": float(balance),
             "withdrawable_cash": float(withdrawable),
+            "asset_equation_cash_field": asset_equation_cash_field,
             "current_open_exposure": exposure,
             "capital_basis_source": capital_basis_source,
             "capital_basis_receipt_sha256": basis_receipt or None,
@@ -2367,17 +2424,22 @@ class FounderscNativeAXBrokerAdapter(BrokerAdapter):
             or withdrawable < 0
         ):
             raise FounderscNativeAXError("LIVE_ACCOUNT_SNAPSHOT_VALUES_INVALID")
-        if balance + securities != total_assets:
-            raise FounderscNativeAXError(
-                "LIVE_ACCOUNT_SNAPSHOT_ASSET_EQUATION_FAILED"
+        asset_equation_cash_field = _asset_equation_cash_field(
+            total_assets=total_assets,
+            securities=securities,
+            balance=balance,
+            available=available,
+            withdrawable=withdrawable,
+            reason_prefix="LIVE_ACCOUNT_SNAPSHOT",
+        )
+        if (
+            asset_equation_cash_field == "available_cash"
+            and not _same_day_sell_fill_proven(
+                tables["today-trades"]["rows"]
             )
-        if available > balance:
+        ):
             raise FounderscNativeAXError(
-                "LIVE_ACCOUNT_SNAPSHOT_AVAILABLE_EXCEEDS_BALANCE"
-            )
-        if withdrawable > available:
-            raise FounderscNativeAXError(
-                "LIVE_ACCOUNT_SNAPSHOT_WITHDRAWABLE_EXCEEDS_AVAILABLE"
+                "LIVE_ACCOUNT_SNAPSHOT_AVAILABLE_CASH_SELL_UNPROVEN"
             )
         position_value = sum(
             _decimal(row.get("最新市值"), field="POSITION_VALUE")
@@ -2407,6 +2469,7 @@ class FounderscNativeAXBrokerAdapter(BrokerAdapter):
                 "available_cash": float(available),
                 "cash_balance": float(balance),
                 "withdrawable_cash": float(withdrawable),
+                "asset_equation_cash_field": asset_equation_cash_field,
             },
             "funds_summary": {
                 "source": "positions_summary",
@@ -2415,6 +2478,7 @@ class FounderscNativeAXBrokerAdapter(BrokerAdapter):
                 "available_cash": float(available),
                 "cash_balance": float(balance),
                 "withdrawable_cash": float(withdrawable),
+                "asset_equation_cash_field": asset_equation_cash_field,
             },
             "tables": tables,
         }

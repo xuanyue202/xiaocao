@@ -333,6 +333,7 @@ class TransientAccountInvariantNative(FakeNative):
         if kind == "positions" and self.transient_position_reads == 0:
             self.transient_position_reads += 1
             receipt.payload["query_readback"]["summary_values"]["余额"] = "0.01"
+            receipt.payload["query_readback"]["summary_values"]["可用"] = "0.02"
         return receipt
 
 
@@ -1823,6 +1824,69 @@ def test_native_allocation_uses_cash_balance_and_hashes_all_five_fund_fields() -
     assert second["allocation_capsule_sha256"] != first["allocation_capsule_sha256"]
 
 
+def test_native_fund_equation_accepts_same_day_sell_cash_as_available() -> None:
+    native = FakeNative()
+    native.position_summary.update(
+        {
+            "资产": "97245.61",
+            "股票市值": "43054.60",
+            "余额": "40875.80",
+            "可用": "54191.01",
+            "可取": "40875.80",
+        }
+    )
+    native.trades.append(
+        {
+            "证券代码": "603029",
+            "证券名称": "天鹅股份",
+            "买卖标志": "卖出",
+            "成交价格": "16.66",
+            "成交数量": "800",
+            "成交类型": "成交",
+            "成交编号": "1567173",
+            "委托编号": "6007173",
+        }
+    )
+    adapter = _adapter(native)
+    now = datetime.fromisoformat(OBSERVED_AT.replace("Z", "+00:00"))
+
+    snapshot = adapter.read_live_account_snapshot(
+        trade_date="2026-08-30",
+        expected_fund_account_fingerprint="123******890",
+        now=now,
+    )
+
+    assert snapshot["funds_summary"]["asset_equation_cash_field"] == (
+        "available_cash"
+    )
+    assert native.prepare_calls == 0
+    assert native.submit_calls == 0
+    assert native.cancel_calls == 0
+
+
+def test_native_fund_equation_rejects_available_cash_without_sell_fill() -> None:
+    native = FakeNative()
+    native.position_summary.update(
+        {
+            "资产": "97245.61",
+            "股票市值": "43054.60",
+            "余额": "40875.80",
+            "可用": "54191.01",
+            "可取": "40875.80",
+        }
+    )
+
+    with pytest.raises(
+        FounderscNativeAXError,
+        match="AVAILABLE_CASH_SELL_UNPROVEN",
+    ):
+        _adapter(native).read_live_account_snapshot(
+            trade_date="2026-08-30",
+            expected_fund_account_fingerprint="123******890",
+            now=datetime.fromisoformat(OBSERVED_AT.replace("Z", "+00:00")),
+        )
+
+
 @pytest.mark.parametrize(
     ("field", "value", "reason"),
     [
@@ -1938,6 +2002,7 @@ def test_native_live_account_snapshot_reads_three_tables_and_position_funds(
         "available_cash": 0.0,
         "cash_balance": 0.0,
         "withdrawable_cash": 0.0,
+        "asset_equation_cash_field": "cash_balance",
     }
     assert native.query_calls[-3:] == [
         "positions", "today-orders", "today-trades"
@@ -2152,6 +2217,7 @@ def test_native_allocation_recovers_transient_asset_drift_read_only() -> None:
 def test_native_live_account_snapshot_reports_exhausted_read_recovery() -> None:
     native = FakeNative()
     native.position_summary["余额"] = "0.01"
+    native.position_summary["可用"] = "0.02"
     adapter = FounderscNativeAXBrokerAdapter(
         native=native,
         expected_fund_account_fingerprint="123******890",
@@ -2183,6 +2249,7 @@ def test_native_live_account_snapshot_rejects_position_funds_asset_drift() -> No
     native = FakeNative()
     adapter = _adapter(native)
     native.position_summary["余额"] = "0.01"
+    native.position_summary["可用"] = "0.02"
 
     with pytest.raises(FounderscNativeAXError, match="ASSET_EQUATION_FAILED"):
         adapter.read_live_account_snapshot(
