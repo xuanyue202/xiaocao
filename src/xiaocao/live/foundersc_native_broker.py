@@ -248,12 +248,19 @@ class FounderscNativeAXBrokerAdapter(BrokerAdapter):
                         f"attempts={attempt}"
                     ) from exc
                 if reset_query_surface is not None:
-                    if reset_query_surface():
+                    try:
+                        reset_succeeded = reset_query_surface()
+                    except FounderscNativeAXError as reset_exc:
+                        if str(reset_exc) != "NATIVE_AX_COMMAND_TIMEOUT":
+                            raise
+                        reset_succeeded = False
+                        reset_failure = "NATIVE_QUERY_RESET_SURFACE_TIMEOUT"
+                    else:
+                        reset_failure = "NATIVE_QUERY_RESET_SURFACE_UNPROVEN"
+                    if reset_succeeded:
                         surface_resets += 1
                     else:
-                        surface_reset_failure_codes.append(
-                            "NATIVE_QUERY_RESET_SURFACE_UNPROVEN"
-                        )
+                        surface_reset_failure_codes.append(reset_failure)
                 continue
             recovery = {
                 "actions": "native_readback_only",

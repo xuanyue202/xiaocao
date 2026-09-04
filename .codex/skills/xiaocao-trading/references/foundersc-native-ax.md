@@ -146,10 +146,11 @@ whether recovery occurred. A retry may reset a sticky query surface through
 ordinary order-surface navigation without populating any field; if the normal
 five-minute trade lock appears mid-read, that reset may use the fixed Keychain
 unlock once and records `surface_resets`. Structurally unproved read-only
-navigation records `surface_reset_failure_codes` and leaves only the original
-whole-snapshot read budget; it never authorizes another click. Account/date
-mismatch and every broker write remain non-retryable; exhausted read recovery
-fails closed. It must never repeat Return, confirmation or submit.
+navigation or its transport timeout records `surface_reset_failure_codes` and
+leaves only the original whole-snapshot read budget; it never authorizes
+another click. Account/date mismatch and every broker write remain
+non-retryable; exhausted read recovery fails closed. It must never repeat
+Return, confirmation or submit.
 Persist a separate cancel claim before the one external cancel action. If that
 process stops or the response is lost, the same order id becomes readback-only;
 never issue another cancel click from the existing claim. Apart from the two
