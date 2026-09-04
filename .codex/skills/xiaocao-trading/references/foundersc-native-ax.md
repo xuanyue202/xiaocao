@@ -142,9 +142,12 @@ that same durable submit claim. Account/allocation/lifecycle reads use a
 bounded whole-snapshot retry after transient parsing, time-evidence, strict
 asset-equation, or cross-table failures. The retry never relaxes an invariant
 and records `actions=native_readback_only`, attempt count, failure codes, and
-whether recovery occurred. Account/date mismatch and every broker write remain
-non-retryable; exhausted read recovery fails closed. It must never repeat
-Return, confirmation or submit.
+whether recovery occurred. A retry may reset a sticky query surface through
+ordinary order-surface navigation without populating any field; if the normal
+five-minute trade lock appears mid-read, that reset may use the fixed Keychain
+unlock once and records `surface_resets`. Account/date mismatch and every
+broker write remain non-retryable; exhausted read recovery fails closed. It
+must never repeat Return, confirmation or submit.
 Persist a separate cancel claim before the one external cancel action. If that
 process stops or the response is lost, the same order id becomes readback-only;
 never issue another cancel click from the existing claim. Apart from the two

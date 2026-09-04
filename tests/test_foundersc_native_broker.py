@@ -336,6 +336,51 @@ class TransientAccountInvariantNative(FakeNative):
         return receipt
 
 
+class StickyQuerySurfaceNative(FakeNative):
+    """Positions OCR stays unproven until read-only navigation resets the surface."""
+
+    def __init__(self):
+        super().__init__()
+        self.surface = "query_only"
+        self.query_surface_needs_reset = True
+
+    def open_order_surface(self, *, side: str, **kwargs) -> NativeAXReceipt:
+        receipt = super().open_order_surface(side=side, **kwargs)
+        self.query_surface_needs_reset = False
+        return receipt
+
+    def read_query(self, *, kind: str, **kwargs) -> NativeAXReceipt:
+        if kind == "positions" and self.query_surface_needs_reset:
+            self.query_calls.append(kind)
+            return self._receipt(
+                status="query_parse_unproven",
+                query_readback={
+                    "kind": kind,
+                    "capture_proven": True,
+                    "parsing_proven": False,
+                    "rows": [],
+                    "row_count": 0,
+                    "observed_at": OBSERVED_AT,
+                },
+            )
+        return super().read_query(kind=kind, **kwargs)
+
+
+class MidSnapshotTradeLockNative(StickyQuerySurfaceNative):
+    """The normal five-minute trade lock appears after snapshot reading starts."""
+
+    def read_query(self, *, kind: str, **kwargs) -> NativeAXReceipt:
+        receipt = super().read_query(kind=kind, **kwargs)
+        if kind == "positions" and self.query_surface_needs_reset:
+            self.surface = "authentication_required"
+        return receipt
+
+    def open_order_surface(self, *, side: str, **kwargs) -> NativeAXReceipt:
+        if self.surface == "authentication_required":
+            return self._receipt(status="order_surface_authentication_required")
+        return super().open_order_surface(side=side, **kwargs)
+
+
 class LowConfidenceZeroFillNative(FakeNative):
     def __init__(self):
         super().__init__()
@@ -1905,11 +1950,73 @@ def test_native_live_account_snapshot_recovers_transient_asset_drift_read_only(
         "attempts": 2,
         "failure_codes": ["LIVE_ACCOUNT_SNAPSHOT_ASSET_EQUATION_FAILED"],
         "recovered": True,
+        "surface_resets": 1,
     }
     assert native.query_calls == [
         "positions", "today-orders", "today-trades",
         "positions", "today-orders", "today-trades",
     ]
+    assert native.prepare_calls == 0
+    assert native.submit_calls == 0
+    assert native.cancel_calls == 0
+    assert native.open_order_calls == 1
+
+
+def test_native_live_account_snapshot_resets_sticky_query_surface_read_only(
+) -> None:
+    native = StickyQuerySurfaceNative()
+    adapter = FounderscNativeAXBrokerAdapter(
+        native=native,
+        expected_fund_account_fingerprint="123******890",
+        reconcile_delays=(0.0,),
+        snapshot_read_delays=(0.0, 0.0),
+    )
+
+    snapshot = adapter.read_live_account_snapshot(
+        trade_date="2026-08-30",
+        expected_fund_account_fingerprint="123******890",
+        now=datetime.fromisoformat(OBSERVED_AT.replace("Z", "+00:00")),
+    )
+
+    assert snapshot["read_recovery"] == {
+        "actions": "native_readback_only",
+        "attempts": 2,
+        "failure_codes": ["NATIVE_QUERY_POSITIONS_UNPROVEN"],
+        "recovered": True,
+        "surface_resets": 1,
+    }
+    assert native.open_order_calls == 1
+    assert native.query_calls == [
+        "positions",
+        "positions",
+        "positions",
+        "today-orders",
+        "today-trades",
+    ]
+    assert native.prepare_calls == 0
+    assert native.submit_calls == 0
+    assert native.cancel_calls == 0
+
+
+def test_native_live_account_snapshot_unlocks_once_when_trade_lock_appears_mid_read(
+) -> None:
+    native = MidSnapshotTradeLockNative()
+    adapter = FounderscNativeAXBrokerAdapter(
+        native=native,
+        expected_fund_account_fingerprint="123******890",
+        reconcile_delays=(0.0,),
+        snapshot_read_delays=(0.0, 0.0),
+    )
+
+    snapshot = adapter.read_live_account_snapshot(
+        trade_date="2026-08-30",
+        expected_fund_account_fingerprint="123******890",
+        now=datetime.fromisoformat(OBSERVED_AT.replace("Z", "+00:00")),
+    )
+
+    assert snapshot["read_recovery"]["surface_resets"] == 1
+    assert native.unlock_calls == 1
+    assert native.open_order_calls == 1
     assert native.prepare_calls == 0
     assert native.submit_calls == 0
     assert native.cancel_calls == 0
@@ -1938,8 +2045,10 @@ def test_native_allocation_recovers_transient_asset_drift_read_only() -> None:
         "attempts": 2,
         "failure_codes": ["LIVE_ALLOCATION_ASSET_EQUATION_FAILED"],
         "recovered": True,
+        "surface_resets": 1,
     }
     assert native.query_calls == ["positions", "positions"]
+    assert native.open_order_calls == 1
     assert native.prepare_calls == 0
     assert native.submit_calls == 0
     assert native.cancel_calls == 0

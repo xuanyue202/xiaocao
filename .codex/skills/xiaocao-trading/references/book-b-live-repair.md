@@ -55,7 +55,12 @@ as a bounded whole-snapshot read when parsing, freshness evidence, or a strict
 cross-field invariant is transiently unproven. Keep every invariant unchanged.
 Record attempts, failure codes, and `actions=native_readback_only`; exhaustion
 remains fail-closed. Account/date mismatch and every broker write are
-non-retryable.
+non-retryable. Between whole-snapshot attempts, the native route may leave the
+sticky full-query surface through ordinary order-surface navigation and enter
+it again without touching code, price, quantity or submit. If the normal
+five-minute trade lock appears during that read-only recovery, it may consume
+the fixed Keychain item once; an unproved unlock is terminal and never loops.
+Record the successful navigation count as `surface_resets`.
 
 ## Required 5 Why closeout
 
