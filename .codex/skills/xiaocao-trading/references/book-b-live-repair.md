@@ -60,7 +60,10 @@ sticky full-query surface through ordinary order-surface navigation and enter
 it again without touching code, price, quantity or submit. If the normal
 five-minute trade lock appears during that read-only recovery, it may consume
 the fixed Keychain item once; an unproved unlock is terminal and never loops.
-Record the successful navigation count as `surface_resets`.
+Record successful resets as `surface_resets`. A structurally unproved
+read-only navigation records `surface_reset_failure_codes` and preserves the
+remaining whole-snapshot read budget; it never permits another navigation
+click or weakens the final snapshot proof.
 
 ## Required 5 Why closeout
 

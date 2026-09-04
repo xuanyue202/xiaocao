@@ -226,12 +226,13 @@ class FounderscNativeAXBrokerAdapter(BrokerAdapter):
         self,
         read_once: Callable[[], dict[str, Any]],
         *,
-        reset_query_surface: Callable[[], None] | None = None,
+        reset_query_surface: Callable[[], bool] | None = None,
     ) -> tuple[dict[str, Any], dict[str, Any]]:
         """Retry only native reads after transient evidence/invariant failures."""
         delays = self.snapshot_read_delays or (0.0,)
         failure_codes: list[str] = []
         surface_resets = 0
+        surface_reset_failure_codes: list[str] = []
         for attempt, delay in enumerate(delays, 1):
             if delay:
                 time.sleep(delay)
@@ -247,8 +248,12 @@ class FounderscNativeAXBrokerAdapter(BrokerAdapter):
                         f"attempts={attempt}"
                     ) from exc
                 if reset_query_surface is not None:
-                    reset_query_surface()
-                    surface_resets += 1
+                    if reset_query_surface():
+                        surface_resets += 1
+                    else:
+                        surface_reset_failure_codes.append(
+                            "NATIVE_QUERY_RESET_SURFACE_UNPROVEN"
+                        )
                 continue
             recovery = {
                 "actions": "native_readback_only",
@@ -258,25 +263,28 @@ class FounderscNativeAXBrokerAdapter(BrokerAdapter):
             }
             if surface_resets:
                 recovery["surface_resets"] = surface_resets
+            if surface_reset_failure_codes:
+                recovery["surface_reset_failure_codes"] = (
+                    surface_reset_failure_codes
+                )
             return payload, recovery
         raise AssertionError("unreachable read recovery state")
 
-    def _reset_query_surface_for_read_retry(self) -> None:
+    def _reset_query_surface_for_read_retry(self) -> bool:
         """Break sticky OCR state and recover one mid-read five-minute lock."""
         ready = self.ensure_native_ready(unlock_once=True)
         if str(ready.get("surface_state") or "") == "trade_ready":
-            return
+            return True
         payload = self.native.open_order_surface(
             side="BUY",
             expected_fingerprint=self.expected_fund_account_fingerprint,
         ).as_dict()
-        if (
+        return bool(
             str(payload.get("status") or "")
-            not in {"order_surface_opened", "order_surface_ready"}
-            or str(payload.get("surface_state") or "") != "trade_ready"
-            or not self._account_bound(payload)
-        ):
-            raise FounderscNativeAXError("NATIVE_QUERY_RESET_SURFACE_UNPROVEN")
+            in {"order_surface_opened", "order_surface_ready"}
+            and str(payload.get("surface_state") or "") == "trade_ready"
+            and self._account_bound(payload)
+        )
 
     def _account_bound(self, payload: dict[str, Any]) -> bool:
         return bool(
