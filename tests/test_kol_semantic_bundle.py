@@ -22,6 +22,27 @@ def _sha(path: Path) -> str:
     return hashlib.sha256(path.read_bytes()).hexdigest()
 
 
+@pytest.mark.parametrize("field", ["reasoning", "direction", "confidence"])
+def test_canonical_rejects_missing_claim_fields_before_consumer(tmp_path, field):
+    from xiaocao.kol.decisions import DecisionPipeline
+    from xiaocao.kol._shared import DecisionError
+
+    request, draft, bundle, receipt, _ = _fixture(tmp_path)
+    build_validated_bundle(request, draft, bundle_path=bundle, receipt_path=receipt)
+    item = json.loads(bundle.read_text())["items"][0]
+    item["claims"][0].pop(field)
+    consumer = object.__new__(DecisionPipeline)  # Pure item validation; no account initialization.
+    with pytest.raises(DecisionError, match="claim has missing fields"):
+        consumer._validate_item(item)
+    draft["claims"][0].pop(field)
+    rejected_bundle = tmp_path / "rejected-bundle.json"
+    rejected_receipt = tmp_path / "rejected-receipt.json"
+    with pytest.raises(SemanticBundleError, match="claim has missing fields"):
+        build_validated_bundle(request, draft, bundle_path=rejected_bundle, receipt_path=rejected_receipt)
+    assert not rejected_bundle.exists()
+    assert not rejected_receipt.exists()
+
+
 def _fixture(tmp_path: Path) -> tuple[dict, dict, Path, Path, Path]:
     evidence = tmp_path / "evidence.md"
     evidence.write_text(

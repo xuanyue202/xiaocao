@@ -23,6 +23,16 @@ class DecisionError(ValueError):
     """The proposed judgment cannot be tied safely to its evidence."""
 
 
+def validate_claim_fields(claim: dict[str, Any]) -> None:
+    """Keep canonical sealing and the decision consumer on one claim contract."""
+    required = (
+        "claim_id", "quote", "reasoning", "asset_scope", "direction",
+        "horizon", "confidence", "falsifiers",
+    )
+    if any(not claim.get(field) for field in required):
+        raise DecisionError(f"claim has missing fields: {claim.get('claim_id', '<unknown>')}")
+
+
 def now_iso() -> str:
     return datetime.now(timezone.utc).astimezone().isoformat(timespec="seconds")
 

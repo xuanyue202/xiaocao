@@ -41,6 +41,21 @@ passes, repeat parent review for every newly acquired Xiaocao transcript.
    publication, notifications, Book, ack, shared ledgers, Git, and Automation
    writes from its authority.
 
+   Remind the analyst that `investment_thesis_inventory` and
+   `investment_thesis_coverage_audit` each need the exact request's
+   `evidence_sha256` and `contract_version=kol-investment-claims-v1` in the
+   saved draft. The canonical builder does not infer these audit bindings.
+   Pure validation must inspect the saved draft, not a temporary in-memory
+   object with missing fields silently filled in. For an uncertain security
+   name with a material recommendation or risk role, retain a traceable raw
+   name and mark the possible correction as uncertain; do not erase the name
+   into an anonymous rank or invent a verified name/code pair.
+   Each claim must also include source-grounded `reasoning`, `direction`, and
+   `confidence` alongside its identity, quote, scope, horizon and falsifiers.
+   The parent must run the actual decision consumer's pure item validation as
+   well as the publication candidate check before returning a sealed bundle;
+   neither check calls `process`, publishes, or initializes an account.
+
 The analyst owns judgment and final wording; the parent owns operational
 coordination. The stronger model does not replace the full coverage audit,
 exact quotation checks, current-fact limitations, or paper-only boundaries.

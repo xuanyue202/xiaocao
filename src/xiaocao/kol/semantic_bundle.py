@@ -18,7 +18,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Mapping
 
-from ._shared import DecisionError, LOCAL_THESIS_ID_PATTERN, canonical
+from ._shared import DecisionError, LOCAL_THESIS_ID_PATTERN, canonical, validate_claim_fields
 from .claim_coverage import (
     CONTRACT_VERSION,
     build_claim_extraction_request,
@@ -1245,6 +1245,15 @@ def _validate_segments(item: Mapping[str, Any], known: Mapping[str, Mapping[str,
                 stage="coverage",
                 field=f"claims[{index}]",
             )
+        try:
+            validate_claim_fields(dict(claim))
+        except DecisionError as exc:
+            raise _fail(
+                str(exc),
+                error_code="claim_semantics_incomplete",
+                stage="coverage",
+                field=f"claims[{index}]",
+            ) from exc
         quote = claim.get("quote")
         if not isinstance(quote, str) or not quote.strip() or quote not in text:
             claim_id = str(claim.get("claim_id") or "<unknown>")

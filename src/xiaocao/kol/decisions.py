@@ -20,6 +20,7 @@ from ._shared import (
     now_iso as _now_iso,
     parse_iso as _parse_iso,
     read_jsonl as _read_jsonl,
+    validate_claim_fields,
 )
 from .book import BookKolUs
 from .claim_coverage import validate_claim_coverage
@@ -220,12 +221,7 @@ class DecisionPipeline:
             raise DecisionError(f"missing source metadata: {', '.join(missing)}")
         document = TranscriptDocument.load(item["evidence_path"])
         for claim in item.get("claims") or []:
-            fields = (
-                "claim_id", "quote", "reasoning", "asset_scope", "direction",
-                "horizon", "confidence", "falsifiers",
-            )
-            if any(not claim.get(field) for field in fields):
-                raise DecisionError(f"claim has missing fields: {claim.get('claim_id', '<unknown>')}")
+            validate_claim_fields(claim)
             if not document.contains(claim["quote"]):
                 raise DecisionError(f"quote not found in evidence: {claim['claim_id']}")
         validate_claim_coverage(
