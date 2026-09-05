@@ -462,8 +462,17 @@ def test_kol_skill_defers_the_full_contract_on_hourly_no_update_runs() -> None:
     assert "Do not read `full-contract.md` unless the" in hourly_flat
     assert "daily_analysis_input_required" in entrypoint
     assert "daily_analysis_input_required" in hourly
-    assert "Read `full-contract.md` completely before analysis" in hourly_flat
-    assert "verify its current SHA-256 against the request" in hourly_flat
+    assert "semantic-model-routing.md" in entrypoint
+    assert "semantic-model-routing.md" in hourly
+    assert "Read `full-contract.md` completely before acceptance" in hourly_flat
+    assert "its current hash must match the request" in hourly_flat
+    route = SKILL_DIR.joinpath("references/semantic-model-routing.md").read_text(encoding="utf-8")
+    for marker in (
+        "gpt-6-astra", "reasoning_effort=xhigh", "fork_context=false",
+        "one Xiaocao pilot", "independently reads the full",
+        "parent_source_review.json", "parent_accepted", "empty queues do not spawn",
+    ):
+        assert marker in route
 
 
 def test_hourly_local_and_remote_machine_contracts_stay_separate() -> None:

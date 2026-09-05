@@ -214,11 +214,15 @@ def test_kol_remote_writer_automation_is_a_thin_fail_closed_bootstrap() -> None:
     ]
     assert automation["rrule"] == (
         "RRULE:FREQ=DAILY;"
-        "BYHOUR=7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23;"
+        "BYHOUR=8,10,12,14,17,18,22;"
         "BYMINUTE=30"
     )
     assert "DTSTART" not in automation["rrule"]
     assert "TZID" not in automation["rrule"]
+
+    assert automation["model"] == "gpt-5.6-luna"
+    assert automation["reasoning_effort"] == "max"
+    assert automation["notification_policy"] == "failed_runs_only"
 
     for marker in (
         "kol-intelligence",
@@ -238,6 +242,11 @@ def test_kol_remote_writer_automation_is_a_thin_fail_closed_bootstrap() -> None:
         "uncertain=0",
         "5 Why",
         "exact narrow resume",
+        "references/semantic-model-routing.md",
+        "model=gpt-6-astra",
+        "reasoning_effort=xhigh",
+        "fork_context=false",
+        "主模型不得重写 Astra 审定的语义内容",
         "`对象 | 状态 | 说明`",
         "`[视频]`",
         "`[文章]`",
@@ -255,4 +264,5 @@ def test_kol_remote_writer_automation_is_a_thin_fail_closed_bootstrap() -> None:
         "stability-acceptance",
     ):
         assert implementation_detail not in prompt
-    assert len(prompt) < 2_200
+    # Preserve the live proactive-repair contract; implementation stays in the skill.
+    assert len(prompt) < 3_800

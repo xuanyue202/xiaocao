@@ -54,9 +54,11 @@ from xiaocao.kol.mailbox import (
 )
 from xiaocao.kol.publication import PublicationLedger, read_published_publication
 from xiaocao.kol.semantic_bundle import (
+    SemanticBundleError,
     read_validated_bundle,
     validate_receipt_bindings,
 )
+from xiaocao.kol.semantic_delegation import verify_result as verify_delegated_result
 from xiaocao.kol.subscription_video import LV_SOURCE, SubscriptionVideoService
 from xiaocao.kol.wechat_official import (
     DEFAULT_PUBLISHERS as DEFAULT_WECHAT_OFFICIAL_PUBLISHERS,
@@ -782,7 +784,7 @@ def _require_canonical_semantic_artifact(
     bundle_path: Path,
     request: dict[str, Any],
 ) -> Path:
-    """Fail closed unless the hourly response has a bound v2 receipt."""
+    """Require a canonical receipt and an evidence-bound Astra delegation."""
 
     binding_request = request
     request_path_value = request.get("analysis_request_path") or request.get(
@@ -820,6 +822,37 @@ def _require_canonical_semantic_artifact(
             ),
         },
     )
+    # Roll out the user-approved Xiaocao pilot only; other authors retain their
+    # existing route. Keep legacy receipt readers read-only for reconciliation.
+    if (
+        binding_request.get("adapter") != "xiaocao_live"
+        and binding_request.get("author") != "小草"
+    ):
+        return bundle_path
+    try:
+        if not request_path_value:
+            raise ValueError("persisted analysis request path is required")
+        request_sha = hashlib.sha256(request_path.read_bytes()).hexdigest()
+        packet_path = (
+            request_path.parent / ".semantic_delegation" / request_sha
+            / "context_packet.json"
+        )
+        packet = json.loads(packet_path.read_text(encoding="utf-8"))
+        dispatch = json.loads(
+            packet_path.with_name("dispatch.json").read_text(encoding="utf-8")
+        )
+        acceptance = verify_delegated_result(
+            request_path,
+            packet_path=packet_path,
+            agent_id=dispatch["agent_id"],
+            semantic_draft=packet["expected_outputs"]["semantic_draft.json"],
+            bundle_path=bundle_path,
+            semantic_review=request_path.with_name("parent_source_review.json"),
+        )
+        if acceptance["semantic_acceptance"]["status"] != "parent_accepted":
+            raise ValueError("parent full-source quality review requires changes")
+    except (OSError, ValueError, TypeError, KeyError, SemanticBundleError) as exc:
+        raise DailyError(f"semantic delegation acceptance failed: {exc}") from exc
     return bundle_path
 
 

@@ -386,6 +386,8 @@ _VISIBLE_STATE_PATTERNS = {
     ),
 }
 _TRANSIENT_FAILURE_FIELDS = {
+    "diagnostic",
+    "cause_diagnostic",
     "error_type",
     "failure_stage",
     "reason",
@@ -414,6 +416,15 @@ def _sha256_handle(handle: BinaryIO) -> str:
 def _clear_transient_failures(row: dict[str, Any]) -> None:
     for field in _TRANSIENT_FAILURE_FIELDS:
         row.pop(field, None)
+
+
+def _opencli_diagnostic(error: EnrichmentDiagnosticError) -> dict[str, Any]:
+    return {
+        "category": error.diagnostic_category,
+        "code": error.diagnostic_code,
+        "stage": error.diagnostic_stage,
+        "exit_code": error.diagnostic_exit_code,
+    }
 
 
 def _normalize_ordered_transcript_segments(
@@ -1320,8 +1331,34 @@ class NetdiskEnrichmentService:
             or len(netdisk_paths) != 1
             or netdisk_paths[0] != expected_path
         ):
-            raise EnrichmentError("OpenCLI player does not match the prepared Netdisk path")
+            raise EnrichmentDiagnosticError(
+                "OpenCLI player does not match the prepared Netdisk path",
+                category="identity_mismatch",
+                code="target_url_mismatch",
+                stage="player_binding",
+            )
         return page_url
+
+    def _find_opencli_player_page(
+        self,
+        *,
+        session: str,
+        profile: str | None,
+        target_name: str,
+    ) -> str | None:
+        for row in self._opencli_tab_list(session=session, profile=profile):
+            page = row.get("page")
+            url = row.get("url")
+            if not isinstance(url, str):
+                continue
+            try:
+                self._validate_player_url(url, target_name=target_name)
+            except EnrichmentError:
+                continue
+            if not isinstance(page, str) or not page.strip():
+                raise EnrichmentError("OpenCLI did not return the exact player tab identity")
+            return page
+        return None
 
     def _open_opencli_player_receipt(
         self,
@@ -1330,55 +1367,103 @@ class NetdiskEnrichmentService:
         profile: str | None,
         target_name: str,
     ) -> dict[str, Any]:
-        player_url = self._player_url(target_name)
-        opened = self._opencli_json(
-            session,
-            "open",
-            player_url,
+        page = self._find_opencli_player_page(
+            session=session,
             profile=profile,
-            timeout_seconds=30,
-        )
-        observed = self._opencli_json(
-            session,
-            "eval",
-            "(() => ({current_url: location.href}))()",
-            profile=profile,
-            timeout_seconds=30,
-        )
-        actual_url = observed.get("current_url")
-        if not isinstance(actual_url, str):
-            raise EnrichmentError("OpenCLI did not return the current player URL")
-        validated_url = self._validate_player_url(
-            actual_url,
             target_name=target_name,
         )
-        page = opened.get("page")
-        if not isinstance(page, str) or not page.strip():
-            raise EnrichmentError("OpenCLI did not return the exact player tab identity")
-        pause_receipt = self._opencli_json(
-            session,
-            "eval",
-            _OPENCLI_PLAYER_PAUSE_GUARD.replace(
-                "__EXPECTED_NETDISK_PATH__",
-                json.dumps(self._netdisk_path(target_name)),
-            ),
-            profile=profile,
-            timeout_seconds=20,
-            attempts=1,
-        )
-        if (
-            pause_receipt.get("target_bound") is not True
-            or pause_receipt.get("pause_guard_installed") is not True
-            or not isinstance(pause_receipt.get("video_count"), int)
-            or pause_receipt["video_count"] < 1
-            or pause_receipt.get("all_video_paused") is not True
-        ):
-            raise EnrichmentError(
-                "Netdisk player video is not proven paused"
+        open_error: EnrichmentDiagnosticError | None = None
+        try:
+            if page is None:
+                try:
+                    opened = self._opencli_json(
+                        session,
+                        "open",
+                        self._player_url(target_name),
+                        profile=profile,
+                        timeout_seconds=30,
+                        attempts=1,
+                    )
+                    page = opened.get("page")
+                except EnrichmentDiagnosticError as exc:
+                    if not (
+                        exc.diagnostic_code == "opencli_timeout"
+                        and exc.diagnostic_stage == "browser_open"
+                    ):
+                        raise
+                    # Navigation may have completed despite a lost open receipt.
+                    # Reconcile once by full path; never repeat that navigation.
+                    open_error = exc
+                    page = self._find_opencli_player_page(
+                        session=session,
+                        profile=profile,
+                        target_name=target_name,
+                    )
+                    if page is None:
+                        raise
+            if not isinstance(page, str) or not page.strip():
+                raise EnrichmentError("OpenCLI did not return the exact player tab identity")
+            selected = self._opencli_json(
+                session,
+                "tab", "select", page, "--window", "foreground",
+                profile=profile,
+                timeout_seconds=10,
+                attempts=1,
             )
+            if selected.get("selected") != page:
+                raise EnrichmentDiagnosticError(
+                    "OpenCLI did not select the exact player tab",
+                    category="provider_contract_error",
+                    code="opencli_tab_activation_failed",
+                    stage="player_binding",
+                )
+            observed = self._opencli_json(
+                session,
+                "eval",
+                "(() => ({current_url: location.href}))()",
+                profile=profile,
+                timeout_seconds=10,
+                attempts=2,
+            )
+            actual_url = observed.get("current_url")
+            if not isinstance(actual_url, str):
+                raise EnrichmentError("OpenCLI did not return the current player URL")
+            validated_url = self._validate_player_url(
+                actual_url,
+                target_name=target_name,
+            )
+            pause_receipt = self._opencli_json(
+                session,
+                "eval",
+                _OPENCLI_PLAYER_PAUSE_GUARD.replace(
+                    "__EXPECTED_NETDISK_PATH__",
+                    json.dumps(self._netdisk_path(target_name)),
+                ),
+                profile=profile,
+                timeout_seconds=20,
+                attempts=1,
+            )
+            if (
+                pause_receipt.get("target_bound") is not True
+                or pause_receipt.get("pause_guard_installed") is not True
+                or not isinstance(pause_receipt.get("video_count"), int)
+                or pause_receipt["video_count"] < 1
+                or pause_receipt.get("all_video_paused") is not True
+            ):
+                raise EnrichmentDiagnosticError(
+                    "Netdisk player video is not proven paused",
+                    category="provider_contract_error",
+                    code="player_not_paused",
+                    stage="player_pause",
+                )
+        except EnrichmentError as exc:
+            if open_error is not None and exc is not open_error:
+                raise exc from open_error
+            raise
         return {
             "player_url": validated_url,
             "page": page,
+            "recovered_from": _opencli_diagnostic(open_error) if open_error else None,
             "pause_receipt": {
                 "video_count": pause_receipt["video_count"],
                 "playing_before_pause": int(
@@ -1408,6 +1493,7 @@ class NetdiskEnrichmentService:
         *,
         session: str,
         profile: str | None,
+        attempts: int = 1,
     ) -> list[dict[str, Any]]:
         result = self._run_opencli(
             session,
@@ -1415,14 +1501,19 @@ class NetdiskEnrichmentService:
             "list",
             profile=profile,
             timeout_seconds=30,
-            attempts=1,
+            attempts=attempts,
         )
         try:
             payload = json.loads(str(result.stdout))
         except (TypeError, json.JSONDecodeError) as exc:
             raise EnrichmentError("OpenCLI returned an invalid tab list") from exc
         if not isinstance(payload, list) or any(
-            not isinstance(row, dict) for row in payload
+            not isinstance(row, dict)
+            or not isinstance(row.get("page"), str)
+            or not row["page"].strip()
+            or not isinstance(row.get("url"), str)
+            or not row["url"].strip()
+            for row in payload
         ):
             raise EnrichmentError("OpenCLI returned an invalid tab list")
         return payload
@@ -1438,12 +1529,36 @@ class NetdiskEnrichmentService:
         if not page.strip():
             raise EnrichmentError("OpenCLI player tab identity is invalid")
         closed_pages: list[str] = []
-        pending_pages = [page]
-        final_rows: list[dict[str, Any]] = []
-        while pending_pages:
-            target_page = pending_pages.pop(0)
+        rows = self._opencli_tab_list(session=session, profile=profile, attempts=2)
+        # Reconcile before each close: a saved page ID can now be absent or
+        # point elsewhere. Never close an unrelated tab or repeat a close.
+        for _attempt in range(17):
+            exact_matches: list[str] = []
+            for row in rows:
+                row_url = row.get("url")
+                if not isinstance(row_url, str):
+                    continue
+                try:
+                    self._validate_player_url(row_url, target_name=target_name)
+                except EnrichmentError:
+                    continue
+                row_page = row.get("page")
+                if not isinstance(row_page, str) or not row_page.strip():
+                    raise EnrichmentError("OpenCLI did not return the exact player tab identity")
+                exact_matches.append(row_page)
+            if not exact_matches:
+                return {
+                    "capture_page": page,
+                    "closed_page": closed_pages[0] if closed_pages else None,
+                    "closed_pages": closed_pages,
+                    "exact_player_absent": True,
+                }
+            if _attempt == 16:
+                break
+            target_page = page if page in exact_matches else exact_matches[0]
             if target_page in closed_pages:
-                continue
+                raise EnrichmentError("Exact Netdisk player tab remains open")
+            close_error: EnrichmentError | None = None
             try:
                 result = self._opencli_json(
                     session,
@@ -1454,48 +1569,25 @@ class NetdiskEnrichmentService:
                     timeout_seconds=30,
                     attempts=1,
                 )
-            except EnrichmentError:
-                rows = self._opencli_tab_list(session=session, profile=profile)
-                if any(row.get("page") == target_page for row in rows):
-                    raise
+            except EnrichmentError as exc:
+                close_error = exc
             else:
                 if result.get("closed") != target_page:
-                    raise EnrichmentError(
+                    close_error = EnrichmentError(
                         "OpenCLI did not confirm the exact player tab close"
                     )
-            closed_pages.append(target_page)
-            rows = self._opencli_tab_list(session=session, profile=profile)
-            final_rows = rows
-            exact_matches: list[str] = []
-            for row in rows:
-                row_url = row.get("url")
-                row_page = row.get("page")
-                if not isinstance(row_url, str) or not isinstance(row_page, str):
-                    continue
-                try:
-                    self._validate_player_url(row_url, target_name=target_name)
-                except EnrichmentError:
-                    continue
-                exact_matches.append(row_page)
-            pending_pages.extend(
-                candidate
-                for candidate in exact_matches
-                if candidate not in closed_pages and candidate not in pending_pages
-            )
-        for row in final_rows:
-            row_url = row.get("url")
-            if not isinstance(row_url, str):
-                continue
             try:
-                self._validate_player_url(row_url, target_name=target_name)
-            except EnrichmentError:
-                continue
-            raise EnrichmentError("Exact Netdisk player tab remains open")
-        return {
-            "closed_page": page,
-            "closed_pages": closed_pages,
-            "exact_player_absent": True,
-        }
+                rows = self._opencli_tab_list(session=session, profile=profile, attempts=2)
+            except EnrichmentError as exc:
+                if close_error is not None:
+                    raise exc from close_error
+                raise
+            if any(row.get("page") == target_page for row in rows):
+                if close_error is not None:
+                    raise close_error
+                raise EnrichmentError("Exact Netdisk player tab remains open")
+            closed_pages.append(target_page)
+        raise EnrichmentError("Netdisk player close exceeded its bounded tab limit")
 
     def _select_opencli_tab(
         self,
@@ -3522,19 +3614,79 @@ class NetdiskEnrichmentService:
             current = self.store.latest(job_id)
             failure_recorded = False
 
-            def reject(reason: str, message: str) -> None:
+            def reject(
+                reason: str,
+                message: str,
+                *,
+                error: EnrichmentError | None = None,
+            ) -> None:
                 nonlocal failure_recorded
                 failure_recorded = True
-                self.store.append({
+                row = {
                     **current,
                     "event": "netdisk_dom_capture_failed",
                     "status": current.get("status"),
                     "failure_stage": "capture_opencli_dom",
                     "reason": reason,
-                    "error_type": "EnrichmentError",
+                    "error_type": type(error).__name__ if error else "EnrichmentError",
                     "updated_at": self._time().isoformat(timespec="seconds"),
-                })
+                }
+                row.pop("diagnostic", None)
+                row.pop("cause_diagnostic", None)
+                if isinstance(error, EnrichmentDiagnosticError):
+                    row["diagnostic"] = _opencli_diagnostic(error)
+                if isinstance(getattr(error, "__cause__", None), EnrichmentDiagnosticError):
+                    row["cause_diagnostic"] = _opencli_diagnostic(error.__cause__)
+                self.store.append(row)
+                if error is not None:
+                    raise error
                 raise EnrichmentError(message)
+
+            def finish_close() -> dict[str, Any]:
+                transcript_path = Path(str(current.get("transcript_path") or ""))
+                expected_path_sha = hashlib.sha256(
+                    self._netdisk_path(str(current["video_basename"])).encode("utf-8")
+                ).hexdigest()
+                if (
+                    current.get("player_session") != session
+                    or current.get("player_profile") != profile
+                    or current.get("player_path_sha256") != expected_path_sha
+                    or not transcript_path.is_file()
+                    or _sha256_file(transcript_path) != current.get("transcript_sha256")
+                    or not current.get("dom_capture_sha256")
+                    or any(
+                        not isinstance(current.get(field), dict)
+                        or current[field].get("all_video_paused") is not True
+                        or current[field].get("pause_guard_installed") is not True
+                        or not isinstance(current[field].get("video_count"), int)
+                        or current[field]["video_count"] < 1
+                        for field in ("player_pause_receipt", "player_capture_pause_receipt")
+                    )
+                ):
+                    reject(
+                        "completed_capture_mismatch",
+                        "pending transcript close lost its exact capture binding",
+                    )
+                try:
+                    close_receipt = self._close_opencli_player(
+                        session=session,
+                        profile=profile,
+                        target_name=str(current["video_basename"]),
+                        page=str(current.get("player_page") or ""),
+                    )
+                except EnrichmentError as exc:
+                    reject("player_close_unverified", str(exc), error=exc)
+                row = {
+                    **current,
+                    "event": "netdisk_transcript_dom_captured",
+                    "status": "transcript_captured",
+                    "player_close_receipt": close_receipt,
+                    "updated_at": self._time().isoformat(timespec="seconds"),
+                }
+                row.pop("transcript_close_pending", None)
+                _clear_transient_failures(row)
+                self.store.append(row)
+                return {**row, "idempotent_replay": False}
 
             if current.get("status") in {"transcript_captured", "verified", "decided"}:
                 transcript_path = Path(str(current.get("transcript_path") or ""))
@@ -3563,20 +3715,14 @@ class NetdiskEnrichmentService:
                     "wrong_browser_surface",
                     "OpenCLI DOM capture requires an OpenCLI browser proof",
                 )
+            if current.get("transcript_close_pending") is True:
+                return finish_close()
             try:
-                try:
-                    player_receipt = self._open_opencli_player_receipt(
-                        session=session,
-                        profile=profile,
-                        target_name=str(current["video_basename"]),
-                    )
-                except EnrichmentError as exc:
-                    if str(exc) == "Netdisk player video is not proven paused":
-                        reject("player_not_paused", str(exc))
-                    reject(
-                        "target_url_mismatch",
-                        "OpenCLI player does not match the prepared Netdisk path",
-                    )
+                player_receipt = self._open_opencli_player_receipt(
+                    session=session,
+                    profile=profile,
+                    target_name=str(current["video_basename"]),
+                )
                 capture_output = self._run_opencli(
                     session,
                     "eval",
@@ -3676,8 +3822,11 @@ class NetdiskEnrichmentService:
                 if isinstance(exc, EnrichmentError):
                     if not failure_recorded:
                         reject(
-                            "opencli_command_failed",
-                            "OpenCLI transcript capture command failed",
+                            exc.diagnostic_code
+                            if isinstance(exc, EnrichmentDiagnosticError)
+                            else "opencli_command_failed",
+                            str(exc),
+                            error=exc,
                         )
                     raise
                 reject(
@@ -3761,9 +3910,16 @@ class NetdiskEnrichmentService:
             video_stem = Path(str(current["video_basename"])).stem
             transcript_path = artifact_dir / f"{video_stem}.txt"
             transcript_bytes = (transcript_text.rstrip() + "\n").encode("utf-8")
-            transcript_temp = artifact_dir / f".{video_stem}.partial.txt"
-            transcript_temp.write_bytes(transcript_bytes)
-            transcript_temp.replace(transcript_path)
+            if transcript_path.exists():
+                if transcript_path.read_bytes() != transcript_bytes:
+                    reject(
+                        "existing_transcript_mismatch",
+                        "existing transcript cannot be replaced during capture recovery",
+                    )
+            else:
+                transcript_temp = artifact_dir / f".{video_stem}.partial.txt"
+                transcript_temp.write_bytes(transcript_bytes)
+                transcript_temp.replace(transcript_path)
             transcript_sha = hashlib.sha256(transcript_bytes).hexdigest()
             safe_url = urlunsplit((parsed.scheme, parsed.netloc, parsed.path, "", ""))
             render_proof = {
@@ -3801,22 +3957,10 @@ class NetdiskEnrichmentService:
             binding_bytes = json.dumps(
                 binding, ensure_ascii=False, sort_keys=True, separators=(",", ":")
             ).encode("utf-8")
-            try:
-                player_close_receipt = self._close_opencli_player(
-                    session=session,
-                    profile=profile,
-                    target_name=str(current["video_basename"]),
-                    page=str(player_receipt["page"]),
-                )
-            except EnrichmentError:
-                reject(
-                    "player_close_unverified",
-                    "Netdisk transcript was captured but the exact player tab close was not proven",
-                )
             row = {
                 **current,
-                "event": "netdisk_transcript_dom_captured",
-                "status": "transcript_captured",
+                "event": "netdisk_transcript_dom_capture_pending_close",
+                "transcript_close_pending": True,
                 "ai_note_completion_required": False,
                 "ai_note_submission_status": (
                     "claimed_non_gating"
@@ -3838,17 +3982,24 @@ class NetdiskEnrichmentService:
                     capture_result.get("ad_overlays_dismissed") or 0
                 ),
                 "player_pause_receipt": player_receipt["pause_receipt"],
+                "player_open_recovery": player_receipt["recovered_from"],
                 "player_capture_pause_receipt": {
                     "video_count": playback["video_count"],
                     "all_video_paused": True,
                     "pause_guard_installed": True,
                 },
-                "player_close_receipt": player_close_receipt,
+                "player_page": player_receipt["page"],
+                "player_session": session,
+                "player_profile": profile,
+                "player_path_sha256": hashlib.sha256(
+                    self._netdisk_path(str(current["video_basename"])).encode("utf-8")
+                ).hexdigest(),
                 "updated_at": observed_at.isoformat(timespec="seconds"),
             }
             _clear_transient_failures(row)
             self.store.append(row)
-            return {**row, "idempotent_replay": False}
+            current = row
+            return finish_close()
 
     def verify_transcript(
         self, job_id: str, *, audit_path: Path | str

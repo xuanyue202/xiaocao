@@ -49,10 +49,9 @@ or bypass a human gate.
   not read the full contract before starting the runner.
 - Before remote Baidu player work, read
   [video-player-safety.md](references/video-player-safety.md) completely.
-- If the hourly runner emits `daily_analysis_input_required`, keep that same
-  process alive, then read
-  [full-contract.md](references/full-contract.md) completely before reading
-  the immutable evidence and creating the requested bundle.
+- For hourly Xiaocao transcript semantic input (including
+  `daily_analysis_input_required`), keep stdin open and read
+  [semantic-model-routing.md](references/semantic-model-routing.md) completely.
 - For remote post-handoff, enrichment, subscription, batch, semantic analysis,
   publication, viewpoint, notification, or Book KOL-US work, read
   [full-contract.md](references/full-contract.md) completely before acting.

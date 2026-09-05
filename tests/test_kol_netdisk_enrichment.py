@@ -12,7 +12,10 @@ import pytest
 
 from xiaocao.kol.book import BookKolUs
 from xiaocao.kol.enrichment import EnrichmentError
-from xiaocao.kol.enrichment_types import validate_decision_completion
+from xiaocao.kol.enrichment_types import (
+    EnrichmentDiagnosticError,
+    validate_decision_completion,
+)
 from xiaocao.kol.netdisk_enrichment import (
     NetdiskEnrichmentService,
     _normalize_ordered_transcript_segments,
@@ -48,8 +51,10 @@ def _opencli_capture_runner(
         {"index": index, "paragraph_index": index, "text": text}
         for index, text in enumerate(transcript.split("\n\n"))
     ]
+    player_open = False
 
     def runner(command, **kwargs):
+        nonlocal player_open
         if command_log is not None:
             command_log.append(list(command))
         if command[0] == "ffprobe":
@@ -62,7 +67,11 @@ def _opencli_capture_runner(
             raise AssertionError(command)
         tail = command[len(prefix):]
         if tail[:1] == ["open"]:
+            player_open = True
             payload = {"url": command[len(prefix) + 1], "page": "page-1"}
+        elif tail[:2] == ["tab", "select"]:
+            assert tail == ["tab", "select", "page-1", "--window", "foreground"]
+            payload = {"selected": "page-1"}
         elif tail[:1] == ["eval"] and "const guardKey = '__xiaocaoNetdiskPauseGuardV1'" in tail[1]:
             payload = {
                 "target_bound": True,
@@ -122,9 +131,14 @@ def _opencli_capture_runner(
                 },
             }
         elif tail[:2] == ["tab", "close"] and tail[2:] == ["page-1"]:
+            player_open = False
             payload = {"closed": "page-1"}
         elif tail[:2] == ["tab", "list"]:
-            payload = []
+            payload = [{
+                "page": "page-1",
+                "url": "https://pan.baidu.com/pfile/video?path="
+                + quote(f"/课程/自己的课/小草/{video_name}"),
+            }] if player_open else []
         else:
             raise AssertionError(command)
         return SimpleNamespace(
@@ -897,6 +911,10 @@ def _opencli_transcript_runner(
         tail = command[5:]
         if tail[:1] == ["open"]:
             payload = {"url": command[6], "page": "page-1"}
+        elif tail[:2] == ["tab", "list"]:
+            payload = []
+        elif tail[:2] == ["tab", "select"]:
+            payload = {"selected": "page-1"}
         elif tail[:1] == ["eval"] and "const guardKey = '__xiaocaoNetdiskPauseGuardV1'" in tail[1]:
             payload = {
                 "target_bound": True,
@@ -1102,7 +1120,7 @@ def test_transcript_claim_replay_never_repeats_generation_interaction_after_brow
     service.claim_browser_action(job_id, action="transcript")
 
     base_runner = _opencli_transcript_runner(video.name)
-    open_failures = 3
+    open_failures = 1
     bind_calls = 0
     commands: list[list[str]] = []
 
@@ -1139,7 +1157,8 @@ def test_transcript_claim_replay_never_repeats_generation_interaction_after_brow
         index for index, command in enumerate(commands)
         if command[5:6] == ["bind"]
     )
-    assert commands[bind_index + 1][5:6] == ["open"]
+    assert commands[bind_index + 1][5:7] == ["tab", "list"]
+    assert commands[bind_index + 2][5:6] == ["open"]
     assert not any(command[5:6] == ["click"] for command in commands)
 
 
@@ -1183,6 +1202,10 @@ def _opencli_ai_note_runner(
         tail = command[5:]
         if tail[:1] == ["open"]:
             payload = {"url": command[6], "page": "page-1"}
+        elif tail[:2] == ["tab", "list"]:
+            payload = []
+        elif tail[:2] == ["tab", "select"]:
+            payload = {"selected": "page-1"}
         elif tail[:1] == ["eval"] and "const guardKey = '__xiaocaoNetdiskPauseGuardV1'" in tail[1]:
             payload = {
                 "target_bound": True,
@@ -2524,13 +2547,13 @@ def test_opencli_capture_rejects_same_basename_in_wrong_directory_before_dom_mut
 def test_opencli_dom_capture_retries_one_transient_command_timeout(tmp_path):
     service, job_id = _prepare_opencli_dom_capture(tmp_path)
     base_runner = service.runner
-    opencli_calls = 0
+    readback_calls = 0
 
     def flaky_runner(command, **kwargs):
-        nonlocal opencli_calls
-        if command[0] == "opencli":
-            opencli_calls += 1
-            if opencli_calls == 1:
+        nonlocal readback_calls
+        if "current_url: location.href" in command[-1]:
+            readback_calls += 1
+            if readback_calls == 1:
                 raise subprocess.TimeoutExpired(command, kwargs["timeout"])
         return base_runner(command, **kwargs)
 
@@ -2541,7 +2564,7 @@ def test_opencli_dom_capture_retries_one_transient_command_timeout(tmp_path):
     )
 
     assert captured["status"] == "transcript_captured"
-    assert opencli_calls == 7
+    assert readback_calls == 2
 
 
 def test_opencli_dom_capture_rejects_virtualized_or_partial_render(tmp_path):
@@ -2568,6 +2591,279 @@ def test_opencli_dom_capture_rejects_virtualized_or_partial_render(tmp_path):
     assert "reason" not in recovered
     assert "failure_stage" not in recovered
     assert "error_type" not in recovered
+
+
+def _install_player_recovery_runner(service, job_id, *, already_open=False, open_timeout=False):
+    base_runner = service.runner
+    name = service.status(job_id)["video_basename"]
+    exact_url = service._player_url(name)
+    other_url = "https://pan.baidu.com/pfile/video?path=" + quote(f"/其他/{name}")
+    state = {
+        "tabs": {"other-page": other_url},
+        "open_calls": 0,
+        "current_url": exact_url,
+        "close_behavior": "success",
+        "select_wrong": False,
+        "paused": True,
+        "materialize_open": True,
+    }
+    if already_open:
+        state["tabs"]["page-1"] = exact_url
+    commands = []
+
+    def runner(command, **kwargs):
+        commands.append(list(command))
+        assert command[:3] == ["opencli", "browser", "ticket02-test"]
+        tail = command[3:]
+        assert kwargs["timeout"] <= 30
+        assert not any(marker in tail[-1] for marker in (
+            "submit-ai-note", "probe-ai-note", "prepare-ai-note", "genNoteByTpl",
+        ))
+        if tail[:1] == ["open"]:
+            state["open_calls"] += 1
+            assert state["open_calls"] == 1
+            assert tail[1] == exact_url
+            if state["materialize_open"]:
+                state["tabs"]["page-1"] = exact_url
+            if open_timeout:
+                raise subprocess.TimeoutExpired(command, kwargs["timeout"])
+            payload = {"page": "page-1", "url": exact_url}
+        elif tail == ["tab", "list"]:
+            payload = [{"page": page, "url": url} for page, url in state["tabs"].items()]
+        elif tail[:2] == ["tab", "select"]:
+            assert tail == ["tab", "select", "page-1", "--window", "foreground"]
+            payload = {"selected": "other-page" if state["select_wrong"] else "page-1"}
+        elif tail[:2] == ["tab", "close"]:
+            page = tail[2]
+            assert page != "other-page"
+            # The complete immutable transcript and pause proofs precede close.
+            pending = service.status(job_id)
+            assert pending["transcript_close_pending"] is True
+            assert pending["player_pause_receipt"]["all_video_paused"] is True
+            assert hashlib.sha256(Path(pending["transcript_path"]).read_bytes()).hexdigest() == pending["transcript_sha256"]
+            behavior = state["close_behavior"]
+            if behavior not in {"timeout_before", "ack_but_remains"}:
+                state["tabs"].pop(page)
+            if behavior.startswith("timeout"):
+                raise subprocess.TimeoutExpired(command, kwargs["timeout"])
+            payload = {"closed": "wrong-page" if behavior == "wrong_ack_after" else page}
+        elif tail[:1] == ["eval"] and "current_url: location.href" in tail[1]:
+            payload = {"current_url": state["current_url"]}
+        elif tail[:1] == ["eval"] and "const guardKey = '__xiaocaoNetdiskPauseGuardV1'" in tail[1]:
+            payload = {
+                "target_bound": True, "video_count": 2,
+                "playing_before_pause": 1,
+                "all_video_paused": state["paused"], "pause_guard_installed": True,
+            }
+        else:
+            assert tail[0] == "eval" and "ad_overlays_dismissed" in tail[1]
+            return base_runner(command, **kwargs)
+        return SimpleNamespace(returncode=0, stdout=json.dumps(payload), stderr="")
+
+    service.runner = runner
+    return state, commands
+
+
+@pytest.mark.parametrize("already_open", [False, True])
+def test_capture_reuses_exact_tab_after_open_timeout_without_ai_replay(tmp_path, already_open):
+    service, job_id = _prepare_opencli_dom_capture(tmp_path)
+    original = service.status(job_id)
+    Path(original["video_path"]).unlink()  # Recovery must not read source video bytes.
+    state, commands = _install_player_recovery_runner(
+        service, job_id, already_open=already_open, open_timeout=True,
+    )
+    state["tabs"]["duplicate-page"] = service._player_url(original["video_basename"]) if already_open else state["tabs"]["other-page"]
+
+    captured = service.advance_opencli(job_id, session="ticket02-test")
+
+    assert captured["status"] == "transcript_captured"
+    assert state["open_calls"] == (0 if already_open else 1)
+    assert captured["ai_note_submission_status"] == "requested"
+    assert captured["claimed_at"] == original["claimed_at"]
+    assert captured["player_close_receipt"]["exact_player_absent"] is True
+    assert state["tabs"]["other-page"].startswith("https://pan.baidu.com/")
+    if already_open:
+        assert captured["player_close_receipt"]["closed_pages"] == ["page-1", "duplicate-page"]
+    else:
+        assert captured["player_open_recovery"] == {
+            "category": "timeout", "code": "opencli_timeout",
+            "stage": "browser_open", "exit_code": None,
+        }
+    select_index = next(i for i, cmd in enumerate(commands) if cmd[3:5] == ["tab", "select"])
+    guard_index = next(i for i, cmd in enumerate(commands) if "const guardKey" in cmd[-1])
+    capture_index = next(i for i, cmd in enumerate(commands) if "ad_overlays_dismissed" in cmd[-1])
+    assert select_index < guard_index < capture_index
+    prior_count = len(commands)
+    assert service.capture_opencli_transcript(job_id, session="ticket02-test")["idempotent_replay"] is True
+    assert len(commands) == prior_count
+    events = service.store.read()
+    assert sum(row["event"] == "netdisk_ai_note_claimed" for row in events) == 1
+    assert "?path=" not in service.store.events_path.read_text()
+
+
+@pytest.mark.parametrize("failure", ["wrong_url", "wrong_selection", "not_paused", "missing_tab"])
+def test_open_timeout_recovery_fails_closed_with_original_diagnostic(tmp_path, failure):
+    service, job_id = _prepare_opencli_dom_capture(tmp_path)
+    state, commands = _install_player_recovery_runner(service, job_id, open_timeout=True)
+    if failure == "wrong_url":
+        state["current_url"] = state["tabs"]["other-page"]
+    elif failure == "wrong_selection":
+        state["select_wrong"] = True
+    elif failure == "not_paused":
+        state["paused"] = False
+    else:
+        state["materialize_open"] = False
+    expected = {
+        "wrong_url": "target_url_mismatch", "wrong_selection": "opencli_tab_activation_failed",
+        "not_paused": "player_not_paused", "missing_tab": "opencli_timeout",
+    }[failure]
+
+    with pytest.raises(EnrichmentDiagnosticError) as caught:
+        service.capture_opencli_transcript(job_id, session="ticket02-test")
+
+    assert caught.value.diagnostic_code == expected
+    failed = service.status(job_id)
+    assert failed["status"] == "ai_note_requested"
+    assert failed["reason"] == expected
+    assert failed["diagnostic"]["code"] == expected
+    if failure != "missing_tab":
+        assert failed["cause_diagnostic"]["code"] == "opencli_timeout"
+        assert failed["cause_diagnostic"]["stage"] == "browser_open"
+    assert state["open_calls"] == 1
+    assert not any("ad_overlays_dismissed" in cmd[-1] or cmd[3:5] == ["tab", "close"] for cmd in commands)
+
+
+@pytest.mark.parametrize("close_behavior", ["timeout_after", "wrong_ack_after"])
+def test_capture_close_reconciles_lost_ack_without_second_close(tmp_path, close_behavior):
+    service, job_id = _prepare_opencli_dom_capture(tmp_path)
+    state, commands = _install_player_recovery_runner(service, job_id, already_open=True)
+    state["close_behavior"] = close_behavior
+
+    captured = service.capture_opencli_transcript(job_id, session="ticket02-test")
+
+    assert captured["player_close_receipt"]["exact_player_absent"] is True
+    assert [cmd[5] for cmd in commands if cmd[3:5] == ["tab", "close"]] == ["page-1"]
+
+
+@pytest.mark.parametrize("already_closed", [False, True])
+def test_close_failure_resumes_only_close_with_immutable_capture(tmp_path, already_closed):
+    service, job_id = _prepare_opencli_dom_capture(tmp_path)
+    state, commands = _install_player_recovery_runner(service, job_id, already_open=True)
+    state["close_behavior"] = "timeout_before"
+    with pytest.raises(EnrichmentDiagnosticError, match="timed out"):
+        service.capture_opencli_transcript(job_id, session="ticket02-test")
+    pending = service.status(job_id)
+    transcript = Path(pending["transcript_path"])
+    prior_stat = transcript.stat()
+    assert pending["status"] == "ai_note_requested"
+    assert pending["reason"] == "player_close_unverified"
+    assert pending["diagnostic"]["code"] == "opencli_timeout"
+    assert pending["transcript_close_pending"] is True
+    if already_closed:
+        state["tabs"].pop("page-1")
+    state["close_behavior"] = "success"
+    commands.clear()
+
+    captured = service.advance_opencli(job_id, session="ticket02-test")
+
+    assert captured["status"] == "transcript_captured"
+    assert captured["transcript_sha256"] == pending["transcript_sha256"]
+    assert captured["dom_capture_sha256"] == pending["dom_capture_sha256"]
+    assert transcript.stat().st_mtime_ns == prior_stat.st_mtime_ns
+    assert all(cmd[3:5] in (["tab", "list"], ["tab", "close"]) for cmd in commands)
+    assert "reason" not in captured and "diagnostic" not in captured
+    assert "transcript_close_pending" not in captured
+
+
+def test_close_resume_rejects_changed_transcript_before_browser_work(tmp_path):
+    service, job_id = _prepare_opencli_dom_capture(tmp_path)
+    state, commands = _install_player_recovery_runner(service, job_id, already_open=True)
+    state["close_behavior"] = "ack_but_remains"
+    with pytest.raises(EnrichmentError, match="remains open"):
+        service.capture_opencli_transcript(job_id, session="ticket02-test")
+    pending = service.status(job_id)
+    Path(pending["transcript_path"]).write_text("changed", encoding="utf-8")
+    commands.clear()
+
+    with pytest.raises(EnrichmentError, match="lost its exact capture binding"):
+        service.capture_opencli_transcript(job_id, session="ticket02-test")
+    assert commands == []
+    assert service.status(job_id)["status"] == "ai_note_requested"
+
+
+def test_close_resume_does_not_close_saved_page_that_now_has_another_path(tmp_path):
+    service, job_id = _prepare_opencli_dom_capture(tmp_path)
+    state, commands = _install_player_recovery_runner(service, job_id, already_open=True)
+    state["close_behavior"] = "timeout_before"
+    with pytest.raises(EnrichmentError):
+        service.capture_opencli_transcript(job_id, session="ticket02-test")
+    state["tabs"]["replacement-page"] = state["tabs"]["page-1"]
+    state["tabs"]["page-1"] = state["tabs"]["other-page"]
+    state["close_behavior"] = "success"
+    commands.clear()
+
+    captured = service.capture_opencli_transcript(job_id, session="ticket02-test")
+
+    assert [cmd[5] for cmd in commands if cmd[3:5] == ["tab", "close"]] == ["replacement-page"]
+    assert "page-1" in state["tabs"]
+    assert captured["player_close_receipt"]["capture_page"] == "page-1"
+    assert captured["player_close_receipt"]["closed_page"] == "replacement-page"
+    assert captured["player_close_receipt"]["exact_player_absent"] is True
+
+
+@pytest.mark.parametrize("kind", ["timeout", "command_failed", "invalid_json"])
+def test_capture_preserves_readback_error_instead_of_reporting_target_mismatch(tmp_path, kind):
+    service, job_id = _prepare_opencli_dom_capture(tmp_path)
+    base_runner = service.runner
+
+    def runner(command, **kwargs):
+        if "current_url: location.href" in command[-1]:
+            if kind == "timeout":
+                raise subprocess.TimeoutExpired(command, kwargs["timeout"])
+            return SimpleNamespace(
+                returncode=1 if kind == "command_failed" else 0,
+                stdout="invalid", stderr="credential_must_not_be_persisted",
+            )
+        return base_runner(command, **kwargs)
+
+    service.runner = runner
+    with pytest.raises(EnrichmentDiagnosticError) as caught:
+        service.capture_opencli_transcript(job_id, session="ticket02-test")
+    failed = service.status(job_id)
+    assert failed["reason"] == caught.value.diagnostic_code == f"opencli_{kind}"
+    assert failed["diagnostic"]["stage"] == "browser_eval"
+    assert "credential_must_not_be_persisted" not in service.store.events_path.read_text()
+
+
+@pytest.mark.parametrize("changed", [False, True])
+def test_legacy_close_failure_preserves_existing_transcript_bytes(tmp_path, changed):
+    service, job_id = _prepare_opencli_dom_capture(tmp_path)
+    legacy = service.status(job_id)
+    state, commands = _install_player_recovery_runner(service, job_id, already_open=True)
+    state["close_behavior"] = "timeout_before"
+    with pytest.raises(EnrichmentError):
+        service.capture_opencli_transcript(job_id, session="ticket02-test")
+    pending = service.status(job_id)
+    transcript = Path(pending["transcript_path"])
+    # Older code saved the text but omitted its proof from the failure row.
+    service.store.append({**legacy, "event": "netdisk_dom_capture_failed", "reason": "player_close_unverified"})
+    if changed:
+        transcript.write_text("preexisting different transcript", encoding="utf-8")
+    before = transcript.read_bytes()
+    before_mtime = transcript.stat().st_mtime_ns
+    state["close_behavior"] = "success"
+    commands.clear()
+
+    if changed:
+        with pytest.raises(EnrichmentError, match="cannot be replaced"):
+            service.capture_opencli_transcript(job_id, session="ticket02-test")
+        assert not any(cmd[3:5] == ["tab", "close"] for cmd in commands)
+    else:
+        captured = service.capture_opencli_transcript(job_id, session="ticket02-test")
+        assert captured["transcript_sha256"] == pending["transcript_sha256"]
+        assert captured["player_close_receipt"]["exact_player_absent"] is True
+    assert transcript.read_bytes() == before
+    assert transcript.stat().st_mtime_ns == before_mtime
 
 
 def test_ordered_transcript_segments_deduplicate_and_restore_source_order():
