@@ -106,6 +106,16 @@ The capture candidate API uses `view=capture`: fresh observed IDs/times only,
 without historical title enrichment or remote metadata requests. General display
 lists enrich asynchronously with an incremental cache; they cannot bind a source.
 
+The full continuation remains enabled in code: exact-source media observation ->
+original compressed download -> media validation -> detach only the capture PAC
+and stop the sniffer -> original Netdisk upload -> hash-bound mailbox handoff ->
+authoritative end-to-end readback. Do not insert a new permanent stop after native
+playback. Local capture commands preserve inherited PATH precedence and append
+installed Homebrew CLI directories for ffmpeg/ffprobe and transfer helpers.
+A user request to prepare but wait for confirmation is an execution gate: keep
+the Automation PAUSED and run offline checks only until explicit confirmation.
+`Handoff完成` is not remote `全部完成`; report each from its actual bound receipt.
+
 1. `resolve_xiaoetong_page`: open the supplied `source_url` only to obtain and
    validate the bound Xiaoetong app/resource anchor. Accept only a bound H5 live
    page (`/vN/course/alive/l_*`) or recorded-video page

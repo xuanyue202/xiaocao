@@ -7,6 +7,7 @@ import argparse
 import functools
 import hashlib
 import json
+import os
 import re
 import stat
 import subprocess
@@ -68,6 +69,7 @@ from xiaocao.kol.wechat_official import (
 )
 from xiaocao.kol.xiaocao_live import (
     XiaocaoLiveService,
+    capture_runtime_environment,
     validate_decision_bundle,
 )
 from xiaocao.kol.xiaocao_wechat import (
@@ -4463,6 +4465,9 @@ def main() -> int:
         default="site:baidu-netdisk",
     )
     args = parser.parse_args()
+    if args.command in {"capture-local", "capture-xiaocao-item", "capture-xiaocao-handoff"}:
+        # Applies only to this explicitly invoked local pipeline and its children.
+        os.environ["PATH"] = capture_runtime_environment()["PATH"]
     if args.command == "import-wechat-official":
         try:
             line = sys.stdin.readline()
