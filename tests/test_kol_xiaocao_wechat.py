@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import hashlib
+from types import SimpleNamespace
 from base64 import urlsafe_b64encode
 from datetime import datetime
 from urllib.parse import quote
@@ -12,6 +13,7 @@ from xiaocao.kol.enrichment_types import (
     EnrichmentDiagnosticError,
     EnrichmentError,
 )
+from xiaocao.kol.capture import CaptureJobStore
 from xiaocao.kol.xiaocao_wechat import (
     XiaocaoLiveCaptureDriver,
     XiaocaoWechatLiveSubscription,
@@ -83,12 +85,38 @@ def test_wechat_history_accepts_h5_xeknow_short_live_links():
     assert items[0]["source_url"] == "https://9ozbz.h5.xeknow.com/sl/2AjX90"
 
 
+def test_wechat_history_accepts_native_goose_live_mini_program_entries():
+    payload = _history(
+        "[2026-09-04 08:37] 福利官小花四: 9点20草神直播地址（密码666）："
+        "#小程序://鹅直播/WDUa9A1nxlXZoSz"
+    )
+
+    items = parse_xiaocao_live_messages(payload)
+
+    assert len(items) == 1
+    assert items[0]["published_at"] == "2026-09-04T08:37:00+08:00"
+    assert items[0]["entry_kind"] == "wechat_mini_program"
+    assert items[0]["mini_program_name"] == "鹅直播"
+    assert items[0]["mini_program_token"] == "WDUa9A1nxlXZoSz"
+    assert "source_url" not in items[0]
+    assert "message" not in items[0]
+
+
 class _CaptureDriver:
     def __init__(self):
-        self.arms: list[tuple[str, str, str | None]] = []
+        self.arms: list[tuple[str, str | None, str | None]] = []
         self.advances = 0
+        self.capture_checks = 0
+        self.native_bindings = []
+        self.playback_preparations = []
         self.media_urls: list[str | None] = []
         self.needs_media_url = False
+        self.capture_check_result = {
+            "event": "capture_pending",
+            "status": "awaiting_capture",
+            "capture_job_id": "kol-capture-current",
+            "source_job_status": "awaiting_playback",
+        }
         self.next_result = {
             "event": "xiaocao_live_pending",
             "status": "downloading",
@@ -99,12 +127,20 @@ class _CaptureDriver:
     def arm(
         self,
         identity: str,
-        page_url: str,
+        page_url: str | None,
         *,
         media_file_id: str | None = None,
     ) -> dict:
         self.arms.append((identity, page_url, media_file_id))
         return {"capture_job_id": "kol-capture-current"}
+
+    def bind_mini_program_capture(self, identity, capture_job_id, **binding):
+        self.native_bindings.append((identity, capture_job_id, binding))
+        return {"status": "captured"}
+
+    def prepare_playback(self, identity, capture_job_id):
+        self.playback_preparations.append((identity, capture_job_id))
+        return {"capture_job_id": capture_job_id, "status": "awaiting_capture"}
 
     def advance(
         self,
@@ -122,6 +158,19 @@ class _CaptureDriver:
         assert opencli_profile is None
         self.advances += 1
         return dict(self.next_result)
+
+    def advance_capture(
+        self,
+        identity: str,
+        capture_job_id: str,
+        *,
+        recorded_media_url: str | None = None,
+    ) -> dict:
+        del recorded_media_url
+        assert identity
+        assert capture_job_id == "kol-capture-current"
+        self.capture_checks += 1
+        return dict(self.capture_check_result)
 
     def needs_recorded_media_url(
         self,
@@ -444,6 +493,25 @@ def test_first_poll_baselines_history_and_arms_only_latest_live(tmp_path):
     assert statuses == ["historical_baseline", "playback_activated"]
 
 
+@pytest.mark.parametrize("returned_id", ["same-capture", "different-capture"])
+def test_native_playback_restores_only_the_existing_capture(tmp_path, returned_id):
+    starts = []
+    def start():
+        starts.append(True)
+        return {"capture_job_id": returned_id, "status": "awaiting_capture"}
+    service = SimpleNamespace(
+        capture_store=SimpleNamespace(latest=lambda job_id: {"status": "awaiting_capture"}),
+        start=start,
+    )
+    driver = XiaocaoLiveCaptureDriver(tmp_path, service_factory=lambda *a, **kw: service)
+    if returned_id == "different-capture":
+        with pytest.raises(EnrichmentError, match="different capture"):
+            driver.prepare_playback("source", "same-capture")
+    else:
+        assert driver.prepare_playback("source", "same-capture")["capture_job_id"] == returned_id
+    assert starts == [True]
+
+
 def test_wechat_mini_program_route_binds_media_to_the_exact_live_id(tmp_path):
     page_url = (
         "https://app6ums63as6516.h5.xiaoeknow.com/v2/course/alive/"
@@ -465,6 +533,7 @@ def test_wechat_mini_program_route_binds_media_to_the_exact_live_id(tmp_path):
                 "page_state": "unknown",
             }
         assert request["action"] == "activate_xiaoetong_mini_program"
+        assert capture.playback_preparations == [(request["subscription_id"], "kol-capture-current")]
         assert request["playback_surface"] == (
             XIAOCAO_PLAYBACK_ROUTE_WECHAT_MINI_PROGRAM
         )
@@ -477,6 +546,12 @@ def test_wechat_mini_program_route_binds_media_to_the_exact_live_id(tmp_path):
             "max_activation_attempts": 1,
         }
         assert "浏览器 H5" in request["instructions"]
+        assert request["launch_resolver_command"] == [
+            ".venv/bin/python", "scripts/kol_xiaoetong_launch.py",
+            "--source-url", request["source_url"],
+            "--expected-identity", "xiaoetong:app6ums63as6516:l_6a9531fbe4b0694c35440d7e",
+        ]
+        assert "不重开" in request["instructions"]
         return {
             "action": request["action"],
             "subscription_id": request["subscription_id"],
@@ -522,6 +597,115 @@ def test_wechat_mini_program_route_binds_media_to_the_exact_live_id(tmp_path):
         XIAOCAO_PLAYBACK_ROUTE_WECHAT_MINI_PROGRAM
     )
     assert item["media_request_observed"] is True
+
+
+def test_native_mini_program_entry_is_armed_before_ui_and_binds_observed_live(
+    tmp_path,
+):
+    payload = _history(
+        "[2026-09-04 08:37] 福利官小花四: 9点20草神直播地址（密码666）："
+        "#小程序://鹅直播/WDUa9A1nxlXZoSz"
+    )
+    requests: list[dict] = []
+    capture = _CaptureDriver()
+
+    def browser_exchange(request: dict) -> dict:
+        requests.append(request)
+        assert request["action"] == "activate_xiaoetong_mini_program"
+        assert request["mini_program_name"] == "鹅直播"
+        assert request["mini_program_token"] == "WDUa9A1nxlXZoSz"
+        assert "source_url" not in request
+        return {
+            "action": request["action"],
+            "subscription_id": request["subscription_id"],
+            "playback_surface": XIAOCAO_PLAYBACK_ROUTE_WECHAT_MINI_PROGRAM,
+            "source_identity": (
+                "xiaoetong:app6ums63as6516:l_6a99d00de4b0694c3546aaaa"
+            ),
+            "live_id": "l_6a99d00de4b0694c3546aaaa",
+            "candidate_id": "candidate-new-live",
+            "page_state": "mini_program_media_observed",
+            "activated": True,
+            "media_request_observed": True,
+            "password_used": True,
+        }
+
+    subscription = XiaocaoWechatLiveSubscription(
+        tmp_path / "wechat",
+        history_reader=lambda: payload,
+        browser_exchange=browser_exchange,
+        capture_driver=capture,
+        contact=CONTACT,
+        password="666",
+        playback_route=XIAOCAO_PLAYBACK_ROUTE_WECHAT_MINI_PROGRAM,
+    )
+
+    result = subscription.run_once(
+        opencli_session="xiaocao-lv-subscription",
+    )
+
+    assert result["status"] == "waiting"
+    assert capture.arms == [(
+        result["waiting_items"][0]["identity"],
+        None,
+        None,
+    )]
+    assert capture.advances == 1
+    assert [request["action"] for request in requests] == [
+        "activate_xiaoetong_mini_program",
+    ]
+    manifest = json.loads(
+        (tmp_path / "wechat" / "manifest.json").read_text(encoding="utf-8")
+    )
+    item = next(iter(manifest["items"].values()))
+    assert item["status"] == "playback_activated"
+    assert item["source_identity"] == (
+        "xiaoetong:app6ums63as6516:l_6a99d00de4b0694c3546aaaa"
+    )
+    assert item["candidate_id"] == "candidate-new-live"
+    assert capture.native_bindings == [(
+        item["identity"], "kol-capture-current", {
+            "source_identity": item["source_identity"],
+            "candidate_id": "candidate-new-live",
+        },
+    )]
+
+
+@pytest.mark.parametrize("invalid", [None, "other_app", "stale", "live_stream"])
+def test_native_candidate_binding_checks_real_sniffer_evidence(tmp_path, invalid):
+    store = CaptureJobStore(tmp_path / "capture.jsonl")
+    armed = store.arm([])
+    armed = store.transition(armed, "test_clock", created_at="2026-09-05T15:00:00+08:00")
+    candidate = {
+        "id": "new-candidate",
+        "live_id": "l_target",
+        "captured": "2026-09-05 15:01:00",
+        "media_type": "m3u8",
+        "source_url": "https://appdemo.h5.xe-live.com/_alive/v3/get_lookback_list",
+        "url": "https://vod.xet.tech/replay/playlist_eof.m3u8?secret=private",
+    }
+    if invalid == "other_app":
+        candidate["source_url"] = "https://appother.h5.xe-live.com/api"
+    elif invalid == "stale":
+        candidate["captured"] = "2026-09-05 14:59:00"
+    elif invalid == "live_stream":
+        candidate["url"] = "https://vod.xet.tech/liveplay.m3u8"
+    service = SimpleNamespace(
+        capture_store=store,
+        sniffer=SimpleNamespace(candidates=lambda: [candidate]),
+    )
+    driver = XiaocaoLiveCaptureDriver(tmp_path, service_factory=lambda *a, **kw: service)
+    kwargs = dict(source_identity="xiaoetong:appdemo:l_target", candidate_id="new-candidate")
+    if invalid:
+        with pytest.raises(EnrichmentError):
+            driver.bind_mini_program_capture("item", armed["job_id"], **kwargs)
+        assert store.latest()["status"] == "awaiting_capture"
+    else:
+        result = driver.bind_mini_program_capture("item", armed["job_id"], **kwargs)
+        assert result["status"] == "captured"
+        assert result["expected_source"]["source_identity"] == kwargs["source_identity"]
+        assert driver.bind_mini_program_capture("item", armed["job_id"], **kwargs) == result
+        assert "private" not in store.path.read_text()
 
 
 def test_wechat_mini_program_route_rejects_a_different_live_id(tmp_path):
@@ -809,6 +993,75 @@ def test_newest_inflight_capture_precedes_an_older_ready_handoff():
 
     assert selected is not None
     assert selected["identity"] == "current-live"
+
+
+def test_existing_source_task_is_reconciled_before_another_wechat_ui_attempt(
+    tmp_path,
+):
+    identity = "kol-wechat-current"
+    output_dir = tmp_path / "wechat"
+    output_dir.mkdir()
+    (output_dir / "manifest.json").write_text(
+        json.dumps({
+            "schema_version": 1,
+            "initialized_at": "2026-09-05T14:00:00+08:00",
+            "updated_at": "2026-09-05T14:00:00+08:00",
+            "items": {
+                identity: {
+                    "identity": identity,
+                    "contact": CONTACT,
+                    "contact_username": USERNAME,
+                    "published_at": "2026-09-03T08:30:00+08:00",
+                    "source_url": "https://9znl4.xet.tech/s/23pHhw",
+                    "page_url": (
+                        "https://app6ums63as6516.h5.xiaoeknow.com/v3/"
+                        "course/alive/l_target"
+                    ),
+                    "source_identity": "xiaoetong:app6ums63as6516:l_target",
+                    "capture_job_id": "kol-capture-current",
+                    "status": "awaiting_playback",
+                    "observed_page_state": "unknown",
+                    "updated_at": "2026-09-05T14:00:00+08:00",
+                }
+            },
+        }),
+        encoding="utf-8",
+    )
+    capture = _CaptureDriver()
+    capture.capture_check_result = {
+        "event": "download_completed",
+        "status": "downloaded",
+        "capture_job_id": "kol-capture-current",
+        "source_job_status": "task_created",
+    }
+    capture.next_result = {
+        "event": "xiaocao_live_pending",
+        "status": "prepared",
+        "capture_job_id": "kol-capture-current",
+        "next": "rerun_broadband",
+    }
+
+    def reject_browser(_request: dict) -> dict:
+        raise AssertionError("a completed source task must bypass WeChat UI")
+
+    subscription = XiaocaoWechatLiveSubscription(
+        output_dir,
+        history_reader=lambda: {},
+        browser_exchange=reject_browser,
+        capture_driver=capture,
+        contact=CONTACT,
+        playback_route=XIAOCAO_PLAYBACK_ROUTE_WECHAT_MINI_PROGRAM,
+    )
+
+    result = subscription.run_once(
+        opencli_session="xiaocao-lv-subscription",
+        only_identity=identity,
+    )
+
+    assert result["status"] == "waiting"
+    assert result["waiting_items"][0]["stage"] == "compressed_capture"
+    assert capture.capture_checks == 1
+    assert capture.advances == 1
 
 
 def test_awaiting_playback_rechecks_the_bound_page_each_hour_until_playable(

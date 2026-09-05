@@ -40,6 +40,11 @@ async function inspectTarget(page, input) {
   const folderUrl = 'https://pan.baidu.com/disk/main#/index?category=all&path='
     + encodeURIComponent(input.directory);
   await page.goto(folderUrl, { waitUntil: 'load', settleMs: 1500 });
+  const activePage = page.getActivePage?.();
+  if (!activePage || !page.selectTab) {
+    throw new CommandExecutionError('Exact OpenCLI site page selection is required');
+  }
+  await page.selectTab(activePage);
   await page.wait({ time: 1 });
   const inspection = await page.evaluate(`(async () => {
     const dir = ${JSON.stringify(input.directory)};
@@ -142,6 +147,36 @@ async function inspectTarget(page, input) {
       exactCount,
       errno,
       url: location.origin + location.pathname,
+      surfaceState: {
+        visibility: document.visibilityState,
+        focused: document.hasFocus(),
+        userActive: navigator.userActivation?.isActive === true,
+        inputs: [...document.querySelectorAll('input[type="file"]')].map(node => ({
+          title: node.title, accept: node.accept, directory: node.hasAttribute('webkitdirectory'),
+          visible: visible(node), disabled: node.disabled,
+          targetAttached: [...(node.files || [])].some(file => file.name === target),
+        })),
+        receiptClaim: window.__opencliBaiduUploadReceipt?.claim || '',
+        receiptMatchesTarget: (window.__opencliBaiduUploadReceipt?.fileNames || []).includes(target),
+        targetInTransferUi: [...document.querySelectorAll('.uploader-list')]
+          .some(node => (node.textContent || '').includes(target)),
+        targetUiRows: [...document.querySelectorAll('[title], span')]
+          .filter(node => node.getAttribute('title') === target || (node.children.length === 0 && node.textContent?.trim() === target))
+          .map(node => ({className: node.parentElement?.className || '', text: node.parentElement?.parentElement?.innerText?.slice(0, 500) || ''})),
+        transferQueue: (() => {
+          const panels = [...document.querySelectorAll('.uploader-list')];
+          const panel = panels.length === 1 ? panels[0] : null;
+          const rows = panel ? [...panel.querySelectorAll('.file-list')] : [];
+          return {
+            complete: !!panel && panel.clientHeight > 0
+              && panel.scrollHeight <= panel.clientHeight + 2
+              && (panel.innerText || '').includes('仅展示本次上传任务'),
+            rowCount: rows.length,
+            successfulCount: rows.filter(node => node.classList.contains('status-success')).length,
+            targetCount: rows.filter(node => (node.textContent || '').includes(target)).length,
+          };
+        })(),
+      },
     };
   })()`);
   if (!inspection || typeof inspection !== 'object') {
@@ -215,6 +250,33 @@ async function markUploadInput(page, input) {
   return `input[data-opencli-baidu-upload-claim="${input.claimId}"]`;
 }
 
+async function activateUploadPage(page) {
+  // A native click on the file-name header is harmless (sort only) and gives
+  // Chromium the user activation required to open its native file chooser.
+  const marked = await page.evaluate(`(() => {
+    const headers = [...document.querySelectorAll('span')].filter(node => {
+      const rect = node.getBoundingClientRect();
+      return node.children.length === 0 && node.textContent.trim() === '文件名'
+        && rect.width > 0 && rect.height > 0;
+    });
+    if (headers.length !== 1) return false;
+    headers[0].setAttribute('data-opencli-baidu-upload-activation', 'true');
+    return true;
+  })()`);
+  if (marked !== true || !page.click) {
+    throw new CommandExecutionError('Upload activation header is not uniquely available');
+  }
+  await page.click('[data-opencli-baidu-upload-activation="true"]');
+  const state = await page.evaluate(`(() => ({
+    userActive: navigator.userActivation?.isActive === true,
+    focused: document.hasFocus(), visibility: document.visibilityState,
+  }))()`);
+  if (state?.userActive !== true) {
+    throw new CommandExecutionError('Native upload-page click did not establish user activation');
+  }
+  return state;
+}
+
 cli({
   site: 'baidu-netdisk',
   name: 'upload',
@@ -233,6 +295,7 @@ cli({
     { name: 'target-name', required: true, help: 'Exact destination basename; must equal the local basename' },
     { name: 'claim-id', required: true, help: 'Durable upload claim identifier from the caller ledger' },
     { name: 'inspect-only', type: 'boolean', default: false, help: 'Stop after exact folder/name inspection without attaching a file' },
+    { name: 'activate-only', type: 'boolean', default: false, help: 'Check native page activation without attaching a file' },
   ],
   columns: [
     'status',
@@ -257,6 +320,7 @@ cli({
         uploadTarget: '',
         claimId: input.claimId,
         url: inspection.url,
+        surfaceState: inspection.surfaceState,
       }];
     }
     if (kwargs['inspect-only'] === true) {
@@ -269,12 +333,17 @@ cli({
         uploadTarget: '',
         claimId: input.claimId,
         url: inspection.url,
+        surfaceState: inspection.surfaceState,
       }];
     }
     if (!page.uploadFiles) {
       throw new CommandExecutionError('OpenCLI Browser Bridge uploadFiles support is required');
     }
     const selector = await markUploadInput(page, input);
+    const activation = await activateUploadPage(page);
+    if (kwargs['activate-only'] === true) {
+      return [{status: 'activation_verified', claimId: input.claimId, uploaded: false, activation}];
+    }
     const upload = await page.uploadFiles(selector, [input.file], {nth: 0});
     if (!upload || upload.uploaded !== true || upload.files !== 1) {
       throw new CommandExecutionError('Baidu Netdisk did not confirm exactly one uploaded file');

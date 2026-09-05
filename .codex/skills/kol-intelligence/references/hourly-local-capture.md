@@ -1,7 +1,7 @@
 # Hourly Local Capture Node
 
 Local node: WeChat capture, publisher discovery, upload, and credential-free
-handoff. Remote work: [hourly-remote-writer.md](hourly-remote-writer.md).
+handoff.
 
 ## Runner and boundary
 
@@ -12,20 +12,22 @@ PYTHONPATH=src .venv/bin/python scripts/kol_daily.py capture-local
 ```
 
 Use an interactive PTY (`tty=true`) and keep stdin alive for Browser/MCP JSON.
-The normal handoff path does not inject a Codex task message or remote-import.
+Do not inject a Codex task message or remote-import.
+
+For one existing item, run
+`PYTHONPATH=src .venv/bin/python scripts/kol_daily.py capture-xiaocao-item
+--source-identity <identity>` in one PTY. Never schedule or widen it.
 
 `capture-local` runs only `xiaocao_wechat_live` and
 `wechat_official_accounts`; it never scans Lv, analyzes, publishes, or writes
 Book. Do not substitute the remote coordinator.
 
-Report every item with safe `category`/`code`/`stage`. Prefer newest
-browser-critical, newest `playback_activated`, then oldest `handoff_ready`;
-never duplicate an armed capture.
+Report `category`/`code`/`stage`; prefer newest browser-critical, then
+`playback_activated`, then oldest `handoff_ready`. Never duplicate an arm.
 
-An `upload_claimed`/`cloud_handoff` wait is nonterminal. The same `capture-local`
-process must reconcile its identity, jobs, and claim through
-`cloud_handoff_published` plus LiangHuiMCP `created|already_present`
-(`Handoff完成`); it must not end the task, rescan, or create another claim.
+An `upload_claimed`/`cloud_handoff` wait is nonterminal. The same process must
+reach `cloud_handoff_published` plus LiangHuiMCP `created|already_present`
+(`Handoff完成`); do not rescan or create another claim.
 
 A retryable `source_temporarily_unavailable` after an `awaiting_playback` wait
 reuses the same capture/job and next 20-minute deadline; binding, ledger, or receipt
@@ -69,12 +71,56 @@ old direct-H5 playback route is archived: its code and historical evidence stay
 available for compatibility/readback, but it must not be used as a download
 fallback.
 
-For `daily_browser_input_required`, retain the process and use Browser only for
-credential-free H5 identity resolution. The H5 page may be provider-paused and
-is not playback proof. Claim the exact app/resource identity, then let the
-Agent use the native WeChat mini-program as the playback surface under this UI
-policy. The Browser/OpenCLI route remains separate and must
-not be used to simulate or replace the mini-program playback.
+Use `--xiaoetong-only`; apply `/proxy.pac` only while the service is healthy.
+Keep WeChat login/security domains DIRECT and disable the PAC when stopping.
+For `#小程序://鹅直播/<token>`, retain contact/time/token, arm the candidate
+baseline, then open the original message once. Skip H5 resolution. Bind the
+observed candidate ID, app ID, live ID and post-arm time before downloading.
+For H5 entries, retain the process for credential-free identity resolution;
+H5 is not playback proof.
+
+For an HTTPS share entry, the default launch route is now the verified merchant
+Web Link, not chat-window screenshots. Run the emitted `launch_resolver_command`
+with `PYTHONPATH=src`. The read-only `scripts/kol_xiaoetong_launch.py` follows the
+first-party share redirect, validates the app/live anchor, obtains the provider's
+public Web Link representation, ignores the page's mock branch and verifies that
+the real `weixin://dl/business/?t=...` ticket embeds that exact replay. The mobile
+User-Agent requests the provider's link representation instead of its desktop QR;
+it is not login or entitlement. Do not invent tickets, app IDs or page paths.
+
+Use the returned page URL for identity resolution only. After the same task is
+armed and `/proxy.pac` is healthy and applied, execute `launch_command` once via
+normal macOS URL handling. If the target mini-program is already open, reuse it.
+Regenerate tickets at activation; never reuse an old ticket from a report. Read
+the Goose Live window, not the unshareable main chat window. Inspect the visible
+course-password gate, enter `666` once if present, and observe the exact finite
+replay request. Password acceptance may itself start media loading; do not add a
+redundant Play click. No hooks, WeChat re-signing, hidden debugging or protection
+changes are allowed. Use visible player mute/pause controls when available; the
+H5-only DOM mute instruction does not authorize attaching a debugger to WeChat.
+If the resolver cannot prove a ticket, use the original visible message entry.
+Native `#小程序://...` tokens still use that original-message fallback, not guessed
+URL conversion. A launch plan is not playback, download or upload acceptance.
+
+The capture candidate API uses `view=capture`: fresh observed IDs/times only,
+without historical title enrichment or remote metadata requests. General display
+lists enrich asynchronously with an incremental cache; they cannot bind a source.
+
+The full continuation remains enabled in code: exact-source media observation ->
+original compressed download -> media validation -> detach only the capture PAC
+and stop the sniffer -> original Netdisk upload -> hash-bound mailbox handoff ->
+authoritative end-to-end readback. Do not insert a new permanent stop after native
+playback. Local capture commands preserve inherited PATH precedence and append
+installed Homebrew CLI directories for ffmpeg/ffprobe and transfer helpers.
+Before every native activation prompt, the driver restores and checks the
+existing capture's singleton sniffer; a historical armed receipt is not current
+process health. Verify/apply the bounded capture PAC only after that health check.
+Completed-capture acceptance uses the persisted, exact candidate/source/task
+receipt and rechecks local media hashes; it must not restart or query the cleaned
+sniffer merely to pass audit. A mismatched saved task fails closed.
+A user request to prepare but wait for confirmation is an execution gate: keep
+the Automation PAUSED and run offline checks only until explicit confirmation.
+`Handoff完成` is not remote `全部完成`; report each from its actual bound receipt.
 
 1. `resolve_xiaoetong_page`: open the supplied `source_url` only to obtain and
    validate the bound Xiaoetong app/resource anchor. Accept only a bound H5 live
@@ -88,11 +134,11 @@ not be used to simulate or replace the mini-program playback.
    arm another job when switching from the archived H5 route.
 3. `activate_xiaoetong_mini_program`: the Agent owns the native WeChat UI
    action; never ask the user to open or select the replay. Use the reviewed
-   Computer Use exception (`node_repl` with `@oai/sky`) against visible WeChat,
+   Computer Use exception (`cua_repl`) against visible WeChat,
    inspect fresh state, keep one foreground session, one action at a time, and
    read state back after each. Do
-   not use hooks, injection, webhooks, database/storage/cookie reads,
-   credential extraction, clipboard retry loops, or rapid/global-shortcut
+   not use hooks, injection, webhooks, storage/cookie reads,
+   credential extraction, clipboard loops, or rapid/global-shortcut
    retries. There is no evidence for a magic safe interval: wait only for a
    visible state/sniffer event, and make at most one
    activation attempt per scheduled boundary. If the app requires login,

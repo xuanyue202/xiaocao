@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -18,6 +19,7 @@ from xiaocao.kol.xiaocao_live import (
     REQUIRED_COVERAGE_ROWS,
     XiaocaoLiveService,
     _default_sniffer_binary,
+    capture_runtime_environment,
     validate_cleanup_evidence,
     validate_coverage_matrix,
 )
@@ -25,6 +27,42 @@ from xiaocao.kol.xiaocao_live import (
 
 def _sha256(path: Path) -> str:
     return hashlib.sha256(path.read_bytes()).hexdigest()
+
+
+def test_capture_runtime_preserves_environment_and_adds_installed_tools(monkeypatch):
+    monkeypatch.setenv("PATH", "/usr/bin:/bin")
+    monkeypatch.setenv("XIAOCAO_ENV_TEST", "preserved")
+    environment = capture_runtime_environment()
+    assert environment["PATH"].startswith("/usr/bin:/bin")
+    assert environment["XIAOCAO_ENV_TEST"] == "preserved"
+    for directory in ("/opt/homebrew/bin", "/usr/local/bin"):
+        if Path(directory).is_dir():
+            assert directory in environment["PATH"].split(os.pathsep)
+    assert os.environ["PATH"] == "/usr/bin:/bin"
+
+
+@pytest.mark.parametrize("url,expected_writes", [
+    ("http://127.0.0.1:2023/proxy.pac", 1),
+    ("http://127.0.0.1:33331/commands/pac", 0),
+])
+def test_capture_cleanup_disables_only_owned_pac(tmp_path, url, expected_writes):
+    writes = []
+
+    def runner(command, **kwargs):
+        if command == ["scutil", "--proxy"]:
+            return SimpleNamespace(stdout=f"ProxyAutoConfigEnable : 1\nProxyAutoConfigURLString : {url}\n")
+        if command == ["networksetup", "-listallnetworkservices"]:
+            return SimpleNamespace(stdout="An asterisk denotes disabled services\nWi-Fi\nOther\n")
+        if command[:2] == ["networksetup", "-getautoproxyurl"]:
+            configured = url if command[2] == "Wi-Fi" else "https://unrelated.example/pac"
+            return SimpleNamespace(stdout=f"URL: {configured}\nEnabled: Yes\n")
+        writes.append(command)
+        assert command == ["networksetup", "-setautoproxystate", "Wi-Fi", "off"]
+        return SimpleNamespace(stdout="")
+
+    service = XiaocaoLiveService(tmp_path / "live", runner=runner)
+    service._disable_owned_capture_pac()
+    assert len(writes) == expected_writes
 
 
 def test_default_sniffer_binary_follows_active_checkout(tmp_path):
@@ -1167,7 +1205,9 @@ def test_start_emits_one_prompt_after_health_and_baseline(tmp_path):
     class Process:
         pid = 1234
 
-    def popen(*_args, **_kwargs):
+    def popen(command, **_kwargs):
+        assert command == [str(binary), "--xiaoetong-only"]
+        assert _kwargs["env"] == capture_runtime_environment()
         state["running"] = True
         return Process()
 

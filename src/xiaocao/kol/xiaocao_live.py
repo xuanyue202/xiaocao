@@ -60,6 +60,23 @@ def _default_sniffer_binary(repo_root: Path | str | None = None) -> Path:
 
 
 DEFAULT_SNIFFER_BINARY = _default_sniffer_binary()
+
+
+def capture_runtime_environment() -> dict[str, str]:
+    """Keep inherited tool precedence and add installed macOS CLI locations.
+
+    Desktop agents need not run a login shell. This affects child processes,
+    never the user's shell profile, system environment or account settings.
+    """
+    environment = dict(os.environ)
+    paths = [part for part in environment.get("PATH", os.defpath).split(os.pathsep) if part]
+    for directory in ("/opt/homebrew/bin", "/usr/local/bin"):
+        if Path(directory).is_dir() and directory not in paths:
+            paths.append(directory)
+    environment["PATH"] = os.pathsep.join(paths)
+    return environment
+
+
 REQUIRED_COVERAGE_ROWS = {
     "todays_market_diagnosis",
     "next_session_playbook",
@@ -905,12 +922,13 @@ class XiaocaoLiveService:
                         f"sniffer binary not found: {self.sniffer_binary}"
                     )
                 process = self._popen(
-                    [str(self.sniffer_binary)],
+                    [str(self.sniffer_binary), "--xiaoetong-only"],
                     cwd=str(self.sniffer_binary.parent),
                     stdin=subprocess.DEVNULL,
                     stdout=subprocess.DEVNULL,
                     stderr=subprocess.DEVNULL,
                     start_new_session=True,
+                    env=capture_runtime_environment(),
                 )
                 pids = [int(process.pid)]
                 for _ in range(50):
@@ -962,12 +980,13 @@ class XiaocaoLiveService:
             raise EnrichmentError("multiple exact sniffer processes are running")
         if not pids and sniffer_status is None:
             process = self._popen(
-                [str(self.sniffer_binary)],
+                [str(self.sniffer_binary), "--xiaoetong-only"],
                 cwd=str(self.sniffer_binary.parent),
                 stdin=subprocess.DEVNULL,
                 stdout=subprocess.DEVNULL,
                 stderr=subprocess.DEVNULL,
                 start_new_session=True,
+                env=capture_runtime_environment(),
             )
             pids = [int(process.pid)]
             for _ in range(50):
@@ -1587,6 +1606,36 @@ class XiaocaoLiveService:
             "observed_at": self._clock().isoformat(timespec="seconds"),
         }
 
+    def _disable_owned_capture_pac(self) -> None:
+        """Detach only this adapter's PAC before stopping its local server."""
+        own_url = "http://127.0.0.1:2023/proxy.pac"
+        current = self._runner(
+            ["scutil", "--proxy"], check=True, capture_output=True, text=True,
+        ).stdout
+        if not re.search(r"\bProxyAutoConfigEnable\s*:\s*1\b", current):
+            return
+        configured = re.search(r"\bProxyAutoConfigURLString\s*:\s*(\S+)", current)
+        if configured is None or configured.group(1) != own_url:
+            return
+        services = self._runner(
+            ["networksetup", "-listallnetworkservices"],
+            check=True, capture_output=True, text=True,
+        ).stdout.splitlines()[1:]
+        for service in services:
+            name = service.strip()
+            if not name or name.startswith("*"):
+                continue
+            info = self._runner(
+                ["networksetup", "-getautoproxyurl", name],
+                check=True, capture_output=True, text=True,
+            ).stdout
+            if f"URL: {own_url}" not in info.splitlines():
+                continue
+            self._runner(
+                ["networksetup", "-setautoproxystate", name, "off"],
+                check=True, capture_output=True, text=True,
+            )
+
     def cleanup_sniffer(self, *, capture_job_id: str) -> dict[str, Any]:
         existing = self._event(
             "capture_cleanup_completed",
@@ -1599,6 +1648,7 @@ class XiaocaoLiveService:
             status="cleanup_claimed",
             idempotency_key=_sha256_text("xiaocao-sniffer-cleanup"),
         )
+        self._disable_owned_capture_pac()
         pids = self._sniffer_pids()
         if len(pids) > 1:
             raise EnrichmentError("multiple exact sniffer processes block cleanup")
