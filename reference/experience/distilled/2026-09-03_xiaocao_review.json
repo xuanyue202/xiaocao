@@ -1,0 +1,1850 @@
+{
+  "date": "2026-09-03",
+  "kind": "review",
+  "author": "小草",
+  "source": "小草直播",
+  "authority": 0,
+  "evidence": [
+    {
+      "path": "/Users/xuanyue202/Documents/project/xiaocao/output/live/kol_netdisk_enrichment/artifacts/kol-netdisk-fbec95873ac0785b/20260903 大师班专场(晚17：30开播)-compressed.txt",
+      "sha256": "0f2d277a394fb5f35ed605620cc550190bb5dbbde1a7d6b5d5cbf64f2108bdd3",
+      "size": 58710
+    }
+  ],
+  "summary": "9月3日大师班把当日视为高标二波退潮：神奇制药、誉衡药业当日有机会退出，福建金森次日给机会退出；北交所两成轮动，非北交所减半，紫薇以等待为主、坚持者10%并避开高位金健米业。低吸备选保留评分和次日亏损退出。后段高分收益为同学样本与假设买点口算，未经独立验证。",
+  "posture": {
+    "regime": "shortline_second_retreat",
+    "dominant_style": "高标退潮下的轻仓北交所轮动和低吸备选",
+    "risk": "高标一字跌停延续、旧股不再创新高、追高及不退出会放大风险；北交所转负停止，不能把相对强误当无风险。",
+    "style_ranking": [
+      "优先评估北交所绿盘低吸，仅两成轮动示例。",
+      "不能参与北交所可休息；坚持参与优先过滤后的下跌低吸。",
+      "低位中低开低吸是稳定性条件约束的备选。",
+      "紫薇个人倾向暂停；坚持者10%，明显高位不做。"
+    ]
+  },
+  "regime_call": {
+    "call": "当日进入短线二波退潮，作者预计约三至四个交易日，先观察高标止跌而非老高标恢复前高；北交所可能引领超跌反弹，长度未定。",
+    "horizon": "从2026-09-03起约三至四个交易日，仅原文预期，不回填已发生结果。",
+    "what_would_falsify": [
+      "跌停继续扩散或断板评分明显回落使短退潮判断失效。",
+      "北交所出现明显高标亏钱效应或相关评分转负。",
+      "高标迅速止跌且其他市场机会持续扩散，使原等待方案需重新评估。"
+    ]
+  },
+  "directions": [
+    {
+      "name": "二波退潮中的仓位收缩",
+      "view": "他把9月2日看作分歧，把9月3日早盘多只高标一字跌停看作突然进入二波退潮；创业板虽尝试修复但反复回落，短线轮动机会到收盘进一步减少。因此非北交所参与应轻仓、在原仓位基础上再减半，也可以休息两天。",
+      "horizon": "9月3日起的退潮阶段",
+      "falsifiers": [
+        "高标止跌并持续修复、轮动机会重新扩散时重新评估。"
+      ],
+      "evidence_refs": [
+        {
+          "segment_id": "5c1b0d21bfd63d4283cc4f370849b761ca8da9913e20189f28c74af1b88cadbe",
+          "quote": "算是短线突呃，短线突然退潮啊"
+        },
+        {
+          "segment_id": "aa832005845efe3441e08e6f49c68d141af09930ef0d968224b42870647f03b4",
+          "quote": "好转了两天。然后又又退潮"
+        },
+        {
+          "segment_id": "86dd51c8f10ee068a30c8f27ee83c8637b508c268974748d14989708eb628d73",
+          "quote": "打算冲高修复，又掉下去了"
+        },
+        {
+          "segment_id": "f0e40e1dba019e254df6a2d4cd67e9838966b748b1c6a02178f63b6c8f1176a8",
+          "quote": "昨天我觉得算分歧，不太算退潮"
+        },
+        {
+          "segment_id": "86f0ae190b72334452f998bc562ff4ff157535fe2805ff10c7b1a5d62c1a06ca",
+          "quote": "把仓位再降下去"
+        },
+        {
+          "segment_id": "a85aeb035e66f2c1663ef46e1dbf2e3d5d21cbb6ceef5f9f7276a64bd6242b1f",
+          "quote": "也是轮动仓位啊，也不是说重仓做啊"
+        },
+        {
+          "segment_id": "78743e716587526d4c697a59841304a5d9543e479e41c66079a2f1f1695bbe9a",
+          "quote": "仓位轻一点"
+        },
+        {
+          "segment_id": "fc62893d19dd426e68fba9d12d85140ba64d3773f6c56e4e76104cbfe16604a3",
+          "quote": "降一半仓位"
+        },
+        {
+          "segment_id": "951995eb0f21069bd2a423e81fca9b89a38052303f5a0812a469bdd7837a3685",
+          "quote": "个人倾向于下跌底细"
+        },
+        {
+          "segment_id": "e2a6cd293cc15d499c97b2bd29470b384225ba8a399fe67c133ba8a1b14bb68f",
+          "quote": "轮动环境的主板是清仓啊"
+        },
+        {
+          "segment_id": "60b1770461c9b8386afe35094a652a47f6ad278d634e144348dfd41d96eff94f",
+          "quote": "昨天早上来说，还没有那么退"
+        },
+        {
+          "segment_id": "0db390c195270604bdae49b621ebbddda82e855014276d7915d56d43c75198bd",
+          "quote": "到收盘的话就更少了"
+        },
+        {
+          "segment_id": "ff66019a6a3cfb40630829fa3a2993cf4473faa418a536a6af5b03ba46cc507e",
+          "quote": "仓位就要降一半"
+        }
+      ]
+    },
+    {
+      "name": "北交所优先轮动",
+      "view": "他对9月4日的首选是北交所绿盘低吸：理由是指数回调时仍有赚钱效应，且高标没有像其他市场那样出现严重亏钱效应；做两成左右的轮动仓位，不能重仓。回答选第一名还是分散时，他倾向前两名分散参与，并未明确两只的分配比例。早盘相关评分转负就不做；他强调应看高标实际亏钱效应，不能只盯传闻里的监管涨幅数字。没有北交所条件的人可以等待。",
+      "horizon": "原定9月4日；之后仅在相对赚钱效应保持时继续观察",
+      "falsifiers": [
+        "评分转负或高标亏钱效应恶化则停止；两成是该轮动方案，不是家庭总资产配置指令。"
+      ],
+      "evidence_refs": [
+        {
+          "segment_id": "553ed3945f73eedafe915089e4fb2ec4ea0700de09b64e85a3baae6a5810552c",
+          "quote": "你能做北交所。还是北交所"
+        },
+        {
+          "segment_id": "a85aeb035e66f2c1663ef46e1dbf2e3d5d21cbb6ceef5f9f7276a64bd6242b1f",
+          "quote": "也是轮动仓位啊，也不是说重仓做啊"
+        },
+        {
+          "segment_id": "e5d211d8e9a5c8372d7fa29dcd78d3c8b7c28cb0b44fc120faaf3a44b78fb7f7",
+          "quote": "你像中广天泽。啊，没有太高的，也没太大问题啊"
+        },
+        {
+          "segment_id": "29e47e8780a1da3e2ea7652711ad0dcca336f379395a7b9efa075d98129c7970",
+          "quote": "北交所就纯按轮动环境看"
+        },
+        {
+          "segment_id": "a93859531fdef1c914b81423b63cf94db236e51ba354bef54ea291b5b8e1cacf",
+          "quote": "五板就今天按一字板跌停。所以它高度打不开"
+        },
+        {
+          "segment_id": "d6ada196f8e9f7919e858eaafe917206b41c2e126a2f6624d29c2aef2a3da7f5",
+          "quote": "重点不是它监不监管，而是而是它的高标有没有亏钱效应"
+        },
+        {
+          "segment_id": "fd788d022f31c5931fb236f5f8323a18d817b4dd2a1e44eee93eec592090076e",
+          "quote": "我们关心的是？啊，在在北交所在这些地方有没有亏钱效应啊"
+        },
+        {
+          "segment_id": "5fc43bf267d6b9fc181eb0f4975658b3fc6ef548ab5d11473869276a41162f73",
+          "quote": "跃龙科技是北交所"
+        },
+        {
+          "segment_id": "32c81c886608281024800da50e36ef6c826f1b4e03ef00a1b7b1ad0679225c68",
+          "quote": "只剩一个北交所"
+        },
+        {
+          "segment_id": "cbbbe22a29cf5d3ca30b6d826d3ce630b242b7374a8b1e1f3df6d756079d3165",
+          "quote": "即使是下跌预期，他亏钱效应，他的赚钱效应也还可以"
+        },
+        {
+          "segment_id": "ee4dd56ecf6be6efc2612685d828646730bb5038dd298cb5e59ef63ea10691f7",
+          "quote": "做北交所也是轮动仓位做，比如说两成仓啊"
+        },
+        {
+          "segment_id": "cbaa47c23345c1021b473264d5fcd7de329b559c9462c41c3b01b86d27594466",
+          "quote": "慢慢的会带动其他的板块"
+        },
+        {
+          "segment_id": "4fa2b314fe34f8c27c9e6aeeba47241343fba8157b20221881e0a659d7ced403",
+          "quote": "北交所负分了啊，不做了"
+        },
+        {
+          "segment_id": "1c20a4d1e77777c4340cfd2489b6805213962b5c26849383cf633f125319c6c6",
+          "quote": "一下子变负分，我们就不做"
+        },
+        {
+          "segment_id": "fc62893d19dd426e68fba9d12d85140ba64d3773f6c56e4e76104cbfe16604a3",
+          "quote": "降一半仓位"
+        },
+        {
+          "segment_id": "76ee80e9bfccdf823ff95d252530af29e8d55b8bf593cd0f683725f89f1178dd",
+          "quote": "绿盘低吸啊"
+        },
+        {
+          "segment_id": "e4655031c14355d849df18d68f34abf44b0e18b7cfe06740f4ec24c7fd7e9f42",
+          "quote": "屏幕前两名吧"
+        },
+        {
+          "segment_id": "f4c3835c4a136a63c9b6e742d1c782fe9a270ca79db4ba4febea076251b4738e",
+          "quote": "两层仓滚动"
+        }
+      ]
+    },
+    {
+      "name": "主板高标与万向德农回避",
+      "view": "新赛股份、深中华A、爱丽家居、一鸣食品被他用作高标风险案例；若次日仍延续一字跌停，暂不做这类短线高标。他还明确说早上防范了万向德农（600371），不应在高标亏钱效应里再碰高位票。二波退潮结束只要求止跌，他认为一些老高标可能回不到前高；金牛化工、四方科技的口头举例有犹豫和自我修正。",
+      "horizon": "9月3日至高标跌停止住",
+      "falsifiers": [
+        "高标止跌并出现可持续赚钱效应后再评估；未核实具体证券的当日跌停路径。"
+      ],
+      "evidence_refs": [
+        {
+          "segment_id": "5d2f35650624c5f9510686aa59e70563722009426bed9aa3f4b3593edd29bf43",
+          "quote": "新赛股份。这是一字版的，这个是连版的"
+        },
+        {
+          "segment_id": "b828b4942c0a220a43c2c4100ec5e967c6ce215a868c8d442dbebff8403a3fe6",
+          "quote": "福建金森还是还不算一字板跌停啊，这个没有"
+        },
+        {
+          "segment_id": "951af42aeaa8416c6917942c749c6f29be3b50bbdae6d3c0d8c947c8ef4f9f47",
+          "quote": "现在其实是在第二次"
+        },
+        {
+          "segment_id": "3ea2afb75c44550a5c0c82c0772f6b6dc9938300eeceae72ba312d5e2918bf21",
+          "quote": "今天早上高标一字板跌停，你还去做高标"
+        },
+        {
+          "segment_id": "a93859531fdef1c914b81423b63cf94db236e51ba354bef54ea291b5b8e1cacf",
+          "quote": "五板就今天按一字板跌停。所以它高度打不开"
+        },
+        {
+          "segment_id": "df385baf49955a29442e537eb61ed47095c5c87fda5dd97dc19dca75e9d9c760",
+          "quote": "不是一字板跌停的"
+        },
+        {
+          "segment_id": "d572aac90a8fa3dda825f876213b0aa251a38501c86a628ba2fc73473d176dec",
+          "quote": "福建先生不是纯一字板"
+        },
+        {
+          "segment_id": "5fc43bf267d6b9fc181eb0f4975658b3fc6ef548ab5d11473869276a41162f73",
+          "quote": "跃龙科技是北交所"
+        },
+        {
+          "segment_id": "b8fc5618bf85dd6cd4de0b63df496f3451a952be898a0572fe28190c0c25a329",
+          "quote": "早上的时候还专门防止这个万向德农啊的问题"
+        },
+        {
+          "segment_id": "259e063ca453ee8ae4e94806c9f3209392a216564381a0f4b429cc849936bdf3",
+          "quote": "个股可能上不去了"
+        },
+        {
+          "segment_id": "34f0f377d71348ff6e82aba34845071f92d0c740a5cee8bbf553387660ff9da0",
+          "quote": "它只要止跌了，这个推导就结束了"
+        },
+        {
+          "segment_id": "6184ded21932c758a772e45c27cf7e3780d630ae1c4a1da602ed31b25cc94d04",
+          "quote": "高位，追涨就放一边去啊"
+        },
+        {
+          "segment_id": "ff66019a6a3cfb40630829fa3a2993cf4473faa418a536a6af5b03ba46cc507e",
+          "quote": "仓位就要降一半"
+        }
+      ]
+    },
+    {
+      "name": "紫薇模式先等待修复",
+      "view": "紫薇模式仍包含相对高位股票，他个人倾向在这两三天退潮时先不做，等高标跌停止住或修复后再看；历史回放中既有亏损也有回升，不能因担心错过一次大涨而忽略当前亏钱效应。",
+      "horizon": "原定9月4日及随后两三天的退潮期",
+      "falsifiers": [
+        "跌停止住、修复出现时重新评估；不是永久否定紫薇模式。"
+      ],
+      "evidence_refs": [
+        {
+          "segment_id": "aa7381c09f584c6cde71b0caed3fade91a7733b15da30a69664af26af423aae2",
+          "quote": "紫薇模式其实我觉得也不要做这几天"
+        },
+        {
+          "segment_id": "2b86fec503328943f931c4354d7641e1504fcd2b8e222116ec8eb47328bc2994",
+          "quote": "接下来两三天"
+        },
+        {
+          "segment_id": "890c655444d1b5d28bac8417b8884e33f67aadd394dc6a1ed9a07d181c69c844",
+          "quote": "要呃降一些仓位啊，因为行情太差"
+        },
+        {
+          "segment_id": "bf59e3804ab64f05b33206ea4b7731514ac8157b139b905799774663a60b121f",
+          "quote": "退潮期隔了两三天之后，我们再做职位模式"
+        },
+        {
+          "segment_id": "cb69baef4cca6a973ba2f3b276e805afa2eb1474e53228556b8844bf8b46e89e",
+          "quote": "这个时候，那个失败的概率大一点"
+        },
+        {
+          "segment_id": "3a13a2abf7ac42f4a4cae2d60f996b20279869d49e96cbb40cb9cee3c194daed",
+          "quote": "神农种业这个反反复复的神农种业好几次"
+        },
+        {
+          "segment_id": "9aa45a0d8860f0dde5c09c90c9671f4d6e3c43240191e4a2fbf739b6b9219e16",
+          "quote": "等跌停板止住再做紫薇模式会更稳一点"
+        },
+        {
+          "segment_id": "b0ad4facfbd1036dee0f5a27b19f28a09d817acdd80ad80b8a4ba9bc29aaf375",
+          "quote": "紫薇模式也是高标模式"
+        },
+        {
+          "segment_id": "f7f038dec82dc8a11f979a59a29883c48a149354d73a64c89f89731c6ba32b66",
+          "quote": "高标的一字板跌太多了"
+        },
+        {
+          "segment_id": "e2a6cd293cc15d499c97b2bd29470b384225ba8a399fe67c133ba8a1b14bb68f",
+          "quote": "轮动环境的主板是清仓啊"
+        },
+        {
+          "segment_id": "802691ce9834e96d51408dae4595b95b891fc8662b246c8d2b6b0338b666c2a8",
+          "quote": "你一定要职位，其实也没问题"
+        },
+        {
+          "segment_id": "0e95f018e09d09520b690ddca0a645a354408a45543e06f9f2c2fd677af0a56a",
+          "quote": "这两天退潮啊，优的点优一点"
+        }
+      ]
+    },
+    {
+      "name": "坚持做紫薇时的一成仓与金健米业限制",
+      "view": "他随后补充：若坚持做紫薇模式，把仓位降到10%，但他本人仍倾向不做；明显处于高位的票可直接跳过，并点名金健米业（600127）太高、不该做。前面说该股回放中也赚了，与后面的风险回避是不同层面的判断，不能只保留前一句。",
+      "horizon": "同一退潮阶段，限坚持参与者",
+      "falsifiers": [
+        "明显高位或高标一字跌停的亏钱效应持续，则可不做。"
+      ],
+      "evidence_refs": [
+        {
+          "segment_id": "8eda7f2ceb98f87acf31266c987e758e749a223f13c7a670e8558870b2da88ea",
+          "quote": "规避一下，有些特别高的"
+        },
+        {
+          "segment_id": "802691ce9834e96d51408dae4595b95b891fc8662b246c8d2b6b0338b666c2a8",
+          "quote": "你一定要职位，其实也没问题"
+        },
+        {
+          "segment_id": "71cd90ae97ace27ad5bfa6c86ae129327acdc31a004f708b7020759abc8c1a60",
+          "quote": "你把仓位降到10%啊，我个人倾向于不做"
+        },
+        {
+          "segment_id": "7647a177cbc73826f6d46d891e9b70570794d7d49c97a52cd59548ed62665010",
+          "quote": "亏钱效应在那里"
+        }
+      ]
+    },
+    {
+      "name": "下跌低吸及评分过滤",
+      "view": "不能做北交所而又坚持参与时，他更倾向轻仓下跌低吸，主板也一样；当前下跌环境下其优先级高于低位或中位低吸。超跌低吸当时评分为负，所以他选下跌低吸，并要求同时考虑稳定性和模式评分。他要求从内置模式入口勾选，保留模式内置的评分过滤，低于150分不做；他也用了“大于150”和“150以上”两种说法。他说更希望200分以上，但因候选太少放宽到150。不要直接只选“下跌”和“低吸”，应使用含过滤的模式；可与低位中低开低吸一起勾选排序，仍按市场分开看。",
+      "horizon": "原定9月4日及同类退潮环境",
+      "falsifiers": [
+        "模式或相关评分转负、环境继续恶化即不参与；阈值不自动进入本地策略。 该评分的正式指标名因转录不清尚未确认。"
+      ],
+      "evidence_refs": [
+        {
+          "segment_id": "b8fc5618bf85dd6cd4de0b63df496f3451a952be898a0572fe28190c0c25a329",
+          "quote": "早上的时候还专门防止这个万向德农啊的问题"
+        },
+        {
+          "segment_id": "e970f266de6cdf8c406d08d7f8749765ea7cb4470a6374f47c02f526c5c58282",
+          "quote": "轻一点好吧"
+        },
+        {
+          "segment_id": "aaa4f613f799893ba651238f957f1671a633f77b31845b6fa3efbaff7a4613df",
+          "quote": "下跌底息啊，在目前这种行情里面胜率还可以"
+        },
+        {
+          "segment_id": "0bfec98d7b0d92e9797515a8e2c0b751c00b0d3bc05cd69c828cf67e80f2cd66",
+          "quote": "不要点超跌低吸"
+        },
+        {
+          "segment_id": "9aa45a0d8860f0dde5c09c90c9671f4d6e3c43240191e4a2fbf739b6b9219e16",
+          "quote": "等跌停板止住再做紫薇模式会更稳一点"
+        },
+        {
+          "segment_id": "e92e7e80bc948be487c4b40424087b3573152069075e81a43f397b414d50fa58",
+          "quote": "今天就抛"
+        },
+        {
+          "segment_id": "66987e00013c45f641e2b5e3692852a0ceca6f3219081e256eb54c8b1b0e2467",
+          "quote": "下跌低息什么低位什么都放到放到今日精算这边"
+        },
+        {
+          "segment_id": "2b338670b0b696f258e522231dc081ae85112daa15ab208a117461f08b2e5a49",
+          "quote": "退潮退的是高标"
+        },
+        {
+          "segment_id": "eaaa684874925d3d36ffb0d29ce209ddc6f6d17d387ae64ea437f01bc22bfd2d",
+          "quote": "下跌低吸或者低位中低开低吸也行啊"
+        },
+        {
+          "segment_id": "063f96abac7cdff65f751defaf2b18acadec720abe4671e8288b65087cf0c35c",
+          "quote": "小草精华要大于150分啊，小于150分是不做的"
+        },
+        {
+          "segment_id": "7108595b9636071e2b632a5701731d1f96f9f683bf136441c270d16a764c412d",
+          "quote": "只会留下150分以上的"
+        },
+        {
+          "segment_id": "6184ded21932c758a772e45c27cf7e3780d630ae1c4a1da602ed31b25cc94d04",
+          "quote": "高位，追涨就放一边去啊"
+        },
+        {
+          "segment_id": "2b0e3a3e346681daf6e54be201d5b00a2ab2711a521fa0c8a7c025ee7addbe96",
+          "quote": "下跌低吸比中位低吸要强一些"
+        },
+        {
+          "segment_id": "951995eb0f21069bd2a423e81fca9b89a38052303f5a0812a469bdd7837a3685",
+          "quote": "个人倾向于下跌底细"
+        },
+        {
+          "segment_id": "0503f468ab6681e8e26a274fe2a6ea1c1a20dd50d57eea14c0f1f6378306a40c",
+          "quote": "一定不是直接点下跌点低吸"
+        },
+        {
+          "segment_id": "f733d77e8fb6e1505b6f817a5ab576422962c6375ad88c6d1ad9db16ba053357",
+          "quote": "200分以上有时候没票少了，所以就放宽到150了"
+        },
+        {
+          "segment_id": "fe886cd1365109517016678adeb6ec6af9478a2be3281a313bcc270ae5e32edf",
+          "quote": "这两个可以一起点啊"
+        },
+        {
+          "segment_id": "ff66019a6a3cfb40630829fa3a2993cf4473faa418a536a6af5b03ba46cc507e",
+          "quote": "仓位就要降一半"
+        },
+        {
+          "segment_id": "46bc07ae89d45307e308cd62683cec058517df720e9ceba2d498a3a70e9f3ab7",
+          "quote": "只是来打分的，只是来达到150分这个要求的"
+        }
+      ]
+    },
+    {
+      "name": "低位中低开低吸的备选与退出",
+      "view": "对不愿频繁切换模式、希望波动更平稳的人，他给出低位中低开低吸作为轻仓备选，虽然自己更喜欢人气股和断板。其主要条件是稳定性评分在1以上，低于1就不做；他强调环境太差时它也会变差。低位横盘有时可观察，但亏损后不建议一直等回本，明确说第二天走。他展示了不同月份的稳定性，也提到“大傻瓜”模式长时间不出票、出现时曾较好做。 对这一备选，他主要看稳定性评分，不把模式评分或短线评分当作相同的筛选门槛。",
+      "horizon": "长期模式选择方法及每次短线持仓；并非长期持股建议",
+      "falsifiers": [
+        "稳定性低于1或环境变差停止，亏损后按次日退出；恰好1的口头边界未明确。"
+      ],
+      "evidence_refs": [
+        {
+          "segment_id": "fcbd10318a306e8909276ba0bbf3d393b03b348c391a51be0e6ec5a75d26bb59",
+          "quote": "长期一点这个模式"
+        },
+        {
+          "segment_id": "23b38f84e44d32578324b98078fdcec371bba8064444fe7fe72c15b09b9e1c9f",
+          "quote": "低位中低开低吸"
+        },
+        {
+          "segment_id": "1ce2ef5307d62e9e168b1862acf12505ad99cbbba8dd9a91c11ac40a0eb4c357",
+          "quote": "灭了之后就第二天走"
+        },
+        {
+          "segment_id": "83ef0b13336ba9211218aebe914f9f5dc6f28dc71ef957a792a8958a7b2fb59f",
+          "quote": "他会很长一段时间不出票"
+        },
+        {
+          "segment_id": "ddfdfeacbae1f8c2a6261107dec67aaacfcfd0cea518de25ec18c6b010fcfbc5",
+          "quote": "它稳定性评分常年在在一点零以上"
+        },
+        {
+          "segment_id": "d2e81a3fb2e59bef2071904206ab7b67f044c57a89c6b2cf2ff3e3ebf1476715",
+          "quote": "稳定性评分都比较高"
+        },
+        {
+          "segment_id": "695b99f50b73424fb6121de9ca899f4b02da3b5dca5fe078b3b5bd224d51197b",
+          "quote": "他稳定性评分在一以上，这个模式他就可以做稳定性评分低于一的时候就不做了啊"
+        },
+        {
+          "segment_id": "a44e816a7ef12b90cb3f42985e2670f0755ae9bd30e9150834c2be3c5357a124",
+          "quote": "环境差了，它也不好啊"
+        },
+        {
+          "segment_id": "12864c1bd207d6c926c7182395f618431ce6ac91ed2463d914ac895d61adcccb",
+          "quote": "有些人需要舒服"
+        },
+        {
+          "segment_id": "fa10143665a19aff32e647c4ed39b3eac06d68ad8f12dee245b857f68f12487c",
+          "quote": "我的仓位会会跟着那个来啊"
+        },
+        {
+          "segment_id": "fbfdaf93038f07e072705496250eed8bd0337b39f80eb90de06cb937bfe7a60f",
+          "quote": "下跌反弹不破均线就可以卖"
+        },
+        {
+          "segment_id": "1d98f2eb8d60e989b6965ee9aa5b3580d60ef0f9af9bdf056e8774f5d020a249",
+          "quote": "那你做了，那第二天就走啊"
+        },
+        {
+          "segment_id": "66987e00013c45f641e2b5e3692852a0ceca6f3219081e256eb54c8b1b0e2467",
+          "quote": "下跌低息什么低位什么都放到放到今日精算这边"
+        },
+        {
+          "segment_id": "2b338670b0b696f258e522231dc081ae85112daa15ab208a117461f08b2e5a49",
+          "quote": "退潮退的是高标"
+        },
+        {
+          "segment_id": "eaaa684874925d3d36ffb0d29ce209ddc6f6d17d387ae64ea437f01bc22bfd2d",
+          "quote": "下跌低吸或者低位中低开低吸也行啊"
+        },
+        {
+          "segment_id": "eb2d2c8f30130f409f66b8b390f374f3b653a484dd665fb1e68ba7cf189abea1",
+          "quote": "多数时候是大于一啊"
+        },
+        {
+          "segment_id": "fe886cd1365109517016678adeb6ec6af9478a2be3281a313bcc270ae5e32edf",
+          "quote": "这两个可以一起点啊"
+        },
+        {
+          "segment_id": "ff66019a6a3cfb40630829fa3a2993cf4473faa418a536a6af5b03ba46cc507e",
+          "quote": "仓位就要降一半"
+        }
+      ]
+    },
+    {
+      "name": "退潮持续时间与结束条件",
+      "view": "他预计这次二波退潮比上一轮约一周更短，大概三天、也提到三四天，从9月3日星期四开始向周五、下周一或周二观察。他的理由是断板评分已经起来，较低位置的亏钱效应还没有全面失控；高标止跌后，断板或紫薇可能重新出现较大的短线收益。",
+      "horizon": "从9月3日起约三至四个交易日，口头估计",
+      "falsifiers": [
+        "跌停继续扩散或断板评分明显恶化，则时间预期失效。"
+      ],
+      "evidence_refs": [
+        {
+          "segment_id": "a5280b8e7e9c00c6dcc8be199a7245d63ef21699b5b3fa108625dc1cdb9960dd",
+          "quote": "三天四天左右不会到一个礼拜那么久啊，看情况"
+        },
+        {
+          "segment_id": "56535683efffbb846d180765eeab91a455249befd8d927175bc383e2e6541510",
+          "quote": "这个断板的分数上来了，它不会一下子掉下去"
+        },
+        {
+          "segment_id": "470246eb5ef52684b0a248d61a0e254d81c8a468fba19b5ead94d97197e989c1",
+          "quote": "没有那么大的亏钱效应"
+        },
+        {
+          "segment_id": "8c0845dbdafdf3ff46e6c899046971a609e14410bc7e87b06597b2613b5b94de",
+          "quote": "大概三天左右，大概是三天啊"
+        },
+        {
+          "segment_id": "f0e40e1dba019e254df6a2d4cd67e9838966b748b1c6a02178f63b6c8f1176a8",
+          "quote": "昨天我觉得算分歧，不太算退潮"
+        },
+        {
+          "segment_id": "aa7381c09f584c6cde71b0caed3fade91a7733b15da30a69664af26af423aae2",
+          "quote": "紫薇模式其实我觉得也不要做这几天"
+        },
+        {
+          "segment_id": "5ac6f175347aa38f86361e6e2989048e1dc4010a2477a827367cca511a882411",
+          "quote": "目前是个情绪退潮期"
+        },
+        {
+          "segment_id": "259e063ca453ee8ae4e94806c9f3209392a216564381a0f4b429cc849936bdf3",
+          "quote": "个股可能上不去了"
+        },
+        {
+          "segment_id": "34f0f377d71348ff6e82aba34845071f92d0c740a5cee8bbf553387660ff9da0",
+          "quote": "它只要止跌了，这个推导就结束了"
+        },
+        {
+          "segment_id": "17d5b4db6aa93d5f0cc168b231f4d46380701408374c5b4bc951a28b27c9ca6c",
+          "quote": "二零二五年4月15号之后，还是4月16号之后"
+        },
+        {
+          "segment_id": "e4655031c14355d849df18d68f34abf44b0e18b7cfe06740f4ec24c7fd7e9f42",
+          "quote": "屏幕前两名吧"
+        },
+        {
+          "segment_id": "f7f038dec82dc8a11f979a59a29883c48a149354d73a64c89f89731c6ba32b66",
+          "quote": "高标的一字板跌太多了"
+        },
+        {
+          "segment_id": "e2a6cd293cc15d499c97b2bd29470b384225ba8a399fe67c133ba8a1b14bb68f",
+          "quote": "轮动环境的主板是清仓啊"
+        },
+        {
+          "segment_id": "0db390c195270604bdae49b621ebbddda82e855014276d7915d56d43c75198bd",
+          "quote": "到收盘的话就更少了"
+        },
+        {
+          "segment_id": "0503f468ab6681e8e26a274fe2a6ea1c1a20dd50d57eea14c0f1f6378306a40c",
+          "quote": "一定不是直接点下跌点低吸"
+        }
+      ]
+    },
+    {
+      "name": "北交所带动修复的条件性路径",
+      "view": "他把当前描述为超跌反弹而非大行情：高标延续性打不开时，北交所这类小票可能先反弹，再观察能否带动其他板块。他类比2025年4月中旬一段约两周的北交所行情，但明确说不知道这次会持续多久。",
+      "horizon": "未来数日的修复路径；总时长未确定",
+      "falsifiers": [
+        "北交所失去赚钱效应，或未能向其他板块扩散。"
+      ],
+      "evidence_refs": [
+        {
+          "segment_id": "17d5b4db6aa93d5f0cc168b231f4d46380701408374c5b4bc951a28b27c9ca6c",
+          "quote": "二零二五年4月15号之后，还是4月16号之后"
+        },
+        {
+          "segment_id": "354608f49e12f770622e7ae2f8e9e5f67c91c7acc2db9fcc769e1c2064add98f",
+          "quote": "那些高标呢，打不出高度啊"
+        },
+        {
+          "segment_id": "f2e1bbbf3c88d44fc7cebc3139ed23a84522719a72ba3fe908ca82cff139dc53",
+          "quote": "这个过程持续了两个礼拜"
+        },
+        {
+          "segment_id": "cbaa47c23345c1021b473264d5fcd7de329b559c9462c41c3b01b86d27594466",
+          "quote": "慢慢的会带动其他的板块"
+        },
+        {
+          "segment_id": "18d238d4e18d85b3f12a3a815f6b5ddde76d15ce4c4c7faed7383a9a2e447707",
+          "quote": "我也不知道时间上面我们这里是多久啊"
+        },
+        {
+          "segment_id": "8591e368063036ebe3ad19c1f284b86f193358ee0ff234d93f75808152efc3b3",
+          "quote": "不来自于大行情，来自于超跌反弹"
+        },
+        {
+          "segment_id": "9a74689416bf419cca929741e8476003aa61dd987f87acef4bd2bec0b7a267b8",
+          "quote": "看北交所能不能在这个地方带起来啊"
+        },
+        {
+          "segment_id": "bc95ef6fff9a96b59f8812dd8fce345c71ce0dc51a929231bee14069a75a9728",
+          "quote": "二零二五年四月。16号啊"
+        }
+      ]
+    }
+  ],
+  "stocks": [
+    {
+      "name": "神奇制药",
+      "code": "600613",
+      "role": "primary_recommendation",
+      "resolution_status": "resolved",
+      "judgment": "明确卖出；公司名代码已由交易所2026年名单确认，具体行情未核对。",
+      "actionable": false,
+      "evidence_refs": [
+        {
+          "segment_id": "534e5ef7e99955278b6c473e66f7485cd10dfd229e20d39a0a21e70a396e6c9b",
+          "quotes": [
+            "神奇制药这种啊，我今天早上也跟你讲了，就是你你有你有你有有机会你就抛啊。你说你你你说我实在是不愿意抛，你说我也拿到收盘了。拿到收盘，其实也应该卖也应该卖啊，你不要问我老师，我后面这这。你拿到收盘了，就就这个票，你拿到收盘了，哎呀。你说你说我有机会抛，我就不抛啊，"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "福建金森",
+      "code": "002679",
+      "role": "primary_recommendation",
+      "resolution_status": "resolved",
+      "judgment": "次日给机会退出；不是当前买入推荐。",
+      "actionable": false,
+      "evidence_refs": [
+        {
+          "segment_id": "b828b4942c0a220a43c2c4100ec5e967c6ce215a868c8d442dbebff8403a3fe6",
+          "quotes": [
+            "还有深中华AA这些。啊对。深中华AA啊，这个都是属于高标，今天早上这几个高标。那个不是它一个啊，跌一字板跌停。深圳华为往开服看就知道了啊，等一下啊，忘了。啊对福建金呃福建金森还是还不算一字板跌停啊，这个没有，主要是这个不是很高，但是它不是一字板跌停。这个新赛股份。"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "誉衡药业",
+      "code": "002437",
+      "role": "primary_recommendation",
+      "resolution_status": "resolved",
+      "judgment": "当日高抛退出并禁止八九点追高。",
+      "actionable": false,
+      "evidence_refs": [
+        {
+          "segment_id": "8eda7f2ceb98f87acf31266c987e758e749a223f13c7a670e8558870b2da88ea",
+          "quotes": [
+            "啊，今天米业也赚了他，他在这种行情里面，他也可以啊，还有花溪啊，他的整体来说他的结构还是可以的啊。但是我规避一下，有些特别高的啊。昨天是誉衡药业，誉衡药业，今天啊，对誉衡药业今天有些同学，我真的是。我有时候不想说玉衡药业，昨天那个紫薇模式有玉衡药业是不是？"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "金健米业",
+      "code": "600127",
+      "role": "risk_warning",
+      "resolution_status": "resolved",
+      "judgment": "前段正面回放，后段明确太高可不做，两角色均保留。",
+      "actionable": false,
+      "evidence_refs": [
+        {
+          "segment_id": "48e244405cca1b314e5ec4593b6907b363ede87ba3639c4f16b72627d668e472",
+          "quotes": [
+            "我就选了那个数字，其实在长期数据统计里面，他们没多大区别，你31分十几秒和45秒什么的，50秒它没多大区别啊，在长期。所以早上的时候大概就是这样子，同事帮金健米业啊，或者是超平山金健米业啊，大概就是这样子。啊，第三个还是花溪，所以紫薇博士嗯。其实总的来主规模是靠前的还是可以的，但是呢，"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "万向德农",
+      "code": "600371",
+      "role": "risk_warning",
+      "resolution_status": "resolved",
+      "judgment": "前文谐音以后文明名确认；高标回避。",
+      "actionable": false,
+      "evidence_refs": [
+        {
+          "segment_id": "5fc43bf267d6b9fc181eb0f4975658b3fc6ef548ab5d11473869276a41162f73",
+          "quotes": [
+            "那明天早上还继续一字板的话。对不对？就是高标啊。那就不能做啊。北交所用DC对。好，如果你直接看市场排名的话啊。那也就北交所能活着吗？跃龙科技是北交所福建金城这个断板。这个是这个是v4值c码，换这个也还好吧，这个不说嗯嗯，方向德龙是高标啊。那那呃，属于这种属于环境里面，"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "新赛股份",
+      "code": null,
+      "role": "risk_warning",
+      "resolution_status": "unresolved",
+      "judgment": "名称清晰但本轮没有取得直接名称代码对照；保留原称，代码不猜。",
+      "actionable": false,
+      "evidence_refs": [
+        {
+          "segment_id": "5d2f35650624c5f9510686aa59e70563722009426bed9aa3f4b3593edd29bf43",
+          "quotes": [
+            "就是呃那个情绪。点这里啊，点这里可以看到早上。就是这些高标里面主要就是高标啊，这个我们前面看。听到那几个高标叫什么名字啊？这个。新赛股份。这是一字版的，这个是连版的。哎，我记不住名字，等一下啊，我看一下。啊。"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "深中华AA",
+      "code": null,
+      "role": "risk_warning",
+      "resolution_status": "unresolved",
+      "judgment": "原文及旧交易所月报支持名称读作深中华A，但近期检索页面未形成有效代码读回，本次不提供未新核实代码。",
+      "actionable": false,
+      "evidence_refs": [
+        {
+          "segment_id": "b828b4942c0a220a43c2c4100ec5e967c6ce215a868c8d442dbebff8403a3fe6",
+          "quotes": [
+            "还有深中华AA这些。啊对。深中华AA啊，这个都是属于高标，今天早上这几个高标。那个不是它一个啊，跌一字板跌停。深圳华为往开服看就知道了啊，等一下啊，忘了。啊对福建金呃福建金森还是还不算一字板跌停啊，这个没有，主要是这个不是很高，但是它不是一字板跌停。这个新赛股份。"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "爱丽家居",
+      "code": "603221",
+      "role": "risk_warning",
+      "resolution_status": "resolved",
+      "judgment": "交易所2026年名单确认名称代码；行情为作者主张。",
+      "actionable": false,
+      "evidence_refs": [
+        {
+          "segment_id": "951af42aeaa8416c6917942c749c6f29be3b50bbdae6d3c0d8c947c8ef4f9f47",
+          "quotes": [
+            "深中华a。爱丽家居啊，这都是。啊，一名食品，这个是高标二波，高标二波啊，其实之前这一波退过一次潮啊，我们经历了一次。现在其实是在第二次，相当于这个地方是今天是其实昨天跌停都算了，今天是这几个啊，主要就是新赛股份。这个相当于我们呃，今天早上直接就进入到一个呃，"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "一鸣食品",
+      "code": "605179",
+      "role": "risk_warning",
+      "resolution_status": "resolved",
+      "judgment": "后文明名和发行上市公告绑定，二波风险案例。",
+      "actionable": false,
+      "evidence_refs": [
+        {
+          "segment_id": "951af42aeaa8416c6917942c749c6f29be3b50bbdae6d3c0d8c947c8ef4f9f47",
+          "quotes": [
+            "深中华a。爱丽家居啊，这都是。啊，一名食品，这个是高标二波，高标二波啊，其实之前这一波退过一次潮啊，我们经历了一次。现在其实是在第二次，相当于这个地方是今天是其实昨天跌停都算了，今天是这几个啊，主要就是新赛股份。这个相当于我们呃，今天早上直接就进入到一个呃，"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "中广天择",
+      "code": "603721",
+      "role": "historical_example",
+      "resolution_status": "resolved",
+      "judgment": "7月公告以中广天择简称披露；本场为低位回放例子，非当前入场。",
+      "actionable": false,
+      "evidence_refs": [
+        {
+          "segment_id": "e5d211d8e9a5c8372d7fa29dcd78d3c8b7c28cb0b44fc120faaf3a44b78fb7f7",
+          "quotes": [
+            "那你说没有太高的，你像中广天泽。啊，没有太高的，也没太大问题啊，没太大问题，不是说断板就一定不是，只不过是在退潮期。啊，只是在退潮期好吧。如果你一定要讲的话，那就是呃能活的地方就是，包括今天北交所这个样子，它其实还可以。其实还可以，"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "金牛化工",
+      "code": null,
+      "role": "historical_example",
+      "resolution_status": "unresolved",
+      "judgment": "作者犹豫后否定纯一字跌停，代码未核实，非肯定风险清单。",
+      "actionable": false,
+      "evidence_refs": [
+        {
+          "segment_id": "df385baf49955a29442e537eb61ed47095c5c87fda5dd97dc19dca75e9d9c760",
+          "quotes": [
+            "那十厘米的那那其他地方的高标呢？其他地方高标呢，有严重的亏钱效应是吧？今天昨天的五板，今天早上一字板跌停，还有刚刚那几个跌停的都是呃，那几个跌停的叫什么名字？金牛化工吧，好像是。金融化啊，不是一字板跌停的，对在这里一字板跌停的这个四方科技。啊不四方科技都不算啊，四方科技对主要是爱丽家居，爱丽家居，"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "四方科技",
+      "code": null,
+      "role": "historical_example",
+      "resolution_status": "unresolved",
+      "judgment": "作者反复自改且说不算，不肯定其为一字跌停；代码不猜。",
+      "actionable": false,
+      "evidence_refs": [
+        {
+          "segment_id": "df385baf49955a29442e537eb61ed47095c5c87fda5dd97dc19dca75e9d9c760",
+          "quotes": [
+            "那十厘米的那那其他地方的高标呢？其他地方高标呢，有严重的亏钱效应是吧？今天昨天的五板，今天早上一字板跌停，还有刚刚那几个跌停的都是呃，那几个跌停的叫什么名字？金牛化工吧，好像是。金融化啊，不是一字板跌停的，对在这里一字板跌停的这个四方科技。啊不四方科技都不算啊，四方科技对主要是爱丽家居，爱丽家居，"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "超频三",
+      "code": "300647",
+      "role": "historical_example",
+      "resolution_status": "resolved",
+      "judgment": "2026年公司报告确认名称代码；本场是排名及40分回放。",
+      "actionable": false,
+      "evidence_refs": [
+        {
+          "segment_id": "890c655444d1b5d28bac8417b8884e33f67aadd394dc6a1ed9a07d181c69c844",
+          "quotes": [
+            "啊，它其实也容易，也容易面对吧？那我们明天做思维模式，我们也悠着点。我们看今天的职位模式啊。今天早上我只是跟大家跟大家讲要呃降一些仓位啊，因为行情太差。还在放那，今天就是这个超频三吗？主谓模式，其实我早上看到的不是这个，我早上看到的是红色方对我，我其实在招聘商红色方是反反复复在第一名的。啊，"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "红四方",
+      "code": "603395",
+      "role": "historical_example",
+      "resolution_status": "resolved",
+      "judgment": "后文明名绑定交易所代码，仅模拟选择回看，无实际成交证明。",
+      "actionable": false,
+      "evidence_refs": [
+        {
+          "segment_id": "890c655444d1b5d28bac8417b8884e33f67aadd394dc6a1ed9a07d181c69c844",
+          "quotes": [
+            "啊，它其实也容易，也容易面对吧？那我们明天做思维模式，我们也悠着点。我们看今天的职位模式啊。今天早上我只是跟大家跟大家讲要呃降一些仓位啊，因为行情太差。还在放那，今天就是这个超频三吗？主谓模式，其实我早上看到的不是这个，我早上看到的是红色方对我，我其实在招聘商红色方是反反复复在第一名的。啊，"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "麦捷科技",
+      "code": "300319",
+      "role": "historical_example",
+      "resolution_status": "resolved",
+      "judgment": "8月21日前后回放亏损后回升；不是当日新推荐。",
+      "actionable": false,
+      "evidence_refs": [
+        {
+          "segment_id": "cb69baef4cca6a973ba2f3b276e805afa2eb1474e53228556b8844bf8b46e89e",
+          "quotes": [
+            "啊，这一天21号。虽然麦捷科技后面好像涨回来了，虽然面的也不多啊。虽然后面涨回来，但是这个时候是这个时候，那个失败的概率大一点，这天小陈科技是赚了。啊，就往前就20号十九十九号20号这两天这几天啊，他也会面是吧？我们也可以，我我们也知道在退潮的这个时候。稍微稍微呃，那个一点。"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "神农种业",
+      "code": "300189",
+      "role": "historical_example",
+      "resolution_status": "resolved",
+      "judgment": "回放反复赚钱与141/171/90口头分数例子，不当成确切历史信号。",
+      "actionable": false,
+      "evidence_refs": [
+        {
+          "segment_id": "3a13a2abf7ac42f4a4cae2d60f996b20279869d49e96cbb40cb9cee3c194daed",
+          "quotes": [
+            "虽然虽然他也没多大的影响，没多大的影响好吧啊，他可能接受的马上他就会马上他就来呃来肉了啊，马上就来肉了。啊，神农种业这个反反复复的神农种业好几次。嗯。好吧，就是这个时候退潮期的时候啊，也是一样职位模式，毕竟也是一些高标模式，它也是一些。相对位置比较高的股票啊，虽然它不一定是最高的那一批，虽然不是不一定是最高那一批，"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "ST通脉",
+      "code": "603559",
+      "role": "historical_example",
+      "resolution_status": "resolved",
+      "judgment": "公司旧称与2026年公告简称ST通脉对应；源中连断回放，交易当日简称未另核。",
+      "actionable": false,
+      "evidence_refs": [
+        {
+          "segment_id": "74f0b944da824ab262a9324c750de7e38f261079a56e25ee34aa70b5ba1ca04e",
+          "quotes": [
+            "那照这样的话，高标不能做了，对不对？那所以他第二天肯定要走。第二天要走，就是如果说昨天是直接看这个神奇制药的话啊。对不对？直接看审计资料的话。昨天的话，我我其实早上带的时候是看了连段，对吧？他在连断中通国脉，还可以，不算特别高啊，今天还涨了。"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "赤天化",
+      "code": null,
+      "role": "historical_example",
+      "resolution_status": "unresolved",
+      "judgment": "15分示范，非买入或本地命中，代码未核。",
+      "actionable": false,
+      "evidence_refs": [
+        {
+          "segment_id": "9ecacbe6332f2c8804f187798ff616aab1e723f63c7e0ca1e0b6aa0dac9b6747",
+          "quotes": [
+            "看到没？神农种业171很少有100分以上的。啊，这个六分这个只有六分。这个赤天化也只有15分。啊，很少有，就是哎，这一天有一个渐开，那这个面呢？啊，这个90分虽然没灭，也是神龙种业接近100分，估计盘中是到达过啊，哎，"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "跃龙科技",
+      "code": null,
+      "role": "primary_recommendation",
+      "resolution_status": "unresolved",
+      "judgment": "当日直接选股及低位模式候选，必须保留候选角色；语音不足以唯一识别，未解身份禁止行动。",
+      "actionable": false,
+      "evidence_refs": [
+        {
+          "segment_id": "5fc43bf267d6b9fc181eb0f4975658b3fc6ef548ab5d11473869276a41162f73",
+          "quotes": [
+            "那明天早上还继续一字板的话。对不对？就是高标啊。那就不能做啊。北交所用DC对。好，如果你直接看市场排名的话啊。那也就北交所能活着吗？跃龙科技是北交所福建金城这个断板。这个是这个是v4值c码，换这个也还好吧，这个不说嗯嗯，方向德龙是高标啊。那那呃，属于这种属于环境里面，"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "华西科技",
+      "code": null,
+      "role": "supporting_rationale",
+      "resolution_status": "unresolved",
+      "judgment": "源称北交所高标且12元至30多元，但无法唯一识别，不猜代码或改为另一家公司。",
+      "actionable": false,
+      "evidence_refs": [
+        {
+          "segment_id": "d6ada196f8e9f7919e858eaafe917206b41c2e126a2f6624d29c2aef2a3da7f5",
+          "quotes": [
+            "是150%嘛。比这边要高一些，150%重点不是它监不监管，而是而是它的高标有没有亏钱效应，高标有亏钱效应。那这边不能碰短线，不能碰高标，没有亏钱效应。那那只有北交所高标，没有亏钱效应啊，北交所那个叫什么嗯？华西科技。这都多少个？啊，华西科技。"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "花溪",
+      "code": null,
+      "role": "historical_example",
+      "resolution_status": "unresolved",
+      "judgment": "不自动与华西科技合并；仅模式排名案例。",
+      "actionable": false,
+      "evidence_refs": [
+        {
+          "segment_id": "48e244405cca1b314e5ec4593b6907b363ede87ba3639c4f16b72627d668e472",
+          "quotes": [
+            "我就选了那个数字，其实在长期数据统计里面，他们没多大区别，你31分十几秒和45秒什么的，50秒它没多大区别啊，在长期。所以早上的时候大概就是这样子，同事帮金健米业啊，或者是超平山金健米业啊，大概就是这样子。啊，第三个还是花溪，所以紫薇博士嗯。其实总的来主规模是靠前的还是可以的，但是呢，"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "小陈科技",
+      "code": null,
+      "role": "historical_example",
+      "resolution_status": "unresolved",
+      "judgment": "8月历史赚钱案例，名称不足唯一识别；不猜晓程科技。",
+      "actionable": false,
+      "evidence_refs": [
+        {
+          "segment_id": "cb69baef4cca6a973ba2f3b276e805afa2eb1474e53228556b8844bf8b46e89e",
+          "quotes": [
+            "啊，这一天21号。虽然麦捷科技后面好像涨回来了，虽然面的也不多啊。虽然后面涨回来，但是这个时候是这个时候，那个失败的概率大一点，这天小陈科技是赚了。啊，就往前就20号十九十九号20号这两天这几天啊，他也会面是吧？我们也可以，我我们也知道在退潮的这个时候。稍微稍微呃，那个一点。"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "小城科技",
+      "code": null,
+      "role": "historical_example",
+      "resolution_status": "unresolved",
+      "judgment": "100分历史案例，不自动与小陈科技合并或猜代码。",
+      "actionable": false,
+      "evidence_refs": [
+        {
+          "segment_id": "b15b6f133ba474da451a5ffdf72815aac7193ab398759019975380cf60aa9d01",
+          "quotes": [
+            "这个100分小城科技。对吧，这个就是这个，就是人家就是每个人去做这种记录的时候。今天才多少分，今天才今天有40分。好吧，今天有40分。嗯，繁动系统点错了，不好意思。今天是四十分九点三十一。今天是超平三，但是我今天早上看到的是这个，看到的是红四方啊，"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "渐开",
+      "code": null,
+      "role": "historical_example",
+      "resolution_status": "unresolved",
+      "judgment": "回放亏损案例，名称未解；不猜佳创或其他证券。",
+      "actionable": false,
+      "evidence_refs": [
+        {
+          "segment_id": "9ecacbe6332f2c8804f187798ff616aab1e723f63c7e0ca1e0b6aa0dac9b6747",
+          "quotes": [
+            "看到没？神农种业171很少有100分以上的。啊，这个六分这个只有六分。这个赤天化也只有15分。啊，很少有，就是哎，这一天有一个渐开，那这个面呢？啊，这个90分虽然没灭，也是神龙种业接近100分，估计盘中是到达过啊，哎，"
+          ]
+        }
+      ]
+    }
+  ],
+  "method_principles": [
+    {
+      "principle": "先辨别高标亏钱效应和市场相对强弱，再决定是否轮动；并不是只按监管传闻或指数方向选市场。",
+      "evidence_refs": [
+        {
+          "segment_id": "d6ada196f8e9f7919e858eaafe917206b41c2e126a2f6624d29c2aef2a3da7f5",
+          "quote": "重点不是它监不监管，而是而是它的高标有没有亏钱效应"
+        },
+        {
+          "segment_id": "fd788d022f31c5931fb236f5f8323a18d817b4dd2a1e44eee93eec592090076e",
+          "quote": "我们关心的是？啊，在在北交所在这些地方有没有亏钱效应啊"
+        },
+        {
+          "segment_id": "cbbbe22a29cf5d3ca30b6d826d3ce630b242b7374a8b1e1f3df6d756079d3165",
+          "quote": "即使是下跌预期，他亏钱效应，他的赚钱效应也还可以"
+        },
+        {
+          "segment_id": "1c20a4d1e77777c4340cfd2489b6805213962b5c26849383cf633f125319c6c6",
+          "quote": "一下子变负分，我们就不做"
+        }
+      ]
+    },
+    {
+      "principle": "内置模式含评分过滤，不能用两个表面条件替代；评分更高也有候选稀少的代价。",
+      "evidence_refs": [
+        {
+          "segment_id": "063f96abac7cdff65f751defaf2b18acadec720abe4671e8288b65087cf0c35c",
+          "quote": "小草精华要大于150分啊，小于150分是不做的"
+        },
+        {
+          "segment_id": "7108595b9636071e2b632a5701731d1f96f9f683bf136441c270d16a764c412d",
+          "quote": "只会留下150分以上的"
+        },
+        {
+          "segment_id": "f733d77e8fb6e1505b6f817a5ab576422962c6375ad88c6d1ad9db16ba053357",
+          "quote": "200分以上有时候没票少了，所以就放宽到150了"
+        },
+        {
+          "segment_id": "46bc07ae89d45307e308cd62683cec058517df720e9ceba2d498a3a70e9f3ab7",
+          "quote": "只是来打分的，只是来达到150分这个要求的"
+        }
+      ]
+    },
+    {
+      "principle": "模拟收益必须从实际入场价格出发，不能拿当日和次日涨幅加总当组合收益；这是系统对来源口算的拆解。",
+      "attribution": "系统研究建议",
+      "evidence_refs": [
+        {
+          "segment_id": "a1fe0c6db19e13b061f1bb78f02d3911444a4296798dacc2d9053ffdec44a388",
+          "quote": "也有第二天跌十个点的"
+        },
+        {
+          "segment_id": "29747e52a526973bc15c85b49f77d25db56357493c30f451979ce9c6b676ccb8",
+          "quote": "111个点加88个点"
+        },
+        {
+          "segment_id": "1202f8a5f9b5eeea9e0b27fcf081fd747d8e273ecef1888e49ef47311b603b00",
+          "quote": "没有记录当天什么时候什么时候买什么什么点位买的"
+        },
+        {
+          "segment_id": "fd2e8dcfb7e5775685a8094d79277e58e1aa2aa3e47e872ae26aeb0a753ab209",
+          "quote": "减掉36=164，再除以18"
+        }
+      ]
+    },
+    {
+      "principle": "低开、盘中时点、小涨幅与退出条件一起保留；未来可探索的模型不等同于当前已上线模式。",
+      "evidence_refs": [
+        {
+          "segment_id": "94ba24bb5bfec52132a71daff76128a26684821f19b448eaa1f8a8dbbbba7ad4",
+          "quote": "30分45秒和31分，在长期的数据统计"
+        },
+        {
+          "segment_id": "eea85b18ec9d05a07504d5006fcb1e01cd12b7165110347eaeba3eca9033c781",
+          "quote": "低开有两种情况，低开低走，一个低开高走"
+        },
+        {
+          "segment_id": "5d8fb7bdcc142b8dab7abc43b537394b0c4633ab3748c3871690a4e186fb11db",
+          "quote": "低开高走，只要它破了均线就卖"
+        },
+        {
+          "segment_id": "0560f0f02c22b68da416aed332eb34062a7f7cae5379e9e46d003a5cc06adec3",
+          "quote": "还没有统计"
+        },
+        {
+          "segment_id": "e718bddb10ad6e0b04da02e0f5c8a2a7a46a9cbb46731011bd44f14a68bc49a6",
+          "quote": "紫薇模式，它限制色了你你趋势抱团加小涨幅"
+        },
+        {
+          "segment_id": "6e6df7d433364fc36cb805b816aa7b57182a6961c8a5692f4917808b848976d1",
+          "quote": "你买就不要把小涨幅去掉了"
+        }
+      ]
+    }
+  ],
+  "exit_lessons": [
+    {
+      "lesson": "神奇制药（600613）：他明确说9月3日盘中有机会就卖，即使一直拿到收盘也应该卖，不能因为没有出现高抛提示就继续拖着。",
+      "horizon": "9月3日当日及既有短线持仓退出",
+      "evidence_refs": [
+        {
+          "segment_id": "534e5ef7e99955278b6c473e66f7485cd10dfd229e20d39a0a21e70a396e6c9b",
+          "quote": "拿到收盘，其实也应该卖也应该卖啊"
+        },
+        {
+          "segment_id": "74f0b944da824ab262a9324c750de7e38f261079a56e25ee34aa70b5ba1ca04e",
+          "quote": "他在连断中通国脉，还可以，不算特别高啊，今天还涨了"
+        }
+      ]
+    },
+    {
+      "lesson": "福建金森（002679）：他区分其并非早盘纯一字跌停、位置也不是特别高；但对于仍持有者，9月4日即使低开，只要给出退出机会就尽快离开。",
+      "horizon": "原定9月4日的持仓退出",
+      "evidence_refs": [
+        {
+          "segment_id": "b828b4942c0a220a43c2c4100ec5e967c6ce215a868c8d442dbebff8403a3fe6",
+          "quote": "福建金森还是还不算一字板跌停啊，这个没有"
+        },
+        {
+          "segment_id": "3ea2afb75c44550a5c0c82c0772f6b6dc9938300eeceae72ba312d5e2918bf21",
+          "quote": "今天早上高标一字板跌停，你还去做高标"
+        },
+        {
+          "segment_id": "d572aac90a8fa3dda825f876213b0aa251a38501c86a628ba2fc73473d176dec",
+          "quote": "福建先生不是纯一字板"
+        },
+        {
+          "segment_id": "2a067754f45d94caeeb64441646f1644745707e04440deb309b15a08b26d609b",
+          "quote": "给个机会抛，你就赶紧跑了"
+        }
+      ]
+    },
+    {
+      "lesson": "誉衡药业（002437）：他回看9月3日下午时认为已有高抛或可退出的位置，当日应卖出；这是对既有持仓的退出建议，并未要求等待下一轮上涨。",
+      "horizon": "9月3日当日持仓",
+      "evidence_refs": [
+        {
+          "segment_id": "8eda7f2ceb98f87acf31266c987e758e749a223f13c7a670e8558870b2da88ea",
+          "quote": "规避一下，有些特别高的"
+        },
+        {
+          "segment_id": "7c5f4a38af41cd2bc3b917285a9a0207810eabf9b9007a5934c3de411048a926",
+          "quote": "誉衡药业今天下午这个地方应该是在这个地方有高抛啊"
+        },
+        {
+          "segment_id": "e92e7e80bc948be487c4b40424087b3573152069075e81a43f397b414d50fa58",
+          "quote": "今天就抛"
+        }
+      ]
+    },
+    {
+      "lesson": "环境差时，他说不必死等高抛提示：下跌后的反弹若始终上不穿盘中所看的均线，可以卖；若先上穿后又跌破，也卖；低开高走后跌破该均线，同样卖。上穿后未再跌破可以继续观察，环境正常才可等高抛。",
+      "horizon": "持仓盘中退出",
+      "evidence_refs": [
+        {
+          "segment_id": "01b1573e1125ec02cd3a05b9a554343ccde9f94db1e652d2cdebe5c4db304aa6",
+          "quote": "除了这个高抛以外，如果环境差"
+        },
+        {
+          "segment_id": "2dc1464b5a5a434f402c53ff95df3dbf29da15b7835618ba21093902f26f231e",
+          "quote": "反弹不上穿均线。那就卖上穿了均线，再跌破了也是卖不跌破，你就可以拿着"
+        },
+        {
+          "segment_id": "fbfdaf93038f07e072705496250eed8bd0337b39f80eb90de06cb937bfe7a60f",
+          "quote": "下跌反弹不破均线就可以卖"
+        },
+        {
+          "segment_id": "1d98f2eb8d60e989b6965ee9aa5b3580d60ef0f9af9bdf056e8774f5d020a249",
+          "quote": "那你做了，那第二天就走啊"
+        },
+        {
+          "segment_id": "eea85b18ec9d05a07504d5006fcb1e01cd12b7165110347eaeba3eca9033c781",
+          "quote": "低开有两种情况，低开低走，一个低开高走"
+        },
+        {
+          "segment_id": "5d8fb7bdcc142b8dab7abc43b537394b0c4633ab3748c3871690a4e186fb11db",
+          "quote": "低开高走，只要它破了均线就卖"
+        }
+      ]
+    },
+    {
+      "lesson": "对不愿频繁切换模式、希望波动更平稳的人，他给出低位中低开低吸作为轻仓备选，虽然自己更喜欢人气股和断板。其主要条件是稳定性评分在1以上，低于1就不做；他强调环境太差时它也会变差。低位横盘有时可观察，但亏损后不建议一直等回本，明确说第二天走。他展示了不同月份的稳定性，也提到“大傻瓜”模式长时间不出票、出现时曾较好做。",
+      "horizon": "长期模式选择方法及每次短线持仓；并非长期持股建议",
+      "evidence_refs": [
+        {
+          "segment_id": "fcbd10318a306e8909276ba0bbf3d393b03b348c391a51be0e6ec5a75d26bb59",
+          "quote": "长期一点这个模式"
+        },
+        {
+          "segment_id": "23b38f84e44d32578324b98078fdcec371bba8064444fe7fe72c15b09b9e1c9f",
+          "quote": "低位中低开低吸"
+        },
+        {
+          "segment_id": "1ce2ef5307d62e9e168b1862acf12505ad99cbbba8dd9a91c11ac40a0eb4c357",
+          "quote": "灭了之后就第二天走"
+        },
+        {
+          "segment_id": "83ef0b13336ba9211218aebe914f9f5dc6f28dc71ef957a792a8958a7b2fb59f",
+          "quote": "他会很长一段时间不出票"
+        },
+        {
+          "segment_id": "ddfdfeacbae1f8c2a6261107dec67aaacfcfd0cea518de25ec18c6b010fcfbc5",
+          "quote": "它稳定性评分常年在在一点零以上"
+        },
+        {
+          "segment_id": "d2e81a3fb2e59bef2071904206ab7b67f044c57a89c6b2cf2ff3e3ebf1476715",
+          "quote": "稳定性评分都比较高"
+        },
+        {
+          "segment_id": "695b99f50b73424fb6121de9ca899f4b02da3b5dca5fe078b3b5bd224d51197b",
+          "quote": "他稳定性评分在一以上，这个模式他就可以做稳定性评分低于一的时候就不做了啊"
+        },
+        {
+          "segment_id": "a44e816a7ef12b90cb3f42985e2670f0755ae9bd30e9150834c2be3c5357a124",
+          "quote": "环境差了，它也不好啊"
+        },
+        {
+          "segment_id": "12864c1bd207d6c926c7182395f618431ce6ac91ed2463d914ac895d61adcccb",
+          "quote": "有些人需要舒服"
+        },
+        {
+          "segment_id": "fa10143665a19aff32e647c4ed39b3eac06d68ad8f12dee245b857f68f12487c",
+          "quote": "我的仓位会会跟着那个来啊"
+        },
+        {
+          "segment_id": "fbfdaf93038f07e072705496250eed8bd0337b39f80eb90de06cb937bfe7a60f",
+          "quote": "下跌反弹不破均线就可以卖"
+        },
+        {
+          "segment_id": "1d98f2eb8d60e989b6965ee9aa5b3580d60ef0f9af9bdf056e8774f5d020a249",
+          "quote": "那你做了，那第二天就走啊"
+        },
+        {
+          "segment_id": "66987e00013c45f641e2b5e3692852a0ceca6f3219081e256eb54c8b1b0e2467",
+          "quote": "下跌低息什么低位什么都放到放到今日精算这边"
+        },
+        {
+          "segment_id": "2b338670b0b696f258e522231dc081ae85112daa15ab208a117461f08b2e5a49",
+          "quote": "退潮退的是高标"
+        },
+        {
+          "segment_id": "eaaa684874925d3d36ffb0d29ce209ddc6f6d17d387ae64ea437f01bc22bfd2d",
+          "quote": "下跌低吸或者低位中低开低吸也行啊"
+        },
+        {
+          "segment_id": "eb2d2c8f30130f409f66b8b390f374f3b653a484dd665fb1e68ba7cf189abea1",
+          "quote": "多数时候是大于一啊"
+        },
+        {
+          "segment_id": "fe886cd1365109517016678adeb6ec6af9478a2be3281a313bcc270ae5e32edf",
+          "quote": "这两个可以一起点啊"
+        },
+        {
+          "segment_id": "ff66019a6a3cfb40630829fa3a2993cf4473faa418a536a6af5b03ba46cc507e",
+          "quote": "仓位就要降一半"
+        }
+      ]
+    }
+  ],
+  "hypotheses": [
+    {
+      "candidate_key": "bse_relative_loss_effect",
+      "claim": "主板高标出现集中亏钱效应而北交所高标尚未同步恶化时，北交所轻仓轮动可能优于继续参与主板高标。",
+      "implied_rule": "研究层按事前高标亏钱效应分层，并设置北交所评分转负停止条件；不改变Book B或任何实盘资格。",
+      "falsifiable_test": "固定退潮定义、上市板块和前向可见评分，以同等风险预算比较北交所与主板高标的可成交率、次日净收益、最大不利变动及跌停不可退出率；按日期做训练/测试隔离。",
+      "expected_effect": "仅当相对优势在成本与流动性约束后仍跨样本成立才支持，否则拒绝。",
+      "category": "market_regime_rotation",
+      "evidence_refs": [
+        {
+          "segment_id": "d6ada196f8e9f7919e858eaafe917206b41c2e126a2f6624d29c2aef2a3da7f5",
+          "quote": "重点不是它监不监管，而是而是它的高标有没有亏钱效应"
+        },
+        {
+          "segment_id": "ee4dd56ecf6be6efc2612685d828646730bb5038dd298cb5e59ef63ea10691f7",
+          "quote": "做北交所也是轮动仓位做，比如说两成仓啊"
+        },
+        {
+          "segment_id": "1c20a4d1e77777c4340cfd2489b6805213962b5c26849383cf633f125319c6c6",
+          "quote": "一下子变负分，我们就不做"
+        }
+      ],
+      "authority": 0,
+      "status": "candidate_not_ingested"
+    },
+    {
+      "candidate_key": "filtered_decline_dip",
+      "claim": "下跌低吸内置评分过滤可能在减少候选数量的同时改善退潮阶段的候选质量，但150分与200分之间存在覆盖率和风险收益的取舍。",
+      "implied_rule": "比较内置模式、直接条件交集、150与200分档，明确等号边界和评分生成时点；阈值只有研究意义。",
+      "falsifiable_test": "用完整事前候选和统一可成交价格，在相同交易日比较不过滤、严格大于150、至少150、200分档的覆盖率、亏损尾部、次日收益与成本后风险收益；控制模式与环境的选择偏差。",
+      "expected_effect": "若优势仅来自样本变少或事后挑选则拒绝，不将来源阈值自动写入策略。",
+      "category": "signal_filter",
+      "evidence_refs": [
+        {
+          "segment_id": "063f96abac7cdff65f751defaf2b18acadec720abe4671e8288b65087cf0c35c",
+          "quote": "小草精华要大于150分啊，小于150分是不做的"
+        },
+        {
+          "segment_id": "7108595b9636071e2b632a5701731d1f96f9f683bf136441c270d16a764c412d",
+          "quote": "只会留下150分以上的"
+        },
+        {
+          "segment_id": "f733d77e8fb6e1505b6f817a5ab576422962c6375ad88c6d1ad9db16ba053357",
+          "quote": "200分以上有时候没票少了，所以就放宽到150了"
+        },
+        {
+          "segment_id": "46bc07ae89d45307e308cd62683cec058517df720e9ceba2d498a3a70e9f3ab7",
+          "quote": "只是来打分的，只是来达到150分这个要求的"
+        }
+      ],
+      "authority": 0,
+      "status": "candidate_not_ingested"
+    },
+    {
+      "candidate_key": "weak_regime_intraday_exit",
+      "claim": "在高标退潮且持仓反弹不能站上盘中均线或站上后再跌破时，主动退出可能比一直等待高抛提示更能控制亏损扩大。",
+      "implied_rule": "先查明源图所用均线定义，再比较不过线、过线再破、低开高走再破三种退出；不将均线擅自当作5日线。",
+      "falsifiable_test": "按入场时已知条件抽取退潮短线持仓，重放分钟路径、信号生成时刻和实际可卖性，比较所述退出与高抛提示/次日收盘基准的实现收益、卖飞和尾损；记录无买盘无法卖出的样本。",
+      "expected_effect": "只有成本后尾损改善且收益牺牲可接受才支持；不得覆盖已研究过的不同趋势出场结论。",
+      "category": "intraday_exit",
+      "evidence_refs": [
+        {
+          "segment_id": "534e5ef7e99955278b6c473e66f7485cd10dfd229e20d39a0a21e70a396e6c9b",
+          "quote": "拿到收盘，其实也应该卖也应该卖啊"
+        },
+        {
+          "segment_id": "2dc1464b5a5a434f402c53ff95df3dbf29da15b7835618ba21093902f26f231e",
+          "quote": "反弹不上穿均线。那就卖上穿了均线，再跌破了也是卖不跌破，你就可以拿着"
+        },
+        {
+          "segment_id": "2a067754f45d94caeeb64441646f1644745707e04440deb309b15a08b26d609b",
+          "quote": "给个机会抛，你就赶紧跑了"
+        },
+        {
+          "segment_id": "5d8fb7bdcc142b8dab7abc43b537394b0c4633ab3748c3871690a4e186fb11db",
+          "quote": "低开高走，只要它破了均线就卖"
+        }
+      ],
+      "authority": 0,
+      "status": "candidate_not_ingested"
+    },
+    {
+      "candidate_key": "intraday_score_time_price",
+      "claim": "保留趋势抱团与小涨幅限制时，早盘9时40分前更高的紫薇评分可能有增量解释力，但600分和100分样本的口算收益尚未证明可成交优势。",
+      "implied_rule": "锁定评分与时间，记录每次阈值首次触及的真实价格；分别检验100与600等分档，禁止把事后涨幅合计当实盘收益或最优阈值。",
+      "falsifiable_test": "在完整逐秒或足够细的事前记录中预注册时间窗与分档，去重同股票同日信号，纳入所有失败样本、涨停不可成交、费用滑点，比较次日收盘与固定退出的净收益；多重试验校正并做样本外验证。",
+      "expected_effect": "高分若在样本外无法改善基准，或只有稀疏挑样本的结果则拒绝。",
+      "category": "intraday_score_research",
+      "evidence_refs": [
+        {
+          "segment_id": "0560f0f02c22b68da416aed332eb34062a7f7cae5379e9e46d003a5cc06adec3",
+          "quote": "还没有统计"
+        },
+        {
+          "segment_id": "80d2e46c3f16b55b82fdce9d0e98e7f7c26cbddd98f69a8ff8e42d94fc530e9a",
+          "quote": "只是他能看到的一个点一个点的时间"
+        },
+        {
+          "segment_id": "1202f8a5f9b5eeea9e0b27fcf081fd747d8e273ecef1888e49ef47311b603b00",
+          "quote": "没有记录当天什么时候什么时候买什么什么点位买的"
+        },
+        {
+          "segment_id": "06871717d5f0ea4be1bbc911c9fabb528e225acd14ac86749d37489cd0b2eac1",
+          "quote": "1000份以上的一共九支票"
+        },
+        {
+          "segment_id": "fd2e8dcfb7e5775685a8094d79277e58e1aa2aa3e47e872ae26aeb0a753ab209",
+          "quote": "减掉36=164，再除以18"
+        },
+        {
+          "segment_id": "063dc666c7e66c01ea3090ea086dbbf9a6a6921735c282edde99f4df8b153823",
+          "quote": "九点四十之前啊，九点四十之后不行了"
+        },
+        {
+          "segment_id": "6e6df7d433364fc36cb805b816aa7b57182a6961c8a5692f4917808b848976d1",
+          "quote": "你买就不要把小涨幅去掉了"
+        }
+      ],
+      "authority": 0,
+      "status": "candidate_not_ingested"
+    },
+    {
+      "candidate_key": "low_open_stability",
+      "claim": "低位中低开低吸在稳定性评分较高时可能提供较平稳的短线备选，但环境恶化及亏损后继续等回本会破坏这一特征。",
+      "implied_rule": "把作者的稳定性1分边界、低位状态和亏损次日退出分别记录；不把长期用同一模式等同于长期持同一股票。",
+      "falsifiable_test": "先确认稳定性评分算法及发布时间，比较1分上下的完整前向样本与相同环境其他模式；用同一风险预算、含成本执行、亏损次日退出与延迟等待的配对路径，评估波动、尾损及净收益。",
+      "expected_effect": "如稳定性分无预测增量或延后持仓增加尾损，否定相应命题。",
+      "category": "mode_stability",
+      "evidence_refs": [
+        {
+          "segment_id": "23b38f84e44d32578324b98078fdcec371bba8064444fe7fe72c15b09b9e1c9f",
+          "quote": "低位中低开低吸"
+        },
+        {
+          "segment_id": "1ce2ef5307d62e9e168b1862acf12505ad99cbbba8dd9a91c11ac40a0eb4c357",
+          "quote": "灭了之后就第二天走"
+        },
+        {
+          "segment_id": "ddfdfeacbae1f8c2a6261107dec67aaacfcfd0cea518de25ec18c6b010fcfbc5",
+          "quote": "它稳定性评分常年在在一点零以上"
+        },
+        {
+          "segment_id": "695b99f50b73424fb6121de9ca899f4b02da3b5dca5fe078b3b5bd224d51197b",
+          "quote": "他稳定性评分在一以上，这个模式他就可以做稳定性评分低于一的时候就不做了啊"
+        },
+        {
+          "segment_id": "a44e816a7ef12b90cb3f42985e2670f0755ae9bd30e9150834c2be3c5357a124",
+          "quote": "环境差了，它也不好啊"
+        }
+      ],
+      "authority": 0,
+      "status": "candidate_not_ingested"
+    }
+  ],
+  "timing_notes": [
+    "正文自称今天星期四且说9月2号、9月3号，支持源会话为2026-09-03；请求published_at为9月5日处理/采集时间，不改请求身份。",
+    "明天对应9月4日；周五、下周一/周二以及三四天是退潮观察窗，不是保证恢复日。",
+    "旧北交所两周类比在后文回到2025年4月16日，早前月日口误不被当成独立事实，也不确定本轮长度。",
+    "9时31分邻近秒点的长期等价说法未独立复现；高分观察后来限定9时40分前，不能忽略此条件。",
+    "源中没有上一场的持股三日容错或按盯盘能力分层规则；低位亏损段明确次日走。",
+    "来源均线未给算法/周期；150分和1分等号边界需研究确认，不擅自参数化。",
+    "北交所倾向前两名分散参与；两只的分配比例未明确，不推算每只占家庭资产10%。"
+  ],
+  "typo_corrections": [
+    {
+      "original": "清仓",
+      "corrected": "轻仓（仅相应仓位语境）",
+      "reason": "第36段明说仓位轻，第37/103段两成，第68/104段减半，不能概括成全部清仓。",
+      "evidence_refs": [
+        {
+          "segment_id": "78743e716587526d4c697a59841304a5d9543e479e41c66079a2f1f1695bbe9a",
+          "quote": "仓位轻一点"
+        },
+        {
+          "segment_id": "ee4dd56ecf6be6efc2612685d828646730bb5038dd298cb5e59ef63ea10691f7",
+          "quote": "做北交所也是轮动仓位做，比如说两成仓啊"
+        },
+        {
+          "segment_id": "fc62893d19dd426e68fba9d12d85140ba64d3773f6c56e4e76104cbfe16604a3",
+          "quote": "降一半仓位"
+        },
+        {
+          "segment_id": "f4c3835c4a136a63c9b6e742d1c782fe9a270ca79db4ba4febea076251b4738e",
+          "quote": "两层仓滚动"
+        },
+        {
+          "segment_id": "ff66019a6a3cfb40630829fa3a2993cf4473faa418a536a6af5b03ba46cc507e",
+          "quote": "仓位就要降一半"
+        }
+      ]
+    },
+    {
+      "original": "屏幕前两名",
+      "corrected": "倾向前两名分散参与，未明确两只分配比例",
+      "reason": "问答上下文支持分散前两名，不足以证明等权配置。",
+      "evidence_refs": [
+        {
+          "segment_id": "e4655031c14355d849df18d68f34abf44b0e18b7cfe06740f4ec24c7fd7e9f42",
+          "quote": "屏幕前两名吧"
+        }
+      ]
+    },
+    {
+      "original": "破这个均线就买",
+      "corrected": "跌破所述均线就卖",
+      "reason": "同段反复说卖出；不发明均线周期。",
+      "evidence_refs": [
+        {
+          "segment_id": "5d8fb7bdcc142b8dab7abc43b537394b0c4633ab3748c3871690a4e186fb11db",
+          "quote": "低开高走，只要它破了均线就卖"
+        }
+      ]
+    },
+    {
+      "original": "静丸/精华/禁玩/竞网",
+      "corrected": "内置评分过滤，正式指标名待确认",
+      "reason": "阈值和入口可提炼，不能凭谐音确定正式产品名称。",
+      "evidence_refs": [
+        {
+          "segment_id": "063f96abac7cdff65f751defaf2b18acadec720abe4671e8288b65087cf0c35c",
+          "quote": "小草精华要大于150分啊，小于150分是不做的"
+        },
+        {
+          "segment_id": "7108595b9636071e2b632a5701731d1f96f9f683bf136441c270d16a764c412d",
+          "quote": "只会留下150分以上的"
+        },
+        {
+          "segment_id": "46bc07ae89d45307e308cd62683cec058517df720e9ceba2d498a3a70e9f3ab7",
+          "quote": "只是来打分的，只是来达到150分这个要求的"
+        }
+      ]
+    },
+    {
+      "original": "红色方/超平三/新建米业/玉衡药业",
+      "corrected": "红四方/超频三/金健米业/誉衡药业",
+      "reason": "同一稿明名及官方身份资料支持；不更改原quote。",
+      "evidence_refs": [
+        {
+          "segment_id": "48e244405cca1b314e5ec4593b6907b363ede87ba3639c4f16b72627d668e472",
+          "quote": "他们没多大区别"
+        },
+        {
+          "segment_id": "7c5f4a38af41cd2bc3b917285a9a0207810eabf9b9007a5934c3de411048a926",
+          "quote": "誉衡药业今天下午这个地方应该是在这个地方有高抛啊"
+        },
+        {
+          "segment_id": "71cd90ae97ace27ad5bfa6c86ae129327acdc31a004f708b7020759abc8c1a60",
+          "quote": "你把仓位降到10%啊，我个人倾向于不做"
+        },
+        {
+          "segment_id": "b15b6f133ba474da451a5ffdf72815aac7193ab398759019975380cf60aa9d01",
+          "quote": "今天有40分"
+        },
+        {
+          "segment_id": "fc4ed5934393af4867c6b9761d21dd37523368510bfef80d0595f1e171f3ee1a",
+          "quote": "今天米啊没有100分"
+        }
+      ]
+    },
+    {
+      "original": "跃龙科技/华西科技/花溪/小陈科技/小城科技/渐开",
+      "corrected": "保留各自未解实体，不猜名代码、不自动合并",
+      "reason": "名称尚不足以唯一识别，角色不因未解而删除。",
+      "evidence_refs": [
+        {
+          "segment_id": "d6ada196f8e9f7919e858eaafe917206b41c2e126a2f6624d29c2aef2a3da7f5",
+          "quote": "重点不是它监不监管，而是而是它的高标有没有亏钱效应"
+        },
+        {
+          "segment_id": "5fc43bf267d6b9fc181eb0f4975658b3fc6ef548ab5d11473869276a41162f73",
+          "quote": "跃龙科技是北交所"
+        },
+        {
+          "segment_id": "cb69baef4cca6a973ba2f3b276e805afa2eb1474e53228556b8844bf8b46e89e",
+          "quote": "这个时候，那个失败的概率大一点"
+        },
+        {
+          "segment_id": "2a067754f45d94caeeb64441646f1644745707e04440deb309b15a08b26d609b",
+          "quote": "给个机会抛，你就赶紧跑了"
+        },
+        {
+          "segment_id": "9ecacbe6332f2c8804f187798ff616aab1e723f63c7e0ca1e0b6aa0dac9b6747",
+          "quote": "这个赤天化也只有15分"
+        },
+        {
+          "segment_id": "b15b6f133ba474da451a5ffdf72815aac7193ab398759019975380cf60aa9d01",
+          "quote": "今天有40分"
+        }
+      ]
+    },
+    {
+      "original": "每个票都是200% / 通通买8%",
+      "corrected": "按上下文为假设买在2%或3%时扣减的口算",
+      "reason": "18只扣36或54个百分点，再除18；不是账户收益。",
+      "evidence_refs": [
+        {
+          "segment_id": "29747e52a526973bc15c85b49f77d25db56357493c30f451979ce9c6b676ccb8",
+          "quote": "111个点加88个点"
+        },
+        {
+          "segment_id": "74344756bfdf4c0ce32a82a69d33c72eb794441e3d750be6d00e8923d48ee7cf",
+          "quote": "全部按三个点买"
+        },
+        {
+          "segment_id": "fd2e8dcfb7e5775685a8094d79277e58e1aa2aa3e47e872ae26aeb0a753ab209",
+          "quote": "减掉36=164，再除以18"
+        },
+        {
+          "segment_id": "063dc666c7e66c01ea3090ea086dbbf9a6a6921735c282edde99f4df8b153823",
+          "quote": "九点四十之前啊，九点四十之后不行了"
+        }
+      ]
+    }
+  ],
+  "strategy_hit_audit": {
+    "scope": "本场点名与本地9月3日四类只读账本/推荐的分离核对；没有运行策略或行情重扫。",
+    "teacher_named_winners": [
+      {
+        "name": "红四方",
+        "classification": "not_emitted",
+        "note": "来源当日盈利回看及模拟选择；9月3日本地5条信号均非该股，不声称来源实际成交。",
+        "evidence_refs": [
+          {
+            "segment_id": "f7f89ddbfd3ff68255caa3694cacc236d2f6e0ad9ae15dfe81efd7ebeeef711a",
+            "quote": "如果模拟盘下单"
+          },
+          {
+            "segment_id": "b0ad4facfbd1036dee0f5a27b19f28a09d817acdd80ad80b8a4ba9bc29aaf375",
+            "quote": "紫薇模式也是高标模式"
+          },
+          {
+            "segment_id": "b15b6f133ba474da451a5ffdf72815aac7193ab398759019975380cf60aa9d01",
+            "quote": "今天有40分"
+          },
+          {
+            "segment_id": "fc4ed5934393af4867c6b9761d21dd37523368510bfef80d0595f1e171f3ee1a",
+            "quote": "今天米啊没有100分"
+          }
+        ]
+      },
+      {
+        "name": "金健米业",
+        "classification": "not_emitted",
+        "note": "来源先说回放赚钱，后明确高位可不做；9月3日本地5条信号没有该股。",
+        "evidence_refs": [
+          {
+            "segment_id": "8eda7f2ceb98f87acf31266c987e758e749a223f13c7a670e8558870b2da88ea",
+            "quote": "规避一下，有些特别高的"
+          },
+          {
+            "segment_id": "71cd90ae97ace27ad5bfa6c86ae129327acdc31a004f708b7020759abc8c1a60",
+            "quote": "你把仓位降到10%啊，我个人倾向于不做"
+          }
+        ]
+      },
+      {
+        "name": "神农种业",
+        "classification": "no_evidence",
+        "note": "来源历史反复收益和评分例子，具体回放日期不完整，未验证历史命中。",
+        "evidence_refs": [
+          {
+            "segment_id": "3a13a2abf7ac42f4a4cae2d60f996b20279869d49e96cbb40cb9cee3c194daed",
+            "quote": "神农种业这个反反复复的神农种业好几次"
+          },
+          {
+            "segment_id": "6e6df7d433364fc36cb805b816aa7b57182a6961c8a5692f4917808b848976d1",
+            "quote": "你买就不要把小涨幅去掉了"
+          },
+          {
+            "segment_id": "9ecacbe6332f2c8804f187798ff616aab1e723f63c7e0ca1e0b6aa0dac9b6747",
+            "quote": "这个赤天化也只有15分"
+          }
+        ]
+      },
+      {
+        "name": "小陈科技",
+        "classification": "no_evidence",
+        "note": "作者称历史当日赚钱，实体未解，不记入任何确定性命中。",
+        "evidence_refs": [
+          {
+            "segment_id": "cb69baef4cca6a973ba2f3b276e805afa2eb1474e53228556b8844bf8b46e89e",
+            "quote": "这个时候，那个失败的概率大一点"
+          }
+        ]
+      },
+      {
+        "name": "中通国脉",
+        "classification": "not_emitted",
+        "note": "作者称当日上涨并澄清此前看连断；9月3日本地信号无该名称代码，不倒推源买入。",
+        "evidence_refs": [
+          {
+            "segment_id": "74f0b944da824ab262a9324c750de7e38f261079a56e25ee34aa70b5ba1ca04e",
+            "quote": "他在连断中通国脉，还可以，不算特别高啊，今天还涨了"
+          },
+          {
+            "segment_id": "b8fc5618bf85dd6cd4de0b63df496f3451a952be898a0572fe28190c0c25a329",
+            "quote": "早上的时候还专门防止这个万向德农啊的问题"
+          }
+        ]
+      }
+    ],
+    "local_strategy_benchmark_hits": [
+      {
+        "names": [
+          "精研科技",
+          "易点天下",
+          "泓淋电力",
+          "托普云农",
+          "沃森生物"
+        ],
+        "classification": "cohort_benchmark",
+        "note": "9月3日signal_snapshots仅这5条，来源未点名其中任何一只；推荐可执行候选为NONE。"
+      }
+    ],
+    "direction_core_observations": [
+      {
+        "name": "北交所相对轮动",
+        "classification": "no_evidence",
+        "note": "方向观点不等于本地同股入场；不执行任何北交所或Book路径。"
+      },
+      {
+        "name": "紫薇高分样本",
+        "classification": "no_evidence",
+        "note": "完整表格、每笔入场和可成交性未提供，不能称回测通过或本地命中。"
+      }
+    ],
+    "local_evidence_paths": [
+      "output/live/recommend_2026-09-03.md",
+      "output/live/signal_snapshots.jsonl",
+      "output/live/positions.jsonl",
+      "output/live/paper_trades.jsonl",
+      "output/live/decision_journal.jsonl"
+    ],
+    "limitations": [
+      "positions与paper_trades没有含2026-09-03的行；这不证明该日券商或全部Book零交易。",
+      "decision_journal有11条日期匹配，仅用于确认有记录，不代替逐单核对。",
+      "旧日期案例未补抓行情，不声称完成全历史命中审计。"
+    ]
+  },
+  "feedback_assessment": {
+    "command": "scripts/distill_transcript.py --feedback",
+    "assessment": [
+      "反馈没有新calibration flag；7月电子趋势尾声先验与本场短线高标退潮不同，不据此改写。",
+      "细化环境下的退出和等待边界，但没有为6月广度机械禁做提供新统计证据，不能推翻已拒绝结果。",
+      "8月11日反馈中的执行能力分层和最长三日是旧场内容，本场不承接、不新增相同候选。",
+      "本场缺少新的样本外测算，不能因达人退潮判断而自动推翻广度机械禁做已拒绝的先验；也不从旧场迁入执行能力分层或固定三天持股。"
+    ],
+    "merge_candidates": [
+      "北交所研究与XH-014 Book B排除边界并存，不能合并成给Book B开放北交所。",
+      "盘中均线退出与XH-001已拒绝的趋势trailing修改并非同命题，不复活被拒绝结论。",
+      "5条新候选只供主代理比对当前完整backlog后合并；尚未申请或分配全局编号。",
+      "150/200过滤与600/100早盘评分属于不同语境、阈值和时间条件，不能合并成一个通用分数门槛。"
+    ]
+  },
+  "decision_trace": [
+    {
+      "observation": "高标集中一字跌停，而北交所仍有赚钱效应。",
+      "inference": "这是一轮短线二波退潮，板块间相对强弱仍可能轮动。",
+      "action": "非北交所减半/可等，北交所仅两成轮动；负分停止。",
+      "evidence_refs": [
+        {
+          "segment_id": "f0e40e1dba019e254df6a2d4cd67e9838966b748b1c6a02178f63b6c8f1176a8",
+          "quote": "昨天我觉得算分歧，不太算退潮"
+        },
+        {
+          "segment_id": "d6ada196f8e9f7919e858eaafe917206b41c2e126a2f6624d29c2aef2a3da7f5",
+          "quote": "重点不是它监不监管，而是而是它的高标有没有亏钱效应"
+        },
+        {
+          "segment_id": "ee4dd56ecf6be6efc2612685d828646730bb5038dd298cb5e59ef63ea10691f7",
+          "quote": "做北交所也是轮动仓位做，比如说两成仓啊"
+        },
+        {
+          "segment_id": "1c20a4d1e77777c4340cfd2489b6805213962b5c26849383cf633f125319c6c6",
+          "quote": "一下子变负分，我们就不做"
+        },
+        {
+          "segment_id": "ff66019a6a3cfb40630829fa3a2993cf4473faa418a536a6af5b03ba46cc507e",
+          "quote": "仓位就要降一半"
+        }
+      ]
+    },
+    {
+      "observation": "已有持仓走弱、有人死等高抛或回本。",
+      "inference": "指标没有提示不等于持有理由仍成立。",
+      "action": "保留神奇、福建、誉衡各自退出时点；用源中所看的均线判断盘中弱势。",
+      "evidence_refs": [
+        {
+          "segment_id": "534e5ef7e99955278b6c473e66f7485cd10dfd229e20d39a0a21e70a396e6c9b",
+          "quote": "拿到收盘，其实也应该卖也应该卖啊"
+        },
+        {
+          "segment_id": "2dc1464b5a5a434f402c53ff95df3dbf29da15b7835618ba21093902f26f231e",
+          "quote": "反弹不上穿均线。那就卖上穿了均线，再跌破了也是卖不跌破，你就可以拿着"
+        },
+        {
+          "segment_id": "7c5f4a38af41cd2bc3b917285a9a0207810eabf9b9007a5934c3de411048a926",
+          "quote": "誉衡药业今天下午这个地方应该是在这个地方有高抛啊"
+        },
+        {
+          "segment_id": "2a067754f45d94caeeb64441646f1644745707e04440deb309b15a08b26d609b",
+          "quote": "给个机会抛，你就赶紧跑了"
+        },
+        {
+          "segment_id": "5d8fb7bdcc142b8dab7abc43b537394b0c4633ab3748c3871690a4e186fb11db",
+          "quote": "低开高走，只要它破了均线就卖"
+        }
+      ]
+    },
+    {
+      "observation": "作者先建议暂停紫薇，后允许坚持者一成且排除高位。",
+      "inference": "主建议和条件性备选必须同时保存。",
+      "action": "不将末尾高分讨论升级为次日满仓买入。",
+      "evidence_refs": [
+        {
+          "segment_id": "aa7381c09f584c6cde71b0caed3fade91a7733b15da30a69664af26af423aae2",
+          "quote": "紫薇模式其实我觉得也不要做这几天"
+        },
+        {
+          "segment_id": "9aa45a0d8860f0dde5c09c90c9671f4d6e3c43240191e4a2fbf739b6b9219e16",
+          "quote": "等跌停板止住再做紫薇模式会更稳一点"
+        },
+        {
+          "segment_id": "802691ce9834e96d51408dae4595b95b891fc8662b246c8d2b6b0338b666c2a8",
+          "quote": "你一定要职位，其实也没问题"
+        },
+        {
+          "segment_id": "71cd90ae97ace27ad5bfa6c86ae129327acdc31a004f708b7020759abc8c1a60",
+          "quote": "你把仓位降到10%啊，我个人倾向于不做"
+        },
+        {
+          "segment_id": "063dc666c7e66c01ea3090ea086dbbf9a6a6921735c282edde99f4df8b153823",
+          "quote": "九点四十之前啊，九点四十之后不行了"
+        }
+      ]
+    },
+    {
+      "observation": "同学记录只有样本涨幅、时间切片且无真实买点。",
+      "inference": "评分效应有研究价值，当前证据不足以计算实际收益。",
+      "action": "形成时间、评分、价格共同约束的候选，等待独立研究。",
+      "evidence_refs": [
+        {
+          "segment_id": "0560f0f02c22b68da416aed332eb34062a7f7cae5379e9e46d003a5cc06adec3",
+          "quote": "还没有统计"
+        },
+        {
+          "segment_id": "80d2e46c3f16b55b82fdce9d0e98e7f7c26cbddd98f69a8ff8e42d94fc530e9a",
+          "quote": "只是他能看到的一个点一个点的时间"
+        },
+        {
+          "segment_id": "1202f8a5f9b5eeea9e0b27fcf081fd747d8e273ecef1888e49ef47311b603b00",
+          "quote": "没有记录当天什么时候什么时候买什么什么点位买的"
+        },
+        {
+          "segment_id": "fd2e8dcfb7e5775685a8094d79277e58e1aa2aa3e47e872ae26aeb0a753ab209",
+          "quote": "减掉36=164，再除以18"
+        },
+        {
+          "segment_id": "063dc666c7e66c01ea3090ea086dbbf9a6a6921735c282edde99f4df8b153823",
+          "quote": "九点四十之前啊，九点四十之后不行了"
+        },
+        {
+          "segment_id": "6e6df7d433364fc36cb805b816aa7b57182a6961c8a5692f4917808b848976d1",
+          "quote": "你买就不要把小涨幅去掉了"
+        }
+      ]
+    }
+  ],
+  "judgment_heuristics": [
+    "一字跌停带来的不可退出风险应与相对高位同时看。",
+    "个人模式偏好不替代评分和当下环境；轻仓、减半、10%各有不同适用条件。",
+    "亏损次日走与高标退潮预计三天属于不同时间对象。",
+    "高分统计必须保留小涨幅、出现时间和样本完整性，不能给阈值制造确定性。"
+  ],
+  "action_summary": {
+    "posture_update": "no_change：用户限定单对象本地草稿，不修改全局posture或时间线。",
+    "playbook_update": "no_change：五条候选仍authority=0，仅单文件归档。",
+    "hypothesis_update": "pending_parent_merge：5条authority=0候选，未入库、未分配全局编号；先由主代理对完整backlog去重。",
+    "audit_evidence": "148段完整源文与第二遍语义审计已经覆盖；引用均从同一SHA的原段落截取。独立市场补充仅确认9月4日指数及三只退出股名称代码，不能回填9月3日。",
+    "instrumentation_todo": "no_issue_created：研究需事前分数、毫秒/秒级时点、具体均线、候选全量、失败样本、可成交性及实际入场退出价格。",
+    "routing": [
+      "authority_0_durable_knowledge",
+      "parent_semantic_review",
+      "pending_hypothesis_deduplication",
+      "no_shared_index_writes"
+    ]
+  },
+  "local_review_status": "unsealed_knowledge_draft_pending_parent_review",
+  "coverage_judgment": {
+    "source_paragraph_count": 148,
+    "investment_paragraph_count": 142,
+    "non_investment_paragraph_count": 4,
+    "advertisement_paragraph_count": 2,
+    "must_surface_count": 18,
+    "audit_only_thesis_count": 6,
+    "holdings_did_not_limit_extraction": true,
+    "limitations": "独立语义覆盖不是外部事实验证；当前模型声明不是服务端密码学证明。"
+  }
+}
