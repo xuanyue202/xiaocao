@@ -373,7 +373,7 @@ def test_sniffer_allows_large_candidate_listing_more_time():
     client = SnifferClient(timeout=2.0, opener=opener)
 
     assert client.candidates() == [{"id": "candidate-1"}]
-    assert seen["path"].endswith("/api/elive/live/candidates?all=1")
+    assert seen["path"].endswith("/api/elive/live/candidates?all=1&view=capture")
     assert seen["timeout"] == 15.0
 
 

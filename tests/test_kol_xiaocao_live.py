@@ -1167,7 +1167,8 @@ def test_start_emits_one_prompt_after_health_and_baseline(tmp_path):
     class Process:
         pid = 1234
 
-    def popen(*_args, **_kwargs):
+    def popen(command, **_kwargs):
+        assert command == [str(binary), "--xiaoetong-only"]
         state["running"] = True
         return Process()
 

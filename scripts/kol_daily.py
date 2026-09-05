@@ -4383,6 +4383,7 @@ def main() -> int:
             "run",
             "viewpoints",
             "capture-local",
+            "capture-xiaocao-item",
             "capture-xiaocao-handoff",
             "capture-wechat-official",
             "import-wechat-official",
@@ -4849,6 +4850,22 @@ def main() -> int:
             blocker_sender=_sender,
         )
         if not result.get("silent"):
+            _print(result)
+        follow_result = _follow_cloud_handoff(runtime, result)
+        if follow_result is not None:
+            _print(follow_result)
+        return 0
+    if args.command == "capture-xiaocao-item":
+        if not args.source_identity:
+            raise DailyError(
+                "capture-xiaocao-item requires the manifest identity"
+            )
+        runtime = DailyRuntime.__new__(DailyRuntime)
+        runtime.args = args
+        result = runtime.xiaocao_wechat(
+            only_identity=args.source_identity,
+        )
+        if result.get("status") != "no_update":
             _print(result)
         follow_result = _follow_cloud_handoff(runtime, result)
         if follow_result is not None:

@@ -1196,6 +1196,43 @@ def test_capture_local_cli_runs_live_and_official_account_sources(
     }
 
 
+def test_capture_xiaocao_item_cli_runs_only_the_bound_manifest_identity(
+    tmp_path,
+    monkeypatch,
+):
+    observed: dict[str, object] = {}
+
+    def capture(self, *, only_identity=None):
+        observed["has_client"] = hasattr(self, "_client")
+        observed["identity"] = only_identity
+        return {"status": "waiting", "waiting_items": []}
+
+    monkeypatch.setattr(DailyRuntime, "xiaocao_wechat", capture)
+    monkeypatch.setattr(
+        kol_daily_script,
+        "_follow_cloud_handoff",
+        lambda runtime, result: None,
+    )
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "kol_daily.py",
+            "capture-xiaocao-item",
+            "--source-identity",
+            "kol-wechat-current",
+            "--output-dir",
+            str(tmp_path / "daily"),
+        ],
+    )
+
+    assert kol_daily_script.main() == 0
+    assert observed == {
+        "has_client": False,
+        "identity": "kol-wechat-current",
+    }
+
+
 def test_remote_run_drains_mailbox_before_existing_sources(
     tmp_path,
     monkeypatch,

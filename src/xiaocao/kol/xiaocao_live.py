@@ -905,7 +905,7 @@ class XiaocaoLiveService:
                         f"sniffer binary not found: {self.sniffer_binary}"
                     )
                 process = self._popen(
-                    [str(self.sniffer_binary)],
+                    [str(self.sniffer_binary), "--xiaoetong-only"],
                     cwd=str(self.sniffer_binary.parent),
                     stdin=subprocess.DEVNULL,
                     stdout=subprocess.DEVNULL,
@@ -962,7 +962,7 @@ class XiaocaoLiveService:
             raise EnrichmentError("multiple exact sniffer processes are running")
         if not pids and sniffer_status is None:
             process = self._popen(
-                [str(self.sniffer_binary)],
+                [str(self.sniffer_binary), "--xiaoetong-only"],
                 cwd=str(self.sniffer_binary.parent),
                 stdin=subprocess.DEVNULL,
                 stdout=subprocess.DEVNULL,

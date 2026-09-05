@@ -507,7 +507,7 @@ class SnifferClient:
 
     def candidates(self) -> list[dict[str, Any]]:
         data = self._json(
-            "/api/elive/live/candidates?all=1",
+            "/api/elive/live/candidates?all=1&view=capture",
             timeout=max(self.timeout, CANDIDATES_MIN_TIMEOUT_SECONDS),
         ).get("data") or {}
         rows = data.get("list") if isinstance(data, dict) else []
