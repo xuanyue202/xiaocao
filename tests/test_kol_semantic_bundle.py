@@ -634,6 +634,40 @@ def test_promoted_projection_requires_downstream_timestamp_and_basis(tmp_path):
     assert caught.value.field.endswith("evaluation.basis")
 
 
+@pytest.mark.parametrize("local_id,accepted", [("T01", False), ("t01", True), ("t.01", True)])
+def test_projection_identity_matches_actual_publication_consumer(tmp_path, local_id, accepted):
+    from xiaocao.kol.daily import DailyPublicationContext, _publication_candidate
+
+    request, draft, bundle_path, receipt_path, _ = _fixture(tmp_path)
+    draft["longitudinal_projection"] = {
+        "status": "promoted", "reason": "保留独立量能观点。",
+        "evaluated_at": "2026-08-08T07:00:00+08:00",
+        "viewpoints": [{
+            "local_thesis_id": local_id, "subject": "量能确认",
+            "stance": "量能恢复前不追涨。", "horizon": "跨交易日",
+            "reasoning": "缩量降低突破可靠性。",
+            "evidence_refs": [{"claim_id": draft["claims"][0]["claim_id"],
+                               "excerpt": "下一交易日先看成交额是否恢复"}],
+            "evaluation": {"status": "uncertain", "basis": "等待新的量价事实。"},
+        }],
+    }
+    if not accepted:
+        with pytest.raises(SemanticBundleError) as caught:
+            build_validated_bundle(request, draft, bundle_path=bundle_path, receipt_path=receipt_path)
+        assert caught.value.field == "longitudinal_projection.viewpoints.local_thesis_id"
+        assert not bundle_path.exists()
+        assert not receipt_path.exists()
+        return
+    build_validated_bundle(request, draft, bundle_path=bundle_path, receipt_path=receipt_path)
+    item = json.loads(bundle_path.read_text())["items"][0]
+    candidate = _publication_candidate(item, context=DailyPublicationContext(
+        adapter="xiaocao_live", source_identity="pilot-identity", publication_version="v1",
+        kol_id="xiaocao", source="小草直播", source_published_at="2026-08-08T07:00:00+08:00",
+        media_types=("video",), source_parts=(),
+    ))
+    assert candidate["metadata"]["viewpoint_count"] == 1
+
+
 def test_content_value_requires_independent_terminal_reason(tmp_path):
     request, draft, bundle_path, receipt_path, _ = _fixture(tmp_path)
     del draft["content_value"]["reason"]

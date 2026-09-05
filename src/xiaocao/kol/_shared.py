@@ -14,6 +14,11 @@ from pathlib import Path
 from typing import Any, Callable
 
 
+# Shared by canonical validation and the publication consumer. Case is part of
+# the stable identity; never silently lowercase an already published viewpoint.
+LOCAL_THESIS_ID_PATTERN = re.compile(r"[a-z0-9][a-z0-9._-]{0,127}")
+
+
 class DecisionError(ValueError):
     """The proposed judgment cannot be tied safely to its evidence."""
 

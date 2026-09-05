@@ -18,7 +18,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Mapping
 
-from ._shared import DecisionError, canonical
+from ._shared import DecisionError, LOCAL_THESIS_ID_PATTERN, canonical
 from .claim_coverage import (
     CONTRACT_VERSION,
     build_claim_extraction_request,
@@ -666,7 +666,7 @@ def _validate_projection(item: dict[str, Any]) -> None:
                     stage="longitudinal_projection",
                 )
             local_id = str(viewpoint.get("local_thesis_id") or "")
-            if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_-]{0,127}", local_id) or local_id in local_ids:
+            if not LOCAL_THESIS_ID_PATTERN.fullmatch(local_id) or local_id in local_ids:
                 raise _fail(
                     "longitudinal viewpoint identity is invalid",
                     error_code="longitudinal_projection_invalid",

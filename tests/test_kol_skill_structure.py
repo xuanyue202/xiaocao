@@ -11,6 +11,9 @@ FULL_CONTRACT_MD = SKILL_DIR / "references" / "full-contract.md"
 HOURLY_LOCAL_CAPTURE_MD = (
     SKILL_DIR / "references" / "hourly-local-capture.md"
 )
+HOURLY_LOCAL_NATIVE_CAPTURE_MD = (
+    SKILL_DIR / "references" / "hourly-local-native-capture.md"
+)
 HOURLY_REMOTE_WRITER_MD = (
     SKILL_DIR / "references" / "hourly-remote-writer.md"
 )
@@ -83,25 +86,125 @@ def test_kol_skill_owns_safe_self_repair_before_user_escalation() -> None:
         assert marker in full
 
 
-def test_kol_local_capture_reuses_side_browser_and_rechecks_short_lives() -> None:
-    text = " ".join(
+def test_kol_local_capture_owns_bounded_native_activation_and_rechecks() -> None:
+    local = " ".join(
         HOURLY_LOCAL_CAPTURE_MD.read_text(encoding="utf-8").split()
+    )
+    native = " ".join(
+        HOURLY_LOCAL_NATIVE_CAPTURE_MD.read_text(encoding="utf-8").split()
     )
 
     for marker in (
         "native WeChat mini-program",
-        "activate_xiaoetong_mini_program",
-        "Agent owns the native WeChat UI",
-        "one action at a time",
-        "no evidence for a magic safe interval",
-        "clipboard retry loops",
-        "app_id",
-        "pro_id",
-        "alive_mode",
         "20 分钟",
         "account_login_required",
+        "keep the same identity/job",
+        "one deduplicated user action even from `resume-source-repair`",
     ):
-        assert marker in text
+        assert marker in local
+    for marker in (
+        "activate_xiaoetong_mini_program",
+        "Agent owns the native WeChat UI",
+        "one action at a time, and read state back after each",
+        "no evidence for a magic safe interval",
+        "Do not use hooks, injection, webhooks, storage/cookie reads, "
+        "credential extraction, clipboard loops, or rapid/global-shortcut retries",
+        "at most one activation attempt per scheduled boundary",
+        "retain only `app_id`, `pro_id`, `type`, `alive_mode`, stripping share IDs",
+        "SMS/OTP, CAPTCHA, consent, or shows an explicit protection screen",
+        "`account_login_required`/the corresponding blocked state and stop",
+        "Never return signed URLs, cookies, keys, or request headers",
+    ):
+        assert marker in native
+
+
+def test_hourly_local_native_details_are_mandatory_at_the_relevant_stage() -> None:
+    local = HOURLY_LOCAL_CAPTURE_MD.read_text(encoding="utf-8")
+    target = HOURLY_LOCAL_NATIVE_CAPTURE_MD.name
+    routes = [
+        " ".join(paragraph.split())
+        for paragraph in local.split("\n\n")
+        if f"]({target})" in paragraph
+    ]
+
+    assert HOURLY_LOCAL_NATIVE_CAPTURE_MD.is_file()
+    assert len(routes) == 1
+    route = routes[0]
+    for marker in (
+        "Before native launch resolution",
+        "`resolve_xiaoetong_page`",
+        "`activate_xiaoetong_mini_program`",
+        "continuation/acceptance of an existing native capture",
+        f"read [{target}]({target}) completely",
+        "mandatory for resumed jobs",
+        "No-update discovery needs only this entry reference",
+    ):
+        assert marker in route
+    for detail in ("launch_resolver_command", "playlist_eof.m3u8", "view=capture"):
+        assert detail not in local
+        assert detail in HOURLY_LOCAL_NATIVE_CAPTURE_MD.read_text(encoding="utf-8")
+
+
+def test_hourly_local_native_launch_preserves_readiness_and_verified_identity() -> None:
+    native = " ".join(
+        HOURLY_LOCAL_NATIVE_CAPTURE_MD.read_text(encoding="utf-8").split()
+    )
+    local = " ".join(HOURLY_LOCAL_CAPTURE_MD.read_text(encoding="utf-8").split())
+
+    for marker in (
+        "Before every native activation prompt, the driver restores and checks",
+        "a historical armed receipt is not current process health",
+        "Verify/apply the bounded capture PAC only after that health check",
+        "preserve inherited PATH precedence and append installed Homebrew CLI directories",
+        "Run the emitted `launch_resolver_command` with `PYTHONPATH=src`",
+        "ignores the page's mock branch",
+        "`weixin://dl/business/?t=...` ticket embeds that exact replay",
+        "Do not invent tickets, app IDs or page paths",
+        "armed and `/proxy.pac` is healthy and applied, execute `launch_command` once",
+        "If the target mini-program is already open, reuse it",
+        "Regenerate tickets at activation; never reuse an old ticket from a report",
+        "do not add a redundant Play click",
+        "No hooks, WeChat re-signing, hidden debugging or protection changes are allowed",
+        "H5-only DOM mute instruction does not authorize attaching a debugger to WeChat",
+        "If the resolver cannot prove a ticket, use the original visible message entry",
+        "A launch plan is not playback, download or upload acceptance",
+    ):
+        assert marker in native
+    for marker in (
+        "must not be used as a download fallback",
+        "Use `--xiaoetong-only`",
+        "Keep WeChat login/security domains DIRECT and disable the PAC when stopping",
+        "keep the Automation PAUSED and run offline checks only until explicit confirmation",
+    ):
+        assert marker in local
+
+
+def test_hourly_local_native_continuation_requires_bound_media_and_cleaned_audit() -> None:
+    native = " ".join(
+        HOURLY_LOCAL_NATIVE_CAPTURE_MD.read_text(encoding="utf-8").split()
+    )
+
+    for marker in (
+        "`view=capture`: fresh observed IDs/times only",
+        "they cannot bind a source",
+        "observed candidate ID, app ID, live ID and post-arm time before downloading",
+        "`media_request_observed=true` only when the singleton "
+        "`wx_channels_download` sniffer saw the target request",
+        "`liveplay` request alone is not a finite replay",
+        "only the newly observed candidate bound to the exact `live_id` and finite playlist",
+        "same `type=live_capture`, `compress=true` task",
+        "validates the resulting `-compressed.mp4`",
+        "H5 block-page status must never be reported as download success",
+        "exact-source media observation -> original compressed download -> "
+        "media validation -> detach only the capture PAC and stop the sniffer -> "
+        "original Netdisk upload -> hash-bound mailbox handoff -> "
+        "authoritative end-to-end readback",
+        "Do not insert a new permanent stop after native playback",
+        "persisted, exact candidate/source/task receipt and rechecks local media hashes",
+        "must not restart or query the cleaned sniffer merely to pass audit",
+        "A mismatched saved task fails closed",
+    ):
+        assert marker in native
 
 
 def test_kol_skill_routes_xiaocao_recap_to_live_replay_capture_first() -> None:

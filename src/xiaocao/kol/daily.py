@@ -22,6 +22,7 @@ from zoneinfo import ZoneInfo
 
 from .enrichment_types import EnrichmentError, is_durable_report_only
 from ._shared import (
+    LOCAL_THESIS_ID_PATTERN,
     append_integrity_jsonl,
     read_integrity_jsonl,
 )
@@ -91,7 +92,7 @@ AGENT_OWNED_FAILURE_CATEGORIES = frozenset({
     "local_runtime_error",
     "protocol_error",
 })
-_LOCAL_THESIS_ID = re.compile(r"[a-z0-9][a-z0-9._-]{0,127}")
+_LOCAL_THESIS_ID = LOCAL_THESIS_ID_PATTERN
 
 
 def _next_local_playback_recheck(value: datetime) -> datetime:
