@@ -607,6 +607,9 @@ TARGETED_REPAIR_TESTS: dict[str, tuple[str, ...]] = {
         "tests/test_kol_daily.py",
         "tests/test_kol_wechat_official.py",
         "tests/test_kol_repair_validation.py",
+        "tests/test_kol_semantic_delegation.py",
+        "tests/test_kol_daily_semantic_delegation.py",
+        "tests/test_kol_netdisk_enrichment.py",
         "-q",
     ),
     "kol_lv_download_recovery": (
@@ -878,6 +881,9 @@ _TARGETED_REPAIR_IMPLEMENTATION_PATHS: dict[str, frozenset[str]] = {
             "scripts/kol_daily.py",
             "src/xiaocao/kol/mailbox.py",
             "src/xiaocao/kol/semantic_bundle.py",
+            "src/xiaocao/kol/semantic_delegation.py",
+            "src/xiaocao/kol/netdisk_enrichment.py",
+            "scripts/kol_semantic_delegation.py",
             "src/xiaocao/kol/writer_progress.py",
             "src/xiaocao/kol/wechat_official.py",
         }
@@ -971,6 +977,9 @@ _TARGETED_REPAIR_TEST_PATHS: dict[str, frozenset[str]] = {
         {
             "tests/test_kol_mailbox.py",
             "tests/test_kol_semantic_bundle.py",
+            "tests/test_kol_semantic_delegation.py",
+            "tests/test_kol_daily_semantic_delegation.py",
+            "tests/test_kol_netdisk_enrichment.py",
             "tests/test_kol_daily.py",
             "tests/test_kol_repair_validation.py",
             "tests/test_kol_wechat_official.py",
