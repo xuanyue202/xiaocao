@@ -94,3 +94,11 @@ request, requiring the same awaiting capture and healthy singleton. It cannot
 substitute another job. The complete scoped suite passes 305 tests, including
 the local runner and upload/handoff boundaries. The Sep 3 evening mailbox was
 read back as `pending`; remote completion is not claimed.
+
+At 22:14 the unanswered native-entry wait was suspended. No post-resume candidate
+or running/waiting download existed. The exact idle sniffer 94211 was stopped,
+the prior disabled Wi-Fi PAC restored, and all proxy flags/readback checks were
+zero. Capture kol-4e5c505ccb5f stays awaiting_capture; the subscription is
+awaiting_playback. The same PTY received a truthful media_request_observed=false
+response and exited. Resume the same identity when the user opens its native
+entry; do not create another job or leave the sniffer running between requests.
