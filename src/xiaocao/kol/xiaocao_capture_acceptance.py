@@ -129,7 +129,35 @@ def inspect_identity(
         "",
     )
     source_job: dict[str, Any] = {}
-    if source_job_id:
+    completed_snapshot = capture.get("status") == "downloaded"
+    snapshot_task = capture.get("download_task") or {}
+    snapshot_meta = snapshot_task.get("meta") or {}
+    snapshot_labels = snapshot_meta.get("labels") or (snapshot_meta.get("req") or {}).get("labels") or {}
+    snapshot_candidate = capture.get("candidate") or {}
+    snapshot_bound = (
+        completed_snapshot
+        and bool(capture.get("download_task_id"))
+        and snapshot_task.get("id") == capture.get("download_task_id")
+        and snapshot_task.get("status") == "done"
+        and (capture.get("expected_source") or {}).get("source_identity") == source_identity
+        and bool(snapshot_candidate.get("id"))
+        and snapshot_candidate.get("live_id") == live_id
+        and capture.get("candidate_key") == f"live:{live_id}"
+        and capture.get("candidate_key") not in (capture.get("baseline_candidate_keys") or [])
+        and snapshot_labels.get("capture_id") == snapshot_candidate.get("id")
+        and snapshot_labels.get("live_id") == live_id
+        and snapshot_labels.get("type") == "live_capture"
+        and str(snapshot_labels.get("compress")).lower() == "true"
+        and str(snapshot_labels.get("compress_inline")).lower() == "true"
+    )
+    if snapshot_bound and source_job_id and capture.get("source_task_id") == snapshot_task.get("id"):
+        # Projection of the persisted capture receipt, not a fabricated live API response.
+        source_job = {
+            "id": source_job_id, "live_id": snapshot_candidate.get("live_id"),
+            "status": capture.get("source_job_status"),
+            "task_id": capture.get("source_task_id"),
+        }
+    elif source_job_id and not completed_snapshot:
         value = fetch_json(
             f"{sniffer_url.rstrip('/')}/api/elive/source-jobs/{source_job_id}"
         )
@@ -138,8 +166,8 @@ def inspect_identity(
             source_job = data
 
     task_id = str(source_job.get("task_id") or capture.get("download_task_id") or "")
-    task: dict[str, Any] = {}
-    if task_id:
+    task: dict[str, Any] = snapshot_task if snapshot_bound else {}
+    if task_id and not completed_snapshot:
         value = fetch_json(
             f"{sniffer_url.rstrip('/')}/api/task/list?page_size=500"
         )
@@ -230,6 +258,7 @@ def inspect_identity(
         "capture_job_id": capture_job_id,
         "source_job_id": source_job_id,
         "task_id": task_id,
+        "task_evidence_origin": "capture_ledger" if completed_snapshot else "live_sniffer",
         "media_path": str(media_path) if media_exists else "",
         "checks": checks,
         "passed": all(checks.values()),

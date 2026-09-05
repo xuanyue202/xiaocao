@@ -108,6 +108,7 @@ class _CaptureDriver:
         self.advances = 0
         self.capture_checks = 0
         self.native_bindings = []
+        self.playback_preparations = []
         self.media_urls: list[str | None] = []
         self.needs_media_url = False
         self.capture_check_result = {
@@ -136,6 +137,10 @@ class _CaptureDriver:
     def bind_mini_program_capture(self, identity, capture_job_id, **binding):
         self.native_bindings.append((identity, capture_job_id, binding))
         return {"status": "captured"}
+
+    def prepare_playback(self, identity, capture_job_id):
+        self.playback_preparations.append((identity, capture_job_id))
+        return {"capture_job_id": capture_job_id, "status": "awaiting_capture"}
 
     def advance(
         self,
@@ -488,6 +493,25 @@ def test_first_poll_baselines_history_and_arms_only_latest_live(tmp_path):
     assert statuses == ["historical_baseline", "playback_activated"]
 
 
+@pytest.mark.parametrize("returned_id", ["same-capture", "different-capture"])
+def test_native_playback_restores_only_the_existing_capture(tmp_path, returned_id):
+    starts = []
+    def start():
+        starts.append(True)
+        return {"capture_job_id": returned_id, "status": "awaiting_capture"}
+    service = SimpleNamespace(
+        capture_store=SimpleNamespace(latest=lambda job_id: {"status": "awaiting_capture"}),
+        start=start,
+    )
+    driver = XiaocaoLiveCaptureDriver(tmp_path, service_factory=lambda *a, **kw: service)
+    if returned_id == "different-capture":
+        with pytest.raises(EnrichmentError, match="different capture"):
+            driver.prepare_playback("source", "same-capture")
+    else:
+        assert driver.prepare_playback("source", "same-capture")["capture_job_id"] == returned_id
+    assert starts == [True]
+
+
 def test_wechat_mini_program_route_binds_media_to_the_exact_live_id(tmp_path):
     page_url = (
         "https://app6ums63as6516.h5.xiaoeknow.com/v2/course/alive/"
@@ -509,6 +533,7 @@ def test_wechat_mini_program_route_binds_media_to_the_exact_live_id(tmp_path):
                 "page_state": "unknown",
             }
         assert request["action"] == "activate_xiaoetong_mini_program"
+        assert capture.playback_preparations == [(request["subscription_id"], "kol-capture-current")]
         assert request["playback_surface"] == (
             XIAOCAO_PLAYBACK_ROUTE_WECHAT_MINI_PROGRAM
         )

@@ -112,6 +112,12 @@ and stop the sniffer -> original Netdisk upload -> hash-bound mailbox handoff ->
 authoritative end-to-end readback. Do not insert a new permanent stop after native
 playback. Local capture commands preserve inherited PATH precedence and append
 installed Homebrew CLI directories for ffmpeg/ffprobe and transfer helpers.
+Before every native activation prompt, the driver restores and checks the
+existing capture's singleton sniffer; a historical armed receipt is not current
+process health. Verify/apply the bounded capture PAC only after that health check.
+Completed-capture acceptance uses the persisted, exact candidate/source/task
+receipt and rechecks local media hashes; it must not restart or query the cleaned
+sniffer merely to pass audit. A mismatched saved task fails closed.
 A user request to prepare but wait for confirmation is an execution gate: keep
 the Automation PAUSED and run offline checks only until explicit confirmation.
 `Handoff完成` is not remote `全部完成`; report each from its actual bound receipt.

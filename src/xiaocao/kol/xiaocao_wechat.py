@@ -241,6 +241,8 @@ def parse_xiaocao_live_messages(payload: dict[str, Any]) -> list[dict[str, Any]]
 
 
 class CaptureDriver(Protocol):
+    def prepare_playback(self, identity: str, capture_job_id: str) -> dict[str, Any]: ...
+
     def bind_mini_program_capture(
         self,
         identity: str,
@@ -389,6 +391,16 @@ class XiaocaoLiveCaptureDriver:
                 code="sniffer_request_failed",
                 stage="source_run",
             ) from exc
+
+    def prepare_playback(self, identity: str, capture_job_id: str) -> dict[str, Any]:
+        service = self._service(identity)
+        capture = service.capture_store.latest(capture_job_id)
+        if capture is None or capture.get("status") != "awaiting_capture":
+            raise EnrichmentError("native playback requires the existing awaiting capture")
+        ready = service.start()
+        if ready.get("capture_job_id") != capture_job_id:
+            raise EnrichmentError("native playback resumed a different capture")
+        return ready
 
     def advance(
         self,
@@ -1369,6 +1381,7 @@ class XiaocaoWechatLiveSubscription:
                 "Scheme，不猜参数。解析失败再用可见原始消息入口；不要把主聊天窗口"
                 "白色截图当作微信退出。后续密码、播放在可见小程序窗口操作。"
             ) + request["instructions"]
+        self.capture_driver.prepare_playback(item["identity"], item["capture_job_id"])
         response = self.browser_exchange(request)
         self._validate_browser_response(request, response)
         if (

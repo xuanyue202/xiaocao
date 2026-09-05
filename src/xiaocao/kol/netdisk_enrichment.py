@@ -321,6 +321,7 @@ _CAPABILITY_FAILURES = {
 _OPENCLI_UPLOAD_FAILURES = {
     "file_access_denied",
     "browser_command_failed",
+    "file_chooser_not_opened",
 }
 _STATE_PREDECESSORS = {
     "transcript_requested": "transcript_claimed",
@@ -667,6 +668,7 @@ class NetdiskEnrichmentService:
         video_path: Path,
         target_name: str,
         claim_id: str,
+        inspect_only: bool = False,
     ) -> Any:
         if session != _OPENCLI_UPLOAD_TEMPLATE_SESSION:
             raise EnrichmentError(
@@ -694,6 +696,7 @@ class NetdiskEnrichmentService:
             "foreground",
             "--format",
             "json",
+            *(["--inspect-only", "true"] if inspect_only else []),
         ]
         try:
             return self.runner(
@@ -722,6 +725,14 @@ class NetdiskEnrichmentService:
     ) -> dict[str, Any]:
         if result.returncode != 0:
             diagnostic = f"{result.stdout}\n{result.stderr}".lower()
+            if "page.filechooseropened not received within 5s" in diagnostic:
+                raise EnrichmentDiagnosticError(
+                    "OpenCLI file chooser did not open; no file attachment occurred",
+                    category="transport_error",
+                    code="file_chooser_not_opened",
+                    stage="upload_before_attachment",
+                    exit_code=int(result.returncode),
+                )
             if "not allowed" in diagnostic or "file access" in diagnostic:
                 raise EnrichmentError(
                     "OpenCLI local file access denied; enable "
@@ -1179,7 +1190,10 @@ class NetdiskEnrichmentService:
                 **current,
                 "event": "netdisk_upload_failed",
                 "status": "upload_claimed",
-                "failure_stage": "opencli_cdp",
+                "failure_stage": (
+                    "upload_before_attachment"
+                    if safe_reason == "file_chooser_not_opened" else "opencli_cdp"
+                ),
                 "reason": safe_reason,
                 "error_type": "EnrichmentError",
                 "updated_at": self._time().isoformat(timespec="microseconds"),
@@ -1225,7 +1239,9 @@ class NetdiskEnrichmentService:
                     self._record_opencli_upload_failure(
                         job_id,
                         reason=(
-                            "file_access_denied"
+                            "file_chooser_not_opened"
+                            if getattr(exc, "diagnostic_code", "") == "file_chooser_not_opened"
+                            else "file_access_denied"
                             if "file access denied" in str(exc).lower()
                             else "browser_command_failed"
                         ),
@@ -2347,6 +2363,144 @@ class NetdiskEnrichmentService:
             "side_effect_uncertain": True,
             "idempotent_replay": True,
         }
+
+    def resume_pre_attachment_upload(
+        self, job_id: str, *, session: str, profile: str | None = None,
+        file_access_restored: bool = False,
+    ) -> dict[str, Any]:
+        """One narrow repair after a proven chooser failure before file assignment.
+
+        Never called by the ordinary sweep. Unknown failures remain uncertain;
+        a repaired claim is durable before attachment and can never be replayed.
+        """
+        def eligible(row: dict[str, Any]) -> bool:
+            chooser_failure = (
+                row.get("reason") == "file_chooser_not_opened"
+                and row.get("failure_stage") == "upload_before_attachment"
+                and not row.get("upload_repair_attempts")
+            )
+            permission_restored = (
+                file_access_restored is True
+                and row.get("reason") == "file_access_denied"
+                and not row.get("file_access_repair_claimed_at")
+                and int(row.get("upload_repair_attempts") or 0) <= 1
+            )
+            return (
+                self.use_opencli_upload_template
+                and row.get("status") == "upload_claimed"
+                and row.get("event") == "netdisk_upload_failed"
+                and not row.get("upload_started_at")
+                and (chooser_failure or permission_restored)
+            )
+
+        if session != _OPENCLI_UPLOAD_TEMPLATE_SESSION or (
+            profile is not None and not _OPENCLI_PROFILE.fullmatch(profile)
+        ):
+            raise EnrichmentError("pre-attachment repair requires the existing upload session")
+        current = self.store.latest(job_id)
+        if not eligible(current):
+            raise EnrichmentError("upload has no eligible proven pre-attachment failure")
+        inspection = self._inspect_opencli_target(
+            session=session, profile=profile, target_name=str(current["video_basename"]),
+        )
+        if inspection["exact_count"] == 1:
+            return self.advance_opencli(job_id, session=session, profile=profile)
+        with self.store.job_lock(job_id):
+            current = self.store.latest(job_id)
+            if not eligible(current):
+                raise EnrichmentError("upload has no eligible proven pre-attachment failure")
+            now = self._time().isoformat(timespec="microseconds")
+            permission_repair = current.get("reason") == "file_access_denied"
+            self.store.append({
+                **current,
+                "event": "netdisk_upload_repair_claimed",
+                "upload_repair_attempts": int(current.get("upload_repair_attempts") or 0) + 1,
+                "repair_basis": (
+                    "user_restored_file_access" if permission_repair
+                    else "file_chooser_failed_before_file_assignment"
+                ),
+                **({"file_access_repair_claimed_at": now} if permission_repair else {}),
+                "repair_claimed_at": now,
+                "updated_at": now,
+            })
+        return self._submit_opencli_upload(job_id, session=session, profile=profile)
+
+    def resume_reconciled_failed_upload(
+        self, job_id: str, *, session: str, profile: str | None = None,
+        repair_authorized: bool = False,
+    ) -> dict[str, Any]:
+        """Agent-owned one-item repair, after full cloud AND retained queue proof.
+
+        Generic failures are not relabeled as pre-attachment failures. This
+        explicit repair requires the same persistent uploader, an entirely
+        rendered queue with a successful control upload, and no target in the
+        queue, cloud, attachment receipt, or any file input. Never sweep it.
+        """
+        def eligible(row: dict[str, Any]) -> bool:
+            return (
+                repair_authorized is True and self.use_opencli_upload_template
+                and row.get("event") == "netdisk_upload_failed"
+                and row.get("status") == "upload_claimed"
+                and row.get("reason") == "browser_command_failed"
+                and not row.get("upload_started_at")
+                and not row.get("upload_reconciled_repair_claimed_at")
+                and not row.get("upload_repair_attempts")
+            )
+
+        if session != _OPENCLI_UPLOAD_TEMPLATE_SESSION or (
+            profile is not None and not _OPENCLI_PROFILE.fullmatch(profile)
+        ):
+            raise EnrichmentError("reconciled repair requires the existing upload session")
+        current = self.store.latest(job_id)
+        if not eligible(current):
+            raise EnrichmentError("upload is not eligible for reconciled repair")
+        failed_at = datetime.fromisoformat(str(current["updated_at"]))
+        if self._time() - failed_at < timedelta(minutes=5):
+            raise EnrichmentError("upload failure is too recent for reconciled repair")
+        result = self._opencli_upload_template_process(
+            session=session, profile=profile,
+            video_path=Path(str(current["video_path"])).expanduser().resolve(),
+            target_name=str(current["video_basename"]), claim_id=job_id,
+            inspect_only=True,
+        )
+        try:
+            rows = json.loads(str(result.stdout))
+            row = rows[0] if isinstance(rows, list) and len(rows) == 1 else {}
+            surface = row.get("surfaceState") or {}
+            queue = surface.get("transferQueue") or {}
+            inputs = surface.get("inputs") or []
+            safe = (
+                result.returncode == 0 and row.get("status") == "ready_to_upload"
+                and row.get("directory") == self.netdisk_directory
+                and row.get("targetName") == current["video_basename"]
+                and row.get("claimId") == job_id and row.get("uploaded") is False
+                and row.get("exactCountBefore") == 0
+                and queue.get("complete") is True
+                and int(queue.get("successfulCount") or 0) >= 1
+                and queue.get("targetCount") == 0
+                and surface.get("targetInTransferUi") is False
+                and surface.get("targetUiRows") == []
+                and surface.get("receiptMatchesTarget") is False
+                and inputs and all(item.get("targetAttached") is False for item in inputs)
+            )
+        except (ValueError, TypeError, AttributeError):
+            safe = False
+        if not safe:
+            raise EnrichmentError("upload cloud/queue reconciliation is incomplete or uncertain")
+        with self.store.job_lock(job_id):
+            current = self.store.latest(job_id)
+            if not eligible(current):
+                raise EnrichmentError("upload is not eligible for reconciled repair")
+            now = self._time().isoformat(timespec="microseconds")
+            self.store.append({
+                **current, "event": "netdisk_upload_repair_claimed",
+                "upload_reconciled_repair_claimed_at": now,
+                "upload_repair_attempts": 1,
+                "repair_basis": "authorized_complete_cloud_and_retained_queue_absence",
+                "upload_reconciliation_proof": row,
+                "updated_at": now,
+            })
+        return self._submit_opencli_upload(job_id, session=session, profile=profile)
 
     def status(self, job_id: str | None = None) -> dict[str, Any]:
         return self.store.status(job_id)

@@ -134,3 +134,40 @@ If the original message becomes inspectable, start the same capture job with the
 Xiaoetong-only downloader, verify health, enable the narrow PAC, then activate
 the exact original message once. Require a new finite media candidate, validated
 download and unchanged normal WeChat operation before claiming a live success.
+
+## Authorized execution on 2026-09-05: download complete, upload unresolved
+
+This later run uses the already activated Sep 4 evening item, not the morning
+native-token item described above. Its exact identity is
+`kol-wechat-9cf5f75a8a43bb900b34cddd`, capture `kol-41ec37cf0683`, source job
+`elive-job-d5a4b25f8c928407`, candidate `60b1f61448d4b732`, download task
+`GzqGCYZRbDgkyTuCS9XLz`. No new WeChat activation was performed in this run.
+
+- Fixed restored downloader task metadata before resume (Go local commit
+  `7d2ca9e`): a JSON map in Req.Extra previously panicked at Start instead of
+  starting ffmpeg. Offline regression failed before the fix and passed after it.
+- At 20:38:30 +08:00, the normal pipeline validated
+  `20260904 大师班专场(晚17：30开播)-compressed.mp4`: 192762240 bytes,
+  1822.767123 seconds, SHA-256
+  `cc466a7032f969ffa2173b633922d1feb87857184d249761b3c1cb40c34b9e67`.
+- Cleanup receipt proves owned sniffer stopped, ports 2022/2023 closed,
+  API unavailable, all four proxy flags zero. WeChat PID 84914 remained alive;
+  that is not a fresh visual login-state proof.
+- Netdisk job `kol-netdisk-cc466a7032f969ff` claimed upload at 20:38:51.878066;
+  the adapter failed at 20:39:07.765854 with `browser_command_failed` and no
+  `upload_started_at`. Its wrapper discarded the underlying CLI diagnostic,
+  so whether file attachment was dispatched is not authoritatively known.
+- After the user reported changing networks, OpenCLI daemon/extension health
+  passed. Read-only adapter inspection proved authenticated exact-folder
+  complete scan, zero exact target matches, and `uploaded=false` for that
+  inspection only. No transfer queue or upload marker was observed. These
+  observations do not retroactively prove that the earlier claim was unissued.
+- No upload was retriggered, no replacement job created, and no mailbox
+  handoff sent. Recurring local Automation remains paused.
+- The standalone acceptance script currently crashes when the successfully
+  cleaned-up sniffer is unavailable; it needs an offline receipt-backed path.
+  Do not restart the sniffer merely to satisfy this diagnostic dependency and
+  do not report full end-to-end acceptance as passed.
+
+Authoritative local evidence remains in the exact item's `events.jsonl` and
+`receipts/capture_cleanup.json`, plus `output/live/kol_netdisk_enrichment/events.jsonl`.

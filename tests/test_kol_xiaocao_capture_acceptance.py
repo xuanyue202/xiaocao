@@ -164,3 +164,30 @@ def test_native_entry_acceptance_requires_the_same_candidate_in_task_labels(tmp_
     assert inspect_acceptance(root, [identity], **kwargs)["status"] == "passed"
     labels["capture_id"] = "another-candidate"
     assert inspect_acceptance(root, [identity], **kwargs)["status"] == "failed"
+
+
+def test_completed_capture_acceptance_uses_durable_task_after_sniffer_cleanup(tmp_path):
+    root, identity = _fixture(tmp_path, complete=True)
+    ledger = root / "items" / identity / "capture_jobs.jsonl"
+    capture = {"job_id": "kol-capture-test", "status": "downloaded",
+               "source_job_id": "elive-job-test", "source_job_status": "task_created",
+               "source_task_id": "task-test", "download_task_id": "task-test",
+               "expected_source": {"source_identity": "xiaoetong:appdemo:l_test"},
+               "candidate": {"id": "candidate-test", "live_id": "l_test"},
+               "candidate_key": "live:l_test", "baseline_candidate_keys": [],
+               "download_task": {"id": "task-test", "status": "done", "meta": {"labels": {
+                   "capture_id": "candidate-test", "live_id": "l_test", "type": "live_capture",
+                   "compress": "true", "compress_inline": "true"}}}}
+    _write_jsonl(ledger, [capture])
+    def offline(url):
+        raise AssertionError("completed capture must not restart or query the stopped sniffer")
+    result = inspect_acceptance(root, [identity], required_count=1, fetch_json=offline,
+                                probe_media=lambda _: True)
+    assert result["status"] == "passed"
+    assert result["items"][0]["task_evidence_origin"] == "capture_ledger"
+    capture["download_task"]["meta"]["labels"]["capture_id"] = "wrong-candidate"
+    _write_jsonl(ledger, [capture])
+    rejected = inspect_acceptance(root, [identity], required_count=1, fetch_json=offline,
+                                  probe_media=lambda _: True)
+    assert rejected["status"] == "failed"
+    assert rejected["items"][0]["checks"]["download_task_done"] is False

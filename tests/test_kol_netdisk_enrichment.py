@@ -12,7 +12,7 @@ import pytest
 
 from xiaocao.kol.book import BookKolUs
 from xiaocao.kol.enrichment import EnrichmentError
-from xiaocao.kol.enrichment_types import validate_decision_completion
+from xiaocao.kol.enrichment_types import EnrichmentDiagnosticError, validate_decision_completion
 from xiaocao.kol.netdisk_enrichment import (
     NetdiskEnrichmentService,
     _normalize_ordered_transcript_segments,
@@ -20,6 +20,116 @@ from xiaocao.kol.netdisk_enrichment import (
 
 
 NOW = datetime.fromisoformat("2026-07-20T09:00:00+08:00")
+
+
+def test_template_file_chooser_timeout_preserves_pre_attachment_diagnostic():
+    result = SimpleNamespace(returncode=1, stdout="", stderr=(
+        "Page.fileChooserOpened not received within 5s — the input may not have opened a file chooser"
+    ))
+    with pytest.raises(EnrichmentDiagnosticError) as caught:
+        NetdiskEnrichmentService._validate_opencli_upload_template_receipt(
+            result, target_name="video.mp4", directory="/课程/自己的课/小草", claim_id="job-12345678"
+        )
+    assert caught.value.diagnostic_code == "file_chooser_not_opened"
+    assert caught.value.diagnostic_stage == "upload_before_attachment"
+
+
+def test_pre_attachment_repair_reuses_claim_once_and_rejects_unknown_effect(tmp_path, monkeypatch):
+    video = tmp_path / "video-compressed.mp4"
+    video.write_bytes(b"real-video")
+    service = NetdiskEnrichmentService(tmp_path / "out", runner=_runner, now=lambda: NOW,
+                                       use_opencli_upload_template=True)
+    job = service.prepare(video)
+    current = {**job, "event": "netdisk_upload_failed", "status": "upload_claimed",
+               "reason": "browser_command_failed"}
+    service.store.append(current)
+    with pytest.raises(EnrichmentError, match="pre-attachment"):
+        service.resume_pre_attachment_upload(job["job_id"], session="site:baidu-netdisk")
+    service.store.append({**current, "reason": "file_chooser_not_opened",
+                          "failure_stage": "upload_before_attachment"})
+    monkeypatch.setattr(service, "_inspect_opencli_target", lambda **kwargs: {
+        "exact_count": 0, "observed_at": NOW})
+    submitted = []
+    def submit(job_id, **kwargs):
+        latest = service.store.latest(job_id)
+        assert latest["event"] == "netdisk_upload_repair_claimed"
+        submitted.append(job_id)
+        return latest
+    monkeypatch.setattr(service, "_submit_opencli_upload", submit)
+    result = service.resume_pre_attachment_upload(job["job_id"], session="site:baidu-netdisk")
+    assert result["upload_repair_attempts"] == 1
+    assert submitted == [job["job_id"]]
+    with pytest.raises(EnrichmentError, match="pre-attachment"):
+        service.resume_pre_attachment_upload(job["job_id"], session="site:baidu-netdisk")
+
+
+def test_file_access_repair_requires_user_restore_and_is_consumed_once(tmp_path, monkeypatch):
+    video = tmp_path / "video-compressed.mp4"
+    video.write_bytes(b"real-video")
+    service = NetdiskEnrichmentService(tmp_path / "out", runner=_runner, now=lambda: NOW,
+                                       use_opencli_upload_template=True)
+    job = service.prepare(video)
+    service.store.append({**job, "event": "netdisk_upload_failed", "status": "upload_claimed",
+                          "reason": "file_access_denied", "upload_repair_attempts": 1})
+    with pytest.raises(EnrichmentError, match="pre-attachment"):
+        service.resume_pre_attachment_upload(job["job_id"], session="site:baidu-netdisk")
+    monkeypatch.setattr(service, "_inspect_opencli_target", lambda **kwargs: {
+        "exact_count": 0, "observed_at": NOW})
+    monkeypatch.setattr(service, "_submit_opencli_upload", lambda job_id, **kwargs: service.store.latest(job_id))
+    result = service.resume_pre_attachment_upload(job["job_id"], session="site:baidu-netdisk",
+                                                  file_access_restored=True)
+    assert result["upload_repair_attempts"] == 2
+    assert result["file_access_repair_claimed_at"]
+    service.store.append({**result, "event": "netdisk_upload_failed", "reason": "file_access_denied"})
+    with pytest.raises(EnrichmentError, match="pre-attachment"):
+        service.resume_pre_attachment_upload(job["job_id"], session="site:baidu-netdisk",
+                                              file_access_restored=True)
+
+
+@pytest.mark.parametrize("failure", [None, "cloud_present", "queue_incomplete", "queued", "attached", "receipt", "no_control", "wrong_job", "not_authorized"])
+def test_reconciled_upload_requires_complete_negative_proof_and_claims_once(tmp_path, monkeypatch, failure):
+    video = tmp_path / "video-compressed.mp4"
+    video.write_bytes(b"real-video")
+    service = NetdiskEnrichmentService(tmp_path / "out", runner=_runner, now=lambda: NOW,
+                                       use_opencli_upload_template=True)
+    job = service.prepare(video)
+    service.store.append({**job, "event": "netdisk_upload_failed", "status": "upload_claimed",
+                          "reason": "browser_command_failed", "updated_at": (NOW - timedelta(minutes=10)).isoformat()})
+    queue = {"complete": True, "targetCount": 0, "successfulCount": 1}
+    surface = {"transferQueue": queue, "targetInTransferUi": False, "targetUiRows": [],
+               "receiptMatchesTarget": False, "inputs": [{"targetAttached": False}]}
+    row = {"status": "ready_to_upload", "directory": service.netdisk_directory,
+           "targetName": video.name, "claimId": job["job_id"], "uploaded": False,
+           "exactCountBefore": 0, "surfaceState": surface}
+    if failure == "cloud_present": row["exactCountBefore"] = 1
+    if failure == "queue_incomplete": queue["complete"] = False
+    if failure == "queued": queue["targetCount"] = 1
+    if failure == "attached": surface["inputs"][0]["targetAttached"] = True
+    if failure == "receipt": surface["receiptMatchesTarget"] = True
+    if failure == "no_control": queue["successfulCount"] = 0
+    if failure == "wrong_job": row["claimId"] = "different-job"
+    def inspect(**kwargs):
+        assert kwargs["inspect_only"] is True
+        return SimpleNamespace(returncode=0, stdout=json.dumps([row]), stderr="")
+    monkeypatch.setattr(service, "_opencli_upload_template_process", inspect)
+    submissions = []
+    def submit(job_id, **kwargs):
+        state = service.store.latest(job_id)
+        assert state["event"] == "netdisk_upload_repair_claimed"
+        assert state["upload_reconciliation_proof"] == row
+        submissions.append(job_id)
+        return state
+    monkeypatch.setattr(service, "_submit_opencli_upload", submit)
+    if failure:
+        with pytest.raises(EnrichmentError):
+            service.resume_reconciled_failed_upload(job["job_id"], session="site:baidu-netdisk",
+                                                     repair_authorized=failure != "not_authorized")
+        assert submissions == []
+        return
+    service.resume_reconciled_failed_upload(job["job_id"], session="site:baidu-netdisk", repair_authorized=True)
+    assert submissions == [job["job_id"]]
+    with pytest.raises(EnrichmentError):
+        service.resume_reconciled_failed_upload(job["job_id"], session="site:baidu-netdisk", repair_authorized=True)
 
 
 def _runner(command, **_kwargs):
