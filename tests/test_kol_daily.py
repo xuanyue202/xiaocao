@@ -542,6 +542,11 @@ def test_source_repair_validation_recovers_missing_convergence_observation():
 
 def test_lv_narrow_resume_supports_declared_source_surface():
     runtime = DailyRuntime.__new__(DailyRuntime)
+    runtime._lv_service = object()
+    runtime.args = SimpleNamespace(lv_output_dir=Path("/tmp/unused-lv"))
+    runtime._lv_service_for_sweep = lambda: SimpleNamespace(
+        pending_items=lambda: [],
+    )
     calls = []
     runtime.lv = lambda **kwargs: calls.append(kwargs) or {"status": "no_update"}
 
@@ -562,6 +567,48 @@ def test_lv_narrow_resume_skips_global_discovery_for_exact_identity():
 
     assert result == {"status": "no_update"}
     assert calls == [{"only_identity": "item-1", "refresh_listing": False}]
+
+
+def test_lv_source_resume_uses_unique_persisted_bundle_without_listing(tmp_path):
+    identity = "item-with-bundle"
+    version_key = "version-with-bundle"
+    artifact_dir = tmp_path / "lv" / "artifacts" / version_key
+    artifact_dir.mkdir(parents=True)
+    (artifact_dir / "analysis_request.json").write_text(
+        json.dumps({
+            "identity": identity,
+            "version_key": version_key,
+        }),
+        encoding="utf-8",
+    )
+    (artifact_dir / "validated_bundle.json").write_text(
+        "{}\n",
+        encoding="utf-8",
+    )
+
+    class FakeService:
+        @staticmethod
+        def pending_items():
+            return [{
+                "identity": identity,
+                "version_key": version_key,
+            }]
+
+    runtime = DailyRuntime.__new__(DailyRuntime)
+    runtime.args = SimpleNamespace(lv_output_dir=tmp_path / "lv")
+    runtime._lv_service_for_sweep = lambda: FakeService()
+    calls = []
+    runtime.lv = lambda **kwargs: calls.append(kwargs) or {
+        "status": "completed",
+    }
+
+    result = runtime.lv_narrow_resume("lv_text_image:source")
+
+    assert result == {"status": "completed"}
+    assert calls == [{
+        "only_identity": identity,
+        "refresh_listing": False,
+    }]
 
 
 def test_source_cli_narrow_runner_supports_xiaocao_wechat_live():
@@ -4962,9 +5009,40 @@ def test_narrow_source_provider_failure_becomes_bounded_wait(monkeypatch):
     progress = WriterProgress.from_dict(result["writer_progress"])
 
     assert progress.status == "wait_until"
+    assert progress.item_identity == "source"
+    assert progress.details["narrow_resume_surface"] == (
+        "lv_text_image:source"
+    )
     assert progress.details["deadline"] == "2026-08-19T17:00:00+08:00"
     assert result["waiting_items"][0]["next_poll_not_before"] == (
         "2026-08-19T17:00:00+08:00"
+    )
+
+
+def test_narrow_source_failure_preserves_exact_item_identity(monkeypatch):
+    monkeypatch.setattr(
+        kol_daily_script,
+        "_next_source_poll_not_before",
+        lambda: "2026-08-19T17:00:00+08:00",
+    )
+    runner = _classified_narrow_source(
+        "lv_text_image",
+        lambda _surface: (_ for _ in ()).throw(
+            EnrichmentDiagnosticError(
+                "provider temporarily unavailable",
+                category="provider_error",
+                code="source_temporarily_unavailable",
+                stage="source_run",
+            )
+        ),
+    )
+
+    result = runner("lv_text_image:item-1")
+    progress = WriterProgress.from_dict(result["writer_progress"])
+
+    assert progress.item_identity == "item-1"
+    assert progress.details["narrow_resume_surface"] == (
+        "lv_text_image:item-1"
     )
 
 

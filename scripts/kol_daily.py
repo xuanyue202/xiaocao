@@ -1574,8 +1574,13 @@ def _classified_narrow_source(name: str, runner):
                 )
         except TransientSourceError as exc:
             failure = exc.diagnostic()
+            resume_identity = _exact_progress_surface(name, surface)
             waiting_item = {
-                "identity": f"{name}:source",
+                "identity": (
+                    "source"
+                    if resume_identity == "source"
+                    else resume_identity
+                ),
                 "stage": failure["stage"],
                 "failure": failure,
             }
@@ -2487,6 +2492,44 @@ class DailyRuntime:
             raise
         return self._lv_listing
 
+    def _lv_unique_persisted_bundle_identity(self) -> str | None:
+        """Find one pending Lv item whose semantic bundle is already durable.
+
+        A source-level repair has no item identity of its own. If the failed
+        sweep left exactly one pending item with a bound analysis request and
+        validated bundle, that item is the only safe narrow continuation and
+        can be resumed without reopening the provider listing. Ambiguous or
+        incomplete local state deliberately falls back to the source-level
+        path, which preserves the existing fail-closed behavior.
+        """
+
+        service = self._lv_service_for_sweep()
+        output_dir = Path(self.args.lv_output_dir).expanduser().resolve()
+        candidates: list[str] = []
+        for row in service.pending_items():
+            identity = str(row.get("identity") or "").strip()
+            version_key = str(row.get("version_key") or "").strip()
+            if not identity or not version_key:
+                continue
+            artifact_dir = output_dir / "artifacts" / version_key
+            request_path = artifact_dir / "analysis_request.json"
+            try:
+                request = json.loads(request_path.read_text(encoding="utf-8"))
+            except (OSError, json.JSONDecodeError):
+                continue
+            if not isinstance(request, dict):
+                continue
+            if (
+                str(request.get("identity") or "") != identity
+                or str(request.get("version_key") or "") != version_key
+            ):
+                continue
+            if _persisted_validated_bundle({
+                "artifact_dir": str(artifact_dir),
+            }) is not None:
+                candidates.append(identity)
+        return candidates[0] if len(candidates) == 1 else None
+
     def _complete_lv_video_transcripts(self) -> list[dict[str, Any]]:
         manifest_path = self.args.video_output_dir / "manifest.json"
         if not manifest_path.is_file():
@@ -2864,6 +2907,12 @@ class DailyRuntime:
     def lv_narrow_resume(self, surface: str) -> dict[str, Any]:
         identity = _exact_progress_surface("lv_text_image", surface)
         if identity == "source":
+            persisted_identity = self._lv_unique_persisted_bundle_identity()
+            if persisted_identity is not None:
+                return self.lv(
+                    only_identity=persisted_identity,
+                    refresh_listing=False,
+                )
             return self.lv()
         return self.lv(only_identity=identity, refresh_listing=False)
 
