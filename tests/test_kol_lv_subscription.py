@@ -4871,6 +4871,80 @@ def test_decision_requires_full_coverage_then_delivers_and_routes_paper_once(tmp
         )
 
 
+def test_subscription_low_density_terminal_completes_without_delivery(tmp_path):
+    service = LvSubscriptionService(tmp_path / "subscription", now=lambda: NOW)
+    downloaded = tmp_path / "mind-map.txt"
+    downloaded.write_text(
+        "今天市场缩量，下一交易日先看成交额是否恢复。\n",
+        encoding="utf-8",
+    )
+    entry = _representative_subscription_entries()[1]
+    entry["name"] = "mind-map.txt"
+    entry["path"] = "/彤商学院防断更新zk7897897/7月25日/mind-map.txt"
+    entry["size"] = downloaded.stat().st_size
+    update = service.observe_browser_listing([entry])["updates"][0]
+    _capture_browser_download(service, update["identity"], downloaded)
+    evidence = service.ingest_browser_download(update["identity"])
+    bundle = _decision_bundle(evidence)
+    item = bundle["items"][0]
+    item.update(
+        {
+            "claims": [],
+            "actionable_signals": [],
+            "market_outlook": {},
+            "decision_status": "no_actionable_signal",
+            "decision_reason": "来源证据不可辨识，没有可安全转述的投资信息。",
+            "reader_insight": {
+                "status": "none",
+                "reason": "没有可准确复述给读者的新洞察。",
+            },
+            "content_value": {
+                "status": "low_density",
+                "reason": "来源证据不可辨识，没有可安全转述的投资信息。",
+            },
+            "claim_semantic_routing": {
+                "content_product": "unknown",
+                "current_decision_claim_ids": [],
+                "durable_knowledge_claim_ids": [],
+            },
+        }
+    )
+    attach_claim_contract(item, evidence["evidence_path"])
+    bundle_path = tmp_path / "low-density-decision.json"
+    bundle_path.write_text(
+        json.dumps(bundle, ensure_ascii=False),
+        encoding="utf-8",
+    )
+    pipeline = DecisionPipeline(
+        tmp_path / "decisions",
+        household_context_loader=_household_context,
+    )
+    sends = 0
+
+    def sender(_title, _body):
+        nonlocal sends
+        sends += 1
+        return {"wecom": "ok"}
+
+    state = service.decide(
+        update["identity"],
+        bundle_path=bundle_path,
+        decision_output_dir=tmp_path / "decisions",
+        sender=sender,
+        pipeline=pipeline,
+    )
+
+    assert state["status"] == "decided"
+    assert state["household_notification"]["status"] == "suppressed"
+    assert state["book_kol_us"]["status"] == "no_trade"
+    assert sends == 0
+    result = json.loads(Path(state["decision_result_path"]).read_text())
+    assert result["status"] == "completed"
+    assert result["items"][0]["notification"]["status"] == "suppressed"
+    outbox = tmp_path / "decisions" / "household_outbox.jsonl"
+    assert json.loads(outbox.read_text().splitlines()[0])["status"] == "suppressed"
+
+
 def test_no_reader_insight_suppresses_household_but_keeps_paper_audit_once(tmp_path):
     service = LvSubscriptionService(tmp_path / "subscription", now=lambda: NOW)
     downloaded = tmp_path / "盘后.txt"

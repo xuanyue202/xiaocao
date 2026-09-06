@@ -64,6 +64,7 @@ class DecisionPipeline:
                 failures.append("missing_market_data")
             if (item.get("book_kol_us") or {}).get("ticker_ambiguous"):
                 failures.append("ambiguous_ticker_mapping")
+            content_value = item.get("content_value") or {}
             theses = (
                 (item.get("investment_thesis_inventory") or {}).get("theses")
                 or []
@@ -73,9 +74,15 @@ class DecisionPipeline:
                 and thesis.get("decision_relevance") == "must_surface"
                 for thesis in theses
             )
-            if not item.get("claims") or (
-                not item.get("actionable_signals")
-                and not has_must_surface
+            if (
+                (
+                    not item.get("claims")
+                    or (
+                        not item.get("actionable_signals")
+                        and not has_must_surface
+                    )
+                )
+                and content_value.get("status") != "low_density"
             ):
                 failures.append("low_density_content")
         return list(dict.fromkeys(failures))

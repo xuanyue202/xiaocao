@@ -661,6 +661,7 @@ TARGETED_REPAIR_TESTS: dict[str, tuple[str, ...]] = {
         "tests/test_kol_semantic_bundle.py",
         "tests/test_kol_repair_validation.py",
         "tests/test_kol_daily.py",
+        "tests/test_kol_decisions.py",
         "-q",
         "-k",
         (
@@ -669,7 +670,8 @@ TARGETED_REPAIR_TESTS: dict[str, tuple[str, ...]] = {
             "repair_validation_accepts_lv_text_image_source_run_profile or "
             "persisted_validated_bundle_is_reused or "
             "narrow_source_provider_failure_becomes_bounded_wait or "
-            "subscription_decision_pipeline_provider_error_is_diagnostic"
+            "subscription_decision_pipeline_provider_error_is_diagnostic or "
+            "subscription_low_density_terminal_completes_without_delivery"
         ),
     ),
     "kol_lv_text_image_browser_open": (
@@ -899,6 +901,7 @@ _TARGETED_REPAIR_IMPLEMENTATION_PATHS: dict[str, frozenset[str]] = {
     "kol_lv_text_image_source_run": frozenset(
         {
             "scripts/kol_daily.py",
+            "src/xiaocao/kol/decisions.py",
             "src/xiaocao/kol/lv_subscription.py",
             "src/xiaocao/kol/semantic_bundle.py",
             "src/xiaocao/kol/writer_progress.py",
@@ -999,6 +1002,7 @@ _TARGETED_REPAIR_TEST_PATHS: dict[str, frozenset[str]] = {
             "tests/test_kol_lv_subscription.py",
             "tests/test_kol_semantic_bundle.py",
             "tests/test_kol_repair_validation.py",
+            "tests/test_kol_decisions.py",
         }
     ),
     "kol_lv_text_image_browser_open": frozenset(
