@@ -1,6 +1,6 @@
 # KOL 受限实时判断与统一账户风控
 
-Status: validated and activated; scoped commit prepared
+Status: delivered; implementation 4ad6cc9 pushed and origin/main reconciled
 
 ## 已确认的用户意图（2026-09-06）
 
@@ -50,7 +50,7 @@ Status: validated and activated; scoped commit prepared
 - [x] 已登记多 KOL 覆盖与增量更新验证；消费与反馈可追溯。
 - [x] 原 Automation 原位更新并通过接口重读；不新增重复 writer。
 - [x] 周复盘的固定证据、三框架比较、最多三试验、回滚和跨周跟踪验证。
-- [ ] 源码定向提交并正常推送；不提交私密证据、运行账本或已有无关 WIP。
+- [x] 源码定向提交并正常推送；不提交私密证据、运行账本或已有无关 WIP。
 
 ## 验收边界
 
