@@ -104,7 +104,7 @@ def test_kol_local_capture_owns_bounded_native_activation_and_rechecks() -> None
         "Agent owns the native WeChat UI",
         "read state back after each semantic action",
         "no evidence for a magic safe interval",
-        "Do not use coordinates, hooks, injection, webhooks, storage/cookie",
+        "Do not use guessed coordinates, hooks, injection, webhooks, storage/cookie",
         "at most one activation attempt per scheduled boundary",
         "Retain only `app_id`, `pro_id`, `type`, `alive_mode`, stripping share IDs",
         "SMS/OTP, CAPTCHA, consent, or shows an explicit protection screen",
@@ -160,8 +160,10 @@ def test_hourly_local_native_launch_preserves_readiness_and_verified_identity() 
         "If the target mini-program is already open, reuse it",
         "Regenerate the merchant ticket only for that one activation",
         "Once the exact course is visible, do not resolve again",
-        "focus the visible course-password input, enter `666` once",
-        "then press Play once and Pause once",
+        "At the visible course-password input, enter `666` once",
+        "Immediately press `space` in the player window when playback starts",
+        "before querying logs or download progress",
+        "cursor triangle",
         "No hooks, WeChat re-signing, hidden debugging, CDP/DOM evaluation",
         "If the resolver cannot prove a ticket, use the original visible message entry",
         "A launch plan is not playback, download or upload acceptance",
@@ -763,8 +765,8 @@ def test_hourly_local_capture_sunsets_xiaoetong_web_login() -> None:
     assert "xiaoetong-sms-login.md" not in hourly
     for marker in (
         "H5 is a credential-free identity anchor",
-        "semantically enter `666` if visible, Play once, Pause once",
-        "never use coordinates, CDP/DOM evaluation",
+        "on playback immediately press Space and verify stopped frame/time",
+        "No guessed coordinates",
     ):
         assert marker in entrypoint
 

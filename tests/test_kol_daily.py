@@ -78,6 +78,42 @@ class Clock:
         return self.value
 
 
+def test_capture_follow_keeps_one_identity_through_download_upload_and_mailbox(monkeypatch):
+    def waiting(stage, identity="source-1"):
+        return {"waiting_items": [{
+            "identity": identity, "capture_job_id": "capture-1",
+            "stage": stage, "status": "downloading" if stage == "compressed_capture" else "upload_claimed",
+        }]}
+
+    calls = []
+    outcomes = iter([waiting("compressed_capture"), waiting("cloud_handoff")])
+    runtime = SimpleNamespace(
+        xiaocao_wechat=lambda **kwargs: (calls.append(kwargs) or next(outcomes)),
+        xiaocao_cloud_handoff=lambda *args: (calls.append(args) or {"handoff_dispatched": True}),
+    )
+    monkeypatch.setattr(kol_daily_script, "_cloud_handoff_sleep", lambda _: None)
+    assert kol_daily_script._follow_cloud_handoff(runtime, waiting("compressed_capture")) == {
+        "handoff_dispatched": True,
+    }
+    assert calls == [{"only_identity": "source-1"}, {"only_identity": "source-1"}, ("source-1", "capture-1")]
+
+
+def test_capture_follow_rejects_identity_change_and_never_repeats_playback(monkeypatch):
+    waiting = {"waiting_items": [{
+        "identity": "source-1", "capture_job_id": "capture-1",
+        "stage": "compressed_capture", "status": "awaiting_playback",
+    }]}
+    runtime = SimpleNamespace(xiaocao_wechat=lambda **_: pytest.fail("must not reopen playback"))
+    assert kol_daily_script._follow_cloud_handoff(runtime, waiting) is None
+    waiting["waiting_items"][0]["status"] = "downloading"
+    runtime.xiaocao_wechat = lambda **_: {"waiting_items": [{
+        **waiting["waiting_items"][0], "capture_job_id": "different-capture",
+    }]}
+    monkeypatch.setattr(kol_daily_script, "_cloud_handoff_sleep", lambda _: None)
+    with pytest.raises(DailyError, match="lost its running download binding"):
+        kol_daily_script._follow_cloud_handoff(runtime, waiting)
+
+
 def test_persisted_validated_bundle_is_reused(tmp_path):
     bundle_path = tmp_path / "validated_bundle.json"
     bundle_path.write_text("{}", encoding="utf-8")

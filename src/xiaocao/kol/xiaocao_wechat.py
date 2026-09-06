@@ -1042,6 +1042,9 @@ class XiaocaoWechatLiveSubscription:
                 "surface": "visible_foreground_ui",
                 "action_mode": "one_action_then_state_readback",
                 "max_activation_attempts": 1,
+                "pause_key": "space",
+                "pause_readback_required": True,
+                "coordinate_policy": "fresh_screenshot_visible_control_only_when_ax_absent",
             },
             "password_policy": {
                 "only_if_password_gate_visible": True,
@@ -1056,9 +1059,13 @@ class XiaocaoWechatLiveSubscription:
                 "仅执行已验证、商户签发的 launch_command 一次，打开 source_url 对应"
                 "的同一场小鹅通小程序；不要打开或依赖浏览器 H5 播放页。"
             ) + (
-                "到达精确课程小程序后，禁止再次解析、重新生成跳转票据、重开 Scheme、"
-                "刷新或坐标猜测。若看见课程口令门，只能以辅助功能语义聚焦可见输入框，"
-                "输入提供的口令并读回；随后只播放一次并立即暂停。让目标画面开始请求"
+                "到达精确课程小程序后，禁止再次解析、重新生成跳转票据、重开 Scheme或刷新。"
+                "优先辅助功能控件；小程序只暴露窗口、没有控件时，允许基于刚读取截图"
+                "点击明确可见的按钮/输入框，不复制历史坐标。若看见课程口令门，打开"
+                "输入框，输入提供的口令、读回并确认。口令通过可能自动播放；画面一旦"
+                "开始播放，立即在播放器窗口按空格暂停，不要先去查下载日志。仅未自动"
+                "起播时点击一次可见播放按钮再按空格。暂停后两次观察画面/进度停止变化，"
+                "不能把鼠标指针或点击成功当作暂停证据。让目标画面开始请求"
                 "媒体即可，不需要持续播放。确认本机"
                 "wx_channels_download 已观察到媒体请求，并从其无凭证日志确认"
                 + (
@@ -1087,6 +1094,7 @@ class XiaocaoWechatLiveSubscription:
                 "activated": "boolean",
                 "media_request_observed": "boolean",
                 "password_used": "boolean",
+                "playback_paused": "boolean; true only after paused-state readback",
                 "page_url": (
                     "optional canonical H5 identity anchor; omit when the native "
                     "mini-program supplied no page URL"
@@ -1119,9 +1127,6 @@ class XiaocaoWechatLiveSubscription:
                 "一次；若当前已是目标小程序则不重开。只用商户生成且校验场次一致的 "
                 "Scheme，不猜参数。解析失败再用可见原始消息入口；不要把主聊天窗口"
                 "白色截图当作微信退出。后续密码、播放在可见小程序窗口操作。"
-                "目标小程序已打开后，禁止再次解析、重新生成跳转票据、重开 Scheme、"
-                "刷新或坐标猜测。若看见课程口令门，只能先聚焦可见口令输入框、"
-                "输入提供的口令并读回；确认页面可播放后只播放一次再立即暂停。"
             ) + request["instructions"]
         self.capture_driver.prepare_playback(item["identity"], item["capture_job_id"])
         response = self.browser_exchange(request)
@@ -1182,6 +1187,13 @@ class XiaocaoWechatLiveSubscription:
                 "WeChat mini-program playback binding is invalid"
             )
         activated = response.get("activated") is True and media_request_observed
+        if activated and response.get("playback_paused") is not True:
+            raise EnrichmentDiagnosticError(
+                "native playback pause has not been verified",
+                category="input_error",
+                code="native_playback_pause_unverified",
+                stage="native_playback_pause",
+            )
         if native_entry and activated:
             self.capture_driver.bind_mini_program_capture(
                 item["identity"],
@@ -1195,6 +1207,7 @@ class XiaocaoWechatLiveSubscription:
             "playback_route": self.playback_route,
             "playback_surface": XIAOCAO_PLAYBACK_ROUTE_WECHAT_MINI_PROGRAM,
             "media_request_observed": media_request_observed,
+            "playback_paused": response.get("playback_paused") is True,
         }
         if response_page:
             fields["page_url"] = response_page

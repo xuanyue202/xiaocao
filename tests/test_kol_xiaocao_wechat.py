@@ -426,6 +426,7 @@ def test_first_poll_baselines_history_and_arms_only_latest_live(tmp_path):
             "live_id": "l_6a708838e4b0694c5bf42e55",
             "page_state": "mini_program_media_observed",
             "activated": True,
+            "playback_paused": True,
             "password_used": True,
             "media_request_observed": True,
         }
@@ -482,7 +483,8 @@ def test_native_playback_restores_only_the_existing_capture(tmp_path, returned_i
     assert starts == [True]
 
 
-def test_wechat_mini_program_route_binds_media_to_the_exact_live_id(tmp_path):
+@pytest.mark.parametrize("paused", [True, False, None])
+def test_wechat_mini_program_route_binds_media_to_the_exact_live_id(tmp_path, paused):
     page_url = (
         "https://app6ums63as6516.h5.xiaoeknow.com/v2/course/alive/"
         "l_6a9531fbe4b0694c35440d7e"
@@ -514,6 +516,9 @@ def test_wechat_mini_program_route_binds_media_to_the_exact_live_id(tmp_path):
             "surface": "visible_foreground_ui",
             "action_mode": "one_action_then_state_readback",
             "max_activation_attempts": 1,
+            "pause_key": "space",
+            "pause_readback_required": True,
+            "coordinate_policy": "fresh_screenshot_visible_control_only_when_ax_absent",
         }
         assert "浏览器 H5" in request["instructions"]
         assert request["launch_resolver_command"] == [
@@ -532,6 +537,7 @@ def test_wechat_mini_program_route_binds_media_to_the_exact_live_id(tmp_path):
             "live_id": "l_6a9531fbe4b0694c35440d7e",
             "page_state": "mini_program_media_observed",
             "activated": True,
+            "playback_paused": paused,
             "media_request_observed": True,
             "password_used": False,
         }
@@ -545,10 +551,14 @@ def test_wechat_mini_program_route_binds_media_to_the_exact_live_id(tmp_path):
         playback_route=XIAOCAO_PLAYBACK_ROUTE_WECHAT_MINI_PROGRAM,
     )
 
-    result = subscription.run_once(
-        opencli_session="xiaocao-lv-subscription",
-    )
+    if paused is not True:
+        with pytest.raises(EnrichmentDiagnosticError) as error:
+            subscription.run_once(opencli_session="xiaocao-lv-subscription")
+        assert error.value.diagnostic_code == "native_playback_pause_unverified"
+        assert capture.advances == 0
+        return
 
+    result = subscription.run_once(opencli_session="xiaocao-lv-subscription")
     assert result["status"] == "waiting"
     assert capture.advances == 1
     assert [request["action"] for request in requests] == [
@@ -596,6 +606,7 @@ def test_native_mini_program_entry_is_armed_before_ui_and_binds_observed_live(
             "candidate_id": "candidate-new-live",
             "page_state": "mini_program_media_observed",
             "activated": True,
+            "playback_paused": True,
             "media_request_observed": True,
             "password_used": True,
         }
@@ -705,6 +716,7 @@ def test_wechat_mini_program_route_rejects_a_different_live_id(tmp_path):
             "live_id": "l_wrong_resource",
             "page_state": "mini_program_media_observed",
             "activated": True,
+            "playback_paused": True,
             "media_request_observed": True,
             "password_used": False,
         }
@@ -881,6 +893,7 @@ def test_newer_preview_is_not_starved_by_an_older_unfinished_capture(tmp_path):
             ),
             "page_state": "mini_program_media_observed",
             "activated": True,
+            "playback_paused": True,
             "password_used": False,
             "media_request_observed": True,
         }
@@ -1058,6 +1071,7 @@ def test_awaiting_playback_rechecks_the_bound_page_each_hour_until_playable(
             "live_id": "l_6a708838e4b0694c5bf42e55",
             "page_state": page_state,
             "activated": activated,
+            "playback_paused": activated,
             "password_used": False,
             "media_request_observed": activated,
         }
@@ -1190,6 +1204,7 @@ def test_pending_cloud_handoff_resumes_exact_job_after_stale_playback_state(
                 "live_id": "l_6a708838e4b0694c5bf42e55",
                 "page_state": "mini_program_media_observed",
                 "activated": True,
+                "playback_paused": True,
                 "media_request_observed": True,
                 "password_used": False,
             }

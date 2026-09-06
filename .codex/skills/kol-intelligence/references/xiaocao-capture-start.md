@@ -29,8 +29,10 @@ Before Ready, do only this:
    keep one foreground session, read state back after each action, and use only
    event-based waits. Stop for login, SMS/OTP, CAPTCHA, consent, or an explicit
    protection screen; those are the only user-action boundaries. The matching
-   player only needs to emit a media request; continued playback and a fixed
-   wait are unnecessary. The old direct-H5 player is archived and may be used
+   player only needs to emit a media request. On auto-play immediately press
+   Space and verify stopped picture/time; do not wait to inspect capture logs.
+   Read `hourly-local-native-capture.md` for the exact UI/PAC checklist.
+   The old direct-H5 player was removed; its URL may be used
    only to validate the stable app/resource identity, never as a playback
    fallback. The singleton `wx_channels_download` sniffer must report the exact
    `live_id` before capture can advance.
@@ -90,10 +92,10 @@ The capture node owns the large upload and then publishes one credential-free,
 self-hashed metadata handoff. It does not read the generated transcript, make
 investment decisions, publish 灰常亮, notify the household, or write Book.
 
-After `cloud_handoff_published`, send the capsule to the existing registered
-remote Xiaocao task. The remote sole writer reads `full-contract.md`, imports
-the capsule idempotently, and uses `scope=post_handoff`. It must not require the
-local capture ledger, cleanup receipt, local media path, or source-video bytes.
+After `cloud_handoff_published`, use the local entry's exact LiangHui mailbox
+handoff and structured receipt. Never send a Codex task message for handoff.
+The remote sole writer consumes the capsule idempotently and uses
+`scope=post_handoff`; it must not require local media paths or source-video bytes.
 
 Local acceptance ends with compressed-media proof, deterministic proxy cleanup,
 cloud readiness, and the self-hashed handoff. End-to-end completion additionally

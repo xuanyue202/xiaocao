@@ -25,7 +25,9 @@ Book. Do not substitute the remote coordinator.
 Report `category`/`code`/`stage`; prefer newest browser-critical, then
 `playback_activated`, then oldest `handoff_ready`. Never duplicate an arm.
 
-An `upload_claimed`/`cloud_handoff` wait is nonterminal and must not end the task.
+An active `downloading` or `upload_claimed`/`cloud_handoff` wait is nonterminal
+and must not end the task. The runner follows these stages in the same PTY;
+do not kill it when the initial JSON says `waiting`.
 Keep the same `capture-local` process alive until `cloud_handoff_published` plus
 LiangHuiMCP `created|already_present` (`Handoff完成`); do not rescan or create
 another claim.
@@ -67,10 +69,9 @@ Also run stateless `subscription-updates --within 48h` for exactly:
 Repeat `--publisher`, require `failures=[]`, baseline old articles, and persist
 only stable identity, metadata, normalized URL, and hashes. Never fetch locally.
 
-The default Xiaocao playback route is now the native WeChat mini-program. The
-old direct-H5 playback route is archived: its code and historical evidence stay
-available for compatibility/readback, but it must not be used as a download
-fallback.
+The only Xiaocao playback route is the native WeChat mini-program. Direct-H5
+playback/login code and its SOP were removed; historical evidence remains in
+Git and ledgers. H5 must not be used as a download fallback.
 
 Use `--xiaoetong-only`; apply `/proxy.pac` only while the service is healthy.
 Keep WeChat login/security domains DIRECT and disable the PAC when stopping.

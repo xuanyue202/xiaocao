@@ -36,10 +36,18 @@ armed and `/proxy.pac` is healthy and applied, execute `launch_command` once via
 normal macOS URL handling. If the target mini-program is already open, reuse it.
 Regenerate the merchant ticket only for that one activation; never reuse an old
 ticket from a report. Read the Goose Live window, not the unshareable main chat
-window. Once the exact course is visible, do not resolve again, refresh, open a
-second Scheme, or use a coordinate click. Use accessibility semantics to focus
-the visible course-password input, enter `666` once if it is present, read it
-back, then press Play once and Pause once. No hooks, WeChat re-signing, hidden
+window. Once the exact course is visible, do not resolve again, refresh, or open
+a second Scheme. Prefer accessibility controls; when the mini-program exposes
+only a window, use the fresh screenshot to click its visible controls. Never
+reuse coordinates from an earlier screenshot/run or click the main chat window.
+At the visible course-password input, enter `666` once, read it back, and confirm.
+Confirmation may automatically start playback. Immediately press `space` in the
+player window when playback starts, before querying logs or download progress.
+If it does not auto-start, click the visible Play control once then press `space`.
+Verify that the picture/playhead stops on two observations; a cursor triangle,
+successful click, or disappearance of controls is not pause evidence. Never
+press Space a second time on an already paused video, as it resumes playback.
+No hooks, WeChat re-signing, hidden
 debugging, CDP/DOM evaluation, or protection changes are allowed. If the resolver
 cannot prove a ticket, use the original visible message entry. Native
 `#小程序://...` tokens still use that original-message fallback, not guessed URL
@@ -64,7 +72,7 @@ lists enrich asynchronously with an incremental cache; they cannot bind a source
    action; never ask the user to open or select the replay. Use the reviewed
    Computer Use exception (`cua_repl`) against visible WeChat, inspect fresh
    state, keep one foreground session, and read state back after each semantic
-   action. Do not use coordinates, hooks, injection, webhooks, storage/cookie
+   action. Do not use guessed coordinates, hooks, injection, webhooks, storage/cookie
    reads, credential extraction, clipboard loops, CDP/DOM evaluation, or
    rapid/global-shortcut retries. There is no evidence for a magic safe
    interval: wait only for a visible state/sniffer event, and make at most one
@@ -72,7 +80,8 @@ lists enrich asynchronously with an incremental cache; they cannot bind a source
    login, SMS/OTP, CAPTCHA, consent, or shows an explicit protection screen,
    return `wechat_client_login_required` and stop; that is the only
    user-action boundary. At the exact visible course, enter `666` only at a
-   visible course-password gate, then Play once and Pause once. Let the target
+   visible course-password gate, then immediately pause with Space after auto-play
+   (or one visible Play click). Read back a stopped picture/playhead. Let the target
    start a media request; no continuous playback or fixed wait is required. Return
    `playback_surface=wechat_mini_program`, the exact `source_identity` and
    `live_id`, plus `media_request_observed=true` only when the singleton
@@ -85,6 +94,65 @@ lists enrich asynchronously with an incremental cache; they cannot bind a source
    `type=live_capture`, `compress=true` task and validates the resulting
    `-compressed.mp4`. An H5 identity anchor can never be reported as download
    success.
+
+## Minimal execution checklist (follow in order)
+
+1. **Resume the exact item.** Read its manifest identity and `capture_job_id`.
+   If a PTY is already running, retain it. If it exited, use the existing-item
+   command from the local entry, not another `capture-local`, new arm or job.
+   A `downloading`/`cloud_handoff` item needs no WeChat action at all.
+2. **Before launching, verify capture routing.** Require `/api/status` success,
+   the existing capture ID, and a healthy `/proxy.pac`. Read `route -n get default`
+   and `networksetup -listnetworkserviceorder` to identify the current network
+   service. If its capture PAC is disabled, set only that service's PAC URL to
+   `http://127.0.0.1:2023/proxy.pac` and enable it; read back URL and Enabled=Yes.
+   The PAC must route only Xiaoetong domains through 2023 and all WeChat security
+   domains DIRECT. Do not modify unrelated proxies. The downloader guard and
+   post-download cleanup own restoration. Missing PAC can let playback work
+   while preventing capture; it must not be diagnosed as a login issue.
+3. **One launch and password.** Execute the supplied resolver, verify exact
+   app/live ID, then its `launch_command` once. Loading/blank main chat is not a
+   logout. Read the Goose Live course window. Click visible 输入密码, then the
+   modal input, type `666`, verify it, click 确定. Each step uses fresh UI state.
+   If no gate is present, omit password actions. Never enter a course password
+   into a WeChat account-login form.
+4. **Pause immediately.** Password acceptance can auto-play. Press `space` in
+   Goose Live as soon as the playing picture appears. Verify stopped picture/time
+   on two observations. Do not spend time checking capture logs while it plays.
+   Return `playback_paused=true` only after this check. If another user action
+   changes the window, reread it and avoid toggling a video already paused.
+5. **Verify media, then feed the PTY.** Use candidate `view=capture` and match
+   exact `live_id`, app host and post-arm time. Require the finite VOD
+   `playlist_eof.m3u8`, not the `liveplay` FLV/M3U8 candidates emitted alongside
+   it. Return the exact requested JSON, `activated=true`, `password_used` as
+   observed, `media_request_observed=true`, and `playback_paused=true`. For a
+   native-message entry also return the exact fresh candidate ID. Do not paste
+   signed media URLs, request headers or cookies. The downloader creates one
+   source-bound task; never create a second task manually.
+6. **Stay through upload and Handoff.** Keep the PTY open while it downloads and
+   compresses, validates the MP4, cleans the sniffer/PAC, and uploads. Follow any
+   Browser recovery through the existing upload job and persistent session.
+   On mailbox input call the exact LiangHui operation and feed its actual
+   structured receipt to the same PTY. Accept only cloud `video_ready` plus a
+   same-hash `created|already_present` mailbox receipt as `Handoff完成`.
+
+After Handoff, run the read-only acceptance gate:
+
+```bash
+PYTHONPATH=src .venv/bin/python scripts/kol_xiaocao_capture_acceptance.py \
+  --identity <manifest-identity> --required-count 1
+```
+
+Require `status=passed`. Record the exact capture/source/task IDs, final filename,
+SHA-256, duration/bytes, Netdisk job/cloud receipt, Handoff ID and mailbox hash in
+the run's local evidence. Never call a code/test pass or `waiting` an E2E pass.
+Mailbox `acked` is the separate remote `全部完成` state.
+
+An explicit browser security-policy denial is not a transient OpenCLI timeout.
+Stop the denied browser action and retain the upload claim; do not switch tools,
+browser surfaces or protocols to bypass it. A submitted file without a cloud
+receipt remains uncertain, even if another page shows an empty upload queue.
+Do not resubmit or report Handoff until that exact job is safely reconciled.
 
 ## Continuation and completed-capture acceptance
 

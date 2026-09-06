@@ -74,9 +74,10 @@ evidence ambiguity, requested edits, or explicit historical aggregation.
 
 - Xiaocao: native WeChat mini-program only. H5 is a credential-free identity
   anchor, never a player, login surface, or fallback. After the one verified
-  Scheme launch: semantically enter `666` if visible, Play once, Pause once;
-  never use coordinates, CDP/DOM evaluation, a second resolution, refresh, or
-  Scheme launch.
+  Scheme launch: enter `666` at the course gate; on playback immediately press
+  Space and verify stopped frame/time. Prefer AX; otherwise use fresh screenshot
+  controls. No guessed coordinates,
+  CDP/DOM evaluation, repeat resolution, refresh, or relaunch.
 - Resolve code/state conflicts from first principles without asking by default:
   preserve a reversible snapshot and unrelated WIP, identify both intents,
   integrate compatible behavior, verify it, and continue. Ask only when the

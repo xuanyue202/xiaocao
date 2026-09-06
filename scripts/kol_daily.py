@@ -2159,6 +2159,8 @@ def _consume_structured_input(
 
 def _cloud_handoff_binding(
     result: dict[str, Any],
+    *,
+    stage: str = "cloud_handoff",
 ) -> tuple[str, str] | None:
     rows = result.get("source_results")
     if not isinstance(rows, list):
@@ -2173,7 +2175,9 @@ def _cloud_handoff_binding(
         if not isinstance(waiting_items, list):
             continue
         for item in waiting_items:
-            if not isinstance(item, dict) or item.get("stage") != "cloud_handoff":
+            if not isinstance(item, dict) or item.get("stage") != stage:
+                continue
+            if stage == "compressed_capture" and item.get("status") != "downloading":
                 continue
             identity = str(item.get("identity") or "")
             capture_job_id = str(item.get("capture_job_id") or "")
@@ -2189,6 +2193,28 @@ def _follow_cloud_handoff(
     runtime: "DailyRuntime",
     sweep_result: dict[str, Any],
 ) -> dict[str, Any] | None:
+    # A running download is not a terminal result. Keep the same PTY alive
+    # through compression, cleanup, upload and its structured mailbox receipt.
+    # Never turn an awaiting-playback result into repeated UI activation.
+    capture_binding = _cloud_handoff_binding(
+        sweep_result, stage="compressed_capture",
+    )
+    if capture_binding is not None:
+        identity, capture_job_id = capture_binding
+        while True:
+            _cloud_handoff_sleep(CLOUD_HANDOFF_POLL_SECONDS)
+            sweep_result = runtime.xiaocao_wechat(only_identity=identity)
+            if sweep_result.get("handoff_dispatched") or sweep_result.get("already_completed"):
+                return sweep_result
+            cloud_binding = _cloud_handoff_binding(sweep_result)
+            if cloud_binding is not None:
+                if cloud_binding != capture_binding:
+                    raise DailyError("capture follow-up changed its cloud binding")
+                break
+            if _cloud_handoff_binding(
+                sweep_result, stage="compressed_capture",
+            ) != capture_binding:
+                raise DailyError("capture follow-up lost its running download binding")
     binding = _cloud_handoff_binding(sweep_result)
     if binding is None:
         return None
