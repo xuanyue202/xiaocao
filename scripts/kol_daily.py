@@ -53,7 +53,11 @@ from xiaocao.kol.mailbox import (
     MailboxLedger,
     RemoteMailboxDrain,
 )
-from xiaocao.kol.publication import PublicationLedger, read_published_publication
+from xiaocao.kol.publication import (
+    PublicationLedger,
+    publication_id_for_source,
+    read_published_publication,
+)
 from xiaocao.kol.semantic_bundle import (
     SemanticBundleError,
     read_validated_bundle,

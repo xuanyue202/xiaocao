@@ -3925,6 +3925,29 @@ def test_lv_terminal_reconciliation_is_exact_and_read_only(tmp_path):
     ] is False
 
 
+def test_lv_promoted_terminal_reads_existing_publication(tmp_path, monkeypatch):
+    identity = "exact-promoted-pdf"
+    terminal = _promoted_event(event_id=identity, tier="report_only")
+    monkeypatch.setattr(kol_daily_script, "_lv_text_image_terminal_decision",
+                        lambda _runtime, exact: {"terminal": terminal, "result_sha256": "a" * 64}
+                        if exact == identity else pytest.fail("changed identity"))
+    runtime = object.__new__(DailyRuntime)
+    observed = []
+    runtime.publications = SimpleNamespace(status=lambda key: (
+        observed.append(key) or {"completed": True, "publish_receipt": {
+            "detailUrl": terminal["gray_report"]["detail_url"],
+            "idempotencyKey": "existing-publish-receipt",
+        }}
+    ))
+    progress = kol_daily_script._lv_text_image_terminal_progress(runtime, identity)
+
+    wrapped = runtime.lv_terminal_reconcile(progress)
+
+    assert observed == [publication_id_for_source(adapter="lv_text_image", source_identity=identity)]
+    assert wrapped["outcome"]["authoritative_readback"]["publication_receipt_id"] == "existing-publish-receipt"
+    assert wrapped["outcome"]["authoritative_readback"]["external_business_effects_replayed"] is False
+
+
 def test_lv_terminal_reconciliation_rejects_changed_result(tmp_path):
     identity = "lv-image-20260727"
     version = "a" * 64

@@ -286,7 +286,7 @@ def _fixture(tmp_path: Path) -> tuple[dict, dict, Path, Path, Path]:
     return request, draft, bundle_path, receipt_path, evidence
 
 
-def test_pdf_mixed_newlines_keep_request_segments_and_raw_hash(tmp_path):
+def test_pdf_mixed_newlines_keep_request_segments_and_raw_hash(tmp_path, monkeypatch):
     request, draft, bundle_path, receipt_path, evidence = _fixture(tmp_path)
     raw = evidence.read_bytes().replace(b"\n", b"\r\n") + "附注\r另注\r\n".encode()
     evidence.write_bytes(raw)
@@ -311,6 +311,20 @@ def test_pdf_mixed_newlines_keep_request_segments_and_raw_hash(tmp_path):
     assert receipt.bundle_sha256 == _sha(bundle_path)
     assert evidence.read_bytes() == raw
     assert json.loads(bundle_path.read_text())["items"][0]["evidence_sha256"] == evidence_sha
+    from xiaocao.kol.decisions import DecisionPipeline
+    from datetime import datetime
+
+    class ProcessingTime(datetime):
+        @classmethod
+        def now(cls, tz=None):
+            return datetime.fromisoformat("2026-08-08T07:00:00+08:00").astimezone(tz)
+
+    monkeypatch.setattr("xiaocao.kol.decisions.datetime", ProcessingTime)
+
+    consumer = object.__new__(DecisionPipeline)
+    document = consumer._validate_item(json.loads(bundle_path.read_text())["items"][0])
+    assert document.sha256 == evidence_sha
+    assert document.text == evidence.read_text(encoding="utf-8")
 
 
 def test_canonical_durable_only_report_has_no_book_row(tmp_path):

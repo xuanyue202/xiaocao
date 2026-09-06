@@ -1,0 +1,67 @@
+{
+  "date": "2026-09-06",
+  "kind": "资料复核",
+  "author": "未署名投资人（吕晓彤订阅资料）",
+  "source": "baidu_subscription_share_browser:2541e028d427195e0b22c329c9548b20f88343473971f5d6d8609fb744a85c52",
+  "evidence": [
+    {
+      "path": "/Users/xuanyue202/Documents/project/xiaocao/output/live/kol_lv_subscription/artifacts/2709ebc488be693ba5ca77bbfadcc2b18f9c910a695f0529db5839de01993fbe/evidence.txt",
+      "sha256": "7a89312c135830ce1bd29e7d87bc56df1627eedfded959063e34b598609667b7",
+      "size": 7734
+    }
+  ],
+  "summary": "从AI产业摘要中保留应用护城河、用量与利润拆分、机器人验证条件三条候选方法；明确摘要事实误差和未署名边界。",
+  "posture": {
+    "regime": "not_applicable",
+    "dominant_style": "方法候选，不判断A股即时姿态",
+    "risk": "来自吕晓彤订阅资料中的未署名投资人分享摘要，不是已核验的原始逐字稿；真实演讲日期未确认，文件更新时间不等于观点日期。",
+    "style_ranking": []
+  },
+  "regime_call": {
+    "horizon": "方法研究，不设市场预测期限",
+    "what_would_falsify": [
+      "有可靠同口径数据证明工作流嵌入与留存、利润表现无关。"
+    ]
+  },
+  "directions": [],
+  "stocks": [],
+  "method_principles": [
+    "以基础模型能力扩张为压力测试，检查应用是否依靠工作流嵌入、专业数据、质量责任和客户留存形成壁垒。",
+    "把智能体带来的用量增长、推理单价下降、硬件供给扩张和客户实际回款分开，避免由需求叙事直接推出利润。",
+    "用技术能力、交付可靠性、付费订单及退出条件分别审查机器人与世界模型，不以融资估值替代产业成熟度。"
+  ],
+  "exit_lessons": [
+    "估值、融资与长期需求不能代替实际退出能力。"
+  ],
+  "hypotheses": [],
+  "timing_notes": [
+    "真实演讲日期未确认，不生成即时交易或提醒。"
+  ],
+  "typo_corrections": [
+    "Silo AI收购主体与金额按AMD官方披露纠正；其余未核实名词与数字不补猜。"
+  ],
+  "decision_trace": [
+    "观察：完整阅读3页PDF及首页思维导图。",
+    "复核：并购主体与估值存在错误，方法论与事实数字分别处理。",
+    "判断：保留来源框架，方法只作authority=0候选；不据此通知或交易。"
+  ],
+  "judgment_heuristics": [
+    "以基础模型能力扩张为压力测试，检查应用是否依靠工作流嵌入、专业数据、质量责任和客户留存形成壁垒。",
+    "把智能体带来的用量增长、推理单价下降、硬件供给扩张和客户实际回款分开，避免由需求叙事直接推出利润。",
+    "用技术能力、交付可靠性、付费订单及退出条件分别审查机器人与世界模型，不以融资估值替代产业成熟度。"
+  ],
+  "feedback_response": "既有反馈讨论A股轮动和仓位，本材料不触及其验证条件，不修改旧判决或小草姿态。",
+  "action_summary": {
+    "posture_update": "not_applied:other_author",
+    "playbook_update": "no_change",
+    "hypothesis_update": "no_change:保留方法，不新增未定义样本的重复假说",
+    "audit_evidence": "完整3页及123段复读；事实与来源分开。",
+    "instrumentation_todo": "not_applicable",
+    "routing": [
+      "authority=0",
+      "other_author",
+      "report_only",
+      "no_strategy_tuning"
+    ]
+  }
+}

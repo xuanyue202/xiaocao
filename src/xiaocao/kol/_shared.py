@@ -186,7 +186,9 @@ class TranscriptDocument:
             raise DecisionError(f"evidence file not found: {source}")
         raw = source.read_bytes()
         try:
-            text = raw.decode("utf-8")
+            # Keep the same universal-newline view as extraction requests and
+            # canonical bundles; provenance remains the hash of raw bytes.
+            text = raw.decode("utf-8").replace("\r\n", "\n").replace("\r", "\n")
         except UnicodeDecodeError as exc:
             raise DecisionError(
                 "transcript must be UTF-8 text/Markdown; convert Word files first"
