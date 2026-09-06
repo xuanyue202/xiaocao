@@ -672,6 +672,7 @@ TARGETED_REPAIR_TESTS: dict[str, tuple[str, ...]] = {
             "narrow_source_provider_failure_becomes_bounded_wait or "
             "narrow_source_failure_preserves_exact_item_identity or "
             "lv_source_resume_uses_unique_persisted_bundle_without_listing or "
+            "low_density_does_not_wait_for_household_context or "
             "subscription_decision_pipeline_provider_error_is_diagnostic or "
             "subscription_low_density_terminal_completes_without_delivery"
         ),

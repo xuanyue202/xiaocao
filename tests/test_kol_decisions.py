@@ -305,6 +305,61 @@ def test_no_reader_insight_is_audited_but_never_sent(tmp_path):
     assert json.loads(rows[0])["status"] == "suppressed"
 
 
+def test_low_density_does_not_wait_for_household_context(tmp_path):
+    transcript = _write_text(tmp_path / "low-density.txt", "无法辨识的来源片段")
+    item = _item(transcript)
+    item.update(
+        {
+            "claims": [],
+            "actionable_signals": [],
+            "market_outlook": {
+                "scope": "来源证据可用性",
+                "current_phase": "来源证据不可辨识。",
+                "base_case": "不把来源作为交易输入。",
+                "horizon": "直到补充完整证据",
+                "confidence": "low",
+                "strategy": ["保留 low_density 终态。"],
+                "turning_points": ["取得可读且哈希绑定的完整证据。"],
+                "falsifiers": ["完整证据形成可核验主张。"],
+                "current_validation": {
+                    **item["market_validation"],
+                },
+            },
+            "decision_status": "no_actionable_signal",
+            "decision_reason": "来源证据不可辨识，没有可安全转述的投资信息。",
+            "reader_insight": {
+                "status": "none",
+                "reason": "没有可准确复述给读者的新洞察。",
+            },
+            "content_value": {
+                "status": "low_density",
+                "reason": "来源证据不可辨识，没有可安全转述的投资信息。",
+            },
+            "claim_semantic_routing": {
+                "content_product": "unknown",
+                "current_decision_claim_ids": [],
+                "durable_knowledge_claim_ids": [],
+            },
+        }
+    )
+    attach_claim_contract(item, transcript)
+
+    def unavailable_household_context():
+        raise DecisionError("亮灰 MCP request failed")
+
+    pipeline = DecisionPipeline(
+        tmp_path / "out",
+        household_context_loader=unavailable_household_context,
+    )
+    result = pipeline.process(_bundle(item, household_path=tmp_path / "unused.json"))
+
+    assert result["status"] == "completed"
+    assert result["items"][0]["notification"]["status"] == "suppressed"
+    assert result["items"][0]["notification"]["household_context"]["family_id"] == (
+        "not_consulted"
+    )
+
+
 def test_report_only_content_is_audited_but_never_sent(tmp_path):
     transcript = _write_text(tmp_path / "report-only.txt", "等待成交量放大再行动")
     item = _item(transcript)

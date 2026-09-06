@@ -54,10 +54,36 @@ class DecisionPipeline:
         self.book = BookKolUs(self.output_dir / "book_kol_us")
         self.household_context_loader = household_context_loader
 
+    @staticmethod
+    def _is_low_density_only(bundle: dict[str, Any]) -> bool:
+        items = bundle.get("items")
+        return bool(items) and isinstance(items, list) and all(
+            isinstance(item, dict)
+            and (item.get("content_value") or {}).get("status") == "low_density"
+            for item in items
+        )
+
+    @staticmethod
+    def _not_consulted_household_context() -> tuple[dict[str, Any], str]:
+        context = {
+            "family_id": "not_consulted",
+            "as_of": _now_iso(),
+            "source_reference": "not_applicable:low_density",
+            "positions": [],
+            "decision_view": {},
+        }
+        return context, hashlib.sha256(_canonical(context).encode()).hexdigest()
+
     def _failures(self, bundle: dict[str, Any]) -> list[str]:
         failures = []
         provider = bundle.get("household_context_provider") or {}
-        if provider.get("type") != "lianghui_mcp" or self.household_context_loader is None:
+        if (
+            not self._is_low_density_only(bundle)
+            and (
+                provider.get("type") != "lianghui_mcp"
+                or self.household_context_loader is None
+            )
+        ):
             failures.append("missing_household_context")
         for item in bundle.get("items") or []:
             if not (item.get("market_validation") or {}).get("facts"):
@@ -237,7 +263,8 @@ class DecisionPipeline:
             evidence_sha256=document.sha256,
         )
         self._validate_actionable_signals(item)
-        self._validate_market_outlook(item)
+        if (item.get("content_value") or {}).get("status") != "low_density":
+            self._validate_market_outlook(item)
         self._validate_market_validation(
             item.get("market_validation") or {}, field="market_validation"
         )
@@ -582,7 +609,12 @@ class DecisionPipeline:
             result = {"status": "failed", "failures": failures, "processed_at": _now_iso()}
             _append_jsonl(self.events_path, {"event": "processing_failed", **result})
             return result
-        household_context, household_context_sha256 = self._load_household_context()
+        if self._is_low_density_only(bundle):
+            household_context, household_context_sha256 = (
+                self._not_consulted_household_context()
+            )
+        else:
+            household_context, household_context_sha256 = self._load_household_context()
         cross_source = self._validate_cross_source(bundle)
         validated = []
         for item in bundle.get("items") or []:
