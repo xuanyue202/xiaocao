@@ -25,7 +25,7 @@ from .claim_coverage import (
     evidence_segments,
     validate_claim_coverage,
 )
-from .enrichment_types import EnrichmentError
+from .enrichment_types import EnrichmentError, is_durable_report_only
 from .reader_copy import (
     ReaderCopyError,
     validate_reader_payload,
@@ -259,7 +259,10 @@ def _read_evidence(request: Mapping[str, Any]) -> tuple[Path, str, str]:
         )
     try:
         raw = path.read_bytes()
-        text = raw.decode("utf-8")
+        # Extraction requests and downstream quote validation use Python's
+        # universal-newline text view. Match that view while hashing the
+        # original bytes below; mixed PDF CR/CRLF must not change segment IDs.
+        text = raw.decode("utf-8").replace("\r\n", "\n").replace("\r", "\n")
     except (OSError, UnicodeDecodeError) as exc:
         raise _fail(
             "semantic evidence is not valid UTF-8",
@@ -1194,6 +1197,14 @@ def _validate_book_intent(item: Mapping[str, Any]) -> None:
             stage="book",
             field="book_kol_us",
         )
+    if (
+        book.get("decision") == "not_applicable"
+        and is_durable_report_only(dict(item))
+        and item.get("decision_status") == "no_actionable_signal"
+        and item.get("knowledge_status") == "reusable_knowledge"
+        and _nonblank(book.get("reason"))
+    ):
+        return
     if book.get("decision") not in {"trade", "no_trade"} or (
         book.get("decision") == "no_trade" and not _nonblank(book.get("reason"))
     ):

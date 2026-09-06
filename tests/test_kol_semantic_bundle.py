@@ -286,6 +286,60 @@ def _fixture(tmp_path: Path) -> tuple[dict, dict, Path, Path, Path]:
     return request, draft, bundle_path, receipt_path, evidence
 
 
+def test_pdf_mixed_newlines_keep_request_segments_and_raw_hash(tmp_path):
+    request, draft, bundle_path, receipt_path, evidence = _fixture(tmp_path)
+    raw = evidence.read_bytes().replace(b"\n", b"\r\n") + "附注\r另注\r\n".encode()
+    evidence.write_bytes(raw)
+    evidence_sha = _sha(evidence)
+    extraction = build_claim_extraction_request(evidence, evidence_sha256=evidence_sha)
+    request["evidence_sha256"] = evidence_sha
+    request["investment_claim_extraction"] = extraction
+    for key in ("investment_thesis_inventory", "investment_thesis_coverage_audit"):
+        draft[key]["evidence_sha256"] = evidence_sha
+    segments = extraction["segments"]
+    draft["investment_thesis_inventory"]["theses"][0]["evidence_refs"][0]["segment_id"] = segments[0]["segment_id"]
+    draft["investment_thesis_coverage_audit"]["segment_reviews"] = [
+        {"segment_id": row["segment_id"],
+         "disposition": "investment_content" if index == 0 else "non_investment_content",
+         "thesis_ids": ["liquidity-thesis"] if index == 0 else [],
+         "reason": "来源观点。" if index == 0 else "无投资信息的附注。"}
+        for index, row in enumerate(segments)
+    ]
+
+    receipt = build_validated_bundle(request, draft, bundle_path=bundle_path, receipt_path=receipt_path)
+
+    assert receipt.bundle_sha256 == _sha(bundle_path)
+    assert evidence.read_bytes() == raw
+    assert json.loads(bundle_path.read_text())["items"][0]["evidence_sha256"] == evidence_sha
+
+
+def test_canonical_durable_only_report_has_no_book_row(tmp_path):
+    request, draft, bundle_path, receipt_path, _ = _fixture(tmp_path)
+    draft["decision_status"] = "no_actionable_signal"
+    draft["actionable_signals"] = []
+    draft["claim_semantic_routing"] = {
+        "current_decision_claim_ids": [],
+        "durable_knowledge_claim_ids": ["liquidity-claim"],
+    }
+    draft["knowledge_status"] = "reusable_knowledge"
+    draft["knowledge"] = {"summary": "以成交量确认而不盲目追涨的候选方法。"}
+    knowledge = tmp_path / "distillation.json"
+    knowledge.write_text(json.dumps({"summary": "候选方法"}))
+    draft["durable_distillation_path"] = str(knowledge)
+    draft["durable_distillation_sha256"] = _sha(knowledge)
+    draft["book_kol_us"] = {
+        "book": "KOL-US", "paper_only": True,
+        "decision": "not_applicable", "reason": "纯方法报告不建立交易行。",
+    }
+
+    build_validated_bundle(request, draft, bundle_path=bundle_path, receipt_path=receipt_path)
+    assert json.loads(bundle_path.read_text())["items"][0]["book_kol_us"]["decision"] == "not_applicable"
+
+    draft["claim_semantic_routing"]["current_decision_claim_ids"] = ["liquidity-claim"]
+    with pytest.raises(SemanticBundleError, match="Book KOL-US intent"):
+        build_validated_bundle(request, draft, bundle_path=tmp_path / "rejected.json", receipt_path=tmp_path / "rejected-receipt.json")
+
+
 def test_build_validated_bundle_persists_receipt_before_consumer_use(tmp_path):
     request, draft, bundle_path, receipt_path, _ = _fixture(tmp_path)
 
