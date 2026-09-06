@@ -55,7 +55,8 @@ def test_capture_cleanup_disables_only_owned_pac(tmp_path, url, expected_writes)
             return SimpleNamespace(stdout="An asterisk denotes disabled services\nWi-Fi\nOther\n")
         if command[:2] == ["networksetup", "-getautoproxyurl"]:
             configured = url if command[2] == "Wi-Fi" else "https://unrelated.example/pac"
-            return SimpleNamespace(stdout=f"URL: {configured}\nEnabled: Yes\n")
+            enabled = "No" if writes and command[2] == "Wi-Fi" else "Yes"
+            return SimpleNamespace(stdout=f"URL: {configured}\nEnabled: {enabled}\n")
         writes.append(command)
         assert command == ["networksetup", "-setautoproxystate", "Wi-Fi", "off"]
         return SimpleNamespace(stdout="")
@@ -63,6 +64,52 @@ def test_capture_cleanup_disables_only_owned_pac(tmp_path, url, expected_writes)
     service = XiaocaoLiveService(tmp_path / "live", runner=runner)
     service._disable_owned_capture_pac()
     assert len(writes) == expected_writes
+
+
+@pytest.mark.parametrize("service_prefix", ["", "*"])
+def test_capture_cleanup_checks_inactive_network_services(tmp_path, service_prefix):
+    writes = []
+
+    def runner(command, **kwargs):
+        if command == ["scutil", "--proxy"]:
+            return SimpleNamespace(stdout="ProxyAutoConfigEnable : 0\n")
+        if command == ["networksetup", "-listallnetworkservices"]:
+            return SimpleNamespace(stdout=f"An asterisk denotes disabled services\n{service_prefix}Wi-Fi\nUSB LAN\n")
+        if command[:2] == ["networksetup", "-getautoproxyurl"]:
+            url = "http://127.0.0.1:2023/proxy.pac" if command[2] == "Wi-Fi" else "http://vpn.example/pac"
+            enabled = "No" if writes and command[2] == "Wi-Fi" else "Yes"
+            return SimpleNamespace(stdout=f"URL: {url}\nEnabled: {enabled}\n")
+        writes.append(command)
+        return SimpleNamespace(stdout="")
+
+    XiaocaoLiveService(tmp_path / "live", runner=runner)._disable_owned_capture_pac()
+    assert writes == [["networksetup", "-setautoproxystate", "Wi-Fi", "off"]]
+
+
+def test_capture_pac_noop_write_cannot_prove_cleanup(tmp_path):
+    def runner(command, **kwargs):
+        if command == ["networksetup", "-listallnetworkservices"]:
+            return SimpleNamespace(stdout="An asterisk denotes disabled services\nWi-Fi\n")
+        if command[:2] == ["networksetup", "-getautoproxyurl"]:
+            return SimpleNamespace(stdout="URL: http://127.0.0.1:2023/proxy.pac\nEnabled: Yes\n")
+        return SimpleNamespace(stdout="")
+
+    with pytest.raises(EnrichmentError, match="detachment was not verified"):
+        XiaocaoLiveService(tmp_path / "live", runner=runner)._disable_owned_capture_pac()
+
+
+def test_sniffer_singleton_excludes_only_exact_proxy_guard(tmp_path):
+    binary = tmp_path / "wx_video_download_macos_arm64"
+    binary.write_bytes(b"binary")
+    service = XiaocaoLiveService(
+        tmp_path / "live", sniffer_binary=binary,
+        runner=lambda *args, **kwargs: SimpleNamespace(stdout=(
+            f"101 {binary} --xiaoetong-only\n"
+            f"102 {binary} __proxy-guard\n"
+            f"103 {binary} --xiaoetong-only --unexpected\n"
+        )),
+    )
+    assert service._sniffer_pids() == [101, 103]
 
 
 def test_default_sniffer_binary_follows_active_checkout(tmp_path):
@@ -1762,16 +1809,18 @@ def test_paused_zero_byte_source_task_returns_to_source_retry(tmp_path):
     assert result["status"] == "awaiting_capture"
 
 
+@pytest.mark.parametrize("capture_pac_enabled", [False, True])
 def test_cancel_wait_stops_only_the_idle_sniffer_and_restores_proxy(
     tmp_path,
     monkeypatch,
+    capture_pac_enabled,
 ):
     binary = tmp_path / "wx_video_download_macos_arm64"
     binary.write_bytes(b"binary")
     ledger = tmp_path / "capture.jsonl"
     store = CaptureJobStore(ledger)
     armed = store.arm([{"live_id": "live-old"}])
-    state = {"running": True}
+    state = {"running": True, "pac_enabled": capture_pac_enabled}
 
     class Sniffer:
         @staticmethod
@@ -1793,13 +1842,23 @@ def test_cancel_wait_stops_only_the_idle_sniffer_and_restores_proxy(
                 stdout=(
                     "HTTPEnable : 0\n"
                     "HTTPSEnable : 0\n"
-                    "ProxyAutoConfigEnable : 0\n"
+                    f"ProxyAutoConfigEnable : {int(state['pac_enabled'])}\n"
+                    "ProxyAutoConfigURLString : http://127.0.0.1:2023/proxy.pac\n"
                     "SOCKSEnable : 0\n"
                 )
             )
+        if command == ["networksetup", "-listallnetworkservices"]:
+            return SimpleNamespace(stdout="An asterisk denotes disabled services\nWi-Fi\n")
+        if command == ["networksetup", "-getautoproxyurl", "Wi-Fi"]:
+            enabled = "Yes" if state["pac_enabled"] else "No"
+            return SimpleNamespace(stdout=f"URL: http://127.0.0.1:2023/proxy.pac\nEnabled: {enabled}\n")
+        if command == ["networksetup", "-setautoproxystate", "Wi-Fi", "off"]:
+            state["pac_enabled"] = False
+            return SimpleNamespace(stdout="")
         raise AssertionError(command)
 
     def kill(_pid, _signal):
+        assert not state["pac_enabled"], "network still points at the proxy being stopped"
         state["running"] = False
 
     class ClosedSocket:

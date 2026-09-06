@@ -88,6 +88,26 @@ lists enrich asynchronously with an incremental cache; they cannot bind a source
 
 ## Continuation and completed-capture acceptance
 
+On macOS the patched downloader owns a detached `__proxy-guard` pipe lease.
+It snapshots HTTP/HTTPS/PAC settings before takeover, restores only its exact
+endpoints before normal shutdown, and also restores after parent death (including
+SIGKILL). Do not kill the guard or count it as a second capture process. Closing
+a terminal (SIGHUP) follows normal cleanup. Preserve other software's later proxy
+changes; never switch off every system proxy to force a green acceptance.
+Cancel-wait must detach the owned PAC before stopping the sniffer, including on
+inactive network services left behind by a network switch. Retain the existing
+media/receipt validation gates. PAC uses `PROXY ...; DIRECT` for capture domains;
+direct fallback preserves connectivity, not media-capture success.
+
+If an older crash or machine restart leaves an orphaned endpoint, use the exact
+installed downloader's `proxy-recover` subcommand (not a new capture). It refuses
+a listening endpoint or active guard lease, touches only its own HTTP/HTTPS/PAC
+configuration, and verifies readback. Without a prior snapshot it disables that
+orphan, not a guessed previous VPN. Guard failures are logged in
+`~/Library/Caches/wx_channels_download/proxy-recovery.log`; report them rather
+than claiming cleanup. Power loss, simultaneous guard death, and denied system
+configuration writes are not covered by a graceful-exit guarantee.
+
 The full continuation remains enabled in code: exact-source media observation ->
 original compressed download -> media validation -> detach only the capture PAC
 and stop the sniffer -> original Netdisk upload -> hash-bound mailbox handoff ->

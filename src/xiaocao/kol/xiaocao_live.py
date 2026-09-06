@@ -851,6 +851,8 @@ class XiaocaoLiveService:
         for line in result.stdout.splitlines():
             pieces = line.strip().split(maxsplit=1)
             if len(pieces) == 2 and pieces[1].split()[0] == expected:
+                if pieces[1].split()[1:] == ["__proxy-guard"]:
+                    continue
                 pids.append(int(pieces[0]))
         return pids
 
@@ -1609,32 +1611,35 @@ class XiaocaoLiveService:
     def _disable_owned_capture_pac(self) -> None:
         """Detach only this adapter's PAC before stopping its local server."""
         own_url = "http://127.0.0.1:2023/proxy.pac"
-        current = self._runner(
-            ["scutil", "--proxy"], check=True, capture_output=True, text=True,
-        ).stdout
-        if not re.search(r"\bProxyAutoConfigEnable\s*:\s*1\b", current):
-            return
-        configured = re.search(r"\bProxyAutoConfigURLString\s*:\s*(\S+)", current)
-        if configured is None or configured.group(1) != own_url:
-            return
+        # scutil projects the current network only. A service left behind by a
+        # network switch can still have our PAC enabled and break on reconnect.
         services = self._runner(
             ["networksetup", "-listallnetworkservices"],
-            check=True, capture_output=True, text=True,
+            check=True, capture_output=True, text=True, timeout=3,
         ).stdout.splitlines()[1:]
         for service in services:
-            name = service.strip()
-            if not name or name.startswith("*"):
+            name = service.strip().removeprefix("*").strip()
+            if not name:
                 continue
             info = self._runner(
                 ["networksetup", "-getautoproxyurl", name],
-                check=True, capture_output=True, text=True,
+                check=True, capture_output=True, text=True, timeout=3,
             ).stdout
-            if f"URL: {own_url}" not in info.splitlines():
+            if (
+                f"URL: {own_url}" not in info.splitlines()
+                or "Enabled: Yes" not in info.splitlines()
+            ):
                 continue
             self._runner(
                 ["networksetup", "-setautoproxystate", name, "off"],
-                check=True, capture_output=True, text=True,
+                check=True, capture_output=True, text=True, timeout=3,
             )
+            verified = self._runner(
+                ["networksetup", "-getautoproxyurl", name],
+                check=True, capture_output=True, text=True, timeout=3,
+            ).stdout.splitlines()
+            if "Enabled: No" not in verified:
+                raise EnrichmentError(f"capture PAC detachment was not verified: {name}")
 
     def cleanup_sniffer(self, *, capture_job_id: str) -> dict[str, Any]:
         existing = self._event(
@@ -1648,10 +1653,10 @@ class XiaocaoLiveService:
             status="cleanup_claimed",
             idempotency_key=_sha256_text("xiaocao-sniffer-cleanup"),
         )
-        self._disable_owned_capture_pac()
         pids = self._sniffer_pids()
         if len(pids) > 1:
             raise EnrichmentError("multiple exact sniffer processes block cleanup")
+        self._disable_owned_capture_pac()
         if pids:
             os.kill(pids[0], signal.SIGINT)
             for _ in range(100):
@@ -1701,6 +1706,7 @@ class XiaocaoLiveService:
         pids = self._sniffer_pids()
         if len(pids) > 1:
             raise EnrichmentError("multiple exact sniffer processes block cleanup")
+        self._disable_owned_capture_pac()
         if pids:
             os.kill(pids[0], signal.SIGINT)
             for _ in range(100):

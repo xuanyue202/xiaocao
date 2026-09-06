@@ -42,6 +42,11 @@ playback prompt.
 
 ## Bounded proxy lifecycle
 
+macOS uses the downloader's detached `__proxy-guard` to restore owned proxy
+settings before shutdown and after parent death. Do not terminate that helper.
+For cleanup/recovery details read `hourly-local-native-capture.md`; the standalone
+`proxy-recover` command clears only proved orphans without restarting capture.
+
 The sniffer is an on-demand capture process, not a long-lived daemon. Never keep
 it warm between requests. If the user cancels, changes the target, or abandons
 the request before a new candidate is detected, stop the idle wait immediately:

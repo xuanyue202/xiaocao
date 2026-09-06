@@ -1,0 +1,6 @@
+diff --git a/internal/interceptor/interceptor.go b/internal/interceptor/interceptor.go
+--- a/internal/interceptor/interceptor.go
++++ b/internal/interceptor/interceptor.go
+@@ -1,1 +1,1 @@
+-    if (host == suffixes[i] || dnsDomainIs(host, "." + suffixes[i])) return "PROXY %s";
++    if (host == suffixes[i] || dnsDomainIs(host, "." + suffixes[i])) return "PROXY %s; DIRECT";
