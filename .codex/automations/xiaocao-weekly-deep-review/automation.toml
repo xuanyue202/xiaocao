@@ -2,7 +2,7 @@ version = 1
 id = "xiaocao-weekly-deep-review"
 kind = "cron"
 name = "xiaocao weekly deep review"
-prompt = "Use the local `xiaocao-trading` skill/project conventions. Run the Xiaocao weekly deep review workflow: build the fixed-input plan, apply only evidence-backed AUTO_APPLIED changes when the plan permits, otherwise create explicit proposals, run validation, then finalize the weekly report/ledger/current-branch commit according to the skill's weekly workflow instructions."
+prompt = "Use the local `xiaocao-trading` skill/project conventions. Run the Xiaocao weekly deep review workflow: build the fixed-input plan, apply only evidence-backed AUTO_APPLIED changes when the plan permits, otherwise create explicit proposals, run validation, then finalize the weekly report/ledger/current-branch commit according to the skill's weekly workflow instructions. Read the local trading reference `.codex/skills/xiaocao-trading/references/kol-trading-judgment.md` for the user-approved Operating Contract §2a bounded KOL interface and shared account-risk policy. Keep this Automation's model; delegate only semantic judgment to `gpt-6-astra` with `xhigh`, save the accepted dispatch and provide complete source/current decision context, then independently review the full relevant evidence before publishing through `scripts/kol_trading_decision.py publish`. No KOL claim changes eligibility, capital keys, the frozen capsule or an existing durable intent. No new capital/leverage or live order is authorized by this prompt. The weekly plan now includes kol_system_review. Treat this as a higher-level framework review, not concatenated KOL headlines: review this week plus 4/12-week evidence where available; overall outcomes, missed upside, capital use, drawdown, costs and execution loss; source conflicts/correlation, interpretation/timing errors and over-filtered opportunities. Have Astra xhigh challenge at least the no-KOL baseline, current bounded overlay and a plausible challenger using the full fixed-input plan, prior weekly hypotheses and failures. Independently review. Follow up prior experiments and choose at most three concrete adjustments/experiments with objective, falsifier, evidence requirement, owner, rollback and next review. Sparse samples are not causal profit proof. Keep existing AUTO_APPLIED vs PROPOSAL_ONLY, dirty-target and permanent-strategy/research/human gates; this framework review never auto-promotes live capital/strategy changes."
 status = "ACTIVE"
 rrule = "RRULE:FREQ=WEEKLY;BYDAY=FR;BYHOUR=20;BYMINUTE=30"
 model = "gpt-5.6-sol"
@@ -11,4 +11,4 @@ execution_environment = "local"
 target = { type = "project", project_id = "c5acdaa7-f8a7-42d4-96fe-bf979a6b7415" }
 cwds = ["/Users/xuanyue202/Documents/project/xiaocao"]
 created_at = 1785639808317
-updated_at = 1787493122693
+updated_at = 1788660213299

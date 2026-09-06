@@ -6,7 +6,7 @@ Xiaocao is a Python CLI and automation toolkit for A-share data, strategy screen
 
 `reference/experience/README.md` is the single entry point to the distilled 小草 knowledge: the judgment playbook (`docs/XIAOCAO_PLAYBOOK.md`), the dated posture timeline (`reference/experience/REGIME_TIMELINE.md`), the falsifiable hypothesis backlog (`reference/experience/xiaocao_hypotheses.jsonl`), the verdict ledger (`kronos_screen/HYPOTHESES.jsonl`), and the **flywheel findings log**. One command for current state: `PYTHONPATH=src python3 scripts/xiaocao_knowledge.py`.
 
-These are **judgment priors / candidate hypotheses** — agent-cortex and flywheel inputs only. They MUST NOT enter the deterministic spine or auto-tune any param; a claim has zero authority over strategy until it passes `scripts/research_run.py` and the §10 human gate (see `docs/OPERATING_CONTRACT.md` §2). Same SSOT discipline as everything else here.
+These are **judgment priors / candidate hypotheses** — raw claims have authority=0 and MUST NOT auto-tune parameters. Permanent strategy/parameter promotion requires `scripts/research_run.py` and the §10 human gate. The separately user-authorized bounded current KOL decision interface is governed by `docs/OPERATING_CONTRACT.md` §2a and the trading skill's `references/kol-trading-judgment.md`; it requires source verification, current applicability and independent review, and never widens capital/execution authority. Same SSOT discipline as everything else here.
 
 ## Project Structure & Module Organization
 

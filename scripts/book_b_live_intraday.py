@@ -26,6 +26,7 @@ from xiaocao.live.book_b_live_intraday import run_book_b_live_intraday  # noqa: 
 from xiaocao.live.capital_keychain import KeychainCapitalRuntime  # noqa: E402
 from xiaocao.live.foundersc_keychain import FounderscKeychainPreflight  # noqa: E402
 from xiaocao.live.trading_runner import build_foundersc_native_execution  # noqa: E402
+from xiaocao.live.live_decision_support import calendar_provider, read_policy  # noqa: E402
 
 
 def _china_now() -> datetime:
@@ -66,6 +67,7 @@ def main(argv: list[str] | None = None) -> int:
         "--state-dir", default="output/live/book_b_live_execution"
     )
     parser.add_argument("--freeze-dir", default="output/live")
+    parser.add_argument("--policy-root", default="output/live/kol_policy/decisions")
     parser.add_argument(
         "--execute-sells",
         action="store_true",
@@ -154,6 +156,7 @@ def main(argv: list[str] | None = None) -> int:
                     market_context=market_context,
                     sentiment_map=sentiment_map,
                     snapshot_map=snapshot_map,
+                    kol_decision=read_policy(Path(args.policy_root), _china_now()),
                 )
                 statuses.append({**status, "owned_lot_id": lot.owned_lot_id})
             return statuses
@@ -173,6 +176,8 @@ def main(argv: list[str] | None = None) -> int:
             strategy_sha=_git_sha(),
             freeze_dir=Path(args.freeze_dir),
             execute_sells=args.execute_sells,
+            policy_root=Path(args.policy_root),
+            trading_dates_provider=calendar_provider(client),
         )
         payload = receipt.as_dict()
         payload["route"] = "native-app"

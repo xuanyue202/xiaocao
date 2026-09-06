@@ -4,11 +4,18 @@ Read this file only for Book-B/Book-T monitoring, the 14:25 precheck or the 14:5
 
 ## Execute and scope
 
-For opening, sparse and 14:25 precheck, start with:
+For opening and 14:25 precheck, start with:
 
 ```bash
 python3 scripts/show_journal.py --date today
 ```
+
+The existing sparse task now starts with the local
+`scripts/kol_trading_tick.py poll` gate. Read
+[kol-trading-judgment.md](kol-trading-judgment.md); `no_op` ends silently before
+journal/MCP/broker reads. A claimed `run` retains the following independent
+paper/live checkpoints and the exact token acknowledgement. No extra tick
+grants the 14:55 soft-exit authority.
 
 Default Book B:
 
@@ -61,12 +68,14 @@ Never mix Book T into the default Book-B report. Book A is settled separately an
 | 14:25 precheck | Run immediately; never wait for 14:55; leave soft exits deferred |
 | 14:55 closing discipline | The single soft-exit pass; run once when woken and do not wait for another gate |
 
-Intraday executes only `HARD_STOP`, authorized structured `AI_EVENT_RISK_EXIT`, or liquidity escape. Ordinary trailing/composite signals are `SELL_DEFERRED` until 14:55.
+Intraday executes `HARD_STOP`, authorized structured `AI_EVENT_RISK_EXIT`,
+fresh independently reviewed `KOL_DISCRETIONARY_EXIT` under Contract §2a, or
+liquidity escape. Ordinary trailing/composite signals are `SELL_DEFERRED` until 14:55.
 
 Use live phase `opening` for opening dense, `sparse` for the four sparse runs,
 `precheck` at 14:25 and `closing` at 14:55. Only `closing` may hand off
 `TRAILING_STOP` / `EOD_DISCIPLINE_1455`; the other live phases may hand off only
-`HARD_STOP` / `AI_EVENT_RISK_EXIT`.
+`HARD_STOP` / `AI_EVENT_RISK_EXIT` / verified `KOL_DISCRETIONARY_EXIT`.
 The `closing` authority is code-bound to China time 14:55:00–14:56:59 on the
 declared trade date. An early, late or wrong-date invocation fails closed; a
 prompt label or scheduler wake alone does not grant soft-exit authority.
@@ -83,7 +92,7 @@ paper action, not permission to apply stock defaults.
 All writers share `output/live/paper_ledger.lock`. If `.ledger_txn/pending.json` exists, let the next writer recover it under the lock; never delete it manually. A concurrent second writer may become a no-op but must not duplicate a SELL.
 
 Any real SELL intent must be derived from this monitor's authorized
-`HARD_STOP`, `AI_EVENT_RISK_EXIT`, or 14:55 `TRAILING_STOP` /
+`HARD_STOP`, `AI_EVENT_RISK_EXIT`, verified `KOL_DISCRETIONARY_EXIT`, or 14:55 `TRAILING_STOP` /
 `EOD_DISCIPLINE_1455` decision, bound to a Book-B-owned sellable lot and free
 of T+1/liquidity blocks. The live lifecycle records/reconciles such an intent
 and hands it to the native execution port; it does not replace the simulated sell writer or infer a SELL from

@@ -18,12 +18,19 @@ from dataclasses import asdict, dataclass, replace
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Callable
+from zoneinfo import ZoneInfo
 
-from .book_b_allocation import BookBAllocationFacts
+from .book_b_allocation import BookBAllocationFacts, allocate_frozen_rows, validate_allocation_rows
+from .account_risk import AccountRiskReceipt
+from .live_decision_support import (
+    bind_plan_audit, buy_cap, evaluate_live_risk, read_plan_audit, read_policy,
+)
+from xiaocao.strategy.mode_switch import plan_board_lot_orders
 from .book_b_live_lifecycle import (
     load_latest_book_b_live_settlement,
     open_execution_plan_ids,
     ownership_head_sha256,
+    validate_broker_account_snapshot,
 )
 from .trading_execution import (
     BrokerReceipt,
@@ -73,6 +80,7 @@ class BookBLiveMorningConfig:
     state_dir: Path
     dated_freeze_receipt: dict | None = None
     logical_account_id: str = "primary"
+    policy_root: Path | None = None
 
 
 @dataclass(frozen=True)
@@ -91,6 +99,8 @@ class BookBLiveMorningReceipt:
     capital_runtime: dict | None = None
     open_plan_reconciliations: tuple[dict, ...] = ()
     prior_reconciliations: tuple[dict, ...] = ()
+    policy_consumptions: tuple[dict, ...] = ()
+    review_rendezvous: dict | None = None
 
     def as_dict(self) -> dict:
         return asdict(self)
@@ -697,6 +707,8 @@ def _materialize_or_restore_plans(
     allocation: BookBAllocationFacts,
     now: datetime,
     refresh_market_guard: Callable[[dict], dict] | None = None,
+    policy_evidence: dict | None = None,
+    check_new_plan: Callable[[TradePlan, dict], bool] | None = None,
 ) -> list[TradePlan]:
     restored_by_id: dict[str, TradePlan] = {}
     new_rows: list[dict] = []
@@ -708,6 +720,13 @@ def _materialize_or_restore_plans(
         )
         if restored is None:
             materialized_row = dict(row)
+            if policy_evidence is not None:
+                # Selection is made on the entire original batch first. A
+                # skipped/unrepresentable slot stays cash, with no promotion.
+                sized = policy_evidence["rows_by_code"].get(str(row.get("code")))
+                if sized is None:
+                    continue
+                materialized_row.update(sized)
             if refresh_market_guard is not None:
                 guard = refresh_market_guard(dict(row))
                 if not isinstance(guard, dict):
@@ -734,17 +753,81 @@ def _materialize_or_restore_plans(
         side="BUY",
         allocation=allocation,
     ) if new_rows else []
+    if check_new_plan is not None and policy_evidence is not None:
+        new_plans = [plan for plan in new_plans
+                     if check_new_plan(plan, policy_evidence["by_code"][plan.code])]
     new_by_id = {
         plan.plan_id: plan
         for plan in _bind_durable_plan_intents(config, new_plans)
     }
+    if policy_evidence is not None:
+        for plan in new_by_id.values():
+            bind_plan_audit(config.state_dir, plan, {
+                **policy_evidence["by_code"][plan.code],
+                "base_allocation": policy_evidence["base_allocation"],
+                "allocation_capsule_sha256": policy_evidence["allocation_capsule_sha256"],
+                "freeze_sha256": frozen_rows_digest(rows),
+            })
     return [
         restored_by_id.get(
             f"book-b:{config.trade_date}:{row.get('code')}:BUY"
         )
-        or new_by_id[f"book-b:{config.trade_date}:{row.get('code')}:BUY"]
+        or new_by_id.get(f"book-b:{config.trade_date}:{row.get('code')}:BUY")
         for row in rows
+        if f"book-b:{config.trade_date}:{row.get('code')}:BUY" in restored_by_id
+        or f"book-b:{config.trade_date}:{row.get('code')}:BUY" in new_by_id
     ]
+
+
+def _policy_allocation(rows: list[dict], allocation: BookBAllocationFacts,
+                       decision: dict, risk: AccountRiskReceipt) -> tuple[BookBAllocationFacts, dict]:
+    """Size only original allocator slots, retaining each slot's cash ceiling."""
+    error = allocation.validation_error()
+    if error:
+        raise ValueError(error)
+    evidence = {str(row["code"]): buy_cap(decision, risk, str(row["code"]), allocation.deploy_factor)
+                for row in rows}
+    factor = min([allocation.deploy_factor, risk.deploy_factor] +
+                 [item["scale"] for item in evidence.values() if not item["skip"]])
+    effective = replace(allocation, deploy_factor=factor)
+    sized = []
+    if any(not item["skip"] for item in evidence.values()):
+        try:
+            if any(row.get("mode_exec_planned_shares") in (None, "") for row in rows):
+                base_rows = allocate_frozen_rows(rows, allocation)
+            else:
+                validate_allocation_rows(rows, allocation)
+                base_rows = [dict(row) for row in rows]
+        except ValueError as exc:
+            if str(exc) != "ALLOCATION_EMPTY":
+                raise
+            base_rows = []
+        for row in base_rows:
+            adjustment = evidence[str(row["code"])]
+            if adjustment["skip"]:
+                continue
+            ratio = adjustment["effective_deploy_factor"] / allocation.deploy_factor
+            if ratio == 1:
+                planned = [dict(row)]
+            else:
+                from .book_b_pricing import initial_limit_price
+
+                price = initial_limit_price(row.get("open"), row.get("basket_price"))
+                candidate = {**row, "execution_price": price}
+                target = float(row["mode_exec_target_weight"]) * ratio
+                planned = plan_board_lot_orders(
+                    [candidate], nav=allocation.settled_nav, cash_limit=effective.cash_limit,
+                    fee_rate=allocation.fee_rate, price_key="execution_price", max_candidates=1,
+                    max_batch_ratio=effective.batch_ratio * effective.deploy_factor,
+                    weight_resolver=lambda _subset, weight=target: [weight],
+                    per_position_cash_cap=int(row["mode_exec_planned_shares"]) * price *
+                                          (1 + allocation.fee_rate) * ratio,
+                )
+            for item in planned:
+                item.pop("allocation_proof_hash", None)
+                sized.append(item)
+    return effective, {"rows_by_code": {str(row["code"]): row for row in sized},
+                       "by_code": evidence, "base_allocation": allocation.canonical_payload()}
 
 
 def reconcile_open_book_b_plans(
@@ -800,6 +883,16 @@ def _plan_requires_prepare(config: BookBLiveMorningConfig, plan: TradePlan) -> b
         ExecutionState.VALIDATED,
         ExecutionState.PREPARED,
     }
+
+
+def _uncertain_execution_plan_ids(state_dir: Path) -> tuple[str, ...]:
+    """Prepared/unclaimed intents reserve plans but are not UNKNOWN effects."""
+    store = ExecutionStore(Path(state_dir) / "events.jsonl")
+    return tuple(plan_id for plan_id in open_execution_plan_ids(state_dir)
+                 if (receipt := store.current(plan_id)) is not None
+                 and receipt.state in {ExecutionState.CLAIMED, ExecutionState.UNKNOWN,
+                     ExecutionState.SUBMITTED, ExecutionState.ACKNOWLEDGED,
+                     ExecutionState.PARTIAL, ExecutionState.RECONCILING})
 
 
 def reconcile_prior_day_canary_unknowns(
@@ -901,6 +994,8 @@ def _read_completed_freeze(
 def _load_allocation(
     config: BookBLiveMorningConfig,
     payload: dict | None = None,
+    *,
+    restoring_only: bool = False,
 ) -> BookBAllocationFacts:
     if payload is None:
         try:
@@ -965,7 +1060,8 @@ def _load_allocation(
             settlement is None
             or capital_basis_receipt
             != str(settlement.get("settlement_sha256") or "").lower()
-            or open_execution_plan_ids(config.state_dir)
+            or (_uncertain_execution_plan_ids(config.state_dir) if restoring_only
+                else open_execution_plan_ids(config.state_dir))
             or settlement.get("ownership_head_sha256")
             != ownership_head_sha256(config.state_dir)
             or payload.get("settled_nav") != settlement.get("settled_nav")
@@ -1210,6 +1306,10 @@ def run_book_b_live_morning(
     wait_for_submit_window: Callable[[datetime], None] | None = None,
     wait_for_reconcile: Callable[[], None] | None = None,
     now: Callable[[], datetime] = lambda: datetime.now(timezone.utc),
+    risk_provider: Callable[[datetime], AccountRiskReceipt] | None = None,
+    account_snapshot_provider: Callable[[], dict] | None = None,
+    trading_dates_provider: Callable[[datetime], list[str]] | None = None,
+    review_rendezvous: Callable[[dict], dict] | None = None,
 ) -> BookBLiveMorningReceipt:
     """Consume one dated freeze and advance immutable live plans exactly once.
 
@@ -1227,6 +1327,68 @@ def run_book_b_live_morning(
     preparation_receipts: list[dict] = []
     receipt: BookBLiveMorningReceipt
     restore_failure: str | None = None
+    policy_consumptions: list[dict] = []
+    open_reconciliations: tuple[dict, ...] = ()
+    review_receipt: dict | None = None
+    review_requested_at: datetime | None = None
+    snapshot_cache: dict | None = None
+    snapshot_ownership_head: str | None = None
+
+    def cached_snapshot() -> dict:
+        nonlocal snapshot_cache, snapshot_ownership_head
+        clock = now()
+        head = ownership_head_sha256(config.state_dir)
+        if snapshot_cache is not None and snapshot_ownership_head == head:
+            try:
+                return validate_broker_account_snapshot(snapshot_cache, trade_date=config.trade_date, now=clock)
+            except ValueError:
+                snapshot_cache = None
+        if account_snapshot_provider is None:
+            raise ValueError("LIVE_RISK_RECONCILED_CURRENT_NAV_REQUIRED")
+        snapshot = validate_broker_account_snapshot(account_snapshot_provider(),
+                                                    trade_date=config.trade_date, now=now())
+        snapshot_cache, snapshot_ownership_head = snapshot, head
+        return snapshot
+
+    def execute_plan(plan: TradePlan) -> ExecutionReceipt:
+        nonlocal snapshot_cache
+        try:
+            return execute(plan)
+        finally:
+            # Any execution may have changed broker state, including a lost
+            # reply. Do not reuse a pre-action NAV at the next risk boundary.
+            snapshot_cache = None
+
+    def support() -> tuple[dict, AccountRiskReceipt]:
+        clock = now()
+        risk = risk_provider(clock) if risk_provider is not None else evaluate_live_risk(
+            config.state_dir, now=clock,
+            account_snapshot_provider=cached_snapshot if account_snapshot_provider is not None else None,
+            trading_dates_provider=trading_dates_provider,
+            receipt_root=config.policy_root.parent / "account_risk",
+            now_provider=now,
+        )
+        decision = read_policy(config.policy_root, now())
+        if (review_receipt is not None and review_receipt.get("status") == "timed_out"
+                and review_requested_at is not None and decision.get("status") == "validated"
+                and datetime.fromisoformat(decision["record"]["decision"]["as_of"].replace("Z", "+00:00")) < review_requested_at):
+            decision = {"status": "neutral", "book": "B", "runtime": "live",
+                        "reason": "LIVE_REVIEW_TIMEOUT_NEUTRAL_FALLBACK", "decision_id": None}
+        return decision, risk
+
+    def allow_new_risk(plan: TradePlan, original: dict | None = None) -> bool:
+        if config.policy_root is None or not _plan_requires_prepare(config, plan):
+            return True
+        audit = original if original is not None else read_plan_audit(config.state_dir, plan)
+        prior_factor = float(audit["effective_deploy_factor"]) if audit else 1.0
+        decision, risk = support()
+        adjustment = buy_cap(decision, risk, plan.code, allocation.deploy_factor)
+        allowed = not adjustment["skip"] and adjustment["effective_deploy_factor"] >= prior_factor
+        policy_consumptions.append({"plan_id": plan.plan_id, "plan_hash": plan.plan_hash,
+                                    "stage": "new_intent" if original is not None else "before_action",
+                                    "allowed": allowed, **adjustment})
+        return allowed
+
     try:
         try:
             if preflight is not None:
@@ -1234,8 +1396,14 @@ def run_book_b_live_morning(
                 environment_receipt = preflight()
                 if str(environment_receipt.get("environment") or "").lower() != "live":
                     raise ValueError("LIVE_ENVIRONMENT_NOT_PROVEN")
+            if config.policy_root is not None:
+                open_reconciliations = reconcile_open_book_b_plans(
+                    config.state_dir, trade_date=config.trade_date, execute=execute_plan,
+                )
+                if _uncertain_execution_plan_ids(config.state_dir):
+                    raise ValueError("LIVE_BOOK_B_OPEN_EXECUTION_RECONCILE_REQUIRED")
             allocation: BookBAllocationFacts | None = None
-            if read_allocation_facts is not None:
+            if read_allocation_facts is not None and config.policy_root is None:
                 allocation_payload = read_allocation_facts()
                 allocation = _load_allocation(config, allocation_payload)
                 _write_json_atomic(config.allocation_facts_path, allocation_payload)
@@ -1253,22 +1421,72 @@ def run_book_b_live_morning(
                 if not rows:
                     receipt = _no_action_receipt(config)
                 else:
-                    allocation = allocation or _load_allocation(config)
+                    all_restoring = False
+                    if config.policy_root is not None:
+                        all_restoring = all(_restore_durable_plan_for_row(
+                            config, row, strategy_sha=str(dated_freeze_receipt["strategy_sha"]),
+                        ) is not None for row in rows)
+                    if config.policy_root is not None and review_rendezvous is not None:
+                        new_candidates = [row for row in rows if _restore_durable_plan_for_row(
+                            config, row, strategy_sha=str(dated_freeze_receipt["strategy_sha"]),
+                        ) is None]
+                        if new_candidates:
+                            current = now().astimezone(ZoneInfo("Asia/Shanghai"))
+                            review_requested_at = current
+                            if (current.hour, current.minute) < (11, 30):
+                                deadline = current.replace(hour=11, minute=30, second=0, microsecond=0)
+                            elif (13, 0) <= (current.hour, current.minute) < (14, 57):
+                                deadline = current.replace(hour=14, minute=57, second=0, microsecond=0)
+                            else:
+                                deadline = current
+                            request = {
+                                "schema_version": "book-b-live-review-request.v1",
+                                "book": "B", "runtime": "live", "trade_date": config.trade_date,
+                                "freeze_path": str(config.freeze_path),
+                                "freeze_sha256": dated_freeze_receipt["snapshot_sha256"],
+                                "strategy_sha": dated_freeze_receipt["strategy_sha"],
+                                "policy_root": str(config.policy_root),
+                                "candidates": [dict(row) for row in new_candidates],
+                                "requested_at": current.isoformat(), "entry_deadline": deadline.isoformat(),
+                                "max_wait_seconds": min(120.0, max(0.0, (deadline - current).total_seconds()))
+                                    if current.date().isoformat() == config.trade_date else 0.0,
+                            }
+                            review_receipt = review_rendezvous(request)
+                            if not isinstance(review_receipt, dict):
+                                raise ValueError("LIVE_REVIEW_RENDEZVOUS_RECEIPT_INVALID")
+                            if now() >= deadline:
+                                raise ValueError("LIVE_REVIEW_ENTRY_WINDOW_CLOSED")
+                    if config.policy_root is not None and read_allocation_facts is not None and not all_restoring:
+                        allocation_payload = read_allocation_facts()
+                        allocation = _load_allocation(config, allocation_payload)
+                        _write_json_atomic(config.allocation_facts_path, allocation_payload)
+                    allocation = allocation or _load_allocation(config, restoring_only=all_restoring)
+                    effective_allocation = allocation
+                    policy_evidence = None
+                    if config.policy_root is not None:
+                        decision, risk = support()
+                        effective_allocation, policy_evidence = _policy_allocation(rows, allocation, decision, risk)
+                        capsule = json.loads(config.allocation_facts_path.read_text(encoding="utf-8"))
+                        policy_evidence["allocation_capsule_sha256"] = capsule["allocation_capsule_sha256"]
+                        policy_consumptions.extend({"code": code, "stage": "allocation", **evidence}
+                                                   for code, evidence in policy_evidence["by_code"].items())
                     plans = _materialize_or_restore_plans(
                         config,
                         rows,
                         strategy_sha=str(dated_freeze_receipt["strategy_sha"]),
-                        allocation=allocation,
+                        allocation=effective_allocation,
                         now=now(),
                         refresh_market_guard=refresh_market_guard,
+                        policy_evidence=policy_evidence,
+                        check_new_plan=allow_new_risk,
                     )
                     if prepare_only is not None:
                         preparation_receipts = [
                             _assert_prepare_only(plan, prepare_only(plan))
                             for plan in plans
-                            if _plan_requires_prepare(config, plan)
+                            if _plan_requires_prepare(config, plan) and allow_new_risk(plan)
                         ]
-                    if wait_for_submit_window is not None:
+                    if plans and wait_for_submit_window is not None:
                         submit_at = max(
                             plan.submit_not_before or plan.created_at
                             for plan in plans
@@ -1279,7 +1497,9 @@ def run_book_b_live_morning(
                             raise ValueError("LIVE_SUBMIT_WINDOW_NOT_REACHED")
                     execution_receipts = []
                     for plan in plans:
-                        execution_receipt = execute(plan)
+                        if not allow_new_risk(plan):
+                            continue
+                        execution_receipt = execute_plan(plan)
                         for _attempt in range(3):
                             needs_reconcile = (
                                 execution_receipt.state
@@ -1298,9 +1518,16 @@ def run_book_b_live_morning(
                                 break
                             if wait_for_reconcile is not None:
                                 wait_for_reconcile()
-                            execution_receipt = execute(plan)
+                            execution_receipt = execute_plan(plan)
                         execution_receipts.append(execution_receipt)
+                        if execution_receipt.state in {
+                            ExecutionState.CLAIMED, ExecutionState.UNKNOWN, ExecutionState.SUBMITTED,
+                            ExecutionState.ACKNOWLEDGED, ExecutionState.PARTIAL, ExecutionState.RECONCILING,
+                        }:
+                            break
                     status, reason = _rollup(execution_receipts)
+                    if not execution_receipts:
+                        status, reason = "no_action", "NO_NEW_BUY_AFTER_POLICY_RISK"
                     receipt = BookBLiveMorningReceipt(
                         trade_date=config.trade_date,
                         status=status,
@@ -1346,6 +1573,9 @@ def run_book_b_live_morning(
             receipt,
             environment_restoration=environment_restoration,
         )
+    receipt = replace(receipt, policy_consumptions=tuple(policy_consumptions),
+                      open_plan_reconciliations=open_reconciliations or receipt.open_plan_reconciliations,
+                      review_rendezvous=review_receipt)
     _write_receipt(config, receipt)
     return receipt
 

@@ -4,6 +4,13 @@ Read this file only for the daily morning recommendation/paper-book branch.
 
 ## Execute
 
+For the bounded KOL overlay, also read
+[kol-trading-judgment.md](kol-trading-judgment.md). Keep the original runner and
+model; use its review window for Astra `xhigh` plus independent parent review.
+Only a source-verified published decision is consumable. Account-risk and KOL
+caps are separate from frozen qualification and the allocation capsule; a late
+review never rewrites the freeze, old intent or an earlier fill.
+
 Scheduled delivery is split across two Automations because the recommendation
 is ready before opening-window execution can finish:
 

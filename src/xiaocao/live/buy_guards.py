@@ -76,6 +76,10 @@ def evaluate_buy_market_guard(
     required = bool(row.get("market_guard_required")) if require_authoritative is None else bool(require_authoritative)
     status_raw = str(row.get("market_guard_status") or row.get("trade_status") or row.get("tradeStatus") or "").strip()
     status = status_raw.lower()
+    # Same documented continuous-auction family as the live execution guard.
+    # Do not accept an arbitrary string merely beginning with T.
+    if re.fullmatch(r"t[0-9]+", status):
+        status = "t"
     down_price = _number(row, "down_price", "downPrice", "limit_down_price")
     latest_price = _number(row, "latest_price", "market_price", "trade", "last")
     observed_at = row.get("market_observed_at") or row.get("trade_timestamp") or row.get("tradeTimestamp")

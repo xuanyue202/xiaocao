@@ -20,18 +20,24 @@ import argparse
 import datetime as dt
 import hashlib
 import json
+import math
 import os
 import re
 import subprocess
 import sys
+from collections import Counter
 from pathlib import Path
 from typing import Any
+from zoneinfo import ZoneInfo
 
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "src"))
 
 from xiaocao.live import flywheel  # noqa: E402
 from xiaocao.research import protocols  # noqa: E402
+from xiaocao.kol import trading_decision  # noqa: E402
+from xiaocao.kol.publication import canonical_sha256  # noqa: E402
+from xiaocao.live import kol_policy  # noqa: E402
 
 ACTION_LOG = ROOT / "reference" / "experience" / "distill_action_log.jsonl"
 CHANGE_LEDGER = ROOT / "output" / "live" / "flywheel_change_ledger.jsonl"
@@ -73,6 +79,470 @@ FIXED_INPUTS = [
     "output/research/runs/*/manifest.json",
     "git status --porcelain",
 ]
+
+# Fixed observation inputs, NOT new AUTO_APPLIED authority. Keep the existing
+# promotion-source list and human/research/dirty-file gates unchanged.
+KOL_REVIEW_INPUTS = {
+    "decisions": "output/live/kol_policy/decisions/*.json",
+    "context": "output/live/kol_policy/context/*.context.json",
+    "requests": "output/live/kol_policy/requests/*.json",
+    "source_verifications": "output/live/kol_policy/source_verifications/*.json",
+    "paper_risk": "output/live/kol_policy/account_risk/risk_receipts/*.json",
+    "live_risk": "output/live/kol_policy/account_risk/live_B.jsonl",
+    "paper_consumption": "output/live/paper_decision_support/consumption/*.json",
+    "paper_consumption_log": "output/live/paper_decision_support/consumption.jsonl",
+    "live_consumption_log": "output/live/book_b_live_execution/consumption.jsonl",
+    "live_morning": "output/live/book_b_live_execution/runs/*.json",
+    "live_decisions": "output/live/book_b_live_execution/book_b_live_decisions.jsonl",
+    "prior_reviews": "output/live/flywheel_change_ledger.jsonl",
+}
+_KOL_CHINA = ZoneInfo("Asia/Shanghai")
+_KOL_SLOT_FIELDS = ("id", "experiment_id", "origin_review_date", "status", "objective", "falsifier",
+                    "required_evidence", "owner", "rollback", "next_review", "follow_up")
+
+
+def _kol_time(value: Any) -> dt.datetime:
+    parsed = dt.datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+    if parsed.utcoffset() is None:
+        raise ValueError("aware evidence time required")
+    return parsed
+
+
+def _kol_hash_bound(row: dict, key: str, *, rfc8785: bool = False) -> None:
+    unsigned = {k: v for k, v in row.items() if k != key}
+    digest = canonical_sha256(unsigned) if rfc8785 else kol_policy.decision_sha256(unsigned)
+    if row.get(key) != digest:
+        raise ValueError("evidence hash mismatch")
+
+
+def _kol_rows(data: bytes, *, jsonl: bool) -> list[dict]:
+    # Use the same strict parser as the consumer audit, including duplicate
+    # keys and non-finite numbers. Never silently drop a damaged ledger row.
+    rows = [json.loads(line, object_pairs_hook=trading_decision._unique)
+            for line in (data.splitlines() if jsonl else [data]) if line.strip()]
+    for row in rows:
+        if not isinstance(row, dict):
+            raise ValueError("object required")
+        canonical_sha256(row)
+    return rows
+
+
+def _kol_consumption_digest(files: dict[str, str], runtime: str) -> str:
+    """Bind the inventory to audit_feedback's actual ordered file inventory."""
+    base = "output/live/" + ("paper_decision_support" if runtime == "paper" else "book_b_live_execution")
+    relative = {path.removeprefix(base + "/"): digest for path, digest in files.items() if path.startswith(base + "/")}
+    paths = ["consumption.jsonl"] if "consumption.jsonl" in relative else []
+    if runtime == "live":
+        paths += sorted(p for p in relative if p.startswith("runs/"))
+        if "book_b_live_decisions.jsonl" in relative:
+            paths.append("book_b_live_decisions.jsonl")
+    else:
+        for path in sorted(p for p in relative if p.startswith("consumption/") and not p.endswith(".result.json")):
+            paths.append(path)
+            terminal = path.removesuffix(".json") + ".result.json"
+            if terminal in relative:
+                paths.append(terminal)
+    return canonical_sha256([{"path": path, "sha256": relative[path]} for path in paths])
+
+
+def _kol_item(kind: str, row: dict, reference: dict) -> dict:
+    item = {"kind": kind, "evidence": reference}
+    if kind == "prior_reviews":
+        state = row["kol_review_state"]
+        _kol_hash_bound(state, "state_sha256", rfc8785=True)
+        if state.get("schema_version") != 1 or state.get("date") != row["date"]:
+            raise ValueError("weekly review date/schema mismatch")
+        slots = state["experiment_slots"]
+        if not isinstance(slots, list) or len(slots) > 3 or any(not isinstance(s, dict) for s in slots):
+            raise ValueError("weekly review slots invalid")
+        day = dt.date.fromisoformat(row["date"])
+        item.update(observed_date=day.isoformat(), state_sha256=state["state_sha256"],
+                    experiment_slots=slots, analysis=state.get("analysis", {}), authority="review_only")
+    elif kind == "decisions":
+        kol_policy._validate_record(row)
+        decision, review = row["decision"], row["review"]
+        item.update(book=decision["book"], runtime=decision["runtime"],
+                    observed_at=row["receipt"]["published_at"], decision_id=decision["decision_id"],
+                    decision_sha256=row["receipt"]["decision_sha256"],
+                    source_refs=decision["source_refs"], agent_id=decision["agent_id"],
+                    source_observation_latency_seconds=[(_kol_time(s["received_at"]) - _kol_time(s["source_published_at"])).total_seconds()
+                                                        for s in decision["source_refs"]],
+                    reviewer_agent_id=review["reviewer_agent_id"],
+                    review_latency_seconds=(_kol_time(review["reviewed_at"]) - _kol_time(decision["as_of"])).total_seconds(),
+                    publication_latency_seconds=(_kol_time(row["receipt"]["published_at"]) - _kol_time(review["reviewed_at"])).total_seconds())
+    elif kind == "context":
+        _kol_hash_bound(row, "context_sha256", rfc8785=True)
+        if row.get("source") != "lianghui_published_registry" or not isinstance(row.get("coverage"), dict):
+            raise ValueError("context schema missing")
+        item.update(observed_at=row["as_of"], coverage=row["coverage"],
+                    context_sha256=row["context_sha256"],
+                    relation_types=dict(Counter(r.get("record", {}).get("payload", {}).get("relation_type", "unknown")
+                                                for r in row.get("relations", []))),
+                    report_count=len(row.get("report_index", [])),
+                    unloaded_report_ids=row.get("unloaded_report_ids", []))
+    elif kind in ("requests", "source_verifications"):
+        _kol_hash_bound(row, "record_sha256", rfc8785=True)
+        payload = row["payload"]
+        item.update(observed_at=row["recorded_at"], book=payload.get("book"), runtime=payload.get("runtime"),
+                    decision_id=payload.get("decision_id"), decision_sha256=payload.get("decision_sha256"),
+                    context_sha256=payload.get("context_sha256", payload.get("context", {}).get("context_sha256")),
+                    phase=payload.get("phase"))
+    elif kind in ("paper_risk", "live_risk"):
+        if kind == "paper_risk":
+            _kol_hash_bound(row, "receipt_sha256")
+            receipt = row
+        else:
+            _kol_hash_bound(row, "event_hash")
+            receipt = row["receipt"]
+        runtime = "paper" if kind == "paper_risk" else "live"
+        if receipt.get("account_id") != f"{runtime}:B":
+            raise ValueError("account identity mismatch")
+        nav = receipt.get("nav")
+        if nav is not None and (isinstance(nav, bool) or not isinstance(nav, (int, float))
+                                or not math.isfinite(nav) or nav <= 0):
+            raise ValueError("invalid NAV")
+        nav_time = receipt.get("nav_observed_at")
+        age = (_kol_time(receipt["asof"]) - _kol_time(nav_time)).total_seconds() if nav_time else None
+        nav_usable = (nav is not None and receipt["status"] in ("NORMAL", "REDUCED", "PAUSED")
+                      and age is not None and 0 <= age <= 300
+                      and _kol_time(nav_time).astimezone(_KOL_CHINA).date()
+                      == _kol_time(receipt["asof"]).astimezone(_KOL_CHINA).date())
+        item.update(book="B", runtime=runtime, observed_at=receipt["asof"], nav=nav,
+                    nav_observed_at=nav_time, nav_evidence_usable=nav_usable,
+                    risk_status=receipt["status"], history_basis=receipt.get("history_basis", "missing"),
+                    evidence_digest=receipt["evidence_digest"])
+    elif kind == "paper_consumption":
+        _kol_hash_bound(row, "receipt_sha256")
+        if row.get("book") != "B" or row.get("runtime") != "paper":
+            raise ValueError("paper consumption scope mismatch")
+        if row.get("schema_version") not in ("paper-policy-result.v1", "paper-policy-consumption.v1"):
+            raise ValueError("paper consumption schema missing")
+        terminal = row.get("schema_version") == "paper-policy-result.v1"
+        if terminal:
+            # Terminal is meaningful only when bound to its exact durable claim.
+            result_path = Path(reference["absolute_path"])
+            claim_path = result_path.with_name(result_path.name.removesuffix(".result.json") + ".json")
+            claim = trading_decision.read_json(claim_path)
+            _kol_hash_bound(claim, "receipt_sha256")
+            if row.get("consumption_sha256") != claim["receipt_sha256"]:
+                raise ValueError("paper terminal binding mismatch")
+        else:
+            claim = row
+        observed = claim["kol_decision"]["evaluated_at"]
+        item.update(book="B", runtime="paper", observed_at=observed,
+                    timestamp_basis="policy_evaluated_at; terminal clock not recorded",
+                    decision_id=claim["kol_decision"].get("decision_id"),
+                    decision_sha256=claim["kol_decision"].get("decision_sha256"),
+                    policy_status=claim["kol_decision"]["status"], terminal=terminal,
+                    execution_status=row["status"], slots=[] if terminal else claim["slots"],
+                    buy_count=row.get("buy_count") if terminal else None,
+                    execution_verification="paper_receipt_only_not_broker")
+    elif kind.endswith("consumption_log"):
+        if row.get("runtime") != kind.split("_")[0] or row.get("book") not in ("B", "T", "KOL-US"):
+            raise ValueError("consumption scope mismatch")
+        item.update(book=row["book"], runtime=row["runtime"], observed_at=row["consumed_at"],
+                    decision_id=row["decision_id"], decision_sha256=row.get("decision_sha256"),
+                    execution_status=row.get("execution_status"),
+                    adjustment=row.get("adjustment", {}), execution_verification="not_performed")
+    elif kind == "live_decisions":
+        _kol_hash_bound(row, "event_hash")
+        if row.get("environment") != "live" or "kol_decision_id" not in row:
+            raise ValueError("legacy or unscoped live decision")
+        item.update(book="B", runtime="live", observed_at=row["recorded_at"],
+                    decision_id=row["kol_decision_id"], decision_sha256=row.get("kol_decision_sha256"),
+                    execution_status=row.get("action"), execution_verification="not_performed")
+    else:
+        # Native run receipts are inventory evidence, not broker-fill proofs.
+        day = dt.date.fromisoformat(row["trade_date"])
+        item.update(book="B", runtime="live", observed_date=day.isoformat(),
+                    execution_verification="not_performed", execution_status=row.get("status"),
+                    timestamp_basis="run_trade_date_not_consumption_clock",
+                    policy_consumptions=row.get("policy_consumptions"))
+    if "observed_at" in item:
+        item["observed_date"] = _kol_time(item["observed_at"]).astimezone(_KOL_CHINA).date().isoformat()
+    item["evidence"].pop("absolute_path", None)
+    return item
+
+
+def build_kol_evidence_inventory(root: Path, *, as_of: dt.date) -> dict:
+    """Read fixed KOL evidence and existing audit_feedback, without any writer.
+
+    Availability is evidence availability, not investment efficacy or complete
+    account history. Audit totals cover all current files, never a week count.
+    Each dated item below is independently assigned to the requested windows.
+    """
+    root = Path(root)
+    try:
+        feedback = trading_decision.audit_feedback(root, clock=lambda: dt.datetime.combine(as_of, dt.time.max, _KOL_CHINA))
+    except (OSError, ValueError, TypeError):
+        feedback = {"status": "missing", "reason": "audit_evidence_invalid",
+                    "execution_verification": "not_performed", "profit_attribution": "not_established"}
+    sources, items, observed_files = {}, [], {}
+    for kind, pattern in KOL_REVIEW_INPUTS.items():
+        references, errors, record_count = [], [], 0
+        paths = sorted(root.glob(pattern))
+        for path in paths:
+            reference = {"path": path.relative_to(root).as_posix(), "absolute_path": str(path)}
+            try:
+                data = trading_decision._bytes(path)
+                reference["sha256"] = hashlib.sha256(data).hexdigest()
+                observed_files[reference["path"]] = reference["sha256"]
+                rows = _kol_rows(data, jsonl=path.suffix == ".jsonl")
+                if kind in ("paper_consumption", "paper_consumption_log", "live_consumption_log", "live_morning", "live_decisions"):
+                    if feedback.get("status") != "audited":
+                        raise ValueError("consumption audit failed")
+                chain_head = None
+                file_items = []
+                for row in rows:
+                    if kind == "prior_reviews" and "kol_review_state" not in row:
+                        continue  # Legacy weekly ledger rows do not prove experiment completion.
+                    if kind in ("live_risk", "live_decisions"):
+                        if row.get("previous_hash") != chain_head:
+                            raise ValueError("risk history chain invalid")
+                        chain_head = row.get("event_hash")
+                    if kind == "live_decisions" and "kol_decision_id" not in row:
+                        _kol_hash_bound(row, "event_hash")
+                        continue
+                    file_items.append(_kol_item(kind, row, dict(reference)))
+                # Reject a damaged file as a whole, never expose its valid prefix.
+                items.extend(file_items)
+                record_count += len(file_items)
+                references.append({k: v for k, v in reference.items() if k != "absolute_path"})
+            except (OSError, ValueError, TypeError, KeyError, AttributeError):
+                errors.append({"path": reference["path"], "reason": "missing_or_invalid_evidence"})
+        sources[kind] = {"pattern": pattern, "status": "available" if record_count else "missing",
+                         "record_count": record_count or None, "files": references, "invalid_files": errors}
+    snapshot_binding = {}
+    for runtime in ("live", "paper"):
+        matched = (feedback.get("status") == "audited"
+                   and feedback.get("consumption", {}).get(runtime, {}).get("evidence_sha256")
+                   == _kol_consumption_digest(observed_files, runtime))
+        snapshot_binding[runtime] = "matched" if matched else "missing_or_changed"
+        if not matched:
+            kinds = {"paper_consumption", "paper_consumption_log"} if runtime == "paper" else {
+                "live_consumption_log", "live_morning", "live_decisions"}
+            items = [item for item in items if item["kind"] not in kinds]
+            for kind in kinds:
+                sources[kind].update(status="missing", record_count=None, reason="audit_snapshot_unbound")
+    end = as_of.isoformat()
+    start = (as_of - dt.timedelta(weeks=12) + dt.timedelta(days=1)).isoformat()
+    selected = [item for item in items if (item["observed_date"] < end if item["kind"] == "prior_reviews"
+                                           else start <= item["observed_date"] <= end)]
+    return {"schema_version": 1, "authority": "review_only", "as_of": end,
+            "fixed_inputs": dict(KOL_REVIEW_INPUTS), "sources": sources, "items": selected,
+            "audit_feedback": feedback, "audit_feedback_scope": "all_available_records_not_window_totals",
+            "audit_feedback_snapshot_binding": snapshot_binding,
+            "excluded_outside_window_count": len(items) - len(selected),
+            "status": "available" if selected else "missing"}
+
+
+def _kol_evidence_cell(rows: list[dict], *, missing: list[str], **observations) -> dict:
+    return {"status": "available" if rows else "missing", "record_count": len(rows) if rows else None,
+            "available": [row["evidence"] for row in rows], "missing": missing, **observations}
+
+
+def _kol_prior_experiments(inventory: dict, *, as_of: dt.date) -> dict:
+    """Retain unresolved experiments even beyond 12 weeks; no launch/closure inference."""
+    latest = {}
+    prior = sorted((r for r in inventory["items"] if r["kind"] == "prior_reviews"), key=lambda r: r["observed_date"])
+    for row in prior:
+        for slot in row["experiment_slots"]:
+            identifier = slot.get("experiment_id") or f"weekly-{row['observed_date']}-{slot.get('id', 'missing')}"
+            experiment = {key: slot[key] for key in _KOL_SLOT_FIELDS if key in slot}
+            experiment.update(experiment_id=identifier,
+                              origin_review_date=slot.get("origin_review_date", row["observed_date"]))
+            follow_up = experiment.get("follow_up") or {}
+            refs = follow_up.get("evidence_refs") if isinstance(follow_up, dict) else None
+            complete_refs = (isinstance(refs, list) and bool(refs) and all(
+                isinstance(ref, dict) and isinstance(ref.get("path"), str) and bool(ref["path"].strip())
+                and isinstance(ref.get("sha256"), str) and re.fullmatch(r"[0-9a-f]{64}", ref["sha256"])
+                for ref in refs))
+            # These are reported findings, not verification of a run, profit or promotion.
+            reported_closed = (isinstance(follow_up, dict) and follow_up.get("status") == "reviewed"
+                               and follow_up.get("disposition") in ("completed", "retired", "rolled_back")
+                               and not _is_nullish(follow_up.get("conclusion"))
+                               and complete_refs)
+            latest[identifier] = {"experiment": experiment, "source": row["evidence"],
+                                  "source_review_date": row["observed_date"], "state_sha256": row["state_sha256"],
+                                  "reported_closed": bool(reported_closed), "outcome_verification": "not_performed",
+                                  "current_review_status": "pending_review",
+                                  "missing_fields": [key for key in ("rollback", "next_review", "owner") if _is_nullish(slot.get(key))]}
+    items = sorted(latest.values(), key=lambda r: (r["experiment"].get("next_review") or "", r["experiment"]["experiment_id"]))
+    for row in items:
+        try:
+            row["next_review_due"] = dt.date.fromisoformat(row["experiment"]["next_review"]) <= as_of
+        except (KeyError, TypeError, ValueError):
+            row["next_review_due"] = None
+    return {"status": "available" if items else "missing", "items": items,
+            "history_scope": "all dated prior finalized reviews; unresolved work is not dropped after 12 weeks",
+            "authority": "review_only", "automatic_launch": False,
+            "missing": ["逐项复核上期试验的实际运行/反证/失败/回滚证据；未记录不等于完成。"]}
+
+
+def _kol_review_state(plan: dict) -> dict | None:
+    """Compact durable projection; never embed previous inventories recursively."""
+    review = plan.get("kol_system_review")
+    if not review:
+        return None  # Original plans and their promotion gates remain compatible.
+    slots = review.get("experiment_slots")
+    if not isinstance(slots, list) or len(slots) > 3:
+        raise SystemExit("KOL weekly review requires at most three experiment_slots")
+    for slot in slots:
+        if not isinstance(slot, dict) or any(_is_nullish(slot.get(key)) for key in (
+                "id", "objective", "falsifier", "required_evidence", "owner", "rollback", "next_review")):
+            raise SystemExit("KOL weekly experiment requires objective/falsifier/evidence/owner/rollback/next_review")
+    identifiers = [slot.get("experiment_id") or slot["id"] for slot in slots]
+    if len(set(identifiers)) != len(identifiers):
+        raise SystemExit("KOL weekly experiment identities must be unique")
+    state = {"schema_version": 1, "date": plan["date"], "authority": "review_only", "automatic_launch": False,
+             "experiment_slots": [{key: slot[key] for key in _KOL_SLOT_FIELDS if key in slot} for slot in slots],
+             "analysis": review.get("analysis", {})}
+    return {**state, "state_sha256": canonical_sha256(state)}
+
+
+def _kol_execution_chain(items: list[dict], decisions: list[dict]) -> dict:
+    links = []
+    for decision in decisions:
+        identifier, digest = decision["decision_id"], decision["decision_sha256"]
+        proofs = [r for r in items if r["kind"] == "source_verifications"
+                  and r.get("decision_id") == identifier and r.get("decision_sha256") == digest]
+        contexts = [r for r in items if r["kind"] == "context"
+                    and any(r["context_sha256"] == p["context_sha256"] for p in proofs)]
+        runtimes = ("live", "paper") if decision["runtime"] == "both" else (decision["runtime"],)
+        for runtime in runtimes:
+            scoped = [r for r in items if r.get("book") == decision["book"] and r.get("runtime") == runtime]
+            consumes = [r for r in scoped if r["kind"] not in ("decisions", "requests", "source_verifications")
+                        and ((r.get("decision_id") == identifier and r.get("decision_sha256") == digest)
+                             or any(c.get("decision_id") == identifier and c.get("decision_sha256") == digest
+                                    for c in (r.get("policy_consumptions") or [])))]
+            requests = [r for r in scoped if r["kind"] == "requests"
+                        and any(r.get("context_sha256") == p["context_sha256"] for p in proofs)]
+            missing_clocks = any(r["kind"] == "live_morning" and any(
+                c.get("decision_id") == identifier and not c.get("consumed_at")
+                for c in (r.get("policy_consumptions") or [])) for r in consumes)
+            links.append({"account_id": f"{runtime}:{decision['book']}", "decision_id": identifier,
+                          "decision_sha256": digest, "decision": decision["evidence"],
+                          "source_verifications": [r["evidence"] for r in proofs],
+                          "context": [r["evidence"] for r in contexts],
+                          "same_context_requests_not_proven_model_runs": [r["evidence"] for r in requests],
+                          "consumption": [r["evidence"] for r in consumes],
+                          "missing": ([] if proofs else ["来源复核绑定"]) + ([] if contexts else ["对应 context"])
+                                     + ([] if consumes else ["本 runtime 的 hash-bound 消费"])
+                                     + (["精确消费时钟；run.trade_date 仅供日期分组"] if missing_clocks else [])
+                                     + ["成交/费用对账及模型请求的精确关联"],
+                          "execution_verification": "not_performed", "profit_attribution": "not_established"})
+    return {"status": "available" if links else "missing", "links": links,
+            "missing": ["没有完整链时，不把发布、消费或状态声明当作真实成交。"]}
+
+
+def build_kol_system_review(root: Path, *, as_of: dt.date) -> dict:
+    """Build the read-only Astra weekly framework-review context for the plan."""
+    inventory = build_kol_evidence_inventory(root, as_of=as_of)
+    windows = {}
+    for weeks in (1, 4, 12):
+        start = (as_of - dt.timedelta(weeks=weeks) + dt.timedelta(days=1)).isoformat()
+        rows = [r for r in inventory["items"] if start <= r["observed_date"] <= as_of.isoformat()]
+        accounts_review = {}
+        scopes = {("B", "live"), ("B", "paper")} | {
+            (r["book"], r["runtime"]) for r in rows if r.get("book") and r.get("runtime") in ("paper", "live")}
+        for book, runtime in sorted(scopes):
+            scoped = [r for r in rows if r.get("book") == book and r.get("runtime") == runtime]
+            nav_rows = [r for r in scoped if r["kind"] in ("paper_risk", "live_risk") and r["nav_evidence_usable"]]
+            consume = [r for r in scoped if r["kind"] in ("paper_consumption", "paper_consumption_log",
+                                                           "live_consumption_log", "live_decisions")
+                       or (r["kind"] == "live_morning" and r.get("policy_consumptions"))]
+            slots = [r for r in consume if r.get("slots")]
+            nav_rows.sort(key=lambda r: _kol_time(r["observed_at"]))
+            accounts_review[f"{runtime}:{book}"] = {
+                "account_performance": _kol_evidence_cell(nav_rows,
+                    missing=["窗口首尾同口径净值、完整结算覆盖与资金流核验；启用后观测不等于历史净值曲线"],
+                    observed_nav=[{"as_of": r["observed_at"], "nav_observed_at": r["nav_observed_at"],
+                                   "nav": r["nav"], "history_basis": r["history_basis"], "risk_status": r["risk_status"]}
+                                  for r in nav_rows], window_return_pct=None, profit_attribution="not_established"),
+                "execution_loss": _kol_evidence_cell(consume,
+                    missing=["同计划委托/成交/费用与时效对账，才可量化执行漏损；消费或状态声明不是成交证明"],
+                    reported_status_counts=dict(Counter(str(r.get("execution_status") or "not_recorded") for r in consume)),
+                    count_semantics="artifact records, not trades; paper claim and terminal counted separately",
+                    loss_amount=None),
+                "missed_opportunities": _kol_evidence_cell(slots,
+                    missing=["同一冻结候选的 no-KOL/current/challenger 可成交反事实与退出费后路径；留现金不等于错失收益"],
+                    opportunity_pnl=None),
+            }
+        contexts = [r for r in rows if r["kind"] == "context"]
+        decisions = [r for r in rows if r["kind"] == "decisions"]
+        consumed_ids = {r.get("decision_id") for r in rows if r["kind"] != "decisions"}
+        consumed_ids.update(c.get("decision_id") for r in rows for c in (r.get("policy_consumptions") or []))
+        chain_decisions = [r for r in inventory["items"] if r["kind"] == "decisions"
+                           and (r in decisions or r["decision_id"] in consumed_ids)]
+        windows[f"{weeks}w"] = {"start": start, "end": as_of.isoformat(), "accounts": accounts_review,
+            "decision_execution_chain": _kol_execution_chain(inventory["items"], chain_decisions),
+            "source_coverage": _kol_evidence_cell(contexts,
+                missing=["未登记来源的远端完整发现，registered coverage 不能代表全部 KOL"],
+                snapshots=[{"as_of": r["observed_at"], "coverage": r["coverage"],
+                            "relation_types": r["relation_types"], "unloaded_report_ids": r["unloaded_report_ids"]}
+                           for r in contexts]),
+            "decision_review_latency": _kol_evidence_cell(decisions,
+                missing=["模型请求/开始/完成遥测及未完成请求；不能将 decision.as_of 到 reviewed_at 全算模型耗时"],
+                observations=[{k: r[k] for k in ("decision_id", "book", "runtime", "agent_id", "reviewer_agent_id",
+                                                "source_observation_latency_seconds", "review_latency_seconds",
+                                                "publication_latency_seconds")} for r in decisions]),
+        }
+    explanations = [
+        {"id": "baseline_no_kol", "hypothesis": "账户表现主要由原 ★E 资格、模式与市场环境解释，KOL 增量可能只是少用资金。",
+         "falsifier": "同一冻结样本、同等风险预算及费用后，原基线无法解释有界 KOL 的跨窗口尾部改善。",
+         "required_evidence": ["无 KOL 的冻结整手基线", "同风险暴露比较", "模式/环境分层及选择偏差"]},
+        {"id": "current_bounded", "hypothesis": "现行有界 KOL 减少尾部损失，但可能增加等待、过期和错失机会成本。",
+         "falsifier": "可成交反事实的错失收益和执行漏损抵消尾部收益，或改善仅由单一赢家/来源/周解释。",
+         "required_evidence": ["实际消费到执行链", "费用和未执行样本", "同窗口尾部与闲置现金对比"]},
+        {"id": "kol_challenger", "hypothesis": "局部最优可能源于上游入口过滤或模式集合；只在已入选票上缩量无法解决框架与资本利用率问题。",
+         "falsifier": "隔离挑战者在同本金、同费用、同合法成交约束和 OOS 中，不能改善机会覆盖及风险调整表现。",
+         "required_evidence": ["被原入口/模式排除的 authority=0 研究队列", "no-KOL/current/challenger 配对回放", "资金利用率与尾部约束"]},
+    ]
+    next_review = (as_of + dt.timedelta(days=7)).isoformat()
+    slots = [{"id": row["id"], "status": "needs_evidence_and_design", "objective": row["hypothesis"],
+              "experiment_id": f"weekly-{as_of.isoformat()}-{row['id']}", "origin_review_date": as_of.isoformat(),
+              "falsifier": row["falsifier"], "required_evidence": row["required_evidence"],
+              "rollback": "未启动则保留现行基线；若另经研究门批准，仅撤销该隔离试验的明确变更并保留失败/回滚证据，不改正式账户、安全或原 kill-switch。启动前补齐精确版本/参数恢复点。",
+              "follow_up": {"status": "pending", "disposition": None, "conclusion": None, "evidence_refs": []},
+              "owner": "weekly Astra analysis + independent main-agent review", "next_review": next_review,
+              "authority": "proposal_or_existing_research_gate", "auto_apply_eligible": False}
+             for row in explanations]
+    prior_follow_up = _kol_prior_experiments(inventory, as_of=as_of)
+    unresolved = [row for row in prior_follow_up["items"] if not row["reported_closed"]]
+    if unresolved:
+        # Carry identity and original due date; do not silently restart, close,
+        # reschedule or invent rollback for legacy experiments missing it.
+        slots = [{**row["experiment"], "prior_review_evidence": row["source"], "follow_up_required": True,
+                  "authority": "proposal_or_existing_research_gate", "auto_apply_eligible": False}
+                 for row in unresolved[:3]]
+    prior_follow_up["unresolved_outside_slots_count"] = max(0, len(unresolved) - 3)
+    missing = ["1/4/12 周完整账户表现与可成交配对反事实", "原入口过滤、模式和资金利用率的竞争解释",
+               "新旧观点冲突、遗漏来源及模型/审阅迟延的归因"]
+    if any(value != "matched" for value in inventory["audit_feedback_snapshot_binding"].values()):
+        missing.append("消费审计与本次固定输入未能完整绑定，需重取一致证据后复核")
+    if any(source["invalid_files"] for source in inventory["sources"].values()):
+        missing.append("存在损坏或不完整输入，路径见 inventory.sources.invalid_files")
+    return {"schema_version": 1, "status": "pending_analysis" if inventory["status"] == "available" else "missing_evidence",
+            "authority": "review_only", "inventory": inventory, "windows": windows,
+            "window_semantics": "trailing 7/28/84 calendar days inclusive; overlapping, not independent samples",
+            "competing_explanations": explanations, "experiment_slots": slots,
+            "prior_experiment_follow_up": prior_follow_up,
+            "analysis_context": {"model": "gpt-6-astra", "reasoning_effort": "xhigh",
+                "objective": "从整体账户目标审视本周与4/12周表现，挑战当前框架、入口过滤、模式与资本利用率，避免逐条新闻局部优化。",
+                "instructions": ["用固定输入 hash 引用区分事实、缺口和竞争解释，不能只复述新闻。",
+                    "逐本逐 runtime 对照三个解释；新旧冲突须读已发布观点/评估/关系，不按关键词生成结论。",
+                    "最多三个可证伪试验槽位；缺数据先提取证要求，不生成合格变更候选。",
+                    "先复核 prior_experiment_follow_up 的旧试验、失败和回滚，再选择最多三个槽位；每槽保留 experiment_id、rollback、owner、next_review。不得自动启动。",
+                    "跟进写入每槽 follow_up：status=reviewed、disposition=continue/refine/completed/retired/rolled_back、conclusion、evidence_refs=[{path,sha256}]；空结果不算闭环。finalize 将槽位和跟进保存到固定 weekly ledger，下周读取。",
+                    "分析写入 analysis：status=completed、非空 framework_conclusion、evidence_refs=[{path,sha256}] 和 missing_evidence；引用必须来自 inventory.items。",
+                    "小样本不得声称因果胜率或稳定收益；实盘策略/安全/永久参数维持提案或既有研究门。"],
+                "inventory_sha256": canonical_sha256(inventory)},
+            "analysis": {"status": "pending", "framework_conclusion": None,
+                         "evidence_refs": [], "missing_evidence": missing},
+            "limitations": ["available 仅表示可读证据，不证明完整窗口或盈利归因。",
+                            "工程测试、消费次数、非配对累计 A/B 差不是收益证据；小样本不建立因果或稳定收益。"],
+            "promotion": {"auto_apply_candidate": False, "live_auto_promotion": False,
+                          "existing_human_dirty_research_gates": "unchanged"}}
 
 
 def _today() -> dt.date:
@@ -598,6 +1068,8 @@ def build_plan(*, as_of: dt.date | None = None, output: Path | None = None) -> d
         "week_start": (as_of - dt.timedelta(days=6)).isoformat(),
         "week_end": as_of.isoformat(),
         "fixed_inputs": FIXED_INPUTS,
+        "fixed_review_inputs": dict(KOL_REVIEW_INPUTS),
+        "kol_system_review": build_kol_system_review(ROOT, as_of=as_of),
         "pre_existing_dirty": pre_dirty,
         "flywheel": fw,
         "sweep": sweep,
@@ -678,6 +1150,35 @@ def _validation_failed(validation: list[str]) -> bool:
     return any(re.search(r"\b(fail|failed|error)\b", line, re.IGNORECASE) for line in validation)
 
 
+def _render_kol_system_review(plan: dict) -> list[str]:
+    review = plan.get("kol_system_review")
+    if not isinstance(review, dict) or not review:
+        return ["- 整体框架复盘：缺少 KOL 系统复盘上下文，未完成高视角分析。"]
+    analysis = review.get("analysis") or {}
+    inventory = review.get("inventory") or {}
+    known_refs = {(r["evidence"]["path"], r["evidence"]["sha256"]) for r in inventory.get("items", [])}
+    refs = analysis.get("evidence_refs") or []
+    conclusion = analysis.get("framework_conclusion")
+    complete = (analysis.get("status") == "completed" and isinstance(conclusion, str)
+                and not _is_nullish(conclusion) and bool(refs)
+                and all(isinstance(r, dict) and (r.get("path"), r.get("sha256")) in known_refs for r in refs))
+    if complete:
+        lines = [f"- 整体框架复盘（有证据引用的分析，非收益认证）：{conclusion.strip()}"]
+        lines.append("- 结论证据：" + "；".join(f"`{r['path']}`（sha256={r['sha256']}）" for r in refs))
+    else:
+        state = "已收集部分固定证据，待 Astra 整体分析" if inventory.get("status") == "available" else "关键证据缺失，未完成分析"
+        lines = [f"- 整体框架复盘：{state}；不以空结论或消费次数认定有效。"]
+    missing = analysis.get("missing_evidence") or []
+    missing = [value.strip() for value in missing if isinstance(value, str) and not _is_nullish(value)]
+    lines.append("- 待核证据：" + ("；".join(missing) if missing else "尚未明确证据缺口，需补充核验，不能视为无缺口。"))
+    lines.append("- 比较框架：无 KOL 基线 / 现行有界 KOL / 挑战者；分别检查入口过滤、模式和资金利用率。")
+    lines.append("- 纸实逐账户分开；1/4/12 周重叠窗口不是独立样本。小样本不宣称因果胜率或稳定收益，不自动推广实盘。")
+    prior = review.get("prior_experiment_follow_up", {})
+    if prior.get("items"):
+        lines.append(f"- 旧试验跟进：{len(prior['items'])} 项需先复核（历史状态仅为报告声明），再决定本周最多三个槽位；不自动启动。")
+    return lines
+
+
 def _render_report(plan: dict, *, mode: str, validation: list[str], created_issues: list[str],
                    staged_files: list[str], blocked_dirty: list[str]) -> str:
     fw = plan.get("flywheel", {})
@@ -690,11 +1191,16 @@ def _render_report(plan: dict, *, mode: str, validation: list[str], created_issu
         f"# 小草每周深度复盘 {plan['date']}",
         "",
         "## 先看结论",
+        "",
         f"- 本周模式：{human_mode}（`{mode}`）。",
         f"- 自动改策略代码：{'有，见下方「已自动落地」' if mode == MODE_AUTO else '没有。没有完整证据链时只产出提案/审计，不想当然改策略。'}",
         f"- 需要你确认的事项：{decision_count} 个{reminder}，见下一节。",
+    ]
+    lines.extend(_render_kol_system_review(plan))
+    lines += [
         "",
         "## 需要你看/确认的事项",
+        "",
     ]
     lines.extend(_render_needs_review(plan, blocked_dirty))
     lines += [
@@ -707,6 +1213,33 @@ def _render_report(plan: dict, *, mode: str, validation: list[str], created_issu
         "## 已经改进/沉淀到哪里",
     ]
     lines.extend(_render_knowledge_changes(plan))
+    review = plan.get("kol_system_review") or {}
+    prior = review.get("prior_experiment_follow_up", {})
+    if prior:
+        lines += ["", "## 上期试验与失败跟进（先于新增试验，未记录不等于完成）", ""]
+        for item in prior.get("items", []):
+            old = item["experiment"]
+            follow_up = old.get("follow_up") or {}
+            if not isinstance(follow_up, dict):
+                follow_up = {}
+            lines += [f"- `{old['experiment_id']}`：{old.get('objective') or '目标待补'}",
+                      f"  - 历史状态：{old.get('status') or '未记录'}；本周待复核；原复核日：{old.get('next_review') or '缺失'}。",
+                      f"  - 跟进结论（报告声明）：{follow_up.get('conclusion') or '未记录，不能认定已完成'}",
+                      f"  - 回滚：{old.get('rollback') or '缺失，需补齐后才能关闭或进入新试验'}",
+                      f"  - 固定来源：`{item['source']['path']}`；复盘日期 {item['source_review_date']}；state sha256={item['state_sha256']}。"]
+        if not prior.get("items"):
+            lines.append("- 缺少可读的上期结构化试验记录；不能据此宣称全部完成。")
+    if review.get("experiment_slots"):
+        lines += ["", "## 整体框架试验槽位（待取证与设计，不是合格变更候选）", ""]
+        for slot in review["experiment_slots"][:3]:
+            follow_up = slot.get("follow_up") or {}
+            if not isinstance(follow_up, dict):
+                follow_up = {}
+            lines += [f"- 目标：{slot['objective']}", f"  - 证伪条件：{slot['falsifier']}",
+                      f"  - 必要证据：{'；'.join(slot['required_evidence'])}",
+                      f"  - 回滚：{slot.get('rollback') or '缺失，需补齐'}",
+                      f"  - 本次跟进（报告声明）：{follow_up.get('conclusion') or '待复核，尚无完成证明'}",
+                      f"  - 负责人：{slot['owner']}；下次复核：{slot['next_review']}。"]
     lines += [
         "",
         "## 已自动落地的代码/配置变更",
@@ -723,6 +1256,7 @@ def _render_report(plan: dict, *, mode: str, validation: list[str], created_issu
         "",
         "## 证据来源",
         f"- 固定输入清单：{', '.join(plan.get('fixed_inputs', []))}",
+        f"- KOL 固定复盘输入（仅观察，不增加自动落地权限）：{', '.join(plan.get('fixed_review_inputs', {}).values()) or 'missing'}",
         f"- 提案数量：{len(plan.get('proposals', []))}",
         f"- 自动落地候选数量：{len(plan.get('auto_apply_candidates', []))}",
         "",
@@ -751,6 +1285,11 @@ def _render_report(plan: dict, *, mode: str, validation: list[str], created_issu
             "pass_evidence": plan.get("sweep", {}).get("pass_evidence", []),
             "pre_existing_dirty_count": len(plan.get("pre_existing_dirty", [])),
             "pre_existing_dirty_sample": plan.get("pre_existing_dirty", [])[:20],
+            "kol_system_review_status": review.get("status", "missing"),
+            "kol_inventory_sha256": review.get("analysis_context", {}).get("inventory_sha256"),
+            "kol_audit_feedback": review.get("inventory", {}).get("audit_feedback", {}),
+            "kol_audit_snapshot_binding": review.get("inventory", {}).get("audit_feedback_snapshot_binding", {}),
+            "kol_experiment_slots": review.get("experiment_slots", []),
         }, ensure_ascii=False, indent=2),
         "```",
         "",
@@ -774,6 +1313,9 @@ def _append_ledger(plan: dict, *, mode: str, report_path: str, validation: list[
         "weekly_report": report_path,
         "proposal_issues": created_issues,
     }
+    kol_state = _kol_review_state(plan)
+    if kol_state is not None:
+        rec["kol_review_state"] = kol_state
     with CHANGE_LEDGER.open("a", encoding="utf-8") as fh:
         fh.write(json.dumps(rec, ensure_ascii=False, sort_keys=True) + "\n")
 
@@ -820,6 +1362,7 @@ def finalize_plan(*, plan_path: Path, mode: str | None, validation: list[str],
                   auto_apply_candidate_paths: list[Path] | None = None,
                   allow_commit: bool) -> dict:
     plan = json.loads(plan_path.read_text(encoding="utf-8"))
+    _kol_review_state(plan)  # Validate rollback/slot limit before any report or ledger writes.
     extra_candidates = _load_auto_apply_candidates(auto_apply_candidate_paths)
     if extra_candidates:
         plan.setdefault("auto_apply_candidates", []).extend(extra_candidates)

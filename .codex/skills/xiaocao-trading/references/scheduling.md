@@ -8,7 +8,10 @@ Read this file only when creating, changing or auditing Xiaocao schedules.
 - Book-B Founder live morning: 09:20 trading weekdays; independent of paper execution.
 - Morning execution: 09:25 trading weekdays.
 - Opening dense: 09:35, 09:45, 09:55.
-- Sparse monitor: 10:25, 10:55, 13:25, 13:55.
+- Sparse monitor: retains 10:25, 10:55, 13:25, 13:55. The same Automation also
+  runs a five-minute local KOL event gate during weekday session hours; empty
+  ticks do not run brokers/models. See `kol-trading-judgment.md` for claim,
+  acknowledgement and priority rules. It never acquires 14:55 authority.
 - Risk precheck: 14:25.
 - Closing discipline: 14:55.
 - EOD: 15:10.

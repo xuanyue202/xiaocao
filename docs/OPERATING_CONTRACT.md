@@ -1,6 +1,6 @@
 # 小草运营契约（Operating Contract, SSOT）
 
-**版本**：4.1
+**版本**：4.2
 **状态**：现行
 **适用范围**：所有 paper / 未来 real 的实盘环（live_recommend → paper_record → live_monitor → eod）与回测
 **关联实现**：`src/xiaocao/live/{safety,capital_keychain,foundersc_native_ax,foundersc_native_broker,trading_execution,book_b_live_lifecycle,book_b_live_intraday}.py`、`src/xiaocao/live/intelligence_policy.py`、`src/xiaocao/strategy/{mode_switch,trend_rules,kol_reference}.py`、`native/foundersc_ax_executor/`、`kronos_screen/scripts/{capture_signals,forward_eval,paper_record,settle_book_a,settle_book_t,decompose_pnl,quality_governor}.py`、`scripts/{book_b_live_morning,book_b_live_intraday,live_monitor,research_mode_switch_replay}.py`
@@ -30,6 +30,54 @@
 **MUST NOT**：让 agent 直接计算成交价、改账本余额、决定是否真实下单。这些只能由脊柱确定性执行；agent 仅产出"判断"，落入决策日志。
 
 **MUST NOT（判断先验）**：不得让 playbook / REGIME_TIMELINE / xiaocao_hypotheses.jsonl 的先验进入 fill/stop/记账/安全，或据此**自动调任何 param/threshold/profile/model**。candidate 假设**不是 verdict**，对脊柱权威 = 0；唯一升级路径 = 过 `research_run.py` 护栏 → `kronos_screen/HYPOTHESES.jsonl` → §10 人工门。
+
+### 2a. 已授权的有界 KOL 当下判断（2026-09-06）
+
+用户确认新增判断接口，不要求每次当下判断先完成研究 PASS；这不把原始
+KOL 断言、候选假设或报告升级为策略真值，也不替代永久参数升级的 §10 门。
+小草用于短线体系及适用环境，其余已登记 KOL 用于因果逻辑、主题和风险；
+不得仅按持仓名称或关键词裁剪信息。灰常亮报告及观点/评估/关系是事实源，
+本地只保存可重建的 hash-bound 缓存；远端发现仅能证明已登记 ID 的覆盖。
+
+语义分析产出 `kol-trading-decision.v1`，由不同 Agent 完整复核来源忠实性、
+重要观点覆盖、当下适用性及反证，并绑定精确 decision hash。
+`kol_policy.py` 仅确定性解释这个受限接口，不自行理解自然语言或生成信号：
+
+- Book B 模拟/实盘：既有合格候选的买入缩放 `0..1`、精确代码跳过，以及
+  既有可卖 lot 的 `KOL_DISCRETIONARY_EXIT`。不得增加标的、席位、模式、
+  本金、杠杆或原预算上限；跳过后的槽位留现金。Book T/KOL-US 不因此新增
+  实盘或确定性执行权限。
+- 买入仍须原 ★E/ACTIVE-PROVISIONAL/板块/整手/资金资格及所有交易安全门；
+  KOL 因子只进一步约束基线，不修改冻结行或已持久化 intent。新判断不能
+  重建旧订单；已有可能副作用优先同计划 reconcile，未知写动作永不重放。
+- KOL 退出允许在合法盘中检查点提出，但必须再次核验正确 Book/runtime、
+  来源/审核 hash、精确代码和当前时效，且仍受 T+1、可卖量、报价、流动性、
+  双钥匙及 native execution 门约束。不能伪造 `AI_EVENT_RISK_EXIT`，也不能
+  将普通软止损的 14:55 权限前移。已有必要硬/事件退出优先，KOL 不压住它。
+- 判断寿命最多 24 小时，但 `current_checks` 超过 15 分钟即 `needs_refresh`，
+  不因较长 `valid_until` 延长。语义 Agent 必须重新检查失效条件；代码的
+  hash/时间校验并不证明自然语言条件成立。缺失/过期回基线并显式降级，
+  损坏或越权包阻断新增风险、不得产生退出；风险保护与必要对账继续运行。
+- 分析使用 GPT-6 Astra `xhigh`，常规调度/采集保留原模型；主 Agent 独立
+  复核后才能发布可消费包。审阅字段是审计声明，不是不可伪造的资金钥匙。
+  原始报告作者、判断作者和审核者身份始终分别记录。
+
+共同账户风控由 `account_risk.py` 解释对应账簿的有效净值证据：从有效高点
+回撤 10% 将新增风险因子降为 0.5；20% 降为 0 且锁存，恢复须另行复核，
+不随反弹或进程重启自动解除。它与 KOL/原 kill-switch 取更严格上限，
+不重复相乘或放宽单票退出。实盘逐份核验已有结算、必须具备最近应结算日
+回执及新鲜 broker-proved Book-B 净值，禁止用混合总账户或纸盘证据。
+高点是初始本金、已验证历史观测和启用后观测的最大值，并非完整历史分时
+最高净值；旧结算缺日须显式披露，不能伪造补齐或悄悄重置高点，最新应结算
+日缺失仍阻断新买。纸盘缺少完整历史曲线时明确
+`history_basis=since_activation`，只追踪启用以来真实标记，不伪造历史回撤。
+新增资金需另立审阅基数，不可悄悄重置高点。缺失/损坏风险证据阻断新买，
+不阻断保护性卖出。阈值是试点损失预算，不是经验证最优参数，更不是可保证
+成交的止损价格。
+
+来源 → 判断/复核 → 消费 → 原计划/实际账本结果必须可追溯。先验证真实
+样本和真实调用点的隔离演练，再推广；前向比较披露费用、未执行、时效及
+选择偏差，不把工程测试或 A/B 非配对累计差说成盈利因果证明。
 
 **MUST NOT（cohort 中间层）**：不得把 `benchmark/watchlist/research cohort` 成员直接当成实盘买入。cohort 可以证明“值得观察/值得研究/是老师或本地标杆”，但一条 cohort 只有通过 `research_run.py` 护栏并经过 §10 人工门，才能升级为 emitted strategy 或 param 变更。2026-06-30 人工门已将 raw-qibao top10 + 电子/20cm 的 `high_open_watch` 6%-10% 子桶和 `limitlike_watch` 升级为 **Book B 模拟盘** emitted modes（`高开标杆起爆` / `强攻标杆起爆`）；这不改变实盘两钥匙边界。
 
@@ -328,6 +376,7 @@
 
 | 版本 | 日期 | 说明 |
 |------|------|------|
+| 4.2 | 2026-09-06 | 用户确认有界 KOL 当下判断接口：已发布来源精确回读、Astra xhigh 分析与独立主审、15 分钟当前核验、Book-B 受限买入/退出及独立实盘/模拟消费；统一高点回撤 10%/20% 试点新增风险预算。原始先验 authority=0、永久参数研究门、既有资金/执行/不可变/精确一次边界保持。 |
 | 1.0 | 2026-06-20 | 首版：架构原则 + book A/B 口径 + 成交模型 + 仓位 + governor + kill-switch + **双钥匙资金边界** + 异常策略 + 不变量。 |
 | 1.1 | 2026-06-21 | §2 登记「判断先验（小草蒸馏）」复利记忆层（playbook / REGIME_TIMELINE / distilled / xiaocao_hypotheses.jsonl）+ 新增 MUST NOT：先验不进脊柱、不自动改参，candidate≠verdict。能力层接入 SKILL.md「Xiaocao Judgment Playbook」节，与 FLYWHEEL.md「判断先验→候选假设」两层假设模型对齐。 |
 | 1.2 | 2026-06-30 | §2 增加 Benchmark/Watchlist/Research Cohort 中间层：承接老师点名、本地标杆与 raw pool 观察样本，authority=0；明确 cohort 不直接进 paper-buy/确定性脊柱，唯一升级路径仍为 research_run 护栏 + §10 人工门。 |

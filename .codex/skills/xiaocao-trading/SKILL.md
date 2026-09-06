@@ -25,7 +25,7 @@ Completion means the requested command reached a terminal state and the branch-s
 - `docs/OPERATING_CONTRACT.md` is the SSOT for Book A/B/T, ★E authority, fills, exits, allocation, kill-switch, account identity and capital safety. Read it completely before changing or adjudicating those semantics; do not duplicate them here.
 - The deterministic spine owns data, fills, stops, accounting and safety. Never hand-compute a fill, edit an account/ledger, fabricate a trade, or authorize a real order.
 - Xiaocao is paper-only unless both live-capital keys pass `src/xiaocao/live/safety.py`. An automation never creates either key.
-- Judgment artifacts (`XIAOCAO_PLAYBOOK`, posture timeline, candidate hypotheses) are priors only. They cannot filter deterministic picks, tune parameters or validate a strategy. For posture/exit judgment, start at `reference/experience/README.md` and follow only its relevant pointer.
+- Judgment artifacts (`XIAOCAO_PLAYBOOK`, posture timeline, candidate hypotheses) are priors only; they cannot tune parameters or validate a strategy. The separately user-authorized bounded KOL decision interface is governed by Operating Contract §2a; never infer its authority from raw source text. For posture/exit judgment, start at `reference/experience/README.md` and follow only its relevant pointer.
 - Keep Books A, B and T separate. Same-code overlap is valid. For current truth, prefer `positions.jsonl`, `paper_trades.jsonl` and matching account files over stale holdings snapshots.
 - Book-B live lifecycle is isolated from the paper runtime: the separate
   09:20 task must never call or wait for the 09:25 `morning-execute`, replace
@@ -79,6 +79,7 @@ Completion means the requested command reached a terminal state and the branch-s
 | Book-B live non-normal result, self-repair, narrow resume or 5 Why | [`references/book-b-live-repair.md`](references/book-b-live-repair.md), then the owning live branch above |
 | “What should the trading system do?” or a behavior change | `docs/OPERATING_CONTRACT.md`, then the owning code/tests |
 | Posture, discretionary exit triage or distilled 小草 knowledge | `reference/experience/README.md`, then only the routed playbook/timeline artifact |
+| KOL source absorption, reviewed bounded decisions, account-risk overlay | [`references/kol-trading-judgment.md`](references/kol-trading-judgment.md), Operating Contract §2a |
 
 ## Shared evidence tools
 

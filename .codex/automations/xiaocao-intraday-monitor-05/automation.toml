@@ -2,13 +2,13 @@ version = 1
 id = "xiaocao-intraday-monitor-05"
 kind = "cron"
 name = "xiaocao intraday monitor sparse"
-prompt = "Use the local `xiaocao-trading` skill/project conventions. Run the Xiaocao sparse intraday monitor workflow and report according to the skill's automation workflow instructions."
+prompt = "Use the local xiaocao-trading skill and its kol-trading-judgment and intraday references. First business command: `PYTHONPATH=src .venv/bin/python scripts/kol_trading_tick.py poll`. This is the existing sparse monitor, now with lightweight local five-minute event detection; retain its four original sparse checkpoints. A no_op ends silently before any journal, MCP, model delegation or broker read. A reconcile_required result means reconcile the exact previous tick and durable writer results; never clear a claim by time or repeat an unknown business effect. On run, keep its exact token/frozen fingerprints. Run the normal paper Book B monitor once and wait for terminal result, then `PYTHONPATH=src .venv/bin/python scripts/book_b_live_intraday.py --date today --phase sparse --execute-sells` once and reconcile its terminal evidence. Keep paper and live separate; preserve T+1, fresh quotes, ownership, two-key native execution, hard/structured-event/verified-KOL exit authority and ordinary soft-exit deferral. If need_semantic_review is true, after necessary exit/reconcile work refresh the registered source context, have Astra xhigh analyze the complete relevant reports plus current facts, independently review, and publish a bounded current decision. It is consumed at the next legal tick, not by rerunning this checkpoint. Ack only this exact tick token using `scripts/kol_trading_tick.py ack --token <returned-token> --outcome completed|degraded` after business processes and evidence reach terminal states; later arrivals must remain pending. No new Automation or broker writer. Stay quiet on unchanged/non-actionable state; report only material execution/risk, degraded coverage, unreconciled failure, or required user action. Read the local trading reference `.codex/skills/xiaocao-trading/references/kol-trading-judgment.md` for the user-approved Operating Contract §2a bounded KOL interface and shared account-risk policy. Keep this Automation's model; delegate only semantic judgment to `gpt-6-astra` with `xhigh`, save the accepted dispatch and provide complete source/current decision context, then independently review the full relevant evidence before publishing through `scripts/kol_trading_decision.py publish`. No KOL claim changes eligibility, capital keys, the frozen capsule or an existing durable intent. No new capital/leverage or live order is authorized by this prompt."
 status = "ACTIVE"
-rrule = "RRULE:FREQ=WEEKLY;BYDAY=MO,TU,WE,TH,FR;BYHOUR=10,13;BYMINUTE=25,55"
+rrule = "RRULE:FREQ=WEEKLY;BYDAY=MO,TU,WE,TH,FR;BYHOUR=9,10,11,13,14;BYMINUTE=0,5,10,15,20,25,30,35,40,45,50,55"
 model = "gpt-5.6-sol"
 reasoning_effort = "xhigh"
 execution_environment = "local"
 target = { type = "project", project_id = "c5acdaa7-f8a7-42d4-96fe-bf979a6b7415" }
 cwds = ["/Users/xuanyue202/Documents/project/xiaocao"]
 created_at = 1785639827968
-updated_at = 1787493122433
+updated_at = 1788660212980

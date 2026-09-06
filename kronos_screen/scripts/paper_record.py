@@ -15,6 +15,7 @@ Reads output/live/signal_snapshots.jsonl; updates output/live/positions.jsonl.
 from __future__ import annotations
 import argparse, json
 import hashlib
+import math
 import sys
 import time
 from datetime import datetime, timedelta
@@ -28,7 +29,8 @@ sys.path.insert(0, str(SCRIPTS))
 
 from xiaocao.api.client import XiaocaoClient  # noqa: E402
 from xiaocao.kol.publication import canonical_sha256  # noqa: E402
-from xiaocao.live import accounts, intelligence_policy  # noqa: E402
+from xiaocao.live import accounts, intelligence_policy, kol_policy  # noqa: E402
+from xiaocao.live import paper_decision_support as paper_support  # noqa: E402
 from xiaocao.live.book_b_pricing import initial_limit_price  # noqa: E402
 from xiaocao.live.buy_guards import evaluate_buy_market_guard  # noqa: E402
 from xiaocao.live.instrument_contract import (  # noqa: E402
@@ -110,6 +112,33 @@ KOL_REFERENCE_FIELDS = (
 
 def _now_iso() -> str:
     return datetime.now().isoformat(timespec="seconds")
+
+
+def _paper_support_context(account: dict, positions: list[dict], client=None) -> tuple[dict, dict]:
+    try:
+        has_open_b = any(isinstance(row, dict) and row.get("book") == "B"
+                         and row.get("exit_date") is None and row.get("exit_price") is None
+                         for row in positions)
+        marks = paper_support.fetch_paper_marks(client or (XiaocaoClient() if has_open_b else None), positions)
+    except (ValueError, TypeError):
+        marks = {}
+    now = datetime.now(A_SHARE_TZ)
+    risk = paper_support.evaluate_paper_risk(
+        ROOT, account, positions, now=now, mark_provider=lambda code: marks.get(code, {}),
+    )
+    decision = kol_policy.load_decision(ROOT / "output/live/kol_policy/decisions", book="B", runtime="paper", now=now)
+    return risk, decision
+
+
+def _paper_support_claim(a, risk: dict, decision: dict, baseline: list[dict],
+                         slots: list[dict], *, reason: str, snapshot_sha256: str) -> dict:
+    return paper_support.write_consumption(ROOT, a.date, a.pick, {
+        "status": "claimed" if any(row["final_shares"] for row in slots) else "no_buy",
+        "reason": reason, "snapshot_sha256": snapshot_sha256,
+        "risk_receipt": risk, "kol_decision": decision,
+        "supporting_health": "ok" if decision["status"] == "validated" else "degraded",
+        "baseline_codes": [row["code"] for row in baseline], "slots": slots,
+    })
 
 
 # Account/position I/O is the shared real-money SSOT in xiaocao.live.accounts
@@ -942,10 +971,38 @@ def _main_locked():
         except OSError as exc:
             print(f"{a.date}: Book T v1 control receipt DEGRADED: {exc}")
         return
+    if a.pick == "mode_exec_star":
+        # A consumed zero-buy batch and an interrupted claimed writer are
+        # both final for automatic retries, including --allow-additional.
+        prior_consumption = paper_support.read_consumption(ROOT, a.date, a.pick)
+        if prior_consumption is not None:
+            terminal = paper_support.read_consumption_result(ROOT, a.date, a.pick)
+            status = terminal["status"] if terminal else "claimed; reconciliation_required"
+            print(f"{a.date}: paper policy already consumed ({status}); no rewrite")
+            return
+    try:
+        account = _load_account(a.initial_capital, a.fee_rate)
+    except (OSError, ValueError, TypeError, AttributeError):
+        if a.pick != "mode_exec_star":
+            raise
+        account = {}
+    paper_positions = paper_support.read_paper_positions(POS)
+    snapshot_sha256 = hashlib.sha256(SNAP.read_bytes()).hexdigest() if SNAP.exists() else ""
+
+    def no_buy_support(reason: str, *, context=None) -> None:
+        if a.pick != "mode_exec_star":
+            return
+        risk, decision = context or _paper_support_context(account, paper_positions)
+        _paper_support_claim(a, risk, decision, [], [], reason=reason, snapshot_sha256=snapshot_sha256)
+        paper_support.complete_consumption(ROOT, a.date, a.pick, entries=[])
+        print(f"{a.date}: paper policy no-buy receipt: {reason}; risk={risk['status']}; KOL={decision['status']}")
+
     if not SNAP.exists():
+        no_buy_support("NO_SNAPSHOTS")
         print("no snapshots; run live_recommend first"); return
     snaps = [json.loads(l) for l in open(SNAP, encoding="utf-8") if l.strip()]
-    day_live = [r for r in snaps if r.get("date") == a.date and r.get("is_live")]
+    day_live = [r for r in snaps if r.get("date") == a.date and r.get("is_live")
+                and r.get("book", "B") == "B"]
     latest_capture = max((str(r.get("captured_at") or "") for r in day_live), default="")
     latest_rows = [
         r for r in day_live
@@ -970,20 +1027,25 @@ def _main_locked():
     else:
         picks = selection.selected
     if not picks:
+        no_buy_support("NO_ELIGIBLE_STAR_E")
         print(f"{a.date}: no live {a.pick} picks to paper-record (is_live snapshot required)"); return
-    account = _load_account(a.initial_capital, a.fee_rate)
+    if a.pick == "mode_exec_star" and any(
+        isinstance(account.get(key), bool) or not isinstance(account.get(key), (int, float))
+        or not math.isfinite(account[key]) for key in ("initial_capital", "cash", "fee_rate", "realized_pnl")
+    ):
+        no_buy_support("PAPER_ACCOUNT_INVALID")
+        return
     fee_rate = float(account.get("fee_rate", a.fee_rate))
     existing = set()
     open_codes = set()
     existing_auto_for_date = 0
     if POS.exists():
-        for l in open(POS, encoding="utf-8"):
+        for r in paper_positions:
             try:
-                r = json.loads(l)
-                if r.get("book", "B") != "B":
+                if r.get("book") != "B":
                     continue  # book A entries never block / get blocked by book B
                 existing.add((r.get("entry_date"), r.get("code")))
-                if r.get("status", "open") == "open":
+                if r.get("exit_date") is None and r.get("exit_price") is None:
                     open_codes.add(r.get("code"))
                 if r.get("entry_date") == a.date and r.get("source") == f"auto:{a.pick}":
                     existing_auto_for_date += 1
@@ -1002,6 +1064,7 @@ def _main_locked():
         and r.get("open")
     ]
     if not buyable:
+        no_buy_support("NO_NEW_BUYABLE_STAR_E")
         print(
             f"{a.date}: no new buyable {a.pick} picks "
             f"(cash={float(account.get('cash', 0.0)):.2f})"
@@ -1055,6 +1118,7 @@ def _main_locked():
             "ai_hard_veto": bool(r.get("ai_hard_veto")),
         })
     if not buyable:
+        no_buy_support("ALL_FILL_GUARDS_SKIPPED")
         print(f"{a.date}: all {a.pick} picks skipped (limit not reached and retry not suitable)")
         return
     if not a.no_book_a and a.pick != "mode_exec_star":
@@ -1065,17 +1129,26 @@ def _main_locked():
         raise SystemExit("--deploy-ratio must be in (0, 1]")
     ks_factor, ks_reason = _kill_switch_factor()
     print(f"{a.date}: kill-switch — {ks_reason} (deploy factor {ks_factor:.1f})")
-    if ks_factor <= 0:
+    policy_context = _paper_support_context(account, paper_positions, client) if a.pick == "mode_exec_star" else None
+    if policy_context and policy_context[0]["status"] == "BLOCKED":
+        no_buy_support("PAPER_RISK_BLOCKED", context=policy_context)
+        return
+    if ks_factor <= 0 and a.pick != "mode_exec_star":
         print(f"{a.date}: book B buys PAUSED by kill-switch; data capture & book A continue")
         return
-    deploy_ratio = deploy_ratio * ks_factor
+    # Select the original representable slots before narrowing. Risk/KOL
+    # reductions cannot make another candidate eligible or refill a vacated slot.
+    if a.pick != "mode_exec_star":
+        deploy_ratio = deploy_ratio * ks_factor
     max_total_exposure_ratio = float(a.max_total_exposure_ratio)
     if not (0 < max_total_exposure_ratio <= 1):
         raise SystemExit("--max-total-exposure-ratio must be in (0, 1]")
     current_open_cost = 0.0
     for l in _load_positions_from_file(POS):
-        if l.get("book", "B") == "B" and l.get("status", "open") == "open":
+        if l.get("book") == "B" and l.get("exit_date") is None and l.get("exit_price") is None:
             current_open_cost += float(l.get("gross_notional") or 0.0)
+    if policy_context and policy_context[0].get("valuation"):
+        current_open_cost = max(current_open_cost, policy_context[0]["valuation"]["market_value"])
     settled_nav = max(
         0.0,
         float(account.get("initial_capital", a.initial_capital))
@@ -1094,6 +1167,7 @@ def _main_locked():
     else:
         deployable_cash = min(cash * deploy_ratio, exposure_budget)
     if deployable_cash <= 0:
+        no_buy_support("EXPOSURE_BUDGET_EXHAUSTED", context=policy_context)
         print(
             f"{a.date}: exposure budget exhausted for {a.pick} "
             f"(cash={cash:.2f}, open_cost={current_open_cost:.2f}, "
@@ -1105,6 +1179,7 @@ def _main_locked():
         a.quality_governor,
     )
     if a.quality_governor == "on" and not quality_buyable:
+        no_buy_support("QUALITY_LEFT_ALL_SLOTS_CASH", context=policy_context)
         target_notional = deployable_cash / max(quality_slot_count, 1)
         _append_quality_audit(_quality_audit_records(
             date_iso=a.date,
@@ -1133,7 +1208,7 @@ def _main_locked():
             fee_rate=fee_rate,
             price_key="execution_price",
             max_batch_ratio=deploy_ratio,
-            target_scale=ks_factor,
+            target_scale=1.0,
             per_position_cash_cap=a.notional,
         )
         target_notional = (
@@ -1141,6 +1216,21 @@ def _main_locked():
             / len(eligible_buyable)
             if eligible_buyable else 0.0
         )
+        baseline = eligible_buyable
+        risk, decision = policy_context
+        decision = kol_policy.load_decision(ROOT / "output/live/kol_policy/decisions",
+                                            book="B", runtime="paper", now=datetime.now(A_SHARE_TZ))
+        eligible_buyable, policy_slots = paper_support.apply_buy_policy(
+            baseline, decision, risk, kill_factor=ks_factor, fee_rate=fee_rate,
+        )
+        _paper_support_claim(a, risk, decision, baseline, policy_slots,
+                             reason="POLICY_APPLIED", snapshot_sha256=snapshot_sha256)
+        for slot in policy_slots:
+            if slot["final_shares"] == 0:
+                _append_skip({"ts": _now_iso(), "date": a.date, "book": "B",
+                              "source": f"auto:{a.pick}", **slot})
+        print(f"{a.date}: paper risk={risk['status']} / KOL={decision['status']}; "
+              f"{len(eligible_buyable)}/{len(baseline)} baseline slots retained")
     elif a.notional is not None:
         eligible_buyable = list(quality_buyable)
         target_notional = a.notional
@@ -1167,16 +1257,18 @@ def _main_locked():
         target_notional=target_notional,
     ))
     if not eligible_buyable or target_notional <= 0:
+        if a.pick == "mode_exec_star":
+            paper_support.complete_consumption(ROOT, a.date, a.pick, entries=[])
         print(
             f"{a.date}: no affordable {a.pick} picks after board-lot filter "
             f"(cash={cash:.2f}, deployable={deployable_cash:.2f})"
         )
         return
-    if not a.no_book_a and a.pick == "mode_exec_star":
-        _record_book_a(eligible_buyable, a, fee_rate)
     POS.parent.mkdir(parents=True, exist_ok=True)
     n = 0
     run_fees = 0.0
+    actual_b_entries = []
+    actual_b_picks = []
     with POS.open("a", encoding="utf-8") as fh:
         for r in eligible_buyable:
             key = (a.date, r["code"])
@@ -1205,6 +1297,8 @@ def _main_locked():
             cash = round(cash - entry_cash_out, 2)
             fh.write(accounts.position_jsonl_line({
                 "book": "B",
+                **({"paper_decision_support": r["paper_decision_support"]}
+                   if "paper_decision_support" in r else {}),
                 "code": r["code"], "name": r.get("name", ""), "entry_date": a.date,
                 "entry_price": round(px, 3), "profile": a.profile, "shares": shares,
                 "mode": r.get("mode"), "flags": r.get("flags"),
@@ -1283,6 +1377,8 @@ def _main_locked():
             }))
             _append_trade({
                 "ts": _now_iso(), "date": a.date, "side": "BUY", "book": "B",
+                **({"paper_decision_support": r["paper_decision_support"]}
+                   if "paper_decision_support" in r else {}),
                 "code": r["code"],
                 "name": r.get("name", ""), "price": round(px, 3), "shares": shares,
                 "gross_notional": gross_notional, "fee": entry_fee,
@@ -1323,7 +1419,12 @@ def _main_locked():
             })
             run_fees = round(run_fees + entry_fee, 2)
             n += 1
+            actual_b_entries.append({"code": r["code"], "shares": shares, "price": round(px, 3),
+                                     "entry_cash_out": entry_cash_out, "entry_fee": entry_fee})
+            actual_b_picks.append(r)
     if n == 0:
+        if a.pick == "mode_exec_star":
+            paper_support.complete_consumption(ROOT, a.date, a.pick, entries=[])
         print(
             f"{a.date}: no {a.pick} positions recorded after fill/sizing checks "
             f"(cash={cash:.2f}, target_notional={target_notional:.2f})"
@@ -1334,6 +1435,11 @@ def _main_locked():
     account["last_buy_date"] = a.date
     account["total_fees"] = round(float(account.get("total_fees", 0.0)) + run_fees, 2)
     _save_account(account)
+    if a.pick == "mode_exec_star":
+        # Pair only the entries B actually booked, at exactly the final size.
+        if not a.no_book_a:
+            _record_book_a(actual_b_picks, a, fee_rate)
+        paper_support.complete_consumption(ROOT, a.date, a.pick, entries=actual_b_entries)
     print(
         f"{a.date}: paper-recorded {n} {a.pick} positions -> {POS} "
         f"(cash_after={cash:.2f}, fee_rate={fee_rate:.4%}, "

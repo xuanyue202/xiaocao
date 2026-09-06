@@ -36,18 +36,21 @@ from .book_b_live_morning import (
 )
 from .trading_execution import ExecutionReceipt, TERMINAL_STATES, TradePlan
 from .trading_runner import frozen_rows_digest
+from .kol_policy import exit_adjustment
+from .live_decision_support import bind_plan_audit, evaluate_live_risk, read_policy
 
 
 _AUTHORIZED_REASONS = frozenset(
-    {"AI_EVENT_RISK_EXIT", "HARD_STOP", "TRAILING_STOP", "EOD_DISCIPLINE_1455"}
+    {"AI_EVENT_RISK_EXIT", "HARD_STOP", "TRAILING_STOP", "EOD_DISCIPLINE_1455", "KOL_DISCRETIONARY_EXIT"}
 )
 _AUTHORIZED_PHASES = {
     "AI_EVENT_RISK_EXIT": "event_risk",
     "HARD_STOP": "risk_floor",
     "TRAILING_STOP": "eod_discipline",
     "EOD_DISCIPLINE_1455": "eod_discipline",
+    "KOL_DISCRETIONARY_EXIT": "kol_discretionary",
 }
-_INTRADAY_IMMEDIATE_REASONS = frozenset({"AI_EVENT_RISK_EXIT", "HARD_STOP"})
+_INTRADAY_IMMEDIATE_REASONS = frozenset({"AI_EVENT_RISK_EXIT", "HARD_STOP", "KOL_DISCRETIONARY_EXIT"})
 _LIVE_PHASES = frozenset({"opening", "sparse", "precheck", "closing", "eod"})
 
 
@@ -295,6 +298,7 @@ class BookBLiveIntradayReceipt:
     execution_receipts: tuple[dict[str, Any], ...]
     reconciliation_receipts: tuple[dict[str, Any], ...]
     settlement: dict[str, Any] | None = None
+    risk_receipt: dict[str, Any] | None = None
 
     def as_dict(self) -> dict[str, Any]:
         return asdict(self)
@@ -334,14 +338,19 @@ def _sell_plan(
     strategy_sha: str,
     current: datetime,
     decision_id: str,
+    kol_decision: dict | None = None,
 ) -> TradePlan:
     reason = str(status.get("sell_reason") or "")
     decision_phase = _AUTHORIZED_PHASES.get(reason)
     if reason not in _AUTHORIZED_REASONS or decision_phase is None:
         raise ValueError("LIVE_SELL_REASON_NOT_AUTHORIZED")
+    if reason == "KOL_DISCRETIONARY_EXIT" and not exit_adjustment(kol_decision, lot.code)["triggered"]:
+        raise ValueError("LIVE_KOL_EXIT_CURRENT_DECISION_REQUIRED")
     shares = min(int(lot.shares), int(lot.sellable_shares))
-    if shares <= 0:
+    if shares <= 0 or lot.entry_date >= trade_date or status.get("t1_blocked") is True:
         raise ValueError("LIVE_SELL_T1_OR_BROKER_SELLABLE_BLOCKED")
+    if status.get("sell_block_reason") or not _continuous_auction(current, trade_date):
+        raise ValueError("LIVE_SELL_LIQUIDITY_OR_TIME_BLOCKED")
     observed_raw = status.get("market_guard_observed_at")
     if isinstance(observed_raw, datetime):
         observed = observed_raw
@@ -369,6 +378,9 @@ def _sell_plan(
         or status.get("market_guard_down_price") in (None, "")
         or not guard_trading
     ):
+        raise ValueError("LIVE_SELL_MARKET_GUARD_UNPROVEN")
+    down_price = float(status["market_guard_down_price"])
+    if not math.isfinite(down_price) or down_price <= 0:
         raise ValueError("LIVE_SELL_MARKET_GUARD_UNPROVEN")
     lot_digest = hashlib.sha256(lot.owned_lot_id.encode("utf-8")).hexdigest()[:12]
     return TradePlan(
@@ -420,6 +432,8 @@ def _run_book_b_live_intraday_locked(
     strategy_sha: str = "unknown",
     freeze_dir: Path | None = None,
     execute_sells: bool = True,
+    policy_root: Path | None = None,
+    trading_dates_provider: Callable[[datetime], list[str]] | None = None,
 ) -> BookBLiveIntradayReceipt:
     """Run one exact-once live lifecycle checkpoint without broker UI logic."""
     normalized_phase = str(phase or "").lower()
@@ -473,6 +487,17 @@ def _run_book_b_live_intraday_locked(
         now=current,
         monitor_context_by_lot=contexts,
     )
+    risk_receipt = None
+
+    def record_risk(*, refresh: bool = False) -> dict | None:
+        # Observation only: no calendar/history work may delay a necessary
+        # SELL. This is called after handoff (or a proved no-lot checkpoint).
+        if policy_root is None:
+            return None
+        return evaluate_live_risk(state_root, now=now(), account=account,
+                                  account_snapshot_provider=account_snapshot_provider if refresh else None,
+                                  trading_dates_provider=trading_dates_provider,
+                                  receipt_root=Path(policy_root).parent / "account_risk", now_provider=now).as_dict()
     if normalized_phase == "eod":
         current = now()
         if current.tzinfo is None:
@@ -484,6 +509,7 @@ def _run_book_b_live_intraday_locked(
         ):
             raise ValueError("LIVE_BOOK_B_EOD_BROKER_SNAPSHOT_PRE_CLOSE")
         settlement = write_book_b_live_settlement(state_root, account, now=current)
+        risk_receipt = record_risk()
         return BookBLiveIntradayReceipt(
             trade_date=trade_date,
             phase=normalized_phase,
@@ -494,8 +520,10 @@ def _run_book_b_live_intraday_locked(
             execution_receipts=(),
             reconciliation_receipts=tuple(reconciled),
             settlement=settlement,
+            risk_receipt=risk_receipt,
         )
     if not account.lots:
+        risk_receipt = record_risk()
         return BookBLiveIntradayReceipt(
             trade_date=trade_date,
             phase=normalized_phase,
@@ -505,6 +533,7 @@ def _run_book_b_live_intraday_locked(
             decisions=(),
             execution_receipts=(),
             reconciliation_receipts=tuple(reconciled),
+            risk_receipt=risk_receipt,
         )
     statuses = status_provider(account.lots)
     by_lot = {str(status.get("owned_lot_id") or ""): status for status in statuses}
@@ -524,11 +553,19 @@ def _run_book_b_live_intraday_locked(
         status = dict(by_lot[lot.owned_lot_id])
         reason = str(status.get("sell_reason") or "") or None
         triggered = status.get("triggered") is True
+        # Status providers may request a reason; only this fresh exact-code
+        # read grants KOL authority. Ordinary hard/soft exits are independent.
+        kol_decision = read_policy(policy_root, decision_now)
+        kol_exit = exit_adjustment(kol_decision, lot.code)
+        kol_authorized = reason != "KOL_DISCRETIONARY_EXIT" or kol_exit["triggered"]
         authorized_now = bool(
             triggered
+            and kol_authorized
             and reason in _AUTHORIZED_REASONS
             and not status.get("sell_block_reason")
             and lot.sellable_shares > 0
+            and lot.entry_date < trade_date
+            and status.get("t1_blocked") is not True
             and (
                 normalized_phase == "closing"
                 or reason in _INTRADAY_IMMEDIATE_REASONS
@@ -543,6 +580,10 @@ def _run_book_b_live_intraday_locked(
                 "triggered": triggered,
                 "sell_reason": reason,
                 "decision_phase": status.get("decision_phase"),
+                "kol_decision_id": kol_decision.get("decision_id"),
+                "kol_decision_sha256": kol_decision.get("decision_sha256"),
+                "kol_policy_status": kol_decision.get("status"),
+                "sell_authorized": authorized_now,
             }
         )
         decision = {
@@ -576,6 +617,10 @@ def _run_book_b_live_intraday_locked(
             "strong_hold_reason": status.get("strong_hold_reason"),
             "deferred_sell_reason": status.get("deferred_sell_reason"),
             "sell_block_reason": status.get("sell_block_reason"),
+            "kol_decision_id": kol_decision.get("decision_id"),
+            "kol_decision_sha256": kol_decision.get("decision_sha256"),
+            "kol_policy_status": kol_decision.get("status"),
+            "kol_exit_currently_valid": kol_exit["triggered"],
         }
         decisions.append(ledger.append(decision))
         if not authorized_now or not execute_sells:
@@ -595,19 +640,38 @@ def _run_book_b_live_intraday_locked(
                 strategy_sha=strategy_sha,
                 current=decision_now,
                 decision_id=decision_id,
+                kol_decision=kol_decision,
             )
             plan = bind_durable_live_plan_intents(
                 state_root,
                 [plan],
             )[0]
+            if reason == "KOL_DISCRETIONARY_EXIT":
+                bind_plan_audit(state_root, plan, {
+                    "decision_ledger_id": decision_id,
+                    "decision_id": kol_decision["decision_id"],
+                    "decision_sha256": kol_decision["decision_sha256"],
+                    "owned_lot_id": lot.owned_lot_id,
+                    "broker_snapshot_sha256": account.broker_snapshot_sha256,
+                })
         else:
             plan = existing
+        handoff_now = now()
+        if (not _continuous_auction(handoff_now, trade_date)
+                or (normalized_phase == "closing" and not _closing_discipline_window(handoff_now, trade_date))
+                or plan.guard_reason(now=handoff_now)):
+            continue
+        if plan.sell_reason == "KOL_DISCRETIONARY_EXIT":
+            latest = read_policy(policy_root, handoff_now)
+            if not exit_adjustment(latest, plan.code)["triggered"]:
+                continue
         receipt = execute(plan)
         receipts.append(receipt.as_dict())
         if receipt.state not in TERMINAL_STATES:
             break
     status_name = "executed" if receipts else "observed"
     reason_name = "SELL_INTENTS_HANDED_OFF" if receipts else "NO_NEW_LIVE_SELL_HANDOFF"
+    risk_receipt = record_risk(refresh=any(item.get("filled_shares", 0) > 0 for item in receipts))
     return BookBLiveIntradayReceipt(
         trade_date=trade_date,
         phase=normalized_phase,
@@ -617,6 +681,7 @@ def _run_book_b_live_intraday_locked(
         decisions=tuple(decisions),
         execution_receipts=tuple(receipts),
         reconciliation_receipts=tuple(reconciled),
+        risk_receipt=risk_receipt,
     )
 
 
@@ -632,6 +697,8 @@ def run_book_b_live_intraday(
     strategy_sha: str = "unknown",
     freeze_dir: Path | None = None,
     execute_sells: bool = True,
+    policy_root: Path | None = None,
+    trading_dates_provider: Callable[[datetime], list[str]] | None = None,
 ) -> BookBLiveIntradayReceipt:
     """Run one checkpoint under a process-wide lifecycle writer fence."""
     with _checkpoint_lock(Path(state_dir)):
@@ -646,6 +713,8 @@ def run_book_b_live_intraday(
             strategy_sha=strategy_sha,
             freeze_dir=freeze_dir,
             execute_sells=execute_sells,
+            policy_root=policy_root,
+            trading_dates_provider=trading_dates_provider,
         )
 
 

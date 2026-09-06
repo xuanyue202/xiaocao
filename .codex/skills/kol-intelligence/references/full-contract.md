@@ -62,6 +62,13 @@ Keep the layers separate:
 - Durable knowledge is an `authority=0` prior or candidate, never a deterministic rule.
 - Household advice is advisory; Book KOL-US is paper-only; neither authorizes real-capital execution.
 
+After verified publication, registered reports may separately inform the
+user-authorized bounded Book-B judgment interface in Operating Contract §2a.
+Follow the trading skill's `references/kol-trading-judgment.md`; this source
+writer only prepares read-only evidence. It does not execute Book-B trades or
+inherit that independent consumer's capital authority. Weekly framework review
+also reads the source/decision/consumption chain, not only fresh headlines.
+
 ## Deployment boundary
 
 - The always-on coordinator owns every 7x24 activity that is not bandwidth-heavy: Netdisk subscription/folder polling, metadata deduplication, cloud-to-cloud transfer, AI-job submission and polling, small transcript/image retrieval, OCR, market validation, household notification, and Book KOL-US paper execution.

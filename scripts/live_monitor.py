@@ -77,6 +77,8 @@ from xiaocao.live.exit_policy import (  # noqa: E402
     strong_hold_reason as _strong_hold_reason,
 )
 from xiaocao.live import accounts, contexts, intelligence_policy, journal, paper_exit  # noqa: E402
+from xiaocao.live import kol_policy  # noqa: E402
+from xiaocao.live import paper_decision_support  # noqa: E402
 from xiaocao.live.instrument_contract import (  # noqa: E402
     InstrumentContractError,
     contract_from_record,
@@ -515,14 +517,36 @@ def _has_alert_recorded(
 
 
 def _execute_simulated_sells(client: XiaocaoClient, triggered_alerts: list[dict], *, book: str = "B") -> tuple[int, int]:
+    accepted = []
+    policy_blocked = 0
+    for alert in triggered_alerts:
+        if alert.get("sell_reason") == "KOL_DISCRETIONARY_EXIT":
+            snapshot = kol_policy.load_decision(
+                OUT_DIR / "kol_policy" / "decisions", book=book,
+                runtime="paper", now=_market_now(),
+            )
+            current = kol_policy.exit_adjustment(snapshot, str(alert.get("code") or ""))
+            if (book != "B" or not current.get("triggered") or
+                    current.get("decision_id") != alert.get("kol_decision_id")):
+                policy_blocked += 1
+                with ALERTS_FILE.open("a", encoding="utf-8") as handle:
+                    handle.write(json.dumps({
+                        "ts": _now_iso(), "alert": "SELL_BLOCKED", "book": book,
+                        "code": alert.get("code"), "entry_date": alert.get("entry_date"),
+                        "reason": "KOL_DECISION_REVALIDATION_REQUIRED",
+                        "kol_decision_id": alert.get("kol_decision_id"),
+                        "kol_policy_status": snapshot.get("status"),
+                    }, ensure_ascii=False) + "\n")
+                continue
+        accepted.append(alert)
     today_iso = _date.today().isoformat()
     initial = (
         DEFAULT_STARTING_CAPITAL * TREND_BUDGET_RATIO
         if book == "T"
         else DEFAULT_STARTING_CAPITAL
     )
-    return paper_exit.execute_simulated_sells(
-        triggered_alerts,
+    closed, blocked = paper_exit.execute_simulated_sells(
+        accepted,
         book=book,
         live_dir=OUT_DIR,
         positions_path=POSITIONS_FILE,
@@ -535,6 +559,36 @@ def _execute_simulated_sells(client: XiaocaoClient, triggered_alerts: list[dict]
         detail_provider=lambda code: _realtime_detail(client, code),
         timestamp_provider=lambda _alert: _now_iso(),
     )
+    return closed, blocked + policy_blocked
+
+
+def _record_paper_account_risk(client: XiaocaoClient, *, book: str) -> dict:
+    """Mark the complete canonical B account, never a --code monitor subset."""
+    if book != "B":
+        return {"status": "not_applicable"}
+    with accounts.ledger_lock(OUT_DIR / "paper_ledger.lock"):
+        try:
+            account = json.loads(_account_file("B").read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            account = {}
+        positions = paper_decision_support.read_paper_positions(POSITIONS_FILE)
+        try:
+            marks = paper_decision_support.fetch_paper_marks(client, positions)
+        except (ValueError, TypeError):
+            marks = {}
+        evidence_root = (OUT_DIR.parent.parent if OUT_DIR.name == "live"
+                         and OUT_DIR.parent.name == "output"
+                         else OUT_DIR / ".decision_support_scope")
+        receipt = paper_decision_support.evaluate_paper_risk(
+            evidence_root, account, positions, now=_market_now(),
+            mark_provider=lambda code: marks.get(code, {}),
+        )
+    print(json.dumps({"account_risk_status": receipt["status"],
+                      "account_id": "paper:B", "deploy_factor": receipt["deploy_factor"],
+                      "drawdown_pct": receipt["drawdown_pct"],
+                      "risk_receipt_sha256": receipt["receipt_sha256"],
+                      "reasons": receipt["reasons"]}, ensure_ascii=False))
+    return receipt
 
 
 def _trading_dates_between(start: str, end: str, client: XiaocaoClient) -> list[str]:
@@ -637,6 +691,7 @@ def _compute_status(
     market_context: dict[str, object],
     sentiment_map: dict[str, dict[str, object]],
     snapshot_map: dict[tuple[str, str, str], dict[str, object]],
+    kol_decision: dict | None = None,
 ) -> dict:
     """Pull minute data from entry_date through today, compute peak + dd + status."""
     code = position["code"]
@@ -752,6 +807,10 @@ def _compute_status(
         sentiment_map=sentiment_map,
     )
     event_risk = intelligence_policy.event_risk_exit(sentiment_map.get(code))
+    # The production caller supplies the correct account/runtime snapshot.
+    # A shared status helper must never silently read the paper policy for live.
+    kol_decision = kol_decision or {"status": "absent"}
+    kol_exit = kol_policy.exit_adjustment(kol_decision, code)
     kronos_context = _kronos_context(position, snapshot_map)
     realtime_context = _realtime_strength_context(detail, latest_price, peak)
     score_context = _decision_score_context(
@@ -780,6 +839,7 @@ def _compute_status(
             hold_days=hold_days,
             signal_score=float(score_context.get("composite_score", 0.0) or 0.0),
             event_risk=event_risk,
+            kol_exit=kol_exit,
             hard_dd_threshold=hard_dd_threshold,
         )
     return {
@@ -822,6 +882,9 @@ def _compute_status(
         "ai_event_risk_exit": bool(event_risk.get("triggered")),
         "ai_event_risk_event_types": event_risk.get("event_types") or [],
         "ai_event_risk_reason": event_risk.get("reason") or "",
+        "kol_policy_status": kol_decision.get("status"),
+        "kol_decision_id": kol_exit.get("decision_id"),
+        "kol_exit_requested": bool(kol_exit.get("triggered")),
         **score_context,
         "market_regime": market_context.get("regime"),
         "stock_sentiment_source": stock_sentiment_context.get("source"),
@@ -903,6 +966,7 @@ def main() -> None:
         positions = [p for p in positions if p.get("code") == args.code]
     if not positions:
         snapshot = _write_holdings_snapshot([], book=book)
+        _record_paper_account_risk(client, book=book)
         print(f"No open Book {book} positions in {POSITIONS_FILE.relative_to(ROOT)}")
         print(
             f"Account: cash={snapshot['cash']:.2f}, "
@@ -945,6 +1009,10 @@ def main() -> None:
                 market_context=market_context,
                 sentiment_map=sentiment_map,
                 snapshot_map=snapshot_map,
+                kol_decision=kol_policy.load_decision(
+                    OUT_DIR / "kol_policy" / "decisions", book=book,
+                    runtime="paper", now=_market_now(),
+                ),
             )
             statuses.append(s)
             status_label = (
@@ -1044,6 +1112,7 @@ def main() -> None:
     else:
         print(f"\nNo sell triggers. {sum(1 for p in positions)} position(s) holding.")
     snapshot = _write_holdings_snapshot(statuses, book=book)
+    _record_paper_account_risk(client, book=book)
     print(
         f"Holdings snapshot: cash={snapshot['cash']:.2f}, "
         f"holdings_value={snapshot['liquidation_value_after_fee']:.2f}, "

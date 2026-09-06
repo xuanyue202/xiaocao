@@ -2,7 +2,7 @@ version = 1
 id = "xiaocao-daily-eod"
 kind = "cron"
 name = "xiaocao daily eod"
-prompt = "Use the local `xiaocao-trading` skill/project conventions. Run the Xiaocao EOD automation workflow and report according to the skill's automation workflow instructions."
+prompt = "Use the local `xiaocao-trading` skill/project conventions and the EOD reference. Run the canonical Xiaocao paper EOD workflow exactly once and wait for its original process to terminate. Then run `PYTHONPATH=src .venv/bin/python scripts/book_b_live_intraday.py --date today --phase eod` exactly once, without `--execute-sells`. The live EOD branch is read/reconcile/settle only: reconcile existing durable live plans through the Founder native execution port; require fresh account-bound positions/orders/trades row tables plus the funds summary embedded in the same positions capture, with every row-table observed time at or after 15:00; project only broker-proved Book B owned fills; and write an immutable settlement only if every live plan is terminal. The standalone funds page is diagnostic-only. Never create a new order, mint/edit authorization, treat UNKNOWN as terminal, or use broker mixed-account totals as Book B NAV. Report paper and real Book B separately; an explicit live reconcile/checkpoint/data blocker is not a completed settlement. After the original EOD settlement/reconciliation reaches terminal state, run `PYTHONPATH=src .venv/bin/python scripts/kol_trading_decision.py feedback` and inspect actual distinct live/paper source-decision-consumption links. Missing/legacy evidence stays unknown, not zero impact or proved execution. This feedback never replaces EOD settlement, rewrites history or grants trading authority."
 status = "ACTIVE"
 rrule = "RRULE:FREQ=WEEKLY;BYDAY=MO,TU,WE,TH,FR;BYHOUR=15;BYMINUTE=10"
 model = "gpt-5.6-sol"
@@ -11,4 +11,4 @@ execution_environment = "local"
 target = { type = "project", project_id = "c5acdaa7-f8a7-42d4-96fe-bf979a6b7415" }
 cwds = ["/Users/xuanyue202/Documents/project/xiaocao"]
 created_at = 1785639808241
-updated_at = 1787493122641
+updated_at = 1788660213202

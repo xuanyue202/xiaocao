@@ -205,6 +205,7 @@ def decide_sell_action(
     hold_days: int,
     signal_score: float = 0.0,
     event_risk: dict[str, object] | None = None,
+    kol_exit: dict[str, object] | None = None,
     hard_dd_threshold: float = 8.0,
     now: datetime | None = None,
 ) -> dict[str, object]:
@@ -241,6 +242,17 @@ def decide_sell_action(
             "sell_reason": "HARD_STOP",
             "hold_reason": None,
             "decision_phase": "risk_floor",
+        }
+
+    # The separately reviewed, time-bound KOL consumer supplies this request.
+    # It cannot suppress an existing hard/event exit or bypass T+1 above.
+    if kol_exit and kol_exit.get("triggered") is True and kol_exit.get("decision_id"):
+        return {
+            "triggered": True,
+            "sell_reason": "KOL_DISCRETIONARY_EXIT",
+            "hold_reason": None,
+            "decision_phase": "kol_discretionary",
+            "kol_decision_id": kol_exit["decision_id"],
         }
 
     if hold_days < 1:
