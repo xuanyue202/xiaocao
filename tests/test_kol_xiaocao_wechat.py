@@ -1,11 +1,9 @@
 from __future__ import annotations
 
-import json
 import hashlib
+import json
 from types import SimpleNamespace
-from base64 import urlsafe_b64encode
 from datetime import datetime
-from urllib.parse import quote
 
 import pytest
 
@@ -104,13 +102,11 @@ def test_wechat_history_accepts_native_goose_live_mini_program_entries():
 
 class _CaptureDriver:
     def __init__(self):
-        self.arms: list[tuple[str, str | None, str | None]] = []
+        self.arms: list[tuple[str, str | None]] = []
         self.advances = 0
         self.capture_checks = 0
         self.native_bindings = []
         self.playback_preparations = []
-        self.media_urls: list[str | None] = []
-        self.needs_media_url = False
         self.capture_check_result = {
             "event": "capture_pending",
             "status": "awaiting_capture",
@@ -128,10 +124,8 @@ class _CaptureDriver:
         self,
         identity: str,
         page_url: str | None,
-        *,
-        media_file_id: str | None = None,
     ) -> dict:
-        self.arms.append((identity, page_url, media_file_id))
+        self.arms.append((identity, page_url))
         return {"capture_job_id": "kol-capture-current"}
 
     def bind_mini_program_capture(self, identity, capture_job_id, **binding):
@@ -149,9 +143,7 @@ class _CaptureDriver:
         *,
         opencli_session: str,
         opencli_profile: str | None,
-        recorded_media_url: str | None = None,
     ) -> dict:
-        self.media_urls.append(recorded_media_url)
         assert identity
         assert capture_job_id == "kol-capture-current"
         assert opencli_session == "xiaocao-lv-subscription"
@@ -163,23 +155,11 @@ class _CaptureDriver:
         self,
         identity: str,
         capture_job_id: str,
-        *,
-        recorded_media_url: str | None = None,
     ) -> dict:
-        del recorded_media_url
         assert identity
         assert capture_job_id == "kol-capture-current"
         self.capture_checks += 1
         return dict(self.capture_check_result)
-
-    def needs_recorded_media_url(
-        self,
-        identity: str,
-        capture_job_id: str,
-    ) -> bool:
-        assert identity
-        assert capture_job_id == "kol-capture-current"
-        return self.needs_media_url
 
     def published_handoff(
         self,
@@ -338,9 +318,7 @@ def test_live_capture_driver_reconciles_sniffer_before_pending_advance(tmp_path)
             *,
             opencli_session,
             opencli_profile,
-            recorded_media_url=None,
         ):
-            del recorded_media_url
             calls.append((capture_job_id, opencli_session, opencli_profile))
             return {"event": "capture_pending", "status": "awaiting_capture"}
 
@@ -389,9 +367,7 @@ def test_live_capture_driver_does_not_restart_sniffer_after_download(tmp_path):
             *,
             opencli_session,
             opencli_profile,
-            recorded_media_url=None,
         ):
-            del recorded_media_url
             calls.append((capture_job_id, opencli_session, opencli_profile))
             return {"event": "xiaocao_live_upload_pending", "status": "prepared"}
 
@@ -425,38 +401,33 @@ def test_first_poll_baselines_history_and_arms_only_latest_live(tmp_path):
     def browser_exchange(request: dict) -> dict:
         browser_requests.append(request)
         if request["action"] == "resolve_xiaoetong_page":
-            params = urlsafe_b64encode(json.dumps({
-                "apparid": "appsnm3rlcp3566",
-                "resource_id": "l_6a708838e4b0694c5bf42e55",
-                "h5_url": (
-                    "https://appsnm3rlcp3566.h5.xiaoeknow.com/v2/course/"
-                    "alive/l_6a708838e4b0694c5bf42e55?share_user_id=private"
-                ),
-            }).encode()).decode().rstrip("=")
             return {
                 "action": request["action"],
                 "subscription_id": request["subscription_id"],
                 "page_url": (
-                    "https://appsnm3rlcp3566.mp.xiaoeknow.com/"
-                    f"?app_id=appsnm3rlcp3566&params={params}"
+                    "https://appsnm3rlcp3566.h5.xiaoeknow.com/v2/course/"
+                    "alive/l_6a708838e4b0694c5bf42e55?share_user_id=private"
                 ),
-                "page_state": "password_required",
+                "page_state": "unknown",
             }
-        assert request["action"] == "activate_xiaoetong_playback"
+        assert request["action"] == "activate_xiaoetong_mini_program"
         assert request["password_policy"] == {
             "only_if_password_gate_visible": True,
             "password": "666",
         }
-        assert "page-level control" in request["instructions"]
-        assert "video.muted=true" in request["instructions"]
-        assert "video.volume=0" in request["instructions"]
-        assert "Runtime.evaluate" in request["instructions"]
+        assert "不要打开或依赖浏览器 H5 播放页" in request["instructions"]
         return {
             "action": request["action"],
             "subscription_id": request["subscription_id"],
-            "page_url": request["page_url"],
+            "playback_surface": XIAOCAO_PLAYBACK_ROUTE_WECHAT_MINI_PROGRAM,
+            "source_identity": (
+                "xiaoetong:appsnm3rlcp3566:l_6a708838e4b0694c5bf42e55"
+            ),
+            "live_id": "l_6a708838e4b0694c5bf42e55",
+            "page_state": "mini_program_media_observed",
             "activated": True,
             "password_used": True,
+            "media_request_observed": True,
         }
 
     capture = _CaptureDriver()
@@ -478,13 +449,12 @@ def test_first_poll_baselines_history_and_arms_only_latest_live(tmp_path):
     assert result["waiting_items"][0]["stage"] == "compressed_capture"
     assert [request["action"] for request in browser_requests] == [
         "resolve_xiaoetong_page",
-        "activate_xiaoetong_playback",
+        "activate_xiaoetong_mini_program",
     ]
     assert capture.arms == [(
         result["waiting_items"][0]["identity"],
         "https://appsnm3rlcp3566.h5.xiaoeknow.com/v2/course/alive/"
         "l_6a708838e4b0694c5bf42e55",
-        None,
     )]
     manifest = json.loads(
         (tmp_path / "wechat" / "manifest.json").read_text(encoding="utf-8")
@@ -648,7 +618,6 @@ def test_native_mini_program_entry_is_armed_before_ui_and_binds_observed_live(
     assert capture.arms == [(
         result["waiting_items"][0]["identity"],
         None,
-        None,
     )]
     assert capture.advances == 1
     assert [request["action"] for request in requests] == [
@@ -757,7 +726,7 @@ def test_wechat_mini_program_route_rejects_a_different_live_id(tmp_path):
     assert capture.advances == 0
 
 
-def test_recorded_video_page_arms_bound_capture(tmp_path):
+def test_h5_playback_state_is_rejected_before_arming(tmp_path):
     payload = _history(
         "[2026-08-13 21:46] 福利官小花四: 8月13日大师班复盘直播："
         "https://yv9lc.xetslk.com/s/5ftVx"
@@ -774,31 +743,10 @@ def test_recorded_video_page_arms_bound_capture(tmp_path):
                 "subscription_id": request["subscription_id"],
                 "page_url": page_url + "?share_user_id=private",
                 "page_state": "playable",
-                "media_file_id": "5001834815942190711",
             }
-        if request["action"] == "resolve_xiaoetong_media_url":
-            return {
-                "action": request["action"],
-                "subscription_id": request["subscription_id"],
-                "page_url": page_url,
-                "media_file_id": "5001834815942190711",
-                "media_url": (
-                    "https://encrypt-k-vod.xet.tech/vod/"
-                    "773e679a5001834815942190711/drm/v.f421220.m3u8"
-                    "?sign=fresh&t=expires&us=user"
-                ),
-            }
-        return {
-            "action": request["action"],
-            "subscription_id": request["subscription_id"],
-            "page_url": page_url,
-            "page_state": "playable",
-            "activated": True,
-            "password_used": False,
-        }
+        raise AssertionError("H5 resolution must stop before native activation")
 
     capture = _CaptureDriver()
-    capture.needs_media_url = True
     subscription = XiaocaoWechatLiveSubscription(
         tmp_path / "wechat",
         history_reader=lambda: payload,
@@ -808,33 +756,16 @@ def test_recorded_video_page_arms_bound_capture(tmp_path):
         password="666",
     )
 
-    result = subscription.run_once(
-        opencli_session="xiaocao-lv-subscription",
-    )
+    with pytest.raises(
+        EnrichmentError,
+        match="Xiaocao H5 resolution returned a playback state",
+    ):
+        subscription.run_once(opencli_session="xiaocao-lv-subscription")
 
-    assert result["status"] == "waiting"
-    assert capture.arms == [(
-        result["waiting_items"][0]["identity"],
-        page_url,
-        "5001834815942190711",
-    )]
-    assert capture.media_urls == [
-        "https://encrypt-k-vod.xet.tech/vod/"
-        "773e679a5001834815942190711/drm/v.f421220.m3u8"
-        "?sign=fresh&t=expires&us=user"
-    ]
-    manifest = json.loads(
-        (tmp_path / "wechat" / "manifest.json").read_text(encoding="utf-8")
-    )
-    item = next(iter(manifest["items"].values()))
-    assert item["page_url"] == page_url
-    assert item["source_identity"] == (
-        "xiaoetong:appsnm3rlcp3566:v_6a7db774e4b0694c5bfa7583"
-    )
-    assert item["media_file_id"] == "5001834815942190711"
+    assert capture.arms == []
 
 
-def test_existing_recorded_video_page_resolves_media_file_before_arming(tmp_path):
+def test_persisted_web_recorded_video_is_rejected_before_arming(tmp_path):
     output = tmp_path / "wechat"
     output.mkdir(parents=True)
     identity = "kol-wechat-recorded"
@@ -873,9 +804,6 @@ def test_existing_recorded_video_page_resolves_media_file_before_arming(tmp_path
             "subscription_id": request["subscription_id"],
             "page_url": page_url,
             "page_state": "playable",
-            "media_file_id": "5001834815942190711",
-            "activated": request["action"] == "activate_xiaoetong_playback",
-            "password_used": False,
         }
 
     capture = _CaptureDriver()
@@ -888,17 +816,17 @@ def test_existing_recorded_video_page_resolves_media_file_before_arming(tmp_path
         password="666",
     )
 
-    result = subscription.run_once(
-        opencli_session="xiaocao-lv-subscription",
-        only_identity=identity,
-    )
+    with pytest.raises(
+        EnrichmentError,
+        match="supports only Xiaoetong live mini-program entries",
+    ):
+        subscription.run_once(
+            opencli_session="xiaocao-lv-subscription",
+            only_identity=identity,
+        )
 
-    assert result["status"] == "waiting"
-    assert [request["action"] for request in requests] == [
-        "resolve_xiaoetong_page",
-        "activate_xiaoetong_playback",
-    ]
-    assert capture.arms == [(identity, page_url, "5001834815942190711")]
+    assert requests == []
+    assert capture.arms == []
 
 
 def test_newer_preview_is_not_starved_by_an_older_unfinished_capture(tmp_path):
@@ -932,15 +860,29 @@ def test_newer_preview_is_not_starved_by_an_older_unfinished_capture(tmp_path):
                     "https://appsnm3rlcp3566.h5.xiaoeknow.com/v4/course/"
                     f"alive/{resource_id}"
                 ),
-                "page_state": "playable",
+                "page_state": "unknown",
             }
         return {
             "action": request["action"],
             "subscription_id": request["subscription_id"],
-            "page_url": request["page_url"],
-            "page_state": "playable",
+            "playback_surface": XIAOCAO_PLAYBACK_ROUTE_WECHAT_MINI_PROGRAM,
+            "source_identity": (
+                "xiaoetong:appsnm3rlcp3566:"
+                + (
+                    "l_new_preview"
+                    if request["source_url"].endswith("/new002")
+                    else "l_old_preview"
+                )
+            ),
+            "live_id": (
+                "l_new_preview"
+                if request["source_url"].endswith("/new002")
+                else "l_old_preview"
+            ),
+            "page_state": "mini_program_media_observed",
             "activated": True,
             "password_used": False,
+            "media_request_observed": True,
         }
 
     capture = _CaptureDriver()
@@ -1073,9 +1015,9 @@ def test_awaiting_playback_rechecks_the_bound_page_each_hour_until_playable(
     )
     browser_requests: list[dict] = []
     activation_states = iter([
-        ("waiting_to_start", False),
-        ("replay_generating", False),
-        ("playable", True),
+        ("mini_program_waiting", False),
+        ("mini_program_waiting", False),
+        ("mini_program_media_observed", True),
     ])
     capture = _CaptureDriver()
     capture.next_result = {
@@ -1096,7 +1038,7 @@ def test_awaiting_playback_rechecks_the_bound_page_each_hour_until_playable(
                     "https://appsnm3rlcp3566.h5.xiaoeknow.com/v4/course/"
                     "alive/l_6a708838e4b0694c5bf42e55"
                 ),
-                "page_state": "waiting_to_start",
+                "page_state": "unknown",
             }
         page_state, activated = next(activation_states)
         if activated:
@@ -1109,10 +1051,15 @@ def test_awaiting_playback_rechecks_the_bound_page_each_hour_until_playable(
         return {
             "action": request["action"],
             "subscription_id": request["subscription_id"],
-            "page_url": request["page_url"],
+            "playback_surface": XIAOCAO_PLAYBACK_ROUTE_WECHAT_MINI_PROGRAM,
+            "source_identity": (
+                "xiaoetong:appsnm3rlcp3566:l_6a708838e4b0694c5bf42e55"
+            ),
+            "live_id": "l_6a708838e4b0694c5bf42e55",
             "page_state": page_state,
             "activated": activated,
             "password_used": False,
+            "media_request_observed": activated,
         }
 
     subscription = XiaocaoWechatLiveSubscription(
@@ -1135,14 +1082,14 @@ def test_awaiting_playback_rechecks_the_bound_page_each_hour_until_playable(
     ]
     assert [request["action"] for request in browser_requests] == [
         "resolve_xiaoetong_page",
-        "activate_xiaoetong_playback",
-        "activate_xiaoetong_playback",
-        "activate_xiaoetong_playback",
+        "activate_xiaoetong_mini_program",
+        "activate_xiaoetong_mini_program",
+        "activate_xiaoetong_mini_program",
     ]
     assert [
         request.get("check_reason")
         for request in browser_requests
-        if request["action"] == "activate_xiaoetong_playback"
+        if request["action"] == "activate_xiaoetong_mini_program"
     ] == ["initial", "awaiting_playback", "awaiting_playback"]
     assert capture.advances == 1
     manifest = json.loads(
@@ -1150,63 +1097,22 @@ def test_awaiting_playback_rechecks_the_bound_page_each_hour_until_playable(
     )
     item = next(iter(manifest["items"].values()))
     assert item["status"] == "playback_activated"
-    assert item["observed_page_state"] == "playable"
+    assert item["observed_page_state"] == "mini_program_media_observed"
 
 
-def test_xiaoetong_account_login_redirect_is_reported_explicitly(tmp_path):
-    payload = _history(
-        "[2026-08-09 16:42] 福利官小花四: 草神直播："
-        "https://appsnm3rlcp3566.h5.xiaoeknow.com/v4/course/"
-        "alive/l_6a75cf66e4b0694c5bf6d228",
-    )
-    page_url = (
-        "https://appsnm3rlcp3566.h5.xiaoeknow.com/v4/course/"
-        "alive/l_6a75cf66e4b0694c5bf6d228"
-    )
-
-    def browser_exchange(request: dict) -> dict:
-        if request["action"] == "resolve_xiaoetong_page":
-            return {
-                "action": request["action"],
-                "subscription_id": request["subscription_id"],
-                "page_url": page_url,
-                "page_state": "unknown",
-            }
-        assert "account_login_required" in request["required_response"][
-            "page_state"
-        ]
-        return {
-            "action": request["action"],
-            "subscription_id": request["subscription_id"],
-            "page_url": (
-                "https://appsnm3rlcp3566.h5.xiaoeknow.com/p/t/free/v1/"
-                "basic-platform/h5_basic/login/auth?redirect_url="
-                f"{quote(page_url, safe='')}"
-            ),
-            "page_state": "unknown",
-            "activated": False,
-            "password_used": False,
-        }
-
-    subscription = XiaocaoWechatLiveSubscription(
-        tmp_path / "wechat",
-        history_reader=lambda: payload,
-        browser_exchange=browser_exchange,
-        capture_driver=_CaptureDriver(),
-        contact=CONTACT,
-        password="666",
-    )
-
-    with pytest.raises(EnrichmentDiagnosticError) as captured:
-        subscription.run_once(opencli_session="xiaocao-lv-subscription")
-    assert captured.value.diagnostic_category == "authentication_error"
-    assert captured.value.diagnostic_code == "xiaoetong_account_login_required"
-    assert captured.value.diagnostic_stage == "playback_authorization"
+def test_web_playback_route_is_rejected_at_construction(tmp_path):
+    with pytest.raises(ValueError, match="web playback is sunset"):
+        XiaocaoWechatLiveSubscription(
+            tmp_path / "wechat",
+            history_reader=lambda: _history(),
+            browser_exchange=lambda request: request,
+            capture_driver=_CaptureDriver(),
+            contact=CONTACT,
+            playback_route="xiaoetong_h5",
+        )
 
 
-def test_wechat_mini_program_login_state_is_fail_closed(
-    tmp_path,
-):
+def test_wechat_mini_program_client_login_is_not_xiaoetong_login(tmp_path):
     page_url = (
         "https://app6ums63as6516.h5.xiaoeknow.com/v4/course/alive/"
         "l_6a75cf66e4b0694c5bf6d228"
@@ -1231,9 +1137,9 @@ def test_wechat_mini_program_login_state_is_fail_closed(
                 "xiaoetong:app6ums63as6516:l_6a75cf66e4b0694c5bf6d228"
             ),
             "live_id": "l_6a75cf66e4b0694c5bf6d228",
-            "page_state": "account_login_required",
-            "activated": True,
-            "media_request_observed": True,
+            "page_state": "wechat_client_login_required",
+            "activated": False,
+            "media_request_observed": False,
             "password_used": False,
         }
 
@@ -1246,394 +1152,11 @@ def test_wechat_mini_program_login_state_is_fail_closed(
         playback_route=XIAOCAO_PLAYBACK_ROUTE_WECHAT_MINI_PROGRAM,
     )
 
-    with pytest.raises(
-        EnrichmentDiagnosticError,
-        match="Xiaoetong account login is required",
-    ):
+    with pytest.raises(EnrichmentDiagnosticError) as captured:
         subscription.run_once(opencli_session="xiaocao-lv-subscription")
 
-
-def test_xiaoetong_mp_wrapper_login_state_stays_bound(tmp_path):
-    page_url = (
-        "https://appsnm3rlcp3566.h5.xiaoeknow.com/v4/course/"
-        "alive/l_6a75cf66e4b0694c5bf6d228"
-    )
-    params = urlsafe_b64encode(json.dumps({
-        "apparid": "appsnm3rlcp3566",
-        "resource_id": "l_6a75cf66e4b0694c5bf6d228",
-        "h5_url": page_url,
-    }).encode()).decode().rstrip("=")
-    wrapper_url = (
-        "https://appsnm3rlcp3566.mp.xiaoeknow.com/"
-        f"?app_id=appsnm3rlcp3566&params={params}"
-    )
-    payload = _history(f"[2026-08-09 16:42] 福利官小花四: 草神直播：{page_url}")
-
-    def browser_exchange(request: dict) -> dict:
-        return {
-            "action": request["action"],
-            "subscription_id": request["subscription_id"],
-            "page_url": wrapper_url,
-            "page_state": "account_login_required",
-            **(
-                {"activated": False, "password_used": False}
-                if request["action"] == "activate_xiaoetong_playback"
-                else {}
-            ),
-        }
-
-    subscription = XiaocaoWechatLiveSubscription(
-        tmp_path / "wechat",
-        history_reader=lambda: payload,
-        browser_exchange=browser_exchange,
-        capture_driver=_CaptureDriver(),
-        contact=CONTACT,
-        password="666",
-    )
-
-    with pytest.raises(EnrichmentError, match="account login is required"):
-        subscription.run_once(opencli_session="xiaocao-lv-subscription")
-
-
-def test_xiaoetong_login_redirect_allows_bound_resource_version_rotation():
-    expected_page = (
-        "https://appsnm3rlcp3566.h5.xiaoeknow.com/v2/course/alive/"
-        "l_6a8dc972e4b0694c354119f2"
-    )
-    redirected_page = (
-        "https://appsnm3rlcp3566.h5.xiaoeknow.com/v3/course/alive/"
-        "l_6a8dc972e4b0694c354119f2"
-    )
-    login_url = (
-        "https://appsnm3rlcp3566.h5.xiaoeknow.com/p/t/free/v1/"
-        "basic-platform/h5_basic/login/auth?redirect_url="
-        f"{quote(redirected_page, safe='')}"
-    )
-
-    assert XiaocaoWechatLiveSubscription._is_bound_account_login_redirect(
-        login_url,
-        expected_page_url=expected_page,
-        expected_source_identity=(
-            "xiaoetong:appsnm3rlcp3566:l_6a8dc972e4b0694c354119f2"
-        ),
-    )
-
-
-def test_xiaoetong_bound_provider_block_waits_for_the_same_page(tmp_path):
-    payload = _history(
-        "[2026-08-13 08:42] 福利官小花四: 草神直播："
-        "https://appsnm3rlcp3566.h5.xiaoeknow.com/v2/course/"
-        "alive/l_6a7c2ed8e4b023c0d633fabb",
-    )
-    page_url = (
-        "https://appsnm3rlcp3566.h5.xiaoeknow.com/v2/course/"
-        "alive/l_6a7c2ed8e4b023c0d633fabb"
-    )
-    block_url = (
-        "https://appsnm3rlcp3566.block.xiaoeeye.com/v4/course/"
-        "alive/l_6a7c2ed8e4b023c0d633fabb"
-    )
-
-    def browser_exchange(request: dict) -> dict:
-        if request["action"] == "resolve_xiaoetong_page":
-            return {
-                "action": request["action"],
-                "subscription_id": request["subscription_id"],
-                "page_url": page_url,
-                "page_state": "unknown",
-            }
-        assert "source_temporarily_unavailable" in request[
-            "required_response"
-        ]["page_state"]
-        assert "personal-center shell" in request["instructions"]
-        assert "block.xiaoeeye.com" in request["instructions"]
-        return {
-            "action": request["action"],
-            "subscription_id": request["subscription_id"],
-            "page_url": block_url,
-            "page_state": "source_temporarily_unavailable",
-            "activated": False,
-            "password_used": False,
-        }
-
-    capture = _CaptureDriver()
-    subscription = XiaocaoWechatLiveSubscription(
-        tmp_path / "wechat",
-        history_reader=lambda: payload,
-        browser_exchange=browser_exchange,
-        capture_driver=capture,
-        contact=CONTACT,
-        password="666",
-        clock=lambda: datetime.fromisoformat("2026-08-13T14:08:00+08:00"),
-    )
-
-    result = subscription.run_once(opencli_session="xiaocao-lv-subscription")
-
-    assert result["status"] == "waiting"
-    assert result["waiting_items"][0]["status"] == "awaiting_playback"
-    assert result["waiting_items"][0]["next_poll_not_before"] == (
-        "2026-08-13T14:20:00+08:00"
-    )
-    manifest = json.loads(
-        (tmp_path / "wechat" / "manifest.json").read_text(encoding="utf-8")
-    )
-    item = next(iter(manifest["items"].values()))
-    assert item["page_url"] == page_url
-    assert item["observed_page_state"] == "source_temporarily_unavailable"
-
-    # A blocked provider page must be rechecked before touching the capture
-    # job again; the source job may already have failed behind that page.
-    second = subscription.run_once(opencli_session="xiaocao-lv-subscription")
-    assert second["status"] == "waiting"
-    assert second["waiting_items"][0]["status"] == "awaiting_playback"
-    assert capture.advances == 0
-
-
-def test_xiaoetong_playable_page_accepts_bound_version_rotation(tmp_path):
-    payload = _history(
-        "[2026-08-13 08:42] 福利官小花四: 草神直播："
-        "https://appsnm3rlcp3566.h5.xiaoeknow.com/v2/course/"
-        "alive/l_6a7c2ed8e4b023c0d633fabb",
-    )
-    original_page = (
-        "https://appsnm3rlcp3566.h5.xiaoeknow.com/v2/course/"
-        "alive/l_6a7c2ed8e4b023c0d633fabb"
-    )
-    rotated_page = (
-        "https://appsnm3rlcp3566.h5.xiaoeknow.com/v4/course/"
-        "alive/l_6a7c2ed8e4b023c0d633fabb"
-    )
-
-    def browser_exchange(request: dict) -> dict:
-        if request["action"] == "resolve_xiaoetong_page":
-            return {
-                "action": request["action"],
-                "subscription_id": request["subscription_id"],
-                "page_url": original_page,
-                "page_state": "unknown",
-            }
-        return {
-            "action": request["action"],
-            "subscription_id": request["subscription_id"],
-            "page_url": rotated_page,
-            "page_state": "playable",
-            "activated": True,
-            "password_used": False,
-        }
-
-    subscription = XiaocaoWechatLiveSubscription(
-        tmp_path / "wechat",
-        history_reader=lambda: payload,
-        browser_exchange=browser_exchange,
-        capture_driver=_CaptureDriver(),
-        contact=CONTACT,
-        password="666",
-    )
-
-    subscription.run_once(opencli_session="xiaocao-lv-subscription")
-    manifest = json.loads(
-        (tmp_path / "wechat" / "manifest.json").read_text(encoding="utf-8")
-    )
-    item = next(iter(manifest["items"].values()))
-    assert item["page_url"] == rotated_page
-    assert item["status"] == "playback_activated"
-
-
-@pytest.mark.parametrize(
-    "block_url",
-    [
-        (
-            "https://anotherapp.block.xiaoeeye.com/v4/course/"
-            "alive/l_6a7c2ed8e4b023c0d633fabb"
-        ),
-        (
-            "https://appsnm3rlcp3566.block.xiaoeeye.com/v4/course/"
-            "alive/l_another_resource"
-        ),
-    ],
-)
-def test_xiaoetong_unbound_provider_block_fails_closed(tmp_path, block_url):
-    page_url = (
-        "https://appsnm3rlcp3566.h5.xiaoeknow.com/v4/course/"
-        "alive/l_6a7c2ed8e4b023c0d633fabb"
-    )
-    payload = _history(
-        "[2026-08-13 08:42] 福利官小花四: 草神直播：" + page_url,
-    )
-
-    def browser_exchange(request: dict) -> dict:
-        if request["action"] == "resolve_xiaoetong_page":
-            return {
-                "action": request["action"],
-                "subscription_id": request["subscription_id"],
-                "page_url": page_url,
-                "page_state": "unknown",
-            }
-        return {
-            "action": request["action"],
-            "subscription_id": request["subscription_id"],
-            "page_url": block_url,
-            "page_state": "source_temporarily_unavailable",
-            "activated": False,
-            "password_used": False,
-        }
-
-    subscription = XiaocaoWechatLiveSubscription(
-        tmp_path / "wechat",
-        history_reader=lambda: payload,
-        browser_exchange=browser_exchange,
-        capture_driver=_CaptureDriver(),
-        contact=CONTACT,
-        password="666",
-    )
-
-    with pytest.raises(
-        EnrichmentError,
-        match="browser provider block is not bound to the live page",
-    ):
-        subscription.run_once(opencli_session="xiaocao-lv-subscription")
-
-
-def test_new_source_account_login_redirect_resolves_exact_page(tmp_path):
-    payload = _history(
-        "[2026-08-10 08:45] 福利官小花四: 草神直播："
-        "https://yv9lc.xetslk.com/sl/TYpKp",
-    )
-    page_url = (
-        "https://appsnm3rlcp3566.h5.xiaoeknow.com/v4/course/"
-        "alive/l_6a787961e4b0694c35385519"
-    )
-    login_url = (
-        "https://appsnm3rlcp3566.h5.xiaoeknow.com/p/t/free/v1/"
-        "basic-platform/h5_basic/login/auth?redirect_url="
-        f"{quote(page_url, safe='')}"
-    )
-    browser_requests: list[dict] = []
-
-    def browser_exchange(request: dict) -> dict:
-        browser_requests.append(request)
-        return {
-            "action": request["action"],
-            "subscription_id": request["subscription_id"],
-            "page_url": login_url,
-            "page_state": "account_login_required",
-            "activated": False,
-            "password_used": False,
-        }
-
-    subscription = XiaocaoWechatLiveSubscription(
-        tmp_path / "wechat",
-        history_reader=lambda: payload,
-        browser_exchange=browser_exchange,
-        capture_driver=_CaptureDriver(),
-        contact=CONTACT,
-        password="666",
-    )
-
-    with pytest.raises(
-        EnrichmentError,
-        match="Xiaoetong account login is required",
-    ):
-        subscription.run_once(opencli_session="xiaocao-lv-subscription")
-
-    assert [request["action"] for request in browser_requests] == [
-        "resolve_xiaoetong_page",
-        "activate_xiaoetong_playback",
-    ]
-    assert "account_login_required" in browser_requests[0][
-        "required_response"
-    ]["page_state"]
-    manifest = json.loads(
-        (tmp_path / "wechat" / "manifest.json").read_text(encoding="utf-8")
-    )
-    item = next(iter(manifest["items"].values()))
-    assert item["page_url"] == page_url
-    assert item["source_identity"] == (
-        "xiaoetong:appsnm3rlcp3566:l_6a787961e4b0694c35385519"
-    )
-    assert item["status"] == "capture_armed"
-    assert item["capture_job_id"]
-
-
-def test_account_login_state_is_authoritative_when_page_url_stays_bound(
-    tmp_path,
-):
-    payload = _history(
-        "[2026-08-10 08:45] 福利官小花四: 草神直播："
-        "https://yv9lc.xetslk.com/sl/TYpKp",
-    )
-    page_url = (
-        "https://appsnm3rlcp3566.h5.xiaoeknow.com/v4/course/"
-        "alive/l_6a787961e4b0694c35385519"
-    )
-    activation_states = iter([
-        "waiting_to_start",
-        "account_login_required",
-    ])
-    browser_requests: list[dict] = []
-    capture = _CaptureDriver()
-    capture.next_result = {
-        "event": "xiaocao_live_pending",
-        "status": "awaiting_capture",
-        "capture_job_id": "kol-capture-current",
-        "source_job_status": "awaiting_playback",
-        "next": "rerun",
-    }
-
-    def browser_exchange(request: dict) -> dict:
-        browser_requests.append(request)
-        if request["action"] == "resolve_xiaoetong_page":
-            return {
-                "action": request["action"],
-                "subscription_id": request["subscription_id"],
-                "page_url": page_url,
-                "page_state": "waiting_to_start",
-            }
-        return {
-            "action": request["action"],
-            "subscription_id": request["subscription_id"],
-            "page_url": page_url,
-            "page_state": next(activation_states),
-            "activated": False,
-            "password_used": False,
-        }
-
-    subscription = XiaocaoWechatLiveSubscription(
-        tmp_path / "wechat",
-        history_reader=lambda: payload,
-        browser_exchange=browser_exchange,
-        capture_driver=capture,
-        contact=CONTACT,
-        password="666",
-    )
-
-    assert subscription.run_once(
-        opencli_session="xiaocao-lv-subscription"
-    )["status"] == "waiting"
-    manifest_path = tmp_path / "wechat" / "manifest.json"
-    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
-    target_identity = next(iter(manifest["items"]))
-    manifest["items"]["newer-other-item"] = {
-        **manifest["items"][target_identity],
-        "identity": "newer-other-item",
-        "published_at": "2026-08-10T09:45:00+08:00",
-    }
-    manifest_path.write_text(
-        json.dumps(manifest, ensure_ascii=False),
-        encoding="utf-8",
-    )
-    subscription.history_reader = lambda: pytest.fail(
-        "exact resume must not rescan WeChat"
-    )
-    with pytest.raises(
-        EnrichmentError,
-        match="Xiaoetong account login is required",
-    ):
-        subscription.run_once(
-            opencli_session="xiaocao-lv-subscription",
-            only_identity=target_identity,
-        )
-    assert browser_requests[-1]["subscription_id"] == target_identity
+    assert captured.value.diagnostic_code == "wechat_client_login_required"
+    assert captured.value.diagnostic_stage == "wechat_client_authorization"
 
 
 def test_pending_cloud_handoff_resumes_exact_job_after_stale_playback_state(
@@ -1654,14 +1177,20 @@ def test_pending_cloud_handoff_resumes_exact_job_after_stale_playback_state(
                     "https://appsnm3rlcp3566.h5.xiaoeknow.com/v4/course/"
                     "alive/l_6a708838e4b0694c5bf42e55"
                 ),
-                "page_state": "playable",
+                "page_state": "unknown",
             }
-        if request["action"] == "activate_xiaoetong_playback":
+        if request["action"] == "activate_xiaoetong_mini_program":
             return {
                 "action": request["action"],
                 "subscription_id": request["subscription_id"],
-                "page_url": request["page_url"],
+                "playback_surface": XIAOCAO_PLAYBACK_ROUTE_WECHAT_MINI_PROGRAM,
+                "source_identity": (
+                    "xiaoetong:appsnm3rlcp3566:l_6a708838e4b0694c5bf42e55"
+                ),
+                "live_id": "l_6a708838e4b0694c5bf42e55",
+                "page_state": "mini_program_media_observed",
                 "activated": True,
+                "media_request_observed": True,
                 "password_used": False,
             }
         raise AssertionError("mailbox handoff must not use the Browser exchange")
@@ -1708,7 +1237,7 @@ def test_pending_cloud_handoff_resumes_exact_job_after_stale_playback_state(
     assert first["status"] == "waiting"
     assert [request["action"] for request in browser_requests] == [
         "resolve_xiaoetong_page",
-        "activate_xiaoetong_playback",
+        "activate_xiaoetong_mini_program",
     ]
 
     manifest_path = tmp_path / "wechat" / "manifest.json"
@@ -1759,7 +1288,7 @@ def test_pending_cloud_handoff_resumes_exact_job_after_stale_playback_state(
     }
     assert [request["action"] for request in browser_requests] == [
         "resolve_xiaoetong_page",
-        "activate_xiaoetong_playback",
+        "activate_xiaoetong_mini_program",
     ]
     assert [capsule["handoff_id"] for capsule in mailbox_published] == ["b" * 64]
     assert capture.advances == 2

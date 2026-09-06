@@ -20,28 +20,30 @@ observed candidate ID, app ID, live ID and post-arm time before downloading.
 For H5 entries, retain the process for credential-free identity resolution;
 H5 is not playback proof.
 
-For an HTTPS share entry, the default launch route is now the verified merchant
-Web Link, not chat-window screenshots. Run the emitted `launch_resolver_command`
-with `PYTHONPATH=src`. The read-only `scripts/kol_xiaoetong_launch.py` follows the
-first-party share redirect, validates the app/live anchor, obtains the provider's
-public Web Link representation, ignores the page's mock branch and verifies that
-the real `weixin://dl/business/?t=...` ticket embeds that exact replay. The mobile
-User-Agent requests the provider's link representation instead of its desktop QR;
-it is not login or entitlement. Do not invent tickets, app IDs or page paths.
+For an HTTPS share entry, the default launch route is the verified merchant
+Web Link, not chat-window screenshots or a browser player. Run the emitted
+`launch_resolver_command` with `PYTHONPATH=src`. The read-only
+`scripts/kol_xiaoetong_launch.py` follows the first-party share redirect,
+validates the app/live anchor, obtains the provider's public Web Link
+representation, ignores the page's mock branch and verifies that the real
+`weixin://dl/business/?t=...` ticket embeds that exact replay. The mobile
+User-Agent requests the provider's link representation instead of its desktop
+QR; it is not login or entitlement. Do not invent tickets, app IDs or page
+paths.
 
 Use the returned page URL for identity resolution only. After the same task is
 armed and `/proxy.pac` is healthy and applied, execute `launch_command` once via
 normal macOS URL handling. If the target mini-program is already open, reuse it.
-Regenerate tickets at activation; never reuse an old ticket from a report. Read
-the Goose Live window, not the unshareable main chat window. Inspect the visible
-course-password gate, enter `666` once if present, and observe the exact finite
-replay request. Password acceptance may itself start media loading; do not add a
-redundant Play click. No hooks, WeChat re-signing, hidden debugging or protection
-changes are allowed. Use visible player mute/pause controls when available; the
-H5-only DOM mute instruction does not authorize attaching a debugger to WeChat.
-If the resolver cannot prove a ticket, use the original visible message entry.
-Native `#小程序://...` tokens still use that original-message fallback, not guessed
-URL conversion. A launch plan is not playback, download or upload acceptance.
+Regenerate the merchant ticket only for that one activation; never reuse an old
+ticket from a report. Read the Goose Live window, not the unshareable main chat
+window. Once the exact course is visible, do not resolve again, refresh, open a
+second Scheme, or use a coordinate click. Use accessibility semantics to focus
+the visible course-password input, enter `666` once if it is present, read it
+back, then press Play once and Pause once. No hooks, WeChat re-signing, hidden
+debugging, CDP/DOM evaluation, or protection changes are allowed. If the resolver
+cannot prove a ticket, use the original visible message entry. Native
+`#小程序://...` tokens still use that original-message fallback, not guessed URL
+conversion. A launch plan is not playback, download or upload acceptance.
 
 ## Identity, activation, and download
 
@@ -49,31 +51,29 @@ The capture candidate API uses `view=capture`: fresh observed IDs/times only,
 without historical title enrichment or remote metadata requests. General display
 lists enrich asynchronously with an incremental cache; they cannot bind a source.
 
-1. `resolve_xiaoetong_page`: open the supplied `source_url` only to obtain and
-   validate the bound Xiaoetong app/resource anchor. Accept only a bound H5 live
-   page (`/vN/course/alive/l_*`) or recorded-video page
-   (`/p/course/video/v_*`). For a recorded-video page, also return the numeric
-   `media_file_id` from the visible video. Validate MP wrapper app/resource;
-   retain only `app_id`, `pro_id`, `type`, `alive_mode`, stripping share IDs.
-   Accept `/v2` to `/v4` rotation only for the same app/resource. A bound
-   `source_temporarily_unavailable` result is an expected H5 observation here.
+1. `resolve_xiaoetong_page`: resolve the supplied `source_url` only to obtain
+   and validate the bound Xiaoetong app/live anchor. Accept only a bound H5 live
+   page (`/vN/course/alive/l_*`) or MP wrapper resolving to that same live ID.
+   H5 is identity-only: return `page_state=unknown`; never log in, inspect a
+   player, obtain media, or treat an H5 page state as capture evidence. Retain
+   only `app_id`, `pro_id`, `type`, `alive_mode`, stripping share IDs. Accept
+   `/v2` to `/v4` rotation only for the same app/live ID.
 2. Let the runner arm the exact source job using that stable identity. Do not
    arm another job when switching from the archived H5 route.
 3. `activate_xiaoetong_mini_program`: the Agent owns the native WeChat UI
    action; never ask the user to open or select the replay. Use the reviewed
-   Computer Use exception (`cua_repl`) against visible WeChat,
-   inspect fresh state, keep one foreground session, one action at a time, and
-   read state back after each. Do
-   not use hooks, injection, webhooks, storage/cookie reads,
-   credential extraction, clipboard loops, or rapid/global-shortcut
-   retries. There is no evidence for a magic safe interval: wait only for a
-   visible state/sniffer event, and make at most one
-   activation attempt per scheduled boundary. If the app requires login,
-   SMS/OTP, CAPTCHA, consent, or shows an explicit protection screen, return
-   `account_login_required`/the corresponding blocked state and stop; that is
-   the only user-action boundary. Enter `666` only at a visible
-   course-password gate. Let the target start a media request; no continuous
-   playback or fixed wait is required. Return
+   Computer Use exception (`cua_repl`) against visible WeChat, inspect fresh
+   state, keep one foreground session, and read state back after each semantic
+   action. Do not use coordinates, hooks, injection, webhooks, storage/cookie
+   reads, credential extraction, clipboard loops, CDP/DOM evaluation, or
+   rapid/global-shortcut retries. There is no evidence for a magic safe
+   interval: wait only for a visible state/sniffer event, and make at most one
+   activation attempt per scheduled boundary. If WeChat visibly requires phone
+   login, SMS/OTP, CAPTCHA, consent, or shows an explicit protection screen,
+   return `wechat_client_login_required` and stop; that is the only
+   user-action boundary. At the exact visible course, enter `666` only at a
+   visible course-password gate, then Play once and Pause once. Let the target
+   start a media request; no continuous playback or fixed wait is required. Return
    `playback_surface=wechat_mini_program`, the exact `source_identity` and
    `live_id`, plus `media_request_observed=true` only when the singleton
    `wx_channels_download` sniffer saw the target request. A current-live
@@ -83,7 +83,7 @@ lists enrich asynchronously with an incremental cache; they cannot bind a source
 4. The source job accepts only the newly observed candidate bound to the exact
    `live_id` and finite playlist. The runner then starts the same
    `type=live_capture`, `compress=true` task and validates the resulting
-   `-compressed.mp4`. H5 block-page status must never be reported as download
+   `-compressed.mp4`. An H5 identity anchor can never be reported as download
    success.
 
 ## Continuation and completed-capture acceptance

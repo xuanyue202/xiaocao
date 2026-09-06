@@ -1902,8 +1902,13 @@ class LvSubscriptionService:
         self.share_url = str(share_url or "").strip()
         self.share_code = str(share_code or "").strip()
         self.sleep = sleep
-        self.edge_route_launcher = (
-            edge_route_launcher or self._default_edge_route_launcher
+        # A supplied runner is a test/dry-run boundary.  It must not still
+        # launch a real Edge window through an unrelated default callback.
+        # Production keeps the default runner and the normal recovery launch.
+        self.edge_route_launcher = edge_route_launcher or (
+            self._default_edge_route_launcher
+            if runner is subprocess.run
+            else lambda _route: None
         )
         self.downloads_dir = Path(
             downloads_dir or (Path.home() / "Downloads")

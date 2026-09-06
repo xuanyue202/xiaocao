@@ -89,9 +89,10 @@ A user request to prepare but wait for confirmation is an execution gate: keep
 the Automation PAUSED and run offline checks only until explicit confirmation.
 `Handoff完成` is not remote `全部完成`; report each from its actual bound receipt.
 
-If the native mini-program needs login, report `account_login_required` with
-`activated=false` and keep the same identity/job. Send one deduplicated user
-action even from `resume-source-repair`. See [SOP](xiaoetong-sms-login.md).
+If the native WeChat client visibly says phone login is required, report
+`wechat_client_login_required` with `activated=false` and keep the same
+identity/job. This is not a Xiaoetong account-login or course-password state.
+Send one deduplicated user action even from `resume-source-repair`.
 
 `密码666` text is not a visible gate. Do not inspect cookies, storage, or
 credentials. `awaiting_playback` keeps identities and rechecks at the next

@@ -4967,15 +4967,15 @@ def test_source_classifier_surfaces_provider_authentication_as_user_action():
     assert "重新完成登录或访问授权" in captured.value.action
 
 
-def test_source_classifier_surfaces_xiaoetong_login_with_exact_mini_program_action():
+def test_source_classifier_keeps_wechat_client_login_distinct():
     runner = _classified_source(
         "xiaocao_wechat_live",
         lambda: (_ for _ in ()).throw(
             EnrichmentDiagnosticError(
-                "Xiaoetong account login is required",
+                "WeChat client login is required",
                 category="authentication_error",
-                code="xiaoetong_account_login_required",
-                stage="playback_authorization",
+                code="wechat_client_login_required",
+                stage="wechat_client_authorization",
             )
         ),
     )
@@ -4983,11 +4983,8 @@ def test_source_classifier_surfaces_xiaoetong_login_with_exact_mini_program_acti
     with pytest.raises(UserActionBlocker) as captured:
         runner()
 
-    assert captured.value.blocker_key == (
-        "xiaocao-wechat-live-xiaoetong-login"
-    )
-    assert "本机微信小程序" in captured.value.action
-    assert "当前小鹅通账号登录" in captured.value.action
+    assert captured.value.blocker_key == "xiaocao-wechat-client-login"
+    assert "不是小鹅通账号" in captured.value.action
 
 
 def test_source_classifier_surfaces_provider_captcha_as_user_action():
@@ -6574,22 +6571,6 @@ def test_source_classifier_promotes_wechat_opencli_captcha_to_blocker():
     assert captured.value.blocker_key == "wechat-official-opencli-captcha"
     assert "现有 OpenCLI Edge 会话" in captured.value.action
     assert "循环重试" in captured.value.action
-
-
-def test_source_classifier_promotes_xiaoetong_account_login_to_blocker():
-    runner = _classified_source(
-        "xiaocao_wechat_live",
-        lambda: (_ for _ in ()).throw(
-            EnrichmentError("Xiaoetong account login is required")
-        ),
-    )
-
-    with pytest.raises(UserActionBlocker) as captured:
-        runner()
-
-    assert captured.value.blocker_key == "xiaocao-wechat-live-xiaoetong-login"
-    assert "小鹅通账号登录" in captured.value.action
-    assert "666" not in captured.value.action
 
 
 def test_status_classifies_legacy_retryable_failure_as_degraded(tmp_path):

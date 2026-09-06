@@ -42,8 +42,6 @@ or bypass a human gate.
   OpenCLI/Edge failure read
   [opencli-edge-recovery.md](references/opencli-edge-recovery.md). Skip
   remote/full contracts.
-- For Xiaoetong phone/SMS login, read
-  [xiaoetong-sms-login.md](references/xiaoetong-sms-login.md) completely.
 - For remote hourly `scripts/kol_daily.py run|status|audit`, read
   [hourly-remote-writer.md](references/hourly-remote-writer.md) completely. Do
   not read the full contract before starting the runner.
@@ -74,10 +72,11 @@ evidence ambiguity, requested edits, or explicit historical aggregation.
 
 ## Non-negotiable semantic boundaries
 
-- Xiaoetong: enter `666` at a visible course-password gate. Set/read
-  `video.muted=true` and `video.volume=0` before playback
-  (`cdp`/`Runtime.evaluate` if controls are hidden); OS mute is insufficient.
-- Xiaocao: mini capture; H5 identity-only.
+- Xiaocao: native WeChat mini-program only. H5 is a credential-free identity
+  anchor, never a player, login surface, or fallback. After the one verified
+  Scheme launch: semantically enter `666` if visible, Play once, Pause once;
+  never use coordinates, CDP/DOM evaluation, a second resolution, refresh, or
+  Scheme launch.
 - Resolve code/state conflicts from first principles without asking by default:
   preserve a reversible snapshot and unrelated WIP, identify both intents,
   integrate compatible behavior, verify it, and continue. Ask only when the

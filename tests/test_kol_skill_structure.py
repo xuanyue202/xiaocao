@@ -23,9 +23,6 @@ VIDEO_PLAYER_SAFETY_MD = (
 OPENCLI_EDGE_RECOVERY_MD = (
     SKILL_DIR / "references" / "opencli-edge-recovery.md"
 )
-XIAOETONG_SMS_LOGIN_MD = (
-    SKILL_DIR / "references" / "xiaoetong-sms-login.md"
-)
 REMOTE_WRITER_LEASE_MD = (
     SKILL_DIR / "references" / "remote-writer-lease.md"
 )
@@ -97,7 +94,7 @@ def test_kol_local_capture_owns_bounded_native_activation_and_rechecks() -> None
     for marker in (
         "native WeChat mini-program",
         "20 分钟",
-        "account_login_required",
+        "wechat_client_login_required",
         "keep the same identity/job",
         "one deduplicated user action even from `resume-source-repair`",
     ):
@@ -105,14 +102,13 @@ def test_kol_local_capture_owns_bounded_native_activation_and_rechecks() -> None
     for marker in (
         "activate_xiaoetong_mini_program",
         "Agent owns the native WeChat UI",
-        "one action at a time, and read state back after each",
+        "read state back after each semantic action",
         "no evidence for a magic safe interval",
-        "Do not use hooks, injection, webhooks, storage/cookie reads, "
-        "credential extraction, clipboard loops, or rapid/global-shortcut retries",
+        "Do not use coordinates, hooks, injection, webhooks, storage/cookie",
         "at most one activation attempt per scheduled boundary",
-        "retain only `app_id`, `pro_id`, `type`, `alive_mode`, stripping share IDs",
+        "Retain only `app_id`, `pro_id`, `type`, `alive_mode`, stripping share IDs",
         "SMS/OTP, CAPTCHA, consent, or shows an explicit protection screen",
-        "`account_login_required`/the corresponding blocked state and stop",
+        "return `wechat_client_login_required` and stop",
         "Never return signed URLs, cookies, keys, or request headers",
     ):
         assert marker in native
@@ -162,10 +158,11 @@ def test_hourly_local_native_launch_preserves_readiness_and_verified_identity() 
         "Do not invent tickets, app IDs or page paths",
         "armed and `/proxy.pac` is healthy and applied, execute `launch_command` once",
         "If the target mini-program is already open, reuse it",
-        "Regenerate tickets at activation; never reuse an old ticket from a report",
-        "do not add a redundant Play click",
-        "No hooks, WeChat re-signing, hidden debugging or protection changes are allowed",
-        "H5-only DOM mute instruction does not authorize attaching a debugger to WeChat",
+        "Regenerate the merchant ticket only for that one activation",
+        "Once the exact course is visible, do not resolve again",
+        "focus the visible course-password input, enter `666` once",
+        "then press Play once and Pause once",
+        "No hooks, WeChat re-signing, hidden debugging, CDP/DOM evaluation",
         "If the resolver cannot prove a ticket, use the original visible message entry",
         "A launch plan is not playback, download or upload acceptance",
     ):
@@ -194,7 +191,7 @@ def test_hourly_local_native_continuation_requires_bound_media_and_cleaned_audit
         "only the newly observed candidate bound to the exact `live_id` and finite playlist",
         "same `type=live_capture`, `compress=true` task",
         "validates the resulting `-compressed.mp4`",
-        "H5 block-page status must never be reported as download success",
+        "An H5 identity anchor can never be reported as download success",
         "exact-source media observation -> original compressed download -> "
         "media validation -> detach only the capture PAC and stop the sniffer -> "
         "original Netdisk upload -> hash-bound mailbox handoff -> "
@@ -758,54 +755,18 @@ def test_opencli_edge_recovery_exhausts_self_repair_before_user_action() -> None
     assert "Google Chrome" not in recovery
 
 
-def test_hourly_local_capture_routes_authorized_xiaoetong_sms_login() -> None:
+def test_hourly_local_capture_sunsets_xiaoetong_web_login() -> None:
     entrypoint = " ".join(SKILL_MD.read_text(encoding="utf-8").split())
     hourly = HOURLY_LOCAL_CAPTURE_MD.read_text(encoding="utf-8")
-    sms_login = " ".join(
-        XIAOETONG_SMS_LOGIN_MD.read_text(encoding="utf-8").split()
-    )
 
+    assert "xiaoetong-sms-login.md" not in entrypoint
+    assert "xiaoetong-sms-login.md" not in hourly
     for marker in (
-        "Xiaoetong phone/SMS login",
-        "xiaoetong-sms-login.md",
-        "completely",
+        "H5 is a credential-free identity anchor",
+        "semantically enter `666` if visible, Play once, Pause once",
+        "never use coordinates, CDP/DOM evaluation",
     ):
         assert marker in entrypoint
-    assert "xiaoetong-sms-login.md" in hourly
-    for marker in (
-        "## Contents",
-        "## One-pass path",
-        "pageAssets",
-        "drag_distance_css",
-        "tab.cua.drag()",
-        "Browser tab's input primitive, not the Computer Use skill",
-        "验证码已发送成功",
-        "#SpToast",
-        '[id="SpToast"]',
-        "elementFromPoint()",
-        ".custom-button.login-verify-code",
-        "Agent-owned repair",
-        "performance.timeOrigin",
-        "accepted | expired | invalidated",
-        "Pass the phone/OTP only once to the intended Browser input",
-        "already present in the current user message",
-        "Enter the newest OTP once",
-        "check it once and read back the checked state",
-        "Enter `666` only after reaching that exact course resource",
-        "video.muted = true",
-        "video.volume = 0",
-        "page-level control",
-        "tab's `cdp` capability",
-        "Runtime.evaluate",
-        "system/browser mute",
-        "location.reload()",
-        "video.play().catch(() => {})",
-        'visibilityState == "visible"',
-        "no-preconnect",
-        "readyState >= 2",
-        "3–5",
-    ):
-        assert marker in sms_login
 
 
 def test_durable_branch_preserves_authority_and_provenance_boundaries() -> None:

@@ -1461,15 +1461,12 @@ def _classified_source(name: str, runner):
             diagnostic_code = str(
                 getattr(exc, "diagnostic_code", "")
             )
-            if (
-                diagnostic_code == "xiaoetong_account_login_required"
-                or message == "Xiaoetong account login is required"
-            ):
+            if diagnostic_code == "wechat_client_login_required":
                 raise UserActionBlocker(
-                    "xiaocao-wechat-live-xiaoetong-login",
-                    "请在本机微信小程序中完成当前小鹅通账号登录；不要把课程"
-                    "直播口令填入账号密码框。完成后保持目标可访问，系统会在"
-                    " 20 分钟内复核同一任务并继续。",
+                    "xiaocao-wechat-client-login",
+                    "本机微信客户端显示“需在手机上完成登录”；这不是小鹅通"
+                    "账号或课程口令问题。完成微信客户端登录后保持目标课程可访问，"
+                    "系统会复核同一任务并继续。",
                 ) from exc
             if diagnostic_code == "provider_authentication_required":
                 raise UserActionBlocker(

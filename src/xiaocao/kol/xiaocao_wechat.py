@@ -1,8 +1,9 @@
-"""Local WeChat discovery for resumable Xiaocao web-live capture.
+"""Local WeChat discovery for resumable Xiaocao mini-program live capture.
 
-This adapter keeps the hourly coordinator on metadata only.  Browser playback
-is delegated through a small request/response exchange and all video bytes are
-owned by :class:`XiaocaoLiveService` and the external sniffer/downloader.
+This adapter keeps the hourly coordinator on metadata only.  A Xiaoetong H5
+URL can establish a credential-free source identity, but playback happens only
+in the native WeChat mini-program.  All video bytes are owned by
+:class:`XiaocaoLiveService` and the external sniffer/downloader.
 """
 
 from __future__ import annotations
@@ -16,7 +17,7 @@ import subprocess
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any, Callable, Protocol
-from urllib.parse import parse_qs, urlsplit, urlunsplit
+from urllib.parse import urlsplit, urlunsplit
 from uuid import uuid4
 from zoneinfo import ZoneInfo
 
@@ -47,14 +48,13 @@ _XIAOETONG_SOURCE_IDENTITY = re.compile(
 )
 _TERMINAL = {"historical_baseline", "superseded", "completed"}
 _SHA256 = re.compile(r"^[0-9a-f]{64}$")
-_MEDIA_FILE_ID = re.compile(r"^[0-9]{8,32}$")
 _MAX_HANDOFF_BYTES = 1024 * 1024
 _CAPTURE_PROGRESS_POLL_SECONDS = 30
 _PLAYBACK_RECHECK_MINUTES = 20
 _LOCAL_CAPTURE_FIRST_HOUR = 7
 _LOCAL_CAPTURE_LAST_HOUR = 22
 _PLAYBACK_PAGE_STATES = {
-    "account_login_required",
+    "wechat_client_login_required",
     "waiting_to_start",
     "live",
     "replay_generating",
@@ -63,14 +63,7 @@ _PLAYBACK_PAGE_STATES = {
     "source_temporarily_unavailable",
     "unknown",
 }
-XIAOCAO_PLAYBACK_ROUTE_H5 = "xiaoetong_h5"
 XIAOCAO_PLAYBACK_ROUTE_WECHAT_MINI_PROGRAM = "wechat_mini_program"
-_PLAYBACK_ROUTES = frozenset(
-    {
-        XIAOCAO_PLAYBACK_ROUTE_H5,
-        XIAOCAO_PLAYBACK_ROUTE_WECHAT_MINI_PROGRAM,
-    }
-)
 _MINI_PROGRAM_PLAYBACK_STATES = _PLAYBACK_PAGE_STATES | {
     "mini_program_media_observed",
     "mini_program_waiting",
@@ -256,8 +249,6 @@ class CaptureDriver(Protocol):
         self,
         identity: str,
         page_url: str | None,
-        *,
-        media_file_id: str | None = None,
     ) -> dict[str, Any]: ...
 
     def advance(
@@ -267,15 +258,12 @@ class CaptureDriver(Protocol):
         *,
         opencli_session: str,
         opencli_profile: str | None,
-        recorded_media_url: str | None = None,
     ) -> dict[str, Any]: ...
 
     def advance_capture(
         self,
         identity: str,
         capture_job_id: str,
-        *,
-        recorded_media_url: str | None = None,
     ) -> dict[str, Any]: ...
 
     def published_handoff(
@@ -376,14 +364,9 @@ class XiaocaoLiveCaptureDriver:
         self,
         identity: str,
         page_url: str | None,
-        *,
-        media_file_id: str | None = None,
     ) -> dict[str, Any]:
         try:
-            return self._service(identity).start(
-                page_url=page_url,
-                media_file_id=media_file_id,
-            )
+            return self._service(identity).start(page_url=page_url)
         except SnifferError as exc:
             raise EnrichmentDiagnosticError(
                 "Xiaocao sniffer request failed",
@@ -409,7 +392,6 @@ class XiaocaoLiveCaptureDriver:
         *,
         opencli_session: str,
         opencli_profile: str | None,
-        recorded_media_url: str | None = None,
     ) -> dict[str, Any]:
         service = self._service(identity)
         published = self.published_handoff(identity, capture_job_id)
@@ -423,13 +405,12 @@ class XiaocaoLiveCaptureDriver:
                 capture_job_id,
                 opencli_session=opencli_session,
                 opencli_profile=opencli_profile,
-                recorded_media_url=recorded_media_url,
             )
         except InvalidSourcePage as exc:
             raise EnrichmentDiagnosticError(
-                "Xiaocao recorded media URL binding failed",
+                "Xiaocao live source identity is invalid",
                 category="contract_error",
-                code="recorded_media_url_binding_invalid",
+                code="xiaocao_live_source_identity_invalid",
                 stage="compressed_capture",
             ) from exc
         except SnifferError as exc:
@@ -514,8 +495,6 @@ class XiaocaoLiveCaptureDriver:
         self,
         identity: str,
         capture_job_id: str,
-        *,
-        recorded_media_url: str | None = None,
     ) -> dict[str, Any]:
         """Reconcile the exact source job before requesting another UI action."""
 
@@ -526,13 +505,12 @@ class XiaocaoLiveCaptureDriver:
         try:
             return service.advance_capture(
                 capture_job_id,
-                recorded_media_url=recorded_media_url,
             )
         except InvalidSourcePage as exc:
             raise EnrichmentDiagnosticError(
-                "Xiaocao recorded media URL binding failed",
+                "Xiaocao live source identity is invalid",
                 category="contract_error",
-                code="recorded_media_url_binding_invalid",
+                code="xiaocao_live_source_identity_invalid",
                 stage="compressed_capture",
             ) from exc
         except SnifferError as exc:
@@ -559,28 +537,11 @@ class XiaocaoLiveCaptureDriver:
             None,
         )
 
-    def needs_recorded_media_url(
-        self,
-        identity: str,
-        capture_job_id: str,
-    ) -> bool:
-        capture = self._service(identity).capture_store.latest(capture_job_id)
-        expected = (capture or {}).get("expected_source") or {}
-        resource_id = str(expected.get("source_resource_id") or "")
-        return bool(
-            capture
-            and resource_id.startswith("v_")
-            and capture.get("status") != "downloaded"
-        )
-
-
 class XiaocaoWechatLiveSubscription:
     """Exactly-once WeChat discovery and capture state machine.
 
-    ``xiaoetong_h5`` remains a compatibility route for direct callers and
-    historical tests.  The local Xiaocao runtime selects
-    ``wechat_mini_program`` so a provider-paused H5 player is not a download
-    dependency.
+    The browser/H5 route is identity-resolution-only. Playback and media
+    evidence are always owned by the native WeChat mini-program and sniffer.
     """
 
     def __init__(
@@ -593,7 +554,7 @@ class XiaocaoWechatLiveSubscription:
         capture_driver: CaptureDriver,
         contact: str = DEFAULT_CONTACT,
         password: str = "666",
-        playback_route: str = XIAOCAO_PLAYBACK_ROUTE_H5,
+        playback_route: str = XIAOCAO_PLAYBACK_ROUTE_WECHAT_MINI_PROGRAM,
         clock: Callable[[], datetime] | None = None,
     ):
         self.output_dir = Path(output_dir).expanduser().resolve()
@@ -606,9 +567,9 @@ class XiaocaoWechatLiveSubscription:
         self.contact = str(contact)
         self.password = str(password)
         self.playback_route = str(playback_route or "").strip()
-        if self.playback_route not in _PLAYBACK_ROUTES:
+        if self.playback_route != XIAOCAO_PLAYBACK_ROUTE_WECHAT_MINI_PROGRAM:
             raise ValueError(
-                f"unsupported Xiaocao playback route: {self.playback_route}"
+                "Xiaocao web playback is sunset; use the WeChat mini-program route"
             )
         self.clock = clock or (lambda: datetime.now(BEIJING))
 
@@ -765,117 +726,10 @@ class XiaocaoWechatLiveSubscription:
             canonical = resolve_xiaoetong_h5_page(page_url)
             source = canonical_xiaoetong_source(canonical)
         except InvalidSourcePage as exc:
-            raise EnrichmentError("browser did not resolve a Xiaoetong live page") from exc
+            raise EnrichmentError(
+                "launch resolver did not resolve a Xiaoetong live page"
+            ) from exc
         return canonical, source["source_identity"]
-
-    @classmethod
-    def _canonical_browser_page(
-        cls,
-        page_url: str,
-        *,
-        page_state: str,
-    ) -> tuple[str, str]:
-        if page_state != "account_login_required":
-            return cls._canonical_page(page_url)
-        parsed = urlsplit(page_url.strip())
-        if (parsed.hostname or "").lower().endswith(".mp.xiaoeknow.com"):
-            return cls._canonical_page(page_url)
-        redirect_urls = parse_qs(parsed.query).get("redirect_url", [])
-        if (
-            parsed.scheme != "https"
-            or parsed.path
-            != "/p/t/free/v1/basic-platform/h5_basic/login/auth"
-            or len(redirect_urls) != 1
-        ):
-            raise EnrichmentError("browser account login redirect is invalid")
-        redirect = urlsplit(redirect_urls[0])
-        if (parsed.hostname or "").lower() != (redirect.hostname or "").lower():
-            raise EnrichmentError("browser account login redirect changed host")
-        return cls._canonical_page(redirect_urls[0])
-
-    @classmethod
-    def _is_bound_account_login_redirect(
-        cls,
-        page_url: str,
-        *,
-        expected_page_url: str,
-        expected_source_identity: str,
-    ) -> bool:
-        parsed = urlsplit(page_url.strip())
-        expected = urlsplit(expected_page_url)
-        if (
-            parsed.scheme != "https"
-            or (parsed.hostname or "").lower()
-            != (expected.hostname or "").lower()
-            or parsed.path
-            != "/p/t/free/v1/basic-platform/h5_basic/login/auth"
-        ):
-            return False
-        redirect_urls = parse_qs(parsed.query).get("redirect_url", [])
-        if len(redirect_urls) != 1:
-            return False
-        try:
-            redirect_page, redirect_identity = cls._canonical_page(
-                redirect_urls[0]
-            )
-        except EnrichmentError:
-            return False
-        return redirect_identity == expected_source_identity
-
-    @classmethod
-    def _is_bound_account_login_page(
-        cls,
-        page_url: str,
-        *,
-        expected_page_url: str,
-        expected_source_identity: str,
-    ) -> bool:
-        """Accept a direct MP wrapper as a bound login observation."""
-        try:
-            canonical_page, canonical_identity = cls._canonical_page(page_url)
-        except EnrichmentError:
-            return False
-        return canonical_identity == expected_source_identity
-
-    @classmethod
-    def _is_bound_provider_block_redirect(
-        cls,
-        page_url: str,
-        *,
-        expected_page_url: str,
-        expected_source_identity: str,
-    ) -> bool:
-        parsed = urlsplit(page_url.strip())
-        expected = urlsplit(expected_page_url)
-        identity_parts = expected_source_identity.split(":", 2)
-        if (
-            len(identity_parts) != 3
-            or identity_parts[0] != "xiaoetong"
-            or not identity_parts[1]
-        ):
-            return False
-        app_id = identity_parts[1]
-        pieces = [piece for piece in parsed.path.split("/") if piece]
-        if (
-            parsed.scheme != "https"
-            or parsed.netloc.lower() != f"{app_id}.block.xiaoeeye.com"
-            or expected.netloc.lower() != f"{app_id}.h5.xiaoeknow.com"
-            or len(pieces) != 4
-            or re.fullmatch(r"v[0-9]+", pieces[0]) is None
-            or pieces[1:3] != ["course", "alive"]
-            or pieces[3] != identity_parts[2]
-        ):
-            return False
-        try:
-            canonical_page, canonical_identity = cls._canonical_page(
-                expected_page_url
-            )
-        except EnrichmentError:
-            return False
-        return (
-            canonical_page == expected_page_url
-            and canonical_identity == expected_source_identity
-        )
 
     @staticmethod
     def _validate_browser_response(
@@ -1119,7 +973,6 @@ class XiaocaoWechatLiveSubscription:
             capture_job_id,
             opencli_session=opencli_session,
             opencli_profile=opencli_profile,
-            recorded_media_url=self._media_url_if_needed(item),
         )
         state_capture_job_id = str(state.get("capture_job_id") or "")
         if state_capture_job_id and state_capture_job_id != capture_job_id:
@@ -1148,125 +1001,10 @@ class XiaocaoWechatLiveSubscription:
         *,
         reason: str,
     ) -> dict[str, Any]:
-        if self.playback_route == XIAOCAO_PLAYBACK_ROUTE_WECHAT_MINI_PROGRAM:
-            return self._check_mini_program_playback(
-                manifest,
-                item,
-                reason=reason,
-            )
-        request = {
-            "event": "daily_browser_input_required",
-            "adapter": "xiaocao_wechat_live",
-            "action": "activate_xiaoetong_playback",
-            "subscription_id": item["identity"],
-            "page_url": item["page_url"],
-            "check_reason": reason,
-            "password_policy": {
-                "only_if_password_gate_visible": True,
-                "password": self.password,
-            },
-            "instructions": (
-                "Refresh the bound page and inspect its visible lifecycle state. "
-                "If it is directly playable, play it without entering a password. "
-                "If a course-password gate is visible, enter the supplied password "
-                "and submit it. As soon as the bound page has a current video, use "
-                "the same Browser tab's page-level control to set and read back "
-                "video.muted=true and video.volume=0; use the tab cdp capability's "
-                "scoped Runtime.evaluate when custom player controls are hidden. "
-                "Then start playback and prove advancing media time. If it is "
-                "waiting to start, live without replay, or generating a replay, "
-                "return that state without waiting for it to change. If the same "
-                "app and resource redirect "
-                "to its block.xiaoeeye.com page, return "
-                "source_temporarily_unavailable. If the page first lands on a "
-                "generic Xiaoetong unavailable or personal-center shell, derive "
-                "the same app/resource block URL by replacing the .h5.xiaoeknow.com "
-                "host suffix with .block.xiaoeeye.com, navigate the same tab to "
-                "that exact path, and return the resulting bound block URL. Do not "
-                "report source_temporarily_unavailable for an unrelated URL."
-            ),
-            "required_response": {
-                "action": "activate_xiaoetong_playback",
-                "subscription_id": item["identity"],
-                "page_url": item["page_url"],
-                "page_state": (
-                    "account_login_required|waiting_to_start|live|"
-                    "replay_generating|playable|password_required|unknown"
-                    "|source_temporarily_unavailable"
-                ),
-                "activated": "boolean",
-                "password_used": "boolean",
-            },
-        }
-        response = self.browser_exchange(request)
-        self._validate_browser_response(request, response)
-        response_url = str(response.get("page_url") or "")
-        activated = response.get("activated") is True
-        page_state = str(
-            response.get("page_state")
-            or ("playable" if activated else "unknown")
-        ).strip()
-        if (
-            not activated
-            and response.get("password_used") is not True
-            and page_state in {"account_login_required", "unknown"}
-            and (
-                (
-                    page_state == "account_login_required"
-                    and response_url == item["page_url"]
-                )
-                or self._is_bound_account_login_redirect(
-                    response_url,
-                    expected_page_url=item["page_url"],
-                    expected_source_identity=item["source_identity"],
-                )
-                or self._is_bound_account_login_page(
-                    response_url,
-                    expected_page_url=item["page_url"],
-                    expected_source_identity=item["source_identity"],
-                )
-            )
-        ):
-            raise EnrichmentDiagnosticError(
-                "Xiaoetong account login is required",
-                category="authentication_error",
-                code="xiaoetong_account_login_required",
-                stage="playback_authorization",
-            )
-        if page_state == "source_temporarily_unavailable":
-            if (
-                activated
-                or response.get("password_used") is True
-                or not self._is_bound_provider_block_redirect(
-                    response_url,
-                    expected_page_url=item["page_url"],
-                    expected_source_identity=item["source_identity"],
-                )
-            ):
-                raise EnrichmentError(
-                    "browser provider block is not bound to the live page"
-                )
-            return self._transition(
-                manifest,
-                item,
-                "awaiting_playback",
-                observed_page_state=page_state,
-                password_used=False,
-            )
-        response_page, response_identity = self._canonical_page(response_url)
-        if (
-            response_identity != item["source_identity"]
-            or page_state not in _PLAYBACK_PAGE_STATES
-        ):
-            raise EnrichmentError("browser did not check the bound live page")
-        return self._transition(
+        return self._check_mini_program_playback(
             manifest,
             item,
-            "playback_activated" if activated else "awaiting_playback",
-            page_url=response_page,
-            observed_page_state=page_state,
-            password_used=response.get("password_used") is True,
-            playback_route=self.playback_route,
+            reason=reason,
         )
 
     def _check_mini_program_playback(
@@ -1276,7 +1014,7 @@ class XiaocaoWechatLiveSubscription:
         *,
         reason: str,
     ) -> dict[str, Any]:
-        """Use native WeChat playback while keeping the H5 identity anchor.
+        """Use native WeChat playback while keeping an H5 identity anchor.
 
         The mini-program is the user-visible playback surface.  The local
         ``wx_channels_download`` sniffer observes its requests and the source
@@ -1312,15 +1050,16 @@ class XiaocaoWechatLiveSubscription:
             "instructions": (
                 "用 wechat-cli 已定位的原始联系人和发布时间，在本机微信中只打开"
                 "该条原始 #小程序://鹅直播/ 消息一次；不要复制发送消息、猜测 URL "
-                "Scheme，或反复拉起小程序。若小程序显示课程口令门，只在可见口令门"
-                "输入提供的口令。"
+                "Scheme，或反复拉起小程序。"
                 if native_entry
                 else
-                "在本机微信中打开 source_url 对应的同一场小鹅通小程序回放，"
-                "不要打开或依赖浏览器 H5 播放页。若小程序显示课程口令门，"
-                "只在可见口令门输入提供的口令。选择与 source_url 对应的历史回放；"
+                "仅执行已验证、商户签发的 launch_command 一次，打开 source_url 对应"
+                "的同一场小鹅通小程序；不要打开或依赖浏览器 H5 播放页。"
             ) + (
-                "让目标画面开始请求媒体即可，不需要持续播放。确认本机"
+                "到达精确课程小程序后，禁止再次解析、重新生成跳转票据、重开 Scheme、"
+                "刷新或坐标猜测。若看见课程口令门，只能以辅助功能语义聚焦可见输入框，"
+                "输入提供的口令并读回；随后只播放一次并立即暂停。让目标画面开始请求"
+                "媒体即可，不需要持续播放。确认本机"
                 "wx_channels_download 已观察到媒体请求，并从其无凭证日志确认"
                 + (
                     "该次新候选的 live_id 和 app_id。"
@@ -1341,7 +1080,7 @@ class XiaocaoWechatLiveSubscription:
                 "live_id": expected_live_id or "observed l_ live_id",
                 "operator": "agent",
                 "page_state": (
-                    "account_login_required|waiting_to_start|live|"
+                    "wechat_client_login_required|waiting_to_start|live|"
                     "replay_generating|playable|password_required|unknown|"
                     "mini_program_media_observed|mini_program_waiting"
                 ),
@@ -1380,6 +1119,9 @@ class XiaocaoWechatLiveSubscription:
                 "一次；若当前已是目标小程序则不重开。只用商户生成且校验场次一致的 "
                 "Scheme，不猜参数。解析失败再用可见原始消息入口；不要把主聊天窗口"
                 "白色截图当作微信退出。后续密码、播放在可见小程序窗口操作。"
+                "目标小程序已打开后，禁止再次解析、重新生成跳转票据、重开 Scheme、"
+                "刷新或坐标猜测。若看见课程口令门，只能先聚焦可见口令输入框、"
+                "输入提供的口令并读回；确认页面可播放后只播放一次再立即暂停。"
             ) + request["instructions"]
         self.capture_driver.prepare_playback(item["identity"], item["capture_job_id"])
         response = self.browser_exchange(request)
@@ -1427,12 +1169,12 @@ class XiaocaoWechatLiveSubscription:
             raise EnrichmentError(
                 "WeChat mini-program returned an unknown playback state"
             )
-        if page_state == "account_login_required":
+        if page_state == "wechat_client_login_required":
             raise EnrichmentDiagnosticError(
-                "Xiaoetong account login is required",
+                "WeChat client login is required",
                 category="authentication_error",
-                code="xiaoetong_account_login_required",
-                stage="playback_authorization",
+                code="wechat_client_login_required",
+                stage="wechat_client_authorization",
             )
         media_request_observed = response.get("media_request_observed") is True
         if (expected_live_id or media_request_observed) and not source_bound:
@@ -1471,56 +1213,6 @@ class XiaocaoWechatLiveSubscription:
             **fields,
         )
 
-    def _recorded_media_url(self, item: dict[str, Any]) -> str | None:
-        resource_id = str(item.get("source_identity") or "").rsplit(":", 1)[-1]
-        if not resource_id.startswith("v_"):
-            return None
-        request = {
-            "event": "daily_browser_input_required",
-            "adapter": "xiaocao_wechat_live",
-            "action": "resolve_xiaoetong_media_url",
-            "subscription_id": item["identity"],
-            "page_url": item["page_url"],
-            "media_file_id": item["media_file_id"],
-            "instructions": (
-                "Read the currently playing page's actual HTTPS m3u8 network "
-                "request. Return the full short-lived URL whose path is bound "
-                "to the supplied media_file_id. Do not return cookies, DRM "
-                "keys, or unrelated request headers."
-            ),
-            "required_response": {
-                "action": "resolve_xiaoetong_media_url",
-                "subscription_id": item["identity"],
-                "page_url": item["page_url"],
-                "media_file_id": item["media_file_id"],
-                "media_url": "full short-lived signed HTTPS m3u8 URL",
-            },
-        }
-        response = self.browser_exchange(request)
-        self._validate_browser_response(request, response)
-        if (
-            response.get("page_url") != item["page_url"]
-            or response.get("media_file_id") != item["media_file_id"]
-        ):
-            raise EnrichmentError("browser media URL response is not bound")
-        media_url = str(response.get("media_url") or "").strip()
-        if not media_url:
-            raise EnrichmentError("browser media URL response is missing")
-        return media_url
-
-    def _media_url_if_needed(self, item: dict[str, Any]) -> str | None:
-        predicate = getattr(
-            self.capture_driver,
-            "needs_recorded_media_url",
-            None,
-        )
-        if not callable(predicate) or not predicate(
-            item["identity"],
-            item["capture_job_id"],
-        ):
-            return None
-        return self._recorded_media_url(item)
-
     def _resolve_page(
         self,
         manifest: dict[str, Any],
@@ -1534,65 +1226,49 @@ class XiaocaoWechatLiveSubscription:
             "source_url": item["source_url"],
             "playback_route": self.playback_route,
             "instructions": (
-                "Resolve only the stable Xiaoetong app/resource identity needed to "
-                "arm the capture job. The H5 page may be provider-paused; do not "
-                "treat H5 playback as proof of download readiness."
-                if self.playback_route
-                == XIAOCAO_PLAYBACK_ROUTE_WECHAT_MINI_PROGRAM
-                else "Resolve the current Xiaoetong page and its playback state."
+                "Resolve only the stable Xiaoetong live identity needed to arm the "
+                "native capture. H5 is an identity anchor only: do not log in, "
+                "play media, inspect player controls, or request media from it."
             ),
             "required_response": {
                 "action": "resolve_xiaoetong_page",
                 "subscription_id": item["identity"],
                 "page_url": "current Xiaoetong MP wrapper or H5 page URL",
-                "page_state": (
-                    "account_login_required|playable|password_required|unknown"
-                ),
-                "media_file_id": (
-                    "digits from the bound video element for a recorded-video "
-                    "page; omit for a live page"
-                ),
+                "page_state": "unknown",
             },
         }
-        if self.playback_route == XIAOCAO_PLAYBACK_ROUTE_WECHAT_MINI_PROGRAM:
-            request["launch_resolver_command"] = [
-                ".venv/bin/python", "scripts/kol_xiaoetong_launch.py",
-                "--source-url", item["source_url"],
-            ]
-            request["instructions"] = (
-                "First run launch_resolver_command with PYTHONPATH=src; it is "
-                "read-only and validates the merchant-issued WeChat launch link. "
-                "Return its page_url with page_state=unknown, then let the runner "
-                "arm before executing any launch_command. If no launch plan is "
-                "available, resolve the supplied URL through the visible browser. "
-            ) + request["instructions"]
+        request["launch_resolver_command"] = [
+            ".venv/bin/python", "scripts/kol_xiaoetong_launch.py",
+            "--source-url", item["source_url"],
+        ]
+        request["instructions"] = (
+            "First run launch_resolver_command with PYTHONPATH=src; it is "
+            "read-only and validates the merchant-issued WeChat launch link. "
+            "Return its page_url with page_state=unknown, then let the runner "
+            "arm before executing its one launch_command. If no launch plan is "
+            "available, resolve the supplied URL only to a stable identity. "
+        ) + request["instructions"]
         response = self.browser_exchange(request)
         self._validate_browser_response(request, response)
         observed_page_state = str(
             response.get("page_state") or "unknown"
         ).strip()
-        page_url, source_identity = self._canonical_browser_page(
+        if observed_page_state != "unknown":
+            raise EnrichmentError("Xiaocao H5 resolution returned a playback state")
+        page_url, source_identity = self._canonical_page(
             str(response.get("page_url") or ""),
-            page_state=observed_page_state,
         )
         resource_id = source_identity.rsplit(":", 1)[-1]
-        media_file_id = str(response.get("media_file_id") or "").strip()
-        if (
-            (
-                resource_id.startswith("v_")
-                and not _MEDIA_FILE_ID.fullmatch(media_file_id)
+        if not resource_id.startswith("l_"):
+            raise EnrichmentError(
+                "Xiaocao capture supports only Xiaoetong live mini-program entries"
             )
-            or (not resource_id.startswith("v_") and media_file_id)
-        ):
-            raise EnrichmentError("browser recorded media binding is invalid")
         fields: dict[str, Any] = {
             "page_url": page_url,
             "source_identity": source_identity,
             "observed_page_state": observed_page_state,
             "playback_route": self.playback_route,
         }
-        if media_file_id:
-            fields["media_file_id"] = media_file_id
         return self._transition(
             manifest,
             item,
@@ -1647,17 +1323,18 @@ class XiaocaoWechatLiveSubscription:
         if (
             item["status"] == "page_resolved"
             and str(item.get("source_identity") or "")
+            and not str(item.get("source_identity") or "")
             .rsplit(":", 1)[-1]
-            .startswith("v_")
-            and not item.get("media_file_id")
+            .startswith("l_")
         ):
-            item = self._resolve_page(manifest, item)
+            raise EnrichmentError(
+                "Xiaocao capture supports only Xiaoetong live mini-program entries"
+            )
 
         if item["status"] == "page_resolved":
             armed = self.capture_driver.arm(
                 item["identity"],
                 str(item.get("page_url") or "") or None,
-                media_file_id=str(item.get("media_file_id") or "") or None,
             )
             capture_job_id = str(armed.get("capture_job_id") or "")
             if not capture_job_id:
@@ -1718,13 +1395,12 @@ class XiaocaoWechatLiveSubscription:
                 item["capture_job_id"],
                 opencli_session=opencli_session,
                 opencli_profile=opencli_profile,
-                recorded_media_url=self._media_url_if_needed(item),
             )
         except InvalidSourcePage as exc:
             raise EnrichmentDiagnosticError(
-                "Xiaocao recorded media URL binding failed",
+                "Xiaocao live source identity is invalid",
                 category="contract_error",
-                code="recorded_media_url_binding_invalid",
+                code="xiaocao_live_source_identity_invalid",
                 stage="compressed_capture",
             ) from exc
         if (
@@ -1744,7 +1420,6 @@ class XiaocaoWechatLiveSubscription:
                 item["capture_job_id"],
                 opencli_session=opencli_session,
                 opencli_profile=opencli_profile,
-                recorded_media_url=self._media_url_if_needed(item),
             )
         if (
             state.get("event") == "cloud_handoff_published"
