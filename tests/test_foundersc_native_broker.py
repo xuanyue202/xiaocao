@@ -1887,6 +1887,70 @@ def test_native_fund_equation_rejects_available_cash_without_sell_fill() -> None
         )
 
 
+def test_native_fund_equation_accepts_same_day_buy_cash_as_available() -> None:
+    native = FakeNative()
+    native.position_summary.update(
+        {
+            "资产": "97245.61",
+            "股票市值": "43054.60",
+            "余额": "54196.01",
+            "可用": "54191.01",
+            "可取": "54191.01",
+        }
+    )
+    native.trades.append(
+        {
+            "证券代码": "600059",
+            "证券名称": "古越龙山",
+            "买卖标志": "买入",
+            "成交价格": "9.34",
+            "成交数量": "800",
+            "成交类型": "成交",
+            "成交编号": "1388274",
+            "委托编号": "6000331",
+        }
+    )
+    adapter = _adapter(native)
+    now = datetime.fromisoformat(OBSERVED_AT.replace("Z", "+00:00"))
+
+    snapshot = adapter.read_live_account_snapshot(
+        trade_date="2026-08-30",
+        expected_fund_account_fingerprint="123******890",
+        now=now,
+    )
+
+    assert snapshot["funds_summary"]["asset_equation_cash_field"] == (
+        "available_cash"
+    )
+    assert native.prepare_calls == 0
+    assert native.submit_calls == 0
+    assert native.cancel_calls == 0
+
+
+def test_native_fund_equation_rejects_buy_shaped_available_cash_without_buy_fill(
+) -> None:
+    native = FakeNative()
+    native.position_summary.update(
+        {
+            "资产": "97245.61",
+            "股票市值": "43054.60",
+            "余额": "54196.01",
+            "可用": "54191.01",
+            "可取": "54191.01",
+        }
+    )
+
+    with pytest.raises(
+        FounderscNativeAXError,
+        match="AVAILABLE_CASH_BUY_UNPROVEN",
+    ):
+        _adapter(native).read_live_account_snapshot(
+            trade_date="2026-08-30",
+            expected_fund_account_fingerprint="123******890",
+            now=datetime.fromisoformat(OBSERVED_AT.replace("Z", "+00:00")),
+        )
+
+
 @pytest.mark.parametrize(
     ("field", "value", "reason"),
     [

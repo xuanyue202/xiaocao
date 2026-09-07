@@ -102,10 +102,11 @@ and submit capabilities, and local reconciliation capability. The separate
 `资金明细` tab is diagnostic only and must not gate submission.
 
 The normal branch requires `余额+股票市值=资产` and
-`0<=可取<=可用<=余额`. For a three-table account snapshot, after the same
-snapshot's today-trades table proves a positive same-day SELL, proceeds may be
-tradable before settlement and withdrawal; only then may the alternate branch
-require `可用+股票市值=资产` and `0<=可取<=余额<=可用`. Live allocation
+`0<=可取<=可用<=余额`. For a three-table account snapshot, the alternate
+`可用+股票市值=资产` branch requires a positive same-day fill in that same
+snapshot: SELL must satisfy `0<=可取<=余额<可用`, while BUY must satisfy
+`0<=可取<=可用<余额`. Direction, price and quantity must be proven by the
+exact today-trades row; a cancel or opposite-side fill cannot prove the branch. Live allocation
 facts remain on the normal cash-balance branch and cannot spend this exception.
 Persist
 `asset_equation_cash_field` as `cash_balance` or `available_cash`. If neither

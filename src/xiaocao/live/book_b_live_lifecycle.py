@@ -217,14 +217,17 @@ def validate_broker_account_snapshot(
             or withdrawable_decimal > available_decimal
         )
     elif asset_equation_cash_field == "available_cash":
-        equation_invalid = (
-            available_decimal + securities_decimal != total_assets_decimal
-            or balance_decimal > available_decimal
-            or withdrawable_decimal > balance_decimal
-        )
+        equation_invalid = available_decimal + securities_decimal != total_assets_decimal
+        expected_side = "SELL" if available_decimal > balance_decimal else "BUY"
+        if available_decimal > balance_decimal:
+            equation_invalid = equation_invalid or withdrawable_decimal > balance_decimal
+        elif balance_decimal > available_decimal:
+            equation_invalid = equation_invalid or withdrawable_decimal > available_decimal
+        else:
+            equation_invalid = True
         if not equation_invalid:
             equation_invalid = not any(
-                _broker_side(row.get("买卖标志")) == "SELL"
+                _broker_side(row.get("买卖标志")) == expected_side
                 and _nonnegative_int(
                     row.get("成交数量"),
                     reason="LIVE_BOOK_B_BROKER_TRADE_FILL_UNPROVEN",
