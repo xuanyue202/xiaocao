@@ -7,6 +7,12 @@ use Computer Use. Exhaust safe self-recovery before asking the user to act.
 1. Read the exact capture and Netdisk ledgers. Bind the existing capture ID,
    Netdisk job ID, target folder, and upload claim state. Never retry an
    uncertain upload or create another session/job.
+   For the repository upload adapter, use its `--inspect-only true` checkpoint
+   from [opencli-baidu-netdisk-upload.md](opencli-baidu-netdisk-upload.md) first.
+   It preserves the adapter-surface uploader and restores only its exact Edge
+   window. The identically named `browser` session is a different surface:
+   its transfer queue cannot clear this upload's uncertain effect. Never
+   reload a retained uploader merely to diagnose it.
 2. Run `opencli daemon status` and `opencli doctor`. A browser command timeout
    is not a user blocker by itself.
 3. Foreground the existing target through the connected Microsoft Edge OpenCLI

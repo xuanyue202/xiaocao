@@ -25,6 +25,66 @@ from xiaocao.kol.netdisk_enrichment import (
 NOW = datetime.fromisoformat("2026-07-20T09:00:00+08:00")
 
 
+@pytest.mark.parametrize("stages,expected", [
+    (["tabs", "select"], "upload_select_failed"),
+    (["folder_scan", "mark_input", "activate"], "upload_activate_failed"),
+    (["attach"], "upload_attachment_uncertain"),
+    (["attach", "receipt"], "upload_attachment_uncertain"),
+])
+def test_upload_failure_preserves_bound_stage_without_claiming_no_effect(stages, expected):
+    stderr = "\n".join(json.dumps({"kind": "xiaocao_upload_stage", "claimId": "job-12345678",
+                                  "stage": stage, "phase": "begin"}) for stage in stages)
+    with pytest.raises(EnrichmentDiagnosticError) as caught:
+        NetdiskEnrichmentService._validate_opencli_upload_template_receipt(
+            SimpleNamespace(returncode=75, stdout="", stderr=stderr),
+            target_name="video.mp4", directory="/课程/自己的课/小草", claim_id="job-12345678")
+    assert caught.value.diagnostic_code == expected
+
+
+def test_upload_watchdog_keeps_exact_claim_stage(tmp_path):
+    stage = json.dumps({"kind": "xiaocao_upload_stage", "claimId": "job-12345678",
+                        "stage": "event_loop", "phase": "begin"}).encode()
+    def timed_out(command, **kwargs):
+        raise subprocess.TimeoutExpired(command, 300, stderr=stage)
+    service = NetdiskEnrichmentService(tmp_path / "out", runner=timed_out)
+    with pytest.raises(EnrichmentDiagnosticError) as caught:
+        service._opencli_upload_template_process(session="site:baidu-netdisk", profile=None,
+            video_path=tmp_path / "video.mp4", target_name="video.mp4", claim_id="job-12345678")
+    assert caught.value.diagnostic_stage == "upload_event_loop"
+
+
+def test_unrelated_stage_does_not_reclassify_historical_upload_failure():
+    stage = json.dumps({"kind": "xiaocao_upload_stage", "claimId": "another-job",
+                        "stage": "select", "phase": "begin"})
+    with pytest.raises(EnrichmentError) as caught:
+        NetdiskEnrichmentService._validate_opencli_upload_template_receipt(
+            SimpleNamespace(returncode=75, stdout="", stderr=stage),
+            target_name="video.mp4", directory="/课程/自己的课/小草", claim_id="job-12345678")
+    assert not isinstance(caught.value, EnrichmentDiagnosticError)
+
+
+def test_template_recovery_stays_on_adapter_and_clears_only_current_error(tmp_path, monkeypatch):
+    video = tmp_path / "video-compressed.mp4"
+    video.write_bytes(b"real-video")
+    service = NetdiskEnrichmentService(tmp_path / "out", runner=_runner, now=lambda: NOW,
+                                       use_opencli_upload_template=True)
+    job = service.prepare(video)
+    service.store.append({**job, "event":"netdisk_upload_failed", "status":"upload_claimed",
+                          "reason":"browser_command_failed", "failure_stage":"opencli_cdp"})
+    def wrong_surface(**kwargs):
+        raise AssertionError("browser-surface inspection during adapter submission")
+    monkeypatch.setattr(service, "_assert_opencli_folder", wrong_surface)
+    row = {"status":"upload_submitted", "directory":service.netdisk_directory,
+           "targetName":video.name, "claimId":job["job_id"], "exactCountBefore":0,
+           "uploaded":True, "uploadTarget":"input[data-opencli-baidu-upload-claim]"}
+    monkeypatch.setattr(service, "_opencli_upload_template_process", lambda **kwargs:
+        SimpleNamespace(returncode=0, stdout=json.dumps([row]), stderr=""))
+    result = service._submit_opencli_upload(job["job_id"], session="site:baidu-netdisk", profile=None)
+    assert result["event"] == "netdisk_upload_started"
+    assert "reason" not in result and "failure_stage" not in result
+    assert "netdisk_upload_failed" in (tmp_path / "out/events.jsonl").read_text()
+
+
 def test_template_file_chooser_timeout_preserves_pre_attachment_diagnostic():
     result = SimpleNamespace(returncode=1, stdout="", stderr=(
         "Page.fileChooserOpened not received within 5s — the input may not have opened a file chooser"

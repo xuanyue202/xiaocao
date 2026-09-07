@@ -724,6 +724,17 @@ class NetdiskEnrichmentService:
                 },
             )
         except subprocess.TimeoutExpired as exc:
+            # subprocess.run has stopped this child. Keep its claim-bound stage
+            # evidence rather than collapsing the outer watchdog into UNKNOWN.
+            stderr = (
+                exc.stderr.decode("utf-8", errors="replace")
+                if isinstance(exc.stderr, bytes) else (exc.stderr or "")
+            )
+            if "xiaocao_upload_stage" in stderr:
+                self._validate_opencli_upload_template_receipt(
+                    subprocess.CompletedProcess(command, 75, stdout="", stderr=stderr),
+                    target_name=target_name, directory=self.netdisk_directory, claim_id=claim_id,
+                )
             raise EnrichmentError("OpenCLI upload template timed out") from exc
 
     @staticmethod
@@ -748,6 +759,30 @@ class NetdiskEnrichmentService:
                 raise EnrichmentError(
                     "OpenCLI local file access denied; enable "
                     "Allow access to file URLs for the OpenCLI extension"
+                )
+            stages = []
+            for line in str(result.stderr).splitlines():
+                try:
+                    event = json.loads(line)
+                except (TypeError, ValueError):
+                    continue
+                if (isinstance(event, dict) and event.get("kind") == "xiaocao_upload_stage"
+                        and event.get("claimId") == claim_id
+                        and event.get("phase") in {"begin", "end"}
+                        and event.get("stage") in {"tabs", "select", "navigate", "page_state", "foreground", "event_loop", "folder_scan",
+                                                    "mark_input", "activate", "attach", "receipt"}):
+                    stages.append(event["stage"])
+            if stages:
+                stage = stages[-1]
+                uncertain = "attach" in stages or "receipt" in stages
+                raise EnrichmentDiagnosticError(
+                    f"OpenCLI upload failed at {stage}; " + (
+                        "file attachment outcome is uncertain; reconcile before continuation"
+                        if uncertain else "file attachment stage was not reached"
+                    ),
+                    category="transport_error",
+                    code="upload_attachment_uncertain" if uncertain else f"upload_{stage}_failed",
+                    stage=f"upload_{stage}", exit_code=int(result.returncode),
                 )
             raise EnrichmentError("OpenCLI Baidu Netdisk upload template failed")
         try:
@@ -1187,6 +1222,7 @@ class NetdiskEnrichmentService:
         job_id: str,
         *,
         reason: object,
+        diagnostic: EnrichmentDiagnosticError | None = None,
     ) -> None:
         safe_reason = (
             reason
@@ -1207,6 +1243,8 @@ class NetdiskEnrichmentService:
                 ),
                 "reason": safe_reason,
                 "error_type": "EnrichmentError",
+                **({"failure_stage": diagnostic.diagnostic_stage,
+                    "diagnostic": _opencli_diagnostic(diagnostic)} if diagnostic else {}),
                 "updated_at": self._time().isoformat(timespec="microseconds"),
             })
 
@@ -1219,7 +1257,11 @@ class NetdiskEnrichmentService:
     ) -> dict[str, Any]:
         current = self.store.latest(job_id)
         video_path = Path(str(current["video_path"])).expanduser().resolve()
-        self._assert_opencli_folder(session=session, profile=profile)
+        # The template validates its own adapter-surface folder. A browser-
+        # surface check here activates a different window and proves nothing
+        # about the retained uploader.
+        if not self.use_opencli_upload_template:
+            self._assert_opencli_folder(session=session, profile=profile)
         try:
             source = video_path.open("rb")
         except OSError as exc:
@@ -1249,6 +1291,7 @@ class NetdiskEnrichmentService:
                 except EnrichmentError as exc:
                     self._record_opencli_upload_failure(
                         job_id,
+                        diagnostic=exc if isinstance(exc, EnrichmentDiagnosticError) else None,
                         reason=(
                             "file_chooser_not_opened"
                             if getattr(exc, "diagnostic_code", "") == "file_chooser_not_opened"
@@ -1326,6 +1369,7 @@ class NetdiskEnrichmentService:
                 "upload_started_at": now,
                 "updated_at": now,
             }
+            _clear_transient_failures(row)
             self.store.append(row)
             return {**row, "idempotent_replay": False}
 
