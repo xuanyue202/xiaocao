@@ -153,6 +153,23 @@ def test_repair_validation_maps_wechat_source_failure_to_exact_mailbox_profile(
     assert service._expected_profile(context) == "kol_mailbox_exact_resume"
 
 
+def test_repair_validation_maps_mailbox_wrapped_browser_failure_to_exact_profile(
+    tmp_path,
+) -> None:
+    service = RepairValidationService(
+        tmp_path,
+        ledger=RepairValidationLedger(tmp_path / "repair-validation.jsonl"),
+    )
+    context = {
+        **_context(),
+        "category": "transport_error",
+        "code": "opencli_command_failed",
+        "stage": "browser_command",
+    }
+
+    assert service._expected_profile(context) == "kol_mailbox_exact_resume"
+
+
 @pytest.mark.parametrize(
     ("category", "code", "stage", "declared_profile"),
     [

@@ -1321,6 +1321,45 @@ _XIAOCAO_WECHAT_COMPRESSED_CAPTURE_REPAIR_PROFILE = (
 _XIAOCAO_WECHAT_CLOUD_HANDOFF_REPAIR_PROFILE = (
     "kol_xiaocao_wechat_live_cloud_handoff"
 )
+
+_MAILBOX_BROWSER_REPAIR_FAILURES = frozenset({
+    ("transport_error", "opencli_command_failed"),
+    ("timeout", "opencli_timeout"),
+    ("timeout", "opencli_cdp_timeout"),
+    ("protocol_error", "opencli_invalid_json"),
+    ("protocol_error", "opencli_non_object"),
+    ("provider_contract_error", "opencli_tab_activation_failed"),
+})
+_MAILBOX_BROWSER_REPAIR_STAGES = frozenset({
+    "browser_command",
+    "browser_open",
+    "browser_eval",
+    "browser_wait",
+})
+
+
+def _canonical_mailbox_browser_repair_profile(
+    context: Mapping[str, Any],
+) -> str | None:
+    """Keep mailbox-wrapped business browser failures resumable."""
+
+    if (
+        str(context.get("targeted_test_profile") or "")
+        != "kol_mailbox_exact_resume"
+    ):
+        return None
+    if (
+        str(context.get("stage") or "") in _MAILBOX_BROWSER_REPAIR_STAGES
+        and (
+            str(context.get("category") or ""),
+            str(context.get("code") or ""),
+        )
+        in _MAILBOX_BROWSER_REPAIR_FAILURES
+    ):
+        return "kol_mailbox_exact_resume"
+    return None
+
+
 _SUBSCRIPTION_VIDEO_SOURCE_REPAIR_PROFILE = (
     "kol_subscription_video_source_run"
 )
@@ -1591,6 +1630,11 @@ class RepairValidationService:
         )
         if subscription_source_profile is not None:
             return subscription_source_profile
+        mailbox_browser_profile = _canonical_mailbox_browser_repair_profile(
+            context
+        )
+        if mailbox_browser_profile is not None:
+            return mailbox_browser_profile
         if (
             str(context.get("category") or "")
             in {"configuration", "source_error", "timeout"}
