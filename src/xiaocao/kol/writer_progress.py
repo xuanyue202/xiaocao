@@ -1467,6 +1467,10 @@ def _canonical_shared_lv_listing_validation_repair_profile(
 _WECHAT_OFFICIAL_SOURCE_REPAIR_PROFILE = (
     "kol_wechat_official_accounts_source_run"
 )
+_WECHAT_OFFICIAL_SOURCE_REPAIR_PROFILE_ALIASES = frozenset({
+    _WECHAT_OFFICIAL_SOURCE_REPAIR_PROFILE,
+    "kol_wechat_official_accounts_wechat_official_scan",
+})
 
 
 def _canonical_wechat_official_source_repair_profile(
@@ -1475,17 +1479,24 @@ def _canonical_wechat_official_source_repair_profile(
     if (
         str(context.get("adapter") or "") == "wechat_official_accounts"
         and str(context.get("targeted_test_profile") or "")
-        == _WECHAT_OFFICIAL_SOURCE_REPAIR_PROFILE
+        in _WECHAT_OFFICIAL_SOURCE_REPAIR_PROFILE_ALIASES
         and (
             str(context.get("category") or ""),
             str(context.get("code") or ""),
             str(context.get("stage") or ""),
         )
-        == (
-            "source_error",
-            "source_temporarily_unavailable",
-            "source_run",
-        )
+        in {
+            (
+                "source_error",
+                "source_temporarily_unavailable",
+                "source_run",
+            ),
+            (
+                "configuration",
+                "wechat_cli_missing",
+                "wechat_official_scan",
+            ),
+        }
     ):
         return _WECHAT_OFFICIAL_SOURCE_REPAIR_PROFILE
     return None
@@ -1768,6 +1779,11 @@ class RepairValidationService:
                     _XIAOCAO_WECHAT_COMPRESSED_CAPTURE_REPAIR_PROFILE,
                     _XIAOCAO_WECHAT_CLOUD_HANDOFF_REPAIR_PROFILE,
                 }
+            )
+            and not (
+                profile == _WECHAT_OFFICIAL_SOURCE_REPAIR_PROFILE
+                and declared_profile
+                in _WECHAT_OFFICIAL_SOURCE_REPAIR_PROFILE_ALIASES
             )
             and not (
                 profile == _SUBSCRIPTION_VIDEO_SOURCE_REPAIR_PROFILE

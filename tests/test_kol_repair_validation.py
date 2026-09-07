@@ -997,8 +997,29 @@ def test_repair_validation_accepts_shared_lv_listing_validation_profile(
     assert receipt.failure_fingerprint == "3" * 64
 
 
+@pytest.mark.parametrize(
+    ("category", "code", "stage", "targeted_test_profile"),
+    [
+        (
+            "source_error",
+            "source_temporarily_unavailable",
+            "source_run",
+            "kol_wechat_official_accounts_source_run",
+        ),
+        (
+            "configuration",
+            "wechat_cli_missing",
+            "wechat_official_scan",
+            "kol_wechat_official_accounts_wechat_official_scan",
+        ),
+    ],
+)
 def test_repair_validation_accepts_wechat_official_accounts_source_profile(
     tmp_path,
+    category: str,
+    code: str,
+    stage: str,
+    targeted_test_profile: str,
 ) -> None:
     context = {
         "adapter": "wechat_official_accounts",
@@ -1006,12 +1027,10 @@ def test_repair_validation_accepts_wechat_official_accounts_source_profile(
         "content_sha256": "5" * 64,
         "failure_fingerprint": "6" * 64,
         "failure_revision": FAILURE_REVISION,
-        "category": "source_error",
-        "code": "source_temporarily_unavailable",
-        "stage": "source_run",
-        "targeted_test_profile": (
-            "kol_wechat_official_accounts_source_run"
-        ),
+        "category": category,
+        "code": code,
+        "stage": stage,
+        "targeted_test_profile": targeted_test_profile,
     }
 
     expected_command = (
