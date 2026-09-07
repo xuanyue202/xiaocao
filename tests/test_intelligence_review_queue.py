@@ -124,6 +124,7 @@ def test_agent_review_rewrite_does_not_invalidate_immutable_live_freeze(
         strategy_sha="d" * 40,
     )
     freeze = Path(queue["freeze_binding"]["snapshot_path"])
+    freeze_before = freeze.read_bytes()
     write_review_queue(
         live / f"intelligence_review_queue_{market_date}.json",
         queue,
@@ -154,6 +155,14 @@ def test_agent_review_rewrite_does_not_invalidate_immutable_live_freeze(
     assert queue["freeze_binding"]["snapshot_artifact"] == (
         "immutable_book_b_live_freeze_v1"
     )
+    rebuilt = build_review_queue(
+        live_dir=live,
+        market_date=market_date,
+        limit=8,
+        strategy_sha="d" * 40,
+    )
+    assert rebuilt["freeze_binding"]["snapshot_sha256"] == queue["freeze_binding"]["snapshot_sha256"]
+    assert freeze.read_bytes() == freeze_before
 
 
 def test_review_queue_refuses_to_overwrite_a_different_live_freeze(
@@ -169,7 +178,7 @@ def test_review_queue_refuses_to_overwrite_a_different_live_freeze(
 
     _jsonl(
         live / "signal_snapshots.jsonl",
-        [{**original, "score_source": "later_agent_review"}],
+        [{**original, "mode_state": "COLD"}],
     )
 
     with pytest.raises(RuntimeError, match="BOOK_B_LIVE_FREEZE_IMMUTABILITY_VIOLATION"):

@@ -22,6 +22,7 @@ from zoneinfo import ZoneInfo
 
 from .book_b_allocation import BookBAllocationFacts, allocate_frozen_rows, validate_allocation_rows
 from .account_risk import AccountRiskReceipt
+from . import kol_policy
 from .live_decision_support import (
     bind_plan_audit, buy_cap, evaluate_live_risk, read_plan_audit, read_policy,
 )
@@ -785,8 +786,13 @@ def _policy_allocation(rows: list[dict], allocation: BookBAllocationFacts,
     error = allocation.validation_error()
     if error:
         raise ValueError(error)
-    evidence = {str(row["code"]): buy_cap(decision, risk, str(row["code"]), allocation.deploy_factor)
-                for row in rows}
+    evidence = {
+        str(row["code"]): {
+            **buy_cap(decision, risk, str(row["code"]), allocation.deploy_factor),
+            "kol_mode_override": row.get("kol_mode_override"),
+        }
+        for row in rows
+    }
     factor = min([allocation.deploy_factor, risk.deploy_factor] +
                  [item["scale"] for item in evidence.values() if not item["skip"]])
     effective = replace(allocation, deploy_factor=factor)
@@ -1359,6 +1365,15 @@ def run_book_b_live_morning(
             # reply. Do not reuse a pre-action NAV at the next risk boundary.
             snapshot_cache = None
 
+    def policy() -> dict:
+        decision = read_policy(config.policy_root, now())
+        if (review_receipt is not None and review_receipt.get("status") == "timed_out"
+                and review_requested_at is not None and decision.get("status") == "validated"
+                and datetime.fromisoformat(decision["record"]["decision"]["as_of"].replace("Z", "+00:00")) < review_requested_at):
+            return {"status": "neutral", "book": "B", "runtime": "live",
+                    "reason": "LIVE_REVIEW_TIMEOUT_NEUTRAL_FALLBACK", "decision_id": None}
+        return decision
+
     def support() -> tuple[dict, AccountRiskReceipt]:
         clock = now()
         risk = risk_provider(clock) if risk_provider is not None else evaluate_live_risk(
@@ -1368,13 +1383,7 @@ def run_book_b_live_morning(
             receipt_root=config.policy_root.parent / "account_risk",
             now_provider=now,
         )
-        decision = read_policy(config.policy_root, now())
-        if (review_receipt is not None and review_receipt.get("status") == "timed_out"
-                and review_requested_at is not None and decision.get("status") == "validated"
-                and datetime.fromisoformat(decision["record"]["decision"]["as_of"].replace("Z", "+00:00")) < review_requested_at):
-            decision = {"status": "neutral", "book": "B", "runtime": "live",
-                        "reason": "LIVE_REVIEW_TIMEOUT_NEUTRAL_FALLBACK", "decision_id": None}
-        return decision, risk
+        return policy(), risk
 
     def allow_new_risk(plan: TradePlan, original: dict | None = None) -> bool:
         if config.policy_root is None or not _plan_requires_prepare(config, plan):
@@ -1383,10 +1392,21 @@ def run_book_b_live_morning(
         prior_factor = float(audit["effective_deploy_factor"]) if audit else 1.0
         decision, risk = support()
         adjustment = buy_cap(decision, risk, plan.code, allocation.deploy_factor)
-        allowed = not adjustment["skip"] and adjustment["effective_deploy_factor"] >= prior_factor
+        mode_override = audit.get("kol_mode_override") if audit else None
+        mode_binding_ok = (
+            mode_override is None
+            or (
+                decision.get("status") == "validated"
+                and decision.get("decision_id") == mode_override.get("decision_id")
+                and decision.get("decision_sha256") == mode_override.get("decision_sha256")
+            )
+        )
+        allowed = (mode_binding_ok and not adjustment["skip"]
+                   and adjustment["effective_deploy_factor"] >= prior_factor)
         policy_consumptions.append({"plan_id": plan.plan_id, "plan_hash": plan.plan_hash,
                                     "stage": "new_intent" if original is not None else "before_action",
-                                    "allowed": allowed, **adjustment})
+                                    "allowed": allowed, "mode_binding_ok": mode_binding_ok,
+                                    **adjustment})
         return allowed
 
     try:
@@ -1417,7 +1437,53 @@ def run_book_b_live_morning(
             if not frozen_rows:
                 receipt = _no_action_receipt(config)
             else:
-                rows = _eligible_buy_rows(frozen_rows)
+                review_candidates = [
+                    row for row in frozen_rows
+                    if row.get("book") == "B"
+                    and row.get("is_live") is True
+                    and str(row.get("mode_state") or "") != "UNKNOWN"
+                    and not str(row.get("code") or "").endswith(".BJSE")
+                    and ("executable_fillable" not in row or row.get("executable_fillable") is True)
+                ]
+                if config.policy_root is not None and review_rendezvous is not None:
+                    new_candidates = [row for row in review_candidates if _restore_durable_plan_for_row(
+                            config, row, strategy_sha=str(dated_freeze_receipt["strategy_sha"]),
+                        ) is None]
+                    if new_candidates:
+                        current = now().astimezone(ZoneInfo("Asia/Shanghai"))
+                        review_requested_at = current
+                        if (current.hour, current.minute) < (11, 30):
+                            deadline = current.replace(hour=11, minute=30, second=0, microsecond=0)
+                        elif (13, 0) <= (current.hour, current.minute) < (14, 57):
+                            deadline = current.replace(hour=14, minute=57, second=0, microsecond=0)
+                        else:
+                            deadline = current
+                        request = {
+                            "schema_version": "book-b-live-review-request.v1",
+                            "book": "B", "runtime": "live", "trade_date": config.trade_date,
+                            "freeze_path": str(config.freeze_path),
+                            "freeze_sha256": dated_freeze_receipt["snapshot_sha256"],
+                            "strategy_sha": dated_freeze_receipt["strategy_sha"],
+                            "policy_root": str(config.policy_root),
+                            "candidate_scope": "all_frozen_non_unknown_modes",
+                            "candidates": [dict(row) for row in new_candidates],
+                            "requested_at": current.isoformat(), "entry_deadline": deadline.isoformat(),
+                            "max_wait_seconds": min(120.0, max(0.0, (deadline - current).total_seconds()))
+                                if current.date().isoformat() == config.trade_date else 0.0,
+                        }
+                        review_receipt = review_rendezvous(request)
+                        if not isinstance(review_receipt, dict):
+                            raise ValueError("LIVE_REVIEW_RENDEZVOUS_RECEIPT_INVALID")
+                        if now() >= deadline:
+                            raise ValueError("LIVE_REVIEW_ENTRY_WINDOW_CLOSED")
+                selection_decision = policy() if config.policy_root is not None else {
+                    "status": "neutral", "book": "B", "runtime": "live",
+                    "reason": "POLICY_NOT_CONFIGURED", "decision_id": None,
+                }
+                prioritized_rows = kol_policy.prioritize_xiaocao_modes(
+                    frozen_rows, selection_decision,
+                )
+                rows = _eligible_buy_rows(prioritized_rows)
                 if not rows:
                     receipt = _no_action_receipt(config)
                 else:
@@ -1426,36 +1492,6 @@ def run_book_b_live_morning(
                         all_restoring = all(_restore_durable_plan_for_row(
                             config, row, strategy_sha=str(dated_freeze_receipt["strategy_sha"]),
                         ) is not None for row in rows)
-                    if config.policy_root is not None and review_rendezvous is not None:
-                        new_candidates = [row for row in rows if _restore_durable_plan_for_row(
-                            config, row, strategy_sha=str(dated_freeze_receipt["strategy_sha"]),
-                        ) is None]
-                        if new_candidates:
-                            current = now().astimezone(ZoneInfo("Asia/Shanghai"))
-                            review_requested_at = current
-                            if (current.hour, current.minute) < (11, 30):
-                                deadline = current.replace(hour=11, minute=30, second=0, microsecond=0)
-                            elif (13, 0) <= (current.hour, current.minute) < (14, 57):
-                                deadline = current.replace(hour=14, minute=57, second=0, microsecond=0)
-                            else:
-                                deadline = current
-                            request = {
-                                "schema_version": "book-b-live-review-request.v1",
-                                "book": "B", "runtime": "live", "trade_date": config.trade_date,
-                                "freeze_path": str(config.freeze_path),
-                                "freeze_sha256": dated_freeze_receipt["snapshot_sha256"],
-                                "strategy_sha": dated_freeze_receipt["strategy_sha"],
-                                "policy_root": str(config.policy_root),
-                                "candidates": [dict(row) for row in new_candidates],
-                                "requested_at": current.isoformat(), "entry_deadline": deadline.isoformat(),
-                                "max_wait_seconds": min(120.0, max(0.0, (deadline - current).total_seconds()))
-                                    if current.date().isoformat() == config.trade_date else 0.0,
-                            }
-                            review_receipt = review_rendezvous(request)
-                            if not isinstance(review_receipt, dict):
-                                raise ValueError("LIVE_REVIEW_RENDEZVOUS_RECEIPT_INVALID")
-                            if now() >= deadline:
-                                raise ValueError("LIVE_REVIEW_ENTRY_WINDOW_CLOSED")
                     if config.policy_root is not None and read_allocation_facts is not None and not all_restoring:
                         allocation_payload = read_allocation_facts()
                         allocation = _load_allocation(config, allocation_payload)
@@ -1464,7 +1500,7 @@ def run_book_b_live_morning(
                     effective_allocation = allocation
                     policy_evidence = None
                     if config.policy_root is not None:
-                        decision, risk = support()
+                        decision, risk = selection_decision, support()[1]
                         effective_allocation, policy_evidence = _policy_allocation(rows, allocation, decision, risk)
                         capsule = json.loads(config.allocation_facts_path.read_text(encoding="utf-8"))
                         policy_evidence["allocation_capsule_sha256"] = capsule["allocation_capsule_sha256"]

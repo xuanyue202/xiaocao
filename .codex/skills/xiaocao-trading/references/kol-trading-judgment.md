@@ -55,12 +55,17 @@ different writers. Do not ask the user to repeat the 2026-09-06 authorization.
 
 ## Publish and consume
 
-The draft uses `kol-trading-decision.v1` (see `kol_policy.py`): exact Book/runtime,
-UTC as-of/expiry, source refs, fresh current checks, rationale/invalidation
-conditions and only `buy_scale` 0..1, `skip_codes`, `exit_codes`. `runtime=both`
-is valid only when both accounts were actually checked. Otherwise publish
-separate decisions. Neutral is valid when justified; do not manufacture a trade
-to demonstrate absorption. Limit single-session hypotheses accordingly.
+The baseline draft uses `kol-trading-decision.v1` (see `kol_policy.py`): exact
+Book/runtime, UTC as-of/expiry, source refs, fresh current checks,
+rationale/invalidation conditions and only `buy_scale` 0..1, `skip_codes`,
+`exit_codes`. Use `kol-trading-decision.v2` only when Xiaocao explicitly says to
+follow a named mode now. Its `xiaocao_mode_overrides` entries must bind the exact
+mode, a cited source report whose `author_id=kol-xiaocao`, a faithful source
+quote, and `scope=frozen_candidates_only`. Do not infer an override from a
+customer-service victory message, a later limit-up screenshot, generic praise,
+another KOL, or a merely related theme. `runtime=both` is valid only when both
+accounts were actually checked. Otherwise publish separate decisions. Neutral
+is valid when justified; do not manufacture a trade to demonstrate absorption.
 
 The independent review binds `decision_sha256`, a different reviewer agent ID,
 `reviewed_at`, `status=approved`, and true source-fidelity/coverage/applicability/
@@ -89,6 +94,14 @@ the producer or mutate its freeze. If the review misses its budget, preserve
 the fallback receipt and existing timing; do not backdate or replay orders.
 Paper uses the existing review window before `paper_record`; finish KOL review
 before releasing the older structured-review rendezvous when time permits.
+The request includes every same-day frozen, live, non-BJSE candidate whose mode
+state is not UNKNOWN, not only the old ★E rows. A validated Xiaocao override is
+consumed before normal rotation: one frozen name per explicitly followed mode,
+at most three total slots, with the original COLD/eligibility/star fields and
+decision/source hashes retained in the derived consumer row. It may restore
+COLD only. UNKNOWN, absent codes, explicit unfillability, risk/capital gates and
+broker exact-once rules remain fail-closed. Missing, stale or invalid v2 data
+falls back to the ordinary immutable selection; never late-run a missed order.
 
 Intraday: existing necessary exit/reconcile work takes priority. Run each
 scheduled paper/live checkpoint once. New source review may follow it; a newly

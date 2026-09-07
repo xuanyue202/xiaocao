@@ -1,6 +1,6 @@
 # 小草运营契约（Operating Contract, SSOT）
 
-**版本**：4.3
+**版本**：4.4
 **状态**：现行
 **适用范围**：所有 paper / 未来 real 的实盘环（live_recommend → paper_record → live_monitor → eod）与回测
 **关联实现**：`src/xiaocao/live/{safety,capital_keychain,foundersc_native_ax,foundersc_native_broker,trading_execution,book_b_live_lifecycle,book_b_live_intraday}.py`、`src/xiaocao/live/intelligence_policy.py`、`src/xiaocao/strategy/{mode_switch,trend_rules,kol_reference}.py`、`native/foundersc_ax_executor/`、`kronos_screen/scripts/{capture_signals,forward_eval,paper_record,settle_book_a,settle_book_t,decompose_pnl,quality_governor}.py`、`scripts/{book_b_live_morning,book_b_live_intraday,live_monitor,research_mode_switch_replay}.py`
@@ -31,7 +31,7 @@
 
 **MUST NOT（判断先验）**：不得让 playbook / REGIME_TIMELINE / xiaocao_hypotheses.jsonl 的先验进入 fill/stop/记账/安全，或据此**自动调任何 param/threshold/profile/model**。candidate 假设**不是 verdict**，对脊柱权威 = 0；唯一升级路径 = 过 `research_run.py` 护栏 → `kronos_screen/HYPOTHESES.jsonl` → §10 人工门。
 
-### 2a. 已授权的有界 KOL 当下判断（2026-09-06）
+### 2a. 已授权的有界 KOL 当下判断（2026-09-07）
 
 用户确认新增判断接口，不要求每次当下判断先完成研究 PASS；这不把原始
 KOL 断言、候选假设或报告升级为策略真值，也不替代永久参数升级的 §10 门。
@@ -39,16 +39,22 @@ KOL 断言、候选假设或报告升级为策略真值，也不替代永久参�
 不得仅按持仓名称或关键词裁剪信息。灰常亮报告及观点/评估/关系是事实源，
 本地只保存可重建的 hash-bound 缓存；远端发现仅能证明已登记 ID 的覆盖。
 
-语义分析产出 `kol-trading-decision.v1`，由不同 Agent 完整复核来源忠实性、
+语义分析产出兼容的 `kol-trading-decision.v1/v2`，由不同 Agent 完整复核来源忠实性、
 重要观点覆盖、当下适用性及反证，并绑定精确 decision hash。
 `kol_policy.py` 仅确定性解释这个受限接口，不自行理解自然语言或生成信号：
 
 - Book B 模拟/实盘：既有合格候选的买入缩放 `0..1`、精确代码跳过，以及
-  既有可卖 lot 的 `KOL_DISCRETIONARY_EXIT`。不得增加标的、席位、模式、
-  本金、杠杆或原预算上限；跳过后的槽位留现金。Book T/KOL-US 不因此新增
-  实盘或确定性执行权限。
-- 买入仍须原 ★E/ACTIVE-PROVISIONAL/板块/整手/资金资格及所有交易安全门；
-  KOL 因子只进一步约束基线，不修改冻结行或已持久化 intent。新判断不能
+  既有可卖 lot 的 `KOL_DISCRETIONARY_EXIT`。此外，只有来源 `author_id` 精确为
+  `kol-xiaocao`、引用原文片段并经独立复核的 v2 `xiaocao_mode_overrides`，可把
+  小草当下明确要求跟随的模式提到模式轮动之前。它只在同日不可变 Book-B
+  freeze 已有候选中每模式取一只，最多仍为三席位；可覆盖历史收益造成的
+  `COLD`，不得恢复证据缺失的 `UNKNOWN`、北交所、不可成交行或新增代码。
+  不得增加席位、本金、杠杆或原预算上限；跳过后的槽位留现金。Book T/KOL-US
+  不因此新增实盘或确定性执行权限。
+- 普通买入仍须原 ★E/ACTIVE-PROVISIONAL；上述小草显式模式跟随是唯一例外，
+  只生成带原状态、来源 report、decision hash 的消费派生行，不改写 freeze。
+  两者都继续受板块/整手/资金、行情新鲜度、涨跌停可成交性及所有交易安全门。
+  新判断不能
   重建旧订单；已有可能副作用优先同计划 reconcile，未知写动作永不重放。
 - KOL 退出允许在合法盘中检查点提出，但必须再次核验正确 Book/runtime、
   来源/审核 hash、精确代码和当前时效，且仍受 T+1、可卖量、报价、流动性、
@@ -247,7 +253,7 @@ KOL 断言、候选假设或报告升级为策略真值，也不替代永久参�
 - **无未来信息与证据口径**：D 日信号在 D+1 收盘结算，最早只能进入 D+2 早盘的模式判断。正式门依次检查首个样本充足的 20/60/120 交易日窗口，最低活跃日/信号数分别为 8/12、15/20、8/10。模式信号日保留已完成回放验证的 1/2/3 信号 25%/45%/50% 证据权重；模式相对同日全可执行候选池和四指数的 alpha 必须各自满足单侧 80% 下置信界大于 0 才为 `ACTIVE`，否则为 `COLD`。四指数证据缺失或样本不足为 `UNKNOWN`。
 - **快速升格与冷却**：最近 5 日至少有 3 个活跃日、5 个信号，候选池/四指数 alpha 均值为正且各自正 alpha 日占多数时，模式直接升为 `ACTIVE`。正式 `ACTIVE` 若同一样本地板下任一双基准 alpha 均值转为非正，则降为 `PROVISIONAL`，不是一票否决；未满足直接升格但剔除最好日后双 alpha 仍为正的模式保留 `PROVISIONAL` 入口。所有可交易模式每日最多贡献排名第一的 1 只；`COLD/UNKNOWN` 只留 shadow。
 - **近期健康传感器**：晨报和 snapshot 额外记录 `mode_fast_health`。最近至少 3 个模式日出现均值转差或多数 alpha 日转差时可提前标记 `EARLY_WARNING/DETERIORATING`，包括尚未达到 5 信号硬冷却地板、或均值仍被单个 winner 支撑的情况；该字段固定 `shadow_only`，不能改变资格、仓位或排序。
-- **门内排序**：通过模式硬门后统一按 `0.50×rank_score分位 + 0.25×K分位 + 0.25×P分位` 排序；`rank_score` 中的模式置信度必须取同一可执行资金加权候选池/四指数 alpha 的保守侧重建，禁止回退理论近期收益或 `mode_history`。K/P、环境适配、小草评分和 AI 情报默认都没有恢复失效模式的权限。
+- **门内排序**：通过模式硬门后统一按 `0.50×rank_score分位 + 0.25×K分位 + 0.25×P分位` 排序；`rank_score` 中的模式置信度必须取同一可执行资金加权候选池/四指数 alpha 的保守侧重建，禁止回退理论近期收益或 `mode_history`。K/P、环境适配、小草评分和 AI 情报默认都没有恢复失效模式的权限；唯一例外是 §2a 经验证的 `kol-xiaocao` 显式模式跟随，可在同日 freeze 内恢复 `COLD` 并优先于本排序，但不得恢复 `UNKNOWN` 或绕过其他门。
 - **共享实现**：`live_recommend.py`、`capture_signals.py`、`paper_record.py` 与 `research_mode_switch_replay.py` 必须调用 `strategy.mode_switch` 的同一状态机、选择器和整手分配器；不得在回放中复制一套近似逻辑。
 - **AI 情报因子（paper-only P2）**：默认自动化为 `--intelligence-trade shadow`，只记录反事实。显式 `on` 时也只能在已通过资格的 ★E 内重排或移除，不能恢复 `COLD/UNKNOWN`、北交所或非 ★E 候选。关键词 `keyword_score` / 一句话舆情永不参与买入排序。
 - **Agent-review 汇合**：morning 在冻结 evidence 并生成零打分 queue 后进入有上限的 rendezvous；automation agent 只可基于冻结证据写结构化 `agent_review`，不得用关键词脚本冒充判断。超时按 base picks 继续并把支持层标为 degraded，不能无限等待，也不能把 timeout 说成确定性主链失败。
@@ -380,6 +386,7 @@ KOL 断言、候选假设或报告升级为策略真值，也不替代永久参�
 |------|------|------|
 | 4.3 | 2026-09-07 | 修正方正 native 同日 BUY 后的资金语义：三表 account snapshot 在同一成交表证明正数量 BUY、可用资金与证券市值精确闭合且可取<=可用<余额时，允许只读 lifecycle 使用 available-cash 分支；allocation 仍只认常态余额分支，不扩大买入资金或订单权限。 |
 | 4.2 | 2026-09-06 | 用户确认有界 KOL 当下判断接口：已发布来源精确回读、Astra xhigh 分析与独立主审、15 分钟当前核验、Book-B 受限买入/退出及独立实盘/模拟消费；统一高点回撤 10%/20% 试点新增风险预算。原始先验 authority=0、永久参数研究门、既有资金/执行/不可变/精确一次边界保持。 |
+| 4.4 | 2026-09-07 | 用户确认小草当下明确模式跟随高于普通模式轮动：新增 v2 `xiaocao_mode_overrides`，仅允许 `kol-xiaocao` 已引用且独立复核的来源，在同日不可变 Book-B 候选内恢复 COLD、每模式一只且总席位不变；UNKNOWN/BJSE/非冻结代码/资金及交易安全门不被覆盖。 |
 | 1.0 | 2026-06-20 | 首版：架构原则 + book A/B 口径 + 成交模型 + 仓位 + governor + kill-switch + **双钥匙资金边界** + 异常策略 + 不变量。 |
 | 1.1 | 2026-06-21 | §2 登记「判断先验（小草蒸馏）」复利记忆层（playbook / REGIME_TIMELINE / distilled / xiaocao_hypotheses.jsonl）+ 新增 MUST NOT：先验不进脊柱、不自动改参，candidate≠verdict。能力层接入 SKILL.md「Xiaocao Judgment Playbook」节，与 FLYWHEEL.md「判断先验→候选假设」两层假设模型对齐。 |
 | 1.2 | 2026-06-30 | §2 增加 Benchmark/Watchlist/Research Cohort 中间层：承接老师点名、本地标杆与 raw pool 观察样本，authority=0；明确 cohort 不直接进 paper-buy/确定性脊柱，唯一升级路径仍为 research_run 护栏 + §10 人工门。 |

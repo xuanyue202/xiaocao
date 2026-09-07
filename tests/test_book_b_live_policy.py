@@ -27,19 +27,24 @@ from tests.test_book_b_live_lifecycle import _plan, _record_fill, _snapshot, NOW
 MORNING = datetime(2026, 8, 24, 1, 30, tzinfo=timezone.utc)
 
 
-def _publish(root, now, *, scale=1.0, skips=(), exits=(), identifier="d1", runtime="live", lifetime=3600):
+def _publish(root, now, *, scale=1.0, skips=(), exits=(), identifier="d1", runtime="live", lifetime=3600,
+             mode_overrides=()):
     stamp = now.isoformat()
     decision = {
-        "schema_version": "kol-trading-decision.v1", "decision_id": identifier,
+        "schema_version": "kol-trading-decision.v2" if mode_overrides else "kol-trading-decision.v1",
+        "decision_id": identifier,
         "agent_id": "author", "book": "B", "runtime": runtime,
         "as_of": stamp, "valid_until": (now + timedelta(seconds=lifetime)).isoformat(),
         "buy_scale": scale, "skip_codes": list(skips), "exit_codes": list(exits),
         "rationale": "Reviewed test judgment", "invalidation_conditions": ["changed facts"],
         "source_refs": [{"report_id": "test-report", "content_sha256": "a" * 64,
-                         "author_id": "test-kol", "source_published_at": stamp, "received_at": stamp}],
+                         "author_id": "kol-xiaocao" if mode_overrides else "test-kol",
+                         "source_published_at": stamp, "received_at": stamp}],
         "current_checks": [{"claim": "test context", "evidence_ref": "test-evidence",
                             "observed_at": stamp, "verdict": "supports"}],
     }
+    if mode_overrides:
+        decision["xiaocao_mode_overrides"] = list(mode_overrides)
     review = {"status": "approved", "decision_sha256": decision_sha256(decision),
               "reviewer_agent_id": "reviewer", "reviewed_at": stamp,
               "coverage_complete": True, "source_fidelity": True,
@@ -101,6 +106,39 @@ def test_buy_cap_keeps_capsule_freeze_and_independent_intent_audit(tmp_path, sca
     assert audit["decision_sha256"] == published["decision_sha256"]
     assert audit["plan_hash"] == plan.plan_hash
     assert before == (config.freeze_path.read_bytes(), config.allocation_facts_path.read_bytes())
+
+
+def test_explicit_xiaocao_mode_follow_precedes_normal_live_rotation(tmp_path):
+    normal = _frozen_row()
+    followed = {
+        **_frozen_row(),
+        "code": "600001.XSHG",
+        "name": "小草模式候选",
+        "mode": "首板回封",
+        "mode_state": "COLD",
+        "mode_trade_eligible": False,
+        "mode_exec_star": False,
+        "mode_exec_rank": 9999,
+        "mode_exec_candidate_rank": 9999,
+        "mode_exec_target_weight": 0.0,
+    }
+    config = _morning(tmp_path, rows=[normal, followed])
+    _publish(config.policy_root, MORNING, mode_overrides=[{
+        "mode": "首板回封",
+        "source_report_id": "test-report",
+        "source_quote": "明确跟随首板回封模式。",
+        "scope": "frozen_candidates_only",
+    }])
+    seen = []
+    receipt = run_book_b_live_morning(
+        config,
+        execute=_execute_capture(seen),
+        now=lambda: MORNING,
+        risk_provider=_risk,
+    )
+    assert receipt.status == "completed", receipt.reason
+    assert [plan.code for plan in seen][:1] == ["600001.XSHG"]
+    assert {plan.code for plan in seen} == {"600001.XSHG", "000001.XSHE"}
 
 
 @pytest.mark.parametrize("kind", ["skip", "zero", "malformed", "risk_pause"])
@@ -440,6 +478,27 @@ def test_review_request_only_new_candidates_and_bounded_by_entry_window(tmp_path
                            risk_provider=_risk, review_rendezvous=lambda _: pytest.fail("existing intent must not rendezvous"))
     assert len(seen) == 2, recovered.reason
     assert seen[0].plan_hash == seen[1].plan_hash
+
+
+def test_review_request_includes_cold_modes_but_not_unknown(tmp_path):
+    cold = {**_frozen_row(), "code": "600001.XSHG", "mode": "cold-mode",
+            "mode_state": "COLD", "mode_trade_eligible": False,
+            "mode_exec_star": False, "mode_exec_rank": 9999}
+    unknown = {**_frozen_row(), "code": "600002.XSHG", "mode": "unknown-mode",
+               "mode_state": "UNKNOWN", "mode_trade_eligible": False,
+               "mode_exec_star": False, "mode_exec_rank": 9999}
+    config = _morning(tmp_path, rows=[_frozen_row(), cold, unknown])
+    requests = []
+    receipt = run_book_b_live_morning(
+        config,
+        execute=_execute_capture([]),
+        now=lambda: MORNING,
+        risk_provider=_risk,
+        review_rendezvous=lambda request: requests.append(request) or {"status": "completed"},
+    )
+    assert receipt.status == "completed", receipt.reason
+    assert requests[0]["candidate_scope"] == "all_frozen_non_unknown_modes"
+    assert [row["code"] for row in requests[0]["candidates"]] == ["000001.XSHE", "600001.XSHG"]
 
 
 def test_pause_survives_invalid_history_then_repair(tmp_path):

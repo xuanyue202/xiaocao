@@ -168,7 +168,8 @@ def test_intraday_automations_use_explicit_china_market_wall_clock() -> None:
         "RRULE:FREQ=WEEKLY;BYDAY=MO,TU,WE,TH,FR;BYHOUR=9;BYMINUTE=35,45,55"
     )
     assert sparse["rrule"] == (
-        "RRULE:FREQ=WEEKLY;BYDAY=MO,TU,WE,TH,FR;BYHOUR=10,13;BYMINUTE=25,55"
+        "RRULE:FREQ=WEEKLY;BYDAY=MO,TU,WE,TH,FR;"
+        "BYHOUR=9,10,11,13,14;BYMINUTE=0,5,10,15,20,25,30,35,40,45,50,55"
     )
 
 
@@ -178,7 +179,10 @@ def test_all_china_market_automations_use_dtstart_free_local_wall_clock() -> Non
         "xiaocao-daily-morning-execution": ("BYHOUR=9", "BYMINUTE=25"),
         "xiaocao-book-b-live-morning": ("BYHOUR=9", "BYMINUTE=20"),
         "xiaocao-intraday-monitor": ("BYHOUR=9", "BYMINUTE=35,45,55"),
-        "xiaocao-intraday-monitor-05": ("BYHOUR=10,13", "BYMINUTE=25,55"),
+        "xiaocao-intraday-monitor-05": (
+            "BYHOUR=9,10,11,13,14",
+            "BYMINUTE=0,5,10,15,20,25,30,35,40,45,50,55",
+        ),
         "xiaocao-intraday-risk-precheck-1425": ("BYHOUR=14", "BYMINUTE=25"),
         "xiaocao-intraday-monitor-1455": ("BYHOUR=14", "BYMINUTE=55"),
         "xiaocao-daily-eod": ("BYHOUR=15", "BYMINUTE=10"),
@@ -195,6 +199,10 @@ def test_all_china_market_automations_use_dtstart_free_local_wall_clock() -> Non
 def test_kol_local_automation_uses_lianghui_mailbox_without_task_injection() -> None:
     automation = _automation("xiaocao-kol-hourly")
 
+    assert automation["id"] == "xiaocao-kol-hourly-local-capture"
+    assert automation["name"] == "xiaocao KOL hourly local capture"
+    assert automation["target"]["project_id"] == "c5acdaa7-f8a7-42d4-96fe-bf979a6b7415"
+    assert automation["cwds"] == ["/Users/xuanyue202/Documents/project/xiaocao"]
     assert "daily_lianghui_mailbox_input_required" in automation["prompt"]
     assert "send_mailbox_message" in automation["prompt"]
     assert "get_mailbox_message" in automation["prompt"]
