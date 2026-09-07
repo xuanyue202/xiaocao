@@ -307,6 +307,56 @@ def test_project_rejects_available_cash_equation_without_same_day_sell(
         )
 
 
+def test_project_accepts_hash_bound_same_day_buy_cash_equation(
+    tmp_path: Path,
+) -> None:
+    snapshot = _snapshot(
+        shares=100,
+        sellable=0,
+        broker_fills=(("buy-order", "000001.XSHE", "BUY", 100, 10.0),),
+    )
+    snapshot.pop("snapshot_sha256")
+    for summary_key in ("broker_summary", "funds_summary"):
+        snapshot[summary_key].update(
+            {
+                "available_cash": 98_900.0,
+                "cash_balance": 98_905.0,
+                "withdrawable_cash": 98_900.0,
+                "asset_equation_cash_field": "available_cash",
+            }
+        )
+    snapshot["snapshot_sha256"] = _canonical_sha256(snapshot)
+
+    account = project_book_b_live_account(
+        tmp_path, snapshot, trade_date="2026-09-01", now=NOW
+    )
+
+    assert account.cash == 30_000
+    assert account.settled_nav == 30_000
+
+
+def test_project_rejects_buy_shaped_available_cash_without_same_day_buy(
+    tmp_path: Path,
+) -> None:
+    snapshot = _snapshot(shares=100, sellable=0)
+    snapshot.pop("snapshot_sha256")
+    for summary_key in ("broker_summary", "funds_summary"):
+        snapshot[summary_key].update(
+            {
+                "available_cash": 98_900.0,
+                "cash_balance": 98_905.0,
+                "withdrawable_cash": 98_900.0,
+                "asset_equation_cash_field": "available_cash",
+            }
+        )
+    snapshot["snapshot_sha256"] = _canonical_sha256(snapshot)
+
+    with pytest.raises(ValueError, match="BROKER_FUNDS_EQUATION_FAILED"):
+        project_book_b_live_account(
+            tmp_path, snapshot, trade_date="2026-09-01", now=NOW
+        )
+
+
 def test_project_owned_buy_uses_broker_mark_but_not_mixed_account_cash(
     tmp_path: Path,
 ) -> None:

@@ -52,6 +52,7 @@ _READ_ONLY_SNAPSHOT_RETRYABLE_CODES = frozenset(
         "LIVE_ACCOUNT_SNAPSHOT_WITHDRAWABLE_EXCEEDS_AVAILABLE",
         "LIVE_ACCOUNT_SNAPSHOT_WITHDRAWABLE_EXCEEDS_BALANCE",
         "LIVE_ACCOUNT_SNAPSHOT_AVAILABLE_CASH_SELL_UNPROVEN",
+        "LIVE_ACCOUNT_SNAPSHOT_AVAILABLE_CASH_BUY_UNPROVEN",
         "LIVE_ACCOUNT_SNAPSHOT_POSITION_SUM_FAILED",
         "LIVE_ALLOCATION_SUMMARY_UNPROVEN",
         "LIVE_ALLOCATION_VALUES_INVALID",
@@ -102,10 +103,11 @@ def _asset_equation_cash_field(
 ) -> str:
     """Bind total assets to the broker cash field that exactly closes it.
 
-    Founder normally closes assets with cash balance. After a same-day SELL,
-    the proceeds are tradable before they are withdrawable, so ``可用`` can
-    exceed ``余额`` and becomes the asset-bearing cash field until settlement.
-    Both branches remain exact and retain a strict withdrawable-cash ordering.
+    Founder normally closes assets with cash balance. After a same-day fill,
+    unsettled proceeds or execution-cost reservations can instead make ``可用``
+    the exact asset-bearing cash field. Both branches remain exact and retain
+    a direction-sensitive strict withdrawable-cash ordering; the caller must
+    separately prove the corresponding same-day trade direction.
     """
     balance_closes = balance + securities == total_assets
     available_closes = available + securities == total_assets
@@ -120,13 +122,14 @@ def _asset_equation_cash_field(
             )
         return "cash_balance"
     if available_closes:
-        if balance > available:
+        if available > balance:
+            if withdrawable > balance:
+                raise FounderscNativeAXError(
+                    f"{reason_prefix}_WITHDRAWABLE_EXCEEDS_BALANCE"
+                )
+        elif withdrawable > available:
             raise FounderscNativeAXError(
-                f"{reason_prefix}_BALANCE_EXCEEDS_AVAILABLE"
-            )
-        if withdrawable > balance:
-            raise FounderscNativeAXError(
-                f"{reason_prefix}_WITHDRAWABLE_EXCEEDS_BALANCE"
+                f"{reason_prefix}_WITHDRAWABLE_EXCEEDS_AVAILABLE"
             )
         return "available_cash"
     raise FounderscNativeAXError(f"{reason_prefix}_ASSET_EQUATION_FAILED")
@@ -226,6 +229,16 @@ def _same_day_sell_fill_proven(rows: list[dict[str, Any]]) -> bool:
     return any(
         not _is_cancel_trade_row(row)
         and _side(row.get("买卖标志")) == "SELL"
+        and _integer(row.get("成交数量"), field="TRADE_QUANTITY") > 0
+        and _decimal(row.get("成交价格"), field="TRADE_PRICE") > 0
+        for row in rows
+    )
+
+
+def _same_day_buy_fill_proven(rows: list[dict[str, Any]]) -> bool:
+    return any(
+        not _is_cancel_trade_row(row)
+        and _side(row.get("买卖标志")) == "BUY"
         and _integer(row.get("成交数量"), field="TRADE_QUANTITY") > 0
         and _decimal(row.get("成交价格"), field="TRADE_PRICE") > 0
         for row in rows
@@ -2432,15 +2445,16 @@ class FounderscNativeAXBrokerAdapter(BrokerAdapter):
             withdrawable=withdrawable,
             reason_prefix="LIVE_ACCOUNT_SNAPSHOT",
         )
-        if (
-            asset_equation_cash_field == "available_cash"
-            and not _same_day_sell_fill_proven(
-                tables["today-trades"]["rows"]
-            )
-        ):
-            raise FounderscNativeAXError(
-                "LIVE_ACCOUNT_SNAPSHOT_AVAILABLE_CASH_SELL_UNPROVEN"
-            )
+        if asset_equation_cash_field == "available_cash":
+            trade_rows = tables["today-trades"]["rows"]
+            if available > balance and not _same_day_sell_fill_proven(trade_rows):
+                raise FounderscNativeAXError(
+                    "LIVE_ACCOUNT_SNAPSHOT_AVAILABLE_CASH_SELL_UNPROVEN"
+                )
+            if balance > available and not _same_day_buy_fill_proven(trade_rows):
+                raise FounderscNativeAXError(
+                    "LIVE_ACCOUNT_SNAPSHOT_AVAILABLE_CASH_BUY_UNPROVEN"
+                )
         position_value = sum(
             _decimal(row.get("最新市值"), field="POSITION_VALUE")
             for row in tables["positions"]["rows"]

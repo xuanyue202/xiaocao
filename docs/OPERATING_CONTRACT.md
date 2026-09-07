@@ -1,6 +1,6 @@
 # 小草运营契约（Operating Contract, SSOT）
 
-**版本**：4.2
+**版本**：4.3
 **状态**：现行
 **适用范围**：所有 paper / 未来 real 的实盘环（live_recommend → paper_record → live_monitor → eod）与回测
 **关联实现**：`src/xiaocao/live/{safety,capital_keychain,foundersc_native_ax,foundersc_native_broker,trading_execution,book_b_live_lifecycle,book_b_live_intraday}.py`、`src/xiaocao/live/intelligence_policy.py`、`src/xiaocao/strategy/{mode_switch,trend_rules,kol_reference}.py`、`native/foundersc_ax_executor/`、`kronos_screen/scripts/{capture_signals,forward_eval,paper_record,settle_book_a,settle_book_t,decompose_pnl,quality_governor}.py`、`scripts/{book_b_live_morning,book_b_live_intraday,live_monitor,research_mode_switch_replay}.py`
@@ -200,8 +200,10 @@ KOL 断言、候选假设或报告升级为策略真值，也不替代永久参�
   投影 Book-B 自有 lot、策略子账户现金、当前敞口和退出费后 NAV。独立“资金明细”
   页面只可诊断，不是 lifecycle/EOD 必需门。常态资金恒等式严格为
   余额+股票市值=总资产，且 0<=可取<=可用<=余额；仅对三表 account snapshot，
-  同一快照的 today-trades 表已证明正数量同日 SELL 后，卖出款可交易但尚不可取时，
-  才允许严格的可用+股票市值=总资产与 0<=可取<=余额<=可用分支。live allocation
+  同一快照的 today-trades 表已证明正数量同日成交时，才允许严格的
+  可用+股票市值=总资产分支：SELL 后必须为 0<=可取<=余额<可用；BUY 后必须为
+  0<=可取<=可用<余额。方向、价格和数量必须来自同一三表快照的精确成交行；缺失、
+  撤单或反向成交不能证明该分支。live allocation
   facts 仍只认常态余额分支，不得用该例外扩大可买资金。回执必须持久化实际闭合等式的
   `asset_equation_cash_field`。两者均不精确闭合或字段顺序不成立仍 fail-closed，
   禁止用持仓行反算、近似或补造缺失资金字段。Vision 返回的 token 数组顺序没有
@@ -376,6 +378,7 @@ KOL 断言、候选假设或报告升级为策略真值，也不替代永久参�
 
 | 版本 | 日期 | 说明 |
 |------|------|------|
+| 4.3 | 2026-09-07 | 修正方正 native 同日 BUY 后的资金语义：三表 account snapshot 在同一成交表证明正数量 BUY、可用资金与证券市值精确闭合且可取<=可用<余额时，允许只读 lifecycle 使用 available-cash 分支；allocation 仍只认常态余额分支，不扩大买入资金或订单权限。 |
 | 4.2 | 2026-09-06 | 用户确认有界 KOL 当下判断接口：已发布来源精确回读、Astra xhigh 分析与独立主审、15 分钟当前核验、Book-B 受限买入/退出及独立实盘/模拟消费；统一高点回撤 10%/20% 试点新增风险预算。原始先验 authority=0、永久参数研究门、既有资金/执行/不可变/精确一次边界保持。 |
 | 1.0 | 2026-06-20 | 首版：架构原则 + book A/B 口径 + 成交模型 + 仓位 + governor + kill-switch + **双钥匙资金边界** + 异常策略 + 不变量。 |
 | 1.1 | 2026-06-21 | §2 登记「判断先验（小草蒸馏）」复利记忆层（playbook / REGIME_TIMELINE / distilled / xiaocao_hypotheses.jsonl）+ 新增 MUST NOT：先验不进脊柱、不自动改参，candidate≠verdict。能力层接入 SKILL.md「Xiaocao Judgment Playbook」节，与 FLYWHEEL.md「判断先验→候选假设」两层假设模型对齐。 |
