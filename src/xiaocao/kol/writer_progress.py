@@ -45,19 +45,20 @@ NEXT_ACTIONS = {
 }
 
 
+_MAILBOX_PROJECTION_STATUS = {
+    "repair_required": "repair_required",
+    "user_action_required": "blocked",
+    "terminal": "completed",
+}
+
+
 def mailbox_projection_status(progress: Mapping[str, Any] | None) -> str:
     """Map persisted writer progress to a mailbox-facing state."""
 
     status = str(progress.get("status") or "") if isinstance(
         progress, Mapping
     ) else ""
-    if status == "repair_required":
-        return "repair_required"
-    if status == "user_action_required":
-        return "blocked"
-    if status == "terminal":
-        return "completed"
-    return "waiting"
+    return _MAILBOX_PROJECTION_STATUS.get(status, "waiting")
 
 
 STATUS_REQUIRED_FIELDS = {

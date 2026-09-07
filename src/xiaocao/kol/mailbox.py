@@ -378,6 +378,17 @@ class MailboxLedger:
             )
             if waiting.get(key) is not None
         })
+        progress = waiting.get("writer_progress")
+        if isinstance(progress, Mapping):
+            context.update({
+                key: str(progress[key])
+                for key in (
+                    "failure_fingerprint",
+                    "failure_revision",
+                    "targeted_test_profile",
+                )
+                if progress.get(key) is not None
+            })
         return context
 
     def repair_resume_context(self, handoff_id: str) -> dict[str, str]:

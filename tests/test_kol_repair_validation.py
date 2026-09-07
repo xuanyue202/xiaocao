@@ -188,13 +188,15 @@ def test_repair_validation_maps_mailbox_wrapped_browser_failure_to_exact_profile
         ("user_action_required", "blocked"),
         ("terminal", "completed"),
         ("wait_until", "waiting"),
+        (None, "waiting"),
     ],
 )
 def test_mailbox_projection_keeps_nonterminal_progress_visible(
-    status: str,
+    status: str | None,
     expected: str,
 ) -> None:
-    assert mailbox_projection_status({"status": status}) == expected
+    progress = None if status is None else {"status": status}
+    assert mailbox_projection_status(progress) == expected
 
 
 @pytest.mark.parametrize(

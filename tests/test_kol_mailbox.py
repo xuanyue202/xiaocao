@@ -645,6 +645,38 @@ def test_progress_projection_exposes_latest_repair_and_clears_on_ack(
     assert terminal["active_message_count"] == 0
 
 
+def test_repair_resume_context_reads_progress_bindings_from_waiting_event(
+    tmp_path,
+) -> None:
+    message_id = "a" * 64
+    content_sha256 = "b" * 64
+    ledger = MailboxLedger(tmp_path / "mailbox")
+    ledger.append(
+        "mailbox_message_attempted",
+        occurred_at="2026-09-07T04:33:10.230Z",
+        handoff_id=message_id,
+        content_sha256=content_sha256,
+    )
+    ledger.append(
+        "mailbox_message_waiting",
+        occurred_at="2026-09-07T04:33:21.193Z",
+        handoff_id=message_id,
+        category="transport_error",
+        code="opencli_command_failed",
+        stage="browser_command",
+        writer_progress={
+            "failure_fingerprint": "c" * 64,
+            "failure_revision": "d" * 40,
+            "targeted_test_profile": "kol_mailbox_exact_resume",
+        },
+    )
+
+    context = ledger.repair_resume_context(message_id)
+    assert context["failure_fingerprint"] == "c" * 64
+    assert context["failure_revision"] == "d" * 40
+    assert context["targeted_test_profile"] == "kol_mailbox_exact_resume"
+
+
 def test_remote_drain_normalizes_unstructured_exception_code(tmp_path) -> None:
     message = _mailbox_message("a" * 64)
     pages = iter([[message], []])
