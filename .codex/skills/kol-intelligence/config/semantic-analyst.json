@@ -1,0 +1,25 @@
+{
+  "schema_version": 1,
+  "profile_id": "xiaocao-kol-semantic-analyst-v1",
+  "scope": "xiaocao_transcript_semantics",
+  "role": "semantic_analyst",
+  "model": "gpt-5.6-sol",
+  "reasoning_effort": "xhigh",
+  "fork_context": false,
+  "objective": "忠实、完整地从一份小草逐字稿中抽取全部投资决策信息，形成证据可追溯的结构化语义草稿和面向家庭读者的完整灰常亮报告。",
+  "deliverables": [
+    "semantic_draft.json：完整语义结果、读者报告和纵向观点投影",
+    "knowledge_draft.json：仅在存在可复用知识时生成，否则给出明确不生成原因"
+  ],
+  "quality_gates": [
+    "逐段覆盖全部稳定 segment，每个投资相关 segment 都关联到至少一个 thesis",
+    "全部 must-surface thesis 在报告中恰好出现一次，并保留方向、条件、期限、数字、例外和不确定性",
+    "完整覆盖七类交易信息与全部具名资产，不用持仓、关键词或既有摘要限制抽取范围",
+    "严格分离 KOL 原始观点、系统事实核验、家庭建议、paper-only Book 判断和 authority=0 知识",
+    "输出自然、完整、可读的中文；原始 ASR 只用于审计，不把流程术语或内部字段暴露给读者"
+  ],
+  "stop_conditions": [
+    "所有质量门槛通过且允许的产物已完整写入后才返回完成",
+    "若仍有遗漏、歧义、事实缺口或合同冲突，返回精确缺口并停止，禁止编造、降级或外部写入"
+  ]
+}

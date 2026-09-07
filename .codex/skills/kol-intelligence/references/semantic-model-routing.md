@@ -1,110 +1,126 @@
 # Semantic model routing
 
-Use for new Xiaocao transcript work at the remote hourly writer's three
-semantic-input events, including exact resumes. Other authors retain their
-existing route. Acquisition, provider waits, mailbox operations, and downstream
-effects remain on the Automation's configured parent model. The user has
-authorized a subagent specifically for semantic judgment: `gpt-6-astra` with
-`reasoning_effort=xhigh` (极高), not an inferred default or `max`.
+Use this route only for new Xiaocao transcript semantic-input events, including
+exact resumes. Other authors retain their existing route. Acquisition, provider
+waits, mailbox operations, deterministic validation, publication, notification,
+Book, knowledge ingestion, and ack remain on the Automation parent.
 
-## Prepare and delegate
+## Fixed role boundary
 
-Rollout starts with one Xiaocao pilot. The parent independently reads the full
-source and compares it with the analyst's report before enabling future
-Automation routing. Preserve a hash-bound review showing material omissions,
-attribution/number/timing errors, their corrections, and the final verdict.
-Structural validation alone never passes this quality gate. After the pilot
-passes, repeat parent review for every newly acquired Xiaocao transcript.
+- The Automation parent is an operational executor. It may prepare immutable
+  context, dispatch exact arguments, wait, reconcile, run validators, and perform
+  authorized external effects. It must not invent the analyst's goal, summarize
+  the source instead of passing it, or rewrite accepted semantic content.
+- The configured semantic analyst owns full-source investment-thesis extraction,
+  entity resolution, independent coverage audit, current-decision judgment,
+  durable-knowledge judgment, and final 灰常亮 reader wording.
+- Parent review is an acceptance audit only. It may identify omissions or
+  distortions against the full source, but every content correction returns to
+  the same analyst. The parent never authors replacement insight.
 
-1. Keep the same runner stdin open. Bind the emitted immutable request to its
-   absolute file, source identity/version, full evidence path/hash, and stable
+The one editable model-and-objective source is:
+
+`config/semantic-analyst.json`
+
+Inspect it with:
+
+```bash
+PYTHONPATH=src .venv/bin/python scripts/kol_semantic_delegation.py profile
+```
+
+The profile defines `model`, `reasoning_effort`, `fork_context`, one explicit
+objective, deliverables, quality gates, and stop conditions. Do not duplicate or
+override those values in an Automation prompt. `prepare` snapshots the profile
+and its hashes into the item packet, so a later profile edit affects only new
+requests. Already-issued packets retain their bound route; schema-v1 Astra
+packets remain valid for exact read-only reconciliation and must not be migrated
+or redispatched.
+
+## Prepare and dispatch
+
+1. Keep the same runner stdin open. Bind the immutable analysis request to its
+   absolute path, source identity/version, complete evidence path/hash, and stable
    segment inventory. Preserve provider pause/close receipts. Read
    `full-contract.md` completely and honor any pinned request hash.
-2. Use `scripts/kol_semantic_delegation.py prepare` (consult its `--help`) to
-   persist the context packet. Include separately captured market evidence and
-   household context when available, with source/as-of/limitations. A missing
-   fact is explicit uncertainty, not permission to invent one. Include current
-   knowledge feedback and the applicable durable-knowledge contract when that
-   branch applies. Give full-file pointers, never only a parent summary.
-3. Dispatch the packet's exact invocation through `spawn_agent`, explicitly
-   setting `model=gpt-6-astra`, `reasoning_effort=xhigh`, and
-   `fork_context=false`. Persist the actual accepted tool arguments and returned
-   agent ID with `record-dispatch`. This records the accepted invocation, not
-   cryptographic proof of the backend inference. Never manufacture a successful
-   dispatch from a model label in prose.
-4. Give each analyst a disjoint item artifact directory. The analyst reopens
-   and hashes the full evidence, reads the complete contract, extracts every
-   investment thesis, independently rereads every stable segment, resolves
-   entities, checks dated market facts, and writes the final 灰常亮 reader copy
-   plus applicable attributed knowledge, returning the draft paths, coverage
-   result, and changed-file list. Exclude mailbox, browser/provider,
-   publication, notifications, Book, ack, shared ledgers, Git, and Automation
-   writes from its authority.
+2. Run `scripts/kol_semantic_delegation.py prepare` with the analysis request and
+   any separately captured market evidence and household context. Missing facts
+   remain explicit limitations. The generated context packet includes full-file
+   pointers and a hash-bound snapshot of the analyst profile.
+3. Call `spawn_agent` with the generated `spawn_arguments.json` exactly as saved.
+   Do not paraphrase its message, infer a default model, change effort, fork
+   parent context, add unrelated tools, or ask the analyst to coordinate the
+   workflow. Record the actual accepted arguments and returned agent ID with
+   `record-dispatch`. A model label in prose is not dispatch evidence.
+4. Give each analyst a disjoint item artifact directory. Its only writable
+   outputs are the packet's `semantic_draft.json` and conditional
+   `knowledge_draft.json`. Exclude mailbox, browser/provider, publication,
+   notification, Book, ack, shared ledgers, Git, and Automation writes.
 
-   Remind the analyst that `investment_thesis_inventory` and
-   `investment_thesis_coverage_audit` each need the exact request's
-   `evidence_sha256` and `contract_version=kol-investment-claims-v1` in the
-   saved draft. The canonical builder does not infer these audit bindings.
-   Pure validation must inspect the saved draft, not a temporary in-memory
-   object with missing fields silently filled in. For an uncertain security
-   name with a material recommendation or risk role, retain a traceable raw
-   name and mark the possible correction as uncertain; do not erase the name
-   into an anonymous rank or invent a verified name/code pair.
-   Each claim must also include source-grounded `reasoning`, `direction`, and
-   `confidence` alongside its identity, quote, scope, horizon and falsifiers.
-   The parent must run the actual decision consumer's pure item validation as
-   well as the publication candidate check before returning a sealed bundle;
-   neither check calls `process`, publishes, or initializes an account.
+## Extraction target
 
-The analyst owns judgment and final wording; the parent owns operational
-coordination. The stronger model does not replace the full coverage audit,
-exact quotation checks, current-fact limitations, or paper-only boundaries.
+The analyst's single outcome is a faithful, complete, evidence-traceable semantic
+representation of one full transcript plus a coherent reader report. The saved
+profile is authoritative; the following explains the required shape:
 
-## Accept and publish
+1. Read every evidence file completely to EOF and verify its hash. Prior chat,
+   metadata, segment labels, holdings, keywords, and copied summaries never
+   substitute for the source or restrict extraction.
+2. First pass: build the complete investment-thesis and entity inventories.
+   Preserve every must-surface thesis, including conflicts, alternatives, risk
+   warnings, low-confidence names, conditions, horizons, numbers, exceptions,
+   triggers, falsifiers, and uncertainty.
+3. Second pass: reread every stable segment exactly once; classify it as
+   investment, non-investment, or advertisement; link every investment segment
+   to exact quoted theses; clear missing-thesis, incorrect-merge, and role-error
+   findings. Complete all seven trade-information coverage rows and the named-
+   asset inventory.
+4. Produce the complete natural-Chinese 灰常亮 report and reader briefing. Each
+   must-surface thesis appears exactly once in ranked KOL prose. Keep KOL claims,
+   system fact validation, household advice, paper-only KOL-US judgment, and
+   authority=0 knowledge separate. Preserve uncertainty instead of inventing
+   names, codes, facts, weights, or actions.
+5. Save `investment_thesis_inventory` and
+   `investment_thesis_coverage_audit` with the exact request `evidence_sha256`
+   and `contract_version=kol-investment-claims-v1`. Every claim includes
+   source-grounded `reasoning`, `direction`, and `confidence` in addition to
+   identity, quote, scope, horizon, and falsifiers. An uncertain security name
+   remains traceable and explicitly uncertain; it is never erased into an
+   anonymous rank.
+6. Stop only when the profile's quality gates pass and the allowed outputs are
+   complete. Otherwise return the exact unresolved gaps. Low density is legal
+   only after full evidence review; unavailable facts never authorize fabricated
+   validation or a parent-model fallback.
 
-5. Read Astra's reader copy and verify material source claims before sealing
-   the result. Independently cover the entire source, not just a sample or the
-   analyst's summary: concrete assets/actions, exceptions, triggers, invalidators,
-   numerical/statistical claims, and dense late-source passages must survive.
-   Keep historical/as-of limits and source claims separate from system inference.
-   Record the review against source and draft hashes; an unresolved material
-   omission or distortion means revise. Send corrections to the same analyst.
-   The parent then
-   runs the deterministic `scripts/kol_semantic_bundle.py` builder on the
-   unedited Astra draft and separate market evidence. Run `verify-result`
-   against that exact request, accepted dispatch, and canonical bundle.
-   Validate full segment coverage, request/evidence hashes, market evidence,
-   final receipt, and the permitted knowledge branch. Do not rewrite the
-   approved report on the parent model while calling it Astra output.
-   Write `parent_source_review.json` beside the immutable request using the
-   `verify_semantic_review` schema in `src/xiaocao/kol/semantic_delegation.py`:
-   all five evidence-backed checks and every reviewed segment, with exact
-   request/packet/draft/bundle/receipt/knowledge hashes. Call `verify-result`
-   with `--semantic-review`; the hourly consumer requires `parent_accepted`.
-   A local structural `verified` result or `not_assessed` is insufficient.
-6. Only the parent returns the validated `bundle_path` to the same runner.
-   Let the existing deterministic pipeline publish the exact approved report
-   and reconcile its stable URL/receipt before eligible reminders, Book
-   KOL-US, knowledge ingestion, and final mailbox ack. Use the unchanged
-   per-object terminal tuple and claim/receipt parity for completion.
+## Validate and publish
+
+5. The parent runs the actual decision consumer's pure item validation and the
+   publication candidate check before sealing a bundle. Neither check calls
+   `process`, publishes, or initializes an account.
+6. The parent independently checks the whole source against the analyst output
+   for omitted or distorted assets/actions, conditions, numbers, timing,
+   exceptions, invalidators, and dense late passages. Record this acceptance
+   against source and draft hashes. Any material issue returns to the same
+   analyst; the parent does not rewrite it.
+7. Run `scripts/kol_semantic_bundle.py` on the unedited accepted draft and
+   separate market evidence. Write `parent_source_review.json` using the
+   `verify_semantic_review` schema with every reviewed segment and exact
+   request/packet/draft/bundle/receipt/knowledge hash. Run `verify-result` with
+   `--semantic-review`; only `parent_accepted` may continue.
+8. Only the parent returns the validated `bundle_path` to the same runner. The
+   deterministic pipeline publishes the exact accepted report and reconciles its
+   stable URL/receipt before eligible reminder, paper-only Book KOL-US,
+   knowledge, and mailbox-ack effects.
 
 ## Resume and failures
 
-- Reuse the exact request/packet/agent and validated result after interruption.
-  If stdin died, reconcile the item and use only the runner-issued narrow
-  continuation. Completed acquisition and external effects remain immutable.
-- A wrong/unavailable model, missing dispatch, changed input, or invalid bundle
-  blocks publication. Repair the exact delegation or validation in this task;
-  never silently fall back to the parent model or start another sweep.
-- An accepted dispatch with unknown progress remains owned by that agent.
-  Read/wait on it before creating another analyst; an interruption is not proof
-  of failure. Context changes require a freshly bound packet and an explicit
-  continuation to Astra before acceptance, not a retroactive attribution.
-- When adopting an already-running Astra pilot, preserve its known original
-  explicit dispatch parameters and record the actual same-agent `send_input`
-  arguments/result via `--context-delivery`. Preserve the exact original
-  message when available; if unavailable, record `original_parameters_only`
-  transparently. The newly delivered full packet and independently accepted
-  result are still mandatory. Future fresh spawns record complete arguments.
-- Low-density remains a legitimate outcome after full evidence review. Higher
-  model cost is confined to real semantic work; empty queues do not spawn.
+- Reuse the exact request, packet, profile snapshot, agent, and validated result
+  after interruption. If stdin died, use only the runner-issued narrow
+  continuation. Never start another sweep or analyst for the same item.
+- Wrong or unavailable configured model, changed input, missing accepted
+  dispatch, incomplete output, invalid bundle, or failed quality gate blocks
+  publication. Repair the exact delegation or validation in this task; never
+  fall back to the parent model.
+- An accepted dispatch with unknown progress remains owned by that agent. Wait
+  or read it before any continuation. New context goes to the same agent through
+  an exact recorded delivery.
+- `empty queues do not spawn`: they do not load this route or create an analyst.

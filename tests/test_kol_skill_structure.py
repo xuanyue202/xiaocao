@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import re
 from pathlib import Path
 
@@ -7,6 +8,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 SKILL_DIR = ROOT / ".codex" / "skills" / "kol-intelligence"
 SKILL_MD = SKILL_DIR / "SKILL.md"
+SEMANTIC_ANALYST_PROFILE = SKILL_DIR / "config" / "semantic-analyst.json"
 FULL_CONTRACT_MD = SKILL_DIR / "references" / "full-contract.md"
 HOURLY_LOCAL_CAPTURE_MD = (
     SKILL_DIR / "references" / "hourly-local-capture.md"
@@ -570,11 +572,18 @@ def test_kol_skill_defers_the_full_contract_on_hourly_no_update_runs() -> None:
     assert "its current hash must match the request" in hourly_flat
     route = SKILL_DIR.joinpath("references/semantic-model-routing.md").read_text(encoding="utf-8")
     for marker in (
-        "gpt-6-astra", "reasoning_effort=xhigh", "fork_context=false",
-        "one Xiaocao pilot", "independently reads the full",
+        "config/semantic-analyst.json", "spawn_arguments.json", "Extraction target",
+        "schema-v1 Astra", "independently checks the whole source",
         "parent_source_review.json", "parent_accepted", "empty queues do not spawn",
     ):
         assert marker in route
+    profile = json.loads(SEMANTIC_ANALYST_PROFILE.read_text(encoding="utf-8"))
+    assert profile["model"] == "gpt-5.6-sol"
+    assert profile["reasoning_effort"] == "xhigh"
+    assert profile["fork_context"] is False
+    assert profile["objective"]
+    assert len(profile["quality_gates"]) >= 5
+    assert "config/semantic-analyst.json" in entrypoint
 
 
 def test_hourly_local_and_remote_machine_contracts_stay_separate() -> None:

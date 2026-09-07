@@ -243,16 +243,20 @@ def test_kol_remote_writer_automation_is_a_thin_fail_closed_bootstrap() -> None:
         "5 Why",
         "exact narrow resume",
         "references/semantic-model-routing.md",
-        "model=gpt-6-astra",
-        "reasoning_effort=xhigh",
-        "fork_context=false",
-        "主模型不得重写 Astra 审定的语义内容",
+        ".codex/skills/kol-intelligence/config/semantic-analyst.json",
+        "scripts/kol_semantic_delegation.py profile",
+        "spawn_arguments.json",
+        "全部投资决策论点",
+        "执行 Agent 只按完整来源做 acceptance audit",
+        "不能自行补写",
         "`对象 | 状态 | 说明`",
         "`[视频]`",
         "`[文章]`",
         "空队列静默",
     ):
         assert marker in prompt
+    assert "gpt-6-astra" not in prompt
+    assert "gpt-5.6-sol" not in prompt
 
     for implementation_detail in (
         "initialize",

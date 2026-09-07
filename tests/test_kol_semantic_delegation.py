@@ -75,6 +75,11 @@ def test_complete_context_receipt_roundtrip_is_local_and_idempotent(inputs, monk
     request_before = inputs["request"].read_bytes()
     prepared = _prepare(inputs)
     packet = _read(prepared["packet_path"])
+    assert packet["schema_version"] == 2
+    assert packet["analyst_profile"]["value"]["model"] == "gpt-5.6-sol"
+    assert packet["analyst_profile"]["value"]["objective"]
+    assert packet["analyst_profile"]["source"]["sha256"] == prepared["analyst_profile_sha256"]
+    assert prepared["analyst_profile_id"] == "xiaocao-kol-semantic-analyst-v1"
     assert packet["analysis_request"]["sha256"] == _sha(inputs["request"])
     assert packet["evidence"]["sha256"] == _sha(inputs["evidence"])
     assert packet["market_evidence"]["sha256"] == _sha(inputs["market"])
@@ -83,9 +88,11 @@ def test_complete_context_receipt_roundtrip_is_local_and_idempotent(inputs, monk
     assert packet["source_metadata"]["author"] == "小草"
     assert all(Path(ref["path"]).is_absolute() for ref in packet["contracts"].values())
     prompt = prepared["spawn_arguments"]["message"]
-    for requirement in ("COMPLETELY to EOF", "WHOLE immutable evidence", "Pass 1", "Pass 2",
-                        "EVERY segment", "complete reader report", "durable-knowledge.md", "No external writers"):
+    for requirement in ("唯一目标", "必须读到 EOF", "第一遍", "第二遍", "稳定 segment",
+                        "完整灰常亮报告", "验收标准", "停止条件", "禁止网络和外部 writer"):
         assert requirement in prompt
+    assert prepared["spawn_arguments"]["model"] == "gpt-5.6-sol"
+    assert prepared["spawn_arguments"]["reasoning_effort"] == "xhigh"
     assert prepared["spawn_arguments"]["fork_context"] is False
     dispatch = _dispatch(inputs, prepared)
     assert dispatch["agent_id"] == AGENT_ID
@@ -165,6 +172,27 @@ def test_input_changes_block_without_modifying_sealed_bundle(inputs, monkeypatch
 def test_tampered_evidence_blocks_prepare_before_any_output(inputs):
     inputs["evidence"].write_text("Changed evidence", encoding="utf-8")
     with pytest.raises(canonical.SemanticBundleError, match="hash"):
+        _prepare(inputs)
+    assert not (inputs["request"].parent / ".semantic_delegation").exists()
+
+
+@pytest.mark.parametrize("problem", ["wrong_scope", "bad_model", "bad_effort", "forked", "empty_gates"])
+def test_invalid_configurable_analyst_profile_blocks_prepare(inputs, monkeypatch, problem):
+    profile = delegation.load_analyst_profile()["value"]
+    profile_path = inputs["request"].parent / "semantic-analyst.json"
+    if problem == "wrong_scope":
+        profile["scope"] = "all_kol"
+    elif problem == "bad_model":
+        profile["model"] = "summary model"
+    elif problem == "bad_effort":
+        profile["reasoning_effort"] = "infinite"
+    elif problem == "forked":
+        profile["fork_context"] = True
+    else:
+        profile["quality_gates"] = []
+    _write(profile_path, profile)
+    monkeypatch.setattr(delegation, "ANALYST_PROFILE_PATH", profile_path)
+    with pytest.raises(delegation.DelegationError, match="profile|fork_context"):
         _prepare(inputs)
     assert not (inputs["request"].parent / ".semantic_delegation").exists()
 
@@ -249,6 +277,11 @@ def test_cli_json_outputs_and_blocked_exit(inputs, capsys):
     spec = importlib.util.spec_from_file_location("delegation_cli", path)
     cli = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(cli)
+    assert cli.main(["profile"]) == 0
+    profile = json.loads(capsys.readouterr().out)
+    assert profile["model"] == "gpt-5.6-sol"
+    assert profile["reasoning_effort"] == "xhigh"
+    assert profile["status"] == "configured"
     assert cli.main(["prepare", "--analysis-request", str(inputs["request"]),
                      "--market-evidence", str(inputs["market"])]) == 0
     prepared = json.loads(capsys.readouterr().out)
@@ -294,6 +327,28 @@ def _continuation(inputs, prepared):
     }
     directory = inputs["request"].parent
     return (_write(directory / "original_spawn.json", original), _write(directory / "delivery.json", delivery))
+
+
+def test_legacy_astra_packet_remains_verifiable_after_profile_switch(inputs):
+    request_ref = delegation._file(inputs["request"])
+    directory = inputs["request"].parent / ".semantic_delegation" / request_ref["sha256"]
+    packet_path = directory / "context_packet.json"
+    packet = delegation._legacy_packet(inputs["request"], packet_path, inputs["market"], inputs["household"])
+    prompt = delegation._legacy_prompt(packet)
+    spawn = {**delegation.LEGACY_DISPATCH_PARAMETERS, "message": prompt}
+    directory.mkdir(parents=True)
+    packet_path.write_bytes(delegation._bytes(packet))
+    (directory / "analyst_prompt.txt").write_text(prompt, encoding="utf-8")
+    invocation = _write(directory / "spawn_arguments.json", spawn)
+    delegation.record_dispatch(inputs["request"], packet_path=packet_path,
+                               agent_id=AGENT_ID, invocation_args=invocation)
+    _bundle(inputs)
+    result = delegation.verify_result(inputs["request"], packet_path=packet_path,
+                                      agent_id=AGENT_ID, bundle_path=inputs["bundle"],
+                                      semantic_draft=inputs["draft"])
+    assert result["status"] == "verified"
+    assert result["dispatch"]["path"].endswith("dispatch.json")
+    assert delegation.DISPATCH_PARAMETERS["model"] == "gpt-5.6-sol"
 
 
 def test_existing_agent_context_delivery_roundtrip_preserves_original_spawn(inputs):

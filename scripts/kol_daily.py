@@ -790,7 +790,7 @@ def _require_canonical_semantic_artifact(
     bundle_path: Path,
     request: dict[str, Any],
 ) -> Path:
-    """Require a canonical receipt and an evidence-bound Astra delegation."""
+    """Require a canonical receipt and a packet-bound semantic delegation."""
 
     binding_request = request
     request_path_value = request.get("analysis_request_path") or request.get(
