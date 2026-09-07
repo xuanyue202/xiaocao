@@ -365,6 +365,20 @@ def test_source_cli_narrow_runner_supports_subscription_video():
     ) is subscription
 
 
+def test_source_cli_narrow_runner_supports_wechat_official_accounts():
+    official = lambda surface: {"surface": surface}
+    runtime = SimpleNamespace(
+        lv_narrow_resume=lambda surface: {"lv": surface},
+        videos_narrow_resume=lambda surface: {"video": surface},
+        wechat_official_narrow_resume=official,
+    )
+
+    assert _source_cli_narrow_runner(
+        runtime,
+        "wechat_official_accounts",
+    ) is official
+
+
 def test_source_cli_structured_input_binding_supports_exact_lv_item(
     tmp_path,
     monkeypatch,

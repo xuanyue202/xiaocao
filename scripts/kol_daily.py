@@ -1632,6 +1632,8 @@ def _source_cli_narrow_runner(runtime: "DailyRuntime", adapter: str):
         return runtime.videos_narrow_resume
     if adapter == "xiaocao_wechat_live":
         return runtime.xiaocao_wechat_narrow_resume
+    if adapter == "wechat_official_accounts":
+        return runtime.wechat_official_narrow_resume
     raise DailyError("source repair adapter has no CLI narrow resume")
 
 
