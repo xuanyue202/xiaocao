@@ -1042,8 +1042,8 @@ class XiaocaoWechatLiveSubscription:
                 "surface": "visible_foreground_ui",
                 "action_mode": "one_action_then_state_readback",
                 "max_activation_attempts": 1,
-                "pause_key": "space",
-                "pause_readback_required": True,
+                "playback_cleanup": "close_course_window",
+                "window_close_readback_required": True,
                 "coordinate_policy": "fresh_screenshot_visible_control_only_when_ax_absent",
             },
             "password_policy": {
@@ -1063,10 +1063,11 @@ class XiaocaoWechatLiveSubscription:
                 "优先辅助功能控件；小程序只暴露窗口、没有控件时，允许基于刚读取截图"
                 "点击明确可见的按钮/输入框，不复制历史坐标。若看见课程口令门，打开"
                 "输入框，输入提供的口令、读回并确认。口令通过可能自动播放；画面一旦"
-                "开始播放，立即在播放器窗口按空格暂停，不要先去查下载日志。仅未自动"
-                "起播时点击一次可见播放按钮再按空格。暂停后两次观察画面/进度停止变化，"
-                "不能把鼠标指针或点击成功当作暂停证据。让目标画面开始请求"
-                "媒体即可，不需要持续播放。确认本机"
+                "开始播放并被抓取后，关闭这一个鹅直播课程窗口：在确认标题的目标窗口"
+                "点击文件菜单，再点击该窗口的关闭全部标签页（performClose:），读回"
+                "窗口菜单已无鹅直播。若未自动起播，只点击一次可见播放按钮。"
+                "不按空格、不静音、不退出微信。关闭播放器不等于下载完成，仍需验证"
+                "同一下载任务的媒体文件。确认本机"
                 "wx_channels_download 已观察到媒体请求，并从其无凭证日志确认"
                 + (
                     "该次新候选的 live_id 和 app_id。"
@@ -1094,7 +1095,9 @@ class XiaocaoWechatLiveSubscription:
                 "activated": "boolean",
                 "media_request_observed": "boolean",
                 "password_used": "boolean",
-                "playback_paused": "boolean; true only after paused-state readback",
+                "playback_window_closed": (
+                    "boolean; true only after exact course window closure readback"
+                ),
                 "page_url": (
                     "optional canonical H5 identity anchor; omit when the native "
                     "mini-program supplied no page URL"
@@ -1128,7 +1131,16 @@ class XiaocaoWechatLiveSubscription:
                 "Scheme，不猜参数。解析失败再用可见原始消息入口；不要把主聊天窗口"
                 "白色截图当作微信退出。后续密码、播放在可见小程序窗口操作。"
             ) + request["instructions"]
-        self.capture_driver.prepare_playback(item["identity"], item["capture_job_id"])
+        if reason == "captured_window_cleanup":
+            request.pop("launch_resolver_command", None)
+            request["instructions"] = (
+                "同一 capture 的有限媒体已捕获。仅核对本任务鹅直播课程窗口已关闭；"
+                "若仍存在，按 native SOP 的文件菜单关闭该课程并读回窗口列表无鹅直播。"
+                "已有本任务关闭读回则直接返回真实回执，不重复操作。不要唤起、重新播放、"
+                "输入口令或恢复 sniffer。返回 playback_window_closed 和原身份绑定。"
+            )
+        else:
+            self.capture_driver.prepare_playback(item["identity"], item["capture_job_id"])
         response = self.browser_exchange(request)
         self._validate_browser_response(request, response)
         if (
@@ -1187,14 +1199,14 @@ class XiaocaoWechatLiveSubscription:
                 "WeChat mini-program playback binding is invalid"
             )
         activated = response.get("activated") is True and media_request_observed
-        if activated and response.get("playback_paused") is not True:
+        if activated and response.get("playback_window_closed") is not True:
             raise EnrichmentDiagnosticError(
-                "native playback pause has not been verified",
+                "native course window closure has not been verified",
                 category="input_error",
-                code="native_playback_pause_unverified",
-                stage="native_playback_pause",
+                code="native_playback_window_close_unverified",
+                stage="native_playback_window_close",
             )
-        if native_entry and activated:
+        if native_entry and activated and reason != "captured_window_cleanup":
             self.capture_driver.bind_mini_program_capture(
                 item["identity"],
                 item["capture_job_id"],
@@ -1207,7 +1219,7 @@ class XiaocaoWechatLiveSubscription:
             "playback_route": self.playback_route,
             "playback_surface": XIAOCAO_PLAYBACK_ROUTE_WECHAT_MINI_PROGRAM,
             "media_request_observed": media_request_observed,
-            "playback_paused": response.get("playback_paused") is True,
+            "playback_window_closed": response.get("playback_window_closed") is True,
         }
         if response_page:
             fields["page_url"] = response_page
@@ -1378,6 +1390,19 @@ class XiaocaoWechatLiveSubscription:
                 or source_job_status
                 in {"playlist_detected", "task_created"}
             )
+
+        if (
+            capture_reconciled
+            and item.get("media_request_observed") is True
+            and item.get("playback_window_closed") is not True
+            and item.get("playback_paused") is not True  # Historical pause receipts.
+        ):
+            item = self._check_mini_program_playback(
+                manifest, item, reason="captured_window_cleanup",
+            )
+            playback_checked = True
+            if item["status"] == "awaiting_playback":
+                return self._waiting(item, {"status": "awaiting_playback"})
 
         if item["status"] == "capture_armed" and not capture_reconciled:
             item = self._check_playback(

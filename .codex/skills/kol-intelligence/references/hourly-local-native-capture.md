@@ -6,8 +6,8 @@ activation, or continuation/acceptance stage routed by
 Keep the existing capture/job and process; the local entry owns discovery,
 process lifetime, and mailbox completion.
 
-**微信执行标准：只执行下文 W0–W8 的有限动作，不临场分解或探索 UI。**
-“打开课程”“输入口令”“暂停”不是可直接执行的指令，必须落到对应行的
+**微信执行标准：只执行下文动作表，不临场分解或探索 UI。**
+“打开课程”“输入口令”“关闭课程窗口”必须落到对应行的
 前置画面、工具调用和结果检查。未列出的画面/操作停在原任务做离线诊断，
 不得以自修复为由试点、重开、刷新或增加快捷键。此约束旨在减少微信敏感操作，
 不代表已证明之前退出的具体触发原因，也不保证微信绝不会退出。
@@ -47,12 +47,13 @@ a second Scheme. Prefer accessibility controls; when the mini-program exposes
 only a window, use the fresh screenshot to click its visible controls. Never
 reuse coordinates from an earlier screenshot/run or click the main chat window.
 At the visible course-password input, enter `666` once, read it back, and confirm.
-Confirmation may automatically start playback. Immediately press `space` in the
-player window when playback starts, before querying logs or download progress.
-If it does not auto-start, click the visible Play control once then press `space`.
-Verify that the picture/playhead stops on two observations; a cursor triangle,
-successful click, or disappearance of controls is not pause evidence. Never
-press Space a second time on an already paused video, as it resumes playback.
+Confirmation may automatically start playback. Once the exact finite replay
+has been captured, close that course window using the File menu's observed
+`关闭全部标签页` (`performClose:`), then verify Goose Live is absent from the
+Window menu. If it does not auto-start, click the visible Play control once.
+Do not press Space, pause, or mute: keyboard focus is unreliable. Closing the
+course window leaves the independent download running; it does not prove the
+file is complete. Keep WeChat itself running.
 No hooks, WeChat re-signing, hidden
 debugging, CDP/DOM evaluation, or protection changes are allowed. If the resolver
 cannot prove a ticket, use the original visible message entry. Native
@@ -86,9 +87,9 @@ lists enrich asynchronously with an incremental cache; they cannot bind a source
    login, SMS/OTP, CAPTCHA, consent, or shows an explicit protection screen,
    return `wechat_client_login_required` and stop; that is the only
    user-action boundary. At the exact visible course, enter `666` only at a
-   visible course-password gate, then immediately pause with Space after auto-play
-   (or one visible Play click). Read back a stopped picture/playhead. Let the target
-   start a media request; no continuous playback or fixed wait is required. Return
+   visible course-password gate. After auto-play (or one visible Play click) and
+   exact finite-media observation, close the course window using W7–W10 below.
+   Read back its absence from the Window menu. No continuous playback is required. Return
    `playback_surface=wechat_mini_program`, the exact `source_identity` and
    `live_id`, plus `media_request_observed=true` only when the singleton
    `wx_channels_download` sniffer saw the target request. A current-live
@@ -103,8 +104,9 @@ lists enrich asynchronously with an incremental cache; they cannot bind a source
 
 ## 实操 SOP：打开小鹅通小程序 → 下载视频
 
-以下步骤以 2026-09-06 晚场实际抓取为依据。商户唤起、课程口令、空格暂停、
-完整回放下载和压缩均已验证；最初点击暂停失败，不能复用那次点击方法。
+商户唤起、课程口令、完整回放下载和压缩沿用已验证路径。
+2026-09-07 用户将收尾改为关闭课程窗口；当天已实测菜单关闭及窗口消失读回。
+空格受焦点影响失效，已废弃；右上角坐标点击曾被工具拒绝，也不作为关闭路径。
 只替换本段前端采集操作，步骤 6 起沿用既有上传/Handoff 流程。
 
 1. **保留原任务，先准备抓取。** 从当前 runner 请求/manifest 取出
@@ -161,44 +163,54 @@ lists enrich asynchronously with an incremental cache; they cannot bind a source
    历史坐标、屏幕比例或另一个窗口的位置。表中的 `passwordButton`、
    `passwordInput`、`confirmButton`、`playButton` 均按此规则绑定为索引或坐标，
    不是字符串选择器。目标不唯一、被遮挡或无法定位，停止输入，不能点附近试探。
+   菜单参数 `fileMenu`、`closeCourse`、`windowMenu`、`gooseWindow` 只能绑定
+   最近 AX 读回中的唯一索引；不得使用坐标或历史索引。
+
+   若当前是微信主聊天窗口，但本任务课程已打开：点击 AX `窗口` 菜单并读回，
+   唯一 `鹅直播` 项存在时点击该项并读回课程标题，然后进入 W1。
+   不以主聊天窗口可见推断课程已关闭。菜单没有该项且同一场有限媒体已捕获时，
+   记录已关闭，跳过重复关闭；用菜单已暴露的 `Cancel` secondary action 收起菜单。
 
    | 步骤 | 必须已看到的前置画面 | 唯一允许的调用（`cua_repl`） | 结果与下一步 |
    |---|---|---|---|
    | W0 | 一次商户唤起已执行；尚未取得 app 对象 | `var wechat = await cua.getApp("com.tencent.xinWeChat");`；首次调用仅此一行 | 已有该对象就跳过，不重复初始化；进入 W1 |
-   | W1 | 已取得 app 对象 | `await wechat.getAXStateAndScreenshot();` | 目标课程且有“输入密码”→W2；口令弹窗已打开且输入为空→W3；已在播放→W7；无口令门且有可见 Play→W6；本任务已有暂停读回→W8；其他→停止输入 |
+   | W1 | 已取得 app 对象 | `await wechat.getAXStateAndScreenshot();` | 目标课程且有“输入密码”→W2；口令弹窗已打开且输入为空→W3；已起播或同一场有限媒体已捕获→W7；无口令门且有可见 Play→W6；其他→停止输入 |
    | W2 | 目标课程，唯一可见“输入密码”按钮，无弹窗 | `await wechat.click(passwordButton); await wechat.getAXStateAndScreenshot();` | 必须出现课程口令弹窗和空输入框→W3；没出现不再点 |
    | W3 | 课程口令弹窗内空输入框可见 | `await wechat.click(passwordInput); await wechat.getAXStateAndScreenshot();` | 同一输入框已聚焦/可见输入光标→W4；未确认聚焦不输入 |
    | W4 | 同一空输入框已聚焦 | `await wechat.typeText("666"); await wechat.getAXStateAndScreenshot();` | 必须读回输入值为 666→W5；其他值不清空、不补写、不提交 |
    | W5 | 课程口令框显示 666，唯一“确定”按钮可见 | `await wechat.click(confirmButton); await wechat.getAXStateAndScreenshot();` | 已起播→立即 W7；未起播且有可见 Play→W6；错误/仍为口令门→停止输入，不能再提交 |
 
-4. **只用空格暂停：W6–W8。** W5 之后禁止切终端、查日志或先写进度消息。
-   只按下表选下一行，不尝试底部暂停按钮、点画面唤出控件或其他快捷键。
+4. **抓到后关闭课程窗口：W6–W10。** W5 起播后立即只读同一 source job /
+   `view=capture` 候选，确认 baseline 之后同一 app/live 的有限 VOD 已被抓取。
+   已有该证据就跳过查询，直接 W7。不要等完整下载才关窗；下载由独立服务继续。
+   看见画面不等于文件下载完成；步骤5仍须验收同一压缩文件。
 
    | 步骤 | 必须已看到的前置画面 | 唯一允许的调用（`cua_repl`） | 结果与下一步 |
    |---|---|---|---|
    | W6 | 同一目标课程未自动起播，明确可见 Play，尚未点过播放 | `await wechat.click(playButton); await wechat.getAXStateAndScreenshot();` | 已起播→立即 W7；否则停止输入，不再点播放 |
-   | W7 | 同一鹅直播播放器已起播，尚未发送过暂停空格 | `await wechat.pressKey("space"); await wechat.getAXStateAndScreenshot();` | 保存暂停后画面/播放时间→W8；本轮 Space 最多一次，不能连按 |
-   | W8 | 同一播放器已发送暂停，或本任务已有暂停读回 | `await wechat.getAXStateAndScreenshot();` | 明确显示播放器的 Play 按钮，或可见播放时间在相隔至少2秒的两次读回中不变，且无仍在播放的证据→步骤5；否则 `playback_paused` 不得填 true，也不能试其他暂停操作 |
+   | W7 | 当前 AX 窗口为鹅直播，截图标题为目标课程；同一场有限媒体已捕获 | `await wechat.click(fileMenu); await wechat.getAXState();` | 必须有可用 `关闭全部标签页`，ID 为 `performClose:`→W8；不匹配则停止输入 |
+   | W8 | 上一步目标课程的文件菜单仍打开，唯一 `关闭全部标签页` 可用 | `await wechat.click(closeCourse); await wechat.getAXStateAndScreenshot();` | 鹅直播课程消失，回到微信窗口→W9；本轮关闭只提交一次 |
+   | W9 | 已回到微信窗口，窗口菜单唯一可见 | `await wechat.click(windowMenu); await wechat.getAXState();` | 列表无 `鹅直播`→W10；仍有该窗口则关闭未证实，不重复关闭 |
+   | W10 | 窗口菜单已读回无鹅直播，并暴露 `Cancel` secondary action | `await wechat.performSecondaryAction(windowMenu, "Cancel"); await wechat.getAXState();` | 记录 `playback_window_closed=true`，进入步骤5 |
 
-   W8 若需时间对照，首次读回后只调用 `clock.sleep`，参数
-   `{"duration_ms":2000}`，再执行 W8；这是暂停证据采样，不是连续播放等待捕获。
-   不为显示控件而点击播放器。只有静态课件画面、看不到状态/时间时，暂停仍未证实。
+   `关闭全部标签页` 必须来自已核对标题的鹅直播窗口，不能来自微信聊天窗口
+   或浏览器。此处的 `performClose:` 关闭该课程窗口。不要点微信主窗口关闭按钮，
+   不使用退出微信、进程终止、全局快捷键或右上角坐标作为替代。
 
    **本轮输入上限：** 商户唤起一次；有课程口令门时按钮/输入框/确定各点击一次、
-   `typeText("666")` 一次；未自动起播才增加 Play 点击一次；起播后 Space 一次。
+   `typeText("666")` 一次；未自动起播才增加 Play 点击一次；课程关闭提交一次。
    这是上限而非配额，已满足的步骤必须跳过。允许的微信工具动作仅为表内
    `getApp`、`getAXStateAndScreenshot`、目标 `click`、`typeText("666")`、
-   `pressKey("space")`；不能用双击、Enter、Tab、Esc、全局快捷键、刷新、
+   菜单 `performSecondaryAction(..., "Cancel")`；不能用 Space、静音、双击、Enter、Tab、Esc、全局快捷键、刷新、
    返回、窗口调整、退出/重启微信、重新打开 Scheme、DOM/CDP 或注入来代替。
 
    **非预期结果的固定处理：** 调用超时、被拒绝、用户切换窗口或画面不匹配时，
    不重复该输入；只再读取一次当前状态，记录步骤号、实际画面、最后一次调用和
-   是否已发送，保留原任务做离线诊断。若发现目标仍在播放且从未发送暂停空格，
-   仅允许进入 W7；若已发送，不能因结果不明再切换一次。登录/手机确认/验证码/
-   保护画面不属于课程口令门。无法证明暂停就如实报告“暂停未证实”，不继续按成功
-   回填。鼠标三角形、点击成功、控件消失都不能证明暂停。
+   是否已发送，保留原任务做离线诊断。登录/手机确认/验证码/保护画面不属于课程
+   口令门。无法证明课程关闭就如实报告“课程窗口关闭未证实”，不回填成功。
+   仅切到微信主窗口、最小化或工具点击成功都不能证明鹅直播窗口已关闭。
 
-5. **确认有限回放，交回原 PTY，等压缩文件完成。** 暂停后才查
+5. **确认有限回放，交回原 PTY，等压缩文件完成。** 复用 W7 前已读取的
    `/api/elive/live/candidates?all=1&view=capture`：候选必须是 baseline 之后出现、
    与当前 app/live ID 一致的有限 VOD `playlist_eof.m3u8`，不能选同时出现的
    `liveplay` FLV/M3U8。只读必要的 ID/时间/类型，不输出签名 URL、headers 或 cookies。
@@ -206,7 +218,8 @@ lists enrich asynchronously with an incremental cache; they cannot bind a source
    向原 PTY 回一行当前请求指定的 JSON，原样保留动作和身份字段；只在实际读回
    后填写 `playback_surface=wechat_mini_program`、
    `page_state=mini_program_media_observed`、`activated=true`、
-   `media_request_observed=true`、`playback_paused=true`，并据实填 `password_used`。
+   `media_request_observed=true`、`playback_window_closed=true`，并据实填 `password_used`。
+   不再要求或伪造 `playback_paused`；新规则只认课程窗口关闭读回。
    原始小程序消息入口还要回同一新候选的 `candidate_id`；不伪造成功字段。
 
    runner 用同一 `source_job_id` 创建绑定的下载任务。通过

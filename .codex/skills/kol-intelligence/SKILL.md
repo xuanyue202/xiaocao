@@ -73,8 +73,9 @@ evidence ambiguity, requested edits, or explicit historical aggregation.
 ## Non-negotiable semantic boundaries
 
 - Xiaocao: native WeChat mini-program only. H5 is a credential-free identity
-  anchor, never a player/login/fallback. Follow native SOP W0–W8 only:
-  on playback immediately press Space and verify stopped frame/time.
+  anchor, never a player/login/fallback. Follow the native SOP action table:
+  after media capture, close the exact course window and verify its absence.
+  No Space/pause/mute; keep WeChat running.
   No guessed coordinates, exploratory clicks, CDP/DOM, refresh or relaunch.
   Unexpected UI: stop inputs; diagnose offline.
 - Resolve code/state conflicts from first principles without asking by default:

@@ -426,7 +426,7 @@ def test_first_poll_baselines_history_and_arms_only_latest_live(tmp_path):
             "live_id": "l_6a708838e4b0694c5bf42e55",
             "page_state": "mini_program_media_observed",
             "activated": True,
-            "playback_paused": True,
+            "playback_window_closed": True,
             "password_used": True,
             "media_request_observed": True,
         }
@@ -483,8 +483,8 @@ def test_native_playback_restores_only_the_existing_capture(tmp_path, returned_i
     assert starts == [True]
 
 
-@pytest.mark.parametrize("paused", [True, False, None])
-def test_wechat_mini_program_route_binds_media_to_the_exact_live_id(tmp_path, paused):
+@pytest.mark.parametrize("closed", [True, False, None])
+def test_wechat_mini_program_route_binds_media_to_the_exact_live_id(tmp_path, closed):
     page_url = (
         "https://app6ums63as6516.h5.xiaoeknow.com/v2/course/alive/"
         "l_6a9531fbe4b0694c35440d7e"
@@ -516,8 +516,8 @@ def test_wechat_mini_program_route_binds_media_to_the_exact_live_id(tmp_path, pa
             "surface": "visible_foreground_ui",
             "action_mode": "one_action_then_state_readback",
             "max_activation_attempts": 1,
-            "pause_key": "space",
-            "pause_readback_required": True,
+            "playback_cleanup": "close_course_window",
+            "window_close_readback_required": True,
             "coordinate_policy": "fresh_screenshot_visible_control_only_when_ax_absent",
         }
         assert "浏览器 H5" in request["instructions"]
@@ -537,7 +537,8 @@ def test_wechat_mini_program_route_binds_media_to_the_exact_live_id(tmp_path, pa
             "live_id": "l_6a9531fbe4b0694c35440d7e",
             "page_state": "mini_program_media_observed",
             "activated": True,
-            "playback_paused": paused,
+            "playback_window_closed": closed,
+            "playback_paused": True,  # A pause must not satisfy the new close gate.
             "media_request_observed": True,
             "password_used": False,
         }
@@ -551,10 +552,10 @@ def test_wechat_mini_program_route_binds_media_to_the_exact_live_id(tmp_path, pa
         playback_route=XIAOCAO_PLAYBACK_ROUTE_WECHAT_MINI_PROGRAM,
     )
 
-    if paused is not True:
+    if closed is not True:
         with pytest.raises(EnrichmentDiagnosticError) as error:
             subscription.run_once(opencli_session="xiaocao-lv-subscription")
-        assert error.value.diagnostic_code == "native_playback_pause_unverified"
+        assert error.value.diagnostic_code == "native_playback_window_close_unverified"
         assert capture.advances == 0
         return
 
@@ -606,7 +607,7 @@ def test_native_mini_program_entry_is_armed_before_ui_and_binds_observed_live(
             "candidate_id": "candidate-new-live",
             "page_state": "mini_program_media_observed",
             "activated": True,
-            "playback_paused": True,
+            "playback_window_closed": True,
             "media_request_observed": True,
             "password_used": True,
         }
@@ -716,7 +717,7 @@ def test_wechat_mini_program_route_rejects_a_different_live_id(tmp_path):
             "live_id": "l_wrong_resource",
             "page_state": "mini_program_media_observed",
             "activated": True,
-            "playback_paused": True,
+            "playback_window_closed": True,
             "media_request_observed": True,
             "password_used": False,
         }
@@ -893,7 +894,7 @@ def test_newer_preview_is_not_starved_by_an_older_unfinished_capture(tmp_path):
             ),
             "page_state": "mini_program_media_observed",
             "activated": True,
-            "playback_paused": True,
+            "playback_window_closed": True,
             "password_used": False,
             "media_request_observed": True,
         }
@@ -950,8 +951,9 @@ def test_newest_inflight_capture_precedes_an_older_ready_handoff():
     assert selected["identity"] == "current-live"
 
 
+@pytest.mark.parametrize("needs_close_readback", [False, True])
 def test_existing_source_task_is_reconciled_before_another_wechat_ui_attempt(
-    tmp_path,
+    tmp_path, needs_close_readback,
 ):
     identity = "kol-wechat-current"
     output_dir = tmp_path / "wechat"
@@ -976,6 +978,8 @@ def test_existing_source_task_is_reconciled_before_another_wechat_ui_attempt(
                     "capture_job_id": "kol-capture-current",
                     "status": "awaiting_playback",
                     "observed_page_state": "unknown",
+                    "media_request_observed": needs_close_readback,
+                    "playback_paused": False,
                     "updated_at": "2026-09-05T14:00:00+08:00",
                 }
             },
@@ -996,13 +1000,29 @@ def test_existing_source_task_is_reconciled_before_another_wechat_ui_attempt(
         "next": "rerun_broadband",
     }
 
-    def reject_browser(_request: dict) -> dict:
-        raise AssertionError("a completed source task must bypass WeChat UI")
+    requests = []
+
+    def close_readback(request: dict) -> dict:
+        assert needs_close_readback, "completed source must bypass new playback"
+        assert request["check_reason"] == "captured_window_cleanup"
+        assert "launch_resolver_command" not in request
+        requests.append(request)
+        return {
+            "action": request["action"],
+            "subscription_id": identity,
+            "playback_surface": XIAOCAO_PLAYBACK_ROUTE_WECHAT_MINI_PROGRAM,
+            "source_identity": "xiaoetong:app6ums63as6516:l_target",
+            "live_id": "l_target",
+            "page_state": "mini_program_media_observed",
+            "activated": True,
+            "media_request_observed": True,
+            "playback_window_closed": True,
+        }
 
     subscription = XiaocaoWechatLiveSubscription(
         output_dir,
         history_reader=lambda: {},
-        browser_exchange=reject_browser,
+        browser_exchange=close_readback,
         capture_driver=capture,
         contact=CONTACT,
         playback_route=XIAOCAO_PLAYBACK_ROUTE_WECHAT_MINI_PROGRAM,
@@ -1017,6 +1037,8 @@ def test_existing_source_task_is_reconciled_before_another_wechat_ui_attempt(
     assert result["waiting_items"][0]["stage"] == "compressed_capture"
     assert capture.capture_checks == 1
     assert capture.advances == 1
+    assert capture.playback_preparations == []
+    assert len(requests) == int(needs_close_readback)
 
 
 def test_awaiting_playback_rechecks_the_bound_page_each_hour_until_playable(
@@ -1071,7 +1093,7 @@ def test_awaiting_playback_rechecks_the_bound_page_each_hour_until_playable(
             "live_id": "l_6a708838e4b0694c5bf42e55",
             "page_state": page_state,
             "activated": activated,
-            "playback_paused": activated,
+            "playback_window_closed": activated,
             "password_used": False,
             "media_request_observed": activated,
         }
@@ -1204,7 +1226,7 @@ def test_pending_cloud_handoff_resumes_exact_job_after_stale_playback_state(
                 "live_id": "l_6a708838e4b0694c5bf42e55",
                 "page_state": "mini_program_media_observed",
                 "activated": True,
-                "playback_paused": True,
+                "playback_window_closed": True,
                 "media_request_observed": True,
                 "password_used": False,
             }
