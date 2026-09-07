@@ -1321,6 +1321,7 @@ _XIAOCAO_WECHAT_COMPRESSED_CAPTURE_REPAIR_PROFILE = (
 _XIAOCAO_WECHAT_CLOUD_HANDOFF_REPAIR_PROFILE = (
     "kol_xiaocao_wechat_live_cloud_handoff"
 )
+_MAILBOX_EXACT_RESUME_PROFILE = "kol_mailbox_exact_resume"
 
 _MAILBOX_BROWSER_REPAIR_FAILURES = frozenset({
     ("transport_error", "opencli_command_failed"),
@@ -1345,7 +1346,7 @@ def _canonical_mailbox_browser_repair_profile(
 
     if (
         str(context.get("targeted_test_profile") or "")
-        != "kol_mailbox_exact_resume"
+        != _MAILBOX_EXACT_RESUME_PROFILE
     ):
         return None
     if (
@@ -1356,7 +1357,7 @@ def _canonical_mailbox_browser_repair_profile(
         )
         in _MAILBOX_BROWSER_REPAIR_FAILURES
     ):
-        return "kol_mailbox_exact_resume"
+        return _MAILBOX_EXACT_RESUME_PROFILE
     return None
 
 
