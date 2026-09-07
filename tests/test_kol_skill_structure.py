@@ -163,9 +163,9 @@ def test_hourly_local_native_launch_preserves_readiness_and_verified_identity() 
         "Regenerate the merchant ticket only for that one activation",
         "Once the exact course is visible, do not resolve again",
         "At the visible course-password input, enter `666` once",
-        "Immediately press `space` in the player window when playback starts",
-        "before querying logs or download progress",
-        "cursor triangle",
+        "close that course window using the File menu",
+        "verify Goose Live is absent",
+        "Do not press Space, pause, or mute",
         "No hooks, WeChat re-signing, hidden debugging, CDP/DOM evaluation",
         "If the resolver cannot prove a ticket, use the original visible message entry",
         "A launch plan is not playback, download or upload acceptance",
@@ -774,7 +774,7 @@ def test_hourly_local_capture_sunsets_xiaoetong_web_login() -> None:
     assert "xiaoetong-sms-login.md" not in hourly
     for marker in (
         "H5 is a credential-free identity anchor",
-        "on playback immediately press Space and verify stopped frame/time",
+        "after media capture, close the exact course window and verify its absence",
         "No guessed coordinates",
     ):
         assert marker in entrypoint
