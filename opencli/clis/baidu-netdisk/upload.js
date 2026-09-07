@@ -1,4 +1,5 @@
 import { cli, Strategy } from '@jackwener/opencli/registry';
+import { execFileSync } from 'node:child_process';
 import {
   ArgumentError,
   AuthRequiredError,
@@ -7,6 +8,73 @@ import {
 
 const DEFAULT_DIRECTORY = '/课程/自己的课/小草';
 const UPLOAD_INPUT = 'input[type="file"][title="点击选择文件"][accept="*/*"]';
+
+// Credential-free, claim-bound progress survives CLI/runtime failures. Never
+// infer a pre-attachment failure after attach.begin has appeared.
+async function uploadStage(input, stage, action) {
+  const emit = phase => process.stderr.write(JSON.stringify({
+    kind: 'xiaocao_upload_stage', claimId: input.claimId, stage, phase,
+  }) + '\n');
+  emit('begin');
+  const result = await action();
+  emit('end');
+  return result;
+}
+
+async function restoreUploaderWindow(page, input) {
+  const state = await uploadStage(input, 'page_state', () => page.evaluate(`({
+    visibility: document.visibilityState, url: location.href,
+    x: screenX, y: screenY, w: outerWidth, h: outerHeight
+  })`));
+  if (state?.visibility !== 'hidden') return;
+  if (process.platform !== 'darwin' || ![state.x, state.y, state.w, state.h].every(Number.isFinite)) {
+    throw new CommandExecutionError('Hidden uploader requires exact Edge window restoration');
+  }
+  // Native window activation only: no navigation, reload, profile changes,
+  // webpage scripting, or file chooser. Geometry + full URL must match once.
+  const script = `on run argv
+    set expectedBounds to {(item 1 of argv as integer), (item 2 of argv as integer), (item 3 of argv as integer), (item 4 of argv as integer)}
+    set expectedURL to item 5 of argv
+    tell application "Microsoft Edge"
+      set candidates to {}
+      repeat with w in windows
+        if bounds of w is expectedBounds then
+          repeat with i from 1 to count of tabs of w
+            if URL of tab i of w is expectedURL then set end of candidates to {(id of w as integer), i, (id of tab i of w as text)}
+          end repeat
+        end if
+      end repeat
+      if count of candidates is not 1 then error "Exact uploader window is missing or ambiguous"
+      set chosen to item 1 of candidates
+      set w to window id (item 1 of chosen)
+      set tabIndex to item 2 of chosen
+      if (id of tab tabIndex of w as text) is not item 3 of chosen then error "Uploader tab changed"
+      if URL of tab tabIndex of w is not expectedURL then error "Uploader URL changed"
+      set active tab index of w to tabIndex
+      set index of w to 1
+      activate
+    end tell
+    return "foreground_requested"
+  end run`;
+  await uploadStage(input, 'foreground', async () => {
+    try {
+      execFileSync('/usr/bin/osascript', ['-e', script,
+        String(Math.round(state.x)), String(Math.round(state.y)),
+        String(Math.round(state.x + state.w)), String(Math.round(state.y + state.h)), state.url,
+      ], {encoding: 'utf8', timeout: 10000});
+    } catch {
+      throw new CommandExecutionError('Exact Edge uploader window restoration failed; no file attached');
+    }
+  });
+  // Visibility alone is insufficient: background pages can still be healthy.
+  // Prove the task queue actually resumed before issuing network/file work.
+  const heartbeat = await uploadStage(input, 'event_loop', () => page.evaluate(
+    'new Promise(resolve => setTimeout(() => resolve({responsive:true}), 100))'
+  ));
+  if (heartbeat?.responsive !== true) {
+    throw new CommandExecutionError('Uploader event loop recovery was not verified');
+  }
+}
 
 function basename(value) {
   return String(value || '').split(/[\\/]/).filter(Boolean).at(-1) || '';
@@ -36,17 +104,39 @@ function normalizeInput(kwargs) {
   return { file, directory, targetName, claimId };
 }
 
-async function inspectTarget(page, input) {
+async function inspectTarget(page, input, { retainPage = false } = {}) {
   const folderUrl = 'https://pan.baidu.com/disk/main#/index?category=all&path='
     + encodeURIComponent(input.directory);
-  await page.goto(folderUrl, { waitUntil: 'load', settleMs: 1500 });
-  const activePage = page.getActivePage?.();
-  if (!activePage || !page.selectTab) {
+  if (!page.tabs || !page.selectTab) {
     throw new CommandExecutionError('Exact OpenCLI site page selection is required');
   }
-  await page.selectTab(activePage);
-  await page.wait({ time: 1 });
-  const inspection = await page.evaluate(`(async () => {
+  // Adapter and browser-command surfaces have separate leases, even with the
+  // same session name. Resolve only THIS adapter's page and preserve its queue.
+  const tabs = await uploadStage(input, 'tabs', () => page.tabs());
+  const targets = tabs.filter(tab => {
+    try {
+      const url = new URL(tab.url);
+      const query = url.hash.slice(url.hash.indexOf('?') + 1);
+      return url.origin === 'https://pan.baidu.com' && url.pathname === '/disk/main'
+        && new URLSearchParams(query).get('path') === input.directory;
+    } catch { return false; }
+  });
+  if (targets.length > 1) {
+    throw new CommandExecutionError('Multiple exact adapter uploader pages; selection is ambiguous');
+  }
+  if (targets.length === 1 && targets[0].page) {
+    await uploadStage(input, 'select', () => page.selectTab(targets[0].page));
+  } else {
+    if (retainPage) {
+      throw new CommandExecutionError('Retained adapter uploader page is missing; inspection must not navigate');
+    }
+    await uploadStage(input, 'navigate', () => page.goto(folderUrl, { waitUntil: 'load', settleMs: 1500 }));
+    const activePage = page.getActivePage?.();
+    if (!activePage) throw new CommandExecutionError('Exact adapter page identity is missing');
+    await uploadStage(input, 'select', () => page.selectTab(activePage));
+  }
+  await restoreUploaderWindow(page, input);
+  const inspection = await uploadStage(input, 'folder_scan', () => page.evaluate(`(async () => {
     const dir = ${JSON.stringify(input.directory)};
     const target = ${JSON.stringify(input.targetName)};
     const currentUrl = new URL(location.href);
@@ -67,47 +157,6 @@ async function inspectTarget(page, input) {
         && style.display !== 'none' && style.visibility !== 'hidden'
         && Number(style.opacity) !== 0;
     };
-    const adPattern = /广告|运营图片|限时特惠|下载客户端|开通\\s*(?:SVIP|超级会员)|SVIP\\s*(?:活动|特惠|优惠)/i;
-    const overlays = [...document.querySelectorAll([
-      '.nd-operate-guidance',
-      '[role="dialog"]',
-      '[class*="modal"]',
-      '[class*="popup"]',
-      '[class*="advert"]',
-      '[class*="promotion"]',
-      '[class*="pay-revolution"]',
-      '[class*="vip-dialog"]',
-    ].join(','))];
-    for (const overlay of overlays) {
-      const identity = [
-        overlay.className || '',
-        (overlay.innerText || '').trim(),
-        ...[...overlay.querySelectorAll('img')].map(
-          (node) => (node.getAttribute('alt') || '') + ' ' + (node.className || '')
-        ),
-      ].join(' ');
-      if (!visible(overlay) || !adPattern.test(identity)) continue;
-      const close = [...overlay.querySelectorAll(
-        'button,[role="button"],[aria-label],[title],[class*="close"],img[alt="close"]'
-      )].find((node) => {
-        const label = [
-          node.getAttribute('aria-label') || '',
-          node.getAttribute('title') || '',
-          node.getAttribute('alt') || '',
-          node.className || '',
-          (node.textContent || '').trim(),
-        ].join(' ');
-        return visible(node) && /关闭|close|×|^x$/i.test(label);
-      });
-      if (close) {
-        close.click();
-        await new Promise((resolve) => setTimeout(resolve, 100));
-      }
-      if (document.contains(overlay) && visible(overlay)) {
-        overlay.style.setProperty('display', 'none', 'important');
-        overlay.setAttribute('aria-hidden', 'true');
-      }
-    }
     const pageSize = 1000;
     const maxPages = 100;
     let pageNumber = 1;
@@ -118,7 +167,7 @@ async function inspectTarget(page, input) {
       const url = '/api/list?clienttype=0&app_id=250528&web=1'
         + '&order=name&desc=1&dir=' + encodeURIComponent(dir)
         + '&num=' + pageSize + '&page=' + pageNumber;
-      const response = await fetch(url, {credentials: 'include'});
+      const response = await fetch(url, {credentials: 'include', signal: AbortSignal.timeout(15000)});
       let body;
       try {
         body = await response.json();
@@ -178,7 +227,7 @@ async function inspectTarget(page, input) {
         })(),
       },
     };
-  })()`);
+  })()`));
   if (!inspection || typeof inspection !== 'object') {
     throw new CommandExecutionError('Baidu Netdisk returned a malformed folder inspection');
   }
@@ -296,6 +345,7 @@ cli({
     { name: 'claim-id', required: true, help: 'Durable upload claim identifier from the caller ledger' },
     { name: 'inspect-only', type: 'boolean', default: false, help: 'Stop after exact folder/name inspection without attaching a file' },
     { name: 'activate-only', type: 'boolean', default: false, help: 'Check native page activation without attaching a file' },
+    { name: 'timeout', type: 'int', default: 60, help: 'Transport deadline in seconds; shared with the runtime deadline' },
   ],
   columns: [
     'status',
@@ -309,7 +359,7 @@ cli({
   ],
   func: async (page, kwargs) => {
     const input = normalizeInput(kwargs);
-    const inspection = await inspectTarget(page, input);
+    const inspection = await inspectTarget(page, input, {retainPage: kwargs['inspect-only'] === true});
     if (inspection.exactCount === 1) {
       return [{
         status: 'already_present',
@@ -339,21 +389,21 @@ cli({
     if (!page.uploadFiles) {
       throw new CommandExecutionError('OpenCLI Browser Bridge uploadFiles support is required');
     }
-    const selector = await markUploadInput(page, input);
-    const activation = await activateUploadPage(page);
+    const selector = await uploadStage(input, 'mark_input', () => markUploadInput(page, input));
+    const activation = await uploadStage(input, 'activate', () => activateUploadPage(page));
     if (kwargs['activate-only'] === true) {
       return [{status: 'activation_verified', claimId: input.claimId, uploaded: false, activation}];
     }
-    const upload = await page.uploadFiles(selector, [input.file], {nth: 0});
+    const upload = await uploadStage(input, 'attach', () => page.uploadFiles(selector, [input.file], {nth: 0}));
     if (!upload || upload.uploaded !== true || upload.files !== 1) {
       throw new CommandExecutionError('Baidu Netdisk did not confirm exactly one uploaded file');
     }
     const uploadedNames = Array.isArray(upload.file_names) ? upload.file_names : [];
-    const captured = await page.evaluate(`(() => {
+    const captured = await uploadStage(input, 'receipt', () => page.evaluate(`(() => {
       const value = window.__opencliBaiduUploadReceipt;
       delete window.__opencliBaiduUploadReceipt;
       return value || null;
-    })()`);
+    })()`));
     const capturedNames = Array.isArray(captured?.fileNames) ? captured.fileNames : [];
     if (upload.target !== selector || upload.matches_n !== 1
         || captured?.claim !== input.claimId

@@ -11,7 +11,7 @@ hash-bound `NetdiskEnrichmentService` job. Install or verify the exact template:
 Use persistent OpenCLI session `site:baidu-netdisk`. The repository wrapper
 owns source path/SHA/size validation, the append-only durable claim, uncertain-
 side-effect handling, and authoritative cloud readback. The adapter owns exact
-folder navigation, credentialed paginated `/api/list`, semantic ad dismissal,
+folder binding, credentialed paginated `/api/list`,
 one claimed file-input attachment, and its low-level receipt. Never replace the
 pair with a click macro or hard-coded profile/path.
 
@@ -33,6 +33,38 @@ visible file-name header to establish browser user activation before attaching
 the file. A `--window foreground` flag alone does not prove activation. Its
 `--activate-only true` probe attaches no file; it cannot prove upload completion.
 Never replace the adapter with direct debugger calls or a synthetic DOM click.
+
+## Exact local upload SOP (macOS / Microsoft Edge)
+
+Do not manually decompose these stages into browser clicks. The repository
+adapter performs them in order. `browser site:baidu-netdisk` and the upload
+adapter use **different OpenCLI surfaces**, despite the identical session name;
+the browser command's empty queue or healthy page is not uploader evidence.
+
+| Step | Exact action / required result | Failure boundary |
+|---|---|---|
+| U1 | Bind the existing Netdisk job, exact basename, bytes and SHA from its ledger; verify the installed template using the commands above. | No new job, renamed copy, or full `capture-local` rerun. |
+| U2 | Adapter `page.tabs()` finds exactly one page for the exact destination directory; `page.selectTab(page)` reuses it. | Multiple matches stop. `--inspect-only true` must never navigate or recreate a missing uploader. |
+| U3 | Read that page's current window geometry and URL. If hidden, the adapter's fixed `osascript` helper selects the unique Edge window/tab matching BOTH; foreground it once. No hard-coded IDs or coordinates. | Missing/ambiguous native match stops before attachment. Never activate every window, refresh, close, or change browser settings. |
+| U4 | Require the same page's 100 ms event-loop probe to finish; then credentialed paginated `/api/list` must prove exact folder, `errno=0`, complete scan, and 0 or 1 exact basename. Inspection changes no ads, styles or file inputs. | A synchronous read, `selected=true`, or `--window foreground` alone is not readiness. Use the emitted stage diagnostic; do not turn a timeout hint into a claim that a native dialog exists. |
+| U5 | For a new prepared claim: persist claim, verify media hash/size, mark one file input, native-click the exact filename header, require user activation, attach once and bind its receipt. Existing claims follow only the recovery APIs below. | From `attach.begin` onward, absent receipt means uncertain effect, never permission to retry. |
+| U6 | Keep the same item PTY running until later exact cloud readback yields `video_ready`; feed the exact LiangHui operation/receipt as specified by the local entry. | Attachment is not cloud completion; mailbox creation is `Handoff完成`, not remote `全部完成`. |
+
+For diagnosis only, run the adapter with the existing ledger values and
+`--inspect-only true --timeout 25 --site-session persistent --keep-tab true
+--window foreground --format json`. Never omit `--inspect-only true` when
+diagnosing an already-claimed upload. Use the wrapper, not a standalone adapter
+invocation, for any actual attachment. Stages are emitted on stderr as compact
+`xiaocao_upload_stage` JSON bound to `claimId`; stdout remains the receipt.
+`--timeout` is an explicit adapter argument so transport and runtime deadlines
+agree. Historical generic failures remain generic; a new reproduction cannot
+retroactively prove an old attempt never attached a file.
+
+The foreground helper is a bounded macOS **Edge window-management** operation,
+not webpage scripting, file attachment, or a WeChat operation. It does not
+modify extension permissions or browser security settings. An explicit security
+denial, authentication/consent challenge, or unknown upload effect still stops
+the corresponding action; do not switch surfaces to bypass it.
 
 For the exact `file_chooser_not_opened` / `upload_before_attachment` failure,
 OpenCLI's chooser timeout occurs before file assignment. After a verified repair,

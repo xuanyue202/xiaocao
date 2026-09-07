@@ -200,7 +200,7 @@ lists enrich asynchronously with an incremental cache; they cannot bind a source
    **本轮输入上限：** 商户唤起一次；有课程口令门时按钮/输入框/确定各点击一次、
    `typeText("666")` 一次；未自动起播才增加 Play 点击一次；课程关闭提交一次。
    这是上限而非配额，已满足的步骤必须跳过。允许的微信工具动作仅为表内
-   `getApp`、`getAXStateAndScreenshot`、目标 `click`、`typeText("666")`、
+   `getApp`、`getAXState`、`getAXStateAndScreenshot`、目标 `click`、`typeText("666")`、
    菜单 `performSecondaryAction(..., "Cancel")`；不能用 Space、静音、双击、Enter、Tab、Esc、全局快捷键、刷新、
    返回、窗口调整、退出/重启微信、重新打开 Scheme、DOM/CDP 或注入来代替。
 
