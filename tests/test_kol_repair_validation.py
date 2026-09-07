@@ -185,6 +185,7 @@ def test_repair_validation_maps_mailbox_wrapped_browser_failure_to_exact_profile
     ("status", "expected"),
     [
         ("repair_required", "repair_required"),
+        ("reconcile_required", "repair_required"),
         ("user_action_required", "blocked"),
         ("terminal", "completed"),
         ("wait_until", "waiting"),

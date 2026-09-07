@@ -47,6 +47,7 @@ NEXT_ACTIONS = {
 
 _MAILBOX_PROJECTION_STATUS = {
     "repair_required": "repair_required",
+    "reconcile_required": "repair_required",
     "user_action_required": "blocked",
     "terminal": "completed",
 }

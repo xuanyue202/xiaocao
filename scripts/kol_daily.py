@@ -3721,7 +3721,11 @@ class DailyRuntime:
                 try:
                     state = service.netdisk.advance_opencli(
                         job_id,
-                        session=self.args.enrichment_session,
+                        session=getattr(
+                            self.args,
+                            "xiaocao_enrichment_session",
+                            self.args.enrichment_session,
+                        ),
                         profile=self.args.opencli_profile,
                     )
                 except EnrichmentError:
@@ -3753,7 +3757,11 @@ class DailyRuntime:
                         raise
                     state = service.netdisk.advance_opencli(
                         job_id,
-                        session=self.args.enrichment_session,
+                        session=getattr(
+                            self.args,
+                            "xiaocao_enrichment_session",
+                            self.args.enrichment_session,
+                        ),
                         profile=self.args.opencli_profile,
                     )
             if state.get("status") == "transcript_captured":
