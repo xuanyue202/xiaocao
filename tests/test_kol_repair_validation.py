@@ -1,13 +1,18 @@
 from __future__ import annotations
 
+from datetime import datetime
 from subprocess import CompletedProcess
 
 import pytest
 
 from xiaocao.kol.writer_progress import (
+    ConvergenceLedger,
+    FailureFingerprint,
     ProgressContractError,
     RepairValidationLedger,
+    RepairValidationReceipt,
     RepairValidationService,
+    WriterProgress,
     mailbox_projection_status,
 )
 
@@ -1046,7 +1051,8 @@ def test_repair_validation_accepts_wechat_official_accounts_source_profile(
         (
             "official_account_parser_uses_exact_publishers_and_url_only_metadata or "
             "official_account_reader_calls_one_stateless_combined_window or "
-            "repair_validation_accepts_wechat_official_accounts_source_profile"
+            "repair_validation_accepts_wechat_official_accounts_source_profile or "
+            "repair_validation_accepts_wechat_official_accounts_repair_closure_alias"
         ),
     )
 
@@ -1100,6 +1106,69 @@ def test_repair_validation_accepts_wechat_official_accounts_source_profile(
         "kol_wechat_official_accounts_source_run"
     )
     assert receipt.failure_fingerprint == "6" * 64
+
+
+def test_repair_validation_accepts_wechat_official_accounts_repair_closure_alias(
+    tmp_path,
+) -> None:
+    progress = WriterProgress.repair_required(
+        item_identity="wechat_official_accounts:source",
+        fingerprint=FailureFingerprint(
+            adapter="wechat_official_accounts",
+            category="configuration",
+            code="wechat_cli_missing",
+            stage="wechat_official_scan",
+            failure_revision=FAILURE_REVISION,
+            provider_contract_version="xiaocao_writer_v1",
+        ),
+        repair_revision=None,
+        affected_set_digest="7" * 64,
+        claim_receipt_summary={
+            "claim_count": 0,
+            "receipt_count": 0,
+            "uncertain_effect_count": 0,
+        },
+        targeted_test_profile=(
+            "kol_wechat_official_accounts_wechat_official_scan"
+        ),
+        narrow_resume_surface="wechat_official_accounts:source",
+        retryability="retryable",
+    )
+    convergence = ConvergenceLedger(
+        tmp_path / "convergence.jsonl",
+        now=lambda: datetime.fromisoformat("2026-08-31T11:30:00+08:00"),
+    )
+    convergence.record(progress, slot="2026-08-31T11:00+08:00")
+    validation = RepairValidationLedger(tmp_path / "repair-validation.jsonl")
+    receipt = validation.append(
+        RepairValidationReceipt.create(
+            message_id="4" * 64,
+            content_sha256="5" * 64,
+            failure_fingerprint=progress.failure_fingerprint,
+            failure_revision=FAILURE_REVISION,
+            failure_code="wechat_cli_missing",
+            failure_stage="wechat_official_scan",
+            repair_revision=REPAIR_REVISION,
+            target_branch="main",
+            target_branch_revision=REPAIR_REVISION,
+            targeted_test_profile="kol_wechat_official_accounts_source_run",
+            test_command_digest="8" * 64,
+            test_result_sha256="9" * 64,
+            validated_at="2026-08-31T11:30:00+08:00",
+        )
+    )
+
+    closure = convergence.close_repair(
+        progress.failure_fingerprint,
+        repair_receipt=receipt,
+        validation_ledger=validation,
+        slot="2026-08-31T11:00+08:00",
+    )
+
+    assert closure["event"] == "repair_closed"
+    assert closure["repair_receipt"]["targeted_test_profile"] == (
+        "kol_wechat_official_accounts_source_run"
+    )
 
 
 @pytest.mark.parametrize(

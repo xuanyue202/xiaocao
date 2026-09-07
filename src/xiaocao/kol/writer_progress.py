@@ -857,7 +857,8 @@ TARGETED_REPAIR_TESTS: dict[str, tuple[str, ...]] = {
         (
             "official_account_parser_uses_exact_publishers_and_url_only_metadata or "
             "official_account_reader_calls_one_stateless_combined_window or "
-            "repair_validation_accepts_wechat_official_accounts_source_profile"
+            "repair_validation_accepts_wechat_official_accounts_source_profile or "
+            "repair_validation_accepts_wechat_official_accounts_repair_closure_alias"
         ),
     ),
     "kol_xiaocao_wechat_live_source_run": (
@@ -3060,6 +3061,17 @@ class ConvergenceLedger:
             )
             if canonical_listing_validation_profile is not None:
                 expected_profile = canonical_listing_validation_profile
+            canonical_wechat_official_profile = (
+                _canonical_wechat_official_source_repair_profile({
+                    "adapter": open_progress.failure["adapter"],
+                    "targeted_test_profile": expected_profile,
+                    "category": open_progress.failure["category"],
+                    "code": open_progress.failure["code"],
+                    "stage": open_progress.failure["stage"],
+                })
+            )
+            if canonical_wechat_official_profile is not None:
+                expected_profile = canonical_wechat_official_profile
             canonical_xiaocao_wechat_profile = (
                 _canonical_xiaocao_wechat_source_repair_profile({
                     "adapter": open_progress.failure["adapter"],
