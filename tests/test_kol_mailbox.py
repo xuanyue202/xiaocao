@@ -582,6 +582,69 @@ def test_remote_drain_preserves_structured_exception_diagnostics(tmp_path) -> No
     )
 
 
+def test_progress_projection_exposes_latest_repair_and_clears_on_ack(
+    tmp_path,
+) -> None:
+    message_id = "a" * 64
+    content_sha256 = "b" * 64
+    ledger = MailboxLedger(tmp_path / "mailbox")
+    attempted = ledger.append(
+        "mailbox_message_attempted",
+        occurred_at="2026-09-07T04:33:10.230Z",
+        handoff_id=message_id,
+        content_sha256=content_sha256,
+    )
+    progress = {
+        "status": "repair_required",
+        "ownership": "agent",
+        "failure_fingerprint": "c" * 64,
+        "failure_revision": "d" * 40,
+        "next_action": "validate_repair_then_narrow_resume",
+        "claim_receipt_summary": {
+            "claim_count": 0,
+            "receipt_count": 0,
+            "uncertain_effect_count": 0,
+        },
+    }
+    ledger.append(
+        "mailbox_message_waiting",
+        occurred_at="2026-09-07T04:33:21.193Z",
+        handoff_id=message_id,
+        content_sha256=content_sha256,
+        category="transport_error",
+        code="opencli_command_failed",
+        stage="browser_command",
+        failure_fingerprint="c" * 64,
+        failure_revision="d" * 40,
+        writer_progress=progress,
+    )
+
+    projected = ledger.progress_projection()
+    assert projected["status"] == "repair_required"
+    assert projected["message_id"] == message_id
+    assert projected["content_sha256"] == content_sha256
+    assert projected["failure_fingerprint"] == "c" * 64
+    assert projected["next_action"] == (
+        "validate_repair_then_narrow_resume"
+    )
+    assert projected["active_message_count"] == 1
+    assert projected["event_id"] != attempted["event_id"]
+
+    ledger.append(
+        "mailbox_ack_receipted",
+        occurred_at="2026-09-07T05:00:00.000Z",
+        handoff_id=message_id,
+        content_sha256=content_sha256,
+        outcome="acked",
+        receipt={"message_id": message_id},
+    )
+    terminal = ledger.progress_projection()
+    assert terminal["status"] == "completed"
+    assert terminal["message_id"] == message_id
+    assert "failure_fingerprint" not in terminal
+    assert terminal["active_message_count"] == 0
+
+
 def test_remote_drain_normalizes_unstructured_exception_code(tmp_path) -> None:
     message = _mailbox_message("a" * 64)
     pages = iter([[message], []])

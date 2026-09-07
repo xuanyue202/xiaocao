@@ -15,6 +15,7 @@ from .writer_progress import (
     FailureFingerprint,
     ProgressContractError,
     WriterProgress,
+    mailbox_projection_status,
     resolve_repository_revision,
 )
 
@@ -139,6 +140,122 @@ class MailboxLedger:
                 )
             rows.append(row)
         return rows
+
+    def progress_projection(self) -> dict[str, Any]:
+        """Project the latest local progress for mailbox messages.
+
+        This is deliberately local-only: status and audit must be able to
+        expose a durable mailbox wait without issuing another provider read.
+        """
+
+        states: dict[str, dict[str, Any]] = {}
+        for position, row in enumerate(self.events()):
+            event = str(row.get("event") or "")
+            message_id = str(row.get("handoff_id") or "")
+            if event not in {
+                "mailbox_message_attempted",
+                "mailbox_message_repair_resumed",
+                "mailbox_message_waiting",
+                "mailbox_ack_receipted",
+            } or not message_id:
+                continue
+            state = states.setdefault(
+                message_id,
+                {"message_id": message_id},
+            )
+            state.update({
+                "occurred_at": str(row.get("occurred_at") or ""),
+                "event_id": str(row.get("event_id") or ""),
+                "last_event": event,
+                "_position": position,
+            })
+            if row.get("content_sha256"):
+                state["content_sha256"] = str(row["content_sha256"])
+            if event in {
+                "mailbox_message_attempted",
+                "mailbox_message_repair_resumed",
+            }:
+                state["status"] = (
+                    "resuming"
+                    if event == "mailbox_message_repair_resumed"
+                    else "attempted"
+                )
+                if row.get("repair_revision"):
+                    state["repair_revision"] = str(row["repair_revision"])
+                continue
+            if event == "mailbox_ack_receipted":
+                state["status"] = "completed"
+                state.pop("category", None)
+                state.pop("code", None)
+                state.pop("stage", None)
+                state.pop("failure_fingerprint", None)
+                state.pop("failure_revision", None)
+                state.pop("next_action", None)
+                state.pop("claim_receipt_summary", None)
+                state.pop("writer_progress", None)
+                continue
+
+            progress = row.get("writer_progress")
+            state["status"] = mailbox_projection_status(
+                progress if isinstance(progress, Mapping) else None
+            )
+            for key in (
+                "category",
+                "code",
+                "stage",
+                "failure_fingerprint",
+                "failure_revision",
+                "next_action",
+            ):
+                value = row.get(key)
+                if value:
+                    state[key] = str(value)
+            if isinstance(progress, Mapping):
+                state["writer_progress"] = dict(progress)
+                for key in (
+                    "failure_fingerprint",
+                    "failure_revision",
+                    "next_action",
+                ):
+                    value = progress.get(key)
+                    if value:
+                        state[key] = str(value)
+                summary = progress.get("claim_receipt_summary")
+                if isinstance(summary, Mapping):
+                    state["claim_receipt_summary"] = dict(summary)
+
+        if not states:
+            return {
+                "status": "idle",
+                "active_message_count": 0,
+                "completed_message_count": 0,
+            }
+
+        active = [
+            state for state in states.values()
+            if state.get("status") != "completed"
+        ]
+        candidates = active or list(states.values())
+        latest = max(candidates, key=lambda state: int(state["_position"]))
+        if any(state.get("status") == "repair_required" for state in active):
+            overall_status = "repair_required"
+        elif any(state.get("status") == "blocked" for state in active):
+            overall_status = "blocked"
+        elif active:
+            overall_status = "waiting"
+        else:
+            overall_status = "completed"
+        projection = {
+            key: value
+            for key, value in latest.items()
+            if key != "_position"
+        }
+        projection.update({
+            "status": overall_status,
+            "active_message_count": len(active),
+            "completed_message_count": len(states) - len(active),
+        })
+        return projection
 
     def _handoff_states(self) -> tuple[dict[str, dict[str, Any]], set[str]]:
         sent: dict[str, dict[str, Any]] = {}

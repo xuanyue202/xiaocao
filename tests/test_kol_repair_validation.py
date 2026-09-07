@@ -8,6 +8,7 @@ from xiaocao.kol.writer_progress import (
     ProgressContractError,
     RepairValidationLedger,
     RepairValidationService,
+    mailbox_projection_status,
 )
 
 
@@ -178,6 +179,22 @@ def test_repair_validation_maps_mailbox_wrapped_browser_failure_to_exact_profile
     }
 
     assert service._expected_profile(context) == "kol_mailbox_exact_resume"
+
+
+@pytest.mark.parametrize(
+    ("status", "expected"),
+    [
+        ("repair_required", "repair_required"),
+        ("user_action_required", "blocked"),
+        ("terminal", "completed"),
+        ("wait_until", "waiting"),
+    ],
+)
+def test_mailbox_projection_keeps_nonterminal_progress_visible(
+    status: str,
+    expected: str,
+) -> None:
+    assert mailbox_projection_status({"status": status}) == expected
 
 
 @pytest.mark.parametrize(

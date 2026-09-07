@@ -21,6 +21,7 @@ from typing import Any, Callable, Iterator, Mapping
 from zoneinfo import ZoneInfo
 
 from .enrichment_types import EnrichmentError, is_durable_report_only
+from .mailbox import MailboxError, MailboxLedger
 from ._shared import (
     LOCAL_THESIS_ID_PATTERN,
     append_integrity_jsonl,
@@ -1324,10 +1325,16 @@ class DailyCoordinator:
         self,
         output_dir: Path | str,
         *,
+        mailbox_output_dir: Path | str | None = None,
         now: Callable[[], datetime] | None = None,
         failure_revision: Callable[[], str] | None = None,
     ):
         self.output_dir = Path(output_dir).expanduser().resolve()
+        self.mailbox_output_dir = (
+            Path(mailbox_output_dir).expanduser().resolve()
+            if mailbox_output_dir is not None
+            else self.output_dir.parent / "kol_mailbox"
+        )
         self.events_path = self.output_dir / "events.jsonl"
         self.convergence = ConvergenceLedger(
             self.output_dir / "convergence.jsonl",
@@ -1340,6 +1347,55 @@ class DailyCoordinator:
         )
         self._resolved_failure_revision: str | None = None
         self._thread_lock = threading.RLock()
+
+    def mailbox_progress(self) -> dict[str, Any]:
+        """Read the durable mailbox projection without contacting the provider."""
+
+        try:
+            return MailboxLedger(self.mailbox_output_dir).progress_projection()
+        except MailboxError:
+            return {
+                "status": "degraded",
+                "active_message_count": 0,
+                "completed_message_count": 0,
+                "failure": {
+                    "category": "schema_error",
+                    "code": "mailbox_ledger_read_failed",
+                    "stage": "mailbox_readback",
+                    "retryable": True,
+                },
+            }
+
+    @staticmethod
+    def _projected_health(
+        sweep_health: str,
+        mailbox_progress: Mapping[str, Any],
+    ) -> str:
+        mailbox_status = str(mailbox_progress.get("status") or "idle")
+        if mailbox_status == "blocked":
+            return "blocked"
+        if mailbox_status == "repair_required":
+            return "degraded"
+        if mailbox_status == "waiting" and sweep_health not in {
+            "blocked",
+            "degraded",
+        }:
+            return "waiting"
+        if mailbox_status == "degraded":
+            return "degraded"
+        return sweep_health
+
+    @staticmethod
+    def _projected_sweep_status(
+        sweep_status: str,
+        mailbox_progress: Mapping[str, Any],
+    ) -> str:
+        mailbox_status = str(mailbox_progress.get("status") or "idle")
+        if mailbox_status in {"blocked", "repair_required"}:
+            return mailbox_status
+        if mailbox_status == "waiting" and sweep_status == "completed":
+            return "waiting"
+        return sweep_status
 
     def _failure_revision(self) -> str:
         if self._resolved_failure_revision is None:
@@ -3327,7 +3383,10 @@ class DailyCoordinator:
     def status(self) -> dict[str, Any]:
         rows = self.events()
         last = self._last_sweep_state(rows)
-        health = str((last or {}).get("health") or "unknown")
+        sweep_health = str((last or {}).get("health") or "unknown")
+        mailbox_progress = self.mailbox_progress()
+        health = self._projected_health(sweep_health, mailbox_progress)
+        sweep_status = str((last or {}).get("status") or "unknown")
         return {
             "status": (
                 "ready"
@@ -3336,12 +3395,19 @@ class DailyCoordinator:
                 if last
                 else "ready"
             ),
+            "mailbox_progress": mailbox_progress,
             "last_sweep": (
                 {
                     "slot": last["slot"],
-                    "status": last["status"],
+                    "status": self._projected_sweep_status(
+                        sweep_status,
+                        mailbox_progress,
+                    ),
                     "health": health,
+                    "sweep_status": sweep_status,
+                    "sweep_health": sweep_health,
                     "source_states": last.get("source_states", []),
+                    "mailbox_progress": mailbox_progress,
                 }
                 if last
                 else None
@@ -3363,11 +3429,26 @@ class DailyCoordinator:
             microsecond=0,
         ).isoformat(timespec="seconds")
         end = period_end or now.isoformat(timespec="seconds")
-        return self.convergence.report(
+        report = self.convergence.report(
             self.events(),
             period_start=start,
             period_end=end,
         )
+        mailbox_progress = self.mailbox_progress()
+        report["mailbox_progress"] = mailbox_progress
+        mailbox_status = str(mailbox_progress.get("status") or "idle")
+        report["operational_status"] = (
+            "blocked"
+            if mailbox_status == "blocked"
+            else "degraded"
+            if mailbox_status in {"degraded", "repair_required"}
+            else "waiting"
+            if mailbox_status == "waiting"
+            else "healthy"
+        )
+        if report["operational_status"] != "healthy":
+            report["status"] = report["operational_status"]
+        return report
 
     def stability_acceptance_report(
         self,
@@ -3384,7 +3465,12 @@ class DailyCoordinator:
         rows = self.events()
         convergence_rows = self.convergence.events()
         last = self._last_sweep_state(rows)
-        operational_status = str((last or {}).get("health") or "unknown")
+        sweep_health = str((last or {}).get("health") or "unknown")
+        mailbox_progress = self.mailbox_progress()
+        operational_status = self._projected_health(
+            sweep_health,
+            mailbox_progress,
+        )
         latest_failures = [
             {
                 "source": str(state.get("name") or ""),
@@ -3416,6 +3502,36 @@ class DailyCoordinator:
                 else {}
             ]
         ]
+
+        if mailbox_progress.get("status") == "repair_required":
+            latest_repairs.append({
+                "source": "kol.handoff",
+                "repair_key": str(
+                    mailbox_progress.get("failure_fingerprint") or ""
+                ),
+                "owner": str(
+                    (mailbox_progress.get("writer_progress") or {}).get(
+                        "ownership",
+                        "agent",
+                    )
+                ),
+                "failure_fingerprint": str(
+                    mailbox_progress.get("failure_fingerprint") or ""
+                ),
+                "next_action": str(
+                    mailbox_progress.get("next_action")
+                    or "validate_repair_then_narrow_resume"
+                ),
+            })
+        if mailbox_progress.get("status") in {
+            "repair_required",
+            "blocked",
+            "degraded",
+        } and isinstance(mailbox_progress.get("failure"), Mapping):
+            latest_failures.append({
+                "source": "kol.handoff",
+                **dict(mailbox_progress["failure"]),
+            })
         source_bytes = sum(
             int(row.get("coordinator_source_video_bytes") or 0)
             for row in rows
@@ -3462,6 +3578,7 @@ class DailyCoordinator:
             ),
             "safety_status": safety_status,
             "operational_status": operational_status,
+            "mailbox_progress": mailbox_progress,
             "latest_failures": latest_failures,
             "latest_repairs": latest_repairs,
             "event_count": len(rows),
@@ -3486,7 +3603,7 @@ class DailyCoordinator:
                 row.get("event") == "source_completed"
                 and (row.get("result") or {}).get("repair_required") is True
                 for row in rows
-            ),
+            ) + int(mailbox_progress.get("status") == "repair_required"),
             "failure_fingerprint_count": len({
                 str(row.get("failure_fingerprint") or "")
                 for row in convergence_rows

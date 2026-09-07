@@ -4817,6 +4817,7 @@ def main() -> int:
         })
         return 0
     service = DailyCoordinator(args.output_dir)
+    service.mailbox_output_dir = args.mailbox_output_dir.expanduser().resolve()
     if args.command == "status":
         value = service.status()
         value["latest_lv_video_goal"] = _latest_lv_video_goal(

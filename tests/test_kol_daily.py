@@ -51,6 +51,7 @@ from xiaocao.kol.enrichment_types import (
 )
 from xiaocao.kol._shared import DecisionError
 from xiaocao.kol.household import LiangHuiMcpError
+from xiaocao.kol.mailbox import MailboxLedger
 from xiaocao.kol.publication import (
     PublicationLedger,
     build_record,
@@ -1390,6 +1391,89 @@ def test_remote_run_drains_mailbox_before_existing_sources(
     assert observed["priorities"] == [10, 20, 25, 30, 40]
     assert observed["official_exclusions"] == ("a" * 64,)
     assert observed["xiaocao_exclusions"] == ("a" * 64,)
+
+
+def test_status_audit_and_convergence_project_mailbox_repair_over_no_update(
+    tmp_path,
+):
+    daily_dir = tmp_path / "daily"
+    mailbox_dir = tmp_path / "mailbox"
+    service = DailyCoordinator(
+        daily_dir,
+        mailbox_output_dir=mailbox_dir,
+        now=Clock("2026-09-07T12:40:00+08:00"),
+    )
+    service.run([{
+        "name": "xiaocao_handoff",
+        "run": lambda: {"status": "no_update"},
+    }])
+
+    message_id = "a" * 64
+    content_sha256 = "b" * 64
+    progress = {
+        "status": "repair_required",
+        "ownership": "agent",
+        "failure_fingerprint": "c" * 64,
+        "failure_revision": "d" * 40,
+        "next_action": "validate_repair_then_narrow_resume",
+        "claim_receipt_summary": {
+            "claim_count": 0,
+            "receipt_count": 0,
+            "uncertain_effect_count": 0,
+        },
+    }
+    ledger = MailboxLedger(mailbox_dir)
+    ledger.append(
+        "mailbox_message_attempted",
+        occurred_at="2026-09-07T04:33:10.230Z",
+        handoff_id=message_id,
+        content_sha256=content_sha256,
+    )
+    ledger.append(
+        "mailbox_message_waiting",
+        occurred_at="2026-09-07T04:33:21.193Z",
+        handoff_id=message_id,
+        content_sha256=content_sha256,
+        category="transport_error",
+        code="opencli_command_failed",
+        stage="browser_command",
+        failure_fingerprint="c" * 64,
+        failure_revision="d" * 40,
+        writer_progress=progress,
+    )
+
+    status = service.status()
+    assert status["status"] == "degraded"
+    assert status["mailbox_progress"]["status"] == "repair_required"
+    assert status["mailbox_progress"]["message_id"] == message_id
+    assert status["mailbox_progress"]["failure_fingerprint"] == "c" * 64
+    assert status["mailbox_progress"]["next_action"] == (
+        "validate_repair_then_narrow_resume"
+    )
+    assert status["last_sweep"]["status"] == "repair_required"
+    assert status["last_sweep"]["health"] == "degraded"
+    assert status["last_sweep"]["sweep_status"] == "completed"
+    assert status["last_sweep"]["sweep_health"] == "healthy"
+
+    audit = service.audit()
+    assert audit["status"] == "degraded"
+    assert audit["operational_status"] == "degraded"
+    assert audit["mailbox_progress"]["message_id"] == message_id
+    assert audit["latest_repairs"][-1] == {
+        "source": "kol.handoff",
+        "repair_key": "c" * 64,
+        "owner": "agent",
+        "failure_fingerprint": "c" * 64,
+        "next_action": "validate_repair_then_narrow_resume",
+    }
+
+    convergence = service.convergence_report(
+        period_start="2026-09-07T00:00:00+08:00",
+        period_end="2026-09-07T23:59:59+08:00",
+    )
+    assert convergence["status"] == "degraded"
+    assert convergence["operational_status"] == "degraded"
+    assert convergence["mailbox_progress"]["message_id"] == message_id
 
 
 def test_official_decided_handoff_requires_durable_terminal_readback(
