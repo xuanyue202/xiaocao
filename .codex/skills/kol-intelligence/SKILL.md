@@ -73,11 +73,10 @@ evidence ambiguity, requested edits, or explicit historical aggregation.
 ## Non-negotiable semantic boundaries
 
 - Xiaocao: native WeChat mini-program only. H5 is a credential-free identity
-  anchor, never a player, login surface, or fallback. After the one verified
-  Scheme launch: enter `666` at the course gate; on playback immediately press
-  Space and verify stopped frame/time. Prefer AX; otherwise use fresh screenshot
-  controls. No guessed coordinates,
-  CDP/DOM evaluation, repeat resolution, refresh, or relaunch.
+  anchor, never a player/login/fallback. Follow native SOP W0–W8 only:
+  on playback immediately press Space and verify stopped frame/time.
+  No guessed coordinates, exploratory clicks, CDP/DOM, refresh or relaunch.
+  Unexpected UI: stop inputs; diagnose offline.
 - Resolve code/state conflicts from first principles without asking by default:
   preserve a reversible snapshot and unrelated WIP, identify both intents,
   integrate compatible behavior, verify it, and continue. Ask only when the

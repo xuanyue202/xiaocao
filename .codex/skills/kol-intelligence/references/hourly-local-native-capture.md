@@ -6,6 +6,12 @@ activation, or continuation/acceptance stage routed by
 Keep the existing capture/job and process; the local entry owns discovery,
 process lifetime, and mailbox completion.
 
+**微信执行标准：只执行下文 W0–W8 的有限动作，不临场分解或探索 UI。**
+“打开课程”“输入口令”“暂停”不是可直接执行的指令，必须落到对应行的
+前置画面、工具调用和结果检查。未列出的画面/操作停在原任务做离线诊断，
+不得以自修复为由试点、重开、刷新或增加快捷键。此约束旨在减少微信敏感操作，
+不代表已证明之前退出的具体触发原因，也不保证微信绝不会退出。
+
 ## Readiness and launch
 
 Before every native activation prompt, the driver restores and checks the
@@ -143,30 +149,54 @@ lists enrich asynchronously with an incremental cache; they cannot bind a source
    H5 地址打开成网页播放器，不沿用旧 ticket；目标课程已打开时不再唤起。
    `#小程序://鹅直播/...` 入口则用原始可见消息一次，不运行 HTTPS resolver。
 
-   用 `cua_repl` 获取微信（首次调用只执行这一行）：
+   接着严格执行以下动作表 W0–W5，不能把它重新概括成“完成登录/打开播放器”。
+   只认**鹅直播课程窗口**中的预期场次标题；主聊天窗口白屏不代表退出。
+   本表针对已验证的商户唤起后课程画面；原始消息入口仅在当前画面已有唯一匹配
+   卡片时点该卡片一次，然后进入 W1。没有该卡片时不搜索聊天、不滚动试找、
+   不猜入口；保留任务做入口诊断。
 
-   ```javascript
-   var wechat = await cua.getApp("com.tencent.xinWeChat");
-   ```
+   **目标参数的取得规则（不是操作策略选择）：** 每次点击前，使用最近一次
+   `getAXStateAndScreenshot()` 的结果。若目标有唯一 AX 控件索引，参数就是该
+   索引；否则只能取截图中下表所指**唯一可见控件的中心点** `[x, y]`。不得用
+   历史坐标、屏幕比例或另一个窗口的位置。表中的 `passwordButton`、
+   `passwordInput`、`confirmButton`、`playButton` 均按此规则绑定为索引或坐标，
+   不是字符串选择器。目标不唯一、被遮挡或无法定位，停止输入，不能点附近试探。
 
-   在后续调用中用 `await wechat.getAXStateAndScreenshot()` 读取**鹅直播课程窗口**。
-   核对场次标题；主聊天窗口白屏不代表退出。AX 有控件就用控件；仅暴露窗口时，
-   按刚读取截图中的可见控件点击，不存固定坐标。逐个动作后读回：
-   **输入密码 → 弹窗输入框 → `typeText("666")` → 确认框内为 666 → 确定**。
-   没有课程口令门就跳过；不要把 666 输入微信账号登录框。
+   | 步骤 | 必须已看到的前置画面 | 唯一允许的调用（`cua_repl`） | 结果与下一步 |
+   |---|---|---|---|
+   | W0 | 一次商户唤起已执行；尚未取得 app 对象 | `var wechat = await cua.getApp("com.tencent.xinWeChat");`；首次调用仅此一行 | 已有该对象就跳过，不重复初始化；进入 W1 |
+   | W1 | 已取得 app 对象 | `await wechat.getAXStateAndScreenshot();` | 目标课程且有“输入密码”→W2；口令弹窗已打开且输入为空→W3；已在播放→W7；无口令门且有可见 Play→W6；本任务已有暂停读回→W8；其他→停止输入 |
+   | W2 | 目标课程，唯一可见“输入密码”按钮，无弹窗 | `await wechat.click(passwordButton); await wechat.getAXStateAndScreenshot();` | 必须出现课程口令弹窗和空输入框→W3；没出现不再点 |
+   | W3 | 课程口令弹窗内空输入框可见 | `await wechat.click(passwordInput); await wechat.getAXStateAndScreenshot();` | 同一输入框已聚焦/可见输入光标→W4；未确认聚焦不输入 |
+   | W4 | 同一空输入框已聚焦 | `await wechat.typeText("666"); await wechat.getAXStateAndScreenshot();` | 必须读回输入值为 666→W5；其他值不清空、不补写、不提交 |
+   | W5 | 课程口令框显示 666，唯一“确定”按钮可见 | `await wechat.click(confirmButton); await wechat.getAXStateAndScreenshot();` | 已起播→立即 W7；未起播且有可见 Play→W6；错误/仍为口令门→停止输入，不能再提交 |
 
-4. **画面起播，下一步立即按空格。** 口令确认后可能自动播放；一旦看到起播，
-   下一次 UI 操作就是在同一鹅直播播放器窗口执行：
+4. **只用空格暂停：W6–W8。** W5 之后禁止切终端、查日志或先写进度消息。
+   只按下表选下一行，不尝试底部暂停按钮、点画面唤出控件或其他快捷键。
 
-   ```javascript
-   await wechat.pressKey("space");
-   await wechat.getAXStateAndScreenshot();
-   ```
+   | 步骤 | 必须已看到的前置画面 | 唯一允许的调用（`cua_repl`） | 结果与下一步 |
+   |---|---|---|---|
+   | W6 | 同一目标课程未自动起播，明确可见 Play，尚未点过播放 | `await wechat.click(playButton); await wechat.getAXStateAndScreenshot();` | 已起播→立即 W7；否则停止输入，不再点播放 |
+   | W7 | 同一鹅直播播放器已起播，尚未发送过暂停空格 | `await wechat.pressKey("space"); await wechat.getAXStateAndScreenshot();` | 保存暂停后画面/播放时间→W8；本轮 Space 最多一次，不能连按 |
+   | W8 | 同一播放器已发送暂停，或本任务已有暂停读回 | `await wechat.getAXStateAndScreenshot();` | 明确显示播放器的 Play 按钮，或可见播放时间在相隔至少2秒的两次读回中不变，且无仍在播放的证据→步骤5；否则 `playback_paused` 不得填 true，也不能试其他暂停操作 |
 
-   仅没有自动播放时才点一次可见 Play，然后立即按空格。不再试点底部暂停图标，
-   不先切终端查日志，不连续播放等待下载。再观察一次，确认画面/播放时间停止；
-   鼠标三角形、点击成功、控件消失均不算暂停证据。已暂停不要再按空格。
-   若用户切了窗口，先重新读当前窗口，不能把空格发到错误应用。
+   W8 若需时间对照，首次读回后只调用 `clock.sleep`，参数
+   `{"duration_ms":2000}`，再执行 W8；这是暂停证据采样，不是连续播放等待捕获。
+   不为显示控件而点击播放器。只有静态课件画面、看不到状态/时间时，暂停仍未证实。
+
+   **本轮输入上限：** 商户唤起一次；有课程口令门时按钮/输入框/确定各点击一次、
+   `typeText("666")` 一次；未自动起播才增加 Play 点击一次；起播后 Space 一次。
+   这是上限而非配额，已满足的步骤必须跳过。允许的微信工具动作仅为表内
+   `getApp`、`getAXStateAndScreenshot`、目标 `click`、`typeText("666")`、
+   `pressKey("space")`；不能用双击、Enter、Tab、Esc、全局快捷键、刷新、
+   返回、窗口调整、退出/重启微信、重新打开 Scheme、DOM/CDP 或注入来代替。
+
+   **非预期结果的固定处理：** 调用超时、被拒绝、用户切换窗口或画面不匹配时，
+   不重复该输入；只再读取一次当前状态，记录步骤号、实际画面、最后一次调用和
+   是否已发送，保留原任务做离线诊断。若发现目标仍在播放且从未发送暂停空格，
+   仅允许进入 W7；若已发送，不能因结果不明再切换一次。登录/手机确认/验证码/
+   保护画面不属于课程口令门。无法证明暂停就如实报告“暂停未证实”，不继续按成功
+   回填。鼠标三角形、点击成功、控件消失都不能证明暂停。
 
 5. **确认有限回放，交回原 PTY，等压缩文件完成。** 暂停后才查
    `/api/elive/live/candidates?all=1&view=capture`：候选必须是 baseline 之后出现、
