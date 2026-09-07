@@ -25,17 +25,12 @@ Before Ready, do only this:
    candidate baseline before it emits that result.
 4. The Agent opens the target in the native WeChat mini-program and selects the
    matching replay through the reviewed, visible Computer Use exception; do not
-   ask the user to perform that step. Inspect fresh state before each action,
-   keep one foreground session, read state back after each action, and use only
-   event-based waits. Stop for login, SMS/OTP, CAPTCHA, consent, or an explicit
-   protection screen; those are the only user-action boundaries. The matching
-   player only needs to emit a media request. On auto-play immediately press
-   Space and verify stopped picture/time; do not wait to inspect capture logs.
-   Read `hourly-local-native-capture.md` for the exact UI/PAC checklist.
-   The old direct-H5 player was removed; its URL may be used
-   only to validate the stable app/resource identity, never as a playback
-   fallback. The singleton `wx_channels_download` sniffer must report the exact
-   `live_id` before capture can advance.
+   ask the user to perform that step. Before acting, read
+   [hourly-local-native-capture.md](hourly-local-native-capture.md) completely and
+   follow its **实操 SOP：打开小鹅通小程序 → 下载视频** steps 1–5. That is the single
+   UI/PAC/download checklist: one verified launch, visible course password,
+   immediate Space, stopped-playback readback, exact finite replay, compressed
+   file validation. Use event-based waits; do not restore the removed H5 player.
 
 Do not inspect Git or scan historical ledgers before Ready. Do not contact the
 remote writer, load market or portfolio data, or read `full-contract.md` before

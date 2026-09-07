@@ -95,40 +95,102 @@ lists enrich asynchronously with an incremental cache; they cannot bind a source
    `-compressed.mp4`. An H5 identity anchor can never be reported as download
    success.
 
-## Minimal execution checklist (follow in order)
+## 实操 SOP：打开小鹅通小程序 → 下载视频
 
-1. **Resume the exact item.** Read its manifest identity and `capture_job_id`.
-   If a PTY is already running, retain it. If it exited, use the existing-item
-   command from the local entry, not another `capture-local`, new arm or job.
-   A `downloading`/`cloud_handoff` item needs no WeChat action at all.
-2. **Before launching, verify capture routing.** Require `/api/status` success,
-   the existing capture ID, and a healthy `/proxy.pac`. Read `route -n get default`
-   and `networksetup -listnetworkserviceorder` to identify the current network
-   service. If its capture PAC is disabled, set only that service's PAC URL to
-   `http://127.0.0.1:2023/proxy.pac` and enable it; read back URL and Enabled=Yes.
-   The PAC must route only Xiaoetong domains through 2023 and all WeChat security
-   domains DIRECT. Do not modify unrelated proxies. The downloader guard and
-   post-download cleanup own restoration. Missing PAC can let playback work
-   while preventing capture; it must not be diagnosed as a login issue.
-3. **One launch and password.** Execute the supplied resolver, verify exact
-   app/live ID, then its `launch_command` once. Loading/blank main chat is not a
-   logout. Read the Goose Live course window. Click visible 输入密码, then the
-   modal input, type `666`, verify it, click 确定. Each step uses fresh UI state.
-   If no gate is present, omit password actions. Never enter a course password
-   into a WeChat account-login form.
-4. **Pause immediately.** Password acceptance can auto-play. Press `space` in
-   Goose Live as soon as the playing picture appears. Verify stopped picture/time
-   on two observations. Do not spend time checking capture logs while it plays.
-   Return `playback_paused=true` only after this check. If another user action
-   changes the window, reread it and avoid toggling a video already paused.
-5. **Verify media, then feed the PTY.** Use candidate `view=capture` and match
-   exact `live_id`, app host and post-arm time. Require the finite VOD
-   `playlist_eof.m3u8`, not the `liveplay` FLV/M3U8 candidates emitted alongside
-   it. Return the exact requested JSON, `activated=true`, `password_used` as
-   observed, `media_request_observed=true`, and `playback_paused=true`. For a
-   native-message entry also return the exact fresh candidate ID. Do not paste
-   signed media URLs, request headers or cookies. The downloader creates one
-   source-bound task; never create a second task manually.
+以下步骤以 2026-09-06 晚场实际抓取为依据。商户唤起、课程口令、空格暂停、
+完整回放下载和压缩均已验证；最初点击暂停失败，不能复用那次点击方法。
+只替换本段前端采集操作，步骤 6 起沿用既有上传/Handoff 流程。
+
+1. **保留原任务，先准备抓取。** 从当前 runner 请求/manifest 取出
+   `identity`、`capture_job_id`、`source_job_id` 和预期 `source_identity/live_id`，
+   不复制本次示例的 ID。已有 PTY 就留在该 PTY；已退出才按 local entry 的
+   `capture-xiaocao-item --source-identity <identity>` 续原条目，不再跑全量
+   `capture-local`。若已经 `downloading` 或 `cloud_handoff`，跳过小程序操作。
+   让 runner 恢复同一 singleton sniffer 并持久化 baseline；不要手动新建下载任务。
+
+2. **唤起前确认媒体流量能被捕获。** 检查 `http://127.0.0.1:2022/api/status`
+   和 `http://127.0.0.1:2023/proxy.pac` 健康。执行下面的只读检查，确定当前网络
+   接口对应的服务，不把本次的 Wi-Fi 当作所有机器的固定值：
+
+   ```bash
+   route -n get default
+   networksetup -listnetworkserviceorder
+   networksetup -getautoproxyurl "<当前网络服务>"
+   ```
+
+   仅在该任务抓取服务健康、已 armed，而当前服务尚未应用抓取 PAC 时执行：
+
+   ```bash
+   networksetup -setautoproxyurl "<当前网络服务>" http://127.0.0.1:2023/proxy.pac
+   networksetup -setautoproxystate "<当前网络服务>" on
+   networksetup -getautoproxyurl "<当前网络服务>"
+   ```
+
+   必须读回精确 URL 和 `Enabled: Yes`。PAC 只代理 Xiaoetong，微信安全域名
+   DIRECT；其他代理设置不动。没有 PAC 时可能能播放却抓不到，不是登录失败。
+
+3. **一次正常唤起，再输入课程口令。** 对 HTTPS 分享入口，运行当前请求给出的
+   `launch_resolver_command`；其命令形态为：
+
+   ```bash
+   PYTHONPATH=src .venv/bin/python scripts/kol_xiaoetong_launch.py \
+     --source-url '<当前 source_url>' \
+     --expected-identity '<当前 source_identity>'
+   ```
+
+   核对返回的 app/live ID，只执行返回的 `launch_command` 一次，经正常 macOS
+   URL handling 打开商户签发的 `weixin://dl/business/?t=...`。不要把输出里的
+   H5 地址打开成网页播放器，不沿用旧 ticket；目标课程已打开时不再唤起。
+   `#小程序://鹅直播/...` 入口则用原始可见消息一次，不运行 HTTPS resolver。
+
+   用 `cua_repl` 获取微信（首次调用只执行这一行）：
+
+   ```javascript
+   var wechat = await cua.getApp("com.tencent.xinWeChat");
+   ```
+
+   在后续调用中用 `await wechat.getAXStateAndScreenshot()` 读取**鹅直播课程窗口**。
+   核对场次标题；主聊天窗口白屏不代表退出。AX 有控件就用控件；仅暴露窗口时，
+   按刚读取截图中的可见控件点击，不存固定坐标。逐个动作后读回：
+   **输入密码 → 弹窗输入框 → `typeText("666")` → 确认框内为 666 → 确定**。
+   没有课程口令门就跳过；不要把 666 输入微信账号登录框。
+
+4. **画面起播，下一步立即按空格。** 口令确认后可能自动播放；一旦看到起播，
+   下一次 UI 操作就是在同一鹅直播播放器窗口执行：
+
+   ```javascript
+   await wechat.pressKey("space");
+   await wechat.getAXStateAndScreenshot();
+   ```
+
+   仅没有自动播放时才点一次可见 Play，然后立即按空格。不再试点底部暂停图标，
+   不先切终端查日志，不连续播放等待下载。再观察一次，确认画面/播放时间停止；
+   鼠标三角形、点击成功、控件消失均不算暂停证据。已暂停不要再按空格。
+   若用户切了窗口，先重新读当前窗口，不能把空格发到错误应用。
+
+5. **确认有限回放，交回原 PTY，等压缩文件完成。** 暂停后才查
+   `/api/elive/live/candidates?all=1&view=capture`：候选必须是 baseline 之后出现、
+   与当前 app/live ID 一致的有限 VOD `playlist_eof.m3u8`，不能选同时出现的
+   `liveplay` FLV/M3U8。只读必要的 ID/时间/类型，不输出签名 URL、headers 或 cookies。
+
+   向原 PTY 回一行当前请求指定的 JSON，原样保留动作和身份字段；只在实际读回
+   后填写 `playback_surface=wechat_mini_program`、
+   `page_state=mini_program_media_observed`、`activated=true`、
+   `media_request_observed=true`、`playback_paused=true`，并据实填 `password_used`。
+   原始小程序消息入口还要回同一新候选的 `candidate_id`；不伪造成功字段。
+
+   runner 用同一 `source_job_id` 创建绑定的下载任务。通过
+   `/api/elive/source-jobs/<source_job_id>` 取得对应 `task_id`，只跟踪
+   `/api/task/list?page_size=500` 中该任务的状态和进度；不要再操作播放器。
+   要求 `type=live_capture`、`compress=true`、`compress_inline=true`，并等到
+   压缩结束，而不是拿到媒体地址或看到进度就结束。最终以同一任务的
+   `media_validated` 回执验收：`-compressed.mp4` 存在，bytes 非零、ffprobe 时长
+   与候选匹配、SHA-256 已记录，未保留 raw 副本。保留 PTY，让既有后续流程接手。
+
+   本次实证：capture `kol-3ffdb59330e5`、task `JhgYHS-g4C9DAvFl5RxAq`，
+   产物 `20260906 大师班专场(晚18：00开播)-compressed.mp4`，382641026 bytes，
+   3345.534247 秒；仅供对照，不是下次运行的参数或整个 Handoff 的成功证明。
+
 6. **Stay through upload and Handoff.** Keep the PTY open while it downloads and
    compresses, validates the MP4, cleans the sniffer/PAC, and uploads. Follow any
    Browser recovery through the existing upload job and persistent session.
