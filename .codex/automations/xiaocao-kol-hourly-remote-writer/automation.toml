@@ -2,7 +2,33 @@ version = 1
 id = "xiaocao-kol-hourly-low-bandwidth-operation"
 kind = "cron"
 name = "xiaocao KOL hourly remote writer"
-prompt = "使用本机 `kol-intelligence` skill，并完整读取 `references/hourly-remote-writer.md`。这是 `MacBook-Pro-6.local` 上唯一的 KOL remote writer；Automation ID、canonical cwd 和 schedule 以本 Automation 的结构化配置为准。\n\n启动任何 KOL runner，或读取 mailbox、status、convergence 前，必须且只能运行一次以下 repository peer gate：\n```bash\nCODEX_HOME=/Users/xuanyue202/.codex \\\nCODEX_AUTOMATION_ID=xiaocao-kol-hourly-low-bandwidth-operation \\\nCODEX_REMOTE_HOST=MacBook-Pro-6.local \\\nnode scripts/codex_peer_gate.js\n```\n只按有效结构化 `gate_result` 分支：`pass` 才可继续；`no_op` 立即结束，不做任何后续读取；`repair_required` 或没有有效结构化结果时禁止业务副作用，由本 task 修复后只重跑 gate surface。不得改用桌面 thread wrapper 或其他方式推断 peer。\n\nGate 通过后，按 skill/reference 和 runner 输出执行一次本轮 remote-writer 合同。仅当当前 task 已携带 runner 签发的 exact continuation 事件时执行其 narrow resume；否则启动一次新 sweep。其余 mailbox、writer_progress、repair/reconcile、provider safety、receipts、ack、报告和验收规则均以 skill/reference 与确定性代码为权威。\n\n完成判据必须按每个具体对象验收，不能按 sweep 退出或中间产物验收。`structured_input`、transcript、analysis_request、runner exit、provider `wait_until` 都只是检查点，不是完成。每个对象只有同时满足以下终态才可写“完成”：content terminal；灰常亮报告已有稳定 URL/receipt 或合法 `not_created`；提醒为 `delivered|not_eligible|not_created`；Book KOL-US 为 paper-only fill/no_trade/not_created 合法终态；knowledge 为 reusable/no_reusable/not_created 合法终态；所需 ack 完成；精确副作用账本 claim=receipt 且 uncertain=0；`writer_progress.status=terminal` 且 `next_action=stop`。任何非终态一律明确为未完成并沿 runner 签发的窄续跑继续。\n\n【第一性原理主动修复、跑完、5 Why 强制闭环】\n任何异常、失败、超时、卡住、schema/selector 错误、状态投影不一致、协议/依赖问题、权限配置问题或验收不一致都必须主动进入修复闭环，不限于 `repair_required`，不得把可修问题留给下一轮，也不得用重跑掩盖根因。先锁定 exact object、claim、receipt 和可能已发生的外部副作用，读取权威状态；写出不变量、失败条件和最小可复现回归，区分表面症状与根因。凡属 Agent 可修的代码、协议、状态投影、测试、模板、运行配置或 Automation 配置，必须当场修复，补回归并跑定向验证；需要时 commit/push。外部效果不确定时只能读回和对账，禁止重复写入、重复发送或第二次 full sweep。\n修复完成后，必须继续原同一 runner、原对象、原 claim/continuation 做 exact narrow resume，并把这一对象跑到完整终态：per-object terminal tuple、`writer_progress.status=terminal`、`next_action=stop`、claim/receipt parity、`uncertain=0`，以及所需报告 URL/receipt、提醒、Book/knowledge、ack 全部落定。修复完成或中间产物出现不等于任务完成；不得把第二次 full sweep 当作恢复手段。只有外部认证、SMS/验证码、用户同意或无法安全对账的真实外部效果仍不可由 Agent 完成时，才保留精确阻塞状态和安全 next_action，禁止假报成功。\n原对象达到终态后，必须再做一次 5 Why 复盘并持久化：记录触发症状、直接原因、流程/协议原因、为何现有 gate/测试/监控未拦截、根因修复、预防控制和回归/监控证据；把复盘写入现有 Automation memory 或 durable repair ledger，并验证未来配置已生效。预防控制必须能让同类错误在下一次被自动阻止、自动修复或明确降级，而不是只留下文字提醒。5 Why、回归和防复发验证完成后，才能结束本轮；最终回复仍必须按对象终态合同输出。\n\n【分阶段模型路由】\n本 Automation 的主模型及推理档位保持现有设置，负责 handoff、获取文字稿、等待、对账和最终上传执行。遇到新取得的小草逐字稿的 semantic-input 事件时，完整读取 `references/semantic-model-routing.md`，明确授权使用 Subagent，以 `model=gpt-6-astra`、`reasoning_effort=xhigh`（极高）、`fork_context=false` 完成全文达人观点提炼、独立覆盖审计和灰常亮最终报告文案。须交付完整文字稿路径与哈希、原始请求、完整合同、行情与家庭上下文及限制，并记录实际成功委派的参数和 agent ID。先以一份逐字稿完成试点：主 Agent 必须独立通读全文，对照报告检查遗漏、原意、条件、数字、时效和可读性，退回同一 Astra 修正并保存哈希绑定的复核记录；试点通过后，将同样的逐稿复核用于所有新取得的小草逐字稿，其他达人保持原流程。经主 Agent 内容复核及上下文/委派/报告包校验后，由原主模型唯一执行上传、提醒、Book/knowledge 和 ack；主模型不得重写 Astra 审定的语义内容。模型不可用或校验失败时禁止降级发布，按同一对象修复并窄续跑。\n\n空队列静默。非空队列的最终回复必须逐对象说明结果，并以 Markdown 表格收尾，表头固定为 `对象 | 状态 | 说明`；对象名必须前缀 `[视频]` 或 `[文章]`。表格不得被普通段落或中间 runner 输出替代、遗漏。 After and only after a newly published report or viewpoint-maintenance receipt is terminal and verified, read `.codex/skills/xiaocao-trading/references/kol-trading-judgment.md` and run `PYTHONPATH=src .venv/bin/python scripts/kol_trading_context.py context --summary` once to prepare the all-registered-KOL evidence context. Expose precise coverage gaps. This is read-only evidence preparation, never Book-B broker/paper execution or a new writer. Preserve the mandatory peer gate first, no_op immediate silence, exact-one original sweep, existing semantic model routing, and all per-item receipts. Empty/unchanged publication slots do not run a context refresh."
+prompt = '''使用本机 `kol-intelligence` skill，并完整读取 `references/hourly-remote-writer.md`。这是 `MacBook-Pro-6.local` 上唯一的 KOL remote writer；Automation ID、canonical cwd、主执行模型和 schedule 以本 Automation 的结构化配置为准。
+
+【唯一入口】
+启动任何 KOL runner，或读取 mailbox、status、convergence 前，必须且只能运行一次：
+```bash
+CODEX_HOME=/Users/xuanyue202/.codex CODEX_AUTOMATION_ID=xiaocao-kol-hourly-low-bandwidth-operation CODEX_REMOTE_HOST=MacBook-Pro-6.local node scripts/codex_peer_gate.js
+```
+只按有效结构化 `gate_result` 分支：`pass` 才可继续；`no_op` 立即结束且不再读取；`repair_required` 或没有有效结构化结果时禁止业务副作用，由本 task 修复后只重跑 gate surface。不得改用桌面 thread wrapper 推断 peer。
+
+Gate 通过后，仅当当前 task 已携带 runner 签发的 exact continuation 时执行其 narrow resume；否则启动一次 `PYTHONPATH=src .venv/bin/python scripts/kol_daily.py run`。同一时段不得启动第二次 full sweep。mailbox、provider、writer_progress、receipt、ack 和终态规则以 skill、reference 与确定性代码为权威。
+
+【固定模型职责】
+本 Automation 的结构化模型是执行 Agent，只负责 gate、handoff、文字稿取得、确定性 context prepare、原样 dispatch、等待、对账、校验、上传及后续外部效果。它不得自行做全文观点抽取、重写洞察目标、用摘要替代逐字稿，或改写洞察 Agent 审定的语义内容。
+
+小草逐字稿出现 semantic-input 事件时，完整读取 `references/semantic-model-routing.md`。洞察 Agent 的唯一配置入口是 `.codex/skills/kol-intelligence/config/semantic-analyst.json`；先运行 `PYTHONPATH=src .venv/bin/python scripts/kol_semantic_delegation.py profile` 核对，再用 `prepare` 生成 hash-bound packet 和 `spawn_arguments.json`。必须把保存的 spawn 参数原样交给 Subagent，禁止手写、概括或覆盖 model、reasoning_effort、fork_context 与 message，并记录实际接受的参数和 agent ID。
+
+洞察的唯一目标是：完整、忠实地抽取整份逐字稿中的全部投资决策论点，逐段绑定证据，保留方向、条件、期限、数字、例外和不确定性，完成七类交易信息与具名资产覆盖，并生成自然中文的完整灰常亮报告；KOL 原始观点、系统事实核验、家庭建议、paper-only Book 判断和 authority=0 知识必须分层。洞察 Agent 自己完成双遍全文抽取与覆盖审计。执行 Agent 只按完整来源做 acceptance audit；发现内容问题必须退回同一洞察 Agent 修正，不能自行补写。模型不可用、目标/输入/输出/hash/schema 不匹配时禁止降级发布，按同一对象修复并 exact narrow resume。
+
+【完成与修复】
+`structured_input`、transcript、analysis_request、runner exit、dispatch accepted、provider `wait_until` 都只是检查点。每个对象只有同时满足 content terminal；灰常亮稳定 URL/receipt 或合法 `not_created`；提醒 `delivered|not_eligible|not_created`；Book KOL-US paper-only fill/no_trade/not_created；knowledge reusable/no_reusable/not_created；所需 ack；精确副作用 claim=receipt 且 uncertain=0；`writer_progress.status=terminal` 且 `next_action=stop`，才可写完成。
+
+任何异常、超时、schema/selector/协议/依赖/状态投影或验收问题都进入第一性原理修复：锁定 exact object、claim、receipt 和不确定外部效果；写最小回归；修复代码、合同、测试或配置；定向验证；需要时 commit/push；再沿原 runner/对象/claim 的 exact narrow resume 跑到终态。禁止用第二次 full sweep、重复发送或重复写入掩盖根因。对象终态后持久化 5 Why、根因修复、防复发控制和验证证据。仅认证、SMS/验证码、用户同意或无法安全对账的真实外部效果可保留用户阻塞。
+
+【输出与后续】
+空队列静默。非空队列最终回复逐对象说明，并以 Markdown 表格收尾，表头固定为 `对象 | 状态 | 说明`；对象名必须前缀 `[视频]` 或 `[文章]`。
+
+只有新发布报告或 viewpoint-maintenance receipt 已终态且核验后，才读取 `.codex/skills/xiaocao-trading/references/kol-trading-judgment.md` 并运行一次 `PYTHONPATH=src .venv/bin/python scripts/kol_trading_context.py context --summary`，明确 coverage gaps。它只是只读证据准备，不执行 Book-B broker/paper，不创建新 writer；空队列或未变化 publication slot 不刷新。'''
 status = "ACTIVE"
 rrule = "RRULE:FREQ=DAILY;BYHOUR=8,10,12,14,17,18,22;BYMINUTE=30"
 model = "gpt-5.6-luna"

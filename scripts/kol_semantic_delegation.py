@@ -8,12 +8,18 @@ import json
 from pathlib import Path
 
 from xiaocao.kol.semantic_bundle import SemanticBundleError
-from xiaocao.kol.semantic_delegation import prepare, record_dispatch, verify_result
+from xiaocao.kol.semantic_delegation import (
+    load_analyst_profile,
+    prepare,
+    record_dispatch,
+    verify_result,
+)
 
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     commands = parser.add_subparsers(dest="command", required=True)
+    commands.add_parser("profile", help="Show the active semantic analyst profile and source hash")
     preparing = commands.add_parser("prepare")
     preparing.add_argument("--analysis-request", required=True, type=Path)
     preparing.add_argument("--market-evidence", type=Path)
@@ -35,7 +41,15 @@ def main(argv: list[str] | None = None) -> int:
                            help="Separate parent-authored full-evidence review; never inferred from structural checks")
     args = parser.parse_args(argv)
     try:
-        if args.command == "prepare":
+        if args.command == "profile":
+            profile = load_analyst_profile()
+            result = {
+                "status": "configured",
+                "profile_path": profile["source"]["path"],
+                "profile_sha256": profile["source"]["sha256"],
+                **profile["value"],
+            }
+        elif args.command == "prepare":
             result = prepare(args.analysis_request, market_evidence=args.market_evidence,
                              household_context=args.household_context)
         elif args.command == "record-dispatch":
