@@ -1,7 +1,10 @@
 # Hourly Local Capture Node
 
 Local node: WeChat capture, publisher discovery, upload, and credential-free
-handoff.
+handoff. Its runtime checkout is `/Users/bytedance/coding/xiaocao`. Never create,
+enable, or run this Automation on `MacBook-Pro-6.local` or from
+`/Users/xuanyue202/Documents/project/xiaocao`; that host runs only the remote
+sole writer and receives this node's credential-free capsules as external input.
 
 ## Runner and boundary
 
