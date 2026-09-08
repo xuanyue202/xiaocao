@@ -186,8 +186,11 @@ def test_intraday_automations_use_explicit_china_market_wall_clock() -> None:
     )
     assert sparse["rrule"] == (
         "RRULE:FREQ=WEEKLY;BYDAY=MO,TU,WE,TH,FR;"
-        "BYHOUR=9,10,11,13,14;BYMINUTE=0,5,10,15,20,25,30,35,40,45,50,55"
+        "BYHOUR=10,13;BYMINUTE=25,55"
     )
+    assert "runs only the four original sparse checkpoints" in sparse["prompt"]
+    assert "exactly one task-status read" in sparse["prompt"]
+    assert "end immediately without waiting" in sparse["prompt"]
 
 
 def test_all_china_market_automations_use_dtstart_free_local_wall_clock() -> None:
@@ -197,8 +200,8 @@ def test_all_china_market_automations_use_dtstart_free_local_wall_clock() -> Non
         "xiaocao-book-b-live-morning": ("BYHOUR=9", "BYMINUTE=20"),
         "xiaocao-intraday-monitor": ("BYHOUR=9", "BYMINUTE=35,45,55"),
         "xiaocao-intraday-monitor-05": (
-            "BYHOUR=9,10,11,13,14",
-            "BYMINUTE=0,5,10,15,20,25,30,35,40,45,50,55",
+            "BYHOUR=10,13",
+            "BYMINUTE=25,55",
         ),
         "xiaocao-intraday-risk-precheck-1425": ("BYHOUR=14", "BYMINUTE=25"),
         "xiaocao-intraday-monitor-1455": ("BYHOUR=14", "BYMINUTE=55"),

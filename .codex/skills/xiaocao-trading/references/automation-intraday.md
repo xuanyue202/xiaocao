@@ -10,12 +10,21 @@ For opening and 14:25 precheck, start with:
 python3 scripts/show_journal.py --date today
 ```
 
-The existing sparse task now starts with the local
-`scripts/kol_trading_tick.py poll` gate. Read
+The existing sparse task runs only at 10:25, 10:55, 13:25 and 13:55, and starts
+with the local `scripts/kol_trading_tick.py poll` gate. Source discovery and
+durable handoff belong to the KOL capture/remote-writer pipeline; do not create
+a five-minute Codex polling loop. Read
 [kol-trading-judgment.md](kol-trading-judgment.md); `no_op` ends silently before
 journal/MCP/broker reads. A claimed `run` retains the following independent
-paper/live checkpoints and the exact token acknowledgement. No extra tick
-grants the 14:55 soft-exit authority.
+paper/live checkpoints and the exact token acknowledgement.
+
+For `reconcile_required / RUNNING_CLAIM`, use the returned
+`owner_thread_id` for exactly one task-status read. If that owner is active,
+end immediately without waiting, business-ledger inspection, broker access,
+semantic delegation, publication or acknowledgement. If the owner is terminal
+and the claim has cleared, end. Only when the owner is terminal/unavailable and
+the exact claim remains may one task reconcile its durable receipts. Never
+clear a claim by age or repeat an unknown business effect.
 
 Default Book B:
 

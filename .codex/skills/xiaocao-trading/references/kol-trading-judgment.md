@@ -110,29 +110,35 @@ lot/ownership, T+1, liquidity and capital gates. It is not a second broker
 writer. At 14:55 the **first business command remains live closing**; never
 put context retrieval or a model call ahead of that two-minute authority.
 
-## Lightweight event ticks
+## Sparse checkpoint gate
 
-The existing sparse Automation polls locally at five-minute cadence. Its first
+The sparse Automation runs only at 10:25, 10:55, 13:25 and 13:55. Its first
 business command is `PYTHONPATH=src .venv/bin/python scripts/kol_trading_tick.py
-poll`. `no_op` ends silently; it does not justify broker or MCP reads.
-`run` identifies an immutable claim and whether source judgment is needed.
-Preserve the original four sparse checkpoints even without new KOL input.
-Extra ticks react only to new registered publications, new reviewed decisions,
-or a due current-check refresh for actual Book-B exposure. The script's weekday
-clock gate is not an exchange-calendar or trading authorization.
+poll`. The local capture and remote sole-writer pipelines own source discovery,
+handoff, analysis and publication receipts; raw capture is never trading
+authority. A completed production publication receipt remains pending until the
+next sparse checkpoint consumes it with current account and market facts.
 
-On `run`, perform each permitted paper/live checkpoint once, then handle a
-requested semantic refresh using this reference. A source-only update does
-not itself authorize a trade. Finally acknowledge the exact token with
-`kol_trading_tick.py ack --token <token> --outcome completed|degraded` only after
-terminal process/ledger readback. Ack freezes only the claimed source/decision
-fingerprints; later arrivals remain pending. `reconcile_required` means inspect
-the prior claim and durable writer receipts, not repeat broker effects. Never
-clear it merely because a lease/time limit elapsed.
+`no_op` ends silently and does not justify journal, broker, MCP or model reads.
+`run` identifies one immutable owner-bound claim and whether source judgment is
+needed. Perform each paper/live checkpoint once, then handle a requested
+semantic refresh. A source-only update does not itself authorize a trade.
+Finally acknowledge the exact token with `kol_trading_tick.py ack --token
+<token> --outcome completed|degraded` only after terminal process/ledger
+readback. Ack freezes only the claimed source/decision fingerprints; later
+arrivals remain pending.
 
-The latency budget is next local poll (up to five minutes), plus bounded source
-reads/model review, then next consumer tick; it is not guaranteed real time.
-No-op polls keep the original model and do not pay for Astra or broker queries.
+`reconcile_required / RUNNING_CLAIM` returns the original
+`owner_thread_id`. Read that task status once. An active owner makes the
+duplicate task immediately terminal without waiting, business-state reads,
+broker access, another semantic worker, publication or acknowledgement. If the
+owner is terminal and already cleared the claim, stop. Only a terminal or
+unavailable owner with the exact claim still open permits one receipt-bound
+reconciliation. Never clear it merely because time elapsed, and never repeat an
+unknown business effect.
+
+The latency budget is the next original sparse checkpoint plus bounded source
+review, then the following legal consumer checkpoint; it is not real time.
 
 ## Forward feedback and quality
 

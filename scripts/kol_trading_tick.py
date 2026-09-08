@@ -3,25 +3,21 @@
 
 Only production publication receipts, local Book B ownership and published KOL
 decisions are read. No broker, MCP, raw capture scan, calendar query or business
-writer runs here. Weekday/session slots are candidates, NOT proof of an open
-exchange; every consumer must still validate its trading calendar and gates.
-Extra morning work starts at 09:40 and stops before 11:30. The five-minute
-slots owned by opening (09:35/09:45/09:55), precheck (14:25) and closing (14:55)
-are reserved, including delayed polls within those slots. 14:50 remains a
-candidate for the ordinary sparse hard-risk monitor, never a soft-close pass.
-Reserved/window no-ops consume no source or decision changes. Existing native
-writer locks and durable plans take priority; consumers must still acquire
-their own execution fences because a local precheck is not a transferred lock.
+writer runs here. The gate runs only at the four original sparse checkpoints;
+source discovery and durable handoff belong to the local/remote KOL pipeline,
+not to a blind five-minute Codex polling loop. A weekday slot is still only a
+candidate, NOT proof of an open exchange; every consumer must validate its own
+trading calendar and safety gates. Existing native writer locks and durable
+plans take priority because a local precheck is not a transferred lock.
 
-The four original sparse slots always request the regular monitor. Other slots
-wake for source or published decision changes, or a stale published decision
-with explicit open positions in its own runtime. Fresh decision changes need
-monitor consumption, not another semantic review. On EVERY run, the consumer
-runs each existing paper/live monitor once FIRST, protecting hard exits, then
-arranges any required semantic review. Newly reviewed packs are consumed by a
-later tick, never by rerunning a monitor within the same claim. Each stale
-decision is acknowledged once, including a degraded completion. A claim never
-expires: interrupted/unknown business work requires exact reconciliation.
+Each sparse checkpoint runs the existing paper/live monitors once FIRST,
+protecting hard exits, then arranges any required semantic review from already
+published receipts. Fresh decisions are consumed at a later sparse checkpoint,
+never by rerunning a monitor within the same claim. A claim binds the Codex task
+identity when available so a later checkpoint can check that owner once rather
+than wait, rescan business state, or start another semantic worker. A claim
+never expires: an interrupted or unknown business effect still requires exact
+terminal reconciliation, never time-based clearing or replay.
 
 ack asserts the entire claimed work completed or terminally degraded; it is
 not an acknowledgement of dispatch. reconcile additionally records an explicit
@@ -52,7 +48,6 @@ ROOT = Path(__file__).resolve().parents[1]
 STATE_RELATIVE_PATH = Path("output/live/kol_policy/ticks")
 _CHINA = ZoneInfo("Asia/Shanghai")
 _REGULAR = {"10:25", "10:55", "13:25", "13:55"}
-_RESERVED = {"09:35", "09:45", "09:55", "14:25", "14:55"}
 
 
 class TickError(ValueError):
@@ -259,22 +254,27 @@ def _live_owner(root: Path) -> dict | None:
     return None
 
 
-def poll(root: Path = ROOT, *, now: datetime | None = None) -> dict:
+def poll(root: Path = ROOT, *, now: datetime | None = None,
+         owner_thread_id: str | None = None) -> dict:
     try:
         root, current = Path(root).resolve(), _clock(now)
         with _locked(root) as directory:
             state = _state(root, directory)
             if state["claim"] is not None:
-                return _result("reconcile_required", "RUNNING_CLAIM", token=state["claim"]["token"])
+                claim = state["claim"]
+                return _result(
+                    "reconcile_required",
+                    "RUNNING_CLAIM",
+                    token=claim["token"],
+                    owner_thread_id=claim.get("owner_thread_id"),
+                    claimed_at=claim["claimed_at"],
+                )
             local = current.astimezone(_CHINA)
-            minute = local.hour * 60 + local.minute
             if local.weekday() > 4:
                 return _result("no_op", "OUTSIDE_CANDIDATE_WINDOW")
             slot = local.replace(minute=local.minute // 5 * 5, second=0, microsecond=0).isoformat()
-            if slot[11:16] in _RESERVED:
-                return _result("no_op", "RESERVED_OWNED_SLOT")
-            if not (580 <= minute < 690 or 780 <= minute <= 890):
-                return _result("no_op", "OUTSIDE_CANDIDATE_WINDOW")
+            if slot[11:16] not in _REGULAR:
+                return _result("no_op", "OUTSIDE_SPARSE_CHECKPOINT")
             cursor = state["cursor"]
             if cursor["slot"] is not None and slot <= cursor["slot"]:
                 return _result("no_op", "SLOT_ALREADY_ACKNOWLEDGED")
@@ -285,20 +285,19 @@ def poll(root: Path = ROOT, *, now: datetime | None = None) -> dict:
             decision_fingerprint, stale = _decision_inputs(root, current)
             expired = sorted(set(stale) - set(cursor["expired"]))
             decision_changed = decision_fingerprint != cursor.get("decision_fingerprint", _digest([]))
-            regular = slot[11:16] in _REGULAR
+            regular = True
             semantic = fingerprint != cursor["fingerprint"] or bool(expired)
-            if not regular and not semantic and not decision_changed:
-                return _result("no_op", "UNCHANGED")
             claim = {"root": str(root), "nonce": uuid.uuid4().hex, "claimed_at": current.isoformat(),
                      "cadence_slot": slot, "fingerprint": fingerprint, "expired": expired,
                      "decision_fingerprint": decision_fingerprint, "decision_changed": decision_changed,
-                     "need_semantic_review": semantic, "regular_monitor": regular}
+                     "need_semantic_review": semantic, "regular_monitor": regular,
+                     "owner_thread_id": owner_thread_id.strip() if owner_thread_id else None}
             claim["token"] = _digest(claim)
             state["claim"] = claim
             _save(directory, state)
             return _result("run", "CLAIMED", **{key: claim[key] for key in (
                 "token", "cadence_slot", "fingerprint", "decision_fingerprint", "decision_changed",
-                "need_semantic_review", "regular_monitor")})
+                "need_semantic_review", "regular_monitor", "owner_thread_id")})
     except (OSError, ValueError, TypeError, KeyError, AttributeError):
         return _result("reconcile_required", "LOCAL_GATE_READBACK_REQUIRED")
 
@@ -361,7 +360,11 @@ def main(argv: list[str] | None = None) -> int:
             raise TickError("TEST_CLOCK_REQUIRES_SEPARATE_ROOT")
         now = _time(args.now) if args.now is not None else None
         if args.command == "poll":
-            result = poll(args.root, now=now)
+            result = poll(
+                args.root,
+                now=now,
+                owner_thread_id=os.environ.get("CODEX_THREAD_ID"),
+            )
         elif args.command == "ack":
             result = ack(args.root, token=args.token, outcome=args.outcome, now=now)
         else:
