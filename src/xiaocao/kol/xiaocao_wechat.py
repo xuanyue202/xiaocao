@@ -46,7 +46,7 @@ _GOOSE_LIVE_MINI_PROGRAM = re.compile(
 _XIAOETONG_SOURCE_IDENTITY = re.compile(
     r"^xiaoetong:(?P<app_id>app[A-Za-z0-9]+):(?P<live_id>l_[A-Za-z0-9]+)$"
 )
-_TERMINAL = {"historical_baseline", "superseded", "completed"}
+_TERMINAL = {"historical_baseline", "superseded", "completed", "expired"}
 _SHA256 = re.compile(r"^[0-9a-f]{64}$")
 _MAX_HANDOFF_BYTES = 1024 * 1024
 _CAPTURE_PROGRESS_POLL_SECONDS = 30
@@ -234,6 +234,8 @@ def parse_xiaocao_live_messages(payload: dict[str, Any]) -> list[dict[str, Any]]
 
 
 class CaptureDriver(Protocol):
+    def can_expire_wait(self, identity: str, capture_job_id: str) -> bool: ...
+
     def prepare_playback(self, identity: str, capture_job_id: str) -> dict[str, Any]: ...
 
     def bind_mini_program_capture(
@@ -358,6 +360,17 @@ class XiaocaoLiveCaptureDriver:
             capture_ledger=item_dir / "capture_jobs.jsonl",
             netdisk_output=self.netdisk_output,
             decision_output=self.decision_output,
+        )
+
+    def can_expire_wait(self, identity: str, capture_job_id: str) -> bool:
+        """Only retire an unbound idle capture; preserve every media/job claim."""
+        capture = self._service(identity).capture_store.latest(capture_job_id)
+        return bool(
+            capture
+            and capture.get("status") == "awaiting_capture"
+            and not any(capture.get(key) for key in (
+                "candidate_id", "task_id", "source_job_id", "expected_source",
+            ))
         )
 
     def arm(
@@ -671,6 +684,35 @@ class XiaocaoWechatLiveSubscription:
                 "superseded",
                 superseded_by=newest["identity"],
             )
+
+    def expire_stale_waits(self, manifest: dict[str, Any]) -> list[str]:
+        """Drop ungenerated entries after 72 hours without touching media work."""
+        cutoff = datetime.fromisoformat(self._now()) - timedelta(hours=72)
+        expired = []
+        for item in list(manifest["items"].values()):
+            if item.get("status") not in {
+                "discovered", "page_resolved", "capture_armed", "awaiting_playback",
+            }:
+                continue
+            published = datetime.fromisoformat(item["published_at"])
+            if published.tzinfo is None or published > cutoff:
+                continue
+            if any(item.get(key) for key in (
+                "candidate_id", "task_id", "media_request_observed", "handoff_id",
+            )):
+                continue
+            job = item.get("capture_job_id")
+            if job:
+                check = getattr(self.capture_driver, "can_expire_wait", None)
+                if check is None or not check(item["identity"], job):
+                    continue
+            self._transition(
+                manifest, item, "expired",
+                expiration_reason="no_media_after_72_hours",
+                expired_at=self._now(),
+            )
+            expired.append(item["identity"])
+        return expired
 
     @staticmethod
     def _next_pending(manifest: dict[str, Any]) -> dict[str, Any] | None:
@@ -1318,8 +1360,10 @@ class XiaocaoWechatLiveSubscription:
         if only_identity is None:
             self._poll(manifest)
             self._supersede_older_unarmed_previews(manifest)
+            self.expire_stale_waits(manifest)
             item = self._next_pending(manifest)
         else:
+            self.expire_stale_waits(manifest)
             item = manifest["items"].get(only_identity)
             if not isinstance(item, dict):
                 raise EnrichmentError(

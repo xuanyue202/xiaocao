@@ -439,6 +439,7 @@ def test_first_poll_baselines_history_and_arms_only_latest_live(tmp_path):
         capture_driver=capture,
         contact=CONTACT,
         password="666",
+        clock=lambda: datetime.fromisoformat("2026-08-04T23:00:00+08:00"),
     )
 
     result = subscription.run_once(
@@ -550,6 +551,7 @@ def test_wechat_mini_program_route_binds_media_to_the_exact_live_id(tmp_path, cl
         capture_driver=capture,
         contact=CONTACT,
         playback_route=XIAOCAO_PLAYBACK_ROUTE_WECHAT_MINI_PROGRAM,
+        clock=lambda: datetime.fromisoformat("2026-08-31T23:00:00+08:00"),
     )
 
     if closed is not True:
@@ -620,6 +622,7 @@ def test_native_mini_program_entry_is_armed_before_ui_and_binds_observed_live(
         contact=CONTACT,
         password="666",
         playback_route=XIAOCAO_PLAYBACK_ROUTE_WECHAT_MINI_PROGRAM,
+        clock=lambda: datetime.fromisoformat("2026-09-04T23:00:00+08:00"),
     )
 
     result = subscription.run_once(
@@ -729,6 +732,7 @@ def test_wechat_mini_program_route_rejects_a_different_live_id(tmp_path):
         capture_driver=capture,
         contact=CONTACT,
         playback_route=XIAOCAO_PLAYBACK_ROUTE_WECHAT_MINI_PROGRAM,
+        clock=lambda: datetime.fromisoformat("2026-08-31T23:00:00+08:00"),
     )
 
     with pytest.raises(
@@ -786,6 +790,7 @@ def test_h5_playback_state_is_rejected_before_arming(tmp_path):
         capture_driver=capture,
         contact=CONTACT,
         password="666",
+        clock=lambda: datetime.fromisoformat("2026-08-13T23:00:00+08:00"),
     )
 
     with pytest.raises(
@@ -846,6 +851,7 @@ def test_persisted_web_recorded_video_is_rejected_before_arming(tmp_path):
         capture_driver=capture,
         contact=CONTACT,
         password="666",
+        clock=lambda: datetime.fromisoformat("2026-08-13T23:00:00+08:00"),
     )
 
     with pytest.raises(
@@ -926,6 +932,7 @@ def test_newer_preview_is_not_starved_by_an_older_unfinished_capture(tmp_path):
         capture_driver=capture,
         contact=CONTACT,
         password="666",
+        clock=lambda: datetime.fromisoformat("2026-08-05T23:00:00+08:00"),
     )
 
     subscription.run_once(opencli_session="xiaocao-lv-subscription")
@@ -1045,6 +1052,7 @@ def test_existing_source_task_is_reconciled_before_another_wechat_ui_attempt(
         capture_driver=capture,
         contact=CONTACT,
         playback_route=XIAOCAO_PLAYBACK_ROUTE_WECHAT_MINI_PROGRAM,
+        clock=lambda: datetime.fromisoformat("2026-09-05T23:00:00+08:00"),
     )
 
     result = subscription.run_once(
@@ -1124,6 +1132,7 @@ def test_awaiting_playback_rechecks_the_bound_page_each_hour_until_playable(
         capture_driver=capture,
         contact=CONTACT,
         password="666",
+        clock=lambda: datetime.fromisoformat("2026-08-05T23:00:00+08:00"),
     )
 
     first = subscription.run_once(opencli_session="xiaocao-lv-subscription")
@@ -1205,6 +1214,7 @@ def test_wechat_mini_program_client_login_is_not_xiaoetong_login(tmp_path):
         capture_driver=_CaptureDriver(),
         contact=CONTACT,
         playback_route=XIAOCAO_PLAYBACK_ROUTE_WECHAT_MINI_PROGRAM,
+        clock=lambda: datetime.fromisoformat("2026-08-09T23:00:00+08:00"),
     )
 
     with pytest.raises(EnrichmentDiagnosticError) as captured:
@@ -1286,6 +1296,7 @@ def test_pending_cloud_handoff_resumes_exact_job_after_stale_playback_state(
         capture_driver=capture,
         contact=CONTACT,
         password="666",
+        clock=lambda: datetime.fromisoformat("2026-08-04T23:00:00+08:00"),
     )
     first = subscription.run_once(
         opencli_session="xiaocao-lv-subscription",
@@ -1431,6 +1442,7 @@ def test_published_handoff_recovery_is_read_only_until_remote_dispatch(tmp_path)
         handoff_exchange=exchange,
         capture_driver=RecoveryCapture(),
         contact=CONTACT,
+        clock=lambda: datetime.fromisoformat("2026-08-06T23:00:00+08:00"),
     )
 
     result = subscription.dispatch_published_handoff()
@@ -1447,3 +1459,30 @@ def test_published_handoff_recovery_is_read_only_until_remote_dispatch(tmp_path)
     item = manifest["items"][parsed["identity"]]
     assert item["status"] == "completed"
     assert item["mailbox_readback_status"] == "already_present"
+
+
+@pytest.mark.parametrize("age_hours,eligible,expected", [(71, True, False), (72, True, True), (96, False, False)])
+def test_expiry_preserves_recent_and_claimed_waits(tmp_path, age_hours, eligible, expected):
+    from datetime import timedelta
+    now = datetime.fromisoformat("2026-09-08T15:00:00+08:00")
+    subscription = XiaocaoWechatLiveSubscription(
+        tmp_path, history_reader=lambda: {}, browser_exchange=lambda r: r,
+        capture_driver=SimpleNamespace(can_expire_wait=lambda identity, job: eligible),
+        clock=lambda: now,
+    )
+    item = {"identity": "old", "published_at": (now-timedelta(hours=age_hours)).isoformat(),
+            "status": "awaiting_playback", "capture_job_id": "same-job"}
+    manifest = {"schema_version": 1, "items": {"old": item}}
+    assert subscription.expire_stale_waits(manifest) == (["old"] if expected else [])
+    assert manifest["items"]["old"]["capture_job_id"] == "same-job"
+    if expected:
+        assert subscription._next_pending(manifest) is None
+        assert subscription.expire_stale_waits(manifest) == []
+
+
+@pytest.mark.parametrize("fields", [{}, {"candidate_id": "media"}, {"source_job_id": "source"}, {"expected_source": {"id": "live"}}, {"status": "downloading"}])
+def test_expiry_driver_requires_unbound_idle_ledger(tmp_path, fields):
+    row = {"status": "awaiting_capture", **fields}
+    driver = XiaocaoLiveCaptureDriver(tmp_path, service_factory=lambda *a, **k:
+        SimpleNamespace(capture_store=SimpleNamespace(latest=lambda job: row)))
+    assert driver.can_expire_wait("same", "job") is (not fields)
