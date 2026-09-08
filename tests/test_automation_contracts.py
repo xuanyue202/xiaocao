@@ -118,6 +118,9 @@ def test_live_morning_is_a_separate_0920_fail_closed_task() -> None:
         "do not defer to the next Automation",
     ):
         assert repair_marker in live["prompt"]
+    assert "exactly one immutable no-cache market-guard sidecar" in live["prompt"]
+    assert "never fetch a second one or revive a terminal plan" in live["prompt"]
+    assert "above-basket evidence" in live["prompt"]
     assert "auto_daily.sh" not in live["prompt"]
     assert "book_b_live_morning.py" not in paper["prompt"]
     live_script = (ROOT / "scripts" / "book_b_live_morning.py").read_text(
