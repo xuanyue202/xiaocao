@@ -5098,6 +5098,67 @@ def test_repair_resume_persists_following_wait_for_narrow_recheck(tmp_path):
     ][0]["next_poll_not_before"] == "2026-08-31T11:20:00+08:00"
 
 
+def test_repair_resume_uses_originating_sweep_after_later_partial_sweep(
+    tmp_path,
+):
+    clock = Clock("2026-08-31T11:19:00+08:00")
+    service = DailyCoordinator(tmp_path / "daily", now=clock)
+    initial = service.run([{
+        "name": "subscription_video",
+        "run": lambda: (_ for _ in ()).throw(
+            TransientSourceError("temporarily unavailable")
+        ),
+    }])
+    prior = WriterProgress.from_dict(
+        initial["source_results"][0]["writer_progress"]
+    )
+    _close_validated_repair(
+        service,
+        prior,
+        tmp_path=tmp_path,
+        slot="2026-08-31T11:00+08:00",
+    )
+
+    clock.value = datetime.fromisoformat("2026-08-31T11:30:00+08:00")
+    service.run([{
+        "name": "local_partial_source",
+        "run": lambda: {"status": "no_update"},
+    }])
+
+    waiting = {
+        "status": "waiting",
+        "waiting_count": 1,
+        "waiting_items": [{
+            "identity": "subscription_video:source",
+            "status": "awaiting_provider",
+            "stage": "cloud_transfer_confirmation",
+            "next_poll_not_before": "2026-08-31T12:00:00+08:00",
+        }],
+    }
+    following = normalize_source_result(
+        "subscription_video",
+        waiting,
+        failure_revision="a" * 40,
+        provider_contract_version="xiaocao_writer_v1",
+    )
+
+    service.record_repair_resume(
+        "subscription_video",
+        prior=prior,
+        outcome=waiting,
+        following=following,
+        slot="2026-08-31T11:00+08:00",
+    )
+
+    progress_rows = [
+        row for row in service.events()
+        if row.get("event") == "source_progressed"
+        and row.get("source") == "subscription_video"
+    ]
+    assert progress_rows[-1]["progress"]["status"] == "wait_until"
+    assert service.convergence.pending_resume("subscription_video") is None
+
+
 def test_source_classifier_preserves_safe_timeout_diagnostic():
     runner = _classified_source(
         "lv_text_image",

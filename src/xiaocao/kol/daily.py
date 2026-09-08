@@ -1751,6 +1751,37 @@ class DailyCoordinator:
             }],
         }
 
+    @staticmethod
+    def _repair_originating_sweep(
+        rows: list[dict[str, Any]],
+        *,
+        source: str,
+        progress: WriterProgress,
+    ) -> dict[str, Any] | None:
+        """Find the sweep that persisted this exact repair progress."""
+
+        for row in reversed(rows):
+            if row.get("event") != "sweep_completed":
+                continue
+            source_states = row.get("source_states")
+            if not isinstance(source_states, list):
+                continue
+            for state in source_states:
+                if not isinstance(state, Mapping) or state.get("name") != source:
+                    continue
+                candidate = state.get("writer_progress")
+                if not isinstance(candidate, Mapping):
+                    continue
+                if (
+                    candidate.get("status") == "repair_required"
+                    and str(candidate.get("item_identity") or "")
+                    == progress.item_identity
+                    and str(candidate.get("failure_fingerprint") or "")
+                    == progress.failure_fingerprint
+                ):
+                    return row
+        return None
+
     def _append(self, event: str, **fields: Any) -> dict[str, Any]:
         row = {
             "schema_version": 1,
@@ -2988,7 +3019,11 @@ class DailyCoordinator:
         started = time.monotonic()
         with self._locked():
             prior_rows = self._events_unlocked()
-            prior_sweep = self._last_sweep_state(prior_rows)
+            prior_sweep = self._repair_originating_sweep(
+                prior_rows,
+                source=name,
+                progress=prior,
+            )
             if prior_sweep is None:
                 raise DailyError("repair resume lost its originating sweep")
             prior_states = prior_sweep.get("source_states")
