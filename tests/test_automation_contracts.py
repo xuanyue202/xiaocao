@@ -53,13 +53,17 @@ def test_1455_live_closing_has_one_bounded_instruction_read_before_execution() -
 
     assert "one read-only startup batch" in prompt
     for required_path in (
-        "$CODEX_HOME/automations/xiaocao-intraday-monitor-1455/memory.md",
+        "/Users/xuanyue202/.codex/automations/"
+        "xiaocao-intraday-monitor-1455/memory.md",
         ".codex/skills/xiaocao-trading/SKILL.md",
         ".codex/skills/xiaocao-trading/references/automation-intraday.md",
         ".codex/skills/xiaocao-trading/references/book-b-live-repair.md",
         ".codex/skills/xiaocao-trading/references/kol-trading-judgment.md",
     ):
         assert required_path in prompt
+    assert "same shell tool call" in prompt
+    assert "do not return control to the model between the reads and that command" in prompt
+    assert "$CODEX_HOME/automations/xiaocao-intraday-monitor-1455" not in prompt
     assert "do not make a separate discovery/count/list/read call" in prompt
     assert "do not open sibling skill references before the live command" in prompt
 
