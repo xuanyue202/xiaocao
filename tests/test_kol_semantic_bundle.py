@@ -233,9 +233,22 @@ def _fixture(tmp_path: Path) -> tuple[dict, dict, Path, Path, Path]:
         },
         "content_value": {
             "status": "promoted",
-            "tier": "report_only",
-            "reason": "有决策价值，但当前没有即时动作。",
-            "no_alert_reason": "当前没有需要即时提醒的新增动作。",
+            "tier": "alert_eligible",
+            "reason": "来源给出当前市场姿态和下一交易日触发条件。",
+            "alert_basis": ["market_posture", "actionable_trigger"],
+        },
+        "alert_qualification": {
+            "contract_version": "kol-alert-qualification-v1",
+            "status": "alert_eligible",
+            "reason": "量能判断仍面向下一交易日，属于当前姿态与触发条件。",
+            "claim_reviews": [
+                {
+                    "claim_id": claim_id,
+                    "currentness": "current",
+                    "alert_bases": ["market_posture", "actionable_trigger"],
+                    "reason": "原文明确要求下一交易日继续观察成交量。",
+                }
+            ],
         },
         "publication": {
             "summary": "量能不足，下一交易日先观察成交额。",
@@ -337,6 +350,26 @@ def test_canonical_durable_only_report_has_no_book_row(tmp_path):
     }
     draft["knowledge_status"] = "reusable_knowledge"
     draft["knowledge"] = {"summary": "以成交量确认而不盲目追涨的候选方法。"}
+    draft["content_value"] = {
+        "status": "promoted",
+        "tier": "report_only",
+        "reason": "保留可复用方法供后续研究。",
+        "no_alert_reason": "纯方法资料不包含当前市场方向或触发条件。",
+    }
+    draft["alert_qualification"] = {
+        "contract_version": "kol-alert-qualification-v1",
+        "status": "report_only",
+        "reason": "本条仅形成方法知识，不包含当前投资判断。",
+        "no_alert_basis": "methodology_only",
+        "claim_reviews": [
+            {
+                "claim_id": "liquidity-claim",
+                "currentness": "methodology_only",
+                "alert_bases": [],
+                "reason": "该主张在本场景只沉淀为方法，不作当前姿态。",
+            }
+        ],
+    }
     knowledge = tmp_path / "distillation.json"
     knowledge.write_text(json.dumps({"summary": "候选方法"}))
     draft["durable_distillation_path"] = str(knowledge)
@@ -959,6 +992,149 @@ def test_alert_basis_is_validated_before_business_publication(tmp_path):
     assert caught.value.field == "content_value.alert_basis"
     assert not bundle_path.exists()
     assert not receipt_path.exists()
+
+
+def test_current_evidence_bound_direction_cannot_be_report_only(tmp_path):
+    request, draft, bundle_path, receipt_path, _ = _fixture(tmp_path)
+    draft["content_value"] = {
+        "status": "promoted",
+        "tier": "report_only",
+        "reason": "方向有报告价值。",
+        "no_alert_reason": "方向与此前一致且仍需核验。",
+    }
+    draft["alert_qualification"] = {
+        "contract_version": "kol-alert-qualification-v1",
+        "status": "report_only",
+        "reason": "错误地把未核验和观点延续当作不提醒理由。",
+        "no_alert_basis": "pure_confirmation",
+        "claim_reviews": [
+            {
+                "claim_id": draft["claims"][0]["claim_id"],
+                "currentness": "current",
+                "alert_bases": ["market_posture", "actionable_trigger"],
+                "reason": "原文仍给出下一交易日的量能触发条件。",
+            }
+        ],
+    }
+
+    with pytest.raises(SemanticBundleError) as caught:
+        build_validated_bundle(
+            request,
+            draft,
+            bundle_path=bundle_path,
+            receipt_path=receipt_path,
+        )
+
+    assert caught.value.error_code == "alert_qualification_invalid"
+    assert caught.value.stage == "content_routing"
+    assert caught.value.field == "content_value.tier"
+    assert not bundle_path.exists()
+    assert not receipt_path.exists()
+
+
+def test_new_contract_rejects_missing_alert_qualification(tmp_path):
+    request, draft, bundle_path, receipt_path, _ = _fixture(tmp_path)
+    del draft["alert_qualification"]
+
+    with pytest.raises(SemanticBundleError) as caught:
+        build_validated_bundle(
+            request,
+            draft,
+            bundle_path=bundle_path,
+            receipt_path=receipt_path,
+        )
+
+    assert caught.value.error_code == "alert_qualification_invalid"
+    assert caught.value.field == "alert_qualification"
+
+
+def test_legacy_request_without_alert_contract_remains_reusable(tmp_path):
+    request, draft, bundle_path, receipt_path, _ = _fixture(tmp_path)
+    request["investment_claim_extraction"].pop(
+        "alert_qualification_contract_version"
+    )
+    request["investment_claim_extraction"]["required_output_schema"].pop(
+        "alert_qualification"
+    )
+    draft.pop("alert_qualification")
+
+    build_validated_bundle(
+        request,
+        draft,
+        bundle_path=bundle_path,
+        receipt_path=receipt_path,
+    )
+
+    bundle = json.loads(bundle_path.read_text(encoding="utf-8"))
+    assert "alert_qualification_contract_version" not in bundle
+
+
+def test_report_only_accepts_evidence_bound_pure_confirmation(tmp_path):
+    request, draft, bundle_path, receipt_path, _ = _fixture(tmp_path)
+    draft["content_value"] = {
+        "status": "promoted",
+        "tier": "report_only",
+        "reason": "完整保留重复观点供检索。",
+        "no_alert_reason": "本次只有纯确认，没有新增当前判断或触发条件。",
+    }
+    draft["alert_qualification"] = {
+        "contract_version": "kol-alert-qualification-v1",
+        "status": "report_only",
+        "reason": "证据只重复既有观点，没有新增当前动作、方向或触发条件。",
+        "no_alert_basis": "pure_confirmation",
+        "claim_reviews": [
+            {
+                "claim_id": draft["claims"][0]["claim_id"],
+                "currentness": "pure_confirmation",
+                "alert_bases": [],
+                "reason": "仅复述已提醒过的同一判断和条件。",
+            }
+        ],
+    }
+
+    build_validated_bundle(
+        request,
+        draft,
+        bundle_path=bundle_path,
+        receipt_path=receipt_path,
+    )
+
+    item = json.loads(bundle_path.read_text(encoding="utf-8"))["items"][0]
+    assert item["content_value"]["tier"] == "report_only"
+    assert item["alert_qualification"]["claim_reviews"][0]["currentness"] == (
+        "pure_confirmation"
+    )
+
+
+def test_unverified_low_confidence_no_trade_stays_alert_eligible(tmp_path):
+    request, draft, bundle_path, receipt_path, _ = _fixture(tmp_path)
+    draft["claims"][0]["confidence"] = "low"
+    draft["actionable_signals"][0]["confidence"] = "low"
+    draft["investment_thesis_fact_checks"][0].update(
+        {
+            "status": "unverified",
+            "summary": "没有独立行情证明量能已恢复。",
+            "reader_visible": True,
+        }
+    )
+    request["market_evidence"]["validation"].update(
+        {
+            "status": "conflict",
+            "summary": "最新事实与来源方向存在冲突，但来源仍给出当前触发条件。",
+        }
+    )
+
+    build_validated_bundle(
+        request,
+        draft,
+        bundle_path=bundle_path,
+        receipt_path=receipt_path,
+    )
+
+    item = json.loads(bundle_path.read_text(encoding="utf-8"))["items"][0]
+    assert item["content_value"]["tier"] == "alert_eligible"
+    assert item["book_kol_us"]["decision"] == "no_trade"
+    assert item["market_validation"]["status"] == "conflict"
 
 
 def test_synthesis_is_validated_before_business_publication(tmp_path):

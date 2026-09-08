@@ -20,6 +20,7 @@ from typing import Any, Mapping
 
 from ._shared import DecisionError, LOCAL_THESIS_ID_PATTERN, canonical, validate_claim_fields
 from .claim_coverage import (
+    ALERT_QUALIFICATION_CONTRACT_VERSION,
     CONTRACT_VERSION,
     build_claim_extraction_request,
     evidence_segments,
@@ -50,6 +51,22 @@ _ALERT_BASES = {
     "position_boundary",
     "direction",
     "actionable_trigger",
+}
+_ALERT_CURRENTNESS = {
+    "current",
+    "pure_confirmation",
+    "expired",
+    "historical",
+    "methodology_only",
+    "not_current_investment_content",
+}
+_LEGAL_NO_ALERT_BASES = {
+    "historical_initialization",
+    "expired_intraday_commentary",
+    "report_correction",
+    "methodology_only",
+    "pure_confirmation",
+    "no_current_investment_content",
 }
 _PROJECTION_STATUSES = {"none", "promoted"}
 _MARKET_STATUSES = {"support", "qualify", "conflict", "invalidate"}
@@ -1026,6 +1043,172 @@ def _validate_content_routing(item: Mapping[str, Any]) -> dict[str, Any]:
     return content
 
 
+def _validate_alert_qualification(item: Mapping[str, Any]) -> None:
+    """Keep source currentness independent from facts, Book, and content value."""
+
+    review = item.get("alert_qualification")
+    if not isinstance(review, Mapping):
+        raise _fail(
+            "promoted content needs an independent alert qualification review",
+            error_code="alert_qualification_invalid",
+            stage="content_routing",
+            field="alert_qualification",
+        )
+    if review.get("contract_version") != ALERT_QUALIFICATION_CONTRACT_VERSION:
+        raise _fail(
+            "alert qualification contract is invalid",
+            error_code="alert_qualification_invalid",
+            stage="content_routing",
+            field="alert_qualification.contract_version",
+        )
+    if not _nonblank(review.get("reason")):
+        raise _fail(
+            "alert qualification needs an independent reason",
+            error_code="alert_qualification_invalid",
+            stage="content_routing",
+            field="alert_qualification.reason",
+        )
+
+    referenced_claim_ids: set[str] = set()
+    for signal in item.get("actionable_signals") or []:
+        if isinstance(signal, Mapping):
+            referenced_claim_ids.update(
+                str(value) for value in signal.get("claim_ids") or []
+            )
+    outlook = item.get("market_outlook")
+    if isinstance(outlook, Mapping):
+        referenced_claim_ids.update(
+            str(value) for value in outlook.get("claim_ids") or []
+        )
+    known_claim_ids = {
+        str(claim.get("claim_id") or "")
+        for claim in item.get("claims") or []
+        if isinstance(claim, Mapping)
+    }
+    claim_reviews = review.get("claim_reviews")
+    if not isinstance(claim_reviews, list) or any(
+        not isinstance(row, Mapping) for row in claim_reviews
+    ):
+        raise _fail(
+            "alert qualification claim reviews are invalid",
+            error_code="alert_qualification_invalid",
+            stage="content_routing",
+            field="alert_qualification.claim_reviews",
+        )
+    reviewed_ids = [str(row.get("claim_id") or "") for row in claim_reviews]
+    if (
+        len(reviewed_ids) != len(set(reviewed_ids))
+        or set(reviewed_ids) != referenced_claim_ids
+        or not set(reviewed_ids) <= known_claim_ids
+    ):
+        raise _fail(
+            "alert qualification must review each routed claim exactly once",
+            error_code="alert_qualification_invalid",
+            stage="content_routing",
+            field="alert_qualification.claim_reviews.claim_id",
+        )
+
+    current_bases: set[str] = set()
+    current_reviews = 0
+    currentness_values: set[str] = set()
+    for row in claim_reviews:
+        currentness = str(row.get("currentness") or "")
+        bases = row.get("alert_bases")
+        if currentness not in _ALERT_CURRENTNESS:
+            raise _fail(
+                "alert qualification currentness is invalid",
+                error_code="alert_qualification_invalid",
+                stage="content_routing",
+                field="alert_qualification.claim_reviews.currentness",
+            )
+        if (
+            not isinstance(bases, list)
+            or len(bases) != len(set(map(str, bases)))
+            or not set(map(str, bases)) <= _ALERT_BASES
+            or not _nonblank(row.get("reason"))
+        ):
+            raise _fail(
+                "alert qualification claim review is incomplete",
+                error_code="alert_qualification_invalid",
+                stage="content_routing",
+                field="alert_qualification.claim_reviews",
+            )
+        currentness_values.add(currentness)
+        if currentness == "current":
+            if not bases:
+                raise _fail(
+                    "current investment content needs a live alert basis",
+                    error_code="alert_qualification_invalid",
+                    stage="content_routing",
+                    field="alert_qualification.claim_reviews.alert_bases",
+                )
+            current_reviews += 1
+            current_bases.update(map(str, bases))
+        elif bases:
+            raise _fail(
+                "non-current investment content cannot carry a live alert basis",
+                error_code="alert_qualification_invalid",
+                stage="content_routing",
+                field="alert_qualification.claim_reviews.alert_bases",
+            )
+
+    content = item.get("content_value") or {}
+    tier = str(content.get("tier") or "")
+    if review.get("status") != tier:
+        raise _fail(
+            "alert qualification status must match content tier",
+            error_code="alert_qualification_invalid",
+            stage="content_routing",
+            field="alert_qualification.status",
+        )
+    if tier == "alert_eligible":
+        if current_reviews == 0 or set(content.get("alert_basis") or []) != current_bases:
+            raise _fail(
+                "current investment content and alert bases must stay alert eligible",
+                error_code="alert_qualification_invalid",
+                stage="content_routing",
+                field="content_value.alert_basis",
+            )
+        if review.get("no_alert_basis") is not None:
+            raise _fail(
+                "alert-eligible content cannot carry a no-alert basis",
+                error_code="alert_qualification_invalid",
+                stage="content_routing",
+                field="alert_qualification.no_alert_basis",
+            )
+        return
+
+    no_alert_basis = str(review.get("no_alert_basis") or "")
+    if current_reviews:
+        raise _fail(
+            "current investment content cannot be routed report-only",
+            error_code="alert_qualification_invalid",
+            stage="content_routing",
+            field="content_value.tier",
+        )
+    if no_alert_basis not in _LEGAL_NO_ALERT_BASES:
+        raise _fail(
+            "report-only content needs a legal source-currentness basis",
+            error_code="alert_qualification_invalid",
+            stage="content_routing",
+            field="alert_qualification.no_alert_basis",
+        )
+    expected_currentness = {
+        "historical_initialization": "historical",
+        "expired_intraday_commentary": "expired",
+        "methodology_only": "methodology_only",
+        "pure_confirmation": "pure_confirmation",
+        "no_current_investment_content": "not_current_investment_content",
+    }.get(no_alert_basis)
+    if expected_currentness and claim_reviews and expected_currentness not in currentness_values:
+        raise _fail(
+            "report-only basis does not match its evidence-bound claim reviews",
+            error_code="alert_qualification_invalid",
+            stage="content_routing",
+            field="alert_qualification.no_alert_basis",
+        )
+
+
 def _validate_reader_copy(item: Mapping[str, Any], decision_status: str) -> None:
     raw_insight = item.get("reader_insight")
     if raw_insight is not None and not isinstance(raw_insight, Mapping):
@@ -1377,6 +1560,20 @@ def _validate_request(request: Mapping[str, Any]) -> dict[str, Any]:
             stage="evidence_binding",
             field="investment_claim_extraction.contract_version",
         )
+    alert_contract = extraction.get("alert_qualification_contract_version")
+    if (
+        alert_contract is not None
+        and alert_contract != ALERT_QUALIFICATION_CONTRACT_VERSION
+    ):
+        raise _fail(
+            "alert qualification extraction contract is invalid",
+            error_code="alert_qualification_invalid",
+            stage="request_binding",
+            field=(
+                "investment_claim_extraction."
+                "alert_qualification_contract_version"
+            ),
+        )
     expected_segments = evidence_segments(text, evidence_sha256=evidence_sha)
     supplied_segments = extraction.get("segments")
     if not isinstance(supplied_segments, list):
@@ -1434,6 +1631,7 @@ def _validate_request(request: Mapping[str, Any]) -> dict[str, Any]:
         "source_identity": source_identity,
         "source_version_key": source_version,
         "extraction": extraction,
+        "alert_qualification_contract_version": alert_contract,
         "segments": expected_by_id,
     }
 
@@ -1564,6 +1762,9 @@ def _canonical_bundle(request: Mapping[str, Any], draft: Mapping[str, Any], vali
         "items": [item],
         "cross_source": draft.get("cross_source") or {"agreements": [], "conflicts": []},
     }
+    alert_contract = validated.get("alert_qualification_contract_version")
+    if alert_contract:
+        bundle["alert_qualification_contract_version"] = alert_contract
     _validate_complete_bundle(bundle, validated)
     return bundle
 
@@ -1601,6 +1802,18 @@ def _validate_complete_bundle(bundle: dict[str, Any], validated: Mapping[str, An
     _validate_segments(item, validated["segments"], str(validated["text"]))
     _validate_market_outlook(item, item["market_validation"])
     _validate_actionable_signals(item, item["market_validation"])
+    _validate_content_routing(item)
+    alert_contract = bundle.get("alert_qualification_contract_version")
+    if alert_contract is not None:
+        if alert_contract != ALERT_QUALIFICATION_CONTRACT_VERSION:
+            raise _fail(
+                "semantic bundle alert qualification contract is invalid",
+                error_code="alert_qualification_invalid",
+                stage="semantic_validation",
+                field="alert_qualification_contract_version",
+            )
+        if (item.get("content_value") or {}).get("status") == "promoted":
+            _validate_alert_qualification(item)
     _validate_reader_and_terminals(item)
     _validate_projection(item)
     _validate_cross_source(bundle)
