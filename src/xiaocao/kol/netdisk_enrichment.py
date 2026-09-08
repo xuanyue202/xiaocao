@@ -2521,6 +2521,8 @@ class NetdiskEnrichmentService:
                 and (row.get("diagnostic") or {}).get("code") == "upload_foreground_failed"
                 and (row.get("diagnostic") or {}).get("stage") == "upload_foreground"
                 and (row.get("diagnostic") or {}).get("category") == "transport_error"
+                and type((row.get("diagnostic") or {}).get("exit_code")) is int
+                and (row.get("diagnostic") or {})["exit_code"] > 0
                 and not row.get("upload_repair_attempts")
             )
             permission_restored = (

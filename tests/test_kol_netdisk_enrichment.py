@@ -4042,7 +4042,7 @@ def test_same_second_preclaim_evidence_is_rejected_with_microsecond_precision(
         )
 
 
-@pytest.mark.parametrize("failure", [None, "wrong_claim", "attached", "started", "uncertain", "missing_stage"])
+@pytest.mark.parametrize("failure", [None, "wrong_claim", "attached", "started", "uncertain", "missing_stage", "no_failure_exit"])
 def test_foreground_repair_uses_bound_adapter_and_never_retries_attachment(tmp_path, monkeypatch, failure):
     video = tmp_path / "video-compressed.mp4"
     video.write_bytes(b"real-video")
@@ -4051,7 +4051,8 @@ def test_foreground_repair_uses_bound_adapter_and_never_retries_attachment(tmp_p
     job = service.prepare(video)
     current = {**job, "event": "netdisk_upload_failed", "status": "upload_claimed",
                "reason": "browser_command_failed", "failure_stage": "upload_foreground",
-               "diagnostic": {"category": "transport_error", "code": "upload_foreground_failed", "stage": "upload_foreground"}}
+               "diagnostic": {"category": "transport_error", "code": "upload_foreground_failed", "stage": "upload_foreground", "exit_code": 1}}
+    if failure == "no_failure_exit": current["diagnostic"]["exit_code"] = 0
     if failure == "started": current["upload_started_at"] = NOW.isoformat()
     if failure == "uncertain": current["diagnostic"]["code"] = "upload_attachment_uncertain"
     if failure == "missing_stage": current.pop("diagnostic")
