@@ -1582,6 +1582,12 @@ def _canonical_xiaocao_wechat_source_repair_profile(
         str(context.get("stage") or ""),
     )
     if (
+        declared_profile == "kol_xiaocao_wechat_live_native_playback_window_close"
+        and failure == (
+            "input_error", "native_playback_window_close_unverified",
+            "native_playback_window_close",
+        )
+    ) or (
         declared_profile == _XIAOCAO_WECHAT_SOURCE_REPAIR_PROFILE
         and failure
         == (
