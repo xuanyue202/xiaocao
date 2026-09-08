@@ -7197,6 +7197,31 @@ try {
         primary_status = str(
             relationship.get("primary_source_status") or ""
         )
+        related = relationship.get("related_source_part")
+        candidate_key: tuple[str, str] | None = None
+        if isinstance(related, dict):
+            candidate_key = (
+                str(related.get("identity") or ""),
+                str(related.get("version_key") or ""),
+            )
+        candidates = {
+            (str(row["identity"]), str(row["version_key"]))
+            for row in self._episode_relation_candidates(
+                self._manifest_item(str(ingest["identity"]))
+            )
+        }
+        if primary_status == "pending":
+            if (
+                role not in PDF_DOCUMENT_ROLES
+                or not isinstance(related, dict)
+                or not str(related.get("identity") or "").strip()
+                or not str(related.get("version_key") or "").strip()
+                or candidate_key not in candidates
+            ):
+                raise EnrichmentError(
+                    "subscription PDF related source metadata is incomplete"
+                )
+            return relationship, "waiting_primary_source"
         comparison = relationship.get("semantic_comparison")
         quotes = relationship.get("content_evidence_quotes")
         if (
@@ -7233,19 +7258,6 @@ try {
                 "subscription PDF episode relationship is not evidence-bound"
             )
 
-        related = relationship.get("related_source_part")
-        candidate_key: tuple[str, str] | None = None
-        if isinstance(related, dict):
-            candidate_key = (
-                str(related.get("identity") or ""),
-                str(related.get("version_key") or ""),
-            )
-        candidates = {
-            (str(row["identity"]), str(row["version_key"]))
-            for row in self._episode_relation_candidates(
-                self._manifest_item(str(ingest["identity"]))
-            )
-        }
         if role == "video_summary" or primary_status != "not_applicable":
             if candidate_key not in candidates:
                 raise EnrichmentError(
