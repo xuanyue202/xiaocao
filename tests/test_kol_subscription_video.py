@@ -1888,6 +1888,24 @@ def test_absence_readback_cannot_replenish_consumed_operator_recovery(tmp_path):
     assert result["side_effect_uncertain"] is True
 
 
+def test_consumed_recovery_preserves_its_unexpired_receipt_window(tmp_path):
+    service = _service(tmp_path)
+    item = service._normalize(_source_rows()[0][1], source=LV_SOURCE, author=LV_AUTHOR)
+    claim_path = service._claim_path(f"lv_transfer_{item['version_key']}")
+    claim_path.parent.mkdir(parents=True)
+    claim = {"claim_id": "third", "source_identity": item["identity"],
+             "source_version_key": item["version_key"], "provider_outcome": "unobserved",
+             "trigger_attempt": 3, "trigger_attempt_maximum": 3,
+             "authorized_recovery_consumed": True, "status": "waiting_cloud_transfer_receipt",
+             "next_poll_not_before": (NOW + timedelta(minutes=30)).isoformat()}
+    claim_path.write_text(json.dumps(claim))
+    result = service.record_lv_transfer_absence_reconciliation(
+        item, claim_id="third", readback_evidence_sha256="a" * 64,
+    )
+    assert result == claim
+    assert json.loads(claim_path.read_text()) == claim
+
+
 def test_lv_transfer_retries_once_after_authoritative_absence_reconciliation(
     tmp_path,
 ):

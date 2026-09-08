@@ -3803,9 +3803,13 @@ class SubscriptionVideoService:
         if claim.get("authorized_recovery_consumed") is True:
             # An absence readback is evidence, not fresh authority for a
             # fourth click. Preserve the explicit one-recovery boundary.
+            deadline = claim.get("next_poll_not_before")
+            if deadline and self._time() < datetime.fromisoformat(str(deadline)):
+                return claim
             return self._record_transfer_blocker(
                 receipt_name,
-                {**claim, "readback_evidence_sha256": readback_evidence_sha256},
+                {**claim, "readback_evidence_sha256": readback_evidence_sha256,
+                 "reconciled_absent_at": self._time().isoformat(timespec="seconds")},
                 blocker_key="lv-cloud-transfer-not-materialized",
                 failure_reason="operator-authorized recovery exhausted without a verified private copy",
                 reconciliation_status="exact_private_copy_absent_after_bounded_retry",
