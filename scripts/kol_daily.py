@@ -742,7 +742,11 @@ def _read_agent_path(request: dict[str, Any], field: str) -> Path:
 
 
 def _persisted_validated_bundle(request: dict[str, Any]) -> Path | None:
-    """Reuse a bundle already persisted for this semantic request."""
+    """Reuse a request-bound bundle after an interactive runner interruption.
+
+    This keeps an exact narrow resume independent of the original stdin while
+    leaving canonical receipt and parent-review validation to the caller.
+    """
 
     artifact_dir = str(request.get("artifact_dir") or "").strip()
     if not artifact_dir:

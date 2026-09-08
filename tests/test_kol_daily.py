@@ -2311,6 +2311,9 @@ def test_xiaocao_resume_reuses_persisted_validated_bundle_without_stdin(
     assert consumed["field"] == "bundle_path"
     assert consumed["path"] == bundle_path.resolve()
     assert consumed["request"]["artifact_dir"] == str(artifact_dir.resolve())
+    assert consumed["request"]["analysis_request_path"] == str(
+        (artifact_dir / "analysis_request.json").resolve()
+    )
 
 
 def test_capture_local_cli_follows_exact_cloud_handoff_in_same_process(
