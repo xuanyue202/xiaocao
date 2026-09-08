@@ -47,6 +47,23 @@ def test_1455_live_closing_crosses_the_narrow_gate_before_paper_work() -> None:
         assert repair_marker in prompt
 
 
+def test_1455_live_closing_has_one_bounded_instruction_read_before_execution() -> None:
+    closing = _automation("xiaocao-intraday-monitor-1455")
+    prompt = closing["prompt"]
+
+    assert "one read-only startup batch" in prompt
+    for required_path in (
+        "$CODEX_HOME/automations/xiaocao-intraday-monitor-1455/memory.md",
+        ".codex/skills/xiaocao-trading/SKILL.md",
+        ".codex/skills/xiaocao-trading/references/automation-intraday.md",
+        ".codex/skills/xiaocao-trading/references/book-b-live-repair.md",
+        ".codex/skills/xiaocao-trading/references/kol-trading-judgment.md",
+    ):
+        assert required_path in prompt
+    assert "do not make a separate discovery/count/list/read call" in prompt
+    assert "do not open sibling skill references before the live command" in prompt
+
+
 def test_morning_automations_separate_user_visible_prerecommend_from_execution() -> None:
     prerecommend = _automation("xiaocao-daily-morning")
     execution = _automation("xiaocao-daily-morning-execution")
@@ -101,6 +118,9 @@ def test_live_morning_is_a_separate_0920_fail_closed_task() -> None:
         "do not defer to the next Automation",
     ):
         assert repair_marker in live["prompt"]
+    assert "exactly one immutable no-cache market-guard sidecar" in live["prompt"]
+    assert "never fetch a second one or revive a terminal plan" in live["prompt"]
+    assert "above-basket evidence" in live["prompt"]
     assert "auto_daily.sh" not in live["prompt"]
     assert "book_b_live_morning.py" not in paper["prompt"]
     live_script = (ROOT / "scripts" / "book_b_live_morning.py").read_text(
@@ -168,8 +188,12 @@ def test_intraday_automations_use_explicit_china_market_wall_clock() -> None:
         "RRULE:FREQ=WEEKLY;BYDAY=MO,TU,WE,TH,FR;BYHOUR=9;BYMINUTE=35,45,55"
     )
     assert sparse["rrule"] == (
-        "RRULE:FREQ=WEEKLY;BYDAY=MO,TU,WE,TH,FR;BYHOUR=10,13;BYMINUTE=25,55"
+        "RRULE:FREQ=WEEKLY;BYDAY=MO,TU,WE,TH,FR;"
+        "BYHOUR=10,13;BYMINUTE=25,55"
     )
+    assert "runs only the four original sparse checkpoints" in sparse["prompt"]
+    assert "exactly one task-status read" in sparse["prompt"]
+    assert "end immediately without waiting" in sparse["prompt"]
 
 
 def test_all_china_market_automations_use_dtstart_free_local_wall_clock() -> None:
@@ -178,7 +202,10 @@ def test_all_china_market_automations_use_dtstart_free_local_wall_clock() -> Non
         "xiaocao-daily-morning-execution": ("BYHOUR=9", "BYMINUTE=25"),
         "xiaocao-book-b-live-morning": ("BYHOUR=9", "BYMINUTE=20"),
         "xiaocao-intraday-monitor": ("BYHOUR=9", "BYMINUTE=35,45,55"),
-        "xiaocao-intraday-monitor-05": ("BYHOUR=10,13", "BYMINUTE=25,55"),
+        "xiaocao-intraday-monitor-05": (
+            "BYHOUR=10,13",
+            "BYMINUTE=25,55",
+        ),
         "xiaocao-intraday-risk-precheck-1425": ("BYHOUR=14", "BYMINUTE=25"),
         "xiaocao-intraday-monitor-1455": ("BYHOUR=14", "BYMINUTE=55"),
         "xiaocao-daily-eod": ("BYHOUR=15", "BYMINUTE=10"),
@@ -195,6 +222,10 @@ def test_all_china_market_automations_use_dtstart_free_local_wall_clock() -> Non
 def test_kol_local_automation_uses_lianghui_mailbox_without_task_injection() -> None:
     automation = _automation("xiaocao-kol-hourly")
 
+    assert automation["id"] == "xiaocao-kol-hourly-local-capture"
+    assert automation["name"] == "xiaocao KOL hourly local capture"
+    assert automation["target"]["project_id"] == "c5acdaa7-f8a7-42d4-96fe-bf979a6b7415"
+    assert automation["cwds"] == ["/Users/xuanyue202/Documents/project/xiaocao"]
     assert "daily_lianghui_mailbox_input_required" in automation["prompt"]
     assert "send_mailbox_message" in automation["prompt"]
     assert "get_mailbox_message" in automation["prompt"]

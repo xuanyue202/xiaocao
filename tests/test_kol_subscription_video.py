@@ -2029,6 +2029,7 @@ def test_lv_transfer_claim_precedes_click_and_exact_copy_readback_completes(
             native_click_calls += 1
             assert claim["status"] == "native_click_claimed"
             assert args[1] == '[data-xiaocao-lv-confirm="ready"]'
+            assert args[2:4] == ("--tab", "page-1")
             return {
                 "clicked": True,
                 "target": args[1],
@@ -2084,6 +2085,36 @@ def test_lv_transfer_claim_precedes_click_and_exact_copy_readback_completes(
     assert not any(
         "lv_cloud_transfer_outcome_uncertain" in row for row in events
     )
+
+
+def test_transfer_activation_falls_back_for_bound_user_tab(tmp_path):
+    commands = []
+
+    def runner(command, **_kwargs):
+        commands.append(command)
+        browser_index = command.index("browser")
+        tail = command[browser_index + 2 :]
+        assert tail[:3] == ["tab", "select", "page-1"]
+        return SimpleNamespace(
+            returncode=1,
+            stdout=json.dumps({
+                "error": {
+                    "code": "bound_tab_mutation_blocked",
+                },
+            }),
+            stderr="",
+        )
+
+    service = _service(tmp_path, runner=runner)
+
+    page = service._activate_opencli_page(
+        "ticket05",
+        {"page": "page-1"},
+        profile="work",
+    )
+
+    assert page == "page-1"
+    assert len(commands) == 1
 
 
 def test_lv_transfer_reconciles_observed_default_root_save_without_resend(

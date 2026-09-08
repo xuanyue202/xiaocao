@@ -19,6 +19,7 @@ import hashlib
 import json
 import math
 import os
+import re
 import uuid
 from contextlib import contextmanager
 from dataclasses import asdict, dataclass, field, replace
@@ -236,6 +237,20 @@ def _parse_market_guard_observed_at(value: object, trade_date: str) -> datetime 
 
 
 @dataclass(frozen=True)
+class MarketGuardRefresh:
+    """Hash-bound, non-economic quote refresh for one immutable live intent."""
+
+    plan_id: str
+    plan_hash: str
+    status: str
+    observed_at: datetime
+    latest_price: float
+    down_price: float
+    refreshed_at: datetime
+    receipt_sha256: str
+
+
+@dataclass(frozen=True)
 class TradePlan:
     """Immutable economic intent passed from the deterministic Book B spine."""
 
@@ -269,6 +284,14 @@ class TradePlan:
     sell_decision_phase: str | None = None
     sell_decision_at: datetime | None = None
     sell_block_reason: str | None = None
+    # This sidecar is deliberately excluded from canonical_payload/plan_hash.
+    # It may refresh only time-sensitive safety facts for the same economic
+    # intent; code, side, shares, limit, allocation and authority stay frozen.
+    market_guard_refresh: MarketGuardRefresh | None = field(
+        default=None,
+        compare=False,
+        repr=False,
+    )
 
     @property
     def notional(self) -> float:
@@ -362,7 +385,41 @@ class TradePlan:
             return "RECOVERY_DEADLINE_NOT_TZ_AWARE"
         if self.submit_not_before is not None and self.submit_not_before.tzinfo is None:
             return "SUBMIT_NOT_BEFORE_NOT_TZ_AWARE"
+        refresh = self.market_guard_refresh
+        if refresh is not None:
+            if self.environment != "live" or self.side.upper() != "BUY":
+                return "MARKET_GUARD_REFRESH_SCOPE_INVALID"
+            if refresh.plan_id != self.plan_id or refresh.plan_hash != self.plan_hash:
+                return "MARKET_GUARD_REFRESH_BINDING_MISMATCH"
+            if (
+                refresh.observed_at.tzinfo is None
+                or refresh.refreshed_at.tzinfo is None
+                or not re.fullmatch(r"[0-9a-f]{64}", refresh.receipt_sha256)
+                or not math.isfinite(float(refresh.latest_price))
+                or float(refresh.latest_price) <= 0
+                or not math.isfinite(float(refresh.down_price))
+                or float(refresh.down_price) <= 0
+            ):
+                return "MARKET_GUARD_REFRESH_INVALID"
         return None
+
+    def _effective_buy_market_guard(
+        self,
+    ) -> tuple[str, datetime | None, float | None, float | None]:
+        refresh = self.market_guard_refresh
+        if refresh is not None:
+            return (
+                refresh.status,
+                refresh.observed_at,
+                refresh.latest_price,
+                refresh.down_price,
+            )
+        return (
+            self.market_guard_status,
+            self.market_guard_observed_at,
+            self.market_guard_latest_price,
+            self.market_guard_down_price,
+        )
 
     def guard_reason(self, *, now: datetime | None = None) -> str | None:
         if self.side.upper() == "SELL":
@@ -401,25 +458,28 @@ class TradePlan:
             return None
         if self.side.upper() != "BUY":
             return None
-        status = str(self.market_guard_status or "unavailable").strip().lower()
+        guard_status, observed_at, latest_price, down_price = (
+            self._effective_buy_market_guard()
+        )
+        status = str(guard_status or "unavailable").strip().lower()
         if status in {"limit_down", "limitdown", "跌停"}:
             return "LIMIT_DOWN_BUY_BLOCKED"
         if status in _UNAVAILABLE_GUARD_STATUSES:
             return "LIMIT_DOWN_CHECK_UNAVAILABLE"
         if self.market_guard_required and (
-            self.market_guard_observed_at is None
-            or self.market_guard_latest_price is None
-            or self.market_guard_down_price is None
+            observed_at is None
+            or latest_price is None
+            or down_price is None
         ):
             return "LIMIT_DOWN_CHECK_UNAVAILABLE"
         if self.market_guard_required:
             allowed, reason, _evidence = evaluate_buy_market_guard(
                 {
                     "market_guard_required": True,
-                    "market_guard_status": self.market_guard_status,
-                    "market_price": self.market_guard_latest_price,
-                    "down_price": self.market_guard_down_price,
-                    "market_observed_at": _iso(self.market_guard_observed_at),
+                    "market_guard_status": guard_status,
+                    "market_price": latest_price,
+                    "down_price": down_price,
+                    "market_observed_at": _iso(observed_at),
                     "trade_date": self.trade_date,
                 },
                 require_authoritative=True,
@@ -427,6 +487,12 @@ class TradePlan:
             )
             if not allowed:
                 return reason or "LIMIT_DOWN_CHECK_UNAVAILABLE"
+            if (
+                latest_price is not None
+                and self.basket_price is not None
+                and float(latest_price) > float(self.basket_price) + 1e-6
+            ):
+                return "REALTIME_ABOVE_BASKET"
         return None
 
     def describe(self, *, requested_shares: int | None = None) -> str:
@@ -1593,9 +1659,32 @@ class TradingExecution:
         return existing
 
     def _start(self, plan: TradePlan, broker: BrokerAdapter) -> ExecutionReceipt:
+        guard_status, guard_observed_at, guard_latest_price, guard_down_price = (
+            plan._effective_buy_market_guard()
+            if plan.side.upper() == "BUY"
+            else (None, None, None, None)
+        )
+        guard_locator = {}
+        if plan.market_guard_refresh is not None:
+            guard_locator = {
+                "market_guard_refresh_applied": True,
+                "market_guard_refresh_sha256": (
+                    plan.market_guard_refresh.receipt_sha256
+                ),
+            }
         receipt = self._record(
             plan,
-            ExecutionReceipt(plan.plan_id, plan.plan_hash, ExecutionState.PLANNED, remaining_shares=plan.shares),
+            ExecutionReceipt(
+                plan.plan_id,
+                plan.plan_hash,
+                ExecutionState.PLANNED,
+                remaining_shares=plan.shares,
+                latest_price=guard_latest_price,
+                market_guard_status=guard_status,
+                market_guard_observed_at=guard_observed_at,
+                market_guard_down_price=guard_down_price,
+                locator_proof=guard_locator,
+            ),
             kind="plan_created",
         )
         error = plan.validation_error()
@@ -2532,13 +2621,34 @@ class TradingExecution:
                 if isinstance(broker.absence_proof, bool)
                 else previous.absence_proof
             ),
-            order_price=broker.order_price,
+            order_price=(
+                broker.order_price
+                if broker.order_price is not None
+                else previous.order_price
+            ),
             fill_price=plan_fill_price,
-            latest_price=broker.latest_price,
+            latest_price=(
+                broker.latest_price
+                if broker.latest_price is not None
+                else previous.latest_price
+            ),
             active=broker.active,
-            market_guard_status=broker.market_guard_status,
-            market_guard_observed_at=broker.market_guard_observed_at or broker.observed_at,
-            market_guard_down_price=broker.market_guard_down_price,
+            market_guard_status=(
+                broker.market_guard_status or previous.market_guard_status
+            ),
+            market_guard_observed_at=(
+                broker.market_guard_observed_at
+                or (
+                    broker.observed_at
+                    if broker.market_guard_status
+                    else previous.market_guard_observed_at
+                )
+            ),
+            market_guard_down_price=(
+                broker.market_guard_down_price
+                if broker.market_guard_down_price is not None
+                else previous.market_guard_down_price
+            ),
             template_name=broker.template_name or previous.template_name,
             template_version=broker.template_version or previous.template_version,
             account_binding=broker.account_binding or previous.account_binding,

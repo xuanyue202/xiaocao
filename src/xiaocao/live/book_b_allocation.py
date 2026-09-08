@@ -138,6 +138,8 @@ class BookBAllocationFacts:
                 "target_weight": round(float(row.get("mode_exec_target_weight") or 0.0), 6),
                 "mode_exec_star": row.get("mode_exec_star") is True,
                 "mode_trade_eligible": row.get("mode_trade_eligible") is True,
+                "kol_mode_override": row.get("kol_mode_override"),
+                "kol_mode_original_state": row.get("kol_mode_original_state"),
                 "shares": int(row.get("mode_exec_planned_shares") or row.get("shares") or 0),
                 "planned_cash": round(float(row.get("mode_exec_planned_cash_out") or 0.0), 6),
                 "open": round(float(row.get("open") or 0.0), 6),

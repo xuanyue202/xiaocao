@@ -51,6 +51,7 @@ from xiaocao.kol.enrichment_types import (
 )
 from xiaocao.kol._shared import DecisionError
 from xiaocao.kol.household import LiangHuiMcpError
+from xiaocao.kol.mailbox import MailboxLedger
 from xiaocao.kol.publication import (
     PublicationLedger,
     build_record,
@@ -372,6 +373,20 @@ def test_source_cli_narrow_runner_supports_subscription_video():
         runtime,
         "subscription_video",
     ) is subscription
+
+
+def test_source_cli_narrow_runner_supports_wechat_official_accounts():
+    official = lambda surface: {"surface": surface}
+    runtime = SimpleNamespace(
+        lv_narrow_resume=lambda surface: {"lv": surface},
+        videos_narrow_resume=lambda surface: {"video": surface},
+        wechat_official_narrow_resume=official,
+    )
+
+    assert _source_cli_narrow_runner(
+        runtime,
+        "wechat_official_accounts",
+    ) is official
 
 
 def test_source_cli_structured_input_binding_supports_exact_lv_item(
@@ -1402,6 +1417,89 @@ def test_remote_run_drains_mailbox_before_existing_sources(
     assert observed["xiaocao_exclusions"] == ("a" * 64,)
 
 
+def test_status_audit_and_convergence_project_mailbox_repair_over_no_update(
+    tmp_path,
+):
+    daily_dir = tmp_path / "daily"
+    mailbox_dir = tmp_path / "mailbox"
+    service = DailyCoordinator(
+        daily_dir,
+        mailbox_output_dir=mailbox_dir,
+        now=Clock("2026-09-07T12:40:00+08:00"),
+    )
+    service.run([{
+        "name": "xiaocao_handoff",
+        "run": lambda: {"status": "no_update"},
+    }])
+
+    message_id = "a" * 64
+    content_sha256 = "b" * 64
+    progress = {
+        "status": "repair_required",
+        "ownership": "agent",
+        "failure_fingerprint": "c" * 64,
+        "failure_revision": "d" * 40,
+        "next_action": "validate_repair_then_narrow_resume",
+        "claim_receipt_summary": {
+            "claim_count": 0,
+            "receipt_count": 0,
+            "uncertain_effect_count": 0,
+        },
+    }
+    ledger = MailboxLedger(mailbox_dir)
+    ledger.append(
+        "mailbox_message_attempted",
+        occurred_at="2026-09-07T04:33:10.230Z",
+        handoff_id=message_id,
+        content_sha256=content_sha256,
+    )
+    ledger.append(
+        "mailbox_message_waiting",
+        occurred_at="2026-09-07T04:33:21.193Z",
+        handoff_id=message_id,
+        content_sha256=content_sha256,
+        category="transport_error",
+        code="opencli_command_failed",
+        stage="browser_command",
+        failure_fingerprint="c" * 64,
+        failure_revision="d" * 40,
+        writer_progress=progress,
+    )
+
+    status = service.status()
+    assert status["status"] == "degraded"
+    assert status["mailbox_progress"]["status"] == "repair_required"
+    assert status["mailbox_progress"]["message_id"] == message_id
+    assert status["mailbox_progress"]["failure_fingerprint"] == "c" * 64
+    assert status["mailbox_progress"]["next_action"] == (
+        "validate_repair_then_narrow_resume"
+    )
+    assert status["last_sweep"]["status"] == "repair_required"
+    assert status["last_sweep"]["health"] == "degraded"
+    assert status["last_sweep"]["sweep_status"] == "completed"
+    assert status["last_sweep"]["sweep_health"] == "healthy"
+
+    audit = service.audit()
+    assert audit["status"] == "degraded"
+    assert audit["operational_status"] == "degraded"
+    assert audit["mailbox_progress"]["message_id"] == message_id
+    assert audit["latest_repairs"][-1] == {
+        "source": "kol.handoff",
+        "repair_key": "c" * 64,
+        "owner": "agent",
+        "failure_fingerprint": "c" * 64,
+        "next_action": "validate_repair_then_narrow_resume",
+    }
+
+    convergence = service.convergence_report(
+        period_start="2026-09-07T00:00:00+08:00",
+        period_end="2026-09-07T23:59:59+08:00",
+    )
+    assert convergence["status"] == "degraded"
+    assert convergence["operational_status"] == "degraded"
+    assert convergence["mailbox_progress"]["message_id"] == message_id
+
+
 def test_official_decided_handoff_requires_durable_terminal_readback(
     tmp_path,
     monkeypatch,
@@ -1786,6 +1884,64 @@ def test_xiaocao_wait_preserves_exact_transcript_poll_state(
             "next_poll_not_before": "2026-08-07T21:08:10+08:00",
         }],
     }
+
+
+def test_xiaocao_handoff_uses_dedicated_netdisk_session_for_resume(
+    tmp_path,
+    monkeypatch,
+):
+    handoff_dir = tmp_path / "xiaocao" / "imported_handoffs"
+    handoff_dir.mkdir(parents=True)
+    handoff = {
+        "schema_version": 1,
+        "handoff_id": "a" * 64,
+        "capture_job_id": "kol-capture-current",
+        "netdisk_job_id": "kol-netdisk-current",
+        "media_sha256": "b" * 64,
+        "media_basename": "current-compressed.mp4",
+        "published_at": "2026-08-07T18:00:00+08:00",
+        "large_payload_local_bytes": 0,
+    }
+    handoff["handoff_sha256"] = _canonical_sha256(handoff)
+    (handoff_dir / "kol-capture-current.json").write_text(
+        json.dumps(handoff),
+        encoding="utf-8",
+    )
+    calls: list[str] = []
+
+    class FakeNetdisk:
+        @staticmethod
+        def status(requested_job_id):
+            assert requested_job_id == "kol-netdisk-current"
+            return {"status": "transcript_claimed"}
+
+        @staticmethod
+        def advance_opencli(requested_job_id, **kwargs):
+            assert requested_job_id == "kol-netdisk-current"
+            calls.append(str(kwargs["session"]))
+            return {
+                "status": "transcript_requested",
+                "next_poll_not_before": "2026-08-07T21:08:10+08:00",
+            }
+
+    class FakeService:
+        def __init__(self, *_args, **_kwargs):
+            self.netdisk = FakeNetdisk()
+
+    monkeypatch.setattr(kol_daily_script, "XiaocaoLiveService", FakeService)
+    runtime = DailyRuntime.__new__(DailyRuntime)
+    runtime.args = SimpleNamespace(
+        xiaocao_output_dir=tmp_path / "xiaocao",
+        decision_output_dir=tmp_path / "decisions",
+        enrichment_session="xiaocao-lv-subscription",
+        xiaocao_enrichment_session="site:baidu-netdisk",
+        opencli_profile=None,
+    )
+
+    result = runtime.xiaocao(handoff_id=handoff["handoff_id"])
+
+    assert calls == ["site:baidu-netdisk"]
+    assert result["status"] == "waiting"
 
 
 def test_xiaocao_ai_note_pretrigger_failure_preserves_no_click_resume_context(
@@ -3077,6 +3233,69 @@ def test_resume_structured_input_consumes_exact_request_without_new_sweep(
     assert source["writer_progress"]["status"] == "terminal"
 
 
+def test_structured_input_resume_finds_originating_sweep_after_newer_sweep(
+    tmp_path,
+):
+    clock = Clock("2026-08-08T07:30:00+08:00")
+    service = DailyCoordinator(tmp_path / "daily", now=clock)
+    service.run([{
+        "name": "lv_text_image",
+        "run": lambda: {
+            "status": "waiting",
+            "waiting_items": [{
+                "identity": "item-1",
+                "version_key": "version-1",
+                "stage": "waiting_semantic_input",
+                "evidence_sha256": "b" * 64,
+            }],
+        },
+    }])
+    progress = WriterProgress.from_dict(next(
+        row["progress"]
+        for row in service.events()
+        if row.get("event") == "source_progressed"
+        and row.get("source") == "lv_text_image"
+    ))
+
+    service.run([{
+        "name": "subscription_video",
+        "run": lambda: {"status": "no_update"},
+    }])
+
+    def handler(seen):
+        return {
+            "outcome": {"status": "no_update"},
+            "structured_input_receipt": {
+                "event": "structured_input_consumed",
+                "request_id": seen.details["request_id"],
+                "request_schema_version": 1,
+                "response_field": seen.details["response_field"],
+                "immutable_bindings_sha256": hashlib.sha256(
+                    json.dumps(
+                        seen.details["immutable_bindings"],
+                        ensure_ascii=False,
+                        sort_keys=True,
+                        separators=(",", ":"),
+                    ).encode()
+                ).hexdigest(),
+                "request_sha256": "c" * 64,
+                "response_sha256": "d" * 64,
+            },
+        }
+
+    result = service.resume_structured_input(
+        {"name": "lv_text_image", "structured_input": handler},
+        progress=progress,
+    )
+
+    assert result["source_result"]["name"] == "lv_text_image"
+    assert result["continuation_only"] is True
+    assert any(
+        row["name"] == "lv_text_image"
+        for row in service.status()["last_sweep"]["source_states"]
+    )
+
+
 def test_resume_reconciliation_projects_readback_terminal_without_replay(
     tmp_path,
 ):
@@ -3476,6 +3695,77 @@ def test_daily_status_preserves_specific_video_waiting_stage(tmp_path):
     clock.value = datetime.fromisoformat("2026-07-27T10:30:00+08:00")
     service.run([{"name": "subscription_video", "run": waiting}])
     assert calls == 2
+
+
+def test_video_provider_wait_preserves_failure_for_progress_projection(
+    tmp_path,
+    monkeypatch,
+):
+    identity = "a" * 64
+    version = "b" * 64
+    item = {
+        "identity": identity,
+        "version_key": version,
+        "name": "9月7日.mp4",
+        "author": "吕晓彤",
+    }
+
+    class FakeVideoService:
+        def __init__(self, *_args, **_kwargs):
+            pass
+
+        @staticmethod
+        def pending_items():
+            return [item]
+
+        @staticmethod
+        def advance_item(_item, **_kwargs):
+            return {
+                "event": "subscription_video_episode_pending",
+                "status": "waiting_cloud_transfer_receipt",
+                "stage": "cloud_transfer_confirmation",
+                "next_poll_not_before": "2026-08-08T11:00:00+08:00",
+                "reconciliation_status": "exact_private_copy_absent",
+                "trigger_attempt": 2,
+            }
+
+    monkeypatch.setattr(
+        kol_daily_script,
+        "SubscriptionVideoService",
+        FakeVideoService,
+    )
+    runtime = DailyRuntime.__new__(DailyRuntime)
+    runtime.args = SimpleNamespace(
+        video_output_dir=tmp_path / "videos",
+        config=tmp_path / "config.yaml",
+        lv_session="lv",
+        private_session="private",
+        enrichment_session="enrichment",
+        opencli_profile="work",
+    )
+
+    result = runtime.videos(
+        only_identity=identity,
+        refresh_listing=False,
+    )
+    waiting_item = result["waiting_items"][0]
+
+    assert waiting_item["category"] == "provider_wait"
+    assert waiting_item["code"] == "waiting_cloud_transfer_receipt"
+    assert waiting_item["failure"] == {
+        "category": "provider_wait",
+        "code": "waiting_cloud_transfer_receipt",
+        "stage": "cloud_transfer_confirmation",
+        "retryable": True,
+    }
+    progress = normalize_source_result(
+        "subscription_video",
+        result,
+        failure_revision="c" * 40,
+        provider_contract_version="xiaocao_writer_v1",
+    )
+    assert progress.status == "wait_until"
+    assert progress.details["category"] == "provider_wait"
 
 
 def test_daily_resume_wait_runs_only_exact_due_source(tmp_path):
@@ -4950,6 +5240,67 @@ def test_repair_resume_persists_following_wait_for_narrow_recheck(tmp_path):
     assert service.status()["last_sweep"]["source_states"][0][
         "waiting_items"
     ][0]["next_poll_not_before"] == "2026-08-31T11:20:00+08:00"
+
+
+def test_repair_resume_uses_originating_sweep_after_later_partial_sweep(
+    tmp_path,
+):
+    clock = Clock("2026-08-31T11:19:00+08:00")
+    service = DailyCoordinator(tmp_path / "daily", now=clock)
+    initial = service.run([{
+        "name": "subscription_video",
+        "run": lambda: (_ for _ in ()).throw(
+            TransientSourceError("temporarily unavailable")
+        ),
+    }])
+    prior = WriterProgress.from_dict(
+        initial["source_results"][0]["writer_progress"]
+    )
+    _close_validated_repair(
+        service,
+        prior,
+        tmp_path=tmp_path,
+        slot="2026-08-31T11:00+08:00",
+    )
+
+    clock.value = datetime.fromisoformat("2026-08-31T11:30:00+08:00")
+    service.run([{
+        "name": "local_partial_source",
+        "run": lambda: {"status": "no_update"},
+    }])
+
+    waiting = {
+        "status": "waiting",
+        "waiting_count": 1,
+        "waiting_items": [{
+            "identity": "subscription_video:source",
+            "status": "awaiting_provider",
+            "stage": "cloud_transfer_confirmation",
+            "next_poll_not_before": "2026-08-31T12:00:00+08:00",
+        }],
+    }
+    following = normalize_source_result(
+        "subscription_video",
+        waiting,
+        failure_revision="a" * 40,
+        provider_contract_version="xiaocao_writer_v1",
+    )
+
+    service.record_repair_resume(
+        "subscription_video",
+        prior=prior,
+        outcome=waiting,
+        following=following,
+        slot="2026-08-31T11:00+08:00",
+    )
+
+    progress_rows = [
+        row for row in service.events()
+        if row.get("event") == "source_progressed"
+        and row.get("source") == "subscription_video"
+    ]
+    assert progress_rows[-1]["progress"]["status"] == "wait_until"
+    assert service.convergence.pending_resume("subscription_video") is None
 
 
 def test_source_classifier_preserves_safe_timeout_diagnostic():

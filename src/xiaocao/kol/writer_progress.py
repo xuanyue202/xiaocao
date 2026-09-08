@@ -43,6 +43,25 @@ NEXT_ACTIONS = {
     "user_action_required": "await_user_action",
     "terminal": "stop",
 }
+
+
+_MAILBOX_PROJECTION_STATUS = {
+    "repair_required": "repair_required",
+    "reconcile_required": "repair_required",
+    "user_action_required": "blocked",
+    "terminal": "completed",
+}
+
+
+def mailbox_projection_status(progress: Mapping[str, Any] | None) -> str:
+    """Map persisted writer progress to a mailbox-facing state."""
+
+    status = str(progress.get("status") or "") if isinstance(
+        progress, Mapping
+    ) else ""
+    return _MAILBOX_PROJECTION_STATUS.get(status, "waiting")
+
+
 STATUS_REQUIRED_FIELDS = {
     "continue": frozenset({"completed_stage", "next_stage"}),
     "structured_input": frozenset({
@@ -669,6 +688,8 @@ TARGETED_REPAIR_TESTS: dict[str, tuple[str, ...]] = {
             "builder_allows_episode_relationship_source_binding or "
             "repair_validation_accepts_lv_text_image_source_run_profile or "
             "persisted_validated_bundle_is_reused or "
+            "structured_input_resume_finds_originating_sweep_after_newer_sweep or "
+            "video_provider_wait_preserves_failure_for_progress_projection or "
             "narrow_source_provider_failure_becomes_bounded_wait or "
             "narrow_source_failure_preserves_exact_item_identity or "
             "lv_source_resume_uses_unique_persisted_bundle_without_listing or "
@@ -756,6 +777,24 @@ TARGETED_REPAIR_TESTS: dict[str, tuple[str, ...]] = {
             "repair_closure_accepts_subscription_video_browser_open_profile"
         ),
     ),
+    "kol_subscription_video_browser_command": (
+        "env",
+        "PYTHONPATH=src",
+        ".venv/bin/python",
+        "-m",
+        "pytest",
+        "tests/test_kol_subscription_video.py",
+        "tests/test_kol_daily.py",
+        "tests/test_kol_repair_validation.py",
+        "-q",
+        "-k",
+        (
+            "transfer_activation_falls_back_for_bound_user_tab or "
+            "lv_transfer_claim_precedes_click_and_exact_copy_readback_completes or "
+            "repair_resume_uses_originating_sweep_after_later_partial_sweep or "
+            "repair_validation_accepts_subscription_video_browser_command_profile"
+        ),
+    ),
     "kol_subscription_video_source_run": (
         "env",
         "PYTHONPATH=src",
@@ -838,7 +877,8 @@ TARGETED_REPAIR_TESTS: dict[str, tuple[str, ...]] = {
         (
             "official_account_parser_uses_exact_publishers_and_url_only_metadata or "
             "official_account_reader_calls_one_stateless_combined_window or "
-            "repair_validation_accepts_wechat_official_accounts_source_profile"
+            "repair_validation_accepts_wechat_official_accounts_source_profile or "
+            "repair_validation_accepts_wechat_official_accounts_repair_closure_alias"
         ),
     ),
     "kol_xiaocao_wechat_live_source_run": (
@@ -932,6 +972,13 @@ _TARGETED_REPAIR_IMPLEMENTATION_PATHS: dict[str, frozenset[str]] = {
     ),
     "kol_subscription_video_browser_open": frozenset(
         {
+            "src/xiaocao/kol/subscription_video.py",
+            "src/xiaocao/kol/writer_progress.py",
+        }
+    ),
+    "kol_subscription_video_browser_command": frozenset(
+        {
+            "src/xiaocao/kol/daily.py",
             "src/xiaocao/kol/subscription_video.py",
             "src/xiaocao/kol/writer_progress.py",
         }
@@ -1035,6 +1082,13 @@ _TARGETED_REPAIR_TEST_PATHS: dict[str, frozenset[str]] = {
             "tests/test_kol_subscription_video.py",
             "tests/test_kol_repair_validation.py",
             "tests/test_kol_writer_progress.py",
+        }
+    ),
+    "kol_subscription_video_browser_command": frozenset(
+        {
+            "tests/test_kol_daily.py",
+            "tests/test_kol_subscription_video.py",
+            "tests/test_kol_repair_validation.py",
         }
     ),
     "kol_subscription_video_source_run": frozenset(
@@ -1150,6 +1204,10 @@ def _canonical_lv_download_repair_profile(
 
 
 _LV_TEXT_IMAGE_SOURCE_REPAIR_PROFILE = "kol_lv_text_image_source_run"
+_LV_TEXT_IMAGE_SOURCE_REPAIR_FAILURES = frozenset({
+    ("source_error", "source_temporarily_unavailable"),
+    ("internal_state_error", "progress_deadline_missing"),
+})
 
 
 def _canonical_lv_text_image_source_repair_profile(
@@ -1159,9 +1217,11 @@ def _canonical_lv_text_image_source_repair_profile(
         str(context.get("adapter") or "") == "lv_text_image"
         and str(context.get("targeted_test_profile") or "")
         == _LV_TEXT_IMAGE_SOURCE_REPAIR_PROFILE
-        and str(context.get("category") or "") == "source_error"
-        and str(context.get("code") or "")
-        == "source_temporarily_unavailable"
+        and (
+            str(context.get("category") or ""),
+            str(context.get("code") or ""),
+        )
+        in _LV_TEXT_IMAGE_SOURCE_REPAIR_FAILURES
         and str(context.get("stage") or "") == "source_run"
     ):
         return _LV_TEXT_IMAGE_SOURCE_REPAIR_PROFILE
@@ -1243,6 +1303,33 @@ _SUBSCRIPTION_VIDEO_BROWSER_EVAL_REPAIR_PROFILE = (
 _SUBSCRIPTION_VIDEO_BROWSER_OPEN_REPAIR_PROFILE = (
     "kol_subscription_video_browser_open"
 )
+_SUBSCRIPTION_VIDEO_BROWSER_COMMAND_REPAIR_PROFILE = (
+    "kol_subscription_video_browser_command"
+)
+
+
+def _canonical_subscription_video_browser_command_repair_profile(
+    context: Mapping[str, Any],
+) -> str | None:
+    if (
+        str(context.get("adapter") or "") == "subscription_video"
+        and str(context.get("targeted_test_profile") or "")
+        == _SUBSCRIPTION_VIDEO_BROWSER_COMMAND_REPAIR_PROFILE
+        and str(context.get("stage") or "") == "browser_command"
+        and (
+            str(context.get("category") or ""),
+            str(context.get("code") or ""),
+        )
+        in {
+            ("transport_error", "opencli_command_failed"),
+            (
+                "provider_contract_error",
+                "opencli_bound_tab_mutation_blocked",
+            ),
+        }
+    ):
+        return _SUBSCRIPTION_VIDEO_BROWSER_COMMAND_REPAIR_PROFILE
+    return None
 
 
 def _canonical_subscription_video_browser_open_repair_profile(
@@ -1321,6 +1408,46 @@ _XIAOCAO_WECHAT_COMPRESSED_CAPTURE_REPAIR_PROFILE = (
 _XIAOCAO_WECHAT_CLOUD_HANDOFF_REPAIR_PROFILE = (
     "kol_xiaocao_wechat_live_cloud_handoff"
 )
+_MAILBOX_EXACT_RESUME_PROFILE = "kol_mailbox_exact_resume"
+
+_MAILBOX_BROWSER_REPAIR_FAILURES = frozenset({
+    ("transport_error", "opencli_command_failed"),
+    ("timeout", "opencli_timeout"),
+    ("timeout", "opencli_cdp_timeout"),
+    ("protocol_error", "opencli_invalid_json"),
+    ("protocol_error", "opencli_non_object"),
+    ("provider_contract_error", "opencli_tab_activation_failed"),
+})
+_MAILBOX_BROWSER_REPAIR_STAGES = frozenset({
+    "browser_command",
+    "browser_open",
+    "browser_eval",
+    "browser_wait",
+})
+
+
+def _canonical_mailbox_browser_repair_profile(
+    context: Mapping[str, Any],
+) -> str | None:
+    """Keep mailbox-wrapped business browser failures resumable."""
+
+    if (
+        str(context.get("targeted_test_profile") or "")
+        != _MAILBOX_EXACT_RESUME_PROFILE
+    ):
+        return None
+    if (
+        str(context.get("stage") or "") in _MAILBOX_BROWSER_REPAIR_STAGES
+        and (
+            str(context.get("category") or ""),
+            str(context.get("code") or ""),
+        )
+        in _MAILBOX_BROWSER_REPAIR_FAILURES
+    ):
+        return _MAILBOX_EXACT_RESUME_PROFILE
+    return None
+
+
 _SUBSCRIPTION_VIDEO_SOURCE_REPAIR_PROFILE = (
     "kol_subscription_video_source_run"
 )
@@ -1408,6 +1535,10 @@ def _canonical_shared_lv_listing_validation_repair_profile(
 _WECHAT_OFFICIAL_SOURCE_REPAIR_PROFILE = (
     "kol_wechat_official_accounts_source_run"
 )
+_WECHAT_OFFICIAL_SOURCE_REPAIR_PROFILE_ALIASES = frozenset({
+    _WECHAT_OFFICIAL_SOURCE_REPAIR_PROFILE,
+    "kol_wechat_official_accounts_wechat_official_scan",
+})
 
 
 def _canonical_wechat_official_source_repair_profile(
@@ -1416,17 +1547,24 @@ def _canonical_wechat_official_source_repair_profile(
     if (
         str(context.get("adapter") or "") == "wechat_official_accounts"
         and str(context.get("targeted_test_profile") or "")
-        == _WECHAT_OFFICIAL_SOURCE_REPAIR_PROFILE
+        in _WECHAT_OFFICIAL_SOURCE_REPAIR_PROFILE_ALIASES
         and (
             str(context.get("category") or ""),
             str(context.get("code") or ""),
             str(context.get("stage") or ""),
         )
-        == (
-            "source_error",
-            "source_temporarily_unavailable",
-            "source_run",
-        )
+        in {
+            (
+                "source_error",
+                "source_temporarily_unavailable",
+                "source_run",
+            ),
+            (
+                "configuration",
+                "wechat_cli_missing",
+                "wechat_official_scan",
+            ),
+        }
     ):
         return _WECHAT_OFFICIAL_SOURCE_REPAIR_PROFILE
     return None
@@ -1554,6 +1692,13 @@ class RepairValidationService:
         )
         if subscription_profile is not None:
             return subscription_profile
+        subscription_browser_command_profile = (
+            _canonical_subscription_video_browser_command_repair_profile(
+                context
+            )
+        )
+        if subscription_browser_command_profile is not None:
+            return subscription_browser_command_profile
         subscription_browser_open_profile = (
             _canonical_subscription_video_browser_open_repair_profile(
                 context
@@ -1591,6 +1736,11 @@ class RepairValidationService:
         )
         if subscription_source_profile is not None:
             return subscription_source_profile
+        mailbox_browser_profile = _canonical_mailbox_browser_repair_profile(
+            context
+        )
+        if mailbox_browser_profile is not None:
+            return mailbox_browser_profile
         if (
             str(context.get("category") or "")
             in {"configuration", "source_error", "timeout"}
@@ -1704,6 +1854,11 @@ class RepairValidationService:
                     _XIAOCAO_WECHAT_COMPRESSED_CAPTURE_REPAIR_PROFILE,
                     _XIAOCAO_WECHAT_CLOUD_HANDOFF_REPAIR_PROFILE,
                 }
+            )
+            and not (
+                profile == _WECHAT_OFFICIAL_SOURCE_REPAIR_PROFILE
+                and declared_profile
+                in _WECHAT_OFFICIAL_SOURCE_REPAIR_PROFILE_ALIASES
             )
             and not (
                 profile == _SUBSCRIPTION_VIDEO_SOURCE_REPAIR_PROFILE
@@ -2944,6 +3099,17 @@ class ConvergenceLedger:
             })
             if canonical_lv_profile is not None:
                 expected_profile = canonical_lv_profile
+            canonical_subscription_browser_command_profile = (
+                _canonical_subscription_video_browser_command_repair_profile({
+                    "adapter": open_progress.failure["adapter"],
+                    "targeted_test_profile": expected_profile,
+                    "category": open_progress.failure["category"],
+                    "code": open_progress.failure["code"],
+                    "stage": open_progress.failure["stage"],
+                })
+            )
+            if canonical_subscription_browser_command_profile is not None:
+                expected_profile = canonical_subscription_browser_command_profile
             canonical_subscription_browser_eval_profile = (
                 _canonical_subscription_video_browser_eval_repair_profile({
                     "adapter": open_progress.failure["adapter"],
@@ -2980,6 +3146,17 @@ class ConvergenceLedger:
             )
             if canonical_listing_validation_profile is not None:
                 expected_profile = canonical_listing_validation_profile
+            canonical_wechat_official_profile = (
+                _canonical_wechat_official_source_repair_profile({
+                    "adapter": open_progress.failure["adapter"],
+                    "targeted_test_profile": expected_profile,
+                    "category": open_progress.failure["category"],
+                    "code": open_progress.failure["code"],
+                    "stage": open_progress.failure["stage"],
+                })
+            )
+            if canonical_wechat_official_profile is not None:
+                expected_profile = canonical_wechat_official_profile
             canonical_xiaocao_wechat_profile = (
                 _canonical_xiaocao_wechat_source_repair_profile({
                     "adapter": open_progress.failure["adapter"],

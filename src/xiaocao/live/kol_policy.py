@@ -47,6 +47,8 @@ from typing import Iterator
 
 
 SCHEMA_VERSION = "kol-trading-decision.v1"
+MODE_OVERRIDE_SCHEMA_VERSION = "kol-trading-decision.v2"
+_SUPPORTED_SCHEMA_VERSIONS = {SCHEMA_VERSION, MODE_OVERRIDE_SCHEMA_VERSION}
 _RECORD_VERSION = "kol-trading-decision-record.v1"
 _SOURCE_FIELDS = {
     "report_id", "content_sha256", "author_id", "source_published_at", "received_at",
@@ -127,7 +129,8 @@ def _validate_pair(decision: dict, review: dict) -> tuple[datetime, datetime, da
     _require(isinstance(decision, dict) and isinstance(review, dict), "DECISION_AND_REVIEW_REQUIRED")
     _canonical(decision)
     _canonical(review)
-    _require(decision.get("schema_version") == SCHEMA_VERSION, "INVALID_SCHEMA")
+    schema_version = decision.get("schema_version")
+    _require(schema_version in _SUPPORTED_SCHEMA_VERSIONS, "INVALID_SCHEMA")
     identifier = decision.get("decision_id")
     _require(isinstance(identifier, str) and _ID.fullmatch(identifier) is not None, "INVALID_DECISION_ID")
     _require(_text(decision.get("agent_id")), "AUTHOR_AGENT_REQUIRED")
@@ -158,6 +161,30 @@ def _validate_pair(decision: dict, review: dict) -> tuple[datetime, datetime, da
         _require(published <= received <= as_of, "SOURCE_TIME_ORDER")
         _require(source["report_id"] not in report_ids, "DUPLICATE_SOURCE_REPORT")
         report_ids.add(source["report_id"])
+
+    mode_overrides = decision.get("xiaocao_mode_overrides")
+    if schema_version == SCHEMA_VERSION:
+        _require(mode_overrides is None, "MODE_OVERRIDE_REQUIRES_V2")
+    else:
+        _require(isinstance(mode_overrides, list), "MODE_OVERRIDE_LIST_REQUIRED")
+        _require(len(mode_overrides) <= 3, "MODE_OVERRIDE_LIMIT")
+        source_by_report = {source["report_id"]: source for source in sources}
+        seen_modes: set[str] = set()
+        for override in mode_overrides:
+            _require(isinstance(override, dict) and set(override) == {
+                "mode", "source_report_id", "source_quote", "scope",
+            }, "INVALID_MODE_OVERRIDE_FIELDS")
+            mode = override["mode"]
+            _require(_text(mode) and len(mode) <= 128, "INVALID_MODE_OVERRIDE")
+            _require(mode not in seen_modes, "DUPLICATE_MODE_OVERRIDE")
+            seen_modes.add(mode)
+            report_id = override["source_report_id"]
+            source = source_by_report.get(report_id)
+            _require(source is not None, "MODE_OVERRIDE_SOURCE_NOT_CITED")
+            _require(source["author_id"] == "kol-xiaocao", "MODE_OVERRIDE_SOURCE_NOT_XIAOCAO")
+            quote = override["source_quote"]
+            _require(_text(quote) and len(quote) <= 2000, "MODE_OVERRIDE_QUOTE_REQUIRED")
+            _require(override["scope"] == "frozen_candidates_only", "MODE_OVERRIDE_SCOPE_INVALID")
 
     checks = decision.get("current_checks")
     _require(isinstance(checks, list) and bool(checks), "CURRENT_CHECKS_REQUIRED")
@@ -322,7 +349,7 @@ def _state(status: str, book: str, runtime: str, reason: str, *, decision_id: st
     return {
         "status": status, "book": book, "runtime": runtime, "reason": reason,
         "decision_id": decision_id, "buy_scale": 0.0 if status == "blocked" else 1.0,
-        "skip_codes": [], "exit_codes": [],
+        "skip_codes": [], "exit_codes": [], "xiaocao_mode_overrides": [],
     }
 
 
@@ -339,6 +366,7 @@ def _snapshot(record: dict, book: str, runtime: str, now: datetime) -> dict:
                       decision_id=decision["decision_id"])
     result = _state("validated", book, runtime, "KOL_POLICY_VALIDATED", decision_id=decision["decision_id"])
     result.update({key: decision[key] for key in ("buy_scale", "skip_codes", "exit_codes")})
+    result["xiaocao_mode_overrides"] = list(decision.get("xiaocao_mode_overrides") or [])
     result.update(record=record, evaluated_at=now.isoformat(), decision_sha256=record["receipt"]["decision_sha256"])
     return result
 
@@ -375,7 +403,7 @@ def load_decision(root: Path, book: str, runtime: str, now: datetime) -> dict:
         return _state("blocked", book, runtime, "KOL_POLICY_BLOCKED: " + str(exc))
 
 
-def _consumable(snapshot: dict, code: str) -> dict:
+def _consumable_snapshot(snapshot: dict) -> dict:
     if not isinstance(snapshot, dict):
         return _state("blocked", "", "", "KOL_POLICY_INVALID_SNAPSHOT")
     if snapshot.get("status") in ("no_decision", "neutral", "expired", "needs_refresh", "blocked"):
@@ -386,12 +414,124 @@ def _consumable(snapshot: dict, code: str) -> dict:
         record = snapshot.get("record")
         _validate_record(record)
         _scope(snapshot.get("book"), snapshot.get("runtime"))
-        _require(_valid_code(code, snapshot["book"]), "INVALID_EXACT_CODE")
         expected = _snapshot(record, snapshot["book"], snapshot["runtime"], _time(snapshot.get("evaluated_at")))
         _require(_canonical(snapshot) == _canonical(expected), "SNAPSHOT_MISMATCH")
         return expected
     except (ValueError, TypeError, OverflowError, RecursionError) as exc:
         return _state("blocked", snapshot.get("book"), snapshot.get("runtime"), "KOL_POLICY_BLOCKED: " + str(exc))
+
+
+def _consumable(snapshot: dict, code: str) -> dict:
+    expected = _consumable_snapshot(snapshot)
+    if expected["status"] != "validated":
+        return expected
+    try:
+        _require(_valid_code(code, expected["book"]), "INVALID_EXACT_CODE")
+        return expected
+    except (ValueError, TypeError, OverflowError, RecursionError) as exc:
+        return _state("blocked", expected.get("book"), expected.get("runtime"),
+                      "KOL_POLICY_BLOCKED: " + str(exc))
+
+
+def prioritize_xiaocao_modes(rows: list[dict], snapshot: dict, *, max_slots: int = 3) -> list[dict]:
+    """Apply an explicit Xiaocao mode follow before the normal mode rotation.
+
+    The function only derives a consumer view of already frozen live Book-B
+    candidates.  It cannot add a code, restore UNKNOWN/missing evidence, make a
+    BJSE name eligible, or bypass an explicit fillability block.  The immutable
+    source row remains available through the ``kol_mode_original_*`` fields.
+    """
+    copied = [dict(row) for row in rows]
+    decision = _consumable_snapshot(snapshot)
+    overrides = decision.get("xiaocao_mode_overrides") if decision.get("status") == "validated" else []
+    if not overrides:
+        return copied
+    limit = max(0, min(3, int(max_slots)))
+
+    def number(value: object, default: float = 0.0) -> float:
+        try:
+            parsed = float(value)
+        except (TypeError, ValueError):
+            return default
+        return parsed if math.isfinite(parsed) else default
+
+    def frozen_candidate(row: dict) -> bool:
+        return (
+            row.get("book") == "B"
+            and row.get("is_live") is True
+            and str(row.get("mode_state") or "") != "UNKNOWN"
+            and not str(row.get("code") or "").endswith(".BJSE")
+            and ("executable_fillable" not in row or row.get("executable_fillable") is True)
+        )
+
+    selected: list[dict] = []
+    selected_codes: set[str] = set()
+    selected_modes: set[str] = set()
+    for priority, override in enumerate(overrides, 1):
+        mode = override["mode"]
+        candidates = [row for row in copied if frozen_candidate(row) and row.get("mode") == mode]
+        candidates.sort(key=lambda row: (
+            -number(row.get("mode_exec_score")),
+            -number(row.get("mode_exec_rank_score") or row.get("rank_score")),
+            str(row.get("code") or ""),
+        ))
+        if not candidates:
+            continue
+        row = candidates[0]
+        code = str(row.get("code") or "")
+        if not _valid_code(code, "B") or code in selected_codes or mode in selected_modes:
+            continue
+        row.update({
+            "kol_mode_original_state": row.get("mode_state"),
+            "kol_mode_original_trade_eligible": row.get("mode_trade_eligible"),
+            "kol_mode_original_exec_star": row.get("mode_exec_star"),
+            "kol_mode_override": {
+                "priority": priority,
+                "decision_id": decision["decision_id"],
+                "decision_sha256": decision.get("decision_sha256"),
+                **override,
+            },
+            "mode_state": "ACTIVE",
+            "mode_trade_eligible": True,
+        })
+        selected.append(row)
+        selected_codes.add(code)
+        selected_modes.add(mode)
+
+    baseline = [row for row in copied if frozen_candidate(row) and row.get("mode_trade_eligible") is True]
+    baseline.sort(key=lambda row: (
+        0 if row.get("mode_exec_star") is True else 1,
+        int(number(row.get("mode_exec_rank"), 9999)),
+        int(number(row.get("mode_exec_candidate_rank"), 9999)),
+        -number(row.get("mode_exec_score")),
+        str(row.get("code") or ""),
+    ))
+    ordered_pool = selected + [row for row in baseline if str(row.get("code") or "") not in selected_codes]
+    for row in copied:
+        row.update(mode_exec_star=False, mode_exec_rank=9999, mode_exec_target_weight=0.0)
+    selected = []
+    selected_codes.clear()
+    selected_modes.clear()
+    ranked_pool: list[dict] = []
+    for row in ordered_pool:
+        code, mode = str(row.get("code") or ""), str(row.get("mode") or "")
+        if code in selected_codes or not mode or mode in selected_modes:
+            continue
+        ranked_pool.append(row)
+        selected_codes.add(code)
+        selected_modes.add(mode)
+    for rank, row in enumerate(ranked_pool, 1):
+        row["mode_exec_candidate_rank"] = rank
+    selected = ranked_pool[:limit]
+    if selected:
+        from xiaocao.strategy.mode_switch import target_weights
+
+        weights = target_weights([str(row.get("mode_state") or "UNKNOWN") for row in selected])
+        for rank, (row, weight) in enumerate(zip(selected, weights), 1):
+            row.update(mode_exec_star=True, mode_exec_rank=rank,
+                       mode_exec_candidate_rank=rank, mode_exec_target_weight=weight)
+    ranked_ids = {id(row) for row in ranked_pool}
+    return ranked_pool + [row for row in copied if id(row) not in ranked_ids]
 
 
 def buy_adjustment(decision: dict, code: str) -> dict:

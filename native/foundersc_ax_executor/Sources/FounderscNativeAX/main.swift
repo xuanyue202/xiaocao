@@ -2107,21 +2107,29 @@ private func setOrderFields(_ fields: OrderFields, input: OrderInput) -> Bool {
 }
 
 private func clearOrderFields(_ fields: OrderFields) -> Bool {
-    let results = [fields.quantity, fields.price, fields.code].map { field in
-        AXUIElementSetAttributeValue(
-            field,
-            kAXValueAttribute as CFString,
-            "" as CFTypeRef
-        )
+    for attempt in 1...2 {
+        let results = [fields.quantity, fields.price, fields.code].map { field in
+            AXUIElementSetAttributeValue(
+                field,
+                kAXValueAttribute as CFString,
+                "" as CFTypeRef
+            )
+        }
+        // The native form may repopulate dependent price/quantity fields after
+        // the code is cleared.  Re-check after the UI settles, then permit one
+        // more field-clear attempt without any Return, confirmation or submit.
+        usleep(attempt == 1 ? 100_000 : 200_000)
+        let code = normalizedCode(fieldString(fields.code))
+        let price = normalizedDecimal(fieldString(fields.price))
+        let quantity = normalizedQuantity(fieldString(fields.quantity))
+        if results.allSatisfy({ $0 == .success })
+            && code.isEmpty
+            && (price == nil || price == 0)
+            && (quantity == nil || quantity == 0) {
+            return true
+        }
     }
-    usleep(20_000)
-    let code = normalizedCode(fieldString(fields.code))
-    let price = normalizedDecimal(fieldString(fields.price))
-    let quantity = normalizedQuantity(fieldString(fields.quantity))
-    return results.allSatisfy { $0 == .success }
-        && code.isEmpty
-        && (price == nil || price == 0)
-        && (quantity == nil || quantity == 0)
+    return false
 }
 
 private func prepareOrder(arguments: [String]) -> Receipt {

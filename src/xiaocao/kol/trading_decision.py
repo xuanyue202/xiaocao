@@ -410,7 +410,8 @@ def decision_status(root: Path, *, book: str, runtime: str, clock: Callable[[], 
     # Do not print freeform rationale, exception text, report bodies or config.
     return {"status": snapshot["status"], "book": book, "runtime": runtime,
             "decision_id": snapshot["decision_id"], "buy_scale": snapshot["buy_scale"],
-            "skip_count": len(snapshot["skip_codes"]), "exit_request_count": len(snapshot["exit_codes"])}
+            "skip_count": len(snapshot["skip_codes"]), "exit_request_count": len(snapshot["exit_codes"]),
+            "xiaocao_mode_override_count": len(snapshot.get("xiaocao_mode_overrides") or [])}
 
 
 def _consumption_evidence(location: Path, runtime: str) -> tuple[list[dict], dict]:

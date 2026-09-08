@@ -10,7 +10,8 @@ proxy; when that price is still within the basket abandon bound, it buys at
 that real-time price and audits the retry. basket_price is the abandon bound
 only — never the fill assumption (the old behaviour booked every fill at the
 +2% chase cap, costing ~1.9%/trade of fictitious slippage).
-Reads output/live/signal_snapshots.jsonl; updates output/live/positions.jsonl.
+Reads the dated immutable Book-B freeze when available (legacy variants still
+read signal_snapshots.jsonl); updates output/live/positions.jsonl.
 """
 from __future__ import annotations
 import argparse, json
@@ -987,7 +988,9 @@ def _main_locked():
             raise
         account = {}
     paper_positions = paper_support.read_paper_positions(POS)
-    snapshot_sha256 = hashlib.sha256(SNAP.read_bytes()).hexdigest() if SNAP.exists() else ""
+    dated_freeze = Path(f"output/live/book_b_live_freeze_{a.date}.jsonl")
+    selection_source = dated_freeze if a.pick == "mode_exec_star" and dated_freeze.exists() else SNAP
+    snapshot_sha256 = hashlib.sha256(selection_source.read_bytes()).hexdigest() if selection_source.exists() else ""
 
     def no_buy_support(reason: str, *, context=None) -> None:
         if a.pick != "mode_exec_star":
@@ -997,21 +1000,34 @@ def _main_locked():
         paper_support.complete_consumption(ROOT, a.date, a.pick, entries=[])
         print(f"{a.date}: paper policy no-buy receipt: {reason}; risk={risk['status']}; KOL={decision['status']}")
 
-    if not SNAP.exists():
+    if not selection_source.exists():
         no_buy_support("NO_SNAPSHOTS")
         print("no snapshots; run live_recommend first"); return
-    snaps = [json.loads(l) for l in open(SNAP, encoding="utf-8") if l.strip()]
+    snaps = [json.loads(l) for l in open(selection_source, encoding="utf-8") if l.strip()]
     day_live = [r for r in snaps if r.get("date") == a.date and r.get("is_live")
                 and r.get("book", "B") == "B"]
-    latest_capture = max((str(r.get("captured_at") or "") for r in day_live), default="")
-    latest_rows = [
-        r for r in day_live
-        if str(r.get("captured_at") or "") == latest_capture
-    ]
+    if selection_source == dated_freeze:
+        latest_rows = day_live
+    else:
+        latest_capture = max((str(r.get("captured_at") or "") for r in day_live), default="")
+        latest_rows = [
+            r for r in day_live
+            if str(r.get("captured_at") or "") == latest_capture
+        ]
     if a.pick == "mode_exec_star":
-        # Re-derive the ★E ranks from the frozen morning state fields. This
-        # catches stale/corrupt star flags while preserving the 09:25 decision.
-        latest_rows = select_executable_candidates(latest_rows, top_n=3)
+        if selection_source == SNAP:
+            # Legacy/test fallback: derive ★E only when the immutable dated
+            # producer artifact is unavailable.
+            latest_rows = select_executable_candidates(latest_rows, top_n=3)
+        decision_for_selection = kol_policy.load_decision(
+            ROOT / "output/live/kol_policy/decisions",
+            book="B",
+            runtime="paper",
+            now=datetime.now(A_SHARE_TZ),
+        )
+        latest_rows = kol_policy.prioritize_xiaocao_modes(
+            latest_rows, decision_for_selection,
+        )
     intelligence_config = _intelligence_config_from_args(a)
     selection = _select_intelligence_picks(
         latest_rows,
@@ -1220,6 +1236,13 @@ def _main_locked():
         risk, decision = policy_context
         decision = kol_policy.load_decision(ROOT / "output/live/kol_policy/decisions",
                                             book="B", runtime="paper", now=datetime.now(A_SHARE_TZ))
+        if any(row.get("kol_mode_override") for row in baseline) and (
+            decision.get("status") != "validated"
+            or decision.get("decision_id") != decision_for_selection.get("decision_id")
+            or decision.get("decision_sha256") != decision_for_selection.get("decision_sha256")
+        ):
+            no_buy_support("KOL_MODE_OVERRIDE_CHANGED_BEFORE_CONSUMPTION", context=(risk, decision))
+            return
         eligible_buyable, policy_slots = paper_support.apply_buy_policy(
             baseline, decision, risk, kill_factor=ks_factor, fee_rate=fee_rate,
         )

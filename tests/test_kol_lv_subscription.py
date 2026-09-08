@@ -1667,6 +1667,87 @@ def test_downloaded_pdf_relationship_binds_authoritative_complete_transcript(
     assert ingest["evidence_sha256"]
 
 
+def test_pending_pdf_relationship_waits_for_exact_primary_source(tmp_path):
+    service = LvSubscriptionService(tmp_path / "out", now=lambda: NOW)
+    modified_at = int(NOW.timestamp())
+    video = {
+        "provider_file_id": "video-sep-7",
+        "path": "/彤商学院/直播回放/2026年9月/9月7日.mp4",
+        "name": "9月7日.mp4",
+        "is_dir": False,
+        "size": 4096,
+        "modified_at": modified_at,
+    }
+    pdf = {
+        "provider_file_id": "summary-sep-7",
+        "path": "/彤商学院/直播回放/2026年9月/9月7日ai总结内容.pdf",
+        "name": "9月7日ai总结内容.pdf",
+        "is_dir": False,
+        "size": 4096,
+        "modified_at": modified_at + 60,
+    }
+    service.observe_browser_listing([video, pdf])
+    item = next(
+        row
+        for row in service.status()["items"].values()
+        if row.get("media_type") == "pdf"
+    )
+    downloaded = tmp_path / pdf["name"]
+    downloaded.write_bytes(b"%PDF-1.7\n" + b"x" * (pdf["size"] - 9))
+    _capture_browser_download(service, item["identity"], downloaded)
+    service.ingest_browser_download(
+        item["identity"],
+        pdf_text_extractor=lambda _path: {
+            "engine": "test-local",
+            "pages": [{
+                "page": 1,
+                "text": "摘要来自2026年9月7日直播，等待完整回放逐字稿核对。",
+                "has_visuals": False,
+            }],
+        },
+    )
+    normalized_video = LvSubscriptionService._normalize_entry(video)
+    bundle = tmp_path / "bundle.json"
+    bundle.write_text(
+        json.dumps({
+            "items": [{
+                "episode_relationship": {
+                    "document_role": "video_summary",
+                    "primary_source_status": "pending",
+                    "semantic_comparison": {
+                        "substantive_new_points": True,
+                    },
+                    "related_source_part": {
+                        key: normalized_video[key]
+                        for key in ("identity", "version_key")
+                    },
+                },
+            }],
+        }, ensure_ascii=False),
+        encoding="utf-8",
+    )
+
+    state = service.record_pdf_relationship(
+        item["identity"],
+        bundle_path=bundle,
+        complete_video_transcripts=[],
+    )
+
+    assert state["status"] == "waiting"
+    assert state["route"] == "waiting_primary_source"
+    assert state["primary_source_status"] == "pending"
+    assert state["related_source_part"] == {
+        "identity": normalized_video["identity"],
+        "version_key": normalized_video["version_key"],
+    }
+    assert state["business_effects"] == {
+        "report": "not_created",
+        "notification": "not_created",
+        "book_kol_us": "not_created",
+        "durable_knowledge": "not_created",
+    }
+
+
 def test_ambiguous_pdf_relation_creates_only_one_download_claim(tmp_path):
     service = LvSubscriptionService(tmp_path / "out", now=lambda: NOW)
     report = _pdf_entry()

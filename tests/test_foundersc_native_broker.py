@@ -650,6 +650,43 @@ def test_native_probe_proves_app_only_submit_and_all_readbacks() -> None:
     ]
 
 
+def test_native_readonly_prepare_preserves_unproven_helper_evidence() -> None:
+    class ClearUnprovenNative(FakeNative):
+        def prepare_order(self, **kwargs) -> NativeAXReceipt:
+            self.prepare_calls += 1
+            return self._receipt(
+                status="prepare_clear_unproven",
+                reason="prepared fields were read back but could not be proven cleared",
+                order_readback={
+                    "code": kwargs["code"].split(".", 1)[0],
+                    "side": kwargs["side"].lower(),
+                    "price": str(kwargs["price"]),
+                    "quantity": kwargs["quantity"],
+                    "field_mapping_proven": True,
+                    "submit_control_count": 1,
+                    "submitted": False,
+                    "saved": False,
+                    "started": False,
+                    "form_cleared": False,
+                    "observed_at": OBSERVED_AT,
+                },
+            )
+
+    receipt = _adapter(ClearUnprovenNative()).prepare_readonly(
+        _plan(),
+        expected_fund_account_fingerprint="123******890",
+    )
+
+    assert receipt.normalized_status() == BrokerStatus.REJECTED
+    assert receipt.reason == "NATIVE_READONLY_PREPARE_UNPROVEN"
+    assert receipt.field_readback["native_helper_status"] == (
+        "prepare_clear_unproven"
+    )
+    assert receipt.field_readback["native_helper_reason"] == (
+        "prepared fields were read back but could not be proven cleared"
+    )
+
+
 def test_native_probe_accepts_reserved_cash_without_breaking_asset_identity() -> None:
     native = FakeNative()
     native.position_summary.update(

@@ -12,6 +12,32 @@ from typing import Any
 from .trading_runner import frozen_rows_digest, read_frozen_rows
 
 
+_POST_FREEZE_REVIEW_FIELDS = frozenset({
+    "agent_score",
+    "agent_short_score",
+    "ai_intelligence_short_rank",
+    "ai_intelligence_short_score",
+    "ai_intelligence_short_star",
+    "intelligence_factor_agent_score",
+    "intelligence_factor_score_source",
+    "intelligence_factor_short_score",
+    "intelligence_long_rank",
+    "intelligence_long_score",
+    "intelligence_long_star",
+    "score_source",
+    "stock_sentiment_label",
+    "stock_sentiment_score",
+    "stock_sentiment_summary",
+})
+
+
+def _pre_review_projection(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    return [
+        {key: value for key, value in row.items() if key not in _POST_FREEZE_REVIEW_FIELDS}
+        for row in rows
+    ]
+
+
 def _read_jsonl(path: Path) -> list[dict[str, Any]]:
     if not path.exists():
         return []
@@ -46,7 +72,8 @@ def _assert_existing_live_freeze(
         raise RuntimeError("BOOK_B_LIVE_FREEZE_EXISTING_ARTIFACT_INVALID") from exc
     if (
         len(existing_rows) != len(expected_rows)
-        or frozen_rows_digest(existing_rows) != frozen_rows_digest(expected_rows)
+        or frozen_rows_digest(_pre_review_projection(existing_rows))
+        != frozen_rows_digest(_pre_review_projection(expected_rows))
     ):
         raise RuntimeError("BOOK_B_LIVE_FREEZE_IMMUTABILITY_VIOLATION")
 
@@ -232,12 +259,13 @@ def build_review_queue(
         _read_jsonl(live_dir / "signal_snapshots.jsonl"),
         market_date,
     )
-    snapshot_sha256 = frozen_rows_digest(snapshot_rows)
     live_freeze_path = _materialize_book_b_live_freeze(
         live_dir=live_dir,
         market_date=market_date,
         rows=snapshot_rows,
     )
+    frozen_snapshot_rows = read_frozen_rows(live_freeze_path, date=market_date)
+    snapshot_sha256 = frozen_rows_digest(frozen_snapshot_rows)
     report = live_dir / f"recommend_{market_date}.md"
     report_sha256 = hashlib.sha256(report.read_bytes()).hexdigest() if report.is_file() else ""
     return {
@@ -260,7 +288,7 @@ def build_review_queue(
             "snapshot_path": str(live_freeze_path),
             "snapshot_artifact": "immutable_book_b_live_freeze_v1",
             "source_snapshot_path": str(live_dir / "signal_snapshots.jsonl"),
-            "snapshot_row_count": len(snapshot_rows),
+            "snapshot_row_count": len(frozen_snapshot_rows),
             "snapshot_sha256": snapshot_sha256,
             "report_sha256": report_sha256,
         },

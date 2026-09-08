@@ -121,6 +121,60 @@ def test_prose_and_author_counts_cannot_generate_or_expand_actions(tmp_path: Pat
     assert policy.exit_adjustment(snapshot, OTHER)["triggered"] is False
 
 
+def test_xiaocao_explicit_mode_follow_has_priority_without_adding_codes(tmp_path: Path) -> None:
+    decision = make_decision(scale=1)
+    decision["schema_version"] = policy.MODE_OVERRIDE_SCHEMA_VERSION
+    decision["source_refs"][0]["author_id"] = "kol-xiaocao"
+    decision["xiaocao_mode_overrides"] = [{
+        "mode": "首板回封",
+        "source_report_id": "report-1",
+        "source_quote": "今天明确跟随首板回封模式，等待当日条件确认。",
+        "scope": "frozen_candidates_only",
+    }]
+    publish(tmp_path, decision)
+    rows = [
+        {"date": "2026-09-06", "book": "B", "is_live": True, "code": CODE,
+         "mode": "普通轮动", "mode_state": "ACTIVE", "mode_trade_eligible": True,
+         "mode_exec_star": True, "mode_exec_rank": 1, "mode_exec_candidate_rank": 1,
+         "mode_exec_target_weight": 0.5, "executable_fillable": True},
+        {"date": "2026-09-06", "book": "B", "is_live": True, "code": OTHER,
+         "mode": "首板回封", "mode_state": "COLD", "mode_trade_eligible": False,
+         "mode_exec_star": False, "mode_exec_rank": 9999, "mode_exec_candidate_rank": 9999,
+         "mode_exec_target_weight": 0.0, "executable_fillable": True},
+    ]
+    prioritized = policy.prioritize_xiaocao_modes(rows, load(tmp_path), max_slots=1)
+    selected = [row for row in prioritized if row["mode_exec_star"]]
+    assert [row["code"] for row in selected] == [OTHER]
+    assert selected[0]["mode_state"] == "ACTIVE"
+    assert selected[0]["kol_mode_original_state"] == "COLD"
+    assert selected[0]["kol_mode_override"]["source_report_id"] == "report-1"
+    assert {row["code"] for row in prioritized} == {CODE, OTHER}
+
+
+def test_xiaocao_mode_follow_cannot_restore_unknown_or_uncited_author(tmp_path: Path) -> None:
+    decision = make_decision(scale=1)
+    decision["schema_version"] = policy.MODE_OVERRIDE_SCHEMA_VERSION
+    decision["xiaocao_mode_overrides"] = [{
+        "mode": "首板回封", "source_report_id": "report-1", "source_quote": "明确跟随。",
+        "scope": "frozen_candidates_only",
+    }]
+    with pytest.raises(policy.KolPolicyError, match="MODE_OVERRIDE_SOURCE_NOT_XIAOCAO"):
+        publish(tmp_path, decision)
+    decision["source_refs"][0]["author_id"] = "kol-xiaocao"
+    publish(tmp_path, decision)
+    unknown = [{"date": "2026-09-06", "book": "B", "is_live": True, "code": OTHER,
+                "mode": "首板回封", "mode_state": "UNKNOWN", "mode_trade_eligible": False,
+                "mode_exec_star": False, "executable_fillable": True}]
+    assert not any(row.get("mode_exec_star") for row in policy.prioritize_xiaocao_modes(unknown, load(tmp_path)))
+
+
+def test_v1_cannot_smuggle_mode_override(tmp_path: Path) -> None:
+    decision = make_decision()
+    decision["xiaocao_mode_overrides"] = []
+    with pytest.raises(policy.KolPolicyError, match="MODE_OVERRIDE_REQUIRES_V2"):
+        publish(tmp_path, decision)
+
+
 def test_missing_and_empty_store_are_neutral_without_writes(tmp_path: Path) -> None:
     assert_inert(load(tmp_path / "missing"), "no_decision", 1)
     assert_inert(load(tmp_path), "no_decision", 1)

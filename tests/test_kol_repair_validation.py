@@ -1,13 +1,19 @@
 from __future__ import annotations
 
+from datetime import datetime
 from subprocess import CompletedProcess
 
 import pytest
 
 from xiaocao.kol.writer_progress import (
+    ConvergenceLedger,
+    FailureFingerprint,
     ProgressContractError,
     RepairValidationLedger,
+    RepairValidationReceipt,
     RepairValidationService,
+    WriterProgress,
+    mailbox_projection_status,
 )
 
 
@@ -151,6 +157,52 @@ def test_repair_validation_maps_wechat_source_failure_to_exact_mailbox_profile(
     context.pop("targeted_test_profile")
 
     assert service._expected_profile(context) == "kol_mailbox_exact_resume"
+
+
+@pytest.mark.parametrize(
+    ("category", "code", "stage"),
+    [
+        ("transport_error", "opencli_command_failed", "browser_command"),
+        ("timeout", "opencli_timeout", "browser_eval"),
+    ],
+)
+def test_repair_validation_maps_mailbox_wrapped_browser_failure_to_exact_profile(
+    tmp_path,
+    category: str,
+    code: str,
+    stage: str,
+) -> None:
+    service = RepairValidationService(
+        tmp_path,
+        ledger=RepairValidationLedger(tmp_path / "repair-validation.jsonl"),
+    )
+    context = {
+        **_context(),
+        "category": category,
+        "code": code,
+        "stage": stage,
+    }
+
+    assert service._expected_profile(context) == "kol_mailbox_exact_resume"
+
+
+@pytest.mark.parametrize(
+    ("status", "expected"),
+    [
+        ("repair_required", "repair_required"),
+        ("reconcile_required", "repair_required"),
+        ("user_action_required", "blocked"),
+        ("terminal", "completed"),
+        ("wait_until", "waiting"),
+        (None, "waiting"),
+    ],
+)
+def test_mailbox_projection_keeps_nonterminal_progress_visible(
+    status: str | None,
+    expected: str,
+) -> None:
+    progress = None if status is None else {"status": status}
+    assert mailbox_projection_status(progress) == expected
 
 
 @pytest.mark.parametrize(
@@ -323,7 +375,18 @@ def test_repair_validation_accepts_exact_lv_download_recovery_profile(
     assert receipt.failure_fingerprint == "3" * 64
 
 
-def test_repair_validation_accepts_lv_text_image_source_run_profile(tmp_path):
+@pytest.mark.parametrize(
+    ("category", "code"),
+    [
+        ("source_error", "source_temporarily_unavailable"),
+        ("internal_state_error", "progress_deadline_missing"),
+    ],
+)
+def test_repair_validation_accepts_lv_text_image_source_run_profile(
+    tmp_path,
+    category,
+    code,
+):
     service = RepairValidationService(
         tmp_path,
         ledger=RepairValidationLedger(tmp_path / "repair-validation.jsonl"),
@@ -334,13 +397,30 @@ def test_repair_validation_accepts_lv_text_image_source_run_profile(tmp_path):
         "content_sha256": "2" * 64,
         "failure_fingerprint": "3" * 64,
         "failure_revision": FAILURE_REVISION,
-        "category": "source_error",
-        "code": "source_temporarily_unavailable",
+        "category": category,
+        "code": code,
         "stage": "source_run",
         "targeted_test_profile": "kol_lv_text_image_source_run",
     }
 
     assert service._expected_profile(context) == "kol_lv_text_image_source_run"
+
+
+def test_repair_validation_rejects_unrelated_lv_internal_state_error(tmp_path):
+    service = RepairValidationService(
+        tmp_path,
+        ledger=RepairValidationLedger(tmp_path / "repair-validation.jsonl"),
+    )
+    context = {
+        "adapter": "lv_text_image",
+        "category": "internal_state_error",
+        "code": "unrelated_state_error",
+        "stage": "source_run",
+        "targeted_test_profile": "kol_lv_text_image_source_run",
+    }
+
+    with pytest.raises(ProgressContractError):
+        service._expected_profile(context)
 
 
 @pytest.mark.parametrize(
@@ -733,6 +813,91 @@ def test_repair_validation_accepts_subscription_video_browser_open_profile(
     assert receipt.failure_fingerprint == "3" * 64
 
 
+def test_repair_validation_accepts_subscription_video_browser_command_profile(
+    tmp_path,
+) -> None:
+    context = {
+        "adapter": "subscription_video",
+        "message_id": "1" * 64,
+        "content_sha256": "2" * 64,
+        "failure_fingerprint": "3" * 64,
+        "failure_revision": FAILURE_REVISION,
+        "category": "transport_error",
+        "code": "opencli_command_failed",
+        "stage": "browser_command",
+        "targeted_test_profile": "kol_subscription_video_browser_command",
+    }
+
+    def git(command: tuple[str, ...]) -> CompletedProcess[str]:
+        if command == ("branch", "--show-current"):
+            return CompletedProcess(command, 0, "main\n", "")
+        if command == ("rev-parse", "--verify", "HEAD^{commit}"):
+            return CompletedProcess(command, 0, f"{REPAIR_REVISION}\n", "")
+        if command == ("rev-parse", "--verify", "origin/main^{commit}"):
+            return CompletedProcess(command, 0, f"{REPAIR_REVISION}\n", "")
+        if command[:2] == ("diff-tree", "--no-commit-id"):
+            return CompletedProcess(
+                command,
+                0,
+                (
+                    "src/xiaocao/kol/subscription_video.py\n"
+                    "src/xiaocao/kol/writer_progress.py\n"
+                    "tests/test_kol_subscription_video.py\n"
+                    "tests/test_kol_repair_validation.py\n"
+                ),
+                "",
+            )
+        if command == ("show", "-s", "--format=%B", REPAIR_REVISION):
+            return CompletedProcess(
+                command,
+                0,
+                "Repair bound user tab activation\n\n"
+                f"Repair-Fingerprint: {'3' * 64}\n",
+                "",
+            )
+        if command[:2] == ("merge-base", "--is-ancestor"):
+            return CompletedProcess(command, 0, "", "")
+        raise AssertionError(command)
+
+    expected_command = (
+        "env",
+        "PYTHONPATH=src",
+        ".venv/bin/python",
+        "-m",
+        "pytest",
+        "tests/test_kol_subscription_video.py",
+        "tests/test_kol_daily.py",
+        "tests/test_kol_repair_validation.py",
+        "-q",
+        "-k",
+        (
+            "transfer_activation_falls_back_for_bound_user_tab or "
+            "lv_transfer_claim_precedes_click_and_exact_copy_readback_completes or "
+            "repair_resume_uses_originating_sweep_after_later_partial_sweep or "
+            "repair_validation_accepts_subscription_video_browser_command_profile"
+        ),
+    )
+    service = RepairValidationService(
+        tmp_path,
+        ledger=RepairValidationLedger(tmp_path / "repair-validation.jsonl"),
+        git_runner=git,
+        test_runner=lambda command: CompletedProcess(
+            command,
+            0 if command == expected_command else 1,
+            "3 passed\n",
+            "",
+        ),
+        now=lambda: "2026-09-08T10:00:00+08:00",
+    )
+
+    receipt = service.validate(context, repair_revision=REPAIR_REVISION)
+
+    assert receipt.targeted_test_profile == (
+        "kol_subscription_video_browser_command"
+    )
+    assert receipt.failure_fingerprint == "3" * 64
+
+
 @pytest.mark.parametrize(
     ("adapter", "failure_code"),
     [
@@ -950,8 +1115,29 @@ def test_repair_validation_accepts_shared_lv_listing_validation_profile(
     assert receipt.failure_fingerprint == "3" * 64
 
 
+@pytest.mark.parametrize(
+    ("category", "code", "stage", "targeted_test_profile"),
+    [
+        (
+            "source_error",
+            "source_temporarily_unavailable",
+            "source_run",
+            "kol_wechat_official_accounts_source_run",
+        ),
+        (
+            "configuration",
+            "wechat_cli_missing",
+            "wechat_official_scan",
+            "kol_wechat_official_accounts_wechat_official_scan",
+        ),
+    ],
+)
 def test_repair_validation_accepts_wechat_official_accounts_source_profile(
     tmp_path,
+    category: str,
+    code: str,
+    stage: str,
+    targeted_test_profile: str,
 ) -> None:
     context = {
         "adapter": "wechat_official_accounts",
@@ -959,12 +1145,10 @@ def test_repair_validation_accepts_wechat_official_accounts_source_profile(
         "content_sha256": "5" * 64,
         "failure_fingerprint": "6" * 64,
         "failure_revision": FAILURE_REVISION,
-        "category": "source_error",
-        "code": "source_temporarily_unavailable",
-        "stage": "source_run",
-        "targeted_test_profile": (
-            "kol_wechat_official_accounts_source_run"
-        ),
+        "category": category,
+        "code": code,
+        "stage": stage,
+        "targeted_test_profile": targeted_test_profile,
     }
 
     expected_command = (
@@ -980,7 +1164,8 @@ def test_repair_validation_accepts_wechat_official_accounts_source_profile(
         (
             "official_account_parser_uses_exact_publishers_and_url_only_metadata or "
             "official_account_reader_calls_one_stateless_combined_window or "
-            "repair_validation_accepts_wechat_official_accounts_source_profile"
+            "repair_validation_accepts_wechat_official_accounts_source_profile or "
+            "repair_validation_accepts_wechat_official_accounts_repair_closure_alias"
         ),
     )
 
@@ -1034,6 +1219,69 @@ def test_repair_validation_accepts_wechat_official_accounts_source_profile(
         "kol_wechat_official_accounts_source_run"
     )
     assert receipt.failure_fingerprint == "6" * 64
+
+
+def test_repair_validation_accepts_wechat_official_accounts_repair_closure_alias(
+    tmp_path,
+) -> None:
+    progress = WriterProgress.repair_required(
+        item_identity="wechat_official_accounts:source",
+        fingerprint=FailureFingerprint(
+            adapter="wechat_official_accounts",
+            category="configuration",
+            code="wechat_cli_missing",
+            stage="wechat_official_scan",
+            failure_revision=FAILURE_REVISION,
+            provider_contract_version="xiaocao_writer_v1",
+        ),
+        repair_revision=None,
+        affected_set_digest="7" * 64,
+        claim_receipt_summary={
+            "claim_count": 0,
+            "receipt_count": 0,
+            "uncertain_effect_count": 0,
+        },
+        targeted_test_profile=(
+            "kol_wechat_official_accounts_wechat_official_scan"
+        ),
+        narrow_resume_surface="wechat_official_accounts:source",
+        retryability="retryable",
+    )
+    convergence = ConvergenceLedger(
+        tmp_path / "convergence.jsonl",
+        now=lambda: datetime.fromisoformat("2026-08-31T11:30:00+08:00"),
+    )
+    convergence.record(progress, slot="2026-08-31T11:00+08:00")
+    validation = RepairValidationLedger(tmp_path / "repair-validation.jsonl")
+    receipt = validation.append(
+        RepairValidationReceipt.create(
+            message_id="4" * 64,
+            content_sha256="5" * 64,
+            failure_fingerprint=progress.failure_fingerprint,
+            failure_revision=FAILURE_REVISION,
+            failure_code="wechat_cli_missing",
+            failure_stage="wechat_official_scan",
+            repair_revision=REPAIR_REVISION,
+            target_branch="main",
+            target_branch_revision=REPAIR_REVISION,
+            targeted_test_profile="kol_wechat_official_accounts_source_run",
+            test_command_digest="8" * 64,
+            test_result_sha256="9" * 64,
+            validated_at="2026-08-31T11:30:00+08:00",
+        )
+    )
+
+    closure = convergence.close_repair(
+        progress.failure_fingerprint,
+        repair_receipt=receipt,
+        validation_ledger=validation,
+        slot="2026-08-31T11:00+08:00",
+    )
+
+    assert closure["event"] == "repair_closed"
+    assert closure["repair_receipt"]["targeted_test_profile"] == (
+        "kol_wechat_official_accounts_source_run"
+    )
 
 
 @pytest.mark.parametrize(
