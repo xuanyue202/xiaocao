@@ -1,5 +1,6 @@
 import { cli, Strategy } from '@jackwener/opencli/registry';
 import { execFileSync } from 'node:child_process';
+import { randomUUID } from 'node:crypto';
 import {
   ArgumentError,
   AuthRequiredError,
@@ -23,51 +24,60 @@ async function uploadStage(input, stage, action) {
 
 async function restoreUploaderWindow(page, input) {
   const state = await uploadStage(input, 'page_state', () => page.evaluate(`({
-    visibility: document.visibilityState, url: location.href,
-    x: screenX, y: screenY, w: outerWidth, h: outerHeight
+    visibility: document.visibilityState, url: location.href
   })`));
   if (state?.visibility !== 'hidden') return;
-  if (process.platform !== 'darwin' || ![state.x, state.y, state.w, state.h].every(Number.isFinite)) {
+  if (process.platform !== 'darwin') {
     throw new CommandExecutionError('Hidden uploader requires exact Edge window restoration');
   }
-  // Native window activation only: no navigation, reload, profile changes,
-  // webpage scripting, or file chooser. Geometry + full URL must match once.
+  // The retained Bridge page is the identity. Geometry can be stale and two
+  // native tabs can share both URL and bounds. A temporary title binds only
+  // this page to its native tab; restore it even if foregrounding fails.
+  const marker = `Xiaocao uploader ${randomUUID()}`;
+  const originalTitle = await page.evaluate(`(() => {
+    const original = document.title;
+    document.title = ${JSON.stringify(marker)};
+    return original;
+  })()`);
   const script = `on run argv
-    set expectedBounds to {(item 1 of argv as integer), (item 2 of argv as integer), (item 3 of argv as integer), (item 4 of argv as integer)}
-    set expectedURL to item 5 of argv
+    set expectedURL to item 1 of argv
+    set expectedTitle to item 2 of argv
     tell application "Microsoft Edge"
       set candidates to {}
       repeat with w in windows
-        if bounds of w is expectedBounds then
-          repeat with i from 1 to count of tabs of w
-            if URL of tab i of w is expectedURL then set end of candidates to {(id of w as integer), i, (id of tab i of w as text)}
-          end repeat
-        end if
+        repeat with i from 1 to count of tabs of w
+          if URL of tab i of w is expectedURL and title of tab i of w is expectedTitle then
+            set end of candidates to {(id of w as integer), i, (id of tab i of w as text)}
+          end if
+        end repeat
       end repeat
-      if count of candidates is not 1 then error "Exact uploader window is missing or ambiguous"
+      if count of candidates is not 1 then error "Exact marked uploader tab is missing or ambiguous"
       set chosen to item 1 of candidates
       set w to window id (item 1 of chosen)
       set tabIndex to item 2 of chosen
       if (id of tab tabIndex of w as text) is not item 3 of chosen then error "Uploader tab changed"
       if URL of tab tabIndex of w is not expectedURL then error "Uploader URL changed"
+      if title of tab tabIndex of w is not expectedTitle then error "Uploader title binding changed"
       set active tab index of w to tabIndex
       set index of w to 1
       activate
     end tell
     return "foreground_requested"
   end run`;
-  await uploadStage(input, 'foreground', async () => {
-    try {
-      execFileSync('/usr/bin/osascript', ['-e', script,
-        String(Math.round(state.x)), String(Math.round(state.y)),
-        String(Math.round(state.x + state.w)), String(Math.round(state.y + state.h)), state.url,
-      ], {encoding: 'utf8', timeout: 10000});
-    } catch {
-      throw new CommandExecutionError('Exact Edge uploader window restoration failed; no file attached');
-    }
-  });
-  // Visibility alone is insufficient: background pages can still be healthy.
-  // Prove the task queue actually resumed before issuing network/file work.
+  try {
+    await uploadStage(input, 'foreground', async () => {
+      try {
+        execFileSync('/usr/bin/osascript', ['-e', script, state.url, marker],
+          {encoding: 'utf8', timeout: 10000});
+      } catch {
+        throw new CommandExecutionError('Exact Edge uploader window restoration failed; no file attached');
+      }
+    });
+  } finally {
+    await page.evaluate(`(() => {
+      if (document.title === ${JSON.stringify(marker)}) document.title = ${JSON.stringify(originalTitle)};
+    })()`);
+  }
   const heartbeat = await uploadStage(input, 'event_loop', () => page.evaluate(
     'new Promise(resolve => setTimeout(() => resolve({responsive:true}), 100))'
   ));

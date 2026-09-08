@@ -45,7 +45,7 @@ the browser command's empty queue or healthy page is not uploader evidence.
 |---|---|---|
 | U1 | Bind the existing Netdisk job, exact basename, bytes and SHA from its ledger; verify the installed template using the commands above. | No new job, renamed copy, or full `capture-local` rerun. |
 | U2 | Adapter `page.tabs()` finds exactly one page for the exact destination directory; `page.selectTab(page)` reuses it. | Multiple matches stop. `--inspect-only true` must never navigate or recreate a missing uploader. |
-| U3 | Read that page's current window geometry and URL. If hidden, the adapter's fixed `osascript` helper selects the unique Edge window/tab matching BOTH; foreground it once. No hard-coded IDs or coordinates. | Missing/ambiguous native match stops before attachment. Never activate every window, refresh, close, or change browser settings. |
+| U3 | Read the bound page's visibility and URL. If hidden, mark only that retained page with a random temporary title; the fixed native helper matches exact URL + title, foregrounds once, then restores the title in finally. Geometry is not identity: duplicate URLs and stale background bounds are expected. | Missing/ambiguous native match stops attachment and triggers Agent-owned diagnosis and same-job repair; it does not end the task. Never activate every window, refresh, close, or change browser settings. |
 | U4 | Require the same page's 100 ms event-loop probe to finish; then credentialed paginated `/api/list` must prove exact folder, `errno=0`, complete scan, and 0 or 1 exact basename. Inspection changes no ads, styles or file inputs. | A synchronous read, `selected=true`, or `--window foreground` alone is not readiness. Use the emitted stage diagnostic; do not turn a timeout hint into a claim that a native dialog exists. |
 | U5 | For a new prepared claim: persist claim, verify media hash/size, mark one file input, native-click the exact filename header, require user activation, attach once and bind its receipt. Existing claims follow only the recovery APIs below. | From `attach.begin` onward, absent receipt means uncertain effect, never permission to retry. |
 | U6 | Keep the same item PTY running until later exact cloud readback yields `video_ready`; feed the exact LiangHui operation/receipt as specified by the local entry. | Attachment is not cloud completion; mailbox creation is `Handoff完成`, not remote `全部完成`. |
@@ -65,6 +65,12 @@ not webpage scripting, file attachment, or a WeChat operation. It does not
 modify extension permissions or browser security settings. An explicit security
 denial, authentication/consent challenge, or unknown upload effect still stops
 the corresponding action; do not switch surfaces to bypass it.
+
+For a ledger-bound `upload_foreground_failed` / `upload_foreground` diagnostic,
+the original run proves attachment was not reached. After repairing the adapter,
+`resume_pre_attachment_upload` requires same-claim adapter folder/name readback
+and no target in receipt/UI/inputs, then persists one continuation claim. Never
+infer this eligibility from a later inspection or a generic historical failure.
 
 For the exact `file_chooser_not_opened` / `upload_before_attachment` failure,
 OpenCLI's chooser timeout occurs before file assignment. After a verified repair,

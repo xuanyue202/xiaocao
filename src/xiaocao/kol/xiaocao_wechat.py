@@ -1240,7 +1240,15 @@ class XiaocaoWechatLiveSubscription:
             raise EnrichmentError(
                 "WeChat mini-program playback binding is invalid"
             )
-        activated = response.get("activated") is True and media_request_observed
+        # A current live stream is not a captured finite replay. Keep the
+        # source waiting without demanding the post-capture window cleanup.
+        # Preserve observed media evidence even while replay activation is false.
+        current_live_only = page_state == "live"
+        activated = (
+            response.get("activated") is True
+            and media_request_observed
+            and not current_live_only
+        )
         if activated and response.get("playback_window_closed") is not True:
             raise EnrichmentDiagnosticError(
                 "native course window closure has not been verified",

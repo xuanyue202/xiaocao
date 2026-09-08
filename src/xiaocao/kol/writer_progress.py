@@ -1133,6 +1133,21 @@ _TARGETED_REPAIR_TEST_PATHS: dict[str, frozenset[str]] = {
     ),
 }
 
+# Exact pre-attachment foreground failure; no other upload stage is aliased.
+TARGETED_REPAIR_TESTS["kol_xiaocao_wechat_live_upload_foreground"] = (
+    "env", "PYTHONPATH=src", ".venv/bin/python", "-m", "pytest",
+    "tests/test_kol_netdisk_upload_adapter.py", "tests/test_kol_netdisk_enrichment.py",
+    "tests/test_kol_repair_validation.py", "-q",
+)
+_TARGETED_REPAIR_IMPLEMENTATION_PATHS["kol_xiaocao_wechat_live_upload_foreground"] = frozenset({
+    "opencli/clis/baidu-netdisk/upload.js", "src/xiaocao/kol/netdisk_enrichment.py",
+    "src/xiaocao/kol/writer_progress.py",
+})
+_TARGETED_REPAIR_TEST_PATHS["kol_xiaocao_wechat_live_upload_foreground"] = frozenset({
+    "tests/test_kol_netdisk_upload_adapter.py", "tests/test_kol_netdisk_enrichment.py",
+    "tests/test_kol_repair_validation.py",
+})
+
 _LV_DOWNLOAD_REPAIR_PROFILE = "kol_lv_download_recovery"
 _LV_DOWNLOAD_REPAIR_PROFILE_ALIASES = frozenset({
     _LV_DOWNLOAD_REPAIR_PROFILE,
@@ -1581,7 +1596,16 @@ def _canonical_xiaocao_wechat_source_repair_profile(
         str(context.get("code") or ""),
         str(context.get("stage") or ""),
     )
+    if (declared_profile == "kol_xiaocao_wechat_live_upload_foreground"
+            and failure == ("transport_error", "upload_foreground_failed", "upload_foreground")):
+        return declared_profile
     if (
+        declared_profile == "kol_xiaocao_wechat_live_native_playback_window_close"
+        and failure == (
+            "input_error", "native_playback_window_close_unverified",
+            "native_playback_window_close",
+        )
+    ) or (
         declared_profile == _XIAOCAO_WECHAT_SOURCE_REPAIR_PROFILE
         and failure
         == (
@@ -1853,6 +1877,7 @@ class RepairValidationService:
                 in {
                     _XIAOCAO_WECHAT_COMPRESSED_CAPTURE_REPAIR_PROFILE,
                     _XIAOCAO_WECHAT_CLOUD_HANDOFF_REPAIR_PROFILE,
+                    "kol_xiaocao_wechat_live_native_playback_window_close",
                 }
             )
             and not (

@@ -2515,6 +2515,16 @@ class NetdiskEnrichmentService:
                 and row.get("failure_stage") == "upload_before_attachment"
                 and not row.get("upload_repair_attempts")
             )
+            foreground_failure = (
+                row.get("reason") == "browser_command_failed"
+                and row.get("failure_stage") == "upload_foreground"
+                and (row.get("diagnostic") or {}).get("code") == "upload_foreground_failed"
+                and (row.get("diagnostic") or {}).get("stage") == "upload_foreground"
+                and (row.get("diagnostic") or {}).get("category") == "transport_error"
+                and type((row.get("diagnostic") or {}).get("exit_code")) is int
+                and (row.get("diagnostic") or {})["exit_code"] > 0
+                and not row.get("upload_repair_attempts")
+            )
             permission_restored = (
                 file_access_restored is True
                 and row.get("reason") == "file_access_denied"
@@ -2526,7 +2536,7 @@ class NetdiskEnrichmentService:
                 and row.get("status") == "upload_claimed"
                 and row.get("event") == "netdisk_upload_failed"
                 and not row.get("upload_started_at")
-                and (chooser_failure or permission_restored)
+                and (chooser_failure or foreground_failure or permission_restored)
             )
 
         if session != _OPENCLI_UPLOAD_TEMPLATE_SESSION or (
@@ -2536,11 +2546,45 @@ class NetdiskEnrichmentService:
         current = self.store.latest(job_id)
         if not eligible(current):
             raise EnrichmentError("upload has no eligible proven pre-attachment failure")
-        inspection = self._inspect_opencli_target(
-            session=session, profile=profile, target_name=str(current["video_basename"]),
-        )
-        if inspection["exact_count"] == 1:
-            return self.advance_opencli(job_id, session=session, profile=profile)
+        # Reconcile the retained adapter page, not the separate Browser session.
+        if current.get("failure_stage") == "upload_foreground":
+            result = self._opencli_upload_template_process(
+                session=session, profile=profile, video_path=Path(current["video_path"]),
+                target_name=current["video_basename"], claim_id=job_id, inspect_only=True,
+            )
+            try:
+                rows = json.loads(str(result.stdout))
+                proof = rows[0] if isinstance(rows, list) and len(rows) == 1 else {}
+                surface = proof.get("surfaceState") or {}
+                inputs = surface.get("inputs") or []
+                valid = (
+                    result.returncode == 0 and proof.get("claimId") == job_id
+                    and proof.get("directory") == self.netdisk_directory
+                    and proof.get("targetName") == current["video_basename"]
+                    and proof.get("uploaded") is False
+                )
+                present = valid and proof.get("status") == "already_present" and proof.get("exactCountBefore") == 1
+                absent = (
+                    valid and proof.get("status") == "ready_to_upload"
+                    and proof.get("exactCountBefore") == 0
+                    and surface.get("receiptMatchesTarget") is False
+                    and surface.get("targetInTransferUi") is False
+                    and surface.get("targetUiRows") == []
+                    and inputs and all(i.get("targetAttached") is False for i in inputs)
+                )
+            except (ValueError, TypeError, AttributeError):
+                present = absent = False
+            if present:
+                return self.advance_opencli(job_id, session=session, profile=profile)
+            if not absent:
+                raise EnrichmentError("pre-attachment adapter reconciliation is incomplete or uncertain")
+        else:
+            proof = None
+            inspection = self._inspect_opencli_target(
+                session=session, profile=profile, target_name=str(current["video_basename"]),
+            )
+            if inspection["exact_count"] == 1:
+                return self.advance_opencli(job_id, session=session, profile=profile)
         with self.store.job_lock(job_id):
             current = self.store.latest(job_id)
             if not eligible(current):
@@ -2553,9 +2597,11 @@ class NetdiskEnrichmentService:
                 "upload_repair_attempts": int(current.get("upload_repair_attempts") or 0) + 1,
                 "repair_basis": (
                     "user_restored_file_access" if permission_repair
+                    else "bound_foreground_failure_before_file_assignment" if proof is not None
                     else "file_chooser_failed_before_file_assignment"
                 ),
                 **({"file_access_repair_claimed_at": now} if permission_repair else {}),
+                **({"upload_reconciliation_proof": proof} if proof is not None else {}),
                 "repair_claimed_at": now,
                 "updated_at": now,
             })

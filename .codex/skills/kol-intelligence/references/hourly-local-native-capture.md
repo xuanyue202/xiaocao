@@ -302,3 +302,8 @@ playback.
 Completed-capture acceptance uses the persisted, exact candidate/source/task
 receipt and rechecks local media hashes; it must not restart or query the cleaned
 sniffer merely to pass audit. A mismatched saved task fails closed.
+
+A visible current broadcast with only bound liveplay candidates returns
+`page_state=live` and truthful `media_request_observed=true`; it stays
+`awaiting_playback`. This is not finite replay acceptance and does not trigger
+the post-capture window-closure gate or permit a finite download.

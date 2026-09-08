@@ -485,7 +485,8 @@ def test_native_playback_restores_only_the_existing_capture(tmp_path, returned_i
 
 
 @pytest.mark.parametrize("closed", [True, False, None])
-def test_wechat_mini_program_route_binds_media_to_the_exact_live_id(tmp_path, closed):
+@pytest.mark.parametrize("page_state", ["mini_program_media_observed", "live"])
+def test_wechat_mini_program_route_binds_media_to_the_exact_live_id(tmp_path, closed, page_state):
     page_url = (
         "https://app6ums63as6516.h5.xiaoeknow.com/v2/course/alive/"
         "l_6a9531fbe4b0694c35440d7e"
@@ -536,7 +537,7 @@ def test_wechat_mini_program_route_binds_media_to_the_exact_live_id(tmp_path, cl
                 "xiaoetong:app6ums63as6516:l_6a9531fbe4b0694c35440d7e"
             ),
             "live_id": "l_6a9531fbe4b0694c35440d7e",
-            "page_state": "mini_program_media_observed",
+            "page_state": page_state,
             "activated": True,
             "playback_window_closed": closed,
             "playback_paused": True,  # A pause must not satisfy the new close gate.
@@ -554,7 +555,7 @@ def test_wechat_mini_program_route_binds_media_to_the_exact_live_id(tmp_path, cl
         clock=lambda: datetime.fromisoformat("2026-08-31T23:00:00+08:00"),
     )
 
-    if closed is not True:
+    if closed is not True and page_state != "live":
         with pytest.raises(EnrichmentDiagnosticError) as error:
             subscription.run_once(opencli_session="xiaocao-lv-subscription")
         assert error.value.diagnostic_code == "native_playback_window_close_unverified"
@@ -563,7 +564,7 @@ def test_wechat_mini_program_route_binds_media_to_the_exact_live_id(tmp_path, cl
 
     result = subscription.run_once(opencli_session="xiaocao-lv-subscription")
     assert result["status"] == "waiting"
-    assert capture.advances == 1
+    assert capture.advances == (0 if page_state == "live" else 1)
     assert [request["action"] for request in requests] == [
         "resolve_xiaoetong_page",
         "activate_xiaoetong_mini_program",
@@ -572,7 +573,7 @@ def test_wechat_mini_program_route_binds_media_to_the_exact_live_id(tmp_path, cl
         (tmp_path / "wechat" / "manifest.json").read_text(encoding="utf-8")
     )
     item = next(iter(manifest["items"].values()))
-    assert item["status"] == "playback_activated"
+    assert item["status"] == ("awaiting_playback" if page_state == "live" else "playback_activated")
     assert item["playback_route"] == (
         XIAOCAO_PLAYBACK_ROUTE_WECHAT_MINI_PROGRAM
     )
@@ -580,6 +581,9 @@ def test_wechat_mini_program_route_binds_media_to_the_exact_live_id(tmp_path, cl
         XIAOCAO_PLAYBACK_ROUTE_WECHAT_MINI_PROGRAM
     )
     assert item["media_request_observed"] is True
+    assert item["source_resource_id"] == "l_6a9531fbe4b0694c35440d7e"
+    assert item["observed_page_state"] == page_state
+    assert item["playback_window_closed"] is (closed is True)
 
 
 def test_native_mini_program_entry_is_armed_before_ui_and_binds_observed_live(

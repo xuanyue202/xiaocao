@@ -1649,3 +1649,21 @@ def test_repair_validation_requires_regression_and_fingerprint_trailer(
 
     with pytest.raises(ProgressContractError, match=expected):
         service.validate(_context(), repair_revision=REPAIR_REVISION)
+
+
+def test_native_window_close_repair_profile_is_exact():
+    from xiaocao.kol.writer_progress import _canonical_xiaocao_wechat_source_repair_profile
+    context = dict(adapter="xiaocao_wechat_live", targeted_test_profile="kol_xiaocao_wechat_live_native_playback_window_close", category="input_error", code="native_playback_window_close_unverified", stage="native_playback_window_close")
+    assert _canonical_xiaocao_wechat_source_repair_profile(context) == "kol_xiaocao_wechat_live_source_run"
+    context["code"] = "unrelated"
+    assert _canonical_xiaocao_wechat_source_repair_profile(context) is None
+
+
+def test_uploader_foreground_profile_rejects_uncertain_attachment():
+    from xiaocao.kol.writer_progress import _canonical_xiaocao_wechat_source_repair_profile
+    context = dict(adapter="xiaocao_wechat_live", targeted_test_profile="kol_xiaocao_wechat_live_upload_foreground", category="transport_error", code="upload_foreground_failed", stage="upload_foreground")
+    from xiaocao.kol.writer_progress import TARGETED_REPAIR_TESTS
+    assert _canonical_xiaocao_wechat_source_repair_profile(context) == context["targeted_test_profile"]
+    assert "tests/test_kol_repair_validation.py" in TARGETED_REPAIR_TESTS[context["targeted_test_profile"]]
+    context["code"] = "upload_attachment_uncertain"
+    assert _canonical_xiaocao_wechat_source_repair_profile(context) is None
