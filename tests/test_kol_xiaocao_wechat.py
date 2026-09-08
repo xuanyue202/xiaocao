@@ -581,6 +581,7 @@ def test_wechat_mini_program_route_binds_media_to_the_exact_live_id(tmp_path, cl
         XIAOCAO_PLAYBACK_ROUTE_WECHAT_MINI_PROGRAM
     )
     assert item["media_request_observed"] is True
+    assert item["observed_page_state"] == page_state
 
 
 def test_native_mini_program_entry_is_armed_before_ui_and_binds_observed_live(

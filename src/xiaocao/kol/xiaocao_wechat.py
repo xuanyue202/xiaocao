@@ -1242,10 +1242,11 @@ class XiaocaoWechatLiveSubscription:
             )
         # A current live stream is not a captured finite replay. Keep the
         # source waiting without demanding the post-capture window cleanup.
+        finite_replay_possible = page_state != "live"
         activated = (
             response.get("activated") is True
             and media_request_observed
-            and page_state != "live"
+            and finite_replay_possible
         )
         if activated and response.get("playback_window_closed") is not True:
             raise EnrichmentDiagnosticError(
