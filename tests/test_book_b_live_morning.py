@@ -5,7 +5,7 @@ import json
 import subprocess
 import sys
 from dataclasses import replace
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 import pytest
@@ -1375,6 +1375,7 @@ def test_live_morning_reuses_intent_written_before_prepare_block(
         now=lambda: datetime(2026, 8, 24, 1, 30, tzinfo=timezone.utc),
     )
     assert first.reason == "LIVE_PREPARE_ONLY_FORM_NOT_CLOSED"
+    assert not (state_dir / "market_guard_refreshes").exists()
 
     changed = _live_allocation_payload()
     changed["available_cash"] = 1_000
@@ -1424,6 +1425,146 @@ def test_live_morning_reuses_intent_written_before_prepare_block(
     assert len(prepared) == len(executed) == 1
     assert executed[0].plan_hash == prepared[0].plan_hash
     assert executed[0].shares == prepared[0].shares == 1_400
+
+
+def test_live_morning_refreshes_stale_unclaimed_intent_once_after_readonly_prepare(
+    tmp_path: Path,
+) -> None:
+    freeze = tmp_path / "signal_snapshots.jsonl"
+    freeze.write_text(json.dumps(_frozen_row()) + "\n", encoding="utf-8")
+    allocation = tmp_path / "allocation.json"
+    allocation.write_text(json.dumps(_live_allocation_payload()), encoding="utf-8")
+    state_dir = tmp_path / "state"
+    initial = datetime(2026, 8, 24, 1, 30, tzinfo=timezone.utc)
+
+    first = run_book_b_live_morning(
+        BookBLiveMorningConfig(
+            trade_date="2026-08-24",
+            freeze_path=freeze,
+            allocation_facts_path=allocation,
+            state_dir=state_dir,
+            dated_freeze_receipt=_ready_freeze(),
+        ),
+        prepare_only=lambda plan: BrokerReceipt(
+            status=BrokerStatus.PREPARED,
+            account_binding="proven",
+            echoed={
+                "code": plan.code,
+                "side": plan.side,
+                "shares": plan.shares,
+                "limit_price": plan.limit_price,
+            },
+            field_readback={
+                "submitted": False,
+                "saved": False,
+                "started": False,
+            },
+        ),
+        execute=lambda _plan: pytest.fail("unproven clear must not execute"),
+        refresh_market_guard=lambda _row: {
+            "market_guard_required": True,
+            "market_guard_status": "T100",
+            "market_price": 10.0,
+            "down_price": 9.0,
+            "market_observed_at": initial.isoformat(),
+        },
+        now=lambda: initial,
+    )
+    assert first.reason == "LIVE_PREPARE_ONLY_FORM_NOT_CLOSED"
+
+    resumed_at = initial + timedelta(minutes=16)
+    refresh_calls = 0
+    executed: list[TradePlan] = []
+
+    def refresh(_row: dict) -> dict:
+        nonlocal refresh_calls
+        refresh_calls += 1
+        return {
+            "market_guard_required": True,
+            "market_guard_status": "T100",
+            "market_price": 10.05,
+            "down_price": 9.0,
+            "market_observed_at": resumed_at.isoformat(),
+        }
+
+    def prepared(plan: TradePlan) -> BrokerReceipt:
+        return BrokerReceipt(
+            status=BrokerStatus.PREPARED,
+            account_binding="proven",
+            echoed={
+                "code": plan.code,
+                "side": plan.side,
+                "shares": plan.shares,
+                "limit_price": plan.limit_price,
+            },
+            field_readback={
+                "submitted": False,
+                "saved": False,
+                "started": False,
+                "form_cleared": True,
+            },
+        )
+
+    second = run_book_b_live_morning(
+        BookBLiveMorningConfig(
+            trade_date="2026-08-24",
+            freeze_path=freeze,
+            allocation_facts_path=allocation,
+            state_dir=state_dir,
+            dated_freeze_receipt=_ready_freeze(),
+        ),
+        prepare_only=prepared,
+        execute=lambda plan: executed.append(plan) or ExecutionReceipt(
+            plan.plan_id,
+            plan.plan_hash,
+            ExecutionState.SKIPPED,
+            reason="test_stop",
+        ),
+        refresh_market_guard=refresh,
+        now=lambda: resumed_at,
+    )
+
+    assert second.status == "skipped"
+    assert refresh_calls == 1
+    assert len(executed) == 1
+    assert executed[0].guard_reason(now=resumed_at) is None
+    assert executed[0].market_guard_refresh is not None
+    assert executed[0].market_guard_refresh.latest_price == 10.05
+    intent = json.loads(
+        next((state_dir / "plan_intents").glob("*.json")).read_text(
+            encoding="utf-8"
+        )
+    )
+    assert executed[0].plan_hash == intent["plan_hash"]
+    assert len(second.market_guard_refreshes) == 1
+    assert second.market_guard_refreshes[0]["reused"] is False
+
+    third_executed: list[TradePlan] = []
+    third = run_book_b_live_morning(
+        BookBLiveMorningConfig(
+            trade_date="2026-08-24",
+            freeze_path=freeze,
+            allocation_facts_path=allocation,
+            state_dir=state_dir,
+            dated_freeze_receipt=_ready_freeze(),
+        ),
+        prepare_only=prepared,
+        execute=lambda plan: third_executed.append(plan) or ExecutionReceipt(
+            plan.plan_id,
+            plan.plan_hash,
+            ExecutionState.SKIPPED,
+            reason="test_stop",
+        ),
+        refresh_market_guard=lambda _row: pytest.fail(
+            "a persisted guard refresh must be reused, never fetched twice"
+        ),
+        now=lambda: resumed_at + timedelta(minutes=1),
+    )
+
+    assert third.status == "skipped"
+    assert len(third_executed) == 1
+    assert third_executed[0].market_guard_refresh is not None
+    assert third.market_guard_refreshes[0]["reused"] is True
 
 
 def test_open_plan_recovery_reconciles_durable_ack_without_submit(
@@ -1606,6 +1747,9 @@ def test_live_morning_restores_post_submit_plan_before_reallocation_or_prepare(
             "post-submit recovery must not prepare a second form"
         ),
         execute=lambda plan: engine.execute(plan, broker),
+        refresh_market_guard=lambda _row: pytest.fail(
+            "post-submit recovery must not refresh market facts"
+        ),
         now=lambda: datetime(2026, 8, 24, 1, 31, tzinfo=timezone.utc),
     )
 

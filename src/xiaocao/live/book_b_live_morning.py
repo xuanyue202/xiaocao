@@ -39,6 +39,7 @@ from .trading_execution import (
     ExecutionReceipt,
     ExecutionStore,
     ExecutionState,
+    MarketGuardRefresh,
     TradePlan,
     account_writer_lock,
     trade_plan_from_frozen_row,
@@ -102,6 +103,7 @@ class BookBLiveMorningReceipt:
     prior_reconciliations: tuple[dict, ...] = ()
     policy_consumptions: tuple[dict, ...] = ()
     review_rendezvous: dict | None = None
+    market_guard_refreshes: tuple[dict, ...] = ()
 
     def as_dict(self) -> dict:
         return asdict(self)
@@ -548,6 +550,197 @@ def _trade_plan_from_canary_intent(payload: dict) -> TradePlan:
 def _plan_intent_path(state_dir: Path, plan_id: str) -> Path:
     digest = hashlib.sha256(plan_id.encode("utf-8")).hexdigest()[:24]
     return Path(state_dir) / "plan_intents" / f"{digest}.json"
+
+
+def _market_guard_refresh_path(state_dir: Path, plan_id: str) -> Path:
+    digest = hashlib.sha256(plan_id.encode("utf-8")).hexdigest()[:24]
+    return Path(state_dir) / "market_guard_refreshes" / f"{digest}.json"
+
+
+def _payload_sha256(payload: dict) -> str:
+    return hashlib.sha256(
+        json.dumps(
+            payload,
+            ensure_ascii=False,
+            sort_keys=True,
+            separators=(",", ":"),
+            default=str,
+        ).encode("utf-8")
+    ).hexdigest()
+
+
+def _market_guard_refresh_from_payload(
+    payload: dict,
+    plan: TradePlan,
+) -> MarketGuardRefresh:
+    unsigned = dict(payload)
+    receipt_sha256 = str(unsigned.pop("receipt_sha256", ""))
+    guard = unsigned.get("market_guard")
+    if (
+        unsigned.get("schema_version")
+        != "book-b-live-market-guard-refresh.v1"
+        or unsigned.get("plan_id") != plan.plan_id
+        or unsigned.get("plan_hash") != plan.plan_hash
+        or unsigned.get("refresh_count") != 1
+        or unsigned.get("immutable_fields")
+        != [
+            "code",
+            "side",
+            "shares",
+            "limit_price",
+            "basket_price",
+            "allocation_proof_hash",
+        ]
+        or not isinstance(guard, dict)
+        or guard.get("market_guard_required") is not True
+        or receipt_sha256 != _payload_sha256(unsigned)
+    ):
+        raise ValueError("LIVE_MARKET_GUARD_REFRESH_BINDING_MISMATCH")
+    try:
+        refresh = MarketGuardRefresh(
+            plan_id=plan.plan_id,
+            plan_hash=plan.plan_hash,
+            status=str(guard["market_guard_status"]),
+            observed_at=_intent_datetime(
+                guard["market_observed_at"], required=True
+            ),
+            latest_price=float(guard["market_price"]),
+            down_price=float(guard["down_price"]),
+            refreshed_at=_intent_datetime(
+                unsigned["refreshed_at"], required=True
+            ),
+            receipt_sha256=receipt_sha256,
+        )
+    except (KeyError, TypeError, ValueError) as exc:
+        if isinstance(exc, ValueError) and str(exc).startswith("LIVE_PLAN_"):
+            raise ValueError("LIVE_MARKET_GUARD_REFRESH_INVALID") from exc
+        raise ValueError("LIVE_MARKET_GUARD_REFRESH_INVALID") from exc
+    refreshed_plan = replace(plan, market_guard_refresh=refresh)
+    if refreshed_plan.validation_error() is not None:
+        raise ValueError("LIVE_MARKET_GUARD_REFRESH_INVALID")
+    return refresh
+
+
+def _is_live_buy_refresh_window(clock: datetime, plan: TradePlan) -> bool:
+    if clock.tzinfo is None:
+        return False
+    local = clock.astimezone(ZoneInfo("Asia/Shanghai"))
+    hhmm = (local.hour, local.minute)
+    return (
+        local.date().isoformat() == plan.trade_date
+        and clock < plan.recovery_deadline
+        and (
+            (9, 30) <= hhmm < (11, 30)
+            or (13, 0) <= hhmm < (14, 57)
+        )
+    )
+
+
+def _refresh_stale_unclaimed_market_guard(
+    config: BookBLiveMorningConfig,
+    plan: TradePlan,
+    *,
+    refresh_market_guard: Callable[[dict], dict] | None,
+    now: datetime,
+) -> tuple[TradePlan, dict | None]:
+    """Attach one immutable safety-fact refresh after side-effect-free prepare."""
+    if (
+        refresh_market_guard is None
+        or plan.environment != "live"
+        or plan.side.upper() != "BUY"
+        or plan.market_guard_refresh is not None
+        or plan.guard_reason(now=now) != "LIMIT_DOWN_CHECK_UNAVAILABLE"
+        or plan.guard_reason(now=plan.created_at) is not None
+        or not _is_live_buy_refresh_window(now, plan)
+    ):
+        return plan, None
+    store = ExecutionStore(Path(config.state_dir) / "events.jsonl")
+    current = store.current(plan.plan_id)
+    if current is not None and (
+        current.state
+        not in {
+            ExecutionState.PLANNED,
+            ExecutionState.VALIDATED,
+            ExecutionState.PREPARED,
+        }
+        or current.submit_claim_id is not None
+        or current.broker_order_id is not None
+        or current.submit_chain_uncertain
+    ):
+        return plan, None
+
+    path = _market_guard_refresh_path(config.state_dir, plan.plan_id)
+    with account_writer_lock(
+        Path(config.state_dir) / "account_writer_locks",
+        config.logical_account_id,
+    ):
+        with _plan_intent_lock(config.state_dir):
+            reused = path.is_file()
+            if reused:
+                try:
+                    payload = json.loads(path.read_text(encoding="utf-8"))
+                except (OSError, json.JSONDecodeError) as exc:
+                    raise ValueError("LIVE_MARKET_GUARD_REFRESH_INVALID") from exc
+                if not isinstance(payload, dict):
+                    raise ValueError("LIVE_MARKET_GUARD_REFRESH_INVALID")
+            else:
+                guard = refresh_market_guard(
+                    {
+                        "date": plan.trade_date,
+                        "code": plan.code,
+                        "side": plan.side,
+                        "shares": plan.shares,
+                        "limit_price": plan.limit_price,
+                        "basket_price": plan.basket_price,
+                    }
+                )
+                allowed = {
+                    "market_guard_required",
+                    "market_guard_status",
+                    "market_price",
+                    "down_price",
+                    "market_observed_at",
+                }
+                if not isinstance(guard, dict) or set(guard) != allowed:
+                    raise ValueError("LIVE_MARKET_GUARD_REFRESH_UNSCOPED")
+                unsigned = {
+                    "schema_version": "book-b-live-market-guard-refresh.v1",
+                    "plan_id": plan.plan_id,
+                    "plan_hash": plan.plan_hash,
+                    "refresh_count": 1,
+                    "refreshed_at": now.isoformat(),
+                    "immutable_fields": [
+                        "code",
+                        "side",
+                        "shares",
+                        "limit_price",
+                        "basket_price",
+                        "allocation_proof_hash",
+                    ],
+                    "previous_market_guard_sha256": _payload_sha256(
+                        {
+                            "market_guard_status": plan.market_guard_status,
+                            "market_observed_at": (
+                                plan.market_guard_observed_at.isoformat()
+                                if plan.market_guard_observed_at is not None
+                                else None
+                            ),
+                            "market_price": plan.market_guard_latest_price,
+                            "down_price": plan.market_guard_down_price,
+                        }
+                    ),
+                    "market_guard": dict(guard),
+                }
+                payload = {
+                    **unsigned,
+                    "receipt_sha256": _payload_sha256(unsigned),
+                }
+                _write_json_atomic(path, payload)
+            refresh = _market_guard_refresh_from_payload(payload, plan)
+    return replace(plan, market_guard_refresh=refresh), {
+        **payload,
+        "reused": reused,
+    }
 
 
 @contextmanager
@@ -1355,6 +1548,7 @@ def run_book_b_live_morning(
     review_requested_at: datetime | None = None
     snapshot_cache: dict | None = None
     snapshot_ownership_head: str | None = None
+    market_guard_refreshes: list[dict] = []
 
     def cached_snapshot() -> dict:
         nonlocal snapshot_cache, snapshot_ownership_head
@@ -1534,6 +1728,7 @@ def run_book_b_live_morning(
                     )
                     if prepare_only is not None:
                         preparation_receipts = []
+                        prepared_plan_ids: set[str] = set()
                         for plan in plans:
                             if not (
                                 _plan_requires_prepare(config, plan)
@@ -1551,6 +1746,9 @@ def run_book_b_live_morning(
                                 )
                                 raise
                             preparation_receipts.append(proven_prepare)
+                            prepared_plan_ids.add(plan.plan_id)
+                    else:
+                        prepared_plan_ids = set()
                     if plans and wait_for_submit_window is not None:
                         submit_at = max(
                             plan.submit_not_before or plan.created_at
@@ -1560,8 +1758,22 @@ def run_book_b_live_morning(
                             wait_for_submit_window(submit_at)
                         if now() < submit_at:
                             raise ValueError("LIVE_SUBMIT_WINDOW_NOT_REACHED")
-                    execution_receipts = []
+                    execution_plans: list[TradePlan] = []
                     for plan in plans:
+                        if plan.plan_id in prepared_plan_ids:
+                            plan, refresh_receipt = (
+                                _refresh_stale_unclaimed_market_guard(
+                                    config,
+                                    plan,
+                                    refresh_market_guard=refresh_market_guard,
+                                    now=now(),
+                                )
+                            )
+                            if refresh_receipt is not None:
+                                market_guard_refreshes.append(refresh_receipt)
+                        execution_plans.append(plan)
+                    execution_receipts = []
+                    for plan in execution_plans:
                         if not allow_new_risk(plan):
                             continue
                         execution_receipt = execute_plan(plan)
@@ -1640,7 +1852,8 @@ def run_book_b_live_morning(
         )
     receipt = replace(receipt, policy_consumptions=tuple(policy_consumptions),
                       open_plan_reconciliations=open_reconciliations or receipt.open_plan_reconciliations,
-                      review_rendezvous=review_receipt)
+                      review_rendezvous=review_receipt,
+                      market_guard_refreshes=tuple(market_guard_refreshes))
     _write_receipt(config, receipt)
     return receipt
 

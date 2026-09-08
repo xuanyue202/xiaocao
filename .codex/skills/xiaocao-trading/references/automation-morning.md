@@ -73,7 +73,17 @@ trade status, current price, authoritative down price and timestamp with no
 cache; bind those facts into the durable plan. Lunch, the closing auction and
 post-close remain blocked. This changes no frozen selection, allocation,
 initial limit, capital scope or exact-once rule, and an existing intent is
-always reconciled rather than refreshed or resubmitted.
+always reconciled rather than regenerated or resubmitted. One narrow
+pre-submit exception exists for a local/read-only repair: when the original
+guard was valid at binding time but has aged out, no submit claim, broker order
+id or chain uncertainty exists, and the read-only prepare again proves no
+write, the same plan may bind exactly one immutable no-cache guard sidecar.
+That sidecar may change only current trade status, price, authoritative down
+price and observation time; it keeps the original plan hash, code, side,
+shares, limit, basket and allocation proof, is reused rather than overwritten,
+and must still stop at limit-down, unavailable data, an expired session or
+`REALTIME_ABOVE_BASKET`. It never revives a terminal plan and never authorizes
+a second refresh or submit.
 The live-plan consumer binds proprietary `HH:MM:SS:millisecond` clocks to the
 dated China session and accepts only the documented continuous-auction `T`
 status family (`T` or `T` plus digits). Numeric BUY limits are floored, never

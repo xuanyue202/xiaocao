@@ -15,6 +15,7 @@ from xiaocao.live.trading_execution import (
     ExecutionReceipt,
     ExecutionState,
     InMemoryExecutionStore,
+    MarketGuardRefresh,
     TradePlan,
     TradingAccountLedger,
     TradingExecution,
@@ -1482,6 +1483,40 @@ def test_live_sell_unproven_market_guard_stops_before_probe(
     assert broker.probe_calls == 0
     assert broker.prepare_calls == 0
     assert broker.submit_calls == 0
+
+
+def test_bound_market_guard_refresh_preserves_intent_hash_and_abandon_line() -> None:
+    observed = datetime(2026, 8, 15, 1, 30, tzinfo=timezone.utc)
+    base = replace(
+        _plan(environment="live", deadline=observed + timedelta(hours=5)),
+        market_guard_required=True,
+        market_guard_observed_at=observed,
+        market_guard_latest_price=10.0,
+        market_guard_down_price=9.0,
+    )
+    original_hash = base.plan_hash
+    refreshed_at = observed + timedelta(minutes=16)
+    refresh = MarketGuardRefresh(
+        plan_id=base.plan_id,
+        plan_hash=original_hash,
+        status="T100",
+        observed_at=refreshed_at,
+        latest_price=10.05,
+        down_price=9.0,
+        refreshed_at=refreshed_at,
+        receipt_sha256="a" * 64,
+    )
+    refreshed = replace(base, market_guard_refresh=refresh)
+
+    assert refreshed.plan_hash == original_hash
+    assert refreshed.guard_reason(now=refreshed_at) is None
+
+    above_basket = replace(
+        refreshed,
+        market_guard_refresh=replace(refresh, latest_price=10.11),
+    )
+    assert above_basket.plan_hash == original_hash
+    assert above_basket.guard_reason(now=refreshed_at) == "REALTIME_ABOVE_BASKET"
 
 
 def test_live_sell_guard_is_rechecked_after_validated_recovery(

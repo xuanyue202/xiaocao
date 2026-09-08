@@ -1,6 +1,6 @@
 # 小草运营契约（Operating Contract, SSOT）
 
-**版本**：4.4
+**版本**：4.5
 **状态**：现行
 **适用范围**：所有 paper / 未来 real 的实盘环（live_recommend → paper_record → live_monitor → eod）与回测
 **关联实现**：`src/xiaocao/live/{safety,capital_keychain,foundersc_native_ax,foundersc_native_broker,trading_execution,book_b_live_lifecycle,book_b_live_intraday}.py`、`src/xiaocao/live/intelligence_policy.py`、`src/xiaocao/strategy/{mode_switch,trend_rules,kol_reference}.py`、`native/foundersc_ax_executor/`、`kronos_screen/scripts/{capture_signals,forward_eval,paper_record,settle_book_a,settle_book_t,decompose_pnl,quality_governor}.py`、`scripts/{book_b_live_morning,book_b_live_intraday,live_monitor,research_mode_switch_replay}.py`
@@ -139,6 +139,14 @@ KOL 断言、候选假设或报告升级为策略真值，也不替代永久参�
   可对账能力、表单回读、市场 guard 与双钥匙。market guard 可把 proprietary feed 的 `HH:MM:SS:毫秒`
   时钟绑定到 immutable trade date，并仅把上游 UI 已定义的连续竞价 `T` family
   （`T` 或 `T` 后接数字）归一为 trading；其他未知前缀继续 fail-closed。
+  若同一 BUY intent 在任何 submit claim 之前因本地/只读 prepare 修复而令原先有效的
+  market guard 超时，只有在 read-only prepare 再次证明 `submitted/saved/started=false`
+  且表单已清空、execution state 仍为 unclaimed、无 broker order-id/chain uncertainty、仍在
+  `09:30–11:30` 或 `13:00–14:57` 时，才可为原 plan hash 持久化**恰好一次**不可变的
+  no-cache guard sidecar。sidecar 只能更新交易状态、当前价、权威跌停价和观察时间；代码、
+  方向、数量、限价、basket、allocation proof、plan id/hash 与资本授权全部不变。它必须先
+  执行 basket 放弃线和全部 market guard，已有 sidecar 只复用不覆盖；过期、越 basket、
+  数据不可得或任何 terminal/claim 状态均停止，禁止第二次刷新、复活 terminal plan 或补发。
   OCR 不采用“两帧完全一致”作为真值：单帧必须证明预期表头、表格几何和完整行结构；
   只有首帧结构无效时才允许一次定向重读。证券名称没有订单匹配权限；证券代码、方向、
   价格、委托数量、委托编号、成交数量和状态必须通过精确形状/范围校验。唯一例外是定向
@@ -374,7 +382,7 @@ KOL 断言、候选假设或报告升级为策略真值，也不替代永久参�
 - [x] Book T snapshot/account/monitor key 均带 `book` 命名空间；B/T 同票同日不互相覆盖；T 宽止损不调用短线 strong-hold/composite。
 - [x] Book B 与历史回放共用 `strategy.mode_switch`；D-1 outcome 不进入 D 日早盘状态；`COLD/UNKNOWN/BJSE` 无成交权限；`--notional` 不能绕过 3 席位、每模式 1 只和批次 50% 上限。
 - [x] 模式证据保留 25%/45%/50% 验证权重；`ACTIVE` 同时通过候选池和四指数证据，近期双基准均值与多数日转正可直接升格，任一均值转负只冷却到 `PROVISIONAL`。
-- [x] 独立 09:20 Book-B live morning 与 09:25 模拟任务隔离；唯一写路由为 account-bound `native-app`，OpenCLI 不参与 native 登录/查询/交易；09:30 前只预检/心跳；盘中 continuation 仅覆盖 `09:30–11:30` / `13:00–14:57` 且新 intent 前刷新专有实时 market guard；不读写模拟成交或 canonical paper ledger；submit 前零 exact-tuple baseline，submit 后只认唯一新增 order-id，歧义保持 UNKNOWN/reconcile-only/no-retry；exact-order 撤单已实盘验收，自动补单禁用，App 重启 CAPTCHA 保持独立慢恢复。
+- [x] 独立 09:20 Book-B live morning 与 09:25 模拟任务隔离；唯一写路由为 account-bound `native-app`，OpenCLI 不参与 native 登录/查询/交易；09:30 前只预检/心跳；盘中 continuation 仅覆盖 `09:30–11:30` / `13:00–14:57` 且新 intent 前刷新专有实时 market guard；无 claim 的本地 prepare 修复只允许一次 plan-hash-bound 行情 sidecar 并先执行 basket 放弃线；不读写模拟成交或 canonical paper ledger；submit 前零 exact-tuple baseline，submit 后只认唯一新增 order-id，歧义保持 UNKNOWN/reconcile-only/no-retry；exact-order 撤单已实盘验收，自动补单禁用，App 重启 CAPTCHA 保持独立慢恢复。
 - [x] allocation proof 复用 `mode_switch.plan_board_lot_orders`，以滚动结算 NAV 验证批次/敞口/现金/slot 上限；ownership evidence 不得替代 canonical paper ledger。
 - [x] Book-B 实盘 owned-lot / 三表+positions 资金摘要 / 日间退出 / SELL intent / EOD settlement 已形成独立生命周期；纸盘 writer 不参与，成交执行仍由 native `TradingExecution` 端口独占。
 - [x] 同一 logical account 由 account-level writer lock 串行推进；异常写入 durable takeover capsule，WeCom pending incident 可重试且已送达事件幂等。
@@ -419,3 +427,4 @@ KOL 断言、候选假设或报告升级为策略真值，也不替代永久参�
 | 3.9 | 2026-09-01 | 补齐 Book-B 实盘成交之外的全生命周期：broker-proved ownership 投影为独立 owned lots 与滚动子账户 NAV；日间复用生产 exit policy 生成 lot-bound SELL intent；三张行表+positions 内嵌资金摘要、T+1/流动性/fresh quote、exact-once handoff 全部 fail-closed，独立资金明细页降为诊断；closing 扩权硬绑定 14:55–14:57，EOD settlement 硬绑定 15:00 后；15:10 reconcile 后写不可变 EOD settlement，并作为下一日 live allocation 基准。纸盘账本保持隔离，真实成交仍独占 native TradingExecution 端口。 |
 | 4.0 | 2026-09-03 | Book-B native account/allocation/lifecycle 纯读取增加有界完整快照自愈：只对瞬时结构、时效证明、严格资金恒等式或跨表失败重读并持久化尝试证据；不放宽任何 invariant，不重放 broker 写动作，账户/日期不匹配与耗尽状态继续 fail-closed。Automation 皮层负责 test-first 根因修复、durable-state 窄恢复和 5 Why，不改变确定性交易语义。 |
 | 4.1 | 2026-09-04 | 修正方正同日 SELL 后资金语义：常态继续要求余额闭合总资产；三表 account snapshot 仅在同一成交表证明正数量 SELL、可用资金与证券市值精确闭合且可取<=余额<=可用时接受未交收卖出款分支，并把实际现金字段写入 hash-bound 回执。live allocation 不消费该例外；两分支都不成立仍 fail-closed。 |
+| 4.5 | 2026-09-08 | 修复无副作用 prepare 自愈后的行情过期断点：原 guard 绑定时有效、read-only prepare 已清空且无 claim/order-id/chain uncertainty 时，同一 plan hash 在连续竞价与 recovery deadline 内最多绑定一次不可变 no-cache guard sidecar；只刷新状态/当前价/跌停价/时间，并新增 basket 放弃线复核。terminal/UNKNOWN/已 claim 不可刷新，sidecar 不覆盖、不扩权、不重发。 |
