@@ -20,7 +20,9 @@ retry transient readback with supported arguments, and retrieve evidence when
 available. Do not defer work to the next Automation. A stage instruction to stop an
 ambiguous action stops that action only: diagnose from first principles, repair
 and test in place, then continue the same job through handoff and readback.
-Never use that instruction alone as a reason to end the task.
+Never use that instruction alone as a reason to end the task. Before a local
+run ends after any failure, apply the hourly local reference's “Before ending a
+run after a failure” gate; shell exit 0 does not override `repair_required`.
 
 Bind exact claims/receipts, patch repository code/templates/contracts, add a
 regression, and resume the same job without waiting for the user to request a

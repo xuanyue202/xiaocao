@@ -58,6 +58,38 @@ Never schedule it or run before remote ambiguity clears. Use Browser, not
 Computer Use; only `wx_channels_download` owns video bytes. Before upload read
 [opencli-baidu-netdisk-upload.md](opencli-baidu-netdisk-upload.md).
 
+## Before ending a run after a failure
+
+Read business state and bound receipts, not the shell exit code. The coordinator
+can exit 0 with `health=degraded`, `status=waiting`, and
+`writer_progress.status=repair_required`; that means the invocation returned,
+not that the Agent's work finished. `user_action_required=false` is never a
+reason to say “no user action needed” and leave an Agent-owned repair unfinished.
+
+For any unfinished item, keep working through diagnosis -> repair -> scoped
+regression -> commit/push -> exact repair validation -> same-item continuation.
+A source/skill instruction to stop ambiguous input prohibits that input; continue
+read-only diagnosis and repair. Repeated failure of the same inspection is not
+exhaustion of all safe recovery. Establish which identity assumption failed and
+whether attachment was reached before choosing the continuation.
+
+For a known upload item, retain its subscription identity, capture/source IDs,
+Netdisk job, file hash, original failure diagnostic and claim. Validate the exact
+fingerprint with a full pushed commit SHA and its `Repair-Fingerprint` trailer.
+Then use the reviewed same-job upload recovery and
+`capture-xiaocao-item --source-identity <original identity>` in a retained PTY.
+A generic `xiaocao_wechat_live:source` resume can select an older replay: it is
+not a substitute for a known item's continuation. Never activate that unrelated
+replay to make the repair command appear successful.
+
+End a repaired local item only after media acceptance, exact cloud receipt,
+mailbox `created|already_present`, and authoritative same-ID/hash readback, or an
+observed irreducible user/external blocker after available safe diagnosis.
+Report `pending` as local `Handoff完成` with remote work still pending; the existing
+mailbox reconciliation owns subsequent readback. Never call it `全部完成` without
+`acked`, and never end at a launch, download, source-code fix, or upload claim.
+Record the actual stopping condition and its evidence in Automation memory.
+
 ## WeChat and Xiaoetong gate
 
 Scan only `福利官小花四-刘丹（执业编号:A0380125080026）` via local `wechat-cli`;
