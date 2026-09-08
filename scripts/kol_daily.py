@@ -1569,7 +1569,7 @@ def _classified_source(name: str, runner):
                 raise UserActionBlocker(
                     "lv-cloud-transfer-not-materialized",
                     "转存点击已达到本对象的重试边界，但尚无成功回执，目标目录和"
-                    "全局精确搜索均未找到文件。这不是已确认转存，也不是百度权限"
+                    "全局精确搜索均未找到文件。这不是已确认转存，也不代表百度权限"
                     "不足；外部结果仍不确定，保留账本并停止追加点击，只读对账。",
                 ) from exc
             if message == "Lv cloud transfer was rejected by provider":
@@ -3226,7 +3226,7 @@ class DailyRuntime:
                         blocker_key="lv-cloud-transfer-not-materialized",
                         action=(
                             "转存点击已达到本对象的重试边界，但尚无成功回执，目标目录和"
-                            "全局精确搜索均未找到文件。这不是已确认转存，也不是百度权限"
+                            "全局精确搜索均未找到文件。这不是已确认转存，也不代表百度权限"
                             "不足；外部结果仍不确定，保留账本并停止追加点击，只读对账。"
                         ),
                     ) from exc

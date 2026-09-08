@@ -3800,6 +3800,16 @@ class SubscriptionVideoService:
             == readback_evidence_sha256
         ):
             return claim
+        if claim.get("authorized_recovery_consumed") is True:
+            # An absence readback is evidence, not fresh authority for a
+            # fourth click. Preserve the explicit one-recovery boundary.
+            return self._record_transfer_blocker(
+                receipt_name,
+                {**claim, "readback_evidence_sha256": readback_evidence_sha256},
+                blocker_key="lv-cloud-transfer-not-materialized",
+                failure_reason="operator-authorized recovery exhausted without a verified private copy",
+                reconciliation_status="exact_private_copy_absent_after_bounded_retry",
+            )
         reconciled = {
             **claim,
             "event": "lv_cloud_transfer_absence_reconciled",

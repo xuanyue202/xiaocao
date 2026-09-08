@@ -67,3 +67,10 @@ handoff/邮箱创建也不代表报告、提醒资格、Book 和 ACK 完成。
 
 不修改交易、账户、订阅范围、收件人、时间表；不下载视频；不创建新 writer。
 代码回归通过不等于百度转存成功，也不等于已经证明长期稳定。
+
+### 同链路复核补充
+
+发现通用 absence reconciliation 会把 attempt maximum 提升为 attempts+1，
+可能在明确第三次恢复已使用后重新放开第四次。真实回归先 red（4 != 3）；
+修复使 consumed operator recovery 在空结果对账后保持 blocked、maximum=3，
+读取事实不产生新的操作授权。该边界不依赖调用者记住另行停手。
