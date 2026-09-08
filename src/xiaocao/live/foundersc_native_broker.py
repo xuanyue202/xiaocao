@@ -1225,6 +1225,23 @@ class FounderscNativeAXBrokerAdapter(BrokerAdapter):
                 requested_shares=shares,
             )
         readback, matched = self._native_order_readback(plan, payload, shares)
+        readback = {
+            **readback,
+            "native_helper_status": str(payload.get("status") or ""),
+            "native_helper_reason": str(payload.get("reason") or ""),
+            "native_action": {
+                key: value
+                for key, value in dict(payload.get("action") or {}).items()
+                if key
+                in {
+                    "attempted",
+                    "succeeded",
+                    "requires_user_input",
+                    "confirm_pressed",
+                    "confirmation_mode",
+                }
+            },
+        }
         if (
             str(payload.get("status") or "") != "prepared"
             or not matched

@@ -1675,6 +1675,11 @@ def test_live_morning_blocks_before_execution_when_prepare_only_is_unproven(
     assert receipt.status == "blocked"
     assert receipt.reason == reason
     assert executed == []
+    assert len(receipt.preparation_receipts) == 1
+    assert receipt.preparation_receipts[0]["status"] == (
+        prepare_receipt.normalized_status().value
+    )
+    assert receipt.preparation_receipts[0]["reason"] == prepare_receipt.reason
 
 
 def test_live_morning_does_not_wait_for_simulated_fill_fields(tmp_path: Path) -> None:

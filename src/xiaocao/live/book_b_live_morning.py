@@ -1299,6 +1299,22 @@ def _assert_prepare_only(plan: TradePlan, receipt: BrokerReceipt) -> dict:
     return result
 
 
+def _failed_prepare_receipt(plan: TradePlan, receipt: BrokerReceipt) -> dict:
+    """Keep sanitized native failure evidence before the run fails closed."""
+    return {
+        "plan_id": plan.plan_id,
+        "plan_hash": plan.plan_hash,
+        "status": receipt.normalized_status().value,
+        "reason": receipt.reason,
+        "error_code": receipt.error_code,
+        "account_binding": receipt.account_binding,
+        "template_name": receipt.template_name,
+        "template_version": receipt.template_version,
+        "echoed": dict(receipt.echoed),
+        "field_readback": dict(receipt.field_readback),
+    }
+
+
 def run_book_b_live_morning(
     config: BookBLiveMorningConfig,
     *,
@@ -1517,11 +1533,24 @@ def run_book_b_live_morning(
                         check_new_plan=allow_new_risk,
                     )
                     if prepare_only is not None:
-                        preparation_receipts = [
-                            _assert_prepare_only(plan, prepare_only(plan))
-                            for plan in plans
-                            if _plan_requires_prepare(config, plan) and allow_new_risk(plan)
-                        ]
+                        preparation_receipts = []
+                        for plan in plans:
+                            if not (
+                                _plan_requires_prepare(config, plan)
+                                and allow_new_risk(plan)
+                            ):
+                                continue
+                            raw_prepare = prepare_only(plan)
+                            try:
+                                proven_prepare = _assert_prepare_only(
+                                    plan, raw_prepare
+                                )
+                            except ValueError:
+                                preparation_receipts.append(
+                                    _failed_prepare_receipt(plan, raw_prepare)
+                                )
+                                raise
+                            preparation_receipts.append(proven_prepare)
                     if plans and wait_for_submit_window is not None:
                         submit_at = max(
                             plan.submit_not_before or plan.created_at

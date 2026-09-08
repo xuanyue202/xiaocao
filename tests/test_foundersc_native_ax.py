@@ -711,6 +711,27 @@ def test_swift_submit_confirmation_fallback_is_exact_and_single_point() -> None:
     assert source.count('postSingleReturnKey()') == 3
 
 
+def test_swift_prepare_clear_retries_only_field_neutralization() -> None:
+    root = Path(__file__).resolve().parents[1]
+    source = (
+        root
+        / "native"
+        / "foundersc_ax_executor"
+        / "Sources"
+        / "FounderscNativeAX"
+        / "main.swift"
+    ).read_text(encoding="utf-8")
+    start = source.index("private func clearOrderFields")
+    end = source.index("private func prepareOrder", start)
+    clear = source[start:end]
+
+    assert "for attempt in 1...2" in clear
+    assert "usleep(attempt == 1 ? 100_000 : 200_000)" in clear
+    assert "postSingleReturnKey" not in clear
+    assert "submitPreparedOrder" not in clear
+    assert "AXUIElementPerformAction" not in clear
+
+
 def test_swift_observation_ignores_focused_accessory_windows() -> None:
     root = Path(__file__).resolve().parents[1]
     source = (
