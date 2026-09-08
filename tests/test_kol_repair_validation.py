@@ -1662,6 +1662,8 @@ def test_native_window_close_repair_profile_is_exact():
 def test_uploader_foreground_profile_rejects_uncertain_attachment():
     from xiaocao.kol.writer_progress import _canonical_xiaocao_wechat_source_repair_profile
     context = dict(adapter="xiaocao_wechat_live", targeted_test_profile="kol_xiaocao_wechat_live_upload_foreground", category="transport_error", code="upload_foreground_failed", stage="upload_foreground")
+    from xiaocao.kol.writer_progress import TARGETED_REPAIR_TESTS
     assert _canonical_xiaocao_wechat_source_repair_profile(context) == context["targeted_test_profile"]
+    assert "tests/test_kol_repair_validation.py" in TARGETED_REPAIR_TESTS[context["targeted_test_profile"]]
     context["code"] = "upload_attachment_uncertain"
     assert _canonical_xiaocao_wechat_source_repair_profile(context) is None
