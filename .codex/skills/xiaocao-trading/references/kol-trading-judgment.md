@@ -83,9 +83,14 @@ Publish verifies source hashes against current remote manifests and writes only
 the dedicated `output/live/kol_policy/decisions` store. Keep source caches,
 requests, risk evidence and analysis outside that directory. Reconcile an exact
 existing receipt; do not reuse an ID to change content or extend expiry.
-Current checks older than 15 minutes require refresh regardless of a longer
-decision lifetime. Expiry does not revive an older decision. A corrupt packet
-blocks new risk but never generates an exit or disables protective exits.
+`current_checks` remain dated audit context and must not be from the future, but
+they have no independent fixed TTL. Semantic validity follows the reviewed
+`valid_until` (at most 24 hours and normally bounded to the current trading day),
+new source receipts and explicit invalidation conditions. Do not rerun complete
+historical analysis merely because a current-check timestamp aged. Every actual
+consumer still refreshes its own quote, account, lot/T+1, liquidity and capital
+gates at the action boundary. Expiry does not revive an older decision. A corrupt
+packet blocks new risk but never generates an exit or disables protective exits.
 
 Morning: start the normal independent live/paper runner on time. When its
 bounded review rendezvous is open, analyze the emitted exact frozen evidence
@@ -125,7 +130,9 @@ consumes it with current account and market facts.
 `no_op` ends silently and does not justify journal, broker, MCP or model reads.
 `run` identifies one immutable owner-bound claim and whether source judgment is
 needed. Perform each paper/live checkpoint once, then handle a requested
-semantic refresh. A source-only update does not itself authorize a trade.
+semantic refresh. `need_semantic_review` is raised by a new production source
+fingerprint or explicit decision expiry, not by `current_checks` age. A source-only
+update does not itself authorize a trade.
 Finally acknowledge the exact token with `kol_trading_tick.py ack --token
 <token> --outcome completed|degraded` only after terminal process/ledger
 readback. Ack freezes only the claimed source/decision fingerprints; later

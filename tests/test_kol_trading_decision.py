@@ -147,6 +147,16 @@ def test_publish_remote_readback_and_distinct_hashes(tmp_path, bundle):
     assert td.decision_status(tmp_path, book="B", runtime="paper", clock=lambda: NOW)["status"] == "no_decision"
 
 
+def test_publish_accepts_dated_current_checks_until_explicit_valid_until(tmp_path, bundle):
+    decision, review, _, _ = bundle
+    decision["current_checks"][0]["observed_at"] = iso(NOW - timedelta(hours=8))
+    review["decision_sha256"] = kol_policy.decision_sha256(decision)
+    assert publish(tmp_path, bundle)["status"] == "published"
+    assert td.decision_status(
+        tmp_path, book="B", runtime="live", clock=lambda: NOW + timedelta(hours=23)
+    )["status"] == "validated"
+
+
 def test_completed_publish_retry_preserves_receipts_after_expiry_without_remote_calls(tmp_path, bundle):
     first = publish(tmp_path, bundle)
     root = tmp_path / td.POLICY_PATH

@@ -1,6 +1,6 @@
 # 小草运营契约（Operating Contract, SSOT）
 
-**版本**：4.5
+**版本**：4.6
 **状态**：现行
 **适用范围**：所有 paper / 未来 real 的实盘环（live_recommend → paper_record → live_monitor → eod）与回测
 **关联实现**：`src/xiaocao/live/{safety,capital_keychain,foundersc_native_ax,foundersc_native_broker,trading_execution,book_b_live_lifecycle,book_b_live_intraday}.py`、`src/xiaocao/live/intelligence_policy.py`、`src/xiaocao/strategy/{mode_switch,trend_rules,kol_reference}.py`、`native/foundersc_ax_executor/`、`kronos_screen/scripts/{capture_signals,forward_eval,paper_record,settle_book_a,settle_book_t,decompose_pnl,quality_governor}.py`、`scripts/{book_b_live_morning,book_b_live_intraday,live_monitor,research_mode_switch_replay}.py`
@@ -60,10 +60,13 @@ KOL 断言、候选假设或报告升级为策略真值，也不替代永久参�
   来源/审核 hash、精确代码和当前时效，且仍受 T+1、可卖量、报价、流动性、
   双钥匙及 native execution 门约束。不能伪造 `AI_EVENT_RISK_EXIT`，也不能
   将普通软止损的 14:55 权限前移。已有必要硬/事件退出优先，KOL 不压住它。
-- 判断寿命最多 24 小时，但 `current_checks` 超过 15 分钟即 `needs_refresh`，
-  不因较长 `valid_until` 延长。语义 Agent 必须重新检查失效条件；代码的
-  hash/时间校验并不证明自然语言条件成立。缺失/过期回基线并显式降级，
-  损坏或越权包阻断新增风险、不得产生退出；风险保护与必要对账继续运行。
+- 判断寿命由经复核决策显式声明的 `valid_until` 控制，最长 24 小时，通常不跨
+  当前交易日；`current_checks` 是带时间戳、hash-bound 的分析上下文，不再另设
+  固定 15 分钟 TTL，也不因其自然变旧反复触发 Astra 全量复核。新来源、明确的
+  失效条件或 `valid_until` 到期才要求重新做语义判断。实际消费仍必须在自己的
+  动作边界重新核验行情、账户、lot/T+1、流动性、资金和 native 安全门；KOL 包
+  不能把这些执行事实缓存到 `valid_until`。缺失/过期回基线并显式降级，损坏或
+  越权包阻断新增风险、不得产生退出；风险保护与必要对账继续运行。
 - 分析使用 GPT-6 Astra `xhigh`，常规调度/采集保留原模型；主 Agent 独立
   复核后才能发布可消费包。审阅字段是审计声明，不是不可伪造的资金钥匙。
   原始报告作者、判断作者和审核者身份始终分别记录。
@@ -392,6 +395,7 @@ KOL 断言、候选假设或报告升级为策略真值，也不替代永久参�
 
 | 版本 | 日期 | 说明 |
 |------|------|------|
+| 4.6 | 2026-09-08 | 按用户授权移除 KOL `current_checks` 的固定 15 分钟 TTL：语义有效性只由最长 24 小时的显式 `valid_until`、新来源与自然语言失效条件控制；交易消费端继续独立刷新行情、账户、lot/T+1、流动性与资金安全事实，避免 sparse 间隔天然触发重复 Astra 全量复核。 |
 | 4.3 | 2026-09-07 | 修正方正 native 同日 BUY 后的资金语义：三表 account snapshot 在同一成交表证明正数量 BUY、可用资金与证券市值精确闭合且可取<=可用<余额时，允许只读 lifecycle 使用 available-cash 分支；allocation 仍只认常态余额分支，不扩大买入资金或订单权限。 |
 | 4.2 | 2026-09-06 | 用户确认有界 KOL 当下判断接口：已发布来源精确回读、Astra xhigh 分析与独立主审、15 分钟当前核验、Book-B 受限买入/退出及独立实盘/模拟消费；统一高点回撤 10%/20% 试点新增风险预算。原始先验 authority=0、永久参数研究门、既有资金/执行/不可变/精确一次边界保持。 |
 | 4.4 | 2026-09-07 | 用户确认小草当下明确模式跟随高于普通模式轮动：新增 v2 `xiaocao_mode_overrides`，仅允许 `kol-xiaocao` 已引用且独立复核的来源，在同日不可变 Book-B 候选内恢复 COLD、每模式一只且总席位不变；UNKNOWN/BJSE/非冻结代码/资金及交易安全门不被覆盖。 |

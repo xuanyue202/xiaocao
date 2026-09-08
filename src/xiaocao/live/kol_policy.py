@@ -15,11 +15,13 @@ Eligibility, capital, lots, liquidity and broker safety remain separate gates.
 
 Review uses reviewer_agent_id and reviewed_at (UTC ISO). A contradicting check is
 material by default; live/both requires resolved=true and resolution_reason for
-material contradictions. Every current check must be at most 15 minutes old both
-at decision.as_of and at consumption; otherwise load returns needs_refresh with
-neutral adjustments and the original decision_id for Agent reassessment. Source
-publication and receipt times are separate required facts, never inferred from
-one another (they may genuinely coincide). Optional annotations are hash-bound;
+material contradictions. Current checks are dated, hash-bound decision context;
+they must not be from the future, but they do not carry a second fixed TTL. The
+reviewed decision's explicit valid_until (at most 24 hours after as_of) is the
+semantic validity boundary. Trade consumers still prove current quote, account,
+lot, T+1, liquidity and capital facts independently at each action boundary.
+Source publication and receipt times are separate required facts, never inferred
+from one another (they may genuinely coincide). Optional annotations are hash-bound;
 source_refs accepts only its five documented fields to avoid apparent validation
 of unsupported source-verification claims.
 
@@ -193,7 +195,7 @@ def _validate_pair(decision: dict, review: dict) -> tuple[datetime, datetime, da
         _require(isinstance(check, dict), "INVALID_CURRENT_CHECK")
         _require(_text(check.get("claim")) and _text(check.get("evidence_ref")), "CHECK_EVIDENCE_REQUIRED")
         observed = _time(check.get("observed_at"))
-        _require(timedelta(0) <= as_of - observed <= timedelta(minutes=15), "STALE_OR_FUTURE_CHECK")
+        _require(observed <= as_of, "FUTURE_CHECK")
         verdict = check.get("verdict")
         _require(verdict in ("supports", "contradicts", "uncertain"), "INVALID_CHECK_VERDICT")
         supported = supported or verdict == "supports"
@@ -360,10 +362,6 @@ def _snapshot(record: dict, book: str, runtime: str, now: datetime) -> dict:
     _require(_time(decision["as_of"]) <= now, "FUTURE_DECISION")
     if now >= _time(decision["valid_until"]):
         return _state("expired", book, runtime, "KOL_POLICY_EXPIRED", decision_id=decision["decision_id"])
-    oldest_check = min(_time(check["observed_at"]) for check in decision["current_checks"])
-    if now - oldest_check > timedelta(minutes=15):
-        return _state("needs_refresh", book, runtime, "KOL_POLICY_NEEDS_REFRESH",
-                      decision_id=decision["decision_id"])
     result = _state("validated", book, runtime, "KOL_POLICY_VALIDATED", decision_id=decision["decision_id"])
     result.update({key: decision[key] for key in ("buy_scale", "skip_codes", "exit_codes")})
     result["xiaocao_mode_overrides"] = list(decision.get("xiaocao_mode_overrides") or [])

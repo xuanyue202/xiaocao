@@ -228,8 +228,6 @@ def _validate_inputs(decision: dict, review: dict, context: dict, now: datetime,
             selected.append(row)
         if fresh:
             _require(now < until, "decision_expired")
-            _require(all(now - _time(check["observed_at"]) <= timedelta(minutes=15)
-                         for check in decision["current_checks"]), "current_checks_need_refresh")
         return selected
     except TradingDecisionError:
         raise

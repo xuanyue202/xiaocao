@@ -384,28 +384,26 @@ def test_source_author_is_bound_to_review_but_local_hash_is_not_remote_verificat
 @pytest.mark.parametrize("field,value", [
     ("claim", ""), ("evidence_ref", ""), ("verdict", "unknown"), ("verdict", "uncertain"),
     ("observed_at", iso(NOW + timedelta(microseconds=1))),
-    ("observed_at", iso(NOW - timedelta(minutes=15, microseconds=1))),
     ("material", "false"), ("resolved", 1), ("resolved", True),
 ])
-def test_current_checks_require_fresh_non_uncertain_support(tmp_path: Path, field: str, value: object) -> None:
+def test_current_checks_require_structured_nonfuture_support(tmp_path: Path, field: str, value: object) -> None:
     decision = make_decision()
     decision["current_checks"][0][field] = value
     with pytest.raises(policy.KolPolicyError):
         publish(tmp_path, decision)
 
 
-def test_check_freshness_and_lifetime_boundaries_are_inclusive(tmp_path: Path) -> None:
+def test_old_current_checks_remain_valid_until_explicit_lifetime_boundary(tmp_path: Path) -> None:
     decision = make_decision()
-    decision["current_checks"][0]["observed_at"] = iso(NOW - timedelta(minutes=15))
+    decision["current_checks"][0]["observed_at"] = iso(NOW - timedelta(days=7))
     decision["valid_until"] = iso(NOW + timedelta(hours=24))
     publish(tmp_path, decision)
     assert load(tmp_path)["status"] == "validated"
-    assert_inert(load(tmp_path, NOW + timedelta(microseconds=1)), "needs_refresh", 1)
-    assert_inert(load(tmp_path, NOW + timedelta(hours=23)), "needs_refresh", 1)
+    assert load(tmp_path, NOW + timedelta(hours=23))["status"] == "validated"
     assert_inert(load(tmp_path, NOW + timedelta(hours=24)), "expired", 1)
 
 
-def test_every_current_check_must_stay_fresh_at_consumption(tmp_path: Path) -> None:
+def test_current_checks_are_audit_context_not_a_second_consumption_ttl(tmp_path: Path) -> None:
     decision = make_decision()
     decision.update(buy_scale=0, skip_codes=[CODE], exit_codes=[CODE])
     decision["valid_until"] = iso(NOW + timedelta(hours=24))
@@ -415,25 +413,22 @@ def test_every_current_check_must_stay_fresh_at_consumption(tmp_path: Path) -> N
         "claim": "Older contextual fact also needs to remain current.", "verdict": "uncertain",
     })
     publish(tmp_path, decision)
-    boundary = load(tmp_path, NOW + timedelta(minutes=1))
-    assert boundary["status"] == "validated"
-    assert policy.exit_adjustment(boundary, CODE)["triggered"] is True
-    stale = load(tmp_path, NOW + timedelta(minutes=1, microseconds=1))
-    assert_inert(stale, "needs_refresh", 1)
-    assert stale["decision_id"] == "decision-1"
-    assert stale["reason"] == "KOL_POLICY_NEEDS_REFRESH"
-    assert_inert(load(tmp_path, NOW + timedelta(hours=1)), "needs_refresh", 1)
+    later = load(tmp_path, NOW + timedelta(hours=23))
+    assert later["status"] == "validated"
+    assert policy.buy_adjustment(later, CODE)["skip"] is True
+    assert policy.exit_adjustment(later, CODE)["triggered"] is True
+    assert_inert(load(tmp_path, NOW + timedelta(hours=24)), "expired", 1)
 
 
-def test_refresh_requires_new_reviewed_judgment_and_does_not_mutate_old_one(tmp_path: Path) -> None:
+def test_expiry_requires_new_reviewed_judgment_and_does_not_mutate_old_one(tmp_path: Path) -> None:
     original = make_decision(scale=0)
     original["exit_codes"] = [CODE]
     receipt = publish(tmp_path, original)
     original_bytes = (tmp_path / "decision-1.json").read_bytes()
-    later = NOW + timedelta(minutes=16)
-    assert_inert(load(tmp_path, later), "needs_refresh", 1)
+    later = NOW + timedelta(hours=2)
+    assert_inert(load(tmp_path, later), "expired", 1)
     assert publish(tmp_path, original, later) == receipt
-    assert_inert(load(tmp_path, later), "needs_refresh", 1)
+    assert_inert(load(tmp_path, later), "expired", 1)
     refreshed = make_decision("reassessed-2", as_of=later, scale=0.3)
     publish(tmp_path, refreshed, later)
     snapshot = load(tmp_path, later)

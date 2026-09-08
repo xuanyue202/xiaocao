@@ -151,7 +151,7 @@ def test_ack_binds_claimed_fingerprint_not_newer_publications(tmp_path):
     assert tick.poll(tmp_path, now=NOW)["token"] == second["token"]
 
 
-def test_stale_policy_requires_same_runtime_explicit_open_positions_and_ack(tmp_path):
+def test_expired_policy_requires_same_runtime_explicit_open_positions_and_ack(tmp_path):
     policy(tmp_path)
     finish(tmp_path, tick.poll(tmp_path, now=NOW))
     no_position = tick.poll(tmp_path, now=NOW + timedelta(minutes=30))
@@ -318,12 +318,16 @@ def live_positions(root, closed=False):
 
 
 @pytest.mark.parametrize("closed,semantic", [(False, True), (True, False)])
-def test_live_owned_open_positions_refresh_only_at_sparse_checkpoint(tmp_path, closed, semantic):
+def test_live_owned_open_positions_reassess_only_after_explicit_expiry(tmp_path, closed, semantic):
     policy(tmp_path, runtime="live")
     finish(tmp_path, tick.poll(tmp_path, now=NOW))
     live_positions(tmp_path, closed)
     assert tick.poll(tmp_path, now=NOW + timedelta(minutes=20))["status"] == "no_op"
-    result = tick.poll(tmp_path, now=NOW + timedelta(minutes=30))
+    still_valid = tick.poll(tmp_path, now=NOW + timedelta(minutes=30))
+    assert still_valid["status"] == "run" and still_valid["regular_monitor"]
+    assert not still_valid["need_semantic_review"]
+    finish(tmp_path, still_valid, now=NOW + timedelta(minutes=30))
+    result = tick.poll(tmp_path, now=NOW + timedelta(hours=3))
     assert result["status"] == "run" and result["regular_monitor"]
     assert result["need_semantic_review"] == semantic
 
