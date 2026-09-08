@@ -11,6 +11,7 @@
 
 const { spawn, spawnSync } = require("node:child_process");
 const fs = require("node:fs");
+const path = require("node:path");
 
 const AUTOMATION_ID = process.env.CODEX_AUTOMATION_ID || "";
 const CURRENT_THREAD_ID = process.env.CODEX_THREAD_ID || "";
@@ -178,6 +179,30 @@ function hasTaskComplete(rolloutPath) {
   return terminal;
 }
 
+function scheduledAutomationIdentity(rolloutPath, threadId, cwd) {
+  if (!rolloutPath || !fs.existsSync(rolloutPath)) return null;
+  let bound = false;
+  try {
+    for (const line of fs.readFileSync(rolloutPath, "utf8").split("\n")) {
+      if (!line.trim()) continue;
+      const record = JSON.parse(line);
+      const payload = record.payload;
+      if (record.type === "session_meta") {
+        bound = payload.id === threadId && payload.cwd === cwd &&
+          payload.source === "vscode" && payload.thread_source === "automation";
+      }
+      if (record.type !== "response_item") continue;
+      if (payload.role === "assistant" || payload.type === "function_call" ||
+          payload.type === "custom_tool_call") break;
+      if (bound && payload.type === "function_call_output" &&
+          payload.namespace === "codex_app" && payload.name === "automation_update") {
+        return String(payload.output || "").match(/^Automation ID: ([^\r\n]+)$/m)?.[1] || null;
+      }
+    }
+  } catch { return null; }
+  return null;
+}
+
 async function oneAttempt() {
   const server = startServer();
   try {
@@ -194,7 +219,7 @@ async function oneAttempt() {
       1,
     );
     server.child.stdin.write('{"method":"initialized"}\n');
-    const result = await discoverPeers({ server });
+    const result = await discoverPeers({ server, hiddenCandidates: discoverHiddenCandidates() });
     return { ...result, initialize_user_agent: init?.userAgent || "" };
   } catch (error) {
     const stderr = server.stderr.trim();
@@ -203,6 +228,22 @@ async function oneAttempt() {
   } finally {
     stopServer(server);
   }
+}
+
+function discoverHiddenCandidates() {
+  // Desktop visibility is not execution ownership: thread/list omits rows
+  // whose preview is empty, including live automation tasks. Use the index
+  // only for discovery; thread/read and the rollout remain the authority.
+  const statePath = path.join(process.env.CODEX_HOME, "state_5.sqlite");
+  const quotedCwd = CWD.replaceAll("'", "''");
+  const cutoff = Math.floor(Date.now() / 1000) - PEER_LOOKBACK_SECONDS;
+  const result = spawnSync("sqlite3", ["-readonly", "-json", statePath,
+    `SELECT id,cwd,thread_source AS threadSource,updated_at AS updatedAt FROM threads WHERE source='vscode' AND preview='' AND cwd='${quotedCwd}' AND updated_at>=${cutoff} ORDER BY updated_at DESC`],
+  { encoding: "utf8", timeout: REQUEST_TIMEOUT_MS });
+  if (result.status !== 0) throw new Error("hidden task index readback unavailable");
+  const rows = JSON.parse(result.stdout || "[]");
+  if (!Array.isArray(rows)) throw new Error("hidden task index readback invalid");
+  return rows;
 }
 
 async function discoverPeers({
@@ -215,6 +256,8 @@ async function discoverPeers({
   readTaskComplete = hasTaskComplete,
   nowSeconds = Math.floor(Date.now() / 1000),
   lookbackSeconds = PEER_LOOKBACK_SECONDS,
+  hiddenCandidates = [],
+  readScheduledIdentity = scheduledAutomationIdentity,
 }) {
   const candidates = [];
   const readback = [];
@@ -292,11 +335,12 @@ async function discoverPeers({
       }
     }
 
-    const candidateRows = recentRows.filter(
+    const candidateRows = [...recentRows, ...(pageCount === 1 ? hiddenCandidates : [])].filter(
       (row) => row.id && row.id !== currentThreadId && row.cwd === cwd,
     );
     for (const candidate of candidateRows) {
       if (seenThreadIds.has(candidate.id)) {
+        if (hiddenCandidates.some((row) => row.id === candidate.id)) continue;
         return fail("thread_list_duplicate_thread", "peer_discovery", {
           thread_id: candidate.id,
           page_count: pageCount,
@@ -323,10 +367,19 @@ async function discoverPeers({
       const previewMatches = String(thread.preview || "").includes(identityMarker);
       const firstTurnMatches = turns.length > 0 &&
         userText(turns[0]).includes(identityMarker);
-      if (!previewMatches && !firstTurnMatches) {
+      const scheduledIdentity = readScheduledIdentity(thread.path, thread.id, cwd);
+      const scheduledMatches = scheduledIdentity === automationId;
+      if (candidate.threadSource === "automation" && !scheduledIdentity &&
+          !previewMatches && !firstTurnMatches) {
+        return fail("scheduled_thread_identity_unavailable", "peer_readback", {
+          thread_id: candidate.id,
+        });
+      }
+      if (!previewMatches && !firstTurnMatches && !scheduledMatches) {
         continue;
       }
-      if (!previewMatches || !firstTurnMatches) {
+      if (!scheduledMatches &&
+          ((!previewMatches && String(thread.preview || "").trim()) || !firstTurnMatches)) {
         return fail("thread_prompt_identity_mismatch", "peer_readback", {
           thread_id: candidate.id,
         });
@@ -465,4 +518,4 @@ if (require.main === module) {
   });
 }
 
-module.exports = { discoverPeers };
+module.exports = { discoverPeers, scheduledAutomationIdentity };

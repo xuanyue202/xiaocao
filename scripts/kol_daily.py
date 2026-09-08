@@ -754,6 +754,67 @@ def _persisted_validated_bundle(request: dict[str, Any]) -> Path | None:
     return candidate if candidate.is_file() else None
 
 
+def _lv_pdf_dependency_progress(
+    request: dict[str, Any], bundle_path: Path, video_output_dir: Path,
+    complete_transcripts: list[dict[str, Any]],
+) -> dict[str, Any] | None:
+    """Join a cached semantic dependency to the exact current video receipt.
+
+    The semantic bundle describes content, not a forever-current queue state.
+    Never advance publication here or replace a semantic relationship decision.
+    """
+    bundle = json.loads(bundle_path.read_text(encoding="utf-8"))
+    items = bundle.get("items") or []
+    relation = items[0].get("episode_relationship") if items else None
+    if not isinstance(relation, dict) or relation.get("primary_source_status") != "pending":
+        return None
+    related = relation.get("related_source_part") or {}
+    candidates = (request.get("episode_relationship_contract") or {}).get("candidates") or []
+    matches = [row for row in candidates if all(
+        row.get(key) == related.get(key) for key in ("identity", "version_key")
+    )]
+    if len(matches) != 1:
+        raise DailyError("PDF primary source candidate binding is unresolved")
+    candidate = matches[0]
+    manifest = json.loads((video_output_dir / "manifest.json").read_text(encoding="utf-8"))
+    matches = [row for row in (manifest.get("items") or {}).values()
+               if row.get("provider_identity_sha256") == candidate["identity"]
+               and all(row.get(key) == candidate.get(key)
+                       for key in ("path", "name", "size", "modified_at"))]
+    if len(matches) != 1:
+        raise DailyError("PDF primary source runtime binding is unresolved")
+    item = matches[0]
+    base = {"primary_source_identity": item["identity"],
+            "primary_source_version_key": item["version_key"],
+            "related_source_part": candidate}
+    for transcript in complete_transcripts:
+        if (transcript.get("identity") == item["identity"]
+                and transcript.get("version_key") == item["version_key"]):
+            return {**base, "requires_relationship_review": True,
+                    "primary_source_status": "complete", "transcript": transcript}
+    claim_path = video_output_dir / "claims" / f"lv_transfer_{item['version_key']}.json"
+    claim_bytes = claim_path.read_bytes()
+    claim = json.loads(claim_bytes)
+    if (claim.get("source_identity") != item["identity"]
+            or claim.get("source_version_key") != item["version_key"]):
+        raise DailyError("PDF primary source claim binding is invalid")
+    base.update({"claim_path": str(claim_path.resolve()),
+                 "claim_sha256": hashlib.sha256(claim_bytes).hexdigest()})
+    if (claim.get("status") == "blocked" and claim.get("reconciliation_status")
+            == "exact_private_copy_absent_after_bounded_retry"):
+        return {**base, "requires_relationship_review": True,
+                "primary_source_status": "unavailable",
+                "primary_source_failure": {"receipt_reconciled": True,
+                    "code": claim["reconciliation_status"],
+                    "stage": claim.get("stage") or "cloud_transfer_confirmation"}}
+    deadline = claim.get("next_poll_not_before")
+    if claim.get("status") != "waiting_cloud_transfer_receipt" or not deadline:
+        raise DailyError("PDF primary source requires exact reconciliation, not a renewed wait")
+    return {**base, "requires_relationship_review": False,
+            "primary_source_status": "pending", "stage": claim["stage"],
+            "next_poll_not_before": deadline}
+
+
 def _transcript_audit_contract(state: dict[str, Any]) -> dict[str, Any]:
     """Describe the exact character thirds consumed by transcript audit."""
 
@@ -1507,10 +1568,9 @@ def _classified_source(name: str, runner):
             ):
                 raise UserActionBlocker(
                     "lv-cloud-transfer-not-materialized",
-                    "百度网盘已两次确认转存，但目标目录和全局精确搜索均无"
-                    "对应文件。外部效果暂未可证实，已保留精确账本并停止自动重试；"
-                    "如当前任务有明确代理接管授权，由代理执行一次受限修复，"
-                    "不要求用户代做。",
+                    "转存点击已达到本对象的重试边界，但尚无成功回执，目标目录和"
+                    "全局精确搜索均未找到文件。这不是已确认转存，也不是百度权限"
+                    "不足；外部结果仍不确定，保留账本并停止追加点击，只读对账。",
                 ) from exc
             if message == "Lv cloud transfer was rejected by provider":
                 raise UserActionBlocker(
@@ -2028,6 +2088,9 @@ def _lv_transfer_blocked_item_projection(
                 claim.get("reconciliation_status") or ""
             ),
             "trigger_attempt": int(claim.get("trigger_attempt") or 0),
+            "trigger_attempt_maximum": int(claim.get("trigger_attempt_maximum") or 2),
+            "provider_outcome": str(claim.get("provider_outcome") or "unknown"),
+            "authorized_recovery_consumed": claim.get("authorized_recovery_consumed") is True,
             "side_effect_uncertain": side_effect_uncertain,
         })
     blocked_items.sort(
@@ -2867,6 +2930,21 @@ class DailyRuntime:
                 ),
             }
             bundle_path = _persisted_validated_bundle(semantic_request)
+            primary_progress = None
+            if bundle_path is not None and ingest["media_type"] == "pdf":
+                primary_progress = _lv_pdf_dependency_progress(
+                    request, bundle_path, self.args.video_output_dir,
+                    complete_video_transcripts,
+                )
+                if primary_progress and primary_progress["requires_relationship_review"]:
+                    semantic_request["primary_source_readback"] = primary_progress
+                    semantic_request["required_relationship_action"] = (
+                        "Reassess only the pending relationship against this exact "
+                        "primary readback; preserve source claims and evidence. "
+                        "Use the evidence-limited PDF fallback when the primary is "
+                        "unavailable; never claim the full video was reviewed."
+                    )
+                    bundle_path = None
             reused_bundle = bundle_path is not None
             if bundle_path is None:
                 try:
@@ -2911,6 +2989,12 @@ class DailyRuntime:
                     suppressed += 1
                     continue
                 if relationship["route"] == "waiting_primary_source":
+                    primary_progress = _lv_pdf_dependency_progress(
+                        request, bundle_path, self.args.video_output_dir,
+                        complete_video_transcripts,
+                    )
+                    if not primary_progress or primary_progress["requires_relationship_review"]:
+                        raise DailyError("PDF relationship still pending after primary state changed")
                     waiting += 1
                     waiting_items.append({
                         "identity": identity,
@@ -2926,8 +3010,11 @@ class DailyRuntime:
                             "retryable": True,
                         },
                         "next_poll_not_before": (
-                            _next_source_poll_not_before()
+                            primary_progress["next_poll_not_before"]
                         ),
+                        "primary_source_readback": primary_progress,
+                        "source_acquisition": "completed",
+                        "status_explanation": "PDF已取得；待主来源回执核对，不是等待PDF下载",
                         "related_source_part": relationship.get(
                             "related_source_part"
                         ),
@@ -3138,10 +3225,9 @@ class DailyRuntime:
                         item,
                         blocker_key="lv-cloud-transfer-not-materialized",
                         action=(
-                            "百度网盘已两次确认转存，但目标目录和全局精确搜索均无"
-                            "对应文件。该外部效果暂未可证实，本次运行已停止自动重试并"
-                            "保留精确账本；如果当前任务已有明确代理接管授权，应由代理执行"
-                            "一次受限修复，不要求用户代做。"
+                            "转存点击已达到本对象的重试边界，但尚无成功回执，目标目录和"
+                            "全局精确搜索均未找到文件。这不是已确认转存，也不是百度权限"
+                            "不足；外部结果仍不确定，保留账本并停止追加点击，只读对账。"
                         ),
                     ) from exc
                 if str(exc) == "Lv cloud transfer was rejected by provider":

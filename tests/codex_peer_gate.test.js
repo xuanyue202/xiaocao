@@ -1,13 +1,76 @@
 const assert = require("node:assert/strict");
 const test = require("node:test");
 
-const { discoverPeers } = require("../scripts/codex_peer_gate.js");
+const { discoverPeers, scheduledAutomationIdentity } = require("../scripts/codex_peer_gate.js");
+const fs = require("node:fs");
+const os = require("node:os");
+const path = require("node:path");
 
 const AUTOMATION_ID = "xiaocao-kol-hourly-low-bandwidth-operation";
 const CWD = "/Users/xuanyue202/Documents/project/xiaocao";
 const HOST = "MacBook-Pro-6.local";
 const NOW_SECONDS = 2_000_000_000;
 const LOOKBACK_SECONDS = 12 * 60 * 60;
+
+test("reads an active task hidden by an empty preview instead of passing", async () => {
+  const id = "hidden-active";
+  const { requestFn } = fixture(new Map([[null, { data: [], nextCursor: null }]]),
+    new Map([[id, thread(id, { preview: "", turns: [automationTurn("running", "inProgress")] })]]));
+  const result = await discoverPeers({
+    server: { host: HOST, stderr: "" }, requestFn,
+    automationId: AUTOMATION_ID, currentThreadId: "current", cwd: CWD,
+    expectedHost: HOST, nowSeconds: NOW_SECONDS,
+    hiddenCandidates: [candidate(id)], readTaskComplete: () => false,
+  });
+  assert.equal(result.gate_result, "no_op");
+  assert.equal(result.authoritative_peer_thread_id, id);
+});
+
+test("recognizes a scheduler-origin output with no user prompt", async () => {
+  const id = "scheduled";
+  const { requestFn } = fixture(new Map([[null, { data: [], nextCursor: null }]]),
+    new Map([[id, thread(id, { preview: "", turns: [unrelatedTurn("running")] })]]));
+  const result = await discoverPeers({
+    server: { host: HOST, stderr: "" }, requestFn,
+    automationId: AUTOMATION_ID, currentThreadId: "current", cwd: CWD,
+    expectedHost: HOST, nowSeconds: NOW_SECONDS,
+    hiddenCandidates: [{ ...candidate(id), threadSource: "automation" }],
+    readScheduledIdentity: () => AUTOMATION_ID, readTaskComplete: () => false,
+  });
+  assert.equal(result.gate_result, "no_op");
+});
+
+test("scheduler identity is session-bound and only accepted before agent tool work", () => {
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), "kol-peer-test-"));
+  const file = path.join(directory, "rollout.jsonl");
+  const meta = { type: "session_meta", payload: { id: "scheduled", cwd: CWD,
+    source: "vscode", thread_source: "automation" } };
+  const prompt = { type: "response_item", payload: { type: "function_call_output",
+    namespace: "codex_app", name: "automation_update",
+    output: `Automation: KOL\nAutomation ID: ${AUTOMATION_ID}\n` } };
+  const write = (rows) => fs.writeFileSync(file, rows.map(JSON.stringify).join("\n"));
+  try {
+    write([meta, prompt]);
+    assert.equal(scheduledAutomationIdentity(file, "scheduled", CWD), AUTOMATION_ID);
+    assert.equal(scheduledAutomationIdentity(file, "other", CWD), null);
+    write([meta, { type: "response_item", payload: { type: "custom_tool_call" } }, prompt]);
+    assert.equal(scheduledAutomationIdentity(file, "scheduled", CWD), null);
+  } finally { fs.rmSync(directory, { recursive: true }); }
+});
+
+test("missing identity on a hidden scheduler task fails closed", async () => {
+  const id = "identity-missing";
+  const { requestFn } = fixture(new Map([[null, { data: [], nextCursor: null }]]),
+    new Map([[id, thread(id, { preview: "", turns: [unrelatedTurn("running")] })]]));
+  const result = await discoverPeers({
+    server: { host: HOST, stderr: "" }, requestFn,
+    automationId: AUTOMATION_ID, currentThreadId: "current", cwd: CWD,
+    expectedHost: HOST, nowSeconds: NOW_SECONDS,
+    hiddenCandidates: [{ ...candidate(id), threadSource: "automation" }],
+    readScheduledIdentity: () => null, readTaskComplete: () => false,
+  });
+  assert.equal(result.gate_result, "repair_required");
+});
 
 function candidate(id, { updatedAt = NOW_SECONDS - 60 } = {}) {
   return {

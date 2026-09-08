@@ -7407,6 +7407,9 @@ try {
                         "terminal subscription PDF relationship cannot change"
                     )
                 return {**prior, "idempotent_replay": True}
+            if (prior.get("relationship_sha256") == relationship_sha256
+                    and prior.get("route") == route):
+                return {**prior, "idempotent_replay": True}
         state = {
             "event": "subscription_pdf_relationship_resolved",
             "status": (

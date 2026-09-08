@@ -1736,6 +1736,9 @@ def test_pending_pdf_relationship_waits_for_exact_primary_source(tmp_path):
     assert state["status"] == "waiting"
     assert state["route"] == "waiting_primary_source"
     assert state["primary_source_status"] == "pending"
+    replay = service.record_pdf_relationship(item["identity"], bundle_path=bundle)
+    assert replay["idempotent_replay"] is True
+    assert replay["resolved_at"] == state["resolved_at"]
     assert state["related_source_part"] == {
         "identity": normalized_video["identity"],
         "version_key": normalized_video["version_key"],
@@ -4650,7 +4653,7 @@ def test_one_runner_resumes_after_analysis_failure_without_repeating_browser_or_
     tmp_path,
 ):
     private_url = "https://pan.baidu.com/s/private-share-token"
-    private_code = "a1b2"
+    private_code = "z9q8"  # Non-hex: a SHA-256 substring is not a secret leak.
     downloaded = tmp_path / "12.png"
     downloaded.write_bytes(b"\x89PNG\r\nbrowser-downloaded-real-shape")
     entry = _representative_subscription_entries()[0]

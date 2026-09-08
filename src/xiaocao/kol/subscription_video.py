@@ -4340,7 +4340,7 @@ class SubscriptionVideoService:
                     blocker_key="lv-cloud-transfer-not-materialized",
                     failure_reason=str(
                         claim.get("failure_reason")
-                        or "two confirmed transfer attempts produced no exact "
+                        or "bounded native click attempts produced no verified "
                         "private copy"
                     ),
                     reconciliation_status=str(
@@ -4404,7 +4404,7 @@ class SubscriptionVideoService:
                         claim,
                         blocker_key="lv-cloud-transfer-not-materialized",
                         failure_reason=(
-                            "two confirmed transfer attempts produced no exact "
+                            "bounded native click attempts produced no verified "
                             "private copy"
                         ),
                         reconciliation_status=(
