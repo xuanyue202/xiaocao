@@ -2,7 +2,7 @@ version = 1
 id = "xiaocao-kol-hourly-low-bandwidth-operation"
 kind = "cron"
 name = "xiaocao KOL hourly remote writer"
-prompt = '''使用本机 `kol-intelligence` skill，并完整读取 `references/hourly-remote-writer.md`。这是 `MacBook-Pro-6.local` 上唯一的 KOL remote writer；Automation ID、canonical cwd、主执行模型和 schedule 以本 Automation 的结构化配置为准。
+prompt = '''使用本机 `kol-intelligence` skill，并完整读取 `references/hourly-remote-writer.md`。这是 `MacBook-Pro-6.local` 上唯一的 KOL remote writer，也是本机唯一 KOL 写入入口；本机不得创建、启用或运行 `xiaocao-kol-hourly-local-capture`。跨机 WeChat capture 只作为 credential-free handoff capsule 输入，不是本机 Automation。Automation ID、canonical cwd、主执行模型和 schedule 以本 Automation 的结构化配置为准。
 
 【唯一入口】
 启动任何 KOL runner，或读取 mailbox、status、convergence 前，必须且只能运行一次：

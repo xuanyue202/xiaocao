@@ -114,10 +114,13 @@ put context retrieval or a model call ahead of that two-minute authority.
 
 The sparse Automation runs only at 10:25, 10:55, 13:25 and 13:55. Its first
 business command is `PYTHONPATH=src .venv/bin/python scripts/kol_trading_tick.py
-poll`. The local capture and remote sole-writer pipelines own source discovery,
-handoff, analysis and publication receipts; raw capture is never trading
-authority. A completed production publication receipt remains pending until the
-next sparse checkpoint consumes it with current account and market facts.
+poll`. On the `/Users/xuanyue202` remote host, the remote writer is the sole KOL
+write ingress and owns post-handoff analysis plus production publication. A
+cross-machine WeChat capture is only an upstream credential-free capsule; no
+local-capture Automation may be created or run on this host. The sparse task
+discovers no source, and raw capture is never trading authority. A completed
+production publication receipt remains pending until the next sparse checkpoint
+consumes it with current account and market facts.
 
 `no_op` ends silently and does not justify journal, broker, MCP or model reads.
 `run` identifies one immutable owner-bound claim and whether source judgment is

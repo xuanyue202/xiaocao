@@ -8,9 +8,10 @@ Read this file only when creating, changing or auditing Xiaocao schedules.
 - Book-B Founder live morning: 09:20 trading weekdays; independent of paper execution.
 - Morning execution: 09:25 trading weekdays.
 - Opening dense: 09:35, 09:45, 09:55.
-- Sparse monitor: 10:25, 10:55, 13:25, 13:55 only. KOL source discovery and
-  durable handoff remain in the local-capture/remote-writer pipeline; the next
-  sparse checkpoint consumes completed publication receipts. See
+- Sparse monitor: 10:25, 10:55, 13:25, 13:55 only. On the `/Users/xuanyue202`
+  remote host, the remote writer is the sole KOL write ingress; cross-machine
+  capture is only upstream capsule input and is never created or run there. The
+  next sparse checkpoint consumes completed publication receipts. See
   `kol-trading-judgment.md` for claim, acknowledgement and owner-recovery rules.
   It never acquires 14:55 authority.
 - Risk precheck: 14:25.

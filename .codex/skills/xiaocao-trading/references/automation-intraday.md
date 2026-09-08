@@ -11,9 +11,10 @@ python3 scripts/show_journal.py --date today
 ```
 
 The existing sparse task runs only at 10:25, 10:55, 13:25 and 13:55, and starts
-with the local `scripts/kol_trading_tick.py poll` gate. Source discovery and
-durable handoff belong to the KOL capture/remote-writer pipeline; do not create
-a five-minute Codex polling loop. Read
+with the local `scripts/kol_trading_tick.py poll` gate. On this remote host the
+remote writer is the sole KOL write ingress; cross-machine capture is only an
+upstream capsule, never a local Automation. The sparse task discovers no source
+and must not create a five-minute Codex polling loop. Read
 [kol-trading-judgment.md](kol-trading-judgment.md); `no_op` ends silently before
 journal/MCP/broker reads. A claimed `run` retains the following independent
 paper/live checkpoints and the exact token acknowledgement.

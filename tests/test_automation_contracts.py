@@ -192,6 +192,9 @@ def test_intraday_automations_use_explicit_china_market_wall_clock() -> None:
         "BYHOUR=10,13;BYMINUTE=25,55"
     )
     assert "runs only the four original sparse checkpoints" in sparse["prompt"]
+    assert "sole KOL writer and sole KOL write ingress" in sparse["prompt"]
+    assert "Never create, enable, run, or substitute a local-capture Automation here" in sparse["prompt"]
+    assert "This task discovers no KOL source" in sparse["prompt"]
     assert "exactly one task-status read" in sparse["prompt"]
     assert "end immediately without waiting" in sparse["prompt"]
 
@@ -224,8 +227,9 @@ def test_kol_local_automation_uses_lianghui_mailbox_without_task_injection() -> 
 
     assert automation["id"] == "xiaocao-kol-hourly-local-capture"
     assert automation["name"] == "xiaocao KOL hourly local capture"
-    assert automation["target"]["project_id"] == "c5acdaa7-f8a7-42d4-96fe-bf979a6b7415"
-    assert automation["cwds"] == ["/Users/xuanyue202/Documents/project/xiaocao"]
+    assert automation["target"]["project_id"] == "local-1ff740a1b48a4503d6129896acb205d5"
+    assert automation["cwds"] == ["/Users/bytedance/coding/xiaocao"]
+    assert "never create, update, enable, or run it on `MacBook-Pro-6.local`" in automation["prompt"]
     assert "daily_lianghui_mailbox_input_required" in automation["prompt"]
     assert "send_mailbox_message" in automation["prompt"]
     assert "get_mailbox_message" in automation["prompt"]
@@ -243,6 +247,12 @@ def test_kol_remote_writer_automation_is_a_thin_fail_closed_bootstrap() -> None:
     assert automation["cwds"] == [
         "/Users/xuanyue202/Documents/project/xiaocao"
     ]
+    assert "本机唯一 KOL 写入入口" in prompt
+    assert "本机不得创建、启用或运行 `xiaocao-kol-hourly-local-capture`" in prompt
+    local_capture = _automation("xiaocao-kol-hourly")
+    assert local_capture["id"] != automation["id"]
+    assert local_capture["target"] != automation["target"]
+    assert local_capture["cwds"] != automation["cwds"]
     assert automation["rrule"] == (
         "RRULE:FREQ=DAILY;"
         "BYHOUR=8,10,12,14,17,18,22;"
