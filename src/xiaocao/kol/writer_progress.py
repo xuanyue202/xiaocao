@@ -1594,6 +1594,9 @@ def _canonical_xiaocao_wechat_source_repair_profile(
         str(context.get("code") or ""),
         str(context.get("stage") or ""),
     )
+    if (declared_profile == "kol_xiaocao_wechat_live_upload_foreground"
+            and failure == ("transport_error", "upload_foreground_failed", "upload_foreground")):
+        return declared_profile
     if (
         declared_profile == "kol_xiaocao_wechat_live_native_playback_window_close"
         and failure == (
