@@ -581,6 +581,7 @@ def test_wechat_mini_program_route_binds_media_to_the_exact_live_id(tmp_path, cl
         XIAOCAO_PLAYBACK_ROUTE_WECHAT_MINI_PROGRAM
     )
     assert item["media_request_observed"] is True
+    assert item["source_resource_id"] == "l_6a9531fbe4b0694c35440d7e"
     assert item["observed_page_state"] == page_state
     assert item["playback_window_closed"] is (closed is True)
 
