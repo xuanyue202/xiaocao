@@ -138,3 +138,12 @@ changed Automation, verify next run/no duplicate, and never alter the remote wri
 The append-only local ledger resumes only unfinished capture/upload/handoff
 work. A restart or replay reconciles existing claims and never repeats a cloud
 upload with an uncertain side effect.
+
+## Expired ungenerated entries
+
+User policy: skip entries older than 72 hours that still have no observed media.
+The subscription expiry gate retires unarmed or ledger-proven unbound idle waits
+as `expired`, retaining identity and receipts. Never launch an expired entry or
+report it completed. Bound source jobs, media candidates, downloads, uploads and
+handoffs remain subject to exact-job reconciliation, not age-based deletion.
+Provider failure is a hypothesis unless independently verified.
