@@ -67,8 +67,13 @@ node scripts/codex_peer_gate.js
 
 The helper scans descending `thread/list` pages through the authoritative
 12-hour `updatedAt` window. A peer is top-level `source=vscode`, has no parent,
-and has the exact Automation ID in its preview and first turn; inherited or
-quoted prompts do not qualify. `task_complete=true` is the durable terminal
+and has the exact Automation ID in its preview and first turn, or in the
+session-bound scheduler's initial `codex_app.automation_update` output before
+Agent tool work. Paginated Automation tasks can have empty preview/user text;
+the helper supplements discovery from the read-only local task index, then
+uses exact `thread/read` and rollout identity/terminal checks. Missing scheduled
+identity is a repair, never proof that no peer exists. Inherited or quoted
+prompts do not qualify. `task_complete=true` is the durable terminal
 fence. Any matching incomplete peer returns `no_op`, regardless of whether the
 app-server snapshot says `inProgress`, `interrupted`, `failed`, or `completed`;
 this preserves peer ownership across compaction and closes the

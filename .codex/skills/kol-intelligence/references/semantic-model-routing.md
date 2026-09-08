@@ -91,6 +91,32 @@ profile is authoritative; the following explains the required shape:
    only after full evidence review; unavailable facts never authorize fabricated
    validation or a parent-model fallback.
 
+### Independent alert qualification
+
+When the extraction payload declares
+`alert_qualification_contract_version=kol-alert-qualification-v1`, add a sibling
+`alert_qualification` object to the semantic draft. Do not infer reminder
+eligibility from `content_value`, fact-check confidence, instrument mapping,
+household context, or Book outcome.
+
+Review every claim referenced by `actionable_signals` or `market_outlook`
+exactly once. Bind each review to its `claim_id`; classify currentness as
+`current`, `pure_confirmation`, `expired`, `historical`, `methodology_only`, or
+`not_current_investment_content`; and explain the classification from source
+evidence. A `current` review carries one or more accepted live bases
+(`market_posture`, `buy`, `sell`, `hold`, `position_boundary`, `direction`, or
+`actionable_trigger`); every other currentness state carries an empty base list.
+
+If any reviewed claim is `current`, both qualification status and content tier
+must be `alert_eligible`, and `content_value.alert_basis` equals the union of
+the current reviews' live bases. Direction continuity does not demote a new
+current event. `report_only` is legal only when no review is current and
+`no_alert_basis` is `historical_initialization`,
+`expired_intraday_commentary`, `report_correction`, `methodology_only`,
+`pure_confirmation`, or `no_current_investment_content`. Missing verification,
+low confidence, unmapped instruments, and Book `no_trade` remain reader-visible
+execution boundaries; they are not alert-currentness states.
+
 ## Validate and publish
 
 5. The parent runs the actual decision consumer's pure item validation and the

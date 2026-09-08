@@ -228,7 +228,7 @@ def _decision_inputs(root: Path, now: datetime) -> tuple[str, list[str]]:
             ))
             snapshot = kol_policy._snapshot(record, "B", runtime, now)
             fingerprints.append([runtime, record["record_sha256"]])
-            if runtime in runtimes and snapshot["status"] in ("expired", "needs_refresh"):
+            if runtime in runtimes and snapshot["status"] == "expired":
                 expired.append(runtime + ":" + record["record_sha256"])
     return _digest(sorted(fingerprints)), expired
 

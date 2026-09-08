@@ -3800,6 +3800,20 @@ class SubscriptionVideoService:
             == readback_evidence_sha256
         ):
             return claim
+        if claim.get("authorized_recovery_consumed") is True:
+            # An absence readback is evidence, not fresh authority for a
+            # fourth click. Preserve the explicit one-recovery boundary.
+            deadline = claim.get("next_poll_not_before")
+            if deadline and self._time() < datetime.fromisoformat(str(deadline)):
+                return claim
+            return self._record_transfer_blocker(
+                receipt_name,
+                {**claim, "readback_evidence_sha256": readback_evidence_sha256,
+                 "reconciled_absent_at": self._time().isoformat(timespec="seconds")},
+                blocker_key="lv-cloud-transfer-not-materialized",
+                failure_reason="operator-authorized recovery exhausted without a verified private copy",
+                reconciliation_status="exact_private_copy_absent_after_bounded_retry",
+            )
         reconciled = {
             **claim,
             "event": "lv_cloud_transfer_absence_reconciled",
@@ -4340,7 +4354,7 @@ class SubscriptionVideoService:
                     blocker_key="lv-cloud-transfer-not-materialized",
                     failure_reason=str(
                         claim.get("failure_reason")
-                        or "two confirmed transfer attempts produced no exact "
+                        or "bounded native click attempts produced no verified "
                         "private copy"
                     ),
                     reconciliation_status=str(
@@ -4404,7 +4418,7 @@ class SubscriptionVideoService:
                         claim,
                         blocker_key="lv-cloud-transfer-not-materialized",
                         failure_reason=(
-                            "two confirmed transfer attempts produced no exact "
+                            "bounded native click attempts produced no verified "
                             "private copy"
                         ),
                         reconciliation_status=(

@@ -432,14 +432,14 @@ def test_stale_quote_cannot_sell_on_valid_kol_decision(tmp_path):
         _exit_run(tmp_path, status_changes={"market_guard_observed_at": NOW - timedelta(minutes=6)})
 
 
-def test_needs_refresh_is_neutral_with_original_decision_id(tmp_path):
+def test_old_current_check_keeps_reviewed_policy_until_explicit_expiry(tmp_path):
     config = _morning(tmp_path)
     _publish(config.policy_root, MORNING - timedelta(minutes=16), scale=0)
     seen = []
     receipt = run_book_b_live_morning(config, execute=_execute_capture(seen), now=lambda: MORNING, risk_provider=_risk)
-    assert receipt.status == "completed" and len(seen) == 1
+    assert receipt.status == "no_action" and seen == []
     assert receipt.policy_consumptions[0]["decision_id"] == "d1"
-    assert receipt.policy_consumptions[0]["reason"] == "KOL_POLICY_NEEDS_REFRESH"
+    assert receipt.policy_consumptions[0]["reason"] == "KOL_POLICY_VALIDATED"
 
 
 def test_recovery_of_scaled_intent_keeps_original_hash_when_policy_relaxes(tmp_path):

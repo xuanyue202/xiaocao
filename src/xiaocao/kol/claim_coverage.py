@@ -11,6 +11,7 @@ from ._shared import DecisionError
 
 
 CONTRACT_VERSION = "kol-investment-claims-v1"
+ALERT_QUALIFICATION_CONTRACT_VERSION = "kol-alert-qualification-v1"
 IMPORTANCE_BASES = {
     "explicit_recommendation",
     "portfolio_or_risk_guidance",
@@ -152,6 +153,9 @@ def build_claim_extraction_request(
     segments = evidence_segments(text, evidence_sha256=actual_sha256)
     return {
         "contract_version": CONTRACT_VERSION,
+        "alert_qualification_contract_version": (
+            ALERT_QUALIFICATION_CONTRACT_VERSION
+        ),
         "evidence_path": str(path),
         "evidence_sha256": actual_sha256,
         "goal": (
@@ -161,6 +165,7 @@ def build_claim_extraction_request(
         "mandatory_order": [
             "first_pass_complete_investment_thesis_inventory",
             "second_pass_independent_full_evidence_coverage_audit",
+            "independent_currentness_and_alert_qualification_review",
             "fact_and_background_supplement",
             "reader_briefing",
             "household_and_book_routing",
@@ -208,6 +213,37 @@ def build_claim_extraction_request(
             ),
         },
         "required_output_schema": {
+            "alert_qualification": {
+                "contract_version": ALERT_QUALIFICATION_CONTRACT_VERSION,
+                "status": "alert_eligible or report_only; must match content_value.tier",
+                "reason": "自然中文的独立提醒资格结论",
+                "no_alert_basis": (
+                    "required only for report_only: historical_initialization, "
+                    "expired_intraday_commentary, report_correction, "
+                    "methodology_only, pure_confirmation, or "
+                    "no_current_investment_content"
+                ),
+                "claim_reviews": [
+                    {
+                        "claim_id": (
+                            "every claim referenced by actionable_signals or "
+                            "market_outlook exactly once"
+                        ),
+                        "currentness": (
+                            "current, pure_confirmation, expired, historical, "
+                            "methodology_only, or not_current_investment_content"
+                        ),
+                        "alert_bases": (
+                            "one or more accepted live bases only when current; "
+                            "empty otherwise"
+                        ),
+                        "reason": (
+                            "基于来源证据的当前性判断；不得以未核验、低置信、"
+                            "标的未映射或Book no_trade代替当前性判断"
+                        ),
+                    }
+                ],
+            },
             "investment_thesis_inventory": {
                 "contract_version": CONTRACT_VERSION,
                 "evidence_sha256": actual_sha256,

@@ -463,6 +463,16 @@ work and never authorizes replaying publication, reminder, or Book side effects.
   evidence SHA-256; publication then uses one source-neutral event and ordered
   mixed-media `source_parts`. Do not publish both a companion PDF and its video
   independently. Unresolved relation evidence remains pending, not guessed.
+- A cached PDF `primary_source_status=pending` is a semantic snapshot, not a
+  current provider state. Join its exact provider identity/version and metadata
+  to the video manifest and bound claim. Preserve the provider deadline and
+  unchanged relationship timestamp. A verified transcript or reconciled primary
+  failure invalidates the pending relationship for semantic review: reuse the
+  PDF evidence and claims, resolve the existing complete-primary or fallback
+  route, and explicitly limit a fallback to the PDF's coverage. Missing or
+  mismatched runtime bindings require Agent repair. Report PDF acquisition,
+  relationship review, and publication separately; do not renew a synthetic
+  wait or describe native click attempts as provider-confirmed transfers.
 - Route Lv claims by product semantics, never by PDF/video type alone. The
   `会员直播` product is time-sensitive current decision evidence and follows the
   complete transcript -> current-fact validation -> one event report ->

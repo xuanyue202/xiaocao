@@ -127,14 +127,21 @@ def test_kol_scale_and_skipped_slots_leave_cash_without_refill(runtime, scale):
     assert len([row for row in positions if row["book"] == "A"]) == len(b)
 
 
-@pytest.mark.parametrize("age,status", [(timedelta(minutes=16), "needs_refresh"),
-                                       (timedelta(hours=3), "expired")])
-def test_expired_or_stale_checks_are_neutral_with_decision_id(runtime, age, status):
+def test_old_current_checks_remain_active_until_explicit_expiry(runtime):
     root, live, pr, run = runtime
-    publish(root, scale=0, skips=CODES, asof=NOW - age)
+    publish(root, scale=0, skips=CODES, asof=NOW - timedelta(minutes=16))
+    positions, claim, terminal = run()
+    assert terminal["buy_count"] == 0 and positions == []
+    assert claim["kol_decision"]["status"] == "validated"
+    assert claim["kol_decision"]["decision_id"] == "reviewed-paper-1"
+
+
+def test_expired_policy_is_neutral_with_decision_id(runtime):
+    root, live, pr, run = runtime
+    publish(root, scale=0, skips=CODES, asof=NOW - timedelta(hours=3))
     positions, claim, terminal = run()
     assert terminal["buy_count"] == 3
-    assert claim["kol_decision"]["status"] == status
+    assert claim["kol_decision"]["status"] == "expired"
     assert claim["kol_decision"]["decision_id"] == "reviewed-paper-1"
     assert claim["supporting_health"] == "degraded"
     assert all(slot["final_shares"] == slot["baseline_shares"] for slot in claim["slots"])
