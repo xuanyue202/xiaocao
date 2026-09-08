@@ -1242,6 +1242,7 @@ class XiaocaoWechatLiveSubscription:
             )
         # A current live stream is not a captured finite replay. Keep the
         # source waiting without demanding the post-capture window cleanup.
+        # Preserve observed media evidence even while replay activation is false.
         finite_replay_possible = page_state != "live"
         activated = (
             response.get("activated") is True
