@@ -2214,6 +2214,105 @@ def test_xiaocao_validated_bundle_uses_message_handoff_binding(
     assert validation["source_identity"] == capture_job_id
 
 
+def test_xiaocao_resume_reuses_persisted_validated_bundle_without_stdin(
+    tmp_path,
+    monkeypatch,
+):
+    xiaocao_output = tmp_path / "xiaocao"
+    handoff_dir = xiaocao_output / "imported_handoffs"
+    handoff_dir.mkdir(parents=True)
+    handoff_id = "a" * 64
+    capture_job_id = "kol-capture-current"
+    job_id = "kol-netdisk-current"
+    transcript_path = tmp_path / "transcript.txt"
+    transcript_path.write_text("测试逐字稿", encoding="utf-8")
+    transcript_sha256 = hashlib.sha256(transcript_path.read_bytes()).hexdigest()
+    handoff = {
+        "schema_version": 1,
+        "handoff_id": handoff_id,
+        "capture_job_id": capture_job_id,
+        "netdisk_job_id": job_id,
+        "media_sha256": "b" * 64,
+        "media_basename": "current-compressed.mp4",
+        "published_at": "2026-08-07T18:00:00+08:00",
+        "large_payload_local_bytes": 0,
+    }
+    handoff["handoff_sha256"] = _canonical_sha256(handoff)
+    (handoff_dir / f"{capture_job_id}.json").write_text(
+        json.dumps(handoff),
+        encoding="utf-8",
+    )
+    artifact_dir = xiaocao_output / "semantic_requests" / capture_job_id
+    artifact_dir.mkdir(parents=True)
+    bundle_path = artifact_dir / "validated_bundle.json"
+    bundle_path.write_text("{}", encoding="utf-8")
+    result_path = tmp_path / "decision-result.json"
+    result_path.write_text(
+        json.dumps({
+            "status": "completed",
+            "items": [{"daily_terminal": {"kind": "source_event"}}],
+        }),
+        encoding="utf-8",
+    )
+    consumed: dict[str, object] = {}
+
+    class FakeNetdisk:
+        @staticmethod
+        def status(requested_job_id):
+            assert requested_job_id == job_id
+            return {
+                "status": "verified",
+                "transcript_path": str(transcript_path),
+                "transcript_sha256": transcript_sha256,
+            }
+
+        @staticmethod
+        def decide(requested_job_id, **_kwargs):
+            assert requested_job_id == job_id
+            return {"decision_result_path": str(result_path)}
+
+    class FakeService:
+        def __init__(self, *_args, **_kwargs):
+            self.netdisk = FakeNetdisk()
+
+    monkeypatch.setattr(kol_daily_script, "XiaocaoLiveService", FakeService)
+    monkeypatch.setattr(
+        kol_daily_script,
+        "_read_agent_path",
+        lambda *_args, **_kwargs: pytest.fail("persisted bundle must avoid stdin"),
+    )
+    monkeypatch.setattr(
+        kol_daily_script,
+        "_require_canonical_semantic_artifact",
+        lambda path, _request: path,
+    )
+    monkeypatch.setattr(
+        kol_daily_script,
+        "_record_structured_input_consumption",
+        lambda request, **kwargs: consumed.update(request=request, **kwargs),
+    )
+    monkeypatch.setattr(
+        kol_daily_script,
+        "validate_decision_bundle",
+        lambda *_args, **_kwargs: {"items": [{}]},
+    )
+    runtime = DailyRuntime.__new__(DailyRuntime)
+    runtime.args = SimpleNamespace(
+        xiaocao_output_dir=xiaocao_output,
+        decision_output_dir=tmp_path / "decisions",
+        enrichment_session="xiaocao-lv-subscription",
+        opencli_profile=None,
+    )
+    runtime._pipeline = lambda _context: object()
+
+    result = runtime.xiaocao(handoff_id=handoff_id)
+
+    assert result["status"] == "completed"
+    assert consumed["field"] == "bundle_path"
+    assert consumed["path"] == bundle_path.resolve()
+    assert consumed["request"]["artifact_dir"] == str(artifact_dir.resolve())
+
+
 def test_capture_local_cli_follows_exact_cloud_handoff_in_same_process(
     tmp_path,
     monkeypatch,
