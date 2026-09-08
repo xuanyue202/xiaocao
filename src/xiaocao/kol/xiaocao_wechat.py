@@ -1265,11 +1265,12 @@ class XiaocaoWechatLiveSubscription:
         request["launch_resolver_command"] = [
             ".venv/bin/python", "scripts/kol_xiaoetong_launch.py",
             "--source-url", item["source_url"],
+            "--subscription-id", item["identity"],
         ]
         request["instructions"] = (
             "First run launch_resolver_command with PYTHONPATH=src; it is "
             "read-only and validates the merchant-issued WeChat launch link. "
-            "Return its page_url with page_state=unknown, then let the runner "
+            "Return its generated browser_response unchanged, then let the runner "
             "arm before executing its one launch_command. If no launch plan is "
             "available, resolve the supplied URL only to a stable identity. "
         ) + request["instructions"]

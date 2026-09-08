@@ -742,12 +742,17 @@ def test_wechat_mini_program_route_rejects_a_different_live_id(tmp_path):
 def test_transcribed_resolver_identity_is_rejected_before_arming(tmp_path):
     capture = _CaptureDriver()
     page = "https://app123.h5.xiaoeknow.com/v2/course/alive/l_wrong"
-    subscription = XiaocaoWechatLiveSubscription(
-        tmp_path, history_reader=lambda: {}, capture_driver=capture, contact=CONTACT,
-        browser_exchange=lambda request: {"action": request["action"],
+    def exchange(request):
+        command = request["launch_resolver_command"]
+        assert command[command.index("--subscription-id") + 1] == "item"
+        assert "browser_response unchanged" in request["instructions"]
+        return {"action": request["action"],
             "subscription_id": request["subscription_id"], "page_url": page,
             "page_state": "unknown", "source_identity": "xiaoetong:app123:l_correct",
-            "live_id": "l_correct"})
+            "live_id": "l_correct"}
+    subscription = XiaocaoWechatLiveSubscription(
+        tmp_path, history_reader=lambda: {}, capture_driver=capture, contact=CONTACT,
+        browser_exchange=exchange)
     with pytest.raises(EnrichmentError, match="resolver response identity"):
         subscription._resolve_page({}, {"identity": "item", "source_url": "https://x.xet.tech/s/a"})
     assert capture.arms == []
