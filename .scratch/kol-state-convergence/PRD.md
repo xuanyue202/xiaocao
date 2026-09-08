@@ -1,6 +1,6 @@
 # KOL 状态收敛修复：2026-09-08
 
-Status: validation in progress
+Status: repaired and validated; old video transfer remains unavailable
 
 ## 第一性原理
 
@@ -56,7 +56,24 @@ handoff/邮箱创建也不代表报告、提醒资格、Book 和 ACK 完成。
 - 国家队成本线：13:15 创建，15:20 尝试，15:56:31 ACK；报告 published，Book no_trade。
 - 9月8日盘前大师班：13:29 创建；原任务完成转录和语义证据绑定修复；
   原 owner 回报 17:12:29 ACK，报告 published、提醒 delivered、Book no_trade。
-- 两篇文章错误的 report_only 判定另交原 owner 原位修复提醒资格；不重发报告/Book/ACK。
+- 两篇文章错误的 report_only 判定由原 owner 原位修复提醒资格：17:33:34 / 17:33:45
+  CAS 更新；Chen 和 FeiFei 均有独立 delivered 回执，重放新增送达为 0。
+  原报告 URL、Book、知识和 ACK 保持不变。
+
+## 5 Why：文章为何已发布却漏提醒
+
+1. 来源包含当前方向与触发判断，但提醒资格被判为 report_only。
+2. 分析把观点延续、未独立核验、标的未映射和 Book no_trade 混成不提醒理由。
+3. 同一草稿同时承载内容价值、事实核验、Book 和提醒判断，边界未独立验证。
+4. canonical acceptance 只检查 no_alert_reason 非空，未核对来源绑定的当前性。
+5. 测试验证发布与送达机制，却没有覆盖该语义降级反例。
+
+修复 6d8612c：新 extraction request 声明 kol-alert-qualification-v1，要求对
+actionable_signals / market_outlook 引用的每条 claim 独立审查当前性和提醒依据。
+存在 current claim 时必须 alert_eligible；事实核验、置信度、标的映射和 Book
+不参与降级。保留合法历史、失效、方法论、纯确认等 report_only 路由。旧请求兼容。
+真实 red→green 覆盖当前方向不得 report_only、缺审查 fail closed、纯确认合法，
+以及 unverified + low confidence + market conflict + no_trade 仍可提醒。
 
 ## 回归与外部边界
 
@@ -74,3 +91,21 @@ handoff/邮箱创建也不代表报告、提醒资格、Book 和 ACK 完成。
 可能在明确第三次恢复已使用后重新放开第四次。真实回归先 red（4 != 3）；
 修复使 consumed operator recovery 在空结果对账后保持 blocked、maximum=3，
 读取事实不产生新的操作授权。该边界不依赖调用者记住另行停手。
+
+## 最终实物与回执验收
+
+- 9月7日视频：第三次点击 17:02:46，保留真实 17:32:46 回执等待窗口。
+  17:33:57 只读核对目标目录和稳定后的全局精确搜索均无匹配；无提供方请求/响应
+  观察，也无视频副本/逐字稿。claim 保持 blocked、3/3、recovery consumed，
+  不自动产生第四次授权。此结果不等于提供方明确拒绝，转存根因尚不能据此确认。
+- PDF：原语义 owner 只修改 episode_relationship 和 quality_review.limitations[2]；
+  主任务验证其余 JSON 完全相同、引文确实存在于 PDF，保留原输入和旧产物副本。
+  原 resume-source-wait 进程消费新 canonical bundle 后退出 0；17:50:59 报告 published，
+  17:51 Book no_trade、提醒 all_recipients delivered、知识 reusable_knowledge，waiting_count=0。
+  报告 ID kr_n46ojlymhaaf7ut7dfvrkl67rsgptzpnsttr7vbr2moudntm2oyq；云端 exact readback
+  验证 published + alert_eligible=true 与同一 PDF evidence/source version。
+- 最终合并验证：350 项 Python 测试通过，14 项 Node peer-gate 测试通过。
+  scoped 命令：pytest tests/test_kol_pdf_dependency.py tests/test_kol_lv_subscription.py
+  tests/test_kol_subscription_video.py tests/test_kol_semantic_bundle.py tests/test_kol_daily.py；
+  node --test tests/codex_peer_gate.test.js。
+- 修复代码已推送：0bfc0bb、801eff5、b0f62bf、6d8612c。保留原交易/知识/test WIP。
