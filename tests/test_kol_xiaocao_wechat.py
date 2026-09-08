@@ -739,6 +739,20 @@ def test_wechat_mini_program_route_rejects_a_different_live_id(tmp_path):
     assert capture.advances == 0
 
 
+def test_transcribed_resolver_identity_is_rejected_before_arming(tmp_path):
+    capture = _CaptureDriver()
+    page = "https://app123.h5.xiaoeknow.com/v2/course/alive/l_wrong"
+    subscription = XiaocaoWechatLiveSubscription(
+        tmp_path, history_reader=lambda: {}, capture_driver=capture, contact=CONTACT,
+        browser_exchange=lambda request: {"action": request["action"],
+            "subscription_id": request["subscription_id"], "page_url": page,
+            "page_state": "unknown", "source_identity": "xiaoetong:app123:l_correct",
+            "live_id": "l_correct"})
+    with pytest.raises(EnrichmentError, match="resolver response identity"):
+        subscription._resolve_page({}, {"identity": "item", "source_url": "https://x.xet.tech/s/a"})
+    assert capture.arms == []
+
+
 def test_h5_playback_state_is_rejected_before_arming(tmp_path):
     payload = _history(
         "[2026-08-13 21:46] 福利官小花四: 8月13日大师班复盘直播："
