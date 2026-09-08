@@ -2901,6 +2901,26 @@ class DailyRuntime:
                     continue
                 if relationship["route"] == "waiting_primary_source":
                     waiting += 1
+                    waiting_items.append({
+                        "identity": identity,
+                        "version_key": str(row.get("version_key") or ""),
+                        "name": str(row.get("name") or ""),
+                        "stage": "waiting_primary_source",
+                        "category": "provider_wait",
+                        "code": "primary_source_pending",
+                        "failure": {
+                            "category": "provider_wait",
+                            "code": "primary_source_pending",
+                            "stage": "waiting_primary_source",
+                            "retryable": True,
+                        },
+                        "next_poll_not_before": (
+                            _next_source_poll_not_before()
+                        ),
+                        "related_source_part": relationship.get(
+                            "related_source_part"
+                        ),
+                    })
                     continue
             context = _lv_publication_context(ingest, bundle_path)
             state = service.decide(
@@ -3189,33 +3209,46 @@ class DailyRuntime:
                 continue
             if state.get("event") != "subscription_video_analysis_input_required":
                 waiting += 1
-                waiting_items.append(
-                    {
-                        key: value
-                        for key, value in {
-                            "identity": str(item.get("identity") or ""),
-                            "version_key": str(
-                                item.get("version_key") or ""
-                            ),
-                            "name": str(item.get("name") or ""),
-                            "author": str(item.get("author") or ""),
-                            "status": str(state.get("status") or "waiting"),
-                            "stage": str(
-                                state.get("stage")
-                                or "cloud_enrichment"
-                            ),
-                            "trigger_attempt": state.get("trigger_attempt"),
-                            "next_poll_not_before": state.get(
-                                "next_poll_not_before"
-                            ),
-                            "reconciliation_status": state.get(
-                                "reconciliation_status"
-                            ),
-                            "failure_reason": state.get("failure_reason"),
-                        }.items()
-                        if value not in (None, "")
-                    }
+                state_status = str(state.get("status") or "waiting")
+                state_stage = str(
+                    state.get("stage") or "cloud_enrichment"
                 )
+                waiting_item = {
+                    key: value
+                    for key, value in {
+                        "identity": str(item.get("identity") or ""),
+                        "version_key": str(item.get("version_key") or ""),
+                        "name": str(item.get("name") or ""),
+                        "author": str(item.get("author") or ""),
+                        "status": state_status,
+                        "stage": state_stage,
+                        "trigger_attempt": state.get("trigger_attempt"),
+                        "next_poll_not_before": state.get(
+                            "next_poll_not_before"
+                        ),
+                        "reconciliation_status": state.get(
+                            "reconciliation_status"
+                        ),
+                        "failure_reason": state.get("failure_reason"),
+                    }.items()
+                    if value not in (None, "")
+                }
+                if waiting_item.get("next_poll_not_before"):
+                    failure_code = (
+                        "transcript_pending"
+                        if state_status
+                        in {"transcript_claimed", "transcript_requested"}
+                        else state_status
+                    )
+                    waiting_item["category"] = "provider_wait"
+                    waiting_item["code"] = failure_code
+                    waiting_item["failure"] = {
+                        "category": "provider_wait",
+                        "code": failure_code,
+                        "stage": state_stage,
+                        "retryable": True,
+                    }
+                waiting_items.append(waiting_item)
                 continue
             semantic_request = {
                     **state,

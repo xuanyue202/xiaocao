@@ -1782,6 +1782,51 @@ class DailyCoordinator:
                     return row
         return None
 
+    @staticmethod
+    def _originating_sweep_for_progress(
+        rows: list[dict[str, Any]],
+        *,
+        source: str,
+        progress: WriterProgress,
+    ) -> dict[str, Any] | None:
+        """Find the completed sweep that contains this exact continuation."""
+
+        for row in reversed(rows):
+            if row.get("event") != "sweep_completed":
+                continue
+            source_states = row.get("source_states")
+            if not isinstance(source_states, list):
+                continue
+            for state in source_states:
+                if not isinstance(state, Mapping) or state.get("name") != source:
+                    continue
+                candidate = state.get("writer_progress")
+                if not isinstance(candidate, Mapping):
+                    continue
+                if (
+                    candidate.get("status") != progress.status
+                    or str(candidate.get("item_identity") or "")
+                    != progress.item_identity
+                ):
+                    continue
+                if progress.status == "structured_input" and (
+                    str(candidate.get("request_id") or "")
+                    != str(progress.details.get("request_id") or "")
+                ):
+                    continue
+                if progress.status == "wait_until" and (
+                    str(candidate.get("deadline") or "")
+                    != str(progress.details.get("deadline") or "")
+                ):
+                    continue
+                if progress.status == "reconcile_required" and (
+                    str(candidate.get("claim_identity") or "")
+                    != str(progress.details.get("claim_identity") or "")
+                ):
+                    continue
+                return row
+        return None
+
     def _append(self, event: str, **fields: Any) -> dict[str, Any]:
         row = {
             "schema_version": 1,
@@ -2826,7 +2871,11 @@ class DailyCoordinator:
                 )
                 if surface != f"{name}:{identity}":
                     raise DailyError("provider wait narrow resume surface changed")
-            prior_sweep = self._last_sweep_state(prior_rows)
+            prior_sweep = self._originating_sweep_for_progress(
+                prior_rows,
+                source=name,
+                progress=prior,
+            ) or self._last_sweep_state(prior_rows)
             if prior_sweep is None:
                 raise DailyError("provider wait resume lost its originating sweep")
             prior_states = prior_sweep.get("source_states")
@@ -3131,7 +3180,11 @@ class DailyCoordinator:
         started = time.monotonic()
         with self._locked():
             prior_rows = self._events_unlocked()
-            prior_sweep = self._last_sweep_state(prior_rows)
+            prior_sweep = self._originating_sweep_for_progress(
+                prior_rows,
+                source=name,
+                progress=progress,
+            ) or self._last_sweep_state(prior_rows)
             if prior_sweep is None:
                 raise DailyError(
                     "structured input resume lost its originating sweep"
@@ -3304,7 +3357,11 @@ class DailyCoordinator:
         started = time.monotonic()
         with self._locked():
             prior_rows = self._events_unlocked()
-            prior_sweep = self._last_sweep_state(prior_rows)
+            prior_sweep = self._originating_sweep_for_progress(
+                prior_rows,
+                source=name,
+                progress=progress,
+            ) or self._last_sweep_state(prior_rows)
             if prior_sweep is None:
                 raise DailyError("source reconciliation lost its sweep")
             prior_states = prior_sweep.get("source_states")

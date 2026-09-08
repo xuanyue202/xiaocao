@@ -3223,6 +3223,69 @@ def test_resume_structured_input_consumes_exact_request_without_new_sweep(
     assert source["writer_progress"]["status"] == "terminal"
 
 
+def test_structured_input_resume_finds_originating_sweep_after_newer_sweep(
+    tmp_path,
+):
+    clock = Clock("2026-08-08T07:30:00+08:00")
+    service = DailyCoordinator(tmp_path / "daily", now=clock)
+    service.run([{
+        "name": "lv_text_image",
+        "run": lambda: {
+            "status": "waiting",
+            "waiting_items": [{
+                "identity": "item-1",
+                "version_key": "version-1",
+                "stage": "waiting_semantic_input",
+                "evidence_sha256": "b" * 64,
+            }],
+        },
+    }])
+    progress = WriterProgress.from_dict(next(
+        row["progress"]
+        for row in service.events()
+        if row.get("event") == "source_progressed"
+        and row.get("source") == "lv_text_image"
+    ))
+
+    service.run([{
+        "name": "subscription_video",
+        "run": lambda: {"status": "no_update"},
+    }])
+
+    def handler(seen):
+        return {
+            "outcome": {"status": "no_update"},
+            "structured_input_receipt": {
+                "event": "structured_input_consumed",
+                "request_id": seen.details["request_id"],
+                "request_schema_version": 1,
+                "response_field": seen.details["response_field"],
+                "immutable_bindings_sha256": hashlib.sha256(
+                    json.dumps(
+                        seen.details["immutable_bindings"],
+                        ensure_ascii=False,
+                        sort_keys=True,
+                        separators=(",", ":"),
+                    ).encode()
+                ).hexdigest(),
+                "request_sha256": "c" * 64,
+                "response_sha256": "d" * 64,
+            },
+        }
+
+    result = service.resume_structured_input(
+        {"name": "lv_text_image", "structured_input": handler},
+        progress=progress,
+    )
+
+    assert result["source_result"]["name"] == "lv_text_image"
+    assert result["continuation_only"] is True
+    assert any(
+        row["name"] == "lv_text_image"
+        for row in service.status()["last_sweep"]["source_states"]
+    )
+
+
 def test_resume_reconciliation_projects_readback_terminal_without_replay(
     tmp_path,
 ):
@@ -3622,6 +3685,77 @@ def test_daily_status_preserves_specific_video_waiting_stage(tmp_path):
     clock.value = datetime.fromisoformat("2026-07-27T10:30:00+08:00")
     service.run([{"name": "subscription_video", "run": waiting}])
     assert calls == 2
+
+
+def test_video_provider_wait_preserves_failure_for_progress_projection(
+    tmp_path,
+    monkeypatch,
+):
+    identity = "a" * 64
+    version = "b" * 64
+    item = {
+        "identity": identity,
+        "version_key": version,
+        "name": "9月7日.mp4",
+        "author": "吕晓彤",
+    }
+
+    class FakeVideoService:
+        def __init__(self, *_args, **_kwargs):
+            pass
+
+        @staticmethod
+        def pending_items():
+            return [item]
+
+        @staticmethod
+        def advance_item(_item, **_kwargs):
+            return {
+                "event": "subscription_video_episode_pending",
+                "status": "waiting_cloud_transfer_receipt",
+                "stage": "cloud_transfer_confirmation",
+                "next_poll_not_before": "2026-08-08T11:00:00+08:00",
+                "reconciliation_status": "exact_private_copy_absent",
+                "trigger_attempt": 2,
+            }
+
+    monkeypatch.setattr(
+        kol_daily_script,
+        "SubscriptionVideoService",
+        FakeVideoService,
+    )
+    runtime = DailyRuntime.__new__(DailyRuntime)
+    runtime.args = SimpleNamespace(
+        video_output_dir=tmp_path / "videos",
+        config=tmp_path / "config.yaml",
+        lv_session="lv",
+        private_session="private",
+        enrichment_session="enrichment",
+        opencli_profile="work",
+    )
+
+    result = runtime.videos(
+        only_identity=identity,
+        refresh_listing=False,
+    )
+    waiting_item = result["waiting_items"][0]
+
+    assert waiting_item["category"] == "provider_wait"
+    assert waiting_item["code"] == "waiting_cloud_transfer_receipt"
+    assert waiting_item["failure"] == {
+        "category": "provider_wait",
+        "code": "waiting_cloud_transfer_receipt",
+        "stage": "cloud_transfer_confirmation",
+        "retryable": True,
+    }
+    progress = normalize_source_result(
+        "subscription_video",
+        result,
+        failure_revision="c" * 40,
+        provider_contract_version="xiaocao_writer_v1",
+    )
+    assert progress.status == "wait_until"
+    assert progress.details["category"] == "provider_wait"
 
 
 def test_daily_resume_wait_runs_only_exact_due_source(tmp_path):
