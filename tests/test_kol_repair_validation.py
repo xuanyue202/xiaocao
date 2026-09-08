@@ -375,7 +375,18 @@ def test_repair_validation_accepts_exact_lv_download_recovery_profile(
     assert receipt.failure_fingerprint == "3" * 64
 
 
-def test_repair_validation_accepts_lv_text_image_source_run_profile(tmp_path):
+@pytest.mark.parametrize(
+    ("category", "code"),
+    [
+        ("source_error", "source_temporarily_unavailable"),
+        ("internal_state_error", "progress_deadline_missing"),
+    ],
+)
+def test_repair_validation_accepts_lv_text_image_source_run_profile(
+    tmp_path,
+    category,
+    code,
+):
     service = RepairValidationService(
         tmp_path,
         ledger=RepairValidationLedger(tmp_path / "repair-validation.jsonl"),
@@ -386,8 +397,8 @@ def test_repair_validation_accepts_lv_text_image_source_run_profile(tmp_path):
         "content_sha256": "2" * 64,
         "failure_fingerprint": "3" * 64,
         "failure_revision": FAILURE_REVISION,
-        "category": "source_error",
-        "code": "source_temporarily_unavailable",
+        "category": category,
+        "code": code,
         "stage": "source_run",
         "targeted_test_profile": "kol_lv_text_image_source_run",
     }

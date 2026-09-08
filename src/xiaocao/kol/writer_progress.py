@@ -688,6 +688,8 @@ TARGETED_REPAIR_TESTS: dict[str, tuple[str, ...]] = {
             "builder_allows_episode_relationship_source_binding or "
             "repair_validation_accepts_lv_text_image_source_run_profile or "
             "persisted_validated_bundle_is_reused or "
+            "structured_input_resume_finds_originating_sweep_after_newer_sweep or "
+            "video_provider_wait_preserves_failure_for_progress_projection or "
             "narrow_source_provider_failure_becomes_bounded_wait or "
             "narrow_source_failure_preserves_exact_item_identity or "
             "lv_source_resume_uses_unique_persisted_bundle_without_listing or "
@@ -1211,9 +1213,19 @@ def _canonical_lv_text_image_source_repair_profile(
         str(context.get("adapter") or "") == "lv_text_image"
         and str(context.get("targeted_test_profile") or "")
         == _LV_TEXT_IMAGE_SOURCE_REPAIR_PROFILE
-        and str(context.get("category") or "") == "source_error"
-        and str(context.get("code") or "")
-        == "source_temporarily_unavailable"
+        and (
+            (
+                str(context.get("category") or "") == "source_error"
+                and str(context.get("code") or "")
+                == "source_temporarily_unavailable"
+            )
+            or (
+                str(context.get("category") or "")
+                == "internal_state_error"
+                and str(context.get("code") or "")
+                == "progress_deadline_missing"
+            )
+        )
         and str(context.get("stage") or "") == "source_run"
     ):
         return _LV_TEXT_IMAGE_SOURCE_REPAIR_PROFILE
