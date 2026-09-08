@@ -2214,6 +2214,17 @@ def _follow_cloud_handoff(
             if _cloud_handoff_binding(
                 sweep_result, stage="compressed_capture",
             ) != capture_binding:
+                waiting = sweep_result.get("waiting_items") or []
+                if len(waiting) == 1 and isinstance(waiting[0], dict):
+                    item = waiting[0]
+                    same = (item.get("identity"), item.get("capture_job_id")) == capture_binding
+                    if same and item.get("stage") == "compressed_capture":
+                        if item.get("status") == "awaiting_capture":
+                            # A failed candidate returned to its original source job.
+                            # Keep the PTY for that job's next structured input.
+                            continue
+                        if item.get("status") == "awaiting_playback":
+                            return sweep_result
                 raise DailyError("capture follow-up lost its running download binding")
     binding = _cloud_handoff_binding(sweep_result)
     if binding is None:

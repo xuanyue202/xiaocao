@@ -1284,6 +1284,11 @@ class XiaocaoWechatLiveSubscription:
             str(response.get("page_url") or ""),
         )
         resource_id = source_identity.rsplit(":", 1)[-1]
+        if (
+            response.get("source_identity", source_identity) != source_identity
+            or response.get("live_id", resource_id) != resource_id
+        ):
+            raise EnrichmentError("resolver response identity differs from its page URL")
         if not resource_id.startswith("l_"):
             raise EnrichmentError(
                 "Xiaocao capture supports only Xiaoetong live mini-program entries"

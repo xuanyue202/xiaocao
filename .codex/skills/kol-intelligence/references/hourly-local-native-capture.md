@@ -29,6 +29,18 @@ H5 is not playback proof.
 For an HTTPS share entry, the default launch route is the verified merchant
 Web Link, not chat-window screenshots or a browser player. Run the emitted
 `launch_resolver_command` with `PYTHONPATH=src`. The read-only
+resolver also accepts `--subscription-id <request subscription_id>` and emits
+`browser_response`; pass that object directly to the retained PTY. Never retype
+the page URL or splice live IDs from another run. If an agent transcription
+error has already armed a source, correct it under the same capture/source IDs
+with `scripts/kol_repair_capture_identity.py` after its dry-run validates native
+evidence and zero download claims. Retain the before/after receipts and original
+baseline. Agent-owned identity corrections do not require another user approval.
+The repair restarts the source manager and may lose its in-memory media ticket;
+if the preserved candidate is no longer usable, follow the same-job native
+activation boundary, never reconstruct credentials or replace the capture.
+
+The read-only
 `scripts/kol_xiaoetong_launch.py` follows the first-party share redirect,
 validates the app/live anchor, obtains the provider's public Web Link
 representation, ignores the page's mock branch and verifies that the real

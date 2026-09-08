@@ -124,6 +124,16 @@ def test_persisted_validated_bundle_is_reused(tmp_path):
     assert _persisted_validated_bundle({}) is None
 
 
+def test_capture_follow_retains_retrying_source_then_returns_playback_wait(monkeypatch):
+    def waiting(status):
+        return {"waiting_items": [{"identity": "source", "capture_job_id": "capture",
+                                   "stage": "compressed_capture", "status": status}]}
+    outcomes = iter([waiting("awaiting_capture"), waiting("awaiting_playback")])
+    runtime = SimpleNamespace(xiaocao_wechat=lambda **_: next(outcomes))
+    monkeypatch.setattr(kol_daily_script, "_cloud_handoff_sleep", lambda _: None)
+    assert kol_daily_script._follow_cloud_handoff(runtime, waiting("downloading")) == waiting("awaiting_playback")
+
+
 def test_official_writer_reuses_persisted_bundle_without_stdin(
     monkeypatch,
     tmp_path,
