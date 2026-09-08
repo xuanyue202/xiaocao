@@ -4040,3 +4040,47 @@ def test_same_second_preclaim_evidence_is_rejected_with_microsecond_precision(
             evidence=stale_video,
             source_mode="uploaded",
         )
+
+
+@pytest.mark.parametrize("failure", [None, "wrong_claim", "attached", "started", "uncertain", "missing_stage"])
+def test_foreground_repair_uses_bound_adapter_and_never_retries_attachment(tmp_path, monkeypatch, failure):
+    video = tmp_path / "video-compressed.mp4"
+    video.write_bytes(b"real-video")
+    service = NetdiskEnrichmentService(tmp_path / "out", runner=_runner, now=lambda: NOW,
+                                       use_opencli_upload_template=True)
+    job = service.prepare(video)
+    current = {**job, "event": "netdisk_upload_failed", "status": "upload_claimed",
+               "reason": "browser_command_failed", "failure_stage": "upload_foreground",
+               "diagnostic": {"category": "transport_error", "code": "upload_foreground_failed", "stage": "upload_foreground"}}
+    if failure == "started": current["upload_started_at"] = NOW.isoformat()
+    if failure == "uncertain": current["diagnostic"]["code"] = "upload_attachment_uncertain"
+    if failure == "missing_stage": current.pop("diagnostic")
+    service.store.append(current)
+    proof = {"status": "ready_to_upload", "directory": service.netdisk_directory,
+             "targetName": video.name, "claimId": job["job_id"], "uploaded": False, "exactCountBefore": 0,
+             "surfaceState": {"receiptMatchesTarget": False, "targetInTransferUi": False,
+                              "targetUiRows": [], "inputs": [{"targetAttached": failure == "attached"}]}}
+    if failure == "wrong_claim": proof["claimId"] = "other-job"
+    def inspect(**kwargs):
+        assert kwargs["inspect_only"] is True
+        assert kwargs["claim_id"] == job["job_id"]
+        return SimpleNamespace(returncode=0, stdout=json.dumps([proof]))
+    monkeypatch.setattr(service, "_opencli_upload_template_process", inspect)
+    monkeypatch.setattr(service, "_inspect_opencli_target", lambda **kw: pytest.fail("wrong browser surface"))
+    submitted = []
+    def submit(job_id, **kwargs):
+        row = service.store.latest(job_id)
+        assert row["upload_repair_attempts"] == 1
+        assert row["upload_reconciliation_proof"] == proof
+        submitted.append(job_id)
+        return row
+    monkeypatch.setattr(service, "_submit_opencli_upload", submit)
+    if failure:
+        with pytest.raises(EnrichmentError):
+            service.resume_pre_attachment_upload(job["job_id"], session="site:baidu-netdisk")
+        assert not submitted
+    else:
+        service.resume_pre_attachment_upload(job["job_id"], session="site:baidu-netdisk")
+        assert submitted == [job["job_id"]]
+        with pytest.raises(EnrichmentError):
+            service.resume_pre_attachment_upload(job["job_id"], session="site:baidu-netdisk")

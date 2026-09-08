@@ -14,8 +14,11 @@ const vm = require('vm');
 let spec;
 const mode = process.argv[2];
 let foregroundRequests = 0;
-const sandbox = {process: {...process, platform:'darwin'}, execFileSync: (cmd, argv) => {
+let pageTitle = '百度网盘';
+const sandbox = {randomUUID: () => 'test-marker', process: {...process, platform:'darwin'}, execFileSync: (cmd, argv) => {
     foregroundRequests++;
+    if(pageTitle !== 'Xiaocao uploader test-marker' || !argv.includes(pageTitle)) throw Error('native title not bound to retained page');
+    if(!argv[1].includes('title of tab i of w is expectedTitle')) throw Error('ambiguous native URLs not disambiguated');
     if(cmd !== '/usr/bin/osascript' || !argv.includes('https://pan.baidu.com/disk/main#/index?category=all&path=%2F%E8%AF%BE%E7%A8%8B%2F%E8%87%AA%E5%B7%B1%E7%9A%84%E8%AF%BE%2F%E5%B0%8F%E8%8D%89')) throw Error('wrong native target');
     if(mode === 'foreground_ambiguous') throw Error('ambiguous native window');
     return 'foreground_requested';
@@ -34,8 +37,10 @@ const page = {
   selectTab: async id => { if (id !== 'site-upload-page') throw Error('wrong page'); foreground = true; },
   click: async selector => { if (!foreground || !selector.includes('activation')) throw Error('wrong activation'); activated = mode !== 'activation_denied'; },
   evaluate: async source => {
+    if (source.includes('const original = document.title')) {pageTitle='Xiaocao uploader test-marker'; return '百度网盘';}
+    if (source.includes('if (document.title ===')) {pageTitle='百度网盘'; return;}
     if (source.includes('responsive:true')) return {responsive:true};
-    if (source.includes('screenX')) return {visibility: ['hidden','foreground_ambiguous'].includes(mode) ? 'hidden' : 'visible', x:0,y:101,w:1496,h:866,url:'https://pan.baidu.com/disk/main#/index?category=all&path=%2F%E8%AF%BE%E7%A8%8B%2F%E8%87%AA%E5%B7%B1%E7%9A%84%E8%AF%BE%2F%E5%B0%8F%E8%8D%89'};
+    if (source.includes('visibility: document.visibilityState, url: location.href')) return {visibility: ['hidden','foreground_ambiguous'].includes(mode) ? 'hidden' : 'visible', x:0,y:101,w:1496,h:866,url:'https://pan.baidu.com/disk/main#/index?category=all&path=%2F%E8%AF%BE%E7%A8%8B%2F%E8%87%AA%E5%B7%B1%E7%9A%84%E8%AF%BE%2F%E5%B0%8F%E8%8D%89'};
     if (source.includes('const pageSize')) return {folderBound: true, authenticated: true, completeScan: true, exactCount: 0, url: 'https://pan.baidu.com/disk/main'};
     if (source.includes('const inputs')) return {marked: true, matches: 1};
     if (source.includes('const headers')) return true;
@@ -51,12 +56,13 @@ const page = {
 };
 spec.func(page, {file: '/tmp/video.mp4', 'target-name': 'video.mp4', 'claim-id': 'job-12345678',
   'inspect-only': ['inspect','missing','ambiguous','wrong_folder','hidden','foreground_ambiguous'].includes(mode), 'activate-only': mode === 'activate'})
-  .then(value => process.stdout.write(JSON.stringify({value, attachments,foregroundRequests})))
-  .catch(error => {process.stdout.write(JSON.stringify({error: error.message, attachments,foregroundRequests})); process.exitCode = 1;});
+  .then(value => process.stdout.write(JSON.stringify({value, attachments,foregroundRequests,pageTitle})))
+  .catch(error => {process.stdout.write(JSON.stringify({error: error.message, attachments,foregroundRequests,pageTitle})); process.exitCode = 1;});
 """
     node = shutil.which("node") or "/opt/homebrew/bin/node"
     result = subprocess.run([node, "-e", script, str(adapter), mode], capture_output=True, text=True)
     payload = json.loads(result.stdout)
+    assert payload["pageTitle"] == "百度网盘"
     assert payload["attachments"] == (1 if mode == "upload" else 0)
     assert payload["foregroundRequests"] == (1 if mode in {"hidden", "foreground_ambiguous"} else 0)
     if mode == "foreground_ambiguous":
