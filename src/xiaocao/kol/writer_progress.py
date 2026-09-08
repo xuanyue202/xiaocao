@@ -775,6 +775,22 @@ TARGETED_REPAIR_TESTS: dict[str, tuple[str, ...]] = {
             "repair_closure_accepts_subscription_video_browser_open_profile"
         ),
     ),
+    "kol_subscription_video_browser_command": (
+        "env",
+        "PYTHONPATH=src",
+        ".venv/bin/python",
+        "-m",
+        "pytest",
+        "tests/test_kol_subscription_video.py",
+        "tests/test_kol_repair_validation.py",
+        "-q",
+        "-k",
+        (
+            "transfer_activation_falls_back_for_bound_user_tab or "
+            "lv_transfer_claim_precedes_click_and_exact_copy_readback_completes or "
+            "repair_validation_accepts_subscription_video_browser_command_profile"
+        ),
+    ),
     "kol_subscription_video_source_run": (
         "env",
         "PYTHONPATH=src",
@@ -956,6 +972,12 @@ _TARGETED_REPAIR_IMPLEMENTATION_PATHS: dict[str, frozenset[str]] = {
             "src/xiaocao/kol/writer_progress.py",
         }
     ),
+    "kol_subscription_video_browser_command": frozenset(
+        {
+            "src/xiaocao/kol/subscription_video.py",
+            "src/xiaocao/kol/writer_progress.py",
+        }
+    ),
     "kol_subscription_video_source_run": frozenset(
         {
             "scripts/kol_daily.py",
@@ -1055,6 +1077,12 @@ _TARGETED_REPAIR_TEST_PATHS: dict[str, frozenset[str]] = {
             "tests/test_kol_subscription_video.py",
             "tests/test_kol_repair_validation.py",
             "tests/test_kol_writer_progress.py",
+        }
+    ),
+    "kol_subscription_video_browser_command": frozenset(
+        {
+            "tests/test_kol_subscription_video.py",
+            "tests/test_kol_repair_validation.py",
         }
     ),
     "kol_subscription_video_source_run": frozenset(
@@ -1263,6 +1291,33 @@ _SUBSCRIPTION_VIDEO_BROWSER_EVAL_REPAIR_PROFILE = (
 _SUBSCRIPTION_VIDEO_BROWSER_OPEN_REPAIR_PROFILE = (
     "kol_subscription_video_browser_open"
 )
+_SUBSCRIPTION_VIDEO_BROWSER_COMMAND_REPAIR_PROFILE = (
+    "kol_subscription_video_browser_command"
+)
+
+
+def _canonical_subscription_video_browser_command_repair_profile(
+    context: Mapping[str, Any],
+) -> str | None:
+    if (
+        str(context.get("adapter") or "") == "subscription_video"
+        and str(context.get("targeted_test_profile") or "")
+        == _SUBSCRIPTION_VIDEO_BROWSER_COMMAND_REPAIR_PROFILE
+        and str(context.get("stage") or "") == "browser_command"
+        and (
+            str(context.get("category") or ""),
+            str(context.get("code") or ""),
+        )
+        in {
+            ("transport_error", "opencli_command_failed"),
+            (
+                "provider_contract_error",
+                "opencli_bound_tab_mutation_blocked",
+            ),
+        }
+    ):
+        return _SUBSCRIPTION_VIDEO_BROWSER_COMMAND_REPAIR_PROFILE
+    return None
 
 
 def _canonical_subscription_video_browser_open_repair_profile(
@@ -1625,6 +1680,13 @@ class RepairValidationService:
         )
         if subscription_profile is not None:
             return subscription_profile
+        subscription_browser_command_profile = (
+            _canonical_subscription_video_browser_command_repair_profile(
+                context
+            )
+        )
+        if subscription_browser_command_profile is not None:
+            return subscription_browser_command_profile
         subscription_browser_open_profile = (
             _canonical_subscription_video_browser_open_repair_profile(
                 context
@@ -3025,6 +3087,17 @@ class ConvergenceLedger:
             })
             if canonical_lv_profile is not None:
                 expected_profile = canonical_lv_profile
+            canonical_subscription_browser_command_profile = (
+                _canonical_subscription_video_browser_command_repair_profile({
+                    "adapter": open_progress.failure["adapter"],
+                    "targeted_test_profile": expected_profile,
+                    "category": open_progress.failure["category"],
+                    "code": open_progress.failure["code"],
+                    "stage": open_progress.failure["stage"],
+                })
+            )
+            if canonical_subscription_browser_command_profile is not None:
+                expected_profile = canonical_subscription_browser_command_profile
             canonical_subscription_browser_eval_profile = (
                 _canonical_subscription_video_browser_eval_repair_profile({
                     "adapter": open_progress.failure["adapter"],

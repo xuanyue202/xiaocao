@@ -64,6 +64,7 @@ _PRIVATE_DIRECTORY_EVAL_PROCESS_TIMEOUT_SECONDS = 120
 _DISCOVERY_HOT_WINDOW = timedelta(days=14)
 _DISCOVERY_HOT_ROOT_LIMIT = 3
 _DISCOVERY_COLD_ROOTS_PER_HOUR = 1
+_OPENCLI_BOUND_TAB_MUTATION_CODE = "opencli_bound_tab_mutation_blocked"
 FULL_CONTRACT_PATH = (
     Path(__file__).resolve().parents[3]
     / ".codex"
@@ -1131,18 +1132,31 @@ class SubscriptionVideoService:
             except (TypeError, json.JSONDecodeError):
                 pass
             if provider_code == "cdp_timeout":
-                raise EnrichmentDiagnosticError(
+                diagnostic = EnrichmentDiagnosticError(
                     "Ticket 05 browser evaluation exceeded the OpenCLI CDP deadline",
                     category="timeout",
                     code="opencli_cdp_timeout",
                     stage=stage,
                 )
-            raise EnrichmentDiagnosticError(
+                diagnostic.diagnostic_operation = operation
+                raise diagnostic
+            if provider_code == "bound_tab_mutation_blocked":
+                diagnostic = EnrichmentDiagnosticError(
+                    "Ticket 05 OpenCLI cannot select a tab bound to a user window",
+                    category="provider_contract_error",
+                    code=_OPENCLI_BOUND_TAB_MUTATION_CODE,
+                    stage=stage,
+                )
+                diagnostic.diagnostic_operation = operation
+                raise diagnostic
+            diagnostic = EnrichmentDiagnosticError(
                 "Ticket 05 browser command failed",
                 category="transport_error",
                 code="opencli_command_failed",
                 stage=stage,
             )
+            diagnostic.diagnostic_operation = operation
+            raise diagnostic
         try:
             value = json.loads(str(result.stdout))
         except (TypeError, json.JSONDecodeError) as exc:
@@ -1173,16 +1187,24 @@ class SubscriptionVideoService:
         page_id = str(open_result.get("page") or "").strip()
         if not page_id:
             return ""
-        selected = self._opencli_json(
-            session,
-            "tab",
-            "select",
-            page_id,
-            "--window",
-            "foreground",
-            profile=profile,
-            timeout_seconds=30,
-        )
+        try:
+            selected = self._opencli_json(
+                session,
+                "tab",
+                "select",
+                page_id,
+                "--window",
+                "foreground",
+                profile=profile,
+                timeout_seconds=30,
+            )
+        except EnrichmentDiagnosticError as exc:
+            if exc.diagnostic_code != _OPENCLI_BOUND_TAB_MUTATION_CODE:
+                raise
+            # A user-bound session intentionally rejects tab mutation. The
+            # preceding exact open already returned this page identity; the
+            # later click targets it explicitly instead of selecting it.
+            return page_id
         if selected.get("selected") != page_id:
             raise EnrichmentDiagnosticError(
                 "Ticket 05 OpenCLI transfer tab was not activated",
@@ -4559,6 +4581,8 @@ class SubscriptionVideoService:
             lv_session,
             "open",
             self.lv.share_url,
+            "--window",
+            "foreground",
             profile=profile,
             timeout_seconds=30,
         )
@@ -4602,6 +4626,8 @@ class SubscriptionVideoService:
                 lv_session,
                 "open",
                 self.lv.share_url,
+                "--window",
+                "foreground",
                 profile=profile,
                 timeout_seconds=30,
             )
@@ -4659,10 +4685,12 @@ class SubscriptionVideoService:
                     "event": "lv_cloud_transfer_native_click_claimed",
                 },
             )
+            click_arguments = ["click", selector]
+            if native_click_page_id:
+                click_arguments.extend(["--tab", native_click_page_id])
             click_result = self._opencli_json(
                 lv_session,
-                "click",
-                selector,
+                *click_arguments,
                 profile=profile,
                 timeout_seconds=30,
             )

@@ -785,6 +785,89 @@ def test_repair_validation_accepts_subscription_video_browser_open_profile(
     assert receipt.failure_fingerprint == "3" * 64
 
 
+def test_repair_validation_accepts_subscription_video_browser_command_profile(
+    tmp_path,
+) -> None:
+    context = {
+        "adapter": "subscription_video",
+        "message_id": "1" * 64,
+        "content_sha256": "2" * 64,
+        "failure_fingerprint": "3" * 64,
+        "failure_revision": FAILURE_REVISION,
+        "category": "transport_error",
+        "code": "opencli_command_failed",
+        "stage": "browser_command",
+        "targeted_test_profile": "kol_subscription_video_browser_command",
+    }
+
+    def git(command: tuple[str, ...]) -> CompletedProcess[str]:
+        if command == ("branch", "--show-current"):
+            return CompletedProcess(command, 0, "main\n", "")
+        if command == ("rev-parse", "--verify", "HEAD^{commit}"):
+            return CompletedProcess(command, 0, f"{REPAIR_REVISION}\n", "")
+        if command == ("rev-parse", "--verify", "origin/main^{commit}"):
+            return CompletedProcess(command, 0, f"{REPAIR_REVISION}\n", "")
+        if command[:2] == ("diff-tree", "--no-commit-id"):
+            return CompletedProcess(
+                command,
+                0,
+                (
+                    "src/xiaocao/kol/subscription_video.py\n"
+                    "src/xiaocao/kol/writer_progress.py\n"
+                    "tests/test_kol_subscription_video.py\n"
+                    "tests/test_kol_repair_validation.py\n"
+                ),
+                "",
+            )
+        if command == ("show", "-s", "--format=%B", REPAIR_REVISION):
+            return CompletedProcess(
+                command,
+                0,
+                "Repair bound user tab activation\n\n"
+                f"Repair-Fingerprint: {'3' * 64}\n",
+                "",
+            )
+        if command[:2] == ("merge-base", "--is-ancestor"):
+            return CompletedProcess(command, 0, "", "")
+        raise AssertionError(command)
+
+    expected_command = (
+        "env",
+        "PYTHONPATH=src",
+        ".venv/bin/python",
+        "-m",
+        "pytest",
+        "tests/test_kol_subscription_video.py",
+        "tests/test_kol_repair_validation.py",
+        "-q",
+        "-k",
+        (
+            "transfer_activation_falls_back_for_bound_user_tab or "
+            "lv_transfer_claim_precedes_click_and_exact_copy_readback_completes or "
+            "repair_validation_accepts_subscription_video_browser_command_profile"
+        ),
+    )
+    service = RepairValidationService(
+        tmp_path,
+        ledger=RepairValidationLedger(tmp_path / "repair-validation.jsonl"),
+        git_runner=git,
+        test_runner=lambda command: CompletedProcess(
+            command,
+            0 if command == expected_command else 1,
+            "3 passed\n",
+            "",
+        ),
+        now=lambda: "2026-09-08T10:00:00+08:00",
+    )
+
+    receipt = service.validate(context, repair_revision=REPAIR_REVISION)
+
+    assert receipt.targeted_test_profile == (
+        "kol_subscription_video_browser_command"
+    )
+    assert receipt.failure_fingerprint == "3" * 64
+
+
 @pytest.mark.parametrize(
     ("adapter", "failure_code"),
     [
