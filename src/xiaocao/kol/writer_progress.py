@@ -1204,6 +1204,10 @@ def _canonical_lv_download_repair_profile(
 
 
 _LV_TEXT_IMAGE_SOURCE_REPAIR_PROFILE = "kol_lv_text_image_source_run"
+_LV_TEXT_IMAGE_SOURCE_REPAIR_FAILURES = frozenset({
+    ("source_error", "source_temporarily_unavailable"),
+    ("internal_state_error", "progress_deadline_missing"),
+})
 
 
 def _canonical_lv_text_image_source_repair_profile(
@@ -1214,18 +1218,10 @@ def _canonical_lv_text_image_source_repair_profile(
         and str(context.get("targeted_test_profile") or "")
         == _LV_TEXT_IMAGE_SOURCE_REPAIR_PROFILE
         and (
-            (
-                str(context.get("category") or "") == "source_error"
-                and str(context.get("code") or "")
-                == "source_temporarily_unavailable"
-            )
-            or (
-                str(context.get("category") or "")
-                == "internal_state_error"
-                and str(context.get("code") or "")
-                == "progress_deadline_missing"
-            )
+            str(context.get("category") or ""),
+            str(context.get("code") or ""),
         )
+        in _LV_TEXT_IMAGE_SOURCE_REPAIR_FAILURES
         and str(context.get("stage") or "") == "source_run"
     ):
         return _LV_TEXT_IMAGE_SOURCE_REPAIR_PROFILE
