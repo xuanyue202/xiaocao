@@ -1859,6 +1859,7 @@ class RepairValidationService:
                 in {
                     _XIAOCAO_WECHAT_COMPRESSED_CAPTURE_REPAIR_PROFILE,
                     _XIAOCAO_WECHAT_CLOUD_HANDOFF_REPAIR_PROFILE,
+                    "kol_xiaocao_wechat_live_native_playback_window_close",
                 }
             )
             and not (
