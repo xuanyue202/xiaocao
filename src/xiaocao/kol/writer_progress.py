@@ -785,12 +785,14 @@ TARGETED_REPAIR_TESTS: dict[str, tuple[str, ...]] = {
         "pytest",
         "tests/test_kol_subscription_video.py",
         "tests/test_kol_daily.py",
+        "tests/test_kol_netdisk_enrichment.py",
         "tests/test_kol_repair_validation.py",
         "-q",
         "-k",
         (
             "transfer_activation_falls_back_for_bound_user_tab or "
             "lv_transfer_claim_precedes_click_and_exact_copy_readback_completes or "
+            "transcript_claim_replay_rebinds_after_exact_tab_transport_failure or "
             "repair_resume_uses_originating_sweep_after_later_partial_sweep or "
             "repair_validation_accepts_subscription_video_browser_command_profile"
         ),
@@ -979,6 +981,7 @@ _TARGETED_REPAIR_IMPLEMENTATION_PATHS: dict[str, frozenset[str]] = {
     "kol_subscription_video_browser_command": frozenset(
         {
             "src/xiaocao/kol/daily.py",
+            "src/xiaocao/kol/netdisk_enrichment.py",
             "src/xiaocao/kol/subscription_video.py",
             "src/xiaocao/kol/writer_progress.py",
         }
@@ -1087,6 +1090,7 @@ _TARGETED_REPAIR_TEST_PATHS: dict[str, frozenset[str]] = {
     "kol_subscription_video_browser_command": frozenset(
         {
             "tests/test_kol_daily.py",
+            "tests/test_kol_netdisk_enrichment.py",
             "tests/test_kol_subscription_video.py",
             "tests/test_kol_repair_validation.py",
         }

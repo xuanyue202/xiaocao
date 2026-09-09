@@ -46,7 +46,7 @@ _OPENCLI_READBACK_REBIND_CODES = frozenset(
     {"opencli_timeout", "opencli_command_failed"}
 )
 _OPENCLI_READBACK_REBIND_STAGES = frozenset(
-    {"browser_open", "browser_eval", "browser_wait"}
+    {"browser_open", "browser_eval", "browser_tab", "browser_wait"}
 )
 _NETDISK_GENERATION_POLL_INTERVAL = timedelta(minutes=1)
 _AI_NOTE_MAX_TRIGGER_ATTEMPTS = 2
@@ -579,6 +579,7 @@ class NetdiskEnrichmentService:
             "click": "browser_click",
             "eval": "browser_eval",
             "open": "browser_open",
+            "tab": "browser_tab",
             "wait": "browser_wait",
         }.get(operation, "browser_command")
 
