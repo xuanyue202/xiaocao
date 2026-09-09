@@ -389,6 +389,46 @@ def test_source_cli_narrow_runner_supports_wechat_official_accounts():
     ) is official
 
 
+def test_wechat_official_cli_missing_repair_resumes_remote_inbox_only(
+    monkeypatch,
+):
+    calls = []
+
+    def remote_inbox(surface):
+        calls.append(("remote_inbox", surface))
+        return {"status": "no_update"}
+
+    def local_scan():
+        calls.append(("local_scan", None))
+        raise AssertionError("remote repair must not start local WeChat scan")
+
+    runtime = SimpleNamespace(
+        lv_narrow_resume=lambda surface: {"lv": surface},
+        videos_narrow_resume=lambda surface: {"video": surface},
+        wechat_official_narrow_resume=remote_inbox,
+        wechat_official_local=local_scan,
+    )
+    monkeypatch.setattr(
+        kol_daily_script,
+        "_writer_failure_revision",
+        lambda: "a" * 40,
+    )
+
+    result = kol_daily_script._resume_source_repair_outcome(
+        runtime,
+        "wechat_official_accounts",
+        "wechat_official_accounts:source",
+        failure_code="wechat_cli_missing",
+    )
+
+    assert calls == [
+        ("remote_inbox", "wechat_official_accounts:source")
+    ]
+    assert result["status"] == "no_update"
+    assert result["writer_progress"]["status"] == "terminal"
+    assert result["writer_progress"]["next_action"] == "stop"
+
+
 def test_source_cli_structured_input_binding_supports_exact_lv_item(
     tmp_path,
     monkeypatch,

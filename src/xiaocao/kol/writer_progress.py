@@ -874,11 +874,13 @@ TARGETED_REPAIR_TESTS: dict[str, tuple[str, ...]] = {
         ".venv/bin/python",
         "-m",
         "pytest",
+        "tests/test_kol_daily.py",
         "tests/test_kol_wechat_official.py",
         "tests/test_kol_repair_validation.py",
         "-q",
         "-k",
         (
+            "wechat_official_cli_missing_repair_resumes_remote_inbox_only or "
             "official_account_parser_uses_exact_publishers_and_url_only_metadata or "
             "official_account_reader_calls_one_stateless_combined_window or "
             "repair_validation_accepts_wechat_official_accounts_source_profile or "
@@ -1014,6 +1016,7 @@ _TARGETED_REPAIR_IMPLEMENTATION_PATHS: dict[str, frozenset[str]] = {
     ),
     "kol_wechat_official_accounts_source_run": frozenset(
         {
+            "scripts/kol_daily.py",
             "src/xiaocao/kol/wechat_official.py",
             "src/xiaocao/kol/writer_progress.py",
         }
@@ -1123,6 +1126,7 @@ _TARGETED_REPAIR_TEST_PATHS: dict[str, frozenset[str]] = {
     ),
     "kol_wechat_official_accounts_source_run": frozenset(
         {
+            "tests/test_kol_daily.py",
             "tests/test_kol_repair_validation.py",
             "tests/test_kol_wechat_official.py",
         }
