@@ -823,9 +823,11 @@ TARGETED_REPAIR_TESTS: dict[str, tuple[str, ...]] = {
             "lv_destination_triggered_claim_has_poll_deadline or "
             "source_cli_narrow_runner_supports_subscription_video or "
             "transcript_claim_replay_never_repeats_generation_interaction or "
+            "bound_user_player_close_releases_exact_page_to_private_folder or "
             "source_repair_validation_accepts_pending_resume or "
             "repair_validation_accepts_subscription_video_source_run_profile or "
             "repair_validation_accepts_subscription_video_source_alias_profile or "
+            "bound_player_close_uses_subscription_video_source_profile or "
             "repair_closure_accepts_subscription_video_observability_profile_alias or "
             "repair_resume_persists_following_repair"
         ),
@@ -1542,6 +1544,11 @@ def _canonical_subscription_video_source_repair_profile(
                 "internal_state_error",
                 "progress_deadline_missing",
                 "cloud_enrichment",
+            ),
+            (
+                "provider_contract_error",
+                "bound_tab_mutation_blocked",
+                "browser_tab",
             ),
         }
     ):

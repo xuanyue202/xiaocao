@@ -916,6 +916,22 @@ def test_browser_tab_profile_aliases_to_subscription_video_command_profile():
     assert profile == "kol_subscription_video_browser_command"
 
 
+def test_bound_player_close_uses_subscription_video_source_profile():
+    service = RepairValidationService(
+        ".",
+        ledger=RepairValidationLedger("repair-validation-unused.jsonl"),
+    )
+    profile = service._expected_profile({
+        "adapter": "subscription_video",
+        "category": "provider_contract_error",
+        "code": "bound_tab_mutation_blocked",
+        "stage": "browser_tab",
+        "targeted_test_profile": "kol_subscription_video_source_run",
+    })
+
+    assert profile == "kol_subscription_video_source_run"
+
+
 @pytest.mark.parametrize(
     ("adapter", "failure_code"),
     [
@@ -1546,9 +1562,11 @@ def test_repair_validation_accepts_subscription_video_source_run_profile(
             "lv_destination_triggered_claim_has_poll_deadline or "
             "source_cli_narrow_runner_supports_subscription_video or "
             "transcript_claim_replay_never_repeats_generation_interaction or "
+            "bound_user_player_close_releases_exact_page_to_private_folder or "
             "source_repair_validation_accepts_pending_resume or "
             "repair_validation_accepts_subscription_video_source_run_profile or "
             "repair_validation_accepts_subscription_video_source_alias_profile or "
+            "bound_player_close_uses_subscription_video_source_profile or "
             "repair_closure_accepts_subscription_video_observability_profile_alias or "
             "repair_resume_persists_following_repair"
         ),
