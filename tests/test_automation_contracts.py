@@ -68,6 +68,43 @@ def test_1455_live_closing_has_one_bounded_instruction_read_before_execution() -
     assert "do not open sibling skill references before the live command" in prompt
 
 
+def test_1455_live_closing_uses_a_prebuilt_deadline_first_startup() -> None:
+    closing = _automation("xiaocao-intraday-monitor-1455")
+    prompt = closing["prompt"]
+    startup_command = "bash scripts/book_b_live_closing_startup.sh"
+    live_command = (
+        "PYTHONPATH=src .venv/bin/python scripts/book_b_live_intraday.py "
+        "--date today --phase closing --execute-sells"
+    )
+
+    assert prompt.startswith("TIME-CRITICAL 14:55")
+    assert prompt.index(startup_command) < 500
+    assert len(prompt) <= 3_200
+
+    startup_path = ROOT / "scripts" / "book_b_live_closing_startup.sh"
+    assert startup_path.is_file()
+    startup = startup_path.read_text(encoding="utf-8")
+    assert startup.count(live_command) == 1
+    for required_path in (
+        "/Users/xuanyue202/.codex/automations/"
+        "xiaocao-intraday-monitor-1455/memory.md",
+        ".codex/skills/xiaocao-trading/SKILL.md",
+        ".codex/skills/xiaocao-trading/references/automation-intraday.md",
+        ".codex/skills/xiaocao-trading/references/book-b-live-repair.md",
+        ".codex/skills/xiaocao-trading/references/kol-trading-judgment.md",
+    ):
+        assert required_path in startup
+        assert startup.index(required_path) < startup.index(live_command)
+    for forbidden_before_live in (
+        "show_journal.py",
+        "live_monitor.py",
+        "data_doctor.py",
+        "git status",
+        "kol_trading_decision.py",
+    ):
+        assert forbidden_before_live not in startup.split(live_command, 1)[0]
+
+
 def test_morning_automations_separate_user_visible_prerecommend_from_execution() -> None:
     prerecommend = _automation("xiaocao-daily-morning")
     execution = _automation("xiaocao-daily-morning-execution")
