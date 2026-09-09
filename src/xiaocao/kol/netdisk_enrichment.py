@@ -1662,6 +1662,74 @@ class NetdiskEnrichmentService:
                     close_error = EnrichmentError(
                         "OpenCLI did not confirm the exact player tab close"
                     )
+            if (
+                isinstance(close_error, EnrichmentDiagnosticError)
+                and close_error.diagnostic_code
+                == _OPENCLI_BOUND_TAB_MUTATION_CODE
+            ):
+                if len(exact_matches) != 1:
+                    raise EnrichmentError(
+                        "Bound OpenCLI player release requires one exact tab"
+                    ) from close_error
+                current = self._opencli_json(
+                    session,
+                    "eval",
+                    "(() => ({current_url: location.href}))()",
+                    "--tab",
+                    target_page,
+                    profile=profile,
+                    timeout_seconds=10,
+                    attempts=1,
+                )
+                self._validate_player_url(
+                    current.get("current_url"),
+                    target_name=target_name,
+                )
+                folder_url = self._netdisk_folder_url()
+                released = self._opencli_json(
+                    session,
+                    "open",
+                    folder_url,
+                    "--window",
+                    "foreground",
+                    profile=profile,
+                    timeout_seconds=30,
+                    attempts=1,
+                )
+                if (
+                    released.get("page") != target_page
+                    or released.get("url") != folder_url
+                ):
+                    raise EnrichmentError(
+                        "Bound OpenCLI player release did not preserve page identity"
+                    )
+                rows = self._opencli_tab_list(
+                    session=session,
+                    profile=profile,
+                    attempts=2,
+                )
+                for row in rows:
+                    row_url = row.get("url")
+                    if not isinstance(row_url, str):
+                        continue
+                    try:
+                        self._validate_player_url(
+                            row_url,
+                            target_name=target_name,
+                        )
+                    except EnrichmentError:
+                        continue
+                    raise EnrichmentError(
+                        "Exact Netdisk player tab remains open after bound release"
+                    )
+                return {
+                    "capture_page": page,
+                    "closed_page": None,
+                    "closed_pages": closed_pages,
+                    "released_page": target_page,
+                    "release_mode": "navigate_bound_user_tab_to_private_folder",
+                    "exact_player_absent": True,
+                }
             try:
                 rows = self._opencli_tab_list(session=session, profile=profile, attempts=2)
             except EnrichmentError as exc:

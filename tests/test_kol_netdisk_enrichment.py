@@ -3027,6 +3027,62 @@ def test_capture_close_reconciles_lost_ack_without_second_close(tmp_path, close_
     assert [cmd[5] for cmd in commands if cmd[3:5] == ["tab", "close"]] == ["page-1"]
 
 
+def test_bound_user_player_close_releases_exact_page_to_private_folder(
+    tmp_path,
+    monkeypatch,
+):
+    service, job_id = _prepare_opencli_dom_capture(tmp_path)
+    name = service.status(job_id)["video_basename"]
+    page = "bound-page"
+    exact_url = service._player_url(name)
+    rows = [{"page": page, "url": exact_url}]
+    commands: list[tuple[str, ...]] = []
+
+    monkeypatch.setattr(
+        service,
+        "_opencli_tab_list",
+        lambda **_kwargs: list(rows),
+    )
+
+    def opencli_json(_session, *args, **_kwargs):
+        commands.append(args)
+        if args[:2] == ("tab", "close"):
+            raise EnrichmentDiagnosticError(
+                "bound tab",
+                category="provider_contract_error",
+                code="bound_tab_mutation_blocked",
+                stage="browser_tab",
+            )
+        if args[:1] == ("eval",):
+            assert args[-2:] == ("--tab", page)
+            return {"current_url": exact_url}
+        if args[:1] == ("open",):
+            rows.clear()
+            return {"page": page, "url": service._netdisk_folder_url()}
+        raise AssertionError(args)
+
+    monkeypatch.setattr(service, "_opencli_json", opencli_json)
+
+    receipt = service._close_opencli_player(
+        session="ticket02-test",
+        profile=None,
+        target_name=name,
+        page=page,
+    )
+
+    assert receipt == {
+        "capture_page": page,
+        "closed_page": None,
+        "closed_pages": [],
+        "released_page": page,
+        "release_mode": "navigate_bound_user_tab_to_private_folder",
+        "exact_player_absent": True,
+    }
+    assert commands[0][:2] == ("tab", "close")
+    assert commands[1][0] == "eval"
+    assert commands[2][0] == "open"
+
+
 @pytest.mark.parametrize("already_closed", [False, True])
 def test_close_failure_resumes_only_close_with_immutable_capture(tmp_path, already_closed):
     service, job_id = _prepare_opencli_dom_capture(tmp_path)
