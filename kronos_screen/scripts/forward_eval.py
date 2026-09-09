@@ -283,6 +283,10 @@ def _historical_opening_fill(
         hour=9, minute=30, tzinfo=ZoneInfo("Asia/Shanghai")
     )
     record = dict(record)
+    # A label with missing market facts is unknown, including legacy null
+    # flags. Pandas/Parquet can represent a missing flag as NaN or None; its
+    # truthiness must never decide whether an executable label bypasses proof.
+    record["market_guard_required"] = True
     # Legacy snapshots stored the provider clock without its trade date.
     # Bind only when the immutable capture independently proves the same day.
     if str(record.get("captured_at") or "")[:10] == entry_clock.date().isoformat():

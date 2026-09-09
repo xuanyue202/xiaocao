@@ -101,6 +101,8 @@ def test_historical_fill_checks_market_facts_at_entry_clock() -> None:
     assert _historical_opening_fill({**legacy, "captured_at": "2026-09-07T09:25:54"}, window)[0] is None
     for invalid in (
         {"down_price": None},
+        {"market_guard_required": None, "down_price": None},
+        {"market_guard_required": False, "market_observed_at": None},
         {"market_observed_at": "2026-09-07T09:25:00+08:00"},
         {"market_observed_at": "2026-09-08T09:00:00+08:00"},
         {"market_guard_status": "suspended"},
