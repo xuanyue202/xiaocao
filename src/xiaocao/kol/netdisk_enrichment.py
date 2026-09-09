@@ -40,6 +40,7 @@ _OPENCLI_SESSION = re.compile(r"^[A-Za-z0-9_.:-]{1,64}$")
 _OPENCLI_PROFILE = re.compile(r"^[A-Za-z0-9_.-]{1,128}$")
 _OPENCLI_UPLOAD_TIMEOUT_SECONDS = 300
 _OPENCLI_UPLOAD_TEMPLATE_SESSION = "site:baidu-netdisk"
+_OPENCLI_BOUND_TAB_MUTATION_CODE = "bound_tab_mutation_blocked"
 _OPENCLI_FOLDER_READY_ATTEMPTS = 6
 _OPENCLI_FOLDER_READY_WAIT_SECONDS = 2
 _OPENCLI_READBACK_REBIND_CODES = frozenset(
@@ -659,6 +660,22 @@ class NetdiskEnrichmentService:
                     timeout_seconds=timeout_seconds,
                 )
                 if result.returncode != 0:
+                    provider_code = ""
+                    try:
+                        payload = json.loads(str(result.stdout or ""))
+                        error = payload.get("error") if isinstance(payload, dict) else None
+                        if isinstance(error, dict):
+                            provider_code = str(error.get("code") or "")
+                    except (TypeError, json.JSONDecodeError):
+                        pass
+                    if provider_code == _OPENCLI_BOUND_TAB_MUTATION_CODE:
+                        raise EnrichmentDiagnosticError(
+                            "OpenCLI cannot select a tab bound to a user window",
+                            category="provider_contract_error",
+                            code=_OPENCLI_BOUND_TAB_MUTATION_CODE,
+                            stage=self._opencli_stage(args),
+                            exit_code=int(result.returncode),
+                        )
                     raise EnrichmentDiagnosticError(
                         "OpenCLI browser command failed",
                         category="transport_error",
@@ -1464,13 +1481,21 @@ class NetdiskEnrichmentService:
                         raise
             if not isinstance(page, str) or not page.strip():
                 raise EnrichmentError("OpenCLI did not return the exact player tab identity")
-            selected = self._opencli_json(
-                session,
-                "tab", "select", page, "--window", "foreground",
-                profile=profile,
-                timeout_seconds=10,
-                attempts=1,
-            )
+            try:
+                selected = self._opencli_json(
+                    session,
+                    "tab", "select", page, "--window", "foreground",
+                    profile=profile,
+                    timeout_seconds=10,
+                    attempts=1,
+                )
+            except EnrichmentDiagnosticError as exc:
+                if exc.diagnostic_code != _OPENCLI_BOUND_TAB_MUTATION_CODE:
+                    raise
+                # User-bound sessions intentionally reject tab mutation.  The
+                # following current-URL and pause-guard reads must still prove
+                # that this exact bound player is the active DOM surface.
+                selected = {"selected": page, "selection_mode": "bound_user_tab"}
             if selected.get("selected") != page:
                 raise EnrichmentDiagnosticError(
                     "OpenCLI did not select the exact player tab",

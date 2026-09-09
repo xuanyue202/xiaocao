@@ -1387,6 +1387,63 @@ def test_transcript_claim_replay_rebinds_after_exact_tab_transport_failure(
     assert not any(command[5:6] == ["click"] for command in commands)
 
 
+def test_transcript_claim_replay_accepts_exact_bound_user_player_tab(
+    tmp_path,
+):
+    service, video, prepared = _prepare(tmp_path)
+    job_id = prepared["job_id"]
+    service.record_browser_liveness(
+        job_id,
+        surface="opencli",
+        evidence=_liveness_evidence(),
+    )
+    service.record_browser_state(
+        job_id,
+        step="video_ready",
+        evidence=_evidence(video.name, "目标视频已存在"),
+        source_mode="existing",
+    )
+    service.claim_browser_action(job_id, action="transcript")
+
+    base_runner = _opencli_transcript_runner(video.name)
+    player_url = "https://pan.baidu.com/pfile/video?path=" + quote(
+        f"/课程/自己的课/小草/{video.name}"
+    )
+    bind_calls = 0
+
+    def runner(command, **kwargs):
+        nonlocal bind_calls
+        tail = command[5:]
+        if tail[:1] == ["bind"]:
+            bind_calls += 1
+        if tail[:2] == ["tab", "list"]:
+            return SimpleNamespace(
+                returncode=0,
+                stdout=json.dumps([{"page": "page-1", "url": player_url}]),
+                stderr="",
+            )
+        if tail[:2] == ["tab", "select"]:
+            return SimpleNamespace(
+                returncode=1,
+                stdout=json.dumps({
+                    "error": {"code": "bound_tab_mutation_blocked"},
+                }),
+                stderr="",
+            )
+        return base_runner(command, **kwargs)
+
+    service.runner = runner
+    service.opencli_command = ("opencli",)
+    replay = service.advance_opencli(
+        job_id,
+        session="ticket02-transcript",
+        profile="work",
+    )
+
+    assert replay["status"] == "transcript_requested"
+    assert bind_calls == 0
+
+
 def _opencli_ai_note_runner(
     video_name: str,
     *,

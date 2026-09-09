@@ -900,6 +900,22 @@ def test_repair_validation_accepts_subscription_video_browser_command_profile(
     assert receipt.failure_fingerprint == "3" * 64
 
 
+def test_browser_tab_profile_aliases_to_subscription_video_command_profile():
+    service = RepairValidationService(
+        ".",
+        ledger=RepairValidationLedger("repair-validation-unused.jsonl"),
+    )
+    profile = service._expected_profile({
+        "adapter": "subscription_video",
+        "category": "transport_error",
+        "code": "opencli_command_failed",
+        "stage": "browser_tab",
+        "targeted_test_profile": "kol_subscription_video_browser_tab",
+    })
+
+    assert profile == "kol_subscription_video_browser_command"
+
+
 @pytest.mark.parametrize(
     ("adapter", "failure_code"),
     [

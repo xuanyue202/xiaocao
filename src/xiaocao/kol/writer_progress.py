@@ -1325,6 +1325,10 @@ _SUBSCRIPTION_VIDEO_BROWSER_OPEN_REPAIR_PROFILE = (
 _SUBSCRIPTION_VIDEO_BROWSER_COMMAND_REPAIR_PROFILE = (
     "kol_subscription_video_browser_command"
 )
+_SUBSCRIPTION_VIDEO_BROWSER_COMMAND_REPAIR_PROFILE_ALIASES = frozenset({
+    _SUBSCRIPTION_VIDEO_BROWSER_COMMAND_REPAIR_PROFILE,
+    "kol_subscription_video_browser_tab",
+})
 
 
 def _canonical_subscription_video_browser_command_repair_profile(
@@ -1333,19 +1337,34 @@ def _canonical_subscription_video_browser_command_repair_profile(
     if (
         str(context.get("adapter") or "") == "subscription_video"
         and str(context.get("targeted_test_profile") or "")
-        == _SUBSCRIPTION_VIDEO_BROWSER_COMMAND_REPAIR_PROFILE
-        and str(context.get("stage") or "") == "browser_command"
+        in _SUBSCRIPTION_VIDEO_BROWSER_COMMAND_REPAIR_PROFILE_ALIASES
         and (
-            str(context.get("category") or ""),
-            str(context.get("code") or ""),
-        )
-        in {
-            ("transport_error", "opencli_command_failed"),
             (
-                "provider_contract_error",
-                "opencli_bound_tab_mutation_blocked",
-            ),
-        }
+                str(context.get("stage") or "") == "browser_command"
+                and (
+                    str(context.get("category") or ""),
+                    str(context.get("code") or ""),
+                )
+                in {
+                    ("transport_error", "opencli_command_failed"),
+                    (
+                        "provider_contract_error",
+                        "opencli_bound_tab_mutation_blocked",
+                    ),
+                }
+            )
+            or (
+                str(context.get("stage") or "") == "browser_tab"
+                and (
+                    str(context.get("category") or ""),
+                    str(context.get("code") or ""),
+                )
+                in {
+                    ("transport_error", "opencli_command_failed"),
+                    ("provider_contract_error", "bound_tab_mutation_blocked"),
+                }
+            )
+        )
     ):
         return _SUBSCRIPTION_VIDEO_BROWSER_COMMAND_REPAIR_PROFILE
     return None
@@ -1893,6 +1912,11 @@ class RepairValidationService:
                 profile == _SUBSCRIPTION_VIDEO_SOURCE_REPAIR_PROFILE
                 and declared_profile
                 in _SUBSCRIPTION_VIDEO_SOURCE_REPAIR_PROFILE_ALIASES
+            )
+            and not (
+                profile == _SUBSCRIPTION_VIDEO_BROWSER_COMMAND_REPAIR_PROFILE
+                and declared_profile
+                in _SUBSCRIPTION_VIDEO_BROWSER_COMMAND_REPAIR_PROFILE_ALIASES
             )
             and not (
                 profile == _SHARED_LV_LISTING_VALIDATION_REPAIR_PROFILE
