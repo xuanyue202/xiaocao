@@ -108,6 +108,12 @@ for this investigation, restart EOD, or launch a second business writer.
    or duplicate runs, scheduler delay, startup overhead, lock starvation and
    window misses separately. A correct time-gate rejection can still expose an
    orchestration defect upstream.
+   For learning, verify the latest usable executable signal date and new
+   executable labels, not just growing theoretical-label counts. Repeated
+   `LIMIT_DOWN_CHECK_UNAVAILABLE` across mature rows is a data-path anomaly:
+   historical fill evaluation must validate original market facts at the
+   historical entry clock, never against the current EOD clock. Missing facts
+   remain unknown/retryable evidence, not permanently cached unfillable trades.
 2. Trace current source -> reviewed analysis -> decision -> consumer using
    source hashes, applicability, review status and timestamps. Check stale or
    incomplete analysis, timeouts and lost consumption links. Missing evidence

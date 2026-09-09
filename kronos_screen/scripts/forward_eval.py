@@ -9,7 +9,9 @@ Run any time after the outcome day's close is available (T+1+). Idempotent.
 from __future__ import annotations
 import argparse, json, time
 from collections import defaultdict
+from datetime import datetime
 from pathlib import Path
+from zoneinfo import ZoneInfo
 import numpy as np
 import pandas as pd
 from xiaocao.config.settings import load_settings
@@ -253,6 +255,8 @@ def _is_known_executable(record: dict | None) -> bool:
     if not record:
         return False
     reason = record.get("executable_skip_reason")
+    if isinstance(reason, str) and reason == "LIMIT_DOWN_CHECK_UNAVAILABLE":
+        return False
     fillable = record.get("executable_fillable")
     try:
         has_fill = not pd.isna(fillable) and bool(fillable)
@@ -260,6 +264,41 @@ def _is_known_executable(record: dict | None) -> bool:
     except (TypeError, ValueError):
         return False
     return has_fill or has_reason
+
+
+def _historical_opening_fill(
+    record: dict, window: dict,
+) -> tuple[float | None, str, str | None, dict]:
+    """Replay market freshness at D's entry, never at the EOD wall clock.
+
+    Keep the original dated market facts and all guard invariants. Missing or
+    stale-at-entry evidence remains blocked; this helper never places orders.
+    """
+    if __package__:
+        from . import paper_record
+    else:
+        import paper_record
+
+    entry_clock = datetime.strptime(str(record["date"])[:10], "%Y-%m-%d").replace(
+        hour=9, minute=30, tzinfo=ZoneInfo("Asia/Shanghai")
+    )
+    record = dict(record)
+    # Legacy snapshots stored the provider clock without its trade date.
+    # Bind only when the immutable capture independently proves the same day.
+    if str(record.get("captured_at") or "")[:10] == entry_clock.date().isoformat():
+        text = str(record.get("market_observed_at") or "")
+        for fmt in ("%H:%M:%S:%f", "%H:%M:%S", "%H%M%S"):
+            try:
+                clock = datetime.strptime(text, fmt).time()
+            except ValueError:
+                continue
+            record["market_observed_at"] = datetime.combine(
+                entry_clock.date(), clock, tzinfo=ZoneInfo("Asia/Shanghai")
+            ).isoformat()
+            break
+    return paper_record._fill_price_from_window(
+        record, window=window, limit_premium_pct=0.5, market_guard_now=entry_clock,
+    )
 
 
 def qibao_benchmark_mask(df: pd.DataFrame) -> pd.Series:
@@ -438,11 +477,7 @@ def main():
         # the paper fill fallback.  Leave it pending so a later EOD can retry.
         if window is None:
             continue
-        fill_price, basis, _, meta = paper_fill._fill_price_from_window(
-            record,
-            window=window,
-            limit_premium_pct=0.5,
-        )
+        fill_price, basis, _, meta = _historical_opening_fill(record, window)
         if fill_price is None:
             executable[key] = {
                 "executable_fillable": False,

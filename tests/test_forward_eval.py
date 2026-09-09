@@ -73,6 +73,42 @@ def test_unknown_executable_nan_is_not_treated_as_cached_result() -> None:
     })
 
 
+def test_missing_market_evidence_is_not_a_terminal_cached_label() -> None:
+    assert not _is_known_executable({
+        "executable_fillable": False,
+        "executable_skip_reason": "LIMIT_DOWN_CHECK_UNAVAILABLE",
+    })
+
+
+def test_historical_fill_checks_market_facts_at_entry_clock() -> None:
+    from kronos_screen.scripts.forward_eval import _historical_opening_fill
+    from kronos_screen.scripts.paper_record import _fill_price_from_window
+
+    row = {
+        "date": "2026-09-08", "code": "600371.XSHG",
+        "open": 15.37, "basket_price": 15.6866,
+        "market_guard_required": True, "market_guard_status": "T100",
+        "market_price": 15.37, "down_price": 13.56,
+        "market_observed_at": "2026-09-08T09:25:00+08:00",
+    }
+    window = {"low": 15.37, "high": 15.50, "vwap": 15.40, "last": 15.40}
+    # The normal actuator still uses wall-clock freshness, not replay time.
+    expired = {**row, "date": "2020-01-02", "market_observed_at": "2020-01-02T09:25:00+08:00"}
+    assert _fill_price_from_window(expired, window=window, limit_premium_pct=0.5)[0] is None
+    assert _historical_opening_fill(row, window)[0] == pytest.approx(15.40)
+    legacy = {**row, "captured_at": "2026-09-08T09:25:54", "market_observed_at": "09:25:00:140"}
+    assert _historical_opening_fill(legacy, window)[0] == pytest.approx(15.40)
+    assert _historical_opening_fill({**legacy, "captured_at": "2026-09-07T09:25:54"}, window)[0] is None
+    for invalid in (
+        {"down_price": None},
+        {"market_observed_at": "2026-09-07T09:25:00+08:00"},
+        {"market_observed_at": "2026-09-08T09:00:00+08:00"},
+        {"market_guard_status": "suspended"},
+        {"market_price": 13.56},
+    ):
+        assert _historical_opening_fill({**row, **invalid}, window)[0] is None
+
+
 def test_market_return_requires_all_four_index_components() -> None:
     complete = _market_return_map(_IndexClient(), ["2026-07-10"], {})
     incomplete = _market_return_map(

@@ -518,6 +518,7 @@ def _fill_price_from_window(
     *,
     window: dict | None,
     limit_premium_pct: float,
+    market_guard_now: datetime | None = None,
 ) -> tuple[float | None, str, str | None, dict]:
     """Realistic paper fill with an order-status retry.
 
@@ -572,7 +573,7 @@ def _fill_price_from_window(
             metadata["skip_reason"] = "INSTRUMENT_CONTRACT_UNVERIFIED"
             metadata["skip_detail"] = str(exc)
             return None, "skipped_instrument_contract", record.get("basket_rule"), metadata
-    guard_ok, guard_reason, guard_evidence = evaluate_buy_market_guard(record)
+    guard_ok, guard_reason, guard_evidence = evaluate_buy_market_guard(record, now=market_guard_now)
     metadata.update(guard_evidence)
     if not guard_ok:
         metadata["skip_reason"] = guard_reason
