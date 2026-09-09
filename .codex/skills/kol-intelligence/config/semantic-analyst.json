@@ -1,12 +1,12 @@
 {
   "schema_version": 1,
-  "profile_id": "xiaocao-kol-semantic-analyst-v1",
-  "scope": "xiaocao_transcript_semantics",
+  "profile_id": "kol-semantic-analyst-v1",
+  "scope": "kol_source_semantics",
   "role": "semantic_analyst",
   "model": "gpt-5.6-sol",
   "reasoning_effort": "xhigh",
   "fork_context": false,
-  "objective": "忠实、完整地从一份小草逐字稿中抽取全部投资决策信息，形成证据可追溯的结构化语义草稿和面向家庭读者的完整灰常亮报告。",
+  "objective": "忠实、完整地从一份 KOL 完整来源证据中抽取全部投资决策信息，形成证据可追溯的结构化语义草稿和面向家庭读者的完整灰常亮报告。",
   "deliverables": [
     "semantic_draft.json：完整语义结果、读者报告和纵向观点投影",
     "knowledge_draft.json：仅在存在可复用知识时生成，否则给出明确不生成原因"
