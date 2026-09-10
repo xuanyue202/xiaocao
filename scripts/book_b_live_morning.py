@@ -145,6 +145,22 @@ def _review_rendezvous(request: dict, *, now=None, sleep=None, monotonic=None,
     monotonic = monotonic or time.monotonic
     started = monotonic()
     payload = dict(request)
+    # K/P are optional supporting scores. Legacy frozen rows may represent
+    # their missing values as NaN; expose null in the review copy only and
+    # retain an explicit conversion record plus the original freeze digest.
+    # Never normalize execution fields or infinities into valid evidence.
+    candidates = [dict(row) for row in payload.get("candidates", [])]
+    missing_values = []
+    for index, row in enumerate(candidates):
+        for field in ("k_score", "p_score"):
+            value = row.get(field)
+            if isinstance(value, float) and math.isnan(value):
+                row[field] = None
+                missing_values.append({"candidate_index": index, "code": row.get("code"),
+                                       "field": field, "source_value": "NaN"})
+    if missing_values:
+        payload["candidates"] = candidates
+        payload["candidate_missing_values"] = missing_values
     requested = datetime.fromisoformat(payload["requested_at"])
     entry_deadline = datetime.fromisoformat(payload["entry_deadline"])
     if requested.utcoffset() is None or entry_deadline.utcoffset() is None:

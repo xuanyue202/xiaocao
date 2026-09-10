@@ -122,6 +122,12 @@ recoverable diagnosis, test-first repair, exact narrow resume, terminal
 readback, and 5 Why; it must not leave a locally repairable failure for the
 next schedule.
 
+The review request keeps the original frozen evidence hash. Legacy missing
+`k_score` / `p_score` NaN values become null only in the review copy, with an
+explicit `candidate_missing_values` audit. This never edits the frozen rows or
+normalizes execution fields or infinities. A process that died before opening
+its review window must not be restarted to obtain a late semantic decision.
+
 The execution stage must never rerun `live_recommend.py`. Keep its shell alive
 through the agent-review rendezvous and paper recording. Do not restart it while
 it is waiting for the opening window. For an explicit manual one-shell recovery,
