@@ -369,7 +369,7 @@ def main():
         "--backfill-executable-max",
         type=int,
         default=20,
-        help="maximum missing all-hit opening-window fills to backfill this run",
+        help="maximum missing all-hit opening-window fills to backfill, newest mature signals first",
     )
     ap.add_argument(
         "--backfill-sleep-sec",
@@ -445,7 +445,10 @@ def main():
     executable: dict[tuple[str, str], dict] = {}
     backfilled = 0
     max_backfill = max(0, int(a.backfill_executable_max))
-    for row in df.itertuples():
+    # Retriable old evidence gaps must not exhaust the bounded minute-read
+    # budget before newly matured signals are evaluated. Keep the persisted
+    # frame order unchanged; only the work queue is newest-first and stable.
+    for row in df.sort_values("date", ascending=False, kind="stable").itertuples():
         day = str(row.date)[:10]
         code = str(row.code)
         key = (day, code)
@@ -516,11 +519,15 @@ def main():
 
     scored = ensure_training_schema(df[df["realized_ret"].notna()].copy())
     executable_known = int(pd.to_numeric(scored["executable_net_ret"], errors="coerce").notna().sum())
+    usable = pd.to_numeric(scored["executable_net_ret"], errors="coerce").notna()
+    latest_executable = str(scored.loc[usable, "date"].max()) if usable.any() else "NONE"
+    latest_mature = str(scored["date"].max()) if not scored.empty else "NONE"
     print(
         f"snapshots={len(df)}  scored(outcome known)={len(scored)}  "
         f"pending={len(df)-len(scored)}  executable={executable_known}  "
         f"backfilled={backfilled}"
     )
+    print(f"executable evidence: latest={latest_executable} latest_mature={latest_mature}")
     if scored.empty:
         print("no outcomes available yet — re-run after T+1 close."); return
 

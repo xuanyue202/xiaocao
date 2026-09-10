@@ -114,6 +114,10 @@ for this investigation, restart EOD, or launch a second business writer.
    historical fill evaluation must validate original market facts at the
    historical entry clock, never against the current EOD clock. Missing facts
    remain unknown/retryable evidence, not permanently cached unfillable trades.
+   The bounded executable backfill queue processes recent mature signals first;
+   old retryable gaps must not consume the whole budget ahead of new D+1 rows.
+   Compare `latest` executable date with `latest_mature` in the terminal log.
+   A newer theoretical date alone does not prove new executable evidence.
 2. Trace current source -> reviewed analysis -> decision -> consumer using
    source hashes, applicability, review status and timestamps. Check stale or
    incomplete analysis, timeouts and lost consumption links. Missing evidence

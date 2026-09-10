@@ -24,6 +24,11 @@ continues to use the wall clock. Missing market evidence remains retryable;
 it must not freeze mode evidence by caching an unavailable check as a terminal
 trade outcome. Track the latest executable evidence date separately from
 theoretical label counts.
+The bounded minute-read backfill queue runs newest mature signal dates first,
+then older retryable gaps within the same budget and rate limit. It reuses
+known labels without a read and excludes rows without a D+1 outcome. Terminal
+output reports both latest executable and latest mature signal dates; an old
+unavailable-evidence backlog must not hide starvation of recent samples.
 
 ## Daily research loop
 
