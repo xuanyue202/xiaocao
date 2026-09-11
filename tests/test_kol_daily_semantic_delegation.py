@@ -86,6 +86,48 @@ def test_hourly_accepts_only_bound_dispatch_and_unchanged_draft(tmp_path):
         kol_daily._require_canonical_semantic_artifact(bundle, request)
 
 
+def test_hourly_accepts_bundle_from_immutable_context_revision(tmp_path):
+    request, request_path, draft, market, bundle = _inputs(tmp_path)
+    first = prepare(request_path, market_evidence=market)
+    revised_market = json.loads(market.read_text(encoding="utf-8"))
+    revised_market["as_of"] = "2026-08-08T01:00:00Z"
+    market.write_text(json.dumps(revised_market), encoding="utf-8")
+    revised = prepare(request_path, market_evidence=market)
+    assert Path(revised["packet_path"]).parent.name.startswith("context-")
+    packet = json.loads(Path(revised["packet_path"]).read_text(encoding="utf-8"))
+    draft_path = Path(packet["expected_outputs"]["semantic_draft.json"])
+    draft_path.write_text(json.dumps(draft), encoding="utf-8")
+    record_dispatch(
+        request_path, packet_path=revised["packet_path"],
+        agent_id="019a7213-73b4-7351-87c4-13e1234abcde",
+        invocation_args=revised["spawn_arguments_path"],
+    )
+    build_validated_bundle_from_files(request_path, draft_path, market)
+    structural = verify_result(
+        request_path, packet_path=revised["packet_path"], bundle_path=bundle,
+        semantic_draft=draft_path, agent_id="019a7213-73b4-7351-87c4-13e1234abcde",
+    )
+    review = {
+        "decision": "accepted", "reviewer": "parent_main_agent",
+        "reviewed_at": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
+        "independent_full_evidence_read": True,
+        "reviewed_segment_ids": packet["segment_ids"],
+        "bindings": {
+            "analysis_request": packet["analysis_request"],
+            "packet": {"path": revised["packet_path"], "sha256": revised["packet_sha256"]},
+            "semantic_draft": structural["semantic_draft"], "bundle": structural["bundle"],
+            "receipt": structural["receipt"], "knowledge_draft": None,
+        },
+        "checks": {name: {"status": "passed", "evidence": "Full fixture review passed."}
+                   for name in PARENT_REVIEW_CHECKS},
+    }
+    request_path.with_name("parent_source_review.json").write_text(
+        json.dumps(review), encoding="utf-8"
+    )
+    assert Path(first["packet_path"]) != Path(revised["packet_path"])
+    assert kol_daily._require_canonical_semantic_artifact(bundle, request) == bundle
+
+
 def test_other_authors_keep_existing_canonical_route(tmp_path):
     request, request_path, draft, market, bundle = _inputs(tmp_path)
     request["author"] = "另一位作者"

@@ -332,6 +332,20 @@ def prepare(analysis_request: Path | str, *, market_evidence: Path | str | None 
             )):
                 raise DelegationError("Completed or drafted semantic packet cannot be reissued under a new profile")
             directory = directory / analyst_profile["source"]["sha256"]
+        else:
+            candidate = _packet(
+                request_path,
+                prior_packet,
+                _path(market_evidence) if market_evidence else None,
+                _path(household_context) if household_context else None,
+                analyst_profile,
+            )
+            if candidate != prior:
+                context_revision = _sha(_bytes({
+                    "market_evidence": candidate.get("market_evidence"),
+                    "household_context": candidate.get("household_context"),
+                }))
+                directory = directory / f"context-{context_revision}"
     packet_path = directory / "context_packet.json"
     packet = _packet(request_path, packet_path, _path(market_evidence) if market_evidence else None,
                      _path(household_context) if household_context else None, analyst_profile)

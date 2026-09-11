@@ -161,6 +161,29 @@ def test_unfinished_packet_can_be_reissued_after_profile_repair(inputs, monkeypa
     assert first_paths == {path: path.read_bytes() for path in Path(first["packet_path"]).parent.iterdir() if path.is_file()}
 
 
+def test_changed_optional_context_gets_immutable_revision_packet(inputs):
+    first = _prepare(inputs)
+    first_dir = Path(first["packet_path"]).parent
+    first_paths = {
+        path: path.read_bytes() for path in first_dir.iterdir() if path.is_file()
+    }
+    market = _read(inputs["market"])
+    market["validation"]["as_of"] = "2026-08-09T11:00:00+08:00"
+    _write(inputs["market"], market)
+
+    revised = _prepare(inputs)
+    revised_packet = _read(revised["packet_path"])
+
+    assert revised["packet_path"] != first["packet_path"]
+    assert Path(revised["packet_path"]).parent.parent == first_dir
+    assert Path(revised["packet_path"]).parent.name.startswith("context-")
+    assert revised_packet["market_evidence"]["sha256"] == _sha(inputs["market"])
+    assert first_paths == {
+        path: path.read_bytes() for path in first_dir.iterdir() if path.is_file()
+    }
+    assert _prepare(inputs) == revised
+
+
 @pytest.mark.parametrize("field,value", [("model", "gpt-5.6-luna"), ("reasoning_effort", "high"),
                                          ("fork_context", True), ("fork_context", 0), ("message", "summary only")])
 def test_wrong_dispatch_arguments_block(inputs, field, value):

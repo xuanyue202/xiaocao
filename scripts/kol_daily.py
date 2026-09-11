@@ -21,7 +21,7 @@ from pathlib import Path
 from time import sleep as _cloud_handoff_sleep
 from typing import Any
 
-from xiaocao.kol._shared import DecisionError
+from xiaocao.kol._shared import DecisionError, canonical_sha256
 from xiaocao.kol.daily import (
     AGENT_OWNED_FAILURE_CATEGORIES,
     build_initial_projection_candidate,
@@ -904,10 +904,28 @@ def _require_canonical_semantic_artifact(
         if not request_path_value:
             raise ValueError("persisted analysis request path is required")
         request_sha = hashlib.sha256(request_path.read_bytes()).hexdigest()
-        packet_path = (
-            request_path.parent / ".semantic_delegation" / request_sha
-            / "context_packet.json"
-        )
+        packet_root = request_path.parent / ".semantic_delegation" / request_sha
+        draft_sha = str(receipt.bindings.get("semantic_draft_sha256") or "")
+        packet_candidates = [packet_root / "context_packet.json"]
+        packet_candidates.extend(sorted(packet_root.glob("context-*/context_packet.json")))
+        matching_packets: list[Path] = []
+        for candidate in packet_candidates:
+            if not candidate.is_file():
+                continue
+            candidate_packet = json.loads(candidate.read_text(encoding="utf-8"))
+            candidate_draft = Path(
+                candidate_packet["expected_outputs"]["semantic_draft.json"]
+            ).expanduser().resolve()
+            if (
+                candidate_draft.is_file()
+                and canonical_sha256(
+                    json.loads(candidate_draft.read_text(encoding="utf-8"))
+                ) == draft_sha
+            ):
+                matching_packets.append(candidate)
+        if len(matching_packets) != 1:
+            raise ValueError("semantic bundle must bind exactly one delegated context packet")
+        packet_path = matching_packets[0]
         packet = json.loads(packet_path.read_text(encoding="utf-8"))
         dispatch = json.loads(
             packet_path.with_name("dispatch.json").read_text(encoding="utf-8")
