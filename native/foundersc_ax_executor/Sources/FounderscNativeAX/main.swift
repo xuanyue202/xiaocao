@@ -90,6 +90,7 @@ private struct OrderReadback: Codable {
     let saved: Bool
     let started: Bool
     let formCleared: Bool?
+    var clearEvidence: [[String: String]]? = nil
     let clickMode: String
     let observedAt: String
 }
@@ -2106,26 +2107,36 @@ private func setOrderFields(_ fields: OrderFields, input: OrderInput) -> Bool {
     return priceResult == .success && quantityResult == .success
 }
 
-private func clearOrderFields(_ fields: OrderFields) -> Bool {
+private func clearOrderFields(
+    _ fields: OrderFields,
+    record: ([String: String]) -> Void = { _ in }
+) -> Bool {
+    // Clearing the security triggers a quote callback. Do it once, before
+    // dependent fields; re-clearing it after price recreates the residual quote.
+    let codeResult = AXUIElementSetAttributeValue(
+        fields.code, kAXValueAttribute as CFString, "" as CFTypeRef
+    )
+    usleep(100_000)
     for attempt in 1...2 {
-        let results = [fields.quantity, fields.price, fields.code].map { field in
+        let results = [fields.quantity, fields.price].map { field in
             AXUIElementSetAttributeValue(
-                field,
-                kAXValueAttribute as CFString,
-                "" as CFTypeRef
+                field, kAXValueAttribute as CFString, "" as CFTypeRef
             )
         }
-        // The native form may repopulate dependent price/quantity fields after
-        // the code is cleared.  Re-check after the UI settles, then permit one
-        // more field-clear attempt without any Return, confirmation or submit.
         usleep(attempt == 1 ? 100_000 : 200_000)
-        let code = normalizedCode(fieldString(fields.code))
-        let price = normalizedDecimal(fieldString(fields.price))
-        let quantity = normalizedQuantity(fieldString(fields.quantity))
-        if results.allSatisfy({ $0 == .success })
-            && code.isEmpty
-            && (price == nil || price == 0)
-            && (quantity == nil || quantity == 0) {
+        let code = fieldString(fields.code).trimmingCharacters(in: .whitespacesAndNewlines)
+        let price = fieldString(fields.price).trimmingCharacters(in: .whitespacesAndNewlines)
+        let quantity = fieldString(fields.quantity).trimmingCharacters(in: .whitespacesAndNewlines)
+        let writesSucceeded = codeResult == .success && results.allSatisfy({ $0 == .success })
+        record([
+            "attempt": String(attempt), "code": code, "price": price,
+            "quantity": quantity, "writes_succeeded": String(writesSucceeded),
+            "sequence": "code_once_then_dependent_fields", "click_mode": "none"
+        ])
+        // A malformed non-empty numeric value is not a neutral field.
+        if writesSucceeded && code.isEmpty
+            && (price.isEmpty || normalizedDecimal(price) == 0)
+            && (quantity.isEmpty || normalizedQuantity(quantity) == 0) {
             return true
         }
     }
@@ -2188,7 +2199,8 @@ private func prepareOrder(arguments: [String]) -> Receipt {
     }
     let clearAfter = arguments.contains("--clear-after-readback")
     if clearAfter {
-        let cleared = clearOrderFields(fields)
+        var clearEvidence: [[String: String]] = []
+        let cleared = clearOrderFields(fields) { clearEvidence.append($0) }
         readback = OrderReadback(
             code: readback.code,
             side: readback.side,
@@ -2203,6 +2215,7 @@ private func prepareOrder(arguments: [String]) -> Receipt {
             clickMode: "none",
             observedAt: readback.observedAt
         )
+        readback.clearEvidence = clearEvidence
         guard cleared else {
             receipt.status = "prepare_clear_unproven"
             receipt.reason = "prepared fields were read back but could not be proven cleared"

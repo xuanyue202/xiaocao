@@ -149,6 +149,11 @@ low-confidence field or cross-table mismatch remains fail-closed.
 Persist the baseline order ids and durable claim id so a lost submit response
 can recover across restart only from one exact new-row delta. Missing durable
 context stays UNKNOWN/no-retry.
+Read-only prepare neutralizes the security code once before clearing dependent
+price/quantity fields, allowing the code-triggered quote callback to settle first.
+The bounded second clear must not rewrite the code and retrigger that callback.
+Persist each clear attempt's raw code/price/quantity and write-success evidence;
+a non-empty malformed numeric field never proves neutralization.
 Normalize broker numeric cells by field and locale: a Vision decimal comma
 such as `17,3900` is 17.3900, while grouping commas such as `54,528.94` must
 remain grouping separators. Preserve a validated success-popup order id plus
