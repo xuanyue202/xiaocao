@@ -1245,11 +1245,11 @@ class XiaocaoWechatLiveSubscription:
         # Warm-up/live requests are not a completed replay, even when the
         # native window opened successfully. Preserve that evidence without
         # advancing the download. The Agent closes the waiting course window.
-        replay_unavailable = page_state in {"waiting_to_start", "live", "replay_generating"}
+        replay_ready = page_state in {"mini_program_media_observed", "playable"}
         activated = (
             response.get("activated") is True
             and media_request_observed
-            and not replay_unavailable
+            and replay_ready
         )
         if activated and response.get("playback_window_closed") is not True:
             raise EnrichmentDiagnosticError(

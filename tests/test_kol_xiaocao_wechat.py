@@ -485,7 +485,7 @@ def test_native_playback_restores_only_the_existing_capture(tmp_path, returned_i
 
 
 @pytest.mark.parametrize("closed", [True, False, None])
-@pytest.mark.parametrize("page_state", ["mini_program_media_observed", "live", "waiting_to_start", "replay_generating"])
+@pytest.mark.parametrize("page_state", ["mini_program_media_observed", "live", "waiting_to_start", "replay_generating", "mini_program_waiting", "unknown"])
 def test_wechat_mini_program_route_binds_media_to_the_exact_live_id(tmp_path, closed, page_state):
     page_url = (
         "https://app6ums63as6516.h5.xiaoeknow.com/v2/course/alive/"
