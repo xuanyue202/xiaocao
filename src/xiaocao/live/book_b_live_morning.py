@@ -1421,13 +1421,16 @@ def _blocked_receipt(
     config: BookBLiveMorningConfig,
     reason: str,
     preparation_receipts: tuple[dict, ...] = (),
+    *,
+    plan_count: int = 0,
+    execution_receipts: tuple[dict, ...] = (),
 ) -> BookBLiveMorningReceipt:
     return BookBLiveMorningReceipt(
         trade_date=config.trade_date,
         status="blocked",
         reason=reason,
-        plan_count=0,
-        execution_receipts=(),
+        plan_count=plan_count,
+        execution_receipts=execution_receipts,
         preparation_receipts=preparation_receipts,
         freeze_path=str(config.freeze_path),
         allocation_facts_path=str(config.allocation_facts_path),
@@ -1540,6 +1543,8 @@ def run_book_b_live_morning(
     environment_receipt: dict | None = None
     environment_restoration: dict | None = None
     preparation_receipts: list[dict] = []
+    plans: list[TradePlan] = []
+    execution_receipts: list[ExecutionReceipt] = []
     receipt: BookBLiveMorningReceipt
     restore_failure: str | None = None
     policy_consumptions: list[dict] = []
@@ -1772,11 +1777,13 @@ def run_book_b_live_morning(
                             if refresh_receipt is not None:
                                 market_guard_refreshes.append(refresh_receipt)
                         execution_plans.append(plan)
-                    execution_receipts = []
                     for plan in execution_plans:
                         if not allow_new_risk(plan):
                             continue
                         execution_receipt = execute_plan(plan)
+                        # Preserve each returned observation before another
+                        # read can fail; an ACK is still not a terminal fill.
+                        execution_receipts.append(execution_receipt)
                         for _attempt in range(3):
                             needs_reconcile = (
                                 execution_receipt.state
@@ -1796,7 +1803,7 @@ def run_book_b_live_morning(
                             if wait_for_reconcile is not None:
                                 wait_for_reconcile()
                             execution_receipt = execute_plan(plan)
-                        execution_receipts.append(execution_receipt)
+                            execution_receipts[-1] = execution_receipt
                         if execution_receipt.state in {
                             ExecutionState.CLAIMED, ExecutionState.UNKNOWN, ExecutionState.SUBMITTED,
                             ExecutionState.ACKNOWLEDGED, ExecutionState.PARTIAL, ExecutionState.RECONCILING,
@@ -1821,6 +1828,8 @@ def run_book_b_live_morning(
                 config,
                 str(exc),
                 tuple(preparation_receipts),
+                plan_count=len(plans),
+                execution_receipts=tuple(item.as_dict() for item in execution_receipts),
             )
     finally:
         if preflight_attempted and restore_environment is not None:

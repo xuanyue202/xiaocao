@@ -1375,6 +1375,8 @@ def test_live_morning_reuses_intent_written_before_prepare_block(
         now=lambda: datetime(2026, 8, 24, 1, 30, tzinfo=timezone.utc),
     )
     assert first.reason == "LIVE_PREPARE_ONLY_FORM_NOT_CLOSED"
+    assert first.plan_count == len(list((state_dir / "plan_intents").glob("*.json"))) == 1
+    assert first.execution_receipts == ()
     assert not (state_dir / "market_guard_refreshes").exists()
 
     changed = _live_allocation_payload()
@@ -1824,6 +1826,47 @@ def test_live_morning_blocks_before_execution_when_prepare_only_is_unproven(
         prepare_receipt.normalized_status().value
     )
     assert receipt.preparation_receipts[0]["reason"] == prepare_receipt.reason
+
+
+def test_live_morning_preserves_acknowledgement_when_reconcile_raises(tmp_path: Path) -> None:
+    freeze = tmp_path / "freeze.jsonl"
+    freeze.write_text(json.dumps(_frozen_row()) + "\n", encoding="utf-8")
+    allocation = tmp_path / "allocation.json"
+    allocation.write_text(json.dumps(_live_allocation_payload()), encoding="utf-8")
+    state_dir = tmp_path / "state"
+    calls = []
+
+    def execute(plan):
+        calls.append(plan.plan_id)
+        if len(calls) > 1:
+            raise RuntimeError("TEST_RECONCILE_READ_FAILED")
+        return ExecutionReceipt(
+            plan.plan_id, plan.plan_hash, ExecutionState.ACKNOWLEDGED,
+            broker_order_id="order-123", next_action="reconcile_only",
+        )
+
+    receipt = run_book_b_live_morning(
+        BookBLiveMorningConfig(
+            trade_date="2026-08-24", freeze_path=freeze,
+            allocation_facts_path=allocation, state_dir=state_dir,
+            dated_freeze_receipt=_ready_freeze(),
+        ),
+        execute=execute,
+        now=lambda: datetime(2026, 8, 24, 1, 30, tzinfo=timezone.utc),
+    )
+
+    assert receipt.status == "blocked"
+    assert receipt.reason == "TEST_RECONCILE_READ_FAILED"
+    assert len(calls) == 2
+    assert len(receipt.execution_receipts) == 1
+    assert receipt.execution_receipts[0]["state"] == "acknowledged"
+    assert receipt.execution_receipts[0]["broker_order_id"] == "order-123"
+    assert receipt.execution_receipts[0]["next_action"] == "reconcile_only"
+    assert receipt.plan_count == 1
+    saved = json.loads((state_dir / "runs/2026-08-24.json").read_text())
+    assert saved["status"] == "blocked"
+    assert saved["plan_count"] == 1
+    assert saved["execution_receipts"] == list(receipt.execution_receipts)
 
 
 def test_live_morning_does_not_wait_for_simulated_fill_fields(tmp_path: Path) -> None:

@@ -134,6 +134,11 @@ for this investigation, restart EOD, or launch a second business writer.
    ownership, cash and settlement. Keep paper/live explanations separate;
    paper fills cannot prove live execution. Check UNKNOWN, mismatches, stale
    marks, missing artifacts and immutable settlement integrity.
+   A blocked morning receipt retains its completed materialization count and
+   last returned execution observations. Cross-check durable intents/events:
+   an exception during materialization may precede that count, and an ACK
+   before a failed read is still unresolved. Keep the original failure receipt
+   separate from later repair or owner-abandonment evidence.
 5. Classify each finding as expected terminal state, repair_required,
    reconcile_only or user_action_required. For safely repairable code,
    configuration or orchestration faults, the started task owns repair: follow
