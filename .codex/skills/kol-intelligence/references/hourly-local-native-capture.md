@@ -305,5 +305,12 @@ sniffer merely to pass audit. A mismatched saved task fails closed.
 
 A visible current broadcast with only bound liveplay candidates returns
 `page_state=live` and truthful `media_request_observed=true`; it stays
-`awaiting_playback`. This is not finite replay acceptance and does not trigger
-the post-capture window-closure gate or permit a finite download.
+`awaiting_playback`. Close the exact course using W7–W10; do not download it.
+
+## 未结束直播与暖场（2026-09-11 用户修订）
+
+未开播、直播中、回放生成中，先按 W7–W10 关闭已核对标题的课程窗口；
+这些状态的关闭不要求先捕获有限回放。保留原身份和 source job，返回
+对应 waiting_to_start/live/replay_generating、activated=false、真实媒体观察值
+和窗口关闭读回。暖场 get_warm_up_video 与 liveplay 都不是目标完整回放，
+不得下载。只有直播结束且完整回放生成后才执行下载。
