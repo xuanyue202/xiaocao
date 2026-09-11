@@ -485,7 +485,7 @@ def test_native_playback_restores_only_the_existing_capture(tmp_path, returned_i
 
 
 @pytest.mark.parametrize("closed", [True, False, None])
-@pytest.mark.parametrize("page_state", ["mini_program_media_observed", "live"])
+@pytest.mark.parametrize("page_state", ["mini_program_media_observed", "live", "waiting_to_start", "replay_generating", "mini_program_waiting", "unknown"])
 def test_wechat_mini_program_route_binds_media_to_the_exact_live_id(tmp_path, closed, page_state):
     page_url = (
         "https://app6ums63as6516.h5.xiaoeknow.com/v2/course/alive/"
@@ -529,6 +529,7 @@ def test_wechat_mini_program_route_binds_media_to_the_exact_live_id(tmp_path, cl
             "--expected-identity", "xiaoetong:app6ums63as6516:l_6a9531fbe4b0694c35440d7e",
         ]
         assert "不重开" in request["instructions"]
+        assert "只有直播结束且完整回放生成才可下载" in request["instructions"]
         return {
             "action": request["action"],
             "subscription_id": request["subscription_id"],
@@ -555,7 +556,7 @@ def test_wechat_mini_program_route_binds_media_to_the_exact_live_id(tmp_path, cl
         clock=lambda: datetime.fromisoformat("2026-08-31T23:00:00+08:00"),
     )
 
-    if closed is not True and page_state != "live":
+    if closed is not True and page_state == "mini_program_media_observed":
         with pytest.raises(EnrichmentDiagnosticError) as error:
             subscription.run_once(opencli_session="xiaocao-lv-subscription")
         assert error.value.diagnostic_code == "native_playback_window_close_unverified"
@@ -564,7 +565,7 @@ def test_wechat_mini_program_route_binds_media_to_the_exact_live_id(tmp_path, cl
 
     result = subscription.run_once(opencli_session="xiaocao-lv-subscription")
     assert result["status"] == "waiting"
-    assert capture.advances == (0 if page_state == "live" else 1)
+    assert capture.advances == (1 if page_state == "mini_program_media_observed" else 0)
     assert [request["action"] for request in requests] == [
         "resolve_xiaoetong_page",
         "activate_xiaoetong_mini_program",
@@ -573,7 +574,7 @@ def test_wechat_mini_program_route_binds_media_to_the_exact_live_id(tmp_path, cl
         (tmp_path / "wechat" / "manifest.json").read_text(encoding="utf-8")
     )
     item = next(iter(manifest["items"].values()))
-    assert item["status"] == ("awaiting_playback" if page_state == "live" else "playback_activated")
+    assert item["status"] == ("playback_activated" if page_state == "mini_program_media_observed" else "awaiting_playback")
     assert item["playback_route"] == (
         XIAOCAO_PLAYBACK_ROUTE_WECHAT_MINI_PROGRAM
     )
@@ -955,8 +956,18 @@ def test_newer_preview_is_not_starved_by_an_older_unfinished_capture(tmp_path):
     manifest = json.loads(
         (tmp_path / "wechat" / "manifest.json").read_text(encoding="utf-8")
     )
-    assert manifest["items"][morning_identity]["status"] == "superseded"
-    assert manifest["items"][morning_identity]["superseded_by"] == new_identity
+    assert manifest["items"][morning_identity]["status"] == "discovered"
+    assert "superseded_by" not in manifest["items"][morning_identity]
+
+    # Recover the legacy persisted state only through explicit same-item resume.
+    manifest["items"][morning_identity]["status"] = "superseded"
+    subscription._save(manifest)
+    subscription.run_once(
+        opencli_session="xiaocao-lv-subscription", only_identity=morning_identity,
+    )
+    assert capture.arms[-1][0] == morning_identity
+    restored = subscription._load()["items"][morning_identity]
+    assert restored["backfill_reason"] == "explicit_item_resume"
 
 
 def test_newest_inflight_capture_precedes_an_older_ready_handoff():

@@ -1108,6 +1108,8 @@ class XiaocaoWechatLiveSubscription:
                 "开始播放并被抓取后，关闭这一个鹅直播课程窗口：在确认标题的目标窗口"
                 "点击文件菜单，再点击该窗口的关闭全部标签页（performClose:），读回"
                 "窗口菜单已无鹅直播。若未自动起播，只点击一次可见播放按钮。"
+                "未开播、直播中或回放生成中：先按同一文件菜单关闭课程并读回，不下载暖场或直播流；"
+                "只有直播结束且完整回放生成才可下载。"
                 "不按空格、不静音、不退出微信。关闭播放器不等于下载完成，仍需验证"
                 "同一下载任务的媒体文件。确认本机"
                 "wx_channels_download 已观察到媒体请求，并从其无凭证日志确认"
@@ -1240,14 +1242,14 @@ class XiaocaoWechatLiveSubscription:
             raise EnrichmentError(
                 "WeChat mini-program playback binding is invalid"
             )
-        # A current live stream is not a captured finite replay. Keep the
-        # source waiting without demanding the post-capture window cleanup.
-        # Preserve observed media evidence even while replay activation is false.
-        current_live_only = page_state == "live"
+        # Warm-up/live requests are not a completed replay, even when the
+        # native window opened successfully. Preserve that evidence without
+        # advancing the download. The Agent closes the waiting course window.
+        replay_ready = page_state in {"mini_program_media_observed", "playable"}
         activated = (
             response.get("activated") is True
             and media_request_observed
-            and not current_live_only
+            and replay_ready
         )
         if activated and response.get("playback_window_closed") is not True:
             raise EnrichmentDiagnosticError(
@@ -1367,7 +1369,6 @@ class XiaocaoWechatLiveSubscription:
         manifest = self._load()
         if only_identity is None:
             self._poll(manifest)
-            self._supersede_older_unarmed_previews(manifest)
             self.expire_stale_waits(manifest)
             item = self._next_pending(manifest)
         else:
@@ -1378,6 +1379,17 @@ class XiaocaoWechatLiveSubscription:
                     "Xiaocao narrow resume item is missing"
                 )
             item = dict(item)
+            # Explicit one-item backfill may recover a recent skipped preview.
+            # Expired entries and any already-bound claims remain immutable.
+            if (
+                item.get("status") == "superseded"
+                and not item.get("capture_job_id")
+                and datetime.fromisoformat(item["published_at"])
+                > datetime.fromisoformat(self._now()) - timedelta(hours=72)
+            ):
+                item = self._transition(
+                    manifest, item, "discovered", backfill_reason="explicit_item_resume",
+                )
             if item.get("status") in _TERMINAL:
                 return {
                     "status": "no_update",
