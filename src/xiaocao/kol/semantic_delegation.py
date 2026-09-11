@@ -11,6 +11,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import re
 import tempfile
 from datetime import datetime, timezone
 from pathlib import Path
@@ -374,13 +375,27 @@ def _load_packet(analysis_request: Path | str, packet_path: Path | str) -> dict[
 
 
 def _agent_id(value: str) -> str:
-    # Current parent spawn interface returns UUIDs. Unknown formats fail closed.
+    # Agent runtimes return either an opaque UUID or a canonical task identity.
+    # Preserve the exact returned value; unknown and placeholder formats fail closed.
+    try:
+        parsed = UUID(value)
+    except (ValueError, TypeError, AttributeError):
+        if isinstance(value, str) and re.fullmatch(r"/root(?:/[a-z0-9_]+)+", value):
+            return value
+        raise DelegationError("Expected the actual returned agent identity, not a failure or placeholder")
+    if str(parsed) == value and parsed.variant == "specified in RFC 4122" and len(set(parsed.hex)) >= 5:
+        return value
+    raise DelegationError("Invalid or placeholder-looking agent identity")
+
+
+def _submission_id(value: str) -> str:
+    """Context-delivery receipts remain opaque RFC-4122 submission UUIDs."""
     try:
         parsed = UUID(value)
     except (ValueError, TypeError, AttributeError) as exc:
-        raise DelegationError("Expected the actual returned agent UUID, not a failure or placeholder") from exc
+        raise DelegationError("Expected the actual returned submission UUID") from exc
     if str(parsed) != value or parsed.variant != "specified in RFC 4122" or len(set(parsed.hex)) < 5:
-        raise DelegationError("Invalid or placeholder-looking agent UUID")
+        raise DelegationError("Invalid or placeholder-looking submission UUID")
     return value
 
 
@@ -413,7 +428,7 @@ def _context_delivery(packet: dict[str, Any], agent_id: str, path: Path | str) -
         raise DelegationError("Context delivery must send the exact prepared prompt to the same agent")
     if not isinstance(result, dict) or set(result) != {"submission_id"}:
         raise DelegationError("Context delivery requires an accepted send_input submission_id result")
-    submission_id = _agent_id(result["submission_id"])
+    submission_id = _submission_id(result["submission_id"])
     if submission_id == agent_id:
         raise DelegationError("Context submission_id must not be the agent ID")
     if _file(path) != ref:

@@ -19,6 +19,7 @@ from xiaocao.kol.claim_coverage import build_claim_extraction_request
 
 AGENT_ID = "019a7213-73b4-7351-87c4-13e1234abcde"
 OTHER_AGENT_ID = "019a7213-73b4-7351-87c4-13e1234abcd0"
+CANONICAL_AGENT_ID = "/root/semantic_87e35"
 
 
 def _write(path: Path, value: dict) -> Path:
@@ -113,6 +114,17 @@ def test_complete_context_receipt_roundtrip_is_local_and_idempotent(inputs, monk
     assert inputs["request"].read_bytes() == request_before
 
 
+def test_current_spawn_canonical_agent_identity_is_recorded_exactly(inputs):
+    prepared = _prepare(inputs)
+
+    dispatch = delegation.record_dispatch(
+        inputs["request"], packet_path=prepared["packet_path"],
+        agent_id=CANONICAL_AGENT_ID, invocation_args=prepared["spawn_arguments_path"],
+    )
+
+    assert dispatch["agent_id"] == CANONICAL_AGENT_ID
+
+
 def test_semantic_profile_is_source_agnostic_for_official_article_requests(inputs):
     request = _read(inputs["request"])
     request.update(
@@ -165,7 +177,7 @@ def test_wrong_dispatch_arguments_block(inputs, field, value):
                                      "00000000-0000-0000-0000-000000000000"])
 def test_empty_failure_or_placeholder_agent_ids_block(inputs, agent_id):
     prepared = _prepare(inputs)
-    with pytest.raises(delegation.DelegationError, match="UUID"):
+    with pytest.raises(delegation.DelegationError, match="identity"):
         delegation.record_dispatch(inputs["request"], packet_path=prepared["packet_path"],
                                    agent_id=agent_id, invocation_args=prepared["spawn_arguments_path"])
 
