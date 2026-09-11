@@ -4431,7 +4431,9 @@ class NetdiskEnrichmentService:
                 ):
                     reject(
                         "unverified_excerpt",
-                        "content audit contains an unverified excerpt",
+                        "content audit contains an unverified "
+                        f"{check['position']} excerpt; expected match start in "
+                        f"[{int(begin)}, {int(end)})",
                     )
             artifact_dir = self.output_dir / "artifacts" / job_id
             durable_audit = artifact_dir / "content_audit.json"

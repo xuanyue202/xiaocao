@@ -3734,6 +3734,51 @@ def test_non_object_content_audit_fails_with_a_durable_event(tmp_path):
     assert latest["reason"] == "invalid_audit_shape"
 
 
+def test_content_audit_reports_the_misplaced_excerpt_partition(tmp_path):
+    service, job_id = _prepare_opencli_dom_capture(tmp_path)
+    captured = service.capture_opencli_transcript(job_id, session="ticket02-test")
+    text = Path(captured["transcript_path"]).read_text(encoding="utf-8")
+    misplaced = "商业航天没有企稳信号"
+    assert text.count(misplaced) == 1
+    audit_path = tmp_path / "audit.json"
+    audit_path.write_text(
+        json.dumps(
+            {
+                "video_sha256": captured["video_sha256"],
+                "transcript_sha256": captured["transcript_sha256"],
+                "checks": [
+                    {
+                        "position": "opening",
+                        "excerpt": misplaced,
+                        "passed": True,
+                    },
+                    {
+                        "position": "middle",
+                        "excerpt": "信通电子、德明利和市场成交量",
+                        "passed": True,
+                    },
+                    {
+                        "position": "ending",
+                        "excerpt": misplaced,
+                        "passed": True,
+                    },
+                ],
+            },
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(
+        EnrichmentError,
+        match=r"unverified opening excerpt; expected match start in \[",
+    ):
+        service.verify_transcript(job_id, audit_path=audit_path)
+
+    latest = service.status(job_id)
+    assert latest["reason"] == "unverified_excerpt"
+
+
 def test_decision_input_failure_is_appended_without_bundle_contents(tmp_path):
     service, _video, prepared = _prepare(tmp_path)
 
