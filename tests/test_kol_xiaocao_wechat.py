@@ -529,6 +529,7 @@ def test_wechat_mini_program_route_binds_media_to_the_exact_live_id(tmp_path, cl
             "--expected-identity", "xiaoetong:app6ums63as6516:l_6a9531fbe4b0694c35440d7e",
         ]
         assert "不重开" in request["instructions"]
+        assert "只有直播结束且完整回放生成才可下载" in request["instructions"]
         return {
             "action": request["action"],
             "subscription_id": request["subscription_id"],
