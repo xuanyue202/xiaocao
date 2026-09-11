@@ -956,8 +956,18 @@ def test_newer_preview_is_not_starved_by_an_older_unfinished_capture(tmp_path):
     manifest = json.loads(
         (tmp_path / "wechat" / "manifest.json").read_text(encoding="utf-8")
     )
-    assert manifest["items"][morning_identity]["status"] == "superseded"
-    assert manifest["items"][morning_identity]["superseded_by"] == new_identity
+    assert manifest["items"][morning_identity]["status"] == "discovered"
+    assert "superseded_by" not in manifest["items"][morning_identity]
+
+    # Recover the legacy persisted state only through explicit same-item resume.
+    manifest["items"][morning_identity]["status"] = "superseded"
+    subscription._save(manifest)
+    subscription.run_once(
+        opencli_session="xiaocao-lv-subscription", only_identity=morning_identity,
+    )
+    assert capture.arms[-1][0] == morning_identity
+    restored = subscription._load()["items"][morning_identity]
+    assert restored["backfill_reason"] == "explicit_item_resume"
 
 
 def test_newest_inflight_capture_precedes_an_older_ready_handoff():

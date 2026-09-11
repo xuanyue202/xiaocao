@@ -1369,7 +1369,6 @@ class XiaocaoWechatLiveSubscription:
         manifest = self._load()
         if only_identity is None:
             self._poll(manifest)
-            self._supersede_older_unarmed_previews(manifest)
             self.expire_stale_waits(manifest)
             item = self._next_pending(manifest)
         else:
@@ -1380,6 +1379,17 @@ class XiaocaoWechatLiveSubscription:
                     "Xiaocao narrow resume item is missing"
                 )
             item = dict(item)
+            # Explicit one-item backfill may recover a recent skipped preview.
+            # Expired entries and any already-bound claims remain immutable.
+            if (
+                item.get("status") == "superseded"
+                and not item.get("capture_job_id")
+                and datetime.fromisoformat(item["published_at"])
+                > datetime.fromisoformat(self._now()) - timedelta(hours=72)
+            ):
+                item = self._transition(
+                    manifest, item, "discovered", backfill_reason="explicit_item_resume",
+                )
             if item.get("status") in _TERMINAL:
                 return {
                     "status": "no_update",

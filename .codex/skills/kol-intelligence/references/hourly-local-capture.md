@@ -93,8 +93,10 @@ Record the actual stopping condition and its evidence in Automation memory.
 ## WeChat and Xiaoetong gate
 
 Scan only `福利官小花四-刘丹（执业编号:A0380125080026）` via local `wechat-cli`;
-baseline older links, arm only the newest, reuse the singleton sniffer, preserve
-armed jobs, and supersede older unarmed previews.
+baseline older links on first initialization, reuse the singleton sniffer and
+preserve pending entries independently. New links must not supersede distinct
+missed sessions. Explicit capture-xiaocao-item can restore a legacy superseded
+unarmed entry within 72 hours; expired entries remain terminal.
 
 Also run stateless `subscription-updates --within 48h` for exactly:
 
