@@ -1332,6 +1332,118 @@ def test_transcript_claim_replay_never_repeats_generation_interaction_after_brow
     assert not any(command[5:6] == ["click"] for command in commands)
 
 
+def test_transcript_claim_replay_rebinds_after_exact_tab_transport_failure(
+    tmp_path,
+):
+    service, video, prepared = _prepare(tmp_path)
+    job_id = prepared["job_id"]
+    service.record_browser_liveness(
+        job_id,
+        surface="opencli",
+        evidence=_liveness_evidence(),
+    )
+    service.record_browser_state(
+        job_id,
+        step="video_ready",
+        evidence=_evidence(video.name, "目标视频已存在"),
+        source_mode="existing",
+    )
+    service.claim_browser_action(job_id, action="transcript")
+
+    base_runner = _opencli_transcript_runner(video.name)
+    tab_failures = 1
+    bind_calls = 0
+    commands: list[list[str]] = []
+
+    def runner(command, **kwargs):
+        nonlocal tab_failures, bind_calls
+        commands.append(command)
+        tail = command[5:]
+        if tail[:1] == ["bind"]:
+            bind_calls += 1
+            return SimpleNamespace(
+                returncode=0,
+                stdout=json.dumps({"session": "ticket02-transcript"}),
+                stderr="",
+            )
+        if tail[:2] == ["tab", "select"] and tab_failures:
+            tab_failures -= 1
+            return SimpleNamespace(returncode=1, stdout="", stderr="detached")
+        return base_runner(command, **kwargs)
+
+    service.runner = runner
+    service.opencli_command = ("opencli",)
+    replay = service.advance_opencli(
+        job_id,
+        session="ticket02-transcript",
+        profile="work",
+    )
+
+    assert replay["status"] == "transcript_requested"
+    assert bind_calls == 1
+    assert sum(
+        command[5:7] == ["tab", "select"] for command in commands
+    ) == 2
+    assert not any(command[5:6] == ["click"] for command in commands)
+
+
+def test_transcript_claim_replay_accepts_exact_bound_user_player_tab(
+    tmp_path,
+):
+    service, video, prepared = _prepare(tmp_path)
+    job_id = prepared["job_id"]
+    service.record_browser_liveness(
+        job_id,
+        surface="opencli",
+        evidence=_liveness_evidence(),
+    )
+    service.record_browser_state(
+        job_id,
+        step="video_ready",
+        evidence=_evidence(video.name, "目标视频已存在"),
+        source_mode="existing",
+    )
+    service.claim_browser_action(job_id, action="transcript")
+
+    base_runner = _opencli_transcript_runner(video.name)
+    player_url = "https://pan.baidu.com/pfile/video?path=" + quote(
+        f"/课程/自己的课/小草/{video.name}"
+    )
+    bind_calls = 0
+
+    def runner(command, **kwargs):
+        nonlocal bind_calls
+        tail = command[5:]
+        if tail[:1] == ["bind"]:
+            bind_calls += 1
+        if tail[:2] == ["tab", "list"]:
+            return SimpleNamespace(
+                returncode=0,
+                stdout=json.dumps([{"page": "page-1", "url": player_url}]),
+                stderr="",
+            )
+        if tail[:2] == ["tab", "select"]:
+            return SimpleNamespace(
+                returncode=1,
+                stdout=json.dumps({
+                    "error": {"code": "bound_tab_mutation_blocked"},
+                }),
+                stderr="",
+            )
+        return base_runner(command, **kwargs)
+
+    service.runner = runner
+    service.opencli_command = ("opencli",)
+    replay = service.advance_opencli(
+        job_id,
+        session="ticket02-transcript",
+        profile="work",
+    )
+
+    assert replay["status"] == "transcript_requested"
+    assert bind_calls == 0
+
+
 def _opencli_ai_note_runner(
     video_name: str,
     *,
@@ -2913,6 +3025,62 @@ def test_capture_close_reconciles_lost_ack_without_second_close(tmp_path, close_
 
     assert captured["player_close_receipt"]["exact_player_absent"] is True
     assert [cmd[5] for cmd in commands if cmd[3:5] == ["tab", "close"]] == ["page-1"]
+
+
+def test_bound_user_player_close_releases_exact_page_to_private_folder(
+    tmp_path,
+    monkeypatch,
+):
+    service, job_id = _prepare_opencli_dom_capture(tmp_path)
+    name = service.status(job_id)["video_basename"]
+    page = "bound-page"
+    exact_url = service._player_url(name)
+    rows = [{"page": page, "url": exact_url}]
+    commands: list[tuple[str, ...]] = []
+
+    monkeypatch.setattr(
+        service,
+        "_opencli_tab_list",
+        lambda **_kwargs: list(rows),
+    )
+
+    def opencli_json(_session, *args, **_kwargs):
+        commands.append(args)
+        if args[:2] == ("tab", "close"):
+            raise EnrichmentDiagnosticError(
+                "bound tab",
+                category="provider_contract_error",
+                code="bound_tab_mutation_blocked",
+                stage="browser_tab",
+            )
+        if args[:1] == ("eval",):
+            assert args[-2:] == ("--tab", page)
+            return {"current_url": exact_url}
+        if args[:1] == ("open",):
+            rows.clear()
+            return {"page": page, "url": service._netdisk_folder_url()}
+        raise AssertionError(args)
+
+    monkeypatch.setattr(service, "_opencli_json", opencli_json)
+
+    receipt = service._close_opencli_player(
+        session="ticket02-test",
+        profile=None,
+        target_name=name,
+        page=page,
+    )
+
+    assert receipt == {
+        "capture_page": page,
+        "closed_page": None,
+        "closed_pages": [],
+        "released_page": page,
+        "release_mode": "navigate_bound_user_tab_to_private_folder",
+        "exact_player_absent": True,
+    }
+    assert commands[0][:2] == ("tab", "close")
+    assert commands[1][0] == "eval"
+    assert commands[2][0] == "open"
 
 
 @pytest.mark.parametrize("already_closed", [False, True])

@@ -52,7 +52,8 @@ A non-trading-day skip is a normal terminal state. Otherwise completion requires
 - Produce PnL decomposition and Book-B-versus-four-index report.
 - Push the status digest, run Friday verdict recording when applicable, check flywheels, and update posture/exit calibration plus backlog sweep.
 
-Do not repair, settle or infer any of these by hand.
+Do not repair account state, settle or infer any of these by hand. Code and
+orchestration defects follow the daily review repair loop below.
 
 ## Verify decisive artifacts
 
@@ -95,7 +96,68 @@ facts are unknown, leave the position open and report the bounded block.
 
 EOD is an audit, not a new bullish/bearish call. Stale posture, missing structured reviews, unchanged REJECTED verdicts and an open strategy flywheel are supporting/informational states, not capital failures. Strategy flywheel `blocked` (unconsumed PASS) is an anomaly requiring a proposal or weekly consumption path.
 
-## Real anomalies
+## Daily analysis and execution review
+
+After the original paper/live EOD processes and KOL feedback terminate, review
+the whole trading day even if settlement is blocked. Do not delay settlement
+for this investigation, restart EOD, or launch a second business writer.
+
+1. Compare the active Automation schedule and actual task/process timestamps
+   against dated receipts for morning analysis, candidate freeze, buy execution,
+   opening/sparse monitoring, 14:25 precheck, 14:55 closing and EOD. Check missing
+   or duplicate runs, scheduler delay, startup overhead, lock starvation and
+   window misses separately. A correct time-gate rejection can still expose an
+   orchestration defect upstream.
+   For learning, verify the latest usable executable signal date and new
+   executable labels, not just growing theoretical-label counts. Repeated
+   `LIMIT_DOWN_CHECK_UNAVAILABLE` across mature rows is a data-path anomaly:
+   historical fill evaluation must validate original market facts at the
+   historical entry clock, never against the current EOD clock. Missing facts
+   remain unknown/retryable evidence, not permanently cached unfillable trades.
+   The bounded executable backfill queue processes recent mature signals first;
+   old retryable gaps must not consume the whole budget ahead of new D+1 rows.
+   Compare `latest` executable date with `latest_mature` in the terminal log.
+   A newer theoretical date alone does not prove new executable evidence.
+2. Trace current source -> reviewed analysis -> decision -> consumer using
+   source hashes, applicability, review status and timestamps. Check stale or
+   incomplete analysis, timeouts and lost consumption links. Missing evidence
+   is unknown. Check frozen candidate/mode consistency and each actual buy's
+   allocation and execution gates without changing strategy parameters.
+3. For every owned lot, explain each sell/hold/block from evidence available at
+   that checkpoint, including T+1, hard versus deferred soft exits and any
+   validated KOL input. Historical missed sells are never replayed. Future
+   sell decisions use current evidence and the current authorized exit policy
+   at a legal checkpoint; today's profit does not vindicate yesterday's missed
+   evaluation, and a loss alone does not prove a defect. A no-sell result is
+   verified only by a timely, complete evaluation, not absence of an order.
+4. Trace intents to exact plan/order/fill IDs, side and quantity, broker-proved
+   ownership, cash and settlement. Keep paper/live explanations separate;
+   paper fills cannot prove live execution. Check UNKNOWN, mismatches, stale
+   marks, missing artifacts and immutable settlement integrity.
+5. Classify each finding as expected terminal state, repair_required,
+   reconcile_only or user_action_required. For safely repairable code,
+   configuration or orchestration faults, the started task owns repair: follow
+   `book-b-live-repair.md` for evidence, falsifiable hypotheses, a tight red
+   regression, minimal patch, focused tests and relevant safety tests. Preserve
+   unrelated work and commit/push only the validated repair allowlist. Use the
+   existing Automation API plus readback for scheduling changes. This repair
+   branch never starts live-morning or replays an expired checkpoint. EOD
+   remains read/reconcile/settle only; no top-level rerun, new order, uncertain
+   broker-action retry, fabricated ledger, immutable-history rewrite, weakened
+   time/capital/safety gate or automatic strategy promotion is allowed.
+6. Write `output/live/daily_execution_review_<date>.md`: expected versus actual,
+   evidence paths/timestamps, impact, stable failure fingerprint, 5 Why for
+   defects, repair and regression proof, production verification status and
+   next legal verification checkpoint. Check prior Automation memory for
+   recurrence, append prevention/results, and keep unresolved defects visible.
+   Distinguish code repaired, tests passed and production verified; an external
+   blocker or missed window remains explicit, never a claimed full repair.
+
+Include this review's result and artifact link in the Chinese final report.
+If a prior repair has its first production opportunity today, explicitly
+verify it using today's receipts; do not require a trade just to pass the audit.
+
+## Anomaly escalation and completion
 
 Escalate: nonzero script exit/traceback, missing run-flow or expected artifact,
 incomplete step chain, data-doctor CRITICAL, HARD_STOP,

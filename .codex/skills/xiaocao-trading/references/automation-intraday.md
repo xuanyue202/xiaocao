@@ -51,6 +51,13 @@ paper monitor exactly once and complete both branches' reconciliation. This
 priority changes orchestration only; it does not broaden the time gate, capital
 authority or exact-once rules.
 
+The closing Automation uses `scripts/book_b_live_closing_startup.sh` as its
+prebuilt first tool invocation. That launcher performs only the required
+instruction/memory reads and then the exact live command in one shell process;
+it exists to remove model-composed startup work from the two-minute deadline.
+Do not add discovery, journal, Git, KOL, paper, broker or diagnostic work to the
+launcher, and do not use it outside the single scheduled closing pass.
+
 This second command reads no paper positions/account/trades. It first
 reconciles existing live intents, then consumes the native Founder
 positions/orders/trades row tables plus the funds summary embedded in the same

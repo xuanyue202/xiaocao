@@ -785,12 +785,14 @@ TARGETED_REPAIR_TESTS: dict[str, tuple[str, ...]] = {
         "pytest",
         "tests/test_kol_subscription_video.py",
         "tests/test_kol_daily.py",
+        "tests/test_kol_netdisk_enrichment.py",
         "tests/test_kol_repair_validation.py",
         "-q",
         "-k",
         (
             "transfer_activation_falls_back_for_bound_user_tab or "
             "lv_transfer_claim_precedes_click_and_exact_copy_readback_completes or "
+            "transcript_claim_replay_rebinds_after_exact_tab_transport_failure or "
             "repair_resume_uses_originating_sweep_after_later_partial_sweep or "
             "repair_validation_accepts_subscription_video_browser_command_profile"
         ),
@@ -821,9 +823,11 @@ TARGETED_REPAIR_TESTS: dict[str, tuple[str, ...]] = {
             "lv_destination_triggered_claim_has_poll_deadline or "
             "source_cli_narrow_runner_supports_subscription_video or "
             "transcript_claim_replay_never_repeats_generation_interaction or "
+            "bound_user_player_close_releases_exact_page_to_private_folder or "
             "source_repair_validation_accepts_pending_resume or "
             "repair_validation_accepts_subscription_video_source_run_profile or "
             "repair_validation_accepts_subscription_video_source_alias_profile or "
+            "bound_player_close_uses_subscription_video_source_profile or "
             "repair_closure_accepts_subscription_video_observability_profile_alias or "
             "repair_resume_persists_following_repair"
         ),
@@ -870,11 +874,13 @@ TARGETED_REPAIR_TESTS: dict[str, tuple[str, ...]] = {
         ".venv/bin/python",
         "-m",
         "pytest",
+        "tests/test_kol_daily.py",
         "tests/test_kol_wechat_official.py",
         "tests/test_kol_repair_validation.py",
         "-q",
         "-k",
         (
+            "wechat_official_cli_missing_repair_resumes_remote_inbox_only or "
             "official_account_parser_uses_exact_publishers_and_url_only_metadata or "
             "official_account_reader_calls_one_stateless_combined_window or "
             "repair_validation_accepts_wechat_official_accounts_source_profile or "
@@ -979,6 +985,7 @@ _TARGETED_REPAIR_IMPLEMENTATION_PATHS: dict[str, frozenset[str]] = {
     "kol_subscription_video_browser_command": frozenset(
         {
             "src/xiaocao/kol/daily.py",
+            "src/xiaocao/kol/netdisk_enrichment.py",
             "src/xiaocao/kol/subscription_video.py",
             "src/xiaocao/kol/writer_progress.py",
         }
@@ -1009,6 +1016,7 @@ _TARGETED_REPAIR_IMPLEMENTATION_PATHS: dict[str, frozenset[str]] = {
     ),
     "kol_wechat_official_accounts_source_run": frozenset(
         {
+            "scripts/kol_daily.py",
             "src/xiaocao/kol/wechat_official.py",
             "src/xiaocao/kol/writer_progress.py",
         }
@@ -1087,6 +1095,7 @@ _TARGETED_REPAIR_TEST_PATHS: dict[str, frozenset[str]] = {
     "kol_subscription_video_browser_command": frozenset(
         {
             "tests/test_kol_daily.py",
+            "tests/test_kol_netdisk_enrichment.py",
             "tests/test_kol_subscription_video.py",
             "tests/test_kol_repair_validation.py",
         }
@@ -1117,6 +1126,7 @@ _TARGETED_REPAIR_TEST_PATHS: dict[str, frozenset[str]] = {
     ),
     "kol_wechat_official_accounts_source_run": frozenset(
         {
+            "tests/test_kol_daily.py",
             "tests/test_kol_repair_validation.py",
             "tests/test_kol_wechat_official.py",
         }
@@ -1321,6 +1331,10 @@ _SUBSCRIPTION_VIDEO_BROWSER_OPEN_REPAIR_PROFILE = (
 _SUBSCRIPTION_VIDEO_BROWSER_COMMAND_REPAIR_PROFILE = (
     "kol_subscription_video_browser_command"
 )
+_SUBSCRIPTION_VIDEO_BROWSER_COMMAND_REPAIR_PROFILE_ALIASES = frozenset({
+    _SUBSCRIPTION_VIDEO_BROWSER_COMMAND_REPAIR_PROFILE,
+    "kol_subscription_video_browser_tab",
+})
 
 
 def _canonical_subscription_video_browser_command_repair_profile(
@@ -1329,19 +1343,34 @@ def _canonical_subscription_video_browser_command_repair_profile(
     if (
         str(context.get("adapter") or "") == "subscription_video"
         and str(context.get("targeted_test_profile") or "")
-        == _SUBSCRIPTION_VIDEO_BROWSER_COMMAND_REPAIR_PROFILE
-        and str(context.get("stage") or "") == "browser_command"
+        in _SUBSCRIPTION_VIDEO_BROWSER_COMMAND_REPAIR_PROFILE_ALIASES
         and (
-            str(context.get("category") or ""),
-            str(context.get("code") or ""),
-        )
-        in {
-            ("transport_error", "opencli_command_failed"),
             (
-                "provider_contract_error",
-                "opencli_bound_tab_mutation_blocked",
-            ),
-        }
+                str(context.get("stage") or "") == "browser_command"
+                and (
+                    str(context.get("category") or ""),
+                    str(context.get("code") or ""),
+                )
+                in {
+                    ("transport_error", "opencli_command_failed"),
+                    (
+                        "provider_contract_error",
+                        "opencli_bound_tab_mutation_blocked",
+                    ),
+                }
+            )
+            or (
+                str(context.get("stage") or "") == "browser_tab"
+                and (
+                    str(context.get("category") or ""),
+                    str(context.get("code") or ""),
+                )
+                in {
+                    ("transport_error", "opencli_command_failed"),
+                    ("provider_contract_error", "bound_tab_mutation_blocked"),
+                }
+            )
+        )
     ):
         return _SUBSCRIPTION_VIDEO_BROWSER_COMMAND_REPAIR_PROFILE
     return None
@@ -1519,6 +1548,11 @@ def _canonical_subscription_video_source_repair_profile(
                 "internal_state_error",
                 "progress_deadline_missing",
                 "cloud_enrichment",
+            ),
+            (
+                "provider_contract_error",
+                "bound_tab_mutation_blocked",
+                "browser_tab",
             ),
         }
     ):
@@ -1889,6 +1923,11 @@ class RepairValidationService:
                 profile == _SUBSCRIPTION_VIDEO_SOURCE_REPAIR_PROFILE
                 and declared_profile
                 in _SUBSCRIPTION_VIDEO_SOURCE_REPAIR_PROFILE_ALIASES
+            )
+            and not (
+                profile == _SUBSCRIPTION_VIDEO_BROWSER_COMMAND_REPAIR_PROFILE
+                and declared_profile
+                in _SUBSCRIPTION_VIDEO_BROWSER_COMMAND_REPAIR_PROFILE_ALIASES
             )
             and not (
                 profile == _SHARED_LV_LISTING_VALIDATION_REPAIR_PROFILE

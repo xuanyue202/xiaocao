@@ -1,5 +1,9 @@
 from __future__ import annotations
 
+import json
+import sys
+from types import SimpleNamespace
+
 import pytest
 
 pd = pytest.importorskip("pandas")
@@ -71,6 +75,44 @@ def test_unknown_executable_nan_is_not_treated_as_cached_result() -> None:
         "executable_fillable": float("nan"),
         "executable_skip_reason": float("nan"),
     })
+
+
+def test_missing_market_evidence_is_not_a_terminal_cached_label() -> None:
+    assert not _is_known_executable({
+        "executable_fillable": False,
+        "executable_skip_reason": "LIMIT_DOWN_CHECK_UNAVAILABLE",
+    })
+
+
+def test_historical_fill_checks_market_facts_at_entry_clock() -> None:
+    from kronos_screen.scripts.forward_eval import _historical_opening_fill
+    from kronos_screen.scripts.paper_record import _fill_price_from_window
+
+    row = {
+        "date": "2026-09-08", "code": "600371.XSHG",
+        "open": 15.37, "basket_price": 15.6866,
+        "market_guard_required": True, "market_guard_status": "T100",
+        "market_price": 15.37, "down_price": 13.56,
+        "market_observed_at": "2026-09-08T09:25:00+08:00",
+    }
+    window = {"low": 15.37, "high": 15.50, "vwap": 15.40, "last": 15.40}
+    # The normal actuator still uses wall-clock freshness, not replay time.
+    expired = {**row, "date": "2020-01-02", "market_observed_at": "2020-01-02T09:25:00+08:00"}
+    assert _fill_price_from_window(expired, window=window, limit_premium_pct=0.5)[0] is None
+    assert _historical_opening_fill(row, window)[0] == pytest.approx(15.40)
+    legacy = {**row, "captured_at": "2026-09-08T09:25:54", "market_observed_at": "09:25:00:140"}
+    assert _historical_opening_fill(legacy, window)[0] == pytest.approx(15.40)
+    assert _historical_opening_fill({**legacy, "captured_at": "2026-09-07T09:25:54"}, window)[0] is None
+    for invalid in (
+        {"down_price": None},
+        {"market_guard_required": None, "down_price": None},
+        {"market_guard_required": False, "market_observed_at": None},
+        {"market_observed_at": "2026-09-07T09:25:00+08:00"},
+        {"market_observed_at": "2026-09-08T09:00:00+08:00"},
+        {"market_guard_status": "suspended"},
+        {"market_price": 13.56},
+    ):
+        assert _historical_opening_fill({**row, **invalid}, window)[0] is None
 
 
 def test_market_return_requires_all_four_index_components() -> None:
@@ -171,3 +213,63 @@ def test_training_schema_backfills_ai_short_from_legacy_intelligence_long() -> N
 
     assert bool(df["ai_intelligence_short_star"].iloc[0]) is True
     assert df["ai_intelligence_short_score"].iloc[0] == 0.5
+
+
+@pytest.mark.parametrize("budget", [0, 1, 2])
+def test_executable_budget_prioritizes_recent_mature_rows(monkeypatch, tmp_path, budget) -> None:
+    from kronos_screen.scripts import forward_eval as ev
+    from kronos_screen.scripts import paper_record
+
+    rows = [
+        {"date": "2026-08-14", "code": "600001.XSHG"},
+        {"date": "2026-09-09", "code": "600002.XSHG"},
+        {"date": "2026-09-10", "code": "600003.XSHG"},
+        {"date": "2026-09-08", "code": "600004.XSHG"},
+        {"date": "2026-09-09", "code": "920001.BJSE"},
+    ]
+    snapshot = tmp_path / "snap.jsonl"
+    snapshot.write_text("\n".join(json.dumps({**r, "open": 10, "is_live": True,
+        "book": "B", "mode": "绿断低吸", "kp_star": True, "vb_star": True}) for r in rows))
+    train = tmp_path / "train.parquet"
+    monkeypatch.setattr(ev, "TRAIN", train)
+    monkeypatch.setattr(ev, "load_settings", lambda _: SimpleNamespace(base_url="unused", timeout=1, retries=0))
+    monkeypatch.setattr(ev, "SQLiteCache", lambda _: None)
+    monkeypatch.setattr(ev, "XiaocaoClient", lambda **_: None)
+    monkeypatch.setattr(ev, "_load_reconstructed_daily", lambda: {})
+    monkeypatch.setattr(ev, "_daily_series", lambda *_: {
+        day: {"open": 10, "close": 11}
+        for day in ("2026-08-14", "2026-08-17", "2026-09-08", "2026-09-09", "2026-09-10")
+    })
+    monkeypatch.setattr(ev, "_market_return_map", lambda _cli, days, _cache: dict.fromkeys(days, 0))
+    cached = {"executable_fillable": True, "executable_entry_price": 10,
+        "executable_entry_basis": "cached", "executable_skip_reason": None, "executable_net_ret": 9.978}
+    monkeypatch.setattr(ev, "_previous_executable_rows", lambda: {
+        ("2026-08-14", "600001.XSHG"): {"executable_fillable": False,
+            "executable_skip_reason": "LIMIT_DOWN_CHECK_UNAVAILABLE"},
+        ("2026-09-08", "600004.XSHG"): cached,
+    })
+    attempts = []
+
+    def window(_cli, code, day, **_kwargs):
+        attempts.append((day, code))
+        return {"low": 10, "high": 10, "vwap": 10, "last": 10}
+
+    monkeypatch.setitem(sys.modules, "paper_record", paper_record)
+    monkeypatch.setattr(paper_record, "_fill_window_stats", window)
+    monkeypatch.setattr(ev, "_historical_opening_fill", lambda row, _window:
+        (None, "blocked", None, {"skip_reason": "LIMIT_DOWN_CHECK_UNAVAILABLE"})
+        if row["date"] == "2026-08-14" else (10, "fixture", None, {}))
+    monkeypatch.setattr(sys, "argv", ["forward_eval", "--snap", str(snapshot),
+        "--backfill-executable-max", str(budget), "--backfill-sleep-sec", "0"])
+    ev.main()
+
+    assert attempts == [("2026-09-09", "600002.XSHG"), ("2026-08-14", "600001.XSHG")][:budget]
+    output = pd.read_parquet(train).set_index("code")
+    if budget:
+        assert bool(output.loc["600002.XSHG", "executable_fillable"])
+    else:
+        assert pd.isna(output.loc["600002.XSHG", "executable_net_ret"])
+    assert output.loc["600004.XSHG", "executable_net_ret"] == cached["executable_net_ret"]
+    assert output.loc["920001.BJSE", "executable_skip_reason"] == "NO_USER_BOARD_PERMISSION"
+    assert "600003.XSHG" not in output.index  # No D+1 outcome: never spend its budget.
+    assert pd.isna(output.loc["600001.XSHG", "executable_net_ret"])

@@ -867,12 +867,14 @@ def test_repair_validation_accepts_subscription_video_browser_command_profile(
         "pytest",
         "tests/test_kol_subscription_video.py",
         "tests/test_kol_daily.py",
+        "tests/test_kol_netdisk_enrichment.py",
         "tests/test_kol_repair_validation.py",
         "-q",
         "-k",
         (
             "transfer_activation_falls_back_for_bound_user_tab or "
             "lv_transfer_claim_precedes_click_and_exact_copy_readback_completes or "
+            "transcript_claim_replay_rebinds_after_exact_tab_transport_failure or "
             "repair_resume_uses_originating_sweep_after_later_partial_sweep or "
             "repair_validation_accepts_subscription_video_browser_command_profile"
         ),
@@ -896,6 +898,38 @@ def test_repair_validation_accepts_subscription_video_browser_command_profile(
         "kol_subscription_video_browser_command"
     )
     assert receipt.failure_fingerprint == "3" * 64
+
+
+def test_browser_tab_profile_aliases_to_subscription_video_command_profile():
+    service = RepairValidationService(
+        ".",
+        ledger=RepairValidationLedger("repair-validation-unused.jsonl"),
+    )
+    profile = service._expected_profile({
+        "adapter": "subscription_video",
+        "category": "transport_error",
+        "code": "opencli_command_failed",
+        "stage": "browser_tab",
+        "targeted_test_profile": "kol_subscription_video_browser_tab",
+    })
+
+    assert profile == "kol_subscription_video_browser_command"
+
+
+def test_bound_player_close_uses_subscription_video_source_profile():
+    service = RepairValidationService(
+        ".",
+        ledger=RepairValidationLedger("repair-validation-unused.jsonl"),
+    )
+    profile = service._expected_profile({
+        "adapter": "subscription_video",
+        "category": "provider_contract_error",
+        "code": "bound_tab_mutation_blocked",
+        "stage": "browser_tab",
+        "targeted_test_profile": "kol_subscription_video_source_run",
+    })
+
+    assert profile == "kol_subscription_video_source_run"
 
 
 @pytest.mark.parametrize(
@@ -1157,11 +1191,13 @@ def test_repair_validation_accepts_wechat_official_accounts_source_profile(
         ".venv/bin/python",
         "-m",
         "pytest",
+        "tests/test_kol_daily.py",
         "tests/test_kol_wechat_official.py",
         "tests/test_kol_repair_validation.py",
         "-q",
         "-k",
         (
+            "wechat_official_cli_missing_repair_resumes_remote_inbox_only or "
             "official_account_parser_uses_exact_publishers_and_url_only_metadata or "
             "official_account_reader_calls_one_stateless_combined_window or "
             "repair_validation_accepts_wechat_official_accounts_source_profile or "
@@ -1528,9 +1564,11 @@ def test_repair_validation_accepts_subscription_video_source_run_profile(
             "lv_destination_triggered_claim_has_poll_deadline or "
             "source_cli_narrow_runner_supports_subscription_video or "
             "transcript_claim_replay_never_repeats_generation_interaction or "
+            "bound_user_player_close_releases_exact_page_to_private_folder or "
             "source_repair_validation_accepts_pending_resume or "
             "repair_validation_accepts_subscription_video_source_run_profile or "
             "repair_validation_accepts_subscription_video_source_alias_profile or "
+            "bound_player_close_uses_subscription_video_source_profile or "
             "repair_closure_accepts_subscription_video_observability_profile_alias or "
             "repair_resume_persists_following_repair"
         ),

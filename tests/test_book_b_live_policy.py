@@ -727,6 +727,36 @@ def test_cli_rendezvous_corrupt_policy_stays_blocked(tmp_path, monkeypatch):
     assert receipt["status"] == "blocked" and receipt["fallback"] is None
 
 
+def test_cli_review_missing_optional_scores_preserves_frozen_evidence(tmp_path, monkeypatch):
+    cli = _morning_cli(monkeypatch)
+    request = _review_request(tmp_path, budget=0)
+    row = request["candidates"][0]
+    row.update(k_score=float("nan"), p_score=float("nan"))
+    before = frozen_rows_digest(request["candidates"])
+    receipt = cli._review_rendezvous(request, now=lambda: MORNING, monotonic=lambda: 0)
+    artifact = json.loads(Path(receipt["request_path"]).read_text())
+    assert artifact["candidates"][0]["k_score"] is None
+    assert artifact["candidates"][0]["p_score"] is None
+    assert artifact["candidate_missing_values"] == [
+        {"candidate_index": 0, "code": row["code"], "field": field, "source_value": "NaN"}
+        for field in ("k_score", "p_score")
+    ]
+    assert artifact["freeze_sha256"] == request["freeze_sha256"]
+    assert frozen_rows_digest(request["candidates"]) == before
+    assert receipt["status"] == "timed_out"
+
+
+@pytest.mark.parametrize("field,value", [("market_price", float("nan")),
+    ("basket_price", float("inf")), ("k_score", float("inf"))])
+def test_cli_review_nonfinite_execution_or_infinite_score_stays_blocked(tmp_path, monkeypatch, field, value):
+    cli = _morning_cli(monkeypatch)
+    request = _review_request(tmp_path, budget=0)
+    request["candidates"][0][field] = value
+    with pytest.raises(ValueError, match="Out of range float"):
+        cli._review_rendezvous(request, now=lambda: MORNING, monotonic=lambda: 0)
+    assert not (Path(request["policy_root"]).parent / "context").exists()
+
+
 def test_cli_review_artifacts_are_immutable(tmp_path, monkeypatch):
     cli = _morning_cli(monkeypatch)
     path = tmp_path / "request.json"

@@ -742,7 +742,11 @@ def _read_agent_path(request: dict[str, Any], field: str) -> Path:
 
 
 def _persisted_validated_bundle(request: dict[str, Any]) -> Path | None:
-    """Reuse a bundle already persisted for this semantic request."""
+    """Reuse a request-bound bundle after an interactive runner interruption.
+
+    This keeps an exact narrow resume independent of the original stdin while
+    leaving canonical receipt and parent-review validation to the caller.
+    """
 
     artifact_dir = str(request.get("artifact_dir") or "").strip()
     if not artifact_dir:
@@ -3989,11 +3993,20 @@ class DailyRuntime:
                 output_dir=Path(self.args.xiaocao_output_dir),
                 request_id=str(handoff["capture_job_id"]),
             )
-            bundle_path = _read_agent_path(semantic_request, "bundle_path")
+            bundle_path = _persisted_validated_bundle(semantic_request)
+            reused_bundle = bundle_path is not None
+            if bundle_path is None:
+                bundle_path = _read_agent_path(semantic_request, "bundle_path")
             bundle_path = _require_canonical_semantic_artifact(
                 bundle_path,
                 semantic_request,
             )
+            if reused_bundle:
+                _record_structured_input_consumption(
+                    semantic_request,
+                    field="bundle_path",
+                    path=bundle_path,
+                )
             validate_decision_bundle(
                 bundle_path,
                 transcript_path=Path(state["transcript_path"]),

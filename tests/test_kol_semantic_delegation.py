@@ -79,7 +79,7 @@ def test_complete_context_receipt_roundtrip_is_local_and_idempotent(inputs, monk
     assert packet["analyst_profile"]["value"]["model"] == "gpt-5.6-sol"
     assert packet["analyst_profile"]["value"]["objective"]
     assert packet["analyst_profile"]["source"]["sha256"] == prepared["analyst_profile_sha256"]
-    assert prepared["analyst_profile_id"] == "xiaocao-kol-semantic-analyst-v1"
+    assert prepared["analyst_profile_id"] == "kol-semantic-analyst-v1"
     assert packet["analysis_request"]["sha256"] == _sha(inputs["request"])
     assert packet["evidence"]["sha256"] == _sha(inputs["evidence"])
     assert packet["market_evidence"]["sha256"] == _sha(inputs["market"])
@@ -111,6 +111,42 @@ def test_complete_context_receipt_roundtrip_is_local_and_idempotent(inputs, monk
     assert _verify(inputs, prepared) == result
     assert before == {p: (p.read_bytes(), p.stat().st_mtime_ns) for p in inputs["request"].parent.rglob("*") if p.is_file()}
     assert inputs["request"].read_bytes() == request_before
+
+
+def test_semantic_profile_is_source_agnostic_for_official_article_requests(inputs):
+    request = _read(inputs["request"])
+    request.update(
+        adapter="wechat_official_account",
+        author="刘少狙击营",
+        publisher="刘少狙击营",
+        source="微信公众号",
+        event="daily_analysis_input_required",
+    )
+    _write(inputs["request"], request)
+
+    prepared = _prepare(inputs)
+    packet = _read(prepared["packet_path"])
+
+    assert packet["source_metadata"]["author"] == "刘少狙击营"
+    assert packet["analyst_profile"]["value"]["scope"] == "kol_source_semantics"
+    assert "KOL 完整来源证据" in packet["analyst_profile"]["value"]["objective"]
+    assert "完整来源证据" in prepared["spawn_arguments"]["message"]
+
+
+def test_unfinished_packet_can_be_reissued_after_profile_repair(inputs, monkeypatch):
+    first = _prepare(inputs)
+    first_paths = {path: path.read_bytes() for path in Path(first["packet_path"]).parent.iterdir()}
+    profile = delegation.load_analyst_profile()["value"]
+    profile["objective"] += " 修复后的跨来源目标。"
+    profile_path = inputs["request"].parent / "semantic-analyst-repaired.json"
+    _write(profile_path, profile)
+    monkeypatch.setattr(delegation, "ANALYST_PROFILE_PATH", profile_path)
+
+    repaired = _prepare(inputs)
+
+    assert repaired["packet_path"] != first["packet_path"]
+    assert Path(repaired["packet_path"]).parent.parent == Path(first["packet_path"]).parent
+    assert first_paths == {path: path.read_bytes() for path in Path(first["packet_path"]).parent.iterdir() if path.is_file()}
 
 
 @pytest.mark.parametrize("field,value", [("model", "gpt-5.6-luna"), ("reasoning_effort", "high"),

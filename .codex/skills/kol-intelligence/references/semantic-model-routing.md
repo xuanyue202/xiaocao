@@ -1,9 +1,11 @@
 # Semantic model routing
 
-Use this route only for new Xiaocao transcript semantic-input events, including
-exact resumes. Other authors retain their existing route. Acquisition, provider
-waits, mailbox operations, deterministic validation, publication, notification,
-Book, knowledge ingestion, and ack remain on the Automation parent.
+Use this route for every new KOL semantic-input event, including Xiaocao
+transcripts, official-account articles, subscription sources, and exact resumes.
+Source adapters differ only in evidence acquisition; they share this semantic
+route. Acquisition, provider waits, mailbox operations, deterministic validation,
+publication, notification, Book, knowledge ingestion, and ack remain on the
+Automation parent.
 
 ## Fixed role boundary
 

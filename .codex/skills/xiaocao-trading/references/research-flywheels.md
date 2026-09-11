@@ -17,6 +17,19 @@ Read this file only for K/P overlays, forward labels, training rows, guarded res
 
 `forward_eval.py --live-only` reports all six. Contrast frequency matters: B is uninformative when it rarely differs from A. Small-n E/F remains small-n.
 
+Executable-label replay evaluates market freshness at the signal day's 09:30
+entry using the original dated market facts. Legacy provider-only clocks may
+be date-bound only by a matching immutable capture date. Live paper execution
+continues to use the wall clock. Missing market evidence remains retryable;
+it must not freeze mode evidence by caching an unavailable check as a terminal
+trade outcome. Track the latest executable evidence date separately from
+theoretical label counts.
+The bounded minute-read backfill queue runs newest mature signal dates first,
+then older retryable gaps within the same budget and rate limit. It reuses
+known labels without a read and excludes rows without a D+1 outcome. Terminal
+output reports both latest executable and latest mature signal dates; an old
+unavailable-evidence backlog must not hide starvation of recent samples.
+
 ## Daily research loop
 
 ```bash

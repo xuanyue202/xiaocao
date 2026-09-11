@@ -293,6 +293,12 @@ work and never authorizes replaying publication, reminder, or Book side effects.
      ordering, and SHA-256 proofs pass, immediately close the exact OpenCLI
      player tab. Then list the session tabs and prove that no tab with the same
      full player path remains; close any exact duplicates and read back again.
+     When the sole exact player is a user-bound OpenCLI tab and `tab close`
+     returns the explicit `bound_tab_mutation_blocked` provider contract,
+     revalidate its page ID and full path, navigate that same bound page back
+     to the configured private folder, and require a fresh tab list with zero
+     matching player paths. This is the only close-equivalent fallback; it is
+     invalid for multiple matches, a changed path, or a generic close failure.
      Persist both the pause and close receipts with the capture. A missing or
      uncertain receipt is `repair_required` and cannot become
      `transcript_captured`; do not keep the page open for non-gating AI-note

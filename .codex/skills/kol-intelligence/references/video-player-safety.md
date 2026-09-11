@@ -20,6 +20,12 @@ user blocker.
 Persist the complete transcript first, then verify its exact path, DOM
 completeness, order, and SHA-256. Immediately close every player tab for that
 exact path by page ID and use `tab list` to prove no matching player remains.
+If OpenCLI returns the explicit `bound_tab_mutation_blocked` contract for the
+one exact user-bound player, verify that page ID and full path again, navigate
+that same page back to the configured private folder, and require `tab list`
+to prove zero matching player paths. This is a close-equivalent release only
+for that provider-declared bound-tab case; never use it for multiple matches
+or a generic close failure.
 Do not keep the page open for an ungated AI-note completion.
 
 A missing close receipt is Agent-owned `repair_required`. Do not continue to
