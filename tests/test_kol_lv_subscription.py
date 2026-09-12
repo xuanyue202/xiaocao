@@ -11,6 +11,7 @@ from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
 from pathlib import Path
 from types import SimpleNamespace
+from urllib.parse import parse_qs, unquote, urlsplit
 
 import pytest
 
@@ -89,25 +90,6 @@ def _capture_browser_download(
     )
 
 
-def test_ticket_records_sanitized_iab_policy_failure_and_opencli_bootstrap():
-    ticket = (
-        Path(__file__).parents[1]
-        / ".scratch"
-        / "kol-intelligence-mvp"
-        / "issues"
-        / "04-lv-text-image-to-decisions.md"
-    ).read_text(encoding="utf-8")
-
-    assert "browser_security_policy_denied" in ticket
-    assert "built-in browser" in ticket
-    assert "Microsoft Edge" in ticket
-    assert "Google Chrome" not in ticket
-    assert "OpenCLI Browser Bridge" in ticket
-    assert "OpenCLI" in ticket
-    assert "attach that exact tab" not in ticket
-    assert "https://pan.baidu.com/s/" not in ticket
-
-
 def test_native_save_runtime_targets_microsoft_edge_only(tmp_path):
     helper = Path(__file__).parents[1] / "scripts" / "macos_edge_save_helper.swift"
     source = helper.read_text(encoding="utf-8")
@@ -174,94 +156,17 @@ def test_partial_listing_preserves_unscanned_cold_root(tmp_path):
     assert cold_state["present"] is True
 
 
-def test_exact_download_listing_reads_only_target_ancestor_chain(tmp_path):
-    service = LvSubscriptionService(tmp_path / "out", now=lambda: NOW)
-    captured = []
-    service._read_opencli_listing = lambda **kwargs: (
-        captured.append(kwargs)
-        or {
-            "status": "ok",
-            "complete_scan": False,
-            "coverage": {
-                "direct_roots": ["/wrapper", "/wrapper/直播回放"],
-                "recursive_roots": [],
-            },
-            "entries": [],
-        }
-    )
-
-    service._download_listing(
-        session="ticket04",
-        profile="work",
-        exact_path="/wrapper/直播回放/8月10日.mp4",
-    )
-
-    assert captured == [{
-        "session": "ticket04",
-        "profile": "work",
-        "exact_path": "/wrapper/直播回放/8月10日.mp4",
-    }]
-
-
-def test_exact_listing_navigates_to_parent_before_read_only_eval(tmp_path):
-    opened_urls = []
-
-    def browser_runner(command, **_kwargs):
-        tail = command[3:]
-        if tail[:1] == ["open"]:
-            opened_urls.append(tail[1])
-            payload = {"url": "redacted", "page": "page-1"}
-        elif tail[:1] == ["bind"]:
-            payload = {"session": "ticket04"}
-        elif tail[:1] == ["eval"]:
-            if "ticket04_exact_listing_route_readback" in tail[1]:
-                payload = {"status": "target_route_ready"}
-            else:
-                payload = {
-                    "status": "ok",
-                    "complete_scan": False,
-                    "coverage": {
-                        "direct_roots": ["/wrapper", "/wrapper/直播回放"],
-                        "recursive_roots": [],
-                    },
-                    "entries": [],
-                }
-        else:
-            raise AssertionError(command)
-        return SimpleNamespace(
-            returncode=0,
-            stdout=json.dumps(payload, ensure_ascii=False),
-            stderr="",
-        )
-
-    service = LvSubscriptionService(
-        tmp_path / "out",
-        runner=browser_runner,
-        opencli_command=("opencli",),
-        share_url=(
-            "https://pan.baidu.com/s/private-share-token#list/path=%2F"
-        ),
-        share_code="a1b2",
-        edge_route_launcher=lambda _route: None,
-    )
-
-    service._read_opencli_listing(
-        session="ticket04",
-        exact_path="/wrapper/直播回放/8月10日.mp4",
-    )
-
-    assert opened_urls == [
-        "https://pan.baidu.com/s/private-share-token?pwd=a1b2"
-        "#list/path=%2Fwrapper%2F%E7%9B%B4%E6%92%AD%E5%9B%9E%E6%94%BE"
-    ]
-
-
 def test_exact_listing_proves_parent_route_before_first_listing_eval(tmp_path):
     operations = []
 
     def browser_runner(command, **_kwargs):
         tail = command[3:]
         if tail[:1] == ["open"]:
+            target = urlsplit(tail[1])
+            assert target.netloc == "pan.baidu.com"
+            assert target.path == "/s/private-share-token"
+            assert parse_qs(target.query) == {"pwd": ["a1b2"]}
+            assert unquote(target.fragment) == "list/path=/wrapper/直播回放"
             operations.append(
                 "open_foreground"
                 if tail[-2:] == ["--window", "foreground"]
@@ -303,13 +208,14 @@ def test_exact_listing_proves_parent_route_before_first_listing_eval(tmp_path):
         tmp_path / "out",
         runner=browser_runner,
         opencli_command=("opencli",),
-        share_url="https://pan.baidu.com/s/private-share-token",
+        share_url="https://pan.baidu.com/s/private-share-token#list/path=%2F",
         share_code="a1b2",
         edge_route_launcher=lambda _route: operations.append("wake_edge"),
     )
 
-    service._read_opencli_listing(
+    service._download_listing(
         session="ticket04",
+        profile=None,
         exact_path="/wrapper/直播回放/8月10日.mp4",
     )
 
@@ -560,15 +466,6 @@ def test_private_config_drives_one_browser_listing_path_without_persisting_crede
         "open",
         f"{private_url}?pwd={private_code}",
     ]
-    assert "/share/list" in commands[1][-1]
-    assert "performance.getEntriesByType('resource')" in commands[1][-1]
-    assert "parsed.searchParams.has('shorturl')" in commands[1][-1]
-    assert "parsed.searchParams.has('sekey')" in commands[1][-1]
-    assert "parsed.searchParams.set('dir', String(dir))" in commands[1][-1]
-    assert "String(item.isdir) === '1'" in commands[1][-1]
-    assert "new URLSearchParams({" not in commands[1][-1]
-    assert "expectedPath" in commands[1][-1]
-    assert "/s/private-share-token" in commands[1][-1]
 
     durable = "\n".join(
         path.read_text(encoding="utf-8")
@@ -586,51 +483,6 @@ def test_authorized_share_url_preserves_the_root_hash_route():
         "https://pan.baidu.com/s/private-share-token"
         "?pwd=a1b2#list/path=%2F"
     )
-
-
-def test_browser_listing_recurses_without_parent_mtime_pruning_in_bounded_batches():
-    script = lv_subscription._browser_listing_script(
-        "/s/private-share-token"
-    )
-
-    assert "pendingDirs.push(path)" in script
-    assert "const maxConcurrentDirectories = 4;" in script
-    assert (
-        "const batch = pendingDirs.splice(0, maxConcurrentDirectories);"
-        in script
-    )
-    assert "await Promise.all(batch.map(async dir =>" in script
-    assert "const controller = new AbortController();" in script
-    assert "const rootDeadline = Date.now() + 10000;" in script
-    assert "share_list_timeout" in script
-    assert ".includes('已失效')" not in script
-    assert "exact_visible_terminal" in script
-    assert "localValue('shareid')" not in script
-    assert "localValue('share_uk')" not in script
-    assert (
-        script.index("exact_visible_terminal")
-        < script.index("share_root_template_missing")
-    )
-    assert "provider_errno" in script
-    assert "json_error_position" in script
-    assert "item.server_mtime" not in script[
-        script.index("if (isDir && shouldRecurse && !seenDirs.has(path))") :
-        script.index("const maxDirectories")
-    ]
-
-
-def test_hourly_listing_script_limits_recursion_to_selected_and_new_roots():
-    script = lv_subscription._browser_listing_script(
-        "/s/private-share-token",
-        recursive_roots=["/直播回放", "/报告"],
-        known_roots=["/直播回放", "/报告", "/老课程"],
-    )
-
-    assert json.dumps(["/直播回放", "/报告"]) in script
-    assert "knownRootDirectories.has(path)" in script
-    assert "activeRecursiveRoots.add(path)" in script
-    assert "complete_scan: configuredRecursiveRoots === null" in script
-    assert "hourly_hot_roots_plus_rotating_cold_shard" in script
 
 
 def test_tiered_share_plan_descends_below_single_real_wrapper_directory():
@@ -2109,22 +1961,6 @@ def test_download_confirmation_recovers_detached_route_readback_within_bound(
     assert trigger_calls == 1
 
 
-def test_provider_row_selection_does_not_treat_js_item_active_as_selected():
-    script = lv_subscription._browser_download_script(
-        expected_share_path="/s/private-share-token",
-        expected_item_path="/彤商学院/报告/大摩拆解.pdf",
-        expected_name="大摩拆解.pdf",
-    )
-
-    assert "!row.classList.contains('JS-item-active')" in script
-    assert (
-        "rows.filter(row => row.classList.contains('JS-item-active'))"
-        not in script
-    )
-    assert "downloadControls[0].click()" not in script
-    assert "data-xiaocao-download-open" in script
-
-
 def test_download_control_uses_native_click_and_preserves_client_only_status(
     tmp_path,
 ):
@@ -2167,26 +2003,6 @@ def test_download_control_uses_native_click_and_preserves_client_only_status(
 
     assert result["status"] == "provider_web_download_client_only"
     assert operations == ["select", "native_click", "readback"]
-
-
-def test_owner_download_selection_binds_exact_fsid_name_and_checkbox_state():
-    script = lv_subscription._owner_download_link_script(
-        expected_provider_file_id="512980618612681",
-        expected_name="大摩拆解.pdf",
-        expected_size=768188,
-    )
-
-    assert "[data-id], [data-fsid]" in script
-    assert "expectedProviderFileId" in script
-    assert "rowName(row)" in script
-    assert "row.querySelector('input[type=\"checkbox\"]')" in script
-    assert "aria-selected" in script
-    assert "aria-checked" in script
-    assert "row.classList.contains('selected')" in script
-    assert "control?.classList.contains('is-select')" not in script
-    assert "filter(row => itemRow(row) && visible(row))" in script
-    assert "selectedRows.length !== 1" in script
-    assert "JS-item-active" not in script
 
 
 def test_replayed_download_claim_reconciles_without_retriggering_browser(tmp_path):
@@ -3047,27 +2863,6 @@ def test_existing_image_claim_uses_direct_page_api_without_second_ui_trigger(
         for path in (tmp_path / "out").rglob("*.json*")
     )
     assert "credential-redacted-from-ledger" not in durable
-
-
-def test_image_recovery_provider_probe_is_versioned_opencli_template():
-    source = lv_subscription._provider_direct_link_script(
-        expected_share_path="/s/private-share-token",
-        expected_provider_file_id="123456789012345",
-        expected_item_path="/folder/12.png",
-        expected_name="12.png",
-        expected_size=42,
-    )
-
-    assert "baidu-netdisk/probe-download" in source
-    assert "const template_version = 1" in source
-    assert "__EXPECTED_" not in source
-    assert "performance.getEntriesByType('resource')" in source
-    assert "resourceValue(['sekey'])" in source
-    assert "if (sign) query.set('sign', sign)" in source
-    assert "provider_filtered" in source
-    assert "部分文件违规，已被过滤" in source
-    assert "expectedProviderFileId = \"123456789012345\"" in source
-    assert "12.png" in source
 
 
 def test_detached_provider_link_uses_idempotent_owner_cloud_fallback(

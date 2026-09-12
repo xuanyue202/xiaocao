@@ -70,6 +70,25 @@ def test_wechat_history_accepts_xiaoetong_link_without_message_keywords():
     assert items[0]["source_url"] == "https://yv9lc.xetslk.com/sl/3qV2x"
 
 
+def test_wechat_history_discovers_merchant_entry_exactly_once():
+    message = "[2026-09-11 16:38] 福利官小花四: https://wxmpurl.cn/OOgqnECl26c"
+    items = parse_xiaocao_live_messages(_history(message, message))
+    assert len(items) == 1
+    assert items[0]["source_url"] == "https://wxmpurl.cn/OOgqnECl26c"
+    assert items[0]["published_at"] == "2026-09-11T16:38:00+08:00"
+
+
+@pytest.mark.parametrize("url", [
+    "http://wxmpurl.cn/a", "https://wxmpurl.cn.evil.test/a",
+    "https://u:p@wxmpurl.cn/a", "https://wxmpurl.cn/a/b",
+    "https://wxmpurl.cn/a?extra=1",
+])
+def test_wechat_history_rejects_ambiguous_merchant_entries(url):
+    assert parse_xiaocao_live_messages(_history(
+        "[2026-09-11 16:38] 福利官小花四: " + url,
+    )) == []
+
+
 def test_wechat_history_accepts_h5_xeknow_short_live_links():
     payload = _history(
         "[2026-08-14 16:53] 福利官小花四: 17:30草神重磅直播："
@@ -98,6 +117,31 @@ def test_wechat_history_accepts_native_goose_live_mini_program_entries():
     assert items[0]["mini_program_token"] == "WDUa9A1nxlXZoSz"
     assert "source_url" not in items[0]
     assert "message" not in items[0]
+
+
+def test_unsupported_merchant_entry_is_retained_without_arming_or_retry(tmp_path):
+    history = _history("[2026-09-11 16:38] 福利官小花四: https://wxmpurl.cn/OOgqnECl26c")
+    calls = []
+    driver = _CaptureDriver()
+
+    def exchange(request):
+        calls.append(request)
+        return {"action": request["action"], "subscription_id": request["subscription_id"],
+                "page_state": "unsupported_application", "launch_allowed": False}
+
+    subscription = XiaocaoWechatLiveSubscription(
+        tmp_path, history_reader=lambda: history, browser_exchange=exchange,
+        capture_driver=driver,
+        clock=lambda: datetime.fromisoformat("2026-09-12T12:00:00+08:00"),
+    )
+    result = subscription.run_once(opencli_session="test")
+    assert result["unsupported_application"] is True
+    assert driver.arms == []
+    saved = subscription._load()["items"][result["identity"]]
+    assert saved["status"] == "unsupported_application"
+    assert saved["message_sha256"]
+    subscription.run_once(opencli_session="test")
+    assert len(calls) == 1
 
 
 class _CaptureDriver:

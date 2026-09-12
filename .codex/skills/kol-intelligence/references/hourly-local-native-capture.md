@@ -27,7 +27,40 @@ For H5 entries, retain the process for credential-free identity resolution;
 H5 is not playback proof.
 
 For an HTTPS share entry, the default launch route is the verified merchant
-Web Link, not chat-window screenshots or a browser player. Run the emitted
+Web Link, not chat-window screenshots or a browser player.
+
+The reviewed branded Xiaoetong application `见势擒龙团` is supported only when
+the merchant page binds `gh_4b9150162d69`,
+`subpkg/live-room-horizon/pages/index`, and `appsnm3rlcp3566` together.
+Its flat query supplies the exact live identity; never change that identity or
+infer a replay from its title. With `--reuse-open-window`, the resolver returns
+`reuse_open_window=true` without a launch command. Without that option, the
+provider may issue a fresh Goose Live ticket for the same app/live; the resolver
+must independently verify that binding. Reuse the user's already-open matching
+course first. For this authorized branded window apply the same one-action
+and readback SOP below, substituting its exact window title in W7-W10.
+No refresh, re-launch or guessed tickets. If the user explicitly authorizes one
+same-course reopen because the player predates capture and no finite candidate
+was observed, close only the verified branded course using W7-W10, then execute
+one freshly issued, independently validated same-app/live Goose Live launch.
+Keep the existing subscription/capture/source job and baseline. A fresh same-live finite candidate
+from the existing narrow Xiaoetong sniffer is still required. If unavailable,
+continue diagnosis rather than downloading a different/live candidate.
+
+`wxmpurl.cn` entries are discovered as merchant links, not assumed to be Goose
+Live. If resolution returns `unsupported_application` / `launch_allowed=false`,
+do not launch or use the original-message fallback: preserve the entry and
+report the unsupported application. This is distinct from transient resolution
+failure. A verified Goose Live entry yields its embedded identity and then a
+fresh merchant ticket; never reuse the old ticket from the message.
+
+Complete read-only link/application validation before touching WeChat or
+changing the capture PAC. Do not rewrite an already correct, enabled PAC.
+Reuse fresh UI evidence within one action/readback pair; avoid redundant
+state-only probes. These reduce unnecessary operations, not a proven guarantee
+against WeChat protection. Do not add arbitrary sleeps or evasion behavior.
+
+Run the emitted
 `launch_resolver_command` with `PYTHONPATH=src`. The read-only
 resolver also accepts `--subscription-id <request subscription_id>` and emits
 `browser_response`; pass that object directly to the retained PTY. Never retype
