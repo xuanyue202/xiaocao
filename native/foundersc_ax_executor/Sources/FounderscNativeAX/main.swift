@@ -2111,34 +2111,56 @@ private func clearOrderFields(
     _ fields: OrderFields,
     record: ([String: String]) -> Void = { _ in }
 ) -> Bool {
-    // Clearing the security triggers a quote callback. Do it once, before
-    // dependent fields; re-clearing it after price recreates the residual quote.
+    let deadline = Date().addingTimeInterval(3)
+    func read(_ field: AXUIElement) -> String? {
+        guard Date() < deadline else { return nil }
+        let raw = attribute(field, kAXValueAttribute)
+        if let value = raw as? String { return value.trimmingCharacters(in: .whitespacesAndNewlines) }
+        if let value = raw as? NSNumber { return value.stringValue }
+        return nil // Unreadable or locked is not an empty field.
+    }
+    func zeroOrEmpty(_ value: String?) -> Bool {
+        guard let value else { return false }
+        return value.isEmpty || value.range(of: #"^[+-]?0+(\.0+)?$"#, options: .regularExpression) != nil
+    }
+    // Clear the security once: repeating this write retriggers quote callbacks.
     let codeResult = AXUIElementSetAttributeValue(
         fields.code, kAXValueAttribute as CFString, "" as CFTypeRef
     )
+    if codeResult != .success {
+        record(["phase": "code_clear", "writes_succeeded": "false", "click_mode": "none"])
+        return false
+    }
     usleep(100_000)
-    for attempt in 1...2 {
-        let results = [fields.quantity, fields.price].map { field in
-            AXUIElementSetAttributeValue(
-                field, kAXValueAttribute as CFString, "" as CFTypeRef
-            )
+    var shouldClear = true
+    var quietSamples = 0
+    // Programmed waits total 400–900 ms, with a 3 s polling budget including
+    // AX calls. Quiet samples contain no new field writes.
+    for attempt in 1...8 {
+        guard Date() < deadline else { return false }
+        var writesSucceeded = true
+        if shouldClear {
+            writesSucceeded = [fields.quantity, fields.price].map { field -> AXError in
+                guard Date() < deadline else { return .cannotComplete }
+                return AXUIElementSetAttributeValue(field, kAXValueAttribute as CFString, "" as CFTypeRef)
+            }.allSatisfy({ $0 == .success })
         }
-        usleep(attempt == 1 ? 100_000 : 200_000)
-        let code = fieldString(fields.code).trimmingCharacters(in: .whitespacesAndNewlines)
-        let price = fieldString(fields.price).trimmingCharacters(in: .whitespacesAndNewlines)
-        let quantity = fieldString(fields.quantity).trimmingCharacters(in: .whitespacesAndNewlines)
-        let writesSucceeded = codeResult == .success && results.allSatisfy({ $0 == .success })
+        usleep(100_000)
+        let code = read(fields.code)
+        let price = read(fields.price)
+        let quantity = read(fields.quantity)
+        let readable = code != nil && price != nil && quantity != nil
+        let neutral = Date() < deadline && writesSucceeded && code == "" && zeroOrEmpty(price) && zeroOrEmpty(quantity)
+        quietSamples = neutral ? quietSamples + 1 : 0
         record([
-            "attempt": String(attempt), "code": code, "price": price,
-            "quantity": quantity, "writes_succeeded": String(writesSucceeded),
+            "attempt": String(attempt), "code": code ?? "<unreadable>",
+            "price": price ?? "<unreadable>", "quantity": quantity ?? "<unreadable>",
+            "reads_proven": String(readable), "writes_succeeded": String(writesSucceeded),
+            "quiet_samples": String(quietSamples),
             "sequence": "code_once_then_dependent_fields", "click_mode": "none"
         ])
-        // A malformed non-empty numeric value is not a neutral field.
-        if writesSucceeded && code.isEmpty
-            && (price.isEmpty || normalizedDecimal(price) == 0)
-            && (quantity.isEmpty || normalizedQuantity(quantity) == 0) {
-            return true
-        }
+        if quietSamples >= 3 { return true }
+        shouldClear = !neutral
     }
     return false
 }
@@ -3445,7 +3467,7 @@ private func unlockFromStandardInput(arguments: [String]) -> Receipt {
         return receipt
     }
 
-    let deadline = Date().addingTimeInterval(8)
+    let deadline = Date().addingTimeInterval(3)
     var final = observe(command: "unlock-stdin")
     while Date() < deadline,
           !["trade_ready", "query_only"].contains(

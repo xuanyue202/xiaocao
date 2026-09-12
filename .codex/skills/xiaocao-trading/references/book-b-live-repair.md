@@ -129,6 +129,13 @@ the builder failed before returning a plan list. The next normal checkpoint
 closes a truly expired unclaimed intent; uncertain effects remain open for
 reconciliation. Deadline pressure never weakens necessary judgment.
 
+Before actual expiry, a proven unclaimed BUY remains with its original owner;
+the intraday monitor reports `deferred_buy_plan_ids` and continues existing
+owned-lot protection without taking over that BUY. Claim/uncertainty, pending
+SELL and final settlement retain their existing reconciliation requirements.
+For AX clear/readiness timing, use the bounded checks in
+`foundersc-native-ax.md`; do not add a long stable-empty wait.
+
 During 09:25–09:30, immediately fix an unexpected local failure and validate only
 the affected behavior before resuming. For missing KOL material, use the current
 reading pack and exact report-ID retrieval in `kol-trading-judgment.md`; do not

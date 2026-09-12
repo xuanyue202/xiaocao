@@ -68,6 +68,13 @@ mints or edits an authorization. Do not run it a second time after an UNKNOWN,
 timeout, process interruption or visible form state; use its durable
 intent/execution readback on the next scheduled checkpoint.
 
+An open BUY proven unclaimed by its bound intent and complete event history is
+reported in `deferred_buy_plan_ids`. Leave it to the original morning owner;
+continue monitoring existing owned lots and authorized exits. Recheck after
+account and status reads. A SELL intent, claim or uncertain effect still
+requires reconciliation before new decisions. Deferred BUY intents still
+reserve capital and block final settlement until formally closed or completed.
+
 Book T is a separate explicit branch:
 
 ```bash

@@ -1,6 +1,6 @@
 # 小草运营契约（Operating Contract, SSOT）
 
-**版本**：4.10
+**版本**：4.11
 **状态**：现行
 **适用范围**：所有 paper / 未来 real 的实盘环（live_recommend → paper_record → live_monitor → eod）与回测
 **关联实现**：`src/xiaocao/live/{safety,capital_keychain,foundersc_native_ax,foundersc_native_broker,trading_execution,book_b_live_lifecycle,book_b_live_intraday}.py`、`src/xiaocao/live/intelligence_policy.py`、`src/xiaocao/strategy/{mode_switch,trend_rules,kol_reference}.py`、`native/foundersc_ax_executor/`、`kronos_screen/scripts/{capture_signals,forward_eval,paper_record,settle_book_a,settle_book_t,decompose_pnl,quality_governor}.py`、`scripts/{book_b_live_morning,book_b_live_intraday,live_monitor,research_mode_switch_replay}.py`
@@ -60,6 +60,8 @@ Book B live morning 仍提前至交易日09:15启动，09:23推荐和09:25本地
 撤回09:28:30定时提醒、倒计时播报和09:30准备未完成自动跳过。09:30只保留原有最早submit时间；出现非预期情况时持续紧急修复，不凭到点放弃。后续是否可执行由原策略、行情、连续竞价时段和原计划recovery_deadline决定。既有未终结intent中的opening_preparation_deadline是撤回的历史元数据，不再作为失效依据；已经终结的计划不会因此复活。
 
 正式恢复用`--resume-plan-id`和`--recovery-action resume|reconcile|close`，不重跑生产器或修改计划经济字段。已提交/未知副作用只对账，未提交计划可恢复或正式关闭，真正到期的无claim计划仍可关闭。保留失败进度、各阶段时间和恢复历史，用于事后定位耗时，不再围绕时钟增加交易门。
+
+盘中监控在账户锁内核验完整意图/事件链后，可将尚无claim、订单、成交或不确定副作用的BUY保留给原任务，并在回执`deferred_buy_plan_ids`中列明；它不阻塞已有持仓监控和原策略授权退出。账户与状态读取后重新核验；未结SELL及可能副作用仍先对账。该例外不释放BUY资金预留、不代替原任务恢复，也不绕过最终结算的未结计划检查。AX清空采用短间隔可读空值确认，等待预算400–900毫秒、含AX调用的轮询预算3秒；解锁就绪轮询也缩为3秒，就绪即返回，不增加长时间稳定空值等待。
 
 来源的日期、观察时点、行数、hash、缺失/空响应和有界确认窗口继续保留；不把稳定结果冒充数据齐全。KOL阅读文件保留全部已加载正文及完整来源、观点、评估、关系和覆盖信息，仅去掉重复正文与JSON排版冗余；已完整读过的context可通过`--since-context`作增量阅读基准：绑定前后hash、保留全部变更记录和移除ID，当前覆盖信息完整保留；新读者仍须读基准。正式发布仍绑定当前完整context/hash，缺失来源精确补读，不以摘要代替正文。
 
@@ -442,6 +444,7 @@ KOL 断言、候选假设或报告升级为策略真值，也不替代永久参�
 | 版本 | 日期 | 说明 |
 |------|------|------|
 | 4.10 | 2026-09-12 | 按用户最新要求撤回09:28:30提醒与09:30自动跳过，黄金五分钟紧急代码修复/精确KOL补读优先；保留早启动、原计划恢复、回执、来源准备和原策略；新增无损KOL阅读文件与缺失来源定位。 |
+| 4.11 | 2026-09-12 | 未提交BUY不阻塞已有持仓保护，保留claim/SELL/资金预留/结算边界；AX清空增加可读性、延迟回填与残留校验，普通清空和解锁就绪采用短等待与3秒轮询预算。 |
 | 4.9 | 2026-09-12 | Book B 提前09:15准备；09:28:30仅提醒，09:30未完成必要判断和prepare即跳过，不自动盘中补买；正式原计划恢复/对账/本地关闭、历史运行回执、来源观察与有效KOL复用；当前执行仓位不变，领域历史提案移入研究归档。 |
 | 4.8 | 2026-09-12 | 简化验证与复盘：删除文案/版本/模型/篇幅机械断言，保留能检出实际错误的行为与部署检查；按变更影响选择回归，取消文档改动全套交易测试及固定假设数量/复盘格式要求。 |
 | 4.7 | 2026-09-12 | 登记用户说明的本地数字模拟与 APP 服务端仿真分级；保留正式执行纪律、独立账本及既有运行门。故障恢复改为 AX/项目代码紧急修复、最小必要验证、同计划窄恢复及终态回读优先，随后根因修复与完整回归；界面仅辅助诊断。 |
