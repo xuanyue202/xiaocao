@@ -68,3 +68,34 @@ def test_grid_cannot_hide_rows_or_truncate_its_row_count(fault):
             now=datetime.fromisoformat(OBSERVED_AT.replace("Z", "+00:00")),
         )
     assert native.prepare_calls == native.submit_calls == native.cancel_calls == 0
+
+
+@pytest.mark.parametrize('glyph,price,traded,allowed', [
+    ('O', '0.000', False, True), ('OO', '0.000', False, False),
+    ('O', '1.000', False, False), ('O', '0.000', True, False),
+])
+def test_isolated_zero_ocr_alias_requires_zero_price_and_independent_zero_trades(glyph, price, traded, allowed):
+    class Native(FakeNative):
+        def read_query(self, **kwargs):
+            result = super().read_query(**kwargs)
+            if kwargs['kind'] == 'today-orders':
+                q = result.payload['query_readback']
+                q.update(parsing_proven=False, critical_confidence_proven=False,
+                         headers=list(q['rows'][0]), low_confidence_critical_headers=['成交数量'])
+            return result
+    native = Native()
+    native.orders[0].update({'成交数量': glyph, '成交价格': price})
+    if traded:
+        native.trades = [{'证券代码':'515120','买卖标志':'买入','成交数量':'1',
+                          '成交价格':'0.646','成交编号':'1234','委托编号':'6000002'}]
+    adapter = _adapter(native)
+    def read():
+        return adapter.read_live_account_snapshot(trade_date='2026-08-30',
+            expected_fund_account_fingerprint='123******890',
+            now=datetime.fromisoformat(OBSERVED_AT.replace('Z','+00:00')))
+    if allowed:
+        assert read()['tables']['today-orders']['rows'][0]['成交数量'] == '0'
+        assert native.query_calls.count('today-orders') == 2
+    else:
+        with pytest.raises(FounderscNativeAXError):
+            read()

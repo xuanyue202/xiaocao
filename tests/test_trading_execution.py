@@ -25,6 +25,15 @@ from xiaocao.live.trading_execution import (
 from xiaocao.live.safety import ENV_LIVE_ENABLED, ENV_SIGNING_KEY, make_authorization
 
 
+# Repeated calls describe the same immutable fixture, even across a second boundary.
+_DEFAULT_PLAN_DEADLINE = datetime.now(timezone.utc) + timedelta(minutes=15)
+
+
+@pytest.fixture(autouse=True)
+def no_external_execution_notifications(monkeypatch):
+    monkeypatch.setattr(TradingExecution, "_default_notifier", staticmethod(lambda *_args: None))
+
+
 def _plan(
     *,
     environment: str = "mock",
@@ -50,7 +59,7 @@ def _plan(
         basket_price=basket,
         market_guard_status=guard,
         created_at=datetime(2026, 8, 15, 1, 0, tzinfo=timezone.utc),
-        recovery_deadline=deadline or datetime.now(timezone.utc) + timedelta(minutes=15),
+        recovery_deadline=deadline or _DEFAULT_PLAN_DEADLINE,
         allocation_proof_hash="test-allocation-proof",
     )
 

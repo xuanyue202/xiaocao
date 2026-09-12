@@ -206,6 +206,11 @@ KOL 断言、候选假设或报告升级为策略真值，也不替代永久参�
   order-id 汇总仍严格为零；(b) 撤单目标的 order-id/code/price/quantity 已精确且唯一，
   唯一低置信字段为方向，二字 OCR token 以 `入`/`出` 结尾并与请求方向一致。前者必须把
   submit 前 baseline 与 submit/recovery 后 readback mode 分相记录，禁止后者覆盖前者；
+  成交数量单格被识别为 `O` 时，只能在第二次读取的上述零成交分支内，结合该行成交价
+  严格为零与独立成交表按委托号严格为零，记录原字符后归一为 0；代码/价格/委托量/
+  委托号不做字母替换。Python 统一拥有定向重读，helper 单次捕获，避免两层重读相乘。
+  撤单按目标行的代码/委托号/价格/数量置信度及方向证明选取；无关行的状态/成交数量
+  置信度不能否定已证明的目标身份。选择后再读同一行身份，重排或换行则停止点击。
   后者必须记录 selection proof mode 并继续证明唯一复选框
   视觉变化；任何非零成交、未知状态、其他低置信字段或多行匹配仍 fail-closed。
   prepare 前必须读取全部当日委托编号，并证明目标
@@ -221,6 +226,8 @@ KOL 断言、候选假设或报告升级为策略真值，也不替代永久参�
   durable claim 必须同时持久化 submit 前完整 order-id baseline 与 claim id；跨进程
   UNKNOWN 只有在该 baseline 之外恰好出现一个 exact tuple 时才可恢复 order/strategy
   mapping。缺 baseline/claim、重复 exact tuple 或关键字段不完整一律继续 UNKNOWN。
+  已取得成功提示 order-id 但尚无完整映射/strategy-id 时，恢复仍调用同一 durable claim
+  的 exact-delta 恢复器并约束原 order-id，不能因已有号码而跳过映射恢复。
   无 order mapping 的 `REJECTED` 只有同时证明 submitted/saved/started 均为 false
   才能作为“未点击”的终态，否则同样进入 UNKNOWN。无 order-id 的前日 UNKNOWN
   不得通过“当前没有记录”推断未提交；没有 broker order-id 的历史 UNKNOWN 保持
@@ -241,7 +248,11 @@ KOL 断言、候选假设或报告升级为策略真值，也不替代永久参�
   原生填单/清空、查询、账户绑定、真实提交和 exact-order 撤单已在本机验收：数量框
   只发一次 Return，随后只按当前确认窗唯一原生按钮；连续 Return/Y 禁止。提交成功只认
   合同号与新增 exact tuple。撤单副作用前也必须落 durable cancel claim；进程中断或结果
-  未知后只回读同 order-id，禁止第二次撤单动作。撤单只认同 order-id 的 `已撤` 回读，且
+  未知后只回读同 order-id，禁止第二次撤单动作。唯一的未执行关闭是 helper 明确返回
+  `cancel_target_not_unique`（代码保证在任何撤单点击前返回），且持久回执中撤单点击、
+  点击证明、确认均显式为 false；再次按原 order-id 证明仍为活动订单后，可追加关闭
+  该未执行 claim 的事件并为同单创建新 claim。历史不覆盖；超时、缺失字段、可能点击
+  或任何未知结果均不能使用该例外。撤单只认同 order-id 的 `已撤` 回读，且
   无论最终为 CANCELLED、与其他终态竞争或 UNKNOWN，均必须分别保留 helper status、
   helper 报告的点击事实、exact click proof、确认是否按下和 selection proof mode；不能因
   确认或字段证明不完整，把一次可能已经发生的写动作降格成无副作用失败。

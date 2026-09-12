@@ -442,6 +442,7 @@ class FounderscNativeAXClient:
                 "--kind",
                 str(kind),
                 "--allow-query-navigation",
+                "--single-capture",
                 "--expected-fingerprint",
                 str(expected_fingerprint),
             ],

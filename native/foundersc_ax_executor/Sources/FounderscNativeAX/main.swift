@@ -1975,6 +1975,38 @@ private func cancelRowMatchesWithBoundedSide(
         && boundedCancelSide(row["买卖标志"] ?? "") == input.order.side
 }
 
+private func cancelRowProofMode(
+    query: QueryReadback, tokens: [OCRToken], shape: TableShape,
+    targetIndex: Int, input: CancelInput
+) -> String? {
+    guard shape.auditComplete,
+          let rowBounds = shape.rowBounds, let columns = shape.columns,
+          query.rows.count == rowBounds.count,
+          query.rows.indices.contains(targetIndex),
+          cancelRowMatchesWithBoundedSide(query.rows[targetIndex], input: input) else { return nil }
+    let row = rowBounds[targetIndex]
+    let identityHeaders: Set<String> = ["证券代码", "委托编号", "委托价格", "委托数量", "买卖标志"]
+    var seen = Set<String>()
+    var boundedSide = false
+    for column in columns where identityHeaders.contains(normalizedHeader(column.title)) {
+        let title = normalizedHeader(column.title)
+        guard seen.insert(title).inserted, let bounds = column.bounds else { return nil }
+        let cells = tokens.filter {
+            let x = $0.bounds.x + $0.bounds.width / 2
+            let y = $0.bounds.y + $0.bounds.height / 2
+            return x >= bounds.x - 2 && x <= bounds.x + bounds.width + 2
+                && y >= row.y - 2 && y <= row.y + row.height + 2
+        }
+        guard !cells.isEmpty else { return nil }
+        let confident = cells.allSatisfy { $0.confidence >= minimumCriticalOCRConfidence }
+        if title == "买卖标志" {
+            boundedSide = !confident || normalizedBrokerSide(query.rows[targetIndex][title] ?? "").isEmpty
+        } else if !confident { return nil }
+    }
+    guard seen == identityHeaders else { return nil }
+    return boundedSide ? "exact_numeric_tuple_bounded_side_suffix" : "exact_order_tuple"
+}
+
 private func actionStripTokens(
     _ tokens: [OCRToken],
     label: String,
@@ -2630,25 +2662,16 @@ private func performCancel(arguments: [String], selectionProbeOnly: Bool) -> Rec
         navigationLabelCount: 1,
         navigationClickMode: "ocr_guarded_coordinate"
     )
-    let exactTargetIndices = query.rows.enumerated().compactMap { index, row in
-        cancelRowMatches(row, input: input) ? index : nil
+    // Select by the target's exact identity cells, not unrelated rows' status
+    // or fill OCR confidence. Python already reconciled the order's state.
+    let targetIndices = query.rows.enumerated().compactMap { index, row in
+        cancelRowMatchesWithBoundedSide(row, input: input) ? index : nil
     }
-    var targetIndices = exactTargetIndices
-    var selectionProofMode = "exact_order_tuple"
-    if !query.parsingProven,
-       Set(query.lowConfidenceCriticalHeaders) == Set(["买卖标志"]),
-       Set(query.headers).isSuperset(of: queryRequiredHeaders("today-orders")) {
-        let boundedTargets = query.rows.enumerated().compactMap { index, row in
-            cancelRowMatchesWithBoundedSide(row, input: input) ? index : nil
-        }
-        if boundedTargets.count == 1 {
-            targetIndices = boundedTargets
-            selectionProofMode = "exact_numeric_tuple_bounded_side_suffix"
-        }
-    }
-    let boundedSideFallbackProven = selectionProofMode
-        == "exact_numeric_tuple_bounded_side_suffix"
-    guard (query.parsingProven || boundedSideFallbackProven),
+    let mode = targetIndices.count == 1 ? cancelRowProofMode(
+        query: query, tokens: baselineTokens, shape: observation.receipt.tableShapes[0],
+        targetIndex: targetIndices[0], input: input
+    ) : nil
+    guard let selectionProofMode = mode,
           query.rows.count == rowBounds.count,
           targetIndices.count == 1 else {
         receipt.status = "cancel_target_not_unique"
@@ -2730,6 +2753,21 @@ private func performCancel(arguments: [String], selectionProbeOnly: Bool) -> Rec
         _ = postSingleLeftClick(at: deselectPoint)
         receipt.status = "cancel_target_selection_unproven"
         receipt.reason = "only the exact target checkbox did not produce a unique visual state delta"
+        receipt.timingMs = milliseconds(since: started)
+        return receipt
+    }
+
+    // A list refresh/reorder after the first capture must not change the
+    // identity of the selected row. Re-read that row before the cancel action.
+    let selectedTokens = recognizeText(image: selectedCapture.0, screenBounds: selectedCapture.1)
+    let selectedQuery = structuredQueryReadback(kind: "today-orders", tokens: selectedTokens,
+        tableShapes: observation.receipt.tableShapes, navigationLabelCount: 1,
+        navigationClickMode: "ocr_guarded_coordinate")
+    guard cancelRowProofMode(query: selectedQuery, tokens: selectedTokens,
+        shape: observation.receipt.tableShapes[0], targetIndex: targetIndex, input: input) != nil else {
+        _ = postSingleLeftClick(at: deselectPoint)
+        receipt.status = "cancel_selected_identity_changed"
+        receipt.reason = "selected row no longer proves the requested exact order identity"
         receipt.timingMs = milliseconds(since: started)
         return receipt
     }
@@ -2878,7 +2916,10 @@ private func readQuery(arguments: [String]) -> Receipt {
     var finalReadback: QueryReadback?
     var finalReceipt = receipt
     var lastLabelCount = 0
-    for _ in 0..<2 {
+    // Python owns the targeted reread. Avoid nesting two helper captures
+    // inside each of its two attempts; standalone helper callers keep two.
+    let captures = arguments.contains("--single-capture") ? 1 : 2
+    for _ in 0..<captures {
         let current = observe(command: "read-query")
         guard ["trade_ready", "query_only"].contains(current.receipt.surfaceState),
               current.receipt.tradeAccountFingerprintCount == 1,

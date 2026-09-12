@@ -146,7 +146,8 @@ the current process:
 - exactly one expected fund-account fingerprint;
 - positions, today-orders and today-trades query surfaces all parse, and the
   same positions capture proves `资产/股票市值/余额/可用/可取`; require
-  `余额+股票市值=资产` and `0<=可取<=可用<=余额`;
+  the exact balance/available-cash equation and directional evidence defined
+  in Operating Contract §4, including independently proven pending BUY reservations;
 - an ordinary buy/sell surface exposes exact prepare and submit capability;
 - native reconciliation is available.
 
@@ -316,4 +317,4 @@ for test scope, corrected defects, observed APP evidence and remaining limits.
 
 `FounderscNativeAXClient.command_timings` 记录每次命令的排队和执行秒数，不记录参数或凭据。
 
-已明确授权的 APP 服务端仿真可通过 `scripts/foundersc_app_batch_rehearsal.py advance --run-id <唯一批次> --fingerprint <掩码账号> --prices <2至5个不同限价> --acknowledge-app-server-simulation` 验收连续多笔委托。批次总额不超过 1000 元且受可用资金约束；先持久化全部不可变计划及基线，提交后读取同时存在的委托，再按原委托号逆序撤单。任一非预期结果停止新增；cleanup 标记落盘后重跑仅收尾已有 claim。中断后必须复用原批次、原参数；`cleanup` 只对已有批次收尾。结果、各阶段耗时、三表回读均写入独立研究目录，不写策略持仓。
+已明确授权的 APP 服务端仿真可通过 `scripts/foundersc_app_batch_rehearsal.py advance --run-id <唯一批次> --fingerprint <掩码账号> --prices <2至5个不同限价> --acknowledge-app-server-simulation` 验收连续多笔委托。每笔默认 100 股，可显式 `--shares 200` 或 `--shares 300`；批次总额不超过 1000 元且受可用资金约束；先持久化全部不可变计划及基线，提交后读取同时存在的委托，再按原委托号逆序撤单。任一非预期结果停止新增；cleanup 标记落盘后重跑仅收尾已有 claim，并正式关闭已证明未提交的计划。中断后必须复用原批次、原参数；`cleanup` 只对已有批次收尾。结果、各阶段耗时、三表回读均写入独立研究目录，不写策略持仓。

@@ -107,12 +107,25 @@ an exact settlement-aware asset equation, strict cash ordering, exact prepare
 and submit capabilities, and local reconciliation capability. The separate
 `资金明细` tab is diagnostic only and must not gate submission.
 
+All native adapter operations, including queries, share one host-user APP
+session lock across threads, processes, state directories and checkouts. The
+execution port holds it across probe/prepare/claim/submit/readback; account
+locks precede APP locks. Raw Python helper calls use the same lock, inherited
+by the native subprocess so it stays owned if its Python parent exits. Keep
+market-data and KOL work outside this UI session.
+
 The normal branch requires `余额+股票市值=资产` and
 `0<=可取<=可用<=余额`. For a three-table account snapshot, the alternate
 `可用+股票市值=资产` branch requires a positive same-day fill in that same
 snapshot: SELL must satisfy `0<=可取<=余额<可用`, while BUY must satisfy
 `0<=可取<=可用<余额`. Direction, price and quantity must be proven by the
-exact today-trades row; a cancel or opposite-side fill cannot prove the branch. Live allocation
+exact today-trades row; a cancel or opposite-side fill cannot prove a fill.
+Operating Contract §4 also recognizes pre-fill BUY reservations: current
+working/partial orders with unique IDs and positive unfilled limit notional,
+covered by the reported balance-minus-available reduction, can explain that
+strict BUY-shaped cash branch. Preserve its order IDs, principal and reported
+reservation difference; do not infer a fee rate or manufacture a fill/NAV.
+Probe, snapshot and lifecycle apply the same reservation proof. Live allocation
 facts remain on the normal cash-balance branch and cannot spend this exception.
 Persist
 `asset_equation_cash_field` as `cash_balance` or `available_cash`. If neither
@@ -216,3 +229,29 @@ For an explicitly authorized APP-server simulation rehearsal, read the manual
 runner section in `docs/FOUNDER_RELIABILITY_20260912.md` and reuse its durable
 run ID after interruption. These engineering tools are outside the morning
 hot path; the regular Automation still uses the existing strategy runner.
+
+For continuous 2–5-order simulation acceptance, use the batch rehearsal in
+`docs/FOUNDER_NATIVE_AX.md`. Reuse its run ID and arguments after interruption.
+After cleanup is sealed, it only reconciles/cancels claimed orders and formally
+closes proven unsubmitted intents. `acceptance_complete` means every intended
+order obtained a broker ID and reached filled/cancelled; `all_orders_terminal`
+alone may include skipped/rejected tests. Check final APP tables and funds,
+not merely script exit. No extra morning test gate is introduced.
+
+On multirow tables, a lone OCR `O` in 成交数量 may normalize to zero only
+on the second bounded read, with zero execution price and independent zero
+trades for that order. Preserve the raw character; identifiers, limit prices
+and requested quantities never use letter-to-number correction. Python owns
+the targeted reread (`--single-capture`), avoiding nested helper retries.
+Cancel selection proves the target row's numeric identity and side, then
+rechecks its identity after selection; unrelated status/fill confidence does
+not govern target selection. Checkbox delta and final broker readback remain
+required. A known popup order ID without full mapping still uses durable-claim
+recovery constrained to that same ID.
+
+An exception to uncertain-cancel reconciliation is a proven *unperformed*
+attempt: `cancel_target_not_unique` returns before any cancel action, with
+all cancel/confirmation flags explicitly false. After exact active-order
+readback, execution archives that attempt and creates a new claim for the
+same order. New claims clear prior cancel evidence. Timeout, missing flags,
+possible clicks and unknown outcomes cannot take this path; see Contract §4.

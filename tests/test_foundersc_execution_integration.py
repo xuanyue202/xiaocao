@@ -250,3 +250,95 @@ def test_account_reader_cannot_navigate_between_prepare_and_submit(chain, tmp_pa
     assert receipt.state == ExecutionState.ACKNOWLEDGED, receipt.reason
     assert native.submit_calls == 1
     assert engine(native).cancel(plan).state == ExecutionState.CANCELLED
+
+
+def test_proven_preclick_cancel_failure_can_close_claim_and_cancel_same_order(chain):
+    class Native(FakeNative):
+        attempts = 0
+        def cancel_order(self, **kwargs):
+            self.attempts += 1
+            if self.attempts == 1:
+                return self._receipt(status='cancel_target_not_unique', cancel_readback={
+                    'cancel_clicked': False, 'confirmation_pressed': False,
+                    'selection_proven': False, 'selection_proof_mode': 'none',
+                    'target_match_count': 1})
+            return super().cancel_order(**kwargs)
+    plan, engine = chain
+    native = Native()
+    accepted = engine(native).execute(plan)
+    assert accepted.state == ExecutionState.ACKNOWLEDGED
+    interrupted = engine(native).cancel(plan)
+    assert interrupted.state == ExecutionState.UNKNOWN and native.cancel_calls == 0
+    old_claim = interrupted.cancel_claim_id
+    result = engine(native).cancel(plan)
+    assert result.state == ExecutionState.CANCELLED, result.reason
+    assert native.cancel_calls == 1 and native.attempts == 2
+    closed = [e for e in engine(native).store.events(plan.plan_id) if e['kind']=='cancel_claim_closed_no_effect']
+    assert len(closed) == 1 and closed[0]['details']['closed_cancel_claim_id'] == old_claim
+    assert result.cancel_claim_id != old_claim
+    assert engine(native).cancel(plan).state == ExecutionState.CANCELLED
+    assert native.cancel_calls == 1
+
+
+@pytest.mark.parametrize('key,value', [('cancel_clicked',None),('cancel_clicked',True),
+    ('cancel_confirmation_pressed',True),('cancel_helper_status','cancel_confirmation_unproven'),
+    ('cancel_helper_status','')])
+def test_absent_or_uncertain_cancel_evidence_never_releases_claim(key,value):
+    native = FakeNative()
+    adapter = _adapter(native)
+    previous = {'cancel_claim_id':'claim','broker_order_id':'123','account_binding':'proven',
+                'locator_proof':{'cancel_helper_status':'cancel_target_not_unique',
+                  'cancel_clicked':False,'cancel_click_proven':False,'cancel_confirmation_pressed':False}}
+    previous['locator_proof'][key]=value
+    assert not adapter.cancel_attempt_proven_unperformed(previous)
+
+
+def test_popup_order_id_without_grid_mapping_recovers_from_original_claim(chain):
+    class Native(FakeNative):
+        fail_reads = False
+        def submit_prepared_order(self, **kwargs):
+            result = super().submit_prepared_order(**kwargs)
+            result.payload['result_readback'] = {'kind':'submit','message_matched':True,
+                'broker_order_id':self.orders[-1]['委托编号']}
+            self.fail_reads = True
+            return result
+        def read_query(self, **kwargs):
+            if self.fail_reads:
+                raise TimeoutError('grid refresh temporarily unavailable')
+            return super().read_query(**kwargs)
+    plan, engine = chain
+    native = Native()
+    first = engine(native).execute(plan)
+    assert first.state == ExecutionState.UNKNOWN
+    assert first.broker_order_id and first.broker_strategy_id is None
+    native.fail_reads = False
+    recovered = engine(native).execute(plan)
+    assert recovered.state == ExecutionState.ACKNOWLEDGED, recovered.reason
+    assert recovered.broker_order_id == first.broker_order_id
+    assert recovered.broker_strategy_id and native.submit_calls == 1
+    assert engine(native).cancel(plan).state == ExecutionState.CANCELLED
+
+
+def test_no_effect_evidence_from_old_claim_cannot_release_a_new_unknown_attempt(chain):
+    plan, engine = chain
+    native = FakeNative()
+    first = engine(native)
+    first.execute(plan)
+    def not_clicked(**kwargs):
+        return native._receipt(status='cancel_target_not_unique', cancel_readback={
+            'cancel_clicked':False,'confirmation_pressed':False,'selection_proven':False})
+    native.cancel_order = not_clicked
+    rejected_attempt = first.cancel(plan)
+    assert rejected_attempt.state == ExecutionState.UNKNOWN
+    requests = []
+    second = engine(native)
+    def lost_after_dispatch(*args, **kwargs):
+        requests.append('cancel dispatched, service has not reflected it yet')
+        raise TimeoutError('entire adapter interrupted')
+    second.broker.cancel = lost_after_dispatch
+    unknown = second.cancel(plan)
+    assert unknown.cancel_claim_id != rejected_attempt.cancel_claim_id
+    assert unknown.state == ExecutionState.UNKNOWN and len(requests) == 1
+    assert not first.broker.cancel_attempt_proven_unperformed(unknown.as_dict())
+    assert second.cancel(plan).state == ExecutionState.UNKNOWN
+    assert len(requests) == 1

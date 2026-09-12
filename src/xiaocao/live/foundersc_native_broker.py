@@ -583,6 +583,12 @@ class FounderscNativeAXBrokerAdapter(BrokerAdapter):
                         attempt == 1
                         and self._bounded_order_readback(kind, readback, rows)
                     )
+                    zero_normalizations = []
+                    if bounded_order_readback:
+                        for row in rows:
+                            if str(row.get("成交数量") or "").strip() == "O":
+                                zero_normalizations.append({"order_id": row["委托编号"], "raw": "O"})
+                                row["成交数量"] = "0"
                     try:
                         self._validate_rows(kind, rows)
                     except FounderscNativeAXError as exc:
@@ -595,6 +601,7 @@ class FounderscNativeAXBrokerAdapter(BrokerAdapter):
                             **readback,
                             "rows": rows,
                             "targeted_reread_used": attempt == 1,
+                            "bounded_zero_fill_normalizations": zero_normalizations,
                             "bounded_order_readback_used": bounded_order_readback,
                             "bounded_low_confidence_headers": (
                                 list(
@@ -645,7 +652,11 @@ class FounderscNativeAXBrokerAdapter(BrokerAdapter):
         for row in rows:
             filled = str(row.get("成交数量") or "").strip()
             if re.fullmatch(r"(?:0+(?:\.0+)?)?", filled) is None:
-                return False
+                # Observed OCR capital O in the zero-fill cell. Only this
+                # bounded second-read path may interpret it, with a zero
+                # execution price and independent per-order trade proof.
+                if filled != "O" or str(row.get("成交价格") or "").strip() not in {"0", "0.0", "0.00", "0.000", "0.0000"}:
+                    return False
             if _status(row.get("状态说明")) not in {
                 BrokerStatus.ACCEPTED,
                 BrokerStatus.CANCELLED,
@@ -1817,6 +1828,10 @@ class FounderscNativeAXBrokerAdapter(BrokerAdapter):
 
     @serialized_app_operation
     def reconcile(self, plan: TradePlan, previous: dict[str, Any]) -> BrokerReceipt:
+        if previous.get("submit_claim_id") and (
+            not previous.get("broker_strategy_id") or previous.get("receipt_mapping") is not True
+        ):
+            return self.recover(plan, previous)
         order_id = str(
             previous.get("broker_order_id") or previous.get("order_id") or ""
         ).strip()
@@ -1860,6 +1875,16 @@ class FounderscNativeAXBrokerAdapter(BrokerAdapter):
                 conclusive=False,
                 retry_allowed=False,
             )
+
+    @staticmethod
+    def cancel_attempt_proven_unperformed(previous: dict[str, Any]) -> bool:
+        proof = previous.get("locator_proof") or {}
+        return bool(previous.get("cancel_claim_id") and previous.get("broker_order_id")
+            and previous.get("account_binding") == "proven"
+            and proof.get("cancel_evidence_claim_id", previous.get("cancel_claim_id")) == previous.get("cancel_claim_id")
+            and proof.get("cancel_helper_status") == "cancel_target_not_unique"
+            and all(proof.get(key) is False for key in (
+                "cancel_clicked", "cancel_click_proven", "cancel_confirmation_pressed")))
 
     @serialized_app_operation
     def cancel(self, plan: TradePlan, previous: dict[str, Any]) -> BrokerReceipt:
@@ -1999,6 +2024,7 @@ class FounderscNativeAXBrokerAdapter(BrokerAdapter):
         except FounderscNativeAXError:
             cancel_click_proven = False
         cancel_locator_evidence = {
+            "cancel_evidence_claim_id": previous.get("cancel_claim_id"),
             "cancel_helper_status": helper_status,
             "cancel_clicked": cancel_clicked,
             "cancel_click_proven": cancel_click_proven,

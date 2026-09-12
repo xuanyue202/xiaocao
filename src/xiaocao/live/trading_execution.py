@@ -1364,7 +1364,11 @@ class TradingExecution:
             if previous.state in TERMINAL_STATES:
                 return self._repair_terminal_ownership(plan, previous)
             if previous.cancel_claim_id:
-                return self._reconcile_cancel_claim(plan, broker, previous)
+                previous = self._reconcile_cancel_claim(plan, broker, previous)
+                if previous.cancel_claim_id or previous.state not in {
+                    ExecutionState.ACKNOWLEDGED, ExecutionState.PARTIAL,
+                }:
+                    return previous
             if (
                 previous.state not in {ExecutionState.ACKNOWLEDGED, ExecutionState.PARTIAL}
                 or not previous.broker_order_id
@@ -1470,6 +1474,8 @@ class TradingExecution:
                     previous,
                     cancel_claim_id=cancel_claim_id,
                     cancel_chain_uncertain=True,
+                    locator_proof={key: value for key, value in previous.locator_proof.items()
+                                   if not key.startswith("cancel_")},
                     next_action="cancel_once",
                 ),
                 kind="cancel_claimed",
@@ -1602,6 +1608,19 @@ class TradingExecution:
             plan.environment != "live"
             or self._live_reconcile_receipt_proven(plan, previous, broker_receipt)
         )
+        no_action_proof = getattr(broker, "cancel_attempt_proven_unperformed", None)
+        if (receipt_proven and status in {BrokerStatus.ACCEPTED, BrokerStatus.PARTIAL}
+                and callable(no_action_proof) and no_action_proof(previous.as_dict()) is True):
+            # The native helper returned before any cancel click. Retain the
+            # old claim in history, close only that proven-unperformed attempt,
+            # and let cancel() create a fresh claim for the same exact order.
+            return self._record(plan, replace(
+                self._receipt_from_broker(plan, previous, broker_receipt,
+                    self._state_for_broker(broker_receipt), plan.shares),
+                cancel_claim_id=None, cancel_chain_uncertain=False,
+                reason="CANCEL_ATTEMPT_PROVEN_UNPERFORMED", next_action="cancel"),
+                kind="cancel_claim_closed_no_effect",
+                details={"closed_cancel_claim_id": previous.cancel_claim_id})
         if terminal and receipt_proven:
             return self._record(
                 plan,

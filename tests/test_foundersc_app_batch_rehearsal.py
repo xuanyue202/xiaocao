@@ -15,10 +15,10 @@ def batch_app(app, monkeypatch):
     monkeypatch.setattr(batch, "FounderscNativeAXClient", lambda: native)
     monkeypatch.setattr(batch, "source_digest", lambda: "test-source")
     native.command_timings = []
-    def run(prices, action="advance"):
+    def run(prices, action="advance", shares=100):
         monkeypatch.setattr(batch.sys, "argv", ["batch", action, "--run-id", "test",
             "--fingerprint", "123******890", "--acknowledge-app-server-simulation",
-            "--prices", *map(str, prices)])
+            "--shares", str(shares), "--prices", *map(str, prices)])
         return batch.main()
     return run, native, directory
 
@@ -79,3 +79,11 @@ def test_manifest_tampering_and_aggregate_budget_make_zero_new_orders(batch_app)
     with pytest.raises(ValueError, match="IMMUTABLE"):
         run([.34, .36])
     assert native.submit_calls == native.cancel_calls == 2
+
+
+@pytest.mark.parametrize("shares", [200,300])
+def test_batch_quantity_switches_are_preserved(batch_app, shares):
+    run, native, directory = batch_app
+    assert run([.34,.35,.36,.37,.38], shares=shares) == 0
+    assert all(int(row["委托数量"]) == shares for row in native.orders if row["委托编号"] != "6000002")
+    assert native.submit_calls == native.cancel_calls == 5
