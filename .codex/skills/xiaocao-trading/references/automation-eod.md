@@ -144,7 +144,7 @@ for this investigation, restart EOD, or launch a second business writer.
    configuration or orchestration faults, the started task owns repair: follow
    `book-b-live-repair.md` for urgent repair, minimum necessary validation and
    exact narrow continuation of the current reconcile/settle work first;
-   root-cause analysis, focused regression and relevant safety tests follow
+   root-cause analysis and tests selected for the affected behavior follow
    its terminal outcome. Apply Operating Contract §1a to distinguish the two
    simulation levels without relaxing execution or accounting standards. Preserve
    unrelated work and commit/push only the validated repair allowlist. Use the
@@ -154,7 +154,7 @@ for this investigation, restart EOD, or launch a second business writer.
    broker-action retry, fabricated ledger, immutable-history rewrite, weakened
    time/capital/safety gate or automatic strategy promotion is allowed.
 6. Write `output/live/daily_execution_review_<date>.md`: expected versus actual,
-   evidence paths/timestamps, impact, stable failure fingerprint, 5 Why for
+   evidence paths/timestamps, impact, stable failure fingerprint, concise cause/fix/verification for
    defects, repair and regression proof, production verification status and
    next legal verification checkpoint. Check prior Automation memory for
    recurrence, append prevention/results, and keep unresolved defects visible.

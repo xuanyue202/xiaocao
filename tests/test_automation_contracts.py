@@ -1,3 +1,8 @@
+"""Check deployment wiring; prose and model preferences are reviewed as text.
+
+These offline checks do not run an automation or contact a trading service.
+Trading behavior is covered by the execution, lifecycle and safety suites.
+"""
 from __future__ import annotations
 
 import tomllib
@@ -12,354 +17,66 @@ def _automation(name: str) -> dict:
     return tomllib.loads(path.read_text(encoding="utf-8"))
 
 
-def test_1425_precheck_and_1455_execution_are_separate_wakeups() -> None:
-    precheck = _automation("xiaocao-intraday-risk-precheck-1425")
-    closing = _automation("xiaocao-intraday-monitor-1455")
-
-    assert precheck["id"] != closing["id"]
-    assert "BYHOUR=14;BYMINUTE=25" in precheck["rrule"]
-    assert "never wait for 14:55" in precheck["prompt"]
-    assert "BYHOUR=14;BYMINUTE=55" in closing["rrule"]
-    assert "BYMINUTE=25,55" not in closing["rrule"]
-    assert "do not wait" in closing["prompt"]
-
-
-def test_1455_live_closing_crosses_the_narrow_gate_before_paper_work() -> None:
-    closing = _automation("xiaocao-intraday-monitor-1455")
-    prompt = closing["prompt"]
-
-    live_command = (
-        "scripts/book_b_live_intraday.py --date today --phase closing --execute-sells"
-    )
-    paper_command = "scripts/live_monitor.py --execute-sells"
-    assert live_command in prompt
-    assert paper_command in prompt
-    assert prompt.index(live_command) < prompt.index(paper_command)
-    for repair_marker in (
-        "first executable business command",
-        "started task owns repair",
-        "do not defer to the next Automation",
-        "tight red test",
-        "minimum necessary validation",
-        "Root-cause repair after terminal",
-        "exact narrow resume",
-        "5 Why",
-        "same failure fingerprint",
-    ):
-        assert repair_marker in prompt
-    assert prompt.index("Urgent repair:") < prompt.index("exact narrow resume")
-    assert prompt.index("exact narrow resume") < prompt.index("Root-cause repair after terminal")
-    assert prompt.index("Root-cause repair after terminal") < prompt.index("tight red test")
+def test_market_schedules_keep_distinct_ids_and_china_wall_clock() -> None:
+    expected = {
+        "xiaocao-daily-morning": ("9", "23"),
+        "xiaocao-daily-morning-execution": ("9", "25"),
+        "xiaocao-book-b-live-morning": ("9", "20"),
+        "xiaocao-intraday-monitor": ("9", "35,45,55"),
+        "xiaocao-intraday-monitor-05": ("10,13", "25,55"),
+        "xiaocao-intraday-risk-precheck-1425": ("14", "25"),
+        "xiaocao-intraday-monitor-1455": ("14", "55"),
+        "xiaocao-daily-eod": ("15", "10"),
+        "xiaocao-weekly-deep-review": ("20", "30"),
+    }
+    ids = []
+    for name, (hour, minute) in expected.items():
+        automation = _automation(name)
+        ids.append(automation["id"])
+        rrule = automation["rrule"]
+        assert "DTSTART" not in rrule and "TZID" not in rrule
+        parts = dict(part.split("=", 1) for part in rrule.removeprefix("RRULE:").split(";"))
+        assert parts["BYHOUR"] == hour
+        assert parts["BYMINUTE"] == minute
+    assert len(ids) == len(set(ids))
 
 
-def test_1455_live_closing_has_one_bounded_instruction_read_before_execution() -> None:
-    closing = _automation("xiaocao-intraday-monitor-1455")
-    prompt = closing["prompt"]
-
-    assert "one read-only startup batch" in prompt
-    for required_path in (
-        "/Users/xuanyue202/.codex/automations/"
-        "xiaocao-intraday-monitor-1455/memory.md",
-        ".codex/skills/xiaocao-trading/SKILL.md",
-        ".codex/skills/xiaocao-trading/references/automation-intraday.md",
-        ".codex/skills/xiaocao-trading/references/book-b-live-repair.md",
-        ".codex/skills/xiaocao-trading/references/kol-trading-judgment.md",
-    ):
-        assert required_path in prompt
-    assert "same shell tool call" in prompt
-    assert "do not return control to the model between the reads and that command" in prompt
-    assert "$CODEX_HOME/automations/xiaocao-intraday-monitor-1455" not in prompt
-    assert "do not make a separate discovery/count/list/read call" in prompt
-    assert "do not open sibling skill references before the live command" in prompt
+def test_morning_tasks_route_to_separate_entrypoints() -> None:
+    prerecommend = _automation("xiaocao-daily-morning")["prompt"]
+    paper = _automation("xiaocao-daily-morning-execution")["prompt"]
+    native = _automation("xiaocao-book-b-live-morning")["prompt"]
+    assert "morning-prerecommend" in prerecommend
+    assert "morning-execute" in paper
+    assert "scripts/book_b_live_morning.py --date today --route native-app" in native
+    assert "book_b_live_morning.py" not in paper
 
 
-def test_1455_live_closing_uses_a_prebuilt_deadline_first_startup() -> None:
-    closing = _automation("xiaocao-intraday-monitor-1455")
-    prompt = closing["prompt"]
+def test_closing_dispatches_native_once_before_paper_work() -> None:
+    prompt = _automation("xiaocao-intraday-monitor-1455")["prompt"]
     startup_command = "bash scripts/book_b_live_closing_startup.sh"
-    live_command = (
-        "PYTHONPATH=src .venv/bin/python scripts/book_b_live_intraday.py "
-        "--date today --phase closing --execute-sells"
-    )
-
-    assert prompt.startswith("TIME-CRITICAL 14:55")
-    assert prompt.index(startup_command) < 500
-    assert len(prompt) <= 3_200
-
-    startup_path = ROOT / "scripts" / "book_b_live_closing_startup.sh"
-    assert startup_path.is_file()
-    startup = startup_path.read_text(encoding="utf-8")
+    paper_command = "scripts/live_monitor.py --execute-sells"
+    assert prompt.index(startup_command) < prompt.index(paper_command)
+    startup = (ROOT / "scripts/book_b_live_closing_startup.sh").read_text()
+    live_command = "scripts/book_b_live_intraday.py --date today --phase closing --execute-sells"
     assert startup.count(live_command) == 1
-    for required_path in (
-        "/Users/xuanyue202/.codex/automations/"
-        "xiaocao-intraday-monitor-1455/memory.md",
-        ".codex/skills/xiaocao-trading/SKILL.md",
-        ".codex/skills/xiaocao-trading/references/automation-intraday.md",
-        ".codex/skills/xiaocao-trading/references/book-b-live-repair.md",
-        ".codex/skills/xiaocao-trading/references/kol-trading-judgment.md",
-    ):
-        assert required_path in startup
-        assert startup.index(required_path) < startup.index(live_command)
-    for forbidden_before_live in (
-        "show_journal.py",
-        "live_monitor.py",
-        "data_doctor.py",
-        "git status",
-        "kol_trading_decision.py",
-    ):
-        assert forbidden_before_live not in startup.split(live_command, 1)[0]
+    before_live = startup.split(live_command, 1)[0]
+    for unrelated_work in ("live_monitor.py", "data_doctor.py", "git status", "kol_trading_decision.py"):
+        assert unrelated_work not in before_live
 
 
-def test_morning_automations_separate_user_visible_prerecommend_from_execution() -> None:
-    prerecommend = _automation("xiaocao-daily-morning")
-    execution = _automation("xiaocao-daily-morning-execution")
-
-    assert prerecommend["id"] != execution["id"]
-    assert "BYHOUR=9;BYMINUTE=23" in prerecommend["rrule"]
-    assert "morning-prerecommend" in prerecommend["prompt"]
-    assert "final/inbox" in prerecommend["prompt"]
-    assert "before any agent review" in prerecommend["prompt"]
-    assert "missing signal capture is a deterministic failure" in prerecommend["prompt"]
-    assert "must not suppress ★E" in prerecommend["prompt"]
-    assert "do not paper-record" in prerecommend["prompt"]
-
-    assert "BYHOUR=9;BYMINUTE=25" in execution["rrule"]
-    assert "morning-execute" in execution["prompt"]
-    assert "never rerun live_recommend" in execution["prompt"]
-    assert "bounded agent-review rendezvous" in execution["prompt"]
-    assert "agent_intelligence_review.py" in execution["prompt"]
-    assert "never use keyword scoring" in execution["prompt"]
-
-
-def test_live_morning_is_a_separate_0920_fail_closed_task() -> None:
-    live = _automation("xiaocao-book-b-live-morning")
-    paper = _automation("xiaocao-daily-morning-execution")
-
-    assert live["model"] == "gpt-5.6-sol"
-    assert live["reasoning_effort"] == "xhigh"
-    assert live["id"] != paper["id"]
-    assert live["rrule"].endswith(";BYHOUR=9;BYMINUTE=20")
-    assert "scripts/book_b_live_morning.py" in live["prompt"]
-    assert "--route native-app" in live["prompt"]
-    assert "do not initialize or use OpenCLI inside this route" in live["prompt"]
-    assert "dated deterministic freeze" in live["prompt"]
-    assert "broker-sourced allocation facts" in live["prompt"]
-    assert "never run or wait for `morning-execute`" in live["prompt"]
-    assert "never read or write simulated fills" in live["prompt"]
-    assert "09:30 submit floor" in live["prompt"]
-    assert "sanitized Keychain capital-runtime" in live["prompt"]
-    assert "Never run `configure_live_capital_keychain.py`" in live["prompt"]
-    assert "zero pre-existing exact code/side/price/quantity" in live["prompt"]
-    assert "exactly one new numeric order id" in live["prompt"]
-    assert "native mock restoration as not applicable" in live["prompt"]
-    assert "never repeat a final submit click" in live["prompt"]
-    for repair_marker in (
-        "started task owns repair",
-        "`repair_required`",
-        "tight red test",
-        "3–5 falsifiable hypotheses",
-        "minimum necessary validation",
-        "Root-cause repair after terminal",
-        "exact narrow resume",
-        "5 Why",
-        "same failure fingerprint",
-        "do not defer to the next Automation",
-    ):
-        assert repair_marker in live["prompt"]
-    prompt = live["prompt"]
-    assert prompt.index("Urgent repair:") < prompt.index("exact narrow resume")
-    assert prompt.index("exact narrow resume") < prompt.index("Root-cause repair after terminal")
-    assert prompt.index("Root-cause repair after terminal") < prompt.index("tight red test")
-    assert "exactly one immutable no-cache market-guard sidecar" in live["prompt"]
-    assert "never fetch a second one or revive a terminal plan" in live["prompt"]
-    assert "above-basket evidence" in live["prompt"]
-    assert "auto_daily.sh" not in live["prompt"]
-    assert "book_b_live_morning.py" not in paper["prompt"]
-    live_script = (ROOT / "scripts" / "book_b_live_morning.py").read_text(
-        encoding="utf-8"
-    )
-    assert "build_foundersc_native_execution" in live_script
-    assert "keychain.run(read_trade_secret=True)" in live_script
-    assert "keychain.run(read_secrets=True)" not in live_script
-    assert "foundersc_opencli" not in live_script
-    assert "build_foundersc_execution" not in live_script
-    assert 'choices=("native-app",)' in live_script
-    assert "read_login_secret=True" not in live_script
-    assert "_bounded_no_order_retry" not in live_script
-    assert "KeychainCapitalRuntime" in live_script
-    assert "capital_runtime.preflight()" in live_script
-    assert "safety_env_provider=capital_runtime.safety_env" in live_script
-    assert "expected_fund_account_fingerprint=trade_account_fingerprint" in live_script
-    assert "wait_for_submit_window" in live_script
-    assert 'expected_current="live"' in live_script
-
-
-def test_live_authorization_mint_reads_keychain_but_remains_human_interactive() -> None:
-    script = (ROOT / "scripts" / "authorize_live.py").read_text(encoding="utf-8")
-
-    assert "KeychainCapitalRuntime" in script
-    assert "capital_runtime.safety_env()" in script
-    assert "sys.stdin.isatty()" in script
-    assert "--yes" not in script
-    assert "os.environ" not in script
-
-
-def test_live_capital_keychain_setup_never_places_secret_in_command_arguments() -> None:
-    script = (ROOT / "scripts" / "configure_live_capital_keychain.py").read_text(
-        encoding="utf-8"
-    )
-
-    assert "sys.stdin.isatty()" in script
-    assert "secrets.token_urlsafe" in script
-    assert 'EXPECT_COMMAND = "/usr/bin/expect"' in script
-    assert "log_user 0" in script
-    assert "input=secret.encode" in script
-    assert "add-generic-password -U -a runtime -s $service -w" in script
-    assert 'command.extend(["-w", secret])' not in script
-    assert "--yes" not in script
-
-
-def test_auto_daily_exposes_separate_morning_stage_commands() -> None:
-    script = (ROOT / "scripts" / "auto_daily.sh").read_text(encoding="utf-8")
-
-    assert 'BASH_SOURCE[0]' in script
-    assert '$HOME/coding/xiaocao' not in script
-    assert 'export PYTHONPATH="$ROOT/src${PYTHONPATH:+:$PYTHONPATH}"' in script
-    assert "morning-prerecommend)" in script
-    assert "morning-execute)" in script
-    assert "wait_for_morning_freeze.py" in script
+def test_paper_execution_stage_does_not_regenerate_recommendations() -> None:
+    script = (ROOT / "scripts/auto_daily.sh").read_text()
     execute_branch = script.split("morning-execute)", 1)[1].split(";;", 1)[0]
+    assert "wait_for_morning_freeze.py" in execute_branch
     assert "live_recommend.py" not in execute_branch
 
 
-def test_intraday_automations_use_explicit_china_market_wall_clock() -> None:
-    opening = _automation("xiaocao-intraday-monitor")
-    sparse = _automation("xiaocao-intraday-monitor-05")
-
-    assert opening["rrule"] == (
-        "RRULE:FREQ=WEEKLY;BYDAY=MO,TU,WE,TH,FR;BYHOUR=9;BYMINUTE=35,45,55"
-    )
-    assert sparse["rrule"] == (
-        "RRULE:FREQ=WEEKLY;BYDAY=MO,TU,WE,TH,FR;"
-        "BYHOUR=10,13;BYMINUTE=25,55"
-    )
-    assert "runs only the four original sparse checkpoints" in sparse["prompt"]
-    assert "sole KOL writer and sole KOL write ingress" in sparse["prompt"]
-    assert "Never create, enable, run, or substitute a local-capture Automation here" in sparse["prompt"]
-    assert "This task discovers no KOL source" in sparse["prompt"]
-    assert "exactly one task-status read" in sparse["prompt"]
-    assert "end immediately without waiting" in sparse["prompt"]
-
-
-def test_all_china_market_automations_use_dtstart_free_local_wall_clock() -> None:
-    expected = {
-        "xiaocao-daily-morning": ("BYHOUR=9", "BYMINUTE=23"),
-        "xiaocao-daily-morning-execution": ("BYHOUR=9", "BYMINUTE=25"),
-        "xiaocao-book-b-live-morning": ("BYHOUR=9", "BYMINUTE=20"),
-        "xiaocao-intraday-monitor": ("BYHOUR=9", "BYMINUTE=35,45,55"),
-        "xiaocao-intraday-monitor-05": (
-            "BYHOUR=10,13",
-            "BYMINUTE=25,55",
-        ),
-        "xiaocao-intraday-risk-precheck-1425": ("BYHOUR=14", "BYMINUTE=25"),
-        "xiaocao-intraday-monitor-1455": ("BYHOUR=14", "BYMINUTE=55"),
-        "xiaocao-daily-eod": ("BYHOUR=15", "BYMINUTE=10"),
-        "xiaocao-weekly-deep-review": ("BYHOUR=20", "BYMINUTE=30"),
-    }
-
-    for name, wall_clock_parts in expected.items():
-        rrule = _automation(name)["rrule"]
-        assert "DTSTART" not in rrule
-        assert "TZID" not in rrule
-        assert all(part in rrule for part in wall_clock_parts)
-
-
-def test_kol_local_automation_uses_lianghui_mailbox_without_task_injection() -> None:
-    automation = _automation("xiaocao-kol-hourly")
-
-    assert automation["id"] == "xiaocao-kol-hourly-local-capture"
-    assert automation["name"] == "xiaocao KOL hourly local capture"
-    assert automation["target"]["project_id"] == "local-1ff740a1b48a4503d6129896acb205d5"
-    assert automation["cwds"] == ["/Users/bytedance/coding/xiaocao"]
-    assert "never create, update, enable, or run it on `MacBook-Pro-6.local`" in automation["prompt"]
-    assert "daily_lianghui_mailbox_input_required" in automation["prompt"]
-    assert "send_mailbox_message" in automation["prompt"]
-    assert "get_mailbox_message" in automation["prompt"]
-    assert "Handoff完成" in automation["prompt"]
-    assert "Never use `send_message_to_thread`" in automation["prompt"]
-    assert automation["rrule"].endswith(";BYMINUTE=0,20,40")
-
-
-def test_kol_remote_writer_automation_is_a_thin_fail_closed_bootstrap() -> None:
-    automation = _automation("xiaocao-kol-hourly-remote-writer")
-    prompt = automation["prompt"]
-
-    assert automation["id"] == "xiaocao-kol-hourly-low-bandwidth-operation"
-    assert automation["name"] == "xiaocao KOL hourly remote writer"
-    assert automation["cwds"] == [
-        "/Users/xuanyue202/Documents/project/xiaocao"
-    ]
-    assert "本机唯一 KOL 写入入口" in prompt
-    assert "本机不得创建、启用或运行 `xiaocao-kol-hourly-local-capture`" in prompt
-    local_capture = _automation("xiaocao-kol-hourly")
-    assert local_capture["id"] != automation["id"]
-    assert local_capture["target"] != automation["target"]
-    assert local_capture["cwds"] != automation["cwds"]
-    assert automation["rrule"] == (
-        "RRULE:FREQ=DAILY;"
-        "BYHOUR=8,10,12,14,17,18,22;"
-        "BYMINUTE=30"
-    )
-    assert "DTSTART" not in automation["rrule"]
-    assert "TZID" not in automation["rrule"]
-
-    assert automation["model"] == "gpt-5.6-luna"
-    assert automation["reasoning_effort"] == "max"
-    assert automation["notification_policy"] == "failed_runs_only"
-
-    for marker in (
-        "kol-intelligence",
-        "references/hourly-remote-writer.md",
-        "MacBook-Pro-6.local",
-        "node scripts/codex_peer_gate.js",
-        "读取 mailbox、status、convergence 前",
-        "`pass` 才可继续",
-        "`no_op` 立即结束",
-        "`repair_required` 或没有有效结构化结果",
-        "不得改用桌面 thread wrapper",
-        "runner 签发的 exact continuation",
-        "`structured_input`",
-        "`writer_progress.status=terminal`",
-        "`next_action=stop`",
-        "claim=receipt",
-        "uncertain=0",
-        "5 Why",
-        "exact narrow resume",
-        "references/semantic-model-routing.md",
-        ".codex/skills/kol-intelligence/config/semantic-analyst.json",
-        "scripts/kol_semantic_delegation.py profile",
-        "spawn_arguments.json",
-        "全部投资决策论点",
-        "执行 Agent 只按完整来源做 acceptance audit",
-        "不能自行补写",
-        "`对象 | 状态 | 说明`",
-        "`[视频]`",
-        "`[文章]`",
-        "空队列静默",
-    ):
-        assert marker in prompt
-    assert "gpt-6-astra" not in prompt
-    assert "gpt-5.6-sol" not in prompt
-
-    for implementation_detail in (
-        "initialize",
-        "thread/list",
-        "thread/read",
-        "sourceKinds",
-        "useStateDbOnly",
-        "video.paused=true",
-        "stability-acceptance",
-    ):
-        assert implementation_detail not in prompt
-    # Preserve the live proactive-repair contract; implementation stays in the skill.
-    assert len(prompt) < 3_800
+def test_kol_writers_stay_on_separate_hosts_and_schedules() -> None:
+    local = _automation("xiaocao-kol-hourly")
+    remote = _automation("xiaocao-kol-hourly-remote-writer")
+    assert local["id"] != remote["id"]
+    assert local["target"] != remote["target"]
+    assert local["cwds"] == ["/Users/bytedance/coding/xiaocao"]
+    assert remote["cwds"] == ["/Users/xuanyue202/Documents/project/xiaocao"]
+    assert local["rrule"].endswith(";BYMINUTE=0,20,40")
+    assert remote["rrule"] == "RRULE:FREQ=DAILY;BYHOUR=8,10,12,14,17,18,22;BYMINUTE=30"

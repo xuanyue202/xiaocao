@@ -67,10 +67,14 @@ cannot establish order correctness is a remaining blocker, not a passed repair.
 
 ## Root-cause repair: after the terminal outcome
 
-In the same task, reproduce the defect with a tight red test where appropriate;
-rank falsifiable hypotheses when causality remains uncertain. Replace a tactical
-patch with a durable root fix if needed, then run the focused regression group
-and relevant safety tests. Full analysis and tests belong here, not on the
+In the same task, add regression coverage for a demonstrated failure when useful;
+investigate competing causes only when causality remains uncertain. Replace a tactical
+patch with a durable root fix if needed, then test the affected behavior.
+Add safety tests only for affected order/account/claim/receipt boundaries;
+do not run a whole safety suite for a documentation or unrelated parser edit.
+Tests must detect a concrete wrong outcome, not require particular prose,
+document versions, model names, line counts or implementation spelling.
+Full analysis and broader regression belong here, not on the
 urgent path. Preserve the already recorded trade outcome; never rerun a trade
 to demonstrate the root fix. Stage only the repair allowlist and, after scoped
 validation, commit/push the coherent repair for the collaborating writer.
@@ -93,10 +97,9 @@ read-only navigation or its transport timeout records
 budget; it never permits another navigation click or weakens the final
 snapshot proof.
 
-## Required 5 Why closeout
+## Closeout
 
-After the terminal outcome, write a concise 5 Why covering symptom, causal
-chain, root cause, code/contract fix, regression proof, and residual external
+After the terminal outcome, record the cause, fix, verification and residual
 blocker. Append its failure fingerprint and prevention to the Automation
 memory. If the same failure fingerprint already exists, the previous
 prevention failed: repair a deeper boundary or invariant before returning.

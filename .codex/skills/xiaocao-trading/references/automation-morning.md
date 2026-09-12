@@ -119,7 +119,7 @@ restart/CAPTCHA remains a separate bounded slow path.
 After any non-normal live-morning result, follow
 [`book-b-live-repair.md`](book-b-live-repair.md). The started Automation owns
 urgent AX/code repair, minimum necessary validation, exact narrow resume and
-terminal readback first; root-cause repair, full regression and 5 Why follow
+terminal readback first; root-cause repair, affected-behavior verification and concise cause/fix/verification follow
 the terminal outcome. Do not delay continuation for commit/push or defer a
 locally repairable failure to the next schedule. Apply Operating Contract §1a
 for local versus APP-server simulation; preserve execution discipline.

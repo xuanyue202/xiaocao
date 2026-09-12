@@ -127,7 +127,7 @@ After any non-normal live result, follow
 locally recoverable code, configuration, parsing, orchestration or read-only
 evidence repair through urgent AX/code repair, minimum necessary validation,
 exact narrow resume and terminal reconciliation first; root-cause repair,
-full regression and 5 Why follow. Apply Operating Contract §1a for the two
+affected-behavior verification and concise cause/fix/verification follow. Apply Operating Contract §1a for the two
 simulation levels. Do not defer recovery to the next Automation or delay it
 for commit/push. A durable claim or possible broker effect remains
 reconcile-only. An expired closing window is never authority for a late SELL;
