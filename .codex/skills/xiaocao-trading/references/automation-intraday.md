@@ -125,9 +125,11 @@ stop; do not queue a second native query/UI pass.
 After any non-normal live result, follow
 [`book-b-live-repair.md`](book-b-live-repair.md). The started task owns every
 locally recoverable code, configuration, parsing, orchestration or read-only
-evidence repair through a tight red test, root fix, scoped validation, safe
-exact narrow resume, terminal reconciliation and 5 Why. Do not defer it to the
-next Automation. A durable claim or possible broker effect remains
+evidence repair through urgent AX/code repair, minimum necessary validation,
+exact narrow resume and terminal reconciliation first; root-cause repair,
+full regression and 5 Why follow. Apply Operating Contract §1a for the two
+simulation levels. Do not defer recovery to the next Automation or delay it
+for commit/push. A durable claim or possible broker effect remains
 reconcile-only. An expired closing window is never authority for a late SELL;
 repair and validate the future invocation path without replaying the missed
 business action.

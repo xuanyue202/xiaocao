@@ -2,6 +2,8 @@
 
 Xiaocao is a Python CLI and automation toolkit for A-share data, strategy screening, reports, Kronos recommendations, and paper-trading surveillance.
 
+For the current deployment's local versus APP-server simulation levels and unchanged execution discipline, read `docs/OPERATING_CONTRACT.md` §1a. For trading faults, follow `.codex/skills/xiaocao-trading/references/book-b-live-repair.md`: urgent AX/code repair and minimum necessary validation precede same-plan continuation; root-cause analysis and full regression follow the terminal outcome.
+
 ## Xiaocao Knowledge Base (read when working on strategy/posture/exit judgment)
 
 `reference/experience/README.md` is the single entry point to the distilled 小草 knowledge: the judgment playbook (`docs/XIAOCAO_PLAYBOOK.md`), the dated posture timeline (`reference/experience/REGIME_TIMELINE.md`), the falsifiable hypothesis backlog (`reference/experience/xiaocao_hypotheses.jsonl`), the verdict ledger (`kronos_screen/HYPOTHESES.jsonl`), and the **flywheel findings log**. One command for current state: `PYTHONPATH=src python3 scripts/xiaocao_knowledge.py`.

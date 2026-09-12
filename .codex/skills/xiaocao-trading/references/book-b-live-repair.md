@@ -3,6 +3,13 @@
 Read this file after any non-normal Book-B live-morning result, unexpected
 block, provider/native read failure, or repeated failure fingerprint.
 
+Apply Operating Contract §1a to this deployment: local digital simulation and
+APP-server simulation remain separate experiments. The user identifies the
+current APP service as simulation with no real brokerage-account effects;
+legacy `live` labels are not backend verification. Keep strategy, allocation,
+execution guards and receipt standards unchanged. The APP route consumes its
+service receipts, never local paper fills.
+
 ## Ownership and outcome classes
 
 Run the full live-morning command exactly once. The started task owns repair;
@@ -25,28 +32,48 @@ Classify the observed state before changing anything:
 Exact-once prevents duplicate external effects. It does not permit a task to
 stop after a safely repairable local failure.
 
-## First-principles repair loop
+## Urgent repair: restore the current flow first
 
 For `repair_required`, keep the same task alive and perform this loop:
 
-1. Preserve the exact receipt, durable state, failure code, and a stable
-   failure fingerprint. Check the Automation memory for the same fingerprint.
-2. Add a tight red test that reproduces the failed boundary without a broker
-   write.
-3. List 3–5 falsifiable hypotheses, rank them, and eliminate alternatives with
-   current evidence. Do not weaken account, asset, date, market, capital, or
-   exact-order invariants to make the test pass.
-4. Patch the smallest owning boundary, make the red test green, then run its
-   focused regression group and the relevant live safety suite.
-5. Continue only through the exact narrow resume authorized by durable state.
+1. Preserve the exact receipt, durable state, failure code and fingerprint.
+   Determine whether a write may already have happened; uncertainty takes the
+   reconcile-only branch. Read only the matching prior failure note if needed.
+2. Locate and patch the smallest failing AX/helper/adapter or orchestration
+   boundary. Preserve unrelated work. Agent UI observation may diagnose the
+   fault; trading-form manipulation is not an emergency execution fallback.
+   All continuation runs through project code and its normal execution port.
+3. Perform minimum necessary validation: syntax/import or Swift build for the
+   touched runtime, plus a focused reproduction or read-only boundary check
+   that proves the reported failure is repaired. Reuse an existing focused
+   test when useful; a new unit test is not mandatory before continuation.
+   If the change touches account binding, code/side/price/quantity, submit
+   claims or receipt mapping, validate that affected invariant before resuming.
+   Never weaken a check or bypass a failing test to regain execution.
+4. Continue immediately through the exact narrow resume authorized by durable state.
    If no safe continuation exists, adding a read-only or state-bound resume is
-   part of the repair. Never replay an uncertain broker action.
-6. Reconcile terminal broker/account artifacts. A process exit, click, form,
+   part of the repair. Recheck current session/market eligibility through the
+   existing guards; use only the contract's bounded guard-refresh exception.
+   Never replay an uncertain broker action or revive an expired/terminal plan.
+5. Reconcile terminal service/account artifacts. A process exit, click, form,
    or local status line is not completion.
 
-Preserve unrelated work. Stage only the repair allowlist. After scoped
-validation, commit and push the coherent repair so another live writer cannot
-encounter the old code.
+Do not put full regression suites, multi-hypothesis writeups, packaging for
+distribution, commit or push ahead of this continuation. Build/install the
+changed helper only when the current execution needs it. Record fault time,
+repair-ready time, minimum validation, resume time and terminal outcome so the
+latency and any missed opportunity remain measurable. Minimum validation that
+cannot establish order correctness is a remaining blocker, not a passed repair.
+
+## Root-cause repair: after the terminal outcome
+
+In the same task, reproduce the defect with a tight red test where appropriate;
+rank falsifiable hypotheses when causality remains uncertain. Replace a tactical
+patch with a durable root fix if needed, then run the focused regression group
+and relevant safety tests. Full analysis and tests belong here, not on the
+urgent path. Preserve the already recorded trade outcome; never rerun a trade
+to demonstrate the root fix. Stage only the repair allowlist and, after scoped
+validation, commit/push the coherent repair for the collaborating writer.
 
 ## Read-only recovery boundary
 

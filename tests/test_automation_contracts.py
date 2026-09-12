@@ -40,11 +40,16 @@ def test_1455_live_closing_crosses_the_narrow_gate_before_paper_work() -> None:
         "started task owns repair",
         "do not defer to the next Automation",
         "tight red test",
+        "minimum necessary validation",
+        "Root-cause repair after terminal",
         "exact narrow resume",
         "5 Why",
         "same failure fingerprint",
     ):
         assert repair_marker in prompt
+    assert prompt.index("Urgent repair:") < prompt.index("exact narrow resume")
+    assert prompt.index("exact narrow resume") < prompt.index("Root-cause repair after terminal")
+    assert prompt.index("Root-cause repair after terminal") < prompt.index("tight red test")
 
 
 def test_1455_live_closing_has_one_bounded_instruction_read_before_execution() -> None:
@@ -153,12 +158,18 @@ def test_live_morning_is_a_separate_0920_fail_closed_task() -> None:
         "`repair_required`",
         "tight red test",
         "3–5 falsifiable hypotheses",
+        "minimum necessary validation",
+        "Root-cause repair after terminal",
         "exact narrow resume",
         "5 Why",
         "same failure fingerprint",
         "do not defer to the next Automation",
     ):
         assert repair_marker in live["prompt"]
+    prompt = live["prompt"]
+    assert prompt.index("Urgent repair:") < prompt.index("exact narrow resume")
+    assert prompt.index("exact narrow resume") < prompt.index("Root-cause repair after terminal")
+    assert prompt.index("Root-cause repair after terminal") < prompt.index("tight red test")
     assert "exactly one immutable no-cache market-guard sidecar" in live["prompt"]
     assert "never fetch a second one or revive a terminal plan" in live["prompt"]
     assert "above-basket evidence" in live["prompt"]

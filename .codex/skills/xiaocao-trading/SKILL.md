@@ -17,6 +17,7 @@ This file is the router. Load one task branch, not the whole operating manual.
    - Otherwise use `$SKILL_DIR/assets/xiaocao-runtime`.
 3. Run from `XIAOCAO_ROOT`. Prefer `.venv/bin/python` for scripts when present; otherwise use `PYTHONPATH=src python3`.
 4. Read only the matching branch below before acting. If the request crosses branches, read each matching file. Do not preload sibling branches.
+5. For execution or recovery, apply Operating Contract §1a: this research deployment has local digital simulation and APP-server simulation. Legacy `live` labels do not identify real funds. Preserve formal execution discipline and separate ledgers; use `references/book-b-live-repair.md` for urgent AX/code repair before same-plan continuation, with root-cause work after the terminal outcome.
 
 Completion means the requested command reached a terminal state and the branch-specific evidence was checked. A command start, intermediate log line, or UI toast is not completion.
 

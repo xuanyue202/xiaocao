@@ -3,6 +3,12 @@
 Use this branch for the macOS Founder Securities 6.12 native helper under
 `native/foundersc_ax_executor/`.
 
+Read Operating Contract §1a for this deployment's APP-server simulation and
+its separation from local paper fills. For runtime faults, use
+`book-b-live-repair.md`: urgent AX/project-code repair, minimum necessary
+validation and state-bound continuation first; root-cause work follows the
+terminal outcome. UI observation supports diagnosis; project code owns execution.
+
 ## Commands
 
 Run from the Xiaocao repository root:
