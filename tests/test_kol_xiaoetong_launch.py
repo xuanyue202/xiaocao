@@ -5,7 +5,7 @@ from urllib.parse import urlencode
 import pytest
 
 from xiaocao.kol.xiaoetong_launch import (
-    LaunchResolutionError, _trusted_url, parse_launch_page, resolve_launch_plan,
+    LaunchResolutionError, UnsupportedLaunchApplication, _trusted_url, parse_launch_page, resolve_launch_plan,
 )
 
 
@@ -86,6 +86,41 @@ def test_bound_h5_anchor_is_not_opened_as_a_playback_page():
 
     assert resolve_launch_plan(PAGE, expected_identity=IDENTITY, fetch=fetch)["live_id"] == "l_target"
     assert len(calls) == 2
+
+
+def test_merchant_entry_discovers_identity_and_refreshes_ticket():
+    old_link = "https://wxmpurl.cn/old-ticket"
+    calls = []
+
+    def fetch(url):
+        calls.append(url)
+        if url == old_link:
+            return url, launch_html().replace("real-ticket", "old-ticket")
+        if "get_elive_outside_url?" in url:
+            return url, json.dumps({"code": 0, "data": {"type": 0, "url": LINK}})
+        assert url == LINK
+        return url, launch_html()
+
+    plan = resolve_launch_plan(old_link, fetch=fetch)
+    assert plan["source_identity"] == IDENTITY
+    assert plan["web_link"] == LINK
+    assert len(calls) == 3
+
+
+@pytest.mark.parametrize("html,expected", [
+    (launch_html(), "xiaoetong:app123:l_other"),
+    (launch_html().replace("鹅直播", "其他应用"), None),
+    (launch_html(live_id="l_other"), None),
+])
+def test_merchant_entry_rejects_wrong_application_or_identity(html, expected):
+    with pytest.raises(LaunchResolutionError):
+        resolve_launch_plan(LINK, expected_identity=expected, fetch=lambda url: (url, html))
+
+
+def test_other_mini_program_is_classified_before_decoding_its_payload():
+    html = launch_html().replace("鹅直播", "见势擒龙团").replace("base64Decode", "otherFormat")
+    with pytest.raises(UnsupportedLaunchApplication):
+        resolve_launch_plan(LINK, fetch=lambda url: (url, html))
 
 
 @pytest.mark.parametrize("url", ["http://wxmpurl.cn/a", "https://127.0.0.1/a", "https://xiaoeknow.com.evil.test/a", "https://u:p@wxmpurl.cn/a"])

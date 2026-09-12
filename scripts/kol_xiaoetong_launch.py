@@ -4,7 +4,7 @@
 import argparse
 import json
 
-from xiaocao.kol.xiaoetong_launch import resolve_launch_plan
+from xiaocao.kol.xiaoetong_launch import UnsupportedLaunchApplication, resolve_launch_plan
 
 
 def main() -> int:
@@ -15,6 +15,15 @@ def main() -> int:
     args = parser.parse_args()
     try:
         result = resolve_launch_plan(args.source_url, expected_identity=args.expected_identity)
+    except UnsupportedLaunchApplication:
+        result = {"status": "unsupported_application", "error_type": "UnsupportedLaunchApplication", "launch_allowed": False}
+        if args.subscription_id:
+            result["browser_response"] = {
+                "action": "resolve_xiaoetong_page", "subscription_id": args.subscription_id,
+                "page_state": "unsupported_application", "launch_allowed": False,
+            }
+        print(json.dumps(result))
+        return 1
     except Exception as exc:
         # Provider exceptions can contain URLs: report only type, never credentials.
         print(json.dumps({"status": "visible_ui_fallback", "error_type": type(exc).__name__}))

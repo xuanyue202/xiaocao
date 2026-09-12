@@ -27,7 +27,22 @@ For H5 entries, retain the process for credential-free identity resolution;
 H5 is not playback proof.
 
 For an HTTPS share entry, the default launch route is the verified merchant
-Web Link, not chat-window screenshots or a browser player. Run the emitted
+Web Link, not chat-window screenshots or a browser player.
+
+`wxmpurl.cn` entries are discovered as merchant links, not assumed to be Goose
+Live. If resolution returns `unsupported_application` / `launch_allowed=false`,
+do not launch or use the original-message fallback: preserve the entry and
+report the unsupported application. This is distinct from transient resolution
+failure. A verified Goose Live entry yields its embedded identity and then a
+fresh merchant ticket; never reuse the old ticket from the message.
+
+Complete read-only link/application validation before touching WeChat or
+changing the capture PAC. Do not rewrite an already correct, enabled PAC.
+Reuse fresh UI evidence within one action/readback pair; avoid redundant
+state-only probes. These reduce unnecessary operations, not a proven guarantee
+against WeChat protection. Do not add arbitrary sleeps or evasion behavior.
+
+Run the emitted
 `launch_resolver_command` with `PYTHONPATH=src`. The read-only
 resolver also accepts `--subscription-id <request subscription_id>` and emits
 `browser_response`; pass that object directly to the retained PTY. Never retype

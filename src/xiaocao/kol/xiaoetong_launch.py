@@ -28,6 +28,10 @@ class LaunchResolutionError(ValueError):
     """No verified public launch plan is available; use visible UI fallback."""
 
 
+class UnsupportedLaunchApplication(LaunchResolutionError):
+    """The merchant link belongs to a different mini-program; do not launch."""
+
+
 def _trusted_url(url: str) -> None:
     value = urlsplit(url)
     host = (value.hostname or "").lower()
@@ -66,7 +70,7 @@ def _decode(value: str) -> str:
     return base64.b64decode(value + "=" * (-len(value) % 4), validate=True).decode("utf-8")
 
 
-def parse_launch_page(html: str, web_link: str, expected_identity: str) -> dict:
+def parse_launch_page(html: str, web_link: str, expected_identity: str | None) -> dict:
     # The provider page also contains a mock window.data branch: ignore it.
     match = re.search(r"}\s*else\s*{\s*window\.data\s*=\s*{(.*?)}", html, re.S)
     if not match:
@@ -78,6 +82,11 @@ def parse_launch_page(html: str, web_link: str, expected_identity: str) -> dict:
         if not found:
             raise LaunchResolutionError("merchant launch field missing")
         return found.group(1)
+
+    if (field("nickname") != "鹅直播"
+            or field("path") != "/pages/webView/webView"
+            or field("user_name") != "gh_363391d02e3e"):
+        raise UnsupportedLaunchApplication("merchant launch application unsupported")
 
     encoded = re.search(r"(?m)^\s*query:\s*base64Decode\('([^']+)'\)", data)
     if not encoded:
@@ -98,7 +107,8 @@ def parse_launch_page(html: str, web_link: str, expected_identity: str) -> dict:
         or field("nickname") != "鹅直播"
         or field("path") != "/pages/webView/webView"
         or field("user_name") != "gh_363391d02e3e"
-        or source["source_identity"] != expected_identity
+        or (expected_identity is not None and source["source_identity"] != expected_identity)
+        or not source["source_resource_id"].startswith("l_")
         or payload.get("alive_id") != source["source_resource_id"]
     ):
         raise LaunchResolutionError("merchant launch target does not match source")
@@ -119,12 +129,20 @@ def resolve_launch_plan(
     fetch: Callable[[str], tuple[str, str]] = _fetch,
 ) -> dict:
     _trusted_url(source_url)
-    try:
+    if urlsplit(source_url).hostname == "wxmpurl.cn":
+        final_link, html = fetch(source_url)
+        if final_link != source_url:
+            raise LaunchResolutionError("merchant entry unexpectedly redirected")
+        # Read identity from the real merchant branch, then obtain a fresh
+        # ticket below. Never launch the potentially old message ticket.
+        page_url = parse_launch_page(html, source_url, expected_identity)["page_url"]
+    else:
         # An identity-bearing URL needs no H5 playback/navigation request.
-        page_url = resolve_xiaoetong_h5_page(source_url)
-    except InvalidSourcePage:
-        wrapper, _ = fetch(source_url)
-        page_url = resolve_xiaoetong_h5_page(wrapper)
+        try:
+            page_url = resolve_xiaoetong_h5_page(source_url)
+        except InvalidSourcePage:
+            wrapper, _ = fetch(source_url)
+            page_url = resolve_xiaoetong_h5_page(wrapper)
     source = canonical_xiaoetong_source(page_url)
     identity = source["source_identity"]
     if expected_identity is not None and identity != expected_identity:
