@@ -142,8 +142,11 @@ for this investigation, restart EOD, or launch a second business writer.
 5. Classify each finding as expected terminal state, repair_required,
    reconcile_only or user_action_required. For safely repairable code,
    configuration or orchestration faults, the started task owns repair: follow
-   `book-b-live-repair.md` for evidence, falsifiable hypotheses, a tight red
-   regression, minimal patch, focused tests and relevant safety tests. Preserve
+   `book-b-live-repair.md` for urgent repair, minimum necessary validation and
+   exact narrow continuation of the current reconcile/settle work first;
+   root-cause analysis, focused regression and relevant safety tests follow
+   its terminal outcome. Apply Operating Contract §1a to distinguish the two
+   simulation levels without relaxing execution or accounting standards. Preserve
    unrelated work and commit/push only the validated repair allowlist. Use the
    existing Automation API plus readback for scheduling changes. This repair
    branch never starts live-morning or replays an expired checkpoint. EOD

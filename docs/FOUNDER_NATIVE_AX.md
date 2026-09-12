@@ -2,6 +2,15 @@
 
 Status: **production-capable Book-B route, fail-closed**.
 
+Deployment context and experiment standards: `OPERATING_CONTRACT.md` §1a
+records the user's 2026-09-12 clarification that the current APP connects to a
+black-box simulation service, separate from local digital simulation. Legacy
+`live` labels and the adapter's constant environment-proof fields are not
+backend identification. For a runtime fault, follow the trading skill's
+`references/book-b-live-repair.md`: urgent AX/code repair and minimum necessary
+validation, then same-plan continuation and terminal readback; root-cause work
+and full regression follow. Keep execution guards and service receipt evidence.
+
 The active `native-app` route uses only the locally installed macOS Founder
 Securities App. OpenCLI trading/view is sunset: this live entrypoint does not
 import, initialize or call it for login, environment, assets, positions,

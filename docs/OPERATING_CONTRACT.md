@@ -1,6 +1,6 @@
 # 小草运营契约（Operating Contract, SSOT）
 
-**版本**：4.6
+**版本**：4.7
 **状态**：现行
 **适用范围**：所有 paper / 未来 real 的实盘环（live_recommend → paper_record → live_monitor → eod）与回测
 **关联实现**：`src/xiaocao/live/{safety,capital_keychain,foundersc_native_ax,foundersc_native_broker,trading_execution,book_b_live_lifecycle,book_b_live_intraday}.py`、`src/xiaocao/live/intelligence_policy.py`、`src/xiaocao/strategy/{mode_switch,trend_rules,kol_reference}.py`、`native/foundersc_ax_executor/`、`kronos_screen/scripts/{capture_signals,forward_eval,paper_record,settle_book_a,settle_book_t,decompose_pnl,quality_governor}.py`、`scripts/{book_b_live_morning,book_b_live_intraday,live_monitor,research_mode_switch_replay}.py`
@@ -16,6 +16,34 @@
 实盘环由多个**全新上下文的 agent**（5 个 Codex cron）轮流操作。若口径不统一，会重演 iteration-7 的教训：book A（验证口径）与 book B（实盘 stop 口径）漂移（曾 -4,191）。本契约把"agent 写什么、确定性脊柱如何执行、回测与实盘如何对齐、资金动作如何被守门"固化为不可变法律。
 
 ---
+
+### 1a. 当前实验环境与执行标准（2026-09-12 用户说明）
+
+当前部署用于股票交易研究，分为两层：
+
+| 层级 | 执行与成交事实来源 | 用途 |
+|------|--------------------|------|
+| 本地数字模拟 | 本地确定性成交模型与 paper 账本 | 策略回放、纸面成交和对照研究 |
+| APP 服务端仿真 | APP 连接的黑盒仿真服务；以其委托、成交、持仓和资金回执为准 | 原生 AX 端到端交易流程实验 |
+
+用户明确说明：当前 APP 服务端仿真无法影响真实券商账户。此说明针对当前
+研究部署，不外推到其他 APP、账户或未来服务连接。沿用的 `live`、`native-app`、
+“实盘”和 `real_capital` 等代码/历史名称不单独证明后端资金性质；适配器固定返回的
+`environment=live` / `environment_proof_complete=true` 也不是服务端环境鉴别。
+本节记录用户提供的环境背景，不声称代码已经独立验证后端，也不通过改名关闭既有运行门。
+
+两层均按正式交易纪律运行：保持当前策略与仓位、交易时段、报价时效、费用、
+T+1、流动性、账户隔离和精确一次规则。知晓仿真不改变候选选择或执行积极性，
+不以“模拟”为由放宽交易条件、随意试单、补造成交或重置亏损。APP 仿真成交
+只能来自服务回执，不能用本地理论成交替代；两层账本及实验结果分别保留。
+旧文中的“不读取模拟成交”指 APP 路由不读取本地 paper 成交，并非否定服务端仿真。
+
+故障恢复优先修复 AX/项目代码，通过项目执行端口推进当前仿真流程；取消
+Agent 直接操纵交易表单下单的应急分支，界面观察仅辅助诊断。恢复分成
+**紧急修复 → 最小必要验证 → 同计划窄恢复及终态回读 → 根因修复与完整回归**。
+具体步骤以交易 skill 的 `references/book-b-live-repair.md` 为准。完整测试、
+长篇假设分析、复盘和 commit/push 不占用紧急恢复前的交易窗口；会影响当前
+订单正确性的检查必须先完成。未知提交仍先对账，绝不通过重放获得“成功”。
 
 ## 2. 架构原则：LLM 不进确定性回路
 
@@ -395,6 +423,7 @@ KOL 断言、候选假设或报告升级为策略真值，也不替代永久参�
 
 | 版本 | 日期 | 说明 |
 |------|------|------|
+| 4.7 | 2026-09-12 | 登记用户说明的本地数字模拟与 APP 服务端仿真分级；保留正式执行纪律、独立账本及既有运行门。故障恢复改为 AX/项目代码紧急修复、最小必要验证、同计划窄恢复及终态回读优先，随后根因修复与完整回归；界面仅辅助诊断。 |
 | 4.6 | 2026-09-08 | 按用户授权移除 KOL `current_checks` 的固定 15 分钟 TTL：语义有效性只由最长 24 小时的显式 `valid_until`、新来源与自然语言失效条件控制；交易消费端继续独立刷新行情、账户、lot/T+1、流动性与资金安全事实，避免 sparse 间隔天然触发重复 Astra 全量复核。 |
 | 4.3 | 2026-09-07 | 修正方正 native 同日 BUY 后的资金语义：三表 account snapshot 在同一成交表证明正数量 BUY、可用资金与证券市值精确闭合且可取<=可用<余额时，允许只读 lifecycle 使用 available-cash 分支；allocation 仍只认常态余额分支，不扩大买入资金或订单权限。 |
 | 4.2 | 2026-09-06 | 用户确认有界 KOL 当下判断接口：已发布来源精确回读、Astra xhigh 分析与独立主审、15 分钟当前核验、Book-B 受限买入/退出及独立实盘/模拟消费；统一高点回撤 10%/20% 试点新增风险预算。原始先验 authority=0、永久参数研究门、既有资金/执行/不可变/精确一次边界保持。 |
