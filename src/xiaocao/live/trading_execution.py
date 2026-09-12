@@ -21,7 +21,7 @@ import math
 import os
 import re
 import uuid
-from contextlib import contextmanager
+from contextlib import contextmanager, nullcontext
 from dataclasses import asdict, dataclass, field, replace
 from datetime import datetime, timezone
 from decimal import Decimal, InvalidOperation
@@ -1324,7 +1324,9 @@ class TradingExecution:
         broker = broker or self.broker
         if broker is None:
             raise ValueError("a broker adapter must be configured before execute")
-        with self._account_writer_lock(plan.logical_account_id):
+        with self._account_writer_lock(plan.logical_account_id), (
+            broker.session() if callable(getattr(broker, "session", None)) else nullcontext()
+        ):
             return self._execute_locked(plan, broker)
 
     def cancel(self, plan: TradePlan, broker: BrokerAdapter | None = None) -> ExecutionReceipt:
@@ -1332,7 +1334,9 @@ class TradingExecution:
         broker = broker or self.broker
         if broker is None:
             raise ValueError("a broker adapter must be configured before cancel")
-        with self._account_writer_lock(plan.logical_account_id):
+        with self._account_writer_lock(plan.logical_account_id), (
+            broker.session() if callable(getattr(broker, "session", None)) else nullcontext()
+        ):
             previous = self.store.current(plan.plan_id)
             if previous is None:
                 return self._record(

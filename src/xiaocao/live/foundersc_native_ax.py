@@ -13,11 +13,13 @@ import os
 import re
 import shutil
 import subprocess
+import time
 from dataclasses import dataclass
 from decimal import Decimal, InvalidOperation
 from pathlib import Path
 from typing import Any, Callable
 
+from .foundersc_session import app_session
 from .foundersc_keychain import (
     SECURITY_COMMAND,
     TRADE_SERVICE,
@@ -369,6 +371,7 @@ class FounderscNativeAXClient:
         self.helper_path = Path(helper_path or expected_helper_path(self.root))
         self.runner = runner
         self.timeout_seconds = max(0.5, float(timeout_seconds))
+        self.command_timings: list[dict[str, object]] = []
 
     def __repr__(self) -> str:
         return (
@@ -376,12 +379,27 @@ class FounderscNativeAXClient:
             "credentials=redacted)"
         )
 
-    def _run(
+    def _run(self, command: str, args: list[str] | None = None, *,
+             secret_input: bytes | bytearray | None = None) -> NativeAXReceipt:
+        started = time.monotonic()
+        with app_session() as descriptor:
+            acquired = time.monotonic()
+            try:
+                return self._run_locked(command, args, secret_input=secret_input,
+                                        session_descriptor=descriptor)
+            finally:
+                # No field values, argv, receipt content, or credentials here.
+                self.command_timings.append({"command": command,
+                    "wait_seconds": round(acquired - started, 4),
+                    "run_seconds": round(time.monotonic() - acquired, 4)})
+
+    def _run_locked(
         self,
         command: str,
         args: list[str] | None = None,
         *,
         secret_input: bytes | bytearray | None = None,
+        session_descriptor: int,
     ) -> NativeAXReceipt:
         if not self.helper_path.is_file() or not os.access(self.helper_path, os.X_OK):
             raise FounderscNativeAXError("NATIVE_AX_HELPER_MISSING")
@@ -393,6 +411,7 @@ class FounderscNativeAXClient:
                 capture_output=True,
                 check=False,
                 timeout=self.timeout_seconds,
+                pass_fds=(session_descriptor,),
             )
         except subprocess.TimeoutExpired as exc:
             raise FounderscNativeAXError("NATIVE_AX_COMMAND_TIMEOUT") from exc

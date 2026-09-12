@@ -18,6 +18,7 @@ from typing import Any, Callable
 from zoneinfo import ZoneInfo
 
 from .foundersc_native_ax import FounderscNativeAXClient, FounderscNativeAXError
+from .foundersc_session import app_session, serialized_app_operation
 from .trading_execution import (
     BrokerAdapter,
     BrokerCapability,
@@ -254,6 +255,11 @@ class FounderscNativeAXBrokerAdapter(BrokerAdapter):
 
     route = NATIVE_APP_ROUTE
 
+    @staticmethod
+    def session():
+        """Execution owns this lease across probe, prepare, claim and submit."""
+        return app_session()
+
     def __init__(
         self,
         *,
@@ -374,6 +380,7 @@ class FounderscNativeAXBrokerAdapter(BrokerAdapter):
             == self.expected_fund_account_fingerprint
         )
 
+    @serialized_app_operation
     def ensure_native_ready(
         self,
         *,
@@ -437,10 +444,12 @@ class FounderscNativeAXBrokerAdapter(BrokerAdapter):
             "started": False,
         }
 
+    @serialized_app_operation
     def ensure_login(self) -> dict[str, Any]:
         """Unlock the App trading area once; the web login is not used."""
         return self.ensure_native_ready(unlock_once=True)
 
+    @serialized_app_operation
     def ensure_environment(
         self,
         *,
@@ -809,6 +818,7 @@ class FounderscNativeAXBrokerAdapter(BrokerAdapter):
             == requested_shares
         ]
 
+    @serialized_app_operation
     def probe(self, plan: TradePlan) -> BrokerCapability:
         try:
             ready = self.ensure_native_ready(unlock_once=True)
@@ -914,6 +924,7 @@ class FounderscNativeAXBrokerAdapter(BrokerAdapter):
                 template_name="foundersc-native-ax",
             )
 
+    @serialized_app_operation
     def probe_cancel(
         self,
         plan: TradePlan,
@@ -1109,6 +1120,7 @@ class FounderscNativeAXBrokerAdapter(BrokerAdapter):
         self._open_query_surface()
         return self._query("today-orders")
 
+    @serialized_app_operation
     def prepare(
         self,
         plan: TradePlan,
@@ -1204,6 +1216,7 @@ class FounderscNativeAXBrokerAdapter(BrokerAdapter):
             },
         )
 
+    @serialized_app_operation
     def prepare_readonly(
         self,
         plan: TradePlan,
@@ -1610,6 +1623,7 @@ class FounderscNativeAXBrokerAdapter(BrokerAdapter):
             },
         )
 
+    @serialized_app_operation
     def submit(
         self,
         plan: TradePlan,
@@ -1754,6 +1768,7 @@ class FounderscNativeAXBrokerAdapter(BrokerAdapter):
             },
         )
 
+    @serialized_app_operation
     def reconcile(self, plan: TradePlan, previous: dict[str, Any]) -> BrokerReceipt:
         order_id = str(
             previous.get("broker_order_id") or previous.get("order_id") or ""
@@ -1799,6 +1814,7 @@ class FounderscNativeAXBrokerAdapter(BrokerAdapter):
                 retry_allowed=False,
             )
 
+    @serialized_app_operation
     def cancel(self, plan: TradePlan, previous: dict[str, Any]) -> BrokerReceipt:
         """Cancel one exact mapped order with at most one broker-side click."""
         order_id = str(
@@ -2033,6 +2049,7 @@ class FounderscNativeAXBrokerAdapter(BrokerAdapter):
             },
         )
 
+    @serialized_app_operation
     def recover(self, plan: TradePlan, previous: dict[str, Any]) -> BrokerReceipt:
         """Recover an unknown submit only from its durable pre-submit delta."""
         shares = int(previous.get("requested_shares") or plan.shares)
@@ -2155,6 +2172,7 @@ class FounderscNativeAXBrokerAdapter(BrokerAdapter):
             }
         )
 
+    @serialized_app_operation
     def read_live_allocation_facts(
         self,
         *,
@@ -2343,6 +2361,7 @@ class FounderscNativeAXBrokerAdapter(BrokerAdapter):
         ).hexdigest()
         return capsule
 
+    @serialized_app_operation
     def read_live_account_snapshot(
         self,
         *,

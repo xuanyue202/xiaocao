@@ -206,3 +206,47 @@ def test_concurrent_distinct_orders_preserve_each_tuple_and_exact_cancel(chain, 
         assert engine(native).cancel(item).state == ExecutionState.CANCELLED
     assert native.submit_calls == native.cancel_calls == workers
     assert native.orders[0]["状态说明"] == "未报"  # unrelated pre-existing order
+
+
+@pytest.mark.parametrize("different_state_dir", [False, True])
+def test_account_reader_cannot_navigate_between_prepare_and_submit(chain, tmp_path, different_state_dir):
+    from threading import Event
+    prepared, reader_attempting, reader_entered = Event(), Event(), Event()
+    class Native(FakeNative):
+        def prepare_order(self, **kwargs):
+            result = super().prepare_order(**kwargs)
+            prepared.set()
+            assert reader_attempting.wait(3)
+            assert not reader_entered.wait(.1)
+            return result
+        def submit_prepared_order(self, **kwargs):
+            assert not reader_entered.is_set(), "reader replaced the prepared form"
+            return super().submit_prepared_order(**kwargs)
+    plan, engine = chain
+    native = Native()
+    writer = engine(native)
+    reader = engine(native)
+    if different_state_dir:
+        reader.account_lock_dir = tmp_path / "other-checkout/state/locks"
+    original = native.read_query
+    def read_query(**kwargs):
+        if prepared.is_set() and reader_attempting.is_set() and native.submit_calls == 0:
+            reader_entered.set()
+        receipt = original(**kwargs)
+        receipt.payload["query_readback"]["observed_at"] = writer.now().isoformat()
+        return receipt
+    native.read_query = read_query
+    def query():
+        assert prepared.wait(3)
+        reader_attempting.set()
+        # This public adapter read does not acquire the account-state lock.
+        return reader.broker.read_live_account_snapshot(
+            trade_date=plan.trade_date, expected_fund_account_fingerprint="123******890",
+            now=writer.now())
+    with ThreadPoolExecutor(2) as pool:
+        reading = pool.submit(query)
+        receipt = pool.submit(writer.execute, plan).result(timeout=5)
+        reading.result(timeout=5)
+    assert receipt.state == ExecutionState.ACKNOWLEDGED, receipt.reason
+    assert native.submit_calls == 1
+    assert engine(native).cancel(plan).state == ExecutionState.CANCELLED

@@ -9,11 +9,11 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 MODULES = [
-    "foundersc_native_ax", "foundersc_native_broker", "foundersc_keychain", "capital_keychain",
+    "foundersc_native_ax", "foundersc_native_broker", "foundersc_session", "foundersc_keychain", "capital_keychain",
     "trading_execution", "trading_runner", "book_b_live_morning", "book_b_live_recovery",
     "book_b_live_intraday", "book_b_live_lifecycle",
 ]
-ENTRYPOINTS = ["foundersc_native_ax", "foundersc_app_rehearsal", "book_b_live_morning", "book_b_live_intraday"]
+ENTRYPOINTS = ["foundersc_app_batch_rehearsal", "foundersc_native_ax", "foundersc_app_rehearsal", "book_b_live_morning", "book_b_live_intraday"]
 TESTS = [
     "foundersc_native_ax", "foundersc_native_broker", "foundersc_keychain", "live_capital_keychain",
     "trading_execution", "trading_runner", "book_b_live_morning", "book_b_live_recovery",
@@ -24,7 +24,7 @@ TESTS = [
     "wait_for_morning_freeze",
     "book_b_intraday_cli",
     "book_b_morning_cli",
-    "foundersc_process_fencing",
+    "foundersc_process_fencing", "foundersc_session", "foundersc_app_batch_rehearsal",
 ]
 
 

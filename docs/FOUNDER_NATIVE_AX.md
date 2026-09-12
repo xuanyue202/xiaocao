@@ -309,3 +309,11 @@ test store shares the account writer lock with normal execution. Resume the
 same ID after interruption; preserve submit/cancel claims and reconcile exact
 order state. See [the September 12 validation record](FOUNDER_RELIABILITY_20260912.md)
 for test scope, corrected defects, observed APP evidence and remaining limits.
+
+## APP 会话与批量仿真验收
+
+同一 macOS 用户的方正 APP 只有一个页面状态。所有原生查询、预填、提交、撤单共用用户缓存目录中的会话锁，跨线程、进程、checkout 和账本目录互斥。执行端从能力读取到最终回读持续持锁，账本锁先于 APP 锁。原生子进程继承锁文件描述符，父 Python 意外退出时仍保持隔离直到子进程退出。此锁只约束项目调用，不阻止用户手动操作 APP；每次写前仍须验证账户及完整订单字段。
+
+`FounderscNativeAXClient.command_timings` 记录每次命令的排队和执行秒数，不记录参数或凭据。
+
+已明确授权的 APP 服务端仿真可通过 `scripts/foundersc_app_batch_rehearsal.py advance --run-id <唯一批次> --fingerprint <掩码账号> --prices <2至5个不同限价> --acknowledge-app-server-simulation` 验收连续多笔委托。批次总额不超过 1000 元且受可用资金约束；先持久化全部不可变计划及基线，提交后读取同时存在的委托，再按原委托号逆序撤单。任一非预期结果停止新增；cleanup 标记落盘后重跑仅收尾已有 claim。中断后必须复用原批次、原参数；`cleanup` 只对已有批次收尾。结果、各阶段耗时、三表回读均写入独立研究目录，不写策略持仓。
