@@ -22,21 +22,21 @@ ROOT = Path(__file__).resolve().parents[1]
 @pytest.fixture(scope="module")
 def reviewed_artifact_root(tmp_path_factory):
     return materialize_reviewed_artifacts(
-        tmp_path_factory.mktemp("reviewed-kol-artifacts")
+        tmp_path_factory.mktemp("reviewed-kol-artifacts"), include_later_author_examples=True,
     )
 
 
 def _candidates(reviewed_artifact_root):
     return initial_import_candidates(
-        ROOT,
+        reviewed_artifact_root,
         reviewed_artifact_root=reviewed_artifact_root,
     )
 
 
-def _expected_candidate_count() -> int:
+def _expected_candidate_count(project: Path) -> int:
     reviewed_distills = [
         path
-        for path in (ROOT / "reference/experience/distilled").glob("*.json")
+        for path in (project / "reference/experience/distilled").glob("*.json")
         if path.name != "2026-07-05_lucifer_review.json"
     ]
     return len(reviewed_distills) + 4
@@ -95,7 +95,7 @@ def test_initial_import_has_one_safe_report_per_reviewed_publication_event(
 ):
     candidates = _candidates(reviewed_artifact_root)
 
-    assert len(candidates) == _expected_candidate_count()
+    assert len(candidates) == _expected_candidate_count(reviewed_artifact_root)
     assert len({row["publication_key"] for row in candidates}) == len(
         candidates
     )

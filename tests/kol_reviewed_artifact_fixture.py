@@ -95,8 +95,29 @@ def _write(root: Path, relative: str, value: dict[str, Any]) -> None:
     )
 
 
-def materialize_reviewed_artifacts(root: Path) -> Path:
+def materialize_reviewed_artifacts(root: Path, *, include_later_author_examples: bool = False) -> Path:
     """Create small, synthetic reviewed inputs without raw transcripts."""
+
+    # The longitudinal review is explicitly as of July 26. Later operational
+    # distills (and local output/Downloads files) are not inputs to that replay.
+    # Keep three official-account examples for the separate author-binding cases.
+    source = Path(__file__).resolve().parents[1] / "reference/experience/distilled"
+    author_examples = {"2026-08-04_liu_shao_review.json", "2026-08-05_a_alex_review.json",
+                       "2026-08-06_a_alex_review.json"}
+    for path in sorted(source.glob("*.json")):
+        if path.name[:10] > "2026-07-26" and not (
+            include_later_author_examples and path.name in author_examples
+        ):
+            continue
+        value = json.loads(path.read_text(encoding="utf-8"))
+        evidence = ("Synthetic reviewed evidence: " + path.name + "\n").encode()
+        relative = "reference/experience/test-evidence/" + path.stem + ".txt"
+        target = root / relative
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_bytes(evidence)
+        value["evidence"] = [{"path": relative, "sha256": hashlib.sha256(evidence).hexdigest(),
+                              "size": len(evidence)}]
+        _write(root, "reference/experience/distilled/" + path.name, value)
 
     lucifer_current_ids = [
         "spacex-short-after-july-7",
