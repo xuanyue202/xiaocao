@@ -1840,11 +1840,16 @@ private func normalizedCode(_ value: String) -> String {
 
 private func normalizedDecimal(_ value: String) -> Decimal? {
     let cleaned = value
-        .replacingOccurrences(of: ",", with: "")
         .replacingOccurrences(of: "¥", with: "")
         .replacingOccurrences(of: "￥", with: "")
         .trimmingCharacters(in: .whitespacesAndNewlines)
-    return Decimal(string: cleaned, locale: Locale(identifier: "en_US_POSIX"))
+    // Decimal(string:) accepts a numeric prefix followed by arbitrary text.
+    // Order fields and confirmation tokens must prove the entire value.
+    guard cleaned.range(
+        of: #"^[+-]?(?:[0-9]+|[0-9]{1,3}(?:,[0-9]{3})+)(?:\.[0-9]+)?$"#,
+        options: .regularExpression
+    ) != nil else { return nil }
+    return Decimal(string: cleaned.replacingOccurrences(of: ",", with: ""), locale: Locale(identifier: "en_US_POSIX"))
 }
 
 private func normalizedQuantity(_ value: String) -> Int? {

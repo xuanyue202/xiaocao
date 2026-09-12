@@ -1340,10 +1340,12 @@ class FounderscNativeAXBrokerAdapter(BrokerAdapter):
             raise FounderscNativeAXError("NATIVE_ORDER_TRADE_QUANTITY_MISMATCH")
         if trade_filled:
             filled = trade_filled
-            normalized = (
-                BrokerStatus.FILLED
-                if filled == requested_shares else BrokerStatus.PARTIAL
-            )
+            # A positive fill does not reopen the cancelled remainder.
+            if normalized != BrokerStatus.CANCELLED:
+                normalized = (
+                    BrokerStatus.FILLED
+                    if filled == requested_shares else BrokerStatus.PARTIAL
+                )
         fill_price = None
         fill_notional = Decimal("0")
         if trade_matches:

@@ -1261,6 +1261,29 @@ def test_native_cancel_uses_exact_order_id_once_and_reconciles() -> None:
     assert native.cancel_calls == 1
 
 
+@pytest.mark.parametrize("status", ["已撤"])
+def test_partially_filled_cancel_remains_terminal(status: str) -> None:
+    native = FakeNative()
+    adapter = _adapter(native)
+    plan = replace(_plan(), trade_date=datetime.now(timezone.utc).date().isoformat())
+    adapter.prepare(plan)
+    submitted = adapter.submit(plan, "partial-cancel")
+    order = next(row for row in native.orders if row["委托编号"] == submitted.order_id)
+    order.update({"状态说明": status, "成交数量": "40"})
+    native.trades = [{
+        "证券代码": "000001", "证券名称": "测试标的", "买卖标志": "买入",
+        "成交时间": "100001", "成交价格": "10.00", "成交数量": "40",
+        "成交金额": "400.00", "成交编号": "700001", "委托编号": submitted.order_id,
+        "成交类型": "普通成交", "状态说明": "已成", "股东代码": "A***",
+    }]
+    receipt = adapter.reconcile(plan, {"broker_order_id": submitted.order_id})
+    assert receipt.normalized_status() == BrokerStatus.CANCELLED
+    assert receipt.filled_shares == 40 and receipt.remaining_shares == 60
+    assert receipt.active is False and receipt.conclusive is True
+    assert receipt.fill_price == 10.0 and receipt.retry_allowed is False
+    assert native.submit_calls == 1 and native.cancel_calls == 0
+
+
 def test_native_cancel_probe_leaves_exact_active_order_on_cancel_surface() -> None:
     native = FakeNative()
     adapter = _adapter(native)
