@@ -37,3 +37,34 @@ for value in CommandLine.arguments.dropFirst() {
 def test_order_decimal_requires_entire_valid_numeric_shape(numeric_parser, value, expected):
     result = subprocess.run([str(numeric_parser), value], capture_output=True, text=True, check=True, timeout=2)
     assert result.stdout.strip() == expected
+
+
+@pytest.fixture(scope="module")
+def cell_parser(tmp_path_factory):
+    compiler = shutil.which("swiftc")
+    if not compiler:
+        pytest.skip("Swift compiler required")
+    source = (Path(__file__).resolve().parents[1] / "native/foundersc_ax_executor/Sources/FounderscNativeAX/main.swift").read_text()
+    routine = source[source.index("private func queryCellText("):source.index("private func structuredQueryReadback(")]
+    directory = tmp_path_factory.mktemp("ax-cell")
+    path, executable = directory / "cell.swift", directory / "cell"
+    path.write_text('import Foundation\n' + routine + '\nprint(queryCellText(title: CommandLine.arguments[1], fragments: Array(CommandLine.arguments.dropFirst(2))))\n')
+    subprocess.run([compiler, str(path), "-o", str(executable)], check=True, capture_output=True, timeout=45)
+    return executable
+
+
+@pytest.mark.parametrize("title,fragments,expected", [
+    ("委托编号", ["600", "0009"], "6000009"),
+    ("委托编号", ["600 0009"], "6000009"),
+    ("成交编号", ["000", "123"], "000123"),
+    ("证券代码", ["512", "010"], "512010"),
+    ("委托编号", ["6O0", "0009"], "6O0 0009"),
+    ("委托编号", ["600-0009"], "600-0009"),
+    ("委托编号", ["600", "?", "0009"], "600 ? 0009"),
+    ("委托价格", ["0.3", "500"], "0.3 500"),
+    ("委托数量", ["1", "00"], "1 00"),
+    ("委托编号", [], ""),
+])
+def test_numeric_identifier_word_fragments_keep_digits_without_correcting_glyphs(cell_parser, title, fragments, expected):
+    result = subprocess.run([str(cell_parser), title, *fragments], capture_output=True, text=True, check=True, timeout=2)
+    assert result.stdout.strip() == expected

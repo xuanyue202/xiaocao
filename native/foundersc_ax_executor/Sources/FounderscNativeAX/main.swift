@@ -492,6 +492,18 @@ private func queryRequiredHeaders(_ kind: String) -> Set<String> {
     }
 }
 
+private func queryCellText(title: String, fragments: [String]) -> String {
+    let value = fragments.joined(separator: " ")
+        .trimmingCharacters(in: .whitespacesAndNewlines)
+    // A single AX cell can contain multiple Vision word fragments. Numeric
+    // identifiers have no word separators; preserve every recognized digit.
+    if ["证券代码", "委托编号", "成交编号"].contains(title),
+       value.range(of: #"^[0-9\s]+$"#, options: .regularExpression) != nil {
+        return value.components(separatedBy: .whitespacesAndNewlines).joined()
+    }
+    return value
+}
+
 private func structuredQueryReadback(
     kind: String,
     tokens: [OCRToken],
@@ -559,8 +571,7 @@ private func structuredQueryReadback(
                     lowConfidenceCriticalHeaders.insert(column.title)
                 }
             }
-            var value = cellTokens.map(\.text).joined(separator: " ")
-                .trimmingCharacters(in: .whitespacesAndNewlines)
+            var value = queryCellText(title: column.title, fragments: cellTokens.map(\.text))
             if ["股东代码", "资金帐号"].contains(column.title) {
                 value = redactedOCRLine(value)
             }

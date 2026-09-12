@@ -238,7 +238,7 @@ order obtained a broker ID and reached filled/cancelled; `all_orders_terminal`
 alone may include skipped/rejected tests. Check final APP tables and funds,
 not merely script exit. No extra morning test gate is introduced.
 
-On multirow tables, a lone OCR `O` in 成交数量 may normalize to zero only
+On multirow tables, a lone OCR `O`, `o` or `◎` in 成交数量 may normalize to zero only
 on the second bounded read, with zero execution price and independent zero
 trades for that order. Preserve the raw character; identifiers, limit prices
 and requested quantities never use letter-to-number correction. Python owns
@@ -255,3 +255,8 @@ all cancel/confirmation flags explicitly false. After exact active-order
 readback, execution archives that attempt and creates a new claim for the
 same order. New claims clear prior cancel evidence. Timeout, missing flags,
 possible clicks and unknown outcomes cannot take this path; see Contract §4.
+
+Failed reads retain the specific error code, dated table metadata and flattened
+redacted cells within the execution evidence depth limit. A terminal cancel
+readback clears cancellation uncertainty through either execute or cancel
+recovery; a nonterminal uncertain cancel remains read-only.
