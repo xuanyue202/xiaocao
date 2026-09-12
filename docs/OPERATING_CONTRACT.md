@@ -1,6 +1,6 @@
 # 小草运营契约（Operating Contract, SSOT）
 
-**版本**：4.9
+**版本**：4.10
 **状态**：现行
 **适用范围**：所有 paper / 未来 real 的实盘环（live_recommend → paper_record → live_monitor → eod）与回测
 **关联实现**：`src/xiaocao/live/{safety,capital_keychain,foundersc_native_ax,foundersc_native_broker,trading_execution,book_b_live_lifecycle,book_b_live_intraday}.py`、`src/xiaocao/live/intelligence_policy.py`、`src/xiaocao/strategy/{mode_switch,trend_rules,kol_reference}.py`、`native/foundersc_ax_executor/`、`kronos_screen/scripts/{capture_signals,forward_eval,paper_record,settle_book_a,settle_book_t,decompose_pnl,quality_governor}.py`、`scripts/{book_b_live_morning,book_b_live_intraday,live_monitor,research_mode_switch_replay}.py`
@@ -51,17 +51,17 @@ Agent 直接操纵交易表单下单的应急分支，界面观察仅辅助诊�
 行为，新的失败或未解决疑点才扩大范围；复盘记录原因、修复和验证，不凑假设
 数量或固定问答格式。测试通过数量不等于交易已完成。
 
-### 1b. Book B 开盘准备截止与恢复（2026-09-12）
+### 1b. Book B 早盘紧急执行优先（2026-09-12 最新决定）
 
-现有 Book B live morning Automation 提前至交易日 **09:15** 启动；09:23 推荐生产和09:25 本地纸面执行保持原时间、进程与账本边界。提前时间用于原生会话预检、准备完整 KOL 来源上下文和复用仍有效的已发布决策；不提前冻结竞价数据。资金分配事实在冻结数据可用后按需现读，避免使用提前十分钟的账户快照。
+Book B live morning 仍提前至交易日09:15启动，09:23推荐和09:25本地纸面任务不变。提前完成会话预检、完整KOL来源阅读和条件梳理；冻结后只处理候选映射、新增事实和账户现读。复用仍有效且适用的已发布判断。
 
-正常目标是 **09:30 前完成必要判断、独立审核和全部只读 prepare**。09:25–09:30 在阶段切换和等待心跳记录当前时间、剩余秒数；09:28:30 仅提醒，不能截断必要分析、弱化门槛或制造审批。当前已验证且仍适用的 KOL 决策可复用，不要求每次重新等待一份；需要的审核未完成时不能用 neutral fallback 冒充通过。
+**09:25–09:30优先完成当前交易流程。** 遇到AX代码故障，立即定位最小失败点、修补、做必要验证并通过原计划恢复入口继续；缺KOL材料，优先复用本地完整阅读文件，按准确report_id补读缺失来源。主审在语义分析任务运行时同步独立阅读，不等草稿到达才开始。必要信息与订单正确性仍须证明；完整回归、打包、Git和复盘放在当前流程终态之后。
 
-09:30 是开盘准备截止，同时仍是最早 submit 时间。因此目标不是 09:30 前成交。未按时完成准备的本次开盘计划记为 skipped，不因修复完成或新判断到达而自动盘中补买。已按时准备的计划继续正常提交时段与报价检查；已有 claim/未知提交始终继续精确对账，截止时间不取消或重放订单。本规则收窄历史早盘 continuation 授权，不修改底层通用交易时段或其他独立策略。
+撤回09:28:30定时提醒、倒计时播报和09:30准备未完成自动跳过。09:30只保留原有最早submit时间；出现非预期情况时持续紧急修复，不凭到点放弃。后续是否可执行由原策略、行情、连续竞价时段和原计划recovery_deadline决定。既有未终结intent中的opening_preparation_deadline是撤回的历史元数据，不再作为失效依据；已经终结的计划不会因此复活。
 
-恢复统一使用 `scripts/book_b_live_morning.py --resume-plan-id <原 plan_id> --recovery-action resume|reconcile|close`：未提交且未过准备截止才可沿原冻结计划恢复；已有可能副作用只能对账；无 claim 的过期/放弃 intent 仅做本地 skipped 关闭。不得重新生成计划、改经济字段或覆盖原失败回执。各次运行记录 run_id、recovery_of、阶段时间、失败阶段和已持久化计划；恢复回执写入 history，原日回执保留。盘中检查会关闭过期未提交 intent，未知提交不会因此被当成未提交。
+正式恢复用`--resume-plan-id`和`--recovery-action resume|reconcile|close`，不重跑生产器或修改计划经济字段。已提交/未知副作用只对账，未提交计划可恢复或正式关闭，真正到期的无claim计划仍可关闭。保留失败进度、各阶段时间和恢复历史，用于事后定位耗时，不再围绕时钟增加交易门。
 
-来源准备记录请求日期、观察时间、行数、响应 hash、缺失代码和错误/空响应状态。两次结果相同不证明来源齐备，须走完有界确认窗口；缺少服务端完整性证明时保留 unproven，不能把无可执行候选说成所有来源确实无信号。保留最佳已观测结果时，其来源证据与对应观察轮次绑定。
+来源的日期、观察时点、行数、hash、缺失/空响应和有界确认窗口继续保留；不把稳定结果冒充数据齐全。KOL阅读文件保留全部已加载正文及完整来源、观点、评估、关系和覆盖信息，仅去掉重复正文与JSON排版冗余；已完整读过的context可通过`--since-context`作增量阅读基准：绑定前后hash、保留全部变更记录和移除ID，当前覆盖信息完整保留；新读者仍须读基准。正式发布仍绑定当前完整context/hash，缺失来源精确补读，不以摘要代替正文。
 
 ## 2. 架构原则：LLM 不进确定性回路
 
@@ -190,7 +190,7 @@ KOL 断言、候选假设或报告升级为策略真值，也不替代永久参�
   （`T` 或 `T` 后接数字）归一为 trading；其他未知前缀继续 fail-closed。
   若同一 BUY intent 在任何 submit claim 之前因本地/只读 prepare 修复而令原先有效的
   market guard 超时，只有在 read-only prepare 再次证明 `submitted/saved/started=false`
-  且表单已清空、execution state 仍为 unclaimed、无 broker order-id/chain uncertainty、未触及 §1b 的准备截止，且执行时仍在
+  且表单已清空、execution state 仍为 unclaimed、无 broker order-id/chain uncertainty、执行时仍在
   `09:30–11:30` 或 `13:00–14:57` 时，才可为原 plan hash 持久化**恰好一次**不可变的
   no-cache guard sidecar。sidecar 只能更新交易状态、当前价、权威跌停价和观察时间；代码、
   方向、数量、限价、basket、allocation proof、plan id/hash 与资本授权全部不变。它必须先
@@ -401,7 +401,7 @@ KOL 断言、候选假设或报告升级为策略真值，也不替代永久参�
   底层执行器的连续竞价能力仅允许 BUY 在
   `09:30–11:30` 或 `13:00–14:57`，午休、收盘集合竞价和盘后继续硬阻断；每个
   新 plan 在持久化 intent 前必须从专有 API 刷新并绑定同日、15 分钟内的交易状态、
-  现价、跌停价和时间戳。该底层能力不构成早盘自动补买授权：本节 §1b 的 09:30 准备截止优先。不得改变冻结选股、allocation、初始限价、
+  现价、跌停价和时间戳。同一冻结计划的恢复按§1b持续推进，09:30不再是准备截止。不得改变冻结选股、allocation、初始限价、
   资金门或 exact-once；恢复已有 intent 仍只对账，不重新刷新经济字段或提交。
   exact-order 撤单已实现并实盘验收；自动补单仍禁用；App 重启后的 CAPTCHA 按独立慢恢复证据判定。
 
@@ -431,7 +431,7 @@ KOL 断言、候选假设或报告升级为策略真值，也不替代永久参�
 - [x] Book T snapshot/account/monitor key 均带 `book` 命名空间；B/T 同票同日不互相覆盖；T 宽止损不调用短线 strong-hold/composite。
 - [x] Book B 与历史回放共用 `strategy.mode_switch`；D-1 outcome 不进入 D 日早盘状态；`COLD/UNKNOWN/BJSE` 无成交权限；`--notional` 不能绕过 3 席位、每模式 1 只和批次 50% 上限。
 - [x] 模式证据保留 25%/45%/50% 验证权重；`ACTIVE` 同时通过候选池和四指数证据，近期双基准均值与多数日转正可直接升格，任一均值转负只冷却到 `PROVISIONAL`。
-- [x] 独立 09:15 Book-B live morning 与 09:25 模拟任务隔离；唯一写路由为 account-bound `native-app`，OpenCLI 不参与 native 登录/查询/交易；09:30 前只预检/心跳；09:30 前必要判断与准备未完成即跳过，不自动盘中补买；已准备计划在 submit floor 后仍通过专有实时 market guard；无 claim 的本地 prepare 修复只允许一次 plan-hash-bound 行情 sidecar 并先执行 basket 放弃线；不读写模拟成交或 canonical paper ledger；submit 前零 exact-tuple baseline，submit 后只认唯一新增 order-id，歧义保持 UNKNOWN/reconcile-only/no-retry；exact-order 撤单已实盘验收，自动补单禁用，App 重启 CAPTCHA 保持独立慢恢复。
+- [x] 独立 09:15 Book-B live morning 与 09:25 模拟任务隔离；唯一写路由为 account-bound `native-app`，OpenCLI 不参与 native 登录/查询/交易；09:30 前只预检/心跳；09:25–09:30紧急修复与必要补读优先，原计划恢复仍通过交易时段与专有实时market guard；无 claim 的本地 prepare 修复只允许一次 plan-hash-bound 行情 sidecar 并先执行 basket 放弃线；不读写模拟成交或 canonical paper ledger；submit 前零 exact-tuple baseline，submit 后只认唯一新增 order-id，歧义保持 UNKNOWN/reconcile-only/no-retry；exact-order 撤单已实盘验收，自动补单禁用，App 重启 CAPTCHA 保持独立慢恢复。
 - [x] allocation proof 复用 `mode_switch.plan_board_lot_orders`，以滚动结算 NAV 验证批次/敞口/现金/slot 上限；ownership evidence 不得替代 canonical paper ledger。
 - [x] Book-B 实盘 owned-lot / 三表+positions 资金摘要 / 日间退出 / SELL intent / EOD settlement 已形成独立生命周期；纸盘 writer 不参与，成交执行仍由 native `TradingExecution` 端口独占。
 - [x] 同一 logical account 由 account-level writer lock 串行推进；异常写入 durable takeover capsule，WeCom pending incident 可重试且已送达事件幂等。
@@ -441,6 +441,7 @@ KOL 断言、候选假设或报告升级为策略真值，也不替代永久参�
 
 | 版本 | 日期 | 说明 |
 |------|------|------|
+| 4.10 | 2026-09-12 | 按用户最新要求撤回09:28:30提醒与09:30自动跳过，黄金五分钟紧急代码修复/精确KOL补读优先；保留早启动、原计划恢复、回执、来源准备和原策略；新增无损KOL阅读文件与缺失来源定位。 |
 | 4.9 | 2026-09-12 | Book B 提前09:15准备；09:28:30仅提醒，09:30未完成必要判断和prepare即跳过，不自动盘中补买；正式原计划恢复/对账/本地关闭、历史运行回执、来源观察与有效KOL复用；当前执行仓位不变，领域历史提案移入研究归档。 |
 | 4.8 | 2026-09-12 | 简化验证与复盘：删除文案/版本/模型/篇幅机械断言，保留能检出实际错误的行为与部署检查；按变更影响选择回归，取消文档改动全套交易测试及固定假设数量/复盘格式要求。 |
 | 4.7 | 2026-09-12 | 登记用户说明的本地数字模拟与 APP 服务端仿真分级；保留正式执行纪律、独立账本及既有运行门。故障恢复改为 AX/项目代码紧急修复、最小必要验证、同计划窄恢复及终态回读优先，随后根因修复与完整回归；界面仅辅助诊断。 |

@@ -9,7 +9,7 @@ from pathlib import Path
 
 from .book_b_live_morning import (
     BookBLiveMorningConfig, BookBLiveMorningReceipt, _event_chain_proven,
-    _plan_intent_path, _intent_datetime, read_durable_live_plan_intent, run_book_b_live_morning,
+    _plan_intent_path, read_durable_live_plan_intent, run_book_b_live_morning,
     write_book_b_live_morning_receipt,
 )
 from .trading_execution import (
@@ -87,11 +87,7 @@ def run_book_b_live_recovery(
     events = _history(config.state_dir, plan)
     current = ExecutionStore(config.state_dir / "events.jsonl").current(plan_id)
     possible_write = _has_possible_write(events)
-    opening = _intent_datetime(payload.get("opening_preparation_deadline"), required=False)
-    deadlines = [d for d in (opening, config.opening_deadline) if d is not None]
-    if deadlines:
-        config = replace(config, opening_deadline=min(deadlines))
-    deadline = min([plan.recovery_deadline, *deadlines])
+    deadline = plan.recovery_deadline
     failure = None
     if current is not None and current.state in TERMINAL:
         result = current

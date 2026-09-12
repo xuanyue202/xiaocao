@@ -13,14 +13,18 @@ different writers. Do not ask the user to repeat the 2026-09-06 authorization.
    PYTHONPATH=src .venv/bin/python scripts/kol_trading_context.py context --summary
    ```
 
-   Reopen the returned full context file. Its report bodies, attributed
+   Read the returned `reading_path` first: complete bodies appear once, followed
+   by all provenance and longitudinal evidence. Keep `context_path` as the
+   authoritative hashed publication input. Its report bodies, attributed
    viewpoints, evaluations, relations, report index and coverage are separate
    evidence layers. `registry_only` is explicit: MCP has exact-ID readback but
    no complete remote report discovery. Cover all registered authors, not only
    Xiaocao or names overlapping holdings. Missing author/latest evidence is
    degraded coverage requiring investigation, never a fabricated absence.
    Historical cached evaluations are dated context, not fresh market proof.
-   For a needed unloaded body, repeat with its exact `--report-id`; do not load
+   `refresh_report_ids` identifies missing/stale registered sources. For a needed
+   unloaded or stale body, repeat with its exact `--report-id` and
+   `--read-report-id` (plus `--refresh` only for that exact scope); do not load
    every historical transcript on every tick. `--refresh` is an explicit full
    source refresh, not a routine five-minute action.
 2. Build the decision context from the exact current phase: immutable dated
@@ -45,7 +49,9 @@ different writers. Do not ask the user to repeat the 2026-09-06 authorization.
    coverage/counterevidence analysis, never its own approved review, a broker
    action, account edit or capital key. If explicit routing is unavailable,
    report supporting degradation; never relabel a fallback model as Astra.
-5. The parent independently reviews the complete relevant source and current
+5. While the semantic worker drafts, the parent independently reads the complete
+   relevant sources and current evidence. Do not wait for the draft to start
+   this reading. The parent then reviews the draft against the source and current
    evidence. Verify no dropped important condition, wrong attribution, example
    turned into recommendation, hindsight, duplicated return deduction, invented
    stock code, threshold, timing, confidence or causal mechanism. Other KOLs'
@@ -166,3 +172,20 @@ pause is latched; do not edit/remove its evidence to resume. Recovery needs
 review of the actual loss, current evidence and budget. Historical missing
 marks and the paper activation epoch remain visible. Engineering pilot tests
 prove routing/coverage/constraints, not future profitability.
+
+## Golden five-minute priority
+
+At 09:25–09:30, missing evidence triggers exact-ID retrieval immediately and a
+local fault triggers urgent project-code repair. Reuse already read source
+conditions and valid published decisions; read complete new/changed evidence.
+No countdown reminder, 09:30 preparation cutoff, extra review layer or broad
+historical scan is added. Preserve the original bounded rendezvous and order
+state; never backdate a late publication or replay an uncertain order.
+
+After the exact full context has already been read during early preparation,
+use `context --summary --since-context <already-read-context.json>` for a later
+refresh (combine with exact `--report-id` / `--read-report-id` when needed).
+The reading delta binds that base hash, carries every changed record and
+removed ID, and retains full current coverage. It is not an AI summary or a
+substitute for reading the base. A new worker must receive both the base and
+delta. Source publication continues to use the full current `context_path`.

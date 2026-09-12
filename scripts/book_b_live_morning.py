@@ -45,17 +45,6 @@ def _china_date() -> str:
     return datetime.now(ZoneInfo("Asia/Shanghai")).date().isoformat()
 
 
-def _opening_progress(stage: str, current: datetime | None = None) -> None:
-    current = (current or datetime.now(ZoneInfo("Asia/Shanghai"))).astimezone(ZoneInfo("Asia/Shanghai"))
-    if (9, 25) <= (current.hour, current.minute) < (9, 30):
-        deadline = current.replace(hour=9, minute=30, second=0, microsecond=0)
-        print(json.dumps({"event": "opening_deadline", "stage": stage,
-                          "observed_at": current.isoformat(),
-                          "seconds_to_open": max(0, int((deadline-current).total_seconds())),
-                          "preparation_deadline": "09:30:00",
-                          "warning": (current.minute, current.second) >= (28, 30)}, ensure_ascii=False), flush=True)
-
-
 def _wait_for_submit_window(target: datetime, *, heartbeat=None) -> None:
     """Keep the early task alive, but never wait across an unexpected window."""
     while True:
@@ -150,8 +139,8 @@ def _review_rendezvous(request: dict, *, now=None, sleep=None, monotonic=None,
 
     The parent performs full-source reasoning/review while this process waits.
     This consumer never invokes a model, publishes a decision, or touches keys.
-    The opening profile permits up to five minutes, bounded by 09:30;
-    generic callers retain the two-minute cap. Neither backdates a late read.
+    The existing entry deadline and two-minute wait budget apply.
+    Neither backdates a late read; 09:30 is not a preparation cutoff.
     """
     now = now or (lambda: datetime.now(ZoneInfo("Asia/Shanghai")))
     sleep = sleep or time.sleep
@@ -181,10 +170,8 @@ def _review_rendezvous(request: dict, *, now=None, sleep=None, monotonic=None,
     budget = float(payload["max_wait_seconds"])
     if not math.isfinite(budget) or budget < 0 or not math.isfinite(poll_seconds) or poll_seconds <= 0:
         raise ValueError("LIVE_REVIEW_WAIT_BUDGET_INVALID")
-    budget = min(300.0 if payload.get("opening_deadline") else 120.0, budget)
+    budget = min(120.0, budget)
     deadline = min(entry_deadline, requested + timedelta(seconds=budget))
-    if payload.get("opening_deadline"):
-        deadline = min(deadline, datetime.fromisoformat(payload["opening_deadline"]))
     payload["max_wait_seconds"] = budget
     payload["freeze_path"] = str(Path(payload["freeze_path"]).resolve())
     payload["policy_root"] = str(Path(payload["policy_root"]).resolve())
@@ -207,15 +194,13 @@ def _review_rendezvous(request: dict, *, now=None, sleep=None, monotonic=None,
                      ensure_ascii=False, sort_keys=True), flush=True)
     latest: dict = {}
     status, reason = "timed_out", "LIVE_REVIEW_TIMEOUT_NEUTRAL_FALLBACK"
-    next_progress = 0.0
     while True:
         current = now()
         remaining = min(budget - (monotonic() - started), (deadline - current).total_seconds())
         latest = read_policy(Path(payload["policy_root"]), current)
         # A slow read must not backdate a decision past the deadline. A
         # zero-budget lookup may reuse a policy only before the entry cutoff.
-        hard_deadline = min(entry_deadline, datetime.fromisoformat(payload["opening_deadline"])) if payload.get("opening_deadline") else entry_deadline
-        if now() >= hard_deadline or (budget > 0 and (monotonic() - started >= budget or now() >= deadline)):
+        if now() >= entry_deadline or (budget > 0 and (monotonic() - started >= budget or now() >= deadline)):
             break
         if latest.get("status") == "blocked":
             status, reason = "blocked", str(latest["reason"])
@@ -227,9 +212,6 @@ def _review_rendezvous(request: dict, *, now=None, sleep=None, monotonic=None,
             break
         if remaining <= 0 or monotonic() - started >= budget or now() >= deadline:
             break
-        if monotonic() - started >= next_progress:
-            _opening_progress("review_wait", current)
-            next_progress = monotonic() - started + 30
         sleep(min(1.0, poll_seconds, remaining))
     receipt = {
         "schema_version": "book-b-live-review-receipt.v1", "request_id": identifier,
@@ -383,7 +365,6 @@ def main(argv: list[str] | None = None) -> int:
         }
 
     def live_heartbeat() -> dict:
-        _opening_progress("wait")
         return broker.ensure_environment(
             target="live",
             expected_current="live",
@@ -398,8 +379,6 @@ def main(argv: list[str] | None = None) -> int:
         logical_account_id="primary",
         policy_root=Path(args.policy_root),
         resume_plan_id=args.resume_plan_id,
-        opening_deadline=datetime.combine(date.fromisoformat(trade_date),
-                                          datetime.min.time(), tzinfo=ZoneInfo("Asia/Shanghai")).replace(hour=9, minute=30),
     )
     runner = run_book_b_live_recovery if args.resume_plan_id else run_book_b_live_morning
     recovery_args = {"plan_id": args.resume_plan_id, "action": args.recovery_action} if args.resume_plan_id else {}
@@ -415,8 +394,7 @@ def main(argv: list[str] | None = None) -> int:
         wait_for_dated_freeze=lambda: wait_for_morning_freeze(
             date=trade_date,
             live_dir=freeze_path.parent,
-            timeout_sec=0 if args.resume_plan_id else min(args.freeze_wait_seconds, max(0.0,
-                (config.opening_deadline - datetime.now(ZoneInfo("Asia/Shanghai"))).total_seconds())),
+            timeout_sec=0 if args.resume_plan_id else args.freeze_wait_seconds,
             poll_sec=args.poll_seconds,
             snapshot_path=freeze_path,
             heartbeat=live_heartbeat,
@@ -437,7 +415,6 @@ def main(argv: list[str] | None = None) -> int:
             expected_fund_account_fingerprint=trade_account_fingerprint,
         ),
         review_rendezvous=lambda request: _review_rendezvous(request, poll_seconds=args.poll_seconds),
-        on_progress=_opening_progress,
     )
     receipt = replace(
         receipt,
