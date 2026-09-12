@@ -24,6 +24,7 @@ TESTS = [
     "wait_for_morning_freeze",
     "book_b_intraday_cli",
     "book_b_morning_cli",
+    "foundersc_process_fencing",
 ]
 
 

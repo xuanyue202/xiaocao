@@ -1,5 +1,7 @@
 """Real Python execution/store/adapter chain with a controllable native service."""
 import json
+from concurrent.futures import ThreadPoolExecutor
+from threading import Barrier
 from dataclasses import replace
 from datetime import datetime, timedelta, timezone
 
@@ -154,3 +156,53 @@ def test_owned_sell_uses_native_side_and_t1_then_reconciles_once(chain, sellable
         assert engine(native).cancel(sell).state == ExecutionState.CANCELLED
         assert native.submit_calls == 2 and native.cancel_calls == 1
     assert engine(native).ledger.owned_shares(logical_account_id="primary", code=plan.code) == 100
+
+
+@pytest.mark.parametrize("workers", [2, 5, 20])
+def test_concurrent_same_plan_submits_and_cancels_exactly_once(chain, workers):
+    plan, engine = chain
+    native = FakeNative()
+    def simultaneously(action):
+        start = Barrier(workers)
+        def invoke(_):
+            execution = engine(native)  # independent stores/adapters, shared account lock
+            start.wait(timeout=5)
+            return getattr(execution, action)(plan)
+        with ThreadPoolExecutor(max_workers=workers) as pool:
+            return list(pool.map(invoke, range(workers)))
+    submitted = simultaneously("execute")
+    assert {r.state for r in submitted} == {ExecutionState.ACKNOWLEDGED}
+    assert len({r.broker_order_id for r in submitted}) == 1
+    assert native.prepare_calls == native.submit_calls == 1
+    cancelled = simultaneously("cancel")
+    assert {r.state for r in cancelled} == {ExecutionState.CANCELLED}
+    assert native.cancel_calls == 1
+
+
+@pytest.mark.parametrize("workers", [2, 5, 20])
+@pytest.mark.parametrize("same_symbol", [False, True])
+def test_concurrent_distinct_orders_preserve_each_tuple_and_exact_cancel(chain, workers, same_symbol):
+    plan, engine = chain
+    native = FakeNative()
+    plans = [replace(plan, plan_id=f"{plan.plan_id}:batch:{index}",
+                     code=f"{512010 if same_symbol else 512010 + index:06d}.XSHG", limit_price=9.0 + index / 100)
+             for index in range(workers)]
+    start = Barrier(workers)
+    def submit(item):
+        start.wait(timeout=5)
+        return engine(native).execute(item)
+    with ThreadPoolExecutor(max_workers=workers) as pool:
+        receipts = list(pool.map(submit, plans))
+    assert all(r.state == ExecutionState.ACKNOWLEDGED for r in receipts)
+    assert len({r.broker_order_id for r in receipts}) == workers
+    orders = {row["委托编号"]: row for row in native.orders}
+    for item, receipt in zip(plans, receipts):
+        row = orders[receipt.broker_order_id]
+        assert row["证券代码"] == item.code.split(".")[0]
+        assert float(row["委托价格"]) == item.limit_price
+        assert int(row["委托数量"]) == item.shares
+    # A different cancellation order must still target the original order IDs.
+    for item in reversed(plans):
+        assert engine(native).cancel(item).state == ExecutionState.CANCELLED
+    assert native.submit_calls == native.cancel_calls == workers
+    assert native.orders[0]["状态说明"] == "未报"  # unrelated pre-existing order
