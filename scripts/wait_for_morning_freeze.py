@@ -121,14 +121,20 @@ def wait_for_morning_freeze(
     timeout_sec: float,
     poll_sec: float,
     snapshot_path: Path | None = None,
+    heartbeat=None,
+    heartbeat_seconds: float = 30.0,
 ) -> dict[str, Any]:
     deadline = time.monotonic() + max(0.0, timeout_sec)
+    next_heartbeat = time.monotonic()
     result = _freeze_status(
         date=date,
         live_dir=live_dir,
         snapshot_path=snapshot_path,
     )
     while result["status"] != "ready" and time.monotonic() < deadline:
+        if heartbeat is not None and time.monotonic() >= next_heartbeat:
+            heartbeat()
+            next_heartbeat = time.monotonic() + max(1.0, heartbeat_seconds)
         remaining = max(0.0, deadline - time.monotonic())
         time.sleep(min(max(0.05, poll_sec), remaining))
         result = _freeze_status(

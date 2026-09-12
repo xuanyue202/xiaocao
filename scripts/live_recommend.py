@@ -573,6 +573,8 @@ def _run_strategy_when_ready(
     signals" or "backend not populated yet". Poll briefly before declaring NONE.
     """
     if not _is_today_live_run(date_iso) or timeout_sec <= 0:
+        if hasattr(source, "begin_observation"):
+            source.begin_observation(1)
         rows = run_strategy(date_iso, source, profile="validated_v5", adaptive_modes=False)
         actives = [r for r in rows if r.get("adaptive_active") in (True, None)]
         return rows, actives
@@ -581,17 +583,35 @@ def _run_strategy_when_ready(
     attempt = 0
     best_rows: list[dict[str, object]] = []
     best_actives: list[dict[str, object]] = []
+    best_readiness: dict = {}
     first_nonempty_at: float | None = None
     last_fingerprint: tuple[tuple[object, object, object], ...] | None = None
     stable_seen = 0
+    def finish(selected_rows, selected_actives, reason, selected_evidence=None):
+        if hasattr(source, "readiness"):
+            last_observation = source.readiness
+            if selected_evidence is not None:
+                source.readiness = {**selected_evidence, "last_attempt": last_observation}
+            observations = source.readiness.get("sources", [])
+            unresolved = [row["source"] for row in observations
+                          if row["status"] in {"empty_unconfirmed", "partial", "error"}]
+            source.readiness.update({"trade_date": date_iso, "exit_reason": reason,
+                                     "signal_count": len(selected_rows),
+                                     "unresolved_sources": unresolved,
+                                     "completeness": "unproven" if unresolved or not observations else "observed_responses",
+                                     "note": "Request date and populated responses do not prove provider completeness."})
+        return selected_rows, selected_actives
     while True:
         attempt += 1
+        if hasattr(source, "begin_observation"):
+            source.begin_observation(attempt)
         rows = run_strategy(date_iso, source, profile="validated_v5", adaptive_modes=False)
         actives = [r for r in rows if r.get("adaptive_active") in (True, None)]
 
         if len(actives) > len(best_actives) or (len(actives) == len(best_actives) and len(rows) > len(best_rows)):
             best_rows = rows
             best_actives = actives
+            best_readiness = dict(getattr(source, "readiness", {}))
 
         if actives:
             now = _time.monotonic()
@@ -599,16 +619,17 @@ def _run_strategy_when_ready(
                 first_nonempty_at = now
                 deadline = max(deadline, now + max(0.0, confirm_sec))
             fingerprint = tuple(sorted(
-                (r.get("code"), r.get("mode"), r.get("adaptive_active"))
+                (str(r.get("code")), str(r.get("mode")), json.dumps(r, sort_keys=True, default=str))
                 for r in rows
             ))
             stable_seen = stable_seen + 1 if fingerprint == last_fingerprint else 1
             last_fingerprint = fingerprint
-            if stable_seen >= max(1, stable_samples):
-                return rows, actives
+            if stable_seen >= max(1, stable_samples) and now - first_nonempty_at >= max(0.0, confirm_sec):
+                return finish(rows, actives, "confirmation_window_elapsed")
             remaining = deadline - now
             if remaining <= 0:
-                return best_rows or rows, best_actives or actives
+                return finish(best_rows or rows, best_actives or actives, "readiness_timeout",
+                              best_readiness if best_rows else None)
             sleep_sec = min(max(0.2, poll_sec), remaining)
             print(
                 f"[settle] {date_iso} 第 {attempt} 次已有 {len(rows)} 个信号/"
@@ -620,7 +641,8 @@ def _run_strategy_when_ready(
 
         remaining = deadline - _time.monotonic()
         if remaining <= 0:
-            return best_rows or rows, best_actives or actives
+            return finish(best_rows or rows, best_actives or actives, "empty_unconfirmed_timeout",
+                          best_readiness if best_rows else None)
         sleep_sec = min(max(0.2, poll_sec), remaining)
         print(
             f"[not-ready] {date_iso} 第 {attempt} 次策略结果为空，疑似 API 尚未发布；"
@@ -1089,16 +1111,19 @@ def main() -> None:
     # they differ only in scoring (exit rule), so signals should be identical.
     # We run once and label each signal as "in v5" / "in v6" — they're all in
     # both. The differentiation is in the STOP price computed below.
-    rows, actives = _run_strategy_when_ready(
-        date_iso,
-        source,
-        timeout_sec=max(0.0, args.ready_timeout_sec),
-        poll_sec=max(1.0, args.ready_poll_sec),
-        confirm_sec=max(0.0, args.ready_confirm_sec),
-    )
+    try:
+        rows, actives = _run_strategy_when_ready(
+            date_iso, source, timeout_sec=max(0.0, args.ready_timeout_sec),
+            poll_sec=max(1.0, args.ready_poll_sec), confirm_sec=max(0.0, args.ready_confirm_sec),
+        )
+    finally:
+        (OUT_DIR / f"recommend_source_readiness_{date_iso}.json").write_text(
+            json.dumps(source.readiness, ensure_ascii=False, sort_keys=True, indent=2), encoding="utf-8")
 
     if not actives:
         msg = f"# {date_iso} 候选股: NONE"
+        if source.readiness.get("unresolved_sources"):
+            msg += "\n\n来源存在空响应或缺失，完整性未证明；本次没有可用候选，不能推断所有来源确实无信号。"
         print(msg)
         (OUT_DIR / f"recommend_{date_iso}.md").write_text(msg, encoding="utf-8")
         return

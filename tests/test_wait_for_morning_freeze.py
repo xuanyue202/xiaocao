@@ -163,3 +163,15 @@ def test_wait_for_morning_freeze_rejects_missing_producer_strategy_sha(tmp_path)
 
     assert result["status"] == "timeout"
     assert result["reason"] == "queue_snapshot_binding_mismatch"
+
+
+def test_freeze_wait_keeps_session_warm_with_bounded_heartbeats(tmp_path, monkeypatch):
+    import scripts.wait_for_morning_freeze as waiter
+    elapsed = [0.0]
+    beats = []
+    monkeypatch.setattr(waiter.time, "monotonic", lambda: elapsed[0])
+    monkeypatch.setattr(waiter.time, "sleep", lambda seconds: elapsed.__setitem__(0, elapsed[0] + seconds))
+    monkeypatch.setattr(waiter, "_freeze_status", lambda **kwargs: {"status": "ready" if elapsed[0] >= 61 else "missing"})
+    result = waiter.wait_for_morning_freeze(date="2026-09-11", live_dir=tmp_path,
+        timeout_sec=90, poll_sec=1, heartbeat=lambda: beats.append(elapsed[0]))
+    assert result["status"] == "ready" and beats == [0, 30, 60]

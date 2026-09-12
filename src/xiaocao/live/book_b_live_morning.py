@@ -13,6 +13,7 @@ import json
 import math
 import os
 import re
+import uuid
 from contextlib import contextmanager
 from dataclasses import asdict, dataclass, replace
 from datetime import datetime, timezone
@@ -83,6 +84,8 @@ class BookBLiveMorningConfig:
     dated_freeze_receipt: dict | None = None
     logical_account_id: str = "primary"
     policy_root: Path | None = None
+    resume_plan_id: str | None = None
+    opening_deadline: datetime | None = None
 
 
 @dataclass(frozen=True)
@@ -104,6 +107,11 @@ class BookBLiveMorningReceipt:
     policy_consumptions: tuple[dict, ...] = ()
     review_rendezvous: dict | None = None
     market_guard_refreshes: tuple[dict, ...] = ()
+    run_id: str = ""
+    recovery_of: str | None = None
+    stage_times: dict | None = None
+    failed_stage: str | None = None
+    persisted_plan_ids: tuple[str, ...] = ()
 
     def as_dict(self) -> dict:
         return asdict(self)
@@ -793,6 +801,7 @@ def _bind_durable_plan_intents(
                             "plan_id": generated.plan_id,
                             "plan_hash": generated.plan_hash,
                             "plan": generated.canonical_payload(),
+                            "opening_preparation_deadline": config.opening_deadline.isoformat() if config.opening_deadline else None,
                         },
                     )
                 try:
@@ -1034,8 +1043,9 @@ def reconcile_open_book_b_plans(
     *,
     trade_date: str,
     execute: Callable[[TradePlan], ExecutionReceipt],
+    now: datetime | None = None,
 ) -> tuple[dict, ...]:
-    """Advance only already-submitted durable plans through broker reconcile."""
+    """Reconcile submitted plans; close expired, proven unclaimed intents locally."""
     root = Path(state_dir)
     intent_dir = root / "plan_intents"
     if not intent_dir.is_dir():
@@ -1061,6 +1071,14 @@ def reconcile_open_book_b_plans(
         if plan.trade_date > trade_date:
             continue
         current = store.current(plan.plan_id)
+        opening_deadline = _intent_datetime(payload.get("opening_preparation_deadline"), required=False)
+        if (current is None or current.state in {
+            ExecutionState.PLANNED, ExecutionState.VALIDATED, ExecutionState.PREPARED,
+        }) and (plan.trade_date < trade_date or (now is not None and now >= (opening_deadline or plan.recovery_deadline))):
+            from .book_b_live_recovery import close_unsubmitted_plan
+            closed = close_unsubmitted_plan(root, plan, reason="UNSUBMITTED_INTENT_EXPIRED")
+            receipts.append(closed.as_dict())
+            continue
         if current is None or current.state not in open_states:
             continue
         if current.plan_hash != plan.plan_hash:
@@ -1391,6 +1409,11 @@ def _write_json_atomic(target: Path, payload: dict) -> None:
 
 
 def _write_receipt(config: BookBLiveMorningConfig, receipt: BookBLiveMorningReceipt) -> None:
+    if receipt.run_id:
+        archive = config.state_dir / "runs" / "history" / f"{receipt.run_id}.json"
+        _write_json_atomic(archive, receipt.as_dict())
+    if config.resume_plan_id:
+        return
     target = config.state_dir / "runs" / f"{config.trade_date}.json"
     _write_json_atomic(target, receipt.as_dict())
 
@@ -1528,6 +1551,7 @@ def run_book_b_live_morning(
     account_snapshot_provider: Callable[[], dict] | None = None,
     trading_dates_provider: Callable[[datetime], list[str]] | None = None,
     review_rendezvous: Callable[[dict], dict] | None = None,
+    on_progress: Callable[[str, datetime], None] | None = None,
 ) -> BookBLiveMorningReceipt:
     """Consume one dated freeze and advance immutable live plans exactly once.
 
@@ -1554,6 +1578,24 @@ def run_book_b_live_morning(
     snapshot_cache: dict | None = None
     snapshot_ownership_head: str | None = None
     market_guard_refreshes: list[dict] = []
+    run_id = f"{config.trade_date}-{uuid.uuid4().hex[:12]}"
+    stage_times = {"started": now().isoformat()}
+    stage = "preflight"
+    failed_stage = None
+    candidate_plan_ids: list[str] = [config.resume_plan_id] if config.resume_plan_id else []
+
+    def enter(next_stage: str) -> None:
+        nonlocal stage
+        stage = next_stage
+        stage_times[next_stage] = now().isoformat()
+        if on_progress is not None:
+            on_progress(next_stage, now())
+
+    def require_opening_ready() -> datetime:
+        current = now()
+        if config.opening_deadline is not None and current >= config.opening_deadline:
+            raise ValueError("LIVE_OPENING_PREPARATION_DEADLINE_MISSED")
+        return current
 
     def cached_snapshot() -> dict:
         nonlocal snapshot_cache, snapshot_ownership_head
@@ -1581,13 +1623,7 @@ def run_book_b_live_morning(
             snapshot_cache = None
 
     def policy() -> dict:
-        decision = read_policy(config.policy_root, now())
-        if (review_receipt is not None and review_receipt.get("status") == "timed_out"
-                and review_requested_at is not None and decision.get("status") == "validated"
-                and datetime.fromisoformat(decision["record"]["decision"]["as_of"].replace("Z", "+00:00")) < review_requested_at):
-            return {"status": "neutral", "book": "B", "runtime": "live",
-                    "reason": "LIVE_REVIEW_TIMEOUT_NEUTRAL_FALLBACK", "decision_id": None}
-        return decision
+        return read_policy(config.policy_root, now())
 
     def support() -> tuple[dict, AccountRiskReceipt]:
         clock = now()
@@ -1632,23 +1668,31 @@ def run_book_b_live_morning(
                 if str(environment_receipt.get("environment") or "").lower() != "live":
                     raise ValueError("LIVE_ENVIRONMENT_NOT_PROVEN")
             if config.policy_root is not None:
-                open_reconciliations = reconcile_open_book_b_plans(
-                    config.state_dir, trade_date=config.trade_date, execute=execute_plan,
-                )
+                if not config.resume_plan_id:
+                    open_reconciliations = reconcile_open_book_b_plans(
+                        config.state_dir, trade_date=config.trade_date, execute=execute_plan, now=now(),
+                    )
                 if _uncertain_execution_plan_ids(config.state_dir):
                     raise ValueError("LIVE_BOOK_B_OPEN_EXECUTION_RECONCILE_REQUIRED")
             allocation: BookBAllocationFacts | None = None
-            if read_allocation_facts is not None and config.policy_root is None:
-                allocation_payload = read_allocation_facts()
-                allocation = _load_allocation(config, allocation_payload)
-                _write_json_atomic(config.allocation_facts_path, allocation_payload)
+            enter("freeze_wait")
             dated_freeze_receipt = (
                 wait_for_dated_freeze()
                 if wait_for_dated_freeze is not None
                 else config.dated_freeze_receipt
             )
+            require_opening_ready()
             dated_freeze_receipt = _assert_dated_freeze(config, dated_freeze_receipt)
             frozen_rows = _read_completed_freeze(config, dated_freeze_receipt)
+            if config.resume_plan_id:
+                frozen_rows = [row for row in frozen_rows
+                               if f"book-b:{config.trade_date}:{row.get('code')}:BUY" == config.resume_plan_id]
+                if len(frozen_rows) != 1 or _restore_durable_plan_for_row(
+                    config, frozen_rows[0], strategy_sha=str(dated_freeze_receipt["strategy_sha"]),
+                ) is None:
+                    raise ValueError("LIVE_RECOVERY_INTENT_FREEZE_MISMATCH")
+            enter("freeze_ready")
+            require_opening_ready()
             if not frozen_rows:
                 receipt = _no_action_receipt(config)
             else:
@@ -1673,6 +1717,9 @@ def run_book_b_live_morning(
                             deadline = current.replace(hour=14, minute=57, second=0, microsecond=0)
                         else:
                             deadline = current
+                        review_deadline = deadline
+                        if config.opening_deadline is not None:
+                            review_deadline = min(deadline, config.opening_deadline)
                         request = {
                             "schema_version": "book-b-live-review-request.v1",
                             "book": "B", "runtime": "live", "trade_date": config.trade_date,
@@ -1683,18 +1730,28 @@ def run_book_b_live_morning(
                             "candidate_scope": "all_frozen_non_unknown_modes",
                             "candidates": [dict(row) for row in new_candidates],
                             "requested_at": current.isoformat(), "entry_deadline": deadline.isoformat(),
-                            "max_wait_seconds": min(120.0, max(0.0, (deadline - current).total_seconds()))
+                            "review_deadline": review_deadline.isoformat(),
+                            "opening_deadline": config.opening_deadline.isoformat() if config.opening_deadline else None,
+                            "max_wait_seconds": min(300.0 if config.opening_deadline else 120.0,
+                                                    max(0.0, (review_deadline - current).total_seconds()))
                                 if current.date().isoformat() == config.trade_date else 0.0,
                         }
+                        enter("review")
                         review_receipt = review_rendezvous(request)
                         if not isinstance(review_receipt, dict):
                             raise ValueError("LIVE_REVIEW_RENDEZVOUS_RECEIPT_INVALID")
+                        require_opening_ready()
+                        if config.opening_deadline is not None and review_receipt.get("status") != "validated":
+                            raise ValueError("LIVE_OPENING_REQUIRED_REVIEW_NOT_READY")
                         if now() >= deadline:
                             raise ValueError("LIVE_REVIEW_ENTRY_WINDOW_CLOSED")
                 selection_decision = policy() if config.policy_root is not None else {
                     "status": "neutral", "book": "B", "runtime": "live",
                     "reason": "POLICY_NOT_CONFIGURED", "decision_id": None,
                 }
+                if (config.opening_deadline is not None and review_receipt is not None
+                        and selection_decision.get("status") != "validated"):
+                    raise ValueError("LIVE_OPENING_REQUIRED_REVIEW_NOT_READY")
                 prioritized_rows = kol_policy.prioritize_xiaocao_modes(
                     frozen_rows, selection_decision,
                 )
@@ -1707,7 +1764,8 @@ def run_book_b_live_morning(
                         all_restoring = all(_restore_durable_plan_for_row(
                             config, row, strategy_sha=str(dated_freeze_receipt["strategy_sha"]),
                         ) is not None for row in rows)
-                    if config.policy_root is not None and read_allocation_facts is not None and not all_restoring:
+                    enter("allocation")
+                    if read_allocation_facts is not None and not all_restoring:
                         allocation_payload = read_allocation_facts()
                         allocation = _load_allocation(config, allocation_payload)
                         _write_json_atomic(config.allocation_facts_path, allocation_payload)
@@ -1721,6 +1779,9 @@ def run_book_b_live_morning(
                         policy_evidence["allocation_capsule_sha256"] = capsule["allocation_capsule_sha256"]
                         policy_consumptions.extend({"code": code, "stage": "allocation", **evidence}
                                                    for code, evidence in policy_evidence["by_code"].items())
+                    candidate_plan_ids = [f"book-b:{config.trade_date}:{row.get('code')}:BUY" for row in rows]
+                    require_opening_ready()
+                    enter("materialize")
                     plans = _materialize_or_restore_plans(
                         config,
                         rows,
@@ -1732,6 +1793,7 @@ def run_book_b_live_morning(
                         check_new_plan=allow_new_risk,
                     )
                     if prepare_only is not None:
+                        enter("prepare")
                         preparation_receipts = []
                         prepared_plan_ids: set[str] = set()
                         for plan in plans:
@@ -1752,9 +1814,12 @@ def run_book_b_live_morning(
                                 raise
                             preparation_receipts.append(proven_prepare)
                             prepared_plan_ids.add(plan.plan_id)
+                            require_opening_ready()
+                        stage_times["prepared"] = require_opening_ready().isoformat()
                     else:
                         prepared_plan_ids = set()
                     if plans and wait_for_submit_window is not None:
+                        enter("submit_wait")
                         submit_at = max(
                             plan.submit_not_before or plan.created_at
                             for plan in plans
@@ -1764,7 +1829,14 @@ def run_book_b_live_morning(
                         if now() < submit_at:
                             raise ValueError("LIVE_SUBMIT_WINDOW_NOT_REACHED")
                     execution_plans: list[TradePlan] = []
+                    enter("execution")
                     for plan in plans:
+                        if (config.opening_deadline is not None and _plan_requires_prepare(config, plan)
+                                and plan.plan_id not in prepared_plan_ids):
+                            from .book_b_live_recovery import close_unsubmitted_plan
+                            execution_receipts.append(close_unsubmitted_plan(
+                                config.state_dir, plan, reason="LIVE_OPENING_NOT_PREPARED"))
+                            continue
                         if plan.plan_id in prepared_plan_ids:
                             plan, refresh_receipt = (
                                 _refresh_stale_unclaimed_market_guard(
@@ -1824,13 +1896,31 @@ def run_book_b_live_morning(
                         state_path=str(config.state_dir),
                     )
         except (OSError, ValueError, RuntimeError) as exc:
+            failed_stage = stage
+            stage_times["failed"] = now().isoformat()
+            # Materialization can persist an intent before returning its list.
+            # Report those files without overwriting the original failure.
+            persisted_ids = tuple(plan_id for plan_id in candidate_plan_ids
+                                  if _plan_intent_path(config.state_dir, plan_id).is_file())
             receipt = _blocked_receipt(
                 config,
                 str(exc),
                 tuple(preparation_receipts),
-                plan_count=len(plans),
+                plan_count=max(len(plans), len(persisted_ids)),
                 execution_receipts=tuple(item.as_dict() for item in execution_receipts),
             )
+            if str(exc) in {"LIVE_OPENING_PREPARATION_DEADLINE_MISSED", "LIVE_OPENING_REQUIRED_REVIEW_NOT_READY"}:
+                from .book_b_live_recovery import close_unsubmitted_plan
+                closed = []
+                try:
+                    for plan_id in persisted_ids:
+                        plan = read_durable_live_plan_intent(json.loads(
+                            _plan_intent_path(config.state_dir, plan_id).read_text()))
+                        closed.append(close_unsubmitted_plan(config.state_dir, plan, reason=str(exc)).as_dict())
+                    receipt = replace(receipt, status="skipped", execution_receipts=tuple(closed))
+                except (OSError, ValueError, RuntimeError) as closure_error:
+                    receipt = replace(receipt, reason=f"{exc};CLOSURE_FAILED:{closure_error}",
+                                      execution_receipts=tuple(closed))
     finally:
         if preflight_attempted and restore_environment is not None:
             try:
@@ -1863,6 +1953,11 @@ def run_book_b_live_morning(
                       open_plan_reconciliations=open_reconciliations or receipt.open_plan_reconciliations,
                       review_rendezvous=review_receipt,
                       market_guard_refreshes=tuple(market_guard_refreshes))
+    stage_times["finished"] = now().isoformat()
+    receipt = replace(receipt, run_id=run_id, recovery_of=config.resume_plan_id,
+                      stage_times=stage_times, failed_stage=failed_stage,
+                      persisted_plan_ids=tuple(plan_id for plan_id in candidate_plan_ids
+                                              if _plan_intent_path(config.state_dir, plan_id).is_file()))
     _write_receipt(config, receipt)
     return receipt
 

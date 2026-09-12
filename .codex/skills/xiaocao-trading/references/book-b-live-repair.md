@@ -50,7 +50,9 @@ For `repair_required`, keep the same task alive and perform this loop:
    If the change touches account binding, code/side/price/quantity, submit
    claims or receipt mapping, validate that affected invariant before resuming.
    Never weaken a check or bypass a failing test to regain execution.
-4. Continue immediately through the exact narrow resume authorized by durable state.
+4. Before 09:30, continue immediately through the exact narrow resume authorized by durable state.
+   At or after the opening preparation deadline, close a proven unsubmitted intent
+   and skip that opening entry; do not turn an urgent fix into a late catch-up buy.
    If no safe continuation exists, adding a read-only or state-bound resume is
    part of the repair. Recheck current session/market eligibility through the
    existing guards; use only the contract's bounded guard-refresh exception.
@@ -103,3 +105,26 @@ After the terminal outcome, record the cause, fix, verification and residual
 blocker. Append its failure fingerprint and prevention to the Automation
 memory. If the same failure fingerprint already exists, the previous
 prevention failed: repair a deeper boundary or invariant before returning.
+
+## Formal same-plan recovery
+
+Use the existing dated intent and `--resume-plan-id`, never restart the producer:
+
+```bash
+PYTHONPATH=src .venv/bin/python scripts/book_b_live_morning.py --date YYYY-MM-DD --route native-app --resume-plan-id '<original-plan-id>' --recovery-action resume
+```
+
+`resume` continues an unclaimed BUY only before its opening preparation deadline,
+using unchanged plan hash and original dated freeze. A possible write takes the
+execution module's reconcile path without prepare or a new semantic review.
+`--recovery-action reconcile` explicitly requests that submitted-order branch.
+`--recovery-action close` only closes a proven unclaimed local intent, without
+accessing the App or Keychain; a claim/uncertain result rejects closure. It is
+not a broker cancellation. Terminal results are idempotent.
+
+Inspect `runs/history/<run_id>.json`: `recovery_of`, `stage_times`, `failed_stage`,
+`persisted_plan_ids` and execution receipts. The original daily failure receipt
+is preserved. Partial materialization must report persisted intents even when
+the builder failed before returning a plan list. The next normal checkpoint
+closes an expired unclaimed opening intent; uncertain effects remain open for
+reconciliation. Deadline pressure never weakens necessary judgment.

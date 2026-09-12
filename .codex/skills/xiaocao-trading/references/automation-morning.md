@@ -23,7 +23,7 @@ bash scripts/auto_daily.sh morning-execute
 ```
 
 Book-B real-capital execution is a third, deliberately independent
-09:20 Automation and process:
+09:15 Automation and process:
 
 ```bash
 PYTHONPATH=src .venv/bin/python scripts/book_b_live_morning.py --date today --route native-app
@@ -33,8 +33,8 @@ It may start before the dated freeze exists and wait only for that freeze. It
 must never run or await `morning-execute`, read a paper fill, or write
 `positions.jsonl`, `paper_trades.jsonl`, `paper_account.json`, or
 `paper_account_T.json`. Its state lives only under
-`output/live/book_b_live_execution/`. Before waiting, it switches to live and
-uses the account-bound Founder App full-query surface to read
+`output/live/book_b_live_execution/`. Before waiting, it verifies and keeps the native session ready. Once a non-empty
+freeze exists, it uses the account-bound Founder App full-query surface to read
 positions/orders/trades plus the account-bound funds summary embedded in the
 positions capture and
 atomically produce `book_b_live_allocation_facts_<date>.json` only from a
@@ -63,11 +63,14 @@ and broker-summary cash must equal top-level available cash. Because the native
 App has no mock/live data namespace, every exit must record the explicit
 `native_environment_restore_not_applicable` receipt and must not claim a fake
 mock restoration.
-At 09:20-09:30 the later `forward_eval` field `executable_fillable` may be
+At 09:15-09:30 the later `forward_eval` field `executable_fillable` may be
 absent. Absence is not false and must be deferred to the current submit-time
 market guard; an explicitly false value remains ineligible.
-The user has also authorized the same dated deterministic plan to continue
-during either continuous-auction session (`09:30-11:30` or `13:00-14:57`).
+The scheduled opening entry must finish necessary judgment and readonly prepare
+before 09:30 (Operating Contract §1b). At 09:28:30 warn only; never truncate
+required review. If unready at 09:30, skip the opening plan with no automatic
+intraday catch-up. Already submitted orders still require reconciliation.
+A plan prepared on time retains the 09:30 submit floor and normal market guards.
 Before materializing any new live intent, refresh the proprietary same-day
 trade status, current price, authoritative down price and timestamp with no
 cache; bind those facts into the durable plan. Lunch, the closing auction and
@@ -144,7 +147,7 @@ The orchestration must reach these stages:
 1. The prerecommendation stage runs `live_recommend.py`, freezes the usable 9:25 signal/evidence set, and writes `output/live/recommend_<date>.md` plus ★/★B/★M/★E snapshots. K/P is an optional ranking overlay: a missing model/cache must fall back to neutral K/P ranks and must not skip deterministic snapshot capture or ★E selection. Snapshot-capture failure is fatal and must never be reported as a genuine `★E NONE`.
 2. The same stage runs `build_intelligence_review_queue.py` to create the zero-fetch, zero-score review queue, then terminates so its final/inbox result is user-visible. Priority is open Book-B positions, then ★E, ★B and ★.
 3. The execution stage uses `wait_for_morning_freeze.py` to require the matching dated report and queue. Missing, malformed or wrong-date evidence fails closed; it never regenerates the signal set.
-4. `wait_for_agent_reviews.py` opens a bounded rendezvous. While the execution shell waits, read the dated queue and frozen evidence, then write structured reviews with `scripts/agent_intelligence_review.py`. Never substitute keyword scoring. If time expires, let base picks continue and report supporting-layer fallback.
+4. `wait_for_agent_reviews.py` opens a bounded rendezvous. While the execution shell waits, read the dated queue and frozen evidence, then write structured reviews with `scripts/agent_intelligence_review.py`. Never substitute keyword scoring. For this local paper branch, if time expires, let base picks continue and report supporting-layer fallback. The independent APP opening runner follows §1b instead.
 5. `paper_record.py --pick mode_exec_star --intelligence-trade shadow` records only executable ★E Book-B fills plus the matching Book-A reference rows. K/P, auxiliary indicators, intelligence and manual notional cannot restore a failed mode gate.
 6. `paper_record.py --trend-only` first checks whether Book T has an empty slot or a sellable switch candidate. A full aligned book returns immediately; otherwise it waits for the opening window and fills or performs a paired switch. No candidate or an unfilled replacement is normal.
 
@@ -247,3 +250,21 @@ terminate and the final ledger state to be checked. Never conflate the two.
 Normal bounded states: no raw candidates, no executable mode, no Book-T slot, review timeout with base-pick fallback, or a documented unfilled limit.
 
 Escalate: script failure/traceback, missing recommendation or paper-record stage, torn/corrupt snapshots, missing mode evidence, AI hard veto, insufficient cash, suspicious fill metadata, ledger inconsistency, or a run-flow/log disagreement.
+
+## Opening preparation and timing
+
+Start the normal runner at 09:15; prepare complete KOL source context while it
+waits for the producer. Reuse a still-valid, applicable published decision; do
+not require a newer timestamp solely because a review request was emitted.
+A necessary new judgment still needs source verification and independent review
+inside the same process's window. The review window ends no later than 09:30.
+Missing required approval skips the opening entry; it is not neutral approval.
+From 09:25, read countdown/stage events and keep tool waits at most 30 seconds.
+Do not start broad repository searches, full tests, packaging or Git operations
+in that window. Correctness checks remain mandatory. Record timings to identify
+slow stages after the run; do not promise a latency that has not been measured.
+
+Inspect `recommend_source_readiness_<date>.json` alongside the frozen report.
+Empty or partial responses and a stable candidate set do not prove all sources
+are complete. Preserve the selected observation's evidence and final-attempt
+state when the bounded wait expires. Do not rerun the producer after freezing.

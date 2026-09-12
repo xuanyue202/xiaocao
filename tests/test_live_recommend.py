@@ -263,7 +263,9 @@ def test_ready_wait_continues_after_first_nonempty_until_stable(monkeypatch) -> 
 
     monkeypatch.setattr(live_recommend, "_today_iso", lambda: "2026-05-25")
     monkeypatch.setattr(live_recommend, "run_strategy", fake_run_strategy)
-    monkeypatch.setattr(live_recommend._time, "sleep", lambda _seconds: None)
+    elapsed = [0.0]
+    monkeypatch.setattr(live_recommend._time, "monotonic", lambda: elapsed[0])
+    monkeypatch.setattr(live_recommend._time, "sleep", lambda seconds: elapsed.__setitem__(0, elapsed[0] + seconds))
 
     rows, actives = _run_strategy_when_ready(
         "2026-05-25",
@@ -274,7 +276,8 @@ def test_ready_wait_continues_after_first_nonempty_until_stable(monkeypatch) -> 
         stable_samples=2,
     )
 
-    assert calls["n"] == 4
+    assert calls["n"] == 7
+    assert elapsed[0] == 6
     assert [row["code"] for row in rows] == ["A.XSHE", "B.XSHE"]
     assert len(actives) == 2
 
@@ -405,7 +408,7 @@ def test_kronos_model_failure_does_not_block_mode_exec_snapshot_or_report(
     monkeypatch.setattr(live_recommend, "_resolve_date", lambda _date: "2026-08-05")
     monkeypatch.setattr(live_recommend, "_wait_for_recommendation_start", lambda _date: None)
     monkeypatch.setattr(live_recommend, "_client", lambda: _Client())
-    monkeypatch.setattr(live_recommend, "ApiDataSource", lambda *_args, **_kwargs: object())
+    monkeypatch.setattr(live_recommend, "ApiDataSource", lambda *_args, **_kwargs: SimpleNamespace(readiness={}))
     monkeypatch.setattr(
         live_recommend,
         "_run_strategy_when_ready",
@@ -508,7 +511,7 @@ def test_required_signal_capture_failure_is_not_reported_as_mode_exec_none(
     monkeypatch.setattr(live_recommend, "_resolve_date", lambda _date: "2026-08-05")
     monkeypatch.setattr(live_recommend, "_wait_for_recommendation_start", lambda _date: None)
     monkeypatch.setattr(live_recommend, "_client", lambda: _Client())
-    monkeypatch.setattr(live_recommend, "ApiDataSource", lambda *_args, **_kwargs: object())
+    monkeypatch.setattr(live_recommend, "ApiDataSource", lambda *_args, **_kwargs: SimpleNamespace(readiness={}))
     monkeypatch.setattr(
         live_recommend,
         "_run_strategy_when_ready",
