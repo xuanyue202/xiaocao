@@ -69,6 +69,8 @@ Use 4-space indentation and type hints where they clarify interfaces. Prefer sma
 
 Pytest uses `pytest.ini`, `tests` as the default path, and `e2e` as the live API marker. Name tests `test_*.py`. For live trading changes, cover normal flow and fail-closed safety, especially paper vs real-capital paths.
 
+Choose checks by the failure they can detect. Preserve behavioral tests for order identity, duplicate effects, amounts and accounting, plus deployment wiring and broken-link checks. Do not lock prose, document versions, model preferences, line counts or internal implementation spelling into tests. Documentation-only edits need a diff/link/config check, not a full trading suite. Follow the urgent-repair reference for minimum pre-resume validation; expand regression only for the affected behavior after the terminal outcome.
+
 ## Commit & Pull Request Guidelines
 
 Recent commits use concise imperative summaries, sometimes with a priority prefix such as `P0:`. Examples: `Add live trading automation migration support`, `Improve paper trading execution controls`. PRs should describe changes, list validation, call out live/API impact, and mention excluded artifacts.

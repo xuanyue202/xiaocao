@@ -1,6 +1,6 @@
 # 小草运营契约（Operating Contract, SSOT）
 
-**版本**：4.7
+**版本**：4.8
 **状态**：现行
 **适用范围**：所有 paper / 未来 real 的实盘环（live_recommend → paper_record → live_monitor → eod）与回测
 **关联实现**：`src/xiaocao/live/{safety,capital_keychain,foundersc_native_ax,foundersc_native_broker,trading_execution,book_b_live_lifecycle,book_b_live_intraday}.py`、`src/xiaocao/live/intelligence_policy.py`、`src/xiaocao/strategy/{mode_switch,trend_rules,kol_reference}.py`、`native/foundersc_ax_executor/`、`kronos_screen/scripts/{capture_signals,forward_eval,paper_record,settle_book_a,settle_book_t,decompose_pnl,quality_governor}.py`、`scripts/{book_b_live_morning,book_b_live_intraday,live_monitor,research_mode_switch_replay}.py`
@@ -40,10 +40,16 @@ T+1、流动性、账户隔离和精确一次规则。知晓仿真不改变候�
 
 故障恢复优先修复 AX/项目代码，通过项目执行端口推进当前仿真流程；取消
 Agent 直接操纵交易表单下单的应急分支，界面观察仅辅助诊断。恢复分成
-**紧急修复 → 最小必要验证 → 同计划窄恢复及终态回读 → 根因修复与完整回归**。
+**紧急修复 → 最小必要验证 → 同计划窄恢复及终态回读 → 根因修复与必要回归**。
 具体步骤以交易 skill 的 `references/book-b-live-repair.md` 为准。完整测试、
 长篇假设分析、复盘和 commit/push 不占用紧急恢复前的交易窗口；会影响当前
 订单正确性的检查必须先完成。未知提交仍先对账，绝不通过重放获得“成功”。
+
+验证按能发现的实际错误选择：保留订单、金额、成交、重复副作用、会计及部署
+连接检查；删除仅锁定文案、版本号、模型偏好、篇幅或实现写法的断言。文档改动
+检查差异、链接与配置即可，不要求交易测试全套通过。事后回归也只覆盖受影响
+行为，新的失败或未解决疑点才扩大范围；复盘记录原因、修复和验证，不凑假设
+数量或固定问答格式。测试通过数量不等于交易已完成。
 
 ## 2. 架构原则：LLM 不进确定性回路
 
@@ -423,6 +429,7 @@ KOL 断言、候选假设或报告升级为策略真值，也不替代永久参�
 
 | 版本 | 日期 | 说明 |
 |------|------|------|
+| 4.8 | 2026-09-12 | 简化验证与复盘：删除文案/版本/模型/篇幅机械断言，保留能检出实际错误的行为与部署检查；按变更影响选择回归，取消文档改动全套交易测试及固定假设数量/复盘格式要求。 |
 | 4.7 | 2026-09-12 | 登记用户说明的本地数字模拟与 APP 服务端仿真分级；保留正式执行纪律、独立账本及既有运行门。故障恢复改为 AX/项目代码紧急修复、最小必要验证、同计划窄恢复及终态回读优先，随后根因修复与完整回归；界面仅辅助诊断。 |
 | 4.6 | 2026-09-08 | 按用户授权移除 KOL `current_checks` 的固定 15 分钟 TTL：语义有效性只由最长 24 小时的显式 `valid_until`、新来源与自然语言失效条件控制；交易消费端继续独立刷新行情、账户、lot/T+1、流动性与资金安全事实，避免 sparse 间隔天然触发重复 Astra 全量复核。 |
 | 4.3 | 2026-09-07 | 修正方正 native 同日 BUY 后的资金语义：三表 account snapshot 在同一成交表证明正数量 BUY、可用资金与证券市值精确闭合且可取<=可用<余额时，允许只读 lifecycle 使用 available-cash 分支；allocation 仍只认常态余额分支，不扩大买入资金或订单权限。 |

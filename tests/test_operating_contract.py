@@ -286,20 +286,6 @@ def test_real_capital_allow_fails_closed_when_audit_unwritable(tmp_path):
     assert not d.allowed and "audit write failed" in d.reason
 
 
-def test_contract_declares_book_b_live_lifecycle_and_settlement_authority():
-    contract = (ROOT / "docs" / "OPERATING_CONTRACT.md").read_text(encoding="utf-8")
-
-    assert "**版本**：4.7" in contract
-    assert "实盘全生命周期" in contract
-    assert "broker_reconciled_book_b_nav" in contract
-    assert "book_b_live_intraday.py" in contract
-    assert "纸盘账本保持隔离" in contract
-    assert "BUY 后必须为" in contract
-    assert "恰好一次" in contract
-    assert "no-cache guard sidecar" in contract
-    assert "禁止第二次刷新、复活 terminal plan 或补发" in contract
-
-
 def test_paper_fill_retries_when_limit_misses_but_realtime_is_within_basket():
     pr = _paper_record()
     # open=10 -> L=min(10*1.005, basket=10.10)=10.05; window low 10.06 never trades through L.

@@ -20,12 +20,8 @@ EXPECTED_BRANCHES = {
 }
 
 
-def test_xiaocao_skill_is_a_progressive_disclosure_router() -> None:
+def test_xiaocao_skill_routes_to_existing_branch_files() -> None:
     text = SKILL_MD.read_text(encoding="utf-8")
-
-    assert len(text.splitlines()) <= 150
-    assert "Read only the matching branch" in text
-    assert "Do not preload sibling branches" in text
 
     for name in EXPECTED_BRANCHES:
         assert f"(references/{name})" in text
@@ -41,22 +37,3 @@ def test_xiaocao_skill_local_markdown_links_resolve() -> None:
             assert (source.parent / target).resolve().is_file(), (
                 f"broken Markdown link in {source}: {target}"
             )
-
-
-def test_xiaocao_skill_keeps_high_risk_branch_contracts() -> None:
-    combined = "\n".join(
-        path.read_text(encoding="utf-8")
-        for path in [SKILL_MD, *(SKILL_DIR / "references").glob("*.md")]
-    )
-
-    for marker in (
-        "wait_for_agent_reviews.py",
-        "mode_exec_star",
-        "SELL_BLOCKED / LIMIT_DOWN_NO_BID",
-        "run_flow_<date>_eod.json",
-        "A/B/C/D/E/F",
-        "AUTO_APPLIED",
-        "BYHOUR",
-        "date_kline",
-    ):
-        assert marker in combined
