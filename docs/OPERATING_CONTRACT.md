@@ -1,6 +1,6 @@
 # 小草运营契约（Operating Contract, SSOT）
 
-**版本**：4.8
+**版本**：4.9
 **状态**：现行
 **适用范围**：所有 paper / 未来 real 的实盘环（live_recommend → paper_record → live_monitor → eod）与回测
 **关联实现**：`src/xiaocao/live/{safety,capital_keychain,foundersc_native_ax,foundersc_native_broker,trading_execution,book_b_live_lifecycle,book_b_live_intraday}.py`、`src/xiaocao/live/intelligence_policy.py`、`src/xiaocao/strategy/{mode_switch,trend_rules,kol_reference}.py`、`native/foundersc_ax_executor/`、`kronos_screen/scripts/{capture_signals,forward_eval,paper_record,settle_book_a,settle_book_t,decompose_pnl,quality_governor}.py`、`scripts/{book_b_live_morning,book_b_live_intraday,live_monitor,research_mode_switch_replay}.py`
@@ -50,6 +50,18 @@ Agent 直接操纵交易表单下单的应急分支，界面观察仅辅助诊�
 检查差异、链接与配置即可，不要求交易测试全套通过。事后回归也只覆盖受影响
 行为，新的失败或未解决疑点才扩大范围；复盘记录原因、修复和验证，不凑假设
 数量或固定问答格式。测试通过数量不等于交易已完成。
+
+### 1b. Book B 开盘准备截止与恢复（2026-09-12）
+
+现有 Book B live morning Automation 提前至交易日 **09:15** 启动；09:23 推荐生产和09:25 本地纸面执行保持原时间、进程与账本边界。提前时间用于原生会话预检、准备完整 KOL 来源上下文和复用仍有效的已发布决策；不提前冻结竞价数据。资金分配事实在冻结数据可用后按需现读，避免使用提前十分钟的账户快照。
+
+正常目标是 **09:30 前完成必要判断、独立审核和全部只读 prepare**。09:25–09:30 在阶段切换和等待心跳记录当前时间、剩余秒数；09:28:30 仅提醒，不能截断必要分析、弱化门槛或制造审批。当前已验证且仍适用的 KOL 决策可复用，不要求每次重新等待一份；需要的审核未完成时不能用 neutral fallback 冒充通过。
+
+09:30 是开盘准备截止，同时仍是最早 submit 时间。因此目标不是 09:30 前成交。未按时完成准备的本次开盘计划记为 skipped，不因修复完成或新判断到达而自动盘中补买。已按时准备的计划继续正常提交时段与报价检查；已有 claim/未知提交始终继续精确对账，截止时间不取消或重放订单。本规则收窄历史早盘 continuation 授权，不修改底层通用交易时段或其他独立策略。
+
+恢复统一使用 `scripts/book_b_live_morning.py --resume-plan-id <原 plan_id> --recovery-action resume|reconcile|close`：未提交且未过准备截止才可沿原冻结计划恢复；已有可能副作用只能对账；无 claim 的过期/放弃 intent 仅做本地 skipped 关闭。不得重新生成计划、改经济字段或覆盖原失败回执。各次运行记录 run_id、recovery_of、阶段时间、失败阶段和已持久化计划；恢复回执写入 history，原日回执保留。盘中检查会关闭过期未提交 intent，未知提交不会因此被当成未提交。
+
+来源准备记录请求日期、观察时间、行数、响应 hash、缺失代码和错误/空响应状态。两次结果相同不证明来源齐备，须走完有界确认窗口；缺少服务端完整性证明时保留 unproven，不能把无可执行候选说成所有来源确实无信号。保留最佳已观测结果时，其来源证据与对应观察轮次绑定。
 
 ## 2. 架构原则：LLM 不进确定性回路
 
@@ -141,7 +153,7 @@ KOL 断言、候选假设或报告升级为策略真值，也不替代永久参�
 
 - **阶段一执行缝**：`src/xiaocao/live/trading_execution.py`、
   `scripts/book_b_execute.py` 与独立的 `scripts/book_b_live_morning.py` 提供
-  可审计的 broker-neutral probe/prepare/reconcile/recover 边界。09:20 live
+  可审计的 broker-neutral probe/prepare/reconcile/recover 边界。09:15 live
   morning 只消费当日冻结的确定性 ★E 与 broker-sourced allocation facts，
   不调用或等待 `auto_daily.sh morning-execute`，不读取模拟成交，也不写
   canonical paper ledger。该 seam 只走方正证券原生 App；不得初始化、登录或
@@ -168,7 +180,7 @@ KOL 断言、候选假设或报告升级为策略真值，也不替代永久参�
   100 股余额一次性卖出，禁止把部分成交形成的零股永久卡死；BUY 数值限价必须在 execution boundary 向下
   对齐 0.01 元股票 tick，禁止四舍五入越过原始限价；条件单、网格、定时/定投、集合竞价、
   TWAP/VWAP/POV/冰山及价格/时间分段均因引入触发、相对价格、重复、竞价或拆单
-  语义而不得替代。09:20 只做 App/account/allocation/prepare 预检并维持心跳；
+  语义而不得替代。09:15 只做 App/account/allocation/prepare 预检并维持心跳；
   此时 `forward_eval` 的事后 `executable_fillable` 尚不可知，字段缺省不得冒充 false，
   但显式 false 仍必须拒绝，并由 submit 前实时 market guard 决定当下可交易性。
   BUY 最早 09:30 才允许进入 submit。提交前必须同时通过账户绑定、三张 native 行表与
@@ -178,7 +190,7 @@ KOL 断言、候选假设或报告升级为策略真值，也不替代永久参�
   （`T` 或 `T` 后接数字）归一为 trading；其他未知前缀继续 fail-closed。
   若同一 BUY intent 在任何 submit claim 之前因本地/只读 prepare 修复而令原先有效的
   market guard 超时，只有在 read-only prepare 再次证明 `submitted/saved/started=false`
-  且表单已清空、execution state 仍为 unclaimed、无 broker order-id/chain uncertainty、仍在
+  且表单已清空、execution state 仍为 unclaimed、无 broker order-id/chain uncertainty、未触及 §1b 的准备截止，且执行时仍在
   `09:30–11:30` 或 `13:00–14:57` 时，才可为原 plan hash 持久化**恰好一次**不可变的
   no-cache guard sidecar。sidecar 只能更新交易状态、当前价、权威跌停价和观察时间；代码、
   方向、数量、限价、basket、allocation proof、plan id/hash 与资本授权全部不变。它必须先
@@ -373,23 +385,23 @@ KOL 断言、候选假设或报告升级为策略真值，也不替代永久参�
 - **real_capital 必须同时**：
   1. 固定 macOS Keychain 项 `xiaocao.live.capital.toggle` / account `runtime` 的值严格为 `true`；
   2. 签名授权 `output/live/live_authorization.json`（HMAC 对固定 Keychain 项 `xiaocao.live.capital.signing` / account `runtime` 校验）。授权**带 scope（max_notional / side / code 白名单）与到期**。
-- 09:20 runner 先做无敏感信息 preflight，并在每个 submit-capable 资金门重新现读两项 Keychain runtime material；只把兼容映射作为函数参数传给 `safety.py`，不得写入 `os.environ`、argv、日志、回执、takeover capsule 或任何落盘证据。Keychain 可读本身不是订单授权；仍必须有同一密钥验证通过且未过期、未越权的授权文件。
-- 两个 Keychain 项与 HMAC 授权都属于同一 macOS 登录主体，因此这是用户明确批准的**同主体运行门**，不是两个安全主体的密码学隔离；不得再声称“agent 从技术上绝对无法自签”。交互命令 `scripts/configure_live_capital_keychain.py` 用于创建/启用固定 runtime 项，`scripts/authorize_live.py` 用于铸造 scoped authorization；09:20 Automation 的运行契约禁止调用两者、创建/旋转密钥或铸权。
+- 09:15 runner 先做无敏感信息 preflight，并在每个 submit-capable 资金门重新现读两项 Keychain runtime material；只把兼容映射作为函数参数传给 `safety.py`，不得写入 `os.environ`、argv、日志、回执、takeover capsule 或任何落盘证据。Keychain 可读本身不是订单授权；仍必须有同一密钥验证通过且未过期、未越权的授权文件。
+- 两个 Keychain 项与 HMAC 授权都属于同一 macOS 登录主体，因此这是用户明确批准的**同主体运行门**，不是两个安全主体的密码学隔离；不得再声称“agent 从技术上绝对无法自签”。交互命令 `scripts/configure_live_capital_keychain.py` 用于创建/启用固定 runtime 项，`scripts/authorize_live.py` 用于铸造 scoped authorization；09:15 Automation 的运行契约禁止调用两者、创建/旋转密钥或铸权。
 - 任一缺失/签名被篡改（含非 ASCII 签名）/过期/越权/**或越权属性缺省**（如限定 max_notional 却未指定 notional、限定 side/code 却为 None）→ **硬拒**（fail-closed）。
 - 审计：real_capital **ALLOW 必须可持久审计**——若审计写失败则转为 DENY（不下不可审计的真实单）；DENY/always-allowed 行为 best-effort（审计永不让交易回路崩溃）。`require_capital_action` 拒绝时**只**抛 `CapitalActionDenied`。
 - 唯一实现 `src/xiaocao/live/safety.py`；真实下单 **MUST** 经 `require_capital_action(...)`，仅在 ALLOW 时下单。
 - **现状**：阶段一执行缝已在任何 broker adapter 之前调用
-  `require_capital_action(...)`；独立 09:20 Automation 只启动隔离 live seam，
+  `require_capital_action(...)`；独立 09:15 Automation 只启动隔离 live seam，
   不改变 09:25 模拟任务。Founder `native-app` 只有在 App/account、三张行表与
   同次 positions 五字段资金摘要、表单和
   本地对账均成立时才动态暴露 `supports_submit=true`；OpenCLI 不参与该 route。
   最终 run receipt 必须持久化 `website_authentication.status=not_used`、native
   PassGuard/Keychain 恢复证据和新委托 delta；submit 只有在唯一新增 order-id 映射完整时
   才能 ACK，歧义一律 UNKNOWN/no-retry；
-  用户已明确授权同一 dated freeze 在 A 股连续竞价盘中继续执行：BUY 只允许
+  底层执行器的连续竞价能力仅允许 BUY 在
   `09:30–11:30` 或 `13:00–14:57`，午休、收盘集合竞价和盘后继续硬阻断；每个
   新 plan 在持久化 intent 前必须从专有 API 刷新并绑定同日、15 分钟内的交易状态、
-  现价、跌停价和时间戳。该 continuation 不得改变冻结选股、allocation、初始限价、
+  现价、跌停价和时间戳。该底层能力不构成早盘自动补买授权：本节 §1b 的 09:30 准备截止优先。不得改变冻结选股、allocation、初始限价、
   资金门或 exact-once；恢复已有 intent 仍只对账，不重新刷新经济字段或提交。
   exact-order 撤单已实现并实盘验收；自动补单仍禁用；App 重启后的 CAPTCHA 按独立慢恢复证据判定。
 
@@ -419,7 +431,7 @@ KOL 断言、候选假设或报告升级为策略真值，也不替代永久参�
 - [x] Book T snapshot/account/monitor key 均带 `book` 命名空间；B/T 同票同日不互相覆盖；T 宽止损不调用短线 strong-hold/composite。
 - [x] Book B 与历史回放共用 `strategy.mode_switch`；D-1 outcome 不进入 D 日早盘状态；`COLD/UNKNOWN/BJSE` 无成交权限；`--notional` 不能绕过 3 席位、每模式 1 只和批次 50% 上限。
 - [x] 模式证据保留 25%/45%/50% 验证权重；`ACTIVE` 同时通过候选池和四指数证据，近期双基准均值与多数日转正可直接升格，任一均值转负只冷却到 `PROVISIONAL`。
-- [x] 独立 09:20 Book-B live morning 与 09:25 模拟任务隔离；唯一写路由为 account-bound `native-app`，OpenCLI 不参与 native 登录/查询/交易；09:30 前只预检/心跳；盘中 continuation 仅覆盖 `09:30–11:30` / `13:00–14:57` 且新 intent 前刷新专有实时 market guard；无 claim 的本地 prepare 修复只允许一次 plan-hash-bound 行情 sidecar 并先执行 basket 放弃线；不读写模拟成交或 canonical paper ledger；submit 前零 exact-tuple baseline，submit 后只认唯一新增 order-id，歧义保持 UNKNOWN/reconcile-only/no-retry；exact-order 撤单已实盘验收，自动补单禁用，App 重启 CAPTCHA 保持独立慢恢复。
+- [x] 独立 09:15 Book-B live morning 与 09:25 模拟任务隔离；唯一写路由为 account-bound `native-app`，OpenCLI 不参与 native 登录/查询/交易；09:30 前只预检/心跳；09:30 前必要判断与准备未完成即跳过，不自动盘中补买；已准备计划在 submit floor 后仍通过专有实时 market guard；无 claim 的本地 prepare 修复只允许一次 plan-hash-bound 行情 sidecar 并先执行 basket 放弃线；不读写模拟成交或 canonical paper ledger；submit 前零 exact-tuple baseline，submit 后只认唯一新增 order-id，歧义保持 UNKNOWN/reconcile-only/no-retry；exact-order 撤单已实盘验收，自动补单禁用，App 重启 CAPTCHA 保持独立慢恢复。
 - [x] allocation proof 复用 `mode_switch.plan_board_lot_orders`，以滚动结算 NAV 验证批次/敞口/现金/slot 上限；ownership evidence 不得替代 canonical paper ledger。
 - [x] Book-B 实盘 owned-lot / 三表+positions 资金摘要 / 日间退出 / SELL intent / EOD settlement 已形成独立生命周期；纸盘 writer 不参与，成交执行仍由 native `TradingExecution` 端口独占。
 - [x] 同一 logical account 由 account-level writer lock 串行推进；异常写入 durable takeover capsule，WeCom pending incident 可重试且已送达事件幂等。
@@ -429,6 +441,7 @@ KOL 断言、候选假设或报告升级为策略真值，也不替代永久参�
 
 | 版本 | 日期 | 说明 |
 |------|------|------|
+| 4.9 | 2026-09-12 | Book B 提前09:15准备；09:28:30仅提醒，09:30未完成必要判断和prepare即跳过，不自动盘中补买；正式原计划恢复/对账/本地关闭、历史运行回执、来源观察与有效KOL复用；当前执行仓位不变，领域历史提案移入研究归档。 |
 | 4.8 | 2026-09-12 | 简化验证与复盘：删除文案/版本/模型/篇幅机械断言，保留能检出实际错误的行为与部署检查；按变更影响选择回归，取消文档改动全套交易测试及固定假设数量/复盘格式要求。 |
 | 4.7 | 2026-09-12 | 登记用户说明的本地数字模拟与 APP 服务端仿真分级；保留正式执行纪律、独立账本及既有运行门。故障恢复改为 AX/项目代码紧急修复、最小必要验证、同计划窄恢复及终态回读优先，随后根因修复与完整回归；界面仅辅助诊断。 |
 | 4.6 | 2026-09-08 | 按用户授权移除 KOL `current_checks` 的固定 15 分钟 TTL：语义有效性只由最长 24 小时的显式 `valid_until`、新来源与自然语言失效条件控制；交易消费端继续独立刷新行情、账户、lot/T+1、流动性与资金安全事实，避免 sparse 间隔天然触发重复 Astra 全量复核。 |

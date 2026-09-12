@@ -21,7 +21,7 @@ def test_market_schedules_keep_distinct_ids_and_china_wall_clock() -> None:
     expected = {
         "xiaocao-daily-morning": ("9", "23"),
         "xiaocao-daily-morning-execution": ("9", "25"),
-        "xiaocao-book-b-live-morning": ("9", "20"),
+        "xiaocao-book-b-live-morning": ("9", "15"),
         "xiaocao-intraday-monitor": ("9", "35,45,55"),
         "xiaocao-intraday-monitor-05": ("10,13", "25,55"),
         "xiaocao-intraday-risk-precheck-1425": ("14", "25"),

@@ -672,7 +672,7 @@ def test_cli_rendezvous_waits_for_new_reviewed_policy_and_flushes_request(tmp_pa
     cli = _morning_cli(monkeypatch)
     request = _review_request(tmp_path)
     root = Path(request["policy_root"])
-    _publish(root, MORNING - timedelta(seconds=1), scale=0)
+    _publish(root, MORNING - timedelta(hours=2), scale=0, lifetime=60)
     elapsed = [0.0]
     flushed = []
     real_print = print
@@ -767,13 +767,13 @@ def test_cli_review_artifacts_are_immutable(tmp_path, monkeypatch):
     assert path.read_bytes() == before and not list(tmp_path.glob(".review-*"))
 
 
-def test_review_timeout_ignores_old_decision_but_does_not_ignore_fresh_skip(tmp_path):
+def test_review_timeout_preserves_still_valid_prior_decision_and_fresh_skip(tmp_path):
     config = _morning(tmp_path)
     _publish(config.policy_root, MORNING - timedelta(seconds=1), scale=0)
     seen = []
     receipt = run_book_b_live_morning(config, now=lambda: MORNING, risk_provider=_risk,
         execute=_execute_capture(seen), review_rendezvous=lambda _: {"status": "timed_out", "fallback": "neutral"})
-    assert len(seen) == 1 and receipt.policy_consumptions[0]["reason"] == "LIVE_REVIEW_TIMEOUT_NEUTRAL_FALLBACK"
+    assert not seen  # still-valid prior scale=0 is not erased by a later timeout
     other = tmp_path / "fresh"
     other.mkdir()
     config = _morning(other)
@@ -851,3 +851,38 @@ def test_rendezvous_does_not_accept_a_policy_read_that_finishes_after_timeout(tm
     receipt = cli._review_rendezvous(request, now=lambda: MORNING + timedelta(seconds=elapsed[0]),
         monotonic=lambda: elapsed[0], sleep=lambda _: pytest.fail("read already exhausted the wait budget"))
     assert receipt["status"] == "timed_out" and receipt["supporting_health"] == "degraded"
+
+
+def test_opening_required_review_timeout_skips_without_neutral_approval(tmp_path):
+    config = replace(_morning(tmp_path), opening_deadline=MORNING)
+    before = MORNING - timedelta(seconds=30)
+    result = run_book_b_live_morning(config, now=lambda: before,
+        review_rendezvous=lambda _: {"status": "timed_out", "fallback": "neutral"},
+        execute=lambda _: pytest.fail("required review did not finish"))
+    assert result.status == "skipped" and result.plan_count == 0
+    assert result.reason == "LIVE_OPENING_REQUIRED_REVIEW_NOT_READY"
+
+
+def test_cli_reuses_current_reviewed_policy_without_wait(tmp_path, monkeypatch):
+    cli = _morning_cli(monkeypatch)
+    request = _review_request(tmp_path)
+    _publish(Path(request["policy_root"]), MORNING - timedelta(seconds=30), identifier="current")
+    result = cli._review_rendezvous(request, now=lambda: MORNING, monotonic=lambda: 0,
+        sleep=lambda _: pytest.fail("valid current judgment needs no replacement"))
+    assert result["status"] == "validated" and result["waited_seconds"] == 0
+    assert result["decision_id"] == "current"
+
+
+def test_opening_review_warning_does_not_cut_off_needed_judgment(tmp_path, monkeypatch):
+    cli = _morning_cli(monkeypatch)
+    request = _review_request(tmp_path, budget=300)
+    start = MORNING - timedelta(minutes=5)
+    request.update(requested_at=start.isoformat(), opening_deadline=MORNING.isoformat())
+    elapsed = [0.0]
+    def sleep(seconds):
+        elapsed[0] += seconds
+        if elapsed[0] >= 240:
+            _publish(Path(request["policy_root"]), start + timedelta(seconds=elapsed[0]), identifier="quality-review")
+    result = cli._review_rendezvous(request, now=lambda: start + timedelta(seconds=elapsed[0]),
+        monotonic=lambda: elapsed[0], sleep=sleep)
+    assert result["status"] == "validated" and result["waited_seconds"] == 240

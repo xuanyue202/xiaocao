@@ -29,7 +29,7 @@ Completion means the requested command reached a terminal state and the branch-s
 - Judgment artifacts (`XIAOCAO_PLAYBOOK`, posture timeline, candidate hypotheses) are priors only; they cannot tune parameters or validate a strategy. The separately user-authorized bounded KOL decision interface is governed by Operating Contract §2a; never infer its authority from raw source text. Only a validated v2 `kol-xiaocao` explicit mode-follow entry may precede normal Book-B mode rotation, and only inside the immutable same-day frozen candidate set; it never restores UNKNOWN or bypasses execution safety. For posture/exit judgment, start at `reference/experience/README.md` and follow only its relevant pointer.
 - Keep Books A, B and T separate. Same-code overlap is valid. For current truth, prefer `positions.jsonl`, `paper_trades.jsonl` and matching account files over stale holdings snapshots.
 - Book-B live lifecycle is isolated from the paper runtime: the separate
-  09:20 task must never call or wait for the 09:25 `morning-execute`, replace
+  09:15 task must never call or wait for the 09:25 `morning-execute`, replace
   the canonical `paper_record.py` writer, consume a simulated fill, or invent
   a broker fill. It requires
   ★E/allocation proof for BUY, monitor-authorized owned-lot evidence for SELL,

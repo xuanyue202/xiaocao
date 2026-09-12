@@ -447,6 +447,7 @@ def _run_book_b_live_intraday_locked(
         state_root,
         trade_date=trade_date,
         execute=execute,
+        now=current,
     )
     if open_execution_plan_ids(state_root):
         raise ValueError("LIVE_BOOK_B_OPEN_EXECUTION_RECONCILE_REQUIRED")

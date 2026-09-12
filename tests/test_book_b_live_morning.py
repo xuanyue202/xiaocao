@@ -527,7 +527,7 @@ def test_live_morning_rejects_any_logical_account_except_primary(tmp_path: Path)
         )
 
 
-def test_live_morning_produces_allocation_facts_before_waiting_for_freeze(
+def test_empty_freeze_needs_no_allocation_read(
     tmp_path: Path,
 ) -> None:
     allocation = tmp_path / "book_b_live_allocation_facts_2026-08-24.json"
@@ -560,8 +560,8 @@ def test_live_morning_produces_allocation_facts_before_waiting_for_freeze(
     )
 
     assert receipt.status == "no_action"
-    assert events == ["allocation", "freeze"]
-    assert json.loads(allocation.read_text(encoding="utf-8"))["source"] == "foundersc_reconcile"
+    assert events == ["freeze"]
+    assert not allocation.exists()
 
 
 def test_live_morning_rejects_snapshot_changed_after_freeze_receipt(tmp_path: Path) -> None:
