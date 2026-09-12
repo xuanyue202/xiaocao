@@ -88,3 +88,15 @@ def test_killed_python_does_not_release_surface_under_running_helper(tmp_path):
                 if process.is_alive():
                     process.terminate()
                 process.join(5)
+
+
+def test_queued_read_advances_injected_clock_instead_of_rejecting_fresh_capture(tmp_path, monkeypatch):
+    from datetime import datetime, timedelta, timezone
+    monkeypatch.setattr(session, 'session_path', lambda: tmp_path/'app.lock')
+    ticks = iter([100.,145.])
+    monkeypatch.setattr(session, 'monotonic', lambda: next(ticks))
+    @session.serialized_app_operation
+    def read(*, now):
+        return now
+    before = datetime(2026,9,12,1,25,tzinfo=timezone.utc)
+    assert read(now=before) == before+timedelta(seconds=45)

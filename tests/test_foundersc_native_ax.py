@@ -730,3 +730,11 @@ def test_swift_observation_ignores_focused_accessory_windows() -> None:
     assert "guard dismissKnownFounderAccessoryWindow(running) else" in source
     assert "normalizeFounderWindowForAction" in source
     assert 'if command != "probe"' in source
+
+
+def test_python_query_owns_reread_budget_and_requests_one_native_capture(tmp_path):
+    runner = HelperRunner(_receipt(status='query_parse_unproven'))
+    client = FounderscNativeAXClient(helper_path=_helper(tmp_path),runner=runner)
+    assert client.read_query(kind='today-orders',expected_fingerprint='123******890').status == 'query_parse_unproven'
+    assert len(runner.calls) == 1
+    assert '--single-capture' in runner.calls[0][0]

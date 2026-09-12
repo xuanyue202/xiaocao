@@ -71,7 +71,7 @@ def test_grid_cannot_hide_rows_or_truncate_its_row_count(fault):
 
 
 @pytest.mark.parametrize('glyph,price,traded,allowed', [
-    ('O', '0.000', False, True), ('OO', '0.000', False, False),
+    ('O', '0.000', False, True), ('o', '0.000', False, True), ('OO', '0.000', False, False),
     ('O', '1.000', False, False), ('O', '0.000', True, False),
 ])
 def test_isolated_zero_ocr_alias_requires_zero_price_and_independent_zero_trades(glyph, price, traded, allowed):
@@ -94,7 +94,9 @@ def test_isolated_zero_ocr_alias_requires_zero_price_and_independent_zero_trades
             expected_fund_account_fingerprint='123******890',
             now=datetime.fromisoformat(OBSERVED_AT.replace('Z','+00:00')))
     if allowed:
-        assert read()['tables']['today-orders']['rows'][0]['成交数量'] == '0'
+        table = read()['tables']['today-orders']
+        assert table['rows'][0]['成交数量'] == '0'
+        assert table['bounded_zero_fill_normalizations'] == [{'order_id':'6000002','raw':glyph}]
         assert native.query_calls.count('today-orders') == 2
     else:
         with pytest.raises(FounderscNativeAXError):

@@ -586,8 +586,8 @@ class FounderscNativeAXBrokerAdapter(BrokerAdapter):
                     zero_normalizations = []
                     if bounded_order_readback:
                         for row in rows:
-                            if str(row.get("成交数量") or "").strip() == "O":
-                                zero_normalizations.append({"order_id": row["委托编号"], "raw": "O"})
+                            if str(row.get("成交数量") or "").strip().upper() == "O":
+                                zero_normalizations.append({"order_id": row["委托编号"], "raw": row["成交数量"]})
                                 row["成交数量"] = "0"
                     try:
                         self._validate_rows(kind, rows)
@@ -655,7 +655,7 @@ class FounderscNativeAXBrokerAdapter(BrokerAdapter):
                 # Observed OCR capital O in the zero-fill cell. Only this
                 # bounded second-read path may interpret it, with a zero
                 # execution price and independent per-order trade proof.
-                if filled != "O" or str(row.get("成交价格") or "").strip() not in {"0", "0.0", "0.00", "0.000", "0.0000"}:
+                if filled.upper() != "O" or str(row.get("成交价格") or "").strip() not in {"0", "0.0", "0.00", "0.000", "0.0000"}:
                     return False
             if _status(row.get("状态说明")) not in {
                 BrokerStatus.ACCEPTED,
@@ -707,6 +707,7 @@ class FounderscNativeAXBrokerAdapter(BrokerAdapter):
                 orders.get("targeted_reread_used")
             ),
             "observed_order_row_count": len(orders.get("rows") or []),
+            "bounded_zero_fill_normalizations": list(orders.get("bounded_zero_fill_normalizations") or []),
         }
 
     @staticmethod
@@ -771,6 +772,7 @@ class FounderscNativeAXBrokerAdapter(BrokerAdapter):
             "baseline_observed_at",
             "baseline_order_readback_mode",
             "baseline_bounded_low_confidence_headers",
+            "baseline_bounded_zero_fill_normalizations",
             "baseline_targeted_order_reread_used",
             "comparison",
             "native_helper_status",
@@ -2537,6 +2539,7 @@ class FounderscNativeAXBrokerAdapter(BrokerAdapter):
                 "bounded_order_readback_used": bool(
                     readback.get("bounded_order_readback_used")
                 ),
+                "bounded_zero_fill_normalizations": list(readback.get("bounded_zero_fill_normalizations") or []),
             }
             if kind == "positions":
                 table["summary_values"] = dict(

@@ -81,7 +81,7 @@ def test_manifest_tampering_and_aggregate_budget_make_zero_new_orders(batch_app)
     assert native.submit_calls == native.cancel_calls == 2
 
 
-@pytest.mark.parametrize("shares", [200,300])
+@pytest.mark.parametrize("shares", [200,300,400])
 def test_batch_quantity_switches_are_preserved(batch_app, shares):
     run, native, directory = batch_app
     assert run([.34,.35,.36,.37,.38], shares=shares) == 0

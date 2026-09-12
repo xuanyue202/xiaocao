@@ -10,8 +10,10 @@ import fcntl
 import os
 import threading
 from contextlib import contextmanager
+from datetime import datetime, timedelta
 from functools import wraps
 from pathlib import Path
+from time import monotonic
 
 
 _mutex = threading.RLock()
@@ -66,6 +68,12 @@ def serialized_app_operation(method):
     """Fence an entire multi-command adapter operation, including reads."""
     @wraps(method)
     def wrapped(*args, **kwargs):
+        started = monotonic()
         with app_session():
+            # An injected as-of clock must advance while queued just like the
+            # real clock; otherwise a fresh broker capture appears to be from
+            # the future after a long submit owns the APP.
+            if isinstance(kwargs.get("now"), datetime):
+                kwargs = {**kwargs, "now": kwargs["now"] + timedelta(seconds=monotonic() - started)}
             return method(*args, **kwargs)
     return wrapped

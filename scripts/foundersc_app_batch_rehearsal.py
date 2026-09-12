@@ -173,7 +173,7 @@ def main():
     parser.add_argument("--run-id", required=True)
     parser.add_argument("--fingerprint", required=True)
     parser.add_argument("--code", default="512010.XSHG")
-    parser.add_argument("--shares", type=int, choices=(100, 200, 300), default=100)
+    parser.add_argument("--shares", type=int, choices=(100, 200, 300, 400), default=100)
     parser.add_argument("--prices", required=True, type=float, nargs="+")
     parser.add_argument("--acknowledge-app-server-simulation", action="store_true")
     args = parser.parse_args()
