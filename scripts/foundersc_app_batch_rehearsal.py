@@ -130,7 +130,7 @@ def run_batch(execution, plans, *, directory, snapshot, cleanup_only=False):
                         prior = execution.store.append(plan=plan, receipt=replace(prior,
                             state=ExecutionState.SKIPPED, reason="REHEARSAL_BATCH_ABORTED_UNSUBMITTED",
                             next_action="stop"), kind="rehearsal_unsubmitted_closed")
-                if prior.state in TERMINAL:
+                if prior.state in TERMINAL and not prior.cancel_chain_uncertain:
                     outcomes[plan.plan_id] = prior.as_dict()
                     continue
                 if not prior.submit_claim_id:

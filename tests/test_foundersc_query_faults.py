@@ -71,7 +71,9 @@ def test_grid_cannot_hide_rows_or_truncate_its_row_count(fault):
 
 
 @pytest.mark.parametrize('glyph,price,traded,allowed', [
-    ('O', '0.000', False, True), ('o', '0.000', False, True), ('OO', '0.000', False, False),
+    ('O', '0.000', False, True), ('o', '0.000', False, True), ('◎', '0.000', False, True),
+    ('◎', '0.000', True, False), ('◎', '1.000', False, False), ('?', '0.000', False, False),
+    ('OO', '0.000', False, False),
     ('O', '1.000', False, False), ('O', '0.000', True, False),
 ])
 def test_isolated_zero_ocr_alias_requires_zero_price_and_independent_zero_trades(glyph, price, traded, allowed):

@@ -325,6 +325,27 @@ class FounderscNativeAXBrokerAdapter(BrokerAdapter):
     def _read_error_code(exc: FounderscNativeAXError) -> str:
         return str(exc).split(":", 1)[0]
 
+    def _failed_read_evidence(self, exc: Exception | None) -> dict[str, Any]:
+        """Keep account-bound, redacted readbacks without arbitrary exception text."""
+        return {
+            "native_read_error": (
+                self._read_error_code(exc)
+                if isinstance(exc, FounderscNativeAXError)
+                else type(exc).__name__ if exc else "Unproven"
+            ),
+            "failed_native_readbacks": {
+                kind: {key: value for key, value in readback.items() if key != "rows"}
+                for kind, readback in self.last_query_readbacks.items()
+            },
+            # Keep cells within the execution store's evidence depth limit.
+            "failed_native_rows": [
+                {**row, "query_kind": kind}
+                for kind, readback in self.last_query_readbacks.items()
+                if isinstance(readback.get("rows"), list)
+                for row in readback.get("rows", []) if isinstance(row, dict)
+            ],
+        }
+
     @classmethod
     def _retryable_read_error(cls, exc: FounderscNativeAXError) -> bool:
         code = cls._read_error_code(exc)
@@ -586,7 +607,7 @@ class FounderscNativeAXBrokerAdapter(BrokerAdapter):
                     zero_normalizations = []
                     if bounded_order_readback:
                         for row in rows:
-                            if str(row.get("成交数量") or "").strip().upper() == "O":
+                            if str(row.get("成交数量") or "").strip() in {"O", "o", "◎"}:
                                 zero_normalizations.append({"order_id": row["委托编号"], "raw": row["成交数量"]})
                                 row["成交数量"] = "0"
                     try:
@@ -652,10 +673,10 @@ class FounderscNativeAXBrokerAdapter(BrokerAdapter):
         for row in rows:
             filled = str(row.get("成交数量") or "").strip()
             if re.fullmatch(r"(?:0+(?:\.0+)?)?", filled) is None:
-                # Observed OCR capital O in the zero-fill cell. Only this
+                # Observed OCR round glyphs in the zero-fill cell. Only this
                 # bounded second-read path may interpret it, with a zero
                 # execution price and independent per-order trade proof.
-                if filled.upper() != "O" or str(row.get("成交价格") or "").strip() not in {"0", "0.0", "0.00", "0.000", "0.0000"}:
+                if filled not in {"O", "o", "◎"} or str(row.get("成交价格") or "").strip() not in {"0", "0.0", "0.00", "0.000", "0.0000"}:
                     return False
             if _status(row.get("状态说明")) not in {
                 BrokerStatus.ACCEPTED,
@@ -980,7 +1001,7 @@ class FounderscNativeAXBrokerAdapter(BrokerAdapter):
                 route=self.route,
                 account_binding="unproven",
                 reason=f"NATIVE_APP_PROBE_FAILED:{self._read_error_code(exc) if isinstance(exc, FounderscNativeAXError) else type(exc).__name__}",
-                locator_proof={"failed_native_readbacks": dict(self.last_query_readbacks)},
+                locator_proof=self._failed_read_evidence(exc),
                 template_name="foundersc-native-ax",
             )
 
@@ -1763,6 +1784,7 @@ class FounderscNativeAXBrokerAdapter(BrokerAdapter):
                 },
             )
         last: BrokerReceipt | None = None
+        last_read_error: Exception | None = None
         for delay in self.reconcile_delays:
             if delay:
                 time.sleep(delay)
@@ -1773,7 +1795,8 @@ class FounderscNativeAXBrokerAdapter(BrokerAdapter):
                     baseline_order_ids=set(prepared["baseline_order_ids"]),
                     expected_order_id=result_order_id,
                 )
-            except Exception:
+            except Exception as exc:
+                last_read_error = exc
                 continue
             if last.receipt_mapping and last.order_id and last.conclusive:
                 claim_hash = hashlib.sha256(str(claim_id).encode("utf-8")).hexdigest()
@@ -1811,6 +1834,7 @@ class FounderscNativeAXBrokerAdapter(BrokerAdapter):
                 **prepared["baseline_locator_proof"],
                 **(last.locator_proof if last else {}),
                 **native_evidence,
+                **self._failed_read_evidence(last_read_error),
             },
             template_name="foundersc-native-ax",
             reason="NATIVE_SUBMIT_CLICKED_READBACK_UNPROVEN",
@@ -1872,6 +1896,7 @@ class FounderscNativeAXBrokerAdapter(BrokerAdapter):
                 remaining_shares=shares,
                 account_binding="proven",
                 template_name="foundersc-native-ax",
+                locator_proof=self._failed_read_evidence(exc),
                 reason=f"NATIVE_RECONCILE_FAILED:{type(exc).__name__}",
                 error_code="NATIVE_RECONCILE_FAILED_NO_RETRY",
                 conclusive=False,
@@ -2039,6 +2064,7 @@ class FounderscNativeAXBrokerAdapter(BrokerAdapter):
         }
 
         last: BrokerReceipt | None = None
+        last_read_error: Exception | None = None
         for delay in self.reconcile_delays:
             if delay:
                 time.sleep(delay)
@@ -2048,7 +2074,8 @@ class FounderscNativeAXBrokerAdapter(BrokerAdapter):
                     requested_shares=shares,
                     expected_order_id=order_id,
                 )
-            except Exception:
+            except Exception as exc:
+                last_read_error = exc
                 continue
             if last.normalized_status() == BrokerStatus.CANCELLED and last.conclusive:
                 return BrokerReceipt(
@@ -2104,6 +2131,7 @@ class FounderscNativeAXBrokerAdapter(BrokerAdapter):
             locator_proof={
                 **(last.locator_proof if last else current.locator_proof),
                 **cancel_locator_evidence,
+                **self._failed_read_evidence(last_read_error),
             },
             template_name="foundersc-native-ax",
             reason=(
@@ -2199,6 +2227,7 @@ class FounderscNativeAXBrokerAdapter(BrokerAdapter):
                     **baseline_locator,
                     "recovery_read_attempts": read_attempts,
                     "recovery_expected_order_id": expected_order_id,
+                    **self._failed_read_evidence(last_error),
                 },
                 template_name="foundersc-native-ax",
                 reason=(

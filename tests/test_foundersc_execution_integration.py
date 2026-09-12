@@ -39,7 +39,8 @@ def chain(tmp_path):
 
 
 @pytest.mark.parametrize("lost", [None, "submit", "cancel"])
-def test_restart_after_native_response_loss_never_repeats_effect(chain, lost):
+@pytest.mark.parametrize("resume_action", ["cancel", "execute"])
+def test_restart_after_native_response_loss_never_repeats_effect(chain, lost, resume_action):
     class Native(FakeNative):
         def submit_prepared_order(self, **kwargs):
             result = super().submit_prepared_order(**kwargs)
@@ -70,8 +71,9 @@ def test_restart_after_native_response_loss_never_repeats_effect(chain, lost):
     if lost == "cancel":
         assert cancelled.state == ExecutionState.UNKNOWN
         native.lose_cancel_reads = False
-        cancelled = engine(native).cancel(plan)
+        cancelled = getattr(engine(native), resume_action)(plan)
     assert cancelled.state == ExecutionState.CANCELLED
+    assert not cancelled.cancel_chain_uncertain
     before = (native.submit_calls, native.cancel_calls, len(native.query_calls))
     for _ in range(3):
         assert engine(native).execute(plan).state == ExecutionState.CANCELLED
@@ -91,6 +93,37 @@ def test_broken_native_readiness_never_reaches_order_fields(chain, field, value)
     assert receipt.state in {ExecutionState.REJECTED, ExecutionState.VALIDATED}
     assert receipt.submit_claim_id is None and receipt.broker_order_id is None
     assert native.prepare_calls == native.submit_calls == native.cancel_calls == 0
+
+
+@pytest.mark.parametrize("action", ["submit", "cancel"])
+def test_failed_post_action_read_keeps_specific_redacted_evidence(chain, action):
+    class Native(FakeNative):
+        def submit_prepared_order(self, **kwargs):
+            result = super().submit_prepared_order(**kwargs)
+            if action == "submit":
+                self.orders[-1]["委托价格"] = "garbled"
+            return result
+
+        def cancel_order(self, **kwargs):
+            result = super().cancel_order(**kwargs)
+            if action == "cancel":
+                self.orders[-1]["委托价格"] = "garbled"
+            return result
+
+    plan, engine = chain
+    native = Native()
+    receipt = engine(native).execute(plan)
+    if action == "cancel":
+        receipt = engine(native).cancel(plan)
+    assert receipt.state == ExecutionState.UNKNOWN
+    for receipt in (receipt, engine(native).execute(plan)):
+        proof = receipt.locator_proof
+        assert proof["native_read_error"].startswith("NATIVE_QUERY_")
+        assert proof["native_read_error"].endswith("MALFORMED")
+        assert any(row.get("query_kind") == "today-orders" and row.get("委托价格") == "garbled"
+                   for row in proof["failed_native_rows"])
+    assert native.submit_calls == 1
+    assert native.cancel_calls == (action == "cancel")
 
 
 @pytest.mark.parametrize("filled", [40, 100])

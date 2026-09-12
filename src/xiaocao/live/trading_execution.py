@@ -1361,6 +1361,9 @@ class TradingExecution:
                     ),
                     kind="cancel_rejected",
                 )
+            if (previous.state in TERMINAL_STATES
+                    and previous.cancel_claim_id and previous.cancel_chain_uncertain):
+                return self._reconcile_cancel_claim(plan, broker, previous)
             if previous.state in TERMINAL_STATES:
                 return self._repair_terminal_ownership(plan, previous)
             if previous.cancel_claim_id:
@@ -1670,6 +1673,8 @@ class TradingExecution:
             )
         if existing is None:
             return self._start(plan, broker)
+        if existing.cancel_claim_id and existing.cancel_chain_uncertain:
+            return self._reconcile_cancel_claim(plan, broker, existing)
         if existing.state in TERMINAL_STATES:
             return self._repair_terminal_ownership(plan, existing)
         if existing.state == ExecutionState.CLAIMED:
@@ -2157,6 +2162,8 @@ class TradingExecution:
         )
 
     def _reconcile(self, plan: TradePlan, broker: BrokerAdapter, previous: ExecutionReceipt) -> ExecutionReceipt:
+        if previous.cancel_claim_id:
+            return self._reconcile_cancel_claim(plan, broker, previous)
         reconciling = self._record(
             plan,
             replace(previous, state=ExecutionState.RECONCILING, next_action="reconcile"),
