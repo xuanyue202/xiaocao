@@ -2,7 +2,9 @@
 
 Xiaocao is a Python CLI and automation toolkit for A-share data, strategy screening, reports, Kronos recommendations, and paper-trading surveillance.
 
-For the current deployment's local versus APP-server simulation levels and unchanged execution discipline, read `docs/OPERATING_CONTRACT.md` §1a. For trading faults, follow `.codex/skills/xiaocao-trading/references/book-b-live-repair.md`: urgent AX/code repair and minimum necessary validation precede same-plan continuation; root-cause analysis and full regression follow the terminal outcome.
+当前研究部署按用户 2026-09-12 的明确说明分为**本地数字模拟**与 **APP 服务端仿真**。当前 APP 即使界面、代码或历史记录称为“实盘/live”，连接的仍是无法影响真实券商账户的仿真服务。所有本项目任务应同时理解：在既有任务范围内通过项目代码推进仿真买卖、撤单和对账；按正式交易标准保持策略、仓位、时效、成交确认与账本准确性，不因知道是模拟而降低执行积极性或实验严谨性。完整定义及当前部署范围见 `docs/OPERATING_CONTRACT.md` §1a；旧的实盘措辞按该节解释。
+
+For trading faults, follow `.codex/skills/xiaocao-trading/references/book-b-live-repair.md`: urgent AX/code repair and minimum necessary validation precede same-plan continuation; root-cause analysis and affected-behavior verification follow the terminal outcome.
 
 ## Xiaocao Knowledge Base (read when working on strategy/posture/exit judgment)
 
