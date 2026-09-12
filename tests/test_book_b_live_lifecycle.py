@@ -842,11 +842,13 @@ def test_next_day_basis_blocks_a_post_settlement_fill_missing_ownership(
         load_book_b_live_capital_basis(tmp_path)
 
 
+@pytest.mark.parametrize("pending_buy", [False, True])
 def test_intraday_hard_stop_materializes_one_owned_lot_sell_handoff(
-    tmp_path: Path,
+    tmp_path: Path, pending_buy: bool,
 ) -> None:
     buy = _plan(trade_date="2026-08-31")
     _record_fill(tmp_path, buy, price=10.0, event_id="buy-fill")
+    pending = _bind_plan_intent(tmp_path, _plan()) if pending_buy else None
     seen: list[TradePlan] = []
 
     def execute(plan: TradePlan) -> ExecutionReceipt:
@@ -892,7 +894,63 @@ def test_intraday_hard_stop_materializes_one_owned_lot_sell_handoff(
     assert seen[0].owned_lot_id == buy.plan_id
     assert seen[0].sell_reason == "HARD_STOP"
     assert seen[0].limit_price == 9.2
-    assert len(list((tmp_path / "plan_intents").glob("*.json"))) == 2
+    assert len(list((tmp_path / "plan_intents").glob("*.json"))) == 2 + int(pending_buy)
+    assert receipt.deferred_buy_plan_ids == ((pending.plan_id,) if pending else ())
+    if pending:
+        assert pending.plan_id in open_execution_plan_ids(tmp_path)
+        assert ExecutionStore(tmp_path / "events.jsonl").current(pending.plan_id) is None
+
+
+@pytest.mark.parametrize("state", [None, ExecutionState.PLANNED, ExecutionState.VALIDATED, ExecutionState.PREPARED])
+def test_intraday_leaves_unclaimed_buy_for_owner(tmp_path: Path, state) -> None:
+    pending = _bind_plan_intent(tmp_path, _plan())
+    store = ExecutionStore(tmp_path / "events.jsonl")
+    if state:
+        store.append(plan=pending, receipt=ExecutionReceipt(
+            pending.plan_id, pending.plan_hash, state, remaining_shares=pending.shares,
+        ), kind="pre_submit")
+    before = store.current(pending.plan_id)
+    receipt = run_book_b_live_intraday(
+        state_dir=tmp_path, freeze_dir=tmp_path, trade_date="2026-09-01", phase="opening",
+        account_snapshot_provider=_snapshot,
+        status_provider=lambda lots: pytest.fail("No owned lots to monitor"),
+        execute=lambda plan: pytest.fail("Must not take over the pending BUY"), now=lambda: NOW,
+    )
+    assert receipt.deferred_buy_plan_ids == (pending.plan_id,)
+    assert store.current(pending.plan_id) == before
+    assert open_execution_plan_ids(tmp_path) == (pending.plan_id,)
+
+
+def test_intraday_rechecks_buy_claim_after_snapshot(tmp_path: Path) -> None:
+    pending = _bind_plan_intent(tmp_path, _plan())
+
+    def snapshot():
+        ExecutionStore(tmp_path / "events.jsonl").append(
+            plan=pending, receipt=ExecutionReceipt(
+                pending.plan_id, pending.plan_hash, ExecutionState.PREPARED,
+                submit_claim_id="concurrent-owner", remaining_shares=pending.shares,
+            ), kind="submit_claim",
+        )
+        return _snapshot()
+
+    with pytest.raises(ValueError, match="OPEN_EXECUTION_RECONCILE_REQUIRED"):
+        run_book_b_live_intraday(
+            state_dir=tmp_path, freeze_dir=tmp_path, trade_date="2026-09-01", phase="opening",
+            account_snapshot_provider=snapshot,
+            status_provider=lambda lots: pytest.fail("Claim invalidated the snapshot"),
+            execute=lambda plan: pytest.fail("Must not submit"), now=lambda: NOW,
+        )
+
+
+def test_intraday_unclaimed_sell_still_blocks(tmp_path: Path) -> None:
+    _bind_plan_intent(tmp_path, _plan(side="SELL", lot_id="owned-lot"))
+    with pytest.raises(ValueError, match="OPEN_EXECUTION_RECONCILE_REQUIRED"):
+        run_book_b_live_intraday(
+            state_dir=tmp_path, freeze_dir=tmp_path, trade_date="2026-09-01", phase="opening",
+            account_snapshot_provider=lambda: pytest.fail("Pending SELL must be reconciled"),
+            status_provider=lambda lots: pytest.fail("Must not re-decide"),
+            execute=lambda plan: pytest.fail("Must not submit"), now=lambda: NOW,
+        )
 
 
 def test_intraday_rejects_tampered_buy_freeze_binding(tmp_path: Path) -> None:

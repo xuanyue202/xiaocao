@@ -157,9 +157,15 @@ can recover across restart only from one exact new-row delta. Missing durable
 context stays UNKNOWN/no-retry.
 Read-only prepare neutralizes the security code once before clearing dependent
 price/quantity fields, allowing the code-triggered quote callback to settle first.
-The bounded second clear must not rewrite the code and retrigger that callback.
-Persist each clear attempt's raw code/price/quantity and write-success evidence;
-a non-empty malformed numeric field never proves neutralization.
+Retry dependent fields only when necessary; never rewrite the code and retrigger
+that callback. Require three readable neutral samples at 100 ms intervals.
+Programmed waits total 400–900 ms, with a three-second polling budget including
+AX calls; an in-flight native call may finish after that budget. A nil/locked
+read or malformed numeric residual never proves neutralization. Persist raw
+values, read/write success and quiet samples. Unlock readiness also polls for
+at most three seconds and returns immediately when ready; an unproved unlock
+does not authorize a second confirmation. Transport/build timeouts are process
+watchdogs, not fixed UI waits.
 Normalize broker numeric cells by field and locale: a Vision decimal comma
 such as `17,3900` is 17.3900, while grouping commas such as `54,528.94` must
 remain grouping separators. Preserve a validated success-popup order id plus

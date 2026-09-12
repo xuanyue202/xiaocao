@@ -15,6 +15,7 @@ from .book_b_live_morning import (
 from .trading_execution import (
     ExecutionReceipt, ExecutionState, ExecutionStore, TradePlan, account_writer_lock,
 )
+from .book_b_live_lifecycle import open_execution_plan_ids
 
 UNCLAIMED = {ExecutionState.PLANNED, ExecutionState.VALIDATED, ExecutionState.PREPARED}
 TERMINAL = {ExecutionState.FILLED, ExecutionState.CANCELLED, ExecutionState.REJECTED,
@@ -45,6 +46,28 @@ def _has_possible_write(events: list[dict]) -> bool:
                 or receipt.filled_shares or receipt.attempt):
             return True
     return False
+
+
+def check_monitor_pending_plans(state_dir: Path) -> tuple[str, ...]:
+    """Prove which open intents are only local BUY reservations.
+
+    These remain open for their original owner. They cannot by themselves
+    block monitoring of owned lots; SELL intents and uncertain effects can.
+    """
+    deferred = []
+    with account_writer_lock(state_dir / "account_writer_locks", "primary"):
+        for plan_id in open_execution_plan_ids(state_dir):
+            path = _plan_intent_path(state_dir, plan_id)
+            if not path.is_file():
+                raise ValueError("LIVE_BOOK_B_OPEN_EXECUTION_RECONCILE_REQUIRED")
+            plan = read_durable_live_plan_intent(json.loads(path.read_text()))
+            if plan.plan_id != plan_id or plan.logical_account_id != "primary":
+                raise ValueError("LIVE_RECOVERY_PLAN_BINDING_MISMATCH")
+            if plan.side == "BUY" and not _has_possible_write(_history(state_dir, plan)):
+                deferred.append(plan_id)
+            else:
+                raise ValueError("LIVE_BOOK_B_OPEN_EXECUTION_RECONCILE_REQUIRED")
+    return tuple(deferred)
 
 
 def close_unsubmitted_plan(state_dir: Path, plan: TradePlan, *, reason: str) -> ExecutionReceipt:

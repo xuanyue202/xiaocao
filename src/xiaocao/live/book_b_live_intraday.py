@@ -25,7 +25,6 @@ from zoneinfo import ZoneInfo
 from .book_b_live_lifecycle import (
     BookBLiveAccountState,
     BookBLiveOwnedLot,
-    open_execution_plan_ids,
     project_book_b_live_account,
     write_book_b_live_settlement,
 )
@@ -35,6 +34,7 @@ from .book_b_live_morning import (
     reconcile_open_book_b_plans,
 )
 from .trading_execution import ExecutionReceipt, TERMINAL_STATES, TradePlan
+from .book_b_live_recovery import check_monitor_pending_plans
 from .trading_runner import frozen_rows_digest
 from .kol_policy import exit_adjustment
 from .live_decision_support import bind_plan_audit, evaluate_live_risk, read_policy
@@ -299,6 +299,7 @@ class BookBLiveIntradayReceipt:
     reconciliation_receipts: tuple[dict[str, Any], ...]
     settlement: dict[str, Any] | None = None
     risk_receipt: dict[str, Any] | None = None
+    deferred_buy_plan_ids: tuple[str, ...] = ()
 
     def as_dict(self) -> dict[str, Any]:
         return asdict(self)
@@ -449,8 +450,7 @@ def _run_book_b_live_intraday_locked(
         execute=execute,
         now=current,
     )
-    if open_execution_plan_ids(state_root):
-        raise ValueError("LIVE_BOOK_B_OPEN_EXECUTION_RECONCILE_REQUIRED")
+    deferred_buys = check_monitor_pending_plans(state_root)
     phase_now = now()
     if phase_now.tzinfo is None:
         raise ValueError("LIVE_BOOK_B_NOW_NOT_TZ_AWARE")
@@ -463,6 +463,7 @@ def _run_book_b_live_intraday_locked(
     ):
         raise ValueError("LIVE_BOOK_B_EOD_SETTLEMENT_WINDOW_NOT_OPEN")
     snapshot = account_snapshot_provider()
+    deferred_buys = check_monitor_pending_plans(state_root)
     current = now()
     if current.tzinfo is None:
         raise ValueError("LIVE_BOOK_B_NOW_NOT_TZ_AWARE")
@@ -522,6 +523,7 @@ def _run_book_b_live_intraday_locked(
             reconciliation_receipts=tuple(reconciled),
             settlement=settlement,
             risk_receipt=risk_receipt,
+            deferred_buy_plan_ids=deferred_buys,
         )
     if not account.lots:
         risk_receipt = record_risk()
@@ -535,8 +537,10 @@ def _run_book_b_live_intraday_locked(
             execution_receipts=(),
             reconciliation_receipts=tuple(reconciled),
             risk_receipt=risk_receipt,
+            deferred_buy_plan_ids=deferred_buys,
         )
     statuses = status_provider(account.lots)
+    deferred_buys = check_monitor_pending_plans(state_root)
     by_lot = {str(status.get("owned_lot_id") or ""): status for status in statuses}
     if set(by_lot) != {lot.owned_lot_id for lot in account.lots}:
         raise ValueError("LIVE_BOOK_B_STATUS_COVERAGE_MISMATCH")
@@ -683,6 +687,7 @@ def _run_book_b_live_intraday_locked(
         execution_receipts=tuple(receipts),
         reconciliation_receipts=tuple(reconciled),
         risk_receipt=risk_receipt,
+        deferred_buy_plan_ids=deferred_buys,
     )
 
 
