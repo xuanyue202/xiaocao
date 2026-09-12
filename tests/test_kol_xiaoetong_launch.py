@@ -123,6 +123,48 @@ def test_other_mini_program_is_classified_before_decoding_its_payload():
         resolve_launch_plan(LINK, fetch=lambda url: (url, html))
 
 
+def branded_html(app_id="appsnm3rlcp3566", live_id="l_evening"):
+    html = launch_html().replace("鹅直播", "见势擒龙团").replace(
+        "gh_363391d02e3e", "gh_4b9150162d69",
+    ).replace("/pages/webView/webView", "subpkg/live-room-horizon/pages/index")
+    query = urlencode({"app_id": app_id, "alive_id": live_id, "alive_mode": "0",
+                       "type": "2", "pro_id": "course_target", "share_user_id": "private"})
+    import re
+    return re.sub(r"base64Decode\('[^']+'\)", "base64Decode('" + encoded(query) + "')", html)
+
+
+def test_branded_entry_uses_exact_flat_identity_without_launching():
+    plan = resolve_launch_plan(LINK, reuse_open_window=True, fetch=lambda url: (url, branded_html()))
+    assert plan["source_identity"] == "xiaoetong:appsnm3rlcp3566:l_evening"
+    assert plan["reuse_open_window"] is True
+    assert "launch_command" not in plan
+    assert "private" not in plan["page_url"]
+
+
+@pytest.mark.parametrize("app_id,live_id", [("app_other", "l_evening"), ("appsnm3rlcp3566", "v_recorded")])
+def test_branded_entry_rejects_unbound_app_or_non_live(app_id, live_id):
+    with pytest.raises(LaunchResolutionError):
+        resolve_launch_plan(LINK, fetch=lambda url: (url, branded_html(app_id, live_id)))
+
+
+def test_branded_entry_can_obtain_fresh_same_identity_goose_ticket():
+    page = "https://appsnm3rlcp3566.h5.xiaoeknow.com/v2/course/alive/l_evening"
+    calls = []
+
+    def fetch(url):
+        calls.append(url)
+        if len(calls) == 1:
+            return url, branded_html()
+        if "get_elive_outside_url?" in url:
+            return url, json.dumps({"code": 0, "data": {"type": 0, "url": LINK}})
+        return url, launch_html(page=page, live_id="l_evening")
+
+    plan = resolve_launch_plan(LINK, fetch=fetch)
+    assert plan["source_identity"] == "xiaoetong:appsnm3rlcp3566:l_evening"
+    assert plan["launch_command"][-1] == "weixin://dl/business/?t=real-ticket"
+    assert len(calls) == 3
+
+
 @pytest.mark.parametrize("url", ["http://wxmpurl.cn/a", "https://127.0.0.1/a", "https://xiaoeknow.com.evil.test/a", "https://u:p@wxmpurl.cn/a"])
 def test_resolver_rejects_untrusted_redirects(url):
     with pytest.raises(LaunchResolutionError):

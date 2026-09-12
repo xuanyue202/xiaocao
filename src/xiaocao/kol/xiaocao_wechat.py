@@ -1182,6 +1182,16 @@ class XiaocaoWechatLiveSubscription:
                 "Scheme，不猜参数。解析失败再用可见原始消息入口；不要把主聊天窗口"
                 "白色截图当作微信退出。后续密码、播放在可见小程序窗口操作。"
             ) + request["instructions"]
+        if item.get("mini_program_name") == "见势擒龙团":
+            request["mini_program_name"] = "见势擒龙团"
+            request["reuse_open_window"] = True
+            request.pop("launch_resolver_command", None)
+            request["instructions"] = (
+                "复用已核对的见势擒龙团课程窗口；应用身份已由商户页校验。"
+                "不重新唤起、不刷新、不重复解析。沿用限定小鹅通抓取和同一 live_id "
+                "有限回放门槛；抓到后用该课程文件菜单关闭并从窗口菜单读回消失。"
+                "自动播放不增加 Play；仅按当前可见控件操作。返回原动作和精确身份。"
+            )
         if reason == "captured_window_cleanup":
             request.pop("launch_resolver_command", None)
             request["instructions"] = (
@@ -1366,6 +1376,8 @@ class XiaocaoWechatLiveSubscription:
             "observed_page_state": observed_page_state,
             "playback_route": self.playback_route,
         }
+        if response.get("mini_program_name") == "见势擒龙团":
+            fields["mini_program_name"] = "见势擒龙团"
         return self._transition(
             manifest,
             item,
@@ -1393,6 +1405,12 @@ class XiaocaoWechatLiveSubscription:
                     "Xiaocao narrow resume item is missing"
                 )
             item = dict(item)
+            if item.get("status") == "unsupported_application" and not item.get("capture_job_id"):
+                # A user-requested exact-item retry may use a newly installed
+                # application adapter. Ordinary sweeps never reactivate it.
+                item = self._transition(
+                    manifest, item, "discovered", recheck_reason="explicit_application_recheck",
+                )
             # Explicit one-item backfill may recover a recent skipped preview.
             # Expired entries and any already-bound claims remain immutable.
             if (

@@ -29,6 +29,24 @@ H5 is not playback proof.
 For an HTTPS share entry, the default launch route is the verified merchant
 Web Link, not chat-window screenshots or a browser player.
 
+The reviewed branded Xiaoetong application `见势擒龙团` is supported only when
+the merchant page binds `gh_4b9150162d69`,
+`subpkg/live-room-horizon/pages/index`, and `appsnm3rlcp3566` together.
+Its flat query supplies the exact live identity; never change that identity or
+infer a replay from its title. With `--reuse-open-window`, the resolver returns
+`reuse_open_window=true` without a launch command. Without that option, the
+provider may issue a fresh Goose Live ticket for the same app/live; the resolver
+must independently verify that binding. Reuse the user's already-open matching
+course first. For this authorized branded window apply the same one-action
+and readback SOP below, substituting its exact window title in W7-W10.
+No refresh, re-launch or guessed tickets. If the user explicitly authorizes one
+same-course reopen because the player predates capture and no finite candidate
+was observed, close only the verified branded course using W7-W10, then execute
+one freshly issued, independently validated same-app/live Goose Live launch.
+Keep the existing subscription/capture/source job and baseline. A fresh same-live finite candidate
+from the existing narrow Xiaoetong sniffer is still required. If unavailable,
+continue diagnosis rather than downloading a different/live candidate.
+
 `wxmpurl.cn` entries are discovered as merchant links, not assumed to be Goose
 Live. If resolution returns `unsupported_application` / `launch_allowed=false`,
 do not launch or use the original-message fallback: preserve the entry and
