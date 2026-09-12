@@ -285,13 +285,14 @@ def test_account_reader_cannot_navigate_between_prepare_and_submit(chain, tmp_pa
     assert engine(native).cancel(plan).state == ExecutionState.CANCELLED
 
 
-def test_proven_preclick_cancel_failure_can_close_claim_and_cancel_same_order(chain):
+@pytest.mark.parametrize("preclick_status", ["cancel_target_not_unique", "cancel_controls_unproven"])
+def test_proven_preclick_cancel_failure_can_close_claim_and_cancel_same_order(chain, preclick_status):
     class Native(FakeNative):
         attempts = 0
         def cancel_order(self, **kwargs):
             self.attempts += 1
             if self.attempts == 1:
-                return self._receipt(status='cancel_target_not_unique', cancel_readback={
+                return self._receipt(status=preclick_status, cancel_readback={
                     'cancel_clicked': False, 'confirmation_pressed': False,
                     'selection_proven': False, 'selection_proof_mode': 'none',
                     'target_match_count': 1})
@@ -375,3 +376,44 @@ def test_no_effect_evidence_from_old_claim_cannot_release_a_new_unknown_attempt(
     assert not first.broker.cancel_attempt_proven_unperformed(unknown.as_dict())
     assert second.cancel(plan).state == ExecutionState.UNKNOWN
     assert len(requests) == 1
+
+
+@pytest.mark.parametrize("degraded", [False, True])
+def test_proven_cancel_terminal_cannot_regress_on_later_unreadable_history(chain, degraded):
+    plan, engine = chain
+    native = FakeNative()
+    execution = engine(native)
+    execution.execute(plan)
+    terminal = execution.cancel(plan)
+    legacy = replace(terminal, cancel_chain_uncertain=True)
+    execution.store.append(plan=plan, receipt=legacy, kind="legacy_terminal_flag")
+    if degraded:
+        execution.store.append(plan=plan, receipt=replace(legacy, state=ExecutionState.UNKNOWN,
+            broker_status="unknown", receipt_mapping=False, active=None), kind="legacy_failed_read")
+    calls = len(native.query_calls)
+    result = engine(native).execute(plan)
+    assert result.state == ExecutionState.CANCELLED and not result.cancel_chain_uncertain
+    assert native.cancel_calls == 1 and len(native.query_calls) == calls
+
+
+@pytest.mark.parametrize("fault", ["changed_claim", "broken_chain"])
+def test_terminal_restore_requires_same_claim_and_intact_chain(chain, fault):
+    plan, engine = chain
+    native = FakeNative()
+    execution = engine(native)
+    execution.execute(plan)
+    terminal = execution.cancel(plan)
+    prior = replace(terminal, state=ExecutionState.UNKNOWN, broker_status="unknown",
+                    receipt_mapping=False, active=None, cancel_chain_uncertain=True)
+    if fault == "changed_claim": prior = replace(prior, cancel_claim_id="different-claim")
+    execution.store.append(plan=plan, receipt=prior, kind="legacy_failed_read")
+    if fault == "broken_chain":
+        lines = execution.store.path.read_text().splitlines()
+        event = json.loads(lines[-1]); event["event_hash"] = "broken"
+        lines[-1] = json.dumps(event)
+        execution.store.path.write_text("\n".join(lines)+"\n")
+    calls = len(native.query_calls)
+    result = engine(native).execute(plan)
+    assert result.state == ExecutionState.CANCELLED and len(native.query_calls) > calls
+    assert native.cancel_calls == 1
+    assert execution.store.events(plan.plan_id)[-1]["kind"] != "cancel_terminal_evidence_restored"

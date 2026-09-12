@@ -249,7 +249,7 @@ KOL 断言、候选假设或报告升级为策略真值，也不替代永久参�
   只发一次 Return，随后只按当前确认窗唯一原生按钮；连续 Return/Y 禁止。提交成功只认
   合同号与新增 exact tuple。撤单副作用前也必须落 durable cancel claim；进程中断或结果
   未知后只回读同 order-id，禁止第二次撤单动作。唯一的未执行关闭是 helper 明确返回
-  `cancel_target_not_unique`（代码保证在任何撤单点击前返回），且持久回执中撤单点击、
+  `cancel_target_not_unique` 或 `cancel_controls_unproven`（代码保证在任何撤单点击前返回），且持久回执中撤单点击、
   点击证明、确认均显式为 false；再次按原 order-id 证明仍为活动订单后，可追加关闭
   该未执行 claim 的事件并为同单创建新 claim。历史不覆盖；超时、缺失字段、可能点击
   或任何未知结果均不能使用该例外。撤单只认同 order-id 的 `已撤` 回读，且
@@ -356,6 +356,10 @@ KOL 断言、候选假设或报告升级为策略真值，也不替代永久参�
 - **评估**：Book T 不进入 `forward_eval.py -> training_rows.parquet -> continuous_optimize.py` 的短线 per-trade A/B/C/D 口径；趋势评估只走 `trend_guards` / `trend_optimize` 的复利、回撤、换手、vs-beta 仪器。`trend_optimize.py --record` 只能把 changed verdict 写入 `kronos_screen/HYPOTHESES.jsonl`，不得改 `TREND_*` 参数。
 - **命名空间**：`signal_snapshots.jsonl` 的唯一键是 `(date, code, is_live, book)`；缺 `book` 的旧行默认 B。`data_health` / `contexts` / `forward_eval` 均必须保留 book 维度，避免 B/T 同票同日被误判重复或互相覆盖。
 - **v2 shadow 时间门**：stage 3 的日常稳定性验收要求 5 个连续真实交易日，stage 4 的 engineering burn-in 独立要求 20 个连续真实交易日；两者都排除 rehearsal，验证每日重评、可重放、ETF/市场 fail-closed 与正式账本零变更。5 日验收不得降低或替代 20 日门，二者在真实证据不足时均保持 `pending`，且均无策略 promotion 权限。
+
+已证明的同订单终态不可被后续读取失败降回 UNKNOWN。旧版本残留撤单不确定标记时，可凭同 plan/order/strategy/cancel-claim、完整事件哈希链及已绑定账户的终态证据正式恢复该终态；不得用于新的 claim。
+
+跨零点不等于 APP 当前委托已切交易日。仅正在恢复的撤单可在以下证据齐全时继续查询当前委托：原成功提示日期为前一日且订单号一致，持久精确委托时钟仍晚于今日当前时钟（排除当日重用同一编号），当前行的订单号、代码、方向、价格、数量和委托时钟全部一致，独立成交表仍通过对账。缺少任一证据或今日已到达该时钟，仍必须使用有明确日期的历史证据；不能只按旧订单号匹配。
 
 ## 5. 成交模型（真实，非最坏价）
 

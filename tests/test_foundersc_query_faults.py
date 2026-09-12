@@ -103,3 +103,50 @@ def test_isolated_zero_ocr_alias_requires_zero_price_and_independent_zero_trades
     else:
         with pytest.raises(FounderscNativeAXError):
             read()
+
+
+@pytest.mark.parametrize("fault,uses_current", [
+    (None, True), ("mapping_temporarily_unproven", True), ("changed_clock", True), ("missing_clock", False),
+    ("today_clock_can_recur", False), ("wrong_popup_id", False), ("wrong_popup_date", False),
+])
+def test_midnight_cancel_uses_exact_original_order_clock_not_calendar_alone(monkeypatch, fault, uses_current):
+    from dataclasses import replace
+    from datetime import timezone
+    import xiaocao.live.foundersc_native_broker as module
+    from tests.test_foundersc_native_broker import _plan
+    from xiaocao.live.trading_execution import BrokerReceipt, BrokerStatus
+    native = FakeNative()
+    adapter = _adapter(native)
+    plan = replace(_plan(), trade_date="2026-09-12", code="515120.XSHG", limit_price=0.646, basket_price=0.646)
+    native.orders[0]["委托时间"] = "235839" if fault != "changed_clock" else "235840"
+    fixed = datetime.fromisoformat("2026-09-13T00:05:00+08:00")
+    if fault == "today_clock_can_recur":
+        fixed = datetime.fromisoformat("2026-09-13T23:59:00+08:00")
+    class Clock(datetime):
+        @classmethod
+        def now(cls, tz=None):
+            return fixed.astimezone(tz or timezone.utc)
+    monkeypatch.setattr(module, "datetime", Clock)
+    history = []
+    def historical(*args, **kwargs):
+        history.append(True)
+        return BrokerReceipt(status=BrokerStatus.UNKNOWN, reason="dated-history-only")
+    monkeypatch.setattr(adapter, "_reconcile_prior_day_rows", historical)
+    previous = {"broker_order_id":"6000002", "broker_strategy_id":"NAXtest",
+        "receipt_mapping":True, "account_binding":"proven", "cancel_claim_id":"cancel",
+        "locator_proof":{"native_order_time":"235839", "native_result_readback":{
+            "broker_order_id":"6000002", "observed_at":"2026-09-12T15:58:40+00:00"}}}
+    if fault == "missing_clock": previous["locator_proof"].pop("native_order_time")
+    if fault == "mapping_temporarily_unproven":
+        previous.update(receipt_mapping=False, submit_claim_id="original-submit")
+    if fault == "wrong_popup_id": previous["locator_proof"]["native_result_readback"]["broker_order_id"] = "6000003"
+    if fault == "wrong_popup_date": previous["locator_proof"]["native_result_readback"]["observed_at"] = "2026-09-11T15:58:40+00:00"
+    result = adapter.reconcile(plan, previous)
+    assert bool(history) != uses_current
+    if fault in {None, "mapping_temporarily_unproven"}:
+        assert result.status == BrokerStatus.ACCEPTED
+        assert result.locator_proof["native_order_time"] == "235839"
+    elif fault == "changed_clock":
+        assert result.status == BrokerStatus.UNKNOWN
+        assert result.locator_proof["native_read_error"] == "NATIVE_ORDER_SESSION_TIME_MISMATCH"
+    assert native.submit_calls == native.cancel_calls == 0

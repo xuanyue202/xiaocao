@@ -250,7 +250,7 @@ required. A known popup order ID without full mapping still uses durable-claim
 recovery constrained to that same ID.
 
 An exception to uncertain-cancel reconciliation is a proven *unperformed*
-attempt: `cancel_target_not_unique` returns before any cancel action, with
+attempt: `cancel_target_not_unique` or `cancel_controls_unproven` returns before any cancel action, with
 all cancel/confirmation flags explicitly false. After exact active-order
 readback, execution archives that attempt and creates a new claim for the
 same order. New claims clear prior cancel evidence. Timeout, missing flags,
@@ -265,3 +265,7 @@ Missing critical cells may receive one in-memory, enlarged Vision crop within
 the audited cell geometry. Existing tokens are retained; recovered tokens must
 remain inside that cell and meet the unchanged confidence floor. This is
 read-only capture repair, not status or side inference from previous orders.
+
+Calendar midnight alone does not prove an APP order-session rollover. Follow
+Operating Contract §4 for clock-bound current-session cancel recovery and
+monotonic, hash-chain-proven terminal restoration. Otherwise use dated history.

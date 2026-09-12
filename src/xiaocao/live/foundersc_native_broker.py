@@ -12,7 +12,7 @@ import json
 import math
 import re
 import time
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from decimal import Decimal, InvalidOperation
 from typing import Any, Callable
 from zoneinfo import ZoneInfo
@@ -1386,6 +1386,7 @@ class FounderscNativeAXBrokerAdapter(BrokerAdapter):
         requested_shares: int,
         baseline_order_ids: set[str] | None = None,
         expected_order_id: str | None = None,
+        expected_order_time: str | None = None,
     ) -> BrokerReceipt:
         orders = self._order_snapshot()
         matches = self._matching_orders(plan, orders["rows"], requested_shares)
@@ -1423,6 +1424,8 @@ class FounderscNativeAXBrokerAdapter(BrokerAdapter):
                 echoed=self._echo(plan, requested_shares),
             )
         order = matches[0]
+        if expected_order_time is not None and str(order.get("委托时间") or "").strip() != expected_order_time:
+            raise FounderscNativeAXError("NATIVE_ORDER_SESSION_TIME_MISMATCH")
         order_id = str(order["委托编号"]).strip()
         filled = _integer(
             order.get("成交数量"), field="ORDER_FILLED_QUANTITY", blank_zero=True
@@ -1482,6 +1485,7 @@ class FounderscNativeAXBrokerAdapter(BrokerAdapter):
                 **locator,
                 "trade_match_count": len(trade_matches),
                 "current_order_cumulative_fill_notional": str(fill_notional),
+                "native_order_time": str(order.get("委托时间") or ""),
             },
             template_name="foundersc-native-ax",
             reason=(
@@ -1854,7 +1858,7 @@ class FounderscNativeAXBrokerAdapter(BrokerAdapter):
 
     @serialized_app_operation
     def reconcile(self, plan: TradePlan, previous: dict[str, Any]) -> BrokerReceipt:
-        if previous.get("submit_claim_id") and (
+        if not previous.get("cancel_claim_id") and previous.get("submit_claim_id") and (
             not previous.get("broker_strategy_id") or previous.get("receipt_mapping") is not True
         ):
             return self.recover(plan, previous)
@@ -1875,9 +1879,12 @@ class FounderscNativeAXBrokerAdapter(BrokerAdapter):
                 retry_allowed=False,
             )
         try:
-            if plan.trade_date < datetime.now(
-                ZoneInfo("Asia/Shanghai")
-            ).date().isoformat():
+            now = datetime.now(ZoneInfo("Asia/Shanghai"))
+            if plan.trade_date < now.date().isoformat():
+                continuity_time = self._midnight_order_time(plan, previous, now)
+                if continuity_time is not None:
+                    return self._reconcile_rows(plan, requested_shares=shares,
+                        expected_order_id=order_id, expected_order_time=continuity_time)
                 return self._reconcile_prior_day_rows(
                     plan,
                     requested_shares=shares,
@@ -1904,12 +1911,44 @@ class FounderscNativeAXBrokerAdapter(BrokerAdapter):
             )
 
     @staticmethod
+    def _midnight_order_time(plan: TradePlan, previous: dict[str, Any], now: datetime) -> str | None:
+        """A still-current order cannot have been re-created later today.
+
+        Require yesterday's durable popup and exact order clock, which is
+        still ahead of today's wall clock. Once that clock can recur today,
+        only dated historical evidence is valid; no generic ID-only fallback.
+        """
+        proof = previous.get("locator_proof") or {}
+        popup = proof.get("native_result_readback") or {}
+        submitted = _parse_timestamp(popup.get("observed_at"))
+        order_id = str(previous.get("broker_order_id") or "")
+        if (not previous.get("cancel_claim_id") or previous.get("account_binding") != "proven"
+                or not previous.get("broker_strategy_id") or not submitted
+                or str(popup.get("broker_order_id") or "") != order_id
+                or submitted.astimezone(now.tzinfo).date().isoformat() != plan.trade_date
+                or (now.date() - timedelta(days=1)).isoformat() != plan.trade_date):
+            return None
+        clock = str(proof.get("native_order_time") or "")
+        if not clock:
+            # Legacy failed read evidence already retained the exact row.
+            rows = [row for row in proof.get("failed_native_rows", [])
+                if isinstance(row, dict) and row.get("query_kind") == "today-orders"
+                and str(row.get("委托编号") or "") == order_id]
+            if len(rows) == 1:
+                clock = str(rows[0].get("委托时间") or "")
+        if re.fullmatch(r"(?:[01]\d|2[0-3])[0-5]\d[0-5]\d", clock) and clock > now.strftime("%H%M%S"):
+            return clock
+        return None
+
+    @staticmethod
     def cancel_attempt_proven_unperformed(previous: dict[str, Any]) -> bool:
         proof = previous.get("locator_proof") or {}
         return bool(previous.get("cancel_claim_id") and previous.get("broker_order_id")
             and previous.get("account_binding") == "proven"
             and proof.get("cancel_evidence_claim_id", previous.get("cancel_claim_id")) == previous.get("cancel_claim_id")
-            and proof.get("cancel_helper_status") == "cancel_target_not_unique"
+            and proof.get("cancel_helper_status") in {
+                "cancel_target_not_unique", "cancel_controls_unproven",
+            }
             and all(proof.get(key) is False for key in (
                 "cancel_clicked", "cancel_click_proven", "cancel_confirmation_pressed")))
 

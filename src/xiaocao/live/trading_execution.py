@@ -1587,6 +1587,32 @@ class TradingExecution:
         previous: ExecutionReceipt,
     ) -> ExecutionReceipt:
         """Resolve a durable cancel claim without replaying its broker action."""
+        # A proved terminal event is monotonic. Older versions could leave
+        # cancel uncertainty on a terminal receipt; a later failed query must
+        # not erase that completed outcome or re-open its order.
+        events = self.store.events(plan.plan_id)
+        head = None
+        for sequence, event in enumerate(events, 1):
+            if (event.get("previous_hash") != head or event.get("sequence") != sequence
+                    or event.get("plan_hash") != plan.plan_hash
+                    or event.get("event_hash") != hashlib.sha256(_canonical(
+                        {key: value for key, value in event.items() if key != "event_hash"})).hexdigest()):
+                events = []
+                break
+            head = event["event_hash"]
+        for event in reversed(events):
+            saved = ExecutionReceipt.from_dict(event["receipt"])
+            if (saved.plan_hash == plan.plan_hash
+                    and saved.cancel_claim_id == previous.cancel_claim_id
+                    and saved.broker_order_id == previous.broker_order_id
+                    and saved.broker_strategy_id == previous.broker_strategy_id
+                    and saved.state in {ExecutionState.CANCELLED, ExecutionState.FILLED, ExecutionState.REJECTED}
+                    and saved.broker_status == saved.state.value
+                    and saved.active is False and saved.receipt_mapping
+                    and saved.account_binding == "proven"):
+                return self._record(plan, replace(saved, cancel_chain_uncertain=False),
+                    kind="cancel_terminal_evidence_restored",
+                    details={"terminal_event_id": event["event_id"]})
         try:
             broker_receipt = broker.reconcile(plan, previous.as_dict())
         except Exception as exc:
