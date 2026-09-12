@@ -863,6 +863,7 @@ class FounderscNativeAXBrokerAdapter(BrokerAdapter):
 
     @serialized_app_operation
     def probe(self, plan: TradePlan) -> BrokerCapability:
+        self.last_query_readbacks = {}
         try:
             ready = self.ensure_native_ready(unlock_once=True)
             self._open_query_surface()

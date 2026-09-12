@@ -16,6 +16,23 @@ DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 COMPACT_DATE_RE = re.compile(r"^\d{8}$")
 
 
+@pytest.fixture(scope="session", autouse=True)
+def isolated_founder_test_session(tmp_path_factory):
+    """Offline fake-native tests must not queue behind the user's actual APP.
+
+Actual APP rehearsals use the explicit standalone scripts, outside pytest.
+The same production lock implementation still serializes all test clients.
+"""
+    from xiaocao.live import foundersc_session
+    path = tmp_path_factory.mktemp("founder-session") / "app.lock"
+    original = foundersc_session.session_path
+    foundersc_session.session_path = lambda: path
+    try:
+        yield
+    finally:
+        foundersc_session.session_path = original
+
+
 @pytest.fixture(scope="session")
 def client() -> XiaocaoClient:
     return XiaocaoClient(

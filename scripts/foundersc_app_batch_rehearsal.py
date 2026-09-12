@@ -13,6 +13,7 @@ import re
 import subprocess
 import sys
 import time
+from dataclasses import replace
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from zoneinfo import ZoneInfo
@@ -26,7 +27,7 @@ from xiaocao.live.capital_keychain import KeychainCapitalRuntime
 from xiaocao.live.foundersc_native_ax import FounderscNativeAXClient, source_digest
 from xiaocao.live.foundersc_native_broker import FounderscNativeAXBrokerAdapter
 from xiaocao.live.trading_execution import (
-    BookBOwnershipEvidence, ExecutionState, ExecutionStore, TradePlan,
+    BookBOwnershipEvidence, ExecutionReceipt, ExecutionState, ExecutionStore, TradePlan,
     TradingExecution, account_writer_lock,
 )
 
@@ -115,9 +116,20 @@ def run_batch(execution, plans, *, directory, snapshot, cleanup_only=False):
             write_once(seal, {"started_at": stamp})
         for plan in reversed(plans):
             try:
-                prior = execution.store.current(plan.plan_id)
-                if prior is None:
-                    continue
+                with account_writer_lock(execution.account_lock_dir, plan.logical_account_id):
+                    prior = execution.store.current(plan.plan_id)
+                    if prior is None:
+                        prior = ExecutionReceipt(plan.plan_id, plan.plan_hash,
+                            ExecutionState.PLANNED, remaining_shares=plan.shares)
+                    if (prior.plan_hash == plan.plan_hash
+                            and prior.state in {ExecutionState.PLANNED, ExecutionState.VALIDATED,
+                                                ExecutionState.PREPARED}
+                            and not any((prior.submit_claim_id, prior.cancel_claim_id,
+                                prior.broker_order_id, prior.filled_shares,
+                                prior.submit_chain_uncertain, prior.cancel_chain_uncertain))):
+                        prior = execution.store.append(plan=plan, receipt=replace(prior,
+                            state=ExecutionState.SKIPPED, reason="REHEARSAL_BATCH_ABORTED_UNSUBMITTED",
+                            next_action="stop"), kind="rehearsal_unsubmitted_closed")
                 if prior.state in TERMINAL:
                     outcomes[plan.plan_id] = prior.as_dict()
                     continue
@@ -125,7 +137,11 @@ def run_batch(execution, plans, *, directory, snapshot, cleanup_only=False):
                     # An unclaimed failure is evidence, never a new submit in cleanup.
                     outcomes[plan.plan_id] = prior.as_dict()
                     continue
-                receipt = stage("reconcile", plan, lambda: execution.execute(plan))
+                receipt = prior
+                if receipt.state not in {ExecutionState.ACKNOWLEDGED, ExecutionState.PARTIAL}:
+                    receipt = stage("reconcile", plan, lambda: execution.execute(plan))
+                # cancel() itself proves the current exact row and reconciles
+                # fills; do not duplicate a full read for an already-known ID.
                 if receipt.state in {ExecutionState.ACKNOWLEDGED, ExecutionState.PARTIAL}:
                     stage("cancel", plan, lambda: execution.cancel(plan))
             except Exception as exc:
@@ -141,6 +157,11 @@ def run_batch(execution, plans, *, directory, snapshot, cleanup_only=False):
               "all_orders_terminal": all(
                   execution.store.current(p.plan_id) is not None and
                   execution.store.current(p.plan_id).state in TERMINAL for p in plans),
+              "acceptance_complete": all(
+                  execution.store.current(p.plan_id) is not None and
+                  execution.store.current(p.plan_id).broker_order_id and
+                  execution.store.current(p.plan_id).state in {ExecutionState.CANCELLED, ExecutionState.FILLED}
+                  for p in plans),
               "final_snapshot_proven": after is not None}
     write_once(directory / (stamp + "-result.json"), result)
     return result
@@ -191,7 +212,8 @@ def main():
         stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S%fZ")
         write_once(directory / (stamp + "-timings.json"), {"commands": native.command_timings})
     print(json.dumps({"run_id": args.run_id, **result}, ensure_ascii=False, default=str))
-    return 0 if result["all_orders_terminal"] and result["final_snapshot_proven"] and not result["errors"] else 2
+    complete = result["all_orders_terminal"] if args.action == "cleanup" else result["acceptance_complete"]
+    return 0 if complete and result["final_snapshot_proven"] and not result["errors"] else 2
 
 
 if __name__ == "__main__":
