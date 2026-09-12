@@ -1,6 +1,6 @@
 # 小草运营契约（Operating Contract, SSOT）
 
-**版本**：4.11
+**版本**：4.12
 **状态**：现行
 **适用范围**：所有 paper / 未来 real 的实盘环（live_recommend → paper_record → live_monitor → eod）与回测
 **关联实现**：`src/xiaocao/live/{safety,capital_keychain,foundersc_native_ax,foundersc_native_broker,trading_execution,book_b_live_lifecycle,book_b_live_intraday}.py`、`src/xiaocao/live/intelligence_policy.py`、`src/xiaocao/strategy/{mode_switch,trend_rules,kol_reference}.py`、`native/foundersc_ax_executor/`、`kronos_screen/scripts/{capture_signals,forward_eval,paper_record,settle_book_a,settle_book_t,decompose_pnl,quality_governor}.py`、`scripts/{book_b_live_morning,book_b_live_intraday,live_monitor,research_mode_switch_replay}.py`
@@ -268,7 +268,13 @@ KOL 断言、候选假设或报告升级为策略真值，也不替代永久参�
   同一快照的 today-trades 表已证明正数量同日成交时，才允许严格的
   可用+股票市值=总资产分支：SELL 后必须为 0<=可取<=余额<可用；BUY 后必须为
   0<=可取<=可用<余额。方向、价格和数量必须来自同一三表快照的精确成交行；缺失、
-  撤单或反向成交不能证明该分支。live allocation
+  撤单或反向成交不能证明成交分支。当前 APP 还会在 BUY 未成交时冻结本金及费用预留，
+  并将资产显示为可用+股票市值；因此 account snapshot、native probe 和 lifecycle
+  可由同账户同日 working/partial BUY 行独立证明冻结分支：唯一委托号、有效价格与
+  正未成交余量，其限价本金之和必须为正且不超过余额-可用，且仍严格满足资产等式及
+  0<=可取<=可用<余额。未知状态、已撤/废单/SELL 不得证明 BUY 冻结。
+  保存原始余额、可用、订单号、本金和未分解预留差额，不从单次观察推导费率，不把
+  冻结当成交或损益；混合账户的该差额仍不进入 Book-B NAV。live allocation
   facts 仍只认常态余额分支，不得用该例外扩大可买资金。回执必须持久化实际闭合等式的
   `asset_equation_cash_field`。两者均不精确闭合或字段顺序不成立仍 fail-closed，
   禁止用持仓行反算、近似或补造缺失资金字段。Vision 返回的 token 数组顺序没有
@@ -443,6 +449,7 @@ KOL 断言、候选假设或报告升级为策略真值，也不替代永久参�
 
 | 版本 | 日期 | 说明 |
 |------|------|------|
+| 4.12 | 2026-09-12 | APP 会话跨查询/提交、线程/进程/checkouts 串行；按实测未成交 BUY 冻结识别资金摘要，保留精确资产等式、可用资金和订单证据，不补造成交、不扩大 allocation。 |
 | 4.10 | 2026-09-12 | 按用户最新要求撤回09:28:30提醒与09:30自动跳过，黄金五分钟紧急代码修复/精确KOL补读优先；保留早启动、原计划恢复、回执、来源准备和原策略；新增无损KOL阅读文件与缺失来源定位。 |
 | 4.11 | 2026-09-12 | 未提交BUY不阻塞已有持仓保护，保留claim/SELL/资金预留/结算边界；AX清空增加可读性、延迟回填与残留校验，普通清空和解锁就绪采用短等待与3秒轮询预算。 |
 | 4.9 | 2026-09-12 | Book B 提前09:15准备；09:28:30仅提醒，09:30未完成必要判断和prepare即跳过，不自动盘中补买；正式原计划恢复/对账/本地关闭、历史运行回执、来源观察与有效KOL复用；当前执行仓位不变，领域历史提案移入研究归档。 |

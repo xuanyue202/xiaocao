@@ -38,7 +38,7 @@ def _hash(value):
     return hashlib.sha256(json.dumps(value, sort_keys=True).encode()).hexdigest()
 
 
-def create_batch(directory, *, run_id, fingerprint, code, prices, snapshot):
+def create_batch(directory, *, run_id, fingerprint, code, prices, snapshot, shares=100):
     manifest = directory / "batch.json"
     if manifest.exists():
         batch = json.loads(manifest.read_text())
@@ -48,7 +48,7 @@ def create_batch(directory, *, run_id, fingerprint, code, prices, snapshot):
                 or batch.get("fingerprint") != fingerprint
                 or batch.get("baseline_hash") != _hash(baseline)
                 or [p.limit_price for p in plans] != prices
-                or any(p.code != code for p in plans)
+                or any(p.code != code or p.shares != shares for p in plans)
                 or len({p.plan_id for p in plans}) != len(prices)
                 or any(item["fingerprint"] != fingerprint or
                        item["rehearsal_budget"]["account_snapshot_sha256"] != baseline["snapshot_sha256"]
@@ -57,14 +57,14 @@ def create_batch(directory, *, run_id, fingerprint, code, prices, snapshot):
             raise ValueError("REHEARSAL_BATCH_IMMUTABLE")
         return batch, plans
     baseline = snapshot()
-    total = sum(price * 100 for price in prices)
+    total = sum(price * shares for price in prices)
     if not 0 < total <= min(1000, baseline["broker_summary"]["available_cash"]):
         raise ValueError("REHEARSAL_BATCH_BUDGET")
     now = datetime.now(timezone.utc)
     sha = subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=ROOT, text=True).strip()
     intents = []
     for index, price in enumerate(prices):
-        budget = {"purpose": "user_authorized_app_simulation_canary", "shares": 100,
+        budget = {"purpose": "user_authorized_app_simulation_canary", "shares": shares,
                   "limit_price": price, "code": code,
                   "account_snapshot_sha256": baseline["snapshot_sha256"]}
         plan = TradePlan(
@@ -72,7 +72,7 @@ def create_batch(directory, *, run_id, fingerprint, code, prices, snapshot):
             snapshot_ref=str(manifest), strategy_sha=sha,
             trade_date=now.astimezone(ZoneInfo("Asia/Shanghai")).date().isoformat(),
             book="B", logical_account_id="primary", environment="live", code=code,
-            name="APP仿真批量工程试单", side="BUY", shares=100,
+            name="APP仿真批量工程试单", side="BUY", shares=shares,
             limit_price=price, basket_price=price, market_guard_status="ok",
             market_guard_required=False, price_rule="explicit_app_simulation_canary",
             created_at=now, recovery_deadline=now + timedelta(minutes=20),
@@ -152,6 +152,7 @@ def main():
     parser.add_argument("--run-id", required=True)
     parser.add_argument("--fingerprint", required=True)
     parser.add_argument("--code", default="512010.XSHG")
+    parser.add_argument("--shares", type=int, choices=(100, 200), default=100)
     parser.add_argument("--prices", required=True, type=float, nargs="+")
     parser.add_argument("--acknowledge-app-server-simulation", action="store_true")
     args = parser.parse_args()
@@ -178,7 +179,7 @@ def main():
         lock_root = ROOT / "output/live/book_b_live_execution/account_writer_locks"
         with account_writer_lock(lock_root, "primary"):
             batch, plans = create_batch(directory, run_id=args.run_id,
-                fingerprint=args.fingerprint, code=args.code, prices=args.prices, snapshot=snapshot)
+                fingerprint=args.fingerprint, code=args.code, prices=args.prices, snapshot=snapshot, shares=args.shares)
         execution = TradingExecution(store=ExecutionStore(directory / "events.jsonl"), broker=broker,
             ledger=BookBOwnershipEvidence(directory / "ownership.jsonl"),
             safety_env_provider=KeychainCapitalRuntime().safety_env,

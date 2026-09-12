@@ -250,6 +250,46 @@ def _same_day_buy_fill_proven(rows: list[dict[str, Any]]) -> bool:
     )
 
 
+def pending_buy_reservation_evidence(
+    rows: list[dict[str, Any]], *, balance: Decimal, available: Decimal,
+) -> dict[str, Any] | None:
+    """Explain a conservative cash reduction with current working BUY rows.
+
+The APP reserves order principal plus charges before a fill exists. We cannot
+derive its fee schedule from one example, so preserve the reported difference
+and the separately proven principal. Neither amount creates a fill or NAV.
+The caller still requires the exact asset equation and cash ordering.
+"""
+    if balance <= available:
+        return None
+    principal = Decimal(0)
+    identities = []
+    for row in rows:
+        status = _status(row.get("状态说明"))
+        if status == BrokerStatus.UNKNOWN:
+            return None
+        if status not in {BrokerStatus.ACCEPTED, BrokerStatus.PARTIAL}:
+            continue
+        if _side(row.get("买卖标志")) != "BUY":
+            continue
+        quantity = _integer(row.get("委托数量"), field="ORDER_QUANTITY")
+        filled = _integer(row.get("成交数量"), field="FILLED_QUANTITY", blank_zero=True)
+        price = _decimal(row.get("委托价格"), field="ORDER_PRICE")
+        order_id = str(row.get("委托编号") or "")
+        if (not re.fullmatch(r"\d+", order_id) or order_id in identities
+                or not 0 <= filled < quantity or price <= 0):
+            return None
+        identities.append(order_id)
+        principal += price * (quantity - filled)
+    reduction = balance - available
+    if not identities or principal <= 0 or principal > reduction:
+        return None
+    return {"kind": "pending_buy_reservation", "order_ids": sorted(identities),
+            "unfilled_limit_notional": str(principal),
+            "reported_cash_reduction": str(reduction),
+            "unallocated_reservation": str(reduction - principal)}
+
+
 class FounderscNativeAXBrokerAdapter(BrokerAdapter):
     """Exact-account, exact-order adapter for the Founder desktop App."""
 
@@ -277,6 +317,7 @@ class FounderscNativeAXBrokerAdapter(BrokerAdapter):
         self.snapshot_read_delays = tuple(
             max(0.0, float(item)) for item in snapshot_read_delays
         )
+        self.last_query_readbacks: dict[str, dict[str, Any]] = {}
         self._prepared: dict[str, dict[str, Any]] = {}
         self._prepared_cancels: dict[str, dict[str, Any]] = {}
 
@@ -514,6 +555,8 @@ class FounderscNativeAXBrokerAdapter(BrokerAdapter):
             ).as_dict()
             readback = payload.get("query_readback")
             readback = dict(readback) if isinstance(readback, dict) else {}
+            if self._account_bound(payload):
+                self.last_query_readbacks[kind] = readback
             basic_proven = bool(
                 str(payload.get("status") or "")
                     in {"query_read", "query_parse_unproven"}
@@ -854,7 +897,9 @@ class FounderscNativeAXBrokerAdapter(BrokerAdapter):
             )
             if cash_field == "available_cash" and (
                 (available > balance and not _same_day_sell_fill_proven(trades["rows"]))
-                or (available < balance and not _same_day_buy_fill_proven(trades["rows"]))
+                or (available < balance and not _same_day_buy_fill_proven(trades["rows"])
+                    and not pending_buy_reservation_evidence(
+                        orders["rows"], balance=balance, available=available))
             ):
                 raise FounderscNativeAXError("NATIVE_POSITION_FUNDS_FILL_DIRECTION_UNPROVEN")
             cancel_ready = self._open_cancel_surface()
@@ -920,7 +965,8 @@ class FounderscNativeAXBrokerAdapter(BrokerAdapter):
                 supports_cancel=False,
                 route=self.route,
                 account_binding="unproven",
-                reason=f"NATIVE_APP_PROBE_FAILED:{type(exc).__name__}",
+                reason=f"NATIVE_APP_PROBE_FAILED:{self._read_error_code(exc) if isinstance(exc, FounderscNativeAXError) else type(exc).__name__}",
+                locator_proof={"failed_native_readbacks": dict(self.last_query_readbacks)},
                 template_name="foundersc-native-ax",
             )
 
@@ -2502,7 +2548,9 @@ class FounderscNativeAXBrokerAdapter(BrokerAdapter):
                 raise FounderscNativeAXError(
                     "LIVE_ACCOUNT_SNAPSHOT_AVAILABLE_CASH_SELL_UNPROVEN"
                 )
-            if balance > available and not _same_day_buy_fill_proven(trade_rows):
+            if (balance > available and not _same_day_buy_fill_proven(trade_rows)
+                    and not pending_buy_reservation_evidence(
+                        tables["today-orders"]["rows"], balance=balance, available=available)):
                 raise FounderscNativeAXError(
                     "LIVE_ACCOUNT_SNAPSHOT_AVAILABLE_CASH_BUY_UNPROVEN"
                 )
@@ -2528,6 +2576,9 @@ class FounderscNativeAXBrokerAdapter(BrokerAdapter):
             ).hexdigest(),
             "source": "foundersc_native_app",
             "observed_at": min(observed_values).isoformat(),
+            "cash_reservation_evidence": pending_buy_reservation_evidence(
+                tables["today-orders"]["rows"], balance=balance, available=available
+            ) if asset_equation_cash_field == "available_cash" else None,
             "broker_summary": {
                 "total_assets": float(total_assets),
                 "securities_market_value": float(securities),

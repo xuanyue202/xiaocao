@@ -62,7 +62,7 @@ def read_rehearsal_plan(capsule: dict) -> TradePlan:
             or not plan.plan_id.startswith("native-rehearsal:")
             or capsule.get("plan_hash") != plan.plan_hash or plan.validation_error()
             or plan.logical_account_id != "primary" or plan.environment != "live"
-            or plan.shares != 100 or not 0 < plan.notional <= 1000
+            or plan.shares not in {100, 200} or not 0 < plan.notional <= 1000
             or plan.side != "BUY" or plan.price_rule != "explicit_app_simulation_canary"
             or plan.allocation_proof_hash != budget_hash
             or budget.get("purpose") != "user_authorized_app_simulation_canary"

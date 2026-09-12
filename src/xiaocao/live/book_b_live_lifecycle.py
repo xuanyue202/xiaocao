@@ -22,7 +22,7 @@ from typing import Any, Iterable
 from zoneinfo import ZoneInfo
 
 from .trading_execution import account_writer_lock
-from .foundersc_native_broker import _decimal as _native_decimal
+from .foundersc_native_broker import pending_buy_reservation_evidence, _decimal as _native_decimal
 from .foundersc_native_ax import FounderscNativeAXError
 
 
@@ -256,6 +256,11 @@ def validate_broker_account_snapshot(
                 and "撤" not in str(row.get("成交类型") or "")
                 for row in tables["today-trades"]["rows"]
             )
+            if equation_invalid and expected_side == "BUY":
+                equation_invalid = not bool(pending_buy_reservation_evidence(
+                    tables["today-orders"]["rows"],
+                    balance=balance_decimal, available=available_decimal,
+                ))
     else:
         equation_invalid = True
     if common_invalid or equation_invalid:
