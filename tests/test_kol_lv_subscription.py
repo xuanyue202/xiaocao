@@ -4126,6 +4126,7 @@ def test_listing_eval_timeout_exposes_safe_operation_diagnostic(tmp_path):
         opencli_command=("opencli",),
         share_url="https://pan.baidu.com/s/private-share-token",
         share_code="a1b2",
+        edge_route_launcher=lambda _route: None,
     )
 
     with pytest.raises(EnrichmentDiagnosticError) as captured:
