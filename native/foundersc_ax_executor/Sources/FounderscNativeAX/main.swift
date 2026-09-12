@@ -368,12 +368,14 @@ private func captureFounderWindow(
 
 private func recognizeText(
     image: CGImage,
-    screenBounds: Bounds
+    screenBounds: Bounds,
+    smallCell: Bool = false
 ) -> [OCRToken] {
     let request = VNRecognizeTextRequest()
     request.recognitionLevel = .accurate
     request.recognitionLanguages = ["zh-Hans", "en-US"]
     request.usesLanguageCorrection = false
+    if smallCell { request.minimumTextHeight = 0 }
     let handler = VNImageRequestHandler(cgImage: image, options: [:])
     guard (try? handler.perform([request])) != nil else { return [] }
     return (request.results ?? []).compactMap { observation in
@@ -390,6 +392,56 @@ private func recognizeText(
             )
         )
     }.filter { !$0.text.isEmpty }
+}
+
+private func recognizeTableText(
+    image: CGImage, screenBounds: Bounds, shapes: [TableShape]
+) -> [OCRToken] {
+    return recoverMissingTableText(image: image, screenBounds: screenBounds, shapes: shapes,
+        initialTokens: recognizeText(image: image, screenBounds: screenBounds))
+}
+
+private func recoverMissingTableText(
+    image: CGImage, screenBounds: Bounds, shapes: [TableShape], initialTokens: [OCRToken]
+) -> [OCRToken] {
+    var tokens = initialTokens
+    guard shapes.count == 1, shapes[0].auditComplete,
+          let rows = shapes[0].rowBounds, let columns = shapes[0].columns,
+          rows.count == shapes[0].rowCount,
+          screenBounds.width > 0, screenBounds.height > 0 else { return tokens }
+    let required: Set<String> = ["证券代码", "买卖标志", "状态说明", "委托价格", "委托数量", "委托编号", "成交编号"]
+    for row in rows {
+        for column in columns where required.contains(column.title) {
+            guard let bounds = column.bounds else { continue }
+            let cell = Bounds(x: bounds.x, y: row.y, width: bounds.width, height: row.height)
+            func inside(_ token: OCRToken) -> Bool {
+                let x = token.bounds.x + token.bounds.width / 2
+                let y = token.bounds.y + token.bounds.height / 2
+                return x >= cell.x && x <= cell.x + cell.width
+                    && y >= cell.y && y <= cell.y + cell.height
+            }
+            // Retry only a missing critical cell, never replace a readable
+            // number or derive a direction from another order.
+            guard !tokens.contains(where: inside) else { continue }
+            let rect = CGRect(x: (cell.x - screenBounds.x) * Double(image.width) / screenBounds.width,
+                y: (cell.y - screenBounds.y) * Double(image.height) / screenBounds.height,
+                width: cell.width * Double(image.width) / screenBounds.width,
+                height: cell.height * Double(image.height) / screenBounds.height).integral
+            guard CGRect(x: 0, y: 0, width: image.width, height: image.height).contains(rect),
+                  let crop = image.cropping(to: rect),
+                  let context = CGContext(data: nil, width: crop.width * 3, height: crop.height * 3,
+                    bitsPerComponent: 8, bytesPerRow: 0, space: CGColorSpaceCreateDeviceRGB(),
+                    bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue) else { continue }
+            context.interpolationQuality = .high
+            context.draw(crop, in: CGRect(x: 0, y: 0, width: crop.width * 3, height: crop.height * 3))
+            guard let enlarged = context.makeImage() else { continue }
+            let recovered = recognizeText(image: enlarged, screenBounds: cell, smallCell: true)
+            if !recovered.isEmpty && recovered.allSatisfy({ inside($0) && $0.confidence >= minimumCriticalOCRConfidence }) {
+                tokens.append(contentsOf: recovered)
+            }
+        }
+    }
+    return tokens
 }
 
 private func redactedOCRLine(_ value: String) -> String {
@@ -727,9 +779,10 @@ private func capturedQueryReadback(
           ) else {
         return nil
     }
-    let tokens = recognizeText(
+    let tokens = recognizeTableText(
         image: capture.0,
-        screenBounds: capture.1
+        screenBounds: capture.1,
+        shapes: observation.receipt.tableShapes
     )
     return structuredQueryReadback(
         kind: kind,
@@ -2662,9 +2715,10 @@ private func performCancel(arguments: [String], selectionProbeOnly: Bool) -> Rec
         receipt.timingMs = milliseconds(since: started)
         return receipt
     }
-    let baselineTokens = recognizeText(
+    let baselineTokens = recognizeTableText(
         image: baselineCapture.0,
-        screenBounds: baselineCapture.1
+        screenBounds: baselineCapture.1,
+        shapes: observation.receipt.tableShapes
     )
     let query = structuredQueryReadback(
         kind: "today-orders",
@@ -2770,7 +2824,8 @@ private func performCancel(arguments: [String], selectionProbeOnly: Bool) -> Rec
 
     // A list refresh/reorder after the first capture must not change the
     // identity of the selected row. Re-read that row before the cancel action.
-    let selectedTokens = recognizeText(image: selectedCapture.0, screenBounds: selectedCapture.1)
+    let selectedTokens = recognizeTableText(image: selectedCapture.0, screenBounds: selectedCapture.1,
+        shapes: observation.receipt.tableShapes)
     let selectedQuery = structuredQueryReadback(kind: "today-orders", tokens: selectedTokens,
         tableShapes: observation.receipt.tableShapes, navigationLabelCount: 1,
         navigationClickMode: "ocr_guarded_coordinate")

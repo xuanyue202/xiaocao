@@ -260,3 +260,8 @@ Failed reads retain the specific error code, dated table metadata and flattened
 redacted cells within the execution evidence depth limit. A terminal cancel
 readback clears cancellation uncertainty through either execute or cancel
 recovery; a nonterminal uncertain cancel remains read-only.
+
+Missing critical cells may receive one in-memory, enlarged Vision crop within
+the audited cell geometry. Existing tokens are retained; recovered tokens must
+remain inside that cell and meet the unchanged confidence floor. This is
+read-only capture repair, not status or side inference from previous orders.

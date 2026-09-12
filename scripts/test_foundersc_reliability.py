@@ -18,7 +18,7 @@ TESTS = [
     "foundersc_native_ax", "foundersc_native_broker", "foundersc_keychain", "live_capital_keychain",
     "trading_execution", "trading_runner", "book_b_live_morning", "book_b_live_recovery",
     "book_b_live_lifecycle", "book_b_live_policy", "book_b_allocation", "live_monitor",
-    "native_prepare_clear_behavior", "native_order_value_behavior", "native_cancel_identity_behavior", "foundersc_execution_integration",
+    "native_prepare_clear_behavior", "native_order_value_behavior", "native_table_capture_behavior", "native_cancel_identity_behavior", "foundersc_execution_integration",
     "foundersc_python_boundaries", "foundersc_query_faults", "foundersc_app_rehearsal",
     "foundersc_native_cli", "configure_foundersc_trade_keychain", "wait_for_agent_reviews",
     "wait_for_morning_freeze",
