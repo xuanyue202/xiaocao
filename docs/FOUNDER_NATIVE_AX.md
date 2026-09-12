@@ -295,3 +295,17 @@ normalization, retains the success-popup order id plus action/result evidence,
 and retries bounded read-only grid reconciliation for the same durable claim.
 This repair recovered order `6000356` and trade `1560943` at 17.06 without a
 second submit.
+
+## Offline reliability and APP simulation rehearsal
+
+Run `PYTHONPATH=src .venv/bin/python scripts/test_foundersc_reliability.py` after
+the terminal outcome when a broad adapter regression is needed. This covers the
+Python execution/account lifecycle and CLI wiring as well as AX. It is an
+offline development command, not a morning prerequisite.
+
+Manual APP-server simulation tests use `scripts/foundersc_app_rehearsal.py` with
+the explicit deployment acknowledgment and an immutable run ID. The isolated
+test store shares the account writer lock with normal execution. Resume the
+same ID after interruption; preserve submit/cancel claims and reconcile exact
+order state. See [the September 12 validation record](FOUNDER_RELIABILITY_20260912.md)
+for test scope, corrected defects, observed APP evidence and remaining limits.

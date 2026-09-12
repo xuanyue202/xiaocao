@@ -209,3 +209,10 @@ machine-local and are never transferred through Git. A green Remote device is
 not runtime readiness; only the fresh bootstrap readback is.
 
 Full operator/design documentation: `docs/FOUNDER_NATIVE_AX.md`.
+
+For offline reliability work after the terminal outcome, run
+`PYTHONPATH=src .venv/bin/python scripts/test_foundersc_reliability.py`.
+For an explicitly authorized APP-server simulation rehearsal, read the manual
+runner section in `docs/FOUNDER_RELIABILITY_20260912.md` and reuse its durable
+run ID after interruption. These engineering tools are outside the morning
+hot path; the regular Automation still uses the existing strategy runner.

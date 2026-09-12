@@ -770,6 +770,16 @@ class ExecutionStore:
         fcntl.flock(handle.fileno(), fcntl.LOCK_EX)
         return handle
 
+    @staticmethod
+    def _read_event(line: str) -> dict[str, Any]:
+        try:
+            row = json.loads(line)
+        except (TypeError, ValueError) as exc:
+            raise ValueError("EXECUTION_HISTORY_CORRUPT") from exc
+        if not isinstance(row, dict) or not row.get("plan_id"):
+            raise ValueError("EXECUTION_HISTORY_CORRUPT")
+        return row
+
     def events(self, plan_id: str) -> list[dict[str, Any]]:
         if not self.path.exists():
             return []
@@ -778,10 +788,9 @@ class ExecutionStore:
             rows = []
             with self.path.open(encoding="utf-8") as stream:
                 for line in stream:
-                    try:
-                        row = json.loads(line)
-                    except (TypeError, ValueError):
+                    if not line.strip():
                         continue
+                    row = self._read_event(line)
                     if row.get("plan_id") == plan_id:
                         rows.append(row)
             return rows
@@ -812,10 +821,9 @@ class ExecutionStore:
             if self.path.exists():
                 with self.path.open(encoding="utf-8") as stream:
                     for line in stream:
-                        try:
-                            row = json.loads(line)
-                        except (TypeError, ValueError):
+                        if not line.strip():
                             continue
+                        row = self._read_event(line)
                         if row.get("plan_id") == plan.plan_id:
                             previous_hash = row.get("event_hash")
                             sequence = max(sequence, int(row.get("sequence") or 0))

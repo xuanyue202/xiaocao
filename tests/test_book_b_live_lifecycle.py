@@ -385,6 +385,24 @@ def test_project_owned_buy_uses_broker_mark_but_not_mixed_account_cash(
     assert account.lots[0].monitor_context == {"profile": "v6", "mode": "接力"}
 
 
+@pytest.mark.parametrize("table,field,text", [
+    ("positions", "当前价", "11,0000"), ("positions", "证券数量", "100,00"),
+    ("positions", "可卖数量", "100,00"), ("today-orders", "成交数量", "100,00"),
+    ("today-trades", "成交数量", "100,00"), ("today-trades", "成交价格", "10,0000"),
+])
+def test_native_locale_numbers_survive_account_projection(tmp_path, table, field, text):
+    _record_fill(tmp_path, _plan(), price=10.0, event_id="buy-fill")
+    snapshot = _snapshot(shares=100, sellable=100, price=11.0,
+        broker_fills=(("order-buy-fill", "000001.XSHE", "BUY", 100, 10.0),))
+    snapshot["tables"][table]["rows"][0][field] = text
+    snapshot.pop("snapshot_sha256")
+    snapshot["snapshot_sha256"] = _canonical_sha256(snapshot)
+    account = project_book_b_live_account(tmp_path, snapshot, trade_date="2026-09-01", now=NOW)
+    assert account.cash == 28_999.9
+    assert account.current_open_exposure == 1100
+    assert account.settled_nav == 30_099.79
+
+
 def test_project_uses_authoritative_fill_notional_not_rounded_fill_price(
     tmp_path: Path,
 ) -> None:

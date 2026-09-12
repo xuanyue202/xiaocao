@@ -14,7 +14,8 @@ from xiaocao.live.trading_execution import (
 
 @pytest.fixture
 def chain(tmp_path):
-    now = datetime.now(timezone.utc)
+    china_day = datetime.now(timezone(timedelta(hours=8))).date()
+    now = datetime(china_day.year, china_day.month, china_day.day, 1, 35, tzinfo=timezone.utc)
     plan = replace(_plan(), created_at=now, trade_date=now.astimezone(timezone(timedelta(hours=8))).date().isoformat(),
                    recovery_deadline=now + timedelta(minutes=5), price_rule="explicit-test-limit",
                    code="512010.XSHG")
@@ -88,3 +89,68 @@ def test_broken_native_readiness_never_reaches_order_fields(chain, field, value)
     assert receipt.state in {ExecutionState.REJECTED, ExecutionState.VALIDATED}
     assert receipt.submit_claim_id is None and receipt.broker_order_id is None
     assert native.prepare_calls == native.submit_calls == native.cancel_calls == 0
+
+
+@pytest.mark.parametrize("filled", [40, 100])
+def test_partial_cancel_and_fill_are_recorded_once_across_restarts(chain, filled):
+    plan, engine = chain
+    native = FakeNative()
+    accepted = engine(native).execute(plan)
+    order = next(row for row in native.orders if row["委托编号"] == accepted.broker_order_id)
+    order.update({"状态说明": "已撤" if filled < 100 else "已成", "成交数量": str(filled)})
+    native.trades = [{
+        "证券代码": "512010", "买卖标志": "买入", "成交时间": "100001",
+        "成交价格": "9.98", "成交数量": str(filled), "成交金额": str(filled * 9.98),
+        "成交编号": "700001", "委托编号": accepted.broker_order_id,
+    }]
+    final = engine(native).execute(plan)
+    assert final.state == (ExecutionState.CANCELLED if filled < 100 else ExecutionState.FILLED), final.reason
+    for _ in range(3):
+        assert engine(native).execute(plan).filled_shares == filled
+    ledger = engine(native).ledger
+    assert ledger.owned_shares(logical_account_id="primary", code=plan.code) == filled
+    rows = [json.loads(line) for line in ledger.path.read_text().splitlines()]
+    assert len(rows) == 1
+    assert native.submit_calls == 1 and native.cancel_calls == 0
+
+
+@pytest.mark.parametrize("tail", ['{"submit_claim_id":', '[]\n', 'null\n'])
+def test_damaged_execution_history_cannot_be_interpreted_as_no_order(chain, tail):
+    plan, engine = chain
+    native = FakeNative()
+    execution = engine(native)
+    execution.store.path.write_text(tail)
+    with pytest.raises(ValueError, match="EXECUTION_HISTORY_CORRUPT"):
+        execution.execute(plan)
+    assert native.prepare_calls == native.submit_calls == native.cancel_calls == 0
+    assert execution.store.path.read_text() == tail
+
+
+@pytest.mark.parametrize("sellable", [0, 100])
+def test_owned_sell_uses_native_side_and_t1_then_reconciles_once(chain, sellable):
+    plan, engine = chain
+    native = FakeNative()
+    bought = engine(native).execute(plan)
+    order = next(row for row in native.orders if row["委托编号"] == bought.broker_order_id)
+    order.update({"状态说明": "已成", "成交数量": "100"})
+    native.trades = [{"证券代码": "512010", "买卖标志": "买入", "成交价格": "10.0",
+                      "成交数量": "100", "成交编号": "700001", "委托编号": bought.broker_order_id}]
+    assert engine(native).execute(plan).state == ExecutionState.FILLED
+    native.positions.append({"证券代码": "512010", "证券数量": "100",
+        "可卖数量": str(sellable), "当前价": "10", "最新市值": "1000"})
+    sell = replace(plan, plan_id=plan.plan_id + ":sell", side="SELL", basket_price=None,
+        owned_lot_id=plan.plan_id, sell_authorized=True, sell_reason="HARD_STOP",
+        sell_decision_phase="risk_floor", sell_decision_at=plan.created_at,
+        market_guard_required=True, market_guard_observed_at=plan.created_at,
+        market_guard_latest_price=10.0, market_guard_down_price=9.0)
+    receipt = engine(native).execute(sell)
+    if not sellable:
+        assert receipt.state in {ExecutionState.SKIPPED, ExecutionState.REJECTED}, receipt.reason
+        assert native.submit_calls == 1
+    else:
+        assert receipt.state == ExecutionState.ACKNOWLEDGED, receipt.reason
+        assert native.orders[-1]["买卖标志"] == "卖出"
+        assert engine(native).cancel(sell).state == ExecutionState.CANCELLED
+        assert engine(native).cancel(sell).state == ExecutionState.CANCELLED
+        assert native.submit_calls == 2 and native.cancel_calls == 1
+    assert engine(native).ledger.owned_shares(logical_account_id="primary", code=plan.code) == 100

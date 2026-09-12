@@ -24,8 +24,8 @@ TERMINAL = {ExecutionState.FILLED, ExecutionState.CANCELLED, ExecutionState.REJE
 
 def _history(state_dir: Path, plan: TradePlan) -> list[dict]:
     path = state_dir / "events.jsonl"
-    # ExecutionStore's compatibility reader skips malformed lines. A recovery
-    # must not interpret a corrupt submit claim as an absent submit claim.
+    # Keep the recovery-specific error and chain verification before dispatch.
+    # A corrupt submit claim must never be interpreted as an absent claim.
     rows = [json.loads(line) for line in path.read_text().splitlines() if line.strip()] if path.exists() else []
     if any(not isinstance(row, dict) for row in rows):
         raise ValueError("LIVE_RECOVERY_EVENT_INVALID")

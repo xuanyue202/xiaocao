@@ -10,9 +10,11 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import re
 import shutil
 import subprocess
 from dataclasses import dataclass
+from decimal import Decimal, InvalidOperation
 from pathlib import Path
 from typing import Any, Callable
 
@@ -198,7 +200,7 @@ def _one_receipt(stdout: object) -> dict[str, Any]:
         raise FounderscNativeAXError("NATIVE_AX_RECEIPT_SHAPE")
     if payload.get("schema_version") != SCHEMA_VERSION:
         raise FounderscNativeAXError("NATIVE_AX_SCHEMA_MISMATCH")
-    if not isinstance(payload.get("helper_version"), int):
+    if type(payload.get("helper_version")) is not int:
         raise FounderscNativeAXError("NATIVE_AX_HELPER_VERSION_MISSING")
     if not isinstance(payload.get("status"), str):
         raise FounderscNativeAXError("NATIVE_AX_STATUS_MISSING")
@@ -583,9 +585,24 @@ class FounderscNativeAXClient:
         quantity: int,
         expected_fingerprint: str,
     ) -> list[str]:
-        bare_code = str(code or "").strip().split(".", 1)[0]
+        full_code = str(code or "").strip()
+        bare_code = full_code.split(".", 1)[0]
         normalized_side = str(side or "").strip().lower()
-        normalized_price = f"{float(price):.6f}".rstrip("0").rstrip(".")
+        fingerprint = str(expected_fingerprint or "").strip()
+        if (not re.fullmatch(r"[0-9]{6}(?:\.(?:XSHG|XSHE|BJSE))?", full_code)
+                or normalized_side not in {"buy", "sell"} or not fingerprint):
+            raise FounderscNativeAXError("NATIVE_AX_ORDER_IDENTITY_INVALID")
+        try:
+            amount = Decimal(str(quantity))
+            value = Decimal(str(price))
+            if (isinstance(quantity, bool) or isinstance(price, bool)
+                    or not amount.is_finite() or amount <= 0 or amount != amount.to_integral_value()
+                    or not value.is_finite() or value <= 0
+                    or value != value.quantize(Decimal("0.000001"))):
+                raise ValueError()
+        except (InvalidOperation, TypeError, ValueError) as exc:
+            raise FounderscNativeAXError("NATIVE_AX_ORDER_NUMERIC_INVALID") from exc
+        normalized_price = format(value, ".6f").rstrip("0").rstrip(".")
         return [
             "--code",
             bare_code,
@@ -594,9 +611,9 @@ class FounderscNativeAXClient:
             "--price",
             normalized_price,
             "--quantity",
-            str(int(quantity)),
+            str(int(amount)),
             "--expected-fingerprint",
-            str(expected_fingerprint or "").strip(),
+            fingerprint,
         ]
 
     def prepare_order(

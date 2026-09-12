@@ -22,6 +22,8 @@ from typing import Any, Iterable
 from zoneinfo import ZoneInfo
 
 from .trading_execution import account_writer_lock
+from .foundersc_native_broker import _decimal as _native_decimal
+from .foundersc_native_ax import FounderscNativeAXError
 
 
 BOOK_B_LIVE_INITIAL_CAPITAL = 30_000.0
@@ -72,6 +74,19 @@ def _nonnegative_int(value: object, *, reason: str) -> int:
     if number < 0 or number != number.to_integral_value():
         raise ValueError(reason)
     return int(number)
+
+
+def _broker_decimal(value: object, *, reason: str, field: str = "PRICE") -> Decimal:
+    """Use the adapter's locale rules only for raw APP table cells."""
+    try:
+        return _native_decimal(str(value), field=field)
+    except FounderscNativeAXError as exc:
+        raise ValueError(reason) from exc
+
+
+def _broker_integer(value: object, *, reason: str) -> int:
+    number = _broker_decimal(value, reason=reason, field="QUANTITY")
+    return _nonnegative_int(number, reason=reason)
 
 
 def _post_close_timestamp(
@@ -228,12 +243,12 @@ def validate_broker_account_snapshot(
         if not equation_invalid:
             equation_invalid = not any(
                 _broker_side(row.get("买卖标志")) == expected_side
-                and _nonnegative_int(
+                and _broker_integer(
                     row.get("成交数量"),
                     reason="LIVE_BOOK_B_BROKER_TRADE_FILL_UNPROVEN",
                 )
                 > 0
-                and _finite_decimal(
+                and _broker_decimal(
                     row.get("成交价格"),
                     reason="LIVE_BOOK_B_BROKER_TRADE_FILL_UNPROVEN",
                 )
@@ -439,7 +454,7 @@ def _validate_same_day_broker_fill_coverage(
         ]
         if len(matching_orders) != 1:
             raise ValueError("LIVE_BOOK_B_BROKER_ORDER_FILL_UNPROVEN")
-        order_filled = _nonnegative_int(
+        order_filled = _broker_integer(
             matching_orders[0].get("成交数量") or 0,
             reason="LIVE_BOOK_B_BROKER_ORDER_FILL_UNPROVEN",
         )
@@ -453,7 +468,7 @@ def _validate_same_day_broker_fill_coverage(
                 or _broker_side(row.get("买卖标志")) != side
             ):
                 continue
-            price = _finite_decimal(
+            price = _broker_decimal(
                 row.get("成交价格"),
                 reason="LIVE_BOOK_B_BROKER_TRADE_FILL_UNPROVEN",
             )
@@ -463,7 +478,7 @@ def _validate_same_day_broker_fill_coverage(
                 raise ValueError("LIVE_BOOK_B_BROKER_TRADE_FILL_UNPROVEN")
             matching_trades.append(row)
         trade_shares = sum(
-            _nonnegative_int(
+            _broker_integer(
                 row.get("成交数量"),
                 reason="LIVE_BOOK_B_BROKER_TRADE_FILL_UNPROVEN",
             )
@@ -471,11 +486,11 @@ def _validate_same_day_broker_fill_coverage(
         )
         trade_notional = sum(
             (
-                _finite_decimal(
+                _broker_decimal(
                     row.get("成交价格"),
                     reason="LIVE_BOOK_B_BROKER_TRADE_FILL_UNPROVEN",
                 )
-                * _nonnegative_int(
+                * _broker_integer(
                     row.get("成交数量"),
                     reason="LIVE_BOOK_B_BROKER_TRADE_FILL_UNPROVEN",
                 )
@@ -677,14 +692,15 @@ def project_book_b_live_account(
         if code6 in broker_positions:
             raise ValueError(f"LIVE_BOOK_B_BROKER_POSITION_DUPLICATE:{code6}")
         broker_positions[code6] = {
-            "shares": _nonnegative_int(
+            "shares": _broker_integer(
                 row.get("证券数量"), reason="LIVE_BOOK_B_BROKER_SHARES_INVALID"
             ),
-            "sellable": _nonnegative_int(
+            "sellable": _broker_integer(
                 row.get("可卖数量"), reason="LIVE_BOOK_B_BROKER_SELLABLE_INVALID"
             ),
             "price": _finite_float(
-                row.get("当前价"), reason="LIVE_BOOK_B_BROKER_PRICE_INVALID"
+                _broker_decimal(row.get("当前价"), reason="LIVE_BOOK_B_BROKER_PRICE_INVALID"),
+                reason="LIVE_BOOK_B_BROKER_PRICE_INVALID",
             ),
         }
 

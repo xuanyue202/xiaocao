@@ -220,7 +220,7 @@ class FakeNative:
                 "状态说明": "未报",
                 "委托价格": f"{kwargs['price']:.4f}",
                 "委托数量": str(kwargs["quantity"]),
-                "委托编号": "6000003",
+                "委托编号": str(6000002 + self.submit_calls),
                 "成交价格": "0.000",
                 "成交数量": "",
                 "报价方式": "买卖",
@@ -1261,11 +1261,11 @@ def test_native_cancel_uses_exact_order_id_once_and_reconciles() -> None:
     assert native.cancel_calls == 1
 
 
-@pytest.mark.parametrize("status", ["已撤"])
-def test_partially_filled_cancel_remains_terminal(status: str) -> None:
+@pytest.mark.parametrize("status,expected", [("已撤", BrokerStatus.CANCELLED), ("状态未知", BrokerStatus.UNKNOWN)])
+def test_partially_filled_cancel_remains_terminal(status: str, expected) -> None:
     native = FakeNative()
     adapter = _adapter(native)
-    plan = replace(_plan(), trade_date=datetime.now(timezone.utc).date().isoformat())
+    plan = replace(_plan(), trade_date=datetime.now(timezone(timedelta(hours=8))).date().isoformat())
     adapter.prepare(plan)
     submitted = adapter.submit(plan, "partial-cancel")
     order = next(row for row in native.orders if row["委托编号"] == submitted.order_id)
@@ -1277,9 +1277,9 @@ def test_partially_filled_cancel_remains_terminal(status: str) -> None:
         "成交类型": "普通成交", "状态说明": "已成", "股东代码": "A***",
     }]
     receipt = adapter.reconcile(plan, {"broker_order_id": submitted.order_id})
-    assert receipt.normalized_status() == BrokerStatus.CANCELLED
+    assert receipt.normalized_status() == expected
     assert receipt.filled_shares == 40 and receipt.remaining_shares == 60
-    assert receipt.active is False and receipt.conclusive is True
+    assert receipt.active is False and receipt.conclusive is (expected == BrokerStatus.CANCELLED)
     assert receipt.fill_price == 10.0 and receipt.retry_allowed is False
     assert native.submit_calls == 1 and native.cancel_calls == 0
 
@@ -1619,7 +1619,8 @@ def test_prior_day_native_history_does_not_infer_terminal_from_accepted() -> Non
     assert native.query_calls == ["history-orders", "history-trades", "positions"]
 
 
-def test_prior_day_native_history_accepts_explicit_exact_cancel_terminal() -> None:
+@pytest.mark.parametrize("filled", [0, 40, 100])
+def test_prior_day_native_history_accepts_explicit_exact_cancel_terminal(filled) -> None:
     native = FakeNative()
     native.positions = [
         row for row in native.positions if row["证券代码"] != "000001"
@@ -1637,9 +1638,15 @@ def test_prior_day_native_history_accepts_explicit_exact_cancel_terminal() -> No
             "委托数量": "100.00",
             "委托编号": "6001324",
             "成交价格": "0.00000000",
-            "成交数量": "0.00",
+            "成交数量": str(filled),
         }
     ]
+    if filled:
+        native.history_trades = [{
+            "证券代码": "000001", "买卖标志": "买入", "成交日期": "20260830",
+            "成交时间": "145041", "成交价格": "10.00", "成交数量": str(filled),
+            "成交金额": str(filled * 10), "成交编号": "700001", "委托编号": "6001324",
+        }]
 
     receipt = _adapter(native).reconcile(
         _plan(),
@@ -1650,7 +1657,10 @@ def test_prior_day_native_history_accepts_explicit_exact_cancel_terminal() -> No
     assert receipt.reason == "native_historical_order_and_trade_readback"
     assert receipt.receipt_mapping is True
     assert receipt.conclusive is True
-    assert receipt.filled_shares == 0
+    assert receipt.filled_shares == filled
+    assert receipt.remaining_shares == 100 - filled
+    assert receipt.active is False
+    assert receipt.fill_price == (10.0 if filled else None)
 
 
 def test_prior_day_native_history_rejects_cross_order_tuple_match() -> None:
@@ -1919,6 +1929,7 @@ def test_native_fund_equation_accepts_same_day_sell_cash_as_available() -> None:
     assert snapshot["funds_summary"]["asset_equation_cash_field"] == (
         "available_cash"
     )
+    assert adapter.probe(_plan()).ready is True
     assert native.prepare_calls == 0
     assert native.submit_calls == 0
     assert native.cancel_calls == 0
@@ -1982,6 +1993,7 @@ def test_native_fund_equation_accepts_same_day_buy_cash_as_available() -> None:
     assert snapshot["funds_summary"]["asset_equation_cash_field"] == (
         "available_cash"
     )
+    assert adapter.probe(_plan()).ready is True
     assert native.prepare_calls == 0
     assert native.submit_calls == 0
     assert native.cancel_calls == 0

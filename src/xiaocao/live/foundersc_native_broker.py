@@ -148,10 +148,14 @@ def _normalize_decimal_text(text: str, *, field: str) -> str:
         return compact
     if "." in compact:
         if compact.rfind(",") > compact.rfind("."):
+            if re.fullmatch(r"[+-]?[0-9]{1,3}(?:\.[0-9]{3})+,[0-9]+", compact) is None:
+                return compact
             integer, fraction = compact.rsplit(",", 1)
             if not fraction.isdigit():
                 return compact
             return integer.replace(".", "").replace(",", "") + "." + fraction
+        if re.fullmatch(r"[+-]?[0-9]{1,3}(?:,[0-9]{3})+\.[0-9]+", compact) is None:
+            return compact
         return compact.replace(",", "")
 
     parts = compact.split(",")
@@ -508,6 +512,8 @@ class FounderscNativeAXBrokerAdapter(BrokerAdapter):
                 and readback.get("capture_proven") is True
                 and str(readback.get("kind") or "") == kind
                 and isinstance(readback.get("rows"), list)
+                and all(isinstance(row, dict) for row in readback["rows"])
+                and type(readback.get("row_count")) is int
             )
             if basic_proven:
                 rows = [
@@ -515,7 +521,7 @@ class FounderscNativeAXBrokerAdapter(BrokerAdapter):
                     for row in readback["rows"]
                     if isinstance(row, dict)
                 ]
-                if len(rows) != int(readback.get("row_count") or 0):
+                if len(rows) != readback["row_count"]:
                     last_error = (
                         f"NATIVE_QUERY_{kind.upper()}_ROW_COUNT_MISMATCH"
                     )
@@ -829,12 +835,18 @@ class FounderscNativeAXBrokerAdapter(BrokerAdapter):
                 or balance < 0
                 or available < 0
                 or withdrawable < 0
-                or withdrawable > available
-                or available > balance
-                or abs((balance + securities) - total_assets)
-                    > Decimal("0.10")
             ):
                 raise FounderscNativeAXError("NATIVE_POSITION_FUNDS_UNPROVEN")
+            cash_field = _asset_equation_cash_field(
+                total_assets=total_assets, securities=securities, balance=balance,
+                available=available, withdrawable=withdrawable,
+                reason_prefix="NATIVE_POSITION_FUNDS",
+            )
+            if cash_field == "available_cash" and (
+                (available > balance and not _same_day_sell_fill_proven(trades["rows"]))
+                or (available < balance and not _same_day_buy_fill_proven(trades["rows"]))
+            ):
+                raise FounderscNativeAXError("NATIVE_POSITION_FUNDS_FILL_DIRECTION_UNPROVEN")
             cancel_ready = self._open_cancel_surface()
             order_ready = self.ensure_native_ready(
                 require_order_capability=True,
@@ -1341,7 +1353,7 @@ class FounderscNativeAXBrokerAdapter(BrokerAdapter):
         if trade_filled:
             filled = trade_filled
             # A positive fill does not reopen the cancelled remainder.
-            if normalized != BrokerStatus.CANCELLED:
+            if normalized not in {BrokerStatus.CANCELLED, BrokerStatus.UNKNOWN}:
                 normalized = (
                     BrokerStatus.FILLED
                     if filled == requested_shares else BrokerStatus.PARTIAL
@@ -1549,10 +1561,11 @@ class FounderscNativeAXBrokerAdapter(BrokerAdapter):
                 for row in trade_matches
             )
             fill_price = float(fill_notional / Decimal(trade_filled))
-            normalized = (
-                BrokerStatus.FILLED
-                if trade_filled == requested_shares else BrokerStatus.PARTIAL
-            )
+            if normalized not in {BrokerStatus.CANCELLED, BrokerStatus.UNKNOWN}:
+                normalized = (
+                    BrokerStatus.FILLED
+                    if trade_filled == requested_shares else BrokerStatus.PARTIAL
+                )
         elif normalized == BrokerStatus.ACCEPTED:
             # A historical day-order row that still says 已报 is not a broker
             # terminal. Date/position inference must never manufacture a
