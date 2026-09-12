@@ -587,3 +587,74 @@ def test_cli_context_arguments_and_failure_output_are_credential_free(tmp_path, 
     monkeypatch.setattr(cli, "build_trading_context", broken)
     assert cli.main(["context"]) == 2
     assert "redacted-test-secret" not in capsys.readouterr().out
+
+
+def test_reading_pack_keeps_full_sources_and_evidence_without_duplicate_bodies(tmp_path):
+    items = [publication("甲作者"), publication("乙作者")]
+    register(tmp_path, items)
+    reader, clock = Reader(items), Clock()
+    context = build(tmp_path, reader, clock)
+    original = copy.deepcopy(context)
+    calls = len(reader.calls)
+    summary = tc.summarize_context(context, repo_root=tmp_path)
+    text = Path(summary["reading_path"]).read_text()
+    marker = "## Complete provenance, coverage and longitudinal evidence\n\n"
+    remainder = json.loads(text.split(marker, 1)[1])
+    for report in context["reports"]:
+        assert f"## {report['report_id']}" in text
+        assert report["report_body"] in text
+        restored = next(r for r in remainder["reports"] if r["report_id"] == report["report_id"])
+        restored["report_body"] = report["report_body"]
+        restored["report"]["payload"]["report_body"] = report["report_body"]
+    assert remainder == original and context == original
+    assert len(reader.calls) == calls and summary["refresh_report_ids"] == []
+
+
+def test_summary_names_only_missing_or_stale_sources_for_exact_repair(tmp_path):
+    items = [publication("甲作者"), publication("乙作者")]
+    register(tmp_path, items)
+    reader, clock = Reader(items), Clock()
+    first_id, second_id = [r[0]["record_id"] for r in items]
+    context = build(tmp_path, reader, clock, read_report_ids=[first_id])
+    assert tc.summarize_context(context, repo_root=tmp_path)["refresh_report_ids"] == [second_id]
+
+
+def test_incremental_pack_keeps_changes_removals_and_bound_prior(tmp_path):
+    items = [publication("甲作者"), publication("乙作者")]
+    register(tmp_path, items)
+    reader, clock = Reader(items), Clock()
+    base = build(tmp_path, reader, clock)
+    current = copy.deepcopy(base)
+    current["relations"] = []
+    current["viewpoints"][0]["latest_status"] = "uncertain"
+    current["context_sha256"] = canonical_sha256({k: v for k, v in current.items() if k != "context_sha256"})
+    full = tc.summarize_context(current, repo_root=tmp_path)
+    delta = tc.summarize_context(current, repo_root=tmp_path, prior_context=base)
+    text = Path(delta["reading_path"]).read_text()
+    evidence = json.loads(text.split("## Complete provenance, coverage and longitudinal evidence\n\n", 1)[1])
+    assert delta["reading_base_context_sha256"] == base["context_sha256"]
+    assert evidence["viewpoints"] == []
+    assert evidence["reading_delta"]["updated_fields"]["viewpoints"] == [{"record_id": current["viewpoints"][0]["record_id"], "set": {"latest_status": "uncertain"}, "remove": []}]
+    assert evidence["reports"] == [] and evidence["evaluations"] == []
+    assert evidence["coverage"] == current["coverage"]
+    assert evidence["reading_delta"]["removed_ids"]["relations"] == sorted(r["record_id"] for r in base["relations"])
+    assert delta["reading_path"] != full["reading_path"]
+    assert Path(full["reading_path"]).is_file()
+    restored = copy.deepcopy(evidence)
+    delta_info = restored.pop("reading_delta")
+    for collection, identity in (("reports", "report_id"), ("report_index", "report_id"),
+                                 ("viewpoints", "record_id"), ("evaluations", "record_id"),
+                                 ("relations", "record_id")):
+        rows = {r[identity]: copy.deepcopy(r) for r in base[collection]}
+        for rid in delta_info["removed_ids"][collection]:
+            rows.pop(rid)
+        for patch in delta_info["updated_fields"][collection]:
+            rows[patch[identity]].update(patch["set"])
+            for field in patch["remove"]:
+                rows[patch[identity]].pop(field)
+        rows.update({r[identity]: r for r in restored[collection]})
+        restored[collection] = [rows[rid] for rid in delta_info["collection_order"][collection]]
+    assert restored == current
+    base["as_of"] = "corrupted"
+    with pytest.raises(tc.TradingContextError, match="prior_context_hash_mismatch"):
+        tc.summarize_context(current, repo_root=tmp_path, prior_context=base)

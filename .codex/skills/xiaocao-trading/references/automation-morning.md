@@ -66,11 +66,10 @@ mock restoration.
 At 09:15-09:30 the later `forward_eval` field `executable_fillable` may be
 absent. Absence is not false and must be deferred to the current submit-time
 market guard; an explicitly false value remains ineligible.
-The scheduled opening entry must finish necessary judgment and readonly prepare
-before 09:30 (Operating Contract §1b). At 09:28:30 warn only; never truncate
-required review. If unready at 09:30, skip the opening plan with no automatic
-intraday catch-up. Already submitted orders still require reconciliation.
-A plan prepared on time retains the 09:30 submit floor and normal market guards.
+During 09:25–09:30, urgent code repair and exact missing-source retrieval take
+priority. Follow Operating Contract §1b. Do not add countdown warnings or an
+opening preparation cutoff. 09:30 remains the submit floor; the original plan
+may continue within its existing session, recovery deadline and market guards.
 Before materializing any new live intent, refresh the proprietary same-day
 trade status, current price, authoritative down price and timestamp with no
 cache; bind those facts into the durable plan. Lunch, the closing auction and
@@ -251,20 +250,38 @@ Normal bounded states: no raw candidates, no executable mode, no Book-T slot, re
 
 Escalate: script failure/traceback, missing recommendation or paper-record stage, torn/corrupt snapshots, missing mode evidence, AI hard veto, insufficient cash, suspicious fill metadata, ledger inconsistency, or a run-flow/log disagreement.
 
-## Opening preparation and timing
+## Early preparation and urgent continuation
 
-Start the normal runner at 09:15; prepare complete KOL source context while it
-waits for the producer. Reuse a still-valid, applicable published decision; do
-not require a newer timestamp solely because a review request was emitted.
-A necessary new judgment still needs source verification and independent review
-inside the same process's window. The review window ends no later than 09:30.
-Missing required approval skips the opening entry; it is not neutral approval.
-From 09:25, read countdown/stage events and keep tool waits at most 30 seconds.
-Do not start broad repository searches, full tests, packaging or Git operations
-in that window. Correctness checks remain mandatory. Record timings to identify
-slow stages after the run; do not promise a latency that has not been measured.
+Start at 09:15 with a short initial command yield; do not block source work
+behind the running shell. During 09:25–09:30, react promptly to emitted review
+requests and failures; avoid long blind waits for a potentially actionable
+result. While the original runner waits for freeze, prepare full KOL
+sources and their important conditions. Read `reading_path` returned by
+`kol_trading_context.py context --summary`; retain `context_path` for formal
+publication. Missing or stale bodies have exact `refresh_report_ids`: retrieve
+only the needed registered sources using `--read-report-id` and `--report-id`.
+Do not refresh every historical source or reread repeated JSON bodies.
+The parent reads relevant evidence independently while semantic judgment runs,
+then reviews the draft and necessary changes; do not wait for the draft to
+start source reading. Reuse an applicable, still-valid published decision.
 
-Inspect `recommend_source_readiness_<date>.json` alongside the frozen report.
-Empty or partial responses and a stable candidate set do not prove all sources
-are complete. Preserve the selected observation's evidence and final-attempt
-state when the bounded wait expires. Do not rerun the producer after freezing.
+During 09:25–09:30, unexpected AX/code errors or missing KOL material are urgent
+work. Patch the smallest failure, validate affected correctness, resume the
+same plan and read the terminal result. Keep full tests, packaging, Git and
+postmortem work after this flow. There is no 09:28:30 reminder or 09:30 automatic
+skip. Existing review budgets, submit floor, actual session/market eligibility,
+immutable plan and unknown-submit reconciliation still apply.
+
+Inspect `recommend_source_readiness_<date>.json` alongside the freeze. Empty or
+partial responses and stable candidates do not prove source completeness.
+Preserve selected observation evidence and final-attempt status; never rerun
+the producer after freezing. Stage timings remain in receipts for later
+performance diagnosis, not as extra approval gates.
+
+After the exact full context has already been read during early preparation,
+use `context --summary --since-context <already-read-context.json>` for a later
+refresh (combine with exact `--report-id` / `--read-report-id` when needed).
+The reading delta binds that base hash, carries every changed record and
+removed ID, and retains full current coverage. It is not an AI summary or a
+substitute for reading the base. A new worker must receive both the base and
+delta. Source publication continues to use the full current `context_path`.

@@ -50,9 +50,9 @@ For `repair_required`, keep the same task alive and perform this loop:
    If the change touches account binding, code/side/price/quantity, submit
    claims or receipt mapping, validate that affected invariant before resuming.
    Never weaken a check or bypass a failing test to regain execution.
-4. Before 09:30, continue immediately through the exact narrow resume authorized by durable state.
-   At or after the opening preparation deadline, close a proven unsubmitted intent
-   and skip that opening entry; do not turn an urgent fix into a late catch-up buy.
+4. Continue immediately through the exact narrow resume authorized by durable state.
+   The critical 09:25–09:30 window makes local repair and missing evidence retrieval
+   urgent; 09:30 is not an automatic stop. Preserve original session/plan validity.
    If no safe continuation exists, adding a read-only or state-bound resume is
    part of the repair. Recheck current session/market eligibility through the
    existing guards; use only the contract's bounded guard-refresh exception.
@@ -114,7 +114,7 @@ Use the existing dated intent and `--resume-plan-id`, never restart the producer
 PYTHONPATH=src .venv/bin/python scripts/book_b_live_morning.py --date YYYY-MM-DD --route native-app --resume-plan-id '<original-plan-id>' --recovery-action resume
 ```
 
-`resume` continues an unclaimed BUY only before its opening preparation deadline,
+`resume` continues an unclaimed BUY within its original recovery deadline/session,
 using unchanged plan hash and original dated freeze. A possible write takes the
 execution module's reconcile path without prepare or a new semantic review.
 `--recovery-action reconcile` explicitly requests that submitted-order branch.
@@ -126,5 +126,12 @@ Inspect `runs/history/<run_id>.json`: `recovery_of`, `stage_times`, `failed_stag
 `persisted_plan_ids` and execution receipts. The original daily failure receipt
 is preserved. Partial materialization must report persisted intents even when
 the builder failed before returning a plan list. The next normal checkpoint
-closes an expired unclaimed opening intent; uncertain effects remain open for
+closes a truly expired unclaimed intent; uncertain effects remain open for
 reconciliation. Deadline pressure never weakens necessary judgment.
+
+During 09:25–09:30, immediately fix an unexpected local failure and validate only
+the affected behavior before resuming. For missing KOL material, use the current
+reading pack and exact report-ID retrieval in `kol-trading-judgment.md`; do not
+restart broad research. Do not wait for 09:28:30, schedule countdown warnings or
+close a plan simply because 09:30 arrives. Keep the original strategy and plan
+authority; quote, order identity and unknown-side-effect checks still apply.
