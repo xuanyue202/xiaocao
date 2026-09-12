@@ -20,6 +20,7 @@ from pathlib import Path
 from typing import Any, Callable
 
 from .foundersc_session import app_session
+from .app_test_window import app_test_context_active, require_app_test_window
 from .foundersc_keychain import (
     SECURITY_COMMAND,
     TRADE_SERVICE,
@@ -372,6 +373,7 @@ class FounderscNativeAXClient:
         self.runner = runner
         self.timeout_seconds = max(0.5, float(timeout_seconds))
         self.command_timings: list[dict[str, object]] = []
+        self._app_test_only = app_test_context_active()
 
     def __repr__(self) -> str:
         return (
@@ -382,7 +384,11 @@ class FounderscNativeAXClient:
     def _run(self, command: str, args: list[str] | None = None, *,
              secret_input: bytes | bytearray | None = None) -> NativeAXReceipt:
         started = time.monotonic()
+        if self._app_test_only or app_test_context_active():
+            require_app_test_window()
         with app_session() as descriptor:
+            if self._app_test_only or app_test_context_active():
+                require_app_test_window()
             acquired = time.monotonic()
             try:
                 return self._run_locked(command, args, secret_input=secret_input,

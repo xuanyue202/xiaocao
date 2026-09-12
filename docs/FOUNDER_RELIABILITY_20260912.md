@@ -6,6 +6,8 @@
 **端到端已于 2026-09-13 零点后收尾**：最后一组 5 笔委托全部受理并同时存在，之后全部按原订单撤回；本次累计 20 条 APP 委托历史均已撤、成交 0，所有工程计划已到终态。最终可用资金 **53522.06**，总资产 **202293.26**，原有 5 笔持仓及数量不变。独立核验文件：`output/research/ax_robustness_20260912/final-acceptance-audit.json`。
 ## 可复用的离线验证
 
+2026-09-13 起，本文的 APP 专项回归和手动仿真/压力测试只允许在北京时间周末全天、工作日 09:00 前或 15:00 起运行，详见 [测试时段](FOUNDER_NATIVE_AX.md#测试时段2026-09-13)。下列计数保留本轮端到端验收时的结果。
+
 ```bash
 PYTHONPATH=src .venv/bin/python scripts/test_foundersc_reliability.py
 ```

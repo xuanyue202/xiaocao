@@ -224,6 +224,15 @@ not runtime readiness; only the fresh bootstrap readback is.
 Full operator/design documentation: `docs/FOUNDER_NATIVE_AX.md`.
 
 For offline reliability work after the terminal outcome, run
+only during the APP test window: Asia/Shanghai weekends, or weekdays before
+09:00 / from 15:00. Weekday 09:00–15:00 includes lunch and forbids APP-specific
+offline regressions, APP rehearsals and manual stress tests. New pytest cases
+use `app_simulation`; ad-hoc native CLI testing must set
+`XIAOCAO_APP_SIMULATION_TEST=1`. Do not bypass this through production entrypoints.
+Leave enough time for cancellation before 09:00; at the cutoff start no further
+test APP actions, retain receipts and resume the same test run outside the
+blocked window. Production trading/reconciliation and necessary fault repair
+remain on their production rules. The offline regression command is
 `PYTHONPATH=src .venv/bin/python scripts/test_foundersc_reliability.py`.
 For an explicitly authorized APP-server simulation rehearsal, read the manual
 runner section in `docs/FOUNDER_RELIABILITY_20260912.md` and reuse its durable

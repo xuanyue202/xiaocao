@@ -300,6 +300,17 @@ second submit.
 
 ## Offline reliability and APP simulation rehearsal
 
+### 测试时段（2026-09-13）
+
+所有方正 APP 相关模拟测试仅在 **Asia/Shanghai 周六日全天，或工作日 09:00 前、15:00 起**运行。工作日 **09:00 ≤ 当前时间 < 15:00** 禁止，午休不例外；按用户给定的星期/时钟规则判断，不额外查询节假日日历。
+
+- `scripts/test_foundersc_reliability.py` 的自动化专项回归也受限，即使不实际访问 APP。
+- 单笔 `foundersc_app_rehearsal.py` 和批量 `foundersc_app_batch_rehearsal.py` 的所有动作（包括 snapshot、prepare、advance、reconcile、cleanup）在启动前检查时段。
+- 直接运行 pytest 时，方正专项既有模块自动标记 `app_simulation`；新 APP 测试须用该标记。每个用例在 fixture/setup 前复核时段，禁止时明确 SKIPPED。其他测试不受此规则限制。
+- 需要临时通过原生 CLI 做模拟验证时，必须设置 `XIAOCAO_APP_SIMULATION_TEST=1`。测试客户端在获取 APP 会话锁前后、每次 helper 调用前重新检查；等待锁跨入 09:00 也不能发出新 APP 操作。无强制绕过参数。
+
+运行前预留提交、撤回及对账所需时间。到点后不再发起任何测试 APP 操作；已发出的单次原生指令允许返回，不以强杀制造未知结果。如仍有未结试单，保留原 run ID、订单号和回执，等允许时段同批次收尾，不能为了测试清理占用正式交易窗口。正式交易、生产订单对账和必要故障修复按其原规则执行，不应用工程测试限制。
+
 Run `PYTHONPATH=src .venv/bin/python scripts/test_foundersc_reliability.py` after
 the terminal outcome when a broad adapter regression is needed. This covers the
 Python execution/account lifecycle and CLI wiring as well as AX. It is an

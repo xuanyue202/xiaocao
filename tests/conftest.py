@@ -9,6 +9,29 @@ import pytest
 
 from xiaocao.api import XiaocaoClient
 from xiaocao.utils.trading_session import latest_completed_trade_date
+from xiaocao.live import app_test_window
+
+
+def pytest_collection_modifyitems(items):
+    from scripts.test_foundersc_reliability import TESTS
+    for item in items:
+        stem = item.path.stem.removeprefix("test_")
+        if stem in TESTS or stem.startswith(("foundersc_", "native_")):
+            item.add_marker(pytest.mark.app_simulation)
+
+
+@pytest.hookimpl(tryfirst=True)
+def pytest_runtest_setup(item):
+    # Check before fixtures, including direct pytest calls and a suite that
+    # started before 09:00. Future APP tests can use the same explicit marker.
+    if item.get_closest_marker("app_simulation") and not app_test_window.app_tests_allowed():
+        pytest.skip("APP_TEST_TIME_BLOCKED: " + app_test_window.WINDOW_DESCRIPTION)
+
+
+@pytest.fixture(autouse=True)
+def app_simulation_test_context(request, monkeypatch):
+    if request.node.get_closest_marker("app_simulation"):
+        monkeypatch.setenv(app_test_window.TEST_CONTEXT_ENV, "1")
 
 
 CODE_RE = re.compile(r"^\d{6}\.(XSHG|XSHE|BJSE)$")

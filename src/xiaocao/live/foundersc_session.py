@@ -14,6 +14,7 @@ from datetime import datetime, timedelta
 from functools import wraps
 from pathlib import Path
 from time import monotonic
+from .app_test_window import app_test_context_active, require_app_test_window
 
 
 _mutex = threading.RLock()
@@ -46,7 +47,11 @@ keeps the surface fenced until that helper exits. A normal subprocess timeout
 kills and waits for the helper before releasing the session.
 """
     global _descriptor
+    if app_test_context_active():
+        require_app_test_window()
     with _mutex:
+        if app_test_context_active():
+            require_app_test_window()
         if _descriptor is not None:
             yield _descriptor
             return
@@ -55,6 +60,8 @@ kills and waits for the helper before releasing the session.
         descriptor = os.open(path, os.O_CREAT | os.O_RDWR, 0o600)
         try:
             fcntl.flock(descriptor, fcntl.LOCK_EX)
+            if app_test_context_active():
+                require_app_test_window()
             _descriptor = descriptor
             yield descriptor
         finally:

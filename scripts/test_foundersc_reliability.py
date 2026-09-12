@@ -8,13 +8,16 @@ import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT / "src"))
+from xiaocao.live.app_test_window import app_test_only, require_app_test_window, TEST_CONTEXT_ENV
 MODULES = [
-    "foundersc_native_ax", "foundersc_native_broker", "foundersc_session", "foundersc_keychain", "capital_keychain",
+    "app_test_window", "foundersc_native_ax", "foundersc_native_broker", "foundersc_session", "foundersc_keychain", "capital_keychain",
     "trading_execution", "trading_runner", "book_b_live_morning", "book_b_live_recovery",
     "book_b_live_intraday", "book_b_live_lifecycle",
 ]
 ENTRYPOINTS = ["foundersc_app_batch_rehearsal", "foundersc_native_ax", "foundersc_app_rehearsal", "book_b_live_morning", "book_b_live_intraday"]
 TESTS = [
+    "foundersc_test_window",
     "foundersc_native_ax", "foundersc_native_broker", "foundersc_keychain", "live_capital_keychain",
     "trading_execution", "trading_runner", "book_b_live_morning", "book_b_live_recovery",
     "book_b_live_lifecycle", "book_b_live_policy", "book_b_allocation", "live_monitor",
@@ -28,10 +31,11 @@ TESTS = [
 ]
 
 
+@app_test_only
 def main() -> int:
     destination = ROOT / "output/research/foundersc_reliability"
     destination.mkdir(parents=True, exist_ok=True)
-    env = {**os.environ, "PYTHONPATH": str(ROOT / "src"),
+    env = {**os.environ, TEST_CONTEXT_ENV: "1", "PYTHONPATH": str(ROOT / "src"),
            "COVERAGE_FILE": str(destination / ".coverage")}
     source = ",".join([*("xiaocao.live." + name for name in MODULES),
                        *("scripts." + name for name in ENTRYPOINTS)])
@@ -41,6 +45,7 @@ def main() -> int:
         "-q", "--tb=short"], cwd=ROOT, env=env, check=False)
     for args in (["report"], ["json", "-o", str(destination / "coverage.json")],
                  ["html", "-d", str(destination / "html")]):
+        require_app_test_window()
         report = subprocess.run([*command, *args], cwd=ROOT, env=env, check=False)
         if report.returncode:
             return result.returncode or report.returncode

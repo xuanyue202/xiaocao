@@ -53,6 +53,7 @@ RUNTIME_ITEMS = [
     "reference/experience",
     "native/foundersc_ax_executor",
     "pyproject.toml",
+    "pytest.ini",
     "README.md",
     "xiaocao.yaml.example",
     "stocks.json",

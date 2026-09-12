@@ -25,6 +25,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
 
 from xiaocao.live.capital_keychain import KeychainCapitalRuntime
+from xiaocao.live.app_test_window import app_test_only
 from xiaocao.live.foundersc_native_ax import FounderscNativeAXClient, source_digest
 from xiaocao.live.foundersc_native_broker import FounderscNativeAXBrokerAdapter
 from xiaocao.live.trading_execution import (
@@ -86,6 +87,7 @@ def advance_cycle(execution, plan, *, reconcile_only=False):
     return receipt
 
 
+@app_test_only
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("action", choices=("snapshot", "prepare", "advance", "reconcile"))

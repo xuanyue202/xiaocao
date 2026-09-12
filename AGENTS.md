@@ -69,6 +69,8 @@ Use 4-space indentation and type hints where they clarify interfaces. Prefer sma
 
 ## Testing Guidelines
 
+方正 APP 相关模拟测试（含自动化离线回归、APP 端到端及手动压力/试单脚本）仅在北京时间周六日，或工作日 09:00 前、15:00 起运行；工作日 09:00–15:00（含午休）禁止。新测试使用 `app_simulation` pytest 标记；临时通过原生 CLI 做测试时设置 `XIAOCAO_APP_SIMULATION_TEST=1`，禁止用正式交易入口绕过测试时段。具体入口、到点停止及同批次收尾见 `docs/FOUNDER_NATIVE_AX.md` 的测试时段说明。正式交易、生产对账及必要故障修复不属于工程模拟测试。
+
 Pytest uses `pytest.ini`, `tests` as the default path, and `e2e` as the live API marker. Name tests `test_*.py`. For live trading changes, cover normal flow and fail-closed safety, especially paper vs real-capital paths.
 
 Choose checks by the failure they can detect. Preserve behavioral tests for order identity, duplicate effects, amounts and accounting, plus deployment wiring and broken-link checks. Do not lock prose, document versions, model preferences, line counts or internal implementation spelling into tests. Documentation-only edits need a diff/link/config check, not a full trading suite. Follow the urgent-repair reference for minimum pre-resume validation; expand regression only for the affected behavior after the terminal outcome.
