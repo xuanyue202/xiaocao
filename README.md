@@ -914,6 +914,17 @@ CLI 参数 > 环境变量 > 配置文件 > 默认值
 - `XIAOCAO_CONFIG`
 - `XIAOCAO_LOG_LEVEL`
 
+## 离线回归
+
+安装开发测试依赖后，完整离线回归使用两个进程、按文件分组：
+
+```bash
+.venv/bin/python -m pip install -e '.[test]'
+PYTHONPATH=src .venv/bin/python -m pytest -q -m 'not e2e' -n 2 --dist loadfile
+```
+
+单项调试保留串行 pytest；方正专项覆盖率仍使用 `scripts/test_foundersc_reliability.py`。APP 专项测试继续遵守非交易时间限制。测试取舍、隔离约定及耗时证据见 [测试说明](docs/TESTING.md)。
+
 ## E2E 测试
 
 Live API e2e 测试会动态选择最近 45 天里的最新交易日，覆盖所有已接入 API、Datasource、策略、日报和输出格式。它不是只测“能不能返回”，还会检查关键字段、日期格式、股票代码格式、数字字段和跨接口一致性。

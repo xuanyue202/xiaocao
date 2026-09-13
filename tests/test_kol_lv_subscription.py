@@ -3905,6 +3905,7 @@ def test_expired_share_is_a_structured_user_blocker(tmp_path):
 
 
 def test_listing_eval_timeout_exposes_safe_operation_diagnostic(tmp_path):
+    waits = []
     def browser_runner(command, **_kwargs):
         if command[3:4] == ["open"]:
             return SimpleNamespace(
@@ -3922,6 +3923,7 @@ def test_listing_eval_timeout_exposes_safe_operation_diagnostic(tmp_path):
         share_url="https://pan.baidu.com/s/private-share-token",
         share_code="a1b2",
         edge_route_launcher=lambda _route: None,
+        sleep=waits.append,
     )
 
     with pytest.raises(EnrichmentDiagnosticError) as captured:
@@ -3932,6 +3934,7 @@ def test_listing_eval_timeout_exposes_safe_operation_diagnostic(tmp_path):
     assert captured.value.diagnostic_code == "opencli_timeout"
     assert captured.value.diagnostic_stage == "browser_eval"
     assert not (tmp_path / "out" / "manifest.json").exists()
+    assert waits == [1.0, 1.0]
 
 
 def test_explicit_pretrigger_browser_failure_can_resume_safely(tmp_path):

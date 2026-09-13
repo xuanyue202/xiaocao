@@ -23,6 +23,7 @@ Operational scripts live in `scripts/`; live automation centers on `auto_daily.s
 - `PYTHONPATH=src python3 -m xiaocao --help`: run the CLI from source.
 - `python3 -m pip install -e .`: install the package and `xiaocao` console script.
 - `PYTHONPATH=src python3 -m pytest -q`: run the standard test suite.
+- `PYTHONPATH=src .venv/bin/python -m pytest -q -m 'not e2e' -n 2 --dist loadfile`: full offline regression, grouped by file on two workers. See `docs/TESTING.md` for scope, isolation and test-value criteria. Keep focused tests and coverage runs serial.
 - `PYTHONPATH=src python3 -m pytest tests/e2e -q`: run live API tests.
 - `bash -n scripts/auto_daily.sh`: syntax-check automation shell.
 - `python3 scripts/package_xiaocao_skill.py`: refresh the Codex skill runtime and symlink install.

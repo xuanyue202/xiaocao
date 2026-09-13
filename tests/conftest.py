@@ -2,7 +2,9 @@ from __future__ import annotations
 
 import os
 import re
+import tempfile
 from datetime import date, timedelta
+from pathlib import Path
 from typing import Any
 
 import pytest
@@ -10,6 +12,15 @@ import pytest
 from xiaocao.api import XiaocaoClient
 from xiaocao.utils.trading_session import latest_completed_trade_date
 from xiaocao.live import app_test_window
+
+
+@pytest.fixture
+def tmp_path(request, tmp_path_factory):
+    # pytest's numbered mktemp scans all earlier case directories twice for
+    # every test (quadratic over a large suite). Keep per-case isolation and
+    # normal session retention, using atomic random names without that scan.
+    prefix = re.sub(r"[\W]", "_", request.node.name)[:30] + "-"
+    return Path(tempfile.mkdtemp(prefix=prefix, dir=tmp_path_factory.getbasetemp()))
 
 
 def pytest_collection_modifyitems(items):

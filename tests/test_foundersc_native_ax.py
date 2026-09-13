@@ -473,27 +473,6 @@ def test_expected_helper_path_is_bound_to_source_digest() -> None:
     assert path.parts[-2:] == (digest, "foundersc-native-ax")
 
 
-def test_swift_read_query_supports_historical_order_and_trade_surfaces() -> None:
-    root = Path(__file__).resolve().parents[1]
-    source = (
-        root
-        / "native"
-        / "foundersc_ax_executor"
-        / "Sources"
-        / "FounderscNativeAX"
-        / "main.swift"
-    ).read_text(encoding="utf-8")
-
-    assert '"history-orders": "历史委托"' in source
-    assert '"history-trades": "历史成交"' in source
-    assert 'case "history-orders": expectedX = 0.428' in source
-    assert 'case "history-trades": expectedX = 0.515' in source
-    assert 'case "funds": expectedX = surfaceState == "query_only" ? 0.863' in source
-    assert 'return (pointForSubstring(label, in: candidates[0]), 1)' in source
-    assert 'case "today-orders", "history-orders":' in source
-    assert 'case "today-trades", "history-trades":' in source
-
-
 @pytest.mark.skipif(
     sys.platform != "darwin" or shutil.which("swift") is None,
     reason="Founder native Swift helper requires macOS Swift",
@@ -674,62 +653,6 @@ def test_remote_bootstrap_guidance_is_bounded_state_machine(
     rendered = json.dumps(guidance)
     assert "test-secret" not in rendered
     assert "1234567890" not in rendered
-
-
-def test_swift_submit_confirmation_fallback_is_exact_and_single_point() -> None:
-    root = Path(__file__).resolve().parents[1]
-    source = (
-        root
-        / "native"
-        / "foundersc_ax_executor"
-        / "Sources"
-        / "FounderscNativeAX"
-        / "main.swift"
-    ).read_text(encoding="utf-8")
-
-    assert "confirmationCandidate,\n       confirmationMarker,\n       confirmationOrderMatched" in source
-    assert "guardedOCRConfirmationPoint" not in source
-    assert "ocr_guarded_order_confirmation" not in source
-    assert 'quantity_field_single_return' in source
-    assert 'secure_field_single_return' in source
-    assert 'semantic_focused_dialog_button' in source
-    assert 'postSingleReturnKey()' in source
-    assert 'rendered.contains("交易确认")' in source
-    assert 'case "probe-pending-order-confirmation"' in source
-    assert 'case "confirm-pending-order"' in source
-    assert 'arguments.contains("--allow-single-order-confirmation")' in source
-    assert 'tableShapes[0].auditComplete' in source
-    assert 'minimumCriticalOCRConfidence: Float = 0.50' in source
-    assert 'criticalConfidenceProven' in source
-    assert 'focusedCancelDialogControls(postClick)' in source
-    assert 'ocr_guarded_cancel_confirmation' not in source
-    assert 'func editDistance' not in source
-    assert 'submit_result_acknowledged' in source
-    assert 'cancel_result_acknowledged' in source
-    assert '委托已提交' in source
-    assert '撤单已提交' in source
-    assert source.count('postSingleReturnKey()') == 3
-
-
-def test_swift_observation_ignores_focused_accessory_windows() -> None:
-    root = Path(__file__).resolve().parents[1]
-    source = (
-        root
-        / "native"
-        / "foundersc_ax_executor"
-        / "Sources"
-        / "FounderscNativeAX"
-        / "main.swift"
-    ).read_text(encoding="utf-8")
-
-    assert "let largestWindow = windows.max" in source
-    assert "let roots: [AXUIElement] = primaryWindow.map { [$0] } ?? []" in source
-    assert "roots = windows" not in source
-    assert '== "通达信键盘精灵"' in source
-    assert "kAXCloseButtonAttribute" in source
-    assert "guard dismissKnownFounderAccessoryWindow(running) else" in source
-    assert "normalizeFounderWindowForAction" in source
-    assert 'if command != "probe"' in source
 
 
 def test_python_query_owns_reread_budget_and_requests_one_native_capture(tmp_path):

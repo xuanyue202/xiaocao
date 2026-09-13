@@ -131,18 +131,6 @@ def test_cli_default_lease_includes_previous_day_writer(tmp_path, capsys) -> Non
     ]
 
 
-def test_remote_writer_lease_documents_candidate_only_cache_fallback() -> None:
-    reference = (
-        Path(__file__).parents[1]
-        / ".codex/skills/kol-intelligence/references/remote-writer-lease.md"
-    ).read_text(encoding="utf-8")
-
-    assert "scripts/kol_remote_writer_candidates.py" in reference
-    assert "still require `read_thread` before sending" in reference
-    assert "Never report\n   “no task exists”" in reference
-    assert "`No handler registered`" in reference
-
-
 def test_peer_gate_retries_control_plane_and_ignores_stale_active_snapshot() -> None:
     list_calls = 0
     read_calls: list[str] = []

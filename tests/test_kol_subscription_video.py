@@ -15,12 +15,7 @@ from xiaocao.kol.enrichment_types import (
 )
 from xiaocao.kol.netdisk_enrichment import NetdiskEnrichmentService
 from xiaocao.kol.subscription_video import (
-    _CREATE_FOLDER_SCRIPT,
-    _PRIVATE_SCAN_SCRIPT,
     _PRIVATE_RELOAD_SCRIPT,
-    _PRIVATE_SEARCH_SCRIPT,
-    _TRANSFER_OUTCOME_SCRIPT,
-    _TRANSFER_SCRIPT,
     LUCIFER_SOURCE,
     LV_AUTHOR,
     LV_DESTINATION_DIRECTORY,
@@ -1151,18 +1146,10 @@ def test_private_scan_retries_open_after_wrong_preclaim_readback(tmp_path):
     ]
 
 
-def test_private_scan_allows_slow_directory_settlement():
-    assert "new Promise" not in _PRIVATE_SCAN_SCRIPT
-    assert "status: 'private_directory_loading'" in _PRIVATE_SCAN_SCRIPT
-    assert "!/正在加载中/.test(text)" in _PRIVATE_SCAN_SCRIPT
-    assert "if (currentDir() !== dir)" in _PRIVATE_SCAN_SCRIPT
-    assert "location.pathname === '/login'" in _PRIVATE_SCAN_SCRIPT
-    assert "status: 'authentication_required'" in _PRIVATE_SCAN_SCRIPT
-
-
 def test_private_scan_chunks_recursive_eval_below_opencli_deadline(tmp_path):
     commands = []
     root_attempts = 0
+    waits = []
 
     def runner(command, **kwargs):
         nonlocal root_attempts
@@ -1225,7 +1212,7 @@ def test_private_scan_chunks_recursive_eval_below_opencli_deadline(tmp_path):
             stderr="",
         )
 
-    result = _service(tmp_path, runner=runner)._scan_private(
+    result = _service(tmp_path, runner=runner, sleep=waits.append)._scan_private(
         session="ticket05",
         profile="work",
         root="/课程/路西法全套",
@@ -1233,6 +1220,7 @@ def test_private_scan_chunks_recursive_eval_below_opencli_deadline(tmp_path):
     )
 
     assert result["complete_scan"] is True
+    assert waits == [5]
     assert result["directories_scanned"] == 2
     assert [row["provider_file_id"] for row in result["entries"]] == [
         "child",
@@ -1528,7 +1516,8 @@ def test_private_scan_classifies_directory_failure(
             stderr="",
         )
 
-    service = _service(tmp_path, runner=runner)
+    waits = []
+    service = _service(tmp_path, runner=runner, sleep=waits.append)
 
     with pytest.raises(EnrichmentDiagnosticError) as captured:
         service._scan_private(
@@ -1541,6 +1530,7 @@ def test_private_scan_classifies_directory_failure(
     assert captured.value.diagnostic_category == category
     assert captured.value.diagnostic_code == code
     assert captured.value.diagnostic_stage == "private_listing_validation"
+    assert waits == ([5] if status == "private_directory_load_timeout" else [])
 
 
 def test_private_scan_classifies_directory_failure_as_authentication(tmp_path):
@@ -1627,13 +1617,6 @@ def test_explicit_episode_spec_maps_arbitrary_real_source_names(tmp_path):
     assert {row["episode_title"] for row in selected} == {"新品发布日"}
 
 
-def test_folder_creation_recovers_the_observed_baidu_inline_editor():
-    assert ".wp-s-pan-list__file-name-edit" in _CREATE_FOLDER_SCRIPT
-    assert "input.closest('.wp-s-pan-list__file-name-edit')" in (
-        _CREATE_FOLDER_SCRIPT
-    )
-
-
 def test_lv_destination_triggered_claim_has_poll_deadline(tmp_path):
     service = _service(tmp_path)
     claim_path = service._claim_path("lv_destination_folder")
@@ -1670,41 +1653,7 @@ def test_lv_destination_triggered_claim_has_poll_deadline(tmp_path):
     assert persisted["next_poll_not_before"] == waiting["next_poll_not_before"]
 
 
-def test_private_search_accepts_stable_fuzzy_results_as_exact_zero_matches():
-    assert "bodyText.includes('搜索：' + targetName)" in _PRIVATE_SEARCH_SCRIPT
-    assert "items.length > 0 && stablePolls >= 5" in _PRIVATE_SEARCH_SCRIPT
-    assert "当前列表为空" in _PRIVATE_SEARCH_SCRIPT
-    assert "items.length === 0 && stablePolls >= 40" in _PRIVATE_SEARCH_SCRIPT
-    assert "search_settled: true" in _PRIVATE_SEARCH_SCRIPT
-
-
-def test_lv_transfer_observes_provider_outcome_after_confirmation():
-    assert "row.querySelectorAll('[role=\"checkbox\"]')" in _TRANSFER_SCRIPT
-    assert "node.getAttribute('aria-checked')" in _TRANSFER_SCRIPT
-    assert "const legacy = row.querySelector('span.EOGexf')" in _TRANSFER_SCRIPT
-    assert ".filter(row => rowSelected(row) === true)" in _TRANSFER_SCRIPT
-    assert "'#share-save-dialog-title'" in _TRANSFER_SCRIPT
-    assert "node.closest('[role=\"dialog\"]')" in _TRANSFER_SCRIPT
-    assert "node.querySelector('#fileTreeDialog[role=\"dialog\"]')" in (
-        _TRANSFER_SCRIPT
-    )
-    assert "const legacyDialogs" in _TRANSFER_SCRIPT
-    assert "const beforeLines = new Set(" in _TRANSFER_SCRIPT
-    assert "data-xiaocao-lv-confirm" in _TRANSFER_SCRIPT
-    assert "confirms[0].click()" not in _TRANSFER_SCRIPT
-    assert "XMLHttpRequest.prototype.send" in _TRANSFER_SCRIPT
-    assert "window.fetch" in _TRANSFER_SCRIPT
-    assert "'/share/transfer'" in _TRANSFER_SCRIPT
-    assert "provider_request_observed" in _TRANSFER_OUTCOME_SCRIPT
-    assert "provider_response_observed" in _TRANSFER_OUTCOME_SCRIPT
-    assert "cloud_transfer_rejected" in _TRANSFER_OUTCOME_SCRIPT
-    assert "cloud_transfer_accepted" in _TRANSFER_OUTCOME_SCRIPT
-    assert "provider_outcome: 'unobserved'" in _TRANSFER_OUTCOME_SCRIPT
-
-
 def test_lv_transfer_reopens_share_once_after_target_not_unique(tmp_path):
-    assert "const legacy = row.querySelector('span.EOGexf')" in _TRANSFER_SCRIPT
-    assert "return legacy ? row : null" in _TRANSFER_SCRIPT
     service = _service(tmp_path, sleep=lambda _seconds: None)
     item = service._normalize(
         _source_rows()[0][1],

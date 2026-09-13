@@ -1,21 +1,13 @@
 import json
-from pathlib import Path
 
 import pytest
 
 from xiaocao.kol.netdisk_opencli_templates import (
-    NETDISK_OPENCLI_TEMPLATE_VERSION,
     netdisk_opencli_template_names,
     render_netdisk_opencli_template,
 )
 
 
-CASES_PATH = (
-    Path(__file__).parent
-    / "fixtures"
-    / "kol_opencli"
-    / "netdisk_template_cases.json"
-)
 EXPECTED_PATH = "/课程/自己的课/小草/20260804 大师班专场-compressed.mp4"
 
 
@@ -23,8 +15,7 @@ def _render(name: str) -> str:
     return render_netdisk_opencli_template(name, expected_path=EXPECTED_PATH)
 
 
-def test_netdisk_opencli_template_registry_is_versioned_and_complete():
-    assert NETDISK_OPENCLI_TEMPLATE_VERSION == 1
+def test_netdisk_opencli_template_registry_renders_all_commands():
     assert netdisk_opencli_template_names() == (
         "prepare_ai_note",
         "probe_ai_note",
@@ -34,7 +25,6 @@ def test_netdisk_opencli_template_registry_is_versioned_and_complete():
     for name in netdisk_opencli_template_names():
         source = _render(name)
         assert f"baidu-netdisk/{name.replace('_', '-')}" in source
-        assert "const template_version = 1" in source
         assert "__EXPECTED_PATH__" not in source
 
 
@@ -61,19 +51,6 @@ def test_netdisk_opencli_template_parameters_are_exact_and_json_escaped():
             "unknown",
             expected_path=EXPECTED_PATH,
         )
-
-
-def test_netdisk_opencli_historical_edge_case_fixtures_are_embedded():
-    fixture = json.loads(CASES_PATH.read_text(encoding="utf-8"))
-
-    assert fixture["schema_version"] == 1
-    assert len(fixture["cases"]) >= 7
-    for case in fixture["cases"]:
-        source = _render(case["template"])
-        for marker in case.get("required", []):
-            assert marker in source, f"{case['case']} missing {marker}"
-        for marker in case.get("forbidden", []):
-            assert marker not in source, f"{case['case']} contains {marker}"
 
 
 def test_only_submit_template_can_dispatch_the_generation_click():

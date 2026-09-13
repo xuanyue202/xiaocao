@@ -234,6 +234,9 @@ test APP actions, retain receipts and resume the same test run outside the
 blocked window. Production trading/reconciliation and necessary fault repair
 remain on their production rules. The offline regression command is
 `PYTHONPATH=src .venv/bin/python scripts/test_foundersc_reliability.py`.
+For a full offline regression, use the two-worker command in
+`docs/TESTING.md`; keep the coverage runner serial so its report measures the
+executed code. Focused urgent-repair checks remain serial and scoped.
 For an explicitly authorized APP-server simulation rehearsal, read the manual
 runner section in `docs/FOUNDER_RELIABILITY_20260912.md` and reuse its durable
 run ID after interruption. These engineering tools are outside the morning
