@@ -66,7 +66,8 @@ modify extension permissions or browser security settings. An explicit security
 denial, authentication/consent challenge, or unknown upload effect still stops
 the corresponding action; do not switch surfaces to bypass it.
 
-For a ledger-bound `upload_foreground_failed` / `upload_foreground` diagnostic,
+For a ledger-bound `upload_foreground_failed` / `upload_foreground` or
+`upload_event_loop_failed` / `upload_event_loop` diagnostic,
 the original run proves attachment was not reached. After repairing the adapter,
 `resume_pre_attachment_upload` requires same-claim adapter folder/name readback
 and no target in receipt/UI/inputs, then persists one continuation claim. Never

@@ -2611,11 +2611,11 @@ class NetdiskEnrichmentService:
                 and row.get("failure_stage") == "upload_before_attachment"
                 and not row.get("upload_repair_attempts")
             )
-            foreground_failure = (
+            readiness_failure = (
                 row.get("reason") == "browser_command_failed"
-                and row.get("failure_stage") == "upload_foreground"
-                and (row.get("diagnostic") or {}).get("code") == "upload_foreground_failed"
-                and (row.get("diagnostic") or {}).get("stage") == "upload_foreground"
+                and row.get("failure_stage") in {"upload_foreground", "upload_event_loop"}
+                and (row.get("diagnostic") or {}).get("code") == row.get("failure_stage") + "_failed"
+                and (row.get("diagnostic") or {}).get("stage") == row.get("failure_stage")
                 and (row.get("diagnostic") or {}).get("category") == "transport_error"
                 and type((row.get("diagnostic") or {}).get("exit_code")) is int
                 and (row.get("diagnostic") or {})["exit_code"] > 0
@@ -2632,7 +2632,7 @@ class NetdiskEnrichmentService:
                 and row.get("status") == "upload_claimed"
                 and row.get("event") == "netdisk_upload_failed"
                 and not row.get("upload_started_at")
-                and (chooser_failure or foreground_failure or permission_restored)
+                and (chooser_failure or readiness_failure or permission_restored)
             )
 
         if session != _OPENCLI_UPLOAD_TEMPLATE_SESSION or (
@@ -2643,7 +2643,7 @@ class NetdiskEnrichmentService:
         if not eligible(current):
             raise EnrichmentError("upload has no eligible proven pre-attachment failure")
         # Reconcile the retained adapter page, not the separate Browser session.
-        if current.get("failure_stage") == "upload_foreground":
+        if current.get("failure_stage") in {"upload_foreground", "upload_event_loop"}:
             result = self._opencli_upload_template_process(
                 session=session, profile=profile, video_path=Path(current["video_path"]),
                 target_name=current["video_basename"], claim_id=job_id, inspect_only=True,
@@ -2693,7 +2693,7 @@ class NetdiskEnrichmentService:
                 "upload_repair_attempts": int(current.get("upload_repair_attempts") or 0) + 1,
                 "repair_basis": (
                     "user_restored_file_access" if permission_repair
-                    else "bound_foreground_failure_before_file_assignment" if proof is not None
+                    else "bound_readiness_failure_before_file_assignment" if proof is not None
                     else "file_chooser_failed_before_file_assignment"
                 ),
                 **({"file_access_repair_claimed_at": now} if permission_repair else {}),
