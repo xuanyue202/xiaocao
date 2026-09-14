@@ -45,10 +45,11 @@ def test_failed_read_returns_no_secret(monkeypatch):
     assert auth.read_keychain_token() == ""
 
 
-def test_auth_rejection_reloads_replaced_keychain_on_next_call(monkeypatch):
+def test_auth_rejection_reuses_replaced_keychain_and_replays_once(monkeypatch, tmp_path):
     from xiaocao.api.errors import ApiAuthError
-    tokens = iter(["old-fixture", "new-fixture"])
-    monkeypatch.setattr(auth, "read_keychain_token", lambda: next(tokens))
+    tokens = ["old-fixture", "new-fixture"]
+    monkeypatch.setattr(auth, "_login_state_directory", lambda: tmp_path)
+    monkeypatch.setattr(auth, "read_keychain_token", lambda: tokens.pop(0) if len(tokens) > 1 else tokens[0])
     calls = []
     class Response:
         status_code = 200
@@ -62,9 +63,6 @@ def test_auth_rejection_reloads_replaced_keychain_on_next_call(monkeypatch):
         return Response()
     c = XiaocaoClient(retries=3)
     monkeypatch.setattr(c._session, "post", post)
-    with pytest.raises(ApiAuthError):
-        c.get_industry_block_rank("2026-09-14", 0)
-    assert calls == ["old-fixture"]
     assert c.get_industry_block_rank("2026-09-14", 0) == []
     assert calls == ["old-fixture", "new-fixture"]
 

@@ -122,15 +122,16 @@ class XiaocaoClient:
                 time.sleep(wait_for)
             last_requests[path] = time.monotonic()
 
-    def _do_post(self, path: str, payload: dict[str, Any]) -> Any:
+    def _do_post(self, path: str, payload: dict[str, Any], *, _auth_replayed: bool = False) -> Any:
         url = f"{self.base_url.rstrip('/')}/{path.lstrip('/')}"
         # The official XC frontend sends its existing login token in this header.
         # Read at the request boundary so an operator can rotate the credential.
         # Never forward an ambient credential to a custom API/test server.
         headers = {}
-        from .auth import OFFICIAL_HOSTS, invalidate_token_cache, load_market_token
+        from .auth import OFFICIAL_HOSTS, invalidate_token_cache, load_market_token, renew_market_token
 
-        if urlsplit(self.base_url).netloc in OFFICIAL_HOSTS and urlsplit(self.base_url).scheme == "https":
+        official = urlsplit(self.base_url).netloc in OFFICIAL_HOSTS and urlsplit(self.base_url).scheme == "https"
+        if official:
             token = load_market_token()
             if token:
                 headers["token"] = token
@@ -157,7 +158,12 @@ class XiaocaoClient:
                 code = body.get("code")
                 if code == 990502:
                     invalidate_token_cache()
-                    # Repeating an unchanged request cannot renew the service login.
+                    if official and path.startswith("/stock/") and not _auth_replayed:
+                        try:
+                            renew_market_token(headers.get("token", ""))
+                        except ApiAuthError as error:
+                            raise ApiAuthError(f"API returned code=990502 for {path}: {error}") from None
+                        return self._do_post(path, payload, _auth_replayed=True)
                     raise ApiAuthError(
                         f"API returned code=990502 for {path}: 登录已失效，请重新登录"
                     )

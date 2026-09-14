@@ -13,11 +13,19 @@ Read this file only for quotes, market state, pools, sectors, indices, indicator
   It bypasses cache and checks industry/category ranks, three candidate pools,
   core stock scores and smallGrass technical values with request spacing.
   Reachable is not proof of full source coverage or an executable candidate.
-- 990502 stops without blind retries and invalidates the in-memory credential
-  cache. Replace an expired token using the hidden-input local command
-  `PYTHONPATH=src .venv/bin/python scripts/configure_market_data_auth.py`, then
-  rerun preflight in a fresh process. No verified refresh endpoint or account
-  password is configured; never claim automatic renewal or guess a protocol.
+- Provision username/password using the hidden-input local command
+  `PYTHONPATH=src .venv/bin/python scripts/configure_market_data_auth.py --dialog`.
+  It verifies official `/user/v2/login` before storing credentials in the
+  dedicated Keychain item `xiaocao.market-data.credentials` / account `runtime`.
+  The session is cached separately; ordinary requests reuse it without logging
+  in each time. `--token-only` is available for manual session replacement.
+- On 990502, official `/stock/` reads invalidate the memory cache, serialize
+  password login across local processes and retry the original read once.
+  Another process's rotated token is reused; login attempts have a 120-second
+  cooldown. Explicit environment overrides disable automatic login. Repeated
+  rejection, missing credentials, captcha/SMS or login failure remains an
+  authentication blocker, never an empty opportunity. No refresh-token API is
+  assumed. After provisioning/recovery, validate with a fresh-process preflight.
   Successful web login/disabled buttons are not API authorization proof.
 
 - Cache first (`output/.cache/xiaocao.db`). For more than a few symbols/dates, batch small, space requests roughly 0.5–1 second and keep concurrency at or below about 8. Empty/null responses after bursts can be silent throttling.
