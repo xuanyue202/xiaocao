@@ -147,7 +147,7 @@ def test_branded_entry_rejects_unbound_app_or_non_live(app_id, live_id):
         resolve_launch_plan(LINK, fetch=lambda url: (url, branded_html(app_id, live_id)))
 
 
-def test_branded_entry_can_obtain_fresh_same_identity_goose_ticket():
+def test_branded_entry_preserves_merchant_application_without_goose_exchange():
     page = "https://appsnm3rlcp3566.h5.xiaoeknow.com/v2/course/alive/l_evening"
     calls = []
 
@@ -162,7 +162,8 @@ def test_branded_entry_can_obtain_fresh_same_identity_goose_ticket():
     plan = resolve_launch_plan(LINK, fetch=fetch)
     assert plan["source_identity"] == "xiaoetong:appsnm3rlcp3566:l_evening"
     assert plan["launch_command"][-1] == "weixin://dl/business/?t=real-ticket"
-    assert len(calls) == 3
+    assert plan["mini_program_name"] == "见势擒龙团"
+    assert calls == [LINK]
 
 
 @pytest.mark.parametrize("url", ["http://wxmpurl.cn/a", "https://127.0.0.1/a", "https://xiaoeknow.com.evil.test/a", "https://u:p@wxmpurl.cn/a"])

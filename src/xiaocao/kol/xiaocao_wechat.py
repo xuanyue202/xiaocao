@@ -1184,14 +1184,10 @@ class XiaocaoWechatLiveSubscription:
             ) + request["instructions"]
         if item.get("mini_program_name") == "见势擒龙团":
             request["mini_program_name"] = "见势擒龙团"
-            request["reuse_open_window"] = True
-            request.pop("launch_resolver_command", None)
             request["instructions"] = (
-                "复用已核对的见势擒龙团课程窗口；应用身份已由商户页校验。"
-                "不重新唤起、不刷新、不重复解析。沿用限定小鹅通抓取和同一 live_id "
-                "有限回放门槛；抓到后用该课程文件菜单关闭并从窗口菜单读回消失。"
-                "自动播放不增加 Play；仅按当前可见控件操作。返回原动作和精确身份。"
-            )
+                "保留见势擒龙团应用身份；当前已有匹配课程窗口则复用。"
+                "没有窗口时使用当前商户页校验返回的品牌应用入口，不换成鹅直播。"
+            ) + request["instructions"]
         if reason == "captured_window_cleanup":
             request.pop("launch_resolver_command", None)
             request["instructions"] = (

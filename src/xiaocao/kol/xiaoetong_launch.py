@@ -137,8 +137,7 @@ def parse_launch_page(html: str, web_link: str, expected_identity: str | None) -
         "media_request_observed": False,
     }
     if branded:
-        result.pop("launch_command")
-        result.update({"mini_program_name": "见势擒龙团", "reuse_open_window": True})
+        result.update({"mini_program_name": "见势擒龙团"})
     return result
 
 
@@ -155,7 +154,12 @@ def resolve_launch_plan(
         # Read identity from the real merchant branch, then obtain a fresh
         # ticket below. Never launch the potentially old message ticket.
         entry = parse_launch_page(html, source_url, expected_identity)
-        if entry.get("reuse_open_window") and reuse_open_window:
+        if entry.get("mini_program_name") == "见势擒龙团":
+            # Preserve the application carrying the user's authorization.
+            # A Goose ticket for the same live ID is not equivalent access.
+            if reuse_open_window:
+                entry.pop("launch_command", None)
+                entry["reuse_open_window"] = True
             return entry
         page_url = entry["page_url"]
     else:
