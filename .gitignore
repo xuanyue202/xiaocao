@@ -37,6 +37,8 @@ output/ .cache/
 # 顶层 ad-hoc artifacts（每次 backtest 产生）
 output/*.log
 output/*.parquet
+output/.coverage*
+output/*coverage*.json
 output/result_*.csv
 output/cli_result_*.csv
 
@@ -65,6 +67,9 @@ output/gate_ablation_*/
 output/quality_governor_backtest*/
 
 # Live trading runtime — 只保 positions.jsonl.example 模板
+# 新的冻结、执行回执、账户事实、复盘和缓存都是运行状态，不作为代码同步。
+# 已跟踪的历史研究材料不受 ignore 影响；新共享研究结论放入 docs/reference。
+/output/live/*
 output/live/positions.jsonl
 output/live/alerts.jsonl
 output/live/*.env
@@ -113,6 +118,7 @@ output/live/exit_call*.jsonl
 output/live/exit_calibration.jsonl
 output/live/calibration_candidates.jsonl
 output/live/reality_checks.jsonl
+!/output/live/positions.jsonl.example
 
 # Paper trading runtime（每次 replay 重新生成）
 output/paper_v6/
@@ -140,6 +146,15 @@ output/*.sha256
 
 # Superseded one-off probe; the reusable Founder AX implementation lives under native/.
 .scratch/foundersc-mac-native-probe/
+
+# 一次性运行恢复材料；保留本机证据，不提交旧自动任务请求或补发脚本。
+# 不忽略整个 .scratch：PRD 与 issues 是仓库正式任务记录。
+.scratch/book-b-live-repair-2026-09-04-closing/
+.scratch/book-b-opening-20260912/
+.scratch/kol-alert-reminder-correction-20260908/
+.scratch/kol-astra-routing-2026-09-06/
+.scratch/simulation-recovery-20260912/
+.scratch/kol-writer-self-repair/generate_semantic_inputs.py
 
 # Local Claude state. Project-shared Claude links may be tracked.
 .claude/settings.local.json
