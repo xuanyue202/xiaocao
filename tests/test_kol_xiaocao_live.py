@@ -2040,3 +2040,27 @@ def test_reconcile_completed_capture_rejects_running_task(tmp_path):
 
     with pytest.raises(EnrichmentError, match="not durably paused"):
         service.reconcile_completed_capture(capture_job_id)
+
+
+@pytest.mark.parametrize("raw_name", [None, "target.mp4", "target (1).mp4"])
+def test_validate_collision_numbered_compressed_media(tmp_path, raw_name):
+    ledger, job_id, media, duration = _capture_fixture(tmp_path)
+    numbered = media.with_name("target-compressed (1).mp4")
+    media.rename(numbered)
+    store = CaptureJobStore(ledger)
+    current = store.latest(job_id)
+    task = current["download_task"]
+    task["name"] = numbered.name
+    task["meta"]["opts"]["name"] = numbered.name
+    store.transition(current, "download_completed", status="downloaded",
+                     media_path=str(numbered), download_task=task)
+    service = XiaocaoLiveService(tmp_path / "live", capture_ledger=ledger,
+                                 runner=_probe_runner(numbered, duration))
+    if raw_name:
+        (tmp_path / raw_name).write_bytes(b"raw")
+        with pytest.raises(EnrichmentError, match="retained a raw"):
+            service.validate_media(job_id)
+    else:
+        receipt = service.validate_media(job_id)
+        assert receipt["media_sha256"] == _sha256(numbered)
+        assert receipt["media_basename"] == numbered.name

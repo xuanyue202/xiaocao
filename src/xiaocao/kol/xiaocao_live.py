@@ -8,6 +8,8 @@ handoff and the Netdisk job ledger.
 
 from __future__ import annotations
 
+from .enrichment_types import compressed_media_name
+
 import hashlib
 import json
 import os
@@ -1512,14 +1514,19 @@ class XiaocaoLiveService:
             raise EnrichmentError("capture job does not exist")
         identity = self._capture_contract(capture)
         media = Path(str(capture.get("media_path") or "")).expanduser().resolve()
+        compressed_name = compressed_media_name(media.name)
         if (
             not media.is_file()
-            or not media.name.endswith("-compressed.mp4")
+            or compressed_name is None
             or media.stat().st_size <= 0
         ):
             raise EnrichmentError("compressed capture artifact is missing or invalid")
-        raw_name = media.name.removesuffix("-compressed.mp4") + ".mp4"
-        if (media.parent / raw_name).exists():
+        assert compressed_name is not None
+        raw_names = {
+            compressed_name[1] + ".mp4",
+            compressed_name[1] + (compressed_name[2] or "") + ".mp4",
+        }
+        if any((media.parent / name).exists() for name in raw_names):
             raise EnrichmentError("normal capture path retained a raw source video")
         result = self._runner(
             [

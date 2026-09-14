@@ -4256,15 +4256,16 @@ def test_same_second_preclaim_evidence_is_rejected_with_microsecond_precision(
 
 
 @pytest.mark.parametrize("failure", [None, "wrong_claim", "attached", "started", "uncertain", "missing_stage", "no_failure_exit"])
-def test_foreground_repair_uses_bound_adapter_and_never_retries_attachment(tmp_path, monkeypatch, failure):
+@pytest.mark.parametrize("stage", ["upload_foreground", "upload_event_loop"])
+def test_foreground_repair_uses_bound_adapter_and_never_retries_attachment(tmp_path, monkeypatch, failure, stage):
     video = tmp_path / "video-compressed.mp4"
     video.write_bytes(b"real-video")
     service = NetdiskEnrichmentService(tmp_path / "out", runner=_runner, now=lambda: NOW,
                                        use_opencli_upload_template=True)
     job = service.prepare(video)
     current = {**job, "event": "netdisk_upload_failed", "status": "upload_claimed",
-               "reason": "browser_command_failed", "failure_stage": "upload_foreground",
-               "diagnostic": {"category": "transport_error", "code": "upload_foreground_failed", "stage": "upload_foreground", "exit_code": 1}}
+               "reason": "browser_command_failed", "failure_stage": stage,
+               "diagnostic": {"category": "transport_error", "code": stage + "_failed", "stage": stage, "exit_code": 1}}
     if failure == "no_failure_exit": current["diagnostic"]["exit_code"] = 0
     if failure == "started": current["upload_started_at"] = NOW.isoformat()
     if failure == "uncertain": current["diagnostic"]["code"] = "upload_attachment_uncertain"
@@ -4298,3 +4299,14 @@ def test_foreground_repair_uses_bound_adapter_and_never_retries_attachment(tmp_p
         assert submitted == [job["job_id"]]
         with pytest.raises(EnrichmentError):
             service.resume_pre_attachment_upload(job["job_id"], session="site:baidu-netdisk")
+
+
+@pytest.mark.parametrize("name", ["target-compressed (1).mp4", "target-compressed (12).mp4"])
+def test_prepare_numbered_compressed_file_preserves_exact_source(tmp_path, name):
+    video = tmp_path / name
+    video.write_bytes(b"real-video")
+    service = NetdiskEnrichmentService(tmp_path / "out", runner=_runner, now=lambda: NOW)
+    job = service.prepare(video)
+    assert job["video_basename"] == name
+    assert job["video_path"] == str(video)
+    assert service.prepare(video)["job_id"] == job["job_id"]
