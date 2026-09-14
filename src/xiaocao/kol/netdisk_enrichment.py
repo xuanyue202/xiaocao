@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from .enrichment_types import compressed_media_name
+
 import hashlib
 import json
 import os
@@ -2838,7 +2840,7 @@ class NetdiskEnrichmentService:
         video = Path(video_path).expanduser().resolve()
         if not video.is_file():
             raise EnrichmentError(f"source video not found: {video}")
-        if not video.name.endswith("-compressed.mp4"):
+        if compressed_media_name(video.name) is None:
             raise EnrichmentError("ticket 02 requires a completed -compressed.mp4 source")
         video_sha256 = _sha256_file(video)
         job_id = f"kol-netdisk-{video_sha256[:16]}"

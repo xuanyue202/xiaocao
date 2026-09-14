@@ -139,3 +139,8 @@ def validate_decision_completion(
     ).strip():
         raise EnrichmentError("Book KOL-US no_trade requires reason")
     return notification, paper
+
+
+def compressed_media_name(name: str) -> re.Match[str] | None:
+    """Recognize inline compressed output, including downloader collision suffixes."""
+    return re.fullmatch(r"(.+)-compressed( \([1-9][0-9]*\))?\.mp4", name)

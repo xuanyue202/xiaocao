@@ -271,8 +271,8 @@ lists enrich asynchronously with an incremental cache; they cannot bind a source
    `/api/task/list?page_size=500` 中该任务的状态和进度；不要再操作播放器。
    要求 `type=live_capture`、`compress=true`、`compress_inline=true`，并等到
    压缩结束，而不是拿到媒体地址或看到进度就结束。最终以同一任务的
-   `media_validated` 回执验收：`-compressed.mp4` 存在，bytes 非零、ffprobe 时长
-   与候选匹配、SHA-256 已记录，未保留 raw 副本。保留 PTY，让既有后续流程接手。
+   `media_validated` 回执验收：`-compressed.mp4`（或下载器重名后缀 `-compressed (N).mp4`）存在，bytes 非零、ffprobe 时长
+   与候选匹配、SHA-256 已记录，未保留 raw 副本。重名文件保留原路径、任务和哈希，验收不得改名或重下载。保留 PTY，让既有后续流程接手。
 
    本次实证：capture `kol-3ffdb59330e5`、task `JhgYHS-g4C9DAvFl5RxAq`，
    产物 `20260906 大师班专场(晚18：00开播)-compressed.mp4`，382641026 bytes，

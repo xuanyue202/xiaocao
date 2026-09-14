@@ -4298,3 +4298,14 @@ def test_foreground_repair_uses_bound_adapter_and_never_retries_attachment(tmp_p
         assert submitted == [job["job_id"]]
         with pytest.raises(EnrichmentError):
             service.resume_pre_attachment_upload(job["job_id"], session="site:baidu-netdisk")
+
+
+@pytest.mark.parametrize("name", ["target-compressed (1).mp4", "target-compressed (12).mp4"])
+def test_prepare_numbered_compressed_file_preserves_exact_source(tmp_path, name):
+    video = tmp_path / name
+    video.write_bytes(b"real-video")
+    service = NetdiskEnrichmentService(tmp_path / "out", runner=_runner, now=lambda: NOW)
+    job = service.prepare(video)
+    assert job["video_basename"] == name
+    assert job["video_path"] == str(video)
+    assert service.prepare(video)["job_id"] == job["job_id"]
