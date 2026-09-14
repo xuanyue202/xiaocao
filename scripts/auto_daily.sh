@@ -23,6 +23,25 @@ fi
 LOG_DIR="$ROOT/output/live/auto"; mkdir -p "$LOG_DIR"
 LOG="$LOG_DIR/${TODAY}_${STEP}.log"
 log() { echo "[$(date '+%F %T')] $*" | tee -a "$LOG"; }
+run_book_b_morning() {
+  local FREEZE_STATUS FREEZE_EXIT REVIEW_RENDEZVOUS
+  log "morning execute: wait for dated frozen recommendation + review queue (never rerun live_recommend)"
+  FREEZE_STATUS="$("$PY" scripts/wait_for_morning_freeze.py --date "$TODAY" --timeout-sec "${XIAOCAO_MORNING_FREEZE_TIMEOUT_SEC:-240}" 2>&1)"
+  FREEZE_EXIT=$?
+  log "morning freeze result: $FREEZE_STATUS"
+  if [ "$FREEZE_EXIT" -ne 0 ]; then
+    log "Book B FAILED: dated frozen evidence unavailable; independent Book T will still run"
+    return "$FREEZE_EXIT"
+  fi
+  log "bounded agent-review rendezvous (structured review only; timeout falls back to base picks)"
+  REVIEW_RENDEZVOUS="$("$PY" scripts/wait_for_agent_reviews.py --date "$TODAY" --timeout-sec "${XIAOCAO_AGENT_REVIEW_TIMEOUT_SEC:-180}" 2>&1)" || true
+  log "agent-review rendezvous result: $REVIEW_RENDEZVOUS"
+  log "paper-record ★E mode-qualified picks"
+  if ! "$PY" kronos_screen/scripts/paper_record.py --date "$TODAY" --pick mode_exec_star --initial-capital 100000 --fee-rate 0.0001 --deploy-ratio 0.5 --max-total-exposure-ratio 1.0 --quality-governor shadow --intelligence-trade shadow >>"$LOG" 2>&1; then
+    log "morning execute FAILED: Book B paper-record failed"
+    return 1
+  fi
+}
 run_book_t_shadow_if_frozen() {
   local input="output/live/book_t_v2_shadow_input_${TODAY}.json"
   local producer_args=(--prepare --date "$TODAY" --root "$ROOT" --run-mode "${XIAOCAO_BOOK_T_V2_RUN_MODE:-real}")
@@ -123,22 +142,8 @@ case "$STEP" in
     log "morning prerecommend ready -> output/live/recommend_${TODAY}.md"
     ;;
   morning-execute)
-    log "morning execute: wait for dated frozen recommendation + review queue (never rerun live_recommend)"
-    FREEZE_STATUS="$("$PY" scripts/wait_for_morning_freeze.py --date "$TODAY" --timeout-sec "${XIAOCAO_MORNING_FREEZE_TIMEOUT_SEC:-240}" 2>&1)"
-    FREEZE_EXIT=$?
-    log "morning freeze result: $FREEZE_STATUS"
-    if [ "$FREEZE_EXIT" -ne 0 ]; then
-      log "morning execute aborted: dated frozen evidence unavailable"
-      exit "$FREEZE_EXIT"
-    fi
-    log "bounded agent-review rendezvous (structured review only; timeout falls back to base picks)"
-    REVIEW_RENDEZVOUS="$("$PY" scripts/wait_for_agent_reviews.py --date "$TODAY" --timeout-sec "${XIAOCAO_AGENT_REVIEW_TIMEOUT_SEC:-180}" 2>&1)" || true
-    log "agent-review rendezvous result: $REVIEW_RENDEZVOUS"
-    log "paper-record ★E mode-qualified picks"
-    if ! "$PY" kronos_screen/scripts/paper_record.py --date "$TODAY" --pick mode_exec_star --initial-capital 100000 --fee-rate 0.0001 --deploy-ratio 0.5 --max-total-exposure-ratio 1.0 --quality-governor shadow --intelligence-trade shadow >>"$LOG" 2>&1; then
-      log "morning execute FAILED: Book B paper-record failed"
-      exit 1
-    fi
+    run_book_b_morning
+    BOOK_B_EXIT=$?
     log "paper-record Book T trend basket (paper-only, independent account)"
     if ! "$PY" kronos_screen/scripts/paper_record.py --date "$TODAY" --initial-capital 100000 --fee-rate 0.0001 --trend-only >>"$LOG" 2>&1; then
       log "morning execute FAILED: Book T paper-record failed"
@@ -149,6 +154,10 @@ case "$STEP" in
     "$PY" scripts/xiaocao_knowledge.py --posture >>"$LOG" 2>&1 || true
     log "record standing posture call (judgment-calibration loop; scored fwd at eod)"
     "$PY" scripts/posture_calibration.py --record-current >>"$LOG" 2>&1 || true
+    if [ "$BOOK_B_EXIT" -ne 0 ]; then
+      log "morning execution FAILED: Book B failed; Book T completed independently"
+      exit "$BOOK_B_EXIT"
+    fi
     log "morning execution done"
     ;;
   morning)

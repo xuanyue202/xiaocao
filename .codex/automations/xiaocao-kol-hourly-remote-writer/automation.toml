@@ -2,40 +2,14 @@ version = 1
 id = "xiaocao-kol-hourly-low-bandwidth-operation"
 kind = "cron"
 name = "xiaocao KOL hourly remote writer"
-prompt = '''使用本机 `kol-intelligence` skill，并完整读取 `references/hourly-remote-writer.md`。这是 `MacBook-Pro-6.local` 上唯一的 KOL remote writer，也是本机唯一 KOL 写入入口；本机不得创建、启用或运行 `xiaocao-kol-hourly-local-capture`。跨机 WeChat capture 只作为 credential-free handoff capsule 输入，不是本机 Automation。Automation ID、canonical cwd、主执行模型和 schedule 以本 Automation 的结构化配置为准。
-
-【唯一入口】
-启动任何 KOL runner，或读取 mailbox、status、convergence 前，必须且只能运行一次：
-```bash
-CODEX_HOME=/Users/xuanyue202/.codex CODEX_AUTOMATION_ID=xiaocao-kol-hourly-low-bandwidth-operation CODEX_REMOTE_HOST=MacBook-Pro-6.local node scripts/codex_peer_gate.js
-```
-只按有效结构化 `gate_result` 分支：`pass` 才可继续；`no_op` 立即结束且不再读取；`repair_required` 或没有有效结构化结果时禁止业务副作用，由本 task 修复后只重跑 gate surface。不得改用桌面 thread wrapper 推断 peer。
-
-Gate 通过后，仅当当前 task 已携带 runner 签发的 exact continuation 时执行其 narrow resume；否则启动一次 `PYTHONPATH=src .venv/bin/python scripts/kol_daily.py run`。同一时段不得启动第二次 full sweep。mailbox、provider、writer_progress、receipt、ack 和终态规则以 skill、reference 与确定性代码为权威。
-
-【固定模型职责】
-本 Automation 的结构化模型是执行 Agent，只负责 gate、handoff、文字稿取得、确定性 context prepare、原样 dispatch、等待、对账、校验、上传及后续外部效果。它不得自行做全文观点抽取、重写洞察目标、用摘要替代逐字稿，或改写洞察 Agent 审定的语义内容。
-
-小草逐字稿出现 semantic-input 事件时，完整读取 `references/semantic-model-routing.md`。洞察 Agent 的唯一配置入口是 `.codex/skills/kol-intelligence/config/semantic-analyst.json`；先运行 `PYTHONPATH=src .venv/bin/python scripts/kol_semantic_delegation.py profile` 核对，再用 `prepare` 生成 hash-bound packet 和 `spawn_arguments.json`。必须把保存的 spawn 参数原样交给 Subagent，禁止手写、概括或覆盖 model、reasoning_effort、fork_context 与 message，并记录实际接受的参数和 agent ID。
-
-洞察的唯一目标是：完整、忠实地抽取整份逐字稿中的全部投资决策论点，逐段绑定证据，保留方向、条件、期限、数字、例外和不确定性，完成七类交易信息与具名资产覆盖，并生成自然中文的完整灰常亮报告；KOL 原始观点、系统事实核验、家庭建议、paper-only Book 判断和 authority=0 知识必须分层。洞察 Agent 自己完成双遍全文抽取与覆盖审计。执行 Agent 只按完整来源做 acceptance audit；发现内容问题必须退回同一洞察 Agent 修正，不能自行补写。模型不可用、目标/输入/输出/hash/schema 不匹配时禁止降级发布，按同一对象修复并 exact narrow resume。
-
-【完成与修复】
-`structured_input`、transcript、analysis_request、runner exit、dispatch accepted、provider `wait_until` 都只是检查点。每个对象只有同时满足 content terminal；灰常亮稳定 URL/receipt 或合法 `not_created`；提醒 `delivered|not_eligible|not_created`；Book KOL-US paper-only fill/no_trade/not_created；knowledge reusable/no_reusable/not_created；所需 ack；精确副作用 claim=receipt 且 uncertain=0；`writer_progress.status=terminal` 且 `next_action=stop`，才可写完成。
-
-任何异常、超时、schema/selector/协议/依赖/状态投影或验收问题都进入第一性原理修复：锁定 exact object、claim、receipt 和不确定外部效果；写最小回归；修复代码、合同、测试或配置；定向验证；需要时 commit/push；再沿原 runner/对象/claim 的 exact narrow resume 跑到终态。禁止用第二次 full sweep、重复发送或重复写入掩盖根因。对象终态后持久化 5 Why、根因修复、防复发控制和验证证据。仅认证、SMS/验证码、用户同意或无法安全对账的真实外部效果可保留用户阻塞。
-
-【输出与后续】
-空队列静默。非空队列最终回复逐对象说明，并以 Markdown 表格收尾，表头固定为 `对象 | 状态 | 说明`；对象名必须前缀 `[视频]` 或 `[文章]`。
-
-只有新发布报告或 viewpoint-maintenance receipt 已终态且核验后，才读取 `.codex/skills/xiaocao-trading/references/kol-trading-judgment.md` 并运行一次 `PYTHONPATH=src .venv/bin/python scripts/kol_trading_context.py context --summary`，明确 coverage gaps。它只是只读证据准备，不执行 Book-B broker/paper，不创建新 writer；空队列或未变化 publication slot 不刷新。'''
+prompt = "使用本机 `kol-intelligence` skill，并完整读取 `references/hourly-remote-writer.md`。这是 `MacBook-Pro-6.local` 上唯一的 KOL remote writer，也是本机唯一 KOL 写入入口；本机不得创建、启用或运行 `xiaocao-kol-hourly-local-capture`。跨机 WeChat capture 只作为 credential-free handoff capsule 输入，不是本机 Automation。Automation ID、canonical cwd、主执行模型和 schedule 以本 Automation 的结构化配置为准。\n\n【唯一入口】\n启动任何 KOL runner，或读取 mailbox、status、convergence 前，必须且只能运行一次：\n```bash\nCODEX_HOME=/Users/xuanyue202/.codex CODEX_AUTOMATION_ID=xiaocao-kol-hourly-low-bandwidth-operation CODEX_REMOTE_HOST=MacBook-Pro-6.local node scripts/codex_peer_gate.js\n```\n只按有效结构化 `gate_result` 分支：`pass` 才可继续；`no_op` 立即结束且不再读取；`repair_required` 或没有有效结构化结果时禁止业务副作用，由本 task 修复后只重跑 gate surface。不得改用桌面 thread wrapper 推断 peer。\n\nGate 通过后，仅当当前 task 已携带 runner 签发的 exact continuation 时执行其 narrow resume；否则启动一次 `PYTHONPATH=src .venv/bin/python scripts/kol_daily.py run`。同一时段不得启动第二次 full sweep。mailbox、provider、writer_progress、receipt、ack 和终态规则以 skill、reference 与确定性代码为权威。\n\n【固定模型职责】\n本 Automation 的结构化模型是执行 Agent，只负责 gate、handoff、文字稿取得、确定性 context prepare、原样 dispatch、等待、对账、校验、上传及后续外部效果。它不得自行做全文观点抽取、重写洞察目标、用摘要替代逐字稿，或改写洞察 Agent 审定的语义内容。\n\n小草逐字稿出现 semantic-input 事件时，完整读取 `references/semantic-model-routing.md`。洞察 Agent 的唯一配置入口是 `.codex/skills/kol-intelligence/config/semantic-analyst.json`；先运行 `PYTHONPATH=src .venv/bin/python scripts/kol_semantic_delegation.py profile` 核对，再用 `prepare` 生成 hash-bound packet 和 `spawn_arguments.json`。必须把保存的 spawn 参数原样交给 Subagent，禁止手写、概括或覆盖 model、reasoning_effort、fork_context 与 message，并记录实际接受的参数和 agent ID。\n\n洞察的唯一目标是：完整、忠实地抽取整份逐字稿中的全部投资决策论点，逐段绑定证据，保留方向、条件、期限、数字、例外和不确定性，完成七类交易信息与具名资产覆盖，并生成自然中文的完整灰常亮报告；KOL 原始观点、系统事实核验、家庭建议、paper-only Book 判断和 authority=0 知识必须分层。洞察 Agent 自己完成双遍全文抽取与覆盖审计。执行 Agent 只按完整来源做 acceptance audit；发现内容问题必须退回同一洞察 Agent 修正，不能自行补写。模型不可用、目标/输入/输出/hash/schema 不匹配时禁止降级发布，按同一对象修复并 exact narrow resume。\n\n【完成与修复】\n`structured_input`、transcript、analysis_request、runner exit、dispatch accepted、provider `wait_until` 都只是检查点。每个对象只有同时满足 content terminal；灰常亮稳定 URL/receipt 或合法 `not_created`；提醒 `delivered|not_eligible|not_created`；Book KOL-US paper-only fill/no_trade/not_created；knowledge reusable/no_reusable/not_created；所需 ack；精确副作用 claim=receipt 且 uncertain=0；`writer_progress.status=terminal` 且 `next_action=stop`，才可写完成。\n\n任何异常、超时、schema/selector/协议/依赖/状态投影或验收问题都进入第一性原理修复：锁定 exact object、claim、receipt 和不确定外部效果；写最小回归；修复代码、合同、测试或配置；定向验证；需要时 commit/push；再沿原 runner/对象/claim 的 exact narrow resume 跑到终态。禁止用第二次 full sweep、重复发送或重复写入掩盖根因。对象终态后持久化 5 Why、根因修复、防复发控制和验证证据。仅认证、SMS/验证码、用户同意或无法安全对账的真实外部效果可保留用户阻塞。\n\n【输出与后续】\n空队列静默。非空队列最终回复逐对象说明，并以 Markdown 表格收尾，表头固定为 `对象 | 状态 | 说明`；对象名必须前缀 `[视频]` 或 `[文章]`。\n\n只有新发布报告或 viewpoint-maintenance receipt 已终态且核验后，读取 `.codex/skills/xiaocao-trading/references/kol-source-preparation.md`，按其中流程提前完成来源分析交接：先准备 context 并明确 coverage gaps，复用 hash 匹配的已有分析；新变化来源由规定的语义 Agent 忠实提炼条件、期限、反证，经独立 review 后用 `scripts/kol_trading_preparation.py publish` 保存 authority=0 的持久化准备包。不要把全文分析拖到交易日 09:25；早盘 09:00 读取准备包，09:25 只做当日行情、账户、候选和原文适用条件的映射与复核。准备包不是正式交易 decision，不执行 Book-B broker/paper，不创建新 writer，不声称未读取的历史来源已覆盖。空队列或未变化 publication slot 不刷新。"
 status = "ACTIVE"
-rrule = "RRULE:FREQ=DAILY;BYHOUR=8,10,12,14,17,18,22;BYMINUTE=30"
-model = "gpt-5.6-luna"
-reasoning_effort = "max"
+rrule = "RRULE:FREQ=DAILY;BYHOUR=8,10,12,14,17,18,21;BYMINUTE=30"
+model = "gpt-5.6-sol"
+reasoning_effort = "medium"
 notification_policy = "failed_runs_only"
 execution_environment = "local"
 target = { type = "project", project_id = "c5acdaa7-f8a7-42d4-96fe-bf979a6b7415" }
 cwds = ["/Users/xuanyue202/Documents/project/xiaocao"]
 created_at = 1785628290778
-updated_at = 1788660213354
+updated_at = 1789350688655

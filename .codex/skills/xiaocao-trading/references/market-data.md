@@ -4,6 +4,30 @@ Read this file only for quotes, market state, pools, sectors, indices, indicator
 
 ## Data-source rules
 
+- Official HTTPS market API clients read the dedicated macOS Keychain item
+  `xiaocao.market-data.session` / account `runtime`. An explicitly set
+  `XIAOCAO_API_TOKEN` overrides it; do not embed either value in commands,
+  prompts, logs, or reports. Custom hosts never receive this credential.
+- At morning preparation or after code 990502, run
+  `PYTHONPATH=src .venv/bin/python scripts/market_data_preflight.py --date today`.
+  It bypasses cache and checks industry/category ranks, three candidate pools,
+  core stock scores and smallGrass technical values with request spacing.
+  Reachable is not proof of full source coverage or an executable candidate.
+- Provision username/password using the hidden-input local command
+  `PYTHONPATH=src .venv/bin/python scripts/configure_market_data_auth.py --dialog`.
+  It verifies official `/user/v2/login` before storing credentials in the
+  dedicated Keychain item `xiaocao.market-data.credentials` / account `runtime`.
+  The session is cached separately; ordinary requests reuse it without logging
+  in each time. `--token-only` is available for manual session replacement.
+- On 990502, official `/stock/` reads invalidate the memory cache, serialize
+  password login across local processes and retry the original read once.
+  Another process's rotated token is reused; login attempts have a 120-second
+  cooldown. Explicit environment overrides disable automatic login. Repeated
+  rejection, missing credentials, captcha/SMS or login failure remains an
+  authentication blocker, never an empty opportunity. No refresh-token API is
+  assumed. After provisioning/recovery, validate with a fresh-process preflight.
+  Successful web login/disabled buttons are not API authorization proof.
+
 - Cache first (`output/.cache/xiaocao.db`). For more than a few symbols/dates, batch small, space requests roughly 0.5–1 second and keep concurrency at or below about 8. Empty/null responses after bursts can be silent throttling.
 - Always use exchange suffixes: `.XSHG`, `.XSHE` or `.BJSE`.
 - Minute-line price is `trade`; `open/high/low/close` may be null. Historical minute requests need both `trade_date=YYYYMMDD` and `count=241`.

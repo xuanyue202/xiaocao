@@ -6,6 +6,7 @@ import warnings
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
 from typing import Any, Iterable
+from urllib.parse import urlsplit
 
 warnings.filterwarnings("ignore", message="urllib3 v2 only supports OpenSSL")
 import requests
@@ -18,7 +19,7 @@ from .catalog import (
     resolve_sort_id,
     resolve_sort_target_type,
 )
-from .errors import ApiError, ApiNotFoundError, ApiSchemaError
+from .errors import ApiAuthError, ApiError, ApiNotFoundError, ApiSchemaError
 from .normalizers import (
     as_list as _as_list,
     as_list_of_dicts as _as_list_of_dicts,
@@ -121,8 +122,19 @@ class XiaocaoClient:
                 time.sleep(wait_for)
             last_requests[path] = time.monotonic()
 
-    def _do_post(self, path: str, payload: dict[str, Any]) -> Any:
+    def _do_post(self, path: str, payload: dict[str, Any], *, _auth_replayed: bool = False) -> Any:
         url = f"{self.base_url.rstrip('/')}/{path.lstrip('/')}"
+        # The official XC frontend sends its existing login token in this header.
+        # Read at the request boundary so an operator can rotate the credential.
+        # Never forward an ambient credential to a custom API/test server.
+        headers = {}
+        from .auth import OFFICIAL_HOSTS, invalidate_token_cache, load_market_token, renew_market_token
+
+        official = urlsplit(self.base_url).netloc in OFFICIAL_HOSTS and urlsplit(self.base_url).scheme == "https"
+        if official:
+            token = load_market_token()
+            if token:
+                headers["token"] = token
         last_error: Exception | None = None
         for attempt in range(self.retries + 1):
             try:
@@ -137,18 +149,32 @@ class XiaocaoClient:
                     url,
                     json=payload,
                     timeout=self.timeout,
+                    **({"headers": headers, "allow_redirects": False} if headers else {}),
                 ) as response:
                     if response.status_code == 404:
                         raise ApiNotFoundError(f"API endpoint not found: {path}")
                     response.raise_for_status()
                     body = response.json()
                 code = body.get("code")
+                if code == 990502:
+                    invalidate_token_cache()
+                    if official and path.startswith("/stock/") and not _auth_replayed:
+                        try:
+                            renew_market_token(headers.get("token", ""))
+                        except ApiAuthError as error:
+                            raise ApiAuthError(f"API returned code=990502 for {path}: {error}") from None
+                        return self._do_post(path, payload, _auth_replayed=True)
+                    raise ApiAuthError(
+                        f"API returned code=990502 for {path}: 登录已失效，请重新登录"
+                    )
                 if code is not None and code != 8200:
                     message = body.get("msg") or body.get("errmsg") or body
                     raise ApiError(f"API returned code={code}: {message}")
                 if "result" not in body:
                     raise ApiSchemaError(f"Missing result in API response for {path}")
                 return body["result"]
+            except ApiAuthError:
+                raise
             except (requests.RequestException, ValueError, ApiError) as exc:
                 last_error = exc
                 if attempt >= self.retries:

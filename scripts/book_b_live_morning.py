@@ -250,7 +250,7 @@ def main(argv: list[str] | None = None) -> int:
         default="native-app",
         help="Native Founder App only; OpenCLI trading/view is sunset",
     )
-    parser.add_argument("--freeze-wait-seconds", type=float, default=900.0)
+    parser.add_argument("--freeze-wait-seconds", type=float, default=2100.0)
     parser.add_argument("--resume-plan-id", help="Resume only this existing durable plan; never regenerate candidates")
     parser.add_argument("--recovery-action", choices=("resume", "reconcile", "close"), default="resume")
     parser.add_argument("--poll-seconds", type=float, default=1.0)
