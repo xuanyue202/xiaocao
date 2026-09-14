@@ -23,7 +23,7 @@ bash scripts/auto_daily.sh morning-execute
 ```
 
 Book-B real-capital execution is a third, deliberately independent
-09:15 Automation and process:
+09:00 Automation and process:
 
 ```bash
 PYTHONPATH=src .venv/bin/python scripts/book_b_live_morning.py --date today --route native-app
@@ -63,7 +63,7 @@ and broker-summary cash must equal top-level available cash. Because the native
 App has no mock/live data namespace, every exit must record the explicit
 `native_environment_restore_not_applicable` receipt and must not claim a fake
 mock restoration.
-At 09:15-09:30 the later `forward_eval` field `executable_fillable` may be
+At 09:00-09:30 the later `forward_eval` field `executable_fillable` may be
 absent. Absence is not false and must be deferred to the current submit-time
 market guard; an explicitly false value remains ineligible.
 During 09:25–09:30, urgent code repair and exact missing-source retrieval take
@@ -253,7 +253,7 @@ Escalate: script failure/traceback, missing recommendation or paper-record stage
 
 ## Early preparation and urgent continuation
 
-Start at 09:15 with a short initial command yield; do not block source work
+Start at 09:00 with the default 2100-second freeze wait and a short initial command yield; do not block source work
 behind the running shell. During 09:25–09:30, react promptly to emitted review
 requests and failures; avoid long blind waits for a potentially actionable
 result. While the original runner waits for freeze, prepare full KOL
@@ -286,3 +286,5 @@ The reading delta binds that base hash, carries every changed record and
 removed ID, and retains full current coverage. It is not an AI summary or a
 substitute for reading the base. A new worker must receive both the base and
 delta. Source publication continues to use the full current `context_path`.
+
+At 09:00 run `PYTHONPATH=src .venv/bin/python scripts/market_data_preflight.py --date today` alongside the original runner. Resolve authentication/transport failures immediately; a successful empty response proves reachability only. Follow `kol-source-preparation.md` to reuse the remote writer's reviewed source packet. Once ready, sleep in bounded intervals while preserving native heartbeat; actively poll by 09:24:50. Source freshness and current applicability remain independent.

@@ -5,6 +5,16 @@ Read Operating Contract §2a before changing its scope. This is current judgment
 not automatic strategy promotion. Source reporting and broker execution remain
 different writers. Do not ask the user to repeat the 2026-09-06 authorization.
 
+## Prepare before the trading window
+
+The remote writer owns source extraction and the reviewed source-only handoff
+when new publications or viewpoint maintenance complete. Follow
+[kol-source-preparation.md](kol-source-preparation.md). At 09:00 read the matching
+packet first and resolve changed evidence and coverage gaps. At 09:25, use its
+conditions with the dated freeze/account/current facts for the bounded current
+decision. Reuse unchanged source analysis; a source packet has authority=0 and
+does not itself satisfy current applicability or formal decision publication.
+
 ## Evidence and model routing
 
 1. Read the existing publication registry through the bounded context adapter:

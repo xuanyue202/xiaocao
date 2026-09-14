@@ -29,6 +29,7 @@ PACKAGE_DIR_NAME = "xiaocao-trading"
 
 SKILL_REFERENCE_FILES = [
     "automation-morning.md",
+    "kol-source-preparation.md",
     "book-b-live-repair.md",
     "automation-intraday.md",
     "automation-eod.md",
@@ -123,6 +124,8 @@ def validate_skill(skill_dir: Path) -> None:
         runtime / "scripts" / "live_capital_preflight.py",
         runtime / "scripts" / "live_recommend.py",
         runtime / "scripts" / "live_monitor.py",
+        runtime / "scripts" / "market_data_preflight.py",
+        runtime / "scripts" / "kol_trading_preparation.py",
         runtime / "scripts" / "kol_trading_context.py",
         runtime / "scripts" / "kol_trading_decision.py",
         runtime / "scripts" / "kol_trading_tick.py",

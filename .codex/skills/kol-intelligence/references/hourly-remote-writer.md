@@ -230,3 +230,15 @@ missing UI path, or repository defect is never by itself `user_action_required`.
 User-directed bounded cloud-transfer repair is Agent-owned: bind the claim,
 prove target absence, persist `operator_authorized_recovery`, make one third
 native click and stop. Never ask user to save or add it to hourly.
+
+## Trading-source preparation after publication
+
+After a new report or viewpoint-maintenance receipt is terminal, complete the
+reviewed source-only handoff in
+`../../xiaocao-trading/references/kol-source-preparation.md` before closing the
+writer task. Reuse unchanged source notes, fill required manifest gaps here,
+and preserve complete new/changed source conditions, dates and counterevidence.
+This is an authority=0 artifact under `output/live/kol_policy/preparations`,
+not a Book-B decision, account or order. Empty/unchanged sweeps remain silent
+and do not refresh history. Existing gate, publication and exact-once ownership
+remain unchanged.

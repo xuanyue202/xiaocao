@@ -46,7 +46,7 @@ def test_morning_entry_dispatches_without_reproducing_recovery_candidates(tmp_pa
     monkeypatch.setattr(cli, "_wait_for_submit_window", lambda *a, **k: None)
     monkeypatch.setattr(cli, "_review_rendezvous", lambda *a, **k: {"status": "reviewed"})
     def freeze(**kwargs):
-        assert kwargs["timeout_sec"] == (900 if action is None else 0)
+        assert kwargs["timeout_sec"] == (2100 if action is None else 0)
         kwargs["heartbeat"]()
         return {}
     monkeypatch.setattr(cli, "wait_for_morning_freeze", freeze)
