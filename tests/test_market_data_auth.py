@@ -2,6 +2,15 @@ import pytest
 
 from xiaocao.api.client import XiaocaoClient
 from xiaocao.api.errors import ApiAuthError
+from xiaocao.api import auth
+
+
+@pytest.fixture(autouse=True)
+def isolate_keychain(monkeypatch):
+    monkeypatch.setattr(auth, "read_keychain_token", lambda: "")
+    auth.invalidate_token_cache()
+    yield
+    auth.invalidate_token_cache()
 
 
 class Response:

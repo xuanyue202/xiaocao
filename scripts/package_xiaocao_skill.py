@@ -125,6 +125,7 @@ def validate_skill(skill_dir: Path) -> None:
         runtime / "scripts" / "live_recommend.py",
         runtime / "scripts" / "live_monitor.py",
         runtime / "scripts" / "market_data_preflight.py",
+        runtime / "scripts" / "configure_market_data_auth.py",
         runtime / "scripts" / "kol_trading_preparation.py",
         runtime / "scripts" / "kol_trading_context.py",
         runtime / "scripts" / "kol_trading_decision.py",

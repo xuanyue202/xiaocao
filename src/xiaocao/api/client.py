@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import os
 import threading
 import time
 import warnings
@@ -129,8 +128,10 @@ class XiaocaoClient:
         # Read at the request boundary so an operator can rotate the credential.
         # Never forward an ambient credential to a custom API/test server.
         headers = {}
-        if urlsplit(self.base_url).netloc == "p-xcapi.kjap1.cn" and urlsplit(self.base_url).scheme == "https":
-            token = os.environ.get("XIAOCAO_API_TOKEN", "").strip()
+        from .auth import OFFICIAL_HOSTS, invalidate_token_cache, load_market_token
+
+        if urlsplit(self.base_url).netloc in OFFICIAL_HOSTS and urlsplit(self.base_url).scheme == "https":
+            token = load_market_token()
             if token:
                 headers["token"] = token
         last_error: Exception | None = None
@@ -155,6 +156,7 @@ class XiaocaoClient:
                     body = response.json()
                 code = body.get("code")
                 if code == 990502:
+                    invalidate_token_cache()
                     # Repeating an unchanged request cannot renew the service login.
                     raise ApiAuthError(
                         f"API returned code=990502 for {path}: 登录已失效，请重新登录"

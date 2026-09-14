@@ -6,7 +6,8 @@ from xiaocao.api.client import XiaocaoClient
 from xiaocao.api.errors import ApiAuthError
 
 
-def test_expired_upstream_login_is_typed_and_not_retried_or_cached():
+def test_expired_upstream_login_is_typed_and_not_retried_or_cached(monkeypatch):
+    monkeypatch.setenv("XIAOCAO_API_TOKEN", "")
     client = XiaocaoClient(retries=3, backoff=0, cache=MagicMock())
     client.cache.get.return_value = None
     response = MagicMock()

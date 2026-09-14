@@ -4,6 +4,22 @@ Read this file only for quotes, market state, pools, sectors, indices, indicator
 
 ## Data-source rules
 
+- Official HTTPS market API clients read the dedicated macOS Keychain item
+  `xiaocao.market-data.session` / account `runtime`. An explicitly set
+  `XIAOCAO_API_TOKEN` overrides it; do not embed either value in commands,
+  prompts, logs, or reports. Custom hosts never receive this credential.
+- At morning preparation or after code 990502, run
+  `PYTHONPATH=src .venv/bin/python scripts/market_data_preflight.py --date today`.
+  It bypasses cache and checks industry/category ranks, three candidate pools,
+  core stock scores and smallGrass technical values with request spacing.
+  Reachable is not proof of full source coverage or an executable candidate.
+- 990502 stops without blind retries and invalidates the in-memory credential
+  cache. Replace an expired token using the hidden-input local command
+  `PYTHONPATH=src .venv/bin/python scripts/configure_market_data_auth.py`, then
+  rerun preflight in a fresh process. No verified refresh endpoint or account
+  password is configured; never claim automatic renewal or guess a protocol.
+  Successful web login/disabled buttons are not API authorization proof.
+
 - Cache first (`output/.cache/xiaocao.db`). For more than a few symbols/dates, batch small, space requests roughly 0.5–1 second and keep concurrency at or below about 8. Empty/null responses after bursts can be silent throttling.
 - Always use exchange suffixes: `.XSHG`, `.XSHE` or `.BJSE`.
 - Minute-line price is `trade`; `open/high/low/close` may be null. Historical minute requests need both `trade_date=YYYYMMDD` and `count=241`.
