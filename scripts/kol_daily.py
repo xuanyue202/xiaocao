@@ -1584,6 +1584,14 @@ def _classified_source(name: str, runner):
                     "微信验证；不要新建抓取器或循环重试。完成后保持该会话可用，"
                     "下一小时会重新验收同一文章。",
                 ) from exc
+            if message == "wechat_official_comment_authentication_required":
+                raise UserActionBlocker(
+                    "wechat-official-comment-authentication",
+                    "这篇公众号文章把完整正文放在评论区，公共 OpenCLI 页面没有"
+                    "读取评论所需的微信会话。请在已登录微信中打开该文章评论区，"
+                    "并把作者发布的完整正文转交给当前 KOL 流程；remote writer "
+                    "不会启动本地 WeChat capture 或用不完整正文发布。",
+                ) from exc
             if message == (
                 "Lv cloud transfer did not materialize after bounded "
                 "exact reconciliation"

@@ -1278,7 +1278,10 @@ class OfficialAccountInbox:
                 **current,
                 "status": (
                     "verification_required"
-                    if exc.diagnostic_code == "wechat_official_captcha_required"
+                    if exc.diagnostic_code in {
+                        "wechat_official_captcha_required",
+                        "wechat_official_comment_authentication_required",
+                    }
                     else "imported"
                 ),
                 "last_acquisition_failure": {

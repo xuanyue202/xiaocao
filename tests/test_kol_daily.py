@@ -7112,6 +7112,29 @@ def test_source_classifier_promotes_wechat_opencli_captcha_to_blocker():
     assert "循环重试" in captured.value.action
 
 
+def test_source_classifier_promotes_wechat_comment_auth_to_blocker():
+    runner = _classified_source(
+        "wechat_official_accounts",
+        lambda: (_ for _ in ()).throw(
+            EnrichmentDiagnosticError(
+                "wechat_official_comment_authentication_required",
+                category="user_action",
+                code="wechat_official_comment_authentication_required",
+                stage="wechat_official_validation",
+            )
+        ),
+    )
+
+    with pytest.raises(UserActionBlocker) as captured:
+        runner()
+
+    assert captured.value.blocker_key == (
+        "wechat-official-comment-authentication"
+    )
+    assert "评论区" in captured.value.action
+    assert "remote writer" in captured.value.action
+
+
 def test_status_classifies_legacy_retryable_failure_as_degraded(tmp_path):
     service = DailyCoordinator(
         tmp_path / "daily",

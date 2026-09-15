@@ -490,6 +490,12 @@ def test_opencli_routes_comment_only_article_to_authentication_blocker(tmp_path)
         captured.value.diagnostic_code
         == "wechat_official_comment_authentication_required"
     )
+    manifest = json.loads(
+        (tmp_path / "remote" / "inbox_manifest.json").read_text(encoding="utf-8")
+    )
+    assert manifest["items"][item["handoff_id"]]["status"] == (
+        "verification_required"
+    )
     assert not (tmp_path / "remote" / "evidence").exists()
 
 
