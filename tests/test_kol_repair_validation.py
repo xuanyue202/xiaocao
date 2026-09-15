@@ -159,6 +159,22 @@ def test_repair_validation_maps_wechat_source_failure_to_exact_mailbox_profile(
     assert service._expected_profile(context) == "kol_mailbox_exact_resume"
 
 
+def test_repair_validation_closes_legacy_comment_auth_projection(tmp_path) -> None:
+    service = RepairValidationService(
+        tmp_path,
+        ledger=RepairValidationLedger(tmp_path / "repair-validation.jsonl"),
+    )
+    context = {
+        **_context(),
+        "category": "user_action",
+        "code": "wechat_official_comment_authentication_required",
+        "stage": "wechat_official_validation",
+    }
+    context.pop("targeted_test_profile")
+
+    assert service._expected_profile(context) == "kol_mailbox_exact_resume"
+
+
 @pytest.mark.parametrize(
     ("category", "code", "stage"),
     [

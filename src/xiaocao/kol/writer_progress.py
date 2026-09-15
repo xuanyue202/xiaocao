@@ -1804,6 +1804,12 @@ class RepairValidationService:
             in {"configuration", "source_error", "timeout"}
             and str(context.get("code") or "").startswith("wechat_official_")
             and str(context.get("stage") or "").startswith("wechat_official_")
+        ) or (
+            str(context.get("category") or "") == "user_action"
+            and str(context.get("code") or "")
+            == "wechat_official_comment_authentication_required"
+            and str(context.get("stage") or "")
+            == "wechat_official_validation"
         ):
             return "kol_mailbox_exact_resume"
         if (
