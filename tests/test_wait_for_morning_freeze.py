@@ -175,3 +175,85 @@ def test_freeze_wait_keeps_session_warm_with_bounded_heartbeats(tmp_path, monkey
     result = waiter.wait_for_morning_freeze(date="2026-09-11", live_dir=tmp_path,
         timeout_sec=90, poll_sec=1, heartbeat=lambda: beats.append(elapsed[0]))
     assert result["status"] == "ready" and beats == [0, 30, 60]
+
+
+def _morning_clock(monkeypatch, start):
+    from datetime import datetime, timedelta
+    import scripts.wait_for_morning_freeze as waiter
+    elapsed, sleeps = [0.0], []
+    class Clock(datetime):
+        @classmethod
+        def now(cls, tz=None):
+            return (start + timedelta(seconds=elapsed[0])).astimezone(tz)
+    def sleep(seconds):
+        sleeps.append(seconds)
+        elapsed[0] += seconds
+    # raising=False keeps the original fixed-interval implementation reproducible.
+    monkeypatch.setattr(waiter, 'datetime', Clock, raising=False)
+    monkeypatch.setattr(waiter.time, 'monotonic', lambda: elapsed[0])
+    monkeypatch.setattr(waiter.time, 'sleep', sleep)
+    return waiter, elapsed, sleeps
+
+
+def test_early_native_wait_sleeps_until_0924_before_touching_app(tmp_path, monkeypatch):
+    from datetime import datetime
+    waiter, elapsed, sleeps = _morning_clock(monkeypatch, datetime.fromisoformat('2026-09-15T09:00:00+08:00'))
+    beats, reads = [], []
+    def status(**kwargs):
+        reads.append(elapsed[0])
+        return {'status': 'ready' if elapsed[0] >= 1533 else 'waiting'}
+    monkeypatch.setattr(waiter, '_freeze_status', status)
+    result = waiter.wait_for_morning_freeze(date='2026-09-15', live_dir=tmp_path,
+        timeout_sec=2100, poll_sec=1, heartbeat=lambda: beats.append(elapsed[0]))
+    assert result['status'] == 'ready'
+    assert beats == [1440, 1470, 1500, 1530]
+    assert not any(0 < t < 1440 for t in reads)
+    assert max(sleeps) <= 60
+
+
+def test_early_wait_timeout_never_touches_app(tmp_path, monkeypatch):
+    from datetime import datetime
+    waiter, elapsed, sleeps = _morning_clock(monkeypatch, datetime.fromisoformat('2026-09-15T09:23:50+08:00'))
+    monkeypatch.setattr(waiter, '_freeze_status', lambda **kw: {'status': 'waiting'})
+    def unexpected_heartbeat():
+        raise AssertionError('native heartbeat before 09:24')
+    result = waiter.wait_for_morning_freeze(date='2026-09-15', live_dir=tmp_path,
+        timeout_sec=5, poll_sec=1, heartbeat=unexpected_heartbeat)
+    assert result['status'] == 'timeout'
+    assert elapsed[0] == 5 and sleeps == [5]
+
+
+def test_0924_wakeup_recovers_before_consuming_freeze(tmp_path, monkeypatch):
+    from datetime import datetime
+    waiter, elapsed, _ = _morning_clock(monkeypatch, datetime.fromisoformat('2026-09-15T09:23:50+08:00'))
+    events = []
+    def status(**kw):
+        events.append(('freeze', elapsed[0]))
+        return {'status': 'ready' if elapsed[0] >= 10 else 'waiting'}
+    monkeypatch.setattr(waiter, '_freeze_status', status)
+    result = waiter.wait_for_morning_freeze(date='2026-09-15', live_dir=tmp_path,
+        timeout_sec=30, poll_sec=1, heartbeat=lambda: events.append(('native', elapsed[0])))
+    assert result['status'] == 'ready'
+    assert events == [('freeze', 0), ('native', 10), ('freeze', 11)]
+
+
+def test_late_start_and_native_recovery_failure_do_not_wait_or_continue(tmp_path, monkeypatch):
+    from datetime import datetime
+    import pytest
+    waiter, elapsed, sleeps = _morning_clock(monkeypatch, datetime.fromisoformat('2026-09-15T09:24:40+08:00'))
+    monkeypatch.setattr(waiter, '_freeze_status', lambda **kw: {'status': 'waiting'})
+    def failed_recovery():
+        raise RuntimeError('session_recovery_failed')
+    with pytest.raises(RuntimeError, match='session_recovery_failed'):
+        waiter.wait_for_morning_freeze(date='2026-09-15', live_dir=tmp_path,
+            timeout_sec=90, poll_sec=1, heartbeat=failed_recovery)
+    assert elapsed[0] == 0 and sleeps == []
+
+
+def test_paper_freeze_wait_has_no_native_idle_schedule(tmp_path, monkeypatch):
+    from datetime import datetime
+    waiter, elapsed, _ = _morning_clock(monkeypatch, datetime.fromisoformat('2026-09-15T09:00:00+08:00'))
+    monkeypatch.setattr(waiter, '_freeze_status', lambda **kw: {'status': 'ready' if elapsed[0] >= 1 else 'waiting'})
+    result = waiter.wait_for_morning_freeze(date='2026-09-15', live_dir=tmp_path,
+        timeout_sec=5, poll_sec=1)
+    assert result['status'] == 'ready' and elapsed[0] == 1

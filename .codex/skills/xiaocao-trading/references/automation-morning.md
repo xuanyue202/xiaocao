@@ -33,7 +33,7 @@ It may start before the dated freeze exists and wait only for that freeze. It
 must never run or await `morning-execute`, read a paper fill, or write
 `positions.jsonl`, `paper_trades.jsonl`, `paper_account.json`, or
 `paper_account_T.json`. Its state lives only under
-`output/live/book_b_live_execution/`. Before waiting, it verifies and keeps the native session ready. Once a non-empty
+`output/live/book_b_live_execution/`. Before waiting, it verifies the native session once. It then leaves the App untouched until 09:24 China time, when the same runner rechecks/recovers the session and resumes 30-second heartbeats until the freeze. The quiet wait performs no repeated freeze polling; bounded sleeps recheck the clock and original timeout. A late start resumes checks immediately. Once a non-empty
 freeze exists, it uses the account-bound Founder App full-query surface to read
 positions/orders/trades plus the account-bound funds summary embedded in the
 positions capture and
@@ -287,4 +287,4 @@ removed ID, and retains full current coverage. It is not an AI summary or a
 substitute for reading the base. A new worker must receive both the base and
 delta. Source publication continues to use the full current `context_path`.
 
-At 09:00 run `PYTHONPATH=src .venv/bin/python scripts/market_data_preflight.py --date today` alongside the original runner. Resolve authentication/transport failures immediately; a successful empty response proves reachability only. Follow `kol-source-preparation.md` to reuse the remote writer's reviewed source packet. Once ready, sleep in bounded intervals while preserving native heartbeat; actively poll by 09:24:50. Source freshness and current applicability remain independent.
+At 09:00 run `PYTHONPATH=src .venv/bin/python scripts/market_data_preflight.py --date today --scope authentication` alongside the original runner. Resolve authentication/transport failures immediately; a successful empty response proves reachability only. Follow `kol-source-preparation.md` to reuse the remote writer's reviewed source packet. Once ready, sleep in bounded intervals without extra APP keepalive. The runner resumes native checks at 09:24; actively poll its output by 09:24:50. Source freshness and current applicability remain independent.

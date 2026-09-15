@@ -7,8 +7,10 @@ import hashlib
 import json
 import re
 import time
+from datetime import datetime
 from pathlib import Path
 from typing import Any
+from zoneinfo import ZoneInfo
 
 from xiaocao.live.trading_runner import frozen_rows_digest, read_frozen_rows
 
@@ -126,12 +128,26 @@ def wait_for_morning_freeze(
 ) -> dict[str, Any]:
     deadline = time.monotonic() + max(0.0, timeout_sec)
     next_heartbeat = time.monotonic()
+    # The native caller already performed its initial readiness check. Leave
+    # the App alone until one minute before the expected 09:25 freeze, then
+    # use the existing heartbeat to recover a session that locked while idle.
+    resume_at = datetime.fromisoformat(date[:10]).replace(
+        hour=9, minute=24, tzinfo=ZoneInfo("Asia/Shanghai")
+    ) if heartbeat is not None else None
     result = _freeze_status(
         date=date,
         live_dir=live_dir,
         snapshot_path=snapshot_path,
     )
     while result["status"] != "ready" and time.monotonic() < deadline:
+        if resume_at is not None:
+            quiet_seconds = (resume_at - datetime.now(resume_at.tzinfo)).total_seconds()
+            if quiet_seconds > 0:
+                # Recheck wall time after each bounded sleep (suspend/clock
+                # changes included), without native calls or freeze polling.
+                remaining = max(0.0, deadline - time.monotonic())
+                time.sleep(min(60.0, quiet_seconds, remaining))
+                continue
         if heartbeat is not None and time.monotonic() >= next_heartbeat:
             heartbeat()
             next_heartbeat = time.monotonic() + max(1.0, heartbeat_seconds)
