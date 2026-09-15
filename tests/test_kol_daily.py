@@ -1617,6 +1617,61 @@ def test_mailbox_processor_imports_and_completes_only_target_official_handoff(
     ]
 
 
+def test_mailbox_processor_projects_official_comment_auth_as_user_action(
+    tmp_path,
+    monkeypatch,
+):
+    handoff_id = "a" * 64
+    capsule = {
+        "schema_version": 2,
+        "handoff_id": handoff_id,
+        "handoff_sha256": "b" * 64,
+        "content_transport": "public_url_only",
+        "large_payload_local_bytes": 0,
+    }
+
+    class FakeInbox:
+        def __init__(self, output_dir):
+            assert output_dir == tmp_path / "official"
+
+        @staticmethod
+        def import_capsule(value):
+            assert value == capsule
+            return {"status": "accepted", "handoff_id": handoff_id}
+
+    runtime = DailyRuntime.__new__(DailyRuntime)
+    runtime.args = SimpleNamespace(
+        wechat_official_output_dir=tmp_path / "official",
+    )
+
+    def blocked(handoff_id=None):
+        assert handoff_id == "a" * 64
+        raise EnrichmentDiagnosticError(
+            "wechat_official_comment_authentication_required",
+            category="user_action",
+            code="wechat_official_comment_authentication_required",
+            stage="wechat_official_validation",
+        )
+
+    monkeypatch.setattr(kol_daily_script, "OfficialAccountInbox", FakeInbox)
+    monkeypatch.setattr(runtime, "wechat_official", blocked)
+
+    result = runtime._process_mailbox_message({
+        "message_id": handoff_id,
+        "payload": capsule,
+    })
+
+    assert result["business_complete"] is False
+    assert result["user_action_required"] is True
+    [waiting] = result["waiting_items"]
+    assert waiting["identity"] == handoff_id
+    assert waiting["blocker_identity"] == (
+        "wechat-official-comment-authentication"
+    )
+    assert waiting["dedup_key"] == waiting["blocker_identity"]
+    assert "评论区" in waiting["action"]
+
+
 def test_mailbox_processor_binds_source_terminal_to_ack_progress(
     tmp_path,
     monkeypatch,

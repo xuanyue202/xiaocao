@@ -2502,7 +2502,35 @@ class DailyRuntime:
                     code="official_handoff_import_not_durable",
                     stage="mailbox_import",
                 )
-            result = self.wechat_official(handoff_id=handoff_id)
+            try:
+                result = _classified_source(
+                    "wechat_official_accounts",
+                    lambda: self.wechat_official(handoff_id=handoff_id),
+                )()
+            except UserActionBlocker as exc:
+                waiting_items = exc.waiting_items or [{
+                    "identity": handoff_id,
+                    "stage": "wechat_official_validation",
+                    "user_action_required": True,
+                    "action": exc.action,
+                    "blocker_identity": exc.blocker_key,
+                    "dedup_key": exc.blocker_key,
+                }]
+                return {
+                    "status": "waiting",
+                    "business_complete": False,
+                    "user_action_required": True,
+                    "waiting_count": len(waiting_items),
+                    "waiting_items": waiting_items,
+                    "claim_receipt_summary": (
+                        exc.claim_receipt_summary
+                        or {
+                            "claim_count": 0,
+                            "receipt_count": 0,
+                            "uncertain_effect_count": 0,
+                        }
+                    ),
+                }
         elif (
             capsule.get("source_mode") == "cloud_handoff"
             or (
