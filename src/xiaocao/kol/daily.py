@@ -1119,11 +1119,13 @@ class DailyPublicationPipeline:
         ledger: PublicationLedger,
         client: PublicationTransport,
         context: DailyPublicationContext,
+        source_preparation: Callable[[dict], None] | None = None,
     ):
         self.delegate = delegate
         self.ledger = ledger
         self.client = client
         self.context = context
+        self.source_preparation = source_preparation
         self.book = delegate.book
         self._publication_state: dict[str, Any] | None = None
         self._content: dict[str, Any] | None = None
@@ -1292,6 +1294,7 @@ class DailyPublicationPipeline:
                 }
             )
             self._sync_terminal(result, alert_order=3)
+            self._prepare_sources(result)
             return {
                 "status": "legally_not_eligible",
                 "deliveries": [],
@@ -1315,7 +1318,13 @@ class DailyPublicationPipeline:
             message_builder=report_message,
         )
         self._sync_terminal(result, alert_order=3)
+        self._prepare_sources(result)
         return delivery
+
+    def _prepare_sources(self, result: dict) -> None:
+        if self.source_preparation is not None:
+            validate_source_event(result["items"][0]["daily_terminal"])
+            self.source_preparation(self._publication_state)
 
 
 class DailyCoordinator:

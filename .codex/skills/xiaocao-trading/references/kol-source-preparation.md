@@ -1,8 +1,10 @@
 # Source analysis before the trading window
 
-The remote writer prepares this handoff after a new published report or
-viewpoint-maintenance receipt reaches its existing terminal gate. Do not run a
-second sweep. Empty/unchanged publication slots do no preparation work.
+The remote writer prepares this handoff per published object, before advancing
+to the next object. `DailyPublicationPipeline` emits
+`daily_trading_source_preparation_input_required` after the reader/Book terminals;
+viewpoint maintenance uses the same boundary. Keep that stdin open. An existing
+completed handoff receipt is read-only reuse. Empty/unchanged slots do no work.
 
 1. Build `kol_trading_context.py context --summary` while there is time outside
    the opening window. Resolve required registered manifest gaps by exact ID;
@@ -27,14 +29,25 @@ second sweep. Empty/unchanged publication slots do no preparation work.
 5. Publish through `PYTHONPATH=src .venv/bin/python scripts/kol_trading_preparation.py
    publish --context <context.json> --notes <notes.json> --review <review.json>`;
    then read `status` with the same context and verify the immutable packet path.
+6. Return one JSON line to the waiting runner:
+   `{"context_path":"<reviewed-context.json>","preparation_path":"<published-packet.json>"}`.
+   It verifies the exact report/content/manifest and packet bindings and persists
+   a handoff receipt before proceeding. Coverage limits remain explicit; a source
+   handoff does not certify complete or fresh trading coverage. If interrupted,
+   use `kol_daily.py prepare-trading-sources --publication-key <exact-key>` under
+   the existing writer's ownership. This resumes only the pending handoff, with
+   no report, reminder, Book or ACK replay. The next authorized full sweep drains
+   persisted pending handoffs before mailbox discovery.
 
 At 09:00 the trading task obtains a cache-only context with
-`--history-max-cache-age-seconds 82800` and reads the matching preparation
-packet. This stricter 23-hour preparation age exposes manifests that would
-otherwise expire at the normal 24-hour boundary during the opening window.
-Refresh the returned exact IDs in bounded batches, keeping this preparation
-age until `registered_longitudinal_complete` is true; retain unresolved gaps.
-Reuse unchanged analysis. Near 09:22 refresh selected manifests and read only
+`--history-fresh-through <today>T09:30:00+08:00` and reads the matching preparation
+packet. This checks the actual opening horizon against the unchanged 24-hour
+history TTL, without making the evidence as-of future-dated. Refresh returned
+exact IDs in bounded batches with the same horizon until
+`registered_longitudinal_complete` is true; retain unresolved gaps. A
+`source_revalidation_required` result exposes `reusable_path`: refresh the exact
+missing manifests, then reuse matching analysis; absence of cached records is
+not a claim that the underlying views changed. Near 09:22 refresh selected manifests and read only
 new or changed bodies. Formal publication keeps its existing freshness and
 coverage checks. Status invalidates the match for changed reports, evaluations or
 relations. Packet review does not mean every historical body was loaded/read,

@@ -51,3 +51,22 @@ def test_changed_evaluation_invalidates_prepared_analysis(tmp_path):
     publish_preparation(tmp_path, context, notes, review)
     context["evaluations"] = [{"record_id": "evaluation", "content_sha256": "new"}]
     assert preparation_status(tmp_path, context)["status"] == "source_analysis_required"
+
+
+def test_missing_cached_history_requires_revalidation_not_reanalysis(tmp_path):
+    from copy import deepcopy
+    context, notes, review = inputs()
+    context["report_index"].append({"report_id": "history", "content_sha256": "old"})
+    context["evaluations"] = [{"record_id": "old-eval", "content_sha256": "eval", "report_id": "history"}]
+    context["context_sha256"] = canonical_sha256({k: v for k, v in context.items() if k != "context_sha256"})
+    notes["context_sha256"] = context["context_sha256"]
+    review["notes_sha256"] = canonical_sha256(notes)
+    packet = publish_preparation(tmp_path, context, notes, review)
+    expired = deepcopy(context)
+    expired["report_index"][1]["longitudinal_loaded"] = False
+    expired["report_index"][1]["content_sha256"] = None
+    expired["evaluations"] = []
+    status = preparation_status(tmp_path, expired)
+    assert status["status"] == "source_revalidation_required"
+    assert status["reusable_path"] == packet["path"]
+    assert status["current_applicability_review_required"] is True

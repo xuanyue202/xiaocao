@@ -36,3 +36,25 @@ def test_preflight_rejects_missing_core_values():
     r = core_preflight(c, "2026-09-14", pause=lambda _: None)
     assert r["status"] == "blocked"
     assert r["checks"][-1]["source"] == "stock_core"
+
+
+def test_early_auth_probe_does_not_require_unpublished_opening_scores():
+    from xiaocao.api.preflight import authentication_preflight
+    c = client_fixture()
+    c.get_xiao_cao_index_v2.return_value = None
+    result = authentication_preflight(c, "2026-09-15")
+    assert result["status"] == "reachable"
+    assert result["source_completeness_proven"] is False
+    assert c.method_calls == [("get_code_list_v2", ("2026-09-15", "jieli"), {})]
+
+
+def test_early_auth_probe_preserves_auth_and_transport_failures():
+    from xiaocao.api.errors import ApiError
+    from xiaocao.api.preflight import authentication_preflight
+    for error, reason in [(ApiAuthError("990502"), "MARKET_DATA_AUTH_REQUIRED"),
+                          (ApiError("network"), "MARKET_DATA_UNAVAILABLE_OR_INVALID")]:
+        c = client_fixture()
+        c.get_code_list_v2.side_effect = error
+        result = authentication_preflight(c, "2026-09-15")
+        assert result["status"] == "blocked" and result["reason"] == reason
+        assert len(c.method_calls) == 1

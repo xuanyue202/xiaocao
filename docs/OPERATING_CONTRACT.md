@@ -1,6 +1,6 @@
 # 小草运营契约（Operating Contract, SSOT）
 
-**版本**：4.14
+**版本**：4.15
 **状态**：现行
 **适用范围**：所有 paper / 未来 real 的实盘环（live_recommend → paper_record → live_monitor → eod）与回测
 **关联实现**：`src/xiaocao/live/{safety,capital_keychain,foundersc_native_ax,foundersc_native_broker,trading_execution,book_b_live_lifecycle,book_b_live_intraday}.py`、`src/xiaocao/live/intelligence_policy.py`、`src/xiaocao/strategy/{mode_switch,trend_rules,kol_reference}.py`、`native/foundersc_ax_executor/`、`kronos_screen/scripts/{capture_signals,forward_eval,paper_record,settle_book_a,settle_book_t,decompose_pnl,quality_governor}.py`、`scripts/{book_b_live_morning,book_b_live_intraday,live_monitor,research_mode_switch_replay}.py`
@@ -57,7 +57,11 @@ Agent 直接操纵交易表单下单的应急分支，界面观察仅辅助诊�
 
 Book B live morning 仍提前至交易日09:00启动，09:23推荐和09:25本地纸面任务不变。09:00立即启动一次原APP进程（默认冻结等待2100秒）并行检查行情认证、会话及来源准备；准备完成可分段sleep，保留会话心跳，09:24:50起主动等待09:25冻结。行情预检只证明接口可达/认证，不证明来源齐全。
 
+09:00是故障恢复余量，不是策略选股时点：行情使用`market_data_preflight.py --scope authentication`的一次认证读取，不要求当天尚未发布的核心指标；来源检查用`--history-fresh-through <today>T09:30:00+08:00`补验即将在开盘窗口失效的历史清单，保持24小时有效期及真实as-of不变。完成后sleep，不重复完整分析；09:22核验最新来源，冻结后核验当前账户及行情。原生30秒保活仍有进程、AX查询和必要解锁成本，不能宣称提前准备完全没有界面副作用。
+
 remote writer在新报告或观点维护终态后，提前完成来源层语义分析与独立复核，使用`kol_trading_preparation.py`保存绑定来源hash、条件、期限、反证和覆盖缺口的`authority=0`准备包。09:00优先读此包并补齐变更；09:25仅处理冻结候选、账户和当前事实映射，不重新提炼全部历史。准备包不是交易决策，不能预先认定开盘条件满足；正式决策仍遵守§2a完整来源、独立当下复核和发布要求。复用仍有效且适用的已发布判断。
+
+此交接由逐对象`daily_trading_source_preparation_input_required`检查点触发，读回报告/manifest/准备包绑定并保存回执后才继续下一对象；不等待整批任务收尾。中断后只恢复持久化交接请求，不重放发布、提醒或Book效果。缓存缺失而已知内容未变时标为`source_revalidation_required`，复用原来源分析并补验缺失清单，不能把缓存失效冒充观点变化或当前判断批准。
 
 **09:25–09:30优先完成当前交易流程。** 遇到AX代码故障，立即定位最小失败点、修补、做必要验证并通过原计划恢复入口继续；缺KOL材料，优先复用本地完整阅读文件，按准确report_id补读缺失来源。主审在语义分析任务运行时同步独立阅读，不等草稿到达才开始。必要信息与订单正确性仍须证明；完整回归、打包、Git和复盘放在当前流程终态之后。
 
@@ -469,6 +473,7 @@ KOL 断言、候选假设或报告升级为策略真值，也不替代永久参�
 
 | 版本 | 日期 | 说明 |
 |------|------|------|
+| 4.15 | 2026-09-15 | KOL来源准备改为逐对象持久化交接；区分缓存补验与语义重分析，按开盘窗口检查历史有效期；09:00认证预检收窄为单次读取，保留当前交易复核。 |
 | 4.14 | 2026-09-14 | Book B 提前09:00准备，延长冻结等待并提前行情认证检查；remote writer交付独立复核的零权限来源准备包，09:25只做当前适配。 |
 | 4.13 | 2026-09-14 | 隔离早盘 B/T 分支失败：B 冻结或记账失败后仍检查 T，最终保留失败状态，按独立回执报告结果。 |
 | 4.12 | 2026-09-12 | APP 会话跨查询/提交、线程/进程/checkouts 串行；按实测未成交 BUY 冻结识别资金摘要，保留精确资产等式、可用资金和订单证据，不补造成交、不扩大 allocation。 |

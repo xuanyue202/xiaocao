@@ -8,6 +8,27 @@ from typing import Any
 from .errors import ApiAuthError, ApiError
 
 
+def authentication_preflight(client: Any, date: str) -> dict:
+    """One authenticated read; pre-auction empty pools are not auth failures."""
+    reason = None
+    check = {"source": "pool:jieli", "status": "reachable"}
+    try:
+        rows = client.get_code_list_v2(date, "jieli")
+        if not isinstance(rows, list):
+            raise ValueError("invalid_rows")
+        check["row_count"] = len(rows)
+    except ApiAuthError:
+        reason = "MARKET_DATA_AUTH_REQUIRED"
+        check["api_code"] = 990502
+    except (ApiError, ValueError, TypeError, KeyError):
+        reason = "MARKET_DATA_UNAVAILABLE_OR_INVALID"
+    if reason:
+        check.update(status="blocked", reason=reason)
+    return {"status": "blocked" if reason else "reachable", "reason": reason,
+            "scope": "authentication", "checks": [check],
+            "source_completeness_proven": False, "actions": "market_data_read_only"}
+
+
 def core_preflight(client: Any, date: str, block_model: int = 1, *, pause=time.sleep) -> dict:
     checks = []
     symbol = "600519.XSHG"

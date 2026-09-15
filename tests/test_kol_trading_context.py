@@ -658,3 +658,45 @@ def test_incremental_pack_keeps_changes_removals_and_bound_prior(tmp_path):
     base["as_of"] = "corrupted"
     with pytest.raises(tc.TradingContextError, match="prior_context_hash_mismatch"):
         tc.summarize_context(current, repo_root=tmp_path, prior_context=base)
+
+
+def test_early_preparation_refreshes_history_through_opening_without_future_evidence(tmp_path):
+    items = [publication("甲作者", 1), publication("甲作者", 5)]
+    register(tmp_path, items)
+    reader, clock = Reader(items), Clock()
+    build(tmp_path, reader, clock, latest_per_author=1)
+    clock.now += timedelta(hours=23, minutes=38)
+    horizon = clock.now + timedelta(minutes=30)
+    early = build(tmp_path, reader, clock, latest_per_author=1, read_report_ids=[],
+                  history_fresh_through=horizon)
+    assert early["coverage"]["registered_longitudinal_complete"] is False
+    pending = tc.summarize_context(early, repo_root=tmp_path)["refresh_report_ids"]
+    assert set(pending) == {item[0]["record_id"] for item in items}
+    reader.calls.clear()
+    ready = build(tmp_path, reader, clock, latest_per_author=1, read_report_ids=pending,
+                  history_fresh_through=horizon)
+    assert ready["coverage"]["registered_longitudinal_complete"] is True
+    assert ready["as_of"] == tc._iso(clock.now)
+    assert tc._timestamp(ready["coverage"]["history_valid_until"]) > horizon
+    clock.now = horizon
+    reader.calls.clear()
+    current = build(tmp_path, reader, clock, latest_per_author=1)
+    assert current["coverage"]["registered_longitudinal_complete"] is True
+    # Only the selected current manifest needs a fresh action-time read.
+    assert [a["record_id"] for _, a in reader.calls if a["kind"] == "report"] == [items[1][0]["record_id"]]
+
+
+def test_context_does_not_claim_complete_when_history_expires_during_batch(tmp_path):
+    items = [publication("甲作者", 1), publication("甲作者", 5)]
+    register(tmp_path, items)
+    reader, clock = Reader(items), Clock()
+    build(tmp_path, reader, clock, latest_per_author=1)
+    clock.now += timedelta(hours=23, minutes=59, seconds=59)
+    call = reader.call_tool
+    def slow_read(name, arguments):
+        clock.now += timedelta(seconds=2)
+        return call(name, arguments)
+    reader.call_tool = slow_read
+    context = build(tmp_path, reader, clock, latest_per_author=1)
+    assert context["coverage"]["registered_longitudinal_complete"] is False
+    assert "history_refresh_required" in codes(context)

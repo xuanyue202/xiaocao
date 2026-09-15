@@ -8,9 +8,12 @@ Read this file only for quotes, market state, pools, sectors, indices, indicator
   `xiaocao.market-data.session` / account `runtime`. An explicitly set
   `XIAOCAO_API_TOKEN` overrides it; do not embed either value in commands,
   prompts, logs, or reports. Custom hosts never receive this credential.
-- At morning preparation or after code 990502, run
-  `PYTHONPATH=src .venv/bin/python scripts/market_data_preflight.py --date today`.
-  It bypasses cache and checks industry/category ranks, three candidate pools,
+- At 09:00 preparation run `PYTHONPATH=src .venv/bin/python
+  scripts/market_data_preflight.py --date today --scope authentication` once.
+  This is one uncached authenticated pool read. An empty pool is not an auth
+  failure; no opening score or rank is required before its publication time.
+  An explicit 990502 remains an authentication failure. For affected endpoint
+  recovery use the default `--scope core`, which checks ranks, three pools,
   core stock scores and smallGrass technical values with request spacing.
   Reachable is not proof of full source coverage or an executable candidate.
 - Provision username/password using the hidden-input local command

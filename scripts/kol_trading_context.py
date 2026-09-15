@@ -25,6 +25,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--refresh", action="store_true")
     parser.add_argument("--max-cache-age-seconds", type=float, default=300)
     parser.add_argument("--history-max-cache-age-seconds", type=float, default=86400)
+    parser.add_argument("--history-fresh-through", help="Refresh history that expires before this aware timestamp; never changes evidence as-of")
     parser.add_argument("--timeout-seconds", type=float, default=10)
     parser.add_argument("--total-timeout-seconds", type=float, default=120)
     parser.add_argument("--retries", type=int, default=1)
@@ -40,6 +41,7 @@ def main(argv: list[str] | None = None) -> int:
             registered_authors=args.author, latest_per_author=args.latest_per_author,
             refresh=args.refresh, max_cache_age_seconds=args.max_cache_age_seconds,
             history_max_cache_age_seconds=args.history_max_cache_age_seconds,
+            history_fresh_through=args.history_fresh_through,
             timeout_seconds=args.timeout_seconds, total_timeout_seconds=args.total_timeout_seconds,
             retries=args.retries, max_read_calls=args.max_read_calls,
         )

@@ -233,10 +233,11 @@ native click and stop. Never ask user to save or add it to hourly.
 
 ## Trading-source preparation after publication
 
-After a new report or viewpoint-maintenance receipt is terminal, complete the
+On each `daily_trading_source_preparation_input_required`, complete the
 reviewed source-only handoff in
-`../../xiaocao-trading/references/kol-source-preparation.md` before closing the
-writer task. Reuse unchanged source notes, fill required manifest gaps here,
+`../../xiaocao-trading/references/kol-source-preparation.md` on the same stdin
+before the runner advances to another object. Do not defer it to batch closeout.
+Reuse unchanged source notes, fill required manifest gaps here,
 and preserve complete new/changed source conditions, dates and counterevidence.
 This is an authority=0 artifact under `output/live/kol_policy/preparations`,
 not a Book-B decision, account or order. Empty/unchanged sweeps remain silent

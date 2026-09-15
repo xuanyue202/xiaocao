@@ -2541,6 +2541,7 @@ class DailyRuntime:
         return response
 
     def mailbox(self) -> dict[str, Any]:
+        self.prepare_pending_trading_sources()
         return RemoteMailboxDrain(
             self._mailbox(),
             processor=self._process_mailbox_message,
@@ -2749,7 +2750,30 @@ class DailyRuntime:
             ledger=self.publications,
             client=lianghui,
             context=context,
+            source_preparation=self.prepare_trading_sources,
         )
+
+    def prepare_trading_sources(self, state: dict) -> dict:
+        from xiaocao.kol.trading_context import build_trading_context, summarize_context
+        from xiaocao.kol.trading_source_handoff import complete_source_handoff
+
+        try:
+            return complete_source_handoff(
+                self.trading_source_root(), state, build_context=build_trading_context,
+                summarize_context=summarize_context, read_response=_read_agent_json,
+            )
+        except ValueError as exc:
+            raise DailyError(str(exc)) from exc
+
+    def prepare_pending_trading_sources(self) -> None:
+        from xiaocao.kol.trading_source_handoff import pending_source_handoffs
+
+        root = self.trading_source_root()
+        for key in pending_source_handoffs(root):
+            self.prepare_trading_sources(self.publications.status(key))
+
+    def trading_source_root(self) -> Path:
+        return Path(getattr(self.args, "trading_root", self.args.output_dir / "source-context")).resolve()
 
     @staticmethod
     def _terminal(result_path: Path | str) -> dict[str, Any]:
@@ -4476,6 +4500,7 @@ class DailyRuntime:
                 terminal = initial_projection_terminal(candidate, state)
             else:
                 terminal = triggered_evaluation_terminal(candidate, state)
+            self.prepare_trading_sources(state)
             terminals.append(terminal)
             receipt_dir.mkdir(parents=True, exist_ok=True)
             receipt_path.write_text(
@@ -4663,6 +4688,7 @@ def main() -> int:
         "command",
         choices=(
             "run",
+            "prepare-trading-sources",
             "viewpoints",
             "capture-local",
             "capture-xiaocao-item",
@@ -4713,6 +4739,8 @@ def main() -> int:
         default=DEFAULT_MAILBOX_OUTPUT,
     )
     parser.add_argument("--mailbox-message-id")
+    parser.add_argument("--publication-key")
+    parser.add_argument("--trading-root", type=Path, default=Path(__file__).resolve().parents[1])
     parser.add_argument("--source-adapter")
     parser.add_argument("--source-identity")
     parser.add_argument("--failure-fingerprint")
@@ -4745,6 +4773,12 @@ def main() -> int:
         default="site:baidu-netdisk",
     )
     args = parser.parse_args()
+    if args.command == "prepare-trading-sources":
+        if not args.publication_key:
+            raise DailyError("prepare-trading-sources requires publication key")
+        runtime = DailyRuntime(args)
+        _print(runtime.prepare_trading_sources(runtime.publications.status(args.publication_key)))
+        return 0
     if args.command in {"capture-local", "capture-xiaocao-item", "capture-xiaocao-handoff"}:
         # Applies only to this explicitly invoked local pipeline and its children.
         os.environ["PATH"] = capture_runtime_environment()["PATH"]

@@ -7786,3 +7786,22 @@ def test_replayed_terminal_receipt_is_recorded_once_across_hourly_slots(
         replay_source["writer_progress"]
     ).status == "terminal"
     assert service.audit()["viewpoint_evaluation_count"] == 1
+
+
+def test_each_published_object_hands_off_sources_before_next_object(tmp_path):
+    order = []
+    for identity in ("first", "second"):
+        pipeline = DailyPublicationPipeline(
+            _DelegatePipeline(order), ledger=PublicationLedger(tmp_path / "pub"),
+            client=_PublicationClient(order),
+            context=DailyPublicationContext(
+                adapter="xiaocao_live", source_identity=identity,
+                publication_version="v1", kol_id="kol-xiaocao", source="小草直播",
+                source_published_at="2026-07-27T09:30:00+08:00",
+                media_types=("video",), source_parts=(),
+            ),
+        )
+        pipeline.source_preparation = lambda state: order.append("prepared")
+        result = pipeline.process(_publication_bundle())
+        pipeline.deliver_wechat(result, sender=lambda *_: {"wecom": "ok"})
+    assert order == ["gray", "book", "alert", "prepared"] * 2

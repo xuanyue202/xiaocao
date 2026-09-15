@@ -21,6 +21,15 @@ def source_fingerprint(context: dict) -> str:
     return canonical_sha256({"reports": reports, "records": records})
 
 
+def _source_identity(context: dict) -> dict:
+    return {
+        "reports": {r["report_id"]: r["content_sha256"] for r in context["report_index"]},
+        "records": {kind: {r["record_id"]: [r["content_sha256"], r.get("report_id")]
+                           for r in context.get(kind, [])}
+                    for kind in ("viewpoints", "evaluations", "relations")},
+    }
+
+
 def publish_preparation(root: Path, context: dict, notes: dict, review: dict) -> dict:
     body = {k: v for k, v in context.items() if k != "context_sha256"}
     if canonical_sha256(body) != context["context_sha256"]:
@@ -48,6 +57,7 @@ def publish_preparation(root: Path, context: dict, notes: dict, review: dict) ->
     packet = {"schema_version": "kol-source-preparation-record.v1", "authority": 0,
               "source_fingerprint": source_fingerprint(context),
               "context_sha256": context["context_sha256"],
+              "source_identity": _source_identity(context),
               "notes": notes, "review": review,
               "coverage": context["coverage"]}
     packet["packet_sha256"] = canonical_sha256(packet)
@@ -75,6 +85,10 @@ def publish_preparation(root: Path, context: dict, notes: dict, review: dict) ->
 def preparation_status(root: Path, context: dict) -> dict:
     fingerprint = source_fingerprint(context)
     matches = []
+    reusable = []
+    current = _source_identity(context)
+    missing = {r["report_id"] for r in context["report_index"]
+               if r.get("longitudinal_loaded") is False}
     for path in (root / "output/live/kol_policy/preparations").glob("*.json"):
         packet = json.loads(path.read_text())
         digest = packet.pop("packet_sha256", None)
@@ -82,6 +96,28 @@ def preparation_status(root: Path, context: dict) -> dict:
             raise ValueError("preparation_corrupt")
         if packet.get("source_fingerprint") == fingerprint:
             matches.append((packet["review"].get("reviewed_at", ""), str(path.resolve())))
-    return {"status": "prepared" if matches else "source_analysis_required", "authority": 0,
+        elif missing:
+            prior = packet.get("source_identity")
+            # Old immutable packets remain valid. Their hash-bound context can
+            # provide identity metadata without claiming its body was read now.
+            if prior is None:
+                base = root / "output/live/kol_policy/context" / (packet["context_sha256"] + ".context.json")
+                if base.is_file():
+                    previous = json.loads(base.read_text())
+                    if canonical_sha256({k: v for k, v in previous.items() if k != "context_sha256"}) == packet["context_sha256"]:
+                        prior = _source_identity(previous)
+            if (prior and prior["reports"].keys() == current["reports"].keys()
+                    and all(value == prior["reports"][rid] or (rid in missing and value is None)
+                            for rid, value in current["reports"].items())):
+                compatible = all(
+                    all(prior["records"][kind].get(key) == value for key, value in rows.items())
+                    and all(key in rows or value[1] in missing
+                            for key, value in prior["records"][kind].items())
+                    for kind, rows in current["records"].items()
+                )
+                if compatible:
+                    reusable.append((packet["review"].get("reviewed_at", ""), str(path.resolve())))
+    return {"status": "prepared" if matches else "source_revalidation_required" if reusable else "source_analysis_required", "authority": 0,
             "source_fingerprint": fingerprint, "path": max(matches)[1] if matches else None,
+            "reusable_path": max(reusable)[1] if reusable else None,
             "current_applicability_review_required": True}

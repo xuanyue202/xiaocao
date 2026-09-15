@@ -26,7 +26,7 @@ import tempfile
 import threading
 import time
 from collections import defaultdict
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Callable, Sequence
 from urllib.parse import urlsplit
@@ -357,6 +357,7 @@ def build_trading_context(
     registered_authors: Sequence[str] = (), latest_per_author: int = 3,
     refresh: bool = False, max_cache_age_seconds: float = 300,
     history_max_cache_age_seconds: float = 86400,
+    history_fresh_through: str | datetime | None = None,
     timeout_seconds: float = 10, retries: int = 1, max_read_calls: int | None = None,
     total_timeout_seconds: float = 120, client: PublicationTransport | None = None,
     repo_root: Path | str = ROOT, clock: Callable[[], datetime] = _now,
@@ -380,6 +381,9 @@ def build_trading_context(
     must inspect coverage before making their separately authorized judgment.
     """
     start = _timestamp(clock())
+    horizon = _timestamp(history_fresh_through) if history_fresh_through is not None else None
+    if horizon is not None and (horizon - start).total_seconds() >= history_max_cache_age_seconds:
+        raise TradingContextError("history_horizon_exceeds_cache_lifetime")
     cutoff = _timestamp(as_of) if as_of is not None else None
     if cutoff is not None and cutoff > start:
         raise TradingContextError("future_as_of_forbidden")
@@ -408,12 +412,12 @@ def build_trading_context(
         return _build_locked(root, directory, cutoff, ledger_paths, report_ids, read_report_ids,
                              registered_authors, latest_per_author, refresh,
                              max_cache_age_seconds, history_max_cache_age_seconds, client, timeout_seconds,
-                             retries, max_read_calls, total_timeout_seconds, clock)
+                             retries, max_read_calls, total_timeout_seconds, clock, horizon)
 
 
 def _build_locked(root, directory, cutoff, ledger_paths, report_ids, read_report_ids,
                   registered_authors, latest_per_author, refresh, max_cache_age_seconds, history_max_cache_age_seconds,
-                  client, timeout_seconds, retries, max_read_calls, total_timeout_seconds, clock):
+                  client, timeout_seconds, retries, max_read_calls, total_timeout_seconds, clock, horizon):
     registry, issues, ledgers = _registry(root, ledger_paths)
     read_scope = None if read_report_ids is None else set(read_report_ids)
     if not registry:
@@ -450,7 +454,8 @@ def _build_locked(root, directory, cutoff, ledger_paths, report_ids, read_report
         force_refresh = refresh and (read_scope is None or rid in read_scope)
         ttl = max_cache_age_seconds if rid in freshness_ids else history_max_cache_age_seconds
         if (cached and not force_refresh and not cached.get("refresh_required")
-                and 0 <= age <= ttl):
+                and 0 <= age <= ttl
+                and (max(now, horizon or now) - _timestamp(cached["verified_at"])).total_seconds() <= history_max_cache_age_seconds):
             continue
         needs_read.add(rid)
     pending = needs_read if read_scope is None else needs_read & read_scope
@@ -470,7 +475,8 @@ def _build_locked(root, directory, cutoff, ledger_paths, report_ids, read_report
         if read_scope is not None and rid not in read_scope:
             age = (_timestamp(clock()) - _timestamp(cached["verified_at"])).total_seconds() if cached else None
             if (cached and not cached.get("refresh_required") and
-                    0 <= age <= history_max_cache_age_seconds):
+                    0 <= age <= history_max_cache_age_seconds
+                    and (max(_timestamp(clock()), horizon or _timestamp(clock())) - _timestamp(cached["verified_at"])).total_seconds() <= history_max_cache_age_seconds):
                 caches[rid] = cached
                 if rid in freshness_ids and age > max_cache_age_seconds:
                     issues.append({"code": "selected_report_refresh_required", "report_id": rid})
@@ -506,6 +512,12 @@ def _build_locked(root, directory, cutoff, ledger_paths, report_ids, read_report
     for rid, cached in list(caches.items()):
         if not _eligible(cached["publication"], cached, as_of):
             failures[rid] = "publication_not_observed_as_of"
+            issues.append({"code": failures[rid], "report_id": rid})
+            del caches[rid]
+        elif (max(as_of, horizon or as_of) - _timestamp(cached["verified_at"])).total_seconds() > history_max_cache_age_seconds:
+            # A long batch can cross the TTL after its initial needs-read pass.
+            # Expose the exact gap instead of claiming complete coverage.
+            failures[rid] = "history_refresh_required"
             issues.append({"code": failures[rid], "report_id": rid})
             del caches[rid]
     # Author/source dates are authoritative only after the current readback.
@@ -641,6 +653,9 @@ def _build_locked(root, directory, cutoff, ledger_paths, report_ids, read_report
             "history_refresh_policy": "independent_history_ttl; exact_report_ids_for_current_readback; refresh_all_when_unscoped",
             "max_cache_age_seconds": max_cache_age_seconds,
             "history_max_cache_age_seconds": history_max_cache_age_seconds,
+            "history_fresh_through": _iso(horizon) if horizon else None,
+            "history_valid_until": min((_iso(_timestamp(c["verified_at"]) + timedelta(seconds=history_max_cache_age_seconds))
+                                        for c in caches.values()), default=None),
             "viewpoint_status_semantics": "latest_observed_published_evaluation; not_reevaluated_at_context_as_of",
             "fresh_selected_report_ids": sorted(fresh_selected_ids),
             "selected_reports_fresh": all(r["report_id"] in caches and
