@@ -1545,3 +1545,26 @@ def test_expiry_driver_requires_unbound_idle_ledger(tmp_path, fields):
     driver = XiaocaoLiveCaptureDriver(tmp_path, service_factory=lambda *a, **k:
         SimpleNamespace(capture_store=SimpleNamespace(latest=lambda job: row)))
     assert driver.can_expire_wait("same", "job") is (not fields)
+
+
+def test_course_preview_is_retained_without_capture_or_repeated_resolution(tmp_path):
+    calls = []
+    driver = _CaptureDriver()
+    def exchange(request):
+        calls.append(request)
+        return {"action": request["action"], "subscription_id": request["subscription_id"],
+                "page_state": "unknown", "page_url": "https://appsnm3rlcp3566.h5.xiaoeknow.com/p/course/ecourse/preview/course_abc?share=private"}
+    subscription = XiaocaoWechatLiveSubscription(
+        tmp_path, history_reader=lambda: _history("[2026-09-15 07:00] 福利官小花四: https://yv9lc.xetslk.com/s/3KML8K"),
+        browser_exchange=exchange, capture_driver=driver,
+        clock=lambda: datetime.fromisoformat("2026-09-15T08:00:00+08:00"),
+    )
+    result = subscription.run_once(opencli_session="test")
+    assert result["unsupported_resource"] is True
+    assert driver.arms == []
+    saved = subscription._load()["items"][result["identity"]]
+    assert saved["message_sha256"]
+    assert "?" not in saved["page_url"]
+    assert subscription.run_once(opencli_session="test")["status"] == "no_update"
+    assert subscription.run_once(opencli_session="test", only_identity=result["identity"])["already_completed"] is False
+    assert len(calls) == 1
