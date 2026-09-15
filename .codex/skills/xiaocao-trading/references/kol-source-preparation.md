@@ -28,9 +28,15 @@ second sweep. Empty/unchanged publication slots do no preparation work.
    publish --context <context.json> --notes <notes.json> --review <review.json>`;
    then read `status` with the same context and verify the immutable packet path.
 
-At 09:00 the trading task obtains a cache-only context first and reads the
-matching preparation packet. It resolves missing/changed material and freshness
-early. Status invalidates the match for changed reports, evaluations or
+At 09:00 the trading task obtains a cache-only context with
+`--history-max-cache-age-seconds 82800` and reads the matching preparation
+packet. This stricter 23-hour preparation age exposes manifests that would
+otherwise expire at the normal 24-hour boundary during the opening window.
+Refresh the returned exact IDs in bounded batches, keeping this preparation
+age until `registered_longitudinal_complete` is true; retain unresolved gaps.
+Reuse unchanged analysis. Near 09:22 refresh selected manifests and read only
+new or changed bodies. Formal publication keeps its existing freshness and
+coverage checks. Status invalidates the match for changed reports, evaluations or
 relations. Packet review does not mean every historical body was loaded/read,
 nor does it justify `--since-context` against an unread full context.
 
