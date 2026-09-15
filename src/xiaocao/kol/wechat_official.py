@@ -56,6 +56,14 @@ _MAX_ARTICLE_BYTES = 20 * 1024 * 1024
 _MAX_IMAGE_NOTES_BYTES = 1024 * 1024
 _PUBLISH_TIME_TOLERANCE_SECONDS = 5 * 60
 _IMAGE_NOTES_HEADING = "# 图片信息转写"
+_COMMENT_BODY_MARKERS = (
+    "正文贴评论区",
+    "正文放评论区",
+    "正文见评论区",
+    "全文贴评论区",
+    "全文放评论区",
+    "全文见评论区",
+)
 
 
 def _canonical(value: Any) -> str:
@@ -197,17 +205,7 @@ def _article_text_characters(markdown: str) -> int:
 def _defers_body_to_comments(markdown: str) -> bool:
     """Return whether the article explicitly places its body in comments."""
     normalized = re.sub(r"\s+", "", unicodedata.normalize("NFKC", markdown))
-    return any(
-        marker in normalized
-        for marker in (
-            "正文贴评论区",
-            "正文放评论区",
-            "正文见评论区",
-            "全文贴评论区",
-            "全文放评论区",
-            "全文见评论区",
-        )
-    )
+    return any(marker in normalized for marker in _COMMENT_BODY_MARKERS)
 
 
 def _discovery_version(item: dict[str, Any]) -> str:

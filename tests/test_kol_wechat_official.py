@@ -490,6 +490,7 @@ def test_opencli_routes_comment_only_article_to_authentication_blocker(tmp_path)
         captured.value.diagnostic_code
         == "wechat_official_comment_authentication_required"
     )
+    assert not (tmp_path / "remote" / "evidence").exists()
 
 
 def test_opencli_profile_is_bound_to_official_account_download(tmp_path):
