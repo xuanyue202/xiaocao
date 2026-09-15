@@ -457,6 +457,41 @@ def test_opencli_rejects_received_anchor_in_the_future(tmp_path):
     )
 
 
+def test_opencli_routes_comment_only_article_to_authentication_blocker(tmp_path):
+    capsule = _capture_one(tmp_path)
+    inbox = OfficialAccountInbox(tmp_path / "remote")
+    inbox.import_capsule(capsule)
+    [item] = inbox.pending_items()
+    markdown = (
+        f"# {item['title']}\n\n"
+        f"公众号：{item['publisher']}\n\n"
+        "修改了无数次，力竭了。没想到会以这种方式断更。"
+        "正文贴评论区了，咱也没招了。\n"
+    )
+    runner, _calls = _opencli_runner(
+        markdown=markdown,
+        title=item["title"],
+        author=item["publisher"],
+        publish_time="2026年8月4日 16:57",
+        with_image=False,
+    )
+
+    with pytest.raises(EnrichmentDiagnosticError) as captured:
+        inbox.acquire(
+            item,
+            acquirer=OfficialAccountOpenCliAcquirer(
+                tmp_path / "remote" / "opencli",
+                runner=runner,
+            ),
+        )
+
+    assert captured.value.diagnostic_category == "user_action"
+    assert (
+        captured.value.diagnostic_code
+        == "wechat_official_comment_authentication_required"
+    )
+
+
 def test_opencli_profile_is_bound_to_official_account_download(tmp_path):
     capsule = _capture_one(tmp_path)
     inbox = OfficialAccountInbox(tmp_path / "remote")

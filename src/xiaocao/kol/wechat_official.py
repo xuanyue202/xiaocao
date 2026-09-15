@@ -194,6 +194,22 @@ def _article_text_characters(markdown: str) -> int:
     return len(text)
 
 
+def _defers_body_to_comments(markdown: str) -> bool:
+    """Return whether the article explicitly places its body in comments."""
+    normalized = re.sub(r"\s+", "", unicodedata.normalize("NFKC", markdown))
+    return any(
+        marker in normalized
+        for marker in (
+            "正文贴评论区",
+            "正文放评论区",
+            "正文见评论区",
+            "全文贴评论区",
+            "全文放评论区",
+            "全文见评论区",
+        )
+    )
+
+
 def _discovery_version(item: dict[str, Any]) -> str:
     return _sha256_text(
         _canonical(
@@ -1036,6 +1052,13 @@ class OfficialAccountOpenCliAcquirer:
                 "wechat_official_captcha_required",
                 category="user_action",
                 code="wechat_official_captcha_required",
+                stage="wechat_official_validation",
+            )
+        if _defers_body_to_comments(markdown):
+            raise EnrichmentDiagnosticError(
+                "wechat_official_comment_authentication_required",
+                category="user_action",
+                code="wechat_official_comment_authentication_required",
                 stage="wechat_official_validation",
             )
         if (
