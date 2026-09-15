@@ -267,6 +267,21 @@ def test_verification_freshness_is_checked_again_after_remote_read(tmp_path, bun
     assert not (tmp_path / td.POLICY_PATH / "decisions").exists()
 
 
+def test_publication_read_budget_covers_every_sequential_source(tmp_path, bundle, monkeypatch):
+    captured = {}
+    original = tc.ReadOnlyPublicationTransport
+
+    class CapturingTransport(original):
+        def __init__(self, client, **kwargs):
+            captured.update(kwargs)
+            super().__init__(client, **kwargs)
+
+    monkeypatch.setattr(tc, "ReadOnlyPublicationTransport", CapturingTransport)
+    assert publish(tmp_path, bundle)["status"] == "published"
+    source_count = len(bundle[0]["source_refs"])
+    assert captured["total_timeout_seconds"] >= captured["timeout_seconds"] * (source_count + 1)
+
+
 @pytest.mark.parametrize("mutation", ["hash", "schema", "authority", "source", "future", "body", "embedded_hash", "index", "manifest"])
 def test_context_integrity_and_structure(tmp_path, bundle, mutation):
     _, review, context, reader = bundle

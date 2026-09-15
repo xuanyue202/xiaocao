@@ -339,8 +339,11 @@ def publish_trading_decision(root: Path, decision: dict, review: dict, context: 
                          "verification_receipt_time_mismatch")
                 return _publish_receipt(prior["receipt"], proof)
             _validate_inputs(decision, review, context, now, fresh=True)
-            transport = trading_context.ReadOnlyPublicationTransport(client, timeout_seconds=10,
-                retries=0, max_read_calls=256, total_timeout_seconds=60)
+            per_source_timeout_seconds = 10
+            total_timeout_seconds = max(60, per_source_timeout_seconds * (len(selected) + 1))
+            transport = trading_context.ReadOnlyPublicationTransport(client,
+                timeout_seconds=per_source_timeout_seconds, retries=0, max_read_calls=256,
+                total_timeout_seconds=total_timeout_seconds)
             for row in selected:
                 publication = read_published_publication(transport, row["report_id"])
                 trading_context._validate_publication(publication, {
