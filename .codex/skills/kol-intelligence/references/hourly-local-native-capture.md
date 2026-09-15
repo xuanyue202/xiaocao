@@ -346,3 +346,5 @@ A visible current broadcast with only bound liveplay candidates returns
 对应 waiting_to_start/live/replay_generating、activated=false、真实媒体观察值
 和窗口关闭读回。暖场 get_warm_up_video 与 liveplay 都不是目标完整回放，
 不得下载。只有直播结束且完整回放生成后才执行下载。
+
+Verified first-party `/p/course/ecourse/preview/course_*` pages are non-live course previews. Return the observed URL with `page_state=unknown`; the driver retains them as `unsupported_resource` without arming, launching, or retrying. Do not invent a live ID.

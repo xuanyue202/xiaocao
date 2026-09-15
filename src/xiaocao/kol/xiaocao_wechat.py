@@ -46,7 +46,7 @@ _GOOSE_LIVE_MINI_PROGRAM = re.compile(
 _XIAOETONG_SOURCE_IDENTITY = re.compile(
     r"^xiaoetong:(?P<app_id>app[A-Za-z0-9]+):(?P<live_id>l_[A-Za-z0-9]+)$"
 )
-_TERMINAL = {"historical_baseline", "superseded", "completed", "expired", "unsupported_application"}
+_TERMINAL = {"historical_baseline", "superseded", "completed", "expired", "unsupported_application", "unsupported_resource"}
 _SHA256 = re.compile(r"^[0-9a-f]{64}$")
 _MAX_HANDOFF_BYTES = 1024 * 1024
 _CAPTURE_PROGRESS_POLL_SECONDS = 30
@@ -1353,6 +1353,18 @@ class XiaocaoWechatLiveSubscription:
             )
         if observed_page_state != "unknown":
             raise EnrichmentError("Xiaocao H5 resolution returned a playback state")
+        resolved_url = urlsplit(str(response.get("page_url") or ""))
+        if (
+            resolved_url.scheme == "https"
+            and re.fullmatch(r"app[a-z0-9]+\.h5\.xiaoeknow\.com", resolved_url.netloc)
+            and re.fullmatch(r"/p/course/ecourse/preview/course_[A-Za-z0-9]+", resolved_url.path)
+            and not item.get("capture_job_id")
+        ):
+            return self._transition(
+                manifest, item, "unsupported_resource",
+                page_url=urlunsplit(resolved_url._replace(query="", fragment="")),
+                diagnostic_code="non_live_course_preview", launch_allowed=False,
+            )
         page_url, source_identity = self._canonical_page(
             str(response.get("page_url") or ""),
         )
@@ -1422,7 +1434,8 @@ class XiaocaoWechatLiveSubscription:
                 return {
                     "status": "no_update",
                     "identity": only_identity,
-                    "already_completed": item.get("status") != "unsupported_application",
+                    "already_completed": item.get("status") not in {"unsupported_application", "unsupported_resource", "expired"},
+                    "unsupported_resource": item.get("status") == "unsupported_resource",
                     "unsupported_application": item.get("status") == "unsupported_application",
                 }
         if item is None:
@@ -1443,6 +1456,12 @@ class XiaocaoWechatLiveSubscription:
             )
         elif item["status"] == "discovered":
             item = self._resolve_page(manifest, item)
+
+        if item["status"] == "unsupported_resource":
+            return {
+                "status": "no_update", "identity": item["identity"],
+                "unsupported_resource": True, "launch_allowed": False,
+            }
 
         if item["status"] == "unsupported_application":
             return {
