@@ -1568,6 +1568,89 @@ def test_official_decided_handoff_requires_durable_terminal_readback(
         runtime.wechat_official(handoff_id="a" * 64)
 
 
+def test_official_deleted_source_becomes_no_effect_terminal(tmp_path, monkeypatch):
+    handoff_id = "a" * 64
+    terminal = {
+        "kind": "source_event",
+        "event_id": "source-1",
+        "content_value": {
+            "status": "source_unavailable",
+            "reason": "原始公众号文章已由作者删除，无法取得完整正文。",
+        },
+        "gray_report": {"status": "not_created"},
+        "alert": {"status": "not_created"},
+        "book_kol_us": {
+            "book": "KOL-US",
+            "paper_only": True,
+            "status": "not_created",
+            "reason": "原始公众号文章已由作者删除，无法取得完整正文。",
+        },
+        "knowledge_effect": {
+            "status": "not_created",
+            "reason": "原始公众号文章已由作者删除，无法取得完整正文。",
+        },
+        "coordinator_source_video_bytes": 0,
+    }
+    result_path = tmp_path / "result.json"
+    result_path.write_text(
+        json.dumps({"items": [{"daily_terminal": terminal}]}, ensure_ascii=False),
+        encoding="utf-8",
+    )
+
+    class FakeInbox:
+        def __init__(self, output_dir):
+            assert output_dir == tmp_path / "official"
+
+        @staticmethod
+        def get_item(value):
+            assert value == handoff_id
+            return {"handoff_id": handoff_id, "status": "imported"}
+
+        @staticmethod
+        def pending_items():
+            return [{"handoff_id": handoff_id, "published_at": "2026-09-15"}]
+
+        @staticmethod
+        def acquire(_value, *, acquirer):
+            raise EnrichmentDiagnosticError(
+                "wechat_official_source_deleted",
+                category="source_terminal",
+                code="wechat_official_source_deleted",
+                stage="wechat_official_validation",
+            )
+
+        @staticmethod
+        def finalize_source_unavailable(value):
+            assert value == handoff_id
+            return {"decision_result_path": str(result_path)}
+
+    class FakeAcquirer:
+        def __init__(self, *_args, **_kwargs):
+            pass
+
+    monkeypatch.setattr(kol_daily_script, "OfficialAccountInbox", FakeInbox)
+    monkeypatch.setattr(
+        kol_daily_script,
+        "OfficialAccountOpenCliAcquirer",
+        FakeAcquirer,
+    )
+    runtime = DailyRuntime.__new__(DailyRuntime)
+    runtime.args = SimpleNamespace(
+        wechat_official_output_dir=tmp_path / "official",
+        opencli_profile=None,
+    )
+
+    result = runtime.wechat_official(handoff_id=handoff_id)
+
+    assert result == {
+        "status": "completed",
+        "events": [terminal],
+        "completed_handoff_ids": [handoff_id],
+        "waiting_count": 0,
+        "waiting_items": [],
+    }
+
+
 def test_mailbox_processor_imports_and_completes_only_target_official_handoff(
     tmp_path,
     monkeypatch,
@@ -1775,6 +1858,81 @@ def test_mailbox_processor_binds_source_terminal_to_ack_progress(
             "receipt_count": 2,
             "uncertain_effect_count": 0,
         },
+    }
+
+
+def test_mailbox_processor_accepts_deleted_source_terminal(tmp_path, monkeypatch):
+    handoff_id = "a" * 64
+    capsule = {
+        "schema_version": 2,
+        "handoff_id": handoff_id,
+        "handoff_sha256": "b" * 64,
+        "content_transport": "public_url_only",
+        "large_payload_local_bytes": 0,
+    }
+    reason = "原始公众号文章已由作者删除，无法取得完整正文。"
+    terminal = {
+        "kind": "source_event",
+        "event_id": "source-1",
+        "source_binding": {
+            "source_identity": "source-1",
+            "publication_version": "version-1",
+        },
+        "content_value": {
+            "status": "source_unavailable",
+            "reason": reason,
+        },
+        "gray_report": {"status": "not_created"},
+        "alert": {"status": "not_created"},
+        "book_kol_us": {
+            "book": "KOL-US",
+            "paper_only": True,
+            "status": "not_created",
+            "reason": reason,
+        },
+        "knowledge_effect": {
+            "status": "not_created",
+            "reason": reason,
+        },
+        "coordinator_source_video_bytes": 0,
+    }
+
+    class FakeInbox:
+        def __init__(self, output_dir):
+            assert output_dir == tmp_path / "official"
+
+        @staticmethod
+        def import_capsule(value):
+            assert value == capsule
+            return {"status": "accepted", "handoff_id": handoff_id}
+
+    runtime = DailyRuntime.__new__(DailyRuntime)
+    runtime.args = SimpleNamespace(
+        wechat_official_output_dir=tmp_path / "official",
+    )
+    runtime.wechat_official = lambda handoff_id=None: {
+        "status": "completed",
+        "completed_handoff_ids": [handoff_id],
+        "events": [terminal],
+    }
+    monkeypatch.setattr(kol_daily_script, "OfficialAccountInbox", FakeInbox)
+
+    result = runtime._process_mailbox_message({
+        "message_id": handoff_id,
+        "payload": capsule,
+    })
+
+    assert result["business_complete"] is True
+    assert result["writer_progress"]["content_terminal"] == "source_unavailable"
+    assert result["writer_progress"]["gray_report_terminal"] == "not_created"
+    assert result["writer_progress"]["reminder_terminal"] == "not_created"
+    assert result["writer_progress"]["book_terminal"] == "not_created"
+    assert result["writer_progress"]["knowledge_terminal"] == "not_created"
+    assert result["writer_progress"]["new_external_effect_count"] == 0
+    assert result["writer_progress"]["claim_receipt_summary"] == {
+        "claim_count": 0,
+        "receipt_count": 0,
+        "uncertain_effect_count": 0,
     }
 
 

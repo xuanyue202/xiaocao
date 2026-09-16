@@ -501,6 +501,23 @@ def validate_source_event(value: Any) -> dict[str, Any]:
     book = value.get("book_kol_us")
     if not all(isinstance(row, dict) for row in (report, alert, book)):
         raise DailyError("daily source event lacks independent terminals")
+    if disposition == "source_unavailable":
+        knowledge = value.get("knowledge_effect")
+        if (
+            report.get("status") != "not_created"
+            or alert.get("status") != "not_created"
+            or book.get("book") != "KOL-US"
+            or book.get("paper_only") is not True
+            or book.get("status") != "not_created"
+            or not isinstance(knowledge, dict)
+            or knowledge.get("status") != "not_created"
+        ):
+            raise DailyError(
+                "source-unavailable item must leave every business effect uncreated"
+            )
+        _required_reason(book.get("reason"), label="Book KOL-US not-created")
+        _required_reason(knowledge.get("reason"), label="knowledge not-created")
+        return value
     durable_report_only = is_durable_report_only(value)
     valid_book_status = book.get("status") in {"filled", "no_trade"} or (
         durable_report_only and book.get("status") == "not_created"

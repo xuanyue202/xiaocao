@@ -4347,7 +4347,19 @@ class DailyRuntime:
         completed_handoff_ids: list[str] = []
         waiting_items: list[dict[str, Any]] = []
         for discovered in pending:
-            item = inbox.acquire(discovered, acquirer=acquirer)
+            try:
+                item = inbox.acquire(discovered, acquirer=acquirer)
+            except EnrichmentDiagnosticError as exc:
+                if exc.diagnostic_code != "wechat_official_source_deleted":
+                    raise
+                terminal_state = inbox.finalize_source_unavailable(
+                    str(discovered["handoff_id"])
+                )
+                events.append(
+                    self._terminal(terminal_state["decision_result_path"])
+                )
+                completed_handoff_ids.append(str(discovered["handoff_id"]))
+                continue
             image_request = inbox.prepare_image_request(item)
             if image_request is not None:
                 try:

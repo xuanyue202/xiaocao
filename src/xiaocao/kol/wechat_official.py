@@ -703,6 +703,9 @@ class OfficialAccountOpenCliAcquirer:
     image_urls: content ? [...content.querySelectorAll('img')]
       .map((image) => image.getAttribute('data-src') || image.getAttribute('src') || '')
       .filter(Boolean) : [],
+    source_deleted:
+      /The content has been deleted by the author\.?/i.test(visible) ||
+      /(内容|文章).{0,8}(已被|已经).{0,8}(作者|发布者).{0,8}删除/.test(visible),
     verification_required:
       (/环境异常/.test(visible) && /(完成验证后即可继续访问|去验证)/.test(visible)) ||
       /secitptpage\/verify\.html/.test(html) || !!document.querySelector('#js_verify')
@@ -748,6 +751,13 @@ class OfficialAccountOpenCliAcquirer:
                 category="user_action",
                 code="wechat_official_captcha_required",
                 stage="wechat_official_opencli",
+            )
+        if page.get("source_deleted") is True:
+            raise EnrichmentDiagnosticError(
+                "wechat_official_source_deleted",
+                category="source_terminal",
+                code="wechat_official_source_deleted",
+                stage="wechat_official_validation",
             )
         title = _normalized_text(page.get("title"))
         author = _normalized_text(page.get("author"))
@@ -1242,6 +1252,78 @@ class OfficialAccountInbox:
                 "official-account decision result lacks durable terminal"
             )
         return item
+
+    def finalize_source_unavailable(self, handoff_id: str) -> dict[str, Any]:
+        """Persist a no-effect terminal after authoritative source deletion."""
+
+        current = self.get_item(handoff_id)
+        if not isinstance(current, dict):
+            raise EnrichmentError("official-account inbox item disappeared")
+        if current.get("status") == "decided":
+            self.verify_completed(handoff_id)
+            return current
+        failure = current.get("last_acquisition_failure")
+        if failure != {
+            "category": "source_terminal",
+            "code": "wechat_official_source_deleted",
+            "stage": "wechat_official_validation",
+        }:
+            raise EnrichmentError(
+                "official-account source-unavailable terminal lacks deletion proof"
+            )
+        reason = "原始公众号文章已由作者删除，无法取得完整正文。"
+        terminal = {
+            "kind": "source_event",
+            "event_id": current["source_identity"],
+            "author": current["author"],
+            "source_binding": {
+                "source_identity": current["source_identity"],
+                "publication_version": current["discovery_version"],
+            },
+            "content_value": {
+                "status": "source_unavailable",
+                "reason": reason,
+            },
+            "gray_report": {"status": "not_created"},
+            "alert": {"status": "not_created"},
+            "book_kol_us": {
+                "book": "KOL-US",
+                "paper_only": True,
+                "status": "not_created",
+                "reason": reason,
+            },
+            "knowledge_effect": {
+                "status": "not_created",
+                "reason": reason,
+            },
+            "coordinator_source_video_bytes": 0,
+        }
+        result = {
+            "status": "completed",
+            "items": [{"daily_terminal": terminal}],
+        }
+        result_path = self.output_dir / "decisions" / handoff_id / "result.json"
+        _atomic_json(result_path, result)
+        result_sha256 = _sha256_bytes(result_path.read_bytes())
+        decided = {
+            **current,
+            "status": "decided",
+            "decision_result_path": str(result_path),
+            "decision_result_sha256": result_sha256,
+        }
+        self._save_item(decided)
+        _append_jsonl(
+            self.events_path,
+            {
+                "schema_version": 2,
+                "event": "official_account_source_unavailable",
+                "handoff_id": handoff_id,
+                "source_identity": current["source_identity"],
+                "reason_code": "wechat_official_source_deleted",
+                "decision_result_sha256": result_sha256,
+            },
+        )
+        return decided
 
     @staticmethod
     def _verify_file(path_value: Any, expected_sha256: Any, *, label: str) -> Path:

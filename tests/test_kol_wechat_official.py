@@ -733,6 +733,70 @@ def test_opencli_text_share_recovery_rejects_non_text_page(tmp_path):
     )
 
 
+def test_opencli_text_share_recovery_detects_author_deleted_source(tmp_path):
+    capsule = _capture_one(tmp_path)
+    inbox = OfficialAccountInbox(tmp_path / "remote")
+    inbox.import_capsule(capsule)
+    [item] = inbox.pending_items()
+
+    def runner(command, **_kwargs):
+        if command[1:3] == ["weixin", "download"]:
+            return SimpleNamespace(
+                returncode=0,
+                stdout=json.dumps([{
+                    "title": "Error",
+                    "author": "-",
+                    "publish_time": "-",
+                    "status": "failed — no title",
+                    "size": "-",
+                    "saved": "-",
+                }], ensure_ascii=False),
+                stderr="",
+            )
+        if "eval" in command:
+            return SimpleNamespace(
+                returncode=0,
+                stdout=json.dumps({
+                    "url": item["source_url"],
+                    "ready_state": "complete",
+                    "item_show_type": "",
+                    "title": "",
+                    "author": "",
+                    "publish_time": "",
+                    "body": "",
+                    "image_urls": [],
+                    "source_deleted": True,
+                    "verification_required": False,
+                }, ensure_ascii=False),
+                stderr="",
+            )
+        return SimpleNamespace(returncode=0, stdout="{}", stderr="")
+
+    with pytest.raises(EnrichmentDiagnosticError) as captured:
+        inbox.acquire(
+            item,
+            acquirer=OfficialAccountOpenCliAcquirer(
+                tmp_path / "remote" / "opencli",
+                runner=runner,
+            ),
+        )
+
+    assert captured.value.diagnostic_category == "source_terminal"
+    assert captured.value.diagnostic_code == "wechat_official_source_deleted"
+    terminal = inbox.finalize_source_unavailable(item["handoff_id"])
+    assert terminal["status"] == "decided"
+    inbox.verify_completed(item["handoff_id"])
+    result = json.loads(
+        Path(terminal["decision_result_path"]).read_text(encoding="utf-8")
+    )
+    daily = result["items"][0]["daily_terminal"]
+    assert daily["content_value"]["status"] == "source_unavailable"
+    assert daily["gray_report"]["status"] == "not_created"
+    assert daily["alert"]["status"] == "not_created"
+    assert daily["book_kol_us"]["status"] == "not_created"
+    assert daily["knowledge_effect"]["status"] == "not_created"
+
+
 def test_opencli_challenge_is_user_action_and_does_not_create_evidence(tmp_path):
     capsule = _capture_one(tmp_path)
     inbox = OfficialAccountInbox(tmp_path / "remote")
