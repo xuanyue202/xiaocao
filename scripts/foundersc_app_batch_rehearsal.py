@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import argparse
 import hashlib
+from contextlib import contextmanager, nullcontext
 import json
 import re
 import subprocess
@@ -95,6 +96,7 @@ def run_batch(execution, plans, *, directory, snapshot, cleanup_only=False):
     stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S%fZ")
     seal = directory / "cleanup-started.json"
     outcomes, errors, stages = {}, [], []
+    batch_timing = {}
     def stage(name, plan, action):
         started = time.monotonic()
         started_at = datetime.now(timezone.utc).isoformat()
@@ -114,6 +116,18 @@ def run_batch(execution, plans, *, directory, snapshot, cleanup_only=False):
         prior = execution.store.current(plan.plan_id)
         name = "reconcile" if prior and prior.submit_claim_id else "submit"
         return stage(name, plan, lambda: execution.execute(plan))
+    @contextmanager
+    def submission_scope(batch_plans):
+        fresh = all(not (execution.store.current(p.plan_id) and
+                        execution.store.current(p.plan_id).submit_claim_id) for p in batch_plans)
+        batch_timing["preflight_started_at"] = datetime.now(timezone.utc).isoformat()
+        started = time.monotonic()
+        scope = execution.broker.submission_batch(batch_plans) if fresh else nullcontext()
+        with scope:
+            batch_timing["preflight_seconds"] = round(time.monotonic() - started, 4)
+            batch_timing["submission_ready_at"] = datetime.now(timezone.utc).isoformat()
+            yield
+
     try:
         if not cleanup_only and not seal.exists():
             # Exercise the production batch advancement, including its mapped
@@ -122,6 +136,7 @@ def run_batch(execution, plans, *, directory, snapshot, cleanup_only=False):
                 advance_submission_batch(
                     plans, execute=execute_timed,
                     allow=lambda _plan: True, receipts=[],
+                    submission_scope=submission_scope,
                 )
             write_once(directory / (stamp + "-outstanding.json"), snapshot())
     except Exception as exc:
@@ -170,6 +185,11 @@ def run_batch(execution, plans, *, directory, snapshot, cleanup_only=False):
         errors.append({"phase": "final_snapshot", "type": type(exc).__name__})
     submissions = [item for item in stages if item["stage"] == "submit"]
     result = {"outcomes": outcomes, "errors": errors, "stages": stages,
+              "batch_timing": batch_timing,
+              "preflight_and_submission_span_seconds": (
+                  (datetime.fromisoformat(submissions[-1]["completed_at"])
+                   - datetime.fromisoformat(batch_timing["preflight_started_at"])).total_seconds()
+                  if submissions and batch_timing else None),
               "submission_span_seconds": (
                   (datetime.fromisoformat(submissions[-1]["completed_at"])
                    - datetime.fromisoformat(submissions[0]["started_at"])).total_seconds()

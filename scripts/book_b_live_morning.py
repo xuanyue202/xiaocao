@@ -409,6 +409,7 @@ def main(argv: list[str] | None = None) -> int:
         ),
         wait_for_reconcile=lambda: time.sleep(1.0),
         execute=lambda plan: execution.execute(plan, broker),
+        submission_scope=broker.submission_batch,
         trading_dates_provider=calendar_provider(market_client),
         account_snapshot_provider=lambda: broker.read_live_account_snapshot(
             trade_date=trade_date, logical_account_id="primary",

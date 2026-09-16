@@ -812,7 +812,13 @@ def test_production_morning_cli_passes_real_rendezvous_callback(tmp_path, monkey
         run=lambda **_: {key: True for key in ("trade_item_present", "trade_account_present",
                                                "trade_secret_readable", "trade_secret_nonempty")},
         trade_account_fingerprint=lambda: "fake-only"))
-    monkeypatch.setattr(cli, "build_foundersc_native_execution", lambda *a, **k: (object(), object()))
+    from contextlib import nullcontext
+    scoped = []
+    def batch_scope(plans):
+        scoped.append(plans)
+        return nullcontext()
+    monkeypatch.setattr(cli, "build_foundersc_native_execution",
+                        lambda *a, **k: (object(), SimpleNamespace(submission_batch=batch_scope)))
     monkeypatch.setattr(cli, "load_settings", lambda _: SimpleNamespace(base_url="fake", timeout=1, retries=0))
     monkeypatch.setattr(cli, "XiaocaoClient", lambda **_: object())
     monkeypatch.setattr(cli, "write_book_b_live_morning_receipt", lambda *args: None)
@@ -824,6 +830,8 @@ def test_production_morning_cli_passes_real_rendezvous_callback(tmp_path, monkey
 
     def core(config, **kwargs):
         assert config.policy_root == Path("output/live/kol_policy/decisions")
+        with kwargs["submission_scope"](["bound-plan"]):
+            assert scoped == [["bound-plan"]]
         review = kwargs["review_rendezvous"]({"test": "production-wiring"})
         return BookBLiveMorningReceipt(config.trade_date, "no_action", "FAKE_ONLY", 0, (), (),
             str(config.freeze_path), str(config.allocation_facts_path), str(config.state_dir), review_rendezvous=review)
@@ -861,3 +869,36 @@ def test_cli_reuses_current_reviewed_policy_without_wait(tmp_path, monkeypatch):
         sleep=lambda _: pytest.fail("valid current judgment needs no replacement"))
     assert result["status"] == "validated" and result["waited_seconds"] == 0
     assert result["decision_id"] == "current"
+
+
+@pytest.mark.parametrize("tighten", [False, True])
+def test_reserved_batch_reuses_risk_but_rechecks_policy_before_each_order(tmp_path, tighten):
+    from contextlib import contextmanager
+    rows = [_frozen_row(), {**_frozen_row(), "code": "000002.XSHE", "mode": "mode-b"}]
+    config = _morning(tmp_path, rows=rows)
+    _publish(config.policy_root, MORNING)
+    active, calls, risk_reads = [], [], []
+    @contextmanager
+    def scope(plans):
+        assert len(plans) == 2
+        active.append(True)
+        try:
+            yield
+        finally:
+            active.pop()
+    def risk(now):
+        assert not active, "full account risk reread interrupted submission"
+        risk_reads.append(now)
+        return _risk(now)
+    def execute(plan):
+        assert active
+        calls.append(plan)
+        if tighten:
+            _publish(config.policy_root, MORNING, scale=0, identifier="stop-now")
+        return ExecutionReceipt(plan.plan_id, plan.plan_hash, ExecutionState.CANCELLED,
+                                remaining_shares=plan.shares, reason="FAKE_ZERO_FILL")
+    receipt = run_book_b_live_morning(config, execute=execute, submission_scope=scope,
+                                    risk_provider=risk, now=lambda: MORNING)
+    assert receipt.status == "completed", receipt.reason
+    assert len(calls) == (1 if tighten else 2)
+    assert risk_reads and not active

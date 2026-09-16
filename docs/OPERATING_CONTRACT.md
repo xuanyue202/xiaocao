@@ -1,6 +1,6 @@
 # 小草运营契约（Operating Contract, SSOT）
 
-**版本**：4.17
+**版本**：4.18
 **状态**：现行
 **适用范围**：所有 paper / 未来 real 的实盘环（live_recommend → paper_record → live_monitor → eod）与回测
 **关联实现**：`src/xiaocao/live/{safety,capital_keychain,foundersc_native_ax,foundersc_native_broker,trading_execution,book_b_live_lifecycle,book_b_live_intraday}.py`、`src/xiaocao/live/intelligence_policy.py`、`src/xiaocao/strategy/{mode_switch,trend_rules,kol_reference}.py`、`native/foundersc_ax_executor/`、`kronos_screen/scripts/{capture_signals,forward_eval,paper_record,settle_book_a,settle_book_t,decompose_pnl,quality_governor}.py`、`scripts/{book_b_live_morning,book_b_live_intraday,live_monitor,research_mode_switch_replay}.py`
@@ -223,7 +223,10 @@ KOL 断言、候选假设或报告升级为策略真值，也不替代永久参�
   视觉变化；任何低置信非零成交、未知状态、其他低置信字段或多行匹配仍 fail-closed。
   prepare 前必须读取全部当日委托编号，并证明目标
   `code+side+price+quantity` 零匹配；durable claim 后只允许一次 submit。点击后只有
-  恰好一个目标 tuple 且委托编号不在 baseline 的新增行才能 `receipt_mapping=true`；
+  恰好一个目标 tuple 且委托编号不在 baseline 的新增行才能 `receipt_mapping=true`。
+  有界 BUY 批次另允许原生成功通知证明柜台 ACK：账户与准备 tuple 精确绑定、单次确认成功、
+  `委托已提交` 唯一数字合同号不在整批 baseline/已收单编号中，并持久化原始 action/result 与 claim。
+  此时 `fill_observation_pending=true`，零是尚无已验证成交，不能宣称零成交或成交终态；
   成交按 `order_id+code+side` 唯一绑定，累计成交不得超过委托数量。broker 未提供的
   strategy-id 由 durable claim 派生的本地不可逆标识补齐，不得替代 broker order-id。
   最终点击一旦可能发生，缺任一回执证明即进入 `UNKNOWN/reconcile_only` 且
@@ -276,7 +279,8 @@ KOL 断言、候选假设或报告升级为策略真值，也不替代永久参�
   使用首次基数。
 
 - **服务关闭拒绝回执**：无柜台号且无成交的原提交可从唯一原生“4-关闭状态／应在3-就绪状态执行”拒绝提示取证，必须绑定账户、当前表单完整经济字段、原plan hash与submit claim。先将证明持久化为UNKNOWN，下一次同单对账才确认该信息提示并进入REJECTED；已有委托号/成交、不同claim、未持久化证明均不适用。它不重发提交，不把账户快照或窗口消失本身当作拒单证明。原不确定历史保留，终态另记。
-- **早盘批次提交与成交解耦**：同一账户writer锁覆盖冻结后账户分配、全批不可变intent预留及连续提交；底层逐单写锁可由同一线程重入。沿用整批allocation proof，不按每单现金重新分配，不扩大最多三席策略。每单精确plan/hash、账户、claim、唯一order/strategy映射、成交与剩余量以及无不确定链全部证明后，ACK/PARTIAL即可继续下一个已预留计划；未知或证明缺失立即停止后续新增写。整批提交后才逐轮对账，ACK永远不是FILLED。每笔柜台接受的证明时刻及09:28/09:30达标状态独立留证；缺少回执不能算提交达标。审核等待最多120秒，早盘最多等到09:27，之后使用既有有效判断或明确降级回基线，为整批提交留余量；这只约束支持层等待，不降低来源/独立审核要求，不关闭或复活交易计划。
+- **柜台批次热路径**：只对全新 BUY 批次复用一次持仓/委托/成交、资金与撤单能力检查；同一账户 writer 锁与 APP 会话锁贯穿，最多5个不可变计划（生产策略仍最多三席），整批名义金额不得超过已证明可用现金。缓存仅存本次提交栈、60秒到期，绑定全部 plan/hash，离开提交阶段立即清除。风险按已分配预留整批评估一次；每单仍重读当前 KOL 限制并通过市场、账户、资金授权、精确表单与durable claim。成功通知证明后直接推进下一单；缺失/异常通知退回原有精确表格证明，并禁用余下批次缓存，不重复资金动作。整批后才查成交和完整账户；已有 claim/恢复、SELL、撤单不得复用该缓存。计时同时报告预检、连续柜台收单与两者合计，不能仅把工作移出计时范围。
+- **早盘批次提交与成交解耦**：同一账户writer锁覆盖冻结后账户分配、全批不可变intent预留及连续提交；底层逐单写锁可由同一线程重入。沿用整批allocation proof，不按每单现金重新分配，不扩大最多三席策略。每单精确plan/hash、账户、claim、唯一order/strategy映射、已观察成交与剩余量结构及无不确定链证明后（成功通知ACK显式保留成交待核标志），ACK/PARTIAL即可继续下一个已预留计划；未知或证明缺失立即停止后续新增写。整批提交后才逐轮对账，ACK永远不是FILLED。每笔柜台接受的证明时刻及09:28/09:30达标状态独立留证；缺少回执不能算提交达标。审核等待最多120秒，早盘最多等到09:27，之后使用既有有效判断或明确降级回基线，为整批提交留余量；这只约束支持层等待，不降低来源/独立审核要求，不关闭或复活交易计划。
 
 - **实盘全生命周期**：`BookBOwnershipEvidence` 只接收 native broker 已证明的
   partial/filled 增量，以及 conclusive cancelled 终态中尚未落盘的正成交增量；
@@ -476,6 +480,7 @@ KOL 断言、候选假设或报告升级为策略真值，也不替代永久参�
 
 | 版本 | 日期 | 说明 |
 |------|------|------|
+| 4.18 | 2026-09-16 | 批次级原生检查与资金风险预留，成功通知唯一合同号柜台ACK，成交延后核实；账户/APP锁与60秒限时缓存，异常停止剩余新增写，分阶段完整计时。 |
 | 4.17 | 2026-09-16 | 用户确认09:25后柜台可排队，整批理想09:28前、最迟09:30前提交；前置语义判断与账户输入，缩短早盘支持层等待，整批账户锁内先收单后对账，保留UNKNOWN不重发；同步混合严格成交行与有界零格OCR语义。 |
 | 4.16 | 2026-09-15 | 按用户要求将早期APP保活改为初次就绪后静默至09:24，再恢复会话检查及30秒心跳；不改变冻结、提交或执行门。 |
 | 4.15 | 2026-09-15 | KOL来源准备改为逐对象持久化交接；区分缓存补验与语义重分析，按开盘窗口检查历史有效期；09:00认证预检收窄为单次读取，保留当前交易复核。 |

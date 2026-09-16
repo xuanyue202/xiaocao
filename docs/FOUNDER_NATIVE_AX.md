@@ -110,7 +110,8 @@ model and systematic failure modes. The accepted logic is:
 3. Before prepare, read all current order ids and require zero existing exact
    `code+side+price+quantity` matches.
 4. After the one submit, require exactly one matching row whose numeric order
-   id was absent from the baseline.
+   id was absent from the baseline. The bounded counter-submission hot path below
+   additionally accepts an exact native success notice for ACK only.
 5. Match trades by `order_id+code+side`; cumulative fill must not exceed the
    requested quantity and must agree with the order row when both are nonzero.
 6. Map known Chinese broker statuses explicitly. Malformed, duplicate,
@@ -352,3 +353,31 @@ for test scope, corrected defects, observed APP evidence and remaining limits.
 整窗 OCR 遗漏关键单元格时，helper 仅在已审计的行列边界内裁剪该格、放大三倍并用 Vision 重读；恢复文字须位于原格内且置信度达到原阈值。已达标文字不被覆盖；持仓当前价/持仓量/可卖量若低置信，可在同格放大复读达到原阈值且严格数值一致时采用新读数（仅当前价接受四位小数逗号）。不得据此替换委托身份字段，也不从其他行推断方向/状态。该读取也用于撤单选中前后的身份检查。
 
 跨零点撤单恢复与已证明终态的单调性遵循 Operating Contract §4：保留原委托时钟；旧终态从完整、同 claim 的事件哈希链恢复，跨零点当前行必须证明原时钟仍不可在今日重现。其余前日订单仍使用精确日期的历史证据。
+
+
+### Bounded counter-submission hot path
+
+For an entirely new BUY batch, the production CLI and rehearsal share
+`submission_batch`: hold the account writer fence and native App session,
+validate positions/orders/trades/funds and cancellation capability once, reserve
+the whole immutable batch notional within available cash, and expire the local
+observations after 60 seconds. At most five engineering plans are supported;
+production selection remains at most three seats. Current account/form identity,
+KOL restrictions, market guards and capital authorization still apply per order.
+No full-grid query belongs between successful counter acknowledgements.
+
+An exact native confirmed action plus the account-bound prepared tuple and unique
+`委托已提交` success-notice contract number outside the baseline/earlier batch IDs
+may prove ACK. Persist action/result and the claim binding. This is counter
+acceptance only: `fill_observation_pending=true`; zero observed fill does not
+prove zero actual fill. Full order/trade reconciliation starts after the submission
+pass and remains mandatory. Missing/suspect success notices take the existing
+exact table path, invalidate batch reuse and stop further fast-path submissions.
+Existing claims/recovery, SELL and cancellation retain current-table checks.
+Clear batch observations before reconciliation and on every context exit.
+
+Report preflight duration, first-to-last counter acknowledgement duration and
+their total separately, plus terminal cleanup. After the September 16 change,
+offline behavior is verified; the new APP speed requires fresh 2/3/5-order
+acceptance. Earlier 70.366/105.654-second runs used the old orchestration and are
+not performance evidence for this path.

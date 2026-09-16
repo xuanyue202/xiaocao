@@ -14,11 +14,11 @@ import math
 import os
 import re
 import uuid
-from contextlib import ExitStack, contextmanager
+from contextlib import ExitStack, contextmanager, nullcontext
 from dataclasses import asdict, dataclass, replace
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Callable
+from typing import Callable, ContextManager
 from zoneinfo import ZoneInfo
 
 from .book_b_allocation import BookBAllocationFacts, allocate_frozen_rows, validate_allocation_rows
@@ -1559,6 +1559,7 @@ def advance_submission_batch(
     allow: Callable[[TradePlan], bool], receipts: list[ExecutionReceipt],
     wait: Callable[[], None] | None = None,
     on_observation: Callable[[TradePlan, ExecutionReceipt], None] | None = None,
+    submission_scope: Callable[[list[TradePlan]], ContextManager] | None = None,
 ) -> None:
     """Submit serially before polling fills; uncertainty stops further writes.
 
@@ -1571,26 +1572,27 @@ def advance_submission_batch(
     pending = {ExecutionState.CLAIMED, ExecutionState.UNKNOWN, ExecutionState.SUBMITTED,
                ExecutionState.ACKNOWLEDGED, ExecutionState.PARTIAL, ExecutionState.RECONCILING}
     order_ids: set[str] = set()
-    for plan in plans:
-        if not allow(plan):
-            continue
-        receipt = execute(plan)
-        attempted.append(plan)
-        receipts.append(receipt)
-        if receipt.plan_id != plan.plan_id or receipt.plan_hash != plan.plan_hash:
-            break
-        if receipt.broker_order_id:
-            if receipt.broker_order_id in order_ids:
-                raise ValueError("LIVE_BATCH_ORDER_ID_REUSED")
-            order_ids.add(receipt.broker_order_id)
-        if on_observation is not None:
-            on_observation(plan, receipt)
-        if receipt.submit_chain_uncertain or receipt.cancel_chain_uncertain:
-            break
-        if receipt.state == ExecutionState.FILLED and not _mapped_batch_order(plan, receipt):
-            break
-        if receipt.state not in terminal and not _mapped_batch_order(plan, receipt):
-            break
+    with submission_scope(plans) if submission_scope else nullcontext():
+        for plan in plans:
+            if not allow(plan):
+                continue
+            receipt = execute(plan)
+            attempted.append(plan)
+            receipts.append(receipt)
+            if receipt.plan_id != plan.plan_id or receipt.plan_hash != plan.plan_hash:
+                break
+            if receipt.broker_order_id:
+                if receipt.broker_order_id in order_ids:
+                    raise ValueError("LIVE_BATCH_ORDER_ID_REUSED")
+                order_ids.add(receipt.broker_order_id)
+            if on_observation is not None:
+                on_observation(plan, receipt)
+            if receipt.submit_chain_uncertain or receipt.cancel_chain_uncertain:
+                break
+            if receipt.state == ExecutionState.FILLED and not _mapped_batch_order(plan, receipt):
+                break
+            if receipt.state not in terminal and not _mapped_batch_order(plan, receipt):
+                break
     # Round robin: one resting order must not monopolize readback either.
     for _attempt in range(3):
         for index, plan in enumerate(attempted):
@@ -1608,6 +1610,7 @@ def run_book_b_live_morning(
     config: BookBLiveMorningConfig,
     *,
     execute: Callable[[TradePlan], ExecutionReceipt],
+    submission_scope: Callable[[list[TradePlan]], ContextManager] | None = None,
     preflight: Callable[[], dict] | None = None,
     restore_environment: Callable[[], dict] | None = None,
     read_allocation_facts: Callable[[], dict] | None = None,
@@ -1645,6 +1648,7 @@ def run_book_b_live_morning(
     open_reconciliations: tuple[dict, ...] = ()
     review_receipt: dict | None = None
     review_requested_at: datetime | None = None
+    batch_risk: AccountRiskReceipt | None = None
     snapshot_cache: dict | None = None
     snapshot_ownership_head: str | None = None
     market_guard_refreshes: list[dict] = []
@@ -1714,12 +1718,30 @@ def run_book_b_live_morning(
         )
         return policy(), risk
 
+    @contextmanager
+    def reserved_submission_scope(batch_plans: list[TradePlan]):
+        nonlocal batch_risk, snapshot_cache
+        # Evaluate NAV/risk once for this already allocated, fully reserved batch.
+        # Every plan still rechecks current KOL policy, market and capital gates.
+        # Native scope expires after 60 seconds and cannot survive fill polling.
+        if config.resume_plan_id or not all(_plan_requires_prepare(config, p) for p in batch_plans):
+            yield
+            return
+        if config.policy_root is not None:
+            batch_risk = support()[1]
+        try:
+            with submission_scope(batch_plans):
+                yield
+        finally:
+            batch_risk = None
+            snapshot_cache = None
+
     def allow_new_risk(plan: TradePlan, original: dict | None = None) -> bool:
         if config.policy_root is None or not _plan_requires_prepare(config, plan):
             return True
         audit = original if original is not None else read_plan_audit(config.state_dir, plan)
         prior_factor = float(audit["effective_deploy_factor"]) if audit else 1.0
-        decision, risk = support()
+        decision, risk = (policy(), batch_risk) if batch_risk is not None else support()
         adjustment = buy_cap(decision, risk, plan.code, allocation.deploy_factor)
         mode_override = audit.get("kol_mode_override") if audit else None
         mode_binding_ok = (
@@ -1938,6 +1960,7 @@ def run_book_b_live_morning(
                         execution_plans, execute=execute_plan, allow=allow_new_risk,
                         receipts=execution_receipts, wait=wait_for_reconcile,
                         on_observation=observe_submission,
+                        submission_scope=reserved_submission_scope if submission_scope else None,
                     )
                     stage_times["batch_observed"] = now().isoformat()
                     status, reason = _rollup(execution_receipts)

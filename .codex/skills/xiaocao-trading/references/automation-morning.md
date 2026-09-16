@@ -101,7 +101,7 @@ separate native PassGuard evidence; never infer one capability from another.
 Before prepare, the adapter requires zero existing exact
 `code+side+price+quantity` orders and snapshots all visible order ids. The
 single claimed submit must map to exactly one new numeric order id with that
-tuple, then bind any fills by `order_id+code+side`; otherwise it becomes
+tuple (or the bounded counter-success notice proof below), then bind any fills by `order_id+code+side`; otherwise it becomes
 UNKNOWN/reconcile-only with no click retry. OCR names are non-authoritative;
 critical numbers must be exact, locale-normalized by field (`17,3900` is a
 decimal price; `54,528.94` uses a grouping comma), and invariant-checked. Keep
@@ -294,3 +294,31 @@ At 09:00 run `PYTHONPATH=src .venv/bin/python scripts/market_data_preflight.py -
 The runner supplies the hash-bound account/allocation facts and account-risk receipt before starting final review. Use that exact request; do not spend its budget on a separate duplicate account read. Retain the early semantic worker across the 09:22 source delta and the final freeze; send only new evidence/current applicability work. Never invent a conditional opening fact or publish a source-only packet as a current decision.
 
 The runner holds one account fence across full-batch allocation and serialized submissions. A fully mapped, chain-certain ACK/PARTIAL allows the next reserved order; UNKNOWN or incomplete identity stops new writes. Fill polling starts after the submission pass. Inspect submission_observations for actual counter-acceptance proof and deadline performance; prepare completion is not submission. Preserve APP raw order states: queued is not exchange-accepted and neither is a fill. If orders remain open, the original task owns exact-plan reconciliation until terminal or an explicit recorded checkpoint handoff; never leave a bare unresolved receipt without naming the pending orders and next owner.
+
+
+### Bounded counter-submission hot path
+
+For an entirely new BUY batch, the production CLI and rehearsal share
+`submission_batch`: hold the account writer fence and native App session,
+validate positions/orders/trades/funds and cancellation capability once, reserve
+the whole immutable batch notional within available cash, and expire the local
+observations after 60 seconds. At most five engineering plans are supported;
+production selection remains at most three seats. Current account/form identity,
+KOL restrictions, market guards and capital authorization still apply per order.
+No full-grid query belongs between successful counter acknowledgements.
+
+An exact native confirmed action plus the account-bound prepared tuple and unique
+`委托已提交` success-notice contract number outside the baseline/earlier batch IDs
+may prove ACK. Persist action/result and the claim binding. This is counter
+acceptance only: `fill_observation_pending=true`; zero observed fill does not
+prove zero actual fill. Full order/trade reconciliation starts after the submission
+pass and remains mandatory. Missing/suspect success notices take the existing
+exact table path, invalidate batch reuse and stop further fast-path submissions.
+Existing claims/recovery, SELL and cancellation retain current-table checks.
+Clear batch observations before reconciliation and on every context exit.
+
+Report preflight duration, first-to-last counter acknowledgement duration and
+their total separately, plus terminal cleanup. After the September 16 change,
+offline behavior is verified; the new APP speed requires fresh 2/3/5-order
+acceptance. Earlier 70.366/105.654-second runs used the old orchestration and are
+not performance evidence for this path.

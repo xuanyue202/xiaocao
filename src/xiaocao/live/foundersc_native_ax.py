@@ -14,6 +14,7 @@ import re
 import shutil
 import subprocess
 import time
+from datetime import datetime, timezone
 from dataclasses import dataclass
 from decimal import Decimal, InvalidOperation
 from pathlib import Path
@@ -384,6 +385,11 @@ class FounderscNativeAXClient:
     def _run(self, command: str, args: list[str] | None = None, *,
              secret_input: bytes | bytearray | None = None) -> NativeAXReceipt:
         started = time.monotonic()
+        started_at = datetime.now(timezone.utc).isoformat()
+        query_kind = None
+        if command == "read-query" and args and args[:1] == ["--kind"] and len(args) > 1:
+            if args[1] in {"positions", "today-orders", "today-trades", "funds", "history-orders", "history-trades"}:
+                query_kind = args[1]
         if self._app_test_only or app_test_context_active():
             require_app_test_window()
         with app_session() as descriptor:
@@ -394,8 +400,10 @@ class FounderscNativeAXClient:
                 return self._run_locked(command, args, secret_input=secret_input,
                                         session_descriptor=descriptor)
             finally:
-                # No field values, argv, receipt content, or credentials here.
-                self.command_timings.append({"command": command,
+                # Only an allowlisted query kind; no field values or credentials.
+                self.command_timings.append({"command": command, "query_kind": query_kind,
+                    "started_at": started_at,
+                    "completed_at": datetime.now(timezone.utc).isoformat(),
                     "wait_seconds": round(acquired - started, 4),
                     "run_seconds": round(time.monotonic() - acquired, 4)})
 

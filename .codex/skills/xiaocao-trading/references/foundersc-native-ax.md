@@ -151,7 +151,8 @@ low-confidence or geometrically ambiguous value remains unproven. Stock names
 are non-authoritative. Before submit, persist the complete set of visible order
 ids and require zero pre-existing exact
 `code+side+price+quantity` matches. After the one click, accept only one new
-exact tuple with a new numeric order id; bind trades by
+exact tuple with a new numeric order id (the bounded counter-success notice
+exception below may acknowledge before the grid refresh); bind trades by
 `order_id+code+side`, enforce cumulative fill `<= requested`, and map broker
 status explicitly. Malformed/ambiguous fields or an unknown status become
 UNKNOWN with `retry_allowed=false`; take a targeted fresh read only when the
@@ -187,7 +188,7 @@ such as `17,3900` is 17.3900, while grouping commas such as `54,528.94` must
 remain grouping separators. Preserve a validated success-popup order id plus
 the native action/result evidence even when the order grid has not refreshed.
 Immediate self-heal may retry only native reads and exact reconciliation for
-that same durable submit claim. Each order's pre-submit capability probe,
+that same durable submit claim. Standalone pre-submit probes and batch preflight,
 account/allocation/lifecycle reads use a bounded whole-snapshot retry after transient parsing, time-evidence, strict
 asset-equation, or cross-table failures. The retry never relaxes an invariant
 and records `actions=native_readback_only`, attempt count, failure codes, and
@@ -301,3 +302,31 @@ UNKNOWN, then acknowledges the informational notice on the next reconciliation
 and terminalizes REJECTED. No new submit is allowed. Do not label this as an
 accepted order or completed multi-order test; reconcile funds/positions and
 resume remaining engineering acceptance in a later allowed, server-ready window.
+
+
+### Bounded counter-submission hot path
+
+For an entirely new BUY batch, the production CLI and rehearsal share
+`submission_batch`: hold the account writer fence and native App session,
+validate positions/orders/trades/funds and cancellation capability once, reserve
+the whole immutable batch notional within available cash, and expire the local
+observations after 60 seconds. At most five engineering plans are supported;
+production selection remains at most three seats. Current account/form identity,
+KOL restrictions, market guards and capital authorization still apply per order.
+No full-grid query belongs between successful counter acknowledgements.
+
+An exact native confirmed action plus the account-bound prepared tuple and unique
+`委托已提交` success-notice contract number outside the baseline/earlier batch IDs
+may prove ACK. Persist action/result and the claim binding. This is counter
+acceptance only: `fill_observation_pending=true`; zero observed fill does not
+prove zero actual fill. Full order/trade reconciliation starts after the submission
+pass and remains mandatory. Missing/suspect success notices take the existing
+exact table path, invalidate batch reuse and stop further fast-path submissions.
+Existing claims/recovery, SELL and cancellation retain current-table checks.
+Clear batch observations before reconciliation and on every context exit.
+
+Report preflight duration, first-to-last counter acknowledgement duration and
+their total separately, plus terminal cleanup. After the September 16 change,
+offline behavior is verified; the new APP speed requires fresh 2/3/5-order
+acceptance. Earlier 70.366/105.654-second runs used the old orchestration and are
+not performance evidence for this path.

@@ -12,6 +12,8 @@ import json
 import math
 import re
 import time
+from contextlib import contextmanager
+from dataclasses import replace
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal, InvalidOperation
 from typing import Any, Callable
@@ -320,6 +322,55 @@ class FounderscNativeAXBrokerAdapter(BrokerAdapter):
         self.last_query_readbacks: dict[str, dict[str, Any]] = {}
         self._prepared: dict[str, dict[str, Any]] = {}
         self._prepared_cancels: dict[str, dict[str, Any]] = {}
+        self._submission_batch: dict[str, Any] | None = None
+
+    @contextmanager
+    def submission_batch(self, plans: list[TradePlan]):
+        """One short BUY reservation under the caller's account writer fence.
+
+        Only the first submission pass may use these observations. Fill polling,
+        recovery, SELL and cancellation always use current native tables.
+        """
+        with self.session():
+            if self._submission_batch is not None:
+                raise ValueError("NATIVE_BATCH_NESTED")
+            if not plans:
+                yield
+                return
+            if (len(plans) > 5 or any(p.side.upper() != "BUY" or p.environment != "live" for p in plans)
+                    or len({p.logical_account_id for p in plans}) != 1
+                    or len({p.plan_id for p in plans}) != len(plans)
+                    or len({(p.code, p.side, p.shares, p.limit_price) for p in plans}) != len(plans)):
+                raise ValueError("NATIVE_BATCH_SCOPE_INVALID")
+            capability = self.probe(plans[0])
+            if not capability.ready or not capability.supports_submit:
+                raise ValueError("NATIVE_BATCH_PREFLIGHT_UNPROVEN")
+            positions = self.last_query_readbacks["positions"]
+            orders = self.last_query_readbacks["today-orders"]
+            available = _decimal(positions["summary_values"]["可用"], field="AVAILABLE_CASH")
+            if sum(Decimal(str(p.limit_price)) * p.shares for p in plans) > available:
+                raise ValueError("NATIVE_BATCH_CASH_RESERVATION_EXCEEDED")
+            self._submission_batch = {
+                "plans": {p.plan_id: p.plan_hash for p in plans},
+                "capability": capability, "positions": positions, "orders": orders,
+                "order_ids": {str(row["委托编号"]).strip() for row in orders["rows"]},
+                "used": set(), "expires": time.monotonic() + 60.0,
+            }
+            try:
+                yield
+            finally:
+                self._submission_batch = None
+                for plan in plans:
+                    self._prepared.pop(plan.plan_id, None)
+
+    def _batch_for(self, plan: TradePlan) -> dict[str, Any] | None:
+        batch = self._submission_batch
+        if batch is not None and (
+            batch["plans"].get(plan.plan_id) != plan.plan_hash
+            or time.monotonic() >= batch["expires"]
+        ):
+            raise FounderscNativeAXError("NATIVE_BATCH_SCOPE_EXPIRED_OR_MISMATCH")
+        return batch
 
     @staticmethod
     def _read_error_code(exc: FounderscNativeAXError) -> str:
@@ -957,6 +1008,15 @@ class FounderscNativeAXBrokerAdapter(BrokerAdapter):
     def probe(self, plan: TradePlan) -> BrokerCapability:
         self.last_query_readbacks = {}
         try:
+            batch = self._batch_for(plan)
+            if batch is not None:
+                self.ensure_native_ready(unlock_once=False)
+                position = self._position_for(plan, batch["positions"]["rows"])
+                owned = _integer(position["证券数量"], field="POSITION_QUANTITY") if position else 0
+                sellable = _integer(position["可卖数量"], field="SELLABLE_QUANTITY") if position else 0
+                return replace(batch["capability"], manual_position_shares=owned,
+                               owned_position_shares=owned, sellable_shares=sellable,
+                               locator_proof={"batch_preflight_reused": True})
             ready = self.ensure_native_ready(unlock_once=True)
             positions, recovery = self._bounded_read_recovery(
                 self._read_probe_facts_once,
@@ -1237,16 +1297,19 @@ class FounderscNativeAXBrokerAdapter(BrokerAdapter):
         shares = int(requested_shares or plan.shares)
         baseline_locator: dict[str, Any] = {}
         try:
-            orders = self._order_snapshot()
-            if orders.get("bounded_order_readback_used") is True:
+            batch = self._batch_for(plan)
+            if batch is not None and (plan.plan_id in batch["used"] or shares != plan.shares):
+                raise FounderscNativeAXError("NATIVE_BATCH_PLAN_ALREADY_USED_OR_CHANGED")
+            orders = batch["orders"] if batch is not None else self._order_snapshot()
+            if batch is None and orders.get("bounded_order_readback_used") is True:
                 self._open_query_surface()
                 self._validate_order_trade_cross_readback(
                     orders,
                     self._query("today-trades"),
                 )
-            baseline_ids = sorted(
+            baseline_ids = sorted(batch["order_ids"] if batch is not None else (
                 str(row["委托编号"]).strip() for row in orders["rows"]
-            )
+            ))
             baseline_locator = {
                 **self._baseline_order_readback_locator(orders),
                 "baseline_order_ids": baseline_ids,
@@ -1510,6 +1573,7 @@ class FounderscNativeAXBrokerAdapter(BrokerAdapter):
             locator_proof={
                 **locator,
                 "trade_match_count": len(trade_matches),
+                "fill_observation_pending": not conclusive,
                 "current_order_cumulative_fill_notional": str(fill_notional),
                 "native_order_time": str(order.get("委托时间") or ""),
             },
@@ -1757,6 +1821,11 @@ class FounderscNativeAXBrokerAdapter(BrokerAdapter):
                 requested_shares=shares,
             )
         try:
+            batch = self._batch_for(plan)
+            if batch is not None:
+                if plan.plan_id in batch["used"]:
+                    raise FounderscNativeAXError("NATIVE_BATCH_PLAN_ALREADY_USED")
+                batch["used"].add(plan.plan_id)
             payload = self.native.submit_prepared_order(
                 code=plan.code,
                 side=plan.side,
@@ -1785,6 +1854,7 @@ class FounderscNativeAXBrokerAdapter(BrokerAdapter):
         clicked = bool(
             str(payload.get("status") or "") == "submit_confirmed"
             and matched
+            and self._account_bound(payload)
             and readback.get("submitted") is True
             and readback.get("saved") is True
             and readback.get("started") is True
@@ -1813,6 +1883,37 @@ class FounderscNativeAXBrokerAdapter(BrokerAdapter):
                     "saved": None,
                 },
             )
+        result = native_evidence["native_result_readback"]
+        action = native_evidence["native_action"]
+        if (batch is not None and result_order_id
+                and result_order_id not in batch["order_ids"]
+                and result.get("kind") == "submit"
+                and result.get("status") == "submit_result_acknowledged"
+                and result.get("acknowledgment_pressed") is True
+                and action.get("attempted") is True
+                and action.get("succeeded") is True
+                and action.get("confirm_pressed") is True
+                and action.get("requires_user_input") is False):
+            batch["order_ids"].add(result_order_id)
+            claim_hash = hashlib.sha256(str(claim_id).encode("utf-8")).hexdigest()
+            return BrokerReceipt(
+                status=BrokerStatus.ACCEPTED, order_id=result_order_id,
+                strategy_id="NAX" + claim_hash[:16].upper(), receipt_mapping=True,
+                requested_shares=shares, filled_shares=0, remaining_shares=shares,
+                order_price=plan.limit_price, active=True, account_binding="proven",
+                locator_proof={**prepared["baseline_locator_proof"], **native_evidence,
+                               "acknowledgment_source": "native_success_notice",
+                               "fill_observation_pending": True},
+                template_name="foundersc-native-ax",
+                reason="native_counter_acknowledged_fill_readback_pending",
+                conclusive=True, retry_allowed=False, echoed=self._echo(plan, shares),
+                field_readback={**readback, **native_evidence,
+                                "native_claim_binding_sha256": claim_hash},
+            )
+        # A missing or suspect success notice uses the full, exact table path.
+        # No cached account/baseline may survive an intervening grid read.
+        if batch is not None:
+            batch["expires"] = 0.0
         last: BrokerReceipt | None = None
         last_read_error: Exception | None = None
         for delay in self.reconcile_delays:
