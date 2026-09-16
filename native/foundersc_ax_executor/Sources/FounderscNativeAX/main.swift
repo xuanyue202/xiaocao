@@ -402,6 +402,21 @@ private func recognizeTableText(
         initialTokens: recognizeText(image: image, screenBounds: screenBounds))
 }
 
+private func matchingPositionCellNumbers(_ original: String, _ recovered: String, title: String) -> Bool {
+    func parse(_ value: String) -> Decimal? {
+        var text = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        // Position prices have four decimal places. Do not interpret arbitrary
+        // commas as decimals or silently remove unrecognized characters.
+        if title == "当前价", text.range(of: #"^[0-9]+,[0-9]{4}$"#, options: .regularExpression) != nil {
+            text = text.replacingOccurrences(of: ",", with: ".")
+        }
+        guard text.range(of: #"^[0-9]+(?:\.[0-9]+)?$"#, options: .regularExpression) != nil else { return nil }
+        return Decimal(string: text, locale: Locale(identifier: "en_US_POSIX"))
+    }
+    guard let old = parse(original), let fresh = parse(recovered) else { return false }
+    return old == fresh
+}
+
 private func recoverMissingTableText(
     image: CGImage, screenBounds: Bounds, shapes: [TableShape], initialTokens: [OCRToken]
 ) -> [OCRToken] {
@@ -410,7 +425,8 @@ private func recoverMissingTableText(
           let rows = shapes[0].rowBounds, let columns = shapes[0].columns,
           rows.count == shapes[0].rowCount,
           screenBounds.width > 0, screenBounds.height > 0 else { return tokens }
-    let required: Set<String> = ["证券代码", "买卖标志", "状态说明", "委托价格", "委托数量", "委托编号", "成交编号"]
+    let positionNumbers: Set<String> = ["当前价", "证券数量", "可卖数量"]
+    let required: Set<String> = ["证券代码", "买卖标志", "状态说明", "委托价格", "委托数量", "委托编号", "成交编号", "当前价", "证券数量", "可卖数量"]
     for row in rows {
         for column in columns where required.contains(column.title) {
             guard let bounds = column.bounds else { continue }
@@ -421,9 +437,12 @@ private func recoverMissingTableText(
                 return x >= cell.x && x <= cell.x + cell.width
                     && y >= cell.y && y <= cell.y + cell.height
             }
-            // Retry only a missing critical cell, never replace a readable
-            // number or derive a direction from another order.
-            guard !tokens.contains(where: inside) else { continue }
+            let existing = tokens.filter(inside).sorted { $0.bounds.x < $1.bounds.x }
+            // A low-confidence holding value needs an independent cell crop
+            // that agrees numerically; already-proven values remain untouched.
+            let recheckPosition = positionNumbers.contains(column.title)
+                && existing.contains { $0.confidence < minimumCriticalOCRConfidence }
+            guard existing.isEmpty || recheckPosition else { continue }
             let rect = CGRect(x: (cell.x - screenBounds.x) * Double(image.width) / screenBounds.width,
                 y: (cell.y - screenBounds.y) * Double(image.height) / screenBounds.height,
                 width: cell.width * Double(image.width) / screenBounds.width,
@@ -438,6 +457,12 @@ private func recoverMissingTableText(
             guard let enlarged = context.makeImage() else { continue }
             let recovered = recognizeText(image: enlarged, screenBounds: cell, smallCell: true)
             if !recovered.isEmpty && recovered.allSatisfy({ inside($0) && $0.confidence >= minimumCriticalOCRConfidence }) {
+                if recheckPosition {
+                    let oldValue = existing.map(\.text).joined()
+                    let newValue = recovered.sorted { $0.bounds.x < $1.bounds.x }.map(\.text).joined()
+                    guard matchingPositionCellNumbers(oldValue, newValue, title: column.title) else { continue }
+                    tokens.removeAll(where: inside)
+                }
                 tokens.append(contentsOf: recovered)
             }
         }
@@ -3630,6 +3655,15 @@ case "version":
     var receipt = emptyReceipt(command: "version", status: "ok", reason: "helper available")
     receipt.accessibilityTrusted = AXIsProcessTrusted()
     emit(receipt)
+case "compare-position-cells-stdin":
+    let data = FileHandle.standardInput.readDataToEndOfFile()
+    guard data.count <= 131_072,
+          let cases = try? JSONDecoder().decode([[String: String]].self, from: data),
+          let encoded = try? JSONEncoder().encode(cases.map {
+              matchingPositionCellNumbers($0["original"] ?? "", $0["recovered"] ?? "", title: $0["title"] ?? "")
+          }) else { exit(2) }
+    FileHandle.standardOutput.write(encoded)
+    FileHandle.standardOutput.write(Data("\n".utf8))
 case "parse-query-summary-stdin":
     let data = FileHandle.standardInput.readDataToEndOfFile()
     guard data.count <= 131_072,

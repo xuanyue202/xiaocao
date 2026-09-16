@@ -661,3 +661,24 @@ def test_python_query_owns_reread_budget_and_requests_one_native_capture(tmp_pat
     assert client.read_query(kind='today-orders',expected_fingerprint='123******890').status == 'query_parse_unproven'
     assert len(runner.calls) == 1
     assert '--single-capture' in runner.calls[0][0]
+
+
+@pytest.mark.skipif(sys.platform != "darwin" or shutil.which("swift") is None, reason="macOS Swift required")
+def test_position_crop_requires_same_strict_numeric_value():
+    cases = [
+        ("当前价", "4,0400", "4.0400", True),
+        ("当前价", "4,0400", "4.4000", False),
+        ("当前价", "4,0400", "40400", False),
+        ("证券数量", "1800.00", "1800", True),
+        ("证券数量", "1800.00", "18000", False),
+        ("证券数量", "1,800", "1.800", False),
+        ("当前价", "4.0400x", "4.0400", False),
+        ("当前价", "", "4.0400", False),
+    ]
+    result = subprocess.run(
+        ["swift", "run", "--package-path", str(Path(__file__).resolve().parents[1] / "native/foundersc_ax_executor"),
+         "foundersc-native-ax", "compare-position-cells-stdin"],
+        input=json.dumps([dict(title=t, original=o, recovered=r) for t, o, r, _ in cases]),
+        text=True, capture_output=True, check=True, timeout=60,
+    )
+    assert json.loads(result.stdout) == [expected for _, _, _, expected in cases]

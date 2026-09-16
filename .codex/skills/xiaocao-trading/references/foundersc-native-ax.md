@@ -187,8 +187,8 @@ such as `17,3900` is 17.3900, while grouping commas such as `54,528.94` must
 remain grouping separators. Preserve a validated success-popup order id plus
 the native action/result evidence even when the order grid has not refreshed.
 Immediate self-heal may retry only native reads and exact reconciliation for
-that same durable submit claim. Account/allocation/lifecycle reads use a
-bounded whole-snapshot retry after transient parsing, time-evidence, strict
+that same durable submit claim. Each order's pre-submit capability probe,
+account/allocation/lifecycle reads use a bounded whole-snapshot retry after transient parsing, time-evidence, strict
 asset-equation, or cross-table failures. The retry never relaxes an invariant
 and records `actions=native_readback_only`, attempt count, failure codes, and
 whether recovery occurred. A retry may reset a sticky query surface through
@@ -203,7 +203,11 @@ Return, confirmation or submit.
 Persist a separate cancel claim before the one external cancel action. If that
 process stops or the response is lost, the same order id becomes readback-only;
 never issue another cancel click from the existing claim. Apart from the two
-bounded proofs above, critical OCR cells below the confidence floor and
+bounded proofs above, low-confidence holding-number cells may be reread from the same audited cell
+at 3x scale only when the new OCR meets the original confidence floor and
+strict numeric comparison agrees with the initial value (four-place decimal
+comma is permitted only for current price). Proven text and all order identity
+fields are never replaced by this path. Other critical OCR cells below the confidence floor and
 malformed side text fail closed after the single targeted reread. Every
 post-click outcome must separately preserve helper status, the helper-reported
 click fact, exact click proof, confirmation state and selection proof mode even

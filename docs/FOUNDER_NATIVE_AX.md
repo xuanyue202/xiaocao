@@ -52,6 +52,10 @@ single click.
   numeric order id and `撤单已提交!` is matched exactly before the popup's
   unique native confirm control is pressed once.
 - Full-query native reads for positions, today orders and today trades.
+  Each pre-submit capability probe uses bounded whole-snapshot read recovery
+  after transient OCR failure, with unchanged confidence/account/funds checks.
+  Recovery can reset the query surface but never repeats prepare or submit;
+  account/date mismatch remains non-retryable.
 - Complete native funds/allocation capsule from the account-bound `资金股份`
   positions summary plus row-level market values. The separate `资金明细` tab
   is diagnostic only and is not a submit-capability dependency.
@@ -335,6 +339,6 @@ for test scope, corrected defects, observed APP evidence and remaining limits.
 
 会话等待耗时和 helper 执行耗时分别记录；显式校验时钟会随等待时间前进。失败回执保留错误码、带时间的表格摘要及展平后的脱敏原始单元格，避免事件存储的深度限制丢失诊断值。通用恢复和撤单恢复都正确收口撤单不确定状态。
 
-整窗 OCR 遗漏关键单元格时，helper 仅在已审计的行列边界内裁剪该格、放大三倍并用 Vision 重读；恢复文字须位于原格内且置信度达到原阈值。已有文字不被覆盖，不从其他行推断方向/状态。该读取也用于撤单选中前后的身份检查。
+整窗 OCR 遗漏关键单元格时，helper 仅在已审计的行列边界内裁剪该格、放大三倍并用 Vision 重读；恢复文字须位于原格内且置信度达到原阈值。已达标文字不被覆盖；持仓当前价/持仓量/可卖量若低置信，可在同格放大复读达到原阈值且严格数值一致时采用新读数（仅当前价接受四位小数逗号）。不得据此替换委托身份字段，也不从其他行推断方向/状态。该读取也用于撤单选中前后的身份检查。
 
 跨零点撤单恢复与已证明终态的单调性遵循 Operating Contract §4：保留原委托时钟；旧终态从完整、同 claim 的事件哈希链恢复，跨零点当前行必须证明原时钟仍不可在今日重现。其余前日订单仍使用精确日期的历史证据。

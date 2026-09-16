@@ -349,6 +349,11 @@ class FounderscNativeAXBrokerAdapter(BrokerAdapter):
     @classmethod
     def _retryable_read_error(cls, exc: FounderscNativeAXError) -> bool:
         code = cls._read_error_code(exc)
+        if code.endswith((
+            "_ACCOUNT_UNPROVEN", "_ACCOUNT_MISMATCH",
+            "_ACCOUNT_BINDING_UNPROVEN", "_DATE_MISMATCH",
+        )):
+            return False
         return bool(
             code in _READ_ONLY_SNAPSHOT_RETRYABLE_CODES
             or (
@@ -906,48 +911,57 @@ class FounderscNativeAXBrokerAdapter(BrokerAdapter):
             == requested_shares
         ]
 
+    def _read_probe_facts_once(self) -> dict[str, Any]:
+        """Read and validate one complete pre-submit snapshot, without writes."""
+        self.last_query_readbacks = {}
+        self._open_query_surface()
+        positions = self._query("positions")
+        orders = self._query("today-orders")
+        trades = self._query("today-trades")
+        self._validate_order_trade_cross_readback(orders, trades)
+        summary = positions.get("summary_values")
+        summary = dict(summary) if isinstance(summary, dict) else {}
+        required_summary = {"资产", "股票市值", "余额", "可用", "可取"}
+        if not required_summary.issubset(summary):
+            raise FounderscNativeAXError("NATIVE_POSITION_FUNDS_UNPROVEN")
+        total_assets = _decimal(summary["资产"], field="TOTAL_ASSETS")
+        securities = _decimal(
+            summary["股票市值"], field="SECURITIES_VALUE"
+        )
+        available = _decimal(summary["可用"], field="AVAILABLE_CASH")
+        balance = _decimal(summary["余额"], field="CASH_BALANCE")
+        withdrawable = _decimal(summary["可取"], field="WITHDRAWABLE_CASH")
+        if (
+            total_assets <= 0
+            or securities < 0
+            or balance < 0
+            or available < 0
+            or withdrawable < 0
+        ):
+            raise FounderscNativeAXError("NATIVE_POSITION_FUNDS_UNPROVEN")
+        cash_field = _asset_equation_cash_field(
+            total_assets=total_assets, securities=securities, balance=balance,
+            available=available, withdrawable=withdrawable,
+            reason_prefix="NATIVE_POSITION_FUNDS",
+        )
+        if cash_field == "available_cash" and (
+            (available > balance and not _same_day_sell_fill_proven(trades["rows"]))
+            or (available < balance and not _same_day_buy_fill_proven(trades["rows"])
+                and not pending_buy_reservation_evidence(
+                    orders["rows"], balance=balance, available=available))
+        ):
+            raise FounderscNativeAXError("NATIVE_POSITION_FUNDS_FILL_DIRECTION_UNPROVEN")
+        return positions
+
     @serialized_app_operation
     def probe(self, plan: TradePlan) -> BrokerCapability:
         self.last_query_readbacks = {}
         try:
             ready = self.ensure_native_ready(unlock_once=True)
-            self._open_query_surface()
-            positions = self._query("positions")
-            orders = self._query("today-orders")
-            trades = self._query("today-trades")
-            self._validate_order_trade_cross_readback(orders, trades)
-            summary = positions.get("summary_values")
-            summary = dict(summary) if isinstance(summary, dict) else {}
-            required_summary = {"资产", "股票市值", "余额", "可用", "可取"}
-            if not required_summary.issubset(summary):
-                raise FounderscNativeAXError("NATIVE_POSITION_FUNDS_UNPROVEN")
-            total_assets = _decimal(summary["资产"], field="TOTAL_ASSETS")
-            securities = _decimal(
-                summary["股票市值"], field="SECURITIES_VALUE"
+            positions, recovery = self._bounded_read_recovery(
+                self._read_probe_facts_once,
+                reset_query_surface=self._reset_query_surface_for_read_retry,
             )
-            available = _decimal(summary["可用"], field="AVAILABLE_CASH")
-            balance = _decimal(summary["余额"], field="CASH_BALANCE")
-            withdrawable = _decimal(summary["可取"], field="WITHDRAWABLE_CASH")
-            if (
-                total_assets <= 0
-                or securities < 0
-                or balance < 0
-                or available < 0
-                or withdrawable < 0
-            ):
-                raise FounderscNativeAXError("NATIVE_POSITION_FUNDS_UNPROVEN")
-            cash_field = _asset_equation_cash_field(
-                total_assets=total_assets, securities=securities, balance=balance,
-                available=available, withdrawable=withdrawable,
-                reason_prefix="NATIVE_POSITION_FUNDS",
-            )
-            if cash_field == "available_cash" and (
-                (available > balance and not _same_day_sell_fill_proven(trades["rows"]))
-                or (available < balance and not _same_day_buy_fill_proven(trades["rows"])
-                    and not pending_buy_reservation_evidence(
-                        orders["rows"], balance=balance, available=available))
-            ):
-                raise FounderscNativeAXError("NATIVE_POSITION_FUNDS_FILL_DIRECTION_UNPROVEN")
             cancel_ready = self._open_cancel_surface()
             order_ready = self.ensure_native_ready(
                 require_order_capability=True,
@@ -993,6 +1007,7 @@ class FounderscNativeAXBrokerAdapter(BrokerAdapter):
                     "opencli_used": False,
                 },
                 reason="" if submit else NATIVE_ORDER_ROUTE_NOT_PROMOTED,
+                locator_proof={"read_recovery": recovery},
                 manual_position_shares=owned,
                 owned_position_shares=owned,
                 sellable_shares=sellable,

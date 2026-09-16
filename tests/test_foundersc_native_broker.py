@@ -2436,3 +2436,49 @@ def test_mixed_cancelled_zero_and_strict_filled_order(fault) -> None:
         assert receipt.filled_shares == 100
         assert receipt.order_id == "6000003"
     assert native.submit_calls == native.cancel_calls == 0
+
+
+@pytest.mark.parametrize("persistent", [False, True])
+def test_probe_recovers_sticky_position_ocr_only_with_proven_reread(persistent):
+    class StickyPositions(FakeNative):
+        def read_query(self, *, kind, **kwargs):
+            receipt = super().read_query(kind=kind, **kwargs)
+            if kind == "positions" and (persistent or self.open_order_calls == 0):
+                receipt.payload["query_readback"].update(
+                    parsing_proven=False, critical_confidence_proven=False,
+                    low_confidence_critical_headers=["当前价"],
+                )
+            return receipt
+
+    native = StickyPositions()
+    adapter = _adapter(native)
+    adapter.snapshot_read_delays = (0.0, 0.0)
+    capability = adapter.probe(_plan())
+    assert capability.ready is (not persistent)
+    assert native.prepare_calls == native.submit_calls == 0
+    if persistent:
+        assert native.query_calls == ["positions"] * 4
+        assert capability.account_binding == "unproven"
+    else:
+        assert native.query_calls == ["positions"] * 3 + ["today-orders", "today-trades"]
+        assert capability.locator_proof["read_recovery"] == {
+            "actions": "native_readback_only", "attempts": 2,
+            "failure_codes": ["NATIVE_QUERY_POSITIONS_UNPROVEN"],
+            "recovered": True, "surface_resets": 1,
+        }
+
+
+def test_probe_never_retries_account_mismatch():
+    class WrongAccount(FakeNative):
+        def read_query(self, **kwargs):
+            receipt = super().read_query(**kwargs)
+            receipt.payload["trade_account_fingerprint"] = "999******999"
+            return receipt
+
+    native = WrongAccount()
+    adapter = _adapter(native)
+    adapter.snapshot_read_delays = (0.0, 0.0, 0.0)
+    capability = adapter.probe(_plan())
+    assert capability.ready is False
+    assert native.query_calls == ["positions"]
+    assert native.open_order_calls == native.prepare_calls == native.submit_calls == 0
