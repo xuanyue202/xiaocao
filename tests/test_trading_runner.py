@@ -165,7 +165,7 @@ def test_live_foundersc_runtime_defaults_to_app_only_native_route(
     assert not hasattr(adapter, "readback")
 
 
-def test_live_buy_plan_starts_at_0920_but_cannot_submit_before_0930() -> None:
+def test_live_buy_plan_starts_at_0923_but_cannot_submit_before_0925() -> None:
     plan = plans_from_frozen_rows(
         [_row()],
         environment="live",
@@ -175,5 +175,5 @@ def test_live_buy_plan_starts_at_0920_but_cannot_submit_before_0930() -> None:
     )[0]
 
     assert plan.submit_not_before == datetime(
-        2026, 8, 15, 1, 30, tzinfo=timezone.utc
+        2026, 8, 15, 1, 25, tzinfo=timezone.utc
     )

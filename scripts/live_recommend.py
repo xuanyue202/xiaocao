@@ -608,7 +608,9 @@ def _run_strategy_when_ready(
         rows = run_strategy(date_iso, source, profile="validated_v5", adaptive_modes=False)
         actives = [r for r in rows if r.get("adaptive_active") in (True, None)]
 
-        if len(actives) > len(best_actives) or (len(actives) == len(best_actives) and len(rows) > len(best_rows)):
+        # Equal signal coverage should retain the most recent observation and
+        # its matching source evidence, not stale prices from the first tie.
+        if len(actives) > len(best_actives) or (len(actives) == len(best_actives) and len(rows) >= len(best_rows)):
             best_rows = rows
             best_actives = actives
             best_readiness = dict(getattr(source, "readiness", {}))

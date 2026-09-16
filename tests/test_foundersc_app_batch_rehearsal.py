@@ -23,7 +23,7 @@ def batch_app(app, monkeypatch):
     return run, native, directory
 
 
-@pytest.mark.parametrize("prices", [[.34, .36], [.34, .36, .37, .38, .39]])
+@pytest.mark.parametrize("prices", [[.34, .36], [.34, .36, .37], [.34, .36, .37, .38, .39]])
 def test_cli_multiple_outstanding_then_exact_cancel_and_idempotent_replay(batch_app, prices):
     run, native, directory = batch_app
     def snapshot_seen():

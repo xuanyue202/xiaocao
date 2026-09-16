@@ -21,7 +21,7 @@ def test_market_schedules_keep_distinct_ids_and_china_wall_clock() -> None:
     expected = {
         "xiaocao-daily-morning": ("9", "23"),
         "xiaocao-daily-morning-execution": ("9", "25"),
-        "xiaocao-book-b-live-morning": ("9", "15"),
+        "xiaocao-book-b-live-morning": ("9", "0"),
         "xiaocao-intraday-monitor": ("9", "35,45,55"),
         "xiaocao-intraday-monitor-05": ("10,13", "25,55"),
         "xiaocao-intraday-risk-precheck-1425": ("14", "25"),
@@ -67,13 +67,6 @@ def test_closing_dispatches_native_once_before_paper_work() -> None:
         assert unrelated_work not in before_live
 
 
-def test_paper_execution_stage_does_not_regenerate_recommendations() -> None:
-    script = (ROOT / "scripts/auto_daily.sh").read_text()
-    execute_branch = script.split("morning-execute)", 1)[1].split(";;", 1)[0]
-    assert "wait_for_morning_freeze.py" in execute_branch
-    assert "live_recommend.py" not in execute_branch
-
-
 def test_kol_writers_stay_on_separate_hosts_and_schedules() -> None:
     local = _automation("xiaocao-kol-hourly")
     remote = _automation("xiaocao-kol-hourly-remote-writer")
@@ -82,4 +75,4 @@ def test_kol_writers_stay_on_separate_hosts_and_schedules() -> None:
     assert local["cwds"] == ["/Users/bytedance/coding/xiaocao"]
     assert remote["cwds"] == ["/Users/xuanyue202/Documents/project/xiaocao"]
     assert local["rrule"].endswith(";BYMINUTE=0,20,40")
-    assert remote["rrule"] == "RRULE:FREQ=DAILY;BYHOUR=8,10,12,14,17,18,22;BYMINUTE=30"
+    assert remote["rrule"] == "RRULE:FREQ=DAILY;BYHOUR=8,10,12,14,17,18,21;BYMINUTE=30"

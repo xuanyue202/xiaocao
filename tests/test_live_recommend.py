@@ -282,6 +282,31 @@ def test_ready_wait_continues_after_first_nonempty_until_stable(monkeypatch) -> 
     assert len(actives) == 2
 
 
+def test_ready_timeout_uses_latest_equally_complete_observation(monkeypatch) -> None:
+    from types import SimpleNamespace
+
+    source = SimpleNamespace(readiness={})
+    elapsed = [0.0]
+    calls = []
+
+    def strategy(*args, **kwargs):
+        calls.append(len(calls) + 1)
+        source.readiness = {"attempt": calls[-1], "sources": [
+            {"source": "pool", "status": "populated", "row_count": calls[-1]}]}
+        return [{"code": "000001.XSHE", "mode": "接力低弱转1",
+                 "adaptive_active": True, "open": 10 + calls[-1] / 100}]
+
+    monkeypatch.setattr(live_recommend, "_today_iso", lambda: "2026-09-16")
+    monkeypatch.setattr(live_recommend, "run_strategy", strategy)
+    monkeypatch.setattr(live_recommend._time, "monotonic", lambda: elapsed[0])
+    monkeypatch.setattr(live_recommend._time, "sleep", lambda s: elapsed.__setitem__(0, elapsed[0] + s))
+    rows, _ = _run_strategy_when_ready("2026-09-16", source, timeout_sec=2,
+                                      poll_sec=1, confirm_sec=0, stable_samples=2)
+    assert rows[0]["open"] == 10.03
+    assert source.readiness["attempt"] == 3
+    assert source.readiness["exit_reason"] == "readiness_timeout"
+
+
 def test_basket_price_caps_low_absorb_at_preclose_when_chasing() -> None:
     price, rule = _basket_price(entry_price=9.96, pre_close=10.0, premium_pct=0.8, cap_pct=0.0)
 

@@ -6,7 +6,7 @@ Read this file only for the daily morning recommendation/paper-book branch.
 
 For the bounded KOL overlay, also read
 [kol-trading-judgment.md](kol-trading-judgment.md). Keep the original runner and
-model; use its review window for Astra `xhigh` plus independent parent review.
+model. Start Astra `xhigh` and independent parent reading as soon as sources are ready; the freeze window is only for final applicability and publication.
 Only a source-verified published decision is consumable. Account-risk and KOL
 caps are separate from frozen qualification and the allocation capsule; a late
 review never rewrites the freeze, old intent or an earlier fill.
@@ -68,7 +68,7 @@ absent. Absence is not false and must be deferred to the current submit-time
 market guard; an explicitly false value remains ineligible.
 During 09:25–09:30, urgent code repair and exact missing-source retrieval take
 priority. Follow Operating Contract §1b. Do not add countdown warnings or an
-opening preparation cutoff. 09:30 remains the submit floor; the original plan
+opening preparation cutoff. The APP accepts queued BUY orders from 09:25; aim for the entire batch before 09:28 and require acceptance before 09:30 as the service target. Record lateness honestly; the original plan
 may continue within its existing session, recovery deadline and market guards.
 Before materializing any new live intent, refresh the proprietary same-day
 trade status, current price, authoritative down price and timestamp with no
@@ -270,7 +270,7 @@ During 09:25–09:30, unexpected AX/code errors or missing KOL material are urge
 work. Patch the smallest failure, validate affected correctness, resume the
 same plan and read the terminal result. Keep full tests, packaging, Git and
 postmortem work after this flow. There is no 09:28:30 reminder or 09:30 automatic
-skip. Existing review budgets, submit floor, actual session/market eligibility,
+skip. The final review waits at most 120 seconds and, before opening, only until 09:27; this reserves submission time and retains explicit neutral fallback. The 09:25 BUY floor, actual session/market eligibility,
 immutable plan and unknown-submit reconciliation still apply.
 
 Inspect `recommend_source_readiness_<date>.json` alongside the freeze. Empty or
@@ -288,3 +288,9 @@ substitute for reading the base. A new worker must receive both the base and
 delta. Source publication continues to use the full current `context_path`.
 
 At 09:00 run `PYTHONPATH=src .venv/bin/python scripts/market_data_preflight.py --date today --scope authentication` alongside the original runner. Resolve authentication/transport failures immediately; a successful empty response proves reachability only. Follow `kol-source-preparation.md` to reuse the remote writer's reviewed source packet. Once ready, sleep in bounded intervals without extra APP keepalive. The runner resumes native checks at 09:24; actively poll its output by 09:24:50. Source freshness and current applicability remain independent.
+
+### Submit the batch before waiting for fills
+
+The runner supplies the hash-bound account/allocation facts and account-risk receipt before starting final review. Use that exact request; do not spend its budget on a separate duplicate account read. Retain the early semantic worker across the 09:22 source delta and the final freeze; send only new evidence/current applicability work. Never invent a conditional opening fact or publish a source-only packet as a current decision.
+
+The runner holds one account fence across full-batch allocation and serialized submissions. A fully mapped, chain-certain ACK/PARTIAL allows the next reserved order; UNKNOWN or incomplete identity stops new writes. Fill polling starts after the submission pass. Inspect submission_observations for actual counter-acceptance proof and deadline performance; prepare completion is not submission. Preserve APP raw order states: queued is not exchange-accepted and neither is a fill. If orders remain open, the original task owns exact-plan reconciliation until terminal or an explicit recorded checkpoint handoff; never leave a bare unresolved receipt without naming the pending orders and next owner.

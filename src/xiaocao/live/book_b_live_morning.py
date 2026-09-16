@@ -14,7 +14,7 @@ import math
 import os
 import re
 import uuid
-from contextlib import contextmanager
+from contextlib import ExitStack, contextmanager
 from dataclasses import asdict, dataclass, replace
 from datetime import datetime, timezone
 from pathlib import Path
@@ -111,6 +111,7 @@ class BookBLiveMorningReceipt:
     stage_times: dict | None = None
     failed_stage: str | None = None
     persisted_plan_ids: tuple[str, ...] = ()
+    submission_observations: tuple[dict, ...] = ()
 
     def as_dict(self) -> dict:
         return asdict(self)
@@ -637,7 +638,7 @@ def _is_live_buy_refresh_window(clock: datetime, plan: TradePlan) -> bool:
         local.date().isoformat() == plan.trade_date
         and clock < plan.recovery_deadline
         and (
-            (9, 30) <= hhmm < (11, 30)
+            (9, 25) <= hhmm < (11, 30)
             or (13, 0) <= hhmm < (14, 57)
         )
     )
@@ -1531,6 +1532,78 @@ def _failed_prepare_receipt(plan: TradePlan, receipt: BrokerReceipt) -> dict:
     }
 
 
+def _mapped_batch_order(plan: TradePlan, receipt: ExecutionReceipt) -> bool:
+    """An exact counter acknowledgement permits the next reserved order."""
+    return bool(
+        receipt.plan_id == plan.plan_id and receipt.plan_hash == plan.plan_hash
+        and receipt.state in {ExecutionState.ACKNOWLEDGED, ExecutionState.PARTIAL,
+                              ExecutionState.FILLED}
+        and receipt.receipt_mapping is True
+        and receipt.account_binding in {"bound", "proven"}
+        and receipt.broker_order_id and receipt.broker_strategy_id and receipt.submit_claim_id
+        and not receipt.submit_chain_uncertain and not receipt.cancel_chain_uncertain
+        and 0 <= receipt.filled_shares <= plan.shares
+        and receipt.remaining_shares == plan.shares - receipt.filled_shares
+        and (
+            (receipt.state == ExecutionState.ACKNOWLEDGED and receipt.filled_shares == 0)
+            or (receipt.state == ExecutionState.PARTIAL and 0 < receipt.filled_shares < plan.shares)
+            or (receipt.state == ExecutionState.FILLED and receipt.filled_shares == plan.shares)
+        )
+        and (receipt.state == ExecutionState.FILLED or receipt.active is True)
+        and receipt.next_action != "reconcile_only"
+    )
+
+
+def advance_submission_batch(
+    plans: list[TradePlan], *, execute: Callable[[TradePlan], ExecutionReceipt],
+    allow: Callable[[TradePlan], bool], receipts: list[ExecutionReceipt],
+    wait: Callable[[], None] | None = None,
+    on_observation: Callable[[TradePlan, ExecutionReceipt], None] | None = None,
+) -> None:
+    """Submit serially before polling fills; uncertainty stops further writes.
+
+    The caller owns the account fence and has persisted the whole allocation.
+    Receipts are updated in place so a later read exception cannot erase an ACK.
+    """
+    attempted: list[TradePlan] = []
+    terminal = {ExecutionState.FILLED, ExecutionState.CANCELLED,
+                ExecutionState.REJECTED, ExecutionState.SKIPPED}
+    pending = {ExecutionState.CLAIMED, ExecutionState.UNKNOWN, ExecutionState.SUBMITTED,
+               ExecutionState.ACKNOWLEDGED, ExecutionState.PARTIAL, ExecutionState.RECONCILING}
+    order_ids: set[str] = set()
+    for plan in plans:
+        if not allow(plan):
+            continue
+        receipt = execute(plan)
+        attempted.append(plan)
+        receipts.append(receipt)
+        if receipt.plan_id != plan.plan_id or receipt.plan_hash != plan.plan_hash:
+            break
+        if receipt.broker_order_id:
+            if receipt.broker_order_id in order_ids:
+                raise ValueError("LIVE_BATCH_ORDER_ID_REUSED")
+            order_ids.add(receipt.broker_order_id)
+        if on_observation is not None:
+            on_observation(plan, receipt)
+        if receipt.submit_chain_uncertain or receipt.cancel_chain_uncertain:
+            break
+        if receipt.state == ExecutionState.FILLED and not _mapped_batch_order(plan, receipt):
+            break
+        if receipt.state not in terminal and not _mapped_batch_order(plan, receipt):
+            break
+    # Round robin: one resting order must not monopolize readback either.
+    for _attempt in range(3):
+        for index, plan in enumerate(attempted):
+            receipt = receipts[index]
+            if receipt.state not in pending and receipt.next_action not in {"reconcile", "reconcile_only"}:
+                continue
+            if wait is not None:
+                wait()
+            receipts[index] = execute(plan)
+            if on_observation is not None:
+                on_observation(plan, receipts[index])
+
+
 def run_book_b_live_morning(
     config: BookBLiveMorningConfig,
     *,
@@ -1577,6 +1650,8 @@ def run_book_b_live_morning(
     market_guard_refreshes: list[dict] = []
     run_id = f"{config.trade_date}-{uuid.uuid4().hex[:12]}"
     stage_times = {"started": now().isoformat()}
+    submission_observations: dict[str, dict] = {}
+    batch_fence = ExitStack()
     stage = "preflight"
     failed_stage = None
     candidate_plan_ids: list[str] = [config.resume_plan_id] if config.resume_plan_id else []
@@ -1612,6 +1687,18 @@ def run_book_b_live_morning(
             # Any execution may have changed broker state, including a lost
             # reply. Do not reuse a pre-action NAV at the next risk boundary.
             snapshot_cache = None
+
+    def observe_submission(plan: TradePlan, observed: ExecutionReceipt) -> None:
+        if plan.plan_id in submission_observations or not _mapped_batch_order(plan, observed):
+            return
+        clock = now().astimezone(ZoneInfo("Asia/Shanghai"))
+        submission_observations[plan.plan_id] = {
+            "plan_id": plan.plan_id, "broker_order_id": observed.broker_order_id,
+            "counter_acceptance_proven_at": clock.isoformat(),
+            "before_0928": clock < clock.replace(hour=9, minute=28, second=0, microsecond=0),
+            "before_0930": clock < clock.replace(hour=9, minute=30, second=0, microsecond=0),
+            "broker_status": observed.broker_status,
+        }
 
     def policy() -> dict:
         return read_policy(config.policy_root, now())
@@ -1685,6 +1772,14 @@ def run_book_b_live_morning(
             if not frozen_rows:
                 receipt = _no_action_receipt(config)
             else:
+                # Keep allocation, durable reservations and every submit on
+                # one account writer. No other project writer can spend the
+                # same cash between two members of this batch.
+                batch_fence.enter_context(account_writer_lock(
+                    config.state_dir / "account_writer_locks", config.logical_account_id,
+                ))
+                if config.policy_root is not None and _uncertain_execution_plan_ids(config.state_dir):
+                    raise ValueError("LIVE_BOOK_B_OPEN_EXECUTION_RECONCILE_REQUIRED")
                 review_candidates = [
                     row for row in frozen_rows
                     if row.get("book") == "B"
@@ -1698,6 +1793,14 @@ def run_book_b_live_morning(
                             config, row, strategy_sha=str(dated_freeze_receipt["strategy_sha"]),
                         ) is None]
                     if new_candidates:
+                        # The review budget starts only after its account input
+                        # is available, not while the agent performs another read.
+                        enter("review_account")
+                        allocation_payload = (read_allocation_facts() if read_allocation_facts is not None
+                                              else json.loads(config.allocation_facts_path.read_text(encoding="utf-8")))
+                        allocation = _load_allocation(config, allocation_payload)
+                        _write_json_atomic(config.allocation_facts_path, allocation_payload)
+                        review_risk = support()[1]
                         current = now().astimezone(ZoneInfo("Asia/Shanghai"))
                         review_requested_at = current
                         if (current.hour, current.minute) < (11, 30):
@@ -1706,6 +1809,14 @@ def run_book_b_live_morning(
                             deadline = current.replace(hour=14, minute=57, second=0, microsecond=0)
                         else:
                             deadline = current
+                        # Heavy semantic work is prepared before freeze. Leave
+                        # the opening tail for native prepare/serial acceptance;
+                        # this only bounds supporting wait, never expires a plan.
+                        review_until = deadline
+                        if (current.hour, current.minute) < (9, 30):
+                            review_until = min(deadline, current.replace(
+                                hour=9, minute=27, second=0, microsecond=0,
+                            ))
                         request = {
                             "schema_version": "book-b-live-review-request.v1",
                             "book": "B", "runtime": "live", "trade_date": config.trade_date,
@@ -1715,8 +1826,13 @@ def run_book_b_live_morning(
                             "policy_root": str(config.policy_root),
                             "candidate_scope": "all_frozen_non_unknown_modes",
                             "candidates": [dict(row) for row in new_candidates],
+                            "allocation_facts_path": str(config.allocation_facts_path.resolve()),
+                            "allocation_capsule_sha256": allocation_payload["allocation_capsule_sha256"],
+                            "account_facts": allocation.canonical_payload(),
+                            "account_risk": asdict(review_risk),
                             "requested_at": current.isoformat(), "entry_deadline": deadline.isoformat(),
-                            "max_wait_seconds": min(120.0, max(0.0, (deadline - current).total_seconds()))
+                            "review_wait_until": review_until.isoformat(),
+                            "max_wait_seconds": min(120.0, max(0.0, (review_until - current).total_seconds()))
                                 if current.date().isoformat() == config.trade_date else 0.0,
                         }
                         enter("review")
@@ -1742,7 +1858,7 @@ def run_book_b_live_morning(
                             config, row, strategy_sha=str(dated_freeze_receipt["strategy_sha"]),
                         ) is not None for row in rows)
                     enter("allocation")
-                    if read_allocation_facts is not None and not all_restoring:
+                    if allocation is None and read_allocation_facts is not None and not all_restoring:
                         allocation_payload = read_allocation_facts()
                         allocation = _load_allocation(config, allocation_payload)
                         _write_json_atomic(config.allocation_facts_path, allocation_payload)
@@ -1818,38 +1934,12 @@ def run_book_b_live_morning(
                             if refresh_receipt is not None:
                                 market_guard_refreshes.append(refresh_receipt)
                         execution_plans.append(plan)
-                    for plan in execution_plans:
-                        if not allow_new_risk(plan):
-                            continue
-                        execution_receipt = execute_plan(plan)
-                        # Preserve each returned observation before another
-                        # read can fail; an ACK is still not a terminal fill.
-                        execution_receipts.append(execution_receipt)
-                        for _attempt in range(3):
-                            needs_reconcile = (
-                                execution_receipt.state
-                                in {
-                                    ExecutionState.CLAIMED,
-                                    ExecutionState.UNKNOWN,
-                                    ExecutionState.SUBMITTED,
-                                    ExecutionState.ACKNOWLEDGED,
-                                    ExecutionState.PARTIAL,
-                                    ExecutionState.RECONCILING,
-                                }
-                                or execution_receipt.next_action
-                                in {"reconcile", "reconcile_only"}
-                            )
-                            if not needs_reconcile:
-                                break
-                            if wait_for_reconcile is not None:
-                                wait_for_reconcile()
-                            execution_receipt = execute_plan(plan)
-                            execution_receipts[-1] = execution_receipt
-                        if execution_receipt.state in {
-                            ExecutionState.CLAIMED, ExecutionState.UNKNOWN, ExecutionState.SUBMITTED,
-                            ExecutionState.ACKNOWLEDGED, ExecutionState.PARTIAL, ExecutionState.RECONCILING,
-                        }:
-                            break
+                    advance_submission_batch(
+                        execution_plans, execute=execute_plan, allow=allow_new_risk,
+                        receipts=execution_receipts, wait=wait_for_reconcile,
+                        on_observation=observe_submission,
+                    )
+                    stage_times["batch_observed"] = now().isoformat()
                     status, reason = _rollup(execution_receipts)
                     if not execution_receipts:
                         status, reason = "no_action", "NO_NEW_BUY_AFTER_POLICY_RISK"
@@ -1897,6 +1987,7 @@ def run_book_b_live_morning(
                 environment_restoration = dict(restored)
             except Exception as exc:
                 restore_failure = f"ENVIRONMENT_RESTORE_FAILED:{exc}"
+        batch_fence.close()
     if restore_failure is not None:
         receipt = replace(receipt, status="blocked", reason=restore_failure)
     if environment_receipt is not None:
@@ -1909,7 +2000,8 @@ def run_book_b_live_morning(
     receipt = replace(receipt, policy_consumptions=tuple(policy_consumptions),
                       open_plan_reconciliations=open_reconciliations or receipt.open_plan_reconciliations,
                       review_rendezvous=review_receipt,
-                      market_guard_refreshes=tuple(market_guard_refreshes))
+                      market_guard_refreshes=tuple(market_guard_refreshes),
+                      submission_observations=tuple(submission_observations.values()))
     stage_times["finished"] = now().isoformat()
     receipt = replace(receipt, run_id=run_id, recovery_of=config.resume_plan_id,
                       stage_times=stage_times, failed_stage=failed_stage,
@@ -1923,6 +2015,7 @@ __all__ = [
     "BookBLiveCapitalBasis",
     "BookBLiveMorningConfig",
     "BookBLiveMorningReceipt",
+    "advance_submission_batch",
     "bind_durable_live_plan_intents",
     "load_book_b_live_capital_basis",
     "read_durable_live_plan_intent",

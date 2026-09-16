@@ -192,7 +192,7 @@ def test_skip_does_not_promote_another_mode_or_redistribute_slot(tmp_path):
 @pytest.mark.parametrize("tightening", ["scale", "risk_pause", "new_skip"])
 def test_prepared_plan_is_blocked_when_policy_tightens_during_wait(tmp_path, tightening):
     config = _morning(tmp_path)
-    clock = [MORNING - timedelta(minutes=5)]
+    clock = [MORNING - timedelta(minutes=6)]
     _publish(config.policy_root, clock[0])
     seen = []
     prepared = []
@@ -208,12 +208,12 @@ def test_prepared_plan_is_blocked_when_policy_tightens_during_wait(tmp_path, tig
             echoed={"code": plan.code, "side": plan.side, "shares": plan.shares, "limit_price": plan.limit_price},
             field_readback={"submitted": False, "saved": False, "started": False, "form_closed": True})
 
-    def wait(_):
-        clock[0] = MORNING
+    def wait(target):
+        clock[0] = target
         if tightening == "risk_pause":
             risk_nav[0] = 24000
         else:
-            _publish(config.policy_root, MORNING, scale=0.5 if tightening == "scale" else 1,
+            _publish(config.policy_root, clock[0], scale=0.5 if tightening == "scale" else 1,
                      skips=["000001.XSHE"] if tightening == "new_skip" else [], identifier="d2")
 
     receipt = run_book_b_live_morning(config, execute=_execute_capture(seen), now=lambda: clock[0],

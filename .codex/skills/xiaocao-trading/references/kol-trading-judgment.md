@@ -10,7 +10,7 @@ different writers. Do not ask the user to repeat the 2026-09-06 authorization.
 The remote writer owns source extraction and the reviewed source-only handoff
 when new publications or viewpoint maintenance complete. Follow
 [kol-source-preparation.md](kol-source-preparation.md). At 09:00 read the matching
-packet first and resolve changed evidence and coverage gaps. At 09:25, use its
+packet first and resolve changed evidence and coverage gaps. Once ready, start the retained Astra worker and independent parent reading immediately, with unobserved opening conditions explicitly pending. At 09:22 send the complete source delta to that same worker. At 09:25, use its
 conditions with the dated freeze/account/current facts for the bounded current
 decision. Reuse unchanged source analysis; a source packet has authority=0 and
 does not itself satisfy current applicability or formal decision publication.
@@ -109,7 +109,7 @@ gates at the action boundary. Expiry does not revive an older decision. A corrup
 packet blocks new risk but never generates an exit or disables protective exits.
 
 Morning: start the normal independent live/paper runner on time. When its
-bounded review rendezvous is open, analyze the emitted exact frozen evidence
+bounded review rendezvous is open, finish the prepared judgment with the emitted exact frozen evidence and its bound account/risk inputs
 and publish before it closes; keep the original process alive. Do not rerun
 the producer or mutate its freeze. If the review misses its budget, preserve
 the fallback receipt and existing timing; do not backdate or replay orders.

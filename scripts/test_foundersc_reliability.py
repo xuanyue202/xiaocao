@@ -26,7 +26,7 @@ TESTS = [
     "foundersc_native_cli", "configure_foundersc_trade_keychain", "wait_for_agent_reviews",
     "wait_for_morning_freeze",
     "book_b_intraday_cli",
-    "book_b_morning_cli",
+    "book_b_morning_cli", "book_b_preopen_batch",
     "foundersc_process_fencing", "foundersc_session", "foundersc_app_batch_rehearsal", "foundersc_pending_cash",
 ]
 

@@ -20,6 +20,7 @@ import json
 import math
 import os
 import re
+import threading
 import uuid
 from contextlib import contextmanager, nullcontext
 from dataclasses import asdict, dataclass, field, replace
@@ -1241,23 +1242,47 @@ class TradingTakeoverStore:
 
 Notifier = Callable[[str, str], object]
 
+_account_mutex = threading.RLock()
+_account_descriptors: dict[str, int] = {}
+
+
+def _reset_account_locks_after_fork() -> None:
+    global _account_mutex
+    for descriptor in _account_descriptors.values():
+        os.close(descriptor)
+    _account_descriptors.clear()
+    _account_mutex = threading.RLock()
+
+
+os.register_at_fork(after_in_child=_reset_account_locks_after_fork)
+
 
 @contextmanager
 def account_writer_lock(account_lock_dir: Path, logical_account_id: str):
-    """Fence every state transition for one logical trading account."""
+    """Fence accounts across processes, nesting within the owning thread.
+
+    Morning holds this fence across allocation and the entire submission batch;
+    individual execution/lifecycle transitions acquire the same fence inside it.
+    """
     account = str(logical_account_id or "").strip()
     if not account:
         raise ValueError("logical account id is required for writer fencing")
     digest = hashlib.sha256(account.encode("utf-8")).hexdigest()[:24]
     lock_dir = Path(account_lock_dir)
     lock_dir.mkdir(parents=True, exist_ok=True)
-    handle = (lock_dir / f"account-{digest}.lock").open("a+", encoding="utf-8")
-    fcntl.flock(handle.fileno(), fcntl.LOCK_EX)
-    try:
-        yield
-    finally:
-        fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
-        handle.close()
+    path = str((lock_dir / f"account-{digest}.lock").resolve())
+    with _account_mutex:
+        if path in _account_descriptors:
+            yield
+            return
+        descriptor = os.open(path, os.O_CREAT | os.O_RDWR, 0o600)
+        try:
+            fcntl.flock(descriptor, fcntl.LOCK_EX)
+            _account_descriptors[path] = descriptor
+            yield
+        finally:
+            _account_descriptors.pop(path, None)
+            os.close(descriptor)
 
 
 class TradingExecution:
@@ -2962,7 +2987,7 @@ def _outside_live_initial_submit_window(
         return True
     clock = (local.hour, local.minute, local.second, local.microsecond)
     return not (
-        (9, 30, 0, 0) <= clock < (11, 30, 0, 0)
+        (9, 25 if plan.side.upper() == "BUY" else 30, 0, 0) <= clock < (11, 30, 0, 0)
         or (13, 0, 0, 0) <= clock < (14, 57, 0, 0)
     )
 
@@ -3054,7 +3079,7 @@ def trade_plan_from_frozen_row(
     if environment == "live" and normalized_side == "BUY":
         opening_submit = local_date.replace(
             hour=9,
-            minute=30,
+            minute=25,
             second=0,
             microsecond=0,
         ).astimezone(timezone.utc)

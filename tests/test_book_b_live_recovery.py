@@ -13,7 +13,7 @@ from xiaocao.live.book_b_live_recovery import run_book_b_live_recovery
 from xiaocao.live.book_b_live_lifecycle import open_execution_plan_ids
 from xiaocao.live.trading_execution import BrokerReceipt, BrokerStatus, ExecutionReceipt, ExecutionState, ExecutionStore
 
-BEFORE = datetime(2026, 8, 24, 1, 29, tzinfo=timezone.utc)
+BEFORE = datetime(2026, 8, 24, 1, 24, tzinfo=timezone.utc)
 OPEN = BEFORE + timedelta(minutes=1)
 
 

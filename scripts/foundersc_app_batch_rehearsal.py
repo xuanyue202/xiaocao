@@ -25,6 +25,7 @@ sys.path.insert(0, str(ROOT / "src"))
 from scripts.foundersc_app_rehearsal import read_rehearsal_plan, write_once
 from xiaocao.live.capital_keychain import KeychainCapitalRuntime
 from xiaocao.live.app_test_window import app_test_only
+from xiaocao.live.book_b_live_morning import advance_submission_batch
 from xiaocao.live.foundersc_native_ax import FounderscNativeAXClient, source_digest
 from xiaocao.live.foundersc_native_broker import FounderscNativeAXBrokerAdapter
 from xiaocao.live.trading_execution import (
@@ -96,19 +97,32 @@ def run_batch(execution, plans, *, directory, snapshot, cleanup_only=False):
     outcomes, errors, stages = {}, [], []
     def stage(name, plan, action):
         started = time.monotonic()
+        started_at = datetime.now(timezone.utc).isoformat()
+        result = None
         try:
             result = action()
             outcomes[plan.plan_id] = result.as_dict()
             return result
         finally:
             stages.append({"stage": name, "plan_id": plan.plan_id,
+                           "started_at": started_at,
+                           "completed_at": datetime.now(timezone.utc).isoformat(),
+                           "broker_order_id": result.broker_order_id if result else None,
+                           "state": result.state.value if result else "exception",
                            "seconds": round(time.monotonic() - started, 4)})
+    def execute_timed(plan):
+        prior = execution.store.current(plan.plan_id)
+        name = "reconcile" if prior and prior.submit_claim_id else "submit"
+        return stage(name, plan, lambda: execution.execute(plan))
     try:
         if not cleanup_only and not seal.exists():
-            for plan in plans:
-                receipt = stage("submit_or_reconcile", plan, lambda: execution.execute(plan))
-                if receipt.state not in {ExecutionState.ACKNOWLEDGED, ExecutionState.PARTIAL}:
-                    break  # No new orders after the first unexpected outcome.
+            # Exercise the production batch advancement, including its mapped
+            # ACK gate and uncertainty stop, under the same account fence.
+            with account_writer_lock(execution.account_lock_dir, plans[0].logical_account_id):
+                advance_submission_batch(
+                    plans, execute=execute_timed,
+                    allow=lambda _plan: True, receipts=[],
+                )
             write_once(directory / (stamp + "-outstanding.json"), snapshot())
     except Exception as exc:
         errors.append({"phase": "advance", "type": type(exc).__name__})
@@ -154,7 +168,12 @@ def run_batch(execution, plans, *, directory, snapshot, cleanup_only=False):
         write_once(directory / (stamp + "-after.json"), after)
     except Exception as exc:
         errors.append({"phase": "final_snapshot", "type": type(exc).__name__})
+    submissions = [item for item in stages if item["stage"] == "submit"]
     result = {"outcomes": outcomes, "errors": errors, "stages": stages,
+              "submission_span_seconds": (
+                  (datetime.fromisoformat(submissions[-1]["completed_at"])
+                   - datetime.fromisoformat(submissions[0]["started_at"])).total_seconds()
+                  if submissions else None),
               "all_orders_terminal": all(
                   execution.store.current(p.plan_id) is not None and
                   execution.store.current(p.plan_id).state in TERMINAL for p in plans),

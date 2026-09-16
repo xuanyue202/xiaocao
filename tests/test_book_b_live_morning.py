@@ -1152,7 +1152,7 @@ def test_live_morning_runs_auditable_prepare_only_before_execution(
     assert receipt.preparation_receipts[0]["minute"] == "30"
 
 
-def test_live_morning_package_limit_prepares_then_waits_for_0930_submit(
+def test_live_morning_package_limit_prepares_then_waits_for_0925_submit(
     tmp_path: Path,
 ) -> None:
     freeze = tmp_path / "signal_snapshots.jsonl"
@@ -1183,7 +1183,7 @@ def test_live_morning_package_limit_prepares_then_waits_for_0930_submit(
 
     def wait_for_submit_window(target):
         events.append("wait")
-        assert target == datetime(2026, 8, 24, 1, 30, tzinfo=timezone.utc)
+        assert target == datetime(2026, 8, 24, 1, 25, tzinfo=timezone.utc)
         clock[0] = target
 
     def execute(plan):
