@@ -25,7 +25,7 @@ def test_market_schedules_keep_distinct_ids_and_china_wall_clock() -> None:
         "xiaocao-intraday-monitor": ("9", "35,45,55"),
         "xiaocao-intraday-monitor-05": ("10,13", "25,55"),
         "xiaocao-intraday-risk-precheck-1425": ("14", "25"),
-        "xiaocao-intraday-monitor-1455": ("14", "55"),
+        "xiaocao-intraday-monitor-1455": ("14", "54"),
         "xiaocao-daily-eod": ("15", "10"),
         "xiaocao-weekly-deep-review": ("20", "30"),
     }
@@ -57,8 +57,11 @@ def test_closing_dispatches_native_once_before_paper_work() -> None:
     paper_command = "scripts/live_monitor.py --execute-sells"
     assert prompt.index(startup_command) < prompt.index(paper_command)
     startup = (ROOT / "scripts/book_b_live_closing_startup.sh").read_text()
+    prearm_command = "python -m xiaocao.live.closing_startup"
     live_command = "scripts/book_b_live_intraday.py --date today --phase closing --execute-sells"
     assert startup.count(live_command) == 1
+    assert startup.count(prearm_command) == 1
+    assert startup.index(prearm_command) < startup.index(live_command)
     before_live = startup.split(live_command, 1)[0]
     for unrelated_work in ("live_monitor.py", "data_doctor.py", "git status", "kol_trading_decision.py"):
         assert unrelated_work not in before_live

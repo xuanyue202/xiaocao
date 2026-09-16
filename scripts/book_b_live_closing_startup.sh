@@ -20,4 +20,5 @@ rg -n -i -m 80 \
   'intraday|closing|14:55|book.?b|founder|reconcile|kol|UNKNOWN|settlement' \
   /Users/xuanyue202/.codex/memories/MEMORY.md || true
 
+PYTHONPATH=src .venv/bin/python -m xiaocao.live.closing_startup
 PYTHONPATH=src .venv/bin/python scripts/book_b_live_intraday.py --date today --phase closing --execute-sells
