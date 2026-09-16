@@ -109,17 +109,19 @@ model and systematic failure modes. The accepted logic is:
    local Vision confidence floor (`0.50`, calibrated against the real Founder
    table). There are only two bounded second-read exceptions:
    - Today-orders may accept low-confidence `成交数量`/`状态说明` only when
-     every fill is blank/zero (or an observed isolated `O`/`o`/`◎` glyph
+     each uncertain row's fill is blank/zero (or an observed isolated `O`/`o`/`◎` glyph
      with a zero execution price), every status maps exactly to a known
      working/cancelled/rejected state, and an independent today-trades query
-     proves zero traded quantity for every order id.
+     proves zero traded quantity for each such order id. Other rows may carry
+     fills only with native per-cell confidence at least 0.50 for every required
+     order field and an exact quantity match in the independent trade table.
    - Cancel selection may accept a low-confidence side alone when the exact
      unique order-id/code/price/quantity tuple, two-character `入`/`出` suffix,
      and unique checkbox visual delta all agree.
    Both paths emit their bounded proof mode and low-confidence headers.
    Baseline and post-submit/recovery evidence are phase-separated, so neither
    can overwrite the other when their modes differ. Any other low-confidence
-   field, unknown status, nonzero fill or ambiguity fails closed.
+   field, unknown status, uncertain nonzero fill or ambiguity fails closed.
 9. Preserve helper status, the helper-reported click fact, exact click proof,
    confirmation state and selection proof mode as separate fields on every
    post-click receipt, including raced terminal states and UNKNOWN. An

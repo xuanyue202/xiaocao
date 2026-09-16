@@ -158,12 +158,15 @@ UNKNOWN with `retry_allowed=false`; take a targeted fresh read only when the
 first parse is structurally invalid, never to manufacture agreement.
 The only bounded today-orders fallback is on that second read: the low-
 confidence critical-header set must be a non-empty subset of `成交数量` and
-`状态说明`; every fill must be blank/zero; every status must map exactly to a
-known working/cancelled/rejected state; and an independent today-trades query
-must prove the per-order traded quantity is also zero. Persist the bounded
+`状态说明`; every uncertain row must have a blank/zero fill and a known
+working/cancelled/rejected status; an independent today-trades query must
+prove its per-order traded quantity is also zero. Other rows may contain fills
+only with native per-cell confidence at least 0.50 for every required order
+header and exact quantities in the independent trade table. Missing confidence
+evidence on a nonzero row fails closed. Persist the bounded
 headers and mode in locator evidence. Baseline and post-submit/recovery modes
 must use phase-separated fields so a later strict or bounded read cannot
-overwrite the durable baseline proof. Any nonzero fill, unknown status, other
+overwrite the durable baseline proof. Any uncertain nonzero fill, unknown status, other
 low-confidence field or cross-table mismatch remains fail-closed.
 Persist the baseline order ids and durable claim id so a lost submit response
 can recover across restart only from one exact new-row delta. Missing durable
@@ -277,6 +280,7 @@ Missing critical cells may receive one in-memory, enlarged Vision crop within
 the audited cell geometry. Existing tokens are retained; recovered tokens must
 remain inside that cell and meet the unchanged confidence floor. This is
 read-only capture repair, not status or side inference from previous orders.
+
 
 Calendar midnight alone does not prove an APP order-session rollover. Follow
 Operating Contract §4 for clock-bound current-session cancel recovery and

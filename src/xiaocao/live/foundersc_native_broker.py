@@ -670,8 +670,19 @@ class FounderscNativeAXBrokerAdapter(BrokerAdapter):
         }
         if not required_headers.issubset(set(readback.get("headers") or [])):
             return False
-        for row in rows:
+        cell_confidences = readback.get("critical_cell_confidences")
+        for index, row in enumerate(rows):
             filled = str(row.get("成交数量") or "").strip()
+            # A strict-confidence row may coexist with another row's bounded
+            # zero. Never extend the zero fallback to a nonzero uncertain cell.
+            if isinstance(cell_confidences, list) and len(cell_confidences) == len(rows):
+                cells = cell_confidences[index]
+                if isinstance(cells, dict) and all(
+                    type(cells.get(header)) in {int, float}
+                    and 0.5 <= cells[header] <= 1.0
+                    for header in required_headers
+                ):
+                    continue
             if re.fullmatch(r"(?:0+(?:\.0+)?)?", filled) is None:
                 # Observed OCR round glyphs in the zero-fill cell. Only this
                 # bounded second-read path may interpret it, with a zero

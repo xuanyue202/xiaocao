@@ -112,6 +112,7 @@ private struct QueryReadback: Codable {
     let lowConfidenceCriticalHeaders: [String]
     let ocrLineCount: Int
     let observedAt: String
+    var criticalCellConfidences: [[String: Float]]? = nil
 }
 
 private struct CancelReadback: Codable {
@@ -598,12 +599,14 @@ private func structuredQueryReadback(
     var criticalConfidences: [Float] = []
     var lowConfidenceCriticalHeaders = Set<String>()
     var rows: [[String: String]] = []
+    var cellConfidences: [[String: Float]] = []
     for row in rowBounds {
         let rowTokens = tokens.filter { token in
             let centerY = token.bounds.y + token.bounds.height / 2
             return centerY >= row.y - 2 && centerY <= row.y + row.height + 2
         }
         var values: [String: String] = [:]
+        var rowConfidences: [String: Float] = [:]
         for column in columns {
             guard let columnBounds = column.bounds else { continue }
             let cellTokens = rowTokens.filter { token in
@@ -613,6 +616,7 @@ private func structuredQueryReadback(
             }.sorted { $0.bounds.x < $1.bounds.x }
             if required.contains(column.title),
                !cellTokens.isEmpty {
+                rowConfidences[column.title] = cellTokens.map(\.confidence).min()
                 criticalConfidences.append(
                     contentsOf: cellTokens.map(\.confidence)
                 )
@@ -631,6 +635,7 @@ private func structuredQueryReadback(
         }
         if values.values.contains(where: { !$0.isEmpty }) {
             rows.append(values)
+            cellConfidences.append(rowConfidences)
         }
     }
     let headerSet = Set(headers)
@@ -661,7 +666,8 @@ private func structuredQueryReadback(
         minimumCriticalConfidenceObserved: criticalConfidences.min(),
         lowConfidenceCriticalHeaders: lowConfidenceCriticalHeaders.sorted(),
         ocrLineCount: tokens.count,
-        observedAt: isoTimestamp()
+        observedAt: isoTimestamp(),
+        criticalCellConfidences: cellConfidences
     )
 }
 

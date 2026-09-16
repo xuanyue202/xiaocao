@@ -2393,3 +2393,46 @@ def test_native_live_account_snapshot_rejects_position_funds_asset_drift() -> No
             expected_fund_account_fingerprint="123******890",
             now=datetime.fromisoformat(OBSERVED_AT.replace("Z", "+00:00")),
         )
+
+
+@pytest.mark.app_simulation
+@pytest.mark.parametrize("fault", [None, "uncertain_fill", "missing_cells", "trade_mismatch"])
+def test_mixed_cancelled_zero_and_strict_filled_order(fault) -> None:
+    class MixedOrdersNative(LowConfidenceZeroFillNative):
+        def read_query(self, *, kind: str, **kwargs) -> NativeAXReceipt:
+            receipt = super().read_query(kind=kind, **kwargs)
+            if kind != "today-orders":
+                return receipt
+            payload = receipt.as_dict()
+            readback = payload["query_readback"]
+            cells = [{header: 0.99 for header in readback["headers"]} for _ in self.orders]
+            cells[0]["成交数量"] = 0.3
+            if fault == "uncertain_fill":
+                cells[1]["成交数量"] = 0.3
+            if fault != "missing_cells":
+                readback["critical_cell_confidences"] = cells
+            return NativeAXReceipt(payload)
+
+    native = MixedOrdersNative()
+    native.orders[0].update({"状态说明": "已撤", "成交数量": "0"})
+    native.orders.append({
+        **native.orders[0], "证券代码": "000001", "委托编号": "6000003",
+        "委托价格": "10.0000", "状态说明": "已成", "成交数量": "100",
+        "成交价格": "10.0000",
+    })
+    native.trades.append({
+        "证券代码": "000001", "成交时间": "093501", "买卖标志": "买入",
+        "成交价格": "10.0000", "成交数量": "90" if fault == "trade_mismatch" else "100",
+        "成交金额": "900.00" if fault == "trade_mismatch" else "1000.00",
+        "成交编号": "7000001", "委托编号": "6000003",
+    })
+    adapter = _adapter(native)
+    if fault:
+        with pytest.raises(FounderscNativeAXError):
+            adapter._reconcile_rows(_plan(), requested_shares=100, expected_order_id="6000003")
+    else:
+        receipt = adapter._reconcile_rows(_plan(), requested_shares=100, expected_order_id="6000003")
+        assert receipt.normalized_status() == BrokerStatus.FILLED
+        assert receipt.filled_shares == 100
+        assert receipt.order_id == "6000003"
+    assert native.submit_calls == native.cancel_calls == 0
