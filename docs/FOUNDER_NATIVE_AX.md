@@ -71,6 +71,16 @@ single click.
   order-id/code/price/quantity tuple may be combined with a two-character OCR
   suffix `入`/`出`; the receipt records that bounded selection proof mode.
 
+A unique server-closed rejection alert may be captured from any native window,
+including one obscured by the raised main window. It must retain the exact
+account and prepared code/side/price/quantity, contain the explicit closed-state
+rejection and no contract number. Recovery first persists this proof bound to
+the original plan hash and submit claim as UNKNOWN; only the next reconciliation
+may acknowledge the informational notice and return REJECTED. A different
+claim, an existing order id or any fill cannot use this branch. It never repeats
+submit. The September 16 afternoon server rejected the first five-order test at
+16:01 as closed; do not treat a locally unlocked App as server readiness.
+
 Automatic replacement remains disabled in the native adapter. Unknown action
 outcomes are reconciliation-only and never cause another Return, click or
 submit.

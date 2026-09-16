@@ -2217,9 +2217,59 @@ class FounderscNativeAXBrokerAdapter(BrokerAdapter):
             },
         )
 
+    def _recover_server_rejection(self, plan: TradePlan, previous: dict[str, Any]) -> BrokerReceipt | None:
+        read = getattr(self.native, "read_submit_rejection", None)
+        if not callable(read) or previous.get("broker_order_id") or previous.get("filled_shares"):
+            return None
+        claim = str(previous.get("submit_claim_id") or "")
+        if not claim or previous.get("submit_chain_uncertain") is not True:
+            return None
+        locator = dict(previous.get("locator_proof") or {})
+        proof = dict(locator.get("server_rejection") or {})
+        persisted = bool(proof.get("kind") == "server_closed"
+            and proof.get("plan_hash") == plan.plan_hash
+            and proof.get("submit_claim_id") == claim
+            and proof.get("tuple_proven") is True
+            and _parse_timestamp(proof.get("observed_at")) is not None)
+        payload = read(code=plan.code, side=plan.side, price=plan.limit_price,
+            quantity=plan.shares, expected_fingerprint=self.expected_fund_account_fingerprint,
+            acknowledge=persisted).as_dict()
+        result = dict(payload.get("result_readback") or {})
+        fields, matched = self._native_order_readback(plan, payload, plan.shares)
+        proven = bool(matched and self._account_bound(payload)
+            and result.get("status") == "server_closed_rejection"
+            and result.get("message_matched") is True
+            and not result.get("broker_order_id"))
+        if not persisted and not proven:
+            return None
+        if not persisted:
+            proof = {"kind": "server_closed", "plan_hash": plan.plan_hash,
+                "submit_claim_id": claim, "tuple_proven": True,
+                "observed_at": result.get("observed_at")}
+        # The first call only captures evidence. Execution persists it as UNKNOWN
+        # before a subsequent call can dismiss this non-transactional notice.
+        acknowledged = persisted and proven and result.get("acknowledgment_pressed") is True
+        # If the notice disappeared after a process interruption, its durable
+        # exact-tuple rejection remains valid; never acknowledge another dialog.
+        absent = (persisted and self._account_bound(payload)
+                  and payload.get("status") == "submit_rejection_unproven")
+        terminal = acknowledged or absent
+        return BrokerReceipt(status=BrokerStatus.REJECTED if terminal else BrokerStatus.UNKNOWN,
+            requested_shares=plan.shares, remaining_shares=plan.shares,
+            account_binding="proven" if self._account_bound(payload) else "unproven",
+            active=False, conclusive=terminal, retry_allowed=False,
+            template_name="foundersc-native-ax", echoed=self._echo(plan, plan.shares),
+            reason="NATIVE_SERVER_CLOSED_REJECTED" if terminal else "NATIVE_SERVER_REJECTION_CAPTURED",
+            locator_proof={**self._durable_baseline_locator(locator), "server_rejection": proof},
+            field_readback={"submitted": False, "saved": False, "started": False,
+                            "rejection_acknowledged": acknowledged})
+
     @serialized_app_operation
     def recover(self, plan: TradePlan, previous: dict[str, Any]) -> BrokerReceipt:
         """Recover an unknown submit only from its durable pre-submit delta."""
+        rejection = self._recover_server_rejection(plan, previous)
+        if rejection is not None:
+            return rejection
         shares = int(previous.get("requested_shares") or plan.shares)
         claim_id = str(previous.get("submit_claim_id") or "").strip()
         raw_order_id = str(

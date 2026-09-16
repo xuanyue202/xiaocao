@@ -2482,3 +2482,50 @@ def test_probe_never_retries_account_mismatch():
     assert capability.ready is False
     assert native.query_calls == ["positions"]
     assert native.open_order_calls == native.prepare_calls == native.submit_calls == 0
+
+
+def test_server_rejection_is_persisted_before_notice_acknowledgment():
+    from xiaocao.live.trading_execution import ExecutionReceipt, ExecutionState, TradingExecution
+
+    class ClosedServer(FakeNative):
+        def __init__(self):
+            super().__init__()
+            self.ack_calls = []
+
+        def read_submit_rejection(self, **kwargs):
+            self.ack_calls.append(kwargs['acknowledge'])
+            return self._receipt(
+                status='submit_rejection_acknowledged' if kwargs['acknowledge'] else 'submit_rejection_proven',
+                order_readback=dict(code='000001', side='buy', price='10.0', quantity=100,
+                    field_mapping_proven=True, submit_control_count=1, submitted=False, saved=False, started=False),
+                result_readback=dict(status='server_closed_rejection', message_matched=True,
+                    broker_order_id='', observed_at=OBSERVED_AT,
+                    acknowledgment_pressed=kwargs['acknowledge']),
+            )
+
+    native = ClosedServer()
+    adapter = _adapter(native)
+    plan = _plan()
+    prior = ExecutionReceipt(plan.plan_id, plan.plan_hash, ExecutionState.UNKNOWN,
+        submit_claim_id='original-claim', submit_chain_uncertain=True, remaining_shares=100)
+    captured = adapter.recover(plan, prior.as_dict())
+    assert captured.normalized_status() == BrokerStatus.UNKNOWN
+    assert native.ack_calls == [False]
+    durable = replace(prior, locator_proof=captured.locator_proof)
+    rejected = adapter.recover(plan, durable.as_dict())
+    assert rejected.normalized_status() == BrokerStatus.REJECTED
+    assert native.ack_calls == [False, True]
+    assert native.submit_calls == native.cancel_calls == 0
+    assert TradingExecution._live_reconcile_receipt_proven(plan, durable, rejected)
+    assert not TradingExecution._live_reconcile_receipt_proven(plan, prior, rejected)
+    assert not TradingExecution._live_reconcile_receipt_proven(
+        plan, replace(durable, submit_claim_id='other-claim'), rejected)
+    assert not TradingExecution._live_reconcile_receipt_proven(
+        plan, replace(durable, broker_order_id='6000123'), rejected)
+    assert not TradingExecution._live_reconcile_receipt_proven(
+        plan, replace(durable, filled_shares=100), rejected)
+
+    native.payload['trade_account_fingerprint'] = '999******999'
+    wrong_account = adapter.recover(plan, durable.as_dict())
+    assert wrong_account.normalized_status() == BrokerStatus.UNKNOWN
+    assert wrong_account.account_binding == 'unproven'

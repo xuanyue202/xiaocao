@@ -289,3 +289,15 @@ read-only capture repair, not status or side inference from previous orders.
 Calendar midnight alone does not prove an APP order-session rollover. Follow
 Operating Contract §4 for clock-bound current-session cancel recovery and
 monotonic, hash-chain-proven terminal restoration. Otherwise use dated history.
+
+### Explicit server-closed rejection
+
+An unlocked App does not prove that its server still accepts orders after close.
+The 2026-09-16 test received an explicit closed-state rejection at 16:01. A hidden
+rejection alert can also block all query navigation. The native recovery path
+reads all App windows for only this exact known rejection, binds its visible
+account/order tuple to the original plan hash and claim, persists the proof as
+UNKNOWN, then acknowledges the informational notice on the next reconciliation
+and terminalizes REJECTED. No new submit is allowed. Do not label this as an
+accepted order or completed multi-order test; reconcile funds/positions and
+resume remaining engineering acceptance in a later allowed, server-ready window.

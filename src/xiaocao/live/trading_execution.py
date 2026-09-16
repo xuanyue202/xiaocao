@@ -2490,6 +2490,23 @@ class TradingExecution:
         previous: ExecutionReceipt,
         receipt: BrokerReceipt,
     ) -> bool:
+        rejection = receipt.locator_proof.get("server_rejection")
+        if receipt.normalized_status() == BrokerStatus.REJECTED and isinstance(rejection, dict):
+            return bool(
+                receipt.template_name == "foundersc-native-ax"
+                and cls._account_binding_proven(receipt) and receipt.conclusive
+                and receipt.active is False and not receipt.order_id and not receipt.strategy_id
+                and not previous.broker_order_id and not previous.broker_strategy_id
+                and previous.filled_shares == receipt.filled_shares == 0
+                and previous.submit_chain_uncertain and previous.submit_claim_id
+                and rejection == previous.locator_proof.get("server_rejection")
+                and rejection.get("kind") == "server_closed"
+                and rejection.get("plan_hash") == plan.plan_hash
+                and rejection.get("submit_claim_id") == previous.submit_claim_id
+                and rejection.get("tuple_proven") is True and rejection.get("observed_at")
+                and all(receipt.field_readback.get(key) is False
+                        for key in ("submitted", "saved", "started"))
+            )
         if (
             receipt.normalized_status() == BrokerStatus.REJECTED
             and receipt.absence_proof is True

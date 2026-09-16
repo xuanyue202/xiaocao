@@ -696,6 +696,17 @@ class FounderscNativeAXClient:
             ],
         )
 
+    def read_submit_rejection(self, *, code: str, side: str, price: float,
+                              quantity: int, expected_fingerprint: str,
+                              acknowledge: bool = False) -> NativeAXReceipt:
+        """Read one exact server-closed rejection; optionally dismiss its notice."""
+        return self._run(
+            "acknowledge-submit-rejection" if acknowledge else "probe-submit-rejection",
+            (["--allow-rejection-acknowledgment"] if acknowledge else [])
+            + self._order_args(code=code, side=side, price=price, quantity=quantity,
+                               expected_fingerprint=expected_fingerprint),
+        )
+
     def probe_pending_order_confirmation(
         self,
         *,

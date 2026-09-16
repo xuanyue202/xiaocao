@@ -2579,6 +2579,63 @@ private func submitPreparedOrder(arguments: [String]) -> Receipt {
     return receipt
 }
 
+private func pendingClosedServerRejection(arguments: [String], acknowledge: Bool) -> Receipt {
+    let observation = observe(command: "probe-submit-rejection")
+    var receipt = observation.receipt
+    receipt.status = "submit_rejection_unproven"
+    guard let input = parseOrderInput(arguments),
+          receipt.tradeAccountFingerprint == input.expectedFingerprint,
+          receipt.tradeAccountFingerprintCount == 1,
+          let fields = observation.orderFields,
+          let app = observation.applicationElement else { return receipt }
+    let readback = currentOrderReadback(input: input, fields: fields,
+        submitControlCount: observation.submitControls.count,
+        submitted: false, saved: false, started: false, clickMode: "rejection_probe")
+    guard orderReadbackMatches(readback, input) else { return receipt }
+    let windows = attribute(app, kAXWindowsAttribute) as? [AXUIElement] ?? []
+    var matches: [[AXUIElement]] = []
+    for window in windows {
+        var texts: [String] = []
+        var buttons: [AXUIElement] = []
+        var visited = 0
+        func walk(_ el: AXUIElement, depth: Int) {
+            guard depth <= maximumDepth, visited < maximumNodes else { return }
+            visited += 1
+            let role = stringAttribute(el, kAXRoleAttribute)
+            if ["AXTable", "AXMenu", "AXMenuBar"].contains(role) { return }
+            for key in [kAXTitleAttribute, kAXValueAttribute, kAXDescriptionAttribute] {
+                let value = stringAttribute(el, key as String)
+                if !value.isEmpty { texts.append(value) }
+            }
+            if role == "AXButton", exactSemanticText(el, "确定") { buttons.append(el) }
+            for child in attribute(el, kAXChildrenAttribute) as? [AXUIElement] ?? [] { walk(child, depth: depth + 1) }
+        }
+        walk(window, depth: 0)
+        let text = texts.joined(separator: " ")
+        if text.contains("委托已提交,证券系统返回的原因:")
+            && text.contains("该功能禁止在目前系统状态下运行")
+            && text.contains("4-关闭状态") && text.contains("3-就绪状态")
+            && !text.contains("合同号") && buttons.count == 1 { matches.append(buttons) }
+    }
+    guard matches.count == 1 else { return receipt }
+    receipt.orderReadback = readback
+    receipt.reason = "exact prepared tuple and unique server-closed rejection alert proven"
+    var pressed = false
+    var mode = "none"
+    if acknowledge {
+        let action = pressUniqueFocusedDialogButton(matches[0])
+        pressed = action.pressed
+        mode = action.mode
+    }
+    receipt.status = acknowledge
+        ? (pressed ? "submit_rejection_acknowledged" : "submit_rejection_ack_unproven")
+        : "submit_rejection_proven"
+    receipt.resultReadback = BrokerResultReadback(kind: "submit", status: "server_closed_rejection",
+        brokerOrderId: "", messageMatched: true, acknowledgmentPressed: pressed,
+        acknowledgmentMode: mode, observedAt: isoTimestamp())
+    return receipt
+}
+
 private func pendingOrderConfirmation(
     arguments: [String],
     pressConfirmation: Bool
@@ -3686,6 +3743,11 @@ case "prepare-order":
     emit(prepareOrder(arguments: arguments))
 case "submit-prepared-order":
     emit(submitPreparedOrder(arguments: arguments))
+case "probe-submit-rejection":
+    emit(pendingClosedServerRejection(arguments: arguments, acknowledge: false))
+case "acknowledge-submit-rejection":
+    guard arguments.contains("--allow-rejection-acknowledgment") else { exit(2) }
+    emit(pendingClosedServerRejection(arguments: arguments, acknowledge: true))
 case "probe-pending-order-confirmation":
     emit(pendingOrderConfirmation(arguments: arguments, pressConfirmation: false))
 case "confirm-pending-order":
