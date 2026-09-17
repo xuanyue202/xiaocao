@@ -6,6 +6,7 @@ from datetime import datetime, timezone
 import pytest
 from xiaocao.live.foundersc_native_ax import NativeAXReceipt
 from xiaocao.live.foundersc_native_broker import FounderscNativeAXBrokerAdapter
+from xiaocao.live.trading_execution import BrokerStatus
 from tests.test_foundersc_native_broker import FakeNative, _plan
 
 pytestmark = pytest.mark.app_simulation
@@ -42,13 +43,53 @@ def adapter(native):
 
 def test_unrelated_orders_and_valuation_do_not_block_new_buy():
     n = ScopedNative()
-    n.orders[0].update(状态说明='任意旧状态', 成交数量='未识别', 委托价格='不重要')
+    # The old order is deliberately for the same security, but its historical
+    # cancellation/fill text is unreadable.  New-BUY preflight must retain
+    # only the identity and tuple facts needed to reject an exact duplicate;
+    # it must not spend the 09:25 submit path reconciling this old chain.
+    n.orders[0].update(证券代码='000001', 状态说明='人工撤单状态未知', 成交数量='未识别',
+                       委托价格='9.9900', 委托数量='100', 委托编号='6000999')
     n.positions[0].update(当前价='未识别', 最新市值='未识别')
     n.corrupt = 'status'
     capability = adapter(n).probe(_plan())
     assert capability.ready and capability.supports_submit
     assert n.query_calls == ['positions', 'today-orders']
     assert n.open_cancel_calls == n.submit_calls == n.cancel_calls == 0
+
+
+def test_scoped_batch_ack_bypasses_same_code_legacy_order_anomaly():
+    n = ScopedNative()
+    n.orders[0].update(证券代码='000001', 状态说明='人工撤单状态未知', 成交数量='未识别',
+                       委托价格='9.9900', 委托数量='100', 委托编号='6000999')
+    original_submit = n.submit_prepared_order
+
+    def counter_ack(**kwargs):
+        receipt = original_submit(**kwargs)
+        receipt.payload['action'] = {
+            'attempted': True, 'succeeded': True, 'confirm_pressed': True,
+            'requires_user_input': False,
+        }
+        receipt.payload['result_readback'] = {
+            'kind': 'submit', 'status': 'submit_result_acknowledged',
+            'broker_order_id': '6001000', 'message_matched': True,
+            'acknowledgment_pressed': True,
+            'acknowledgment_mode': 'semantic_focused_dialog_button',
+        }
+        return receipt
+
+    n.submit_prepared_order = counter_ack
+    a = adapter(n)
+    plan = _plan()
+    with a.submission_batch([plan]):
+        prepared = a.prepare(plan)
+        acknowledged = a.submit(plan, 'same-code-legacy-order')
+
+    assert prepared.status == BrokerStatus.PREPARED
+    assert acknowledged.status == BrokerStatus.ACCEPTED
+    # One scoped preflight only.  There is no full order/trade reconciliation
+    # between prepare and the counter acknowledgement.
+    assert n.query_calls == ['positions', 'today-orders']
+    assert n.submit_calls == 1
 
 
 @pytest.mark.parametrize('corrupt', ['structure', 'code'])
