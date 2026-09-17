@@ -40,7 +40,7 @@ completed handoff receipt is read-only reuse. Empty/unchanged slots do no work.
    persisted pending handoffs before mailbox discovery.
 
 At 09:00 the trading task obtains a cache-only context with
-`--history-fresh-through <today>T09:30:00+08:00` and reads the matching preparation
+`--history-fresh-through <today>T11:30:00+08:00` and reads the matching preparation
 packet. This checks the actual opening horizon against the unchanged 24-hour
 history TTL, without making the evidence as-of future-dated. Refresh returned
 exact IDs in bounded batches with the same horizon until
@@ -61,3 +61,19 @@ decision may be reused directly. Source packets never enter the decision store,
 assert future opening conditions, override qualification, or authorize orders.
 Incomplete source coverage can be documented in a preparation packet but cannot
 bypass the existing formal decision publication checks.
+
+
+For morning consumption, distinguish source reuse from current policy validity.
+Run status with `--ready-through <today>T11:30:00+08:00 --opening-draft <path>`.
+`source_analysis_reusable` does not imply `current_policy_reusable`.
+Complete the conditional draft before 09:20: `source_fingerprint`,
+`analyst_agent_id`, `decision_template` with reasoned `buy_scale`, `rationale`,
+`invalidation_conditions`, and explicit `opening_scenarios`. A null skeleton is
+unfinished. The independent parent adds `source_review` containing
+`status=source_reasoning_reviewed`, its different `reviewer_agent_id`, and
+`draft_sha256` over the entire draft excluding `source_review`.
+This source review grants no trading authority. The opening request still needs
+current applicability review and normal formal publication. If adequate current
+facts already support a session-valid decision, publish it early with a justified
+valid_until; never manufacture a neutral decision to fill the slot.
+At freeze reuse the reviewed conditional draft and verify only changed inputs.

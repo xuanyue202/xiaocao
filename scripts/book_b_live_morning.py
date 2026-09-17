@@ -41,6 +41,9 @@ from xiaocao.live.live_decision_support import calendar_provider, digest, read_p
 from wait_for_morning_freeze import wait_for_morning_freeze  # noqa: E402
 
 
+from xiaocao.live.morning_observability import review_brief, review_notice, terminal_notice
+
+
 def _china_date() -> str:
     return datetime.now(ZoneInfo("Asia/Shanghai")).date().isoformat()
 
@@ -181,6 +184,8 @@ def _review_rendezvous(request: dict, *, now=None, sleep=None, monotonic=None,
     receipt_path = root / f"{identifier}.receipt.json"
     artifact = {**payload, "request_id": identifier, "request_sha256": identifier}
     _write_review_immutable(request_path, artifact)
+    brief_path = root / f"{identifier}.brief.json"
+    _write_review_immutable(brief_path, review_brief(artifact))
     if receipt_path.exists():
         receipt = json.loads(receipt_path.read_text(encoding="utf-8"))
         body = {key: value for key, value in receipt.items() if key != "receipt_sha256"}
@@ -188,9 +193,7 @@ def _review_rendezvous(request: dict, *, now=None, sleep=None, monotonic=None,
                 or receipt.get("request_id") != identifier):
             raise ValueError("LIVE_REVIEW_RECEIPT_BINDING_MISMATCH")
         return receipt
-    print(json.dumps({"event": "book_b_live_review_requested", "request_id": identifier,
-                      "request_sha256": identifier, "request_path": str(request_path),
-                      "receipt_path": str(receipt_path), "request": artifact},
+    print(json.dumps(review_notice(artifact, request_path, receipt_path, brief_path),
                      ensure_ascii=False, sort_keys=True), flush=True)
     latest: dict = {}
     status, reason = "timed_out", "LIVE_REVIEW_TIMEOUT_NEUTRAL_FALLBACK"
@@ -295,6 +298,7 @@ def main(argv: list[str] | None = None) -> int:
         raise RuntimeError("FOUNDER_TRADE_ACCOUNT_FINGERPRINT_MISSING")
     execution, broker = build_foundersc_native_execution(
         args.state_dir,
+        scoped_buy_preflight=not bool(args.resume_plan_id),
         expected_fund_account_fingerprint=trade_account_fingerprint,
         safety_env_provider=capital_runtime.safety_env,
     )
@@ -307,6 +311,34 @@ def main(argv: list[str] | None = None) -> int:
         cache=None,
     )
 
+    from xiaocao.live.buy_preflight import allocation_from_buy_preflight, pretrade_account, validate_buy_preflight
+    from xiaocao.live.book_b_live_lifecycle import load_latest_book_b_live_settlement, ownership_head_sha256
+    from xiaocao.live.live_decision_support import evaluate_live_risk
+    trading_calendar = calendar_provider(market_client)
+    buying_snapshot = None
+    buying_head = None
+    def current_buy_snapshot():
+        nonlocal buying_snapshot, buying_head
+        current = datetime.now(ZoneInfo("Asia/Shanghai"))
+        head = ownership_head_sha256(Path(args.state_dir))
+        if buying_snapshot is not None and buying_head == head:
+            try:
+                return validate_buy_preflight(buying_snapshot, trade_date, current)
+            except ValueError:
+                pass
+        settlement = load_latest_book_b_live_settlement(Path(args.state_dir))
+        codes = {lot["code"] for lot in (settlement or {}).get("lots", [])}
+        buying_snapshot = broker.read_buy_preflight_snapshot(trade_date=trade_date, owned_codes=codes)
+        buying_head = head
+        return buying_snapshot
+
+    def current_buy_risk(clock):
+        account = pretrade_account(Path(args.state_dir), current_buy_snapshot(),
+            trade_date=trade_date, now=datetime.now(ZoneInfo("Asia/Shanghai")))
+        return evaluate_live_risk(Path(args.state_dir), now=datetime.now(ZoneInfo("Asia/Shanghai")),
+            account=account, trading_dates_provider=trading_calendar,
+            receipt_root=Path(args.policy_root).parent / "account_risk")
+
     def read_allocation_facts() -> dict:
         nonlocal prior_reconciliations
         # The core reconciles open ordinary intents before this callback.
@@ -316,6 +348,9 @@ def main(argv: list[str] | None = None) -> int:
             execute=lambda plan: execution.execute(plan, broker),
         )
         basis = load_book_b_live_capital_basis(Path(args.state_dir))
+        if not args.resume_plan_id:
+            return allocation_from_buy_preflight(current_buy_snapshot(), basis,
+                now=datetime.now(ZoneInfo("Asia/Shanghai")))
         allocation_kwargs = {
             "trade_date": trade_date,
             "logical_account_id": "primary",
@@ -399,10 +434,10 @@ def main(argv: list[str] | None = None) -> int:
             snapshot_path=freeze_path,
             heartbeat=live_heartbeat,
         ),
-        prepare_only=lambda plan: broker.prepare_readonly(
+        prepare_only=(lambda plan: broker.prepare_readonly(
             plan,
             expected_fund_account_fingerprint=trade_account_fingerprint,
-        ),
+        )) if args.resume_plan_id else None,
         wait_for_submit_window=lambda target: _wait_for_submit_window(
             target,
             heartbeat=live_heartbeat,
@@ -410,7 +445,8 @@ def main(argv: list[str] | None = None) -> int:
         wait_for_reconcile=lambda: time.sleep(1.0),
         execute=lambda plan: execution.execute(plan, broker),
         submission_scope=broker.submission_batch,
-        trading_dates_provider=calendar_provider(market_client),
+        trading_dates_provider=trading_calendar,
+        risk_provider=None if args.resume_plan_id else current_buy_risk,
         account_snapshot_provider=lambda: broker.read_live_account_snapshot(
             trade_date=trade_date, logical_account_id="primary",
             expected_fund_account_fingerprint=trade_account_fingerprint,
@@ -425,7 +461,8 @@ def main(argv: list[str] | None = None) -> int:
     )
     write_book_b_live_morning_receipt(config, receipt)
     payload = receipt.as_dict()
-    print(json.dumps(payload, ensure_ascii=False, sort_keys=True))
+    print(json.dumps(terminal_notice(payload, config.state_dir / "runs" / "history" / f"{receipt.run_id}.json"),
+                     ensure_ascii=False, sort_keys=True))
     return 0 if receipt.status in {"completed", "no_action", "skipped"} else 2
 
 

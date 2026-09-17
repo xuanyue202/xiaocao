@@ -47,6 +47,11 @@ _ORDER_REJECTED_STATUSES = frozenset(
 )
 _READ_ONLY_SNAPSHOT_RETRYABLE_CODES = frozenset(
     {
+        "NATIVE_BUY_QUERY_STRUCTURE_UNPROVEN",
+        "NATIVE_BUY_QUERY_ROWS_UNPROVEN",
+        "NATIVE_BUY_QUERY_CELL_UNPROVEN",
+        "NATIVE_BUY_QUERY_TIME_UNPROVEN",
+        "NATIVE_BUY_QUERY_STALE",
         "LIVE_ACCOUNT_SNAPSHOT_SUMMARY_UNPROVEN",
         "LIVE_ACCOUNT_SNAPSHOT_VALUES_INVALID",
         "LIVE_ACCOUNT_SNAPSHOT_ASSET_EQUATION_FAILED",
@@ -309,10 +314,12 @@ class FounderscNativeAXBrokerAdapter(BrokerAdapter):
         expected_fund_account_fingerprint: str,
         reconcile_delays: tuple[float, ...] = (0.0, 0.25, 0.75, 1.5),
         snapshot_read_delays: tuple[float, ...] = (0.0, 0.25, 0.75),
+        scoped_buy_preflight: bool = False,
     ) -> None:
         expected = str(expected_fund_account_fingerprint or "").strip()
         if _ACCOUNT_FINGERPRINT_PATTERN.fullmatch(expected) is None:
             raise ValueError("Founder fund-account fingerprint is required")
+        self.scoped_buy_preflight = scoped_buy_preflight
         self.native = native
         self.expected_fund_account_fingerprint = expected
         self.reconcile_delays = tuple(max(0.0, float(item)) for item in reconcile_delays)
@@ -342,7 +349,8 @@ class FounderscNativeAXBrokerAdapter(BrokerAdapter):
                     or len({p.plan_id for p in plans}) != len(plans)
                     or len({(p.code, p.side, p.shares, p.limit_price) for p in plans}) != len(plans)):
                 raise ValueError("NATIVE_BATCH_SCOPE_INVALID")
-            capability = self.probe(plans[0])
+            capability = (self.probe(plans[0], buy_codes={p.code.split(".")[0] for p in plans})
+                          if self.scoped_buy_preflight else self.probe(plans[0]))
             if not capability.ready or not capability.supports_submit:
                 raise ValueError("NATIVE_BATCH_PREFLIGHT_UNPROVEN")
             positions = self.last_query_readbacks["positions"]
@@ -622,6 +630,107 @@ class FounderscNativeAXBrokerAdapter(BrokerAdapter):
         ):
             raise FounderscNativeAXError("NATIVE_CANCEL_SURFACE_OPEN_UNPROVEN")
         return payload
+
+    def _query_buy_scope(self, kind: str, codes: set[str]) -> dict[str, Any]:
+        """Validate only BUY-relevant cells, with an explicit complete-table proof.
+
+        Every row's code/ID stays strict so an unreadable identity cannot hide
+        a duplicate. Unrelated order status/fills and position valuation are
+        accounting observations, not permissions to submit this new BUY.
+        """
+        payload = self.native.read_query(
+            kind=kind, expected_fingerprint=self.expected_fund_account_fingerprint,
+        ).as_dict()
+        raw = payload.get("query_readback") or {}
+        if not self._account_bound(payload):
+            raise FounderscNativeAXError("NATIVE_BUY_QUERY_ACCOUNT_UNPROVEN")
+        if (payload.get("status") not in {"query_read", "query_parse_unproven"}
+                or raw.get("capture_proven") is not True or raw.get("kind") != kind
+                or raw.get("structural_parsing_proven") is not True
+                or int(payload.get("helper_version") or 0) < 11):
+            raise FounderscNativeAXError("NATIVE_BUY_QUERY_STRUCTURE_UNPROVEN")
+        rows, cells = raw.get("rows"), raw.get("critical_cell_confidences")
+        if (not isinstance(rows, list) or not isinstance(cells, list)
+                or len(rows) != raw.get("row_count") or len(rows) != len(cells)
+                or (not rows and raw.get("empty_state_proven") is not True)):
+            raise FounderscNativeAXError("NATIVE_BUY_QUERY_ROWS_UNPROVEN")
+        floor = float(raw.get("critical_confidence_floor") or 0)
+        if not math.isfinite(floor) or not 0.5 <= floor <= 1:
+            raise FounderscNativeAXError("NATIVE_BUY_QUERY_CONFIDENCE_UNPROVEN")
+        selected, identities = [], set()
+        for row, confidence in zip(rows, cells):
+            def require(fields):
+                if any(not math.isfinite(float(confidence.get(f, -1)))
+                       or float(confidence.get(f, -1)) < floor for f in fields):
+                    raise FounderscNativeAXError("NATIVE_BUY_QUERY_CELL_UNPROVEN")
+            require(["证券代码"])
+            code = _code(row.get("证券代码"))
+            if kind == "positions":
+                if code not in codes:
+                    continue
+                if code in identities:
+                    raise FounderscNativeAXError("NATIVE_POSITION_NOT_UNIQUE")
+                identities.add(code)
+                require(["证券数量", "可卖数量", "当前价"])
+                owned = _integer(row.get("证券数量"), field="POSITION_QUANTITY")
+                sellable = _integer(row.get("可卖数量"), field="SELLABLE_QUANTITY")
+                price = _decimal(row.get("当前价"), field="POSITION_PRICE")
+                if owned < 0 or not 0 <= sellable <= owned or price <= 0:
+                    raise FounderscNativeAXError("NATIVE_BUY_POSITION_INVALID")
+                selected.append({"证券代码": code, "证券数量": str(owned),
+                                 "可卖数量": str(sellable), "当前价": str(price)})
+            else:
+                require(["委托编号"])
+                order_id = str(row.get("委托编号") or "").strip()
+                if not order_id.isdigit() or order_id in identities:
+                    raise FounderscNativeAXError("NATIVE_BUY_ORDER_ID_UNPROVEN")
+                identities.add(order_id)
+                item = {"证券代码": code, "委托编号": order_id}
+                if code in codes:
+                    require(["买卖标志", "委托价格", "委托数量"])
+                    _side(row.get("买卖标志"))
+                    if (_decimal(row.get("委托价格"), field="ORDER_PRICE") < 0
+                            or _integer(row.get("委托数量"), field="ORDER_QUANTITY") <= 0):
+                        raise FounderscNativeAXError("NATIVE_BUY_ORDER_TUPLE_UNPROVEN")
+                    item.update({k: row[k] for k in ("买卖标志", "委托价格", "委托数量")})
+                selected.append(item)
+        observed = _parse_timestamp(raw.get("observed_at"))
+        if observed is None:
+            raise FounderscNativeAXError("NATIVE_BUY_QUERY_TIME_UNPROVEN")
+        current = datetime.now(timezone.utc)
+        if not -30 <= (current - observed).total_seconds() <= 60:
+            raise FounderscNativeAXError("NATIVE_BUY_QUERY_STALE")
+        result = {"kind": kind, "rows": selected, "row_count": len(selected),
+                  "observed_at": observed.isoformat(), "capture_proven": True,
+                  "scope": "new_buy_preflight", "scoped_codes": sorted(codes),
+                  "observed_total_row_count": len(rows),
+                  "critical_confidence_floor": floor,
+                  "source_readback_sha256": hashlib.sha256(json.dumps(raw, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode()).hexdigest(),
+                  "summary_values": dict(raw.get("summary_values") or {})}
+        if kind == "positions":
+            available = _decimal(result["summary_values"].get("可用"), field="AVAILABLE_CASH")
+            if available < 0:
+                raise FounderscNativeAXError("NATIVE_BUY_AVAILABLE_CASH_INVALID")
+        self.last_query_readbacks[kind] = result
+        return result
+
+    @serialized_app_operation
+    def read_buy_preflight_snapshot(self, *, trade_date: str, owned_codes: set[str]) -> dict[str, Any]:
+        def read_once():
+            self._open_query_surface()
+            return self._query_buy_scope("positions", {c.split(".")[0] for c in owned_codes})
+        positions, recovery = self._bounded_read_recovery(
+            read_once, reset_query_surface=self._reset_query_surface_for_read_retry)
+        if _parse_timestamp(positions["observed_at"]).astimezone(ZoneInfo("Asia/Shanghai")).date().isoformat() != trade_date:
+            raise FounderscNativeAXError("NATIVE_BUY_QUERY_DATE_MISMATCH")
+        body = {"schema_version": "book-b-buy-preflight.v1", "trade_date": trade_date,
+                "logical_account_id": "primary", "account_binding": "proven",
+                "fund_account_binding_sha256": hashlib.sha256(self.expected_fund_account_fingerprint.encode()).hexdigest(),
+                "observed_at": positions["observed_at"], "positions": positions,
+                "read_recovery": recovery,
+                "available_cash": float(_decimal(positions["summary_values"]["可用"], field="AVAILABLE_CASH"))}
+        body["snapshot_sha256"] = hashlib.sha256(json.dumps(body, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
+        return body
 
     def _query(self, kind: str) -> dict[str, Any]:
         last_error = f"NATIVE_QUERY_{kind.upper()}_UNPROVEN"
@@ -1005,7 +1114,7 @@ class FounderscNativeAXBrokerAdapter(BrokerAdapter):
         return positions
 
     @serialized_app_operation
-    def probe(self, plan: TradePlan) -> BrokerCapability:
+    def probe(self, plan: TradePlan, *, buy_codes: set[str] | None = None) -> BrokerCapability:
         self.last_query_readbacks = {}
         try:
             batch = self._batch_for(plan)
@@ -1018,11 +1127,18 @@ class FounderscNativeAXBrokerAdapter(BrokerAdapter):
                                owned_position_shares=owned, sellable_shares=sellable,
                                locator_proof={"batch_preflight_reused": True})
             ready = self.ensure_native_ready(unlock_once=True)
+            def read_probe():
+                if self.scoped_buy_preflight and plan.side.upper() == "BUY":
+                    self._open_query_surface()
+                    positions = self._query_buy_scope("positions", buy_codes or {plan.code.split(".")[0]})
+                    self._query_buy_scope("today-orders", buy_codes or {plan.code.split(".")[0]})
+                    return positions
+                return self._read_probe_facts_once()
             positions, recovery = self._bounded_read_recovery(
-                self._read_probe_facts_once,
+                read_probe,
                 reset_query_surface=self._reset_query_surface_for_read_retry,
             )
-            cancel_ready = self._open_cancel_surface()
+            cancel_ready = self._open_cancel_surface() if not self.scoped_buy_preflight or plan.side.upper() != "BUY" else {}
             order_ready = self.ensure_native_ready(
                 require_order_capability=True,
                 unlock_once=True,
@@ -1063,7 +1179,7 @@ class FounderscNativeAXBrokerAdapter(BrokerAdapter):
                     "native_trades": True,
                     "native_position_funds_summary": True,
                     "native_funds_query": False,
-                    "native_cancel": True,
+                    "native_cancel": bool(cancel_ready),
                     "opencli_used": False,
                 },
                 reason="" if submit else NATIVE_ORDER_ROUTE_NOT_PROMOTED,

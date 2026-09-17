@@ -4,7 +4,7 @@ import Foundation
 import Vision
 
 private let schemaVersion = 2
-private let helperVersion = 10
+private let helperVersion = 11
 private let bundleIdentifier = "com.fzzq.Mac2020"
 private let maximumDepth = 12
 private let maximumNodes = 1_000
@@ -113,6 +113,7 @@ private struct QueryReadback: Codable {
     let ocrLineCount: Int
     let observedAt: String
     var criticalCellConfidences: [[String: Float]]? = nil
+    var structuralParsingProven: Bool? = nil
 }
 
 private struct CancelReadback: Codable {
@@ -692,7 +693,8 @@ private func structuredQueryReadback(
         lowConfidenceCriticalHeaders: lowConfidenceCriticalHeaders.sorted(),
         ocrLineCount: tokens.count,
         observedAt: isoTimestamp(),
-        criticalCellConfidences: cellConfidences
+        criticalCellConfidences: cellConfidences,
+        structuralParsingProven: headersProven && (emptyStateProven || rows.count == rowBounds.count)
     )
 }
 

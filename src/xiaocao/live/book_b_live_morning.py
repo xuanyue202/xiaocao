@@ -1326,23 +1326,39 @@ def _load_allocation(
     values = summary.get("values")
     if not isinstance(values, dict):
         raise ValueError("LIVE_ALLOCATION_RECEIPT_UNPROVEN")
-    try:
-        broker_total_assets = float(values["总资产"])
-        broker_market_value = float(values["证券市值"])
-        broker_cash = float(values["可用资金"])
-        top_total_assets = float(payload["broker_total_assets"])
-        top_market_value = float(payload["broker_securities_market_value"])
-        top_cash = float(payload["available_cash"])
-    except (KeyError, TypeError, ValueError) as exc:
-        raise ValueError("LIVE_ALLOCATION_RECEIPT_UNPROVEN") from exc
-    pairs = (
-        (broker_total_assets, top_total_assets),
-        (broker_market_value, top_market_value),
-        (broker_cash, top_cash),
-    )
+    buying_power = payload.get("allocation_scope") == "buying_power"
+    if buying_power:
+        from .buy_preflight import validate_buy_preflight
+        if broker_receipt.get("allocation_scope") != "buying_power":
+            raise ValueError("LIVE_ALLOCATION_RECEIPT_BINDING_MISMATCH")
+        snapshot = broker_receipt.get("pretrade_snapshot") or {}
+        # Freshness is checked by the normal entry clock below; this validation
+        # binds the transport proof and every economic field without requiring
+        # mixed-account audit totals to decide new buying power.
+        observed = datetime.fromisoformat(str(payload["broker_observed_at"]))
+        validate_buy_preflight(snapshot, config.trade_date, observed)
+        if snapshot.get("fund_account_binding_sha256") != binding_hash:
+            raise ValueError("LIVE_ALLOCATION_RECEIPT_BINDING_MISMATCH")
+        if snapshot["available_cash"] != payload.get("available_cash"):
+            raise ValueError("LIVE_ALLOCATION_ECONOMIC_BINDING_MISMATCH")
+        pairs = ((float(values["可用资金"]), float(payload["available_cash"])),)
+    else:
+        try:
+            broker_total_assets = float(values["总资产"])
+            broker_market_value = float(values["证券市值"])
+            broker_cash = float(values["可用资金"])
+            top_total_assets = float(payload["broker_total_assets"])
+            top_market_value = float(payload["broker_securities_market_value"])
+            top_cash = float(payload["available_cash"])
+        except (KeyError, TypeError, ValueError) as exc:
+            raise ValueError("LIVE_ALLOCATION_RECEIPT_UNPROVEN") from exc
+        pairs = (
+            (broker_total_assets, top_total_assets),
+            (broker_market_value, top_market_value),
+            (broker_cash, top_cash),
+        )
     if any(
-        not math.isfinite(left)
-        or not math.isfinite(right)
+        not math.isfinite(left) or not math.isfinite(right)
         or not math.isclose(left, right, rel_tol=0.0, abs_tol=1e-6)
         for left, right in pairs
     ):
@@ -1389,6 +1405,8 @@ def _rollup(receipts: list[ExecutionReceipt]) -> tuple[str, str]:
         return "completed", "BROKER_TERMINAL"
     if states <= {ExecutionState.SKIPPED}:
         return "skipped", receipts[0].reason or "BROKER_SKIPPED"
+    if states <= {ExecutionState.FILLED, ExecutionState.CANCELLED, ExecutionState.SKIPPED}:
+        return "completed", "BROKER_TERMINAL_WITH_SKIPS"
     if ExecutionState.REJECTED in states:
         rejected = next(receipt for receipt in receipts if receipt.state == ExecutionState.REJECTED)
         return "blocked", rejected.reason or "BROKER_REJECTED"

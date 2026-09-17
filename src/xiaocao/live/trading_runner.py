@@ -192,6 +192,7 @@ def build_foundersc_native_execution(
     *,
     expected_fund_account_fingerprint: str,
     native_client: FounderscNativeAXClient | None = None,
+    scoped_buy_preflight: bool = False,
     safety_env_provider: Callable[[], dict[str, str]] | None = None,
     now=None,
     notifier=None,
@@ -206,6 +207,7 @@ def build_foundersc_native_execution(
         native = FounderscNativeAXClient()
     adapter = FounderscNativeAXBrokerAdapter(
         native=native,
+        scoped_buy_preflight=scoped_buy_preflight,
         expected_fund_account_fingerprint=expected_fund_account_fingerprint,
     )
     execution = TradingExecution(

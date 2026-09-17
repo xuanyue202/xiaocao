@@ -125,7 +125,7 @@ working/partial orders with unique IDs and positive unfilled limit notional,
 covered by the reported balance-minus-available reduction, can explain that
 strict BUY-shaped cash branch. Preserve its order IDs, principal and reported
 reservation difference; do not infer a fee rate or manufacture a fill/NAV.
-Probe, snapshot and lifecycle apply the same reservation proof. Live allocation
+Full recovery probe, snapshot and lifecycle apply the same reservation proof. Legacy allocation
 facts may fall back to the same strictly reconciled three-table pending-BUY
 reservation proof when the normal balance equation fails. Persist that snapshot,
 use only net available cash, and preserve independent Book-B NAV/exposure/batch
@@ -333,3 +333,14 @@ their total separately, plus terminal cleanup. After the September 16 change,
 offline behavior is verified; the new APP speed requires fresh 2/3/5-order
 acceptance. Earlier 70.366/105.654-second runs used the old orchestration and are
 not performance evidence for this path.
+
+
+For a normal morning new-BUY batch, `scoped_buy_preflight` uses helper v11's
+independent structural parsing proof. Account binding, full table structure,
+all row codes/order IDs and this batch's code/side/price/quantity stay strict.
+Only Book-B owned/current candidate positions require quantity/mark validation;
+unrelated valuation and order-status/fill cells are outside this submission
+proof. Buying power is the directly read available cash. Complete account
+equations and order/trade reconciliation remain required after submission and
+for recovery/SELL/cancel, using their existing ports. This route cannot certify
+settlement or convert an uncertain earlier write into a new submit.

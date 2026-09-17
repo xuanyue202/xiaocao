@@ -34,11 +34,10 @@ must never run or await `morning-execute`, read a paper fill, or write
 `positions.jsonl`, `paper_trades.jsonl`, `paper_account.json`, or
 `paper_account_T.json`. Its state lives only under
 `output/live/book_b_live_execution/`. Before waiting, it verifies the native session once. It then leaves the App untouched until 09:24 China time, when the same runner rechecks/recovers the session and resumes 30-second heartbeats until the freeze. The quiet wait performs no repeated freeze polling; bounded sleeps recheck the clock and original timeout. A late start resumes checks immediately. Once a non-empty
-freeze exists, it uses the account-bound Founder App full-query surface to read
-positions/orders/trades plus the account-bound funds summary embedded in the
-positions capture and
-atomically produce `book_b_live_allocation_facts_<date>.json` only from a
-complete, account-bound native receipt. OpenCLI trading/view is sunset: this
+freeze exists, the normal new-BUY path reads available cash and Book-B owned
+position marks from the account-bound positions capture. It atomically produces
+`book_b_live_allocation_facts_<date>.json` with a scoped buying-power receipt;
+full mixed-account order/trade/equation reconciliation follows submission. OpenCLI trading/view is sunset: this
 live entrypoint does not import, initialize, authenticate or query it. A
 non-empty dated freeze is valid for this
 consumer only when the queue producer manifest already binds its actual
@@ -91,10 +90,9 @@ dated China session and accepts only the documented continuous-auction `T`
 status family (`T` or `T` plus digits). Numeric BUY limits are floored, never
 rounded up, to the 0.01-yuan stock tick before broker readback.
 Apply `docs/OPERATING_CONTRACT.md` section 9 for the capital-gate semantics.
-Unless the Founder adapter proves the account-bound `native-app` route, helper
-version 8+, the three positions/orders/trades row-query surfaces plus the
-positions-embedded funds summary, exact prepare/submit capability,
-native reconcile capability and broker allocation facts, the task
+Unless the Founder adapter proves the account-bound `native-app` route, the
+required helper capability (v11 for scoped new-BUY parsing), exact prepare/submit
+capability, native reconcile capability and broker buying-power facts, the task
 reports the exact fail-closed reason and produces no real order. Persist the
 sanitized preflight receipt with `website_authentication.status=not_used` and
 separate native PassGuard evidence; never infer one capability from another.
@@ -322,3 +320,26 @@ their total separately, plus terminal cleanup. After the September 16 change,
 offline behavior is verified; the new APP speed requires fresh 2/3/5-order
 acceptance. Earlier 70.366/105.654-second runs used the old orchestration and are
 not performance evidence for this path.
+
+
+## New-BUY critical path and operator context
+
+Operating Contract §1c/§4 governs the scoped buying-power route. The normal
+native morning uses one account-bound positions capture for available cash and
+owned-lot risk, sharing it for up to 60 seconds while the ownership head is
+unchanged. At batch entry read positions and order identities/related tuples;
+unrelated statuses, fills, valuations and cancel readiness cannot block the
+new BUY. Complete native structure and relevant cell confidence remain required.
+The execution port performs the one real form preparation and readback just
+before claim/submit; the separate clear-after-readback rehearsal is omitted for
+new morning orders. Recovery keeps its established prepare/reconcile route.
+Full order/trade/account reconciliation follows the submission pass.
+
+Before 09:20 retain a file checkpoint and a reviewed conditional opening draft,
+not just source notes or null placeholders. Use the 11:30 history horizon.
+After 09:24, poll the original runner with small output budgets. Read its
+`brief_path` first, fetch missing relevant fields from `request_path` only as
+needed, and read the complete terminal artifact by field selection. Never print
+full candidate arrays, account tables or source caches into the operator stream.
+These projections preserve original immutable evidence; they do not create
+analysis approval or replace reading changed source material.

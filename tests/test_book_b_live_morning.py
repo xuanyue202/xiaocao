@@ -1971,3 +1971,13 @@ def test_live_morning_cli_is_independent_of_auto_daily() -> None:
     assert "auto_daily.sh" in result.stdout
     assert "--initial-capital" not in result.stdout
     assert "--logical-account-id" not in result.stdout
+
+
+def test_filled_and_safely_skipped_batch_is_terminal_not_unresolved():
+    from xiaocao.live.book_b_live_morning import _rollup
+    from types import SimpleNamespace
+    receipts = [SimpleNamespace(state=ExecutionState.FILLED, reason='filled'),
+                SimpleNamespace(state=ExecutionState.SKIPPED, reason='REALTIME_ABOVE_BASKET')]
+    assert _rollup(receipts) == ('completed', 'BROKER_TERMINAL_WITH_SKIPS')
+    receipts.append(SimpleNamespace(state=ExecutionState.UNKNOWN, reason='ambiguous'))
+    assert _rollup(receipts)[0] == 'unresolved'
