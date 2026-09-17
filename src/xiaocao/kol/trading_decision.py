@@ -2,9 +2,10 @@
 
 Context/report hashes use publication's RFC 8785 canonical JSON. The trading
 decision hash uses kol_policy.decision_sha256; these are different objects and
-must never be substituted for one another. Context cache hashes prove internal
-consistency, not remote authority. Every NEW publication reads the referenced
-current reports through get_kol_record and the complete manifest verifier.
+must never be substituted for one another. Context cache hashes and verification
+times prove internal consistency, not publication-time remote authority. Every
+NEW publication reads the referenced current reports through get_kol_record and
+the complete manifest verifier.
 received_at remains a local consumer observation, not a remotely certified date.
 
 Review is independent Agent judgment, not cryptographic permission. Natural
@@ -27,7 +28,7 @@ import re
 import tempfile
 from collections import Counter
 from contextlib import contextmanager
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Callable, Iterator, Sequence
 
@@ -223,8 +224,6 @@ def _validate_inputs(decision: dict, review: dict, context: dict, now: datetime,
                      "source_version_not_observed_as_of")
             _require(_time(row["version_received_at"]) <= _time(row["verified_at"]) <= now,
                      "source_verification_time_invalid")
-            if fresh:
-                _require(now - _time(row["verified_at"]) <= timedelta(seconds=300), "source_verification_stale")
             selected.append(row)
         if fresh:
             _require(now < until, "decision_expired")

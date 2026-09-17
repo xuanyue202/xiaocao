@@ -125,8 +125,11 @@ broker exact-once rules remain fail-closed. Missing, stale or invalid v2 data
 falls back to the ordinary immutable selection; never late-run a missed order.
 
 Intraday: existing necessary exit/reconcile work takes priority. Run each
-scheduled paper/live checkpoint once. New source review may follow it; a newly
-published decision is consumed by the next event tick, with fresh quote,
+scheduled paper/live checkpoint once. Opening-dense, precheck and closing tasks
+never retrieve KOL context, read report bodies, dispatch a semantic Agent,
+refresh source identities or publish a KOL decision. Morning changes wait for
+the 10:25 sparse gate; later changes wait for the next sparse claim owner. A
+newly published decision is consumed by the next event tick, with fresh quote,
 lot/ownership, T+1, liquidity and capital gates. It is not a second broker
 writer. At 14:55 the **first business command remains live closing**; never
 put context retrieval or a model call ahead of that two-minute authority.

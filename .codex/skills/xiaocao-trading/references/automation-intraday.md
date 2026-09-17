@@ -92,6 +92,15 @@ Never mix Book T into the default Book-B report. Book A is settled separately an
 | 14:25 precheck | Run immediately; never wait for 14:55; leave soft exits deferred |
 | 14:55 closing discipline | The single soft-exit pass; run once when woken and do not wait for another gate |
 
+Opening-dense tasks are protective-monitor owners only. They must not retrieve
+KOL context, read report bodies, dispatch a semantic Agent, refresh source
+identities, publish a KOL decision, or write under `kol_policy/analysis`. Any
+morning source/decision change remains pending for the 10:25 sparse gate and
+its single owner-bound claim. The opening monitor may consume only a decision
+that was already validated before the checkpoint through the normal paper/live
+consumer; an expired or absent KOL decision is a safe degradation, not a reason
+to extend or duplicate the opening task.
+
 Intraday executes `HARD_STOP`, authorized structured `AI_EVENT_RISK_EXIT`,
 fresh independently reviewed `KOL_DISCRETIONARY_EXIT` under Contract §2a, or
 liquidity escape. Ordinary trailing/composite signals are `SELL_DEFERRED` until 14:55.
