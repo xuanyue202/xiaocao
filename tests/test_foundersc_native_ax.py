@@ -663,6 +663,19 @@ def test_python_query_owns_reread_budget_and_requests_one_native_capture(tmp_pat
     assert '--single-capture' in runner.calls[0][0]
 
 
+def test_history_query_refresh_is_explicit_and_history_only(tmp_path):
+    runner = HelperRunner(_receipt(status='query_read'))
+    client = FounderscNativeAXClient(helper_path=_helper(tmp_path), runner=runner)
+
+    client.read_query(kind='history-trades', expected_fingerprint='123******890',
+                      refresh_history=True)
+
+    assert '--refresh-history-query' in runner.calls[0][0]
+    with pytest.raises(ValueError, match='only valid for history'):
+        client.read_query(kind='today-trades', expected_fingerprint='123******890',
+                          refresh_history=True)
+
+
 @pytest.mark.skipif(sys.platform != "darwin" or shutil.which("swift") is None, reason="macOS Swift required")
 def test_position_crop_requires_same_strict_numeric_value():
     cases = [

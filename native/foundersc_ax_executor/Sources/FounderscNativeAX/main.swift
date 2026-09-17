@@ -4,7 +4,7 @@ import Foundation
 import Vision
 
 private let schemaVersion = 2
-private let helperVersion = 11
+private let helperVersion = 12
 private let bundleIdentifier = "com.fzzq.Mac2020"
 private let maximumDepth = 12
 private let maximumNodes = 1_000
@@ -781,6 +781,24 @@ private func guardedQueryNavigationPoint(
         normalizedYRange: surfaceState == "query_only"
             ? 0.055...0.105 : 0.35...0.55
     )
+}
+
+private func guardedHistoryRefreshPoint(
+    tokens: [OCRToken],
+    window: Bounds
+) -> (point: CGPoint?, count: Int) {
+    let candidates = tokens.filter { token in
+        let centerX = token.bounds.x + token.bounds.width / 2
+        let centerY = token.bounds.y + token.bounds.height / 2
+        let normalizedX = (centerX - window.x) / window.width
+        let normalizedY = (centerY - window.y) / window.height
+        return token.text.trimmingCharacters(in: .whitespacesAndNewlines) == "查询"
+            && token.confidence >= 0.25
+            && (0.29...0.36).contains(normalizedX)
+            && (0.075...0.13).contains(normalizedY)
+    }
+    guard candidates.count == 1 else { return (nil, candidates.count) }
+    return (pointForSubstring("查询", in: candidates[0]), 1)
 }
 
 private func queryNavigationTokens(
@@ -3114,7 +3132,7 @@ private func readQuery(arguments: [String]) -> Receipt {
             break
         }
         usleep(500_000)
-        let finalObservation = observe(command: "read-query", auditTables: true)
+        var finalObservation = observe(command: "read-query", auditTables: true)
         guard ["trade_ready", "query_only"].contains(
             finalObservation.receipt.surfaceState
         ),
@@ -3122,6 +3140,34 @@ private func readQuery(arguments: [String]) -> Receipt {
               finalObservation.receipt.tradeAccountFingerprint
                 == expectedFingerprint else {
             break
+        }
+        if arguments.contains("--refresh-history-query"),
+           ["history-orders", "history-trades"].contains(kind) {
+            guard let refreshRunning = finalObservation.runningApplication,
+                  let refreshBounds = finalObservation.receipt.windowBounds,
+                  let refreshCapture = captureFounderWindow(
+                    pid: refreshRunning.processIdentifier,
+                    windowBounds: refreshBounds
+                  ) else { break }
+            let refreshTokens = recognizeText(
+                image: refreshCapture.0,
+                screenBounds: refreshCapture.1
+            )
+            let refresh = guardedHistoryRefreshPoint(
+                tokens: refreshTokens,
+                window: refreshBounds
+            )
+            guard refresh.count == 1,
+                  let refreshPoint = refresh.point,
+                  postSingleLeftClick(at: refreshPoint) else { break }
+            usleep(500_000)
+            finalObservation = observe(command: "read-query", auditTables: true)
+            guard ["trade_ready", "query_only"].contains(
+                finalObservation.receipt.surfaceState
+            ),
+                  finalObservation.receipt.tradeAccountFingerprintCount == 1,
+                  finalObservation.receipt.tradeAccountFingerprint
+                    == expectedFingerprint else { break }
         }
         finalReceipt = finalObservation.receipt
         finalReadback = capturedQueryReadback(

@@ -449,17 +449,23 @@ class FounderscNativeAXClient:
         *,
         kind: str,
         expected_fingerprint: str,
+        refresh_history: bool = False,
     ) -> NativeAXReceipt:
+        if refresh_history and kind not in {"history-orders", "history-trades"}:
+            raise ValueError("history refresh is only valid for history queries")
+        args = [
+            "--kind",
+            str(kind),
+            "--allow-query-navigation",
+            "--single-capture",
+            "--expected-fingerprint",
+            str(expected_fingerprint),
+        ]
+        if refresh_history:
+            args.append("--refresh-history-query")
         return self._run(
             "read-query",
-            [
-                "--kind",
-                str(kind),
-                "--allow-query-navigation",
-                "--single-capture",
-                "--expected-fingerprint",
-                str(expected_fingerprint),
-            ],
+            args,
         )
 
     def open_order_surface(
