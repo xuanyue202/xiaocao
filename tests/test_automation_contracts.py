@@ -25,7 +25,7 @@ def test_market_schedules_keep_distinct_ids_and_china_wall_clock() -> None:
         "xiaocao-intraday-monitor": ("9", "35,45,55"),
         "xiaocao-intraday-monitor-05": ("10,13", "25,55"),
         "xiaocao-intraday-risk-precheck-1425": ("14", "25"),
-        "xiaocao-intraday-monitor-1455": ("14", "54"),
+        "xiaocao-intraday-monitor-1455": ("14", "51"),
         "xiaocao-daily-eod": ("15", "10"),
         "xiaocao-weekly-deep-review": ("20", "30"),
     }

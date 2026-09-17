@@ -554,7 +554,12 @@ def _run_book_b_live_intraday_locked(
         if normalized_phase == "closing" and not _closing_discipline_window(
             decision_now, trade_date
         ):
-            raise ValueError("LIVE_BOOK_B_CLOSING_DISCIPLINE_WINDOW_NOT_OPEN")
+            # A prior lot may already have produced a durable decision and
+            # terminal execution receipt. Preserve that partial checkpoint
+            # instead of replacing its audit trail with a top-level time-gate
+            # exception. The expired window still forbids any new decision,
+            # intent, prepare, or submit work.
+            break
         status = dict(by_lot[lot.owned_lot_id])
         reason = str(status.get("sell_reason") or "") or None
         triggered = status.get("triggered") is True

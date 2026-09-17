@@ -1334,6 +1334,92 @@ def test_intraday_rejects_closing_authority_before_1455(
         )
 
 
+def test_intraday_preserves_partial_receipt_when_closing_window_expires(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    lots = tuple(
+        BookBLiveOwnedLot(
+            owned_lot_id=f"buy-lot-{index}",
+            code=f"00000{index}.XSHE",
+            name=f"标的{index}",
+            entry_date="2026-08-31",
+            entry_price=10.0,
+            shares=100,
+            sellable_shares=100,
+            current_price=9.0,
+            market_value=900.0,
+            liquidation_value_after_fee=899.91,
+            buy_fee_rate=0.0001,
+            sell_fee_rate=0.0001,
+            snapshot_ref="test-only",
+            monitor_context={},
+        )
+        for index in (1, 2)
+    )
+    account = BookBLiveAccountState(
+        trade_date="2026-09-01",
+        logical_account_id="primary",
+        cash=28_000.0,
+        current_open_exposure=1_800.0,
+        liquidation_value_after_fee=1_799.82,
+        settled_nav=29_799.82,
+        realized_cash_delta=-2_000.0,
+        ownership_head_sha256="a" * 64,
+        broker_snapshot_sha256="b" * 64,
+        broker_snapshot_observed_at=NOW.isoformat(),
+        lots=lots,
+    )
+    monkeypatch.setattr(
+        "xiaocao.live.book_b_live_intraday.project_book_b_live_account",
+        lambda *args, **kwargs: account,
+    )
+    monkeypatch.setattr(
+        "xiaocao.live.book_b_live_intraday.load_monitor_contexts",
+        lambda *args, **kwargs: {},
+    )
+    late = NOW + timedelta(minutes=1)
+    times = iter((NOW, NOW, NOW, NOW, NOW, late, late))
+
+    def execute(plan: TradePlan) -> ExecutionReceipt:
+        return ExecutionReceipt(
+            plan_id=plan.plan_id,
+            plan_hash=plan.plan_hash,
+            state=ExecutionState.SKIPPED,
+            reason="OUTSIDE_CONTINUOUS_AUCTION",
+            remaining_shares=plan.shares,
+        )
+
+    receipt = run_book_b_live_intraday(
+        state_dir=tmp_path,
+        freeze_dir=tmp_path,
+        trade_date="2026-09-01",
+        phase="closing",
+        account_snapshot_provider=lambda: _snapshot(),
+        status_provider=lambda owned: [
+            {
+                "owned_lot_id": lot.owned_lot_id,
+                "triggered": True,
+                "sell_reason": "EOD_DISCIPLINE_1455",
+                "decision_phase": "eod_discipline",
+                "latest_price": 9.0,
+                "market_guard_status": "ok",
+                "market_guard_observed_at": NOW,
+                "market_guard_down_price": 8.0,
+            }
+            for lot in owned
+        ],
+        execute=execute,
+        now=lambda: next(times),
+    )
+
+    assert receipt.status == "executed"
+    assert len(receipt.decisions) == 1
+    assert len(receipt.execution_receipts) == 1
+    assert receipt.execution_receipts[0]["state"] == "skipped"
+    assert receipt.execution_receipts[0]["reason"] == "OUTSIDE_CONTINUOUS_AUCTION"
+
+
 def test_intraday_blocks_new_decisions_while_any_live_plan_is_unresolved(
     tmp_path: Path,
 ) -> None:
