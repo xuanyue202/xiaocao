@@ -61,3 +61,13 @@ decision may be reused directly. Source packets never enter the decision store,
 assert future opening conditions, override qualification, or authorize orders.
 Incomplete source coverage can be documented in a preparation packet but cannot
 bypass the existing formal decision publication checks.
+
+The approved packet is the reusable semantic boundary for every daytime
+consumer. Downstream live, paper, sparse and audit tasks verify its context,
+source and review hashes, then read only newly approved changes plus their own
+current facts. They do not reopen all unchanged report bodies or independently
+recreate source notes. If the packet is absent or requires source analysis, the
+consumer degrades to its deterministic baseline and leaves source work to this
+owner. Formal decision publication still uses the complete current context and
+remote report/manifest verification; packet reuse does not weaken source
+identity checks.

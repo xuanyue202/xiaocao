@@ -67,6 +67,30 @@ def test_closing_dispatches_native_once_before_paper_work() -> None:
         assert unrelated_work not in before_live
 
 
+def test_nonsemantic_daytime_tasks_cannot_start_kol_publication() -> None:
+    for name in (
+        "xiaocao-intraday-monitor",
+        "xiaocao-intraday-risk-precheck-1425",
+        "xiaocao-intraday-monitor-1455",
+        "xiaocao-daily-eod",
+    ):
+        prompt = _automation(name)["prompt"]
+        assert "delegate only semantic judgment" not in prompt
+        assert "kol_trading_decision.py publish" not in prompt
+
+
+def test_semantic_consumers_reuse_source_preparation() -> None:
+    for name in (
+        "xiaocao-book-b-live-morning",
+        "xiaocao-daily-morning-execution",
+        "xiaocao-intraday-monitor-05",
+    ):
+        prompt = _automation(name)["prompt"]
+        assert "kol_trading_preparation.py status" in prompt
+        assert "source_analysis_required" in prompt
+        assert "unchanged report bodies" in prompt
+
+
 def test_kol_writers_stay_on_separate_hosts_and_schedules() -> None:
     local = _automation("xiaocao-kol-hourly")
     remote = _automation("xiaocao-kol-hourly-remote-writer")

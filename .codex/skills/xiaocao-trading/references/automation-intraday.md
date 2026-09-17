@@ -18,6 +18,11 @@ and must not create a five-minute Codex polling loop. Read
 [kol-trading-judgment.md](kol-trading-judgment.md); `no_op` ends silently before
 journal/MCP/broker reads. A claimed `run` retains the following independent
 paper/live checkpoints and the exact token acknowledgement.
+If that claim requests semantic review, reuse the remote writer's reviewed
+source-preparation packet. Verify exact bindings and read only approved
+new/changed evidence plus current paper/live facts. Missing source preparation
+degrades and acknowledges the tick; it never authorizes this task to reread all
+unchanged report bodies or recreate source analysis.
 
 For `reconcile_required / RUNNING_CLAIM`, use the returned
 `owner_thread_id` for exactly one task-status read. If that owner is active,

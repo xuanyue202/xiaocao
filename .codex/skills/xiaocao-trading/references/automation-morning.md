@@ -6,8 +6,11 @@ Read this file only for the daily morning recommendation/paper-book branch.
 
 For the bounded KOL overlay, also read
 [kol-trading-judgment.md](kol-trading-judgment.md). Keep the original runner and
-model. Start Astra `xhigh` and independent parent reading as soon as sources are ready; the freeze window is only for final applicability and publication.
-Only a source-verified published decision is consumable. Account-risk and KOL
+model. The remote writer owns full reading and independent source-level review
+of every new/changed report. Morning live and paper tasks reuse that hash-bound
+preparation packet and perform only their separate current-applicability
+adaptation and review. They do not reread unchanged report bodies. Only a
+source-verified published decision is consumable. Account-risk and KOL
 caps are separate from frozen qualification and the allocation capsule; a late
 review never rewrites the freeze, old intent or an earlier fill.
 
@@ -256,15 +259,18 @@ Escalate: script failure/traceback, missing recommendation or paper-record stage
 Start at 09:00 with the default 2100-second freeze wait and a short initial command yield; do not block source work
 behind the running shell. During 09:25–09:30, react promptly to emitted review
 requests and failures; avoid long blind waits for a potentially actionable
-result. While the original runner waits for freeze, prepare full KOL
-sources and their important conditions. Read `reading_path` returned by
-`kol_trading_context.py context --summary`; retain `context_path` for formal
-publication. Missing or stale bodies have exact `refresh_report_ids`: retrieve
-only the needed registered sources using `--read-report-id` and `--report-id`.
-Do not refresh every historical source or reread repeated JSON bodies.
-The parent reads relevant evidence independently while semantic judgment runs,
-then reviews the draft and necessary changes; do not wait for the draft to
-start source reading. Reuse an applicable, still-valid published decision.
+result. While the original runner waits for freeze, build the cache-only context
+and run `kol_trading_preparation.py status`. Retain `context_path` for formal
+publication. For `prepared`, use the reviewed packet. For
+`source_revalidation_required`, verify only the exact missing manifests and
+reuse `reusable_path`; do not open unchanged report bodies. For
+`source_analysis_required`, a missing packet, or changed evidence without an
+approved packet, record supporting degradation and use the deterministic
+baseline rather than taking over the remote writer's source-analysis job.
+Current-applicability Astra work receives the approved packet, exact freeze and
+runtime-specific current facts. The parent independently reviews that mapping
+and its counterevidence, not the unchanged source corpus. Reuse an applicable,
+still-valid published decision.
 
 During 09:25–09:30, unexpected AX/code errors or missing KOL material are urgent
 work. Patch the smallest failure, validate affected correctness, resume the
@@ -279,7 +285,7 @@ Preserve selected observation evidence and final-attempt status; never rerun
 the producer after freezing. Stage timings remain in receipts for later
 performance diagnosis, not as extra approval gates.
 
-After the exact full context has already been read during early preparation,
+After the source-preparation owner has read the exact full context,
 use `context --summary --since-context <already-read-context.json>` for a later
 refresh (combine with exact `--report-id` / `--read-report-id` when needed).
 The reading delta binds that base hash, carries every changed record and
@@ -291,7 +297,7 @@ At 09:00 run `PYTHONPATH=src .venv/bin/python scripts/market_data_preflight.py -
 
 ### Submit the batch before waiting for fills
 
-The runner supplies the hash-bound account/allocation facts and account-risk receipt before starting final review. Use that exact request; do not spend its budget on a separate duplicate account read. Retain the early semantic worker across the 09:22 source delta and the final freeze; send only new evidence/current applicability work. Never invent a conditional opening fact or publish a source-only packet as a current decision.
+The runner supplies the hash-bound account/allocation facts and account-risk receipt before starting final review. Use that exact request; do not spend its budget on a separate duplicate account read. Retain the current-applicability worker across the 09:22 prepared source delta and the final freeze; send only newly approved source changes and current applicability work. Never invent a conditional opening fact or publish a source-only packet as a current decision.
 
 The runner holds one account fence across full-batch allocation and serialized submissions. A fully mapped, chain-certain ACK/PARTIAL allows the next reserved order; UNKNOWN or incomplete identity stops new writes. Fill polling starts after the submission pass. Inspect submission_observations for actual counter-acceptance proof and deadline performance; prepare completion is not submission. Preserve APP raw order states: queued is not exchange-accepted and neither is a fill. If orders remain open, the original task owns exact-plan reconciliation until terminal or an explicit recorded checkpoint handoff; never leave a bare unresolved receipt without naming the pending orders and next owner.
 
