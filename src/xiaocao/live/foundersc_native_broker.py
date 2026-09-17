@@ -2589,8 +2589,28 @@ class FounderscNativeAXBrokerAdapter(BrokerAdapter):
             or withdrawable < 0
         ):
             raise FounderscNativeAXError("LIVE_ALLOCATION_VALUES_INVALID")
+        reservation_snapshot = None
+        asset_equation_cash_field = "cash_balance"
         if balance + securities != total_assets:
-            raise FounderscNativeAXError("LIVE_ALLOCATION_ASSET_EQUATION_FAILED")
+            # Mixed-account pending buys can make this APP display net available
+            # cash in total assets. Require the full, independently reconciled
+            # snapshot; never infer reservations from a summary difference.
+            reservation_snapshot = self._read_live_account_snapshot_once(
+                trade_date=trade_date,
+                expected_fund_account_fingerprint=expected_fund_account_fingerprint,
+                logical_account_id=logical_account_id,
+                now=now,
+            )
+            if not reservation_snapshot.get("cash_reservation_evidence"):
+                raise FounderscNativeAXError("LIVE_ALLOCATION_ASSET_EQUATION_FAILED")
+            positions = reservation_snapshot["tables"]["positions"]
+            summary = positions["summary_values"]
+            total_assets = _decimal(summary["资产"], field="TOTAL_ASSETS")
+            securities = _decimal(summary["股票市值"], field="SECURITIES_VALUE")
+            balance = _decimal(summary["余额"], field="CASH_BALANCE")
+            available = _decimal(summary["可用"], field="AVAILABLE_CASH")
+            withdrawable = _decimal(summary["可取"], field="WITHDRAWABLE_CASH")
+            asset_equation_cash_field = "available_cash"
         if available > balance:
             raise FounderscNativeAXError(
                 "LIVE_ALLOCATION_AVAILABLE_EXCEEDS_BALANCE"
@@ -2599,14 +2619,16 @@ class FounderscNativeAXBrokerAdapter(BrokerAdapter):
             raise FounderscNativeAXError(
                 "LIVE_ALLOCATION_WITHDRAWABLE_EXCEEDS_AVAILABLE"
             )
-        asset_equation_cash_field = "cash_balance"
         position_value = sum(
             _decimal(row.get("最新市值"), field="POSITION_VALUE")
             for row in positions["rows"]
         )
         if abs(position_value - securities) > Decimal("0.10"):
             raise FounderscNativeAXError("LIVE_ALLOCATION_POSITION_SUM_FAILED")
-        observed_at = _parse_timestamp(positions.get("observed_at"))
+        observed_at = _parse_timestamp(
+            reservation_snapshot["observed_at"] if reservation_snapshot
+            else positions.get("observed_at")
+        )
         current = now or datetime.now(timezone.utc)
         if current.tzinfo is None:
             raise ValueError("LIVE_ALLOCATION_NOW_NOT_TZ_AWARE")
@@ -2641,6 +2663,8 @@ class FounderscNativeAXBrokerAdapter(BrokerAdapter):
             "asset_equation_cash_field": asset_equation_cash_field,
             "allocation_summary": {"complete": True, "values": values},
         }
+        if reservation_snapshot is not None:
+            safe_receipt["reservation_snapshot"] = reservation_snapshot
         receipt_hash = hashlib.sha256(
             json.dumps(
                 safe_receipt,

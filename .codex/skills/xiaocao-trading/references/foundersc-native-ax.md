@@ -126,7 +126,10 @@ covered by the reported balance-minus-available reduction, can explain that
 strict BUY-shaped cash branch. Preserve its order IDs, principal and reported
 reservation difference; do not infer a fee rate or manufacture a fill/NAV.
 Probe, snapshot and lifecycle apply the same reservation proof. Live allocation
-facts remain on the normal cash-balance branch and cannot spend this exception.
+facts may fall back to the same strictly reconciled three-table pending-BUY
+reservation proof when the normal balance equation fails. Persist that snapshot,
+use only net available cash, and preserve independent Book-B NAV/exposure/batch
+limits. Do not cancel, retry or adopt unrelated orders to reconcile the difference.
 Persist
 `asset_equation_cash_field` as `cash_balance` or `available_cash`. If neither
 branch closes exactly, or its ordering fails, the snapshot remains invalid;

@@ -2058,6 +2058,37 @@ def test_native_allocation_rejects_invalid_cash_ordering(
         )
 
 
+@pytest.mark.parametrize("order_status", ["已报", "已撤", "未知"])
+def test_native_allocation_requires_proven_pending_buy_reservation(order_status: str) -> None:
+    native = FakeNative()
+    native.position_summary.update({
+        "资产": "43104.60", "股票市值": "43054.60",
+        "余额": "120.00", "可用": "50.00", "可取": "40.00",
+    })
+    native.orders[0]["状态说明"] = order_status
+    adapter = _adapter(native)
+    kwargs = dict(
+        trade_date="2026-08-30", settled_nav=30000,
+        current_open_exposure=7000, capital_basis_source="initial_book_b_capital",
+        expected_fund_account_fingerprint="123******890",
+        now=datetime.fromisoformat(OBSERVED_AT.replace("Z", "+00:00")),
+    )
+    if order_status != "已报":
+        with pytest.raises(FounderscNativeAXError):
+            adapter.read_live_allocation_facts(**kwargs)
+    else:
+        facts = adapter.read_live_allocation_facts(**kwargs)
+        assert facts["available_cash"] == 50.0
+        assert facts["cash_balance"] == 120.0
+        assert facts["settled_nav"] == 30000
+        assert facts["current_open_exposure"] == 7000
+        assert facts["asset_equation_cash_field"] == "available_cash"
+        snapshot = facts["broker_receipt"]["reservation_snapshot"]
+        assert snapshot["cash_reservation_evidence"]["order_ids"] == ["6000002"]
+        assert set(snapshot["tables"]) == {"positions", "today-orders", "today-trades"}
+    assert native.submit_calls == native.cancel_calls == 0
+
+
 def test_native_allocation_rejects_one_cent_asset_equation_drift() -> None:
     native = FakeNative()
     native.position_summary.update(
