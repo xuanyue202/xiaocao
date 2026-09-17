@@ -58,6 +58,36 @@ def test_cli_multiple_outstanding_then_exact_cancel_and_idempotent_replay(batch_
     assert not (directory / "ownership.jsonl").exists()
 
 
+@pytest.mark.parametrize("prices", [[.34, .36], [.34, .36, .37], [.34, .36, .37, .38, .39]])
+def test_existing_same_symbol_orders_survive_reordered_batch_submit_and_cancel(batch_app, prices):
+    run, native, _ = batch_app
+    existing_ids = {"6000101", "6000102"}
+    for order_id, price in zip(sorted(existing_ids), ("0.3100", "0.3200")):
+        row = dict(native.orders[0])
+        row.update({
+            "证券代码": "512010",
+            "证券名称": "既有同代码委托",
+            "状态说明": "已报",
+            "委托价格": price,
+            "委托编号": order_id,
+        })
+        native.orders.append(row)
+    original = native.read_query
+    def query(**kwargs):
+        if kwargs["kind"] == "today-orders":
+            native.orders.reverse()
+        return original(**kwargs)
+    native.read_query = query
+
+    assert run(prices) == 0
+
+    existing = {row["委托编号"]: row for row in native.orders
+                if row["委托编号"] in existing_ids}
+    assert set(existing) == existing_ids
+    assert {row["状态说明"] for row in existing.values()} == {"已报"}
+    assert native.submit_calls == native.cancel_calls == len(prices)
+
+
 def test_kth_lost_response_seals_batch_and_cleans_known_claims(batch_app):
     run, native, directory = batch_app
     original = native.submit_prepared_order
