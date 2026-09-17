@@ -5,17 +5,30 @@ trade and mixed-account reconciliation remains mandatory after submission.
 """
 from dataclasses import replace
 from datetime import datetime
+import hashlib
+import json
 import math
 import re
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
-from xiaocao.kol.publication import canonical_sha256
 from .book_b_live_lifecycle import (
     BookBLiveAccountState, BookBLiveOwnedLot, load_latest_book_b_live_settlement,
     _read_jsonl_strict, _validate_execution_fill_coverage,
     _validate_ownership_chain,
 )
+
+
+def _capsule_sha256(value: dict) -> str:
+    return hashlib.sha256(
+        json.dumps(
+            value,
+            ensure_ascii=False,
+            sort_keys=True,
+            separators=(",", ":"),
+            default=str,
+        ).encode("utf-8")
+    ).hexdigest()
 
 
 def validate_buy_preflight(snapshot: dict, trade_date: str, now: datetime) -> dict:
@@ -28,8 +41,9 @@ def validate_buy_preflight(snapshot: dict, trade_date: str, now: datetime) -> di
 def _validate_buy_preflight(snapshot: dict, trade_date: str, now: datetime) -> dict:
     from .foundersc_native_broker import _decimal
     body = {k: v for k, v in snapshot.items() if k != 'snapshot_sha256'}
+    snapshot_sha256 = _capsule_sha256(body)
     observed = datetime.fromisoformat(snapshot['observed_at'])
-    if (canonical_sha256(body) != snapshot.get('snapshot_sha256')
+    if (snapshot_sha256 != snapshot.get('snapshot_sha256')
             or snapshot.get('schema_version') != 'book-b-buy-preflight.v1'
             or snapshot.get('account_binding') != 'proven'
             or snapshot.get('logical_account_id') != 'primary'
@@ -65,9 +79,9 @@ def allocation_from_buy_preflight(snapshot: dict, basis, *, now: datetime) -> di
         'settled_nav': basis.settled_nav, 'current_open_exposure': basis.current_open_exposure,
         'capital_basis_source': basis.source, 'capital_basis_receipt_sha256': basis.receipt_sha256,
         'broker_observed_at': snapshot['observed_at'],
-        'broker_receipt': receipt, 'broker_receipt_sha256': canonical_sha256(receipt),
+        'broker_receipt': receipt, 'broker_receipt_sha256': _capsule_sha256(receipt),
     }
-    result['allocation_capsule_sha256'] = canonical_sha256(result)
+    result['allocation_capsule_sha256'] = _capsule_sha256(result)
     return result
 
 

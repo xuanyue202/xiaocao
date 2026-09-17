@@ -1213,12 +1213,12 @@ class FounderscNativeAXBrokerAdapter(BrokerAdapter):
         plan: TradePlan,
         previous: dict[str, Any],
     ) -> BrokerCapability:
-        """Prove one exact cancel path without reopening order entry.
+        """Prove one exact cancel target without changing row selection.
 
         The submit probe deliberately ends on the BUY/SELL form. It is the
         wrong precondition for cancellation and used to create the sequence
         ``cancel -> query/order form -> stop``. This dedicated probe uses the
-        helper's non-cancelling exact-row selection/clear proof, leaves the App
+        helper's non-mutating exact-row/control proof, leaves the App
         on the cancel surface, and caches it for the one post-claim cancel.
         """
         order_id = str(
@@ -1229,7 +1229,7 @@ class FounderscNativeAXBrokerAdapter(BrokerAdapter):
             raise FounderscNativeAXError("NATIVE_CANCEL_ORDER_ID_MISSING_NO_RETRY")
         # A cancel probe is allowed the same single unattended unlock recovery
         # as the ordinary native route. This is read-only with respect to the
-        # broker order: the helper only selects and clears the exact row.
+        # broker order: the helper does not change checkbox selection.
         self.ensure_native_ready(unlock_once=True)
         payload = self.native.probe_cancel_selection(
             order_id=order_id,
@@ -1245,11 +1245,11 @@ class FounderscNativeAXBrokerAdapter(BrokerAdapter):
         try:
             status = _status(readback.get("order_status"))
             exact = bool(
-                str(payload.get("status") or "") == "cancel_selection_proven"
+                str(payload.get("status") or "") == "cancel_target_ready"
                 and self._account_bound(payload)
                 and int(payload.get("helper_version") or 0)
                     >= NATIVE_CANCEL_HELPER_MIN_VERSION
-                and readback.get("selection_proven") is True
+                and readback.get("selection_proven") is False
                 and str(readback.get("selection_proof_mode") or "") in {
                     "exact_order_tuple",
                     "exact_numeric_tuple_bounded_side_suffix",
@@ -1636,7 +1636,6 @@ class FounderscNativeAXBrokerAdapter(BrokerAdapter):
             order.get("成交数量"), field="ORDER_FILLED_QUANTITY", blank_zero=True
         )
         normalized = _status(order.get("状态说明"))
-        self._open_query_surface()
         trades = self._query("today-trades")
         self._validate_order_trade_cross_readback(orders, trades)
         trade_matches = [
@@ -2299,6 +2298,14 @@ class FounderscNativeAXBrokerAdapter(BrokerAdapter):
             dict(cancel_readback) if isinstance(cancel_readback, dict) else {}
         )
         helper_status = str(payload.get("status") or "")
+        result_readback = payload.get("result_readback")
+        result_readback = (
+            dict(result_readback) if isinstance(result_readback, dict) else {}
+        )
+        service_message_matched = bool(
+            result_readback.get("kind") == "cancel"
+            and result_readback.get("message_matched") is True
+        )
         cancel_clicked = cancel_readback.get("cancel_clicked") is True
         try:
             selection_proof_mode = str(
@@ -2310,6 +2317,8 @@ class FounderscNativeAXBrokerAdapter(BrokerAdapter):
                     in {
                         "cancel_clicked",
                         "cancel_confirmed",
+                        "cancel_service_accepted",
+                        "cancel_confirmation_pressed_result_unproven",
                         "cancel_confirmation_unproven",
                     }
                 and cancel_readback.get("selection_proven") is True
@@ -2342,6 +2351,13 @@ class FounderscNativeAXBrokerAdapter(BrokerAdapter):
             ),
             "cancel_selection_proof_mode": str(
                 cancel_readback.get("selection_proof_mode") or ""
+            ),
+            "cancel_service_status": str(
+                result_readback.get("status") or ""
+            ),
+            "cancel_service_message_matched": service_message_matched,
+            "cancel_service_acknowledgment_pressed": (
+                result_readback.get("acknowledgment_pressed") is True
             ),
         }
 
@@ -2417,8 +2433,11 @@ class FounderscNativeAXBrokerAdapter(BrokerAdapter):
             },
             template_name="foundersc-native-ax",
             reason=(
-                "NATIVE_CANCEL_CLICKED_READBACK_UNPROVEN"
-                if cancel_clicked else
+                "NATIVE_CANCEL_ACCEPTED_PENDING_READBACK"
+                if service_message_matched else
+                "NATIVE_CANCEL_CONFIRMATION_RESULT_UNPROVEN"
+                if cancel_readback.get("confirmation_pressed") is True else
+                "NATIVE_CANCEL_CLICKED_READBACK_UNPROVEN" if cancel_clicked else
                 "NATIVE_CANCEL_OUTCOME_UNKNOWN:"
                 f"{click_error or str(payload.get('status') or 'UNPROVEN')}"
             ),
@@ -2431,6 +2450,10 @@ class FounderscNativeAXBrokerAdapter(BrokerAdapter):
                 **cancel_readback,
                 "cancel_clicked": cancel_clicked,
                 "cancel_click_proven": cancel_click_proven,
+                "cancel_service_status": str(
+                    result_readback.get("status") or ""
+                ),
+                "cancel_service_message_matched": service_message_matched,
             },
         )
 

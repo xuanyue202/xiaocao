@@ -2867,9 +2867,47 @@ private func performCancel(arguments: [String], selectionProbeOnly: Bool) -> Rec
     guard deselectTokens.count == 1,
           cancelTokens.count == 1,
           let deselectPoint = pointForSubstring("全不选", in: deselectTokens[0]),
-          postSingleLeftClick(at: deselectPoint) else {
+          let cancelPoint = pointForSubstring("撤单", in: cancelTokens[0]) else {
         receipt.status = "cancel_controls_unproven"
         receipt.reason = "unique deselect-all and cancel action controls were not proven"
+        receipt.timingMs = milliseconds(since: started)
+        return receipt
+    }
+
+    if selectionProbeOnly {
+        receipt.status = "cancel_target_ready"
+        receipt.reason = "exact active order row and unique cancel controls were proven without changing selection"
+        receipt.cancelReadback = CancelReadback(
+            orderId: input.orderId,
+            code: input.order.code,
+            side: input.order.side,
+            price: input.order.priceText,
+            quantity: input.order.quantity,
+            orderStatus: targetRow["状态说明"] ?? "",
+            targetMatchCount: 1,
+            selectionProven: false,
+            selectionProofMode: selectionProofMode,
+            cancelControlCount: 1,
+            cancelClicked: false,
+            confirmationPressed: false,
+            confirmationMode: "none",
+            observedAt: isoTimestamp()
+        )
+        receipt.action = ActionResult(
+            attempted: false,
+            succeeded: true,
+            requiresUserInput: false,
+            confirmPressed: false,
+            confirmationMode: "none",
+            unlockPathProven: false
+        )
+        receipt.timingMs = milliseconds(since: started)
+        return receipt
+    }
+
+    guard postSingleLeftClick(at: deselectPoint) else {
+        receipt.status = "cancel_deselect_failed"
+        receipt.reason = "unique deselect-all control could not be clicked"
         receipt.timingMs = milliseconds(since: started)
         return receipt
     }
@@ -2928,44 +2966,7 @@ private func performCancel(arguments: [String], selectionProbeOnly: Bool) -> Rec
         return receipt
     }
 
-    if selectionProbeOnly {
-        let cleared = postSingleLeftClick(at: deselectPoint)
-        usleep(120_000)
-        receipt.status = cleared
-            ? "cancel_selection_proven" : "cancel_selection_clear_unproven"
-        receipt.reason = cleared
-            ? "exact cancel row was uniquely selected and then cleared without cancellation"
-            : "exact cancel row selection was proven but clearing it was not proven"
-        receipt.cancelReadback = CancelReadback(
-            orderId: input.orderId,
-            code: input.order.code,
-            side: input.order.side,
-            price: input.order.priceText,
-            quantity: input.order.quantity,
-            orderStatus: targetRow["状态说明"] ?? "",
-            targetMatchCount: 1,
-            selectionProven: true,
-            selectionProofMode: selectionProofMode,
-            cancelControlCount: cancelTokens.count,
-            cancelClicked: false,
-            confirmationPressed: false,
-            confirmationMode: "none",
-            observedAt: isoTimestamp()
-        )
-        receipt.action = ActionResult(
-            attempted: true,
-            succeeded: cleared,
-            requiresUserInput: false,
-            confirmPressed: false,
-            confirmationMode: "visual_delta_then_clear",
-            unlockPathProven: false
-        )
-        receipt.timingMs = milliseconds(since: started)
-        return receipt
-    }
-
-    guard let cancelPoint = pointForSubstring("撤单", in: cancelTokens[0]),
-          postSingleLeftClick(at: cancelPoint) else {
+    guard postSingleLeftClick(at: cancelPoint) else {
         _ = postSingleLeftClick(at: deselectPoint)
         receipt.status = "cancel_click_failed"
         receipt.reason = "unique cancel action control could not be clicked"
@@ -2998,13 +2999,20 @@ private func performCancel(arguments: [String], selectionProbeOnly: Bool) -> Rec
     }
     let confirmationUnproven = confirmationCandidate && !confirmationPressed
     receipt = postClick.receipt
+    let serviceAccepted = brokerResult?.messageMatched == true
     receipt.status = confirmationUnproven
         ? "cancel_confirmation_unproven"
-        : confirmationPressed ? "cancel_confirmed" : "cancel_clicked"
+        : serviceAccepted
+            ? "cancel_service_accepted"
+            : confirmationPressed
+                ? "cancel_confirmation_pressed_result_unproven"
+                : "cancel_clicked"
     receipt.reason = confirmationUnproven
         ? "cancel was clicked but an exact broker confirmation could not be proven; reconcile only"
-        : confirmationPressed
-            ? "only the exact order row received one cancel action and one guarded confirmation"
+        : serviceAccepted
+            ? "the exact cancel action was accepted by the service and awaits terminal table readback"
+            : confirmationPressed
+            ? "the exact cancel action was confirmed but its service result was not observed; reconcile only"
             : "only the exact order row received one direct cancel action; reconciliation is required"
     receipt.cancelReadback = CancelReadback(
         orderId: input.orderId,

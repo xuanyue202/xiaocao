@@ -37,6 +37,12 @@ invariants remain unchanged, the receipt records every read-only recovery
 attempt, and exhaustion fails closed; never rerun the top-level EOD process or
 replay a broker action to manufacture settlement.
 
+KOL work at EOD is receipt/hash audit only. `kol_trading_decision.py feedback`
+may trace source-preparation, decision, consumer and outcome receipts, but EOD
+must not open report bodies, build a new semantic context, dispatch a semantic
+Agent or publish/extend a decision. A missing link is recorded for the remote
+writer or next sparse claim owner; it does not keep the EOD task alive.
+
 A non-trading-day skip is a normal terminal state. Otherwise completion requires the dated run-flow to reach `eod done` and final artifacts to reconcile.
 
 ## What the orchestration owns

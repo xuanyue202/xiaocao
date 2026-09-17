@@ -242,8 +242,8 @@ def test_report_hash_cannot_be_replaced_with_trading_decision_or_source_binding_
     assert reader.calls == []
 
 
-@pytest.mark.parametrize("offset,accepted", [(300, True), (301, False), (-1, False)])
-def test_verified_at_max_age_and_future_boundary(tmp_path, bundle, offset, accepted):
+@pytest.mark.parametrize("offset,accepted", [(300, True), (301, True), (-1, False)])
+def test_cached_verification_age_does_not_replace_publication_read(tmp_path, bundle, offset, accepted):
     if offset == -1:
         context = bundle[2]
         for row in context["reports"] + context["report_index"]:
@@ -260,11 +260,13 @@ def test_verified_at_max_age_and_future_boundary(tmp_path, bundle, offset, accep
             publish(tmp_path, bundle, when)
 
 
-def test_verification_freshness_is_checked_again_after_remote_read(tmp_path, bundle):
+def test_elapsed_remote_read_does_not_stale_matching_context(tmp_path, bundle):
     times = iter((NOW, NOW + timedelta(seconds=301)))
-    with pytest.raises(td.TradingDecisionError, match="source_verification_stale"):
-        td.publish_trading_decision(tmp_path, *bundle[:3], client=bundle[3], clock=lambda: next(times))
-    assert not (tmp_path / td.POLICY_PATH / "decisions").exists()
+    receipt = td.publish_trading_decision(
+        tmp_path, *bundle[:3], client=bundle[3], clock=lambda: next(times)
+    )
+    assert receipt["status"] == "published"
+    assert len(bundle[3].calls) == len(bundle[0]["source_refs"])
 
 
 def test_publication_read_budget_covers_every_sequential_source(tmp_path, bundle, monkeypatch):

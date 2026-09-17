@@ -19,6 +19,25 @@ Read this file only when creating, changing or auditing Xiaocao schedules.
 - EOD: 15:10.
 - Weekly deep review: Friday 20:30.
 
+## Daytime ownership matrix
+
+| Stage | Sole business responsibility | KOL/source responsibility |
+|---|---|---|
+| Remote writer | Publish source objects and reviewed source-preparation packets | Sole full reader for new/changed report bodies; unchanged source analysis is reused |
+| 09:00 live morning | One native live runner, authentication probe, live current-applicability decision | Reuse the reviewed preparation packet; never redo unchanged source semantics |
+| 09:23 prerecommendation | Produce the immutable recommendation/freeze and exit | No KOL semantic work |
+| 09:25 paper execution | Keep the original paper shell alive and complete paper current applicability | Reuse the reviewed preparation packet; never redo unchanged source semantics or live work |
+| 09:35/09:45/09:55 opening | Protective paper/live checkpoints only | Consume an already-valid decision only; no context, model or publication work |
+| 10:25/10:55/13:25/13:55 sparse | One owner-bound tick claim and paper/live checkpoints | Only the claim owner may adapt a prepared packet when the source fingerprint changed or the decision expired |
+| 14:25 precheck | Protective paper/live checkpoints only | Consume an already-valid decision only; no context, model or publication work |
+| 14:55 closing | Time-critical live close first, then paper close | Consume an already-valid decision only; no context, model or publication work |
+| 15:10 EOD | Paper/live reconciliation, settlement and receipt audit | Receipt/hash linkage only; no report-body read, semantic dispatch or decision publication |
+
+Codex scheduling does not substitute for these durable business owners. Every
+repeated slot must either have a deterministic no-op/claim gate or be unable to
+start the expensive supporting workflow by contract. A task ends when its own
+stage is terminal; it does not stay alive to perform work owned by a later stage.
+
 For ordinary recurring Codex cron automations, express China wall-clock time directly with RRULE `BYHOUR` and `BYMINUTE`. Omit `DTSTART` and `TZID`; never convert to UTC. Timezone-specific/DTSTART schedules use a separate reviewed path.
 
 Codex Automation is the scheduling authority. Repository and `~/.codex/automations` TOML files are mirrors/runtime state, not activation proof.

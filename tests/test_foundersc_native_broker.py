@@ -77,6 +77,7 @@ class FakeNative:
         self.cancel_calls = 0
         self.unlock_calls = 0
         self.open_cancel_calls = 0
+        self.open_query_calls = 0
         self.open_order_calls = 0
         self.query_calls: list[str] = []
         self.orders = [
@@ -143,6 +144,7 @@ class FakeNative:
         return self._receipt(status="unlocked")
 
     def open_query_surface(self, **_kwargs) -> NativeAXReceipt:
+        self.open_query_calls += 1
         self.surface = "query_only"
         return self._receipt(status="query_surface_opened")
 
@@ -282,7 +284,7 @@ class FakeNative:
         assert len(matches) == 1
         row = matches[0]
         return self._receipt(
-            status="cancel_selection_proven",
+            status="cancel_target_ready",
             cancel_readback={
                 "order_id": kwargs["order_id"],
                 "code": kwargs["code"].split(".", 1)[0],
@@ -291,7 +293,7 @@ class FakeNative:
                 "quantity": kwargs["quantity"],
                 "order_status": row["状态说明"],
                 "target_match_count": 1,
-                "selection_proven": True,
+                "selection_proven": False,
                 "selection_proof_mode": "exact_order_tuple",
                 "cancel_control_count": 1,
                 "cancel_clicked": False,
@@ -1309,6 +1311,37 @@ def test_native_cancel_probe_leaves_exact_active_order_on_cancel_surface() -> No
     assert cancelled.normalized_status() == BrokerStatus.CANCELLED
 
 
+def test_reconcile_reads_orders_and_trades_with_one_query_surface_open() -> None:
+    native = FakeNative()
+    native.orders.append(
+        {
+            "证券代码": "000001",
+            "证券名称": "测试标的",
+            "委托时间": "092001",
+            "买卖标志": "买入",
+            "委托类别": "委托",
+            "状态说明": "已报",
+            "委托价格": "10.0000",
+            "委托数量": "100",
+            "委托编号": "6000099",
+            "成交价格": "0.000",
+            "成交数量": "",
+            "报价方式": "买卖",
+            "股东代码": "A***",
+            "备注": "",
+        }
+    )
+    adapter = _adapter(native)
+
+    receipt = adapter._reconcile_rows(
+        _plan(), requested_shares=100, expected_order_id="6000099"
+    )
+
+    assert receipt.normalized_status() == BrokerStatus.ACCEPTED
+    assert native.query_calls == ["today-orders", "today-trades"]
+    assert native.open_query_calls == 1
+
+
 def test_native_cancel_probe_allows_one_unlock_recovery() -> None:
     native = FakeNative(
         status="authentication_required",
@@ -1418,6 +1451,45 @@ def test_unknown_cancel_keeps_click_and_selection_evidence_without_retry() -> No
         == "exact_order_tuple"
     )
     assert native.cancel_calls == 1
+
+
+def test_unknown_cancel_preserves_service_result_separately_from_confirmation() -> None:
+    native = UnreconciledCancelNative()
+    adapter = _adapter(native)
+    plan = _plan()
+    adapter.prepare(plan)
+    submitted = adapter.submit(plan, "claim-1")
+
+    original_cancel = native.cancel_order
+
+    def cancel_with_service_result(**kwargs):
+        receipt = original_cancel(**kwargs)
+        receipt.payload["result_readback"] = {
+            "kind": "cancel",
+            "status": "cancel_result_acknowledged",
+            "message_matched": True,
+            "acknowledgment_pressed": True,
+            "acknowledgment_mode": "focused_dialog_button",
+            "observed_at": OBSERVED_AT,
+        }
+        return receipt
+
+    native.cancel_order = cancel_with_service_result
+    unresolved = adapter.cancel(
+        plan,
+        {
+            "broker_order_id": submitted.order_id,
+            "broker_strategy_id": submitted.strategy_id,
+            "requested_shares": 100,
+        },
+    )
+
+    assert unresolved.normalized_status() == BrokerStatus.UNKNOWN
+    assert unresolved.locator_proof["cancel_service_message_matched"] is True
+    assert unresolved.locator_proof["cancel_service_status"] == (
+        "cancel_result_acknowledged"
+    )
+    assert unresolved.reason == "NATIVE_CANCEL_ACCEPTED_PENDING_READBACK"
 
 
 def test_unproven_cancel_confirmation_preserves_proven_click_fact() -> None:
@@ -2374,7 +2446,13 @@ def test_native_allocation_recovers_transient_asset_drift_read_only() -> None:
         "recovered": True,
         "surface_resets": 1,
     }
-    assert native.query_calls == ["positions", "positions"]
+    assert native.query_calls == [
+        "positions",
+        "positions",
+        "today-orders",
+        "today-trades",
+        "positions",
+    ]
     assert native.open_order_calls == 1
     assert native.prepare_calls == 0
     assert native.submit_calls == 0

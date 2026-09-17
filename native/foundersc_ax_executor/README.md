@@ -25,7 +25,7 @@ Current commands:
 - `open-query-surface`, `read-query`: positions, current/historical orders,
   current/historical trades and funds using
   AX geometry plus local Vision OCR.
-- `open-cancel-surface`, `probe-cancel-selection`, `cancel-order`: one exact
+- `open-cancel-surface`, `probe-cancel-selection`, `cancel-order`: read-only exact
   numeric row selection proof and at most one cancel/confirmation action. The
   only OCR fallback is a receipt-labelled two-character `入`/`出` side suffix
   when order id, code, price and quantity are already exact and unique.

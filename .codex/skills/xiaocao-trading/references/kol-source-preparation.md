@@ -62,7 +62,6 @@ assert future opening conditions, override qualification, or authorize orders.
 Incomplete source coverage can be documented in a preparation packet but cannot
 bypass the existing formal decision publication checks.
 
-
 For morning consumption, distinguish source reuse from current policy validity.
 Run status with `--ready-through <today>T11:30:00+08:00 --opening-draft <path>`.
 `source_analysis_reusable` does not imply `current_policy_reusable`.
@@ -77,3 +76,13 @@ current applicability review and normal formal publication. If adequate current
 facts already support a session-valid decision, publish it early with a justified
 valid_until; never manufacture a neutral decision to fill the slot.
 At freeze reuse the reviewed conditional draft and verify only changed inputs.
+
+The approved packet is the reusable semantic boundary for every daytime
+consumer. Downstream live, paper, sparse and audit tasks verify its context,
+source and review hashes, then read only newly approved changes plus their own
+current facts. They do not reopen all unchanged report bodies or independently
+recreate source notes. If the packet is absent or requires source analysis, the
+consumer degrades to its deterministic baseline and leaves source work to this
+owner. Formal decision publication still uses the complete current context and
+remote report/manifest verification; packet reuse does not weaken source
+identity checks.
