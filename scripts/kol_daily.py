@@ -4309,10 +4309,12 @@ class DailyRuntime:
             if target is None:
                 raise DailyError("official mailbox handoff import is missing")
             if target.get("status") == "decided":
-                inbox.verify_completed(handoff_id)
+                completed = inbox.verify_completed(handoff_id)
                 return {
                     "status": "completed",
-                    "events": [],
+                    "events": [
+                        self._terminal(completed["decision_result_path"])
+                    ],
                     "completed_handoff_ids": [handoff_id],
                     "already_completed": True,
                 }

@@ -1568,6 +1568,60 @@ def test_official_decided_handoff_requires_durable_terminal_readback(
         runtime.wechat_official(handoff_id="a" * 64)
 
 
+def test_official_decided_handoff_replays_durable_terminal(
+    tmp_path,
+    monkeypatch,
+):
+    handoff_id = "a" * 64
+    terminal = {
+        "kind": "source_event",
+        "event_id": "source-1",
+        "content_value": {"status": "promoted"},
+        "gray_report": {"status": "published"},
+        "alert": {"status": "delivered"},
+        "book_kol_us": {"status": "no_trade"},
+        "knowledge_effect": {"status": "reusable_knowledge"},
+    }
+    result_path = tmp_path / "result.json"
+    result_path.write_text(
+        json.dumps({"items": [{"daily_terminal": terminal}]}),
+        encoding="utf-8",
+    )
+
+    class FakeInbox:
+        def __init__(self, output_dir):
+            assert output_dir == tmp_path / "official"
+
+        @staticmethod
+        def get_item(value):
+            assert value == handoff_id
+            return {"handoff_id": handoff_id, "status": "decided"}
+
+        @staticmethod
+        def verify_completed(value):
+            assert value == handoff_id
+            return {
+                "handoff_id": handoff_id,
+                "status": "decided",
+                "decision_result_path": str(result_path),
+            }
+
+    monkeypatch.setattr(kol_daily_script, "OfficialAccountInbox", FakeInbox)
+    runtime = DailyRuntime.__new__(DailyRuntime)
+    runtime.args = SimpleNamespace(
+        wechat_official_output_dir=tmp_path / "official",
+    )
+
+    result = runtime.wechat_official(handoff_id=handoff_id)
+
+    assert result == {
+        "status": "completed",
+        "events": [terminal],
+        "completed_handoff_ids": [handoff_id],
+        "already_completed": True,
+    }
+
+
 def test_official_deleted_source_becomes_no_effect_terminal(tmp_path, monkeypatch):
     handoff_id = "a" * 64
     terminal = {
