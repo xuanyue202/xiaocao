@@ -2490,6 +2490,78 @@ class TradingExecution:
         previous: ExecutionReceipt,
         receipt: BrokerReceipt,
     ) -> bool:
+        identity_mismatch = receipt.locator_proof.get(
+            "terminal_identity_mismatch"
+        )
+        if (
+            receipt.normalized_status() == BrokerStatus.REJECTED
+            and isinstance(identity_mismatch, dict)
+        ):
+            expected = identity_mismatch.get("expected")
+            observed = identity_mismatch.get("observed")
+            native_result = previous.locator_proof.get("native_result_readback")
+            native_action = previous.locator_proof.get("native_action")
+            claim_hash = hashlib.sha256(
+                str(previous.submit_claim_id or "").encode("utf-8")
+            ).hexdigest()
+            return bool(
+                receipt.template_name == "foundersc-native-ax"
+                and cls._account_binding_proven(receipt)
+                and receipt.conclusive
+                and receipt.active is False
+                and receipt.receipt_mapping is False
+                and receipt.order_id
+                and receipt.order_id == previous.broker_order_id
+                and receipt.strategy_id == "NAX" + claim_hash[:16].upper()
+                and previous.submit_chain_uncertain
+                and previous.submit_claim_id
+                and previous.filled_shares == receipt.filled_shares == 0
+                and receipt.remaining_shares == plan.shares
+                and identity_mismatch.get("kind")
+                == "acknowledged_order_id_terminal_identity_mismatch"
+                and identity_mismatch.get("order_id") == receipt.order_id
+                and identity_mismatch.get("broker_status") in {
+                    "废单",
+                    "已废",
+                    "拒单",
+                    "已拒绝",
+                    "委托失败",
+                    "无效委托",
+                }
+                and identity_mismatch.get("zero_fill_proven") is True
+                and identity_mismatch.get("order_id_trade_match_count") == 0
+                and isinstance(expected, dict)
+                and expected
+                == {
+                    "code": plan.code.split(".", 1)[0],
+                    "side": plan.side.upper(),
+                    "price": format(
+                        Decimal(str(plan.limit_price)).normalize(), "f"
+                    ),
+                    "shares": plan.shares,
+                }
+                and isinstance(observed, dict)
+                and observed.get("code") != expected["code"]
+                and observed.get("side") == expected["side"]
+                and observed.get("price") == expected["price"]
+                and observed.get("shares") == expected["shares"]
+                and isinstance(native_result, dict)
+                and native_result.get("kind") == "submit"
+                and native_result.get("status") == "submit_result_acknowledged"
+                and native_result.get("message_matched") is True
+                and native_result.get("acknowledgment_pressed") is True
+                and str(native_result.get("broker_order_id") or "").strip()
+                == receipt.order_id
+                and isinstance(native_action, dict)
+                and native_action.get("attempted") is True
+                and native_action.get("succeeded") is True
+                and native_action.get("confirm_pressed") is True
+                and native_action.get("requires_user_input") is False
+                and all(
+                    receipt.field_readback.get(key) is True
+                    for key in ("submitted", "saved", "started")
+                )
+            )
         rejection = receipt.locator_proof.get("server_rejection")
         if receipt.normalized_status() == BrokerStatus.REJECTED and isinstance(rejection, dict):
             return bool(

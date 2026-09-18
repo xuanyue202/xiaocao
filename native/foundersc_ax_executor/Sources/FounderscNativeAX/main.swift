@@ -4,7 +4,7 @@ import Foundation
 import Vision
 
 private let schemaVersion = 2
-private let helperVersion = 12
+private let helperVersion = 13
 private let bundleIdentifier = "com.fzzq.Mac2020"
 private let maximumDepth = 12
 private let maximumNodes = 1_000
@@ -202,6 +202,7 @@ private struct TransactionDialogControls {
     let markerPresent: Bool
     let confirmButtons: [AXUIElement]
     let cancelButtons: [AXUIElement]
+    let renderedText: String
 }
 
 private struct BrokerResultDialogControls {
@@ -1148,22 +1149,26 @@ private func focusedConfirmationDialogControls(
         return TransactionDialogControls(
             markerPresent: false,
             confirmButtons: [],
-            cancelButtons: []
+            cancelButtons: [],
+            renderedText: ""
         )
     }
     var markerPresent = false
     var confirmButtons: [AXUIElement] = []
     var cancelButtons: [AXUIElement] = []
+    var textParts: [String] = []
     var visited = 0
     func walk(_ element: AXUIElement, depth: Int) {
         guard depth <= maximumDepth, visited < maximumNodes else { return }
         visited += 1
         let role = stringAttribute(element, kAXRoleAttribute)
-        let text = [
+        let values = [
             stringAttribute(element, kAXTitleAttribute),
             stringAttribute(element, kAXDescriptionAttribute),
             stringAttribute(element, kAXValueAttribute),
-        ].joined(separator: " ")
+        ].filter { !$0.isEmpty }
+        textParts.append(contentsOf: values)
+        let text = values.joined(separator: " ")
         markerPresent = markerPresent || marker(text)
         if role == "AXButton" {
             if ["确定", "确认"].contains(
@@ -1188,7 +1193,8 @@ private func focusedConfirmationDialogControls(
     return TransactionDialogControls(
         markerPresent: markerPresent,
         confirmButtons: confirmButtons,
-        cancelButtons: cancelButtons
+        cancelButtons: cancelButtons,
+        renderedText: textParts.joined(separator: " ")
     )
 }
 
@@ -2034,6 +2040,28 @@ private func ocrOrderMatches(_ tokens: [OCRToken], _ input: OrderInput) -> Bool 
         && sideMatches >= 1
 }
 
+private func confirmationOrderTextMatches(
+    _ rendered: String,
+    _ input: OrderInput
+) -> Bool {
+    let sideText = input.side == "buy" ? "买入" : "卖出"
+    guard rendered.contains(sideText) else { return false }
+    let escapedCode = NSRegularExpression.escapedPattern(for: input.code)
+    guard rendered.range(
+        of: "(?<![0-9])\(escapedCode)(?![0-9])",
+        options: .regularExpression
+    ) != nil else { return false }
+    guard let regex = try? NSRegularExpression(
+        pattern: #"(?<![0-9])[0-9]+(?:[.,][0-9]+)?(?![0-9])"#
+    ) else { return false }
+    let range = NSRange(rendered.startIndex..<rendered.endIndex, in: rendered)
+    let values = regex.matches(in: rendered, range: range).compactMap {
+        Range($0.range, in: rendered).map { String(rendered[$0]) }
+    }
+    return values.contains { normalizedDecimal($0) == input.price }
+        && values.contains { normalizedQuantity($0) == input.quantity }
+}
+
 private func orderConfirmationMarker(_ rendered: String) -> Bool {
     return rendered.contains("交易确认")
         || rendered.contains("委托确认")
@@ -2238,13 +2266,27 @@ private func validateOrderSurface(
 }
 
 private func setOrderFields(_ fields: OrderFields, input: OrderInput) -> Bool {
+    guard AXUIElementSetAttributeValue(
+        fields.code,
+        kAXFocusedAttribute as CFString,
+        kCFBooleanTrue
+    ) == .success else { return false }
     let codeResult = AXUIElementSetAttributeValue(
         fields.code,
         kAXValueAttribute as CFString,
         input.code as CFTypeRef
     )
     guard codeResult == .success else { return false }
-    usleep(20_000)
+    // Founder keeps an internal security selection separate from the visible
+    // field value. Moving focus away commits the security before the dependent
+    // price and quantity fields are populated.
+    usleep(80_000)
+    guard AXUIElementSetAttributeValue(
+        fields.price,
+        kAXFocusedAttribute as CFString,
+        kCFBooleanTrue
+    ) == .success else { return false }
+    usleep(120_000)
     let priceResult = AXUIElementSetAttributeValue(
         fields.price,
         kAXValueAttribute as CFString,
@@ -2510,38 +2552,55 @@ private func submitPreparedOrder(arguments: [String]) -> Receipt {
     usleep(180_000)
     let postClick = observe(command: "submit-prepared-order")
     let focusedDialog = focusedTransactionDialogControls(postClick)
-    var confirmationCandidate = !focusedDialog.confirmButtons.isEmpty
+    let confirmationCandidate = !focusedDialog.confirmButtons.isEmpty
         || postClick.receipt.windowCount > receipt.windowCount
         || postClick.receipt.markers.contains("order_confirmation")
-    var confirmationMarker = focusedDialog.markerPresent
+    let confirmationMarker = focusedDialog.markerPresent
         || postClick.receipt.markers.contains("order_confirmation")
-    var confirmationOrderMatched = postClick.orderFields.map { fields in
-        orderReadbackMatches(
-            currentOrderReadback(
-                input: input,
-                fields: fields,
-                submitControlCount: postClick.submitControls.count
-            ),
-            input
+    let confirmationOrderMatched = focusedDialog.markerPresent
+        && confirmationOrderTextMatches(focusedDialog.renderedText, input)
+    if confirmationCandidate,
+       confirmationMarker,
+       !confirmationOrderMatched,
+       focusedDialog.cancelButtons.count == 1 {
+        let cancelled = pressUniqueFocusedDialogButton(
+            focusedDialog.cancelButtons
         )
-    } ?? false
-    if !(confirmationMarker && confirmationOrderMatched),
-       let running = postClick.runningApplication,
-       let windowBounds = postClick.receipt.windowBounds,
-       let capture = captureFounderWindow(
-        pid: running.processIdentifier,
-        windowBounds: windowBounds
-       ) {
-        let tokens = recognizeText(
-            image: capture.0,
-            screenBounds: capture.1
-        )
-        let rendered = tokens.map(\.text).joined(separator: " ")
-        confirmationMarker = confirmationMarker
-            || orderConfirmationMarker(rendered)
-        confirmationCandidate = confirmationCandidate || confirmationMarker
-        confirmationOrderMatched = confirmationOrderMatched
-            || ocrOrderMatches(tokens, input)
+        if cancelled.pressed {
+            usleep(120_000)
+            let afterCancel = focusedTransactionDialogControls(
+                observe(command: "submit-prepared-order")
+            )
+            if !afterCancel.markerPresent {
+                readback = OrderReadback(
+                    code: readback.code,
+                    side: readback.side,
+                    price: readback.price,
+                    quantity: readback.quantity,
+                    fieldMappingProven: readback.fieldMappingProven,
+                    submitControlCount: readback.submitControlCount,
+                    submitted: false,
+                    saved: false,
+                    started: true,
+                    formCleared: nil,
+                    clickMode: "confirmation_identity_mismatch_cancelled",
+                    observedAt: isoTimestamp()
+                )
+                receipt.status = "submit_confirmation_identity_mismatch_cancelled"
+                receipt.reason = "focused confirmation tuple did not match; confirmation was cancelled without broker submit"
+                receipt.orderReadback = readback
+                receipt.action = ActionResult(
+                    attempted: true,
+                    succeeded: false,
+                    requiresUserInput: false,
+                    confirmPressed: false,
+                    confirmationMode: "confirmation_identity_mismatch_cancelled",
+                    unlockPathProven: false
+                )
+                receipt.timingMs = milliseconds(since: started)
+                return receipt
+            }
+        }
     }
     var brokerConfirmationPressed = false
     var brokerConfirmationMode = "none"
@@ -2712,7 +2771,8 @@ private func pendingOrderConfirmation(
         started: true,
         clickMode: "pending_confirmation"
     )
-    guard orderReadbackMatches(readback, input) else {
+    guard orderReadbackMatches(readback, input),
+          confirmationOrderTextMatches(focusedDialog.renderedText, input) else {
         receipt.status = "order_confirmation_tuple_mismatch"
         receipt.reason = "visible confirmation did not retain the exact prepared order tuple"
         receipt.orderReadback = readback

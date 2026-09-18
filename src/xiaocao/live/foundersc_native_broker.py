@@ -1592,10 +1592,17 @@ class FounderscNativeAXBrokerAdapter(BrokerAdapter):
         baseline_order_ids: set[str] | None = None,
         expected_order_id: str | None = None,
         expected_order_time: str | None = None,
+        allow_terminal_identity_mismatch: bool = False,
     ) -> BrokerReceipt:
         orders = self._order_snapshot()
         matches = self._matching_orders(plan, orders["rows"], requested_shares)
+        order_id_matches: list[dict[str, Any]] = []
         if expected_order_id:
+            order_id_matches = [
+                row
+                for row in orders["rows"]
+                if str(row.get("委托编号") or "").strip() == expected_order_id
+            ]
             matches = [
                 row for row in matches
                 if str(row.get("委托编号") or "").strip() == expected_order_id
@@ -1614,6 +1621,94 @@ class FounderscNativeAXBrokerAdapter(BrokerAdapter):
             "comparison": "code+side+price+quantity+new_order_id",
         }
         if len(matches) != 1:
+            if allow_terminal_identity_mismatch and len(order_id_matches) == 1:
+                mismatched = order_id_matches[0]
+                normalized = _status(mismatched.get("状态说明"))
+                filled = _integer(
+                    mismatched.get("成交数量"),
+                    field="ORDER_FILLED_QUANTITY",
+                    blank_zero=True,
+                )
+                trades = self._query("today-trades")
+                self._validate_order_trade_cross_readback(orders, trades)
+                order_id_trades = [
+                    row
+                    for row in trades["rows"]
+                    if not _is_cancel_trade_row(row)
+                    and str(row.get("委托编号") or "").strip()
+                    == expected_order_id
+                ]
+                if normalized == BrokerStatus.REJECTED and filled == 0 and not order_id_trades:
+                    observed_price = _decimal(
+                        mismatched.get("委托价格"), field="ORDER_PRICE"
+                    )
+                    expected_price = Decimal(str(plan.limit_price))
+                    observed = {
+                        "code": str(mismatched.get("证券代码") or "").strip(),
+                        "side": _side(mismatched.get("买卖标志")),
+                        "price": format(observed_price.normalize(), "f"),
+                        "shares": _integer(
+                            mismatched.get("委托数量"), field="ORDER_QUANTITY"
+                        ),
+                    }
+                    expected = {
+                        "code": plan.code.split(".", 1)[0],
+                        "side": plan.side.upper(),
+                        "price": format(expected_price.normalize(), "f"),
+                        "shares": requested_shares,
+                    }
+                    if (
+                        observed["code"] != expected["code"]
+                        and observed["side"] == expected["side"]
+                        and observed_price == expected_price
+                        and observed["shares"] == expected["shares"]
+                    ):
+                        mismatch_proof = {
+                            "kind": "acknowledged_order_id_terminal_identity_mismatch",
+                            "order_id": expected_order_id,
+                            "expected": expected,
+                            "observed": observed,
+                            "broker_status": str(mismatched.get("状态说明") or ""),
+                            "zero_fill_proven": True,
+                            "order_id_trade_match_count": 0,
+                        }
+                        return BrokerReceipt(
+                            status=BrokerStatus.REJECTED,
+                            order_id=expected_order_id,
+                            receipt_mapping=False,
+                            requested_shares=requested_shares,
+                            filled_shares=0,
+                            remaining_shares=requested_shares,
+                            order_price=float(
+                                _decimal(
+                                    mismatched.get("委托价格"),
+                                    field="ORDER_PRICE",
+                                )
+                            ),
+                            active=False,
+                            retry_allowed=False,
+                            account_binding="proven",
+                            locator_proof={
+                                **locator,
+                                "terminal_identity_mismatch": mismatch_proof,
+                                "trade_match_count": 0,
+                                "fill_observation_pending": False,
+                            },
+                            template_name="foundersc-native-ax",
+                            reason="NATIVE_ACK_ORDER_ID_REJECTED_IDENTITY_MISMATCH",
+                            error_code="NATIVE_ACK_ORDER_ID_REJECTED_IDENTITY_MISMATCH",
+                            observed_at=_parse_timestamp(orders.get("observed_at")),
+                            conclusive=True,
+                            echoed=self._echo(plan, requested_shares),
+                            field_readback={
+                                "order_status": str(mismatched.get("状态说明") or ""),
+                                "order_time": str(mismatched.get("委托时间") or ""),
+                                "trade_match_count": 0,
+                                "submitted": True,
+                                "saved": True,
+                                "started": True,
+                            },
+                        )
             return BrokerReceipt(
                 status=BrokerStatus.UNKNOWN,
                 requested_shares=requested_shares,
@@ -1966,6 +2061,35 @@ class FounderscNativeAXBrokerAdapter(BrokerAdapter):
         readback, matched = self._native_order_readback(plan, payload, shares)
         native_evidence = self._native_submit_evidence(payload)
         result_order_id = self._native_result_order_id(native_evidence)
+        mismatch_cancelled = bool(
+            str(payload.get("status") or "")
+            == "submit_confirmation_identity_mismatch_cancelled"
+            and matched
+            and self._account_bound(payload)
+            and readback.get("submitted") is False
+            and readback.get("saved") is False
+            and readback.get("started") is True
+            and dict(payload.get("action") or {}).get("confirm_pressed") is False
+            and dict(payload.get("action") or {}).get("succeeded") is False
+        )
+        if mismatch_cancelled:
+            return self._safe_rejection(
+                plan,
+                "NATIVE_CONFIRMATION_IDENTITY_MISMATCH_BLOCKED",
+                requested_shares=shares,
+                field_readback={
+                    **readback,
+                    **native_evidence,
+                    "submitted": False,
+                    "saved": False,
+                    "started": False,
+                },
+                locator_proof={
+                    **prepared["baseline_locator_proof"],
+                    **native_evidence,
+                    "confirmation_identity_mismatch_cancelled": True,
+                },
+            )
         clicked = bool(
             str(payload.get("status") or "") == "submit_confirmed"
             and matched
@@ -2535,6 +2659,21 @@ class FounderscNativeAXBrokerAdapter(BrokerAdapter):
             and locator.get("baseline_order_count") == len(baseline_ids)
             and _parse_timestamp(locator.get("baseline_observed_at")) is not None
         )
+        native_result = dict(locator.get("native_result_readback") or {})
+        native_action = dict(locator.get("native_action") or {})
+        terminal_identity_mismatch_allowed = bool(
+            expected_order_id
+            and native_result.get("kind") == "submit"
+            and native_result.get("status") == "submit_result_acknowledged"
+            and native_result.get("message_matched") is True
+            and native_result.get("acknowledgment_pressed") is True
+            and str(native_result.get("broker_order_id") or "").strip()
+            == expected_order_id
+            and native_action.get("attempted") is True
+            and native_action.get("succeeded") is True
+            and native_action.get("confirm_pressed") is True
+            and native_action.get("requires_user_input") is False
+        )
         if not context_proven:
             return BrokerReceipt(
                 status=BrokerStatus.UNKNOWN,
@@ -2561,15 +2700,24 @@ class FounderscNativeAXBrokerAdapter(BrokerAdapter):
                     requested_shares=shares,
                     baseline_order_ids=set(baseline_ids),
                     expected_order_id=expected_order_id,
+                    allow_terminal_identity_mismatch=(
+                        terminal_identity_mismatch_allowed
+                    ),
                 )
             except Exception as exc:
                 last_error = exc
                 continue
             recovered = candidate
             if (
-                candidate.receipt_mapping is True
-                and candidate.order_id
+                candidate.order_id
                 and candidate.conclusive
+                and (
+                    candidate.receipt_mapping is True
+                    or isinstance(
+                        candidate.locator_proof.get("terminal_identity_mismatch"),
+                        dict,
+                    )
+                )
             ):
                 break
         if recovered is None:
@@ -2605,10 +2753,19 @@ class FounderscNativeAXBrokerAdapter(BrokerAdapter):
                 },
             }
         )
-        if not (
-            recovered.receipt_mapping is True
-            and recovered.order_id
+        terminal_identity_mismatch = recovered.locator_proof.get(
+            "terminal_identity_mismatch"
+        )
+        specially_terminal = bool(
+            isinstance(terminal_identity_mismatch, dict)
+            and recovered.normalized_status() == BrokerStatus.REJECTED
+            and recovered.order_id == expected_order_id
             and recovered.conclusive
+        )
+        if not (
+            recovered.order_id
+            and recovered.conclusive
+            and (recovered.receipt_mapping is True or specially_terminal)
         ):
             return recovered
         claim_hash = hashlib.sha256(claim_id.encode("utf-8")).hexdigest()
@@ -2616,10 +2773,18 @@ class FounderscNativeAXBrokerAdapter(BrokerAdapter):
             **{
                 **recovered.__dict__,
                 "strategy_id": "NAX" + claim_hash[:16].upper(),
-                "reason": "native_unknown_submit_recovered_by_durable_exact_order_delta",
+                "reason": (
+                    "native_acknowledged_wrong_identity_order_terminally_rejected"
+                    if specially_terminal
+                    else "native_unknown_submit_recovered_by_durable_exact_order_delta"
+                ),
                 "locator_proof": {
                     **recovered.locator_proof,
-                    "recovery_mode": "durable_exact_order_delta",
+                    "recovery_mode": (
+                        "acknowledged_order_id_terminal_identity_mismatch"
+                        if specially_terminal
+                        else "durable_exact_order_delta"
+                    ),
                 },
                 "field_readback": {
                     **recovered.field_readback,

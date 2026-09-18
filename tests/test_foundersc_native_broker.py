@@ -16,7 +16,13 @@ from xiaocao.live.foundersc_native_broker import (
     _integer,
 )
 from xiaocao.live.book_b_live_lifecycle import project_book_b_live_account
-from xiaocao.live.trading_execution import BrokerStatus, TradePlan
+from xiaocao.live.trading_execution import (
+    BrokerStatus,
+    ExecutionReceipt,
+    ExecutionState,
+    TradePlan,
+    TradingExecution,
+)
 
 
 OBSERVED_AT = "2026-08-30T12:39:09.550Z"
@@ -1340,6 +1346,130 @@ def test_reconcile_reads_orders_and_trades_with_one_query_surface_open() -> None
     assert receipt.normalized_status() == BrokerStatus.ACCEPTED
     assert native.query_calls == ["today-orders", "today-trades"]
     assert native.open_query_calls == 1
+
+
+def test_acknowledged_wrong_code_rejection_terminalizes_without_retry() -> None:
+    native = FakeNative()
+    native.orders = [
+        {
+            "证券代码": "000572",
+            "证券名称": "海马汽车",
+            "委托时间": "093717",
+            "买卖标志": "买入",
+            "委托类别": "委托",
+            "状态说明": "废单",
+            "委托价格": "10.0000",
+            "委托数量": "100",
+            "委托编号": "6000099",
+            "成交价格": "0.000",
+            "成交数量": "",
+            "报价方式": "买卖",
+            "股东代码": "A***",
+            "备注": "[88009][价格错误]",
+        }
+    ]
+    native.trades = []
+    plan = _plan()
+    locator = {
+        "baseline_order_ids": [],
+        "baseline_order_count": 0,
+        "baseline_observed_at": OBSERVED_AT,
+        "comparison": "code+side+price+quantity+new_order_id",
+        "native_helper_status": "submit_confirmed",
+        "native_action": {
+            "attempted": True,
+            "succeeded": True,
+            "requires_user_input": False,
+            "confirm_pressed": True,
+        },
+        "native_result_readback": {
+            "kind": "submit",
+            "status": "submit_result_acknowledged",
+            "broker_order_id": "6000099",
+            "message_matched": True,
+            "acknowledgment_pressed": True,
+            "observed_at": OBSERVED_AT,
+        },
+    }
+    previous = ExecutionReceipt(
+        plan_id=plan.plan_id,
+        plan_hash=plan.plan_hash,
+        state=ExecutionState.UNKNOWN,
+        reason="NATIVE_SUBMIT_CLICKED_READBACK_UNPROVEN",
+        filled_shares=0,
+        remaining_shares=plan.shares,
+        broker_order_id="6000099",
+        receipt_mapping=False,
+        submit_chain_uncertain=True,
+        submit_claim_id="claim-wrong-code",
+        account_binding="proven",
+        locator_proof=locator,
+    )
+
+    receipt = _adapter(native).reconcile(plan, previous.as_dict())
+
+    assert receipt.normalized_status() == BrokerStatus.REJECTED
+    assert receipt.order_id == "6000099"
+    assert receipt.receipt_mapping is False
+    assert receipt.filled_shares == 0 and receipt.remaining_shares == 100
+    assert receipt.reason == (
+        "native_acknowledged_wrong_identity_order_terminally_rejected"
+    )
+    proof = receipt.locator_proof["terminal_identity_mismatch"]
+    assert proof["expected"]["code"] == "000001"
+    assert proof["observed"]["code"] == "000572"
+    assert proof["zero_fill_proven"] is True
+    assert proof["order_id_trade_match_count"] == 0
+    assert TradingExecution._live_reconcile_receipt_proven(
+        plan, previous, receipt
+    ) is True
+
+
+def test_confirmation_identity_mismatch_cancel_is_safe_rejection() -> None:
+    class ConfirmationMismatchNative(FakeNative):
+        def submit_prepared_order(self, **kwargs) -> NativeAXReceipt:
+            assert kwargs["explicitly_enabled"] is True
+            self.submit_calls += 1
+            return self._receipt(
+                helper_version=13,
+                status="submit_confirmation_identity_mismatch_cancelled",
+                order_readback={
+                    "code": kwargs["code"].split(".", 1)[0],
+                    "side": kwargs["side"].lower(),
+                    "price": str(kwargs["price"]),
+                    "quantity": kwargs["quantity"],
+                    "field_mapping_proven": True,
+                    "submit_control_count": 1,
+                    "submitted": False,
+                    "saved": False,
+                    "started": True,
+                    "observed_at": OBSERVED_AT,
+                },
+                action={
+                    "attempted": True,
+                    "succeeded": False,
+                    "requires_user_input": False,
+                    "confirm_pressed": False,
+                    "confirmation_mode": (
+                        "confirmation_identity_mismatch_cancelled"
+                    ),
+                },
+            )
+
+    native = ConfirmationMismatchNative()
+    adapter = _adapter(native)
+    plan = _plan()
+
+    assert adapter.prepare(plan).normalized_status() == BrokerStatus.PREPARED
+    receipt = adapter.submit(plan, "claim-confirmation-mismatch")
+
+    assert receipt.normalized_status() == BrokerStatus.REJECTED
+    assert receipt.reason == "NATIVE_CONFIRMATION_IDENTITY_MISMATCH_BLOCKED"
+    assert receipt.order_id is None and receipt.filled_shares == 0
+    assert receipt.retry_allowed is False and receipt.conclusive is True
+    assert receipt.field_readback["submitted"] is False
+    assert receipt.locator_proof["confirmation_identity_mismatch_cancelled"] is True
+    assert native.submit_calls == 1
 
 
 def test_native_cancel_probe_allows_one_unlock_recovery() -> None:
