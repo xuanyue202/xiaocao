@@ -25,6 +25,43 @@ from xiaocao.kol.netdisk_enrichment import (
 NOW = datetime.fromisoformat("2026-07-20T09:00:00+08:00")
 
 
+def test_opencli_time_wait_accepts_cli_plain_text_receipt(tmp_path):
+    commands = []
+
+    def runner(command, **_kwargs):
+        commands.append(command)
+        return SimpleNamespace(returncode=0, stdout="Waited 2s\n", stderr="")
+
+    service = NetdiskEnrichmentService(
+        tmp_path / "out",
+        runner=runner,
+        opencli_command=("opencli",),
+    )
+
+    assert service._wait_opencli_time(
+        "site:baidu-netdisk", 2, profile=None
+    ) == {"waited_seconds": 2}
+    assert commands == [
+        ["opencli", "browser", "site:baidu-netdisk", "wait", "time", "2"]
+    ]
+
+
+def test_opencli_time_wait_rejects_unbound_plain_text(tmp_path):
+    service = NetdiskEnrichmentService(
+        tmp_path / "out",
+        runner=lambda *_args, **_kwargs: SimpleNamespace(
+            returncode=0, stdout="wait complete\n", stderr=""
+        ),
+        opencli_command=("opencli",),
+    )
+
+    with pytest.raises(EnrichmentDiagnosticError) as caught:
+        service._wait_opencli_time("site:baidu-netdisk", 2, profile=None)
+
+    assert caught.value.diagnostic_code == "opencli_invalid_wait_receipt"
+    assert caught.value.diagnostic_stage == "browser_wait"
+
+
 @pytest.mark.parametrize("stages,expected", [
     (["tabs", "select"], "upload_select_failed"),
     (["folder_scan", "mark_input", "activate"], "upload_activate_failed"),

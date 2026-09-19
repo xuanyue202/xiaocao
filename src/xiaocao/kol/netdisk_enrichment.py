@@ -879,6 +879,39 @@ class NetdiskEnrichmentService:
             )
         return payload
 
+    def _wait_opencli_time(
+        self,
+        session: str,
+        seconds: int,
+        *,
+        profile: str | None,
+    ) -> dict[str, Any]:
+        """Accept OpenCLI's documented plain-text receipt for a time wait."""
+        result = self._run_opencli(
+            session,
+            "wait",
+            "time",
+            str(seconds),
+            profile=profile,
+            timeout_seconds=max(10, seconds + 5),
+            attempts=1,
+        )
+        output = str(result.stdout or "").strip()
+        try:
+            payload = json.loads(output)
+        except (TypeError, json.JSONDecodeError):
+            payload = None
+        if isinstance(payload, dict):
+            return payload
+        if output == f"Waited {seconds}s":
+            return {"waited_seconds": seconds}
+        raise EnrichmentDiagnosticError(
+            "OpenCLI time wait returned an invalid receipt",
+            category="protocol_error",
+            code="opencli_invalid_wait_receipt",
+            stage="browser_wait",
+        )
+
     def _bind_opencli(
         self,
         *,
@@ -1095,14 +1128,10 @@ class NetdiskEnrichmentService:
             ):
                 break
             if ready_attempt + 1 < _OPENCLI_FOLDER_READY_ATTEMPTS:
-                self._opencli_json(
+                self._wait_opencli_time(
                     session,
-                    "wait",
-                    "time",
-                    str(_OPENCLI_FOLDER_READY_WAIT_SECONDS),
+                    _OPENCLI_FOLDER_READY_WAIT_SECONDS,
                     profile=profile,
-                    timeout_seconds=10,
-                    attempts=1,
                 )
         if payload.get("errno") != 0:
             raise EnrichmentError("Netdisk file-list API inspection failed")
