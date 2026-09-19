@@ -65,6 +65,7 @@ _PLAYBACK_PAGE_STATES = {
 }
 XIAOCAO_PLAYBACK_ROUTE_WECHAT_MINI_PROGRAM = "wechat_mini_program"
 _MINI_PROGRAM_PLAYBACK_STATES = _PLAYBACK_PAGE_STATES | {
+    "mini_program_consent_required",
     "mini_program_media_observed",
     "mini_program_waiting",
 }
@@ -1099,6 +1100,13 @@ class XiaocaoWechatLiveSubscription:
                 "only_if_password_gate_visible": True,
                 "password": self.password,
             },
+            "consent_policy": {
+                "non_binding_privacy_notice": "agent_handle_visible_controls",
+                "service_agreement": "confirmation_at_action_time",
+                "sensitive_permissions": "confirmation_at_action_time",
+                "readback_after_each_action": True,
+                "blocked_page_state": "mini_program_consent_required",
+            },
             "instructions": (
                 "用 wechat-cli 已定位的原始联系人和发布时间，在本机微信中只打开"
                 "该条原始 #小程序://鹅直播/ 消息一次；不要复制发送消息、猜测 URL "
@@ -1110,7 +1118,10 @@ class XiaocaoWechatLiveSubscription:
             ) + (
                 "到达精确课程小程序后，禁止再次解析、重新生成跳转票据、重开 Scheme或刷新。"
                 "优先辅助功能控件；小程序只暴露窗口、没有控件时，允许基于刚读取截图"
-                "点击明确可见的按钮/输入框，不复制历史坐标。若看见课程口令门，打开"
+                "点击明确可见的按钮/输入框，不复制历史坐标。普通非约束性隐私提示由 Agent"
+                "处理；服务协议或敏感授权须获得当次确认后，按 Skill C1–C3 勾选、读回、"
+                "同意、读回并继续同一任务。需确认时返回 mini_program_consent_required，"
+                "不得误报微信手机登录。若看见课程口令门，打开"
                 "输入框，输入提供的口令、读回并确认。口令通过可能自动播放；画面一旦"
                 "开始播放并被抓取后，关闭这一个鹅直播课程窗口：在确认标题的目标窗口"
                 "点击文件菜单，再点击该窗口的关闭全部标签页（performClose:），读回"
@@ -1139,7 +1150,7 @@ class XiaocaoWechatLiveSubscription:
                 "live_id": expected_live_id or "observed l_ live_id",
                 "operator": "agent",
                 "page_state": (
-                    "wechat_client_login_required|waiting_to_start|live|"
+                    "wechat_client_login_required|mini_program_consent_required|waiting_to_start|live|"
                     "replay_generating|playable|password_required|unknown|"
                     "mini_program_media_observed|mini_program_waiting"
                 ),
@@ -1249,6 +1260,13 @@ class XiaocaoWechatLiveSubscription:
                 category="authentication_error",
                 code="wechat_client_login_required",
                 stage="wechat_client_authorization",
+            )
+        if page_state == "mini_program_consent_required":
+            raise EnrichmentDiagnosticError(
+                "native mini-program consent requires current user confirmation",
+                category="authentication_error",
+                code="mini_program_consent_required",
+                stage="mini_program_consent",
             )
         media_request_observed = response.get("media_request_observed") is True
         if (expected_live_id or media_request_observed) and not source_bound:
@@ -1409,9 +1427,19 @@ class XiaocaoWechatLiveSubscription:
             self.expire_stale_waits(manifest)
             item = manifest["items"].get(only_identity)
             if not isinstance(item, dict):
-                raise EnrichmentError(
-                    "Xiaocao narrow resume item is missing"
-                )
+                source_matches = [
+                    row
+                    for row in manifest["items"].values()
+                    if isinstance(row, dict)
+                    and str(row.get("source_identity") or "") == only_identity
+                ]
+                if len(source_matches) != 1:
+                    raise EnrichmentError(
+                        "Xiaocao narrow resume item is missing"
+                        if not source_matches
+                        else "Xiaocao narrow resume source identity is ambiguous"
+                    )
+                item = source_matches[0]
             item = dict(item)
             if item.get("status") == "unsupported_application" and not item.get("capture_job_id"):
                 # A user-requested exact-item retry may use a newly installed
@@ -1433,7 +1461,7 @@ class XiaocaoWechatLiveSubscription:
             if item.get("status") in _TERMINAL:
                 return {
                     "status": "no_update",
-                    "identity": only_identity,
+                    "identity": item["identity"],
                     "already_completed": item.get("status") not in {"unsupported_application", "unsupported_resource", "expired"},
                     "unsupported_resource": item.get("status") == "unsupported_resource",
                     "unsupported_application": item.get("status") == "unsupported_application",

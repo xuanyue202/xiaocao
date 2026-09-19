@@ -136,6 +136,11 @@ Send one deduplicated user action even from `resume-source-repair`.
 credentials. `awaiting_playback` keeps identities and rechecks at the next
 20 分钟 boundary; never replace the job. Later stages need no Browser.
 
+Native consent pages use the native reference's C1–C3: handle non-binding
+privacy notices automatically, and execute a service-agreement confirmation
+once the user confirms that current action. Return `mini_program_consent_required`
+only when confirmation is still required; do not misreport a phone-login failure.
+
 ## LiangHuiMCP handoff
 
 On `daily_lianghui_mailbox_input_required`, keep the process alive and call the

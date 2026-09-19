@@ -5793,6 +5793,26 @@ def test_source_classifier_keeps_wechat_client_login_distinct():
     assert "不是小鹅通账号" in captured.value.action
 
 
+def test_source_classifier_keeps_mini_program_consent_distinct():
+    runner = _classified_source(
+        "xiaocao_wechat_live",
+        lambda: (_ for _ in ()).throw(
+            EnrichmentDiagnosticError(
+                "native mini-program consent requires current user confirmation",
+                category="authentication_error",
+                code="mini_program_consent_required",
+                stage="mini_program_consent",
+            )
+        ),
+    )
+
+    with pytest.raises(UserActionBlocker) as captured:
+        runner()
+
+    assert captured.value.blocker_key == "xiaocao-mini-program-consent"
+    assert "需在手机上完成登录" not in captured.value.action
+
+
 def test_source_classifier_surfaces_provider_captcha_as_user_action():
     runner = _classified_source(
         "lv_text_image",
