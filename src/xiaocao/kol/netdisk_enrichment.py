@@ -897,12 +897,6 @@ class NetdiskEnrichmentService:
             attempts=1,
         )
         output = str(result.stdout or "").strip()
-        try:
-            payload = json.loads(output)
-        except (TypeError, json.JSONDecodeError):
-            payload = None
-        if isinstance(payload, dict):
-            return payload
         if output == f"Waited {seconds}s":
             return {"waited_seconds": seconds}
         raise EnrichmentDiagnosticError(

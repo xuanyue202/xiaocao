@@ -46,11 +46,12 @@ def test_opencli_time_wait_accepts_cli_plain_text_receipt(tmp_path):
     ]
 
 
-def test_opencli_time_wait_rejects_unbound_plain_text(tmp_path):
+@pytest.mark.parametrize("output", ["wait complete\n", '{"waited_seconds":2}\n'])
+def test_opencli_time_wait_rejects_unbound_receipt(tmp_path, output):
     service = NetdiskEnrichmentService(
         tmp_path / "out",
         runner=lambda *_args, **_kwargs: SimpleNamespace(
-            returncode=0, stdout="wait complete\n", stderr=""
+            returncode=0, stdout=output, stderr=""
         ),
         opencli_command=("opencli",),
     )
