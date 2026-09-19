@@ -1235,7 +1235,16 @@ def test_web_playback_route_is_rejected_at_construction(tmp_path):
         )
 
 
-def test_wechat_mini_program_client_login_is_not_xiaoetong_login(tmp_path):
+@pytest.mark.parametrize(
+    "page_state, diagnostic_stage",
+    [
+        ("wechat_client_login_required", "wechat_client_authorization"),
+        ("mini_program_consent_required", "mini_program_consent"),
+    ],
+)
+def test_wechat_mini_program_authorization_keeps_login_and_consent_distinct(
+    tmp_path, page_state, diagnostic_stage,
+):
     page_url = (
         "https://app6ums63as6516.h5.xiaoeknow.com/v4/course/alive/"
         "l_6a75cf66e4b0694c5bf6d228"
@@ -1260,7 +1269,7 @@ def test_wechat_mini_program_client_login_is_not_xiaoetong_login(tmp_path):
                 "xiaoetong:app6ums63as6516:l_6a75cf66e4b0694c5bf6d228"
             ),
             "live_id": "l_6a75cf66e4b0694c5bf6d228",
-            "page_state": "wechat_client_login_required",
+            "page_state": page_state,
             "activated": False,
             "media_request_observed": False,
             "password_used": False,
@@ -1279,8 +1288,8 @@ def test_wechat_mini_program_client_login_is_not_xiaoetong_login(tmp_path):
     with pytest.raises(EnrichmentDiagnosticError) as captured:
         subscription.run_once(opencli_session="xiaocao-lv-subscription")
 
-    assert captured.value.diagnostic_code == "wechat_client_login_required"
-    assert captured.value.diagnostic_stage == "wechat_client_authorization"
+    assert captured.value.diagnostic_code == page_state
+    assert captured.value.diagnostic_stage == diagnostic_stage
 
 
 def test_pending_cloud_handoff_resumes_exact_job_after_stale_playback_state(

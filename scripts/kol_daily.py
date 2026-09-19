@@ -1544,6 +1544,13 @@ def _classified_source(name: str, runner):
             diagnostic_code = str(
                 getattr(exc, "diagnostic_code", "")
             )
+            if diagnostic_code == "mini_program_consent_required":
+                raise UserActionBlocker(
+                    "xiaocao-mini-program-consent",
+                    "目标小程序显示需确认的协议或授权；请确认当前页面的同意操作，"
+                    "Agent 将勾选、同意并读回后续页面，继续原采集任务。"
+                    "这不是微信手机登录失败。",
+                ) from exc
             if diagnostic_code == "wechat_client_login_required":
                 raise UserActionBlocker(
                     "xiaocao-wechat-client-login",

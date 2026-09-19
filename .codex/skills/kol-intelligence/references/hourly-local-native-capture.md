@@ -128,9 +128,10 @@ lists enrich asynchronously with an incremental cache; they cannot bind a source
    rapid/global-shortcut retries. There is no evidence for a magic safe
    interval: wait only for a visible state/sniffer event, and make at most one
    activation attempt per scheduled boundary. If WeChat visibly requires phone
-   login, SMS/OTP, CAPTCHA, consent, or shows an explicit protection screen,
+   login, SMS/OTP, CAPTCHA, or shows an explicit protection screen,
    return `wechat_client_login_required` and stop; that is the only
-   user-action boundary. At the exact visible course, enter `666` only at a
+   authentication boundary. Consent pages follow C1–C3 below; never classify
+   consent as phone login. At the exact visible course, enter `666` only at a
    visible course-password gate. After auto-play (or one visible Play click) and
    exact finite-media observation, close the course window using W7–W10 below.
    Read back its absence from the Window menu. No continuous playback is required. Return
@@ -215,6 +216,26 @@ lists enrich asynchronously with an incremental cache; they cannot bind a source
    不以主聊天窗口可见推断课程已关闭。菜单没有该项且同一场有限媒体已捕获时，
    记录已关闭，跳过重复关闭；用菜单已暴露的 `Cancel` secondary action 收起菜单。
 
+   **同意页 C1–C3（2026-09-19）：** 普通非约束性的隐私提示由 Agent 自动处理，
+   不因出现“同意”二字就停下。若勾选/提交代表接受服务协议、法律条款或扩大敏感
+   授权，先取得当前操作的用户确认；本轮明确回复“勾选，然后同意”即为本次确认，
+   不再要求用户亲手点击。不能将这次确认记录成未来所有协议的永久同意。
+   无法确定含义、正文/按钮遮挡或窗口切换时不猜测、不盲点。
+   尚需确认时返回 `page_state=mini_program_consent_required`，保留身份与任务，
+   不返回 `wechat_client_login_required`。确认后复用现有窗口及原任务；若原 PTY 已
+   退出，用 local entry 的 `capture-xiaocao-item --source-identity <原 identity>`。
+   若同意/登录可能触发媒体请求，先让同一任务完成 readiness 和 PAC 检查。
+
+   | 步骤 | 必须已看到的前置画面 | 唯一允许的调用（`cua_repl`） | 结果与下一步 |
+   |---|---|---|---|
+   | C1 | 已校验的目标小程序同意页；普通隐私提示或已获本次确认；唯一未勾选框可见 | `await wechat.click(consentCheckbox); await wechat.getAXStateAndScreenshot();` | 必须读回勾选状态；已勾选则跳过本步，不切回未勾选 |
+   | C2 | 同页已勾选（无勾选框则不要求）；明确可见且已授权的“同意/继续/登录”按钮 | `await wechat.click(consentButton); await wechat.getAXStateAndScreenshot();` | 已进入目标课程→W1；验证码、手机确认、保护或新增授权→对应边界；仍为原页则停止输入诊断 |
+   | C3 | 同意后目标课程可见 | 不再点击同意；依照 W1–W10 继续 | 勾选/同意不代表媒体已捕获，仍要求同源有限回放与完整交接回执 |
+
+   `consentCheckbox`、`consentButton` 与课程控件相同，只取最新 AX 唯一索引或
+   新截图唯一可见控件中心。各点击一次，每步读回；拒绝/超时仍遵守下文固定处理。
+   不自动开启新权限或分享个人资料，不缓存勾选坐标，不重开小程序绕过同意页。
+
    | 步骤 | 必须已看到的前置画面 | 唯一允许的调用（`cua_repl`） | 结果与下一步 |
    |---|---|---|---|
    | W0 | 一次商户唤起已执行；尚未取得 app 对象 | `var wechat = await cua.getApp("com.tencent.xinWeChat");`；首次调用仅此一行 | 已有该对象就跳过，不重复初始化；进入 W1 |
@@ -243,6 +264,7 @@ lists enrich asynchronously with an incremental cache; they cannot bind a source
 
    **本轮输入上限：** 商户唤起一次；有课程口令门时按钮/输入框/确定各点击一次、
    `typeText("666")` 一次；未自动起播才增加 Play 点击一次；课程关闭提交一次。
+   同意页另按 C1–C3，勾选和提交各最多一次。
    这是上限而非配额，已满足的步骤必须跳过。允许的微信工具动作仅为表内
    `getApp`、`getAXState`、`getAXStateAndScreenshot`、目标 `click`、`typeText("666")`、
    菜单 `performSecondaryAction(..., "Cancel")`；不能用 Space、静音、双击、Enter、Tab、Esc、全局快捷键、刷新、
