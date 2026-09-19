@@ -1427,9 +1427,19 @@ class XiaocaoWechatLiveSubscription:
             self.expire_stale_waits(manifest)
             item = manifest["items"].get(only_identity)
             if not isinstance(item, dict):
-                raise EnrichmentError(
-                    "Xiaocao narrow resume item is missing"
-                )
+                source_matches = [
+                    row
+                    for row in manifest["items"].values()
+                    if isinstance(row, dict)
+                    and str(row.get("source_identity") or "") == only_identity
+                ]
+                if len(source_matches) != 1:
+                    raise EnrichmentError(
+                        "Xiaocao narrow resume item is missing"
+                        if not source_matches
+                        else "Xiaocao narrow resume source identity is ambiguous"
+                    )
+                item = source_matches[0]
             item = dict(item)
             if item.get("status") == "unsupported_application" and not item.get("capture_job_id"):
                 # A user-requested exact-item retry may use a newly installed
@@ -1451,7 +1461,7 @@ class XiaocaoWechatLiveSubscription:
             if item.get("status") in _TERMINAL:
                 return {
                     "status": "no_update",
-                    "identity": only_identity,
+                    "identity": item["identity"],
                     "already_completed": item.get("status") not in {"unsupported_application", "unsupported_resource", "expired"},
                     "unsupported_resource": item.get("status") == "unsupported_resource",
                     "unsupported_application": item.get("status") == "unsupported_application",

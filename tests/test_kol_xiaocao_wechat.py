@@ -1577,3 +1577,41 @@ def test_course_preview_is_retained_without_capture_or_repeated_resolution(tmp_p
     assert subscription.run_once(opencli_session="test")["status"] == "no_update"
     assert subscription.run_once(opencli_session="test", only_identity=result["identity"])["already_completed"] is False
     assert len(calls) == 1
+
+
+def test_exact_item_resume_accepts_a_unique_source_identity(tmp_path):
+    source_identity = "xiaoetong:appsnm3rlcp3566:l_6aa79dc4e4b0694c5c09eba7"
+    manifest_identity = "kol-wechat-current"
+    subscription = XiaocaoWechatLiveSubscription(
+        tmp_path,
+        history_reader=lambda: (_ for _ in ()).throw(
+            AssertionError("exact resume must not rescan WeChat")
+        ),
+        browser_exchange=lambda request: request,
+        capture_driver=_CaptureDriver(),
+        clock=lambda: datetime.fromisoformat("2026-09-19T10:30:00+08:00"),
+    )
+    subscription._save({
+        "schema_version": 1,
+        "items": {
+            manifest_identity: {
+                "identity": manifest_identity,
+                "source_identity": source_identity,
+                "published_at": "2026-09-19T08:00:00+08:00",
+                "status": "completed",
+            }
+        },
+    })
+
+    result = subscription.run_once(
+        opencli_session="test",
+        only_identity=source_identity,
+    )
+
+    assert result == {
+        "status": "no_update",
+        "identity": manifest_identity,
+        "already_completed": True,
+        "unsupported_resource": False,
+        "unsupported_application": False,
+    }
