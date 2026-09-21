@@ -4551,16 +4551,23 @@ class DailyRuntime:
                 )
             else:
                 candidate = build_triggered_evaluation_candidate(current, request)
-            self.publications.prepare(
-                candidate["publication_key"],
-                candidate["records"],
-                candidate["publish_request"],
-                metadata=candidate["metadata"],
-            )
-            state = self.publications.run(
-                candidate["publication_key"],
-                self._lianghui_client(),
-            )
+            if candidate.get("already_published") is True:
+                state = self.publications.status(candidate["publication_key"])
+                if state.get("completed") is not True:
+                    raise DailyError(
+                        "published viewpoint lacks its durable local receipt"
+                    )
+            else:
+                self.publications.prepare(
+                    candidate["publication_key"],
+                    candidate["records"],
+                    candidate["publish_request"],
+                    metadata=candidate["metadata"],
+                )
+                state = self.publications.run(
+                    candidate["publication_key"],
+                    self._lianghui_client(),
+                )
             if request.get("operation") == "initial_projection":
                 terminal = initial_projection_terminal(candidate, state)
             else:

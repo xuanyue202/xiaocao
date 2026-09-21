@@ -783,6 +783,31 @@ def build_triggered_evaluation_candidate(
             "trading_applicability": trading_applicability,
         },
     )
+    existing_evaluation = next((
+        row for row in records
+        if isinstance(row, dict)
+        and row.get("kind") == "viewpoint_evaluation"
+        and row.get("record_id") == evaluation_id_value
+    ), None)
+    if existing_evaluation is not None:
+        if existing_evaluation != evaluation:
+            raise DailyError(
+                "published viewpoint evaluation differs from the exact trigger"
+            )
+        return {
+            "publication_key": f"viewpoint-maintenance:{evaluation_id_value}",
+            "records": records,
+            "publish_request": {},
+            "metadata": {
+                "trigger": trigger,
+                "evaluation_id": evaluation_id_value,
+                "notification_claim_authorized": False,
+                "book_kol_us_replay_authorized": False,
+                "large_payload_local_bytes": 0,
+                "coordinator_source_video_bytes": 0,
+            },
+            "already_published": True,
+        }
     updated_records, publish = build_append_only_publication_update(
         current_records=records,
         additions=[evaluation],
@@ -980,16 +1005,48 @@ def build_classification_backfill_candidate(
             "reason": "同源细化观点补齐短线触发、证伪与不确定性边界，旧记录继续保留。",
         },
     )
+    additions = [
+        old_evaluation,
+        refined_viewpoint,
+        refined_evaluation,
+        relation,
+    ]
+    current_by_identity = {
+        (str(row.get("kind") or ""), str(row.get("record_id") or "")): row
+        for row in records
+        if isinstance(row, dict)
+    }
+    existing_additions = [
+        current_by_identity.get((row["kind"], row["record_id"]))
+        for row in additions
+    ]
+    if any(row is not None for row in existing_additions):
+        if existing_additions != additions:
+            raise DailyError(
+                "published classification refinement differs from exact trigger"
+            )
+        return {
+            "publication_key": (
+                f"viewpoint-maintenance:{refined_evaluation_id}"
+            ),
+            "records": records,
+            "publish_request": {},
+            "metadata": {
+                "trigger": "user_request",
+                "evaluation_id": refined_evaluation_id,
+                "refined_viewpoint_id": refined_viewpoint_id,
+                "notification_claim_authorized": False,
+                "book_kol_us_replay_authorized": False,
+                "large_payload_local_bytes": 0,
+                "coordinator_source_video_bytes": 0,
+            },
+            "already_published": True,
+        }
     viewpoint_ids = list(report["payload"].get("viewpoint_ids") or [])
     viewpoint_ids.append(refined_viewpoint_id)
     updated_records, publish = build_append_only_publication_update(
         current_records=records,
-        additions=[
-            old_evaluation,
-            refined_viewpoint,
-            refined_evaluation,
-            relation,
-        ],
+        additions=additions,
         viewpoint_ids=viewpoint_ids,
         created_at=evaluated_at,
         revision=f"classification-refinement-{refined_evaluation_id}",

@@ -7960,32 +7960,33 @@ def test_classification_backfill_refines_incomplete_short_term_viewpoint():
     )
     report["payload"]["viewpoint_ids"] = [legacy_viewpoint_id]
     report["content_sha256"] = record_content_sha256(report)
+    request = {
+        "operation": "classification_backfill",
+        "trigger": "user_request",
+        "report_id": report_id_value,
+        "viewpoint_id": legacy_viewpoint_id,
+        "status": "current",
+        "as_of": "2026-09-14T12:00:00Z",
+        "evaluated_at": "2026-09-21T04:30:00Z",
+        "basis": "保留原判断，只补齐短线适用性结构。",
+        "confidence": "medium",
+        "uncertainties": ["本次没有刷新行情。"],
+        "trading_applicability": {
+            "scope": "book_b_short_term",
+            "utility": "risk_constraint",
+            "priority": 5,
+            "valid_until": "2026-09-22T07:00:00Z",
+            "reason": "该观点直接约束短线风险暴露。",
+        },
+        "refinement": {
+            "triggers": ["环境评分仍为主跌。"],
+            "falsifiers": ["环境与赚钱效应持续恢复。"],
+            "uncertainties": ["原来源没有量化仓位上限。"],
+        },
+    }
     candidate = build_classification_backfill_candidate(
         {"report": report, "records": [report, legacy_viewpoint]},
-        {
-            "operation": "classification_backfill",
-            "trigger": "user_request",
-            "report_id": report_id_value,
-            "viewpoint_id": legacy_viewpoint_id,
-            "status": "current",
-            "as_of": "2026-09-14T12:00:00Z",
-            "evaluated_at": "2026-09-21T04:30:00Z",
-            "basis": "保留原判断，只补齐短线适用性结构。",
-            "confidence": "medium",
-            "uncertainties": ["本次没有刷新行情。"],
-            "trading_applicability": {
-                "scope": "book_b_short_term",
-                "utility": "risk_constraint",
-                "priority": 5,
-                "valid_until": "2026-09-22T07:00:00Z",
-                "reason": "该观点直接约束短线风险暴露。",
-            },
-            "refinement": {
-                "triggers": ["环境评分仍为主跌。"],
-                "falsifiers": ["环境与赚钱效应持续恢复。"],
-                "uncertainties": ["原来源没有量化仓位上限。"],
-            },
-        },
+        request,
     )
 
     records = candidate["records"]
@@ -8015,6 +8016,16 @@ def test_classification_backfill_refines_incomplete_short_term_viewpoint():
         "book_b_short_term"
     )
     assert candidate["publish_request"]["report_id"] == report["record_id"]
+    published_report = next(
+        row for row in records if row["kind"] == "report"
+    )
+    replay = build_classification_backfill_candidate(
+        {"report": published_report, "records": records},
+        request,
+    )
+    assert replay["already_published"] is True
+    assert replay["publication_key"] == candidate["publication_key"]
+    assert replay["records"] == records
 
 
 def test_initial_projection_backfills_report_only_history_without_side_effects(
