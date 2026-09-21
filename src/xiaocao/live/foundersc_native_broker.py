@@ -1655,8 +1655,10 @@ class FounderscNativeAXBrokerAdapter(BrokerAdapter):
         locator = {
             **self._order_readback_locator(orders),
             "exact_order_match_count": len(matches),
-            "baseline_order_count": (
-                len(baseline_order_ids) if baseline_order_ids is not None else None
+            **(
+                {"baseline_order_count": len(baseline_order_ids)}
+                if baseline_order_ids is not None
+                else {}
             ),
             "comparison": "code+side+price+quantity+new_order_id",
         }
@@ -2264,8 +2266,24 @@ class FounderscNativeAXBrokerAdapter(BrokerAdapter):
 
     @serialized_app_operation
     def reconcile(self, plan: TradePlan, previous: dict[str, Any]) -> BrokerReceipt:
+        locator = dict(previous.get("locator_proof") or {})
+        native_action = dict(locator.get("native_action") or {})
+        durable_mapped_order = bool(
+            previous.get("broker_order_id")
+            and previous.get("broker_strategy_id")
+            and self._native_result_order_id(locator)
+            == str(previous.get("broker_order_id"))
+            and native_action.get("attempted") is True
+            and native_action.get("succeeded") is True
+            and native_action.get("confirm_pressed") is True
+            and native_action.get("requires_user_input") is False
+        )
         if not previous.get("cancel_claim_id") and previous.get("submit_claim_id") and (
-            not previous.get("broker_strategy_id") or previous.get("receipt_mapping") is not True
+            not previous.get("broker_strategy_id")
+            or (
+                previous.get("receipt_mapping") is not True
+                and not durable_mapped_order
+            )
         ):
             return self.recover(plan, previous)
         order_id = str(

@@ -849,6 +849,30 @@ def test_bounded_order_baseline_is_persisted_through_prepare_and_submit() -> Non
     assert submitted.locator_proof["baseline_order_count"] == 1
 
 
+def test_expected_order_reconcile_does_not_erase_durable_baseline_count() -> None:
+    native = FakeNative()
+    adapter = _adapter(native)
+    plan = _plan()
+
+    prepared = adapter.prepare(plan)
+    submitted = adapter.submit(plan, "claim-preserve-baseline")
+    reconciled = adapter.reconcile(
+        plan,
+        {
+            "requested_shares": plan.shares,
+            "broker_order_id": submitted.order_id,
+            "broker_strategy_id": submitted.strategy_id,
+            "receipt_mapping": True,
+            "account_binding": "proven",
+            "locator_proof": submitted.locator_proof,
+        },
+    )
+
+    assert prepared.locator_proof["baseline_order_count"] == 1
+    assert submitted.locator_proof["baseline_order_count"] == 1
+    assert "baseline_order_count" not in reconciled.locator_proof
+
+
 @pytest.mark.parametrize(
     ("native_type", "baseline_mode", "post_mode"),
     [

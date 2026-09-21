@@ -167,6 +167,36 @@ def test_mock_order_claims_and_reconciles_to_filled(tmp_path: Path) -> None:
     assert broker.reconcile_calls == 1
 
 
+def test_unknown_reconcile_does_not_erase_proven_receipt_mapping(
+    tmp_path: Path,
+) -> None:
+    broker = FakeBroker(
+        reconcile=[
+            BrokerReceipt(
+                status=BrokerStatus.UNKNOWN,
+                order_id="o-1",
+                receipt_mapping=False,
+                account_binding="proven",
+                reason="READBACK_INCONCLUSIVE",
+                conclusive=False,
+            )
+        ]
+    )
+    store = InMemoryExecutionStore(tmp_path / "events.jsonl")
+    engine = TradingExecution(
+        store=store,
+        now=lambda: datetime(2026, 8, 15, 1, 1, tzinfo=timezone.utc),
+    )
+    plan = _plan()
+
+    submitted = engine.execute(plan, broker)
+    unknown = engine.execute(plan, broker)
+
+    assert submitted.receipt_mapping is True
+    assert unknown.state == ExecutionState.UNKNOWN
+    assert unknown.receipt_mapping is True
+
+
 def test_cancel_is_one_shot_and_persists_terminal_receipt(tmp_path: Path) -> None:
     broker = FakeBroker()
     store = InMemoryExecutionStore(tmp_path / "events.jsonl")

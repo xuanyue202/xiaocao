@@ -2790,7 +2790,13 @@ class TradingExecution:
             broker_strategy_id=broker.strategy_id or previous.broker_strategy_id,
             broker_status=broker.normalized_status().value,
             receipt_mapping=(
-                broker.receipt_mapping
+                previous.receipt_mapping
+                if (
+                    previous.receipt_mapping is True
+                    and broker.normalized_status() == BrokerStatus.UNKNOWN
+                    and broker.receipt_mapping is False
+                )
+                else broker.receipt_mapping
                 if isinstance(broker.receipt_mapping, bool)
                 else previous.receipt_mapping
             ),
