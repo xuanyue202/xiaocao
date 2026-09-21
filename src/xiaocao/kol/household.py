@@ -8,7 +8,9 @@ import stat
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable
-from urllib.request import Request, urlopen
+from urllib.request import Request
+
+import requests
 
 try:
     import tomllib
@@ -59,11 +61,12 @@ class LiangHuiMcpClient:
         url: str,
         headers: dict[str, str],
         *,
-        opener: Callable[..., Any] = urlopen,
+        opener: Callable[..., Any] | None = None,
     ):
         self.url = url
         self.headers = dict(headers)
         self.opener = opener
+        self.session = requests.Session() if opener is None else None
 
     @classmethod
     def from_config(
@@ -113,16 +116,31 @@ class LiangHuiMcpClient:
             {"jsonrpc": "2.0", "id": 1, "method": method, "params": params},
             ensure_ascii=False,
         ).encode()
-        request = Request(
-            self.url,
-            data=body,
-            headers={"Content-Type": "application/json", **self.headers},
-            method="POST",
-        )
         try:
-            with self.opener(request, timeout=30) as response:
-                payload = json.loads(response.read().decode("utf-8"))
-        except (OSError, ValueError, json.JSONDecodeError) as exc:
+            if self.opener is None:
+                response = self.session.post(
+                    self.url,
+                    data=body,
+                    headers={"Content-Type": "application/json", **self.headers},
+                    timeout=30,
+                )
+                response.raise_for_status()
+                payload = response.json()
+            else:
+                request = Request(
+                    self.url,
+                    data=body,
+                    headers={"Content-Type": "application/json", **self.headers},
+                    method="POST",
+                )
+                with self.opener(request, timeout=30) as response:
+                    payload = json.loads(response.read().decode("utf-8"))
+        except (
+            OSError,
+            ValueError,
+            json.JSONDecodeError,
+            requests.RequestException,
+        ) as exc:
             raise DecisionError("亮灰 MCP request failed") from exc
         if payload.get("error"):
             error = payload["error"]

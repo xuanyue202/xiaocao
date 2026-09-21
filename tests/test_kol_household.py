@@ -180,3 +180,37 @@ def test_lianghui_client_lists_live_tools():
     assert [tool["name"] for tool in client.list_tools()] == [
         "publish_kol_report"
     ]
+
+
+def test_lianghui_default_transport_reuses_one_requests_session(monkeypatch):
+    calls = []
+
+    class Response:
+        def raise_for_status(self):
+            return None
+
+        def json(self):
+            return {
+                "jsonrpc": "2.0",
+                "id": 1,
+                "result": {"tools": [{"name": "get_kol_record"}]},
+            }
+
+    class Session:
+        def post(self, url, *, data, headers, timeout):
+            calls.append((url, json.loads(data), headers, timeout))
+            return Response()
+
+    session = Session()
+    monkeypatch.setattr(
+        "xiaocao.kol.household.requests.Session",
+        lambda: session,
+    )
+    client = LiangHuiMcpClient(
+        "https://example.test/mcp",
+        {"X-Phone-Number": "secret"},
+    )
+
+    assert [tool["name"] for tool in client.list_tools()] == ["get_kol_record"]
+    assert client.session is session
+    assert len(calls) == 1
