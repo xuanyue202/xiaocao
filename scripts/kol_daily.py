@@ -4565,7 +4565,8 @@ class DailyRuntime:
                 terminal = initial_projection_terminal(candidate, state)
             else:
                 terminal = triggered_evaluation_terminal(candidate, state)
-            self.prepare_trading_sources(state)
+            if request.get("operation") != "classification_backfill":
+                self.prepare_trading_sources(state)
             terminals.append(terminal)
             receipt_dir.mkdir(parents=True, exist_ok=True)
             receipt_path.write_text(

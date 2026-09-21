@@ -7842,6 +7842,65 @@ def test_triggered_viewpoint_evaluation_appends_without_event_side_effects(
     assert service.audit()["book_trade_count"] == 0
 
 
+def test_classification_backfill_skips_legacy_trading_source_packet(
+    tmp_path,
+    monkeypatch,
+):
+    output_dir = tmp_path / "daily"
+    trigger_dir = output_dir / "viewpoint_triggers"
+    trigger_dir.mkdir(parents=True)
+    (trigger_dir / "classification.json").write_text(
+        json.dumps({
+            "operation": "classification_backfill",
+            "report_id": "kr_fixture",
+            "viewpoint_id": "vp_fixture",
+        }),
+        encoding="utf-8",
+    )
+    candidate = {
+        "publication_key": "viewpoint-maintenance:ve_fixture",
+        "records": [],
+        "publish_request": {},
+        "metadata": {"evaluation_id": "ve_fixture"},
+    }
+    state = {"completed": True}
+
+    class FakePublications:
+        def prepare(self, *args, **kwargs):
+            return None
+
+        def run(self, *args, **kwargs):
+            return state
+
+    runtime = DailyRuntime.__new__(DailyRuntime)
+    runtime.args = SimpleNamespace(output_dir=output_dir)
+    runtime.publications = FakePublications()
+    runtime._lianghui_client = lambda: object()
+    runtime.prepare_trading_sources = lambda _state: pytest.fail(
+        "classification backfill must not create a legacy source packet"
+    )
+    monkeypatch.setattr(
+        kol_daily_script,
+        "read_published_publication",
+        lambda *_args, **_kwargs: {"report": {}, "records": []},
+    )
+    monkeypatch.setattr(
+        kol_daily_script,
+        "build_classification_backfill_candidate",
+        lambda *_args, **_kwargs: candidate,
+    )
+    monkeypatch.setattr(
+        kol_daily_script,
+        "triggered_evaluation_terminal",
+        lambda *_args, **_kwargs: {"evaluation_id": "ve_fixture"},
+    )
+
+    assert runtime.viewpoints() == {
+        "status": "completed",
+        "events": [{"evaluation_id": "ve_fixture"}],
+    }
+
+
 def test_classification_backfill_refines_incomplete_short_term_viewpoint():
     publication_id = publication_id_for_source(
         adapter="xiaocao_live", source_identity="legacy-short-term"
