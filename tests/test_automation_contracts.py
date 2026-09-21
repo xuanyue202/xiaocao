@@ -91,6 +91,17 @@ def test_semantic_consumers_use_lianghui_viewpoint_projection() -> None:
         assert "opening draft" not in prompt.lower()
         assert "unchanged report bodies" in prompt
         assert "source_fingerprint" in prompt
+        assert "at most 16" in prompt
+        assert "classification_backfill" in prompt
+        assert "keywords, holdings, asset names or latest-N" in prompt
+
+
+def test_remote_writer_owns_typed_short_term_classification() -> None:
+    prompt = _automation("xiaocao-kol-hourly-remote-writer")["prompt"]
+    assert "trading_applicability" in prompt
+    assert "book_b_short_term" in prompt
+    assert "classification_backfill" in prompt
+    assert "not_book_b_short_term" in prompt
 
 
 def test_live_morning_wait_and_unlock_promises_are_event_driven_and_guarded() -> None:

@@ -30,6 +30,14 @@ and never satisfies formal decision publication by itself.
    binds one audit-time artifact; only a changed `source_fingerprint` means the
    published semantics changed. It contains attributed viewpoints, latest
    evaluations, relations and only relation-needed history, never report bodies.
+   `active_viewpoints` is a hard-budgeted set of at most 16 explicitly typed,
+   still-valid Book-B short-term `current` viewpoints. `uncertain`, non-short,
+   unclassified and condition-incomplete viewpoints are excluded from model
+   context and retained only as counts/quality. Never open the compact
+   `classification_backfill` manifest in a trading task or substitute keyword,
+   holdings, asset-name or latest-N filtering; its exact IDs belong to the
+   remote writer. A degraded or mandatory-overflow projection uses the
+   deterministic baseline.
    `registry_only` is explicit: MCP has exact-ID readback but
    no complete remote report discovery. Cover all registered authors, not only
    Xiaocao or names overlapping holdings. Missing author/latest evidence is

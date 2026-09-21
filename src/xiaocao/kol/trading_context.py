@@ -58,6 +58,15 @@ PRODUCTION_LEDGER_PATHS = (
     "output/live/kol_reader_copy_20260726/events.jsonl",
 )
 EVALUATION_STATES = {"current", "expired", "invalidated", "uncertain"}
+SHORT_TERM_PROJECTION_BUDGET = 16
+SHORT_TERM_SCOPE = "book_b_short_term"
+SHORT_TERM_UTILITIES = {
+    "direct_action": 4,
+    "risk_constraint": 4,
+    "market_posture": 3,
+    "supporting_context": 2,
+}
+MANDATORY_SHORT_TERM_UTILITIES = {"direct_action", "risk_constraint"}
 
 
 class TradingContextError(ValueError):
@@ -883,6 +892,125 @@ def _projection_viewpoint(row: dict) -> dict:
     }
 
 
+def _short_term_selection(
+    *,
+    context: dict,
+    viewpoints: dict[str, dict],
+) -> tuple[list[str], dict, list[dict]]:
+    """Select a bounded Book-B shortlist from typed evaluation metadata.
+
+    Source semantics stay complete in LiangHui.  This seam decides only which
+    already-published viewpoints are allowed into the short-term model context.
+    Natural-language keywords, holdings and asset names are deliberately not
+    used as selectors.
+    """
+    evaluation_rows = {
+        row["record_id"]: row for row in context["evaluations"]
+    }
+    as_of = _timestamp(context["as_of"])
+    excluded = Counter()
+    backfill_rows: list[dict] = []
+    eligible: list[tuple[tuple, str, str]] = []
+    quality_issues: list[dict] = []
+    for identifier, row in viewpoints.items():
+        status = row.get("latest_status") or "uncertain"
+        if status != "current":
+            excluded[f"status_{status}"] += 1
+            continue
+        latest = [
+            evaluation_rows[evaluation_id]
+            for evaluation_id in row.get("latest_evaluation_ids", [])
+            if evaluation_id in evaluation_rows
+        ]
+        if len(latest) != 1:
+            excluded["latest_evaluation_ambiguous"] += 1
+            continue
+        evaluation = latest[0]["record"]["payload"]
+        applicability = evaluation.get("trading_applicability")
+        if not isinstance(applicability, dict):
+            excluded["short_term_classification_missing"] += 1
+            backfill_rows.append({
+                "viewpoint_id": identifier,
+                "report_id": row["report_id"],
+                "latest_evaluation_ids": list(
+                    row.get("latest_evaluation_ids", [])
+                ),
+            })
+            continue
+        if applicability.get("scope") != SHORT_TERM_SCOPE:
+            excluded["not_book_b_short_term"] += 1
+            continue
+        utility = str(applicability.get("utility") or "")
+        priority = applicability.get("priority")
+        valid_until = applicability.get("valid_until")
+        if (
+            utility not in SHORT_TERM_UTILITIES
+            or type(priority) is not int
+            or not 1 <= priority <= 5
+            or not isinstance(valid_until, str)
+        ):
+            excluded["short_term_classification_invalid"] += 1
+            continue
+        try:
+            if _timestamp(valid_until) <= as_of:
+                excluded["short_term_validity_expired"] += 1
+                continue
+        except TradingContextError:
+            excluded["short_term_classification_invalid"] += 1
+            continue
+        payload = row["record"]["payload"]
+        if not all(payload.get(field) for field in (
+            "triggers", "falsifiers", "uncertainties"
+        )):
+            excluded["short_term_operability_incomplete"] += 1
+            continue
+        evaluated_at = _timestamp(evaluation["evaluated_at"])
+        sort_key = (
+            -SHORT_TERM_UTILITIES[utility],
+            -priority,
+            -evaluated_at.timestamp(),
+            identifier,
+        )
+        eligible.append((sort_key, identifier, utility))
+    eligible.sort()
+    mandatory = [
+        row for row in eligible if row[2] in MANDATORY_SHORT_TERM_UTILITIES
+    ]
+    if len(mandatory) > SHORT_TERM_PROJECTION_BUDGET:
+        quality_issues.append({
+            "code": "mandatory_short_term_viewpoints_exceed_budget",
+            "count": len(mandatory),
+            "budget": SHORT_TERM_PROJECTION_BUDGET,
+        })
+        selected: list[str] = []
+    else:
+        mandatory_ids = {row[1] for row in mandatory}
+        selected = [row[1] for row in mandatory]
+        selected.extend(
+            row[1] for row in eligible
+            if row[1] not in mandatory_ids
+        )
+        selected = selected[:SHORT_TERM_PROJECTION_BUDGET]
+    omitted_due_budget = max(0, len(eligible) - len(selected))
+    if excluded["short_term_classification_missing"]:
+        quality_issues.append({
+            "code": "short_term_applicability_backfill_required",
+            "count": excluded["short_term_classification_missing"],
+        })
+    selection = {
+        "policy": "typed_evaluation_only_no_keyword_or_holdings_filter",
+        "budget": SHORT_TERM_PROJECTION_BUDGET,
+        "eligible_count": len(eligible),
+        "selected_count": len(selected),
+        "omitted_due_budget": omitted_due_budget,
+        "excluded_by_reason": dict(sorted(excluded.items())),
+        "_backfill_rows": sorted(
+            backfill_rows, key=lambda row: row["viewpoint_id"]
+        ),
+    }
+    return selected, selection, quality_issues
+
+
 def write_trading_projection(
     context: dict,
     *,
@@ -895,10 +1023,11 @@ def write_trading_projection(
     if context.get("context_sha256") != canonical_sha256(unsigned_context):
         raise TradingContextError("context_hash_mismatch")
     viewpoints = {row["record_id"]: row for row in context["viewpoints"]}
-    active_ids = {
-        identifier for identifier, row in viewpoints.items()
-        if row.get("latest_status") in {"current", "uncertain"}
-    }
+    selected_ids, selection, selection_quality_issues = _short_term_selection(
+        context=context,
+        viewpoints=viewpoints,
+    )
+    active_ids = set(selected_ids)
     relation_rows = [
         row for row in context["relations"]
         if {
@@ -943,7 +1072,7 @@ def write_trading_projection(
         copy.deepcopy(issue)
         for issue in context["coverage"].get("incomplete_reasons", [])
         if issue.get("code") in quality_codes
-    ]
+    ] + selection_quality_issues
     source_identity = {
         "reports": sorted(
             ({"report_id": row["report_id"],
@@ -959,16 +1088,43 @@ def write_trading_projection(
             key=lambda row: (row["kind"], row["record_id"]),
         ),
     }
+    source_fingerprint = canonical_sha256(source_identity)
+    backfill_rows = selection.pop("_backfill_rows")
+    if backfill_rows:
+        backfill_manifest = {
+            "schema_version": 1,
+            "source_fingerprint": source_fingerprint,
+            "viewpoints": backfill_rows,
+        }
+        backfill_sha256 = canonical_sha256(backfill_manifest)
+        backfill_path = (
+            Path(repo_root).resolve()
+            / CACHE_RELATIVE_PATH
+            / f"{backfill_sha256}.short-term-backfill.json"
+        )
+        _write_json(backfill_path, backfill_manifest)
+        selection["classification_backfill"] = {
+            "count": len(backfill_rows),
+            "sha256": backfill_sha256,
+            "path": str(backfill_path),
+        }
+    else:
+        selection["classification_backfill"] = {
+            "count": 0,
+            "sha256": None,
+            "path": None,
+        }
     projection = {
-        "schema_version": "kol-trading-viewpoint-projection.v1",
+        "schema_version": "kol-trading-viewpoint-projection.v2",
         "authority": 0,
         "source": "lianghui_published_registry",
         "as_of": context["as_of"],
         "context_sha256": context["context_sha256"],
-        "source_fingerprint": canonical_sha256(source_identity),
+        "source_fingerprint": source_fingerprint,
+        "selection": selection,
         "active_viewpoints": [
             _projection_viewpoint(viewpoints[identifier])
-            for identifier in sorted(active_ids)
+            for identifier in selected_ids
         ],
         "related_history": [
             _projection_viewpoint(viewpoints[identifier])
@@ -999,6 +1155,7 @@ def write_trading_projection(
         },
         "consumption_contract": {
             "source_semantics": "direct_lianghui_viewpoints",
+            "short_term_selection": "typed_latest_evaluation_only",
             "current_applicability": "bounded_runtime_review_required",
             "source_text_reread": "forbidden_for_projection_consumer",
             "trading_authority": "none",
@@ -1028,8 +1185,9 @@ def write_trading_projection(
                     raise TradingContextError("projection_immutable_conflict")
         finally:
             Path(temporary).unlink(missing_ok=True)
-    counts = Counter(
-        row["latest_status"] for row in projection["active_viewpoints"]
+    all_status_counts = Counter(
+        row.get("latest_status") or "uncertain"
+        for row in viewpoints.values()
     )
     return {
         "status": projection["quality"]["status"],
@@ -1038,9 +1196,14 @@ def write_trading_projection(
         "context_sha256": context["context_sha256"],
         "source_fingerprint": projection["source_fingerprint"],
         "counts": {
-            "active_viewpoints": len(projection["active_viewpoints"]),
-            "current": counts.get("current", 0),
-            "uncertain": counts.get("uncertain", 0),
+            "selected_viewpoints": len(projection["active_viewpoints"]),
+            "eligible_before_budget": selection["eligible_count"],
+            "current_total": all_status_counts.get("current", 0),
+            "uncertain_excluded": all_status_counts.get("uncertain", 0),
+            "classification_backfill_required": selection[
+                "excluded_by_reason"
+            ].get("short_term_classification_missing", 0),
+            "omitted_due_budget": selection["omitted_due_budget"],
             "related_history": len(projection["related_history"]),
             "relations": len(projection["relations"]),
             "quality_issues": len(quality_issues),

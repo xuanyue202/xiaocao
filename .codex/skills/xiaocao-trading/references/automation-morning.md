@@ -268,9 +268,11 @@ PYTHONPATH=src .venv/bin/python scripts/kol_trading_context.py projection \
 
 Read only its `projection_path`, `projection_sha256`, stable
 `source_fingerprint`, counts and quality. Use `source_fingerprint`, not the
-audit-time-dependent projection hash, to decide whether source semantics changed. It contains current
-or uncertain LiangHui viewpoints, latest evaluations, relations and necessary
-related history; it contains no report bodies. Missing or structurally degraded
+audit-time-dependent projection hash, to decide whether source semantics changed. The model body contains at most 16 typed, still-valid Book-B short-term `current`
+viewpoints plus only their necessary relation history; `uncertain`, non-short,
+unclassified and inoperable viewpoints remain counts, not context. It contains
+no report bodies. Never open a `classification_backfill` manifest in the morning
+or infer classifications from keywords, holdings or asset names. Missing or structurally degraded
 projection evidence falls back to the deterministic baseline and remains a
 remote-writer quality issue. One current-applicability worker receives this
 projection plus the exact freeze and runtime facts. The parent independently

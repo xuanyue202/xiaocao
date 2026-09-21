@@ -199,7 +199,9 @@ Every item includes `content_value.status=low_density|promoted`; promoted items
 add `content_value.tier=report_only|alert_eligible`, accepted `alert_basis`,
 reviewed publication fields, and a `longitudinal_projection`: `promoted` carries
 evidence-bound viewpoints with an initial `current|expired|invalidated|uncertain`
-evaluation; `none` carries an empty list and concrete reason. Missing this
+evaluation. Every evaluation also carries the typed `trading_applicability`
+defined by `semantic-model-routing.md`; non-short-horizon viewpoints must be
+explicitly classified rather than omitted. `none` carries an empty list and concrete reason. Missing this
 decision fails closed rather than defaulting to an empty viewpoint list.
 
 Low-density creates neither report nor reminder. A promoted event gets its
@@ -236,8 +238,19 @@ native click and stop. Never ask user to save or add it to hourly.
 The validated semantic bundle is the only source-analysis pass. Before accepting
 publication, require every decision-relevant thesis to carry evidence, horizon,
 conditions/triggers, falsifiers, uncertainties and an explicit currentness
-evaluation. The same publication atomically writes the report, viewpoints and
+evaluation plus typed short-term applicability. The same publication atomically writes the report, viewpoints and
 initial evaluations; maintenance appends evaluations/relations. Do not pause for
 `daily_trading_source_preparation_input_required` or create a second notes packet.
 Trading tasks compose their rebuildable compact projection from these published
 records. Empty/unchanged sweeps remain silent and do not refresh history.
+
+When that projection reports a content-hash-bound `classification_backfill`
+manifest, the remote writer owns the exact listed viewpoint IDs. Reuse the
+already-published viewpoint, evaluation and cited evidence; do not reread every
+report body merely to classify time horizon. Append one validated evaluation per
+viewpoint with explicit `trading_applicability`. If a genuinely short-term legacy
+view lacks triggers, falsifiers or uncertainties, publish a source-bound refined
+replacement/superseding viewpoint rather than mutating history or letting the
+trading consumer infer the missing fields. Process at most the first 16 sorted IDs from the exact manifest per hourly run and
+leave morning and intraday consumers on their deterministic baseline until the
+next clean projection.

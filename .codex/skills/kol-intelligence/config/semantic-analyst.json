@@ -14,7 +14,8 @@
   "quality_gates": [
     "逐段覆盖全部稳定 segment，每个投资相关 segment 都关联到至少一个 thesis",
     "全部 must-surface thesis 在报告中恰好出现一次，并保留方向、条件、期限、数字、例外和不确定性",
-    "每条可能影响 Book B 决策的纵向观点都直接写明 horizon、triggers、falsifiers、uncertainties、证据引用和当前性 evaluation；禁止留给下游重新提炼",
+    "每条纵向观点的 evaluation 都显式给出 trading_applicability：短线观点用 scope=book_b_short_term、utility、priority 1..5、UTC valid_until 和自然语言 reason，且 viewpoint 必须有 triggers、falsifiers、uncertainties；其余观点明确标成 not_book_b_short_term/not_applicable/priority=0/valid_until=null；禁止留给下游重新提炼",
+    "短线适用性按观点本身的时间尺度、可操作性和风险价值判断，不用持仓、资产名或关键词作筛选器",
     "完整覆盖七类交易信息与全部具名资产，不用持仓、关键词或既有摘要限制抽取范围",
     "严格分离 KOL 原始观点、系统事实核验、家庭建议、paper-only Book 判断和 authority=0 知识",
     "输出自然、完整、可读的中文；原始 ASR 只用于审计，不把流程术语或内部字段暴露给读者"

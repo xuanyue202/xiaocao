@@ -5006,6 +5006,13 @@ def _projection_bundle() -> dict:
                 "basis": "观点来源明确，但随后数日的盘面持续性尚未验证。",
                 "confidence": "中等",
                 "uncertainties": ["缺少下一交易日的量价确认。"],
+                "trading_applicability": {
+                    "scope": "book_b_short_term",
+                    "utility": "risk_constraint",
+                    "priority": 5,
+                    "valid_until": "2026-07-30T15:00:00Z",
+                    "reason": "仓位边界会直接约束短线新增风险。",
+                },
                 "evidence": [
                     "/Users/example/output/live/paper_holdings.json"
                 ],
@@ -5060,6 +5067,9 @@ def test_publication_pipeline_creates_initial_viewpoint_and_evaluation(
     )
     assert evaluation["payload"]["viewpoint_id"] == viewpoint["record_id"]
     assert evaluation["payload"]["status"] == "uncertain"
+    assert evaluation["payload"]["trading_applicability"]["utility"] == (
+        "risk_constraint"
+    )
     assert "evidence" not in evaluation["payload"]
     assert evaluation["created_at"] == "2026-07-27T02:05:00Z"
     assert order == ["gray", "book"]
@@ -7773,6 +7783,13 @@ def test_triggered_viewpoint_evaluation_appends_without_event_side_effects(
             "basis": "新一期节目仍强调防守，但没有重申精确的一半现金比例。",
             "confidence": "medium",
             "uncertainties": ["缺少下一期完整仓位表。"],
+            "trading_applicability": {
+                "scope": "not_book_b_short_term",
+                "utility": "not_applicable",
+                "priority": 0,
+                "valid_until": None,
+                "reason": "长期现金边界不直接改变本次短线决策。",
+            },
         },
     )
     kinds = [row["kind"] for row in candidate["records"]]
@@ -7788,6 +7805,9 @@ def test_triggered_viewpoint_evaluation_appends_without_event_side_effects(
     assert evaluation["created_at"] == "2026-07-27T07:01:00Z"
     assert evaluation["payload"]["as_of"] == "2026-07-27T07:00:00Z"
     assert evaluation["payload"]["evaluated_at"] == "2026-07-27T07:01:00Z"
+    assert evaluation["payload"]["trading_applicability"]["scope"] == (
+        "not_book_b_short_term"
+    )
     assert candidate["metadata"]["notification_claim_authorized"] is False
     assert candidate["metadata"]["book_kol_us_replay_authorized"] is False
     terminal = triggered_evaluation_terminal(
@@ -7905,6 +7925,13 @@ def test_initial_projection_backfills_report_only_history_without_side_effects(
                     "status": "uncertain",
                     "basis": "来源观点清晰，但尚缺后续订单与利润数据。",
                     "uncertainties": ["等待下一期经营数据。"],
+                    "trading_applicability": {
+                        "scope": "not_book_b_short_term",
+                        "utility": "not_applicable",
+                        "priority": 0,
+                        "valid_until": None,
+                        "reason": "数周到季度的行业验证不直接进入短线决策。",
+                    },
                 },
             }],
         },
@@ -8041,6 +8068,13 @@ def test_initial_projection_rejects_report_copy_side_effect_fields(tmp_path):
                 "evaluation": {
                     "status": "uncertain",
                     "basis": "尚缺后续数据。",
+                    "trading_applicability": {
+                        "scope": "not_book_b_short_term",
+                        "utility": "not_applicable",
+                        "priority": 0,
+                        "valid_until": None,
+                        "reason": "未来数周的行业观点不直接进入短线决策。",
+                    },
                 },
             }],
         },

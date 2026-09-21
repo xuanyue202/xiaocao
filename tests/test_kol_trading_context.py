@@ -66,7 +66,10 @@ def publication(author="甲作者", day=5, *, viewpoints=2):
             "viewpoint_id": vid, "report_id": rid, "kol_id": "kol-" + author,
             "subject": "跨周期行业观点", "stance": "观点的完整条件和边界。",
             "source_published_at": source_time, "horizon": "直到明确反证出现",
-            "falsifiers": ["前提发生变化"], "evidence_refs": [{"excerpt": "完整来源论述"}],
+            "triggers": ["盘面出现来源要求的确认条件"],
+            "falsifiers": ["前提发生变化"],
+            "uncertainties": ["仍需动作边界的实时事实"],
+            "evidence_refs": [{"excerpt": "完整来源论述"}],
         }))
         for n, status in enumerate(["current", "expired"] if i == 0 else ["current"]):
             eid = f"ve-{vid}-{n}"
@@ -75,6 +78,13 @@ def publication(author="甲作者", day=5, *, viewpoints=2):
                 "evaluation_id": eid, "viewpoint_id": vid, "status": status,
                 "as_of": evaluation_time, "evaluated_at": evaluation_time,
                 "basis": "完整评估依据", "uncertainties": ["证据仍有边界"],
+                "trading_applicability": {
+                    "scope": "book_b_short_term",
+                    "utility": "direct_action",
+                    "priority": 5,
+                    "valid_until": "2026-09-07T00:00:00Z",
+                    "reason": "可能改变下一交易日的短线决策。",
+                },
             }))
     if len(ids) > 1:
         relation_id = "vr-" + rid
@@ -632,7 +642,7 @@ def test_morning_projection_uses_lianghui_viewpoints_without_report_bodies(tmp_p
     summary = tc.write_trading_projection(context, repo_root=tmp_path)
     projection = json.loads(Path(summary["projection_path"]).read_text())
 
-    assert projection["schema_version"] == "kol-trading-viewpoint-projection.v1"
+    assert projection["schema_version"] == "kol-trading-viewpoint-projection.v2"
     assert projection["authority"] == 0
     assert projection["context_sha256"] == context["context_sha256"]
     assert len(projection["active_viewpoints"]) == 1
@@ -644,13 +654,88 @@ def test_morning_projection_uses_lianghui_viewpoints_without_report_bodies(tmp_p
     assert "完整正文" not in rendered
     assert "unloaded_report_ids" not in rendered
     assert summary["counts"] == {
-        "active_viewpoints": 1,
-        "current": 1,
-        "uncertain": 0,
+        "selected_viewpoints": 1,
+        "eligible_before_budget": 1,
+        "current_total": 1,
+        "uncertain_excluded": 0,
+        "classification_backfill_required": 0,
+        "omitted_due_budget": 0,
         "related_history": 1,
         "relations": 1,
         "quality_issues": 0,
     }
+
+
+def test_projection_excludes_uncertain_and_unclassified_views_from_model_context(tmp_path):
+    items = [publication("甲作者", viewpoints=3)]
+    second_viewpoint_id = [
+        row["record_id"] for row in items[0] if row["kind"] == "viewpoint"
+    ][1]
+    current = next(
+        row for row in items[0]
+        if row["kind"] == "viewpoint_evaluation"
+        and row["payload"]["status"] == "current"
+        and row["payload"]["viewpoint_id"] == second_viewpoint_id
+    )
+    current["payload"].pop("trading_applicability")
+    current["content_sha256"] = record_content_sha256(current)
+    register(tmp_path, items)
+    context = build(
+        tmp_path,
+        Reader(items),
+        Clock(),
+        include_report_bodies=False,
+    )
+
+    summary = tc.write_trading_projection(context, repo_root=tmp_path)
+    projection = json.loads(Path(summary["projection_path"]).read_text())
+
+    assert summary["status"] == "degraded"
+    assert summary["counts"]["selected_viewpoints"] == 1
+    assert summary["counts"]["uncertain_excluded"] == 0
+    assert projection["selection"]["excluded_by_reason"] == {
+        "short_term_classification_missing": 1,
+        "status_expired": 1,
+    }
+    backfill = projection["selection"]["classification_backfill"]
+    assert backfill["count"] == 1
+    assert len(backfill["sha256"]) == 64
+    assert json.loads(Path(backfill["path"]).read_text())[
+        "viewpoints"
+    ] == [{
+        "viewpoint_id": second_viewpoint_id,
+        "report_id": items[0][0]["record_id"],
+        "latest_evaluation_ids": [current["record_id"]],
+    }]
+    assert all(
+        row["latest_status"] == "current"
+        for row in projection["active_viewpoints"]
+    )
+    assert len(projection["active_viewpoints"]) == 1
+
+
+def test_projection_fails_closed_when_mandatory_short_term_views_exceed_budget(tmp_path):
+    items = [publication("甲作者", viewpoints=18)]
+    register(tmp_path, items)
+    context = build(
+        tmp_path,
+        Reader(items),
+        Clock(),
+        include_report_bodies=False,
+    )
+
+    summary = tc.write_trading_projection(context, repo_root=tmp_path)
+    projection = json.loads(Path(summary["projection_path"]).read_text())
+
+    assert summary["status"] == "degraded"
+    assert projection["selection"]["budget"] == 16
+    assert projection["selection"]["eligible_count"] == 17
+    assert projection["active_viewpoints"] == []
+    assert projection["quality"]["issues"] == [{
+        "code": "mandatory_short_term_viewpoints_exceed_budget",
+        "count": 17,
+        "budget": 16,
+    }]
 
 
 def test_morning_projection_reuses_published_receipt_without_remote_report_read(tmp_path):
@@ -672,7 +757,7 @@ def test_morning_projection_reuses_published_receipt_without_remote_report_read(
         "none_longitudinal_projection_only"
     )
     assert summary["status"] == "ready"
-    assert summary["counts"]["active_viewpoints"] == 1
+    assert summary["counts"]["selected_viewpoints"] == 1
 
 
 def test_morning_projection_is_immutable_and_hash_bound(tmp_path):

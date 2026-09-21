@@ -88,7 +88,15 @@ profile is authoritative; the following explains the required shape:
    identity, quote, scope, horizon, and falsifiers. An uncertain security name
    remains traceable and explicitly uncertain; it is never erased into an
    anonymous rank.
-6. Stop only when the profile's quality gates pass and the allowed outputs are
+6. Every longitudinal evaluation explicitly classifies `trading_applicability`.
+   A Book-B short-term item uses `scope=book_b_short_term`, one of
+   `direct_action|risk_constraint|market_posture|supporting_context`, priority
+   `1..5`, a real UTC `valid_until`, and a natural-language reason; its
+   viewpoint must carry non-empty triggers, falsifiers and uncertainties. All
+   other horizons use `not_book_b_short_term`, `not_applicable`, priority `0`
+   and null validity. Judge this from the thesis itself, never from holdings,
+   asset names or keyword matches.
+7. Stop only when the profile's quality gates pass and the allowed outputs are
    complete. Otherwise return the exact unresolved gaps. Low density is legal
    only after full evidence review; unavailable facts never authorize fabricated
    validation or a parent-model fallback.

@@ -770,7 +770,17 @@ def test_projection_identity_matches_actual_publication_consumer(tmp_path, local
             "reasoning": "缩量降低突破可靠性。",
             "evidence_refs": [{"claim_id": draft["claims"][0]["claim_id"],
                                "excerpt": "下一交易日先看成交额是否恢复"}],
-            "evaluation": {"status": "uncertain", "basis": "等待新的量价事实。"},
+            "evaluation": {
+                "status": "uncertain",
+                "basis": "等待新的量价事实。",
+                "trading_applicability": {
+                    "scope": "not_book_b_short_term",
+                    "utility": "not_applicable",
+                    "priority": 0,
+                    "valid_until": None,
+                    "reason": "量能观察尚未形成可操作的短线判断。",
+                },
+            },
         }],
     }
     if not accepted:

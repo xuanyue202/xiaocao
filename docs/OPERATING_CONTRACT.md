@@ -1,6 +1,6 @@
 # 小草运营契约（Operating Contract, SSOT）
 
-**版本**：4.20
+**版本**：4.21
 **状态**：现行
 **适用范围**：所有 paper / 未来 real 的实盘环（live_recommend → paper_record → live_monitor → eod）与回测
 **关联实现**：`src/xiaocao/live/{safety,capital_keychain,foundersc_native_ax,foundersc_native_broker,trading_execution,book_b_live_lifecycle,book_b_live_intraday}.py`、`src/xiaocao/live/intelligence_policy.py`、`src/xiaocao/strategy/{mode_switch,trend_rules,kol_reference}.py`、`native/foundersc_ax_executor/`、`kronos_screen/scripts/{capture_signals,forward_eval,paper_record,settle_book_a,settle_book_t,decompose_pnl,quality_governor}.py`、`scripts/{book_b_live_morning,book_b_live_intraday,live_monitor,research_mode_switch_replay}.py`
@@ -61,7 +61,7 @@ Book B live morning 仍提前至交易日09:00启动，09:23推荐和09:25本地
 
 remote writer 对新报告只做一次完整语义工作：同一经校验的 semantic bundle 原子发布灰常亮报告、`viewpoint`、初始 `viewpoint_evaluation`，后续维护只追加当前性评估与观点关系。LiangHui 的这些记录是交易消费者唯一的来源语义 SSOT；不得再派生 `kol-source-preparation` 笔记、逐对象准备包或晨间 opening draft。每条可能影响 Book B 判断的观点应在 writer 端保留期限、触发、证伪、不确定性、证据及显式当前性。缺失这些字段是 writer 质量降级，不由交易任务重读正文补做。
 
-09:00、09:25和稀疏盘中任务只构建无报告正文的 hash-bound 紧凑投影：当前/待确认观点、最新评估、必要关系与相关历史端点。投影原子写入后，下游用其 `path/hash/counts` 做一次有界 runtime 当前适用性判断，并结合各自冻结候选、账户、风险和实时事实；正式决策发布时只为被引用观点精确加载对应报告并完成现有远端验证。投影缺失或质量降级时回确定性基线。它本身 `authority=0`，不能预认开盘条件、扩大资本权限或替代§2a正式判断与独立复核。
+09:00、09:25和稀疏盘中任务只构建无报告正文的 hash-bound 紧凑投影。进入模型正文的不是全部 `current/uncertain`，而是最新 `current` evaluation 已显式标注 `book_b_short_term`、仍在 `valid_until` 内且具备 triggers/falsifiers/uncertainties 的短线子集；`uncertain`、未分类、非短线或条件不完整的观点只计数，不进入正文。投影原子写入后，下游用其 `path/hash/counts` 做一次有界 runtime 当前适用性判断，并结合各自冻结候选、账户、风险和实时事实；正式决策发布时只为被引用观点精确加载对应报告并完成现有远端验证。投影缺失或质量降级时回确定性基线。它本身 `authority=0`，不能预认开盘条件、扩大资本权限或替代§2a正式判断与独立复核。
 
 **09:25–09:30优先完成当前交易流程。** 遇到AX代码故障，立即定位最小失败点、修补、做必要验证并通过原计划恢复入口继续；缺KOL材料，优先复用本地完整阅读文件，按准确report_id补读缺失来源。主审在语义分析任务运行时同步独立阅读，不等草稿到达才开始。必要信息与订单正确性仍须证明；完整回归、打包、Git和复盘放在当前流程终态之后。
 
@@ -76,6 +76,8 @@ remote writer 对新报告只做一次完整语义工作：同一经校验的 se
 ### 1c. 开盘准备与上下文预算（2026-09-17）
 
 LiangHui 语义投影质量、来源读回时效、当前正式决策是三个独立状态。相同hash的已发布观点不会因为过了十分钟而重新提炼；历史TTL仍24小时，09:00补验应覆盖11:30恢复窗口，保持真实as-of并只按准确ID刷新。`projection`的ready/degraded只描述已登记纵向记录是否完整，不称为交易ready。
+
+短线投影采用固定 16 条硬预算。`direct_action` 与 `risk_constraint` 优先保留，再按显式 utility、priority 与评估时间填入 `market_posture` / `supporting_context`；不得使用持仓、资产名、关键词或最新 N 条代替语义分类。强制项超过预算时不静默丢风险，而是空投影并降级到确定性基线。历史 evaluation 缺少分类时生成只含精确 viewpoint/evaluation ID 的 hash-bound backfill manifest，由 remote writer 追加评估；早盘不得打开该清单或全量观点自行补做。
 
 09:20前原子保存紧凑投影的path/projection_sha256/source_fingerprint/counts和质量结论；不再另造条件草稿。projection_sha256绑定含审计时点的单份文件，只有稳定source_fingerprint变化才表示来源语义变化。若已有足够事实可形成适用正式判断，可提前发布并按真实条件选择valid_until；不能续命、回填时间或强制中性。确需开盘事实的部分留待同一份投影的最终适配；09:25只核对source_fingerprint变化与当前条件。新/变更来源仍只由remote writer完整读取并独立复核。
 
@@ -100,7 +102,7 @@ LiangHui 语义投影质量、来源读回时效、当前正式决策是三个�
 用户确认新增判断接口，不要求每次当下判断先完成研究 PASS；这不把原始
 KOL 断言、候选假设或报告升级为策略真值，也不替代永久参数升级的 §10 门。
 小草用于短线体系及适用环境，其余已登记 KOL 用于因果逻辑、主题和风险；
-不得仅按持仓名称或关键词裁剪信息。灰常亮报告及观点/评估/关系是事实源，
+不得仅按持仓名称或关键词裁剪信息。完整语义库存保持全量，但模型运行上下文只消费 writer 显式分类且可操作的短线子集。灰常亮报告及观点/评估/关系是事实源，
 本地只保存可重建的 hash-bound 缓存；远端发现仅能证明已登记 ID 的覆盖。
 
 语义分析产出兼容的 `kol-trading-decision.v1/v2`，由不同 Agent 完整复核来源忠实性、
@@ -486,6 +488,7 @@ KOL 断言、候选假设或报告升级为策略真值，也不替代永久参�
 
 | 版本 | 日期 | 说明 |
 |------|------|------|
+| 4.21 | 2026-09-21 | KOL 运行投影从全部 current/uncertain 收敛为 writer 显式分类的短线可操作子集；排除 uncertain/未分类/非短线，固定 16 条预算，强制项溢出 fail-closed，历史分类由精确 hash-bound manifest 交回 remote writer。 |
 | 4.20 | 2026-09-17 | 拆分来源准备/当前判断、提前条件草稿与上午缓存期限；紧凑运行通知；全新BUY只查本批必要证据，移除重复填单和撤单预检，完整对账后置；混合成交/跳过按终态汇总。 |
 | 4.19 | 2026-09-17 | 日间 KOL 职责收敛：remote writer 独占新/变更正文完整阅读与来源层独立复核；09:00、09:25及 sparse 只复用准备包并复核 runtime 当前映射；opening、14:25、14:55 不启动语义工作，EOD 仅做回执/hash 链路审计。缺包回确定性基线，不以重复全文分析延长交易任务。 |
 | 4.18 | 2026-09-16 | 批次级原生检查与资金风险预留，成功通知唯一合同号柜台ACK，成交延后核实；账户/APP锁与60秒限时缓存，异常停止剩余新增写，分阶段完整计时。 |

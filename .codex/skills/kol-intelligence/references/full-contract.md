@@ -837,6 +837,13 @@ horizons, or conditions as separate units even when they concern the same
 asset. Preserve conflicts and explicit revisions; never let a newer statement
 silently erase an older conflicting one.
 
+Every published `viewpoint_evaluation` also classifies the viewpoint's trading
+scope. Use the typed `trading_applicability` contract from
+`semantic-model-routing.md`: explicit Book-B short-term utility, priority and
+validity for genuinely actionable/defensive/posture/supporting short-horizon
+context, or an explicit non-short-term classification. This is a semantic
+judgment over the complete thesis, never a holdings, asset-name or keyword gate.
+
 Second, after the inventory is complete, perform an independent semantic
 reread of stable segments covering the entire immutable evidence. Every
 segment is reviewed exactly once and classified as investment content,

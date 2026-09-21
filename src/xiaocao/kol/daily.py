@@ -84,6 +84,17 @@ VIEWPOINT_EVALUATION_STATUSES = {
     "invalidated",
     "uncertain",
 }
+TRADING_APPLICABILITY_SCOPES = {
+    "book_b_short_term",
+    "not_book_b_short_term",
+}
+TRADING_APPLICABILITY_UTILITIES = {
+    "direct_action",
+    "risk_constraint",
+    "market_posture",
+    "supporting_context",
+    "not_applicable",
+}
 AGENT_OWNED_FAILURE_CATEGORIES = frozenset({
     "code_error",
     "schema_error",
@@ -199,6 +210,68 @@ def _utc_iso8601(value: str) -> str:
         .isoformat(timespec="seconds")
         .replace("+00:00", "Z")
     )
+
+
+def _normalize_trading_applicability(
+    value: Any,
+    *,
+    evaluation_status: str,
+    as_of: str,
+    triggers: list[str],
+    falsifiers: list[str],
+    uncertainties: list[str],
+) -> dict[str, Any]:
+    if not isinstance(value, dict):
+        raise DailyError(
+            "viewpoint evaluation needs explicit trading applicability"
+        )
+    scope = str(value.get("scope") or "").strip()
+    utility = str(value.get("utility") or "").strip()
+    priority = value.get("priority")
+    reason = _required_reason(
+        value.get("reason"), label="trading applicability"
+    )
+    if scope not in TRADING_APPLICABILITY_SCOPES:
+        raise DailyError("trading applicability scope is unsupported")
+    if utility not in TRADING_APPLICABILITY_UTILITIES:
+        raise DailyError("trading applicability utility is unsupported")
+    if type(priority) is not int:
+        raise DailyError("trading applicability priority must be an integer")
+    valid_until_raw = value.get("valid_until")
+    if scope == "not_book_b_short_term":
+        if utility != "not_applicable" or priority != 0 or valid_until_raw is not None:
+            raise DailyError(
+                "non-short-term applicability must be non-actionable"
+            )
+        return {
+            "scope": scope,
+            "utility": utility,
+            "priority": priority,
+            "valid_until": None,
+            "reason": reason,
+        }
+    if utility == "not_applicable" or not 1 <= priority <= 5:
+        raise DailyError("short-term applicability utility or priority is invalid")
+    if not all((triggers, falsifiers, uncertainties)):
+        raise DailyError(
+            "short-term applicability needs triggers, falsifiers and uncertainties"
+        )
+    valid_until = _utc_iso8601(str(valid_until_raw or ""))
+    if (
+        evaluation_status == "current"
+        and datetime.fromisoformat(valid_until.replace("Z", "+00:00"))
+        <= datetime.fromisoformat(as_of.replace("Z", "+00:00"))
+    ):
+        raise DailyError(
+            "current short-term applicability must remain valid after as_of"
+        )
+    return {
+        "scope": scope,
+        "utility": utility,
+        "priority": priority,
+        "valid_until": valid_until,
+        "reason": reason,
+    }
 
 
 def _sha256(value: Any) -> str:
@@ -343,6 +416,26 @@ def _normalize_longitudinal_projection(
         as_of = _utc_iso8601(
             str(evaluation.get("as_of") or evaluated_at)
         )
+        triggers = _reader_text_list(
+            raw.get("triggers"),
+            label="longitudinal triggers",
+        )
+        falsifiers = _reader_text_list(
+            raw.get("falsifiers"),
+            label="longitudinal falsifiers",
+        )
+        uncertainties = _reader_text_list(
+            raw.get("uncertainties"),
+            label="longitudinal uncertainties",
+        )
+        trading_applicability = _normalize_trading_applicability(
+            evaluation.get("trading_applicability"),
+            evaluation_status=evaluation_status,
+            as_of=as_of,
+            triggers=triggers,
+            falsifiers=falsifiers,
+            uncertainties=uncertainties,
+        )
         normalized.append(
             {
                 "local_thesis_id": local_id,
@@ -351,18 +444,9 @@ def _normalize_longitudinal_projection(
                     raw.get("attribution") or item.get("author") or ""
                 ).strip(),
                 "role": str(raw.get("role") or "").strip(),
-                "triggers": _reader_text_list(
-                    raw.get("triggers"),
-                    label="longitudinal triggers",
-                ),
-                "falsifiers": _reader_text_list(
-                    raw.get("falsifiers"),
-                    label="longitudinal falsifiers",
-                ),
-                "uncertainties": _reader_text_list(
-                    raw.get("uncertainties"),
-                    label="longitudinal uncertainties",
-                ),
+                "triggers": triggers,
+                "falsifiers": falsifiers,
+                "uncertainties": uncertainties,
                 "evidence_refs": refs,
                 "evaluation": {
                     "status": evaluation_status,
@@ -376,6 +460,7 @@ def _normalize_longitudinal_projection(
                         evaluation.get("uncertainties"),
                         label="longitudinal evaluation uncertainties",
                     ),
+                    "trading_applicability": trading_applicability,
                     "evidence": _publication_evidence_list(
                         evaluation.get("evidence")
                     ),
@@ -460,6 +545,9 @@ def _initial_longitudinal_records(
             "basis": evaluation["basis"],
             "confidence": evaluation["confidence"],
             "uncertainties": evaluation["uncertainties"],
+            "trading_applicability": evaluation[
+                "trading_applicability"
+            ],
         }
         if evaluation["evidence"]:
             evaluation_payload["evidence"] = evaluation["evidence"]
@@ -636,12 +724,13 @@ def build_triggered_evaluation_candidate(
     if not isinstance(report, dict) or not isinstance(records, list):
         raise DailyError("current viewpoint publication is incomplete")
     viewpoint_id_value = str(request.get("viewpoint_id") or "")
-    if not any(
-        isinstance(row, dict)
+    viewpoint = next((
+        row for row in records
+        if isinstance(row, dict)
         and row.get("kind") == "viewpoint"
         and row.get("record_id") == viewpoint_id_value
-        for row in records
-    ):
+    ), None)
+    if viewpoint is None:
         raise DailyError("triggered viewpoint does not exist in current history")
     as_of = str(request.get("as_of") or "").strip()
     evaluated_at = str(request.get("evaluated_at") or "").strip()
@@ -656,6 +745,15 @@ def build_triggered_evaluation_candidate(
         raise DailyError("triggered viewpoint evaluation is incomplete")
     as_of_utc = _utc_iso8601(as_of)
     evaluated_at_utc = _utc_iso8601(evaluated_at)
+    viewpoint_payload = viewpoint["payload"]
+    trading_applicability = _normalize_trading_applicability(
+        request.get("trading_applicability"),
+        evaluation_status=status,
+        as_of=as_of_utc,
+        triggers=list(viewpoint_payload.get("triggers") or []),
+        falsifiers=list(viewpoint_payload.get("falsifiers") or []),
+        uncertainties=list(viewpoint_payload.get("uncertainties") or []),
+    )
     evaluation_id_value = evaluation_id(
         viewpoint_id_value,
         as_of_utc,
@@ -681,6 +779,7 @@ def build_triggered_evaluation_candidate(
             "basis": basis,
             "confidence": str(request.get("confidence") or "medium"),
             "uncertainties": list(request.get("uncertainties") or []),
+            "trading_applicability": trading_applicability,
         },
     )
     updated_records, publish = build_append_only_publication_update(
