@@ -1083,25 +1083,45 @@ def _reviewed_author_pronoun_updates(
     report: dict[str, Any],
     request: dict[str, Any],
 ) -> dict[str, str]:
-    """Apply the one reviewed legacy author-pronoun correction."""
+    """Apply exact, trigger-reviewed legacy reader-copy corrections."""
 
-    if request.get("correct_reviewed_author_pronouns") is not True:
-        return {}
     payload = report.get("payload") or {}
-    if payload.get("author") != "吕晓彤":
-        raise DailyError(
-            "reviewed author-pronoun correction is only authorized for 吕晓彤"
-        )
+    replacements = request.get("reviewed_report_copy_replacements") or {}
+    if not isinstance(replacements, dict) or any(
+        not isinstance(old, str)
+        or not old
+        or not isinstance(new, str)
+        or not new
+        for old, new in replacements.items()
+    ):
+        raise DailyError("reviewed report-copy replacements are invalid")
+    if request.get("correct_reviewed_author_pronouns") is True:
+        if payload.get("author") != "吕晓彤":
+            raise DailyError(
+                "reviewed author-pronoun correction is only authorized for 吕晓彤"
+            )
+        replacements = {"她": "他", **replacements}
+    if not replacements:
+        return {}
     updates: dict[str, str] = {}
+    matched = {old: False for old in replacements}
     for field in ("title", "summary", "report_body"):
         value = payload.get(field)
         if not isinstance(value, str):
             continue
-        corrected = value.replace("她", "他")
+        corrected = value
+        for old, new in replacements.items():
+            if old in corrected:
+                matched[old] = True
+                corrected = corrected.replace(old, new)
         if corrected != value:
             updates[field] = corrected
-    if not updates:
-        raise DailyError("reviewed author-pronoun correction found no target text")
+    missing = [old for old, found in matched.items() if not found]
+    if missing:
+        raise DailyError(
+            "reviewed report-copy replacement found no target text: "
+            + ", ".join(missing)
+        )
     return updates
 
 

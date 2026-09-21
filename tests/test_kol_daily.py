@@ -8046,6 +8046,23 @@ def test_classification_backfill_corrects_only_reviewed_author_pronouns():
     }
     assert _reviewed_author_pronoun_updates(report, {}) == {}
 
+    assert _reviewed_author_pronoun_updates(
+        {
+            "payload": {
+                "author": "路西法",
+                "title": "执行边界",
+                "summary": "系统只解释边界。",
+                "report_body": "纸面no_trade，家庭消息suppressed。",
+            }
+        },
+        {
+            "reviewed_report_copy_replacements": {
+                "no_trade": "不交易",
+                "suppressed": "不发送",
+            }
+        },
+    ) == {"report_body": "纸面不交易，家庭消息不发送。"}
+
 
 def test_initial_projection_backfills_report_only_history_without_side_effects(
     tmp_path,
