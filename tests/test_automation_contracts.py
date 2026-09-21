@@ -90,6 +90,7 @@ def test_semantic_consumers_use_lianghui_viewpoint_projection() -> None:
         assert "kol_trading_preparation.py" not in prompt
         assert "opening draft" not in prompt.lower()
         assert "unchanged report bodies" in prompt
+        assert "source_fingerprint" in prompt
 
 
 def test_live_morning_wait_and_unlock_promises_are_event_driven_and_guarded() -> None:

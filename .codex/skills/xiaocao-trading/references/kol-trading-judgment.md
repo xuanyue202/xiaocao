@@ -10,7 +10,8 @@ different writers. Do not ask the user to repeat the 2026-09-06 authorization.
 The remote writer reads each new/changed source once and atomically publishes
 the report plus LiangHui viewpoints, evaluations and relations. Those records
 are the sole source-semantic SSOT. At 09:00 build the compact projection with
-`kol_trading_context.py projection --cache-only`; consume its path/hash/counts
+`kol_trading_context.py projection --cache-only`; consume its path,
+`projection_sha256`, stable `source_fingerprint` and counts
 without reopening unchanged report bodies or creating source notes/opening
 drafts. At the action boundary one bounded worker judges current applicability
 from this projection plus exact runtime facts. The projection has authority=0
@@ -25,7 +26,9 @@ and never satisfies formal decision publication by itself.
    ```
 
    Read the returned immutable `projection_path`; verify its projection/context
-   hashes and quality counts. It contains attributed viewpoints, latest
+   hashes, stable `source_fingerprint` and quality counts. The projection hash
+   binds one audit-time artifact; only a changed `source_fingerprint` means the
+   published semantics changed. It contains attributed viewpoints, latest
    evaluations, relations and only relation-needed history, never report bodies.
    `registry_only` is explicit: MCP has exact-ID readback but
    no complete remote report discovery. Cover all registered authors, not only

@@ -266,7 +266,9 @@ PYTHONPATH=src .venv/bin/python scripts/kol_trading_context.py projection \
   --cache-only --history-fresh-through <today>T11:30:00+08:00
 ```
 
-Read only its `projection_path`, hashes, counts and quality. It contains current
+Read only its `projection_path`, `projection_sha256`, stable
+`source_fingerprint`, counts and quality. Use `source_fingerprint`, not the
+audit-time-dependent projection hash, to decide whether source semantics changed. It contains current
 or uncertain LiangHui viewpoints, latest evaluations, relations and necessary
 related history; it contains no report bodies. Missing or structurally degraded
 projection evidence falls back to the deterministic baseline and remains a
@@ -299,7 +301,7 @@ applicability remain independent.
 
 The runner supplies hash-bound account/allocation facts and account-risk receipt
 before final review. Use that exact request; do not duplicate the account read.
-Send only a changed projection hash and current applicability facts. Never invent
+Send only a changed `source_fingerprint` and current applicability facts. Never invent
 an opening fact or publish an authority=0 projection as a current decision.
 
 The runner holds one account fence across full-batch allocation and serialized submissions. A fully mapped, chain-certain ACK/PARTIAL allows the next reserved order; UNKNOWN or incomplete identity stops new writes. Fill polling starts after the submission pass. Inspect submission_observations for actual counter-acceptance proof and deadline performance; prepare completion is not submission. Preserve APP raw order states: queued is not exchange-accepted and neither is a fill. If orders remain open, the original task owns exact-plan reconciliation until terminal or an explicit recorded checkpoint handoff; never leave a bare unresolved receipt without naming the pending orders and next owner.

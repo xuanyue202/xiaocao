@@ -690,6 +690,24 @@ def test_morning_projection_is_immutable_and_hash_bound(tmp_path):
     })
 
 
+def test_source_fingerprint_ignores_audit_clock_when_semantics_are_unchanged(tmp_path):
+    items = [publication("甲作者")]
+    register(tmp_path, items)
+    reader, clock = Reader(items), Clock()
+    first = tc.write_trading_projection(
+        build(tmp_path, reader, clock, include_report_bodies=False),
+        repo_root=tmp_path,
+    )
+    clock.now += timedelta(minutes=5)
+    second = tc.write_trading_projection(
+        build(tmp_path, reader, clock, include_report_bodies=False),
+        repo_root=tmp_path,
+    )
+
+    assert first["source_fingerprint"] == second["source_fingerprint"]
+    assert first["projection_sha256"] != second["projection_sha256"]
+
+
 def test_incremental_pack_keeps_changes_removals_and_bound_prior(tmp_path):
     items = [publication("甲作者"), publication("乙作者")]
     register(tmp_path, items)

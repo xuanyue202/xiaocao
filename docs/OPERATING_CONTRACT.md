@@ -77,7 +77,7 @@ remote writer 对新报告只做一次完整语义工作：同一经校验的 se
 
 LiangHui 语义投影质量、来源读回时效、当前正式决策是三个独立状态。相同hash的已发布观点不会因为过了十分钟而重新提炼；历史TTL仍24小时，09:00补验应覆盖11:30恢复窗口，保持真实as-of并只按准确ID刷新。`projection`的ready/degraded只描述已登记纵向记录是否完整，不称为交易ready。
 
-09:20前原子保存紧凑投影的path/hash/counts和质量结论；不再另造条件草稿。若已有足够事实可形成适用正式判断，可提前发布并按真实条件选择valid_until；不能续命、回填时间或强制中性。确需开盘事实的部分留待同一份投影的最终适配；09:25只核对投影hash变化与当前条件。新/变更来源仍只由remote writer完整读取并独立复核。
+09:20前原子保存紧凑投影的path/projection_sha256/source_fingerprint/counts和质量结论；不再另造条件草稿。projection_sha256绑定含审计时点的单份文件，只有稳定source_fingerprint变化才表示来源语义变化。若已有足够事实可形成适用正式判断，可提前发布并按真实条件选择valid_until；不能续命、回填时间或强制中性。确需开盘事实的部分留待同一份投影的最终适配；09:25只核对source_fingerprint变化与当前条件。新/变更来源仍只由remote writer完整读取并独立复核。
 
 完整request、候选、回执保存文件，stdout默认只给紧凑通知、路径、hash及实际deadline；brief保留候选的决策相关字段，其他细节按需从原件读取。09:20前保存恢复检查点（原进程ID、投影路径/hash、仍缺事实、下一动作），09:24起只按runner事件读取紧凑状态，禁止模型盲轮询。自动压缩时点由客户端决定；通过减少输入和提前checkpoint避免在开盘依赖满上下文。FILLED/CANCELLED与策略SKIPPED混合也是终态，UNKNOWN仍单独未决。延迟和支持层降级独立报告。
 
