@@ -1,6 +1,6 @@
 # 小草运营契约（Operating Contract, SSOT）
 
-**版本**：4.21
+**版本**：4.22
 **状态**：现行
 **适用范围**：所有 paper / 未来 real 的实盘环（live_recommend → paper_record → live_monitor → eod）与回测
 **关联实现**：`src/xiaocao/live/{safety,capital_keychain,foundersc_native_ax,foundersc_native_broker,trading_execution,book_b_live_lifecycle,book_b_live_intraday}.py`、`src/xiaocao/live/intelligence_policy.py`、`src/xiaocao/strategy/{mode_switch,trend_rules,kol_reference}.py`、`native/foundersc_ax_executor/`、`kronos_screen/scripts/{capture_signals,forward_eval,paper_record,settle_book_a,settle_book_t,decompose_pnl,quality_governor}.py`、`scripts/{book_b_live_morning,book_b_live_intraday,live_monitor,research_mode_switch_replay}.py`
@@ -77,7 +77,7 @@ remote writer 对新报告只做一次完整语义工作：同一经校验的 se
 
 LiangHui 语义投影质量、来源读回时效、当前正式决策是三个独立状态。相同hash的已发布观点不会因为过了十分钟而重新提炼；历史TTL仍24小时，09:00补验应覆盖11:30恢复窗口，保持真实as-of并只按准确ID刷新。`projection`的ready/degraded只描述已登记纵向记录是否完整，不称为交易ready。
 
-短线投影采用固定 16 条硬预算。`direct_action` 与 `risk_constraint` 优先保留，再按显式 utility、priority 与评估时间填入 `market_posture` / `supporting_context`；不得使用持仓、资产名、关键词或最新 N 条代替语义分类。强制项超过预算时不静默丢风险，而是空投影并降级到确定性基线。历史 evaluation 缺少分类时生成只含精确 viewpoint/evaluation ID 的 hash-bound backfill manifest，由 remote writer 追加评估；早盘不得打开该清单或全量观点自行补做。
+短线投影没有固定条数或 latest-N 上限：每条观点独立通过同一显式标准后即进入，最终数量是标准的结果。标准要求最新状态为 `current`、writer 明确标注 `book_b_short_term`、仍在 `valid_until` 内，并具备 triggers、falsifiers 与 uncertainties；utility、priority 和评估时间只用于稳定排序，不得改变集合成员。不得使用持仓、资产名或关键词代替语义分类。历史 evaluation 缺少分类时生成只含精确 viewpoint/evaluation ID 的 hash-bound backfill manifest，由 remote writer 逐对象追加评估；早盘不得打开该清单或全量观点自行补做。
 
 09:20前原子保存紧凑投影的path/projection_sha256/source_fingerprint/counts和质量结论；不再另造条件草稿。projection_sha256绑定含审计时点的单份文件，只有稳定source_fingerprint变化才表示来源语义变化。若已有足够事实可形成适用正式判断，可提前发布并按真实条件选择valid_until；不能续命、回填时间或强制中性。确需开盘事实的部分留待同一份投影的最终适配；09:25只核对source_fingerprint变化与当前条件。新/变更来源仍只由remote writer完整读取并独立复核。
 
@@ -488,6 +488,7 @@ KOL 断言、候选假设或报告升级为策略真值，也不替代永久参�
 
 | 版本 | 日期 | 说明 |
 |------|------|------|
+| 4.22 | 2026-09-21 | 移除 KOL 短线投影的固定 16 条上限及强制项溢出分支；所有满足同一显式短线有效性与可操作性标准的观点全部进入，排序不改变集合成员。 |
 | 4.21 | 2026-09-21 | KOL 运行投影从全部 current/uncertain 收敛为 writer 显式分类的短线可操作子集；排除 uncertain/未分类/非短线，固定 16 条预算，强制项溢出 fail-closed，历史分类由精确 hash-bound manifest 交回 remote writer。 |
 | 4.20 | 2026-09-17 | 拆分来源准备/当前判断、提前条件草稿与上午缓存期限；紧凑运行通知；全新BUY只查本批必要证据，移除重复填单和撤单预检，完整对账后置；混合成交/跳过按终态汇总。 |
 | 4.19 | 2026-09-17 | 日间 KOL 职责收敛：remote writer 独占新/变更正文完整阅读与来源层独立复核；09:00、09:25及 sparse 只复用准备包并复核 runtime 当前映射；opening、14:25、14:55 不启动语义工作，EOD 仅做回执/hash 链路审计。缺包回确定性基线，不以重复全文分析延长交易任务。 |

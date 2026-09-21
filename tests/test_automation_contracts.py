@@ -91,7 +91,7 @@ def test_semantic_consumers_use_lianghui_viewpoint_projection() -> None:
         assert "opening draft" not in prompt.lower()
         assert "unchanged report bodies" in prompt
         assert "source_fingerprint" in prompt
-        assert "at most 16" in prompt
+        assert "no fixed count or latest-N cutoff" in prompt
         assert "classification_backfill" in prompt
         assert "keywords, holdings, asset names or latest-N" in prompt
 

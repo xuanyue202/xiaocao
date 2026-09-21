@@ -58,7 +58,6 @@ PRODUCTION_LEDGER_PATHS = (
     "output/live/kol_reader_copy_20260726/events.jsonl",
 )
 EVALUATION_STATES = {"current", "expired", "invalidated", "uncertain"}
-SHORT_TERM_PROJECTION_BUDGET = 16
 SHORT_TERM_SCOPE = "book_b_short_term"
 SHORT_TERM_UTILITIES = {
     "direct_action": 4,
@@ -66,7 +65,6 @@ SHORT_TERM_UTILITIES = {
     "market_posture": 3,
     "supporting_context": 2,
 }
-MANDATORY_SHORT_TERM_UTILITIES = {"direct_action", "risk_constraint"}
 
 
 class TradingContextError(ValueError):
@@ -910,7 +908,7 @@ def _short_term_selection(
     as_of = _timestamp(context["as_of"])
     excluded = Counter()
     backfill_rows: list[dict] = []
-    eligible: list[tuple[tuple, str, str]] = []
+    eligible: list[tuple[tuple, str]] = []
     quality_issues: list[dict] = []
     for identifier, row in viewpoints.items():
         status = row.get("latest_status") or "uncertain"
@@ -971,27 +969,9 @@ def _short_term_selection(
             -evaluated_at.timestamp(),
             identifier,
         )
-        eligible.append((sort_key, identifier, utility))
+        eligible.append((sort_key, identifier))
     eligible.sort()
-    mandatory = [
-        row for row in eligible if row[2] in MANDATORY_SHORT_TERM_UTILITIES
-    ]
-    if len(mandatory) > SHORT_TERM_PROJECTION_BUDGET:
-        quality_issues.append({
-            "code": "mandatory_short_term_viewpoints_exceed_budget",
-            "count": len(mandatory),
-            "budget": SHORT_TERM_PROJECTION_BUDGET,
-        })
-        selected: list[str] = []
-    else:
-        mandatory_ids = {row[1] for row in mandatory}
-        selected = [row[1] for row in mandatory]
-        selected.extend(
-            row[1] for row in eligible
-            if row[1] not in mandatory_ids
-        )
-        selected = selected[:SHORT_TERM_PROJECTION_BUDGET]
-    omitted_due_budget = max(0, len(eligible) - len(selected))
+    selected = [row[1] for row in eligible]
     if excluded["short_term_classification_missing"]:
         quality_issues.append({
             "code": "short_term_applicability_backfill_required",
@@ -999,10 +979,8 @@ def _short_term_selection(
         })
     selection = {
         "policy": "typed_evaluation_only_no_keyword_or_holdings_filter",
-        "budget": SHORT_TERM_PROJECTION_BUDGET,
         "eligible_count": len(eligible),
         "selected_count": len(selected),
-        "omitted_due_budget": omitted_due_budget,
         "excluded_by_reason": dict(sorted(excluded.items())),
         "_backfill_rows": sorted(
             backfill_rows, key=lambda row: row["viewpoint_id"]
@@ -1115,7 +1093,7 @@ def write_trading_projection(
             "path": None,
         }
     projection = {
-        "schema_version": "kol-trading-viewpoint-projection.v2",
+        "schema_version": "kol-trading-viewpoint-projection.v3",
         "authority": 0,
         "source": "lianghui_published_registry",
         "as_of": context["as_of"],
@@ -1197,13 +1175,12 @@ def write_trading_projection(
         "source_fingerprint": projection["source_fingerprint"],
         "counts": {
             "selected_viewpoints": len(projection["active_viewpoints"]),
-            "eligible_before_budget": selection["eligible_count"],
+            "eligible_viewpoints": selection["eligible_count"],
             "current_total": all_status_counts.get("current", 0),
             "uncertain_excluded": all_status_counts.get("uncertain", 0),
             "classification_backfill_required": selection[
                 "excluded_by_reason"
             ].get("short_term_classification_missing", 0),
-            "omitted_due_budget": selection["omitted_due_budget"],
             "related_history": len(projection["related_history"]),
             "relations": len(projection["relations"]),
             "quality_issues": len(quality_issues),

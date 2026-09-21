@@ -251,6 +251,8 @@ report body merely to classify time horizon. Append one validated evaluation per
 viewpoint with explicit `trading_applicability`. If a genuinely short-term legacy
 view lacks triggers, falsifiers or uncertainties, publish a source-bound refined
 replacement/superseding viewpoint rather than mutating history or letting the
-trading consumer infer the missing fields. Process at most the first 16 sorted IDs from the exact manifest per hourly run and
-leave morning and intraday consumers on their deterministic baseline until the
-next clean projection.
+trading consumer infer the missing fields. Process the exact manifest one
+viewpoint at a time under per-object durable receipts and the normal Automation
+time budget; unprocessed IDs remain for later exact continuation rather than
+being dropped by a count limit. Leave morning and intraday consumers on their
+deterministic baseline until the next clean projection.

@@ -642,7 +642,7 @@ def test_morning_projection_uses_lianghui_viewpoints_without_report_bodies(tmp_p
     summary = tc.write_trading_projection(context, repo_root=tmp_path)
     projection = json.loads(Path(summary["projection_path"]).read_text())
 
-    assert projection["schema_version"] == "kol-trading-viewpoint-projection.v2"
+    assert projection["schema_version"] == "kol-trading-viewpoint-projection.v3"
     assert projection["authority"] == 0
     assert projection["context_sha256"] == context["context_sha256"]
     assert len(projection["active_viewpoints"]) == 1
@@ -655,11 +655,10 @@ def test_morning_projection_uses_lianghui_viewpoints_without_report_bodies(tmp_p
     assert "unloaded_report_ids" not in rendered
     assert summary["counts"] == {
         "selected_viewpoints": 1,
-        "eligible_before_budget": 1,
+        "eligible_viewpoints": 1,
         "current_total": 1,
         "uncertain_excluded": 0,
         "classification_backfill_required": 0,
-        "omitted_due_budget": 0,
         "related_history": 1,
         "relations": 1,
         "quality_issues": 0,
@@ -714,7 +713,7 @@ def test_projection_excludes_uncertain_and_unclassified_views_from_model_context
     assert len(projection["active_viewpoints"]) == 1
 
 
-def test_projection_fails_closed_when_mandatory_short_term_views_exceed_budget(tmp_path):
+def test_projection_includes_every_view_that_meets_the_short_term_standard(tmp_path):
     items = [publication("甲作者", viewpoints=18)]
     register(tmp_path, items)
     context = build(
@@ -727,15 +726,11 @@ def test_projection_fails_closed_when_mandatory_short_term_views_exceed_budget(t
     summary = tc.write_trading_projection(context, repo_root=tmp_path)
     projection = json.loads(Path(summary["projection_path"]).read_text())
 
-    assert summary["status"] == "degraded"
-    assert projection["selection"]["budget"] == 16
+    assert summary["status"] == "ready"
     assert projection["selection"]["eligible_count"] == 17
-    assert projection["active_viewpoints"] == []
-    assert projection["quality"]["issues"] == [{
-        "code": "mandatory_short_term_viewpoints_exceed_budget",
-        "count": 17,
-        "budget": 16,
-    }]
+    assert projection["selection"]["selected_count"] == 17
+    assert len(projection["active_viewpoints"]) == 17
+    assert projection["quality"]["issues"] == []
 
 
 def test_morning_projection_reuses_published_receipt_without_remote_report_read(tmp_path):

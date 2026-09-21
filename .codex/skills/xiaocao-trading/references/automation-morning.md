@@ -268,8 +268,10 @@ PYTHONPATH=src .venv/bin/python scripts/kol_trading_context.py projection \
 
 Read only its `projection_path`, `projection_sha256`, stable
 `source_fingerprint`, counts and quality. Use `source_fingerprint`, not the
-audit-time-dependent projection hash, to decide whether source semantics changed. The model body contains at most 16 typed, still-valid Book-B short-term `current`
-viewpoints plus only their necessary relation history; `uncertain`, non-short,
+audit-time-dependent projection hash, to decide whether source semantics changed. The model body contains every typed, still-valid Book-B short-term `current`
+viewpoint that independently passes the published semantic standard, plus only
+its necessary relation history; there is no fixed count or latest-N cutoff.
+`uncertain`, non-short,
 unclassified and inoperable viewpoints remain counts, not context. It contains
 no report bodies. Never open a `classification_backfill` manifest in the morning
 or infer classifications from keywords, holdings or asset names. Missing or structurally degraded
