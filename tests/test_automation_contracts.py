@@ -79,16 +79,24 @@ def test_nonsemantic_daytime_tasks_cannot_start_kol_publication() -> None:
         assert "kol_trading_decision.py publish" not in prompt
 
 
-def test_semantic_consumers_reuse_source_preparation() -> None:
+def test_semantic_consumers_use_lianghui_viewpoint_projection() -> None:
     for name in (
         "xiaocao-book-b-live-morning",
         "xiaocao-daily-morning-execution",
         "xiaocao-intraday-monitor-05",
     ):
         prompt = _automation(name)["prompt"]
-        assert "kol_trading_preparation.py status" in prompt
-        assert "source_analysis_required" in prompt
+        assert "kol_trading_context.py projection" in prompt
+        assert "kol_trading_preparation.py" not in prompt
+        assert "opening draft" not in prompt.lower()
         assert "unchanged report bodies" in prompt
+
+
+def test_live_morning_wait_and_unlock_promises_are_event_driven_and_guarded() -> None:
+    prompt = _automation("xiaocao-book-b-live-morning")["prompt"]
+    assert "do not model-poll" in prompt
+    assert "credential source and remaining-attempt evidence are safe" in prompt
+    assert "app_test_window_status.py" in prompt
 
 
 def test_kol_writers_stay_on_separate_hosts_and_schedules() -> None:

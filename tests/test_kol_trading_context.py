@@ -607,7 +607,7 @@ def test_reading_pack_keeps_full_sources_and_evidence_without_duplicate_bodies(t
         restored["report_body"] = report["report_body"]
         restored["report"]["payload"]["report_body"] = report["report_body"]
     assert remainder == original and context == original
-    assert len(reader.calls) == calls and summary["refresh_report_ids"] == []
+    assert len(reader.calls) == calls and summary["refresh"]["count"] == 0
 
 
 def test_summary_names_only_missing_or_stale_sources_for_exact_repair(tmp_path):
@@ -616,7 +616,78 @@ def test_summary_names_only_missing_or_stale_sources_for_exact_repair(tmp_path):
     reader, clock = Reader(items), Clock()
     first_id, second_id = [r[0]["record_id"] for r in items]
     context = build(tmp_path, reader, clock, read_report_ids=[first_id])
-    assert tc.summarize_context(context, repo_root=tmp_path)["refresh_report_ids"] == [second_id]
+    summary = tc.summarize_context(context, repo_root=tmp_path)
+    assert summary["refresh"]["count"] == 1
+    assert json.loads(Path(summary["refresh"]["path"]).read_text()) == {
+        "context_sha256": context["context_sha256"],
+        "report_ids": [second_id],
+    }
+
+
+def test_morning_projection_uses_lianghui_viewpoints_without_report_bodies(tmp_path):
+    items = [publication("甲作者")]
+    register(tmp_path, items)
+    context = build(tmp_path, Reader(items), Clock())
+
+    summary = tc.write_trading_projection(context, repo_root=tmp_path)
+    projection = json.loads(Path(summary["projection_path"]).read_text())
+
+    assert projection["schema_version"] == "kol-trading-viewpoint-projection.v1"
+    assert projection["authority"] == 0
+    assert projection["context_sha256"] == context["context_sha256"]
+    assert len(projection["active_viewpoints"]) == 1
+    assert projection["active_viewpoints"][0]["latest_status"] == "current"
+    assert projection["related_history"][0]["latest_status"] == "expired"
+    assert len(projection["relations"]) == 1
+    rendered = json.dumps(projection, ensure_ascii=False)
+    assert "report_body" not in rendered
+    assert "完整正文" not in rendered
+    assert "unloaded_report_ids" not in rendered
+    assert summary["counts"] == {
+        "active_viewpoints": 1,
+        "current": 1,
+        "uncertain": 0,
+        "related_history": 1,
+        "relations": 1,
+        "quality_issues": 0,
+    }
+
+
+def test_morning_projection_reuses_published_receipt_without_remote_report_read(tmp_path):
+    items = [publication("甲作者")]
+    register(tmp_path, items)
+    reader, clock = Reader(items), Clock()
+
+    context = build(
+        tmp_path,
+        reader,
+        clock,
+        include_report_bodies=False,
+        read_report_ids=[],
+    )
+    summary = tc.write_trading_projection(context, repo_root=tmp_path)
+
+    assert reader.calls == []
+    assert context["coverage"]["body_loading_policy"] == (
+        "none_longitudinal_projection_only"
+    )
+    assert summary["status"] == "ready"
+    assert summary["counts"]["active_viewpoints"] == 1
+
+
+def test_morning_projection_is_immutable_and_hash_bound(tmp_path):
+    items = [publication("甲作者")]
+    register(tmp_path, items)
+    context = build(tmp_path, Reader(items), Clock())
+
+    first = tc.write_trading_projection(context, repo_root=tmp_path)
+    second = tc.write_trading_projection(context, repo_root=tmp_path)
+
+    assert first == second
+    payload = json.loads(Path(first["projection_path"]).read_text())
+    assert payload["projection_sha256"] == canonical_sha256({
+        key: value for key, value in payload.items() if key != "projection_sha256"
+    })
 
 
 def test_incremental_pack_keeps_changes_removals_and_bound_prior(tmp_path):
@@ -670,7 +741,10 @@ def test_early_preparation_refreshes_history_through_opening_without_future_evid
     early = build(tmp_path, reader, clock, latest_per_author=1, read_report_ids=[],
                   history_fresh_through=horizon)
     assert early["coverage"]["registered_longitudinal_complete"] is False
-    pending = tc.summarize_context(early, repo_root=tmp_path)["refresh_report_ids"]
+    pending_summary = tc.summarize_context(early, repo_root=tmp_path)
+    pending = json.loads(Path(pending_summary["refresh"]["path"]).read_text())[
+        "report_ids"
+    ]
     assert set(pending) == {item[0]["record_id"] for item in items}
     reader.calls.clear()
     ready = build(tmp_path, reader, clock, latest_per_author=1, read_report_ids=pending,

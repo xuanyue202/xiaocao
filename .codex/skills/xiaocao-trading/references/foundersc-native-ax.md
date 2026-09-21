@@ -70,7 +70,12 @@ secure-field-relative coordinate guard and still requires semantic trade-ready
 readback. It
 must never print, log, persist, return, place in argv, or place in environment
 the raw account/password. `unlock_unproven` is terminal for that attempt and
-must not be retried automatically.
+must not be retried automatically. Before setting either login or in-session
+trade password, the helper replaces the secure field with an empty value and
+proves that empty readback. The receipt records only the masked account binding,
+whether clearance was proven, a fixed failure category and a parsed remaining
+attempt count. `trade_password_incorrect`, exhausted budget or account lock is
+durable failure evidence; it never triggers another unattended attempt.
 
 Treat `screen_locked` as a machine-state blocker distinct from the broker's
 `authentication_required`. An unavailable lock-state readback is fail-closed.

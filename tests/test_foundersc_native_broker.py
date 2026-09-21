@@ -726,6 +726,30 @@ def test_native_ready_navigates_from_wrong_order_side() -> None:
     assert native.open_order_calls == 1
 
 
+def test_unlock_failure_preserves_sanitized_category_and_attempt_budget() -> None:
+    class WrongTradePasswordNative(FakeNative):
+        def __init__(self):
+            super().__init__(surface_state="authentication_required")
+
+        def unlock_from_keychain(self, *, explicitly_enabled: bool) -> NativeAXReceipt:
+            assert explicitly_enabled is True
+            return self._receipt(
+                status="unlock_unproven",
+                unlock_failure_category="trade_password_incorrect",
+                unlock_remaining_attempts=4,
+                secure_field_cleared_before_set=True,
+            )
+
+    with pytest.raises(
+        FounderscNativeAXError,
+        match=(
+            "NATIVE_AX_UNLOCK_UNPROVEN_NO_RETRY:TRADE_PASSWORD_INCORRECT:"
+            "remaining=4:field_cleared=true"
+        ),
+    ):
+        _adapter(WrongTradePasswordNative()).ensure_native_ready(unlock_once=True)
+
+
 def test_query_uses_one_targeted_reread_only_after_invalid_first_parse() -> None:
     native = TransientOrderQueryNative()
     adapter = _adapter(native)

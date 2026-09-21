@@ -516,10 +516,49 @@ class FounderscNativeAXBrokerAdapter(BrokerAdapter):
     ) -> dict[str, Any]:
         payload = self.native.probe(table_audit=True).as_dict()
         surface = str(payload.get("surface_state") or payload.get("status") or "")
+        credential_health = {
+            "trade_account_fingerprint": self.expected_fund_account_fingerprint,
+            "state": "not_checked_session_already_ready",
+            "observed_at": datetime.now(timezone.utc).isoformat(),
+        }
         if unlock_once and surface == "authentication_required":
             unlocked = self.native.unlock_from_keychain(explicitly_enabled=True).as_dict()
             if str(unlocked.get("status") or "") != "unlocked":
-                raise FounderscNativeAXError("NATIVE_AX_UNLOCK_UNPROVEN_NO_RETRY")
+                category = str(
+                    unlocked.get("unlock_failure_category") or "unclassified"
+                ).strip().lower()
+                if category not in {
+                    "trade_password_incorrect",
+                    "attempt_budget_exhausted",
+                    "account_locked",
+                    "unclassified",
+                }:
+                    category = "unclassified"
+                remaining = unlocked.get("unlock_remaining_attempts")
+                remaining_text = (
+                    str(remaining)
+                    if type(remaining) is int and 0 <= remaining <= 99
+                    else "unknown"
+                )
+                cleared = (
+                    "true"
+                    if unlocked.get("secure_field_cleared_before_set") is True
+                    else "false"
+                )
+                raise FounderscNativeAXError(
+                    "NATIVE_AX_UNLOCK_UNPROVEN_NO_RETRY:"
+                    f"{category.upper()}:remaining={remaining_text}:"
+                    f"field_cleared={cleared}"
+                )
+            credential_health = {
+                "trade_account_fingerprint": self.expected_fund_account_fingerprint,
+                "state": "verified_by_single_unlock",
+                "verified_at": datetime.now(timezone.utc).isoformat(),
+                "secure_field_cleared_before_set": (
+                    unlocked.get("secure_field_cleared_before_set") is True
+                ),
+                "remaining_attempts": unlocked.get("unlock_remaining_attempts"),
+            }
             payload = self.native.probe(table_audit=True).as_dict()
             surface = str(payload.get("surface_state") or payload.get("status") or "")
         if not self._account_bound(payload) or surface not in {"trade_ready", "query_only"}:
@@ -565,6 +604,7 @@ class FounderscNativeAXBrokerAdapter(BrokerAdapter):
             "prepare_capability": prepare,
             "submit_capability": submit,
             "reconcile_capability": True,
+            "credential_health": credential_health,
             "submitted": False,
             "saved": False,
             "started": False,

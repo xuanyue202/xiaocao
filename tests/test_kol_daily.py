@@ -8098,7 +8098,7 @@ def test_replayed_terminal_receipt_is_recorded_once_across_hourly_slots(
     assert service.audit()["viewpoint_evaluation_count"] == 1
 
 
-def test_each_published_object_hands_off_sources_before_next_object(tmp_path):
+def test_legacy_explicit_source_handoff_remains_ordered_for_reconciliation(tmp_path):
     order = []
     for identity in ("first", "second"):
         pipeline = DailyPublicationPipeline(

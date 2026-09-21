@@ -23,12 +23,12 @@ Read this file only when creating, changing or auditing Xiaocao schedules.
 
 | Stage | Sole business responsibility | KOL/source responsibility |
 |---|---|---|
-| Remote writer | Publish source objects and reviewed source-preparation packets | Sole full reader for new/changed report bodies; unchanged source analysis is reused |
-| 09:00 live morning | One native live runner, authentication probe, live current-applicability decision | Reuse the reviewed preparation packet; never redo unchanged source semantics |
+| Remote writer | Atomically publish reports, viewpoints, evaluations and relations | Sole full reader for new/changed report bodies; LiangHui is the semantic SSOT |
+| 09:00 live morning | One native live runner, authentication probe, live current-applicability decision | Consume the compact viewpoint projection; never redo unchanged source semantics |
 | 09:23 prerecommendation | Produce the immutable recommendation/freeze and exit | No KOL semantic work |
-| 09:25 paper execution | Keep the original paper shell alive and complete paper current applicability | Reuse the reviewed preparation packet; never redo unchanged source semantics or live work |
+| 09:25 paper execution | Keep the original paper shell alive and complete paper current applicability | Consume the compact viewpoint projection; never redo unchanged source semantics or live work |
 | 09:35/09:45/09:55 opening | Protective paper/live checkpoints only | Consume an already-valid decision only; no context, model or publication work |
-| 10:25/10:55/13:25/13:55 sparse | One owner-bound tick claim and paper/live checkpoints | Only the claim owner may adapt a prepared packet when the source fingerprint changed or the decision expired |
+| 10:25/10:55/13:25/13:55 sparse | One owner-bound tick claim and paper/live checkpoints | Only the claim owner may adapt the compact projection when its fingerprint changed or the decision expired |
 | 14:25 precheck | Protective paper/live checkpoints only | Consume an already-valid decision only; no context, model or publication work |
 | 14:55 closing | Time-critical live close first, then paper close | Consume an already-valid decision only; no context, model or publication work |
 | 15:10 EOD | Paper/live reconciliation, settlement and receipt audit | Receipt/hash linkage only; no report-body read, semantic dispatch or decision publication |

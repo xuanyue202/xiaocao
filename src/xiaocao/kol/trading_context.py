@@ -25,7 +25,7 @@ import queue
 import tempfile
 import threading
 import time
-from collections import defaultdict
+from collections import Counter, defaultdict
 from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Callable, Sequence
@@ -146,6 +146,9 @@ def _registry(root: Path, ledger_paths: Sequence[Path | str]) -> tuple[dict, lis
                     if report["record_id"] != rid or not payload["author"] or not payload["kol_id"]:
                         raise TradingContextError("registry_identity_invalid")
                     published = _timestamp(payload["source_published_at"])
+                    receipt_time = str(
+                        receipt.get("serverTime") or event["occurred_at"]
+                    )
                     local[rid] = {
                         "report_id": rid, "author": payload["author"],
                         "kol_id": payload["kol_id"],
@@ -155,6 +158,14 @@ def _registry(root: Path, ledger_paths: Sequence[Path | str]) -> tuple[dict, lis
                         "estimated_record_reads": len(artifact["records"]),
                         "author_aliases": sorted({payload["author"], *local.get(rid, {}).get("author_aliases", [])}),
                         "url": _public_url(receipt["detailUrl"]),
+                        "_local_publication": {
+                            "report": copy.deepcopy(report),
+                            "records": copy.deepcopy(artifact["records"]),
+                            "content_sha256": report["content_sha256"],
+                            "manifest_sha256": request["manifest_sha256"],
+                            "published_at": receipt_time,
+                            "updated_at": receipt_time,
+                        },
                     }
             for rid, row in local.items():
                 prior = reports.get(rid)
@@ -355,6 +366,7 @@ def build_trading_context(
     ledger_paths: Sequence[Path | str] = (), report_ids: Sequence[str] = (),
     read_report_ids: Sequence[str] | None = None,
     registered_authors: Sequence[str] = (), latest_per_author: int = 3,
+    include_report_bodies: bool = True,
     refresh: bool = False, max_cache_age_seconds: float = 300,
     history_max_cache_age_seconds: float = 86400,
     history_fresh_through: str | datetime | None = None,
@@ -373,7 +385,8 @@ def build_trading_context(
     The automatic call budget uses only manifests needing a network read. Cached
     history is dated evidence with its own 24-hour TTL; selected/explicit reports
     use max_cache_age_seconds. refresh=True refreshes all reports, unless an
-    exact read_report_ids scope is supplied.
+    exact read_report_ids scope is supplied. ``include_report_bodies=False``
+    builds the longitudinal viewpoint projection without reopening report text.
     Before a current decision, use refresh=True with the exact read_report_ids.
     An explicit as_of cannot use a version first observed later; None records
     the actual completion time. Incomplete coverage returns data plus reasons.
@@ -410,13 +423,14 @@ def build_trading_context(
         except BlockingIOError:
             raise TradingContextError("context_cache_busy") from None
         return _build_locked(root, directory, cutoff, ledger_paths, report_ids, read_report_ids,
-                             registered_authors, latest_per_author, refresh,
+                             registered_authors, latest_per_author, include_report_bodies, refresh,
                              max_cache_age_seconds, history_max_cache_age_seconds, client, timeout_seconds,
                              retries, max_read_calls, total_timeout_seconds, clock, horizon)
 
 
 def _build_locked(root, directory, cutoff, ledger_paths, report_ids, read_report_ids,
-                  registered_authors, latest_per_author, refresh, max_cache_age_seconds, history_max_cache_age_seconds,
+                  registered_authors, latest_per_author, include_report_bodies, refresh,
+                  max_cache_age_seconds, history_max_cache_age_seconds,
                   client, timeout_seconds, retries, max_read_calls, total_timeout_seconds, clock, horizon):
     registry, issues, ledgers = _registry(root, ledger_paths)
     read_scope = None if read_report_ids is None else set(read_report_ids)
@@ -430,7 +444,9 @@ def _build_locked(root, directory, cutoff, ledger_paths, report_ids, read_report
         by_author[row["kol_id"]].append(row)
     for rows in by_author.values():
         rows.sort(key=lambda r: (r["source_published_at"], r["report_id"]), reverse=True)
-    freshness_ids = requested | {r["report_id"] for rows in by_author.values() for r in rows[:latest_per_author]}
+    freshness_ids = requested | ({
+        r["report_id"] for rows in by_author.values() for r in rows[:latest_per_author]
+    } if include_report_bodies else set())
     if read_scope is not None:
         freshness_ids |= read_scope
     # Round-robin recent events prevents one prolific author exhausting all reads.
@@ -450,12 +466,36 @@ def _build_locked(root, directory, cutoff, ledger_paths, report_ids, read_report
             issues.append({"code": "cache_invalid_rebuild_required", "report_id": rid})
         now = _timestamp(clock())
         age = (now - _timestamp(cached["verified_at"])).total_seconds() if cached else None
+        if not include_report_bodies and index.get("_local_publication"):
+            observed = index["registry_observed_at"]
+            cached = {
+                "schema_version": 1,
+                "received_at": observed,
+                "version_received_at": observed,
+                "verified_at": observed,
+                "publication": copy.deepcopy(index["_local_publication"]),
+                "local_publication_receipt": True,
+            }
+            _validate_publication(cached["publication"], index)
+            age = (now - _timestamp(cached["verified_at"])).total_seconds()
         prior_caches[rid] = cached
         force_refresh = refresh and (read_scope is None or rid in read_scope)
         ttl = max_cache_age_seconds if rid in freshness_ids else history_max_cache_age_seconds
-        if (cached and not force_refresh and not cached.get("refresh_required")
-                and 0 <= age <= ttl
-                and (max(now, horizon or now) - _timestamp(cached["verified_at"])).total_seconds() <= history_max_cache_age_seconds):
+        if (
+            cached
+            and not force_refresh
+            and not cached.get("refresh_required")
+            and (
+                cached.get("local_publication_receipt")
+                or (
+                    0 <= age <= ttl
+                    and (
+                        max(now, horizon or now) - _timestamp(cached["verified_at"])
+                    ).total_seconds()
+                    <= history_max_cache_age_seconds
+                )
+            )
+        ):
             continue
         needs_read.add(rid)
     pending = needs_read if read_scope is None else needs_read & read_scope
@@ -514,7 +554,9 @@ def _build_locked(root, directory, cutoff, ledger_paths, report_ids, read_report
             failures[rid] = "publication_not_observed_as_of"
             issues.append({"code": failures[rid], "report_id": rid})
             del caches[rid]
-        elif (max(as_of, horizon or as_of) - _timestamp(cached["verified_at"])).total_seconds() > history_max_cache_age_seconds:
+        elif (not cached.get("local_publication_receipt") and
+              (max(as_of, horizon or as_of) - _timestamp(cached["verified_at"])).total_seconds()
+              > history_max_cache_age_seconds):
             # A long batch can cross the TTL after its initial needs-read pass.
             # Expose the exact gap instead of claiming complete coverage.
             failures[rid] = "history_refresh_required"
@@ -528,7 +570,8 @@ def _build_locked(root, directory, cutoff, ledger_paths, report_ids, read_report
     author_identities = {}
     for rows in by_author.values():
         rows.sort(key=lambda r: (r["source_published_at"], r["report_id"]), reverse=True)
-        selected.update(r["report_id"] for r in rows[:latest_per_author])
+        if include_report_bodies:
+            selected.update(r["report_id"] for r in rows[:latest_per_author])
         latest = rows[0]
         canonical_author = (caches[latest["report_id"]]["publication"]["report"]["payload"]["author"]
                             if latest["report_id"] in caches else latest["author"])
@@ -543,7 +586,8 @@ def _build_locked(root, directory, cutoff, ledger_paths, report_ids, read_report
     names = {"viewpoint": "viewpoints", "viewpoint_evaluation": "evaluations", "viewpoint_relation": "relations"}
     for rid, index in sorted(registry.items()):
         cache = caches.get(rid)
-        row = {**index, "received_at": None, "content_sha256": None,
+        row = {**{k: v for k, v in index.items() if not k.startswith("_")},
+               "received_at": None, "content_sha256": None,
                "body_loaded": False, "longitudinal_loaded": False,
                "not_loaded_reason": failures.get(rid, "report_body_not_selected")}
         if cache:
@@ -552,7 +596,13 @@ def _build_locked(root, directory, cutoff, ledger_paths, report_ids, read_report
             metadata["verification_age_seconds"] = round(age, 3)
             row.update(metadata, longitudinal_loaded=True,
                        fresh_for_current_use=0 <= age <= max_cache_age_seconds,
-                       evidence_mode="recent_verified_read" if 0 <= age <= max_cache_age_seconds else "persistent_verified_history")
+                       evidence_mode=(
+                           "local_published_receipt"
+                           if cache.get("local_publication_receipt")
+                           else "recent_verified_read"
+                           if 0 <= age <= max_cache_age_seconds
+                           else "persistent_verified_history"
+                       ))
             publication = cache["publication"]
             if rid in selected:
                 body = publication["report"]["payload"]["report_body"]
@@ -625,7 +675,7 @@ def _build_locked(root, directory, cutoff, ledger_paths, report_ids, read_report
         if row["current_support_eligible"]:
             current_support_ids.append(row["record_id"])
     unloaded = [r["report_id"] for r in report_index if not r["body_loaded"]]
-    if unloaded:
+    if unloaded and include_report_bodies:
         issues.append({"code": "registered_report_bodies_not_loaded", "report_ids": unloaded})
     alias_names = {alias: identity["author"] for identity in author_identities.values() for alias in identity["aliases"]}
     authors = sorted({i["author"] for i in author_identities.values()} |
@@ -650,6 +700,10 @@ def _build_locked(root, directory, cutoff, ledger_paths, report_ids, read_report
                 and not any(i["code"] in {"registered_ledger_missing", "registered_ledger_invalid"} for i in issues),
             "latest_per_author": latest_per_author, "registered_ledgers": ledgers,
             "history_policy": "all_registered_manifests; latest_n_and_explicit_report_bodies",
+            "body_loading_policy": (
+                "latest_n_and_explicit" if include_report_bodies
+                else "none_longitudinal_projection_only"
+            ),
             "history_refresh_policy": "independent_history_ttl; exact_report_ids_for_current_readback; refresh_all_when_unscoped",
             "max_cache_age_seconds": max_cache_age_seconds,
             "history_max_cache_age_seconds": history_max_cache_age_seconds,
@@ -785,9 +839,20 @@ def summarize_context(context: dict, *, repo_root: Path | str = ROOT,
     refresh_ids = [r["report_id"] for r in context["report_index"]
                    if not r["longitudinal_loaded"] or
                    (r["report_id"] in selected_ids and not r.get("fresh_for_current_use", False))]
+    refresh_manifest = {
+        "context_sha256": context["context_sha256"],
+        "report_ids": refresh_ids,
+    }
+    refresh_path = (Path(repo_root).resolve() / CACHE_RELATIVE_PATH /
+                    (context["context_sha256"] + ".refresh.json"))
+    _write_json(refresh_path, refresh_manifest)
     return {
         **write_reading_pack(context, repo_root=repo_root, prior_context=prior_context),
-        "refresh_report_ids": refresh_ids,
+        "refresh": {
+            "count": len(refresh_ids),
+            "sha256": canonical_sha256(refresh_manifest),
+            "path": str(refresh_path),
+        },
         "context_path": str(Path(repo_root).resolve() / CACHE_RELATIVE_PATH / (context["context_sha256"] + ".context.json")),
         "context_sha256": context["context_sha256"], "as_of": context["as_of"],
         "coverage": {k: v for k, v in coverage.items() if k not in {"incomplete_reasons", "registered_ledgers", "fresh_selected_report_ids"}},
@@ -798,4 +863,186 @@ def summarize_context(context: dict, *, repo_root: Path | str = ROOT,
             "fresh_selected_reports": len(coverage["fresh_selected_report_ids"]),
         },
         "latest_by_author": latest,
+    }
+
+
+def _projection_viewpoint(row: dict) -> dict:
+    """Keep a published thesis and its provenance, never a report body."""
+    return {
+        "record_id": row["record_id"],
+        "content_sha256": row["content_sha256"],
+        "report_id": row["report_id"],
+        "report_content_sha256": row["report_content_sha256"],
+        "kol_id": row["kol_id"],
+        "author": row["author"],
+        "source_published_at": row["source_published_at"],
+        "latest_status": row["latest_status"],
+        "latest_evaluation_ids": list(row["latest_evaluation_ids"]),
+        "status_evidence_mode": row["status_evidence_mode"],
+        "viewpoint": copy.deepcopy(row["record"]["payload"]),
+    }
+
+
+def write_trading_projection(
+    context: dict,
+    *,
+    repo_root: Path | str = ROOT,
+) -> dict:
+    """Atomically publish the compact LiangHui semantic input for trading."""
+    unsigned_context = {
+        key: value for key, value in context.items() if key != "context_sha256"
+    }
+    if context.get("context_sha256") != canonical_sha256(unsigned_context):
+        raise TradingContextError("context_hash_mismatch")
+    viewpoints = {row["record_id"]: row for row in context["viewpoints"]}
+    active_ids = {
+        identifier for identifier, row in viewpoints.items()
+        if row.get("latest_status") in {"current", "uncertain"}
+    }
+    relation_rows = [
+        row for row in context["relations"]
+        if {
+            row["record"]["payload"]["from_viewpoint_id"],
+            row["record"]["payload"]["to_viewpoint_id"],
+        } & active_ids
+    ]
+    related_ids = {
+        endpoint
+        for row in relation_rows
+        for endpoint in (
+            row["record"]["payload"]["from_viewpoint_id"],
+            row["record"]["payload"]["to_viewpoint_id"],
+        )
+        if endpoint not in active_ids and endpoint in viewpoints
+    }
+    latest_evaluation_ids = {
+        evaluation_id
+        for identifier in active_ids | related_ids
+        for evaluation_id in viewpoints[identifier]["latest_evaluation_ids"]
+    }
+    evaluations = [
+        {
+            "record_id": row["record_id"],
+            "content_sha256": row["content_sha256"],
+            "report_id": row["report_id"],
+            "evaluation": copy.deepcopy(row["record"]["payload"]),
+        }
+        for row in context["evaluations"]
+        if row["record_id"] in latest_evaluation_ids
+    ]
+    quality_codes = {
+        "viewpoint_evaluation_missing",
+        "conflicting_latest_evaluations",
+        "evaluation_viewpoint_not_loaded",
+        "relation_viewpoints_not_loaded",
+        "registered_author_latest_report_missing",
+        "registered_ledger_missing",
+        "registered_ledger_invalid",
+    }
+    quality_issues = [
+        copy.deepcopy(issue)
+        for issue in context["coverage"].get("incomplete_reasons", [])
+        if issue.get("code") in quality_codes
+    ]
+    source_identity = {
+        "reports": sorted(
+            ({"report_id": row["report_id"],
+              "content_sha256": row["content_sha256"]}
+             for row in context["report_index"] if row.get("content_sha256")),
+            key=lambda row: row["report_id"],
+        ),
+        "records": sorted(
+            ({"kind": name, "record_id": row["record_id"],
+              "content_sha256": row["content_sha256"]}
+             for name in ("viewpoints", "evaluations", "relations")
+             for row in context[name]),
+            key=lambda row: (row["kind"], row["record_id"]),
+        ),
+    }
+    projection = {
+        "schema_version": "kol-trading-viewpoint-projection.v1",
+        "authority": 0,
+        "source": "lianghui_published_registry",
+        "as_of": context["as_of"],
+        "context_sha256": context["context_sha256"],
+        "source_fingerprint": canonical_sha256(source_identity),
+        "active_viewpoints": [
+            _projection_viewpoint(viewpoints[identifier])
+            for identifier in sorted(active_ids)
+        ],
+        "related_history": [
+            _projection_viewpoint(viewpoints[identifier])
+            for identifier in sorted(related_ids)
+        ],
+        "latest_evaluations": sorted(
+            evaluations, key=lambda row: row["record_id"]
+        ),
+        "relations": sorted(({
+            "record_id": row["record_id"],
+            "content_sha256": row["content_sha256"],
+            "report_id": row["report_id"],
+            "relation": copy.deepcopy(row["record"]["payload"]),
+        } for row in relation_rows), key=lambda row: row["record_id"]),
+        "quality": {
+            "status": "ready" if (
+                context["coverage"].get("registered_longitudinal_complete") is True
+                and not context["coverage"].get("missing_authors")
+                and not quality_issues
+            ) else "degraded",
+            "registered_longitudinal_complete": context["coverage"].get(
+                "registered_longitudinal_complete", False
+            ),
+            "missing_author_count": len(
+                context["coverage"].get("missing_authors", [])
+            ),
+            "issues": quality_issues,
+        },
+        "consumption_contract": {
+            "source_semantics": "direct_lianghui_viewpoints",
+            "current_applicability": "bounded_runtime_review_required",
+            "source_text_reread": "forbidden_for_projection_consumer",
+            "trading_authority": "none",
+        },
+    }
+    projection["projection_sha256"] = canonical_sha256(projection)
+    directory = Path(repo_root).resolve() / "output/live/kol_policy/projections"
+    directory.mkdir(parents=True, exist_ok=True)
+    path = directory / (projection["projection_sha256"] + ".json")
+    encoded = canonical_bytes(projection) + b"\n"
+    if path.exists():
+        if path.is_symlink() or path.read_bytes() != encoded:
+            raise TradingContextError("projection_immutable_conflict")
+    else:
+        descriptor, temporary = tempfile.mkstemp(
+            prefix=".projection-", dir=directory
+        )
+        try:
+            with os.fdopen(descriptor, "wb") as stream:
+                stream.write(encoded)
+                stream.flush()
+                os.fsync(stream.fileno())
+            try:
+                os.link(temporary, path)
+            except FileExistsError:
+                if path.is_symlink() or path.read_bytes() != encoded:
+                    raise TradingContextError("projection_immutable_conflict")
+        finally:
+            Path(temporary).unlink(missing_ok=True)
+    counts = Counter(
+        row["latest_status"] for row in projection["active_viewpoints"]
+    )
+    return {
+        "status": projection["quality"]["status"],
+        "projection_path": str(path),
+        "projection_sha256": projection["projection_sha256"],
+        "context_sha256": context["context_sha256"],
+        "source_fingerprint": projection["source_fingerprint"],
+        "counts": {
+            "active_viewpoints": len(projection["active_viewpoints"]),
+            "current": counts.get("current", 0),
+            "uncertain": counts.get("uncertain", 0),
+            "related_history": len(projection["related_history"]),
+            "relations": len(projection["relations"]),
+            "quality_issues": len(quality_issues),
+        },
     }

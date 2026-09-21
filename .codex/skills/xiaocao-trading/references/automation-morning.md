@@ -7,9 +7,11 @@ Read this file only for the daily morning recommendation/paper-book branch.
 For the bounded KOL overlay, also read
 [kol-trading-judgment.md](kol-trading-judgment.md). Keep the original runner and
 model. The remote writer owns full reading and independent source-level review
-of every new/changed report. Morning live and paper tasks reuse that hash-bound
-preparation packet and perform only their separate current-applicability
-adaptation and review. They do not reread unchanged report bodies. Only a
+of every new/changed report. The same semantic publication writes LiangHui
+viewpoints, evaluations and relations atomically. Morning live and paper tasks
+consume the compact hash-bound projection and perform only their separate
+current-applicability adaptation and review. They do not reread unchanged
+report bodies or create a second source draft. Only a
 source-verified published decision is consumable. Account-risk and KOL
 caps are separate from frozen qualification and the allocation capsule; a late
 review never rewrites the freeze, old intent or an earlier fill.
@@ -254,21 +256,23 @@ Escalate: script failure/traceback, missing recommendation or paper-record stage
 
 ## Early preparation and urgent continuation
 
-Start at 09:00 with the default 2100-second freeze wait and a short initial command yield; do not block source work
-behind the running shell. During 09:25–09:30, react promptly to emitted review
-requests and failures; avoid long blind waits for a potentially actionable
-result. While the original runner waits for freeze, build the cache-only context
-and run `kol_trading_preparation.py status`. Retain `context_path` for formal
-publication. For `prepared`, use the reviewed packet. For
-`source_revalidation_required`, verify only the exact missing manifests and
-reuse `reusable_path`; do not open unchanged report bodies. For
-`source_analysis_required`, a missing packet, or changed evidence without an
-approved packet, record supporting degradation and use the deterministic
-baseline rather than taking over the remote writer's source-analysis job.
-Current-applicability Astra work receives the approved packet, exact freeze and
-runtime-specific current facts. The parent independently reviews that mapping
-and its counterevidence, not the unchanged source corpus. Reuse an applicable,
-still-valid published decision.
+Start at 09:00 with the default 2100-second freeze wait and a short initial
+command yield. Runner stage JSON is the event source. Do not model-poll,
+repeatedly call `write_stdin`, or emit unchanged status before a stage event or
+the 09:24 recovery boundary. While it waits, build the 11:30-horizon capsule:
+
+```bash
+PYTHONPATH=src .venv/bin/python scripts/kol_trading_context.py projection \
+  --cache-only --history-fresh-through <today>T11:30:00+08:00
+```
+
+Read only its `projection_path`, hashes, counts and quality. It contains current
+or uncertain LiangHui viewpoints, latest evaluations, relations and necessary
+related history; it contains no report bodies. Missing or structurally degraded
+projection evidence falls back to the deterministic baseline and remains a
+remote-writer quality issue. One current-applicability worker receives this
+projection plus the exact freeze and runtime facts. The parent independently
+reviews the mapping and counterevidence. Reuse a still-valid published decision.
 
 During 09:25–09:30, unexpected AX/code errors or missing KOL material are urgent
 work. Patch the smallest failure, validate affected correctness, resume the
@@ -283,19 +287,20 @@ Preserve selected observation evidence and final-attempt status; never rerun
 the producer after freezing. Stage timings remain in receipts for later
 performance diagnosis, not as extra approval gates.
 
-After the source-preparation owner has read the exact full context,
-use `context --summary --since-context <already-read-context.json>` for a later
-refresh (combine with exact `--report-id` / `--read-report-id` when needed).
-The reading delta binds that base hash, carries every changed record and
-removed ID, and retains full current coverage. It is not an AI summary or a
-substitute for reading the base. A new worker must receive both the base and
-delta. Source publication continues to use the full current `context_path`.
-
-At 09:00 run `PYTHONPATH=src .venv/bin/python scripts/market_data_preflight.py --date today --scope authentication` alongside the original runner. Resolve authentication/transport failures immediately; a successful empty response proves reachability only. Follow `kol-source-preparation.md` to reuse the remote writer's reviewed source packet. Once ready, sleep in bounded intervals without extra APP keepalive. The runner resumes native checks at 09:24; actively poll its output by 09:24:50. Source freshness and current applicability remain independent.
+At formal decision publication, load only the exact cited report IDs into a
+full hashed context and perform the existing remote readback. This verification
+step does not authorize general historical rereading. At 09:00 also run
+`market_data_preflight.py --date today --scope authentication`; a successful
+empty response proves reachability only. Leave the APP untouched after initial
+preflight until the runner's 09:24 recovery event. Source freshness and current
+applicability remain independent.
 
 ### Submit the batch before waiting for fills
 
-The runner supplies the hash-bound account/allocation facts and account-risk receipt before starting final review. Use that exact request; do not spend its budget on a separate duplicate account read. Retain the current-applicability worker across the 09:22 prepared source delta and the final freeze; send only newly approved source changes and current applicability work. Never invent a conditional opening fact or publish a source-only packet as a current decision.
+The runner supplies hash-bound account/allocation facts and account-risk receipt
+before final review. Use that exact request; do not duplicate the account read.
+Send only a changed projection hash and current applicability facts. Never invent
+an opening fact or publish an authority=0 projection as a current decision.
 
 The runner holds one account fence across full-batch allocation and serialized submissions. A fully mapped, chain-certain ACK/PARTIAL allows the next reserved order; UNKNOWN or incomplete identity stops new writes. Fill polling starts after the submission pass. Inspect submission_observations for actual counter-acceptance proof and deadline performance; prepare completion is not submission. Preserve APP raw order states: queued is not exchange-accepted and neither is a fill. If orders remain open, the original task owns exact-plan reconciliation until terminal or an explicit recorded checkpoint handoff; never leave a bare unresolved receipt without naming the pending orders and next owner.
 
@@ -341,11 +346,9 @@ before claim/submit; the separate clear-after-readback rehearsal is omitted for
 new morning orders. Recovery keeps its established prepare/reconcile route.
 Full order/trade/account reconciliation follows the submission pass.
 
-Before 09:20 retain a file checkpoint and a reviewed conditional opening draft,
-not just source notes or null placeholders. Use the 11:30 history horizon.
-After 09:24, poll the original runner with small output budgets. Read its
-`brief_path` first, fetch missing relevant fields from `request_path` only as
-needed, and read the complete terminal artifact by field selection. Never print
-full candidate arrays, account tables or source caches into the operator stream.
-These projections preserve original immutable evidence; they do not create
-analysis approval or replace reading changed source material.
+Before 09:20 retain the immutable viewpoint projection path/hash and its quality
+summary; no source notes or conditional opening draft exists. After 09:24 react
+to runner stage events. Read `brief_path` first, fetch missing fields from
+`request_path` only as needed, and select fields from the terminal artifact.
+Never print full candidate arrays, account tables, report-id arrays or source
+caches into the operator stream. Full detail stays in immutable artifacts.

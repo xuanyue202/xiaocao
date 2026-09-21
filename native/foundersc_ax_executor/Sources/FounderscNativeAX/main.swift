@@ -167,6 +167,9 @@ private struct Receipt: Codable {
     var secureFieldCount: Int
     var confirmButtonCount: Int
     var guardedConfirmAvailable: Bool
+    var unlockFailureCategory: String?
+    var unlockRemainingAttempts: Int?
+    var secureFieldClearedBeforeSet: Bool?
     var settableTextFieldCount: Int
     var tableShapes: [TableShape]
     var tradeAccountFingerprint: String
@@ -885,6 +888,9 @@ private func emptyReceipt(command: String, status: String, reason: String) -> Re
         secureFieldCount: 0,
         confirmButtonCount: 0,
         guardedConfirmAvailable: false,
+        unlockFailureCategory: nil,
+        unlockRemainingAttempts: nil,
+        secureFieldClearedBeforeSet: nil,
         settableTextFieldCount: 0,
         tableShapes: [],
         tradeAccountFingerprint: "",
@@ -1397,6 +1403,33 @@ private func isoTimestamp() -> String {
     return formatter.string(from: Date())
 }
 
+private func unlockFailureDiagnostic(_ text: String) -> (String?, Int?) {
+    let compact = text.replacingOccurrences(
+        of: "\\s+", with: "", options: .regularExpression
+    )
+    let category: String?
+    if ["账户已锁定", "账号已锁定", "密码已锁定"].contains(where: compact.contains) {
+        category = "account_locked"
+    } else if ["交易密码输入错误", "交易密码错误", "密码输入错误", "密码错误"]
+        .contains(where: compact.contains) {
+        category = "trade_password_incorrect"
+    } else {
+        category = nil
+    }
+    let pattern = "(?:剩余|还剩|还可|还可以)[^0-9]{0,8}([0-9]{1,2})[^0-9]{0,4}次"
+    let regex = try? NSRegularExpression(pattern: pattern)
+    let range = NSRange(compact.startIndex..<compact.endIndex, in: compact)
+    var remaining: Int?
+    if let match = regex?.firstMatch(in: compact, range: range),
+       let capture = Range(match.range(at: 1), in: compact) {
+        remaining = Int(compact[capture])
+    }
+    if remaining == 0, category != nil {
+        return ("attempt_budget_exhausted", 0)
+    }
+    return (category, remaining)
+}
+
 private func observe(command: String, auditTables: Bool = false) -> Observation {
     let started = DispatchTime.now()
     let trusted = AXIsProcessTrusted()
@@ -1534,6 +1567,7 @@ private func observe(command: String, auditTables: Bool = false) -> Observation 
     var confirmButtons: [AXUIElement] = []
     var settableTextFieldCount = 0
     var tableShapes: [TableShape] = []
+    var unlockDiagnosticText: [String] = []
     var tradeFingerprints: [String] = []
     var orderLabels: [String: [AXUIElement]] = [:]
     var buySubmitControls: [AXUIElement] = []
@@ -1656,6 +1690,9 @@ private func observe(command: String, auditTables: Bool = false) -> Observation 
             structuralParts.append(stringAttribute(element, kAXValueAttribute))
         }
         let structuralText = structuralParts.joined(separator: " ")
+        if ["AXStaticText", "AXButton"].contains(role), !structuralText.isEmpty {
+            unlockDiagnosticText.append(structuralText)
+        }
         for (needle, marker) in markerNeedles where structuralText.contains(needle) {
             markers.insert(marker)
         }
@@ -1770,6 +1807,9 @@ private func observe(command: String, auditTables: Bool = false) -> Observation 
     let readablePositionValues = tableShapes.contains { table in
         table.auditComplete && (table.readableValueCount ?? 0) > 0
     }
+    let unlockDiagnostic = unlockFailureDiagnostic(
+        unlockDiagnosticText.joined(separator: " ")
+    )
     let orderCapability = surfaceState == "trade_ready"
         && orderFields != nil
         && submitControls.count == 1
@@ -1819,6 +1859,9 @@ private func observe(command: String, auditTables: Bool = false) -> Observation 
         secureFieldCount: secureFields.count,
         confirmButtonCount: confirmButtons.count,
         guardedConfirmAvailable: guardedConfirmAvailable,
+        unlockFailureCategory: unlockDiagnostic.0,
+        unlockRemainingAttempts: unlockDiagnostic.1,
+        secureFieldClearedBeforeSet: nil,
         settableTextFieldCount: settableTextFieldCount,
         tableShapes: tableShapes,
         tradeAccountFingerprint: fingerprint,
@@ -3652,6 +3695,30 @@ private func fillClientLoginFromStandardInput(arguments: [String]) -> Receipt {
         receipt.reason = "Founder window could not be proven frontmost"
         return receipt
     }
+    let clearResult = AXUIElementSetAttributeValue(
+        initial.secureFields[0],
+        kAXValueAttribute as CFString,
+        "" as CFTypeRef
+    )
+    let clearProven = clearResult == .success
+        && stringAttribute(
+            initial.secureFields[0], kAXValueAttribute
+        ).isEmpty
+    guard clearProven else {
+        receipt.status = "trade_password_clear_failed"
+        receipt.reason = "secure field could not be proven empty before password replacement"
+        receipt.secureFieldClearedBeforeSet = false
+        receipt.action = ActionResult(
+            attempted: true,
+            succeeded: false,
+            requiresUserInput: false,
+            confirmPressed: false,
+            confirmationMode: "none",
+            unlockPathProven: false
+        )
+        return receipt
+    }
+
     let setResult = AXUIElementSetAttributeValue(
         initial.secureFields[0],
         kAXValueAttribute as CFString,
@@ -3663,6 +3730,7 @@ private func fillClientLoginFromStandardInput(arguments: [String]) -> Receipt {
         kCFBooleanTrue
     )
     let succeeded = setResult == .success && focusResult == .success
+    receipt.secureFieldClearedBeforeSet = true
     receipt.status = succeeded
         ? "client_login_password_filled"
         : "client_login_password_fill_failed"
@@ -3723,6 +3791,30 @@ private func unlockFromStandardInput(arguments: [String]) -> Receipt {
     guard let secret = readStandardInputSecret() else {
         receipt.status = "trade_password_input_invalid"
         receipt.reason = "stdin secret was empty, too long, or not UTF-8"
+        return receipt
+    }
+
+    let clearResult = AXUIElementSetAttributeValue(
+        initial.secureFields[0],
+        kAXValueAttribute as CFString,
+        "" as CFTypeRef
+    )
+    let clearProven = clearResult == .success
+        && stringAttribute(
+            initial.secureFields[0], kAXValueAttribute
+        ).isEmpty
+    guard clearProven else {
+        receipt.status = "trade_password_clear_failed"
+        receipt.reason = "secure field could not be proven empty before password replacement"
+        receipt.secureFieldClearedBeforeSet = false
+        receipt.action = ActionResult(
+            attempted: true,
+            succeeded: false,
+            requiresUserInput: false,
+            confirmPressed: false,
+            confirmationMode: "none",
+            unlockPathProven: false
+        )
         return receipt
     }
 
@@ -3793,6 +3885,7 @@ private func unlockFromStandardInput(arguments: [String]) -> Receipt {
         final = observe(command: "unlock-stdin")
     }
     var result = final.receipt
+    result.secureFieldClearedBeforeSet = true
     let proven = ["trade_ready", "query_only"].contains(result.surfaceState)
     result.status = proven ? "unlocked" : "unlock_unproven"
     result.reason = proven

@@ -7,12 +7,17 @@ import argparse
 import json
 from pathlib import Path
 
-from xiaocao.kol.trading_context import TradingContextError, build_trading_context, summarize_context
+from xiaocao.kol.trading_context import (
+    TradingContextError,
+    build_trading_context,
+    summarize_context,
+    write_trading_projection,
+)
 
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("command", choices=["context"])
+    parser.add_argument("command", choices=["context", "projection"])
     parser.add_argument("--ledger", action="append", default=[], help="Additional production events.jsonl; repeatable")
     parser.add_argument("--report-id", action="append", default=[], help="Load an additional registered report body")
     parser.add_argument("--read-report-id", action="append", default=None, help="Read only these exact registered IDs remotely; reuse other fresh caches")
@@ -39,13 +44,20 @@ def main(argv: list[str] | None = None) -> int:
             as_of=args.as_of, ledger_paths=args.ledger, report_ids=args.report_id,
             read_report_ids=[] if args.cache_only else args.read_report_id,
             registered_authors=args.author, latest_per_author=args.latest_per_author,
+            include_report_bodies=args.command != "projection",
             refresh=args.refresh, max_cache_age_seconds=args.max_cache_age_seconds,
             history_max_cache_age_seconds=args.history_max_cache_age_seconds,
             history_fresh_through=args.history_fresh_through,
             timeout_seconds=args.timeout_seconds, total_timeout_seconds=args.total_timeout_seconds,
             retries=args.retries, max_read_calls=args.max_read_calls,
         )
-        result = summarize_context(context, prior_context=prior) if args.summary else context
+        result = (
+            write_trading_projection(context)
+            if args.command == "projection"
+            else summarize_context(context, prior_context=prior)
+            if args.summary
+            else context
+        )
     except TradingContextError as exc:
         print(json.dumps({"status": "blocked", "code": str(exc)}, ensure_ascii=False))
         return 2

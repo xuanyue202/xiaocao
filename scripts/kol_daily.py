@@ -2584,7 +2584,6 @@ class DailyRuntime:
         return response
 
     def mailbox(self) -> dict[str, Any]:
-        self.prepare_pending_trading_sources()
         return RemoteMailboxDrain(
             self._mailbox(),
             processor=self._process_mailbox_message,
@@ -2793,7 +2792,11 @@ class DailyRuntime:
             ledger=self.publications,
             client=lianghui,
             context=context,
-            source_preparation=self.prepare_trading_sources,
+            # The validated semantic bundle already publishes LiangHui
+            # viewpoints/evaluations/relations atomically. Trading consumers
+            # compose a compact projection from those records; production no
+            # longer pauses each object for a second source-notes handoff.
+            source_preparation=None,
         )
 
     def prepare_trading_sources(self, state: dict) -> dict:

@@ -48,6 +48,15 @@ def _china_date() -> str:
     return datetime.now(ZoneInfo("Asia/Shanghai")).date().isoformat()
 
 
+def _emit_stage(stage: str, observed_at: datetime) -> None:
+    """Emit only state transitions; the operator stream is not a poll log."""
+    print(json.dumps({
+        "event": "book_b_live_stage",
+        "stage": stage,
+        "observed_at": observed_at.isoformat(),
+    }, ensure_ascii=False, sort_keys=True), flush=True)
+
+
 def _wait_for_submit_window(target: datetime, *, heartbeat=None) -> None:
     """Keep the early task alive, but never wait across an unexpected window."""
     while True:
@@ -452,6 +461,7 @@ def main(argv: list[str] | None = None) -> int:
             expected_fund_account_fingerprint=trade_account_fingerprint,
         ),
         review_rendezvous=lambda request: _review_rendezvous(request, poll_seconds=args.poll_seconds),
+        on_progress=_emit_stage,
     )
     receipt = replace(
         receipt,
