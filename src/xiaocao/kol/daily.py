@@ -1011,6 +1011,7 @@ def build_classification_backfill_candidate(
         refined_evaluation,
         relation,
     ]
+    report_payload_updates = _reviewed_author_pronoun_updates(report, request)
     current_by_identity = {
         (str(row.get("kind") or ""), str(row.get("record_id") or "")): row
         for row in records
@@ -1025,6 +1026,13 @@ def build_classification_backfill_candidate(
             raise DailyError(
                 "published classification refinement differs from exact trigger"
             )
+        if any(
+            report["payload"].get(field) != value
+            for field, value in report_payload_updates.items()
+        ):
+            raise DailyError(
+                "published report copy differs from exact classification trigger"
+            )
         return {
             "publication_key": (
                 f"viewpoint-maintenance:{refined_evaluation_id}"
@@ -1035,6 +1043,7 @@ def build_classification_backfill_candidate(
                 "trigger": "user_request",
                 "evaluation_id": refined_evaluation_id,
                 "refined_viewpoint_id": refined_viewpoint_id,
+                "report_copy_corrected": bool(report_payload_updates),
                 "notification_claim_authorized": False,
                 "book_kol_us_replay_authorized": False,
                 "large_payload_local_bytes": 0,
@@ -1051,6 +1060,7 @@ def build_classification_backfill_candidate(
         created_at=evaluated_at,
         revision=f"classification-refinement-{refined_evaluation_id}",
         reason="补齐旧观点的短线适用性结构；不创建提醒或 Book 动作。",
+        report_payload_updates=report_payload_updates,
     )
     return {
         "publication_key": f"viewpoint-maintenance:{refined_evaluation_id}",
@@ -1060,12 +1070,39 @@ def build_classification_backfill_candidate(
             "trigger": "user_request",
             "evaluation_id": refined_evaluation_id,
             "refined_viewpoint_id": refined_viewpoint_id,
+            "report_copy_corrected": bool(report_payload_updates),
             "notification_claim_authorized": False,
             "book_kol_us_replay_authorized": False,
             "large_payload_local_bytes": 0,
             "coordinator_source_video_bytes": 0,
         },
     }
+
+
+def _reviewed_author_pronoun_updates(
+    report: dict[str, Any],
+    request: dict[str, Any],
+) -> dict[str, str]:
+    """Apply the one reviewed legacy author-pronoun correction."""
+
+    if request.get("correct_reviewed_author_pronouns") is not True:
+        return {}
+    payload = report.get("payload") or {}
+    if payload.get("author") != "吕晓彤":
+        raise DailyError(
+            "reviewed author-pronoun correction is only authorized for 吕晓彤"
+        )
+    updates: dict[str, str] = {}
+    for field in ("title", "summary", "report_body"):
+        value = payload.get(field)
+        if not isinstance(value, str):
+            continue
+        corrected = value.replace("她", "他")
+        if corrected != value:
+            updates[field] = corrected
+    if not updates:
+        raise DailyError("reviewed author-pronoun correction found no target text")
+    return updates
 
 
 def build_initial_projection_candidate(

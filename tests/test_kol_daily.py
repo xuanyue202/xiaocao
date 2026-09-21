@@ -33,6 +33,7 @@ from scripts.kol_daily import (
     SemanticInputUnavailable,
 )
 from xiaocao.kol.daily import (
+    _reviewed_author_pronoun_updates,
     build_classification_backfill_candidate,
     build_initial_projection_candidate,
     build_triggered_evaluation_candidate,
@@ -8026,6 +8027,24 @@ def test_classification_backfill_refines_incomplete_short_term_viewpoint():
     assert replay["already_published"] is True
     assert replay["publication_key"] == candidate["publication_key"]
     assert replay["records"] == records
+
+
+def test_classification_backfill_corrects_only_reviewed_author_pronouns():
+    report = {
+        "payload": {
+            "author": "吕晓彤",
+            "title": "吕晓彤：杠杆产品风险",
+            "summary": "长期配置边界。",
+            "report_body": "她反对长期持有；她认为非杠杆行业ETF更合适。",
+        }
+    }
+
+    assert _reviewed_author_pronoun_updates(
+        report, {"correct_reviewed_author_pronouns": True}
+    ) == {
+        "report_body": "他反对长期持有；他认为非杠杆行业ETF更合适。"
+    }
+    assert _reviewed_author_pronoun_updates(report, {}) == {}
 
 
 def test_initial_projection_backfills_report_only_history_without_side_effects(
