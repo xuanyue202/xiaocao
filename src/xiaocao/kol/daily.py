@@ -37,6 +37,7 @@ from .publication import (
     canonical_sha256,
     evaluation_id,
     publication_id_for_source,
+    relation_id,
     report_id,
     stable_claim,
     viewpoint_id,
@@ -797,6 +798,211 @@ def build_triggered_evaluation_candidate(
         "metadata": {
             "trigger": trigger,
             "evaluation_id": evaluation_id_value,
+            "notification_claim_authorized": False,
+            "book_kol_us_replay_authorized": False,
+            "large_payload_local_bytes": 0,
+            "coordinator_source_video_bytes": 0,
+        },
+    }
+
+
+def build_classification_backfill_candidate(
+    current_publication: dict[str, Any],
+    request: dict[str, Any],
+) -> dict[str, Any]:
+    """Classify one legacy viewpoint, refining incomplete short-term history."""
+
+    if request.get("operation") != "classification_backfill":
+        raise DailyError("classification backfill operation is invalid")
+    if request.get("trigger") != "user_request":
+        raise DailyError("classification backfill needs the reviewed trigger")
+    report = current_publication.get("report")
+    records = current_publication.get("records")
+    if not isinstance(report, dict) or not isinstance(records, list):
+        raise DailyError("current viewpoint publication is incomplete")
+    if str(request.get("report_id") or "") != str(report.get("record_id") or ""):
+        raise DailyError("classification backfill changed report identity")
+    viewpoint_id_value = str(request.get("viewpoint_id") or "")
+    viewpoint = next((
+        row for row in records
+        if isinstance(row, dict)
+        and row.get("kind") == "viewpoint"
+        and row.get("record_id") == viewpoint_id_value
+    ), None)
+    if viewpoint is None:
+        raise DailyError("classification backfill viewpoint is missing")
+
+    refinement = request.get("refinement")
+    if refinement is None:
+        return build_triggered_evaluation_candidate(current_publication, request)
+    if not isinstance(refinement, dict):
+        raise DailyError("classification refinement must be an object")
+    original_payload = viewpoint.get("payload") or {}
+    if all(
+        isinstance(original_payload.get(field), list)
+        and bool(original_payload.get(field))
+        for field in ("triggers", "falsifiers", "uncertainties")
+    ):
+        raise DailyError("complete short-term viewpoint must not be refined")
+    triggers = _reader_text_list(
+        refinement.get("triggers"), label="classification refinement triggers"
+    )
+    falsifiers = _reader_text_list(
+        refinement.get("falsifiers"), label="classification refinement falsifiers"
+    )
+    viewpoint_uncertainties = _reader_text_list(
+        refinement.get("uncertainties"),
+        label="classification refinement uncertainties",
+    )
+    if not all((triggers, falsifiers, viewpoint_uncertainties)):
+        raise DailyError("classification refinement needs complete boundaries")
+
+    evaluated_at = _utc_iso8601(str(request.get("evaluated_at") or ""))
+    as_of = _utc_iso8601(str(request.get("as_of") or ""))
+    status = str(request.get("status") or "").strip()
+    if status not in VIEWPOINT_EVALUATION_STATUSES:
+        raise DailyError("classification refinement status is invalid")
+    local_thesis_id = "classification-backfill-" + hashlib.sha256(
+        viewpoint_id_value.encode("utf-8")
+    ).hexdigest()[:20]
+    evidence_refs = list(original_payload.get("evidence_refs") or [])
+    refined_viewpoint_id = viewpoint_id(
+        str(report["record_id"]), local_thesis_id, evidence_refs
+    )
+    refined_payload = {
+        "viewpoint_id": refined_viewpoint_id,
+        "report_id": str(report["record_id"]),
+        "kol_id": str(original_payload["kol_id"]),
+        "local_thesis_id": local_thesis_id,
+        "subject": str(original_payload["subject"]),
+        "stance": str(original_payload["stance"]),
+        "source_published_at": str(original_payload["source_published_at"]),
+        "evidence_refs": evidence_refs,
+        "triggers": triggers,
+        "falsifiers": falsifiers,
+        "uncertainties": viewpoint_uncertainties,
+    }
+    for field in ("horizon", "attribution", "role", "reasoning"):
+        value = original_payload.get(field)
+        if value not in (None, "", []):
+            refined_payload[field] = value
+    refined_viewpoint = build_record(
+        kind="viewpoint",
+        record_id_value=refined_viewpoint_id,
+        idempotency_key=stable_claim(
+            "put", str(report["record_id"]), "classification-refinement",
+            refined_viewpoint_id,
+        ),
+        created_at=evaluated_at,
+        source_binding=viewpoint["source_binding"],
+        payload=refined_payload,
+    )
+
+    new_applicability = _normalize_trading_applicability(
+        request.get("trading_applicability"),
+        evaluation_status=status,
+        as_of=as_of,
+        triggers=triggers,
+        falsifiers=falsifiers,
+        uncertainties=viewpoint_uncertainties,
+    )
+    refined_evaluation_id = evaluation_id(
+        refined_viewpoint_id, as_of, evaluated_at
+    )
+    refined_evaluation = build_record(
+        kind="viewpoint_evaluation",
+        record_id_value=refined_evaluation_id,
+        idempotency_key=stable_claim(
+            "put", str(report["record_id"]), "evaluation",
+            refined_evaluation_id,
+        ),
+        created_at=evaluated_at,
+        source_binding=viewpoint["source_binding"],
+        payload={
+            "evaluation_id": refined_evaluation_id,
+            "viewpoint_id": refined_viewpoint_id,
+            "status": status,
+            "as_of": as_of,
+            "evaluated_at": evaluated_at,
+            "basis": _required_reason(
+                request.get("basis"), label="classification refinement basis"
+            ),
+            "confidence": str(request.get("confidence") or "medium"),
+            "uncertainties": list(request.get("uncertainties") or []),
+            "trading_applicability": new_applicability,
+        },
+    )
+
+    old_evaluation_id = evaluation_id(viewpoint_id_value, as_of, evaluated_at)
+    old_evaluation = build_record(
+        kind="viewpoint_evaluation",
+        record_id_value=old_evaluation_id,
+        idempotency_key=stable_claim(
+            "put", str(report["record_id"]), "evaluation", old_evaluation_id
+        ),
+        created_at=evaluated_at,
+        source_binding=viewpoint["source_binding"],
+        payload={
+            "evaluation_id": old_evaluation_id,
+            "viewpoint_id": viewpoint_id_value,
+            "status": status,
+            "as_of": as_of,
+            "evaluated_at": evaluated_at,
+            "basis": "旧记录缺少完整触发、证伪和不确定性边界，已由同源细化观点承接。",
+            "confidence": str(request.get("confidence") or "medium"),
+            "uncertainties": list(request.get("uncertainties") or []),
+            "trading_applicability": {
+                "scope": "not_book_b_short_term",
+                "utility": "not_applicable",
+                "priority": 0,
+                "valid_until": None,
+                "reason": "旧记录仅保留历史；短线适用性由同源细化观点承接。",
+            },
+        },
+    )
+    relation_id_value = relation_id(
+        refined_viewpoint_id, viewpoint_id_value, "refines", evaluated_at
+    )
+    relation = build_record(
+        kind="viewpoint_relation",
+        record_id_value=relation_id_value,
+        idempotency_key=stable_claim(
+            "put", str(report["record_id"]), "relation", relation_id_value
+        ),
+        created_at=evaluated_at,
+        source_binding=viewpoint["source_binding"],
+        payload={
+            "relation_id": relation_id_value,
+            "from_viewpoint_id": refined_viewpoint_id,
+            "to_viewpoint_id": viewpoint_id_value,
+            "relation_type": "refines",
+            "asserted_at": evaluated_at,
+            "reason": "同源细化观点补齐短线触发、证伪与不确定性边界，旧记录继续保留。",
+        },
+    )
+    viewpoint_ids = list(report["payload"].get("viewpoint_ids") or [])
+    viewpoint_ids.append(refined_viewpoint_id)
+    updated_records, publish = build_append_only_publication_update(
+        current_records=records,
+        additions=[
+            old_evaluation,
+            refined_viewpoint,
+            refined_evaluation,
+            relation,
+        ],
+        viewpoint_ids=viewpoint_ids,
+        created_at=evaluated_at,
+        revision=f"classification-refinement-{refined_evaluation_id}",
+        reason="补齐旧观点的短线适用性结构；不创建提醒或 Book 动作。",
+    )
+    return {
+        "publication_key": f"viewpoint-maintenance:{refined_evaluation_id}",
+        "records": updated_records,
+        "publish_request": publish,
+        "metadata": {
+            "trigger": "user_request",
+            "evaluation_id": refined_evaluation_id,
+            "refined_viewpoint_id": refined_viewpoint_id,
             "notification_claim_authorized": False,
             "book_kol_us_replay_authorized": False,
             "large_payload_local_bytes": 0,

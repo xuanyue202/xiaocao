@@ -24,6 +24,7 @@ from typing import Any
 from xiaocao.kol._shared import DecisionError, canonical_sha256
 from xiaocao.kol.daily import (
     AGENT_OWNED_FAILURE_CATEGORIES,
+    build_classification_backfill_candidate,
     build_initial_projection_candidate,
     build_triggered_evaluation_candidate,
     DailyCoordinator,
@@ -4544,6 +4545,10 @@ class DailyRuntime:
             )
             if request.get("operation") == "initial_projection":
                 candidate = build_initial_projection_candidate(current, request)
+            elif request.get("operation") == "classification_backfill":
+                candidate = build_classification_backfill_candidate(
+                    current, request
+                )
             else:
                 candidate = build_triggered_evaluation_candidate(current, request)
             self.publications.prepare(

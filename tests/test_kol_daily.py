@@ -33,6 +33,7 @@ from scripts.kol_daily import (
     SemanticInputUnavailable,
 )
 from xiaocao.kol.daily import (
+    build_classification_backfill_candidate,
     build_initial_projection_candidate,
     build_triggered_evaluation_candidate,
     DailyCoordinator,
@@ -56,6 +57,7 @@ from xiaocao.kol.publication import (
     PublicationLedger,
     build_record,
     publication_id_for_source,
+    record_content_sha256,
     report_id,
     viewpoint_id,
 )
@@ -7838,6 +7840,122 @@ def test_triggered_viewpoint_evaluation_appends_without_event_side_effects(
     assert service.audit()["viewpoint_evaluation_count"] == 1
     assert service.audit()["reminder_count"] == 0
     assert service.audit()["book_trade_count"] == 0
+
+
+def test_classification_backfill_refines_incomplete_short_term_viewpoint():
+    publication_id = publication_id_for_source(
+        adapter="xiaocao_live", source_identity="legacy-short-term"
+    )
+    report_id_value = report_id(publication_id)
+    source_binding = {
+        "publication_id": publication_id,
+        "publication_version": "legacy-v1",
+        "evidence_sha256": "a" * 64,
+        "decision_result_sha256": "b" * 64,
+        "extraction_contract_version": "kol-intelligence-v1",
+    }
+    report = build_record(
+        kind="report",
+        record_id_value=report_id_value,
+        idempotency_key="put-report",
+        created_at="2026-09-14T12:00:00Z",
+        source_binding=source_binding,
+        payload={
+            "report_id": report_id_value,
+            "report_kind": "publication_event",
+            "kol_id": "kol-xiaocao",
+            "author": "小草",
+            "source": "直播",
+            "title": "小草：主跌环境的风险边界",
+            "summary": "主跌环境先控制风险暴露。",
+            "source_published_at": "2026-09-14T12:00:00Z",
+            "media_types": ["video"],
+            "source_parts": [],
+            "report_format": "markdown",
+            "report_body": "# 风险边界\n\n主跌环境先控制风险暴露。",
+            "viewpoint_ids": [],
+            "alert_eligible": False,
+            "alert_reason": "历史维护不补发提醒。",
+            "reader_insight": {"status": "useful", "reason": "短线风险边界。"},
+        },
+    )
+    refs = [{"claim_id": "risk", "excerpt": "主跌环境先控制风险暴露。"}]
+    legacy_viewpoint_id = viewpoint_id(report_id_value, "risk-boundary", refs)
+    legacy_viewpoint = build_record(
+        kind="viewpoint",
+        record_id_value=legacy_viewpoint_id,
+        idempotency_key="put-viewpoint",
+        created_at="2026-09-14T12:00:00Z",
+        source_binding=source_binding,
+        payload={
+            "viewpoint_id": legacy_viewpoint_id,
+            "report_id": report_id_value,
+            "kol_id": "kol-xiaocao",
+            "local_thesis_id": "risk-boundary",
+            "subject": "主跌环境的风险暴露",
+            "stance": "主跌环境先空仓或轻仓，等待赚钱效应恢复。",
+            "source_published_at": "2026-09-14T12:00:00Z",
+            "horizon": "直到环境重新转强",
+            "evidence_refs": refs,
+        },
+    )
+    report["payload"]["viewpoint_ids"] = [legacy_viewpoint_id]
+    report["content_sha256"] = record_content_sha256(report)
+    candidate = build_classification_backfill_candidate(
+        {"report": report, "records": [report, legacy_viewpoint]},
+        {
+            "operation": "classification_backfill",
+            "trigger": "user_request",
+            "report_id": report_id_value,
+            "viewpoint_id": legacy_viewpoint_id,
+            "status": "current",
+            "as_of": "2026-09-14T12:00:00Z",
+            "evaluated_at": "2026-09-21T04:30:00Z",
+            "basis": "保留原判断，只补齐短线适用性结构。",
+            "confidence": "medium",
+            "uncertainties": ["本次没有刷新行情。"],
+            "trading_applicability": {
+                "scope": "book_b_short_term",
+                "utility": "risk_constraint",
+                "priority": 5,
+                "valid_until": "2026-09-22T07:00:00Z",
+                "reason": "该观点直接约束短线风险暴露。",
+            },
+            "refinement": {
+                "triggers": ["环境评分仍为主跌。"],
+                "falsifiers": ["环境与赚钱效应持续恢复。"],
+                "uncertainties": ["原来源没有量化仓位上限。"],
+            },
+        },
+    )
+
+    records = candidate["records"]
+    refined = [
+        row for row in records
+        if row["kind"] == "viewpoint"
+        and row["record_id"] != legacy_viewpoint_id
+    ]
+    evaluations = [row for row in records if row["kind"] == "viewpoint_evaluation"]
+    relations = [row for row in records if row["kind"] == "viewpoint_relation"]
+    assert len(refined) == 1
+    assert len(evaluations) == 2
+    assert len(relations) == 1
+    assert relations[0]["payload"]["relation_type"] == "refines"
+    old_evaluation = next(
+        row for row in evaluations
+        if row["payload"]["viewpoint_id"] == legacy_viewpoint_id
+    )
+    new_evaluation = next(
+        row for row in evaluations
+        if row["payload"]["viewpoint_id"] == refined[0]["record_id"]
+    )
+    assert old_evaluation["payload"]["trading_applicability"]["scope"] == (
+        "not_book_b_short_term"
+    )
+    assert new_evaluation["payload"]["trading_applicability"]["scope"] == (
+        "book_b_short_term"
+    )
+    assert candidate["publish_request"]["report_id"] == report["record_id"]
 
 
 def test_initial_projection_backfills_report_only_history_without_side_effects(
