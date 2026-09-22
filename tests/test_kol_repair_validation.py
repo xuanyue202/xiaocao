@@ -422,6 +422,23 @@ def test_repair_validation_accepts_lv_text_image_source_run_profile(
     assert service._expected_profile(context) == "kol_lv_text_image_source_run"
 
 
+def test_repair_validation_accepts_lv_household_context_profile(tmp_path):
+    service = RepairValidationService(
+        tmp_path,
+        ledger=RepairValidationLedger(tmp_path / "repair-validation.jsonl"),
+    )
+    context = {
+        "adapter": "lv_text_image",
+        "category": "provider_error",
+        "code": "lianghui_mcp_request_failed",
+        "stage": "household_context",
+        "targeted_test_profile": "kol_lv_text_image_household_context",
+    }
+    assert service._expected_profile(context) == "kol_lv_text_image_household_context"
+    with pytest.raises(ProgressContractError):
+        service._expected_profile({**context, "code": "unrelated_error"})
+
+
 def test_repair_validation_rejects_unrelated_lv_internal_state_error(tmp_path):
     service = RepairValidationService(
         tmp_path,

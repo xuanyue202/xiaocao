@@ -615,6 +615,11 @@ class RepairValidationLedger:
 
 
 TARGETED_REPAIR_TESTS: dict[str, tuple[str, ...]] = {
+    "kol_lv_text_image_household_context": (
+        "env", "PYTHONPATH=src", ".venv/bin/python", "-m", "pytest",
+        "tests/test_kol_daily.py", "tests/test_kol_repair_validation.py",
+        "-q", "-k", "household_context or repair_validation_accepts_lv_household_context_profile",
+    ),
     "kol_mailbox_exact_resume": (
         "env",
         "PYTHONPATH=src",
@@ -927,6 +932,9 @@ TARGETED_REPAIR_TESTS: dict[str, tuple[str, ...]] = {
 }
 
 _TARGETED_REPAIR_IMPLEMENTATION_PATHS: dict[str, frozenset[str]] = {
+    "kol_lv_text_image_household_context": frozenset({
+        "scripts/kol_daily.py", "src/xiaocao/kol/writer_progress.py",
+    }),
     "kol_mailbox_exact_resume": frozenset(
         {
             "scripts/kol_daily.py",
@@ -1034,6 +1042,9 @@ _TARGETED_REPAIR_IMPLEMENTATION_PATHS: dict[str, frozenset[str]] = {
 }
 
 _TARGETED_REPAIR_TEST_PATHS: dict[str, frozenset[str]] = {
+    "kol_lv_text_image_household_context": frozenset({
+        "tests/test_kol_daily.py", "tests/test_kol_repair_validation.py",
+    }),
     "kol_mailbox_exact_resume": frozenset(
         {
             "tests/test_kol_mailbox.py",
@@ -1732,6 +1743,14 @@ class RepairValidationService:
         return value
 
     def _expected_profile(self, context: Mapping[str, Any]) -> str:
+        if (
+            context.get("adapter") == "lv_text_image"
+            and context.get("category") == "provider_error"
+            and context.get("code") == "lianghui_mcp_request_failed"
+            and context.get("stage") == "household_context"
+            and context.get("targeted_test_profile") == "kol_lv_text_image_household_context"
+        ):
+            return "kol_lv_text_image_household_context"
         lv_profile = _canonical_lv_download_repair_profile(context)
         if lv_profile is not None:
             return lv_profile
