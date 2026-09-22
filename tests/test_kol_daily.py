@@ -769,6 +769,38 @@ def test_household_context_retries_one_transient_read_failure():
     assert calls == 2
 
 
+def test_household_context_retries_two_transient_read_failures():
+    calls = 0
+
+    class Client:
+        def load_context(self):
+            nonlocal calls
+            calls += 1
+            if calls <= 2:
+                raise DecisionError("亮灰 MCP request failed")
+            return {"family_id": "family", "positions": []}
+
+    assert _load_household_context_with_retry(Client()) == {
+        "family_id": "family",
+        "positions": [],
+    }
+    assert calls == 3
+
+
+def test_household_context_stops_after_three_transient_read_failures():
+    calls = 0
+
+    class Client:
+        def load_context(self):
+            nonlocal calls
+            calls += 1
+            raise DecisionError("亮灰 MCP request failed")
+
+    with pytest.raises(DecisionError, match="MCP request failed"):
+        _load_household_context_with_retry(Client())
+    assert calls == 3
+
+
 def test_household_context_does_not_retry_non_transient_failure():
     calls = 0
 

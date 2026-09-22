@@ -138,14 +138,15 @@ DEFAULT_XIAOCAO_WECHAT_OUTPUT = (
 def _load_household_context_with_retry(
     client: LiangHuiMcpClient,
 ) -> dict[str, Any]:
-    """Retry one transient read-only provider failure in the same task."""
+    """Bound transient read-only provider failures before pausing the item."""
 
-    try:
-        return client.load_context()
-    except DecisionError as exc:
-        if str(exc) != "亮灰 MCP request failed":
-            raise
-    return client.load_context()
+    for attempt in range(3):
+        try:
+            return client.load_context()
+        except DecisionError as exc:
+            if str(exc) != "亮灰 MCP request failed" or attempt == 2:
+                raise
+    raise AssertionError("unreachable household context retry state")
 DEFAULT_WECHAT_OFFICIAL_OUTPUT = Path("output/live/kol_wechat_official")
 DEFAULT_MAILBOX_OUTPUT = Path("output/live/kol_mailbox")
 MAX_HANDOFF_BYTES = 1024 * 1024
