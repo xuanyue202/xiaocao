@@ -327,6 +327,8 @@ def test_awaiting_playback_compressed_capture_wait_has_durable_poll_deadline(
     assert result["waiting_items"][0]["next_poll_not_before"] == (
         expected_deadline
     )
+    assert result["waiting_items"][0]["category"] == "provider_wait"
+    assert result["waiting_items"][0]["code"] == "awaiting_playback"
     progress = normalize_source_result(
         "xiaocao_wechat_live",
         result,
@@ -335,6 +337,8 @@ def test_awaiting_playback_compressed_capture_wait_has_durable_poll_deadline(
     )
     assert progress.status == "wait_until"
     assert progress.next_action == "resume_after_deadline"
+    assert progress.details["category"] == "provider_wait"
+    assert progress.details["code"] == "awaiting_playback"
 
 
 def test_live_capture_driver_reconciles_sniffer_before_pending_advance(tmp_path):

@@ -807,6 +807,16 @@ class XiaocaoWechatLiveSubscription:
             "stage": stage,
             "capture_job_id": str(item.get("capture_job_id") or ""),
         }
+        wait_code = {
+            "awaiting_playback": "awaiting_playback",
+            "downloading": "compressed_capture_pending",
+            "upload_claimed": "upload_pending",
+            "cloud_handoff": "cloud_handoff_pending",
+        }.get(status, "capture_progress_pending")
+        waiting_item.update({
+            "category": "provider_wait",
+            "code": wait_code,
+        })
         deadline_base = self.clock()
         if status == "awaiting_playback":
             # Short live windows need the next configured 20-minute boundary.
