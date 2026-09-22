@@ -778,6 +778,7 @@ class FounderscNativeAXBrokerAdapter(BrokerAdapter):
             payload = self.native.read_query(
                 kind=kind,
                 expected_fingerprint=self.expected_fund_account_fingerprint,
+                **({"refresh_history": True} if kind in {"history-orders", "history-trades"} else {}),
             ).as_dict()
             readback = payload.get("query_readback")
             readback = dict(readback) if isinstance(readback, dict) else {}
@@ -1855,14 +1856,10 @@ class FounderscNativeAXBrokerAdapter(BrokerAdapter):
         requested_shares: int,
         expected_order_id: str,
     ) -> BrokerReceipt:
-        """Close one prior-day mapped BUY only from native historical evidence.
+        """Reconcile an exact prior-day order from refreshed native history.
 
-        Founder keeps an unfilled day order's historical status as ``已报``.
-        That label is not carried into a later trading day: a uniquely matched
-        prior-date order, zero exact historical trades, and zero current target
-        holding prove that this BUY expired unfilled.  The durable external
-        order id remains the execution-ledger identity while the native entrust
-        number is retained as locator evidence.
+        A prior-date 已报 row is not terminal, even with zero trades or holdings.
+        Preserve its raw status; only explicit broker evidence releases the plan.
         """
         self._open_query_surface()
         orders = self._query("history-orders")
@@ -1945,6 +1942,7 @@ class FounderscNativeAXBrokerAdapter(BrokerAdapter):
         order = order_matches[0]
         native_order_id = str(order.get("委托编号") or "").strip()
         locator["native_order_id"] = native_order_id
+        locator["historical_order_status"] = str(order.get("状态说明") or "")
         if native_order_id != expected_order_id:
             locator["order_id_mapping"] = "mismatch"
             return BrokerReceipt(

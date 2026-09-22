@@ -2816,3 +2816,23 @@ def test_server_rejection_is_persisted_before_notice_acknowledgment():
     wrong_account = adapter.recover(plan, durable.as_dict())
     assert wrong_account.normalized_status() == BrokerStatus.UNKNOWN
     assert wrong_account.account_binding == 'unproven'
+
+
+def test_history_reconcile_refreshes_server_query_before_accepting_terminal():
+    class StaleHistory(FakeNative):
+        def read_query(self, *, kind, **kwargs):
+            if kind == 'history-orders' and kwargs.get('refresh_history'):
+                self.history_orders[0]['状态说明'] = '已撤'
+            return super().read_query(kind=kind, **kwargs)
+
+    native = StaleHistory()
+    native.history_orders = [{
+        '证券代码': '000001', '证券名称': '测试标的', '委托日期': '20260830',
+        '委托时间': '145040', '买卖标志': '买入', '委托类别': '买卖',
+        '状态说明': '已报', '委托价格': '10.00', '委托数量': '100',
+        '委托编号': '6001324', '成交价格': '0', '成交数量': '0',
+    }]
+    receipt = _adapter(native).reconcile(
+        _plan(), {'broker_order_id': '6001324', 'requested_shares': 100})
+    assert receipt.normalized_status() == BrokerStatus.CANCELLED
+    assert receipt.locator_proof['historical_order_status'] == '已撤'

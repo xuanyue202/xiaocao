@@ -1,6 +1,8 @@
 """Small operator messages; complete immutable receipts stay on disk."""
 from __future__ import annotations
 
+import json
+import re
 from datetime import datetime, timedelta
 from pathlib import Path
 
@@ -44,8 +46,13 @@ def review_notice(request: dict, request_path: Path, receipt_path: Path, brief_p
 
 
 def terminal_notice(payload: dict, receipt_path: Path) -> dict:
-    receipts = payload.get('execution_receipts', [])
+    receipts = list(payload.get('execution_receipts', []))
+    pending = [r for r in payload.get('open_plan_reconciliations', [])
+               if r.get('state') not in {'filled', 'cancelled', 'rejected', 'skipped'}]
     return {**{k: payload.get(k) for k in ('run_id', 'trade_date', 'status', 'reason', 'failed_stage')},
+            'pending_orders': [{k: r.get(k) for k in ('plan_id', 'state', 'broker_order_id',
+                'filled_shares', 'remaining_shares', 'reason', 'next_action')} for r in pending],
+            'incident_notifications': _incident_notifications(receipt_path, receipts + pending),
             'receipt_path': str(receipt_path.resolve()),
             'stage_times': payload.get('stage_times', {}),
             'orders': [{k: r.get(k) for k in ('plan_id', 'state', 'broker_order_id',
@@ -54,3 +61,38 @@ def terminal_notice(payload: dict, receipt_path: Path) -> dict:
             'review': {k: (payload.get('review_rendezvous') or {}).get(k)
                        for k in ('status', 'reason', 'supporting_health', 'decision_id')},
             'submission_observations': payload.get('submission_observations', [])}
+
+
+def _incident_notifications(receipt_path: Path, orders: list[dict]) -> list[dict]:
+    """Read existing delivery proof; never send or infer user acknowledgement."""
+    if receipt_path.parent.name != 'history' or receipt_path.parent.parent.name != 'runs':
+        return []
+    path = receipt_path.parent.parent.parent / 'incidents.jsonl'
+    ids = {str(r['broker_order_id']) for r in orders if r.get('broker_order_id')}
+    if not ids or not path.is_file():
+        return []
+    try:
+        rows = [json.loads(line) for line in path.read_text().splitlines() if line.strip()]
+    except (OSError, ValueError):
+        return [{'status': 'delivery_readback_unproven'}]
+    matches = {}
+    for row in rows:
+        if not isinstance(row, dict):
+            return [{'status': 'delivery_readback_unproven'}]
+        order = re.search(r'(?:^|\s)order_id=([^\s]+)', str(row.get('body', '')))
+        if order and order.group(1) in ids:
+            matches[row.get('incident_id')] = order.group(1)
+    results = {}
+    for row in rows:
+        key = row.get('incident_id')
+        if key in matches:
+            prior = results.get(key, {})
+            if prior.get('status') == 'delivered':
+                continue
+            results[key] = {'incident_id': key, 'broker_order_id': matches[key],
+                            'status': row.get('status')}
+            if row.get('status') == 'delivered':
+                result = row.get('result')
+                results[key].update(delivered_at=row.get('created_at'),
+                    wecom=result.get('wecom') if isinstance(result, dict) else None)
+    return list(results.values())

@@ -101,6 +101,19 @@ snapshot proof.
 
 ## Closeout
 
+Before closing a blocked run, inspect `pending_orders` and
+`incident_notifications` in the terminal notice. Report the exact unresolved
+plan/order and existing WeCom delivery time/status; relay acceptance is not user
+acknowledgement. The order incident outbox may already have delivered an alert
+even when the morning created no new order. Repair local evidence gaps and
+narrow-resume before reporting an irreducible external blocker. A written
+next-owner note is not an accepted handoff.
+
+Historical reconciliation refreshes both query tables before capture. This does
+not set or prove the UI date range; exact row date and order identity remain
+mandatory. A refreshed `已报` with no observed trades is still unproven, not a
+terminal cancellation. Preserve its raw status in locator evidence.
+
 After the terminal outcome, record the cause, fix, verification and residual
 blocker. Append its failure fingerprint and prevention to the Automation
 memory. If the same failure fingerprint already exists, the previous

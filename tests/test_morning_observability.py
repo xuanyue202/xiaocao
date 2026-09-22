@@ -22,3 +22,22 @@ def test_full_evidence_is_referenced_not_injected_into_operator_messages():
         'broker_order_id': '123', 'filled_shares': 100, 'locator_proof': 'x'*50000}]}, Path('run.json'))
     assert terminal['orders'][0]['broker_order_id'] == '123'
     assert len(json.dumps(terminal)) < 2048
+
+
+def test_blocked_morning_exposes_old_order_and_existing_alert_delivery(tmp_path):
+    root = tmp_path / 'book'
+    receipt_path = root / 'runs' / 'history' / 'run.json'
+    receipt_path.parent.mkdir(parents=True)
+    (root / 'incidents.jsonl').write_text('\n'.join(json.dumps(r) for r in [
+        {'incident_id': 'alert', 'status': 'pending',
+         'body': 'state=unknown order_id=6007019\n'},
+        {'incident_id': 'alert', 'status': 'delivered',
+         'created_at': '2026-09-22T01:01:06+00:00', 'result': {'wecom': 'ok'}},
+    ]))
+    notice = terminal_notice({'status': 'blocked', 'execution_receipts': (),
+        'open_plan_reconciliations': [{'plan_id': 'old-sell', 'state': 'unknown',
+            'broker_order_id': '6007019', 'reason': 'NATIVE_HISTORICAL_STATUS_UNPROVEN'}]}, receipt_path)
+    assert notice['pending_orders'][0]['broker_order_id'] == '6007019'
+    assert notice['incident_notifications'][0]['wecom'] == 'ok'
+    assert notice['incident_notifications'][0]['delivered_at'] == '2026-09-22T01:01:06+00:00'
+    assert notice['orders'] == []
