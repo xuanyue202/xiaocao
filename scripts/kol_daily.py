@@ -18,8 +18,8 @@ from contextvars import ContextVar
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from time import sleep as _cloud_handoff_sleep
-from typing import Any
+from time import sleep as _cloud_handoff_sleep, sleep as _household_retry_sleep
+from typing import Any, Callable
 
 from xiaocao.kol._shared import DecisionError, canonical_sha256
 from xiaocao.kol.daily import (
@@ -137,6 +137,8 @@ DEFAULT_XIAOCAO_WECHAT_OUTPUT = (
 
 def _load_household_context_with_retry(
     client: LiangHuiMcpClient,
+    *,
+    pause: Callable[[float], None] = _household_retry_sleep,
 ) -> dict[str, Any]:
     """Bound transient read-only provider failures before pausing the item."""
 
@@ -146,6 +148,7 @@ def _load_household_context_with_retry(
         except DecisionError as exc:
             if str(exc) != "亮灰 MCP request failed" or attempt == 2:
                 raise
+            pause((1.0, 3.0)[attempt])
     raise AssertionError("unreachable household context retry state")
 DEFAULT_WECHAT_OFFICIAL_OUTPUT = Path("output/live/kol_wechat_official")
 DEFAULT_MAILBOX_OUTPUT = Path("output/live/kol_mailbox")

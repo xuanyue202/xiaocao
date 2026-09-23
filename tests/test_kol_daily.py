@@ -753,6 +753,7 @@ def test_runtime_initialization_defers_lianghui_config(monkeypatch, tmp_path):
 
 def test_household_context_retries_one_transient_read_failure():
     calls = 0
+    pauses = []
 
     class Client:
         def load_context(self):
@@ -762,15 +763,17 @@ def test_household_context_retries_one_transient_read_failure():
                 raise DecisionError("亮灰 MCP request failed")
             return {"family_id": "family", "positions": []}
 
-    assert _load_household_context_with_retry(Client()) == {
+    assert _load_household_context_with_retry(Client(), pause=pauses.append) == {
         "family_id": "family",
         "positions": [],
     }
     assert calls == 2
+    assert pauses == [1.0]
 
 
 def test_household_context_retries_two_transient_read_failures():
     calls = 0
+    pauses = []
 
     class Client:
         def load_context(self):
@@ -780,15 +783,17 @@ def test_household_context_retries_two_transient_read_failures():
                 raise DecisionError("亮灰 MCP request failed")
             return {"family_id": "family", "positions": []}
 
-    assert _load_household_context_with_retry(Client()) == {
+    assert _load_household_context_with_retry(Client(), pause=pauses.append) == {
         "family_id": "family",
         "positions": [],
     }
     assert calls == 3
+    assert pauses == [1.0, 3.0]
 
 
 def test_household_context_stops_after_three_transient_read_failures():
     calls = 0
+    pauses = []
 
     class Client:
         def load_context(self):
@@ -797,12 +802,14 @@ def test_household_context_stops_after_three_transient_read_failures():
             raise DecisionError("亮灰 MCP request failed")
 
     with pytest.raises(DecisionError, match="MCP request failed"):
-        _load_household_context_with_retry(Client())
+        _load_household_context_with_retry(Client(), pause=pauses.append)
     assert calls == 3
+    assert pauses == [1.0, 3.0]
 
 
 def test_household_context_does_not_retry_non_transient_failure():
     calls = 0
+    pauses = []
 
     class Client:
         def load_context(self):
@@ -811,8 +818,9 @@ def test_household_context_does_not_retry_non_transient_failure():
             raise DecisionError("亮灰 MCP omitted familyId or portfolio positions")
 
     with pytest.raises(DecisionError, match="omitted familyId"):
-        _load_household_context_with_retry(Client())
+        _load_household_context_with_retry(Client(), pause=pauses.append)
     assert calls == 1
+    assert pauses == []
 
 
 def test_source_repair_resume_follows_bound_xiaocao_cloud_handoff(monkeypatch):
