@@ -202,3 +202,65 @@ def test_concurrent_processes_do_not_repeat_password_without_captcha(monkeypatch
                 process.terminate()
                 process.join(5)
         results.close()
+
+
+def test_agent_captcha_flow_submits_once_and_removes_image(monkeypatch, tmp_path, capsys):
+    import json
+    from scripts import configure_market_data_auth as setup
+
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(setup.sys, "argv", ["configure_market_data_auth.py", "--captcha-from-keychain"])
+    monkeypatch.setattr(setup.sys, "stdin", Mock(isatty=lambda: True))
+    monkeypatch.setattr(setup, "read_credentials", lambda: ("13800000000", "fixture-password"))
+    monkeypatch.setattr(setup, "request_market_captcha", lambda username, *, session: (b"\x89PNG\r\n\x1a\n", "png"))
+    monkeypatch.setattr(setup, "agent_captcha_input", lambda label: "wC4U")
+    session = Mock()
+    session.__enter__ = Mock(return_value=session)
+    session.__exit__ = Mock(return_value=False)
+    monkeypatch.setattr(setup.requests, "Session", lambda: session)
+    configure = Mock()
+    monkeypatch.setattr(setup, "configure_credentials", configure)
+
+    assert setup.main() == 0
+    lines = capsys.readouterr().out.splitlines()
+    event = json.loads(lines[0])
+    assert event["status"] == "awaiting_agent_captcha"
+    assert not setup.Path(event["captcha_image_path"]).exists()
+    assert "fixture-password" not in "\n".join(lines)
+    assert "wC4U" not in "\n".join(lines)
+    configure.assert_called_once_with(
+        "13800000000", "fixture-password", captcha_code="wC4U", session=session,
+    )
+
+
+def test_agent_captcha_rejection_reports_only_sanitized_code(monkeypatch, tmp_path, capsys):
+    import json
+    from scripts import configure_market_data_auth as setup
+
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(setup.sys, "argv", ["configure_market_data_auth.py", "--captcha-from-keychain"])
+    monkeypatch.setattr(setup.sys, "stdin", Mock(isatty=lambda: True))
+    monkeypatch.setattr(setup, "read_credentials", lambda: ("13800000000", "fixture-password"))
+    monkeypatch.setattr(setup, "request_market_captcha", lambda username, *, session: (b"\x89PNG\r\n\x1a\n", "png"))
+    monkeypatch.setattr(setup, "agent_captcha_input", lambda label: "wC4U")
+    session = Mock()
+    session.__enter__ = Mock(return_value=session)
+    session.__exit__ = Mock(return_value=False)
+    monkeypatch.setattr(setup.requests, "Session", lambda: session)
+    configure = Mock(side_effect=ApiAuthError(
+        "MARKET_LOGIN_REQUIRES_USER", failure_category="MARKET_LOGIN_REQUIRES_USER",
+        official_login_code=9001,
+    ))
+    monkeypatch.setattr(setup, "configure_credentials", configure)
+
+    assert setup.main() == 2
+    lines = capsys.readouterr().out.splitlines()
+    event = json.loads(lines[0])
+    failure = json.loads(lines[1])
+    assert not setup.Path(event["captcha_image_path"]).exists()
+    assert failure == {
+        "status": "blocked", "failure_category": "MARKET_LOGIN_REQUIRES_USER",
+        "official_login_code": 9001,
+    }
+    assert "fixture-password" not in "\n".join(lines)
+    configure.assert_called_once()

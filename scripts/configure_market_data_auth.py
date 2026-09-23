@@ -5,6 +5,7 @@ import getpass
 import json
 import os
 from pathlib import Path
+import signal
 import subprocess
 import sys
 import tempfile
@@ -31,6 +32,22 @@ def hidden_dialog(label: str) -> str:
     return result.stdout.decode().rstrip("\r\n")
 
 
+def agent_captcha_input(label: str) -> str:
+    """Bound agent inspection of one challenge; keep the PTY input hidden."""
+    def expired(_signum, _frame):
+        raise TimeoutError
+
+    previous = signal.signal(signal.SIGALRM, expired)
+    signal.setitimer(signal.ITIMER_REAL, 120)
+    try:
+        return getpass.getpass(label)
+    except TimeoutError:
+        raise RuntimeError("market_agent_captcha_timeout") from None
+    finally:
+        signal.setitimer(signal.ITIMER_REAL, 0)
+        signal.signal(signal.SIGALRM, previous)
+
+
 def save_captcha_image(image: bytes, suffix: str) -> Path:
     directory = Path("output/.cache/market-captcha").resolve()
     directory.mkdir(parents=True, exist_ok=True, mode=0o700)
@@ -48,7 +65,7 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--token-only", action="store_true")
     parser.add_argument("--captcha-from-keychain", action="store_true",
-                        help="Use saved account/password with one user-solved official captcha")
+                        help="Use saved account/password with one agent-read official captcha")
     parser.add_argument("--dialog", action="store_true", help="Use local macOS hidden-input dialogs")
     args = parser.parse_args()
     if args.token_only and args.captcha_from_keychain:
@@ -74,15 +91,24 @@ def main() -> int:
                 image, suffix = request_market_captcha(username, session=session)
                 image_path = save_captcha_image(image, suffix)
                 try:
-                    print(json.dumps({"status": "awaiting_user_captcha", "captcha_image_path": str(image_path)},
+                    print(json.dumps({"status": "awaiting_user_captcha" if args.dialog else "awaiting_agent_captcha",
+                                      "captcha_image_path": str(image_path)},
                                      ensure_ascii=False), flush=True)
-                    code = read("请查看 Codex 中的验证码图片，并在此隐藏输入验证码：")
+                    code = (hidden_dialog if args.dialog else agent_captcha_input)(
+                        "请查看验证码图片，并在此隐藏输入验证码："
+                    )
                     configure_credentials(username, password, captcha_code=code, session=session)
                     code = ""
                 finally:
                     image_path.unlink(missing_ok=True)
             username = password = ""
-    except (ApiAuthError, RuntimeError, ValueError) as error:
+    except ApiAuthError as error:
+        print(json.dumps({
+            "status": "blocked", "failure_category": error.failure_category or str(error),
+            "official_login_code": error.official_login_code,
+        }, ensure_ascii=False))
+        return 2
+    except (RuntimeError, ValueError) as error:
         print(f"Market login setup blocked: {error}")
         return 2
     print("Market-data credentials/session saved and securely read back. Run market_data_preflight.py to validate core access.")

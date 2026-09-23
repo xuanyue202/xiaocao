@@ -81,11 +81,11 @@ env -u XIAOCAO_API_TOKEN PYTHONPATH=src .venv/bin/python scripts/market_data_pre
 
 客户端现在遇到 990502 时保留其他进程已轮换的会话复用，但不再自动提交
 缺少验证码的密码请求；它返回 `MARKET_LOGIN_CAPTCHA_REQUIRED`。已保存凭据
-通过下列本地入口获取一张临时验证码图片，由用户本人输入后在同一 HTTP
-会话中提交一次；成功后才更新 Keychain 会话。失败保留旧凭据和会话。
+通过下列本地入口获取一张临时验证码图片，由当次自动化代理读取后在同一
+HTTP 会话中提交一次；成功后才更新 Keychain 会话。失败保留旧凭据和会话。
 
 ```bash
-PYTHONPATH=src .venv/bin/python scripts/configure_market_data_auth.py --captcha-from-keychain --dialog
+PYTHONPATH=src .venv/bin/python scripts/configure_market_data_auth.py --captcha-from-keychain
 ```
 
 验证码图片仅临时写入 `output/.cache/market-captcha/`，入口结束时删除；不在
@@ -93,3 +93,11 @@ PYTHONPATH=src .venv/bin/python scripts/configure_market_data_auth.py --captcha-
 `scripts/market_data_preflight.py --date today --scope authentication` 的
 官方 API 返回为准，官网网页登录本身不替代此验收。2026-09-14 的表格只记
 当时协议的历史验收，不适用于今天的自动密码续登。
+
+同日代理识别验收：第一次验证码字符有 `O/0` 歧义，单次提交被官方拒绝，
+未覆写 Keychain；第二张图片经放大后识别并单次提交，官方登录接受且
+Keychain 回读通过。新进程认证预检 `pool:jieli` 返回 20 行；核心预检的
+行业、分类、三类候选池、股票核心分数及 smallGrass 共 7 项均可达。认证
+与核心数据链已恢复；这不证明全市场来源完整，也不补造当天已失败的
+09:23 推荐冻结。自动化代理需以图像目视复核为准，OCR 猜测只能辅助；
+拒绝后不得循环尝试验证码。

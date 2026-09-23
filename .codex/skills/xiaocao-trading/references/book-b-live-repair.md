@@ -25,9 +25,11 @@ Classify the observed state before changing anything:
 - `reconcile_only`: a durable claim exists or any broker write may have
   happened. Only read the exact plan/order/fill state; never repeat prepare,
   Return, confirmation, submit, cancel, or replacement.
-- `user_action_required`: only authentication, SMS/CAPTCHA, consent, macOS
+- `user_action_required`: only missing credentials, SMS/consent, macOS
   unlock/Accessibility, an unavailable user-only fact, or an external effect
-  that remains uncertain after exact readback.
+  that remains uncertain after exact readback. A market-data image CAPTCHA
+  with saved credentials is agent-recoverable through the bounded local
+  `--captcha-from-keychain` flow; it does not require user intervention.
 
 Exact-once prevents duplicate external effects. It does not permit a task to
 stop after a safely repairable local failure.
