@@ -5,8 +5,8 @@ name = "xiaocao intraday monitor closing discipline"
 prompt = "TIME-CRITICAL 14:41 FOUR-MINUTE PRE-ARM FOR THE 14:45 CLOSE. Use `xiaocao-trading`. After one brief skill-use commentary, the first shell tool call must be `bash scripts/book_b_live_closing_startup.sh`; do not plan, inspect, delegate or wait in the model first. The launcher reads the required memory/skill references, waits in bounded chunks until 14:45 if it starts during 14:41–14:44, and runs `PYTHONPATH=src .venv/bin/python scripts/book_b_live_intraday.py --date today --phase closing --execute-sells` exactly once at the legal gate without a model round-trip. Then run `PYTHONPATH=src .venv/bin/python scripts/live_monitor.py --execute-sells` exactly once. Reconcile live and paper separately. Preserve the 14:45:00-14:56:59 authority, best-bid-aware aggressive SELL limit, account/owned-lot/T+1/liquidity/capital-key/durable-claim/UNKNOWN-no-retry rules, deferred BUY ownership and same-plan repair. Never replay an expired close.\n\nUse only a KOL decision already validated before this closing task through the normal consumers. Do not retrieve KOL context, read KOL report bodies, run `kol_trading_preparation.py status`, dispatch a semantic Agent, refresh sources or publish a KOL decision before or after the close. KOL/source gaps are supporting degradation for the next source/sparse owner and must not extend this task. After both branches terminate, perform bounded receipt/ledger reconciliation. A non-normal live result owns urgent exact repair and narrow durable-state continuation, followed by scoped regression and cause/fix/verification; broker uncertainty remains reconcile-only."
 status = "ACTIVE"
 rrule = "RRULE:FREQ=WEEKLY;BYDAY=MO,TU,WE,TH,FR;BYHOUR=14;BYMINUTE=41"
-model = "gpt-5.6-sol"
-reasoning_effort = "xhigh"
+model = "gpt-6-sol"
+reasoning_effort = "medium"
 execution_environment = "local"
 target = { type = "project", project_id = "c5acdaa7-f8a7-42d4-96fe-bf979a6b7415" }
 cwds = ["/Users/xuanyue202/Documents/project/xiaocao"]
