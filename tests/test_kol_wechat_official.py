@@ -828,6 +828,57 @@ def test_opencli_challenge_is_user_action_and_does_not_create_evidence(tmp_path)
     assert not (tmp_path / "remote" / "evidence").exists()
 
 
+def test_opencli_timeout_recovers_only_exact_browser_article(tmp_path, monkeypatch):
+    capsule = _capture_one(tmp_path)
+    inbox = OfficialAccountInbox(tmp_path / "remote")
+    inbox.import_capsule(capsule)
+    [item] = inbox.pending_items()
+    markdown = (
+        "# 业绩炸裂\n> 公众号: 刘少狙击营\n"
+        "> 发布时间: 2026年08月04日 16:57\n"
+        f"> 原文链接: {item['source_url']}\n\n---\n\n"
+        + _long_body()
+    )
+    saved = tmp_path / "remote" / "opencli" / item["handoff_id"] / "article.md"
+    saved.parent.mkdir(parents=True)
+    saved.write_text(markdown, encoding="utf-8")
+
+    calls = []
+
+    def timeout_runner(_command, **_kwargs):
+        calls.append(_command)
+        raise __import__("subprocess").TimeoutExpired(_command, 120)
+
+    acquirer = OfficialAccountOpenCliAcquirer(
+        tmp_path / "remote" / "opencli", runner=timeout_runner
+    )
+    # A previously materialized exact artifact is accepted without another
+    # browser command. An unrelated article is never accepted.
+    row = acquirer._recover_materialized_article(
+        item=item, source_root=saved.parent.resolve()
+    )
+    assert row is not None and row["recovery"] == "materialized_after_opencli_failure"
+    wrong = dict(item, title="另一篇文章")
+    assert acquirer._recover_materialized_article(
+        item=wrong, source_root=saved.parent.resolve()
+    ) is None
+
+    saved.unlink()
+    def recover(**kwargs):
+        saved.write_text(markdown, encoding="utf-8")
+        return acquirer._recover_materialized_article(
+            item=kwargs["item"], source_root=kwargs["source_root"]
+        )
+    monkeypatch.setattr(
+        acquirer, "_recover_browser_article_after_timeout",
+        recover,
+    )
+    acquired = acquirer(item)
+    assert acquired["opencli_recovery"] == "materialized_after_opencli_failure"
+    assert acquired["raw_markdown_path"] == str(saved.resolve())
+    assert len(calls) == 1
+
+
 def test_image_notes_are_markdown_covered_then_analysis_is_idempotent(tmp_path):
     capsule = _capture_one(tmp_path)
     inbox = OfficialAccountInbox(tmp_path / "remote")

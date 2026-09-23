@@ -866,6 +866,96 @@ class OfficialAccountOpenCliAcquirer:
             }
         return None
 
+    def _recover_browser_article_after_timeout(
+        self, *, item: dict[str, Any], source_root: Path
+    ) -> dict[str, Any] | None:
+        """Finish a timed-out adapter from a freshly bound OpenCLI article page.
+
+        The adapter's page.goto can wait indefinitely after the article is
+        already readable.  Use the same installed OpenCLI browser and its own
+        article converter; the ordinary artifact validator remains the gate.
+        """
+        import shutil
+
+        source_root = source_root.resolve()
+
+        executable = shutil.which(self.opencli_command[0])
+        if not executable:
+            return None
+        converter = Path(executable).resolve().parent / "download" / "article-download.js"
+        if not converter.is_file():
+            return None
+        session = "kol-official-" + str(item["handoff_id"])[:12]
+        url = str(item["source_url"])
+        script = r"""(() => {
+          const content = document.querySelector('#js_content');
+          if (!content) return null;
+          const copy = content.cloneNode(true);
+          copy.querySelectorAll('img').forEach(image => {
+            const source = image.getAttribute('data-src');
+            if (source) image.setAttribute('src', source);
+          });
+          copy.querySelectorAll('script,style,.qr_code_pc,.reward_area')
+            .forEach(element => element.remove());
+          return {
+            url: location.href,
+            title: document.querySelector('#activity-name')?.textContent?.trim(),
+            author: document.querySelector('#js_name')?.textContent?.trim(),
+            publishTime: document.querySelector('#publish_time')?.textContent?.trim(),
+            contentHtml: copy.innerHTML,
+            imageUrls: [...new Set([...copy.querySelectorAll('img[src]')]
+              .map(image => image.getAttribute('src')))]
+          };
+        })()"""
+        try:
+            self._run_opencli(self._command(
+                "browser", session, "open", url, "--window", "foreground"
+            ))
+            result = self._run_opencli(self._command(
+                "browser", session, "eval", script, "--window", "foreground"
+            ))
+            page = json.loads(result.stdout)
+            if (
+                not isinstance(page, dict)
+                or _article_url(page.get("url")) != url
+                or _normalized_text(page.get("title")) != _normalized_text(item["title"])
+                or _normalized_text(page.get("author")) != _normalized_text(item["publisher"])
+                or not isinstance(page.get("contentHtml"), str)
+                or not isinstance(page.get("imageUrls"), list)
+                or _looks_like_challenge(page["contentHtml"])
+            ):
+                return None
+            page["sourceUrl"] = url
+            node_script = r"""
+import fs from 'node:fs';
+import {pathToFileURL} from 'node:url';
+const {downloadArticle} = await import(pathToFileURL(process.argv[1]).href);
+const data = JSON.parse(fs.readFileSync(0, 'utf8'));
+const rows = await downloadArticle(data, {
+  output: process.argv[2], downloadImages: true,
+  imageHeaders: {Referer: 'https://mp.weixin.qq.com/'},
+  frontmatterLabels: {author: '公众号'},
+  detectImageExt: url => {
+    const match = url.match(/wx_fmt=(\w+)/) || url.match(/\.(\w{3,4})(?:\?|$)/);
+    return match ? match[1] : 'png';
+  }
+});
+process.stdout.write(JSON.stringify(rows));
+"""
+            converted = subprocess.run(
+                ("node", "--input-type=module", "-e", node_script,
+                 str(converter), str(source_root)),
+                input=json.dumps(page, ensure_ascii=False),
+                capture_output=True, text=True, check=False, timeout=self.timeout,
+            )
+            if converted.returncode != 0:
+                return None
+            return self._recover_materialized_article(
+                item=item, source_root=source_root
+            )
+        except (OSError, ValueError, subprocess.TimeoutExpired, EnrichmentError):
+            return None
+
     def _images(self, markdown_path: Path, source_root: Path) -> list[dict[str, Any]]:
         markdown = markdown_path.read_text(encoding="utf-8")
         refs = [left or right for left, right in _IMAGE_LINK.findall(markdown)]
@@ -947,6 +1037,10 @@ class OfficialAccountOpenCliAcquirer:
                     item=item,
                     source_root=source_root,
                 )
+                if row is None and exc.diagnostic_code == "wechat_official_opencli_timeout":
+                    row = self._recover_browser_article_after_timeout(
+                        item=item, source_root=source_root
+                    )
                 if row is None:
                     raise
             else:
