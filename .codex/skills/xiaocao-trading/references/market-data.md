@@ -30,6 +30,13 @@ Read this file only for quotes, market state, pools, sectors, indices, indicator
   authentication blocker, never an empty opportunity. No refresh-token API is
   assumed. After provisioning/recovery, validate with a fresh-process preflight.
   Successful web login/disabled buttons are not API authorization proof.
+  A failed preflight reports only the sanitized login failure category and
+  numeric official login code when available; it never prints server text or
+  credentials. `MARKET_LOGIN_REQUIRES_USER` means the saved credentials were
+  submitted and the login service did not accept them. The numeric code alone
+  does not identify a wrong password versus a challenge or account policy.
+  Raise this blocker immediately at the 09:00 preflight; do not repeat the
+  password attempt while waiting for the 09:23 recommendation producer.
 
 - Cache first (`output/.cache/xiaocao.db`). For more than a few symbols/dates, batch small, space requests roughly 0.5–1 second and keep concurrency at or below about 8. Empty/null responses after bursts can be silent throttling.
 - Always use exchange suffixes: `.XSHG`, `.XSHE` or `.BJSE`.

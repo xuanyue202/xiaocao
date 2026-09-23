@@ -162,7 +162,11 @@ class XiaocaoClient:
                         try:
                             renew_market_token(headers.get("token", ""))
                         except ApiAuthError as error:
-                            raise ApiAuthError(f"API returned code=990502 for {path}: {error}") from None
+                            raise ApiAuthError(
+                                f"API returned code=990502 for {path}: {error}",
+                                failure_category=error.failure_category,
+                                official_login_code=error.official_login_code,
+                            ) from None
                         return self._do_post(path, payload, _auth_replayed=True)
                     raise ApiAuthError(
                         f"API returned code=990502 for {path}: 登录已失效，请重新登录"

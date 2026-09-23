@@ -58,3 +58,17 @@ def test_early_auth_probe_preserves_auth_and_transport_failures():
         result = authentication_preflight(c, "2026-09-15")
         assert result["status"] == "blocked" and result["reason"] == reason
         assert len(c.method_calls) == 1
+
+
+def test_early_auth_probe_reports_sanitized_login_failure():
+    from xiaocao.api.preflight import authentication_preflight
+    c = client_fixture()
+    c.get_code_list_v2.side_effect = ApiAuthError(
+        "MARKET_LOGIN_REQUIRES_USER",
+        failure_category="MARKET_LOGIN_REQUIRES_USER",
+        official_login_code=9001,
+    )
+    result = authentication_preflight(c, "2026-09-23")
+    assert result["reason"] == "MARKET_DATA_AUTH_REQUIRED"
+    assert result["checks"][0]["auth_failure_category"] == "MARKET_LOGIN_REQUIRES_USER"
+    assert result["checks"][0]["official_login_code"] == 9001

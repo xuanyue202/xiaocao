@@ -17,9 +17,13 @@ def authentication_preflight(client: Any, date: str) -> dict:
         if not isinstance(rows, list):
             raise ValueError("invalid_rows")
         check["row_count"] = len(rows)
-    except ApiAuthError:
+    except ApiAuthError as error:
         reason = "MARKET_DATA_AUTH_REQUIRED"
         check["api_code"] = 990502
+        if error.failure_category:
+            check["auth_failure_category"] = error.failure_category
+        if error.official_login_code is not None:
+            check["official_login_code"] = error.official_login_code
     except (ApiError, ValueError, TypeError, KeyError):
         reason = "MARKET_DATA_UNAVAILABLE_OR_INVALID"
     if reason:
@@ -59,8 +63,13 @@ def core_preflight(client: Any, date: str, block_model: int = 1, *, pause=time.s
                            for k in ("ema", "aaaLine", "bbbLine")):
                     raise ValueError("technical_values_missing")
             checks.append({"source": name, "status": "reachable", "row_count": len(rows)})
-        except ApiAuthError:
-            checks.append({"source": name, "status": "blocked", "reason": "MARKET_DATA_AUTH_REQUIRED", "api_code": 990502})
+        except ApiAuthError as error:
+            check = {"source": name, "status": "blocked", "reason": "MARKET_DATA_AUTH_REQUIRED", "api_code": 990502}
+            if error.failure_category:
+                check["auth_failure_category"] = error.failure_category
+            if error.official_login_code is not None:
+                check["official_login_code"] = error.official_login_code
+            checks.append(check)
             break
         except (ApiError, ValueError, TypeError, KeyError):
             checks.append({"source": name, "status": "blocked", "reason": "MARKET_DATA_UNAVAILABLE_OR_INVALID"})

@@ -36,6 +36,8 @@ def test_challenge_does_not_return_token_or_expose_server_text(monkeypatch):
         auth.login_with_credentials("13800000000", "fixture-password")
     assert "fixture-password" not in str(error.value)
     assert "MARKET_LOGIN_REQUIRES_USER" in str(error.value)
+    assert error.value.failure_category == "MARKET_LOGIN_REQUIRES_USER"
+    assert error.value.official_login_code == 9001
 
 
 def test_renewal_reuses_other_process_rotation(monkeypatch, tmp_path):
@@ -82,6 +84,31 @@ def test_client_replays_read_only_once_after_login(monkeypatch):
         client.get_industry_block_rank("2026-09-14", 0)
     assert post.call_count == 2
     renew.assert_called_once_with("old")
+
+
+def test_client_preserves_sanitized_login_rejection(monkeypatch):
+    from xiaocao.api.client import XiaocaoClient
+    monkeypatch.setattr(auth, "load_market_token", lambda: "expired")
+    monkeypatch.setattr(
+        auth,
+        "renew_market_token",
+        Mock(side_effect=ApiAuthError(
+            "MARKET_LOGIN_REQUIRES_USER",
+            failure_category="MARKET_LOGIN_REQUIRES_USER",
+            official_login_code=9001,
+        )),
+    )
+    response = Mock()
+    response.status_code = 200
+    response.json.return_value = {"code": 990502}
+    response.__enter__ = Mock(return_value=response)
+    response.__exit__ = Mock(return_value=False)
+    client = XiaocaoClient(retries=0)
+    monkeypatch.setattr(client._session, "post", Mock(return_value=response))
+    with pytest.raises(ApiAuthError) as error:
+        client.get_industry_block_rank("2026-09-23", 0)
+    assert error.value.failure_category == "MARKET_LOGIN_REQUIRES_USER"
+    assert error.value.official_login_code == 9001
 
 
 def test_provisioning_does_not_save_bad_credentials(monkeypatch, tmp_path):

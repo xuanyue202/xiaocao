@@ -11,7 +11,16 @@ class ApiNotFoundError(ApiError):
 
 
 class ApiAuthError(ApiError):
-    pass
+    def __init__(
+        self,
+        message: str,
+        *,
+        failure_category: str | None = None,
+        official_login_code: int | None = None,
+    ) -> None:
+        super().__init__(message)
+        self.failure_category = failure_category
+        self.official_login_code = official_login_code
 
 
 class ApiRateLimitError(ApiError):

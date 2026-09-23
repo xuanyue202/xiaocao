@@ -161,7 +161,13 @@ def login_with_credentials(username: str, password: str) -> str:
         raise ApiAuthError("MARKET_LOGIN_TRANSPORT_FAILED") from None
     if not isinstance(body, dict) or body.get("code") != 8200:
         # Do not repeat password failures or try to bypass captcha/SMS/consent.
-        raise ApiAuthError("MARKET_LOGIN_REQUIRES_USER")
+        code = body.get("code") if isinstance(body, dict) else None
+        safe_code = code if type(code) is int and 0 <= code <= 999999 else None
+        raise ApiAuthError(
+            "MARKET_LOGIN_REQUIRES_USER",
+            failure_category="MARKET_LOGIN_REQUIRES_USER",
+            official_login_code=safe_code,
+        )
     result = body.get("result")
     token = result.get("token") if isinstance(result, dict) else None
     if not isinstance(token, str) or not token.strip() or token == "guest":
