@@ -264,9 +264,11 @@ the 09:24 recovery boundary. While it waits, build the 11:30-horizon capsule:
 The single authentication-only market probe runs at this preparation boundary.
 If it reports `MARKET_LOGIN_REQUIRES_USER` or another authentication block,
 report the user-action requirement immediately and preserve the original
-runner's wait. Saved Keychain credentials have already been tried by the
-client; do not silently wait for the producer or repeat the password login.
-After the user restores authentication through the hidden-input flow, verify
+runner's wait. For `MARKET_LOGIN_CAPTCHA_REQUIRED`, the current client has
+not submitted the saved password; use the local `--captcha-from-keychain
+--dialog` recovery to let the user answer one official captcha, then submit
+the login once. Do not silently wait for the producer or repeat a rejected
+password/captcha login. After the user restores authentication, verify
 with one fresh-process probe and consume only a valid immutable producer freeze.
 
 ```bash

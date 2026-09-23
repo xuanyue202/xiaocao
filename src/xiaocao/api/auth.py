@@ -3,6 +3,8 @@ from __future__ import annotations
 
 import os
 import json
+import base64
+import binascii
 from contextlib import contextmanager
 from pathlib import Path
 import subprocess
@@ -143,11 +145,66 @@ def encode_login_field(value: str) -> str:
     return result.stdout.decode("ascii")
 
 
-def login_with_credentials(username: str, password: str) -> str:
+def request_market_captcha(
+    username: str, *, session: requests.Session | None = None,
+) -> tuple[bytes, str]:
+    """Fetch one official challenge image without logging account or image data."""
+    poster = session.post if session is not None else requests.post
+    try:
+        response = poster(
+            "https://p-xcapi.topxlc.com/user/getCaptcha",
+            json={"params": {"loginId": encode_login_field(username)}},
+            headers={"Origin": "https://www.topxlc.com", "Referer": "https://www.topxlc.com/ddcj-yqs-xc/web/"},
+            timeout=8, allow_redirects=False,
+        )
+        try:
+            response.raise_for_status()
+            body = response.json()
+        finally:
+            response.close()
+    except (requests.RequestException, ValueError):
+        raise ApiAuthError("MARKET_CAPTCHA_FETCH_FAILED") from None
+    result = body.get("result") if isinstance(body, dict) and body.get("code") == 8200 else None
+    if not isinstance(result, str):
+        raise ApiAuthError("MARKET_CAPTCHA_FETCH_FAILED")
+    prefix, separator, encoded = result.partition(",")
+    suffix = {
+        "data:image/png;base64": "png",
+        "data:image/jpeg;base64": "jpg",
+        "data:image/gif;base64": "gif",
+    }.get(prefix.lower())
+    if not separator or suffix is None or len(encoded) > 300_000:
+        raise ApiAuthError("MARKET_CAPTCHA_IMAGE_INVALID")
+    try:
+        image = base64.b64decode(encoded, validate=True)
+    except binascii.Error:
+        raise ApiAuthError("MARKET_CAPTCHA_IMAGE_INVALID") from None
+    magic_ok = (
+        (suffix == "png" and image.startswith(b"\x89PNG\r\n\x1a\n"))
+        or (suffix == "jpg" and image.startswith(b"\xff\xd8\xff"))
+        or (suffix == "gif" and image.startswith((b"GIF87a", b"GIF89a")))
+    )
+    if not magic_ok or len(image) > 200_000:
+        raise ApiAuthError("MARKET_CAPTCHA_IMAGE_INVALID")
+    return image, suffix
+
+
+def login_with_credentials(
+    username: str,
+    password: str,
+    *,
+    captcha_code: str,
+    session: requests.Session | None = None,
+) -> str:
     payload = {"params": {"type": 0, "loginId": encode_login_field(username),
                           "passwd": encode_login_field(password)}}
+    code = captcha_code.strip()
+    if not code or len(code) > 16 or any(ord(char) < 32 or ord(char) == 127 for char in code):
+        raise ApiAuthError("MARKET_CAPTCHA_CODE_INVALID")
+    payload["params"].update(environment="{}", code=code)
+    poster = session.post if session is not None else requests.post
     try:
-        response = requests.post(
+        response = poster(
             "https://p-xcapi.topxlc.com/user/v2/login", json=payload,
             headers={"Origin": "https://www.topxlc.com", "Referer": "https://www.topxlc.com/ddcj-yqs-xc/web/"},
             timeout=8, allow_redirects=False,
@@ -162,7 +219,11 @@ def login_with_credentials(username: str, password: str) -> str:
     if not isinstance(body, dict) or body.get("code") != 8200:
         # Do not repeat password failures or try to bypass captcha/SMS/consent.
         code = body.get("code") if isinstance(body, dict) else None
-        safe_code = code if type(code) is int and 0 <= code <= 999999 else None
+        safe_code = (
+            code if type(code) is int and 0 <= code <= 999999
+            else int(code) if isinstance(code, str) and code.isascii() and code.isdigit() and len(code) <= 6
+            else None
+        )
         raise ApiAuthError(
             "MARKET_LOGIN_REQUIRES_USER",
             failure_category="MARKET_LOGIN_REQUIRES_USER",
@@ -205,7 +266,7 @@ def renew_market_token(rejected_token: str) -> str:
         raise ApiAuthError("MARKET_EXPLICIT_TOKEN_REJECTED")
     if sys.platform != "darwin":
         raise ApiAuthError("MARKET_AUTOMATIC_LOGIN_REQUIRES_MACOS")
-    with _login_lock() as directory:
+    with _login_lock():
         current = read_keychain_token()
         if current and current != rejected_token:
             invalidate_token_cache()
@@ -213,31 +274,29 @@ def renew_market_token(rejected_token: str) -> str:
         credentials = read_credentials()
         if credentials is None:
             raise ApiAuthError("MARKET_CREDENTIALS_REQUIRED")
-        attempt_path = directory / "last-attempt.json"
-        try:
-            previous = json.loads(attempt_path.read_text())
-        except FileNotFoundError:
-            previous = {}
-        except (ValueError, OSError):
-            raise ApiAuthError("MARKET_LOGIN_STATE_UNREADABLE") from None
-        try:
-            last_attempt = float(previous.get("attempted_at", 0))
-        except (ValueError, TypeError, AttributeError):
-            raise ApiAuthError("MARKET_LOGIN_STATE_UNREADABLE") from None
-        if time.time() - last_attempt < 120:
-            raise ApiAuthError("MARKET_LOGIN_COOLDOWN")
-        # Record before sending; crashes/timeouts must not cause a login storm.
-        attempt_path.write_text(json.dumps({"attempted_at": time.time()}))
-        token = login_with_credentials(*credentials)
-        store_market_token(token)
-        return token
+        # The current official login form requires a human-solved captcha.
+        # Never submit the stored password without its challenge response.
+        raise ApiAuthError(
+            "MARKET_LOGIN_CAPTCHA_REQUIRED",
+            failure_category="MARKET_LOGIN_CAPTCHA_REQUIRED",
+        )
 
 
-def configure_credentials(username: str, password: str) -> None:
+def configure_credentials(
+    username: str,
+    password: str,
+    *,
+    captcha_code: str | None = None,
+    session: requests.Session | None = None,
+) -> None:
     if not username.strip() or not password:
         raise ValueError("market_credentials_empty")
     with _login_lock() as directory:
-        token = login_with_credentials(username.strip(), password)
+        if captcha_code is None:
+            raise ApiAuthError("MARKET_LOGIN_CAPTCHA_REQUIRED")
+        token = login_with_credentials(
+            username.strip(), password, captcha_code=captcha_code, session=session,
+        )
         _store_keychain_secret(CREDENTIALS_SERVICE, json.dumps(
             {"username": username.strip(), "password": password}, ensure_ascii=False))
         store_market_token(token)

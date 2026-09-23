@@ -18,23 +18,31 @@ Read this file only for quotes, market state, pools, sectors, indices, indicator
   Reachable is not proof of full source coverage or an executable candidate.
 - Provision username/password using the hidden-input local command
   `PYTHONPATH=src .venv/bin/python scripts/configure_market_data_auth.py --dialog`.
-  It verifies official `/user/v2/login` before storing credentials in the
+  It fetches the official captcha, displays its temporary local image for a
+  human response, and verifies `/user/v2/login` in the same HTTP session
+  before storing credentials in the
   dedicated Keychain item `xiaocao.market-data.credentials` / account `runtime`.
   The session is cached separately; ordinary requests reuse it without logging
-  in each time. `--token-only` is available for manual session replacement.
-- On 990502, official `/stock/` reads invalidate the memory cache, serialize
-  password login across local processes and retry the original read once.
-  Another process's rotated token is reused; login attempts have a 120-second
-  cooldown. Explicit environment overrides disable automatic login. Repeated
-  rejection, missing credentials, captcha/SMS or login failure remains an
-  authentication blocker, never an empty opportunity. No refresh-token API is
-  assumed. After provisioning/recovery, validate with a fresh-process preflight.
+  in each time. If credentials are already saved, use
+  `PYTHONPATH=src .venv/bin/python scripts/configure_market_data_auth.py --captcha-from-keychain --dialog`
+  to request only a new captcha response. `--token-only` is available for
+  manual session replacement. Delete temporary captcha images after the one
+  login submission.
+- On 990502, official `/stock/` reads may reuse another process's rotated
+  token. Otherwise they fail with `MARKET_LOGIN_CAPTCHA_REQUIRED` without
+  submitting the saved password, because the current official frontend
+  requires a human-solved captcha for `/user/v2/login`. Explicit environment
+  overrides disable renewal. Missing credentials or rejected captcha/login
+  remains an authentication blocker, never an empty opportunity. No
+  refresh-token API is assumed. After user-assisted recovery, validate with
+  a fresh-process preflight.
   Successful web login/disabled buttons are not API authorization proof.
   A failed preflight reports only the sanitized login failure category and
   numeric official login code when available; it never prints server text or
-  credentials. `MARKET_LOGIN_REQUIRES_USER` means the saved credentials were
-  submitted and the login service did not accept them. The numeric code alone
-  does not identify a wrong password versus a challenge or account policy.
+  credentials. `MARKET_LOGIN_REQUIRES_USER` means a credential/captcha login
+  was submitted once and the login service did not accept it. The numeric code
+  alone does not identify a wrong password versus a challenge or account
+  policy. `MARKET_LOGIN_CAPTCHA_REQUIRED` means no password was submitted.
   Raise this blocker immediately at the 09:00 preflight; do not repeat the
   password attempt while waiting for the 09:23 recommendation producer.
 

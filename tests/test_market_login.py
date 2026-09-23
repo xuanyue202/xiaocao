@@ -20,11 +20,43 @@ def test_login_uses_official_host_and_encrypted_body(monkeypatch):
     response.json.return_value = {"code": 8200, "result": {"token": "new-session"}}
     post = Mock(return_value=response)
     monkeypatch.setattr(auth.requests, "post", post)
-    assert auth.login_with_credentials("13800000000", "fixture-password") == "new-session"
+    assert auth.login_with_credentials(
+        "13800000000", "fixture-password", captcha_code="AB12",
+    ) == "new-session"
     args, kwargs = post.call_args
     assert args[0] == "https://p-xcapi.topxlc.com/user/v2/login"
     assert kwargs["allow_redirects"] is False
     assert kwargs["json"]["params"]["passwd"] != "fixture-password"
+    assert kwargs["json"]["params"]["loginId"] != "13800000000"
+
+
+def test_captcha_login_uses_same_session_and_frontend_fields(monkeypatch):
+    response = Mock()
+    response.json.return_value = {"code": 8200, "result": {"token": "new-session"}}
+    session = Mock()
+    session.post.return_value = response
+    assert auth.login_with_credentials(
+        "13800000000", "fixture-password", captcha_code="AB12", session=session,
+    ) == "new-session"
+    args, kwargs = session.post.call_args
+    assert args[0] == "https://p-xcapi.topxlc.com/user/v2/login"
+    assert kwargs["json"]["params"]["code"] == "AB12"
+    assert kwargs["json"]["params"]["environment"] == "{}"
+
+
+def test_captcha_image_is_validated_without_exposing_server_text():
+    response = Mock()
+    response.json.return_value = {
+        "code": 8200,
+        "result": "data:image/png;base64,iVBORw0KGgo=",
+        "msg": "private-message",
+    }
+    session = Mock()
+    session.post.return_value = response
+    image, suffix = auth.request_market_captcha("13800000000", session=session)
+    assert image == b"\x89PNG\r\n\x1a\n" and suffix == "png"
+    args, kwargs = session.post.call_args
+    assert args[0] == "https://p-xcapi.topxlc.com/user/getCaptcha"
     assert kwargs["json"]["params"]["loginId"] != "13800000000"
 
 
@@ -33,7 +65,7 @@ def test_challenge_does_not_return_token_or_expose_server_text(monkeypatch):
     response.json.return_value = {"code": 9001, "msg": "fixture-password", "result": None}
     monkeypatch.setattr(auth.requests, "post", Mock(return_value=response))
     with pytest.raises(ApiAuthError) as error:
-        auth.login_with_credentials("13800000000", "fixture-password")
+        auth.login_with_credentials("13800000000", "fixture-password", captcha_code="AB12")
     assert "fixture-password" not in str(error.value)
     assert "MARKET_LOGIN_REQUIRES_USER" in str(error.value)
     assert error.value.failure_category == "MARKET_LOGIN_REQUIRES_USER"
@@ -50,7 +82,7 @@ def test_renewal_reuses_other_process_rotation(monkeypatch, tmp_path):
     login.assert_not_called()
 
 
-def test_failed_login_is_cooled_down_without_overwriting_session(monkeypatch, tmp_path):
+def test_automatic_renewal_requires_user_captcha_without_password_attempt(monkeypatch, tmp_path):
     monkeypatch.delenv(auth.TOKEN_ENV, raising=False)
     monkeypatch.setattr(auth, "_login_state_directory", lambda: tmp_path)
     monkeypatch.setattr(auth, "read_keychain_token", lambda: "expired")
@@ -59,10 +91,10 @@ def test_failed_login_is_cooled_down_without_overwriting_session(monkeypatch, tm
     store = Mock()
     monkeypatch.setattr(auth, "login_with_credentials", login)
     monkeypatch.setattr(auth, "store_market_token", store)
-    for _ in range(2):
-        with pytest.raises(ApiAuthError):
-            auth.renew_market_token("expired")
-    assert login.call_count == 1
+    with pytest.raises(ApiAuthError) as error:
+        auth.renew_market_token("expired")
+    assert error.value.failure_category == "MARKET_LOGIN_CAPTCHA_REQUIRED"
+    login.assert_not_called()
     store.assert_not_called()
 
 
@@ -117,11 +149,11 @@ def test_provisioning_does_not_save_bad_credentials(monkeypatch, tmp_path):
     store = Mock()
     monkeypatch.setattr(auth, "_store_keychain_secret", store)
     with pytest.raises(ApiAuthError):
-        auth.configure_credentials("13800000000", "fixture-password")
+        auth.configure_credentials("13800000000", "fixture-password", captcha_code="AB12")
     store.assert_not_called()
 
 
-def test_concurrent_processes_login_once_and_share_new_session(monkeypatch, tmp_path):
+def test_concurrent_processes_do_not_repeat_password_without_captcha(monkeypatch, tmp_path):
     import multiprocessing
     import time
 
@@ -147,18 +179,23 @@ def test_concurrent_processes_login_once_and_share_new_session(monkeypatch, tmp_
 
     def worker():
         start.wait(3)
-        results.put(auth.renew_market_token("expired"))
+        try:
+            results.put(auth.renew_market_token("expired"))
+        except ApiAuthError as error:
+            results.put(error.failure_category)
 
     workers = [context.Process(target=worker) for _ in range(2)]
     try:
         for process in workers:
             process.start()
         start.set()
-        assert [results.get(timeout=5) for _ in workers] == ["rotated", "rotated"]
+        assert [results.get(timeout=5) for _ in workers] == [
+            "MARKET_LOGIN_CAPTCHA_REQUIRED", "MARKET_LOGIN_CAPTCHA_REQUIRED",
+        ]
         for process in workers:
             process.join(5)
             assert process.exitcode == 0
-        assert calls.read_text().splitlines() == ["login"]
+        assert not calls.exists()
     finally:
         for process in workers:
             if process.is_alive():

@@ -70,3 +70,26 @@ env -u XIAOCAO_API_TOKEN PYTHONPATH=src .venv/bin/python scripts/market_data_pre
 本机原始验收材料保留在 `output/research/api-auth-20260914/recommend-e2e/`，
 不提交账号、行情缓存、模型或运行账本。临时 checkout 清理后，产物保存在
 该目录的 `artifacts/`；原始 manifest 中的绝对路径保留为历史来源，不改写其内容。
+
+## 2026-09-23 验证码协议变更
+
+当天失效会话的认证预检返回 990502。用户在官网网页完成了带验证码的登录；
+当前官网前端脚本明确先请求 `/user/getCaptcha`，再向 `/user/v2/login`
+提交加密 `loginId`、`passwd` 以及 `environment`、`code`。旧客户端仅提交
+账号密码，所以原先的非 8200 拒绝不能归咎于密码错误。一次只读验证码请求
+返回了有效图片；这不等于 API 会话已恢复。
+
+客户端现在遇到 990502 时保留其他进程已轮换的会话复用，但不再自动提交
+缺少验证码的密码请求；它返回 `MARKET_LOGIN_CAPTCHA_REQUIRED`。已保存凭据
+通过下列本地入口获取一张临时验证码图片，由用户本人输入后在同一 HTTP
+会话中提交一次；成功后才更新 Keychain 会话。失败保留旧凭据和会话。
+
+```bash
+PYTHONPATH=src .venv/bin/python scripts/configure_market_data_auth.py --captcha-from-keychain --dialog
+```
+
+验证码图片仅临时写入 `output/.cache/market-captcha/`，入口结束时删除；不在
+日志或命令参数中输出手机号、密码、验证码或 token。是否恢复以新进程
+`scripts/market_data_preflight.py --date today --scope authentication` 的
+官方 API 返回为准，官网网页登录本身不替代此验收。2026-09-14 的表格只记
+当时协议的历史验收，不适用于今天的自动密码续登。
