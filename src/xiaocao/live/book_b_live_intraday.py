@@ -566,6 +566,7 @@ def _run_book_b_live_intraday_locked(
     ledger = BookBLiveDecisionLedger(state_root / "book_b_live_decisions.jsonl")
     decisions: list[dict[str, Any]] = []
     receipts: list[dict[str, Any]] = []
+    broker_handoff_blocked = False
     for lot in account.lots:
         decision_now = now()
         if decision_now.tzinfo is None:
@@ -600,6 +601,7 @@ def _run_book_b_live_intraday_locked(
                 or reason in _INTRADAY_IMMEDIATE_REASONS
             )
         )
+        handoff_block_reason = "PRIOR_NONTERMINAL_SELL_HANDOFF" if broker_handoff_blocked and authorized_now else None
         decision_id = _sha256(
             {
                 "trade_date": trade_date,
@@ -613,6 +615,7 @@ def _run_book_b_live_intraday_locked(
                 "kol_decision_sha256": kol_decision.get("decision_sha256"),
                 "kol_policy_status": kol_decision.get("status"),
                 "sell_authorized": authorized_now,
+                "handoff_block_reason": handoff_block_reason,
                 "best_bid_price": status.get("best_bid_price"),
                 "best_bid_volume": status.get("best_bid_volume"),
             }
@@ -633,6 +636,7 @@ def _run_book_b_live_intraday_locked(
             "broker_snapshot_sha256": account.broker_snapshot_sha256,
             "triggered": triggered,
             "sell_authorized": authorized_now,
+            "handoff_block_reason": handoff_block_reason,
             "sell_reason": reason,
             "decision_phase": status.get("decision_phase"),
             "latest_price": status.get("latest_price"),
@@ -656,7 +660,7 @@ def _run_book_b_live_intraday_locked(
             "kol_exit_currently_valid": kol_exit["triggered"],
         }
         decisions.append(ledger.append(decision))
-        if not authorized_now or not execute_sells:
+        if not authorized_now or not execute_sells or broker_handoff_blocked:
             continue
         if not _continuous_auction(decision_now, trade_date):
             continue
@@ -701,7 +705,9 @@ def _run_book_b_live_intraday_locked(
         receipt = execute(plan)
         receipts.append(receipt.as_dict())
         if receipt.state not in TERMINAL_STATES:
-            break
+            # Keep assessing other owned lots for the audit, but never add a
+            # second broker write while this plan has a nonterminal effect.
+            broker_handoff_blocked = True
     status_name = "executed" if receipts else "observed"
     reason_name = "SELL_INTENTS_HANDED_OFF" if receipts else "NO_NEW_LIVE_SELL_HANDOFF"
     risk_receipt = record_risk(refresh=any(item.get("filled_shares", 0) > 0 for item in receipts))

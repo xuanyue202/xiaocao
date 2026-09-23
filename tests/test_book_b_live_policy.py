@@ -11,7 +11,11 @@ import pytest
 
 from xiaocao.live.account_risk import NAV_BASIS, NavObservation, evaluate_account_risk
 from xiaocao.live.book_b_live_intraday import run_book_b_live_intraday
-from xiaocao.live.book_b_live_lifecycle import project_book_b_live_account, write_book_b_live_settlement
+from xiaocao.live.book_b_live_lifecycle import (
+    BookBLiveAccountState, BookBLiveOwnedLot, project_book_b_live_account,
+    write_book_b_live_settlement,
+)
+import xiaocao.live.book_b_live_intraday as intraday
 from xiaocao.live.book_b_live_morning import BookBLiveMorningConfig, run_book_b_live_morning
 from xiaocao.live.kol_policy import decision_sha256, publish_decision
 from xiaocao.live.live_decision_support import (
@@ -394,6 +398,46 @@ def _exit_run(tmp_path, *, policy_kind="valid", reason="KOL_DISCRETIONARY_EXIT",
         status_provider=lambda _: [status], execute=_execute_capture(seen), policy_root=root,
         trading_dates_provider=lambda _: ["2026-08-31", "2026-09-01"])
     return receipt, seen
+
+
+@pytest.mark.app_simulation
+def test_nonterminal_sell_keeps_other_lot_audit_without_second_broker_write(tmp_path, monkeypatch):
+    current = datetime(2026, 9, 1, 6, 46, tzinfo=timezone.utc)
+    first = BookBLiveOwnedLot("buy-1", "000001.XSHE", "甲", "2026-08-31", 10.0,
+        100, 100, 9.2, 920.0, 919.9, 0.0001, 0.0001, "freeze#1",
+        {"profile": "v6", "mode": "接力"})
+    second = replace(first, owned_lot_id="buy-2", code="000002.XSHE", name="乙")
+    account = BookBLiveAccountState("2026-09-01", "primary", 28000.0, 1840.0,
+        1839.8, 29839.8, 0.0, "b" * 64, "a" * 64, current.isoformat(),
+        (first, second))
+    monkeypatch.setattr(intraday, "reconcile_open_book_b_plans", lambda *a, **k: ())
+    monkeypatch.setattr(intraday, "check_monitor_pending_plans", lambda *a, **k: ())
+    monkeypatch.setattr(intraday, "project_book_b_live_account", lambda *a, **k: account)
+    monkeypatch.setattr(intraday, "load_monitor_contexts", lambda *a, **k: {})
+    monkeypatch.setattr(intraday, "bind_durable_live_plan_intents", lambda root, plans: plans)
+    calls = []
+
+    def execute(plan):
+        calls.append(plan)
+        return ExecutionReceipt(plan.plan_id, plan.plan_hash, ExecutionState.UNKNOWN,
+            reason="BROKER_ORDER_STILL_OPEN", remaining_shares=plan.shares)
+
+    def statuses(lots):
+        return [{"owned_lot_id": lot.owned_lot_id, "triggered": True,
+                 "sell_reason": "HARD_STOP", "decision_phase": "risk_floor",
+                 "latest_price": 9.2, "market_guard_status": "ok",
+                 "market_guard_observed_at": current, "market_guard_down_price": 9.0}
+                for lot in lots]
+
+    receipt = run_book_b_live_intraday(state_dir=tmp_path, freeze_dir=tmp_path,
+        trade_date="2026-09-01", phase="closing", now=lambda: current,
+        account_snapshot_provider=lambda: {}, status_provider=statuses,
+        execute=execute)
+
+    assert len(calls) == len(receipt.execution_receipts) == 1
+    assert len(receipt.decisions) == 2
+    assert receipt.decisions[1]["sell_authorized"] is True
+    assert receipt.decisions[1]["handoff_block_reason"] == "PRIOR_NONTERMINAL_SELL_HANDOFF"
 
 
 def test_kol_exit_has_exact_decision_hash_and_owned_lot_audit_despite_missing_risk_history(tmp_path):

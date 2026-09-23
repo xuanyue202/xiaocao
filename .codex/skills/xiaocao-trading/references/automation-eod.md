@@ -131,6 +131,9 @@ changed in the account, which code guard made the next decision, and what
 counterfactual observation would falsify the suspected cause. Carry the exact
 fingerprint forward until code repair, tests and the next natural production
 readback are separately evidenced.
+A later-lot decision marked `PRIOR_NONTERMINAL_SELL_HANDOFF` proves it was
+assessed but deliberately had no second broker write; a missing decision row
+is incomplete coverage, not a no-sell judgment.
 
 1. Compare the active Automation schedule and actual task/process timestamps
    against dated receipts for morning analysis, candidate freeze, buy execution,

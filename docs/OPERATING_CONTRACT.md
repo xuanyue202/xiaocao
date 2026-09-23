@@ -333,6 +333,7 @@ KOL 断言、候选假设或报告升级为策略真值，也不替代永久参�
   都禁止新 handoff。handoff 后所有 broker 写动作仍只由 `TradingExecution` 和
   native adapter 完成，继续受双钥匙、durable claim、UNKNOWN no-retry 约束。
   任一既有 live plan 在一次只读 reconcile 后仍非终态时，默认禁止读取新退出授权或物化其他 SELL intent。唯一缩小范围的例外是前日及更早的 Book-B 自有 SELL，且当日精确历史委托/成交与持仓回读证明零成交、原 lot 全量仍在；此单继续未决对账并禁止同 lot 重复 SELL，其他 lot 的保护与新 BUY 可继续。新 BUY 仍以当前可用资金、已验证 owned lot、保守 NAV/敞口和风险限额独立约束。
+  若本次 checkpoint 的第一笔 SELL 刚进入未终态，则可用已取得的持仓与行情继续**只读记录**其余 lot 的退出判断及被阻止原因，但不得再物化或交接第二笔 SELL，直到原单按精确回执对账；不能把未记录的 lot 说成已评估无动作。
   每个 live checkpoint 还必须持有独立的非阻塞 lifecycle writer lock；重叠实例直接
   `LIVE_BOOK_B_CHECKPOINT_ALREADY_RUNNING` 结束，禁止并发切换 native 查询页。
   每次运行写独立 archive receipt；`<date>-<phase>.json` 仅为 latest 指针，碰锁实例
