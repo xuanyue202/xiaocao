@@ -5,7 +5,9 @@ Missing inception evidence blocks buys; it never synthesizes a seed settlement.
 The fixed-capital ownership replay proves zero external flow. A cash difference
 is an unproved flow requiring review, never an inferred deposit/new seed.
 The historical writer did not guarantee daily settlements. Validate every
-existing file and require the calendar's latest completed day, but disclose
+existing file and require the calendar's latest completed day, except when a
+freshly reconciled prior-day own SELL proves zero fill and explains the first
+missing date; disclose
 intermediate gaps without treating unknown historical highs as zero or new
 capital. High water means the seed, validated settlements and observed marks.
 """
@@ -31,6 +33,7 @@ from .book_b_live_lifecycle import (
     _validate_execution_fill_coverage,
     _validate_ownership_chain,
     project_book_b_live_account,
+    proven_prior_day_zero_fill_sell_ids,
 )
 from .kol_policy import buy_adjustment, load_decision
 
@@ -160,7 +163,8 @@ def _verify_nav(payload: dict, cash_by_head: dict) -> None:
 
 
 def load_live_nav_history(state_dir: Path, *, asof: datetime,
-                          trading_dates: Iterable[str], diagnostics: dict | None = None) -> list[NavObservation]:
+                          trading_dates: Iterable[str], diagnostics: dict | None = None,
+                          proven_sell_gap_dates: Iterable[str] = ()) -> list[NavObservation]:
     """Verify EVERY immutable settlement, including old hashes and chronology."""
     root = Path(state_dir)
     days = sorted(set(trading_dates))
@@ -213,7 +217,8 @@ def load_live_nav_history(state_dir: Path, *, asof: datetime,
             "high_water_basis": "seed_validated_settlements_and_observed_marks",
             "verified_settlement_dates": sorted(actual),
             "supporting_health": "degraded" if gaps else "healthy"})
-    if history[-1].date != expected:
+    latest_gap_start = next((day for day in required if day > history[-1].date), None)
+    if history[-1].date != expected and latest_gap_start not in set(proven_sell_gap_dates):
         raise ValueError("LIVE_RISK_LATEST_SETTLEMENT_REQUIRED:" + expected)
     return history
 
@@ -238,6 +243,7 @@ def evaluate_live_risk(state_dir: Path, *, now: datetime,
     mark = None
     error = None
     history_diagnostics: dict = {}
+    proven_gap_dates: tuple[str, ...] = ()
     try:
         path.parent.mkdir(parents=True, exist_ok=True)
         with path.with_suffix(".lock").open("a+") as lock:
@@ -258,8 +264,14 @@ def evaluate_live_risk(state_dir: Path, *, now: datetime,
                     raise ValueError("LIVE_RISK_CALENDAR_PROVIDER_REQUIRED")
                 days = list(trading_dates_provider(now))
                 expected = expected_settlement_date(now, days)
+                proven_sells = proven_prior_day_zero_fill_sell_ids(
+                    root, trade_date=now.astimezone(_CHINA).date().isoformat(), asof=now)
+                if proven_sells:
+                    intents = _load_intent_index(root)
+                    proven_gap_dates = tuple(str(intents[plan_id]["trade_date"]) for plan_id in proven_sells)
                 history = load_live_nav_history(root, asof=now, trading_dates=days,
-                                                diagnostics=history_diagnostics)
+                                                diagnostics=history_diagnostics,
+                                                proven_sell_gap_dates=proven_gap_dates)
                 if account_snapshot_provider is not None:
                     snapshot = account_snapshot_provider()
                     if now_provider is not None:
@@ -271,7 +283,8 @@ def evaluate_live_risk(state_dir: Path, *, now: datetime,
                         if completed_date != expected:
                             expected = completed_date
                             history = load_live_nav_history(root, asof=now, trading_dates=days,
-                                                            diagnostics=history_diagnostics)
+                                                            diagnostics=history_diagnostics,
+                                                            proven_sell_gap_dates=proven_gap_dates)
                     account = project_book_b_live_account(root, snapshot,
                                 trade_date=now.astimezone(_CHINA).date().isoformat(), now=now)
                 if not isinstance(account, BookBLiveAccountState) or account.logical_account_id != "primary":
@@ -286,7 +299,8 @@ def evaluate_live_risk(state_dir: Path, *, now: datetime,
             except (OSError, ValueError, TypeError, KeyError, RuntimeError) as exc:
                 error = str(exc) or type(exc).__name__
             receipt = evaluate_account_risk(history, current_nav=mark, asof=now, account_id="live:B",
-                        initial_capital=_CAPITAL, expected_settlement_date=expected, previous_receipt=previous)
+                        initial_capital=_CAPITAL, expected_settlement_date=expected, previous_receipt=previous,
+                        allow_proven_sell_gap=bool(proven_gap_dates and history and history[-1].date != expected))
             if error:
                 receipt = replace(receipt, status="BLOCKED", deploy_factor=0.0, nav=None,
                                   drawdown_pct=None, review_required=True,

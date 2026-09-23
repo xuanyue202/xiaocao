@@ -29,9 +29,12 @@ from .live_decision_support import (
 )
 from xiaocao.strategy.mode_switch import plan_board_lot_orders
 from .book_b_live_lifecycle import (
+    BookBLiveAccountState,
+    blocking_open_execution_plan_ids,
     load_latest_book_b_live_settlement,
     open_execution_plan_ids,
     ownership_head_sha256,
+    proven_prior_day_zero_fill_sell_ids,
     validate_broker_account_snapshot,
 )
 from .trading_execution import (
@@ -127,13 +130,28 @@ class BookBLiveCapitalBasis:
 
 def load_book_b_live_capital_basis(
     state_dir: Path,
+    *,
+    trade_date: str | None = None,
+    current_account: BookBLiveAccountState | None = None,
 ) -> BookBLiveCapitalBasis:
     """Return the first-batch basis or require a settled post-fill receipt."""
     root = Path(state_dir)
     settlement = load_latest_book_b_live_settlement(root)
     if settlement is not None:
-        if open_execution_plan_ids(root):
-            raise ValueError("LIVE_BOOK_B_SETTLED_NAV_RECONCILE_REQUIRED")
+        open_plans = open_execution_plan_ids(root)
+        if open_plans:
+            if not trade_date or not isinstance(current_account, BookBLiveAccountState):
+                raise ValueError("LIVE_BOOK_B_SETTLED_NAV_RECONCILE_REQUIRED")
+            try:
+                marked_at = datetime.fromisoformat(current_account.broker_snapshot_observed_at.replace("Z", "+00:00"))
+            except ValueError as exc:
+                raise ValueError("LIVE_BOOK_B_CURRENT_MARK_UNPROVEN") from exc
+            if blocking_open_execution_plan_ids(root, trade_date=trade_date, asof=marked_at):
+                raise ValueError("LIVE_BOOK_B_SETTLED_NAV_RECONCILE_REQUIRED")
+            if (getattr(current_account, "trade_date", None) != trade_date
+                    or getattr(current_account, "logical_account_id", None) != "primary"
+                    or getattr(current_account, "ownership_head_sha256", None) != settlement.get("ownership_head_sha256")):
+                raise ValueError("LIVE_BOOK_B_CURRENT_MARK_UNPROVEN")
         if settlement.get("ownership_head_sha256") != ownership_head_sha256(root):
             raise ValueError("LIVE_BOOK_B_SETTLED_NAV_RECONCILE_REQUIRED")
         try:
@@ -148,6 +166,20 @@ def load_book_b_live_capital_basis(
             or exposure < 0
         ):
             raise ValueError("LIVE_BOOK_B_SETTLEMENT_INVALID")
+        if open_plans:
+            marked_nav = float(getattr(current_account, "settled_nav"))
+            marked_exposure = float(getattr(current_account, "current_open_exposure"))
+            snapshot_sha = str(getattr(current_account, "broker_snapshot_sha256", ""))
+            if (not math.isfinite(marked_nav) or marked_nav <= 0
+                    or not math.isfinite(marked_exposure) or marked_exposure < 0
+                    or re.fullmatch(r"[0-9a-f]{64}", snapshot_sha) is None):
+                raise ValueError("LIVE_BOOK_B_CURRENT_MARK_UNPROVEN")
+            return BookBLiveCapitalBasis(
+                settled_nav=min(settled_nav, marked_nav),
+                current_open_exposure=max(exposure, marked_exposure),
+                source="broker_reconciled_book_b_current_mark",
+                receipt_sha256=snapshot_sha,
+            )
         return BookBLiveCapitalBasis(
             settled_nav=settled_nav,
             current_open_exposure=exposure,
@@ -1100,10 +1132,14 @@ def _plan_requires_prepare(config: BookBLiveMorningConfig, plan: TradePlan) -> b
     }
 
 
-def _uncertain_execution_plan_ids(state_dir: Path) -> tuple[str, ...]:
+def _uncertain_execution_plan_ids(state_dir: Path, *, trade_date: str | None = None,
+                                  asof: datetime | None = None) -> tuple[str, ...]:
     """Prepared/unclaimed intents reserve plans but are not UNKNOWN effects."""
     store = ExecutionStore(Path(state_dir) / "events.jsonl")
+    proven = set(proven_prior_day_zero_fill_sell_ids(state_dir, trade_date=trade_date,
+        asof=asof)) if trade_date else set()
     return tuple(plan_id for plan_id in open_execution_plan_ids(state_dir)
+                 if plan_id not in proven
                  if (receipt := store.current(plan_id)) is not None
                  and receipt.state in {ExecutionState.CLAIMED, ExecutionState.UNKNOWN,
                      ExecutionState.SUBMITTED, ExecutionState.ACKNOWLEDGED,
@@ -1260,12 +1296,13 @@ def _load_allocation(
     if capital_basis_source not in {
         "initial_book_b_capital",
         "broker_reconciled_book_b_nav",
+        "broker_reconciled_book_b_current_mark",
     }:
         raise ValueError("LIVE_ALLOCATION_CAPITAL_BASIS_UNPROVEN")
     capital_basis_receipt = str(
         payload.get("capital_basis_receipt_sha256") or ""
     ).strip().lower()
-    if capital_basis_source == "broker_reconciled_book_b_nav" and not re.fullmatch(
+    if capital_basis_source in {"broker_reconciled_book_b_nav", "broker_reconciled_book_b_current_mark"} and not re.fullmatch(
         r"[0-9a-f]{64}", capital_basis_receipt
     ):
         raise ValueError("LIVE_ALLOCATION_CAPITAL_BASIS_RECEIPT_UNPROVEN")
@@ -1283,6 +1320,26 @@ def _load_allocation(
             or payload.get("current_open_exposure")
             != settlement.get("current_open_exposure")
         ):
+            raise ValueError("LIVE_ALLOCATION_CAPITAL_BASIS_RECEIPT_MISMATCH")
+    if capital_basis_source == "broker_reconciled_book_b_current_mark":
+        from .buy_preflight import pretrade_account
+        snapshot = (payload.get("broker_receipt") or {}).get("pretrade_snapshot")
+        if not isinstance(snapshot, dict):
+            raise ValueError("LIVE_ALLOCATION_CAPITAL_BASIS_RECEIPT_MISMATCH")
+        try:
+            observed = datetime.fromisoformat(str(snapshot["observed_at"]).replace("Z", "+00:00"))
+            account = pretrade_account(config.state_dir, snapshot,
+                trade_date=config.trade_date, now=observed)
+            basis = load_book_b_live_capital_basis(config.state_dir,
+                trade_date=config.trade_date, current_account=account)
+        except (KeyError, TypeError, ValueError) as exc:
+            raise ValueError("LIVE_ALLOCATION_CAPITAL_BASIS_RECEIPT_MISMATCH") from exc
+        if (basis.source != capital_basis_source
+                or capital_basis_receipt != basis.receipt_sha256
+                or payload.get("settled_nav") != basis.settled_nav
+                or payload.get("current_open_exposure") != basis.current_open_exposure
+                or (_uncertain_execution_plan_ids(config.state_dir, trade_date=config.trade_date, asof=observed) if restoring_only
+                    else blocking_open_execution_plan_ids(config.state_dir, trade_date=config.trade_date, asof=observed))):
             raise ValueError("LIVE_ALLOCATION_CAPITAL_BASIS_RECEIPT_MISMATCH")
     if capital_basis_source == "initial_book_b_capital" and capital_basis_receipt:
         raise ValueError("LIVE_ALLOCATION_CAPITAL_BASIS_RECEIPT_UNEXPECTED")
@@ -1790,7 +1847,7 @@ def run_book_b_live_morning(
                     open_reconciliations = reconcile_open_book_b_plans(
                         config.state_dir, trade_date=config.trade_date, execute=execute_plan, now=now(),
                     )
-                if _uncertain_execution_plan_ids(config.state_dir):
+                if _uncertain_execution_plan_ids(config.state_dir, trade_date=config.trade_date, asof=now()):
                     raise ValueError("LIVE_BOOK_B_OPEN_EXECUTION_RECONCILE_REQUIRED")
             allocation: BookBAllocationFacts | None = None
             enter("freeze_wait")
@@ -1818,7 +1875,7 @@ def run_book_b_live_morning(
                 batch_fence.enter_context(account_writer_lock(
                     config.state_dir / "account_writer_locks", config.logical_account_id,
                 ))
-                if config.policy_root is not None and _uncertain_execution_plan_ids(config.state_dir):
+                if config.policy_root is not None and _uncertain_execution_plan_ids(config.state_dir, trade_date=config.trade_date, asof=now()):
                     raise ValueError("LIVE_BOOK_B_OPEN_EXECUTION_RECONCILE_REQUIRED")
                 review_candidates = [
                     row for row in frozen_rows

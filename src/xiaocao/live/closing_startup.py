@@ -1,4 +1,4 @@
-"""Bounded pre-arm timing for the 14:55 Book-B closing checkpoint."""
+"""Bounded pre-arm timing for the 14:45 Book-B closing checkpoint."""
 
 from __future__ import annotations
 
@@ -10,7 +10,7 @@ from zoneinfo import ZoneInfo
 
 _CHINA = ZoneInfo("Asia/Shanghai")
 _CLOSING_HOUR = 14
-_CLOSING_MINUTE = 55
+_CLOSING_MINUTE = 45
 _PREARM_MINUTES = 4
 _MAX_PREARM_WAIT_SECONDS = float(_PREARM_MINUTES * 60)
 _MAX_SLEEP_CHUNK_SECONDS = 60.0

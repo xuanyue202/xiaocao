@@ -617,6 +617,87 @@ def open_execution_plan_ids(state_dir: Path) -> tuple[str, ...]:
     )
 
 
+def proven_prior_day_zero_fill_sell_ids(state_dir: Path, *, trade_date: str,
+                                         asof: datetime | None = None,
+                                         max_age_seconds: float = 2700) -> tuple[str, ...]:
+    """Scope an old SELL with a fresh, exact zero-fill broker readback.
+
+    This is a buying/valuation exception, not a terminal order state.  The
+    order remains open for exact reconciliation and same-lot duplicate fencing.
+    """
+    root = Path(state_dir)
+    intents = _load_intent_index(root)
+    ownership, _ = _validate_ownership_chain(
+        _read_jsonl_strict(root / "book_b_ownership_evidence.jsonl"))
+    if not ownership:
+        return ()
+    _validate_execution_fill_coverage(root, ownership)
+    owned_shares: dict[str, int] = {}
+    for row in ownership:
+        side = str(row.get("side") or "").upper()
+        lot_id = str(row.get("plan_id") if side == "BUY" else row.get("owned_lot_id") or "")
+        owned_shares[lot_id] = owned_shares.get(lot_id, 0) + (int(row["shares"]) if side == "BUY" else -int(row["shares"]))
+    latest: dict[str, dict] = {}
+    for event in _read_jsonl_strict(root / "events.jsonl"):
+        plan_id = str(event.get("plan_id") or "")
+        if plan_id:
+            latest[plan_id] = event
+    proven = []
+    for plan_id in open_execution_plan_ids(root):
+        intent = intents.get(plan_id)
+        event = latest.get(plan_id)
+        if not isinstance(intent, dict) or not isinstance(event, dict):
+            continue
+        receipt = event.get("receipt")
+        if not isinstance(receipt, dict):
+            continue
+        proof = receipt.get("locator_proof")
+        if not isinstance(proof, dict):
+            continue
+        try:
+            observed = datetime.fromisoformat(str(receipt["observed_at"]).replace("Z", "+00:00"))
+            position_observed = datetime.fromisoformat(str(proof["position_observed_at"]).replace("Z", "+00:00"))
+            shares = int(intent["shares"])
+            holding = int(proof["target_holding_shares"])
+        except (KeyError, TypeError, ValueError):
+            continue
+        if (observed.tzinfo is None or position_observed.tzinfo is None
+                or observed.astimezone(ZoneInfo("Asia/Shanghai")).date().isoformat() != trade_date
+                or position_observed.astimezone(ZoneInfo("Asia/Shanghai")).date().isoformat() != trade_date):
+            continue
+        if asof is not None and (asof.tzinfo is None
+                or not -30 <= (asof - observed).total_seconds() <= max_age_seconds
+                or not -30 <= (asof - position_observed).total_seconds() <= max_age_seconds):
+            continue
+        if (intent.get("side") != "SELL" or str(intent.get("trade_date") or "") >= trade_date
+                or not intent.get("owned_lot_id") or shares <= 0 or holding < shares
+                or owned_shares.get(str(intent["owned_lot_id"]), 0) < shares
+                or receipt.get("plan_id") != plan_id
+                or receipt.get("plan_hash") != _sha256(intent)
+                or not str(receipt.get("broker_order_id") or "").isdigit()
+                or receipt.get("state") not in {"unknown", "acknowledged", "reconciling"}
+                or receipt.get("next_action") not in {"reconcile", "reconcile_only"}
+                or receipt.get("filled_shares") != 0
+                or receipt.get("remaining_shares") != shares
+                or proof.get("fill_aggregate_proven") is not True
+                or proof.get("exact_order_match_count") != 1
+                or proof.get("exact_trade_match_count") != 0
+                or proof.get("current_order_cumulative_fill_notional") != "0"
+                or proof.get("historical_order_row_date") != intent.get("trade_date")
+                or proof.get("historical_trade_row_date") != intent.get("trade_date")):
+            continue
+        proven.append(plan_id)
+    return tuple(sorted(proven))
+
+
+def blocking_open_execution_plan_ids(state_dir: Path, *, trade_date: str,
+                                      asof: datetime | None = None,
+                                      max_age_seconds: float = 2700) -> tuple[str, ...]:
+    proven = set(proven_prior_day_zero_fill_sell_ids(state_dir, trade_date=trade_date,
+        asof=asof, max_age_seconds=max_age_seconds))
+    return tuple(plan_id for plan_id in open_execution_plan_ids(state_dir) if plan_id not in proven)
+
+
 def ownership_head_sha256(state_dir: Path) -> str | None:
     """Return the ownership head after execution-fill coverage is proven."""
     rows, head = _validate_ownership_chain(
@@ -896,7 +977,9 @@ def write_book_b_live_settlement(
     """Write one immutable EOD settlement after all live plans are terminal."""
     root = Path(state_dir)
     with _account_execution_ownership_snapshot_lock(root):
-        open_plans = open_execution_plan_ids(root)
+        observed = now or datetime.now(timezone.utc)
+        open_plans = blocking_open_execution_plan_ids(root, trade_date=account.trade_date,
+            asof=observed, max_age_seconds=300)
         if open_plans:
             raise ValueError("LIVE_BOOK_B_EOD_OPEN_EXECUTION_RECONCILE_REQUIRED")
         current_ownership_head = ownership_head_sha256(root)
@@ -913,7 +996,6 @@ def write_book_b_live_settlement(
             if existing.get("ownership_head_sha256") != current_ownership_head:
                 raise ValueError("LIVE_BOOK_B_SETTLEMENT_IMMUTABILITY_VIOLATION")
             return existing
-        observed = now or datetime.now(timezone.utc)
         if observed.tzinfo is None:
             raise ValueError("LIVE_BOOK_B_NOW_NOT_TZ_AWARE")
         _post_close_timestamp(
@@ -984,10 +1066,12 @@ __all__ = [
     "BOOK_B_LIVE_INITIAL_CAPITAL",
     "BookBLiveAccountState",
     "BookBLiveOwnedLot",
+    "blocking_open_execution_plan_ids",
     "load_latest_book_b_live_settlement",
     "open_execution_plan_ids",
     "ownership_head_sha256",
     "project_book_b_live_account",
+    "proven_prior_day_zero_fill_sell_ids",
     "settlement_path",
     "validate_broker_account_snapshot",
     "write_book_b_live_settlement",

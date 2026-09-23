@@ -1,6 +1,6 @@
 # Intraday and closing automation
 
-Read this file only for Book-B/Book-T monitoring, the 14:25 precheck or the 14:55 closing pass.
+Read this file only for Book-B/Book-T monitoring, the 14:25 precheck or the 14:45 closing pass.
 
 ## Execute and scope
 
@@ -47,8 +47,8 @@ checkpoint exactly once:
 PYTHONPATH=src .venv/bin/python scripts/book_b_live_intraday.py --date today --phase <opening|sparse|precheck|closing> --execute-sells
 ```
 
-The 14:55 closing pass is the deliberate ordering exception because its live
-authority exists for only two minutes. After reading this reference, its first
+The 14:45 closing pass is the deliberate ordering exception because it opens
+the final continuous-auction exit window. After reading this reference, its first
 executable business command must be the live `--phase closing` command above.
 Do not put journal inspection, git checks, paper monitoring, status, data-doctor
 or other diagnostics ahead of it. After that live process terminates, run the
@@ -77,7 +77,9 @@ An open BUY proven unclaimed by its bound intent and complete event history is
 reported in `deferred_buy_plan_ids`. Leave it to the original morning owner;
 continue monitoring existing owned lots and authorized exits. Recheck after
 account and status reads. A SELL intent, claim or uncertain effect still
-requires reconciliation before new decisions. Deferred BUY intents still
+requires reconciliation before new decisions; a prior-day own-lot SELL with
+fresh exact zero-fill and full-holding proof is scoped to that lot and remains
+reconcile-only. Deferred BUY intents still
 reserve capital and block final settlement until formally closed or completed.
 
 Book T is a separate explicit branch:
@@ -94,8 +96,8 @@ Never mix Book T into the default Book-B report. Book A is settled separately an
 |---|---|
 | Opening dense 09:35/09:45/09:55 | Execute hard/event/liquidity exits; diagnose ordinary trailing/composite deterioration |
 | Sparse 10:25/10:55/13:25/13:55 | Same authority; stay quiet without a sell, blocked sell, data issue or meaningful deterioration |
-| 14:25 precheck | Run immediately; never wait for 14:55; leave soft exits deferred |
-| 14:55 closing discipline | The single soft-exit pass; run once when woken and do not wait for another gate |
+| 14:25 precheck | Run immediately; never wait for 14:45; leave soft exits deferred |
+| 14:45 closing discipline | The single soft-exit pass; run once when woken and do not wait for another gate |
 
 Opening-dense tasks are protective-monitor owners only. They must not retrieve
 KOL context, read report bodies, dispatch a semantic Agent, refresh source
@@ -108,13 +110,13 @@ to extend or duplicate the opening task.
 
 Intraday executes `HARD_STOP`, authorized structured `AI_EVENT_RISK_EXIT`,
 fresh independently reviewed `KOL_DISCRETIONARY_EXIT` under Contract §2a, or
-liquidity escape. Ordinary trailing/composite signals are `SELL_DEFERRED` until 14:55.
+liquidity escape. Ordinary trailing/composite signals are `SELL_DEFERRED` until 14:45.
 
 Use live phase `opening` for opening dense, `sparse` for the four sparse runs,
-`precheck` at 14:25 and `closing` at 14:55. Only `closing` may hand off
+`precheck` at 14:25 and `closing` at 14:45. Only `closing` may hand off
 `TRAILING_STOP` / `EOD_DISCIPLINE_1455`; the other live phases may hand off only
 `HARD_STOP` / `AI_EVENT_RISK_EXIT` / verified `KOL_DISCRETIONARY_EXIT`.
-The `closing` authority is code-bound to China time 14:55:00–14:56:59 on the
+The `closing` authority is code-bound to China time 14:45:00–14:56:59 on the
 declared trade date. An early, late or wrong-date invocation fails closed; a
 prompt label or scheduler wake alone does not grant soft-exit authority.
 
@@ -130,7 +132,7 @@ paper action, not permission to apply stock defaults.
 All writers share `output/live/paper_ledger.lock`. If `.ledger_txn/pending.json` exists, let the next writer recover it under the lock; never delete it manually. A concurrent second writer may become a no-op but must not duplicate a SELL.
 
 Any real SELL intent must be derived from this monitor's authorized
-`HARD_STOP`, `AI_EVENT_RISK_EXIT`, verified `KOL_DISCRETIONARY_EXIT`, or 14:55 `TRAILING_STOP` /
+`HARD_STOP`, `AI_EVENT_RISK_EXIT`, verified `KOL_DISCRETIONARY_EXIT`, or 14:45 `TRAILING_STOP` /
 `EOD_DISCIPLINE_1455` decision, bound to a Book-B-owned sellable lot and free
 of T+1/liquidity blocks. The live lifecycle records/reconciles such an intent
 and hands it to the native execution port; it does not replace the simulated sell writer or infer a SELL from

@@ -173,9 +173,9 @@ def blocked_sell_executions(live_dir: Path) -> list[dict[str, Any]]:
     This cross-ledger invariant catches independent writers that ignore the
     execution result and settle from a theoretical close price instead.
     """
-    # A morning liquidity block may clear.  A block observed after the 14:55
+    # A morning liquidity block may clear.  A block observed after the 14:45
     # discipline gate cannot be followed by another executable session that day.
-    blocked = load_blocked_sell_keys(live_dir / "alerts.jsonl", not_before_time="14:55")
+    blocked = load_blocked_sell_keys(live_dir / "alerts.jsonl", not_before_time="14:45")
     if not blocked:
         return []
     contradictions: list[tuple[str, str, str, str]] = []

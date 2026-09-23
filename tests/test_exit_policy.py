@@ -62,6 +62,14 @@ def test_1455_executes_trailing_when_dd_breached():
     assert d["decision_phase"] == "eod_discipline"
 
 
+def test_soft_exit_opens_at_1445_not_before():
+    before = _call(dd_pct=3.0, now=datetime(2026, 6, 19, 14, 44, 59))
+    at_gate = _call(dd_pct=3.0, now=datetime(2026, 6, 19, 14, 45))
+    assert before["triggered"] is False
+    assert at_gate["triggered"] is True
+    assert at_gate["sell_reason"] == "TRAILING_STOP"
+
+
 def test_1455_executes_discipline_when_dd_not_breached():
     d = _call(dd_pct=0.5, now=T_1456)
     assert d["triggered"] is True and d["sell_reason"] == "EOD_DISCIPLINE_1455"

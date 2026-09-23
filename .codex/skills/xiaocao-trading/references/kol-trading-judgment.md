@@ -147,8 +147,8 @@ refresh source identities or publish a KOL decision. Morning changes wait for
 the 10:25 sparse gate; later changes wait for the next sparse claim owner. A
 newly published decision is consumed by the next event tick, with fresh quote,
 lot/ownership, T+1, liquidity and capital gates. It is not a second broker
-writer. At 14:55 the **first business command remains live closing**; never
-put context retrieval or a model call ahead of that two-minute authority.
+writer. At 14:45 the **first business command remains live closing**; never
+put context retrieval or a model call ahead of that closing authority.
 
 ## Sparse checkpoint gate
 

@@ -12,13 +12,16 @@ import pytest
 from xiaocao.live.book_b_live_lifecycle import (
     BookBLiveAccountState,
     BookBLiveOwnedLot,
+    blocking_open_execution_plan_ids,
     load_latest_book_b_live_settlement,
     open_execution_plan_ids,
     project_book_b_live_account,
+    proven_prior_day_zero_fill_sell_ids,
     write_book_b_live_settlement,
 )
-from xiaocao.live.book_b_live_intraday import run_book_b_live_intraday
+from xiaocao.live.book_b_live_intraday import _sell_limit_price, run_book_b_live_intraday
 from xiaocao.live.book_b_live_morning import load_book_b_live_capital_basis
+from xiaocao.live.live_decision_support import evaluate_live_risk
 from xiaocao.live.trading_execution import (
     BookBOwnershipEvidence,
     ExecutionReceipt,
@@ -740,6 +743,105 @@ def test_eod_settlement_blocks_while_any_execution_is_open(tmp_path: Path) -> No
         write_book_b_live_settlement(tmp_path, account, now=EOD_NOW)
 
 
+@pytest.mark.app_simulation
+def test_prior_zero_fill_sell_scopes_new_risk_without_closing_order(tmp_path: Path) -> None:
+    buy = _record_fill(tmp_path, _plan(trade_date="2026-08-31"), price=10, event_id="prior-buy")
+    settled = project_book_b_live_account(tmp_path,
+        _snapshot(shares=100, sellable=100, observed_at=EOD_NOW),
+        trade_date="2026-09-01", now=EOD_NOW)
+    write_book_b_live_settlement(tmp_path, settled, now=EOD_NOW)
+    sell = _bind_plan_intent(tmp_path, _plan(side="SELL", lot_id=buy.plan_id,
+        trade_date="2026-09-02"))
+    current = datetime(2026, 9, 3, 1, 20, tzinfo=timezone.utc)
+    proof = {
+        "position_observed_at": current.isoformat(),
+        "target_holding_shares": 100,
+        "fill_aggregate_proven": True,
+        "exact_order_match_count": 1,
+        "exact_trade_match_count": 0,
+        "current_order_cumulative_fill_notional": "0",
+        "historical_order_row_date": "2026-09-02",
+        "historical_trade_row_date": "2026-09-02",
+    }
+    ExecutionStore(tmp_path / "events.jsonl").append(plan=sell,
+        receipt=ExecutionReceipt(sell.plan_id, sell.plan_hash, ExecutionState.UNKNOWN,
+            filled_shares=0, remaining_shares=100, broker_order_id="6007019",
+            locator_proof=proof, next_action="reconcile_only", observed_at=current),
+        kind="historical_reconcile")
+
+    assert open_execution_plan_ids(tmp_path) == (sell.plan_id,)
+    assert proven_prior_day_zero_fill_sell_ids(tmp_path, trade_date="2026-09-03") == (sell.plan_id,)
+    assert blocking_open_execution_plan_ids(tmp_path, trade_date="2026-09-03") == ()
+    snapshot = _snapshot(shares=100, sellable=100, price=9, observed_at=current)
+    snapshot["trade_date"] = "2026-09-03"
+    snapshot.pop("snapshot_sha256")
+    snapshot["snapshot_sha256"] = _canonical_sha256(snapshot)
+    marked = project_book_b_live_account(tmp_path, snapshot,
+        trade_date="2026-09-03", now=current)
+    basis = load_book_b_live_capital_basis(tmp_path, trade_date="2026-09-03",
+        current_account=marked)
+    assert basis.source == "broker_reconciled_book_b_current_mark"
+    assert basis.settled_nav == min(settled.settled_nav, marked.settled_nav)
+    assert basis.current_open_exposure == max(settled.current_open_exposure, marked.current_open_exposure)
+    risk = evaluate_live_risk(tmp_path, now=current, account=marked,
+        trading_dates_provider=lambda _: ["2026-08-31", "2026-09-01", "2026-09-02", "2026-09-03"])
+    assert risk.status == "NORMAL", risk.reasons
+    assert "PRIOR_SELL_ZERO_FILL_CURRENT_MARK_BASIS" in risk.reasons
+    from xiaocao.live.buy_preflight import allocation_from_buy_preflight, pretrade_account
+    from xiaocao.live.book_b_live_morning import BookBLiveMorningConfig, _load_allocation
+    pretrade = {
+        "schema_version": "book-b-buy-preflight.v1",
+        "trade_date": "2026-09-03", "logical_account_id": "primary",
+        "account_binding": "proven", "fund_account_binding_sha256": "a" * 64,
+        "observed_at": current.isoformat(), "available_cash": 20_000.0,
+        "positions": {
+            "scope": "new_buy_preflight", "observed_at": current.isoformat(),
+            "summary_values": {"可用": "20000.00"},
+            "rows": [{"证券代码": "000001", "证券数量": "100",
+                      "可卖数量": "100", "当前价": "9.00"}],
+        },
+    }
+    pretrade["snapshot_sha256"] = _canonical_sha256(pretrade)
+    current_account = pretrade_account(tmp_path, pretrade,
+        trade_date="2026-09-03", now=current)
+    current_basis = load_book_b_live_capital_basis(tmp_path,
+        trade_date="2026-09-03", current_account=current_account)
+    allocation = allocation_from_buy_preflight(pretrade, current_basis, now=current)
+    assert allocation["available_cash"] == 20_000
+    config = BookBLiveMorningConfig(trade_date="2026-09-03",
+        freeze_path=tmp_path / "freeze.jsonl", allocation_facts_path=tmp_path / "allocation.json",
+        state_dir=tmp_path)
+    assert _load_allocation(config, allocation).cash_limit <= 20_000
+    # The same lot remains fenced even though other purchases may proceed.
+    assert open_execution_plan_ids(tmp_path) == (sell.plan_id,)
+
+    eod = datetime(2026, 9, 3, 7, 10, tzinfo=timezone.utc)
+    with pytest.raises(ValueError, match="OPEN_EXECUTION_RECONCILE_REQUIRED"):
+        write_book_b_live_settlement(tmp_path, marked, now=eod)
+    proof["position_observed_at"] = eod.isoformat()
+    ExecutionStore(tmp_path / "events.jsonl").append(plan=sell,
+        receipt=ExecutionReceipt(sell.plan_id, sell.plan_hash, ExecutionState.UNKNOWN,
+            filled_shares=0, remaining_shares=100, broker_order_id="6007019",
+            locator_proof=proof, next_action="reconcile_only", observed_at=eod),
+        kind="fresh_eod_reconcile")
+    eod_snapshot = _snapshot(shares=100, sellable=100, price=9, observed_at=eod)
+    eod_snapshot["trade_date"] = "2026-09-03"
+    eod_snapshot.pop("snapshot_sha256")
+    eod_snapshot["snapshot_sha256"] = _canonical_sha256(eod_snapshot)
+    eod_account = project_book_b_live_account(tmp_path, eod_snapshot,
+        trade_date="2026-09-03", now=eod)
+    assert write_book_b_live_settlement(tmp_path, eod_account, now=eod)["status"] == "settled"
+    assert open_execution_plan_ids(tmp_path) == (sell.plan_id,)
+
+    proof["exact_trade_match_count"] = 1
+    ExecutionStore(tmp_path / "events.jsonl").append(plan=sell,
+        receipt=ExecutionReceipt(sell.plan_id, sell.plan_hash, ExecutionState.UNKNOWN,
+            filled_shares=0, remaining_shares=100, broker_order_id="6007019",
+            locator_proof=proof, next_action="reconcile_only", observed_at=eod),
+        kind="conflicting_reconcile")
+    assert blocking_open_execution_plan_ids(tmp_path, trade_date="2026-09-03") == (sell.plan_id,)
+
+
 @pytest.mark.parametrize(
     "state",
     [ExecutionState.PLANNED, ExecutionState.VALIDATED, ExecutionState.PREPARED],
@@ -861,8 +963,10 @@ def test_next_day_basis_blocks_a_post_settlement_fill_missing_ownership(
 
 
 @pytest.mark.parametrize("pending_buy", [False, True])
+@pytest.mark.parametrize("best_bid", [None, 9.19])
+@pytest.mark.app_simulation
 def test_intraday_hard_stop_materializes_one_owned_lot_sell_handoff(
-    tmp_path: Path, pending_buy: bool,
+    tmp_path: Path, pending_buy: bool, best_bid: float | None,
 ) -> None:
     buy = _plan(trade_date="2026-08-31")
     _record_fill(tmp_path, buy, price=10.0, event_id="buy-fill")
@@ -899,6 +1003,8 @@ def test_intraday_hard_stop_materializes_one_owned_lot_sell_handoff(
                 "market_guard_status": "ok",
                 "market_guard_observed_at": NOW,
                 "market_guard_down_price": 9.0,
+                "best_bid_price": best_bid,
+                "best_bid_volume": 1000 if best_bid is not None else None,
             }
         ],
         execute=execute,
@@ -911,12 +1017,20 @@ def test_intraday_hard_stop_materializes_one_owned_lot_sell_handoff(
     assert seen[0].side == "SELL"
     assert seen[0].owned_lot_id == buy.plan_id
     assert seen[0].sell_reason == "HARD_STOP"
-    assert seen[0].limit_price == 9.2
+    assert seen[0].limit_price == (9.18 if best_bid is not None else 9.15)
+    assert seen[0].price_rule == ("best_bid_minus_tick" if best_bid is not None
+                                  else "latest_minus_half_percent")
     assert len(list((tmp_path / "plan_intents").glob("*.json"))) == 2 + int(pending_buy)
     assert receipt.deferred_buy_plan_ids == ((pending.plan_id,) if pending else ())
     if pending:
         assert pending.plan_id in open_execution_plan_ids(tmp_path)
         assert ExecutionStore(tmp_path / "events.jsonl").current(pending.plan_id) is None
+
+
+def test_sell_limit_crosses_current_best_bid_with_one_tick_buffer() -> None:
+    assert _sell_limit_price(4.31, 3.92, 4.30, 1200) == (4.29, "best_bid_minus_tick")
+    assert _sell_limit_price(4.31, 3.92, None, None) == (4.28, "latest_minus_half_percent")
+    assert _sell_limit_price(3.92, 3.92, None, None) == (3.92, "latest_minus_half_percent")
 
 
 @pytest.mark.parametrize("state", [None, ExecutionState.PLANNED, ExecutionState.VALIDATED, ExecutionState.PREPARED])
@@ -1298,12 +1412,12 @@ def test_intraday_rejects_preclose_snapshot_after_eod_window_opens(
         )
 
 
-def test_intraday_rejects_closing_authority_before_1455(
+def test_intraday_rejects_closing_authority_before_1445(
     tmp_path: Path,
 ) -> None:
     buy = _plan(trade_date="2026-08-31")
     _record_fill(tmp_path, buy, price=10.0, event_id="buy-fill")
-    early = NOW - timedelta(minutes=2)
+    early = NOW - timedelta(minutes=12)
 
     with pytest.raises(ValueError, match="CLOSING_DISCIPLINE_WINDOW_NOT_OPEN"):
         run_book_b_live_intraday(
@@ -1379,7 +1493,7 @@ def test_intraday_preserves_partial_receipt_when_closing_window_expires(
         lambda *args, **kwargs: {},
     )
     late = NOW + timedelta(minutes=1)
-    times = iter((NOW, NOW, NOW, NOW, NOW, late, late))
+    times = iter((NOW,) * 7 + (late, late))
 
     def execute(plan: TradePlan) -> ExecutionReceipt:
         return ExecutionReceipt(

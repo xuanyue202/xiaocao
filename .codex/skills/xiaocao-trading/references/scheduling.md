@@ -13,9 +13,9 @@ Read this file only when creating, changing or auditing Xiaocao schedules.
   capture is only upstream capsule input and is never created or run there. The
   next sparse checkpoint consumes completed publication receipts. See
   `kol-trading-judgment.md` for claim, acknowledgement and owner-recovery rules.
-  It never acquires 14:55 authority.
+  It never acquires 14:45 authority.
 - Risk precheck: 14:25.
-- Closing discipline: 14:55.
+- Closing discipline: 14:45 (automation pre-arms at 14:41).
 - EOD: 15:10.
 - Weekly deep review: Friday 20:30.
 
@@ -30,7 +30,7 @@ Read this file only when creating, changing or auditing Xiaocao schedules.
 | 09:35/09:45/09:55 opening | Protective paper/live checkpoints only | Consume an already-valid decision only; no context, model or publication work |
 | 10:25/10:55/13:25/13:55 sparse | One owner-bound tick claim and paper/live checkpoints | Only the claim owner may adapt the compact projection when its fingerprint changed or the decision expired |
 | 14:25 precheck | Protective paper/live checkpoints only | Consume an already-valid decision only; no context, model or publication work |
-| 14:55 closing | Time-critical live close first, then paper close | Consume an already-valid decision only; no context, model or publication work |
+| 14:45 closing | Time-critical live close first, then paper close | Consume an already-valid decision only; no context, model or publication work |
 | 15:10 EOD | Paper/live reconciliation, settlement and receipt audit | Receipt/hash linkage only; no report-body read, semantic dispatch or decision publication |
 
 Codex scheduling does not substitute for these durable business owners. Every

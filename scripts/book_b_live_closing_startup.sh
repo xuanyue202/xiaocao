@@ -17,7 +17,7 @@ for required_file in "${required_files[@]}"; do
 done
 
 rg -n -i -m 80 \
-  'intraday|closing|14:55|book.?b|founder|reconcile|kol|UNKNOWN|settlement' \
+  'intraday|closing|14:45|book.?b|founder|reconcile|kol|UNKNOWN|settlement' \
   /Users/xuanyue202/.codex/memories/MEMORY.md || true
 
 PYTHONPATH=src .venv/bin/python -m xiaocao.live.closing_startup

@@ -15,7 +15,7 @@ from .book_b_live_morning import (
 from .trading_execution import (
     ExecutionReceipt, ExecutionState, ExecutionStore, TradePlan, account_writer_lock,
 )
-from .book_b_live_lifecycle import open_execution_plan_ids
+from .book_b_live_lifecycle import open_execution_plan_ids, proven_prior_day_zero_fill_sell_ids
 
 UNCLAIMED = {ExecutionState.PLANNED, ExecutionState.VALIDATED, ExecutionState.PREPARED}
 TERMINAL = {ExecutionState.FILLED, ExecutionState.CANCELLED, ExecutionState.REJECTED,
@@ -48,7 +48,8 @@ def _has_possible_write(events: list[dict]) -> bool:
     return False
 
 
-def check_monitor_pending_plans(state_dir: Path) -> tuple[str, ...]:
+def check_monitor_pending_plans(state_dir: Path, *, trade_date: str | None = None,
+                                asof: datetime | None = None) -> tuple[str, ...]:
     """Prove which open intents are only local BUY reservations.
 
     These remain open for their original owner. They cannot by themselves
@@ -56,7 +57,11 @@ def check_monitor_pending_plans(state_dir: Path) -> tuple[str, ...]:
     """
     deferred = []
     with account_writer_lock(state_dir / "account_writer_locks", "primary"):
+        proven_sells = set(proven_prior_day_zero_fill_sell_ids(state_dir,
+            trade_date=trade_date, asof=asof)) if trade_date else set()
         for plan_id in open_execution_plan_ids(state_dir):
+            if plan_id in proven_sells:
+                continue
             path = _plan_intent_path(state_dir, plan_id)
             if not path.is_file():
                 raise ValueError("LIVE_BOOK_B_OPEN_EXECUTION_RECONCILE_REQUIRED")

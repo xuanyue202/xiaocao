@@ -17,13 +17,13 @@ CHINA = ZoneInfo("Asia/Shanghai")
 @pytest.mark.parametrize(
     ("current", "expected"),
     [
-        (datetime(2026, 9, 17, 14, 51, 0, tzinfo=CHINA), 240.0),
-        (datetime(2026, 9, 17, 14, 52, 31, tzinfo=CHINA), 149.0),
-        (datetime(2026, 9, 17, 14, 54, 0, tzinfo=CHINA), 60.0),
-        (datetime(2026, 9, 17, 14, 54, 23, 500_000, tzinfo=CHINA), 36.5),
-        (datetime(2026, 9, 17, 14, 54, 59, 900_000, tzinfo=CHINA), 0.1),
-        (datetime(2026, 9, 17, 14, 50, 59, tzinfo=CHINA), 0.0),
-        (datetime(2026, 9, 17, 14, 55, 0, tzinfo=CHINA), 0.0),
+        (datetime(2026, 9, 17, 14, 41, 0, tzinfo=CHINA), 240.0),
+        (datetime(2026, 9, 17, 14, 42, 31, tzinfo=CHINA), 149.0),
+        (datetime(2026, 9, 17, 14, 44, 0, tzinfo=CHINA), 60.0),
+        (datetime(2026, 9, 17, 14, 44, 23, 500_000, tzinfo=CHINA), 36.5),
+        (datetime(2026, 9, 17, 14, 44, 59, 900_000, tzinfo=CHINA), 0.1),
+        (datetime(2026, 9, 17, 14, 40, 59, tzinfo=CHINA), 0.0),
+        (datetime(2026, 9, 17, 14, 45, 0, tzinfo=CHINA), 0.0),
         (datetime(2026, 9, 17, 14, 57, 0, tzinfo=CHINA), 0.0),
     ],
 )
@@ -36,7 +36,7 @@ def test_closing_prearm_wait_is_bounded_to_prearm_span(
 
 def test_wait_for_closing_window_applies_computed_delay() -> None:
     sleeps: list[float] = []
-    current = datetime(2026, 9, 17, 14, 52, 40, tzinfo=CHINA)
+    current = datetime(2026, 9, 17, 14, 42, 40, tzinfo=CHINA)
 
     waited = wait_for_closing_window(now=lambda: current, sleep=sleeps.append)
 

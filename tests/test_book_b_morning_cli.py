@@ -25,7 +25,9 @@ def test_morning_entry_dispatches_without_reproducing_recovery_candidates(tmp_pa
         ensure_environment=lambda **kw: account_call("environment", **kw),
         read_live_allocation_facts=lambda **kw: account_call("allocation", **kw),
         read_live_account_snapshot=lambda **kw: account_call("snapshot", **kw),
+        read_buy_preflight_snapshot=lambda **kw: {"trade_date": "2026-09-11"},
         prepare_readonly=lambda plan, **kw: account_call("prepare", **kw),
+        submission_batch=lambda: None,
     )
     execution = SimpleNamespace(execute=lambda plan, bound: account_call("execute"))
     monkeypatch.setattr(cli, "KeychainCapitalRuntime", lambda: SimpleNamespace(
@@ -40,7 +42,10 @@ def test_morning_entry_dispatches_without_reproducing_recovery_candidates(tmp_pa
     monkeypatch.setattr(cli, "XiaocaoClient", lambda **_: object())
     monkeypatch.setattr(cli, "calendar_provider", lambda _: object())
     monkeypatch.setattr(cli, "reconcile_prior_day_canary_unknowns", lambda *a, **k: ())
-    monkeypatch.setattr(cli, "load_book_b_live_capital_basis", lambda _: SimpleNamespace(
+    from xiaocao.live import buy_preflight
+    monkeypatch.setattr(buy_preflight, "pretrade_account", lambda *a, **k: object())
+    monkeypatch.setattr(buy_preflight, "allocation_from_buy_preflight", lambda *a, **k: account_call("allocation"))
+    monkeypatch.setattr(cli, "load_book_b_live_capital_basis", lambda *a, **k: SimpleNamespace(
         settled_nav=30000, current_open_exposure=0, source="fixture", receipt_sha256="hash"))
     monkeypatch.setattr(cli, "_fresh_market_guard", lambda *a: {"status": "ok"})
     monkeypatch.setattr(cli, "_wait_for_submit_window", lambda *a, **k: None)
@@ -65,7 +70,8 @@ def test_morning_entry_dispatches_without_reproducing_recovery_candidates(tmp_pa
             kwargs["account_snapshot_provider"]()
             kwargs["wait_for_dated_freeze"]()
             kwargs["refresh_market_guard"]({})
-            kwargs["prepare_only"]("same-plan")
+            if kwargs["prepare_only"] is not None:
+                kwargs["prepare_only"]("same-plan")
             kwargs["execute"]("same-plan")
             assert kwargs["restore_environment"]()["status"] == "native_environment_restore_not_applicable"
         return BookBLiveMorningReceipt(config.trade_date, "no_action", "fixture", 0, (), (),
@@ -80,5 +86,5 @@ def test_morning_entry_dispatches_without_reproducing_recovery_candidates(tmp_pa
     if action == "capital_unavailable":
         assert result["reason"] == "LIVE_CAPITAL_RUNTIME_NOT_READY" and not calls
     elif action != "close":
-        assert calls.count("prepare") == (0 if action == "reconcile" else 1)
+        assert calls.count("prepare") == (1 if action == "resume" else 0)
         assert calls.count("execute") == calls.count("receipt") == 1

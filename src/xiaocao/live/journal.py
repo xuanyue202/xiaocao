@@ -2,7 +2,7 @@
 
 Each automation run (morning / intraday monitor / eod) appends ONE structured
 record to output/live/decision_journal.jsonl. A fresh-context agent waking at
-14:55 reads the journal to learn what earlier runs concluded — instead of
+14:45 reads the journal to learn what earlier runs concluded — instead of
 re-deriving the day from seven scattered files. Borrowed from QuantDinger's
 agent audit trail, realized as lightweight jsonl (no Postgres). See
 docs/OPERATING_CONTRACT.md §2.

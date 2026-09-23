@@ -13,7 +13,7 @@ docs/OPERATING_CONTRACT.md §4.
 
 Key invariant (validated via decompose_pnl on the 06-01..06-12 book): intraday
 checkpoints only EXECUTE the hard floor; ordinary trailing/composite exits are
-DIAGNOSED intraday and executed at the 14:55 discipline pass, because sparse
+DIAGNOSED intraday and executed at the 14:45 discipline pass, because sparse
 checkpoints otherwise turn a 2% trailing stop into a "sell the D+1 morning low"
 rule. The validated exit reference is the next close.
 """
@@ -23,14 +23,14 @@ from datetime import datetime, time
 
 from xiaocao.utils.trading_session import A_SHARE_TZ
 # Drawdown thresholds live in the parameter registry (the frozen-vs-tunable SSOT).
-#   PROFILE_DD      : soft trailing dd%% per profile, executed at 14:55 not intraday
+#   PROFILE_DD      : soft trailing dd%% per profile, executed at 14:45 not intraday
 #   PROFILE_HARD_DD : intraday hard floor — the only stop executed at intraday checkpoints
 from xiaocao.strategy.params import PROFILE_DD, PROFILE_HARD_DD  # noqa: F401
 
 MORNING_REVIEW_TIME = time(9, 35)
 MIDDAY_REVIEW_TIME = time(10, 30)
 AFTERNOON_TIGHTEN_TIME = time(14, 0)
-EOD_DISCIPLINE_TIME = time(14, 55)
+EOD_DISCIPLINE_TIME = time(14, 45)
 
 
 def clamp(value: float, lo: float = -1.0, hi: float = 1.0) -> float:
@@ -232,7 +232,7 @@ def decide_sell_action(
     # Staged execution: intraday checkpoints only EXECUTE the hard floor
     # (catastrophic damage / liquidity escape). Ordinary trailing-stop or
     # composite deterioration is DIAGNOSED intraday (deferred_sell_reason,
-    # recorded for forward evaluation) and executed at the 14:55 discipline
+    # recorded for forward evaluation) and executed at the 14:45 discipline
     # pass. Rationale (decompose_pnl on the 06-01..06-12 book): sparse
     # checkpoints turned the 2% trailing stop into a "sell the D+1 morning
     # low" rule; the validated exit reference is next close.
@@ -311,7 +311,7 @@ def decide_sell_action(
     elif dd_pct >= dd_threshold and not soft_hold_reason:
         deferred_sell_reason = "TRAILING_STOP"
     if deferred_sell_reason:
-        # diagnosed intraday, executed at >= 14:55 (or earlier by hard floor)
+        # diagnosed intraday, executed at >= 14:45 (or earlier by hard floor)
         return {
             "triggered": False,
             "sell_reason": None,

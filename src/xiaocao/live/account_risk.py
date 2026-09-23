@@ -14,6 +14,9 @@ since_activation. This is not a claim about lifetime maximum drawdown; never
 fabricate historical settlements. The original seed remains a risk floor.
 Live NAV must come
 from the owned-lot lifecycle (settled_nav), never mixed broker assets or paper.
+The sole live exception to a stale latest settlement requires an upstream
+fresh, exact zero-fill prior-day own SELL and a reconciled current mark;
+it retains the actual expected date and reports the proof basis.
 Paper NAV uses total_equity_after_exit_fee after ledger/valuation validation;
 an intraday holdings snapshot alone is not settled evidence. Source digests
 are provenance bindings, not authentication: validate the sources upstream.
@@ -150,12 +153,14 @@ def evaluate_account_risk(
     expected_settlement_date: str | None = None,
     previous_receipt: AccountRiskReceipt | None = None,
     require_settled_history: bool = True,
+    allow_proven_sell_gap: bool = False,
 ) -> AccountRiskReceipt:
     """Return an immutable, JSON-safe cap; invalid evidence yields BLOCKED/0.
 
     asof is timezone-aware. expected_settlement_date is the exact latest
     completed settlement date required by the caller's trading calendar in
-    strict mode, even when current_nav is supplied. Only paper:B may opt out
+    strict mode, even when current_nav is supplied. Only a proved old zero-fill
+    live SELL may opt into allow_proven_sell_gap with a current mark. Only paper:B may opt out
     explicitly; its fresh current_nav is mandatory and the expected date may
     be None. With no history its peak is max(initial_capital, current, prior
     peak), never a newly inferred principal. History timestamps must be post-close on
@@ -174,6 +179,8 @@ def evaluate_account_risk(
     history_basis = "since_activation" if epoch_mode else "settled_history"
     if type(require_settled_history) is not bool:
         errors.add("HISTORY_REQUIREMENT_INVALID")
+    if type(allow_proven_sell_gap) is not bool or (allow_proven_sell_gap and (account_id != "live:B" or current_nav is None)):
+        errors.add("PROVEN_SELL_GAP_INVALID")
     if epoch_mode and account_id != "paper:B":
         errors.add("TRACKING_EPOCH_PAPER_ONLY")
     if epoch_mode and current_nav is None:
@@ -308,7 +315,7 @@ def evaluate_account_risk(
 
     if not dated and not epoch_mode:
         errors.add("SETTLED_HISTORY_REQUIRED")
-    elif dated and not epoch_mode and max(dated) != expected:
+    elif dated and not epoch_mode and max(dated) != expected and not allow_proven_sell_gap:
         errors.add("SETTLED_HISTORY_STALE_OR_UNEXPECTED")
     if current is not None and current[0] in dated and dated[current[0]][0] != current[1]:
         errors.add("DUPLICATE_DATE_CONFLICT")
@@ -350,6 +357,8 @@ def evaluate_account_risk(
     else:
         status, factor = "NORMAL", 1.0
         reasons = ("WITHIN_PILOT_LOSS_BUDGET",)
+    if allow_proven_sell_gap and not errors:
+        reasons = tuple(sorted(set(reasons) | {"PRIOR_SELL_ZERO_FILL_CURRENT_MARK_BASIS"}))
 
     digest = hashlib.sha256(_canonical({
         "policy_id": POLICY_ID, "nav_basis": NAV_BASIS,
@@ -358,6 +367,7 @@ def evaluate_account_risk(
         "initial_capital": initial_capital, "expected_settlement_date": expected_settlement_date,
         "previous_receipt": previous_receipt, "reasons": reasons,
         "require_settled_history": require_settled_history,
+        "allow_proven_sell_gap": allow_proven_sell_gap,
         "history_basis": history_basis,
         "tracking_epoch_started_at": epoch_started,
     }).encode("utf-8")).hexdigest()

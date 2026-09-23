@@ -10,7 +10,7 @@ for each open position:
   5. For stale positions (entry_date < today), applies:
        - post-09:35 early rotation exit unless the stock is clearly becoming
          a leader / near limit-up
-       - 14:55 discipline exit unless the stock still meets that stronger hold
+       - 14:45 discipline exit unless the stock still meets that stronger hold
          exception
   6. Otherwise → HOLD with current diagnostics
 
@@ -861,6 +861,8 @@ def _compute_status(
             else None
         ),
         "market_guard_down_price": _detail_float(detail, "downPrice"),
+        "best_bid_price": _detail_float(detail, "buyPrice1"),
+        "best_bid_volume": _detail_float(detail, "buyVol1"),
         "sell_block_reason": _sell_block_reason(detail),
         "dd_pct": round(dd_pct, 4),
         "ret_pct": round(ret_pct, 4),
@@ -1040,7 +1042,7 @@ def main() -> None:
                         **s,
                     }, ensure_ascii=False) + "\n")
             if s.get("deferred_sell_reason"):
-                # diagnosed intraday, executed at the 14:55 pass — recorded so
+                # diagnosed intraday, executed at the 14:45 pass — recorded so
                 # forward eval can compare deferred vs immediate exit prices
                 if not _has_alert_recorded(
                     "SELL_DEFERRED",

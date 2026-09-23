@@ -333,6 +333,15 @@ def test_calendar_freshness_cannot_be_self_certified_by_latest_file(tmp_path):
     assert "LIVE_RISK_LATEST_SETTLEMENT_REQUIRED:2026-08-31" in receipt.reasons
 
 
+@pytest.mark.app_simulation
+def test_later_sell_cannot_explain_an_earlier_settlement_gap(tmp_path):
+    days = _history(tmp_path)
+    (tmp_path / "settlements" / "2026-08-31.json").unlink()
+    with pytest.raises(ValueError, match="LIVE_RISK_LATEST_SETTLEMENT_REQUIRED"):
+        load_live_nav_history(tmp_path, asof=NOW, trading_dates=days,
+                              proven_sell_gap_dates=("2026-09-01",))
+
+
 def test_no_settlements_never_fabricates_seed_or_reads_paper(tmp_path, monkeypatch):
     forbidden = {"paper_account.json", "paper_holdings.json", "positions.jsonl", "paper_trades.jsonl"}
     original = Path.open

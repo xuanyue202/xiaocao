@@ -114,7 +114,7 @@ def _closing_discipline_window(current: datetime, trade_date: str) -> bool:
     if local.date().isoformat() != str(trade_date)[:10]:
         return False
     clock = (local.hour, local.minute, local.second)
-    return (14, 55, 0) <= clock < (14, 57, 0)
+    return (14, 45, 0) <= clock < (14, 57, 0)
 
 
 def _eod_settlement_window(current: datetime, trade_date: str) -> bool:
@@ -137,16 +137,31 @@ def _snapshot_observed_at(snapshot: dict[str, Any]) -> datetime:
     return observed
 
 
-def _sell_limit_price(latest_price: object) -> float:
+def _sell_limit_price(latest_price: object, down_price: object,
+                      best_bid_price: object = None,
+                      best_bid_volume: object = None) -> tuple[float, str]:
     try:
         price = float(latest_price)
     except (TypeError, ValueError) as exc:
         raise ValueError("LIVE_SELL_PRICE_UNPROVEN") from exc
     if not math.isfinite(price) or price <= 0:
         raise ValueError("LIVE_SELL_PRICE_UNPROVEN")
-    # A current-price SELL is conservative and deterministic: no implicit
-    # market order and no widening to the daily limit-down price.
-    return math.floor((price + 1e-9) * 100.0) / 100.0
+    try:
+        floor = float(down_price)
+    except (TypeError, ValueError) as exc:
+        raise ValueError("LIVE_SELL_PRICE_UNPROVEN") from exc
+    if not math.isfinite(floor) or floor <= 0 or floor > price:
+        raise ValueError("LIVE_SELL_PRICE_UNPROVEN")
+    try:
+        bid = float(best_bid_price)
+        volume = float(best_bid_volume)
+    except (TypeError, ValueError):
+        bid = volume = 0.0
+    if math.isfinite(bid) and math.isfinite(volume) and floor <= bid <= price * 1.01 and volume > 0:
+        return max(floor, math.floor((min(price, bid) - 0.01 + 1e-9) * 100) / 100), "best_bid_minus_tick"
+    # No proved best bid: leave a bounded 0.5% crossing allowance rather than
+    # parking at the last trade. The exchange down limit remains the floor.
+    return max(floor, math.floor((price * 0.995 + 1e-9) * 100) / 100), "latest_minus_half_percent"
 
 
 def load_monitor_contexts(
@@ -383,6 +398,10 @@ def _sell_plan(
     down_price = float(status["market_guard_down_price"])
     if not math.isfinite(down_price) or down_price <= 0:
         raise ValueError("LIVE_SELL_MARKET_GUARD_UNPROVEN")
+    limit_price, price_rule = _sell_limit_price(
+        status.get("latest_price"), down_price,
+        status.get("best_bid_price") if age <= 30 else None,
+        status.get("best_bid_volume") if age <= 30 else None)
     lot_digest = hashlib.sha256(lot.owned_lot_id.encode("utf-8")).hexdigest()[:12]
     return TradePlan(
         plan_id=f"book-b:{trade_date}:{lot.code}:SELL:{lot_digest}",
@@ -397,14 +416,14 @@ def _sell_plan(
         name=lot.name,
         side="SELL",
         shares=shares,
-        limit_price=_sell_limit_price(status.get("latest_price")),
+        limit_price=limit_price,
         basket_price=None,
         market_guard_status=str(status.get("market_guard_status") or "ok"),
         created_at=current,
         recovery_deadline=_china_trade_deadline(trade_date),
         owned_lot_id=lot.owned_lot_id,
         submit_not_before=current,
-        price_rule="current_proprietary_trade_floor_tick",
+        price_rule=price_rule,
         market_guard_required=True,
         market_guard_observed_at=observed,
         market_guard_latest_price=float(status.get("latest_price")),
@@ -450,7 +469,7 @@ def _run_book_b_live_intraday_locked(
         execute=execute,
         now=current,
     )
-    deferred_buys = check_monitor_pending_plans(state_root)
+    deferred_buys = check_monitor_pending_plans(state_root, trade_date=trade_date, asof=current)
     phase_now = now()
     if phase_now.tzinfo is None:
         raise ValueError("LIVE_BOOK_B_NOW_NOT_TZ_AWARE")
@@ -463,7 +482,7 @@ def _run_book_b_live_intraday_locked(
     ):
         raise ValueError("LIVE_BOOK_B_EOD_SETTLEMENT_WINDOW_NOT_OPEN")
     snapshot = account_snapshot_provider()
-    deferred_buys = check_monitor_pending_plans(state_root)
+    deferred_buys = check_monitor_pending_plans(state_root, trade_date=trade_date, asof=now())
     current = now()
     if current.tzinfo is None:
         raise ValueError("LIVE_BOOK_B_NOW_NOT_TZ_AWARE")
@@ -540,7 +559,7 @@ def _run_book_b_live_intraday_locked(
             deferred_buy_plan_ids=deferred_buys,
         )
     statuses = status_provider(account.lots)
-    deferred_buys = check_monitor_pending_plans(state_root)
+    deferred_buys = check_monitor_pending_plans(state_root, trade_date=trade_date, asof=now())
     by_lot = {str(status.get("owned_lot_id") or ""): status for status in statuses}
     if set(by_lot) != {lot.owned_lot_id for lot in account.lots}:
         raise ValueError("LIVE_BOOK_B_STATUS_COVERAGE_MISMATCH")
@@ -594,6 +613,8 @@ def _run_book_b_live_intraday_locked(
                 "kol_decision_sha256": kol_decision.get("decision_sha256"),
                 "kol_policy_status": kol_decision.get("status"),
                 "sell_authorized": authorized_now,
+                "best_bid_price": status.get("best_bid_price"),
+                "best_bid_volume": status.get("best_bid_volume"),
             }
         )
         decision = {
@@ -622,6 +643,8 @@ def _run_book_b_live_intraday_locked(
                 else status.get("market_guard_observed_at")
             ),
             "market_guard_down_price": status.get("market_guard_down_price"),
+            "best_bid_price": status.get("best_bid_price"),
+            "best_bid_volume": status.get("best_bid_volume"),
             "dd_pct": status.get("dd_pct"),
             "net_ret_pct": status.get("net_ret_pct"),
             "strong_hold_reason": status.get("strong_hold_reason"),

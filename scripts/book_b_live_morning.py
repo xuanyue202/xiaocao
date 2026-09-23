@@ -356,10 +356,15 @@ def main(argv: list[str] | None = None) -> int:
             trade_date=trade_date,
             execute=lambda plan: execution.execute(plan, broker),
         )
-        basis = load_book_b_live_capital_basis(Path(args.state_dir))
         if not args.resume_plan_id:
-            return allocation_from_buy_preflight(current_buy_snapshot(), basis,
-                now=datetime.now(ZoneInfo("Asia/Shanghai")))
+            snapshot = current_buy_snapshot()
+            current = datetime.now(ZoneInfo("Asia/Shanghai"))
+            account = pretrade_account(Path(args.state_dir), snapshot,
+                trade_date=trade_date, now=current)
+            basis = load_book_b_live_capital_basis(Path(args.state_dir),
+                trade_date=trade_date, current_account=account)
+            return allocation_from_buy_preflight(snapshot, basis, now=current)
+        basis = load_book_b_live_capital_basis(Path(args.state_dir))
         allocation_kwargs = {
             "trade_date": trade_date,
             "logical_account_id": "primary",

@@ -93,7 +93,7 @@ def pretrade_account(state_dir: Path, snapshot: dict, *, trade_date: str, now: d
     events, head = _validate_ownership_chain(_read_jsonl_strict(state_dir / 'book_b_ownership_evidence.jsonl'))
     _validate_execution_fill_coverage(state_dir, events)
     from .book_b_live_morning import _uncertain_execution_plan_ids
-    if _uncertain_execution_plan_ids(state_dir):
+    if _uncertain_execution_plan_ids(state_dir, trade_date=trade_date, asof=now):
         raise ValueError('BUY_PREFLIGHT_OWNED_ORDER_RECONCILE_REQUIRED')
     settlement = load_latest_book_b_live_settlement(state_dir)
     if settlement is None:

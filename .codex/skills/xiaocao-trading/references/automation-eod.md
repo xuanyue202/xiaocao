@@ -81,9 +81,9 @@ orchestration defects follow the daily review repair loop below.
 - `output/live/book_b_live_execution/runs/intraday/<date>-eod.json`
 - `output/live/book_b_live_execution/settlements/<date>.json`
 
-Cross-check same-day sells from the journal/trades; the EOD monitor may be quiet after an earlier intraday/14:55 sell.
+Cross-check same-day sells from the journal/trades; the EOD monitor may be quiet after an earlier intraday/14:45 sell.
 
-For Book T, use marked equity/unrealized only when `valuation_status=fresh`. Otherwise report cost-basis equity and `unrealized=N/A`; never combine a newer ledger with an older holdings mark. A post-14:55 `SELL_BLOCKED` remains open through settlement.
+For Book T, use marked equity/unrealized only when `valuation_status=fresh`. Otherwise report cost-basis equity and `unrealized=N/A`; never combine a newer ledger with an older holdings mark. A post-14:45 `SELL_BLOCKED` remains open through settlement.
 
 Book T ETF settlement must preserve the explicit instrument contract and use its
 sell fee, lot size and T+0/T+1 rule. If the contract or authoritative market
@@ -110,7 +110,7 @@ for this investigation, restart EOD, or launch a second business writer.
 
 1. Compare the active Automation schedule and actual task/process timestamps
    against dated receipts for morning analysis, candidate freeze, buy execution,
-   opening/sparse monitoring, 14:25 precheck, 14:55 closing and EOD. Check missing
+   opening/sparse monitoring, 14:25 precheck, 14:45 closing and EOD. Check missing
    or duplicate runs, scheduler delay, startup overhead, lock starvation and
    window misses separately. A correct time-gate rejection can still expose an
    orchestration defect upstream.

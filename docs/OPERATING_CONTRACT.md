@@ -125,7 +125,7 @@ KOL 断言、候选假设或报告升级为策略真值，也不替代永久参�
 - KOL 退出允许在合法盘中检查点提出，但必须再次核验正确 Book/runtime、
   来源/审核 hash、精确代码和当前时效，且仍受 T+1、可卖量、报价、流动性、
   双钥匙及 native execution 门约束。不能伪造 `AI_EVENT_RISK_EXIT`，也不能
-  将普通软止损的 14:55 权限前移。已有必要硬/事件退出优先，KOL 不压住它。
+  将普通软止损的 14:45 权限前移。已有必要硬/事件退出优先，KOL 不压住它。
 - 判断寿命由经复核决策显式声明的 `valid_until` 控制，最长 24 小时，通常不跨
   当前交易日；`current_checks` 是带时间戳、hash-bound 的分析上下文，不再另设
   固定 15 分钟 TTL，也不因其自然变旧反复触发 Astra 全量复核。新来源、明确的
@@ -178,7 +178,7 @@ KOL 断言、候选假设或报告升级为策略真值，也不替代永久参�
   不调用或等待 `auto_daily.sh morning-execute`，不读取模拟成交，也不写
   canonical paper ledger。该 seam 只走方正证券原生 App；不得初始化、登录或
   调用 OpenCLI 作为账户、资产、持仓、委托、成交、填单、提交或对账的一部分。
-  全新 BUY 的 allocation 从同账户当日原生持仓页面直接读取可用资金，绑定完整表结构、实际可用字段及自有 lot 标记；以已验证结算和未变化的 ownership chain 约束 Book-B NAV/敞口/批次。余额、可取、混合总资产等审计字段不再作为全新 BUY 的前置门。恢复和完整生命周期对账仍要求下述完整快照及恒等式。原生 App 没有 mock/live 数据
+  全新 BUY 的 allocation 从同账户当日原生持仓页面直接读取可用资金，绑定完整表结构、实际可用字段及自有 lot 标记；以已验证结算和未变化的 ownership chain 约束 Book-B NAV/敞口/批次。前日自有 SELL 在当日精确委托、成交与全量持仓回读证明零成交时，允许用当前 owned-lot mark 计算保守基准：NAV 取旧结算与当前值较低者，敞口取较高者；风险回执保留真实缺失结算日期和降级原因。余额、可取、混合总资产等审计字段不再作为全新 BUY 的前置门。恢复和完整生命周期对账仍要求下述完整快照及恒等式。原生 App 没有 mock/live 数据
   namespace，完成或失败后必须记录
   `native_environment_restore_not_applicable`，不得伪造恢复 mock。非空 freeze 还必须绑定实际同日 snapshot 的 canonical
   SHA-256 与行数，且 digest/run id/producer strategy Git SHA 必须由 queue producer 在冻结时写入 manifest。
@@ -325,15 +325,14 @@ KOL 断言、候选假设或报告升级为策略真值，也不替代永久参�
   durable intent 反向证明 `owned_lot_id`，不得从人工持仓或纸盘账本补造归属。
   `book_b_live_intraday.py` 复用与纸盘相同的 `exit_policy`，但只监控这些实盘 lot：
   opening/sparse/14:25 仅交接 `HARD_STOP` / `AI_EVENT_RISK_EXIT`，普通 trailing /
-  composite 只记录 deferred；且仅中国时间 14:55:00–14:56:59 的 `closing`
+  composite 只记录 deferred；且仅中国时间 14:45:00–14:56:59 的 `closing`
   checkpoint 才允许 `TRAILING_STOP` / `EOD_DISCIPLINE_1455`，提前、迟到或错日
   调用必须 fail-closed。每个 SELL intent 绑定 lot、同日 fresh proprietary quote、
-  精确当前价向下对齐 0.01 tick 的普通限价、决策原因/阶段/时间和 broker snapshot
+  当前买一有量时低一档、买一不可靠时以最新价下浮 0.5% 的普通限价（均不低于跌停价）、决策原因/阶段/时间和 broker snapshot
   hash；T+1、不可卖数量、跌停无买盘、缺少行情字段、非连续竞价或既有同 lot intent
   都禁止新 handoff。handoff 后所有 broker 写动作仍只由 `TradingExecution` 和
   native adapter 完成，继续受双钥匙、durable claim、UNKNOWN no-retry 约束。
-  任一既有 live plan 在一次只读 reconcile 后仍非终态时，当前 checkpoint 禁止读取
-  新退出授权或物化其他 SELL intent，避免未知资金动作与新写并发。
+  任一既有 live plan 在一次只读 reconcile 后仍非终态时，默认禁止读取新退出授权或物化其他 SELL intent。唯一缩小范围的例外是前日及更早的 Book-B 自有 SELL，且当日精确历史委托/成交与持仓回读证明零成交、原 lot 全量仍在；此单继续未决对账并禁止同 lot 重复 SELL，其他 lot 的保护与新 BUY 可继续。新 BUY 仍以当前可用资金、已验证 owned lot、保守 NAV/敞口和风险限额独立约束。
   每个 live checkpoint 还必须持有独立的非阻塞 lifecycle writer lock；重叠实例直接
   `LIVE_BOOK_B_CHECKPOINT_ALREADY_RUNNING` 结束，禁止并发切换 native 查询页。
   每次运行写独立 archive receipt；`<date>-<phase>.json` 仅为 latest 指针，碰锁实例
@@ -342,7 +341,7 @@ KOL 断言、候选假设或报告升级为策略真值，也不替代永久参�
   15:10 EOD 先 reconcile 全部 durable plan；`eod` 入口在中国时间 15:00 前或
   非 trade_date 当日必须拒绝，且用于结算的三张行表最老 observed_at 也必须不早于
   15:00，禁止把盘中/缓存 NAV 固化成不可变 settlement。只要仍有 claimed/submitted/
-  acknowledged/partial/unknown/reconciling 就拒绝结算。全部终态后，按实际 broker-proved
+  acknowledged/partial/unknown/reconciling 就拒绝结算；上述前日零成交且收盘再次精确回读的 SELL 允许仅按仍持有的原 lot 结算，其自身仍不关闭。按实际 broker-proved
   BUY/SELL fills 与最新持仓 mark 写当日不可变 settlement；下一交易日 morning 只有
   settlement ownership head 与当前 ownership chain 完全一致时，才以
   `broker_reconciled_book_b_nav` 作为滚动 NAV/敞口基准。
@@ -360,10 +359,10 @@ KOL 断言、候选假设或报告升级为策略真值，也不替代永久参�
 - **出场分阶段**（`live_monitor`）：
   - **AI_EVENT_RISK_EXIT**：持仓股票若当天结构化 `veto_flags` 命中 hard-veto，且不处于 T+1，则触发尽早卖出；仍受跌停无买盘等流动性执行约束。
   - **盘中仅执行** `HARD_STOP`（peak→now 回撤 ≥ **8%** 且无强持有理由）或流动性逃逸。
-  - **普通 trailing / composite 恶化盘中只诊断**（状态列 `defer:<reason>`，alerts 记 `SELL_DEFERRED`）→ **14:55 纪律 pass 统一执行**，出场对齐 next_close 参照。
+  - **普通 trailing / composite 恶化盘中只诊断**（状态列 `defer:<reason>`，alerts 记 `SELL_DEFERRED`）→ **14:45 纪律 pass 统一执行**，为限价卖出留约 12 分钟连续竞价窗口。
   - **T+1**：建仓日不可卖（`t1_blocked`，诊断用）。
   - **流动性**：触发卖出但跌停无买盘 → 记 `SELL_BLOCKED / LIMIT_DOWN_NO_BID`，**保持持仓**，不更新 cash/realized_pnl/trades。
-- **收盘任务与单写者**：14:25 是独立风险预检，只立即执行盘中已获授权的 HARD_STOP / AI_EVENT_RISK_EXIT 等，不等待 14:55；14:55 是独立且唯一的 soft-exit 收盘纪律 pass。所有 paper-record / monitor / settle / repair 写者共享唯一 `paper_ledger.lock`，必须在锁内重载并提交，重叠 agent 只能观察前一写者结果，不能重复 SELL。收盘 positions/account/trades 三文件提交先持久化 `.ledger_txn/pending.json` 与目标快照；中断后下一写者幂等补完，未恢复事务由 data doctor 报 CRITICAL，禁止用半提交账本评估。
+- **收盘任务与单写者**：14:25 是独立风险预检，只立即执行盘中已获授权的 HARD_STOP / AI_EVENT_RISK_EXIT 等，不等待 14:45；14:45 是独立且唯一的 soft-exit 收盘纪律 pass。所有 paper-record / monitor / settle / repair 写者共享唯一 `paper_ledger.lock`，必须在锁内重载并提交，重叠 agent 只能观察前一写者结果，不能重复 SELL。收盘 positions/account/trades 三文件提交先持久化 `.ledger_txn/pending.json` 与目标快照；中断后下一写者幂等补完，未恢复事务由 data doctor 报 CRITICAL，禁止用半提交账本评估。
 - **历史交易日验收**：`scripts/replay_paper_day.py --date YYYY-MM-DD` 只读冻结的 signal/alerts/decision-journal/trades，使用生产 `exit_policy.decide_sell_action` 重放当日已记录的 Book-B 触发/延迟特征，并核对成交 exactly-once；回执必须写在 `output/live` 之外。迁移验收可再显式传 `--execute-sandbox-twice --sandbox-dir <empty non-production dir>`：它从权威最终账本逆向恢复目标日退出前状态，只在隔离目录调用与 `live_monitor` 相同的 `paper_exit.execute_simulated_sells` 两次，要求首轮成交、次轮零新增且最终状态匹配。不得补造实时字段、成交或改写正式账本；历史强持有若缺原始 realtime detail 必须 fail-closed，不能用近似输入伪造通过。
 - **强持有例外**（抑制 trailing 出场）：接力/连板 或 xcjw≥300 或 jsjl>0；近涨停（≥99.7% up_price）；成为领涨且 pct≥8% 且近日高（≥99.5%）。
 - **profile**：v5 = 5 日 / dd 2%；v6 = 3 日 / dd 0.5%（更激进，需前瞻验证）。hard floor 两者均 8%。
