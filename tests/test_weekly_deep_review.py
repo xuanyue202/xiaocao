@@ -34,6 +34,44 @@ def _fake_flywheel():
     }
 
 
+def test_execution_repair_watch_carries_blocked_eod_into_weekly_plan(tmp_path):
+    archive = tmp_path / "output/live/book_b_live_execution/runs/intraday/archive"
+    archive.mkdir(parents=True)
+    (archive / "2026-09-18-eod-example.json").write_text(json.dumps({
+        "trade_date": "2026-09-18", "phase": "eod", "status": "blocked",
+        "reason": "LIVE_BOOK_B_OPEN_EXECUTION_RECONCILE_REQUIRED",
+    }), encoding="utf-8")
+    review = tmp_path / "output/live/daily_execution_review_2026-09-18.md"
+    review.write_text("SELL 6007019 zero fill; next morning impact unreviewed\n", encoding="utf-8")
+
+    watch = wdr.build_execution_repair_watch(tmp_path, as_of=dt.date(2026, 9, 18))
+
+    assert watch["status"] == "review_required"
+    assert watch["missing_settlement_dates"] == ["2026-09-18"]
+    assert watch["blocked_checkpoints"][0]["reason"] == "LIVE_BOOK_B_OPEN_EXECUTION_RECONCILE_REQUIRED"
+    assert watch["daily_reviews"][0]["evidence"]["sha256"]
+    assert "不能只归为外部状态" in "\n".join(wdr._render_execution_repair_watch({"execution_repair_watch": watch}))
+    assert not wdr._source_is_fixed("output/live/book_b_live_execution/events.jsonl")
+
+
+def test_execution_repair_watch_uses_as_of_order_state(tmp_path, monkeypatch):
+    events = tmp_path / "output/live/book_b_live_execution/events.jsonl"
+    events.parent.mkdir(parents=True)
+    rows = [
+        {"plan_id": "book-b:2026-09-18:000572.XSHE:SELL:x", "ts": "2026-09-18T15:16:00+08:00",
+         "state": "acknowledged", "sequence": 1,
+         "receipt": {"reason": "zero_fill", "broker_order_id": "6007019", "filled_shares": 0}},
+        {"plan_id": "book-b:2026-09-18:000572.XSHE:SELL:x", "ts": "2026-09-21T09:30:00+08:00",
+         "state": "filled", "sequence": 2, "receipt": {"filled_shares": 1800}},
+    ]
+    events.write_text("\n".join(json.dumps(row) for row in rows) + "\n", encoding="utf-8")
+    monkeypatch.setattr(wdr, "open_execution_plan_ids", lambda _: ())
+
+    watch = wdr.build_execution_repair_watch(tmp_path, as_of=dt.date(2026, 9, 18))
+
+    assert [(row["state"], row["event_sequence"]) for row in watch["open_plans"]] == [("acknowledged", 1)]
+
+
 def _write_protocol_registry(root: Path):
     path = root / "reference" / "experience" / "research_protocols.yaml"
     path.parent.mkdir(parents=True, exist_ok=True)

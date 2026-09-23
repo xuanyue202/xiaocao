@@ -30,7 +30,10 @@ It reconciles existing durable live plans through the native execution port,
 requires fresh account-bound positions/orders/trades row tables plus the funds
 summary embedded in the same positions capture, projects
 only broker-proved Book-B owned fills, and writes the immutable settled NAV only
-when every live plan is terminal. Never add `--execute-sells` to the EOD call.
+when every live plan is terminal or a prior-day owned SELL has fresh, exact
+zero-fill order/trade/full-holding proof for the same day. The exception leaves
+that SELL open and fenced from duplicate same-lot writes. Never add
+`--execute-sells` to the EOD call.
 Transient structural, freshness-evidence, asset-equation, or cross-table
 failure may trigger only the adapter's bounded whole-snapshot reread. Strict
 invariants remain unchanged, the receipt records every read-only recovery
@@ -108,11 +111,35 @@ After the original paper/live EOD processes and KOL feedback terminate, review
 the whole trading day even if settlement is blocked. Do not delay settlement
 for this investigation, restart EOD, or launch a second business writer.
 
+Review from effects upward, not from another agent's final paragraph. For each
+anomalous checkpoint, inspect its actual Codex task turn/trace (`read_thread`
+when available), command/tool exit and error output, original dated run receipt,
+durable intent/event chain, broker readback or paper ledger, and the next
+checkpoint's observed effect. A final answer, memory note, `exit 0`, or
+`deterministic_status=succeeded` is a claim to test against those layers, not
+the source of truth. Read bounded, relevant trace spans around the first
+failure, repair attempt and terminal readback; avoid rereading unrelated KOL
+report bodies. If a trace is unavailable, name the missing layer and keep the
+cause unproven. Record contradictions between an agent's conclusion and its
+tool outputs explicitly.
+
+Treat zero-fill accepted SELL, repeated UNKNOWN, missing settlement, same-lot
+or all-lot evaluation gaps, unexpected no-action, delayed/missing Automation
+turn, failed tool call, missing incident delivery, and a capital block despite
+unchanged cash/holdings as investigation triggers. For each, ask what actually
+changed in the account, which code guard made the next decision, and what
+counterfactual observation would falsify the suspected cause. Carry the exact
+fingerprint forward until code repair, tests and the next natural production
+readback are separately evidenced.
+
 1. Compare the active Automation schedule and actual task/process timestamps
    against dated receipts for morning analysis, candidate freeze, buy execution,
    opening/sparse monitoring, 14:25 precheck, 14:45 closing and EOD. Check missing
    or duplicate runs, scheduler delay, startup overhead, lock starvation and
-   window misses separately. A correct time-gate rejection can still expose an
+   window misses separately. If the business process started late, inspect the
+   scheduled task turn and any failed attempt before calling it scheduler delay:
+   an app/backend error, user restart and shell startup are distinct clocks.
+   A correct time-gate rejection can still expose an
    orchestration defect upstream.
    For learning, verify the latest usable executable signal date and new
    executable labels, not just growing theoretical-label counts. Repeated
@@ -145,6 +172,17 @@ for this investigation, restart EOD, or launch a second business writer.
    an exception during materialization may precede that count, and an ACK
    before a failed read is still unresolved. Keep the original failure receipt
    separate from later repair or owner-abandonment evidence.
+   For any accepted or UNKNOWN SELL with zero observed fill, compare its
+   submission time and limit against the point-in-time quote/best bid (if
+   available), subsequent trade prices, remaining auction time and exact
+   broker order/trade/holding readback. A falling trade price is evidence of
+   lost marketability, not proof of the sole cause or permission to cancel or
+   resubmit. Check whether a late start, stale limit, incomplete other-lot
+   evaluation or global open-plan guard caused an independent code or
+   orchestration fault. Trace the same plan's effect on the next morning's
+   available cash, owned lots, NAV/exposure cap, risk receipt and EOD
+   settlement; distinguish order uncertainty from an unnecessary global BUY
+   block. A repeated blocker is not resolved by repeating `reconcile_only`.
 5. Classify each finding as expected terminal state, repair_required,
    reconcile_only or user_action_required. For safely repairable code,
    configuration or orchestration faults, the started task owns repair: follow
@@ -159,6 +197,12 @@ for this investigation, restart EOD, or launch a second business writer.
    remains read/reconcile/settle only; no top-level rerun, new order, uncertain
    broker-action retry, fabricated ledger, immutable-history rewrite, weakened
    time/capital/safety gate or automatic strategy promotion is allowed.
+   A deterministic defect in the earlier closing or next-morning code is still
+   repair_required even if the broker order itself remains reconcile_only.
+   Repair that source/config fault after business terminals with one owner,
+   focused validation and a future natural-run readback; do not defer it merely
+   because the EOD command cannot submit a trade. Check durable incident
+   delivery separately from whether the final summary mentioned the alert.
 6. Write `output/live/daily_execution_review_<date>.md`: expected versus actual,
    evidence paths/timestamps, impact, stable failure fingerprint, concise cause/fix/verification for
    defects, repair and regression proof, production verification status and
@@ -184,4 +228,7 @@ immutability/hash failure.
 Completion requires terminal evidence for both the paper EOD shell and live EOD
 process, dated run-flow/log, paper ledger/account agreement, attribution check,
 benchmark report, plus either a hash-bound real settlement or an explicit
-reconcile blocker. Do not claim completion from intermediate commentary.
+reconcile blocker. If a code/orchestration repair is identified, completion of
+the audit also requires its named owner, repair status and next legal
+verification checkpoint; `reconcile_only` does not close that separate defect.
+Do not claim completion from intermediate commentary.

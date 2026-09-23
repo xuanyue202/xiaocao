@@ -14,6 +14,40 @@ Before applying any change, read `docs/OPERATING_CONTRACT.md` completely, especi
 
 The first phase must produce `output/live/weekly_plan_<date>.json`. Inspect its fixed-input evidence before choosing exactly one route:
 
+Inspect `execution_repair_watch` before the research route. It is a read-only
+weekly rollup of current open APP Book-B plans, blocked closing/EOD receipts,
+missing settlements and hash-bound daily execution reviews. For every flagged
+plan, read its exact order/fill/holding evidence and the corresponding daily
+reports. Compare submission price/time with contemporaneous bid and later
+prices, as available; check all-lot exit coverage, the next morning's buy
+availability and Book-B-only NAV/risk effects. A known broker UNKNOWN may
+remain reconcile-only, but it does not excuse a separable pricing, timing,
+scope, alert or accounting code defect. Trace a repeated fingerprint across
+days and distinguish code repaired, tests passed and natural-run verified.
+Do not turn an absent report or missing broker proof into a normal result.
+
+Audit at least the first failed and latest affected daily/closing/morning task
+turns for each repeated incident. Read their actual command/tool outputs and
+timestamps, original run archives, durable event/ownership ledgers, and broker
+readbacks. Challenge the prior agents' final conclusions and the daily report
+against those lower-level effects; a model's `reconcile_only` label, `exit 0`,
+or polished review text cannot explain away a zero-fill SELL, a later global
+BUY block, or a missing settlement. Look for a failed scheduled attempt before
+calling a late business process a scheduler delay. If task trace access fails,
+record the exact missing evidence rather than accepting the prior summary.
+Produce a concise 5 Why for any defect that survived a day, separating broker
+uncertainty, code/orchestration cause, financial effect and prevention test.
+
+The daily EOD/closing owner has first claim on an active repair. Verify that
+owner's repair and next legal checkpoint; do not create a second writer. If a
+deterministic operational defect has no active owner, this weekly task owns a
+narrow source/config repair under `book-b-live-repair.md`: diagnose, validate,
+commit/push and verify at the next legal run. This incident lane never sends a
+broker order, replays an expired checkpoint, relaxes uncertain-order fencing
+or promotes a strategy/parameter; the AUTO_APPLIED/PROPOSAL_ONLY research
+route and §10 gate remain separate. If external broker state prevents an
+execution claim, keep that state open with exact read-only reconciliation.
+
 Also read [kol-trading-judgment.md](kol-trading-judgment.md) and the plan's
 `kol_system_review`. Weekly review is a higher-level challenge to the framework,
 not seven daily KOL summaries. Compare the week with 4/12-week evidence where

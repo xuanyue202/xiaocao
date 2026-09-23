@@ -38,6 +38,8 @@ from xiaocao.research import protocols  # noqa: E402
 from xiaocao.kol import trading_decision  # noqa: E402
 from xiaocao.kol.publication import canonical_sha256  # noqa: E402
 from xiaocao.live import kol_policy  # noqa: E402
+from xiaocao.live.book_b_live_lifecycle import open_execution_plan_ids  # noqa: E402
+from xiaocao.live.trading_execution import TERMINAL_STATES  # noqa: E402
 
 ACTION_LOG = ROOT / "reference" / "experience" / "distill_action_log.jsonl"
 CHANGE_LEDGER = ROOT / "output" / "live" / "flywheel_change_ledger.jsonl"
@@ -79,6 +81,108 @@ FIXED_INPUTS = [
     "output/research/runs/*/manifest.json",
     "git status --porcelain",
 ]
+
+# Review evidence only. Keep it separate from FIXED_INPUTS, which authorizes
+# research AUTO_APPLIED candidates through _source_is_fixed.
+EXECUTION_REVIEW_INPUTS = [
+    "output/live/daily_execution_review_*.md",
+    "output/live/book_b_live_execution/events.jsonl",
+    "output/live/book_b_live_execution/runs/intraday/archive/*.json",
+    "output/live/book_b_live_execution/settlements/*.json",
+]
+
+
+def build_execution_repair_watch(root: Path, *, as_of: dt.date) -> dict:
+    """Surface live execution blockers from fixed local evidence, read-only."""
+    root = Path(root)
+    state = root / "output/live/book_b_live_execution"
+    archive = state / "runs/intraday/archive"
+    week_start = as_of - dt.timedelta(days=6)
+    evidence: list[dict] = []
+    checkpoints: list[dict] = []
+    daily_reviews: list[dict] = []
+    missing_settlements: list[str] = []
+    missing_daily_reviews: list[str] = []
+    missing_eod_dates: list[str] = []
+
+    def ref(path: Path) -> dict:
+        row = {"path": path.relative_to(root).as_posix(),
+               "sha256": hashlib.sha256(path.read_bytes()).hexdigest()}
+        evidence.append(row)
+        return row
+
+    for offset in range(7):
+        day = (week_start + dt.timedelta(days=offset)).isoformat()
+        review = root / f"output/live/daily_execution_review_{day}.md"
+        if review.is_file():
+            daily_reviews.append({"date": day, "evidence": ref(review)})
+        day_eods = []
+        day_closings = []
+        for phase in ("closing", "eod"):
+            for path in sorted(archive.glob(f"{day}-{phase}-*.json")):
+                data = json.loads(path.read_text(encoding="utf-8"))
+                if not isinstance(data, dict) or data.get("trade_date") != day or data.get("phase") != phase:
+                    raise ValueError("WEEKLY_EXECUTION_CHECKPOINT_INVALID")
+                row = {"date": day, "phase": phase, "status": data.get("status"),
+                       "reason": data.get("reason"), "evidence": ref(path)}
+                checkpoints.append(row)
+                if phase == "eod":
+                    day_eods.append(row)
+                else:
+                    day_closings.append(row)
+        if day_closings and not day_eods:
+            missing_eod_dates.append(day)
+        settlement = state / f"settlements/{day}.json"
+        if settlement.is_file():
+            settled = json.loads(settlement.read_text(encoding="utf-8"))
+            if not isinstance(settled, dict) or settled.get("trade_date") != day:
+                raise ValueError("WEEKLY_EXECUTION_SETTLEMENT_INVALID")
+            ref(settlement)
+        elif day_eods:
+            missing_settlements.append(day)
+        if day_eods and not review.is_file():
+            missing_daily_reviews.append(day)
+
+    open_plans: list[dict] = []
+    events_path = state / "events.jsonl"
+    if events_path.is_file():
+        # Validate the whole durable chain, then derive the review-date state.
+        # A retrospective plan must not borrow a later reconciliation result.
+        open_execution_plan_ids(state)
+        cutoff = dt.datetime.combine(as_of, dt.time.max, _KOL_CHINA)
+        latest = {}
+        for raw in events_path.read_text(encoding="utf-8").splitlines():
+            if raw.strip():
+                event = json.loads(raw)
+                stamp = dt.datetime.fromisoformat(str(event["ts"]).replace("Z", "+00:00"))
+                if stamp.tzinfo is None:
+                    raise ValueError("WEEKLY_EXECUTION_EVENT_TIME_UNPROVEN")
+                if stamp <= cutoff and event.get("plan_id"):
+                    latest[event["plan_id"]] = event
+        event_ref = ref(events_path)
+        terminal = {state.value for state in TERMINAL_STATES}
+        for plan_id, event in sorted(latest.items()):
+            if event.get("state") in terminal:
+                continue
+            receipt = event.get("receipt") or {}
+            open_plans.append({"plan_id": plan_id, "state": event.get("state"),
+                               "reason": receipt.get("reason"),
+                               "broker_order_id": receipt.get("broker_order_id"),
+                               "filled_shares": receipt.get("filled_shares"),
+                               "remaining_shares": receipt.get("remaining_shares"),
+                               "event_sequence": event.get("sequence"),
+                               "evidence": event_ref})
+    blocked = [row for row in checkpoints if row["status"] in {"blocked", "failed"}]
+    return {"schema_version": 1, "authority": "review_only",
+            "week_start": week_start.isoformat(), "week_end": as_of.isoformat(),
+            "status": "review_required" if open_plans or blocked or missing_settlements or missing_daily_reviews or missing_eod_dates else
+                      ("clear" if checkpoints and events_path.is_file() else "missing_evidence"),
+            "open_plans": open_plans, "blocked_checkpoints": blocked,
+            "missing_settlement_dates": missing_settlements,
+            "missing_daily_review_dates": missing_daily_reviews,
+            "missing_eod_dates": missing_eod_dates,
+            "daily_reviews": daily_reviews, "evidence": evidence,
+            "checkpoint_count": len(checkpoints)}
 
 # Fixed observation inputs, NOT new AUTO_APPLIED authority. Keep the existing
 # promotion-source list and human/research/dirty-file gates unchanged.
@@ -1069,7 +1173,9 @@ def build_plan(*, as_of: dt.date | None = None, output: Path | None = None) -> d
         "week_end": as_of.isoformat(),
         "fixed_inputs": FIXED_INPUTS,
         "fixed_review_inputs": dict(KOL_REVIEW_INPUTS),
+        "fixed_execution_inputs": EXECUTION_REVIEW_INPUTS,
         "kol_system_review": build_kol_system_review(ROOT, as_of=as_of),
+        "execution_repair_watch": build_execution_repair_watch(ROOT, as_of=as_of),
         "pre_existing_dirty": pre_dirty,
         "flywheel": fw,
         "sweep": sweep,
@@ -1179,6 +1285,25 @@ def _render_kol_system_review(plan: dict) -> list[str]:
     return lines
 
 
+def _render_execution_repair_watch(plan: dict) -> list[str]:
+    watch = plan.get("execution_repair_watch") or {}
+    if watch.get("status") == "missing_evidence":
+        return ["- APP 执行故障复核：缺少本周收盘/盘后证据，状态未知，不能写为正常。"]
+    if watch.get("status") == "clear":
+        return ["- APP 执行故障复核：固定输入内无未结计划、阻断检查点或缺失结算；仍须核对日复盘的执行损失。"]
+    plans = watch.get("open_plans") or []
+    blocked = watch.get("blocked_checkpoints") or []
+    missing = watch.get("missing_settlement_dates") or []
+    unreviewed = watch.get("missing_daily_review_dates") or []
+    no_eod = watch.get("missing_eod_dates") or []
+    lines = [f"- APP 执行故障复核：未结计划 {len(plans)}，阻断检查点 {len(blocked)}，缺失 EOD {len(no_eod)}，缺失结算日 {len(missing)}，缺失日复盘 {len(unreviewed)}；逐项核对卖价/买盘/成交窗口及后续买入影响，不能只归为外部状态。"]
+    lines.extend(f"  - 未结 `{row['plan_id']}`：{row.get('state')} / {row.get('reason')}；委托 {row.get('broker_order_id')}；证据 `{row['evidence']['path']}`（sha256={row['evidence']['sha256']}）" for row in plans)
+    lines.extend(f"  - 缺失结算：{', '.join(missing)}" for _ in [0] if missing)
+    lines.extend(f"  - 缺失日复盘：{', '.join(unreviewed)}" for _ in [0] if unreviewed)
+    lines.extend(f"  - 缺失 EOD：{', '.join(no_eod)}" for _ in [0] if no_eod)
+    return lines
+
+
 def _render_report(plan: dict, *, mode: str, validation: list[str], created_issues: list[str],
                    staged_files: list[str], blocked_dirty: list[str]) -> str:
     fw = plan.get("flywheel", {})
@@ -1196,6 +1321,7 @@ def _render_report(plan: dict, *, mode: str, validation: list[str], created_issu
         f"- 自动改策略代码：{'有，见下方「已自动落地」' if mode == MODE_AUTO else '没有。没有完整证据链时只产出提案/审计，不想当然改策略。'}",
         f"- 需要你确认的事项：{decision_count} 个{reminder}，见下一节。",
     ]
+    lines.extend(_render_execution_repair_watch(plan))
     lines.extend(_render_kol_system_review(plan))
     lines += [
         "",
@@ -1257,6 +1383,7 @@ def _render_report(plan: dict, *, mode: str, validation: list[str], created_issu
         "## 证据来源",
         f"- 固定输入清单：{', '.join(plan.get('fixed_inputs', []))}",
         f"- KOL 固定复盘输入（仅观察，不增加自动落地权限）：{', '.join(plan.get('fixed_review_inputs', {}).values()) or 'missing'}",
+        f"- APP 执行固定复盘输入（仅观察，不增加策略自动落地权限）：{', '.join(plan.get('fixed_execution_inputs', [])) or 'missing'}",
         f"- 提案数量：{len(plan.get('proposals', []))}",
         f"- 自动落地候选数量：{len(plan.get('auto_apply_candidates', []))}",
         "",
