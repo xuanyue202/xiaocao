@@ -25,6 +25,7 @@ from zoneinfo import ZoneInfo
 from .book_b_live_lifecycle import (
     BookBLiveAccountState,
     BookBLiveOwnedLot,
+    open_execution_plan_ids,
     project_book_b_live_account,
     write_book_b_live_settlement,
 )
@@ -344,6 +345,36 @@ def _existing_sell_plan_for_lot(
     return None
 
 
+def _prior_open_sell_for_lot(
+    state_dir: Path, *, trade_date: str, owned_lot_id: str,
+) -> str | None:
+    """Fence a lot until every earlier SELL for it has a terminal receipt."""
+    intent_dir = Path(state_dir) / "plan_intents"
+    for plan_id in open_execution_plan_ids(state_dir):
+        path = _intent_path(state_dir, plan_id)
+        if not path.is_file():
+            # Intent filenames are not an authority; find the validated plan below.
+            paths = intent_dir.glob("*.json")
+        else:
+            paths = (path,)
+        matched_intent = False
+        for candidate in paths:
+            try:
+                payload = json.loads(candidate.read_text(encoding="utf-8"))
+            except (OSError, json.JSONDecodeError) as exc:
+                raise ValueError("LIVE_PLAN_INTENT_INVALID") from exc
+            plan = read_durable_live_plan_intent(payload)
+            if plan.plan_id == plan_id:
+                matched_intent = True
+            if (plan.plan_id == plan_id and plan.side.upper() == "SELL"
+                    and plan.trade_date < trade_date
+                    and plan.owned_lot_id == owned_lot_id):
+                return plan_id
+        if not matched_intent:
+            raise ValueError("LIVE_PLAN_INTENT_MISSING")
+    return None
+
+
 def _sell_plan(
     lot: BookBLiveOwnedLot,
     status: dict[str, Any],
@@ -601,7 +632,14 @@ def _run_book_b_live_intraday_locked(
                 or reason in _INTRADAY_IMMEDIATE_REASONS
             )
         )
-        handoff_block_reason = "PRIOR_NONTERMINAL_SELL_HANDOFF" if broker_handoff_blocked and authorized_now else None
+        prior_open_sell = _prior_open_sell_for_lot(
+            state_root, trade_date=trade_date, owned_lot_id=lot.owned_lot_id
+        )
+        handoff_block_reason = (
+            "PRIOR_DAY_OPEN_SELL_SAME_LOT_RECONCILE_REQUIRED" if prior_open_sell and authorized_now
+            else "PRIOR_NONTERMINAL_SELL_HANDOFF" if broker_handoff_blocked and authorized_now
+            else None
+        )
         decision_id = _sha256(
             {
                 "trade_date": trade_date,
@@ -660,7 +698,7 @@ def _run_book_b_live_intraday_locked(
             "kol_exit_currently_valid": kol_exit["triggered"],
         }
         decisions.append(ledger.append(decision))
-        if not authorized_now or not execute_sells or broker_handoff_blocked:
+        if not authorized_now or not execute_sells or broker_handoff_blocked or prior_open_sell:
             continue
         if not _continuous_auction(decision_now, trade_date):
             continue

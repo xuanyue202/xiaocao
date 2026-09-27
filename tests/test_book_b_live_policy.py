@@ -440,6 +440,41 @@ def test_nonterminal_sell_keeps_other_lot_audit_without_second_broker_write(tmp_
     assert receipt.decisions[1]["handoff_block_reason"] == "PRIOR_NONTERMINAL_SELL_HANDOFF"
 
 
+@pytest.mark.app_simulation
+def test_prior_day_unknown_sell_fences_same_owned_lot_without_hiding_exit(tmp_path, monkeypatch):
+    current = datetime(2026, 9, 1, 6, 46, tzinfo=timezone.utc)
+    lot = BookBLiveOwnedLot("buy-1", "000001.XSHE", "甲", "2026-08-30", 10.0,
+        100, 100, 9.2, 920.0, 919.9, 0.0001, 0.0001, "freeze#1",
+        {"profile": "v6", "mode": "接力"})
+    account = BookBLiveAccountState("2026-09-01", "primary", 28000.0, 920.0,
+        919.9, 28919.9, 0.0, "b" * 64, "a" * 64, current.isoformat(), (lot,))
+    prior = _plan(side="SELL", lot_id=lot.owned_lot_id, trade_date="2026-08-31")
+    prior = intraday.bind_durable_live_plan_intents(tmp_path, [prior])[0]
+    ExecutionStore(tmp_path / "events.jsonl").append(
+        plan=prior, receipt=ExecutionReceipt(prior.plan_id, prior.plan_hash,
+            ExecutionState.UNKNOWN, reason="BROKER_STATUS_UNPROVEN",
+            remaining_shares=prior.shares))
+    monkeypatch.setattr(intraday, "reconcile_open_book_b_plans", lambda *a, **k: ())
+    monkeypatch.setattr(intraday, "check_monitor_pending_plans", lambda *a, **k: ())
+    monkeypatch.setattr(intraday, "project_book_b_live_account", lambda *a, **k: account)
+    monkeypatch.setattr(intraday, "load_monitor_contexts", lambda *a, **k: {})
+    calls = []
+    receipt = run_book_b_live_intraday(state_dir=tmp_path, freeze_dir=tmp_path,
+        trade_date="2026-09-01", phase="closing", now=lambda: current,
+        account_snapshot_provider=lambda: {},
+        status_provider=lambda _: [{"owned_lot_id": lot.owned_lot_id,
+            "triggered": True, "sell_reason": "HARD_STOP",
+            "decision_phase": "risk_floor", "latest_price": 9.2,
+            "market_guard_status": "ok", "market_guard_observed_at": current,
+            "market_guard_down_price": 9.0}],
+        execute=lambda plan: calls.append(plan))
+    assert calls == []
+    assert len(receipt.decisions) == 1
+    assert receipt.decisions[0]["sell_authorized"] is True
+    assert receipt.decisions[0]["handoff_block_reason"] == (
+        "PRIOR_DAY_OPEN_SELL_SAME_LOT_RECONCILE_REQUIRED")
+
+
 def test_kol_exit_has_exact_decision_hash_and_owned_lot_audit_despite_missing_risk_history(tmp_path):
     receipt, seen = _exit_run(tmp_path)
     assert receipt.status == "executed"
