@@ -26,7 +26,7 @@ def _inputs(tmp_path):
     return request, request_path, draft, market, bundle
 
 
-def test_hourly_rejects_canonical_bundle_without_astra_dispatch(tmp_path):
+def test_hourly_rejects_canonical_bundle_without_semantic_dispatch(tmp_path):
     request, request_path, draft, market, bundle = _inputs(tmp_path)
     draft_path = tmp_path / "draft.json"
     draft_path.write_text(json.dumps(draft), encoding="utf-8")
