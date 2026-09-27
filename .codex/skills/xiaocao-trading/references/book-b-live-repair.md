@@ -171,6 +171,44 @@ retry; transport failure does not undo the validated APP-simulation repair.
 
 ## Formal same-plan recovery
 
+### Production takeover map
+
+Before any repair or continuation, locate the existing dated run archive under
+`output/live/book_b_live_execution/runs/`, its persisted plan/claim events and
+the latest exact APP order/trade readback. Name the affected owner, plan ID,
+plan hash, broker order ID if any, last possible write, legal window and next
+permitted action. An `executed` checkpoint is not fill proof; inspect each
+execution receipt and the corresponding broker row.
+
+| Current owner | Same-plan continuation |
+|---|---|
+| 09:25 BUY | Use the dated `book_b_live_morning.py --resume-plan-id ... --recovery-action resume/reconcile` command below. `resume` requires an unclaimed valid plan; a possible write uses exact-claim reconciliation. |
+| Opening/14:25/14:45 SELL | The intraday script currently has no `--resume-plan-id` CLI. Keep the original task as owner, inspect its durable SELL plan/claim, and restore the smallest blocked Python/AX dependency. Resume through the existing execution port only while the plan and window remain valid; add a plan-bound narrow entry if the checkpoint cannot safely continue. Do not invoke raw native submit/cancel with only a code/price/quantity tuple. |
+| Post-write UNKNOWN or cancel claim | Reconcile the exact existing claim and contract number through APP order/trade rows. A prior-day UNKNOWN is separate from a new dated owned-lot SELL using current APP sellable. |
+| 15:00 EOD | Read/reconcile/settle only after every plan has terminal proof. An EOD rerun cannot restore an expired SELL window. |
+
+Use the production-path review at
+`docs/reviews/2026-09-27-native-app-production-path-review.md` for the observed
+Sep 18/23 order and settlement cases. Its unresolved SELL-only and narrow
+takeover gaps are implementation work, not authority to infer missing facts.
+For a BUY, separate server ACK, price/other server rejection and actual fill.
+A unique contract-number ACK advances the pre-reserved batch but remains open
+until trade readback. A user-observed price-limit rejection is not currently a
+recognized native retry path: first capture its exact message and prove the
+old claim's absence or terminal order/fill state; then add and validate a
+fresh-price, basket- and time-bound immutable retry through the execution
+port. An unrecognized result stays `UNKNOWN/reconcile_only`, never a blind
+second click. Record each order's acceptance and fill separately.
+For a closing SELL, inspect the order's `filled_shares`, `remaining_shares`,
+`state`, current bid and time before calling the checkpoint complete. An
+`ACKNOWLEDGED` or `PARTIAL` receipt is still an open exit. The current native
+adapter has no automatic SELL replacement or within-window fill controller:
+keep the task owner on exact readback/repair and record the unsold amount and
+next-session capacity impact. Any new same-day order for that unsold amount
+needs a durable cancel-terminal/fill proof and a separate plan/claim; a raw
+second native click cannot supply that proof. Implement and validate the
+plan-bound continuation before asserting a SELL completion recovery.
+
 Use the existing dated intent and `--resume-plan-id`, never restart the producer:
 
 ```bash

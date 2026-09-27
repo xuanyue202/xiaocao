@@ -73,6 +73,12 @@ TERMINAL_STATES = frozenset(
     }
 )
 
+
+def _safe_failure_code(exc: Exception) -> str:
+    """Retain a fixed machine error code without persisting exception details."""
+    candidate = str(exc).split(":", 1)[0]
+    return candidate if re.fullmatch(r"[A-Z][A-Z0-9_]{2,119}", candidate) else type(exc).__name__
+
 _TRADING_GUARD_STATUSES = frozenset({
     "ok", "t", "trading", "open", "normal", "交易中", "正常",
 })
@@ -1468,7 +1474,7 @@ class TradingExecution:
                     plan,
                     replace(
                         previous,
-                        reason=f"CANCEL_PROBE_FAILED:{type(exc).__name__}",
+                        reason=f"CANCEL_PROBE_FAILED:{_safe_failure_code(exc)}",
                         next_action="human_review",
                     ),
                     kind="cancel_probe_failed",

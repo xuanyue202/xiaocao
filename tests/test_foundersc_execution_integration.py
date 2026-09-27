@@ -8,6 +8,7 @@ from datetime import datetime, timedelta, timezone
 import pytest
 
 from tests.test_foundersc_native_broker import FakeNative, _adapter, _plan
+from xiaocao.live.foundersc_native_ax import FounderscNativeAXError
 from xiaocao.live.safety import ENV_LIVE_ENABLED, ENV_SIGNING_KEY, make_authorization
 from xiaocao.live.trading_execution import (
     BookBOwnershipEvidence, ExecutionState, ExecutionStore, TradingExecution,
@@ -79,6 +80,29 @@ def test_restart_after_native_response_loss_never_repeats_effect(chain, lost, re
         assert engine(native).execute(plan).state == ExecutionState.CANCELLED
         assert engine(native).cancel(plan).state == ExecutionState.CANCELLED
     assert before == (native.submit_calls, native.cancel_calls, len(native.query_calls))
+    assert native.submit_calls == native.cancel_calls == 1
+
+
+def test_cancel_probe_failure_keeps_specific_safe_code_and_retries_without_order_replay(chain):
+    class Native(FakeNative):
+        failed_once = False
+
+        def probe_cancel_selection(self, **kwargs):
+            if not self.failed_once:
+                self.failed_once = True
+                raise FounderscNativeAXError("NATIVE_CANCEL_PREFLIGHT_STATUS_UNPROVEN:private-detail")
+            return super().probe_cancel_selection(**kwargs)
+
+    plan, engine = chain
+    native = Native()
+    submitted = engine(native).execute(plan)
+    assert submitted.state == ExecutionState.ACKNOWLEDGED
+    blocked = engine(native).cancel(plan)
+    assert blocked.state == ExecutionState.ACKNOWLEDGED
+    assert blocked.reason == "CANCEL_PROBE_FAILED:NATIVE_CANCEL_PREFLIGHT_STATUS_UNPROVEN"
+    assert blocked.cancel_claim_id is None
+    assert native.submit_calls == 1 and native.cancel_calls == 0
+    assert engine(native).cancel(plan).state == ExecutionState.CANCELLED
     assert native.submit_calls == native.cancel_calls == 1
 
 
