@@ -39,7 +39,11 @@ Read this file only for quotes, market state, pools, sectors, indices, indicator
   overrides disable renewal. Missing credentials or rejected captcha/login
   remains an authentication blocker, never an empty opportunity. No
   refresh-token API is assumed. After agent-assisted recovery, validate with
-  a fresh-process preflight.
+  a fresh-process preflight. If the final 09:00 authentication check is still
+  blocked, run `PYTHONPATH=src .venv/bin/python scripts/morning_preflight_alert.py
+  --date today --kind market-auth` once. It performs one fresh official read,
+  records a dated incident and sends an urgent trading WeCom alert when blocked;
+  report the exact delivery status. A healthy result sends nothing.
   Successful web login/disabled buttons are not API authorization proof.
   A failed preflight reports only the sanitized login failure category and
   numeric official login code when available; it never prints server text or

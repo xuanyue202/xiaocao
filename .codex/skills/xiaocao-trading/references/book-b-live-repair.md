@@ -111,6 +111,13 @@ even when the morning created no new order. Repair local evidence gaps and
 narrow-resume before reporting an irreducible external blocker. A written
 next-owner note is not an accepted handoff.
 
+For an early morning preflight failure, use the exact terminal receipt with
+`scripts/morning_preflight_alert.py --date today --kind book-b --receipt <path>`
+as soon as the blocked receipt is durable, while bounded local repair continues.
+This is a separate dated urgent WeCom
+incident from an order's existing notification. Read back whether it was
+delivered; absence of a new order does not suppress the preflight alert.
+
 Historical reconciliation refreshes both query tables before capture. This does
 not set or prove the UI date range; exact row date and order identity remain
 mandatory. A refreshed `已报` with no observed trades is still unproven, not a

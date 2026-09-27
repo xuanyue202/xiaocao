@@ -272,6 +272,30 @@ ambiguous character. Do not repeat a rejected password/captcha login. After
 agent recovery, verify
 with one fresh-process probe and consume only a valid immutable producer freeze.
 
+The 09:00 readiness surface is deliberately small:
+
+1. The original runner's initial event/terminal receipt proves native session,
+   account binding, capital/ownership and old-intent state. Do not duplicate
+   App queries or release an UNKNOWN order to make a green preflight.
+2. The one uncached market authentication read proves the stored token; on
+   990502 the agent obtains a new token through the single challenge flow,
+   then verifies one fresh-process read. Pre-open empty rows are not source
+   completeness failure. The 09:23 producer validates its actual dated inputs.
+3. Run `scripts/morning_preflight_alert.py --date today --kind transport`
+   once to prove a trading WeCom recipient and relay configuration exist;
+   this is read-only and does not claim delivery. Save the KOL projection and
+   its quality separately; degraded coverage uses the deterministic baseline.
+4. If authentication remains blocked after repair, run the alert command with
+   `--kind market-auth`. If the original runner ends blocked, use `--kind book-b
+   --receipt <exact terminal receipt_path>`. A failed original 09:23 producer
+   uses `--kind producer --receipt <exact run_flow path>`. The alert script
+   makes a dated durable incident, sends urgent trading WeCom once for a
+   delivered incident, and prints delivery readback; `unproven` or missing
+   transport is still a blocker to report, never human acknowledgement.
+
+The 09:24 native session recheck and 09:25 account/quote/market guards remain
+fresh action-time checks; a 09:00 green status cannot pre-authorize them.
+
 ```bash
 PYTHONPATH=src .venv/bin/python scripts/kol_trading_context.py projection \
   --cache-only --history-fresh-through <today>T11:30:00+08:00

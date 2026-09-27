@@ -494,6 +494,26 @@ def configured_wecom_recipients(
     return _wecom_user_ids(src, audience=audience)
 
 
+def wecom_transport_readiness(
+    *, env: dict[str, str] | None = None, audience: str | None = None,
+) -> dict[str, Any]:
+    """Read-only relay configuration check; never expose token or recipient IDs."""
+    src = _merged_env(os.environ) if env is None else env
+    missing = []
+    if not _env_first(src, ENV_WECOM_RELAY_URL):
+        missing.append(ENV_WECOM_RELAY_URL)
+    if not _env_first(src, ENV_WECOM_RELAY_TOKEN):
+        missing.append(ENV_WECOM_RELAY_TOKEN)
+    recipients = _wecom_user_ids(src, audience=audience)
+    if not recipients:
+        missing.append(ENV_WECOM_USER_IDS)
+    return {
+        "status": "configured" if not missing else "blocked",
+        "recipient_count": len(recipients),
+        "missing": missing,
+    }
+
+
 def send_wecom_recipient_detailed(
     title: str,
     body: str,
