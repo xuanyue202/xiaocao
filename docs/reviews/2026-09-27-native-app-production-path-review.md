@@ -15,6 +15,12 @@
 
 上述日期、状态、数量与订单号以各日期 `runs/intraday/archive/` 的原始 JSON 为准；摘要中的 `status=executed` 只表示委托执行端口交接完成，成交须看 `execution_receipts[*].state`、合同号及 APP 成交行。
 
+### 当晚追加的实际 APP 检查
+
+北京时间 2026-09-27 晚间，APP 仿真测试窗口开放。原生 Keychain 解锁成功；同一 Python adapter 的完整账户快照一次通过，持仓 6 行、当日委托 16 行、成交 0 行，快照 SHA256 为 `2e592ffc71574f64b653801ffe7386d660d1eef6af5048e663f5e593c20bf5b3`。针对其中实际可卖的 `515120.XSHG`，用生产 adapter 的 `prepare_readonly` 在 APP 卖出页预填 100 股 @0.63，代码/方向/价格/数量精确回读并清空，`submitted=false`、确认按钮未按；这只验证 SELL 表单原子能力，没有发 SELL 委托。
+
+另用既有隔离 BUY 演练入口尝试检查明显高价的服务端响应，但在创建计划/claim 前，完整委托表基线连续三轮以 `NATIVE_QUERY_ORDER_PRICE_MALFORMED` 阻断。原生读回定位到一笔此前已存在的委托 `6000032`，其“委托价格” OCR 为 `0.，5500`，而非可严格解析的价格；16 行中其余行不构成此次错误。该演练目录没有 intent、事件或新委托，故没有本次测试订单需要撤销。高价拒绝弹窗、重提和 SELL 提交/成交闭环仍**未实测**。这个多行旧委托价格误读是一个新的前置读取缺口；应对原单元格作受边界约束的重读或使用更窄、仍验证身份的 BUY 基线，不能把 `0.，5500` 直接猜成 `0.5500`。
+
 ## 原子粒度与接口结论
 
 1. **分层适合正常交易。** native client 将查询、打开页面、预填、提交、结果确认、撤单拆开；adapter 把原始回读归一为 capability/receipt；`TradingExecution` 持久化 plan、claim 和风险权限。原始 `submit_prepared_order`/`cancel_order` 虽需 `explicitly_enabled=True`，本身只收代码/方向/价格/数量/账户指纹，不收 durable plan/claim；正式写入必须从执行层进入。`scripts/foundersc_native_ax.py` 仅暴露 bootstrap/probe/登录解锁等运维命令，不是计划绑定的下单 CLI。
