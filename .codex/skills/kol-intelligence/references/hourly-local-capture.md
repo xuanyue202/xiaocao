@@ -8,13 +8,23 @@ sole writer and receives this node's credential-free capsules as external input.
 
 ## Runner and boundary
 
-Run exactly once and keep the process alive for input requests:
+The Automation starts through one deterministic Beijing clock-hour gate. It does
+not parse the cron schedule or list Codex tasks, OS processes, terminals, or
+runners. The gate truncates the current time to the hour only to form the lock
+key. It exits with `hour_busy` when another invocation owns that Beijing clock
+hour and otherwise holds the hour lock for the full runner lifetime. It has no
+minute cutoff, so `HH:00` and `HH:30` schedules behave identically:
 
 ```bash
-PYTHONPATH=src .venv/bin/python scripts/kol_daily.py capture-local
+PYTHONPATH=src .venv/bin/python scripts/kol_automation_slot_gate.py \
+  --lock-dir output/live/kol_automation_hour_locks \
+  -- .venv/bin/python scripts/kol_daily.py capture-local
 ```
 
-Use an interactive PTY (`tty=true`) and keep stdin alive for Browser/MCP JSON.
+Run this command exactly once in an interactive PTY (`tty=true`) and keep stdin
+alive for Browser/MCP JSON after `hour_acquired`. The gate uses a non-blocking
+`flock`; it never enumerates or attaches to another task/process. The lock is
+released automatically when the exec'd runner exits.
 The normal handoff path does not inject a Codex task message or remote-import.
 
 For one existing item, run
