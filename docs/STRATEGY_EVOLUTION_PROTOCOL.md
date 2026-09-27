@@ -50,6 +50,13 @@ The manifest is the durable bridge from "I ran research" to "this result can be 
 ## Non-Negotiables
 
 - Judgment priors and distilled playbook claims remain `authority=0` until they pass the relevant guard.
-- A PASS verdict is evidence, not permission to edit the deterministic spine.
+- A PASS verdict is evidence, not a substitute for point-in-time inputs,
+  costs, drawdown, out-of-sample and rollback validation.
 - `AUTO_APPLIED` is limited to paper/simulation/research/tooling changes with a complete manifest, evidence bundle, validation, clean target files, and rollback.
-- Real-capital, account history, raw data truth sources, fill/stop/accounting, and safety logic require explicit human authorization outside this protocol.
+- In the current APP-server simulation, evidence-backed strategy or safety
+  changes may be committed and activated without waiting for a user reply;
+  strategy selection, capital permissions, permanent parameters and safety
+  relaxations require a durable WeCom change notice. A failed delivery remains
+  pending for retry and does not block validated simulation behavior.
+- Account history, broker fills and raw data truth sources retain their
+  authoritative receipts; real-capital authorization keeps the two-key gate.

@@ -401,7 +401,7 @@ def _exit_run(tmp_path, *, policy_kind="valid", reason="KOL_DISCRETIONARY_EXIT",
 
 
 @pytest.mark.app_simulation
-def test_nonterminal_sell_keeps_other_lot_audit_without_second_broker_write(tmp_path, monkeypatch):
+def test_nonterminal_sell_does_not_hide_an_independent_owned_lot_exit(tmp_path, monkeypatch):
     current = datetime(2026, 9, 1, 6, 46, tzinfo=timezone.utc)
     first = BookBLiveOwnedLot("buy-1", "000001.XSHE", "甲", "2026-08-31", 10.0,
         100, 100, 9.2, 920.0, 919.9, 0.0001, 0.0001, "freeze#1",
@@ -434,14 +434,15 @@ def test_nonterminal_sell_keeps_other_lot_audit_without_second_broker_write(tmp_
         account_snapshot_provider=lambda: {}, status_provider=statuses,
         execute=execute)
 
-    assert len(calls) == len(receipt.execution_receipts) == 1
+    assert len(calls) == len(receipt.execution_receipts) == 2
     assert len(receipt.decisions) == 2
     assert receipt.decisions[1]["sell_authorized"] is True
-    assert receipt.decisions[1]["handoff_block_reason"] == "PRIOR_NONTERMINAL_SELL_HANDOFF"
+    assert receipt.decisions[1]["handoff_block_reason"] is None
+    assert {plan.owned_lot_id for plan in calls} == {first.owned_lot_id, second.owned_lot_id}
 
 
 @pytest.mark.app_simulation
-def test_prior_day_unknown_sell_fences_same_owned_lot_without_hiding_exit(tmp_path, monkeypatch):
+def test_prior_day_unknown_sell_preserves_identity_and_allows_fresh_sellable_exit(tmp_path, monkeypatch):
     current = datetime(2026, 9, 1, 6, 46, tzinfo=timezone.utc)
     lot = BookBLiveOwnedLot("buy-1", "000001.XSHE", "甲", "2026-08-30", 10.0,
         100, 100, 9.2, 920.0, 919.9, 0.0001, 0.0001, "freeze#1",
@@ -454,6 +455,11 @@ def test_prior_day_unknown_sell_fences_same_owned_lot_without_hiding_exit(tmp_pa
         plan=prior, receipt=ExecutionReceipt(prior.plan_id, prior.plan_hash,
             ExecutionState.UNKNOWN, reason="BROKER_STATUS_UNPROVEN",
             remaining_shares=prior.shares))
+    with pytest.raises(ValueError, match="LIVE_BOOK_B_OPEN_EXECUTION_RECONCILE_REQUIRED"):
+        intraday.check_monitor_pending_plans(tmp_path, trade_date="2026-09-01", asof=current)
+    assert intraday.check_monitor_pending_plans(
+        tmp_path, trade_date="2026-09-01", asof=current, allow_open_sells=True
+    ) == ()
     monkeypatch.setattr(intraday, "reconcile_open_book_b_plans", lambda *a, **k: ())
     monkeypatch.setattr(intraday, "check_monitor_pending_plans", lambda *a, **k: ())
     monkeypatch.setattr(intraday, "project_book_b_live_account", lambda *a, **k: account)
@@ -467,12 +473,18 @@ def test_prior_day_unknown_sell_fences_same_owned_lot_without_hiding_exit(tmp_pa
             "decision_phase": "risk_floor", "latest_price": 9.2,
             "market_guard_status": "ok", "market_guard_observed_at": current,
             "market_guard_down_price": 9.0}],
-        execute=lambda plan: calls.append(plan))
-    assert calls == []
+        execute=lambda plan: (calls.append(plan) or ExecutionReceipt(
+            plan.plan_id, plan.plan_hash, ExecutionState.UNKNOWN,
+            reason="NEW_ORDER_RECONCILE_REQUIRED", remaining_shares=plan.shares)))
+    assert len(calls) == 1
+    assert calls[0].plan_id != prior.plan_id
+    assert calls[0].shares == 100
     assert len(receipt.decisions) == 1
     assert receipt.decisions[0]["sell_authorized"] is True
-    assert receipt.decisions[0]["handoff_block_reason"] == (
-        "PRIOR_DAY_OPEN_SELL_SAME_LOT_RECONCILE_REQUIRED")
+    assert receipt.decisions[0]["handoff_block_reason"] is None
+    assert receipt.decisions[0]["prior_open_sell_plan_id"] == prior.plan_id
+    audit = json.loads(plan_audit_path(tmp_path, calls[0].plan_id).read_text())
+    assert audit["prior_open_sell_plan_id"] == prior.plan_id
 
 
 def test_kol_exit_has_exact_decision_hash_and_owned_lot_audit_despite_missing_risk_history(tmp_path):

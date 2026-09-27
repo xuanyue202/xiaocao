@@ -63,6 +63,14 @@ it exists to remove model-composed startup work from the two-minute deadline.
 Do not add discovery, journal, Git, KOL, paper, broker or diagnostic work to the
 launcher, and do not use it outside the single scheduled closing pass.
 
+For every owned-lot exit, prefer the full APP account/order/trade snapshot.
+If an unrelated prior SELL remains UNKNOWN, keep its own claim for later
+reconciliation and continue other lots. A new trading day's same-lot SELL may
+use current APP sellable with a separate intent; never infer that the older
+order was terminal. If the full read path fails in the legal window, repair
+the true prerequisite and use the sell-only emergency capability described
+in `book-b-live-repair.md`; do not invent BUY, NAV or EOD facts from it.
+
 This second command reads no paper positions/account/trades. It first
 reconciles existing live intents, then consumes the native Founder
 positions/orders/trades row tables plus the funds summary embedded in the same
@@ -76,10 +84,11 @@ intent/execution readback on the next scheduled checkpoint.
 An open BUY proven unclaimed by its bound intent and complete event history is
 reported in `deferred_buy_plan_ids`. Leave it to the original morning owner;
 continue monitoring existing owned lots and authorized exits. Recheck after
-account and status reads. A SELL intent, claim or uncertain effect still
-requires reconciliation before new decisions; a prior-day own-lot SELL with
-fresh exact zero-fill and full-holding proof is scoped to that lot and remains
-reconcile-only. Deferred BUY intents still
+account and status reads. Keep each SELL intent or uncertain effect for exact
+reconciliation, while an older open SELL does not stop fresh owned-lot
+decisions. A prior-day own-lot SELL with fresh exact zero-fill and full-holding
+proof remains reconcile-only, and current APP sellable can support a new dated
+plan. Deferred BUY intents still
 reserve capital and block final settlement until formally closed or completed.
 
 Book T is a separate explicit branch:

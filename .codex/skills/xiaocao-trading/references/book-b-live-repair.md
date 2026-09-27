@@ -10,6 +10,32 @@ legacy `live` labels are not backend verification. Keep strategy, allocation,
 execution guards and receipt standards unchanged. The APP route consumes its
 service receipts, never local paper fills.
 
+## Priority and dependency test
+
+The 09:25–09:30 frozen-candidate BUY and every legal protective/closing SELL
+window are the first repair priority: their missed opportunities cannot be
+recreated by an after-hours replay. Morning is a BUY owner; opening, 14:25
+and 14:45 are separate owned-lot SELL owners. Start their prescribed business
+command on time. During a failure, classify each blocked step as a true
+prerequisite for the next legal order or as supporting reconciliation/reporting.
+Run normal full readback first; record and defer a non-prerequisite failure so
+it does not consume the window. A prerequisite gets bounded Python/AX recovery,
+then model-assisted multimodal diagnosis and restoration of the needed atom.
+The model uses the frozen plan and project execution port first. A direct APP
+operation is an emergency path only when its account, plan, claim, price,
+quantity, action and resulting broker receipt can be durably correlated.
+
+Within this transaction priority, preserve order identity, current APP
+sellable, T+1, quote/time and ownership as per-order inputs. An old UNKNOWN
+claim does not globally block independent candidates or lots. On a later
+trading day, fresh APP sellable may authorize a new SELL for the same owned
+lot; keep the old and new order identities open for separate reconciliation.
+The best-evidence path reads positions/orders/trades and funds. If only the
+current account-bound APP sellable quantity is available, continue a legal
+protective exit through the dedicated sell-only path, mark the omitted facts
+unproven, and cap the new order by both APP sellable and durable owned shares.
+Never promote a partial sell-only observation to BUY/NAV/EOD authority.
+
 ## Ownership and outcome classes
 
 Run the full live-morning command exactly once. The started task owns repair;
@@ -22,9 +48,11 @@ Classify the observed state before changing anything:
   terminal state; do not turn it into an order.
 - `repair_required`: code, configuration, parsing, orchestration, or read-only
   evidence is broken and can be fixed within the repository or current task.
-- `reconcile_only`: a durable claim exists or any broker write may have
-  happened. Only read the exact plan/order/fill state; never repeat prepare,
-  Return, confirmation, submit, cancel, or replacement.
+- `reconcile_only`: a durable claim exists or a broker write may have happened.
+  Reconcile that exact plan/order/fill without blind same-claim replay. Keep
+  other independent transactions moving; a fresh, separately dated SELL may
+  use current APP sellable and a new durable claim while the old claim stays
+  unresolved.
 - `user_action_required`: only missing credentials, SMS/consent, macOS
   unlock/Accessibility, an unavailable user-only fact, or an external effect
   that remains uncertain after exact readback. A market-data image CAPTCHA
@@ -39,12 +67,13 @@ stop after a safely repairable local failure.
 For `repair_required`, keep the same task alive and perform this loop:
 
 1. Preserve the exact receipt, durable state, failure code and fingerprint.
-   Determine whether a write may already have happened; uncertainty takes the
-   reconcile-only branch. Read only the matching prior failure note if needed.
+   Determine which action's side effect is uncertain and isolate that claim;
+   test whether it is a prerequisite for the next legal trade. Read only the
+   matching prior failure note if needed.
 2. Locate and patch the smallest failing AX/helper/adapter or orchestration
-   boundary. Preserve unrelated work. Agent UI observation may diagnose the
-   fault; trading-form manipulation is not an emergency execution fallback.
-   All continuation runs through project code and its normal execution port.
+   boundary. Preserve unrelated work. Use project Python atoms first; when
+   they cannot recover in time, use multimodal APP observation and only a
+   plan/claim-bound direct operation with exact broker readback.
 3. Perform minimum necessary validation: syntax/import or Swift build for the
    touched runtime, plus a focused reproduction or read-only boundary check
    that proves the reported failure is repaired. Reuse an existing focused
@@ -58,7 +87,9 @@ For `repair_required`, keep the same task alive and perform this loop:
    If no safe continuation exists, adding a read-only or state-bound resume is
    part of the repair. Recheck current session/market eligibility through the
    existing guards; use only the contract's bounded guard-refresh exception.
-   Never replay an uncertain broker action or revive an expired/terminal plan.
+   Decide replayability from the exact claim and broker effects, never from a
+   timeout alone. Do not revive an expired/terminal plan. A new dated SELL
+   for currently sellable owned shares is a separate plan, not a replay.
 5. Reconcile terminal service/account artifacts. A process exit, click, form,
    or local status line is not completion.
 
@@ -87,10 +118,15 @@ validation, commit/push the coherent repair for the collaborating writer.
 
 Positions, orders, trades, account-summary, and allocation queries may repeat
 as a bounded whole-snapshot read when parsing, freshness evidence, or a strict
-cross-field invariant is transiently unproven. Keep every invariant unchanged.
-Record attempts, failure codes, and `actions=native_readback_only`; exhaustion
-remains fail-closed. Account/date mismatch and every broker write are
-non-retryable. Between whole-snapshot attempts, the native route may leave the
+cross-field invariant is transiently unproven. BUY/NAV/EOD keep those proofs.
+For a legal protective SELL, when full readback still fails, obtain current
+account-bound APP sellable through the separate sell-only capability, mark
+every omitted table/amount unknown and retain the full-reconciliation work
+item. Build and validate this capability before using it if the installed
+Python port lacks it. Record attempts, failure codes, actual evidence grade
+and `actions=native_readback_only`. Account/date mismatch blocks the affected
+order; a timeout after possible broker write requires claim-bound readback
+before any replay decision. Between whole-snapshot attempts, the native route may leave the
 sticky full-query surface through ordinary order-surface navigation and enter
 it again without touching code, price, quantity or submit. If the normal
 five-minute trade lock appears during that read-only recovery, it may consume
@@ -127,6 +163,11 @@ After the terminal outcome, record the cause, fix, verification and residual
 blocker. Append its failure fingerprint and prevention to the Automation
 memory. If the same failure fingerprint already exists, the previous
 prevention failed: repair a deeper boundary or invariant before returning.
+If the repair changes strategy selection, capital permission, permanent
+parameters or a safety gate, commit its validated code, enqueue a specific
+WeCom change notice with `scripts/trading_change_notice.py`, and attempt
+delivery. Keep a failed notice pending for every later task's post-business
+retry; transport failure does not undo the validated APP-simulation repair.
 
 ## Formal same-plan recovery
 

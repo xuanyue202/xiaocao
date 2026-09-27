@@ -49,16 +49,19 @@ def _has_possible_write(events: list[dict]) -> bool:
 
 
 def check_monitor_pending_plans(state_dir: Path, *, trade_date: str | None = None,
-                                asof: datetime | None = None) -> tuple[str, ...]:
+                                asof: datetime | None = None,
+                                allow_open_sells: bool = False) -> tuple[str, ...]:
     """Prove which open intents are only local BUY reservations.
 
-    These remain open for their original owner. They cannot by themselves
-    block monitoring of owned lots; SELL intents and uncertain effects can.
+    These remain open for their original owner. During an exit checkpoint,
+    an earlier SELL stays with its own reconciliation owner while a fresh
+    broker sellable check decides whether another owned lot may be sold.
     """
     deferred = []
     with account_writer_lock(state_dir / "account_writer_locks", "primary"):
-        proven_sells = set(proven_prior_day_zero_fill_sell_ids(state_dir,
-            trade_date=trade_date, asof=asof)) if trade_date else set()
+        proven_sells = set(proven_prior_day_zero_fill_sell_ids(
+            state_dir, trade_date=trade_date, asof=asof,
+        )) if trade_date and not allow_open_sells else set()
         for plan_id in open_execution_plan_ids(state_dir):
             if plan_id in proven_sells:
                 continue
@@ -68,6 +71,11 @@ def check_monitor_pending_plans(state_dir: Path, *, trade_date: str | None = Non
             plan = read_durable_live_plan_intent(json.loads(path.read_text()))
             if plan.plan_id != plan_id or plan.logical_account_id != "primary":
                 raise ValueError("LIVE_RECOVERY_PLAN_BINDING_MISMATCH")
+            if allow_open_sells and plan.side == "SELL" and (
+                trade_date is None or plan.trade_date <= trade_date
+            ):
+                _history(state_dir, plan)
+                continue
             if plan.side == "BUY" and not _has_possible_write(_history(state_dir, plan)):
                 deferred.append(plan_id)
             else:

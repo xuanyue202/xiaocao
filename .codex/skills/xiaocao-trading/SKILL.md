@@ -17,7 +17,7 @@ This file is the router. Load one task branch, not the whole operating manual.
    - Otherwise use `$SKILL_DIR/assets/xiaocao-runtime`.
 3. Run from `XIAOCAO_ROOT`. Prefer `.venv/bin/python` for scripts when present; otherwise use `PYTHONPATH=src python3`.
 4. Read only the matching branch below before acting. If the request crosses branches, read each matching file. Do not preload sibling branches.
-5. Apply Operating Contract §1a to this research deployment: the user identifies both local digital simulation and APP-server simulation; the current APP service cannot affect a real brokerage account even where UI/code/history says `live`. Within the assigned task, advance simulated orders, cancellations and reconciliation through project code with unchanged strategy, allocation, execution urgency and receipt/accounting standards. Interpret legacy real-trading wording in that deployment context. Keep the two ledgers separate; use `references/book-b-live-repair.md` for urgent AX/code repair before same-plan continuation, with root-cause work after the terminal outcome.
+5. Apply Operating Contract §1a to this research deployment: the user identifies both local digital simulation and APP-server simulation; the current APP service cannot affect a real brokerage account even where UI/code/history says `live`. Keep the two ledgers separate. For a trading fault, read `references/book-b-live-repair.md`: protect the 09:25–09:30 BUY and each legal SELL window, classify actual dependencies, restore through Python first, and defer full 5 Why until the trade outcome. Current APP sellable can support a new dated owned-lot SELL while an older order remains separately unresolved.
 
 Completion means the requested command reached a terminal state and the branch-specific evidence was checked. A command start, intermediate log line, or UI toast is not completion.
 
@@ -37,9 +37,10 @@ Completion means the requested command reached a terminal state and the branch-s
   active write route is Founder `native-app`; a real submit still requires
   exact App/account binding, native query reconciliation and both capital keys.
   First-order receipt, UNKNOWN, reconcile, rejection and replacement semantics
-  are governed exclusively by `docs/OPERATING_CONTRACT.md` §4/§9; never restate,
-  relax or infer them from browser visibility. Unproved cancellation or retry
-  semantics remain fail-closed.
+  are governed by `docs/OPERATING_CONTRACT.md` §4/§9. Resolve the exact old
+  claim without blind replay; current APP sellable and owned-lot proof may
+  authorize a separate new-date SELL under §4. Keep each order's identity and
+  later accounting separate.
   Its non-empty freeze must be hash/count bound to the consumed snapshot; its
   producer strategy Git SHA must be bound by the freeze manifest; its
   allocation facts must come from a complete dated live asset readback bound
@@ -93,6 +94,11 @@ Completion means the requested command reached a terminal state and the branch-s
 ## Response contract
 
 - For automations, reply in concise Chinese and lead with execution/account outcome, not market storytelling.
+- After a high-impact APP-simulation strategy, capital, permanent-parameter or
+  safety-gate change is committed, enqueue and attempt its exact change notice
+  with `PYTHONPATH=src .venv/bin/python scripts/trading_change_notice.py`.
+  After the business window, run its `--retry-pending` mode, report the pending
+  count and repair a failed transport without delaying a legal BUY/SELL.
 - State the actual market/query date. Link the decisive local artifacts and report key rows/counts.
 - Separate deterministic success from supporting-layer degradation such as stale posture, missing reviews or a heavier knowledge backlog.
 - Report `候选股: NONE`, non-trading-day skip, `T+1_blocked` or an unchanged REJECTED research verdict as their actual bounded states, not generic failures.

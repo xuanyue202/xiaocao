@@ -1075,8 +1075,9 @@ def reconcile_open_book_b_plans(
     trade_date: str,
     execute: Callable[[TradePlan], ExecutionReceipt],
     now: datetime | None = None,
+    defer_prior_day_sells: bool = False,
 ) -> tuple[dict, ...]:
-    """Reconcile submitted plans; close expired, proven unclaimed intents locally."""
+    """Reconcile submitted plans; optionally defer old SELL reads until after exits."""
     root = Path(state_dir)
     intent_dir = root / "plan_intents"
     if not intent_dir.is_dir():
@@ -1113,6 +1114,8 @@ def reconcile_open_book_b_plans(
             continue
         if current.plan_hash != plan.plan_hash:
             raise ValueError("LIVE_PLAN_INTENT_EVENT_HASH_MISMATCH")
+        if defer_prior_day_sells and plan.side == "SELL" and plan.trade_date < trade_date:
+            continue
         reconciled = execute(plan)
         durable = store.current(plan.plan_id)
         if durable is None or durable.event_id != reconciled.event_id:

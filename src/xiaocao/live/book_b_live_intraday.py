@@ -34,7 +34,7 @@ from .book_b_live_morning import (
     read_durable_live_plan_intent,
     reconcile_open_book_b_plans,
 )
-from .trading_execution import ExecutionReceipt, TERMINAL_STATES, TradePlan
+from .trading_execution import ExecutionReceipt, TradePlan
 from .book_b_live_recovery import check_monitor_pending_plans
 from .trading_runner import frozen_rows_digest
 from .kol_policy import exit_adjustment
@@ -348,7 +348,7 @@ def _existing_sell_plan_for_lot(
 def _prior_open_sell_for_lot(
     state_dir: Path, *, trade_date: str, owned_lot_id: str,
 ) -> str | None:
-    """Fence a lot until every earlier SELL for it has a terminal receipt."""
+    """Keep an earlier unresolved SELL visible when a fresh lot is assessed."""
     intent_dir = Path(state_dir) / "plan_intents"
     for plan_id in open_execution_plan_ids(state_dir):
         path = _intent_path(state_dir, plan_id)
@@ -499,8 +499,12 @@ def _run_book_b_live_intraday_locked(
         trade_date=trade_date,
         execute=execute,
         now=current,
+        defer_prior_day_sells=normalized_phase != "eod",
     )
-    deferred_buys = check_monitor_pending_plans(state_root, trade_date=trade_date, asof=current)
+    deferred_buys = check_monitor_pending_plans(
+        state_root, trade_date=trade_date, asof=current,
+        allow_open_sells=normalized_phase != "eod",
+    )
     phase_now = now()
     if phase_now.tzinfo is None:
         raise ValueError("LIVE_BOOK_B_NOW_NOT_TZ_AWARE")
@@ -513,7 +517,10 @@ def _run_book_b_live_intraday_locked(
     ):
         raise ValueError("LIVE_BOOK_B_EOD_SETTLEMENT_WINDOW_NOT_OPEN")
     snapshot = account_snapshot_provider()
-    deferred_buys = check_monitor_pending_plans(state_root, trade_date=trade_date, asof=now())
+    deferred_buys = check_monitor_pending_plans(
+        state_root, trade_date=trade_date, asof=now(),
+        allow_open_sells=normalized_phase != "eod",
+    )
     current = now()
     if current.tzinfo is None:
         raise ValueError("LIVE_BOOK_B_NOW_NOT_TZ_AWARE")
@@ -590,14 +597,16 @@ def _run_book_b_live_intraday_locked(
             deferred_buy_plan_ids=deferred_buys,
         )
     statuses = status_provider(account.lots)
-    deferred_buys = check_monitor_pending_plans(state_root, trade_date=trade_date, asof=now())
+    deferred_buys = check_monitor_pending_plans(
+        state_root, trade_date=trade_date, asof=now(),
+        allow_open_sells=True,
+    )
     by_lot = {str(status.get("owned_lot_id") or ""): status for status in statuses}
     if set(by_lot) != {lot.owned_lot_id for lot in account.lots}:
         raise ValueError("LIVE_BOOK_B_STATUS_COVERAGE_MISMATCH")
     ledger = BookBLiveDecisionLedger(state_root / "book_b_live_decisions.jsonl")
     decisions: list[dict[str, Any]] = []
     receipts: list[dict[str, Any]] = []
-    broker_handoff_blocked = False
     for lot in account.lots:
         decision_now = now()
         if decision_now.tzinfo is None:
@@ -635,11 +644,7 @@ def _run_book_b_live_intraday_locked(
         prior_open_sell = _prior_open_sell_for_lot(
             state_root, trade_date=trade_date, owned_lot_id=lot.owned_lot_id
         )
-        handoff_block_reason = (
-            "PRIOR_DAY_OPEN_SELL_SAME_LOT_RECONCILE_REQUIRED" if prior_open_sell and authorized_now
-            else "PRIOR_NONTERMINAL_SELL_HANDOFF" if broker_handoff_blocked and authorized_now
-            else None
-        )
+        handoff_block_reason = None
         decision_id = _sha256(
             {
                 "trade_date": trade_date,
@@ -654,6 +659,7 @@ def _run_book_b_live_intraday_locked(
                 "kol_policy_status": kol_decision.get("status"),
                 "sell_authorized": authorized_now,
                 "handoff_block_reason": handoff_block_reason,
+                "prior_open_sell_plan_id": prior_open_sell,
                 "best_bid_price": status.get("best_bid_price"),
                 "best_bid_volume": status.get("best_bid_volume"),
             }
@@ -675,6 +681,7 @@ def _run_book_b_live_intraday_locked(
             "triggered": triggered,
             "sell_authorized": authorized_now,
             "handoff_block_reason": handoff_block_reason,
+            "prior_open_sell_plan_id": prior_open_sell,
             "sell_reason": reason,
             "decision_phase": status.get("decision_phase"),
             "latest_price": status.get("latest_price"),
@@ -698,7 +705,7 @@ def _run_book_b_live_intraday_locked(
             "kol_exit_currently_valid": kol_exit["triggered"],
         }
         decisions.append(ledger.append(decision))
-        if not authorized_now or not execute_sells or broker_handoff_blocked or prior_open_sell:
+        if not authorized_now or not execute_sells:
             continue
         if not _continuous_auction(decision_now, trade_date):
             continue
@@ -721,14 +728,22 @@ def _run_book_b_live_intraday_locked(
                 state_root,
                 [plan],
             )[0]
+            audit: dict[str, Any] = {}
+            if prior_open_sell:
+                audit = {
+                    "prior_open_sell_plan_id": prior_open_sell,
+                    "broker_snapshot_sha256": account.broker_snapshot_sha256,
+                }
             if reason == "KOL_DISCRETIONARY_EXIT":
-                bind_plan_audit(state_root, plan, {
+                audit.update({
                     "decision_ledger_id": decision_id,
                     "decision_id": kol_decision["decision_id"],
                     "decision_sha256": kol_decision["decision_sha256"],
                     "owned_lot_id": lot.owned_lot_id,
                     "broker_snapshot_sha256": account.broker_snapshot_sha256,
                 })
+            if audit:
+                bind_plan_audit(state_root, plan, audit)
         else:
             plan = existing
         handoff_now = now()
@@ -742,10 +757,6 @@ def _run_book_b_live_intraday_locked(
                 continue
         receipt = execute(plan)
         receipts.append(receipt.as_dict())
-        if receipt.state not in TERMINAL_STATES:
-            # Keep assessing other owned lots for the audit, but never add a
-            # second broker write while this plan has a nonterminal effect.
-            broker_handoff_blocked = True
     status_name = "executed" if receipts else "observed"
     reason_name = "SELL_INTENTS_HANDED_OFF" if receipts else "NO_NEW_LIVE_SELL_HANDOFF"
     risk_receipt = record_risk(refresh=any(item.get("filled_shares", 0) > 0 for item in receipts))

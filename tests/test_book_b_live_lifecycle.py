@@ -20,7 +20,10 @@ from xiaocao.live.book_b_live_lifecycle import (
     write_book_b_live_settlement,
 )
 from xiaocao.live.book_b_live_intraday import _sell_limit_price, run_book_b_live_intraday
-from xiaocao.live.book_b_live_morning import load_book_b_live_capital_basis
+from xiaocao.live.book_b_live_morning import (
+    load_book_b_live_capital_basis,
+    reconcile_open_book_b_plans,
+)
 from xiaocao.live.live_decision_support import evaluate_live_risk
 from xiaocao.live.trading_execution import (
     BookBOwnershipEvidence,
@@ -208,6 +211,26 @@ def _bind_plan_intent(state_dir: Path, plan: TradePlan) -> TradePlan:
         )
     _write_intent(state_dir, plan)
     return plan
+
+
+def test_prior_day_unknown_sell_read_is_deferred_during_exit_window(tmp_path: Path) -> None:
+    old = _bind_plan_intent(
+        tmp_path, _plan(side="SELL", lot_id="owned-lot", trade_date="2026-08-31")
+    )
+    store = ExecutionStore(tmp_path / "events.jsonl")
+    store.append(
+        plan=old,
+        receipt=ExecutionReceipt(
+            old.plan_id, old.plan_hash, ExecutionState.UNKNOWN,
+            reason="BROKER_STATUS_UNPROVEN", remaining_shares=old.shares,
+        ),
+    )
+    assert reconcile_open_book_b_plans(
+        tmp_path, trade_date="2026-09-01", now=NOW,
+        execute=lambda _: pytest.fail("Old uncertain order is post-exit work"),
+        defer_prior_day_sells=True,
+    ) == ()
+    assert store.current(old.plan_id).state == ExecutionState.UNKNOWN
 
 
 def _record_fill(
@@ -1074,15 +1097,15 @@ def test_intraday_rechecks_buy_claim_after_snapshot(tmp_path: Path) -> None:
         )
 
 
-def test_intraday_unclaimed_sell_still_blocks(tmp_path: Path) -> None:
+def test_intraday_unclaimed_sell_does_not_block_empty_owned_account(tmp_path: Path) -> None:
     _bind_plan_intent(tmp_path, _plan(side="SELL", lot_id="owned-lot"))
-    with pytest.raises(ValueError, match="OPEN_EXECUTION_RECONCILE_REQUIRED"):
-        run_book_b_live_intraday(
-            state_dir=tmp_path, freeze_dir=tmp_path, trade_date="2026-09-01", phase="opening",
-            account_snapshot_provider=lambda: pytest.fail("Pending SELL must be reconciled"),
-            status_provider=lambda lots: pytest.fail("Must not re-decide"),
-            execute=lambda plan: pytest.fail("Must not submit"), now=lambda: NOW,
-        )
+    receipt = run_book_b_live_intraday(
+        state_dir=tmp_path, freeze_dir=tmp_path, trade_date="2026-09-01", phase="opening",
+        account_snapshot_provider=_snapshot,
+        status_provider=lambda lots: pytest.fail("No owned lot to decide"),
+        execute=lambda plan: pytest.fail("Must not submit"), now=lambda: NOW,
+    )
+    assert receipt.status == "no_action"
 
 
 def test_intraday_rejects_tampered_buy_freeze_binding(tmp_path: Path) -> None:
@@ -1108,7 +1131,7 @@ def test_intraday_rejects_tampered_buy_freeze_binding(tmp_path: Path) -> None:
         )
 
 
-def test_intraday_unknown_sell_stops_before_materializing_second_write(
+def test_intraday_unknown_sell_does_not_block_independent_second_lot(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -1187,9 +1210,9 @@ def test_intraday_unknown_sell_stops_before_materializing_second_write(
     )
 
     assert receipt.status == "executed"
-    assert len(calls) == 1
-    assert len(receipt.execution_receipts) == 1
-    assert len(list((tmp_path / "plan_intents").glob("*.json"))) == 1
+    assert len(calls) == 2
+    assert len(receipt.execution_receipts) == 2
+    assert len(list((tmp_path / "plan_intents").glob("*.json"))) == 2
 
 
 def test_intraday_can_handoff_entire_sellable_odd_lot_after_partial_buy(

@@ -32,7 +32,9 @@ summary embedded in the same positions capture, projects
 only broker-proved Book-B owned fills, and writes the immutable settled NAV only
 when every live plan is terminal or a prior-day owned SELL has fresh, exact
 zero-fill order/trade/full-holding proof for the same day. The exception leaves
-that SELL open and fenced from duplicate same-lot writes. Never add
+that SELL open for its own reconciliation; a later dated SELL is a separate
+claim and may cause this full-holding settlement exception to stop applying.
+Never add
 `--execute-sells` to the EOD call.
 Transient structural, freshness-evidence, asset-equation, or cross-table
 failure may trigger only the adapter's bounded whole-snapshot reread. Strict
@@ -131,9 +133,10 @@ changed in the account, which code guard made the next decision, and what
 counterfactual observation would falsify the suspected cause. Carry the exact
 fingerprint forward until code repair, tests and the next natural production
 readback are separately evidenced.
-A later-lot decision marked `PRIOR_NONTERMINAL_SELL_HANDOFF` proves it was
-assessed but deliberately had no second broker write; a missing decision row
-is incomplete coverage, not a no-sell judgment.
+A later-lot decision proves assessment, while its distinct plan and execution
+receipt prove whether that lot reached the broker. An earlier nonterminal SELL
+is not a reason to suppress another currently sellable owned lot; a missing
+decision row is incomplete coverage, not a no-sell judgment.
 
 1. Compare the active Automation schedule and actual task/process timestamps
    against dated receipts for morning analysis, candidate freeze, buy execution,

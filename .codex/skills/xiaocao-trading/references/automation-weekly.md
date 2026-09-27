@@ -21,8 +21,10 @@ plan, read its exact order/fill/holding evidence and the corresponding daily
 reports. Compare submission price/time with contemporaneous bid and later
 prices, as available; check all-lot exit coverage, the next morning's buy
 availability and Book-B-only NAV/risk effects. A known broker UNKNOWN may
-remain reconcile-only, but it does not excuse a separable pricing, timing,
-scope, alert or accounting code defect. Trace a repeated fingerprint across
+remain reconcile-only while current APP sellable permits a separately dated
+owned-lot exit. It does not excuse a separable pricing, timing, scope, alert
+or accounting code defect. Rank incident work by the trading window and
+actual next-order dependency. Trace a repeated fingerprint across
 days and distinguish code repaired, tests passed and natural-run verified.
 Do not turn an absent report or missing broker proof into a normal result.
 
@@ -43,9 +45,10 @@ owner's repair and next legal checkpoint; do not create a second writer. If a
 deterministic operational defect has no active owner, this weekly task owns a
 narrow source/config repair under `book-b-live-repair.md`: diagnose, validate,
 commit/push and verify at the next legal run. This incident lane never sends a
-broker order, replays an expired checkpoint, relaxes uncertain-order fencing
-or promotes a strategy/parameter; the AUTO_APPLIED/PROPOSAL_ONLY research
-route and §10 gate remain separate. If external broker state prevents an
+broker order or replays an expired checkpoint. It may scope an overbroad
+uncertain-order guard when current APP sellable, owned-lot and fresh-plan proof
+support a distinct legal SELL; the old claim remains unresolved. Research
+AUTO_APPLIED/PROPOSAL_ONLY gates remain separate. If external broker state prevents an
 execution claim, keep that state open with exact read-only reconciliation.
 
 Also read [kol-trading-judgment.md](kol-trading-judgment.md) and the plan's
@@ -78,7 +81,7 @@ findings with their evidence; a slot or a claim of completion is not a run.
 The finalizer saves a compact dated review state for next week's input.
 
 - `AUTO_APPLIED`: paper/simulation/research/tooling only, with a complete evidence bundle. Strategy-return changes additionally require `change_type`, `protocol_id` and a passing `research_manifest` with diagnostics. Implement, test and provide rollback.
-- `PROPOSAL_ONLY`: evidence outside the fixed list, incomplete attribution/overfit/rollback mapping, real-capital/account/safety/core-truth changes, or a dirty target. Create the dated `.scratch/weekly-deep-review/...md` proposal.
+- `PROPOSAL_ONLY`: evidence outside the fixed list, incomplete attribution/overfit/rollback mapping, real-capital or raw account/ledger truth changes, or a dirty target. Create the dated `.scratch/weekly-deep-review/...md` proposal. APP-simulation strategy, capital-permission, permanent-parameter and safety-gate changes may land after §10 evidence validation; enqueue and attempt their exact WeCom notice without waiting for a reply.
 - `NO_ACTION_REQUIRED`: no qualified auto-apply candidate and no proposal.
 
 Read-only instrumentation/report-quality gaps may be AUTO_APPLIED with focused validation when they do not alter strategy, fills, accounts or safety.
@@ -109,3 +112,7 @@ Use `--mode PROPOSAL_ONLY` when appropriate. Never label failed/unrun validation
 Finalize must write `output/live/weekly_review_<date>.md`, append `output/live/flywheel_change_ledger.jsonl`, stage only the allowlist and commit to the current branch. Do not use `git add -A`.
 
 Completion requires a terminal weekly command, inspected plan, implemented-or-proposed route, passing declared validations, final report/ledger and the expected scoped commit. A plan file alone is not completion.
+After a high-impact APP-simulation change, enqueue its WeCom change notice
+with commit, evidence, validation, impact and rollback. Retry older pending
+notices after business work and report the delivery/pending state; a transport
+fault remains an explicit repair item rather than a strategy gate.

@@ -622,8 +622,9 @@ def proven_prior_day_zero_fill_sell_ids(state_dir: Path, *, trade_date: str,
                                          max_age_seconds: float = 2700) -> tuple[str, ...]:
     """Scope an old SELL with a fresh, exact zero-fill broker readback.
 
-    This is a buying/valuation exception, not a terminal order state.  The
-    order remains open for exact reconciliation and same-lot duplicate fencing.
+    This is a buying/valuation exception, not a terminal order state. The
+    order remains open for exact reconciliation even if a later dated SELL
+    uses current APP sellable.
     """
     root = Path(state_dir)
     intents = _load_intent_index(root)

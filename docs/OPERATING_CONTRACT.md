@@ -1,6 +1,6 @@
 # 小草运营契约（Operating Contract, SSOT）
 
-**版本**：4.23
+**版本**：4.24
 **状态**：现行
 **适用范围**：所有 paper / 未来 real 的实盘环（live_recommend → paper_record → live_monitor → eod）与回测
 **关联实现**：`src/xiaocao/live/{safety,capital_keychain,foundersc_native_ax,foundersc_native_broker,trading_execution,book_b_live_lifecycle,book_b_live_intraday}.py`、`src/xiaocao/live/intelligence_policy.py`、`src/xiaocao/strategy/{mode_switch,trend_rules,kol_reference}.py`、`native/foundersc_ax_executor/`、`kronos_screen/scripts/{capture_signals,forward_eval,paper_record,settle_book_a,settle_book_t,decompose_pnl,quality_governor}.py`、`scripts/{book_b_live_morning,book_b_live_intraday,live_monitor,research_mode_switch_replay}.py`
@@ -38,12 +38,17 @@ T+1、流动性、账户隔离和精确一次规则。知晓仿真不改变候�
 只能来自服务回执，不能用本地理论成交替代；两层账本及实验结果分别保留。
 旧文中的“不读取模拟成交”指 APP 路由不读取本地 paper 成交，并非否定服务端仿真。
 
-故障恢复优先修复 AX/项目代码，通过项目执行端口推进当前仿真流程；取消
-Agent 直接操纵交易表单下单的应急分支，界面观察仅辅助诊断。恢复分成
-**紧急修复 → 最小必要验证 → 同计划窄恢复及终态回读 → 根因修复与必要回归**。
+故障恢复优先使用 Python 原子能力和项目执行端口。模型多模态接手用于在
+交易窗口内定位并通过真正的前置依赖；若端口故障而必须直接操作 APP，
+沿用已冻结计划、账户、代码、价格和数量边界，记录可绑定原计划的操作、
+柜台订单、成交与持仓回读。无法绑定时先修复必要端口或证据环节。恢复分成
+**窗口内必要修复 → 最小验证与合法交易 → 终态/未决回读 → 盘后根因修复、
+5 Why 与必要回归**。
 具体步骤以交易 skill 的 `references/book-b-live-repair.md` 为准。完整测试、
 长篇假设分析、复盘和 commit/push 不占用紧急恢复前的交易窗口；会影响当前
-订单正确性的检查必须先完成。未知提交仍先对账，绝不通过重放获得“成功”。
+订单正确性的检查必须先完成。提交是否可重放由 durable claim、精确柜台
+回读及可见副作用判定；未知的同一委托不盲重放。新交易日独立的自有持仓
+退出按第 4 节当前 APP 可卖事实重新判断，旧委托身份与未决状态继续保留。
 
 验证按能发现的实际错误选择：保留订单、金额、成交、重复副作用、会计及部署
 连接检查；删除仅锁定文案、版本号、模型偏好、篇幅或实现写法的断言。文档改动
@@ -52,6 +57,13 @@ Agent 直接操纵交易表单下单的应急分支，界面观察仅辅助诊�
 数量或固定问答格式。测试通过数量不等于交易已完成。
 
 ### 1b. Book B 早盘紧急执行优先（2026-09-12 最新决定）
+
+09:25–09:30 冻结选股与 BUY 收单，以及各自合法窗口内的保护性 SELL，
+是优先恢复的不可补交易机会。先运行正常完整读取；某支持/对账步骤失败时，
+立即判断它是否为该笔交易的真实前置依赖。非前置依赖记缺口并继续；前置
+依赖先做限时、无副作用的 Python 读取/恢复，仍失败由模型用多模态检查并
+恢复所需原子能力。只读、导航和提交前动作可有界重试；委托提交按 durable
+claim 与精确副作用证据判断是否可重放。完整复盘和充分回归放在盘后。
 
 方正 APP 工程模拟测试（自动化专项回归、端到端试单和手动压力测试）只在北京时间周六日或工作日 09:00 前、15:00 起运行；工作日 09:00–15:00 含午休禁止。入口及等待锁后均须检查，不能借正式交易入口绕过；未结试单保留原回执并在允许时段恢复。正式交易及必要的生产故障修复按下述原流程执行。实施细则见 `docs/FOUNDER_NATIVE_AX.md` 测试时段说明。
 
@@ -95,12 +107,12 @@ LiangHui 语义投影质量、来源读回时效、当前正式决策是三个�
 
 **MUST NOT**：让 agent 直接计算成交价、改账本余额、决定是否真实下单。这些只能由脊柱确定性执行；agent 仅产出"判断"，落入决策日志。
 
-**MUST NOT（判断先验）**：不得让 playbook / REGIME_TIMELINE / xiaocao_hypotheses.jsonl 的先验进入 fill/stop/记账/安全，或据此**自动调任何 param/threshold/profile/model**。candidate 假设**不是 verdict**，对脊柱权威 = 0；唯一升级路径 = 过 `research_run.py` 护栏 → `kronos_screen/HYPOTHESES.jsonl` → §10 人工门。
+**MUST NOT（判断先验）**：不得让 playbook / REGIME_TIMELINE / xiaocao_hypotheses.jsonl 的先验进入 fill/stop/记账/安全，或据此**自动调任何 param/threshold/profile/model**。candidate 假设**不是 verdict**，对脊柱权威 = 0；升级须经过 `research_run.py` 护栏、`kronos_screen/HYPOTHESES.jsonl` 和 §10 的证据、通知与资金权限边界。
 
 ### 2a. 已授权的有界 KOL 当下判断（2026-09-07）
 
 用户确认新增判断接口，不要求每次当下判断先完成研究 PASS；这不把原始
-KOL 断言、候选假设或报告升级为策略真值，也不替代永久参数升级的 §10 门。
+KOL 断言、候选假设或报告升级为策略真值，也不替代永久参数升级的 §10 证据与通知门。
 小草用于短线体系及适用环境，其余已登记 KOL 用于因果逻辑、主题和风险；
 不得仅按持仓名称或关键词裁剪信息。完整语义库存保持全量，但模型运行上下文只消费 writer 显式分类且可操作的短线子集。灰常亮报告及观点/评估/关系是事实源，
 本地只保存可重建的 hash-bound 缓存；远端发现仅能证明已登记 ID 的覆盖。
@@ -154,7 +166,7 @@ KOL 断言、候选假设或报告升级为策略真值，也不替代永久参�
 样本和真实调用点的隔离演练，再推广；前向比较披露费用、未执行、时效及
 选择偏差，不把工程测试或 A/B 非配对累计差说成盈利因果证明。
 
-**MUST NOT（cohort 中间层）**：不得把 `benchmark/watchlist/research cohort` 成员直接当成实盘买入。cohort 可以证明“值得观察/值得研究/是老师或本地标杆”，但一条 cohort 只有通过 `research_run.py` 护栏并经过 §10 人工门，才能升级为 emitted strategy 或 param 变更。2026-06-30 人工门已将 raw-qibao top10 + 电子/20cm 的 `high_open_watch` 6%-10% 子桶和 `limitlike_watch` 升级为 **Book B 模拟盘** emitted modes（`高开标杆起爆` / `强攻标杆起爆`）；这不改变实盘两钥匙边界。
+**MUST NOT（cohort 中间层）**：不得把 `benchmark/watchlist/research cohort` 成员直接当成实盘买入。cohort 可以证明“值得观察/值得研究/是老师或本地标杆”，但一条 cohort 只有通过 `research_run.py` 护栏并经过 §10 证据与通知门，才能升级为 emitted strategy 或 param 变更。2026-06-30 经人工确认将 raw-qibao top10 + 电子/20cm 的 `high_open_watch` 6%-10% 子桶和 `limitlike_watch` 升级为 **Book B 模拟盘** emitted modes（`高开标杆起爆` / `强攻标杆起爆`）；这不改变实盘两钥匙边界。
 
 - **运行状态语义**：自动化必须分别记录 `deterministic_status` 与 `supporting_health`。主链脚本成功但 data-health、posture 或 agent-review 支持层不完整时，总状态是 `degraded`，不能伪装成全健康 `succeeded`；支持层降级也不能反写成确定性成交/记账失败。
 - **账本身份是会计主键**：`positions.jsonl` 与 `paper_trades.jsonl` 的每一行都必须显式写合法 `book=A/B/T`，所有现行写入端缺失时 fail-closed。读取端的历史兼容默认不能充当修复；旧账只能由专属 writer source 或唯一匹配的 code/date/shares/price/PnL 证明后回填，并记录前后 hash 的 repair audit。
@@ -314,10 +326,16 @@ KOL 断言、候选假设或报告升级为策略真值，也不替代永久参�
   禁止用持仓行反算、近似或补造缺失资金字段。Vision 返回的 token 数组顺序没有
   语义权威；资金摘要只能认完整 label/value token，或同一视觉行内标签右侧最近的
   数值 token，缺失、低置信或几何歧义继续视为未证明。
-  positions/orders/trades/account-summary/allocation 的纯读取若因结构、时效证明、上述
-  严格资金恒等式或跨表一致性瞬时失败，只允许有界地重读完整快照；任何恒等式、日期、
-  账户与订单匹配规则不得放宽。成功回执必须保留只读动作、尝试次数、历史失败码与是否
-  恢复；账户/日期不匹配和任何 broker 写动作均不可重试，耗尽后继续 fail-closed。
+  BUY、NAV、EOD 的 positions/orders/trades/account-summary/allocation 纯读取若因
+  结构、时效、严格资金恒等式或跨表一致性瞬时失败，先有界重读完整快照；
+  不能把缺失字段填成已核验。保护性 SELL 在完整快照不可得时可走独立
+  `sellable_only` 降级路径：只使用当前 APP 账户绑定、代码和可卖量决定本次
+  可提交数量，其他订单/成交/资金/结算标记为未证并留待对账。成功回执保留
+  只读动作、尝试次数、历史失败码及实际证据等级。账户/日期不匹配不可降级；
+  broker 写动作按 durable claim 的副作用证据判断，不能因读取失败盲重放。
+  当前 Python native 端口尚未完成独立 `sellable_only` 投影、pre-submit 与
+  回执链；上述是验收目标，使用前须有专用实现及隔离端到端验证。当前完整
+  快照失败时不得伪称已具备这条路径。
   券商混合账户现金/总资产永远只是交叉证据，不能进入 Book-B 子账户计算；券商同
   code 持仓必须覆盖 Book-B owned shares，否则全链 fail-closed。券商可卖数量是
   账号级事实：Book-B 当日 lot 始终按 0 可卖处理，即使同代码人工老仓使账号显示
@@ -329,11 +347,16 @@ KOL 断言、候选假设或报告升级为策略真值，也不替代永久参�
   checkpoint 才允许 `TRAILING_STOP` / `EOD_DISCIPLINE_1455`，提前、迟到或错日
   调用必须 fail-closed。每个 SELL intent 绑定 lot、同日 fresh proprietary quote、
   当前买一有量时低一档、买一不可靠时以最新价下浮 0.5% 的普通限价（均不低于跌停价）、决策原因/阶段/时间和 broker snapshot
-  hash；T+1、不可卖数量、跌停无买盘、缺少行情字段、非连续竞价或既有同 lot intent
-  都禁止新 handoff。handoff 后所有 broker 写动作仍只由 `TradingExecution` 和
-  native adapter 完成，继续受双钥匙、durable claim、UNKNOWN no-retry 约束。
-  任一既有 live plan 在一次只读 reconcile 后仍非终态时，默认禁止读取新退出授权或物化其他 SELL intent。唯一缩小范围的例外是前日及更早的 Book-B 自有 SELL，且当日精确历史委托/成交与持仓回读证明零成交、原 lot 全量仍在；此单继续未决对账并禁止同 lot 重复 SELL，其他 lot 的保护与新 BUY 可继续。新 BUY 仍以当前可用资金、已验证 owned lot、保守 NAV/敞口和风险限额独立约束。
-  若本次 checkpoint 的第一笔 SELL 刚进入未终态，则可用已取得的持仓与行情继续**只读记录**其余 lot 的退出判断及被阻止原因，但不得再物化或交接第二笔 SELL，直到原单按精确回执对账；不能把未记录的 lot 说成已评估无动作。
+  hash；T+1、当前 APP 不可卖数量、跌停无买盘、缺少必要行情字段或非连续竞价
+  禁止新 handoff。同日同 lot 已有 intent 时沿原 plan/claim 推进，不制造第二个
+  同日计划。前日及更早同 lot SELL 即使仍 UNKNOWN，若当前 APP 账户绑定和可卖
+  数量证明可卖，可在新交易日按当前自有 lot 建立新的 SELL plan；旧单继续未决，
+  两单身份、成交、持仓及后续会计分别对账。正常路径读取完整三表和持仓；
+  紧急退出最低可凭当前 APP 账户绑定、代码和可卖量继续，不把缺失订单、成交或
+  资金字段补造为已核验。执行端口再次探测当前可卖量，数量不得超过当时 APP
+  可卖及 Book-B 自有 lot 的剩余份额。其他 lot 的合法退出不因一个未结单全局
+  停下；每笔写入仍串行持锁，保留独立 durable claim 和回执。新 BUY 仍以当前
+  可用资金、已验证 owned lot、保守 NAV/敞口和风险限额独立约束。
   每个 live checkpoint 还必须持有独立的非阻塞 lifecycle writer lock；重叠实例直接
   `LIVE_BOOK_B_CHECKPOINT_ALREADY_RUNNING` 结束，禁止并发切换 native 查询页。
   每次运行写独立 archive receipt；`<date>-<phase>.json` 仅为 latest 指针，碰锁实例
@@ -371,7 +394,7 @@ KOL 断言、候选假设或报告升级为策略真值，也不替代永久参�
 ## 4b. Book T — 趋势模拟口径（paper-only，独立生命周期）
 
 - **建仓**：`paper_record.py --trend-only` 调 `strategy.trend_rules.generate_trend_picks`，从当前主线大类中选少量大票/中军候选，写入 `positions.jsonl` 的 `book="T"` 行；同 code 可同时有 B/T 两行，互不阻塞、互不 net。候选分为 `aligned / neutral / external`：电子、半导体、存储、光电、元器件、通信、机器人等与当前小草主线相关者优先；中性候选只作保持趋势仓位的兜底；银行/保险/证券/医药/白酒等外部旧方向是 `external`，不得作为新趋势买入。
-- **吕晓彤“马车”参考信号**：Book T 生成候选时，只读 `output/live/kol_daily/publications/events.jsonl` 中已经取得 `publication_receipt`（`published / superseded`）的最新 `current` “马车”长期观点，把完整核心推荐池、来源报告/观点身份、来源时点、候选命中主题和“命中优先”的影子名次写入 Book-T 候选、成交和持仓遥测。该因子固定为 `authority=shadow_only`：**不得**改变确定性候选顺序、`aligned / neutral / external` 资格、成交、仓位、换股或退出；因此创新药等现行 `external` 方向即使命中“马车”也不能越权建仓。缺少已发布当前观点或本地账本不可用时记录 `unavailable` 并按原 Book-T 规则继续。只有通过 `research_run.py` 护栏并经 §10 人工门，才可把该影子证据升级为排序或资格规则。
+- **吕晓彤“马车”参考信号**：Book T 生成候选时，只读 `output/live/kol_daily/publications/events.jsonl` 中已经取得 `publication_receipt`（`published / superseded`）的最新 `current` “马车”长期观点，把完整核心推荐池、来源报告/观点身份、来源时点、候选命中主题和“命中优先”的影子名次写入 Book-T 候选、成交和持仓遥测。该因子固定为 `authority=shadow_only`：**不得**改变确定性候选顺序、`aligned / neutral / external` 资格、成交、仓位、换股或退出；因此创新药等现行 `external` 方向即使命中“马车”也不能越权建仓。缺少已发布当前观点或本地账本不可用时记录 `unavailable` 并按原 Book-T 规则继续。只有通过 `research_run.py` 护栏并经 §10 证据与通知门，才可把该影子证据升级为排序或资格规则。
 - **账户**：`paper_account_T.json`，默认初始资金 = `initial_capital × TREND_BUDGET_RATIO`；统一 `paper_trades.jsonl` 记录 `book:"T"`。
 - **早盘故障隔离**：morning-execute 的 Book-B freeze/记账失败只停止 B 分支；同一原进程继续执行独立 Book-T 检查和成功后的可选影子消费，最终保留 B 的失败退出码。共同交易日历失败仍停止全部执行，T 仍走原行情、换仓、账户锁与事务恢复门。T 自身失败禁止输出成功控制回执和启动其影子消费；持仓未变不等于检查完成。
 - **状态快照一致性**：`status.py` 的持仓数量只取 `positions.jsonl` open T 行。`paper_holdings_T.json` 只有在日期、`(code,entry_date,shares)` 身份集和 account totals 全部匹配时才有估值权；否则 `equity` 降级为 cash + open entry cost，`unrealized_pnl=N/A` 并显式给出 `stale/mismatch/missing`，禁止跨版本拼接。
@@ -462,7 +485,16 @@ KOL 断言、候选假设或报告升级为策略真值，也不替代永久参�
 - **AUTO_APPLIED 候选格式**：weekly finalize 必须收到至少一个 auto-apply candidate（plan 内或 `--auto-apply-candidate` JSON/JSONL），字段包括 `id`、`title`、`source`、`recommended_change`、`evidence_bundle`；策略收益类还需要 `change_type`（如 `paper_strategy`）、`protocol_id`、`research_manifest`。脚本会校验 source 是否属于固定输入清单、bundle 是否完整、protocol 是否存在、manifest 是否满足 protocol、validation 是否不含失败标记；校验失败不得提交为 `AUTO_APPLIED`。
 - **固定输入清单**：自动改动只能来自 weekly plan 的固定输入：`flywheel_selfcheck.py`、`flywheel_sweep.py --json --top 30`、`distill_action_log.jsonl`、`kronos_screen/HYPOTHESES.jsonl`、`output/research/*`、`output/research/runs/*/manifest.json`、`reference/experience/research_protocols.yaml`、`pnl_decompose.csv`、`paper_vs_market_*.md`、`posture_calibration.jsonl`、`exit_calibration.jsonl`、`git status --porcelain`。固定输入之外的发现一律写 proposal 等用户确认。
 - **允许自动改**：paper/simulation 策略参数、emitted modes、Book B/T 模拟策略、研究脚本、报告字段、cohort 规则、模型配置、蒸馏/action-log/schema/observability 工具。策略收益类改动必须有 PASS / fill-aware PASS / baseline-vs-variant 明确改善，并说明不过拟合证据；工具类改动必须能归因到具体审计/验证缺口。
-- **不得自动改**：账户历史、成交账本、原始缓存、数据口径真相源、安全校验、real-capital 授权逻辑、live authorization、手工改账。即使未来上小资金，真实资金边界仍走本节两条件资金门。
+- **APP 服务端仿真修复权限**：经过根因分析和受影响行为验证的执行、策略、
+  安全门及永久参数变更可自动提交；策略收益改动仍需点时输入、费用、回撤、
+  样本外、失败样本、研究 verdict 与回滚证据。计划外证据先纳入 hash-bound
+  输入再应用；账户历史、成交账本和原始数据真相源不得手工改写。未来真实
+  资金仍须第 9 节双钥匙授权。
+- **企微变更通知**：策略选择、资金权限、永久参数或安全门放宽在提交/启用时
+  明确发送变更、证据、验证、影响与回滚到交易企微，不等待人工回复。未送达
+  不挡已验证的当前 APP 仿真行为，但通知必须持久排队；后续每次任务明确
+  报告待发项、尝试修复通道并重送，修复后立即补发。Relay 接受是送达
+  证据，不等于已读或批准。
 - **dirty-file 边界**：weekly 开始时记录 `git status --porcelain`。运行前已 dirty 的文件不得自动修改；若证据明确指向该文件，周报第一屏写 `NEEDS_HUMAN_CONFIRMATION`，创建 `.scratch/weekly-deep-review/...` proposal，等待用户明确确认。
 - **提交与审计**：weekly finalize 写 `output/live/weekly_review_YYYY-MM-DD.md`、追加 `output/live/flywheel_change_ledger.jsonl`、只 stage allowlist 文件并直接提交当前分支。`AUTO_APPLIED` 和 `PROPOSAL_ONLY` 都可以 commit；commit body 必须列 validation、报告路径、rollback。不得 `git add -A`。
 - **非异常（正常）**：`SELL_DEFERRED`（盘中只诊断）、`T+1_blocked`、非交易日 skip、book A 单独结算、Book T 无候选/无到期结算、**③ 策略飞轮 `open`**（无 PASS 可应用，策略正确地冻结，无需动作）。
@@ -488,6 +520,7 @@ KOL 断言、候选假设或报告升级为策略真值，也不替代永久参�
 
 | 版本 | 日期 | 说明 |
 |------|------|------|
+| 4.24 | 2026-09-27 | 交易窗口优先、真实前置依赖与 Python/多模态恢复；当前 APP 可卖支持跨日新 SELL 并保留旧单对账；APP 仿真高影响自动变更保留研究证据门和企微持久通知。 |
 | 4.23 | 2026-09-27 | 当前 KOL 当下判断与周度语义挑战改用 GPT-6 Sol xhigh；早盘 Automation 主模型统一改用 GPT-6 Sol，历史 Astra 回执保持原样。 |
 | 4.22 | 2026-09-21 | 移除 KOL 短线投影的固定 16 条上限及强制项溢出分支；所有满足同一显式短线有效性与可操作性标准的观点全部进入，排序不改变集合成员。 |
 | 4.21 | 2026-09-21 | KOL 运行投影从全部 current/uncertain 收敛为 writer 显式分类的短线可操作子集；排除 uncertain/未分类/非短线，固定 16 条预算，强制项溢出 fail-closed，历史分类由精确 hash-bound manifest 交回 remote writer。 |
