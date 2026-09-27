@@ -321,7 +321,7 @@ def test_render_does_not_accept_empty_or_unbound_completed_analysis(tmp_path, co
         ref["sha256"] = "wrong"
     review["analysis"].update(status="completed", framework_conclusion=conclusion, evidence_refs=[ref])
     text = render(review)
-    assert "待 Astra 整体分析" in text
+    assert "待 Sol 整体分析" in text
     assert "有证据引用的分析" not in text
 
 

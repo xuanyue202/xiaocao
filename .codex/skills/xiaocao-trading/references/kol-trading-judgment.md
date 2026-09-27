@@ -64,7 +64,7 @@ and never satisfies formal decision publication by itself.
 4. Keep the Automation's original model. The remote writer's configured semantic
    analyst owns full source semantics once for new/changed bodies. A downstream trading task
    delegates **current-applicability judgment only**
-   using `model=gpt-6-astra`, `reasoning_effort=xhigh`, `fork_context=false`.
+   using `model=gpt-6-sol`, `reasoning_effort=xhigh`, `fork_context=false`.
    Save actual accepted dispatch arguments and returned agent ID under
    `output/live/kol_policy/analysis/`. Give the child the full request/context,
    compact projection, contract boundaries and current evidence. Only the remote
@@ -73,7 +73,7 @@ and never satisfies formal decision publication by itself.
    recap alone is not sufficient context. The child may write a draft and
    coverage/counterevidence analysis, never its own approved review, a broker
    action, account edit or capital key. If explicit routing is unavailable,
-   report supporting degradation; never relabel a fallback model as Astra.
+   report supporting degradation; never relabel a fallback model as Sol.
 5. The published viewpoint projection already passed semantic validation and
    source-fidelity acceptance at the writer boundary. While the current-applicability
    worker drafts, the trading parent verifies projection hashes and independently

@@ -540,7 +540,7 @@ def _kol_execution_chain(items: list[dict], decisions: list[dict]) -> dict:
 
 
 def build_kol_system_review(root: Path, *, as_of: dt.date) -> dict:
-    """Build the read-only Astra weekly framework-review context for the plan."""
+    """Build the read-only Sol weekly framework-review context for the plan."""
     inventory = build_kol_evidence_inventory(root, as_of=as_of)
     windows = {}
     for weeks in (1, 4, 12):
@@ -608,7 +608,7 @@ def build_kol_system_review(root: Path, *, as_of: dt.date) -> dict:
               "falsifier": row["falsifier"], "required_evidence": row["required_evidence"],
               "rollback": "未启动则保留现行基线；若另经研究门批准，仅撤销该隔离试验的明确变更并保留失败/回滚证据，不改正式账户、安全或原 kill-switch。启动前补齐精确版本/参数恢复点。",
               "follow_up": {"status": "pending", "disposition": None, "conclusion": None, "evidence_refs": []},
-              "owner": "weekly Astra analysis + independent main-agent review", "next_review": next_review,
+              "owner": "weekly Sol analysis + independent main-agent review", "next_review": next_review,
               "authority": "proposal_or_existing_research_gate", "auto_apply_eligible": False}
              for row in explanations]
     prior_follow_up = _kol_prior_experiments(inventory, as_of=as_of)
@@ -631,7 +631,7 @@ def build_kol_system_review(root: Path, *, as_of: dt.date) -> dict:
             "window_semantics": "trailing 7/28/84 calendar days inclusive; overlapping, not independent samples",
             "competing_explanations": explanations, "experiment_slots": slots,
             "prior_experiment_follow_up": prior_follow_up,
-            "analysis_context": {"model": "gpt-6-astra", "reasoning_effort": "xhigh",
+            "analysis_context": {"model": "gpt-6-sol", "reasoning_effort": "xhigh",
                 "objective": "从整体账户目标审视本周与4/12周表现，挑战当前框架、入口过滤、模式与资本利用率，避免逐条新闻局部优化。",
                 "instructions": ["用固定输入 hash 引用区分事实、缺口和竞争解释，不能只复述新闻。",
                     "逐本逐 runtime 对照三个解释；新旧冲突须读已发布观点/评估/关系，不按关键词生成结论。",
@@ -1272,7 +1272,7 @@ def _render_kol_system_review(plan: dict) -> list[str]:
         lines = [f"- 整体框架复盘（有证据引用的分析，非收益认证）：{conclusion.strip()}"]
         lines.append("- 结论证据：" + "；".join(f"`{r['path']}`（sha256={r['sha256']}）" for r in refs))
     else:
-        state = "已收集部分固定证据，待 Astra 整体分析" if inventory.get("status") == "available" else "关键证据缺失，未完成分析"
+        state = "已收集部分固定证据，待 Sol 整体分析" if inventory.get("status") == "available" else "关键证据缺失，未完成分析"
         lines = [f"- 整体框架复盘：{state}；不以空结论或消费次数认定有效。"]
     missing = analysis.get("missing_evidence") or []
     missing = [value.strip() for value in missing if isinstance(value, str) and not _is_nullish(value)]

@@ -57,7 +57,7 @@ current bounded overlay, and a challenger. Look for correlated KOL narratives,
 systematic stale-input delays, over-filtering and under-explored strategies.
 Missing comparisons are missing evidence, not zero return or proof of success.
 
-Delegate this semantic synthesis to GPT-6 Astra `xhigh` with the complete fixed
+Delegate this semantic synthesis to GPT-6 Sol `xhigh` with the complete fixed
 input plan, source/decision/consumption evidence, prior weekly hypotheses and
 failures. Keep the existing parent model and independently review the result.
 Choose at most three concrete next experiments/adjustments with objective,
