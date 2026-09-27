@@ -8,7 +8,7 @@ import hashlib
 import json
 from pathlib import Path
 
-from xiaocao.live.notify import notify, wecom_transport_readiness
+from xiaocao.live.notify import notify_detailed, wecom_transport_readiness
 from xiaocao.live.trading_execution import TradingIncidentOutbox
 
 
@@ -39,7 +39,7 @@ def pending_notices(path: Path) -> list[dict]:
     return [row for identifier, row in claims.items() if identifier not in delivered]
 
 
-def deliver_pending(path: Path, *, sender=notify, readiness=wecom_transport_readiness) -> list[dict]:
+def deliver_pending(path: Path, *, sender=notify_detailed, readiness=wecom_transport_readiness) -> list[dict]:
     path.parent.mkdir(parents=True, exist_ok=True)
     delivery_lock = path.with_suffix(path.suffix + ".delivery.lock")
     with delivery_lock.open("a+", encoding="utf-8") as handle:
@@ -70,7 +70,23 @@ def _deliver_pending_locked(path: Path, *, sender, readiness) -> list[dict]:
             outbox.mark_delivered(identifier, {"wecom": "ok"})
             results.append({"incident_id": identifier, "delivery": "delivered"})
         else:
-            results.append({"incident_id": identifier, "delivery": "pending_unproven"})
+            recipient_results = (
+                sent.get("wecom_recipients") if isinstance(sent, dict) else None
+            )
+            failures = (
+                [value for value in recipient_results.values() if isinstance(value, dict)]
+                if isinstance(recipient_results, dict) else []
+            )
+            results.append({
+                "incident_id": identifier,
+                "delivery": "pending_unproven",
+                "failure_phases": sorted({
+                    str(value.get("failure_phase") or "unknown") for value in failures
+                }),
+                "retry_safety": sorted({
+                    str(value.get("retry_safety") or "unknown") for value in failures
+                }),
+            })
     return results
 
 
