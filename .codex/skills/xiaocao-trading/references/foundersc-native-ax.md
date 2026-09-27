@@ -66,8 +66,13 @@ single-attempt local capability. It may read only the fixed
 `xiaocao.foundersc.quant.trade` item, pass the secret on stdin, bind the page to
 the masked Keychain account, and press the unique unlock confirmation once. A
 custom-drawn confirmation may use only the helper's bounded
-secure-field-relative coordinate guard and still requires semantic trade-ready
-readback. It
+secure-field-relative guard and process-targeted Return when no unique AX button
+can be pressed; keep the user's foreground keyboard target unchanged and require
+account-bound trade/query readback. If Founder itself owns keyboard focus, require
+a quiet keyboard before setting the field and again before confirmation. A
+recognized broker password-error dialog is a recorded attempt, not a reason to
+submit the secret again; acknowledge the exact dialog and diagnose focus or
+credential state before a separately authorized attempt. It
 must never print, log, persist, return, place in argv, or place in environment
 the raw account/password. `unlock_unproven` is terminal for that attempt and
 must not be retried automatically. Before setting either login or in-session
@@ -217,8 +222,9 @@ at 3x scale only when the new OCR meets the original confidence floor and
 strict numeric comparison agrees with the initial value (four-place decimal
 comma is permitted only for current price). An existing `委托价格` token with
 malformed numeric syntax, such as `0.，5500`, may instead be replaced only by
-two high-confidence OCR reads of the same audited price cell at 3x and 4x
-that both have valid numeric syntax and agree exactly. The Python row validator
+high-confidence OCR reads of the same audited price cell at 3x and 4x when at
+least one is a valid price and every valid result agrees numerically. One valid
+and one invalid read may proceed; conflicting valid prices stop. The Python row validator
 must then accept the full table; otherwise stop before any write. Valid price
 text and all other order identity fields stay unchanged. Other critical OCR cells below the confidence floor and
 malformed side text fail closed after the single targeted reread. Every

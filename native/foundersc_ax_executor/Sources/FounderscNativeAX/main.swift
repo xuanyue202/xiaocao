@@ -433,6 +433,16 @@ private func strictGridOrderPrice(_ raw: String) -> Decimal? {
                    locale: Locale(identifier: "en_US_POSIX"))
 }
 
+private func uniqueOrderPriceCandidateIndex(_ readings: [String?]) -> Int? {
+    var selected: (index: Int, price: Decimal)?
+    for (index, reading) in readings.enumerated() {
+        guard let reading, let price = strictGridOrderPrice(reading) else { continue }
+        if let selected, selected.price != price { return nil }
+        if selected == nil { selected = (index, price) }
+    }
+    return selected?.index
+}
+
 private func recoverMissingTableText(
     image: CGImage, screenBounds: Bounds, shapes: [TableShape], initialTokens: [OCRToken]
 ) -> [OCRToken] {
@@ -480,16 +490,22 @@ private func recoverMissingTableText(
                 guard let enlarged = context.makeImage() else { return nil }
                 return recognizeText(image: enlarged, screenBounds: cell, smallCell: true)
             }
+            if malformedOrderPrice {
+                let captures = [recapture(scale: 3), recapture(scale: 4)]
+                let readings: [String?] = captures.map { recovered in
+                    guard let recovered, !recovered.isEmpty,
+                          recovered.allSatisfy({ inside($0) && $0.confidence >= minimumCriticalOCRConfidence })
+                    else { return nil }
+                    return recovered.sorted { $0.bounds.x < $1.bounds.x }.map(\.text).joined()
+                }
+                guard let selected = uniqueOrderPriceCandidateIndex(readings),
+                      let recovered = captures[selected] else { continue }
+                tokens.removeAll(where: inside)
+                tokens.append(contentsOf: recovered)
+                continue
+            }
             guard let recovered = recapture(scale: 3) else { continue }
             if !recovered.isEmpty && recovered.allSatisfy({ inside($0) && $0.confidence >= minimumCriticalOCRConfidence }) {
-                if malformedOrderPrice {
-                    guard let second = recapture(scale: 4), !second.isEmpty,
-                          second.allSatisfy({ inside($0) && $0.confidence >= minimumCriticalOCRConfidence }),
-                          let firstPrice = strictGridOrderPrice(recovered.sorted { $0.bounds.x < $1.bounds.x }.map(\.text).joined()),
-                          let secondPrice = strictGridOrderPrice(second.sorted { $0.bounds.x < $1.bounds.x }.map(\.text).joined()),
-                          firstPrice == secondPrice else { continue }
-                    tokens.removeAll(where: inside)
-                }
                 if recheckPosition {
                     let oldValue = existing.map(\.text).joined()
                     let newValue = recovered.sorted { $0.bounds.x < $1.bounds.x }.map(\.text).joined()
@@ -978,6 +994,36 @@ private func guardedUnlockConfirmPoint(
     return point
 }
 
+private func guardedUnlockConfirmButton(
+    window: AXUIElement?, point: CGPoint?
+) -> AXUIElement? {
+    guard let window, let point else { return nil }
+    var matches: [AXUIElement] = []
+    var visited = 0
+    func walk(_ element: AXUIElement, depth: Int) {
+        guard depth <= 8, visited < 120 else { return }
+        visited += 1
+        if stringAttribute(element, kAXRoleAttribute) == "AXButton",
+           supportsPress(element), let box = bounds(of: element),
+           point.x >= box.x, point.x <= box.x + box.width,
+           point.y >= box.y, point.y <= box.y + box.height {
+            matches.append(element)
+        }
+        for child in (attribute(element, kAXChildrenAttribute) as? [AXUIElement] ?? []) {
+            walk(child, depth: depth + 1)
+        }
+    }
+    walk(window, depth: 0)
+    return matches.count == 1 ? matches[0] : nil
+}
+
+private func keyboardQuietForUnlock() -> Bool {
+    let idle = CGEventSource.secondsSinceLastEventType(
+        .combinedSessionState, eventType: .keyDown
+    )
+    return idle >= 0.35
+}
+
 private func postSingleLeftClick(at point: CGPoint) -> Bool {
     guard let source = CGEventSource(stateID: .combinedSessionState),
           let move = CGEvent(
@@ -1036,6 +1082,20 @@ private func postSingleReturnKey() -> Bool {
     down.post(tap: .cghidEventTap)
     usleep(30_000)
     up.post(tap: .cghidEventTap)
+    return true
+}
+
+private func postSingleReturnKey(to pid: pid_t) -> Bool {
+    guard let source = CGEventSource(stateID: .combinedSessionState),
+          let down = CGEvent(
+            keyboardEventSource: source, virtualKey: 36, keyDown: true
+          ),
+          let up = CGEvent(
+            keyboardEventSource: source, virtualKey: 36, keyDown: false
+          ) else { return false }
+    down.postToPid(pid)
+    usleep(30_000)
+    up.postToPid(pid)
     return true
 }
 
@@ -1444,7 +1504,7 @@ private func unlockFailureDiagnostic(_ text: String) -> (String?, Int?) {
     } else {
         category = nil
     }
-    let pattern = "(?:剩余|还剩|还可|还可以)[^0-9]{0,8}([0-9]{1,2})[^0-9]{0,4}次"
+    let pattern = "(?:剩余|还剩|还有|还可|还可以)[^0-9]{0,8}([0-9]{1,2})[^0-9]{0,4}次"
     let regex = try? NSRegularExpression(pattern: pattern)
     let range = NSRange(compact.startIndex..<compact.endIndex, in: compact)
     var remaining: Int?
@@ -1777,6 +1837,42 @@ private func observe(command: String, auditTables: Bool = false) -> Observation 
 
     for root in roots {
         walk(root, depth: 0)
+    }
+
+    // Keep modal diagnostics separate from the primary trading window. The
+    // price/order controls must not be mixed with an alert, but a rejected
+    // unlock must retain the broker's exact error class and attempt count.
+    if secureFields.count == 1 {
+        let primaryArea = primaryWindow.flatMap { bounds(of: $0) }
+            .map { $0.width * $0.height } ?? 0
+        for window in windows {
+            let box = bounds(of: window)
+            let area = box.map { $0.width * $0.height } ?? 0
+            let role = stringAttribute(window, kAXRoleAttribute)
+            let subrole = stringAttribute(window, kAXSubroleAttribute)
+            let description = stringAttribute(window, kAXDescriptionAttribute)
+            guard role == "AXDialog" || subrole == "AXDialog"
+                || description == "alert"
+                || (primaryArea > 0 && area > 0 && area < primaryArea * 0.4)
+            else { continue }
+            var scanned = 0
+            func collect(_ element: AXUIElement, depth: Int) {
+                guard depth <= 5, scanned < 80 else { return }
+                scanned += 1
+                let role = stringAttribute(element, kAXRoleAttribute)
+                if ["AXStaticText", "AXButton"].contains(role) {
+                    unlockDiagnosticText.append([
+                        stringAttribute(element, kAXTitleAttribute),
+                        stringAttribute(element, kAXValueAttribute),
+                        stringAttribute(element, kAXDescriptionAttribute),
+                    ].joined(separator: " "))
+                }
+                for child in (attribute(element, kAXChildrenAttribute) as? [AXUIElement] ?? []) {
+                    collect(child, depth: depth + 1)
+                }
+            }
+            collect(window, depth: 0)
+        }
     }
 
     let hasBuy = markers.contains("buy_submit")
@@ -3798,6 +3894,11 @@ private func unlockFromStandardInput(arguments: [String]) -> Receipt {
         receipt.reason = "a unique secure field was not proven"
         return receipt
     }
+    if receipt.unlockFailureCategory != nil {
+        receipt.status = "unlock_error_alert_pending"
+        receipt.reason = "a prior broker password error alert must be acknowledged before another attempt"
+        return receipt
+    }
     let semanticConfirm = initial.confirmButtons.count == 1
         ? initial.confirmButtons[0]
         : nil
@@ -3805,21 +3906,34 @@ private func unlockFromStandardInput(arguments: [String]) -> Receipt {
         field: bounds(of: initial.secureFields[0]),
         window: receipt.windowBounds
     )
+    let geometryConfirm = guardedUnlockConfirmButton(
+        window: initial.primaryWindow, point: guardedConfirm
+    )
     guard semanticConfirm != nil || guardedConfirm != nil else {
         receipt.status = "unlock_confirmation_unproven"
         receipt.reason = "neither a semantic nor guarded coordinate confirmation was proven"
         return receipt
     }
-    guard activateFounder(initial) else {
-        receipt.status = "app_activation_failed"
-        receipt.reason = "Founder window could not be proven frontmost"
-        return receipt
-    }
-
     guard let secret = readStandardInputSecret() else {
         receipt.status = "trade_password_input_invalid"
         receipt.reason = "stdin secret was empty, too long, or not UTF-8"
         return receipt
+    }
+
+    // AXPress or a process-targeted Return can submit without foregrounding
+    // Founder. Keep the user's keyboard in its current app while replacing
+    // the secure field through AX; typing in Codex must not append to it.
+    let axConfirm = semanticConfirm ?? geometryConfirm
+    if initial.runningApplication?.isActive == true {
+        let quietDeadline = Date().addingTimeInterval(2)
+        while !keyboardQuietForUnlock() && Date() < quietDeadline {
+            Thread.sleep(forTimeInterval: 0.05)
+        }
+        guard keyboardQuietForUnlock() else {
+            receipt.status = "unlock_keyboard_or_focus_busy"
+            receipt.reason = "Founder has keyboard focus while the user is typing"
+            return receipt
+        }
     }
 
     let clearResult = AXUIElementSetAttributeValue(
@@ -3851,11 +3965,12 @@ private func unlockFromStandardInput(arguments: [String]) -> Receipt {
         kAXValueAttribute as CFString,
         secret as CFTypeRef
     )
-    let focusResult = AXUIElementSetAttributeValue(
-        initial.secureFields[0],
-        kAXFocusedAttribute as CFString,
-        kCFBooleanTrue
-    )
+    let focusResult = axConfirm == nil
+        ? AXUIElementSetAttributeValue(
+            initial.secureFields[0],
+            kAXFocusedAttribute as CFString,
+            kCFBooleanTrue
+        ) : .success
     guard setResult == .success, focusResult == .success else {
         receipt.status = "trade_password_set_failed"
         receipt.reason = "secure-field value or focus could not be set"
@@ -3872,19 +3987,29 @@ private func unlockFromStandardInput(arguments: [String]) -> Receipt {
 
     let confirmationMode: String
     let confirmSucceeded: Bool
-    if let semanticConfirm {
-        confirmationMode = "semantic"
+    if let axConfirm {
+        confirmationMode = semanticConfirm != nil ? "semantic" : "guarded_ax_button"
         confirmSucceeded = AXUIElementPerformAction(
-            semanticConfirm,
+            axConfirm,
             kAXPressAction as CFString
         ) == .success
-    } else if guardedConfirm != nil, initial.runningApplication != nil {
-        // The unique secure field plus the bounded confirm geometry proves
-        // this is Founder's unlock form, but a multi-display window can make
-        // the coordinate itself stale. Return on the focused secure field is
-        // the stable native confirmation and is emitted exactly once.
-        confirmationMode = "secure_field_single_return"
-        confirmSucceeded = postSingleReturnKey()
+    } else if guardedConfirm != nil, let running = initial.runningApplication {
+        // The unique secure field and bounded confirm geometry prove the
+        // unlock form. A process-targeted Return avoids global keyboard focus
+        // and multi-display coordinate uncertainty.
+        confirmationMode = "secure_field_targeted_return"
+        if !running.isActive || keyboardQuietForUnlock() {
+            confirmSucceeded = postSingleReturnKey(to: running.processIdentifier)
+        } else {
+            _ = AXUIElementSetAttributeValue(
+                initial.secureFields[0], kAXValueAttribute as CFString,
+                "" as CFTypeRef
+            )
+            receipt.status = "unlock_keyboard_or_focus_busy"
+            receipt.reason = "password field was cleared after keyboard or focus changed before confirmation"
+            receipt.secureFieldClearedBeforeSet = true
+            return receipt
+        }
     } else {
         confirmationMode = "none"
         confirmSucceeded = false
@@ -3933,6 +4058,31 @@ private func unlockFromStandardInput(arguments: [String]) -> Receipt {
 }
 
 let arguments = Array(CommandLine.arguments.dropFirst())
+if arguments.first == "self-test-price-policy" {
+    let cases: [([String?], Int?)] = [
+        (["0.5500", "0.，5500"], 0),
+        ([nil, "0.5500"], 1),
+        (["0.，5500", "0,5500"], 1),
+        (["137.3300", "137,3300"], 0),
+        (["0.5500", "0.55000000"], 0),
+        (["0.5500", "0.6500"], nil),
+        (["137.3300", "17.3300"], nil),
+        (["0.，5500", nil], nil),
+    ]
+    let diagnostic = unlockFailureDiagnostic(
+        "交易密码输入错误,请重新输入(您还有4次尝试机会)!"
+    )
+    let passed = cases.allSatisfy {
+        uniqueOrderPriceCandidateIndex($0.0) == $0.1
+    } && diagnostic.0 == "trade_password_incorrect" && diagnostic.1 == 4
+    let receipt = emptyReceipt(
+        command: "self-test-price-policy",
+        status: passed ? "self_test_passed" : "self_test_failed",
+        reason: "pure OCR candidate and unlock diagnostic policy checks"
+    )
+    emit(receipt)
+    exit(passed ? 0 : 1)
+}
 guard let command = arguments.first else {
     var receipt = emptyReceipt(
         command: "invalid",
