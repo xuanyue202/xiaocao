@@ -23,7 +23,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 sys.path.insert(0, str(ROOT / "src"))
 
-from scripts.foundersc_app_rehearsal import read_rehearsal_plan, write_once
+from scripts.foundersc_app_rehearsal import archive_stamp, read_rehearsal_plan, write_once
 from xiaocao.live.capital_keychain import KeychainCapitalRuntime
 from xiaocao.live.app_test_window import app_test_only
 from xiaocao.live.book_b_live_morning import advance_submission_batch
@@ -93,7 +93,7 @@ def create_batch(directory, *, run_id, fingerprint, code, prices, snapshot, shar
 
 
 def run_batch(execution, plans, *, directory, snapshot, cleanup_only=False):
-    stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S%fZ")
+    stamp = archive_stamp()
     seal = directory / "cleanup-started.json"
     outcomes, errors, stages = {}, [], []
     batch_timing = {}
@@ -137,6 +137,9 @@ def run_batch(execution, plans, *, directory, snapshot, cleanup_only=False):
                     plans, execute=execute_timed,
                     allow=lambda _plan: True, receipts=[],
                     submission_scope=submission_scope,
+                    # The next full snapshot and exact cancel readbacks provide
+                    # the engineering batch's fill/status reconciliation.
+                    post_submit_reconcile_rounds=0,
                 )
             write_once(directory / (stamp + "-outstanding.json"), snapshot())
     except Exception as exc:
@@ -146,34 +149,46 @@ def run_batch(execution, plans, *, directory, snapshot, cleanup_only=False):
             write_once(seal, {"started_at": stamp})
         for plan in reversed(plans):
             try:
-                with account_writer_lock(execution.account_lock_dir, plan.logical_account_id):
-                    prior = execution.store.current(plan.plan_id)
-                    if prior is None:
-                        prior = ExecutionReceipt(plan.plan_id, plan.plan_hash,
-                            ExecutionState.PLANNED, remaining_shares=plan.shares)
-                    if (prior.plan_hash == plan.plan_hash
-                            and prior.state in {ExecutionState.PLANNED, ExecutionState.VALIDATED,
-                                                ExecutionState.PREPARED}
-                            and not any((prior.submit_claim_id, prior.cancel_claim_id,
-                                prior.broker_order_id, prior.filled_shares,
-                                prior.submit_chain_uncertain, prior.cancel_chain_uncertain))):
-                        prior = execution.store.append(plan=plan, receipt=replace(prior,
-                            state=ExecutionState.SKIPPED, reason="REHEARSAL_BATCH_ABORTED_UNSUBMITTED",
-                            next_action="stop"), kind="rehearsal_unsubmitted_closed")
-                if prior.state in TERMINAL and not prior.cancel_chain_uncertain:
-                    outcomes[plan.plan_id] = prior.as_dict()
-                    continue
-                if not prior.submit_claim_id:
-                    # An unclaimed failure is evidence, never a new submit in cleanup.
-                    outcomes[plan.plan_id] = prior.as_dict()
-                    continue
-                receipt = prior
-                if receipt.state not in {ExecutionState.ACKNOWLEDGED, ExecutionState.PARTIAL}:
-                    receipt = stage("reconcile", plan, lambda: execution.execute(plan))
-                # cancel() itself proves the current exact row and reconciles
-                # fills; do not duplicate a full read for an already-known ID.
-                if receipt.state in {ExecutionState.ACKNOWLEDGED, ExecutionState.PARTIAL}:
-                    stage("cancel", plan, lambda: execution.cancel(plan))
+                for attempt in range(3):
+                    with account_writer_lock(execution.account_lock_dir, plan.logical_account_id):
+                        prior = execution.store.current(plan.plan_id)
+                        if prior is None:
+                            prior = ExecutionReceipt(plan.plan_id, plan.plan_hash,
+                                ExecutionState.PLANNED, remaining_shares=plan.shares)
+                        if (prior.plan_hash == plan.plan_hash
+                                and prior.state in {ExecutionState.PLANNED, ExecutionState.VALIDATED,
+                                                    ExecutionState.PREPARED}
+                                and not any((prior.submit_claim_id, prior.cancel_claim_id,
+                                    prior.broker_order_id, prior.filled_shares,
+                                    prior.submit_chain_uncertain, prior.cancel_chain_uncertain))):
+                            prior = execution.store.append(plan=plan, receipt=replace(prior,
+                                state=ExecutionState.SKIPPED, reason="REHEARSAL_BATCH_ABORTED_UNSUBMITTED",
+                                next_action="stop"), kind="rehearsal_unsubmitted_closed")
+                    if prior.state in TERMINAL and not prior.cancel_chain_uncertain:
+                        outcomes[plan.plan_id] = prior.as_dict()
+                        break
+                    if not prior.submit_claim_id:
+                        # An unclaimed failure is evidence, never a new submit in cleanup.
+                        outcomes[plan.plan_id] = prior.as_dict()
+                        break
+                    receipt = prior
+                    if receipt.cancel_claim_id:
+                        # The claim already exists: cancel() only reconciles it.
+                        receipt = stage("cancel_reconcile", plan, lambda: execution.cancel(plan))
+                    else:
+                        if receipt.state not in {ExecutionState.ACKNOWLEDGED, ExecutionState.PARTIAL}:
+                            receipt = stage("reconcile", plan, lambda: execution.execute(plan))
+                        if receipt.state in {ExecutionState.ACKNOWLEDGED, ExecutionState.PARTIAL}:
+                            receipt = stage("cancel", plan, lambda: execution.cancel(plan))
+                    outcomes[plan.plan_id] = receipt.as_dict()
+                    if receipt.state in TERMINAL and not receipt.cancel_chain_uncertain:
+                        break
+                    read_retry = (receipt.cancel_claim_id is not None or
+                                  receipt.reason.startswith("CANCEL_PROBE_FAILED:") or
+                                  receipt.reason == "CANCEL_CAPABILITY_UNPROVEN")
+                    if not read_retry or attempt == 2:
+                        break
+                    time.sleep(0.25)
             except Exception as exc:
                 errors.append({"phase": "cleanup", "plan_id": plan.plan_id,
                                "type": type(exc).__name__})
@@ -250,7 +265,7 @@ def main():
             notifier=lambda *_args, **_kwargs: None)
         result = run_batch(execution, plans, directory=directory, snapshot=snapshot,
                            cleanup_only=args.action == "cleanup")
-        stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S%fZ")
+        stamp = archive_stamp()
         write_once(directory / (stamp + "-timings.json"), {"commands": native.command_timings})
     print(json.dumps({"run_id": args.run_id, **result}, ensure_ascii=False, default=str))
     complete = result["all_orders_terminal"] if args.action == "cleanup" else result["acceptance_complete"]

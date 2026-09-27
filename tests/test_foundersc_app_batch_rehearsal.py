@@ -6,6 +6,8 @@ import pytest
 from scripts import foundersc_app_batch_rehearsal as batch
 from scripts import foundersc_app_rehearsal as single
 from tests.test_foundersc_app_rehearsal import app
+from xiaocao.live.book_b_live_morning import advance_submission_batch
+from xiaocao.live.foundersc_native_ax import FounderscNativeAXError
 
 
 @pytest.fixture
@@ -186,6 +188,37 @@ def test_expired_batch_observations_stop_before_second_submit(batch_app, monkeyp
     run, native, _ = batch_app
     assert run([.34, .36, .37]) == 2
     assert native.submit_calls == native.cancel_calls == 1
+
+
+def test_cleanup_recovers_one_readonly_cancel_probe_failure_without_repeating_orders(batch_app):
+    run, native, directory = batch_app
+    original = native.probe_cancel_selection
+    failed = False
+
+    def transient_probe(**kwargs):
+        nonlocal failed
+        if not failed:
+            failed = True
+            raise FounderscNativeAXError("NATIVE_CANCEL_PROBE_TRANSIENT")
+        return original(**kwargs)
+
+    native.probe_cancel_selection = transient_probe
+    assert run([.34, .36]) == 0
+    assert failed
+    assert native.submit_calls == native.cancel_calls == 2
+    assert run([.34, .36], "cleanup") == 0
+    assert native.submit_calls == native.cancel_calls == 2
+    assert (directory / "cleanup-started.json").exists()
+
+
+def test_invalid_reconcile_rounds_reject_before_any_submission():
+    calls = []
+    with pytest.raises(ValueError, match="LIVE_BATCH_RECONCILE_ROUNDS_INVALID"):
+        advance_submission_batch(
+            [object()], execute=lambda plan: calls.append(plan),
+            allow=lambda _: True, receipts=[], post_submit_reconcile_rounds=-1,
+        )
+    assert calls == []
 
 
 def test_counter_ack_defers_actual_fill_until_exact_trade_readback(batch_app):

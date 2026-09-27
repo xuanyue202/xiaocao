@@ -265,6 +265,15 @@ closes proven unsubmitted intents. `acceptance_complete` means every intended
 order obtained a broker ID and reached filled/cancelled; `all_orders_terminal`
 alone may include skipped/rejected tests. Check final APP tables and funds,
 not merely script exit. No extra morning test gate is introduced.
+Read the focused submit-result AX text and its unique contract number before
+acknowledging that dialog; the 2026-09-27 APP batch proved this path for five
+consecutive orders, so OCR is unnecessary when AX gives exact text. The
+engineering batch takes one full post-submit snapshot, then promptly attempts
+exact-order cancellation; a transient read-only cancel probe may retry within
+the same batch. A persisted cancel claim only reconciles, never clicks again.
+If the first run is not fully terminal, reuse its exact run ID with `cleanup`
+until every test order has an APP terminal row. Production morning polling is
+unchanged. See `docs/reviews/2026-09-27-native-app-simulation-validation.md`.
 
 On multirow tables, a lone OCR `O`, `o` or `◎` in 成交数量 may normalize to zero only
 on the second bounded read, with zero execution price and independent zero

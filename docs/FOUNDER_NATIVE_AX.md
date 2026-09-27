@@ -376,6 +376,17 @@ exact table path, invalidate batch reuse and stop further fast-path submissions.
 Existing claims/recovery, SELL and cancellation retain current-table checks.
 Clear batch observations before reconciliation and on every context exit.
 
+The helper reads the focused result dialog's AX text and unique contract number
+before acknowledging that dialog. On the 2026-09-27 APP simulation run, five
+consecutive submit receipts carried this exact success-notice proof; OCR was not
+needed. The engineering batch rehearsal now reads a complete snapshot after
+submission and proceeds to exact-order cancellation without three additional
+round-robin polls. A transient read-only cancel probe may retry within the same
+batch; an existing cancel claim only reconciles and never clicks again. The
+production morning keeps its default polling behavior. See
+`docs/reviews/2026-09-27-native-app-simulation-validation.md` for the APP receipts
+and the same-run cleanup of all five test orders.
+
 Report preflight duration, first-to-last counter acknowledgement duration and
 their total separately, plus terminal cleanup. After the September 16 change,
 offline behavior is verified; the new APP speed requires fresh 2/3/5-order

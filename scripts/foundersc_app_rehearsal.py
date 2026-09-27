@@ -17,6 +17,7 @@ import re
 import subprocess
 import sys
 import tempfile
+import uuid
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from zoneinfo import ZoneInfo
@@ -49,6 +50,11 @@ def write_once(path: Path, payload: dict) -> None:
     finally:
         if temporary is not None:
             temporary.unlink(missing_ok=True)
+
+
+def archive_stamp() -> str:
+    """Give concurrent invocations separate immutable diagnostic receipts."""
+    return datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S%fZ") + "-" + uuid.uuid4().hex[:12]
 
 
 def read_rehearsal_plan(capsule: dict) -> TradePlan:
@@ -107,7 +113,7 @@ def main() -> int:
         parser.error("100-share rehearsal requires a cent-aligned price and notional <= 1000")
     directory = ROOT / "output/research/foundersc_app_rehearsal" / args.run_id
     directory.mkdir(parents=True, exist_ok=True)
-    stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S%fZ")
+    stamp = archive_stamp()
     native = FounderscNativeAXClient()
     broker = FounderscNativeAXBrokerAdapter(
         native=native, expected_fund_account_fingerprint=args.fingerprint,

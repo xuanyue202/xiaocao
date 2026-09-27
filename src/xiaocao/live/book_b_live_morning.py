@@ -1638,12 +1638,15 @@ def advance_submission_batch(
     wait: Callable[[], None] | None = None,
     on_observation: Callable[[TradePlan, ExecutionReceipt], None] | None = None,
     submission_scope: Callable[[list[TradePlan]], ContextManager] | None = None,
+    post_submit_reconcile_rounds: int = 3,
 ) -> None:
     """Submit serially before polling fills; uncertainty stops further writes.
 
     The caller owns the account fence and has persisted the whole allocation.
     Receipts are updated in place so a later read exception cannot erase an ACK.
     """
+    if not 0 <= post_submit_reconcile_rounds <= 3:
+        raise ValueError("LIVE_BATCH_RECONCILE_ROUNDS_INVALID")
     attempted: list[TradePlan] = []
     terminal = {ExecutionState.FILLED, ExecutionState.CANCELLED,
                 ExecutionState.REJECTED, ExecutionState.SKIPPED}
@@ -1672,7 +1675,7 @@ def advance_submission_batch(
             if receipt.state not in terminal and not _mapped_batch_order(plan, receipt):
                 break
     # Round robin: one resting order must not monopolize readback either.
-    for _attempt in range(3):
+    for _attempt in range(post_submit_reconcile_rounds):
         for index, plan in enumerate(attempted):
             receipt = receipts[index]
             if receipt.state not in pending and receipt.next_action not in {"reconcile", "reconcile_only"}:
