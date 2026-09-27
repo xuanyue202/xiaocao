@@ -761,6 +761,18 @@ def test_query_uses_one_targeted_reread_only_after_invalid_first_parse() -> None
     assert native.transient_order_reads == 1
 
 
+def test_malformed_old_order_price_remains_unproven_after_bounded_reread() -> None:
+    native = FakeNative()
+    native.orders[0]["委托价格"] = "0.，5500"
+
+    with pytest.raises(FounderscNativeAXError, match="NATIVE_QUERY_ORDER_PRICE_MALFORMED"):
+        _adapter(native)._query("today-orders")
+
+    assert native.query_calls == ["today-orders", "today-orders"]
+    assert native.submit_calls == 0
+    assert native.cancel_calls == 0
+
+
 def test_query_accepts_only_targeted_low_confidence_zero_fill_fallback() -> None:
     native = LowConfidenceZeroFillNative()
     native.orders[0]["成交数量"] = "0"

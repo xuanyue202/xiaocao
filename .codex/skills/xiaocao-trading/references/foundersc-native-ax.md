@@ -215,8 +215,12 @@ never issue another cancel click from the existing claim. Apart from the two
 bounded proofs above, low-confidence holding-number cells may be reread from the same audited cell
 at 3x scale only when the new OCR meets the original confidence floor and
 strict numeric comparison agrees with the initial value (four-place decimal
-comma is permitted only for current price). Proven text and all order identity
-fields are never replaced by this path. Other critical OCR cells below the confidence floor and
+comma is permitted only for current price). An existing `委托价格` token with
+malformed numeric syntax, such as `0.，5500`, may instead be replaced only by
+two high-confidence OCR reads of the same audited price cell at 3x and 4x
+that both have valid numeric syntax and agree exactly. The Python row validator
+must then accept the full table; otherwise stop before any write. Valid price
+text and all other order identity fields stay unchanged. Other critical OCR cells below the confidence floor and
 malformed side text fail closed after the single targeted reread. Every
 post-click outcome must separately preserve helper status, the helper-reported
 click fact, exact click proof, confirmation state and selection proof mode even

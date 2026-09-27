@@ -422,6 +422,17 @@ private func matchingPositionCellNumbers(_ original: String, _ recovered: String
     return old == fresh
 }
 
+private func strictGridOrderPrice(_ raw: String) -> Decimal? {
+    let compact = raw.components(separatedBy: .whitespacesAndNewlines).joined()
+    // A second punctuation glyph (for example "0.，5500") is not a price.
+    // Keep the fractional width flexible for historical grids; the Python
+    // table validator remains the final authority for each readback.
+    guard compact.range(of: #"^[0-9]+[.,][0-9]+$"#,
+                        options: .regularExpression) != nil else { return nil }
+    return Decimal(string: compact.replacingOccurrences(of: ",", with: "."),
+                   locale: Locale(identifier: "en_US_POSIX"))
+}
+
 private func recoverMissingTableText(
     image: CGImage, screenBounds: Bounds, shapes: [TableShape], initialTokens: [OCRToken]
 ) -> [OCRToken] {
@@ -447,21 +458,38 @@ private func recoverMissingTableText(
             // that agrees numerically; already-proven values remain untouched.
             let recheckPosition = positionNumbers.contains(column.title)
                 && existing.contains { $0.confidence < minimumCriticalOCRConfidence }
-            guard existing.isEmpty || recheckPosition else { continue }
+            let malformedOrderPrice = column.title == "委托价格"
+                && !existing.isEmpty
+                && strictGridOrderPrice(existing.map(\.text).joined()) == nil
+            guard existing.isEmpty || recheckPosition || malformedOrderPrice else { continue }
             let rect = CGRect(x: (cell.x - screenBounds.x) * Double(image.width) / screenBounds.width,
                 y: (cell.y - screenBounds.y) * Double(image.height) / screenBounds.height,
                 width: cell.width * Double(image.width) / screenBounds.width,
                 height: cell.height * Double(image.height) / screenBounds.height).integral
             guard CGRect(x: 0, y: 0, width: image.width, height: image.height).contains(rect),
-                  let crop = image.cropping(to: rect),
-                  let context = CGContext(data: nil, width: crop.width * 3, height: crop.height * 3,
-                    bitsPerComponent: 8, bytesPerRow: 0, space: CGColorSpaceCreateDeviceRGB(),
-                    bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue) else { continue }
-            context.interpolationQuality = .high
-            context.draw(crop, in: CGRect(x: 0, y: 0, width: crop.width * 3, height: crop.height * 3))
-            guard let enlarged = context.makeImage() else { continue }
-            let recovered = recognizeText(image: enlarged, screenBounds: cell, smallCell: true)
+                  let crop = image.cropping(to: rect) else { continue }
+            func recapture(scale: Int) -> [OCRToken]? {
+                guard let context = CGContext(data: nil,
+                    width: crop.width * scale, height: crop.height * scale,
+                    bitsPerComponent: 8, bytesPerRow: 0,
+                    space: CGColorSpaceCreateDeviceRGB(),
+                    bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue) else { return nil }
+                context.interpolationQuality = .high
+                context.draw(crop, in: CGRect(x: 0, y: 0,
+                    width: crop.width * scale, height: crop.height * scale))
+                guard let enlarged = context.makeImage() else { return nil }
+                return recognizeText(image: enlarged, screenBounds: cell, smallCell: true)
+            }
+            guard let recovered = recapture(scale: 3) else { continue }
             if !recovered.isEmpty && recovered.allSatisfy({ inside($0) && $0.confidence >= minimumCriticalOCRConfidence }) {
+                if malformedOrderPrice {
+                    guard let second = recapture(scale: 4), !second.isEmpty,
+                          second.allSatisfy({ inside($0) && $0.confidence >= minimumCriticalOCRConfidence }),
+                          let firstPrice = strictGridOrderPrice(recovered.sorted { $0.bounds.x < $1.bounds.x }.map(\.text).joined()),
+                          let secondPrice = strictGridOrderPrice(second.sorted { $0.bounds.x < $1.bounds.x }.map(\.text).joined()),
+                          firstPrice == secondPrice else { continue }
+                    tokens.removeAll(where: inside)
+                }
                 if recheckPosition {
                     let oldValue = existing.map(\.text).joined()
                     let newValue = recovered.sorted { $0.bounds.x < $1.bounds.x }.map(\.text).joined()
