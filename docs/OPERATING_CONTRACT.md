@@ -1,6 +1,6 @@
 # 小草运营契约（Operating Contract, SSOT）
 
-**版本**：4.24
+**版本**：4.25
 **状态**：现行
 **适用范围**：所有 paper / 未来 real 的实盘环（live_recommend → paper_record → live_monitor → eod）与回测
 **关联实现**：`src/xiaocao/live/{safety,capital_keychain,foundersc_native_ax,foundersc_native_broker,trading_execution,book_b_live_lifecycle,book_b_live_intraday}.py`、`src/xiaocao/live/intelligence_policy.py`、`src/xiaocao/strategy/{mode_switch,trend_rules,kol_reference}.py`、`native/foundersc_ax_executor/`、`kronos_screen/scripts/{capture_signals,forward_eval,paper_record,settle_book_a,settle_book_t,decompose_pnl,quality_governor}.py`、`scripts/{book_b_live_morning,book_b_live_intraday,live_monitor,research_mode_switch_replay}.py`
@@ -190,7 +190,7 @@ KOL 断言、候选假设或报告升级为策略真值，也不替代永久参�
   不调用或等待 `auto_daily.sh morning-execute`，不读取模拟成交，也不写
   canonical paper ledger。该 seam 只走方正证券原生 App；不得初始化、登录或
   调用 OpenCLI 作为账户、资产、持仓、委托、成交、填单、提交或对账的一部分。
-  全新 BUY 的 allocation 从同账户当日原生持仓页面直接读取可用资金，绑定完整表结构、实际可用字段及自有 lot 标记；以已验证结算和未变化的 ownership chain 约束 Book-B NAV/敞口/批次。前日自有 SELL 在当日精确委托、成交与全量持仓回读证明零成交时，允许用当前 owned-lot mark 计算保守基准：NAV 取旧结算与当前值较低者，敞口取较高者；风险回执保留真实缺失结算日期和降级原因。余额、可取、混合总资产等审计字段不再作为全新 BUY 的前置门。恢复和完整生命周期对账仍要求下述完整快照及恒等式。原生 App 没有 mock/live 数据
+  全新 BUY 的 allocation 从同账户当日原生持仓页面直接读取可用资金，绑定完整表结构、实际可用字段及自有 lot 标记。已有可信结算后，当前 ownership chain 即使因后来已证明的成交变化，也可重放全部 hash-bound 自有成交并用当日 APP 持仓标记当前 Book-B lot；NAV 取旧结算与当前值较低者，敞口取较高者，风险回执保留真实缺失结算日期和降级原因。前日自有 SELL 只有在当日精确委托、成交与持仓回读证明零成交，且原 lot 仍足额持有或后来独立成交已清空原 lot 并由 APP 证明当前该股零持仓时，才不全局阻断其他代码的新 BUY；旧单仍未决、仅精确对账，同股新 BUY 继续阻断。余额、可取、混合总资产等审计字段不作为全新 BUY 的前置门。恢复和完整生命周期对账仍要求下述完整快照及恒等式。原生 App 没有 mock/live 数据
   namespace，完成或失败后必须记录
   `native_environment_restore_not_applicable`，不得伪造恢复 mock。非空 freeze 还必须绑定实际同日 snapshot 的 canonical
   SHA-256 与行数，且 digest/run id/producer strategy Git SHA 必须由 queue producer 在冻结时写入 manifest。
@@ -368,7 +368,8 @@ KOL 断言、候选假设或报告升级为策略真值，也不替代永久参�
   acknowledged/partial/unknown/reconciling 就拒绝结算；上述前日零成交且收盘再次精确回读的 SELL 允许仅按仍持有的原 lot 结算，其自身仍不关闭。按实际 broker-proved
   BUY/SELL fills 与最新持仓 mark 写当日不可变 settlement；下一交易日 morning 只有
   settlement ownership head 与当前 ownership chain 完全一致时，才以
-  `broker_reconciled_book_b_nav` 作为滚动 NAV/敞口基准。
+  `broker_reconciled_book_b_nav` 作为滚动 NAV/敞口基准；链头变化走上文的
+  当前自有成交重放与保守标记路径，不改写旧结算。
 
 - **默认建仓集合**：`paper_record.py --pick mode_exec_star` 只成交 `★E`。`★B`（K/P+竞价）和 `★M`（旧模式分轮动）继续前向留样，但没有默认成交权限。
 - **唯一模式证据源**：`output/live/training_rows.parquet` 中 `is_live=true`、`book=B`、`executable_fillable=true`、非北交所的 `executable_net_ret`。该标签复用第 5 节开盘成交模型并扣双边费用；理论 `net_realized_ret`、SQLite `mode_history`、实际已买子集和不可交易北交所信号均不得打开模式资格。
@@ -520,6 +521,7 @@ KOL 断言、候选假设或报告升级为策略真值，也不替代永久参�
 
 | 版本 | 日期 | 说明 |
 |------|------|------|
+| 4.25 | 2026-09-27 | 早盘新 BUY 可用已证明自有成交重放和当日 APP 持仓形成保守当前基准；前日零成交旧 SELL 在原 lot 后续独立清空时不全局阻断其他代码，同股新 BUY 仍阻断，旧单维持精确对账。 |
 | 4.24 | 2026-09-27 | 交易窗口优先、真实前置依赖与 Python/多模态恢复；当前 APP 可卖支持跨日新 SELL 并保留旧单对账；APP 仿真高影响自动变更保留研究证据门和企微持久通知。 |
 | 4.23 | 2026-09-27 | 当前 KOL 当下判断与周度语义挑战改用 GPT-6 Sol xhigh；早盘 Automation 主模型统一改用 GPT-6 Sol，历史 Astra 回执保持原样。 |
 | 4.22 | 2026-09-21 | 移除 KOL 短线投影的固定 16 条上限及强制项溢出分支；所有满足同一显式短线有效性与可操作性标准的观点全部进入，排序不改变集合成员。 |

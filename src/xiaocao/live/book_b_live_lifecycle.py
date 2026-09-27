@@ -617,6 +617,19 @@ def open_execution_plan_ids(state_dir: Path) -> tuple[str, ...]:
     )
 
 
+def unresolved_prior_sell_codes(state_dir: Path, *, trade_date: str) -> frozenset[str]:
+    """Codes where an old SELL might later consume a newly bought position."""
+    root = Path(state_dir)
+    intents = _load_intent_index(root)
+    return frozenset(
+        str(intents[plan_id]["code"])
+        for plan_id in open_execution_plan_ids(root)
+        if plan_id in intents
+        and intents[plan_id].get("side") == "SELL"
+        and str(intents[plan_id].get("trade_date") or "") < trade_date
+    )
+
+
 def proven_prior_day_zero_fill_sell_ids(state_dir: Path, *, trade_date: str,
                                          asof: datetime | None = None,
                                          max_age_seconds: float = 2700) -> tuple[str, ...]:
@@ -634,10 +647,20 @@ def proven_prior_day_zero_fill_sell_ids(state_dir: Path, *, trade_date: str,
         return ()
     _validate_execution_fill_coverage(root, ownership)
     owned_shares: dict[str, int] = {}
+    bought_shares: dict[str, int] = {}
+    lot_exits: dict[str, list[tuple[int, str]]] = {}
     for row in ownership:
         side = str(row.get("side") or "").upper()
-        lot_id = str(row.get("plan_id") if side == "BUY" else row.get("owned_lot_id") or "")
-        owned_shares[lot_id] = owned_shares.get(lot_id, 0) + (int(row["shares"]) if side == "BUY" else -int(row["shares"]))
+        lot_id = str(row.get("plan_id") if side == "BUY" else
+            row.get("owned_lot_id") or
+            intents.get(str(row.get("plan_id") or ""), {}).get("owned_lot_id") or "")
+        shares = int(row["shares"])
+        owned_shares[lot_id] = owned_shares.get(lot_id, 0) + (shares if side == "BUY" else -shares)
+        if side == "BUY":
+            bought_shares[lot_id] = bought_shares.get(lot_id, 0) + shares
+        else:
+            lot_exits.setdefault(lot_id, []).append(
+                (shares, str(row.get("trade_date") or "")[:10]))
     latest: dict[str, dict] = {}
     for event in _read_jsonl_strict(root / "events.jsonl"):
         plan_id = str(event.get("plan_id") or "")
@@ -662,6 +685,16 @@ def proven_prior_day_zero_fill_sell_ids(state_dir: Path, *, trade_date: str,
             holding = int(proof["target_holding_shares"])
         except (KeyError, TypeError, ValueError):
             continue
+        lot_id = str(intent.get("owned_lot_id") or "")
+        later_exit_shares = sum(
+            quantity for quantity, exit_date in lot_exits.get(lot_id, ())
+            if exit_date > str(intent.get("trade_date") or ""))
+        holding_coverage = holding >= shares and owned_shares.get(lot_id, 0) >= shares
+        fully_exited_lot = (
+            holding == 0 and owned_shares.get(lot_id, 0) == 0
+            and bought_shares.get(lot_id, 0) >= shares
+            and later_exit_shares >= shares
+        )
         if (observed.tzinfo is None or position_observed.tzinfo is None
                 or observed.astimezone(ZoneInfo("Asia/Shanghai")).date().isoformat() != trade_date
                 or position_observed.astimezone(ZoneInfo("Asia/Shanghai")).date().isoformat() != trade_date):
@@ -671,8 +704,8 @@ def proven_prior_day_zero_fill_sell_ids(state_dir: Path, *, trade_date: str,
                 or not -30 <= (asof - position_observed).total_seconds() <= max_age_seconds):
             continue
         if (intent.get("side") != "SELL" or str(intent.get("trade_date") or "") >= trade_date
-                or not intent.get("owned_lot_id") or shares <= 0 or holding < shares
-                or owned_shares.get(str(intent["owned_lot_id"]), 0) < shares
+                or not lot_id or shares <= 0
+                or not (holding_coverage or fully_exited_lot)
                 or receipt.get("plan_id") != plan_id
                 or receipt.get("plan_hash") != _sha256(intent)
                 or not str(receipt.get("broker_order_id") or "").isdigit()
@@ -1070,6 +1103,7 @@ __all__ = [
     "blocking_open_execution_plan_ids",
     "load_latest_book_b_live_settlement",
     "open_execution_plan_ids",
+    "unresolved_prior_sell_codes",
     "ownership_head_sha256",
     "project_book_b_live_account",
     "proven_prior_day_zero_fill_sell_ids",

@@ -47,7 +47,9 @@ Completion means the requested command reached a terminal state and the branch-s
   to the logical/fund account and protect the complete economic capsule with a
   canonical hash. The live logical account is fixed to `primary`; 30,000 yuan
   is only the pre-first-fill basis, after which a broker-reconciled EOD
-  settlement and unchanged ownership-chain head are mandatory. Intraday live
+  settlement is mandatory. When later proved fills change its ownership head,
+  morning uses the §4 conservative current mark and fences a code with an
+  unresolved older SELL. Intraday live
   monitoring reads only broker-proved owned lots, reuses the production exit
   policy, and hands authorized lot-bound SELL intents to the same exact-once
   native execution port. It never reads or writes paper account files. The

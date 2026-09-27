@@ -60,7 +60,12 @@ unknown or reconciling execution evidence (including a fill followed by an
 ownership-ledger write failure) blocks reuse of the first-batch basis until a
 hash-bound EOD settled-NAV receipt exists. A settlement is reusable only when
 its ownership-chain head still equals the current broker-proved ownership
-ledger; otherwise morning fails closed instead of reusing stale capital. The
+ledger. If the head changed after a proved fill, replay the hash-bound owned
+fills and mark the current owned lots from today's account-bound APP positions;
+use the lower of settled/current NAV and higher of settled/current exposure.
+An old zero-fill SELL with exact fresh order/trade/holding proof may remain
+reconcile-only while other codes proceed; block a new BUY in that SELL's code.
+The
 complete allocation capsule binds its capital
 basis source, NAV, cash, exposure and broker summary under one canonical hash,
 and broker-summary cash must equal top-level available cash. Because the native

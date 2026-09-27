@@ -17,6 +17,7 @@ from xiaocao.live.book_b_live_lifecycle import (
     open_execution_plan_ids,
     project_book_b_live_account,
     proven_prior_day_zero_fill_sell_ids,
+    unresolved_prior_sell_codes,
     write_book_b_live_settlement,
 )
 from xiaocao.live.book_b_live_intraday import _sell_limit_price, run_book_b_live_intraday
@@ -764,6 +765,92 @@ def test_eod_settlement_blocks_while_any_execution_is_open(tmp_path: Path) -> No
 
     with pytest.raises(ValueError, match="OPEN_EXECUTION_RECONCILE_REQUIRED"):
         write_book_b_live_settlement(tmp_path, account, now=EOD_NOW)
+
+
+@pytest.mark.app_simulation
+def test_old_zero_fill_sell_after_lot_exit_allows_fresh_mark_for_other_codes(
+    tmp_path: Path,
+) -> None:
+    from xiaocao.live.buy_preflight import current_owned_book_b_codes, pretrade_account
+
+    buy = _record_fill(tmp_path, _plan(trade_date="2026-08-31"),
+        price=10, event_id="prior-buy")
+    settled = project_book_b_live_account(tmp_path,
+        _snapshot(shares=100, sellable=100, observed_at=EOD_NOW),
+        trade_date="2026-09-01", now=EOD_NOW)
+    write_book_b_live_settlement(tmp_path, settled, now=EOD_NOW)
+    old_sell = _bind_plan_intent(tmp_path, _plan(side="SELL", lot_id=buy.plan_id,
+        trade_date="2026-09-02"))
+    _record_fill(tmp_path, _plan(side="SELL", lot_id=buy.plan_id,
+        trade_date="2026-09-03"), price=11, event_id="later-sell")
+    current = datetime(2026, 9, 4, 1, 25, tzinfo=timezone.utc)
+    proof = {
+        "position_observed_at": current.isoformat(),
+        "target_holding_shares": 0,
+        "fill_aggregate_proven": True,
+        "exact_order_match_count": 1,
+        "exact_trade_match_count": 0,
+        "current_order_cumulative_fill_notional": "0",
+        "historical_order_row_date": "2026-09-02",
+        "historical_trade_row_date": "2026-09-02",
+    }
+    ExecutionStore(tmp_path / "events.jsonl").append(plan=old_sell,
+        receipt=ExecutionReceipt(old_sell.plan_id, old_sell.plan_hash,
+            ExecutionState.UNKNOWN, filled_shares=0, remaining_shares=100,
+            broker_order_id="6007019", locator_proof=proof,
+            next_action="reconcile_only", observed_at=current),
+        kind="historical_reconcile")
+
+    assert proven_prior_day_zero_fill_sell_ids(tmp_path,
+        trade_date="2026-09-04", asof=current) == (old_sell.plan_id,)
+    assert blocking_open_execution_plan_ids(tmp_path,
+        trade_date="2026-09-04", asof=current) == ()
+    assert unresolved_prior_sell_codes(tmp_path,
+        trade_date="2026-09-04") == frozenset({"000001.XSHE"})
+    assert current_owned_book_b_codes(tmp_path) == set()
+    snapshot = _snapshot(observed_at=current)
+    snapshot["trade_date"] = "2026-09-04"
+    snapshot.pop("snapshot_sha256")
+    snapshot["snapshot_sha256"] = _canonical_sha256(snapshot)
+    account = project_book_b_live_account(tmp_path, snapshot,
+        trade_date="2026-09-04", now=current)
+    pretrade = {
+        "schema_version": "book-b-buy-preflight.v1",
+        "trade_date": "2026-09-04", "logical_account_id": "primary",
+        "account_binding": "proven", "fund_account_binding_sha256": "a" * 64,
+        "observed_at": current.isoformat(), "available_cash": 20_000.0,
+        "positions": {"scope": "new_buy_preflight",
+            "observed_at": current.isoformat(),
+            "summary_values": {"可用": "20000.00"}, "rows": []},
+    }
+    pretrade["snapshot_sha256"] = _canonical_sha256(pretrade)
+    scoped = pretrade_account(tmp_path, pretrade,
+        trade_date="2026-09-04", now=current)
+    assert scoped.cash == account.cash == 30_099.79
+    assert scoped.lots == account.lots == ()
+    basis = load_book_b_live_capital_basis(tmp_path,
+        trade_date="2026-09-04", current_account=scoped)
+    assert basis.source == "broker_reconciled_book_b_current_mark"
+    assert basis.settled_nav == min(settled.settled_nav, scoped.settled_nav)
+    assert basis.current_open_exposure == max(
+        settled.current_open_exposure, scoped.current_open_exposure)
+    risk = evaluate_live_risk(tmp_path, now=current, account=scoped,
+        trading_dates_provider=lambda _: [
+            "2026-08-31", "2026-09-01", "2026-09-02",
+            "2026-09-03", "2026-09-04",
+        ])
+    assert risk.status == "NORMAL", risk.reasons
+    assert "PRIOR_SELL_ZERO_FILL_CURRENT_MARK_BASIS" in risk.reasons
+    assert open_execution_plan_ids(tmp_path) == (old_sell.plan_id,)
+    conflicting = {**proof, "target_holding_shares": 100}
+    ExecutionStore(tmp_path / "events.jsonl").append(plan=old_sell,
+        receipt=ExecutionReceipt(old_sell.plan_id, old_sell.plan_hash,
+            ExecutionState.UNKNOWN, filled_shares=0, remaining_shares=100,
+            broker_order_id="6007019", locator_proof=conflicting,
+            next_action="reconcile_only", observed_at=current),
+        kind="conflicting_position_readback")
+    assert blocking_open_execution_plan_ids(tmp_path,
+        trade_date="2026-09-04", asof=current) == (old_sell.plan_id,)
 
 
 @pytest.mark.app_simulation

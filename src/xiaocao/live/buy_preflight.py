@@ -3,18 +3,20 @@
 No inferred total assets, unrelated order lifecycle or broker write. Full order,
 trade and mixed-account reconciliation remains mandatory after submission.
 """
-from dataclasses import replace
 from datetime import datetime
 import hashlib
 import json
 import math
 import re
+from decimal import Decimal
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
 from .book_b_live_lifecycle import (
+    BOOK_B_LIVE_DEFAULT_FEE_RATE, BOOK_B_LIVE_INITIAL_CAPITAL,
     BookBLiveAccountState, BookBLiveOwnedLot, load_latest_book_b_live_settlement,
-    _read_jsonl_strict, _validate_execution_fill_coverage,
+    _broker_decimal, _broker_integer, _load_intent_index, _normalize_code,
+    _read_jsonl_strict, _sha256, _validate_execution_fill_coverage,
     _validate_ownership_chain,
 )
 
@@ -85,50 +87,116 @@ def allocation_from_buy_preflight(snapshot: dict, basis, *, now: datetime) -> di
     return result
 
 
-def pretrade_account(state_dir: Path, snapshot: dict, *, trade_date: str, now: datetime) -> BookBLiveAccountState:
-    """Mark settled Book-B lots only; cannot settle accounts or authorize exits."""
-    validate_buy_preflight(snapshot, trade_date, now)
-    # Every prior fill must still have durable ownership; this check touches
-    # our own ledger only, not unrelated manual/test broker orders.
-    events, head = _validate_ownership_chain(_read_jsonl_strict(state_dir / 'book_b_ownership_evidence.jsonl'))
+def _replay_owned_book(state_dir: Path) -> tuple[Decimal, dict[str, dict], str | None]:
+    """Replay proved Book-B fills without requiring a terminal old order."""
+    events, head = _validate_ownership_chain(
+        _read_jsonl_strict(state_dir / 'book_b_ownership_evidence.jsonl'))
     _validate_execution_fill_coverage(state_dir, events)
+    intents = _load_intent_index(state_dir)
+    cash = Decimal(str(BOOK_B_LIVE_INITIAL_CAPITAL))
+    lots: dict[str, dict] = {}
+    for event in events:
+        if event.get('logical_account_id') != 'primary':
+            raise ValueError('BUY_PREFLIGHT_OWNERSHIP_ACCOUNT_MISMATCH')
+        plan_id = str(event['plan_id'])
+        intent = intents.get(plan_id)
+        if intent is None or _sha256(intent) != event['plan_hash']:
+            raise ValueError('BUY_PREFLIGHT_OWNERSHIP_INTENT_UNPROVEN')
+        shares = int(event['shares'])
+        notional = Decimal(str(event['fill_notional']))
+        fee = Decimal(str(intent.get('fee_rate', BOOK_B_LIVE_DEFAULT_FEE_RATE)))
+        if shares <= 0 or notional <= 0 or not 0 <= fee < 1:
+            raise ValueError('BUY_PREFLIGHT_OWNERSHIP_FILL_INVALID')
+        if event['side'] == 'BUY':
+            lot = lots.setdefault(plan_id, {
+                'code': str(event['code']),
+                'name': str(event.get('name') or event['code']),
+                'entry_date': str(event['trade_date'])[:10],
+                'snapshot_ref': str(intent.get('snapshot_ref') or ''),
+                'fee_rate': fee, 'shares': 0, 'cost': Decimal('0'),
+            })
+            if not lot['snapshot_ref'] or lot['code'] != str(event['code']):
+                raise ValueError('BUY_PREFLIGHT_OWNERSHIP_LOT_INVALID')
+            lot['shares'] += shares
+            lot['cost'] += notional
+            cash -= notional * (1 + fee)
+        elif event['side'] == 'SELL':
+            lot_id = str(event.get('owned_lot_id') or intent.get('owned_lot_id') or '')
+            lot = lots.get(lot_id)
+            if lot is None or lot['shares'] < shares or lot['code'] != str(event['code']):
+                raise ValueError('BUY_PREFLIGHT_SELL_LOT_UNPROVEN')
+            lot['cost'] -= lot['cost'] / lot['shares'] * shares
+            lot['shares'] -= shares
+            cash += notional * (1 - fee)
+        else:
+            raise ValueError('BUY_PREFLIGHT_OWNERSHIP_SIDE_INVALID')
+    cash = cash.quantize(Decimal('0.01'))
+    if cash < Decimal('-0.10'):
+        raise ValueError('BUY_PREFLIGHT_SUBACCOUNT_CASH_NEGATIVE')
+    return cash, lots, head
+
+
+def current_owned_book_b_codes(state_dir: Path) -> set[str]:
+    """Codes whose proven Book-B shares must be present in scoped APP reads."""
+    _, lots, _ = _replay_owned_book(Path(state_dir))
+    return {str(lot['code']) for lot in lots.values() if lot['shares'] > 0}
+
+
+def pretrade_account(state_dir: Path, snapshot: dict, *, trade_date: str, now: datetime) -> BookBLiveAccountState:
+    """Mark current proved Book-B lots; preserve old orders for reconciliation."""
+    validate_buy_preflight(snapshot, trade_date, now)
+    state_dir = Path(state_dir)
+    cash, owned, head = _replay_owned_book(state_dir)
     from .book_b_live_morning import _uncertain_execution_plan_ids
     if _uncertain_execution_plan_ids(state_dir, trade_date=trade_date, asof=now):
         raise ValueError('BUY_PREFLIGHT_OWNED_ORDER_RECONCILE_REQUIRED')
     settlement = load_latest_book_b_live_settlement(state_dir)
-    if settlement is None:
-        if events:
-            raise ValueError('BUY_PREFLIGHT_SETTLEMENT_REQUIRED')
-        cash, realized, old_lots = 30000.0, 0.0, []
-    else:
-        if settlement['ownership_head_sha256'] != head:
-            raise ValueError('BUY_PREFLIGHT_OWNERSHIP_CHANGED')
-        cash, realized, old_lots = settlement['cash'], settlement['realized_cash_delta'], settlement['lots']
-    positions = {r['证券代码']: r for r in snapshot['positions']['rows']}
+    if settlement is None and owned:
+        raise ValueError('BUY_PREFLIGHT_SETTLEMENT_REQUIRED')
+    contexts = {str(lot['owned_lot_id']): dict(lot.get('monitor_context') or {})
+                for lot in (settlement or {}).get('lots', [])}
+    positions = {}
+    for row in snapshot['positions']['rows']:
+        code = _normalize_code(row.get('证券代码'))
+        if code in positions:
+            raise ValueError('BUY_PREFLIGHT_OWNED_POSITION_DUPLICATE')
+        positions[code] = row
     lots = []
     totals = {}
-    for row in old_lots:
-        code = row['code'].split('.')[0]
+    for row in owned.values():
+        if row['shares'] <= 0:
+            continue
+        code = _normalize_code(row['code'])
         totals[code] = totals.get(code, 0) + row['shares']
     for code, shares in totals.items():
-        if code not in positions or float(positions[code]['证券数量']) < shares:
+        if code not in positions or _broker_integer(positions[code]['证券数量'],
+                reason='BUY_PREFLIGHT_OWNED_POSITION_INVALID') < shares:
             raise ValueError('BUY_PREFLIGHT_OWNED_POSITION_MISMATCH')
-    remaining = {c: int(float(r['可卖数量'])) for c, r in positions.items()}
-    for row in old_lots:
-        lot = BookBLiveOwnedLot(**row)
-        code = lot.code.split('.')[0]
-        price = float(positions[code]['当前价'])
+    remaining = {c: _broker_integer(r['可卖数量'],
+        reason='BUY_PREFLIGHT_OWNED_SELLABLE_INVALID') for c, r in positions.items()}
+    for lot_id, row in sorted(owned.items(), key=lambda item: (item[1]['entry_date'], item[0])):
+        if row['shares'] <= 0:
+            continue
+        code = _normalize_code(row['code'])
+        price = float(_broker_decimal(positions[code]['当前价'],
+            reason='BUY_PREFLIGHT_OWNED_MARK_INVALID'))
         if not math.isfinite(price) or price <= 0:
             raise ValueError('BUY_PREFLIGHT_OWNED_MARK_INVALID')
-        sellable = min(lot.shares, remaining[code]) if lot.entry_date < trade_date else 0
+        sellable = min(row['shares'], remaining[code]) if row['entry_date'] < trade_date else 0
         remaining[code] -= sellable
-        lots.append(replace(lot, current_price=price, sellable_shares=sellable,
-            market_value=round(price*lot.shares, 2),
-            liquidation_value_after_fee=round(price*lot.shares*(1-lot.sell_fee_rate), 2)))
+        lots.append(BookBLiveOwnedLot(
+            owned_lot_id=lot_id, code=row['code'], name=row['name'],
+            entry_date=row['entry_date'], entry_price=round(float(row['cost'] / row['shares']), 6),
+            shares=row['shares'], sellable_shares=sellable, current_price=price,
+            market_value=round(price * row['shares'], 2),
+            liquidation_value_after_fee=round(price * row['shares'] * (1-float(row['fee_rate'])), 2),
+            buy_fee_rate=float(row['fee_rate']), sell_fee_rate=float(row['fee_rate']),
+            snapshot_ref=row['snapshot_ref'], monitor_context=contexts.get(lot_id, {})))
     exposure = round(sum(l.market_value for l in lots), 2)
     liquidation = round(sum(l.liquidation_value_after_fee for l in lots), 2)
-    return BookBLiveAccountState(trade_date=trade_date, logical_account_id='primary', cash=cash,
+    return BookBLiveAccountState(trade_date=trade_date, logical_account_id='primary', cash=float(cash),
         current_open_exposure=exposure, liquidation_value_after_fee=liquidation,
-        settled_nav=round(cash+liquidation, 2), realized_cash_delta=realized,
+        settled_nav=round(float(cash)+liquidation, 2),
+        realized_cash_delta=round(float(cash)-BOOK_B_LIVE_INITIAL_CAPITAL, 2),
         ownership_head_sha256=head, broker_snapshot_sha256=snapshot['snapshot_sha256'],
         broker_snapshot_observed_at=snapshot['observed_at'], lots=tuple(lots))

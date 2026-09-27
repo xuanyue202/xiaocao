@@ -320,8 +320,11 @@ def main(argv: list[str] | None = None) -> int:
         cache=None,
     )
 
-    from xiaocao.live.buy_preflight import allocation_from_buy_preflight, pretrade_account, validate_buy_preflight
-    from xiaocao.live.book_b_live_lifecycle import load_latest_book_b_live_settlement, ownership_head_sha256
+    from xiaocao.live.buy_preflight import (
+        allocation_from_buy_preflight, current_owned_book_b_codes,
+        pretrade_account, validate_buy_preflight,
+    )
+    from xiaocao.live.book_b_live_lifecycle import ownership_head_sha256
     from xiaocao.live.live_decision_support import evaluate_live_risk
     trading_calendar = calendar_provider(market_client)
     buying_snapshot = None
@@ -335,8 +338,7 @@ def main(argv: list[str] | None = None) -> int:
                 return validate_buy_preflight(buying_snapshot, trade_date, current)
             except ValueError:
                 pass
-        settlement = load_latest_book_b_live_settlement(Path(args.state_dir))
-        codes = {lot["code"] for lot in (settlement or {}).get("lots", [])}
+        codes = current_owned_book_b_codes(Path(args.state_dir))
         buying_snapshot = broker.read_buy_preflight_snapshot(trade_date=trade_date, owned_codes=codes)
         buying_head = head
         return buying_snapshot

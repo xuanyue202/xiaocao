@@ -35,6 +35,7 @@ from .book_b_live_lifecycle import (
     open_execution_plan_ids,
     ownership_head_sha256,
     proven_prior_day_zero_fill_sell_ids,
+    unresolved_prior_sell_codes,
     validate_broker_account_snapshot,
 )
 from .trading_execution import (
@@ -139,7 +140,9 @@ def load_book_b_live_capital_basis(
     settlement = load_latest_book_b_live_settlement(root)
     if settlement is not None:
         open_plans = open_execution_plan_ids(root)
-        if open_plans:
+        current_head = ownership_head_sha256(root)
+        needs_current_mark = bool(open_plans) or settlement.get("ownership_head_sha256") != current_head
+        if needs_current_mark:
             if not trade_date or not isinstance(current_account, BookBLiveAccountState):
                 raise ValueError("LIVE_BOOK_B_SETTLED_NAV_RECONCILE_REQUIRED")
             try:
@@ -150,10 +153,8 @@ def load_book_b_live_capital_basis(
                 raise ValueError("LIVE_BOOK_B_SETTLED_NAV_RECONCILE_REQUIRED")
             if (getattr(current_account, "trade_date", None) != trade_date
                     or getattr(current_account, "logical_account_id", None) != "primary"
-                    or getattr(current_account, "ownership_head_sha256", None) != settlement.get("ownership_head_sha256")):
+                    or getattr(current_account, "ownership_head_sha256", None) != current_head):
                 raise ValueError("LIVE_BOOK_B_CURRENT_MARK_UNPROVEN")
-        if settlement.get("ownership_head_sha256") != ownership_head_sha256(root):
-            raise ValueError("LIVE_BOOK_B_SETTLED_NAV_RECONCILE_REQUIRED")
         try:
             settled_nav = float(settlement["settled_nav"])
             exposure = float(settlement["current_open_exposure"])
@@ -166,7 +167,7 @@ def load_book_b_live_capital_basis(
             or exposure < 0
         ):
             raise ValueError("LIVE_BOOK_B_SETTLEMENT_INVALID")
-        if open_plans:
+        if needs_current_mark:
             marked_nav = float(getattr(current_account, "settled_nav"))
             marked_exposure = float(getattr(current_account, "current_open_exposure"))
             snapshot_sha = str(getattr(current_account, "broker_snapshot_sha256", ""))
@@ -987,9 +988,14 @@ def _materialize_or_restore_plans(
         side="BUY",
         allocation=allocation,
     ) if new_rows else []
-    if check_new_plan is not None and policy_evidence is not None:
-        new_plans = [plan for plan in new_plans
-                     if check_new_plan(plan, policy_evidence["by_code"][plan.code])]
+    if check_new_plan is not None:
+        new_plans = [
+            plan for plan in new_plans
+            if check_new_plan(
+                plan,
+                policy_evidence["by_code"][plan.code] if policy_evidence is not None else {},
+            )
+        ]
     new_by_id = {
         plan.plan_id: plan
         for plan in _bind_durable_plan_intents(config, new_plans)
@@ -1818,6 +1824,14 @@ def run_book_b_live_morning(
             snapshot_cache = None
 
     def allow_new_risk(plan: TradePlan, original: dict | None = None) -> bool:
+        if plan.code in unresolved_prior_sell_codes(config.state_dir,
+                trade_date=config.trade_date):
+            policy_consumptions.append({
+                "plan_id": plan.plan_id, "plan_hash": plan.plan_hash,
+                "stage": "new_intent" if original is not None else "before_action",
+                "allowed": False, "reason": "PRIOR_OPEN_SELL_SAME_CODE",
+            })
+            return False
         if config.policy_root is None or not _plan_requires_prepare(config, plan):
             return True
         audit = original if original is not None else read_plan_audit(config.state_dir, plan)
