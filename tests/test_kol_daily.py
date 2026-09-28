@@ -5445,6 +5445,59 @@ def test_completed_publication_resumes_without_rebuilding_changed_reader_copy(
     assert order == ["gray", "book", "book"]
 
 
+@pytest.mark.parametrize("change", ["version", "evidence", "projection", "evaluation"])
+def test_completed_publication_cannot_complete_different_source_or_projection(
+    tmp_path, monkeypatch, change,
+):
+    from dataclasses import replace
+
+    order: list[str] = []
+    ledger = PublicationLedger(tmp_path / "publication")
+    client = _PublicationClient(order)
+    context = DailyPublicationContext(
+        adapter="lv_text_image",
+        source_identity="same-provider-image",
+        publication_version="preview-v1",
+        kol_id="kol-lv-xiaotong",
+        source="吕晓彤订阅",
+        source_published_at="2026-07-27T09:30:00+08:00",
+        media_types=("image",),
+        source_parts=(),
+    )
+    original = _projection_bundle() if change == "evaluation" else _publication_bundle()
+    DailyPublicationPipeline(
+        _DelegatePipeline(order), ledger=ledger, client=client, context=context,
+    ).process(original)
+    key = publication_id_for_source(
+        adapter=context.adapter, source_identity=context.source_identity,
+    )
+    event_count = ledger.status(key)["event_count"]
+    bundle = _publication_bundle()
+    if change == "version":
+        context = replace(context, publication_version="preview-v2")
+    elif change == "evidence":
+        bundle["items"][0]["evidence_sha256"] = "b" * 64
+    elif change == "evaluation":
+        bundle = original
+        state = ledger.status(key)
+        state["artifact"]["records"] = [
+            row for row in state["artifact"]["records"]
+            if row["kind"] != "viewpoint_evaluation"
+        ]
+        monkeypatch.setattr(ledger, "status", lambda _key: state)
+    else:
+        bundle = _projection_bundle()
+    pipeline = DailyPublicationPipeline(
+        _DelegatePipeline(order), ledger=ledger, client=client, context=context,
+    )
+
+    with pytest.raises(DailyError, match="exact publication correction required"):
+        pipeline.process(bundle)
+
+    assert order == ["gray", "book"]
+    assert ledger.status(key)["event_count"] == event_count
+
+
 def test_video_publication_context_uses_request_time_and_evidence_hash():
     context = _video_publication_context(
         {
