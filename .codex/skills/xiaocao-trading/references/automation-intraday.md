@@ -34,6 +34,12 @@ clear a claim by age or repeat an unknown business effect.
 
 `EXISTING_LIVE_PLAN_REQUIRES_OWNER` is a trading-plan fence, not a KOL peer
 lock. Its `plan_ids` and `state_dir` identify the exact durable evidence.
+Validated prior-day owned SELL intents are returned on a normal `run` claim as
+`deferred_reconcile_plan_ids`. Retain those exact old claims and run the current
+paper/live monitors once; the live consumer proves fresh APP ownership,
+sellable quantity and execution eligibility. The tick does not reconcile or
+terminalize the old orders. Current/future SELL, BUY, missing or invalid intent
+and active economic writer locks retain their existing fences.
 Legacy plans may have `owner_identity_status=unavailable`; do not invent a
 task ID, wait on an unspecified owner, clear the plan, or rerun the checkpoint.
 Perform one bounded exact-plan receipt/event read under `book-b-live-repair.md`.

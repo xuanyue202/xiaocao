@@ -768,6 +768,38 @@ def test_eod_settlement_blocks_while_any_execution_is_open(tmp_path: Path) -> No
 
 
 @pytest.mark.app_simulation
+def test_legacy_nonterminal_settlement_is_preserved_but_excluded_from_basis_and_risk(tmp_path):
+    from xiaocao.live.live_decision_support import load_live_nav_history
+
+    account = project_book_b_live_account(tmp_path, _snapshot(observed_at=EOD_NOW),
+                                        trade_date="2026-09-01", now=EOD_NOW)
+    first = write_book_b_live_settlement(tmp_path, account, now=EOD_NOW)
+    later = EOD_NOW + timedelta(days=1)
+    second = write_book_b_live_settlement(tmp_path, replace(account, trade_date="2026-09-02",
+        broker_snapshot_observed_at=later.isoformat()), now=later)
+    settlement_path = tmp_path / "settlements/2026-09-02.json"
+    original = settlement_path.read_bytes()
+    archive = tmp_path / "runs/intraday/archive/2026-09-02-eod-original.json"
+    archive.parent.mkdir(parents=True)
+    archive.write_text(json.dumps({"settlement": second, "reconciliation_receipts": [
+        {"plan_id": "book-b:old:SELL", "state": "unknown", "filled_shares": 0}]}))
+    assert load_latest_book_b_live_settlement(tmp_path) == first
+    diagnostics = {}
+    history = load_live_nav_history(tmp_path, asof=later,
+        trading_dates=["2026-09-01", "2026-09-02"], diagnostics=diagnostics,
+        proven_sell_gap_dates=["2026-09-02"])
+    assert [row.date for row in history] == ["2026-09-01"]
+    assert diagnostics["excluded_nonterminal_settlements"] == {
+        "2026-09-02": ["book-b:old:SELL"]}
+    assert diagnostics["history_gaps"] == ["2026-09-02"]
+    assert settlement_path.read_bytes() == original
+    # An unrelated archive cannot quarantine a different settlement hash.
+    archive.write_text(json.dumps({"settlement": first, "reconciliation_receipts": [
+        {"plan_id": "book-b:old:SELL", "state": "unknown"}]}))
+    assert load_latest_book_b_live_settlement(tmp_path) == second
+
+
+@pytest.mark.app_simulation
 def test_old_zero_fill_sell_after_lot_exit_allows_fresh_mark_for_other_codes(
     tmp_path: Path,
 ) -> None:
@@ -828,6 +860,12 @@ def test_old_zero_fill_sell_after_lot_exit_allows_fresh_mark_for_other_codes(
         trade_date="2026-09-04", now=current)
     assert scoped.cash == account.cash == 30_099.79
     assert scoped.lots == account.lots == ()
+    # An independently exited lot supports a current mark, never terminalizes
+    # the old order or permits immutable EOD settlement.
+    with pytest.raises(ValueError, match="EOD_OPEN_EXECUTION_RECONCILE_REQUIRED"):
+        write_book_b_live_settlement(tmp_path, account,
+            now=datetime(2026, 9, 4, 7, 10, tzinfo=timezone.utc))
+    assert not (tmp_path / "settlements/2026-09-04.json").exists()
     basis = load_book_b_live_capital_basis(tmp_path,
         trade_date="2026-09-04", current_account=scoped)
     assert basis.source == "broker_reconciled_book_b_current_mark"
@@ -940,7 +978,9 @@ def test_prior_zero_fill_sell_scopes_new_risk_without_closing_order(tmp_path: Pa
     eod_snapshot["snapshot_sha256"] = _canonical_sha256(eod_snapshot)
     eod_account = project_book_b_live_account(tmp_path, eod_snapshot,
         trade_date="2026-09-03", now=eod)
-    assert write_book_b_live_settlement(tmp_path, eod_account, now=eod)["status"] == "settled"
+    with pytest.raises(ValueError, match="EOD_OPEN_EXECUTION_RECONCILE_REQUIRED"):
+        write_book_b_live_settlement(tmp_path, eod_account, now=eod)
+    assert not (tmp_path / "settlements/2026-09-03.json").exists()
     assert open_execution_plan_ids(tmp_path) == (sell.plan_id,)
 
     proof["exact_trade_match_count"] = 1

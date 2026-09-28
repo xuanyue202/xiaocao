@@ -33,6 +33,7 @@ from .book_b_live_lifecycle import (
     _validate_execution_fill_coverage,
     _validate_ownership_chain,
     project_book_b_live_account,
+    settlement_nonterminal_plan_ids,
     proven_prior_day_zero_fill_sell_ids,
 )
 from .kol_policy import buy_adjustment, load_decision
@@ -173,6 +174,7 @@ def load_live_nav_history(state_dir: Path, *, asof: datetime,
     if any(row["trade_date"] > asof.astimezone(_CHINA).date().isoformat() for row in ownership):
         raise ValueError("LIVE_RISK_FUTURE_OWNERSHIP")
     history = []
+    excluded = {}
     paths = sorted((root / "settlements").glob("*.json"))
     if not paths:
         raise ValueError("LIVE_RISK_HISTORY_OR_EXPLICIT_SEED_PROOF_REQUIRED")
@@ -206,8 +208,14 @@ def load_live_nav_history(state_dir: Path, *, asof: datetime,
         _verify_nav(payload, cash_by_head)
         if any(lot["entry_date"] > day for lot in payload["lots"]):
             raise ValueError("LIVE_RISK_FUTURE_OWNED_LOT")
+        unresolved = settlement_nonterminal_plan_ids(root, {**payload, "settlement_sha256": claimed})
+        if unresolved:
+            excluded[day] = list(unresolved)
+            continue
         history.append(NavObservation(day, float(payload["settled_nav"]), "live:B", _CAPITAL,
                                       0.0, NAV_BASIS, "settled", settled.isoformat(), claimed))
+    if not history:
+        raise ValueError("LIVE_RISK_HISTORY_OR_EXPLICIT_SEED_PROOF_REQUIRED")
     inception = min([history[0].date] + [row["trade_date"] for row in ownership])
     required = [day for day in days if inception <= day <= expected]
     actual = {row.date for row in history}
@@ -216,6 +224,7 @@ def load_live_nav_history(state_dir: Path, *, asof: datetime,
         diagnostics.update({"history_gaps": gaps, "missing_historical_high_water": bool(gaps),
             "high_water_basis": "seed_validated_settlements_and_observed_marks",
             "verified_settlement_dates": sorted(actual),
+            "excluded_nonterminal_settlements": excluded,
             "supporting_health": "degraded" if gaps else "healthy"})
     latest_gap_start = next((day for day in required if day > history[-1].date), None)
     if history[-1].date != expected and latest_gap_start not in set(proven_sell_gap_dates):

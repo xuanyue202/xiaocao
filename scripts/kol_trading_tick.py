@@ -42,6 +42,7 @@ from xiaocao.kol.publication import PublicationLedger
 from xiaocao.kol.trading_context import PRODUCTION_LEDGER_PATHS
 from xiaocao.live import kol_policy
 from xiaocao.live.book_b_live_lifecycle import _validate_ownership_chain, open_execution_plan_ids
+from xiaocao.live.book_b_live_morning import read_durable_live_plan_intent
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -233,7 +234,7 @@ def _decision_inputs(root: Path, now: datetime) -> tuple[str, list[str]]:
     return _digest(sorted(fingerprints)), expired
 
 
-def _live_owner(root: Path) -> dict | None:
+def _live_owner(root: Path, *, trade_date: str) -> dict | None:
     """Read existing local fences only; never create locks in business stores."""
     state_root = root / "output/live/book_b_live_execution"
     account = hashlib.sha256(b"primary").hexdigest()[:24]
@@ -251,10 +252,28 @@ def _live_owner(root: Path) -> dict | None:
                 return _result("no_op", "LIVE_WRITER_OWNS_CHECKPOINT")
     plans = open_execution_plan_ids(state_root)
     if plans:
+        intents = {}
+        for path in (state_root / "plan_intents").glob("*.json"):
+            plan = read_durable_live_plan_intent(_json(path))
+            if plan.plan_id in intents:
+                raise TickError("DUPLICATE_LIVE_INTENT")
+            intents[plan.plan_id] = plan
+        deferred = []
+        for plan_id in plans:
+            plan = intents.get(plan_id)
+            if (plan is not None and plan.side == "SELL" and plan.owned_lot_id
+                    and datetime.fromisoformat(plan.trade_date).date().isoformat() < trade_date):
+                deferred.append(plan_id)
+        blocking = [plan_id for plan_id in plans if plan_id not in deferred]
+        if not blocking:
+            # Claim only the current monitors. They must obtain fresh APP facts
+            # before evaluating an exit; these old claims remain untouched.
+            return _result("deferred", "PRIOR_DAY_SELL_RECONCILE_ONLY",
+                           deferred_reconcile_plan_ids=deferred)
         # Old plans do not contain a task ID. Return their exact durable IDs
         # rather than implying an owner lookup is possible or inventing one.
         return _result("reconcile_required", "EXISTING_LIVE_PLAN_REQUIRES_OWNER",
-                       plan_ids=list(plans), state_dir=str(state_root),
+                       plan_ids=blocking, state_dir=str(state_root),
                        owner_thread_id=None, owner_identity_status="unavailable",
                        recovery_action="reconcile_only")
     return None
@@ -284,8 +303,8 @@ def poll(root: Path = ROOT, *, now: datetime | None = None,
             cursor = state["cursor"]
             if cursor["slot"] is not None and slot <= cursor["slot"]:
                 return _result("no_op", "SLOT_ALREADY_ACKNOWLEDGED")
-            owner = _live_owner(root)
-            if owner is not None:
+            owner = _live_owner(root, trade_date=local.date().isoformat())
+            if owner is not None and owner["status"] != "deferred":
                 return owner
             fingerprint = publication_fingerprint(root, current)
             decision_fingerprint, stale = _decision_inputs(root, current)
@@ -297,13 +316,14 @@ def poll(root: Path = ROOT, *, now: datetime | None = None,
                      "cadence_slot": slot, "fingerprint": fingerprint, "expired": expired,
                      "decision_fingerprint": decision_fingerprint, "decision_changed": decision_changed,
                      "need_semantic_review": semantic, "regular_monitor": regular,
+                     "deferred_reconcile_plan_ids": (owner or {}).get("deferred_reconcile_plan_ids", []),
                      "owner_thread_id": owner_thread_id.strip() if owner_thread_id else None}
             claim["token"] = _digest(claim)
             state["claim"] = claim
             _save(directory, state)
             return _result("run", "CLAIMED", **{key: claim[key] for key in (
                 "token", "cadence_slot", "fingerprint", "decision_fingerprint", "decision_changed",
-                "need_semantic_review", "regular_monitor", "owner_thread_id")})
+                "need_semantic_review", "regular_monitor", "owner_thread_id", "deferred_reconcile_plan_ids")})
     except (OSError, ValueError, TypeError, KeyError, AttributeError):
         return _result("reconcile_required", "LOCAL_GATE_READBACK_REQUIRED")
 

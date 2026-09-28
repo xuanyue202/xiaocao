@@ -1012,8 +1012,9 @@ def write_book_b_live_settlement(
     root = Path(state_dir)
     with _account_execution_ownership_snapshot_lock(root):
         observed = now or datetime.now(timezone.utc)
-        open_plans = blocking_open_execution_plan_ids(root, trade_date=account.trade_date,
-            asof=observed, max_age_seconds=300)
+        # A current-mark exception can support independent transactions, but
+        # cannot attest that an unresolved historical order is terminal.
+        open_plans = open_execution_plan_ids(root)
         if open_plans:
             raise ValueError("LIVE_BOOK_B_EOD_OPEN_EXECUTION_RECONCILE_REQUIRED")
         current_ownership_head = ownership_head_sha256(root)
@@ -1058,11 +1059,38 @@ def write_book_b_live_settlement(
         return body
 
 
-def load_latest_book_b_live_settlement(state_dir: Path) -> dict[str, Any] | None:
-    paths = sorted((Path(state_dir) / "settlements").glob("*.json"))
-    if not paths:
-        return None
-    path = paths[-1]
+def settlement_nonterminal_plan_ids(state_dir: Path, settlement: dict) -> tuple[str, ...]:
+    """Reject legacy settlement claims contradicted by their original EOD run.
+
+    Keep both immutable artifacts. A later terminal order must not retroactively
+    make the original settlement's nonterminal reconciliation acceptable.
+    """
+    unresolved = set()
+    day = str(settlement.get("trade_date") or "")
+    claimed = settlement.get("settlement_sha256")
+    for path in (Path(state_dir) / "runs/intraday/archive").glob(f"{day}-eod-*.json"):
+        run = json.loads(path.read_text(encoding="utf-8"))
+        if not isinstance(run, dict):
+            raise ValueError("LIVE_BOOK_B_SETTLEMENT_ARCHIVE_INVALID")
+        embedded = run.get("settlement")
+        if not isinstance(embedded, dict) or embedded.get("settlement_sha256") != claimed:
+            continue
+        body = dict(embedded)
+        if _sha256({key: value for key, value in body.items() if key != "settlement_sha256"}) != claimed:
+            raise ValueError("LIVE_BOOK_B_SETTLEMENT_ARCHIVE_HASH_MISMATCH")
+        receipts = run.get("reconciliation_receipts", [])
+        if not isinstance(receipts, list) or any(not isinstance(row, dict) for row in receipts):
+            raise ValueError("LIVE_BOOK_B_SETTLEMENT_ARCHIVE_INVALID")
+        for receipt in receipts:
+            if receipt.get("state") not in _TERMINAL_EXECUTION_STATES:
+                plan_id = receipt.get("plan_id")
+                if not isinstance(plan_id, str) or not plan_id:
+                    raise ValueError("LIVE_BOOK_B_SETTLEMENT_ARCHIVE_PLAN_MISSING")
+                unresolved.add(plan_id)
+    return tuple(sorted(unresolved))
+
+
+def _read_book_b_live_settlement(path: Path) -> dict[str, Any]:
     try:
         payload = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError) as exc:
@@ -1095,6 +1123,14 @@ def load_latest_book_b_live_settlement(state_dir: Path) -> dict[str, Any] | None
     return payload
 
 
+def load_latest_book_b_live_settlement(state_dir: Path) -> dict[str, Any] | None:
+    for path in sorted((Path(state_dir) / "settlements").glob("*.json"), reverse=True):
+        payload = _read_book_b_live_settlement(path)
+        if not settlement_nonterminal_plan_ids(state_dir, payload):
+            return payload
+    return None
+
+
 __all__ = [
     "BOOK_B_LIVE_DEFAULT_FEE_RATE",
     "BOOK_B_LIVE_INITIAL_CAPITAL",
@@ -1108,6 +1144,7 @@ __all__ = [
     "project_book_b_live_account",
     "proven_prior_day_zero_fill_sell_ids",
     "settlement_path",
+    "settlement_nonterminal_plan_ids",
     "validate_broker_account_snapshot",
     "write_book_b_live_settlement",
 ]
