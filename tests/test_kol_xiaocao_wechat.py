@@ -272,6 +272,58 @@ def test_explicit_dated_backfill_recovers_only_the_selected_original_entry(
     assert items[original["identity"]]["manual_backfill_since"] == "2026-09-23"
 
 
+def test_dated_backfill_revalidates_reexpired_item_and_reuses_capture(tmp_path):
+    payload = _history(
+        "[2026-09-23 08:44] 小花: #小程序://见势擒龙团/7qBV0CwjiqCrkHB",
+    )
+    original = parse_xiaocao_live_messages(payload)[0]
+    driver = _CaptureDriver()
+    driver.can_expire_wait = lambda identity, job: job == "kol-capture-current"
+    history_reads = []
+    requests = []
+
+    def history():
+        history_reads.append(True)
+        return payload
+
+    def exchange(request):
+        requests.append(request)
+        return {
+            "action": request["action"],
+            "subscription_id": request["subscription_id"],
+            "playback_surface": "wechat_mini_program",
+            "page_state": "mini_program_waiting",
+            "activated": False,
+            "media_request_observed": False,
+            "playback_window_closed": False,
+        }
+
+    subscription = XiaocaoWechatLiveSubscription(
+        tmp_path / "wechat", history_reader=history, browser_exchange=exchange,
+        capture_driver=driver,
+        clock=lambda: datetime.fromisoformat("2026-09-28T10:15:00+08:00"),
+    )
+    manifest = subscription._load()
+    manifest["items"][original["identity"]] = {
+        **original, "status": "expired", "capture_job_id": "kol-capture-current",
+        "manual_backfill_since": "2026-09-23",
+    }
+    subscription._save(manifest)
+
+    result = subscription.run_once(
+        opencli_session="test", only_identity=original["identity"],
+        backfill_since="2026-09-23",
+    )
+
+    assert result["status"] == "waiting"
+    assert len(history_reads) == 1
+    assert driver.arms == []
+    assert driver.playback_preparations == [(original["identity"], "kol-capture-current")]
+    assert len(requests) == 1
+    assert requests[0]["mini_program_token"] == original["mini_program_token"]
+    assert subscription._load()["items"][original["identity"]]["capture_job_id"] == "kol-capture-current"
+
+
 @pytest.mark.parametrize("since,identity", [
     ("2026-09-24", "selected"),
     ("invalid", "selected"),
@@ -295,11 +347,14 @@ def test_manual_backfill_rejects_ambiguous_or_out_of_range_requests(tmp_path, si
     assert driver.arms == []
 
 
+@pytest.mark.parametrize("previous_authorization", [False, True])
 @pytest.mark.parametrize("status,fields", [
     ("completed", {"handoff_id": "same-handoff", "capture_job_id": "same-capture"}),
     ("expired", {"candidate_id": "same-candidate", "capture_job_id": "same-capture"}),
 ])
-def test_manual_backfill_never_resets_completed_or_bound_claims(tmp_path, status, fields):
+def test_manual_backfill_never_resets_completed_or_bound_claims(
+    tmp_path, status, fields, previous_authorization,
+):
     payload = _history("[2026-09-23 08:44] 小花: #小程序://见势擒龙团/7qBV0CwjiqCrkHB")
     original = parse_xiaocao_live_messages(payload)[0]
     driver = _CaptureDriver()
@@ -311,6 +366,8 @@ def test_manual_backfill_never_resets_completed_or_bound_claims(tmp_path, status
     )
     manifest = subscription._load()
     saved = {**original, "status": status, **fields}
+    if previous_authorization:
+        saved["manual_backfill_since"] = "2026-09-23"
     manifest["items"][original["identity"]] = saved
     subscription._save(manifest)
     if status == "completed":
@@ -862,6 +919,88 @@ def test_native_candidate_binding_checks_real_sniffer_evidence(tmp_path, invalid
         assert result["expected_source"]["source_identity"] == kwargs["source_identity"]
         assert driver.bind_mini_program_capture("item", armed["job_id"], **kwargs) == result
         assert "private" not in store.path.read_text()
+
+
+@pytest.mark.parametrize("invalid", [
+    None, "no_anchor", "other_app", "other_live", "other_media", "other_host",
+    "other_endpoint", "reporting_query", "old_anchor", "future_anchor",
+    "stale_capture", "live_stream", "indirect_request", "conflicting_anchor",
+])
+def test_native_direct_manifest_requires_exact_merchant_lineage(tmp_path, invalid):
+    store = CaptureJobStore(tmp_path / "capture.jsonl")
+    armed = store.arm([])
+    armed = store.transition(armed, "test_clock", created_at="2026-09-05T15:00:00+08:00")
+    resource = "https://encrypt-k-vod.xet.tech/content/replay/playlist_eof.m3u8"
+    candidate = {
+        "id": "fresh-request", "live_id": "l_target",
+        "captured": "2026-09-05 15:02:00", "media_type": "m3u8",
+        "source_url": resource + "?ticket=fresh-private",
+        "source_path": "/content/replay/playlist_eof.m3u8",
+        "url": resource + "?ticket=fresh-private",
+    }
+    anchor = {
+        "id": "metadata-anchor", "live_id": "l_target",
+        "captured": "2026-09-05 15:01:00", "media_type": "m3u8",
+        "source_url": "https://appdemo.h5.xe-live.com/_alive/v3/get_lookback_list",
+        "source_path": "/_alive/v3/get_lookback_list",
+        "json_path": "data[0].line_sharpness[0].url",
+        "url": resource + "?ticket=old-private",
+    }
+    observations = [candidate, anchor]
+    if invalid == "no_anchor":
+        observations = [candidate]
+    elif invalid == "other_app":
+        anchor["source_url"] = anchor["source_url"].replace("appdemo", "appother")
+    elif invalid == "other_live":
+        anchor["live_id"] = "l_other"
+    elif invalid == "other_media":
+        anchor["url"] = anchor["url"].replace("/replay/", "/another/")
+    elif invalid == "other_host":
+        anchor["url"] = anchor["url"].replace("encrypt-k-vod", "another-vod")
+    elif invalid == "other_endpoint":
+        anchor["source_url"] = anchor["source_url"].replace("get_lookback_list", "get_warm_up_video")
+        anchor["source_path"] = "/_alive/v3/get_warm_up_video"
+    elif invalid == "reporting_query":
+        anchor["json_path"] = "query.params[play_url]"
+    elif invalid == "old_anchor":
+        anchor["captured"] = "2026-09-05 14:59:00"
+    elif invalid == "future_anchor":
+        anchor["captured"] = "2026-09-05 15:03:00"
+    elif invalid == "stale_capture":
+        candidate["captured"] = "2026-09-05 14:59:00"
+    elif invalid == "live_stream":
+        candidate["url"] = candidate["source_url"] = resource.replace("playlist_eof", "liveplay")
+        candidate["source_path"] = "/content/replay/liveplay.m3u8"
+    elif invalid == "indirect_request":
+        candidate["source_path"] = "/report"
+    elif invalid == "conflicting_anchor":
+        observations.append({**anchor, "id": "conflict", "live_id": "l_other"})
+    service = SimpleNamespace(
+        capture_store=store,
+        sniffer=SimpleNamespace(candidates=lambda: observations),
+    )
+    driver = XiaocaoLiveCaptureDriver(tmp_path, service_factory=lambda *a, **kw: service)
+    kwargs = dict(source_identity="xiaoetong:appdemo:l_target", candidate_id="fresh-request")
+    if invalid:
+        with pytest.raises(EnrichmentError):
+            driver.bind_mini_program_capture("item", armed["job_id"], **kwargs)
+        assert store.latest()["status"] == "awaiting_capture"
+        return
+    result = driver.bind_mini_program_capture("item", armed["job_id"], **kwargs)
+    assert result["job_id"] == armed["job_id"]
+    assert result["status"] == "captured"
+    assert result["candidate"]["id"] == "fresh-request"
+    assert result["native_media_lineage"] == {
+        "method": "direct_manifest_with_merchant_lookback",
+        "media_resource_sha256": hashlib.sha256(resource.encode()).hexdigest(),
+        "metadata_anchors": [{
+            "candidate_id": "metadata-anchor", "source_host": "appdemo.h5.xe-live.com",
+            "source_path": "/_alive/v3/get_lookback_list",
+            "json_path": "data[0].line_sharpness[0].url",
+        }],
+    }
+    assert driver.bind_mini_program_capture("item", armed["job_id"], **kwargs) == result
+    assert "private" not in store.path.read_text()
 
 
 def test_wechat_mini_program_route_rejects_a_different_live_id(tmp_path):
