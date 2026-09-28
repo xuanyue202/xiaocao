@@ -273,13 +273,15 @@ def test_explicit_dated_backfill_recovers_only_the_selected_original_entry(
     assert items[original["identity"]]["manual_backfill_since"] == "2026-09-23"
 
 
-def test_dated_backfill_revalidates_reexpired_item_and_reuses_capture(tmp_path):
+@pytest.mark.parametrize("retained_native_repair", [False, True])
+def test_dated_backfill_revalidates_reexpired_item_and_reuses_capture(tmp_path, retained_native_repair):
     payload = _history(
         "[2026-09-23 08:44] 小花: #小程序://见势擒龙团/7qBV0CwjiqCrkHB",
     )
     original = parse_xiaocao_live_messages(payload)[0]
     driver = _CaptureDriver()
-    driver.can_expire_wait = lambda identity, job: job == "kol-capture-current"
+    driver.can_expire_wait = lambda identity, job: not retained_native_repair and job == "kol-capture-current"
+    driver.can_resume_unbound_native_repair = lambda identity, job: retained_native_repair and job == "kol-capture-current"
     history_reads = []
     requests = []
 

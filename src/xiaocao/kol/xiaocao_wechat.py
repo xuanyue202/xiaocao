@@ -478,6 +478,21 @@ class XiaocaoLiveCaptureDriver:
                 stage="source_run",
             ) from exc
 
+    def can_resume_unbound_native_repair(self, identity: str, capture_job_id: str) -> bool:
+        """A held native observation is neither idle nor accepted media."""
+        capture = self._service(identity).capture_store.latest(capture_job_id) or {}
+        observed = capture.get("native_unbound_media") or {}
+        return bool(
+            capture.get("status") == "awaiting_capture"
+            and capture.get("native_repair_armed_at")
+            and observed.get("source_accepted") is False
+            and _SHA256.fullmatch(str(observed.get("media_resource_sha256") or ""))
+            and _XIAOETONG_SOURCE_IDENTITY.fullmatch(str(observed.get("source_identity_observed") or ""))
+            and not any(capture.get(key) for key in (
+                "expected_source", "candidate", "source_job_id", "download_task_id", "task_id",
+            ))
+        )
+
     def prepare_playback(self, identity: str, capture_job_id: str) -> dict[str, Any]:
         service = self._service(identity)
         capture = service.capture_store.latest(capture_job_id)
@@ -961,7 +976,11 @@ class XiaocaoWechatLiveSubscription:
                 raise EnrichmentError("manual backfill must reconcile existing bound claims")
             job = item.get("capture_job_id")
             check = getattr(self.capture_driver, "can_expire_wait", None)
-            if job and (check is None or not check(identity, job)):
+            repair = getattr(self.capture_driver, "can_resume_unbound_native_repair", None)
+            if job and not (
+                (check is not None and check(identity, job))
+                or (repair is not None and repair(identity, job))
+            ):
                 raise EnrichmentError("manual backfill cannot replace an existing capture")
             item["status"] = "capture_armed" if job else "discovered"
         if item["status"] in _TERMINAL:
