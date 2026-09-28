@@ -319,6 +319,13 @@ def prepare(analysis_request: Path | str, *, market_evidence: Path | str | None 
     """Persist a repeatable request-scoped packet, prompt and explicit spawn args."""
     request_path = _path(analysis_request)
     request_ref = _file(request_path)
+    if market_evidence is not None:
+        from . import semantic_bundle as canonical
+
+        projection, _ = canonical._market_projection(
+            {"market_evidence": _object(market_evidence)}, {},
+        )
+        canonical._validate_market(projection)
     analyst_profile = load_analyst_profile()
     directory = request_path.parent / ".semantic_delegation" / request_ref["sha256"]
     prior_packet = directory / "context_packet.json"
@@ -429,10 +436,14 @@ def _invocation(packet: dict[str, Any], args: dict[str, Any], *, continuation: b
 
 
 def _context_delivery(packet: dict[str, Any], agent_id: str, path: Path | str) -> dict[str, Any]:
-    """Validate a parent's actual send_input arguments/result, without sending."""
+    """Bind the parent's actual context-message arguments/result without sending."""
     ref = _file(path)
     value = _object(path)
-    if set(value) != {"invocation_args", "result"}:
+    transport = value.get("transport", "send_input")
+    expected_keys = {"invocation_args", "result"}
+    if "transport" in value:
+        expected_keys.add("transport")
+    if set(value) != expected_keys:
         raise DelegationError("Context delivery requires exact send_input invocation_args and result")
     args, result = value["invocation_args"], value["result"]
     if (not isinstance(args, dict) or not {"target", "message"} <= set(args)
@@ -440,14 +451,25 @@ def _context_delivery(packet: dict[str, Any], agent_id: str, path: Path | str) -
             or args["target"] != agent_id or args["message"] != _prompt(packet)
             or ("interrupt" in args and not isinstance(args["interrupt"], bool))):
         raise DelegationError("Context delivery must send the exact prepared prompt to the same agent")
-    if not isinstance(result, dict) or set(result) != {"submission_id"}:
-        raise DelegationError("Context delivery requires an accepted send_input submission_id result")
-    submission_id = _submission_id(result["submission_id"])
-    if submission_id == agent_id:
-        raise DelegationError("Context submission_id must not be the agent ID")
+    if transport == "collaboration.send_message":
+        # This runtime returns an empty tool result, not a submission UUID.
+        # Preserve that limitation instead of manufacturing service evidence.
+        if result != {} or set(args) != {"target", "message"}:
+            raise DelegationError("Collaboration delivery requires exact arguments and its empty result")
+        submission_id = None
+        event = "parent_reported_collaboration_message_sent"
+    elif transport == "send_input":
+        if not isinstance(result, dict) or set(result) != {"submission_id"}:
+            raise DelegationError("Context delivery requires an accepted send_input submission_id result")
+        submission_id = _submission_id(result["submission_id"])
+        if submission_id == agent_id:
+            raise DelegationError("Context submission_id must not be the agent ID")
+        event = "parent_reported_send_input_accepted"
+    else:
+        raise DelegationError("Unknown context delivery transport")
     if _file(path) != ref:
         raise DelegationError("Context delivery changed during validation")
-    return {"event": "parent_reported_send_input_accepted", "file": ref,
+    return {"event": event, "file": ref,
             "submission_id": submission_id, **value}
 
 
@@ -463,6 +485,8 @@ def record_dispatch(analysis_request: Path | str, *, packet_path: Path | str,
     context_delivery is JSON {"invocation_args": {"target": agent UUID, "message":
     exact prepared prompt, optional "interrupt": bool}, "result":
     {"submission_id": actual send_input UUID}}. No tool invocation is performed.
+    collaboration.send_message uses transport='collaboration.send_message',
+    exact target/message arguments and result={}; no submission ID is invented.
     recorded_at is local record time, never an invented historical dispatch time.
     """
     packet = _load_packet(analysis_request, packet_path)

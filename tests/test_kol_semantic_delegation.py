@@ -67,6 +67,22 @@ def _verify(inputs, prepared, **overrides):
     return delegation.verify_result(inputs["request"], **{**args, **overrides})
 
 
+@pytest.mark.parametrize("problem", ["invalid_status", "empty_facts"])
+def test_prepare_rejects_invalid_market_before_immutable_dispatch_packet(inputs, problem):
+    value = _read(inputs["market"])
+    projection = value.get("validation") or value.get("projection") or value.get("market_validation") or value
+    if problem == "invalid_status":
+        projection["status"] = "unavailable"
+    else:
+        projection["facts"] = []
+    _write(inputs["market"], value)
+
+    with pytest.raises(canonical.SemanticBundleError):
+        _prepare(inputs)
+
+    assert not (inputs["request"].parent / ".semantic_delegation").exists()
+
+
 def test_complete_context_receipt_roundtrip_is_local_and_idempotent(inputs, monkeypatch):
     def forbidden(*args, **kwargs):
         pytest.fail("The helper attempted external I/O or bundle rebuilding")
@@ -422,16 +438,23 @@ def test_legacy_astra_packet_remains_verifiable_after_profile_switch(inputs):
     assert delegation.DISPATCH_PARAMETERS["model"] == "gpt-5.6-sol"
 
 
-def test_existing_agent_context_delivery_roundtrip_preserves_original_spawn(inputs):
+@pytest.mark.parametrize("transport", ["send_input", "collaboration.send_message"])
+def test_existing_agent_context_delivery_roundtrip_preserves_original_spawn(inputs, transport):
     prepared = _prepare(inputs)
     original, delivery = _continuation(inputs, prepared)
+    if transport == "collaboration.send_message":
+        value = _read(delivery)
+        value["transport"] = transport
+        value["result"] = {}
+        value["invocation_args"].pop("interrupt", None)
+        _write(delivery, value)
     original_bytes = original.read_bytes()
     record = delegation.record_dispatch(inputs["request"], packet_path=prepared["packet_path"],
                                         agent_id=AGENT_ID, invocation_args=original, context_delivery=delivery)
     assert record["dispatch_kind"] == "existing_agent_context_delivery"
     assert record["original_invocation_provenance"] == "full_args"
     assert record["invocation_args"] == _read(original)
-    assert record["context_delivery"]["submission_id"] == _read(delivery)["result"]["submission_id"]
+    assert record["context_delivery"]["submission_id"] == _read(delivery)["result"].get("submission_id")
     assert record["context_delivery"]["file"]["sha256"] == _sha(delivery)
     assert original.read_bytes() == original_bytes
     _bundle(inputs)
