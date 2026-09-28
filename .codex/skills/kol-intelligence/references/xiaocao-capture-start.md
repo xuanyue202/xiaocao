@@ -29,8 +29,9 @@ Before Ready, do only this:
    [hourly-local-native-capture.md](hourly-local-native-capture.md) completely and
    follow its **实操 SOP：打开小鹅通小程序 → 下载视频** steps 1–5. That is the single
    UI/PAC/download checklist: one verified launch, visible course password,
-   immediate Space, stopped-playback readback, exact finite replay, compressed
-   file validation. Use event-based waits; do not restore the removed H5 player.
+   exact finite replay, close the exact course window and verify its absence,
+   then compressed file validation. No Space/pause/mute. Use event-based waits;
+   do not restore the removed H5 player.
 
 Do not inspect Git or scan historical ledgers before Ready. Do not contact the
 remote writer, load market or portfolio data, or read `full-contract.md` before

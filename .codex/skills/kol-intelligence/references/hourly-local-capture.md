@@ -108,6 +108,11 @@ preserve pending entries independently. New links must not supersede distinct
 missed sessions. Explicit capture-xiaocao-item can restore a legacy superseded
 unarmed entry within 72 hours; expired entries remain terminal.
 
+Native message discovery accepts the reviewed `#小程序://鹅直播/<token>` and
+`#小程序://见势擒龙团/<token>` entries, preserving the original application name,
+token, contact and publication time. A native token uses its exact visible
+original message once; it is never converted into a guessed HTTPS link or Scheme.
+
 Also run stateless `subscription-updates --within 48h` for exactly:
 
 - `刘少狙击营` (`kol-liushao-jujiying`)

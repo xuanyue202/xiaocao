@@ -40,8 +40,8 @@ DEFAULT_CONTACT = "福利官小花四-刘丹（执业编号:A0380125080026）"
 DEFAULT_WECHAT_CLI = Path("/opt/homebrew/bin/wechat-cli")
 _MESSAGE = re.compile(r"^\[(?P<time>\d{4}-\d{2}-\d{2} \d{2}:\d{2})\]")
 _URL = re.compile(r"https://[^\s）)】》>，,；;]+")
-_GOOSE_LIVE_MINI_PROGRAM = re.compile(
-    r"#小程序://(?P<name>鹅直播)/(?P<token>[A-Za-z0-9_-]{8,128})"
+_XIAOCAO_LIVE_MINI_PROGRAM = re.compile(
+    r"#小程序://(?P<name>鹅直播|见势擒龙团)/(?P<token>[A-Za-z0-9_-]{8,128})"
 )
 _XIAOETONG_SOURCE_IDENTITY = re.compile(
     r"^xiaoetong:(?P<app_id>app[A-Za-z0-9]+):(?P<live_id>l_[A-Za-z0-9]+)$"
@@ -199,7 +199,7 @@ def parse_xiaocao_live_messages(payload: dict[str, Any]) -> list[dict[str, Any]]
         published = datetime.strptime(
             timestamp.group("time"), "%Y-%m-%d %H:%M"
         ).replace(tzinfo=BEIJING)
-        for match in _GOOSE_LIVE_MINI_PROGRAM.finditer(raw_message):
+        for match in _XIAOCAO_LIVE_MINI_PROGRAM.finditer(raw_message):
             mini_program_name = match.group("name")
             mini_program_token = match.group("token")
             identity = "kol-wechat-" + _sha256_text(
@@ -1088,6 +1088,7 @@ class XiaocaoWechatLiveSubscription:
             else ""
         )
         native_entry = item.get("entry_kind") == "wechat_mini_program"
+        course_app = str(item.get("mini_program_name") or "鹅直播")
         request = {
             "event": "daily_browser_input_required",
             "adapter": "xiaocao_wechat_live",
@@ -1119,7 +1120,7 @@ class XiaocaoWechatLiveSubscription:
             },
             "instructions": (
                 "用 wechat-cli 已定位的原始联系人和发布时间，在本机微信中只打开"
-                "该条原始 #小程序://鹅直播/ 消息一次；不要复制发送消息、猜测 URL "
+                f"该条原始 #小程序://{course_app}/ 消息一次；不要复制发送消息、猜测 URL "
                 "Scheme，或反复拉起小程序。"
                 if native_entry
                 else
@@ -1133,9 +1134,9 @@ class XiaocaoWechatLiveSubscription:
                 "同意、读回并继续同一任务。需确认时返回 mini_program_consent_required，"
                 "不得误报微信手机登录。若看见课程口令门，打开"
                 "输入框，输入提供的口令、读回并确认。口令通过可能自动播放；画面一旦"
-                "开始播放并被抓取后，关闭这一个鹅直播课程窗口：在确认标题的目标窗口"
+                f"开始播放并被抓取后，关闭这一个{course_app}课程窗口：在确认标题的目标窗口"
                 "点击文件菜单，再点击该窗口的关闭全部标签页（performClose:），读回"
-                "窗口菜单已无鹅直播。若未自动起播，只点击一次可见播放按钮。"
+                f"窗口菜单已无{course_app}。若未自动起播，只点击一次可见播放按钮。"
                 "未开播、直播中或回放生成中：先按同一文件菜单关闭课程并读回，不下载暖场或直播流；"
                 "只有直播结束且完整回放生成才可下载。"
                 "不按空格、不静音、不退出微信。关闭播放器不等于下载完成，仍需验证"
@@ -1203,7 +1204,7 @@ class XiaocaoWechatLiveSubscription:
                 "Scheme，不猜参数。解析失败再用可见原始消息入口；不要把主聊天窗口"
                 "白色截图当作微信退出。后续密码、播放在可见小程序窗口操作。"
             ) + request["instructions"]
-        if item.get("mini_program_name") == "见势擒龙团":
+        if item.get("mini_program_name") == "见势擒龙团" and not native_entry:
             request["mini_program_name"] = "见势擒龙团"
             request["instructions"] = (
                 "保留见势擒龙团应用身份；当前已有匹配课程窗口则复用。"
@@ -1212,8 +1213,8 @@ class XiaocaoWechatLiveSubscription:
         if reason == "captured_window_cleanup":
             request.pop("launch_resolver_command", None)
             request["instructions"] = (
-                "同一 capture 的有限媒体已捕获。仅核对本任务鹅直播课程窗口已关闭；"
-                "若仍存在，按 native SOP 的文件菜单关闭该课程并读回窗口列表无鹅直播。"
+                f"同一 capture 的有限媒体已捕获。仅核对本任务{course_app}课程窗口已关闭；"
+                f"若仍存在，按 native SOP 的文件菜单关闭该课程并读回窗口列表无{course_app}。"
                 "已有本任务关闭读回则直接返回真实回执，不重复操作。不要唤起、重新播放、"
                 "输入口令或恢复 sniffer。返回 playback_window_closed 和原身份绑定。"
             )

@@ -20,9 +20,13 @@ process health. Verify/apply the bounded capture PAC only after that health chec
 Local capture commands preserve inherited PATH precedence and append installed
 Homebrew CLI directories for ffmpeg/ffprobe and transfer helpers.
 
-For `#小程序://鹅直播/<token>`, retain contact/time/token, arm the candidate
+For `#小程序://鹅直播/<token>` or `#小程序://见势擒龙团/<token>`, retain the
+original application name and contact/time/token, arm the candidate
 baseline, then open the original message once. Skip H5 resolution. Bind the
 observed candidate ID, app ID, live ID and post-arm time before downloading.
+The branded native entry stays in `见势擒龙团`; apply W1–W10 with that exact
+window title. An announcement's relative time does not establish today's date:
+use the original message timestamp and observed course state.
 For H5 entries, retain the process for credential-free identity resolution;
 H5 is not playback proof.
 

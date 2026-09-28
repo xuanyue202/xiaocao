@@ -102,10 +102,11 @@ def test_wechat_history_accepts_h5_xeknow_short_live_links():
     assert items[0]["source_url"] == "https://9ozbz.h5.xeknow.com/sl/2AjX90"
 
 
-def test_wechat_history_accepts_native_goose_live_mini_program_entries():
+@pytest.mark.parametrize("app_name", ["鹅直播", "见势擒龙团"])
+def test_wechat_history_accepts_supported_native_mini_program_entries(app_name):
     payload = _history(
         "[2026-09-04 08:37] 福利官小花四: 9点20草神直播地址（密码666）："
-        "#小程序://鹅直播/WDUa9A1nxlXZoSz"
+        f"#小程序://{app_name}/WDUa9A1nxlXZoSz"
     )
 
     items = parse_xiaocao_live_messages(payload)
@@ -113,10 +114,17 @@ def test_wechat_history_accepts_native_goose_live_mini_program_entries():
     assert len(items) == 1
     assert items[0]["published_at"] == "2026-09-04T08:37:00+08:00"
     assert items[0]["entry_kind"] == "wechat_mini_program"
-    assert items[0]["mini_program_name"] == "鹅直播"
+    assert items[0]["mini_program_name"] == app_name
     assert items[0]["mini_program_token"] == "WDUa9A1nxlXZoSz"
     assert "source_url" not in items[0]
     assert "message" not in items[0]
+
+
+def test_wechat_history_ignores_unreviewed_native_mini_program():
+    assert parse_xiaocao_live_messages(_history(
+        "[2026-09-24 17:07] 福利官小花四: "
+        "#小程序://其他直播/W4o8kKJeegclUZv"
+    )) == []
 
 
 def test_unsupported_merchant_entry_is_retained_without_arming_or_retry(tmp_path):
@@ -635,12 +643,16 @@ def test_wechat_mini_program_route_binds_media_to_the_exact_live_id(tmp_path, cl
     assert item["playback_window_closed"] is (closed is True)
 
 
+@pytest.mark.parametrize("app_name,app_id", [
+    ("鹅直播", "app6ums63as6516"),
+    ("见势擒龙团", "appsnm3rlcp3566"),
+])
 def test_native_mini_program_entry_is_armed_before_ui_and_binds_observed_live(
-    tmp_path,
+    tmp_path, app_name, app_id,
 ):
     payload = _history(
         "[2026-09-04 08:37] 福利官小花四: 9点20草神直播地址（密码666）："
-        "#小程序://鹅直播/WDUa9A1nxlXZoSz"
+        f"#小程序://{app_name}/WDUa9A1nxlXZoSz"
     )
     requests: list[dict] = []
     capture = _CaptureDriver()
@@ -648,15 +660,16 @@ def test_native_mini_program_entry_is_armed_before_ui_and_binds_observed_live(
     def browser_exchange(request: dict) -> dict:
         requests.append(request)
         assert request["action"] == "activate_xiaoetong_mini_program"
-        assert request["mini_program_name"] == "鹅直播"
+        assert request["mini_program_name"] == app_name
         assert request["mini_program_token"] == "WDUa9A1nxlXZoSz"
         assert "source_url" not in request
+        assert "launch_resolver_command" not in request
         return {
             "action": request["action"],
             "subscription_id": request["subscription_id"],
             "playback_surface": XIAOCAO_PLAYBACK_ROUTE_WECHAT_MINI_PROGRAM,
             "source_identity": (
-                "xiaoetong:app6ums63as6516:l_6a99d00de4b0694c3546aaaa"
+                f"xiaoetong:{app_id}:l_6a99d00de4b0694c3546aaaa"
             ),
             "live_id": "l_6a99d00de4b0694c3546aaaa",
             "candidate_id": "candidate-new-live",
@@ -697,7 +710,7 @@ def test_native_mini_program_entry_is_armed_before_ui_and_binds_observed_live(
     item = next(iter(manifest["items"].values()))
     assert item["status"] == "playback_activated"
     assert item["source_identity"] == (
-        "xiaoetong:app6ums63as6516:l_6a99d00de4b0694c3546aaaa"
+        f"xiaoetong:{app_id}:l_6a99d00de4b0694c3546aaaa"
     )
     assert item["candidate_id"] == "candidate-new-live"
     assert capture.native_bindings == [(
