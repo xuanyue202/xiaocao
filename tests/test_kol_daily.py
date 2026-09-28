@@ -4618,9 +4618,11 @@ def test_blocked_video_readback_survives_another_objects_terminal_summary(
         )
 
 
+@pytest.mark.parametrize("exhausted", [False, True])
 def test_video_exact_continuations_skip_historical_source_listing(
     tmp_path,
     monkeypatch,
+    exhausted,
 ):
     identity = "video-1"
     version = "version-1"
@@ -4635,7 +4637,8 @@ def test_video_exact_continuations_skip_historical_source_listing(
         }),
         encoding="utf-8",
     )
-    item = {"identity": identity, "version_key": version}
+    item = {"identity": identity, "version_key": version,
+            "source": kol_daily_script.LV_SOURCE, "media_type": "video"}
     observed: dict[str, object] = {}
 
     class FakeVideoService:
@@ -4669,6 +4672,14 @@ def test_video_exact_continuations_skip_historical_source_listing(
                 claim_id,
                 readback_evidence_sha256,
             )
+            if exhausted:
+                claim = json.loads(claim_path.read_text())
+                claim.update({"status": "blocked", "provider_outcome": "unobserved",
+                              "side_effect_uncertain": True,
+                              "blocker_key": "lv-cloud-transfer-not-materialized",
+                              "trigger_attempt": 2, "trigger_attempt_maximum": 2})
+                claim_path.write_text(json.dumps(claim))
+                return claim
             return {"status": "reconciled_absent"}
 
     monkeypatch.setattr(
@@ -4708,6 +4719,11 @@ def test_video_exact_continuations_skip_historical_source_listing(
     assert wrapped["outcome"]["authoritative_readback"][
         "effect_observed"
     ] == "absent"
+    if exhausted:
+        following = WriterProgress.from_dict(wrapped["outcome"]["writer_progress"])
+        assert following.status == "user_action_required"
+        assert following.item_identity == identity
+        assert following.details["claim_receipt_summary"]["uncertain_effect_count"] == 1
 
     runtime.videos = lambda **kwargs: kwargs
     assert runtime.videos_narrow_resume(

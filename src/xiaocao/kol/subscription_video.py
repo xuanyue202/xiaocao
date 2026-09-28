@@ -3944,12 +3944,6 @@ class SubscriptionVideoService:
             raise EnrichmentError(
                 "Lv cloud transfer absence reconciliation changed binding"
             )
-        if (
-            claim.get("status") == "reconciled_absent"
-            and claim.get("readback_evidence_sha256")
-            == readback_evidence_sha256
-        ):
-            return claim
         if claim.get("authorized_recovery_consumed") is True:
             # An absence readback is evidence, not fresh authority for a
             # fourth click. Preserve the explicit one-recovery boundary.
@@ -3964,6 +3958,25 @@ class SubscriptionVideoService:
                 failure_reason="operator-authorized recovery exhausted without a verified private copy",
                 reconciliation_status="exact_private_copy_absent_after_bounded_retry",
             )
+        if int(claim.get("trigger_attempt") or 0) >= int(
+            claim.get("trigger_attempt_maximum") or LV_TRANSFER_MAX_TRIGGER_ATTEMPTS
+        ):
+            # An absent private row does not supply the missing provider
+            # outcome or replenish an exhausted save budget.
+            return self._record_transfer_blocker(
+                receipt_name,
+                {**claim, "readback_evidence_sha256": readback_evidence_sha256,
+                 "reconciled_absent_at": self._time().isoformat(timespec="seconds")},
+                blocker_key="lv-cloud-transfer-not-materialized",
+                failure_reason="bounded transfer attempts exhausted with provider outcome unobserved",
+                reconciliation_status="exact_private_copy_absent_after_bounded_retry",
+            )
+        if (
+            claim.get("status") == "reconciled_absent"
+            and claim.get("readback_evidence_sha256")
+            == readback_evidence_sha256
+        ):
+            return claim
         reconciled = {
             **claim,
             "event": "lv_cloud_transfer_absence_reconciled",
@@ -3976,9 +3989,8 @@ class SubscriptionVideoService:
             "reconciled_absent_at": self._time().isoformat(
                 timespec="seconds"
             ),
-            "trigger_attempt_maximum": max(
-                LV_TRANSFER_MAX_TRIGGER_ATTEMPTS,
-                int(claim.get("trigger_attempt") or 1) + 1,
+            "trigger_attempt_maximum": int(
+                claim.get("trigger_attempt_maximum") or LV_TRANSFER_MAX_TRIGGER_ATTEMPTS
             ),
         }
         _atomic_write_json(claim_path, reconciled)

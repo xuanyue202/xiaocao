@@ -1837,6 +1837,26 @@ def test_absence_readback_cannot_replenish_consumed_operator_recovery(tmp_path):
     assert result["side_effect_uncertain"] is True
 
 
+def test_absence_readback_preserves_exhausted_automatic_transfer_uncertainty(tmp_path):
+    service = _service(tmp_path)
+    item = service._normalize(_source_rows()[0][1], source=LV_SOURCE, author=LV_AUTHOR)
+    claim_path = service._claim_path(f"lv_transfer_{item['version_key']}")
+    claim_path.parent.mkdir(parents=True)
+    claim_path.write_text(json.dumps({
+        "claim_id": "second", "source_identity": item["identity"],
+        "source_version_key": item["version_key"], "provider_outcome": "unobserved",
+        "trigger_attempt": 2, "trigger_attempt_maximum": 2,
+        "status": "reconciled_absent", "side_effect_uncertain": False,
+        "readback_evidence_sha256": "a" * 64,
+    }))
+    result = service.record_lv_transfer_absence_reconciliation(
+        item, claim_id="second", readback_evidence_sha256="a" * 64,
+    )
+    assert result["status"] == "blocked"
+    assert result["side_effect_uncertain"] is True
+    assert result["trigger_attempt"] == result["trigger_attempt_maximum"] == 2
+
+
 def test_consumed_recovery_preserves_its_unexpired_receipt_window(tmp_path):
     service = _service(tmp_path)
     item = service._normalize(_source_rows()[0][1], source=LV_SOURCE, author=LV_AUTHOR)
@@ -1901,7 +1921,7 @@ def test_lv_transfer_retries_once_after_authoritative_absence_reconciliation(
                 "claim_id": "uncertain-claim",
                 "claimed_at": (NOW - timedelta(minutes=31)).isoformat(),
                 "triggered_at": (NOW - timedelta(minutes=31)).isoformat(),
-                "trigger_attempt": 2,
+                "trigger_attempt": 1,
                 "source_identity": item["identity"],
                 "source_version_key": item["version_key"],
                 "source_path": item["path"],
@@ -1921,7 +1941,7 @@ def test_lv_transfer_retries_once_after_authoritative_absence_reconciliation(
     )
     assert reconciled["status"] == "reconciled_absent"
     assert reconciled["side_effect_uncertain"] is False
-    assert reconciled["trigger_attempt_maximum"] == 3
+    assert reconciled["trigger_attempt_maximum"] == 2
 
     def opencli(_session, *args, **_kwargs):
         nonlocal target_ready
@@ -1960,8 +1980,8 @@ def test_lv_transfer_retries_once_after_authoritative_absence_reconciliation(
         for line in service.events_path.read_text(encoding="utf-8").splitlines()
         if "lv_cloud_transfer_recovery_claimed" in line
     )
-    assert recovery["trigger_attempt"] == 3
-    assert recovery["trigger_attempt_maximum"] == 3
+    assert recovery["trigger_attempt"] == 2
+    assert recovery["trigger_attempt_maximum"] == 2
 
 
 def test_lv_transfer_claim_precedes_click_and_exact_copy_readback_completes(

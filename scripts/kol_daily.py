@@ -3610,11 +3610,33 @@ class DailyRuntime:
             claim_id = str(progress.details["claim_identity"]).rsplit(
                 ":", 1
             )[-1]
-            service.record_lv_transfer_absence_reconciliation(
+            reconciled_claim = service.record_lv_transfer_absence_reconciliation(
                 exact[0],
                 claim_id=claim_id,
                 readback_evidence_sha256=readback_evidence_sha256,
             )
+            if reconciled_claim.get("status") == "blocked":
+                blocked, summary = _lv_transfer_blocked_item_projection(
+                    self.args.video_output_dir, exact,
+                )
+                action = (
+                    "本对象两次自动转存预算已耗尽，私有目录与精确搜索仍无副本，"
+                    "提供方结果未观测；保留原声明，等待可核验的外部结果或本对象"
+                    "单次恢复授权，代理不得自动追加点击。"
+                )
+                following = WriterProgress.user_action_required(
+                    item_identity=progress.item_identity,
+                    stage="cloud_transfer_confirmation", action=action,
+                    blocker_identity="lv-cloud-transfer-not-materialized",
+                    dedup_key=f"lv-cloud-transfer-not-materialized:{progress.item_identity}",
+                    claim_receipt_summary=summary,
+                )
+                return _reconciliation_result(progress, {
+                    "status": "waiting", "waiting_count": 1,
+                    "waiting_items": blocked,
+                    "writer_progress": following.to_dict(),
+                    "authoritative_readback": readback,
+                })
             outcome = {
                 "status": "waiting",
                 "waiting_count": 1,
