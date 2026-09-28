@@ -628,9 +628,19 @@ work and never authorizes replaying publication, reminder, or Book side effects.
   download the source video locally. Lucifer videos are already private and
   enter enrichment in place. If either provider truly requires large local
   bytes, persist a broadband-worker handoff and stop.
-- For the Lv share-side save, DOM evaluation may select the exact source and
-  destination and mark the one visible `确定` control with a unique selector,
-  and the exact page returned by `open` must first be selected with
+- For the Lv share-side save, DOM evaluation selects the exact source and
+  destination, distinguishes the `保存到` submit dialog from a
+  `选择保存路径` directory picker, and marks its one visible control with a
+  unique selector. Both confirmations use native OpenCLI input. After a
+  directory-only confirmation, require its trusted input receipt, closed
+  dialog, exact displayed destination and unchanged source selection before
+  marking the unique page-level `保存到网盘` control, including
+  `bottomShareSave`. This is one save workflow and one provider attempt;
+  an observed request at either step goes directly to reconciliation.
+  Verify the marked control's center hits itself or a descendant. Capture
+  trusted input delivery to that exact control and reset provider observations
+  per attempt; late responses from an older generation are excluded.
+  The exact page returned by `open` must first be selected with
   `browser <session> tab select <page> --window foreground` so native input is
   delivered to the active tab. `open --window foreground` alone is not an
   activation proof, and OpenCLI's `clicked=true`/`matches_n=1` only proves
@@ -640,6 +650,12 @@ work and never authorizes replaying publication, reminder, or Book side effects.
   that command. Never use `element.click()` as confirmation proof; a timeout
   or ambiguous native-click result is side-effect-uncertain and must enter
   exact private-copy reconciliation before any retry.
+- A selector match with both an installed input probe proving no trusted input
+  reached the control and an installed observer proving no provider request
+  is `lv_native_click_not_delivered`: Agent-owned pretrigger repair, with no
+  uncertain provider effect. Repair the control plane before exact continuation.
+  Input delivered without a conclusive provider response remains uncertain;
+  neither a missing response nor an absent file alone proves safe replay.
 - A triggered Lv save is unfinished until an exact private copy is observed.
   Reconcile the intended directory first, then a settled provider search by
   exact filename and byte size; fuzzy search rows with no exact match are a

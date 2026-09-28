@@ -4401,6 +4401,82 @@ def test_daily_resume_user_action_runs_only_exact_blocked_source(tmp_path):
     )
 
 
+@pytest.mark.parametrize("receipt_identity,receipt_version,observed", [
+    ("video-1", "version-1", "completed"),
+    ("other-video", "version-1", "completed"),
+    ("video-1", "other-version", "completed"),
+    ("video-1", "version-1", "absent"),
+])
+def test_reconciled_transfer_resumes_exact_unfinished_item(
+    tmp_path, receipt_identity, receipt_version, observed,
+):
+    service = DailyCoordinator(tmp_path / "daily")
+    blocker = UserActionBlocker(
+        "lv-cloud-transfer-not-materialized", "转存结果未确认",
+        waiting_items=[{
+            "identity": "subscription_video:source",
+            "stage": "cloud_transfer_confirmation",
+            "user_action_required": True,
+            "blocked_items": [{"identity": "video-1", "version_key": "version-1"}],
+        }],
+    )
+    service.run([{
+        "name": "subscription_video",
+        "run": lambda: (_ for _ in ()).throw(blocker),
+    }], blocker_sender=lambda *_args: None)
+    claim = f"lv_transfer:{receipt_version}:claim-1"
+    with service._locked():
+        service._append(
+            "source_progressed", source="subscription_video",
+            progress=WriterProgress.wait_until(
+                item_identity="video-1", category="provider_wait",
+                code="waiting_cloud_transfer_receipt", stage="cloud_transfer_confirmation",
+                deadline="2026-08-01T00:00:00Z",
+                attempt_budget={"attempted": 2, "maximum": 3},
+                claim_receipt_summary={"claim_count": 0, "receipt_count": 0, "uncertain_effect_count": 0},
+            ).to_dict(),
+        )
+        service._append(
+            "source_reconciliation_resume_started", source="subscription_video",
+            item_identity=receipt_identity, claim_identity=claim,
+        )
+        service._append(
+            "side_effect_reconciled", source="subscription_video",
+            claim_identity=claim, external_business_effects_replayed=False,
+        )
+        terminal = normalize_source_result(
+            "subscription_video", {"status": "no_update"},
+            failure_revision="a" * 40, provider_contract_version="xiaocao_writer_v1",
+        )
+        service._append("source_progressed", source="subscription_video", progress=terminal.to_dict())
+        service._append(
+            "source_completed", source="subscription_video", result={
+                "status": "no_update", "writer_progress": terminal.to_dict(),
+                "authoritative_readback": {
+                    "claim_identity": claim, "effect_observed": observed,
+                    "receipt_sha256": "a" * 64,
+                },
+            },
+        )
+    surfaces = []
+    source = {
+        "name": "subscription_video",
+        "narrow_resume": lambda surface: surfaces.append(surface) or {"status": "no_update"},
+    }
+    valid = (receipt_identity, receipt_version, observed) == ("video-1", "version-1", "completed")
+    if valid:
+        service.resume_user_action(source, item_identity="video-1")
+        assert surfaces == ["subscription_video:video-1"]
+        with pytest.raises(DailyError):
+            service.resume_user_action(source, item_identity="video-1")
+        assert len(surfaces) == 1
+    else:
+        with pytest.raises(DailyError):
+            service.resume_user_action(source, item_identity="video-1")
+        assert surfaces == []
+    assert sum(row["event"] == "runner_started" for row in service.events()) == 1
+
+
 def test_user_blocker_preserves_concrete_items_and_claim_summary(tmp_path):
     service = DailyCoordinator(
         tmp_path / "daily",
@@ -4495,6 +4571,50 @@ def test_source_effect_readback_recovers_exact_active_progress(tmp_path):
             service,
             "subscription_video",
             "other-video",
+        )
+
+
+@pytest.mark.parametrize("observer_present", [False, True])
+def test_blocked_video_readback_survives_another_objects_terminal_summary(
+    tmp_path, monkeypatch, observer_present,
+):
+    video_output = tmp_path / "videos"
+    claim_path = video_output / "claims/lv_transfer_version-1.json"
+    claim_path.parent.mkdir(parents=True)
+    claim = {"claim_id": "claim-2", "source_identity": "video-1",
+             "source_version_key": "version-1", "status": "blocked",
+             "blocker_key": "lv-cloud-transfer-not-materialized",
+             "provider_outcome": "unobserved"}
+    if observer_present:
+        claim.update(provider_request_observed=False, provider_response_observed=False)
+    claim_path.write_text(json.dumps(claim))
+    before = claim_path.read_bytes()
+    monkeypatch.setattr(kol_daily_script, "SubscriptionVideoService",
+                        lambda *_args, **_kwargs: SimpleNamespace(
+                            pending_items=lambda: [{"identity": "video-1", "version_key": "version-1"}],
+                        ))
+    runtime = object.__new__(DailyRuntime)
+    runtime.args = SimpleNamespace(video_output_dir=video_output, config=tmp_path / "config.yaml")
+    service = SimpleNamespace(status=lambda: {"last_sweep": {"source_states": [{
+        "name": "subscription_video", "writer_progress": WriterProgress.terminal(
+            item_identity="video-2", stage="source_run", content_terminal="no_update",
+            gray_report_terminal="not_created", reminder_terminal="not_created",
+            book_terminal="not_created", knowledge_terminal="not_created",
+            ack_status="not_applicable", new_external_effect_count=0, claim_receipt_summary={
+                "claim_count": 0, "receipt_count": 0, "uncertain_effect_count": 0,
+            },
+        ).to_dict(),
+    }]}})
+    progress = kol_daily_script._source_effect_reconciliation_progress(
+        service, "subscription_video", "video-1", runtime=runtime,
+    )
+    assert progress.item_identity == "video-1"
+    assert progress.status == "reconcile_required"
+    assert progress.details["claim_identity"] == "lv_transfer:version-1:claim-2"
+    assert claim_path.read_bytes() == before
+    with pytest.raises(DailyError, match="not one exact pending"):
+        kol_daily_script._source_effect_reconciliation_progress(
+            service, "subscription_video", "unknown-video", runtime=runtime,
         )
 
 

@@ -10,12 +10,15 @@ from __future__ import annotations
 import hashlib
 import json
 import math
+import os
 import re
+import tempfile
 import time
 from contextlib import contextmanager
 from dataclasses import replace
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal, InvalidOperation
+from pathlib import Path
 from typing import Any, Callable
 from zoneinfo import ZoneInfo
 
@@ -315,6 +318,7 @@ class FounderscNativeAXBrokerAdapter(BrokerAdapter):
         reconcile_delays: tuple[float, ...] = (0.0, 0.25, 0.75, 1.5),
         snapshot_read_delays: tuple[float, ...] = (0.0, 0.25, 0.75),
         scoped_buy_preflight: bool = False,
+        credential_health_path: Path | None = None,
     ) -> None:
         expected = str(expected_fund_account_fingerprint or "").strip()
         if _ACCOUNT_FINGERPRINT_PATTERN.fullmatch(expected) is None:
@@ -330,6 +334,40 @@ class FounderscNativeAXBrokerAdapter(BrokerAdapter):
         self._prepared: dict[str, dict[str, Any]] = {}
         self._prepared_cancels: dict[str, dict[str, Any]] = {}
         self._submission_batch: dict[str, Any] | None = None
+        self.credential_health_path = credential_health_path
+        self.credential_health: dict[str, Any] = {}
+
+    def _save_credential_health(self, health: dict[str, Any]) -> None:
+        self.credential_health = health
+        if self.credential_health_path is None:
+            return
+        path = self.credential_health_path
+        path.parent.mkdir(parents=True, exist_ok=True)
+        fd, temporary = tempfile.mkstemp(dir=path.parent)
+        try:
+            with os.fdopen(fd, "w") as stream:
+                json.dump(health, stream, sort_keys=True)
+                stream.flush()
+                os.fsync(stream.fileno())
+            os.replace(temporary, path)
+            directory = os.open(path.parent, os.O_RDONLY)
+            try:
+                os.fsync(directory)
+            finally:
+                os.close(directory)
+        finally:
+            Path(temporary).unlink(missing_ok=True)
+
+    def _previous_credential_health(self) -> dict[str, Any]:
+        if self.credential_health_path is not None and self.credential_health_path.exists():
+            try:
+                health = json.loads(self.credential_health_path.read_text())
+                if health.get("trade_account_fingerprint") != self.expected_fund_account_fingerprint:
+                    raise ValueError("account binding")
+                self.credential_health = health
+            except (OSError, ValueError, AttributeError) as exc:
+                raise FounderscNativeAXError("NATIVE_AX_CREDENTIAL_HEALTH_UNPROVEN") from exc
+        return self.credential_health
 
     @contextmanager
     def submission_batch(self, plans: list[TradePlan]):
@@ -522,7 +560,18 @@ class FounderscNativeAXBrokerAdapter(BrokerAdapter):
             "observed_at": datetime.now(timezone.utc).isoformat(),
         }
         if unlock_once and surface == "authentication_required":
-            unlocked = self.native.unlock_from_keychain(explicitly_enabled=True).as_dict()
+            prior = self._previous_credential_health()
+            if prior.get("state") in {"attempt_claimed", "unproven_no_retry"}:
+                raise FounderscNativeAXError("NATIVE_AX_UNLOCK_UNPROVEN_NO_RETRY:PRIOR_ATTEMPT")
+            # Persist before the helper or Keychain boundary. A crash or transport
+            # timeout cannot turn an uncertain password action into another try.
+            self._save_credential_health({**credential_health, "state": "attempt_claimed"})
+            try:
+                unlocked = self.native.unlock_from_keychain(explicitly_enabled=True).as_dict()
+            except (OSError, ValueError, RuntimeError):
+                self._save_credential_health({**self.credential_health, "state": "unproven_no_retry",
+                                             "failure_category": "transport_unproven"})
+                raise
             if str(unlocked.get("status") or "") != "unlocked":
                 category = str(
                     unlocked.get("unlock_failure_category") or "unclassified"
@@ -545,6 +594,16 @@ class FounderscNativeAXBrokerAdapter(BrokerAdapter):
                     if unlocked.get("secure_field_cleared_before_set") is True
                     else "false"
                 )
+                action = unlocked.get("action")
+                action = action if isinstance(action, dict) else {}
+                self._save_credential_health({**credential_health, "state": "unproven_no_retry",
+                    "failure_category": category,
+                    "remaining_attempts": remaining if remaining_text != "unknown" else None,
+                    "secure_field_cleared_before_set": cleared == "true",
+                    "confirmation_pressed": action.get("confirm_pressed") is True,
+                    "confirmation_mode": action.get("confirmation_mode") if action.get("confirmation_mode") in
+                        {"none", "semantic", "guarded_ax_button", "secure_field_targeted_return"} else "unknown",
+                    "login_notice_dismissed": unlocked.get("login_notice_dismissed") is True})
                 raise FounderscNativeAXError(
                     "NATIVE_AX_UNLOCK_UNPROVEN_NO_RETRY:"
                     f"{category.upper()}:remaining={remaining_text}:"
@@ -558,13 +617,21 @@ class FounderscNativeAXBrokerAdapter(BrokerAdapter):
                     unlocked.get("secure_field_cleared_before_set") is True
                 ),
                 "remaining_attempts": unlocked.get("unlock_remaining_attempts"),
+                "login_notice_dismissed": unlocked.get("login_notice_dismissed") is True,
             }
+            self._save_credential_health(credential_health)
             payload = self.native.probe(table_audit=True).as_dict()
             surface = str(payload.get("surface_state") or payload.get("status") or "")
         if not self._account_bound(payload) or surface not in {"trade_ready", "query_only"}:
             raise FounderscNativeAXError(
                 f"NATIVE_AX_ACCOUNT_SURFACE_NOT_READY:{surface or 'unknown'}"
             )
+        if self._previous_credential_health().get("state") in {"attempt_claimed", "unproven_no_retry"}:
+            # Only actual account-bound readiness clears the attempt fence.
+            credential_health["state"] = "verified_by_account_bound_readback"
+            self._save_credential_health(credential_health)
+        elif not self.credential_health:
+            self._save_credential_health(credential_health)
         expected_side = "buy" if str(side).upper() == "BUY" else "sell"
         observed_side = str(payload.get("side") or "").strip().lower()
         if require_order_capability and (

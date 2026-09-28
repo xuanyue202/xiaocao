@@ -12,6 +12,43 @@ const HOST = "MacBook-Pro-6.local";
 const NOW_SECONDS = 2_000_000_000;
 const LOOKBACK_SECONDS = 12 * 60 * 60;
 
+test("a fork with a cleared app-server parent cannot own its inherited automation", async () => {
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), "kol-peer-fork-"));
+  const file = path.join(directory, "rollout.jsonl");
+  const id = "weekly-repair-fork";
+  fs.writeFileSync(file, JSON.stringify({ type: "session_meta", payload: {
+    id, cwd: CWD, source: "vscode", thread_source: "user", forked_from_id: "original-kol-task",
+  } }) + "\n");
+  const snapshot = thread(id, { parentThreadId: null, turns: [automationTurn("copied", "completed")] });
+  snapshot.thread.path = file;
+  const { requestFn } = fixture(new Map([[null, { data: [candidate(id)], nextCursor: null }]]),
+    new Map([[id, snapshot]]));
+  try {
+    const result = await discoverPeers({ server: { host: HOST, stderr: "" }, requestFn,
+      automationId: AUTOMATION_ID, currentThreadId: "current", cwd: CWD,
+      expectedHost: HOST, nowSeconds: NOW_SECONDS, readTaskComplete: () => false });
+    assert.equal(result.gate_result, "pass");
+    assert.equal(result.candidate_count, 0);
+  } finally { fs.rmSync(directory, { recursive: true }); }
+});
+
+for (const suffix of ["", "-other"]) {
+  test(`does not let another automation own the KOL slot (${suffix || "quoted ID"})`, async () => {
+    const id = "book-b-morning";
+    const identity = suffix ? AUTOMATION_ID + suffix : "xiaocao-book-b-live-morning";
+    const text = `Automation: Another task\nAutomation ID: ${identity}\n\nQuoted example:\nAutomation ID: ${AUTOMATION_ID}`;
+    const turn = automationTurn("active", "inProgress");
+    turn.items[0].content[0].text = text;
+    const { requestFn } = fixture(new Map([[null, { data: [candidate(id)], nextCursor: null }]]),
+      new Map([[id, thread(id, { preview: text, turns: [turn] })]]));
+    const result = await discoverPeers({ server: { host: HOST, stderr: "" }, requestFn,
+      automationId: AUTOMATION_ID, currentThreadId: "current", cwd: CWD,
+      expectedHost: HOST, nowSeconds: NOW_SECONDS, readTaskComplete: () => false });
+    assert.equal(result.gate_result, "pass");
+    assert.equal(result.candidate_count, 0);
+  });
+}
+
 test("reads an active task hidden by an empty preview instead of passing", async () => {
   const id = "hidden-active";
   const { requestFn } = fixture(new Map([[null, { data: [], nextCursor: null }]]),

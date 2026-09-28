@@ -73,7 +73,13 @@ Agent tool work. Paginated Automation tasks can have empty preview/user text;
 the helper supplements discovery from the read-only local task index, then
 uses exact `thread/read` and rollout identity/terminal checks. Missing scheduled
 identity is a repair, never proof that no peer exists. Inherited or quoted
-prompts do not qualify. `task_complete=true` is the durable terminal
+prompts do not qualify. Match only the exact ID in the leading scheduler
+header; substring/prefix matches, shared Git branch names and task titles are
+not identity. Bound rollout `session_meta.forked_from_id` excludes an inherited
+fork even when Desktop reports `parentThreadId=null`; a user repair fork does
+not retain the original KOL slot. The gate returns the matched automation ID
+with each peer.
+`task_complete=true` is the durable terminal
 fence. Any matching incomplete peer returns `no_op`, regardless of whether the
 app-server snapshot says `inProgress`, `interrupted`, `failed`, or `completed`;
 this preserves peer ownership across compaction and closes the
@@ -147,6 +153,14 @@ Resumes skip mailbox/sweep; mismatch is repair. Use
 input, or `resume-source-user-action` after authentication, with
 `--source-adapter subscription_video --source-identity <identity>`. Auth uses
 identity `subscription_video:source`; clear after `user_action_required`.
+
+After exact cloud-transfer reconciliation proves a completed private copy,
+continue the unfinished item with `resume-source-user-action` and that item's
+exact identity. The coordinator binds the historical blocked identity/version
+to the durable reconciliation claim and receipt, even when source-level
+readback projected `no_update`. Transfer completion closes only that effect;
+the exact-item terminal receipt closes analysis/publication. Keep source
+discovery disabled on this continuation.
 
 Before binding or switching to a Baidu player, read
 [video-player-safety.md](video-player-safety.md) completely. At provider steps,

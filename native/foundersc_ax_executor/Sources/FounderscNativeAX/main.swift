@@ -4,7 +4,7 @@ import Foundation
 import Vision
 
 private let schemaVersion = 2
-private let helperVersion = 13
+private let helperVersion = 14
 private let bundleIdentifier = "com.fzzq.Mac2020"
 private let maximumDepth = 12
 private let maximumNodes = 1_000
@@ -181,6 +181,7 @@ private struct Receipt: Codable {
     var cancelReadback: CancelReadback?
     var resultReadback: BrokerResultReadback?
     var timingMs: Double
+    var loginNoticeDismissed: Bool? = nil
 }
 
 private struct OrderFields {
@@ -3872,8 +3873,63 @@ private func fillClientLoginFromStandardInput(arguments: [String]) -> Receipt {
     return receipt
 }
 
+// A stale login-success message can intercept a targeted Return intended for
+// the unlock form. Only this account-bound informational notice may be closed;
+// unknown dialogs, password errors and transaction confirmations stay blocked.
+private func dismissLoginSuccessNotice(_ observation: Observation, expected: String) -> (Bool, Bool) {
+    guard let app = observation.applicationElement else { return (false, false) }
+    let windows = attribute(app, kAXWindowsAttribute) as? [AXUIElement] ?? []
+    var notices: [(AXUIElement, AXUIElement)] = []
+    for window in windows {
+        if let primary = observation.primaryWindow, CFEqual(window, primary) { continue }
+        let title = stringAttribute(window, kAXTitleAttribute)
+        if title == "通达信键盘精灵" { continue }
+        var texts = Set<String>()
+        var count = 0
+        func walk(_ element: AXUIElement, _ depth: Int) {
+            guard depth <= 12, count < 200 else { return }
+            count += 1
+            if stringAttribute(element, kAXRoleAttribute) == "AXStaticText" {
+                for key in [kAXTitleAttribute, kAXValueAttribute] {
+                    let text = stringAttribute(element, key).trimmingCharacters(in: .whitespacesAndNewlines)
+                    if !text.isEmpty { texts.insert(text) }
+                }
+            }
+            for child in attribute(element, kAXChildrenAttribute) as? [AXUIElement] ?? [] {
+                walk(child, depth + 1)
+            }
+        }
+        walk(window, 0)
+        let messageCenter = title == "消息中心" || texts.contains("消息中心")
+        let bodies = texts.filter { $0.range(of: #"^\d{8,20}\s+.{1,40}的交易已重新登录成功[!！]$"#, options: .regularExpression) != nil }
+        let allowed = texts.allSatisfy { text in
+            text == "消息中心" || bodies.contains(text)
+                || text.range(of: #"^\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2}:\d{2}$"#, options: .regularExpression) != nil
+        }
+        guard messageCenter, bodies.count == 1, allowed,
+              maskedFingerprint(in: bodies.first!) == expected,
+              let close = elementAttribute(window, kAXCloseButtonAttribute),
+              stringAttribute(close, kAXRoleAttribute) == "AXButton" else {
+            return (false, false)
+        }
+        notices.append((window, close))
+    }
+    guard !notices.isEmpty else { return (true, false) }
+    guard notices.count == 1,
+          AXUIElementPerformAction(notices[0].1, kAXPressAction as CFString) == .success else {
+        return (false, false)
+    }
+    let deadline = Date().addingTimeInterval(1)
+    while Date() < deadline {
+        let current = attribute(app, kAXWindowsAttribute) as? [AXUIElement] ?? []
+        if !current.contains(where: { CFEqual($0, notices[0].0) }) { return (true, true) }
+        Thread.sleep(forTimeInterval: 0.05)
+    }
+    return (false, false)
+}
+
 private func unlockFromStandardInput(arguments: [String]) -> Receipt {
-    let initial = observe(command: "unlock-stdin")
+    var initial = observe(command: "unlock-stdin")
     var receipt = initial.receipt
     let expectedFingerprint = option("--expected-fingerprint", in: arguments)
     guard arguments.contains("--allow-stdin-secret") else {
@@ -3898,6 +3954,26 @@ private func unlockFromStandardInput(arguments: [String]) -> Receipt {
         receipt.status = "unlock_error_alert_pending"
         receipt.reason = "a prior broker password error alert must be acknowledged before another attempt"
         return receipt
+    }
+    let notice = dismissLoginSuccessNotice(initial, expected: expectedFingerprint)
+    guard notice.0 else {
+        receipt.status = "unlock_overlay_unproven"
+        receipt.reason = "an unknown or still-present secondary window blocks password submission"
+        return receipt
+    }
+    if notice.1 {
+        initial = observe(command: "unlock-stdin")
+        receipt = initial.receipt
+        receipt.loginNoticeDismissed = true
+        guard receipt.tradeAccountFingerprint == expectedFingerprint,
+              receipt.tradeAccountFingerprintCount == 1,
+              receipt.surfaceState == "authentication_required",
+              initial.secureFields.count == 1,
+              receipt.unlockFailureCategory == nil else {
+            receipt.status = "unlock_surface_unproven"
+            receipt.reason = "fresh account-bound unlock surface after notice dismissal was not proven"
+            return receipt
+        }
     }
     let semanticConfirm = initial.confirmButtons.count == 1
         ? initial.confirmButtons[0]
@@ -4038,6 +4114,7 @@ private func unlockFromStandardInput(arguments: [String]) -> Receipt {
         final = observe(command: "unlock-stdin")
     }
     var result = final.receipt
+    result.loginNoticeDismissed = notice.1
     result.secureFieldClearedBeforeSet = true
     let proven = ["trade_ready", "query_only"].contains(result.surfaceState)
     result.status = proven ? "unlocked" : "unlock_unproven"

@@ -6,8 +6,26 @@ import json
 import os
 import re
 from contextlib import contextmanager
+from contextvars import ContextVar
 from datetime import datetime, timezone
 from pathlib import Path
+
+_task_identity = ContextVar("xiaocao_automation_id", default=None)
+
+
+def current_automation_id():
+    return _task_identity.get() or os.environ.get("CODEX_AUTOMATION_ID")
+
+
+def validate_automation_identity(expected: str, requested: str) -> None:
+    inherited = os.environ.get("CODEX_AUTOMATION_ID")
+    if requested != expected or (inherited and inherited != expected):
+        raise ValueError("AUTOMATION_ENTRYPOINT_ID_MISMATCH")
+
+
+def runner_identity(automation_id: str, entrypoint: str) -> dict:
+    return {"automation_id": automation_id, "owner_thread_id": os.environ.get("CODEX_THREAD_ID"),
+            "runner_pid": os.getpid(), "entrypoint": entrypoint}
 
 
 @contextmanager
@@ -36,7 +54,9 @@ def automation_run(automation_id: str, slot: str, *, root: Path):
         json.dump(owner, handle, sort_keys=True)
         handle.flush()
         os.fsync(handle.fileno())
+        token = _task_identity.set(automation_id)
         try:
             yield {"status": "acquired", **owner}
         finally:
+            _task_identity.reset(token)
             fcntl.flock(handle.fileno(), fcntl.LOCK_UN)

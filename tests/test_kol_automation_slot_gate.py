@@ -12,7 +12,7 @@ ROOT = Path(__file__).resolve().parents[1]
 SCRIPT = ROOT / "scripts" / "kol_automation_slot_gate.py"
 
 
-def _run_gate(tmp_path: Path, now: str, command: list[str]) -> subprocess.CompletedProcess[str]:
+def _run_gate(tmp_path: Path, now: str, command: list[str], automation_id="weekly") -> subprocess.CompletedProcess[str]:
     return subprocess.run(
         [
             sys.executable,
@@ -21,6 +21,8 @@ def _run_gate(tmp_path: Path, now: str, command: list[str]) -> subprocess.Comple
             now,
             "--lock-dir",
             str(tmp_path),
+            "--automation-id",
+            automation_id,
             "--",
             *command,
         ],
@@ -65,7 +67,7 @@ def test_fresh_run_holds_exact_slot_lock_and_executes_command(tmp_path: Path) ->
 
 
 def test_busy_exact_slot_exits_without_running_command(tmp_path: Path) -> None:
-    lock_path = tmp_path / "20260927T1000+0800.lock"
+    lock_path = tmp_path / "weekly/20260927T1000+0800.lock"
     lock_path.parent.mkdir(parents=True, exist_ok=True)
     lock_fd = os.open(lock_path, os.O_RDWR | os.O_CREAT, 0o600)
     fcntl.flock(lock_fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
@@ -85,7 +87,7 @@ def test_busy_exact_slot_exits_without_running_command(tmp_path: Path) -> None:
 
 
 def test_different_clock_hour_uses_a_different_lock(tmp_path: Path) -> None:
-    lock_path = tmp_path / "20260927T1000+0800.lock"
+    lock_path = tmp_path / "weekly/20260927T1000+0800.lock"
     lock_path.parent.mkdir(parents=True, exist_ok=True)
     lock_fd = os.open(lock_path, os.O_RDWR | os.O_CREAT, 0o600)
     fcntl.flock(lock_fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
@@ -104,3 +106,15 @@ def test_different_clock_hour_uses_a_different_lock(tmp_path: Path) -> None:
     assert result["status"] == "hour_acquired"
     assert result["hour_start_at"] == "2026-09-27T11:00:00+08:00"
     assert lines[1] == "continued"
+
+
+def test_other_automation_in_same_directory_and_hour_does_not_block(tmp_path):
+    lock_path = tmp_path / "writer/20260927T1000+0800.lock"
+    lock_path.parent.mkdir(parents=True)
+    with lock_path.open("w") as lock:
+        fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        completed = _run_gate(tmp_path, "2026-09-27T10:20:00+08:00",
+                              [sys.executable, "-c", "print('continued')"])
+    assert completed.returncode == 0
+    assert json.loads(completed.stdout.splitlines()[0])["automation_id"] == "weekly"
+    assert completed.stdout.splitlines()[1] == "continued"

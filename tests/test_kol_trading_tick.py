@@ -485,4 +485,7 @@ def test_unresolved_morning_plan_does_not_start_a_tick_writer_after_time_passes(
     for now in (NOW, NOW + timedelta(days=1)):
         result = tick.poll(tmp_path, now=now)
         assert (result["status"], result["reason"]) == ("reconcile_required", "EXISTING_LIVE_PLAN_REQUIRES_OWNER")
+        assert result["plan_ids"] == ["book-b:morning:BUY"]
+        assert result["owner_identity_status"] == "unavailable"
+        assert result["recovery_action"] == "reconcile_only"
     assert not (tmp_path / tick.STATE_RELATIVE_PATH / "state.json").exists()

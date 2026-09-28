@@ -35,6 +35,9 @@ PYTHONPATH=src .venv/bin/python scripts/book_b_live_morning.py --date today --ro
 ```
 
 It may start before the dated freeze exists and wait only for that freeze. It
+retains its original process on a recoverable preflight dependency failure;
+handle `dependency_recovery_wait` through [book-b-live-repair.md](book-b-live-repair.md)
+and Operating Contract §1b before classifying a terminal result.
 must never run or await `morning-execute`, read a paper fill, or write
 `positions.jsonl`, `paper_trades.jsonl`, `paper_account.json`, or
 `paper_account_T.json`. Its state lives only under
@@ -273,11 +276,21 @@ protect only their actual ledger or native APP operations, not unrelated KOL
 work. Diagnose the emitted failure code and actual lock owner before calling
 an unlock failure a lock conflict.
 
+The original runner rejects a foreign inherited `CODEX_AUTOMATION_ID` or
+`--automation-id` before native preflight. Stage events and immutable terminal
+receipts bind the automation ID, actual `CODEX_THREAD_ID`, PID and entrypoint.
+A separately authorized exact-plan recovery uses its actual automation ID;
+it cannot generate a second morning candidate batch.
+
 The runner durably queues trading WeCom notices for preflight start, APP
 preflight ready, and the opening result regardless of success, no action or
 failure. `ready` means native session/account preflight passed, not future
 quote/capital permission. A preflight failure reports that opening execution
-was not reached. The delivery worker is asynchronous during trading; terminal
+was not reached. If the original runner is still active at 09:30 without a
+terminal receipt, its deterministic notification timer sends an explicit
+unproved/pending window result; recovery continues and later sends the actual
+terminal result. The timer neither polls the APP nor stops the plan. The
+delivery worker is asynchronous during trading; terminal
 readback retains recipient delivery times and any pending/uncertain outcome.
 Report problems on failure and exact orders/fills on success. Never manufacture
 a ready notice or retrospective start. After business work, use

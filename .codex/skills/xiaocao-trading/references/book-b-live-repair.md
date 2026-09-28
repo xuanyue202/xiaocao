@@ -41,6 +41,18 @@ Never promote a partial sell-only observation to BUY/NAV/EOD authority.
 Run the full live-morning command exactly once. The started task owns repair;
 do not defer a recoverable problem to the next Automation.
 
+On `dependency_recovery_wait`, the original process is alive inside preflight
+or the pre-freeze heartbeat. Read its exact `request_path` for sanitized failure
+and credential health, fix the dependency, then signal once with
+`PYTHONPATH=src .venv/bin/python scripts/morning_preflight_recovery.py --request <path>`.
+The bound owner requests a check, not a ready result. Consume the next emitted
+event; without a repair signal the only automatic early recheck is 09:24.
+The startup preparation budget is shared with freeze waiting. Native helper
+repairs may be adopted from their new source hash; do not assume Python edits
+hot-load into the original interpreter. An unproved unlock remains fenced
+across processes until account-bound readiness is observed. Keep the runner
+waiting while resolving the dependency, rather than starting another runner.
+
 Classify the observed state before changing anything:
 
 - `terminal_safe`: a deterministic time, market, strategy, capital, or safety
@@ -168,6 +180,10 @@ parameters or a safety gate, commit its validated code, enqueue a specific
 WeCom change notice with `scripts/trading_change_notice.py`, and attempt
 delivery. Keep a failed notice pending for every later task's post-business
 retry; transport failure does not undo the validated APP-simulation repair.
+The change-notice delivery journal records a claim before sending. Retry only
+proved pre-send failures; `pending_reconcile` includes interrupted/uncertain
+delivery and legacy pending notices without attempt evidence. Report that gap
+without blindly resending an aggregate message or blocking trading.
 
 ## Formal same-plan recovery
 

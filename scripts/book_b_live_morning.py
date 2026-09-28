@@ -15,6 +15,7 @@ import math
 import os
 import sys
 import tempfile
+import threading
 import time
 from dataclasses import replace
 from datetime import date, datetime, timedelta
@@ -42,8 +43,17 @@ from wait_for_morning_freeze import wait_for_morning_freeze  # noqa: E402
 
 
 from xiaocao.live.morning_observability import review_brief, review_notice, terminal_notice
-from xiaocao.automation_run import automation_run
+from xiaocao.automation_run import automation_run, current_automation_id, runner_identity, validate_automation_identity
 from xiaocao.live.morning_notifications import AUTOMATION_ID, MorningNotifications
+from xiaocao.runner_recovery import DependencyRecovery
+
+_OUTPUT_LOCK = threading.Lock()
+
+
+def _emit_json(payload: dict) -> None:
+    # Delivery and execution events share stdout. Keep each JSON line intact.
+    with _OUTPUT_LOCK:
+        print(json.dumps(payload, ensure_ascii=False, sort_keys=True), flush=True)
 
 
 def _china_date() -> str:
@@ -52,11 +62,12 @@ def _china_date() -> str:
 
 def _emit_stage(stage: str, observed_at: datetime) -> None:
     """Emit only state transitions; the operator stream is not a poll log."""
-    print(json.dumps({
+    _emit_json({
         "event": "book_b_live_stage",
+        **runner_identity(current_automation_id() or AUTOMATION_ID, "scripts/book_b_live_morning.py"),
         "stage": stage,
         "observed_at": observed_at.isoformat(),
-    }, ensure_ascii=False, sort_keys=True), flush=True)
+    })
 
 
 def _wait_for_submit_window(target: datetime, *, heartbeat=None) -> None:
@@ -204,8 +215,7 @@ def _review_rendezvous(request: dict, *, now=None, sleep=None, monotonic=None,
                 or receipt.get("request_id") != identifier):
             raise ValueError("LIVE_REVIEW_RECEIPT_BINDING_MISMATCH")
         return receipt
-    print(json.dumps(review_notice(artifact, request_path, receipt_path, brief_path),
-                     ensure_ascii=False, sort_keys=True), flush=True)
+    _emit_json(review_notice(artifact, request_path, receipt_path, brief_path))
     latest: dict = {}
     status, reason = "timed_out", "LIVE_REVIEW_TIMEOUT_NEUTRAL_FALLBACK"
     while True:
@@ -271,6 +281,18 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--automation-id", default=AUTOMATION_ID,
                         help="Task-local deduplication identity; never use a remote writer's identity")
     args = parser.parse_args(argv)
+    if args.resume_plan_id and os.environ.get("CODEX_AUTOMATION_ID"):
+        # A separately authorized checkpoint may reconcile the exact existing
+        # plan. Bind it to its real task, without impersonating morning.
+        if args.automation_id == AUTOMATION_ID:
+            args.automation_id = os.environ["CODEX_AUTOMATION_ID"]
+    try:
+        validate_automation_identity(args.automation_id if args.resume_plan_id else AUTOMATION_ID,
+                                     args.automation_id)
+    except ValueError as exc:
+        _emit_json({"status": "blocked", "reason": str(exc),
+                    **runner_identity(AUTOMATION_ID, "scripts/book_b_live_morning.py")})
+        return 2
     if args.recovery_action != "resume" and not args.resume_plan_id:
         parser.error("--recovery-action requires --resume-plan-id")
 
@@ -278,11 +300,13 @@ def main(argv: list[str] | None = None) -> int:
     with automation_run(args.automation_id, trade_date,
                         root=Path.home() / "Library/Caches/xiaocao/automation-runs") as lock:
         if lock["status"] == "busy":
-            print(json.dumps({**lock, "status": "no_op", "reason": "SAME_AUTOMATION_RUNNING"}))
+            _emit_json({**lock, "status": "no_op", "reason": "SAME_AUTOMATION_RUNNING"})
             return 0
-        notices = MorningNotifications(trade_date, automation_id=args.automation_id)
+        notices = MorningNotifications(trade_date, automation_id=args.automation_id,
+            on_delivery=lambda result: _emit_json({"event": "book_b_wecom_delivery", **result}))
         try:
             if args.recovery_action != "close":
+                notices.arm_golden_window()
                 notices.publish("preflight-start")
             return _run(args, notices)
         except Exception as exc:
@@ -293,14 +317,14 @@ def main(argv: list[str] | None = None) -> int:
             raise
         finally:
             try:
-                for result in notices.close():
-                    print(json.dumps({"event": "book_b_wecom_delivery", **result}, ensure_ascii=False), flush=True)
+                notices.close()
             except Exception:
-                print(json.dumps({"event": "book_b_wecom_delivery", "status": "unproven"}), flush=True)
+                _emit_json({"event": "book_b_wecom_delivery", "status": "unproven"})
 
 
 def _run(args, notices):
     trade_date = _china_date() if args.date == "today" else args.date
+    preparation_deadline = time.monotonic() + max(0.0, args.freeze_wait_seconds)
     freeze_path = Path(str(args.freeze).format(date=trade_date))
     allocation_path = Path(str(args.allocation_facts).format(date=trade_date))
     if args.resume_plan_id and args.recovery_action == "close":
@@ -309,19 +333,20 @@ def _run(args, notices):
             state_dir=Path(args.state_dir), resume_plan_id=args.resume_plan_id,
         )
         receipt = run_book_b_live_recovery(config, plan_id=args.resume_plan_id, action="close")
-        print(json.dumps(receipt.as_dict(), ensure_ascii=False, sort_keys=True))
+        _emit_json(receipt.as_dict())
         return 0
     capital_runtime = KeychainCapitalRuntime()
     capital_receipt = capital_runtime.preflight()
     if capital_receipt["status"] != "ready":
         blocked = {
+            "runner_identity": runner_identity(args.automation_id, "scripts/book_b_live_morning.py"),
             "trade_date": trade_date,
             "status": "blocked",
             "reason": "LIVE_CAPITAL_RUNTIME_NOT_READY",
             "capital_runtime": capital_receipt,
         }
         notices.publish("result", blocked)
-        print(json.dumps(blocked, ensure_ascii=False, sort_keys=True))
+        _emit_json(blocked)
         return 2
     keychain = FounderscKeychainPreflight()
     keychain_receipt = keychain.run(read_trade_secret=True)
@@ -337,12 +362,14 @@ def _run(args, notices):
     trade_account_fingerprint = keychain.trade_account_fingerprint()
     if not trade_account_fingerprint:
         raise RuntimeError("FOUNDER_TRADE_ACCOUNT_FINGERPRINT_MISSING")
-    execution, broker = build_foundersc_native_execution(
-        args.state_dir,
-        scoped_buy_preflight=not bool(args.resume_plan_id),
-        expected_fund_account_fingerprint=trade_account_fingerprint,
-        safety_env_provider=capital_runtime.safety_env,
-    )
+    def build_native():
+        return build_foundersc_native_execution(args.state_dir,
+            scoped_buy_preflight=not bool(args.resume_plan_id),
+            expected_fund_account_fingerprint=trade_account_fingerprint,
+            safety_env_provider=capital_runtime.safety_env)
+    # Initial helper/build faults belong to the original durable preflight,
+    # with its repair budget, rather than an early setup exit.
+    execution, broker = build_native() if args.resume_plan_id else (None, None)
     prior_reconciliations: tuple[dict, ...] = ()
     api_settings = load_settings(None)
     market_client = XiaocaoClient(
@@ -413,6 +440,12 @@ def _run(args, notices):
         )
 
     def preflight() -> dict:
+        nonlocal execution, broker
+        if broker is None:
+            execution, broker = build_native()
+        refresh = getattr(getattr(broker, "native", None), "refresh_helper", None)
+        if refresh:
+            refresh()
         broker.ensure_login()
         native_receipt = broker.ensure_native_ready(
             require_order_capability=True,
@@ -447,12 +480,37 @@ def _run(args, notices):
             "route": "native-app",
         }
 
-    def live_heartbeat() -> dict:
+    def read_live_heartbeat() -> dict:
+        refresh = getattr(getattr(broker, "native", None), "refresh_helper", None)
+        if refresh:
+            refresh()
         return broker.ensure_environment(
             target="live",
             expected_current="live",
             logical_account_id="primary",
         )
+
+    def recovery_event(event):
+        failures = event.get("failures") or []
+        _emit_json({k: event.get(k) for k in ("event", "status", "request_path", "request_sha256", "sequence")}
+            | {"reason": failures[-1]["code"] if failures else None})
+
+    recovery = DependencyRecovery(
+        root=Path(args.state_dir) / "runs" / "dependencies",
+        identity={**runner_identity(args.automation_id, "scripts/book_b_live_morning.py"), "trade_date": trade_date},
+        deadline=preparation_deadline,
+        boundary=datetime.fromisoformat(trade_date + "T09:24:00+08:00"),
+        # These callbacks only read readiness / perform one fenced unlock.
+        # Economic, strategy and order errors outside them are never retried.
+        recoverable=lambda exc: True,
+        on_event=recovery_event,
+        on_failure=lambda record: notices.publish("preflight-problem", {
+            "run_id": record["binding"]["request_id"] + ":" + record["failures"][-1]["code"],
+            "reason": record["failures"][-1]["code"], "request_path": record["request_path"]}),
+        evidence=lambda: getattr(broker, "credential_health", {}),
+    )
+    def live_heartbeat():
+        return read_live_heartbeat() if args.resume_plan_id else recovery.run(read_live_heartbeat)
 
     config = BookBLiveMorningConfig(
         trade_date=trade_date,
@@ -473,7 +531,7 @@ def _run(args, notices):
     receipt = runner(
         config,
         **recovery_args,
-        preflight=preflight,
+        preflight=preflight if args.resume_plan_id else lambda: recovery.run(preflight),
         restore_environment=restore_environment,
         read_allocation_facts=read_allocation_facts,
         refresh_market_guard=lambda row: _fresh_market_guard(
@@ -482,7 +540,7 @@ def _run(args, notices):
         wait_for_dated_freeze=lambda: wait_for_morning_freeze(
             date=trade_date,
             live_dir=freeze_path.parent,
-            timeout_sec=0 if args.resume_plan_id else args.freeze_wait_seconds,
+            timeout_sec=0 if args.resume_plan_id else max(0.0, preparation_deadline - time.monotonic()),
             poll_sec=args.poll_seconds,
             snapshot_path=freeze_path,
             heartbeat=live_heartbeat,
@@ -497,7 +555,7 @@ def _run(args, notices):
         ),
         wait_for_reconcile=lambda: time.sleep(1.0),
         execute=lambda plan: execution.execute(plan, broker),
-        submission_scope=broker.submission_batch,
+        submission_scope=lambda plans: broker.submission_batch(plans),
         trading_dates_provider=trading_calendar,
         risk_provider=None if args.resume_plan_id else current_buy_risk,
         account_snapshot_provider=lambda: broker.read_live_account_snapshot(
@@ -509,15 +567,17 @@ def _run(args, notices):
     )
     receipt = replace(
         receipt,
+        runner_identity=runner_identity(args.automation_id, "scripts/book_b_live_morning.py"),
         capital_runtime=capital_receipt,
         open_plan_reconciliations=receipt.open_plan_reconciliations,
         prior_reconciliations=prior_reconciliations,
+        dependency_recovery=recovery.snapshot(),
     )
     write_book_b_live_morning_receipt(config, receipt)
     payload = receipt.as_dict()
     notice = terminal_notice(payload, config.state_dir / "runs" / "history" / f"{receipt.run_id}.json")
     notices.publish("result", notice)
-    print(json.dumps(notice, ensure_ascii=False, sort_keys=True))
+    _emit_json(notice)
     return 0 if receipt.status in {"completed", "no_action", "skipped"} else 2
 
 

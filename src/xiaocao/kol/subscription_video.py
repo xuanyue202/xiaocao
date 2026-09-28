@@ -637,11 +637,15 @@ _TRANSFER_SCRIPT = r"""(async () => {
     const candidates = [...new Set(nodes)].filter(visible);
     return candidates.length === 1 ? candidates[0] : null;
   };
+  const saveDialogControl = uniqueVisible([
+    ...document.querySelectorAll('a[node-type="shareSave"].save_btn')
+  ]);
+  const destinationPicker = uniqueVisible([
+    ...document.querySelectorAll('.save-path')
+  ]);
   const pathControl = (
-    uniqueVisible([
-      ...document.querySelectorAll('a[node-type="shareSave"].save_btn')
-    ])
-    || uniqueVisible([...document.querySelectorAll('.save-path')])
+    saveDialogControl
+    || destinationPicker
     || uniqueVisible([
       ...document.querySelectorAll('a[node-type="shareSave"].first_btn')
     ])
@@ -750,9 +754,20 @@ _TRANSFER_SCRIPT = r"""(async () => {
   }
   const installNetworkObserver = () => {
     const existing = window.__xiaocaoLvTransferNetwork;
-    if (existing && existing.installed === true) return existing;
+    if (existing && existing.installed === true && existing.observerVersion === 2) {
+      // A retained share page can handle several objects. Its previous
+      // transfer response is never evidence for this object's submission.
+      existing.installedAt = Date.now();
+      existing.generation += 1;
+      existing.requestSeen = false;
+      existing.responseSeen = false;
+      existing.records = [];
+      return existing;
+    }
     const state = {
       installed: true,
+      observerVersion: 2,
+      generation: 1,
       installedAt: Date.now(),
       requestSeen: false,
       responseSeen: false,
@@ -802,7 +817,8 @@ _TRANSFER_SCRIPT = r"""(async () => {
       }
       return summary;
     };
-    const record = (kind, method, url, body, response) => {
+    const record = (kind, method, url, body, response, generation) => {
+      if (generation !== state.generation) return;
       if (pathOf(url) !== '/share/transfer') return;
       state.requestSeen = true;
       const entry = {
@@ -822,6 +838,7 @@ _TRANSFER_SCRIPT = r"""(async () => {
     if (typeof window.fetch === 'function') {
       const originalFetch = window.fetch;
       window.fetch = function(input, init) {
+        const generation = state.generation;
         const url = typeof input === 'string' ? input : input?.url;
         const method = init?.method || input?.method || 'GET';
         const body = init?.body || input?.body;
@@ -834,21 +851,21 @@ _TRANSFER_SCRIPT = r"""(async () => {
           try { clone = response.clone(); } catch (_) {
             record(
               'fetch', method, url, body,
-              responseSummary(response.status, '', 'response_clone_failed')
+              responseSummary(response.status, '', 'response_clone_failed'), generation
             );
             return response;
           }
           return clone.text().catch(() => '').then(text => {
             record(
               'fetch', method, url, body,
-              responseSummary(response.status, text)
+              responseSummary(response.status, text), generation
             );
             return response;
           });
         }).catch(error => {
           record(
             'fetch', method, url, body,
-            responseSummary(0, '', error)
+            responseSummary(0, '', error), generation
           );
           throw error;
         });
@@ -862,6 +879,7 @@ _TRANSFER_SCRIPT = r"""(async () => {
         return originalOpen.apply(this, arguments);
       };
       XMLHttpRequest.prototype.send = function(body) {
+        const generation = state.generation;
         const request = this.__xiaocaoLvTransferRequest || {};
         if (pathOf(request.url) !== '/share/transfer') {
           return originalSend.apply(this, arguments);
@@ -875,7 +893,7 @@ _TRANSFER_SCRIPT = r"""(async () => {
           try { text = this.responseText || ''; } catch (_) {}
           record(
             'xhr', request.method, request.url, body,
-            responseSummary(this.status, text, error)
+            responseSummary(this.status, text, error), generation
           );
         };
         this.addEventListener('loadend', () => finish(), {once: true});
@@ -896,27 +914,153 @@ _TRANSFER_SCRIPT = r"""(async () => {
     window.__xiaocaoLvTransferNetwork = state;
     return state;
   };
+  const network = installNetworkObserver();
+  const providerConfirmation = confirms[0];
+  const confirmationRect = providerConfirmation.getBoundingClientRect();
+  const confirmationHit = document.elementFromPoint(
+    Math.round(confirmationRect.left + confirmationRect.width / 2),
+    Math.round(confirmationRect.top + confirmationRect.height / 2)
+  );
+  if (!confirmationHit || (confirmationHit !== providerConfirmation
+      && !providerConfirmation.contains(confirmationHit))) {
+    return {status: 'save_confirmation_obstructed', triggered: false};
+  }
+  const dialogHeading = String(dialog.innerText || dialog.textContent || '')
+    .split(/\n/)[0].replace(/\s+/g, '').trim();
+  const confirmationRole = dialogHeading.startsWith('选择保存路径')
+    ? 'destination_selection' : dialogHeading === '保存到' ? 'provider_submit' : null;
+  if (!confirmationRole) {
+    return {status: 'save_dialog_role_unknown', triggered: false};
+  }
   const beforeLines = new Set(
     String(document.body?.innerText || '')
       .split(/\n+/)
       .map(value => value.replace(/\s+/g, ' ').trim())
       .filter(Boolean)
   );
-  const network = installNetworkObserver();
   window.__xiaocaoLvTransferConfirmation = {
     beforeLines: [...beforeLines],
     preparedAt: Date.now(),
-    network
+    network,
+    expectedSharePath,
+    targetName,
+    destinationPath: '/' + destinationSegments.join('/'),
+    confirmationRole,
+    expectedControl: providerConfirmation,
+    inputProbeInstalled: true,
+    inputEvents: []
   };
-  confirms[0].setAttribute('data-xiaocao-lv-confirm', 'ready');
+  if (!window.__xiaocaoLvTransferClickProbeInstalled) {
+    document.addEventListener('click', event => {
+      const checkpoint = window.__xiaocaoLvTransferConfirmation;
+      if (!checkpoint) return;
+      checkpoint.inputEvents.push({
+        trusted: event.isTrusted === true,
+        target_match: event.composedPath().includes(checkpoint.expectedControl)
+      });
+      if (checkpoint.inputEvents.length > 8) checkpoint.inputEvents.shift();
+    }, true);
+    window.__xiaocaoLvTransferClickProbeInstalled = true;
+  }
+  // Remove markers from earlier objects on a retained page, then mark
+  // only the actual provider submit control for the native click.
+  for (const node of document.querySelectorAll('[data-xiaocao-lv-confirm]')) {
+    node.removeAttribute('data-xiaocao-lv-confirm');
+  }
+  providerConfirmation.setAttribute('data-xiaocao-lv-confirm', 'ready');
   return {
     status: 'save_confirmation_ready',
     confirmation_selector: '[data-xiaocao-lv-confirm="ready"]',
+    confirmation_role: confirmationRole,
     triggered: false,
     provider_outcome: 'unobserved',
     provider_request_observed: network.requestSeen,
     provider_response_observed: network.responseSeen
   };
+})()"""
+
+
+_TRANSFER_PAGE_SUBMIT_SCRIPT = r"""(async () => {
+  const checkpoint = window.__xiaocaoLvTransferConfirmation || {};
+  const network = checkpoint.network || {};
+  const delivered = (checkpoint.inputEvents || []).some(event => (
+    event.trusted === true && event.target_match === true
+  ));
+  const diagnostics = {
+    input_event_probe_installed: checkpoint.inputProbeInstalled === true,
+    input_target_observed: delivered,
+    provider_request_observed: network.requestSeen === true,
+    provider_response_observed: network.responseSeen === true
+  };
+  if (network.requestSeen) {
+    return {status: 'provider_effect_observed', triggered: true, ...diagnostics};
+  }
+  if (!delivered) {
+    return {status: 'native_click_not_delivered', triggered: false, ...diagnostics};
+  }
+  if (location.origin !== 'https://pan.baidu.com'
+      || location.pathname !== checkpoint.expectedSharePath) {
+    return {status: 'wrong_share', triggered: false, ...diagnostics};
+  }
+  const visible = node => {
+    const rect = node.getBoundingClientRect();
+    const style = getComputedStyle(node);
+    return rect.width > 0 && rect.height > 0 && style.display !== 'none'
+      && style.visibility !== 'hidden';
+  };
+  const deadline = Date.now() + 3000;
+  let pathConfirmed = false;
+  while (Date.now() < deadline) {
+    if (network.requestSeen) {
+      return {status: 'provider_effect_observed', triggered: true, ...diagnostics,
+        provider_request_observed: true};
+    }
+    const paths = [...document.querySelectorAll('.save-path')].filter(visible);
+    const dialogs = [...document.querySelectorAll('.dialog-fileTreeDialog')]
+      .filter(visible);
+    pathConfirmed = paths.length === 1 && dialogs.length === 0
+      && String(paths[0].innerText || paths[0].textContent || '')
+        .replace(/\s+/g, '').replace(/^我的网盘/, '') === checkpoint.destinationPath;
+    if (pathConfirmed) break;
+    await new Promise(resolve => setTimeout(resolve, 50));
+  }
+  if (!pathConfirmed) {
+    return {status: 'destination_path_not_confirmed', triggered: false, ...diagnostics};
+  }
+  const selected = [...document.querySelectorAll('#shareqr dd')].filter(row => (
+    row.querySelector('[role="checkbox"]')?.getAttribute('aria-checked') === 'true'
+      || row.classList.contains('JS-item-active')
+  ));
+  if (selected.length !== 1 || selected[0].querySelector('a.filename')
+      ?.getAttribute('title') !== checkpoint.targetName) {
+    return {status: 'transfer_selection_mismatch', triggered: false, ...diagnostics};
+  }
+  const candidates = [...new Set([
+    ...document.querySelectorAll('a[node-type="bottomShareSave"]'),
+    ...document.querySelectorAll('a[node-type="shareSave"].first_btn')
+  ])].filter(node => visible(node) && String(node.innerText || node.textContent || '')
+    .replace(/\s+/g, '').trim() === '保存到网盘');
+  if (candidates.length !== 1) {
+    return {status: 'save_submit_control_ambiguous', triggered: false, ...diagnostics};
+  }
+  const rect = candidates[0].getBoundingClientRect();
+  const hit = document.elementFromPoint(
+    Math.round(rect.left + rect.width / 2), Math.round(rect.top + rect.height / 2)
+  );
+  if (!hit || (hit !== candidates[0] && !candidates[0].contains(hit))) {
+    return {status: 'save_confirmation_obstructed', triggered: false, ...diagnostics};
+  }
+  for (const node of document.querySelectorAll('[data-xiaocao-lv-confirm]')) {
+    node.removeAttribute('data-xiaocao-lv-confirm');
+  }
+  candidates[0].setAttribute('data-xiaocao-lv-confirm', 'ready');
+  checkpoint.expectedControl = candidates[0];
+  checkpoint.confirmationRole = 'provider_submit';
+  checkpoint.inputEvents = [];
+  return {status: 'save_confirmation_ready', triggered: false,
+    confirmation_selector: '[data-xiaocao-lv-confirm="ready"]',
+    confirmation_role: 'provider_submit', destination_selection: 'path_picker_confirmed',
+    destination_selection_receipt: diagnostics};
 })()"""
 
 
@@ -930,6 +1074,10 @@ _TRANSFER_OUTCOME_SCRIPT = r"""(async () => {
     Array.isArray(network.records) ? network.records.slice(-8) : []
   );
   const networkState = () => ({
+    input_event_probe_installed: checkpoint.inputProbeInstalled === true,
+    input_target_observed: (checkpoint.inputEvents || []).some(event => (
+      event.trusted === true && event.target_match === true
+    )),
     provider_request_observed: network.requestSeen === true
       || networkRecords().length > 0,
     provider_response_observed: network.responseSeen === true
@@ -1028,6 +1176,8 @@ _TRANSFER_OUTCOME_SCRIPT = r"""(async () => {
 
 
 _TRANSFER_DIAGNOSTIC_FIELDS = (
+    "input_event_probe_installed",
+    "input_target_observed",
     "provider_request_observed",
     "provider_response_observed",
     "provider_network_records",
@@ -4658,7 +4808,9 @@ class SubscriptionVideoService:
                 timeout_seconds=60,
             )
         action_claim = claim
-        if result.get("status") == "save_confirmation_ready":
+        for native_step in range(2):
+            if result.get("status") != "save_confirmation_ready":
+                break
             selector = str(result.get("confirmation_selector") or "")
             expected_selector = (
                 '[data-xiaocao-lv-confirm="ready"]'
@@ -4684,6 +4836,11 @@ class SubscriptionVideoService:
                 "native_click_selector": selector,
                 "native_click_page_id": native_click_page_id or None,
                 "native_click_window": "foreground",
+                "confirmation_role": result.get("confirmation_role"),
+                "destination_selection": result.get("destination_selection"),
+                "destination_selection_receipt": result.get(
+                    "destination_selection_receipt"
+                ),
                 "triggered_at": self._time().isoformat(
                     timespec="microseconds"
                 ),
@@ -4724,12 +4881,55 @@ class SubscriptionVideoService:
                 raise EnrichmentError(
                     "Lv cloud transfer native click outcome is uncertain"
                 )
+            if result.get("confirmation_role") == "destination_selection":
+                result = self._opencli_json(
+                    lv_session,
+                    "eval",
+                    _TRANSFER_PAGE_SUBMIT_SCRIPT,
+                    profile=profile,
+                    timeout_seconds=30,
+                )
+                if (
+                    native_step == 0
+                    and result.get("status") == "save_confirmation_ready"
+                ):
+                    continue
+                if result.get("triggered") is not True:
+                    break
             result = self._opencli_json(
                 lv_session,
                 "eval",
                 _TRANSFER_OUTCOME_SCRIPT,
                 profile=profile,
                 timeout_seconds=30,
+            )
+            break
+        if (
+            result.get("input_event_probe_installed") is True
+            and result.get("input_target_observed") is False
+            and result.get("provider_request_observed") is False
+        ):
+            # Selector resolution is not input delivery. With both the
+            # capture probe and request observer proving no dispatch, this
+            # is a control-plane failure, not an uncertain provider transfer.
+            self._record_pretrigger_failure(
+                receipt_name,
+                {
+                    **claim,
+                    "input_delivery_readback": {
+                        field: result.get(field)
+                        for field in _TRANSFER_DIAGNOSTIC_FIELDS
+                        if field in result
+                    },
+                    "side_effect_uncertain": False,
+                },
+                "lv_native_click_not_delivered",
+            )
+            raise EnrichmentDiagnosticError(
+                "Lv save selector resolved but no trusted input reached it",
+                category="provider_contract_error",
+                code="lv_native_click_not_delivered",
+                stage="cloud_transfer_confirmation",
             )
         if result.get("triggered") is not True:
             self._record_pretrigger_failure(

@@ -3677,11 +3677,11 @@ class DailyRuntime:
             and claim.get("blocker_key")
             == "lv-cloud-transfer-not-materialized"
             and claim.get("provider_outcome") == "unobserved"
-            and "provider_request_observed" not in claim
-            and "provider_response_observed" not in claim
+            and claim.get("provider_request_observed") in (None, False)
+            and claim.get("provider_response_observed") in (None, False)
         ):
             raise DailyError(
-                "blocked video is not a legacy observability repair target"
+                "blocked video readback target is not an unobserved transfer"
             )
         return WriterProgress.reconcile_required(
             item_identity=identity,
@@ -4675,14 +4675,13 @@ def _source_effect_reconciliation_progress(
         and progress.item_identity == identity
     ):
         return progress
-    progress_value = progress.to_dict()
     if (
         adapter == "subscription_video"
-        and progress.status == "user_action_required"
-        and progress_value.get("blocker_identity")
-        == "lv-cloud-transfer-not-materialized"
         and runtime is not None
     ):
+        # The latest source summary may belong to a different, completed
+        # object. Read-only reconciliation is bound by the exact pending
+        # item and its durable claim, not that companion's summary.
         return runtime.videos_blocked_reconciliation_progress(identity)
     raise DailyError("source effect readback target is not active")
 

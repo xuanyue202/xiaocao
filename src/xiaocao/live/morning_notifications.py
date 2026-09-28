@@ -6,9 +6,11 @@ import hashlib
 import json
 import os
 import tempfile
+import threading
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
 from pathlib import Path
+from zoneinfo import ZoneInfo
 
 from .notify import configured_wecom_recipients, send_wecom_recipient_detailed
 
@@ -25,6 +27,11 @@ def _write(path: Path, payload: dict):
             stream.flush()
             os.fsync(stream.fileno())
         os.replace(temporary, path)
+        directory = os.open(path.parent, os.O_RDONLY)
+        try:
+            os.fsync(directory)
+        finally:
+            os.close(directory)
     finally:
         Path(temporary).unlink(missing_ok=True)
 
@@ -38,7 +45,11 @@ def message(kind: str, trade_date: str, facts: dict) -> tuple[str, str]:
         return "Book B 晨间预检启动", f"交易日 {trade_date}，APP 服务端仿真预检已启动。"
     if kind == "ready":
         return "Book B APP 预检 ready", f"交易日 {trade_date}，APP 会话和账户预检通过，等待不可变冻结；行情、资金和策略门仍在动作时重新核验。"
-    if kind != "result":
+    if kind == "preflight-problem":
+        return "Book B 预检等待修复", (f"交易日 {trade_date}，问题 {facts.get('reason') or 'unproven'}。\n"
+            "原 runner 保持等待，未生成委托；修复信号仅触发重新核验，不代表预检通过。\n"
+            f"恢复请求：{facts.get('request_path') or '-'}")
+    if kind not in {"result", "golden-window"}:
         raise ValueError("MORNING_NOTIFICATION_KIND_INVALID")
     orders = facts.get("orders") or []
     pending = facts.get("pending_orders") or []
@@ -48,7 +59,10 @@ def message(kind: str, trade_date: str, facts: dict) -> tuple[str, str]:
     lines = [f"交易日 {trade_date}，状态 {status}，原因 {facts.get('reason') or '-'}。"]
     if facts.get("failed_stage") == "preflight":
         lines.append("预检受阻，未进入开盘交易；未补跑原 runner。")
-    lines.append(f"本次委托 {len(orders)}，成交股数 {sum(r.get('filled_shares') or 0 for r in orders)}，未决 {len(pending) + sum(r.get('state') in {'unknown', 'acknowledged', 'partial'} for r in orders)}。")
+    if kind == "golden-window":
+        lines.append("09:30 尚未取得完整终态回执，订单和成交数量暂未证明；原计划继续合法恢复，终态后另报结果。")
+    else:
+        lines.append(f"本次委托 {len(orders)}，成交股数 {sum(r.get('filled_shares') or 0 for r in orders)}，未决 {len(pending) + sum(r.get('state') in {'unknown', 'acknowledged', 'partial'} for r in orders)}。")
     for row in orders + pending:
         lines.append(f"{row.get('plan_id')}：{row.get('state')}，单号 {row.get('broker_order_id') or '-'}，成交 {row.get('filled_shares') or 0}；{row.get('reason') or '-'}")
     if facts.get("receipt_path"):
@@ -58,7 +72,7 @@ def message(kind: str, trade_date: str, facts: dict) -> tuple[str, str]:
 
 class MorningNotifications:
     def __init__(self, trade_date: str, *, automation_id=AUTOMATION_ID,
-                 root=DEFAULT_ROOT, sender=None, recipients=None):
+                 root=DEFAULT_ROOT, sender=None, recipients=None, on_delivery=None):
         self.trade_date, self.automation_id = trade_date, automation_id
         self.root = Path(root)
         self.sender = sender or (lambda t, b, r: send_wecom_recipient_detailed(t, b, r, audience="trading"))
@@ -66,14 +80,48 @@ class MorningNotifications:
         self.pool = ThreadPoolExecutor(max_workers=1, thread_name_prefix="morning-wecom")
         self.futures = []
         self.failures = []
+        self.timer = None
+        self.terminal = threading.Event()
+        self.on_delivery = on_delivery
+
+    def _enqueue(self, path):
+        future = self.pool.submit(self.send, path)
+        self.futures.append(future)
+        if self.on_delivery:
+            def delivered(completed):
+                try:
+                    result = completed.result()
+                except Exception:
+                    result = {"status": "pending", "reason": "MORNING_NOTICE_READBACK_UNPROVEN"}
+                self.on_delivery(result)
+            future.add_done_callback(delivered)
+
+    def arm_golden_window(self, *, now=None, timer_factory=threading.Timer):
+        clock = now or datetime.now(ZoneInfo("Asia/Shanghai"))
+        boundary = datetime.fromisoformat(self.trade_date + "T09:30:00+08:00")
+        remaining = (boundary - clock).total_seconds()
+        if 0 < remaining <= 1800:
+            def checkpoint():
+                if not self.terminal.is_set():
+                    self.publish("golden-window", {"status": "pending",
+                        "reason": "GOLDEN_WINDOW_TERMINAL_NOT_PROVEN"})
+            self.timer = timer_factory(remaining, checkpoint)
+            self.timer.daemon = True
+            self.timer.start()
 
     def publish(self, kind: str, facts: dict | None = None):
+        if kind == "result":
+            self.terminal.set()
+            if self.timer is not None:
+                self.timer.cancel()
         try:
             return self._publish(kind, facts)
         except OSError:
             # Notification storage is supporting work, never an execution gate.
             self.failures.append({"kind": kind, "status": "pending",
                                   "reason": "MORNING_NOTICE_STORAGE_UNPROVEN"})
+            if self.on_delivery:
+                self.on_delivery(self.failures[-1])
             return None
 
     def _publish(self, kind: str, facts: dict | None = None):
@@ -89,7 +137,7 @@ class MorningNotifications:
                 _write(path, {"notification_id": key, "automation_id": self.automation_id,
                               "trade_date": self.trade_date, "kind": kind, "title": title,
                               "body": body, "created_at": _clock(), "recipients": {}})
-        self.futures.append(self.pool.submit(self.send, path))
+        self._enqueue(path)
         return key
 
     def send(self, path: Path):
@@ -127,9 +175,13 @@ class MorningNotifications:
         for path in self.root.glob("*.json"):
             record = json.loads(path.read_text())
             if record.get("automation_id") == self.automation_id and record.get("status") != "delivered":
-                self.futures.append(self.pool.submit(self.send, path))
+                self._enqueue(path)
 
     def close(self):
+        self.terminal.set()
+        if self.timer is not None:
+            self.timer.cancel()
+            self.timer.join()
         self.pool.shutdown(wait=True)
         results = list(self.failures)
         for future in self.futures:
