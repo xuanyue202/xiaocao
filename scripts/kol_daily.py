@@ -4229,6 +4229,9 @@ class DailyRuntime:
         }
         if only_identity is not None:
             run_kwargs["only_identity"] = only_identity
+            backfill_since = getattr(self.args, "xiaocao_backfill_since", None)
+            if backfill_since is not None:
+                run_kwargs["backfill_since"] = backfill_since
         return subscription.run_once(**run_kwargs)
 
     def xiaocao_wechat_narrow_resume(
@@ -4820,6 +4823,10 @@ def main() -> int:
     parser.add_argument("--trading-root", type=Path, default=Path(__file__).resolve().parents[1])
     parser.add_argument("--source-adapter")
     parser.add_argument("--source-identity")
+    parser.add_argument(
+        "--xiaocao-backfill-since",
+        help="Explicit one-item historical capture authorization (YYYY-MM-DD); never for scheduled sweeps",
+    )
     parser.add_argument("--failure-fingerprint")
     parser.add_argument("--repair-revision")
     parser.add_argument("--period-start")
@@ -4850,6 +4857,10 @@ def main() -> int:
         default="site:baidu-netdisk",
     )
     args = parser.parse_args()
+    if args.xiaocao_backfill_since is not None and (
+        args.command != "capture-xiaocao-item" or not args.source_identity
+    ):
+        parser.error("--xiaocao-backfill-since requires capture-xiaocao-item and --source-identity")
     if args.command == "prepare-trading-sources":
         if not args.publication_key:
             raise DailyError("prepare-trading-sources requires publication key")

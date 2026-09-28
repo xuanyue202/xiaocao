@@ -31,6 +31,16 @@ For one existing item, run
 `PYTHONPATH=src .venv/bin/python scripts/kol_daily.py capture-xiaocao-item
 --source-identity <identity>` in one PTY. Never schedule or widen it.
 
+For an explicitly user-requested historical date range, invoke each exact
+original-message identity with `capture-xiaocao-item --source-identity <identity>
+--xiaocao-backfill-since <YYYY-MM-DD>`. This one-invocation authorization can
+restore an unbound expired/baselined/superseded entry within that requested
+range, verifies its original contact/time/token/hash, and retains existing
+capture IDs and claims. It never resets completed or bound work, never applies
+to `capture-local`, and never changes routine 72-hour expiry. Keep the same PTY
+and downstream flow. A pre-existing standalone capture for that same original
+message must be reconciled before creating another capture.
+
 `capture-local` runs only `xiaocao_wechat_live` and
 `wechat_official_accounts`; it never scans Lv, analyzes, publishes, or writes
 Book. Do not substitute the remote coordinator.
@@ -107,6 +117,11 @@ baseline older links on first initialization, reuse the singleton sniffer and
 preserve pending entries independently. New links must not supersede distinct
 missed sessions. Explicit capture-xiaocao-item can restore a legacy superseded
 unarmed entry within 72 hours; expired entries remain terminal.
+
+Native message discovery accepts the reviewed `#小程序://鹅直播/<token>` and
+`#小程序://见势擒龙团/<token>` entries, preserving the original application name,
+token, contact and publication time. A native token uses its exact visible
+original message once; it is never converted into a guessed HTTPS link or Scheme.
 
 Also run stateless `subscription-updates --within 48h` for exactly:
 

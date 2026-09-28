@@ -102,10 +102,11 @@ def test_wechat_history_accepts_h5_xeknow_short_live_links():
     assert items[0]["source_url"] == "https://9ozbz.h5.xeknow.com/sl/2AjX90"
 
 
-def test_wechat_history_accepts_native_goose_live_mini_program_entries():
+@pytest.mark.parametrize("app_name", ["鹅直播", "见势擒龙团"])
+def test_wechat_history_accepts_supported_native_mini_program_entries(app_name):
     payload = _history(
         "[2026-09-04 08:37] 福利官小花四: 9点20草神直播地址（密码666）："
-        "#小程序://鹅直播/WDUa9A1nxlXZoSz"
+        f"#小程序://{app_name}/WDUa9A1nxlXZoSz"
     )
 
     items = parse_xiaocao_live_messages(payload)
@@ -113,10 +114,17 @@ def test_wechat_history_accepts_native_goose_live_mini_program_entries():
     assert len(items) == 1
     assert items[0]["published_at"] == "2026-09-04T08:37:00+08:00"
     assert items[0]["entry_kind"] == "wechat_mini_program"
-    assert items[0]["mini_program_name"] == "鹅直播"
+    assert items[0]["mini_program_name"] == app_name
     assert items[0]["mini_program_token"] == "WDUa9A1nxlXZoSz"
     assert "source_url" not in items[0]
     assert "message" not in items[0]
+
+
+def test_wechat_history_ignores_unreviewed_native_mini_program():
+    assert parse_xiaocao_live_messages(_history(
+        "[2026-09-24 17:07] 福利官小花四: "
+        "#小程序://其他直播/W4o8kKJeegclUZv"
+    )) == []
 
 
 def test_unsupported_merchant_entry_is_retained_without_arming_or_retry(tmp_path):
@@ -212,6 +220,112 @@ class _CaptureDriver:
     ) -> dict | None:
         del identity, capture_job_id
         return None
+
+
+@pytest.mark.parametrize("previous_status", [None, "expired", "superseded", "historical_baseline"])
+def test_explicit_dated_backfill_recovers_only_the_selected_original_entry(
+    tmp_path, previous_status,
+):
+    payload = _history(
+        "[2026-09-23 08:44] 小花: #小程序://见势擒龙团/7qBV0CwjiqCrkHB",
+        "[2026-09-27 17:17] 小花: #小程序://见势擒龙团/YbZMTddvUAzLR2c",
+    )
+    original = parse_xiaocao_live_messages(payload)[0]
+    driver = _CaptureDriver()
+    requests = []
+
+    def exchange(request):
+        requests.append(request)
+        return {
+            "action": request["action"],
+            "subscription_id": request["subscription_id"],
+            "playback_surface": "wechat_mini_program",
+            "page_state": "mini_program_waiting",
+            "activated": False,
+            "media_request_observed": False,
+            "playback_window_closed": False,
+        }
+
+    subscription = XiaocaoWechatLiveSubscription(
+        tmp_path / "wechat", history_reader=lambda: payload,
+        browser_exchange=exchange, capture_driver=driver,
+        clock=lambda: datetime.fromisoformat("2026-09-28T10:15:00+08:00"),
+    )
+    manifest = subscription._load()
+    if previous_status:
+        manifest["items"][original["identity"]] = {**original, "status": previous_status}
+        subscription._save(manifest)
+
+    result = subscription.run_once(
+        opencli_session="test", only_identity=original["identity"],
+        backfill_since="2026-09-23",
+    )
+
+    assert result["status"] == "waiting"
+    assert driver.arms == [(original["identity"], None)]
+    assert driver.advances == 0
+    assert len(requests) == 1
+    assert requests[0]["mini_program_token"] == original["mini_program_token"]
+    items = subscription._load()["items"]
+    assert list(items) == [original["identity"]]
+    assert items[original["identity"]]["capture_job_id"] == "kol-capture-current"
+    assert items[original["identity"]]["manual_backfill_since"] == "2026-09-23"
+
+
+@pytest.mark.parametrize("since,identity", [
+    ("2026-09-24", "selected"),
+    ("invalid", "selected"),
+    ("2026-09-23", None),
+])
+def test_manual_backfill_rejects_ambiguous_or_out_of_range_requests(tmp_path, since, identity):
+    payload = _history("[2026-09-23 08:44] 小花: #小程序://见势擒龙团/7qBV0CwjiqCrkHB")
+    original = parse_xiaocao_live_messages(payload)[0]
+    driver = _CaptureDriver()
+    subscription = XiaocaoWechatLiveSubscription(
+        tmp_path / "wechat", history_reader=lambda: payload,
+        browser_exchange=lambda request: pytest.fail("invalid backfill must not launch"),
+        capture_driver=driver,
+        clock=lambda: datetime.fromisoformat("2026-09-28T10:15:00+08:00"),
+    )
+    with pytest.raises(EnrichmentError):
+        subscription.run_once(
+            opencli_session="test", only_identity=original["identity"] if identity else None,
+            backfill_since=since,
+        )
+    assert driver.arms == []
+
+
+@pytest.mark.parametrize("status,fields", [
+    ("completed", {"handoff_id": "same-handoff", "capture_job_id": "same-capture"}),
+    ("expired", {"candidate_id": "same-candidate", "capture_job_id": "same-capture"}),
+])
+def test_manual_backfill_never_resets_completed_or_bound_claims(tmp_path, status, fields):
+    payload = _history("[2026-09-23 08:44] 小花: #小程序://见势擒龙团/7qBV0CwjiqCrkHB")
+    original = parse_xiaocao_live_messages(payload)[0]
+    driver = _CaptureDriver()
+    subscription = XiaocaoWechatLiveSubscription(
+        tmp_path / "wechat", history_reader=lambda: payload,
+        browser_exchange=lambda request: pytest.fail("bound work must not relaunch"),
+        capture_driver=driver,
+        clock=lambda: datetime.fromisoformat("2026-09-28T10:15:00+08:00"),
+    )
+    manifest = subscription._load()
+    saved = {**original, "status": status, **fields}
+    manifest["items"][original["identity"]] = saved
+    subscription._save(manifest)
+    if status == "completed":
+        assert subscription.run_once(
+            opencli_session="test", only_identity=original["identity"],
+            backfill_since="2026-09-23",
+        )["already_completed"] is True
+    else:
+        with pytest.raises(EnrichmentError, match="reconcile existing bound claims"):
+            subscription.run_once(
+                opencli_session="test", only_identity=original["identity"],
+                backfill_since="2026-09-23",
+            )
+    assert driver.arms == []
+    assert subscription._load()["items"][original["identity"]] == saved
 
 
 def test_cloud_handoff_wait_has_durable_poll_deadline(tmp_path):
@@ -635,12 +749,16 @@ def test_wechat_mini_program_route_binds_media_to_the_exact_live_id(tmp_path, cl
     assert item["playback_window_closed"] is (closed is True)
 
 
+@pytest.mark.parametrize("app_name,app_id", [
+    ("鹅直播", "app6ums63as6516"),
+    ("见势擒龙团", "appsnm3rlcp3566"),
+])
 def test_native_mini_program_entry_is_armed_before_ui_and_binds_observed_live(
-    tmp_path,
+    tmp_path, app_name, app_id,
 ):
     payload = _history(
         "[2026-09-04 08:37] 福利官小花四: 9点20草神直播地址（密码666）："
-        "#小程序://鹅直播/WDUa9A1nxlXZoSz"
+        f"#小程序://{app_name}/WDUa9A1nxlXZoSz"
     )
     requests: list[dict] = []
     capture = _CaptureDriver()
@@ -648,15 +766,16 @@ def test_native_mini_program_entry_is_armed_before_ui_and_binds_observed_live(
     def browser_exchange(request: dict) -> dict:
         requests.append(request)
         assert request["action"] == "activate_xiaoetong_mini_program"
-        assert request["mini_program_name"] == "鹅直播"
+        assert request["mini_program_name"] == app_name
         assert request["mini_program_token"] == "WDUa9A1nxlXZoSz"
         assert "source_url" not in request
+        assert "launch_resolver_command" not in request
         return {
             "action": request["action"],
             "subscription_id": request["subscription_id"],
             "playback_surface": XIAOCAO_PLAYBACK_ROUTE_WECHAT_MINI_PROGRAM,
             "source_identity": (
-                "xiaoetong:app6ums63as6516:l_6a99d00de4b0694c3546aaaa"
+                f"xiaoetong:{app_id}:l_6a99d00de4b0694c3546aaaa"
             ),
             "live_id": "l_6a99d00de4b0694c3546aaaa",
             "candidate_id": "candidate-new-live",
@@ -697,7 +816,7 @@ def test_native_mini_program_entry_is_armed_before_ui_and_binds_observed_live(
     item = next(iter(manifest["items"].values()))
     assert item["status"] == "playback_activated"
     assert item["source_identity"] == (
-        "xiaoetong:app6ums63as6516:l_6a99d00de4b0694c3546aaaa"
+        f"xiaoetong:{app_id}:l_6a99d00de4b0694c3546aaaa"
     )
     assert item["candidate_id"] == "candidate-new-live"
     assert capture.native_bindings == [(

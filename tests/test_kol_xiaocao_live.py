@@ -112,6 +112,27 @@ def test_sniffer_singleton_excludes_only_exact_proxy_guard(tmp_path):
     assert service._sniffer_pids() == [101, 103]
 
 
+@pytest.mark.parametrize("same_executable", [True, False])
+def test_sniffer_manual_relative_launch_requires_actual_executable_identity(
+    tmp_path, monkeypatch, same_executable,
+):
+    binary = tmp_path / "wx_video_download_macos_arm64"
+    binary.write_bytes(b"binary")
+    actual = binary if same_executable else tmp_path / "other" / binary.name
+    monkeypatch.setattr(
+        "xiaocao.kol.xiaocao_live._process_executable_path",
+        lambda pid: str(actual), raising=False,
+    )
+    service = XiaocaoLiveService(
+        tmp_path / "live", sniffer_binary=binary,
+        runner=lambda *args, **kwargs: SimpleNamespace(stdout=(
+            "101 ./wx_video_download_macos_arm64 --xiaoetong-only\n"
+            "102 ./wx_video_download_macos_arm64 __proxy-guard\n"
+        )),
+    )
+    assert service._sniffer_pids() == ([101] if same_executable else [])
+
+
 def test_default_sniffer_binary_follows_active_checkout(tmp_path):
     repo_root = tmp_path / "coding" / "xiaocao"
 

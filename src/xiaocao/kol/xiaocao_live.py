@@ -17,6 +17,7 @@ import re
 import signal
 import socket
 import subprocess
+import sys
 import time
 from datetime import datetime, timezone
 from pathlib import Path
@@ -62,6 +63,26 @@ def _default_sniffer_binary(repo_root: Path | str | None = None) -> Path:
 
 
 DEFAULT_SNIFFER_BINARY = _default_sniffer_binary()
+
+
+def _process_executable_path(pid: int) -> str | None:
+    """Verify one candidate's executable, never trust a matching argv basename."""
+    try:
+        if sys.platform == "darwin":
+            import ctypes
+
+            library = ctypes.CDLL("/usr/lib/libproc.dylib")
+            query = library.proc_pidpath
+            query.argtypes = [ctypes.c_int, ctypes.c_void_p, ctypes.c_uint32]
+            query.restype = ctypes.c_int
+            buffer = ctypes.create_string_buffer(4096)
+            if query(pid, buffer, len(buffer)) > 0:
+                return os.fsdecode(buffer.value)
+        elif sys.platform.startswith("linux"):
+            return os.readlink(f"/proc/{pid}/exe")
+    except (OSError, AttributeError, ValueError):
+        pass
+    return None
 
 
 def capture_runtime_environment() -> dict[str, str]:
@@ -852,10 +873,19 @@ class XiaocaoLiveService:
         pids = []
         for line in result.stdout.splitlines():
             pieces = line.strip().split(maxsplit=1)
-            if len(pieces) == 2 and pieces[1].split()[0] == expected:
-                if pieces[1].split()[1:] == ["__proxy-guard"]:
+            if len(pieces) != 2:
+                continue
+            arguments = pieces[1].split()
+            if not arguments or Path(arguments[0]).name != self.sniffer_binary.name:
+                continue
+            pid = int(pieces[0])
+            if arguments[0] != expected:
+                actual = _process_executable_path(pid)
+                if actual is None or Path(actual).resolve() != self.sniffer_binary.resolve():
                     continue
-                pids.append(int(pieces[0]))
+            if arguments[1:] == ["__proxy-guard"]:
+                continue
+            pids.append(pid)
         return pids
 
     def _confirm_sniffer_stable(
