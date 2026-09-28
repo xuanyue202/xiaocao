@@ -54,6 +54,7 @@ _CAPTURE_PROGRESS_POLL_SECONDS = 30
 _PLAYBACK_RECHECK_MINUTES = 20
 _LOCAL_CAPTURE_FIRST_HOUR = 7
 _LOCAL_CAPTURE_LAST_HOUR = 22
+_NATIVE_SHARE_BRIDGE_CONFIG = Path("output/live/kol_xiaocao_live/native_share_bridge.json")
 _PLAYBACK_PAGE_STATES = {
     "wechat_client_login_required",
     "waiting_to_start",
@@ -1362,6 +1363,12 @@ class XiaocaoWechatLiveSubscription:
                 "blocked_page_state": "mini_program_consent_required",
             },
             "instructions": (
+                "保留原始联系人、发布时间、应用名和分享码；先读 Skill 的"
+                "references/native-share-bridge.md，复用已配置草料活码，读回"
+                "原分享目标后取得一次新鲜提供方入口，按 B0–B4 自动点击课程与允许。"
+                "已有精确课程窗口则复用。"
+                if native_entry and course_app == "见势擒龙团"
+                else
                 "用 wechat-cli 已定位的原始联系人和发布时间，在本机微信中只打开"
                 f"该条原始 #小程序://{course_app}/ 消息一次；不要复制发送消息、猜测 URL "
                 "Scheme，或反复拉起小程序。"
@@ -1377,10 +1384,11 @@ class XiaocaoWechatLiveSubscription:
                 "同意、读回并继续同一任务。需确认时返回 mini_program_consent_required，"
                 "不得误报微信手机登录。若看见课程口令门，打开"
                 "输入框，输入提供的口令、读回并确认。口令通过可能自动播放；画面一旦"
-                f"开始播放并被抓取后，关闭这一个{course_app}课程窗口：在确认标题的目标窗口"
-                "点击文件菜单，再点击该窗口的关闭全部标签页（performClose:），读回"
-                f"窗口菜单已无{course_app}。若未自动起播，只点击一次可见播放按钮。"
-                "未开播、直播中或回放生成中：先按同一文件菜单关闭课程并读回，不下载暖场或直播流；"
+                f"开始播放并被抓取后，关闭这一个{course_app}课程窗口；按 Skill 的"
+                "当前应用关闭规则操作，读回窗口菜单已无该应用。新版品牌的自动关闭"
+                "尚未验收，不以旧文件菜单成功替代当前窗口读回。"
+                "若未自动起播，只点击一次可见播放按钮。"
+                "未开播、直播中或回放生成中：按当前应用关闭规则处理并读回，不下载暖场或直播流；"
                 "只有直播结束且完整回放生成才可下载。"
                 "不按空格、不静音、不退出微信。关闭播放器不等于下载完成，仍需验证"
                 "同一下载任务的媒体文件。确认本机"
@@ -1430,6 +1438,13 @@ class XiaocaoWechatLiveSubscription:
             request["required_response"]["candidate_id"] = (
                 "exact fresh finite replay candidate id; omit if not observed"
             )
+            if course_app == "见势擒龙团":
+                request["native_entry_reference"] = (
+                    ".codex/skills/kol-intelligence/references/native-share-bridge.md"
+                )
+                request["native_bridge_config_path"] = str(
+                    _NATIVE_SHARE_BRIDGE_CONFIG
+                )
         else:
             request.update({
                 "source_url": item["source_url"],
@@ -1457,7 +1472,8 @@ class XiaocaoWechatLiveSubscription:
             request.pop("launch_resolver_command", None)
             request["instructions"] = (
                 f"同一 capture 的有限媒体已捕获。仅核对本任务{course_app}课程窗口已关闭；"
-                f"若仍存在，按 native SOP 的文件菜单关闭该课程并读回窗口列表无{course_app}。"
+                f"若仍存在，按 Skill 当前应用关闭规则处理并读回窗口列表无{course_app}；"
+                "新版品牌的自动关闭未验收，不沿用历史成功回执。"
                 "已有本任务关闭读回则直接返回真实回执，不重复操作。不要唤起、重新播放、"
                 "输入口令或恢复 sniffer。返回 playback_window_closed 和原身份绑定。"
             )

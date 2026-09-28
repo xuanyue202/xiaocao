@@ -47,6 +47,10 @@ or bypass a human gate.
   OpenCLI/Edge failure read
   [opencli-edge-recovery.md](references/opencli-edge-recovery.md). Skip
   remote/full contracts.
+- At a native `见势擒龙团` share entry, the native-stage reference routes to
+  [native-share-bridge.md](references/native-share-bridge.md): reuse the configured
+  Caoliao code, obtain its fresh issued entry, and operate the visible brand jump.
+  Its verification boundary includes the outstanding automatic-close failure.
 - For remote hourly `scripts/kol_daily.py run|status|audit`, read
   [hourly-remote-writer.md](references/hourly-remote-writer.md) completely. Do
   not read the full contract before starting the runner.

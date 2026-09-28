@@ -120,8 +120,12 @@ unarmed entry within 72 hours; expired entries remain terminal.
 
 Native message discovery accepts the reviewed `#小程序://鹅直播/<token>` and
 `#小程序://见势擒龙团/<token>` entries, preserving the original application name,
-token, contact and publication time. A native token uses its exact visible
-original message once; it is never converted into a guessed HTTPS link or Scheme.
+token, contact and publication time. A brand native share uses the reusable
+Caoliao bridge in [native-share-bridge.md](native-share-bridge.md), reached through
+the native-stage reference; the exact original share is its target. Do not
+require a visible chat card for that route or convert its token to a guessed
+HTTPS link or Scheme. Goose's original-message route remains scoped to its
+currently unique visible card.
 
 Also run stateless `subscription-updates --within 48h` for exactly:
 

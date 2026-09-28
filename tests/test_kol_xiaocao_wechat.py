@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+from pathlib import Path
 from types import SimpleNamespace
 from datetime import datetime
 
@@ -827,6 +828,14 @@ def test_native_mini_program_entry_is_armed_before_ui_and_binds_observed_live(
         assert request["mini_program_token"] == "WDUa9A1nxlXZoSz"
         assert "source_url" not in request
         assert "launch_resolver_command" not in request
+        if app_name == "见势擒龙团":
+            assert Path(request["native_entry_reference"]).is_file()
+            assert request["native_bridge_config_path"] == (
+                "output/live/kol_xiaocao_live/native_share_bridge.json"
+            )
+        else:
+            assert "native_entry_reference" not in request
+            assert "native_bridge_config_path" not in request
         return {
             "action": request["action"],
             "subscription_id": request["subscription_id"],

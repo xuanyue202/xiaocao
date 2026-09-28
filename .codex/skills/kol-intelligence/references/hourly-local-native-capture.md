@@ -6,7 +6,7 @@ activation, or continuation/acceptance stage routed by
 Keep the existing capture/job and process; the local entry owns discovery,
 process lifetime, and mailbox completion.
 
-**微信执行标准：只执行下文动作表，不临场分解或探索 UI。**
+**微信执行标准：执行下文动作表；品牌原生分享入口同时使用桥接参考的 B0–B4。**
 “打开课程”“输入口令”“关闭课程窗口”必须落到对应行的
 前置画面、工具调用和结果检查。未列出的画面/操作停在原任务做离线诊断，
 不得以自修复为由试点、重开、刷新或增加快捷键。此约束旨在减少微信敏感操作，
@@ -24,22 +24,27 @@ the detached `__proxy-guard` remains excluded, and duplicate sniffers fail close
 Local capture commands preserve inherited PATH precedence and append installed
 Homebrew CLI directories for ffmpeg/ffprobe and transfer helpers.
 
-For `#小程序://鹅直播/<token>` or `#小程序://见势擒龙团/<token>`, retain the
-original application name and contact/time/token, arm the candidate
-baseline, then open the original message once. Skip H5 resolution. Bind the
-observed candidate ID, app ID, live ID and post-arm time before downloading.
-The branded native entry stays in `见势擒龙团`; apply W1–W10 with that exact
-window title. An announcement's relative time does not establish today's date:
+For original native shares, retain the application name and contact/time/token,
+and arm the same candidate baseline. A `见势擒龙团` share uses the configured
+reusable Caoliao entry: read [native-share-bridge.md](native-share-bridge.md)
+completely and perform its B0–B4. This is the current verified entry route and
+does not require navigating to a chat window. An already-visible exact course
+is reused; an already-bound download/upload skips activation. `鹅直播` shares
+may use their unique currently visible original message once. Skip H5 resolution
+for native shares. Bind observed candidate/app/live/post-arm time before download.
+The branded entry remains in `见势擒龙团`; its automatic closure is still
+unverified. An announcement's relative time does not establish today's date:
 use the original message timestamp and observed course state.
 For H5 entries, retain the process for credential-free identity resolution;
 H5 is not playback proof.
 
-For an HTTPS share entry, the default launch route is the verified merchant
-Web Link, not chat-window screenshots or a browser player.
+The HTTPS resolver below applies only to an actual HTTPS source supplied by the
+current request. It is not a conversion or fallback for a native share token.
 
-The reviewed branded Xiaoetong application `见势擒龙团` is supported only when
-the merchant page binds `gh_4b9150162d69`,
-`subpkg/live-room-horizon/pages/index`, and `appsnm3rlcp3566` together.
+For a historical HTTPS branded source, require the merchant page to bind
+`gh_4b9150162d69`, its actual published page path, and `appsnm3rlcp3566` together.
+Native cards may use `subpkg/live-room-horizon/pages/index.html`; preserve the
+observed path rather than replacing it with the older no-suffix variant.
 Its flat query supplies the exact live identity; never change that identity or
 infer a replay from its title. With `--reuse-open-window`, the resolver returns
 `reuse_open_window=true` without a launch command. Without that option, freshly fetch and validate the original merchant page and
@@ -47,7 +52,8 @@ use only its exact issued branded Scheme. Do not exchange a branded entry for
 Goose Live: the same app/live identity does not prove equivalent authorization
 across mini-programs (observed 2026-09-13). Never reuse a Scheme from a report or
 construct one. Reuse the user's already-open matching course first. For this
-branded window apply W7-W10 with its exact window title. No refresh or repeated
+branded window verify closure against its exact title; the older Goose File-menu
+success does not prove the updated brand's closure. No refresh or repeated
 launch. A user-authorized same-course reopen must still preserve the branded
 application and use a newly read, validated merchant response.
 Keep the existing subscription/capture/source job and baseline. A fresh same-live finite candidate
@@ -107,10 +113,10 @@ Do not press Space, pause, or mute: keyboard focus is unreliable. Closing the
 course window leaves the independent download running; it does not prove the
 file is complete. Keep WeChat itself running.
 No hooks, WeChat re-signing, hidden
-debugging, CDP/DOM evaluation, or protection changes are allowed. If the resolver
-cannot prove a ticket, use the original visible message entry. Native
-`#小程序://...` tokens still use that original-message fallback, not guessed URL
-conversion. A launch plan is not playback, download or upload acceptance.
+debugging, CDP/DOM evaluation, or protection changes are allowed. If an HTTPS
+resolver cannot prove a ticket, retain the source for entry diagnosis. Native
+brand shares use the bridge reference, not guessed URL conversion or an expired
+merchant link. A launch plan is not playback, download or upload acceptance.
 
 ## Identity, activation, and download
 
@@ -157,10 +163,10 @@ lists enrich asynchronously with an incremental cache; they cannot bind a source
 
 ## 实操 SOP：打开小鹅通小程序 → 下载视频
 
-商户唤起、课程口令、完整回放下载和压缩沿用已验证路径。
-2026-09-07 用户将收尾改为关闭课程窗口；当天已实测菜单关闭及窗口消失读回。
-空格受焦点影响失效，已废弃；右上角坐标点击曾被工具拒绝，也不作为关闭路径。
-只替换本段前端采集操作，步骤 6 起沿用既有上传/Handoff 流程。
+品牌原生分享入口先执行桥接参考 B0–B4，再接本段口令/有限回放/下载/上传。
+2026-09-07 的文件菜单关闭验收针对当时的鹅直播窗口；不覆盖更新后的品牌窗口。
+品牌新版关闭动作仍有 `noWindowsAvailable` 故障，不能记为自动关闭成功。
+空格已废弃；步骤 5–6 的原任务下载和上传/Handoff 流程继续有效。
 
 1. **保留原任务，先准备抓取。** 从当前 runner 请求/manifest 取出
    `identity`、`capture_job_id`、`source_job_id` 和预期 `source_identity/live_id`，
@@ -207,6 +213,7 @@ lists enrich asynchronously with an incremental cache; they cannot bind a source
    URL handling 打开商户签发的 `weixin://dl/business/?t=...`。不要把输出里的
    H5 地址打开成网页播放器，不沿用旧 ticket；目标课程已打开时不再唤起。
    `#小程序://鹅直播/...` 入口则用原始可见消息一次，不运行 HTTPS resolver。
+   `#小程序://见势擒龙团/...` 则执行桥接参考，不运行此 HTTPS resolver。
 
    接着严格执行以下动作表 W0–W5，不能把它重新概括成“完成登录/打开播放器”。
    只认**鹅直播课程窗口**中的预期场次标题；主聊天窗口白屏不代表退出。
@@ -257,7 +264,9 @@ lists enrich asynchronously with an incremental cache; they cannot bind a source
    | W4 | 同一空输入框已聚焦 | `await wechat.typeText("666"); await wechat.getAXStateAndScreenshot();` | 必须读回输入值为 666→W5；其他值不清空、不补写、不提交 |
    | W5 | 课程口令框显示 666，唯一“确定”按钮可见 | `await wechat.click(confirmButton); await wechat.getAXStateAndScreenshot();` | 已起播→立即 W7；未起播且有可见 Play→W6；错误/仍为口令门→停止输入，不能再提交 |
 
-4. **抓到后关闭课程窗口：W6–W10。** W5 起播后立即只读同一 source job /
+4. **抓到后关闭课程窗口：W6–W10。** W7–W10 的菜单动作是鹅直播旧版已验收路径；
+   新版品牌走桥接参考 B4 的实际关闭状态核对和故障修复，不将旧菜单验收迁移过来。
+   W5 起播后立即只读同一 source job /
    `view=capture` 候选，确认 baseline 之后同一 app/live 的有限 VOD 已被抓取。
    已有该证据就跳过查询，直接 W7。不要等完整下载才关窗；下载由独立服务继续。
    看见画面不等于文件下载完成；步骤5仍须验收同一压缩文件。
