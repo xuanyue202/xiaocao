@@ -1591,6 +1591,54 @@ class DailyPublicationPipeline:
                 if "not prepared" not in str(exc):
                     raise
                 state = None
+            if state and state.get("completed"):
+                records = (state.get("artifact") or {}).get("records") or []
+                report = next(
+                    (row for row in records if row.get("kind") == "report"),
+                    {},
+                )
+                binding = report.get("source_binding") or {}
+                if (
+                    binding.get("publication_version")
+                    != self.context.publication_version
+                    or binding.get("evidence_sha256")
+                    != item.get("evidence_sha256")
+                ):
+                    raise DailyError(
+                        "completed gray publication has different source evidence; "
+                        "exact publication correction required"
+                    )
+                projection = _normalize_longitudinal_projection(item)
+                expected_theses = {
+                    row["local_thesis_id"]
+                    for row in projection["viewpoints"]
+                }
+                published_theses = {
+                    row["payload"].get("local_thesis_id")
+                    for row in records
+                    if row.get("kind") == "viewpoint"
+                }
+                if not expected_theses <= published_theses:
+                    raise DailyError(
+                        "completed gray publication lacks validated viewpoints; "
+                        "exact publication correction required"
+                    )
+                expected_viewpoint_ids = {
+                    row["payload"]["viewpoint_id"]
+                    for row in records
+                    if row.get("kind") == "viewpoint"
+                    and row["payload"].get("local_thesis_id") in expected_theses
+                }
+                evaluated_viewpoint_ids = {
+                    row["payload"].get("viewpoint_id")
+                    for row in records
+                    if row.get("kind") == "viewpoint_evaluation"
+                }
+                if not expected_viewpoint_ids <= evaluated_viewpoint_ids:
+                    raise DailyError(
+                        "completed gray publication lacks initial evaluations; "
+                        "exact publication correction required"
+                    )
             if not state or not state.get("completed"):
                 candidate = _publication_candidate(item, context=self.context)
                 self.ledger.prepare(
