@@ -740,8 +740,13 @@ class XiaocaoWechatLiveSubscription:
         if cutoff > now:
             raise EnrichmentError("manual backfill date is in the future")
         item = manifest["items"].get(identity)
-        if item and item.get("manual_backfill_since") == since:
-            # Continuations retain the exact original evidence; no repeat poll.
+        if (
+            item and item.get("manual_backfill_since") == since
+            and item.get("status") not in {"expired", "superseded", "historical_baseline"}
+        ):
+            # Active continuations retain evidence. A later routine sweep may
+            # retire an idle backfill again; renewed explicit authorization must
+            # revalidate its original message and reconcile the same capture.
             return
         payload = self.history_reader()
         if str(payload.get("chat") or "") != self.contact:

@@ -272,6 +272,58 @@ def test_explicit_dated_backfill_recovers_only_the_selected_original_entry(
     assert items[original["identity"]]["manual_backfill_since"] == "2026-09-23"
 
 
+def test_dated_backfill_revalidates_reexpired_item_and_reuses_capture(tmp_path):
+    payload = _history(
+        "[2026-09-23 08:44] 小花: #小程序://见势擒龙团/7qBV0CwjiqCrkHB",
+    )
+    original = parse_xiaocao_live_messages(payload)[0]
+    driver = _CaptureDriver()
+    driver.can_expire_wait = lambda identity, job: job == "kol-capture-current"
+    history_reads = []
+    requests = []
+
+    def history():
+        history_reads.append(True)
+        return payload
+
+    def exchange(request):
+        requests.append(request)
+        return {
+            "action": request["action"],
+            "subscription_id": request["subscription_id"],
+            "playback_surface": "wechat_mini_program",
+            "page_state": "mini_program_waiting",
+            "activated": False,
+            "media_request_observed": False,
+            "playback_window_closed": False,
+        }
+
+    subscription = XiaocaoWechatLiveSubscription(
+        tmp_path / "wechat", history_reader=history, browser_exchange=exchange,
+        capture_driver=driver,
+        clock=lambda: datetime.fromisoformat("2026-09-28T10:15:00+08:00"),
+    )
+    manifest = subscription._load()
+    manifest["items"][original["identity"]] = {
+        **original, "status": "expired", "capture_job_id": "kol-capture-current",
+        "manual_backfill_since": "2026-09-23",
+    }
+    subscription._save(manifest)
+
+    result = subscription.run_once(
+        opencli_session="test", only_identity=original["identity"],
+        backfill_since="2026-09-23",
+    )
+
+    assert result["status"] == "waiting"
+    assert len(history_reads) == 1
+    assert driver.arms == []
+    assert driver.playback_preparations == [(original["identity"], "kol-capture-current")]
+    assert len(requests) == 1
+    assert requests[0]["mini_program_token"] == original["mini_program_token"]
+    assert subscription._load()["items"][original["identity"]]["capture_job_id"] == "kol-capture-current"
+
+
 @pytest.mark.parametrize("since,identity", [
     ("2026-09-24", "selected"),
     ("invalid", "selected"),
@@ -295,11 +347,14 @@ def test_manual_backfill_rejects_ambiguous_or_out_of_range_requests(tmp_path, si
     assert driver.arms == []
 
 
+@pytest.mark.parametrize("previous_authorization", [False, True])
 @pytest.mark.parametrize("status,fields", [
     ("completed", {"handoff_id": "same-handoff", "capture_job_id": "same-capture"}),
     ("expired", {"candidate_id": "same-candidate", "capture_job_id": "same-capture"}),
 ])
-def test_manual_backfill_never_resets_completed_or_bound_claims(tmp_path, status, fields):
+def test_manual_backfill_never_resets_completed_or_bound_claims(
+    tmp_path, status, fields, previous_authorization,
+):
     payload = _history("[2026-09-23 08:44] 小花: #小程序://见势擒龙团/7qBV0CwjiqCrkHB")
     original = parse_xiaocao_live_messages(payload)[0]
     driver = _CaptureDriver()
@@ -311,6 +366,8 @@ def test_manual_backfill_never_resets_completed_or_bound_claims(tmp_path, status
     )
     manifest = subscription._load()
     saved = {**original, "status": status, **fields}
+    if previous_authorization:
+        saved["manual_backfill_since"] = "2026-09-23"
     manifest["items"][original["identity"]] = saved
     subscription._save(manifest)
     if status == "completed":
