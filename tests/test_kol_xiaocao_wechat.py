@@ -1003,7 +1003,10 @@ def test_native_direct_manifest_requires_exact_merchant_lineage(tmp_path, invali
     assert "private" not in store.path.read_text()
 
 
-@pytest.mark.parametrize("invalid", [None, "different_media", "old_request", "uncertain_task"])
+@pytest.mark.parametrize("invalid", [
+    None, "different_media", "old_request", "uncertain_task", "restored_pause",
+    "unclaimed_pause", "different_paused_task", "partial_paused_task",
+])
 def test_native_repair_retains_capture_and_only_renews_same_failed_media(tmp_path, invalid):
     store = CaptureJobStore(tmp_path / "capture.jsonl")
     armed = store.arm([])
@@ -1030,10 +1033,20 @@ def test_native_repair_retains_capture_and_only_renews_same_failed_media(tmp_pat
             "meta": {"req": {"labels": {"capture_id": "old", "live_id": "l_target"}}}}
     if invalid == "uncertain_task":
         task["progress"]["downloaded"] = 1
+    if invalid in {"restored_pause", "unclaimed_pause", "different_paused_task", "partial_paused_task"}:
+        task["status"] = "pause"
+        if invalid != "unclaimed_pause":
+            held = store.transition(
+                held, "native_backend_repaired",
+                repair_task_id="other" if invalid == "different_paused_task" else "failed",
+                repaired_binary_sha256="a" * 64,
+            )
+        if invalid == "partial_paused_task":
+            task["progress"]["downloaded"] = 1
     service = SimpleNamespace(capture_store=store, sniffer=SimpleNamespace(
         candidates=lambda: [candidate, anchor], tasks=lambda: [task]))
     driver = XiaocaoLiveCaptureDriver(tmp_path, service_factory=lambda *a, **kw: service)
-    if invalid:
+    if invalid not in {None, "restored_pause"}:
         with pytest.raises(EnrichmentError):
             driver.refresh_failed_native_capture("item", held["job_id"], candidate_id="fresh")
         assert store.latest() == held

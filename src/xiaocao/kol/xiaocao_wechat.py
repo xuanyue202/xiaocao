@@ -618,8 +618,17 @@ class XiaocaoLiveCaptureDriver:
         task = next((row for row in service.sniffer.tasks()
                      if row.get("id") == current.get("download_task_id")), None)
         labels = (((task or {}).get("meta") or {}).get("req") or {}).get("labels") or {}
+        # Unfinished persisted tasks are restored as paused, even when the last
+        # in-memory failure was not saved. Require the exact backend-repair task.
+        restored_repair_pause = bool(
+            task and task.get("status") == "pause"
+            and current.get("repair_task_id") == task.get("id")
+            and re.fullmatch(
+                r"[0-9a-f]{64}", str(current.get("repaired_binary_sha256") or ""),
+            )
+        )
         if (
-            task is None or task.get("status") != "error"
+            task is None or not (task.get("status") == "error" or restored_repair_pause)
             or int((task.get("progress") or {}).get("downloaded") or 0) != 0
             or labels.get("capture_id") != old_candidate.get("id")
             or labels.get("live_id") != match.group("live_id")
