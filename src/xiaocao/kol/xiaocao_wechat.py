@@ -649,9 +649,35 @@ class XiaocaoLiveCaptureDriver:
             raise EnrichmentError("native repair timestamp is invalid") from exc
         if captured_at <= armed_at:
             raise EnrichmentError("native repair candidate predates the repair arm")
+        lineage_armed_at = armed_at
+        if old_lineage.get("metadata_anchors"):
+            # A native client may cache course metadata while requesting a fresh
+            # signed manifest. Revalidate the previously bound identity anchor,
+            # not its credentials; ticket freshness still uses the repair arm.
+            try:
+                original_arm = datetime.fromisoformat(current["created_at"])
+                previous_capture = datetime.fromisoformat(old_candidate["captured"])
+                if previous_capture.tzinfo is None:
+                    previous_capture = previous_capture.replace(tzinfo=BEIJING)
+                if original_arm.tzinfo is None or not original_arm < previous_capture < armed_at:
+                    raise ValueError("invalid prior capture interval")
+            except (KeyError, ValueError, TypeError) as exc:
+                raise EnrichmentError("native repair prior lineage timestamp is invalid") from exc
+            prior_matches = [row for row in observations if row.get("id") == old_candidate.get("id")
+                             and _safe_candidate(row) == old_candidate]
+            if len(prior_matches) != 1:
+                raise EnrichmentError("native repair prior observation changed")
+            prior_lineage = _native_direct_media_lineage(
+                prior_matches[0], observations, app_id=match.group("app_id"),
+                live_id=match.group("live_id"), armed_at=original_arm,
+                captured_at=previous_capture,
+            )
+            if prior_lineage != old_lineage:
+                raise EnrichmentError("native repair prior merchant lineage changed")
+            lineage_armed_at = original_arm
         lineage = _native_direct_media_lineage(
             candidate, observations, app_id=match.group("app_id"),
-            live_id=match.group("live_id"), armed_at=armed_at, captured_at=captured_at,
+            live_id=match.group("live_id"), armed_at=lineage_armed_at, captured_at=captured_at,
         )
         if lineage["media_resource_sha256"] != old_lineage["media_resource_sha256"]:
             raise EnrichmentError("native repair changed the bound media resource")

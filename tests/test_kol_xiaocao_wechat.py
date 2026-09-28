@@ -1006,6 +1006,7 @@ def test_native_direct_manifest_requires_exact_merchant_lineage(tmp_path, invali
 @pytest.mark.parametrize("invalid", [
     None, "different_media", "old_request", "uncertain_task", "restored_pause",
     "unclaimed_pause", "different_paused_task", "partial_paused_task",
+    "cached_lineage", "cached_missing_anchor", "cached_wrong_anchor",
 ])
 def test_native_repair_retains_capture_and_only_renews_same_failed_media(tmp_path, invalid):
     store = CaptureJobStore(tmp_path / "capture.jsonl")
@@ -1029,6 +1030,21 @@ def test_native_repair_retains_capture_and_only_renews_same_failed_media(tmp_pat
               "captured": "2026-09-05 15:01:00", "url": candidate["url"],
               "source_url": "https://appdemo.h5.xe-live.com/_alive/v3/get_lookback_list",
               "source_path": "/_alive/v3/get_lookback_list", "json_path": "data[0].line_sharpness[0].url"}
+    if invalid and invalid.startswith("cached_"):
+        anchor["captured"] = "2026-09-05 14:30:00"
+        held = store.transition(
+            held, "prior_native_binding", created_at="2026-09-05T14:00:00+08:00",
+            candidate={**candidate, "id": "old", "captured": "2026-09-05 14:31:00"},
+            native_media_lineage={
+                "method": "direct_manifest_with_merchant_lookback",
+                "media_resource_sha256": hashlib.sha256(resource.encode()).hexdigest(),
+                "metadata_anchors": [{
+                    "candidate_id": "missing" if invalid == "cached_missing_anchor" else "metadata",
+                    "source_host": "appother.h5.xe-live.com" if invalid == "cached_wrong_anchor" else "appdemo.h5.xe-live.com",
+                    "source_path": anchor["source_path"], "json_path": anchor["json_path"],
+                }],
+            },
+        )
     task = {"id": "failed", "status": "error", "progress": {"downloaded": 0},
             "meta": {"req": {"labels": {"capture_id": "old", "live_id": "l_target"}}}}
     if invalid == "uncertain_task":
@@ -1043,10 +1059,13 @@ def test_native_repair_retains_capture_and_only_renews_same_failed_media(tmp_pat
             )
         if invalid == "partial_paused_task":
             task["progress"]["downloaded"] = 1
+    observations = [candidate, anchor]
+    if invalid and invalid.startswith("cached_"):
+        observations.append({**candidate, "id": "old", "captured": "2026-09-05 14:31:00"})
     service = SimpleNamespace(capture_store=store, sniffer=SimpleNamespace(
-        candidates=lambda: [candidate, anchor], tasks=lambda: [task]))
+        candidates=lambda: observations, tasks=lambda: [task]))
     driver = XiaocaoLiveCaptureDriver(tmp_path, service_factory=lambda *a, **kw: service)
-    if invalid not in {None, "restored_pause"}:
+    if invalid not in {None, "restored_pause", "cached_lineage"}:
         with pytest.raises(EnrichmentError):
             driver.refresh_failed_native_capture("item", held["job_id"], candidate_id="fresh")
         assert store.latest() == held
