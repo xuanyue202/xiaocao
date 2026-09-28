@@ -26,6 +26,7 @@ from .capture import (
     SnifferError,
     canonical_xiaoetong_source,
     resolve_xiaoetong_h5_page,
+    _safe_candidate,
 )
 from .enrichment_types import EnrichmentDiagnosticError, EnrichmentError
 from .xiaocao_live import (
@@ -557,7 +558,9 @@ class XiaocaoLiveCaptureDriver:
             captured_at = datetime.fromisoformat(str(candidate.get("captured") or ""))
             if captured_at.tzinfo is None:
                 captured_at = captured_at.replace(tzinfo=BEIJING)
-            armed_at = datetime.fromisoformat(current["created_at"])
+            armed_at = datetime.fromisoformat(
+                current.get("native_repair_armed_at") or current["created_at"]
+            )
         except (KeyError, TypeError, ValueError) as exc:
             raise EnrichmentError("native capture timestamp is invalid") from exc
         if captured_at <= armed_at:
@@ -572,7 +575,7 @@ class XiaocaoLiveCaptureDriver:
             raise EnrichmentError("native capture is not a finite replay candidate")
         source_host = urlsplit(str(candidate.get("source_url") or "")).hostname
         lineage = {}
-        if source_host not in {
+        if current.get("native_repair_armed_at") or source_host not in {
             f"{app_id}.{surface}.{domain}"
             for surface in ("h5", "mp")
             for domain in ("xiaoeknow.com", "xe-live.com")
@@ -581,6 +584,9 @@ class XiaocaoLiveCaptureDriver:
                 candidate, observations, app_id=app_id, live_id=live_id,
                 armed_at=armed_at, captured_at=captured_at,
             )
+        old_resource = (current.get("native_media_lineage") or {}).get("media_resource_sha256")
+        if current.get("native_repair_armed_at") and old_resource != lineage.get("media_resource_sha256"):
+            raise EnrichmentError("native repair changed the bound media resource")
         page_url = f"https://{app_id}.h5.xiaoeknow.com/v4/course/alive/{live_id}"
         current = service.capture_store.transition(
             current,
@@ -595,6 +601,57 @@ class XiaocaoLiveCaptureDriver:
             raise EnrichmentError("native capture could not bind its candidate")
         return bound
 
+    def refresh_failed_native_capture(
+        self, identity: str, capture_job_id: str, *, candidate_id: str,
+    ) -> dict[str, Any]:
+        """Renew only the same media after a zero-byte, durably held failure."""
+        service = self._service(identity)
+        current = service.capture_store.latest(capture_job_id)
+        if current is None or current.get("status") != "download_retry_claimed":
+            raise EnrichmentError("native download repair is not durably held")
+        source_identity = (current.get("expected_source") or {}).get("source_identity", "")
+        match = _XIAOETONG_SOURCE_IDENTITY.fullmatch(source_identity)
+        old_lineage = current.get("native_media_lineage") or {}
+        if match is None or not old_lineage.get("media_resource_sha256"):
+            raise EnrichmentError("native download repair lacks original media identity")
+        old_candidate = current.get("candidate") or {}
+        task = next((row for row in service.sniffer.tasks()
+                     if row.get("id") == current.get("download_task_id")), None)
+        labels = (((task or {}).get("meta") or {}).get("req") or {}).get("labels") or {}
+        if (
+            task is None or task.get("status") != "error"
+            or int((task.get("progress") or {}).get("downloaded") or 0) != 0
+            or labels.get("capture_id") != old_candidate.get("id")
+            or labels.get("live_id") != match.group("live_id")
+        ):
+            raise EnrichmentError("native download failure is uncertain")
+        observations = service.sniffer.candidates()
+        matches = [row for row in observations if row.get("id") == candidate_id
+                   and row.get("live_id") == match.group("live_id")]
+        if len(matches) != 1 or matches[0].get("media_type") != "m3u8":
+            raise EnrichmentError("native repair candidate is missing or ambiguous")
+        candidate = matches[0]
+        try:
+            armed_at = datetime.fromisoformat(current["native_repair_armed_at"])
+            captured_at = datetime.fromisoformat(candidate["captured"])
+            if captured_at.tzinfo is None:
+                captured_at = captured_at.replace(tzinfo=BEIJING)
+        except (KeyError, ValueError, TypeError) as exc:
+            raise EnrichmentError("native repair timestamp is invalid") from exc
+        if captured_at <= armed_at:
+            raise EnrichmentError("native repair candidate predates the repair arm")
+        lineage = _native_direct_media_lineage(
+            candidate, observations, app_id=match.group("app_id"),
+            live_id=match.group("live_id"), armed_at=armed_at, captured_at=captured_at,
+        )
+        if lineage["media_resource_sha256"] != old_lineage["media_resource_sha256"]:
+            raise EnrichmentError("native repair changed the bound media resource")
+        return service.capture_store.transition(
+            current, "native_media_ticket_renewed", status="download_failed",
+            previous_candidate_id=old_candidate["id"], candidate=_safe_candidate(candidate),
+            native_media_lineage=lineage,
+        )
+
     def advance_capture(
         self,
         identity: str,
@@ -606,6 +663,10 @@ class XiaocaoLiveCaptureDriver:
         capture = service.capture_store.latest(capture_job_id)
         if capture is None or capture.get("status") != "downloaded":
             service.start()
+        if capture and capture.get("status") == "awaiting_capture" and capture.get("native_repair_armed_at"):
+            # A repaired lease must come through the reviewed native observation
+            # and exact lineage binder, never historical/global live-id detection.
+            return {"status": "awaiting_capture", "capture_job_id": capture_job_id}
         try:
             return service.advance_capture(
                 capture_job_id,

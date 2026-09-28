@@ -15,6 +15,7 @@ import json
 import os
 import re
 import signal
+import shutil
 import socket
 import subprocess
 import sys
@@ -215,7 +216,7 @@ def validate_cleanup_evidence(value: dict[str, Any]) -> None:
         or listeners.get("2022") is not False
         or listeners.get("2023") is not False
         or not isinstance(proxy, dict)
-        or any(
+        or (value.get("capture_proxy_detached") is not True and any(
             int(proxy.get(name, -1)) != 0
             for name in (
                 "HTTPEnable",
@@ -223,7 +224,7 @@ def validate_cleanup_evidence(value: dict[str, Any]) -> None:
                 "ProxyAutoConfigEnable",
                 "SOCKSEnable",
             )
-        )
+        ))
         or not str(value.get("observed_at") or "").strip()
     ):
         raise EnrichmentError("capture cleanup proof is incomplete")
@@ -868,6 +869,7 @@ class XiaocaoLiveService:
             check=True,
             capture_output=True,
             text=True,
+            errors="replace",
         )
         expected = str(self.sniffer_binary)
         pids = []
@@ -1637,11 +1639,34 @@ class XiaocaoLiveService:
         ):
             match = re.search(rf"\b{name}\s*:\s*(\d+)", result.stdout)
             flags[name] = int(match.group(1)) if match else -1
+        owned_active = False
+        for prefix in ("HTTP", "HTTPS"):
+            host = re.search(rf"\b{prefix}Proxy\s*:\s*(\S+)", result.stdout)
+            port = re.search(rf"\b{prefix}Port\s*:\s*(\d+)", result.stdout)
+            if flags[prefix + "Enable"] == 1 and host and port:
+                owned_active |= host.group(1) in {"127.0.0.1", "localhost"} and port.group(1) == "2023"
+        services = self._runner(
+            ["networksetup", "-listallnetworkservices"],
+            check=True, capture_output=True, text=True, timeout=3,
+        ).stdout.splitlines()[1:]
+        for service in services:
+            name = service.strip().removeprefix("*").strip()
+            if not name:
+                continue
+            lines = self._runner(
+                ["networksetup", "-getautoproxyurl", name],
+                check=True, capture_output=True, text=True, timeout=3,
+            ).stdout.splitlines()
+            owned_active |= (
+                "URL: http://127.0.0.1:2023/proxy.pac" in lines
+                and "Enabled: Yes" in lines
+            )
         return {
             "process_gone": not pids,
             "listeners": listeners,
             "api_status_unavailable": api_unavailable,
             "proxy_flags": flags,
+            "capture_proxy_detached": not owned_active,
             "observed_at": self._clock().isoformat(timespec="seconds"),
         }
 
@@ -1677,6 +1702,46 @@ class XiaocaoLiveService:
             ).stdout.splitlines()
             if "Enabled: No" not in verified:
                 raise EnrichmentError(f"capture PAC detachment was not verified: {name}")
+
+    def restart_sniffer_for_download_repair(
+        self, capture_job_id: str, *, replacement_binary: Path,
+    ) -> dict[str, Any]:
+        """Restart the sole backend without recording terminal media cleanup."""
+        current = self.capture_store.latest(capture_job_id)
+        if current is None or current.get("status") != "download_retry_claimed":
+            raise EnrichmentError("download repair must be durably held")
+        tasks = self.sniffer.tasks()
+        if any(row.get("status") in {"running", "ready", "wait"} for row in tasks):
+            raise EnrichmentError("active downloads block backend repair")
+        task = next((row for row in tasks if row.get("id") == current.get("download_task_id")), None)
+        if task is None or task.get("status") != "error" or int((task.get("progress") or {}).get("downloaded") or 0) != 0:
+            raise EnrichmentError("backend repair requires a proven zero-byte failure")
+        replacement = replacement_binary.resolve()
+        installed = self.sniffer_binary.resolve()
+        if replacement.parent != installed.parent or replacement == installed or not replacement.is_file():
+            raise EnrichmentError("backend replacement path is invalid")
+        pids = self._sniffer_pids()
+        if len(pids) != 1:
+            raise EnrichmentError("backend repair requires the exact singleton")
+        backup = installed.with_name(installed.name + ".pre-native-ticket-repair-" + _sha256_file(installed)[:12])
+        if not backup.exists():
+            shutil.copy2(installed, backup)
+        self._disable_owned_capture_pac()
+        os.kill(pids[0], signal.SIGINT)
+        for _ in range(100):
+            if not self._sniffer_pids():
+                break
+            time.sleep(0.1)
+        validate_cleanup_evidence(self.cleanup_snapshot())
+        os.replace(replacement, installed)
+        self.capture_store.transition(
+            current, "native_backend_repaired", native_repair_armed_at=self._clock().isoformat(timespec="seconds"),
+            repaired_binary_sha256=_sha256_file(installed),
+        )
+        ready = self.start()
+        if ready.get("capture_job_id") != capture_job_id:
+            raise EnrichmentError("backend repair resumed another capture")
+        return {"capture_job_id": capture_job_id, "status": "ready", "backup_binary": str(backup)}
 
     def cleanup_sniffer(self, *, capture_job_id: str) -> dict[str, Any]:
         existing = self._event(

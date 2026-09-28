@@ -334,6 +334,13 @@ def resolve_candidate(
     ]
     expected_source = current.get("expected_source") or {}
     media_file_id = str(current.get("expected_media_file_id") or "")
+    resource_sha = (current.get("native_media_lineage") or {}).get("media_resource_sha256")
+    if resource_sha:
+        matches = [
+            row for row in matches
+            if row.get("media_type") == "m3u8"
+            and hashlib.sha256(urlunsplit((*urlsplit(str(row.get("url") or ""))[:3], "", "")).encode()).hexdigest() == resource_sha
+        ]
     if (
         not matches
         and str(expected_source.get("source_resource_id") or "").startswith("v_")
