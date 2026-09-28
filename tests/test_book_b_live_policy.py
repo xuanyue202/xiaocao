@@ -755,7 +755,12 @@ def test_risk_asof_uses_native_read_completion_clock(tmp_path):
 
 def _morning_cli(monkeypatch):
     monkeypatch.syspath_prepend(str(Path(__file__).resolve().parents[1] / "scripts"))
-    return importlib.import_module("scripts.book_b_live_morning")
+    cli = importlib.import_module("scripts.book_b_live_morning")
+    # Wiring tests must never reach the production notification transport.
+    notices = SimpleNamespace(arm_golden_window=lambda: None,
+                              publish=lambda *args, **kwargs: None, close=lambda: None)
+    monkeypatch.setattr(cli, "MorningNotifications", lambda *args, **kwargs: notices)
+    return cli
 
 
 def _review_request(tmp_path, *, budget=120, deadline_seconds=600):
@@ -918,7 +923,10 @@ def test_production_morning_cli_passes_real_rendezvous_callback(tmp_path, monkey
         scoped.append(plans)
         return nullcontext()
     monkeypatch.setattr(cli, "build_foundersc_native_execution",
-                        lambda *a, **k: (object(), SimpleNamespace(submission_batch=batch_scope)))
+                        lambda *a, **k: (object(), SimpleNamespace(submission_batch=batch_scope,
+                            ensure_login=lambda: None,
+                            ensure_native_ready=lambda **_: {"status": "ready"},
+                            ensure_environment=lambda **_: {"status": "ready"})))
     monkeypatch.setattr(cli, "load_settings", lambda _: SimpleNamespace(base_url="fake", timeout=1, retries=0))
     monkeypatch.setattr(cli, "XiaocaoClient", lambda **_: object())
     monkeypatch.setattr(cli, "write_book_b_live_morning_receipt", lambda *args: None)
@@ -930,6 +938,7 @@ def test_production_morning_cli_passes_real_rendezvous_callback(tmp_path, monkey
 
     def core(config, **kwargs):
         assert config.policy_root == Path("output/live/kol_policy/decisions")
+        kwargs["preflight"]()
         with kwargs["submission_scope"](["bound-plan"]):
             assert scoped == [["bound-plan"]]
         review = kwargs["review_rendezvous"]({"test": "production-wiring"})

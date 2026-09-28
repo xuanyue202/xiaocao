@@ -489,3 +489,78 @@ def test_unresolved_morning_plan_does_not_start_a_tick_writer_after_time_passes(
         assert result["owner_identity_status"] == "unavailable"
         assert result["recovery_action"] == "reconcile_only"
     assert not (tmp_path / tick.STATE_RELATIVE_PATH / "state.json").exists()
+
+
+def open_live_plan(root, *, side="SELL", day="2026-09-04", lot_id="owned-buy"):
+    from xiaocao.live.trading_execution import ExecutionReceipt, ExecutionState, ExecutionStore, TradePlan
+
+    plan = TradePlan(
+        plan_id=f"book-b:{day}:000001.XSHE:{side}:test", strategy_run_id="test",
+        snapshot_ref="freeze#1", strategy_sha="a" * 40, trade_date=day,
+        book="B", logical_account_id="primary", environment="live",
+        code="000001.XSHE", name="fixture", side=side, shares=100,
+        limit_price=10, basket_price=None, market_guard_status="ok",
+        created_at=at("10:00", day), recovery_deadline=at("14:57", day),
+        owned_lot_id=lot_id,
+    )
+    state = root / "output/live/book_b_live_execution"
+    path = state / "plan_intents" / (tick._digest(plan.plan_id) + ".json")
+    write_json(path, {"schema_version": 1, "plan_id": plan.plan_id,
+                      "plan_hash": plan.plan_hash, "plan": plan.canonical_payload()})
+    ExecutionStore(state / "events.jsonl").append(plan=plan,
+        receipt=ExecutionReceipt(plan.plan_id, plan.plan_hash, ExecutionState.UNKNOWN,
+                                 remaining_shares=100, next_action="reconcile_only"))
+    return plan, path
+
+
+@pytest.mark.app_simulation
+def test_prior_day_sell_allows_current_monitors_without_replaying_old_claim(tmp_path):
+    publication(tmp_path)
+    plan, _ = open_live_plan(tmp_path)
+    event_path = tmp_path / "output/live/book_b_live_execution/events.jsonl"
+    before = event_path.read_bytes()
+    result = tick.poll(tmp_path, now=NOW, owner_thread_id="sparse-owner")
+    assert result["status"] == "run" and result["regular_monitor"]
+    assert result["deferred_reconcile_plan_ids"] == [plan.plan_id]
+    state = json.loads((tmp_path / tick.STATE_RELATIVE_PATH / "state.json").read_text())
+    assert state["claim"]["deferred_reconcile_plan_ids"] == [plan.plan_id]
+    assert event_path.read_bytes() == before
+    assert tick.poll(tmp_path, now=at("10:55"))["reason"] == "RUNNING_CLAIM"
+
+
+@pytest.mark.app_simulation
+@pytest.mark.parametrize("side,day,lot_id", [
+    ("SELL", "2026-09-07", "owned-buy"),
+    ("SELL", "2026-09-08", "owned-buy"),
+    ("BUY", "2026-09-04", None),
+    ("SELL", "2026-09-04", None),
+])
+def test_current_future_buy_or_unbound_plan_still_fences_tick(tmp_path, side, day, lot_id):
+    publication(tmp_path)
+    plan, _ = open_live_plan(tmp_path, side=side, day=day, lot_id=lot_id)
+    result = tick.poll(tmp_path, now=NOW)
+    assert result["reason"] == "EXISTING_LIVE_PLAN_REQUIRES_OWNER"
+    assert result["plan_ids"] == [plan.plan_id]
+    assert not (tmp_path / tick.STATE_RELATIVE_PATH / "state.json").exists()
+
+
+@pytest.mark.app_simulation
+def test_prior_day_sell_cannot_hide_an_independent_current_claim(tmp_path):
+    publication(tmp_path)
+    old, _ = open_live_plan(tmp_path)
+    current, _ = open_live_plan(tmp_path, side="BUY", day="2026-09-07", lot_id=None)
+    result = tick.poll(tmp_path, now=NOW)
+    assert result["reason"] == "EXISTING_LIVE_PLAN_REQUIRES_OWNER"
+    assert result["plan_ids"] == [current.plan_id]
+    assert old.plan_id not in result["plan_ids"]
+
+
+@pytest.mark.app_simulation
+def test_tampered_prior_day_sell_still_fails_closed(tmp_path):
+    publication(tmp_path)
+    _, path = open_live_plan(tmp_path)
+    payload = json.loads(path.read_text())
+    payload["plan"]["shares"] = 200
+    write_json(path, payload)
+    assert tick.poll(tmp_path, now=NOW)["reason"] == "LOCAL_GATE_READBACK_REQUIRED"
+    assert not (tmp_path / tick.STATE_RELATIVE_PATH / "state.json").exists()

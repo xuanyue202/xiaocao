@@ -30,10 +30,13 @@ It reconciles existing durable live plans through the native execution port,
 requires fresh account-bound positions/orders/trades row tables plus the funds
 summary embedded in the same positions capture, projects
 only broker-proved Book-B owned fills, and writes the immutable settled NAV only
-when every live plan is terminal or a prior-day owned SELL has fresh, exact
-zero-fill order/trade/full-holding proof for the same day. The exception leaves
-that SELL open for its own reconciliation; a later dated SELL is a separate
-claim and may cause this full-holding settlement exception to stop applying.
+when every durable live plan is terminal. Fresh zero-fill evidence supports
+independent current transactions; it does not make an old SELL terminal or
+permit EOD settlement. Preserve any older settlement written through that
+exception as historical evidence and disclose its failed terminal-plan audit.
+The settlement loader and risk history exclude a hash-matched settlement whose
+original EOD archive contains a nonterminal reconciliation receipt; report the
+remaining valid basis and exact historical gap without rewriting either file.
 Never add
 `--execute-sells` to the EOD call.
 Transient structural, freshness-evidence, asset-equation, or cross-table
