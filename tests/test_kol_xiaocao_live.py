@@ -29,6 +29,109 @@ def _sha256(path: Path) -> str:
     return hashlib.sha256(path.read_bytes()).hexdigest()
 
 
+@pytest.mark.parametrize("detached", [True, False])
+def test_capture_cleanup_preserves_other_proxy_only_with_owned_endpoint_readback(detached):
+    evidence = {"process_gone": True, "api_status_unavailable": True,
+        "listeners": {"2022": False, "2023": False},
+        "proxy_flags": {"HTTPEnable": 0, "HTTPSEnable": 0, "ProxyAutoConfigEnable": 1, "SOCKSEnable": 0},
+        "capture_proxy_detached": detached, "observed_at": "2026-09-05T15:00:00+08:00"}
+    if detached:
+        validate_cleanup_evidence(evidence)
+    else:
+        with pytest.raises(EnrichmentError):
+            validate_cleanup_evidence(evidence)
+
+
+@pytest.mark.parametrize("active", [False, True])
+def test_backend_repair_keeps_capture_and_does_not_record_terminal_cleanup(tmp_path, monkeypatch, active):
+    installed, replacement = tmp_path / "sniffer", tmp_path / "sniffer.repair"
+    installed.write_bytes(b"old")
+    replacement.write_bytes(b"new")
+    store = CaptureJobStore(tmp_path / "capture.jsonl")
+    current = store.transition(store.arm([]), "hold", status="download_retry_claimed", download_task_id="failed")
+    tasks = [{"id": "failed", "status": "error", "progress": {"downloaded": 0}}]
+    if active:
+        tasks.append({"id": "other", "status": "running"})
+    service = XiaocaoLiveService(tmp_path / "live", capture_ledger=store.path,
+        sniffer_binary=installed, sniffer_client=SimpleNamespace(tasks=lambda: tasks))
+    calls = []
+    pids = iter([[123], []])
+    monkeypatch.setattr(service, "_sniffer_pids", lambda: next(pids))
+    monkeypatch.setattr(service, "_disable_owned_capture_pac", lambda: calls.append("pac_off"))
+    monkeypatch.setattr("xiaocao.kol.xiaocao_live.os.kill", lambda *a: calls.append("stop"))
+    monkeypatch.setattr(service, "cleanup_snapshot", lambda: {
+        "process_gone": True, "api_status_unavailable": True,
+        "listeners": {"2022": False, "2023": False},
+        "proxy_flags": {"HTTPEnable": 0, "HTTPSEnable": 0, "ProxyAutoConfigEnable": 0, "SOCKSEnable": 0},
+        "observed_at": "2026-09-05T15:00:00+08:00"})
+    monkeypatch.setattr(service, "start", lambda: {"capture_job_id": current["job_id"]})
+    if active:
+        with pytest.raises(EnrichmentError, match="active downloads"):
+            service.restart_sniffer_for_download_repair(current["job_id"], replacement_binary=replacement)
+        assert calls == [] and installed.read_bytes() == b"old"
+        return
+    result = service.restart_sniffer_for_download_repair(current["job_id"], replacement_binary=replacement)
+    assert result["capture_job_id"] == current["job_id"]
+    assert calls == ["pac_off", "stop"]
+    assert installed.read_bytes() == b"new"
+    assert Path(result["backup_binary"]).read_bytes() == b"old"
+    assert store.latest()["status"] == "download_retry_claimed"
+    assert store.latest()["job_id"] == current["job_id"]
+    assert store.latest()["native_repair_armed_at"]
+    assert service._event("capture_cleanup_completed", capture_job_id=current["job_id"]) is None
+
+
+@pytest.mark.parametrize("invalid", [None, "active", "claimed", "wrong_live", "stale", "liveplay", "not_closed"])
+def test_native_observation_repair_retains_unbound_capture_without_acceptance(tmp_path, monkeypatch, invalid):
+    installed, replacement = tmp_path / "sniffer", tmp_path / "sniffer.repair"
+    installed.write_bytes(b"old")
+    replacement.write_bytes(b"new")
+    store = CaptureJobStore(tmp_path / "capture.jsonl")
+    current = store.transition(store.arm([]), "clock", created_at="2026-09-05T15:00:00+08:00")
+    if invalid == "claimed":
+        current = store.transition(current, "claimed", source_job_id="existing")
+    resource = "https://encrypt-k-vod.xet.tech/content/playlist_eof.m3u8"
+    candidate = {"id": "native", "live_id": "l_target", "captured": "2026-09-05 15:01:00",
+        "media_type": "m3u8", "url": resource + "?sign=private", "source_url": resource + "?sign=private",
+        "source_path": "/content/playlist_eof.m3u8"}
+    if invalid == "wrong_live":
+        candidate["live_id"] = "l_other"
+    if invalid == "stale":
+        candidate["captured"] = "2026-09-05 14:59:00"
+    if invalid == "liveplay":
+        candidate.update(url=resource.replace("playlist_eof", "liveplay"),
+            source_url=resource.replace("playlist_eof", "liveplay"), source_path="/content/liveplay.m3u8")
+    tasks = [{"id": "other", "status": "running"}] if invalid == "active" else []
+    service = XiaocaoLiveService(tmp_path / "live", capture_ledger=store.path, sniffer_binary=installed,
+        sniffer_client=SimpleNamespace(tasks=lambda: tasks, candidates=lambda: [candidate]))
+    calls = []
+    pids = iter([[123], []])
+    monkeypatch.setattr(service, "_sniffer_pids", lambda: next(pids))
+    monkeypatch.setattr(service, "_disable_owned_capture_pac", lambda: calls.append("pac_off"))
+    monkeypatch.setattr("xiaocao.kol.xiaocao_live.os.kill", lambda *a: calls.append("stop"))
+    monkeypatch.setattr(service, "cleanup_snapshot", lambda: {
+        "process_gone": True, "api_status_unavailable": True, "listeners": {"2022": False, "2023": False},
+        "proxy_flags": {"HTTPEnable": 0, "HTTPSEnable": 0, "ProxyAutoConfigEnable": 0, "SOCKSEnable": 0},
+        "observed_at": "2026-09-05T15:00:00+08:00"})
+    monkeypatch.setattr(service, "start", lambda: {"capture_job_id": current["job_id"]})
+    kwargs = dict(replacement_binary=replacement, candidate_id="native", source_identity="xiaoetong:appdemo:l_target",
+        playback_window_closed=invalid != "not_closed")
+    if invalid:
+        with pytest.raises(EnrichmentError):
+            service.restart_sniffer_for_native_observation_repair(current["job_id"], **kwargs)
+        assert calls == [] and store.latest() == current and installed.read_bytes() == b"old"
+        return
+    result = service.restart_sniffer_for_native_observation_repair(current["job_id"], **kwargs)
+    retained = store.latest()
+    assert result["capture_job_id"] == retained["job_id"] == current["job_id"]
+    assert retained["status"] == "awaiting_capture" and not retained.get("expected_source")
+    assert not retained.get("candidate") and not retained.get("download_task_id")
+    assert retained["native_unbound_media"]["media_resource_sha256"] == hashlib.sha256(resource.encode()).hexdigest()
+    assert retained["native_repair_armed_at"] and "private" not in store.path.read_text()
+    assert calls == ["pac_off", "stop"] and installed.read_bytes() == b"new"
+    assert service._event("capture_cleanup_completed", capture_job_id=current["job_id"]) is None
+
+
 def test_capture_runtime_preserves_environment_and_adds_installed_tools(monkeypatch):
     monkeypatch.setenv("PATH", "/usr/bin:/bin")
     monkeypatch.setenv("XIAOCAO_ENV_TEST", "preserved")

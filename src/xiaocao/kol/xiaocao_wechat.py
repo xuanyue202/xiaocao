@@ -26,6 +26,7 @@ from .capture import (
     SnifferError,
     canonical_xiaoetong_source,
     resolve_xiaoetong_h5_page,
+    _safe_candidate,
 )
 from .enrichment_types import EnrichmentDiagnosticError, EnrichmentError
 from .xiaocao_live import (
@@ -53,6 +54,7 @@ _CAPTURE_PROGRESS_POLL_SECONDS = 30
 _PLAYBACK_RECHECK_MINUTES = 20
 _LOCAL_CAPTURE_FIRST_HOUR = 7
 _LOCAL_CAPTURE_LAST_HOUR = 22
+_NATIVE_SHARE_BRIDGE_CONFIG = Path("output/live/kol_xiaocao_live/native_share_bridge.json")
 _PLAYBACK_PAGE_STATES = {
     "wechat_client_login_required",
     "waiting_to_start",
@@ -124,7 +126,9 @@ def _native_direct_media_lineage(
             continue
         origin = urlsplit(str(row.get("source_url") or ""))
         merchant = re.fullmatch(
-            r"(?P<app_id>app[A-Za-z0-9]+)\.(?:h5|mp)\.(?:xiaoeknow\.com|xe-live\.com)",
+            r"(?P<app_id>app[A-Za-z0-9]+)\."
+            r"(?:(?:h5|mp)\.(?:xiaoeknow\.com|xe-live\.com)"
+            r"|h5\.(?:xiaoe-live\.com|xetsdkspace\.com))",
             origin.hostname or "",
         )
         if (
@@ -455,6 +459,7 @@ class XiaocaoLiveCaptureDriver:
             and capture.get("status") == "awaiting_capture"
             and not any(capture.get(key) for key in (
                 "candidate_id", "task_id", "source_job_id", "expected_source",
+                "native_unbound_media",
             ))
         )
 
@@ -472,6 +477,21 @@ class XiaocaoLiveCaptureDriver:
                 code="sniffer_request_failed",
                 stage="source_run",
             ) from exc
+
+    def can_resume_unbound_native_repair(self, identity: str, capture_job_id: str) -> bool:
+        """A held native observation is neither idle nor accepted media."""
+        capture = self._service(identity).capture_store.latest(capture_job_id) or {}
+        observed = capture.get("native_unbound_media") or {}
+        return bool(
+            capture.get("status") == "awaiting_capture"
+            and capture.get("native_repair_armed_at")
+            and observed.get("source_accepted") is False
+            and _SHA256.fullmatch(str(observed.get("media_resource_sha256") or ""))
+            and _XIAOETONG_SOURCE_IDENTITY.fullmatch(str(observed.get("source_identity_observed") or ""))
+            and not any(capture.get(key) for key in (
+                "expected_source", "candidate", "source_job_id", "download_task_id", "task_id",
+            ))
+        )
 
     def prepare_playback(self, identity: str, capture_job_id: str) -> dict[str, Any]:
         service = self._service(identity)
@@ -545,6 +565,9 @@ class XiaocaoLiveCaptureDriver:
             raise EnrichmentError("native capture was already bound differently")
         app_id = source_match.group("app_id")
         live_id = source_match.group("live_id")
+        unbound_identity = (current.get("native_unbound_media") or {}).get("source_identity_observed")
+        if unbound_identity and unbound_identity != source_identity:
+            raise EnrichmentError("native repair changed the observed source identity")
         observations = service.sniffer.candidates()
         candidates = [
             row for row in observations
@@ -557,7 +580,9 @@ class XiaocaoLiveCaptureDriver:
             captured_at = datetime.fromisoformat(str(candidate.get("captured") or ""))
             if captured_at.tzinfo is None:
                 captured_at = captured_at.replace(tzinfo=BEIJING)
-            armed_at = datetime.fromisoformat(current["created_at"])
+            armed_at = datetime.fromisoformat(
+                current.get("native_repair_armed_at") or current["created_at"]
+            )
         except (KeyError, TypeError, ValueError) as exc:
             raise EnrichmentError("native capture timestamp is invalid") from exc
         if captured_at <= armed_at:
@@ -572,7 +597,7 @@ class XiaocaoLiveCaptureDriver:
             raise EnrichmentError("native capture is not a finite replay candidate")
         source_host = urlsplit(str(candidate.get("source_url") or "")).hostname
         lineage = {}
-        if source_host not in {
+        if current.get("native_repair_armed_at") or source_host not in {
             f"{app_id}.{surface}.{domain}"
             for surface in ("h5", "mp")
             for domain in ("xiaoeknow.com", "xe-live.com")
@@ -581,6 +606,9 @@ class XiaocaoLiveCaptureDriver:
                 candidate, observations, app_id=app_id, live_id=live_id,
                 armed_at=armed_at, captured_at=captured_at,
             )
+        old_resource = (current.get("native_media_lineage") or current.get("native_unbound_media") or {}).get("media_resource_sha256")
+        if current.get("native_repair_armed_at") and old_resource != lineage.get("media_resource_sha256"):
+            raise EnrichmentError("native repair changed the bound media resource")
         page_url = f"https://{app_id}.h5.xiaoeknow.com/v4/course/alive/{live_id}"
         current = service.capture_store.transition(
             current,
@@ -595,6 +623,92 @@ class XiaocaoLiveCaptureDriver:
             raise EnrichmentError("native capture could not bind its candidate")
         return bound
 
+    def refresh_failed_native_capture(
+        self, identity: str, capture_job_id: str, *, candidate_id: str,
+    ) -> dict[str, Any]:
+        """Renew only the same media after a zero-byte, durably held failure."""
+        service = self._service(identity)
+        current = service.capture_store.latest(capture_job_id)
+        if current is None or current.get("status") != "download_retry_claimed":
+            raise EnrichmentError("native download repair is not durably held")
+        source_identity = (current.get("expected_source") or {}).get("source_identity", "")
+        match = _XIAOETONG_SOURCE_IDENTITY.fullmatch(source_identity)
+        old_lineage = current.get("native_media_lineage") or {}
+        if match is None or not old_lineage.get("media_resource_sha256"):
+            raise EnrichmentError("native download repair lacks original media identity")
+        old_candidate = current.get("candidate") or {}
+        task = next((row for row in service.sniffer.tasks()
+                     if row.get("id") == current.get("download_task_id")), None)
+        labels = (((task or {}).get("meta") or {}).get("req") or {}).get("labels") or {}
+        # Unfinished persisted tasks are restored as paused, even when the last
+        # in-memory failure was not saved. Require the exact backend-repair task.
+        restored_repair_pause = bool(
+            task and task.get("status") == "pause"
+            and current.get("repair_task_id") == task.get("id")
+            and re.fullmatch(
+                r"[0-9a-f]{64}", str(current.get("repaired_binary_sha256") or ""),
+            )
+        )
+        if (
+            task is None or not (task.get("status") == "error" or restored_repair_pause)
+            or int((task.get("progress") or {}).get("downloaded") or 0) != 0
+            or labels.get("capture_id") != old_candidate.get("id")
+            or labels.get("live_id") != match.group("live_id")
+        ):
+            raise EnrichmentError("native download failure is uncertain")
+        observations = service.sniffer.candidates()
+        matches = [row for row in observations if row.get("id") == candidate_id
+                   and row.get("live_id") == match.group("live_id")]
+        if len(matches) != 1 or matches[0].get("media_type") != "m3u8":
+            raise EnrichmentError("native repair candidate is missing or ambiguous")
+        candidate = matches[0]
+        try:
+            armed_at = datetime.fromisoformat(current["native_repair_armed_at"])
+            captured_at = datetime.fromisoformat(candidate["captured"])
+            if captured_at.tzinfo is None:
+                captured_at = captured_at.replace(tzinfo=BEIJING)
+        except (KeyError, ValueError, TypeError) as exc:
+            raise EnrichmentError("native repair timestamp is invalid") from exc
+        if captured_at <= armed_at:
+            raise EnrichmentError("native repair candidate predates the repair arm")
+        lineage_armed_at = armed_at
+        if old_lineage.get("metadata_anchors"):
+            # A native client may cache course metadata while requesting a fresh
+            # signed manifest. Revalidate the previously bound identity anchor,
+            # not its credentials; ticket freshness still uses the repair arm.
+            try:
+                original_arm = datetime.fromisoformat(current["created_at"])
+                previous_capture = datetime.fromisoformat(old_candidate["captured"])
+                if previous_capture.tzinfo is None:
+                    previous_capture = previous_capture.replace(tzinfo=BEIJING)
+                if original_arm.tzinfo is None or not original_arm < previous_capture < armed_at:
+                    raise ValueError("invalid prior capture interval")
+            except (KeyError, ValueError, TypeError) as exc:
+                raise EnrichmentError("native repair prior lineage timestamp is invalid") from exc
+            prior_matches = [row for row in observations if row.get("id") == old_candidate.get("id")
+                             and _safe_candidate(row) == old_candidate]
+            if len(prior_matches) != 1:
+                raise EnrichmentError("native repair prior observation changed")
+            prior_lineage = _native_direct_media_lineage(
+                prior_matches[0], observations, app_id=match.group("app_id"),
+                live_id=match.group("live_id"), armed_at=original_arm,
+                captured_at=previous_capture,
+            )
+            if prior_lineage != old_lineage:
+                raise EnrichmentError("native repair prior merchant lineage changed")
+            lineage_armed_at = original_arm
+        lineage = _native_direct_media_lineage(
+            candidate, observations, app_id=match.group("app_id"),
+            live_id=match.group("live_id"), armed_at=lineage_armed_at, captured_at=captured_at,
+        )
+        if lineage["media_resource_sha256"] != old_lineage["media_resource_sha256"]:
+            raise EnrichmentError("native repair changed the bound media resource")
+        return service.capture_store.transition(
+            current, "native_media_ticket_renewed", status="download_failed",
+            previous_candidate_id=old_candidate["id"], candidate=_safe_candidate(candidate),
+            native_media_lineage=lineage,
+        )
+
     def advance_capture(
         self,
         identity: str,
@@ -606,6 +720,10 @@ class XiaocaoLiveCaptureDriver:
         capture = service.capture_store.latest(capture_job_id)
         if capture is None or capture.get("status") != "downloaded":
             service.start()
+        if capture and capture.get("status") == "awaiting_capture" and capture.get("native_repair_armed_at"):
+            # A repaired lease must come through the reviewed native observation
+            # and exact lineage binder, never historical/global live-id detection.
+            return {"status": "awaiting_capture", "capture_job_id": capture_job_id}
         try:
             return service.advance_capture(
                 capture_job_id,
@@ -858,7 +976,11 @@ class XiaocaoWechatLiveSubscription:
                 raise EnrichmentError("manual backfill must reconcile existing bound claims")
             job = item.get("capture_job_id")
             check = getattr(self.capture_driver, "can_expire_wait", None)
-            if job and (check is None or not check(identity, job)):
+            repair = getattr(self.capture_driver, "can_resume_unbound_native_repair", None)
+            if job and not (
+                (check is not None and check(identity, job))
+                or (repair is not None and repair(identity, job))
+            ):
                 raise EnrichmentError("manual backfill cannot replace an existing capture")
             item["status"] = "capture_armed" if job else "discovered"
         if item["status"] in _TERMINAL:
@@ -1266,6 +1388,12 @@ class XiaocaoWechatLiveSubscription:
                 "blocked_page_state": "mini_program_consent_required",
             },
             "instructions": (
+                "保留原始联系人、发布时间、应用名和分享码；先读 Skill 的"
+                "references/native-share-bridge.md，复用已配置草料活码，读回"
+                "原分享目标后取得一次新鲜提供方入口，按 B0–B4 自动点击课程与允许。"
+                "已有精确课程窗口则复用。"
+                if native_entry and course_app == "见势擒龙团"
+                else
                 "用 wechat-cli 已定位的原始联系人和发布时间，在本机微信中只打开"
                 f"该条原始 #小程序://{course_app}/ 消息一次；不要复制发送消息、猜测 URL "
                 "Scheme，或反复拉起小程序。"
@@ -1281,10 +1409,12 @@ class XiaocaoWechatLiveSubscription:
                 "同意、读回并继续同一任务。需确认时返回 mini_program_consent_required，"
                 "不得误报微信手机登录。若看见课程口令门，打开"
                 "输入框，输入提供的口令、读回并确认。口令通过可能自动播放；画面一旦"
-                f"开始播放并被抓取后，关闭这一个{course_app}课程窗口：在确认标题的目标窗口"
-                "点击文件菜单，再点击该窗口的关闭全部标签页（performClose:），读回"
-                f"窗口菜单已无{course_app}。若未自动起播，只点击一次可见播放按钮。"
-                "未开播、直播中或回放生成中：先按同一文件菜单关闭课程并读回，不下载暖场或直播流；"
+                f"开始播放并被抓取后，关闭这一个{course_app}课程窗口；按 Skill 的"
+                "当前应用关闭规则操作，读回窗口菜单已无该应用。新版品牌按桥接"
+                "B4a–B4c 每轮独立核验；工具拒绝后不重复关闭，"
+                "不以旧文件菜单或另一场成功替代当前窗口读回。"
+                "若未自动起播，只点击一次可见播放按钮。"
+                "未开播、直播中或回放生成中：按当前应用关闭规则处理并读回，不下载暖场或直播流；"
                 "只有直播结束且完整回放生成才可下载。"
                 "不按空格、不静音、不退出微信。关闭播放器不等于下载完成，仍需验证"
                 "同一下载任务的媒体文件。确认本机"
@@ -1334,6 +1464,13 @@ class XiaocaoWechatLiveSubscription:
             request["required_response"]["candidate_id"] = (
                 "exact fresh finite replay candidate id; omit if not observed"
             )
+            if course_app == "见势擒龙团":
+                request["native_entry_reference"] = (
+                    ".codex/skills/kol-intelligence/references/native-share-bridge.md"
+                )
+                request["native_bridge_config_path"] = str(
+                    _NATIVE_SHARE_BRIDGE_CONFIG
+                )
         else:
             request.update({
                 "source_url": item["source_url"],
@@ -1361,7 +1498,9 @@ class XiaocaoWechatLiveSubscription:
             request.pop("launch_resolver_command", None)
             request["instructions"] = (
                 f"同一 capture 的有限媒体已捕获。仅核对本任务{course_app}课程窗口已关闭；"
-                f"若仍存在，按 native SOP 的文件菜单关闭该课程并读回窗口列表无{course_app}。"
+                f"若仍存在，按 Skill 当前应用关闭规则处理并读回窗口列表无{course_app}；"
+                "新版品牌按桥接 B4a–B4c 独立核验；工具拒绝后不重复关闭，"
+                "不沿用另一场成功回执。"
                 "已有本任务关闭读回则直接返回真实回执，不重复操作。不要唤起、重新播放、"
                 "输入口令或恢复 sniffer。返回 playback_window_closed 和原身份绑定。"
             )

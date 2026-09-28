@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import io
+import hashlib
 import json
 from base64 import urlsafe_b64encode
 
@@ -598,6 +599,20 @@ def test_resolve_candidate_prefers_latest_fresh_url_for_same_live_id(tmp_path):
 
     assert detected is not None
     assert resolve_candidate(detected, [old, fresh]) == fresh
+
+
+def test_native_candidate_renewal_cannot_select_newer_different_media():
+    resource = "https://vod.xet.tech/exact/playlist_eof.m3u8"
+    current = {"candidate_key": "live:l_exact", "native_media_lineage": {
+        "media_resource_sha256": hashlib.sha256(resource.encode()).hexdigest()}}
+    fresh = {"id": "fresh", "live_id": "l_exact", "media_type": "m3u8",
+             "captured": "2026-09-28 15:00:00", "url": resource + "?sign=private"}
+    wrong = {**fresh, "id": "wrong", "captured": "2026-09-28 15:01:00",
+             "url": "https://vod.xet.tech/other/playlist_eof.m3u8"}
+    stream = {**fresh, "id": "live", "captured": "2026-09-28 15:02:00",
+              "media_type": "flv", "url": resource}
+    assert resolve_candidate(current, [fresh, wrong, stream]) == fresh
+    assert resolve_candidate(current, [wrong, stream]) is None
 
 
 def test_checkpoint_records_async_boundary_and_rejects_unknown_status(tmp_path):
