@@ -5106,14 +5106,19 @@ class _PublicationClient:
     def __init__(self, order: list[str]):
         self.order = order
         self.receipts: dict[str, dict] = {}
+        self.records: dict[str, dict] = {}
+        self.current: dict = {}
 
     def call_tool(self, name, arguments):
+        if name == "get_kol_record":
+            return self.current
         if name == "get_kol_write_status":
             receipt = self.receipts.get(arguments["idempotency_key"])
             if receipt is None:
                 raise LiangHuiMcpError("missing", code="NOT_FOUND")
             return receipt
         if name == "put_kol_record":
+            self.records[arguments["record_id"]] = arguments
             receipt = {
                 "recordState": "staged",
                 "idempotencyKey": arguments["idempotency_key"],
@@ -5121,6 +5126,12 @@ class _PublicationClient:
             self.receipts[arguments["idempotency_key"]] = receipt
             return receipt
         if name == "publish_kol_report":
+            self.current = {
+                **self.records[arguments["report_id"]],
+                "state": "published",
+                "manifest": arguments["records"],
+                "manifest_sha256": arguments["manifest_sha256"],
+            }
             self.order.append("gray")
             receipt = {
                 "recordState": "published",
@@ -5496,6 +5507,42 @@ def test_completed_publication_cannot_complete_different_source_or_projection(
 
     assert order == ["gray", "book"]
     assert ledger.status(key)["event_count"] == event_count
+
+
+@pytest.mark.parametrize("change", ["different_report", "missing_evaluation"])
+def test_publication_receipt_requires_authoritative_manifest_before_book(
+    tmp_path, change,
+):
+    import copy
+    from xiaocao.kol.publication import manifest_sha256, record_content_sha256
+
+    class StaleReadbackClient(_PublicationClient):
+        def call_tool(self, name, arguments):
+            result = super().call_tool(name, arguments)
+            if name != "get_kol_record":
+                return result
+            result = copy.deepcopy(result)
+            if change == "different_report":
+                result["payload"]["report_body"] = "Previously published report"
+                result["content_sha256"] = record_content_sha256(result)
+                result["manifest"][0]["content_sha256"] = result["content_sha256"]
+            else:
+                result["manifest"] = [
+                    row for row in result["manifest"]
+                    if row["kind"] != "viewpoint_evaluation"
+                ]
+            result["manifest_sha256"] = manifest_sha256(result["manifest"])
+            return result
+
+    order: list[str] = []
+    ledger = PublicationLedger(tmp_path / "publication")
+    pipeline = DailyPublicationPipeline(
+        _DelegatePipeline(order), ledger=ledger, client=StaleReadbackClient(order),
+        context=DailyPublicationContext(adapter="lv_text_image",source_identity="readback-bound",publication_version="v1",kol_id="kol-lv-xiaotong",source="吕晓彤",source_published_at="2026-09-28T09:30:00+08:00",media_types=("image",),source_parts=()),
+    )
+    with pytest.raises(DailyError, match="authoritative readback mismatched"):
+        pipeline.process(_projection_bundle())
+    assert order == ["gray"]
 
 
 def test_video_publication_context_uses_request_time_and_evidence_hash():
