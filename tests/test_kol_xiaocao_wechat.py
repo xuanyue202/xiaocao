@@ -921,6 +921,88 @@ def test_native_candidate_binding_checks_real_sniffer_evidence(tmp_path, invalid
         assert "private" not in store.path.read_text()
 
 
+@pytest.mark.parametrize("invalid", [
+    None, "no_anchor", "other_app", "other_live", "other_media", "other_host",
+    "other_endpoint", "reporting_query", "old_anchor", "future_anchor",
+    "stale_capture", "live_stream", "indirect_request", "conflicting_anchor",
+])
+def test_native_direct_manifest_requires_exact_merchant_lineage(tmp_path, invalid):
+    store = CaptureJobStore(tmp_path / "capture.jsonl")
+    armed = store.arm([])
+    armed = store.transition(armed, "test_clock", created_at="2026-09-05T15:00:00+08:00")
+    resource = "https://encrypt-k-vod.xet.tech/content/replay/playlist_eof.m3u8"
+    candidate = {
+        "id": "fresh-request", "live_id": "l_target",
+        "captured": "2026-09-05 15:02:00", "media_type": "m3u8",
+        "source_url": resource + "?ticket=fresh-private",
+        "source_path": "/content/replay/playlist_eof.m3u8",
+        "url": resource + "?ticket=fresh-private",
+    }
+    anchor = {
+        "id": "metadata-anchor", "live_id": "l_target",
+        "captured": "2026-09-05 15:01:00", "media_type": "m3u8",
+        "source_url": "https://appdemo.h5.xe-live.com/_alive/v3/get_lookback_list",
+        "source_path": "/_alive/v3/get_lookback_list",
+        "json_path": "data[0].line_sharpness[0].url",
+        "url": resource + "?ticket=old-private",
+    }
+    observations = [candidate, anchor]
+    if invalid == "no_anchor":
+        observations = [candidate]
+    elif invalid == "other_app":
+        anchor["source_url"] = anchor["source_url"].replace("appdemo", "appother")
+    elif invalid == "other_live":
+        anchor["live_id"] = "l_other"
+    elif invalid == "other_media":
+        anchor["url"] = anchor["url"].replace("/replay/", "/another/")
+    elif invalid == "other_host":
+        anchor["url"] = anchor["url"].replace("encrypt-k-vod", "another-vod")
+    elif invalid == "other_endpoint":
+        anchor["source_url"] = anchor["source_url"].replace("get_lookback_list", "get_warm_up_video")
+        anchor["source_path"] = "/_alive/v3/get_warm_up_video"
+    elif invalid == "reporting_query":
+        anchor["json_path"] = "query.params[play_url]"
+    elif invalid == "old_anchor":
+        anchor["captured"] = "2026-09-05 14:59:00"
+    elif invalid == "future_anchor":
+        anchor["captured"] = "2026-09-05 15:03:00"
+    elif invalid == "stale_capture":
+        candidate["captured"] = "2026-09-05 14:59:00"
+    elif invalid == "live_stream":
+        candidate["url"] = candidate["source_url"] = resource.replace("playlist_eof", "liveplay")
+        candidate["source_path"] = "/content/replay/liveplay.m3u8"
+    elif invalid == "indirect_request":
+        candidate["source_path"] = "/report"
+    elif invalid == "conflicting_anchor":
+        observations.append({**anchor, "id": "conflict", "live_id": "l_other"})
+    service = SimpleNamespace(
+        capture_store=store,
+        sniffer=SimpleNamespace(candidates=lambda: observations),
+    )
+    driver = XiaocaoLiveCaptureDriver(tmp_path, service_factory=lambda *a, **kw: service)
+    kwargs = dict(source_identity="xiaoetong:appdemo:l_target", candidate_id="fresh-request")
+    if invalid:
+        with pytest.raises(EnrichmentError):
+            driver.bind_mini_program_capture("item", armed["job_id"], **kwargs)
+        assert store.latest()["status"] == "awaiting_capture"
+        return
+    result = driver.bind_mini_program_capture("item", armed["job_id"], **kwargs)
+    assert result["job_id"] == armed["job_id"]
+    assert result["status"] == "captured"
+    assert result["candidate"]["id"] == "fresh-request"
+    assert result["native_media_lineage"] == {
+        "method": "direct_manifest_with_merchant_lookback",
+        "media_resource_sha256": hashlib.sha256(resource.encode()).hexdigest(),
+        "metadata_anchors": [{
+            "candidate_id": "metadata-anchor", "source_host": "appdemo.h5.xe-live.com",
+            "source_path": "/_alive/v3/get_lookback_list",
+            "json_path": "data[0].line_sharpness[0].url",
+        }],
+    }
+    assert driver.bind_mini_program_capture("item", armed["job_id"], **kwargs) == result
+    assert "private" not in store.path.read_text()
+
+
 def test_wechat_mini_program_route_rejects_a_different_live_id(tmp_path):
     page_url = (
         "https://app6ums63as6516.h5.xiaoeknow.com/v2/course/alive/"

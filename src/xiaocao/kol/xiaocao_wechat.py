@@ -84,6 +84,83 @@ def _sha256_text(value: str) -> str:
     return hashlib.sha256(value.encode("utf-8")).hexdigest()
 
 
+def _media_resource_key(value: Any) -> str:
+    """Compare observed media resources without retaining signed queries."""
+    parsed = urlsplit(str(value or ""))
+    if (
+        parsed.scheme != "https" or not parsed.hostname
+        or parsed.username is not None or parsed.password is not None
+    ):
+        return ""
+    return urlunsplit((parsed.scheme, parsed.netloc, parsed.path, "", ""))
+
+
+def _native_direct_media_lineage(
+    candidate: dict[str, Any],
+    observations: list[dict[str, Any]],
+    *,
+    app_id: str,
+    live_id: str,
+    armed_at: datetime,
+    captured_at: datetime,
+) -> dict[str, Any]:
+    """Require merchant lookback evidence for a directly requested CDN replay.
+
+    The CDN observation is the fresh capture. Earlier metadata only proves its
+    app/live lineage; it must never replace the selected candidate or ticket.
+    """
+    resource = _media_resource_key(candidate.get("url"))
+    source = urlsplit(str(candidate.get("source_url") or ""))
+    if (
+        not resource or _media_resource_key(candidate.get("source_url")) != resource
+        or candidate.get("source_path") != source.path
+        or candidate.get("json_path")
+        or Path(source.path).name != "playlist_eof.m3u8"
+    ):
+        raise EnrichmentError("native capture candidate belongs to another app")
+    anchors = []
+    for row in observations:
+        if _media_resource_key(row.get("url")) != resource:
+            continue
+        origin = urlsplit(str(row.get("source_url") or ""))
+        merchant = re.fullmatch(
+            r"(?P<app_id>app[A-Za-z0-9]+)\.(?:h5|mp)\.(?:xiaoeknow\.com|xe-live\.com)",
+            origin.hostname or "",
+        )
+        if (
+            merchant is None or origin.scheme != "https"
+            or origin.username is not None or origin.password is not None
+            or origin.path != "/_alive/v3/get_lookback_list"
+            or row.get("source_path") != origin.path
+            or row.get("media_type") != "m3u8"
+            or not re.fullmatch(
+                r"data\[[0-9]+\]\.line_sharpness\[[0-9]+\]\.url",
+                str(row.get("json_path") or ""),
+            )
+        ):
+            continue
+        if merchant.group("app_id") != app_id or row.get("live_id") != live_id:
+            raise EnrichmentError("native media has conflicting merchant identity")
+        try:
+            observed_at = datetime.fromisoformat(str(row.get("captured") or ""))
+            if observed_at.tzinfo is None:
+                observed_at = observed_at.replace(tzinfo=BEIJING)
+        except ValueError:
+            continue
+        if row.get("id") and armed_at < observed_at <= captured_at:
+            anchors.append({
+                "candidate_id": row["id"], "source_host": origin.hostname,
+                "source_path": origin.path, "json_path": row["json_path"],
+            })
+    if not anchors:
+        raise EnrichmentError("native CDN capture lacks matching merchant lookback evidence")
+    return {
+        "method": "direct_manifest_with_merchant_lookback",
+        "media_resource_sha256": _sha256_text(resource),
+        "metadata_anchors": sorted(anchors, key=lambda row: row["candidate_id"]),
+    }
+
+
 def _next_local_playback_recheck(observed_at: datetime) -> datetime:
     if observed_at.tzinfo is None:
         raise EnrichmentError("Xiaocao WeChat clock needs a timezone")
@@ -468,20 +545,14 @@ class XiaocaoLiveCaptureDriver:
             raise EnrichmentError("native capture was already bound differently")
         app_id = source_match.group("app_id")
         live_id = source_match.group("live_id")
+        observations = service.sniffer.candidates()
         candidates = [
-            row for row in service.sniffer.candidates()
+            row for row in observations
             if row.get("id") == candidate_id and row.get("live_id") == live_id
         ]
         if len(candidates) != 1:
             raise EnrichmentError("native capture candidate is missing or ambiguous")
         candidate = candidates[0]
-        source_host = urlsplit(str(candidate.get("source_url") or "")).hostname
-        if source_host not in {
-            f"{app_id}.{surface}.{domain}"
-            for surface in ("h5", "mp")
-            for domain in ("xiaoeknow.com", "xe-live.com")
-        }:
-            raise EnrichmentError("native capture candidate belongs to another app")
         try:
             captured_at = datetime.fromisoformat(str(candidate.get("captured") or ""))
             if captured_at.tzinfo is None:
@@ -499,11 +570,23 @@ class XiaocaoLiveCaptureDriver:
             is None
         ):
             raise EnrichmentError("native capture is not a finite replay candidate")
+        source_host = urlsplit(str(candidate.get("source_url") or "")).hostname
+        lineage = {}
+        if source_host not in {
+            f"{app_id}.{surface}.{domain}"
+            for surface in ("h5", "mp")
+            for domain in ("xiaoeknow.com", "xe-live.com")
+        }:
+            lineage = _native_direct_media_lineage(
+                candidate, observations, app_id=app_id, live_id=live_id,
+                armed_at=armed_at, captured_at=captured_at,
+            )
         page_url = f"https://{app_id}.h5.xiaoeknow.com/v4/course/alive/{live_id}"
         current = service.capture_store.transition(
             current,
             "mini_program_source_bound",
             expected_source=canonical_xiaoetong_source(page_url),
+            native_media_lineage=lineage,
         )
         bound = service.capture_store.bind_source_candidate(
             current, candidates, candidate_id=candidate_id,
