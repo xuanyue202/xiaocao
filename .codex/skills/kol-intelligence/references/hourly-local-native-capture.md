@@ -32,8 +32,9 @@ does not require navigating to a chat window. An already-visible exact course
 is reused; an already-bound download/upload skips activation. `鹅直播` shares
 may use their unique currently visible original message once. Skip H5 resolution
 for native shares. Bind observed candidate/app/live/post-arm time before download.
-The branded entry remains in `见势擒龙团`; its automatic closure is still
-unverified. An announcement's relative time does not establish today's date:
+The branded entry remains in `见势擒龙团`; use the bridge's verified semantic
+close and independently verify this round's window absence. An announcement's
+relative time does not establish today's date:
 use the original message timestamp and observed course state.
 For H5 entries, retain the process for credential-free identity resolution;
 H5 is not playback proof.
@@ -165,9 +166,10 @@ lists enrich asynchronously with an incremental cache; they cannot bind a source
 
 品牌原生分享入口先执行桥接参考 B0–B4，再接本段口令/有限回放/下载/上传。
 2026-09-07 的文件菜单关闭验收针对当时的鹅直播窗口；不覆盖更新后的品牌窗口。
-品牌新版按桥接 B4a–B4c 关闭和读回；已有分场成功，也有
-`noWindowsAvailable` / `windowNotFoundAtPosition` 拒绝。每轮独立核验，
-不得沿用另一场成功或在拒绝后重复关闭。
+品牌新版按桥接 B4a–B4c 优先使用当前课程的语义文件菜单关闭并读回；
+2026-09-28 的 Sep27 同场修复已实测通过，但坐标关闭仍出现
+`windowNotFoundAtPosition`。每轮独立核验，不沿用另一场成功；
+输入拒绝按桥接的窗口恢复分支诊断，不重复同一失败点击。
 空格已废弃；步骤 5–6 的原任务下载和上传/Handoff 流程继续有效。
 
 1. **保留原任务，先准备抓取。** 从当前 runner 请求/manifest 取出
