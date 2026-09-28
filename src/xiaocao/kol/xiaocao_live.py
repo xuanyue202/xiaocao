@@ -1734,8 +1734,6 @@ class XiaocaoLiveService:
             current.get(key) for key in ("expected_source", "candidate", "source_job_id", "download_task_id")
         ):
             raise EnrichmentError("native observation repair requires an unbound capture")
-        if current.get("native_unbound_media"):
-            raise EnrichmentError("native observation repair is already retained")
         if playback_window_closed is not True:
             raise EnrichmentError("native observation repair requires verified course closure")
         match = re.fullmatch(r"xiaoetong:(app[A-Za-z0-9]+):(l_[A-Za-z0-9]+)", source_identity)
@@ -1769,6 +1767,22 @@ class XiaocaoLiveService:
         observation = {"candidate_id": candidate_id, "source_identity_observed": source_identity,
             "captured_at": captured.isoformat(), "media_resource_sha256": _sha256_text(resource),
             "source_accepted": False, "playback_window_closed": True}
+        retained = current.get("native_unbound_media")
+        if retained:
+            # A further diagnosed backend repair must retain the original
+            # observation, not replace it or manufacture media acceptance.
+            if (retained.get("source_identity_observed") != source_identity
+                or retained.get("media_resource_sha256") != observation["media_resource_sha256"]
+                or retained.get("source_accepted") is not False
+                or retained.get("playback_window_closed") is not True):
+                raise EnrichmentError("native observation repair conflicts with retained media")
+            try:
+                repair_arm = datetime.fromisoformat(current["native_repair_armed_at"])
+            except (KeyError, TypeError, ValueError) as exc:
+                raise EnrichmentError("native observation repair arm is invalid") from exc
+            if repair_arm.tzinfo is None or captured <= repair_arm:
+                raise EnrichmentError("native observation repair requires fresh retained-media observation")
+            observation = retained
         return self._replace_sniffer_for_repair(current, replacement_binary=replacement_binary,
             unbound_observation=observation)
 

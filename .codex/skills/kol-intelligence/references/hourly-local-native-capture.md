@@ -209,6 +209,17 @@ lists enrich asynchronously with an incremental cache; they cannot bind a source
    来源检查仍要求同 app/live、同媒体资源、post-arm 的商户 lookback 响应；
    market-conf 身份、UI 标题、CDN 时间或直播流不能代替该映射。
 
+   2026-09-29 的原生采样实测商户自定义域名 `xet.kj1team.cn`；用户已明确
+   授权 `kj1team.cn` 根域及子域加入本地抓取 PAC。该范围不是腾讯/微信全域，
+   相似后缀如 `kj1team.cn.evil.test` 必须仍 DIRECT。新版原生接口为
+   `/_alive/v2/get_lookback_url`，不能因旧 `get_lookback_list` 缺失就借用
+   全局 live context。校验器重新读取 singleton 本轮实际保存的 response：
+   post-arm、同商户 `base_info.data.alive_info.app_id/alive_id`，以及同一
+   lookback response 的 `aliveReviewUrl=/<原 live_id>.m3u8` 与
+   `miniAliveVideoUrl|aliveVideoUrl`，精确核对候选媒体资源，并记录两份正文哈希。
+   仅已验证 `xet.kj1team.cn -> appsnm3rlcp3566` 来源可走此分支；PAC 覆盖
+   整域不代表整域的任意响应可绑定来源。读取的是原生抓取证据，不访问 H5 播放器。
+
 3. **一次正常唤起，再输入课程口令。** 对 HTTPS 分享入口，运行当前请求给出的
    `launch_resolver_command`；其命令形态为：
 
@@ -318,6 +329,9 @@ lists enrich asynchronously with an incremental cache; they cannot bind a source
    72 小时 idle-wait gate 丢弃。重开仍需用户本次同场修复授权，且只有一次新的
    激活边界；新的原生候选必须在 repair-arm 后，重新通过商户映射、原 source
    identity 和原媒体哈希核对。再次缺失映射就保留原任务继续诊断，不能反复重开。
+   已有 retained observation 时，另一项经实际请求定位的新后端缺陷可继续
+   同 capture 修复；必须重新核对 post-repair 同源、同媒体哈希、无下载/来源
+   claim、当前窗口关闭，且保留原 observation 不替换。该 API 不授权盲目重开。
 
 5. **确认有限回放，交回原 PTY，等压缩文件完成。** 复用 W7 前已读取的
    `/api/elive/live/candidates?all=1&view=capture`：候选必须是 baseline 之后出现、

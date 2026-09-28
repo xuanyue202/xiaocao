@@ -97,6 +97,69 @@ def _media_resource_key(value: Any) -> str:
     return urlunsplit((parsed.scheme, parsed.netloc, parsed.path, "", ""))
 
 
+def _native_v2_merchant_lineage(
+    candidate: dict[str, Any], *, app_id: str, live_id: str,
+    armed_at: datetime, captured_at: datetime, debug_root: Path | None,
+) -> dict[str, Any]:
+    """Reopen singleton-owned native responses; never trust global live context."""
+    origin = urlsplit(str(candidate.get("source_url") or ""))
+    resource = _media_resource_key(candidate.get("url"))
+    if (debug_root is None or origin.scheme != "https" or origin.username or origin.password
+        or origin.hostname != "xet.kj1team.cn" or app_id != "appsnm3rlcp3566"
+        or origin.path != "/_alive/v2/get_lookback_url"
+        or candidate.get("source_path") != origin.path
+        or candidate.get("json_path") not in {"data.miniAliveVideoUrl", "data.aliveVideoUrl"}
+        or not resource or Path(urlsplit(resource).path).name != "playlist_eof.m3u8"):
+        raise EnrichmentError("native v2 capture lacks verified merchant source")
+    root = debug_root.resolve()
+    try:
+        events = [json.loads(line) for line in (root / "events.jsonl").read_text().splitlines() if line]
+    except (OSError, ValueError) as exc:
+        raise EnrichmentError("native v2 merchant response evidence unavailable") from exc
+    evidence = {}
+    # Candidate timestamps have second precision. Compare the same clock bin,
+    # not an invented chronology derived from UI or network timing.
+    upper = captured_at.replace(microsecond=0) + timedelta(seconds=1)
+    for event in events:
+        u = urlsplit(str(event.get("url") or ""))
+        if (event.get("kind") != "response.body" or event.get("status") != 200
+            or u.scheme != "https" or u.hostname != origin.hostname
+            or u.path not in {"/_alive/v3/base_info", origin.path}):
+            continue
+        try:
+            observed = datetime.fromisoformat(str(event["at"]))
+            if observed.tzinfo is None or not armed_at < observed < upper:
+                continue
+            path = Path(str(event["file"])).resolve()
+            if not path.is_relative_to(root / "json") or not path.is_file() or path.stat().st_size > 2 * 1024 * 1024:
+                continue
+            body = path.read_bytes()
+            payload = json.loads(body)
+            if not isinstance(payload, dict) or type(payload.get("code")) is not int or payload["code"] != 0 or not isinstance(payload.get("data"), dict):
+                continue
+        except (OSError, KeyError, TypeError, ValueError):
+            continue
+        evidence[u.path] = (payload["data"], observed, hashlib.sha256(body).hexdigest())
+    base = evidence.get("/_alive/v3/base_info")
+    replay = evidence.get(origin.path)
+    if not base or not replay:
+        raise EnrichmentError("native v2 capture lacks post-arm merchant responses")
+    info = base[0].get("alive_info") or {}
+    if (not isinstance(info, dict) or info.get("app_id") != app_id or info.get("alive_id") != live_id
+        or replay[0].get("aliveReviewUrl") != f"/{live_id}.m3u8"
+        or base[1] > replay[1]
+        or _media_resource_key(replay[0].get(candidate["json_path"].split(".")[-1])) != resource):
+        raise EnrichmentError("native v2 response conflicts with exact merchant/media identity")
+    return {
+        "method": "native_v2_merchant_response",
+        "media_resource_sha256": _sha256_text(resource),
+        "metadata_anchors": [{"candidate_id": candidate["id"], "source_host": origin.hostname,
+            "source_path": origin.path, "json_path": candidate["json_path"],
+            "response_sha256": replay[2], "base_info_sha256": base[2],
+            "app_id": app_id, "live_id": live_id}],
+    }
+
+
 def _native_direct_media_lineage(
     candidate: dict[str, Any],
     observations: list[dict[str, Any]],
@@ -105,6 +168,7 @@ def _native_direct_media_lineage(
     live_id: str,
     armed_at: datetime,
     captured_at: datetime,
+    debug_root: Path | None = None,
 ) -> dict[str, Any]:
     """Require merchant lookback evidence for a directly requested CDN replay.
 
@@ -113,6 +177,9 @@ def _native_direct_media_lineage(
     """
     resource = _media_resource_key(candidate.get("url"))
     source = urlsplit(str(candidate.get("source_url") or ""))
+    if source.hostname == "xet.kj1team.cn":
+        return _native_v2_merchant_lineage(candidate, app_id=app_id, live_id=live_id,
+            armed_at=armed_at, captured_at=captured_at, debug_root=debug_root)
     if (
         not resource or _media_resource_key(candidate.get("source_url")) != resource
         or candidate.get("source_path") != source.path
@@ -605,6 +672,7 @@ class XiaocaoLiveCaptureDriver:
             lineage = _native_direct_media_lineage(
                 candidate, observations, app_id=app_id, live_id=live_id,
                 armed_at=armed_at, captured_at=captured_at,
+                debug_root=(service.sniffer_binary.parent / "elive_live_debug") if hasattr(service, "sniffer_binary") else None,
             )
         old_resource = (current.get("native_media_lineage") or current.get("native_unbound_media") or {}).get("media_resource_sha256")
         if current.get("native_repair_armed_at") and old_resource != lineage.get("media_resource_sha256"):
@@ -693,6 +761,7 @@ class XiaocaoLiveCaptureDriver:
                 prior_matches[0], observations, app_id=match.group("app_id"),
                 live_id=match.group("live_id"), armed_at=original_arm,
                 captured_at=previous_capture,
+                debug_root=(service.sniffer_binary.parent / "elive_live_debug") if hasattr(service, "sniffer_binary") else None,
             )
             if prior_lineage != old_lineage:
                 raise EnrichmentError("native repair prior merchant lineage changed")
@@ -700,6 +769,7 @@ class XiaocaoLiveCaptureDriver:
         lineage = _native_direct_media_lineage(
             candidate, observations, app_id=match.group("app_id"),
             live_id=match.group("live_id"), armed_at=lineage_armed_at, captured_at=captured_at,
+            debug_root=(service.sniffer_binary.parent / "elive_live_debug") if hasattr(service, "sniffer_binary") else None,
         )
         if lineage["media_resource_sha256"] != old_lineage["media_resource_sha256"]:
             raise EnrichmentError("native repair changed the bound media resource")

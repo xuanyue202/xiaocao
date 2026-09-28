@@ -81,7 +81,8 @@ def test_backend_repair_keeps_capture_and_does_not_record_terminal_cleanup(tmp_p
     assert service._event("capture_cleanup_completed", capture_job_id=current["job_id"]) is None
 
 
-@pytest.mark.parametrize("invalid", [None, "active", "claimed", "wrong_live", "stale", "liveplay", "not_closed"])
+@pytest.mark.parametrize("invalid", [None, "active", "claimed", "wrong_live", "stale", "liveplay", "not_closed",
+    "retained", "retained_wrong_media", "retained_wrong_source", "retained_stale"])
 def test_native_observation_repair_retains_unbound_capture_without_acceptance(tmp_path, monkeypatch, invalid):
     installed, replacement = tmp_path / "sniffer", tmp_path / "sniffer.repair"
     installed.write_bytes(b"old")
@@ -94,6 +95,20 @@ def test_native_observation_repair_retains_unbound_capture_without_acceptance(tm
     candidate = {"id": "native", "live_id": "l_target", "captured": "2026-09-05 15:01:00",
         "media_type": "m3u8", "url": resource + "?sign=private", "source_url": resource + "?sign=private",
         "source_path": "/content/playlist_eof.m3u8"}
+    previous_observation = None
+    if invalid and invalid.startswith("retained"):
+        previous_observation = {"candidate_id":"original", "captured_at":"2026-09-05T15:00:30+08:00",
+            "source_identity_observed":"xiaoetong:appdemo:l_target",
+            "media_resource_sha256":hashlib.sha256(resource.encode()).hexdigest(),
+            "source_accepted":False, "playback_window_closed":True}
+        if invalid == "retained_wrong_media":
+            previous_observation["media_resource_sha256"] = "0" * 64
+        if invalid == "retained_wrong_source":
+            previous_observation["source_identity_observed"] = "xiaoetong:appother:l_target"
+        if invalid == "retained_stale":
+            candidate["captured"] = "2026-09-05 15:00:40"
+        current = store.transition(current, "retained", native_unbound_media=previous_observation,
+            native_repair_armed_at="2026-09-05T15:00:45+08:00")
     if invalid == "wrong_live":
         candidate["live_id"] = "l_other"
     if invalid == "stale":
@@ -116,7 +131,7 @@ def test_native_observation_repair_retains_unbound_capture_without_acceptance(tm
     monkeypatch.setattr(service, "start", lambda: {"capture_job_id": current["job_id"]})
     kwargs = dict(replacement_binary=replacement, candidate_id="native", source_identity="xiaoetong:appdemo:l_target",
         playback_window_closed=invalid != "not_closed")
-    if invalid:
+    if invalid and invalid != "retained":
         with pytest.raises(EnrichmentError):
             service.restart_sniffer_for_native_observation_repair(current["job_id"], **kwargs)
         assert calls == [] and store.latest() == current and installed.read_bytes() == b"old"
@@ -127,6 +142,8 @@ def test_native_observation_repair_retains_unbound_capture_without_acceptance(tm
     assert retained["status"] == "awaiting_capture" and not retained.get("expected_source")
     assert not retained.get("candidate") and not retained.get("download_task_id")
     assert retained["native_unbound_media"]["media_resource_sha256"] == hashlib.sha256(resource.encode()).hexdigest()
+    if previous_observation:
+        assert retained["native_unbound_media"] == previous_observation
     assert retained["native_repair_armed_at"] and "private" not in store.path.read_text()
     assert calls == ["pac_off", "stop"] and installed.read_bytes() == b"new"
     assert service._event("capture_cleanup_completed", capture_job_id=current["job_id"]) is None

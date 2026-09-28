@@ -1046,6 +1046,50 @@ def test_native_lineage_accepts_documented_sdk_merchants_only(tmp_path, host, va
         assert bound["job_id"] == armed["job_id"]
 
 
+@pytest.mark.parametrize("invalid", [None, "missing_base", "old_base", "other_app", "other_live", "other_media",
+    "review_id", "other_host", "unapproved_field", "outside_root", "provider_error"])
+def test_native_v2_binding_reopens_actual_merchant_response_without_global_context(tmp_path, invalid):
+    from datetime import datetime
+    from xiaocao.kol.xiaocao_wechat import _native_direct_media_lineage
+
+    root = tmp_path / "elive_live_debug"
+    (root / "json").mkdir(parents=True)
+    resource = "https://encrypt-k-vod.xet.tech/vod/playlist_eof.m3u8"
+    candidate = {"id":"native", "url":resource+"?sign=private", "media_type":"m3u8", "live_id":"l_target",
+        "source_url":"https://xet.kj1team.cn/_alive/v2/get_lookback_url",
+        "source_path":"/_alive/v2/get_lookback_url", "json_path":"data.miniAliveVideoUrl"}
+    base = {"code":0,"data":{"alive_info":{"app_id":"appsnm3rlcp3566","alive_id":"l_target"}}}
+    replay = {"code":0,"data":{"aliveReviewUrl":"/l_target.m3u8","miniAliveVideoUrl":resource+"?sign=private"}}
+    if invalid == "other_app": base["data"]["alive_info"]["app_id"] = "appother"
+    if invalid == "other_live": base["data"]["alive_info"]["alive_id"] = "l_other"
+    if invalid == "other_media": replay["data"]["miniAliveVideoUrl"] = resource.replace("vod/", "different/")
+    if invalid == "review_id": replay["data"]["aliveReviewUrl"] = "/l_other.m3u8"
+    if invalid == "provider_error": replay["code"] = 401
+    if invalid == "other_host": candidate["source_url"] = candidate["source_url"].replace("xet.kj1team.cn", "xet.kj1team.cn.evil.test")
+    if invalid == "unapproved_field": candidate["json_path"] = "data.warmupUrl"
+    events = []
+    for name, path, payload, at in [("base", "/_alive/v3/base_info", base, "2026-09-05T15:01:00.5+08:00"),
+        ("replay", "/_alive/v2/get_lookback_url", replay, "2026-09-05T15:01:01.5+08:00")]:
+        file = root / "json" / f"{name}.json"
+        if invalid == "outside_root": file = tmp_path / f"{name}.json"
+        file.write_text(json.dumps(payload))
+        if invalid == "missing_base" and name == "base": continue
+        if invalid == "old_base" and name == "base": at = "2026-09-05T14:59:59+08:00"
+        events.append({"kind":"response.body","url":"https://xet.kj1team.cn"+path,"at":at,"status":200,"file":str(file)})
+    (root / "events.jsonl").write_text("\n".join(json.dumps(e) for e in events))
+    kwargs = dict(app_id="appsnm3rlcp3566",live_id="l_target",debug_root=root,
+        armed_at=datetime.fromisoformat("2026-09-05T15:00:00+08:00"),
+        captured_at=datetime.fromisoformat("2026-09-05T15:01:01+08:00"))
+    if invalid:
+        with pytest.raises(EnrichmentError): _native_direct_media_lineage(candidate, [], **kwargs)
+    else:
+        result = _native_direct_media_lineage(candidate, [], **kwargs)
+        assert result["method"] == "native_v2_merchant_response"
+        assert result["media_resource_sha256"] == hashlib.sha256(resource.encode()).hexdigest()
+        assert len(result["metadata_anchors"][0]["response_sha256"]) == 64
+        assert "private" not in json.dumps(result)
+
+
 @pytest.mark.parametrize("invalid", [None, "missing_anchor", "changed_source", "changed_media", "stale"])
 def test_unbound_native_repair_still_requires_exact_original_identity_and_lineage(tmp_path, invalid):
     store = CaptureJobStore(tmp_path / "capture.jsonl")
