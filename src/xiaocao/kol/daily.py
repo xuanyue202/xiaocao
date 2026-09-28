@@ -36,9 +36,11 @@ from .publication import (
     build_record,
     canonical_sha256,
     evaluation_id,
+    manifest_sha256,
     publication_id_for_source,
     relation_id,
     report_id,
+    record_content_sha256,
     stable_claim,
     viewpoint_id,
 )
@@ -1657,6 +1659,32 @@ class DailyPublicationPipeline:
                 or not str(receipt.get("detailUrl") or "").strip()
             ):
                 raise DailyError("gray report receipt lacks a stable detail URL")
+            records = state["artifact"]["records"]
+            report = next(row for row in records if row["kind"] == "report")
+            current = self.client.call_tool(
+                "get_kol_record",
+                {"kind": "report", "record_id": report["record_id"]},
+            )
+            manifest = current.get("manifest") or []
+            expected_records = {
+                (row["kind"], row["record_id"], row["content_sha256"])
+                for row in records
+            }
+            current_records = {
+                (row.get("kind"), row.get("record_id"), row.get("content_sha256"))
+                for row in manifest
+            }
+            if (
+                current.get("state") != "published"
+                or current.get("content_sha256") != report["content_sha256"]
+                or record_content_sha256(current) != report["content_sha256"]
+                or manifest_sha256(manifest) != current.get("manifest_sha256")
+                or not expected_records <= current_records
+            ):
+                raise DailyError(
+                    "gray publication authoritative readback mismatched; "
+                    "exact publication correction required"
+                )
             self._publication_state = state
             if content.get("tier") == "alert_eligible":
                 self._reminder_message = _reader_reminder_copy(
