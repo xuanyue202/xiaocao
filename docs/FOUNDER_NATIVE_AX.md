@@ -40,6 +40,12 @@ single click.
 - One masked fund-account fingerprint with exact Keychain metadata binding.
 - One-attempt in-session trade unlock using the fixed
   `xiaocao.foundersc.quant.trade` Keychain item over stdin.
+- Before password replacement, v14 dismisses only a uniquely account-matched
+  login-success message-center notice, proves it gone and binds fresh unlock
+  controls. Unknown secondary windows block submission. The adapter persists
+  a sanitized account-bound attempt claim and failure/confirmation evidence;
+  process restart cannot repeat an unproved password attempt. Only proved
+  account readiness clears this fence.
 - Buy/sell page navigation and exact mapping of code, price and quantity
   controls.
 - Millisecond-scale field set, AX readback and optional clear without submit.

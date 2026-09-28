@@ -26,13 +26,24 @@ def isolate_morning_notices(monkeypatch):
     monkeypatch.setattr(cli, "MorningNotifications", Notices)
 
 
-@pytest.mark.parametrize("action", [None, "resume", "reconcile", "close", "capital_unavailable"])
+@pytest.mark.parametrize("action", [None, "preflight_repair", "resume", "reconcile", "close", "capital_unavailable"])
 def test_morning_entry_dispatches_without_reproducing_recovery_candidates(tmp_path, monkeypatch, capsys, action):
+    repair = action == "preflight_repair"
+    action = None if repair else action
     monkeypatch.syspath_prepend(str(Path(__file__).resolve().parents[1] / "scripts"))
     cli = importlib.import_module("scripts.book_b_live_morning")
     calls = []
+    if repair:
+        from xiaocao.runner_recovery import DependencyRecovery, signal_recheck
+        def create_recovery(**kwargs):
+            kwargs["sleep"] = lambda _: signal_recheck(Path(wait.requests[-1]["request_path"]))
+            wait = DependencyRecovery(**kwargs)
+            return wait
+        monkeypatch.setattr(cli, "DependencyRecovery", create_recovery)
     def account_call(name, **kwargs):
         calls.append(name)
+        if repair and name == "login" and calls.count("login") == 1:
+            raise RuntimeError("NATIVE_AX_ACCOUNT_SURFACE_NOT_READY")
         if "expected_fund_account_fingerprint" in kwargs:
             assert kwargs["expected_fund_account_fingerprint"] == "123******890"
         return {"status": "ready"}
@@ -68,7 +79,7 @@ def test_morning_entry_dispatches_without_reproducing_recovery_candidates(tmp_pa
     monkeypatch.setattr(cli, "_wait_for_submit_window", lambda *a, **k: None)
     monkeypatch.setattr(cli, "_review_rendezvous", lambda *a, **k: {"status": "reviewed"})
     def freeze(**kwargs):
-        assert kwargs["timeout_sec"] == (2100 if action is None else 0)
+        assert (0 < kwargs["timeout_sec"] <= 2100) if action is None else kwargs["timeout_sec"] == 0
         kwargs["heartbeat"]()
         return {}
     monkeypatch.setattr(cli, "wait_for_morning_freeze", freeze)
@@ -99,7 +110,12 @@ def test_morning_entry_dispatches_without_reproducing_recovery_candidates(tmp_pa
     if action in {"resume", "reconcile", "close"}:
         args += ["--resume-plan-id", "same-plan", "--recovery-action", action]
     assert cli.main(args) == (2 if action == "capital_unavailable" else 0)
-    result = json.loads(capsys.readouterr().out)
+    lines = [json.loads(line) for line in capsys.readouterr().out.splitlines()]
+    result = lines[-1]
+    if repair:
+        assert calls.count("login") == 2 and calls.count("execute") == 1
+        assert [line.get("event") for line in lines[:-1]] == ["dependency_recovery_wait", "dependency_recovered"]
+        assert result["runner_identity"]["automation_id"] == "xiaocao-book-b-live-morning"
     if action == "capital_unavailable":
         assert result["reason"] == "LIVE_CAPITAL_RUNTIME_NOT_READY" and not calls
     elif action != "close":

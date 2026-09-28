@@ -209,6 +209,8 @@ def build_foundersc_native_execution(
         native=native,
         scoped_buy_preflight=scoped_buy_preflight,
         expected_fund_account_fingerprint=expected_fund_account_fingerprint,
+        credential_health_path=root / "credential_health" / (
+            hashlib.sha256(expected_fund_account_fingerprint.encode()).hexdigest() + ".json"),
     )
     execution = TradingExecution(
         store=store,

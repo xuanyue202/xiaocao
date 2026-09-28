@@ -20,6 +20,34 @@ def test_all_milestones_deliver_once_and_retain_proof(tmp_path):
     assert "成交股数 100" in sent[2][1]
 
 
+def test_preflight_problem_keeps_golden_window_and_ready_notices_live(tmp_path):
+    sent = []
+    notices = MorningNotifications("2026-09-28", root=tmp_path,
+        sender=lambda title, body, recipient: sent.append(body) or {"status": "ok"},
+        recipients=lambda: ("user",))
+    notices.publish("preflight-problem", {"reason": "DEPENDENCY_DOWN", "request_path": "/original/request"})
+    assert not notices.terminal.is_set()
+    notices.publish("ready")
+    notices.publish("result", {"status": "completed"})
+    assert len(notices.close()) == 3
+    assert "原 runner 保持等待" in sent[0]
+
+
+def test_delivery_proof_is_emitted_before_runner_close(tmp_path):
+    from threading import Event
+    observed, results = Event(), []
+    def callback(result):
+        results.append(result)
+        observed.set()
+    notices = MorningNotifications("2026-09-28", root=tmp_path,
+        sender=lambda *args: {"status": "ok"}, recipients=lambda: ("user",), on_delivery=callback)
+    notices.publish("preflight-start")
+    assert observed.wait(2)
+    assert results[0]["status"] == "delivered" and results[0]["delivered_at"]
+    assert not notices.terminal.is_set()
+    notices.close()
+
+
 def test_retry_never_resends_delivered_or_uncertain_recipient(tmp_path):
     sent = []
     def sender(title, body, recipient):

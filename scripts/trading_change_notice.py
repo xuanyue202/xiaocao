@@ -6,13 +6,35 @@ import argparse
 import fcntl
 import hashlib
 import json
+from datetime import datetime, timezone
 from pathlib import Path
 
 from xiaocao.live.notify import notify_detailed, wecom_transport_readiness
 from xiaocao.live.trading_execution import TradingIncidentOutbox
+from xiaocao.runner_recovery import _write
 
 
 DEFAULT_OUTBOX = Path("output/live/trading_change_notices.jsonl")
+
+
+def _attempt_path(path: Path, identifier: str) -> Path:
+    return path.parent / (path.name + ".attempts") / (hashlib.sha256(identifier.encode()).hexdigest() + ".json")
+
+
+def _attempt(path: Path, identifier: str, status: str):
+    _write(_attempt_path(path, identifier), {"incident_id": identifier, "status": status,
+        "observed_at": datetime.now(timezone.utc).isoformat()})
+
+
+def enqueue_notice(path: Path, *, identifier: str, title: str, body: str):
+    """New notices have proof of no prior send; legacy pending claims do not."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.with_suffix(path.suffix + ".delivery.lock").open("a+") as handle:
+        fcntl.flock(handle.fileno(), fcntl.LOCK_EX)
+        outbox = TradingIncidentOutbox(path)
+        if not any(row.get("incident_id") == identifier for row in outbox._rows()):
+            _attempt(path, identifier, "not_sent")
+        outbox.enqueue(incident_id=identifier, title=title, body=body)
 
 
 def pending_notices(path: Path) -> list[dict]:
@@ -55,19 +77,30 @@ def _deliver_pending_locked(path: Path, *, sender, readiness) -> list[dict]:
     results = []
     for row in pending_notices(path):
         identifier = row["incident_id"]
+        try:
+            prior = json.loads(_attempt_path(path, identifier).read_text())
+        except (OSError, ValueError):
+            prior = {"status": "legacy_unproven"}
+        if prior.get("status") not in {"not_sent", "failed_safe"}:
+            results.append({"incident_id": identifier, "delivery": "pending_reconcile",
+                            "reason": "PRIOR_NOTIFICATION_DELIVERY_UNPROVEN"})
+            continue
         state = readiness(audience="trading")
         if state.get("status") != "configured":
             results.append({"incident_id": identifier, "delivery": "pending_transport",
                             "missing": state.get("missing", [])})
             continue
         try:
+            _attempt(path, identifier, "sending")
             sent = sender(row["title"], row["body"], audience="trading")
         except Exception as exc:
+            _attempt(path, identifier, "uncertain")
             results.append({"incident_id": identifier, "delivery": "pending_error",
                             "reason": type(exc).__name__})
             continue
         if isinstance(sent, dict) and sent.get("wecom") == "ok":
             outbox.mark_delivered(identifier, {"wecom": "ok"})
+            _attempt(path, identifier, "delivered")
             results.append({"incident_id": identifier, "delivery": "delivered"})
         else:
             recipient_results = (
@@ -77,6 +110,9 @@ def _deliver_pending_locked(path: Path, *, sender, readiness) -> list[dict]:
                 [value for value in recipient_results.values() if isinstance(value, dict)]
                 if isinstance(recipient_results, dict) else []
             )
+            # A partial delivery also cannot safely resend the aggregate body.
+            safe = bool(failures) and all(value.get("retry_safety") == "safe" for value in failures)
+            _attempt(path, identifier, "failed_safe" if safe else "uncertain")
             results.append({
                 "incident_id": identifier,
                 "delivery": "pending_unproven",
@@ -106,8 +142,8 @@ def main(argv: list[str] | None = None) -> int:
         if not body:
             parser.error("body file is empty")
         identifier = hashlib.sha256(f"{args.kind}\0{args.commit}\0{args.title}".encode()).hexdigest()
-        TradingIncidentOutbox(args.outbox).enqueue(
-            incident_id=identifier, title=args.title,
+        enqueue_notice(args.outbox,
+            identifier=identifier, title=args.title,
             body=f"类别={args.kind} 提交={args.commit}\n{body}",
         )
     elif not args.retry_pending:

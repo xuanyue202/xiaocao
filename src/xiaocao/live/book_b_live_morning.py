@@ -117,6 +117,7 @@ class BookBLiveMorningReceipt:
     persisted_plan_ids: tuple[str, ...] = ()
     submission_observations: tuple[dict, ...] = ()
     runner_identity: dict | None = None
+    dependency_recovery: dict | None = None
 
     def as_dict(self) -> dict:
         return asdict(self)

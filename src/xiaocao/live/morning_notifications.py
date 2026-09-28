@@ -27,6 +27,11 @@ def _write(path: Path, payload: dict):
             stream.flush()
             os.fsync(stream.fileno())
         os.replace(temporary, path)
+        directory = os.open(path.parent, os.O_RDONLY)
+        try:
+            os.fsync(directory)
+        finally:
+            os.close(directory)
     finally:
         Path(temporary).unlink(missing_ok=True)
 
@@ -40,6 +45,10 @@ def message(kind: str, trade_date: str, facts: dict) -> tuple[str, str]:
         return "Book B 晨间预检启动", f"交易日 {trade_date}，APP 服务端仿真预检已启动。"
     if kind == "ready":
         return "Book B APP 预检 ready", f"交易日 {trade_date}，APP 会话和账户预检通过，等待不可变冻结；行情、资金和策略门仍在动作时重新核验。"
+    if kind == "preflight-problem":
+        return "Book B 预检等待修复", (f"交易日 {trade_date}，问题 {facts.get('reason') or 'unproven'}。\n"
+            "原 runner 保持等待，未生成委托；修复信号仅触发重新核验，不代表预检通过。\n"
+            f"恢复请求：{facts.get('request_path') or '-'}")
     if kind not in {"result", "golden-window"}:
         raise ValueError("MORNING_NOTIFICATION_KIND_INVALID")
     orders = facts.get("orders") or []
@@ -63,7 +72,7 @@ def message(kind: str, trade_date: str, facts: dict) -> tuple[str, str]:
 
 class MorningNotifications:
     def __init__(self, trade_date: str, *, automation_id=AUTOMATION_ID,
-                 root=DEFAULT_ROOT, sender=None, recipients=None):
+                 root=DEFAULT_ROOT, sender=None, recipients=None, on_delivery=None):
         self.trade_date, self.automation_id = trade_date, automation_id
         self.root = Path(root)
         self.sender = sender or (lambda t, b, r: send_wecom_recipient_detailed(t, b, r, audience="trading"))
@@ -73,6 +82,19 @@ class MorningNotifications:
         self.failures = []
         self.timer = None
         self.terminal = threading.Event()
+        self.on_delivery = on_delivery
+
+    def _enqueue(self, path):
+        future = self.pool.submit(self.send, path)
+        self.futures.append(future)
+        if self.on_delivery:
+            def delivered(completed):
+                try:
+                    result = completed.result()
+                except Exception:
+                    result = {"status": "pending", "reason": "MORNING_NOTICE_READBACK_UNPROVEN"}
+                self.on_delivery(result)
+            future.add_done_callback(delivered)
 
     def arm_golden_window(self, *, now=None, timer_factory=threading.Timer):
         clock = now or datetime.now(ZoneInfo("Asia/Shanghai"))
@@ -98,6 +120,8 @@ class MorningNotifications:
             # Notification storage is supporting work, never an execution gate.
             self.failures.append({"kind": kind, "status": "pending",
                                   "reason": "MORNING_NOTICE_STORAGE_UNPROVEN"})
+            if self.on_delivery:
+                self.on_delivery(self.failures[-1])
             return None
 
     def _publish(self, kind: str, facts: dict | None = None):
@@ -113,7 +137,7 @@ class MorningNotifications:
                 _write(path, {"notification_id": key, "automation_id": self.automation_id,
                               "trade_date": self.trade_date, "kind": kind, "title": title,
                               "body": body, "created_at": _clock(), "recipients": {}})
-        self.futures.append(self.pool.submit(self.send, path))
+        self._enqueue(path)
         return key
 
     def send(self, path: Path):
@@ -151,7 +175,7 @@ class MorningNotifications:
         for path in self.root.glob("*.json"):
             record = json.loads(path.read_text())
             if record.get("automation_id") == self.automation_id and record.get("status") != "delivered":
-                self.futures.append(self.pool.submit(self.send, path))
+                self._enqueue(path)
 
     def close(self):
         self.terminal.set()

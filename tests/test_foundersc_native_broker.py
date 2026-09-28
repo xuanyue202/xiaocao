@@ -750,6 +750,53 @@ def test_unlock_failure_preserves_sanitized_category_and_attempt_budget() -> Non
         _adapter(WrongTradePasswordNative()).ensure_native_ready(unlock_once=True)
 
 
+def test_unproved_unlock_is_fenced_across_adapter_restart_until_ready(tmp_path) -> None:
+    class UnprovedNative(FakeNative):
+        def __init__(self):
+            super().__init__(surface_state="authentication_required")
+        def unlock_from_keychain(self, *, explicitly_enabled):
+            self.unlock_calls += 1
+            return self._receipt(status="unlock_unproven", unlock_failure_category="unclassified",
+                secure_field_cleared_before_set=True,
+                action={"confirm_pressed": True, "confirmation_mode": "secure_field_targeted_return"})
+    native = UnprovedNative()
+    def adapter():
+        return FounderscNativeAXBrokerAdapter(native=native,
+            expected_fund_account_fingerprint="123******890",
+            credential_health_path=tmp_path / "health.json")
+    first = adapter()
+    with pytest.raises(FounderscNativeAXError, match="NO_RETRY"):
+        first.ensure_native_ready(unlock_once=True)
+    assert first.credential_health["confirmation_pressed"] is True
+    assert first.credential_health["remaining_attempts"] is None
+    restarted = adapter()
+    with pytest.raises(FounderscNativeAXError, match="PRIOR_ATTEMPT"):
+        restarted.ensure_native_ready(unlock_once=True)
+    assert native.unlock_calls == 1
+    native.surface = "trade_ready"
+    restarted.ensure_native_ready(unlock_once=True)
+    assert restarted.credential_health["state"] == "verified_by_account_bound_readback"
+    assert native.unlock_calls == 1
+
+
+def test_crashed_unlock_claim_never_retries_password(tmp_path) -> None:
+    class TimeoutNative(FakeNative):
+        def __init__(self):
+            super().__init__(surface_state="authentication_required")
+        def unlock_from_keychain(self, *, explicitly_enabled):
+            self.unlock_calls += 1
+            raise FounderscNativeAXError("NATIVE_AX_TIMEOUT")
+    native = TimeoutNative()
+    def adapter():
+        return FounderscNativeAXBrokerAdapter(native=native,
+            expected_fund_account_fingerprint="123******890", credential_health_path=tmp_path / "health.json")
+    with pytest.raises(FounderscNativeAXError, match="TIMEOUT"):
+        adapter().ensure_native_ready(unlock_once=True)
+    with pytest.raises(FounderscNativeAXError, match="PRIOR_ATTEMPT"):
+        adapter().ensure_native_ready(unlock_once=True)
+    assert native.unlock_calls == 1
+
+
 def test_query_uses_one_targeted_reread_only_after_invalid_first_parse() -> None:
     native = TransientOrderQueryNative()
     adapter = _adapter(native)

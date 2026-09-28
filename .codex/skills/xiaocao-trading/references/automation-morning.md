@@ -35,6 +35,9 @@ PYTHONPATH=src .venv/bin/python scripts/book_b_live_morning.py --date today --ro
 ```
 
 It may start before the dated freeze exists and wait only for that freeze. It
+retains its original process on a recoverable preflight dependency failure;
+handle `dependency_recovery_wait` through [book-b-live-repair.md](book-b-live-repair.md)
+and Operating Contract §1b before classifying a terminal result.
 must never run or await `morning-execute`, read a paper fill, or write
 `positions.jsonl`, `paper_trades.jsonl`, `paper_account.json`, or
 `paper_account_T.json`. Its state lives only under

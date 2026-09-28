@@ -376,6 +376,12 @@ class FounderscNativeAXClient:
         self.command_timings: list[dict[str, object]] = []
         self._app_test_only = app_test_context_active()
 
+    def refresh_helper(self) -> dict[str, object]:
+        """Adopt a built source-bound repair without creating another runner."""
+        result = build_helper(root=self.root)
+        self.helper_path = Path(str(result["helper_path"]))
+        return result
+
     def __repr__(self) -> str:
         return (
             "FounderscNativeAXClient(helper=source-hash-pinned, "
