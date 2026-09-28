@@ -14,12 +14,16 @@ replay; the same capture was compressed, validated, cleaned up and uploaded to
 `/课程/自己的课/小草`. LiangHui returned `created`; authoritative message/content/
 media-hash readback and the one-item acceptance gate passed.
 
-Automatic course closure **has not passed**: the old File-menu action did not
-close the newer branded window; a fresh round-close click returned
-`noWindowsAvailable`. The user closed it, and the Window menu proved absence.
-This is an accepted local media Handoff with a remaining native-control defect,
-not an unattended capture/close regression pass. A normal WeChat restart later
-restored the login screen but did not restore main-chat content observation.
+The first Sep24 evening Handoff required user closure: the old File-menu action
+did not close the newer branded window, and a fresh round-close click returned
+`noWindowsAvailable`. The user closed it; the Window menu proved absence.
+Later that day, fresh-screenshot round-close actions and Window-menu absence
+readback passed for Sep28 live, Sep23 morning/evening, the single authorized
+Sep23 morning repair, and Sep24 morning. These are bounded native-control
+observations, not unattended batch Handoff acceptance. Sep27 evening then
+returned `windowNotFoundAtPosition`; one readback still showed the course, and
+the observed Window-menu selection did not prove closure. Do not repeat that
+close or claim that intermittent app-scoped input-window failures are cured.
 
 ## Reuse the configured code and bind the original share
 
@@ -98,7 +102,9 @@ with the indicated observation; no historical coordinates or blind input.
 | B1 | That page's unique course button is visible | `await wechat.click(courseButton); await wechat.getAXStateAndScreenshot()` | Exact-brand confirmation → B2; exact course already visible → B3 |
 | B2 | “即将打开‘见势擒龙团’小程序”, with unique “允许” | `await wechat.click(allowButton); await wechat.getAXStateAndScreenshot()` | Require exact brand course; this normal navigation confirmation is already in capture scope |
 | B3 | Brand/course visible | Follow native W1–W6 only for a visible password/Play gate; otherwise inspect the same singleton candidate | Bind the post-arm finite replay to the original source; liveplay/warm-up are not acceptance |
-| B4 | Exact finite media bound | Apply the native reference's closure/readback rules to this exact branded window | Retain truthful `playback_window_closed`; automatic close remains unverified |
+| B4a | Exact branded course/title verified; its finite replay observed, or its waiting/live state established; unique top-right circular close visible in a fresh screenshot | `await wechat.click(closeButton); await wechat.getAXStateAndScreenshot()` once | Require the exact course to disappear; click success alone is not closure |
+| B4b | Course disappeared; fresh AX gives unique Window menu | `await wechat.click(windowMenu); await wechat.getAXState()` | Require no `见势擒龙团` window; still present means unverified, no repeat close |
+| B4c | Window menu proved absence and exposes `Cancel` | `await wechat.performSecondaryAction(windowMenu, "Cancel"); await wechat.getAXState()` | Record `playback_window_closed=true`; media/source acceptance remains independent |
 
 There is no verified way to suppress “允许”. A separate service agreement or
 sensitive permission uses C1–C3, not B2. If a click is rejected or times out,
@@ -109,8 +115,8 @@ Rebinding and a fresh observed Window-menu selection may diagnose the target;
 do not turn a returned `open`/click success into course or closure evidence.
 
 For this newer brand, never claim the old `关闭全部标签页` succeeded solely
-because it was clicked, and never describe the failed round-close action as a
-verified replacement. If the course is already absent from a fresh Window menu,
+because it was clicked. B4a–B4c require this round's actual result, not another
+course's historical success. If the course is already absent from a fresh Window menu,
 record that observation and skip another close. A known download can continue
 while native closure is repaired; preserve both facts independently.
 
