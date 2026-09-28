@@ -126,7 +126,9 @@ def _native_direct_media_lineage(
             continue
         origin = urlsplit(str(row.get("source_url") or ""))
         merchant = re.fullmatch(
-            r"(?P<app_id>app[A-Za-z0-9]+)\.(?:h5|mp)\.(?:xiaoeknow\.com|xe-live\.com)",
+            r"(?P<app_id>app[A-Za-z0-9]+)\."
+            r"(?:(?:h5|mp)\.(?:xiaoeknow\.com|xe-live\.com)"
+            r"|h5\.(?:xiaoe-live\.com|xetsdkspace\.com))",
             origin.hostname or "",
         )
         if (
@@ -457,6 +459,7 @@ class XiaocaoLiveCaptureDriver:
             and capture.get("status") == "awaiting_capture"
             and not any(capture.get(key) for key in (
                 "candidate_id", "task_id", "source_job_id", "expected_source",
+                "native_unbound_media",
             ))
         )
 
@@ -547,6 +550,9 @@ class XiaocaoLiveCaptureDriver:
             raise EnrichmentError("native capture was already bound differently")
         app_id = source_match.group("app_id")
         live_id = source_match.group("live_id")
+        unbound_identity = (current.get("native_unbound_media") or {}).get("source_identity_observed")
+        if unbound_identity and unbound_identity != source_identity:
+            raise EnrichmentError("native repair changed the observed source identity")
         observations = service.sniffer.candidates()
         candidates = [
             row for row in observations
@@ -585,7 +591,7 @@ class XiaocaoLiveCaptureDriver:
                 candidate, observations, app_id=app_id, live_id=live_id,
                 armed_at=armed_at, captured_at=captured_at,
             )
-        old_resource = (current.get("native_media_lineage") or {}).get("media_resource_sha256")
+        old_resource = (current.get("native_media_lineage") or current.get("native_unbound_media") or {}).get("media_resource_sha256")
         if current.get("native_repair_armed_at") and old_resource != lineage.get("media_resource_sha256"):
             raise EnrichmentError("native repair changed the bound media resource")
         page_url = f"https://{app_id}.h5.xiaoeknow.com/v4/course/alive/{live_id}"

@@ -24,6 +24,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable
 from uuid import uuid4
+from urllib.parse import urlsplit, urlunsplit
+from zoneinfo import ZoneInfo
 
 from .capture import (
     CaptureJobStore,
@@ -1716,6 +1718,65 @@ class XiaocaoLiveService:
         task = next((row for row in tasks if row.get("id") == current.get("download_task_id")), None)
         if task is None or task.get("status") != "error" or int((task.get("progress") or {}).get("downloaded") or 0) != 0:
             raise EnrichmentError("backend repair requires a proven zero-byte failure")
+        return self._replace_sniffer_for_repair(current, replacement_binary=replacement_binary)
+
+    def restart_sniffer_for_native_observation_repair(
+        self, capture_job_id: str, *, replacement_binary: Path,
+        candidate_id: str, source_identity: str, playback_window_closed: bool,
+    ) -> dict[str, Any]:
+        """Retain an unaccepted native observation across one backend repair.
+
+        This is not source/media acceptance. The renewed candidate must still
+        prove merchant lineage and the exact same media before any download.
+        """
+        current = self.capture_store.latest(capture_job_id)
+        if current is None or current.get("status") != "awaiting_capture" or any(
+            current.get(key) for key in ("expected_source", "candidate", "source_job_id", "download_task_id")
+        ):
+            raise EnrichmentError("native observation repair requires an unbound capture")
+        if current.get("native_unbound_media"):
+            raise EnrichmentError("native observation repair is already retained")
+        if playback_window_closed is not True:
+            raise EnrichmentError("native observation repair requires verified course closure")
+        match = re.fullmatch(r"xiaoetong:(app[A-Za-z0-9]+):(l_[A-Za-z0-9]+)", source_identity)
+        if match is None:
+            raise EnrichmentError("native observation identity is invalid")
+        if any(row.get("status") in {"running", "ready", "wait"} for row in self.sniffer.tasks()):
+            raise EnrichmentError("active downloads block backend repair")
+        candidates = [row for row in self.sniffer.candidates()
+            if row.get("id") == candidate_id and row.get("live_id") == match.group(2)]
+        if len(candidates) != 1:
+            raise EnrichmentError("native observation is missing or ambiguous")
+        candidate = candidates[0]
+        url = urlsplit(str(candidate.get("url") or ""))
+        origin = urlsplit(str(candidate.get("source_url") or ""))
+        resource = urlunsplit((url.scheme, url.netloc, url.path, "", ""))
+        source_resource = urlunsplit((origin.scheme, origin.netloc, origin.path, "", ""))
+        if (url.scheme != "https" or not url.hostname or url.username or url.password
+            or resource != source_resource or candidate.get("source_path") != url.path
+            or candidate.get("json_path") or candidate.get("media_type") != "m3u8"
+            or Path(url.path).name != "playlist_eof.m3u8"):
+            raise EnrichmentError("native observation is not a directly captured replay")
+        try:
+            captured = datetime.fromisoformat(str(candidate.get("captured") or ""))
+            if captured.tzinfo is None:
+                captured = captured.replace(tzinfo=ZoneInfo("Asia/Shanghai"))
+            armed = datetime.fromisoformat(current["created_at"])
+            if armed.tzinfo is None or captured <= armed:
+                raise ValueError("stale observation")
+        except (KeyError, TypeError, ValueError) as exc:
+            raise EnrichmentError("native observation predates its capture") from exc
+        observation = {"candidate_id": candidate_id, "source_identity_observed": source_identity,
+            "captured_at": captured.isoformat(), "media_resource_sha256": _sha256_text(resource),
+            "source_accepted": False, "playback_window_closed": True}
+        return self._replace_sniffer_for_repair(current, replacement_binary=replacement_binary,
+            unbound_observation=observation)
+
+    def _replace_sniffer_for_repair(
+        self, current: dict[str, Any], *, replacement_binary: Path,
+        unbound_observation: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        capture_job_id = current["job_id"]
         replacement = replacement_binary.resolve()
         installed = self.sniffer_binary.resolve()
         if replacement.parent != installed.parent or replacement == installed or not replacement.is_file():
@@ -1723,6 +1784,9 @@ class XiaocaoLiveService:
         pids = self._sniffer_pids()
         if len(pids) != 1:
             raise EnrichmentError("backend repair requires the exact singleton")
+        if unbound_observation is not None:
+            current = self.capture_store.transition(current, "native_observation_repair_claimed",
+                native_unbound_media=unbound_observation)
         backup = installed.with_name(installed.name + ".pre-native-ticket-repair-" + _sha256_file(installed)[:12])
         if not backup.exists():
             shutil.copy2(installed, backup)

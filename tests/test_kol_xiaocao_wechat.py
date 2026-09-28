@@ -1012,6 +1012,76 @@ def test_native_direct_manifest_requires_exact_merchant_lineage(tmp_path, invali
     assert "private" not in store.path.read_text()
 
 
+@pytest.mark.parametrize("host,valid", [
+    ("appdemo.h5.xiaoe-live.com", True),
+    ("appdemo.h5.xetsdkspace.com", True),
+    ("appdemo.mp.xetsdkspace.com", False),
+    ("appdemo.h5.xetsdkspace.com.evil.test", False),
+])
+def test_native_lineage_accepts_documented_sdk_merchants_only(tmp_path, host, valid):
+    store = CaptureJobStore(tmp_path / "capture.jsonl")
+    armed = store.transition(store.arm([]), "test_clock", created_at="2026-09-05T15:00:00+08:00")
+    resource = "https://encrypt-k-vod.xet.tech/content/playlist_eof.m3u8"
+    candidate = {"id": "native", "live_id": "l_target", "captured": "2026-09-05 15:02:00",
+                 "media_type": "m3u8", "url": resource, "source_url": resource,
+                 "source_path": "/content/playlist_eof.m3u8"}
+    anchor = {"id": "merchant", "live_id": "l_target", "captured": "2026-09-05 15:01:00",
+              "media_type": "m3u8", "url": resource,
+              "source_url": f"https://{host}/_alive/v3/get_lookback_list",
+              "source_path": "/_alive/v3/get_lookback_list",
+              "json_path": "data[0].line_sharpness[0].url"}
+    service = SimpleNamespace(capture_store=store, sniffer=SimpleNamespace(candidates=lambda: [candidate, anchor]))
+    driver = XiaocaoLiveCaptureDriver(tmp_path, service_factory=lambda *a, **kw: service)
+    if not valid:
+        with pytest.raises(EnrichmentError):
+            driver.bind_mini_program_capture("item", armed["job_id"],
+                source_identity="xiaoetong:appdemo:l_target", candidate_id="native")
+        assert store.latest()["status"] == "awaiting_capture"
+    else:
+        bound = driver.bind_mini_program_capture("item", armed["job_id"],
+            source_identity="xiaoetong:appdemo:l_target", candidate_id="native")
+        assert bound["native_media_lineage"]["metadata_anchors"][0]["source_host"] == host
+        assert bound["job_id"] == armed["job_id"]
+
+
+@pytest.mark.parametrize("invalid", [None, "missing_anchor", "changed_source", "changed_media", "stale"])
+def test_unbound_native_repair_still_requires_exact_original_identity_and_lineage(tmp_path, invalid):
+    store = CaptureJobStore(tmp_path / "capture.jsonl")
+    resource = "https://encrypt-k-vod.xet.tech/content/playlist_eof.m3u8"
+    armed = store.transition(store.arm([]), "unaccepted_observation",
+        created_at="2026-09-05T14:00:00+08:00", native_repair_armed_at="2026-09-05T15:00:00+08:00",
+        native_unbound_media={"media_resource_sha256": hashlib.sha256(resource.encode()).hexdigest(),
+            "source_identity_observed": "xiaoetong:appdemo:l_target", "source_accepted": False})
+    candidate = {"id": "renewed", "live_id": "l_target", "captured": "2026-09-05 15:02:00",
+        "media_type": "m3u8", "url": resource, "source_url": resource, "source_path": "/content/playlist_eof.m3u8"}
+    anchor = {"id": "anchor", "live_id": "l_target", "captured": "2026-09-05 15:01:00",
+        "media_type": "m3u8", "url": resource,
+        "source_url": "https://appdemo.h5.xetsdkspace.com/_alive/v3/get_lookback_list",
+        "source_path": "/_alive/v3/get_lookback_list", "json_path": "data[0].line_sharpness[0].url"}
+    source_identity = "xiaoetong:appdemo:l_target"
+    if invalid == "changed_source":
+        source_identity = "xiaoetong:appother:l_target"
+        anchor["source_url"] = anchor["source_url"].replace("appdemo", "appother")
+    if invalid == "changed_media":
+        for key in ("url", "source_url", "source_path"):
+            candidate[key] = candidate[key].replace("/content/", "/other/")
+        anchor["url"] = candidate["url"]
+    if invalid == "stale":
+        candidate["captured"] = "2026-09-05 14:30:00"
+    observations = [candidate] if invalid == "missing_anchor" else [candidate, anchor]
+    service = SimpleNamespace(capture_store=store, sniffer=SimpleNamespace(candidates=lambda: observations))
+    driver = XiaocaoLiveCaptureDriver(tmp_path, service_factory=lambda *a, **kw: service)
+    assert not driver.can_expire_wait("item", armed["job_id"])
+    if invalid:
+        with pytest.raises(EnrichmentError):
+            driver.bind_mini_program_capture("item", armed["job_id"], source_identity=source_identity, candidate_id="renewed")
+        assert store.latest() == armed
+    else:
+        bound = driver.bind_mini_program_capture("item", armed["job_id"], source_identity=source_identity, candidate_id="renewed")
+        assert bound["job_id"] == armed["job_id"] and bound["status"] == "captured"
+        assert bound["native_media_lineage"]["metadata_anchors"][0]["candidate_id"] == "anchor"
+
+
 @pytest.mark.parametrize("invalid", [
     None, "different_media", "old_request", "uncertain_task", "restored_pause",
     "unclaimed_pause", "different_paused_task", "partial_paused_task",

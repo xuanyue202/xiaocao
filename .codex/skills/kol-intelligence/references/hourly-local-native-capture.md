@@ -199,6 +199,11 @@ lists enrich asynchronously with an incremental cache; they cannot bind a source
    微信登录、安全、聊天域名保持 DIRECT；仍使用 `--xiaoetong-only`，不启用微信
    登录/聊天/注入插件。其他代理设置不动。没有 PAC 时可能能播放却抓不到，
    不是登录失败。新增媒体主机须有实际请求或可信提供方证据，并验证授权域名直连。
+   小鹅通[小程序接入文档](https://api-doc.xiaoe-tech.com/recall_scene/lnline_sdk/mini_sdk.html)
+   还列出 `{{appid}}.h5.xiaoe-live.com`、`{{appid}}.h5.xetsdkspace.com`；抓取 PAC
+   与商户来源检查须覆盖这些已公布的域名，但域名覆盖不证明当前故障由它导致。
+   来源检查仍要求同 app/live、同媒体资源、post-arm 的商户 lookback 响应；
+   market-conf 身份、UI 标题、CDN 时间或直播流不能代替该映射。
 
 3. **一次正常唤起，再输入课程口令。** 对 HTTPS 分享入口，运行当前请求给出的
    `launch_resolver_command`；其命令形态为：
@@ -296,6 +301,19 @@ lists enrich asynchronously with an incremental cache; they cannot bind a source
    是否已发送，保留原任务做离线诊断。登录/手机确认/验证码/保护画面不属于课程
    口令门。无法证明课程关闭就如实报告“课程窗口关闭未证实”，不回填成功。
    仅切到微信主窗口、最小化或工具点击成功都不能证明鹅直播窗口已关闭。
+
+   **已观察到原生有限媒体、尚未通过来源映射的抓取器修复：** 不启动下载、
+   不伪造 lookback、不借用别场锚点。只有原 capture 仍 `awaiting_capture`、无
+   source/download claim、窗口关闭已读回、singleton 无运行下载，且有经过
+   验证的同目录 replacement binary 时，才使用
+   `XiaocaoLiveService.restart_sniffer_for_native_observation_repair`，传原
+   `capture_job_id`、实际 `candidate_id/source_identity` 与
+   `playback_window_closed=True`。它保留无凭据的 `native_unbound_media`、媒体
+   资源哈希和原 baseline/ID，记录 `source_accepted=False`，仅更换同一抓取器；
+   不产生完成媒体 cleanup 或下载 claim。该观察保留供 reconciliation，不能被
+   72 小时 idle-wait gate 丢弃。重开仍需用户本次同场修复授权，且只有一次新的
+   激活边界；新的原生候选必须在 repair-arm 后，重新通过商户映射、原 source
+   identity 和原媒体哈希核对。再次缺失映射就保留原任务继续诊断，不能反复重开。
 
 5. **确认有限回放，交回原 PTY，等压缩文件完成。** 复用 W7 前已读取的
    `/api/elive/live/candidates?all=1&view=capture`：候选必须是 baseline 之后出现、
