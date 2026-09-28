@@ -154,6 +154,14 @@ input, or `resume-source-user-action` after authentication, with
 `--source-adapter subscription_video --source-identity <identity>`. Auth uses
 identity `subscription_video:source`; clear after `user_action_required`.
 
+After exact cloud-transfer reconciliation proves a completed private copy,
+continue the unfinished item with `resume-source-user-action` and that item's
+exact identity. The coordinator binds the historical blocked identity/version
+to the durable reconciliation claim and receipt, even when source-level
+readback projected `no_update`. Transfer completion closes only that effect;
+the exact-item terminal receipt closes analysis/publication. Keep source
+discovery disabled on this continuation.
+
 Before binding or switching to a Baidu player, read
 [video-player-safety.md](video-player-safety.md) completely. At provider steps,
 use only the installed OpenCLI provider; keep every effect at-most-once with

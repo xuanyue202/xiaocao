@@ -2382,6 +2382,68 @@ class DailyCoordinator:
                     return dict(item), container
         return None
 
+    @staticmethod
+    def _reconciled_transfer_continuation(
+        rows: list[dict[str, Any]], source: str, identity: str,
+    ) -> dict[str, Any] | None:
+        """Recover an exact blocked item after read-only transfer reconciliation."""
+        if source != "subscription_video":
+            return None
+        for index in range(len(rows) - 1, -1, -1):
+            row = rows[index]
+            if row.get("event") != "source_completed" or row.get("source") != source:
+                continue
+            result = row.get("result") or {}
+            readback = result.get("authoritative_readback") or {}
+            claim = str(readback.get("claim_identity") or "")
+            if (
+                readback.get("effect_observed") != "completed"
+                or not re.fullmatch(r"[0-9a-f]{64}", str(readback.get("receipt_sha256") or ""))
+                or not claim.startswith("lv_transfer:")
+            ):
+                continue
+            bound = any(
+                event.get("event") == "source_reconciliation_resume_started"
+                and event.get("source") == source
+                and event.get("item_identity") == identity
+                and event.get("claim_identity") == claim
+                for event in rows[:index]
+            )
+            receipted = any(
+                event.get("event") == "side_effect_reconciled"
+                and event.get("source") == source
+                and event.get("claim_identity") == claim
+                and event.get("external_business_effects_replayed") is False
+                for event in rows[:index]
+            )
+            if not bound or not receipted:
+                continue
+            for old in reversed(rows[:index]):
+                if old.get("event") != "source_completed" or old.get("source") != source:
+                    continue
+                old_result = old.get("result") or {}
+                progress = old_result.get("writer_progress") or {}
+                if progress.get("status") != "user_action_required":
+                    continue
+                for waiter in old_result.get("waiting_items") or []:
+                    for item in waiter.get("blocked_items") or []:
+                        if (
+                            item.get("identity") == identity
+                            and claim.startswith(f"lv_transfer:{item.get('version_key')}:")
+                        ):
+                            return {
+                                **old,
+                                "progress": {
+                                    **progress,
+                                    "item_identity": identity,
+                                    "claim_receipt_summary": {
+                                        "claim_count": 1, "receipt_count": 1,
+                                        "uncertain_effect_count": 0,
+                                    },
+                                },
+                            }
+        return None
+
     def _source_state_with_pending_waits(
         self,
         *,
@@ -3244,6 +3306,12 @@ class DailyCoordinator:
                 identity,
             )
             projected_from_waiting_item = False
+            reconciled_transfer_continuation = False
+            if progress_row is None and _completed_user_action:
+                progress_row = self._reconciled_transfer_continuation(
+                    prior_rows, name, identity,
+                )
+                reconciled_transfer_continuation = progress_row is not None
             if progress_row is None and not _completed_user_action:
                 waiting_binding = self._source_waiting_item_for_identity(
                     prior_rows,
@@ -3389,6 +3457,14 @@ class DailyCoordinator:
                 )
             )
             prior.validate_transition_to(following, now=now)
+            if (
+                reconciled_transfer_continuation
+                and following.item_identity == f"{name}:source"
+                and following.status == "terminal"
+            ):
+                following = WriterProgress.from_dict({
+                    **following.to_dict(), "item_identity": identity,
+                })
             result = {
                 **{
                     key: value

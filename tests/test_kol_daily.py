@@ -4401,6 +4401,72 @@ def test_daily_resume_user_action_runs_only_exact_blocked_source(tmp_path):
     )
 
 
+@pytest.mark.parametrize("receipt_identity,receipt_version,observed", [
+    ("video-1", "version-1", "completed"),
+    ("other-video", "version-1", "completed"),
+    ("video-1", "other-version", "completed"),
+    ("video-1", "version-1", "absent"),
+])
+def test_reconciled_transfer_resumes_exact_unfinished_item(
+    tmp_path, receipt_identity, receipt_version, observed,
+):
+    service = DailyCoordinator(tmp_path / "daily")
+    blocker = UserActionBlocker(
+        "lv-cloud-transfer-not-materialized", "转存结果未确认",
+        waiting_items=[{
+            "identity": "subscription_video:source",
+            "stage": "cloud_transfer_confirmation",
+            "user_action_required": True,
+            "blocked_items": [{"identity": "video-1", "version_key": "version-1"}],
+        }],
+    )
+    service.run([{
+        "name": "subscription_video",
+        "run": lambda: (_ for _ in ()).throw(blocker),
+    }], blocker_sender=lambda *_args: None)
+    claim = f"lv_transfer:{receipt_version}:claim-1"
+    with service._locked():
+        service._append(
+            "source_reconciliation_resume_started", source="subscription_video",
+            item_identity=receipt_identity, claim_identity=claim,
+        )
+        service._append(
+            "side_effect_reconciled", source="subscription_video",
+            claim_identity=claim, external_business_effects_replayed=False,
+        )
+        terminal = normalize_source_result(
+            "subscription_video", {"status": "no_update"},
+            failure_revision="a" * 40, provider_contract_version="xiaocao_writer_v1",
+        )
+        service._append("source_progressed", source="subscription_video", progress=terminal.to_dict())
+        service._append(
+            "source_completed", source="subscription_video", result={
+                "status": "no_update", "writer_progress": terminal.to_dict(),
+                "authoritative_readback": {
+                    "claim_identity": claim, "effect_observed": observed,
+                    "receipt_sha256": "a" * 64,
+                },
+            },
+        )
+    surfaces = []
+    source = {
+        "name": "subscription_video",
+        "narrow_resume": lambda surface: surfaces.append(surface) or {"status": "no_update"},
+    }
+    valid = (receipt_identity, receipt_version, observed) == ("video-1", "version-1", "completed")
+    if valid:
+        service.resume_user_action(source, item_identity="video-1")
+        assert surfaces == ["subscription_video:video-1"]
+        with pytest.raises(DailyError):
+            service.resume_user_action(source, item_identity="video-1")
+        assert len(surfaces) == 1
+    else:
+        with pytest.raises(DailyError):
+            service.resume_user_action(source, item_identity="video-1")
+        assert surfaces == []
+    assert sum(row["event"] == "runner_started" for row in service.events()) == 1
+
+
 def test_user_blocker_preserves_concrete_items_and_claim_summary(tmp_path):
     service = DailyCoordinator(
         tmp_path / "daily",
