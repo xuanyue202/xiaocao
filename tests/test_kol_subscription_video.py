@@ -2073,6 +2073,92 @@ def test_lv_transfer_claim_precedes_click_and_exact_copy_readback_completes(
     )
 
 
+def test_lv_transfer_lost_native_input_is_repair_not_provider_attempt(tmp_path):
+    service = _service(tmp_path, sleep=lambda _seconds: None)
+    item = service._normalize(_source_rows()[0][1], source=LV_SOURCE, author=LV_AUTHOR)
+    service.ensure_lv_destination = lambda **_kwargs: {"status": "completed"}
+    service._direct_private_entries = lambda **_kwargs: []
+    clicks = []
+
+    def opencli(_session, *args, **_kwargs):
+        if args[0] == "open":
+            return {"page": "page-1"}
+        if args[0] == "tab":
+            return {"selected": "page-1"}
+        if args[0] == "click":
+            clicks.append(args)
+            return {"clicked": True, "matches_n": 1}
+        if "destinationSegments" in args[1]:
+            return {"status": "save_confirmation_ready", "triggered": False,
+                    "confirmation_selector": '[data-xiaocao-lv-confirm="ready"]',
+                    "confirmation_role": "provider_submit"}
+        return {"status": "cloud_transfer_outcome_unobserved", "triggered": True,
+                "provider_outcome": "unobserved", "provider_request_observed": False,
+                "provider_response_observed": False, "input_event_probe_installed": True,
+                "input_target_observed": False}
+
+    service._opencli_json = opencli
+    with pytest.raises(EnrichmentDiagnosticError) as failure:
+        service.transfer_lv_video(item, lv_session="lv", private_session="private", profile=None)
+    assert failure.value.diagnostic_code == "lv_native_click_not_delivered"
+    claim = json.loads(service._claim_path(f"lv_transfer_{item['version_key']}").read_text())
+    assert claim["status"] == "failed_pretrigger"
+    assert claim["side_effect_uncertain"] is False
+    assert "triggered_at" not in claim
+    assert len(clicks) == 1
+    assert "lv_cloud_transfer_triggered" not in service.events_path.read_text()
+
+
+def test_lv_path_confirmation_then_save_share_one_provider_attempt(tmp_path):
+    service = _service(tmp_path, sleep=lambda _seconds: None)
+    item = service._normalize(_source_rows()[0][1], source=LV_SOURCE, author=LV_AUTHOR)
+    service.ensure_lv_destination = lambda **_kwargs: {"status": "completed"}
+    copy_ready = False
+    clicks = []
+
+    def direct_entries(**_kwargs):
+        return ([_row("private-copy", f"{LV_DESTINATION_DIRECTORY}/{item['name']}",
+                      size=item["size"], modified_at=item["modified_at"] + 1)]
+                if copy_ready else [])
+
+    service._direct_private_entries = direct_entries
+
+    def opencli(_session, *args, **_kwargs):
+        nonlocal copy_ready
+        if args[0] == "open":
+            return {"page": "page-1"}
+        if args[0] == "tab":
+            return {"selected": "page-1"}
+        if args[0] == "click":
+            claim = json.loads(service._claim_path(f"lv_transfer_{item['version_key']}").read_text())
+            assert claim["status"] == "native_click_claimed"
+            assert claim["trigger_attempt"] == 1
+            clicks.append(claim["confirmation_role"])
+            return {"clicked": True, "matches_n": 1}
+        if "destinationSegments" in args[1]:
+            return {"status": "save_confirmation_ready", "triggered": False,
+                    "confirmation_selector": '[data-xiaocao-lv-confirm="ready"]',
+                    "confirmation_role": "destination_selection"}
+        if "pathConfirmed" in args[1]:
+            return {"status": "save_confirmation_ready", "triggered": False,
+                    "confirmation_selector": '[data-xiaocao-lv-confirm="ready"]',
+                    "confirmation_role": "provider_submit",
+                    "destination_selection": "path_picker_confirmed",
+                    "destination_selection_receipt": {"input_target_observed": True}}
+        copy_ready = True
+        return {"status": "cloud_transfer_accepted", "triggered": True,
+                "provider_outcome": "accepted", "provider_request_observed": True,
+                "provider_response_observed": True, "input_event_probe_installed": True,
+                "input_target_observed": True}
+
+    service._opencli_json = opencli
+    result = service.transfer_lv_video(item, lv_session="lv", private_session="private", profile=None)
+    assert result["status"] == "completed"
+    assert clicks == ["destination_selection", "provider_submit"]
+    assert sum('"event":"lv_cloud_transfer_triggered"' in line
+               for line in service.events_path.read_text().splitlines()) == 1
+
+
 def test_transfer_activation_falls_back_for_bound_user_tab(tmp_path):
     commands = []
 
