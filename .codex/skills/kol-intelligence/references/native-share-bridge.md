@@ -20,10 +20,11 @@ did not close the newer branded window, and a fresh round-close click returned
 Later that day, fresh-screenshot round-close actions and Window-menu absence
 readback passed for Sep28 live, Sep23 morning/evening, the single authorized
 Sep23 morning repair, and Sep24 morning. These are bounded native-control
-observations, not unattended batch Handoff acceptance. Sep27 evening then
-returned `windowNotFoundAtPosition`; one readback still showed the course, and
-the observed Window-menu selection did not prove closure. Do not repeat that
-close or claim that intermittent app-scoped input-window failures are cured.
+observations, not unattended batch Handoff acceptance. Sep27 evening's circular
+close returned `windowNotFoundAtPosition` even on the current Space. In the
+same-source repair, fresh File → `关闭全部标签页` (`performClose:`) closed the
+actual brand course; the Window menu then proved absence. Prefer that semantic
+close below. This repairs the workflow, not the underlying input service.
 
 ## Reuse the configured code and bind the original share
 
@@ -102,7 +103,7 @@ with the indicated observation; no historical coordinates or blind input.
 | B1 | That page's unique course button is visible | `await wechat.click(courseButton); await wechat.getAXStateAndScreenshot()` | Exact-brand confirmation → B2; exact course already visible → B3 |
 | B2 | “即将打开‘见势擒龙团’小程序”, with unique “允许” | `await wechat.click(allowButton); await wechat.getAXStateAndScreenshot()` | Require exact brand course; this normal navigation confirmation is already in capture scope |
 | B3 | Brand/course visible | Follow native W1–W6 only for a visible password/Play gate; otherwise inspect the same singleton candidate | Bind the post-arm finite replay to the original source; liveplay/warm-up are not acceptance |
-| B4a | Exact branded course/title verified; its finite replay observed, or its waiting/live state established; unique top-right circular close visible in a fresh screenshot | `await wechat.click(closeButton); await wechat.getAXStateAndScreenshot()` once | Require the exact course to disappear; click success alone is not closure |
+| B4a | Exact branded course/title verified; its finite replay observed, or its waiting/live state established; no unrelated tabs/windows would be closed | From fresh AX click File; read AX, then click its unique enabled `关闭全部标签页` (`performClose:`) once and read `getAXStateAndScreenshot()` | Require the exact course to disappear; menu-click success alone is not closure |
 | B4b | Course disappeared; fresh AX gives unique Window menu | `await wechat.click(windowMenu); await wechat.getAXState()` | Require no `见势擒龙团` window; still present means unverified, no repeat close |
 | B4c | Window menu proved absence and exposes `Cancel` | `await wechat.performSecondaryAction(windowMenu, "Cancel"); await wechat.getAXState()` | Record `playback_window_closed=true`; media/source acceptance remains independent |
 
@@ -119,6 +120,35 @@ because it was clicked. B4a–B4c require this round's actual result, not anothe
 course's historical success. If the course is already absent from a fresh Window menu,
 record that observation and skip another close. A known download can continue
 while native closure is repaired; preserve both facts independently.
+
+## Input-window recovery, not a playback retry loop
+
+`noWindowsAvailable` is an input-window lookup error, not proof of WeChat
+protection or course entitlement failure. On 2026-09-28, the installed native
+service used an on-screen-only window list for input, while screenshots used
+desktop-independent capture. A single monitor can have multiple full-screen
+Spaces: readable AX/screenshots do not prove an input-eligible current window.
+One controlled Space switch restored the identical Calculator control without
+restarting anything. Do not infer an off-Space cause from the error alone.
+
+After a rejected action, read back once and distinguish actual absence,
+off-current-Space evidence, and an on-screen window-matching failure. Use only
+documented CUA targeting/AX actions; no blind coordinates, service injection,
+permission changes, or operation of an app that the tool forbids. If a Space
+switch cannot be performed through permitted controls, state that limitation;
+restarting WeChat is not a demonstrated fix. The controlled desktop test is not
+a routine request for the user to click a course.
+
+For a visible Caoliao bridge whose coordinate input still fails on the current
+Space, one bounded reconstruction passed: with no course open, no accepted
+media/download/upload claim, and the original capture retained, close only the
+bridge through fresh File → enabled `关闭全部标签页`; verify its absence from
+Window and cancel the menu. Re-read the exact original editor target, obtain
+one new provider entry after the same readiness checks, and execute B0–B3.
+Do not repeat reconstruction if input remains broken. Never restart the singleton
+or replace the capture for this repair. If the branded course is open, use B4;
+do not reconstruct/replay merely to fix its close button. Fresh on-screen brand
+coordinate close still failed in the repair test, while B4 semantic close passed.
 
 ## Continue to local Handoff
 
