@@ -23,7 +23,12 @@ _CODE = re.compile(r"[A-Z][A-Z0-9_:-]{0,95}\Z")
 
 def _safe_code(value: object, fallback: str) -> str:
     candidate = str(value or "").strip()
-    return candidate if _CODE.fullmatch(candidate) else fallback
+    if _CODE.fullmatch(candidate):
+        return candidate
+    # Rich typed diagnostics contain sanitized field=value suffixes; retain
+    # their leading failure code rather than replacing it with a generic block.
+    leading = candidate.split(":", 1)[0]
+    return leading if _CODE.fullmatch(leading) else fallback
 
 
 def _read_receipt(path: Path) -> dict:
@@ -63,7 +68,7 @@ def assess_receipt(kind: str, trade_date: str, path: Path) -> dict:
         if status not in {"completed", "no_action", "skipped", "blocked", "failed"}:
             raise ValueError("PREFLIGHT_RECEIPT_STATUS_INVALID")
         reason = _safe_code(payload.get("reason"), "BOOK_B_MORNING_BLOCKED")
-        stage = _safe_code(payload.get("failed_stage"), "UNPROVEN_STAGE")
+        stage = _safe_code(str(payload.get("failed_stage") or "").upper(), "UNPROVEN_STAGE")
         evidence = f"run_id={payload['run_id']} stage={stage} receipt={path.resolve()}"
     elif kind == "producer":
         if payload.get("market_date") != trade_date or payload.get("automation") != "morning-prerecommend":

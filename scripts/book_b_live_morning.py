@@ -42,6 +42,8 @@ from wait_for_morning_freeze import wait_for_morning_freeze  # noqa: E402
 
 
 from xiaocao.live.morning_observability import review_brief, review_notice, terminal_notice
+from xiaocao.automation_run import automation_run
+from xiaocao.live.morning_notifications import AUTOMATION_ID, MorningNotifications
 
 
 def _china_date() -> str:
@@ -266,10 +268,38 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--resume-plan-id", help="Resume only this existing durable plan; never regenerate candidates")
     parser.add_argument("--recovery-action", choices=("resume", "reconcile", "close"), default="resume")
     parser.add_argument("--poll-seconds", type=float, default=1.0)
+    parser.add_argument("--automation-id", default=AUTOMATION_ID,
+                        help="Task-local deduplication identity; never use a remote writer's identity")
     args = parser.parse_args(argv)
     if args.recovery_action != "resume" and not args.resume_plan_id:
         parser.error("--recovery-action requires --resume-plan-id")
 
+    trade_date = _china_date() if args.date == "today" else args.date
+    with automation_run(args.automation_id, trade_date,
+                        root=Path.home() / "Library/Caches/xiaocao/automation-runs") as lock:
+        if lock["status"] == "busy":
+            print(json.dumps({**lock, "status": "no_op", "reason": "SAME_AUTOMATION_RUNNING"}))
+            return 0
+        notices = MorningNotifications(trade_date, automation_id=args.automation_id)
+        try:
+            if args.recovery_action != "close":
+                notices.publish("preflight-start")
+            return _run(args, notices)
+        except Exception as exc:
+            # Early configuration faults also need a result; never send raw
+            # exception text from a credential-bearing setup boundary.
+            notices.publish("result", {"status": "blocked", "failed_stage": "preflight",
+                                       "reason": "MORNING_SETUP_FAILED:" + type(exc).__name__})
+            raise
+        finally:
+            try:
+                for result in notices.close():
+                    print(json.dumps({"event": "book_b_wecom_delivery", **result}, ensure_ascii=False), flush=True)
+            except Exception:
+                print(json.dumps({"event": "book_b_wecom_delivery", "status": "unproven"}), flush=True)
+
+
+def _run(args, notices):
     trade_date = _china_date() if args.date == "today" else args.date
     freeze_path = Path(str(args.freeze).format(date=trade_date))
     allocation_path = Path(str(args.allocation_facts).format(date=trade_date))
@@ -284,12 +314,14 @@ def main(argv: list[str] | None = None) -> int:
     capital_runtime = KeychainCapitalRuntime()
     capital_receipt = capital_runtime.preflight()
     if capital_receipt["status"] != "ready":
-        print(json.dumps({
+        blocked = {
             "trade_date": trade_date,
             "status": "blocked",
             "reason": "LIVE_CAPITAL_RUNTIME_NOT_READY",
             "capital_runtime": capital_receipt,
-        }, ensure_ascii=False, sort_keys=True))
+        }
+        notices.publish("result", blocked)
+        print(json.dumps(blocked, ensure_ascii=False, sort_keys=True))
         return 2
     keychain = FounderscKeychainPreflight()
     keychain_receipt = keychain.run(read_trade_secret=True)
@@ -433,6 +465,11 @@ def main(argv: list[str] | None = None) -> int:
     )
     runner = run_book_b_live_recovery if args.resume_plan_id else run_book_b_live_morning
     recovery_args = {"plan_id": args.resume_plan_id, "action": args.recovery_action} if args.resume_plan_id else {}
+    def progress(stage, observed_at):
+        _emit_stage(stage, observed_at)
+        if stage == "freeze_wait":
+            notices.publish("ready")
+
     receipt = runner(
         config,
         **recovery_args,
@@ -468,7 +505,7 @@ def main(argv: list[str] | None = None) -> int:
             expected_fund_account_fingerprint=trade_account_fingerprint,
         ),
         review_rendezvous=lambda request: _review_rendezvous(request, poll_seconds=args.poll_seconds),
-        on_progress=_emit_stage,
+        on_progress=progress,
     )
     receipt = replace(
         receipt,
@@ -478,8 +515,9 @@ def main(argv: list[str] | None = None) -> int:
     )
     write_book_b_live_morning_receipt(config, receipt)
     payload = receipt.as_dict()
-    print(json.dumps(terminal_notice(payload, config.state_dir / "runs" / "history" / f"{receipt.run_id}.json"),
-                     ensure_ascii=False, sort_keys=True))
+    notice = terminal_notice(payload, config.state_dir / "runs" / "history" / f"{receipt.run_id}.json")
+    notices.publish("result", notice)
+    print(json.dumps(notice, ensure_ascii=False, sort_keys=True))
     return 0 if receipt.status in {"completed", "no_action", "skipped"} else 2
 
 

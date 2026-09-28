@@ -77,10 +77,47 @@ def _default_poster(
     headers: dict[str, str] | None = None,
     verify: bool = True,
 ) -> tuple[int, str]:
+    # macOS curl uses its native TLS stack. The deployed relay reproducibly
+    # fails the bundled Python OpenSSL handshake before sending HTTP bytes.
+    # Choose the transport before sending, never retry a possibly sent POST.
+    if sys.platform == "darwin":
+        return _curl_poster(url, payload, headers=headers, verify=verify)
     import requests  # local import so importing this module never requires requests
 
     resp = requests.post(url, json=payload, headers=headers, timeout=8, verify=verify)
     return resp.status_code, resp.text
+
+
+class RelayConnectError(Exception):
+    """The transport proved it could not begin the HTTP request."""
+
+
+def _curl_poster(url, payload, *, headers=None, verify=True):
+    def quoted(value):
+        return '"' + str(value).replace('\\', '\\\\').replace('"', '\\"').replace('\n', '\\n').replace('\r', '\\r') + '"'
+    # Credentials and body go only through stdin, never argv or a temp file.
+    config = ["silent", "show-error", "max-time = 8", "request = POST",
+              "url = " + quoted(url), "write-out = " + quoted("\n%{http_code}")]
+    if not verify:
+        config.append("insecure")  # Preserve the explicit existing relay policy.
+    for key, value in (headers or {}).items():
+        if "\n" in value or "\r" in value:
+            raise ValueError("RELAY_HEADER_INVALID")
+        config.append("header = " + quoted(f"{key}: {value}"))
+    config.append("data = " + quoted(json.dumps(payload, ensure_ascii=False)))
+    result = subprocess.run(["/usr/bin/curl", "--config", "-"],
+                            input="\n".join(config) + "\n", text=True,
+                            capture_output=True, timeout=10)
+    if result.returncode:
+        # DNS/connect and initial TLS negotiation failures precede HTTP.
+        # Timeout/reset can occur after a write and therefore remain uncertain.
+        if result.returncode in {5, 6, 7, 35, 60}:
+            raise RelayConnectError("RELAY_CONNECT_FAILED")
+        raise RuntimeError("RELAY_RESPONSE_UNPROVEN")
+    body, separator, status = result.stdout.rpartition("\n")
+    if not separator or not status.isdigit():
+        raise RuntimeError("RELAY_RESPONSE_UNPROVEN")
+    return int(status), body
 
 
 def _post_json(
@@ -280,6 +317,7 @@ def _wecom_exception_result(
     error_type = type(exc).__name__
     detail = f"{chunk_prefix}error: {error_type}"
     safe_connect_errors = {
+        "RelayConnectError",
         "ConnectTimeout",
         "ConnectionRefusedError",
         "NameResolutionError",

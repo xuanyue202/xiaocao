@@ -9,6 +9,21 @@ import pytest
 from xiaocao.live.book_b_live_morning import BookBLiveMorningReceipt
 
 
+@pytest.fixture(autouse=True)
+def isolate_morning_notices(monkeypatch):
+    """Mocked APP dispatch must never send real historical notifications."""
+    monkeypatch.syspath_prepend(str(Path(__file__).resolve().parents[1] / "scripts"))
+    cli = importlib.import_module("scripts.book_b_live_morning")
+    class Notices:
+        def __init__(self, *args, **kwargs):
+            pass
+        def publish(self, *args, **kwargs):
+            pass
+        def close(self):
+            return []
+    monkeypatch.setattr(cli, "MorningNotifications", Notices)
+
+
 @pytest.mark.parametrize("action", [None, "resume", "reconcile", "close", "capital_unavailable"])
 def test_morning_entry_dispatches_without_reproducing_recovery_candidates(tmp_path, monkeypatch, capsys, action):
     monkeypatch.syspath_prepend(str(Path(__file__).resolve().parents[1] / "scripts"))

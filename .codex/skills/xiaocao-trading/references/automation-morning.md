@@ -266,6 +266,28 @@ command yield. Runner stage JSON is the event source. Do not model-poll,
 repeatedly call `write_stdin`, or emit unchanged status before a stage event or
 the 09:24 recovery boundary. While it waits, build the 11:30-horizon capsule:
 
+The runner's duplicate-run lock is scoped to `xiaocao-book-b-live-morning`
+and the trading date; it records automation ID, task ID and PID. A remote
+writer's task ownership never suppresses this morning task. Resource locks
+protect only their actual ledger or native APP operations, not unrelated KOL
+work. Diagnose the emitted failure code and actual lock owner before calling
+an unlock failure a lock conflict.
+
+The runner durably queues trading WeCom notices for preflight start, APP
+preflight ready, and the opening result regardless of success, no action or
+failure. `ready` means native session/account preflight passed, not future
+quote/capital permission. A preflight failure reports that opening execution
+was not reached. The delivery worker is asynchronous during trading; terminal
+readback retains recipient delivery times and any pending/uncertain outcome.
+Report problems on failure and exact orders/fills on success. Never manufacture
+a ready notice or retrospective start. After business work, use
+`PYTHONPATH=src .venv/bin/python scripts/morning_trade_notice.py --retry-pending`;
+only proven pre-send failures retry automatically. Claimed/uncertain deliveries
+require reconciliation and already delivered recipients never resend. Exact
+terminal receipts may be notified with `--receipt <path>` without replaying
+the trading runner. On macOS the relay uses the native curl TLS stack, keeping
+credentials/body on stdin and preserving the configured TLS verification policy.
+
 The single authentication-only market probe runs at this preparation boundary.
 If it reports `MARKET_LOGIN_REQUIRES_USER` or another authentication block,
 preserve the original runner's wait. For `MARKET_LOGIN_CAPTCHA_REQUIRED`, the

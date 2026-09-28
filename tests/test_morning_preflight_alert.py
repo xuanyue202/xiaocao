@@ -108,6 +108,16 @@ def test_ready_preflight_does_not_notify(tmp_path):
     assert not (tmp_path / "incidents.jsonl").exists()
 
 
+def test_rich_unlock_failure_retains_typed_cause_and_stage(tmp_path):
+    path = tmp_path / "blocked.json"
+    path.write_text(json.dumps({"trade_date": "2026-09-28", "run_id": "original",
+        "status": "blocked", "failed_stage": "preflight",
+        "reason": "NATIVE_AX_UNLOCK_UNPROVEN_NO_RETRY:UNCLASSIFIED:remaining=unknown:field_cleared=true"}))
+    result = alert.assess_receipt("book-b", "2026-09-28", path)
+    assert result["reason"] == "NATIVE_AX_UNLOCK_UNPROVEN_NO_RETRY"
+    assert "stage=PREFLIGHT" in result["evidence"]
+
+
 def test_broken_market_probe_still_escalates_without_exposing_exception(monkeypatch, tmp_path, capsys):
     monkeypatch.setattr(alert, "assess_market_auth", Mock(side_effect=RuntimeError("secret remote response")))
     captured = []

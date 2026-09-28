@@ -7,6 +7,30 @@ from __future__ import annotations
 from xiaocao.live import notify as N
 
 
+def test_native_curl_keeps_credentials_off_argv_and_preserves_tls_policy(monkeypatch):
+    from types import SimpleNamespace
+    calls = []
+    def run(argv, **kwargs):
+        calls.append((argv, kwargs))
+        return SimpleNamespace(returncode=0, stdout='{"ok":true}\n200')
+    monkeypatch.setattr(N.subprocess, "run", run)
+    assert N._curl_poster("https://relay/send", {"text": "中文结果"},
+                          headers={"Authorization": "Bearer private-token"}) == (200, '{"ok":true}')
+    argv, kwargs = calls[0]
+    assert "private-token" not in str(argv) and "中文结果" not in str(argv)
+    assert "private-token" in kwargs["input"] and "中文结果" in kwargs["input"]
+    assert "insecure" not in kwargs["input"]
+
+
+def test_curl_handshake_failure_is_safe_but_timeout_remains_uncertain(monkeypatch):
+    from types import SimpleNamespace
+    for code, safety in [(35, "safe"), (28, "uncertain")]:
+        monkeypatch.setattr(N.subprocess, "run", lambda *a, **kw: SimpleNamespace(returncode=code))
+        result = N.wecom_notify_detailed("https://relay/send", "t", "b", token="secret",
+                                         user_id="user", poster=N._curl_poster)
+        assert result["retry_safety"] == safety
+
+
 def _capturing_poster(status=200, text='{"ok":true}'):
     calls = []
 
