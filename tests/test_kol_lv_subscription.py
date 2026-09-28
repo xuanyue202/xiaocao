@@ -3,6 +3,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import shutil
 import sqlite3
 import subprocess
 import sys
@@ -955,6 +956,36 @@ def test_provider_direct_link_does_not_retry_detached_command(tmp_path):
     assert provider_link_evals == 1
     assert route_readback_evals == 0
     assert launcher_routes == []
+
+
+@pytest.mark.parametrize("parent_path", ["/历史消息/8月24日", "/含&字符/目录"])
+def test_share_parent_binding_accepts_provider_view_option(tmp_path, parent_path):
+    node = shutil.which("node")
+    if not node:
+        pytest.skip("Node is required to execute provider route readback")
+    from urllib.parse import quote
+    service = LvSubscriptionService(
+        tmp_path / "out", share_url="https://pan.baidu.com/s/private-share-token",
+        share_code="a1b2", edge_route_launcher=lambda _route: None,
+    )
+    location = {
+        "origin": "https://pan.baidu.com", "pathname": "/s/private-share-token",
+        "hash": "#list/path=" + quote(parent_path, safe="") + "&vmode=list",
+    }
+    def browser_call(_session, command, *args, **_kwargs):
+        if command == "bind":
+            return {"session": _session}
+        if command != "eval":
+            return {}
+        script = "global.location=" + json.dumps(location) + ";console.log(JSON.stringify(" + args[0] + "));"
+        result = subprocess.run([node, "-e", script], check=True, capture_output=True, text=True)
+        return json.loads(result.stdout)
+    service._opencli_json = browser_call
+    service._rebind_opencli_parent_route(
+        session="ticket04", profile=None,
+        route="https://pan.baidu.com/s/private-share-token", expected_parent_path=parent_path,
+        operation="ticket04_listing_route_readback",
+    )
 
 
 @pytest.mark.parametrize("after_rebind", ["download_link_ready", "wrong_share"])
