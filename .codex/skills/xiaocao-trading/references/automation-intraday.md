@@ -32,6 +32,14 @@ and the claim has cleared, end. Only when the owner is terminal/unavailable and
 the exact claim remains may one task reconcile its durable receipts. Never
 clear a claim by age or repeat an unknown business effect.
 
+`EXISTING_LIVE_PLAN_REQUIRES_OWNER` is a trading-plan fence, not a KOL peer
+lock. Its `plan_ids` and `state_dir` identify the exact durable evidence.
+Legacy plans may have `owner_identity_status=unavailable`; do not invent a
+task ID, wait on an unspecified owner, clear the plan, or rerun the checkpoint.
+Perform one bounded exact-plan receipt/event read under `book-b-live-repair.md`.
+Only its proved same-plan recovery action may continue; UNKNOWN remains
+reconcile-only. Record the exact external terminal-evidence gap if unresolved.
+
 Default Book B:
 
 ```bash

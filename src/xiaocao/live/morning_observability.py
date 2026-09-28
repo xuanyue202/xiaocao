@@ -49,7 +49,7 @@ def terminal_notice(payload: dict, receipt_path: Path) -> dict:
     receipts = list(payload.get('execution_receipts', []))
     pending = [r for r in payload.get('open_plan_reconciliations', [])
                if r.get('state') not in {'filled', 'cancelled', 'rejected', 'skipped'}]
-    return {**{k: payload.get(k) for k in ('run_id', 'trade_date', 'status', 'reason', 'failed_stage')},
+    return {**{k: payload.get(k) for k in ('run_id', 'trade_date', 'status', 'reason', 'failed_stage', 'runner_identity')},
             'pending_orders': [{k: r.get(k) for k in ('plan_id', 'state', 'broker_order_id',
                 'filled_shares', 'remaining_shares', 'reason', 'next_action')} for r in pending],
             'incident_notifications': _incident_notifications(receipt_path, receipts + pending),

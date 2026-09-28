@@ -249,8 +249,14 @@ def _live_owner(root: Path) -> dict | None:
                 fcntl.flock(lock, fcntl.LOCK_SH | fcntl.LOCK_NB)
             except BlockingIOError:
                 return _result("no_op", "LIVE_WRITER_OWNS_CHECKPOINT")
-    if open_execution_plan_ids(state_root):
-        return _result("reconcile_required", "EXISTING_LIVE_PLAN_REQUIRES_OWNER")
+    plans = open_execution_plan_ids(state_root)
+    if plans:
+        # Old plans do not contain a task ID. Return their exact durable IDs
+        # rather than implying an owner lookup is possible or inventing one.
+        return _result("reconcile_required", "EXISTING_LIVE_PLAN_REQUIRES_OWNER",
+                       plan_ids=list(plans), state_dir=str(state_root),
+                       owner_thread_id=None, owner_identity_status="unavailable",
+                       recovery_action="reconcile_only")
     return None
 
 

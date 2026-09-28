@@ -42,7 +42,7 @@ from wait_for_morning_freeze import wait_for_morning_freeze  # noqa: E402
 
 
 from xiaocao.live.morning_observability import review_brief, review_notice, terminal_notice
-from xiaocao.automation_run import automation_run
+from xiaocao.automation_run import automation_run, current_automation_id, runner_identity, validate_automation_identity
 from xiaocao.live.morning_notifications import AUTOMATION_ID, MorningNotifications
 
 
@@ -54,6 +54,7 @@ def _emit_stage(stage: str, observed_at: datetime) -> None:
     """Emit only state transitions; the operator stream is not a poll log."""
     print(json.dumps({
         "event": "book_b_live_stage",
+        **runner_identity(current_automation_id() or AUTOMATION_ID, "scripts/book_b_live_morning.py"),
         "stage": stage,
         "observed_at": observed_at.isoformat(),
     }, ensure_ascii=False, sort_keys=True), flush=True)
@@ -271,6 +272,18 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--automation-id", default=AUTOMATION_ID,
                         help="Task-local deduplication identity; never use a remote writer's identity")
     args = parser.parse_args(argv)
+    if args.resume_plan_id and os.environ.get("CODEX_AUTOMATION_ID"):
+        # A separately authorized checkpoint may reconcile the exact existing
+        # plan. Bind it to its real task, without impersonating morning.
+        if args.automation_id == AUTOMATION_ID:
+            args.automation_id = os.environ["CODEX_AUTOMATION_ID"]
+    try:
+        validate_automation_identity(args.automation_id if args.resume_plan_id else AUTOMATION_ID,
+                                     args.automation_id)
+    except ValueError as exc:
+        print(json.dumps({"status": "blocked", "reason": str(exc),
+                          **runner_identity(AUTOMATION_ID, "scripts/book_b_live_morning.py")}))
+        return 2
     if args.recovery_action != "resume" and not args.resume_plan_id:
         parser.error("--recovery-action requires --resume-plan-id")
 
@@ -316,6 +329,7 @@ def _run(args, notices):
     capital_receipt = capital_runtime.preflight()
     if capital_receipt["status"] != "ready":
         blocked = {
+            "runner_identity": runner_identity(args.automation_id, "scripts/book_b_live_morning.py"),
             "trade_date": trade_date,
             "status": "blocked",
             "reason": "LIVE_CAPITAL_RUNTIME_NOT_READY",
@@ -510,6 +524,7 @@ def _run(args, notices):
     )
     receipt = replace(
         receipt,
+        runner_identity=runner_identity(args.automation_id, "scripts/book_b_live_morning.py"),
         capital_runtime=capital_receipt,
         open_plan_reconciliations=receipt.open_plan_reconciliations,
         prior_reconciliations=prior_reconciliations,

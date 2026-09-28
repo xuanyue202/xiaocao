@@ -116,6 +116,7 @@ class BookBLiveMorningReceipt:
     failed_stage: str | None = None
     persisted_plan_ids: tuple[str, ...] = ()
     submission_observations: tuple[dict, ...] = ()
+    runner_identity: dict | None = None
 
     def as_dict(self) -> dict:
         return asdict(self)

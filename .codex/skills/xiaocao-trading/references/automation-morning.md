@@ -273,6 +273,12 @@ protect only their actual ledger or native APP operations, not unrelated KOL
 work. Diagnose the emitted failure code and actual lock owner before calling
 an unlock failure a lock conflict.
 
+The original runner rejects a foreign inherited `CODEX_AUTOMATION_ID` or
+`--automation-id` before native preflight. Stage events and immutable terminal
+receipts bind the automation ID, actual `CODEX_THREAD_ID`, PID and entrypoint.
+A separately authorized exact-plan recovery uses its actual automation ID;
+it cannot generate a second morning candidate batch.
+
 The runner durably queues trading WeCom notices for preflight start, APP
 preflight ready, and the opening result regardless of success, no action or
 failure. `ready` means native session/account preflight passed, not future

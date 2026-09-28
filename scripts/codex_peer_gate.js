@@ -152,6 +152,31 @@ function userText(turn) {
     .join("\n");
 }
 
+function promptAutomationIdentity(text) {
+  // Only the initial scheduler header identifies a task. Examples, copied
+  // instructions and IDs with a shared prefix never acquire peer ownership.
+  const lines = String(text || "").trimStart().split(/\r?\n/);
+  const index = lines[0]?.startsWith("Automation: ") ? 1 : 0;
+  return lines[index]?.match(/^Automation ID: ([A-Za-z0-9_.:-]{1,120})$/)?.[1] || null;
+}
+
+function rolloutSessionIdentity(rolloutPath, threadId, cwd) {
+  if (!rolloutPath || !fs.existsSync(rolloutPath)) return null;
+  try {
+    const fd = fs.openSync(rolloutPath, "r");
+    const head = Buffer.alloc(65536);
+    let count;
+    try { count = fs.readSync(fd, head, 0, head.length, 0); }
+    finally { fs.closeSync(fd); }
+    const record = JSON.parse(head.subarray(0, count).toString("utf8").split("\n")[0]);
+    const meta = record.payload;
+    if (record.type !== "session_meta" || meta?.id !== threadId ||
+        meta.cwd !== cwd || meta.source !== "vscode") return { status: "invalid" };
+    return { status: "bound", forked_from_id: meta.forked_from_id || null,
+      thread_source: meta.thread_source || null };
+  } catch { return { status: "invalid" }; }
+}
+
 function hasTaskComplete(rolloutPath) {
   if (!rolloutPath || !fs.existsSync(rolloutPath)) return null;
   let terminal = false;
@@ -196,7 +221,7 @@ function scheduledAutomationIdentity(rolloutPath, threadId, cwd) {
           payload.type === "custom_tool_call") break;
       if (bound && payload.type === "function_call_output" &&
           payload.namespace === "codex_app" && payload.name === "automation_update") {
-        return String(payload.output || "").match(/^Automation ID: ([^\r\n]+)$/m)?.[1] || null;
+        return promptAutomationIdentity(payload.output);
       }
     }
   } catch { return null; }
@@ -258,6 +283,7 @@ async function discoverPeers({
   lookbackSeconds = PEER_LOOKBACK_SECONDS,
   hiddenCandidates = [],
   readScheduledIdentity = scheduledAutomationIdentity,
+  readSessionIdentity = rolloutSessionIdentity,
 }) {
   const candidates = [];
   const readback = [];
@@ -363,20 +389,36 @@ async function discoverPeers({
       if (thread.source !== "vscode" || thread.parentThreadId !== null) {
         continue;
       }
-      const identityMarker = `Automation ID: ${automationId}`;
-      const previewMatches = String(thread.preview || "").includes(identityMarker);
-      const firstTurnMatches = turns.length > 0 &&
-        userText(turns[0]).includes(identityMarker);
+      const session = readSessionIdentity(thread.path, thread.id, cwd);
+      if (session?.status === "invalid") {
+        return fail("thread_session_identity_mismatch", "peer_readback", {
+          thread_id: candidate.id,
+        });
+      }
+      // A Desktop fork can expose parentThreadId=null while retaining copied
+      // automation text. The original session metadata proves its ancestry.
+      if (session?.forked_from_id) continue;
+      const previewIdentity = promptAutomationIdentity(thread.preview);
+      const firstTurnIdentity = promptAutomationIdentity(userText(turns[0]));
+      const previewMatches = previewIdentity === automationId;
+      const firstTurnMatches = firstTurnIdentity === automationId;
       const scheduledIdentity = readScheduledIdentity(thread.path, thread.id, cwd);
       const scheduledMatches = scheduledIdentity === automationId;
       if (candidate.threadSource === "automation" && !scheduledIdentity &&
-          !previewMatches && !firstTurnMatches) {
+          !previewIdentity && !firstTurnIdentity) {
         return fail("scheduled_thread_identity_unavailable", "peer_readback", {
           thread_id: candidate.id,
         });
       }
       if (!previewMatches && !firstTurnMatches && !scheduledMatches) {
         continue;
+      }
+      if ([previewIdentity, firstTurnIdentity, scheduledIdentity]
+          .some((identity) => identity && identity !== automationId)) {
+        return fail("thread_prompt_identity_mismatch", "peer_readback", {
+          thread_id: candidate.id,
+          automation_id: automationId,
+        });
       }
       if (!scheduledMatches &&
           ((!previewMatches && String(thread.preview || "").trim()) || !firstTurnMatches)) {
@@ -399,6 +441,7 @@ async function discoverPeers({
         });
       }
       readback.push({
+        automation_id: automationId,
         thread_id: candidate.id,
         source: thread.source,
         parent_thread_id: thread.parentThreadId,
@@ -422,6 +465,7 @@ async function discoverPeers({
           schema_version: 1,
           gate_result: "no_op",
           ownership: "peer",
+          automation_id: automationId,
           retryability: "not_retryable",
           authoritative_peer_thread_id: candidate.id,
           authoritative_peer_turn_status: latestTurnStatus,
@@ -456,6 +500,7 @@ async function discoverPeers({
     schema_version: 1,
     gate_result: "pass",
     ownership: "none",
+    automation_id: automationId,
     retryability: "not_retryable",
     host: server.host,
     cwd,
@@ -518,4 +563,4 @@ if (require.main === module) {
   });
 }
 
-module.exports = { discoverPeers, scheduledAutomationIdentity };
+module.exports = { discoverPeers, scheduledAutomationIdentity, rolloutSessionIdentity };

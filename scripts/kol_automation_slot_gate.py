@@ -7,6 +7,7 @@ import argparse
 import fcntl
 import json
 import os
+import re
 import sys
 from datetime import datetime
 from pathlib import Path
@@ -33,11 +34,13 @@ def _hour_key(hour_start: datetime) -> str:
     return hour_start.strftime("%Y%m%dT%H%M%z")
 
 
-def _emit(status: str, *, hour_start: datetime, now: datetime) -> None:
+def _emit(status: str, *, hour_start: datetime, now: datetime, automation_id: str, owner=None) -> None:
     print(
         json.dumps(
             {
                 "status": status,
+                "automation_id": automation_id,
+                "owner": owner,
                 "hour_start_at": hour_start.isoformat(timespec="seconds"),
                 "current_at": now.isoformat(timespec="seconds"),
                 "hour_key": _hour_key(hour_start),
@@ -62,6 +65,7 @@ def _parser() -> argparse.ArgumentParser:
         default=Path("output/live/kol_automation_hour_locks"),
     )
     parser.add_argument("--now", help=argparse.SUPPRESS)
+    parser.add_argument("--automation-id", default=os.environ.get("CODEX_AUTOMATION_ID", "manual-slot-gate"))
     parser.add_argument("command", nargs=argparse.REMAINDER)
     return parser
 
@@ -69,6 +73,10 @@ def _parser() -> argparse.ArgumentParser:
 def main(argv: list[str] | None = None) -> int:
     parser = _parser()
     args = parser.parse_args(argv)
+    if (not re.fullmatch(r"[A-Za-z0-9_.:-]{1,120}", args.automation_id)
+            or (os.environ.get("CODEX_AUTOMATION_ID")
+                and os.environ["CODEX_AUTOMATION_ID"] != args.automation_id)):
+        parser.error("AUTOMATION_ENTRYPOINT_ID_MISMATCH")
 
     command = list(args.command)
     if command and command[0] == "--":
@@ -83,7 +91,7 @@ def main(argv: list[str] | None = None) -> int:
 
     hour_start = _hour_start(now)
 
-    lock_dir = args.lock_dir.expanduser().resolve()
+    lock_dir = args.lock_dir.expanduser().resolve() / args.automation_id
     lock_dir.mkdir(parents=True, exist_ok=True)
     lock_path = lock_dir / f"{_hour_key(hour_start)}.lock"
     lock_fd = os.open(lock_path, os.O_RDWR | os.O_CREAT, 0o600)
@@ -91,12 +99,18 @@ def main(argv: list[str] | None = None) -> int:
         try:
             fcntl.flock(lock_fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
         except BlockingIOError:
-            _emit("hour_busy", hour_start=hour_start, now=now)
+            try:
+                owner = json.loads(os.read(lock_fd, 4096))
+            except ValueError:
+                owner = {"status": "unproven"}
+            _emit("hour_busy", hour_start=hour_start, now=now, automation_id=args.automation_id, owner=owner)
             return 0
 
         metadata = json.dumps(
             {
                 "pid": os.getpid(),
+                "automation_id": args.automation_id,
+                "thread_id": os.environ.get("CODEX_THREAD_ID"),
                 "hour_start_at": hour_start.isoformat(timespec="seconds"),
                 "acquired_at": now.isoformat(timespec="seconds"),
             },
@@ -107,9 +121,10 @@ def main(argv: list[str] | None = None) -> int:
         os.write(lock_fd, metadata + b"\n")
         os.fsync(lock_fd)
 
-        _emit("hour_acquired", hour_start=hour_start, now=now)
+        _emit("hour_acquired", hour_start=hour_start, now=now, automation_id=args.automation_id)
         os.set_inheritable(lock_fd, True)
         environment = os.environ.copy()
+        environment["CODEX_AUTOMATION_ID"] = args.automation_id
         environment["XIAOCAO_AUTOMATION_HOUR_START_AT"] = (
             hour_start.isoformat(timespec="seconds")
         )

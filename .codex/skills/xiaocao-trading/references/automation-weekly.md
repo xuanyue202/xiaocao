@@ -5,8 +5,12 @@ Read this file only for the Friday weekly flywheel-consumer branch.
 ## Execute
 
 ```bash
-bash scripts/auto_daily.sh weekly
+CODEX_AUTOMATION_ID=xiaocao-weekly-deep-review PYTHONPATH=src .venv/bin/python scripts/kol_automation_slot_gate.py --automation-id xiaocao-weekly-deep-review --lock-dir output/live/weekly_deep_review_hour_locks -- /bin/bash scripts/auto_daily.sh weekly
 ```
+
+The gate holds only this automation's Beijing clock-hour lock across exec.
+Its acquired/busy evidence includes automation ID, task ID and PID; another
+automation in the same checkout or lock directory does not own its slot.
 
 This is a research/iteration workflow, not a trading workflow. It may run on a non-trading Friday and reviews the latest trading week.
 
