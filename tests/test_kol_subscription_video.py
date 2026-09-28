@@ -1837,7 +1837,8 @@ def test_absence_readback_cannot_replenish_consumed_operator_recovery(tmp_path):
     assert result["side_effect_uncertain"] is True
 
 
-def test_absence_readback_preserves_exhausted_automatic_transfer_uncertainty(tmp_path):
+@pytest.mark.parametrize("persisted_maximum", [2, 3])
+def test_absence_readback_preserves_exhausted_automatic_transfer_uncertainty(tmp_path, persisted_maximum):
     service = _service(tmp_path)
     item = service._normalize(_source_rows()[0][1], source=LV_SOURCE, author=LV_AUTHOR)
     claim_path = service._claim_path(f"lv_transfer_{item['version_key']}")
@@ -1845,16 +1846,24 @@ def test_absence_readback_preserves_exhausted_automatic_transfer_uncertainty(tmp
     claim_path.write_text(json.dumps({
         "claim_id": "second", "source_identity": item["identity"],
         "source_version_key": item["version_key"], "provider_outcome": "unobserved",
-        "trigger_attempt": 2, "trigger_attempt_maximum": 2,
+        "trigger_attempt": 2, "trigger_attempt_maximum": persisted_maximum,
         "status": "reconciled_absent", "side_effect_uncertain": False,
         "readback_evidence_sha256": "a" * 64,
     }))
+    if persisted_maximum == 3:
+        service.events_path.write_text(json.dumps({
+            "event": "lv_cloud_transfer_recovery_claimed", "claim_id": "second",
+            "source_identity": item["identity"], "source_version_key": item["version_key"],
+            "trigger_attempt_maximum": 2,
+        }) + "\n")
     result = service.record_lv_transfer_absence_reconciliation(
         item, claim_id="second", readback_evidence_sha256="a" * 64,
     )
     assert result["status"] == "blocked"
     assert result["side_effect_uncertain"] is True
     assert result["trigger_attempt"] == result["trigger_attempt_maximum"] == 2
+    if persisted_maximum == 3:
+        assert len(result["budget_authority_event_sha256"]) == 64
 
 
 def test_consumed_recovery_preserves_its_unexpired_receipt_window(tmp_path):

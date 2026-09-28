@@ -3944,6 +3944,22 @@ class SubscriptionVideoService:
             raise EnrichmentError(
                 "Lv cloud transfer absence reconciliation changed binding"
             )
+        if claim.get("status") == "reconciled_absent" and self.events_path.is_file():
+            # Repair a prior absence projection that enlarged the budget.
+            # Only the bound, pre-click claim event carries attempt authority.
+            for line in reversed(self.events_path.read_text(encoding="utf-8").splitlines()):
+                row = json.loads(line)
+                if (
+                    row.get("claim_id") == claim_id
+                    and row.get("source_identity") == item["identity"]
+                    and row.get("source_version_key") == item["version_key"]
+                    and str(row.get("event") or "").endswith("_claimed")
+                ):
+                    maximum = int(row.get("trigger_attempt_maximum") or LV_TRANSFER_MAX_TRIGGER_ATTEMPTS)
+                    if maximum != int(claim.get("trigger_attempt_maximum") or maximum):
+                        claim = {**claim, "trigger_attempt_maximum": maximum,
+                                 "budget_authority_event_sha256": hashlib.sha256(line.encode()).hexdigest()}
+                    break
         if claim.get("authorized_recovery_consumed") is True:
             # An absence readback is evidence, not fresh authority for a
             # fourth click. Preserve the explicit one-recovery boundary.
