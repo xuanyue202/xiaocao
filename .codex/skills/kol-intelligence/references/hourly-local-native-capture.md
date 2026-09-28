@@ -17,6 +17,10 @@ process lifetime, and mailbox completion.
 Before every native activation prompt, the driver restores and checks the
 existing capture's singleton sniffer; a historical armed receipt is not current
 process health. Verify/apply the bounded capture PAC only after that health check.
+The canonical driver may reuse a manually launched relative-path executable
+only after the operating system proves its actual executable is the same
+installed binary. A matching basename or a healthy unrelated API is insufficient;
+the detached `__proxy-guard` remains excluded, and duplicate sniffers fail closed.
 Local capture commands preserve inherited PATH precedence and append installed
 Homebrew CLI directories for ffmpeg/ffprobe and transfer helpers.
 
