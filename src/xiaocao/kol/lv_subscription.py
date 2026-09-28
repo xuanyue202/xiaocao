@@ -783,7 +783,7 @@ _FILTERED_IMAGE_PREVIEW_SCRIPT_TEMPLATE = r"""(async () => {
   while (Date.now() < routeDeadline) {
     try {
       currentParentPath = location.hash.startsWith(prefix)
-        ? decodeURIComponent(location.hash.slice(prefix.length)) : '';
+        ? decodeURIComponent(location.hash.slice(prefix.length).split('&', 1)[0]) : '';
     } catch (_error) {
       currentParentPath = '';
     }
@@ -2571,7 +2571,7 @@ try {
           let currentParentPath = '';
           try {
             currentParentPath = location.hash.startsWith(prefix)
-              ? decodeURIComponent(location.hash.slice(prefix.length))
+              ? decodeURIComponent(location.hash.slice(prefix.length).split('&', 1)[0])
               : '';
           } catch (_error) {}
           return {
@@ -5469,7 +5469,7 @@ try {
               let currentParentPath = '';
               try {
                 currentParentPath = location.hash.startsWith(prefix)
-                  ? decodeURIComponent(location.hash.slice(prefix.length))
+                  ? decodeURIComponent(location.hash.slice(prefix.length).split('&', 1)[0])
                   : '';
               } catch (_error) {}
               return {
