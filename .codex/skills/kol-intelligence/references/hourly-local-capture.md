@@ -31,6 +31,16 @@ For one existing item, run
 `PYTHONPATH=src .venv/bin/python scripts/kol_daily.py capture-xiaocao-item
 --source-identity <identity>` in one PTY. Never schedule or widen it.
 
+For an explicitly user-requested historical date range, invoke each exact
+original-message identity with `capture-xiaocao-item --source-identity <identity>
+--xiaocao-backfill-since <YYYY-MM-DD>`. This one-invocation authorization can
+restore an unbound expired/baselined/superseded entry within that requested
+range, verifies its original contact/time/token/hash, and retains existing
+capture IDs and claims. It never resets completed or bound work, never applies
+to `capture-local`, and never changes routine 72-hour expiry. Keep the same PTY
+and downstream flow. A pre-existing standalone capture for that same original
+message must be reconciled before creating another capture.
+
 `capture-local` runs only `xiaocao_wechat_live` and
 `wechat_official_accounts`; it never scans Lv, analyzes, publishes, or writes
 Book. Do not substitute the remote coordinator.

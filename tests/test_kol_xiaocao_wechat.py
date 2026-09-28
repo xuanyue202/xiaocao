@@ -222,6 +222,112 @@ class _CaptureDriver:
         return None
 
 
+@pytest.mark.parametrize("previous_status", [None, "expired", "superseded", "historical_baseline"])
+def test_explicit_dated_backfill_recovers_only_the_selected_original_entry(
+    tmp_path, previous_status,
+):
+    payload = _history(
+        "[2026-09-23 08:44] 小花: #小程序://见势擒龙团/7qBV0CwjiqCrkHB",
+        "[2026-09-27 17:17] 小花: #小程序://见势擒龙团/YbZMTddvUAzLR2c",
+    )
+    original = parse_xiaocao_live_messages(payload)[0]
+    driver = _CaptureDriver()
+    requests = []
+
+    def exchange(request):
+        requests.append(request)
+        return {
+            "action": request["action"],
+            "subscription_id": request["subscription_id"],
+            "playback_surface": "wechat_mini_program",
+            "page_state": "mini_program_waiting",
+            "activated": False,
+            "media_request_observed": False,
+            "playback_window_closed": False,
+        }
+
+    subscription = XiaocaoWechatLiveSubscription(
+        tmp_path / "wechat", history_reader=lambda: payload,
+        browser_exchange=exchange, capture_driver=driver,
+        clock=lambda: datetime.fromisoformat("2026-09-28T10:15:00+08:00"),
+    )
+    manifest = subscription._load()
+    if previous_status:
+        manifest["items"][original["identity"]] = {**original, "status": previous_status}
+        subscription._save(manifest)
+
+    result = subscription.run_once(
+        opencli_session="test", only_identity=original["identity"],
+        backfill_since="2026-09-23",
+    )
+
+    assert result["status"] == "waiting"
+    assert driver.arms == [(original["identity"], None)]
+    assert driver.advances == 0
+    assert len(requests) == 1
+    assert requests[0]["mini_program_token"] == original["mini_program_token"]
+    items = subscription._load()["items"]
+    assert list(items) == [original["identity"]]
+    assert items[original["identity"]]["capture_job_id"] == "kol-capture-current"
+    assert items[original["identity"]]["manual_backfill_since"] == "2026-09-23"
+
+
+@pytest.mark.parametrize("since,identity", [
+    ("2026-09-24", "selected"),
+    ("invalid", "selected"),
+    ("2026-09-23", None),
+])
+def test_manual_backfill_rejects_ambiguous_or_out_of_range_requests(tmp_path, since, identity):
+    payload = _history("[2026-09-23 08:44] 小花: #小程序://见势擒龙团/7qBV0CwjiqCrkHB")
+    original = parse_xiaocao_live_messages(payload)[0]
+    driver = _CaptureDriver()
+    subscription = XiaocaoWechatLiveSubscription(
+        tmp_path / "wechat", history_reader=lambda: payload,
+        browser_exchange=lambda request: pytest.fail("invalid backfill must not launch"),
+        capture_driver=driver,
+        clock=lambda: datetime.fromisoformat("2026-09-28T10:15:00+08:00"),
+    )
+    with pytest.raises(EnrichmentError):
+        subscription.run_once(
+            opencli_session="test", only_identity=original["identity"] if identity else None,
+            backfill_since=since,
+        )
+    assert driver.arms == []
+
+
+@pytest.mark.parametrize("status,fields", [
+    ("completed", {"handoff_id": "same-handoff", "capture_job_id": "same-capture"}),
+    ("expired", {"candidate_id": "same-candidate", "capture_job_id": "same-capture"}),
+])
+def test_manual_backfill_never_resets_completed_or_bound_claims(tmp_path, status, fields):
+    payload = _history("[2026-09-23 08:44] 小花: #小程序://见势擒龙团/7qBV0CwjiqCrkHB")
+    original = parse_xiaocao_live_messages(payload)[0]
+    driver = _CaptureDriver()
+    subscription = XiaocaoWechatLiveSubscription(
+        tmp_path / "wechat", history_reader=lambda: payload,
+        browser_exchange=lambda request: pytest.fail("bound work must not relaunch"),
+        capture_driver=driver,
+        clock=lambda: datetime.fromisoformat("2026-09-28T10:15:00+08:00"),
+    )
+    manifest = subscription._load()
+    saved = {**original, "status": status, **fields}
+    manifest["items"][original["identity"]] = saved
+    subscription._save(manifest)
+    if status == "completed":
+        assert subscription.run_once(
+            opencli_session="test", only_identity=original["identity"],
+            backfill_since="2026-09-23",
+        )["already_completed"] is True
+    else:
+        with pytest.raises(EnrichmentError, match="reconcile existing bound claims"):
+            subscription.run_once(
+                opencli_session="test", only_identity=original["identity"],
+                backfill_since="2026-09-23",
+            )
+    assert driver.arms == []
+    assert subscription._load()["items"][original["identity"]] == saved
+
+
 def test_cloud_handoff_wait_has_durable_poll_deadline(tmp_path):
     subscription = XiaocaoWechatLiveSubscription(
         tmp_path / "wechat",

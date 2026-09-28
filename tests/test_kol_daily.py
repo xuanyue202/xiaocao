@@ -1387,15 +1387,18 @@ def test_capture_local_cli_runs_live_and_official_account_sources(
     }
 
 
+@pytest.mark.parametrize("backfill_since", [None, "2026-09-23"])
 def test_capture_xiaocao_item_cli_runs_only_the_bound_manifest_identity(
     tmp_path,
     monkeypatch,
+    backfill_since,
 ):
     observed: dict[str, object] = {}
 
     def capture(self, *, only_identity=None):
         observed["has_client"] = hasattr(self, "_client")
         observed["identity"] = only_identity
+        observed["backfill_since"] = self.args.xiaocao_backfill_since
         return {"status": "waiting", "waiting_items": []}
 
     monkeypatch.setattr(DailyRuntime, "xiaocao_wechat", capture)
@@ -1414,14 +1417,25 @@ def test_capture_xiaocao_item_cli_runs_only_the_bound_manifest_identity(
             "kol-wechat-current",
             "--output-dir",
             str(tmp_path / "daily"),
-        ],
+        ] + (["--xiaocao-backfill-since", backfill_since] if backfill_since else []),
     )
 
     assert kol_daily_script.main() == 0
     assert observed == {
         "has_client": False,
         "identity": "kol-wechat-current",
+        "backfill_since": backfill_since,
     }
+
+
+def test_manual_backfill_flag_cannot_widen_scheduled_capture(monkeypatch):
+    monkeypatch.setattr(sys, "argv", [
+        "kol_daily.py", "capture-local", "--xiaocao-backfill-since", "2026-09-23",
+        "--source-identity", "kol-wechat-current",
+    ])
+    with pytest.raises(SystemExit) as error:
+        kol_daily_script.main()
+    assert error.value.code == 2
 
 
 def test_remote_run_drains_mailbox_before_existing_sources(

@@ -693,11 +693,15 @@ class XiaocaoWechatLiveSubscription:
                 superseded_by=newest["identity"],
             )
 
-    def expire_stale_waits(self, manifest: dict[str, Any]) -> list[str]:
+    def expire_stale_waits(
+        self, manifest: dict[str, Any], *, skip_identity: str | None = None,
+    ) -> list[str]:
         """Drop ungenerated entries after 72 hours without touching media work."""
         cutoff = datetime.fromisoformat(self._now()) - timedelta(hours=72)
         expired = []
         for item in list(manifest["items"].values()):
+            if item["identity"] == skip_identity:
+                continue
             if item.get("status") not in {
                 "discovered", "page_resolved", "capture_armed", "awaiting_playback",
             }:
@@ -721,6 +725,61 @@ class XiaocaoWechatLiveSubscription:
             )
             expired.append(item["identity"])
         return expired
+
+    def _prepare_manual_backfill(
+        self, manifest: dict[str, Any], identity: str | None, since: str,
+    ) -> None:
+        """One invocation's dated authorization; never change routine expiry."""
+        if not identity or re.fullmatch(r"\d{4}-\d{2}-\d{2}", since) is None:
+            raise EnrichmentError("manual backfill requires an exact identity and date")
+        try:
+            cutoff = datetime.fromisoformat(since).replace(tzinfo=BEIJING)
+        except ValueError as exc:
+            raise EnrichmentError("manual backfill date is invalid") from exc
+        now = datetime.fromisoformat(self._now())
+        if cutoff > now:
+            raise EnrichmentError("manual backfill date is in the future")
+        item = manifest["items"].get(identity)
+        if item and item.get("manual_backfill_since") == since:
+            # Continuations retain the exact original evidence; no repeat poll.
+            return
+        payload = self.history_reader()
+        if str(payload.get("chat") or "") != self.contact:
+            raise EnrichmentError("WeChat history resolved another contact")
+        matches = [
+            row for row in parse_xiaocao_live_messages(payload)
+            if row["identity"] == identity
+            and cutoff <= datetime.fromisoformat(row["published_at"]) <= now
+        ]
+        if len(matches) != 1:
+            raise EnrichmentError("manual backfill original entry is missing or out of range")
+        original = matches[0]
+        if item:
+            for key, value in original.items():
+                if key in item and item[key] != value:
+                    raise EnrichmentError("manual backfill original evidence changed")
+            item = dict(item)
+        else:
+            item = {**original, "status": "discovered"}
+        previous = item["status"]
+        if previous in {"expired", "superseded", "historical_baseline"}:
+            if any(item.get(key) for key in (
+                "candidate_id", "task_id", "media_request_observed", "handoff_id",
+                "source_identity",
+            )):
+                raise EnrichmentError("manual backfill must reconcile existing bound claims")
+            job = item.get("capture_job_id")
+            check = getattr(self.capture_driver, "can_expire_wait", None)
+            if job and (check is None or not check(identity, job)):
+                raise EnrichmentError("manual backfill cannot replace an existing capture")
+            item["status"] = "capture_armed" if job else "discovered"
+        if item["status"] in _TERMINAL:
+            return
+        self._transition(
+            manifest, item, item["status"], manual_backfill_since=since,
+            manual_backfill_requested_at=self._now(),
+            manual_backfill_previous_status=previous,
+        )
 
     @staticmethod
     def _next_pending(manifest: dict[str, Any]) -> dict[str, Any] | None:
@@ -1428,14 +1487,19 @@ class XiaocaoWechatLiveSubscription:
         opencli_session: str,
         opencli_profile: str | None = None,
         only_identity: str | None = None,
+        backfill_since: str | None = None,
     ) -> dict[str, Any]:
         manifest = self._load()
+        if backfill_since is not None:
+            self._prepare_manual_backfill(manifest, only_identity, backfill_since)
         if only_identity is None:
             self._poll(manifest)
             self.expire_stale_waits(manifest)
             item = self._next_pending(manifest)
         else:
-            self.expire_stale_waits(manifest)
+            self.expire_stale_waits(
+                manifest, skip_identity=only_identity if backfill_since is not None else None,
+            )
             item = manifest["items"].get(only_identity)
             if not isinstance(item, dict):
                 source_matches = [
