@@ -86,7 +86,8 @@ def test_hourly_accepts_only_bound_dispatch_and_unchanged_draft(tmp_path):
         kol_daily._require_canonical_semantic_artifact(bundle, request)
 
 
-def test_hourly_accepts_bundle_from_immutable_context_revision(tmp_path):
+@pytest.mark.parametrize("packet_review", [False, True])
+def test_hourly_accepts_bundle_from_immutable_context_revision(tmp_path, packet_review):
     request, request_path, draft, market, bundle = _inputs(tmp_path)
     first = prepare(request_path, market_evidence=market)
     revised_market = json.loads(market.read_text(encoding="utf-8"))
@@ -121,11 +122,24 @@ def test_hourly_accepts_bundle_from_immutable_context_revision(tmp_path):
         "checks": {name: {"status": "passed", "evidence": "Full fixture review passed."}
                    for name in PARENT_REVIEW_CHECKS},
     }
-    request_path.with_name("parent_source_review.json").write_text(
+    review_path = (
+        Path(revised["packet_path"]).with_name("parent_source_review.json")
+        if packet_review else request_path.with_name("parent_source_review.json")
+    )
+    review_path.write_text(
         json.dumps(review), encoding="utf-8"
     )
     assert Path(first["packet_path"]) != Path(revised["packet_path"])
     assert kol_daily._require_canonical_semantic_artifact(bundle, request) == bundle
+    if packet_review:
+        request_path.with_name("parent_source_review.json").write_text(
+            json.dumps(review), encoding="utf-8"
+        )
+        review_path.write_text(
+            json.dumps({**review, "decision": "changes_required"}), encoding="utf-8"
+        )
+        with pytest.raises(DailyError, match="semantic delegation"):
+            kol_daily._require_canonical_semantic_artifact(bundle, request)
 
 
 def test_other_authors_keep_existing_canonical_route(tmp_path):
@@ -136,3 +150,15 @@ def test_other_authors_keep_existing_canonical_route(tmp_path):
     draft_path.write_text(json.dumps(draft), encoding="utf-8")
     build_validated_bundle_from_files(request_path, draft_path, market)
     assert kol_daily._require_canonical_semantic_artifact(bundle, request) == bundle
+
+
+def test_packet_parent_review_does_not_fall_back_for_invalid_file(tmp_path):
+    request = tmp_path / "analysis_request.json"
+    packet = tmp_path / "context" / "context_packet.json"
+    packet.parent.mkdir()
+    root_review = request.with_name("parent_source_review.json")
+    root_review.write_text('{"decision":"accepted"}', encoding="utf-8")
+    assert kol_daily._semantic_parent_review_path(packet, request) == root_review
+    packet_review = packet.with_name("parent_source_review.json")
+    packet_review.write_text("invalid review", encoding="utf-8")
+    assert kol_daily._semantic_parent_review_path(packet, request) == packet_review

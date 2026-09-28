@@ -36,9 +36,11 @@ from .publication import (
     build_record,
     canonical_sha256,
     evaluation_id,
+    manifest_sha256,
     publication_id_for_source,
     relation_id,
     report_id,
+    record_content_sha256,
     stable_claim,
     viewpoint_id,
 )
@@ -1591,6 +1593,54 @@ class DailyPublicationPipeline:
                 if "not prepared" not in str(exc):
                     raise
                 state = None
+            if state and state.get("completed"):
+                records = (state.get("artifact") or {}).get("records") or []
+                report = next(
+                    (row for row in records if row.get("kind") == "report"),
+                    {},
+                )
+                binding = report.get("source_binding") or {}
+                if (
+                    binding.get("publication_version")
+                    != self.context.publication_version
+                    or binding.get("evidence_sha256")
+                    != item.get("evidence_sha256")
+                ):
+                    raise DailyError(
+                        "completed gray publication has different source evidence; "
+                        "exact publication correction required"
+                    )
+                projection = _normalize_longitudinal_projection(item)
+                expected_theses = {
+                    row["local_thesis_id"]
+                    for row in projection["viewpoints"]
+                }
+                published_theses = {
+                    row["payload"].get("local_thesis_id")
+                    for row in records
+                    if row.get("kind") == "viewpoint"
+                }
+                if not expected_theses <= published_theses:
+                    raise DailyError(
+                        "completed gray publication lacks validated viewpoints; "
+                        "exact publication correction required"
+                    )
+                expected_viewpoint_ids = {
+                    row["payload"]["viewpoint_id"]
+                    for row in records
+                    if row.get("kind") == "viewpoint"
+                    and row["payload"].get("local_thesis_id") in expected_theses
+                }
+                evaluated_viewpoint_ids = {
+                    row["payload"].get("viewpoint_id")
+                    for row in records
+                    if row.get("kind") == "viewpoint_evaluation"
+                }
+                if not expected_viewpoint_ids <= evaluated_viewpoint_ids:
+                    raise DailyError(
+                        "completed gray publication lacks initial evaluations; "
+                        "exact publication correction required"
+                    )
             if not state or not state.get("completed"):
                 candidate = _publication_candidate(item, context=self.context)
                 self.ledger.prepare(
@@ -1609,6 +1659,32 @@ class DailyPublicationPipeline:
                 or not str(receipt.get("detailUrl") or "").strip()
             ):
                 raise DailyError("gray report receipt lacks a stable detail URL")
+            records = state["artifact"]["records"]
+            report = next(row for row in records if row["kind"] == "report")
+            current = self.client.call_tool(
+                "get_kol_record",
+                {"kind": "report", "record_id": report["record_id"]},
+            )
+            manifest = current.get("manifest") or []
+            expected_records = {
+                (row["kind"], row["record_id"], row["content_sha256"])
+                for row in records
+            }
+            current_records = {
+                (row.get("kind"), row.get("record_id"), row.get("content_sha256"))
+                for row in manifest
+            }
+            if (
+                current.get("state") != "published"
+                or current.get("content_sha256") != report["content_sha256"]
+                or record_content_sha256(current) != report["content_sha256"]
+                or manifest_sha256(manifest) != current.get("manifest_sha256")
+                or not expected_records <= current_records
+            ):
+                raise DailyError(
+                    "gray publication authoritative readback mismatched; "
+                    "exact publication correction required"
+                )
             self._publication_state = state
             if content.get("tier") == "alert_eligible":
                 self._reminder_message = _reader_reminder_copy(

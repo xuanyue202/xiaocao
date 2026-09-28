@@ -221,6 +221,11 @@ decision fails closed rather than defaulting to an empty viewpoint list.
 Low-density creates neither report nor reminder. A promoted event gets its
 durable 灰常亮 receipt and stable URL before Book KOL-US or reminder effects;
 report-only records a no-alert reason, while alert-eligible sends one reminder.
+Before reusing a completed publication, verify that its report binds the accepted
+source version and evidence hash and its manifest contains every accepted
+viewpoint and initial evaluation. A stale local receipt is not completion proof.
+Repair a mismatch through an exact-object publication correction with authoritative
+hash/manifest readback; retain prior receipts and do not replay Book or reminders.
 Missing independent verification, no uniquely mapped instrument, low confidence,
 or Book KOL-US `no_trade` do not justify report-only when current market
 posture/direction is present; retain those limits in the reminder.
