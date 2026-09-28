@@ -4427,6 +4427,16 @@ def test_reconciled_transfer_resumes_exact_unfinished_item(
     claim = f"lv_transfer:{receipt_version}:claim-1"
     with service._locked():
         service._append(
+            "source_progressed", source="subscription_video",
+            progress=WriterProgress.wait_until(
+                item_identity="video-1", category="provider_wait",
+                code="waiting_cloud_transfer_receipt", stage="cloud_transfer_confirmation",
+                deadline="2026-08-01T00:00:00Z",
+                attempt_budget={"attempted": 2, "maximum": 3},
+                claim_receipt_summary={"claim_count": 0, "receipt_count": 0, "uncertain_effect_count": 0},
+            ).to_dict(),
+        )
+        service._append(
             "source_reconciliation_resume_started", source="subscription_video",
             item_identity=receipt_identity, claim_identity=claim,
         )

@@ -2433,6 +2433,7 @@ class DailyCoordinator:
                         ):
                             return {
                                 **old,
+                                "reconciliation_index": index,
                                 "progress": {
                                     **progress,
                                     "item_identity": identity,
@@ -3307,11 +3308,19 @@ class DailyCoordinator:
             )
             projected_from_waiting_item = False
             reconciled_transfer_continuation = False
-            if progress_row is None and _completed_user_action:
-                progress_row = self._reconciled_transfer_continuation(
+            if _completed_user_action and (
+                progress_row is None
+                or progress_row["progress"].get("status") != "terminal"
+            ):
+                reconciled = self._reconciled_transfer_continuation(
                     prior_rows, name, identity,
                 )
-                reconciled_transfer_continuation = progress_row is not None
+                if reconciled is not None and (
+                    progress_row is None
+                    or reconciled["reconciliation_index"] > prior_rows.index(progress_row)
+                ):
+                    progress_row = reconciled
+                    reconciled_transfer_continuation = True
             if progress_row is None and not _completed_user_action:
                 waiting_binding = self._source_waiting_item_for_identity(
                     prior_rows,
