@@ -5372,7 +5372,34 @@ try {
             timeout_seconds=30,
         )
         status = str(link.get("status") or "")
-        if status in {"auth_required", "wrong_share"}:
+        if status == "wrong_share":
+            # The script returns this before requesting a signed link. A cached
+            # listing can outlive navigation by another adapter; restore its
+            # exact parent once, without replaying an uncertain sharedownload.
+            parent_path = str(PurePosixPath(str(item["path"])).parent)
+            route = urlparse(
+                _authorized_share_url(self.share_url, self.share_code)
+            )._replace(fragment=f"list/path={quote(parent_path, safe='')}").geturl()
+            self._rebind_opencli_parent_route(
+                session=session,
+                profile=profile,
+                route=route,
+                expected_parent_path=parent_path,
+                operation="ticket04_provider_direct_link_route_readback",
+            )
+            link = self._opencli_json(
+                session, "eval", link_script,
+                profile=profile, timeout_seconds=30,
+            )
+            status = str(link.get("status") or "")
+            if status == "wrong_share":
+                raise EnrichmentDiagnosticError(
+                    "provider share route changed after recovery",
+                    category="browser_error",
+                    code="wrong_share_page",
+                    stage="provider_download_link",
+                )
+        if status == "auth_required":
             raise EnrichmentDiagnosticError(
                 "provider authentication is required",
                 category="authentication_error",

@@ -957,6 +957,40 @@ def test_provider_direct_link_does_not_retry_detached_command(tmp_path):
     assert launcher_routes == []
 
 
+@pytest.mark.parametrize("after_rebind", ["download_link_ready", "wrong_share"])
+def test_direct_link_recovers_only_proven_pre_request_route_mismatch(
+    tmp_path, after_rebind,
+):
+    service = LvSubscriptionService(
+        tmp_path / "out", share_url="https://pan.baidu.com/s/private-share-token",
+        share_code="a1b2",
+    )
+    item = {
+        **LvSubscriptionService._normalize_entry(_pdf_entry()),
+        "provider_file_id": "123456789012345",
+    }
+    calls = []
+    responses = iter([
+        {"status": "wrong_share"},
+        {"status": after_rebind, "download_url": "https://example.test/file"},
+    ])
+    service._opencli_json = lambda *_args, **_kwargs: next(responses)
+    service._rebind_opencli_parent_route = lambda **kwargs: calls.append(kwargs)
+    service._fetch_provider_small_file = lambda *_args, **_kwargs: {"status": "completed"}
+    if after_rebind == "wrong_share":
+        with pytest.raises(EnrichmentDiagnosticError) as captured:
+            service._provider_direct_download(item, session="ticket04", profile=None)
+        assert captured.value.diagnostic_code == "wrong_share_page"
+        assert captured.value.diagnostic_category != "authentication_error"
+    else:
+        assert service._provider_direct_download(
+            item, session="ticket04", profile=None,
+        ) == {"status": "completed"}
+    assert len(calls) == 1
+    assert calls[0]["expected_parent_path"] == str(Path(item["path"]).parent)
+    assert calls[0]["session"] == "ticket04"
+
+
 def test_lv_text_image_browser_open_exposes_diagnostic(tmp_path):
     open_calls = 0
 
