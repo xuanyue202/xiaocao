@@ -187,8 +187,12 @@ lists enrich asynchronously with an incremental cache; they cannot bind a source
    networksetup -getautoproxyurl "<当前网络服务>"
    ```
 
-   必须读回精确 URL 和 `Enabled: Yes`。PAC 只代理 Xiaoetong，微信安全域名
-   DIRECT；其他代理设置不动。没有 PAC 时可能能播放却抓不到，不是登录失败。
+   必须读回精确 URL 和 `Enabled: Yes`。PAC 覆盖 Xiaoetong（含直播和回放 CDN）
+   以及明确验证的视频媒体主机 `finder.video.qq.com`、`wxapp.tc.qq.com`；
+   后两项仅精确主机匹配，不扩大为 `qq.com`/`weixin.qq.com`/`qpic.cn` 全域。
+   微信登录、安全、聊天域名保持 DIRECT；仍使用 `--xiaoetong-only`，不启用微信
+   登录/聊天/注入插件。其他代理设置不动。没有 PAC 时可能能播放却抓不到，
+   不是登录失败。新增媒体主机须有实际请求或可信提供方证据，并验证授权域名直连。
 
 3. **一次正常唤起，再输入课程口令。** 对 HTTPS 分享入口，运行当前请求给出的
    `launch_resolver_command`；其命令形态为：
