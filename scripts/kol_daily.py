@@ -935,13 +935,16 @@ def _require_canonical_semantic_artifact(
         dispatch = json.loads(
             packet_path.with_name("dispatch.json").read_text(encoding="utf-8")
         )
+        review_path = packet_path.with_name("parent_source_review.json")
+        if not review_path.is_file():
+            review_path = request_path.with_name("parent_source_review.json")
         acceptance = verify_delegated_result(
             request_path,
             packet_path=packet_path,
             agent_id=dispatch["agent_id"],
             semantic_draft=packet["expected_outputs"]["semantic_draft.json"],
             bundle_path=bundle_path,
-            semantic_review=request_path.with_name("parent_source_review.json"),
+            semantic_review=review_path,
         )
         if acceptance["semantic_acceptance"]["status"] != "parent_accepted":
             raise ValueError("parent full-source quality review requires changes")
