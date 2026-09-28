@@ -150,3 +150,15 @@ def test_other_authors_keep_existing_canonical_route(tmp_path):
     draft_path.write_text(json.dumps(draft), encoding="utf-8")
     build_validated_bundle_from_files(request_path, draft_path, market)
     assert kol_daily._require_canonical_semantic_artifact(bundle, request) == bundle
+
+
+def test_packet_parent_review_does_not_fall_back_for_invalid_file(tmp_path):
+    request = tmp_path / "analysis_request.json"
+    packet = tmp_path / "context" / "context_packet.json"
+    packet.parent.mkdir()
+    root_review = request.with_name("parent_source_review.json")
+    root_review.write_text('{"decision":"accepted"}', encoding="utf-8")
+    assert kol_daily._semantic_parent_review_path(packet, request) == root_review
+    packet_review = packet.with_name("parent_source_review.json")
+    packet_review.write_text("invalid review", encoding="utf-8")
+    assert kol_daily._semantic_parent_review_path(packet, request) == packet_review

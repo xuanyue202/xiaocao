@@ -935,9 +935,7 @@ def _require_canonical_semantic_artifact(
         dispatch = json.loads(
             packet_path.with_name("dispatch.json").read_text(encoding="utf-8")
         )
-        review_path = packet_path.with_name("parent_source_review.json")
-        if not review_path.is_file():
-            review_path = request_path.with_name("parent_source_review.json")
+        review_path = _semantic_parent_review_path(packet_path, request_path)
         acceptance = verify_delegated_result(
             request_path,
             packet_path=packet_path,
@@ -951,6 +949,14 @@ def _require_canonical_semantic_artifact(
     except (OSError, ValueError, TypeError, KeyError, SemanticBundleError) as exc:
         raise DailyError(f"semantic delegation acceptance failed: {exc}") from exc
     return bundle_path
+
+
+def _semantic_parent_review_path(packet_path: Path, request_path: Path) -> Path:
+    """Prefer the exact packet review; never fall back after its rejection."""
+    packet_review = packet_path.with_name("parent_source_review.json")
+    if packet_review.is_file():
+        return packet_review
+    return request_path.with_name("parent_source_review.json")
 
 
 def _persist_semantic_request(
