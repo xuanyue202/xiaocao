@@ -283,6 +283,7 @@ def main(argv: list[str] | None = None) -> int:
         notices = MorningNotifications(trade_date, automation_id=args.automation_id)
         try:
             if args.recovery_action != "close":
+                notices.arm_golden_window()
                 notices.publish("preflight-start")
             return _run(args, notices)
         except Exception as exc:

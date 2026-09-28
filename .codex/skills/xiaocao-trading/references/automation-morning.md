@@ -277,7 +277,11 @@ The runner durably queues trading WeCom notices for preflight start, APP
 preflight ready, and the opening result regardless of success, no action or
 failure. `ready` means native session/account preflight passed, not future
 quote/capital permission. A preflight failure reports that opening execution
-was not reached. The delivery worker is asynchronous during trading; terminal
+was not reached. If the original runner is still active at 09:30 without a
+terminal receipt, its deterministic notification timer sends an explicit
+unproved/pending window result; recovery continues and later sends the actual
+terminal result. The timer neither polls the APP nor stops the plan. The
+delivery worker is asynchronous during trading; terminal
 readback retains recipient delivery times and any pending/uncertain outcome.
 Report problems on failure and exact orders/fills on success. Never manufacture
 a ready notice or retrospective start. After business work, use

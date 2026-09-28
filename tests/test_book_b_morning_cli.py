@@ -19,6 +19,8 @@ def isolate_morning_notices(monkeypatch):
             pass
         def publish(self, *args, **kwargs):
             pass
+        def arm_golden_window(self):
+            pass
         def close(self):
             return []
     monkeypatch.setattr(cli, "MorningNotifications", Notices)

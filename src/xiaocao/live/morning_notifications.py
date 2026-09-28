@@ -6,9 +6,11 @@ import hashlib
 import json
 import os
 import tempfile
+import threading
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
 from pathlib import Path
+from zoneinfo import ZoneInfo
 
 from .notify import configured_wecom_recipients, send_wecom_recipient_detailed
 
@@ -38,7 +40,7 @@ def message(kind: str, trade_date: str, facts: dict) -> tuple[str, str]:
         return "Book B 晨间预检启动", f"交易日 {trade_date}，APP 服务端仿真预检已启动。"
     if kind == "ready":
         return "Book B APP 预检 ready", f"交易日 {trade_date}，APP 会话和账户预检通过，等待不可变冻结；行情、资金和策略门仍在动作时重新核验。"
-    if kind != "result":
+    if kind not in {"result", "golden-window"}:
         raise ValueError("MORNING_NOTIFICATION_KIND_INVALID")
     orders = facts.get("orders") or []
     pending = facts.get("pending_orders") or []
@@ -48,7 +50,10 @@ def message(kind: str, trade_date: str, facts: dict) -> tuple[str, str]:
     lines = [f"交易日 {trade_date}，状态 {status}，原因 {facts.get('reason') or '-'}。"]
     if facts.get("failed_stage") == "preflight":
         lines.append("预检受阻，未进入开盘交易；未补跑原 runner。")
-    lines.append(f"本次委托 {len(orders)}，成交股数 {sum(r.get('filled_shares') or 0 for r in orders)}，未决 {len(pending) + sum(r.get('state') in {'unknown', 'acknowledged', 'partial'} for r in orders)}。")
+    if kind == "golden-window":
+        lines.append("09:30 尚未取得完整终态回执，订单和成交数量暂未证明；原计划继续合法恢复，终态后另报结果。")
+    else:
+        lines.append(f"本次委托 {len(orders)}，成交股数 {sum(r.get('filled_shares') or 0 for r in orders)}，未决 {len(pending) + sum(r.get('state') in {'unknown', 'acknowledged', 'partial'} for r in orders)}。")
     for row in orders + pending:
         lines.append(f"{row.get('plan_id')}：{row.get('state')}，单号 {row.get('broker_order_id') or '-'}，成交 {row.get('filled_shares') or 0}；{row.get('reason') or '-'}")
     if facts.get("receipt_path"):
@@ -66,8 +71,27 @@ class MorningNotifications:
         self.pool = ThreadPoolExecutor(max_workers=1, thread_name_prefix="morning-wecom")
         self.futures = []
         self.failures = []
+        self.timer = None
+        self.terminal = threading.Event()
+
+    def arm_golden_window(self, *, now=None, timer_factory=threading.Timer):
+        clock = now or datetime.now(ZoneInfo("Asia/Shanghai"))
+        boundary = datetime.fromisoformat(self.trade_date + "T09:30:00+08:00")
+        remaining = (boundary - clock).total_seconds()
+        if 0 < remaining <= 1800:
+            def checkpoint():
+                if not self.terminal.is_set():
+                    self.publish("golden-window", {"status": "pending",
+                        "reason": "GOLDEN_WINDOW_TERMINAL_NOT_PROVEN"})
+            self.timer = timer_factory(remaining, checkpoint)
+            self.timer.daemon = True
+            self.timer.start()
 
     def publish(self, kind: str, facts: dict | None = None):
+        if kind == "result":
+            self.terminal.set()
+            if self.timer is not None:
+                self.timer.cancel()
         try:
             return self._publish(kind, facts)
         except OSError:
@@ -130,6 +154,10 @@ class MorningNotifications:
                 self.futures.append(self.pool.submit(self.send, path))
 
     def close(self):
+        self.terminal.set()
+        if self.timer is not None:
+            self.timer.cancel()
+            self.timer.join()
         self.pool.shutdown(wait=True)
         results = list(self.failures)
         for future in self.futures:

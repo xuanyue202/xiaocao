@@ -73,3 +73,29 @@ def test_notification_storage_failure_does_not_block_runner(monkeypatch, tmp_pat
     notices = MorningNotifications("2026-09-28", root=tmp_path)
     assert notices.publish("ready") is None
     assert notices.close()[0]["status"] == "pending"
+
+
+def test_golden_window_reports_unproved_outcome_without_stopping_recovery(tmp_path):
+    from datetime import datetime
+    timers, sent = [], []
+    class Timer:
+        def __init__(self, delay, callback):
+            self.delay, self.callback = delay, callback
+            timers.append(self)
+        def start(self):
+            pass
+        def cancel(self):
+            pass
+        def join(self):
+            pass
+    def sender(t, b, r):
+        sent.append((t, b))
+        return {"status": "ok"}
+    notices = MorningNotifications("2026-09-28", root=tmp_path, sender=sender, recipients=lambda: ("user",))
+    notices.arm_golden_window(now=datetime.fromisoformat("2026-09-28T09:00:00+08:00"), timer_factory=Timer)
+    assert timers[0].delay == 1800
+    timers[0].callback()
+    notices.publish("result", {"status": "completed", "run_id": "original"})
+    assert len(notices.close()) == 2
+    assert "暂未证明" in sent[0][1] and "委托 0" not in sent[0][1]
+    assert "结果" in sent[1][0]
