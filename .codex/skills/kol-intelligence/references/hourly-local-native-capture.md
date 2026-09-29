@@ -378,6 +378,20 @@ force download. Keep the original task/capture/claim and narrow item PTY through
 validation/upload/Handoff; a missing or uncertain resume receipt cannot be
 retried blindly. A user pause is not itself authority to resume.
 
+For a falsely-running exact stream whose compressed output is nonzero but has
+not changed for at least five minutes, `resume_interrupted_capture(...,
+stalled_media_repair=True)` requires the original candidate/live/compression
+labels and durably claims one same-task pause/readback/resume. It does not
+replace the task; a consumed or uncertain claim is not permission to repeat it.
+After exact completed-media cleanup is persisted and reverified, a tested
+same-directory downloader replacement may be installed through
+`install_sniffer_repair_after_cleanup`. It requires the same downloaded capture,
+unchanged cleanup proof, no running singleton and fresh cleanup checks; retains
+a backup and starts nothing. Never replace a backend during an active download.
+The installed networking repair bounds HTTP(S) reads/reconnects and retains only
+safe failure codes, not signed URLs or raw stderr. Installation/tests do not
+prove a later live download or Handoff.
+
 A visible current broadcast with only bound liveplay candidates returns
 `page_state=live` and truthful `media_request_observed=true`; it stays
 `awaiting_playback`. Close the exact course using W7–W10; do not download it.

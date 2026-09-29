@@ -73,6 +73,16 @@ the original run proves attachment was not reached. After repairing the adapter,
 and no target in receipt/UI/inputs, then persists one continuation claim. Never
 infer this eligibility from a later inspection or a generic historical failure.
 
+A claim-bound `upload_folder_scan_failed` / `upload_folder_scan` also proves
+the adapter stopped before attachment. `resume_pre_attachment_upload` requires
+a fresh complete exact-folder scan, same claim/name, zero cloud matches, and no
+target in receipt, inputs, transfer text or rows. A collapsed queue alone is not
+an uncertain submission for this proven pre-attachment stage. Its separate
+`upload_folder_scan_repair_claimed_at` is consumed once, preserves any previous
+reconciliation claim, and cannot become a periodic retry loop. Explicit
+authentication or security-policy errors are not transport errors and never
+qualify; recover normal authentication under the Edge reference instead.
+
 For the exact `file_chooser_not_opened` / `upload_before_attachment` failure,
 OpenCLI's chooser timeout occurs before file assignment. After a verified repair,
 `NetdiskEnrichmentService.resume_pre_attachment_upload` reconciles the same target
