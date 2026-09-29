@@ -3,6 +3,7 @@ from __future__ import annotations
 import hashlib
 import json
 from pathlib import Path
+from types import SimpleNamespace
 
 from xiaocao.kol.xiaocao_capture_acceptance import inspect_acceptance
 
@@ -190,4 +191,48 @@ def test_completed_capture_acceptance_uses_durable_task_after_sniffer_cleanup(tm
     rejected = inspect_acceptance(root, [identity], required_count=1, fetch_json=offline,
                                   probe_media=lambda _: True)
     assert rejected["status"] == "failed"
-    assert rejected["items"][0]["checks"]["download_task_done"] is False
+    assert rejected["items"][0]["checks"]["download_completion_verified"] is False
+
+
+def test_reconciled_complete_paused_artifact_is_verified_without_claiming_task_done(tmp_path, monkeypatch):
+    root, identity = _fixture(tmp_path, complete=True)
+    manifest_path = root / "manifest.json"
+    manifest = json.loads(manifest_path.read_text())
+    manifest["items"][identity].update(entry_kind="wechat_mini_program", candidate_id="candidate-test")
+    manifest_path.write_text(json.dumps(manifest))
+    media = tmp_path / "capture-compressed.mp4"
+    capture = {"job_id": "kol-capture-test", "event": "download_completed_reconciled",
+               "status": "downloaded", "download_task_id": "task-test",
+               "expected_source": {"source_identity": "xiaoetong:appdemo:l_test"},
+               "candidate": {"id": "candidate-test", "live_id": "l_test"},
+               "candidate_key": "live:l_test", "baseline_candidate_keys": [],
+               "provider_status_observed": "pause", "media_path": str(media),
+               "media_size_bytes": media.stat().st_size, "media_duration_seconds": 1000.0,
+               "expected_duration_seconds": 1000.0,
+               "reconciliation_reason": "sniffer_interrupted_after_complete_media",
+               "download_task": {"id": "task-test", "status": "pause", "name": media.name, "meta": {"labels": {
+                   "capture_id": "candidate-test", "live_id": "l_test", "type": "live_capture",
+                   "compress": "true", "compress_inline": "true", "hls_duration_sec": "1000.0"}}}}
+    ledger = root / "items" / identity / "capture_jobs.jsonl"
+    source = {"job_id": "kol-capture-test", "event": "mini_program_source_bound"}
+    def offline(url):
+        raise AssertionError("reconciled artifact cannot query or restart the cleaned sniffer")
+    duration = 1000.0
+    monkeypatch.setattr("xiaocao.kol.xiaocao_capture_acceptance.subprocess.run", lambda *a, **k:
+        SimpleNamespace(returncode=0, stdout=json.dumps({"format": {"duration": str(duration)}})))
+    _write_jsonl(ledger, [source, capture])
+    result = inspect_acceptance(root, [identity], required_count=1, fetch_json=offline,
+                                probe_media=lambda _: True)
+    assert result["status"] == "passed"
+    assert result["items"][0]["download_task_status"] == "pause"
+    assert result["items"][0]["download_completion_basis"] == "reconciled_full_artifact"
+    duration = 700.0
+    partial = inspect_acceptance(root, [identity], required_count=1, fetch_json=offline,
+                                 probe_media=lambda _: True)
+    assert partial["status"] == "failed"
+    duration = 1000.0
+    capture["download_task"]["meta"]["labels"]["capture_id"] = "another-candidate"
+    _write_jsonl(ledger, [source, capture])
+    mismatch = inspect_acceptance(root, [identity], required_count=1, fetch_json=offline,
+                                  probe_media=lambda _: True)
+    assert mismatch["status"] == "failed"

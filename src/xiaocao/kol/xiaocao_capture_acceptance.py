@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import math
 import subprocess
 from datetime import datetime
 from pathlib import Path
@@ -82,6 +83,51 @@ def _sha256_file(path: Path) -> str:
     return digest.hexdigest()
 
 
+def _reconciled_full_artifact(capture: dict[str, Any], labels: dict[str, Any]) -> bool:
+    """Independently recheck a full artifact, without rewriting provider pause."""
+    if (
+        capture.get("event") != "download_completed_reconciled"
+        or capture.get("provider_status_observed") != "pause"
+        or capture.get("reconciliation_reason") != "sniffer_interrupted_after_complete_media"
+    ):
+        return False
+    media = Path(str(capture.get("media_path") or "")).expanduser()
+    task = capture.get("download_task") or {}
+    task_options = (task.get("meta") or {}).get("opts") or {}
+    task_name = str(task.get("name") or task_options.get("name") or "")
+    if not media.is_file() or not media.name.endswith("-compressed.mp4"):
+        return False
+    if task_name != media.name:
+        return False
+    if media.with_name(media.name.removesuffix("-compressed.mp4") + ".mp4").exists():
+        return False
+    try:
+        expected = float(labels.get("hls_duration_sec") or 0)
+        recorded_expected = float(capture.get("expected_duration_seconds") or 0)
+        recorded_duration = float(capture.get("media_duration_seconds") or 0)
+        if (
+            not all(math.isfinite(v) for v in (expected, recorded_expected, recorded_duration))
+            or expected < 60 or recorded_expected != expected
+            or media.stat().st_size != capture.get("media_size_bytes")
+        ):
+            return False
+        result = subprocess.run(
+            ["ffprobe", "-v", "error", "-show_entries", "format=duration", "-of", "json", str(media)],
+            check=False, capture_output=True, text=True, timeout=30,
+        )
+        if result.returncode != 0:
+            return False
+        actual = float(json.loads(result.stdout)["format"]["duration"])
+    except (OSError, ValueError, TypeError, KeyError, subprocess.TimeoutExpired):
+        return False
+    tolerance = max(15.0, expected * 0.01)
+    return (
+        math.isfinite(actual) and actual >= 60
+        and abs(actual - expected) <= tolerance
+        and abs(recorded_duration - actual) <= 1.0
+    )
+
+
 def _at_or_after(value: Any, not_before: str | None) -> bool:
     if not not_before:
         return True
@@ -134,11 +180,15 @@ def inspect_identity(
     snapshot_meta = snapshot_task.get("meta") or {}
     snapshot_labels = snapshot_meta.get("labels") or (snapshot_meta.get("req") or {}).get("labels") or {}
     snapshot_candidate = capture.get("candidate") or {}
+    reconciled_artifact = (
+        completed_snapshot and snapshot_task.get("status") == "pause"
+        and _reconciled_full_artifact(capture, snapshot_labels)
+    )
     snapshot_bound = (
         completed_snapshot
         and bool(capture.get("download_task_id"))
         and snapshot_task.get("id") == capture.get("download_task_id")
-        and snapshot_task.get("status") == "done"
+        and (snapshot_task.get("status") == "done" or reconciled_artifact)
         and (capture.get("expected_source") or {}).get("source_identity") == source_identity
         and bool(snapshot_candidate.get("id"))
         and snapshot_candidate.get("live_id") == live_id
@@ -210,6 +260,10 @@ def inspect_identity(
         and _sha256_file(media_path) == expected_sha256
     )
     media_is_valid = media_exists and probe_media(media_path)
+    if reconciled_artifact:
+        reconciled_artifact = (
+            media_path.resolve() == Path(str(capture.get("media_path") or "")).expanduser().resolve()
+        )
     task_meta = task.get("meta") or {}
     task_labels = task_meta.get("labels") or (task_meta.get("req") or {}).get("labels") or {}
     native_source_bound = (
@@ -241,7 +295,9 @@ def inspect_identity(
         "source_task_created": bool(task_id) and (
             native_source_bound or source_job.get("status") == "task_created"
         ),
-        "download_task_done": task.get("status") == "done",
+        "download_completion_verified": task.get("status") == "done" or (
+            snapshot_bound and reconciled_artifact
+        ),
         "media_validated": bool(media),
         "media_file_exists": media_exists,
         "media_sha256_matches": hash_matches,
@@ -258,6 +314,11 @@ def inspect_identity(
         "capture_job_id": capture_job_id,
         "source_job_id": source_job_id,
         "task_id": task_id,
+        "download_task_status": str(snapshot_task.get("status") or task.get("status") or ""),
+        "download_completion_basis": (
+            "reconciled_full_artifact" if snapshot_bound and reconciled_artifact
+            else "provider_done" if task.get("status") == "done" else "unverified"
+        ),
         "task_evidence_origin": "capture_ledger" if completed_snapshot else "live_sniffer",
         "media_path": str(media_path) if media_exists else "",
         "checks": checks,

@@ -371,6 +371,12 @@ sniffer merely to pass audit. A mismatched saved task fails closed.
 After a diagnosed downloader interruption, reconcile the original task before
 any replay. A paused stream is not complete media: `reconcile_completed_capture`
 requires its exact compressed artifact and full HLS-matched duration. If the
+provider remains `pause` after this exact reconciliation, acceptance independently
+rechecks the task/candidate/source labels, original target, actual full duration,
+bytes and media hash. Its `download_completion_verified` gate may pass with
+`download_completion_basis=reconciled_full_artifact`; the reported provider
+`download_task_status` remains `pause`, never fabricated `done`.
+If the
 artifact is incomplete, `resume_interrupted_capture` permits one durable
 same-task continuation only after exact candidate/live/compression labels and
 `pause` are read back. It calls the singleton's resume endpoint, not create or
