@@ -96,6 +96,31 @@ def test_backend_repair_keeps_capture_and_does_not_record_terminal_cleanup(tmp_p
     assert service._event("capture_cleanup_completed", capture_job_id=current["job_id"]) is None
 
 
+@pytest.mark.parametrize("invalid", [None, "existing_task", "started", "no_end", "wrong_resource"])
+def test_claimed_transport_repair_preserves_native_arm_and_download_claim(tmp_path, monkeypatch, invalid):
+    store = CaptureJobStore(tmp_path / "capture.jsonl")
+    current = store.transition(store.arm([]), "download_claimed", status="download_claimed",
+        native_repair_armed_at="2026-09-29T22:47:35+08:00", download_idempotency_key="original",
+        candidate={"id":"exact","live_id":"l_exact"},
+        native_media_lineage={"method":"native_v2_merchant_response","media_resource_sha256":"a"*64,
+            "finite_playlist":{"candidate_id":"exact","ended":True,"media_resource_sha256":"a"*64,"response_sha256":"b"*64}})
+    if invalid == "started": current=store.transition(current,"started",download_task_id="already")
+    if invalid == "no_end": current["native_media_lineage"]["finite_playlist"]["ended"]=False;store.transition(current,"changed")
+    if invalid == "wrong_resource": current["native_media_lineage"]["finite_playlist"]["media_resource_sha256"]="c"*64;store.transition(current,"changed")
+    tasks=[{"id":"other","status":"running"}] if invalid == "existing_task" else []
+    service=XiaocaoLiveService(tmp_path / "live",capture_ledger=store.path,sniffer_client=SimpleNamespace(tasks=lambda:tasks))
+    calls=[]
+    monkeypatch.setattr(service,"_replace_sniffer_for_repair",lambda row,**kw:calls.append((row,kw)) or {"status":"ready"})
+    if invalid:
+        with pytest.raises(EnrichmentError):service.restart_sniffer_for_claimed_native_transport_repair(current["job_id"],replacement_binary=tmp_path / "repair")
+        assert not calls
+    else:
+        service.restart_sniffer_for_claimed_native_transport_repair(current["job_id"],replacement_binary=tmp_path / "repair")
+        assert calls[0][1]["preserve_native_arm"] is True
+        assert calls[0][0]["native_repair_armed_at"] == current["native_repair_armed_at"]
+        assert calls[0][0]["download_idempotency_key"] == "original"
+
+
 @pytest.mark.parametrize("invalid", [None, "active", "changed", "wrong_capture", "unfinished"])
 def test_backend_install_after_exact_cleanup_never_starts_sniffer(tmp_path, monkeypatch, invalid):
     installed, replacement = tmp_path / "sniffer", tmp_path / "sniffer.repair"
@@ -406,6 +431,34 @@ def _capture_fixture(tmp_path: Path) -> tuple[Path, str, Path, float]:
     )
     assert downloaded is not None
     return ledger, armed["job_id"], media, 120.0
+
+
+@pytest.mark.parametrize("invalid", [None, "no_lineage", "stale", "known_candidate", "wrong_anchor", "wrong_task", "bad_hash"])
+def test_native_fresh_replay_accepts_known_live_only_with_exact_lineage(invalid):
+    live, app, cid = "l_original", "apporiginal", "fresh-replay"
+    anchor = {"candidate_id": cid, "app_id": app, "live_id": live,
+        "source_host": "xet.kj1team.cn", "source_path": "/_alive/v2/get_lookback_url",
+        "response_sha256": "a" * 64, "base_info_sha256": "b" * 64}
+    capture = {"status": "downloaded", "created_at": "2026-09-28T12:00:00+08:00",
+        "candidate": {"id": cid, "live_id": live, "captured": "2026-09-29 22:00:00"},
+        "candidate_key": f"live:{live}", "baseline_candidate_keys": [f"live:{live}"],
+        "expected_source": {"source_resource_id": live, "source_app_id": app,
+            "source_identity": f"xiaoetong:{app}:{live}"},
+        "native_media_lineage": {"method": "native_v2_merchant_response",
+            "media_resource_sha256": "c" * 64, "metadata_anchors": [anchor]},
+        "download_task": {"meta": {"labels": {"live_id": live, "capture_id": cid,
+            "type": "live_capture", "compress": "true", "compress_inline": "true"}}}}
+    if invalid == "no_lineage": capture.pop("native_media_lineage")
+    if invalid == "stale": capture["candidate"]["captured"] = "2026-09-27 22:00:00"
+    if invalid == "known_candidate": capture["baseline_candidate_keys"].append(f"id:{cid}")
+    if invalid == "wrong_anchor": anchor["live_id"] = "l_other"
+    if invalid == "wrong_task": capture["download_task"]["meta"]["labels"]["capture_id"] = "other"
+    if invalid == "bad_hash": anchor["response_sha256"] = "invalid"
+    if invalid:
+        with pytest.raises(EnrichmentError, match="Ticket 03 path"):
+            XiaocaoLiveService._capture_contract(capture)
+    else:
+        assert XiaocaoLiveService._capture_contract(capture)["capture_id"] == cid
 
 
 def test_recorded_capture_contract_accepts_file_bound_candidate(tmp_path):

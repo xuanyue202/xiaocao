@@ -23,6 +23,16 @@ source/media/download claim, `prepare_playback` reconciles only the matching
 `awaiting_playback` manifest item back to the same awaiting capture. It preserves
 the original baseline and rejected observation; every bound claim fails closed.
 Do not reset the ledger manually or create a replacement capture.
+For a live ID already present in the original baseline, a newly observed native
+v2 replay may pass media validation only with a new candidate ID, post-arm time,
+exact task capture/live labels and the accepted same-app/live merchant response
+and base-info hashes. The original baseline is retained. A live ID, old candidate
+or unbound global observation alone still fails closed; do not redownload a
+completed artifact merely because its live key was previously seen.
+The durable post-cleanup acceptance gate reuses this same media identity
+contract for a baselined live key; it still requires the original manifest,
+candidate/task labels, compressed artifact hash and cloud receipt. It must not
+query or restart a cleaned sniffer to validate an already completed download.
 The canonical driver may reuse a manually launched relative-path executable
 only after the operating system proves its actual executable is the same
 installed binary. A matching basename or a healthy unrelated API is insufficient;
@@ -179,6 +189,26 @@ lists enrich asynchronously with an incremental cache; they cannot bind a source
    `miniAliveVideoUrl|aliveVideoUrl`，精确核对候选媒体资源，并记录两份正文哈希。
    仅已验证 `xet.kj1team.cn -> appsnm3rlcp3566` 来源可走此分支；PAC 覆盖
    整域不代表整域的任意响应可绑定来源。读取的是原生抓取证据，不访问 H5 播放器。
+
+   Sep28 晚场还使用 `live-ex-speed.xiaoeknow.com` 的数字命名回放清单。
+   不以文件名或 CDN 后缀认定回放：同一 singleton 本轮保存的 HTTP200
+   清单须绑定精确候选资源、post-arm 时间，并含 VOD、末尾 ENDLIST、
+   正时长且数量一致的有限分段；商户 base_info 须为已结束状态、同 app/live，
+   lookback 响应仍须映射同资源。记录清单哈希/时长/分段数，不返回 URL 或密钥。
+   同场后端修复保留这些未下载观察和原 capture；部署后重新取同场媒体，
+   不能沿用旧内存票据。相同 URL 派生 ID 的重复观察仅在资源、来源、字段及
+   live 全部一致时使用真实最新观察时间；冲突仍拒绝。
+   若微信复用缓存、singleton 收到空正文，先保持课程/原任务，不重开或刷新。
+   仅该公开数字回放可运行 `scripts/kol_native_playlist_probe.py --identity <原订阅>
+   --capture-id <原capture> --candidate-id <本轮候选> --source-identity <观测app/live>
+   --network-service <当前服务>`，它先重读实际商户正文、已结束状态与原资源；
+   有查询/签名的 URL 不能探测。经本机已信任证书的系统 curl 和原 singleton
+   代理只复核这一个公开清单，仍由 singleton 保存的 VOD/ENDLIST 正文验收。
+   不下载视频、不换任务、不关闭 TLS 校验；网络失败留在原条目诊断。
+   已有未执行的 download claim（服务端无匹配或活跃任务）可通过
+   `restart_sniffer_for_claimed_native_transport_repair` 部署已测试后端，保留原
+   claim、原绑定与观察时点；仅有 exact 公共 VOD 证据允许恢复无查询资源。
+   有签名/加密票据仍需本轮内存票据，不允许从已脱敏 URL 重建。
 
 3. **一次正常唤起，再输入课程口令。** 对 HTTPS 分享入口，运行当前请求给出的
    `launch_resolver_command`；其命令形态为：

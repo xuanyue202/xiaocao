@@ -1618,6 +1618,39 @@ class XiaocaoLiveService:
         candidate_key = str(capture.get("candidate_key") or "")
         candidate_id = str((candidate or {}).get("id") or "")
         baseline = set(capture.get("baseline_candidate_keys") or [])
+        native_fresh = False
+        lineage = capture.get("native_media_lineage") or {}
+        anchors = lineage.get("metadata_anchors") or []
+        app_id = str(expected_source.get("source_app_id") or "")
+        if (
+            lineage.get("method") == "native_v2_merchant_response"
+            and candidate_id and f"id:{candidate_id}" not in baseline
+            and resource_id == live_id
+            and expected_source.get("source_identity") == f"xiaoetong:{app_id}:{live_id}"
+            and str(labels.get("capture_id") or "") == candidate_id
+            and _SHA256.fullmatch(str(lineage.get("media_resource_sha256") or ""))
+            and len(anchors) == 1
+            and isinstance(anchors[0], dict)
+        ):
+            anchor = anchors[0]
+            try:
+                captured_at = datetime.fromisoformat(str((candidate or {}).get("captured") or ""))
+                if captured_at.tzinfo is None:
+                    captured_at = captured_at.replace(tzinfo=ZoneInfo("Asia/Shanghai"))
+                armed_at = datetime.fromisoformat(str(
+                    capture.get("native_repair_armed_at") or capture.get("created_at") or ""))
+                native_fresh = bool(
+                    armed_at.tzinfo is not None and captured_at > armed_at
+                    and anchor.get("candidate_id") == candidate_id
+                    and anchor.get("app_id") == app_id
+                    and anchor.get("live_id") == live_id
+                    and anchor.get("source_host") == "xet.kj1team.cn"
+                    and anchor.get("source_path") == "/_alive/v2/get_lookback_url"
+                    and _SHA256.fullmatch(str(anchor.get("response_sha256") or ""))
+                    and _SHA256.fullmatch(str(anchor.get("base_info_sha256") or ""))
+                )
+            except (TypeError, ValueError):
+                native_fresh = False
         identity_proven = (
             recorded
             and candidate_id
@@ -1631,7 +1664,7 @@ class XiaocaoLiveService:
             not recorded
             and live_id
             and candidate_key == f"live:{live_id}"
-            and candidate_key not in baseline
+            and (candidate_key not in baseline or native_fresh)
             and str(labels.get("live_id") or "") == live_id
         )
         if (
@@ -1885,10 +1918,16 @@ class XiaocaoLiveService:
         origin = urlsplit(str(candidate.get("source_url") or ""))
         resource = urlunsplit((url.scheme, url.netloc, url.path, "", ""))
         source_resource = urlunsplit((origin.scheme, origin.netloc, origin.path, "", ""))
+        direct_eof = (resource == source_resource and candidate.get("source_path") == url.path
+            and not candidate.get("json_path") and Path(url.path).name == "playlist_eof.m3u8")
+        if not direct_eof:
+            from .xiaocao_wechat import _native_v2_merchant_lineage
+            captured_at = datetime.fromisoformat(candidate["captured"]).replace(tzinfo=ZoneInfo("Asia/Shanghai"))
+            _native_v2_merchant_lineage(candidate, app_id=match.group(1), live_id=match.group(2),
+                armed_at=datetime.fromisoformat(current["created_at"]), captured_at=captured_at,
+                debug_root=self.sniffer_binary.parent / "elive_live_debug")
         if (url.scheme != "https" or not url.hostname or url.username or url.password
-            or resource != source_resource or candidate.get("source_path") != url.path
-            or candidate.get("json_path") or candidate.get("media_type") != "m3u8"
-            or Path(url.path).name != "playlist_eof.m3u8"):
+            or candidate.get("media_type") != "m3u8"):
             raise EnrichmentError("native observation is not a directly captured replay")
         try:
             captured = datetime.fromisoformat(str(candidate.get("captured") or ""))
@@ -1924,6 +1963,7 @@ class XiaocaoLiveService:
     def _replace_sniffer_for_repair(
         self, current: dict[str, Any], *, replacement_binary: Path,
         unbound_observation: dict[str, Any] | None = None,
+        preserve_native_arm: bool = False,
     ) -> dict[str, Any]:
         capture_job_id = current["job_id"]
         replacement = replacement_binary.resolve()
@@ -1947,14 +1987,32 @@ class XiaocaoLiveService:
             time.sleep(0.1)
         validate_cleanup_evidence(self.cleanup_snapshot())
         os.replace(replacement, installed)
-        self.capture_store.transition(
-            current, "native_backend_repaired", native_repair_armed_at=self._clock().isoformat(timespec="seconds"),
-            repaired_binary_sha256=_sha256_file(installed),
-        )
+        fields = {"repaired_binary_sha256": _sha256_file(installed)}
+        if not preserve_native_arm:
+            fields["native_repair_armed_at"] = self._clock().isoformat(timespec="seconds")
+        self.capture_store.transition(current, "native_backend_repaired", **fields)
         ready = self.start()
         if ready.get("capture_job_id") != capture_job_id:
             raise EnrichmentError("backend repair resumed another capture")
         return {"capture_job_id": capture_job_id, "status": "ready", "backup_binary": str(backup)}
+
+    def restart_sniffer_for_claimed_native_transport_repair(self, capture_job_id: str, *, replacement_binary: Path) -> dict[str, Any]:
+        """Retain an unexecuted download claim for an observed public VOD."""
+        current = self.capture_store.latest(capture_job_id)
+        if current is None or current.get("status") != "download_claimed" or current.get("download_task_id"):
+            raise EnrichmentError("transport repair requires an unexecuted download claim")
+        lineage = current.get("native_media_lineage") or {}
+        finite = lineage.get("finite_playlist") or {}
+        candidate = current.get("candidate") or {}
+        if (lineage.get("method") != "native_v2_merchant_response" or finite.get("ended") is not True
+            or finite.get("candidate_id") != candidate.get("id")
+            or finite.get("media_resource_sha256") != lineage.get("media_resource_sha256")
+            or not _SHA256.fullmatch(str(finite.get("response_sha256") or ""))):
+            raise EnrichmentError("transport repair lacks exact ended native evidence")
+        tasks = self.sniffer.tasks()
+        if self._matching_tasks(current, tasks) or any(t.get("status") in {"running", "ready", "wait"} for t in tasks):
+            raise EnrichmentError("existing provider task blocks transport-only repair")
+        return self._replace_sniffer_for_repair(current, replacement_binary=replacement_binary, preserve_native_arm=True)
 
     def cleanup_sniffer(self, *, capture_job_id: str) -> dict[str, Any]:
         existing = self._event(

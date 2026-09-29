@@ -11,6 +11,9 @@ from pathlib import Path
 from typing import Any, Callable
 from urllib.request import urlopen
 
+from .netdisk_enrichment import EnrichmentError
+from .xiaocao_live import XiaocaoLiveService
+
 
 JsonFetcher = Callable[[str], dict[str, Any]]
 MediaProbe = Callable[[Path], bool]
@@ -184,6 +187,17 @@ def inspect_identity(
         completed_snapshot and snapshot_task.get("status") == "pause"
         and _reconciled_full_artifact(capture, snapshot_labels)
     )
+    snapshot_identity_fresh = (
+        capture.get("candidate_key") not in (capture.get("baseline_candidate_keys") or [])
+    )
+    if completed_snapshot and not snapshot_identity_fresh:
+        # Reuse the media validator's exact post-arm native lineage contract.
+        # A seen live key alone never authorizes an old candidate or task.
+        try:
+            XiaocaoLiveService._capture_contract(capture)
+            snapshot_identity_fresh = True
+        except EnrichmentError:
+            pass
     snapshot_bound = (
         completed_snapshot
         and bool(capture.get("download_task_id"))
@@ -193,7 +207,7 @@ def inspect_identity(
         and bool(snapshot_candidate.get("id"))
         and snapshot_candidate.get("live_id") == live_id
         and capture.get("candidate_key") == f"live:{live_id}"
-        and capture.get("candidate_key") not in (capture.get("baseline_candidate_keys") or [])
+        and snapshot_identity_fresh
         and snapshot_labels.get("capture_id") == snapshot_candidate.get("id")
         and snapshot_labels.get("live_id") == live_id
         and snapshot_labels.get("type") == "live_capture"
