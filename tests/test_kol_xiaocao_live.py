@@ -2092,6 +2092,38 @@ def test_cancel_wait_preserves_a_new_candidate_seen_before_ledger_poll(
     assert store.latest(armed["job_id"])["status"] == "captured"
 
 
+@pytest.mark.parametrize("changed", [None, "capture_id", "live_id", "compress_inline", "status"])
+def test_interrupted_capture_resumes_only_original_task_once(tmp_path, changed):
+    calls = []
+    task = {"id": "same-task", "status": "pause", "protocol": "stream", "meta": {"labels": {
+        "capture_id": "same-candidate", "live_id": "l_same", "type": "live_capture",
+        "compress": "true", "compress_inline": "true"}}}
+    if changed == "status":
+        task["status"] = "running"
+    elif changed:
+        task["meta"]["labels"][changed] = "other"
+    class Sniffer:
+        def tasks(self):
+            return [task]
+        def resume_task(self, task_id):
+            calls.append(task_id)
+            return {"id": task_id}
+    service = XiaocaoLiveService(tmp_path / "live", capture_ledger=tmp_path / "capture.jsonl",
+        sniffer_client=Sniffer())
+    armed = service.capture_store.arm([])
+    service.capture_store.transition(armed, "download_started", status="downloading",
+        candidate={"id": "same-candidate", "live_id": "l_same"}, download_task_id="same-task")
+    if changed:
+        with pytest.raises(EnrichmentError, match="does not bind"):
+            service.resume_interrupted_capture(armed["job_id"])
+        assert calls == []
+    else:
+        result = service.resume_interrupted_capture(armed["job_id"])
+        assert result["download_task_id"] == "same-task"
+        assert service.resume_interrupted_capture(armed["job_id"])["idempotent_replay"] is True
+        assert calls == ["same-task"]
+
+
 def test_reconcile_completed_capture_requires_exact_paused_compressed_task(tmp_path):
     ledger = tmp_path / "capture.jsonl"
     store = CaptureJobStore(ledger)

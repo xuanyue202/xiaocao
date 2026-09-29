@@ -1396,6 +1396,39 @@ class XiaocaoLiveService:
             )
         return current
 
+    def resume_interrupted_capture(self, capture_job_id: str) -> dict[str, Any]:
+        """One diagnosed continuation of the same durable paused stream task."""
+        current = self.capture_store.latest(capture_job_id)
+        if current is None or current.get("status") != "downloading":
+            raise EnrichmentError("interrupted capture is not downloading")
+        task_id = str(current.get("download_task_id") or "")
+        matches = [t for t in self.sniffer.tasks() if str(t.get("id") or "") == task_id]
+        if not task_id or len(matches) != 1:
+            raise EnrichmentError("exact interrupted task is unavailable")
+        task = matches[0]
+        if current.get("interrupted_resume_claim"):
+            return {**current, "idempotent_replay": True}
+        meta = task.get("meta") or {}
+        labels = (meta.get("req") or {}).get("labels") or meta.get("labels") or {}
+        candidate = current.get("candidate") or {}
+        if (
+            task.get("status") != "pause" or task.get("protocol") != "stream"
+            or not candidate.get("id") or not candidate.get("live_id")
+            or labels.get("capture_id") != candidate["id"]
+            or labels.get("live_id") != candidate["live_id"]
+            or labels.get("type") != "live_capture"
+            or str(labels.get("compress")).lower() != "true"
+            or str(labels.get("compress_inline")).lower() != "true"
+        ):
+            raise EnrichmentError("paused task does not bind the original compressed capture")
+        claimed = self.capture_store.transition(current, "interrupted_task_resume_claimed",
+            interrupted_resume_claim={"task_id": task_id, "candidate_id": candidate["id"]})
+        response = self.sniffer.resume_task(task_id)
+        if response.get("id") != task_id:
+            raise EnrichmentError("task resume changed the original identity")
+        return self.capture_store.transition(claimed, "interrupted_task_resumed",
+            interrupted_resume_receipt=response)
+
     def reconcile_completed_capture(self, capture_job_id: str) -> dict[str, Any]:
         """Recover a complete compressed artifact after a sniffer interruption."""
         current = self.capture_store.latest(capture_job_id)
