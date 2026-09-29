@@ -17,6 +17,12 @@ process lifetime, and mailbox completion.
 Before every native activation prompt, the driver restores and checks the
 existing capture's singleton sniffer; a historical armed receipt is not current
 process health. Verify/apply the bounded capture PAC only after that health check.
+An unbound original native share must not accept a global historical candidate.
+If an older `capture_detected` transition left it `captured` before any native
+source/media/download claim, `prepare_playback` reconciles only the matching
+`awaiting_playback` manifest item back to the same awaiting capture. It preserves
+the original baseline and rejected observation; every bound claim fails closed.
+Do not reset the ledger manually or create a replacement capture.
 The canonical driver may reuse a manually launched relative-path executable
 only after the operating system proves its actual executable is the same
 installed binary. A matching basename or a healthy unrelated API is insufficient;

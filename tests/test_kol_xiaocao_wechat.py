@@ -1237,9 +1237,12 @@ def test_native_repair_retains_capture_and_only_renews_same_failed_media(tmp_pat
     assert result["status"] == "download_failed"
 
 
-def test_native_repair_wait_cannot_auto_bind_historical_candidates(tmp_path):
+@pytest.mark.parametrize("repaired", [False, True])
+def test_native_repair_wait_cannot_auto_bind_historical_candidates(tmp_path, repaired):
     store = CaptureJobStore(tmp_path / "capture.jsonl")
-    capture = store.transition(store.arm([]), "repair_wait", native_repair_armed_at="2026-09-05T15:00:00+08:00")
+    capture = store.arm([])
+    if repaired:
+        capture = store.transition(capture, "repair_wait", native_repair_armed_at="2026-09-05T15:00:00+08:00")
     starts = []
     service = SimpleNamespace(capture_store=store, start=lambda: starts.append(True))
     driver = XiaocaoLiveCaptureDriver(tmp_path, service_factory=lambda *a, **kw: service)
@@ -1247,6 +1250,33 @@ def test_native_repair_wait_cannot_auto_bind_historical_candidates(tmp_path):
         "status": "awaiting_capture", "capture_job_id": capture["job_id"]}
     assert starts == [True]
     assert store.latest() == capture
+
+
+@pytest.mark.parametrize("claim", [None, "source_job_id", "download_task_id", "expected_source", "native_unbound_media"])
+def test_native_playback_reconciles_only_unaccepted_global_observation(tmp_path, claim):
+    store = CaptureJobStore(tmp_path / "capture.jsonl")
+    original = store.arm([{"id": "baseline"}])
+    captured = store.transition(original, "capture_detected", status="captured",
+        candidate={"id": "another-course", "live_id": "l_other"},
+        candidate_key="live:l_other", **({claim: "retained-claim"} if claim else {}))
+    (tmp_path / "manifest.json").write_text(json.dumps({"items": {"item": {
+        "entry_kind": "wechat_mini_program", "status": "awaiting_playback",
+        "capture_job_id": original["job_id"], "media_request_observed": False,
+    }}}))
+    service = SimpleNamespace(capture_store=store, start=lambda: {
+        "capture_job_id": original["job_id"], "status": store.latest()["status"]})
+    driver = XiaocaoLiveCaptureDriver(tmp_path, service_factory=lambda *a, **kw: service)
+    if claim:
+        with pytest.raises(EnrichmentError, match="existing awaiting capture"):
+            driver.prepare_playback("item", original["job_id"])
+        assert store.latest() == captured
+    else:
+        assert driver.prepare_playback("item", original["job_id"])["status"] == "awaiting_capture"
+        restored = store.latest()
+        assert restored["job_id"] == original["job_id"]
+        assert restored["baseline_candidate_keys"] == original["baseline_candidate_keys"]
+        assert restored["candidate"] is None
+        assert restored["rejected_global_candidate"] == captured["candidate"]
 
 
 def test_wechat_mini_program_route_rejects_a_different_live_id(tmp_path):

@@ -564,6 +564,33 @@ class XiaocaoLiveCaptureDriver:
     def prepare_playback(self, identity: str, capture_job_id: str) -> dict[str, Any]:
         service = self._service(identity)
         capture = service.capture_store.latest(capture_job_id)
+        if (
+            capture and capture.get("status") == "captured"
+            and capture.get("event") == "capture_detected"
+            and not any(capture.get(key) for key in (
+                "expected_source", "source_job_id", "download_task_id", "task_id",
+                "native_unbound_media", "native_media_lineage", "netdisk_job_id",
+            ))
+        ):
+            manifest_path = self.output_dir / "manifest.json"
+            manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+            item = manifest.get("items", {}).get(identity, {})
+            if (
+                item.get("capture_job_id") == capture_job_id
+                and item.get("entry_kind") == "wechat_mini_program"
+                and item.get("status") == "awaiting_playback"
+                and not item.get("source_identity")
+                and item.get("media_request_observed") is False
+            ):
+                # Preserve the rejected observation and original baseline/ID.
+                # Global detection is not the original share's native lineage.
+                capture = service.capture_store.transition(
+                    capture, "unaccepted_global_observation_reconciled",
+                    status="awaiting_capture",
+                    rejected_global_candidate=capture.get("candidate"),
+                    rejected_global_candidate_key=capture.get("candidate_key"),
+                    candidate=None, candidate_key=None,
+                )
         if capture is None or capture.get("status") != "awaiting_capture":
             raise EnrichmentError("native playback requires the existing awaiting capture")
         ready = service.start()
@@ -806,8 +833,10 @@ class XiaocaoLiveCaptureDriver:
         capture = service.capture_store.latest(capture_job_id)
         if capture is None or capture.get("status") != "downloaded":
             service.start()
-        if capture and capture.get("status") == "awaiting_capture" and capture.get("native_repair_armed_at"):
-            # A repaired lease must come through the reviewed native observation
+        if capture and capture.get("status") == "awaiting_capture" and (
+            capture.get("native_repair_armed_at") or not capture.get("expected_source")
+        ):
+            # An unbound native lease must come through the reviewed observation
             # and exact lineage binder, never historical/global live-id detection.
             return {"status": "awaiting_capture", "capture_job_id": capture_job_id}
         try:
