@@ -29,6 +29,10 @@ exact task capture/live labels and the accepted same-app/live merchant response
 and base-info hashes. The original baseline is retained. A live ID, old candidate
 or unbound global observation alone still fails closed; do not redownload a
 completed artifact merely because its live key was previously seen.
+The durable post-cleanup acceptance gate reuses this same media identity
+contract for a baselined live key; it still requires the original manifest,
+candidate/task labels, compressed artifact hash and cloud receipt. It must not
+query or restart a cleaned sniffer to validate an already completed download.
 The canonical driver may reuse a manually launched relative-path executable
 only after the operating system proves its actual executable is the same
 installed binary. A matching basename or a healthy unrelated API is insufficient;

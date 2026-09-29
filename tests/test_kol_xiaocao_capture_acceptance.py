@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import pytest
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -236,3 +237,44 @@ def test_reconciled_complete_paused_artifact_is_verified_without_claiming_task_d
     mismatch = inspect_acceptance(root, [identity], required_count=1, fetch_json=offline,
                                   probe_media=lambda _: True)
     assert mismatch["status"] == "failed"
+
+
+@pytest.mark.parametrize("invalid", [None, "missing_lineage", "old_candidate", "old_time", "wrong_anchor"])
+def test_durable_native_replay_of_seen_live_requires_fresh_bound_evidence(tmp_path, invalid):
+    root, identity = _fixture(tmp_path, complete=True)
+    manifest_path = root / "manifest.json"
+    manifest = json.loads(manifest_path.read_text())
+    manifest["items"][identity].update(entry_kind="wechat_mini_program", candidate_id="fresh")
+    manifest_path.write_text(json.dumps(manifest))
+    capture = {
+        "job_id": "kol-capture-test", "status": "downloaded",
+        "created_at": "2026-09-05T14:00:00+08:00",
+        "candidate_key": "live:l_test", "baseline_candidate_keys": ["live:l_test"],
+        "expected_source": {"source_identity": "xiaoetong:appdemo:l_test",
+                            "source_app_id": "appdemo", "source_resource_id": "l_test"},
+        "candidate": {"id": "fresh", "live_id": "l_test", "captured": "2026-09-05 14:01:00"},
+        "download_task_id": "task-test",
+        "download_task": {"id": "task-test", "status": "done", "meta": {"labels": {
+            "capture_id": "fresh", "live_id": "l_test", "type": "live_capture",
+            "compress": "true", "compress_inline": "true"}}},
+        "native_media_lineage": {"method": "native_v2_merchant_response",
+            "media_resource_sha256": "a" * 64, "metadata_anchors": [{
+                "candidate_id": "fresh", "app_id": "appdemo", "live_id": "l_test",
+                "source_host": "xet.kj1team.cn", "source_path": "/_alive/v2/get_lookback_url",
+                "response_sha256": "b" * 64, "base_info_sha256": "c" * 64}]},
+    }
+    if invalid == "missing_lineage":
+        capture.pop("native_media_lineage")
+    elif invalid == "old_candidate":
+        capture["baseline_candidate_keys"].append("id:fresh")
+    elif invalid == "old_time":
+        capture["candidate"]["captured"] = "2026-09-05 13:59:00"
+    elif invalid == "wrong_anchor":
+        capture["native_media_lineage"]["metadata_anchors"][0]["live_id"] = "l_other"
+    _write_jsonl(root / "items" / identity / "capture_jobs.jsonl", [
+        {"job_id": "kol-capture-test", "event": "mini_program_source_bound"}, capture])
+    def offline(url):
+        raise AssertionError("completed capture must be checked from durable receipts")
+    result = inspect_acceptance(root, [identity], required_count=1, fetch_json=offline,
+                                probe_media=lambda _: True)
+    assert (result["status"] == "passed") == (invalid is None)
