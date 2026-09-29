@@ -767,6 +767,31 @@ class NetdiskEnrichmentService:
     ) -> dict[str, Any]:
         if result.returncode != 0:
             diagnostic = f"{result.stdout}\n{result.stderr}".lower()
+            # Preserve the provider's cause, not just the last stage. Exit 77
+            # alone is ambiguous (authentication OR permission), so require a
+            # structured code or the installed CLI's specific login message.
+            provider_codes = set()
+            for output in (str(result.stdout), str(result.stderr)):
+                for candidate in (output, *output.splitlines()):
+                    try:
+                        envelope = json.loads(candidate)
+                        error = envelope.get("error", envelope) if isinstance(envelope, dict) else {}
+                        if isinstance(error, dict):
+                            provider_codes.add(str(error.get("code") or ""))
+                    except (ValueError, TypeError):
+                        continue
+            if "AUTH_REQUIRED" in provider_codes or "not logged in to" in diagnostic:
+                raise EnrichmentDiagnosticError(
+                    "Baidu Netdisk authentication is required; preserve the upload claim",
+                    category="authentication_error", code="netdisk_login_required",
+                    stage="upload_authentication", exit_code=int(result.returncode),
+                )
+            if provider_codes & {"SECURITY_POLICY", "PERMISSION_DENIED", "EACCES"}:
+                raise EnrichmentDiagnosticError(
+                    "Browser security policy denied upload control; preserve the upload claim",
+                    category="authorization_error", code="browser_security_policy_denied",
+                    stage="upload_authorization", exit_code=int(result.returncode),
+                )
             if "page.filechooseropened not received within 5s" in diagnostic:
                 raise EnrichmentDiagnosticError(
                     "OpenCLI file chooser did not open; no file attachment occurred",
@@ -2644,6 +2669,17 @@ class NetdiskEnrichmentService:
                 and (row.get("diagnostic") or {})["exit_code"] > 0
                 and not row.get("upload_repair_attempts")
             )
+            folder_failure = (
+                row.get("reason") == "browser_command_failed"
+                and row.get("failure_stage") == "upload_folder_scan"
+                and (row.get("diagnostic") or {}).get("code") == "upload_folder_scan_failed"
+                and (row.get("diagnostic") or {}).get("stage") == "upload_folder_scan"
+                and (row.get("diagnostic") or {}).get("category") == "transport_error"
+                and type((row.get("diagnostic") or {}).get("exit_code")) is int
+                and (row.get("diagnostic") or {})["exit_code"] > 0
+                and not row.get("upload_folder_scan_repair_claimed_at")
+                and int(row.get("upload_repair_attempts") or 0) <= 1
+            )
             permission_restored = (
                 file_access_restored is True
                 and row.get("reason") == "file_access_denied"
@@ -2655,7 +2691,7 @@ class NetdiskEnrichmentService:
                 and row.get("status") == "upload_claimed"
                 and row.get("event") == "netdisk_upload_failed"
                 and not row.get("upload_started_at")
-                and (chooser_failure or readiness_failure or permission_restored)
+                and (chooser_failure or readiness_failure or folder_failure or permission_restored)
             )
 
         if session != _OPENCLI_UPLOAD_TEMPLATE_SESSION or (
@@ -2666,7 +2702,7 @@ class NetdiskEnrichmentService:
         if not eligible(current):
             raise EnrichmentError("upload has no eligible proven pre-attachment failure")
         # Reconcile the retained adapter page, not the separate Browser session.
-        if current.get("failure_stage") in {"upload_foreground", "upload_event_loop"}:
+        if current.get("failure_stage") in {"upload_foreground", "upload_event_loop", "upload_folder_scan"}:
             result = self._opencli_upload_template_process(
                 session=session, profile=profile, video_path=Path(current["video_path"]),
                 target_name=current["video_basename"], claim_id=job_id, inspect_only=True,
@@ -2691,6 +2727,13 @@ class NetdiskEnrichmentService:
                     and surface.get("targetUiRows") == []
                     and inputs and all(i.get("targetAttached") is False for i in inputs)
                 )
+                if current.get("failure_stage") == "upload_folder_scan":
+                    queue = surface.get("transferQueue") or {}
+                    absent = (
+                        absent and queue.get("complete") is True
+                        and queue.get("targetCount") == 0
+                        and int(queue.get("successfulCount") or 0) >= 1
+                    )
             except (ValueError, TypeError, AttributeError):
                 present = absent = False
             if present:
@@ -2720,6 +2763,7 @@ class NetdiskEnrichmentService:
                     else "file_chooser_failed_before_file_assignment"
                 ),
                 **({"file_access_repair_claimed_at": now} if permission_repair else {}),
+                **({"upload_folder_scan_repair_claimed_at": now} if current.get("failure_stage") == "upload_folder_scan" else {}),
                 **({"upload_reconciliation_proof": proof} if proof is not None else {}),
                 "repair_claimed_at": now,
                 "updated_at": now,
@@ -2743,6 +2787,7 @@ class NetdiskEnrichmentService:
                 and row.get("event") == "netdisk_upload_failed"
                 and row.get("status") == "upload_claimed"
                 and row.get("reason") == "browser_command_failed"
+                and (row.get("diagnostic") or {}).get("category") not in {"authentication_error", "authorization_error"}
                 and not row.get("upload_started_at")
                 and not row.get("upload_reconciled_repair_claimed_at")
                 and not row.get("upload_repair_attempts")

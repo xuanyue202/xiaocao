@@ -91,6 +91,70 @@ def test_upload_watchdog_keeps_exact_claim_stage(tmp_path):
     assert caught.value.diagnostic_stage == "upload_event_loop"
 
 
+def test_upload_auth_failure_is_not_a_retryable_transport_error():
+    stage = json.dumps({"kind": "xiaocao_upload_stage", "claimId": "job-12345678",
+                        "stage": "folder_scan", "phase": "end"})
+    with pytest.raises(EnrichmentDiagnosticError) as caught:
+        NetdiskEnrichmentService._validate_opencli_upload_template_receipt(
+            SimpleNamespace(returncode=77, stdout=json.dumps({"error": {"code": "AUTH_REQUIRED"}}), stderr=stage),
+            target_name="video.mp4", directory="/课程/自己的课/小草", claim_id="job-12345678")
+    assert caught.value.diagnostic_category == "authentication_error"
+    assert caught.value.diagnostic_code == "netdisk_login_required"
+
+
+@pytest.mark.parametrize("failure", [None, "auth", "started", "attached", "queue_incomplete", "queue_target", "wrong_claim"])
+def test_folder_scan_repair_preserves_old_claim_and_is_consumed_once(tmp_path, monkeypatch, failure):
+    video = tmp_path / "video-compressed.mp4"
+    video.write_bytes(b"real-video")
+    service = NetdiskEnrichmentService(tmp_path / "out", runner=_runner, now=lambda: NOW,
+                                       use_opencli_upload_template=True)
+    job = service.prepare(video)
+    current = {**job, "status": "upload_claimed", "event": "netdisk_upload_failed",
+               "reason": "browser_command_failed", "failure_stage": "upload_folder_scan",
+               "diagnostic": {"category": "transport_error", "code": "upload_folder_scan_failed",
+                              "stage": "upload_folder_scan", "exit_code": 77},
+               "upload_repair_attempts": 1, "upload_reconciled_repair_claimed_at": NOW.isoformat()}
+    if failure == "auth":
+        current["diagnostic"]["category"] = "authentication_error"
+    if failure == "started":
+        current["upload_started_at"] = NOW.isoformat()
+    service.store.append(current)
+    proof = {"status": "ready_to_upload", "directory": service.netdisk_directory,
+             "targetName": video.name, "claimId": job["job_id"], "uploaded": False, "exactCountBefore": 0,
+             "surfaceState": {"receiptMatchesTarget": False, "targetInTransferUi": False,
+                              "targetUiRows": [], "inputs": [{"targetAttached": False}],
+                              "transferQueue": {"complete": True, "successfulCount": 1, "targetCount": 0}}}
+    if failure == "attached":
+        proof["surfaceState"]["inputs"][0]["targetAttached"] = True
+    if failure == "queue_incomplete":
+        proof["surfaceState"]["transferQueue"]["complete"] = False
+    if failure == "queue_target":
+        proof["surfaceState"]["transferQueue"]["targetCount"] = 1
+    if failure == "wrong_claim":
+        proof["claimId"] = "other-job"
+    monkeypatch.setattr(service, "_opencli_upload_template_process", lambda **kwargs:
+                        SimpleNamespace(returncode=0, stdout=json.dumps([proof])))
+    calls = []
+    def submit(job_id, **kwargs):
+        row = service.store.latest(job_id)
+        assert row["upload_folder_scan_repair_claimed_at"]
+        assert row["upload_repair_attempts"] == 2
+        assert row["upload_reconciled_repair_claimed_at"] == current["upload_reconciled_repair_claimed_at"]
+        calls.append(job_id)
+        return row
+    monkeypatch.setattr(service, "_submit_opencli_upload", submit)
+    if failure:
+        with pytest.raises(EnrichmentError):
+            service.resume_pre_attachment_upload(job["job_id"], session="site:baidu-netdisk")
+        assert not calls
+        return
+    service.resume_pre_attachment_upload(job["job_id"], session="site:baidu-netdisk")
+    assert calls == [job["job_id"]]
+    service.store.append({**service.store.latest(job["job_id"]), "event": "netdisk_upload_failed"})
+    with pytest.raises(EnrichmentError, match="pre-attachment"):
+        service.resume_pre_attachment_upload(job["job_id"], session="site:baidu-netdisk")
+
+
 def test_unrelated_stage_does_not_reclassify_historical_upload_failure():
     stage = json.dumps({"kind": "xiaocao_upload_stage", "claimId": "another-job",
                         "stage": "select", "phase": "begin"})

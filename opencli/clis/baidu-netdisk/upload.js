@@ -242,7 +242,11 @@ async function inspectTarget(page, input, { retainPage = false } = {}) {
     throw new CommandExecutionError('Baidu Netdisk returned a malformed folder inspection');
   }
   if (inspection.authenticated !== true) {
-    throw new AuthRequiredError('Baidu Netdisk login is required before upload');
+    process.stderr.write(JSON.stringify({kind: 'xiaocao_upload_folder_failure',
+      claimId: input.claimId, folderBound: inspection.folderBound === true,
+      errno: Number.isInteger(inspection.errno) ? inspection.errno : null,
+      completeScan: inspection.completeScan === true}) + '\n');
+    throw new AuthRequiredError('pan.baidu.com', 'Baidu Netdisk login is required before upload');
   }
   if (inspection.folderBound !== true) {
     throw new CommandExecutionError('OpenCLI is not bound to the requested Baidu Netdisk folder');
