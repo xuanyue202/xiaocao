@@ -1773,6 +1773,34 @@ class XiaocaoLiveService:
             raise EnrichmentError("backend repair requires a proven zero-byte failure")
         return self._replace_sniffer_for_repair(current, replacement_binary=replacement_binary)
 
+    def install_sniffer_repair_after_cleanup(self, capture_job_id: str, *, replacement_binary: Path) -> dict[str, Any]:
+        """Deploy a tested local backend only after exact completed-media cleanup."""
+        cleanup = self._event("capture_cleanup_completed", capture_job_id=capture_job_id)
+        capture = self.capture_store.latest(capture_job_id)
+        if cleanup is None or capture is None or capture.get("status") != "downloaded":
+            raise EnrichmentError("backend installation requires exact completed capture cleanup")
+        proof_path = Path(cleanup["cleanup_evidence_path"])
+        if _sha256_file(proof_path) != cleanup["cleanup_evidence_sha256"]:
+            raise EnrichmentError("completed cleanup evidence changed")
+        proof = json.loads(proof_path.read_text())
+        if proof.get("capture_job_id") != capture_job_id:
+            raise EnrichmentError("completed cleanup belongs to another capture")
+        validate_cleanup_evidence(proof)
+        replacement, installed = replacement_binary.resolve(), self.sniffer_binary.resolve()
+        if replacement.parent != installed.parent or replacement == installed or not replacement.is_file():
+            raise EnrichmentError("backend replacement path is invalid")
+        if self._sniffer_pids():
+            raise EnrichmentError("running singleton blocks post-cleanup installation")
+        validate_cleanup_evidence(self.cleanup_snapshot())
+        previous_sha = _sha256_file(installed)
+        backup = installed.with_name(installed.name + ".pre-network-repair-" + previous_sha[:12])
+        if not backup.exists():
+            shutil.copy2(installed, backup)
+        os.replace(replacement, installed)
+        return self._append("backend_installed_after_cleanup", capture_job_id=capture_job_id,
+            previous_binary_sha256=previous_sha, repaired_binary_sha256=_sha256_file(installed),
+            backup_binary=str(backup), sniffer_started=False)
+
     def restart_sniffer_for_native_observation_repair(
         self, capture_job_id: str, *, replacement_binary: Path,
         candidate_id: str, source_identity: str, playback_window_closed: bool,

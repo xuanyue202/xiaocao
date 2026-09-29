@@ -81,6 +81,36 @@ def test_backend_repair_keeps_capture_and_does_not_record_terminal_cleanup(tmp_p
     assert service._event("capture_cleanup_completed", capture_job_id=current["job_id"]) is None
 
 
+@pytest.mark.parametrize("invalid", [None, "active", "changed", "wrong_capture", "unfinished"])
+def test_backend_install_after_exact_cleanup_never_starts_sniffer(tmp_path, monkeypatch, invalid):
+    installed, replacement = tmp_path / "sniffer", tmp_path / "sniffer.repair"
+    installed.write_bytes(b"old"); replacement.write_bytes(b"new")
+    service = XiaocaoLiveService(tmp_path / "live", capture_ledger=tmp_path / "capture.jsonl", sniffer_binary=installed)
+    job = service.capture_store.arm([])
+    service.capture_store.transition(job, "downloaded", status="downloading" if invalid == "unfinished" else "downloaded")
+    proof = {"capture_job_id": "other" if invalid == "wrong_capture" else job["job_id"],
+        "process_gone": True, "api_status_unavailable": True,
+        "listeners": {"2022": False, "2023": False},
+        "proxy_flags": {"HTTPEnable": 0, "HTTPSEnable": 0, "ProxyAutoConfigEnable": 0, "SOCKSEnable": 0},
+        "observed_at": "2026-09-29T08:00:00+08:00"}
+    path = tmp_path / "cleanup.json"; path.write_text(json.dumps(proof))
+    service._append("capture_cleanup_completed", capture_job_id=job["job_id"],
+        cleanup_evidence_path=str(path), cleanup_evidence_sha256=_sha256(path))
+    if invalid == "changed": path.write_text("{}")
+    monkeypatch.setattr(service, "_sniffer_pids", lambda: [1] if invalid == "active" else [])
+    monkeypatch.setattr(service, "cleanup_snapshot", lambda: proof)
+    monkeypatch.setattr(service, "start", lambda: pytest.fail("never start for installation"))
+    if invalid:
+        with pytest.raises(EnrichmentError):
+            service.install_sniffer_repair_after_cleanup(job["job_id"], replacement_binary=replacement)
+        assert installed.read_bytes() == b"old" and replacement.exists()
+    else:
+        receipt = service.install_sniffer_repair_after_cleanup(job["job_id"], replacement_binary=replacement)
+        assert installed.read_bytes() == b"new"
+        assert Path(receipt["backup_binary"]).read_bytes() == b"old"
+        assert receipt["sniffer_started"] is False
+
+
 @pytest.mark.parametrize("invalid", [None, "active", "claimed", "wrong_live", "stale", "liveplay", "not_closed",
     "retained", "retained_wrong_media", "retained_wrong_source", "retained_stale"])
 def test_native_observation_repair_retains_unbound_capture_without_acceptance(tmp_path, monkeypatch, invalid):
