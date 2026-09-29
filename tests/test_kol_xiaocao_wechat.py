@@ -1124,10 +1124,10 @@ def test_native_v2_binding_reopens_actual_merchant_response_without_global_conte
         assert "private" not in json.dumps(result)
 
 
-@pytest.mark.parametrize("invalid", [None, "no_end", "not_vod", "live", "old", "wrong_resource", "outside"])
-def test_native_numeric_playlist_requires_singleton_ended_vod_receipt(tmp_path, invalid):
+@pytest.mark.parametrize("invalid", [None, "cached_probe", "signed_probe", "no_end", "not_vod", "live", "old", "wrong_resource", "outside"])
+def test_native_numeric_playlist_requires_singleton_ended_vod_receipt(tmp_path, invalid, monkeypatch):
     from datetime import datetime
-    from xiaocao.kol.xiaocao_wechat import _native_direct_media_lineage
+    from xiaocao.kol.xiaocao_wechat import _native_direct_media_lineage, _native_v2_merchant_lineage
     root = tmp_path / "elive_live_debug"
     (root / "json").mkdir(parents=True)
     (root / "m3u8").mkdir()
@@ -1138,6 +1138,7 @@ def test_native_numeric_playlist_requires_singleton_ended_vod_receipt(tmp_path, 
     base = {"code": 0, "data": {"alive_info": {"app_id": "appsnm3rlcp3566", "alive_id": "l_target", "alive_state": 3}}}
     if invalid == "live": base["data"]["alive_info"]["alive_state"] = 1
     replay = {"code": 0, "data": {"aliveReviewUrl": "/l_target.m3u8", "miniAliveVideoUrl": resource}}
+    if invalid == "signed_probe": replay["data"]["miniAliveVideoUrl"] += "?sign=private"
     events = []
     for name, body, path, at in [("base", base, "/_alive/v3/base_info", "2026-09-05T15:01:00+08:00"),
             ("replay", replay, "/_alive/v2/get_lookback_url", "2026-09-05T15:01:01+08:00")]:
@@ -1150,6 +1151,7 @@ def test_native_numeric_playlist_requires_singleton_ended_vod_receipt(tmp_path, 
     if invalid == "not_vod": body = body.replace("VOD", "EVENT")
     file = (tmp_path if invalid == "outside" else root / "m3u8") / "recording.m3u8"
     file.write_text(body)
+    if invalid in {"cached_probe", "signed_probe"}: file.write_text("")
     events.append({"kind": "response.body", "status": 200,
         "url": resource + (".other" if invalid == "wrong_resource" else ""), "file": str(file),
         "at": "2026-09-05T14:59:00+08:00" if invalid == "old" else "2026-09-05T15:01:03+08:00"})
@@ -1157,6 +1159,21 @@ def test_native_numeric_playlist_requires_singleton_ended_vod_receipt(tmp_path, 
     kwargs = dict(app_id="appsnm3rlcp3566", live_id="l_target", debug_root=root,
         armed_at=datetime.fromisoformat("2026-09-05T15:00:00+08:00"),
         captured_at=datetime.fromisoformat("2026-09-05T15:01:01+08:00"))
+    calls = []
+    def probe(argv, **kw):
+        calls.append(argv)
+        assert "-k" not in argv and "--insecure" not in argv and argv[-1] == resource
+        file.write_text(body)
+        return SimpleNamespace(returncode=0, stdout=body.encode())
+    monkeypatch.setattr("xiaocao.kol.xiaocao_wechat.subprocess.run", probe)
+    if invalid in {"cached_probe", "signed_probe"}:
+        if invalid == "signed_probe":
+            with pytest.raises(EnrichmentError): _native_v2_merchant_lineage(candidate, public_probe=True, **kwargs)
+            assert not calls
+        else:
+            assert _native_v2_merchant_lineage(candidate, public_probe=True, **kwargs)["finite_playlist"]["ended"]
+            assert len(calls) == 1
+        return
     if invalid:
         with pytest.raises(EnrichmentError): _native_direct_media_lineage(candidate, [], **kwargs)
     else:

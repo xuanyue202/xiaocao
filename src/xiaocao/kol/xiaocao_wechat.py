@@ -102,6 +102,7 @@ def _media_resource_key(value: Any) -> str:
 def _native_v2_merchant_lineage(
     candidate: dict[str, Any], *, app_id: str, live_id: str,
     armed_at: datetime, captured_at: datetime, debug_root: Path | None,
+    public_probe: bool = False,
 ) -> dict[str, Any]:
     """Reopen singleton-owned native responses; never trust global live context."""
     origin = urlsplit(str(candidate.get("source_url") or ""))
@@ -156,7 +157,27 @@ def _native_v2_merchant_lineage(
     if Path(urlsplit(resource).path).name != "playlist_eof.m3u8":
         if info.get("alive_state") != 3:
             raise EnrichmentError("native replay course has not ended")
-        finite = _observed_native_finite_playlist(candidate, root, armed_at, captured_at)
+        try:
+            finite = _observed_native_finite_playlist(candidate, root, armed_at, captured_at)
+        except EnrichmentError:
+            if not public_probe:
+                raise
+            # Only the actual merchant-issued public recording, never a
+            # redacted signed URL, is eligible for this explicit cache probe.
+            raw = replay[0].get(candidate["json_path"].split(".")[-1])
+            parsed = urlsplit(str(raw or ""))
+            if (parsed.scheme != "https" or parsed.hostname != "live-ex-speed.xiaoeknow.com"
+                or parsed.username or parsed.password or parsed.query or parsed.fragment
+                or str(raw) != resource):
+                raise EnrichmentError("native manifest probe requires a public merchant resource")
+            result = subprocess.run(["/usr/bin/curl", "-fsS", "--max-time", "20",
+                "--proxy", "http://127.0.0.1:2023", "-H", "Cache-Control: no-cache", raw],
+                capture_output=True, timeout=25)
+            if result.returncode or len(result.stdout) > 2 * 1024 * 1024:
+                raise EnrichmentError("native public manifest probe failed")
+            # Acceptance still comes from the singleton's observed HTTP body,
+            # not from curl's stdout, and certificate validation stays enabled.
+            finite = _observed_native_finite_playlist(candidate, root, armed_at, captured_at)
     return {
         "method": "native_v2_merchant_response",
         "media_resource_sha256": _sha256_text(resource),
@@ -181,7 +202,7 @@ def _observed_native_finite_playlist(candidate, root, armed_at, captured_at):
                 or _media_resource_key(event.get("url")) != resource):
                 continue
             observed = datetime.fromisoformat(event["at"])
-            if not armed_at < observed <= captured_at + timedelta(seconds=30):
+            if not armed_at < observed <= captured_at + timedelta(minutes=20):
                 continue
             path = Path(event["file"]).resolve()
             if not path.is_relative_to(root / "m3u8") or path.stat().st_size > 2 * 1024 * 1024:

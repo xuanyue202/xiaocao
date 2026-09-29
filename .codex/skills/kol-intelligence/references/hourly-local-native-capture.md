@@ -198,6 +198,17 @@ lists enrich asynchronously with an incremental cache; they cannot bind a source
    同场后端修复保留这些未下载观察和原 capture；部署后重新取同场媒体，
    不能沿用旧内存票据。相同 URL 派生 ID 的重复观察仅在资源、来源、字段及
    live 全部一致时使用真实最新观察时间；冲突仍拒绝。
+   若微信复用缓存、singleton 收到空正文，先保持课程/原任务，不重开或刷新。
+   仅该公开数字回放可运行 `scripts/kol_native_playlist_probe.py --identity <原订阅>
+   --capture-id <原capture> --candidate-id <本轮候选> --source-identity <观测app/live>
+   --network-service <当前服务>`，它先重读实际商户正文、已结束状态与原资源；
+   有查询/签名的 URL 不能探测。经本机已信任证书的系统 curl 和原 singleton
+   代理只复核这一个公开清单，仍由 singleton 保存的 VOD/ENDLIST 正文验收。
+   不下载视频、不换任务、不关闭 TLS 校验；网络失败留在原条目诊断。
+   已有未执行的 download claim（服务端无匹配或活跃任务）可通过
+   `restart_sniffer_for_claimed_native_transport_repair` 部署已测试后端，保留原
+   claim、原绑定与观察时点；仅有 exact 公共 VOD 证据允许恢复无查询资源。
+   有签名/加密票据仍需本轮内存票据，不允许从已脱敏 URL 重建。
 
 3. **一次正常唤起，再输入课程口令。** 对 HTTPS 分享入口，运行当前请求给出的
    `launch_resolver_command`；其命令形态为：

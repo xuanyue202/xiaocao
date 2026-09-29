@@ -1963,6 +1963,7 @@ class XiaocaoLiveService:
     def _replace_sniffer_for_repair(
         self, current: dict[str, Any], *, replacement_binary: Path,
         unbound_observation: dict[str, Any] | None = None,
+        preserve_native_arm: bool = False,
     ) -> dict[str, Any]:
         capture_job_id = current["job_id"]
         replacement = replacement_binary.resolve()
@@ -1986,14 +1987,32 @@ class XiaocaoLiveService:
             time.sleep(0.1)
         validate_cleanup_evidence(self.cleanup_snapshot())
         os.replace(replacement, installed)
-        self.capture_store.transition(
-            current, "native_backend_repaired", native_repair_armed_at=self._clock().isoformat(timespec="seconds"),
-            repaired_binary_sha256=_sha256_file(installed),
-        )
+        fields = {"repaired_binary_sha256": _sha256_file(installed)}
+        if not preserve_native_arm:
+            fields["native_repair_armed_at"] = self._clock().isoformat(timespec="seconds")
+        self.capture_store.transition(current, "native_backend_repaired", **fields)
         ready = self.start()
         if ready.get("capture_job_id") != capture_job_id:
             raise EnrichmentError("backend repair resumed another capture")
         return {"capture_job_id": capture_job_id, "status": "ready", "backup_binary": str(backup)}
+
+    def restart_sniffer_for_claimed_native_transport_repair(self, capture_job_id: str, *, replacement_binary: Path) -> dict[str, Any]:
+        """Retain an unexecuted download claim for an observed public VOD."""
+        current = self.capture_store.latest(capture_job_id)
+        if current is None or current.get("status") != "download_claimed" or current.get("download_task_id"):
+            raise EnrichmentError("transport repair requires an unexecuted download claim")
+        lineage = current.get("native_media_lineage") or {}
+        finite = lineage.get("finite_playlist") or {}
+        candidate = current.get("candidate") or {}
+        if (lineage.get("method") != "native_v2_merchant_response" or finite.get("ended") is not True
+            or finite.get("candidate_id") != candidate.get("id")
+            or finite.get("media_resource_sha256") != lineage.get("media_resource_sha256")
+            or not _SHA256.fullmatch(str(finite.get("response_sha256") or ""))):
+            raise EnrichmentError("transport repair lacks exact ended native evidence")
+        tasks = self.sniffer.tasks()
+        if self._matching_tasks(current, tasks) or any(t.get("status") in {"running", "ready", "wait"} for t in tasks):
+            raise EnrichmentError("existing provider task blocks transport-only repair")
+        return self._replace_sniffer_for_repair(current, replacement_binary=replacement_binary, preserve_native_arm=True)
 
     def cleanup_sniffer(self, *, capture_job_id: str) -> dict[str, Any]:
         existing = self._event(

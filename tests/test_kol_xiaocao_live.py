@@ -96,6 +96,31 @@ def test_backend_repair_keeps_capture_and_does_not_record_terminal_cleanup(tmp_p
     assert service._event("capture_cleanup_completed", capture_job_id=current["job_id"]) is None
 
 
+@pytest.mark.parametrize("invalid", [None, "existing_task", "started", "no_end", "wrong_resource"])
+def test_claimed_transport_repair_preserves_native_arm_and_download_claim(tmp_path, monkeypatch, invalid):
+    store = CaptureJobStore(tmp_path / "capture.jsonl")
+    current = store.transition(store.arm([]), "download_claimed", status="download_claimed",
+        native_repair_armed_at="2026-09-29T22:47:35+08:00", download_idempotency_key="original",
+        candidate={"id":"exact","live_id":"l_exact"},
+        native_media_lineage={"method":"native_v2_merchant_response","media_resource_sha256":"a"*64,
+            "finite_playlist":{"candidate_id":"exact","ended":True,"media_resource_sha256":"a"*64,"response_sha256":"b"*64}})
+    if invalid == "started": current=store.transition(current,"started",download_task_id="already")
+    if invalid == "no_end": current["native_media_lineage"]["finite_playlist"]["ended"]=False;store.transition(current,"changed")
+    if invalid == "wrong_resource": current["native_media_lineage"]["finite_playlist"]["media_resource_sha256"]="c"*64;store.transition(current,"changed")
+    tasks=[{"id":"other","status":"running"}] if invalid == "existing_task" else []
+    service=XiaocaoLiveService(tmp_path / "live",capture_ledger=store.path,sniffer_client=SimpleNamespace(tasks=lambda:tasks))
+    calls=[]
+    monkeypatch.setattr(service,"_replace_sniffer_for_repair",lambda row,**kw:calls.append((row,kw)) or {"status":"ready"})
+    if invalid:
+        with pytest.raises(EnrichmentError):service.restart_sniffer_for_claimed_native_transport_repair(current["job_id"],replacement_binary=tmp_path / "repair")
+        assert not calls
+    else:
+        service.restart_sniffer_for_claimed_native_transport_repair(current["job_id"],replacement_binary=tmp_path / "repair")
+        assert calls[0][1]["preserve_native_arm"] is True
+        assert calls[0][0]["native_repair_armed_at"] == current["native_repair_armed_at"]
+        assert calls[0][0]["download_idempotency_key"] == "original"
+
+
 @pytest.mark.parametrize("invalid", [None, "active", "changed", "wrong_capture", "unfinished"])
 def test_backend_install_after_exact_cleanup_never_starts_sniffer(tmp_path, monkeypatch, invalid):
     installed, replacement = tmp_path / "sniffer", tmp_path / "sniffer.repair"
