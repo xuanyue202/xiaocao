@@ -1161,6 +1161,8 @@ class XiaocaoLiveService:
         current = self.capture_store.latest(capture_job_id)
         if current is None:
             raise EnrichmentError("capture job does not exist")
+        if current.get("user_resume_required") is True:
+            return current
         if current.get("status") == "awaiting_capture":
             source_job_id = str(current.get("source_job_id") or "")
             if source_job_id:
@@ -1335,6 +1337,11 @@ class XiaocaoLiveService:
             )
         if current.get("status") == "downloading":
             tasks = self.sniffer.tasks()
+            # A pause may be persisted while this provider read is in flight.
+            # Never overwrite that control decision with a stale progress row.
+            fresh = self.capture_store.latest(capture_job_id)
+            if fresh and fresh.get("user_resume_required") is True:
+                return fresh
             current = (
                 self.capture_store.reconcile_download(current, tasks)
                 or current
@@ -1362,6 +1369,9 @@ class XiaocaoLiveService:
                         status="awaiting_capture",
                     )
         if current.get("status") == "download_failed":
+            fresh = self.capture_store.latest(capture_job_id)
+            if fresh and fresh.get("user_resume_required") is True:
+                return fresh
             if current.get("source_job_id"):
                 return self.capture_store.transition(
                     current,
@@ -1396,11 +1406,34 @@ class XiaocaoLiveService:
             )
         return current
 
-    def resume_interrupted_capture(self, capture_job_id: str, *, stalled_media_repair: bool = False) -> dict[str, Any]:
+    def pause_capture(self, capture_job_id: str) -> dict[str, Any]:
+        """Persist the user's execution gate before cancelling the exact task."""
+        current = self.capture_store.latest(capture_job_id)
+        if current is None or current.get("status") != "downloading":
+            raise EnrichmentError("only an existing download can be paused")
+        task_id = str(current.get("download_task_id") or "")
+        if not task_id:
+            raise EnrichmentError("pause requires the original task")
+        if current.get("paused_task_receipt") and current.get("user_resume_required") is True:
+            return {**current, "idempotent_replay": True}
+        claimed = self.capture_store.transition(current, "capture_user_pause_claimed",
+            user_resume_required=True, user_paused_at=self._clock().isoformat(timespec="seconds"))
+        self.sniffer.pause_task(task_id)
+        task = next((t for t in self.sniffer.tasks() if t.get("id") == task_id), None)
+        if task is None or task.get("status") != "pause":
+            raise EnrichmentError("pause requires exact task readback; execution remains gated")
+        return self.capture_store.transition(claimed, "capture_user_paused",
+            paused_task_receipt={"id": task_id, "status": "pause",
+                "downloaded_bytes": int((task.get("progress") or {}).get("downloaded") or 0)})
+
+    def resume_interrupted_capture(self, capture_job_id: str, *, stalled_media_repair: bool = False,
+        user_resume_authorized: bool = False) -> dict[str, Any]:
         """One diagnosed continuation of the same durable paused stream task."""
         current = self.capture_store.latest(capture_job_id)
         if current is None or current.get("status") != "downloading":
             raise EnrichmentError("interrupted capture is not downloading")
+        if current.get("user_resume_required") is True and not user_resume_authorized:
+            raise EnrichmentError("user-paused capture requires explicit resume authorization")
         task_id = str(current.get("download_task_id") or "")
         matches = [t for t in self.sniffer.tasks() if str(t.get("id") or "") == task_id]
         if not task_id or len(matches) != 1:
@@ -1422,6 +1455,9 @@ class XiaocaoLiveService:
             or str(labels.get("compress_inline")).lower() != "true"
         ):
             raise EnrichmentError("paused task does not bind the original compressed capture")
+        if current.get("user_resume_required") is True:
+            current = self.capture_store.transition(current, "capture_user_resume_authorized",
+                user_resume_required=False, user_resumed_at=self._clock().isoformat(timespec="seconds"))
         proof = {"task_id": task_id, "candidate_id": candidate["id"]}
         if stalled_media_repair:
             opts = meta.get("opts") or {}

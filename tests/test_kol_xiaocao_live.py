@@ -1948,6 +1948,31 @@ def test_advance_xiaoetong_source_retries_orphaned_restored_task_with_fresh_cand
     assert retries == ["source-1"]
 
 
+@pytest.mark.parametrize("downloaded", [0, 266076208])
+@pytest.mark.parametrize("provider_status", ["pause", "error"])
+def test_paused_native_download_never_creates_replacement_task(tmp_path, downloaded, provider_status):
+    store = CaptureJobStore(tmp_path / "capture.jsonl")
+    candidate = {"id": "native", "live_id": "l_original", "filename": "original.mp4",
+        "url": "https://example.test/original/playlist_eof.m3u8"}
+    captured = store.detect_capture(store.arm([]), [candidate])
+    downloading = store.transition(captured, "download_started", status="downloading",
+        download_task_id="original-task", user_resume_required=True)
+    task = {"id": "original-task", "status": provider_status, "progress": {"downloaded": downloaded}}
+    calls = []
+    class Sniffer:
+        def tasks(self): return [task]
+        def candidates(self): return [candidate]
+        def start_download(self, candidate, *, force=False):
+            calls.append((candidate["id"], force)); return "replacement-task"
+    service = XiaocaoLiveService(tmp_path / "live", capture_ledger=store.path,
+        sniffer_client=Sniffer())
+    result = service.advance_capture(downloading["job_id"])
+    assert calls == []
+    assert result["download_task_id"] == "original-task"
+    assert result["status"] == "downloading"
+    assert result.get("user_resume_required") is True
+
+
 def test_paused_zero_byte_source_task_returns_to_source_retry(tmp_path):
     ledger = tmp_path / "capture.jsonl"
     store = CaptureJobStore(ledger)
@@ -1978,6 +2003,40 @@ def test_paused_zero_byte_source_task_returns_to_source_retry(tmp_path):
 
     assert result["event"] == "source_retry_pending"
     assert result["status"] == "awaiting_capture"
+
+
+def test_pause_during_provider_read_wins_over_download_error(tmp_path):
+    service = XiaocaoLiveService(tmp_path / "live", capture_ledger=tmp_path / "capture.jsonl")
+    job = service.capture_store.transition(service.capture_store.arm([]), "download_started",
+        status="downloading", download_task_id="original-task")
+    def tasks():
+        service.capture_store.transition(job, "capture_user_pause_claimed", user_resume_required=True)
+        return [{"id": "original-task", "status": "error"}]
+    service.sniffer = SimpleNamespace(tasks=tasks,
+        start_download=lambda *a, **k: pytest.fail("pause cannot create a replacement"))
+    result = service.advance_capture(job["job_id"])
+    assert result["event"] == "capture_user_pause_claimed"
+    assert result["download_task_id"] == "original-task"
+    assert result["user_resume_required"] is True
+
+
+def test_pause_is_durable_before_provider_side_effect(tmp_path):
+    service = XiaocaoLiveService(tmp_path / "live", capture_ledger=tmp_path / "capture.jsonl")
+    job = service.capture_store.transition(service.capture_store.arm([]), "download_started",
+        status="downloading", download_task_id="original-task")
+    calls = []
+    def pause(task_id):
+        assert service.capture_store.latest(job["job_id"])["user_resume_required"] is True
+        calls.append(task_id)
+        return {"id": task_id}
+    service.sniffer = SimpleNamespace(pause_task=pause,
+        tasks=lambda: [{"id": "original-task", "status": "pause", "progress": {"downloaded": 123}}])
+    result = service.pause_capture(job["job_id"])
+    assert result["paused_task_receipt"] == {"id": "original-task", "status": "pause", "downloaded_bytes": 123}
+    assert service.pause_capture(job["job_id"])["idempotent_replay"] is True
+    assert calls == ["original-task"]
+    with pytest.raises(EnrichmentError, match="explicit resume"):
+        service.resume_interrupted_capture(job["job_id"])
 
 
 @pytest.mark.parametrize("capture_pac_enabled", [False, True])
