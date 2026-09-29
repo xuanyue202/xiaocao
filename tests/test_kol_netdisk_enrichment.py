@@ -4348,3 +4348,21 @@ def test_prepare_numbered_compressed_file_preserves_exact_source(tmp_path, name)
     assert job["video_basename"] == name
     assert job["video_path"] == str(video)
     assert service.prepare(video)["job_id"] == job["job_id"]
+
+
+def test_runner_audit_template_is_accepted_by_transcript_consumer(tmp_path):
+    from scripts.kol_daily import _transcript_audit_contract
+
+    service, job_id = _prepare_opencli_dom_capture(tmp_path)
+    captured = service.capture_opencli_transcript(job_id, session="ticket02-test")
+    text = Path(captured["transcript_path"]).read_text(encoding="utf-8")
+    contract = _transcript_audit_contract(captured)
+    audit = contract["audit_template"]
+    for check, bounds in zip(audit["checks"], contract["ranges"]):
+        start = bounds["start_char_inclusive"]
+        check["excerpt"] = text[start:start + 40]
+        check["passed"] = True
+    audit_path = tmp_path / "runner-audit.json"
+    audit_path.write_text(json.dumps(audit), encoding="utf-8")
+    verified = service.verify_transcript(job_id, audit_path=audit_path)
+    assert verified["status"] == "verified"
