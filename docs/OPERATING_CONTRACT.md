@@ -1,6 +1,6 @@
 # 小草运营契约（Operating Contract, SSOT）
 
-**版本**：4.30
+**版本**：4.31
 **状态**：现行
 **适用范围**：所有 paper / 未来 real 的实盘环（live_recommend → paper_record → live_monitor → eod）与回测
 **关联实现**：`src/xiaocao/live/{safety,capital_keychain,foundersc_native_ax,foundersc_native_broker,trading_execution,book_b_live_lifecycle,book_b_live_intraday}.py`、`src/xiaocao/live/intelligence_policy.py`、`src/xiaocao/strategy/{mode_switch,trend_rules,kol_reference}.py`、`native/foundersc_ax_executor/`、`kronos_screen/scripts/{capture_signals,forward_eval,paper_record,settle_book_a,settle_book_t,decompose_pnl,quality_governor}.py`、`scripts/{book_b_live_morning,book_b_live_intraday,live_monitor,research_mode_switch_replay}.py`
@@ -465,6 +465,13 @@ APP 在用户明确批准的动态资金政策下，以账户绑定的资金划�
   账户绑定的明细和归属证明，不从余额推断。当前 APP port 尚未采集资金流水，缺失
   实际费用证据如实保留。当前决策/结算要求最新来源 head，历史 allocation 继续核验
   原引用的不可变分录前缀。查询、明细与备份见 `docs/BOOK_B_ACCOUNTING.md`。
+- 当前观测和明确划拨必须不早于已入账资金事实的证明时点，拒绝须发生在追加划拨前。
+  未决 BUY 的现金预留未证明时不能用重放余额声称现金已闭合，累计收益保持 N/A。
+  资金分录更正以同账户原生证明追加唯一、等额反向冲正，保留原记录；不反写成交证据。
+  仅保护性监控可将 SQLite 存储故障降级为会计不可用，现金/NAV/收益为 N/A，
+  仍凭独立账户、自有成交、当前数量、T+1、市场/策略和 exact-once 证明执行合法 SELL；
+  BUY/结算继续失败关闭，原始事实校验失败不降级。卖出后的会计/风险读回故障不能
+  丢失已证明的订单与成交回执。
 - 签名动态授权绑定上述账户/政策；BUY 每个提交阶段须具备 60 秒内原生账户、
   精确 plan/hash 与含费可用现金证明，SELL 须证明自有数量与当前可卖数量。
   撤单仍须原委托映射和独立原生精确撤单核验。整批现金证明扣除已消费预留，
@@ -565,6 +572,7 @@ APP 在用户明确批准的动态资金政策下，以账户绑定的资金划�
 
 | 版本 | 日期 | 说明 |
 |------|------|------|
+| 4.31 | 2026-09-29 | 生产审查修复较新资金事实/较早快照混用与会计存储阻断保护性 SELL；预留现金待证、补齐明细来源并允许有证明的唯一资金冲正，保留成交权限与原始事实门。 |
 | 4.30 | 2026-09-29 | 用户批准复用原证据与锁建立 SQLite 金融分录和累计明细；现金差额不自动成为本金，区分含费成本、已实现/浮动盈亏、标记与预计清算净值，保留原风险和订单权限。 |
 | 4.29 | 2026-09-29 | 用户批准以全部 APP 可用资金为买入硬上限，原比例按动态策略净资产计算；独立资金划拨/单位净值保留历史盈亏和回撤暂停，签名动态授权绑定账户与原生含费证明，paper 不混账。 |
 | 4.28 | 2026-09-29 | 原生批次及填单前核验账户绑定对话框，按控件与主窗口几何区分 macOS 标题栏；明确未进入密码动作的失败可修复重检，可能确认仍禁止重放。 |
