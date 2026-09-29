@@ -1530,6 +1530,66 @@ def test_intraday_eod_only_reconciles_projects_and_settles(tmp_path: Path) -> No
     assert receipt.settlement["settled_nav"] == 30_000
 
 
+@pytest.mark.app_simulation
+def test_blocked_eod_retains_fresh_account_and_exact_reconciliation(tmp_path: Path) -> None:
+    buy = _record_fill(tmp_path, _plan(trade_date="2026-08-31"),
+        price=10, event_id="prior-buy")
+    old_sell = _bind_plan_intent(tmp_path, _plan(side="SELL", lot_id=buy.plan_id,
+        trade_date="2026-09-02"))
+    _record_fill(tmp_path, _plan(side="SELL", lot_id=buy.plan_id,
+        trade_date="2026-09-03"), price=11, event_id="independent-exit")
+    current = datetime(2026, 9, 4, 7, 10, tzinfo=timezone.utc)
+    proof = {
+        "position_observed_at": current.isoformat(),
+        "target_holding_shares": 0,
+        "fill_aggregate_proven": True,
+        "exact_order_match_count": 1,
+        "exact_trade_match_count": 0,
+        "current_order_cumulative_fill_notional": "0",
+        "historical_order_row_date": "2026-09-02",
+        "historical_trade_row_date": "2026-09-02",
+    }
+    store = ExecutionStore(tmp_path / "events.jsonl")
+    unresolved = store.append(plan=old_sell,
+        receipt=ExecutionReceipt(old_sell.plan_id, old_sell.plan_hash,
+            ExecutionState.UNKNOWN, filled_shares=0, remaining_shares=100,
+            broker_order_id="6007019", locator_proof=proof,
+            next_action="reconcile_only", observed_at=current),
+        kind="historical-reconcile")
+    snapshot = _snapshot(observed_at=current)
+    snapshot["trade_date"] = "2026-09-04"
+    snapshot.pop("snapshot_sha256")
+    snapshot["snapshot_sha256"] = _canonical_sha256(snapshot)
+    reads, reconciliations = [], []
+
+    def read_account():
+        reads.append(True)
+        return snapshot
+
+    def reconcile(plan):
+        assert plan.plan_id == old_sell.plan_id
+        reconciliations.append(plan.plan_id)
+        return unresolved
+
+    receipt = run_book_b_live_intraday(
+        state_dir=tmp_path, trade_date="2026-09-04", phase="eod",
+        account_snapshot_provider=read_account,
+        status_provider=lambda lots: pytest.fail("EOD must not evaluate new exits"),
+        execute=reconcile, now=lambda: current, execute_sells=False,
+    )
+
+    assert receipt.status == "blocked"
+    assert receipt.reason == "LIVE_BOOK_B_EOD_OPEN_EXECUTION_RECONCILE_REQUIRED"
+    assert receipt.account["broker_snapshot_sha256"] == snapshot["snapshot_sha256"]
+    assert receipt.account["cash"] == 30_099.79
+    assert receipt.reconciliation_receipts == (unresolved.as_dict(),)
+    assert receipt.decisions == receipt.execution_receipts == ()
+    assert receipt.settlement is None
+    assert reads == [True] and reconciliations == [old_sell.plan_id]
+    assert store.current(old_sell.plan_id).state == ExecutionState.UNKNOWN
+    assert not (tmp_path / "settlements/2026-09-04.json").exists()
+
+
 def test_intraday_rejects_eod_settlement_before_market_close(
     tmp_path: Path,
 ) -> None:
