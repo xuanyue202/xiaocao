@@ -368,6 +368,16 @@ Completed-capture acceptance uses the persisted, exact candidate/source/task
 receipt and rechecks local media hashes; it must not restart or query the cleaned
 sniffer merely to pass audit. A mismatched saved task fails closed.
 
+After a diagnosed downloader interruption, reconcile the original task before
+any replay. A paused stream is not complete media: `reconcile_completed_capture`
+requires its exact compressed artifact and full HLS-matched duration. If the
+artifact is incomplete, `resume_interrupted_capture` permits one durable
+same-task continuation only after exact candidate/live/compression labels and
+`pause` are read back. It calls the singleton's resume endpoint, not create or
+force download. Keep the original task/capture/claim and narrow item PTY through
+validation/upload/Handoff; a missing or uncertain resume receipt cannot be
+retried blindly. A user pause is not itself authority to resume.
+
 A visible current broadcast with only bound liveplay candidates returns
 `page_state=live` and truthful `media_request_observed=true`; it stays
 `awaiting_playback`. Close the exact course using W7–W10; do not download it.
